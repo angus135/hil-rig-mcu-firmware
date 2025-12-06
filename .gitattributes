@@ -114,7 +114,6 @@
 *.ico     binary
 *.tif     binary
 *.tiff    binary
-*.svg     text   # if you prefer to diff SVGs; change to 'binary' if not
 
 ###############################################################################
 # Repo meta (optional)
