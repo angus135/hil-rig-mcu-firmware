@@ -1,0 +1,124 @@
+###############################################################################
+# Global defaults
+###############################################################################
+
+# Auto-detect text files and normalize line endings in the repo to LF
+* text=auto
+
+# Treat patch files as exact bytes (no EOL conversion)
+*.patch -text
+
+###############################################################################
+# Source code (embedded C / ASM / linker)
+###############################################################################
+
+# C / C++ sources and headers
+*.c       text eol=lf diff=cpp
+*.h       text eol=lf diff=cpp
+*.cpp     text eol=lf diff=cpp
+*.hpp     text eol=lf diff=cpp
+
+# Assembly sources
+*.s       text eol=lf
+*.S       text eol=lf
+*.asm     text eol=lf
+
+# Linker scripts, startup, linker config
+*.ld      text eol=lf
+*.icf     text eol=lf
+*.lds     text eol=lf
+*.map     text eol=lf
+
+# Config / headers that are still plain text
+*.cfg     text eol=lf
+*.ini     text eol=lf
+
+###############################################################################
+# Scripts / tools
+###############################################################################
+
+*.sh      text eol=lf
+*.bash    text eol=lf
+*.py      text eol=lf
+*.pyw     text eol=lf
+*.ps1     text eol=crlf
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+
+###############################################################################
+# Documentation
+###############################################################################
+
+*.md      text eol=lf diff=markdown
+*.txt     text eol=lf
+*.rst     text eol=lf
+
+###############################################################################
+# STM32CubeIDE / CubeMX project files
+# (These are all XML / text and safe to diff)
+###############################################################################
+
+*.project text eol=lf
+*.cproject text eol=lf
+*.launch  text eol=lf
+*.ioc     text eol=lf
+.settings/* text eol=lf
+
+###############################################################################
+# Build outputs and firmware artifacts (binary)
+# These patterns will catch build directories in the CubeIDE subproject and
+# any other toolchains you use.
+###############################################################################
+
+# Generic objects / libs
+*.o       binary
+*.obj     binary
+*.a       binary
+*.lib     binary
+*.la      binary
+*.lai     binary
+
+# Firmware images / ELF binaries
+*.elf     binary
+*.bin     binary
+*.hex     binary
+*.srec    binary
+*.axf     binary
+
+# Debug / trace dumps
+*.axf     binary
+*.out     binary
+*.map     binary
+*.lst     binary
+
+# Precompiled headers
+*.gch     binary
+*.pch     binary
+
+# Archives
+*.zip     binary
+*.7z      binary
+*.gz      binary
+*.tgz     binary
+*.tar     binary
+
+###############################################################################
+# Images / assets
+###############################################################################
+
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.bmp     binary
+*.ico     binary
+*.tif     binary
+*.tiff    binary
+*.svg     text   # if you prefer to diff SVGs; change to 'binary' if not
+
+###############################################################################
+# Repo meta (optional)
+###############################################################################
+
+.gitattributes export-ignore
+.gitignore     export-ignore

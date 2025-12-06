@@ -1,0 +1,9 @@
+build/
+
+# Ignore Unnecessary Cube IDE Generated files and directories
+.metadata/
+f446ze_cubeide_project/Debug/
+f446ze_cubeide_project/Release/
+f446ze_cubeide_project/.settings/language.settings.xml
+f446ze_cubeide_project/.settings/org.eclipse.core.resources.prefs
+f446ze_cubeide_project/.settings/org.eclipse.cdt.ui.prefs

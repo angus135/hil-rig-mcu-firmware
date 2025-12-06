@@ -1,0 +1,81 @@
+---
+Checks: >
+  clang-analyzer-*,
+  bugprone-*,
+  cppcoreguidelines-*,
+  misc-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -readability-magic-numbers,
+  -cppcoreguidelines-pro-type-vararg,
+  -cppcoreguidelines-avoid-non-const-global-variables
+WarningsAsErrors: ''
+HeaderFilterRegex: 'src/.*|include/.*'
+FormatStyle:     none
+User:            angus
+CheckOptions:
+  # Don't spam about floating-point narrowing (C code does this a lot intentionally)
+  - key: bugprone-narrowing-conversions.WarnOnFloatingPointNarrowingConversion
+    value: '0'
+  - key: cppcoreguidelines-narrowing-conversions.WarnOnFloatingPointNarrowingConversion
+    value: '0'
+
+  ###########################################################################
+  # Naming rules (readability-identifier-naming)
+  #
+  # Functions: MODULENAME_UPPER_SNAKE style → approximated as UPPER_CASE.
+  # Variables: lower_snake
+  # Structs/enums/unions/typedefs: UPPER_SNAKE_T
+  # Constants/macros: UPPER_CASE
+  ###########################################################################
+
+  - key:   readability-identifier-naming.FunctionCase
+    value: aNy_CasE
+
+  # Variables (locals, members, globals) in lower_snake
+  - key:   readability-identifier-naming.VariableCase
+    value: lower_case
+  - key:   readability-identifier-naming.LocalVariableCase
+    value: lower_case
+  - key:   readability-identifier-naming.MemberCase
+    value: lower_case
+  - key:   readability-identifier-naming.GlobalVariableCase
+    value: lower_case
+  - key:   readability-identifier-naming.ParameterCase
+    value: lower_case
+
+  # Struct / union / enum / typedef names: StructName_T / EnumName_T / ...
+  - key:   readability-identifier-naming.StructCase
+    value: CamelCase
+  - key:   readability-identifier-naming.StructSuffix
+    value: _T
+
+  - key:   readability-identifier-naming.UnionCase
+    value: CamelCase
+  - key:   readability-identifier-naming.UnionSuffix
+    value: _T
+
+  - key:   readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key:   readability-identifier-naming.EnumSuffix
+    value: _T
+
+  - key:   readability-identifier-naming.TypedefCase
+    value: CamelCase
+  - key:   readability-identifier-naming.TypedefSuffix
+    value: _T
+
+  # Enum values (constants) and other global constants: ALL_CAPS
+  - key:   readability-identifier-naming.EnumConstantCase
+    value: UPPER_CASE
+  - key:   readability-identifier-naming.GlobalConstantCase
+    value: UPPER_CASE
+
+  # Macros (#define) as ALL_CAPS too
+  - key:   readability-identifier-naming.MacroDefinitionCase
+    value: UPPER_CASE
+...
+

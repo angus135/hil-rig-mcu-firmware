@@ -1,0 +1,156 @@
+---
+Language:        Cpp        # Applies to C and C++ in clang-format
+# BasedOnStyle:  LLVM
+
+AccessModifierOffset: -4
+
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true   # Helpful for aligning registers/structs
+AlignEscapedNewlines: Right
+AlignOperands:   true
+AlignTrailingComments: true
+
+AllowAllParametersOfDeclarationOnNextLine: true
+
+# Embedded: avoid hiding logic on single lines
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+
+AlwaysBreakAfterDefinitionReturnType: None
+AlwaysBreakAfterReturnType: None
+AlwaysBreakBeforeMultilineStrings: false
+AlwaysBreakTemplateDeclarations: No
+
+BinPackArguments: true
+BinPackParameters: true
+
+# Use explicit brace rules (Allman-style for readability)
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass:              true
+  AfterControlStatement:   Always   # if (...) \n { ... }
+  AfterEnum:               true
+  AfterFunction:           true
+  AfterNamespace:          false
+  AfterObjCDeclaration:    false
+  AfterStruct:             true
+  AfterUnion:              true
+  AfterExternBlock:        true
+  BeforeCatch:             true
+  BeforeElse:              true
+  IndentBraces:            false
+  SplitEmptyFunction:      true
+  SplitEmptyRecord:        true
+  SplitEmptyNamespace:     true
+
+BreakBeforeBinaryOperators: NonAssignment
+BreakBeforeInheritanceComma: false
+BreakBeforeTernaryOperators: true
+BreakConstructorInitializersBeforeComma: false
+BreakConstructorInitializers: BeforeColon
+
+BreakAfterJavaFieldAnnotations: false
+BreakStringLiterals: true
+
+# Slightly stricter than 120 but still comfortable in IDEs
+ColumnLimit:     100
+
+CommentPragmas:  '^ IWYU pragma:'
+CompactNamespaces: false
+
+ConstructorInitializerAllOnOneLineOrOnePerLine: false
+ConstructorInitializerIndentWidth: 4
+ContinuationIndentWidth: 4
+
+Cpp11BracedListStyle: true
+
+DisableFormat:   false
+ExperimentalAutoDetectBinPacking: false
+
+FixNamespaceComments: true
+
+ForEachMacros:
+  - foreach
+  - Q_FOREACH
+  - BOOST_FOREACH
+
+IncludeBlocks:   Preserve   # Don’t regroup system/vendor includes – can matter in embedded
+
+# Keep includes sorted only within groups; you can also set this to false
+# if include order is critical in your codebase.
+SortIncludes:    false
+
+IncludeCategories:
+  - Regex:           '^"(llvm|llvm-c|clang|clang-c)/'
+    Priority:        2
+  - Regex:           '^(<|"(gtest|gmock|isl|json)/)'
+    Priority:        3
+  - Regex:           '.*'
+    Priority:        1
+
+IncludeIsMainRegex: '(Test)?$'
+
+IndentCaseLabels: true      # Indent case labels inside switch
+IndentPPDirectives: None
+IndentWidth:     4
+IndentWrappedFunctionNames: false
+
+JavaScriptQuotes: Leave
+JavaScriptWrapImports: true
+
+KeepEmptyLinesAtTheStartOfBlocks: true
+
+MacroBlockBegin: ''
+MacroBlockEnd:   ''
+
+MaxEmptyLinesToKeep: 1
+
+NamespaceIndentation: None
+
+ObjCBlockIndentWidth: 4
+ObjCSpaceAfterProperty: false
+ObjCSpaceBeforeProtocolList: true
+
+PenaltyBreakAssignment: 2
+PenaltyBreakBeforeFirstCallParameter: 19
+PenaltyBreakComment: 300
+PenaltyBreakFirstLessLess: 120
+PenaltyBreakString: 1000
+PenaltyExcessCharacter: 1000000
+PenaltyReturnTypeOnItsOwnLine: 60
+
+# Pointer style – common in embedded/MISRA-like code
+# Left => `uint8_t *ptr;`
+PointerAlignment: Left
+DerivePointerAlignment: false
+
+ReflowComments:  true
+
+SortUsingDeclarations: true
+
+SpaceAfterCStyleCast: false
+SpaceAfterTemplateKeyword: true
+SpaceBeforeAssignmentOperators: true
+
+
+# Space before control statement parens, but not function calls:
+# if (x), for (x); foo(x)
+SpaceBeforeParens: ControlStatements
+
+SpaceInEmptyParentheses: false
+SpacesBeforeTrailingComments: 1
+SpacesInAngles:  false
+SpacesInContainerLiterals: true
+SpacesInCStyleCastParentheses: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+Standard:        Latest     # Works fine for C; clang-format just needs a baseline
+
+TabWidth:        4
+UseTab:          Never
+...

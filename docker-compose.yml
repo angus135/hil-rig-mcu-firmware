@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev          # uses the dev stage from your Dockerfile
+    volumes:
+      - .:/hil-rig-mcu-firmware
+    working_dir: /hil-rig-mcu-firmware
+    tty: true              # keep the terminal open
+    stdin_open: true       # allow interactive bash
+    command: bash          # drop you into a shell
+
+  ci:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: ci           # uses the ci stage from your Dockerfile
+    volumes:
+      - .:/hil-rig-mcu-firmware:ro
+    working_dir: /hil-rig-mcu-firmware
+    # Example CI-style command: configure, build, run tests
+    command: >
+      bash -lc "
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug &&
+        cmake --build build &&
+        ctest --test-dir build
+      "
