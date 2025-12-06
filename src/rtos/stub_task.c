@@ -18,6 +18,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// NOLINTBEGIN(readability-identifier-naming)
+
 /*------------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
@@ -60,3 +62,10 @@ void vTaskDelayUntil(TickType_t* pxPreviousWakeTime, const TickType_t xTimeIncre
 
     *pxPreviousWakeTime = time_to_wake;
 }
+
+volatile TickType_t xTaskGetTickCount(void)
+{
+    return current_tick++;
+}
+
+// NOLINTEND(readability-identifier-naming)

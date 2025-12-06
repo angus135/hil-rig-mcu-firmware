@@ -46,7 +46,7 @@ extern "C"
  *
  * The FreeRTOS task that runs all the console related logic
  */
-void CONSOLE_Task(void* pvParameters);
+void CONSOLE_Task(void* task_parameters);
 
 #ifdef __cplusplus
 }

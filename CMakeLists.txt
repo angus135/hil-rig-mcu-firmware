@@ -14,6 +14,18 @@ set(COMMON_WARN_FLAGS
     -Wall
     -Wextra
     -Wpedantic
+    -Wshadow              
+    -Wundef               
+    -Wconversion          
+    -Wsign-conversion     
+    -Wcast-qual           
+    -Wformat=2            
+    -Wswitch-enum         
+    -Wswitch-default      
+    -Wmissing-prototypes  
+    -Wmissing-declarations
+    -Wstrict-prototypes   
+    -Wpointer-arith       
 )
 add_compile_options(${COMMON_WARN_FLAGS})
 

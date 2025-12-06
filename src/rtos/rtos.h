@@ -26,6 +26,7 @@ extern "C"
 #include "queue.h"
 #include "stream_buffer.h"
 #else
+// NOLINTBEGIN(readability-identifier-naming)
 /*------------------------------------------------------------------------------
  *  Includes
  *------------------------------------------------------------------------------
@@ -37,6 +38,8 @@ extern "C"
  */
 typedef uint32_t TickType_t;
 #define portMAX_DELAY (TickType_t)0xffffffffUL
+
+#define pdMS_TO_TICKS(x) (x)
 
 /*------------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -52,7 +55,11 @@ typedef uint32_t TickType_t;
  * @brief stub implementing FreeRTOS vTaskDelayUntil
  */
 void vTaskDelayUntil(TickType_t* pxPreviousWakeTime, const TickType_t xTimeIncrement);
-
+/**
+ * @brief stub implementing FreeRTOS xTaskGetTickCount
+ */
+volatile TickType_t xTaskGetTickCount(void);
+// NOLINTEND(readability-identifier-naming)
 #endif
 #ifdef __cplusplus
 }

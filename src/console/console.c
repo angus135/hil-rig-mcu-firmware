@@ -18,6 +18,7 @@
  *------------------------------------------------------------------------------
  */
 #include "rtos.h"
+#include "console.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -25,7 +26,7 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
-
+#define CONSOLE_TASK_PERIOD 100 // 10Hz
 /*------------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -60,10 +61,14 @@ static void CONSOLE_Process(void)
  *
  * The FreeRTOS task that runs all the console related logic
  */
-void CONSOLE_Task(void* pvParameters)
+void CONSOLE_Task(void* task_parameters)
 {
+    (void)task_parameters;
+
+    TickType_t initial_ticks = xTaskGetTickCount();
     while (true)
     {
         CONSOLE_Process();
+        vTaskDelayUntil(&initial_ticks, pdMS_TO_TICKS(CONSOLE_TASK_PERIOD));
     }
 }
