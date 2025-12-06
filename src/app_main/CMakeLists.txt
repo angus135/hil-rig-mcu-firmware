@@ -23,6 +23,12 @@ target_include_directories(app_main
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+target_link_libraries(app_main
+    PUBLIC
+        cubeide_hal
+        rtos
+)
+
 # -----------------------------
 # Tests for this module (gtest/gmock)
 # -----------------------------

@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
+cmake_policy(SET CMP0135 NEW)
 
 project(HilRigMcuFirmware LANGUAGES C CXX)
 
@@ -15,6 +16,33 @@ set(COMMON_WARN_FLAGS
     -Wpedantic
 )
 add_compile_options(${COMMON_WARN_FLAGS})
+
+# Path to CubeIDE project root
+set(CUBE_PROJECT_ROOT ${CMAKE_SOURCE_DIR}/f446ze_cubeide_project)
+
+# Interface library that only carries include dirs & compile definitions
+add_library(cubeide_hal INTERFACE)
+
+target_include_directories(cubeide_hal
+    INTERFACE
+        ${CUBE_PROJECT_ROOT}/Core/Inc
+        ${CUBE_PROJECT_ROOT}/Drivers/STM32F4xx_HAL_Driver/Inc
+        ${CUBE_PROJECT_ROOT}/Drivers/CMSIS/Device/ST/STM32F4xx/Include
+        ${CUBE_PROJECT_ROOT}/Drivers/CMSIS/Include
+        ${CUBE_PROJECT_ROOT}/Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc
+        ${CUBE_PROJECT_ROOT}/Middlewares/ST/STM32_USB_Device_Library/Core/Inc
+        ${CUBE_PROJECT_ROOT}/USB_DEVICE/App
+        ${CUBE_PROJECT_ROOT}/USB_DEVICE/Target
+)
+
+# Match the same defines CubeIDE uses
+target_compile_definitions(cubeide_hal
+    INTERFACE
+        STM32F4xx       
+        USE_HAL_DRIVER
+)
+
+add_compile_definitions(TEST_BUILD)
 
 # Testing infrastructure
 include(CTest)

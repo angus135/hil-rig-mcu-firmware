@@ -17,8 +17,8 @@ cd /hil-rig-mcu-firmware || exit 1
 
 echo "Collecting source files in src/..."
 
-# Only pick .c and .h files inside src/ and its subdirectories
-FILES=$(find src -type f \( -name "*.c" -o -name "*.h" \))
+# Only pick .c, .cpp and .h files inside src/ and its subdirectories
+FILES=$(find src -type f \( -name "*.c" -o -name "*.cpp" -o -name "*.h" \))
 
 if [ -z "$FILES" ]; then
   echo "No C source/header files found in src/"

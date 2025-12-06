@@ -24,6 +24,16 @@ target_include_directories(example
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+target_link_libraries(example
+    PUBLIC
+        cubeide_hal
+)
+
+target_link_libraries(console
+    PUBLIC
+        rtos
+)
+
 # -----------------------------
 # Tests for this module (gtest/gmock)
 # -----------------------------

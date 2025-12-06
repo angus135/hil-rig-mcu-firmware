@@ -1,17 +1,17 @@
 /******************************************************************************
- *  File:       app_main.h
+ *  File:       console.h
  *  Author:     Angus Corr
- *  Created:    6-12-2025
+ *  Created:    6-Dec-2025
  *
  *  Description:
- *      Call for the MCU application.
+ *      Public interface for the Console module.
  *
  *  Notes:
- *      None.
+ *      None
  ******************************************************************************/
 
-#ifndef APP_MAIN_H
-#define APP_MAIN_H
+#ifndef CONSOLE_H
+#define CONSOLE_H
 
 #ifdef __cplusplus
 extern "C"
@@ -22,6 +22,9 @@ extern "C"
  *  Includes
  *------------------------------------------------------------------------------
  */
+
+#include <stdint.h>
+#include <stdbool.h>
 
 /*------------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -39,17 +42,14 @@ extern "C"
  */
 
 /**
- * @brief MCU application
+ * @brief Console Task
  *
- * @param             void
- * @return            void
- *
- * This function starts the MCU application after all HAL layers have been initialised
+ * The FreeRTOS task that runs all the console related logic
  */
-void APP_MAIN_Application(void);
+void CONSOLE_Task(void* pvParameters);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* APP_MAIN_H */
+#endif /* CONSOLE_H */

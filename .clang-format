@@ -98,6 +98,7 @@ IndentCaseLabels: true      # Indent case labels inside switch
 IndentPPDirectives: None
 IndentWidth:     4
 IndentWrappedFunctionNames: false
+IndentExternBlock: false
 
 JavaScriptQuotes: Leave
 JavaScriptWrapImports: true

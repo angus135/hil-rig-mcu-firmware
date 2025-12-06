@@ -1,32 +1,42 @@
 /******************************************************************************
- *  File:       app_main.h
+ *  File:       rtos.h
  *  Author:     Angus Corr
- *  Created:    6-12-2025
+ *  Created:    6-Dec-2025
  *
  *  Description:
- *      Call for the MCU application.
+ *      Public interface for accessing FreeRTOS
  *
  *  Notes:
- *      None.
+ *      None
  ******************************************************************************/
 
-#ifndef APP_MAIN_H
-#define APP_MAIN_H
+#ifndef RTOS_H
+#define RTOS_H
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
+#ifndef TEST_BUILD
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+#include "timers.h"
+#include "queue.h"
+#include "stream_buffer.h"
+#else
 /*------------------------------------------------------------------------------
  *  Includes
  *------------------------------------------------------------------------------
  */
-
+#include <stdint.h>
 /*------------------------------------------------------------------------------
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
  */
+typedef uint32_t TickType_t;
+#define portMAX_DELAY (TickType_t)0xffffffffUL
 
 /*------------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -39,17 +49,13 @@ extern "C"
  */
 
 /**
- * @brief MCU application
- *
- * @param             void
- * @return            void
- *
- * This function starts the MCU application after all HAL layers have been initialised
+ * @brief stub implementing FreeRTOS vTaskDelayUntil
  */
-void APP_MAIN_Application(void);
+void vTaskDelayUntil(TickType_t* pxPreviousWakeTime, const TickType_t xTimeIncrement);
 
+#endif
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* APP_MAIN_H */
+#endif /* RTOS_H */

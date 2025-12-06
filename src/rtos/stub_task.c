@@ -1,21 +1,22 @@
 /******************************************************************************
- *  File:       app_main.c
+ *  File:       stub_task.c
  *  Author:     Angus Corr
- *  Created:    6-12-2025
+ *  Created:    6-Dec-2025
  *
  *  Description:
- *      Runs the MCU application
+ *      Stubs that correspond to task.c in FreeRTOS
  *
  *  Notes:
- *      None
+ *     None
  ******************************************************************************/
 
 /*------------------------------------------------------------------------------
  *  Includes
  *------------------------------------------------------------------------------
  */
-
-#include "app_main.h"
+#include "rtos.h"
+#include <stdint.h>
+#include <stdbool.h>
 
 /*------------------------------------------------------------------------------
  *  Defines / Macros
@@ -31,6 +32,7 @@
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
+static TickType_t current_tick = 0;
 
 /*------------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -47,10 +49,14 @@
  *------------------------------------------------------------------------------
  */
 
-/**
- * @brief Entry point for MCU application
- */
-void APP_MAIN_Application(void)
+void vTaskDelayUntil(TickType_t* pxPreviousWakeTime, const TickType_t xTimeIncrement)
 {
-    return;
+    TickType_t time_to_wake = *pxPreviousWakeTime + xTimeIncrement;
+
+    if (time_to_wake > current_tick)
+    {
+        current_tick = time_to_wake;
+    }
+
+    *pxPreviousWakeTime = time_to_wake;
 }

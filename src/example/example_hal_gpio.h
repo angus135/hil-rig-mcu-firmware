@@ -24,13 +24,13 @@ extern "C"
 #include <stdint.h>
 #include <stdbool.h>
 
-    /**
-     * @brief Drives a digital output.
-     *
-     * @param pin    Logical pin identifier.
-     * @param level  Output level (true = high, false = low).
-     */
-    void EXAMPLE_HAL_GPIO_WritePin(uint32_t pin, bool level);
+/**
+ * @brief Drives a digital output.
+ *
+ * @param pin    Logical pin identifier.
+ * @param level  Output level (true = high, false = low).
+ */
+void EXAMPLE_HAL_GPIO_WritePin(uint32_t pin, bool level);
 
 #ifdef __cplusplus
 }

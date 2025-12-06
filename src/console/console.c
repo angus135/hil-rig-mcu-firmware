@@ -1,21 +1,25 @@
 /******************************************************************************
- *  File:       app_main.c
+ *  File:       console.c
  *  Author:     Angus Corr
- *  Created:    6-12-2025
+ *  Created:    6-Dec-2025
  *
  *  Description:
- *      Runs the MCU application
+ *      Console module implementation.
+ *
+ *      This module provides:
+ *        - A simple command line console which can be accessed to interface with the MCU
  *
  *  Notes:
- *      None
+ *     None
  ******************************************************************************/
 
 /*------------------------------------------------------------------------------
  *  Includes
  *------------------------------------------------------------------------------
  */
-
-#include "app_main.h"
+#include "rtos.h"
+#include <stdint.h>
+#include <stdbool.h>
 
 /*------------------------------------------------------------------------------
  *  Defines / Macros
@@ -42,15 +46,24 @@
  *------------------------------------------------------------------------------
  */
 
+static void CONSOLE_Process(void)
+{
+}
+
 /*------------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
 
 /**
- * @brief Entry point for MCU application
+ * @brief Console Task
+ *
+ * The FreeRTOS task that runs all the console related logic
  */
-void APP_MAIN_Application(void)
+void CONSOLE_Task(void* pvParameters)
 {
-    return;
+    while (true)
+    {
+        CONSOLE_Process();
+    }
 }
