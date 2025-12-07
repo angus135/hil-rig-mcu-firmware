@@ -19,6 +19,13 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+#include "can.h"
+#include "dac.h"
+#include "dma.h"
+#include "quadspi.h"
+#include "tim.h"
+#include "usart.h"
+#include "usb_device.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -79,12 +86,24 @@ int main(void)
 
   /* USER CODE END Init */
 
+  /* Configure the system clock */
+  SystemClock_Config();
+
   /* USER CODE BEGIN SysInit */
 
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
+  MX_USART3_UART_Init();
+  MX_CAN1_Init();
+  MX_DAC_Init();
+  MX_QUADSPI_Init();
+  MX_TIM1_Init();
+  MX_UART4_Init();
+  MX_UART5_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   APP_MAIN_Application();
   /* USER CODE END 2 */
