@@ -28,8 +28,8 @@ extern "C"
 #include "stream_buffer.h"
 
 static inline BaseType_t CREATE_TASK(TaskFunction_t task_function, const char* task_name,
-                              configSTACK_DEPTH_TYPE task_memory, UBaseType_t task_priority,
-                              TaskHandle_t* task_handle)
+                                     configSTACK_DEPTH_TYPE task_memory, UBaseType_t task_priority,
+                                     TaskHandle_t* task_handle)
 {
     return xTaskCreate(task_function, // Task function (void (*)(void *))
                        task_name,     // Task name
@@ -73,8 +73,8 @@ BaseType_t xTaskCreate(TaskFunction_t pvTaskCode, const char* const pcName,
                        UBaseType_t uxPriority, TaskHandle_t* pxCreatedTask);
 
 static inline BaseType_t CREATE_TASK(TaskFunction_t task_function, const char* task_name,
-                              configSTACK_DEPTH_TYPE task_memory, UBaseType_t task_priority,
-                              TaskHandle_t* task_handle)
+                                     configSTACK_DEPTH_TYPE task_memory, UBaseType_t task_priority,
+                                     TaskHandle_t* task_handle)
 {
     return xTaskCreate(task_function, // Task function (void (*)(void *))
                        task_name,     // Task name
