@@ -60,6 +60,7 @@ extern "C"
  * We provide a C++ mock and route the C function symbol to it so that calls
  * from the C module are validated by GoogleMock.
  */
+1q24132
 class MockHalGpio
 {
 public:
