@@ -72,6 +72,9 @@ The CubeIDE project is configured with:
 
 ```
 ../src
+../src/app_main
+../src/rtos
+...
 ```
 
 via:
@@ -87,38 +90,7 @@ This allows:
 
 without modifying generated files.
 
-### Linking Source Files from `src`
-
-To compile external `.c` files, the `src` folder must be linked into the CubeIDE project:
-
-1. Right-click the CubeIDE project in the Project Explorer.
-2. Select **New → Folder**.
-3. Click **Advanced >>**.
-4. Select **Link to alternate location (Linked Folder)**.
-5. Set the location to:
-
-```
-../src
-```
-
-6. Enable:
-
-```
-Add folder to build
-```
-
-7. Click **Finish**.
-
-CubeIDE will now:
-
-- Compile every `.c` file inside `src/**`
-- Detect new modules automatically
-- Leave application code untouched during CubeMX regenerations
-
-To verify a file is included in the build:
-
-Right-click the file → **Properties → C/C++ Build → Resource Configurations**  
-Ensure **Exclude from build** is **unchecked**.
+If you add more modules you will need to add the relevant path to this so that everything can be built correctly.
 
 ---
 
