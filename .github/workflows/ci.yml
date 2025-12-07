@@ -37,7 +37,7 @@ jobs:
         run: |
           # List the files you want to enforce formatting on.
           # You can narrow this to src/ or specific dirs.
-          FILES=$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp')
+          FILES=$(find src -type f \( -name "*.c" -o -name "*.cpp" -o -name "*.h" \))
 
           if [ -z "$FILES" ]; then
             echo "No C/C++ files to format, skipping"
