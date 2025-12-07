@@ -25,8 +25,10 @@ target_include_directories(app_main
 
 target_link_libraries(app_main
     PUBLIC
+        project_warnings
         cubeide_hal
         rtos
+        console
 )
 
 # -----------------------------
@@ -50,6 +52,7 @@ if(APP_MAIN_ENABLE_TESTS AND BUILD_TESTING)
         target_link_libraries(app_main_tests
             PRIVATE
                 app_main
+                project_warnings
                 gtest
                 gtest_main
                 gmock

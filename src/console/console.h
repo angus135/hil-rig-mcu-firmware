@@ -25,11 +25,14 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "rtos.h"
 
 /*------------------------------------------------------------------------------
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
  */
+#define CONSOLE_TASK_MEMORY 256
+#define CONSOLE_TASK_PRIORITY 3
 
 /*------------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures

@@ -399,6 +399,7 @@ target_include_directories(example_module
 
 target_link_libraries(example_module
     PUBLIC
+        project_warnings
         cubeide_hal
         rtos
         # include any other relevant modules
@@ -418,7 +419,9 @@ if(EXAMPLE_MODULE_ENABLE_TESTS AND BUILD_TESTING)
 
     target_link_libraries(example_module_tests
         PRIVATE
+            project_warnings
             example_module
+            # include any other dependent libraries here
             gtest
             gtest_main
             gmock

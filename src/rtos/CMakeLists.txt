@@ -25,6 +25,7 @@ target_include_directories(rtos
 
 target_link_libraries(rtos
     PUBLIC
+        project_warnings
         cubeide_hal
 )
 
@@ -42,6 +43,7 @@ target_link_libraries(rtos
 
 #     target_link_libraries(rtos_tests
 #         PRIVATE
+#             project_warnings
 #             rtos
 #             gtest
 #             gtest_main

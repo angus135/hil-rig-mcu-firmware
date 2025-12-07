@@ -25,9 +25,11 @@ set(COMMON_WARN_FLAGS
     -Wmissing-prototypes  
     -Wmissing-declarations
     -Wstrict-prototypes   
-    -Wpointer-arith       
+    -Wpointer-arith
 )
-add_compile_options(${COMMON_WARN_FLAGS})
+
+add_library(project_warnings INTERFACE)
+target_compile_options(project_warnings INTERFACE ${COMMON_WARN_FLAGS})
 
 # Path to CubeIDE project root
 set(CUBE_PROJECT_ROOT ${CMAKE_SOURCE_DIR}/f446ze_cubeide_project)

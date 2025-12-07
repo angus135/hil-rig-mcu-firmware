@@ -25,6 +25,7 @@ target_include_directories(console
 
 target_link_libraries(console
     PUBLIC
+        project_warnings
         cubeide_hal
         rtos
 )
@@ -43,6 +44,7 @@ if(CONSOLE_ENABLE_TESTS AND BUILD_TESTING)
 
     target_link_libraries(console_tests
         PRIVATE
+            project_warnings
             console
             gtest
             gtest_main

@@ -9,7 +9,7 @@
  *  Notes:
  *     None
  ******************************************************************************/
-
+#ifdef TEST_BUILD
 /*------------------------------------------------------------------------------
  *  Includes
  *------------------------------------------------------------------------------
@@ -51,6 +51,15 @@ static TickType_t current_tick = 0;
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief stub implementing FreeRTOS vTaskStartScheduler
+ */
+void vTaskStartScheduler(void)
+{
+}
+/**
+ * @brief stub implementing FreeRTOS vTaskDelayUntil
+ */
 void vTaskDelayUntil(TickType_t* pxPreviousWakeTime, const TickType_t xTimeIncrement)
 {
     TickType_t time_to_wake = *pxPreviousWakeTime + xTimeIncrement;
@@ -62,10 +71,12 @@ void vTaskDelayUntil(TickType_t* pxPreviousWakeTime, const TickType_t xTimeIncre
 
     *pxPreviousWakeTime = time_to_wake;
 }
-
+/**
+ * @brief stub implementing FreeRTOS xTaskGetTickCount
+ */
 volatile TickType_t xTaskGetTickCount(void)
 {
     return current_tick++;
 }
-
+#endif
 // NOLINTEND(readability-identifier-naming)

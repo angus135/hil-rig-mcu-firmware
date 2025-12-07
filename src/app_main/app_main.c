@@ -15,7 +15,9 @@
  *------------------------------------------------------------------------------
  */
 #include <stdbool.h>
+#include "rtos.h"
 #include "app_main.h"
+#include "console.h"
 
 /*------------------------------------------------------------------------------
  *  Defines / Macros
@@ -31,6 +33,7 @@
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
+static TaskHandle_t* ConsoleTaskHandle = NULL; // NOLINT(readability-identifier-naming)
 
 /*------------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -52,5 +55,7 @@
  */
 void APP_MAIN_Application(void)
 {
-    while (true) {}
+    CREATE_TASK(CONSOLE_Task, "Console Task", CONSOLE_TASK_MEMORY, CONSOLE_TASK_PRIORITY,
+                ConsoleTaskHandle);
+    vTaskStartScheduler();
 }
