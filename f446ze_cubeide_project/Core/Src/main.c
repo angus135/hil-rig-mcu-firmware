@@ -106,6 +106,8 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   APP_MAIN_Application();
+  // Nothing after here is ever called but if it does, run the error handler
+  Error_Handler();
   /* USER CODE END 2 */
 
   /* Init scheduler */
