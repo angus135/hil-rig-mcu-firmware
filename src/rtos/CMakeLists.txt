@@ -6,6 +6,7 @@
 
 set(RTOS_SOURCES
     stub_task.c
+    stub_queue.c
 )
 
 set(RTOS_HEADERS

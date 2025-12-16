@@ -60,6 +60,10 @@ typedef uint32_t TickType_t;
  */
 typedef void (*TaskFunction_t)(void*);
 typedef int32_t BaseType_t;
+#define pdFALSE			( ( BaseType_t ) 0 )
+#define pdTRUE			( ( BaseType_t ) 1 )
+#define pdPASS			( pdTRUE )
+#define pdFAIL			( pdFALSE )
 typedef int32_t UBaseType_t;
 typedef void*   TaskHandle_t;
 typedef void*   QueueHandle_t;
