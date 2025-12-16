@@ -1,12 +1,13 @@
 /******************************************************************************
- *  File:       test_console.cpp
+ *  File:       hw_uart.c
  *  Author:     Angus Corr
- *  Created:    06-Dec-2025
+ *  Created:    16-12-2025
  *
  *  Description:
+ *      <Short description of the module's purpose and responsibilities>
  *
  *  Notes:
- *
+ *      <Any design notes, dependencies, or assumptions go here>
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -14,49 +15,36 @@
  *------------------------------------------------------------------------------
  */
 
-#include <gtest/gtest.h>
-#include <gmock/gmock.h>
-
-extern "C"
-{
-#include "console.h" /* Module under test */
+#include "hw_uart.h"
 #include <stdint.h>
 #include <stdbool.h>
-}
 
 /**-----------------------------------------------------------------------------
- *  Test Constants / Macros
+ *  Defines / Macros
  *------------------------------------------------------------------------------
  */
 
 /**-----------------------------------------------------------------------------
- *  Test Doubles / Mocks
+ *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
 
 /**-----------------------------------------------------------------------------
- *  Test Fixture
+ *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
 
-/**
- * @brief Test fixture for module tests.
- *
- * Provides a consistent setup/teardown environment for all test cases.
+/**-----------------------------------------------------------------------------
+ *  Private (static) Function Prototypes
+ *------------------------------------------------------------------------------
  */
-class ExampleTest : public ::testing::Test
-{
-protected:
-    void SetUp(void) override
-    {
-    }
-
-    void TearDown(void) override
-    {
-    }
-};
 
 /**-----------------------------------------------------------------------------
- *  Test Cases
+ *  Private Function Definitions
+ *------------------------------------------------------------------------------
+ */
+
+/**-----------------------------------------------------------------------------
+ *  Public Function Definitions
  *------------------------------------------------------------------------------
  */

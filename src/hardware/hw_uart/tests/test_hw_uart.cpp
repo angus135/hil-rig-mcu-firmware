@@ -1,5 +1,5 @@
 /******************************************************************************
- *  File:       test_console.cpp
+ *  File:       test_uart.cpp
  *  Author:     Angus Corr
  *  Created:    06-Dec-2025
  *
@@ -19,7 +19,7 @@
 
 extern "C"
 {
-#include "console.h" /* Module under test */
+#include "hw_uart.h" /* Module under test */
 #include <stdint.h>
 #include <stdbool.h>
 }
