@@ -45,8 +45,8 @@ static uint32_t s_xQueuePeek_called;
 static uint32_t s_xQueuePeekFromISR_called;
 
 // Last args
-static UBaseType_t  s_xQueueCreate_uxQueueLength;
-static UBaseType_t  s_xQueueCreate_uxItemSize;
+static UBaseType_t s_xQueueCreate_uxQueueLength;
+static UBaseType_t s_xQueueCreate_uxItemSize;
 
 static QueueHandle_t s_xQueueSend_xQueue;
 static const void*   s_xQueueSend_pvItemToQueue;
@@ -72,28 +72,28 @@ static QueueHandle_t s_xQueuePeekFromISR_xQueue;
 static void*         s_xQueuePeekFromISR_pvBuffer;
 
 // Configurable return values
-static QueueHandle_t s_xQueueCreate_return = (QueueHandle_t)0;
-static BaseType_t    s_xQueueSend_return = pdPASS;
-static BaseType_t    s_xQueueSendFromISR_return = pdPASS;
-static BaseType_t    s_xQueueReceive_return = pdPASS;
+static QueueHandle_t s_xQueueCreate_return         = (QueueHandle_t)0;
+static BaseType_t    s_xQueueSend_return           = pdPASS;
+static BaseType_t    s_xQueueSendFromISR_return    = pdPASS;
+static BaseType_t    s_xQueueReceive_return        = pdPASS;
 static BaseType_t    s_xQueueReceiveFromISR_return = pdPASS;
-static BaseType_t    s_xQueuePeek_return = pdPASS;
-static BaseType_t    s_xQueuePeekFromISR_return = pdPASS;
+static BaseType_t    s_xQueuePeek_return           = pdPASS;
+static BaseType_t    s_xQueuePeekFromISR_return    = pdPASS;
 
 // Optional output behaviour (copy bytes into provided buffer)
-static uint8_t    s_xQueueReceive_write_data[64];
+static uint8_t     s_xQueueReceive_write_data[64];
 static UBaseType_t s_xQueueReceive_write_len;
 static BaseType_t  s_xQueueReceive_should_write;
 
-static uint8_t    s_xQueueReceiveFromISR_write_data[64];
+static uint8_t     s_xQueueReceiveFromISR_write_data[64];
 static UBaseType_t s_xQueueReceiveFromISR_write_len;
 static BaseType_t  s_xQueueReceiveFromISR_should_write;
 
-static uint8_t    s_xQueuePeek_write_data[64];
+static uint8_t     s_xQueuePeek_write_data[64];
 static UBaseType_t s_xQueuePeek_write_len;
 static BaseType_t  s_xQueuePeek_should_write;
 
-static uint8_t    s_xQueuePeekFromISR_write_data[64];
+static uint8_t     s_xQueuePeekFromISR_write_data[64];
 static UBaseType_t s_xQueuePeekFromISR_write_len;
 static BaseType_t  s_xQueuePeekFromISR_should_write;
 
@@ -149,14 +149,13 @@ BaseType_t xQueueSend(QueueHandle_t xQueue, const void* pvItemToQueue, TickType_
 /**
  * @brief stub implementing FreeRTOS xQueueSendFromISR
  */
-BaseType_t xQueueSendFromISR(QueueHandle_t xQueue,
-                             const void* pvItemToQueue,
+BaseType_t xQueueSendFromISR(QueueHandle_t xQueue, const void* pvItemToQueue,
                              BaseType_t* pxHigherPriorityTaskWoken)
 {
     s_xQueueSendFromISR_called++;
 
-    s_xQueueSendFromISR_xQueue                   = xQueue;
-    s_xQueueSendFromISR_pvItemToQueue            = pvItemToQueue;
+    s_xQueueSendFromISR_xQueue                    = xQueue;
+    s_xQueueSendFromISR_pvItemToQueue             = pvItemToQueue;
     s_xQueueSendFromISR_pxHigherPriorityTaskWoken = pxHigherPriorityTaskWoken;
 
     if ((pxHigherPriorityTaskWoken != NULL) && (s_xQueueSendFromISR_should_write_hptw != pdFALSE))
@@ -180,9 +179,10 @@ BaseType_t xQueueReceive(QueueHandle_t xQueue, void* pvBuffer, TickType_t xTicks
 
     if ((pvBuffer != NULL) && (s_xQueueReceive_should_write != pdFALSE))
     {
-        const UBaseType_t n = (s_xQueueReceive_write_len > (UBaseType_t)sizeof(s_xQueueReceive_write_data))
-                                ? (UBaseType_t)sizeof(s_xQueueReceive_write_data)
-                                : s_xQueueReceive_write_len;
+        const UBaseType_t n =
+            (s_xQueueReceive_write_len > (UBaseType_t)sizeof(s_xQueueReceive_write_data))
+                ? (UBaseType_t)sizeof(s_xQueueReceive_write_data)
+                : s_xQueueReceive_write_len;
         (void)memcpy(pvBuffer, s_xQueueReceive_write_data, (size_t)n);
     }
 
@@ -192,25 +192,26 @@ BaseType_t xQueueReceive(QueueHandle_t xQueue, void* pvBuffer, TickType_t xTicks
 /**
  * @brief stub implementing FreeRTOS xQueueReceiveFromISR
  */
-BaseType_t xQueueReceiveFromISR(QueueHandle_t xQueue,
-                                void* pvBuffer,
+BaseType_t xQueueReceiveFromISR(QueueHandle_t xQueue, void* pvBuffer,
                                 BaseType_t* pxHigherPriorityTaskWoken)
 {
     s_xQueueReceiveFromISR_called++;
 
-    s_xQueueReceiveFromISR_xQueue                   = xQueue;
-    s_xQueueReceiveFromISR_pvBuffer                 = pvBuffer;
+    s_xQueueReceiveFromISR_xQueue                    = xQueue;
+    s_xQueueReceiveFromISR_pvBuffer                  = pvBuffer;
     s_xQueueReceiveFromISR_pxHigherPriorityTaskWoken = pxHigherPriorityTaskWoken;
 
     if ((pvBuffer != NULL) && (s_xQueueReceiveFromISR_should_write != pdFALSE))
     {
-        const UBaseType_t n = (s_xQueueReceiveFromISR_write_len > (UBaseType_t)sizeof(s_xQueueReceiveFromISR_write_data))
-                                ? (UBaseType_t)sizeof(s_xQueueReceiveFromISR_write_data)
-                                : s_xQueueReceiveFromISR_write_len;
+        const UBaseType_t n = (s_xQueueReceiveFromISR_write_len
+                               > (UBaseType_t)sizeof(s_xQueueReceiveFromISR_write_data))
+                                  ? (UBaseType_t)sizeof(s_xQueueReceiveFromISR_write_data)
+                                  : s_xQueueReceiveFromISR_write_len;
         (void)memcpy(pvBuffer, s_xQueueReceiveFromISR_write_data, (size_t)n);
     }
 
-    if ((pxHigherPriorityTaskWoken != NULL) && (s_xQueueReceiveFromISR_should_write_hptw != pdFALSE))
+    if ((pxHigherPriorityTaskWoken != NULL)
+        && (s_xQueueReceiveFromISR_should_write_hptw != pdFALSE))
     {
         *pxHigherPriorityTaskWoken = s_xQueueReceiveFromISR_write_hptw;
     }
@@ -231,9 +232,10 @@ BaseType_t xQueuePeek(QueueHandle_t xQueue, void* pvBuffer, TickType_t xTicksToW
 
     if ((pvBuffer != NULL) && (s_xQueuePeek_should_write != pdFALSE))
     {
-        const UBaseType_t n = (s_xQueuePeek_write_len > (UBaseType_t)sizeof(s_xQueuePeek_write_data))
-                                ? (UBaseType_t)sizeof(s_xQueuePeek_write_data)
-                                : s_xQueuePeek_write_len;
+        const UBaseType_t n =
+            (s_xQueuePeek_write_len > (UBaseType_t)sizeof(s_xQueuePeek_write_data))
+                ? (UBaseType_t)sizeof(s_xQueuePeek_write_data)
+                : s_xQueuePeek_write_len;
         (void)memcpy(pvBuffer, s_xQueuePeek_write_data, (size_t)n);
     }
 
@@ -252,9 +254,10 @@ BaseType_t xQueuePeekFromISR(QueueHandle_t xQueue, void* pvBuffer)
 
     if ((pvBuffer != NULL) && (s_xQueuePeekFromISR_should_write != pdFALSE))
     {
-        const UBaseType_t n = (s_xQueuePeekFromISR_write_len > (UBaseType_t)sizeof(s_xQueuePeekFromISR_write_data))
-                                ? (UBaseType_t)sizeof(s_xQueuePeekFromISR_write_data)
-                                : s_xQueuePeekFromISR_write_len;
+        const UBaseType_t n =
+            (s_xQueuePeekFromISR_write_len > (UBaseType_t)sizeof(s_xQueuePeekFromISR_write_data))
+                ? (UBaseType_t)sizeof(s_xQueuePeekFromISR_write_data)
+                : s_xQueuePeekFromISR_write_len;
         (void)memcpy(pvBuffer, s_xQueuePeekFromISR_write_data, (size_t)n);
     }
 
