@@ -18,7 +18,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// NOLINTBEGIN(readability-identifier-naming)
+// NOLINTBEGIN
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -79,4 +79,4 @@ volatile TickType_t xTaskGetTickCount(void)
     return current_tick++;
 }
 #endif
-// NOLINTEND(readability-identifier-naming)
+// NOLINTEND

@@ -1,7 +1,7 @@
 # console
 ## Overview
 
-`console` contains the entry point for the main application
+`console` contains the code for the programmer facing command line console
 
 This module is responsible for:
 
