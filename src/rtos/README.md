@@ -7,7 +7,7 @@ The `rtos` module provides a thin abstraction layer over FreeRTOS that makes it 
 
 - Build and unit test the same application code in a host or test configuration (e.g. PC, CI) without linking the real FreeRTOS kernel, by using lightweight C stubs.
 
-In a normal (non-test) build, `rtos.h` simply pulls in the STM32Cube FreeRTOS headers and exposes a small helper API (for example `CREATE_TASK`).
+In a normal (non-test) build, `rtos_config` simply pulls in the STM32Cube FreeRTOS headers and exposes a small helper API (for example `CREATE_TASK`).
 In a test build (guarded by `TEST_BUILD`), the same header instead provides:
 
 - Minimal typedefs that mirror the FreeRTOS types actually used in the project (`TaskFunction_t`, `BaseType_t`, `TickType_t`, etc.).
@@ -22,7 +22,7 @@ This design lets application modules compile and link unchanged in both environm
 
 The `rtos` module is responsible for:
 
-- Providing a single, consistent include point (`#include "rtos.h"`) for any module that uses FreeRTOS functionality.
+- Providing a single, consistent include point (`#include "rtos_config.h"`) for any module that uses FreeRTOS functionality.
 
 - Hiding the difference between:
 
@@ -55,7 +55,7 @@ Instead, its purpose is to act as a controlled seam between FreeRTOS usage in th
 The intended directory structure for the module is:
 ```
 rtos/
-├─ rtos.h # Public RTOS abstraction header
+├─ rtos_config # Public RTOS abstraction header
 ├─ stub_task.c # Stubs for task-related APIs (test build only)
 ├─ stub_queue.c # Queue API stubs (xQueueCreate, xQueueSend, xQueueReceive, etc.)
 ├─ stub_semphr.c # Semaphore / mutex API stubs (xSemaphoreTake, xSemaphoreGive, etc.)
@@ -66,7 +66,7 @@ As the project adopts more FreeRTOS features, new `stub_*.c` files should be add
 
 ## Files
 
-File: `rtos.h`
+File: `rtos_config`
 Role:
 
 - Public API surface for any module that needs FreeRTOS facilities.
@@ -94,7 +94,7 @@ Role:
 File: `stub_*.c`
 Role (test build only; compiled when `TEST_BUILD` is defined):
 
-- Implements a minimal, deterministic model of the related FreeRTOS APIs declared in `rtos.h`:
+- Implements a minimal, deterministic model of the related FreeRTOS APIs declared in `rtos_config`:
 
 - Does not create or schedule real tasks; the behaviour is intentionally simple and deterministic.
 
@@ -107,16 +107,16 @@ The key consumption pattern for this module is:
  - All application modules that use FreeRTOS must include:
 
 ```c
-#include "rtos.h"
+#include "rtos_config.h"
 ```
 
  - Application code must not include the CubeIDE-generated FreeRTOS headers directly (for example `#include "FreeRTOS.h"`, `#include "task.h"`).
-Instead, all such headers are pulled in via `rtos.h` in production builds, and replaced by the stubbed types and prototypes in test builds.
+Instead, all such headers are pulled in via `rtos_config` in production builds, and replaced by the stubbed types and prototypes in test builds.
 
 Typical usage example for task creation:
 
 ```c
-#include "rtos.h"
+#include "rtos_config.h"
 
 static TaskHandle_t ConsoleTaskHandle = NULL;
 
@@ -149,7 +149,7 @@ In a test build:
 - The `rtos` module is intentionally minimal. It only introduces stubs for the subset of FreeRTOS used by the application code.
 When a new FreeRTOS function is used in any module:
 
-    - Its prototype should be added to the `TEST_BUILD` section of `rtos.h`.
+    - Its prototype should be added to the `TEST_BUILD` section of `rtos_config`.
 
     - A corresponding stub implementation should be added to an appropriate `stub_*.c` file.
 
@@ -171,7 +171,7 @@ When a new FreeRTOS function is used in any module:
 
 - The build system (for example CMake) must define `TEST_BUILD` for unit-test targets so that:
 
-    - The stubbed RTOS types and prototypes in `rtos.h` are exposed instead of the real FreeRTOS headers.
+    - The stubbed RTOS types and prototypes in `rtos_config` are exposed instead of the real FreeRTOS headers.
 
     - The `stub_*.c` implementation files are compiled and linked into the test executable.
 
@@ -181,4 +181,4 @@ When a new FreeRTOS function is used in any module:
 
     - The STM32CubeIDE project should provide the real FreeRTOS sources and configuration (heap, port, etc.), and only those should be linked.
 
-- Any module that currently includes FreeRTOS headers directly should be migrated to include `rtos.h` only, to ensure the abstraction boundary is respected.
+- Any module that currently includes FreeRTOS headers directly should be migrated to include `rtos_config` only, to ensure the abstraction boundary is respected.

@@ -1,7 +1,7 @@
 /******************************************************************************
- *  File:       hw_gpio.h
+ *  File:       hw_uart.h
  *  Author:     Angus Corr
- *  Created:    16-12/2025
+ *  Created:    18-Dec-2025
  *
  *  Description:
  *      <Short description of the module, what it exposes, and how it should be used>
@@ -10,8 +10,8 @@
  *      <Public assumptions, required initialisation order, dependencies, etc.>
  ******************************************************************************/
 
-#ifndef HW_GPIO_H
-#define HW_GPIO_H
+#ifndef HW_UART_H
+#define HW_UART_H
 
 #ifdef __cplusplus
 extern "C"
@@ -45,4 +45,4 @@ extern "C"
 }
 #endif
 
-#endif /* HW_GPIO_H */
+#endif /* HW_UART_H */

@@ -1,7 +1,7 @@
 /******************************************************************************
  *  File:       hw_timer.c
  *  Author:     Angus Corr
- *  Created:    16-12-2025
+ *  Created:    18-Dec-2025
  *
  *  Description:
  *      <Short description of the module's purpose and responsibilities>

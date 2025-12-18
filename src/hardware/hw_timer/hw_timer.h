@@ -1,7 +1,7 @@
 /******************************************************************************
  *  File:       hw_timer.h
  *  Author:     Angus Corr
- *  Created:    16-12/2025
+ *  Created:    18-Dec-2025
  *
  *  Description:
  *      <Short description of the module, what it exposes, and how it should be used>

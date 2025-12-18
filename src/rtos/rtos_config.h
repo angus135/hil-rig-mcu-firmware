@@ -1,5 +1,5 @@
 /******************************************************************************
- *  File:       rtos.h
+ *  File:       rtos_config
  *  Author:     Angus Corr
  *  Created:    6-Dec-2025
  *
@@ -10,8 +10,8 @@
  *      None
  ******************************************************************************/
 
-#ifndef RTOS_H
-#define RTOS_H
+#ifndef RTOS_CONFIG_H
+#define RTOS_CONFIG_H
 
 #ifdef __cplusplus
 extern "C"
@@ -179,4 +179,4 @@ BaseType_t xQueuePeekFromISR(QueueHandle_t xQueue, void* pvBuffer);
 }
 #endif
 
-#endif /* RTOS_H */
+#endif /* RTOS_CONFIG_H */

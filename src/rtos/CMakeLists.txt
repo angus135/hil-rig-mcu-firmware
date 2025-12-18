@@ -4,18 +4,18 @@
 # Library sources / headers
 # -----------------------------
 
-set(RTOS_SOURCES
+set(RTOS_CONFIG_SOURCES
     stub_task.c
     stub_queue.c
 )
 
-set(RTOS_HEADERS
-    rtos.h
+set(RTOS_CONFIG_HEADERS
+    rtos_config.h
 )
 
 add_library(rtos STATIC
-    ${RTOS_SOURCES}
-    ${RTOS_HEADERS}
+    ${RTOS_CONFIG_SOURCES}
+    ${RTOS_CONFIG_HEADERS}
 )
 
 # Make this directory usable as an include path for other targets
@@ -34,15 +34,15 @@ target_link_libraries(rtos
 # Tests for this module (gtest/gmock)
 # -----------------------------
 
-# option(RTOS_ENABLE_TESTS "Build tests for rtos module" ON)
+# option(RTOS_CONFIG_ENABLE_TESTS "Build tests for rtos module" ON)
 
-# if(RTOS_ENABLE_TESTS AND BUILD_TESTING)
+# if(RTOS_CONFIG_ENABLE_TESTS AND BUILD_TESTING)
 
-#     add_executable(rtos_tests
-#         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rtos.cpp
+#     add_executable(rtos_config_tests
+#         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rtos_config.cpp
 #     )
 
-#     target_link_libraries(rtos_tests
+#     target_link_libraries(rtos_config_tests
 #         PRIVATE
 #             project_warnings
 #             rtos
@@ -51,12 +51,12 @@ target_link_libraries(rtos
 #             gmock
 #     )
 
-#     target_include_directories(rtos_tests
+#     target_include_directories(rtos_config_tests
 #         PRIVATE
 #             ${CMAKE_CURRENT_SOURCE_DIR}
 #             ${CMAKE_CURRENT_SOURCE_DIR}/tests
 #     )
 
-#     add_test(NAME rtos_tests COMMAND rtos_tests)
+#     add_test(NAME rtos_config_tests COMMAND rtos_config_tests)
 
 # endif()

@@ -25,7 +25,7 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "rtos.h"
+#include "rtos_config.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros

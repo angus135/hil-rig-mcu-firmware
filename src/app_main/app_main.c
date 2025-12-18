@@ -15,7 +15,7 @@
  *------------------------------------------------------------------------------
  */
 #include <stdbool.h>
-#include "rtos.h"
+#include "rtos_config.h"
 #include "app_main.h"
 #include "console.h"
 

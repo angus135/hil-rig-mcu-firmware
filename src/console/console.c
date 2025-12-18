@@ -17,7 +17,7 @@
  *  Includes
  *------------------------------------------------------------------------------
  */
-#include "rtos.h"
+#include "rtos_config.h"
 #include "console.h"
 #include <stdint.h>
 #include <stdbool.h>

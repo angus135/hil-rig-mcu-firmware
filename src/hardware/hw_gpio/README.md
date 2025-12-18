@@ -1,7 +1,7 @@
 # hw_gpio
 ## Overview
 
-`hw_gpio` contains the application for handling GPIO
+`hw_gpio` contains the application for handling UART
 
 This module is responsible for:
 
