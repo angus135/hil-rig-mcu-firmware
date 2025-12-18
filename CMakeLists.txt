@@ -22,9 +22,7 @@ set(COMMON_WARN_FLAGS
     -Wformat=2            
     -Wswitch-enum         
     -Wswitch-default      
-    -Wmissing-prototypes  
     -Wmissing-declarations
-    -Wstrict-prototypes   
     -Wpointer-arith
 )
 

@@ -1,7 +1,7 @@
 # hw_gpio
 ## Overview
 
-`hw_gpio` contains the application for handling UART
+`hw_gpio` contains the application for handling GPIO
 
 This module is responsible for:
 
@@ -16,7 +16,6 @@ This module is responsible for:
 |---------------------------|------|
 | `hw_gpio.c`        | Public API implementation |
 | `hw_gpio.h`        | Public API header |
-
 
 ---
 

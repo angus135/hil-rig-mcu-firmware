@@ -19,6 +19,7 @@
  */
 #include "rtos_config.h"
 #include "console.h"
+#include "hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -49,6 +50,7 @@
 
 static void CONSOLE_Process(void)
 {
+    HW_GPIO_Toggle(GPIO_GREEN_LED_INDICATOR);
 }
 
 /**-----------------------------------------------------------------------------

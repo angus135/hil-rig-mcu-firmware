@@ -17,15 +17,32 @@
 extern "C"
 {
 #endif
+
+/**-----------------------------------------------------------------------------
+ *  Common Includes
+ *------------------------------------------------------------------------------
+ */
+
 #include <stddef.h>
 
 #ifndef TEST_BUILD
+
+/**-----------------------------------------------------------------------------
+ *  Includes
+ *------------------------------------------------------------------------------
+ */
+
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
 #include "timers.h"
 #include "queue.h"
 #include "stream_buffer.h"
+
+/**-----------------------------------------------------------------------------
+ *  Public Defines / Macros
+ *------------------------------------------------------------------------------
+ */
 
 static inline BaseType_t CREATE_TASK(TaskFunction_t task_function, const char* task_name,
                                      configSTACK_DEPTH_TYPE task_memory, UBaseType_t task_priority,
@@ -174,7 +191,9 @@ BaseType_t xQueuePeekFromISR(QueueHandle_t xQueue, void* pvBuffer);
 // semphr.c functions
 
 // NOLINTEND
+
 #endif
+
 #ifdef __cplusplus
 }
 #endif

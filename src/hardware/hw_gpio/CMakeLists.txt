@@ -4,17 +4,17 @@
 # Library sources / headers
 # -----------------------------
 
-set(HW_UART_SOURCES
+set(HW_GPIO_SOURCES
     hw_gpio.c
 )
 
-set(HW_UART_HEADERS
+set(HW_GPIO_HEADERS
     hw_gpio.h
 )
 
 add_library(hw_gpio STATIC
-    ${HW_UART_SOURCES}
-    ${HW_UART_HEADERS}
+    ${HW_GPIO_SOURCES}
+    ${HW_GPIO_HEADERS}
 )
 
 # Make this directory usable as an include path for other targets
@@ -37,9 +37,9 @@ target_link_libraries(console
 # Tests for this module (gtest/gmock)
 # -----------------------------
 
-option(HW_UART_ENABLE_TESTS "Build tests for hw_gpio module" ON)
+option(HW_GPIO_ENABLE_TESTS "Build tests for hw_gpio module" ON)
 
-if(HW_UART_ENABLE_TESTS AND BUILD_TESTING)
+if(HW_GPIO_ENABLE_TESTS AND BUILD_TESTING)
 
     add_executable(hw_gpio_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hw_gpio.cpp
