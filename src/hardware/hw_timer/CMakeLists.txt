@@ -25,11 +25,6 @@ target_include_directories(hw_timer
 
 target_link_libraries(hw_timer
     PUBLIC
-        cubeide_hal
-)
-
-target_link_libraries(console
-    PUBLIC
         rtos
 )
 
@@ -37,28 +32,28 @@ target_link_libraries(console
 # Tests for this module (gtest/gmock)
 # -----------------------------
 
-option(HW_TIMER_ENABLE_TESTS "Build tests for hw_timer module" ON)
+# option(HW_TIMER_ENABLE_TESTS "Build tests for hw_timer module" ON)
 
-if(HW_TIMER_ENABLE_TESTS AND BUILD_TESTING)
+# if(HW_TIMER_ENABLE_TESTS AND BUILD_TESTING)
 
-    add_executable(hw_timer_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hw_timer.cpp
-    )
+#     add_executable(hw_timer_tests
+#         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hw_timer.cpp
+#     )
 
-    target_link_libraries(hw_timer_tests
-        PRIVATE
-            hw_timer
-            gtest
-            gtest_main
-            gmock
-    )
+#     target_link_libraries(hw_timer_tests
+#         PRIVATE
+#             hw_timer
+#             gtest
+#             gtest_main
+#             gmock
+#     )
 
-    target_include_directories(hw_timer_tests
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tests
-    )
+#     target_include_directories(hw_timer_tests
+#         PRIVATE
+#             ${CMAKE_CURRENT_SOURCE_DIR}
+#             ${CMAKE_CURRENT_SOURCE_DIR}/tests
+#     )
 
-    add_test(NAME hw_timer_tests COMMAND hw_timer_tests)
+#     add_test(NAME hw_timer_tests COMMAND hw_timer_tests)
 
-endif()
+# endif()

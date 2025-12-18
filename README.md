@@ -131,3 +131,75 @@ APP_MAIN_Application();
 **CubeIDE-generated files must not be edited manually.**
 
 TODO: Add hardware flashing process.
+
+---
+
+## 5. Testing procedure and approach
+
+Two complementary testing techniques are used, depending on the level being
+tested.
+
+
+### 1. TEST_BUILD stubs (eg: low-level hardware - hw_xxx)
+
+Low-level modules such as hw_gpio and hw_uart use #ifdef TEST_BUILD inside
+their .c files to stub out hardware access. This guarantees the code compiles
+and links on the host without requiring hardware or HAL support.
+
+Example:
+```c
+void HW_GPIO_Toggle(GPIO_T gpio)
+{
+#ifdef TEST_BUILD
+    (void)gpio;
+#else
+    switch (gpio)
+    {
+        case GPIO_GREEN_LED_INDICATOR:
+            HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
+            break;
+        default:
+            break;
+    }
+#endif
+}
+```
+
+This pattern is intended for simple, direct hardware actions with minimal
+internal logic.
+
+
+### 2. Google Mock via link seam (higher-level logic)
+
+For higher-level application logic (console commands, protocols, state
+machines), Google Mock is used to verify behaviour. Production code remains
+pure C; all C++ and mocking lives in test_*.cpp files.
+
+Tests replace hw_* functions using a link seam by providing test-only
+implementations with the same C symbols.
+
+Example test-only replacement:
+
+```cpp
+extern "C" bool HW_UART_Tx(HW_UART_T uart,
+                            const uint8_t* data,
+                            uint16_t len)
+{
+    return g_mock->Tx(uart, data, len);
+}
+```
+
+Example gMock expectation:
+```cpp
+EXPECT_CALL(mock, Tx(HW_UART_CONSOLE, _, _)).Times(1);
+```
+
+This allows tests to assert intent (e.g. "UART transmit requested") without
+linking the real hardware implementation.
+
+
+### When to use each approach
+- Use TEST_BUILD stubs for simple, low-level hardware wrappers.
+- Use Google Mock when testing complex logic that depends on hardware.
+
+Both approaches are expected to coexist within the modules layer.

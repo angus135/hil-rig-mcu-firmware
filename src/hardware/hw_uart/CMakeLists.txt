@@ -25,11 +25,6 @@ target_include_directories(hw_uart
 
 target_link_libraries(hw_uart
     PUBLIC
-        cubeide_hal
-)
-
-target_link_libraries(console
-    PUBLIC
         rtos
 )
 
