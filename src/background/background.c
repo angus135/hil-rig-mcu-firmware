@@ -1,30 +1,33 @@
 /******************************************************************************
- *  File:       app_main.c
+ *  File:       background.c
  *  Author:     Angus Corr
- *  Created:    6-12-2025
+ *  Created:    20-Dec-2025
  *
  *  Description:
- *      Runs the MCU application
+ *      Background module implementation.
+ *
+ *      This module provides:
+ *        - A task that calls a set of background functions that run with low priority
  *
  *  Notes:
- *      None
+ *     None
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
  *  Includes
  *------------------------------------------------------------------------------
  */
-#include <stdbool.h>
-#include "background.h"
 #include "rtos_config.h"
-#include "app_main.h"
-#include "console.h"
+#include "background.h"
+#include "hw_gpio.h"
+#include <stdint.h>
+#include <stdbool.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
-
+#define BACKGROUND_TASK_PERIOD 1000 // 1Hz
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -34,8 +37,8 @@
  *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
  */
-extern TaskHandle_t* ConsoleTaskHandle; // NOLINT(readability-identifier-naming)
-extern TaskHandle_t* BackgroundTaskHandle; // NOLINT(readability-identifier-naming)
+
+TaskHandle_t* BackgroundTaskHandle = NULL; // NOLINT(readability-identifier-naming)
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
@@ -52,21 +55,29 @@ extern TaskHandle_t* BackgroundTaskHandle; // NOLINT(readability-identifier-nami
  *------------------------------------------------------------------------------
  */
 
+static void BACKGROUND_Process(void)
+{
+    HW_GPIO_Toggle(GPIO_GREEN_LED_INDICATOR);
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
 
 /**
- * @brief Entry point for MCU application
+ * @brief Console Task
+ *
+ * The FreeRTOS task that runs all the background related logic
  */
-void APP_MAIN_Application(void)
+void BACKGROUND_Task(void* task_parameters)
 {
-    CREATE_TASK(CONSOLE_Task, "Console Task", CONSOLE_TASK_MEMORY, CONSOLE_TASK_PRIORITY,
-                ConsoleTaskHandle);
+    (void)task_parameters;
 
-    CREATE_TASK(BACKGROUND_Task, "Background Task", BACKGROUND_TASK_MEMORY, BACKGROUND_TASK_PRIORITY,
-                BackgroundTaskHandle);
-    
-    vTaskStartScheduler();
+    TickType_t initial_ticks = xTaskGetTickCount();
+    while (true)
+    {
+        BACKGROUND_Process();
+        vTaskDelayUntil(&initial_ticks, pdMS_TO_TICKS(BACKGROUND_TASK_PERIOD));
+    }
 }
