@@ -28,6 +28,7 @@
  *------------------------------------------------------------------------------
  */
 #define CONSOLE_TASK_PERIOD 5 // 200Hz
+#define ARRAY_LEN(a) (sizeof(a) / sizeof((a)[0])) // TODO: move this to a common helper file
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -45,6 +46,7 @@ TaskHandle_t* ConsoleTaskHandle = NULL; // NOLINT(readability-identifier-naming)
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
+static const char welcome_message[] = "Welcome to HIL-RIG MCU!\r\n";
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -55,6 +57,14 @@ TaskHandle_t* ConsoleTaskHandle = NULL; // NOLINT(readability-identifier-naming)
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+
+static void CONSOLE_Init(void)
+{
+    for (size_t index = 0; index < ARRAY_LEN(welcome_message); index++)
+    {
+        HW_UART_Write_Byte(UART_CONSOLE, welcome_message[index]);
+    }
+}
 
 static void CONSOLE_Process(void)
 {
@@ -87,6 +97,8 @@ static void CONSOLE_Process(void)
 void CONSOLE_Task(void* task_parameters)
 {
     (void)task_parameters;
+
+    CONSOLE_Init();
 
     TickType_t initial_ticks = xTaskGetTickCount();
     while (true)
