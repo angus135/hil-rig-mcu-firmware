@@ -45,11 +45,27 @@ extern "C"
  */
 
 /**
- * @brief Console Task
+ * @brief Console FreeRTOS task entry point.
  *
- * The FreeRTOS task that runs all the console related logic
+ * This task is responsible for initialising the console subsystem and
+ * periodically polling the console UART for incoming data. All command
+ * parsing and dispatch occurs within this task context.
+ *
+ * @param task_parameters  Unused task parameter (reserved for future use).
+ *
+ * @returns void
  */
 void CONSOLE_Task(void* task_parameters);
+
+/**
+ * @brief Handles the parsed arguments retrieved from the console
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
+void CONSOLE_Command_Handler(uint16_t argc, char* argv[]);
 
 #ifdef __cplusplus
 }
