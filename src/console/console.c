@@ -19,7 +19,7 @@
  */
 #include "rtos_config.h"
 #include "console.h"
-#include "hw_gpio.h"
+#include "hw_uart.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -27,7 +27,7 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
-#define CONSOLE_TASK_PERIOD 100 // 10Hz
+#define CONSOLE_TASK_PERIOD 5 // 200Hz
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -58,7 +58,20 @@ TaskHandle_t* ConsoleTaskHandle = NULL; // NOLINT(readability-identifier-naming)
 
 static void CONSOLE_Process(void)
 {
-    // HW_GPIO_Toggle(GPIO_GREEN_LED_INDICATOR);
+    uint8_t      byte   = 0;
+    UARTStatus_T status = HW_UART_Read_Byte(UART_CONSOLE, &byte);
+    if (status == UART_SUCCESS)
+    {
+        if (byte == '\r')
+        {
+            HW_UART_Write_Byte(UART_CONSOLE, '\r');
+            HW_UART_Write_Byte(UART_CONSOLE, '\n');
+        }
+        else
+        {
+            HW_UART_Write_Byte(UART_CONSOLE, byte);
+        }
+    }
 }
 
 /**-----------------------------------------------------------------------------

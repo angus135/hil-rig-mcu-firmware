@@ -34,7 +34,7 @@
  *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
  */
-extern TaskHandle_t* ConsoleTaskHandle; // NOLINT(readability-identifier-naming)
+extern TaskHandle_t* ConsoleTaskHandle;    // NOLINT(readability-identifier-naming)
 extern TaskHandle_t* BackgroundTaskHandle; // NOLINT(readability-identifier-naming)
 
 /**-----------------------------------------------------------------------------
@@ -65,8 +65,8 @@ void APP_MAIN_Application(void)
     CREATE_TASK(CONSOLE_Task, "Console Task", CONSOLE_TASK_MEMORY, CONSOLE_TASK_PRIORITY,
                 ConsoleTaskHandle);
 
-    CREATE_TASK(BACKGROUND_Task, "Background Task", BACKGROUND_TASK_MEMORY, BACKGROUND_TASK_PRIORITY,
-                BackgroundTaskHandle);
-    
+    CREATE_TASK(BACKGROUND_Task, "Background Task", BACKGROUND_TASK_MEMORY,
+                BACKGROUND_TASK_PRIORITY, BackgroundTaskHandle);
+
     vTaskStartScheduler();
 }

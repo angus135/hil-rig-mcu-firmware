@@ -31,15 +31,59 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+#define HAL_UART_CONSOLE_HANDLE huart3
+#define HAL_UART_CONSOLE_PORT USART3
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
 
+typedef enum UARTPort_T
+{
+    UART_CONSOLE,
+
+    UART_PORT_NUMBER,
+} UARTPort_T;
+
+typedef enum UARTStatus_T
+{
+    UART_SUCCESS,
+    UART_BUSY,
+    UART_ERROR,
+    UART_TIMEOUT,
+} UARTStatus_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Reads a single Byte from a specified UART port
+ *
+ * @param port   The UART port to read from
+ * @param byte   The received byte
+ *
+ * @returns UARTStatus_T - the status of the transfer
+ *
+ * This function wraps the HAL_UART_Receive_DMA( ... ) function provided by the
+ * HAL layer. So this will be done via DMA.
+ */
+UARTStatus_T HW_UART_Read_Byte(UARTPort_T port, uint8_t* byte);
+
+/**
+ * @brief Reads a single Byte to a specified UART port
+ *
+ * @param port   The UART port to write to
+ * @param byte   The byte to write
+ *
+ * @returns UARTStatus_T - the status of the transfer
+ *
+ * This function wraps the HAL_UART_Transmit_DMA( ... ) function provided by the
+ * HAL layer. So this will be done via DMA.
+ */
+UARTStatus_T HW_UART_Write_Byte(UARTPort_T port, uint8_t byte);
 
 #ifdef __cplusplus
 }

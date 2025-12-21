@@ -106,6 +106,15 @@ void vTaskDelayUntil(TickType_t* pxPreviousWakeTime, const TickType_t xTimeIncre
 
     *pxPreviousWakeTime = time_to_wake;
 }
+
+/**
+ * @brief stub implementing FreeRTOS vTaskDelay
+ */
+void vTaskDelay(const TickType_t xTicksToDelay)
+{
+    current_tick += xTicksToDelay;
+}
+
 /**
  * @brief stub implementing FreeRTOS xTaskGetTickCount
  */

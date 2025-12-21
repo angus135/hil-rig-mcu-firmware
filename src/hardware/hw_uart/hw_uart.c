@@ -14,8 +14,13 @@
  *  Includes
  *------------------------------------------------------------------------------
  */
+#ifndef TEST_BUILD
+#include "usart.h"
+#include "stm32f446xx.h"
+#endif
 
 #include "hw_uart.h"
+#include "rtos_config.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -23,6 +28,8 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
+#define MAXIMUM_WAIT_MS                                                                            \
+    10000 // Maximum time UART will block waiting for sending or receiving to be successful
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -38,6 +45,9 @@
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
+// Note UARTPort_T enum value corresponds to the boolean status
+static volatile bool uart_port_rx_dma_status[UART_PORT_NUMBER] = {0};
+static volatile bool uart_port_tx_dma_status[UART_PORT_NUMBER] = {0};
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -53,3 +63,139 @@
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
+
+#ifndef TEST_BUILD
+
+// ISRs
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart)
+{
+    if (huart->Instance == HAL_UART_CONSOLE_PORT)
+    {
+        uart_port_tx_dma_status[UART_CONSOLE] = true;
+    }
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef* huart)
+{
+    if (huart->Instance == HAL_UART_CONSOLE_PORT)
+    {
+        uart_port_rx_dma_status[UART_CONSOLE] = true;
+    }
+}
+#endif
+
+UARTStatus_T HW_UART_Read_Byte(UARTPort_T port, uint8_t* byte)
+{
+#ifndef TEST_BUILD
+    HAL_StatusTypeDef status      = HAL_ERROR;
+    uart_port_rx_dma_status[port] = false;
+    switch (port)
+    {
+        case UART_CONSOLE:
+
+            status = HAL_UART_Receive_DMA(&HAL_UART_CONSOLE_HANDLE, byte, 1);
+            break;
+
+        default:
+            return UART_ERROR;
+            break;
+    }
+    if (status != HAL_OK)
+    {
+        switch (status)
+        {
+            case HAL_ERROR:
+                return UART_ERROR;
+                break;
+
+            case HAL_BUSY:
+                return UART_BUSY;
+                break;
+
+            case HAL_TIMEOUT:
+                return UART_TIMEOUT;
+                break;
+
+            default:
+                return UART_ERROR;
+                break;
+        }
+    }
+    uint32_t wait_iterations = 0;
+    while (!uart_port_rx_dma_status[port] && wait_iterations < MAXIMUM_WAIT_MS)
+    {
+        vTaskDelay(pdMS_TO_TICKS(1));
+        wait_iterations++;
+    }
+    if (wait_iterations >= MAXIMUM_WAIT_MS)
+    {
+        return UART_TIMEOUT;
+    }
+    else
+    {
+        return UART_SUCCESS;
+    }
+#else
+    (void)port;
+    (void)byte;
+    return UART_SUCCESS;
+#endif
+}
+
+UARTStatus_T HW_UART_Write_Byte(UARTPort_T port, uint8_t byte)
+{
+
+#ifndef TEST_BUILD
+    HAL_StatusTypeDef status      = HAL_ERROR;
+    uart_port_tx_dma_status[port] = false;
+    switch (port)
+    {
+        case UART_CONSOLE:
+
+            status = HAL_UART_Transmit_DMA(&HAL_UART_CONSOLE_HANDLE, &byte, 1);
+            break;
+        default:
+            return UART_ERROR;
+            break;
+    }
+    if (status != HAL_OK)
+    {
+        switch (status)
+        {
+            case HAL_ERROR:
+                return UART_ERROR;
+                break;
+
+            case HAL_BUSY:
+                return UART_BUSY;
+                break;
+
+            case HAL_TIMEOUT:
+                return UART_TIMEOUT;
+                break;
+
+            default:
+                return UART_ERROR;
+                break;
+        }
+    }
+    uint32_t wait_iterations = 0;
+    while (!uart_port_tx_dma_status[port] && wait_iterations < MAXIMUM_WAIT_MS)
+    {
+        vTaskDelay(pdMS_TO_TICKS(1));
+        wait_iterations++;
+    }
+    if (wait_iterations >= MAXIMUM_WAIT_MS)
+    {
+        return UART_TIMEOUT;
+    }
+    else
+    {
+        return UART_SUCCESS;
+    }
+#else
+    (void)port;
+    (void)byte;
+#endif
+}

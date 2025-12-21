@@ -28,7 +28,7 @@ target_link_libraries(console
         project_warnings
         cubeide_hal
         rtos
-        hw_gpio
+        hw_uart
 )
 
 # -----------------------------
