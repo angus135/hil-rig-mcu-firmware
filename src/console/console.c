@@ -20,6 +20,8 @@
 #include "rtos_config.h"
 #include "console.h"
 #include "hw_uart.h"
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -28,11 +30,12 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
-#define CONSOLE_TASK_PERIOD 5                     // 200Hz
-#define ARRAY_LEN(a) (sizeof(a) / sizeof((a)[0])) // TODO: move this to a common helper file
+#define CONSOLE_TASK_PERIOD 5 // 200Hz
 
 #define CONSOLE_LINE_MAX 80U // max characters in a command line (excluding NUL)
 #define CONSOLE_MAX_ARGS 8U  // max argv entries
+
+#define CONSOLE_PRINTF_BUFFER_SIZE 128U
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -247,10 +250,7 @@ static void CONSOLE_Process_Byte(uint8_t byte)
  */
 static void CONSOLE_Init(void)
 {
-    for (size_t index = 0; index < ARRAY_LEN(WELCOME_MESSAGE); index++)
-    {
-        HW_UART_Write_Byte(UART_CONSOLE, WELCOME_MESSAGE[index]);
-    }
+    CONSOLE_Printf("%s", WELCOME_MESSAGE);
 }
 
 /**
@@ -275,6 +275,44 @@ static void CONSOLE_Process(void)
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Printf-style formatted output to the console UART
+ *
+ * Formats the input string into a fixed-size buffer using vsnprintf()
+ * and transmits the resulting characters byte-by-byte over the console UART.
+ *
+ * Output is truncated if it exceeds the internal buffer size.
+ *
+ * @param format  Standard printf-style format string
+ * @param ...     Variable arguments corresponding to the format string
+ *
+ * @returns void
+ */
+void CONSOLE_Printf(const char* format, ...)
+{
+    char buffer[CONSOLE_PRINTF_BUFFER_SIZE];
+
+    va_list args;
+    va_start(args, format);
+
+    const int len = vsnprintf(buffer, sizeof(buffer), format, args);
+
+    va_end(args);
+
+    if (len <= 0)
+    {
+        return;
+    }
+
+    // Clamp length to buffer size
+    uint32_t count = (len < (int)sizeof(buffer)) ? (uint32_t)len : (uint32_t)(sizeof(buffer) - 1U);
+
+    for (uint32_t i = 0U; i < count; i++)
+    {
+        HW_UART_Write_Byte(UART_CONSOLE, (uint8_t)buffer[i]);
+    }
+}
 
 /**
  * @brief Console FreeRTOS task entry point.

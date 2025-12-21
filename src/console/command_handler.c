@@ -15,7 +15,6 @@
  *------------------------------------------------------------------------------
  */
 
-#include "hw_uart.h"
 #include "console.h"
 #include <stdint.h>
 #include <stdbool.h>
@@ -31,13 +30,15 @@
  *------------------------------------------------------------------------------
  */
 
-/**-----------------------------------------------------------------------------
- *  Public (global) and Extern Variables
- *------------------------------------------------------------------------------
- */
+typedef struct Command_T
+{
+    const char* command_name;
+    void (*command_handler)(uint16_t, char**);
+    const char* command_description;
+} Command_T;
 
 /**-----------------------------------------------------------------------------
- *  Private (static) Variables
+ *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
  */
 
@@ -45,28 +46,47 @@
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
+void CONSOLE_Command_Help(uint16_t argc, char* argv[]);
+void CONSOLE_Command_Echo(uint16_t argc, char* argv[]);
 
-static void CONSOLE_Write_String(const char* str);
+/**-----------------------------------------------------------------------------
+ *  Private (static) Variables
+ *------------------------------------------------------------------------------
+ */
+
+// clang-format off
+
+const Command_T CONSOLE_COMMANDS[] = {
+    {"?",       CONSOLE_Command_Help,       "Show available commands."},
+    {"help",    CONSOLE_Command_Help,       "Show available commands."},
+    {"echo",    CONSOLE_Command_Echo,       "Echoes the provided arguments."},
+};
+
+// clang-format on
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
-
-/**
- * @brief Write a NUL-terminated string to the console UART.
- *
- * @param str Pointer to string to transmit
- *
- * @returns void
- */
-static void CONSOLE_Write_String(const char* str)
+void CONSOLE_Command_Help(uint16_t argc, char* argv[])
 {
-    while (*str != '\0')
+    (void)argc;
+    (void)argv;
+    CONSOLE_Printf("Available commands:\r\n");
+    for (size_t command = 0; command < ARRAY_LEN(CONSOLE_COMMANDS); command++)
     {
-        HW_UART_Write_Byte(UART_CONSOLE, (uint8_t)*str);
-        str++;
+        CONSOLE_Printf("%s\t- %s\r\n", CONSOLE_COMMANDS[command].command_name,
+                       CONSOLE_COMMANDS[command].command_description);
     }
+}
+
+void CONSOLE_Command_Echo(uint16_t argc, char* argv[])
+{
+    for (uint16_t i = 1U; i < argc; i++)
+    {
+        CONSOLE_Printf("%s%s", argv[i], (i < (argc - 1U)) ? " " : "");
+    }
+    CONSOLE_Printf("\r\n");
 }
 
 /**-----------------------------------------------------------------------------
@@ -89,34 +109,18 @@ void CONSOLE_Command_Handler(uint16_t argc, char* argv[])
         return;
     }
 
-    /* ---- help ------------------------------------------------------------ */
-    if (strcmp(argv[0], "help") == 0)
+    for (size_t command = 0; command < ARRAY_LEN(CONSOLE_COMMANDS); command++)
     {
-        CONSOLE_Write_String("Available commands:\r\n");
-        CONSOLE_Write_String("  help           - Show this message\r\n");
-        CONSOLE_Write_String("  echo <args>    - Echo arguments back\r\n");
-        return;
-    }
-
-    /* ---- echo ------------------------------------------------------------ */
-    if (strcmp(argv[0], "echo") == 0)
-    {
-        for (uint16_t i = 1U; i < argc; i++)
+        if (strcmp(argv[0], CONSOLE_COMMANDS[command].command_name) == 0)
         {
-            CONSOLE_Write_String(argv[i]);
-
-            if (i < (argc - 1U))
-            {
-                CONSOLE_Write_String(" ");
-            }
+            CONSOLE_COMMANDS[command].command_handler(argc, argv);
+            CONSOLE_Printf("\r\n");
+            return;
         }
-
-        CONSOLE_Write_String("\r\n");
-        return;
     }
 
-    /* ---- unknown command ------------------------------------------------- */
-    CONSOLE_Write_String("Unknown command: ");
-    CONSOLE_Write_String(argv[0]);
-    CONSOLE_Write_String("\r\n");
+    // unknown command
+    CONSOLE_Printf("Unknown command: ");
+    CONSOLE_Printf(argv[0]);
+    CONSOLE_Printf("\r\n");
 }

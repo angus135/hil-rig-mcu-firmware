@@ -23,6 +23,7 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include "rtos_config.h"
@@ -34,6 +35,8 @@ extern "C"
 #define CONSOLE_TASK_MEMORY 256
 #define CONSOLE_TASK_PRIORITY 3
 
+#define ARRAY_LEN(a) (sizeof(a) / sizeof((a)[0])) // TODO: move this to a common helper file
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -43,6 +46,16 @@ extern "C"
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Printf-style formatted output to the console UART
+ *
+ * @param format  Standard printf-style format string
+ * @param ...     Variable arguments corresponding to the format string
+ *
+ * @returns void
+ */
+void CONSOLE_Printf(const char* format, ...);
 
 /**
  * @brief Console FreeRTOS task entry point.
