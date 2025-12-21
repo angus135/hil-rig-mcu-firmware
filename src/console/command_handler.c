@@ -68,6 +68,15 @@ const Command_T CONSOLE_COMMANDS[] = {
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Handles the help command by providing avaiable commands to the console
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
 void CONSOLE_Command_Help(uint16_t argc, char* argv[])
 {
     (void)argc;
@@ -80,6 +89,14 @@ void CONSOLE_Command_Help(uint16_t argc, char* argv[])
     }
 }
 
+/**
+ * @brief Handles the echo command by echoing whatever was provided in the command to the console
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
 void CONSOLE_Command_Echo(uint16_t argc, char* argv[])
 {
     for (uint16_t i = 1U; i < argc; i++)
