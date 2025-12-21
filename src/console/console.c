@@ -27,7 +27,7 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
-#define CONSOLE_TASK_PERIOD 5 // 200Hz
+#define CONSOLE_TASK_PERIOD 5                     // 200Hz
 #define ARRAY_LEN(a) (sizeof(a) / sizeof((a)[0])) // TODO: move this to a common helper file
 
 /**-----------------------------------------------------------------------------
