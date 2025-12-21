@@ -14,11 +14,13 @@
  *  Includes
  *------------------------------------------------------------------------------
  */
-#ifndef TEST_BUILD
+
+#ifdef TEST_BUILD
+#include "tests/hw_uart_mocks.h"
+#else
 #include "usart.h"
 #include "stm32f446xx.h"
 #endif
-
 #include "hw_uart.h"
 #include "rtos_config.h"
 #include <stdint.h>
@@ -64,13 +66,11 @@ static volatile bool uart_port_tx_dma_status[UART_PORT_NUMBER] = {0};
  *------------------------------------------------------------------------------
  */
 
-#ifndef TEST_BUILD
-
 // ISRs
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart)
 {
-    if (huart->Instance == HAL_UART_CONSOLE_PORT)
+    if (huart->Instance == USART3)
     {
         uart_port_tx_dma_status[UART_CONSOLE] = true;
     }
@@ -78,23 +78,21 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart)
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef* huart)
 {
-    if (huart->Instance == HAL_UART_CONSOLE_PORT)
+    if (huart->Instance == USART3)
     {
         uart_port_rx_dma_status[UART_CONSOLE] = true;
     }
 }
-#endif
 
 UARTStatus_T HW_UART_Read_Byte(UARTPort_T port, uint8_t* byte)
 {
-#ifndef TEST_BUILD
     HAL_StatusTypeDef status      = HAL_ERROR;
     uart_port_rx_dma_status[port] = false;
     switch (port)
     {
         case UART_CONSOLE:
 
-            status = HAL_UART_Receive_DMA(&HAL_UART_CONSOLE_HANDLE, byte, 1);
+            status = HAL_UART_Receive_DMA(&huart3, byte, 1);
             break;
 
         default:
@@ -136,24 +134,17 @@ UARTStatus_T HW_UART_Read_Byte(UARTPort_T port, uint8_t* byte)
     {
         return UART_SUCCESS;
     }
-#else
-    (void)port;
-    (void)byte;
-    return UART_SUCCESS;
-#endif
 }
 
 UARTStatus_T HW_UART_Write_Byte(UARTPort_T port, uint8_t byte)
 {
-
-#ifndef TEST_BUILD
     HAL_StatusTypeDef status      = HAL_ERROR;
     uart_port_tx_dma_status[port] = false;
     switch (port)
     {
         case UART_CONSOLE:
 
-            status = HAL_UART_Transmit_DMA(&HAL_UART_CONSOLE_HANDLE, &byte, 1);
+            status = HAL_UART_Transmit_DMA(&huart3, &byte, 1);
             break;
         default:
             return UART_ERROR;
@@ -194,8 +185,4 @@ UARTStatus_T HW_UART_Write_Byte(UARTPort_T port, uint8_t byte)
     {
         return UART_SUCCESS;
     }
-#else
-    (void)port;
-    (void)byte;
-#endif
 }

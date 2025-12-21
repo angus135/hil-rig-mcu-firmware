@@ -46,7 +46,8 @@ example/
 ├─ example.h # Public API
 ├─ hal_gpio.h # HAL dependency (mockable interface)
 └─ tests/
-└─ test_example.cpp # GoogleTest + GoogleMock unit tests
+├── example_mocks.h # Declarations of functions used in example module that are defined in test_example.cpp 
+└── test_example.cpp # GoogleTest + GoogleMock unit tests
 ```
 
 All functionality is scoped to this directory. Other modules may consume the API, but cannot access private internals.
@@ -58,7 +59,7 @@ All functionality is scoped to this directory. Other modules may consume the API
 |---------------------------|------|
 | `example.c`        | Implements the module logic and internal state |
 | `example.h`        | Defines the public API, constants, typedefs and usage notes |
-| `example_hal_gpio.h`        | Declares the hardware abstraction function used by this module |
+| `tests/example_mocks.h`        | Declares the mocked hardware abstraction function used by this module |
 | `tests/test_example.c` | Complete unit test suite using GoogleTest/GoogleMock |
 
 

@@ -22,10 +22,13 @@
  *  Includes
  *------------------------------------------------------------------------------
  */
+#ifdef TEST_BUILD
+#include "tests/example_mocks.h" // Mock Declarations that are then defined in test_example.cpp
+#else
+#include "gpio.h" // STM32 HAL declarations
+#endif
 
 #include "example.h"
-#include "example_hal_gpio.h"
-
 #include <stdint.h>
 #include <stdbool.h>
 

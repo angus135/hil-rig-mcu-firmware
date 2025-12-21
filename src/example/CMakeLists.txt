@@ -10,7 +10,6 @@ set(EXAMPLE_SOURCES
 
 set(EXAMPLE_HEADERS
     example.h
-    example_hal_gpio.h
 )
 
 add_library(example STATIC
@@ -26,12 +25,8 @@ target_include_directories(example
 
 target_link_libraries(example
     PUBLIC
-        cubeide_hal
-)
-
-target_link_libraries(console
-    PUBLIC
         rtos
+        cubeide_hal
 )
 
 # -----------------------------

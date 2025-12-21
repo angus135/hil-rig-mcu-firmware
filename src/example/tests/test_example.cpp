@@ -28,10 +28,9 @@
 
 extern "C"
 {
-#include "example.h"          /* Module under test */
-#include "example_hal_gpio.h" /* C EXAMPLE_HAL dependency to be mocked */
 #include <stdint.h>
 #include <stdbool.h>
+#include "example.c" /* Module under test */ // NOLINT
 }
 
 /**-----------------------------------------------------------------------------
@@ -69,6 +68,12 @@ public:
 /* Global mock pointer used by the C-linkage shim below. */
 static MockHalGpio* g_mock_example_hal_gpio = nullptr;
 
+/**-----------------------------------------------------------------------------
+ *  Link seam: mocked functions definitions
+ *------------------------------------------------------------------------------
+ */
+// NOLINTBEGIN
+
 /**
  * @brief C-linkage shim that forwards calls to the C++ mock.
  *
@@ -81,6 +86,8 @@ extern "C" void EXAMPLE_HAL_GPIO_WritePin(uint32_t pin, bool level)
         << "EXAMPLE_HAL_GPIO_WritePin called without an active mock instance";
     g_mock_example_hal_gpio->EXAMPLE_HAL_GPIO_WritePin(pin, level);
 }
+
+// NOLINTEND
 
 /**-----------------------------------------------------------------------------
  *  Test Fixture

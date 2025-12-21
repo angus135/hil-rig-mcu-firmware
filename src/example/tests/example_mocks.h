@@ -13,8 +13,8 @@
  *        implementation in C++.
  ******************************************************************************/
 
-#ifndef EXAMPLE_HAL_GPIO_H
-#define EXAMPLE_HAL_GPIO_H
+#ifndef EXAMPLE_MOCKS_H
+#define EXAMPLE_MOCKS_H
 
 #ifdef __cplusplus
 extern "C"
@@ -36,4 +36,4 @@ void EXAMPLE_HAL_GPIO_WritePin(uint32_t pin, bool level);
 }
 #endif
 
-#endif /* EXAMPLE_HAL_GPIO_H */
+#endif /* EXAMPLE_MOCKS_H */

@@ -251,10 +251,13 @@ uint16_t MODULE_Test(uint16_t test_value);
 
 extern "C"
 {
-    #include "<module>.h"     // C module under test
-    #include <stdint.h>
-    #include <stdbool.h>
-    // Add any other C headers required by the module
+#include "<module>.h"    
+#include <stdint.h>
+#include <stdbool.h>
+
+// Add any other C headers required by the module
+
+#include "<module>.c" /* Module under test */ // NOLINT
 }
 
 // Add additional C++ includes here if required
@@ -291,6 +294,12 @@ public:
     MOCK_METHOD(void, HAL_GPIO_WritePin, (uint32_t pin, bool level));
 };
 
+/**-----------------------------------------------------------------------------
+ *  Link seam: mocked functions definitions
+ *------------------------------------------------------------------------------
+ */
+// NOLINTBEGIN
+
 // Provide a fake C binding that forwards to the mock instance:
 MockHalGpio mock_gpio;
 extern "C" void HAL_GPIO_WritePin(uint32_t pin, bool level) {
@@ -299,6 +308,7 @@ extern "C" void HAL_GPIO_WritePin(uint32_t pin, bool level) {
 
 // Add mocks or stubs here as needed
 
+// NOLINTEND
 
 /**-----------------------------------------------------------------------------
  *  Test Fixture
