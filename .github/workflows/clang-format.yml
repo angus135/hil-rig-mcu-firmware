@@ -1,0 +1,47 @@
+name: clang-format
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - feature/**
+  pull_request:
+
+jobs:
+  clang-format-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: Check clang-format
+        run: |
+          # Find files to enforce formatting on (adjust paths as needed)
+          FILES=$(find src -type f \( -name "*.c" -o -name "*.cpp" -o -name "*.h" \))
+
+          if [ -z "$FILES" ]; then
+            echo "No C/C++ files to format, skipping"
+            exit 0
+          fi
+
+          # Copy the repo, format in-place, then diff against original
+          cp -R . ../repo-copy
+          cd ../repo-copy
+
+          echo "$FILES" | xargs clang-format -i
+
+          # Show what would change
+          diff -ru ../${GITHUB_REPOSITORY##*/} . || true
+
+          # Fail if there were differences
+          if ! diff -qru ../${GITHUB_REPOSITORY##*/} . >/dev/null; then
+            echo "clang-format check failed. Please run clang-format and commit the changes."
+            exit 1
+          fi
