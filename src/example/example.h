@@ -46,7 +46,7 @@ extern "C"
  * This is exposed so that other modules or tests can make assertions that
  * remain consistent if the scaling behaviour is changed.
  */
-#define EXAMPLE_SCALE_FACTOR (10U)
+#define EXAMPLE_SCALE_FACTOR ( 10U )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -76,7 +76,7 @@ typedef struct
  *
  * Call this before any other public API functions for this module.
  */
-void EXAMPLE_Init(void);
+void EXAMPLE_Init( void );
 
 /**
  * @brief Processes an input value and returns the scaled result.
@@ -84,7 +84,7 @@ void EXAMPLE_Init(void);
  * @param input  Input value to be processed.
  * @return       Processed (scaled) output value.
  */
-uint16_t EXAMPLE_Process(uint16_t input);
+uint16_t EXAMPLE_Process( uint16_t input );
 
 /**
  * @brief Simple test entry point for verifying basic functionality.
@@ -96,7 +96,7 @@ uint16_t EXAMPLE_Process(uint16_t input);
  * This function is intended for unit testing or debugging. IDEs will show the
  * brief, parameters and return information automatically when hovering.
  */
-uint16_t EXAMPLE_Test(uint16_t test_value);
+uint16_t EXAMPLE_Test( uint16_t test_value );
 
 /**
  * @brief Drives a digital output using the underlying GPIO HAL.
@@ -108,7 +108,7 @@ uint16_t EXAMPLE_Test(uint16_t test_value);
  * HAL layer. It is a convenient seam for unit testing where the HAL call is
  * mocked using GoogleMock.
  */
-void EXAMPLE_SetOutput(uint32_t pin, bool level);
+void EXAMPLE_SetOutput( uint32_t pin, bool level );
 
 #ifdef __cplusplus
 }

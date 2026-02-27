@@ -46,7 +46,7 @@ extern "C"
  *
  * This function starts the MCU application after all HAL layers have been initialised
  */
-void APP_MAIN_Application(void);
+void APP_MAIN_Application( void );
 
 #ifdef __cplusplus
 }

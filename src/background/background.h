@@ -49,7 +49,7 @@ extern "C"
  *
  * The FreeRTOS task that runs all the background related logic
  */
-void BACKGROUND_Task(void* task_parameters);
+void BACKGROUND_Task( void* task_parameters );
 
 #ifdef __cplusplus
 }

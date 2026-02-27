@@ -27,7 +27,7 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
-#define BACKGROUND_TASK_PERIOD 1000 // 1Hz
+#define BACKGROUND_TASK_PERIOD 1000  // 1Hz
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -38,7 +38,7 @@
  *------------------------------------------------------------------------------
  */
 
-TaskHandle_t* BackgroundTaskHandle = NULL; // NOLINT(readability-identifier-naming)
+TaskHandle_t* BackgroundTaskHandle = NULL;  // NOLINT(readability-identifier-naming)
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
@@ -55,9 +55,9 @@ TaskHandle_t* BackgroundTaskHandle = NULL; // NOLINT(readability-identifier-nami
  *------------------------------------------------------------------------------
  */
 
-static void BACKGROUND_Process(void)
+static void BACKGROUND_Process( void )
 {
-    HW_GPIO_Toggle(GPIO_GREEN_LED_INDICATOR);
+    HW_GPIO_Toggle( GPIO_GREEN_LED_INDICATOR );
 }
 
 /**-----------------------------------------------------------------------------
@@ -70,14 +70,14 @@ static void BACKGROUND_Process(void)
  *
  * The FreeRTOS task that runs all the background related logic
  */
-void BACKGROUND_Task(void* task_parameters)
+void BACKGROUND_Task( void* task_parameters )
 {
-    (void)task_parameters;
+    ( void )task_parameters;
 
     TickType_t initial_ticks = xTaskGetTickCount();
-    while (true)
+    while ( true )
     {
         BACKGROUND_Process();
-        vTaskDelayUntil(&initial_ticks, pdMS_TO_TICKS(BACKGROUND_TASK_PERIOD));
+        vTaskDelayUntil( &initial_ticks, pdMS_TO_TICKS( BACKGROUND_TASK_PERIOD ) );
     }
 }

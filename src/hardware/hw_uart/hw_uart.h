@@ -67,7 +67,7 @@ typedef enum UARTStatus_T
  * This function wraps the HAL_UART_Receive_DMA( ... ) function provided by the
  * HAL layer. So this will be done via DMA.
  */
-UARTStatus_T HW_UART_Read_Byte(UARTPort_T port, uint8_t* byte);
+UARTStatus_T HW_UART_Read_Byte( UARTPort_T port, uint8_t* byte );
 
 /**
  * @brief Reads a single Byte to a specified UART port
@@ -80,7 +80,7 @@ UARTStatus_T HW_UART_Read_Byte(UARTPort_T port, uint8_t* byte);
  * This function wraps the HAL_UART_Transmit_DMA( ... ) function provided by the
  * HAL layer. So this will be done via DMA.
  */
-UARTStatus_T HW_UART_Write_Byte(UARTPort_T port, uint8_t byte);
+UARTStatus_T HW_UART_Write_Byte( UARTPort_T port, uint8_t byte );
 
 #ifdef __cplusplus
 }

@@ -23,9 +23,9 @@
  *------------------------------------------------------------------------------
  */
 #ifdef TEST_BUILD
-#include "tests/example_mocks.h" // Mock Declarations that are then defined in test_example.cpp
+#include "tests/example_mocks.h"  // Mock Declarations that are then defined in test_example.cpp
 #else
-#include "gpio.h" // STM32 HAL declarations
+#include "gpio.h"  // STM32 HAL declarations
 #endif
 
 #include "example.h"
@@ -38,7 +38,7 @@
  */
 
 /* Internal constants; public constants are in example.h if needed externally. */
-#define EXAMPLE_INTERNAL_INIT_VALUE (0U)
+#define EXAMPLE_INTERNAL_INIT_VALUE ( 0U )
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -68,15 +68,15 @@ typedef struct
  */
 
 /** @brief Local module state, not visible outside this file. */
-static Example_T example_state = {EXAMPLE_INTERNAL_INIT_VALUE, false};
+static Example_T example_state = { EXAMPLE_INTERNAL_INIT_VALUE, false };
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
 
-static void     EXAMPLE_InitState(void);
-static uint16_t EXAMPLE_DoProcess(uint16_t input);
+static void     EXAMPLE_InitState( void );
+static uint16_t EXAMPLE_DoProcess( uint16_t input );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -86,7 +86,7 @@ static uint16_t EXAMPLE_DoProcess(uint16_t input);
 /**
  * @brief Resets the internal module state to a known default.
  */
-static void EXAMPLE_InitState(void)
+static void EXAMPLE_InitState( void )
 {
     example_state.value = EXAMPLE_INTERNAL_INIT_VALUE;
     example_state.ready = false;
@@ -97,9 +97,9 @@ static void EXAMPLE_InitState(void)
  *
  * Multiplies the input by EXAMPLE_SCALE_FACTOR and marks the module as ready.
  */
-static uint16_t EXAMPLE_DoProcess(uint16_t input)
+static uint16_t EXAMPLE_DoProcess( uint16_t input )
 {
-    example_state.value = (uint16_t)(input * EXAMPLE_SCALE_FACTOR);
+    example_state.value = ( uint16_t )( input * EXAMPLE_SCALE_FACTOR );
     example_state.ready = true;
     return example_state.value;
 }
@@ -109,29 +109,29 @@ static uint16_t EXAMPLE_DoProcess(uint16_t input)
  *------------------------------------------------------------------------------
  */
 
-void EXAMPLE_Init(void)
+void EXAMPLE_Init( void )
 {
     EXAMPLE_InitState();
 }
 
-uint16_t EXAMPLE_Process(uint16_t input)
+uint16_t EXAMPLE_Process( uint16_t input )
 {
-    return EXAMPLE_DoProcess(input);
+    return EXAMPLE_DoProcess( input );
 }
 
-uint16_t EXAMPLE_Test(uint16_t test_value)
+uint16_t EXAMPLE_Test( uint16_t test_value )
 {
     /* Simple wrapper around the main processing function.
      * In a real system this could perform a known-good operation for a
      * self-test or built-in test.
      */
-    return EXAMPLE_Process(test_value);
+    return EXAMPLE_Process( test_value );
 }
 
-void EXAMPLE_SetOutput(uint32_t pin, bool level)
+void EXAMPLE_SetOutput( uint32_t pin, bool level )
 {
     /* In production, this calls the real EXAMPLE_HAL implementation. In unit tests,
      * EXAMPLE_HAL_GPIO_WritePin( ... ) is replaced by a GoogleMock-based function.
      */
-    EXAMPLE_HAL_GPIO_WritePin(pin, level);
+    EXAMPLE_HAL_GPIO_WritePin( pin, level );
 }

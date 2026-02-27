@@ -89,17 +89,17 @@ static BaseType_t s_xTaskNotifyFromISR_should_write_hptw;
 /**
  * @brief stub implementing FreeRTOS vTaskStartScheduler
  */
-void vTaskStartScheduler(void)
+void vTaskStartScheduler( void )
 {
 }
 /**
  * @brief stub implementing FreeRTOS vTaskDelayUntil
  */
-void vTaskDelayUntil(TickType_t* pxPreviousWakeTime, const TickType_t xTimeIncrement)
+void vTaskDelayUntil( TickType_t* pxPreviousWakeTime, const TickType_t xTimeIncrement )
 {
     TickType_t time_to_wake = *pxPreviousWakeTime + xTimeIncrement;
 
-    if (time_to_wake > current_tick)
+    if ( time_to_wake > current_tick )
     {
         current_tick = time_to_wake;
     }
@@ -110,7 +110,7 @@ void vTaskDelayUntil(TickType_t* pxPreviousWakeTime, const TickType_t xTimeIncre
 /**
  * @brief stub implementing FreeRTOS vTaskDelay
  */
-void vTaskDelay(const TickType_t xTicksToDelay)
+void vTaskDelay( const TickType_t xTicksToDelay )
 {
     current_tick += xTicksToDelay;
 }
@@ -118,7 +118,7 @@ void vTaskDelay(const TickType_t xTicksToDelay)
 /**
  * @brief stub implementing FreeRTOS xTaskGetTickCount
  */
-volatile TickType_t xTaskGetTickCount(void)
+volatile TickType_t xTaskGetTickCount( void )
 {
     return current_tick++;
 }
@@ -126,8 +126,8 @@ volatile TickType_t xTaskGetTickCount(void)
 /**
  * @brief stub implementing FreeRTOS xTaskNotifyWait
  */
-BaseType_t xTaskNotifyWait(uint32_t ulBitsToClearOnEntry, uint32_t ulBitsToClearOnExit,
-                           uint32_t* pulNotificationValue, TickType_t xTicksToWait)
+BaseType_t xTaskNotifyWait( uint32_t ulBitsToClearOnEntry, uint32_t ulBitsToClearOnExit,
+                            uint32_t* pulNotificationValue, TickType_t xTicksToWait )
 {
     s_xTaskNotifyWait_called++;
 
@@ -136,7 +136,7 @@ BaseType_t xTaskNotifyWait(uint32_t ulBitsToClearOnEntry, uint32_t ulBitsToClear
     s_xTaskNotifyWait_pulNotificationValue = pulNotificationValue;
     s_xTaskNotifyWait_xTicksToWait         = xTicksToWait;
 
-    if ((pulNotificationValue != NULL) && (s_xTaskNotifyWait_should_write_value != pdFALSE))
+    if ( ( pulNotificationValue != NULL ) && ( s_xTaskNotifyWait_should_write_value != pdFALSE ) )
     {
         *pulNotificationValue = s_xTaskNotifyWait_write_value;
     }
@@ -147,7 +147,7 @@ BaseType_t xTaskNotifyWait(uint32_t ulBitsToClearOnEntry, uint32_t ulBitsToClear
 /**
  * @brief stub implementing FreeRTOS xTaskNotify
  */
-BaseType_t xTaskNotify(TaskHandle_t xTaskToNotify, uint32_t ulValue, eNotifyAction eAction)
+BaseType_t xTaskNotify( TaskHandle_t xTaskToNotify, uint32_t ulValue, eNotifyAction eAction )
 {
     s_xTaskNotify_called++;
 
@@ -161,8 +161,8 @@ BaseType_t xTaskNotify(TaskHandle_t xTaskToNotify, uint32_t ulValue, eNotifyActi
 /**
  * @brief stub implementing FreeRTOS xTaskNotifyFromISR
  */
-BaseType_t xTaskNotifyFromISR(TaskHandle_t xTaskToNotify, uint32_t ulValue, eNotifyAction eAction,
-                              BaseType_t* pxHigherPriorityTaskWoken)
+BaseType_t xTaskNotifyFromISR( TaskHandle_t xTaskToNotify, uint32_t ulValue, eNotifyAction eAction,
+                               BaseType_t* pxHigherPriorityTaskWoken )
 {
     s_xTaskNotifyFromISR_called++;
 
@@ -171,7 +171,8 @@ BaseType_t xTaskNotifyFromISR(TaskHandle_t xTaskToNotify, uint32_t ulValue, eNot
     s_xTaskNotifyFromISR_eAction                   = eAction;
     s_xTaskNotifyFromISR_pxHigherPriorityTaskWoken = pxHigherPriorityTaskWoken;
 
-    if ((pxHigherPriorityTaskWoken != NULL) && (s_xTaskNotifyFromISR_should_write_hptw != pdFALSE))
+    if ( ( pxHigherPriorityTaskWoken != NULL )
+         && ( s_xTaskNotifyFromISR_should_write_hptw != pdFALSE ) )
     {
         *pxHigherPriorityTaskWoken = s_xTaskNotifyFromISR_write_hptw;
     }

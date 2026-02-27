@@ -38,7 +38,11 @@
 					"--clang-tidy",
 					"--suggest-missing-includes",
 					"-j=4"
-				]
+				],
+				"C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+				"C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+				"CMake.generator": "Ninja",
+				"CMake.configureOnOpen": true
 			},
 			"extensions": [
 				"llvm-vs-code-extensions.vscode-clangd",

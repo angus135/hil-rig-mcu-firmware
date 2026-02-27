@@ -47,11 +47,11 @@ extern "C"
 class ExampleTest : public ::testing::Test
 {
 protected:
-    void SetUp(void) override
+    void SetUp( void ) override
     {
     }
 
-    void TearDown(void) override
+    void TearDown( void ) override
     {
     }
 };

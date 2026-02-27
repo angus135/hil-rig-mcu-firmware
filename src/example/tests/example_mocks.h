@@ -30,7 +30,7 @@ extern "C"
  * @param pin    Logical pin identifier.
  * @param level  Output level (true = high, false = low).
  */
-void EXAMPLE_HAL_GPIO_WritePin(uint32_t pin, bool level);
+void EXAMPLE_HAL_GPIO_WritePin( uint32_t pin, bool level );
 
 #ifdef __cplusplus
 }

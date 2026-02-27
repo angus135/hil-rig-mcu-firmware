@@ -90,6 +90,8 @@ cmake ..
 cmake --build .
 ```
 
+### Note: To be able to get correct syntax highlighting you must run a cmake configuration first.
+
 ### Run All Tests
 
 ```bash

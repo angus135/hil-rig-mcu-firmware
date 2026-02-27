@@ -30,7 +30,7 @@ extern "C"
 {
 #include <stdint.h>
 #include <stdbool.h>
-#include "example.c" /* Module under test */ // NOLINT
+#include "example.c" /* Module under test */  // NOLINT
 }
 
 /**-----------------------------------------------------------------------------
@@ -38,12 +38,12 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-#define EXAMPLE_TEST_INPUT_VALUE (5U)
-#define EXAMPLE_TEST_EXPECTED_OUTPUT (EXAMPLE_TEST_INPUT_VALUE * EXAMPLE_SCALE_FACTOR)
+#define EXAMPLE_TEST_INPUT_VALUE ( 5U )
+#define EXAMPLE_TEST_EXPECTED_OUTPUT ( EXAMPLE_TEST_INPUT_VALUE * EXAMPLE_SCALE_FACTOR )
 
-#define EXAMPLE_TEST_OUTPUT_PIN (3U)
-#define EXAMPLE_TEST_OUTPUT_LEVEL_HIGH (true)
-#define EXAMPLE_TEST_OUTPUT_LEVEL_LOW (false)
+#define EXAMPLE_TEST_OUTPUT_PIN ( 3U )
+#define EXAMPLE_TEST_OUTPUT_LEVEL_HIGH ( true )
+#define EXAMPLE_TEST_OUTPUT_LEVEL_LOW ( false )
 
 /**-----------------------------------------------------------------------------
  *  Test Doubles / Mocks
@@ -62,7 +62,7 @@ extern "C"
 class MockHalGpio
 {
 public:
-    MOCK_METHOD(void, EXAMPLE_HAL_GPIO_WritePin, (uint32_t pin, bool level));
+    MOCK_METHOD( void, EXAMPLE_HAL_GPIO_WritePin, ( uint32_t pin, bool level ) );
 };
 
 /* Global mock pointer used by the C-linkage shim below. */
@@ -80,11 +80,11 @@ static MockHalGpio* g_mock_example_hal_gpio = nullptr;
  * This replaces the real EXAMPLE_HAL implementation in the test build. The linker
  * will use this definition instead of any production implementation.
  */
-extern "C" void EXAMPLE_HAL_GPIO_WritePin(uint32_t pin, bool level)
+extern "C" void EXAMPLE_HAL_GPIO_WritePin( uint32_t pin, bool level )
 {
-    ASSERT_NE(g_mock_example_hal_gpio, nullptr)
+    ASSERT_NE( g_mock_example_hal_gpio, nullptr )
         << "EXAMPLE_HAL_GPIO_WritePin called without an active mock instance";
-    g_mock_example_hal_gpio->EXAMPLE_HAL_GPIO_WritePin(pin, level);
+    g_mock_example_hal_gpio->EXAMPLE_HAL_GPIO_WritePin( pin, level );
 }
 
 // NOLINTEND
@@ -102,20 +102,20 @@ extern "C" void EXAMPLE_HAL_GPIO_WritePin(uint32_t pin, bool level)
 class ExampleTest : public ::testing::Test
 {
 protected:
-    void SetUp(void) override
+    void SetUp( void ) override
     {
         /* Reset module state before each test. */
         g_mock_example_hal_gpio = new MockHalGpio();
         EXAMPLE_Init();
 
         /* Clear any previous mock expectations. */
-        ::testing::Mock::VerifyAndClearExpectations(g_mock_example_hal_gpio);
+        ::testing::Mock::VerifyAndClearExpectations( g_mock_example_hal_gpio );
     }
 
-    void TearDown(void) override
+    void TearDown( void ) override
     {
         /* Ensure no unexpected calls remain at the end of a test. */
-        ::testing::Mock::VerifyAndClearExpectations(g_mock_example_hal_gpio);
+        ::testing::Mock::VerifyAndClearExpectations( g_mock_example_hal_gpio );
         delete g_mock_example_hal_gpio;
         g_mock_example_hal_gpio = nullptr;
     }
@@ -129,7 +129,7 @@ protected:
 /**
  * @test EXAMPLE_Init should complete without interacting with the GPIO EXAMPLE_HAL.
  */
-TEST_F(ExampleTest, InitDoesNotCallGpio)
+TEST_F( ExampleTest, InitDoesNotCallGpio )
 {
     /* SetUp has already called EXAMPLE_Init().
      *
@@ -143,52 +143,53 @@ TEST_F(ExampleTest, InitDoesNotCallGpio)
 /**
  * @test EXAMPLE_Process scales the input value by EXAMPLE_SCALE_FACTOR.
  */
-TEST_F(ExampleTest, ProcessScalesInputByConstant)
+TEST_F( ExampleTest, ProcessScalesInputByConstant )
 {
-    uint16_t result = EXAMPLE_Process(EXAMPLE_TEST_INPUT_VALUE);
+    uint16_t result = EXAMPLE_Process( EXAMPLE_TEST_INPUT_VALUE );
 
-    EXPECT_EQ(EXAMPLE_TEST_EXPECTED_OUTPUT, result);
+    EXPECT_EQ( EXAMPLE_TEST_EXPECTED_OUTPUT, result );
 }
 
 /**
  * @test EXAMPLE_Test behaves consistently with EXAMPLE_Process.
  */
-TEST_F(ExampleTest, TestWrapperMatchesProcessBehaviour)
+TEST_F( ExampleTest, TestWrapperMatchesProcessBehaviour )
 {
-    uint16_t process_result = EXAMPLE_Process(EXAMPLE_TEST_INPUT_VALUE);
-    uint16_t test_result    = EXAMPLE_Test(EXAMPLE_TEST_INPUT_VALUE);
+    uint16_t process_result = EXAMPLE_Process( EXAMPLE_TEST_INPUT_VALUE );
+    uint16_t test_result    = EXAMPLE_Test( EXAMPLE_TEST_INPUT_VALUE );
 
-    EXPECT_EQ(process_result, test_result);
+    EXPECT_EQ( process_result, test_result );
 }
 
 /**
  * @test EXAMPLE_SetOutput drives the GPIO EXAMPLE_HAL with the correct arguments.
  */
-TEST_F(ExampleTest, SetOutputCallsHalWithCorrectArguments)
+TEST_F( ExampleTest, SetOutputCallsHalWithCorrectArguments )
 {
-    EXPECT_CALL(*g_mock_example_hal_gpio,
-                EXAMPLE_HAL_GPIO_WritePin(EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_HIGH))
-        .Times(1);
+    EXPECT_CALL(
+        *g_mock_example_hal_gpio,
+        EXAMPLE_HAL_GPIO_WritePin( EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_HIGH ) )
+        .Times( 1 );
 
-    EXAMPLE_SetOutput(EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_HIGH);
+    EXAMPLE_SetOutput( EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_HIGH );
 }
 
 /**
  * @test Multiple calls to EXAMPLE_SetOutput result in multiple EXAMPLE_HAL calls.
  */
-TEST_F(ExampleTest, MultipleSetOutputCallsProduceMultipleHalWrites)
+TEST_F( ExampleTest, MultipleSetOutputCallsProduceMultipleHalWrites )
 {
     {
         ::testing::InSequence sequence;
 
         EXPECT_CALL(
             *g_mock_example_hal_gpio,
-            EXAMPLE_HAL_GPIO_WritePin(EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_HIGH));
+            EXAMPLE_HAL_GPIO_WritePin( EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_HIGH ) );
         EXPECT_CALL(
             *g_mock_example_hal_gpio,
-            EXAMPLE_HAL_GPIO_WritePin(EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_LOW));
+            EXAMPLE_HAL_GPIO_WritePin( EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_LOW ) );
     }
 
-    EXAMPLE_SetOutput(EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_HIGH);
-    EXAMPLE_SetOutput(EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_LOW);
+    EXAMPLE_SetOutput( EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_HIGH );
+    EXAMPLE_SetOutput( EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_LOW );
 }

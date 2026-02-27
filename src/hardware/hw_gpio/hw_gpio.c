@@ -67,15 +67,15 @@
  * HAL layer. It is a convenient seam for unit testing where the HAL call is
  * mocked using GoogleMock.
  */
-void HW_GPIO_Toggle(GPIO_T gpio)
+void HW_GPIO_Toggle( GPIO_T gpio )
 {
 #ifdef TEST_BUILD
-    (void)gpio;
+    ( void )gpio;
 #else
-    switch (gpio)
+    switch ( gpio )
     {
         case GPIO_GREEN_LED_INDICATOR:
-            HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
+            HAL_GPIO_TogglePin( LD1_GPIO_Port, LD1_Pin );
             break;
         default:
             break;

@@ -32,7 +32,7 @@ extern "C"
  */
 
 /* Provide a unique "Instance" value for USART3 */
-#define USART3 ((void*)0x40004800u)
+#define USART3 ( ( void* )0x40004800u )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -59,8 +59,8 @@ extern UART_HandleTypeDef huart3;
  *------------------------------------------------------------------------------
  */
 
-HAL_StatusTypeDef HAL_UART_Transmit_DMA(UART_HandleTypeDef* huart, uint8_t* pData, uint16_t Size);
-HAL_StatusTypeDef HAL_UART_Receive_DMA(UART_HandleTypeDef* huart, uint8_t* pData, uint16_t Size);
+HAL_StatusTypeDef HAL_UART_Transmit_DMA( UART_HandleTypeDef* huart, uint8_t* pData, uint16_t Size );
+HAL_StatusTypeDef HAL_UART_Receive_DMA( UART_HandleTypeDef* huart, uint8_t* pData, uint16_t Size );
 
 // NOLINTEND
 

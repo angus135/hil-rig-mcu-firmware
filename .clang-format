@@ -143,11 +143,11 @@ SpaceBeforeAssignmentOperators: true
 SpaceBeforeParens: ControlStatements
 
 SpaceInEmptyParentheses: false
-SpacesBeforeTrailingComments: 1
+SpacesBeforeTrailingComments: 2
 SpacesInAngles:  false
 SpacesInContainerLiterals: true
-SpacesInCStyleCastParentheses: false
-SpacesInParentheses: false
+SpacesInCStyleCastParentheses: true
+SpacesInParentheses: true
 SpacesInSquareBrackets: false
 
 Standard:        Latest     # Works fine for C; clang-format just needs a baseline

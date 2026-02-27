@@ -30,10 +30,10 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
-#define CONSOLE_TASK_PERIOD 5 // 200Hz
+#define CONSOLE_TASK_PERIOD 5  // 200Hz
 
-#define CONSOLE_LINE_MAX 80U // max characters in a command line (excluding NUL)
-#define CONSOLE_MAX_ARGS 8U  // max argv entries
+#define CONSOLE_LINE_MAX 80U  // max characters in a command line (excluding NUL)
+#define CONSOLE_MAX_ARGS 8U   // max argv entries
 
 #define CONSOLE_PRINTF_BUFFER_SIZE 128U
 
@@ -47,7 +47,7 @@
  *------------------------------------------------------------------------------
  */
 
-TaskHandle_t* ConsoleTaskHandle = NULL; // NOLINT(readability-identifier-naming)
+TaskHandle_t* ConsoleTaskHandle = NULL;  // NOLINT(readability-identifier-naming)
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
@@ -92,26 +92,26 @@ static bool s_last_was_newline = false;
  *
  * @returns void
  */
-static void CONSOLE_Parse_Args(char* line, uint16_t* argc_out, char* argv_out[CONSOLE_MAX_ARGS])
+static void CONSOLE_Parse_Args( char* line, uint16_t* argc_out, char* argv_out[CONSOLE_MAX_ARGS] )
 {
     uint16_t argc = 0;
     char*    p    = line;
 
-    while (*p != '\0')
+    while ( *p != '\0' )
     {
         // Skip leading whitespace
-        while ((*p == ' ') || (*p == '\t'))
+        while ( ( *p == ' ' ) || ( *p == '\t' ) )
         {
             p++;
         }
 
-        if (*p == '\0')
+        if ( *p == '\0' )
         {
             break;
         }
 
         // Start of token
-        if (argc < (uint16_t)CONSOLE_MAX_ARGS)
+        if ( argc < ( uint16_t )CONSOLE_MAX_ARGS )
         {
             argv_out[argc] = p;
             argc++;
@@ -123,13 +123,13 @@ static void CONSOLE_Parse_Args(char* line, uint16_t* argc_out, char* argv_out[CO
         }
 
         // Advance to end of token
-        while ((*p != '\0') && (*p != ' ') && (*p != '\t'))
+        while ( ( *p != '\0' ) && ( *p != ' ' ) && ( *p != '\t' ) )
         {
             p++;
         }
 
         // Terminate token if not end of string
-        if (*p != '\0')
+        if ( *p != '\0' )
         {
             *p = '\0';
             p++;
@@ -150,21 +150,21 @@ static void CONSOLE_Parse_Args(char* line, uint16_t* argc_out, char* argv_out[CO
  *
  * @returns void
  */
-static void CONSOLE_On_Line_Complete(void)
+static void CONSOLE_On_Line_Complete( void )
 {
     // NUL-terminate
     s_line_buf[s_line_len] = '\0';
 
     // Parse into argv in-place
-    char*    argv[CONSOLE_MAX_ARGS] = {0};
+    char*    argv[CONSOLE_MAX_ARGS] = { 0 };
     uint16_t argc                   = 0;
 
-    CONSOLE_Parse_Args(s_line_buf, &argc, argv);
+    CONSOLE_Parse_Args( s_line_buf, &argc, argv );
 
     // Ignore empty lines
-    if (argc > 0)
+    if ( argc > 0 )
     {
-        CONSOLE_Command_Handler(argc, argv);
+        CONSOLE_Command_Handler( argc, argv );
     }
 
     // Reset buffer for next command
@@ -184,18 +184,18 @@ static void CONSOLE_On_Line_Complete(void)
  *
  * @returns void
  */
-static void CONSOLE_Process_Byte(uint8_t byte)
+static void CONSOLE_Process_Byte( uint8_t byte )
 {
-    const bool is_newline = (byte == '\r') || (byte == '\n');
+    const bool is_newline = ( byte == '\r' ) || ( byte == '\n' );
 
-    if (is_newline)
+    if ( is_newline )
     {
         // Echo as CRLF for terminal friendliness
-        HW_UART_Write_Byte(UART_CONSOLE, '\r');
-        HW_UART_Write_Byte(UART_CONSOLE, '\n');
+        HW_UART_Write_Byte( UART_CONSOLE, '\r' );
+        HW_UART_Write_Byte( UART_CONSOLE, '\n' );
 
         // Swallow the second newline char in CRLF or LFCR
-        if (s_last_was_newline)
+        if ( s_last_was_newline )
         {
             s_last_was_newline = false;
             return;
@@ -211,26 +211,26 @@ static void CONSOLE_Process_Byte(uint8_t byte)
     s_last_was_newline = false;
 
     // Optional: handle backspace for a nicer UX
-    if ((byte == 0x08U) || (byte == 0x7FU))
+    if ( ( byte == 0x08U ) || ( byte == 0x7FU ) )
     {
-        if (s_line_len > 0U)
+        if ( s_line_len > 0U )
         {
             s_line_len--;
 
             // "Erase" character on terminal: BS, space, BS
-            HW_UART_Write_Byte(UART_CONSOLE, 0x08U);
-            HW_UART_Write_Byte(UART_CONSOLE, ' ');
-            HW_UART_Write_Byte(UART_CONSOLE, 0x08U);
+            HW_UART_Write_Byte( UART_CONSOLE, 0x08U );
+            HW_UART_Write_Byte( UART_CONSOLE, ' ' );
+            HW_UART_Write_Byte( UART_CONSOLE, 0x08U );
         }
         return;
     }
 
     // Normal character: echo and store if there is space
-    HW_UART_Write_Byte(UART_CONSOLE, byte);
+    HW_UART_Write_Byte( UART_CONSOLE, byte );
 
-    if (s_line_len < CONSOLE_LINE_MAX)
+    if ( s_line_len < CONSOLE_LINE_MAX )
     {
-        s_line_buf[s_line_len] = (char)byte;
+        s_line_buf[s_line_len] = ( char )byte;
         s_line_len++;
     }
     else
@@ -248,9 +248,9 @@ static void CONSOLE_Process_Byte(uint8_t byte)
  *
  * @returns void
  */
-static void CONSOLE_Init(void)
+static void CONSOLE_Init( void )
 {
-    CONSOLE_Printf("%s", WELCOME_MESSAGE);
+    CONSOLE_Printf( "%s", WELCOME_MESSAGE );
 }
 
 /**
@@ -261,13 +261,13 @@ static void CONSOLE_Init(void)
  *
  * @returns void
  */
-static void CONSOLE_Process(void)
+static void CONSOLE_Process( void )
 {
     uint8_t      byte   = 0;
-    UARTStatus_T status = HW_UART_Read_Byte(UART_CONSOLE, &byte);
-    if (status == UART_SUCCESS)
+    UARTStatus_T status = HW_UART_Read_Byte( UART_CONSOLE, &byte );
+    if ( status == UART_SUCCESS )
     {
-        CONSOLE_Process_Byte(byte);
+        CONSOLE_Process_Byte( byte );
     }
 }
 
@@ -289,28 +289,29 @@ static void CONSOLE_Process(void)
  *
  * @returns void
  */
-void CONSOLE_Printf(const char* format, ...)
+void CONSOLE_Printf( const char* format, ... )
 {
     char buffer[CONSOLE_PRINTF_BUFFER_SIZE];
 
     va_list args;
-    va_start(args, format);
+    va_start( args, format );
 
-    const int len = vsnprintf(buffer, sizeof(buffer), format, args);
+    const int len = vsnprintf( buffer, sizeof( buffer ), format, args );
 
-    va_end(args);
+    va_end( args );
 
-    if (len <= 0)
+    if ( len <= 0 )
     {
         return;
     }
 
     // Clamp length to buffer size
-    uint32_t count = (len < (int)sizeof(buffer)) ? (uint32_t)len : (uint32_t)(sizeof(buffer) - 1U);
+    uint32_t count =
+        ( len < ( int )sizeof( buffer ) ) ? ( uint32_t )len : ( uint32_t )( sizeof( buffer ) - 1U );
 
-    for (uint32_t i = 0U; i < count; i++)
+    for ( uint32_t i = 0U; i < count; i++ )
     {
-        HW_UART_Write_Byte(UART_CONSOLE, (uint8_t)buffer[i]);
+        HW_UART_Write_Byte( UART_CONSOLE, ( uint8_t )buffer[i] );
     }
 }
 
@@ -325,16 +326,16 @@ void CONSOLE_Printf(const char* format, ...)
  *
  * @returns void
  */
-void CONSOLE_Task(void* task_parameters)
+void CONSOLE_Task( void* task_parameters )
 {
-    (void)task_parameters;
+    ( void )task_parameters;
 
     CONSOLE_Init();
 
     TickType_t initial_ticks = xTaskGetTickCount();
-    while (true)
+    while ( true )
     {
         CONSOLE_Process();
-        vTaskDelayUntil(&initial_ticks, pdMS_TO_TICKS(CONSOLE_TASK_PERIOD));
+        vTaskDelayUntil( &initial_ticks, pdMS_TO_TICKS( CONSOLE_TASK_PERIOD ) );
     }
 }

@@ -55,7 +55,7 @@ typedef enum GPIO_T
  * HAL layer. It is a convenient seam for unit testing where the HAL call is
  * mocked using GoogleMock.
  */
-void HW_GPIO_Toggle(GPIO_T gpio);
+void HW_GPIO_Toggle( GPIO_T gpio );
 
 #ifdef __cplusplus
 }

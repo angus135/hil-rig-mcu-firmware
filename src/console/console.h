@@ -35,7 +35,8 @@ extern "C"
 #define CONSOLE_TASK_MEMORY 256
 #define CONSOLE_TASK_PRIORITY 3
 
-#define ARRAY_LEN(a) (sizeof(a) / sizeof((a)[0])) // TODO: move this to a common helper file
+#define ARRAY_LEN( a )                                                                             \
+    ( sizeof( a ) / sizeof( ( a )[0] ) )  // TODO: move this to a common helper file
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -55,7 +56,7 @@ extern "C"
  *
  * @returns void
  */
-void CONSOLE_Printf(const char* format, ...);
+void CONSOLE_Printf( const char* format, ... );
 
 /**
  * @brief Console FreeRTOS task entry point.
@@ -68,7 +69,7 @@ void CONSOLE_Printf(const char* format, ...);
  *
  * @returns void
  */
-void CONSOLE_Task(void* task_parameters);
+void CONSOLE_Task( void* task_parameters );
 
 /**
  * @brief Handles the parsed arguments retrieved from the console
@@ -78,7 +79,7 @@ void CONSOLE_Task(void* task_parameters);
  *
  * @returns void
  */
-void CONSOLE_Command_Handler(uint16_t argc, char* argv[]);
+void CONSOLE_Command_Handler( uint16_t argc, char* argv[] );
 
 #ifdef __cplusplus
 }
