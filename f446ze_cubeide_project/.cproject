@@ -51,6 +51,8 @@
 									<listOptionValue builtIn="false" value="../../src/hardware/hw_timer"/>
 									<listOptionValue builtIn="false" value="../../src/hardware/hw_uart"/>
 									<listOptionValue builtIn="false" value="../../src/background"/>
+									<listOptionValue builtIn="false" value="../../src/rtos"/>
+									<listOptionValue builtIn="false" value="../../src/console"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input.675227244" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input"/>
 							</tool>
@@ -173,6 +175,8 @@
 									<listOptionValue builtIn="false" value="../../src/hardware/hw_timer"/>
 									<listOptionValue builtIn="false" value="../../src/hardware/hw_uart"/>
 									<listOptionValue builtIn="false" value="../../src/background"/>
+									<listOptionValue builtIn="false" value="../../src/rtos"/>
+									<listOptionValue builtIn="false" value="../../src/console"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input.1805602567" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input"/>
 							</tool>
@@ -202,6 +206,8 @@
 									<listOptionValue builtIn="false" value="../../src/hardware/hw_timer"/>
 									<listOptionValue builtIn="false" value="../../src/hardware/hw_uart"/>
 									<listOptionValue builtIn="false" value="../../src/background"/>
+									<listOptionValue builtIn="false" value="../../src/rtos"/>
+									<listOptionValue builtIn="false" value="../../src/console"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c.1711025851" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c"/>
 							</tool>
