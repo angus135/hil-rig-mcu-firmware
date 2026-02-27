@@ -17,6 +17,7 @@
 
 #ifndef TEST_BUILD
 #include "gpio.h"
+#include "stm32f4xx_ll_gpio.h"
 #endif
 
 #include "hw_gpio.h"
@@ -75,7 +76,7 @@ void HW_GPIO_Toggle( GPIO_T gpio )
     switch ( gpio )
     {
         case GPIO_GREEN_LED_INDICATOR:
-            HAL_GPIO_TogglePin( LD1_GPIO_Port, LD1_Pin );
+            LL_GPIO_TogglePin( LD1_GPIO_Port, LD1_Pin );
             break;
         default:
             break;
