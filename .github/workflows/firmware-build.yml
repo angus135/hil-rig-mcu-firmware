@@ -1,0 +1,30 @@
+name: firmware-build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Builds exactly like CubeIDE headless build (Eclipse CDT managedbuilder)
+      - name: Build (STM32CubeIDE)
+        uses: xanderhendriks/action-build-stm32cubeide@v10.0
+        with:
+          project-path: 'f446ze_cubeide_project'
+          project-target: 'f446ze_cubeide_project/Debug'
+
+      # Optional: upload the firmware artifact (nice for PRs/releases)
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: |
+            **/*.elf
+            **/*.hex
+            **/*.bin
