@@ -1,26 +1,23 @@
 /******************************************************************************
- *  File:       app_main.c
+ *  File:       test_scheduler.c
  *  Author:     Angus Corr
- *  Created:    6-12-2025
+ *  Created:    20-Dec-2025
  *
  *  Description:
- *      Runs the MCU application
  *
  *  Notes:
- *      None
+ *     None
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
  *  Includes
  *------------------------------------------------------------------------------
  */
-#include <stdbool.h>
-#include "global_config.h"
 #include "test_scheduler.h"
-#include "background.h"
-#include "rtos_config.h"
-#include "app_main.h"
-#include "console.h"
+#include "hw_timer.h"
+#include "hw_gpio.h"
+#include <stdint.h>
+#include <stdbool.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -36,9 +33,6 @@
  *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
  */
-extern TaskHandle_t* ConsoleTaskHandle;        // NOLINT(readability-identifier-naming)
-extern TaskHandle_t* BackgroundTaskHandle;     // NOLINT(readability-identifier-naming)
-extern TaskHandle_t* TestSchedulerTaskHandle;  // NOLINT(readability-identifier-naming)
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
@@ -60,17 +54,23 @@ extern TaskHandle_t* TestSchedulerTaskHandle;  // NOLINT(readability-identifier-
  *------------------------------------------------------------------------------
  */
 
-/**
- * @brief Entry point for MCU application
- */
-void APP_MAIN_Application( void )
+void TEST_SCHEDULER_Process_From_ISR( void )
 {
-#if GLOBAL_CONFIG__CONSOLE_ENABLED
-    CREATE_TASK( CONSOLE_Task, "Console Task", CONSOLE_TASK_MEMORY, CONSOLE_TASK_PRIORITY,
-                 ConsoleTaskHandle );
-#endif
-    CREATE_TASK( BACKGROUND_Task, "Background Task", BACKGROUND_TASK_MEMORY,
-                 BACKGROUND_TASK_PRIORITY, BackgroundTaskHandle );
+    HW_GPIO_Toggle( GPIO_GREEN_LED_INDICATOR );
+    // TODO: This is where all the I/O will actually run, this needs to be quick
+}
 
-    vTaskStartScheduler();
+void TEST_SCHEDULER_Start( void )
+{
+    HW_TIMER_Start_Test_Scheduling_Timer();
+}
+
+void TEST_SCHEDULER_Stop( void )
+{
+    HW_TIMER_Stop_Test_Scheduling_Timer();
+}
+
+void TEST_SCHEDULER_Init( void )
+{
+    TEST_SCHEDULER_Start();
 }

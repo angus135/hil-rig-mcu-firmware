@@ -1,17 +1,17 @@
 /******************************************************************************
- *  File:       hw_timer.h
+ *  File:       test_scheduler.h
  *  Author:     Angus Corr
- *  Created:    18-Dec-2025
+ *  Created:    20-Dec-2025
  *
  *  Description:
- *      <Short description of the module, what it exposes, and how it should be used>
+ *      Public interface for the Background module.
  *
  *  Notes:
- *      <Public assumptions, required initialisation order, dependencies, etc.>
+ *      None
  ******************************************************************************/
 
-#ifndef HW_TIMER_H
-#define HW_TIMER_H
+#ifndef TEST_SCHEDULER_H
+#define TEST_SCHEDULER_H
 
 #ifdef __cplusplus
 extern "C"
@@ -42,23 +42,26 @@ extern "C"
  */
 
 /**
- * @brief Starts the timer for test scheduling
+ * @brief Starts the Test Scheduler
  *
- * Starts a 10kHz timer (TODO: Update this to take a frequency mode and set the timer to run at a
- * particular frequency)
  */
-void HW_TIMER_Start_Test_Scheduling_Timer( void );
+void TEST_SCHEDULER_Start( void );
 
 /**
- * @brief Stops the timer for test scheduling
+ * @brief Stops the Test Scheduler
  *
- * Stops a 10kHz timer (TODO: Update this to take a frequency mode and set the timer to run at a
- * particular frequency)
  */
-void HW_TIMER_Stop_Test_Scheduling_Timer( void );
+void TEST_SCHEDULER_Stop( void );
+
+/**
+ * @brief Test Scheduler Initialization
+ *
+ * Initialises the test schedular based on the selected frequency mode.
+ */
+void TEST_SCHEDULER_Init( void );
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* HW_TIMER_H */
+#endif /* TEST_SCHEDULER_H */

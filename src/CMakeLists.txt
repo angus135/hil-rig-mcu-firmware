@@ -5,4 +5,4 @@ add_subdirectory(console)
 add_subdirectory(example)
 add_subdirectory(hardware)
 add_subdirectory(rtos)
-
+add_subdirectory(test_scheduler)

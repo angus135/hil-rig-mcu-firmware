@@ -30,6 +30,7 @@ target_link_libraries(app_main
         cubeide_hal
         rtos
         console
+        test_scheduler
         background
 )
 

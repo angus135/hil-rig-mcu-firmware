@@ -1,64 +1,62 @@
 /******************************************************************************
- *  File:       hw_timer.h
+ *  File:       test_test_scheduler.cpp
  *  Author:     Angus Corr
- *  Created:    18-Dec-2025
+ *  Created:    06-Dec-2025
  *
  *  Description:
- *      <Short description of the module, what it exposes, and how it should be used>
  *
  *  Notes:
- *      <Public assumptions, required initialisation order, dependencies, etc.>
+ *
  ******************************************************************************/
-
-#ifndef HW_TIMER_H
-#define HW_TIMER_H
-
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 /**-----------------------------------------------------------------------------
  *  Includes
  *------------------------------------------------------------------------------
  */
 
+#include <gtest/gtest.h>
+#include <gmock/gmock.h>
+
+extern "C"
+{
+#include "test_scheduler.h" /* Module under test */
 #include <stdint.h>
 #include <stdbool.h>
-
-/**-----------------------------------------------------------------------------
- *  Public Defines / Macros
- *------------------------------------------------------------------------------
- */
-
-/**-----------------------------------------------------------------------------
- *  Public Typedefs / Enums / Structures
- *------------------------------------------------------------------------------
- */
-
-/**-----------------------------------------------------------------------------
- *  Public Function Prototypes
- *------------------------------------------------------------------------------
- */
-
-/**
- * @brief Starts the timer for test scheduling
- *
- * Starts a 10kHz timer (TODO: Update this to take a frequency mode and set the timer to run at a
- * particular frequency)
- */
-void HW_TIMER_Start_Test_Scheduling_Timer( void );
-
-/**
- * @brief Stops the timer for test scheduling
- *
- * Stops a 10kHz timer (TODO: Update this to take a frequency mode and set the timer to run at a
- * particular frequency)
- */
-void HW_TIMER_Stop_Test_Scheduling_Timer( void );
-
-#ifdef __cplusplus
 }
-#endif
 
-#endif /* HW_TIMER_H */
+/**-----------------------------------------------------------------------------
+ *  Test Constants / Macros
+ *------------------------------------------------------------------------------
+ */
+
+/**-----------------------------------------------------------------------------
+ *  Test Doubles / Mocks
+ *------------------------------------------------------------------------------
+ */
+
+/**-----------------------------------------------------------------------------
+ *  Test Fixture
+ *------------------------------------------------------------------------------
+ */
+
+/**
+ * @brief Test fixture for module tests.
+ *
+ * Provides a consistent setup/teardown environment for all test cases.
+ */
+class ExampleTest : public ::testing::Test
+{
+protected:
+    void SetUp( void ) override
+    {
+    }
+
+    void TearDown( void ) override
+    {
+    }
+};
+
+/**-----------------------------------------------------------------------------
+ *  Test Cases
+ *------------------------------------------------------------------------------
+ */
