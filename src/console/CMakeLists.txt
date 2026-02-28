@@ -25,6 +25,7 @@ target_include_directories(console
 
 target_link_libraries(console
     PUBLIC
+        global_config
         project_warnings
         cubeide_hal
         rtos

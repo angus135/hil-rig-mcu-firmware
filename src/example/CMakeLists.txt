@@ -25,6 +25,7 @@ target_include_directories(example
 
 target_link_libraries(example
     PUBLIC
+        global_config
         rtos
         cubeide_hal
 )

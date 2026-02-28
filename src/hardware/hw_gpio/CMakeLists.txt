@@ -25,6 +25,7 @@ target_include_directories(hw_gpio
 
 target_link_libraries(hw_gpio
     PUBLIC
+        global_config
         rtos
         cubeide_hal
 )

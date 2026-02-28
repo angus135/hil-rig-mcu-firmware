@@ -414,6 +414,7 @@ target_include_directories(example_module
 
 target_link_libraries(example_module
     PUBLIC
+        global_config
         project_warnings
         cubeide_hal
         rtos

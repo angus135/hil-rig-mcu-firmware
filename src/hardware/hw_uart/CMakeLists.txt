@@ -25,6 +25,7 @@ target_include_directories(hw_uart
 
 target_link_libraries(hw_uart
     PUBLIC
+        global_config
         rtos
         cubeide_hal
 )

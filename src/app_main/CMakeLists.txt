@@ -25,6 +25,7 @@ target_include_directories(app_main
 
 target_link_libraries(app_main
     PUBLIC
+        global_config
         project_warnings
         cubeide_hal
         rtos

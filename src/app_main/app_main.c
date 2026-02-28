@@ -15,6 +15,7 @@
  *------------------------------------------------------------------------------
  */
 #include <stdbool.h>
+#include "global_config.h"
 #include "background.h"
 #include "rtos_config.h"
 #include "app_main.h"
@@ -62,9 +63,10 @@ extern TaskHandle_t* BackgroundTaskHandle;  // NOLINT(readability-identifier-nam
  */
 void APP_MAIN_Application( void )
 {
+#if GLOBAL_CONFIG__CONSOLE_ENABLED
     CREATE_TASK( CONSOLE_Task, "Console Task", CONSOLE_TASK_MEMORY, CONSOLE_TASK_PRIORITY,
                  ConsoleTaskHandle );
-
+#endif
     CREATE_TASK( BACKGROUND_Task, "Background Task", BACKGROUND_TASK_MEMORY,
                  BACKGROUND_TASK_PRIORITY, BackgroundTaskHandle );
 

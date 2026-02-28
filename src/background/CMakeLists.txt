@@ -25,6 +25,7 @@ target_include_directories(background
 
 target_link_libraries(background
     PUBLIC
+        global_config
         project_warnings
         cubeide_hal
         rtos

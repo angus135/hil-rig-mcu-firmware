@@ -25,6 +25,7 @@ target_include_directories(hw_timer
 
 target_link_libraries(hw_timer
     PUBLIC
+        global_config
         rtos
 )
 

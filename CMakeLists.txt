@@ -56,6 +56,14 @@ target_compile_definitions(cubeide_hal
         USE_HAL_DRIVER
 )
 
+# Configuration Library
+add_library(global_config INTERFACE)
+
+target_include_directories(global_config
+    INTERFACE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
 add_compile_definitions(TEST_BUILD)
 
 # Testing infrastructure
