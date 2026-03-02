@@ -42,18 +42,27 @@ extern "C"
  */
 
 /**
+ * @brief Configures the test scheduling timer.
+ *
+ * @param psc - Prescalar
+ * @param arr - AutoReload Register
+ *
+ * Configures the timer used for test scheduling with a specified prescalar and autoreload register
+value.
+ * Note: Also stops the timer if it is currently running.
+ */
+void HW_TIMER_Configure_Test_Scheduling_Timer( uint32_t psc, uint32_t arr );
+
+/**
  * @brief Starts the timer for test scheduling
  *
- * Starts a 10kHz timer (TODO: Update this to take a frequency mode and set the timer to run at a
- * particular frequency)
+ * Starts the timer that generates interrupts at a certain frequency as configured by
+ * HW_TIMER_Configure_Test_Scheduling_Timer.
  */
 void HW_TIMER_Start_Test_Scheduling_Timer( void );
 
 /**
  * @brief Stops the timer for test scheduling
- *
- * Stops a 10kHz timer (TODO: Update this to take a frequency mode and set the timer to run at a
- * particular frequency)
  */
 void HW_TIMER_Stop_Test_Scheduling_Timer( void );
 

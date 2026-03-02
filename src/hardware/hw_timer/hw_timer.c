@@ -77,6 +77,22 @@ void TIM2_IRQHandler( void )
 #endif
 }
 
+void HW_TIMER_Configure_Test_Scheduling_Timer( uint32_t psc, uint32_t arr )
+{
+    HW_TIMER_Stop_Test_Scheduling_Timer();
+#ifdef TEST_BUILD
+    ( void )psc;
+    ( void )arr;
+#else
+    htim2.Init.Prescaler = psc;
+    htim2.Init.Period    = arr;
+    if ( HAL_TIM_Base_Init( &htim2 ) != HAL_OK )
+    {
+        Error_Handler();
+    }
+#endif
+}
+
 void HW_TIMER_Start_Test_Scheduling_Timer( void )
 {
 #ifdef TEST_BUILD

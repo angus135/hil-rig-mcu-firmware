@@ -35,6 +35,12 @@ extern "C"
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+typedef enum FrequencyMode_T
+{
+    FREQUENCY_100HZ,
+    FREQUENCY_1KHZ,
+    FREQUENCY_10KHZ,
+} FrequencyMode_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -52,6 +58,16 @@ void TEST_SCHEDULER_Start( void );
  *
  */
 void TEST_SCHEDULER_Stop( void );
+
+/**
+ * @brief Sets the frequency mode of the test scheduler
+ *
+ * @param mode - the selected frequency mode
+ *
+ * Note: currently only supports 100Hz, 1kHz or 10kHz
+ *
+ */
+void TEST_SCHEDULER_Set_Frequency_Mode( FrequencyMode_T mode );
 
 /**
  * @brief Test Scheduler Initialization

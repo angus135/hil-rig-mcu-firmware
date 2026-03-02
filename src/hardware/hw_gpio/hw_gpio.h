@@ -38,7 +38,8 @@ extern "C"
 
 typedef enum GPIO_T
 {
-    GPIO_GREEN_LED_INDICATOR
+    GPIO_GREEN_LED_INDICATOR,
+    GPIO_TEST_INDICATOR
 } GPIO_T;
 
 /**-----------------------------------------------------------------------------

@@ -136,12 +136,33 @@ static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] )
     {
         TEST_SCHEDULER_Stop();
     }
+    else if ( strcmp( argv[1], "frequency" ) == 0 )
+    {
+        if ( ( strcmp( argv[2], "10k" ) == 0 ) || ( strcmp( argv[2], "10000" ) == 0 ) )
+        {
+            TEST_SCHEDULER_Set_Frequency_Mode( FREQUENCY_10KHZ );
+        }
+        else if ( ( strcmp( argv[2], "1k" ) == 0 ) || ( strcmp( argv[2], "1000" ) == 0 ) )
+        {
+            TEST_SCHEDULER_Set_Frequency_Mode( FREQUENCY_1KHZ );
+        }
+        else if ( strcmp( argv[2], "100" ) == 0 )
+        {
+            TEST_SCHEDULER_Set_Frequency_Mode( FREQUENCY_100HZ );
+        }
+        else
+        {
+            CONSOLE_Printf( "Invalid: Desired frequencies can only be 100Hz, 1kHz or 10kHz\r\n" );
+        }
+    }
     else
     {
         CONSOLE_Printf( "Invalid argument: %s\r\n", argv[1] );
         CONSOLE_Printf( "Usage:\r\n" );
         CONSOLE_Printf( "  test_scheduler start\r\n" );
         CONSOLE_Printf( "  test_scheduler stop\r\n" );
+        CONSOLE_Printf( "  test_scheduler frequency <desired frequency>\r\n" );
+        CONSOLE_Printf( "    Note: Desired frequencies can only be 100Hz, 1kHz or 10kHz\r\n" );
     }
 }
 
