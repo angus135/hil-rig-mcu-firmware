@@ -124,6 +124,8 @@ static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "Usage:\r\n" );
         CONSOLE_Printf( "  test_scheduler start\r\n" );
         CONSOLE_Printf( "  test_scheduler stop\r\n" );
+        CONSOLE_Printf( "  test_scheduler frequency <desired frequency>\r\n" );
+        CONSOLE_Printf( "    Note: Desired frequencies can only be 100Hz, 1kHz or 10kHz\r\n" );
         return;
     }
 
