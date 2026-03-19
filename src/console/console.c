@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <string.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -37,10 +38,19 @@
 
 #define CONSOLE_PRINTF_BUFFER_SIZE 128U
 
+#define CONSOLE_HISTORY_DEPTH 8U
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+
+typedef enum
+{
+    ESC_IDLE,
+    ESC_GOT_ESCAPE,
+    ESC_GOT_BRACKET
+} ConsoleEscapeState_T;
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -55,10 +65,11 @@ TaskHandle_t* ConsoleTaskHandle = NULL;  // NOLINT(readability-identifier-naming
  */
 static const uint8_t WELCOME_MESSAGE[] = "Welcome to HIL-RIG MCU!\r\n";
 
-/**-----------------------------------------------------------------------------
- *  Private (static) Function Prototypes
- *------------------------------------------------------------------------------
- */
+static ConsoleEscapeState_T s_escape_state = ESC_IDLE;
+static char                 s_history[CONSOLE_HISTORY_DEPTH][CONSOLE_LINE_MAX + 1U];
+static size_t               s_history_count        = 0U;
+static size_t               s_history_next_index   = 0U;
+static int32_t              s_history_browse_index = -1;
 
 // Line buffer and state
 static char   s_line_buf[CONSOLE_LINE_MAX + 1U];
@@ -66,6 +77,16 @@ static size_t s_line_len = 0U;
 
 // Used to swallow the second char of CRLF / LFCR so you don't process two "empty" commands.
 static bool s_last_was_newline = false;
+
+/**-----------------------------------------------------------------------------
+ *  Private (static) Function Prototypes
+ *------------------------------------------------------------------------------
+ */
+static void CONSOLE_Save_History( const char* line );
+static void CONSOLE_Redraw_Line( void );
+static void CONSOLE_Load_Line( const char* line );
+static void CONSOLE_History_Up( void );
+static void CONSOLE_History_Down( void );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -155,6 +176,11 @@ static void CONSOLE_On_Line_Complete( void )
     // NUL-terminate
     s_line_buf[s_line_len] = '\0';
 
+    if ( s_line_len > 0U )
+    {
+        CONSOLE_Save_History( s_line_buf );
+    }
+
     // Parse into argv in-place
     char*    argv[CONSOLE_MAX_ARGS] = { 0 };
     uint16_t argc                   = 0;
@@ -186,7 +212,44 @@ static void CONSOLE_On_Line_Complete( void )
  */
 static void CONSOLE_Process_Byte( uint8_t byte )
 {
-    const bool is_newline = ( byte == '\r' ) || ( byte == '\n' );
+    const bool is_newline   = ( byte == '\r' ) || ( byte == '\n' );
+    const bool is_backspace = ( byte == 0x08U ) || ( byte == 0x7FU );
+    const bool is_escape    = ( byte == 0x1BU );
+    const bool is_control   = ( byte >= 0x00U ) && ( byte <= 0x1FU );
+    CONSOLE_Printf( "RX: 0x%02X\r\n", byte );
+    if ( is_escape && s_escape_state == ESC_IDLE )
+    {
+        s_escape_state = ESC_GOT_ESCAPE;
+        return;
+    }
+
+    if ( s_escape_state == ESC_GOT_ESCAPE )
+    {
+
+        if ( byte == '[' )
+        {
+            s_escape_state = ESC_GOT_BRACKET;
+        }
+        else
+        {
+            s_escape_state = ESC_IDLE;
+        }
+        return;
+    }
+
+    if ( s_escape_state == ESC_GOT_BRACKET )
+    {
+        if ( byte == 'A' )
+        {
+            CONSOLE_History_Up();
+        }
+        else if ( byte == 'B' )
+        {
+            CONSOLE_History_Down();
+        }
+        s_escape_state = ESC_IDLE;
+        return;
+    }
 
     if ( is_newline )
     {
@@ -211,7 +274,7 @@ static void CONSOLE_Process_Byte( uint8_t byte )
     s_last_was_newline = false;
 
     // Optional: handle backspace for a nicer UX
-    if ( ( byte == 0x08U ) || ( byte == 0x7FU ) )
+    if ( is_backspace )
     {
         if ( s_line_len > 0U )
         {
@@ -224,19 +287,23 @@ static void CONSOLE_Process_Byte( uint8_t byte )
         }
         return;
     }
-
+    if ( is_control )
+    {
+        return;  // Ignore control characters unless explicitly handled above
+    }
     // Normal character: echo and store if there is space
     HW_UART_Write_Byte( UART_CONSOLE, byte );
 
     if ( s_line_len < CONSOLE_LINE_MAX )
     {
+        s_history_browse_index = -1;  // Reset history browse index when adding new char
         s_line_buf[s_line_len] = ( char )byte;
         s_line_len++;
     }
     else
     {
         // Buffer full: simplest behaviour is to ignore further chars until newline.
-        // You could also beep or print an error here if you want.
+        // You could also beep or print an error ere if you want.
     }
 }
 
@@ -269,6 +336,104 @@ static void CONSOLE_Process( void )
     {
         CONSOLE_Process_Byte( byte );
     }
+}
+
+/**
+ * @brief Save an input line to console history buffer
+ *
+ * This function saves a completed input line to the console history buffer.
+ * Input lines are stored in a circular buffer, with the most recent line
+ * overwriting the oldest line when the buffer is full.
+ *
+ * @param line  The input line to save.
+ *
+ * @returns void
+ */
+static void CONSOLE_Save_History( const char* line )
+{
+    if ( line[0] != '\0' )
+    {
+        // Store to buffer at current index
+        snprintf( s_history[s_history_next_index], sizeof( s_history[s_history_next_index] ), "%s",
+                  line );
+
+        // Update the next index (wrap around if necessary)
+        s_history_next_index = ( s_history_next_index + 1U ) % CONSOLE_HISTORY_DEPTH;
+
+        // Update the history count
+        if ( s_history_count < CONSOLE_HISTORY_DEPTH )
+        {
+            s_history_count++;
+        }
+        // Reset browse index
+        s_history_browse_index = -1;
+    }
+}
+
+static void CONSOLE_Redraw_Line( void )
+{
+    CONSOLE_Printf( "\r\033[2K" );
+    CONSOLE_Printf( "%s", s_line_buf );
+}
+
+static void CONSOLE_Load_Line( const char* line )
+{
+    snprintf( s_line_buf, sizeof( s_line_buf ), "%s", line );
+    s_line_len = strlen( s_line_buf );
+    CONSOLE_Redraw_Line();
+}
+
+static void CONSOLE_History_Up( void )
+{
+    if ( s_history_count == 0U )
+    {
+        return;
+    }
+
+    if ( s_history_browse_index < 0 )
+    {
+        s_history_browse_index = ( int32_t )( ( s_history_next_index + CONSOLE_HISTORY_DEPTH - 1U )
+                                              % CONSOLE_HISTORY_DEPTH );
+    }
+    else
+    {
+        size_t oldest_index = ( s_history_next_index + CONSOLE_HISTORY_DEPTH - s_history_count )
+                              % CONSOLE_HISTORY_DEPTH;
+
+        if ( ( size_t )s_history_browse_index != oldest_index )
+        {
+            s_history_browse_index =
+                ( int32_t )( ( ( size_t )s_history_browse_index + CONSOLE_HISTORY_DEPTH - 1U )
+                             % CONSOLE_HISTORY_DEPTH );
+        }
+    }
+
+    CONSOLE_Load_Line( s_history[s_history_browse_index] );
+}
+
+static void CONSOLE_History_Down( void )
+{
+    if ( s_history_count == 0U || s_history_browse_index < 0 )
+    {
+        return;
+    }
+
+    size_t newest_index =
+        ( s_history_next_index + CONSOLE_HISTORY_DEPTH - 1U ) % CONSOLE_HISTORY_DEPTH;
+
+    if ( ( size_t )s_history_browse_index == newest_index )
+    {
+        s_history_browse_index = -1;
+        s_line_buf[0]          = '\0';
+        s_line_len             = 0U;
+        CONSOLE_Redraw_Line();
+        return;
+    }
+
+    s_history_browse_index =
+        ( int32_t )( ( ( size_t )s_history_browse_index + 1U ) % CONSOLE_HISTORY_DEPTH );
+
+    CONSOLE_Load_Line( s_history[s_history_browse_index] );
 }
 
 /**-----------------------------------------------------------------------------
