@@ -50,6 +50,7 @@ typedef struct Command_T
 static void CONSOLE_Command_Help( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Echo( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] );
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
@@ -62,7 +63,9 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"?",       CONSOLE_Command_Help,       "Show available commands."},
     {"help",    CONSOLE_Command_Help,       "Show available commands."},
     {"echo",    CONSOLE_Command_Echo,       "Echoes the provided arguments."},
-{"test_scheduler",    CONSOLE_Command_Test_Scheduler,       "Starts the test scheduler."},
+    {"test_scheduler",    CONSOLE_Command_Test_Scheduler,       "Starts the test scheduler."},
+    {"clear",  CONSOLE_Command_Clear,       "Clears the console."}
+
 };
 
 // clang-format on
@@ -168,6 +171,13 @@ static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] )
     }
 }
 
+static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] )
+{
+    ( void )argc;
+    ( void )argv;
+    CONSOLE_Printf( "\033[2J\033[1;1H" );
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
@@ -193,7 +203,10 @@ void CONSOLE_Command_Handler( uint16_t argc, char* argv[] )
         if ( strcmp( argv[0], CONSOLE_COMMANDS[command].command_name ) == 0 )
         {
             CONSOLE_COMMANDS[command].command_handler( argc, argv );
-            CONSOLE_Printf( "\r\n" );
+            if ( strcmp( argv[0], "clear" ) != 0 )
+                {
+                    CONSOLE_Printf( "\r\n" );
+                }
             return;
         }
     }
