@@ -154,17 +154,17 @@ static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] )
         if ( ( strcmp( argv[2], "10k" ) == 0 ) || ( strcmp( argv[2], "10000" ) == 0 ) )
         {
             TEST_SCHEDULER_Set_Frequency_Mode( FREQUENCY_10KHZ );
-            CONSOLE_Printf("Scheduler Frequency is set to %sHz\r\n", argv[2]);
+            CONSOLE_Printf( "Scheduler Frequency is set to %sHz\r\n", argv[2] );
         }
         else if ( ( strcmp( argv[2], "1k" ) == 0 ) || ( strcmp( argv[2], "1000" ) == 0 ) )
         {
             TEST_SCHEDULER_Set_Frequency_Mode( FREQUENCY_1KHZ );
-            CONSOLE_Printf("Scheduler Frequency is set to %sHz\r\n", argv[2]);
+            CONSOLE_Printf( "Scheduler Frequency is set to %sHz\r\n", argv[2] );
         }
         else if ( strcmp( argv[2], "100" ) == 0 )
         {
             TEST_SCHEDULER_Set_Frequency_Mode( FREQUENCY_100HZ );
-            CONSOLE_Printf("Scheduler Frequency is set to %sHz\r\n", argv[2]);
+            CONSOLE_Printf( "Scheduler Frequency is set to %sHz\r\n", argv[2] );
         }
         else
         {
@@ -215,9 +215,9 @@ void CONSOLE_Command_Handler( uint16_t argc, char* argv[] )
         {
             CONSOLE_COMMANDS[command].command_handler( argc, argv );
             if ( strcmp( argv[0], "clear" ) != 0 )
-                {
-                    CONSOLE_Printf( "\r\n" );
-                }
+            {
+                CONSOLE_Printf( "\r\n" );
+            }
             return;
         }
     }
