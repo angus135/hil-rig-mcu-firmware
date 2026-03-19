@@ -150,18 +150,21 @@ static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] )
             CONSOLE_Printf( "    Note: Desired frequencies can only be 100Hz, 1kHz or 10kHz\r\n" );
             return;
         }
-        
+
         if ( ( strcmp( argv[2], "10k" ) == 0 ) || ( strcmp( argv[2], "10000" ) == 0 ) )
         {
             TEST_SCHEDULER_Set_Frequency_Mode( FREQUENCY_10KHZ );
+            CONSOLE_Printf("Scheduler Frequency is set to %sHz\r\n", argv[2]);
         }
         else if ( ( strcmp( argv[2], "1k" ) == 0 ) || ( strcmp( argv[2], "1000" ) == 0 ) )
         {
             TEST_SCHEDULER_Set_Frequency_Mode( FREQUENCY_1KHZ );
+            CONSOLE_Printf("Scheduler Frequency is set to %sHz\r\n", argv[2]);
         }
         else if ( strcmp( argv[2], "100" ) == 0 )
         {
             TEST_SCHEDULER_Set_Frequency_Mode( FREQUENCY_100HZ );
+            CONSOLE_Printf("Scheduler Frequency is set to %sHz\r\n", argv[2]);
         }
         else
         {
