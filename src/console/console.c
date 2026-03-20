@@ -216,6 +216,29 @@ static void CONSOLE_Process_Byte( uint8_t byte )
     const bool is_backspace = ( byte == 0x08U ) || ( byte == 0x7FU );
     const bool is_escape    = ( byte == 0x1BU );
     const bool is_control   = ( byte >= 0x00U ) && ( byte <= 0x1FU );
+
+    if ( is_newline )
+    {
+        // Echo as CRLF for terminal friendliness
+        HW_UART_Write_Byte( UART_CONSOLE, '\r' );
+        HW_UART_Write_Byte( UART_CONSOLE, '\n' );
+
+        // Swallow the second newline char in CRLF or LFCR
+        if ( s_last_was_newline )
+        {
+            s_last_was_newline = false;
+            return;
+        }
+
+        s_last_was_newline = true;
+
+        // Finish the command
+        CONSOLE_On_Line_Complete();
+        return;
+    }
+
+    s_last_was_newline = false;
+
     if ( is_escape && s_escape_state == ESC_IDLE )
     {
         s_escape_state = ESC_GOT_ESCAPE;
@@ -249,28 +272,6 @@ static void CONSOLE_Process_Byte( uint8_t byte )
         s_escape_state = ESC_IDLE;
         return;
     }
-
-    if ( is_newline )
-    {
-        // Echo as CRLF for terminal friendliness
-        HW_UART_Write_Byte( UART_CONSOLE, '\r' );
-        HW_UART_Write_Byte( UART_CONSOLE, '\n' );
-
-        // Swallow the second newline char in CRLF or LFCR
-        if ( s_last_was_newline )
-        {
-            s_last_was_newline = false;
-            return;
-        }
-
-        s_last_was_newline = true;
-
-        // Finish the command
-        CONSOLE_On_Line_Complete();
-        return;
-    }
-
-    s_last_was_newline = false;
 
     // Optional: handle backspace for a nicer UX
     if ( is_backspace )
