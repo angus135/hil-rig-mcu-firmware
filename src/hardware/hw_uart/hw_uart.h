@@ -55,22 +55,27 @@ typedef enum UARTStatus_T
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
-
 /**
- * @brief Reads a single Byte from a specified UART port
+ * @brief Starts the UART receive service for a specified port
  *
- * @param port   The UART port to read from
- * @param byte   The received byte
- *
- * @returns UARTStatus_T - the status of the transfer
- *
- * This function wraps the HAL_UART_Receive_DMA( ... ) function provided by the
- * HAL layer. So this will be done via DMA.
+ * @param port The UART port to start the receive service for
+ * @return UARTStatus_T - the status of the operation
  */
-UARTStatus_T HW_UART_Read_Byte( UARTPort_T port, uint8_t* byte );
+UARTStatus_T HW_UART_Start_Rx_Service( UARTPort_T port );
+
 
 /**
- * @brief Reads a single Byte to a specified UART port
+ * @brief Tries to read a byte from a specified UART port
+ *
+ * @param port The UART port to read from.
+ * @param byte Pointer to the byte to store the received data.
+ * @return true if a byte was read successfully, false if no byte was available.
+ */
+bool HW_UART_Try_Read_Byte( UARTPort_T port, uint8_t* byte );
+
+
+/**
+ * @brief writes a single Byte to a specified UART port
  *
  * @param port   The UART port to write to
  * @param byte   The byte to write

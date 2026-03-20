@@ -187,7 +187,6 @@ static void CONSOLE_On_Line_Complete( void )
 static void CONSOLE_Process_Byte( uint8_t byte )
 {
     const bool is_newline = ( byte == '\r' ) || ( byte == '\n' );
-
     if ( is_newline )
     {
         // Echo as CRLF for terminal friendliness
@@ -250,6 +249,7 @@ static void CONSOLE_Process_Byte( uint8_t byte )
  */
 static void CONSOLE_Init( void )
 {
+    ( void )HW_UART_Start_Rx_Service( UART_CONSOLE );
     CONSOLE_Printf( "%s", WELCOME_MESSAGE );
 }
 
@@ -263,9 +263,8 @@ static void CONSOLE_Init( void )
  */
 static void CONSOLE_Process( void )
 {
-    uint8_t      byte   = 0;
-    UARTStatus_T status = HW_UART_Read_Byte( UART_CONSOLE, &byte );
-    if ( status == UART_SUCCESS )
+    uint8_t byte = 0U;
+    while ( HW_UART_Try_Read_Byte( UART_CONSOLE, &byte ) )
     {
         CONSOLE_Process_Byte( byte );
     }
