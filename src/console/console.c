@@ -353,6 +353,18 @@ static void CONSOLE_Save_History( const char* line )
 {
     if ( line[0] != '\0' )
     {
+        if ( s_history_count > 0U )
+        {
+            size_t last_index =
+                ( s_history_next_index + CONSOLE_HISTORY_DEPTH - 1U ) % CONSOLE_HISTORY_DEPTH;
+
+            // Avoid saving duplicate consecutive entries
+            if ( strncmp( s_history[last_index], line, CONSOLE_LINE_MAX ) == 0 )
+            {
+                return;
+            }
+        }
+
         // Store to buffer at current index
         snprintf( s_history[s_history_next_index], sizeof( s_history[s_history_next_index] ), "%s",
                   line );
