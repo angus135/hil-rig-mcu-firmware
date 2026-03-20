@@ -102,10 +102,10 @@ protected:
 
         uart_port_tx_dma_status[UART_CONSOLE] = false;
 
-        s_uart_rx_head[UART_CONSOLE] = 0U;
-        s_uart_rx_tail[UART_CONSOLE] = 0U;
+        s_uart_rx_head[UART_CONSOLE]     = 0U;
+        s_uart_rx_tail[UART_CONSOLE]     = 0U;
         s_uart_rx_dma_byte[UART_CONSOLE] = 0U;
-        s_uart_rx_active[UART_CONSOLE] = false;
+        s_uart_rx_active[UART_CONSOLE]   = false;
         s_uart_rx_overflow[UART_CONSOLE] = false;
     }
     void TearDown() override
@@ -194,8 +194,6 @@ TEST_F( UartTest, WriteByte_CallsTxDmaAndReturnsSuccess_WhenTxCompleteCallbackFi
     EXPECT_EQ( status, UART_SUCCESS );
 }
 
-
-
 TEST_F( UartTest, WriteByte_MapsHalBusyToUartBusy_AndDoesNotDelay )
 {
     EXPECT_CALL( mock, TxDma( Eq( &huart3 ), testing::_, 1U ) ).WillOnce( Return( HAL_BUSY ) );
@@ -206,5 +204,3 @@ TEST_F( UartTest, WriteByte_MapsHalBusyToUartBusy_AndDoesNotDelay )
     const UARTStatus_T status = HW_UART_Write_Byte( UART_CONSOLE, 0x11U );
     EXPECT_EQ( status, UART_BUSY );
 }
-
-

@@ -63,7 +63,6 @@ typedef enum UARTStatus_T
  */
 UARTStatus_T HW_UART_Start_Rx_Service( UARTPort_T port );
 
-
 /**
  * @brief Tries to read a byte from a specified UART port
  *
@@ -72,7 +71,6 @@ UARTStatus_T HW_UART_Start_Rx_Service( UARTPort_T port );
  * @return true if a byte was read successfully, false if no byte was available.
  */
 bool HW_UART_Try_Read_Byte( UARTPort_T port, uint8_t* byte );
-
 
 /**
  * @brief writes a single Byte to a specified UART port
