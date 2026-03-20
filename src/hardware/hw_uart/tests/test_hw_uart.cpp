@@ -99,6 +99,14 @@ protected:
     void SetUp() override
     {
         g_mock = &mock;
+
+        uart_port_tx_dma_status[UART_CONSOLE] = false;
+
+        s_uart_rx_head[UART_CONSOLE]     = 0U;
+        s_uart_rx_tail[UART_CONSOLE]     = 0U;
+        s_uart_rx_dma_byte[UART_CONSOLE] = 0U;
+        s_uart_rx_active[UART_CONSOLE]   = false;
+        s_uart_rx_overflow[UART_CONSOLE] = false;
     }
     void TearDown() override
     {
@@ -110,11 +118,71 @@ protected:
  *  Test Cases
  *------------------------------------------------------------------------------
  */
+TEST_F( UartTest, StartRxService_CallsRxDmaAndReturnsSuccess )
+{
+    EXPECT_CALL( mock, RxDma( Eq( &huart3 ), testing::_, 1U ) ).WillOnce( Return( HAL_OK ) );
+
+    const UARTStatus_T status = HW_UART_Start_Rx_Service( UART_CONSOLE );
+    EXPECT_EQ( status, UART_SUCCESS );
+}
+
+TEST_F( UartTest, StartRxService_MapsHalBusyToUartBusy )
+{
+    EXPECT_CALL( mock, RxDma( Eq( &huart3 ), testing::_, 1U ) ).WillOnce( Return( HAL_BUSY ) );
+
+    const UARTStatus_T status = HW_UART_Start_Rx_Service( UART_CONSOLE );
+    EXPECT_EQ( status, UART_BUSY );
+}
+
+TEST_F( UartTest, RxCallback_StoresByteInFifo_AndTryReadByteReturnsIt )
+{
+    uint8_t byte = 0U;
+
+    EXPECT_CALL( mock, RxDma( Eq( &huart3 ), testing::_, 1U ) )
+        .WillOnce( Return( HAL_OK ) )   // initial HW_UART_Start_Rx_Service call
+        .WillOnce( Return( HAL_OK ) );  // rearm inside HAL_UART_RxCpltCallback
+
+    const UARTStatus_T start_status = HW_UART_Start_Rx_Service( UART_CONSOLE );
+    EXPECT_EQ( start_status, UART_SUCCESS );
+
+    s_uart_rx_dma_byte[UART_CONSOLE] = 0x5AU;
+    HAL_UART_RxCpltCallback( &huart3 );
+
+    const bool result = HW_UART_Try_Read_Byte( UART_CONSOLE, &byte );
+    EXPECT_TRUE( result );
+    EXPECT_EQ( byte, 0x5AU );
+}
+TEST_F( UartTest, TryReadByte_ReturnsFalseAfterFifoIsDrained )
+{
+    uint8_t byte = 0U;
+
+    EXPECT_CALL( mock, RxDma( Eq( &huart3 ), testing::_, 1U ) )
+        .WillOnce( Return( HAL_OK ) )
+        .WillOnce( Return( HAL_OK ) );
+
+    EXPECT_EQ( HW_UART_Start_Rx_Service( UART_CONSOLE ), UART_SUCCESS );
+
+    s_uart_rx_dma_byte[UART_CONSOLE] = 0x33U;
+    HAL_UART_RxCpltCallback( &huart3 );
+
+    EXPECT_TRUE( HW_UART_Try_Read_Byte( UART_CONSOLE, &byte ) );
+    EXPECT_EQ( byte, 0x33U );
+
+    EXPECT_FALSE( HW_UART_Try_Read_Byte( UART_CONSOLE, &byte ) );
+}
+
+TEST_F( UartTest, TryReadByte_ReturnsFalseWhenFifoEmpty )
+{
+    uint8_t byte = 0U;
+
+    const bool result = HW_UART_Try_Read_Byte( UART_CONSOLE, &byte );
+    EXPECT_FALSE( result );
+}
 
 TEST_F( UartTest, WriteByte_CallsTxDmaAndReturnsSuccess_WhenTxCompleteCallbackFires )
 {
     // Expect 1-byte DMA transmit on the console handle
-    EXPECT_CALL( mock, TxDma( Eq( &huart3 ), testing::_, 1 ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, TxDma( Eq( &huart3 ), testing::_, 1U ) ).WillOnce( Return( HAL_OK ) );
 
     // The driver loops calling vTaskDelay(pdMS_TO_TICKS(1)) until the status is set.
     // Simulate completion by calling the callback during the first delay.
@@ -126,41 +194,13 @@ TEST_F( UartTest, WriteByte_CallsTxDmaAndReturnsSuccess_WhenTxCompleteCallbackFi
     EXPECT_EQ( status, UART_SUCCESS );
 }
 
-TEST_F( UartTest, ReadByte_CallsRxDmaAndReturnsSuccess_WhenRxCompleteCallbackFires )
-{
-    uint8_t byte = 0U;
-
-    EXPECT_CALL( mock, RxDma( Eq( &huart3 ), testing::_, 1 ) ).WillOnce( Return( HAL_OK ) );
-
-    EXPECT_CALL( mock, TaskDelay( pdMS_TO_TICKS( 1 ) ) ).WillOnce( Invoke( [&]( TickType_t ) {
-        byte = 0x5AU;
-        HAL_UART_RxCpltCallback( &huart3 );
-    } ) );
-
-    const UARTStatus_T status = HW_UART_Read_Byte( UART_CONSOLE, &byte );
-    EXPECT_EQ( status, UART_SUCCESS );
-    EXPECT_EQ( byte, 0x5AU );
-}
-
 TEST_F( UartTest, WriteByte_MapsHalBusyToUartBusy_AndDoesNotDelay )
 {
-    EXPECT_CALL( mock, TxDma( Eq( &huart3 ), testing::_, 1 ) ).WillOnce( Return( HAL_BUSY ) );
+    EXPECT_CALL( mock, TxDma( Eq( &huart3 ), testing::_, 1U ) ).WillOnce( Return( HAL_BUSY ) );
 
     // Should return immediately on error status
     EXPECT_CALL( mock, TaskDelay( testing::_ ) ).Times( 0 );
 
     const UARTStatus_T status = HW_UART_Write_Byte( UART_CONSOLE, 0x11U );
     EXPECT_EQ( status, UART_BUSY );
-}
-
-TEST_F( UartTest, ReadByte_MapsHalTimeoutToUartTimeout_AndDoesNotDelay )
-{
-    uint8_t byte = 0U;
-
-    EXPECT_CALL( mock, RxDma( Eq( &huart3 ), testing::_, 1 ) ).WillOnce( Return( HAL_TIMEOUT ) );
-
-    EXPECT_CALL( mock, TaskDelay( testing::_ ) ).Times( 0 );
-
-    const UARTStatus_T status = HW_UART_Read_Byte( UART_CONSOLE, &byte );
-    EXPECT_EQ( status, UART_TIMEOUT );
 }
