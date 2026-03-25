@@ -23,6 +23,10 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
+#define PSC_1HZ 8999
+#define ARR_1HZ 9999
+#define PSC_10HZ 899
+#define ARR_10HZ 9999
 #define PSC_100HZ 89
 #define ARR_100HZ 9999
 #define PSC_1KHZ 89
@@ -71,6 +75,12 @@ void TEST_SCHEDULER_Start( void )
 {
     switch ( frequency_mode )
     {
+        case FREQUENCY_1HZ:
+            HW_TIMER_Configure_Test_Scheduling_Timer( PSC_1HZ, ARR_1HZ );
+            break;
+        case FREQUENCY_10HZ:
+            HW_TIMER_Configure_Test_Scheduling_Timer( PSC_10HZ, ARR_10HZ );
+            break;
         case FREQUENCY_100HZ:
             HW_TIMER_Configure_Test_Scheduling_Timer( PSC_100HZ, ARR_100HZ );
             break;

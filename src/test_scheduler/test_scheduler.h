@@ -37,6 +37,8 @@ extern "C"
  */
 typedef enum FrequencyMode_T
 {
+    FREQUENCY_1HZ,
+    FREQUENCY_10HZ,
     FREQUENCY_100HZ,
     FREQUENCY_1KHZ,
     FREQUENCY_10KHZ,
