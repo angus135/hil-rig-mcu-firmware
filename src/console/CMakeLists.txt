@@ -30,7 +30,7 @@ target_link_libraries(console
         cubeide_hal
         rtos
         hw_uart
-        test_scheduler
+        execution_manager
 )
 
 # -----------------------------

@@ -16,7 +16,7 @@
  */
 
 #include "console.h"
-#include "test_scheduler.h"
+#include "execution_manager.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -63,7 +63,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"?",       CONSOLE_Command_Help,       "Show available commands."},
     {"help",    CONSOLE_Command_Help,       "Show available commands."},
     {"echo",    CONSOLE_Command_Echo,       "Echoes the provided arguments."},
-    {"test_scheduler",    CONSOLE_Command_Test_Scheduler,       "Starts the test scheduler."},
+    {"execution_manager",    CONSOLE_Command_Test_Scheduler,       "Starts the test scheduler."},
     {"clear",  CONSOLE_Command_Clear,       "Clears the console."}
 
 };
@@ -125,45 +125,45 @@ static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] )
     if ( argc < 2 || argv[1] == NULL )
     {
         CONSOLE_Printf( "Usage:\r\n" );
-        CONSOLE_Printf( "  test_scheduler start\r\n" );
-        CONSOLE_Printf( "  test_scheduler stop\r\n" );
-        CONSOLE_Printf( "  test_scheduler frequency <desired frequency>\r\n" );
+        CONSOLE_Printf( "  execution_manager start\r\n" );
+        CONSOLE_Printf( "  execution_manager stop\r\n" );
+        CONSOLE_Printf( "  execution_manager frequency <desired frequency>\r\n" );
         CONSOLE_Printf( "    Note: Desired frequencies can only be 100Hz, 1kHz or 10kHz\r\n" );
         return;
     }
 
     if ( strcmp( argv[1], "start" ) == 0 )
     {
-        TEST_SCHEDULER_Init();
-        TEST_SCHEDULER_Start();
+        EXECUTION_MANAGER_Init();
+        EXECUTION_MANAGER_Start();
     }
     else if ( strcmp( argv[1], "stop" ) == 0 )
     {
-        TEST_SCHEDULER_Stop();
+        EXECUTION_MANAGER_Stop();
     }
     else if ( strcmp( argv[1], "frequency" ) == 0 )
     {
         if ( argc < 3 || argv[2] == NULL )
         {
             CONSOLE_Printf( "Usage:\r\n" );
-            CONSOLE_Printf( "  test_scheduler frequency <desired frequency>\r\n" );
+            CONSOLE_Printf( "  execution_manager frequency <desired frequency>\r\n" );
             CONSOLE_Printf( "    Note: Desired frequencies can only be 100Hz, 1kHz or 10kHz\r\n" );
             return;
         }
 
         if ( ( strcmp( argv[2], "10k" ) == 0 ) || ( strcmp( argv[2], "10000" ) == 0 ) )
         {
-            TEST_SCHEDULER_Set_Frequency_Mode( FREQUENCY_10KHZ );
+            EXECUTION_MANAGER_Set_Frequency_Mode( FREQUENCY_10KHZ );
             CONSOLE_Printf( "Scheduler Frequency is set to %sHz\r\n", argv[2] );
         }
         else if ( ( strcmp( argv[2], "1k" ) == 0 ) || ( strcmp( argv[2], "1000" ) == 0 ) )
         {
-            TEST_SCHEDULER_Set_Frequency_Mode( FREQUENCY_1KHZ );
+            EXECUTION_MANAGER_Set_Frequency_Mode( FREQUENCY_1KHZ );
             CONSOLE_Printf( "Scheduler Frequency is set to %sHz\r\n", argv[2] );
         }
         else if ( strcmp( argv[2], "100" ) == 0 )
         {
-            TEST_SCHEDULER_Set_Frequency_Mode( FREQUENCY_100HZ );
+            EXECUTION_MANAGER_Set_Frequency_Mode( FREQUENCY_100HZ );
             CONSOLE_Printf( "Scheduler Frequency is set to %sHz\r\n", argv[2] );
         }
         else
@@ -175,9 +175,9 @@ static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] )
     {
         CONSOLE_Printf( "Invalid argument: %s\r\n", argv[1] );
         CONSOLE_Printf( "Usage:\r\n" );
-        CONSOLE_Printf( "  test_scheduler start\r\n" );
-        CONSOLE_Printf( "  test_scheduler stop\r\n" );
-        CONSOLE_Printf( "  test_scheduler frequency <desired frequency>\r\n" );
+        CONSOLE_Printf( "  execution_manager start\r\n" );
+        CONSOLE_Printf( "  execution_manager stop\r\n" );
+        CONSOLE_Printf( "  execution_manager frequency <desired frequency>\r\n" );
         CONSOLE_Printf( "    Note: Desired frequencies can only be 100Hz, 1kHz or 10kHz\r\n" );
     }
 }

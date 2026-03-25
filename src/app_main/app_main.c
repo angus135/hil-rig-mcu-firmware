@@ -16,7 +16,6 @@
  */
 #include <stdbool.h>
 #include "global_config.h"
-#include "test_scheduler.h"
 #include "background.h"
 #include "rtos_config.h"
 #include "app_main.h"
@@ -36,9 +35,8 @@
  *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
  */
-extern TaskHandle_t* ConsoleTaskHandle;        // NOLINT(readability-identifier-naming)
-extern TaskHandle_t* BackgroundTaskHandle;     // NOLINT(readability-identifier-naming)
-extern TaskHandle_t* TestSchedulerTaskHandle;  // NOLINT(readability-identifier-naming)
+extern TaskHandle_t* ConsoleTaskHandle;     // NOLINT(readability-identifier-naming)
+extern TaskHandle_t* BackgroundTaskHandle;  // NOLINT(readability-identifier-naming)
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
