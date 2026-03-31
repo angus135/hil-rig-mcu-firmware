@@ -17,6 +17,7 @@
 
 #include "console.h"
 #include "execution_manager.h"
+#include "hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -51,6 +52,7 @@ static void CONSOLE_Command_Help( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Echo( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_LED( uint16_t argc, char* argv[] );
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
@@ -64,7 +66,8 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"help",    CONSOLE_Command_Help,       "Show available commands."},
     {"echo",    CONSOLE_Command_Echo,       "Echoes the provided arguments."},
     {"execution_manager",    CONSOLE_Command_Test_Scheduler,       "Starts the test scheduler."},
-    {"clear",  CONSOLE_Command_Clear,       "Clears the console."}
+    {"clear",  CONSOLE_Command_Clear,       "Clears the console."},
+    {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <green|blue|red|test>"}
 
 };
 
@@ -76,7 +79,7 @@ const Command_T CONSOLE_COMMANDS[] = {
  */
 
 /**
- * @brief Handles the help command by providing avaiable commands to the console
+ * @brief Handles the help command by providing available commands to the console
  *
  * @param argc - The number of arguments
  * @param argv - pointer to each argument string
@@ -187,6 +190,41 @@ static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] )
     ( void )argc;
     ( void )argv;
     CONSOLE_Printf( "\033[2J\033[1;1H" );
+}
+
+/**
+ * @brief Handles the LED toggle command
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
+static void CONSOLE_Command_LED( uint16_t argc, char* argv[] )
+{
+    if (argc < 3) {
+        CONSOLE_Printf("Usage: led toggle <green|blue|red|test>\r\n");
+        return;
+    }
+    if (strcmp(argv[1], "toggle") == 0) {
+        GPIO_T led = GPIO_TEST_INDICATOR; // default to test indicator if color parsing fails
+        if (strcmp(argv[2], "green") == 0) {
+            led = GPIO_GREEN_LED_INDICATOR;
+        } else if (strcmp(argv[2], "blue") == 0) {
+            led = GPIO_BLUE_LED_INDICATOR;
+        } else if (strcmp(argv[2], "red") == 0) {
+            led = GPIO_RED_LED_INDICATOR;
+        } else if (strcmp(argv[2], "test") == 0) {
+            led = GPIO_TEST_INDICATOR;
+        } else {
+            CONSOLE_Printf("Unknown LED: %s\r\n", argv[2]);
+            return;
+        }
+        HW_GPIO_Toggle(led);
+        CONSOLE_Printf("Toggled %s LED\r\n", argv[2]);
+    } else {
+        CONSOLE_Printf("Unknown action: %s\r\n", argv[1]);
+    }
 }
 
 /**-----------------------------------------------------------------------------
