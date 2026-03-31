@@ -28,6 +28,7 @@ target_link_libraries(exec_analogue_input
         global_config
         rtos
         cubeide_hal
+        hw_adc
 )
 
 # -----------------------------
