@@ -78,6 +78,12 @@ void HW_GPIO_Toggle( GPIO_T gpio )
         case GPIO_GREEN_LED_INDICATOR:
             LL_GPIO_TogglePin( LD1_GPIO_Port, LD1_Pin );
             break;
+        case GPIO_BLUE_LED_INDICATOR:
+            LL_GPIO_TogglePin( LD2_GPIO_Port, LD2_Pin );
+            break;
+        case GPIO_RED_LED_INDICATOR:
+            LL_GPIO_TogglePin( LD3_GPIO_Port, LD3_Pin );
+            break;
         case GPIO_TEST_INDICATOR:
             LL_GPIO_TogglePin( Test_GPIO_Output_GPIO_Port, Test_GPIO_Output_Pin );
             break;
