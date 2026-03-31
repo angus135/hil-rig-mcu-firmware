@@ -72,23 +72,23 @@ void EXECUTION_MANAGER_Start( void )
     switch ( frequency_mode )
     {
         case FREQUENCY_100HZ:
-            HW_TIMER_Configure_Test_Scheduling_Timer( PSC_100HZ, ARR_100HZ );
+            HW_TIMER_Configure_Timer( EXECUTION_MANAGER_TIMER, PSC_100HZ, ARR_100HZ );
             break;
         case FREQUENCY_1KHZ:
-            HW_TIMER_Configure_Test_Scheduling_Timer( PSC_1KHZ, ARR_1KHZ );
+            HW_TIMER_Configure_Timer( EXECUTION_MANAGER_TIMER, PSC_1KHZ, ARR_1KHZ );
             break;
         case FREQUENCY_10KHZ:
-            HW_TIMER_Configure_Test_Scheduling_Timer( PSC_10KHZ, ARR_10KHZ );
+            HW_TIMER_Configure_Timer( EXECUTION_MANAGER_TIMER, PSC_10KHZ, ARR_10KHZ );
             break;
         default:
             break;
     }
-    HW_TIMER_Start_Test_Scheduling_Timer();
+    HW_TIMER_Start_Timer( EXECUTION_MANAGER_TIMER );
 }
 
 void EXECUTION_MANAGER_Stop( void )
 {
-    HW_TIMER_Stop_Test_Scheduling_Timer();
+    HW_TIMER_Stop_Timer( EXECUTION_MANAGER_TIMER );
 }
 
 void EXECUTION_MANAGER_Set_Frequency_Mode( FrequencyMode_T mode )

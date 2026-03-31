@@ -104,7 +104,7 @@ static void CONSOLE_Command_Help( uint16_t argc, char* argv[] )
     CONSOLE_Printf( "Available commands:\r\n" );
     for ( size_t command = 0; command < ARRAY_LEN( CONSOLE_COMMANDS ); command++ )
     {
-        CONSOLE_Printf( "%s\t- %s\r\n", CONSOLE_COMMANDS[command].command_name,
+        CONSOLE_Printf( "%s\t\t\t- %s\r\n", CONSOLE_COMMANDS[command].command_name,
                         CONSOLE_COMMANDS[command].command_description );
     }
 }
