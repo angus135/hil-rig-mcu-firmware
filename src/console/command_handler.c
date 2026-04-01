@@ -202,28 +202,41 @@ static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] )
  */
 static void CONSOLE_Command_LED( uint16_t argc, char* argv[] )
 {
-    if (argc < 3) {
-        CONSOLE_Printf("Usage: led toggle <green|blue|red|test>\r\n");
+    if ( argc < 3 )
+    {
+        CONSOLE_Printf( "Usage: led toggle <green|blue|red|test>\r\n" );
         return;
     }
-    if (strcmp(argv[1], "toggle") == 0) {
-        GPIO_T led = GPIO_TEST_INDICATOR; // default to test indicator if color parsing fails
-        if (strcmp(argv[2], "green") == 0) {
+    if ( strcmp( argv[1], "toggle" ) == 0 )
+    {
+        GPIO_T led = GPIO_TEST_INDICATOR;  // default to test indicator if color parsing fails
+        if ( strcmp( argv[2], "green" ) == 0 )
+        {
             led = GPIO_GREEN_LED_INDICATOR;
-        } else if (strcmp(argv[2], "blue") == 0) {
+        }
+        else if ( strcmp( argv[2], "blue" ) == 0 )
+        {
             led = GPIO_BLUE_LED_INDICATOR;
-        } else if (strcmp(argv[2], "red") == 0) {
+        }
+        else if ( strcmp( argv[2], "red" ) == 0 )
+        {
             led = GPIO_RED_LED_INDICATOR;
-        } else if (strcmp(argv[2], "test") == 0) {
+        }
+        else if ( strcmp( argv[2], "test" ) == 0 )
+        {
             led = GPIO_TEST_INDICATOR;
-        } else {
-            CONSOLE_Printf("Unknown LED: %s\r\n", argv[2]);
+        }
+        else
+        {
+            CONSOLE_Printf( "Unknown LED: %s\r\n", argv[2] );
             return;
         }
-        HW_GPIO_Toggle(led);
-        CONSOLE_Printf("Toggled %s LED\r\n", argv[2]);
-    } else {
-        CONSOLE_Printf("Unknown action: %s\r\n", argv[1]);
+        HW_GPIO_Toggle( led );
+        CONSOLE_Printf( "Toggled %s LED\r\n", argv[2] );
+    }
+    else
+    {
+        CONSOLE_Printf( "Unknown action: %s\r\n", argv[1] );
     }
 }
 
