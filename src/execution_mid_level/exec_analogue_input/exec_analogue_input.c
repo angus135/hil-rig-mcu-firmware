@@ -15,6 +15,7 @@
  *------------------------------------------------------------------------------
  */
 
+#include "exec_analogue_input.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -52,3 +53,30 @@
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Configures the Analogue Inputs to run
+ *
+ * @param configuration - a struct containing all the configuration information for during execution
+ *
+ * @returns bool - returns true if configuration is valid, returns false otherwise
+ *
+ * Returns UINT16_MAX if there is a problem in retrieving the selected source adc value.
+ *
+ */
+bool EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( AnalogueInputConfiguration_T configuration )
+{
+}
+
+/**
+ * @brief Reads Analogue Inputs
+ *
+ * @param source - source to poll from
+ *
+ * Returns UINT16_MAX if there is a problem in retrieving the selected source adc value.
+ *
+ */
+void EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( void )
+{
+    
+}
