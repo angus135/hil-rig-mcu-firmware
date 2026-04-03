@@ -48,9 +48,9 @@ typedef struct ADCMeasurement_T
  */
 
 /**
- * @brief Starts th measurements of the DMA channels 
+ * @brief Starts th measurements of the DMA channels
  *
- * This function calls the Timer3 peripheral and the ADC1 peripheral to start polling 
+ * This function calls the Timer3 peripheral and the ADC1 peripheral to start polling
  */
 void HW_ADC_Start_DMA_Measurements( void );
 
@@ -60,7 +60,8 @@ void HW_ADC_Start_DMA_Measurements( void );
  * @param measurements - pointer to array to be filled with last number of measurements
  * @param number - the number of previous measurements to read
  *
- * Note: it is the callers responsibility to ensure that measurements has enough memory allocated to fit 'number' of measurements.
+ * Note: it is the callers responsibility to ensure that measurements has enough memory allocated to
+ * fit 'number' of measurements.
  */
 void HW_ADC_Read_DMA_Measurements( ADCMeasurement_T* measurements, uint32_t number );
 
