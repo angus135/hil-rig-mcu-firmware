@@ -76,13 +76,15 @@ void HW_ADC_Start_DMA_Measurements( void );
 void HW_ADC_Stop_DMA_Measurements( void );
 
 /**
- * @brief Starts th measurements of the DMA channels
+ * @brief Starts the measurements of the DMA channels
  *
  * @param rate - the sample rate which the ADC measurement is being configured to sample at
  *
+ * @return bool - true if rate is supported, otherwise false
+ *
  * Note: All channels will be sampled at this same rate.
  */
-void HW_ADC_Configure_ADC_Measurement_Frequency( ADCSampleRates_T rate );
+bool HW_ADC_Configure_ADC_Measurement_Frequency( ADCSampleRates_T rate );
 
 /**
  * @brief Reads a certain number of the previous DMA measurements (unordered)

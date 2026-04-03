@@ -98,6 +98,7 @@ static ADCMeasurement_T adc_dma_buf[ADC_DMA_LEN];
  */
 void HW_ADC_Start_DMA_Measurements( void )
 {
+    // TODO: add the ability to set the number of channels to 1 or more rather than default to 2.
 #ifdef TEST_BUILD
 #else
     HW_TIMER_Start_Timer( ANALOGUE_INPUT_TIMER );
@@ -124,9 +125,11 @@ void HW_ADC_Stop_DMA_Measurements( void )
  *
  * @param rate - the sample rate which the ADC measurement is being configured to sample at
  *
+ * @return bool - true if rate is supported, otherwise false
+ *
  * Note: All channels will be sampled at this same rate.
  */
-void HW_ADC_Configure_ADC_Measurement_Frequency( ADCSampleRates_T rate )
+bool HW_ADC_Configure_ADC_Measurement_Frequency( ADCSampleRates_T rate )
 {
 #ifdef TEST_BUILD
 #else
@@ -160,9 +163,10 @@ void HW_ADC_Configure_ADC_Measurement_Frequency( ADCSampleRates_T rate )
             arr = ADC_SAMPLE_500_ARR;
             break;
         default:
-            return;
+            return false;
     }
     HW_TIMER_Configure_Timer( ANALOGUE_INPUT_TIMER, psc, arr );
+    return true;
 }
 
 /**
@@ -174,7 +178,7 @@ void HW_ADC_Configure_ADC_Measurement_Frequency( ADCSampleRates_T rate )
  * Note: it is the callers responsibility to ensure that measurements has enough memory allocated to
  * fit 'number' of measurements.
  */
-void HW_ADC_Read_DMA_Measurements( ADCMeasurement_T* measurements, uint32_t number )
+inline void HW_ADC_Read_DMA_Measurements( ADCMeasurement_T* measurements, uint32_t number )
 {
 #ifdef TEST_BUILD
     ( void )number;

@@ -37,20 +37,11 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-// Enum for the different forms of post processing to be applied to the analogue measurements
-typedef enum AnalogueInputProccess_T
-{
-    ANALOGUE_INPUT_PROCESS_MEAN,
-    ANALOGUE_INPUT_PROCESS_MEDIAN,
-} AnalogueInputProccess_T;
-
 // Configuration struct containing all the configuration information for the analogue inputs
 typedef struct AnalogueInputConfiguration_T
 {
-    ADCSampleRates_T adc_sample_rate;  // What rate will the ADC be sampling each channel at?
-    AnalogueInputProccess_T process; // What process will be applied to samples?
-    uint8_t          samples_taken; // How many samples will the process be applied to?
-    ADCMeasurement_T channels_enabled; // Which channels are enabled? 0 for false, otherwise true.
+    ADCSampleRates_T adc_sample_rate;   // What rate will the ADC be sampling each channel at?
+    ADCMeasurement_T channels_enabled;  // Which channels are enabled? 0 for false, otherwise true.
 } AnalogueInputConfiguration_T;
 
 // This struct contains pointers to where the Analogue Input voltages should be stored.
@@ -82,13 +73,12 @@ bool EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( AnalogueInputConfiguration_T
 /**
  * @brief Reads Analogue Inputs
  *
- * @param source - source to poll from
+ * @param voltage_destination - struct containing the pointers to where the voltages should be
+ * stored
  *
- * Returns UINT16_MAX if there is a problem in retrieving the selected source adc value.
  *
  */
-void EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( void );
-
+void EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( AnalogueInputVoltages_T voltage_destination );
 
 #ifdef __cplusplus
 }
