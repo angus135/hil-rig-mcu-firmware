@@ -42,17 +42,47 @@ typedef struct ADCMeasurement_T
     uint16_t ch_1;
 } ADCMeasurement_T;
 
+typedef enum ADCSampleRates_T
+{
+    ADC_SAMPLE_RATE_100K,
+    ADC_SAMPLE_RATE_50K,
+    ADC_SAMPLE_RATE_10K,
+    ADC_SAMPLE_RATE_5K,
+    ADC_SAMPLE_RATE_1K,
+    ADC_SAMPLE_RATE_500,
+} ADCSampleRates_T;
+
+typedef enum ADCSource_T
+{
+    ADC_SOURCE_VIN,
+} ADCSource_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
 
 /**
- * @brief Starts th measurements of the DMA channels
+ * @brief Starts the measurements of the DMA channels
  *
- * This function calls the Timer3 peripheral and the ADC1 peripheral to start polling
+ * This function calls the Timer peripheral and the ADC peripheral to start polling
  */
 void HW_ADC_Start_DMA_Measurements( void );
+
+/**
+ * @brief Stops the measurements of the DMA channels
+ *
+ */
+void HW_ADC_Stop_DMA_Measurements( void );
+
+/**
+ * @brief Starts th measurements of the DMA channels
+ *
+ * @param rate - the sample rate which the ADC measurement is being configured to sample at
+ *
+ * Note: All channels will be sampled at this same rate.
+ */
+void HW_ADC_Configure_ADC_Measurement_Frequency( ADCSampleRates_T rate );
 
 /**
  * @brief Reads a certain number of the previous DMA measurements (unordered)
@@ -64,6 +94,18 @@ void HW_ADC_Start_DMA_Measurements( void );
  * fit 'number' of measurements.
  */
 void HW_ADC_Read_DMA_Measurements( ADCMeasurement_T* measurements, uint32_t number );
+
+/**
+ * @brief Polls a certain ADC source
+ *
+ * @param source - source to poll from
+ *
+ * @returns uint16_t result - the result of the polling on that source
+ *
+ * Returns UINT16_MAX if there is a problem in retrieving the selected source adc value.
+ *
+ */
+uint16_t HW_ADC_Read_Polled_Measurements( ADCSource_T source );
 
 #ifdef __cplusplus
 }

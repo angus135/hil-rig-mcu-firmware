@@ -110,6 +110,7 @@ int main(void)
   MX_I2C1_Init();
   MX_TIM2_Init();
   MX_TIM3_Init();
+  MX_ADC3_Init();
   /* USER CODE BEGIN 2 */
   APP_MAIN_Application();
   // Nothing after here is ever called but if it does, run the error handler
