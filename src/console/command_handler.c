@@ -202,7 +202,7 @@ static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] )
  */
 static void CONSOLE_Command_LED( uint16_t argc, char* argv[] )
 {
-    if ( argc < 3 )
+    if ( argc != 3 )
     {
         CONSOLE_Printf( "Usage: led toggle <green|blue|red|test>\r\n" );
         return;
@@ -236,7 +236,7 @@ static void CONSOLE_Command_LED( uint16_t argc, char* argv[] )
     }
     else
     {
-        CONSOLE_Printf( "Unknown action: %s\r\n", argv[1] );
+        CONSOLE_Printf( "Unknown action: %s\r\nUsage: led toggle <green|blue|red|test>\r\n", argv[1] );
     }
 }
 
