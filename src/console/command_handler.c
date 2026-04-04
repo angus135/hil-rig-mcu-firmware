@@ -236,7 +236,8 @@ static void CONSOLE_Command_LED( uint16_t argc, char* argv[] )
     }
     else
     {
-        CONSOLE_Printf( "Unknown action: %s\r\nUsage: led toggle <green|blue|red|test>\r\n", argv[1] );
+        CONSOLE_Printf( "Unknown action: %s\r\nUsage: led toggle <green|blue|red|test>\r\n",
+                        argv[1] );
     }
 }
 
