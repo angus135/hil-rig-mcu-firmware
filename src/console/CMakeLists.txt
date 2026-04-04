@@ -30,6 +30,7 @@ target_link_libraries(console
         cubeide_hal
         rtos
         hw_uart
+        hw_adc
         execution_manager
 )
 

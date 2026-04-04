@@ -18,6 +18,7 @@
 #include "console.h"
 #include "execution_manager.h"
 #include "hw_gpio.h"
+#include "hw_adc.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -53,6 +54,7 @@ static void CONSOLE_Command_Echo( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_LED( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] );
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
@@ -62,12 +64,13 @@ static void CONSOLE_Command_LED( uint16_t argc, char* argv[] );
 // clang-format off
 
 const Command_T CONSOLE_COMMANDS[] = {
-    {"?",       CONSOLE_Command_Help,       "Show available commands."},
-    {"help",    CONSOLE_Command_Help,       "Show available commands."},
-    {"echo",    CONSOLE_Command_Echo,       "Echoes the provided arguments."},
-    {"execution_manager",    CONSOLE_Command_Test_Scheduler,       "Starts the test scheduler."},
-    {"clear",  CONSOLE_Command_Clear,       "Clears the console."},
-    {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <green|blue|red|test>"}
+    {"?",                       CONSOLE_Command_Help,                   "Show available commands."},
+    {"help",                    CONSOLE_Command_Help,                   "Show available commands."},
+    {"echo",                    CONSOLE_Command_Echo,                   "Echoes the provided arguments."},
+    {"execution_manager",       CONSOLE_Command_Test_Scheduler,         "Starts the test scheduler."},
+    {"clear",                   CONSOLE_Command_Clear,                  "Clears the console."},
+    {"led",                     CONSOLE_Command_LED,                    "Toggle an LED. Usage: led toggle <green|blue|red|test>"},
+    {"analogue_inputs",         CONSOLE_Command_Analogue_Inputs,        "Allows for interaction with Analogue Inputs."},
 
 };
 
@@ -93,7 +96,7 @@ static void CONSOLE_Command_Help( uint16_t argc, char* argv[] )
     CONSOLE_Printf( "Available commands:\r\n" );
     for ( size_t command = 0; command < ARRAY_LEN( CONSOLE_COMMANDS ); command++ )
     {
-        CONSOLE_Printf( "%s\t- %s\r\n", CONSOLE_COMMANDS[command].command_name,
+        CONSOLE_Printf( "%s\t\t\t- %s\r\n", CONSOLE_COMMANDS[command].command_name,
                         CONSOLE_COMMANDS[command].command_description );
     }
 }
@@ -238,6 +241,91 @@ static void CONSOLE_Command_LED( uint16_t argc, char* argv[] )
     {
         CONSOLE_Printf( "Unknown action: %s\r\nUsage: led toggle <green|blue|red|test>\r\n",
                         argv[1] );
+    }
+}
+
+static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] )
+{
+    if ( argc < 2 || argv[1] == NULL )
+    {
+        CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  analogue_inputs start\r\n" );
+        CONSOLE_Printf( "  analogue_inputs stop\r\n" );
+        CONSOLE_Printf( "  analogue_inputs read\r\n" );
+        CONSOLE_Printf( "  analogue_inputs frequency\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "start" ) == 0 )
+    {
+        HW_ADC_Start_DMA_Measurements();
+        CONSOLE_Printf( "Analogue Inputs are now being read into DMA\r\n" );
+    }
+    else if ( strcmp( argv[1], "stop" ) == 0 )
+    {
+        HW_ADC_Stop_DMA_Measurements();
+        CONSOLE_Printf( "Analogue Inputs are no longer being read into DMA\r\n" );
+    }
+    else if ( strcmp( argv[1], "read" ) == 0 )
+    {
+        ADCMeasurement_T measurement;
+        HW_ADC_Read_DMA_Measurements( &measurement, 1 );
+        CONSOLE_Printf( "DMA Input 0: %u\r\n", measurement.ch_0 );
+        CONSOLE_Printf( "DMA Input 1: %u\r\n", measurement.ch_1 );
+        uint16_t value = HW_ADC_Read_Polled_Measurements( ADC_SOURCE_VIN );
+        CONSOLE_Printf( "Vin: %u\r\n", value );
+    }
+    else if ( strcmp( argv[1], "frequency" ) == 0 )
+    {
+        if ( argc < 3 || argv[2] == NULL )
+        {
+            CONSOLE_Printf( "Usage:\r\n" );
+            CONSOLE_Printf( "  analogue_inputs frequency <desired frequency>\r\n" );
+            CONSOLE_Printf( "    Note: Desired frequencies can only be one of the following:\r\n" );
+            CONSOLE_Printf(
+                "\t- 100kHz\r\n\t- 50kHz\r\n\t- 10kHz\r\n\t- 5kHz\r\n\t- 1kHz\r\n\t- 500Hz\r\n" );
+        }
+        else if ( strcmp( argv[2], "100kHz" ) == 0 || strcmp( argv[2], "100k" ) == 0 )
+        {
+            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_100K );
+        }
+        else if ( strcmp( argv[2], "50kHz" ) == 0 || strcmp( argv[2], "50k" ) == 0 )
+        {
+            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_50K );
+        }
+        else if ( strcmp( argv[2], "10kHz" ) == 0 || strcmp( argv[2], "10k" ) == 0 )
+        {
+            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_10K );
+        }
+        else if ( strcmp( argv[2], "5kHz" ) == 0 || strcmp( argv[2], "5k" ) == 0 )
+        {
+            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_5K );
+        }
+        else if ( strcmp( argv[2], "1kHz" ) == 0 || strcmp( argv[2], "1k" ) == 0 )
+        {
+            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_1K );
+        }
+        else if ( strcmp( argv[2], "500Hz" ) == 0 || strcmp( argv[2], "500" ) == 0 )
+        {
+            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_500 );
+        }
+        else
+        {
+            CONSOLE_Printf( "Usage:\r\n" );
+            CONSOLE_Printf( "  analogue_inputs frequency <desired frequency>\r\n" );
+            CONSOLE_Printf( "    Note: Desired frequencies can only be one of the following:\r\n" );
+            CONSOLE_Printf(
+                "\t- 100kHz\r\n\t- 50kHz\r\n\t- 10kHz\r\n\t- 5kHz\r\n\t- 1kHz\r\n\t- 500Hz\r\n" );
+        }
+    }
+    else
+    {
+        CONSOLE_Printf( "Invalid argument: %s\r\n", argv[1] );
+        CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  analogue_inputs start\r\n" );
+        CONSOLE_Printf( "  analogue_inputs stop\r\n" );
+        CONSOLE_Printf( "  analogue_inputs read\r\n" );
+        CONSOLE_Printf( "  analogue_inputs frequency\r\n" );
     }
 }
 
