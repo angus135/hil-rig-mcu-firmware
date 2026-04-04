@@ -1,13 +1,20 @@
 /******************************************************************************
  *  File:       hw_adc.h
- *  Author:     Callum Rafferty
+ *  Author:     Angus Corr
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      <Short description of the module, what it exposes, and how it should be used>
+ *      Public interface for low-level ADC measurement handling. This module
+ *      exposes functions for configuring ADC sample timing, starting and
+ *      stopping DMA-based measurements, retrieving recent DMA samples, and
+ *      performing supported polled ADC reads.
  *
  *  Notes:
- *      <Public assumptions, required initialisation order, dependencies, etc.>
+ *      Intended to be used by higher-level modules that require ADC data but
+ *      should not directly manage ADC, DMA, or timer hardware details.
+ *      Continuous DMA measurements are primarily intended for execution-time
+ *      analogue input handling, while polled reads support slower supervisory
+ *      or monitoring measurements.
  ******************************************************************************/
 
 #ifndef HW_ADC_H
@@ -113,4 +120,4 @@ uint16_t HW_ADC_Read_Polled_Measurements( ADCSource_T source );
 }
 #endif
 
-#endif /* <FILENAME>_H */
+#endif /* HW_ADC_H */

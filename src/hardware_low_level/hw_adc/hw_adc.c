@@ -4,10 +4,17 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      <Short description of the module's purpose and responsibilities>
+ *      Low-level ADC measurement handling for the HIL-RIG. This module
+ *      configures ADC measurement frequency, controls timer-triggered DMA
+ *      sampling, provides access to recent DMA measurements, and supports
+ *      slower one-shot polled ADC reads.
  *
  *  Notes:
- *      <Any design notes, dependencies, or assumptions go here>
+ *      This module separates ADC hardware access from higher-level application
+ *      logic. Continuous analogue acquisition is intended to run in the
+ *      background using a hardware timer and DMA so that execution-time code
+ *      can retrieve recent measurements without performing blocking ADC
+ *      conversions.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -15,7 +22,9 @@
  *------------------------------------------------------------------------------
  */
 
-#ifndef TEST_BUILD
+#ifdef TEST_BUILD
+#include "tests/hw_adc_mocks.h"
+#else
 #include "adc.h"
 #include "tim.h"
 #include "stm32f4xx_ll_dma.h"
@@ -26,22 +35,19 @@
 #include "hw_timer.h"
 #include <stdint.h>
 #include <stdbool.h>
-// Add other required includes here
+#include "stddef.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
 
-#ifndef TEST_BUILD
 #define HW_ADC_DMA_CHANNEL DMA2
 #define HW_ADC_DMA_STREAM 0
 #define HW_ADC_ADC_PERIPHERAL &hadc1
 
 #define VIN_ADC_HANDLE &hadc3
 #define VIN_ADC_CHANNEL ADC_CHANNEL_14
-
-#endif
 
 #define ADC_DMA_LEN 100
 
@@ -73,7 +79,7 @@
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
-static ADCMeasurement_T adc_dma_buf[ADC_DMA_LEN];
+ADCMeasurement_T adc_dma_buf[ADC_DMA_LEN];
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -99,12 +105,9 @@ static ADCMeasurement_T adc_dma_buf[ADC_DMA_LEN];
 void HW_ADC_Start_DMA_Measurements( void )
 {
     // TODO: add the ability to set the number of channels to 1 or more rather than default to 2.
-#ifdef TEST_BUILD
-#else
     HW_TIMER_Start_Timer( ANALOGUE_INPUT_TIMER );
     HAL_ADC_Start_DMA( HW_ADC_ADC_PERIPHERAL, ( uint32_t* )adc_dma_buf,
                        ADC_DMA_LEN * sizeof( ADCMeasurement_T ) / sizeof( uint16_t ) );
-#endif
 }
 
 /**
@@ -113,11 +116,8 @@ void HW_ADC_Start_DMA_Measurements( void )
  */
 void HW_ADC_Stop_DMA_Measurements( void )
 {
-#ifdef TEST_BUILD
-#else
     HW_TIMER_Stop_Timer( ANALOGUE_INPUT_TIMER );
     HAL_ADC_Stop_DMA( HW_ADC_ADC_PERIPHERAL );
-#endif
 }
 
 /**
@@ -131,9 +131,6 @@ void HW_ADC_Stop_DMA_Measurements( void )
  */
 bool HW_ADC_Configure_ADC_Measurement_Frequency( ADCSampleRates_T rate )
 {
-#ifdef TEST_BUILD
-#else
-#endif
     uint32_t psc = 0;
     uint32_t arr = 0;
     switch ( rate )
@@ -170,7 +167,7 @@ bool HW_ADC_Configure_ADC_Measurement_Frequency( ADCSampleRates_T rate )
 }
 
 /**
- * @brief Reads a certain number of the previous DMA measurements (unordered)
+ * @brief Reads a certain number of the previous DMA measurements (reverse order)
  *
  * @param measurements - pointer to array to be filled with last number of measurements
  * @param number - the number of previous measurements to read
@@ -180,10 +177,6 @@ bool HW_ADC_Configure_ADC_Measurement_Frequency( ADCSampleRates_T rate )
  */
 inline void HW_ADC_Read_DMA_Measurements( ADCMeasurement_T* measurements, uint32_t number )
 {
-#ifdef TEST_BUILD
-    ( void )number;
-    ( void )measurements;
-#else
     uint32_t current_index =
         ( ADC_DMA_LEN - LL_DMA_GetDataLength( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM ) )
         >> 1;  // Dividing by 2 because of 2 ADC measurements
@@ -195,7 +188,6 @@ inline void HW_ADC_Read_DMA_Measurements( ADCMeasurement_T* measurements, uint32
     {
         measurements[i] = adc_dma_buf[( current_index + ADC_DMA_LEN - i ) % ADC_DMA_LEN];
     }
-#endif
 }
 
 /**
@@ -210,13 +202,9 @@ inline void HW_ADC_Read_DMA_Measurements( ADCMeasurement_T* measurements, uint32
  */
 uint16_t HW_ADC_Read_Polled_Measurements( ADCSource_T source )
 {
-#ifdef TEST_BUILD
-    ( void )source;
-    return UINT16_MAX;
-#else
-    ADC_HandleTypeDef* hadc;
-    uint32_t           channel;
-    uint16_t           value;
+    ADC_HandleTypeDef* hadc    = NULL;
+    uint32_t           channel = 0;
+    uint16_t           value   = 0;
     switch ( source )
     {
         case ( ADC_SOURCE_VIN ):
@@ -227,14 +215,14 @@ uint16_t HW_ADC_Read_Polled_Measurements( ADCSource_T source )
             return UINT16_MAX;
     }
 
-    ADC_ChannelConfTypeDef sConfig = { 0 };
+    ADC_ChannelConfTypeDef s_config = { 0 };
 
-    sConfig.Channel      = channel;
-    sConfig.Rank         = 1;
-    sConfig.SamplingTime = ADC_SAMPLETIME_15CYCLES; /* example */
-    sConfig.Offset       = 0U;
+    s_config.Channel      = channel;
+    s_config.Rank         = 1;
+    s_config.SamplingTime = ADC_SAMPLETIME_15CYCLES; /* example */
+    s_config.Offset       = 0U;
 
-    if ( HAL_ADC_ConfigChannel( hadc, &sConfig ) != HAL_OK )
+    if ( HAL_ADC_ConfigChannel( hadc, &s_config ) != HAL_OK )
     {
         return UINT16_MAX;
     }
@@ -258,5 +246,4 @@ uint16_t HW_ADC_Read_Polled_Measurements( ADCSource_T source )
     }
 
     return value;
-#endif
 }

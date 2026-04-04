@@ -4,10 +4,16 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      <Short description of the module, what it exposes, and how it should be used>
+ *      Public interface for execution-time analogue input handling. This
+ *      module exposes configuration and read functions used by the execution
+ *      manager to obtain processed analogue input values during a test run.
  *
  *  Notes:
- *      <Public assumptions, required initialisation order, dependencies, etc.>
+ *      Intended for use by the execution subsystem rather than as a general-
+ *      purpose ADC interface. Depends on hw_adc for low-level measurement
+ *      acquisition. The execution manager is expected to configure this module
+ *      before use and provide destinations for storing the resulting analogue
+ *      input values.
  ******************************************************************************/
 
 #ifndef EXEC_ANALOGUE_INPUT_H

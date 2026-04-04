@@ -4,10 +4,16 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      <Short description of the module's purpose and responsibilities>
+ *      Execution-layer analogue input handling for the HIL-RIG. This module
+ *      configures execution-time analogue input sampling and processes recent
+ *      ADC DMA measurements into analogue input values for use by the
+ *      execution manager.
  *
  *  Notes:
- *      <Any design notes, dependencies, or assumptions go here>
+ *      This module is intended for the time-critical execution path and relies
+ *      on hw_adc to perform background ADC acquisition. It does not directly
+ *      control ADC hardware, and assumes recent samples are already being
+ *      captured through the timer-triggered DMA measurement path.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -43,11 +49,14 @@
  *------------------------------------------------------------------------------
  */
 
+ADCMeasurement_T results[SAMPLES_TAKEN] = { 0 };
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
-ADCMeasurement_T results[SAMPLES_TAKEN] = { 0 };
+
+static inline uint32_t EXEC_ANALOGUE_INPUT_Convert_ADC_To_Voltage( uint32_t adc_value );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -55,7 +64,7 @@ ADCMeasurement_T results[SAMPLES_TAKEN] = { 0 };
  */
 
 // TODO: determine how the voltages will be stored
-inline uint32_t EXEC_ANALOGUE_INPUT_Convert_ADC_To_Voltage( uint32_t adc_value )
+static inline uint32_t EXEC_ANALOGUE_INPUT_Convert_ADC_To_Voltage( uint32_t adc_value )
 {
     return adc_value;
 }
