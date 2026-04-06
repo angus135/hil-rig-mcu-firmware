@@ -1,13 +1,15 @@
 /******************************************************************************
  *  File:       hw_gpio.h
- *  Author:     Angus Corr
- *  Created:    18-Dec-2025
+ *  Author:     Coen Pasitchnyj
+ *  Created:    6-April-2026
  *
  *  Description:
- *      <Short description of the module, what it exposes, and how it should be used>
+ *      Public interface for low-level GPIO control functions. This module exposes functions for
+ *      toggling GPIO outputs and reading digital input states.
  *
  *  Notes:
- *      <Public assumptions, required initialisation order, dependencies, etc.>
+ *      This module is intended to be used by higher level modules that require GPIO control without
+ *      needing to know the details of the underlying hardware.
  ******************************************************************************/
 
 #ifndef HW_GPIO_H

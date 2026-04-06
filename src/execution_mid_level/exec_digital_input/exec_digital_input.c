@@ -1,13 +1,16 @@
 /******************************************************************************
  *  File:       exec_digital_input.c
- *  Author:     Angus Corr
- *  Created:    25-Mar-2026
+ *  Author:     Coen Pasitchnyj
+ *  Created:    6-April-2026
  *
  *  Description:
- *      <Short description of the module's purpose and responsibilities>
+ *      Execution-layer digital input handling for the HIL-RIG. This module
+ *      configures execution-time digital input sampling and allows higher level
+ *      modules to read digital input states.
  *
  *  Notes:
- *      <Any design notes, dependencies, or assumptions go here>
+ *      The functions in this module simply pass through the results from the
+ *      low-level GPIO module to the caller.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------

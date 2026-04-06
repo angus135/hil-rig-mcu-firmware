@@ -1,13 +1,21 @@
 /******************************************************************************
  *  File:       hw_gpio.c
- *  Author:     Angus Corr
- *  Created:    18-Dec-2025
+ *  Author:     Coen Pasitchnyj
+ *  Created:    6-April-2026
  *
  *  Description:
- *      <Short description of the module's purpose and responsibilities>
+ *      Low-level GPIO control functions. This module provides an abstraction layer over the
+ *      underlying GPIO hardware. It includes functions to toggle GPIO outputs and read digital input states.
+ *      Reading can be done either by individual pin or by reading the entire port at once for efficiency.
+ *
  *
  *  Notes:
- *      <Any design notes, dependencies, or assumptions go here>
+ *      There are two implementations of the "read all digital inputs" function:
+ *      - HW_GPIO_ReadAllDigitalInputs: Reads each input individually using LL_GPIO_IsInputPinSet,
+ *        which is straightforward but may be less efficient due to multiple hardware accesses.
+ *      - HW_GPIO_ReadAllDigitalInputsSinglePort: Reads the entire GPIO port state once using
+ *        LL_GPIO_ReadInputPort and then extracts individual pin states, which is more efficient
+ *        but assumes all inputs are on the same GPIO port. 
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------

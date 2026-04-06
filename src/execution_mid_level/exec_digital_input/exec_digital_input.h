@@ -1,13 +1,17 @@
 /******************************************************************************
  *  File:       exec_digital_input.h
- *  Author:     Angus Corr
- *  Created:    25-Mar-2026
+ *  Author:     Coen Pasitchnyj
+ *  Created:    6-April-2026
  *
  *  Description:
- *      <Short description of the module, what it exposes, and how it should be used>
+ *      Public interface for execution-time digital input handling. This
+ *      module exposes configuration and read functions used by the execution
+ *      manager to obtain boolean digital input values during a test run.
  *
  *  Notes:
- *      <Public assumptions, required initialisation order, dependencies, etc.>
+ *      Intended for use by the execution subsystem rather than as a general-
+ *      purpose digital input interface. Depends on hw_gpio for low-level GPIO
+ *      control.
  ******************************************************************************/
 
 #ifndef EXEC_DIGITAL_INPUT_H
