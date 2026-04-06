@@ -23,13 +23,13 @@
 
 extern "C"
 {
-#include "hw_gpio.h"
+#include "../hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
 
 // Add any other C headers required by the module
 
-#include "hw_gpio.c" /* Module under test */  // NOLINT
+#include "../hw_gpio.c" /* Module under test */  // NOLINT
 }
 
 // Add additional C++ includes here if required
@@ -40,8 +40,6 @@ extern "C"
  */
 
 // Test-specific constants (does NOT affect production code)
-#define TEST_INPUT_VALUE ( 5U )
-#define TEST_EXPECTED_OUTPUT ( 50U )
 
 // Add additional test-scoped constants and macros here
 
@@ -50,19 +48,11 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-/*
- * If the module calls external interfaces (HAL, drivers, other modules),
- * mock them here using GoogleMock.
- *
- */
-
 /**-----------------------------------------------------------------------------
  *  Link seam: mocked functions definitions
  *------------------------------------------------------------------------------
  */
 // NOLINTBEGIN
-
-// Add mocks or stubs here as needed
 
 // NOLINTEND
 
@@ -72,11 +62,11 @@ extern "C"
  */
 
 /**
- * @brief Test fixture for <module> tests.
+ * @brief Test fixture for HW_GPIO tests.
  *
  * Provides a consistent setup/teardown environment for all test cases.
  */
-class ModuleTest : public ::testing::Test
+class HWGPIOTest : public ::testing::Test
 {
 protected:
     void SetUp() override
