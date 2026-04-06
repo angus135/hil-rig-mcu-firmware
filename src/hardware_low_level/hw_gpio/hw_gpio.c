@@ -44,6 +44,9 @@
  *------------------------------------------------------------------------------
  */
 
+// Digital input pins: PF3, PF4, PF5, PF7, PF10, PF11, PF12, PF13, PF14, PF15
+static const uint8_t DIGITAL_INPUT_PIN_MAP[10] = { 3, 4, 5, 7, 10, 11, 12, 13, 14, 15 };
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -60,12 +63,12 @@
  */
 
 /**
- * @brief Toggles a digital output using the underlying GPIO HAL.
+ * @brief Toggles a digital output using the underlying GPIO LL library.
  *
  * @param gpio   The GPIO to toggle
  *
- * This function wraps the HAL_GPIO_WritePin( ... ) function provided by the
- * HAL layer. It is a convenient seam for unit testing where the HAL call is
+ * This function wraps the LL_GPIO_TogglePin( ... ) function provided by the
+ * LL layer. It is a convenient seam for unit testing where the LL call is
  * mocked using GoogleMock.
  */
 void HW_GPIO_Toggle( GPIO_T gpio )
@@ -89,6 +92,106 @@ void HW_GPIO_Toggle( GPIO_T gpio )
             break;
         default:
             break;
+    }
+#endif
+}
+
+/**
+ * @brief Reads the state of all digital inputs using the underlying GPIO LL library.
+ *
+ * @param input_states   Array to store the states of the digital inputs
+ *
+ * This function wraps the LL_GPIO_IsInputPinSet( ... ) function provided by the
+ * LL layer. It is a convenient seam for unit testing where the LL call is
+ * mocked using GoogleMock.
+ */
+void HW_GPIO_ReadAllDigitalInputs( bool* input_states )
+{
+#ifdef TEST_BUILD
+    // For unit testing, just set all to false or mock as needed
+    for ( uint8_t i = 0; i <= 9; ++i )
+    {
+        input_states[i] = false;
+    }
+#else
+    for ( uint8_t i = 0; i <= 9; ++i )
+    {
+        input_states[i] = HW_GPIO_ReadDigitalInput( ( DIGITAL_INPUT_T )i );
+    }
+#endif
+}
+
+/**
+ * @brief Reads the state of all digital inputs using the underlying GPIO LL library.
+ *
+ * @param input_states   Array to store the states of the digital inputs
+ *
+ * This function wraps the LL_GPIO_ReadInputPort( ... ) function provided by the
+ * LL layer. It is a convenient seam for unit testing where the LL call is
+ * mocked using GoogleMock.
+ * Note: This implementation assumes all digital inputs are on the same GPIO port.
+ * By doing so, we can read all inputs in a single hardware access.
+ */
+void HW_GPIO_ReadAllDigitalInputsSinglePort( bool* input_states )
+{
+#ifdef TEST_BUILD
+    // For unit testing, just set all to false or mock as needed
+    for ( uint8_t i = 0; i <= 9; ++i )
+    {
+        input_states[i] = false;
+    }
+#else
+    // Digital input pins: PF3, PF4, PF5, PF7, PF10, PF11, PF12, PF13, PF14, PF15
+    uint16_t port_state = LL_GPIO_ReadInputPort( GPIOF );
+    for ( uint8_t i = 0; i < 10; ++i )
+    {
+        input_states[i] = ( port_state >> DIGITAL_INPUT_PIN_MAP[i] ) & 0x1;
+    }
+#endif
+}
+
+/**
+ * @brief Reads the state of all digital inputs using the underlying GPIO LL library.
+ *
+ * @param input  The digital input channel to read
+ *
+ * This function wraps the LL_GPIO_IsInputPinSet( ... ) function provided by the
+ * LL layer. It is a convenient seam for unit testing where the LL call is
+ * mocked using GoogleMock.
+ */
+bool HW_GPIO_ReadDigitalInput( DIGITAL_INPUT_T input )
+{
+#ifdef TEST_BUILD
+    // For unit testing, always return false or mock as needed
+    ( void )input;
+    return false;
+#else
+    switch ( input )
+    {
+        case DIGITAL_INPUT_CH_0:
+            // Replace with actual pin read, e.g.:
+            // return LL_GPIO_IsInputPinSet(GPIOx, GPIO_PIN_y);
+            return LL_GPIO_IsInputPinSet( Digital_Input_0_GPIO_Port, Digital_Input_0_Pin );
+        case DIGITAL_INPUT_CH_1:
+            return LL_GPIO_IsInputPinSet( Digital_Input_1_GPIO_Port, Digital_Input_1_Pin );
+        case DIGITAL_INPUT_CH_2:
+            return LL_GPIO_IsInputPinSet( Digital_Input_2_GPIO_Port, Digital_Input_2_Pin );
+        case DIGITAL_INPUT_CH_3:
+            return LL_GPIO_IsInputPinSet( Digital_Input_3_GPIO_Port, Digital_Input_3_Pin );
+        case DIGITAL_INPUT_CH_4:
+            return LL_GPIO_IsInputPinSet( Digital_Input_4_GPIO_Port, Digital_Input_4_Pin );
+        case DIGITAL_INPUT_CH_5:
+            return LL_GPIO_IsInputPinSet( Digital_Input_5_GPIO_Port, Digital_Input_5_Pin );
+        case DIGITAL_INPUT_CH_6:
+            return LL_GPIO_IsInputPinSet( Digital_Input_6_GPIO_Port, Digital_Input_6_Pin );
+        case DIGITAL_INPUT_CH_7:
+            return LL_GPIO_IsInputPinSet( Digital_Input_7_GPIO_Port, Digital_Input_7_Pin );
+        case DIGITAL_INPUT_CH_8:
+            return LL_GPIO_IsInputPinSet( Digital_Input_8_GPIO_Port, Digital_Input_8_Pin );
+        case DIGITAL_INPUT_CH_9:
+            return LL_GPIO_IsInputPinSet( Digital_Input_9_GPIO_Port, Digital_Input_9_Pin );
+        default:
+            return false;
     }
 #endif
 }

@@ -22,7 +22,6 @@ extern "C"
  *  Includes
  *------------------------------------------------------------------------------
  */
-
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -44,6 +43,20 @@ typedef enum GPIO_T
     GPIO_TEST_INDICATOR
 } GPIO_T;
 
+typedef enum DIGITAL_INPUT_T
+{
+    DIGITAL_INPUT_CH_0,
+    DIGITAL_INPUT_CH_1,
+    DIGITAL_INPUT_CH_2,
+    DIGITAL_INPUT_CH_3,
+    DIGITAL_INPUT_CH_4,
+    DIGITAL_INPUT_CH_5,
+    DIGITAL_INPUT_CH_6,
+    DIGITAL_INPUT_CH_7,
+    DIGITAL_INPUT_CH_8,
+    DIGITAL_INPUT_CH_9,
+} DIGITAL_INPUT_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -59,6 +72,12 @@ typedef enum GPIO_T
  * mocked using GoogleMock.
  */
 void HW_GPIO_Toggle( GPIO_T gpio );
+
+void HW_GPIO_ReadAllDigitalInputs( bool* input_states );
+
+void HW_GPIO_ReadAllDigitalInputsSinglePort( bool* input_states );
+
+bool HW_GPIO_ReadDigitalInput( DIGITAL_INPUT_T input );
 
 #ifdef __cplusplus
 }
