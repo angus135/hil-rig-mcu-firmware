@@ -1,13 +1,16 @@
+
 /******************************************************************************
  *  File:       hw_gpio.h
  *  Author:     Coen Pasitchnyj, Tim Vogelsang
  *  Created:    6-April-2026
  *
  *  Description:
- *      <Short description of the module, what it exposes, and how it should be used>
+ *      Public interface for low-level GPIO control functions. This module exposes functions for
+ *      toggling GPIO outputs and reading digital input states.
  *
  *  Notes:
- *      <Public assumptions, required initialisation order, dependencies, etc.>
+ *      This module is intended to be used by higher level modules that require GPIO control without
+ *      needing to know the details of the underlying hardware.
  ******************************************************************************/
 
 #ifndef HW_GPIO_H
@@ -94,6 +97,20 @@ static const GPIO_Name_Map gpio_name_map[] = {
     { "LD2", LD2 },
     { "LD3", LD3 },
 };
+
+typedef enum DigitalInput_T
+{
+    DIGITAL_INPUT_CH_0,
+    DIGITAL_INPUT_CH_1,
+    DIGITAL_INPUT_CH_2,
+    DIGITAL_INPUT_CH_3,
+    DIGITAL_INPUT_CH_4,
+    DIGITAL_INPUT_CH_5,
+    DIGITAL_INPUT_CH_6,
+    DIGITAL_INPUT_CH_7,
+    DIGITAL_INPUT_CH_8,
+    DIGITAL_INPUT_CH_9,
+} DigitalInput_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -190,6 +207,27 @@ DigitalOutputPinmask_T HW_GPIO_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names,
 inline void HW_GPIO_Set_Output( uint32_t pin_mask );
 
 inline void HW_GPIO_Reset_Output( uint32_t pin_mask );
+/** 
+* @brief Reads the state of all digital inputs using the underlying GPIO LL library.
+ *
+ * @param input_states   Array to store the states of the digital inputs
+ *
+ * This function wraps the LL_GPIO_ReadInputPort( ... )/LL_GPIO_IsInputPinSet( ... ) function
+ * provided by the LL layer. It is a convenient seam for unit testing where the LL call is mocked
+ * using GoogleMock.
+ */
+void HW_GPIO_Read_All_Digital_Inputs( bool* input_states );
+
+/**
+ * @brief Reads the state of all digital inputs using the underlying GPIO LL library.
+ *
+ * @param input  The digital input channel to read
+ *
+ * This function wraps the LL_GPIO_IsInputPinSet( ... ) function provided by the
+ * LL layer. It is a convenient seam for unit testing where the LL call is
+ * mocked using GoogleMock.
+ */
+bool HW_GPIO_Read_Digital_Input( DigitalInput_T input );
 
 #ifdef __cplusplus
 }
