@@ -146,6 +146,19 @@ typedef struct
     uint8_t              rx_buffer[HW_UART_RX_BUFFER_SIZE];
 } HwUartChannelState_T;
 
+typedef struct
+{
+    const uint8_t* data;
+    uint32_t       length_bytes;
+} HwUartRxSpan_T;
+
+typedef struct
+{
+    HwUartRxSpan_T first_span;
+    HwUartRxSpan_T second_span;
+    uint32_t       total_length_bytes;
+} HwUartRxSpans_T;
+
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
@@ -161,15 +174,12 @@ static HwUartChannelState_T uart_channel_states[HW_UART_CHANNEL_COUNT];
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
-void HW_UART_STATE_RESET_HELPER( HwUartChannelState_T* channel_state );
-
-bool HW_UART_CONFIGURATION_VALIDATION( const HwUartConfig_T* config );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
-void HW_UART_STATE_RESET_HELPER( HwUartChannelState_T* channel_state )
+static void HW_UART_STATE_RESET_HELPER( HwUartChannelState_T* channel_state )
 {
     if ( channel_state == NULL )
     {
@@ -189,7 +199,7 @@ void HW_UART_STATE_RESET_HELPER( HwUartChannelState_T* channel_state )
     }
 }
 
-bool HW_UART_CONFIGURATION_VALIDATION( const HwUartConfig_T* config )
+static bool HW_UART_CONFIGURATION_VALIDATION( const HwUartConfig_T* config )
 {
     if ( config == NULL )
     {
@@ -250,6 +260,43 @@ bool HW_UART_CONFIGURATION_VALIDATION( const HwUartConfig_T* config )
     }
 
     return valid_baud;
+}
+
+/** -----------------------------------------------------------------------------
+ * @brief Helper function to calculate the number of unread bytes in the circular RX buffer.
+ * @param read_index The current read index in the RX buffer.
+ * @param write_index The current write index in the RX buffer.
+ * @param buffer_size The total size of the RX buffer.
+ * @return The number of unread bytes available in the RX buffer.
+ * This function assumes that the write index is always ahead of the
+ * read index in a circular manner.
+ * inline for performance, as this will be called frequently in the execution path
+ */
+static inline uint32_t HW_UART_UNREAD_BYTES_COUNT_HELPER( uint32_t read_index, uint32_t write_index,
+                                                          uint32_t buffer_size )
+{
+    if ( write_index >= read_index )
+    {
+        return write_index - read_index;
+    }
+    else
+    {
+        return ( buffer_size - read_index ) + write_index;
+    }
+}
+
+/** -----------------------------------------------------------------------------
+ * @brief Helper function to advance the index in a circular buffer.
+ * @param current_index The current index.
+ * @param advance_by The number of positions to advance.
+ * @param buffer_size The total size of the buffer.
+ * @return The new index after advancement.
+ * inline for performance, as this will be called frequently in the execution path
+ */
+static inline uint32_t HW_UART_ADVANCE_INDEX_HELPER( uint32_t current_index, uint32_t advance_by,
+                                                     uint32_t buffer_size )
+{
+    return ( current_index + advance_by ) % buffer_size;
 }
 
 /**-----------------------------------------------------------------------------
