@@ -30,6 +30,15 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
+// UART Hardware mapping definitions
+#define HW_UART_CH1_USART USART1
+#define HW_UART_CH1_DMA_RX_STREAM DMA2_Stream2
+#define HW_UART_CH1_DMA_TX_STREAM DMA2_Stream7
+
+#define HW_UART_CH2_USART USART2
+#define HW_UART_CH2_DMA_RX_STREAM DMA1_Stream5
+#define HW_UART_CH2_DMA_TX_STREAM DMA1_Stream6
+
 // TODO - These pin definitions are placeholders, need to be updated based on actual design
 // May change from GPIO to something else depending on how the mode/voltage selection is implemented
 #define HW_UART_CH1_MODE_SEL0_LINE GPIO_PIN_0
@@ -44,10 +53,15 @@
 
 // Size of the receive buffer for each UART channel,
 // can be adjusted based on expected data rates and memory constraints
-#define HW_UART_RX_BUFFER_SIZE 2048U
+#define HW_UART_RX_BUFFER_SIZE                                                                     \
+    2048U  // Must be a power of 2 for the circular buffer management to work correctly
+#if ( ( HW_UART_RX_BUFFER_SIZE & ( HW_UART_RX_BUFFER_SIZE - 1U ) ) != 0U )
+#error "HW_UART_RX_BUFFER_SIZE must be a power of 2"
+#endif
 
 // Number of UART channels supported by the hardware
 #define HW_UART_CHANNEL_COUNT 2U
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -159,6 +173,13 @@ typedef struct
     uint32_t       total_length_bytes;
 } HwUartRxSpans_T;
 
+typedef struct
+{
+    USART_TypeDef*      uart_instance;
+    DMA_Stream_TypeDef* rx_dma_stream;
+    DMA_Stream_TypeDef* tx_dma_stream;
+} HwUartHardwareMap_T;
+
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
@@ -170,35 +191,18 @@ typedef struct
  */
 static HwUartChannelState_T uart_channel_states[HW_UART_CHANNEL_COUNT];
 
-/**-----------------------------------------------------------------------------
- *  Private (static) Function Prototypes
- *------------------------------------------------------------------------------
- */
+static const HwUartHardwareMap_T uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
+    [HW_UART_CHANNEL_1] = { .uart_instance = HW_UART_CH1_USART,
+                            .rx_dma_stream = HW_UART_CH1_DMA_RX_STREAM,
+                            .tx_dma_stream = HW_UART_CH1_DMA_TX_STREAM },
+    [HW_UART_CHANNEL_2] = { .uart_instance = HW_UART_CH2_USART,
+                            .rx_dma_stream = HW_UART_CH2_DMA_RX_STREAM,
+                            .tx_dma_stream = HW_UART_CH2_DMA_TX_STREAM } };
 
 /**-----------------------------------------------------------------------------
- *  Private Function Definitions
+ *  Private (static) Function Definitions
  *------------------------------------------------------------------------------
  */
-static void HW_UART_STATE_RESET_HELPER( HwUartChannelState_T* channel_state )
-{
-    if ( channel_state == NULL )
-    {
-        return;
-    }
-    channel_state->runtime.rx_read_index  = 0U;
-    channel_state->runtime.latched_faults = 0U;
-    channel_state->runtime.is_initialised = false;
-    channel_state->runtime.is_configured  = false;
-    channel_state->runtime.rx_running     = false;
-    channel_state->runtime.tx_running     = false;
-
-    // Clear the receive buffer
-    for ( uint32_t i = 0; i < HW_UART_RX_BUFFER_SIZE; i++ )
-    {
-        channel_state->rx_buffer[i] = 0U;
-    }
-}
-
 static bool HW_UART_CONFIGURATION_VALIDATION( const HwUartConfig_T* config )
 {
     if ( config == NULL )
@@ -266,40 +270,98 @@ static bool HW_UART_CONFIGURATION_VALIDATION( const HwUartConfig_T* config )
  * @brief Helper function to calculate the number of unread bytes in the circular RX buffer.
  * @param read_index The current read index in the RX buffer.
  * @param write_index The current write index in the RX buffer.
- * @param buffer_size The total size of the RX buffer.
  * @return The number of unread bytes available in the RX buffer.
- * This function assumes that the write index is always ahead of the
- * read index in a circular manner.
  * inline for performance, as this will be called frequently in the execution path
+ * Note: This function assumes that the buffer size is a power of 2, which allows for efficient
+ * wrapping using bitwise operations.
  */
-static inline uint32_t HW_UART_UNREAD_BYTES_COUNT_HELPER( uint32_t read_index, uint32_t write_index,
-                                                          uint32_t buffer_size )
+static inline uint32_t HW_UART_UNREAD_BYTES_COUNT_HELPER( uint32_t read_index,
+                                                          uint32_t write_index )
 {
-    if ( write_index >= read_index )
-    {
-        return write_index - read_index;
-    }
-    else
-    {
-        return ( buffer_size - read_index ) + write_index;
-    }
+    return ( write_index - read_index ) & ( HW_UART_RX_BUFFER_SIZE - 1U );
 }
 
 /** -----------------------------------------------------------------------------
  * @brief Helper function to advance the index in a circular buffer.
  * @param current_index The current index.
  * @param advance_by The number of positions to advance.
- * @param buffer_size The total size of the buffer.
  * @return The new index after advancement.
  * inline for performance, as this will be called frequently in the execution path
+ *
+ * Note: This function assumes that the buffer size is a power of 2, which allows for efficient
+ * wrapping using bitwise operations.
  */
-static inline uint32_t HW_UART_ADVANCE_INDEX_HELPER( uint32_t current_index, uint32_t advance_by,
-                                                     uint32_t buffer_size )
+static inline uint32_t HW_UART_ADVANCE_INDEX_HELPER( uint32_t current_index, uint32_t advance_by )
 {
-    return ( current_index + advance_by ) % buffer_size;
+    // Power of 2 buffer wrap using bitmask.
+    return ( current_index + advance_by ) & ( HW_UART_RX_BUFFER_SIZE - 1U );
 }
 
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief  Peeks at the current unread data in the RX buffer for the specified UART channel,
+ *         returning one or two spans of contiguous data.
+ *
+ * @param channel The UART channel to peek at.
+ * @return HwUartRxSpans_T
+ *              A structure containing one or two spans of contiguous data available in the RX
+ *              buffer, along with the total length of unread data.
+ */
+HwUartRxSpans_T HW_UART_RX_PEEK( HwUartChannel_T channel )
+{
+    // Cache reused values in local variables for performance, as this function will be called
+    // frequently in the execution path
+    HwUartChannelState_T*      state           = &uart_channel_states[channel];
+    const HwUartHardwareMap_T* hw_map          = &uart_hardware_map[channel];
+    uint8_t*                   rx_buffer       = state->rx_buffer;
+    uint32_t                   read_index      = state->runtime.rx_read_index;
+    uint32_t                   dma_remaining   = hw_map->rx_dma_stream->NDTR;
+    uint32_t                   dma_write_index = HW_UART_RX_BUFFER_SIZE - dma_remaining;
+
+    if ( dma_write_index == HW_UART_RX_BUFFER_SIZE )
+    {
+        dma_write_index = 0U;
+    }
+
+    uint32_t unread_bytes = HW_UART_UNREAD_BYTES_COUNT_HELPER( read_index, dma_write_index );
+
+    if ( unread_bytes == 0U )
+    {
+        // No data available
+        return ( HwUartRxSpans_T ){ .first_span  = { .data = &rx_buffer[0], .length_bytes = 0U },
+                                    .second_span = { .data = &rx_buffer[0], .length_bytes = 0U },
+                                    .total_length_bytes = 0U };
+    }
+
+    if ( dma_write_index >= read_index )
+    {
+        // Data does not wrap around the end of the buffer
+        return ( HwUartRxSpans_T ){
+            .first_span         = { .data = &rx_buffer[read_index], .length_bytes = unread_bytes },
+            .second_span        = { .data = &rx_buffer[0], .length_bytes = 0U },
+            .total_length_bytes = unread_bytes };
+    }
+    // else case:
+
+    // Data wraps around the end of the buffer, need to provide two spans
+    uint32_t first_span_length  = HW_UART_RX_BUFFER_SIZE - read_index;
+    uint32_t second_span_length = unread_bytes - first_span_length;
+
+    return ( HwUartRxSpans_T ){
+        .first_span         = { .data = &rx_buffer[read_index], .length_bytes = first_span_length },
+        .second_span        = { .data = &rx_buffer[0], .length_bytes = second_span_length },
+        .total_length_bytes = unread_bytes };
+}
+
+void HW_UART_RX_CONSUME( HwUartChannel_T channel, uint32_t bytes_to_consume )
+{
+    HwUartChannelState_T* state = &uart_channel_states[channel];
+
+    // Advance the read index by the specified number of bytes, wrapping around the buffer as needed
+    state->runtime.rx_read_index =
+        HW_UART_ADVANCE_INDEX_HELPER( state->runtime.rx_read_index, bytes_to_consume );
+}
