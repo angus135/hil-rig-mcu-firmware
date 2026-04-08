@@ -53,6 +53,31 @@
  *------------------------------------------------------------------------------
  */
 
+/* To be implemented in the future.
+typedef enum
+{
+    HW_UART_FAULT_NONE = 0U,
+
+    // Configuration faults
+    HW_UART_FAULT_INVALID_CONFIGURATION = ( 1U << 0 ),
+
+    // RX faults
+    HW_UART_FAULT_RX_OVERRUN  = ( 1U << 1 ),
+    HW_UART_FAULT_RX_FRAMING  = ( 1U << 2 ),
+    HW_UART_FAULT_RX_PARITY   = ( 1U << 3 ),
+    HW_UART_FAULT_RX_NOISE    = ( 1U << 4 ),
+    HW_UART_FAULT_RX_OVERFLOW = ( 1U << 5 ),
+
+    // DMA faults
+    HW_UART_FAULT_DMA_ERROR = ( 1U << 6 ),
+
+    // TX faults
+    HW_UART_FAULT_TX_BUSY       = ( 1U << 7 ),
+    HW_UART_FAULT_TX_INCOMPLETE = ( 1U << 8 )
+
+} HwUartFaultMask_T;
+*/
+
 typedef enum
 {
     HW_UART_MODE_DISABLED = 0,  // Default state, no UART functionality
@@ -63,43 +88,49 @@ typedef enum
 
 typedef enum
 {
-    HW_UART_FAULT_NONE = 0U,
+    HW_UART_CHANNEL_1 = 0,
+    HW_UART_CHANNEL_2 = 1,
+} HwUartChannel_T;
 
-    // RX faults
-    HW_UART_FAULT_RX_OVERRUN  = ( 1U << 0 ),
-    HW_UART_FAULT_RX_FRAMING  = ( 1U << 1 ),
-    HW_UART_FAULT_RX_PARITY   = ( 1U << 2 ),
-    HW_UART_FAULT_RX_NOISE    = ( 1U << 3 ),
-    HW_UART_FAULT_RX_OVERFLOW = ( 1U << 4 ),
+typedef enum
+{
+    HW_UART_PARITY_NONE = 0,
+    HW_UART_PARITY_ODD  = 1,
+    HW_UART_PARITY_EVEN = 2
+} HwUartParity_T;
 
-    // DMA faults
-    HW_UART_FAULT_DMA_ERROR = ( 1U << 5 ),
+typedef enum
+{
+    HW_UART_WORD_LENGTH_7_BITS = 7,
+    HW_UART_WORD_LENGTH_8_BITS = 8,
+    HW_UART_WORD_LENGTH_9_BITS = 9
+} HwUartWordLength_T;
 
-    // TX faults
-    HW_UART_FAULT_TX_BUSY       = ( 1U << 6 ),
-    HW_UART_FAULT_TX_INCOMPLETE = ( 1U << 7 )
-
-} HwUartFaultMask_T;
+typedef enum
+{
+    HW_UART_STOP_BITS_1 = 1,
+    HW_UART_STOP_BITS_2 = 2
+} HwUartStopBits_T;
 
 typedef struct
 {
-    HwUartInterfaceMode_T interface_mode;  // Determines the Uart interfect type and voltage levels
+    HwUartInterfaceMode_T interface_mode;  // Determines the Uart interface type and voltage levels
 
-    uint32_t baud_rate;
-    uint32_t word_length;
-    uint32_t stop_bits;
-    uint32_t parity;
+    uint32_t           baud_rate;
+    HwUartWordLength_T word_length;
+    HwUartStopBits_T   stop_bits;
+    HwUartParity_T     parity;
 
-    bool rx_enabled;           // Enable reception functionality
-    bool tx_enabled;           // Enable transmission functionality
-    bool half_duplex_enabled;  // Enable half-duplex mode for TTL interface modes only.
-    // Must be false if interface_mode is HW_UART_MODE_RS232 or HW_UART_MODE_DISABLED.
+    bool rx_enabled;  // Enable reception functionality
+    bool tx_enabled;  // Enable transmission functionality
+    // Currently not supporting half-duplex mode.
 } HwUartConfig_T;
 
 typedef struct
 {
-    uint32_t          rx_read_index;
-    HwUartFaultMask_T latched_faults;
+    uint32_t rx_read_index;
+    uint32_t latched_faults;  // Bitmask implementation left for a later date when faults are
+                              // implemented.
 
     bool is_initialised;
     bool is_configured;
@@ -114,12 +145,6 @@ typedef struct
     HwUartRuntimeState_T runtime;
     uint8_t              rx_buffer[HW_UART_RX_BUFFER_SIZE];
 } HwUartChannelState_T;
-
-typedef enum
-{
-    HW_UART_CHANNEL_1 = 0,
-    HW_UART_CHANNEL_2,
-} HwUartChannel_T;
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -136,15 +161,98 @@ static HwUartChannelState_T uart_channel_states[HW_UART_CHANNEL_COUNT];
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
+void HW_UART_STATE_RESET_HELPER( HwUartChannelState_T* channel_state );
+
+bool HW_UART_CONFIGURATION_VALIDATION( const HwUartConfig_T* config );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+void HW_UART_STATE_RESET_HELPER( HwUartChannelState_T* channel_state )
+{
+    if ( channel_state == NULL )
+    {
+        return;
+    }
+    channel_state->runtime.rx_read_index  = 0U;
+    channel_state->runtime.latched_faults = 0U;
+    channel_state->runtime.is_initialised = false;
+    channel_state->runtime.is_configured  = false;
+    channel_state->runtime.rx_running     = false;
+    channel_state->runtime.tx_running     = false;
+
+    // Clear the receive buffer
+    for ( uint32_t i = 0; i < HW_UART_RX_BUFFER_SIZE; i++ )
+    {
+        channel_state->rx_buffer[i] = 0U;
+    }
+}
+
+bool HW_UART_CONFIGURATION_VALIDATION( const HwUartConfig_T* config )
+{
+    if ( config == NULL )
+    {
+        return false;
+    }
+
+    if ( config->interface_mode == HW_UART_MODE_DISABLED )
+    {
+        return ( !config->rx_enabled && !config->tx_enabled && config->baud_rate == 0U );
+    }
+
+    if ( !config->rx_enabled && !config->tx_enabled )
+    {
+        return false;
+    }
+
+    if ( config->baud_rate == 0U )
+    {
+        return false;
+    }
+
+    if ( config->word_length != HW_UART_WORD_LENGTH_7_BITS
+         && config->word_length != HW_UART_WORD_LENGTH_8_BITS
+         && config->word_length != HW_UART_WORD_LENGTH_9_BITS )
+    {
+        return false;
+    }
+
+    if ( config->stop_bits != HW_UART_STOP_BITS_1 && config->stop_bits != HW_UART_STOP_BITS_2 )
+    {
+        return false;
+    }
+
+    if ( config->parity != HW_UART_PARITY_NONE && config->parity != HW_UART_PARITY_EVEN
+         && config->parity != HW_UART_PARITY_ODD )
+    {
+        return false;
+    }
+
+    bool valid_baud = false;
+
+    switch ( config->interface_mode )
+    {
+        case HW_UART_MODE_TTL_3V3:
+        case HW_UART_MODE_TTL_5V0:
+            valid_baud = ( config->baud_rate <= 2000000U );
+            break;
+
+        case HW_UART_MODE_RS232:
+            valid_baud = ( config->baud_rate <= 1000000U );
+            break;
+
+        case HW_UART_MODE_DISABLED:
+            // Handled by earlier check, but included here for completeness
+            // Should never reach this point
+        default:
+            return false;
+    }
+
+    return valid_baud;
+}
 
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
-
-// ISRs
