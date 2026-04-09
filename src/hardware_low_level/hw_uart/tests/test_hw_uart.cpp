@@ -49,10 +49,8 @@ using ::testing::Return;
 class MockHalUart
 {
 public:
-    MOCK_METHOD( HAL_StatusTypeDef, TxDma,
-                 ( UART_HandleTypeDef * huart, uint8_t* data, uint16_t len ), () );
-    MOCK_METHOD( HAL_StatusTypeDef, RxDma,
-                 ( UART_HandleTypeDef * huart, uint8_t* data, uint16_t len ), () );
+    MOCK_METHOD( HAL_StatusTypeDef, TxDma, ( UART_HandleTypeDef * huart, uint8_t* data, uint16_t len ), () );
+    MOCK_METHOD( HAL_StatusTypeDef, RxDma, ( UART_HandleTypeDef * huart, uint8_t* data, uint16_t len ), () );
     MOCK_METHOD( void, TaskDelay, ( TickType_t ticks ), () );
 };
 
@@ -63,16 +61,14 @@ static MockHalUart* g_mock = nullptr;
  *------------------------------------------------------------------------------
  */
 // NOLINTBEGIN
-extern "C" HAL_StatusTypeDef HAL_UART_Transmit_DMA( UART_HandleTypeDef* huart, uint8_t* pData,
-                                                    uint16_t Size )
+extern "C" HAL_StatusTypeDef HAL_UART_Transmit_DMA( UART_HandleTypeDef* huart, uint8_t* pData, uint16_t Size )
 {
     if ( !g_mock )
         return HAL_ERROR;
     return g_mock->TxDma( huart, pData, Size );
 }
 
-extern "C" HAL_StatusTypeDef HAL_UART_Receive_DMA( UART_HandleTypeDef* huart, uint8_t* pData,
-                                                   uint16_t Size )
+extern "C" HAL_StatusTypeDef HAL_UART_Receive_DMA( UART_HandleTypeDef* huart, uint8_t* pData, uint16_t Size )
 {
     if ( !g_mock )
         return HAL_ERROR;

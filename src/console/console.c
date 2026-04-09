@@ -306,8 +306,7 @@ void CONSOLE_Printf( const char* format, ... )
     }
 
     // Clamp length to buffer size
-    uint32_t count =
-        ( len < ( int )sizeof( buffer ) ) ? ( uint32_t )len : ( uint32_t )( sizeof( buffer ) - 1U );
+    uint32_t count = ( len < ( int )sizeof( buffer ) ) ? ( uint32_t )len : ( uint32_t )( sizeof( buffer ) - 1U );
 
     for ( uint32_t i = 0U; i < count; i++ )
     {

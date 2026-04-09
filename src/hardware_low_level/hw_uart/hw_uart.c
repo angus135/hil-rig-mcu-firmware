@@ -4,10 +4,25 @@
  *  Created:    16-Dec-2025
  *
  *  Description:
- *      <Short description of the module's purpose and responsibilities>
+ *      Low-level UART driver for DUT-facing UART channels in the HIL-RIG.
+ *
+ *      This module owns:
+ *      - channel configuration and validation,
+ *      - fixed hardware mapping for UART peripherals and DMA streams,
+ *      - static hardware interface selection sequencing,
+ *      - DMA-backed circular RX buffering,
+ *      - lightweight access to unread RX data through zero-copy spans.
+ *
+ *      Non-execution stage functions such as configuration and RX startup may use HAL
+ *      to simplify peripheral initialisation. Execution-path RX access remains
+ *      lightweight and avoids unnecessary copying.
  *
  *  Notes:
- *      <Any design notes, dependencies, or assumptions go here>
+ *      - The low-level driver owns the DMA circular buffer and its management state.
+ *      - Higher layers may inspect unread data through transient span views and
+ *        must copy data into stable storage if persistence is required.
+ *      - Higher layers must explicitly report consumption after processing.
+ *      - This module does not define execution result storage or tick semantics.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -53,8 +68,7 @@
 
 // Size of the receive buffer for each UART channel,
 // can be adjusted based on expected data rates and memory constraints
-#define HW_UART_RX_BUFFER_SIZE                                                                     \
-    2048U  // Must be a power of 2 for the circular buffer management to work correctly
+#define HW_UART_RX_BUFFER_SIZE 4096U  // Must be a power of 2 for the circular buffer management to work correctly
 #if ( ( HW_UART_RX_BUFFER_SIZE & ( HW_UART_RX_BUFFER_SIZE - 1U ) ) != 0U )
 #error "HW_UART_RX_BUFFER_SIZE must be a power of 2"
 #endif
@@ -92,65 +106,49 @@ typedef enum
 } HwUartFaultMask_T;
 */
 
-typedef enum
-{
-    HW_UART_MODE_DISABLED = 0,  // Default state, no UART functionality
-    HW_UART_MODE_TTL_3V3,       // Standard TTL logic levels (0V for LOW, 3.3V for HIGH)
-    HW_UART_MODE_TTL_5V0,       // Standard TTL logic levels (0V for LOW, 5V for HIGH)
-    HW_UART_MODE_RS232          // RS-232 line driver interface
-} HwUartInterfaceMode_T;
-
-typedef enum
-{
-    HW_UART_CHANNEL_1 = 0,
-    HW_UART_CHANNEL_2 = 1,
-} HwUartChannel_T;
-
-typedef enum
-{
-    HW_UART_PARITY_NONE = 0,
-    HW_UART_PARITY_ODD  = 1,
-    HW_UART_PARITY_EVEN = 2
-} HwUartParity_T;
-
-typedef enum
-{
-    HW_UART_WORD_LENGTH_8_BITS = 8,
-    HW_UART_WORD_LENGTH_9_BITS = 9
-} HwUartWordLength_T;
-
-typedef enum
-{
-    HW_UART_STOP_BITS_1 = 1,
-    HW_UART_STOP_BITS_2 = 2
-} HwUartStopBits_T;
-
+/**
+ * @brief  Defines the hardware control lines used to select the external UART interface mode.
+ *
+ * @note   These lines represent board-level control signals such as MODE_SEL and
+ *         VOLT_SEL. They are fixed per channel and are used during configuration
+ *         to place the external interface hardware into the required electrical mode.
+ *
+ * @note   The actual GPIO control implementation is not yet integrated. This structure serves as a placeholder defining
+ *         the required control lines and sequencing for future implementation.
+ */
 typedef struct
 {
-    HwUartInterfaceMode_T interface_mode;  // Determines the Uart interface type and voltage levels
+    uint16_t mode_sel0_line;  // GPIO pin number for MODE_SEL bit 0
+    uint16_t mode_sel1_line;  // GPIO pin number for MODE_SEL bit 1
+    uint16_t volt_sel0_line;  // GPIO pin number for VOLT_SEL bit 0
+    uint16_t volt_sel1_line;  // GPIO pin number for VOLT_SEL bit 1
+} HwUartSelectionLines_T;
 
-    uint32_t           baud_rate;
-    HwUartWordLength_T word_length;
-    HwUartStopBits_T   stop_bits;
-    HwUartParity_T     parity;
-
-    bool rx_enabled;  // Enable reception functionality
-    bool tx_enabled;  // Enable transmission functionality
-    // Currently not supporting half-duplex mode.
-} HwUartConfig_T;
-
+/**
+ * @brief  Stores low-level runtime state associated with a UART channel.
+ *
+ * @note   This structure is owned entirely by the low-level driver and tracks
+ *         circular buffer consumption state, latched faults, configuration status,
+ *         and whether RX or TX operation is currently active.
+ */
 typedef struct
 {
     uint32_t rx_read_index;
-    uint32_t latched_faults;  // Bitmask implementation left for a later date when faults are
-                              // implemented.
+    uint32_t latched_faults;  // Bitmask implementation left for a later date when faults are implemented.
 
     bool is_configured;
 
     bool rx_running;
     bool tx_running;
+
 } HwUartRuntimeState_T;
 
+/**
+ * @brief  Aggregates all low-level state for a UART channel.
+ *
+ * @note   This includes the stored channel configuration, runtime state, and the
+ *         DMA-backed circular RX buffer owned by the low-level driver.
+ */
 typedef struct
 {
     HwUartConfig_T       config;
@@ -158,19 +156,13 @@ typedef struct
     uint8_t              rx_buffer[HW_UART_RX_BUFFER_SIZE];
 } HwUartChannelState_T;
 
-typedef struct
-{
-    const uint8_t* data;
-    uint32_t       length_bytes;
-} HwUartRxSpan_T;
-
-typedef struct
-{
-    HwUartRxSpan_T first_span;
-    HwUartRxSpan_T second_span;
-    uint32_t       total_length_bytes;
-} HwUartRxSpans_T;
-
+/**
+ * @brief  Defines the fixed hardware resources associated with a UART channel.
+ *
+ * @note   This structure maps each logical channel to its UART peripheral,
+ *         associated DMA streams, and HAL handle used during non-hot-path
+ *         initialisation and startup.
+ */
 typedef struct
 {
     USART_TypeDef*      uart_instance;
@@ -188,8 +180,11 @@ typedef struct
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
+
+/* Driver owned per-channel runtime and buffer storage */
 static HwUartChannelState_T uart_channel_states[HW_UART_CHANNEL_COUNT];
 
+/* Fixed board-level mapping from logical UART channels to MCU peripherals */
 static const HwUartHardwareMap_T uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
     [HW_UART_CHANNEL_1] = { .uart_instance = HW_UART_CH1_USART,
                             .rx_dma_stream = HW_UART_CH1_DMA_RX_STREAM,
@@ -200,9 +195,35 @@ static const HwUartHardwareMap_T uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
                             .tx_dma_stream = HW_UART_CH2_DMA_TX_STREAM,
                             .uart_handle   = &huart2 } };
 
+/* Fixed board-level mapping from logical UART channels to interface selection lines */
+static const HwUartSelectionLines_T uart_selection_lines[HW_UART_CHANNEL_COUNT] = {
+    [HW_UART_CHANNEL_1] = { .mode_sel0_line = HW_UART_CH1_MODE_SEL0_LINE,
+                            .mode_sel1_line = HW_UART_CH1_MODE_SEL1_LINE,
+                            .volt_sel0_line = HW_UART_CH1_VOLT_SEL0_LINE,
+                            .volt_sel1_line = HW_UART_CH1_VOLT_SEL1_LINE },
+    [HW_UART_CHANNEL_2] = { .mode_sel0_line = HW_UART_CH2_MODE_SEL0_LINE,
+                            .mode_sel1_line = HW_UART_CH2_MODE_SEL1_LINE,
+                            .volt_sel0_line = HW_UART_CH2_VOLT_SEL0_LINE,
+                            .volt_sel1_line = HW_UART_CH2_VOLT_SEL1_LINE } };
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Definitions
  *------------------------------------------------------------------------------
+ */
+
+/**
+ * @brief  Validates a UART channel configuration before it is stored or applied.
+ *
+ * @param  config Pointer to the configuration to validate.
+ *
+ * @return true if the configuration is internally consistent and supported.
+ * @return false if the configuration is null, incomplete, or requests unsupported
+ *         UART framing or interface settings.
+ *
+ * @note   This function is used only in the non-hot-path configuration stage.
+ *
+ * @note   Validation ensures that later startup code can assume the stored
+ *         configuration is well-formed and can focus on applying it to hardware.
  */
 static bool HW_UART_Configuration_Is_Valid( const HwUartConfig_T* config )
 {
@@ -226,8 +247,7 @@ static bool HW_UART_Configuration_Is_Valid( const HwUartConfig_T* config )
         return false;
     }
 
-    if ( config->word_length != HW_UART_WORD_LENGTH_8_BITS
-         && config->word_length != HW_UART_WORD_LENGTH_9_BITS )
+    if ( config->word_length != HW_UART_WORD_LENGTH_8_BITS && config->word_length != HW_UART_WORD_LENGTH_9_BITS )
     {
         return false;
     }
@@ -266,30 +286,50 @@ static bool HW_UART_Configuration_Is_Valid( const HwUartConfig_T* config )
     return valid_baud;
 }
 
-/** -----------------------------------------------------------------------------
- * @brief Helper function to calculate the number of unread bytes in the circular RX buffer.
- * @param read_index The current read index in the RX buffer.
- * @param write_index The current write index in the RX buffer.
- * @return The number of unread bytes available in the RX buffer.
- * inline for performance, as this will be called frequently in the execution path
- * Note: This function assumes that the buffer size is a power of 2, which allows for efficient
- * wrapping using bitwise operations.
+/**
+ * @brief  Computes the number of unread bytes in the DMA-backed circular RX buffer.
+ *
+ * @param  read_index   Current read index maintained by the LL driver.
+ * @param  write_index  Current write index derived from the DMA stream.
+ *
+ * @return Number of unread bytes available for consumption.
+ *
+ * @note   This function implements circular buffer distance using power-of-2 wrapping:
+ *         (write_index - read_index) & (buffer_size - 1).
+ *
+ * @note   The buffer size must be a power of 2. This allows wrapping via a bitmask
+ *         instead of a modulo operation for improved performance in the hot path.
+ *
+ * @note   This function is used in the execution path and is marked inline to minimise
+ *         overhead.
+ *
+ * @note   The returned value represents a snapshot and may change as DMA continues
+ *         writing to the buffer.
  */
-static inline uint32_t HW_UART_Unread_Bytes_Count_Helper( uint32_t read_index,
-                                                          uint32_t write_index )
+static inline uint32_t HW_UART_Unread_Bytes_Count_Helper( uint32_t read_index, uint32_t write_index )
 {
     return ( write_index - read_index ) & ( HW_UART_RX_BUFFER_SIZE - 1U );
 }
 
-/** -----------------------------------------------------------------------------
- * @brief Helper function to advance the index in a circular buffer.
- * @param current_index The current index.
- * @param advance_by The number of positions to advance.
- * @return The new index after advancement.
- * inline for performance, as this will be called frequently in the execution path
+/**
+ * @brief  Advances an index within the DMA-backed circular RX buffer.
  *
- * Note: This function assumes that the buffer size is a power of 2, which allows for efficient
- * wrapping using bitwise operations.
+ * @param  current_index Current index maintained by the LL driver.
+ * @param  advance_by    Number of positions to advance.
+ *
+ * @return Updated index after advancement with circular wrap applied.
+ *
+ * @note   This function performs circular buffer wrapping using a power-of-2 mask:
+ *         (current_index + advance_by) & (buffer_size - 1).
+ *
+ * @note   The buffer size must be a power of 2. This enables efficient wrapping
+ *         using a bitmask instead of a modulo operation.
+ *
+ * @note   This function is used in the execution path and is marked inline to
+ *         minimise overhead.
+ *
+ * @note   The caller is responsible for ensuring that advance_by does not exceed
+ *         the number of unread bytes, as this function does not perform bounds checking.
  */
 static inline uint32_t HW_UART_Advance_Index_Helper( uint32_t current_index, uint32_t advance_by )
 {
@@ -297,58 +337,136 @@ static inline uint32_t HW_UART_Advance_Index_Helper( uint32_t current_index, uin
     return ( current_index + advance_by ) & ( HW_UART_RX_BUFFER_SIZE - 1U );
 }
 
-static bool HW_UART_Apply_Static_Hardware_Selection( HwUartChannel_T       channel,
-                                                     HwUartInterfaceMode_T interface_mode )
+/**
+ * @brief  Applies the static hardware selection configuration for the specified UART channel.
+ *
+ * @param channel The UART channel whose selection lines are to be configured.
+ * @param interface_mode The desired interface mode (disabled, TTL 3.3V, TTL 5V, RS232).
+ *
+ * @return true if the selection sequence is valid for the given mode.
+ * @return false if the mode is unsupported or invalid.
+ *
+ * @note   This function is responsible for configuring the external hardware selection lines
+ *         (e.g. MODE_SEL[1:0], VOLT_SEL[1:0]) associated with the UART channel. These lines control
+ *         the electrical interface presented to the DUT, including voltage levels and interface
+ *         type.
+ *
+ * @note   The intended behaviour is to follow a safe sequencing strategy:
+ *         - temporarily force the interface into a disabled state,
+ *         - update voltage selection lines,
+ *         - then enable the required interface mode.
+ *
+ * @note   This function belongs to the low-level driver because it applies
+ *         deterministic hardware-facing configuration prior to enabling UART operation.
+ *
+ * @note   The actual GPIO or control-line implementation is not yet integrated. The current
+ *         implementation serves as a placeholder defining the required sequencing and structure.
+ *         Physical line driving will be added in a future revision.
+ */
+static bool HW_UART_Apply_Static_Hardware_Selection( HwUartChannel_T channel, HwUartInterfaceMode_T interface_mode )
 {
+    ( void )channel;  // Suppress unused parameter warning for now, will be used when GPIO
+                      // control is implemented
     switch ( interface_mode )
     {
         case HW_UART_MODE_DISABLED:
             // 1: Set MODE_SEL[0:1] to [0, 0] to select the disabled mode
-
+            // uart_selection_lines[channel].mode_sel0_line = 0U;
+            // uart_selection_lines[channel].mode_sel1_line = 0U;
             // 2: Set VOLT_SEL[0:1] to [0, 0] to set TTL_VCCB to 0V
+            // uart_selection_lines[channel].volt_sel0_line = 0U;
+            // uart_selection_lines[channel].volt_sel1_line = 0U;
             return true;
         case HW_UART_MODE_TTL_3V3:
 
             // 1: Set MODE_SEL[0:1] to [0, 0] to temporarily select the disabled mode while changing
             // voltage levels. This prevents potential damage to the hardware from voltage level
             // changes while the UART is active.
+            // uart_selection_lines[channel].mode_sel0_line = 0U;
+            // uart_selection_lines[channel].mode_sel1_line = 0U;
 
             // 2: Set VOLT_SEL[0:1] to [0, 1] to set TTL_VCCB to 3.3V
+            // uart_selection_lines[channel].volt_sel0_line = 0U;
+            // uart_selection_lines[channel].volt_sel1_line = 1U;
 
             // 3: Set MODE_SEL[0:1] to [0, 1] to select the TTL mode with the new voltage levels
+            // uart_selection_lines[channel].mode_sel0_line = 0U;
+            // uart_selection_lines[channel].mode_sel1_line = 1U;
 
             return true;
         case HW_UART_MODE_TTL_5V0:
             // 1: Set MODE_SEL[0:1] to [0, 0] to temporarily select the disabled mode while changing
             // voltage levels. This prevents potential damage to the hardware from voltage level
             // changes while the UART is active.
+            // uart_selection_lines[channel].mode_sel0_line = 0U;
+            // uart_selection_lines[channel].mode_sel1_line = 0U;
 
             // 2: Set VOLT_SEL[0:1] to [1, 0] to set TTL_VCCB to 5V
+            // uart_selection_lines[channel].volt_sel0_line = 1U;
+            // uart_selection_lines[channel].volt_sel1_line = 0U;
 
             // 3: Set MODE_SEL[0:1] to [0, 1] to select the TTL mode with the new voltage levels
+            // uart_selection_lines[channel].mode_sel0_line = 0U;
+            // uart_selection_lines[channel].mode_sel1_line = 1U;
             return true;
         case HW_UART_MODE_RS232:
             // 1: Set MODE_SEL[0:1] to [0, 0] to temporarily select the disabled mode while changing
             // voltage levels. This prevents potential damage to the hardware from voltage level
             // changes while the UART is active.
+            // uart_selection_lines[channel].mode_sel0_line = 0U;
+            // uart_selection_lines[channel].mode_sel1_line = 0U;
 
             // 2: Set VOLT_SEL[0:1] to [0, 0] to set TTL_VCCB to 0V, as the RS-232 line driver will
             // generate the necessary voltage levels for the RS-232 interface
+            // uart_selection_lines[channel].volt_sel0_line = 0U;
+            // uart_selection_lines[channel].volt_sel1_line = 0U;
 
             // 3: Set MODE_SEL[0:1] to [1, 0] to select the RS-232 mode
+            // uart_selection_lines[channel].mode_sel0_line = 1U;
+            // uart_selection_lines[channel].mode_sel1_line = 0U;
             return true;
         default:
             return false;
     }
 }
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
 
-bool HW_UART_CONFIGURE_CHANNEL( HwUartChannel_T channel, const HwUartConfig_T* config )
+/**
+ * @brief  Configures a UART channel with the specified settings and applies
+ *         the associated static hardware configuration.
+ *
+ * @param  channel The UART channel to configure.
+ * @param  config  Pointer to the configuration structure describing UART
+ *                 parameters and interface mode.
+ *
+ * @return true if the channel was successfully configured.
+ * @return false if the channel index or configuration is invalid, or if
+ *         hardware selection fails.
+ *
+ * @note   This function performs validation of the provided configuration
+ *         before applying any changes to the hardware.
+ *
+ * @note   The configuration is stored within the low-level driver and used
+ *         later during start operations. This function does not enable RX or
+ *         TX operation.
+ *
+ * @note   Static hardware selection (e.g. interface mode and voltage levels)
+ *         is applied as part of configuration to ensure the physical interface
+ *         is in a safe and defined state prior to enabling UART activity.
+ *
+ * @note   Runtime state is reset as part of configuration, including read index
+ *         and fault flags.
+ *
+ * @note   This function must be called successfully before invoking
+ *         HW_UART_Rx_Start() or any TX-related operations.
+ */
+bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* config )
 {
-    // Validate channel number and configuration parameters before applying settings to the hardware
+    // Validate channel number and configuration before applying changes
     if ( channel >= HW_UART_CHANNEL_COUNT )
     {
         return false;
@@ -359,7 +477,7 @@ bool HW_UART_CONFIGURE_CHANNEL( HwUartChannel_T channel, const HwUartConfig_T* c
         return false;
     }
 
-    // Store the configuration in the channel state for future reference
+    // Store the validated configuration
     HwUartChannelState_T* state = &uart_channel_states[channel];
     state->config               = *config;
 
@@ -377,12 +495,41 @@ bool HW_UART_CONFIGURE_CHANNEL( HwUartChannel_T channel, const HwUartConfig_T* c
     state->runtime.rx_running     = false;
     state->runtime.tx_running     = false;
 
-    // Mark the channel as configured after successfully applying the configuration to the hardware
+    // Mark channel as configured.
     state->runtime.is_configured = true;
 
     return true;
 }
 
+/**
+ * @brief  Starts UART reception for the specified channel using DMA into the
+ *         LL driver owned circular RX buffer.
+ *
+ * @param  channel The UART channel to start reception on.
+ *
+ * @return true if RX was successfully started.
+ * @return false if the channel is invalid, not configured, RX is disabled, or
+ *         hardware initialisation fails.
+ *
+ * @note   This function applies the stored configuration to the underlying UART
+ *         peripheral via HAL and initiates DMA-based reception into the internal
+ *         circular buffer owned by the low-level driver.
+ *
+ * @note   The RX buffer and read index are reset prior to enabling reception to
+ *         ensure a clean starting state.
+ *
+ * @note   This function does not expose or transfer ownership of received data.
+ *         Data is made available to higher layers via HW_UART_Rx_Peek().
+ *
+ * @note   The DMA stream is expected to be configured in circular mode so that
+ *         reception continues indefinitely without software intervention.
+ *
+ * @note   This function must only be called after successful configuration via
+ *         HW_UART_Configure_Channel().
+ *
+ * @note   RX operation is considered active once this function returns true, and
+ *         can be queried via the runtime state.
+ */
 bool HW_UART_Rx_Start( HwUartChannel_T channel )
 {
     if ( channel >= HW_UART_CHANNEL_COUNT )
@@ -445,6 +592,7 @@ bool HW_UART_Rx_Start( HwUartChannel_T channel )
             break;
         case HW_UART_PARITY_EVEN:
             huart->Init.Parity = UART_PARITY_EVEN;
+            break;
         case HW_UART_PARITY_ODD:
             huart->Init.Parity = UART_PARITY_ODD;
             break;
@@ -452,8 +600,8 @@ bool HW_UART_Rx_Start( HwUartChannel_T channel )
             return false;  // Should never reach here due to prior validation
     }
 
-    huart->Init.Mode = ( state->config.tx_enabled ? UART_MODE_TX : 0U )
-                       | ( state->config.rx_enabled ? UART_MODE_RX : 0U );
+    huart->Init.Mode =
+        ( state->config.tx_enabled ? UART_MODE_TX : 0U ) | ( state->config.rx_enabled ? UART_MODE_RX : 0U );
 
     if ( HAL_UART_Init( huart ) != HAL_OK )
     {
@@ -470,47 +618,67 @@ bool HW_UART_Rx_Start( HwUartChannel_T channel )
 }
 
 /**
- * @brief  Peeks at the current unread data in the RX buffer for the specified UART channel,
- *         returning one or two spans of contiguous data.
+ * @brief  Exposes a transient zero-copy view of the current unread RX data for the specified UART
+ *         channel as one or two contiguous spans into the LL driver owned DMA circular buffer.
  *
- * @param channel The UART channel to peek at.
+ * @param channel The UART channel to inspect.
+ *
  * @return HwUartRxSpans_T
- *              A structure containing one or two spans of contiguous data available in the RX
- *              buffer, along with the total length of unread data.
+ *         A structure containing up to two readable spans and the total unread byte count.
+ *
+ * @note   This function does not copy data. It provides a read-only view into the low-level driver
+ *         owned DMA buffer. Buffer allocation, DMA write ownership, wrap handling, and consume
+ *         semantics remain the responsibility of the low-level driver.
+ *
+ * @note   The returned spans are intended for immediate higher-level processing. Higher layers may
+ *         copy the data into execution-owned result storage if persistence is required beyond the
+ *         current processing step.
+ *
+ * @note   Higher layers must not directly manage the DMA buffer, modify the returned memory, or
+ *         retain the returned pointers beyond the valid processing window. Once the required copy
+ * or processing is complete, the caller shall report consumption through HW_UART_Rx_Consume().
+ *
+ * @note   This interface preserves a clean ownership boundary:
+ *         - the low-level driver owns the DMA circular buffer and its management,
+ *         - the mid-level driver owns adaptation from raw UART bytes to execution-level data,
+ *         - the execution manager owns result storage and tick association.
  */
 HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
 {
     // Cache reused values in local variables for performance, as this function will be called
     // frequently in the execution path
-    HwUartChannelState_T*      state           = &uart_channel_states[channel];
-    const HwUartHardwareMap_T* hw_map          = &uart_hardware_map[channel];
-    uint8_t*                   rx_buffer       = state->rx_buffer;
-    uint32_t                   read_index      = state->runtime.rx_read_index;
-    uint32_t                   dma_remaining   = hw_map->rx_dma_stream->NDTR;
-    uint32_t                   dma_write_index = HW_UART_RX_BUFFER_SIZE - dma_remaining;
+    HwUartChannelState_T*      state      = &uart_channel_states[channel];
+    const HwUartHardwareMap_T* hw_map     = &uart_hardware_map[channel];
+    uint8_t*                   rx_buffer  = state->rx_buffer;
+    uint32_t                   read_index = state->runtime.rx_read_index;
+
+    // Calculate the current write index based on the DMA stream's remaining data count (NDTR) and
+    // the known buffer size. This reflects the total number of bytes that have been written by the
+    // DMA into the buffer, regardless of any wrapping that may have occurred.
+    uint32_t dma_remaining   = hw_map->rx_dma_stream->NDTR;
+    uint32_t dma_write_index = HW_UART_RX_BUFFER_SIZE - dma_remaining;
 
     if ( dma_write_index == HW_UART_RX_BUFFER_SIZE )
     {
         dma_write_index = 0U;
     }
 
-    uint32_t unread_bytes = HW_UART_UNREAD_BYTES_COUNT_HELPER( read_index, dma_write_index );
+    uint32_t unread_bytes = HW_UART_Unread_Bytes_Count_Helper( read_index, dma_write_index );
 
     if ( unread_bytes == 0U )
     {
         // No data available
-        return ( HwUartRxSpans_T ){ .first_span  = { .data = &rx_buffer[0], .length_bytes = 0U },
-                                    .second_span = { .data = &rx_buffer[0], .length_bytes = 0U },
+        return ( HwUartRxSpans_T ){ .first_span         = { .data = &rx_buffer[0], .length_bytes = 0U },
+                                    .second_span        = { .data = &rx_buffer[0], .length_bytes = 0U },
                                     .total_length_bytes = 0U };
     }
 
     if ( dma_write_index >= read_index )
     {
         // Data does not wrap around the end of the buffer
-        return ( HwUartRxSpans_T ){
-            .first_span         = { .data = &rx_buffer[read_index], .length_bytes = unread_bytes },
-            .second_span        = { .data = &rx_buffer[0], .length_bytes = 0U },
-            .total_length_bytes = unread_bytes };
+        return ( HwUartRxSpans_T ){ .first_span  = { .data = &rx_buffer[read_index], .length_bytes = unread_bytes },
+                                    .second_span = { .data = &rx_buffer[0], .length_bytes = 0U },
+                                    .total_length_bytes = unread_bytes };
     }
     // else case:
 
@@ -518,17 +686,28 @@ HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
     uint32_t first_span_length  = HW_UART_RX_BUFFER_SIZE - read_index;
     uint32_t second_span_length = unread_bytes - first_span_length;
 
-    return ( HwUartRxSpans_T ){
-        .first_span         = { .data = &rx_buffer[read_index], .length_bytes = first_span_length },
-        .second_span        = { .data = &rx_buffer[0], .length_bytes = second_span_length },
-        .total_length_bytes = unread_bytes };
+    return ( HwUartRxSpans_T ){ .first_span  = { .data = &rx_buffer[read_index], .length_bytes = first_span_length },
+                                .second_span = { .data = &rx_buffer[0], .length_bytes = second_span_length },
+                                .total_length_bytes = unread_bytes };
 }
 
+/**
+ * @brief  Marks unread RX data as consumed by advancing the LL driver managed read index.
+ *
+ * @param channel The UART channel to update.
+ * @param bytes_to_consume Number of bytes previously obtained via HW_UART_Rx_Peek() that have been
+ *                         processed by higher layers.
+ *
+ * @note   The LL driver retains ownership of the DMA buffer. This function only updates the read
+ *         index and does not copy or modify buffer contents.
+ *
+ * @note   The caller shall only consume data that has already been processed or copied into
+ *         stable storage. Consuming data allows the DMA buffer region to be reused.
+ */
 void HW_UART_Rx_Consume( HwUartChannel_T channel, uint32_t bytes_to_consume )
 {
     HwUartChannelState_T* state = &uart_channel_states[channel];
 
     // Advance the read index by the specified number of bytes, wrapping around the buffer as needed
-    state->runtime.rx_read_index =
-        HW_UART_ADVANCE_INDEX_HELPER( state->runtime.rx_read_index, bytes_to_consume );
+    state->runtime.rx_read_index = HW_UART_Advance_Index_Helper( state->runtime.rx_read_index, bytes_to_consume );
 }
