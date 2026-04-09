@@ -131,6 +131,7 @@ static UART_HandleTypeDef huart2 = { .Instance = USART2 };
 HAL_StatusTypeDef HAL_UART_Init( UART_HandleTypeDef* huart );
 HAL_StatusTypeDef HAL_UART_Transmit_DMA( UART_HandleTypeDef* huart, uint8_t* pData, uint16_t Size );
 HAL_StatusTypeDef HAL_UART_Receive_DMA( UART_HandleTypeDef* huart, uint8_t* pData, uint16_t Size );
+HAL_StatusTypeDef HAL_UART_DMAStop( UART_HandleTypeDef* huart );
 
 // NOLINTEND
 

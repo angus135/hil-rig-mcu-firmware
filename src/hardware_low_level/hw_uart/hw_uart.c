@@ -618,6 +618,70 @@ bool HW_UART_Rx_Start( HwUartChannel_T channel )
 }
 
 /**
+ * @brief  Stops UART RX operation for the specified channel and halts DMA reception.
+ *
+ * @param  channel The UART channel to stop reception on.
+ *
+ * @return true if RX was successfully stopped.
+ * @return false if the channel is invalid, not configured, not running, or if
+ *         the underlying HAL stop operation fails.
+ *
+ * @note   This function disables DMA-based reception and prevents further data
+ *         from being written into the low-level driver owned circular RX buffer.
+ *
+ * @note   The internal read index is reset as part of the stop operation, and any
+ *         previously buffered data is considered invalid after this call.
+ *
+ * @note   This function is intended for non-hot-path control of RX lifecycle and
+ *         should not be used in the execution path.
+ *
+ * @note   The channel configuration remains intact after stopping RX. Reception
+ *         can be restarted by calling HW_UART_Rx_Start().
+ */
+bool HW_UART_Rx_Stop( HwUartChannel_T channel )
+{
+    if ( channel >= HW_UART_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    HwUartChannelState_T*      state  = &uart_channel_states[channel];
+    const HwUartHardwareMap_T* hw_map = &uart_hardware_map[channel];
+    UART_HandleTypeDef*        huart  = hw_map->uart_handle;
+
+    if ( !state->runtime.is_configured || !state->runtime.rx_running )
+    {
+        return false;
+    }
+
+    if ( HAL_UART_DMAStop( huart ) != HAL_OK )
+    {
+
+        return false;
+    }
+    state->runtime.rx_running    = false;
+    state->runtime.rx_read_index = 0U;
+    return true;
+}
+
+bool HW_UART_Rx_Is_Running( HwUartChannel_T channel )
+{
+    if ( channel >= HW_UART_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    HwUartChannelState_T* state = &uart_channel_states[channel];
+
+    if ( !state->runtime.is_configured )
+    {
+        return false;
+    }
+
+    return state->runtime.rx_running;
+}
+
+/**
  * @brief  Exposes a transient zero-copy view of the current unread RX data for the specified UART
  *         channel as one or two contiguous spans into the LL driver owned DMA circular buffer.
  *
@@ -645,12 +709,24 @@ bool HW_UART_Rx_Start( HwUartChannel_T channel )
  */
 HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
 {
+    // Remove for optimisation, but for safety in case of misuse.
+    if ( channel >= HW_UART_CHANNEL_COUNT )
+    {
+        return ( HwUartRxSpans_T ){ 0 };
+    }
+
     // Cache reused values in local variables for performance, as this function will be called
     // frequently in the execution path
     HwUartChannelState_T*      state      = &uart_channel_states[channel];
     const HwUartHardwareMap_T* hw_map     = &uart_hardware_map[channel];
     uint8_t*                   rx_buffer  = state->rx_buffer;
     uint32_t                   read_index = state->runtime.rx_read_index;
+
+    // Remove for optimisation, but for safety in case of misuse.
+    if ( !state->runtime.is_configured || !state->runtime.rx_running )
+    {
+        return ( HwUartRxSpans_T ){ 0 };
+    }
 
     // Calculate the current write index based on the DMA stream's remaining data count (NDTR) and
     // the known buffer size. This reflects the total number of bytes that have been written by the
