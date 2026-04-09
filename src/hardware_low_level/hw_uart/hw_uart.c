@@ -204,7 +204,7 @@ static const HwUartHardwareMap_T uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
  *  Private (static) Function Definitions
  *------------------------------------------------------------------------------
  */
-static bool HW_UART_CONFIGURATION_VALIDATION( const HwUartConfig_T* config )
+static bool HW_UART_Configuration_Is_Valid( const HwUartConfig_T* config )
 {
     if ( config == NULL )
     {
@@ -275,7 +275,7 @@ static bool HW_UART_CONFIGURATION_VALIDATION( const HwUartConfig_T* config )
  * Note: This function assumes that the buffer size is a power of 2, which allows for efficient
  * wrapping using bitwise operations.
  */
-static inline uint32_t HW_UART_UNREAD_BYTES_COUNT_HELPER( uint32_t read_index,
+static inline uint32_t HW_UART_Unread_Bytes_Count_Helper( uint32_t read_index,
                                                           uint32_t write_index )
 {
     return ( write_index - read_index ) & ( HW_UART_RX_BUFFER_SIZE - 1U );
@@ -291,13 +291,13 @@ static inline uint32_t HW_UART_UNREAD_BYTES_COUNT_HELPER( uint32_t read_index,
  * Note: This function assumes that the buffer size is a power of 2, which allows for efficient
  * wrapping using bitwise operations.
  */
-static inline uint32_t HW_UART_ADVANCE_INDEX_HELPER( uint32_t current_index, uint32_t advance_by )
+static inline uint32_t HW_UART_Advance_Index_Helper( uint32_t current_index, uint32_t advance_by )
 {
     // Power of 2 buffer wrap using bitmask.
     return ( current_index + advance_by ) & ( HW_UART_RX_BUFFER_SIZE - 1U );
 }
 
-static bool HW_UART_APPLY_STATIC_HARDWARE_SELECTION( HwUartChannel_T       channel,
+static bool HW_UART_Apply_Static_Hardware_Selection( HwUartChannel_T       channel,
                                                      HwUartInterfaceMode_T interface_mode )
 {
     switch ( interface_mode )
@@ -354,7 +354,7 @@ bool HW_UART_CONFIGURE_CHANNEL( HwUartChannel_T channel, const HwUartConfig_T* c
         return false;
     }
 
-    if ( !HW_UART_CONFIGURATION_VALIDATION( config ) )
+    if ( !HW_UART_Configuration_Is_Valid( config ) )
     {
         return false;
     }
@@ -366,7 +366,7 @@ bool HW_UART_CONFIGURE_CHANNEL( HwUartChannel_T channel, const HwUartConfig_T* c
     // Apply the static hardware selection states (mode/voltage) based on the interface mode
     // specified in the configuration to the appropriate hardware lines (GPIOs or other control
     // interfaces)
-    if ( !HW_UART_APPLY_STATIC_HARDWARE_SELECTION( channel, config->interface_mode ) )
+    if ( !HW_UART_Apply_Static_Hardware_Selection( channel, config->interface_mode ) )
     {
         return false;
     }
@@ -383,7 +383,7 @@ bool HW_UART_CONFIGURE_CHANNEL( HwUartChannel_T channel, const HwUartConfig_T* c
     return true;
 }
 
-bool HW_UART_RX_START( HwUartChannel_T channel )
+bool HW_UART_Rx_Start( HwUartChannel_T channel )
 {
     if ( channel >= HW_UART_CHANNEL_COUNT )
     {
@@ -478,7 +478,7 @@ bool HW_UART_RX_START( HwUartChannel_T channel )
  *              A structure containing one or two spans of contiguous data available in the RX
  *              buffer, along with the total length of unread data.
  */
-HwUartRxSpans_T HW_UART_RX_PEEK( HwUartChannel_T channel )
+HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
 {
     // Cache reused values in local variables for performance, as this function will be called
     // frequently in the execution path
@@ -524,7 +524,7 @@ HwUartRxSpans_T HW_UART_RX_PEEK( HwUartChannel_T channel )
         .total_length_bytes = unread_bytes };
 }
 
-void HW_UART_RX_CONSUME( HwUartChannel_T channel, uint32_t bytes_to_consume )
+void HW_UART_Rx_Consume( HwUartChannel_T channel, uint32_t bytes_to_consume )
 {
     HwUartChannelState_T* state = &uart_channel_states[channel];
 
