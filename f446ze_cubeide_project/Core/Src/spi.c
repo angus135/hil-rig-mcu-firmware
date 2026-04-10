@@ -263,8 +263,9 @@ void HAL_SPI_MspDeInit(SPI_HandleTypeDef* spiHandle)
     HAL_DMA_DeInit(spiHandle->hdmatx);
     HAL_DMA_DeInit(spiHandle->hdmarx);
 
-    /* SPI1 interrupt Deinit */
-    HAL_NVIC_DisableIRQ(SPI1_IRQn);
+    /* SPI1 DMA DeInit */
+    HAL_DMA_DeInit(spiHandle->hdmarx);
+    HAL_DMA_DeInit(spiHandle->hdmatx);
   /* USER CODE BEGIN SPI1_MspDeInit 1 */
 
   /* USER CODE END SPI1_MspDeInit 1 */
