@@ -1,7 +1,7 @@
 /******************************************************************************
  *  File:       hw_gpio.h
- *  Author:     Angus Corr
- *  Created:    18-Dec-2025
+ *  Author:     Coen Pasitchnyj, Tim Vogelsang
+ *  Created:    6-April-2026
  *
  *  Description:
  *      <Short description of the module, what it exposes, and how it should be used>
@@ -44,6 +44,16 @@ typedef enum GPIO_T
     GPIO_TEST_INDICATOR
 } GPIO_T;
 
+typedef enum GPIO_PORT
+{
+    GPIOA,
+    GPIOB,
+    GPIOC,
+    GPIOD,
+    GPIOE,
+    GPIOF
+} GPIO_PORT;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -59,6 +69,8 @@ typedef enum GPIO_T
  * mocked using GoogleMock.
  */
 void HW_GPIO_Toggle( GPIO_T gpio );
+
+void HW_GPIO_WriteToPort(uint32_t PinMask);
 
 #ifdef __cplusplus
 }
