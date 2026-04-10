@@ -72,6 +72,12 @@ typedef enum SPIFirstBit_T
     SPI_FIRST_LSB,
 } SPIFirstBit_T;
 
+typedef enum SPIMode_T
+{
+    SPI_MODE_MASTER,
+    SPI_MODE_SLAVE,
+} SPIMode_T;
+
 typedef enum SPIPeripheral_T
 {
     SPI_CHANNEL_0,
