@@ -1,7 +1,7 @@
 /******************************************************************************
  *  File:       hw_spi.h
- *  Author:     Callum Rafferty
- *  Created:    25-Mar-2026
+ *  Author:     Angus Corr
+ *  Created:    10-Apr-2026
  *
  *  Description:
  *      <Short description of the module, what it exposes, and how it should be used>
@@ -74,8 +74,8 @@ typedef enum SPIFirstBit_T
 
 typedef enum SPIMode_T
 {
-    SPI_MODE_MASTER,
-    SPI_MODE_SLAVE,
+    SPI_MASTER_MODE,
+    SPI_SLAVE_MODE,
 } SPIMode_T;
 
 typedef enum SPIPeripheral_T
@@ -85,10 +85,22 @@ typedef enum SPIPeripheral_T
     SPI_DAC,
 } SPIPeripheral_T;
 
+typedef struct HWSPIConfig_T
+{
+    SPIMode_T     spi_mode;
+    SPIDataSize_T data_size;
+    SPIFirstBit_T first_bit;
+    SPIBaudRate_T baud_rate;
+    SPICPOL_T     cpol;
+    SPICPHA_T     cpha;
+} HWSPIConfig_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configuration );
 
 #ifdef __cplusplus
 }
