@@ -1,3 +1,4 @@
+
 /******************************************************************************
  *  File:       hw_gpio.h
  *  Author:     Coen Pasitchnyj
@@ -63,6 +64,12 @@ typedef enum DIGITAL_INPUT_T
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+/**
+ * @brief Checks and caches if all digital input pins are on the same port.
+ *
+ * This should be called at system configuration time.
+ */
+void HW_GPIO_CheckSamePort(void);
 
 /**
  * @brief Toggles a digital output using the underlying GPIO HAL.
@@ -80,24 +87,10 @@ void HW_GPIO_Toggle( GPIO_T gpio );
  *
  * @param input_states   Array to store the states of the digital inputs
  *
- * This function wraps the LL_GPIO_IsInputPinSet( ... ) function provided by the
- * LL layer. It is a convenient seam for unit testing where the LL call is
- * mocked using GoogleMock.
+ * This function wraps the LL_GPIO_ReadInputPort( ... )/LL_GPIO_IsInputPinSet( ... ) function provided by the
+ * LL layer. It is a convenient seam for unit testing where the LL call is mocked using GoogleMock.
  */
 void HW_GPIO_ReadAllDigitalInputs( bool* input_states );
-
-/**
- * @brief Reads the state of all digital inputs using the underlying GPIO LL library.
- *
- * @param input_states   Array to store the states of the digital inputs
- *
- * This function wraps the LL_GPIO_ReadInputPort( ... ) function provided by the
- * LL layer. It is a convenient seam for unit testing where the LL call is
- * mocked using GoogleMock.
- * Note: This implementation assumes all digital inputs are on the same GPIO port.
- * By doing so, we can read all inputs in a single hardware access.
- */
-void HW_GPIO_ReadAllDigitalInputsSinglePort( bool* input_states );
 
 /**
  * @brief Reads the state of all digital inputs using the underlying GPIO LL library.

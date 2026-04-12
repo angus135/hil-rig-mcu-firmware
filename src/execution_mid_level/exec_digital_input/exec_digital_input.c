@@ -64,16 +64,14 @@ void EXEC_DigitalInput_Configure( const DIGITAL_INPUT_MODE_T* modes, uint8_t num
     // 'num_channels' is the number of digital input channels
     ( void )modes;
     ( void )num_channels;
-    // Example:
-    // for (uint8_t i = 0; i < num_channels; ++i) {
-    //     OutputExpander_SetMuxModeForChannel(i, modes[i]);
-    // }
+    // Let hw_gpio check and cache if all digital input pins are on the same port
+    HW_GPIO_CheckSamePort();
 }
 
 void EXEC_DigitalInput_SampleAll( bool* dest_buffer )
 {
     // Call the low-level function to read all digital inputs
-    HW_GPIO_ReadAllDigitalInputsSinglePort( dest_buffer );
+    HW_GPIO_ReadAllDigitalInputs( dest_buffer );
 }
 
 bool EXEC_DigitalInput_Sample( DIGITAL_INPUT_T input )
