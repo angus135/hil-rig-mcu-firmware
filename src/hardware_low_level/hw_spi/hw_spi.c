@@ -20,6 +20,7 @@
 #else
 #include "spi.h"
 #include "stm32f446xx.h"
+#include "stm32f4xx_ll_dma.h"
 #endif
 #include "hw_spi.h"
 #include <stddef.h>
@@ -40,6 +41,21 @@
 #define SPI_CHANNEL_1_INSTANCE SPI4
 #define SPI_DAC_INSTANCE SPI4
 
+#define SPI_CHANNEL_0_RX_DMA DMA2
+#define SPI_CHANNEL_0_RX_DMA_STREAM LL_DMA_STREAM_2
+#define SPI_CHANNEL_0_TX_DMA DMA2
+#define SPI_CHANNEL_0_TX_DMA_STREAM LL_DMA_STREAM_3
+#define SPI_CHANNEL_1_RX_DMA DMA2
+#define SPI_CHANNEL_1_RX_DMA_STREAM LL_DMA_STREAM_0
+#define SPI_CHANNEL_1_TX_DMA DMA2
+#define SPI_CHANNEL_1_TX_DMA_STREAM LL_DMA_STREAM_1
+#define SPI_DAC_TX_DMA DMA2
+#define SPI_DAC_TX_DMA_STREAM LL_DMA_STREAM_1
+
+// DMA Definitions
+#define RX_BUFFER_SIZE_BYTES 1024
+#define TX_BUFFER_SIZE_BYTES 1024
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -56,7 +72,17 @@
  */
 HWSPIConfig_T spi_channel_0_config = { 0 };
 HWSPIConfig_T spi_channel_1_config = { 0 };
-HWSPIConfig_T spi_dac_config = { 0 };
+HWSPIConfig_T spi_dac_config       = { 0 };
+
+uint8_t  spi_channel_0_rx_buffer[RX_BUFFER_SIZE_BYTES];
+uint32_t spi_channel_0_rx_position = 0;
+uint8_t  spi_channel_0_tx_buffer[TX_BUFFER_SIZE_BYTES];
+
+uint8_t  spi_channel_1_rx_buffer[RX_BUFFER_SIZE_BYTES];
+uint32_t spi_channel_1_rx_position = 0;
+uint8_t  spi_channel_1_tx_buffer[TX_BUFFER_SIZE_BYTES];
+
+uint8_t spi_dac_tx_buffer[TX_BUFFER_SIZE_BYTES];
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -111,17 +137,17 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
         case SPI_CHANNEL_0:
             hspi           = &SPI_CHANNEL_0_HANDLE;
             hspi->Instance = SPI_CHANNEL_0_INSTANCE;
-            memcpy(&spi_channel_0_config, &configuration, sizeof(HWSPIConfig_T));
+            memcpy( &spi_channel_0_config, &configuration, sizeof( HWSPIConfig_T ) );
             break;
         case SPI_CHANNEL_1:
             hspi           = &SPI_CHANNEL_1_HANDLE;
             hspi->Instance = SPI_CHANNEL_1_INSTANCE;
-            memcpy(&spi_channel_1_config, &configuration, sizeof(HWSPIConfig_T));
+            memcpy( &spi_channel_1_config, &configuration, sizeof( HWSPIConfig_T ) );
             break;
         case SPI_DAC:
             hspi           = &SPI_DAC_HANDLE;
             hspi->Instance = SPI_DAC_INSTANCE;
-            memcpy(&spi_dac_config, &configuration, sizeof(HWSPIConfig_T));
+            memcpy( &spi_dac_config, &configuration, sizeof( HWSPIConfig_T ) );
             break;
         default:
             return false;
@@ -264,7 +290,39 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
  */
 void HW_SPI_Start_Channel( SPIPeripheral_T peripheral )
 {
+    HWSPIConfig_T*     peripheral_to_start = NULL;
+    SPI_HandleTypeDef* hspi                = NULL;
+    uint8_t*           rx_buffer           = NULL;
+    switch ( peripheral )
+    {
+        case SPI_CHANNEL_0:
+            peripheral_to_start = &spi_channel_0_config;
+            hspi                = &SPI_CHANNEL_0_HANDLE;
+            rx_buffer           = spi_channel_0_rx_buffer;
+            break;
+        case SPI_CHANNEL_1:
+            peripheral_to_start = &spi_channel_1_config;
+            hspi                = &SPI_CHANNEL_1_HANDLE;
+            rx_buffer           = spi_channel_1_rx_buffer;
+            break;
+        case SPI_DAC:
+            peripheral_to_start = &spi_dac_config;
+            hspi                = &SPI_DAC_HANDLE;
+            break;
+        default:
+            return;
+    }
 
+    switch ( peripheral_to_start->spi_mode )
+    {
+        case SPI_MASTER_MODE:
+            break;
+        case SPI_SLAVE_MODE:
+            HAL_SPI_Receive_DMA( hspi, rx_buffer, RX_BUFFER_SIZE_BYTES );
+            break;
+        default:
+            return;
+    }
 }
 
 /**
@@ -290,55 +348,126 @@ void HW_SPI_Start_Channel( SPIPeripheral_T peripheral )
  */
 void HW_SPI_Stop_Channel( SPIPeripheral_T peripheral )
 {
-    
+    HWSPIConfig_T*     peripheral_to_stop = NULL;
+    SPI_HandleTypeDef* hspi               = NULL;
+    switch ( peripheral )
+    {
+        case SPI_CHANNEL_0:
+            peripheral_to_stop = &spi_channel_0_config;
+            hspi               = &SPI_CHANNEL_0_HANDLE;
+            break;
+        case SPI_CHANNEL_1:
+            peripheral_to_stop = &spi_channel_1_config;
+            hspi               = &SPI_CHANNEL_1_HANDLE;
+            break;
+        case SPI_DAC:
+            peripheral_to_stop = &spi_dac_config;
+            hspi               = &SPI_DAC_HANDLE;
+            break;
+        default:
+            return;
+    }
+
+    switch ( peripheral_to_stop->spi_mode )
+    {
+        case SPI_MASTER_MODE:
+            break;
+        case SPI_SLAVE_MODE:
+            HAL_SPI_DMAStop( hspi );
+            break;
+        default:
+            return;
+    }
 }
 
 /**
- * @brief Copy currently available unread slave RX data without consuming it.
+ * @brief  Return the unread slave RX data as one or two spans into the internal DMA buffer.
  *
- * Copies unread bytes currently held in the selected slave channel's internal RX
- * buffer into the caller-provided destination buffer, without advancing the
- * driver's RX consume position.
+ * Provides a read-only view of the unread portion of the selected SPI slave RX
+ * DMA buffer without consuming any data.
  *
- * This function provides the "peek" stage of the slave RX peek/consume model.
- * It allows the mid-level driver to inspect received data and determine message
- * boundaries or parsing decisions before later acknowledging consumption with
- * HW_SPI_Slave_Rx_Consume().
+ * Because the RX DMA buffer is circular, unread data may either be contiguous or
+ * split across the end and beginning of the buffer. This function returns up to
+ * two spans describing that unread data.
  *
- * The function shall copy up to the number of bytes requested by the caller via
- * @p size. On return, @p size shall be updated to the number of bytes actually
- * copied.
+ * The returned pointers refer to memory owned by the low-level driver. The
+ * caller must not modify this memory and must copy it if persistence is
+ * required.
  *
- * The copied data represents the unread portion of the driver's internal slave
- * RX buffer at the time the function executes. Because this is a low-level
- * driver over a live hardware receiver, the unread data may continue to grow in
- * the background after this function returns.
- *
- * This function is intended for use only on channels configured in slave mode.
- * Calling it on a master channel is invalid.
- *
- * Buffer ownership remains with the low-level driver. This function copies data
- * out to the caller and does not expose direct access to the internal DMA/ring
- * buffer.
+ * This function does not advance the RX consume position. The mid-level driver
+ * must call HW_SPI_Slave_Rx_Consume() after it has processed the required
+ * number of bytes.
  *
  * @param peripheral
  *     The SPI peripheral/channel to inspect. This channel must be configured in
  *     slave mode.
  *
- * @param data
- *     Destination buffer into which unread RX bytes will be copied.
- *
- * @param size
- *     On entry, the maximum number of bytes to copy into @p data.
- *     On return, the number of bytes actually copied.
- *
- * @note
- *     This function does not mark any bytes as consumed. Repeated calls without
- *     a matching call to HW_SPI_Slave_Rx_Consume() may return the same data.
+ * @return
+ *     A structure describing the unread slave RX data as one or two spans.
  */
-void HW_SPI_Slave_Rx_Peek( SPIPeripheral_T peripheral, uint8_t* data, size_t* size )
+HWSPIRxSpans_T HW_SPI_Slave_Rx_Peek( SPIPeripheral_T peripheral )
 {
+    uint8_t* rx_buffer       = NULL;
+    uint32_t read_index      = 0U;
+    uint32_t dma_remaining   = 0U;
+    uint32_t dma_write_index = 0U;
+    uint32_t unread_bytes    = 0U;
 
+    switch ( peripheral )
+    {
+        case SPI_CHANNEL_0:
+            rx_buffer  = spi_channel_0_rx_buffer;
+            read_index = spi_channel_0_rx_position;
+            dma_remaining =
+                LL_DMA_GetDataLength( SPI_CHANNEL_0_RX_DMA, SPI_CHANNEL_0_RX_DMA_STREAM );
+            break;
+
+        case SPI_CHANNEL_1:
+            rx_buffer  = spi_channel_1_rx_buffer;
+            read_index = spi_channel_1_rx_position;
+            dma_remaining =
+                LL_DMA_GetDataLength( SPI_CHANNEL_1_RX_DMA, SPI_CHANNEL_1_RX_DMA_STREAM );
+            break;
+
+        case SPI_DAC:
+        default:
+            return ( HWSPIRxSpans_T ){ .first_span         = { .data = NULL, .length_bytes = 0U },
+                                       .second_span        = { .data = NULL, .length_bytes = 0U },
+                                       .total_length_bytes = 0U };
+    }
+
+    dma_write_index =
+        RX_BUFFER_SIZE_BYTES - dma_remaining;  // TODO: Adjust based on size of DMA element
+
+    if ( dma_write_index == RX_BUFFER_SIZE_BYTES )
+    {
+        dma_write_index = 0U;
+    }
+
+    unread_bytes = ( dma_write_index + RX_BUFFER_SIZE_BYTES - read_index ) % RX_BUFFER_SIZE_BYTES;
+
+    if ( unread_bytes == 0U )
+    {
+        return ( HWSPIRxSpans_T ){ .first_span  = { .data = &rx_buffer[0], .length_bytes = 0U },
+                                   .second_span = { .data = &rx_buffer[0], .length_bytes = 0U },
+                                   .total_length_bytes = 0U };
+    }
+
+    if ( dma_write_index > read_index )
+    {
+        return ( HWSPIRxSpans_T ){
+            .first_span         = { .data = &rx_buffer[read_index], .length_bytes = unread_bytes },
+            .second_span        = { .data = &rx_buffer[0], .length_bytes = 0U },
+            .total_length_bytes = unread_bytes };
+    }
+
+    uint32_t first_span_length  = RX_BUFFER_SIZE_BYTES - read_index;
+    uint32_t second_span_length = unread_bytes - first_span_length;
+
+    return ( HWSPIRxSpans_T ){
+        .first_span         = { .data = &rx_buffer[read_index], .length_bytes = first_span_length },
+        .second_span        = { .data = &rx_buffer[0], .length_bytes = second_span_length },
+        .total_length_bytes = unread_bytes };
 }
 
 /**
@@ -372,7 +501,20 @@ void HW_SPI_Slave_Rx_Peek( SPIPeripheral_T peripheral, uint8_t* data, size_t* si
  */
 void HW_SPI_Slave_Rx_Consume( SPIPeripheral_T peripheral, size_t bytes_to_consume )
 {
-
+    switch ( peripheral )
+    {
+        case SPI_CHANNEL_0:
+            spi_channel_0_rx_position =
+                ( spi_channel_0_rx_position + bytes_to_consume ) % RX_BUFFER_SIZE_BYTES;
+            break;
+        case SPI_CHANNEL_1:
+            spi_channel_1_rx_position =
+                ( spi_channel_1_rx_position + bytes_to_consume ) % RX_BUFFER_SIZE_BYTES;
+            break;
+        case SPI_DAC:
+        default:
+            return;
+    }
 }
 
 /**
@@ -413,7 +555,6 @@ void HW_SPI_Slave_Rx_Consume( SPIPeripheral_T peripheral, size_t bytes_to_consum
  */
 bool HW_SPI_Slave_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, size_t size )
 {
-
 }
 
 /**
@@ -471,7 +612,6 @@ bool HW_SPI_Slave_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* dat
 bool HW_SPI_Master_Write_Read( SPIPeripheral_T peripheral, const uint8_t* write_data,
                                uint8_t* read_data, size_t size )
 {
-
 }
 
 /**
@@ -494,7 +634,6 @@ bool HW_SPI_Master_Write_Read( SPIPeripheral_T peripheral, const uint8_t* write_
  */
 bool HW_SPI_Master_Is_Busy( SPIPeripheral_T peripheral )
 {
-
 }
 
 /**
@@ -524,7 +663,6 @@ bool HW_SPI_Master_Is_Busy( SPIPeripheral_T peripheral )
  */
 bool HW_SPI_Master_Transfer_Complete( SPIPeripheral_T peripheral )
 {
-    
 }
 
 /**
@@ -550,5 +688,4 @@ bool HW_SPI_Master_Transfer_Complete( SPIPeripheral_T peripheral )
  */
 size_t HW_SPI_Master_Get_Last_Transfer_Size( SPIPeripheral_T peripheral )
 {
-
 }
