@@ -26,7 +26,7 @@ extern "C"
  *  Includes
  *------------------------------------------------------------------------------
  */
-#include "../../hardware_low_level/hw_gpio/hw_gpio.h"
+#include "hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
 
