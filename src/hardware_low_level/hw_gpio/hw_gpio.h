@@ -69,7 +69,7 @@ typedef enum DIGITAL_INPUT_T
  *
  * This should be called at system configuration time.
  */
-void HW_GPIO_CheckSamePort(void);
+void HW_GPIO_CheckSamePort( void );
 
 /**
  * @brief Toggles a digital output using the underlying GPIO HAL.
@@ -87,8 +87,9 @@ void HW_GPIO_Toggle( GPIO_T gpio );
  *
  * @param input_states   Array to store the states of the digital inputs
  *
- * This function wraps the LL_GPIO_ReadInputPort( ... )/LL_GPIO_IsInputPinSet( ... ) function provided by the
- * LL layer. It is a convenient seam for unit testing where the LL call is mocked using GoogleMock.
+ * This function wraps the LL_GPIO_ReadInputPort( ... )/LL_GPIO_IsInputPinSet( ... ) function
+ * provided by the LL layer. It is a convenient seam for unit testing where the LL call is mocked
+ * using GoogleMock.
  */
 void HW_GPIO_ReadAllDigitalInputs( bool* input_states );
 

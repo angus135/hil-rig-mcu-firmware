@@ -60,9 +60,9 @@ extern "C"
 
 extern "C"
 {
-    void HAL_GPIO_WritePin( uint32_t pin, bool level );
-    bool LL_GPIO_IsInputPinSet( uint32_t port, uint32_t pin );
-    uint16_t LL_GPIO_ReadInputPort( uint32_t port );
+void     HAL_GPIO_WritePin( uint32_t pin, bool level );
+bool     LL_GPIO_IsInputPinSet( uint32_t port, uint32_t pin );
+uint16_t LL_GPIO_ReadInputPort( uint32_t port );
 }
 
 class MockHalGpio
@@ -77,8 +77,6 @@ public:
     MOCK_METHOD( bool, LL_GPIO_IsInputPinSet, ( uint32_t port, uint32_t pin ) );
     MOCK_METHOD( uint16_t, LL_GPIO_ReadInputPort, ( uint32_t port ) );
 };
-
-
 
 /**-----------------------------------------------------------------------------
  *  Link seam: mocked functions definitions
