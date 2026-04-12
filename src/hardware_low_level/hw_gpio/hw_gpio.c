@@ -23,12 +23,13 @@
  *------------------------------------------------------------------------------
  */
 
-#ifndef TEST_BUILD
+#ifdef TEST_BUILD
+#include "tests/hw_gpio_mocks.h"
+#else
 #include "gpio.h"
 #include "stm32f4xx_ll_gpio.h"
 #endif
 
-#include "main.h"
 #include "hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
@@ -128,7 +129,7 @@ void HW_GPIO_Toggle( GPIO_T gpio )
  * LL layer. It is a convenient seam for unit testing where the LL call is
  * mocked using GoogleMock.
  */
-void HW_GPIO_ReadAllDigitalInputs( bool* input_states )
+inline void HW_GPIO_ReadAllDigitalInputs( bool* input_states )
 {
 #ifdef TEST_BUILD
     // For unit testing, just set all to false or mock as needed
@@ -182,7 +183,7 @@ inline void HW_GPIO_ReadAllDigitalInputsSinglePort( bool* input_states )
  * LL layer. It is a convenient seam for unit testing where the LL call is
  * mocked using GoogleMock.
  */
-bool HW_GPIO_ReadDigitalInput( DIGITAL_INPUT_T input )
+inline bool HW_GPIO_ReadDigitalInput( DIGITAL_INPUT_T input )
 {
 #ifdef TEST_BUILD
     // For unit testing, always return false or mock as needed
