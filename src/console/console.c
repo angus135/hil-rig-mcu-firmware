@@ -45,6 +45,8 @@
 
 #define CONSOLE_BAUD_RATE 115200U
 
+#define CONSOLE_UART_CHANNEL HW_UART_CHANNEL_3
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -319,6 +321,8 @@ static void CONSOLE_Flush_Tx( void )
 static void CONSOLE_Process_Byte( uint8_t byte )
 {
     const bool is_newline = ( byte == '\r' ) || ( byte == '\n' );
+    s_rx_byte_count++;
+    s_last_rx_byte = byte;
 
     if ( is_newline )
     {
@@ -427,6 +431,21 @@ static void CONSOLE_Process( void )
             CONSOLE_Process_Byte( rx_buf[i] );
         }
     }
+
+    uint32_t processed = 0U;
+
+    for ( uint32_t i = 0U; i < spans.first_span.length_bytes; i++ )
+    {
+        CONSOLE_Process_Byte( spans.first_span.data[i] );
+        processed++;
+    }
+
+    for ( uint32_t i = 0U; i < spans.second_span.length_bytes; i++ )
+    {
+        CONSOLE_Process_Byte( spans.second_span.data[i] );
+        processed++;
+    }
+    HW_UART_Rx_Consume( CONSOLE_UART_CHANNEL, processed );
 }
 
 /**-----------------------------------------------------------------------------
