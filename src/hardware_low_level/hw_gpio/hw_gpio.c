@@ -28,6 +28,7 @@
 #include "stm32f4xx_ll_gpio.h"
 #endif
 
+#include "main.h"
 #include "hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
@@ -36,6 +37,7 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
+#define NUM_DIGITAL_INPUTS 10
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -53,8 +55,21 @@
  */
 
 // Digital input pins: PF3, PF4, PF5, PF7, PF10, PF11, PF12, PF13, PF14, PF15
-static const uint8_t DIGITAL_INPUT_PIN_MAP[10] = { 3, 4, 5, 7, 10, 11, 12, 13, 14, 15 };
+// static const uint8_t DIGITAL_INPUT_PIN_MAP[NUM_DIGITAL_INPUTS] = { 3, 4, 5, 7, 10, 11, 12, 13,
+// 14, 15 };
 
+static const uint8_t DIGITAL_INPUT_PIN_POSITIONS[NUM_DIGITAL_INPUTS] = {
+    __builtin_ctz( Digital_Input_0_Pin ),
+    __builtin_ctz( Digital_Input_1_Pin ),
+    __builtin_ctz( Digital_Input_2_Pin ),
+    __builtin_ctz( Digital_Input_3_Pin ),
+    __builtin_ctz( Digital_Input_4_Pin ),
+    __builtin_ctz( Digital_Input_5_Pin ),
+    __builtin_ctz( Digital_Input_6_Pin ),
+    __builtin_ctz( Digital_Input_7_Pin ),
+    __builtin_ctz( Digital_Input_8_Pin ),
+    __builtin_ctz( Digital_Input_9_Pin )
+};
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -117,12 +132,12 @@ void HW_GPIO_ReadAllDigitalInputs( bool* input_states )
 {
 #ifdef TEST_BUILD
     // For unit testing, just set all to false or mock as needed
-    for ( uint8_t i = 0; i <= 9; ++i )
+    for ( uint8_t i = 0; i < NUM_DIGITAL_INPUTS; ++i )
     {
         input_states[i] = false;
     }
 #else
-    for ( uint8_t i = 0; i <= 9; ++i )
+    for ( uint8_t i = 0; i < NUM_DIGITAL_INPUTS; ++i )
     {
         input_states[i] = HW_GPIO_ReadDigitalInput( ( DIGITAL_INPUT_T )i );
     }
@@ -140,20 +155,20 @@ void HW_GPIO_ReadAllDigitalInputs( bool* input_states )
  * Note: This implementation assumes all digital inputs are on the same GPIO port.
  * By doing so, we can read all inputs in a single hardware access.
  */
-void HW_GPIO_ReadAllDigitalInputsSinglePort( bool* input_states )
+inline void HW_GPIO_ReadAllDigitalInputsSinglePort( bool* input_states )
 {
 #ifdef TEST_BUILD
     // For unit testing, just set all to false or mock as needed
-    for ( uint8_t i = 0; i <= 9; ++i )
+    for ( uint8_t i = 0; i < NUM_DIGITAL_INPUTS; ++i )
     {
         input_states[i] = false;
     }
 #else
     // Digital input pins: PF3, PF4, PF5, PF7, PF10, PF11, PF12, PF13, PF14, PF15
     uint16_t port_state = LL_GPIO_ReadInputPort( GPIOF );
-    for ( uint8_t i = 0; i < 10; ++i )
+    for ( uint8_t i = 0; i < NUM_DIGITAL_INPUTS; ++i )
     {
-        input_states[i] = ( port_state >> DIGITAL_INPUT_PIN_MAP[i] ) & 0x1;
+        input_states[i] = ( port_state >> DIGITAL_INPUT_PIN_POSITIONS[i] ) & 0x1;
     }
 #endif
 }

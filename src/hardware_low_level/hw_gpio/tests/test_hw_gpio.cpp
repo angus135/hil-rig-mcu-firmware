@@ -23,13 +23,13 @@
 
 extern "C"
 {
-#include "hw_gpio.h"
+#include "../hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
 
 // Add any other C headers required by the module
 
-#include "hw_gpio.c" /* Module under test */  // NOLINT
+#include "../hw_gpio.c" /* Module under test */  // NOLINT
 }
 
 // Add additional C++ includes here if required
@@ -55,11 +55,14 @@ extern "C"
  * mock them here using GoogleMock.
  *
  */
-Example :
 
-    extern "C"
+// Example :
+
+extern "C"
 {
     void HAL_GPIO_WritePin( uint32_t pin, bool level );
+    bool LL_GPIO_IsInputPinSet( uint32_t port, uint32_t pin );
+    uint16_t LL_GPIO_ReadInputPort( uint32_t port );
 }
 
 class MockHalGpio
@@ -67,6 +70,15 @@ class MockHalGpio
 public:
     MOCK_METHOD( void, HAL_GPIO_WritePin, ( uint32_t pin, bool level ) );
 };
+
+class MockLlGpio
+{
+public:
+    MOCK_METHOD( bool, LL_GPIO_IsInputPinSet, ( uint32_t port, uint32_t pin ) );
+    MOCK_METHOD( uint16_t, LL_GPIO_ReadInputPort, ( uint32_t port ) );
+};
+
+
 
 /**-----------------------------------------------------------------------------
  *  Link seam: mocked functions definitions
@@ -79,6 +91,17 @@ MockHalGpio     mock_gpio;
 extern "C" void HAL_GPIO_WritePin( uint32_t pin, bool level )
 {
     mock_gpio.HAL_GPIO_WritePin( pin, level );
+}
+
+MockLlGpio      mock_ll_gpio;
+extern "C" bool LL_GPIO_IsInputPinSet( uint32_t port, uint32_t pin )
+{
+    return mock_ll_gpio.LL_GPIO_IsInputPinSet( port, pin );
+}
+
+extern "C" uint16_t LL_GPIO_ReadInputPort( uint32_t port )
+{
+    return mock_ll_gpio.LL_GPIO_ReadInputPort( port );
 }
 
 // Add mocks or stubs here as needed

@@ -18,7 +18,8 @@
  *------------------------------------------------------------------------------
  */
 #include "exec_digital_input.h"
-#include "../../hardware_low_level/hw_gpio/hw_gpio.h"
+// #include "../../hardware_low_level/hw_gpio/hw_gpio.h"
+#include "hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
 
