@@ -76,6 +76,13 @@ extern "C"
 #define SPI_TIMODE_DISABLE ( 0x00000000U )
 #define SPI_CRCCALCULATION_DISABLE ( 0x00000000U )
 
+// DMA related defines
+#define DMA2 ( ( void* )0x40026400U )
+#define LL_DMA_STREAM_0 0x00000000U
+#define LL_DMA_STREAM_1 0x00000001U
+#define LL_DMA_STREAM_2 0x00000002U
+#define LL_DMA_STREAM_3 0x00000003U
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -186,6 +193,45 @@ SPI_HandleTypeDef hspi4;
  * @retval HAL status
  */
 HAL_StatusTypeDef HAL_SPI_Init( SPI_HandleTypeDef* hspi );
+
+/**
+ * @brief  Receive an amount of data in non-blocking mode with DMA.
+ * @note   In case of MASTER mode and SPI_DIRECTION_2LINES direction, hdmatx shall be defined.
+ * @param  hspi pointer to a SPI_HandleTypeDef structure that contains
+ *               the configuration information for SPI module.
+ * @param  pData pointer to data buffer (u8 or u16 data elements)
+ * @note   When the CRC feature is enabled the pData Length must be Size + 1.
+ * @param  Size amount of data elements (u8 or u16) to be received
+ * @retval HAL status
+ */
+HAL_StatusTypeDef HAL_SPI_Receive_DMA( SPI_HandleTypeDef* hspi, uint8_t* pData, uint16_t Size );
+
+/**
+ * @brief  Stop the DMA Transfer.
+ * @param  hspi pointer to a SPI_HandleTypeDef structure that contains
+ *               the configuration information for the specified SPI module.
+ * @retval HAL status
+ */
+HAL_StatusTypeDef HAL_SPI_DMAStop( SPI_HandleTypeDef* hspi );
+
+/**
+ * @brief Get Number of data to transfer.
+ * @rmtoll NDTR          NDT           LL_DMA_GetDataLength
+ * @note   Once the stream is enabled, the return value indicate the
+ *         remaining bytes to be transmitted.
+ * @param  DMAx DMAx Instance
+ * @param  Stream This parameter can be one of the following values:
+ *         @arg @ref LL_DMA_STREAM_0
+ *         @arg @ref LL_DMA_STREAM_1
+ *         @arg @ref LL_DMA_STREAM_2
+ *         @arg @ref LL_DMA_STREAM_3
+ *         @arg @ref LL_DMA_STREAM_4
+ *         @arg @ref LL_DMA_STREAM_5
+ *         @arg @ref LL_DMA_STREAM_6
+ *         @arg @ref LL_DMA_STREAM_7
+ * @retval Between 0 to 0xFFFFFFFF
+ */
+uint32_t LL_DMA_GetDataLength( void* DMAx, uint32_t Stream );
 
 // NOLINTEND
 

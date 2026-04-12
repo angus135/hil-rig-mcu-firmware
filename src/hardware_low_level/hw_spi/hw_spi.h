@@ -96,6 +96,19 @@ typedef struct HWSPIConfig_T
     SPICPHA_T     cpha;
 } HWSPIConfig_T;
 
+typedef struct
+{
+    const uint8_t* data;          // Pointer to the start of the unread data span
+    uint32_t       length_bytes;  // Length of the unread data span in bytes
+} HWSPIRxSpan_T;
+
+typedef struct
+{
+    HWSPIRxSpan_T first_span;   // First contiguous unread span
+    HWSPIRxSpan_T second_span;  // Second contiguous unread span, non-zero only if wrapping occurs
+    uint32_t      total_length_bytes;  // Total unread bytes across both spans
+} HWSPIRxSpans_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -106,7 +119,7 @@ typedef struct HWSPIConfig_T
  *
  * Applies the provided configuration to the selected SPI peripheral and prepares
  * any associated low-level resources required by the driver, such as peripheral
- * registers, DMA streams, internal software state, and internal RX/TX buffers.
+ * registers, internal software state, and internal RX/TX buffers.
  *
  * This function configures the channel role and operating parameters, including
  * settings such as master/slave mode, SPI mode, bitrate, data width, and any
@@ -181,49 +194,31 @@ void HW_SPI_Start_Channel( SPIPeripheral_T peripheral );
 void HW_SPI_Stop_Channel( SPIPeripheral_T peripheral );
 
 /**
- * @brief Copy currently available unread slave RX data without consuming it.
+ * @brief  Return the unread slave RX data as one or two spans into the internal DMA buffer.
  *
- * Copies unread bytes currently held in the selected slave channel's internal RX
- * buffer into the caller-provided destination buffer, without advancing the
- * driver's RX consume position.
+ * Provides a read-only view of the unread portion of the selected SPI slave RX
+ * DMA buffer without consuming any data.
  *
- * This function provides the "peek" stage of the slave RX peek/consume model.
- * It allows the mid-level driver to inspect received data and determine message
- * boundaries or parsing decisions before later acknowledging consumption with
- * HW_SPI_Slave_Rx_Consume().
+ * Because the RX DMA buffer is circular, unread data may either be contiguous or
+ * split across the end and beginning of the buffer. This function returns up to
+ * two spans describing that unread data.
  *
- * The function shall copy up to the number of bytes requested by the caller via
- * @p size. On return, @p size shall be updated to the number of bytes actually
- * copied.
+ * The returned pointers refer to memory owned by the low-level driver. The
+ * caller must not modify this memory and must copy it if persistence is
+ * required.
  *
- * The copied data represents the unread portion of the driver's internal slave
- * RX buffer at the time the function executes. Because this is a low-level
- * driver over a live hardware receiver, the unread data may continue to grow in
- * the background after this function returns.
- *
- * This function is intended for use only on channels configured in slave mode.
- * Calling it on a master channel is invalid.
- *
- * Buffer ownership remains with the low-level driver. This function copies data
- * out to the caller and does not expose direct access to the internal DMA/ring
- * buffer.
+ * This function does not advance the RX consume position. The mid-level driver
+ * must call HW_SPI_Slave_Rx_Consume() after it has processed the required
+ * number of bytes.
  *
  * @param peripheral
  *     The SPI peripheral/channel to inspect. This channel must be configured in
  *     slave mode.
  *
- * @param data
- *     Destination buffer into which unread RX bytes will be copied.
- *
- * @param size
- *     On entry, the maximum number of bytes to copy into @p data.
- *     On return, the number of bytes actually copied.
- *
- * @note
- *     This function does not mark any bytes as consumed. Repeated calls without
- *     a matching call to HW_SPI_Slave_Rx_Consume() may return the same data.
+ * @return
+ *     A structure describing the unread slave RX data as one or two spans.
  */
-void HW_SPI_Slave_Rx_Peek( SPIPeripheral_T peripheral, uint8_t * data, size_t * size );
+HWSPIRxSpans_T HW_SPI_Slave_Rx_Peek( SPIPeripheral_T peripheral );
 
 /**
  * @brief Mark previously received slave RX bytes as consumed.
@@ -292,7 +287,7 @@ void HW_SPI_Slave_Rx_Consume( SPIPeripheral_T peripheral, size_t bytes_to_consum
  *     false if the buffer could not be loaded, the size was invalid, or the
  *     operation was not valid for the current channel state.
  */
-bool HW_SPI_Slave_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t * data, size_t size );
+bool HW_SPI_Slave_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, size_t size );
 
 /**
  * @brief Start a master-mode SPI write/read transaction.
@@ -346,7 +341,8 @@ bool HW_SPI_Slave_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t * da
  *     false if the channel was busy, the arguments were invalid, or the
  *     transaction could not be started.
  */
-bool HW_SPI_Master_Write_Read( SPIPeripheral_T peripheral, const uint8_t * write_data, uint8_t * read_data, size_t size );
+bool HW_SPI_Master_Write_Read( SPIPeripheral_T peripheral, const uint8_t* write_data,
+                               uint8_t* read_data, size_t size );
 
 /**
  * @brief Determine whether a master transfer is currently active.
