@@ -1,5 +1,5 @@
 /******************************************************************************
- *  File:       hw_gpio.h
+ *  File:       hw_gpio.c
  *  Author:     Coen Pasitchnyj, Tim Vogelsang
  *  Created:    6-April-2026
  *
@@ -18,18 +18,20 @@
 #ifndef TEST_BUILD
 #include "gpio.h"
 #include "stm32f4xx_ll_gpio.h"
+#include "stm32f446xx.h"
 #endif
 
 #include "hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include "stddef.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
 
-#define GPIO_OUTPUT_PORT GPIOA;     // Place holder for the actual port
+#define GPIO_OUTPUT_PORT GPIOA     // Place holder for the actual port
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
