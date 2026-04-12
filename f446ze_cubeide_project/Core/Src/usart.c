@@ -210,7 +210,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     HAL_NVIC_EnableIRQ(USART3_IRQn);
   /* USER CODE BEGIN USART3_MspInit 1 */
 
-  /* USER CODE END USART3_MspInit 1 */
+  /* USER CODE END USART6_MspInit 1 */
   }
   else if(uartHandle->Instance==USART6)
   {

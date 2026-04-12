@@ -46,13 +46,17 @@
  *------------------------------------------------------------------------------
  */
 // UART Hardware mapping definitions
-#define HW_UART_CH1_USART USART1
-#define HW_UART_CH1_DMA_RX_STREAM DMA2_Stream2
-#define HW_UART_CH1_DMA_TX_STREAM DMA2_Stream7
+#define HW_UART_CH1_USART USART6
+#define HW_UART_CH1_DMA_RX_STREAM DMA2_Stream1
+#define HW_UART_CH1_DMA_TX_STREAM DMA2_Stream6
 
 #define HW_UART_CH2_USART USART2
 #define HW_UART_CH2_DMA_RX_STREAM DMA1_Stream5
 #define HW_UART_CH2_DMA_TX_STREAM DMA1_Stream6
+
+#define HW_UART_CH3_USART USART3
+#define HW_UART_CH3_DMA_RX_STREAM DMA1_Stream1
+#define HW_UART_CH3_DMA_TX_STREAM DMA1_Stream3
 
 // TODO - These pin definitions are placeholders, need to be updated based on actual design
 // May change from GPIO to something else depending on how the mode/voltage selection is implemented
@@ -74,7 +78,7 @@
 #endif
 
 // Number of UART channels supported by the hardware
-#define HW_UART_CHANNEL_COUNT 2U
+#define HW_UART_CHANNEL_COUNT 3U  // Update this  to 2U when removing console channel
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -189,11 +193,15 @@ static const HwUartHardwareMap_T uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
     [HW_UART_CHANNEL_1] = { .uart_instance = HW_UART_CH1_USART,
                             .rx_dma_stream = HW_UART_CH1_DMA_RX_STREAM,
                             .tx_dma_stream = HW_UART_CH1_DMA_TX_STREAM,
-                            .uart_handle   = &huart1 },
+                            .uart_handle   = &huart6 },
     [HW_UART_CHANNEL_2] = { .uart_instance = HW_UART_CH2_USART,
                             .rx_dma_stream = HW_UART_CH2_DMA_RX_STREAM,
                             .tx_dma_stream = HW_UART_CH2_DMA_TX_STREAM,
-                            .uart_handle   = &huart2 } };
+                            .uart_handle   = &huart2 },
+    [HW_UART_CHANNEL_3] = { .uart_instance = HW_UART_CH3_USART,
+                            .rx_dma_stream = HW_UART_CH3_DMA_RX_STREAM,
+                            .tx_dma_stream = HW_UART_CH3_DMA_TX_STREAM,
+                            .uart_handle   = &huart3 } };
 
 /* Fixed board-level mapping from logical UART channels to interface selection lines */
 static const HwUartSelectionLines_T uart_selection_lines[HW_UART_CHANNEL_COUNT] = {
@@ -365,8 +373,11 @@ static inline uint32_t HW_UART_Advance_Index_Helper( uint32_t current_index, uin
  */
 static bool HW_UART_Apply_Static_Hardware_Selection( HwUartChannel_T channel, HwUartInterfaceMode_T interface_mode )
 {
-    ( void )channel;  // Suppress unused parameter warning for now, will be used when GPIO
-                      // control is implemented
+    if ( channel == HW_UART_CHANNEL_3 )
+    {
+        // Console for Nucleo board does not need selection
+        return true;
+    }
     switch ( interface_mode )
     {
         case HW_UART_MODE_DISABLED:

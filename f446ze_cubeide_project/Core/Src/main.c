@@ -28,7 +28,7 @@
 #include "spi.h"
 #include "tim.h"
 #include "usart.h"
-#include "usb_device.h"
+#include "usb_otg.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -199,7 +199,6 @@ extern ADC_HandleTypeDef hadc1;
 extern SPI_HandleTypeDef hspi1;
 extern TIM_HandleTypeDef htim2;
 extern DMA_HandleTypeDef hdma_usart3_rx;
-extern DMA_HandleTypeDef hdma_usart3_tx;
 extern UART_HandleTypeDef huart2;
 extern UART_HandleTypeDef huart3;
 /******************************************************************************/
