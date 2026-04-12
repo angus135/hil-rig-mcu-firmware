@@ -37,6 +37,8 @@
 
 #define CONSOLE_PRINTF_BUFFER_SIZE 128U
 
+#define CONSOLE_UART_CHANNEL HW_UART_CHANNEL_3
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -54,6 +56,9 @@ TaskHandle_t* ConsoleTaskHandle = NULL;  // NOLINT(readability-identifier-naming
  *------------------------------------------------------------------------------
  */
 static const uint8_t WELCOME_MESSAGE[] = "Welcome to HIL-RIG MCU!\r\n";
+
+static volatile uint32_t s_rx_byte_count = 0U;
+static volatile uint8_t  s_last_rx_byte  = 0U;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -187,12 +192,14 @@ static void CONSOLE_On_Line_Complete( void )
 static void CONSOLE_Process_Byte( uint8_t byte )
 {
     const bool is_newline = ( byte == '\r' ) || ( byte == '\n' );
+    s_rx_byte_count++;
+    s_last_rx_byte = byte;
 
     if ( is_newline )
     {
         // Echo as CRLF for terminal friendliness
-        HW_UART_Write_Byte( UART_CONSOLE, '\r' );
-        HW_UART_Write_Byte( UART_CONSOLE, '\n' );
+        // HW_UART_Write_Byte( UART_CONSOLE, '\r' );
+        // HW_UART_Write_Byte( UART_CONSOLE, '\n' );
 
         // Swallow the second newline char in CRLF or LFCR
         if ( s_last_was_newline )
@@ -218,15 +225,15 @@ static void CONSOLE_Process_Byte( uint8_t byte )
             s_line_len--;
 
             // "Erase" character on terminal: BS, space, BS
-            HW_UART_Write_Byte( UART_CONSOLE, 0x08U );
-            HW_UART_Write_Byte( UART_CONSOLE, ' ' );
-            HW_UART_Write_Byte( UART_CONSOLE, 0x08U );
+            // HW_UART_WRITE_BYTE( UART_CONSOLE, 0x08U );
+            // HW_UART_WRITE_BYTE( UART_CONSOLE, ' ' );
+            // HW_UART_WRITE_BYTE( UART_CONSOLE, 0x08U );
         }
         return;
     }
 
     // Normal character: echo and store if there is space
-    HW_UART_Write_Byte( UART_CONSOLE, byte );
+    // HW_UART_WRITE_BYTE( UART_CONSOLE, byte );
 
     if ( s_line_len < CONSOLE_LINE_MAX )
     {
@@ -250,6 +257,27 @@ static void CONSOLE_Process_Byte( uint8_t byte )
  */
 static void CONSOLE_Init( void )
 {
+
+    HwUartConfig_T config = { .interface_mode = HW_UART_MODE_TTL_3V3,
+                              .baud_rate      = 115200U,
+                              .word_length    = HW_UART_WORD_LENGTH_8_BITS,
+                              .stop_bits      = HW_UART_STOP_BITS_1,
+                              .parity         = HW_UART_PARITY_NONE,
+                              .rx_enabled     = true,
+                              .tx_enabled     = false };
+    if ( HW_UART_Configure_Channel( CONSOLE_UART_CHANNEL, &config ) != true )
+    {
+        // Handle configuration error
+        return;
+    }
+    if ( HW_UART_Rx_Start( CONSOLE_UART_CHANNEL ) != true )
+    {
+        // Handle start error
+        return;
+    }
+    // reset local parser state
+    s_line_len         = 0U;
+    s_last_was_newline = false;
     CONSOLE_Printf( "%s", WELCOME_MESSAGE );
 }
 
@@ -263,12 +291,27 @@ static void CONSOLE_Init( void )
  */
 static void CONSOLE_Process( void )
 {
-    uint8_t      byte   = 0;
-    UARTStatus_T status = HW_UART_Read_Byte( UART_CONSOLE, &byte );
-    if ( status == UART_SUCCESS )
+    HwUartRxSpans_T spans = HW_UART_Rx_Peek( CONSOLE_UART_CHANNEL );
+
+    if ( spans.total_length_bytes == 0U )
     {
-        CONSOLE_Process_Byte( byte );
+        return;
     }
+
+    uint32_t processed = 0U;
+
+    for ( uint32_t i = 0U; i < spans.first_span.length_bytes; i++ )
+    {
+        CONSOLE_Process_Byte( spans.first_span.data[i] );
+        processed++;
+    }
+
+    for ( uint32_t i = 0U; i < spans.second_span.length_bytes; i++ )
+    {
+        CONSOLE_Process_Byte( spans.second_span.data[i] );
+        processed++;
+    }
+    HW_UART_Rx_Consume( CONSOLE_UART_CHANNEL, processed );
 }
 
 /**-----------------------------------------------------------------------------
@@ -310,7 +353,7 @@ void CONSOLE_Printf( const char* format, ... )
 
     for ( uint32_t i = 0U; i < count; i++ )
     {
-        HW_UART_Write_Byte( UART_CONSOLE, ( uint8_t )buffer[i] );
+        // HW_UART_WRITE_BYTE( UART_CONSOLE, ( uint8_t )buffer[i] );
     }
 }
 

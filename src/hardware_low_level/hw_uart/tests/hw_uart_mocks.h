@@ -103,26 +103,38 @@ typedef struct
  */
 
 // USART mocks
-static USART_TypeDef USART1_mock = { 0U };
+static USART_TypeDef USART6_mock = { 0U };
 static USART_TypeDef USART2_mock = { 0U };
+// Console
+static USART_TypeDef USART3_mock = { 0U };
 
-#define USART1 ( &USART1_mock )
+#define USART6 ( &USART6_mock )
 #define USART2 ( &USART2_mock )
+// Console
+#define USART3 ( &USART3_mock )
 
 // DMA stream mocks
-static DMA_Stream_TypeDef DMA2_Stream2_mock = { 0U };
-static DMA_Stream_TypeDef DMA2_Stream7_mock = { 0U };
+static DMA_Stream_TypeDef DMA2_Stream1_mock = { 0U };
+static DMA_Stream_TypeDef DMA2_Stream6_mock = { 0U };
 static DMA_Stream_TypeDef DMA1_Stream5_mock = { 0U };
 static DMA_Stream_TypeDef DMA1_Stream6_mock = { 0U };
+// Console
+static DMA_Stream_TypeDef DMA1_Stream1_mock = { 0U };
+static DMA_Stream_TypeDef DMA1_Stream3_mock = { 0U };
 
-#define DMA2_Stream2 ( &DMA2_Stream2_mock )
-#define DMA2_Stream7 ( &DMA2_Stream7_mock )
+#define DMA2_Stream1 ( &DMA2_Stream1_mock )
+#define DMA2_Stream6 ( &DMA2_Stream6_mock )
 #define DMA1_Stream5 ( &DMA1_Stream5_mock )
 #define DMA1_Stream6 ( &DMA1_Stream6_mock )
+// Console
+#define DMA1_Stream1 ( &DMA1_Stream1_mock )
+#define DMA1_Stream3 ( &DMA1_Stream3_mock )
 
 // hUart handle mocks
-static UART_HandleTypeDef huart1 = { .Instance = USART1 };
+static UART_HandleTypeDef huart6 = { .Instance = USART6 };
 static UART_HandleTypeDef huart2 = { .Instance = USART2 };
+// Console
+static UART_HandleTypeDef huart3 = { .Instance = USART3 };
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------

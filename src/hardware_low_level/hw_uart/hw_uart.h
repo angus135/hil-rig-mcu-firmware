@@ -68,6 +68,7 @@ typedef enum
 {
     HW_UART_CHANNEL_1 = 0,  // First DUT facing UART channel
     HW_UART_CHANNEL_2 = 1,  // Second DUT facing UART channel
+    HW_UART_CHANNEL_3 = 2,  // Temporary Console UART channel
 } HwUartChannel_T;
 
 /**
