@@ -40,6 +40,18 @@
  */
 #define NUM_DIGITAL_INPUTS 10
 
+#define DIGITAL_INPUTS_PORT Digital_Input_0_GPIO_Port
+#define ALL_DIGITAL_INPUTS_SAME_PORT ( \
+    Digital_Input_1_GPIO_Port == DIGITAL_INPUTS_PORT && \
+    Digital_Input_2_GPIO_Port == DIGITAL_INPUTS_PORT && \
+    Digital_Input_3_GPIO_Port == DIGITAL_INPUTS_PORT && \
+    Digital_Input_4_GPIO_Port == DIGITAL_INPUTS_PORT && \
+    Digital_Input_5_GPIO_Port == DIGITAL_INPUTS_PORT && \
+    Digital_Input_6_GPIO_Port == DIGITAL_INPUTS_PORT && \
+    Digital_Input_7_GPIO_Port == DIGITAL_INPUTS_PORT && \
+    Digital_Input_8_GPIO_Port == DIGITAL_INPUTS_PORT && \
+    Digital_Input_9_GPIO_Port == DIGITAL_INPUTS_PORT )
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -125,9 +137,8 @@ void HW_GPIO_Toggle( GPIO_T gpio )
  *
  * @param input_states   Array to store the states of the digital inputs
  *
- * This function wraps the LL_GPIO_IsInputPinSet( ... ) function provided by the
- * LL layer. It is a convenient seam for unit testing where the LL call is
- * mocked using GoogleMock.
+ * This function wraps the LL_GPIO_ReadInputPort( ... )/LL_GPIO_IsInputPinSet( ... ) function provided by the
+ * LL layer. It is a convenient seam for unit testing where the LL call is mocked using GoogleMock.
  */
 inline void HW_GPIO_ReadAllDigitalInputs( bool* input_states )
 {
@@ -138,39 +149,16 @@ inline void HW_GPIO_ReadAllDigitalInputs( bool* input_states )
         input_states[i] = false;
     }
 #else
-    for ( uint8_t i = 0; i < NUM_DIGITAL_INPUTS; ++i )
-    {
-        input_states[i] = HW_GPIO_ReadDigitalInput( ( DIGITAL_INPUT_T )i );
-    }
-#endif
-}
-
-/**
- * @brief Reads the state of all digital inputs using the underlying GPIO LL library.
- *
- * @param input_states   Array to store the states of the digital inputs
- *
- * This function wraps the LL_GPIO_ReadInputPort( ... ) function provided by the
- * LL layer. It is a convenient seam for unit testing where the LL call is
- * mocked using GoogleMock.
- * Note: This implementation assumes all digital inputs are on the same GPIO port.
- * By doing so, we can read all inputs in a single hardware access.
- */
-inline void HW_GPIO_ReadAllDigitalInputsSinglePort( bool* input_states )
-{
-#ifdef TEST_BUILD
-    // For unit testing, just set all to false or mock as needed
-    for ( uint8_t i = 0; i < NUM_DIGITAL_INPUTS; ++i )
-    {
-        input_states[i] = false;
-    }
-#else
-    // Digital input pins: PF3, PF4, PF5, PF7, PF10, PF11, PF12, PF13, PF14, PF15
-    uint16_t port_state = LL_GPIO_ReadInputPort( GPIOF );
-    for ( uint8_t i = 0; i < NUM_DIGITAL_INPUTS; ++i )
-    {
-        input_states[i] = ( port_state >> DIGITAL_INPUT_PIN_POSITIONS[i] ) & 0x1;
-    }
+    #if ALL_DIGITAL_INPUTS_SAME_PORT
+        // Use fast single-port read
+        uint16_t port_state = LL_GPIO_ReadInputPort(DIGITAL_INPUTS_PORT);
+        for (uint8_t i = 0; i < NUM_DIGITAL_INPUTS; ++i)
+            input_states[i] = (port_state >> DIGITAL_INPUT_PIN_POSITIONS[i]) & 0x1;
+    #else
+        // Use slow per-pin read
+        for (uint8_t i = 0; i < NUM_DIGITAL_INPUTS; ++i)
+            input_states[i] = HW_GPIO_ReadDigitalInput((DIGITAL_INPUT_T)i);
+    #endif
 #endif
 }
 
