@@ -177,6 +177,22 @@ static void CONSOLE_On_Line_Complete( void )
 }
 
 /**
+ * @brief Helper function to transmit data over the console UART.
+ *
+ * @param data        Pointer to the data to transmit
+ * @param length      Number of bytes to transmit
+ *
+ * @returns void
+ */
+static void CONSOLE_Transmit( const uint8_t* data, uint32_t length )
+{
+    if ( HW_UART_Tx_Load_Buffer( CONSOLE_UART_CHANNEL, data, length ) )
+    {
+        HW_UART_Tx_Trigger( CONSOLE_UART_CHANNEL );
+    }
+}
+
+/**
  * @brief Process a single received console character.
  *
  * This function handles echoing input back to the terminal, assembling
@@ -198,8 +214,8 @@ static void CONSOLE_Process_Byte( uint8_t byte )
     if ( is_newline )
     {
         // Echo as CRLF for terminal friendliness
-        // HW_UART_Write_Byte( UART_CONSOLE, '\r' );
-        // HW_UART_Write_Byte( UART_CONSOLE, '\n' );
+        const uint8_t crlf[] = { '\r', '\n' };
+        CONSOLE_Transmit( crlf, sizeof( crlf ) );
 
         // Swallow the second newline char in CRLF or LFCR
         if ( s_last_was_newline )
@@ -225,15 +241,14 @@ static void CONSOLE_Process_Byte( uint8_t byte )
             s_line_len--;
 
             // "Erase" character on terminal: BS, space, BS
-            // HW_UART_WRITE_BYTE( UART_CONSOLE, 0x08U );
-            // HW_UART_WRITE_BYTE( UART_CONSOLE, ' ' );
-            // HW_UART_WRITE_BYTE( UART_CONSOLE, 0x08U );
+            const uint8_t backspace[] = { 0x08U, ' ', 0x08U };
+            CONSOLE_Transmit( backspace, sizeof( backspace ) );
         }
         return;
     }
 
     // Normal character: echo and store if there is space
-    // HW_UART_WRITE_BYTE( UART_CONSOLE, byte );
+    CONSOLE_Transmit( &byte, 1U );
 
     if ( s_line_len < CONSOLE_LINE_MAX )
     {
@@ -264,7 +279,7 @@ static void CONSOLE_Init( void )
                               .stop_bits      = HW_UART_STOP_BITS_1,
                               .parity         = HW_UART_PARITY_NONE,
                               .rx_enabled     = true,
-                              .tx_enabled     = false };
+                              .tx_enabled     = true };
     if ( HW_UART_Configure_Channel( CONSOLE_UART_CHANNEL, &config ) != true )
     {
         // Handle configuration error
@@ -275,6 +290,7 @@ static void CONSOLE_Init( void )
         // Handle start error
         return;
     }
+
     // reset local parser state
     s_line_len         = 0U;
     s_last_was_newline = false;
@@ -323,7 +339,7 @@ static void CONSOLE_Process( void )
  * @brief Printf-style formatted output to the console UART
  *
  * Formats the input string into a fixed-size buffer using vsnprintf()
- * and transmits the resulting characters byte-by-byte over the console UART.
+ * and transmits the resulting string over the console UART.
  *
  * Output is truncated if it exceeds the internal buffer size.
  *
@@ -352,10 +368,7 @@ void CONSOLE_Printf( const char* format, ... )
     uint32_t count =
         ( len < ( int )sizeof( buffer ) ) ? ( uint32_t )len : ( uint32_t )( sizeof( buffer ) - 1U );
 
-    for ( uint32_t i = 0U; i < count; i++ )
-    {
-        // HW_UART_WRITE_BYTE( UART_CONSOLE, ( uint8_t )buffer[i] );
-    }
+    CONSOLE_Transmit( ( const uint8_t* )buffer, count );
 }
 
 /**
