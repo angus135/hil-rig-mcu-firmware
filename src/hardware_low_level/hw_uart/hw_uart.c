@@ -668,7 +668,6 @@ bool HW_UART_Rx_Start( HwUartChannel_T channel )
     {
         return false;
     }
-
     state->runtime.rx_running = true;
     return true;
 }
