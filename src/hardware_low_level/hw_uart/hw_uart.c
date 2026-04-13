@@ -40,6 +40,7 @@
 #include "rtos_config.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -148,7 +149,8 @@ typedef struct
 
     bool is_configured_and_initialised;
     bool rx_running;
-    bool tx_loaded_or_running;
+    bool tx_loaded;
+    bool tx_running;
 
 } HwUartRuntimeState_T;
 
@@ -450,11 +452,30 @@ static bool HW_UART_Apply_Static_Hardware_Selection( HwUartChannel_T       chann
     }
 }
 
-bool HW_UART_Init_Channel( HwUartChannel_T channel )
+/**
+ * @brief  Applies the stored UART configuration to the hardware peripheral and performs one-time
+ *         peripheral initialisation for the specified channel.
+ *
+ * @param  channel The UART channel to initialise.
+ *
+ * @return true if the UART peripheral was successfully initialised.
+ * @return false if the stored configuration cannot be translated to HAL settings or if
+ *         HAL_UART_Init() fails.
+ *
+ * @note   This function is part of the non-hot-path configuration stage and must only be called
+ *         after a valid channel configuration has been stored.
+ *
+ * @note   This function applies framing and mode settings from the low-level driver owned channel
+ *         configuration to the underlying HAL UART handle.
+ *
+ * @note   Runtime RX and TX operations assume this initialisation has already completed
+ *         successfully and do not reinitialise the peripheral.
+ */
+static bool HW_UART_Init_Channel( HwUartChannel_T channel )
 {
     HwUartChannelState_T* state = &uart_channel_states[channel];
-    UART_HandleTypeDef* huart = uart_hardware_map[channel].uart_handle;
-        
+    UART_HandleTypeDef*   huart = uart_hardware_map[channel].uart_handle;
+
     huart->Init.BaudRate = state->config.baud_rate;
 
     switch ( state->config.word_length )
@@ -504,7 +525,7 @@ bool HW_UART_Init_Channel( HwUartChannel_T channel )
         return false;
     }
     return true;
-    }
+}
 
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
@@ -548,7 +569,7 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* c
         return false;
     }
 
-    HwUartChannelState_T* state = &uart_channel_states[channel];
+    HwUartChannelState_T* state                  = &uart_channel_states[channel];
     state->runtime.is_configured_and_initialised = false;
 
     if ( !HW_UART_Configuration_Is_Valid( config ) )
@@ -557,8 +578,8 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* c
     }
 
     // Store the validated configuration
-    
-    state->config               = *config;
+
+    state->config = *config;
 
     // Apply the static hardware selection states (mode/voltage) based on the interface mode
     // specified in the configuration to the appropriate hardware lines (GPIOs or other control
@@ -569,11 +590,12 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* c
     }
 
     // Reset runtime state variables to their default values
-    state->runtime.latched_faults = 0U;
-    state->runtime.rx_read_index  = 0U;
-    state->runtime.tx_length_bytes = 0U;
-    state->runtime.rx_running     = false;
-    state->runtime.tx_loaded_or_running     = false;
+    state->runtime.latched_faults       = 0U;
+    state->runtime.rx_read_index        = 0U;
+    state->runtime.tx_length_bytes      = 0U;
+    state->runtime.rx_running           = false;
+    state->runtime.tx_loaded            = false;
+    state->runtime.tx_running           = false;
 
     if ( !HW_UART_Init_Channel( channel ) )
     {
@@ -825,7 +847,152 @@ void HW_UART_Rx_Consume( HwUartChannel_T channel, uint32_t bytes_to_consume )
         HW_UART_Advance_Index_Helper( state->runtime.rx_read_index, bytes_to_consume );
 }
 
+/**
+ * @brief  Copies a transmit payload into the low-level driver owned TX staging buffer for the
+ *         specified UART channel.
+ *
+ * @param  channel       The UART channel whose TX staging buffer is to be loaded.
+ * @param  data          Pointer to the source payload to copy into the staging buffer.
+ * @param  length_bytes  Number of payload bytes to stage for transmission.
+ *
+ * @return true if the payload was successfully copied into the staging buffer.
+ * @return false if the channel is invalid, the payload pointer is null, the payload length is
+ *         zero or exceeds the staging buffer capacity, the channel is not ready for TX, or
+ *         staged or in-flight TX data already owns the buffer.
+ *
+ * @note   This function copies data into low-level driver owned memory. The caller retains
+ *         ownership of the source buffer and may reuse or discard it after this function returns.
+ *
+ * @note   Staged data must not be overwritten before it is transmitted or otherwise released.
+ *         This function therefore rejects loads while TX data is already staged or while a TX
+ *         transfer is currently in progress.
+ *
+ * @note   This function stages data only. It does not begin transmission. Transmission begins
+ *         only when HW_UART_Tx_Trigger() is called.
+ */
+bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint32_t length_bytes )
+{
+    if ( channel >= HW_UART_CHANNEL_COUNT )
+    {
+        return false;
+    }  // Could later assume valid channel for optimisation
+
+    if ( data == NULL )
+    {
+        return false;
+    }  // Could later assume valid data for optimisation
+
+    if ( ( length_bytes == 0U ) || ( length_bytes > HW_UART_TX_BUFFER_SIZE ) )
+    {
+        return false;
+    }  // Could later assume bounded length for optimisation
+
+    HwUartChannelState_T* state = &uart_channel_states[channel];
+
+    if ( !state->runtime.is_configured_and_initialised || !state->config.tx_enabled )
+    {
+        return false;
+    }  // Could later assume configured and enabled for optimisation
+
+    if ( state->runtime.tx_loaded || state->runtime.tx_running )
+    {
+        return false;
+    }  // Staged data must not be overwritten, this should be a fault condition
+
+    memcpy( state->tx_buffer, data, length_bytes );
+
+    state->runtime.tx_length_bytes = length_bytes;
+    state->runtime.tx_loaded = true;
+
+    return true;
+}
+
+/**
+ * @brief  Starts transmission of the currently staged TX payload for the specified UART channel
+ *         using DMA.
+ *
+ * @param  channel The UART channel to transmit on.
+ *
+ * @return true if DMA transmission was successfully started.
+ * @return false if the channel is invalid, the channel is not ready for TX, no payload has been
+ *         staged, a TX transfer is already running, the staged length is invalid, or
+ *         HAL_UART_Transmit_DMA() fails.
+ *
+ * @note   This function does not copy payload data. It launches transmission of data that has
+ *         already been staged in the low-level driver owned TX buffer via HW_UART_Tx_Load_Buffer().
+ *
+ * @note   If DMA launch fails, the staged payload remains present in the TX staging buffer and
+ *         may be retried or otherwise handled by higher layers.
+ *
+ * @note   TX buffer ownership is released only when transmission completes, currently through
+ *         HAL_UART_TxCpltCallback().
+ */
+bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
+{
+    if ( channel >= HW_UART_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    HwUartChannelState_T*      state  = &uart_channel_states[channel];
+    const HwUartHardwareMap_T* hw_map = &uart_hardware_map[channel];
+    UART_HandleTypeDef*        huart  = hw_map->uart_handle;
+
+    if ( !state->runtime.is_configured_and_initialised || !state->config.tx_enabled )
+    {
+        return false;
+    }  // Can remove to optimise if assuming is configured and intilialised
+
+    if ( !state->runtime.tx_loaded || state->runtime.tx_running )
+    {
+        return false;
+    }  // No staged payload available or tx is currently running
+
+    if ( state->runtime.tx_length_bytes == 0U )
+    {
+        return false;
+    }  // Defensive check, should never happen if load succeeded
+
+    
+
+    if ( HAL_UART_Transmit_DMA( huart,
+                                state->tx_buffer,
+                                ( uint16_t )state->runtime.tx_length_bytes ) != HAL_OK )
+    {
+        return false;
+    }
+    state->runtime.tx_running = true;
+    return true;
+}
 
 
-
-
+/**
+ * @brief  HAL UART transmit complete callback used to release low-level TX staging state once a
+ *         DMA-backed UART transmission finishes.
+ *
+ * @param  huart Pointer to the HAL UART handle that completed transmission.
+ *
+ * @return void
+ *
+ * @note   This callback clears the TX running state, releases staged TX buffer ownership, and
+ *         resets the staged payload length for the matching logical UART channel.
+ *
+ * @note   This is currently the mechanism by which the low-level driver marks a staged TX buffer
+ *         as free after transmission.
+ *
+ * @note   The callback ignores UART handles that do not match any logical channel owned by this
+ *         driver.
+ */
+void HAL_UART_TxCpltCallback( UART_HandleTypeDef* huart )
+{
+    for ( uint32_t channel = 0U; channel < HW_UART_CHANNEL_COUNT; channel++ )
+    {
+        if ( uart_hardware_map[channel].uart_handle == huart )
+        {
+            uart_channel_states[channel].runtime.tx_running      = false;
+            uart_channel_states[channel].runtime.tx_loaded       = false;
+            uart_channel_states[channel].runtime.tx_length_bytes = 0U;
+            break;
+        }
+    }
+}
