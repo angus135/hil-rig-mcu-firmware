@@ -590,12 +590,12 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* c
     }
 
     // Reset runtime state variables to their default values
-    state->runtime.latched_faults       = 0U;
-    state->runtime.rx_read_index        = 0U;
-    state->runtime.tx_length_bytes      = 0U;
-    state->runtime.rx_running           = false;
-    state->runtime.tx_loaded            = false;
-    state->runtime.tx_running           = false;
+    state->runtime.latched_faults  = 0U;
+    state->runtime.rx_read_index   = 0U;
+    state->runtime.tx_length_bytes = 0U;
+    state->runtime.rx_running      = false;
+    state->runtime.tx_loaded       = false;
+    state->runtime.tx_running      = false;
 
     if ( !HW_UART_Init_Channel( channel ) )
     {
@@ -902,7 +902,7 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
     memcpy( state->tx_buffer, data, length_bytes );
 
     state->runtime.tx_length_bytes = length_bytes;
-    state->runtime.tx_loaded = true;
+    state->runtime.tx_loaded       = true;
 
     return true;
 }
@@ -953,18 +953,15 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
         return false;
     }  // Defensive check, should never happen if load succeeded
 
-    
-
-    if ( HAL_UART_Transmit_DMA( huart,
-                                state->tx_buffer,
-                                ( uint16_t )state->runtime.tx_length_bytes ) != HAL_OK )
+    if ( HAL_UART_Transmit_DMA( huart, state->tx_buffer,
+                                ( uint16_t )state->runtime.tx_length_bytes )
+         != HAL_OK )
     {
         return false;
     }
     state->runtime.tx_running = true;
     return true;
 }
-
 
 /**
  * @brief  HAL UART transmit complete callback used to release low-level TX staging state once a
