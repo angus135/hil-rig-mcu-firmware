@@ -106,10 +106,23 @@ void HW_GPIO_Toggle( GPIO_T gpio )
  *
  * @return returns the port and a combined pin mask, if fault return {GPIOA, 0xFFFFFFFF}
  * mocked using GoogleMock.
+ * This function is designed to split split pins into groups based on their ports
+ * because we can write to an entire port at once this increases speed.
+ * EXAMPLE: If we want to set DIGITALOUT0, DIGITALOUT1 and DIGITALOUT2, but DIGITALOUT2 uses a
+different port,
+GPIO_OUTPUT_NAMES* my_arr = [ DIGITALOUT0, DIGITALOUT1, DIGITALOUT2 ]
+GPIO_PORT_PACKET destination[8];
+split_about_ports(my_arr, 3, destination);
+// we dont HAVE to go through all 8 ports (as only 2 are used) but for examples sake we can
+for (int i=0; i<8; i++){  
+    HW_GPIO_SetToPort(destination[i].gpiox, destination[i].pin_mask)
+}
+HW_GPIO_SetToPort(p.gpiox, p.pin_mask)
  */
 GPIO_PORT_PACKET* split_about_ports( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length, GPIO_PORT_PACKET* destination)
 {
     GPIO_PORT_PACKET port_packet;
+    // reset data at destination
     for ( int j = 0; j < NUM_GPIO_PORTS; j++ )
     {
         destination[j].gpiox = (GPIO_PORT)j;    // reset ports, destination[0] = GPIOA, destination[1] = GPIOB etc
@@ -133,14 +146,23 @@ GPIO_PORT_PACKET* split_about_ports( GPIO_OUTPUT_NAMES* gpio_names, uint8_t leng
 }
 
 /**
- * @brief combines many GPIO's into one pin mask .
+ * @brief combines many GPIO's (on the same port) into one pin mask.
  *
- * @param gpio_names   an array of GPIO pin names, all of which are on the same port 
- * @param length       the nubmer of GPIO_T in gpio_names
+ * @param gpio_names   an array of GPIO pin names, all of which are on the same port
+ * @param length       the nubmer of GPIO_OUTPUT_NAMES in gpio_names
  *
- * @return returns the port and a combined pin mask, if fault return {GPIOA, 0xFFFFFFFF}
- * This function wraps the HAL_GPIO_WritePin( ... ) function provided by the
- * HAL layer. It is a convenient seam for unit testing where the HAL call is
+ * @return returns the port and a combined pin mask, if fault return {GPIOA, 0xFFFF0000}
+ *
+ * Combines the pinmasks of the gpio_names so that they can be written to the BSR in one step
+ * (instead of individually).
+ * EXAMPLE: if we want to set both DIGITALOUT0 and DIGITALOUT1 we could write
+GPIO_OUTPUT_NAMES* my_arr = [ DIGITALOUT0, DIGITALOUT1 ]
+struct GPIO_PORT_PACKET p = combine_port_pin_masks(my_arr, 2)
+if (p.pin_mask == 0xFFFF0000){
+    error
+} else {
+    HW_GPIO_SetToPort(p.gpiox, p.pin_mask)
+}
  * mocked using GoogleMock.
  */
 GPIO_PORT_PACKET combine_port_pin_masks( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length )
@@ -154,10 +176,7 @@ GPIO_PORT_PACKET combine_port_pin_masks( GPIO_OUTPUT_NAMES* gpio_names, uint8_t 
         if ( checker != port_packet.gpiox )
         {
             // Not all of the pins had the same port, so return an error
-            GPIO_PORT_PACKET p;
-            p.gpiox = GPIOA; 
-            p.pin_mask = 4294967295;  // 0xFFFFFFFF
-            return p;
+            return (struct GPIO_PORT_PACKET){GPIOA, 4294901760};    // 4294901760 = 0xFFFF0000
         }
         pin_mask = pin_mask | port_packet.pin_mask; // combine pin masks
     }
@@ -165,13 +184,14 @@ GPIO_PORT_PACKET combine_port_pin_masks( GPIO_OUTPUT_NAMES* gpio_names, uint8_t 
 }
 
 /**
- * @brief Returns the port and pin associated with the pin name passed into it
+ * @brief Returns the hardware port and pin associated with the  software pin name passed into it
  *
  * @param gpio_name     The name of the GPIO pin as defined in hw_gpio.h GPIO_OUTPUT_NAMES
  *
  *
- * This function maps the GPIO pin name as defined in f446ze_cubeide_project/Core/Inc/main.h to the
- * the mathcing GPIO port and GPIO pin number
+ * This function maps the (software) GPIO pin name defined in hw_gpio.h GPIO_OUTPUT_NAMES
+ * to the mathcing (hardware) GPIO port and GPIO pin number
+ * as defined in f446ze_cubeide_project/Core/Inc/main.h to the
  * mocked using GoogleMock.
  */
 GPIO_PORT_PACKET HW_GPIO_port_pin_association( GPIO_OUTPUT_NAMES gpio_name )
@@ -227,29 +247,68 @@ switch ( gpio_name )
 /**
  * @brief Sets the state of all digital inputs in a GPIO Port using the underlying GPIO LL library.
  *
- * @param PinMask   Carrys the information about which pins to set or rest
-                    If an upper 16 bit is 1 this resets the associated digital output
+ * @param PinMask   Carrys the information about which pins to set
                     If a lower 16 bit is 1 this sets the associated digital output
                     If any bit is 0 this indicates no change
                     0th bit corresponds to digital output 0, 1st bit to output 1 etc
-                    16th bit corresponds to digital output 0, 17th but to output 1 etc
- *                  
  *
- * This function wraps the LL_GPIO_SetOutputPin( ... ) function provided by the
- * LL layer
+ *
+ * This function wraps the LL_GPIO_ResetOutputPin( ... ) function provided by the
+ * LL layer. It can be used to set a single output pin or many output pins (on the same port).
+ * EXAMPLE: HW_GPIO_SetToPort( GPIOA, LL_GPIO_PIN_5 ) sets LL_GPIO_PIN_5 of port A high
+ * EXAMPLE: HW_GPIO_SetToPort( GPIOA, LL_GPIO_PIN_5 | LL_GPIO_PIN_4 ) sets LL_GPIO_PIN_5 and
+LL_GPIO_PIN_4 of port A high
+ * Setting multiple pins works because LL_GPIO_PIN_5 and LL_GPIO_PIN_4 are just uint32_t
+ * in this case likely 0x0000_0020 0x0000_0010, so 0x0000_0030 is written to the BSR register
+ * 0x0000_0030 = 0000_0000_0000_0000_0000_0000_0011_0000 setting pins 4 and 5 high
  * mocked using GoogleMock.
  * Note: This implementation assumes all digital outputs are on the same GPIO port.
  * By doing so, we can set all the outputs in a single hardware access.
  */
-inline void HW_GPIO_WriteToPort( GPIO_PORT gpiox, uint32_t pin_mask )
+inline void HW_GPIO_SetToPort( GPIO_PORT gpiox, uint32_t pin_mask )
 {
 #ifdef TEST_BUILD
     // For unit testing, do nothing
     ( void )pin_mask;
     ( void )gpiox;
 #else
-    // Digital input pins: PF3, PF4, PF5, PF7, PF10, PF11, PF12, PF13, PF14, PF15
+    // LL_GPIO_XOutputPin functions write to the BSR port register,
+    // The lower 16 bits of the pin_mask bit 0 = pin0, bit 1 = pin1 etc
     LL_GPIO_SetOutputPin(gpiox, pin_mask);
+#endif
+}
+
+/**
+ * @brief Resets the state of all digital inputs in a GPIO Port using the underlying GPIO LL
+library.
+ *
+ * @param PinMask   Carrys the information about which pins to reset
+                    If a lower 16 bit is 1 this resets the associated digital output
+                    If any bit is 0 this indicates no change
+                    0th bit corresponds to pin 0, 1st bit to pin 1 etc
+ *
+ *
+ * This function wraps the LL_GPIO_ResetOutputPin( ... ) function provided by the
+ * LL layer. It can be used to resset a single output pin or many output pins (on the same port).
+ * EXAMPLE: HW_GPIO_ResetToPort( GPIOA, LL_GPIO_PIN_5 ) sets LL_GPIO_PIN_5 of port A low
+ * EXAMPLE: HW_GPIO_ResetToPort( GPIOA, LL_GPIO_PIN_5 | LL_GPIO_PIN_4 ) sets LL_GPIO_PIN_5 and
+LL_GPIO_PIN_4 of port A low
+ * Reseting multiple pins works because LL_GPIO_PIN_5 and LL_GPIO_PIN_4 are just uint32_t
+ * in this case likely 0x0000_0020 0x0000_0010, so 0x0000_0030 is written to the BSR register
+ * 0x0000_0030 = 0000_0000_0000_0000_0000_0000_0011_0000 reseting pins 4 and 5 high
+ * mocked using GoogleMock.
+ * Note: This implementation assumes all digital outputs are on the same GPIO port.
+ * By doing so, we can set all the outputs in a single hardware access.
+ */
+inline void HW_GPIO_ResetToPort( GPIO_PORT gpiox, uint32_t pin_mask )
+{
+#ifdef TEST_BUILD
+    // For unit testing, do nothing
+    ( void )pin_mask;
+    ( void )gpiox;
+#else
+    // LL_GPIO_XOutputPin functions write to the BSR port register,
+    // The lower 16 bits of the pin_mask bit 0 = pin0, bit 1 = pin1 etc
     LL_GPIO_ResetOutputPin(gpiox, pin_mask);
 #endif
 }
