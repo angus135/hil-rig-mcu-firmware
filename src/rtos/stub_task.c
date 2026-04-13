@@ -126,8 +126,8 @@ volatile TickType_t xTaskGetTickCount( void )
 /**
  * @brief stub implementing FreeRTOS xTaskNotifyWait
  */
-BaseType_t xTaskNotifyWait( uint32_t ulBitsToClearOnEntry, uint32_t ulBitsToClearOnExit, uint32_t* pulNotificationValue,
-                            TickType_t xTicksToWait )
+BaseType_t xTaskNotifyWait( uint32_t ulBitsToClearOnEntry, uint32_t ulBitsToClearOnExit,
+                            uint32_t* pulNotificationValue, TickType_t xTicksToWait )
 {
     s_xTaskNotifyWait_called++;
 
@@ -171,7 +171,8 @@ BaseType_t xTaskNotifyFromISR( TaskHandle_t xTaskToNotify, uint32_t ulValue, eNo
     s_xTaskNotifyFromISR_eAction                   = eAction;
     s_xTaskNotifyFromISR_pxHigherPriorityTaskWoken = pxHigherPriorityTaskWoken;
 
-    if ( ( pxHigherPriorityTaskWoken != NULL ) && ( s_xTaskNotifyFromISR_should_write_hptw != pdFALSE ) )
+    if ( ( pxHigherPriorityTaskWoken != NULL )
+         && ( s_xTaskNotifyFromISR_should_write_hptw != pdFALSE ) )
     {
         *pxHigherPriorityTaskWoken = s_xTaskNotifyFromISR_write_hptw;
     }

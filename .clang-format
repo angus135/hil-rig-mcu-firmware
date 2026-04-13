@@ -57,7 +57,7 @@ BreakAfterJavaFieldAnnotations: false
 BreakStringLiterals: true
 
 # Slightly stricter than 120 but still comfortable in IDEs
-ColumnLimit:     120
+ColumnLimit:     100
 
 CommentPragmas:  '^ IWYU pragma:'
 CompactNamespaces: false

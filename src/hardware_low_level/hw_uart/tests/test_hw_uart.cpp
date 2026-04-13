@@ -51,7 +51,8 @@ extern "C" HAL_StatusTypeDef HAL_UART_Init( UART_HandleTypeDef* huart )
     return HAL_OK;
 }
 
-extern "C" HAL_StatusTypeDef HAL_UART_Receive_DMA( UART_HandleTypeDef* huart, uint8_t* pData, uint16_t Size )
+extern "C" HAL_StatusTypeDef HAL_UART_Receive_DMA( UART_HandleTypeDef* huart, uint8_t* pData,
+                                                   uint16_t Size )
 {
     ( void )huart;
     ( void )pData;

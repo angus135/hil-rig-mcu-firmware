@@ -106,8 +106,8 @@ typedef enum
 typedef enum
 {
     HW_UART_WORD_LENGTH_8_BITS = 8,  // Standard 8 data bits per frame
-    HW_UART_WORD_LENGTH_9_BITS =
-        9  // Extended 9 data bits per frame, may be used for specific protocols or addressing schemes
+    HW_UART_WORD_LENGTH_9_BITS = 9   // Extended 9 data bits per frame, may be used for specific
+                                     // protocols or addressing schemes
 } HwUartWordLength_T;
 
 /**
@@ -152,7 +152,7 @@ typedef struct
  */
 typedef struct
 {
-    const uint8_t* data;          // Pointer to the start of the unread data span within the DMA buffer
+    const uint8_t* data;  // Pointer to the start of the unread data span within the DMA buffer
     uint32_t       length_bytes;  // Length of the unread data span in bytes
 } HwUartRxSpan_T;
 
@@ -168,9 +168,10 @@ typedef struct
  */
 typedef struct
 {
-    HwUartRxSpan_T first_span;          // First contiguous span of unread data
-    HwUartRxSpan_T second_span;         // Second contiguous span of unread data (non-zero only if wrapping occurs)
-    uint32_t       total_length_bytes;  // Total number of unread bytes across both spans for convenience
+    HwUartRxSpan_T first_span;  // First contiguous span of unread data
+    HwUartRxSpan_T
+        second_span;  // Second contiguous span of unread data (non-zero only if wrapping occurs)
+    uint32_t total_length_bytes;  // Total number of unread bytes across both spans for convenience
 } HwUartRxSpans_T;
 
 /**-----------------------------------------------------------------------------
@@ -258,7 +259,8 @@ bool HW_UART_Rx_Start( HwUartChannel_T channel );
  *
  * @note   Higher layers must not directly manage the DMA buffer, modify the returned memory, or
  *         retain the returned pointers beyond the valid processing window. Once the required copy
- *         or processing is complete, the caller shall report consumption through HW_UART_Rx_Consume().
+ *         or processing is complete, the caller shall report consumption through
+ * HW_UART_Rx_Consume().
  *
  * @note   This interface preserves a clean ownership boundary:
  *         - the low-level driver owns the DMA circular buffer and its management,
