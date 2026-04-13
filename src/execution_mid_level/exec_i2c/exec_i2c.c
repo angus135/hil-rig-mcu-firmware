@@ -1,7 +1,7 @@
 /******************************************************************************
  *  File:       exec_i2c.c
- *  Author:     Angus Corr
- *  Created:    25-Mar-2026
+ *  Author:     Coen Pasitchnyj
+ *  Created:    14-Apr-2026
  *
  *  Description:
  *      <Short description of the module's purpose and responsibilities>
