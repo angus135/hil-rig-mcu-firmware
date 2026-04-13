@@ -45,6 +45,7 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -283,6 +284,53 @@ HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel );
  *         stable storage. Consuming data allows the DMA buffer region to be reused.
  */
 void HW_UART_Rx_Consume( HwUartChannel_T channel, uint32_t bytes_to_consume );
+
+/**
+ * @brief  Copies a transmit payload into the low-level driver owned TX staging buffer for the
+ *         specified UART channel.
+ *
+ * @param  channel       The UART channel whose TX staging buffer is to be loaded.
+ * @param  data          Pointer to the source payload to copy into the staging buffer.
+ * @param  length_bytes  Number of payload bytes to stage for transmission.
+ *
+ * @return true if the payload was successfully copied into the staging buffer.
+ * @return false if the channel is invalid, the payload pointer is null, the payload length is
+ *         zero or exceeds the staging buffer capacity, the channel is not ready for TX, or
+ *         staged or in-flight TX data already owns the buffer.
+ *
+ * @note   This function copies data into low-level driver owned memory. The caller retains
+ *         ownership of the source buffer and may reuse or discard it after this function returns.
+ *
+ * @note   Staged data must not be overwritten before it is transmitted or otherwise released.
+ *         This function therefore rejects loads while TX data is already staged or while a TX
+ *         transfer is currently in progress.
+ *
+ * @note   This function stages data only. It does not begin transmission. Transmission begins
+ *         only when HW_UART_Tx_Trigger() is called.
+ */
+bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint32_t length_bytes );
+
+/**
+ * @brief  Starts transmission of the currently staged TX payload for the specified UART channel
+ *         using DMA.
+ *
+ * @param  channel The UART channel to transmit on.
+ *
+ * @return true if DMA transmission was successfully started.
+ * @return false if the channel is invalid, the channel is not ready for TX, no payload has been
+ *         staged, a TX transfer is already running, the staged length is invalid, or
+ *         HAL_UART_Transmit_DMA() fails.
+ *
+ * @note   This function does not copy payload data. It launches transmission of data that has
+ *         already been staged in the low-level driver owned TX buffer via HW_UART_Tx_Load_Buffer().
+ *
+ * @note   If DMA launch fails, the staged payload remains present in the TX staging buffer and
+ *         may be retried or otherwise handled by higher layers.
+ *
+ * @note   TX buffer ownership is released only when transmission completes, currently through
+ *         HAL_UART_TxCpltCallback().
+ */
+bool HW_UART_Tx_Trigger( HwUartChannel_T channel );
 
 #ifdef __cplusplus
 }
