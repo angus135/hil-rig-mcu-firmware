@@ -72,7 +72,8 @@
 
 // Size of the receive buffer for each UART channel,
 // can be adjusted based on expected data rates and memory constraints
-#define HW_UART_RX_BUFFER_SIZE 4096U  // Must be a power of 2 for the circular buffer management to work correctly
+#define HW_UART_RX_BUFFER_SIZE                                                                     \
+    4096U  // Must be a power of 2 for the circular buffer management to work correctly
 #if ( ( HW_UART_RX_BUFFER_SIZE & ( HW_UART_RX_BUFFER_SIZE - 1U ) ) != 0U )
 #error "HW_UART_RX_BUFFER_SIZE must be a power of 2"
 #endif
@@ -117,8 +118,8 @@ typedef enum
  *         VOLT_SEL. They are fixed per channel and are used during configuration
  *         to place the external interface hardware into the required electrical mode.
  *
- * @note   The actual GPIO control implementation is not yet integrated. This structure serves as a placeholder defining
- *         the required control lines and sequencing for future implementation.
+ * @note   The actual GPIO control implementation is not yet integrated. This structure serves as a
+ * placeholder defining the required control lines and sequencing for future implementation.
  */
 typedef struct
 {
@@ -138,7 +139,8 @@ typedef struct
 typedef struct
 {
     uint32_t rx_read_index;
-    uint32_t latched_faults;  // Bitmask implementation left for a later date when faults are implemented.
+    uint32_t latched_faults;  // Bitmask implementation left for a later date when faults are
+                              // implemented.
 
     bool is_configured;
 
@@ -255,7 +257,8 @@ static bool HW_UART_Configuration_Is_Valid( const HwUartConfig_T* config )
         return false;
     }
 
-    if ( config->word_length != HW_UART_WORD_LENGTH_8_BITS && config->word_length != HW_UART_WORD_LENGTH_9_BITS )
+    if ( config->word_length != HW_UART_WORD_LENGTH_8_BITS
+         && config->word_length != HW_UART_WORD_LENGTH_9_BITS )
     {
         return false;
     }
@@ -314,7 +317,8 @@ static bool HW_UART_Configuration_Is_Valid( const HwUartConfig_T* config )
  * @note   The returned value represents a snapshot and may change as DMA continues
  *         writing to the buffer.
  */
-static inline uint32_t HW_UART_Unread_Bytes_Count_Helper( uint32_t read_index, uint32_t write_index )
+static inline uint32_t HW_UART_Unread_Bytes_Count_Helper( uint32_t read_index,
+                                                          uint32_t write_index )
 {
     return ( write_index - read_index ) & ( HW_UART_RX_BUFFER_SIZE - 1U );
 }
@@ -371,7 +375,8 @@ static inline uint32_t HW_UART_Advance_Index_Helper( uint32_t current_index, uin
  *         implementation serves as a placeholder defining the required sequencing and structure.
  *         Physical line driving will be added in a future revision.
  */
-static bool HW_UART_Apply_Static_Hardware_Selection( HwUartChannel_T channel, HwUartInterfaceMode_T interface_mode )
+static bool HW_UART_Apply_Static_Hardware_Selection( HwUartChannel_T       channel,
+                                                     HwUartInterfaceMode_T interface_mode )
 {
     if ( channel == HW_UART_CHANNEL_3 )
     {
@@ -611,8 +616,8 @@ bool HW_UART_Rx_Start( HwUartChannel_T channel )
             return false;  // Should never reach here due to prior validation
     }
 
-    huart->Init.Mode =
-        ( state->config.tx_enabled ? UART_MODE_TX : 0U ) | ( state->config.rx_enabled ? UART_MODE_RX : 0U );
+    huart->Init.Mode = ( state->config.tx_enabled ? UART_MODE_TX : 0U )
+                       | ( state->config.rx_enabled ? UART_MODE_RX : 0U );
 
     if ( HAL_UART_Init( huart ) != HAL_OK )
     {
@@ -755,17 +760,18 @@ HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
     if ( unread_bytes == 0U )
     {
         // No data available
-        return ( HwUartRxSpans_T ){ .first_span         = { .data = &rx_buffer[0], .length_bytes = 0U },
-                                    .second_span        = { .data = &rx_buffer[0], .length_bytes = 0U },
+        return ( HwUartRxSpans_T ){ .first_span  = { .data = &rx_buffer[0], .length_bytes = 0U },
+                                    .second_span = { .data = &rx_buffer[0], .length_bytes = 0U },
                                     .total_length_bytes = 0U };
     }
 
     if ( dma_write_index >= read_index )
     {
         // Data does not wrap around the end of the buffer
-        return ( HwUartRxSpans_T ){ .first_span  = { .data = &rx_buffer[read_index], .length_bytes = unread_bytes },
-                                    .second_span = { .data = &rx_buffer[0], .length_bytes = 0U },
-                                    .total_length_bytes = unread_bytes };
+        return ( HwUartRxSpans_T ){
+            .first_span         = { .data = &rx_buffer[read_index], .length_bytes = unread_bytes },
+            .second_span        = { .data = &rx_buffer[0], .length_bytes = 0U },
+            .total_length_bytes = unread_bytes };
     }
     // else case:
 
@@ -773,9 +779,10 @@ HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
     uint32_t first_span_length  = HW_UART_RX_BUFFER_SIZE - read_index;
     uint32_t second_span_length = unread_bytes - first_span_length;
 
-    return ( HwUartRxSpans_T ){ .first_span  = { .data = &rx_buffer[read_index], .length_bytes = first_span_length },
-                                .second_span = { .data = &rx_buffer[0], .length_bytes = second_span_length },
-                                .total_length_bytes = unread_bytes };
+    return ( HwUartRxSpans_T ){
+        .first_span         = { .data = &rx_buffer[read_index], .length_bytes = first_span_length },
+        .second_span        = { .data = &rx_buffer[0], .length_bytes = second_span_length },
+        .total_length_bytes = unread_bytes };
 }
 
 /**
@@ -796,5 +803,6 @@ void HW_UART_Rx_Consume( HwUartChannel_T channel, uint32_t bytes_to_consume )
     HwUartChannelState_T* state = &uart_channel_states[channel];
 
     // Advance the read index by the specified number of bytes, wrapping around the buffer as needed
-    state->runtime.rx_read_index = HW_UART_Advance_Index_Helper( state->runtime.rx_read_index, bytes_to_consume );
+    state->runtime.rx_read_index =
+        HW_UART_Advance_Index_Helper( state->runtime.rx_read_index, bytes_to_consume );
 }

@@ -35,7 +35,8 @@ extern "C"
 #define CONSOLE_TASK_MEMORY 256
 #define CONSOLE_TASK_PRIORITY 3
 
-#define ARRAY_LEN( a ) ( sizeof( a ) / sizeof( ( a )[0] ) )  // TODO: move this to a common helper file
+#define ARRAY_LEN( a )                                                                             \
+    ( sizeof( a ) / sizeof( ( a )[0] ) )  // TODO: move this to a common helper file
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures

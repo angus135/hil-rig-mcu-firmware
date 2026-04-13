@@ -82,7 +82,8 @@ static MockHalGpio* g_mock_example_hal_gpio = nullptr;
  */
 extern "C" void EXAMPLE_HAL_GPIO_WritePin( uint32_t pin, bool level )
 {
-    ASSERT_NE( g_mock_example_hal_gpio, nullptr ) << "EXAMPLE_HAL_GPIO_WritePin called without an active mock instance";
+    ASSERT_NE( g_mock_example_hal_gpio, nullptr )
+        << "EXAMPLE_HAL_GPIO_WritePin called without an active mock instance";
     g_mock_example_hal_gpio->EXAMPLE_HAL_GPIO_WritePin( pin, level );
 }
 
@@ -165,8 +166,9 @@ TEST_F( ExampleTest, TestWrapperMatchesProcessBehaviour )
  */
 TEST_F( ExampleTest, SetOutputCallsHalWithCorrectArguments )
 {
-    EXPECT_CALL( *g_mock_example_hal_gpio,
-                 EXAMPLE_HAL_GPIO_WritePin( EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_HIGH ) )
+    EXPECT_CALL(
+        *g_mock_example_hal_gpio,
+        EXAMPLE_HAL_GPIO_WritePin( EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_HIGH ) )
         .Times( 1 );
 
     EXAMPLE_SetOutput( EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_HIGH );
@@ -180,10 +182,12 @@ TEST_F( ExampleTest, MultipleSetOutputCallsProduceMultipleHalWrites )
     {
         ::testing::InSequence sequence;
 
-        EXPECT_CALL( *g_mock_example_hal_gpio,
-                     EXAMPLE_HAL_GPIO_WritePin( EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_HIGH ) );
-        EXPECT_CALL( *g_mock_example_hal_gpio,
-                     EXAMPLE_HAL_GPIO_WritePin( EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_LOW ) );
+        EXPECT_CALL(
+            *g_mock_example_hal_gpio,
+            EXAMPLE_HAL_GPIO_WritePin( EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_HIGH ) );
+        EXPECT_CALL(
+            *g_mock_example_hal_gpio,
+            EXAMPLE_HAL_GPIO_WritePin( EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_LOW ) );
     }
 
     EXAMPLE_SetOutput( EXAMPLE_TEST_OUTPUT_PIN, EXAMPLE_TEST_OUTPUT_LEVEL_HIGH );

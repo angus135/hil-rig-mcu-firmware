@@ -103,8 +103,9 @@ typedef enum
 
 // task.c functions
 
-BaseType_t xTaskCreate( TaskFunction_t pvTaskCode, const char* const pcName, const configSTACK_DEPTH_TYPE uxStackDepth,
-                        void* pvParameters, UBaseType_t uxPriority, TaskHandle_t* pxCreatedTask );
+BaseType_t xTaskCreate( TaskFunction_t pvTaskCode, const char* const pcName,
+                        const configSTACK_DEPTH_TYPE uxStackDepth, void* pvParameters,
+                        UBaseType_t uxPriority, TaskHandle_t* pxCreatedTask );
 
 static inline BaseType_t CREATE_TASK( TaskFunction_t task_function, const char* task_name,
                                       configSTACK_DEPTH_TYPE task_memory, UBaseType_t task_priority,
@@ -141,8 +142,8 @@ volatile TickType_t xTaskGetTickCount( void );
 /**
  * @brief stub implementing FreeRTOS xTaskNotifyWait
  */
-BaseType_t xTaskNotifyWait( uint32_t ulBitsToClearOnEntry, uint32_t ulBitsToClearOnExit, uint32_t* pulNotificationValue,
-                            TickType_t xTicksToWait );
+BaseType_t xTaskNotifyWait( uint32_t ulBitsToClearOnEntry, uint32_t ulBitsToClearOnExit,
+                            uint32_t* pulNotificationValue, TickType_t xTicksToWait );
 /**
  * @brief stub implementing FreeRTOS xTaskNotify
  */
@@ -168,7 +169,8 @@ BaseType_t xQueueSend( QueueHandle_t xQueue, const void* pvItemToQueue, TickType
 /**
  * @brief stub implementing FreeRTOS xQueueSendFromISR
  */
-BaseType_t xQueueSendFromISR( QueueHandle_t xQueue, const void* pvItemToQueue, BaseType_t* pxHigherPriorityTaskWoken );
+BaseType_t xQueueSendFromISR( QueueHandle_t xQueue, const void* pvItemToQueue,
+                              BaseType_t* pxHigherPriorityTaskWoken );
 
 /**
  * @brief stub implementing FreeRTOS xQueueReceive
@@ -178,7 +180,8 @@ BaseType_t xQueueReceive( QueueHandle_t xQueue, void* pvBuffer, TickType_t xTick
 /**
  * @brief stub implementing FreeRTOS xQueueReceiveFromISR
  */
-BaseType_t xQueueReceiveFromISR( QueueHandle_t xQueue, void* pvBuffer, BaseType_t* pxHigherPriorityTaskWoken );
+BaseType_t xQueueReceiveFromISR( QueueHandle_t xQueue, void* pvBuffer,
+                                 BaseType_t* pxHigherPriorityTaskWoken );
 
 /**
  * @brief stub implementing FreeRTOS xQueuePeek
