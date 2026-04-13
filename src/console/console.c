@@ -306,6 +306,22 @@ static void CONSOLE_Flush_Tx( void )
 }
 
 /**
+ * @brief Helper function to transmit data over the console UART.
+ *
+ * @param data        Pointer to the data to transmit
+ * @param length      Number of bytes to transmit
+ *
+ * @returns void
+ */
+static void CONSOLE_Transmit( const uint8_t* data, uint32_t length )
+{
+    if ( HW_UART_Tx_Load_Buffer( CONSOLE_UART_CHANNEL, data, length ) )
+    {
+        HW_UART_Tx_Trigger( CONSOLE_UART_CHANNEL );
+    }
+}
+
+/**
  * @brief Process a single received console character.
  *
  * This function handles echoing input back to the terminal, assembling
