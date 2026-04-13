@@ -78,6 +78,8 @@
 #error "HW_UART_RX_BUFFER_SIZE must be a power of 2"
 #endif
 
+#define HW_UART_TX_BUFFER_SIZE 256U
+
 // Number of UART channels supported by the hardware
 #define HW_UART_CHANNEL_COUNT 3U  // Update this  to 2U when removing console channel
 
@@ -142,10 +144,11 @@ typedef struct
     uint32_t latched_faults;  // Bitmask implementation left for a later date when faults are
                               // implemented.
 
-    bool is_configured;
+    uint32_t tx_length_bytes;
 
+    bool is_configured_and_initialised;
     bool rx_running;
-    bool tx_running;
+    bool tx_loaded_or_running;
 
 } HwUartRuntimeState_T;
 
@@ -160,6 +163,7 @@ typedef struct
     HwUartConfig_T       config;
     HwUartRuntimeState_T runtime;
     uint8_t              rx_buffer[HW_UART_RX_BUFFER_SIZE];
+    uint8_t              tx_buffer[HW_UART_TX_BUFFER_SIZE];
 } HwUartChannelState_T;
 
 /**
@@ -446,135 +450,11 @@ static bool HW_UART_Apply_Static_Hardware_Selection( HwUartChannel_T       chann
     }
 }
 
-/**-----------------------------------------------------------------------------
- *  Public Function Definitions
- *------------------------------------------------------------------------------
- */
-
-/**
- * @brief  Configures a UART channel with the specified settings and applies
- *         the associated static hardware configuration.
- *
- * @param  channel The UART channel to configure.
- * @param  config  Pointer to the configuration structure describing UART
- *                 parameters and interface mode.
- *
- * @return true if the channel was successfully configured.
- * @return false if the channel index or configuration is invalid, or if
- *         hardware selection fails.
- *
- * @note   This function performs validation of the provided configuration
- *         before applying any changes to the hardware.
- *
- * @note   The configuration is stored within the low-level driver and used
- *         later during start operations. This function does not enable RX or
- *         TX operation.
- *
- * @note   Static hardware selection (e.g. interface mode and voltage levels)
- *         is applied as part of configuration to ensure the physical interface
- *         is in a safe and defined state prior to enabling UART activity.
- *
- * @note   Runtime state is reset as part of configuration, including read index
- *         and fault flags.
- *
- * @note   This function must be called successfully before invoking
- *         HW_UART_Rx_Start() or any TX-related operations.
- */
-bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* config )
+bool HW_UART_Init_Channel( HwUartChannel_T channel )
 {
-    // Validate channel number and configuration before applying changes
-    if ( channel >= HW_UART_CHANNEL_COUNT )
-    {
-        return false;
-    }
-
-    if ( !HW_UART_Configuration_Is_Valid( config ) )
-    {
-        return false;
-    }
-
-    // Store the validated configuration
     HwUartChannelState_T* state = &uart_channel_states[channel];
-    state->config               = *config;
-
-    // Apply the static hardware selection states (mode/voltage) based on the interface mode
-    // specified in the configuration to the appropriate hardware lines (GPIOs or other control
-    // interfaces)
-    if ( !HW_UART_Apply_Static_Hardware_Selection( channel, config->interface_mode ) )
-    {
-        return false;
-    }
-
-    // Reset runtime state variables to their default values
-    state->runtime.latched_faults = 0U;
-    state->runtime.rx_read_index  = 0U;
-    state->runtime.rx_running     = false;
-    state->runtime.tx_running     = false;
-
-    // Mark channel as configured.
-    state->runtime.is_configured = true;
-
-    return true;
-}
-
-/**
- * @brief  Starts UART reception for the specified channel using DMA into the
- *         LL driver owned circular RX buffer.
- *
- * @param  channel The UART channel to start reception on.
- *
- * @return true if RX was successfully started.
- * @return false if the channel is invalid, not configured, RX is disabled, or
- *         hardware initialisation fails.
- *
- * @note   This function applies the stored configuration to the underlying UART
- *         peripheral via HAL and initiates DMA-based reception into the internal
- *         circular buffer owned by the low-level driver.
- *
- * @note   The RX buffer and read index are reset prior to enabling reception to
- *         ensure a clean starting state.
- *
- * @note   This function does not expose or transfer ownership of received data.
- *         Data is made available to higher layers via HW_UART_Rx_Peek().
- *
- * @note   The DMA stream is expected to be configured in circular mode so that
- *         reception continues indefinitely without software intervention.
- *
- * @note   This function must only be called after successful configuration via
- *         HW_UART_Configure_Channel().
- *
- * @note   RX operation is considered active once this function returns true, and
- *         can be queried via the runtime state.
- */
-bool HW_UART_Rx_Start( HwUartChannel_T channel )
-{
-    if ( channel >= HW_UART_CHANNEL_COUNT )
-    {
-        return false;
-    }
-
-    HwUartChannelState_T*      state  = &uart_channel_states[channel];
-    const HwUartHardwareMap_T* hw_map = &uart_hardware_map[channel];
-    UART_HandleTypeDef*        huart  = hw_map->uart_handle;
-
-    if ( !state->runtime.is_configured || !state->config.rx_enabled )
-    {
-        return false;
-    }
-
-    if ( state->runtime.rx_running )
-    {
-        return false;
-    }
-
-    // Reset the RX buffer read index to start reading from the beginning of the buffer
-    state->runtime.rx_read_index = 0U;
-    // Clear the entire RX buffer to ensure it doesn't contain stale data
-    for ( uint32_t i = 0U; i < HW_UART_RX_BUFFER_SIZE; i++ )
-    {
-        state->rx_buffer[i] = 0U;
-    }
-
+    UART_HandleTypeDef* huart = uart_hardware_map[channel].uart_handle;
+        
     huart->Init.BaudRate = state->config.baud_rate;
 
     switch ( state->config.word_length )
@@ -623,6 +503,144 @@ bool HW_UART_Rx_Start( HwUartChannel_T channel )
     {
         return false;
     }
+    return true;
+    }
+
+/**-----------------------------------------------------------------------------
+ *  Public Function Definitions
+ *------------------------------------------------------------------------------
+ */
+
+/**
+ * @brief  Configures a UART channel with the specified settings and applies
+ *         the associated static hardware configuration.
+ *
+ * @param  channel The UART channel to configure.
+ * @param  config  Pointer to the configuration structure describing UART
+ *                 parameters and interface mode.
+ *
+ * @return true if the channel was successfully configured.
+ * @return false if the channel index or configuration is invalid, or if
+ *         hardware selection fails.
+ *
+ * @note   This function performs validation of the provided configuration
+ *         before applying any changes to the hardware.
+ *
+ * @note   The configuration is stored within the low-level driver and used
+ *         later during start operations. This function does not enable RX or
+ *         TX operation.
+ *
+ * @note   Static hardware selection (e.g. interface mode and voltage levels)
+ *         is applied as part of configuration to ensure the physical interface
+ *         is in a safe and defined state prior to enabling UART activity.
+ *
+ * @note   Runtime state is reset as part of configuration, including read index
+ *         and fault flags.
+ *
+ * @note   This function must be called successfully before invoking
+ *         HW_UART_Rx_Start() or any TX-related operations.
+ */
+bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* config )
+{
+    // Validate channel number and configuration before applying changes
+    if ( channel >= HW_UART_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    HwUartChannelState_T* state = &uart_channel_states[channel];
+    state->runtime.is_configured_and_initialised = false;
+
+    if ( !HW_UART_Configuration_Is_Valid( config ) )
+    {
+        return false;
+    }
+
+    // Store the validated configuration
+    
+    state->config               = *config;
+
+    // Apply the static hardware selection states (mode/voltage) based on the interface mode
+    // specified in the configuration to the appropriate hardware lines (GPIOs or other control
+    // interfaces)
+    if ( !HW_UART_Apply_Static_Hardware_Selection( channel, config->interface_mode ) )
+    {
+        return false;
+    }
+
+    // Reset runtime state variables to their default values
+    state->runtime.latched_faults = 0U;
+    state->runtime.rx_read_index  = 0U;
+    state->runtime.tx_length_bytes = 0U;
+    state->runtime.rx_running     = false;
+    state->runtime.tx_loaded_or_running     = false;
+
+    if ( !HW_UART_Init_Channel( channel ) )
+    {
+        return false;
+    }
+    // Mark channel as configured and initialised.
+    state->runtime.is_configured_and_initialised = true;
+    return true;
+}
+
+/**
+ * @brief  Starts UART reception for the specified channel using DMA into the
+ *         LL driver owned circular RX buffer.
+ *
+ * @param  channel The UART channel to start reception on.
+ *
+ * @return true if RX was successfully started.
+ * @return false if the channel is invalid, not configured, RX is disabled, or
+ *         hardware initialisation fails.
+ *
+ * @note   This function applies the stored configuration to the underlying UART
+ *         peripheral via HAL and initiates DMA-based reception into the internal
+ *         circular buffer owned by the low-level driver.
+ *
+ * @note   The RX buffer and read index are reset prior to enabling reception to
+ *         ensure a clean starting state.
+ *
+ * @note   This function does not expose or transfer ownership of received data.
+ *         Data is made available to higher layers via HW_UART_Rx_Peek().
+ *
+ * @note   The DMA stream is expected to be configured in circular mode so that
+ *         reception continues indefinitely without software intervention.
+ *
+ * @note   This function must only be called after successful configuration via
+ *         HW_UART_Configure_Channel().
+ *
+ * @note   RX operation is considered active once this function returns true, and
+ *         can be queried via the runtime state.
+ */
+bool HW_UART_Rx_Start( HwUartChannel_T channel )
+{
+    if ( channel >= HW_UART_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    HwUartChannelState_T*      state  = &uart_channel_states[channel];
+    const HwUartHardwareMap_T* hw_map = &uart_hardware_map[channel];
+    UART_HandleTypeDef*        huart  = hw_map->uart_handle;
+
+    if ( !state->runtime.is_configured_and_initialised || !state->config.rx_enabled )
+    {
+        return false;
+    }
+
+    if ( state->runtime.rx_running )
+    {
+        return false;
+    }
+
+    // Reset the RX buffer read index to start reading from the beginning of the buffer
+    state->runtime.rx_read_index = 0U;
+    // Clear the entire RX buffer to ensure it doesn't contain stale data
+    for ( uint32_t i = 0U; i < HW_UART_RX_BUFFER_SIZE; i++ )
+    {
+        state->rx_buffer[i] = 0U;
+    }
 
     if ( HAL_UART_Receive_DMA( huart, state->rx_buffer, HW_UART_RX_BUFFER_SIZE ) != HAL_OK )
     {
@@ -665,7 +683,7 @@ bool HW_UART_Rx_Stop( HwUartChannel_T channel )
     const HwUartHardwareMap_T* hw_map = &uart_hardware_map[channel];
     UART_HandleTypeDef*        huart  = hw_map->uart_handle;
 
-    if ( !state->runtime.is_configured || !state->runtime.rx_running )
+    if ( !state->runtime.is_configured_and_initialised || !state->runtime.rx_running )
     {
         return false;
     }
@@ -689,7 +707,7 @@ bool HW_UART_Rx_Is_Running( HwUartChannel_T channel )
 
     HwUartChannelState_T* state = &uart_channel_states[channel];
 
-    if ( !state->runtime.is_configured )
+    if ( !state->runtime.is_configured_and_initialised )
     {
         return false;
     }
@@ -739,7 +757,7 @@ HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
     uint32_t                   read_index = state->runtime.rx_read_index;
 
     // Remove for optimisation, but for safety in case of misuse.
-    if ( !state->runtime.is_configured || !state->runtime.rx_running )
+    if ( !state->runtime.is_configured_and_initialised || !state->runtime.rx_running )
     {
         return ( HwUartRxSpans_T ){ 0 };
     }
@@ -806,3 +824,8 @@ void HW_UART_Rx_Consume( HwUartChannel_T channel, uint32_t bytes_to_consume )
     state->runtime.rx_read_index =
         HW_UART_Advance_Index_Helper( state->runtime.rx_read_index, bytes_to_consume );
 }
+
+
+
+
+
