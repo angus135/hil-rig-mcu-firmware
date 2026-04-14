@@ -38,8 +38,8 @@
 #include "stm32f4xx_ll_dma.h"
 #include "stm32f4xx_ll_usart.h"
 #endif
+
 #include "hw_uart.h"
-#include "rtos_config.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -265,6 +265,10 @@ static const HwUartSelectionLines_T uart_selection_lines[HW_UART_CHANNEL_COUNT] 
                             .volt_sel0_line = HW_UART_CH2_VOLT_SEL0_LINE,
                             .volt_sel1_line = HW_UART_CH2_VOLT_SEL1_LINE } };
 
+void DMA2_Stream6_IRQHandler( void );
+void DMA1_Stream6_IRQHandler( void );
+void DMA1_Stream3_IRQHandler( void );
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Definitions
  *------------------------------------------------------------------------------
@@ -432,6 +436,9 @@ static bool HW_UART_Apply_Static_Hardware_Selection( HwUartChannel_T       chann
         // Console for Nucleo board does not need selection
         return true;
     }
+
+    const HwUartSelectionLines_T* selection = &uart_selection_lines[channel];
+    ( void )selection;
     switch ( interface_mode )
     {
         case HW_UART_MODE_DISABLED:
