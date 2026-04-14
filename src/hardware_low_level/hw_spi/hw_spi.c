@@ -21,6 +21,8 @@
 #include "spi.h"
 #include "stm32f446xx.h"
 #include "stm32f4xx_ll_dma.h"
+#include "stm32f4xx_ll_spi.h"
+#include "stm32f4xx_it.h"
 #endif
 #include "hw_spi.h"
 #include <stddef.h>
@@ -41,18 +43,28 @@
 #define SPI_CHANNEL_1_INSTANCE SPI4
 #define SPI_DAC_INSTANCE SPI4
 
+// DMA Definitions
 #define SPI_CHANNEL_0_RX_DMA DMA2
 #define SPI_CHANNEL_0_RX_DMA_STREAM LL_DMA_STREAM_2
+#define SPI_CHANNEL_0_RX_DMA_IRQ DMA2_Stream2_IRQHandler
+#define SPI_CHANNEL_0_RX_DMA_IRQN DMA2_Stream2_IRQn
 #define SPI_CHANNEL_0_TX_DMA DMA2
 #define SPI_CHANNEL_0_TX_DMA_STREAM LL_DMA_STREAM_3
+#define SPI_CHANNEL_0_TX_DMA_IRQ DMA2_Stream3_IRQHandler
+#define SPI_CHANNEL_0_TX_DMA_IRQN DMA2_Stream3_IRQn
 #define SPI_CHANNEL_1_RX_DMA DMA2
 #define SPI_CHANNEL_1_RX_DMA_STREAM LL_DMA_STREAM_0
+#define SPI_CHANNEL_1_RX_DMA_IRQ DMA2_Stream0_IRQHandler
+#define SPI_CHANNEL_1_RX_DMA_IRQN DMA2_Stream0_IRQn
 #define SPI_CHANNEL_1_TX_DMA DMA2
 #define SPI_CHANNEL_1_TX_DMA_STREAM LL_DMA_STREAM_1
+#define SPI_CHANNEL_1_TX_DMA_IRQ DMA2_Stream1_IRQHandler
+#define SPI_CHANNEL_1_TX_DMA_IRQN DMA2_Stream1_IRQn
 #define SPI_DAC_TX_DMA DMA2
 #define SPI_DAC_TX_DMA_STREAM LL_DMA_STREAM_1
+#define SPI_DAC_TX_DMA_IRQ DMA2_Stream1_IRQHandler
+#define SPI_DAC_TX_DMA_IRQN DMA2_Stream1_IRQn
 
-// DMA Definitions
 #define RX_BUFFER_SIZE_BYTES 1024
 #define TX_BUFFER_SIZE_BYTES 1024
 
@@ -60,6 +72,22 @@
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+typedef struct SPIPeripheralState_T
+{
+    HWSPIConfig_T config;
+    uint8_t       rx_buffer[RX_BUFFER_SIZE_BYTES];
+    uint32_t      rx_position;
+    uint8_t       tx_buffer[TX_BUFFER_SIZE_BYTES];
+    uint32_t      tx_write_position;
+    uint32_t      tx_read_position;
+    uint32_t      tx_num_in_transmission;
+    DMA_TypeDef*  rx_dma;
+    uint32_t      rx_dma_stream;
+    DMA_TypeDef*  tx_dma;
+    uint32_t      tx_dma_stream;
+    SPI_TypeDef*  spi_peripheral;
+    IRQn_Type     tx_dma_irqn;
+} SPIPeripheralState_T;
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -70,34 +98,124 @@
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
-HWSPIConfig_T spi_channel_0_config = { 0 };
-HWSPIConfig_T spi_channel_1_config = { 0 };
-HWSPIConfig_T spi_dac_config       = { 0 };
-
-uint8_t  spi_channel_0_rx_buffer[RX_BUFFER_SIZE_BYTES];
-uint32_t spi_channel_0_rx_position = 0;
-uint8_t  spi_channel_0_tx_buffer[TX_BUFFER_SIZE_BYTES];
-
-uint8_t  spi_channel_1_rx_buffer[RX_BUFFER_SIZE_BYTES];
-uint32_t spi_channel_1_rx_position = 0;
-uint8_t  spi_channel_1_tx_buffer[TX_BUFFER_SIZE_BYTES];
-
-uint8_t spi_dac_tx_buffer[TX_BUFFER_SIZE_BYTES];
+SPIPeripheralState_T  channel_0_state_struct = { 0 };
+SPIPeripheralState_T  channel_1_state_struct = { 0 };
+SPIPeripheralState_T  dac_state_struct       = { 0 };
+SPIPeripheralState_T* channel_0_state        = &channel_0_state_struct;
+SPIPeripheralState_T* channel_1_state        = &channel_1_state_struct;
+SPIPeripheralState_T* dac_state              = &dac_state_struct;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
 
+static inline void HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral );
+
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
 
+static inline void HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral )
+{
+    SPIPeripheralState_T* peripheral_state = NULL;
+    switch ( peripheral )
+    {
+        case SPI_CHANNEL_0:
+            peripheral_state = channel_0_state;
+            break;
+        case SPI_CHANNEL_1:
+            peripheral_state = channel_1_state;
+            break;
+        case SPI_DAC:
+            peripheral_state = dac_state;
+            break;
+        default:
+            return;
+    }
+    /*
+     * Advance the software read position past the bytes that have just finished
+     * transmitting.
+     */
+    peripheral_state->tx_read_position =
+        peripheral_state->tx_read_position + peripheral_state->tx_num_in_transmission;
+
+    /*
+     * The just-finished DMA transfer is no longer active.
+     */
+    peripheral_state->tx_num_in_transmission = 0U;
+
+    /*
+     * If all queued bytes have now been transmitted, reset the linear buffer
+     * state back to empty so the next transmission session starts from index 0.
+     */
+    if ( peripheral_state->tx_read_position >= peripheral_state->tx_write_position )
+    {
+        peripheral_state->tx_read_position  = 0U;
+        peripheral_state->tx_write_position = 0U;
+        return;
+    }
+
+    /*
+     * More data was appended while the previous DMA transfer was active.
+     * Re-arm DMA for the remaining unsent portion of the TX buffer.
+     */
+    uint32_t bytes_remaining =
+        peripheral_state->tx_write_position - peripheral_state->tx_read_position;
+
+    LL_DMA_DisableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+    while ( LL_DMA_IsEnabledStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream )
+            != 0U )
+    {
+    }
+
+    LL_DMA_SetMemoryAddress(
+        peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
+        ( uint32_t ) & ( peripheral_state->tx_buffer[peripheral_state->tx_read_position] ) );
+
+    LL_DMA_SetPeriphAddress( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
+                             LL_SPI_DMA_GetRegAddr( peripheral_state->spi_peripheral ) );
+
+    LL_DMA_SetDataLength( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
+                          bytes_remaining );  // TODO: Adjust based on element size
+
+    LL_SPI_EnableDMAReq_TX( peripheral_state->spi_peripheral );
+    LL_DMA_EnableIT_TC( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+    LL_DMA_EnableIT_TE( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+    LL_DMA_EnableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+
+    peripheral_state->tx_num_in_transmission = bytes_remaining;
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
+void SPI_CHANNEL_0_RX_DMA_IRQ( void )
+{
+}
+
+void SPI_CHANNEL_1_RX_DMA_IRQ( void )
+{
+}
+
+void SPI_CHANNEL_0_TX_DMA_IRQ( void )
+{
+    HW_SPI_TX_IRQ_Handler( SPI_CHANNEL_0 );
+}
+
+void SPI_CHANNEL_1_TX_DMA_IRQ( void )
+{
+    HW_SPI_TX_IRQ_Handler( SPI_CHANNEL_1 );
+}
+
+// Note: Not implemented yet as Channel 1 and DAC are on the same port right now.
+// void SPI_DAC_TX_DMA_IRQ( void )
+// {
+//     HW_SPI_TX_IRQ_Handler( SPI_DAC );
+
+// }
 
 /**
  * @brief Configure a hardware SPI channel.
@@ -137,17 +255,33 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
         case SPI_CHANNEL_0:
             hspi           = &SPI_CHANNEL_0_HANDLE;
             hspi->Instance = SPI_CHANNEL_0_INSTANCE;
-            memcpy( &spi_channel_0_config, &configuration, sizeof( HWSPIConfig_T ) );
+            memcpy( &( channel_0_state->config ), &configuration, sizeof( HWSPIConfig_T ) );
+            channel_0_state->rx_dma         = SPI_CHANNEL_0_RX_DMA;
+            channel_0_state->rx_dma_stream  = SPI_CHANNEL_0_RX_DMA_STREAM;
+            channel_0_state->tx_dma         = SPI_CHANNEL_0_TX_DMA;
+            channel_0_state->tx_dma_stream  = SPI_CHANNEL_0_TX_DMA_STREAM;
+            channel_0_state->spi_peripheral = SPI_CHANNEL_0_INSTANCE;
+            channel_0_state->tx_dma_irqn    = SPI_CHANNEL_0_TX_DMA_IRQN;
             break;
         case SPI_CHANNEL_1:
             hspi           = &SPI_CHANNEL_1_HANDLE;
             hspi->Instance = SPI_CHANNEL_1_INSTANCE;
-            memcpy( &spi_channel_1_config, &configuration, sizeof( HWSPIConfig_T ) );
+            memcpy( &( channel_1_state->config ), &configuration, sizeof( HWSPIConfig_T ) );
+            channel_1_state->rx_dma         = SPI_CHANNEL_1_RX_DMA;
+            channel_1_state->rx_dma_stream  = SPI_CHANNEL_1_RX_DMA_STREAM;
+            channel_1_state->tx_dma         = SPI_CHANNEL_1_TX_DMA;
+            channel_1_state->tx_dma_stream  = SPI_CHANNEL_1_TX_DMA_STREAM;
+            channel_1_state->spi_peripheral = SPI_CHANNEL_1_INSTANCE;
+            channel_1_state->tx_dma_irqn    = SPI_CHANNEL_1_TX_DMA_IRQN;
             break;
         case SPI_DAC:
             hspi           = &SPI_DAC_HANDLE;
             hspi->Instance = SPI_DAC_INSTANCE;
-            memcpy( &spi_dac_config, &configuration, sizeof( HWSPIConfig_T ) );
+            memcpy( &( dac_state->config ), &configuration, sizeof( HWSPIConfig_T ) );
+            dac_state->tx_dma         = SPI_DAC_TX_DMA;
+            dac_state->tx_dma_stream  = SPI_DAC_TX_DMA_STREAM;
+            dac_state->spi_peripheral = SPI_DAC_INSTANCE;
+            dac_state->tx_dma_irqn    = SPI_DAC_TX_DMA_IRQN;
             break;
         default:
             return false;
@@ -257,7 +391,7 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
     hspi->Init.TIMode         = SPI_TIMODE_DISABLE;
     hspi->Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
     hspi->Init.CRCPolynomial  = 10;
-    if ( HAL_SPI_Init( &hspi1 ) != HAL_OK )
+    if ( HAL_SPI_Init( hspi ) != HAL_OK )
     {
         return false;
     }
@@ -296,17 +430,17 @@ void HW_SPI_Start_Channel( SPIPeripheral_T peripheral )
     switch ( peripheral )
     {
         case SPI_CHANNEL_0:
-            peripheral_to_start = &spi_channel_0_config;
+            peripheral_to_start = &( channel_0_state->config );
             hspi                = &SPI_CHANNEL_0_HANDLE;
-            rx_buffer           = spi_channel_0_rx_buffer;
+            rx_buffer           = ( channel_0_state->rx_buffer );
             break;
         case SPI_CHANNEL_1:
-            peripheral_to_start = &spi_channel_1_config;
+            peripheral_to_start = &( channel_1_state->config );
             hspi                = &SPI_CHANNEL_1_HANDLE;
-            rx_buffer           = spi_channel_1_rx_buffer;
+            rx_buffer           = ( channel_1_state->rx_buffer );
             break;
         case SPI_DAC:
-            peripheral_to_start = &spi_dac_config;
+            peripheral_to_start = &( dac_state->config );
             hspi                = &SPI_DAC_HANDLE;
             break;
         default:
@@ -353,15 +487,15 @@ void HW_SPI_Stop_Channel( SPIPeripheral_T peripheral )
     switch ( peripheral )
     {
         case SPI_CHANNEL_0:
-            peripheral_to_stop = &spi_channel_0_config;
+            peripheral_to_stop = &( channel_0_state->config );
             hspi               = &SPI_CHANNEL_0_HANDLE;
             break;
         case SPI_CHANNEL_1:
-            peripheral_to_stop = &spi_channel_1_config;
+            peripheral_to_stop = &( channel_1_state->config );
             hspi               = &SPI_CHANNEL_1_HANDLE;
             break;
         case SPI_DAC:
-            peripheral_to_stop = &spi_dac_config;
+            peripheral_to_stop = &( dac_state->config );
             hspi               = &SPI_DAC_HANDLE;
             break;
         default:
@@ -413,18 +547,19 @@ HWSPIRxSpans_T HW_SPI_Slave_Rx_Peek( SPIPeripheral_T peripheral )
     uint32_t dma_write_index = 0U;
     uint32_t unread_bytes    = 0U;
 
+    // TODO: fix this based on state
     switch ( peripheral )
     {
         case SPI_CHANNEL_0:
-            rx_buffer  = spi_channel_0_rx_buffer;
-            read_index = spi_channel_0_rx_position;
+            rx_buffer  = ( channel_0_state->rx_buffer );
+            read_index = ( channel_0_state->rx_position );
             dma_remaining =
                 LL_DMA_GetDataLength( SPI_CHANNEL_0_RX_DMA, SPI_CHANNEL_0_RX_DMA_STREAM );
             break;
 
         case SPI_CHANNEL_1:
-            rx_buffer  = spi_channel_1_rx_buffer;
-            read_index = spi_channel_1_rx_position;
+            rx_buffer  = ( channel_1_state->rx_buffer );
+            read_index = ( channel_1_state->rx_position );
             dma_remaining =
                 LL_DMA_GetDataLength( SPI_CHANNEL_1_RX_DMA, SPI_CHANNEL_1_RX_DMA_STREAM );
             break;
@@ -499,17 +634,17 @@ HWSPIRxSpans_T HW_SPI_Slave_Rx_Peek( SPIPeripheral_T peripheral )
  *     This function does not copy any data. It only updates the internal consume
  *     position maintained by the low-level driver.
  */
-void HW_SPI_Slave_Rx_Consume( SPIPeripheral_T peripheral, size_t bytes_to_consume )
+void HW_SPI_Slave_Rx_Consume( SPIPeripheral_T peripheral, uint32_t bytes_to_consume )
 {
     switch ( peripheral )
     {
         case SPI_CHANNEL_0:
-            spi_channel_0_rx_position =
-                ( spi_channel_0_rx_position + bytes_to_consume ) % RX_BUFFER_SIZE_BYTES;
+            ( channel_0_state->rx_position ) =
+                ( ( channel_0_state->rx_position ) + bytes_to_consume ) % RX_BUFFER_SIZE_BYTES;
             break;
         case SPI_CHANNEL_1:
-            spi_channel_1_rx_position =
-                ( spi_channel_1_rx_position + bytes_to_consume ) % RX_BUFFER_SIZE_BYTES;
+            ( channel_1_state->rx_position ) =
+                ( ( channel_1_state->rx_position ) + bytes_to_consume ) % RX_BUFFER_SIZE_BYTES;
             break;
         case SPI_DAC:
         default:
@@ -553,8 +688,125 @@ void HW_SPI_Slave_Rx_Consume( SPIPeripheral_T peripheral, size_t bytes_to_consum
  *     false if the buffer could not be loaded, the size was invalid, or the
  *     operation was not valid for the current channel state.
  */
-bool HW_SPI_Slave_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, size_t size )
+bool HW_SPI_Slave_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uint32_t size )
 {
+    // Pointer to variable to update
+    uint32_t* spi_tx_write_position = NULL;
+    // Pointer to start of buffer
+    uint8_t* spi_tx_buffer = NULL;
+    // IRQ number for DMA to disable interrupts for preventing race condition.
+    IRQn_Type dma_irq = OTG_HS_IRQn;  // Default interrupt that we don't use in project
+    switch ( peripheral )
+    {
+        case SPI_CHANNEL_0:
+            spi_tx_write_position = &( channel_0_state->tx_write_position );
+            spi_tx_buffer         = ( channel_0_state->tx_buffer );
+            dma_irq               = channel_0_state->tx_dma_irqn;
+            break;
+        case SPI_CHANNEL_1:
+            spi_tx_write_position = &( channel_1_state->tx_write_position );
+            spi_tx_buffer         = ( channel_1_state->tx_buffer );
+            dma_irq               = channel_1_state->tx_dma_irqn;
+            break;
+        case SPI_DAC:
+            spi_tx_write_position = &( dac_state->tx_write_position );
+            spi_tx_buffer         = ( dac_state->tx_buffer );
+            dma_irq               = dac_state->tx_dma_irqn;
+        default:
+            return false;
+    }
+    // Exit if trying to load a message that exceeds buffer size.
+    // Note: this may also occur if there are a bunch of messages in the queue that haven't been
+    // cleared yet, in which case should also fail.
+    if ( *spi_tx_write_position + size > TX_BUFFER_SIZE_BYTES )
+    {
+        return false;
+    }
+    // Copying data into buffer and updating write pointer.
+    NVIC_DisableIRQ( dma_irq );  //  Need to disable IRQ to prevent race condition with ISR
+    memcpy( &( spi_tx_buffer[*spi_tx_write_position] ), data, size );
+    *spi_tx_write_position = *spi_tx_write_position + size;
+    NVIC_EnableIRQ( dma_irq );
+    return true;
+}
+
+/**
+ * @brief Trigger transmission of queued slave TX data for a channel.
+ *
+ * Starts the slave transmit DMA for the selected SPI channel if queued transmit
+ * data is available and no transmit DMA transfer is currently in progress.
+ *
+ * This function provides the "trigger" stage of the slave TX queue model. It is
+ * intended to be called by the mid-level driver after one or more messages have
+ * been loaded into the internal slave TX buffer using the corresponding load
+ * function.
+ *
+ * If a transmit DMA transfer is already active, this function does not restart,
+ * interrupt, or modify the current transfer. In this case, the function simply
+ * leaves the existing transmission in progress.
+ *
+ * If no queued transmit data is available, or the selected channel is not valid
+ * for slave TX operation, the function shall do nothing.
+ *
+ * This function only starts transmission of data already stored in the
+ * low-level driver's internal slave TX buffer. It does not copy any new data
+ * into the transmit queue and does not define higher-level frame semantics. The
+ * mid-level driver is responsible for determining what data should be queued and
+ * when transmission should be triggered.
+ *
+ * This function is intended for use only on channels configured in slave mode.
+ * Calling it on a master channel is invalid.
+ *
+ * @param peripheral
+ *     The SPI peripheral/channel whose queued slave TX data should be
+ *     transmitted.
+ */
+void HW_SPI_Slave_Tx_Trigger( SPIPeripheral_T peripheral )
+{
+    SPIPeripheralState_T* peripheral_state = NULL;
+    switch ( peripheral )
+    {
+        case SPI_CHANNEL_0:
+            peripheral_state = channel_0_state;
+            break;
+        case SPI_CHANNEL_1:
+            peripheral_state = channel_1_state;
+            break;
+        case SPI_DAC:
+            peripheral_state = dac_state;
+            break;
+        default:
+            return;
+    }
+
+    // If DMA is already active or there is nothing to send then return
+    if ( peripheral_state->tx_num_in_transmission > 0 || peripheral_state->tx_write_position == 0 )
+    {
+        return;
+    }
+
+    // Disable DMA stream initially
+    LL_DMA_DisableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+    while ( LL_DMA_IsEnabledStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream )
+            != 0U )
+    {
+    }
+
+    LL_DMA_SetMemoryAddress(
+        peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
+        ( uint32_t ) & ( peripheral_state->tx_buffer[peripheral_state->tx_read_position] ) );
+    LL_DMA_SetPeriphAddress( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
+                             LL_SPI_DMA_GetRegAddr( peripheral_state->spi_peripheral ) );
+    LL_DMA_SetDataLength(
+        peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
+        peripheral_state->tx_write_position );  // TODO: Adjust based on element size
+
+    LL_SPI_EnableDMAReq_TX( peripheral_state->spi_peripheral );
+    LL_DMA_EnableIT_TC( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+    LL_DMA_EnableIT_TE( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+    LL_DMA_EnableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+
+    peripheral_state->tx_num_in_transmission = peripheral_state->tx_write_position;
 }
 
 /**
@@ -610,7 +862,7 @@ bool HW_SPI_Slave_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* dat
  *     transaction could not be started.
  */
 bool HW_SPI_Master_Write_Read( SPIPeripheral_T peripheral, const uint8_t* write_data,
-                               uint8_t* read_data, size_t size )
+                               uint8_t* read_data, uint32_t size )
 {
 }
 
@@ -686,6 +938,6 @@ bool HW_SPI_Master_Transfer_Complete( SPIPeripheral_T peripheral )
  * @return
  *     The size, in bytes, of the most recently completed master transfer.
  */
-size_t HW_SPI_Master_Get_Last_Transfer_Size( SPIPeripheral_T peripheral )
+uint32_t HW_SPI_Master_Get_Last_Transfer_Size( SPIPeripheral_T peripheral )
 {
 }
