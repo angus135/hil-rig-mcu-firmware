@@ -104,9 +104,6 @@
 
 #define HW_UART_TX_BUFFER_SIZE 256U
 
-// Number of UART channels supported by the hardware
-#define HW_UART_CHANNEL_COUNT 3U  // Update this  to 2U when removing console channel
-
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -222,10 +219,10 @@ typedef struct
  */
 
 /* Driver owned per-channel runtime and buffer storage */
-static HwUartChannelState_T uart_channel_states[HW_UART_CHANNEL_COUNT];
+static HwUartChannelState_T hw_uart_channel_states[HW_UART_CHANNEL_COUNT];
 
 /* Fixed board-level mapping from logical UART channels to MCU peripherals */
-static const HwUartHardwareMap_T uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
+static const HwUartHardwareMap_T hw_uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
 
     [HW_UART_CHANNEL_1] = { .uart_instance     = HW_UART_CH1_USART,
                             .rx_dma_stream     = HW_UART_CH1_DMA_RX_STREAM,
@@ -523,8 +520,8 @@ static bool HW_UART_Apply_Static_Hardware_Selection( HwUartChannel_T       chann
  */
 static bool HW_UART_Init_Channel( HwUartChannel_T channel )
 {
-    HwUartChannelState_T* state = &uart_channel_states[channel];
-    UART_HandleTypeDef*   huart = uart_hardware_map[channel].uart_handle;
+    HwUartChannelState_T* state = &hw_uart_channel_states[channel];
+    UART_HandleTypeDef*   huart = hw_uart_hardware_map[channel].uart_handle;
 
     huart->Init.BaudRate = state->config.baud_rate;
 
@@ -600,9 +597,9 @@ static bool HW_UART_Init_Channel( HwUartChannel_T channel )
  */
 static inline void HW_UART_Tx_Complete_Handler( HwUartChannel_T channel )
 {
-    HwUartRuntimeState_T* runtime = &uart_channel_states[channel].runtime;
+    HwUartRuntimeState_T* runtime = &hw_uart_channel_states[channel].runtime;
 
-    LL_USART_DisableDMAReq_TX( uart_hardware_map[channel].uart_instance );
+    LL_USART_DisableDMAReq_TX( hw_uart_hardware_map[channel].uart_instance );
 
     runtime->tx_running      = false;
     runtime->tx_loaded       = false;
@@ -626,9 +623,9 @@ static inline void HW_UART_Tx_Complete_Handler( HwUartChannel_T channel )
  */
 static inline void HW_UART_Tx_Error_Handler( HwUartChannel_T channel )
 {
-    HwUartRuntimeState_T* runtime = &uart_channel_states[channel].runtime;
+    HwUartRuntimeState_T* runtime = &hw_uart_channel_states[channel].runtime;
 
-    LL_USART_DisableDMAReq_TX( uart_hardware_map[channel].uart_instance );
+    LL_USART_DisableDMAReq_TX( hw_uart_hardware_map[channel].uart_instance );
 
     runtime->tx_running      = false;
     runtime->tx_loaded       = false;
@@ -680,7 +677,7 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* c
         return false;
     }
 
-    HwUartChannelState_T* state                  = &uart_channel_states[channel];
+    HwUartChannelState_T* state                  = &hw_uart_channel_states[channel];
     state->runtime.is_configured_and_initialised = false;
 
     if ( !HW_UART_Configuration_Is_Valid( config ) )
@@ -753,8 +750,8 @@ bool HW_UART_Rx_Start( HwUartChannel_T channel )
         return false;
     }
 
-    HwUartChannelState_T*      state  = &uart_channel_states[channel];
-    const HwUartHardwareMap_T* hw_map = &uart_hardware_map[channel];
+    HwUartChannelState_T*      state  = &hw_uart_channel_states[channel];
+    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[channel];
     UART_HandleTypeDef*        huart  = hw_map->uart_handle;
 
     if ( !state->runtime.is_configured_and_initialised || !state->config.rx_enabled )
@@ -811,8 +808,8 @@ bool HW_UART_Rx_Stop( HwUartChannel_T channel )
         return false;
     }
 
-    HwUartChannelState_T*      state  = &uart_channel_states[channel];
-    const HwUartHardwareMap_T* hw_map = &uart_hardware_map[channel];
+    HwUartChannelState_T*      state  = &hw_uart_channel_states[channel];
+    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[channel];
     UART_HandleTypeDef*        huart  = hw_map->uart_handle;
 
     if ( !state->runtime.is_configured_and_initialised || !state->runtime.rx_running )
@@ -837,7 +834,7 @@ bool HW_UART_Rx_Is_Running( HwUartChannel_T channel )
         return false;
     }
 
-    HwUartChannelState_T* state = &uart_channel_states[channel];
+    HwUartChannelState_T* state = &hw_uart_channel_states[channel];
 
     if ( !state->runtime.is_configured_and_initialised )
     {
@@ -883,8 +880,8 @@ HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
 
     // Cache reused values in local variables for performance, as this function will be called
     // frequently in the execution path
-    HwUartChannelState_T*      state      = &uart_channel_states[channel];
-    const HwUartHardwareMap_T* hw_map     = &uart_hardware_map[channel];
+    HwUartChannelState_T*      state      = &hw_uart_channel_states[channel];
+    const HwUartHardwareMap_T* hw_map     = &hw_uart_hardware_map[channel];
     uint8_t*                   rx_buffer  = state->rx_buffer;
     uint32_t                   read_index = state->runtime.rx_read_index;
 
@@ -950,7 +947,7 @@ HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
  */
 void HW_UART_Rx_Consume( HwUartChannel_T channel, uint32_t bytes_to_consume )
 {
-    HwUartChannelState_T* state = &uart_channel_states[channel];
+    HwUartChannelState_T* state = &hw_uart_channel_states[channel];
 
     // Advance the read index by the specified number of bytes, wrapping around the buffer as needed
     state->runtime.rx_read_index =
@@ -997,7 +994,7 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
         return false;
     }  // Could later assume bounded length for optimisation
 
-    HwUartChannelState_T* state = &uart_channel_states[channel];
+    HwUartChannelState_T* state = &hw_uart_channel_states[channel];
 
     if ( !state->runtime.is_configured_and_initialised || !state->config.tx_enabled )
     {
@@ -1066,8 +1063,8 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
     }  // Can later assume valid channel for optimisation
 
     // Cache for performance
-    HwUartChannelState_T*      state  = &uart_channel_states[channel];
-    const HwUartHardwareMap_T* hw_map = &uart_hardware_map[channel];
+    HwUartChannelState_T*      state  = &hw_uart_channel_states[channel];
+    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[channel];
     USART_TypeDef*             uart   = hw_map->uart_instance;
     DMA_Stream_TypeDef*        dma    = hw_map->tx_dma_stream;
 
@@ -1124,7 +1121,7 @@ bool HW_UART_Tx_Is_Busy( HwUartChannel_T channel )
         return false;
     }
 
-    HwUartChannelState_T* state = &uart_channel_states[channel];
+    HwUartChannelState_T* state = &hw_uart_channel_states[channel];
 
     if ( !state->runtime.is_configured_and_initialised || !state->config.tx_enabled )
     {
@@ -1136,7 +1133,7 @@ bool HW_UART_Tx_Is_Busy( HwUartChannel_T channel )
 
 void DMA2_Stream6_IRQHandler( void )
 {
-    const HwUartHardwareMap_T* hw_map = &uart_hardware_map[HW_UART_CHANNEL_1];
+    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[HW_UART_CHANNEL_1];
     //  Transfer Complete Branch
     if ( LL_DMA_IsActiveFlag_TC6( DMA2 ) )
     {
@@ -1153,7 +1150,7 @@ void DMA2_Stream6_IRQHandler( void )
 
 void DMA1_Stream6_IRQHandler( void )
 {
-    const HwUartHardwareMap_T* hw_map = &uart_hardware_map[HW_UART_CHANNEL_2];
+    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[HW_UART_CHANNEL_2];
     // Transfer Complete Branch
     if ( LL_DMA_IsActiveFlag_TC6( DMA1 ) )
     {
@@ -1170,7 +1167,7 @@ void DMA1_Stream6_IRQHandler( void )
 
 void DMA1_Stream3_IRQHandler( void )
 {
-    const HwUartHardwareMap_T* hw_map = &uart_hardware_map[HW_UART_CHANNEL_3];
+    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[HW_UART_CHANNEL_3];
 
     // Transfer Complete Branch
     if ( LL_DMA_IsActiveFlag_TC3( DMA1 ) )

@@ -53,6 +53,8 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 #define HW_UART_TX_MAX_CHUNK_SIZE 256U
+// Number of UART channels supported by the hardware
+#define HW_UART_CHANNEL_COUNT 3U  // Update this  to 2U when removing console channel
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
