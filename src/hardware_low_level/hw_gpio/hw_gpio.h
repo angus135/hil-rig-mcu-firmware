@@ -58,8 +58,32 @@ typedef enum GPIO_OUTPUT_NAMES
     DIGITALOUT8,    // Added by Tim for DEV-68
     DIGITALOUT9,    // Added by Tim for DEV-68
     UART_TTL_3V3_EN,    // Added by Tim as an example, whoever does UART should replace
-    UART_TTL_5V_EN      // Added by Tim as an example, whoever does UART should replace
+    UART_TTL_5V_EN,      // Added by Tim as an example, whoever does UART should replace
+    LD2,            // Added by Tim for DEV-68
+    LD3             // Added by Tim for DEV-68
 } GPIO_OUTPUT_NAMES;
+
+typedef struct {
+    const char* name;
+    GPIO_OUTPUT_NAMES value;
+} GPIO_Name_Map;
+
+static const GPIO_Name_Map gpio_name_map[] = {
+    {"DIGITALOUT0", DIGITALOUT0},
+    {"DIGITALOUT1", DIGITALOUT1},
+    {"DIGITALOUT2", DIGITALOUT2},
+    {"DIGITALOUT3", DIGITALOUT3},
+    {"DIGITALOUT4", DIGITALOUT4},
+    {"DIGITALOUT5", DIGITALOUT5},
+    {"DIGITALOUT6", DIGITALOUT6},
+    {"DIGITALOUT7", DIGITALOUT7},
+    {"DIGITALOUT8", DIGITALOUT8},
+    {"DIGITALOUT9", DIGITALOUT9},
+    {"UART_TTL_3V3_EN", UART_TTL_3V3_EN},
+    {"UART_TTL_5V_EN", UART_TTL_5V_EN},
+    {"LD2", LD2},
+    {"LD3", LD3},
+};
 
 typedef struct GPIO_PORT_PACKET{
     GPIO_TypeDef* gpiox;
@@ -72,6 +96,18 @@ extern GPIO_TypeDef** GPIO_ports;
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Converts a string to a digital pin name
+ *
+ * @param str   the input string
+ * @param out   a space to write the associated pin name enum
+ *
+ * @return returns true if a match was found and false otherwise
+ * This function is designed to split split pins into groups based on their ports
+ * because we can write to an entire port at once this increases speed.
+ */
+bool GPIO_StringToEnum(const char* str, GPIO_OUTPUT_NAMES* out);
 
 /**
  * @brief Toggles a digital output using the underlying GPIO HAL.
@@ -164,7 +200,7 @@ LL_GPIO_PIN_4 of port A high
  * Note: This implementation assumes all digital outputs are on the same GPIO port.
  * By doing so, we can set all the outputs in a single hardware access.
  */
-inline void HW_GPIO_SetToPort( GPIO_TypeDef* gpiox, uint32_t pin_mask );
+void HW_GPIO_SetToPort( GPIO_TypeDef* gpiox, uint32_t pin_mask );
 
 /**
  * @brief Resets the state of all digital inputs in a GPIO Port using the underlying GPIO LL
@@ -188,7 +224,7 @@ LL_GPIO_PIN_4 of port A low
  * Note: This implementation assumes all digital outputs are on the same GPIO port.
  * By doing so, we can set all the outputs in a single hardware access.
  */
-inline void HW_GPIO_ResetToPort( GPIO_TypeDef* gpiox, uint32_t pin_mask );
+void HW_GPIO_ResetToPort( GPIO_TypeDef* gpiox, uint32_t pin_mask );
 
 #ifdef __cplusplus
 }

@@ -26,6 +26,7 @@
 #include "hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -128,6 +129,29 @@ void HW_GPIO_Toggle( GPIO_T gpio )
             break;
     }
 #endif
+}
+
+/**
+ * @brief Converts a string to a digital pin name
+ *
+ * @param str   the input string
+ * @param out   a space to write the associated pin name enum 
+ *
+ * @return returns true if a match was found and false otherwise
+ * This function is designed to split split pins into groups based on their ports
+ * because we can write to an entire port at once this increases speed.
+ */
+bool GPIO_StringToEnum(const char* str, GPIO_OUTPUT_NAMES* out)
+{
+    for (size_t i = 0; i < sizeof(gpio_name_map)/sizeof(gpio_name_map[0]); i++)
+    {
+        if (strcmp(str, gpio_name_map[i].name) == 0)
+        {
+            *out = gpio_name_map[i].value;
+            return true;
+        }
+    }
+    return false;
 }
 
 
@@ -258,6 +282,7 @@ switch ( gpio_name )
     // to the physical pin name LD1_Pin and its port LD1_GPIO_Port
     // the name chosen (DIGITALOUT0)
     // would then be added to the GPIO_OUTPUT_NAMES enum in hw_gpio.h
+    // as well as to the string mapping gpio_name_map in hw_gpio.h
     case DIGITALOUT0:  // Added by Tim for DEV-68
         return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
     case DIGITALOUT1:   // Added by Tim for DEV-68
@@ -284,6 +309,10 @@ switch ( gpio_name )
         return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
     default:        // Added by Tim, should be updated to set the warning LED once IOC is decided
         return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
+    case LD2:       // Added by Tim for DEV-68
+        return (struct GPIO_PORT_PACKET){LD2_GPIO_Port, LD2_Pin};
+    case LD3:       // Added by Tim for DEV-68
+        return (struct GPIO_PORT_PACKET){LD3_GPIO_Port, LD3_Pin};
 }
 #else
     return HW_GPIO_port_pin_association_to_return;
