@@ -46,6 +46,8 @@ bool EXEC_UART_Apply_Configuration( HwUartChannel_T channel, const HwUartConfig_
 
 bool EXEC_UART_Deconfigure( HwUartChannel_T channel );
 bool EXEC_UART_Transmit( HwUartChannel_T channel, const uint8_t* data, uint32_t length_bytes );
+bool EXEC_UART_Read( HwUartChannel_T channel, uint8_t* data, uint32_t buffer_size,
+                     uint32_t* bytes_read );
 
 #ifdef __cplusplus
 }
