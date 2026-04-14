@@ -45,6 +45,7 @@ extern "C"
 bool EXEC_UART_Apply_Configuration( HwUartChannel_T channel, const HwUartConfig_T* config );
 
 bool EXEC_UART_Deconfigure( HwUartChannel_T channel );
+bool EXEC_UART_Transmit( HwUartChannel_T channel, const uint8_t* data, uint32_t length_bytes );
 
 #ifdef __cplusplus
 }

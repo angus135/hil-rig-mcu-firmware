@@ -21,6 +21,7 @@
 #include <stdbool.h>
 
 #include "exec_uart.h"
+#include "hw_uart.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -165,5 +166,28 @@ bool EXEC_UART_Deconfigure( HwUartChannel_T channel )
     exec_uart_channel_states[channel].tx_enabled    = false;
     exec_uart_channel_states[channel].tx_staged     = false;
 
+    return true;
+}
+
+bool EXEC_UART_Transmit( HwUartChannel_T channel, const uint8_t* data, uint32_t length_bytes )
+{
+    if ( exec_uart_channel_states[channel].tx_staged )
+    {
+        return false;
+    }
+
+    if ( !HW_UART_Tx_Load_Buffer( channel, data, length_bytes ) )
+    {
+        return false;
+    }
+
+    exec_uart_channel_states[channel].tx_staged = true;
+
+    if ( !HW_UART_Tx_Trigger( channel ) )
+    {
+        return false;
+    }
+
+    exec_uart_channel_states[channel].tx_staged = false;
     return true;
 }
