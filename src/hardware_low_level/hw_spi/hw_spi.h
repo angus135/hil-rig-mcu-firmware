@@ -249,7 +249,7 @@ HWSPIRxSpans_T HW_SPI_Slave_Rx_Peek( SPIPeripheral_T peripheral );
  *     This function does not copy any data. It only updates the internal consume
  *     position maintained by the low-level driver.
  */
-void HW_SPI_Slave_Rx_Consume( SPIPeripheral_T peripheral, size_t bytes_to_consume );
+void HW_SPI_Slave_Rx_Consume( SPIPeripheral_T peripheral, uint32_t bytes_to_consume );
 
 /**
  * @brief Load data into the slave transmit buffer for a channel.
@@ -287,7 +287,40 @@ void HW_SPI_Slave_Rx_Consume( SPIPeripheral_T peripheral, size_t bytes_to_consum
  *     false if the buffer could not be loaded, the size was invalid, or the
  *     operation was not valid for the current channel state.
  */
-bool HW_SPI_Slave_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, size_t size );
+bool HW_SPI_Slave_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uint32_t size );
+
+/**
+ * @brief Trigger transmission of queued slave TX data for a channel.
+ *
+ * Starts the slave transmit DMA for the selected SPI channel if queued transmit
+ * data is available and no transmit DMA transfer is currently in progress.
+ *
+ * This function provides the "trigger" stage of the slave TX queue model. It is
+ * intended to be called by the mid-level driver after one or more messages have
+ * been loaded into the internal slave TX buffer using the corresponding load
+ * function.
+ *
+ * If a transmit DMA transfer is already active, this function does not restart,
+ * interrupt, or modify the current transfer. In this case, the function simply
+ * leaves the existing transmission in progress.
+ *
+ * If no queued transmit data is available, or the selected channel is not valid
+ * for slave TX operation, the function shall do nothing.
+ *
+ * This function only starts transmission of data already stored in the
+ * low-level driver's internal slave TX buffer. It does not copy any new data
+ * into the transmit queue and does not define higher-level frame semantics. The
+ * mid-level driver is responsible for determining what data should be queued and
+ * when transmission should be triggered.
+ *
+ * This function is intended for use only on channels configured in slave mode.
+ * Calling it on a master channel is invalid.
+ *
+ * @param peripheral
+ *     The SPI peripheral/channel whose queued slave TX data should be
+ *     transmitted.
+ */
+void HW_SPI_Slave_Tx_Trigger( SPIPeripheral_T peripheral );
 
 /**
  * @brief Start a master-mode SPI write/read transaction.
@@ -342,7 +375,7 @@ bool HW_SPI_Slave_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* dat
  *     transaction could not be started.
  */
 bool HW_SPI_Master_Write_Read( SPIPeripheral_T peripheral, const uint8_t* write_data,
-                               uint8_t* read_data, size_t size );
+                               uint8_t* read_data, uint32_t size );
 
 /**
  * @brief Determine whether a master transfer is currently active.
@@ -412,7 +445,7 @@ bool HW_SPI_Master_Transfer_Complete( SPIPeripheral_T peripheral );
  * @return
  *     The size, in bytes, of the most recently completed master transfer.
  */
-size_t HW_SPI_Master_Get_Last_Transfer_Size( SPIPeripheral_T peripheral );
+uint32_t HW_SPI_Master_Get_Last_Transfer_Size( SPIPeripheral_T peripheral );
 
 #ifdef __cplusplus
 }
