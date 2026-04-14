@@ -1,6 +1,6 @@
 /******************************************************************************
  *  File:       hw_uart_mocks.h
- *  Author:     Angus Corr
+ *  Author:     Callum Rafferty
  *  Created:    21-Dec-2025
  *
  *  Description:
@@ -94,8 +94,20 @@ typedef enum
 
 typedef struct
 {
+    uint32_t CR;
     uint32_t NDTR;
+    uint32_t PAR;
+    uint32_t M0AR;
+    uint32_t FCR;
 } DMA_Stream_TypeDef;
+
+typedef struct
+{
+    uint32_t LISR;
+    uint32_t HISR;
+    uint32_t LIFCR;
+    uint32_t HIFCR;
+} DMA_TypeDef;
 
 /**-----------------------------------------------------------------------------
  *  Mock Peripheral Instances
@@ -112,6 +124,13 @@ static USART_TypeDef USART3_mock = { 0U };
 #define USART2 ( &USART2_mock )
 // Console
 #define USART3 ( &USART3_mock )
+
+// DMA controller mocks
+static DMA_TypeDef fake_dma1;
+static DMA_TypeDef fake_dma2;
+
+#define DMA1 ( &fake_dma1 )
+#define DMA2 ( &fake_dma2 )
 
 // DMA stream mocks
 static DMA_Stream_TypeDef DMA2_Stream1_mock = { 0U };
@@ -130,11 +149,47 @@ static DMA_Stream_TypeDef DMA1_Stream3_mock = { 0U };
 #define DMA1_Stream1 ( &DMA1_Stream1_mock )
 #define DMA1_Stream3 ( &DMA1_Stream3_mock )
 
+// LL stream constants
+#define LL_DMA_STREAM_1 1U
+#define LL_DMA_STREAM_3 3U
+#define LL_DMA_STREAM_5 5U
+#define LL_DMA_STREAM_6 6U
+
 // hUart handle mocks
 static UART_HandleTypeDef huart6 = { .Instance = USART6 };
 static UART_HandleTypeDef huart2 = { .Instance = USART2 };
 // Console
 static UART_HandleTypeDef huart3 = { .Instance = USART3 };
+
+// IFCR bit mask mocks
+#define DMA_HIFCR_CTCIF6 ( 1U << 0 )
+#define DMA_HIFCR_CTEIF6 ( 1U << 1 )
+#define DMA_HIFCR_CFEIF6 ( 1U << 2 )
+#define DMA_HIFCR_CDMEIF6 ( 1U << 3 )
+#define DMA_HIFCR_CHTIF6 ( 1U << 4 )
+
+#define DMA_LIFCR_CTCIF3 ( 1U << 5 )
+#define DMA_LIFCR_CTEIF3 ( 1U << 6 )
+#define DMA_LIFCR_CFEIF3 ( 1U << 7 )
+#define DMA_LIFCR_CDMEIF3 ( 1U << 8 )
+#define DMA_LIFCR_CHTIF3 ( 1U << 9 )
+
+#define DMA_LISR_TCIF3 ( 1U << 0 )
+#define DMA_LISR_TEIF3 ( 1U << 1 )
+#define DMA_HISR_TCIF6 ( 1U << 2 )
+#define DMA_HISR_TEIF6 ( 1U << 3 )
+
+// LL register helper macros
+
+#define DMA_SxCR_EN ( 1U << 0 )
+#define DMA_SxCR_HTIE ( 1U << 2 )
+#define DMA_SxCR_TCIE ( 1U << 4 )
+#define DMA_SxCR_TEIE ( 1U << 5 )
+#define USART_CR3_DMAT ( 1U << 7 )
+
+#define SET_BIT( REG, BIT ) ( ( REG ) |= ( BIT ) )
+#define CLEAR_BIT( REG, BIT ) ( ( REG ) &= ~( BIT ) )
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -144,6 +199,18 @@ HAL_StatusTypeDef HAL_UART_Init( UART_HandleTypeDef* huart );
 HAL_StatusTypeDef HAL_UART_Transmit_DMA( UART_HandleTypeDef* huart, uint8_t* pData, uint16_t Size );
 HAL_StatusTypeDef HAL_UART_Receive_DMA( UART_HandleTypeDef* huart, uint8_t* pData, uint16_t Size );
 HAL_StatusTypeDef HAL_UART_DMAStop( UART_HandleTypeDef* huart );
+
+// LL function prototypes
+void     LL_DMA_DisableStream( DMA_TypeDef* dma, uint32_t stream );
+void     LL_DMA_EnableStream( DMA_TypeDef* dma, uint32_t stream );
+uint32_t LL_DMA_IsEnabledStream( DMA_TypeDef* dma, uint32_t stream );
+void     LL_USART_EnableDMAReq_TX( USART_TypeDef* usart );
+void     LL_USART_DisableDMAReq_TX( USART_TypeDef* usart );
+
+uint32_t LL_DMA_IsActiveFlag_TC3( DMA_TypeDef* dma );
+uint32_t LL_DMA_IsActiveFlag_TE3( DMA_TypeDef* dma );
+uint32_t LL_DMA_IsActiveFlag_TC6( DMA_TypeDef* dma );
+uint32_t LL_DMA_IsActiveFlag_TE6( DMA_TypeDef* dma );
 
 // NOLINTEND
 

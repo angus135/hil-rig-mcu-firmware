@@ -35,6 +35,8 @@
 #else
 #include "usart.h"
 #include "stm32f446xx.h"
+#include "stm32f4xx_ll_dma.h"
+#include "stm32f4xx_ll_usart.h"
 #endif
 #include "hw_uart.h"
 #include "rtos_config.h"
@@ -50,14 +52,35 @@
 #define HW_UART_CH1_USART USART6
 #define HW_UART_CH1_DMA_RX_STREAM DMA2_Stream1
 #define HW_UART_CH1_DMA_TX_STREAM DMA2_Stream6
+#define HW_UART_CH1_HANDLE ( &huart6 )
+#define HW_UART_CH1_DMA_CONTROLLER DMA2
+#define HW_UART_CH1_DMA_TX_LL_STREAM LL_DMA_STREAM_6
+#define HW_UART_CH1_DMA_TX_IFCR_REG ( &DMA2->HIFCR )
+#define HW_UART_CH1_DMA_TX_IFCR_MASK                                                               \
+    ( DMA_HIFCR_CTCIF6 | DMA_HIFCR_CTEIF6 | DMA_HIFCR_CFEIF6 | DMA_HIFCR_CDMEIF6                   \
+      | DMA_HIFCR_CHTIF6 )
 
 #define HW_UART_CH2_USART USART2
 #define HW_UART_CH2_DMA_RX_STREAM DMA1_Stream5
 #define HW_UART_CH2_DMA_TX_STREAM DMA1_Stream6
+#define HW_UART_CH2_HANDLE ( &huart2 )
+#define HW_UART_CH2_DMA_CONTROLLER DMA1
+#define HW_UART_CH2_DMA_TX_LL_STREAM LL_DMA_STREAM_6
+#define HW_UART_CH2_DMA_TX_IFCR_REG ( &DMA1->HIFCR )
+#define HW_UART_CH2_DMA_TX_IFCR_MASK                                                               \
+    ( DMA_HIFCR_CTCIF6 | DMA_HIFCR_CTEIF6 | DMA_HIFCR_CFEIF6 | DMA_HIFCR_CDMEIF6                   \
+      | DMA_HIFCR_CHTIF6 )
 
 #define HW_UART_CH3_USART USART3
 #define HW_UART_CH3_DMA_RX_STREAM DMA1_Stream1
 #define HW_UART_CH3_DMA_TX_STREAM DMA1_Stream3
+#define HW_UART_CH3_HANDLE ( &huart3 )
+#define HW_UART_CH3_DMA_CONTROLLER DMA1
+#define HW_UART_CH3_DMA_TX_LL_STREAM LL_DMA_STREAM_3
+#define HW_UART_CH3_DMA_TX_IFCR_REG ( &DMA1->LIFCR )
+#define HW_UART_CH3_DMA_TX_IFCR_MASK                                                               \
+    ( DMA_LIFCR_CTCIF3 | DMA_LIFCR_CTEIF3 | DMA_LIFCR_CFEIF3 | DMA_LIFCR_CDMEIF3                   \
+      | DMA_LIFCR_CHTIF3 )
 
 // TODO - These pin definitions are placeholders, need to be updated based on actual design
 // May change from GPIO to something else depending on how the mode/voltage selection is implemented
@@ -177,10 +200,15 @@ typedef struct
  */
 typedef struct
 {
-    USART_TypeDef*      uart_instance;
-    DMA_Stream_TypeDef* rx_dma_stream;
-    DMA_Stream_TypeDef* tx_dma_stream;
-    UART_HandleTypeDef* uart_handle;  // Used for configuration stage HAL calls.
+    USART_TypeDef*      uart_instance;      // Pointer to the UART peripheral instance (e.g. USART2)
+    DMA_Stream_TypeDef* rx_dma_stream;      // Pointer to the DMA stream used for RX operations
+    DMA_Stream_TypeDef* tx_dma_stream;      // Pointer to the DMA stream used for TX operations
+    UART_HandleTypeDef* uart_handle;        // HAL UART handle for initialisation and configuration
+    DMA_TypeDef*        tx_dma_controller;  // Pointer to the DMA controller for TX stream
+    uint32_t            tx_ll_stream;       // LL stream identifier for TX (e.g. LL_DMA_STREAM_6)
+    volatile uint32_t*  tx_dma_ifcr_reg;    // Pointer to the DMA IFCR register for the TX stream
+    uint32_t            tx_dma_ifcr_mask;   // Bitmask for clearing the relevant flags in the IFCR
+                                            // register for the TX stream
 } HwUartHardwareMap_T;
 
 /**-----------------------------------------------------------------------------
@@ -198,18 +226,33 @@ static HwUartChannelState_T uart_channel_states[HW_UART_CHANNEL_COUNT];
 
 /* Fixed board-level mapping from logical UART channels to MCU peripherals */
 static const HwUartHardwareMap_T uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
-    [HW_UART_CHANNEL_1] = { .uart_instance = HW_UART_CH1_USART,
-                            .rx_dma_stream = HW_UART_CH1_DMA_RX_STREAM,
-                            .tx_dma_stream = HW_UART_CH1_DMA_TX_STREAM,
-                            .uart_handle   = &huart6 },
-    [HW_UART_CHANNEL_2] = { .uart_instance = HW_UART_CH2_USART,
-                            .rx_dma_stream = HW_UART_CH2_DMA_RX_STREAM,
-                            .tx_dma_stream = HW_UART_CH2_DMA_TX_STREAM,
-                            .uart_handle   = &huart2 },
-    [HW_UART_CHANNEL_3] = { .uart_instance = HW_UART_CH3_USART,
-                            .rx_dma_stream = HW_UART_CH3_DMA_RX_STREAM,
-                            .tx_dma_stream = HW_UART_CH3_DMA_TX_STREAM,
-                            .uart_handle   = &huart3 } };
+
+    [HW_UART_CHANNEL_1] = { .uart_instance     = HW_UART_CH1_USART,
+                            .rx_dma_stream     = HW_UART_CH1_DMA_RX_STREAM,
+                            .tx_dma_stream     = HW_UART_CH1_DMA_TX_STREAM,
+                            .uart_handle       = HW_UART_CH1_HANDLE,
+                            .tx_dma_controller = HW_UART_CH1_DMA_CONTROLLER,
+                            .tx_ll_stream      = HW_UART_CH1_DMA_TX_LL_STREAM,
+                            .tx_dma_ifcr_reg   = HW_UART_CH1_DMA_TX_IFCR_REG,
+                            .tx_dma_ifcr_mask  = HW_UART_CH1_DMA_TX_IFCR_MASK },
+
+    [HW_UART_CHANNEL_2] = { .uart_instance     = HW_UART_CH2_USART,
+                            .rx_dma_stream     = HW_UART_CH2_DMA_RX_STREAM,
+                            .tx_dma_stream     = HW_UART_CH2_DMA_TX_STREAM,
+                            .uart_handle       = HW_UART_CH2_HANDLE,
+                            .tx_dma_controller = HW_UART_CH2_DMA_CONTROLLER,
+                            .tx_ll_stream      = HW_UART_CH2_DMA_TX_LL_STREAM,
+                            .tx_dma_ifcr_reg   = HW_UART_CH2_DMA_TX_IFCR_REG,
+                            .tx_dma_ifcr_mask  = HW_UART_CH2_DMA_TX_IFCR_MASK },
+
+    [HW_UART_CHANNEL_3] = { .uart_instance     = HW_UART_CH3_USART,
+                            .rx_dma_stream     = HW_UART_CH3_DMA_RX_STREAM,
+                            .tx_dma_stream     = HW_UART_CH3_DMA_TX_STREAM,
+                            .uart_handle       = HW_UART_CH3_HANDLE,
+                            .tx_dma_controller = HW_UART_CH3_DMA_CONTROLLER,
+                            .tx_ll_stream      = HW_UART_CH3_DMA_TX_LL_STREAM,
+                            .tx_dma_ifcr_reg   = HW_UART_CH3_DMA_TX_IFCR_REG,
+                            .tx_dma_ifcr_mask  = HW_UART_CH3_DMA_TX_IFCR_MASK } };
 
 /* Fixed board-level mapping from logical UART channels to interface selection lines */
 static const HwUartSelectionLines_T uart_selection_lines[HW_UART_CHANNEL_COUNT] = {
@@ -525,6 +568,67 @@ static bool HW_UART_Init_Channel( HwUartChannel_T channel )
         return false;
     }
     return true;
+}
+
+/**
+ * @brief  Handles completion of a TX DMA transfer for the specified UART channel.
+ *
+ * @param  channel The UART channel whose TX DMA transfer has completed.
+ *
+ * @return void
+ *
+ * @note   This function is called from the DMA stream interrupt path once the DMA
+ *         controller has finished reading the staged TX buffer.
+ *
+ * @note   DMA completion is sufficient to release the low-level driver owned
+ *         staging buffer because the DMA engine has already consumed the buffer
+ *         contents by this point.
+ *
+ * @note   This function clears the TX running and loaded state, resets the staged
+ *         payload length, and disables the UART DMA transmit request.
+ *
+ * @note   This function does not determine whether the final UART stop bit has
+ *         fully left the wire. It only marks completion of DMA consumption of
+ *         the staged TX buffer.
+ */
+static inline void HW_UART_Tx_Complete_Handler( HwUartChannel_T channel )
+{
+    HwUartRuntimeState_T* runtime = &uart_channel_states[channel].runtime;
+
+    LL_USART_DisableDMAReq_TX( uart_hardware_map[channel].uart_instance );
+
+    runtime->tx_running      = false;
+    runtime->tx_loaded       = false;
+    runtime->tx_length_bytes = 0U;
+}
+
+/**
+ * @brief  Handles a TX DMA error for the specified UART channel.
+ *
+ * @param  channel The UART channel whose TX DMA transfer encountered an error.
+ *
+ * @return void
+ *
+ * @note   A TX DMA error indicates loss of deterministic execution for the active
+ *         transfer. This handler disables the UART DMA TX request, releases the
+ *         low-level TX staging state, and latches a DMA fault for later inspection.
+ *
+ * @note   This function does not attempt recovery or retry. Higher layers are
+ *         expected to treat this as a fault condition and abort execution for deterministic
+ *         behaviour requirements
+ */
+static inline void HW_UART_Tx_Error_Handler( HwUartChannel_T channel )
+{
+    HwUartRuntimeState_T* runtime = &uart_channel_states[channel].runtime;
+
+    LL_USART_DisableDMAReq_TX( uart_hardware_map[channel].uart_instance );
+
+    runtime->tx_running      = false;
+    runtime->tx_loaded       = false;
+    runtime->tx_length_bytes = 0U;
+
+    // To be implemented when faults are implemented
+    // runtime->latched_faults |= HW_UART_FAULT_DMA_ERROR;
 }
 
 /**-----------------------------------------------------------------------------
@@ -908,34 +1012,57 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
 
 /**
  * @brief  Starts transmission of the currently staged TX payload for the specified UART channel
- *         using DMA.
+ *         using a low-level (LL) DMA launch.
  *
  * @param  channel The UART channel to transmit on.
  *
  * @return true if DMA transmission was successfully started.
  * @return false if the channel is invalid, the channel is not ready for TX, no payload has been
- *         staged, a TX transfer is already running, the staged length is invalid, or
- *         HAL_UART_Transmit_DMA() fails.
+ *         staged, a TX transfer is already running, or the staged length is invalid.
  *
  * @note   This function does not copy payload data. It launches transmission of data that has
  *         already been staged in the low-level driver owned TX buffer via HW_UART_Tx_Load_Buffer().
  *
- * @note   If DMA launch fails, the staged payload remains present in the TX staging buffer and
- *         may be retried or otherwise handled by higher layers.
+ * @note   This implementation does not use HAL. Instead, it directly controls the DMA stream and
+ *         UART DMA request using LL functions and register access.
  *
- * @note   TX buffer ownership is released only when transmission completes, currently through
- *         HAL_UART_TxCpltCallback().
+ * @note   Prior to launching the transfer, the DMA stream is explicitly disabled and all pending
+ *         interrupt flags are cleared. This ensures that the DMA registers (M0AR, PAR, NDTR) can be
+ *         safely reprogrammed for the new transfer and that no stale flags interfere with
+ * operation.
+ *
+ * @note   The DMA is configured in normal mode. Once enabled, the DMA controller autonomously
+ *         transfers bytes from the staged TX buffer (memory) to the UART data register (DR). No CPU
+ *         intervention is required during the transfer.
+ *
+ * @note   TX buffer ownership is retained by the low-level driver until the DMA transfer completes.
+ *         Completion is detected via the DMA transfer complete interrupt, at which point the driver
+ *         must clear tx_running, tx_loaded, and tx_length_bytes.
+ *
+ * @note   The UART DMA transmit request (CR3.DMAT) is enabled before the DMA stream is started.
+ * This allows the UART peripheral to generate DMA requests as it becomes ready to accept new data.
+ *
+ * @note   This function assumes that the DMA stream configuration (channel selection, direction,
+ *         increment modes, data width, and priority) has already been performed during channel
+ *         initialization. Only the transfer-specific parameters (addresses and length) are updated
+ *         here.
+ *
+ * @note   This function is designed for deterministic execution. All channel-specific hardware
+ *         information (DMA controller, stream, and flag registers) is precomputed in the hardware
+ *         map, avoiding switch statements in the hot path.
  */
 bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
 {
     if ( channel >= HW_UART_CHANNEL_COUNT )
     {
         return false;
-    }
+    }  // Can later assume valid channel for optimisation
 
+    // Cache for performance
     HwUartChannelState_T*      state  = &uart_channel_states[channel];
     const HwUartHardwareMap_T* hw_map = &uart_hardware_map[channel];
-    UART_HandleTypeDef*        huart  = hw_map->uart_handle;
+    USART_TypeDef*             uart   = hw_map->uart_instance;
+    DMA_Stream_TypeDef*        dma    = hw_map->tx_dma_stream;
 
     if ( !state->runtime.is_configured_and_initialised || !state->config.tx_enabled )
     {
@@ -952,43 +1079,102 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
         return false;
     }  // Defensive check, should never happen if load succeeded
 
-    if ( HAL_UART_Transmit_DMA( huart, state->tx_buffer,
-                                ( uint16_t )state->runtime.tx_length_bytes )
-         != HAL_OK )
+    /* Disable DMA stream before reprogramming */
+    LL_DMA_DisableStream( hw_map->tx_dma_controller, hw_map->tx_ll_stream );
+
+    while ( LL_DMA_IsEnabledStream( hw_map->tx_dma_controller, hw_map->tx_ll_stream ) )
     {
-        return false;
     }
+
+    /* Clear all pending flags for this TX stream */
+    *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
+
+    /* Program DMA transfer */
+    dma->M0AR = ( uint32_t )( uintptr_t )state->tx_buffer;
+    dma->PAR  = ( uint32_t )( uintptr_t )( &( uart->DR ) );
+    dma->NDTR = state->runtime.tx_length_bytes;
+
+    /* Disable half transfer interrupt for TX */
+    CLEAR_BIT( dma->CR, DMA_SxCR_HTIE );
+
+    /* Enable transfer complete and transfer error interrupts */
+    SET_BIT( dma->CR, DMA_SxCR_TCIE | DMA_SxCR_TEIE );
+
+    /* Enable UART DMA transmit request */
+    LL_USART_EnableDMAReq_TX( uart );
+
+    /* Start DMA stream */
+    LL_DMA_EnableStream( hw_map->tx_dma_controller, hw_map->tx_ll_stream );
+
     state->runtime.tx_running = true;
     return true;
 }
 
-/**
- * @brief  HAL UART transmit complete callback used to release low-level TX staging state once a
- *         DMA-backed UART transmission finishes.
- *
- * @param  huart Pointer to the HAL UART handle that completed transmission.
- *
- * @return void
- *
- * @note   This callback clears the TX running state, releases staged TX buffer ownership, and
- *         resets the staged payload length for the matching logical UART channel.
- *
- * @note   This is currently the mechanism by which the low-level driver marks a staged TX buffer
- *         as free after transmission.
- *
- * @note   The callback ignores UART handles that do not match any logical channel owned by this
- *         driver.
- */
-void HAL_UART_TxCpltCallback( UART_HandleTypeDef* huart )
+bool HW_UART_Tx_Is_Busy( HwUartChannel_T channel )
 {
-    for ( uint32_t channel = 0U; channel < HW_UART_CHANNEL_COUNT; channel++ )
+    if ( channel >= HW_UART_CHANNEL_COUNT )
     {
-        if ( uart_hardware_map[channel].uart_handle == huart )
-        {
-            uart_channel_states[channel].runtime.tx_running      = false;
-            uart_channel_states[channel].runtime.tx_loaded       = false;
-            uart_channel_states[channel].runtime.tx_length_bytes = 0U;
-            break;
-        }
+        return false;
+    }
+
+    HwUartChannelState_T* state = &uart_channel_states[channel];
+
+    if ( !state->runtime.is_configured_and_initialised || !state->config.tx_enabled )
+    {
+        return false;
+    }
+
+    return state->runtime.tx_loaded || state->runtime.tx_running;
+}
+
+void DMA2_Stream6_IRQHandler( void )
+{
+    const HwUartHardwareMap_T* hw_map = &uart_hardware_map[HW_UART_CHANNEL_1];
+    //  Transfer Complete Branch
+    if ( LL_DMA_IsActiveFlag_TC6( DMA2 ) )
+    {
+        *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
+        HW_UART_Tx_Complete_Handler( HW_UART_CHANNEL_1 );
+    }
+    //  Transfer Error Branch
+    else if ( LL_DMA_IsActiveFlag_TE6( DMA2 ) )
+    {
+        *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
+        HW_UART_Tx_Error_Handler( HW_UART_CHANNEL_1 );
+    }
+}
+
+void DMA1_Stream6_IRQHandler( void )
+{
+    const HwUartHardwareMap_T* hw_map = &uart_hardware_map[HW_UART_CHANNEL_2];
+    // Transfer Complete Branch
+    if ( LL_DMA_IsActiveFlag_TC6( DMA1 ) )
+    {
+        *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
+        HW_UART_Tx_Complete_Handler( HW_UART_CHANNEL_2 );
+    }
+    // Transfer Error Branch
+    else if ( LL_DMA_IsActiveFlag_TE6( DMA1 ) )
+    {
+        *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
+        HW_UART_Tx_Error_Handler( HW_UART_CHANNEL_2 );
+    }
+}
+
+void DMA1_Stream3_IRQHandler( void )
+{
+    const HwUartHardwareMap_T* hw_map = &uart_hardware_map[HW_UART_CHANNEL_3];
+
+    // Transfer Complete Branch
+    if ( LL_DMA_IsActiveFlag_TC3( DMA1 ) )
+    {
+        *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
+        HW_UART_Tx_Complete_Handler( HW_UART_CHANNEL_3 );
+    }
+    // Transfer Error Branch
+    else if ( LL_DMA_IsActiveFlag_TE3( DMA1 ) )
+    {
+        *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
+        HW_UART_Tx_Error_Handler( HW_UART_CHANNEL_3 );
     }
 }
