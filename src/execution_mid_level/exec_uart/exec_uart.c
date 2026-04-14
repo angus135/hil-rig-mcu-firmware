@@ -78,6 +78,12 @@ static HwUartConfig_T EXEC_UART_Get_Disabled_Config( void )
 
     return config;
 }
+
+static inline bool EXEC_UART_Is_Valid_Channel( HwUartChannel_T channel )
+{
+    return ( ( uint32_t )channel < HW_UART_CHANNEL_COUNT );
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
@@ -95,7 +101,33 @@ bool EXEC_UART_Deconfigure( HwUartChannel_T channel )
 {
     HwUartConfig_T disabled_config = EXEC_UART_Get_Disabled_Config();
     ( void )disabled_config;
-    ( void )channel;
 
-    return false;
+    // Check for Valid channel
+    if ( !EXEC_UART_Is_Valid_Channel( channel ) )
+    {
+        return false;
+    }
+
+    // Halt Rx Operation
+    if ( HW_UART_Rx_Is_Running( channel ) )
+    {
+        if ( !HW_UART_Rx_Stop( channel ) )
+        {
+            return false;
+        }
+    }
+
+    // Configure channel with disabled configuration
+    if ( !HW_UART_Configure_Channel( channel, &disabled_config ) )
+    {
+        return false;
+    }
+
+    // Reset exec channel state
+    exec_uart_channel_states[channel].is_configured = false;
+    exec_uart_channel_states[channel].rx_enabled    = false;
+    exec_uart_channel_states[channel].tx_enabled    = false;
+    exec_uart_channel_states[channel].tx_staged     = false;
+
+    return true;
 }
