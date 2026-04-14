@@ -119,14 +119,14 @@ bool EXEC_UART_Transmit( HwUartChannel_T channel, const uint8_t* data, uint32_t 
  *
  * @param  channel     UART channel to read from.
  * @param  dest        Destination buffer provided by the caller.
- * @param  dest_size Maximum number of bytes that may be written to @p dest.
+ * @param  dest_size   Maximum number of bytes that may be written to @p dest.
  * @param  bytes_read  Output pointer receiving the number of bytes copied.
  *
  * @return true if the read operation completed successfully.
  * @return false if @p dest or @p bytes_read is null.
  *
  * @note   This function retrieves unread RX data from the low-level driver
- *         using the low-level span interface, copies up to @p buffer_size bytes
+ *         using the low-level span interface, copies up to @p dest_size bytes
  *         into caller-provided storage, and consumes exactly the number of
  *         bytes copied.
  *

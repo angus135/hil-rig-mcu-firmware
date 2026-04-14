@@ -29,7 +29,6 @@
 #include <stdbool.h>
 
 #include "exec_uart.h"
-#include "hw_uart.h"
 #include <string.h>
 
 /**-----------------------------------------------------------------------------
@@ -71,12 +70,16 @@ typedef struct
  *------------------------------------------------------------------------------
  */
 
+/* Exec-level per-channel lifecycle state. */
 static ExecUartChannelState_T exec_uart_channel_states[HW_UART_CHANNEL_COUNT];
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+static HwUartConfig_T EXEC_UART_Get_Disabled_Config( void );
+static inline bool    EXEC_UART_Is_Valid_Channel( HwUartChannel_T channel );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -129,13 +132,11 @@ static inline bool EXEC_UART_Is_Valid_Channel( HwUartChannel_T channel )
 bool EXEC_UART_Apply_Configuration( HwUartChannel_T channel, const HwUartConfig_T* config )
 {
 
-    // Valid Channel Check
     if ( !EXEC_UART_Is_Valid_Channel( channel ) )
     {
         return false;
     }
 
-    // Ensure Config Exists
     if ( config == NULL )
     {
         return false;
@@ -152,13 +153,13 @@ bool EXEC_UART_Apply_Configuration( HwUartChannel_T channel, const HwUartConfig_
         }
     }
 
-    // Call LL configuration. This validates configuration before applying
+    /* Call LL configuration. This validates configuration before applying */
     if ( !HW_UART_Configure_Channel( channel, config ) )
     {
         return false;
     }
 
-    // Start Rx if enabled
+    /* Start Rx if enabled */
     if ( config->rx_enabled )
     {
         if ( !HW_UART_Rx_Start( channel ) )

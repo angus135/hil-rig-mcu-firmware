@@ -52,9 +52,12 @@ extern "C"
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
  */
+
 #define HW_UART_TX_MAX_CHUNK_SIZE 256U
-// Number of UART channels supported by the hardware
-#define HW_UART_CHANNEL_COUNT 3U  // Update this  to 2U when removing console channel
+
+/* Number of UART channels supported by the hardware */
+#define HW_UART_CHANNEL_COUNT 3U /* Update to 2U when removing console channel */
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -131,7 +134,7 @@ typedef enum
  *         during configuration and later applied when RX or TX is started.
  *
  * @note   This structure does not initiate hardware activity by itself.
- *         HW_UART_CONFIGURE_CHANNEL() must be called before starting RX or TX.
+ *         HW_UART_Configure_Channel() must be called before starting RX or TX.
  */
 typedef struct
 {
@@ -262,7 +265,7 @@ bool HW_UART_Rx_Start( HwUartChannel_T channel );
  * @note   Higher layers must not directly manage the DMA buffer, modify the returned memory, or
  *         retain the returned pointers beyond the valid processing window. Once the required copy
  *         or processing is complete, the caller shall report consumption through
- * HW_UART_Rx_Consume().
+ *         HW_UART_Rx_Consume().
  *
  * @note   This interface preserves a clean ownership boundary:
  *         - the low-level driver owns the DMA circular buffer and its management,
@@ -355,9 +358,51 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
  */
 bool HW_UART_Tx_Trigger( HwUartChannel_T channel );
 
+/**
+ * @brief  Reports whether the specified UART channel currently has staged or
+ *         in-flight TX data owned by the low-level driver.
+ *
+ * @param  channel The UART channel to inspect.
+ *
+ * @return true if TX data is currently staged or a TX DMA transfer is in
+ *         progress.
+ * @return false if the channel is invalid, not configured for TX, or no TX
+ *         data is currently owned by the low-level driver.
+ *
+ * @note   This function reflects low-level TX ownership state only.
+ *
+ * @note   A return value of true indicates that the TX staging buffer must not
+ *         be overwritten.
+ */
 bool HW_UART_Tx_Is_Busy( HwUartChannel_T channel );
 
+/**
+ * @brief  Stops UART reception for the specified channel and halts DMA-based RX.
+ *
+ * @param  channel The UART channel to stop reception on.
+ *
+ * @return true if RX was successfully stopped.
+ * @return false if the channel is invalid, not configured, RX is not running,
+ *         or the underlying HAL stop operation fails.
+ *
+ * @note   This function is intended for non-hot-path lifecycle control.
+ *
+ * @note   The channel configuration remains valid after RX is stopped. Reception
+ *         may be started again later with HW_UART_Rx_Start().
+ */
 bool HW_UART_Rx_Stop( HwUartChannel_T channel );
+
+/**
+ * @brief  Reports whether UART RX is currently active on the specified channel.
+ *
+ * @param  channel The UART channel to inspect.
+ *
+ * @return true if the channel is configured and RX is currently running.
+ * @return false if the channel is invalid, not configured, or RX is not active.
+ *
+ * @note   This function is intended as a lightweight lifecycle query for
+ *         higher-level sequencing logic.
+ */
 bool HW_UART_Rx_Is_Running( HwUartChannel_T channel );
 
 #ifdef __cplusplus

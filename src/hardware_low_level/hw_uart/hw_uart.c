@@ -48,7 +48,8 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
-// UART Hardware mapping definitions
+
+/* Fixed UART hardware mapping definitions. */
 #define HW_UART_CH1_USART USART6
 #define HW_UART_CH1_DMA_RX_STREAM DMA2_Stream1
 #define HW_UART_CH1_DMA_TX_STREAM DMA2_Stream6
@@ -82,8 +83,7 @@
     ( DMA_LIFCR_CTCIF3 | DMA_LIFCR_CTEIF3 | DMA_LIFCR_CFEIF3 | DMA_LIFCR_CDMEIF3                   \
       | DMA_LIFCR_CHTIF3 )
 
-// TODO - These pin definitions are placeholders, need to be updated based on actual design
-// May change from GPIO to something else depending on how the mode/voltage selection is implemented
+/* Placeholder interface selection line definitions. */
 #define HW_UART_CH1_MODE_SEL0_LINE GPIO_PIN_0
 #define HW_UART_CH1_MODE_SEL1_LINE GPIO_PIN_1
 #define HW_UART_CH1_VOLT_SEL0_LINE GPIO_PIN_2
@@ -94,10 +94,9 @@
 #define HW_UART_CH2_VOLT_SEL0_LINE GPIO_PIN_6
 #define HW_UART_CH2_VOLT_SEL1_LINE GPIO_PIN_7
 
-// Size of the receive buffer for each UART channel,
-// can be adjusted based on expected data rates and memory constraints
-#define HW_UART_RX_BUFFER_SIZE                                                                     \
-    4096U  // Must be a power of 2 for the circular buffer management to work correctly
+/* RX buffer size must remain a power of 2 for mask-based circular indexing. */
+#define HW_UART_RX_BUFFER_SIZE 4096U
+
 #if ( ( HW_UART_RX_BUFFER_SIZE & ( HW_UART_RX_BUFFER_SIZE - 1U ) ) != 0U )
 #error "HW_UART_RX_BUFFER_SIZE must be a power of 2"
 #endif
@@ -640,38 +639,9 @@ static inline void HW_UART_Tx_Error_Handler( HwUartChannel_T channel )
  *------------------------------------------------------------------------------
  */
 
-/**
- * @brief  Configures a UART channel with the specified settings and applies
- *         the associated static hardware configuration.
- *
- * @param  channel The UART channel to configure.
- * @param  config  Pointer to the configuration structure describing UART
- *                 parameters and interface mode.
- *
- * @return true if the channel was successfully configured.
- * @return false if the channel index or configuration is invalid, or if
- *         hardware selection fails.
- *
- * @note   This function performs validation of the provided configuration
- *         before applying any changes to the hardware.
- *
- * @note   The configuration is stored within the low-level driver and used
- *         later during start operations. This function does not enable RX or
- *         TX operation.
- *
- * @note   Static hardware selection (e.g. interface mode and voltage levels)
- *         is applied as part of configuration to ensure the physical interface
- *         is in a safe and defined state prior to enabling UART activity.
- *
- * @note   Runtime state is reset as part of configuration, including read index
- *         and fault flags.
- *
- * @note   This function must be called successfully before invoking
- *         HW_UART_Rx_Start() or any TX-related operations.
- */
+/* Applies validated configuration and resets runtime state. */
 bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* config )
 {
-    // Validate channel number and configuration before applying changes
     if ( channel >= HW_UART_CHANNEL_COUNT )
     {
         return false;
@@ -685,19 +655,14 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* c
         return false;
     }
 
-    // Store the validated configuration
-
     state->config = *config;
 
-    // Apply the static hardware selection states (mode/voltage) based on the interface mode
-    // specified in the configuration to the appropriate hardware lines (GPIOs or other control
-    // interfaces)
     if ( !HW_UART_Apply_Static_Hardware_Selection( channel, config->interface_mode ) )
     {
         return false;
     }
 
-    // Reset runtime state variables to their default values
+    /* Reset runtime state before reinitialising the channel. */
     state->runtime.latched_faults  = 0U;
     state->runtime.rx_read_index   = 0U;
     state->runtime.tx_length_bytes = 0U;
@@ -709,40 +674,12 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* c
     {
         return false;
     }
-    // Mark channel as configured and initialised.
+
     state->runtime.is_configured_and_initialised = true;
     return true;
 }
 
-/**
- * @brief  Starts UART reception for the specified channel using DMA into the
- *         LL driver owned circular RX buffer.
- *
- * @param  channel The UART channel to start reception on.
- *
- * @return true if RX was successfully started.
- * @return false if the channel is invalid, not configured, RX is disabled, or
- *         hardware initialisation fails.
- *
- * @note   This function applies the stored configuration to the underlying UART
- *         peripheral via HAL and initiates DMA-based reception into the internal
- *         circular buffer owned by the low-level driver.
- *
- * @note   The RX buffer and read index are reset prior to enabling reception to
- *         ensure a clean starting state.
- *
- * @note   This function does not expose or transfer ownership of received data.
- *         Data is made available to higher layers via HW_UART_Rx_Peek().
- *
- * @note   The DMA stream is expected to be configured in circular mode so that
- *         reception continues indefinitely without software intervention.
- *
- * @note   This function must only be called after successful configuration via
- *         HW_UART_Configure_Channel().
- *
- * @note   RX operation is considered active once this function returns true, and
- *         can be queried via the runtime state.
- */
+/* Starts DMA-backed UART reception for the specified channel. */
 bool HW_UART_Rx_Start( HwUartChannel_T channel )
 {
     if ( channel >= HW_UART_CHANNEL_COUNT )
@@ -764,9 +701,9 @@ bool HW_UART_Rx_Start( HwUartChannel_T channel )
         return false;
     }
 
-    // Reset the RX buffer read index to start reading from the beginning of the buffer
+    /* Reset RX state and clear stale buffered data before enabling DMA reception. */
     state->runtime.rx_read_index = 0U;
-    // Clear the entire RX buffer to ensure it doesn't contain stale data
+
     for ( uint32_t i = 0U; i < HW_UART_RX_BUFFER_SIZE; i++ )
     {
         state->rx_buffer[i] = 0U;
@@ -780,27 +717,7 @@ bool HW_UART_Rx_Start( HwUartChannel_T channel )
     return true;
 }
 
-/**
- * @brief  Stops UART RX operation for the specified channel and halts DMA reception.
- *
- * @param  channel The UART channel to stop reception on.
- *
- * @return true if RX was successfully stopped.
- * @return false if the channel is invalid, not configured, not running, or if
- *         the underlying HAL stop operation fails.
- *
- * @note   This function disables DMA-based reception and prevents further data
- *         from being written into the low-level driver owned circular RX buffer.
- *
- * @note   The internal read index is reset as part of the stop operation, and any
- *         previously buffered data is considered invalid after this call.
- *
- * @note   This function is intended for non-hot-path control of RX lifecycle and
- *         should not be used in the execution path.
- *
- * @note   The channel configuration remains intact after stopping RX. Reception
- *         can be restarted by calling HW_UART_Rx_Start().
- */
+/* Stops the RX DMA for a given channel */
 bool HW_UART_Rx_Stop( HwUartChannel_T channel )
 {
     if ( channel >= HW_UART_CHANNEL_COUNT )
@@ -827,6 +744,7 @@ bool HW_UART_Rx_Stop( HwUartChannel_T channel )
     return true;
 }
 
+/* Public Helper to check if Rx is running*/
 bool HW_UART_Rx_Is_Running( HwUartChannel_T channel )
 {
     if ( channel >= HW_UART_CHANNEL_COUNT )
@@ -844,56 +762,26 @@ bool HW_UART_Rx_Is_Running( HwUartChannel_T channel )
     return state->runtime.rx_running;
 }
 
-/**
- * @brief  Exposes a transient zero-copy view of the current unread RX data for the specified UART
- *         channel as one or two contiguous spans into the LL driver owned DMA circular buffer.
- *
- * @param channel The UART channel to inspect.
- *
- * @return HwUartRxSpans_T
- *         A structure containing up to two readable spans and the total unread byte count.
- *
- * @note   This function does not copy data. It provides a read-only view into the low-level driver
- *         owned DMA buffer. Buffer allocation, DMA write ownership, wrap handling, and consume
- *         semantics remain the responsibility of the low-level driver.
- *
- * @note   The returned spans are intended for immediate higher-level processing. Higher layers may
- *         copy the data into execution-owned result storage if persistence is required beyond the
- *         current processing step.
- *
- * @note   Higher layers must not directly manage the DMA buffer, modify the returned memory, or
- *         retain the returned pointers beyond the valid processing window. Once the required copy
- * or processing is complete, the caller shall report consumption through HW_UART_Rx_Consume().
- *
- * @note   This interface preserves a clean ownership boundary:
- *         - the low-level driver owns the DMA circular buffer and its management,
- *         - the mid-level driver owns adaptation from raw UART bytes to execution-level data,
- *         - the execution manager owns result storage and tick association.
- */
+/* Provides spans into the DMA buffer with the unread data */
 HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
 {
-    // Remove for optimisation, but for safety in case of misuse.
+
     if ( channel >= HW_UART_CHANNEL_COUNT )
     {
         return ( HwUartRxSpans_T ){ 0 };
-    }
+    }  // Remove for optimisation, but for safety in case of misuse.
 
-    // Cache reused values in local variables for performance, as this function will be called
-    // frequently in the execution path
     HwUartChannelState_T*      state      = &hw_uart_channel_states[channel];
     const HwUartHardwareMap_T* hw_map     = &hw_uart_hardware_map[channel];
     uint8_t*                   rx_buffer  = state->rx_buffer;
     uint32_t                   read_index = state->runtime.rx_read_index;
 
-    // Remove for optimisation, but for safety in case of misuse.
     if ( !state->runtime.is_configured_and_initialised || !state->runtime.rx_running )
     {
         return ( HwUartRxSpans_T ){ 0 };
-    }
+    }  // Remove for optimisation, but for safety in case of misuse.
 
-    // Calculate the current write index based on the DMA stream's remaining data count (NDTR) and
-    // the known buffer size. This reflects the total number of bytes that have been written by the
-    // DMA into the buffer, regardless of any wrapping that may have occurred.
+    /* Derive the current DMA write index from NDTR. */
     uint32_t dma_remaining   = hw_map->rx_dma_stream->NDTR;
     uint32_t dma_write_index = HW_UART_RX_BUFFER_SIZE - dma_remaining;
 
@@ -906,7 +794,7 @@ HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
 
     if ( unread_bytes == 0U )
     {
-        // No data available
+        /* No Data Available */
         return ( HwUartRxSpans_T ){ .first_span  = { .data = &rx_buffer[0], .length_bytes = 0U },
                                     .second_span = { .data = &rx_buffer[0], .length_bytes = 0U },
                                     .total_length_bytes = 0U };
@@ -914,15 +802,14 @@ HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
 
     if ( dma_write_index >= read_index )
     {
-        // Data does not wrap around the end of the buffer
+        /* Single contiguous unread region. */
         return ( HwUartRxSpans_T ){
             .first_span         = { .data = &rx_buffer[read_index], .length_bytes = unread_bytes },
             .second_span        = { .data = &rx_buffer[0], .length_bytes = 0U },
             .total_length_bytes = unread_bytes };
     }
-    // else case:
 
-    // Data wraps around the end of the buffer, need to provide two spans
+    /* Wrapped unread region split into two contiguous spans. */
     uint32_t first_span_length  = HW_UART_RX_BUFFER_SIZE - read_index;
     uint32_t second_span_length = unread_bytes - first_span_length;
 
@@ -932,51 +819,16 @@ HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
         .total_length_bytes = unread_bytes };
 }
 
-/**
- * @brief  Marks unread RX data as consumed by advancing the LL driver managed read index.
- *
- * @param channel The UART channel to update.
- * @param bytes_to_consume Number of bytes previously obtained via HW_UART_Rx_Peek() that have been
- *                         processed by higher layers.
- *
- * @note   The LL driver retains ownership of the DMA buffer. This function only updates the read
- *         index and does not copy or modify buffer contents.
- *
- * @note   The caller shall only consume data that has already been processed or copied into
- *         stable storage. Consuming data allows the DMA buffer region to be reused.
- */
+/* Advances the read pointer by bytes_to_consume amount */
 void HW_UART_Rx_Consume( HwUartChannel_T channel, uint32_t bytes_to_consume )
 {
     HwUartChannelState_T* state = &hw_uart_channel_states[channel];
 
-    // Advance the read index by the specified number of bytes, wrapping around the buffer as needed
     state->runtime.rx_read_index =
         HW_UART_Advance_Index_Helper( state->runtime.rx_read_index, bytes_to_consume );
 }
 
-/**
- * @brief  Copies a transmit payload into the low-level driver owned TX staging buffer for the
- *         specified UART channel.
- *
- * @param  channel       The UART channel whose TX staging buffer is to be loaded.
- * @param  data          Pointer to the source payload to copy into the staging buffer.
- * @param  length_bytes  Number of payload bytes to stage for transmission.
- *
- * @return true if the payload was successfully copied into the staging buffer.
- * @return false if the channel is invalid, the payload pointer is null, the payload length is
- *         zero or exceeds the staging buffer capacity, the channel is not ready for TX, or
- *         staged or in-flight TX data already owns the buffer.
- *
- * @note   This function copies data into low-level driver owned memory. The caller retains
- *         ownership of the source buffer and may reuse or discard it after this function returns.
- *
- * @note   Staged data must not be overwritten before it is transmitted or otherwise released.
- *         This function therefore rejects loads while TX data is already staged or while a TX
- *         transfer is currently in progress.
- *
- * @note   This function stages data only. It does not begin transmission. Transmission begins
- *         only when HW_UART_Tx_Trigger() is called.
- */
+/* Loads argument data into the driver staging buffer */
 bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint32_t length_bytes )
 {
     if ( channel >= HW_UART_CHANNEL_COUNT )
@@ -1014,47 +866,7 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
     return true;
 }
 
-/**
- * @brief  Starts transmission of the currently staged TX payload for the specified UART channel
- *         using a low-level (LL) DMA launch.
- *
- * @param  channel The UART channel to transmit on.
- *
- * @return true if DMA transmission was successfully started.
- * @return false if the channel is invalid, the channel is not ready for TX, no payload has been
- *         staged, a TX transfer is already running, or the staged length is invalid.
- *
- * @note   This function does not copy payload data. It launches transmission of data that has
- *         already been staged in the low-level driver owned TX buffer via HW_UART_Tx_Load_Buffer().
- *
- * @note   This implementation does not use HAL. Instead, it directly controls the DMA stream and
- *         UART DMA request using LL functions and register access.
- *
- * @note   Prior to launching the transfer, the DMA stream is explicitly disabled and all pending
- *         interrupt flags are cleared. This ensures that the DMA registers (M0AR, PAR, NDTR) can be
- *         safely reprogrammed for the new transfer and that no stale flags interfere with
- * operation.
- *
- * @note   The DMA is configured in normal mode. Once enabled, the DMA controller autonomously
- *         transfers bytes from the staged TX buffer (memory) to the UART data register (DR). No CPU
- *         intervention is required during the transfer.
- *
- * @note   TX buffer ownership is retained by the low-level driver until the DMA transfer completes.
- *         Completion is detected via the DMA transfer complete interrupt, at which point the driver
- *         must clear tx_running, tx_loaded, and tx_length_bytes.
- *
- * @note   The UART DMA transmit request (CR3.DMAT) is enabled before the DMA stream is started.
- * This allows the UART peripheral to generate DMA requests as it becomes ready to accept new data.
- *
- * @note   This function assumes that the DMA stream configuration (channel selection, direction,
- *         increment modes, data width, and priority) has already been performed during channel
- *         initialization. Only the transfer-specific parameters (addresses and length) are updated
- *         here.
- *
- * @note   This function is designed for deterministic execution. All channel-specific hardware
- *         information (DMA controller, stream, and flag registers) is precomputed in the hardware
- *         map, avoiding switch statements in the hot path.
- */
+/* Triggers DMA to transmit staged data from the staging buffer */
 bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
 {
     if ( channel >= HW_UART_CHANNEL_COUNT )
@@ -1062,7 +874,6 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
         return false;
     }  // Can later assume valid channel for optimisation
 
-    // Cache for performance
     HwUartChannelState_T*      state  = &hw_uart_channel_states[channel];
     const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[channel];
     USART_TypeDef*             uart   = hw_map->uart_instance;
@@ -1114,6 +925,7 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
     return true;
 }
 
+/* Public helper to check if TX is busy */
 bool HW_UART_Tx_Is_Busy( HwUartChannel_T channel )
 {
     if ( channel >= HW_UART_CHANNEL_COUNT )
@@ -1131,16 +943,17 @@ bool HW_UART_Tx_Is_Busy( HwUartChannel_T channel )
     return state->runtime.tx_loaded || state->runtime.tx_running;
 }
 
+/* IRQ Handler for TX on CH1 */
 void DMA2_Stream6_IRQHandler( void )
 {
     const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[HW_UART_CHANNEL_1];
-    //  Transfer Complete Branch
+
     if ( LL_DMA_IsActiveFlag_TC6( DMA2 ) )
     {
         *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
         HW_UART_Tx_Complete_Handler( HW_UART_CHANNEL_1 );
     }
-    //  Transfer Error Branch
+
     else if ( LL_DMA_IsActiveFlag_TE6( DMA2 ) )
     {
         *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
@@ -1148,16 +961,17 @@ void DMA2_Stream6_IRQHandler( void )
     }
 }
 
+/* IRQ Handler for TX on CH2 */
 void DMA1_Stream6_IRQHandler( void )
 {
     const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[HW_UART_CHANNEL_2];
-    // Transfer Complete Branch
+
     if ( LL_DMA_IsActiveFlag_TC6( DMA1 ) )
     {
         *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
         HW_UART_Tx_Complete_Handler( HW_UART_CHANNEL_2 );
     }
-    // Transfer Error Branch
+
     else if ( LL_DMA_IsActiveFlag_TE6( DMA1 ) )
     {
         *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
@@ -1165,17 +979,17 @@ void DMA1_Stream6_IRQHandler( void )
     }
 }
 
+/* IRQ Handler for TX on CH3 */
 void DMA1_Stream3_IRQHandler( void )
 {
     const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[HW_UART_CHANNEL_3];
 
-    // Transfer Complete Branch
     if ( LL_DMA_IsActiveFlag_TC3( DMA1 ) )
     {
         *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
         HW_UART_Tx_Complete_Handler( HW_UART_CHANNEL_3 );
     }
-    // Transfer Error Branch
+
     else if ( LL_DMA_IsActiveFlag_TE3( DMA1 ) )
     {
         *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
