@@ -1,6 +1,6 @@
 /******************************************************************************
  *  File:       test_hw_gpio.cpp
- *  Author:     Callum Rafferty
+ *  Author:     Callum Rafferty, Tim Vogelsang
  *  Created:    25-Mar-2026
  *
  *  Description:
@@ -55,31 +55,12 @@ extern "C"
  * mock them here using GoogleMock.
  *
  */
-Example :
-
-    extern "C"
-{
-    void HAL_GPIO_WritePin( uint32_t pin, bool level );
-}
-
-class MockHalGpio
-{
-public:
-    MOCK_METHOD( void, HAL_GPIO_WritePin, ( uint32_t pin, bool level ) );
-};
 
 /**-----------------------------------------------------------------------------
  *  Link seam: mocked functions definitions
  *------------------------------------------------------------------------------
  */
 // NOLINTBEGIN
-
-// Provide a fake C binding that forwards to the mock instance:
-MockHalGpio     mock_gpio;
-extern "C" void HAL_GPIO_WritePin( uint32_t pin, bool level )
-{
-    mock_gpio.HAL_GPIO_WritePin( pin, level );
-}
 
 // Add mocks or stubs here as needed
 
@@ -112,44 +93,40 @@ protected:
 };
 
 /**-----------------------------------------------------------------------------
- *  Test Cases
+ *  Digital Output Test Cases
  *------------------------------------------------------------------------------
  */
 
 /**
- * @test Module initialisation should set the module state to known defaults.
+ * @test Processing a value should produce the correct output.
  */
-TEST_F( ModuleTest, ModuleInitialisesCorrectly )
+TEST_F( split_about_ports, ProcessingProducesCorrectOutput )
+{
+    GPIO_OUTPUT_NAMES* my_arr = [ DIGITALOUT0, DIGITALOUT1, DIGITALOUT2 ];
+    HW_GPIO_port_pin_association_to_return.gpiox = GPIOB;
+    HW_GPIO_port_pin_association_to_return.pin_mask = 2;
+    GPIO_PORT_PACKET destination[8];
+    split_about_ports(my_arr, 3, destination);
+
+    uint16_t result = split_about_ports( TEST_INPUT_VALUE );
+
+    EXPECT_EQ( result, TEST_EXPECTED_OUTPUT );
+}
+
+TEST_F( combine_port_pin_masks, ProcessingProducesCorrectOutput )
 {
     MODULE_Init();
 
-    // EXPECT_* and ASSERT_* macros from GoogleTest
-    // Example assertions:
-    EXPECT_EQ( MODULE_GetState(), 0U );
-    EXPECT_FALSE( MODULE_IsReady() );
+    uint16_t result = combine_port_pin_masks( TEST_INPUT_VALUE );
+
+    EXPECT_EQ( result, TEST_EXPECTED_OUTPUT );
 }
 
-/**
- * @test Processing a value should produce the correct output.
- */
-TEST_F( ModuleTest, ProcessingProducesCorrectOutput )
+TEST_F( HW_GPIO_port_pin_association, ProcessingProducesCorrectOutput )
 {
     MODULE_Init();
 
     uint16_t result = MODULE_Process( TEST_INPUT_VALUE );
 
     EXPECT_EQ( result, TEST_EXPECTED_OUTPUT );
-}
-
-/**
- * @test Example demonstrating GoogleMock usage for dependencies.
- *
- */
-TEST_F( ModuleTest, CallsExternalDependency )
-{
-    EXPECT_CALL( mock_gpio, HAL_GPIO_WritePin( /*pin=*/3U, /*level=*/true ) );
-
-    MODULE_DoSomethingThatCallsHal();
-
-    // No additional ASSERTs needed; GoogleMock handles verification.
 }

@@ -22,7 +22,8 @@ extern "C"
  *  Includes
  *------------------------------------------------------------------------------
  */
-
+#include "stm32f4xx_ll_gpio.h"
+#include "stm32f446xx.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -30,8 +31,6 @@ extern "C"
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
  */
-
-#define NUM_GPIO_PORTS 8
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -45,23 +44,6 @@ typedef enum GPIO_T
     GPIO_RED_LED_INDICATOR,
     GPIO_TEST_INDICATOR
 } GPIO_T;
-
-typedef enum GPIO_PORT
-{
-    GPIOA,
-    GPIOB,
-    GPIOC,
-    GPIOD,
-    GPIOE,
-    GPIOF,
-    GPIOG,
-    GPIOH
-} GPIO_PORT;
-
-typedef struct GPIO_PORT_PACKET{
-    GPIO_PORT gpiox;
-    uint32_t pin_mask;
-} GPIO_PORT_PACKET;
 
 typedef enum GPIO_OUTPUT_NAMES
 {
@@ -78,6 +60,13 @@ typedef enum GPIO_OUTPUT_NAMES
     UART_TTL_3V3_EN,    // Added by Tim as an example, whoever does UART should replace
     UART_TTL_5V_EN      // Added by Tim as an example, whoever does UART should replace
 } GPIO_OUTPUT_NAMES;
+
+typedef struct GPIO_PORT_PACKET{
+    GPIO_TypeDef* gpiox;
+    uint32_t pin_mask;
+} GPIO_PORT_PACKET;
+
+extern GPIO_TypeDef** GPIO_ports;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -175,7 +164,7 @@ LL_GPIO_PIN_4 of port A high
  * Note: This implementation assumes all digital outputs are on the same GPIO port.
  * By doing so, we can set all the outputs in a single hardware access.
  */
-inline void HW_GPIO_SetToPort( GPIO_PORT gpiox, uint32_t pin_mask );
+inline void HW_GPIO_SetToPort( GPIO_TypeDef* gpiox, uint32_t pin_mask );
 
 /**
  * @brief Resets the state of all digital inputs in a GPIO Port using the underlying GPIO LL
@@ -199,7 +188,7 @@ LL_GPIO_PIN_4 of port A low
  * Note: This implementation assumes all digital outputs are on the same GPIO port.
  * By doing so, we can set all the outputs in a single hardware access.
  */
-inline void HW_GPIO_ResetToPort( GPIO_PORT gpiox, uint32_t pin_mask );
+inline void HW_GPIO_ResetToPort( GPIO_TypeDef* gpiox, uint32_t pin_mask );
 
 #ifdef __cplusplus
 }

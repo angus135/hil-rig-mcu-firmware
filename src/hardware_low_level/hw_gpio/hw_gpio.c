@@ -19,6 +19,8 @@
 #include "gpio.h"
 #include "stm32f4xx_ll_gpio.h"
 #include "stm32f446xx.h"
+#else
+#include "tests/hw_gpio_mocks.h"
 #endif
 
 #include "hw_gpio.h"
@@ -36,6 +38,38 @@
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+
+GPIO_TypeDef** GPIO_ports = {
+#ifdef GPIOA
+    GPIOA,
+#endif
+#ifdef GPIOB
+    GPIOB,
+#endif
+#ifdef GPIOC
+    GPIOC,
+#endif
+#ifdef GPIOD
+    GPIOD,
+#endif
+#ifdef GPIOE
+    GPIOE,
+#endif
+#ifdef GPIOF
+    GPIOF,
+#endif
+#ifdef GPIOG
+    GPIOG,
+#endif
+#ifdef GPIOH
+    GPIOH
+#endif
+};
+
+#define NUM_GPIO_PORTS (sizeof(GPIO_ports) / sizeof(GPIO_ports[0]))
+#define MAX_NUM_GPIO_PORTS 8
+
+
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -110,7 +144,7 @@ void HW_GPIO_Toggle( GPIO_T gpio )
  * because we can write to an entire port at once this increases speed.
  * EXAMPLE: If we want to set DIGITALOUT0, DIGITALOUT1 and DIGITALOUT2, but DIGITALOUT2 uses a
 different port,
-GPIO_OUTPUT_NAMES* my_arr = [ DIGITALOUT0, DIGITALOUT1, DIGITALOUT2 ]
+GPIO_OUTPUT_NAMES* my_arr = { DIGITALOUT0, DIGITALOUT1, DIGITALOUT2 };
 GPIO_PORT_PACKET destination[8];
 split_about_ports(my_arr, 3, destination);
 // we dont HAVE to go through all 8 ports (as only 2 are used) but for examples sake we can
@@ -123,24 +157,32 @@ GPIO_PORT_PACKET* split_about_ports( GPIO_OUTPUT_NAMES* gpio_names, uint8_t leng
 {
     GPIO_PORT_PACKET port_packet;
     // reset data at destination
-    for ( int j = 0; j < NUM_GPIO_PORTS; j++ )
+    for ( int j = 0; j < MAX_NUM_GPIO_PORTS; j++ )
     {
-        destination[j].gpiox = (GPIO_PORT)j;    // reset ports, destination[0] = GPIOA, destination[1] = GPIOB etc
+        destination[j].gpiox = GPIO_ports[j];    // reset ports, destination[0] = GPIOA, destination[1] = GPIOB etc
         destination[j].pin_mask = 0;            // reset pin masks
     }
     for ( int i = 0; i < length; i++ )
     {
         port_packet = HW_GPIO_port_pin_association(gpio_names[i]);
-        switch ( port_packet.gpiox )
-        {
-            case GPIOA: destination[0].pin_mask = destination[0].pin_mask | port_packet.pin_mask;
-            case GPIOB: destination[1].pin_mask = destination[1].pin_mask | port_packet.pin_mask;
-            case GPIOC: destination[2].pin_mask = destination[2].pin_mask | port_packet.pin_mask;
-            case GPIOD: destination[3].pin_mask = destination[3].pin_mask | port_packet.pin_mask;
-            case GPIOE: destination[4].pin_mask = destination[4].pin_mask | port_packet.pin_mask;
-            case GPIOF: destination[5].pin_mask = destination[5].pin_mask | port_packet.pin_mask;
-            case GPIOG: destination[6].pin_mask = destination[6].pin_mask | port_packet.pin_mask;
-            case GPIOH: destination[7].pin_mask = destination[7].pin_mask | port_packet.pin_mask;
+        if (port_packet.gpiox == GPIO_ports[0]){
+            destination[0].pin_mask = destination[0].pin_mask | port_packet.pin_mask;
+        } else if (port_packet.gpiox == GPIO_ports[1]){
+            destination[1].pin_mask = destination[1].pin_mask | port_packet.pin_mask;
+        } else if (port_packet.gpiox == GPIO_ports[2]){
+            destination[2].pin_mask = destination[2].pin_mask | port_packet.pin_mask;
+        } else if (port_packet.gpiox == GPIO_ports[3]){
+            destination[3].pin_mask = destination[3].pin_mask | port_packet.pin_mask;
+        } else if (port_packet.gpiox == GPIO_ports[4]){
+            destination[4].pin_mask = destination[4].pin_mask | port_packet.pin_mask;
+        } else if (port_packet.gpiox == GPIO_ports[5]){
+            destination[5].pin_mask = destination[5].pin_mask | port_packet.pin_mask;
+        } else if (port_packet.gpiox == GPIO_ports[6]){
+            destination[6].pin_mask = destination[6].pin_mask | port_packet.pin_mask;
+        } else if (port_packet.gpiox == GPIO_ports[7]){
+            destination[7].pin_mask = destination[7].pin_mask | port_packet.pin_mask;
+        } else {
+
         }
     }
 }
@@ -156,7 +198,7 @@ GPIO_PORT_PACKET* split_about_ports( GPIO_OUTPUT_NAMES* gpio_names, uint8_t leng
  * Combines the pinmasks of the gpio_names so that they can be written to the BSR in one step
  * (instead of individually).
  * EXAMPLE: if we want to set both DIGITALOUT0 and DIGITALOUT1 we could write
-GPIO_OUTPUT_NAMES* my_arr = [ DIGITALOUT0, DIGITALOUT1 ]
+GPIO_OUTPUT_NAMES* my_arr = {} DIGITALOUT0, DIGITALOUT1 };
 struct GPIO_PORT_PACKET p = combine_port_pin_masks(my_arr, 2)
 if (p.pin_mask == 0xFFFF0000){
     error
@@ -167,7 +209,7 @@ if (p.pin_mask == 0xFFFF0000){
  */
 GPIO_PORT_PACKET combine_port_pin_masks( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length )
 {
-    GPIO_PORT checker = HW_GPIO_port_pin_association(*gpio_names).gpiox;
+    GPIO_TypeDef* checker = HW_GPIO_port_pin_association(*gpio_names).gpiox;
     uint32_t  pin_mask = 0;
     GPIO_PORT_PACKET port_packet;
     for ( int i = 0; i < length; i++ )  // iterate through the gpio names and combine pin_masks
@@ -176,7 +218,7 @@ GPIO_PORT_PACKET combine_port_pin_masks( GPIO_OUTPUT_NAMES* gpio_names, uint8_t 
         if ( checker != port_packet.gpiox )
         {
             // Not all of the pins had the same port, so return an error
-            return (struct GPIO_PORT_PACKET){GPIOA, 4294901760};    // 4294901760 = 0xFFFF0000
+            return (struct GPIO_PORT_PACKET){GPIO_ports[0], 4294901760};    // 4294901760 = 0xFFFF0000
         }
         pin_mask = pin_mask | port_packet.pin_mask; // combine pin masks
     }
@@ -196,12 +238,13 @@ GPIO_PORT_PACKET combine_port_pin_masks( GPIO_OUTPUT_NAMES* gpio_names, uint8_t 
  */
 GPIO_PORT_PACKET HW_GPIO_port_pin_association( GPIO_OUTPUT_NAMES gpio_name )
 {
+#ifndef TEST_BUILD
 switch ( gpio_name )
 {
     // ==== HOW TO ADD DIGITAL OUTPUT PINS ====
     // the following lines (a) and (b) were taken from f446ze_cubeide_project/Core/Inc/main.h
     // they are created automatically by cube IDE from the IOC file and correspond to the actual
-    // pin on the board
+    // pins on the board
     // #define Test_GPIO_Output_Pin GPIO_PIN_8      // (a)
     // #define Test_GPIO_Output_GPIO_Port GPIOC     // (b)
     // if we wanted these GPIO output pins (a) (b) (hardware)
@@ -240,8 +283,11 @@ switch ( gpio_name )
     case UART_TTL_5V_EN:    // Added by Tim as an example, whoever does UART should replace
         return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
     default:        // Added by Tim, should be updated to set the warning LED once IOC is decided
-        return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};;
+        return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
 }
+#else
+    return HW_GPIO_port_pin_association_to_return;
+#endif
 }
 
 /**
@@ -265,7 +311,7 @@ LL_GPIO_PIN_4 of port A high
  * Note: This implementation assumes all digital outputs are on the same GPIO port.
  * By doing so, we can set all the outputs in a single hardware access.
  */
-inline void HW_GPIO_SetToPort( GPIO_PORT gpiox, uint32_t pin_mask )
+inline void HW_GPIO_SetToPort( GPIO_TypeDef* gpiox, uint32_t pin_mask )
 {
 #ifdef TEST_BUILD
     // For unit testing, do nothing
@@ -300,7 +346,7 @@ LL_GPIO_PIN_4 of port A low
  * Note: This implementation assumes all digital outputs are on the same GPIO port.
  * By doing so, we can set all the outputs in a single hardware access.
  */
-inline void HW_GPIO_ResetToPort( GPIO_PORT gpiox, uint32_t pin_mask )
+inline void HW_GPIO_ResetToPort( GPIO_TypeDef* gpiox, uint32_t pin_mask )
 {
 #ifdef TEST_BUILD
     // For unit testing, do nothing
