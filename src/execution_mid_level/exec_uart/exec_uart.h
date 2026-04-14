@@ -26,6 +26,7 @@ extern "C"
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "hw_uart.h"
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
@@ -40,6 +41,10 @@ extern "C"
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+bool EXEC_UART_Apply_Configuration( HwUartChannel_T channel, const HwUartConfig_T* config );
+
+bool EXEC_UART_Deconfigure( HwUartChannel_T channel );
 
 #ifdef __cplusplus
 }
