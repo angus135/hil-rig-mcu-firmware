@@ -1,15 +1,15 @@
-# src/hardware/hw_uart/CMakeLists.txt
+# src/hardware_low_level/hw_uart/CMakeLists.txt
 
 # -----------------------------
 # Library sources / headers
 # -----------------------------
 
 set(HW_UART_SOURCES
-    hw_uart.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw_uart.c
 )
 
 set(HW_UART_HEADERS
-    hw_uart.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw_uart.h
 )
 
 add_library(hw_uart STATIC
@@ -17,10 +17,13 @@ add_library(hw_uart STATIC
     ${HW_UART_HEADERS}
 )
 
-# Make this directory usable as an include path for other targets
+# Public include path for users of hw_uart.h
+# Private include path for Cube-generated headers such as usart.h
 target_include_directories(hw_uart
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/../f446ze_cubeide_project/Core/Inc
 )
 
 target_link_libraries(hw_uart
@@ -31,7 +34,7 @@ target_link_libraries(hw_uart
 )
 
 # -----------------------------
-# Tests for this module (gtest/gmock)
+# Tests for this module
 # -----------------------------
 
 option(HW_UART_ENABLE_TESTS "Build tests for hw_uart module" ON)
@@ -40,20 +43,27 @@ if(HW_UART_ENABLE_TESTS AND BUILD_TESTING)
 
     add_executable(hw_uart_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hw_uart.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/hw_uart.c
     )
 
-    target_link_libraries(hw_uart_tests
+    target_compile_definitions(hw_uart_tests
         PRIVATE
-            hw_uart
-            gtest
-            gtest_main
-            gmock
+            TEST_BUILD
     )
 
     target_include_directories(hw_uart_tests
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+
+    target_link_libraries(hw_uart_tests
+        PRIVATE
+            global_config
+            rtos
+            gtest
+            gtest_main
+            gmock
     )
 
     add_test(NAME hw_uart_tests COMMAND hw_uart_tests)

@@ -355,6 +355,9 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel );
 
 bool HW_UART_Tx_Is_Busy( HwUartChannel_T channel );
 
+bool HW_UART_Rx_Stop( HwUartChannel_T channel );
+bool HW_UART_Rx_Is_Running( HwUartChannel_T channel );
+
 #ifdef __cplusplus
 }
 #endif
