@@ -4,12 +4,20 @@
  *  Created:    25-Mar-2025
  *
  *  Description:
- *      Mid-level UART driver responsible for sequencing low-level UART
- *      operations for configuration and execution-facing use.
+ *      Implementation of the mid-level UART driver responsible for sequencing
+ *      low-level UART operations for configuration and execution use.
+ *
+ *      This module:
+ *      - sequences configuration and deconfiguration operations,
+ *      - bridges execution-level TX requests to low-level staged DMA transmit,
+ *      - copies low-level RX spans into caller-owned storage.
  *
  *  Notes:
- *      This layer does not access hardware directly.
- *      It coordinates use of the low-level hw_uart driver.
+ *      - Hardware access, DMA ownership, and buffer ownership remain in the
+ *        low-level hw_uart driver.
+ *      - RX data is copied from low-level circular buffers into caller storage.
+ *      - TX staging state is tracked to detect and preserve fault conditions
+ *        where a payload is accepted but transmit launch fails.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -34,6 +42,17 @@
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief  Exec-level UART channel state.
+ *
+ * @note   This state tracks execution-layer lifecycle only.
+ *         Hardware state and DMA ownership remain in the low-level driver.
+ *
+ * @note   tx_staged indicates that a payload has been accepted by the low-level
+ *         staging buffer but has not yet successfully transitioned into an
+ *         active transmit. If transmit launch fails, this flag remains set and
+ *         the channel is considered locked until higher-level recovery.
+ */
 typedef struct
 {
     bool is_configured;
@@ -58,13 +77,23 @@ static ExecUartChannelState_T exec_uart_channel_states[HW_UART_CHANNEL_COUNT];
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
-static HwUartConfig_T EXEC_UART_Get_Disabled_Config( void );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief  Builds a canonical disabled UART configuration.
+ *
+ * @return A UART configuration structure representing a fully disabled channel.
+ *
+ * @note   This configuration is used during exec-level deconfiguration to place
+ *         the low-level driver and external interface into a known disabled state.
+ *
+ * @note   Framing fields are assigned valid default values even though they are
+ *         not operationally relevant while the interface mode is disabled.
+ */
 static HwUartConfig_T EXEC_UART_Get_Disabled_Config( void )
 {
     HwUartConfig_T config;
@@ -79,6 +108,13 @@ static HwUartConfig_T EXEC_UART_Get_Disabled_Config( void )
 
     return config;
 }
+
+/**
+ * @brief  Validates that the UART channel index is within range.
+ *
+ * @note   Used in non-hot-path functions where defensive checks are desirable.
+ *         Hot-path functions rely on valid-call contracts for performance.
+ */
 
 static inline bool EXEC_UART_Is_Valid_Channel( HwUartChannel_T channel )
 {
@@ -107,7 +143,7 @@ bool EXEC_UART_Apply_Configuration( HwUartChannel_T channel, const HwUartConfig_
 
     ExecUartChannelState_T* state = &exec_uart_channel_states[channel];
 
-    // Stop Rx if running
+    /* Stop RX before reconfiguration to avoid modifying LL state while active */
     if ( HW_UART_Rx_Is_Running( channel ) )
     {
         if ( !HW_UART_Rx_Stop( channel ) )
@@ -131,7 +167,7 @@ bool EXEC_UART_Apply_Configuration( HwUartChannel_T channel, const HwUartConfig_
         }
     }
 
-    // Reset internal exec state
+    /* Reset exec-level state after successful LL configuration */
     state->is_configured = true;
     state->rx_enabled    = config->rx_enabled;
     state->tx_enabled    = config->tx_enabled;
@@ -142,6 +178,7 @@ bool EXEC_UART_Apply_Configuration( HwUartChannel_T channel, const HwUartConfig_
 
 bool EXEC_UART_Deconfigure( HwUartChannel_T channel )
 {
+    /* Apply canonical disabled configuration to force safe hardware state */
     HwUartConfig_T disabled_config = EXEC_UART_Get_Disabled_Config();
 
     if ( !EXEC_UART_Is_Valid_Channel( channel ) )
@@ -172,9 +209,10 @@ bool EXEC_UART_Deconfigure( HwUartChannel_T channel )
 
 bool EXEC_UART_Transmit( HwUartChannel_T channel, const uint8_t* data, uint32_t length_bytes )
 {
-    // If tx is staged but not triggered, this is a fault condition, channel is now locked
-    // Later raise fault
-    // See low level driver where a similar lock is imposed
+    /*
+     * Prevent re-entry if a previous payload was staged but not successfully launched.
+     * In this condition, the channel is considered locked and requires recovery.
+     */
     if ( exec_uart_channel_states[channel].tx_staged )
     {
         return false;
@@ -185,6 +223,10 @@ bool EXEC_UART_Transmit( HwUartChannel_T channel, const uint8_t* data, uint32_t 
         return false;
     }
 
+    /*
+     * Mark staged ownership before trigger so that a failed trigger leaves
+     * the channel in a known locked state.
+     */
     exec_uart_channel_states[channel].tx_staged = true;
 
     if ( !HW_UART_Tx_Trigger( channel ) )
@@ -223,6 +265,7 @@ bool EXEC_UART_Read( HwUartChannel_T channel, uint8_t* dest, uint32_t dest_size,
         return true;
     }
 
+    /* Copy from first contiguous span of unread data */
     first_copy = spans.first_span.length_bytes;
     if ( first_copy > dest_size )
     {
@@ -234,6 +277,7 @@ bool EXEC_UART_Read( HwUartChannel_T channel, uint8_t* dest, uint32_t dest_size,
         memcpy( dest, spans.first_span.data, first_copy );
     }
 
+    /* Destination filled by first span, consume and return */
     if ( first_copy == dest_size )
     {
         HW_UART_Rx_Consume( channel, first_copy );
@@ -241,6 +285,7 @@ bool EXEC_UART_Read( HwUartChannel_T channel, uint8_t* dest, uint32_t dest_size,
         return true;
     }
 
+    /* Copy remaining data from wrapped second span */
     remaining_space = dest_size - first_copy;
 
     second_copy = spans.second_span.length_bytes;
@@ -256,6 +301,7 @@ bool EXEC_UART_Read( HwUartChannel_T channel, uint8_t* dest, uint32_t dest_size,
 
     *bytes_read = first_copy + second_copy;
 
+    /* Consume exactly the number of bytes copied from LL buffer */
     if ( *bytes_read > 0U )
     {
         HW_UART_Rx_Consume( channel, *bytes_read );
