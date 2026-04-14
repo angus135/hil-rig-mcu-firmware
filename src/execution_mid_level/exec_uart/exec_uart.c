@@ -51,18 +51,33 @@ typedef struct
  *------------------------------------------------------------------------------
  */
 
-static ExecUartChannelState_T g_exec_uart_channel_state[HW_UART_CHANNEL_3 + 1U];
+static ExecUartChannelState_T exec_uart_channel_states[HW_UART_CHANNEL_COUNT];
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
+static HwUartConfig_T EXEC_UART_Get_Disabled_Config( void );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
 
+static HwUartConfig_T EXEC_UART_Get_Disabled_Config( void )
+{
+    HwUartConfig_T config;
+
+    config.interface_mode = HW_UART_MODE_DISABLED;
+    config.baud_rate      = 0U;
+    config.word_length    = HW_UART_WORD_LENGTH_8_BITS;
+    config.stop_bits      = HW_UART_STOP_BITS_1;
+    config.parity         = HW_UART_PARITY_NONE;
+    config.rx_enabled     = false;
+    config.tx_enabled     = false;
+
+    return config;
+}
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
@@ -78,6 +93,8 @@ bool EXEC_UART_Apply_Configuration( HwUartChannel_T channel, const HwUartConfig_
 
 bool EXEC_UART_Deconfigure( HwUartChannel_T channel )
 {
+    HwUartConfig_T disabled_config = EXEC_UART_Get_Disabled_Config();
+    ( void )disabled_config;
     ( void )channel;
 
     return false;
