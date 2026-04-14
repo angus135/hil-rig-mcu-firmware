@@ -15,6 +15,7 @@
  *------------------------------------------------------------------------------
  */
 
+#include <math.h>
 #ifndef TEST_BUILD
 #include "gpio.h"
 #include "stm32f4xx_ll_gpio.h"
@@ -33,14 +34,12 @@
  *------------------------------------------------------------------------------
  */
 
-#define GPIO_OUTPUT_PORT GPIOA     // Place holder for the actual port
-
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
 
-GPIO_TypeDef** GPIO_ports = {
+GPIO_TypeDef* GPIO_ports[] = {
 #ifdef GPIOA
     GPIOA,
 #endif
@@ -162,8 +161,7 @@ bool GPIO_StringToEnum(const char* str, GPIO_OUTPUT_NAMES* out)
  * @param length       the nubmer of GPIO_T in gpio_names
  * @param destination  pointer to space for 8 GPIO_PORT_PACKET packets (to be written to)
  *
- * @return returns the port and a combined pin mask, if fault return {GPIOA, 0xFFFFFFFF}
- * mocked using GoogleMock.
+ * @return returns the number of GPIO_PORT_PACKET written to destination
  * This function is designed to split split pins into groups based on their ports
  * because we can write to an entire port at once this increases speed.
  * EXAMPLE: If we want to set DIGITALOUT0, DIGITALOUT1 and DIGITALOUT2, but DIGITALOUT2 uses a
@@ -177,38 +175,40 @@ for (int i=0; i<8; i++){
 }
 HW_GPIO_SetToPort(p.gpiox, p.pin_mask)
  */
-GPIO_PORT_PACKET* split_about_ports( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length, GPIO_PORT_PACKET* destination)
+int split_about_ports( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length, GPIO_PORT_PACKET* destination)
 {
     GPIO_PORT_PACKET port_packet;
+    GPIO_PORT_PACKET temp[MAX_NUM_GPIO_PORTS];
+    int counter = 0;
     // reset data at destination
     for ( int j = 0; j < MAX_NUM_GPIO_PORTS; j++ )
     {
         destination[j].gpiox = GPIO_ports[j];    // reset ports, destination[0] = GPIOA, destination[1] = GPIOB etc
-        destination[j].pin_mask = 0;            // reset pin masks
+        destination[j].pin_mask = 0;             // reset pin masks
+        temp[j].gpiox = GPIO_ports[j];          // reset ports, temp[0] = GPIOA, temp[1] = GPIOB etc
+        temp[j].pin_mask = 0;                   // reset pin masks
     }
     for ( int i = 0; i < length; i++ )
     {
         port_packet = HW_GPIO_port_pin_association(gpio_names[i]);
-        if (port_packet.gpiox == GPIO_ports[0]){
-            destination[0].pin_mask = destination[0].pin_mask | port_packet.pin_mask;
-        } else if (port_packet.gpiox == GPIO_ports[1]){
-            destination[1].pin_mask = destination[1].pin_mask | port_packet.pin_mask;
-        } else if (port_packet.gpiox == GPIO_ports[2]){
-            destination[2].pin_mask = destination[2].pin_mask | port_packet.pin_mask;
-        } else if (port_packet.gpiox == GPIO_ports[3]){
-            destination[3].pin_mask = destination[3].pin_mask | port_packet.pin_mask;
-        } else if (port_packet.gpiox == GPIO_ports[4]){
-            destination[4].pin_mask = destination[4].pin_mask | port_packet.pin_mask;
-        } else if (port_packet.gpiox == GPIO_ports[5]){
-            destination[5].pin_mask = destination[5].pin_mask | port_packet.pin_mask;
-        } else if (port_packet.gpiox == GPIO_ports[6]){
-            destination[6].pin_mask = destination[6].pin_mask | port_packet.pin_mask;
-        } else if (port_packet.gpiox == GPIO_ports[7]){
-            destination[7].pin_mask = destination[7].pin_mask | port_packet.pin_mask;
-        } else {
-
+        for (int m=0; m<MAX_NUM_GPIO_PORTS; m++)
+        {
+            if (port_packet.gpiox == GPIO_ports[m])
+            {
+                temp[m].pin_mask = temp[m].pin_mask | port_packet.pin_mask;
+                break;
+            }
         }
     }
+    for ( int k = 0; k < MAX_NUM_GPIO_PORTS; k++ )
+    {
+        if ( temp[k].pin_mask != 0 )
+        {
+            destination[counter] = temp[k];
+            counter += 1;
+        }
+    }
+    return counter;
 }
 
 /**
@@ -233,8 +233,8 @@ if (p.pin_mask == 0xFFFF0000){
  */
 GPIO_PORT_PACKET combine_port_pin_masks( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length )
 {
-    GPIO_TypeDef* checker = HW_GPIO_port_pin_association(*gpio_names).gpiox;
-    uint32_t  pin_mask = 0;
+    GPIO_TypeDef* checker = HW_GPIO_port_pin_association( *gpio_names ).gpiox;
+    int pin_mask = 0;
     GPIO_PORT_PACKET port_packet;
     for ( int i = 0; i < length; i++ )  // iterate through the gpio names and combine pin_masks
     {
@@ -307,12 +307,12 @@ switch ( gpio_name )
         return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
     case UART_TTL_5V_EN:    // Added by Tim as an example, whoever does UART should replace
         return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
-    default:        // Added by Tim, should be updated to set the warning LED once IOC is decided
-        return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
     case LD2:       // Added by Tim for DEV-68
         return (struct GPIO_PORT_PACKET){LD2_GPIO_Port, LD2_Pin};
     case LD3:       // Added by Tim for DEV-68
-        return (struct GPIO_PORT_PACKET){LD3_GPIO_Port, LD3_Pin};
+        return ( struct GPIO_PORT_PACKET ){ LD3_GPIO_Port, LD3_Pin };
+    default:        // Added by Tim, should be updated to set the warning LED once IOC is decided
+        return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
 }
 #else
     return HW_GPIO_port_pin_association_to_return;

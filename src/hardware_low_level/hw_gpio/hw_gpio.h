@@ -90,7 +90,7 @@ typedef struct GPIO_PORT_PACKET{
     uint32_t pin_mask;
 } GPIO_PORT_PACKET;
 
-extern GPIO_TypeDef** GPIO_ports;
+// extern GPIO_TypeDef** GPIO_ports;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -142,7 +142,7 @@ for (int i=0; i<8; i++){
 }
 HW_GPIO_SetToPort(p.gpiox, p.pin_mask)
  */
-GPIO_PORT_PACKET* split_about_ports( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length, GPIO_PORT_PACKET* destination);
+int split_about_ports( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length, GPIO_PORT_PACKET* destination);
 
 /**
  * @brief combines many GPIO's (on the same port) into one pin mask.
