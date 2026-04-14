@@ -205,3 +205,19 @@ linking the real hardware implementation.
 - Use Google Mock when testing complex logic that depends on hardware.
 
 Both approaches are expected to coexist within the modules layer.
+
+---
+
+## 6. Running the console
+
+### 1. Run an instance of Putty
+- Open putty application by searching putty in the windows search bar
+
+### 2. Find correct COM port
+- Open device manager, by searching device manager in the windows search bar
+- Expand the Ports (COM & LPT) tab
+- There should be a STMicroelectronics tab with which COM port it is attached to, eg. (COM3)
+
+### 3. Enter settings into putty
+- Enter the COM Port found in step 2 into putty, set the baud rate to 11520 and the channel to serial.
+- Click open
