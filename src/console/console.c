@@ -306,18 +306,81 @@ static void CONSOLE_Flush_Tx( void )
 }
 
 /**
- * @brief Helper function to transmit data over the console UART.
+ * @brief Appends data to the pending console TX buffer.
  *
- * @param data        Pointer to the data to transmit
- * @param length      Number of bytes to transmit
+ * @param data    Pointer to bytes to append.
+ * @param length  Number of bytes to append.
  *
- * @returns void
+ * @return void
+ *
+ * @note Data is truncated if there is insufficient space in the pending buffer.
+ *       Transmission is not started here. The buffer is flushed later by
+ *       CONSOLE_Flush_Tx() when the UART TX path is free.
  */
-static void CONSOLE_Transmit( const uint8_t* data, uint32_t length )
+static void CONSOLE_Queue_Transmit( const uint8_t* data, uint32_t length )
 {
-    if ( HW_UART_Tx_Load_Buffer( CONSOLE_UART_CHANNEL, data, length ) )
+    if ( ( data == NULL ) || ( length == 0U ) )
     {
-        HW_UART_Tx_Trigger( CONSOLE_UART_CHANNEL );
+        return;
+    }
+
+    uint32_t available = CONSOLE_TX_BUFFER_SIZE - s_tx_len;
+    uint32_t copy_len  = ( length < available ) ? length : available;
+
+    if ( copy_len == 0U )
+    {
+        return;
+    }
+
+    memcpy( &s_tx_buf[s_tx_len], data, copy_len );
+    s_tx_len += copy_len;
+
+    // Optional later: count dropped bytes if copy_len < length
+}
+
+/**
+ * @brief Attempts to flush a single chunk of the pending console TX buffer through the UART driver.
+ *
+ * @return void
+ *
+ * @note At most one UART TX transaction is launched per call.
+ *       If the UART TX path is busy or no pending data exists, this function does nothing.
+ *
+ * @note The pending console TX buffer may be larger than the low-level UART TX staging buffer.
+ *       In that case, this function transmits only the first chunk that fits in the low-level
+ *       staging buffer and leaves the remaining bytes queued for a later call.
+ *
+ * @note After a successful load and trigger, the transmitted bytes are removed from the front of
+ *       the pending console TX buffer by shifting the remaining bytes down.
+ */
+static void CONSOLE_Flush_Tx( void )
+{
+    if ( s_tx_len == 0U )
+    {
+        return;
+    }
+
+    if ( HW_UART_Tx_Is_Busy( CONSOLE_UART_CHANNEL ) )
+    {
+        return;
+    }
+
+    uint32_t chunk_len = s_tx_len;
+
+    if ( chunk_len > HW_UART_TX_MAX_CHUNK_SIZE )
+    {
+        chunk_len = HW_UART_TX_MAX_CHUNK_SIZE;
+    }
+
+    if ( HW_UART_Tx_Load_Buffer( CONSOLE_UART_CHANNEL, s_tx_buf, chunk_len ) )
+    {
+        if ( HW_UART_Tx_Trigger( CONSOLE_UART_CHANNEL ) )
+        {
+            uint32_t remaining = s_tx_len - chunk_len;
+
+            memmove( s_tx_buf, &s_tx_buf[chunk_len], remaining );
+            s_tx_len = remaining;
+        }
     }
 }
 
