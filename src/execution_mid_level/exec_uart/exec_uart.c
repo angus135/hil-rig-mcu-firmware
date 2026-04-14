@@ -172,6 +172,9 @@ bool EXEC_UART_Deconfigure( HwUartChannel_T channel )
 
 bool EXEC_UART_Transmit( HwUartChannel_T channel, const uint8_t* data, uint32_t length_bytes )
 {
+    // If tx is staged but not triggered, this is a fault condition, channel is now locked
+    // Later raise fault
+    // See low level driver where a similar lock is imposed
     if ( exec_uart_channel_states[channel].tx_staged )
     {
         return false;
@@ -228,7 +231,7 @@ bool EXEC_UART_Read( HwUartChannel_T channel, uint8_t* dest, uint32_t dest_size,
 
     if ( first_copy > 0U )
     {
-        memcpy( &dest[0], spans.first_span.data, first_copy );
+        memcpy( dest, spans.first_span.data, first_copy );
     }
 
     if ( first_copy == dest_size )
