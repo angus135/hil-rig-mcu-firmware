@@ -1,6 +1,6 @@
 /******************************************************************************
  *  File:       hw_uart.h
- *  Author:     Angus Corr
+ *  Author:     Callum Rafferty
  *  Created:    16-Dec-2025
  *
  *  Description:
@@ -52,7 +52,7 @@ extern "C"
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
  */
-
+#define HW_UART_TX_MAX_CHUNK_SIZE 256U
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -311,25 +311,49 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
 
 /**
  * @brief  Starts transmission of the currently staged TX payload for the specified UART channel
- *         using DMA.
+ *         using a low-level (LL) DMA launch.
  *
  * @param  channel The UART channel to transmit on.
  *
  * @return true if DMA transmission was successfully started.
  * @return false if the channel is invalid, the channel is not ready for TX, no payload has been
- *         staged, a TX transfer is already running, the staged length is invalid, or
- *         HAL_UART_Transmit_DMA() fails.
+ *         staged, a TX transfer is already running, or the staged length is invalid.
  *
  * @note   This function does not copy payload data. It launches transmission of data that has
  *         already been staged in the low-level driver owned TX buffer via HW_UART_Tx_Load_Buffer().
  *
- * @note   If DMA launch fails, the staged payload remains present in the TX staging buffer and
- *         may be retried or otherwise handled by higher layers.
+ * @note   This implementation does not use HAL. Instead, it directly controls the DMA stream and
+ *         UART DMA request using LL functions and register access.
  *
- * @note   TX buffer ownership is released only when transmission completes, currently through
- *         HAL_UART_TxCpltCallback().
+ * @note   Prior to launching the transfer, the DMA stream is explicitly disabled and all pending
+ *         interrupt flags are cleared. This ensures that the DMA registers (M0AR, PAR, NDTR) can be
+ *         safely reprogrammed for the new transfer and that no stale flags interfere with
+ *         operation.
+ *
+ * @note   The DMA is configured in normal mode. Once enabled, the DMA controller autonomously
+ *         transfers bytes from the staged TX buffer (memory) to the UART data register (DR). No CPU
+ *         intervention is required during the transfer.
+ *
+ * @note   TX buffer ownership is retained by the low-level driver until the DMA transfer completes.
+ *         Completion is detected via the DMA transfer complete interrupt, at which point the driver
+ *         must clear tx_running, tx_loaded, and tx_length_bytes.
+ *
+ * @note   The UART DMA transmit request (CR3.DMAT) is enabled before the DMA stream is started.
+ *         This allows the UART peripheral to generate DMA requests as it becomes ready to accept
+ * new data.
+ *
+ * @note   This function assumes that the DMA stream configuration (channel selection, direction,
+ *         increment modes, data width, and priority) has already been performed during channel
+ *         initialization. Only the transfer-specific parameters (addresses and length) are updated
+ *         here.
+ *
+ * @note   This function is designed for deterministic execution. All channel-specific hardware
+ *         information (DMA controller, stream, and flag registers) is precomputed in the hardware
+ *         map, avoiding switch statements in the hot path.
  */
 bool HW_UART_Tx_Trigger( HwUartChannel_T channel );
+
+bool HW_UART_Tx_Is_Busy( HwUartChannel_T channel );
 
 #ifdef __cplusplus
 }
