@@ -55,7 +55,7 @@ void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_4, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(test_GPIO_output3_GPIO_Port, test_GPIO_output3_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, LD1_Pin|LD3_Pin|LD2_Pin, GPIO_PIN_RESET);
@@ -66,14 +66,14 @@ void MX_GPIO_Init(void)
                           |Digital_Output_7_Pin|Digital_Output_8_Pin|Digital_Output_9_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6|GPIO_PIN_7|Test_GPIO_Output_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, test_GPIO_output2_Pin|test_GPIO_output1_Pin|Test_GPIO_Output_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : PE4 */
-  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  /*Configure GPIO pin : test_GPIO_output3_Pin */
+  GPIO_InitStruct.Pin = test_GPIO_output3_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+  HAL_GPIO_Init(test_GPIO_output3_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : USER_Btn_Pin */
   GPIO_InitStruct.Pin = USER_Btn_Pin;
@@ -115,8 +115,8 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(USB_OverCurrent_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PC6 PC7 Test_GPIO_Output_Pin */
-  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7|Test_GPIO_Output_Pin;
+  /*Configure GPIO pins : test_GPIO_output2_Pin test_GPIO_output1_Pin Test_GPIO_Output_Pin */
+  GPIO_InitStruct.Pin = test_GPIO_output2_Pin|test_GPIO_output1_Pin|Test_GPIO_Output_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
