@@ -15,7 +15,6 @@
  *------------------------------------------------------------------------------
  */
 
-#include <math.h>
 #ifndef TEST_BUILD
 #include "gpio.h"
 #include "stm32f4xx_ll_gpio.h"
@@ -39,7 +38,7 @@
  *------------------------------------------------------------------------------
  */
 
-GPIO_TypeDef* GPIO_ports[] = {
+GPIO_TypeDef* gpio_ports[] = {
 #ifdef GPIOA
     GPIOA,
 #endif
@@ -66,8 +65,8 @@ GPIO_TypeDef* GPIO_ports[] = {
 #endif
 };
 
-#define NUM_GPIO_PORTS (sizeof(GPIO_ports) / sizeof(GPIO_ports[0]))
-#define MAX_NUM_GPIO_PORTS 8
+#define NUM_gpio_ports (sizeof(gpio_ports) / sizeof(gpio_ports[0]))
+#define MAX_NUM_gpio_ports 8
 
 
 
@@ -178,29 +177,29 @@ HW_GPIO_SetToPort(p.gpiox, p.pin_mask)
 int split_about_ports( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length, GPIO_PORT_PACKET* destination)
 {
     GPIO_PORT_PACKET port_packet;
-    GPIO_PORT_PACKET temp[MAX_NUM_GPIO_PORTS];
+    GPIO_PORT_PACKET temp[MAX_NUM_gpio_ports];
     int counter = 0;
     // reset data at destination
-    for ( int j = 0; j < MAX_NUM_GPIO_PORTS; j++ )
+    for ( int j = 0; j < MAX_NUM_gpio_ports; j++ )
     {
-        destination[j].gpiox = GPIO_ports[j];    // reset ports, destination[0] = GPIOA, destination[1] = GPIOB etc
+        destination[j].gpiox = gpio_ports[j];    // reset ports, destination[0] = GPIOA, destination[1] = GPIOB etc
         destination[j].pin_mask = 0;             // reset pin masks
-        temp[j].gpiox = GPIO_ports[j];          // reset ports, temp[0] = GPIOA, temp[1] = GPIOB etc
+        temp[j].gpiox = gpio_ports[j];          // reset ports, temp[0] = GPIOA, temp[1] = GPIOB etc
         temp[j].pin_mask = 0;                   // reset pin masks
     }
     for ( int i = 0; i < length; i++ )
     {
         port_packet = HW_GPIO_port_pin_association(gpio_names[i]);
-        for (int m=0; m<MAX_NUM_GPIO_PORTS; m++)
+        for (int j=0; j<MAX_NUM_gpio_ports; j++)
         {
-            if (port_packet.gpiox == GPIO_ports[m])
+            if (port_packet.gpiox == gpio_ports[j])
             {
-                temp[m].pin_mask = temp[m].pin_mask | port_packet.pin_mask;
+                temp[j].pin_mask = temp[j].pin_mask | port_packet.pin_mask;
                 break;
             }
         }
     }
-    for ( int k = 0; k < MAX_NUM_GPIO_PORTS; k++ )
+    for ( int k = 0; k < MAX_NUM_gpio_ports; k++ )
     {
         if ( temp[k].pin_mask != 0 )
         {
@@ -242,7 +241,7 @@ GPIO_PORT_PACKET combine_port_pin_masks( GPIO_OUTPUT_NAMES* gpio_names, uint8_t 
         if ( checker != port_packet.gpiox )
         {
             // Not all of the pins had the same port, so return an error
-            return (struct GPIO_PORT_PACKET){GPIO_ports[0], 4294901760};    // 4294901760 = 0xFFFF0000
+            return (struct GPIO_PORT_PACKET){gpio_ports[0], 4294901760};    // 4294901760 = 0xFFFF0000
         }
         pin_mask = pin_mask | port_packet.pin_mask; // combine pin masks
     }
@@ -317,10 +316,11 @@ switch ( gpio_name )
 #else
     return HW_GPIO_port_pin_association_to_return;
 #endif
+    ( void )gpio_name; 
 }
 
 /**
- * @brief Sets the state of all digital inputs in a GPIO Port using the underlying GPIO LL library.
+ * @brief Sets the state of all digital outputs in a GPIO Port using the underlying GPIO LL library.
  *
  * @param PinMask   Carrys the information about which pins to set
                     If a lower 16 bit is 1 this sets the associated digital output
@@ -340,7 +340,7 @@ LL_GPIO_PIN_4 of port A high
  * Note: This implementation assumes all digital outputs are on the same GPIO port.
  * By doing so, we can set all the outputs in a single hardware access.
  */
-inline void HW_GPIO_SetToPort( GPIO_TypeDef* gpiox, uint32_t pin_mask )
+inline void HW_GPIO_SetToPort( GPIO_TypeDef* gpiox, int32_t pin_mask )
 {
 #ifdef TEST_BUILD
     // For unit testing, do nothing
@@ -354,7 +354,7 @@ inline void HW_GPIO_SetToPort( GPIO_TypeDef* gpiox, uint32_t pin_mask )
 }
 
 /**
- * @brief Resets the state of all digital inputs in a GPIO Port using the underlying GPIO LL
+ * @brief Resets the state of all digital outputs in a GPIO Port using the underlying GPIO LL
 library.
  *
  * @param PinMask   Carrys the information about which pins to reset
@@ -375,7 +375,7 @@ LL_GPIO_PIN_4 of port A low
  * Note: This implementation assumes all digital outputs are on the same GPIO port.
  * By doing so, we can set all the outputs in a single hardware access.
  */
-inline void HW_GPIO_ResetToPort( GPIO_TypeDef* gpiox, uint32_t pin_mask )
+inline void HW_GPIO_ResetToPort( GPIO_TypeDef* gpiox, int32_t pin_mask )
 {
 #ifdef TEST_BUILD
     // For unit testing, do nothing

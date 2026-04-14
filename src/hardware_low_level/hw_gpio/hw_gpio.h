@@ -90,8 +90,6 @@ typedef struct GPIO_PORT_PACKET{
     uint32_t pin_mask;
 } GPIO_PORT_PACKET;
 
-// extern GPIO_TypeDef** GPIO_ports;
-
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
