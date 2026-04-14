@@ -22,6 +22,7 @@
 
 #include "exec_uart.h"
 #include "hw_uart.h"
+#include <string.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -189,5 +190,73 @@ bool EXEC_UART_Transmit( HwUartChannel_T channel, const uint8_t* data, uint32_t 
     }
 
     exec_uart_channel_states[channel].tx_staged = false;
+    return true;
+}
+
+bool EXEC_UART_Read( HwUartChannel_T channel, uint8_t* dest, uint32_t dest_size,
+                     uint32_t* bytes_read )
+{
+    HwUartRxSpans_T spans;
+    uint32_t        first_copy      = 0U;
+    uint32_t        second_copy     = 0U;
+    uint32_t        remaining_space = 0U;
+
+    if ( dest == NULL || bytes_read == NULL )
+    {
+        return false;
+    }
+
+    *bytes_read = 0U;
+
+    if ( dest_size == 0U )
+    {
+        return true;
+    }
+
+    spans = HW_UART_Rx_Peek( channel );
+
+    if ( spans.total_length_bytes == 0U )
+    {
+        return true;
+    }
+
+    first_copy = spans.first_span.length_bytes;
+    if ( first_copy > dest_size )
+    {
+        first_copy = dest_size;
+    }
+
+    if ( first_copy > 0U )
+    {
+        memcpy( &dest[0], spans.first_span.data, first_copy );
+    }
+
+    if ( first_copy == dest_size )
+    {
+        HW_UART_Rx_Consume( channel, first_copy );
+        *bytes_read = first_copy;
+        return true;
+    }
+
+    remaining_space = dest_size - first_copy;
+
+    second_copy = spans.second_span.length_bytes;
+    if ( second_copy > remaining_space )
+    {
+        second_copy = remaining_space;
+    }
+
+    if ( second_copy > 0U )
+    {
+        memcpy( &dest[first_copy], spans.second_span.data, second_copy );
+    }
+
+    *bytes_read = first_copy + second_copy;
+
+    if ( *bytes_read > 0U )
+    {
+        HW_UART_Rx_Consume( channel, *bytes_read );
+    }
+
     return true;
 }
