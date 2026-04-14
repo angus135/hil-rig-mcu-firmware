@@ -16,11 +16,11 @@
  *  Includes
  *------------------------------------------------------------------------------
  */
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 
 #include "exec_uart.h"
-#include "hw_uart.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -34,7 +34,6 @@
 
 typedef struct
 {
-    bool is_initialised;
     bool is_configured;
     bool rx_enabled;
     bool tx_enabled;
@@ -91,24 +90,22 @@ static inline bool EXEC_UART_Is_Valid_Channel( HwUartChannel_T channel )
 
 bool EXEC_UART_Apply_Configuration( HwUartChannel_T channel, const HwUartConfig_T* config )
 {
-    ( void )channel;
-    ( void )config;
 
-    return false;
-}
-
-bool EXEC_UART_Deconfigure( HwUartChannel_T channel )
-{
-    HwUartConfig_T disabled_config = EXEC_UART_Get_Disabled_Config();
-    ( void )disabled_config;
-
-    // Check for Valid channel
+    // Valid Channel Check
     if ( !EXEC_UART_Is_Valid_Channel( channel ) )
     {
         return false;
     }
 
-    // Halt Rx Operation
+    // Ensure Config Exists
+    if ( config == NULL )
+    {
+        return false;
+    }
+
+    ExecUartChannelState_T* state = &exec_uart_channel_states[channel];
+
+    // Stop Rx if running
     if ( HW_UART_Rx_Is_Running( channel ) )
     {
         if ( !HW_UART_Rx_Stop( channel ) )
@@ -117,13 +114,52 @@ bool EXEC_UART_Deconfigure( HwUartChannel_T channel )
         }
     }
 
-    // Configure channel with disabled configuration
+    // Call LL configuration. This validates configuration before applying
+    if ( !HW_UART_Configure_Channel( channel, config ) )
+    {
+        return false;
+    }
+
+    // Start Rx if enabled
+    if ( config->rx_enabled )
+    {
+        if ( !HW_UART_Rx_Start( channel ) )
+        {
+            return false;
+        }
+    }
+
+    // Reset internal exec state
+    state->is_configured = true;
+    state->rx_enabled    = config->rx_enabled;
+    state->tx_enabled    = config->tx_enabled;
+    state->tx_staged     = false;
+
+    return true;
+}
+
+bool EXEC_UART_Deconfigure( HwUartChannel_T channel )
+{
+    HwUartConfig_T disabled_config = EXEC_UART_Get_Disabled_Config();
+
+    if ( !EXEC_UART_Is_Valid_Channel( channel ) )
+    {
+        return false;
+    }
+
+    if ( HW_UART_Rx_Is_Running( channel ) )
+    {
+        if ( !HW_UART_Rx_Stop( channel ) )
+        {
+            return false;
+        }
+    }
+
     if ( !HW_UART_Configure_Channel( channel, &disabled_config ) )
     {
         return false;
     }
 
-    // Reset exec channel state
     exec_uart_channel_states[channel].is_configured = false;
     exec_uart_channel_states[channel].rx_enabled    = false;
     exec_uart_channel_states[channel].tx_enabled    = false;
