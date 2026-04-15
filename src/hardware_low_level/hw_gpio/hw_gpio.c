@@ -35,6 +35,7 @@
 #include "hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>  // for NULL
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
