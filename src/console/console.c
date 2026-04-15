@@ -19,7 +19,7 @@
  */
 #include "rtos_config.h"
 #include "console.h"
-#include "hw_uart_dut.h"
+#include "hw_uart_console.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -37,10 +37,7 @@
 #define CONSOLE_MAX_ARGS 8U   // max argv entries
 
 #define CONSOLE_PRINTF_BUFFER_SIZE 128U
-#define CONSOLE_TX_BUFFER_SIZE 1024U
 #define CONSOLE_RX_BUFFER_SIZE 32U
-
-#define CONSOLE_UART_CHANNEL HW_UART_CHANNEL_3
 
 #define CONSOLE_BAUD_RATE 115200U
 
@@ -62,13 +59,6 @@ TaskHandle_t* ConsoleTaskHandle = NULL;  // NOLINT(readability-identifier-naming
  */
 static const uint8_t WELCOME_MESSAGE[] = "Welcome to HIL-RIG MCU!\r\n";
 
-static volatile uint32_t s_rx_byte_count = 0U;
-static volatile uint8_t  s_last_rx_byte  = 0U;
-
-static uint8_t  s_tx_buf[CONSOLE_TX_BUFFER_SIZE];
-static uint32_t s_tx_len = 0U;
-
-static uint8_t s_rx_buf[CONSOLE_RX_BUFFER_SIZE];
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -153,6 +143,12 @@ static void CONSOLE_Parse_Args( char* line, uint16_t* argc_out, char* argv_out[C
     *argc_out = argc;
 }
 
+static void CONSOLE_Reset_Line_State( void )
+{
+    s_line_len         = 0U;
+    s_last_was_newline = false;
+}
+
 /**
  * @brief Handle completion of a full console command line.
  *
@@ -181,83 +177,29 @@ static void CONSOLE_On_Line_Complete( void )
         CONSOLE_Command_Handler( argc, argv );
     }
 
-    // Reset buffer for next command
-    s_line_len = 0U;
+    // Reset line state
+    CONSOLE_Reset_Line_State();
 }
 
 /**
- * @brief Appends data to the pending console TX buffer.
+ * @brief Queue console output into the console UART driver.
  *
- * @param data    Pointer to bytes to append.
- * @param length  Number of bytes to append.
+ * @param data    Pointer to bytes to send.
+ * @param length  Number of bytes to send.
  *
  * @return void
  *
- * @note Data is truncated if there is insufficient space in the pending buffer.
- *       Transmission is not started here. The buffer is flushed later by
- *       CONSOLE_Flush_Tx() when the UART TX path is free.
+ * @note Output is forwarded directly to the console UART driver.
+ *       Bytes may be dropped if the low-level TX buffer cannot accept them.
  */
-static void CONSOLE_Queue_Transmit( const uint8_t* data, uint32_t length )
+static void CONSOLE_Write_Raw( const uint8_t* data, uint32_t length )
 {
     if ( ( data == NULL ) || ( length == 0U ) )
     {
         return;
     }
 
-    uint32_t available = CONSOLE_TX_BUFFER_SIZE - s_tx_len;
-    uint32_t copy_len  = ( length < available ) ? length : available;
-
-    if ( copy_len == 0U )
-    {
-        return;
-    }
-
-    memcpy( &s_tx_buf[s_tx_len], data, copy_len );
-    s_tx_len += copy_len;
-
-    // Optional later: count dropped bytes if copy_len < length
-}
-
-/**
- * @brief Attempts to flush a single chunk of the pending console TX buffer through the UART driver.
- *
- * @return void
- *
- * @note At most one UART TX transaction is launched per call.
- *       If the UART TX path is busy or no pending data exists, this function does nothing.
- *
- * @note The pending console TX buffer may be larger than the low-level UART TX staging buffer.
- *       In that case, this function transmits only the first chunk that fits in the low-level
- *       staging buffer and leaves the remaining bytes queued for a later call.
- *
- * @note After a successful load and trigger, the transmitted bytes are removed from the front of
- *       the pending console TX buffer by shifting the remaining bytes down.
- */
-static void CONSOLE_Flush_Tx( void )
-{
-    if ( s_tx_len == 0U )
-    {
-        return;
-    }
-
-    if ( EXEC_UART_Is_Tx_Busy( CONSOLE_UART_CHANNEL ) )
-    {
-        return;
-    }
-
-    uint32_t chunk_len = s_tx_len;
-
-    if ( chunk_len > EXEC_UART_MAX_CHUNK_SIZE )
-    {
-        chunk_len = EXEC_UART_MAX_CHUNK_SIZE;
-    }
-
-    if ( EXEC_UART_Transmit( CONSOLE_UART_CHANNEL, s_tx_buf, chunk_len ) )
-    {
-        uint32_t remaining = s_tx_len - chunk_len;
-        memmove( s_tx_buf, &s_tx_buf[chunk_len], remaining );
-        s_tx_len = remaining;
-    }
+    ( void )HW_UART_CONSOLE_Write( data, length );
 }
 
 /**
@@ -276,14 +218,12 @@ static void CONSOLE_Flush_Tx( void )
 static void CONSOLE_Process_Byte( uint8_t byte )
 {
     const bool is_newline = ( byte == '\r' ) || ( byte == '\n' );
-    s_rx_byte_count++;
-    s_last_rx_byte = byte;
 
     if ( is_newline )
     {
         // Echo as CRLF for terminal friendliness
         const uint8_t crlf[] = { '\r', '\n' };
-        CONSOLE_Queue_Transmit( crlf, sizeof( crlf ) );
+        CONSOLE_Write_Raw( crlf, sizeof( crlf ) );
 
         // Swallow the second newline char in CRLF or LFCR
         if ( s_last_was_newline )
@@ -310,13 +250,13 @@ static void CONSOLE_Process_Byte( uint8_t byte )
 
             // "Erase" character on terminal: BS, space, BS
             const uint8_t backspace[] = { 0x08U, ' ', 0x08U };
-            CONSOLE_Queue_Transmit( backspace, sizeof( backspace ) );
+            CONSOLE_Write_Raw( backspace, sizeof( backspace ) );
         }
         return;
     }
 
     // Normal character: echo and store if there is space
-    CONSOLE_Queue_Transmit( &byte, 1U );
+    CONSOLE_Write_Raw( &byte, 1U );
 
     if ( s_line_len < CONSOLE_LINE_MAX )
     {
@@ -338,28 +278,17 @@ static void CONSOLE_Process_Byte( uint8_t byte )
  *
  * @returns void
  */
-static bool CONSOLE_Init( void )
+bool CONSOLE_Init( void )
 {
-
-    HwUartConfig_T config = { .interface_mode = HW_UART_MODE_TTL_3V3,
-                              .baud_rate      = CONSOLE_BAUD_RATE,
-                              .word_length    = HW_UART_WORD_LENGTH_8_BITS,
-                              .stop_bits      = HW_UART_STOP_BITS_1,
-                              .parity         = HW_UART_PARITY_NONE,
-                              .rx_enabled     = true,
-                              .tx_enabled     = true };
-
-    if ( !EXEC_UART_Apply_Configuration( CONSOLE_UART_CHANNEL, &config ) )
+    if ( !HW_UART_CONSOLE_Init( CONSOLE_BAUD_RATE ) )
     {
-        // Handle configuration error
         return false;
     }
 
-    // reset local parser state
     s_line_len         = 0U;
     s_last_was_newline = false;
-    s_tx_len           = 0U;
-    CONSOLE_Printf( "%s", WELCOME_MESSAGE );
+
+    CONSOLE_Write_Raw( WELCOME_MESSAGE, sizeof( WELCOME_MESSAGE ) - 1U );
     return true;
 }
 
@@ -373,15 +302,25 @@ static bool CONSOLE_Init( void )
  */
 static void CONSOLE_Process( void )
 {
-    uint32_t bytes_read = 0U;
-    if ( !EXEC_UART_Read( CONSOLE_UART_CHANNEL, s_rx_buf, CONSOLE_RX_BUFFER_SIZE, &bytes_read ) )
+    uint8_t rx_buf[CONSOLE_RX_BUFFER_SIZE];
+    while ( true )
     {
-        return;
-    }
+        uint32_t bytes_read = 0U;
 
-    for ( uint32_t i = 0U; i < bytes_read; i++ )
-    {
-        CONSOLE_Process_Byte( s_rx_buf[i] );
+        if ( !HW_UART_CONSOLE_Read( rx_buf, CONSOLE_RX_BUFFER_SIZE, &bytes_read ) )
+        {
+            return;
+        }
+
+        if ( bytes_read == 0U )
+        {
+            return;
+        }
+
+        for ( uint32_t i = 0U; i < bytes_read; i++ )
+        {
+            CONSOLE_Process_Byte( rx_buf[i] );
+        }
     }
 }
 
@@ -423,7 +362,7 @@ void CONSOLE_Printf( const char* format, ... )
     uint32_t count =
         ( len < ( int )sizeof( buffer ) ) ? ( uint32_t )len : ( uint32_t )( sizeof( buffer ) - 1U );
 
-    CONSOLE_Queue_Transmit( ( const uint8_t* )buffer, count );
+    CONSOLE_Write_Raw( ( const uint8_t* )buffer, count );
 }
 
 /**
@@ -454,7 +393,6 @@ void CONSOLE_Task( void* task_parameters )
     while ( true )
     {
         CONSOLE_Process();
-        CONSOLE_Flush_Tx();
         vTaskDelayUntil( &initial_ticks, pdMS_TO_TICKS( CONSOLE_TASK_PERIOD ) );
     }
 }
