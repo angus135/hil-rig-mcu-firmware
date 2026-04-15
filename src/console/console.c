@@ -19,7 +19,7 @@
  */
 #include "rtos_config.h"
 #include "console.h"
-#include "exec_uart.h"
+#include "hw_uart_dut.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdint.h>

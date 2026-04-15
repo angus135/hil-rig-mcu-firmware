@@ -28,7 +28,8 @@ extern "C"
 #include <stdint.h>
 #include <stdbool.h>
 #include "hw_uart_mocks.h"
-#include "hw_uart.h"
+#include "hw_uart_dut.h"
+#include "hw_uart_console.h"
 }
 
 /**-----------------------------------------------------------------------------
