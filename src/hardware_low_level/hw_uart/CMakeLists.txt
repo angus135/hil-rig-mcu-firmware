@@ -5,11 +5,11 @@
 # -----------------------------
 
 set(HW_UART_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/hw_uart.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw_uart_dut.c
 )
 
 set(HW_UART_HEADERS
-    ${CMAKE_CURRENT_SOURCE_DIR}/hw_uart.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw_uart_dut.h
 )
 
 add_library(hw_uart STATIC

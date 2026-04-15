@@ -1,5 +1,5 @@
 /******************************************************************************
- *  File:       hw_uart.h
+ *  File:       hw_uart_dut.h
  *  Author:     Callum Rafferty
  *  Created:    16-Dec-2025
  *
@@ -409,4 +409,4 @@ bool HW_UART_Rx_Is_Running( HwUartChannel_T channel );
 }
 #endif
 
-#endif /* HW_UART_H */
+#endif /* HW_UART_DUT_H */
