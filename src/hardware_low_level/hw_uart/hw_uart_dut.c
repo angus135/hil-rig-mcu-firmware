@@ -1,5 +1,5 @@
 /******************************************************************************
- *  File:       hw_uart.c
+ *  File:       hw_uart_dut.c
  *  Author:     Callum Rafferty
  *  Created:    16-Dec-2025
  *
@@ -39,7 +39,7 @@
 #include "stm32f4xx_ll_usart.h"
 #endif
 
-#include "hw_uart.h"
+#include "hw_uart_dut.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
