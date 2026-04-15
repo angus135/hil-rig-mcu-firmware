@@ -32,8 +32,8 @@
  *      5. Call HW_UART_Rx_Consume() after processing to advance the read index
  ******************************************************************************/
 
-#ifndef HW_UART_H
-#define HW_UART_H
+#ifndef HW_UART__DUT_H
+#define HW_UART_DUT_H
 
 #ifdef __cplusplus
 extern "C"

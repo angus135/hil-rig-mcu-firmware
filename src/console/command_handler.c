@@ -276,6 +276,6 @@ void CONSOLE_Command_Handler( uint16_t argc, char* argv[] )
 
     // unknown command
     CONSOLE_Printf( "Unknown command: " );
-    CONSOLE_Printf( argv[0] );
+    CONSOLE_Printf( "%s", argv[0] );
     CONSOLE_Printf( "\r\n" );
 }

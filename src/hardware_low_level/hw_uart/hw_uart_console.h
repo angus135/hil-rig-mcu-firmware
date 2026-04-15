@@ -12,8 +12,8 @@
  *
  ******************************************************************************/
 
-#ifndef HW_UART_H
-#define HW_UART_H
+#ifndef HW_UART_CONSOLE_H
+#define HW_UART_CONSOLE_H
 
 #ifdef __cplusplus
 extern "C"
@@ -32,6 +32,9 @@ extern "C"
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
  */
+
+/* Size of Tx buffer as defined in hw_uart_console.c */
+#define HW_UART_CONSOLE_TX_MAX_CHUNK_SIZE 256U
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
