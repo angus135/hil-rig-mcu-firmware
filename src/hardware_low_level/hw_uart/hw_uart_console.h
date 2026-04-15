@@ -45,6 +45,8 @@ extern "C"
 bool HW_UART_CONSOLE_Init( uint32_t baud_rate );
 bool HW_UART_CONSOLE_Read( uint8_t* dest, uint32_t dest_size, uint32_t* bytes_read );
 void HW_UART_CONSOLE_IRQHandler( void );
+bool HW_UART_CONSOLE_Write( const uint8_t* data, uint32_t length );
+bool HW_UART_CONSOLE_Is_Tx_Busy( void );
 
 #ifdef __cplusplus
 }

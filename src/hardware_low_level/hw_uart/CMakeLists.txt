@@ -42,8 +42,8 @@ option(HW_UART_ENABLE_TESTS "Build tests for hw_uart module" ON)
 if(HW_UART_ENABLE_TESTS AND BUILD_TESTING)
 
     add_executable(hw_uart_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hw_uart.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/hw_uart.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hw_uart.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw_uart_dut.c
     )
 
     target_compile_definitions(hw_uart_tests
