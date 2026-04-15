@@ -29,6 +29,7 @@
 #else
 #include "gpio.h"
 #include "stm32f4xx_ll_gpio.h"
+#include "main.h"
 #endif
 
 #include "hw_gpio.h"
