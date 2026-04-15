@@ -47,6 +47,8 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+#define EXEC_UART_MAX_CHUNK_SIZE HW_UART_TX_BUFFER_SIZE
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -138,6 +140,18 @@ bool EXEC_UART_Transmit( HwUartChannel_T channel, const uint8_t* data, uint32_t 
  */
 bool EXEC_UART_Read( HwUartChannel_T channel, uint8_t* dest, uint32_t dest_size,
                      uint32_t* bytes_read );
+
+/**
+ * @brief  Reports whether the UART TX path is currently busy.
+ *
+ * @param  channel UART channel to query
+ *
+ * @return true if TX is currently in progress or data is staged
+ * @return false if the channel is ready to accept a new transmit
+ *
+ * @note   This reflects both mid-level staged state and low-level TX activity.
+ */
+bool EXEC_UART_Is_Tx_Busy( HwUartChannel_T channel );
 
 #ifdef __cplusplus
 }

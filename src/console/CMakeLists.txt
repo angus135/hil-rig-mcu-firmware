@@ -29,7 +29,7 @@ target_link_libraries(console
         project_warnings
         cubeide_hal
         rtos
-        hw_uart
+        exec_uart
         execution_manager
 )
 

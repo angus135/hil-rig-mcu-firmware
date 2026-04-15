@@ -19,7 +19,7 @@
  */
 #include "rtos_config.h"
 #include "console.h"
-#include "hw_uart.h"
+#include "exec_uart.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -38,8 +38,11 @@
 
 #define CONSOLE_PRINTF_BUFFER_SIZE 128U
 #define CONSOLE_TX_BUFFER_SIZE 1024U
+#define CONSOLE_RX_BUFFER_SIZE 32U
 
 #define CONSOLE_UART_CHANNEL HW_UART_CHANNEL_3
+
+#define CONSOLE_BAUD_RATE 115200U
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -65,6 +68,7 @@ static volatile uint8_t  s_last_rx_byte  = 0U;
 static uint8_t  s_tx_buf[CONSOLE_TX_BUFFER_SIZE];
 static uint32_t s_tx_len = 0U;
 
+static uint8_t s_rx_buf[CONSOLE_RX_BUFFER_SIZE];
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -236,27 +240,23 @@ static void CONSOLE_Flush_Tx( void )
         return;
     }
 
-    if ( HW_UART_Tx_Is_Busy( CONSOLE_UART_CHANNEL ) )
+    if ( EXEC_UART_Is_Tx_Busy( CONSOLE_UART_CHANNEL ) )
     {
         return;
     }
 
     uint32_t chunk_len = s_tx_len;
 
-    if ( chunk_len > HW_UART_TX_MAX_CHUNK_SIZE )
+    if ( chunk_len > EXEC_UART_MAX_CHUNK_SIZE )
     {
-        chunk_len = HW_UART_TX_MAX_CHUNK_SIZE;
+        chunk_len = EXEC_UART_MAX_CHUNK_SIZE;
     }
 
-    if ( HW_UART_Tx_Load_Buffer( CONSOLE_UART_CHANNEL, s_tx_buf, chunk_len ) )
+    if ( EXEC_UART_Transmit( CONSOLE_UART_CHANNEL, s_tx_buf, chunk_len ) )
     {
-        if ( HW_UART_Tx_Trigger( CONSOLE_UART_CHANNEL ) )
-        {
-            uint32_t remaining = s_tx_len - chunk_len;
-
-            memmove( s_tx_buf, &s_tx_buf[chunk_len], remaining );
-            s_tx_len = remaining;
-        }
+        uint32_t remaining = s_tx_len - chunk_len;
+        memmove( s_tx_buf, &s_tx_buf[chunk_len], remaining );
+        s_tx_len = remaining;
     }
 }
 
@@ -338,25 +338,21 @@ static void CONSOLE_Process_Byte( uint8_t byte )
  *
  * @returns void
  */
-static void CONSOLE_Init( void )
+static bool CONSOLE_Init( void )
 {
 
     HwUartConfig_T config = { .interface_mode = HW_UART_MODE_TTL_3V3,
-                              .baud_rate      = 115200U,
+                              .baud_rate      = CONSOLE_BAUD_RATE,
                               .word_length    = HW_UART_WORD_LENGTH_8_BITS,
                               .stop_bits      = HW_UART_STOP_BITS_1,
                               .parity         = HW_UART_PARITY_NONE,
                               .rx_enabled     = true,
                               .tx_enabled     = true };
-    if ( HW_UART_Configure_Channel( CONSOLE_UART_CHANNEL, &config ) != true )
+
+    if ( !EXEC_UART_Apply_Configuration( CONSOLE_UART_CHANNEL, &config ) )
     {
         // Handle configuration error
-        return;
-    }
-    if ( HW_UART_Rx_Start( CONSOLE_UART_CHANNEL ) != true )
-    {
-        // Handle start error
-        return;
+        return false;
     }
 
     // reset local parser state
@@ -364,6 +360,7 @@ static void CONSOLE_Init( void )
     s_last_was_newline = false;
     s_tx_len           = 0U;
     CONSOLE_Printf( "%s", WELCOME_MESSAGE );
+    return true;
 }
 
 /**
@@ -376,27 +373,16 @@ static void CONSOLE_Init( void )
  */
 static void CONSOLE_Process( void )
 {
-    HwUartRxSpans_T spans = HW_UART_Rx_Peek( CONSOLE_UART_CHANNEL );
-
-    if ( spans.total_length_bytes == 0U )
+    uint32_t bytes_read = 0U;
+    if ( !EXEC_UART_Read( CONSOLE_UART_CHANNEL, s_rx_buf, CONSOLE_RX_BUFFER_SIZE, &bytes_read ) )
     {
         return;
     }
 
-    uint32_t processed = 0U;
-
-    for ( uint32_t i = 0U; i < spans.first_span.length_bytes; i++ )
+    for ( uint32_t i = 0U; i < bytes_read; i++ )
     {
-        CONSOLE_Process_Byte( spans.first_span.data[i] );
-        processed++;
+        CONSOLE_Process_Byte( s_rx_buf[i] );
     }
-
-    for ( uint32_t i = 0U; i < spans.second_span.length_bytes; i++ )
-    {
-        CONSOLE_Process_Byte( spans.second_span.data[i] );
-        processed++;
-    }
-    HW_UART_Rx_Consume( CONSOLE_UART_CHANNEL, processed );
 }
 
 /**-----------------------------------------------------------------------------
@@ -455,7 +441,14 @@ void CONSOLE_Task( void* task_parameters )
 {
     ( void )task_parameters;
 
-    CONSOLE_Init();
+    if ( !CONSOLE_Init() )
+    {
+
+        while ( true )
+        {
+            vTaskDelay( pdMS_TO_TICKS( 1000U ) );
+        }
+    }
 
     TickType_t initial_ticks = xTaskGetTickCount();
     while ( true )

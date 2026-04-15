@@ -310,3 +310,8 @@ bool EXEC_UART_Read( HwUartChannel_T channel, uint8_t* dest, uint32_t dest_size,
 
     return true;
 }
+
+bool EXEC_UART_Is_Tx_Busy( HwUartChannel_T channel )
+{
+    return HW_UART_Is_Tx_Busy( channel );
+}

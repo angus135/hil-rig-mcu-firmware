@@ -53,7 +53,7 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-#define HW_UART_TX_MAX_CHUNK_SIZE 256U
+#define HW_UART_TX_BUFFER_SIZE 256U
 
 /* Number of UART channels supported by the hardware */
 #define HW_UART_CHANNEL_COUNT 3U /* Update to 2U when removing console channel */
@@ -374,7 +374,7 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel );
  * @note   A return value of true indicates that the TX staging buffer must not
  *         be overwritten.
  */
-bool HW_UART_Tx_Is_Busy( HwUartChannel_T channel );
+bool HW_UART_Is_Tx_Busy( HwUartChannel_T channel );
 
 /**
  * @brief  Stops UART reception for the specified channel and halts DMA-based RX.
