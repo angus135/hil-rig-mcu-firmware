@@ -101,8 +101,6 @@
 #error "HW_UART_RX_BUFFER_SIZE must be a power of 2"
 #endif
 
-#define HW_UART_TX_BUFFER_SIZE 256U
-
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -926,7 +924,7 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
 }
 
 /* Public helper to check if TX is busy */
-bool HW_UART_Tx_Is_Busy( HwUartChannel_T channel )
+bool HW_UART_Is_Tx_Busy( HwUartChannel_T channel )
 {
     if ( channel >= HW_UART_CHANNEL_COUNT )
     {
