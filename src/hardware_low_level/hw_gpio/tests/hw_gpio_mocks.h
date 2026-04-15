@@ -14,7 +14,8 @@
 #define HW_GPIO_MOCKS_H
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include <stdint.h>
@@ -36,26 +37,26 @@ static GPIO_PortMock GPIOG_mock = { .id = 0x10 };
 static GPIO_PortMock GPIOH_mock = { .id = 0x11 };
 
 /* ---- Match STM32-style port symbols used by main.h (GPIOF, GPIOC, etc.) ---- */
-#define GPIOA ((void*)&GPIOA_mock)
-#define GPIOB ((void*)&GPIOB_mock)
-#define GPIOC ((void*)&GPIOC_mock)
-#define GPIOD ((void*)&GPIOD_mock)
-#define GPIOE ((void*)&GPIOE_mock)
-#define GPIOF ((void*)&GPIOF_mock)
-#define GPIOG ((void*)&GPIOG_mock)
-#define GPIOH ((void*)&GPIOH_mock)
+#define GPIOA ( ( void* )&GPIOA_mock )
+#define GPIOB ( ( void* )&GPIOB_mock )
+#define GPIOC ( ( void* )&GPIOC_mock )
+#define GPIOD ( ( void* )&GPIOD_mock )
+#define GPIOE ( ( void* )&GPIOE_mock )
+#define GPIOF ( ( void* )&GPIOF_mock )
+#define GPIOG ( ( void* )&GPIOG_mock )
+#define GPIOH ( ( void* )&GPIOH_mock )
 
 /* ---- Pin bitmasks (match STM32 HAL style: GPIO_PIN_x == (1u<<x)) ---- */
-#define Digital_Input_0_Pin (1u << 3)
-#define Digital_Input_1_Pin (1u << 4)
-#define Digital_Input_2_Pin (1u << 5)
-#define Digital_Input_3_Pin (1u << 7)
-#define Digital_Input_4_Pin (1u << 10)
-#define Digital_Input_5_Pin (1u << 11)
-#define Digital_Input_6_Pin (1u << 12)
-#define Digital_Input_7_Pin (1u << 13)
-#define Digital_Input_8_Pin (1u << 14)
-#define Digital_Input_9_Pin (1u << 15)
+#define Digital_Input_0_Pin ( 1u << 3 )
+#define Digital_Input_1_Pin ( 1u << 4 )
+#define Digital_Input_2_Pin ( 1u << 5 )
+#define Digital_Input_3_Pin ( 1u << 7 )
+#define Digital_Input_4_Pin ( 1u << 10 )
+#define Digital_Input_5_Pin ( 1u << 11 )
+#define Digital_Input_6_Pin ( 1u << 12 )
+#define Digital_Input_7_Pin ( 1u << 13 )
+#define Digital_Input_8_Pin ( 1u << 14 )
+#define Digital_Input_9_Pin ( 1u << 15 )
 
 /* ---- Port assignments (all inputs on GPIOF like the real board) ---- */
 #define Digital_Input_0_GPIO_Port GPIOF
