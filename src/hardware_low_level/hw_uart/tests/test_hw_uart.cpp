@@ -215,6 +215,14 @@ extern "C" uint32_t LL_DMA_IsActiveFlag_TE6( DMA_TypeDef* dma )
     return ( ( dma->HISR & DMA_HISR_TEIF6 ) != 0U ) ? 1U : 0U;
 }
 
+extern "C" void __HAL_UART_ENABLE_IT( UART_HandleTypeDef* huart, uint32_t interrupt )
+{
+    if ( ( huart != NULL ) && ( huart->Instance != NULL ) )
+    {
+        huart->Instance->CR1 |= interrupt;
+    }
+}
+
 // NOLINTEND
 
 /**-----------------------------------------------------------------------------

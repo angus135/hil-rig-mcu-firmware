@@ -54,6 +54,9 @@ extern "C"
 #define GPIO_PIN_6 ( ( uint16_t )0x0040 )
 #define GPIO_PIN_7 ( ( uint16_t )0x0080 )
 
+#define USART_CR1_RXNEIE ( 1U << 5 )
+#define UART_IT_RXNE USART_CR1_RXNEIE
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -208,6 +211,10 @@ uint32_t LL_DMA_IsActiveFlag_TC3( DMA_TypeDef* dma );
 uint32_t LL_DMA_IsActiveFlag_TE3( DMA_TypeDef* dma );
 uint32_t LL_DMA_IsActiveFlag_TC6( DMA_TypeDef* dma );
 uint32_t LL_DMA_IsActiveFlag_TE6( DMA_TypeDef* dma );
+
+void     __HAL_UART_ENABLE_IT( UART_HandleTypeDef* huart, uint32_t interrupt );
+uint32_t LL_USART_IsActiveFlag_RXNE( USART_TypeDef* usart );
+uint8_t  LL_USART_ReceiveData8( USART_TypeDef* usart );
 
 // NOLINTEND
 
