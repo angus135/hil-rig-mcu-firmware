@@ -17,7 +17,9 @@
 
 #include "hw_i2c.h"
 
-#ifndef TEST_BUILD
+#ifdef TEST_BUILD
+#include "hw_i2c_mocks.h"
+#else
 #include "stm32f446xx.h"
 #endif
 

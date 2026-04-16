@@ -21,6 +21,8 @@ add_library(hw_i2c STATIC
 target_include_directories(hw_i2c
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
 )
 
 target_link_libraries(hw_i2c
