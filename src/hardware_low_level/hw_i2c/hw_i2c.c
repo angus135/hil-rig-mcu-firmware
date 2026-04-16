@@ -214,6 +214,12 @@ static inline uint32_t HW_I2C_DMA_Channel_Shifted( uint32_t channel )
 	return ( channel << DMA_SxCR_CHSEL_Pos );
 }
 
+static inline uint32_t HW_I2C_DMA_Circular_Write_Index( HwI2cChannel_T channel );
+
+static inline void HW_I2C_Master_Generate_Start( I2C_TypeDef* i2c );
+
+static inline void HW_I2C_Master_Generate_Stop( I2C_TypeDef* i2c );
+
 static inline void HW_I2C_DMA_Clear_Stream0_Flags( void )
 {
 	DMA1->LIFCR = DMA_LIFCR_CFEIF0 | DMA_LIFCR_CDMEIF0 | DMA_LIFCR_CTEIF0 | DMA_LIFCR_CHTIF0

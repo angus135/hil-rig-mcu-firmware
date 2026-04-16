@@ -31,8 +31,8 @@ target_link_libraries(console
         cubeide_hal
         rtos
         hw_uart
-    hw_gpio
-    exec_i2c
+        hw_gpio
+        exec_i2c
         execution_manager
 )
 
