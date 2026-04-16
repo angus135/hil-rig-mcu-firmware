@@ -36,12 +36,6 @@ extern "C"
 #define BIT_U32( n ) ( (uint32_t)1U << ( n ) )
 #endif
 
-#if defined(__GNUC__) || defined(__clang__)
-#define HW_I2C_MOCK_UNUSED __attribute__( ( unused ) )
-#else
-#define HW_I2C_MOCK_UNUSED
-#endif
-
 /* I2C register bit definitions used by hw_i2c.c */
 #define I2C_CR1_PE    BIT_U32( 0 )
 #define I2C_CR1_START BIT_U32( 8 )
@@ -180,16 +174,16 @@ typedef struct
  *------------------------------------------------------------------------------
  */
 
-static I2C_TypeDef HW_I2C_MOCK_UNUSED I2C1_mock = { 0U };
-static I2C_TypeDef HW_I2C_MOCK_UNUSED I2C2_mock = { 0U };
+static I2C_TypeDef I2C1_mock = { 0U };
+static I2C_TypeDef I2C2_mock = { 0U };
 
-static DMA_TypeDef HW_I2C_MOCK_UNUSED DMA1_mock = { 0U };
-static DMA_Stream_TypeDef HW_I2C_MOCK_UNUSED DMA1_Stream0_mock = { 0U };
-static DMA_Stream_TypeDef HW_I2C_MOCK_UNUSED DMA1_Stream2_mock = { 0U };
-static DMA_Stream_TypeDef HW_I2C_MOCK_UNUSED DMA1_Stream6_mock = { 0U };
-static DMA_Stream_TypeDef HW_I2C_MOCK_UNUSED DMA1_Stream7_mock = { 0U };
+static DMA_TypeDef DMA1_mock = { 0U };
+static DMA_Stream_TypeDef DMA1_Stream0_mock = { 0U };
+static DMA_Stream_TypeDef DMA1_Stream2_mock = { 0U };
+static DMA_Stream_TypeDef DMA1_Stream6_mock = { 0U };
+static DMA_Stream_TypeDef DMA1_Stream7_mock = { 0U };
 
-static FMPI2C_TypeDef HW_I2C_MOCK_UNUSED FMPI2C1_mock = { 0U };
+static FMPI2C_TypeDef FMPI2C1_mock = { 0U };
 
 #define I2C1 ( &I2C1_mock )
 #define I2C2 ( &I2C2_mock )
