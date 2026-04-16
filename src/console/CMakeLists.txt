@@ -6,6 +6,7 @@
 
 set(CONSOLE_SOURCES
     console.c
+    command_handler.c
 )
 
 set(CONSOLE_HEADERS
@@ -30,6 +31,8 @@ target_link_libraries(console
         cubeide_hal
         rtos
         hw_uart
+    hw_gpio
+    exec_i2c
         execution_manager
 )
 

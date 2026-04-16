@@ -17,15 +17,21 @@
 
 #include "console.h"
 #include "execution_manager.h"
+#include "execution_mid_level/exec_i2c/exec_i2c.h"
 #include "hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdlib.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
+
+#define CONSOLE_I2C_LOOPBACK_MAX_PAYLOAD_BYTES 64U
+#define CONSOLE_I2C_LOOPBACK_TIMEOUT_MS        300U
+#define CONSOLE_I2C_LOOPBACK_SLAVE_ADDRESS     0x52U
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -53,6 +59,12 @@ static void CONSOLE_Command_Echo( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_LED( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] );
+static bool CONSOLE_I2C_Parse_Speed( const char* token, ExecI2cSpeed_T* out_speed );
+static bool CONSOLE_I2C_Parse_Transfer_Mode( const char* token,
+                                             ExecI2cTransferMode_T* out_transfer_mode );
+static bool CONSOLE_I2C_Parse_Byte( const char* token, uint8_t* out_byte );
+static void CONSOLE_I2C_Print_Loopback_Usage( void );
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
@@ -67,7 +79,9 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"echo",    CONSOLE_Command_Echo,       "Echoes the provided arguments."},
     {"execution_manager",    CONSOLE_Command_Test_Scheduler,       "Starts the test scheduler."},
     {"clear",  CONSOLE_Command_Clear,       "Clears the console."},
-    {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <green|blue|red|test>"}
+    {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <green|blue|red|test>"},
+    {"i2c_loopback", CONSOLE_Command_I2C_Loopback,
+     "Run CH1(master TX)->CH2(slave RX) test. Usage: i2c_loopback run <100|400> <irq|dma> <irq|dma> <byte0> [byte1 ...]"}
 
 };
 
@@ -239,6 +253,218 @@ static void CONSOLE_Command_LED( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "Unknown action: %s\r\nUsage: led toggle <green|blue|red|test>\r\n",
                         argv[1] );
     }
+}
+
+static bool CONSOLE_I2C_Parse_Speed( const char* token, ExecI2cSpeed_T* out_speed )
+{
+    if ( token == NULL || out_speed == NULL )
+    {
+        return false;
+    }
+
+    if ( strcmp( token, "100" ) == 0 || strcmp( token, "100k" ) == 0
+         || strcmp( token, "100khz" ) == 0 )
+    {
+        *out_speed = EXEC_I2C_SPEED_100KHZ;
+        return true;
+    }
+
+    if ( strcmp( token, "400" ) == 0 || strcmp( token, "400k" ) == 0
+         || strcmp( token, "400khz" ) == 0 )
+    {
+        *out_speed = EXEC_I2C_SPEED_400KHZ;
+        return true;
+    }
+
+    return false;
+}
+
+static bool CONSOLE_I2C_Parse_Transfer_Mode( const char* token,
+                                             ExecI2cTransferMode_T* out_transfer_mode )
+{
+    if ( token == NULL || out_transfer_mode == NULL )
+    {
+        return false;
+    }
+
+    if ( strcmp( token, "irq" ) == 0 || strcmp( token, "int" ) == 0
+         || strcmp( token, "interrupt" ) == 0 )
+    {
+        *out_transfer_mode = EXEC_I2C_TRANSFER_INTERRUPT;
+        return true;
+    }
+
+    if ( strcmp( token, "dma" ) == 0 )
+    {
+        *out_transfer_mode = EXEC_I2C_TRANSFER_DMA;
+        return true;
+    }
+
+    return false;
+}
+
+static bool CONSOLE_I2C_Parse_Byte( const char* token, uint8_t* out_byte )
+{
+    if ( token == NULL || out_byte == NULL || token[0] == '\0' )
+    {
+        return false;
+    }
+
+    char* end_ptr      = NULL;
+    unsigned long byte = strtoul( token, &end_ptr, 0 );
+
+    if ( end_ptr == token || *end_ptr != '\0' || byte > 0xFFUL )
+    {
+        return false;
+    }
+
+    *out_byte = (uint8_t)byte;
+    return true;
+}
+
+static void CONSOLE_I2C_Print_Loopback_Usage( void )
+{
+    CONSOLE_Printf( "Usage:\r\n" );
+    CONSOLE_Printf( "  i2c_loopback run <100|400> <irq|dma> <irq|dma> <byte0> [byte1 ...]\r\n" );
+    CONSOLE_Printf( "Example:\r\n" );
+    CONSOLE_Printf( "  i2c_loopback run 100 irq dma 0x11 0x22 0x33\r\n" );
+    CONSOLE_Printf( "Wiring:\r\n" );
+    CONSOLE_Printf( "  Connect CH1 SCL<->CH2 SCL, CH1 SDA<->CH2 SDA and common GND.\r\n" );
+}
+
+static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
+{
+    if ( argc < 6U || argv[1] == NULL || argv[2] == NULL || argv[3] == NULL || argv[4] == NULL )
+    {
+        CONSOLE_I2C_Print_Loopback_Usage();
+        return;
+    }
+
+    if ( strcmp( argv[1], "run" ) != 0 )
+    {
+        CONSOLE_I2C_Print_Loopback_Usage();
+        return;
+    }
+
+    ExecI2cSpeed_T speed;
+    ExecI2cTransferMode_T master_transfer_mode;
+    ExecI2cTransferMode_T slave_transfer_mode;
+
+    if ( !CONSOLE_I2C_Parse_Speed( argv[2], &speed ) )
+    {
+        CONSOLE_Printf( "Invalid speed '%s'. Use 100 or 400.\r\n", argv[2] );
+        return;
+    }
+
+    if ( !CONSOLE_I2C_Parse_Transfer_Mode( argv[3], &master_transfer_mode ) )
+    {
+        CONSOLE_Printf( "Invalid master mode '%s'. Use irq or dma.\r\n", argv[3] );
+        return;
+    }
+
+    if ( !CONSOLE_I2C_Parse_Transfer_Mode( argv[4], &slave_transfer_mode ) )
+    {
+        CONSOLE_Printf( "Invalid slave mode '%s'. Use irq or dma.\r\n", argv[4] );
+        return;
+    }
+
+    const uint16_t payload_len = (uint16_t)( argc - 5U );
+    if ( payload_len == 0U || payload_len > CONSOLE_I2C_LOOPBACK_MAX_PAYLOAD_BYTES )
+    {
+        CONSOLE_Printf( "Payload must contain 1..%u bytes.\r\n", CONSOLE_I2C_LOOPBACK_MAX_PAYLOAD_BYTES );
+        return;
+    }
+
+    uint8_t tx_payload[CONSOLE_I2C_LOOPBACK_MAX_PAYLOAD_BYTES] = { 0U };
+    uint8_t rx_payload[CONSOLE_I2C_LOOPBACK_MAX_PAYLOAD_BYTES] = { 0U };
+
+    for ( uint16_t i = 0U; i < payload_len; i++ )
+    {
+        if ( !CONSOLE_I2C_Parse_Byte( argv[i + 5U], &tx_payload[i] ) )
+        {
+            CONSOLE_Printf( "Invalid byte token '%s'. Use decimal or 0xHH format.\r\n", argv[i + 5U] );
+            return;
+        }
+    }
+
+    const ExecI2cChannelConfig_T channel_1_config = {
+        .mode           = EXEC_I2C_MODE_MASTER,
+        .speed          = speed,
+        .transfer_mode  = master_transfer_mode,
+        .own_address_7bit = 0U,
+        .rx_enabled     = false,
+        .tx_enabled     = true,
+    };
+
+    const ExecI2cChannelConfig_T channel_2_config = {
+        .mode           = EXEC_I2C_MODE_SLAVE,
+        .speed          = speed,
+        .transfer_mode  = slave_transfer_mode,
+        .own_address_7bit = CONSOLE_I2C_LOOPBACK_SLAVE_ADDRESS,
+        .rx_enabled     = true,
+        .tx_enabled     = false,
+    };
+
+    if ( !EXEC_I2C_Configuration( &channel_1_config, &channel_2_config ) )
+    {
+        CONSOLE_Printf( "I2C config failed.\r\n" );
+        return;
+    }
+
+    if ( !EXEC_I2C_Rx_Start( EXEC_I2C_EXTERNAL_CHANNEL_2, 0U, payload_len ) )
+    {
+        CONSOLE_Printf( "I2C slave RX start failed.\r\n" );
+        return;
+    }
+
+    vTaskDelay( pdMS_TO_TICKS( 2U ) );
+
+    if ( !EXEC_I2C_Send( EXEC_I2C_EXTERNAL_CHANNEL_1, CONSOLE_I2C_LOOPBACK_SLAVE_ADDRESS,
+                         tx_payload, payload_len ) )
+    {
+        CONSOLE_Printf( "I2C master send failed.\r\n" );
+        return;
+    }
+
+    uint16_t total_rx = 0U;
+    for ( uint32_t elapsed_ms = 0U; elapsed_ms < CONSOLE_I2C_LOOPBACK_TIMEOUT_MS
+                                  && total_rx < payload_len;
+          elapsed_ms++ )
+    {
+        total_rx += EXEC_I2C_Rx_Copy_And_Consume( EXEC_I2C_EXTERNAL_CHANNEL_2,
+                                                  &rx_payload[total_rx],
+                                                  (uint16_t)( payload_len - total_rx ) );
+
+        if ( total_rx < payload_len )
+        {
+            vTaskDelay( pdMS_TO_TICKS( 1U ) );
+        }
+    }
+
+    CONSOLE_Printf( "I2C loopback result: tx=%u rx=%u\r\n", payload_len, total_rx );
+
+    if ( total_rx != payload_len || memcmp( tx_payload, rx_payload, payload_len ) != 0 )
+    {
+        CONSOLE_Printf( "Loopback FAILED\r\n" );
+    }
+    else
+    {
+        CONSOLE_Printf( "Loopback PASSED\r\n" );
+    }
+
+    CONSOLE_Printf( "TX:" );
+    for ( uint16_t i = 0U; i < payload_len; i++ )
+    {
+        CONSOLE_Printf( " %02X", tx_payload[i] );
+    }
+    CONSOLE_Printf( "\r\n" );
+
+    CONSOLE_Printf( "RX:" );
+    for ( uint16_t i = 0U; i < total_rx; i++ )
+    {
+        CONSOLE_Printf( " %02X", rx_payload[i] );
+    }
+    CONSOLE_Printf( "\r\n" );
 }
 
 /**-----------------------------------------------------------------------------
