@@ -692,6 +692,152 @@ static void CONSOLE_History_Down( void )
     CONSOLE_Load_Line( s_history[s_history_browse_index] );
 }
 
+/**
+ * @brief Save a completed console line into the history buffer.
+ *
+ * Stores the provided line in the fixed-depth circular history buffer unless
+ * the line is empty or is identical to the most recently stored entry.
+ *
+ * @param line  NUL-terminated console line to save.
+ *
+ * @returns void
+ */
+static void CONSOLE_Save_History( const char* line )
+{
+    if ( line[0] != '\0' )
+    {
+        if ( s_history_count > 0U )
+        {
+            size_t last_index =
+                ( s_history_next_index + CONSOLE_HISTORY_DEPTH - 1U ) % CONSOLE_HISTORY_DEPTH;
+
+            // Avoid saving duplicate consecutive entries
+            if ( strncmp( s_history[last_index], line, CONSOLE_LINE_MAX ) == 0 )
+            {
+                return;
+            }
+        }
+
+        // Store to buffer at current index
+        snprintf( s_history[s_history_next_index], sizeof( s_history[s_history_next_index] ), "%s",
+                  line );
+
+        // Update the next index (wrap around if necessary)
+        s_history_next_index = ( s_history_next_index + 1U ) % CONSOLE_HISTORY_DEPTH;
+
+        // Update the history count
+        if ( s_history_count < CONSOLE_HISTORY_DEPTH )
+        {
+            s_history_count++;
+        }
+        // Reset browse index
+        s_history_browse_index = -1;
+    }
+}
+
+/**
+ * @brief Redraw the current editable console line on the terminal.
+ *
+ * Clears the current terminal line and rewrites the contents of the active
+ * console input buffer so that recalled history entries or edited lines are
+ * visible to the user.
+ *
+ * @returns void
+ */
+static void CONSOLE_Redraw_Line( void )
+{
+    CONSOLE_Printf( "\r\033[2K" );
+    CONSOLE_Printf( "%s", s_line_buf );
+}
+
+/**
+ * @brief Replace the active console input line with the provided text.
+ *
+ * Copies the provided line into the editable console input buffer, updates the
+ * tracked line length, and redraws the terminal line so the new contents are
+ * visible to the user.
+ *
+ * @param line  NUL-terminated line to load into the active console input buffer.
+ *
+ * @returns void
+ */
+static void CONSOLE_Load_Line( const char* line )
+{
+    snprintf( s_line_buf, sizeof( s_line_buf ), "%s", line );
+    s_line_len = strlen( s_line_buf );
+    CONSOLE_Redraw_Line();
+}
+
+/**
+ * @brief Recall the previous entry from the console history buffer.
+ *
+ * Moves the current history browse position toward older stored commands and
+ * loads the selected history entry into the active console input buffer.
+ *
+ * @returns void
+ */
+static void CONSOLE_History_Up( void )
+{
+    if ( s_history_count == 0U )
+    {
+        return;
+    }
+
+    if ( s_history_browse_index < 0 )
+    {
+        s_history_browse_index = ( int32_t )( ( s_history_next_index + CONSOLE_HISTORY_DEPTH - 1U )
+                                              % CONSOLE_HISTORY_DEPTH );
+    }
+    else
+    {
+        size_t oldest_index = ( s_history_next_index + CONSOLE_HISTORY_DEPTH - s_history_count )
+                              % CONSOLE_HISTORY_DEPTH;
+
+        if ( ( size_t )s_history_browse_index != oldest_index )
+        {
+            s_history_browse_index =
+                ( int32_t )( ( ( size_t )s_history_browse_index + CONSOLE_HISTORY_DEPTH - 1U )
+                             % CONSOLE_HISTORY_DEPTH );
+        }
+    }
+
+    CONSOLE_Load_Line( s_history[s_history_browse_index] );
+}
+
+/**
+ * @brief Recall the next entry from the console history buffer.
+ *
+ * Moves the current history browse position toward newer stored commands. If
+ * the newest history entry is passed, browsing ends and the active console
+ * input line is cleared.
+ *
+ * @returns void
+ */
+static void CONSOLE_History_Down( void )
+{
+    if ( s_history_count == 0U || s_history_browse_index < 0 )
+    {
+        return;
+    }
+
+    size_t newest_index =
+        ( s_history_next_index + CONSOLE_HISTORY_DEPTH - 1U ) % CONSOLE_HISTORY_DEPTH;
+
+    if ( ( size_t )s_history_browse_index == newest_index )
+    {
+        s_history_browse_index = -1;
+        s_line_buf[0]          = '\0';
+        s_line_len             = 0U;
+        CONSOLE_Redraw_Line();
+        return;
+    }
+
+    s_history_browse_index =
+        ( int32_t )( ( ( size_t )s_history_browse_index + 1U ) % CONSOLE_HISTORY_DEPTH );
+
+    CONSOLE_Load_Line( s_history[s_history_browse_index] );
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
