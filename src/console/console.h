@@ -23,7 +23,6 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-#include <stdarg.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include "rtos_config.h"
@@ -49,23 +48,26 @@ extern "C"
  */
 
 /**
- * @brief Printf-style formatted output to the console UART
+ * @brief Format text and queue it for console transmission.
  *
- * @param format  Standard printf-style format string
- * @param ...     Variable arguments corresponding to the format string
+ * Formats the provided message and appends the result to the console TX buffer.
+ * Transmission occurs later from console task context.
+ *
+ * @param format  Standard printf-style format string.
+ * @param ...     Variable arguments corresponding to the format string.
  *
  * @returns void
  */
 void CONSOLE_Printf( const char* format, ... );
 
 /**
- * @brief Console FreeRTOS task entry point.
+ * @brief Console task entry point.
  *
- * This task is responsible for initialising the console subsystem and
- * periodically polling the console UART for incoming data. All command
- * parsing and dispatch occurs within this task context.
+ * This task initialises the console subsystem, drains buffered RX data from the
+ * low-level console UART driver, processes command line input, and flushes
+ * buffered console TX output from task context.
  *
- * @param task_parameters  Unused task parameter (reserved for future use).
+ * @param task_parameters  Unused task parameter.
  *
  * @returns void
  */
