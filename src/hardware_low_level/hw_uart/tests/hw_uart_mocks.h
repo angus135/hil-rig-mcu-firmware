@@ -218,13 +218,9 @@ uint32_t LL_DMA_IsActiveFlag_TE3( DMA_TypeDef* dma );
 uint32_t LL_DMA_IsActiveFlag_TC6( DMA_TypeDef* dma );
 uint32_t LL_DMA_IsActiveFlag_TE6( DMA_TypeDef* dma );
 
-void __HAL_UART_ENABLE_IT( UART_HandleTypeDef* huart, uint32_t interrupt );
-void __HAL_UART_DISABLE_IT( UART_HandleTypeDef* huart, uint32_t interrupt );
-
-uint32_t LL_USART_IsActiveFlag_RXNE( USART_TypeDef* usart );
-uint32_t LL_USART_IsActiveFlag_TXE( USART_TypeDef* usart );
-uint8_t  LL_USART_ReceiveData8( USART_TypeDef* usart );
-void     LL_USART_TransmitData8( USART_TypeDef* usart, uint8_t data );
+int  HAL_UART_Receive_IT( UART_HandleTypeDef* huart, uint8_t* data, uint16_t size );
+int  HAL_UART_Transmit( UART_HandleTypeDef* huart, uint8_t* data, uint16_t size, uint32_t timeout );
+void HAL_UART_IRQHandler( UART_HandleTypeDef* huart );
 
 // NOLINTEND
 

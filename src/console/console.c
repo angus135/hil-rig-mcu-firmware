@@ -1,6 +1,6 @@
 /******************************************************************************
  *  File:       console.c
- *  Author:     Angus Corr
+ *  Author:     Angus Corr & Callum Rafferty
  *  Created:    6-Dec-2025
  *
  *  Description:
@@ -39,6 +39,10 @@
 #define CONSOLE_PRINTF_BUFFER_SIZE 128U
 #define CONSOLE_RX_BUFFER_SIZE 32U
 
+#define CONSOLE_TX_BUFFER_SIZE 512U
+#define CONSOLE_TX_FLUSH_CHUNK_SIZE 64U
+#define CONSOLE_TX_TIMEOUT_MS 100U
+
 #define CONSOLE_BAUD_RATE 115200U
 
 /**-----------------------------------------------------------------------------
@@ -51,18 +55,17 @@
  *------------------------------------------------------------------------------
  */
 
-TaskHandle_t* ConsoleTaskHandle = NULL;  // NOLINT(readability-identifier-naming)
+TaskHandle_t ConsoleTaskHandle = NULL;  // NOLINT(readability-identifier-naming)
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
 static const uint8_t WELCOME_MESSAGE[] = "Welcome to HIL-RIG MCU!\r\n";
-
-/**-----------------------------------------------------------------------------
- *  Private (static) Function Prototypes
- *------------------------------------------------------------------------------
- */
+static uint8_t       s_tx_buf[CONSOLE_TX_BUFFER_SIZE];
+static uint32_t      s_tx_head           = 0U;
+static uint32_t      s_tx_tail           = 0U;
+static uint32_t      s_tx_overflow_count = 0U;
 
 // Line buffer and state
 static char   s_line_buf[CONSOLE_LINE_MAX + 1U];
@@ -70,6 +73,11 @@ static size_t s_line_len = 0U;
 
 // Used to swallow the second char of CRLF / LFCR so you don't process two "empty" commands.
 static bool s_last_was_newline = false;
+
+/**-----------------------------------------------------------------------------
+ *  Private (static) Function Prototypes
+ *------------------------------------------------------------------------------
+ */
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -143,6 +151,14 @@ static void CONSOLE_Parse_Args( char* line, uint16_t* argc_out, char* argv_out[C
     *argc_out = argc;
 }
 
+/**
+ * @brief Reset the current console line editing state.
+ *
+ * Clears the in-progress command line length and newline tracking state so
+ * that the next received characters begin a fresh command line.
+ *
+ * @returns void
+ */
 static void CONSOLE_Reset_Line_State( void )
 {
     s_line_len         = 0U;
@@ -182,15 +198,47 @@ static void CONSOLE_On_Line_Complete( void )
 }
 
 /**
- * @brief Queue console output into the console UART driver.
+ * @brief Get the number of bytes currently queued in the console TX ring buffer.
  *
- * @param data    Pointer to bytes to send.
- * @param length  Number of bytes to send.
+ * Computes the occupied length of the software-managed TX ring buffer using
+ * the current head and tail indices.
  *
- * @return void
+ * @returns Number of bytes currently pending transmission.
+ */
+static inline uint32_t CONSOLE_Tx_Used( void )
+{
+    return ( s_tx_head >= s_tx_tail ) ? ( s_tx_head - s_tx_tail )
+                                      : ( CONSOLE_TX_BUFFER_SIZE - ( s_tx_tail - s_tx_head ) );
+}
+
+/**
+ * @brief Get the remaining free space in the console TX ring buffer.
  *
- * @note Output is forwarded directly to the console UART driver.
- *       Bytes may be dropped if the low-level TX buffer cannot accept them.
+ * Computes how many additional bytes can be appended to the software-managed
+ * TX ring buffer while preserving the empty/full distinction by leaving one
+ * slot unused.
+ *
+ * @returns Number of free bytes available for enqueue.
+ */
+static inline uint32_t CONSOLE_Tx_Free( void )
+{
+    return ( CONSOLE_TX_BUFFER_SIZE - CONSOLE_Tx_Used() ) - 1U;
+}
+
+/**
+ * @brief Append raw bytes to the console TX ring buffer.
+ *
+ * Attempts to enqueue the provided bytes into the console-owned TX ring buffer.
+ * Queued bytes are transmitted later by CONSOLE_Flush_Tx() from task context
+ * using a blocking UART transmit call.
+ *
+ * If insufficient space is available, only the bytes that fit are queued and
+ * the overflow counter is incremented.
+ *
+ * @param data    Pointer to bytes to enqueue.
+ * @param length  Number of bytes to enqueue.
+ *
+ * @returns void
  */
 static void CONSOLE_Write_Raw( const uint8_t* data, uint32_t length )
 {
@@ -199,7 +247,60 @@ static void CONSOLE_Write_Raw( const uint8_t* data, uint32_t length )
         return;
     }
 
-    ( void )HW_UART_CONSOLE_Write( data, length );
+    uint32_t free_space = CONSOLE_Tx_Free();
+    uint32_t copy_len   = ( length < free_space ) ? length : free_space;
+
+    if ( copy_len < length )
+    {
+        s_tx_overflow_count++;
+    }
+
+    for ( uint32_t i = 0U; i < copy_len; i++ )
+    {
+        s_tx_buf[s_tx_head] = data[i];
+        s_tx_head           = ( s_tx_head + 1U ) % CONSOLE_TX_BUFFER_SIZE;
+    }
+}
+
+/**
+ * @brief Transmit one pending chunk from the console TX ring buffer.
+ *
+ * If queued TX data is available, this function selects the next contiguous
+ * region starting at the TX tail, limits the transfer to the configured flush
+ * chunk size, and sends it using the blocking console UART transmit function.
+ *
+ * On successful transmission, the TX tail is advanced by the transmitted
+ * length. If transmission fails, the pending data remains queued for a later
+ * retry.
+ *
+ * @returns void
+ */
+static void CONSOLE_Flush_Tx( void )
+{
+    if ( s_tx_head == s_tx_tail )
+    {
+        return;
+    }
+
+    uint32_t contiguous_len = 0U;
+
+    if ( s_tx_head > s_tx_tail )
+    {
+        contiguous_len = s_tx_head - s_tx_tail;
+    }
+    else
+    {
+        contiguous_len = CONSOLE_TX_BUFFER_SIZE - s_tx_tail;
+    }
+
+    uint32_t chunk_len = ( contiguous_len > CONSOLE_TX_FLUSH_CHUNK_SIZE )
+                             ? CONSOLE_TX_FLUSH_CHUNK_SIZE
+                             : contiguous_len;
+
+    if ( HW_UART_CONSOLE_Write_Blocking( &s_tx_buf[s_tx_tail], chunk_len, CONSOLE_TX_TIMEOUT_MS ) )
+    {
+        s_tx_tail = ( s_tx_tail + chunk_len ) % CONSOLE_TX_BUFFER_SIZE;
+    }
 }
 
 /**
@@ -271,12 +372,13 @@ static void CONSOLE_Process_Byte( uint8_t byte )
 }
 
 /**
- * @brief Initialise the console subsystem.
+ * @brief Initialise the console subsystem and queue the welcome banner.
  *
- * Sends the console welcome banner to the configured UART interface.
- * This function must be called before any console processing occurs.
+ * Initialises the low-level console UART driver, resets local TX and line
+ * editing state, queues the console welcome banner, and performs an initial
+ * TX flush so the banner is sent immediately.
  *
- * @returns void
+ * @returns true if console initialisation succeeds, otherwise false.
  */
 bool CONSOLE_Init( void )
 {
@@ -285,18 +387,21 @@ bool CONSOLE_Init( void )
         return false;
     }
 
-    s_line_len         = 0U;
-    s_last_was_newline = false;
+    s_tx_head = 0U;
+    s_tx_tail = 0U;
+    CONSOLE_Reset_Line_State();
 
     CONSOLE_Write_Raw( WELCOME_MESSAGE, sizeof( WELCOME_MESSAGE ) - 1U );
+    CONSOLE_Flush_Tx();
     return true;
 }
 
 /**
- * @brief Poll and process incoming console UART data.
+ * @brief Drain and process all currently available console RX data.
  *
- * Attempts to read a single byte from the console UART. If a byte is
- * available, it is forwarded to the console character processing logic.
+ * Repeatedly reads available bytes from the low-level console UART RX buffer
+ * into a small local buffer and forwards each byte to the console character
+ * processing logic until no unread data remains.
  *
  * @returns void
  */
@@ -382,7 +487,6 @@ void CONSOLE_Task( void* task_parameters )
 
     if ( !CONSOLE_Init() )
     {
-
         while ( true )
         {
             vTaskDelay( pdMS_TO_TICKS( 1000U ) );
@@ -390,9 +494,11 @@ void CONSOLE_Task( void* task_parameters )
     }
 
     TickType_t initial_ticks = xTaskGetTickCount();
+
     while ( true )
     {
         CONSOLE_Process();
+        CONSOLE_Flush_Tx();
         vTaskDelayUntil( &initial_ticks, pdMS_TO_TICKS( CONSOLE_TASK_PERIOD ) );
     }
 }
