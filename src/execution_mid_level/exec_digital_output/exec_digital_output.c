@@ -64,11 +64,11 @@ functions.
  *
  * This function wraps the HW_GPIO_set_pin( ... ) function.
  * It can be used to set a single output pin or many output pins (on the same port).
- * EXAMPLE: GPIO_SetToPort( {gpiox = GPIOA, pin_mask = LL_GPIO_PIN_5} ) sets LL_GPIO_PIN_5 of port A
+ * EXAMPLE: EXEC_set_pin( DIGITALoutput1 ) sets DIGITALoutput1 of port A
 high
- * EXAMPLE: GPIO_SetToPort( {gpiox = GPIOA, pin_mask = (LL_GPIO_PIN_5 | LL_GPIO_PIN_4) } ) sets
-LL_GPIO_PIN_5 and LL_GPIO_PIN_4 of port A high
- * Setting multiple pins works because LL_GPIO_PIN_5 and LL_GPIO_PIN_4 are just uint32_t
+ * EXAMPLE: EXEC_set_pin( { DIGITALoutput1, DIGITALoutput1 } ) sets
+DIGITALoutput1 and DIGITALoutput2 of port A high
+ * Setting multiple pins works because DIGITALoutput1 and DIGITALoutput1 under the hood are just uint32_t
  * in this case likely 0x0000_0020 0x0000_0010, so 0x0000_0030 is written to the BSR register
  * 0x0000_0030 = 0000_0000_0000_0000_0000_0000_0011_0000 setting pins 4 and 5 high
  * mocked using GoogleMock.
