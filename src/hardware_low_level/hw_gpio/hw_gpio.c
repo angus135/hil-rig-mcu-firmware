@@ -33,11 +33,6 @@
  *------------------------------------------------------------------------------
  */
 
-#ifdef TEST_BUILD
-#define LD1_GPIO_Port GPIOA;
-#define LD1_Pin 0;
-#endif
-
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -50,30 +45,7 @@ typedef struct GPIOPortPacket_T
 } GPIOPortPacket_T;
 
 GPIO_TypeDef* gpio_ports[] = {
-#ifdef GPIOA
-    GPIOA,
-#endif
-#ifdef GPIOB
-    GPIOB,
-#endif
-#ifdef GPIOC
-    GPIOC,
-#endif
-#ifdef GPIOD
-    GPIOD,
-#endif
-#ifdef GPIOE
-    GPIOE,
-#endif
-#ifdef GPIOF
-    GPIOF,
-#endif
-#ifdef GPIOG
-    GPIOG,
-#endif
-#ifdef GPIOH
-    GPIOH
-#endif
+    GPIOA, GPIOB, GPIOC, GPIOD, GPIOE, GPIOF, GPIOG, GPIOH,
 };
 
 #define NUM_GPIO_PORTS ( sizeof( gpio_ports ) / sizeof( gpio_ports[0] ) )
@@ -239,11 +211,11 @@ bool GPIO_StringToEnum( const char* str, GPIO_OUTPUT_NAMES* out )
 void HW_GPIO_set_pin( GPIO_OUTPUT_NAMES pin )
 {
 #ifndef TEST_BUILD
-    GPIOPortPacket_T pack = HW_GPIO_port_pin_association(pin);
+    GPIOPortPacket_T pack = HW_GPIO_port_pin_association( pin );
     HW_GPIO_SetToPort( pack.gpiox, pack.pin_mask );
     return;
 #endif
-    ( void )pin; // If testing then do nothing
+    ( void )pin;  // If testing then do nothing
 }
 
 /**
@@ -257,15 +229,15 @@ void HW_GPIO_set_pin( GPIO_OUTPUT_NAMES pin )
  */
 void HW_GPIO_set_many_pins( GPIO_OUTPUT_NAMES* pins, uint16_t length )
 {
-    #ifndef TEST_BUILD
+#ifndef TEST_BUILD
     GPIOPortPacket_T packs[MAX_NUM_GPIO_PORTS];
-    int num_ports = split_about_ports( pins, length, packs );
+    int              num_ports = split_about_ports( pins, length, packs );
     for ( int i = 0; i < num_ports; i++ )
     {
-        HW_GPIO_SetToPort(packs[i].gpiox, packs[i].pin_mask);
+        HW_GPIO_SetToPort( packs[i].gpiox, packs[i].pin_mask );
     }
-    #endif
-    ( void )pins; // If testing then do nothing
+#endif
+    ( void )pins;  // If testing then do nothing
 }
 
 /**
@@ -278,11 +250,11 @@ void HW_GPIO_set_many_pins( GPIO_OUTPUT_NAMES* pins, uint16_t length )
  */
 void HW_GPIO_reset_pin( GPIO_OUTPUT_NAMES pin )
 {
-    #ifndef TEST_BUILD
-    GPIOPortPacket_T pack = HW_GPIO_port_pin_association(pin);
+#ifndef TEST_BUILD
+    GPIOPortPacket_T pack = HW_GPIO_port_pin_association( pin );
     HW_GPIO_ResetToPort( pack.gpiox, pack.pin_mask );
-    #endif
-    ( void )pin; // If testing then do nothing
+#endif
+    ( void )pin;  // If testing then do nothing
 }
 
 /**
@@ -296,15 +268,15 @@ void HW_GPIO_reset_pin( GPIO_OUTPUT_NAMES pin )
  */
 void HW_GPIO_reset_many_pins( GPIO_OUTPUT_NAMES* pins, uint16_t length )
 {
-    #ifndef TEST_BUILD
+#ifndef TEST_BUILD
     GPIOPortPacket_T packs[MAX_NUM_GPIO_PORTS];
-    int num_ports = split_about_ports( pins, length, packs );
+    int              num_ports = split_about_ports( pins, length, packs );
     for ( int i = 0; i < num_ports; i++ )
     {
-        HW_GPIO_ResetToPort(packs[i].gpiox, packs[i].pin_mask);
+        HW_GPIO_ResetToPort( packs[i].gpiox, packs[i].pin_mask );
     }
-    #endif
-    ( void )pins; // If testing then do nothing
+#endif
+    ( void )pins;  // If testing then do nothing
 }
 
 /**
@@ -345,7 +317,7 @@ int split_about_ports( GPIO_OUTPUT_NAMES* gpio_names, uint16_t length,
     }
     for ( int i = 0; i < length; i++ )
     {
-        GPIO_Port_port_packet = HW_GPIO_port_pin_association( gpio_names[i] );
+        port_packet = HW_GPIO_port_pin_association( gpio_names[i] );
         for ( int j = 0; j < MAX_NUM_GPIO_PORTS; j++ )
         {
             if ( port_packet.gpiox == gpio_ports[j] )
