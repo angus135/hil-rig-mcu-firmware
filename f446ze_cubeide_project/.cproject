@@ -147,6 +147,7 @@
 									<listOptionValue builtIn="false" value="../../src/rtos"/>
 									<listOptionValue builtIn="false" value="../../src/run_state_manager"/>
 									<listOptionValue builtIn="false" value="../../src/system_monitoring"/>
+									<listOptionValue builtIn="false" value="../../src/feasibility_analyser"/>
 								</option>
 								<option id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.warnings.extra.903146420" name="Enable extra warning flags (-Wextra)" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.warnings.extra" useByScannerDiscovery="false" value="true" valueType="boolean"/>
 								<option id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.warnings.treataserror.1898837666" name="Treat warnings as errors (-Werror)" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.warnings.treataserror" useByScannerDiscovery="false" value="false" valueType="boolean"/>
@@ -331,6 +332,7 @@
 									<listOptionValue builtIn="false" value="../../src/rtos"/>
 									<listOptionValue builtIn="false" value="../../src/run_state_manager"/>
 									<listOptionValue builtIn="false" value="../../src/system_monitoring"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c.1711025851" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c"/>
 							</tool>
@@ -445,6 +447,38 @@
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_adc"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_i2c"/>
 									<listOptionValue builtIn="false" value="../../src/app_main"/>
+									<listOptionValue builtIn="false" value="../../src/buffer_manager"/>
+									<listOptionValue builtIn="false" value="../../src/background"/>
+									<listOptionValue builtIn="false" value="../../src/console"/>
+									<listOptionValue builtIn="false" value="../../src/execution_manager"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_analogue_input"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_analogue_output"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_can"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_digital_input"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_digital_output"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_pwm_capture"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_pwm_gen"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_spi"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_uart"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level"/>
+									<listOptionValue builtIn="false" value="../../src/external_flash"/>
+									<listOptionValue builtIn="false" value="../../src/feasibility_analyser"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_can"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_i2c"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_pwm_capture"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_pwm_gen"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_qspi"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_spi"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_usb"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_watchdog"/>
+									<listOptionValue builtIn="false" value="../../src/host_interface"/>
+									<listOptionValue builtIn="false" value="../../src/logic_expander"/>
+									<listOptionValue builtIn="false" value="../../src/power"/>
+									<listOptionValue builtIn="false" value="../../src/rtos"/>
+									<listOptionValue builtIn="false" value="../../src/run_state_manager"/>
+									<listOptionValue builtIn="false" value="../../src/system_monitoring"/>
+									<listOptionValue builtIn="false" value="../../src"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c.5211661" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c"/>
 							</tool>
@@ -555,6 +589,38 @@
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_adc"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_i2c"/>
 									<listOptionValue builtIn="false" value="../../src/app_main"/>
+									<listOptionValue builtIn="false" value="../../src/buffer_manager"/>
+									<listOptionValue builtIn="false" value="../../src/background"/>
+									<listOptionValue builtIn="false" value="../../src/console"/>
+									<listOptionValue builtIn="false" value="../../src/execution_manager"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_analogue_input"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_analogue_output"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_can"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_digital_input"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_digital_output"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_pwm_capture"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_pwm_gen"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_spi"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_uart"/>
+									<listOptionValue builtIn="false" value="../../src/execution_mid_level"/>
+									<listOptionValue builtIn="false" value="../../src/external_flash"/>
+									<listOptionValue builtIn="false" value="../../src/feasibility_analyser"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_can"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_i2c"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_pwm_capture"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_pwm_gen"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_qspi"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_spi"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_usb"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_watchdog"/>
+									<listOptionValue builtIn="false" value="../../src/host_interface"/>
+									<listOptionValue builtIn="false" value="../../src/logic_expander"/>
+									<listOptionValue builtIn="false" value="../../src/power"/>
+									<listOptionValue builtIn="false" value="../../src/rtos"/>
+									<listOptionValue builtIn="false" value="../../src/run_state_manager"/>
+									<listOptionValue builtIn="false" value="../../src/system_monitoring"/>
+									<listOptionValue builtIn="false" value="../../src"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c.1069875024" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c"/>
 							</tool>
