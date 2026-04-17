@@ -42,6 +42,8 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+typedef uint32_t DigitalOutputPinmask_T;
+
 typedef enum GPIO_T
 {
     GPIO_GREEN_LED_INDICATOR,
@@ -161,33 +163,6 @@ void HW_GPIO_reset_pin( GPIO_OUTPUT_NAMES pin );
  */
 void HW_GPIO_reset_many_pins( GPIO_OUTPUT_NAMES* pins, uint16_t length );
 
-
-#ifndef TEST_BUILD
-/**
- * @brief takes a list of GPIO names and splits them into their ports.
- *
- * @param gpio_names   an array of GPIO pin names, all of which are on the same port
- * @param length       the nubmer of GPIO_T in gpio_names
- * @param destination  pointer to space for 8 GPIOPortPacket_T packets (to be written to)
- *
- * @return returns the port and a combined pin mask, if fault return {GPIOA, 0xFFFFFFFF}
- * mocked using GoogleMock.
- * This function is designed to split split pins into groups based on their ports
- * because we can write to an entire port at once this increases speed.
- * EXAMPLE: If we want to set DIGITALOUT0, DIGITALOUT1 and DIGITALOUT2, but DIGITALOUT2 uses a
-different port,
-GPIO_OUTPUT_NAMES* my_arr = [ DIGITALOUT0, DIGITALOUT1, DIGITALOUT2 ]
-GPIOPortPacket_T destination[8];
-split_about_ports(my_arr, 3, destination);
-// we dont HAVE to go through all 8 ports (as only 2 are used) but for examples sake we can
-for (int i=0; i<8; i++){
-    HW_GPIO_SetToPort(destination[i].gpiox, destination[i].pin_mask)
-}
-HW_GPIO_SetToPort(p.gpiox, p.pin_mask)
- */
-int split_about_ports( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length,
-                       GPIOPortPacket_T* destination );
-
 /**
  * @brief combines many GPIO's (on the same port) into one pin mask.
  *
@@ -208,21 +183,7 @@ if (p.pin_mask == 0xFFFF0000){
 }
  * mocked using GoogleMock.
  */
-GPIOPortPacket_T combine_port_pin_masks( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length );
-
-/**
- * @brief Returns the hardware port and pin associated with the  software pin name passed into it
- *
- * @param gpio_name     The name of the GPIO pin as defined in hw_gpio.h GPIO_OUTPUT_NAMES
- *
- *
- * This function maps the (software) GPIO pin name defined in hw_gpio.h GPIO_OUTPUT_NAMES
- * to the mathcing (hardware) GPIO port and GPIO pin number
- * as defined in f446ze_cubeide_project/Core/Inc/main.h to the
- * mocked using GoogleMock.
- */
-GPIOPortPacket_T HW_GPIO_port_pin_association( GPIO_OUTPUT_NAMES gpio_name );
-#endif
+DigitalOutputPinmask_T combine_port_pin_masks( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length );
 
 
 #ifdef __cplusplus

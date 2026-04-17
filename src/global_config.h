@@ -27,6 +27,7 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 #define GLOBAL_CONFIG__CONSOLE_ENABLED ( 1 )  // Enables or disables the console
+#define GLOBAL_CONFIG__DIGITAL_OUTPUT_ONE_PORT ( 0 )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
