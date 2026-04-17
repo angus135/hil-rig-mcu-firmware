@@ -229,7 +229,7 @@ static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] )
             return;
         }
 
-        HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, ( const uint8_t* ) argv[2], strlen( argv[2] ) );
+        HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, ( const uint8_t* )argv[2], strlen( argv[2] ) );
         HW_SPI_Tx_Trigger( SPI_CHANNEL_0 );
 
         CONSOLE_Printf( "SPI loopback run started with message: %s\r\n", argv[2] );
@@ -242,17 +242,15 @@ static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] )
         /* First span */
         if ( message.first_span.length_bytes > 0U )
         {
-            CONSOLE_Printf( "%.*s",
-                            ( int ) message.first_span.length_bytes,
-                            ( const char* ) message.first_span.data );
+            CONSOLE_Printf( "%.*s", ( int )message.first_span.length_bytes,
+                            ( const char* )message.first_span.data );
         }
 
         /* Second span (only valid if wrapped) */
         if ( message.second_span.length_bytes > 0U )
         {
-            CONSOLE_Printf( "%.*s",
-                            ( int ) message.second_span.length_bytes,
-                            ( const char* ) message.second_span.data );
+            CONSOLE_Printf( "%.*s", ( int )message.second_span.length_bytes,
+                            ( const char* )message.second_span.data );
         }
 
         CONSOLE_Printf( "\r\n" );
