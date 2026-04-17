@@ -54,12 +54,12 @@
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
-inline void GPIO_SetToPort( GPIO_PORT_PACKET gpio_pack )
+inline void GPIO_SetToPort( GPIOPortPacket_T gpio_pack )
 {
     HW_GPIO_SetToPort( gpio_pack.gpiox, gpio_pack.pin_mask );
 }
 
-inline void GPIO_ResetToPort( GPIO_PORT_PACKET gpio_pack )
+inline void GPIO_ResetToPort( GPIOPortPacket_T gpio_pack )
 {
     HW_GPIO_ResetToPort( gpio_pack.gpiox, gpio_pack.pin_mask );
 }
