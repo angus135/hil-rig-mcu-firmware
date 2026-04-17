@@ -85,6 +85,7 @@
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_uart"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_adc"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_i2c"/>
+									<listOptionValue builtIn="false" value="../../src/app_main"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input.675227244" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input"/>
 							</tool>
@@ -269,6 +270,7 @@
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_uart"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_adc"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_i2c"/>
+									<listOptionValue builtIn="false" value="../../src/app_main"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input.1805602567" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input"/>
 							</tool>
@@ -293,12 +295,11 @@
 									<listOptionValue builtIn="false" value="../Middlewares/ST/STM32_USB_Device_Library/Core/Inc"/>
 									<listOptionValue builtIn="false" value="../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc"/>
 									<listOptionValue builtIn="false" value="../../src"/>
-									<listOptionValue builtIn="false" value="../../src/hardware"/>
+									<listOptionValue builtIn="false" value="../../src/app_main"/>
 									<listOptionValue builtIn="false" value="../../src/background"/>
-									<listOptionValue builtIn="false" value="../../src/rtos"/>
+									<listOptionValue builtIn="false" value="../../src/buffer_manager"/>
 									<listOptionValue builtIn="false" value="../../src/console"/>
 									<listOptionValue builtIn="false" value="../../src/execution_manager"/>
-									<listOptionValue builtIn="false" value="../../src/buffer_manager"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_analogue_input"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_analogue_output"/>
@@ -327,6 +328,7 @@
 									<listOptionValue builtIn="false" value="../../src/host_interface"/>
 									<listOptionValue builtIn="false" value="../../src/logic_expander"/>
 									<listOptionValue builtIn="false" value="../../src/power"/>
+									<listOptionValue builtIn="false" value="../../src/rtos"/>
 									<listOptionValue builtIn="false" value="../../src/run_state_manager"/>
 									<listOptionValue builtIn="false" value="../../src/system_monitoring"/>
 								</option>
@@ -412,6 +414,7 @@
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_uart"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_adc"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_i2c"/>
+									<listOptionValue builtIn="false" value="../../src/app_main"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input.739291435" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input"/>
 							</tool>
@@ -441,6 +444,7 @@
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_uart"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_adc"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_i2c"/>
+									<listOptionValue builtIn="false" value="../../src/app_main"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c.5211661" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c"/>
 							</tool>
@@ -521,6 +525,7 @@
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_uart"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_adc"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_i2c"/>
+									<listOptionValue builtIn="false" value="../../src/app_main"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input.133385933" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input"/>
 							</tool>
@@ -549,6 +554,7 @@
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_uart"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_adc"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_i2c"/>
+									<listOptionValue builtIn="false" value="../../src/app_main"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c.1069875024" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c"/>
 							</tool>
