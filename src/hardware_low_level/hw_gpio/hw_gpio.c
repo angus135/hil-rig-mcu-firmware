@@ -138,6 +138,65 @@ static GPIOPortPacket_T HW_GPIO_port_pin_association( GPIO_OUTPUT_NAMES gpio_nam
     }
 }
 
+/**
+ * @brief takes a list of GPIO names and splits them into their ports.
+ *
+ * @param gpio_names   an array of GPIO pin names, all of which are on the same port
+ * @param length       the nubmer of GPIO_T in gpio_names
+ * @param destination  pointer to space for 8 GPIOPortPacket_T packets (to be written to)
+ *
+ * @return returns the number of GPIOPortPacket_T written to destination
+ * This function is designed to split split pins into groups based on their ports
+ * because we can write to an entire port at once this increases speed.
+ * EXAMPLE: If we want to set DIGITALOUT0, DIGITALOUT1 and DIGITALOUT2, but DIGITALOUT2 uses a
+different port,
+GPIO_OUTPUT_NAMES* my_arr = { DIGITALOUT0, DIGITALOUT1, DIGITALOUT2 };
+GPIOPortPacket_T destination[8];
+split_about_ports(my_arr, 3, destination);
+// we dont HAVE to go through all 8 ports (as only 2 are used) but for examples sake we can
+for (int i=0; i<8; i++){
+    HW_GPIO_SetToPort(destination[i].gpiox, destination[i].pin_mask)
+}
+HW_GPIO_SetToPort(p.gpiox, p.pin_mask)
+ */
+int split_about_ports( GPIO_OUTPUT_NAMES* gpio_names, uint16_t length,
+                       GPIOPortPacket_T* destination )
+{
+    GPIOPortPacket_T port_packet;
+    GPIOPortPacket_T temp[MAX_NUM_GPIO_PORTS];
+    int              counter = 0;
+    // reset data at destination
+    for ( int j = 0; j < MAX_NUM_GPIO_PORTS; j++ )
+    {
+        destination[j].gpiox =
+            gpio_ports[j];  // reset ports, destination[0] = GPIOA, destination[1] = GPIOB etc
+        destination[j].pin_mask = 0;       // reset pin masks
+        temp[j].gpiox    = gpio_ports[j];  // reset ports, temp[0] = GPIOA, temp[1] = GPIOB etc
+        temp[j].pin_mask = 0;              // reset pin masks
+    }
+    for ( int i = 0; i < length; i++ )
+    {
+        port_packet = HW_GPIO_port_pin_association( gpio_names[i] );
+        for ( int j = 0; j < MAX_NUM_GPIO_PORTS; j++ )
+        {
+            if ( port_packet.gpiox == gpio_ports[j] )
+            {
+                temp[j].pin_mask = temp[j].pin_mask | port_packet.pin_mask;
+                break;
+            }
+        }
+    }
+    for ( int k = 0; k < MAX_NUM_GPIO_PORTS; k++ )
+    {
+        if ( temp[k].pin_mask != 0 )
+        {
+            destination[counter] = temp[k];
+            counter += 1;
+        }
+    }
+    return counter;
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
@@ -277,65 +336,6 @@ void HW_GPIO_reset_many_pins( GPIO_OUTPUT_NAMES* pins, uint16_t length )
     }
 #endif
     ( void )pins;  // If testing then do nothing
-}
-
-/**
- * @brief takes a list of GPIO names and splits them into their ports.
- *
- * @param gpio_names   an array of GPIO pin names, all of which are on the same port
- * @param length       the nubmer of GPIO_T in gpio_names
- * @param destination  pointer to space for 8 GPIOPortPacket_T packets (to be written to)
- *
- * @return returns the number of GPIOPortPacket_T written to destination
- * This function is designed to split split pins into groups based on their ports
- * because we can write to an entire port at once this increases speed.
- * EXAMPLE: If we want to set DIGITALOUT0, DIGITALOUT1 and DIGITALOUT2, but DIGITALOUT2 uses a
-different port,
-GPIO_OUTPUT_NAMES* my_arr = { DIGITALOUT0, DIGITALOUT1, DIGITALOUT2 };
-GPIOPortPacket_T destination[8];
-split_about_ports(my_arr, 3, destination);
-// we dont HAVE to go through all 8 ports (as only 2 are used) but for examples sake we can
-for (int i=0; i<8; i++){
-    HW_GPIO_SetToPort(destination[i].gpiox, destination[i].pin_mask)
-}
-HW_GPIO_SetToPort(p.gpiox, p.pin_mask)
- */
-int split_about_ports( GPIO_OUTPUT_NAMES* gpio_names, uint16_t length,
-                       GPIOPortPacket_T* destination )
-{
-    GPIOPortPacket_T port_packet;
-    GPIOPortPacket_T temp[MAX_NUM_GPIO_PORTS];
-    int              counter = 0;
-    // reset data at destination
-    for ( int j = 0; j < MAX_NUM_GPIO_PORTS; j++ )
-    {
-        destination[j].gpiox =
-            gpio_ports[j];  // reset ports, destination[0] = GPIOA, destination[1] = GPIOB etc
-        destination[j].pin_mask = 0;       // reset pin masks
-        temp[j].gpiox    = gpio_ports[j];  // reset ports, temp[0] = GPIOA, temp[1] = GPIOB etc
-        temp[j].pin_mask = 0;              // reset pin masks
-    }
-    for ( int i = 0; i < length; i++ )
-    {
-        port_packet = HW_GPIO_port_pin_association( gpio_names[i] );
-        for ( int j = 0; j < MAX_NUM_GPIO_PORTS; j++ )
-        {
-            if ( port_packet.gpiox == gpio_ports[j] )
-            {
-                temp[j].pin_mask = temp[j].pin_mask | port_packet.pin_mask;
-                break;
-            }
-        }
-    }
-    for ( int k = 0; k < MAX_NUM_GPIO_PORTS; k++ )
-    {
-        if ( temp[k].pin_mask != 0 )
-        {
-            destination[counter] = temp[k];
-            counter += 1;
-        }
-    }
-    return counter;
 }
 
 /**
