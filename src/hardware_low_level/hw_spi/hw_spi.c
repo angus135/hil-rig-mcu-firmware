@@ -546,7 +546,8 @@ void HW_SPI_Start_Channel( SPIPeripheral_T peripheral )
         default:
             return;
     }
-
+    NVIC_DisableIRQ( SPI_CHANNEL_0_RX_DMA_IRQN );
+    NVIC_DisableIRQ( SPI_CHANNEL_1_RX_DMA_IRQN );
     HAL_SPI_Receive_DMA( hspi, rx_buffer, RX_BUFFER_SIZE_BYTES );
 }
 
