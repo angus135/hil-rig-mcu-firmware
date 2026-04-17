@@ -31,6 +31,7 @@ target_link_libraries(console
         rtos
         exec_uart
         hw_uart
+        hw_spi
         execution_manager
 )
 

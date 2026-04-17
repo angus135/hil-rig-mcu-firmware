@@ -204,6 +204,119 @@ static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] )
 }
 
 /**
+ * @brief Handles the SPI loopback command
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
+static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] )
+{
+    if ( argc < 2 || argv[1] == NULL )
+    {
+        CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  spi_loop run <message>\r\n" );
+        CONSOLE_Printf( "  spi_loop config <channel> <master|slave>\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "run" ) == 0 )
+    {
+        if ( argc < 3 || argv[2] == NULL )
+        {
+            CONSOLE_Printf( "Usage: spi_loop run <message>\r\n" );
+            return;
+        }
+
+        HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, ( const uint8_t* ) argv[2], strlen( argv[2] ) );
+        HW_SPI_Tx_Trigger( SPI_CHANNEL_0 );
+
+        CONSOLE_Printf( "SPI loopback run started with message: %s\r\n", argv[2] );
+        vTaskDelay( 100 );
+        HWSPIRxSpans_T message = HW_SPI_Rx_Peek( SPI_CHANNEL_1 );
+        HW_SPI_Rx_Consume( SPI_CHANNEL_1, message.total_length_bytes );
+
+        CONSOLE_Printf( "Received (%lu bytes): ", message.total_length_bytes );
+
+        /* First span */
+        if ( message.first_span.length_bytes > 0U )
+        {
+            CONSOLE_Printf( "%.*s",
+                            ( int ) message.first_span.length_bytes,
+                            ( const char* ) message.first_span.data );
+        }
+
+        /* Second span (only valid if wrapped) */
+        if ( message.second_span.length_bytes > 0U )
+        {
+            CONSOLE_Printf( "%.*s",
+                            ( int ) message.second_span.length_bytes,
+                            ( const char* ) message.second_span.data );
+        }
+
+        CONSOLE_Printf( "\r\n" );
+    }
+    else if ( strcmp( argv[1], "config" ) == 0 )
+    {
+        if ( argc < 4 || argv[2] == NULL || argv[3] == NULL )
+        {
+            CONSOLE_Printf( "Usage: spi_loop config <channel> <master|slave>\r\n" );
+            return;
+        }
+
+        SPIPeripheral_T peripheral = SPI_CHANNEL_0;
+        HWSPIConfig_T   configuration;
+
+        if ( strcmp( argv[2], "0" ) == 0 )
+        {
+            peripheral = SPI_CHANNEL_0;
+        }
+        else
+        {
+            peripheral = SPI_CHANNEL_1;
+        }
+
+        if ( strcmp( argv[3], "master" ) == 0 )
+        {
+            configuration.spi_mode = SPI_MASTER_MODE;
+        }
+        else if ( strcmp( argv[3], "slave" ) == 0 )
+        {
+            configuration.spi_mode = SPI_SLAVE_MODE;
+        }
+        else
+        {
+            CONSOLE_Printf( "Invalid mode: %s\r\nUse master or slave\r\n", argv[3] );
+            return;
+        }
+
+        configuration.data_size = SPI_SIZE_8_BIT;
+        configuration.first_bit = SPI_FIRST_MSB;
+        configuration.baud_rate = SPI_BAUD_352KBIT;
+        configuration.cpol      = SPI_CPOL_LOW;
+        configuration.cpha      = SPI_CPHA_1_EDGE;
+
+        if ( HW_SPI_Configure_Channel( peripheral, configuration ) == false )
+        {
+            CONSOLE_Printf( "Failed to configure SPI channel %s\r\n", argv[2] );
+            return;
+        }
+
+        HW_SPI_Start_Channel( peripheral );
+
+        CONSOLE_Printf( "Configured SPI channel %s as %s\r\n", argv[2], argv[3] );
+    }
+    else
+    {
+        CONSOLE_Printf( "Unknown action: %s\r\n", argv[1] );
+        CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  spi_loop run <message>\r\n" );
+        CONSOLE_Printf( "  spi_loop config <channel> <master|slave>\r\n" );
+    }
+}
+
+/**
  * @brief Handles the LED toggle command
  *
  * @param argc - The number of arguments
