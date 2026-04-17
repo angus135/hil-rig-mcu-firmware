@@ -18,8 +18,6 @@ extern "C"
 {
 #endif
 
-
-
 /**-----------------------------------------------------------------------------
  *  Includes
  *------------------------------------------------------------------------------
@@ -184,7 +182,6 @@ if (p.pin_mask == 0xFFFF0000){
  * mocked using GoogleMock.
  */
 DigitalOutputPinmask_T combine_port_pin_masks( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length );
-
 
 #ifdef __cplusplus
 }
