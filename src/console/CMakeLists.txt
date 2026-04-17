@@ -32,7 +32,11 @@ target_link_libraries(console
         rtos
         exec_uart
         hw_uart
+<<<<<<< HEAD
         hw_adc
+=======
+        hw_spi
+>>>>>>> 499dfb5 (DEV-78 SPI)
         execution_manager
         exec_digital_input
         hw_gpio
