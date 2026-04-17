@@ -77,9 +77,9 @@ LL_GPIO_PIN_5 and LL_GPIO_PIN_4 of port A high
  * By doing so, we can set all the outputs in a single hardware access.
  * functions exist in hardware_low_level/hw_gpio.c to help manage ports
  */
-inline void GPIO_SetToPort( GPIO_PORT_PACKET gpio_pack)
+inline void GPIO_SetToPort( GPIO_PORT_PACKET gpio_pack )
 {
-    HW_GPIO_SetToPort(gpio_pack.gpiox, gpio_pack.pin_mask);
+    HW_GPIO_SetToPort( gpio_pack.gpiox, gpio_pack.pin_mask );
 }
 
 /**
@@ -105,7 +105,5 @@ LL_GPIO_PIN_5 and LL_GPIO_PIN_4 of port A high
  */
 inline void GPIO_ResetToPort( GPIO_PORT_PACKET gpio_pack )
 {
-    HW_GPIO_ResetToPort(gpio_pack.gpiox, gpio_pack.pin_mask);
+    HW_GPIO_ResetToPort( gpio_pack.gpiox, gpio_pack.pin_mask );
 }
-
-

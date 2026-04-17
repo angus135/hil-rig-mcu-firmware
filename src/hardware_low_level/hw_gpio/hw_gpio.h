@@ -47,47 +47,49 @@ typedef enum GPIO_T
 
 typedef enum GPIO_OUTPUT_NAMES
 {
-    DIGITALOUT0,    // Added by Tim for DEV-68
-    DIGITALOUT1,    // Added by Tim for DEV-68
-    DIGITALOUT2,    // Added by Tim for DEV-68
-    DIGITALOUT3,    // Added by Tim for DEV-68
-    DIGITALOUT4,    // Added by Tim for DEV-68
-    DIGITALOUT5,    // Added by Tim for DEV-68
-    DIGITALOUT6,    // Added by Tim for DEV-68
-    DIGITALOUT7,    // Added by Tim for DEV-68
-    DIGITALOUT8,    // Added by Tim for DEV-68
-    DIGITALOUT9,    // Added by Tim for DEV-68
-    UART_TTL_3V3_EN,    // Added by Tim as an example, whoever does UART should replace
-    UART_TTL_5V_EN,      // Added by Tim as an example, whoever does UART should replace
-    LD2,            // Added by Tim for DEV-68
-    LD3             // Added by Tim for DEV-68
+    DIGITALOUT0,      // Added by Tim for DEV-68
+    DIGITALOUT1,      // Added by Tim for DEV-68
+    DIGITALOUT2,      // Added by Tim for DEV-68
+    DIGITALOUT3,      // Added by Tim for DEV-68
+    DIGITALOUT4,      // Added by Tim for DEV-68
+    DIGITALOUT5,      // Added by Tim for DEV-68
+    DIGITALOUT6,      // Added by Tim for DEV-68
+    DIGITALOUT7,      // Added by Tim for DEV-68
+    DIGITALOUT8,      // Added by Tim for DEV-68
+    DIGITALOUT9,      // Added by Tim for DEV-68
+    UART_TTL_3V3_EN,  // Added by Tim as an example, whoever does UART should replace
+    UART_TTL_5V_EN,   // Added by Tim as an example, whoever does UART should replace
+    LD2,              // Added by Tim for DEV-68
+    LD3               // Added by Tim for DEV-68
 } GPIO_OUTPUT_NAMES;
 
-typedef struct {
-    const char* name;
+typedef struct
+{
+    const char*       name;
     GPIO_OUTPUT_NAMES value;
 } GPIO_Name_Map;
 
 static const GPIO_Name_Map gpio_name_map[] = {
-    {"DIGITALOUT0", DIGITALOUT0},
-    {"DIGITALOUT1", DIGITALOUT1},
-    {"DIGITALOUT2", DIGITALOUT2},
-    {"DIGITALOUT3", DIGITALOUT3},
-    {"DIGITALOUT4", DIGITALOUT4},
-    {"DIGITALOUT5", DIGITALOUT5},
-    {"DIGITALOUT6", DIGITALOUT6},
-    {"DIGITALOUT7", DIGITALOUT7},
-    {"DIGITALOUT8", DIGITALOUT8},
-    {"DIGITALOUT9", DIGITALOUT9},
-    {"UART_TTL_3V3_EN", UART_TTL_3V3_EN},
-    {"UART_TTL_5V_EN", UART_TTL_5V_EN},
-    {"LD2", LD2},
-    {"LD3", LD3},
+    { "DIGITALOUT0", DIGITALOUT0 },
+    { "DIGITALOUT1", DIGITALOUT1 },
+    { "DIGITALOUT2", DIGITALOUT2 },
+    { "DIGITALOUT3", DIGITALOUT3 },
+    { "DIGITALOUT4", DIGITALOUT4 },
+    { "DIGITALOUT5", DIGITALOUT5 },
+    { "DIGITALOUT6", DIGITALOUT6 },
+    { "DIGITALOUT7", DIGITALOUT7 },
+    { "DIGITALOUT8", DIGITALOUT8 },
+    { "DIGITALOUT9", DIGITALOUT9 },
+    { "UART_TTL_3V3_EN", UART_TTL_3V3_EN },
+    { "UART_TTL_5V_EN", UART_TTL_5V_EN },
+    { "LD2", LD2 },
+    { "LD3", LD3 },
 };
 
-typedef struct GPIO_PORT_PACKET{
+typedef struct GPIO_PORT_PACKET
+{
     GPIO_TypeDef* gpiox;
-    uint32_t pin_mask;
+    uint32_t      pin_mask;
 } GPIO_PORT_PACKET;
 
 /**-----------------------------------------------------------------------------
@@ -105,7 +107,7 @@ typedef struct GPIO_PORT_PACKET{
  * This function is designed to split split pins into groups based on their ports
  * because we can write to an entire port at once this increases speed.
  */
-bool GPIO_StringToEnum(const char* str, GPIO_OUTPUT_NAMES* out);
+bool GPIO_StringToEnum( const char* str, GPIO_OUTPUT_NAMES* out );
 
 /**
  * @brief Toggles a digital output using the underlying GPIO HAL.
@@ -135,12 +137,13 @@ GPIO_OUTPUT_NAMES* my_arr = [ DIGITALOUT0, DIGITALOUT1, DIGITALOUT2 ]
 GPIO_PORT_PACKET destination[8];
 split_about_ports(my_arr, 3, destination);
 // we dont HAVE to go through all 8 ports (as only 2 are used) but for examples sake we can
-for (int i=0; i<8; i++){  
+for (int i=0; i<8; i++){
     HW_GPIO_SetToPort(destination[i].gpiox, destination[i].pin_mask)
 }
 HW_GPIO_SetToPort(p.gpiox, p.pin_mask)
  */
-int split_about_ports( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length, GPIO_PORT_PACKET* destination);
+int split_about_ports( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length,
+                       GPIO_PORT_PACKET* destination );
 
 /**
  * @brief combines many GPIO's (on the same port) into one pin mask.
