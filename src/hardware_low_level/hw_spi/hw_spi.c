@@ -110,30 +110,81 @@ SPIPeripheralState_T* dac_state              = &dac_state_struct;
  *------------------------------------------------------------------------------
  */
 
-static inline void HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral );
+static inline SPIPeripheralState_T* HW_SPI_Get_State( SPIPeripheral_T peripheral );
+static void                         HW_SPI_TX_Error_Handler( SPIPeripheral_T peripheral );
+static inline void                  HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
 
-static inline void HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral )
+static inline SPIPeripheralState_T* HW_SPI_Get_State( SPIPeripheral_T peripheral )
 {
-    SPIPeripheralState_T* peripheral_state = NULL;
     switch ( peripheral )
     {
         case SPI_CHANNEL_0:
-            peripheral_state = channel_0_state;
-            break;
+            return channel_0_state;
+
         case SPI_CHANNEL_1:
-            peripheral_state = channel_1_state;
-            break;
+            return channel_1_state;
+
         case SPI_DAC:
-            peripheral_state = dac_state;
-            break;
+            return dac_state;
+
         default:
-            return;
+            return NULL;
     }
+}
+
+/**
+ * @brief Generic low-level TX DMA error handler.
+ *
+ * This function is called when a TX DMA transfer error is detected for a SPI
+ * channel. It stops the active TX DMA stream, disables the SPI TX DMA request,
+ * and clears the driver's in-flight TX tracking so higher-level software can
+ * decide how to recover.
+ *
+ * @param peripheral
+ *     The SPI peripheral/channel that encountered the TX DMA error.
+ */
+static void HW_SPI_TX_Error_Handler( SPIPeripheral_T peripheral )
+{
+    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
+    if ( peripheral_state == NULL )
+    {
+        return;
+    }
+
+    /*
+     * Stop further TX DMA activity for this channel.
+     */
+    LL_DMA_DisableIT_TC( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+    LL_DMA_DisableIT_TE( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+    LL_SPI_DisableDMAReq_TX( peripheral_state->spi_peripheral );
+    LL_DMA_DisableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+
+    while ( LL_DMA_IsEnabledStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream )
+            != 0U )
+    {
+    }
+
+    /*
+     * Drop knowledge of the currently active transfer. The queued buffer
+     * positions are left unchanged so a higher layer may inspect or recover.
+     */
+    peripheral_state->tx_num_in_transmission = 0U;
+
+    /*
+     * TODO:
+     * Add fault logging, error counters, or escalation here if desired.
+     */
+}
+
+static inline void HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral )
+{
+    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
+
     /*
      * Advance the software read position past the bytes that have just finished
      * transmitting.
@@ -180,12 +231,16 @@ static inline void HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral )
     LL_DMA_SetDataLength( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
                           bytes_remaining );  // TODO: Adjust based on element size
 
+    /*
+     * Mark the transfer as active before enabling the stream so software state
+     * already reflects "busy" if anything else inspects it immediately.
+     */
+    peripheral_state->tx_num_in_transmission = bytes_remaining;
+
     LL_SPI_EnableDMAReq_TX( peripheral_state->spi_peripheral );
     LL_DMA_EnableIT_TC( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
     LL_DMA_EnableIT_TE( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
     LL_DMA_EnableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
-
-    peripheral_state->tx_num_in_transmission = bytes_remaining;
 }
 
 /**-----------------------------------------------------------------------------
@@ -200,21 +255,62 @@ void SPI_CHANNEL_1_RX_DMA_IRQ( void )
 {
 }
 
-void SPI_CHANNEL_0_TX_DMA_IRQ( void )
+void SPI_CHANNEL_0_TX_DMA_IRQ(
+    void )  // TODO: If the DMA stream/channel changes, will need to change TE3/TC3 etc.
 {
-    HW_SPI_TX_IRQ_Handler( SPI_CHANNEL_0 );
+    /*
+     * Handle transfer error first. If both TE and TC are somehow latched, error
+     * handling wins and no normal completion processing is performed.
+     */
+    if ( LL_DMA_IsActiveFlag_TE3( SPI_CHANNEL_0_TX_DMA ) != 0U )
+    {
+        LL_DMA_ClearFlag_TE3( SPI_CHANNEL_0_TX_DMA );
+        HW_SPI_TX_Error_Handler( SPI_CHANNEL_0 );
+        return;
+    }
+
+    if ( LL_DMA_IsActiveFlag_TC3( SPI_CHANNEL_0_TX_DMA ) != 0U )
+    {
+        LL_DMA_ClearFlag_TC3( SPI_CHANNEL_0_TX_DMA );
+        HW_SPI_TX_IRQ_Handler( SPI_CHANNEL_0 );
+        return;
+    }
 }
 
-void SPI_CHANNEL_1_TX_DMA_IRQ( void )
+void SPI_CHANNEL_1_TX_DMA_IRQ(
+    void )  // TODO: If the DMA stream/channel changes, will need to change TE3/TC3 etc.
 {
-    HW_SPI_TX_IRQ_Handler( SPI_CHANNEL_1 );
+    if ( LL_DMA_IsActiveFlag_TE1( SPI_CHANNEL_1_TX_DMA ) != 0U )
+    {
+        LL_DMA_ClearFlag_TE1( SPI_CHANNEL_1_TX_DMA );
+        HW_SPI_TX_Error_Handler( SPI_CHANNEL_1 );
+        return;
+    }
+
+    if ( LL_DMA_IsActiveFlag_TC1( SPI_CHANNEL_1_TX_DMA ) != 0U )
+    {
+        LL_DMA_ClearFlag_TC1( SPI_CHANNEL_1_TX_DMA );
+        HW_SPI_TX_IRQ_Handler( SPI_CHANNEL_1 );
+        return;
+    }
 }
 
 // Note: Not implemented yet as Channel 1 and DAC are on the same port right now.
 // void SPI_DAC_TX_DMA_IRQ( void )
 // {
-//     HW_SPI_TX_IRQ_Handler( SPI_DAC );
-
+//     if ( LL_DMA_IsActiveFlag_TE1( SPI_DAC_TX_DMA ) != 0U )
+//     {
+//         LL_DMA_ClearFlag_TE1( SPI_DAC_TX_DMA );
+//         HW_SPI_TX_Error_Handler( SPI_DAC );
+//         return;
+//     }
+//
+//     if ( LL_DMA_IsActiveFlag_TC1( SPI_DAC_TX_DMA ) != 0U )
+//     {
+//         LL_DMA_ClearFlag_TC1( SPI_DAC_TX_DMA );
+//         HW_SPI_TX_IRQ_Handler( SPI_DAC );
+//         return;
+//     }
 // }
 
 /**
@@ -671,44 +767,27 @@ void HW_SPI_Rx_Consume( SPIPeripheral_T peripheral, uint32_t bytes_to_consume )
  */
 bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uint32_t size )
 {
-    // Pointer to variable to update
-    uint32_t* spi_tx_write_position = NULL;
-    // Pointer to start of buffer
-    uint8_t* spi_tx_buffer = NULL;
-    // IRQ number for DMA to disable interrupts for preventing race condition.
-    IRQn_Type dma_irq = OTG_HS_IRQn;  // Default interrupt that we don't use in project
-    switch ( peripheral )
-    {
-        case SPI_CHANNEL_0:
-            spi_tx_write_position = &( channel_0_state->tx_write_position );
-            spi_tx_buffer         = ( channel_0_state->tx_buffer );
-            dma_irq               = channel_0_state->tx_dma_irqn;
-            break;
-        case SPI_CHANNEL_1:
-            spi_tx_write_position = &( channel_1_state->tx_write_position );
-            spi_tx_buffer         = ( channel_1_state->tx_buffer );
-            dma_irq               = channel_1_state->tx_dma_irqn;
-            break;
-        case SPI_DAC:
-            spi_tx_write_position = &( dac_state->tx_write_position );
-            spi_tx_buffer         = ( dac_state->tx_buffer );
-            dma_irq               = dac_state->tx_dma_irqn;
-            break;
-        default:
-            return false;
-    }
-    // Exit if trying to load a message that exceeds buffer size.
-    // Note: this may also occur if there are a bunch of messages in the queue that haven't been
-    // cleared yet, in which case should also fail.
-    if ( *spi_tx_write_position + size > TX_BUFFER_SIZE_BYTES )
+    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
+    if ( peripheral_state == NULL )
     {
         return false;
     }
+
+    NVIC_DisableIRQ(
+        peripheral_state->tx_dma_irqn );  //  Need to disable IRQ to prevent race condition with ISR
+
+    // Exit if trying to load a message that exceeds buffer size.
+    // Note: this may also occur if there are a bunch of messages in the queue that haven't been
+    // cleared yet, in which case should also fail.
+    if ( peripheral_state->tx_write_position + size > TX_BUFFER_SIZE_BYTES )
+    {
+        NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
+        return false;
+    }
     // Copying data into buffer and updating write pointer.
-    NVIC_DisableIRQ( dma_irq );  //  Need to disable IRQ to prevent race condition with ISR
-    memcpy( &( spi_tx_buffer[*spi_tx_write_position] ), data, size );
-    *spi_tx_write_position = *spi_tx_write_position + size;
-    NVIC_EnableIRQ( dma_irq );
+    memcpy( &( peripheral_state->tx_buffer[peripheral_state->tx_write_position] ), data, size );
+    peripheral_state->tx_write_position = peripheral_state->tx_write_position + size;
+    NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
     return true;
 }
 
@@ -742,25 +821,18 @@ bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uin
  */
 void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral )
 {
-    SPIPeripheralState_T* peripheral_state = NULL;
-    switch ( peripheral )
-    {
-        case SPI_CHANNEL_0:
-            peripheral_state = channel_0_state;
-            break;
-        case SPI_CHANNEL_1:
-            peripheral_state = channel_1_state;
-            break;
-        case SPI_DAC:
-            peripheral_state = dac_state;
-            break;
-        default:
-            return;
-    }
+    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
+
+    /*
+     * Protect against a race with the TX DMA IRQ handler. We only disable the
+     * specific DMA IRQ for this channel, not global interrupts.
+     */
+    NVIC_DisableIRQ( peripheral_state->tx_dma_irqn );
 
     // If DMA is already active or there is nothing to send then return
     if ( peripheral_state->tx_num_in_transmission > 0 || peripheral_state->tx_write_position == 0 )
     {
+        NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
         return;
     }
 
@@ -769,6 +841,34 @@ void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral )
     while ( LL_DMA_IsEnabledStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream )
             != 0U )
     {
+    }
+
+    /*
+     * Clear any stale terminal flags before starting a fresh transfer.
+     * These are stream-specific and should be adjusted if the stream mapping
+     * changes.
+     */
+    // TODO: If the DMA stream/channel changes, will need to change TE3/TC3 etc.
+    switch ( peripheral )
+    {
+        case SPI_CHANNEL_0:
+            LL_DMA_ClearFlag_TC3( peripheral_state->tx_dma );
+            LL_DMA_ClearFlag_TE3( peripheral_state->tx_dma );
+            break;
+
+        case SPI_CHANNEL_1:
+            LL_DMA_ClearFlag_TC1( peripheral_state->tx_dma );
+            LL_DMA_ClearFlag_TE1( peripheral_state->tx_dma );
+            break;
+
+        case SPI_DAC:
+            LL_DMA_ClearFlag_TC1( peripheral_state->tx_dma );
+            LL_DMA_ClearFlag_TE1( peripheral_state->tx_dma );
+            break;
+
+        default:
+            NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
+            return;
     }
 
     LL_DMA_SetMemoryAddress(
@@ -788,4 +888,6 @@ void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral )
 
     peripheral_state->tx_num_in_transmission =
         peripheral_state->tx_write_position - peripheral_state->tx_read_position;
+
+    NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
 }
