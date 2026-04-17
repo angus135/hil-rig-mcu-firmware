@@ -30,8 +30,13 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+#define GPIOA ((GPIO_TypeDef *) ( 1 ))
 #define LD1_GPIO_Port GPIOA
 #define LD1_Pin 1
+#define LD1_GPIO_Port GPIOA
+#define LD1_Pin 2
+#define LD1_GPIO_Port GPIOA
+#define LD1_Pin 3
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
