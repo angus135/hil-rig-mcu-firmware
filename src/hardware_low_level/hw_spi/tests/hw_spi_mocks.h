@@ -509,6 +509,112 @@ void LL_DMA_EnableIT_TE( DMA_TypeDef* DMAx, uint32_t Stream );
 void LL_DMA_EnableStream( DMA_TypeDef* DMAx, uint32_t Stream );
 
 /**
+ * @brief Disable Transfer complete interrupt.
+ * @rmtoll CR        TCIE         LL_DMA_DisableIT_TC
+ * @param  DMAx DMAx Instance
+ * @param  Stream This parameter can be one of the following values:
+ *         @arg @ref LL_DMA_STREAM_0
+ *         @arg @ref LL_DMA_STREAM_1
+ *         @arg @ref LL_DMA_STREAM_2
+ *         @arg @ref LL_DMA_STREAM_3
+ *         @arg @ref LL_DMA_STREAM_4
+ *         @arg @ref LL_DMA_STREAM_5
+ *         @arg @ref LL_DMA_STREAM_6
+ *         @arg @ref LL_DMA_STREAM_7
+ * @retval None
+ */
+void LL_DMA_DisableIT_TC( DMA_TypeDef* DMAx, uint32_t Stream );
+
+/**
+ * @brief Disable Transfer error interrupt.
+ * @rmtoll CR        TEIE         LL_DMA_DisableIT_TE
+ * @param  DMAx DMAx Instance
+ * @param  Stream This parameter can be one of the following values:
+ *         @arg @ref LL_DMA_STREAM_0
+ *         @arg @ref LL_DMA_STREAM_1
+ *         @arg @ref LL_DMA_STREAM_2
+ *         @arg @ref LL_DMA_STREAM_3
+ *         @arg @ref LL_DMA_STREAM_4
+ *         @arg @ref LL_DMA_STREAM_5
+ *         @arg @ref LL_DMA_STREAM_6
+ *         @arg @ref LL_DMA_STREAM_7
+ * @retval None
+ */
+void LL_DMA_DisableIT_TE( DMA_TypeDef* DMAx, uint32_t Stream );
+
+/**
+ * @brief  Disable DMA Tx
+ * @rmtoll CR2          TXDMAEN       LL_SPI_DisableDMAReq_TX
+ * @param  SPIx SPI Instance
+ * @retval None
+ */
+void LL_SPI_DisableDMAReq_TX( SPI_TypeDef* SPIx );
+
+/**
+ * @brief Get Stream 3 transfer error flag.
+ * @rmtoll LISR  TEIF3    LL_DMA_IsActiveFlag_TE3
+ * @param  DMAx DMAx Instance
+ * @retval State of bit (1 or 0).
+ */
+uint32_t LL_DMA_IsActiveFlag_TE3( DMA_TypeDef* DMAx );
+
+/**
+ * @brief Clear Stream 3 transfer error flag.
+ * @rmtoll LIFCR  CTEIF3    LL_DMA_ClearFlag_TE3
+ * @param  DMAx DMAx Instance
+ * @retval None
+ */
+void LL_DMA_ClearFlag_TE3( DMA_TypeDef* DMAx );
+
+/**
+ * @brief Get Stream 3 transfer complete flag.
+ * @rmtoll LISR  TCIF3    LL_DMA_IsActiveFlag_TC3
+ * @param  DMAx DMAx Instance
+ * @retval State of bit (1 or 0).
+ */
+uint32_t LL_DMA_IsActiveFlag_TC3( DMA_TypeDef* DMAx );
+
+/**
+ * @brief Clear Stream 3 transfer complete flag.
+ * @rmtoll LIFCR  CTCIF3    LL_DMA_ClearFlag_TC3
+ * @param  DMAx DMAx Instance
+ * @retval None
+ */
+void LL_DMA_ClearFlag_TC3( DMA_TypeDef* DMAx );
+
+/**
+ * @brief Get Stream 1 transfer error flag.
+ * @rmtoll LISR  TEIF1    LL_DMA_IsActiveFlag_TE1
+ * @param  DMAx DMAx Instance
+ * @retval State of bit (1 or 0).
+ */
+uint32_t LL_DMA_IsActiveFlag_TE1( DMA_TypeDef* DMAx );
+
+/**
+ * @brief Clear Stream 1 transfer error flag.
+ * @rmtoll LIFCR  CTEIF1    LL_DMA_ClearFlag_TE1
+ * @param  DMAx DMAx Instance
+ * @retval None
+ */
+void LL_DMA_ClearFlag_TE1( DMA_TypeDef* DMAx );
+
+/**
+ * @brief Get Stream 1 transfer complete flag.
+ * @rmtoll LISR  TCIF1    LL_DMA_IsActiveFlag_TC1
+ * @param  DMAx DMAx Instance
+ * @retval State of bit (1 or 0).
+ */
+uint32_t LL_DMA_IsActiveFlag_TC1( DMA_TypeDef* DMAx );
+
+/**
+ * @brief Clear Stream 1 transfer complete flag.
+ * @rmtoll LIFCR  CTCIF1    LL_DMA_ClearFlag_TC1
+ * @param  DMAx DMAx Instance
+ * @retval None
+ */
+void LL_DMA_ClearFlag_TC1( DMA_TypeDef* DMAx );
+
+/**
   \brief   Disable Interrupt
   \details Disables a device specific interrupt in the NVIC interrupt controller.
   \param [in]      IRQn  Device specific interrupt number.
