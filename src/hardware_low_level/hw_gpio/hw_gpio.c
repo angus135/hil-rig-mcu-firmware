@@ -65,10 +65,8 @@ GPIO_TypeDef* gpio_ports[] = {
 #endif
 };
 
-#define NUM_gpio_ports (sizeof(gpio_ports) / sizeof(gpio_ports[0]))
+#define NUM_gpio_ports ( sizeof( gpio_ports ) / sizeof( gpio_ports[0] ) )
 #define MAX_NUM_gpio_ports 8
-
-
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -133,17 +131,17 @@ void HW_GPIO_Toggle( GPIO_T gpio )
  * @brief Converts a string to a digital pin name
  *
  * @param str   the input string
- * @param out   a space to write the associated pin name enum 
+ * @param out   a space to write the associated pin name enum
  *
  * @return returns true if a match was found and false otherwise
  * This function is designed to split split pins into groups based on their ports
  * because we can write to an entire port at once this increases speed.
  */
-bool GPIO_StringToEnum(const char* str, GPIO_OUTPUT_NAMES* out)
+bool GPIO_StringToEnum( const char* str, GPIO_OUTPUT_NAMES* out )
 {
-    for (size_t i = 0; i < sizeof(gpio_name_map)/sizeof(gpio_name_map[0]); i++)
+    for ( size_t i = 0; i < sizeof( gpio_name_map ) / sizeof( gpio_name_map[0] ); i++ )
     {
-        if (strcmp(str, gpio_name_map[i].name) == 0)
+        if ( strcmp( str, gpio_name_map[i].name ) == 0 )
         {
             *out = gpio_name_map[i].value;
             return true;
@@ -151,7 +149,6 @@ bool GPIO_StringToEnum(const char* str, GPIO_OUTPUT_NAMES* out)
     }
     return false;
 }
-
 
 /**
  * @brief takes a list of GPIO names and splits them into their ports.
@@ -169,30 +166,32 @@ GPIO_OUTPUT_NAMES* my_arr = { DIGITALOUT0, DIGITALOUT1, DIGITALOUT2 };
 GPIO_PORT_PACKET destination[8];
 split_about_ports(my_arr, 3, destination);
 // we dont HAVE to go through all 8 ports (as only 2 are used) but for examples sake we can
-for (int i=0; i<8; i++){  
+for (int i=0; i<8; i++){
     HW_GPIO_SetToPort(destination[i].gpiox, destination[i].pin_mask)
 }
 HW_GPIO_SetToPort(p.gpiox, p.pin_mask)
  */
-int split_about_ports( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length, GPIO_PORT_PACKET* destination)
+int split_about_ports( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length,
+                       GPIO_PORT_PACKET* destination )
 {
     GPIO_PORT_PACKET port_packet;
     GPIO_PORT_PACKET temp[MAX_NUM_gpio_ports];
-    int counter = 0;
+    int              counter = 0;
     // reset data at destination
     for ( int j = 0; j < MAX_NUM_gpio_ports; j++ )
     {
-        destination[j].gpiox = gpio_ports[j];    // reset ports, destination[0] = GPIOA, destination[1] = GPIOB etc
-        destination[j].pin_mask = 0;             // reset pin masks
-        temp[j].gpiox = gpio_ports[j];          // reset ports, temp[0] = GPIOA, temp[1] = GPIOB etc
-        temp[j].pin_mask = 0;                   // reset pin masks
+        destination[j].gpiox =
+            gpio_ports[j];  // reset ports, destination[0] = GPIOA, destination[1] = GPIOB etc
+        destination[j].pin_mask = 0;       // reset pin masks
+        temp[j].gpiox    = gpio_ports[j];  // reset ports, temp[0] = GPIOA, temp[1] = GPIOB etc
+        temp[j].pin_mask = 0;              // reset pin masks
     }
     for ( int i = 0; i < length; i++ )
     {
-        port_packet = HW_GPIO_port_pin_association(gpio_names[i]);
-        for (int j=0; j<MAX_NUM_gpio_ports; j++)
+        port_packet = HW_GPIO_port_pin_association( gpio_names[i] );
+        for ( int j = 0; j < MAX_NUM_gpio_ports; j++ )
         {
-            if (port_packet.gpiox == gpio_ports[j])
+            if ( port_packet.gpiox == gpio_ports[j] )
             {
                 temp[j].pin_mask = temp[j].pin_mask | port_packet.pin_mask;
                 break;
@@ -232,20 +231,21 @@ if (p.pin_mask == 0xFFFF0000){
  */
 GPIO_PORT_PACKET combine_port_pin_masks( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length )
 {
-    GPIO_TypeDef* checker = HW_GPIO_port_pin_association( *gpio_names ).gpiox;
-    int pin_mask = 0;
+    GPIO_TypeDef*    checker  = HW_GPIO_port_pin_association( *gpio_names ).gpiox;
+    int              pin_mask = 0;
     GPIO_PORT_PACKET port_packet;
     for ( int i = 0; i < length; i++ )  // iterate through the gpio names and combine pin_masks
     {
-        port_packet = HW_GPIO_port_pin_association(gpio_names[i]);
+        port_packet = HW_GPIO_port_pin_association( gpio_names[i] );
         if ( checker != port_packet.gpiox )
         {
             // Not all of the pins had the same port, so return an error
-            return (struct GPIO_PORT_PACKET){gpio_ports[0], 4294901760};    // 4294901760 = 0xFFFF0000
+            return ( struct GPIO_PORT_PACKET ){ gpio_ports[0],
+                                                4294901760 };  // 4294901760 = 0xFFFF0000
         }
-        pin_mask = pin_mask | port_packet.pin_mask; // combine pin masks
+        pin_mask = pin_mask | port_packet.pin_mask;  // combine pin masks
     }
-    return (struct GPIO_PORT_PACKET){checker, pin_mask};
+    return ( struct GPIO_PORT_PACKET ){ checker, pin_mask };
 }
 
 /**
@@ -262,61 +262,61 @@ GPIO_PORT_PACKET combine_port_pin_masks( GPIO_OUTPUT_NAMES* gpio_names, uint8_t 
 GPIO_PORT_PACKET HW_GPIO_port_pin_association( GPIO_OUTPUT_NAMES gpio_name )
 {
 #ifndef TEST_BUILD
-switch ( gpio_name )
-{
-    // ==== HOW TO ADD DIGITAL OUTPUT PINS ====
-    // the following lines (a) and (b) were taken from f446ze_cubeide_project/Core/Inc/main.h
-    // they are created automatically by cube IDE from the IOC file and correspond to the actual
-    // pins on the board
-    // #define Test_GPIO_Output_Pin GPIO_PIN_8      // (a)
-    // #define Test_GPIO_Output_GPIO_Port GPIOC     // (b)
-    // if we wanted these GPIO output pins (a) (b) (hardware)
-    // to be associated to some pin name (software) eg UART_enable
-    // then we would have to add the relationship in this function
-    // to add this new relationship we add a new case statement below.
-    // Here is an example:
-    // case DIGITALOUT0:
-    //    return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
-    // the above example associates the pin name DIGITALOUT0 (software)
-    // to the physical pin name LD1_Pin and its port LD1_GPIO_Port
-    // the name chosen (DIGITALOUT0)
-    // would then be added to the GPIO_OUTPUT_NAMES enum in hw_gpio.h
-    // as well as to the string mapping gpio_name_map in hw_gpio.h
-    case DIGITALOUT0:  // Added by Tim for DEV-68
-        return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
-    case DIGITALOUT1:   // Added by Tim for DEV-68
-        return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
-    case DIGITALOUT2:   // Added by Tim for DEV-68
-        return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
-    case DIGITALOUT3:   // Added by Tim for DEV-68
-        return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
-    case DIGITALOUT4:   // Added by Tim for DEV-68
-        return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
-    case DIGITALOUT5:   // Added by Tim for DEV-68
-        return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
-    case DIGITALOUT6:   // Added by Tim for DEV-68
-        return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
-    case DIGITALOUT7:   // Added by Tim for DEV-68
-        return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
-    case DIGITALOUT8:   // Added by Tim for DEV-68
-        return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
-    case DIGITALOUT9:   // Added by Tim for DEV-68
-        return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
-    case UART_TTL_3V3_EN:   // Added by Tim as an example, whoever does UART should replace
-        return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
-    case UART_TTL_5V_EN:    // Added by Tim as an example, whoever does UART should replace
-        return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
-    case LD2:       // Added by Tim for DEV-68
-        return (struct GPIO_PORT_PACKET){LD2_GPIO_Port, LD2_Pin};
-    case LD3:       // Added by Tim for DEV-68
-        return ( struct GPIO_PORT_PACKET ){ LD3_GPIO_Port, LD3_Pin };
-    default:        // Added by Tim, should be updated to set the warning LED once IOC is decided
-        return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
-}
+    switch ( gpio_name )
+    {
+        // ==== HOW TO ADD DIGITAL OUTPUT PINS ====
+        // the following lines (a) and (b) were taken from f446ze_cubeide_project/Core/Inc/main.h
+        // they are created automatically by cube IDE from the IOC file and correspond to the actual
+        // pins on the board
+        // #define Test_GPIO_Output_Pin GPIO_PIN_8      // (a)
+        // #define Test_GPIO_Output_GPIO_Port GPIOC     // (b)
+        // if we wanted these GPIO output pins (a) (b) (hardware)
+        // to be associated to some pin name (software) eg UART_enable
+        // then we would have to add the relationship in this function
+        // to add this new relationship we add a new case statement below.
+        // Here is an example:
+        // case DIGITALOUT0:
+        //    return (struct GPIO_PORT_PACKET){LD1_GPIO_Port, LD1_Pin};
+        // the above example associates the pin name DIGITALOUT0 (software)
+        // to the physical pin name LD1_Pin and its port LD1_GPIO_Port
+        // the name chosen (DIGITALOUT0)
+        // would then be added to the GPIO_OUTPUT_NAMES enum in hw_gpio.h
+        // as well as to the string mapping gpio_name_map in hw_gpio.h
+        case DIGITALOUT0:  // Added by Tim for DEV-68
+            return ( struct GPIO_PORT_PACKET ){ LD1_GPIO_Port, LD1_Pin };
+        case DIGITALOUT1:  // Added by Tim for DEV-68
+            return ( struct GPIO_PORT_PACKET ){ LD1_GPIO_Port, LD1_Pin };
+        case DIGITALOUT2:  // Added by Tim for DEV-68
+            return ( struct GPIO_PORT_PACKET ){ LD1_GPIO_Port, LD1_Pin };
+        case DIGITALOUT3:  // Added by Tim for DEV-68
+            return ( struct GPIO_PORT_PACKET ){ LD1_GPIO_Port, LD1_Pin };
+        case DIGITALOUT4:  // Added by Tim for DEV-68
+            return ( struct GPIO_PORT_PACKET ){ LD1_GPIO_Port, LD1_Pin };
+        case DIGITALOUT5:  // Added by Tim for DEV-68
+            return ( struct GPIO_PORT_PACKET ){ LD1_GPIO_Port, LD1_Pin };
+        case DIGITALOUT6:  // Added by Tim for DEV-68
+            return ( struct GPIO_PORT_PACKET ){ LD1_GPIO_Port, LD1_Pin };
+        case DIGITALOUT7:  // Added by Tim for DEV-68
+            return ( struct GPIO_PORT_PACKET ){ LD1_GPIO_Port, LD1_Pin };
+        case DIGITALOUT8:  // Added by Tim for DEV-68
+            return ( struct GPIO_PORT_PACKET ){ LD1_GPIO_Port, LD1_Pin };
+        case DIGITALOUT9:  // Added by Tim for DEV-68
+            return ( struct GPIO_PORT_PACKET ){ LD1_GPIO_Port, LD1_Pin };
+        case UART_TTL_3V3_EN:  // Added by Tim as an example, whoever does UART should replace
+            return ( struct GPIO_PORT_PACKET ){ LD1_GPIO_Port, LD1_Pin };
+        case UART_TTL_5V_EN:  // Added by Tim as an example, whoever does UART should replace
+            return ( struct GPIO_PORT_PACKET ){ LD1_GPIO_Port, LD1_Pin };
+        case LD2:  // Added by Tim for DEV-68
+            return ( struct GPIO_PORT_PACKET ){ LD2_GPIO_Port, LD2_Pin };
+        case LD3:  // Added by Tim for DEV-68
+            return ( struct GPIO_PORT_PACKET ){ LD3_GPIO_Port, LD3_Pin };
+        default:  // Added by Tim, should be updated to set the warning LED once IOC is decided
+            return ( struct GPIO_PORT_PACKET ){ LD1_GPIO_Port, LD1_Pin };
+    }
 #else
     return HW_GPIO_port_pin_association_to_return;
 #endif
-    ( void )gpio_name; 
+    ( void )gpio_name;
 }
 
 /**
@@ -349,7 +349,7 @@ inline void HW_GPIO_SetToPort( GPIO_TypeDef* gpiox, int32_t pin_mask )
 #else
     // LL_GPIO_XOutputPin functions write to the BSR port register,
     // The lower 16 bits of the pin_mask bit 0 = pin0, bit 1 = pin1 etc
-    LL_GPIO_SetOutputPin(gpiox, pin_mask);
+    LL_GPIO_SetOutputPin( gpiox, pin_mask );
 #endif
 }
 
@@ -384,6 +384,6 @@ inline void HW_GPIO_ResetToPort( GPIO_TypeDef* gpiox, int32_t pin_mask )
 #else
     // LL_GPIO_XOutputPin functions write to the BSR port register,
     // The lower 16 bits of the pin_mask bit 0 = pin0, bit 1 = pin1 etc
-    LL_GPIO_ResetOutputPin(gpiox, pin_mask);
+    LL_GPIO_ResetOutputPin( gpiox, pin_mask );
 #endif
 }
