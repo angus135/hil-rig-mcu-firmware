@@ -28,6 +28,7 @@ target_link_libraries(exec_i2c
         global_config
         rtos
         cubeide_hal
+        hw_i2c
 )
 
 # -----------------------------
