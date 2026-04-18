@@ -59,6 +59,7 @@
 /* External variables --------------------------------------------------------*/
 extern PCD_HandleTypeDef hpcd_USB_OTG_FS;
 extern ADC_HandleTypeDef hadc1;
+extern FMPI2C_HandleTypeDef hfmpi2c1;
 extern I2C_HandleTypeDef hi2c1;
 extern I2C_HandleTypeDef hi2c2;
 extern SPI_HandleTypeDef hspi1;
@@ -329,6 +330,20 @@ void OTG_FS_IRQHandler(void)
   /* USER CODE BEGIN OTG_FS_IRQn 1 */
 
   /* USER CODE END OTG_FS_IRQn 1 */
+}
+
+/**
+  * @brief This function handles FMPI2C1 event interrupt.
+  */
+void FMPI2C1_EV_IRQHandler(void)
+{
+  /* USER CODE BEGIN FMPI2C1_EV_IRQn 0 */
+
+  /* USER CODE END FMPI2C1_EV_IRQn 0 */
+  HAL_FMPI2C_EV_IRQHandler(&hfmpi2c1);
+  /* USER CODE BEGIN FMPI2C1_EV_IRQn 1 */
+
+  /* USER CODE END FMPI2C1_EV_IRQn 1 */
 }
 
 /* USER CODE BEGIN 1 */
