@@ -872,10 +872,11 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
         return false;
     }  // Can later assume valid channel for optimisation
 
-    HwUartChannelState_T*      state  = &hw_uart_channel_states[channel];
-    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[channel];
-    USART_TypeDef*             uart   = hw_map->uart_instance;
-    DMA_Stream_TypeDef*        dma    = hw_map->tx_dma_stream;
+    HwUartChannelState_T*      state             = &hw_uart_channel_states[channel];
+    const HwUartHardwareMap_T* hw_map            = &hw_uart_hardware_map[channel];
+    USART_TypeDef*             uart              = hw_map->uart_instance;
+    DMA_TypeDef*               tx_dma_controller = hw_map->tx_dma_controller;
+    uint32_t                   tx_ll_stream      = hw_map->tx_ll_stream;
 
     if ( !state->runtime.is_configured_and_initialised || !state->config.tx_enabled )
     {
@@ -893,32 +894,42 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
     }  // Defensive check, should never happen if load succeeded
 
     /* Disable DMA stream before reprogramming */
-    LL_DMA_DisableStream( hw_map->tx_dma_controller, hw_map->tx_ll_stream );
+    LL_DMA_DisableStream( tx_dma_controller, tx_ll_stream );
 
-    while ( LL_DMA_IsEnabledStream( hw_map->tx_dma_controller, hw_map->tx_ll_stream ) )
+    while ( LL_DMA_IsEnabledStream( tx_dma_controller, tx_ll_stream ) )
     {
     }
 
-    /* Clear all pending flags for this TX stream */
+    /* Clear all pending flags for this TX stream.
+     * The LL API provides stream-specific flag-clear helpers rather than a generic
+     * controller-and-stream interface, which would require switch-based handling or
+     * duplicated code here. To preserve a branch-free hot path, the correct IFCR
+     * register address and flag mask are precomputed in the hardware map and written
+     * directly in one operation.
+     */
     *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
 
     /* Program DMA transfer */
-    dma->M0AR = ( uint32_t )( uintptr_t )state->tx_buffer;
-    dma->PAR  = ( uint32_t )( uintptr_t )( &( uart->DR ) );
-    dma->NDTR = state->runtime.tx_length_bytes;
+    LL_DMA_SetMemoryAddress( tx_dma_controller, tx_ll_stream,
+                             ( uint32_t )( uintptr_t )state->tx_buffer );
+
+    LL_DMA_SetPeriphAddress( tx_dma_controller, tx_ll_stream,
+                             ( uint32_t )( uintptr_t )( &( uart->DR ) ) );
+
+    LL_DMA_SetDataLength( tx_dma_controller, tx_ll_stream, state->runtime.tx_length_bytes );
 
     /* Disable half transfer interrupt for TX */
-    LL_DMA_DisableIT_HT( hw_map->tx_dma_controller, hw_map->tx_ll_stream );
+    LL_DMA_DisableIT_HT( tx_dma_controller, tx_ll_stream );
 
     /* Enable transfer complete and transfer error interrupts */
-    LL_DMA_EnableIT_TC( hw_map->tx_dma_controller, hw_map->tx_ll_stream );
-    LL_DMA_EnableIT_TE( hw_map->tx_dma_controller, hw_map->tx_ll_stream );
+    LL_DMA_EnableIT_TC( tx_dma_controller, tx_ll_stream );
+    LL_DMA_EnableIT_TE( tx_dma_controller, tx_ll_stream );
 
     /* Enable UART DMA transmit request */
     LL_USART_EnableDMAReq_TX( uart );
 
     /* Start DMA stream */
-    LL_DMA_EnableStream( hw_map->tx_dma_controller, hw_map->tx_ll_stream );
+    LL_DMA_EnableStream( tx_dma_controller, tx_ll_stream );
 
     state->runtime.tx_running = true;
     return true;

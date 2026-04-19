@@ -222,6 +222,14 @@ int  HAL_UART_Receive_IT( UART_HandleTypeDef* huart, uint8_t* data, uint16_t siz
 int  HAL_UART_Transmit( UART_HandleTypeDef* huart, uint8_t* data, uint16_t size, uint32_t timeout );
 void HAL_UART_IRQHandler( UART_HandleTypeDef* huart );
 
+void LL_DMA_SetMemoryAddress( DMA_TypeDef* dma, uint32_t stream, uint32_t address );
+void LL_DMA_SetPeriphAddress( DMA_TypeDef* dma, uint32_t stream, uint32_t address );
+void LL_DMA_SetDataLength( DMA_TypeDef* dma, uint32_t stream, uint32_t length );
+
+void LL_DMA_DisableIT_HT( DMA_TypeDef* dma, uint32_t stream );
+void LL_DMA_EnableIT_TC( DMA_TypeDef* dma, uint32_t stream );
+void LL_DMA_EnableIT_TE( DMA_TypeDef* dma, uint32_t stream );
+
 // NOLINTEND
 
 #ifdef __cplusplus
