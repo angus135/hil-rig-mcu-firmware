@@ -955,7 +955,28 @@ bool HW_UART_Is_Tx_Busy( HwUartChannel_T channel )
     return state->runtime.tx_loaded || state->runtime.tx_running;
 }
 
-/* IRQ Handler for TX on CH1 */
+/**
+ * @brief  DMA interrupt service routine for TX on UART Channel 1.
+ *
+ * @note   This function is bound to the MCU interrupt vector via the
+ *         HW_UART_CH1_TX_DMA_IRQ_HANDLER macro, which expands to the
+ *         device-specific DMA stream IRQ handler (e.g. DMA2_Stream6_IRQHandler).
+ *
+ * @note   This ISR is not declared in the public header as it is not intended
+ *         to be called by application code. It exists solely to service the
+ *         hardware interrupt vector.
+ *
+ * @note   The ISR checks for DMA transfer-complete and transfer-error conditions,
+ *         clears the corresponding DMA flags, and dispatches to the appropriate
+ *         low-level TX handler.
+ *
+ * @note   DMA completion indicates that the staged TX buffer has been fully
+ *         consumed by the DMA engine. It does not guarantee that the final
+ *         UART stop bit has left the wire.
+ *
+ * @note   This handler must remain minimal and deterministic. No blocking or
+ *         heavy processing should be introduced here.
+ */
 void HW_UART_CH1_TX_DMA_IRQ_HANDLER( void )
 {
     const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[HW_UART_CHANNEL_1];
@@ -973,7 +994,28 @@ void HW_UART_CH1_TX_DMA_IRQ_HANDLER( void )
     }
 }
 
-/* IRQ Handler for TX on CH2 */
+/**
+ * @brief  DMA interrupt service routine for TX on UART Channel 2.
+ *
+ * @note   This function is bound to the MCU interrupt vector via the
+ *         HW_UART_CH2_TX_DMA_IRQ_HANDLER macro, which expands to the
+ *         device-specific DMA stream IRQ handler (e.g. DMA1_Stream6_IRQHandler).
+ *
+ * @note   This ISR is not declared in the public header as it is not intended
+ *         to be called by application code. It exists solely to service the
+ *         hardware interrupt vector.
+ *
+ * @note   The ISR checks for DMA transfer-complete and transfer-error conditions,
+ *         clears the corresponding DMA flags, and dispatches to the appropriate
+ *         low-level TX handler.
+ *
+ * @note   DMA completion indicates that the staged TX buffer has been fully
+ *         consumed by the DMA engine. It does not guarantee that the final
+ *         UART stop bit has left the wire.
+ *
+ * @note   This handler must remain minimal and deterministic. No blocking or
+ *         heavy processing should be introduced here.
+ */
 void HW_UART_CH2_TX_DMA_IRQ_HANDLER( void )
 {
     const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[HW_UART_CHANNEL_2];
@@ -991,7 +1033,28 @@ void HW_UART_CH2_TX_DMA_IRQ_HANDLER( void )
     }
 }
 
-/* IRQ Handler for TX on CH3 */
+/**
+ * @brief  DMA interrupt service routine for TX on UART Channel 3.
+ *
+ * @note   This function is bound to the MCU interrupt vector via the
+ *         HW_UART_CH3_TX_DMA_IRQ_HANDLER macro, which expands to the
+ *         device-specific DMA stream IRQ handler (e.g. DMA1_Stream3_IRQHandler).
+ *
+ * @note   This ISR is not declared in the public header as it is not intended
+ *         to be called by application code. It exists solely to service the
+ *         hardware interrupt vector.
+ *
+ * @note   The ISR checks for DMA transfer-complete and transfer-error conditions,
+ *         clears the corresponding DMA flags, and dispatches to the appropriate
+ *         low-level TX handler.
+ *
+ * @note   DMA completion indicates that the staged TX buffer has been fully
+ *         consumed by the DMA engine. It does not guarantee that the final
+ *         UART stop bit has left the wire.
+ *
+ * @note   This handler must remain minimal and deterministic. No blocking or
+ *         heavy processing should be introduced here.
+ */
 void HW_UART_CH3_TX_DMA_IRQ_HANDLER( void )
 {
     const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[HW_UART_CHANNEL_3];
