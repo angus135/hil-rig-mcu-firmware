@@ -148,11 +148,10 @@ static GPIOPortPacket_T HW_GPIO_Port_Pin_Association( GPIOOutput_T gpio_name )
  * @return returns the number of GPIOPortPacket_T written to destination
  * This function is designed to split split pins into groups based on their ports
  * because we can write to an entire port at once this increases speed.
- * EXAMPLE: If we want to set DIGITAL_OUT_CH_0, DIGITAL_OUT_CH_1 and DIGITAL_OUT_CH_2, but DIGITAL_OUT_CH_2 uses a
-different port,
-GPIOOutput_T* my_arr = { DIGITAL_OUT_CH_0, DIGITAL_OUT_CH_1, DIGITAL_OUT_CH_2 };
-GPIOPortPacket_T destination[8];
-HW_GPIO_split_about_ports(my_arr, 3, destination);
+ * EXAMPLE: If we want to set DIGITAL_OUT_CH_0, DIGITAL_OUT_CH_1 and DIGITAL_OUT_CH_2, but
+DIGITAL_OUT_CH_2 uses a different port, GPIOOutput_T* my_arr = { DIGITAL_OUT_CH_0, DIGITAL_OUT_CH_1,
+DIGITAL_OUT_CH_2 }; GPIOPortPacket_T destination[8]; HW_GPIO_split_about_ports(my_arr, 3,
+destination);
 // we dont HAVE to go through all 8 ports (as only 2 are used) but for examples sake we can
 for (int i=0; i<8; i++){
     HW_GPIO_Set_To_Port(destination[i].gpiox, destination[i].pin_mask)
@@ -160,7 +159,7 @@ for (int i=0; i<8; i++){
 HW_GPIO_Set_To_Port(p.gpiox, p.pin_mask)
  */
 int HW_GPIO_split_about_ports( GPIOOutput_T* gpio_names, uint16_t length,
-                       GPIOPortPacket_T* destination )
+                               GPIOPortPacket_T* destination )
 {
     GPIOPortPacket_T port_packet;
     GPIOPortPacket_T temp[MAX_NUM_GPIO_PORTS];
