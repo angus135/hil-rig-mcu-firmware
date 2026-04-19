@@ -112,8 +112,14 @@ static EXECI2CStatus_T exec_i2c_validate_config( const EXECI2CChannelConfig_T* c
 		return EXEC_I2C_STATUS_INVALID_PARAM;
 	}
 
-	if ( ( config->transfer_path != EXEC_I2C_TRANSFER_INTERRUPT ) &&
-		 ( config->transfer_path != EXEC_I2C_TRANSFER_DMA ) )
+	if ( ( config->tx_transfer_path != EXEC_I2C_TRANSFER_INTERRUPT ) &&
+		 ( config->tx_transfer_path != EXEC_I2C_TRANSFER_DMA ) )
+	{
+		return EXEC_I2C_STATUS_INVALID_PARAM;
+	}
+
+	if ( ( config->rx_transfer_path != EXEC_I2C_TRANSFER_INTERRUPT ) &&
+		 ( config->rx_transfer_path != EXEC_I2C_TRANSFER_DMA ) )
 	{
 		return EXEC_I2C_STATUS_INVALID_PARAM;
 	}
@@ -145,16 +151,18 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
 	}
 
 	HWI2CChannelConfig_T hw_i2c1_config = {
-		.mode            = exec_i2c_to_hw_mode( i2c1_config->mode ),
-		.speed           = exec_i2c_to_hw_speed( i2c1_config->speed ),
-		.transfer_path   = exec_i2c_to_hw_path( i2c1_config->transfer_path ),
+		.mode             = exec_i2c_to_hw_mode( i2c1_config->mode ),
+		.speed            = exec_i2c_to_hw_speed( i2c1_config->speed ),
+		.tx_transfer_path = exec_i2c_to_hw_path( i2c1_config->tx_transfer_path ),
+		.rx_transfer_path = exec_i2c_to_hw_path( i2c1_config->rx_transfer_path ),
 		.own_address_7bit = i2c1_config->own_address_7bit,
 	};
 
 	HWI2CChannelConfig_T hw_i2c2_config = {
-		.mode            = exec_i2c_to_hw_mode( i2c2_config->mode ),
-		.speed           = exec_i2c_to_hw_speed( i2c2_config->speed ),
-		.transfer_path   = exec_i2c_to_hw_path( i2c2_config->transfer_path ),
+		.mode             = exec_i2c_to_hw_mode( i2c2_config->mode ),
+		.speed            = exec_i2c_to_hw_speed( i2c2_config->speed ),
+		.tx_transfer_path = exec_i2c_to_hw_path( i2c2_config->tx_transfer_path ),
+		.rx_transfer_path = exec_i2c_to_hw_path( i2c2_config->rx_transfer_path ),
 		.own_address_7bit = i2c2_config->own_address_7bit,
 	};
 

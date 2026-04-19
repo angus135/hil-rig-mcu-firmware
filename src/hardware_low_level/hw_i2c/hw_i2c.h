@@ -84,7 +84,8 @@ typedef struct HWI2CChannelConfig_T
 {
 	HWI2CMode_T mode;
 	HWI2CSpeed_T speed;
-	HWI2CTransferPath_T transfer_path;
+	HWI2CTransferPath_T tx_transfer_path;
+	HWI2CTransferPath_T rx_transfer_path;
 	uint16_t own_address_7bit;
 } HWI2CChannelConfig_T;
 
