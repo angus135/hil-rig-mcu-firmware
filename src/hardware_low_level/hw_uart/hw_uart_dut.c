@@ -53,6 +53,7 @@
 #define HW_UART_CH1_USART USART6
 #define HW_UART_CH1_DMA_RX_STREAM DMA2_Stream1
 #define HW_UART_CH1_DMA_TX_STREAM DMA2_Stream6
+#define HW_UART_CH1_TX_DMA_IRQ_HANDLER DMA2_Stream6_IRQHandler
 #define HW_UART_CH1_HANDLE ( &huart6 )
 #define HW_UART_CH1_DMA_CONTROLLER DMA2
 #define HW_UART_CH1_DMA_TX_LL_STREAM LL_DMA_STREAM_6
@@ -64,6 +65,7 @@
 #define HW_UART_CH2_USART USART2
 #define HW_UART_CH2_DMA_RX_STREAM DMA1_Stream5
 #define HW_UART_CH2_DMA_TX_STREAM DMA1_Stream6
+#define HW_UART_CH2_TX_DMA_IRQ_HANDLER DMA1_Stream6_IRQHandler
 #define HW_UART_CH2_HANDLE ( &huart2 )
 #define HW_UART_CH2_DMA_CONTROLLER DMA1
 #define HW_UART_CH2_DMA_TX_LL_STREAM LL_DMA_STREAM_6
@@ -75,6 +77,7 @@
 #define HW_UART_CH3_USART USART3
 #define HW_UART_CH3_DMA_RX_STREAM DMA1_Stream1
 #define HW_UART_CH3_DMA_TX_STREAM DMA1_Stream3
+#define HW_UART_CH3_TX_DMA_IRQ_HANDLER DMA1_Stream3_IRQHandler
 #define HW_UART_CH3_HANDLE ( &huart3 )
 #define HW_UART_CH3_DMA_CONTROLLER DMA1
 #define HW_UART_CH3_DMA_TX_LL_STREAM LL_DMA_STREAM_3
@@ -259,10 +262,9 @@ static const HwUartSelectionLines_T uart_selection_lines[HW_UART_CHANNEL_COUNT] 
                             .volt_sel0_line = HW_UART_CH2_VOLT_SEL0_LINE,
                             .volt_sel1_line = HW_UART_CH2_VOLT_SEL1_LINE } };
 
-void DMA2_Stream6_IRQHandler( void );
-void DMA1_Stream6_IRQHandler( void );
-void DMA1_Stream3_IRQHandler( void );
-
+void HW_UART_CH1_TX_DMA_IRQ_HANDLER( void );
+void HW_UART_CH2_TX_DMA_IRQ_HANDLER( void );
+void HW_UART_CH3_TX_DMA_IRQ_HANDLER( void );
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Definitions
  *------------------------------------------------------------------------------
@@ -954,7 +956,7 @@ bool HW_UART_Is_Tx_Busy( HwUartChannel_T channel )
 }
 
 /* IRQ Handler for TX on CH1 */
-void DMA2_Stream6_IRQHandler( void )
+void HW_UART_CH1_TX_DMA_IRQ_HANDLER( void )
 {
     const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[HW_UART_CHANNEL_1];
 
@@ -972,7 +974,7 @@ void DMA2_Stream6_IRQHandler( void )
 }
 
 /* IRQ Handler for TX on CH2 */
-void DMA1_Stream6_IRQHandler( void )
+void HW_UART_CH2_TX_DMA_IRQ_HANDLER( void )
 {
     const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[HW_UART_CHANNEL_2];
 
@@ -990,7 +992,7 @@ void DMA1_Stream6_IRQHandler( void )
 }
 
 /* IRQ Handler for TX on CH3 */
-void DMA1_Stream3_IRQHandler( void )
+void HW_UART_CH3_TX_DMA_IRQ_HANDLER( void )
 {
     const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[HW_UART_CHANNEL_3];
 
