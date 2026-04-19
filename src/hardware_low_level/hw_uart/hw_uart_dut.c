@@ -908,10 +908,11 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
     dma->NDTR = state->runtime.tx_length_bytes;
 
     /* Disable half transfer interrupt for TX */
-    CLEAR_BIT( dma->CR, DMA_SxCR_HTIE );
+    LL_DMA_DisableIT_HT( hw_map->tx_dma_controller, hw_map->tx_ll_stream );
 
     /* Enable transfer complete and transfer error interrupts */
-    SET_BIT( dma->CR, DMA_SxCR_TCIE | DMA_SxCR_TEIE );
+    LL_DMA_EnableIT_TC( hw_map->tx_dma_controller, hw_map->tx_ll_stream );
+    LL_DMA_EnableIT_TE( hw_map->tx_dma_controller, hw_map->tx_ll_stream );
 
     /* Enable UART DMA transmit request */
     LL_USART_EnableDMAReq_TX( uart );
