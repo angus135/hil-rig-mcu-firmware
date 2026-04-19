@@ -14,7 +14,7 @@
  *------------------------------------------------------------------------------
  */
 #include "run_state_manager.h"
-// #include "hw_timer.h"
+#include "hw_timer.h"
 #include "hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>

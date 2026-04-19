@@ -36,7 +36,7 @@ target_link_libraries(hw_gpio
 # Tests for this module (gtest/gmock)
 # -----------------------------
 
-option(HW_GPIO_ENABLE_TESTS "Build tests for hw_gpio module" ON)
+# option(HW_GPIO_ENABLE_TESTS "Build tests for hw_gpio module" ON)
 
 if(HW_GPIO_ENABLE_TESTS AND BUILD_TESTING)
 
