@@ -50,41 +50,41 @@ typedef enum GPIO_T
     GPIO_TEST_INDICATOR
 } GPIO_T;
 
-typedef enum GPIO_OUTPUT_NAMES
+typedef enum GPIOOutput_T
 {
-    DIGITALOUT0,      // Added by Tim for DEV-68
-    DIGITALOUT1,      // Added by Tim for DEV-68
-    DIGITALOUT2,      // Added by Tim for DEV-68
-    DIGITALOUT3,      // Added by Tim for DEV-68
-    DIGITALOUT4,      // Added by Tim for DEV-68
-    DIGITALOUT5,      // Added by Tim for DEV-68
-    DIGITALOUT6,      // Added by Tim for DEV-68
-    DIGITALOUT7,      // Added by Tim for DEV-68
-    DIGITALOUT8,      // Added by Tim for DEV-68
-    DIGITALOUT9,      // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_0,      // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_1,      // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_2,      // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_3,      // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_4,      // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_5,      // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_6,      // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_7,      // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_8,      // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_9,      // Added by Tim for DEV-68
     UART_TTL_3V3_EN,  // Added by Tim as an example, whoever does UART should replace
     UART_TTL_5V_EN,   // Added by Tim as an example, whoever does UART should replace
     LD2,              // Added by Tim for DEV-68
     LD3               // Added by Tim for DEV-68
-} GPIO_OUTPUT_NAMES;
+} GPIOOutput_T;
 
 typedef struct
 {
     const char*       name;
-    GPIO_OUTPUT_NAMES value;
+    GPIOOutput_T value;
 } GPIO_Name_Map;
 
 static const GPIO_Name_Map gpio_name_map[] = {
-    { "DIGITALOUT0", DIGITALOUT0 },
-    { "DIGITALOUT1", DIGITALOUT1 },
-    { "DIGITALOUT2", DIGITALOUT2 },
-    { "DIGITALOUT3", DIGITALOUT3 },
-    { "DIGITALOUT4", DIGITALOUT4 },
-    { "DIGITALOUT5", DIGITALOUT5 },
-    { "DIGITALOUT6", DIGITALOUT6 },
-    { "DIGITALOUT7", DIGITALOUT7 },
-    { "DIGITALOUT8", DIGITALOUT8 },
-    { "DIGITALOUT9", DIGITALOUT9 },
+    { "DIGITAL_OUT_CH_0", DIGITAL_OUT_CH_0 },
+    { "DIGITAL_OUT_CH_1", DIGITAL_OUT_CH_1 },
+    { "DIGITAL_OUT_CH_2", DIGITAL_OUT_CH_2 },
+    { "DIGITAL_OUT_CH_3", DIGITAL_OUT_CH_3 },
+    { "DIGITAL_OUT_CH_4", DIGITAL_OUT_CH_4 },
+    { "DIGITAL_OUT_CH_5", DIGITAL_OUT_CH_5 },
+    { "DIGITAL_OUT_CH_6", DIGITAL_OUT_CH_6 },
+    { "DIGITAL_OUT_CH_7", DIGITAL_OUT_CH_7 },
+    { "DIGITAL_OUT_CH_8", DIGITAL_OUT_CH_8 },
+    { "DIGITAL_OUT_CH_9", DIGITAL_OUT_CH_9 },
     { "UART_TTL_3V3_EN", UART_TTL_3V3_EN },
     { "UART_TTL_5V_EN", UART_TTL_5V_EN },
     { "LD2", LD2 },
@@ -106,7 +106,7 @@ static const GPIO_Name_Map gpio_name_map[] = {
  * This function is designed to split split pins into groups based on their ports
  * because we can write to an entire port at once this increases speed.
  */
-bool GPIO_StringToEnum( const char* str, GPIO_OUTPUT_NAMES* out );
+bool HW_GPIO_StringToEnum( const char* str, GPIOOutput_T* out );
 
 /**
  * @brief Toggles a digital output using the underlying GPIO HAL.
@@ -127,7 +127,7 @@ void HW_GPIO_Toggle( GPIO_T gpio );
  * This function locates the port and pin number (pin_mask) associated with the pin
  * and uses them to set the pin on the STM
  */
-void HW_GPIO_set_pin( GPIO_OUTPUT_NAMES pin );
+void HW_GPIO_Set_Single_Pin( GPIOOutput_T pin );
 
 /**
  * @brief Sets many GPIO pins
@@ -138,7 +138,7 @@ void HW_GPIO_set_pin( GPIO_OUTPUT_NAMES pin );
  * This function locates the ports and pin numbers (pin_masks) associated with the pins
  * and uses them to set the pins on the STM
  */
-void HW_GPIO_set_many_pins( GPIO_OUTPUT_NAMES* pins, uint16_t length );
+void HW_GPIO_Set_Many_Pins( GPIOOutput_T* pins, uint16_t length );
 
 /**
  * @brief Sets a GPIO pin
@@ -148,7 +148,7 @@ void HW_GPIO_set_many_pins( GPIO_OUTPUT_NAMES* pins, uint16_t length );
  * This function locates the port and pin number (pin_mask) associated with the pin
  * and uses them to set the pin on the STM
  */
-void HW_GPIO_reset_pin( GPIO_OUTPUT_NAMES pin );
+void HW_GPIO_Reset_Single_Pin( GPIOOutput_T pin );
 
 /**
  * @brief Resets many GPIO pins
@@ -159,29 +159,29 @@ void HW_GPIO_reset_pin( GPIO_OUTPUT_NAMES pin );
  * This function locates the ports and pin numbers (pin_masks) associated with the pins
  * and uses them to reset the pins on the STM
  */
-void HW_GPIO_reset_many_pins( GPIO_OUTPUT_NAMES* pins, uint16_t length );
+void HW_GPIO_Reset_Many_Pins( GPIOOutput_T* pins, uint16_t length );
 
 /**
  * @brief combines many GPIO's (on the same port) into one pin mask.
  *
  * @param gpio_names   an array of GPIO pin names, all of which are on the same port
- * @param length       the nubmer of GPIO_OUTPUT_NAMES in gpio_names
+ * @param length       the nubmer of GPIOOutput_T in gpio_names
  *
  * @return returns the port and a combined pin mask, if fault return {GPIOA, 0xFFFF0000}
  *
  * Combines the pinmasks of the gpio_names so that they can be written to the BSR in one step
  * (instead of individually).
- * EXAMPLE: if we want to set both DIGITALOUT0 and DIGITALOUT1 we could write
-GPIO_OUTPUT_NAMES* my_arr = [ DIGITALOUT0, DIGITALOUT1 ]
-struct GPIOPortPacket_T p = combine_port_pin_masks(my_arr, 2)
+ * EXAMPLE: if we want to set both DIGITAL_OUT_CH_0 and DIGITAL_OUT_CH_1 we could write
+GPIOOutput_T* my_arr = [ DIGITAL_OUT_CH_0, DIGITAL_OUT_CH_1 ]
+struct GPIOPortPacket_T p = HW_GPIO_Combine_Port_Pin_Masks(my_arr, 2)
 if (p.pin_mask == 0xFFFF0000){
     error
 } else {
-    HW_GPIO_SetToPort(p.gpiox, p.pin_mask)
+    HW_GPIO_Set_To_Port(p.gpiox, p.pin_mask)
 }
  * mocked using GoogleMock.
  */
-DigitalOutputPinmask_T combine_port_pin_masks( GPIO_OUTPUT_NAMES* gpio_names, uint8_t length );
+DigitalOutputPinmask_T HW_GPIO_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names, uint8_t length );
 
 #ifdef __cplusplus
 }

@@ -15,7 +15,6 @@
  *------------------------------------------------------------------------------
  */
 
-#include "exec_digital_input.h"
 #include <stdint.h>
 #include <stdbool.h>
 
