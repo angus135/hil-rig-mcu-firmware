@@ -16,6 +16,7 @@
  */
 
 #include "console.h"
+#include "execution_mid_level/exec_i2c/exec_i2c.h"
 #include "execution_manager.h"
 #include "hw_gpio.h"
 #include <stdint.h>
@@ -53,6 +54,22 @@ static void CONSOLE_Command_Echo( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_LED( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] );
+static bool CONSOLE_Parse_I2C_Master_And_Slave( const char* arg,
+                                                 EXECI2CExternalChannel_T* master_channel,
+                                                 EXECI2CExternalChannel_T* slave_channel );
+static bool CONSOLE_Parse_I2C_Speed( const char* arg, EXECI2CSpeed_T* speed );
+static bool CONSOLE_Parse_I2C_Transfer_Path( const char* arg, EXECI2CTransferPath_T* transfer_path );
+static bool CONSOLE_Build_I2C_Message( uint16_t argc, char* argv[], char* out_message,
+                                       size_t out_message_size, uint16_t* out_message_length );
+static bool CONSOLE_Run_I2C_Loopback_Transfer( EXECI2CExternalChannel_T master_channel,
+                                                EXECI2CExternalChannel_T slave_channel,
+                                                uint16_t slave_addr,
+                                                const char* tx_message,
+                                                uint16_t tx_len,
+                                                char* rx_message,
+                                                uint16_t rx_message_size,
+                                                uint16_t* out_received_len );
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
@@ -67,7 +84,8 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"echo",    CONSOLE_Command_Echo,       "Echoes the provided arguments."},
     {"execution_manager",    CONSOLE_Command_Test_Scheduler,       "Starts the test scheduler."},
     {"clear",  CONSOLE_Command_Clear,       "Clears the console."},
-    {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <green|blue|red|test>"}
+    {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <green|blue|red|test>"},
+    {"i2c_loopback", CONSOLE_Command_I2C_Loopback, "Loopback test. Usage: i2c_loopback <master:1|2> <speed:100|400> <op:interrupt|dma> <message...>"}
 
 };
 
@@ -239,6 +257,262 @@ static void CONSOLE_Command_LED( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "Unknown action: %s\r\nUsage: led toggle <green|blue|red|test>\r\n",
                         argv[1] );
     }
+}
+
+static bool CONSOLE_Parse_I2C_Master_And_Slave( const char* arg,
+                                                 EXECI2CExternalChannel_T* master_channel,
+                                                 EXECI2CExternalChannel_T* slave_channel )
+{
+    if ( ( arg == NULL ) || ( master_channel == NULL ) || ( slave_channel == NULL ) )
+    {
+        return false;
+    }
+
+    if ( strcmp( arg, "1" ) == 0 )
+    {
+        *master_channel = EXEC_I2C_EXTERNAL_1;
+        *slave_channel  = EXEC_I2C_EXTERNAL_2;
+        return true;
+    }
+
+    if ( strcmp( arg, "2" ) == 0 )
+    {
+        *master_channel = EXEC_I2C_EXTERNAL_2;
+        *slave_channel  = EXEC_I2C_EXTERNAL_1;
+        return true;
+    }
+
+    return false;
+}
+
+static bool CONSOLE_Parse_I2C_Speed( const char* arg, EXECI2CSpeed_T* speed )
+{
+    if ( ( arg == NULL ) || ( speed == NULL ) )
+    {
+        return false;
+    }
+
+    if ( ( strcmp( arg, "100" ) == 0 ) || ( strcmp( arg, "100k" ) == 0 ) ||
+         ( strcmp( arg, "100khz" ) == 0 ) )
+    {
+        *speed = EXEC_I2C_SPEED_100KHZ;
+        return true;
+    }
+
+    if ( ( strcmp( arg, "400" ) == 0 ) || ( strcmp( arg, "400k" ) == 0 ) ||
+         ( strcmp( arg, "400khz" ) == 0 ) )
+    {
+        *speed = EXEC_I2C_SPEED_400KHZ;
+        return true;
+    }
+
+    return false;
+}
+
+static bool CONSOLE_Parse_I2C_Transfer_Path( const char* arg, EXECI2CTransferPath_T* transfer_path )
+{
+    if ( ( arg == NULL ) || ( transfer_path == NULL ) )
+    {
+        return false;
+    }
+
+    if ( ( strcmp( arg, "interrupt" ) == 0 ) || ( strcmp( arg, "irq" ) == 0 ) )
+    {
+        *transfer_path = EXEC_I2C_TRANSFER_INTERRUPT;
+        return true;
+    }
+
+    if ( strcmp( arg, "dma" ) == 0 )
+    {
+        *transfer_path = EXEC_I2C_TRANSFER_DMA;
+        return true;
+    }
+
+    return false;
+}
+
+static bool CONSOLE_Build_I2C_Message( uint16_t argc, char* argv[], char* out_message,
+                                       size_t out_message_size, uint16_t* out_message_length )
+{
+    if ( ( out_message == NULL ) || ( out_message_length == NULL ) || ( out_message_size == 0U ) )
+    {
+        return false;
+    }
+
+    size_t tx_len = 0U;
+    memset( out_message, 0, out_message_size );
+
+    for ( uint16_t arg_idx = 4U; arg_idx < argc; ++arg_idx )
+    {
+        const size_t part_len = strlen( argv[arg_idx] );
+        if ( tx_len + part_len + 1U >= out_message_size )
+        {
+            return false;
+        }
+
+        if ( arg_idx > 4U )
+        {
+            out_message[tx_len] = ' ';
+            tx_len++;
+        }
+
+        memcpy( &out_message[tx_len], argv[arg_idx], part_len );
+        tx_len += part_len;
+    }
+
+    if ( tx_len == 0U )
+    {
+        return false;
+    }
+
+    *out_message_length = ( uint16_t )tx_len;
+    return true;
+}
+
+static bool CONSOLE_Run_I2C_Loopback_Transfer( EXECI2CExternalChannel_T master_channel,
+                                                EXECI2CExternalChannel_T slave_channel,
+                                                uint16_t slave_addr,
+                                                const char* tx_message,
+                                                uint16_t tx_len,
+                                                char* rx_message,
+                                                uint16_t rx_message_size,
+                                                uint16_t* out_received_len )
+{
+    EXECI2CStatus_T status = EXEC_I2C_Start_Slave_Receive( slave_channel, tx_len );
+    if ( status != EXEC_I2C_STATUS_OK )
+    {
+        CONSOLE_Printf( "Failed to start slave receive (status=%d).\r\n", ( int )status );
+        return false;
+    }
+
+    vTaskDelay( pdMS_TO_TICKS( 2 ) );
+
+    status = EXEC_I2C_Master_Send( master_channel, slave_addr, ( const uint8_t* )tx_message, tx_len );
+    if ( status != EXEC_I2C_STATUS_OK )
+    {
+        CONSOLE_Printf( "Master send failed (status=%d).\r\n", ( int )status );
+        return false;
+    }
+
+    uint16_t received_len = 0U;
+    memset( rx_message, 0, rx_message_size );
+
+    for ( uint16_t wait_ms = 0U; wait_ms < 500U; ++wait_ms )
+    {
+        uint16_t chunk = 0U;
+        status = EXEC_I2C_Receive_Copy_And_Consume(
+            slave_channel, ( uint8_t* )&rx_message[received_len],
+            ( uint16_t )( rx_message_size - 1U - received_len ), &chunk );
+
+        if ( status != EXEC_I2C_STATUS_OK )
+        {
+            CONSOLE_Printf( "Receive failed (status=%d).\r\n", ( int )status );
+            return false;
+        }
+
+        received_len = ( uint16_t )( received_len + chunk );
+        if ( received_len >= tx_len )
+        {
+            *out_received_len = received_len;
+            return true;
+        }
+
+        vTaskDelay( pdMS_TO_TICKS( 1 ) );
+    }
+
+    *out_received_len = received_len;
+    return true;
+}
+
+static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
+{
+    if ( argc < 5U )
+    {
+        CONSOLE_Printf( "Usage: i2c_loopback <master:1|2> <speed:100|400> <op:interrupt|dma> <message...>\r\n" );
+        return;
+    }
+
+    EXECI2CExternalChannel_T master_channel = EXEC_I2C_EXTERNAL_1;
+    EXECI2CExternalChannel_T slave_channel  = EXEC_I2C_EXTERNAL_2;
+    if ( !CONSOLE_Parse_I2C_Master_And_Slave( argv[1], &master_channel, &slave_channel ) )
+    {
+        CONSOLE_Printf( "Invalid master channel. Use 1 or 2.\r\n" );
+        return;
+    }
+
+    EXECI2CSpeed_T speed = EXEC_I2C_SPEED_100KHZ;
+    if ( !CONSOLE_Parse_I2C_Speed( argv[2], &speed ) )
+    {
+        CONSOLE_Printf( "Invalid speed. Use 100 or 400.\r\n" );
+        return;
+    }
+
+    EXECI2CTransferPath_T transfer_path = EXEC_I2C_TRANSFER_INTERRUPT;
+    if ( !CONSOLE_Parse_I2C_Transfer_Path( argv[3], &transfer_path ) )
+    {
+        CONSOLE_Printf( "Invalid op. Use interrupt|irq or dma.\r\n" );
+        return;
+    }
+
+    char tx_message[200];
+    uint16_t tx_len = 0U;
+    if ( !CONSOLE_Build_I2C_Message( argc, argv, tx_message, sizeof( tx_message ), &tx_len ) )
+    {
+        CONSOLE_Printf( "Invalid message (empty or too long, max %u chars).\r\n",
+                        ( unsigned int )( sizeof( tx_message ) - 1U ) );
+        return;
+    }
+
+    const uint16_t i2c1_addr = 0x31U;
+    const uint16_t i2c2_addr = 0x32U;
+    const uint16_t fmpi_addr = 0x33U;
+
+    EXECI2CChannelConfig_T i2c1_cfg = {
+        .mode             = ( master_channel == EXEC_I2C_EXTERNAL_1 ) ? EXEC_I2C_MODE_MASTER : EXEC_I2C_MODE_SLAVE,
+        .speed            = speed,
+        .tx_transfer_path = transfer_path,
+        .rx_transfer_path = transfer_path,
+        .own_address_7bit = i2c1_addr,
+    };
+
+    EXECI2CChannelConfig_T i2c2_cfg = {
+        .mode             = ( master_channel == EXEC_I2C_EXTERNAL_2 ) ? EXEC_I2C_MODE_MASTER : EXEC_I2C_MODE_SLAVE,
+        .speed            = speed,
+        .tx_transfer_path = transfer_path,
+        .rx_transfer_path = transfer_path,
+        .own_address_7bit = i2c2_addr,
+    };
+
+    EXECI2CStatus_T status = EXEC_I2C_Configuration( &i2c1_cfg, &i2c2_cfg, fmpi_addr );
+    if ( status != EXEC_I2C_STATUS_OK )
+    {
+        CONSOLE_Printf( "I2C configuration failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    const uint16_t slave_addr = ( slave_channel == EXEC_I2C_EXTERNAL_1 ) ? i2c1_addr : i2c2_addr;
+
+    char rx_message[200];
+    uint16_t received_len = 0U;
+    if ( !CONSOLE_Run_I2C_Loopback_Transfer( master_channel, slave_channel, slave_addr, tx_message,
+                                             tx_len, rx_message, sizeof( rx_message ), &received_len ) )
+    {
+        return;
+    }
+
+    CONSOLE_Printf( "I2C loopback: master=I2C%s slave=I2C%s speed=%s op=%s\r\n",
+                    ( master_channel == EXEC_I2C_EXTERNAL_1 ) ? "1" : "2",
+                    ( slave_channel == EXEC_I2C_EXTERNAL_1 ) ? "1" : "2",
+                    ( speed == EXEC_I2C_SPEED_400KHZ ) ? "400kHz" : "100kHz",
+                    ( transfer_path == EXEC_I2C_TRANSFER_DMA ) ? "DMA" : "Interrupt" );
+
+    CONSOLE_Printf( "Sent    (%u): %.*s\r\n", ( unsigned int )tx_len, ( int )tx_len, tx_message );
+    CONSOLE_Printf( "Received(%u): %.*s\r\n", ( unsigned int )received_len, ( int )received_len,
+                    rx_message );
+
+    const bool pass = ( received_len == ( uint16_t )tx_len ) &&
+                      ( memcmp( tx_message, rx_message, tx_len ) == 0 );
+    CONSOLE_Printf( "Result: %s\r\n", pass ? "PASS" : "FAIL" );
 }
 
 /**-----------------------------------------------------------------------------
