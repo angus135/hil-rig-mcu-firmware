@@ -6,6 +6,7 @@
 
 set(CONSOLE_SOURCES
     console.c
+    command_handler.c
 )
 
 set(CONSOLE_HEADERS
@@ -32,6 +33,7 @@ target_link_libraries(console
         exec_uart
         hw_uart
         execution_manager
+        exec_i2c
 )
 
 # -----------------------------
