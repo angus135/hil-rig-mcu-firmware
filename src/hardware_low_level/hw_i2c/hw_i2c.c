@@ -21,6 +21,7 @@
 #include "stm32f4xx_ll_dma.h"
 #include "stm32f4xx_ll_i2c.h"
 #include "stm32f4xx_ll_fmpi2c.h"
+#include "stm32f4xx_it.h"
 #endif
 
 #include "hw_i2c.h"
@@ -38,6 +39,11 @@
 #define HW_I2C_RxPeek_T         HWI2CRxPeek_T
 #define HW_I2C_TransferKind_T   HWI2CTransferKind_T
 #define HW_I2C_ChannelState_T   HWI2CChannelState_T
+
+#define HW_I2C_CHANNEL_1_DMA_RX_STREAM DMA1_Stream0
+#define HW_I2C_CHANNEL_1_DMA_TX_STREAM DMA1_Stream6
+#define HW_I2C_CHANNEL_2_DMA_RX_STREAM DMA1_Stream2
+#define HW_I2C_CHANNEL_2_DMA_TX_STREAM DMA1_Stream7
 
 
 /**-----------------------------------------------------------------------------
@@ -178,8 +184,14 @@ static inline bool hw_i2c_config_is_valid( const HW_I2C_ChannelConfig_T* config 
 		return false;
 	}
 
-	if ( ( config->transfer_path != HW_I2C_TRANSFER_INTERRUPT ) &&
-		 ( config->transfer_path != HW_I2C_TRANSFER_DMA ) )
+	if ( ( config->tx_transfer_path != HW_I2C_TRANSFER_INTERRUPT ) &&
+		 ( config->tx_transfer_path != HW_I2C_TRANSFER_DMA ) )
+	{
+		return false;
+	}
+
+	if ( ( config->rx_transfer_path != HW_I2C_TRANSFER_INTERRUPT ) &&
+		 ( config->rx_transfer_path != HW_I2C_TRANSFER_DMA ) )
 	{
 		return false;
 	}
@@ -256,9 +268,9 @@ static inline DMA_Stream_TypeDef* hw_i2c_channel_to_dma_rx_stream( HW_I2C_Channe
 	switch ( channel )
 	{
 		case HW_I2C_CHANNEL_1:
-			return DMA1_Stream0;
+			return HW_I2C_CHANNEL_1_DMA_RX_STREAM;
 		case HW_I2C_CHANNEL_2:
-			return DMA1_Stream2;
+			return HW_I2C_CHANNEL_2_DMA_RX_STREAM;
 		default:
 			return NULL;
 	}
@@ -269,9 +281,9 @@ static inline DMA_Stream_TypeDef* hw_i2c_channel_to_dma_tx_stream( HW_I2C_Channe
 	switch ( channel )
 	{
 		case HW_I2C_CHANNEL_1:
-			return DMA1_Stream6;
+			return HW_I2C_CHANNEL_1_DMA_TX_STREAM;
 		case HW_I2C_CHANNEL_2:
-			return DMA1_Stream7;
+			return HW_I2C_CHANNEL_2_DMA_TX_STREAM;
 		default:
 			return NULL;
 	}
@@ -404,7 +416,8 @@ static inline void hw_i2c_finish_transfer( HW_I2C_Channel_T channel, I2C_TypeDef
 		i2c_instance->CR1 |= I2C_CR1_STOP;
 	}
 
-	if ( state->config.transfer_path == HW_I2C_TRANSFER_DMA )
+	if ( state->config.tx_transfer_path == HW_I2C_TRANSFER_DMA ||
+	     state->config.rx_transfer_path == HW_I2C_TRANSFER_DMA )
 	{
 		DMA_Stream_TypeDef* rx_stream = hw_i2c_channel_to_dma_rx_stream( channel );
 		DMA_Stream_TypeDef* tx_stream = hw_i2c_channel_to_dma_tx_stream( channel );
@@ -458,19 +471,19 @@ static void hw_i2c_configure_dma_stream( DMA_Stream_TypeDef* stream,
 
 static inline bool hw_i2c_dma_stream_has_tc( DMA_Stream_TypeDef* stream )
 {
-	if ( stream == DMA1_Stream0 )
+	if ( stream == HW_I2C_CHANNEL_1_DMA_RX_STREAM )
 	{
 		return ( ( DMA1->LISR & DMA_LISR_TCIF0 ) != 0U );
 	}
-	if ( stream == DMA1_Stream2 )
+	if ( stream == HW_I2C_CHANNEL_2_DMA_RX_STREAM )
 	{
 		return ( ( DMA1->LISR & DMA_LISR_TCIF2 ) != 0U );
 	}
-	if ( stream == DMA1_Stream6 )
+	if ( stream == HW_I2C_CHANNEL_1_DMA_TX_STREAM )
 	{
 		return ( ( DMA1->HISR & DMA_HISR_TCIF6 ) != 0U );
 	}
-	if ( stream == DMA1_Stream7 )
+	if ( stream == HW_I2C_CHANNEL_2_DMA_TX_STREAM )
 	{
 		return ( ( DMA1->HISR & DMA_HISR_TCIF7 ) != 0U );
 	}
@@ -479,19 +492,19 @@ static inline bool hw_i2c_dma_stream_has_tc( DMA_Stream_TypeDef* stream )
 
 static inline bool hw_i2c_dma_stream_has_te( DMA_Stream_TypeDef* stream )
 {
-	if ( stream == DMA1_Stream0 )
+	if ( stream == HW_I2C_CHANNEL_1_DMA_RX_STREAM )
 	{
 		return ( ( DMA1->LISR & DMA_LISR_TEIF0 ) != 0U );
 	}
-	if ( stream == DMA1_Stream2 )
+	if ( stream == HW_I2C_CHANNEL_2_DMA_RX_STREAM )
 	{
 		return ( ( DMA1->LISR & DMA_LISR_TEIF2 ) != 0U );
 	}
-	if ( stream == DMA1_Stream6 )
+	if ( stream == HW_I2C_CHANNEL_1_DMA_TX_STREAM )
 	{
 		return ( ( DMA1->HISR & DMA_HISR_TEIF6 ) != 0U );
 	}
-	if ( stream == DMA1_Stream7 )
+	if ( stream == HW_I2C_CHANNEL_2_DMA_TX_STREAM )
 	{
 		return ( ( DMA1->HISR & DMA_HISR_TEIF7 ) != 0U );
 	}
@@ -500,19 +513,19 @@ static inline bool hw_i2c_dma_stream_has_te( DMA_Stream_TypeDef* stream )
 
 static inline void hw_i2c_dma_stream_clear_flags( DMA_Stream_TypeDef* stream )
 {
-	if ( stream == DMA1_Stream0 )
+	if ( stream == HW_I2C_CHANNEL_1_DMA_RX_STREAM )
 	{
 		DMA1->LIFCR = DMA_LIFCR_CTCIF0 | DMA_LIFCR_CTEIF0 | DMA_LIFCR_CDMEIF0 | DMA_LIFCR_CFEIF0;
 	}
-	else if ( stream == DMA1_Stream2 )
+	else if ( stream == HW_I2C_CHANNEL_2_DMA_RX_STREAM )
 	{
 		DMA1->LIFCR = DMA_LIFCR_CTCIF2 | DMA_LIFCR_CTEIF2 | DMA_LIFCR_CDMEIF2 | DMA_LIFCR_CFEIF2;
 	}
-	else if ( stream == DMA1_Stream6 )
+	else if ( stream == HW_I2C_CHANNEL_1_DMA_TX_STREAM )
 	{
 		DMA1->HIFCR = DMA_HIFCR_CTCIF6 | DMA_HIFCR_CTEIF6 | DMA_HIFCR_CDMEIF6 | DMA_HIFCR_CFEIF6;
 	}
-	else if ( stream == DMA1_Stream7 )
+	else if ( stream == HW_I2C_CHANNEL_2_DMA_TX_STREAM )
 	{
 		DMA1->HIFCR = DMA_HIFCR_CTCIF7 | DMA_HIFCR_CTEIF7 | DMA_HIFCR_CDMEIF7 | DMA_HIFCR_CFEIF7;
 	}
@@ -700,7 +713,8 @@ HW_I2C_Status_T HW_I2C_Configure_Channel( HW_I2C_Channel_T channel,
 		i2c_instance->CR1 &= ~I2C_CR1_ACK;
 	}
 
-	if ( config->transfer_path == HW_I2C_TRANSFER_DMA )
+	if ( config->tx_transfer_path == HW_I2C_TRANSFER_DMA ||
+	     config->rx_transfer_path == HW_I2C_TRANSFER_DMA )
 	{
 		i2c_instance->CR2 |= I2C_CR2_DMAEN;
 	}
@@ -735,7 +749,8 @@ HW_I2C_Status_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
 	state->rx_tail               = 0U;
 	state->config.mode           = HW_I2C_MODE_MASTER;
 	state->config.speed          = HW_I2C_SPEED_100KHZ;
-	state->config.transfer_path  = HW_I2C_TRANSFER_INTERRUPT;
+	state->config.tx_transfer_path = HW_I2C_TRANSFER_INTERRUPT;
+	state->config.rx_transfer_path = HW_I2C_TRANSFER_INTERRUPT;
 	state->config.own_address_7bit = own_address_7bit;
 
 #ifndef TEST_BUILD
@@ -812,7 +827,7 @@ HW_I2C_Status_T HW_I2C_Trigger_Master_Transmit( HW_I2C_Channel_T channel, uint16
 	if ( hw_i2c_is_external_channel( channel ) )
 	{
 		I2C_TypeDef* i2c_instance = hw_i2c_channel_to_instance( channel );
-		bool use_dma = ( state->config.transfer_path == HW_I2C_TRANSFER_DMA );
+		bool use_dma = ( state->config.tx_transfer_path == HW_I2C_TRANSFER_DMA );
 
 		if ( use_dma )
 		{
@@ -880,7 +895,7 @@ HW_I2C_Status_T HW_I2C_Trigger_Master_Receive( HW_I2C_Channel_T channel, uint16_
 	if ( hw_i2c_is_external_channel( channel ) )
 	{
 		I2C_TypeDef* i2c_instance = hw_i2c_channel_to_instance( channel );
-		bool use_dma = ( state->config.transfer_path == HW_I2C_TRANSFER_DMA );
+		bool use_dma = ( state->config.rx_transfer_path == HW_I2C_TRANSFER_DMA );
 
 		if ( use_dma )
 		{
@@ -951,7 +966,7 @@ HW_I2C_Status_T HW_I2C_Trigger_Slave_Transmit( HW_I2C_Channel_T channel )
 	{
 		I2C_TypeDef* i2c_instance = hw_i2c_channel_to_instance( channel );
 
-		if ( state->config.transfer_path == HW_I2C_TRANSFER_DMA )
+		if ( state->config.tx_transfer_path == HW_I2C_TRANSFER_DMA )
 		{
 			DMA_Stream_TypeDef* tx_stream = hw_i2c_channel_to_dma_tx_stream( channel );
 			if ( tx_stream == NULL )
@@ -1015,7 +1030,7 @@ HW_I2C_Status_T HW_I2C_Trigger_Slave_Receive( HW_I2C_Channel_T channel, uint16_t
 	{
 		I2C_TypeDef* i2c_instance = hw_i2c_channel_to_instance( channel );
 
-		if ( state->config.transfer_path == HW_I2C_TRANSFER_DMA )
+		if ( state->config.rx_transfer_path == HW_I2C_TRANSFER_DMA )
 		{
 			DMA_Stream_TypeDef* rx_stream = hw_i2c_channel_to_dma_rx_stream( channel );
 			if ( rx_stream == NULL )
@@ -1269,4 +1284,102 @@ HW_I2C_Status_T HW_I2C_Get_Last_Error( HW_I2C_Channel_T channel )
 	}
 
 	return hw_i2c_channel_state[channel].last_error;
+}
+
+/**
+  * @brief This function handles I2C1 event interrupt.
+  */
+void I2C1_EV_IRQHandler(void)
+{
+  /* USER CODE BEGIN I2C1_EV_IRQn 0 */
+    HW_I2C_Service_Event_IRQ( HW_I2C_CHANNEL_1 );
+  /* USER CODE END I2C1_EV_IRQn 0 */
+
+  /* USER CODE BEGIN I2C1_EV_IRQn 1 */
+
+  /* USER CODE END I2C1_EV_IRQn 1 */
+}
+
+/**
+  * @brief This function handles I2C2 event interrupt.
+  */
+void I2C2_EV_IRQHandler(void)
+{
+  /* USER CODE BEGIN I2C2_EV_IRQn 0 */
+    HW_I2C_Service_Event_IRQ( HW_I2C_CHANNEL_2 );
+    /* USER CODE END I2C2_EV_IRQn 0 */
+    
+  /* USER CODE BEGIN I2C2_EV_IRQn 1 */
+
+  /* USER CODE END I2C2_EV_IRQn 1 */
+}
+
+/**
+  * @brief This function handles FMPI2C1 event interrupt.
+  */
+void FMPI2C1_EV_IRQHandler(void)
+{
+  /* USER CODE BEGIN FMPI2C1_EV_IRQn 0 */
+    HW_I2C_Service_Event_IRQ( HW_I2C_CHANNEL_FMPI2C1 );
+  /* USER CODE END FMPI2C1_EV_IRQn 0 */
+
+  /* USER CODE BEGIN FMPI2C1_EV_IRQn 1 */
+
+  /* USER CODE END FMPI2C1_EV_IRQn 1 */
+}
+
+/**
+  * @brief This function handles DMA1 stream0 global interrupt.
+  */
+void DMA1_Stream0_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA1_Stream0_IRQn 0 */
+
+  /* USER CODE END DMA1_Stream0_IRQn 0 */
+    HW_I2C_Service_DMA_Rx_IRQ( HW_I2C_CHANNEL_1 );
+  /* USER CODE BEGIN DMA1_Stream0_IRQn 1 */
+
+  /* USER CODE END DMA1_Stream0_IRQn 1 */
+}
+
+/**
+  * @brief This function handles DMA1 stream2 global interrupt.
+  */
+void DMA1_Stream2_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA1_Stream2_IRQn 0 */
+
+  /* USER CODE END DMA1_Stream2_IRQn 0 */
+    HW_I2C_Service_DMA_Rx_IRQ( HW_I2C_CHANNEL_2 );
+  /* USER CODE BEGIN DMA1_Stream2_IRQn 1 */
+
+  /* USER CODE END DMA1_Stream2_IRQn 1 */
+}
+
+/**
+  * @brief This function handles DMA1 stream6 global interrupt.
+  */
+void DMA1_Stream6_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA1_Stream6_IRQn 0 */
+
+  /* USER CODE END DMA1_Stream6_IRQn 0 */
+    HW_I2C_Service_DMA_Tx_IRQ( HW_I2C_CHANNEL_1 );
+  /* USER CODE BEGIN DMA1_Stream6_IRQn 1 */
+
+  /* USER CODE END DMA1_Stream6_IRQn 1 */
+}
+
+/**
+  * @brief This function handles DMA1 stream7 global interrupt.
+  */
+void DMA1_Stream7_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA1_Stream7_IRQn 0 */
+
+  /* USER CODE END DMA1_Stream7_IRQn 0 */
+    HW_I2C_Service_DMA_Tx_IRQ( HW_I2C_CHANNEL_2 );
+  /* USER CODE BEGIN DMA1_Stream7_IRQn 1 */
+
+  /* USER CODE END DMA1_Stream7_IRQn 1 */
 }

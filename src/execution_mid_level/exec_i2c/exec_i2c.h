@@ -75,7 +75,8 @@ typedef struct EXECI2CChannelConfig_T
 {
 	EXECI2CMode_T mode;
 	EXECI2CSpeed_T speed;
-	EXECI2CTransferPath_T transfer_path;
+	EXECI2CTransferPath_T tx_transfer_path;
+	EXECI2CTransferPath_T rx_transfer_path;
 	uint16_t own_address_7bit;
 } EXECI2CChannelConfig_T;
 
