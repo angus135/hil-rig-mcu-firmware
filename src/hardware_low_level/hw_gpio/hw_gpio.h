@@ -52,25 +52,25 @@ typedef enum GPIO_T
 
 typedef enum GPIOOutput_T
 {
-    DIGITAL_OUT_CH_0,      // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_1,      // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_2,      // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_3,      // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_4,      // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_5,      // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_6,      // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_7,      // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_8,      // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_9,      // Added by Tim for DEV-68
-    UART_TTL_3V3_EN,  // Added by Tim as an example, whoever does UART should replace
-    UART_TTL_5V_EN,   // Added by Tim as an example, whoever does UART should replace
-    LD2,              // Added by Tim for DEV-68
-    LD3               // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_0,  // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_1,  // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_2,  // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_3,  // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_4,  // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_5,  // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_6,  // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_7,  // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_8,  // Added by Tim for DEV-68
+    DIGITAL_OUT_CH_9,  // Added by Tim for DEV-68
+    UART_TTL_3V3_EN,   // Added by Tim as an example, whoever does UART should replace
+    UART_TTL_5V_EN,    // Added by Tim as an example, whoever does UART should replace
+    LD2,               // Added by Tim for DEV-68
+    LD3                // Added by Tim for DEV-68
 } GPIOOutput_T;
 
 typedef struct
 {
-    const char*       name;
+    const char*  name;
     GPIOOutput_T value;
 } GPIO_Name_Map;
 
