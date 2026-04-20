@@ -26,6 +26,8 @@
  *------------------------------------------------------------------------------
  */
 
+#define EXEC_I2C_INTERNAL_FMPI2C1_OWN_ADDRESS_7BIT ( 0x33U )
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -182,6 +184,12 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
 	return exec_i2c_from_hw_status( hw_status );
 }
 
+EXECI2CStatus_T EXEC_I2C_Configuration_Internal( void )
+{
+	return exec_i2c_from_hw_status(
+		HW_I2C_Configure_Internal_FMPI2C1( EXEC_I2C_INTERNAL_FMPI2C1_OWN_ADDRESS_7BIT ) );
+}
+
 EXECI2CStatus_T EXEC_I2C_Master_Send( EXECI2CExternalChannel_T channel, uint16_t device_address_7bit,
 									  const uint8_t* payload, uint16_t payload_length )
 {
@@ -219,6 +227,12 @@ EXECI2CStatus_T EXEC_I2C_Internal_Master_Send( uint16_t device_address_7bit,
 	}
 
 	hw_status = HW_I2C_Trigger_Master_Transmit( HW_I2C_CHANNEL_FMPI2C1, device_address_7bit );
+	if ( hw_status != HW_I2C_STATUS_OK )
+	{
+		return exec_i2c_from_hw_status( hw_status );
+	}
+
+	hw_status = HW_I2C_Wait_For_Transfer_Complete( HW_I2C_CHANNEL_FMPI2C1 );
 	return exec_i2c_from_hw_status( hw_status );
 }
 

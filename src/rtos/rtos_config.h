@@ -145,6 +145,10 @@ volatile TickType_t xTaskGetTickCount( void );
 BaseType_t xTaskNotifyWait( uint32_t ulBitsToClearOnEntry, uint32_t ulBitsToClearOnExit,
                             uint32_t* pulNotificationValue, TickType_t xTicksToWait );
 /**
+ * @brief stub implementing FreeRTOS xTaskGetCurrentTaskHandle
+ */
+TaskHandle_t xTaskGetCurrentTaskHandle( void );
+/**
  * @brief stub implementing FreeRTOS xTaskNotify
  */
 BaseType_t xTaskNotify( TaskHandle_t xTaskToNotify, uint32_t ulValue, eNotifyAction eAction );

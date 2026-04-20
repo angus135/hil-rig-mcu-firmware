@@ -89,6 +89,8 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
 										const EXECI2CChannelConfig_T* i2c2_config,
 										uint16_t internal_fmpi2c1_own_address_7bit );
 
+EXECI2CStatus_T EXEC_I2C_Configuration_Internal( void );
+
 EXECI2CStatus_T EXEC_I2C_Master_Send( EXECI2CExternalChannel_T channel, uint16_t device_address_7bit,
 									  const uint8_t* payload, uint16_t payload_length );
 EXECI2CStatus_T EXEC_I2C_Internal_Master_Send( uint16_t device_address_7bit,

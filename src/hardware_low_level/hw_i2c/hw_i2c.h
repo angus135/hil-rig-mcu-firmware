@@ -134,6 +134,7 @@ void HW_I2C_Service_DMA_Rx_IRQ( HWI2CChannel_T channel );
 void HW_I2C_Service_DMA_Tx_IRQ( HWI2CChannel_T channel );
 
 HWI2CStatus_T HW_I2C_Get_Last_Error( HWI2CChannel_T channel );
+HWI2CStatus_T HW_I2C_Wait_For_Transfer_Complete( HWI2CChannel_T channel );
 
 #ifdef __cplusplus
 }

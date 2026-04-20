@@ -16,7 +16,8 @@
  */
 
 #include "console.h"
-#include "execution_mid_level/exec_i2c/exec_i2c.h"
+#include "exec_i2c.h"
+#include "logic_expander.h"
 #include "execution_manager.h"
 #include "hw_gpio.h"
 #include "exec_uart.h"

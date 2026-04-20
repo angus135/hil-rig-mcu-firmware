@@ -34,6 +34,7 @@ target_link_libraries(console
         hw_uart
         execution_manager
         exec_i2c
+        logic_expander
 )
 
 # -----------------------------
