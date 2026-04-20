@@ -91,6 +91,9 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
 
 EXECI2CStatus_T EXEC_I2C_Master_Send( EXECI2CExternalChannel_T channel, uint16_t device_address_7bit,
 									  const uint8_t* payload, uint16_t payload_length );
+EXECI2CStatus_T EXEC_I2C_Internal_Master_Send( uint16_t device_address_7bit,
+													   const uint8_t* payload,
+													   uint16_t payload_length );
 EXECI2CStatus_T EXEC_I2C_Slave_Send( EXECI2CExternalChannel_T channel, const uint8_t* payload,
 									 uint16_t payload_length );
 

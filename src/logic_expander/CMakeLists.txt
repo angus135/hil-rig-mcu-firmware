@@ -31,6 +31,7 @@ target_link_libraries(logic_expander
         rtos
         hw_timer
         hw_gpio
+    exec_i2c
 )
 
 # -----------------------------
