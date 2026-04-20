@@ -14,7 +14,7 @@
  *------------------------------------------------------------------------------
  */
 #include "logic_expander.h"
-#include "execution_mid_level/exec_i2c/exec_i2c.h"
+#include "exec_i2c.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -23,10 +23,14 @@
  *------------------------------------------------------------------------------
  */
 
+#define LOGIC_EXPANDER_ACTIVE_BITMASK         ( 0x01U )
+
 #define LOGIC_EXPANDER_I2C_ADDR_TABLE_INIT    { 0x20U, 0x21U, 0x22U, 0x23U, 0x24U, 0x25U, 0x26U, 0x27U }
 
 #define LOGIC_EXPANDER_INIT_OLATA_TABLE_INIT  { 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U }
-#define LOGIC_EXPANDER_INIT_OLATB_TABLE_INIT  { 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U }
+// #define LOGIC_EXPANDER_INIT_OLATB_TABLE_INIT  { 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U }
+
+#define LOGIC_EXPANDER_INIT_OLATB_TABLE_INIT  { 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU }
 
 #define MCP23017_REG_IODIRA     ( 0x00U )
 #define MCP23017_REG_IODIRB     ( 0x01U )
@@ -42,6 +46,7 @@
 #define MCP23017_REG_GPPUA      ( 0x0CU )
 #define MCP23017_REG_GPPUB      ( 0x0DU )
 #define MCP23017_REG_OLATA      ( 0x14U )
+#define MCP23017_REG_OLATB      ( 0x15U )
 
 #define MCP23017_IOCON_SIMPLE_NO_INTERRUPT ( 0x00U )
 
@@ -110,6 +115,11 @@ static inline bool logic_expander_index_is_valid( uint8_t expander_index )
 	return expander_index < LOGIC_EXPANDER_COUNT;
 }
 
+static inline bool logic_expander_index_is_active( uint8_t expander_index )
+{
+	return ( LOGIC_EXPANDER_ACTIVE_BITMASK & ( 1U << expander_index ) ) != 0U;
+}
+
 static inline bool logic_expander_port_is_valid( LogicExpanderPort_T port )
 {
 	return ( port == LOGIC_EXPANDER_PORT_A ) || ( port == LOGIC_EXPANDER_PORT_B );
@@ -160,6 +170,11 @@ LogicExpanderStatus_T expander_self_config( void )
 {
 	for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
 	{
+		if ( !logic_expander_index_is_active( idx ) )
+		{
+			continue;
+		}
+
 		logic_expander_state[idx].device_address_7bit = LOGIC_EXPANDER_I2C_ADDRESSES[idx];
 		logic_expander_state[idx].olat_a = LOGIC_EXPANDER_INIT_OLAT_A[idx];
 		logic_expander_state[idx].olat_b = LOGIC_EXPANDER_INIT_OLAT_B[idx];
@@ -286,6 +301,11 @@ LogicExpanderStatus_T expander_send_control_bits( void )
 
 	for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
 	{
+		if ( !logic_expander_index_is_active( idx ) )
+		{
+			continue;
+		}
+
 		LogicExpanderStatus_T status =
 			logic_expander_write_register_pair( logic_expander_state[idx].device_address_7bit,
 											MCP23017_REG_OLATA,
@@ -296,6 +316,21 @@ LogicExpanderStatus_T expander_send_control_bits( void )
 			return status;
 		}
 	}
+
+	return LOGIC_EXPANDER_STATUS_OK;
+}
+
+LogicExpanderStatus_T expander_get_state_snapshot( uint8_t expander_index,
+													 LogicExpanderStateSnapshot_T* out_snapshot )
+{
+	if ( !logic_expander_index_is_valid( expander_index ) || ( out_snapshot == 0 ) )
+	{
+		return LOGIC_EXPANDER_STATUS_INVALID_PARAM;
+	}
+
+	out_snapshot->device_address_7bit = logic_expander_state[expander_index].device_address_7bit;
+	out_snapshot->olat_a = logic_expander_state[expander_index].olat_a;
+	out_snapshot->olat_b = logic_expander_state[expander_index].olat_b;
 
 	return LOGIC_EXPANDER_STATUS_OK;
 }

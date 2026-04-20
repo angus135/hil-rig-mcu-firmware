@@ -25,6 +25,7 @@
 #endif
 
 #include "hw_i2c.h"
+#include "rtos_config.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -69,6 +70,7 @@ typedef struct HWI2CChannelState_T
 {
 	bool configured;
 	HW_I2C_ChannelConfig_T config;
+	TaskHandle_t completion_task;
 
 	volatile bool transfer_in_progress;
 	volatile HW_I2C_Status_T last_error;
@@ -120,6 +122,10 @@ static inline uint16_t hw_i2c_ring_free( const HW_I2C_ChannelState_T* state );
 static inline void hw_i2c_ring_push_byte( HW_I2C_ChannelState_T* state, uint8_t data_byte );
 static inline HW_I2C_Status_T hw_i2c_validate_active_channel( HW_I2C_Channel_T channel,
 															  HW_I2C_ChannelState_T** out_state );
+#ifndef TEST_BUILD
+static inline void hw_i2c_signal_completion_from_isr( HW_I2C_ChannelState_T* state,
+													 BaseType_t* higher_priority_task_woken );
+#endif
 
 #ifndef TEST_BUILD
 static inline I2C_TypeDef* hw_i2c_channel_to_instance( HW_I2C_Channel_T channel );
@@ -249,6 +255,20 @@ static inline HW_I2C_Status_T hw_i2c_validate_active_channel( HW_I2C_Channel_T c
 	*out_state = state;
 	return HW_I2C_STATUS_OK;
 }
+
+#ifndef TEST_BUILD
+static inline void hw_i2c_signal_completion_from_isr( HW_I2C_ChannelState_T* state,
+													 BaseType_t* higher_priority_task_woken )
+{
+	if ( ( state == NULL ) || ( state->completion_task == NULL ) )
+	{
+		return;
+	}
+
+	( void )xTaskNotifyFromISR( state->completion_task, 0U, eNoAction, higher_priority_task_woken );
+	state->completion_task = NULL;
+}
+#endif
 
 #ifndef TEST_BUILD
 static inline I2C_TypeDef* hw_i2c_channel_to_instance( HW_I2C_Channel_T channel )
@@ -629,6 +649,7 @@ static inline void hw_i2c_service_event_external( HW_I2C_Channel_T channel, I2C_
 
 static inline void hw_i2c_service_event_fmpi2c1( HW_I2C_ChannelState_T* state )
 {
+	BaseType_t higher_priority_task_woken = pdFALSE;
 	uint32_t isr = FMPI2C1->ISR;
 
 	if ( ( isr & FMPI2C_ISR_TXIS ) != 0U )
@@ -656,6 +677,14 @@ static inline void hw_i2c_service_event_fmpi2c1( HW_I2C_ChannelState_T* state )
 		FMPI2C1->ICR = FMPI2C_ICR_STOPCF;
 		state->transfer_in_progress = false;
 		state->transfer_kind        = HW_I2C_TRANSFER_KIND_IDLE;
+		hw_i2c_signal_completion_from_isr( state, &higher_priority_task_woken );
+		#ifndef TEST_BUILD
+		if ( higher_priority_task_woken != pdFALSE )
+		{
+			portYIELD_FROM_ISR( higher_priority_task_woken );
+		}
+		#endif
+		return;
 	}
 
 	if ( ( isr & FMPI2C_ISR_TC ) != 0U )
@@ -669,7 +698,15 @@ static inline void hw_i2c_service_event_fmpi2c1( HW_I2C_ChannelState_T* state )
 		state->last_error = HW_I2C_STATUS_ERROR;
 		state->transfer_in_progress = false;
 		state->transfer_kind        = HW_I2C_TRANSFER_KIND_IDLE;
+		hw_i2c_signal_completion_from_isr( state, &higher_priority_task_woken );
 	}
+
+	#ifndef TEST_BUILD
+	if ( higher_priority_task_woken != pdFALSE )
+	{
+		portYIELD_FROM_ISR( higher_priority_task_woken );
+	}
+	#endif
 }
 #endif
 
@@ -689,6 +726,7 @@ HW_I2C_Status_T HW_I2C_Configure_Channel( HW_I2C_Channel_T channel,
 	HW_I2C_ChannelState_T* state = &hw_i2c_channel_state[channel];
 	state->config                = *config;
 	state->configured            = true;
+	state->completion_task       = NULL;
 	state->transfer_in_progress  = false;
 	state->last_error            = HW_I2C_STATUS_OK;
 	state->transfer_kind         = HW_I2C_TRANSFER_KIND_IDLE;
@@ -744,6 +782,7 @@ HW_I2C_Status_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
 
 	HW_I2C_ChannelState_T* state = &hw_i2c_channel_state[HW_I2C_CHANNEL_FMPI2C1];
 	state->configured            = true;
+	state->completion_task       = NULL;
 	state->transfer_in_progress  = false;
 	state->last_error            = HW_I2C_STATUS_OK;
 	state->transfer_kind         = HW_I2C_TRANSFER_KIND_IDLE;
@@ -820,6 +859,15 @@ HW_I2C_Status_T HW_I2C_Trigger_Master_Transmit( HW_I2C_Channel_T channel, uint16
 	if ( state->transfer_in_progress )
 	{
 		return HW_I2C_STATUS_BUSY;
+	}
+
+	if ( channel == HW_I2C_CHANNEL_FMPI2C1 )
+	{
+		state->completion_task = xTaskGetCurrentTaskHandle();
+		{
+			uint32_t ignored_notification = 0U;
+			( void )xTaskNotifyWait( 0xFFFFFFFFU, 0U, &ignored_notification, 0U );
+		}
 	}
 
 	state->target_address_7bit = device_address_7bit;
@@ -1187,6 +1235,17 @@ void HW_I2C_Service_Error_IRQ( HW_I2C_Channel_T channel )
 		hw_i2c_channel_state[channel].last_error = HW_I2C_STATUS_ERROR;
 		hw_i2c_channel_state[channel].transfer_in_progress = false;
 		hw_i2c_channel_state[channel].transfer_kind = HW_I2C_TRANSFER_KIND_IDLE;
+		{
+			BaseType_t higher_priority_task_woken = pdFALSE;
+			hw_i2c_signal_completion_from_isr( &hw_i2c_channel_state[channel],
+			                                   &higher_priority_task_woken );
+		#ifndef TEST_BUILD
+			if ( higher_priority_task_woken != pdFALSE )
+			{
+				portYIELD_FROM_ISR( higher_priority_task_woken );
+			}
+		#endif
+		}
 		FMPI2C1->ICR = FMPI2C_ICR_BERRCF | FMPI2C_ICR_ARLOCF | FMPI2C_ICR_OVRCF | FMPI2C_ICR_TIMOUTCF;
 		return;
 	}
@@ -1309,6 +1368,32 @@ HW_I2C_Status_T HW_I2C_Get_Last_Error( HW_I2C_Channel_T channel )
 	}
 
 	return hw_i2c_channel_state[channel].last_error;
+}
+
+HW_I2C_Status_T HW_I2C_Wait_For_Transfer_Complete( HW_I2C_Channel_T channel )
+{
+	HW_I2C_ChannelState_T* state = NULL;
+	HW_I2C_Status_T status      = hw_i2c_validate_active_channel( channel, &state );
+	if ( status != HW_I2C_STATUS_OK )
+	{
+		return status;
+	}
+
+	if ( channel != HW_I2C_CHANNEL_FMPI2C1 )
+	{
+		return HW_I2C_STATUS_INVALID_PARAM;
+	}
+
+#ifndef TEST_BUILD
+	uint32_t notification_value = 0U;
+	BaseType_t wait_status = xTaskNotifyWait( 0xFFFFFFFFU, 0U, &notification_value, portMAX_DELAY );
+	if ( wait_status != pdPASS )
+	{
+		return HW_I2C_STATUS_ERROR;
+	}
+#endif
+
+	return state->last_error;
 }
 
 /**

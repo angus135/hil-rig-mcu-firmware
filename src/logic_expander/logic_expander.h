@@ -53,6 +53,13 @@ typedef enum LogicExpanderStatus_T
 	LOGIC_EXPANDER_STATUS_NOT_READY,
 } LogicExpanderStatus_T;
 
+typedef struct LogicExpanderStateSnapshot_T
+{
+	uint16_t device_address_7bit;
+	uint8_t olat_a;
+	uint8_t olat_b;
+} LogicExpanderStateSnapshot_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -66,6 +73,9 @@ LogicExpanderStatus_T expander_load_control_bit( uint8_t expander_index,
 														 bool bit_value );
 
 LogicExpanderStatus_T expander_send_control_bits( void );
+
+LogicExpanderStatus_T expander_get_state_snapshot( uint8_t expander_index,
+													 LogicExpanderStateSnapshot_T* out_snapshot );
 
 #ifdef __cplusplus
 }

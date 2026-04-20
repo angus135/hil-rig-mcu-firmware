@@ -16,12 +16,14 @@
  */
 
 #include "console.h"
-#include "execution_mid_level/exec_i2c/exec_i2c.h"
+#include "exec_i2c.h"
+#include "logic_expander.h"
 #include "execution_manager.h"
 #include "hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdio.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -54,7 +56,9 @@ static void CONSOLE_Command_Echo( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_LED( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] );
+static bool CONSOLE_Parse_Expander_Port( const char* arg, LogicExpanderPort_T* port );
 static bool CONSOLE_Parse_I2C_Master_And_Slave( const char* arg,
                                                  EXECI2CExternalChannel_T* master_channel,
                                                  EXECI2CExternalChannel_T* slave_channel );
@@ -85,6 +89,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"execution_manager",    CONSOLE_Command_Test_Scheduler,       "Starts the test scheduler."},
     {"clear",  CONSOLE_Command_Clear,       "Clears the console."},
     {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <green|blue|red|test>"},
+    {"expander", CONSOLE_Command_Expander,  "Expander test commands. Usage: expander <config|set|send|reset> [args]"},
     {"i2c_loopback", CONSOLE_Command_I2C_Loopback, "Loopback test. Usage: i2c_loopback <master:1|2> <speed:100|400> <op:interrupt|dma> <message...>"}
 
 };
@@ -257,6 +262,187 @@ static void CONSOLE_Command_LED( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "Unknown action: %s\r\nUsage: led toggle <green|blue|red|test>\r\n",
                         argv[1] );
     }
+}
+
+static bool CONSOLE_Parse_Expander_Port( const char* arg, LogicExpanderPort_T* port )
+{
+    if ( ( arg == NULL ) || ( port == NULL ) )
+    {
+        return false;
+    }
+
+    if ( strcmp( arg, "A" ) == 0 )
+    {
+        *port = LOGIC_EXPANDER_PORT_A;
+        return true;
+    }
+
+    if ( strcmp( arg, "B" ) == 0 )
+    {
+        *port = LOGIC_EXPANDER_PORT_B;
+        return true;
+    }
+
+    return false;
+}
+
+static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
+{
+    if ( argc < 2 )
+    {
+        CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  expander config      - Initialize all active expanders\r\n" );
+        CONSOLE_Printf( "  expander set <addr> <port> <value> - Set control bits (e.g. expander set 0x20 A 0xFF)\r\n" );
+        CONSOLE_Printf( "  expander send       - Send all staged bits to hardware\r\n" );
+        CONSOLE_Printf( "  expander reset      - Reset all bits to 0 and send\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "config" ) == 0 )
+    {
+        EXECI2CStatus_T i2c_status = EXEC_I2C_Configuration_Internal();
+        if ( i2c_status != EXEC_I2C_STATUS_OK )
+        {
+            CONSOLE_Printf( "Expander internal I2C config failed (status=%d)\r\n", ( int )i2c_status );
+            return;
+        }
+
+        LogicExpanderStatus_T status = expander_self_config();
+        if ( status == LOGIC_EXPANDER_STATUS_OK )
+        {
+            CONSOLE_Printf( "Expander config: OK\r\n" );
+        }
+        else
+        {
+            CONSOLE_Printf( "Expander config failed (status=%d)\r\n", ( int )status );
+        }
+        return;
+    }
+
+    if ( strcmp( argv[1], "set" ) == 0 )
+    {
+        if ( argc < 5 )
+        {
+            CONSOLE_Printf( "Usage: expander set <addr> <port> <value>\r\n" );
+            CONSOLE_Printf( "Example: expander set 0x20 A 0xFF\r\n" );
+            return;
+        }
+
+        uint32_t addr = 0U;
+        if ( sscanf( argv[2], "0x%x", ( unsigned int* )&addr ) != 1 )
+        {
+            CONSOLE_Printf( "Invalid address format. Use 0x20, 0x21, etc.\r\n" );
+            return;
+        }
+
+        if ( addr < 0x20U || addr > 0x27U )
+        {
+            CONSOLE_Printf( "Address out of range (0x20-0x27).\r\n" );
+            return;
+        }
+
+        uint8_t expander_index = ( uint8_t )( addr - 0x20U );
+
+        LogicExpanderStateSnapshot_T snapshot_before = { 0 };
+        LogicExpanderStatus_T snapshot_status =
+            expander_get_state_snapshot( expander_index, &snapshot_before );
+        if ( snapshot_status == LOGIC_EXPANDER_STATUS_OK )
+        {
+            CONSOLE_Printf( "Expander state before set: idx=%u addr=0x%04X OLATA=0x%02X OLATB=0x%02X\r\n",
+                            ( unsigned int )expander_index,
+                            ( unsigned int )snapshot_before.device_address_7bit,
+                            ( unsigned int )snapshot_before.olat_a,
+                            ( unsigned int )snapshot_before.olat_b );
+        }
+
+        LogicExpanderPort_T port = LOGIC_EXPANDER_PORT_A;
+        if ( !CONSOLE_Parse_Expander_Port( argv[3], &port ) )
+        {
+            CONSOLE_Printf( "Invalid port. Use exact 'A' or 'B'.\r\n" );
+            return;
+        }
+
+        uint32_t value = 0U;
+        if ( sscanf( argv[4], "0x%x", ( unsigned int* )&value ) != 1 )
+        {
+            CONSOLE_Printf( "Invalid value format. Use 0x00, 0xFF, etc.\r\n" );
+            return;
+        }
+
+        if ( value > 0xFFU )
+        {
+            CONSOLE_Printf( "Value out of range (0x00-0xFF).\r\n" );
+            return;
+        }
+
+        uint8_t byte_value = ( uint8_t )value;
+
+        for ( uint8_t bit_idx = 0U; bit_idx < 8U; ++bit_idx )
+        {
+            bool bit_set = ( byte_value & ( 1U << bit_idx ) ) != 0U;
+            LogicExpanderStatus_T status = expander_load_control_bit( expander_index, port, bit_idx, bit_set );
+            if ( status != LOGIC_EXPANDER_STATUS_OK )
+            {
+                CONSOLE_Printf( "Failed to set bit %u (status=%d)\r\n", ( unsigned int )bit_idx,
+                                ( int )status );
+                return;
+            }
+        }
+
+        LogicExpanderStateSnapshot_T snapshot_after = { 0 };
+        snapshot_status = expander_get_state_snapshot( expander_index, &snapshot_after );
+        if ( snapshot_status == LOGIC_EXPANDER_STATUS_OK )
+        {
+            CONSOLE_Printf( "Expander state after set:  idx=%u addr=0x%04X OLATA=0x%02X OLATB=0x%02X\r\n",
+                            ( unsigned int )expander_index,
+                            ( unsigned int )snapshot_after.device_address_7bit,
+                            ( unsigned int )snapshot_after.olat_a,
+                            ( unsigned int )snapshot_after.olat_b );
+        }
+
+        CONSOLE_Printf( "Set expander 0x%02X port %c = 0x%02X\r\n", ( unsigned int )addr,
+                        ( port == LOGIC_EXPANDER_PORT_A ) ? 'A' : 'B', ( unsigned int )byte_value );
+        return;
+    }
+
+    if ( strcmp( argv[1], "send" ) == 0 )
+    {
+        LogicExpanderStatus_T status = expander_send_control_bits();
+        if ( status == LOGIC_EXPANDER_STATUS_OK )
+        {
+            CONSOLE_Printf( "Expander send: OK\r\n" );
+        }
+        else
+        {
+            CONSOLE_Printf( "Expander send failed (status=%d)\r\n", ( int )status );
+        }
+        return;
+    }
+
+    if ( strcmp( argv[1], "reset" ) == 0 )
+    {
+        for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
+        {
+            for ( uint8_t bit_idx = 0U; bit_idx < 8U; ++bit_idx )
+            {
+                ( void )expander_load_control_bit( idx, LOGIC_EXPANDER_PORT_A, bit_idx, false );
+                ( void )expander_load_control_bit( idx, LOGIC_EXPANDER_PORT_B, bit_idx, false );
+            }
+        }
+
+        LogicExpanderStatus_T status = expander_send_control_bits();
+        if ( status == LOGIC_EXPANDER_STATUS_OK )
+        {
+            CONSOLE_Printf( "Expander reset: OK (all bits cleared and sent)\r\n" );
+        }
+        else
+        {
+            CONSOLE_Printf( "Expander reset failed (status=%d)\r\n", ( int )status );
+        }
+        return;
+    }
+
+    CONSOLE_Printf( "Unknown expander subcommand: %s\r\n", argv[1] );
 }
 
 static bool CONSOLE_Parse_I2C_Master_And_Slave( const char* arg,
