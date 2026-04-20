@@ -3,7 +3,7 @@
  *  Author:     Angus Corr
  *  Created:    10-Apr-2026
  *
-  *  Description:
+ *  Description:
  *      Public interface for the low-level SPI driver used by the HIL-RIG
  *      firmware.
  *
