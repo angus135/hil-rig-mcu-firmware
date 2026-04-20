@@ -4,10 +4,46 @@
  *  Created:    10-Apr-2026
  *
  *  Description:
- *      <Short description of the module's purpose and responsibilities>
+ *      Low-level SPI driver implementation for the HIL-RIG firmware.
+ *
+ *      This module provides a generic DMA-backed SPI transport layer for the
+ *      supported SPI peripherals. It is intentionally kept mode-agnostic at the
+ *      public data-path level and focuses only on configuring SPI hardware,
+ *      managing continuous RX capture into an internal circular buffer, and
+ *      managing queued TX transfers from an internal linear software buffer.
+ *
+ *      RX is exposed through a peek/consume model over a DMA-backed circular
+ *      byte stream. TX is exposed through a load/trigger model where data is
+ *      appended to an internal queue and transmitted using DMA when triggered.
+ *      TX progression is continued by the DMA completion IRQ handler if more
+ *      queued data remains.
+ *
+ *      The module does not implement higher-level protocol framing, transaction
+ *      scheduling, chip-select sequencing policy beyond basic hardware mode
+ *      configuration, logging interpretation, or master/slave application
+ *      semantics. Those responsibilities are intentionally left to higher-level
+ *      software.
  *
  *  Notes:
- *      <Any design notes, dependencies, or assumptions go here>
+ *      - Public RX/TX APIs are byte-oriented even when the SPI peripheral is
+ *        configured for 16-bit data size.
+ *      - In 16-bit mode, queued TX sizes and RX consume sizes must remain
+ *        aligned to whole SPI frames (multiples of 2 bytes).
+ *      - Software queue positions and RX unread tracking are maintained in
+ *        bytes. DMA transfer lengths are configured internally in DMA elements
+ *        according to the selected SPI data size.
+ *      - RX uses a continuous DMA-backed circular buffer. The caller must
+ *        consume data often enough to avoid overwrite of unread data.
+ *      - TX uses a linear queue buffer. Once all queued data has been sent, the
+ *        queue state is reset back to empty.
+ *      - This module assumes DMA stream/hardware mappings defined in this file
+ *        are correct for the target hardware configuration.
+ *      - Stream-specific DMA terminal flag handling is currently hard-coded to
+ *        the selected streams and must be updated if the DMA stream mappings
+ *        change.
+ *      - DMA memory/peripheral widths must match the configured SPI data size.
+ *      - This layer performs no byte swapping, message framing, or semantic
+ *        interpretation of queued or received data.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
