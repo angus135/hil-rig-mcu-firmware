@@ -76,6 +76,11 @@ extern "C"
 #define SPI_TIMODE_DISABLE ( 0x00000000U )
 #define SPI_CRCCALCULATION_DISABLE ( 0x00000000U )
 
+#define LL_DMA_MDATAALIGN_BYTE 0x00000000U     /*!< Memory data alignment : Byte     */
+#define LL_DMA_MDATAALIGN_HALFWORD 0x00000001U /*!< Memory data alignment : HalfWord */
+#define LL_DMA_PDATAALIGN_BYTE 0x00000000U     /*!< Peripheral data alignment : Byte     */
+#define LL_DMA_PDATAALIGN_HALFWORD 0x00000001U /*!< Peripheral data alignment : HalfWord */
+
 // DMA related defines
 #define DMA2 ( ( void* )0x40026400U )
 #define LL_DMA_STREAM_0 0x00000000U
@@ -613,6 +618,48 @@ uint32_t LL_DMA_IsActiveFlag_TC1( DMA_TypeDef* DMAx );
  * @retval None
  */
 void LL_DMA_ClearFlag_TC1( DMA_TypeDef* DMAx );
+
+/**
+ * @brief Set Memory size.
+ * @rmtoll CR          MSIZE           LL_DMA_SetMemorySize
+ * @param  DMAx DMAx Instance
+ * @param  Stream This parameter can be one of the following values:
+ *         @arg @ref LL_DMA_STREAM_0
+ *         @arg @ref LL_DMA_STREAM_1
+ *         @arg @ref LL_DMA_STREAM_2
+ *         @arg @ref LL_DMA_STREAM_3
+ *         @arg @ref LL_DMA_STREAM_4
+ *         @arg @ref LL_DMA_STREAM_5
+ *         @arg @ref LL_DMA_STREAM_6
+ *         @arg @ref LL_DMA_STREAM_7
+ * @param  Size This parameter can be one of the following values:
+ *         @arg @ref LL_DMA_MDATAALIGN_BYTE
+ *         @arg @ref LL_DMA_MDATAALIGN_HALFWORD
+ *         @arg @ref LL_DMA_MDATAALIGN_WORD
+ * @retval None
+ */
+void LL_DMA_SetMemorySize( DMA_TypeDef* DMAx, uint32_t Stream, uint32_t Size );
+
+/**
+ * @brief Set Peripheral size.
+ * @rmtoll CR          PSIZE           LL_DMA_SetPeriphSize
+ * @param  DMAx DMAx Instance
+ * @param  Stream This parameter can be one of the following values:
+ *         @arg @ref LL_DMA_STREAM_0
+ *         @arg @ref LL_DMA_STREAM_1
+ *         @arg @ref LL_DMA_STREAM_2
+ *         @arg @ref LL_DMA_STREAM_3
+ *         @arg @ref LL_DMA_STREAM_4
+ *         @arg @ref LL_DMA_STREAM_5
+ *         @arg @ref LL_DMA_STREAM_6
+ *         @arg @ref LL_DMA_STREAM_7
+ * @param  Size This parameter can be one of the following values:
+ *         @arg @ref LL_DMA_PDATAALIGN_BYTE
+ *         @arg @ref LL_DMA_PDATAALIGN_HALFWORD
+ *         @arg @ref LL_DMA_PDATAALIGN_WORD
+ * @retval None
+ */
+void LL_DMA_SetPeriphSize( DMA_TypeDef* DMAx, uint32_t Stream, uint32_t Size );
 
 /**
   \brief   Disable Interrupt

@@ -75,18 +75,19 @@
 typedef struct SPIPeripheralState_T
 {
     HWSPIConfig_T config;
-    uint8_t       rx_buffer[RX_BUFFER_SIZE_BYTES];
+    uint8_t       rx_buffer[RX_BUFFER_SIZE_BYTES] __attribute__( ( aligned( 2 ) ) );
     uint32_t      rx_position;
-    uint8_t       tx_buffer[TX_BUFFER_SIZE_BYTES];
+    uint8_t       tx_buffer[TX_BUFFER_SIZE_BYTES] __attribute__( ( aligned( 2 ) ) );
     uint32_t      tx_write_position;
     uint32_t      tx_read_position;
-    uint32_t      tx_num_in_transmission;
-    DMA_TypeDef*  rx_dma;
-    uint32_t      rx_dma_stream;
-    DMA_TypeDef*  tx_dma;
-    uint32_t      tx_dma_stream;
-    SPI_TypeDef*  spi_peripheral;
-    IRQn_Type     tx_dma_irqn;
+    uint32_t tx_num_bytes_in_transmission;  // Note: stored in bytes so for 16 bit, divide by 2 for
+                                            // elements
+    DMA_TypeDef* rx_dma;
+    uint32_t     rx_dma_stream;
+    DMA_TypeDef* tx_dma;
+    uint32_t     tx_dma_stream;
+    SPI_TypeDef* spi_peripheral;
+    IRQn_Type    tx_dma_irqn;
 } SPIPeripheralState_T;
 
 /**-----------------------------------------------------------------------------
@@ -113,6 +114,16 @@ SPIPeripheralState_T* dac_state              = &dac_state_struct;
 static inline SPIPeripheralState_T* HW_SPI_Get_State( SPIPeripheral_T peripheral );
 static void                         HW_SPI_TX_Error_Handler( SPIPeripheral_T peripheral );
 static inline void                  HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral );
+static inline uint32_t HW_SPI_Get_Frame_Size_Bytes( const SPIPeripheralState_T* peripheral_state );
+static inline uint16_t HW_SPI_Bytes_To_DMA_Elements( const SPIPeripheralState_T* peripheral_state,
+                                                     uint32_t                    size_bytes );
+static inline uint32_t HW_SPI_DMA_Elements_To_Bytes( const SPIPeripheralState_T* peripheral_state,
+                                                     uint32_t                    num_elements );
+static inline bool     HW_SPI_Is_Frame_Aligned_Size( const SPIPeripheralState_T* peripheral_state,
+                                                     uint32_t                    size_bytes );
+static void            HW_SPI_Configure_DMA_Data_Widths( SPIPeripheralState_T* peripheral_state );
+static bool
+HW_SPI_TX_Start_DMA_From_Current_Read_Position( SPIPeripheralState_T* peripheral_state );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -173,7 +184,7 @@ static void HW_SPI_TX_Error_Handler( SPIPeripheral_T peripheral )
      * Drop knowledge of the currently active transfer. The queued buffer
      * positions are left unchanged so a higher layer may inspect or recover.
      */
-    peripheral_state->tx_num_in_transmission = 0U;
+    peripheral_state->tx_num_bytes_in_transmission = 0U;
 
     /*
      * TODO:
@@ -186,20 +197,20 @@ static inline void HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral )
     SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
 
     /*
-     * Advance the software read position past the bytes that have just finished
-     * transmitting.
+     * Advance by the number of BYTES that were in flight. Software queue state
+     * stays byte-oriented even when DMA is operating in 16-bit mode.
      */
     peripheral_state->tx_read_position =
-        peripheral_state->tx_read_position + peripheral_state->tx_num_in_transmission;
+        peripheral_state->tx_read_position + peripheral_state->tx_num_bytes_in_transmission;
 
     /*
-     * The just-finished DMA transfer is no longer active.
+     * The completed DMA transfer is no longer active.
      */
-    peripheral_state->tx_num_in_transmission = 0U;
+    peripheral_state->tx_num_bytes_in_transmission = 0U;
 
     /*
-     * If all queued bytes have now been transmitted, reset the linear buffer
-     * state back to empty so the next transmission session starts from index 0.
+     * If all queued bytes have now been transmitted, collapse the linear queue
+     * back to an empty state.
      */
     if ( peripheral_state->tx_read_position >= peripheral_state->tx_write_position )
     {
@@ -209,11 +220,107 @@ static inline void HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral )
     }
 
     /*
-     * More data was appended while the previous DMA transfer was active.
-     * Re-arm DMA for the remaining unsent portion of the TX buffer.
+     * More data was appended while the previous DMA transfer was in progress.
+     * Re-arm DMA starting from the new software read position.
      */
-    uint32_t bytes_remaining =
-        peripheral_state->tx_write_position - peripheral_state->tx_read_position;
+    if ( HW_SPI_TX_Start_DMA_From_Current_Read_Position( peripheral_state ) == false )
+    {
+        HW_SPI_TX_Error_Handler( peripheral );
+    }
+}
+
+static inline uint32_t HW_SPI_Get_Frame_Size_Bytes( const SPIPeripheralState_T* peripheral_state )
+{
+    if ( peripheral_state->config.data_size == SPI_SIZE_16_BIT )
+    {
+        return 2U;
+    }
+
+    return 1U;
+}
+
+static inline uint16_t HW_SPI_Bytes_To_DMA_Elements( const SPIPeripheralState_T* peripheral_state,
+                                                     uint32_t                    size_bytes )
+{
+    return size_bytes / HW_SPI_Get_Frame_Size_Bytes( peripheral_state );
+}
+
+static inline uint32_t HW_SPI_DMA_Elements_To_Bytes( const SPIPeripheralState_T* peripheral_state,
+                                                     uint32_t                    num_elements )
+{
+    return num_elements * HW_SPI_Get_Frame_Size_Bytes( peripheral_state );
+}
+
+static inline bool HW_SPI_Is_Frame_Aligned_Size( const SPIPeripheralState_T* peripheral_state,
+                                                 uint32_t                    size_bytes )
+{
+    return ( size_bytes % HW_SPI_Get_Frame_Size_Bytes( peripheral_state ) ) == 0U;
+}
+
+/**
+ * @brief Configure DMA memory/peripheral data widths to match the SPI frame size.
+ *
+ * This must match the selected SPI data size. For 8-bit SPI, DMA transfers bytes.
+ * For 16-bit SPI, DMA transfers halfwords. This is here to guarantee configuration of DMA for size
+ * and alignment that HAL may not do.
+ */
+static void HW_SPI_Configure_DMA_Data_Widths( SPIPeripheralState_T* peripheral_state )
+{
+    uint32_t memory_width     = 0;
+    uint32_t peripheral_width = 0;
+
+    if ( peripheral_state->config.data_size == SPI_SIZE_16_BIT )
+    {
+        memory_width     = LL_DMA_MDATAALIGN_HALFWORD;
+        peripheral_width = LL_DMA_PDATAALIGN_HALFWORD;
+    }
+    else
+    {
+        memory_width     = LL_DMA_MDATAALIGN_BYTE;
+        peripheral_width = LL_DMA_PDATAALIGN_BYTE;
+    }
+
+    if ( peripheral_state->rx_dma
+         != NULL )  // Checks can be done here since configuration is not in critical path
+    {
+        LL_DMA_SetMemorySize( peripheral_state->rx_dma, peripheral_state->rx_dma_stream,
+                              memory_width );
+        LL_DMA_SetPeriphSize( peripheral_state->rx_dma, peripheral_state->rx_dma_stream,
+                              peripheral_width );
+    }
+
+    if ( peripheral_state->tx_dma != NULL )
+    {
+        LL_DMA_SetMemorySize( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
+                              memory_width );
+        LL_DMA_SetPeriphSize( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
+                              peripheral_width );
+    }
+}
+
+/**
+ * @brief Start a TX DMA transfer from the current software read position.
+ *
+ * Software state remains byte-oriented. DMA length is configured in DMA elements,
+ * which are 1 byte for 8-bit SPI or 2 bytes for 16-bit SPI.
+ */
+static bool HW_SPI_TX_Start_DMA_From_Current_Read_Position( SPIPeripheralState_T* peripheral_state )
+{
+    uint32_t bytes_to_send = 0;
+    uint32_t dma_elements  = 0;
+
+    bytes_to_send = peripheral_state->tx_write_position - peripheral_state->tx_read_position;
+    if ( bytes_to_send == 0U )
+    {
+        return false;
+    }
+
+    if ( HW_SPI_Is_Frame_Aligned_Size( peripheral_state, bytes_to_send ) == false )
+    {
+        return false;
+    }
+
+    dma_elements = HW_SPI_Bytes_To_DMA_Elements( peripheral_state, bytes_to_send );
 
     LL_DMA_DisableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
     while ( LL_DMA_IsEnabledStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream )
@@ -228,19 +335,20 @@ static inline void HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral )
     LL_DMA_SetPeriphAddress( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
                              LL_SPI_DMA_GetRegAddr( peripheral_state->spi_peripheral ) );
 
-    LL_DMA_SetDataLength( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
-                          bytes_remaining );  // TODO: Adjust based on element size
+    LL_DMA_SetDataLength( peripheral_state->tx_dma, peripheral_state->tx_dma_stream, dma_elements );
 
     /*
-     * Mark the transfer as active before enabling the stream so software state
-     * already reflects "busy" if anything else inspects it immediately.
+     * Keep software bookkeeping in bytes so the rest of the queue logic stays
+     * byte-oriented and consistent with the public API.
      */
-    peripheral_state->tx_num_in_transmission = bytes_remaining;
+    peripheral_state->tx_num_bytes_in_transmission = bytes_to_send;
 
     LL_SPI_EnableDMAReq_TX( peripheral_state->spi_peripheral );
     LL_DMA_EnableIT_TC( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
     LL_DMA_EnableIT_TE( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
     LL_DMA_EnableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+
+    return true;
 }
 
 /**-----------------------------------------------------------------------------
@@ -499,6 +607,28 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
         return false;
     }
 
+    /*
+     * Ensure DMA memory/peripheral data widths match the configured SPI frame size.
+     * This is essential when switching between 8-bit and 16-bit operation.
+     */
+    switch ( peripheral )
+    {
+        case SPI_CHANNEL_0:
+            HW_SPI_Configure_DMA_Data_Widths( channel_0_state );
+            break;
+
+        case SPI_CHANNEL_1:
+            HW_SPI_Configure_DMA_Data_Widths( channel_1_state );
+            break;
+
+        case SPI_DAC:
+            HW_SPI_Configure_DMA_Data_Widths( dac_state );
+            break;
+
+        default:
+            return false;
+    }
+
     return true;
 }
 
@@ -520,6 +650,10 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
  * policy, or higher-level scheduling semantics. Those responsibilities belong
  * to the software layer above this driver.
  *
+ * When the channel is configured for 16-bit SPI operation, @p bytes_to_consume
+ * must be a multiple of 2 bytes so that the software consume position remains
+ * aligned to SPI frames.
+ *
  * The channel should only be started after successful configuration.
  *
  * @param peripheral
@@ -527,28 +661,42 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
  */
 void HW_SPI_Start_Channel( SPIPeripheral_T peripheral )
 {
-    SPI_HandleTypeDef* hspi      = NULL;
-    uint8_t*           rx_buffer = NULL;
+    SPI_HandleTypeDef*    hspi               = NULL;
+    SPIPeripheralState_T* peripheral_state   = NULL;
+    uint8_t*              rx_buffer          = NULL;
+    uint16_t              rx_length_elements = 0U;
+
     switch ( peripheral )
     {
         case SPI_CHANNEL_0:
-            hspi      = &SPI_CHANNEL_0_HANDLE;
-            rx_buffer = ( channel_0_state->rx_buffer );
+            hspi             = &SPI_CHANNEL_0_HANDLE;
+            peripheral_state = channel_0_state;
+            rx_buffer        = channel_0_state->rx_buffer;
             break;
+
         case SPI_CHANNEL_1:
-            hspi      = &SPI_CHANNEL_1_HANDLE;
-            rx_buffer = ( channel_1_state->rx_buffer );
+            hspi             = &SPI_CHANNEL_1_HANDLE;
+            peripheral_state = channel_1_state;
+            rx_buffer        = channel_1_state->rx_buffer;
             break;
-        case SPI_DAC:
-            hspi = &SPI_DAC_HANDLE;
-            return;
-            break;
+
+        case SPI_DAC:  // SPI will not be receiving anything
         default:
             return;
     }
+    /*
+     * Public software API remains byte-oriented, but HAL/DMA needs the transfer
+     * length in SPI frames, not bytes.
+     */
+    rx_length_elements = HW_SPI_Bytes_To_DMA_Elements( peripheral_state, RX_BUFFER_SIZE_BYTES );
+
+    peripheral_state->rx_position = 0U;
+
+    // Disable Rx interrupts
     NVIC_DisableIRQ( SPI_CHANNEL_0_RX_DMA_IRQN );
     NVIC_DisableIRQ( SPI_CHANNEL_1_RX_DMA_IRQN );
-    HAL_SPI_Receive_DMA( hspi, rx_buffer, RX_BUFFER_SIZE_BYTES );
+
+    HAL_SPI_Receive_DMA( hspi, rx_buffer, rx_length_elements );
 }
 
 /**
@@ -613,6 +761,10 @@ void HW_SPI_Stop_Channel( SPIPeripheral_T peripheral )
  * exposes only the raw unread byte stream currently captured by the channel's
  * RX path.
  *
+ * The returned spans are always expressed in bytes, even when the SPI channel is
+ * configured for 16-bit operation. In 16-bit mode, the unread spans remain
+ * frame-aligned.
+ *
  * @param peripheral
  *     The SPI peripheral/channel to inspect.
  *
@@ -621,26 +773,29 @@ void HW_SPI_Stop_Channel( SPIPeripheral_T peripheral )
  */
 HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIPeripheral_T peripheral )
 {
-    uint8_t* rx_buffer       = NULL;
-    uint32_t read_index      = 0U;
-    uint32_t dma_remaining   = 0U;
-    uint32_t dma_write_index = 0U;
-    uint32_t unread_bytes    = 0U;
+    SPIPeripheralState_T* peripheral_state       = NULL;
+    uint8_t*              rx_buffer              = NULL;
+    uint32_t              read_index             = 0U;
+    uint32_t              dma_remaining_elements = 0U;
+    uint32_t              dma_remaining_bytes    = 0U;
+    uint32_t              dma_write_index        = 0U;
+    uint32_t              unread_bytes           = 0U;
 
-    // TODO: fix this based on state
     switch ( peripheral )
     {
         case SPI_CHANNEL_0:
-            rx_buffer  = ( channel_0_state->rx_buffer );
-            read_index = ( channel_0_state->rx_position );
-            dma_remaining =
+            peripheral_state = channel_0_state;
+            rx_buffer        = channel_0_state->rx_buffer;
+            read_index       = channel_0_state->rx_position;
+            dma_remaining_elements =
                 LL_DMA_GetDataLength( SPI_CHANNEL_0_RX_DMA, SPI_CHANNEL_0_RX_DMA_STREAM );
             break;
 
         case SPI_CHANNEL_1:
-            rx_buffer  = ( channel_1_state->rx_buffer );
-            read_index = ( channel_1_state->rx_position );
-            dma_remaining =
+            peripheral_state = channel_1_state;
+            rx_buffer        = channel_1_state->rx_buffer;
+            read_index       = channel_1_state->rx_position;
+            dma_remaining_elements =
                 LL_DMA_GetDataLength( SPI_CHANNEL_1_RX_DMA, SPI_CHANNEL_1_RX_DMA_STREAM );
             break;
 
@@ -651,8 +806,13 @@ HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIPeripheral_T peripheral )
                                        .total_length_bytes = 0U };
     }
 
-    dma_write_index =
-        RX_BUFFER_SIZE_BYTES - dma_remaining;  // TODO: Adjust based on size of DMA element
+    /*
+     * DMA NDTR is expressed in DMA elements, not bytes. Convert back to bytes so
+     * the software RX stream remains byte-oriented.
+     */
+    dma_remaining_bytes = HW_SPI_DMA_Elements_To_Bytes( peripheral_state, dma_remaining_elements );
+
+    dma_write_index = RX_BUFFER_SIZE_BYTES - dma_remaining_bytes;
 
     if ( dma_write_index == RX_BUFFER_SIZE_BYTES )
     {
@@ -713,20 +873,23 @@ HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIPeripheral_T peripheral )
  */
 void HW_SPI_Rx_Consume( SPIPeripheral_T peripheral, uint32_t bytes_to_consume )
 {
-    switch ( peripheral )
+    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
+    if ( peripheral_state == NULL )
     {
-        case SPI_CHANNEL_0:
-            ( channel_0_state->rx_position ) =
-                ( ( channel_0_state->rx_position ) + bytes_to_consume ) % RX_BUFFER_SIZE_BYTES;
-            break;
-        case SPI_CHANNEL_1:
-            ( channel_1_state->rx_position ) =
-                ( ( channel_1_state->rx_position ) + bytes_to_consume ) % RX_BUFFER_SIZE_BYTES;
-            break;
-        case SPI_DAC:
-        default:
-            return;
+        return;
     }
+
+    /*
+     * In 16-bit mode, keep the software consume pointer aligned to SPI frames.
+     * Public lengths remain byte-based, but they must still be frame-aligned.
+     */
+    if ( HW_SPI_Is_Frame_Aligned_Size( peripheral_state, bytes_to_consume ) == false )
+    {
+        return;
+    }
+
+    peripheral_state->rx_position =
+        ( peripheral_state->rx_position + bytes_to_consume ) % RX_BUFFER_SIZE_BYTES;
 }
 
 /**
@@ -752,6 +915,11 @@ void HW_SPI_Rx_Consume( SPIPeripheral_T peripheral, uint32_t bytes_to_consume )
  * software is responsible for deciding what those bytes mean and when queued
  * transmission should be triggered.
  *
+ * When the channel is configured for 16-bit SPI operation, @p size must be a
+ * multiple of 2 bytes so that the queued TX data remains aligned to SPI frames.
+ * The driver remains byte-oriented at the public API boundary, but misaligned
+ * byte counts are rejected in 16-bit mode.
+ *
  * @param peripheral
  *     The SPI peripheral/channel whose TX queue is to be updated.
  *
@@ -769,7 +937,12 @@ void HW_SPI_Rx_Consume( SPIPeripheral_T peripheral, uint32_t bytes_to_consume )
 bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uint32_t size )
 {
     SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
-    if ( peripheral_state == NULL )
+
+    /*
+     * The public API stays byte-oriented, but in 16-bit mode queued TX data must
+     * still be an integer number of SPI frames.
+     */
+    if ( HW_SPI_Is_Frame_Aligned_Size( peripheral_state, size ) == false )
     {
         return false;
     }
@@ -831,17 +1004,11 @@ void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral )
     NVIC_DisableIRQ( peripheral_state->tx_dma_irqn );
 
     // If DMA is already active or there is nothing to send then return
-    if ( peripheral_state->tx_num_in_transmission > 0 || peripheral_state->tx_write_position == 0 )
+    if ( peripheral_state->tx_num_bytes_in_transmission > 0
+         || peripheral_state->tx_write_position == 0 )
     {
         NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
         return;
-    }
-
-    // Disable DMA stream initially
-    LL_DMA_DisableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
-    while ( LL_DMA_IsEnabledStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream )
-            != 0U )
-    {
     }
 
     /*
@@ -872,23 +1039,10 @@ void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral )
             return;
     }
 
-    LL_DMA_SetMemoryAddress(
-        peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
-        ( uint32_t ) & ( peripheral_state->tx_buffer[peripheral_state->tx_read_position] ) );
-    LL_DMA_SetPeriphAddress( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
-                             LL_SPI_DMA_GetRegAddr( peripheral_state->spi_peripheral ) );
-    LL_DMA_SetDataLength(
-        peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
-        peripheral_state->tx_write_position
-            - peripheral_state->tx_read_position );  // TODO: Adjust based on element size
-
-    LL_SPI_EnableDMAReq_TX( peripheral_state->spi_peripheral );
-    LL_DMA_EnableIT_TC( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
-    LL_DMA_EnableIT_TE( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
-    LL_DMA_EnableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
-
-    peripheral_state->tx_num_in_transmission =
-        peripheral_state->tx_write_position - peripheral_state->tx_read_position;
+    if ( HW_SPI_TX_Start_DMA_From_Current_Read_Position( peripheral_state ) == false )
+    {
+        HW_SPI_TX_Error_Handler( peripheral );
+    }
 
     NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
 }
