@@ -3,11 +3,37 @@
  *  Author:     Angus Corr
  *  Created:    10-Apr-2026
  *
- *  Description:
- *      <Short description of the module, what it exposes, and how it should be used>
+  *  Description:
+ *      Public interface for the low-level SPI driver used by the HIL-RIG
+ *      firmware.
+ *
+ *      This module exposes configuration and runtime control functions for the
+ *      supported SPI peripherals, along with a generic RX peek/consume API and
+ *      TX load/trigger API. The interface is designed to present SPI traffic as
+ *      a raw byte stream and to hide the underlying DMA and peripheral control
+ *      details from higher-level software.
+ *
+ *      The driver supports both 8-bit and 16-bit SPI data sizes while keeping
+ *      the public RX and TX interfaces byte-based. Higher-level software is
+ *      responsible for protocol framing, message construction/parsing,
+ *      scheduling decisions, and correct semantic use of the configured SPI
+ *      channel.
  *
  *  Notes:
- *      <Public assumptions, required initialisation order, dependencies, etc.>
+ *      - This is a low-level transport-style driver, not a protocol driver.
+ *      - RX data is exposed as unread spans into an internal DMA-backed buffer.
+ *      - TX data is copied into an internal queue before being transmitted.
+ *      - The caller does not retain ownership of returned RX span storage and
+ *        must not modify it.
+ *      - In 16-bit SPI mode, TX buffer load sizes and RX consume sizes must be
+ *        multiples of 2 bytes.
+ *      - RX span lengths are always reported in bytes, including in 16-bit
+ *        mode.
+ *      - The driver does not define packet/message boundaries.
+ *      - The driver does not perform byte swapping or data repacking for
+ *        16-bit mode; higher-level software must provide data in the intended
+ *        in-memory order.
+ *      - A channel must be configured before it is started or used.
  ******************************************************************************/
 
 #ifndef HW_SPI_H
@@ -169,6 +195,10 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
  * policy, or higher-level scheduling semantics. Those responsibilities belong
  * to the software layer above this driver.
  *
+ * When the channel is configured for 16-bit SPI operation, @p bytes_to_consume
+ * must be a multiple of 2 bytes so that the software consume position remains
+ * aligned to SPI frames.
+ *
  * The channel should only be started after successful configuration.
  *
  * @param peripheral
@@ -217,6 +247,10 @@ void HW_SPI_Stop_Channel( SPIPeripheral_T peripheral );
  * This function does not define message boundaries or protocol framing. It
  * exposes only the raw unread byte stream currently captured by the channel's
  * RX path.
+ *
+ * The returned spans are always expressed in bytes, even when the SPI channel is
+ * configured for 16-bit operation. In 16-bit mode, the unread spans remain
+ * frame-aligned.
  *
  * @param peripheral
  *     The SPI peripheral/channel to inspect.
