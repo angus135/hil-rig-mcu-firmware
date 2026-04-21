@@ -103,8 +103,6 @@ void Error_Handler(void);
 #define USB_OverCurrent_GPIO_Port GPIOG
 #define Digital_Output_4_Pin GPIO_PIN_8
 #define Digital_Output_4_GPIO_Port GPIOG
-#define DUT_UART_CH1_RX_Pin GPIO_PIN_7
-#define DUT_UART_CH1_RX_GPIO_Port GPIOC
 #define Test_GPIO_Output_Pin GPIO_PIN_8
 #define Test_GPIO_Output_GPIO_Port GPIOC
 #define USB_SOF_Pin GPIO_PIN_8
