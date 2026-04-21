@@ -45,7 +45,7 @@
 
 #define CONSOLE_BAUD_RATE 115200U
 
-#define CONSOLE_UART_CHANNEL HW_UART_CHANNEL_3
+#define CONSOLE_HISTORY_DEPTH 8U
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -332,85 +332,6 @@ static void CONSOLE_Flush_Tx( void )
 }
 
 /**
- * @brief Appends data to the pending console TX buffer.
- *
- * @param data    Pointer to bytes to append.
- * @param length  Number of bytes to append.
- *
- * @return void
- *
- * @note Data is truncated if there is insufficient space in the pending buffer.
- *       Transmission is not started here. The buffer is flushed later by
- *       CONSOLE_Flush_Tx() when the UART TX path is free.
- */
-static void CONSOLE_Queue_Transmit( const uint8_t* data, uint32_t length )
-{
-    if ( ( data == NULL ) || ( length == 0U ) )
-    {
-        return;
-    }
-
-    uint32_t available = CONSOLE_TX_BUFFER_SIZE - s_tx_len;
-    uint32_t copy_len  = ( length < available ) ? length : available;
-
-    if ( copy_len == 0U )
-    {
-        return;
-    }
-
-    memcpy( &s_tx_buf[s_tx_len], data, copy_len );
-    s_tx_len += copy_len;
-
-    // Optional later: count dropped bytes if copy_len < length
-}
-
-/**
- * @brief Attempts to flush a single chunk of the pending console TX buffer through the UART driver.
- *
- * @return void
- *
- * @note At most one UART TX transaction is launched per call.
- *       If the UART TX path is busy or no pending data exists, this function does nothing.
- *
- * @note The pending console TX buffer may be larger than the low-level UART TX staging buffer.
- *       In that case, this function transmits only the first chunk that fits in the low-level
- *       staging buffer and leaves the remaining bytes queued for a later call.
- *
- * @note After a successful load and trigger, the transmitted bytes are removed from the front of
- *       the pending console TX buffer by shifting the remaining bytes down.
- */
-static void CONSOLE_Flush_Tx( void )
-{
-    if ( s_tx_len == 0U )
-    {
-        return;
-    }
-
-    if ( HW_UART_Tx_Is_Busy( CONSOLE_UART_CHANNEL ) )
-    {
-        return;
-    }
-
-    uint32_t chunk_len = s_tx_len;
-
-    if ( chunk_len > HW_UART_TX_MAX_CHUNK_SIZE )
-    {
-        chunk_len = HW_UART_TX_MAX_CHUNK_SIZE;
-    }
-
-    if ( HW_UART_Tx_Load_Buffer( CONSOLE_UART_CHANNEL, s_tx_buf, chunk_len ) )
-    {
-        if ( HW_UART_Tx_Trigger( CONSOLE_UART_CHANNEL ) )
-        {
-            uint32_t remaining = s_tx_len - chunk_len;
-
-            memmove( s_tx_buf, &s_tx_buf[chunk_len], remaining );
-            s_tx_len = remaining;
-        }
-    }
-}
-
-/**
  * @brief Process a single received console character.
  *
  * Handles console line editing, newline completion, backspace processing,
@@ -423,9 +344,44 @@ static void CONSOLE_Flush_Tx( void )
  */
 static void CONSOLE_Process_Byte( uint8_t byte )
 {
-    const bool is_newline = ( byte == '\r' ) || ( byte == '\n' );
-    s_rx_byte_count++;
-    s_last_rx_byte = byte;
+    const bool is_newline   = ( byte == '\r' ) || ( byte == '\n' );
+    const bool is_backspace = ( byte == 0x08U ) || ( byte == 0x7FU );
+    const bool is_escape    = ( byte == 0x1BU );
+    const bool is_control   = ( byte <= 0x1FU );
+
+    if ( is_escape && ( s_escape_state == ESC_IDLE ) )
+    {
+        s_escape_state = ESC_GOT_ESCAPE;
+        return;
+    }
+
+    if ( s_escape_state == ESC_GOT_ESCAPE )
+    {
+        if ( byte == '[' )
+        {
+            s_escape_state = ESC_GOT_BRACKET;
+        }
+        else
+        {
+            s_escape_state = ESC_IDLE;
+        }
+        return;
+    }
+
+    if ( s_escape_state == ESC_GOT_BRACKET )
+    {
+        if ( byte == 'A' )
+        {
+            CONSOLE_History_Up();
+        }
+        else if ( byte == 'B' )
+        {
+            CONSOLE_History_Down();
+        }
+
+        s_escape_state = ESC_IDLE;
+        return;
+    }
 
     if ( is_newline )
     {
@@ -529,167 +485,6 @@ static void CONSOLE_Process( void )
             CONSOLE_Process_Byte( rx_buf[i] );
         }
     }
-
-    uint32_t processed = 0U;
-
-    for ( uint32_t i = 0U; i < spans.first_span.length_bytes; i++ )
-    {
-        CONSOLE_Process_Byte( spans.first_span.data[i] );
-        processed++;
-    }
-
-    for ( uint32_t i = 0U; i < spans.second_span.length_bytes; i++ )
-    {
-        CONSOLE_Process_Byte( spans.second_span.data[i] );
-        processed++;
-    }
-    HW_UART_Rx_Consume( CONSOLE_UART_CHANNEL, processed );
-}
-
-/**
- * @brief Save a completed console line into the history buffer.
- *
- * Stores the provided line in the fixed-depth circular history buffer unless
- * the line is empty or is identical to the most recently stored entry.
- *
- * @param line  NUL-terminated console line to save.
- *
- * @returns void
- */
-static void CONSOLE_Save_History( const char* line )
-{
-    if ( line[0] != '\0' )
-    {
-        if ( s_history_count > 0U )
-        {
-            size_t last_index =
-                ( s_history_next_index + CONSOLE_HISTORY_DEPTH - 1U ) % CONSOLE_HISTORY_DEPTH;
-
-            // Avoid saving duplicate consecutive entries
-            if ( strncmp( s_history[last_index], line, CONSOLE_LINE_MAX ) == 0 )
-            {
-                return;
-            }
-        }
-
-        // Store to buffer at current index
-        snprintf( s_history[s_history_next_index], sizeof( s_history[s_history_next_index] ), "%s",
-                  line );
-
-        // Update the next index (wrap around if necessary)
-        s_history_next_index = ( s_history_next_index + 1U ) % CONSOLE_HISTORY_DEPTH;
-
-        // Update the history count
-        if ( s_history_count < CONSOLE_HISTORY_DEPTH )
-        {
-            s_history_count++;
-        }
-        // Reset browse index
-        s_history_browse_index = -1;
-    }
-}
-
-/**
- * @brief Redraw the current editable console line on the terminal.
- *
- * Clears the current terminal line and rewrites the contents of the active
- * console input buffer so that recalled history entries or edited lines are
- * visible to the user.
- *
- * @returns void
- */
-static void CONSOLE_Redraw_Line( void )
-{
-    CONSOLE_Printf( "\r\033[2K" );
-    CONSOLE_Printf( "%s", s_line_buf );
-}
-
-/**
- * @brief Replace the active console input line with the provided text.
- *
- * Copies the provided line into the editable console input buffer, updates the
- * tracked line length, and redraws the terminal line so the new contents are
- * visible to the user.
- *
- * @param line  NUL-terminated line to load into the active console input buffer.
- *
- * @returns void
- */
-static void CONSOLE_Load_Line( const char* line )
-{
-    snprintf( s_line_buf, sizeof( s_line_buf ), "%s", line );
-    s_line_len = strlen( s_line_buf );
-    CONSOLE_Redraw_Line();
-}
-
-/**
- * @brief Recall the previous entry from the console history buffer.
- *
- * Moves the current history browse position toward older stored commands and
- * loads the selected history entry into the active console input buffer.
- *
- * @returns void
- */
-static void CONSOLE_History_Up( void )
-{
-    if ( s_history_count == 0U )
-    {
-        return;
-    }
-
-    if ( s_history_browse_index < 0 )
-    {
-        s_history_browse_index = ( int32_t )( ( s_history_next_index + CONSOLE_HISTORY_DEPTH - 1U )
-                                              % CONSOLE_HISTORY_DEPTH );
-    }
-    else
-    {
-        size_t oldest_index = ( s_history_next_index + CONSOLE_HISTORY_DEPTH - s_history_count )
-                              % CONSOLE_HISTORY_DEPTH;
-
-        if ( ( size_t )s_history_browse_index != oldest_index )
-        {
-            s_history_browse_index =
-                ( int32_t )( ( ( size_t )s_history_browse_index + CONSOLE_HISTORY_DEPTH - 1U )
-                             % CONSOLE_HISTORY_DEPTH );
-        }
-    }
-
-    CONSOLE_Load_Line( s_history[s_history_browse_index] );
-}
-
-/**
- * @brief Recall the next entry from the console history buffer.
- *
- * Moves the current history browse position toward newer stored commands. If
- * the newest history entry is passed, browsing ends and the active console
- * input line is cleared.
- *
- * @returns void
- */
-static void CONSOLE_History_Down( void )
-{
-    if ( s_history_count == 0U || s_history_browse_index < 0 )
-    {
-        return;
-    }
-
-    size_t newest_index =
-        ( s_history_next_index + CONSOLE_HISTORY_DEPTH - 1U ) % CONSOLE_HISTORY_DEPTH;
-
-    if ( ( size_t )s_history_browse_index == newest_index )
-    {
-        s_history_browse_index = -1;
-        s_line_buf[0]          = '\0';
-        s_line_len             = 0U;
-        CONSOLE_Redraw_Line();
-        return;
-    }
-
-    s_history_browse_index =
-        ( int32_t )( ( ( size_t )s_history_browse_index + 1U ) % CONSOLE_HISTORY_DEPTH );
-
-    CONSOLE_Load_Line( s_history[s_history_browse_index] );
 }
 
 /**
