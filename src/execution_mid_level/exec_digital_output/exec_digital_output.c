@@ -16,7 +16,6 @@
  */
 
 #include "exec_digital_output.h"
-#include "hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
 
