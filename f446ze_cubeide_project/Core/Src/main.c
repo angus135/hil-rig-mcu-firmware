@@ -21,8 +21,8 @@
 #include "cmsis_os.h"
 #include "adc.h"
 #include "can.h"
-#include "dac.h"
 #include "dma.h"
+#include "fmpi2c.h"
 #include "i2c.h"
 #include "quadspi.h"
 #include "spi.h"
@@ -62,7 +62,7 @@ void SystemClock_Config(void);
 void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
 
-/* USER CODE END PFP */
+/* USER CODE END PFP   */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
@@ -100,17 +100,20 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_USART3_UART_Init();
-  MX_CAN1_Init();
-  MX_DAC_Init();
-  MX_QUADSPI_Init();
   MX_TIM1_Init();
-  MX_UART4_Init();
-  MX_UART5_Init();
-  MX_USART2_UART_Init();
   MX_ADC1_Init();
   MX_SPI1_Init();
   MX_I2C1_Init();
   MX_TIM2_Init();
+  MX_FMPI2C1_Init();
+  MX_I2C2_Init();
+  MX_ADC3_Init();
+  MX_USART2_UART_Init();
+  MX_USART6_UART_Init();
+  MX_SPI4_Init();
+  MX_QUADSPI_Init();
+  MX_CAN1_Init();
+  MX_CAN2_Init();
   /* USER CODE BEGIN 2 */
   APP_MAIN_Application();
   // Nothing after here is ever called but if it does, run the error handler
@@ -318,34 +321,6 @@ void SysTick_Handler(void)
 /* For the available peripheral interrupt handler names,                      */
 /* please refer to the startup file (startup_stm32f4xx.s).                    */
 /******************************************************************************/
-
-/**
-  * @brief This function handles DMA1 stream1 global interrupt.
-  */
-void DMA1_Stream1_IRQHandler(void)
-{
-  /* USER CODE BEGIN DMA1_Stream1_IRQn 0 */
-
-  /* USER CODE END DMA1_Stream1_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_usart3_rx);
-  /* USER CODE BEGIN DMA1_Stream1_IRQn 1 */
-
-  /* USER CODE END DMA1_Stream1_IRQn 1 */
-}
-
-/**
-  * @brief This function handles DMA1 stream3 global interrupt.
-  */
-void DMA1_Stream3_IRQHandler(void)
-{
-  /* USER CODE BEGIN DMA1_Stream3_IRQn 0 */
-
-  /* USER CODE END DMA1_Stream3_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_usart3_tx);
-  /* USER CODE BEGIN DMA1_Stream3_IRQn 1 */
-
-  /* USER CODE END DMA1_Stream3_IRQn 1 */
-}
 
 /**
   * @brief This function handles ADC1, ADC2 and ADC3 interrupts.
