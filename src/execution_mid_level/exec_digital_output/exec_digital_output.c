@@ -138,3 +138,19 @@ inline void EXEC_DIGITAL_OUTPUT_reset_many_pins( GPIOOutput_T* pins, uint16_t le
 {
     HW_GPIO_Reset_Many_Pins( pins, length );
 }
+
+inline DigitalOutputPinmask_T DIGITAL_OUTPUT_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names,
+                                                                     uint8_t       length )
+{
+    return HW_GPIO_Combine_Port_Pin_Masks( gpio_names, length );
+}
+
+inline void EXEC_DIGITAL_OUTPUT_Set_Output( uint32_t pin_mask )
+{
+    HW_GPIO_Set_Output( pin_mask );
+}
+
+inline void EXEC_DIGITAL_OUTPUT_Reset_Output( uint32_t pin_mask )
+{
+    HW_GPIO_Reset_Output( pin_mask );
+}

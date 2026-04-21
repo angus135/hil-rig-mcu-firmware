@@ -183,6 +183,10 @@ if (p.pin_mask == 0xFFFF0000){
  */
 DigitalOutputPinmask_T HW_GPIO_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names, uint8_t length );
 
+inline void HW_GPIO_Set_Output( uint32_t pin_mask );
+
+inline void HW_GPIO_Reset_Output( uint32_t pin_mask );
+
 #ifdef __cplusplus
 }
 #endif
