@@ -32,8 +32,8 @@ extern "C"
  */
 
 // HAL defined SPI peripherals
-#define SPI1 ( void* )1
-#define SPI4 ( void* )4
+#define SPI1 ( SPI_TypeDef* )1
+#define SPI4 ( SPI_TypeDef* )4
 
 // HAL defined SPI modes
 #define SPI_MODE_SLAVE ( 0 )
@@ -82,7 +82,7 @@ extern "C"
 #define LL_DMA_PDATAALIGN_HALFWORD 0x00000001U /*!< Peripheral data alignment : HalfWord */
 
 // DMA related defines
-#define DMA2 ( ( void* )0x40026400U )
+#define DMA2 ( ( DMA_TypeDef* )0x40026400U )
 #define LL_DMA_STREAM_0 0x00000000U
 #define LL_DMA_STREAM_1 0x00000001U
 #define LL_DMA_STREAM_2 0x00000002U

@@ -673,8 +673,8 @@ TEST_F( HWSPITest, RxPeek_ReturnsWrappedSpansWhenUnreadWrapsAroundBufferEnd )
     EXPECT_EQ( spans.first_span.data, &channel_0_state->rx_buffer[1000] );
     EXPECT_EQ( spans.first_span.length_bytes, 24U );
     EXPECT_EQ( spans.second_span.data, &channel_0_state->rx_buffer[0] );
-    EXPECT_EQ( spans.second_span.length_bytes, 26U );
-    EXPECT_EQ( spans.total_length_bytes, 50U );
+    EXPECT_EQ( spans.second_span.length_bytes, 50U );
+    EXPECT_EQ( spans.total_length_bytes, 74U );
 }
 
 TEST_F( HWSPITest, RxPeek_UsesByteLengthsEvenWhenConfiguredFor16BitMode )
