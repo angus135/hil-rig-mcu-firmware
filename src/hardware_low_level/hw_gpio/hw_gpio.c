@@ -50,6 +50,9 @@ GPIO_TypeDef* gpio_ports[] = {
 
 #define NUM_GPIO_PORTS ( sizeof( gpio_ports ) / sizeof( gpio_ports[0] ) )
 #define MAX_NUM_GPIO_PORTS 8
+#ifndef TEST_BUILD
+#define GPIO_TypeDef *DIGITAL_OUTPUT_PORT GPIOG
+#endif
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -232,6 +235,72 @@ void HW_GPIO_Toggle( GPIO_T gpio )
         default:
             break;
     }
+#endif
+}
+
+/**
+ * @brief Sets the state of all digital outputs in a GPIO Port using the underlying GPIO LL library.
+ *
+ * @param PinMask   Carrys the information about which pins to set
+                    If a lower 16 bit is 1 this sets the associated digital output
+                    If any bit is 0 this indicates no change
+                    0th bit corresponds to digital output 0, 1st bit to output 1 etc
+ *
+ *
+ * This function wraps the LL_GPIO_ResetOutputPin( ... ) function provided by the
+ * LL layer. It can be used to set a single output pin or many output pins (on the same port).
+ * EXAMPLE: HW_GPIO_Set_To_Port( GPIOA, LL_GPIO_PIN_5 ) sets LL_GPIO_PIN_5 of port A high
+ * EXAMPLE: HW_GPIO_Set_To_Port( GPIOA, LL_GPIO_PIN_5 | LL_GPIO_PIN_4 ) sets LL_GPIO_PIN_5 and
+LL_GPIO_PIN_4 of port A high
+ * Setting multiple pins works because LL_GPIO_PIN_5 and LL_GPIO_PIN_4 are just uint32_t
+ * in this case likely 0x0000_0020 0x0000_0010, so 0x0000_0030 is written to the BSR register
+ * 0x0000_0030 = 0000_0000_0000_0000_0000_0000_0011_0000 setting pins 4 and 5 high
+ * mocked using GoogleMock.
+ * Note: This implementation assumes all digital outputs are on the same GPIO port.
+ * By doing so, we can set all the outputs in a single hardware access.
+ */
+inline void HW_GPIO_Set_Output( uint32_t pin_mask )
+{
+#ifdef TEST_BUILD
+    // For unit testing, do nothing
+    ( void )pin_mask;
+#else
+    // LL_GPIO_XOutputPin functions write to the BSR port register,
+    // The lower 16 bits of the pin_mask bit 0 = pin0, bit 1 = pin1 etc
+    LL_GPIO_SetOutputPin( DIGITAL_OUTPUT_PORT, pin_mask );
+#endif
+}
+
+/**
+ * @brief Sets the state of all digital outputs in a GPIO Port using the underlying GPIO LL library.
+ *
+ * @param PinMask   Carrys the information about which pins to set
+                    If a lower 16 bit is 1 this sets the associated digital output
+                    If any bit is 0 this indicates no change
+                    0th bit corresponds to digital output 0, 1st bit to output 1 etc
+ *
+ *
+ * This function wraps the LL_GPIO_ResetOutputPin( ... ) function provided by the
+ * LL layer. It can be used to set a single output pin or many output pins (on the same port).
+ * EXAMPLE: HW_GPIO_Set_To_Port( GPIOA, LL_GPIO_PIN_5 ) sets LL_GPIO_PIN_5 of port A high
+ * EXAMPLE: HW_GPIO_Set_To_Port( GPIOA, LL_GPIO_PIN_5 | LL_GPIO_PIN_4 ) sets LL_GPIO_PIN_5 and
+LL_GPIO_PIN_4 of port A high
+ * Setting multiple pins works because LL_GPIO_PIN_5 and LL_GPIO_PIN_4 are just uint32_t
+ * in this case likely 0x0000_0020 0x0000_0010, so 0x0000_0030 is written to the BSR register
+ * 0x0000_0030 = 0000_0000_0000_0000_0000_0000_0011_0000 setting pins 4 and 5 high
+ * mocked using GoogleMock.
+ * Note: This implementation assumes all digital outputs are on the same GPIO port.
+ * By doing so, we can set all the outputs in a single hardware access.
+ */
+inline void HW_GPIO_Reset_Output( uint32_t pin_mask )
+{
+#ifdef TEST_BUILD
+    // For unit testing, do nothing
+    ( void )pin_mask;
+#else
+    // LL_GPIO_XOutputPin functions write to the BSR port register,
+    // The lower 16 bits of the pin_mask bit 0 = pin0, bit 1 = pin1 etc
+    LL_GPIO_ResetOutputPin( DIGITAL_OUTPUT_PORT, pin_mask );
 #endif
 }
 
