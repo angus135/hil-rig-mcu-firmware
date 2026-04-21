@@ -135,12 +135,12 @@ typedef struct SPIPeripheralState_T
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
-SPIPeripheralState_T  channel_0_state_struct = { 0 };
-SPIPeripheralState_T  channel_1_state_struct = { 0 };
-SPIPeripheralState_T  dac_state_struct       = { 0 };
-SPIPeripheralState_T* channel_0_state        = &channel_0_state_struct;
-SPIPeripheralState_T* channel_1_state        = &channel_1_state_struct;
-SPIPeripheralState_T* dac_state              = &dac_state_struct;
+SPIPeripheralState_T  channel_0_state_struct;
+SPIPeripheralState_T  channel_1_state_struct;
+SPIPeripheralState_T  dac_state_struct;
+SPIPeripheralState_T* channel_0_state = &channel_0_state_struct;
+SPIPeripheralState_T* channel_1_state = &channel_1_state_struct;
+SPIPeripheralState_T* dac_state       = &dac_state_struct;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -364,9 +364,10 @@ static bool HW_SPI_TX_Start_DMA_From_Current_Read_Position( SPIPeripheralState_T
     {
     }
 
-    LL_DMA_SetMemoryAddress(
-        peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
-        ( uint32_t ) & ( peripheral_state->tx_buffer[peripheral_state->tx_read_position] ) );
+    uint8_t* tx_ptr = &( peripheral_state->tx_buffer[peripheral_state->tx_read_position] );
+
+    LL_DMA_SetMemoryAddress( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
+                             ( uintptr_t )tx_ptr );
 
     LL_DMA_SetPeriphAddress( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
                              LL_SPI_DMA_GetRegAddr( peripheral_state->spi_peripheral ) );
