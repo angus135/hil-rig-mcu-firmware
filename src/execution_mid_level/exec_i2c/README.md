@@ -76,7 +76,9 @@ For each external channel, higher layer provides:
 
 - Mode: `EXEC_I2C_MODE_MASTER` or `EXEC_I2C_MODE_SLAVE`
 - Speed: `EXEC_I2C_SPEED_100KHZ` or `EXEC_I2C_SPEED_400KHZ`
-- Transfer path: `EXEC_I2C_TRANSFER_INTERRUPT` or `EXEC_I2C_TRANSFER_DMA`
+- Transfer path:
+	- `I2C1`: `EXEC_I2C_TRANSFER_INTERRUPT` only
+	- `I2C2`: `EXEC_I2C_TRANSFER_INTERRUPT` or `EXEC_I2C_TRANSFER_DMA`
 - Own address: 7-bit value (`0x00` to `0x7F`)
 
 Input validation rejects invalid enum/address values with `EXEC_I2C_STATUS_INVALID_PARAM`.

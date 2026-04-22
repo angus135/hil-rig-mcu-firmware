@@ -244,20 +244,6 @@ void DMA1_Stream6_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles DMA1 stream6 global interrupt.
-  */
-void DMA1_Stream6_IRQHandler(void)
-{
-  /* USER CODE BEGIN DMA1_Stream6_IRQn 0 */
-
-  /* USER CODE END DMA1_Stream6_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_i2c1_tx);
-  /* USER CODE BEGIN DMA1_Stream6_IRQn 1 */
-
-  /* USER CODE END DMA1_Stream6_IRQn 1 */
-}
-
-/**
   * @brief This function handles ADC1, ADC2 and ADC3 interrupts.
   */
 void ADC_IRQHandler(void)

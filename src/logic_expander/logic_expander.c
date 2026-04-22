@@ -55,6 +55,8 @@
 #define MCP23017_PULLUPS_DISABLED ( 0x00U )
 #define MCP23017_INTERRUPTS_DISABLED ( 0x00U )
 
+#define LOGIC_EXPANDER_INTERNAL_SEND_BUSY_RETRY_LIMIT ( 200000U )
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -97,6 +99,9 @@ static bool logic_expander_ready = false;
 static inline bool logic_expander_index_is_valid( uint8_t expander_index );
 static inline bool logic_expander_port_is_valid( LogicExpanderPort_T port );
 static inline LogicExpanderStatus_T logic_expander_from_exec_status( EXECI2CStatus_T status );
+static LogicExpanderStatus_T logic_expander_internal_send_with_busy_retry( uint16_t device_address_7bit,
+															const uint8_t* payload,
+															uint16_t payload_length );
 static LogicExpanderStatus_T logic_expander_write_register( uint16_t device_address_7bit,
 																	uint8_t register_address,
 																	uint8_t register_value );
@@ -142,13 +147,37 @@ static inline LogicExpanderStatus_T logic_expander_from_exec_status( EXECI2CStat
 	}
 }
 
+static LogicExpanderStatus_T logic_expander_internal_send_with_busy_retry( uint16_t device_address_7bit,
+															const uint8_t* payload,
+															uint16_t payload_length )
+{
+	for ( uint32_t retry = 0U; retry < LOGIC_EXPANDER_INTERNAL_SEND_BUSY_RETRY_LIMIT; ++retry )
+	{
+		EXECI2CStatus_T status = EXEC_I2C_Internal_Master_Send( device_address_7bit,
+													payload,
+													payload_length );
+		if ( status == EXEC_I2C_STATUS_OK )
+		{
+			return LOGIC_EXPANDER_STATUS_OK;
+		}
+
+		if ( status != EXEC_I2C_STATUS_BUSY )
+		{
+			return logic_expander_from_exec_status( status );
+		}
+	}
+
+	return LOGIC_EXPANDER_STATUS_BUSY;
+}
+
 static LogicExpanderStatus_T logic_expander_write_register( uint16_t device_address_7bit,
 																	uint8_t register_address,
 																	uint8_t register_value )
 {
 	uint8_t payload[2] = { register_address, register_value };
-	return logic_expander_from_exec_status(
-		EXEC_I2C_Internal_Master_Send( device_address_7bit, payload, ( uint16_t )sizeof( payload ) ) );
+	return logic_expander_internal_send_with_busy_retry( device_address_7bit,
+												 payload,
+												 ( uint16_t )sizeof( payload ) );
 }
 
 static LogicExpanderStatus_T logic_expander_write_register_pair( uint16_t device_address_7bit,
@@ -157,8 +186,9 @@ static LogicExpanderStatus_T logic_expander_write_register_pair( uint16_t device
 																		 uint8_t second_value )
 {
 	uint8_t payload[3] = { register_address, first_value, second_value };
-	return logic_expander_from_exec_status(
-		EXEC_I2C_Internal_Master_Send( device_address_7bit, payload, ( uint16_t )sizeof( payload ) ) );
+	return logic_expander_internal_send_with_busy_retry( device_address_7bit,
+												 payload,
+												 ( uint16_t )sizeof( payload ) );
 }
 
 /**-----------------------------------------------------------------------------

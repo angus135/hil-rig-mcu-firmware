@@ -97,7 +97,8 @@ static inline EXECI2CStatus_T exec_i2c_from_hw_status( HWI2CStatus_T status )
 	}
 }
 
-static EXECI2CStatus_T exec_i2c_validate_config( const EXECI2CChannelConfig_T* config )
+static EXECI2CStatus_T exec_i2c_validate_config( EXECI2CExternalChannel_T channel,
+													 const EXECI2CChannelConfig_T* config )
 {
 	if ( config == NULL )
 	{
@@ -131,6 +132,15 @@ static EXECI2CStatus_T exec_i2c_validate_config( const EXECI2CChannelConfig_T* c
 		return EXEC_I2C_STATUS_INVALID_PARAM;
 	}
 
+	if ( channel == EXEC_I2C_EXTERNAL_1 )
+	{
+		if ( ( config->tx_transfer_path == EXEC_I2C_TRANSFER_DMA ) ||
+			 ( config->rx_transfer_path == EXEC_I2C_TRANSFER_DMA ) )
+		{
+			return EXEC_I2C_STATUS_INVALID_PARAM;
+		}
+	}
+
 	return EXEC_I2C_STATUS_OK;
 }
 
@@ -143,8 +153,8 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
 										const EXECI2CChannelConfig_T* i2c2_config,
 										uint16_t internal_fmpi2c1_own_address_7bit )
 {
-	EXECI2CStatus_T status_1 = exec_i2c_validate_config( i2c1_config );
-	EXECI2CStatus_T status_2 = exec_i2c_validate_config( i2c2_config );
+	EXECI2CStatus_T status_1 = exec_i2c_validate_config( EXEC_I2C_EXTERNAL_1, i2c1_config );
+	EXECI2CStatus_T status_2 = exec_i2c_validate_config( EXEC_I2C_EXTERNAL_2, i2c2_config );
 
 	if ( ( status_1 != EXEC_I2C_STATUS_OK ) || ( status_2 != EXEC_I2C_STATUS_OK ) ||
 		 ( internal_fmpi2c1_own_address_7bit > 0x7FU ) )
@@ -227,12 +237,6 @@ EXECI2CStatus_T EXEC_I2C_Internal_Master_Send( uint16_t device_address_7bit,
 	}
 
 	hw_status = HW_I2C_Trigger_Master_Transmit( HW_I2C_CHANNEL_FMPI2C1, device_address_7bit );
-	if ( hw_status != HW_I2C_STATUS_OK )
-	{
-		return exec_i2c_from_hw_status( hw_status );
-	}
-
-	hw_status = HW_I2C_Wait_For_Transfer_Complete( HW_I2C_CHANNEL_FMPI2C1 );
 	return exec_i2c_from_hw_status( hw_status );
 }
 

@@ -8,7 +8,7 @@ CDefines=USE_HAL_DRIVER;STM32F446xx;USE_HAL_DRIVER;USE_HAL_DRIVER;
 
 [PreviousGenFiles]
 AdvancedFolderStructure=true
-HeaderFileListSize=19
+HeaderFileListSize=18
 HeaderFiles#0=..\Core\Inc\gpio.h
 HeaderFiles#1=..\Core\Inc\FreeRTOSConfig.h
 HeaderFiles#2=..\Core\Inc\adc.h
@@ -32,7 +32,7 @@ HeaderPath#0=..\Core\Inc
 HeaderPath#1=..\USB_DEVICE\App
 HeaderPath#2=..\USB_DEVICE\Target
 HeaderFiles=;
-SourceFileListSize=19
+SourceFileListSize=18
 SourceFiles#0=..\Core\Src\gpio.c
 SourceFiles#1=..\Core\Src\freertos.c
 SourceFiles#2=..\Core\Src\adc.c

@@ -99,7 +99,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <green|blue|red|test>"},
     {"uart_loopback", CONSOLE_Command_UART_Loopback, "Configuring Channels and Rx/Tx loopback testing for Uart"},
     {"expander", CONSOLE_Command_Expander,  "Expander test commands. Usage: expander <config|set|send|reset> [args]"},
-    {"i2c_loopback", CONSOLE_Command_I2C_Loopback, "Loopback test. Usage: i2c_loopback <master:1|2> <speed:100|400> <op:interrupt|dma> <message...>"}
+    {"i2c_loopback", CONSOLE_Command_I2C_Loopback, "Loopback test. Usage: i2c_loopback <master:1|2> <speed:100|400> \n\r <op:interrupt|dma> <message...>"}
 };
 
 // clang-format on
@@ -503,8 +503,8 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
     EXECI2CChannelConfig_T i2c1_cfg = {
         .mode             = ( master_channel == EXEC_I2C_EXTERNAL_1 ) ? EXEC_I2C_MODE_MASTER : EXEC_I2C_MODE_SLAVE,
         .speed            = speed,
-        .tx_transfer_path = transfer_path,
-        .rx_transfer_path = transfer_path,
+        .tx_transfer_path = EXEC_I2C_TRANSFER_INTERRUPT,
+        .rx_transfer_path = EXEC_I2C_TRANSFER_INTERRUPT,
         .own_address_7bit = i2c1_addr,
     };
 
@@ -533,7 +533,7 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
         return;
     }
 
-    CONSOLE_Printf( "I2C loopback: master=I2C%s slave=I2C%s speed=%s op=%s\r\n",
+    CONSOLE_Printf( "I2C loopback: master=I2C%s slave=I2C%s speed=%s i2c1_op=Interrupt i2c2_op=%s\r\n",
                     ( master_channel == EXEC_I2C_EXTERNAL_1 ) ? "1" : "2",
                     ( slave_channel == EXEC_I2C_EXTERNAL_1 ) ? "1" : "2",
                     ( speed == EXEC_I2C_SPEED_400KHZ ) ? "400kHz" : "100kHz",
