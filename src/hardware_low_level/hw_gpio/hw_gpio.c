@@ -83,7 +83,6 @@ GPIO_TypeDef* gpio_ports[] = {
  * This function maps the (software) GPIO pin name defined in hw_gpio.h GPIOOutput_T
  * to the mathcing (hardware) GPIO port and GPIO pin number
  * as defined in f446ze_cubeide_project/Core/Inc/main.h to the
- * mocked using GoogleMock.
  */
 
 static GPIOPortPacket_T HW_GPIO_Port_Pin_Association( GPIOOutput_T gpio_name )
@@ -144,17 +143,18 @@ static GPIOPortPacket_T HW_GPIO_Port_Pin_Association( GPIOOutput_T gpio_name )
 /**
  * @brief takes a list of GPIO names and splits them into their ports.
  *
- * @param gpio_names   an array of GPIO pin names, all of which are on the same port
- * @param length       the nubmer of GPIO_T in gpio_names
+ * @param gpio_names   an array of GPIO pin names, which may be on different ports
+ * @param length       the nubmer of GPIOOutput_T in gpio_names
  * @param destination  pointer to space for 8 GPIOPortPacket_T packets (to be written to)
  *
- * @return returns the number of GPIOPortPacket_T written to destination
+ * @return returns the number of GPIOPortPacket_T's written to destination
  * This function is designed to split split pins into groups based on their ports
- * because we can write to an entire port at once this increases speed.
+ * because we can write to an entire port at once this can increas speed.
  * EXAMPLE: If we want to set DIGITAL_OUT_CH_0, DIGITAL_OUT_CH_1 and DIGITAL_OUT_CH_2, but
-DIGITAL_OUT_CH_2 uses a different port, GPIOOutput_T* my_arr = { DIGITAL_OUT_CH_0, DIGITAL_OUT_CH_1,
-DIGITAL_OUT_CH_2 }; GPIOPortPacket_T destination[8]; HW_GPIO_split_about_ports(my_arr, 3,
-destination);
+DIGITAL_OUT_CH_2 uses a different port,
+    GPIOOutput_T* my_arr = { DIGITAL_OUT_CH_0, DIGITAL_OUT_CH_1, DIGITAL_OUT_CH_2 };
+    GPIOPortPacket_T destination[8];
+    HW_GPIO_split_about_ports(my_arr, 3, destination);
 // we dont HAVE to go through all 8 ports (as only 2 are used) but for examples sake we can
 for (int i=0; i<8; i++){
     HW_GPIO_Set_To_Port(destination[i].gpiox, destination[i].pin_mask)
