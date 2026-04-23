@@ -307,30 +307,31 @@ static void CONSOLE_Command_Set_Pin( uint16_t argc, char* argv[] )
 static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char* argv[] )
 {
     int arg_limit = 10;
-    if ( argc < 3 | argc > 10+1)
+    if ( argc < 3 | argc > 10 + 1 )
     {
-        CONSOLE_Printf( "Incorrect number of inputs, expected >2 and <%dbut recieved %d", arg_limit, argc );
+        CONSOLE_Printf( "Incorrect number of inputs, expected >2 and <%dbut recieved %d", arg_limit,
+                        argc );
         return;
     }
 
     GPIOOutput_T pins[arg_limit];
-    for ( int i = 0; i < arg_limit-1; i++ )
+    for ( int i = 0; i < arg_limit - 1; i++ )
     {
-        bool check = HW_GPIO_StringToEnum( argv[i+1], &(pins[i]) );
+        bool check = HW_GPIO_StringToEnum( argv[i + 1], &( pins[i] ) );
         if ( !check )
         {
-            CONSOLE_Printf( "Unrecognised pin name: %s", argv[i+1] );
+            CONSOLE_Printf( "Unrecognised pin name: %s", argv[i + 1] );
             return;
         }
     }
     if ( argv[3] == '0' )
     {
-        HW_GPIO_Reset_Many_Pins( pins, argc-2 );
+        HW_GPIO_Reset_Many_Pins( pins, argc - 2 );
         return;
     }
     else if ( argv[3] == '1' )
     {
-        HW_GPIO_Set_Many_Pins( pins, argc-2 );
+        HW_GPIO_Set_Many_Pins( pins, argc - 2 );
         return;
     }
     else
