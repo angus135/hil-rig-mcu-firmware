@@ -65,7 +65,8 @@ functions. NOT TO BE USED DURING EXECUTION
  * This is a high level function that does lots of processing to match the pin name to a pin port.
  * As such it should not be used during execution, instead use EXEC_DIGITAL_OUTPUT_Set_Output
  * EXAMPLE: EXEC_DIGITAL_OUTPUT_set_pin( DIGITALoutput1 ) sets DIGITALoutput1
- * If you are struggling with ports the functions exist in hardware_low_level/hw_gpio.c to help manage ports
+ * If you are struggling with ports the functions exist in hardware_low_level/hw_gpio.c to help
+manage ports
  */
 inline void EXEC_DIGITAL_OUTPUT_set_pin( GPIOOutput_T pin )
 {
@@ -82,8 +83,10 @@ functions. NOT TO BE USED DURING EXECUTION
  * This function wraps the HW_GPIO_Set_Many_Pins( ... ) function.
  * It does lots or processing in the background to match the pin names to the pins, and as such
 should not be used during execution
- * EXAMPLE: EXEC_DIGITAL_OUTPUT_set_many_pins({DIGITALoutput1, UART3V3_En}, 2) sets DIGITALoutput1 and UART3V3_En
- * If you are struggling with ports the functions exist in hardware_low_level/hw_gpio.c to help manage ports
+ * EXAMPLE: EXEC_DIGITAL_OUTPUT_set_many_pins({DIGITALoutput1, UART3V3_En}, 2) sets DIGITALoutput1
+and UART3V3_En
+ * If you are struggling with ports the functions exist in hardware_low_level/hw_gpio.c to help
+manage ports
  */
 inline void EXEC_DIGITAL_OUTPUT_set_many_pins( GPIOOutput_T* pins, uint16_t length )
 {
@@ -100,7 +103,8 @@ functions. NOT TO BE USED DURING EXECUTION
  * This is a high level function that does lots of processing to match the pin name to a pin port.
  * As such it should not be used during execution, instead use EXEC_DIGITAL_OUTPUT_Reset_Output
  * EXAMPLE: EXEC_DIGITAL_OUTPUT_reset_pin( DIGITALoutput1 ) resets DIGITALoutput1
- * If you are struggling with ports the functions exist in hardware_low_level/hw_gpio.c to help manage ports
+ * If you are struggling with ports the functions exist in hardware_low_level/hw_gpio.c to help
+manage ports
  */
 inline void EXEC_DIGITAL_OUTPUT_reset_pin( GPIOOutput_T pin )
 {
@@ -124,7 +128,7 @@ inline void EXEC_DIGITAL_OUTPUT_reset_many_pins( GPIOOutput_T* pins, uint16_t le
 }
 
 /**
- * @brief combines many GPIO's (on the same port) into one pin mask. 
+ * @brief combines many GPIO's (on the same port) into one pin mask.
  *
  * @param gpio_names   an array of GPIO pin names, all of which are on the same port
  * @param length       the nubmer of GPIOOutput_T in gpio_names
@@ -132,7 +136,8 @@ inline void EXEC_DIGITAL_OUTPUT_reset_many_pins( GPIOOutput_T* pins, uint16_t le
  * @return returns the combined pin mask (uint32_t), if fault return 0xFFFF0000
  *
  * Combines the pinmasks of the gpio_names so that they can be written to the BSR in one step
- * (instead of individually), This is much more efficient and should be used with functions liek EXEC_DIGITAL_OUTPUT_Set_Output.
+ * (instead of individually), This is much more efficient and should be used with functions liek
+EXEC_DIGITAL_OUTPUT_Set_Output.
  * EXAMPLE: if we want to set both DIGITAL_OUT_CH_0 and DIGITAL_OUT_CH_1 we could write
 DigitalOutputPinmask_T p = HW_GPIO_Combine_Port_Pin_Masks({DIGITAL_OUT_CH_0, DIGITAL_OUT_CH_1 }, 2)
 if (p.pin_mask == 0xFFFF0000){
@@ -159,7 +164,8 @@ inline DigitalOutputPinmask_T DIGITAL_OUTPUT_Combine_Port_Pin_Masks( GPIOOutput_
  *
  * This function wraps the HW_GPIO_Set_Output( ... ) function provided by the
  * LL layer. It can be used to set a single output pin or many output pins (on the same port).
- * EXAMPLE: EXEC_DIGITAL_OUTPUT_Set_Output( 0x0000_0020 ) sets LL_GPIO_PIN_5 of the Digital GPIO Port high
+ * EXAMPLE: EXEC_DIGITAL_OUTPUT_Set_Output( 0x0000_0020 ) sets LL_GPIO_PIN_5 of the Digital GPIO
+Port high
  * EXAMPLE: EXEC_DIGITAL_OUTPUT_Set_Output( 0x0000_0020 | 0x0000_0001 ) sets LL_GPIO_PIN_5 and
 LL_GPIO_PIN_1 of the Digital GPIO Port high
  * Setting multiple pins works because LL_GPIO_PIN_5 and LL_GPIO_PIN_1 are just uint32_t
@@ -184,7 +190,8 @@ inline void EXEC_DIGITAL_OUTPUT_Set_Output( uint32_t pin_mask )
  *
  * This function wraps the HW_GPIO_Reset_Output( ... ).
  * It can be used to reset a single output pin or many output pins (on the same port).
- * EXAMPLE: EXEC_DIGITAL_OUTPUT_Reset_Output( 0x0000_0020 ) resets LL_GPIO_PIN_5 of the Digital GPIO Port high
+ * EXAMPLE: EXEC_DIGITAL_OUTPUT_Reset_Output( 0x0000_0020 ) resets LL_GPIO_PIN_5 of the Digital GPIO
+Port high
  * EXAMPLE: EXEC_DIGITAL_OUTPUT_Reset_Output( 0x0000_0020 | 0x0000_0001 ) resets LL_GPIO_PIN_5 and
 LL_GPIO_PIN_1 of the Digital GPIO Port high
  * Resetting multiple pins works because LL_GPIO_PIN_5 and LL_GPIO_PIN_1 are just uint32_t
