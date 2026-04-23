@@ -62,6 +62,9 @@ static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_LED( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_UART_Loopback( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_Set_Pin( uint16_t argc, char** argv );
+static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char** argv );
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
@@ -76,7 +79,9 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"execution_manager",    CONSOLE_Command_Test_Scheduler,       "Starts the test scheduler."},
     {"clear",  CONSOLE_Command_Clear,       "Clears the console."},
     {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <green|blue|red|test>"},
-    {"uart_loopback", CONSOLE_Command_UART_Loopback, "Configuring Channels and Rx/Tx loopback testing for Uart"}
+    {"uart_loopback", CONSOLE_Command_UART_Loopback, "Configuring Channels and Rx/Tx loopback testing for Uart"},
+    {"set_pin", CONSOLE_Command_Set_Pin, "Set or reset didital output, Usage: set_pin PIN_NAME <0|1>"},
+    {"set_pins", CONSOLE_Command_Set_Many_Pins, "Set or reset many didital output, Usage: set_pin PIN_NAME0 PIN_NAME1 ... PIN_NAMEX <0|1>"}
 
 };
 
@@ -249,6 +254,89 @@ static void CONSOLE_Command_LED( uint16_t argc, char* argv[] )
     {
         CONSOLE_Printf( "Unknown action: %s\r\nUsage: led toggle <green|blue|red|test>\r\n",
                         argv[1] );
+    }
+}
+
+/**
+ * @brief Sets or resets a single digital pin
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
+static void CONSOLE_Command_Set_Pin( uint16_t argc, char* argv[] )
+{
+    if ( argc != 3 )
+    {
+        CONSOLE_Printf( "Incorrect number of inputs, expected 2 but recieved %d", argc );
+        return;
+    }
+    GPIOOutput_T pin;
+    bool         check = HW_GPIO_StringToEnum( argv[2], &pin );
+    if ( !check )
+    {
+        CONSOLE_Printf( "Unrecognised pin name: %s", argv[2] );
+        return;
+    }
+    if ( argv[3] == '0' )
+    {
+        HW_GPIO_Reset_Single_Pin( pin );
+        return;
+    }
+    else if ( argv[3] == '1' )
+    {
+        HW_GPIO_Set_Single_Pin( pin );
+        return;
+    }
+    else
+    {
+        CONSOLE_Printf( "Unrecognised input, expected 1 or 0 but recieved %c", argv[3] );
+        return;
+    }
+}
+
+/**
+ * @brief Sets or resets many digital pins
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
+static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char* argv[] )
+{
+    int arg_limit = 10;
+    if ( argc < 3 | argc > 10+1)
+    {
+        CONSOLE_Printf( "Incorrect number of inputs, expected >2 and <%dbut recieved %d", arg_limit, argc );
+        return;
+    }
+
+    GPIOOutput_T pins[arg_limit];
+    for ( int i = 0; i < arg_limit-1; i++ )
+    {
+        bool check = HW_GPIO_StringToEnum( argv[i+1], &(pins[i]) );
+        if ( !check )
+        {
+            CONSOLE_Printf( "Unrecognised pin name: %s", argv[i+1] );
+            return;
+        }
+    }
+    if ( argv[3] == '0' )
+    {
+        HW_GPIO_Reset_Many_Pins( pins, argc-2 );
+        return;
+    }
+    else if ( argv[3] == '1' )
+    {
+        HW_GPIO_Set_Many_Pins( pins, argc-2 );
+        return;
+    }
+    else
+    {
+        CONSOLE_Printf( "Unrecognised input, expected 1 or 0 but recieved %c", argv[3] );
+        return;
     }
 }
 
