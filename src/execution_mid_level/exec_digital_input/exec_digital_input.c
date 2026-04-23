@@ -57,10 +57,10 @@
  *------------------------------------------------------------------------------
  */
 
-void EXEC_DigitalInput_Configure( const DIGITAL_INPUT_MODE_T* modes, uint8_t num_channels )
+void EXEC_DigitalInput_Configure( const DigitalInputMode_T* modes, uint8_t num_channels )
 {
     // TODO: Implement configuration via multiplexer/output expander/I2C for each channel
-    // 'modes' is an array of DIGITAL_INPUT_MODE_T, one per channel
+    // 'modes' is an array of DigitalInputMode_T, one per channel
     // 'num_channels' is the number of digital input channels
     ( void )modes;
     ( void )num_channels;
@@ -71,11 +71,11 @@ void EXEC_DigitalInput_Configure( const DIGITAL_INPUT_MODE_T* modes, uint8_t num
 void EXEC_DigitalInput_SampleAll( bool* dest_buffer )
 {
     // Call the low-level function to read all digital inputs
-    HW_GPIO_ReadAllDigitalInputs( dest_buffer );
+    HW_GPIO_Read_All_Digital_Inputs( dest_buffer );
 }
 
-bool EXEC_DigitalInput_Sample( DIGITAL_INPUT_T input )
+bool EXEC_DigitalInput_Sample( DigitalInput_T input )
 {
     // Call the low-level function to read the specified digital input
-    return HW_GPIO_ReadDigitalInput( input );
+    return HW_GPIO_Read_Digital_Input( input );
 }

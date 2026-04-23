@@ -46,7 +46,7 @@ typedef enum GPIO_T
     GPIO_TEST_INDICATOR
 } GPIO_T;
 
-typedef enum DIGITAL_INPUT_T
+typedef enum DigitalInput_T
 {
     DIGITAL_INPUT_CH_0,
     DIGITAL_INPUT_CH_1,
@@ -58,7 +58,7 @@ typedef enum DIGITAL_INPUT_T
     DIGITAL_INPUT_CH_7,
     DIGITAL_INPUT_CH_8,
     DIGITAL_INPUT_CH_9,
-} DIGITAL_INPUT_T;
+} DigitalInput_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -91,7 +91,7 @@ void HW_GPIO_Toggle( GPIO_T gpio );
  * provided by the LL layer. It is a convenient seam for unit testing where the LL call is mocked
  * using GoogleMock.
  */
-void HW_GPIO_ReadAllDigitalInputs( bool* input_states );
+void HW_GPIO_Read_All_Digital_Inputs( bool* input_states );
 
 /**
  * @brief Reads the state of all digital inputs using the underlying GPIO LL library.
@@ -102,7 +102,7 @@ void HW_GPIO_ReadAllDigitalInputs( bool* input_states );
  * LL layer. It is a convenient seam for unit testing where the LL call is
  * mocked using GoogleMock.
  */
-bool HW_GPIO_ReadDigitalInput( DIGITAL_INPUT_T input );
+bool HW_GPIO_Read_Digital_Input( DigitalInput_T input );
 
 #ifdef __cplusplus
 }

@@ -12,9 +12,9 @@
  *
  *  Notes:
  *      There are two implementations of the "read all digital inputs" function:
- *      - HW_GPIO_ReadAllDigitalInputs: Reads each input individually using LL_GPIO_IsInputPinSet,
+ *      - HW_GPIO_Read_All_Digital_Inputs: Reads each input individually using LL_GPIO_IsInputPinSet,
  *        which is straightforward but may be less efficient due to multiple hardware accesses.
- *      - HW_GPIO_ReadAllDigitalInputsSinglePort: Reads the entire GPIO port state once using
+ *      - HW_GPIO_Read_All_Digital_InputsSinglePort: Reads the entire GPIO port state once using
  *        LL_GPIO_ReadInputPort and then extracts individual pin states, which is more efficient
  *        but assumes all inputs are on the same GPIO port.
  ******************************************************************************/
@@ -42,6 +42,20 @@
  *------------------------------------------------------------------------------
  */
 #define NUM_DIGITAL_INPUTS 10
+
+
+
+#if Digital_Input_1_GPIO_Port == s_digital_inputs_port \
+    && Digital_Input_2_GPIO_Port == s_digital_inputs_port \
+    && Digital_Input_3_GPIO_Port == s_digital_inputs_port \
+    && Digital_Input_4_GPIO_Port == s_digital_inputs_port \
+    && Digital_Input_5_GPIO_Port == s_digital_inputs_port \
+    && Digital_Input_6_GPIO_Port == s_digital_inputs_port \
+    && Digital_Input_7_GPIO_Port == s_digital_inputs_port \
+    && Digital_Input_8_GPIO_Port == s_digital_inputs_port \
+    && Digital_Input_9_GPIO_Port == s_digital_inputs_port
+#define ALL_DIGITAL_INPUTS_SAME_PORT
+#endif
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -141,7 +155,7 @@ void HW_GPIO_Toggle( GPIO_T gpio )
  * provided by the LL layer. It is a convenient seam for unit testing where the LL call is mocked
  * using GoogleMock.
  */
-inline void HW_GPIO_ReadAllDigitalInputs( bool* input_states )
+inline void HW_GPIO_Read_All_Digital_Inputs( bool* input_states )
 {
 #ifdef TEST_BUILD
     // For unit testing, just set all to false or mock as needed
@@ -161,7 +175,7 @@ inline void HW_GPIO_ReadAllDigitalInputs( bool* input_states )
     {
         // Use slow per-pin read
         for ( uint8_t i = 0; i < NUM_DIGITAL_INPUTS; ++i )
-            input_states[i] = HW_GPIO_ReadDigitalInput( ( DIGITAL_INPUT_T )i );
+            input_states[i] = HW_GPIO_Read_Digital_Input( ( DigitalInput_T )i );
     }
 #endif
 }
@@ -175,7 +189,7 @@ inline void HW_GPIO_ReadAllDigitalInputs( bool* input_states )
  * LL layer. It is a convenient seam for unit testing where the LL call is
  * mocked using GoogleMock.
  */
-inline bool HW_GPIO_ReadDigitalInput( DIGITAL_INPUT_T input )
+inline bool HW_GPIO_Read_Digital_Input( DigitalInput_T input )
 {
 #ifdef TEST_BUILD
     // For unit testing, always return false or mock as needed

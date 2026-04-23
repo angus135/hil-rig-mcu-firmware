@@ -40,24 +40,24 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-typedef enum DIGITAL_INPUT_MODE_T
+typedef enum DigitalInputMode_T
 {
     DIGITAL_INPUT_MODE_3V3,
     DIGITAL_INPUT_MODE_5V,
     DIGITAL_INPUT_MODE_12V,
     DIGITAL_INPUT_MODE_24V
-} DIGITAL_INPUT_MODE_T;
+} DigitalInputMode_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
 
-void EXEC_DigitalInput_Configure( const DIGITAL_INPUT_MODE_T* modes, uint8_t num_channels );
+void EXEC_DigitalInput_Configure( const DigitalInputMode_T* modes, uint8_t num_channels );
 
 void EXEC_DigitalInput_SampleAll( bool* dest_buffer );
 
-bool EXEC_DigitalInput_Sample( DIGITAL_INPUT_T input );
+bool EXEC_DigitalInput_Sample( DigitalInput_T input );
 
 #ifdef __cplusplus
 }
