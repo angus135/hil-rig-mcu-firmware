@@ -19,6 +19,7 @@
 #include "execution_manager.h"
 #include "hw_gpio.h"
 #include "exec_uart.h"
+#include "exec_digital_input.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -62,6 +63,7 @@ static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_LED( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_UART_Loopback( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] );
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
@@ -76,8 +78,8 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"execution_manager",    CONSOLE_Command_Test_Scheduler,       "Starts the test scheduler."},
     {"clear",  CONSOLE_Command_Clear,       "Clears the console."},
     {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <green|blue|red|test>"},
-    {"uart_loopback", CONSOLE_Command_UART_Loopback, "Configuring Channels and Rx/Tx loopback testing for Uart"}
-
+    {"uart_loopback", CONSOLE_Command_UART_Loopback, "Configuring Channels and Rx/Tx loopback testing for Uart"},
+    {"digital_input", CONSOLE_Command_DigitalInput, "Print digital input states as 1s and 0s."}
 };
 
 // clang-format on
@@ -88,6 +90,40 @@ static ConsoleUartLoopbackState_T s_uart_loopback_state = { 0 };
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+
+static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
+{
+    if ( argc != 2 || argv[1] == NULL )
+    {
+        CONSOLE_Printf( "Usage: digital_input <channel 0-9> or digital_input all\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "all" ) == 0 )
+    {
+        ( void )argc;
+        ( void )argv;
+        bool input_states[10] = { 0 };
+        EXEC_DigitalInput_SampleAll( input_states );
+        CONSOLE_Printf( "Digital Inputs: " );
+        for ( uint8_t i = 0; i < 10; ++i )
+        {
+            CONSOLE_Printf( "%d", input_states[i] ? 1 : 0 );
+        }
+        CONSOLE_Printf( "\r\n" );
+    }
+    else
+    {
+        int channel = atoi( argv[1] );
+        if ( channel < 0 || channel > 9 )
+        {
+            CONSOLE_Printf( "Invalid channel. Must be 0-9.\r\n" );
+            return;
+        }
+        bool state = EXEC_DigitalInput_Sample( ( DigitalInput_T )channel );
+        CONSOLE_Printf( "Digital Input %d: %d\r\n", channel, state ? 1 : 0 );
+    }
+}
 
 /**
  * @brief Handles the help command by providing available commands to the console
