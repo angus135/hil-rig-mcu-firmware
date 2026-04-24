@@ -184,9 +184,9 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
  * selected channel.
  *
  * In the current driver design, starting a channel places its RX path into the
- * driver's continuous receive mode by starting DMA reception into the internal
- * RX buffer. This allows higher-level software to later inspect the received
- * byte stream using HW_SPI_Rx_Peek() and HW_SPI_Rx_Consume().
+ * driver's continuous receive mode by directly arming the RX DMA stream against
+ * the internal RX buffer. This allows higher-level software to later inspect
+ * the received byte stream using HW_SPI_Rx_Peek() and HW_SPI_Rx_Consume().
  *
  * This function does not start any TX transfer. Transmit activity is initiated
  * separately using HW_SPI_Load_Tx_Buffer() and HW_SPI_Tx_Trigger().
@@ -195,9 +195,8 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
  * policy, or higher-level scheduling semantics. Those responsibilities belong
  * to the software layer above this driver.
  *
- * When the channel is configured for 16-bit SPI operation, @p bytes_to_consume
- * must be a multiple of 2 bytes so that the software consume position remains
- * aligned to SPI frames.
+ * The RX DMA path is armed passively. In master mode this function must not
+ * generate clocks; clocks are generated only by explicit TX activity.
  *
  * The channel should only be started after successful configuration.
  *
@@ -301,10 +300,9 @@ void HW_SPI_Rx_Consume( SPIPeripheral_T peripheral, uint32_t bytes_to_consume );
  * This function does not immediately start SPI transmission. It only appends
  * bytes to the low-level driver's internal TX queue.
  *
- * The TX buffer used by this driver is a circular software queue. Buffered data
- * remains in the queue until transmitted by the TX engine. If queued data wraps
- * around the end of the internal buffer, it is transmitted as multiple
- * contiguous DMA transfers.
+ * The TX buffer used by this driver is a circular software queue. Buffered
+ * data remains pending until a contiguous span is handed to DMA. Once a span is
+ * handed to DMA it is tracked as in-flight rather than pending.
  *
  * This function does not define message framing or protocol semantics. It only
  * stores raw bytes to be shifted out by the SPI peripheral. Higher-level
