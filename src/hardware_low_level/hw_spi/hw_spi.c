@@ -14,10 +14,9 @@
  *
  *      RX is exposed through a peek/consume model over a DMA-backed circular
  *      byte stream. TX is exposed through a load/trigger model where data is
- *      appended to an internal ring buffer and transmitted using DMA when
- *      triggered. Each DMA transfer is armed for the next contiguous region of
- *      queued TX data. If the queued data wraps around the end of the ring, TX
- *      progression is continued by the DMA completion IRQ handler.
+ *      appended to an internal queue and transmitted using DMA when triggered.
+ *      TX progression is continued by the DMA completion IRQ handler if more
+ *      queued data remains.
  *
  *      The module does not implement higher-level protocol framing, transaction
  *      scheduling, chip-select sequencing policy beyond basic hardware mode
@@ -35,11 +34,8 @@
  *        according to the selected SPI data size.
  *      - RX uses a continuous DMA-backed circular buffer. The caller must
  *        consume data often enough to avoid overwrite of unread data.
- *      - TX uses a circular queue buffer. Once all queued data has been sent, the
- *        read and write positions are left at their current ring positions.
- *      - Each TX DMA transfer can only transmit one contiguous span of the TX
- *        ring. Wrapped queued data is transmitted by re-arming DMA from the TX
- *        completion IRQ.
+ *      - TX uses a linear queue buffer. Once all queued data has been sent, the
+ *        queue state is reset back to empty.
  *      - This module assumes DMA stream/hardware mappings defined in this file
  *        are correct for the target hardware configuration.
  *      - Stream-specific DMA terminal flag handling is currently hard-coded to
@@ -140,7 +136,7 @@ typedef struct SPIPeripheralState_T
     uint8_t       tx_buffer[TX_BUFFER_SIZE_BYTES] __attribute__( ( aligned( 2 ) ) );
     uint32_t      tx_write_position;
     uint32_t      tx_read_position;
-    uint32_t      tx_num_bytes_queued;
+    uint32_t      tx_num_bytes_pending;
     uint32_t tx_num_bytes_in_transmission;  // Note: stored in bytes so for 16 bit, divide by 2 for
                                             // elements
     DMA_TypeDef* rx_dma;
@@ -182,11 +178,15 @@ static inline uint32_t HW_SPI_DMA_Elements_To_Bytes( const SPIPeripheralState_T*
                                                      uint32_t                    num_elements );
 static inline bool     HW_SPI_Is_Frame_Aligned_Size( const SPIPeripheralState_T* peripheral_state,
                                                      uint32_t                    size_bytes );
-static void            HW_SPI_Configure_DMA_Data_Widths( SPIPeripheralState_T* peripheral_state );
-static bool HW_SPI_TX_Start_DMA_From_Current_Read_Position( SPIPeripheralState_T* peripheral_state );
 static void            HW_SPI_TX_Reset_State( SPIPeripheralState_T* peripheral_state );
+static inline uint32_t HW_SPI_TX_Get_Used_Space( const SPIPeripheralState_T* peripheral_state );
 static inline uint32_t HW_SPI_TX_Get_Free_Space( const SPIPeripheralState_T* peripheral_state );
-static inline uint32_t HW_SPI_TX_Get_Contiguous_Read_Bytes( const SPIPeripheralState_T* peripheral_state );
+static inline uint32_t
+            HW_SPI_TX_Get_Contiguous_Read_Bytes( const SPIPeripheralState_T* peripheral_state );
+static void HW_SPI_Configure_DMA_Data_Widths( SPIPeripheralState_T* peripheral_state );
+static bool HW_SPI_RX_Start_Passive_DMA( SPIPeripheralState_T* peripheral_state );
+static bool
+HW_SPI_TX_Start_DMA_From_Current_Read_Position( SPIPeripheralState_T* peripheral_state );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -259,38 +259,26 @@ static inline void HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral )
 {
     SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
 
-    uint32_t completed_bytes = peripheral_state->tx_num_bytes_in_transmission;
-
-    if ( completed_bytes == 0U )
-    {
-        return;
-    }
-
-    peripheral_state->tx_read_position =
-        ( peripheral_state->tx_read_position + completed_bytes ) % TX_BUFFER_SIZE_BYTES;
-
-    if ( completed_bytes >= peripheral_state->tx_num_bytes_queued )
-    {
-        peripheral_state->tx_num_bytes_queued = 0U;
-    }
-    else
-    {
-        peripheral_state->tx_num_bytes_queued =
-            peripheral_state->tx_num_bytes_queued - completed_bytes;
-    }
-
+    /*
+     * RING BUFFER CHANGE:
+     * The completed TX span was already removed from the pending software ring
+     * when DMA was started. Completion only clears the in-flight byte count.
+     */
     peripheral_state->tx_num_bytes_in_transmission = 0U;
 
     /*
-     * If the ring still contains queued bytes, re-arm DMA for the next
-     * contiguous span. This is what allows wrapped ring data to be transmitted
-     * as two back-to-back DMA transfers.
+     * If more bytes were loaded while the previous DMA transfer was active,
+     * transmit the next contiguous span from the TX ring.
      */
-    if ( peripheral_state->tx_num_bytes_queued == 0U )
+    if ( peripheral_state->tx_num_bytes_pending == 0U )
     {
         return;
     }
 
+    /*
+     * More data was appended while the previous DMA transfer was in progress.
+     * Re-arm DMA starting from the new software read position.
+     */
     if ( HW_SPI_TX_Start_DMA_From_Current_Read_Position( peripheral_state ) == false )
     {
         HW_SPI_TX_Error_Handler( peripheral );
@@ -323,6 +311,54 @@ static inline bool HW_SPI_Is_Frame_Aligned_Size( const SPIPeripheralState_T* per
                                                  uint32_t                    size_bytes )
 {
     return ( size_bytes % HW_SPI_Get_Frame_Size_Bytes( peripheral_state ) ) == 0U;
+}
+
+static void HW_SPI_TX_Reset_State( SPIPeripheralState_T* peripheral_state )
+{
+    if ( peripheral_state == NULL )
+    {
+        return;
+    }
+
+    /*
+     * RING BUFFER CHANGE:
+     * Reset the circular TX queue state. Pending bytes are bytes still in the
+     * software ring. In-flight bytes are bytes already handed to DMA.
+     */
+    peripheral_state->tx_write_position            = 0U;
+    peripheral_state->tx_read_position             = 0U;
+    peripheral_state->tx_num_bytes_pending         = 0U;
+    peripheral_state->tx_num_bytes_in_transmission = 0U;
+}
+
+static inline uint32_t HW_SPI_TX_Get_Used_Space( const SPIPeripheralState_T* peripheral_state )
+{
+    return peripheral_state->tx_num_bytes_pending + peripheral_state->tx_num_bytes_in_transmission;
+}
+
+static inline uint32_t HW_SPI_TX_Get_Free_Space( const SPIPeripheralState_T* peripheral_state )
+{
+    return TX_BUFFER_SIZE_BYTES - HW_SPI_TX_Get_Used_Space( peripheral_state );
+}
+
+static inline uint32_t
+HW_SPI_TX_Get_Contiguous_Read_Bytes( const SPIPeripheralState_T* peripheral_state )
+{
+    uint32_t bytes_until_end = 0U;
+
+    if ( peripheral_state->tx_num_bytes_pending == 0U )
+    {
+        return 0U;
+    }
+
+    bytes_until_end = TX_BUFFER_SIZE_BYTES - peripheral_state->tx_read_position;
+
+    if ( peripheral_state->tx_num_bytes_pending < bytes_until_end )
+    {
+        return peripheral_state->tx_num_bytes_pending;
+    }
+
+    return bytes_until_end;
 }
 
 /**
@@ -366,47 +402,58 @@ static void HW_SPI_Configure_DMA_Data_Widths( SPIPeripheralState_T* peripheral_s
     }
 }
 
-static void HW_SPI_TX_Reset_State( SPIPeripheralState_T* peripheral_state )
+/**
+ * @brief Arm RX DMA without causing master-mode dummy clock generation.
+ *
+ * PASSIVE RX DMA CHANGE:
+ * HAL_SPI_Receive_DMA() is not suitable for this driver model when the SPI
+ * peripheral is configured as a 2-line master. STM32 HAL implements that case
+ * as a transmit/receive operation so the master can generate SCK, which can
+ * clock a full RX buffer worth of dummy traffic.
+ *
+ * This helper arms RX DMA directly. It lets RX DMA drain SPI->DR whenever
+ * frames arrive, but it does not generate clocks by itself. Clocks are only
+ * generated by explicit TX activity.
+ */
+static bool HW_SPI_RX_Start_Passive_DMA( SPIPeripheralState_T* peripheral_state )
 {
+    uint16_t rx_length_elements = 0U;
+
     if ( peripheral_state == NULL )
     {
-        return;
+        return false;
     }
 
-    peripheral_state->tx_write_position            = 0U;
-    peripheral_state->tx_read_position             = 0U;
-    peripheral_state->tx_num_bytes_queued          = 0U;
-    peripheral_state->tx_num_bytes_in_transmission = 0U;
-}
-
-static inline uint32_t HW_SPI_TX_Get_Free_Space( const SPIPeripheralState_T* peripheral_state )
-{
-    return TX_BUFFER_SIZE_BYTES - peripheral_state->tx_num_bytes_queued;
-}
-
-/*
- * DMA can only transmit one contiguous memory span at a time. If the queued TX
- * data wraps around the end of tx_buffer, this returns only the bytes from the
- * current read position to the end of the buffer. The IRQ handler will later
- * re-arm DMA for the wrapped span at tx_buffer[0].
- */
-static inline uint32_t HW_SPI_TX_Get_Contiguous_Read_Bytes( const SPIPeripheralState_T* peripheral_state )
-{
-    uint32_t bytes_until_end = 0U;
-
-    if ( peripheral_state->tx_num_bytes_queued == 0U )
+    if ( peripheral_state->rx_dma == NULL )
     {
-        return 0U;
+        return false;
     }
 
-    bytes_until_end = TX_BUFFER_SIZE_BYTES - peripheral_state->tx_read_position;
+    rx_length_elements = HW_SPI_Bytes_To_DMA_Elements( peripheral_state, RX_BUFFER_SIZE_BYTES );
 
-    if ( peripheral_state->tx_num_bytes_queued < bytes_until_end )
+    peripheral_state->rx_position = 0U;
+
+    LL_DMA_DisableStream( peripheral_state->rx_dma, peripheral_state->rx_dma_stream );
+    while ( LL_DMA_IsEnabledStream( peripheral_state->rx_dma, peripheral_state->rx_dma_stream )
+            != 0U )
     {
-        return peripheral_state->tx_num_bytes_queued;
     }
 
-    return bytes_until_end;
+    LL_DMA_SetMemoryAddress( peripheral_state->rx_dma, peripheral_state->rx_dma_stream,
+                             ( uintptr_t )peripheral_state->rx_buffer );
+
+    LL_DMA_SetPeriphAddress( peripheral_state->rx_dma, peripheral_state->rx_dma_stream,
+                             LL_SPI_DMA_GetRegAddr( peripheral_state->spi_peripheral ) );
+
+    LL_DMA_SetDataLength( peripheral_state->rx_dma, peripheral_state->rx_dma_stream,
+                          rx_length_elements );
+
+    LL_DMA_EnableStream( peripheral_state->rx_dma, peripheral_state->rx_dma_stream );
+    LL_SPI_EnableDMAReq_RX( peripheral_state->spi_peripheral );
+
+    LL_SPI_Enable( peripheral_state->spi_peripheral );
+
+    return true;
 }
 
 /**
@@ -417,11 +464,16 @@ static inline uint32_t HW_SPI_TX_Get_Contiguous_Read_Bytes( const SPIPeripheralS
  */
 static bool HW_SPI_TX_Start_DMA_From_Current_Read_Position( SPIPeripheralState_T* peripheral_state )
 {
-    uint32_t bytes_to_send = 0;
-    uint32_t dma_elements  = 0;
+    uint32_t bytes_to_send = 0U;
+    uint32_t dma_elements  = 0U;
+    uint8_t* tx_ptr        = NULL;
+
+    if ( peripheral_state->tx_num_bytes_in_transmission > 0U )
+    {
+        return false;
+    }
 
     bytes_to_send = HW_SPI_TX_Get_Contiguous_Read_Bytes( peripheral_state );
-
     if ( bytes_to_send == 0U )
     {
         return false;
@@ -440,7 +492,12 @@ static bool HW_SPI_TX_Start_DMA_From_Current_Read_Position( SPIPeripheralState_T
     {
     }
 
-    uint8_t* tx_ptr = &( peripheral_state->tx_buffer[peripheral_state->tx_read_position] );
+    tx_ptr = &( peripheral_state->tx_buffer[peripheral_state->tx_read_position] );
+
+    peripheral_state->tx_read_position =
+        ( peripheral_state->tx_read_position + bytes_to_send ) % TX_BUFFER_SIZE_BYTES;
+    peripheral_state->tx_num_bytes_pending = peripheral_state->tx_num_bytes_pending - bytes_to_send;
+    peripheral_state->tx_num_bytes_in_transmission = bytes_to_send;
 
     LL_DMA_SetMemoryAddress( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
                              ( uintptr_t )tx_ptr );
@@ -449,12 +506,6 @@ static bool HW_SPI_TX_Start_DMA_From_Current_Read_Position( SPIPeripheralState_T
                              LL_SPI_DMA_GetRegAddr( peripheral_state->spi_peripheral ) );
 
     LL_DMA_SetDataLength( peripheral_state->tx_dma, peripheral_state->tx_dma_stream, dma_elements );
-
-    /*
-     * Keep software bookkeeping in bytes so the rest of the queue logic stays
-     * byte-oriented and consistent with the public API.
-     */
-    peripheral_state->tx_num_bytes_in_transmission = bytes_to_send;
 
     LL_SPI_EnableDMAReq_TX( peripheral_state->spi_peripheral );
     LL_DMA_EnableIT_TC( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
@@ -584,7 +635,6 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
             channel_0_state->tx_dma_stream  = SPI_CHANNEL_0_TX_DMA_STREAM;
             channel_0_state->spi_peripheral = SPI_CHANNEL_0_INSTANCE;
             channel_0_state->tx_dma_irqn    = SPI_CHANNEL_0_TX_DMA_IRQN;
-            HW_SPI_TX_Reset_State( channel_0_state );
             break;
         case SPI_CHANNEL_1:
             hspi           = &SPI_CHANNEL_1_HANDLE;
@@ -596,7 +646,6 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
             channel_1_state->tx_dma_stream  = SPI_CHANNEL_1_TX_DMA_STREAM;
             channel_1_state->spi_peripheral = SPI_CHANNEL_1_INSTANCE;
             channel_1_state->tx_dma_irqn    = SPI_CHANNEL_1_TX_DMA_IRQN;
-            HW_SPI_TX_Reset_State( channel_1_state );
             break;
         case SPI_DAC:
             hspi           = &SPI_DAC_HANDLE;
@@ -606,7 +655,6 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
             dac_state->tx_dma_stream  = SPI_DAC_TX_DMA_STREAM;
             dac_state->spi_peripheral = SPI_DAC_INSTANCE;
             dac_state->tx_dma_irqn    = SPI_DAC_TX_DMA_IRQN;
-            HW_SPI_TX_Reset_State( dac_state );
             break;
         default:
             return false;
@@ -798,19 +846,8 @@ void HW_SPI_Start_Channel( SPIPeripheral_T peripheral )
         default:
             return;
     }
-    /*
-     * Public software API remains byte-oriented, but HAL/DMA needs the transfer
-     * length in SPI frames, not bytes.
-     */
-    rx_length_elements = HW_SPI_Bytes_To_DMA_Elements( peripheral_state, RX_BUFFER_SIZE_BYTES );
 
-    peripheral_state->rx_position = 0U;
-
-    // Disable Rx interrupts
-    NVIC_DisableIRQ( SPI_CHANNEL_0_RX_DMA_IRQN );
-    NVIC_DisableIRQ( SPI_CHANNEL_1_RX_DMA_IRQN );
-
-    HAL_SPI_Receive_DMA( hspi, rx_buffer, rx_length_elements );
+    ( void )HW_SPI_RX_Start_Passive_DMA( peripheral_state );
 }
 
 /**
@@ -1019,10 +1056,10 @@ void HW_SPI_Rx_Consume( SPIPeripheral_T peripheral, uint32_t bytes_to_consume )
  * This function does not immediately start SPI transmission. It only appends
  * bytes to the low-level driver's internal TX queue.
  *
- * The TX buffer used by this driver is a circular software queue. Buffered data
- * remains in the queue until transmitted by the TX engine. If queued data wraps
- * around the end of the internal buffer, it is transmitted as multiple
- * contiguous DMA transfers.
+ * The TX buffer used by this driver is a linear software queue rather than a
+ * circular queue. Buffered data remains in the queue until transmitted by the
+ * TX engine and the queue is reset back to empty when all queued data has been
+ * sent.
  *
  * This function does not define message framing or protocol semantics. It only
  * stores raw bytes to be shifted out by the SPI peripheral. Higher-level
@@ -1053,6 +1090,7 @@ bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uin
     SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
     uint32_t              first_copy_size  = 0U;
     uint32_t              second_copy_size = 0U;
+
     /*
      * The public API stays byte-oriented, but in 16-bit mode queued TX data must
      * still be an integer number of SPI frames.
@@ -1067,9 +1105,8 @@ bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uin
 
     /*
      * RING BUFFER CHANGE:
-     * Check available ring capacity instead of checking whether write + size
-     * reaches the physical end of the array. The write pointer may legitimately
-     * wrap back to index 0.
+     * Free space accounts for both bytes still pending in the software ring and
+     * bytes currently owned by DMA, because both occupy storage in tx_buffer.
      */
     if ( size > HW_SPI_TX_Get_Free_Space( peripheral_state ) )
     {
@@ -1079,9 +1116,9 @@ bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uin
 
     /*
      * RING BUFFER CHANGE:
-     * Copy in one or two chunks. The first chunk runs from the current write
-     * position to either the end of the TX buffer or the end of the source data.
-     * The optional second chunk wraps to tx_buffer[0].
+     * Copy into the circular TX buffer. If the write pointer is near the end of
+     * the buffer, the copy is split into an end span and a wrapped span at
+     * index 0.
      */
     first_copy_size = TX_BUFFER_SIZE_BYTES - peripheral_state->tx_write_position;
     if ( first_copy_size > size )
@@ -1095,14 +1132,12 @@ bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uin
     second_copy_size = size - first_copy_size;
     if ( second_copy_size > 0U )
     {
-        memcpy( &( peripheral_state->tx_buffer[0] ), &( data[first_copy_size] ),
-                second_copy_size );
+        memcpy( &( peripheral_state->tx_buffer[0] ), &( data[first_copy_size] ), second_copy_size );
     }
 
     peripheral_state->tx_write_position =
         ( peripheral_state->tx_write_position + size ) % TX_BUFFER_SIZE_BYTES;
-
-    peripheral_state->tx_num_bytes_queued = peripheral_state->tx_num_bytes_queued + size;
+    peripheral_state->tx_num_bytes_pending = peripheral_state->tx_num_bytes_pending + size;
 
     NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
     return true;
@@ -1146,14 +1181,9 @@ void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral )
      */
     NVIC_DisableIRQ( peripheral_state->tx_dma_irqn );
 
-    /*
-     * RING BUFFER CHANGE:
-     * Do not use tx_write_position == 0 to detect an empty TX queue. In a ring
-     * buffer, write position 0 is a valid wrapped write location. Use the
-     * queued-byte count instead.
-     */
-    if ( ( peripheral_state->tx_num_bytes_in_transmission > 0U )
-         || ( peripheral_state->tx_num_bytes_queued == 0U ) )
+    // If DMA is already active or there is nothing to send then return
+    if ( peripheral_state->tx_num_bytes_in_transmission > 0
+         || peripheral_state->tx_write_position == 0 )
     {
         NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
         return;
@@ -1164,6 +1194,7 @@ void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral )
      * These are stream-specific and should be adjusted if the stream mapping
      * changes.
      */
+    // TODO: If the DMA stream/channel changes, will need to change TE3/TC3 etc.
     switch ( peripheral )
     {
         case SPI_CHANNEL_0:

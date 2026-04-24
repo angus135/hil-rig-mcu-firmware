@@ -665,6 +665,22 @@ void LL_DMA_SetMemorySize( DMA_TypeDef* DMAx, uint32_t Stream, uint32_t Size );
 void LL_DMA_SetPeriphSize( DMA_TypeDef* DMAx, uint32_t Stream, uint32_t Size );
 
 /**
+ * @brief  Enable DMA Rx
+ * @rmtoll CR2          RXDMAEN       LL_SPI_EnableDMAReq_RX
+ * @param  SPIx SPI Instance
+ * @retval None
+ */
+void LL_SPI_EnableDMAReq_RX( SPI_TypeDef* SPIx );
+
+/**
+ * @brief  Enable SPI peripheral
+ * @rmtoll CR1          SPE           LL_SPI_Enable
+ * @param  SPIx SPI Instance
+ * @retval None
+ */
+void LL_SPI_Enable( SPI_TypeDef* SPIx );
+
+/**
   \brief   Disable Interrupt
   \details Disables a device specific interrupt in the NVIC interrupt controller.
   \param [in]      IRQn  Device specific interrupt number.
