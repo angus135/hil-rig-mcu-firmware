@@ -19,8 +19,12 @@
 #include "execution_manager.h"
 #include "hw_gpio.h"
 #include "exec_uart.h"
+<<<<<<< HEAD
 #include "hw_adc.h"
 #include "exec_digital_input.h"
+=======
+#include "hw_spi.h"
+>>>>>>> 5881ff8 (DEV-78 SPI)
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -69,6 +73,7 @@ static void CONSOLE_Command_Set_Pin( uint16_t argc, char** argv );
 static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char** argv );
 static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] );
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
@@ -87,7 +92,9 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"set_pin", CONSOLE_Command_Set_Pin, "Set or reset digital output, Usage: set_pin PIN_NAME <0|1>"},
     {"set_pins", CONSOLE_Command_Set_Many_Pins, "Set or reset many digital output, Usage: set_pin PIN_NAME0 PIN_NAME1 ... PIN_NAMEX <0|1>"},
     {"analogue_inputs", CONSOLE_Command_Analogue_Inputs, "Allows for interaction with Analogue Inputs."},
-    {"digital_input", CONSOLE_Command_DigitalInput, "Print digital input states as 1s and 0s."}
+    {"digital_input", CONSOLE_Command_DigitalInput, "Print digital input states as 1s and 0s."},
+    {"spi_loop",    CONSOLE_Command_SPI_Loopback,         "Does a loopback test"},
+
 };
 
 // clang-format on
