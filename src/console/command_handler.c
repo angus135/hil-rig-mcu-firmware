@@ -23,6 +23,7 @@
 #include "exec_uart.h"
 #include "hw_adc.h"
 #include "exec_digital_input.h"
+#include "hw_spi.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -72,6 +73,7 @@ static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] );
 
+static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] );
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
@@ -92,7 +94,9 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"analogue_inputs", CONSOLE_Command_Analogue_Inputs, "Allows for interaction with Analogue Inputs."},
     {"digital_input", CONSOLE_Command_DigitalInput, "Print digital input states as 1s and 0s."},
     {"expander", CONSOLE_Command_Expander,  "Command set allowing user to configure and control the logic expander"},
-    {"i2c_loopback", CONSOLE_Command_I2C_Loopback, "Loopback testing for I2C master and slave channels."}
+    {"i2c_loopback", CONSOLE_Command_I2C_Loopback, "Loopback testing for I2C master and slave channels."},
+    {"spi_loop",    CONSOLE_Command_SPI_Loopback,         "Does a loopback test"},
+
 };
 
 // clang-format on

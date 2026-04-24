@@ -87,6 +87,9 @@ extern "C"
 #define LL_DMA_STREAM_1 0x00000001U
 #define LL_DMA_STREAM_2 0x00000002U
 #define LL_DMA_STREAM_3 0x00000003U
+#define LL_DMA_STREAM_4 0x00000004U
+#define LL_DMA_STREAM_5 0x00000005U
+#define LL_DMA_STREAM_6 0x00000006U
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -557,35 +560,35 @@ void LL_SPI_DisableDMAReq_TX( SPI_TypeDef* SPIx );
 
 /**
  * @brief Get Stream 3 transfer error flag.
- * @rmtoll LISR  TEIF3    LL_DMA_IsActiveFlag_TE3
+ * @rmtoll LISR  TEIF3    LL_DMA_IsActiveFlag_TE5
  * @param  DMAx DMAx Instance
  * @retval State of bit (1 or 0).
  */
-uint32_t LL_DMA_IsActiveFlag_TE3( DMA_TypeDef* DMAx );
+uint32_t LL_DMA_IsActiveFlag_TE5( DMA_TypeDef* DMAx );
 
 /**
  * @brief Clear Stream 3 transfer error flag.
- * @rmtoll LIFCR  CTEIF3    LL_DMA_ClearFlag_TE3
+ * @rmtoll LIFCR  CTEIF3    LL_DMA_ClearFlag_TE5
  * @param  DMAx DMAx Instance
  * @retval None
  */
-void LL_DMA_ClearFlag_TE3( DMA_TypeDef* DMAx );
+void LL_DMA_ClearFlag_TE5( DMA_TypeDef* DMAx );
 
 /**
  * @brief Get Stream 3 transfer complete flag.
- * @rmtoll LISR  TCIF3    LL_DMA_IsActiveFlag_TC3
+ * @rmtoll LISR  TCIF3    LL_DMA_IsActiveFlag_TC5
  * @param  DMAx DMAx Instance
  * @retval State of bit (1 or 0).
  */
-uint32_t LL_DMA_IsActiveFlag_TC3( DMA_TypeDef* DMAx );
+uint32_t LL_DMA_IsActiveFlag_TC5( DMA_TypeDef* DMAx );
 
 /**
  * @brief Clear Stream 3 transfer complete flag.
- * @rmtoll LIFCR  CTCIF3    LL_DMA_ClearFlag_TC3
+ * @rmtoll LIFCR  CTCIF3    LL_DMA_ClearFlag_TC5
  * @param  DMAx DMAx Instance
  * @retval None
  */
-void LL_DMA_ClearFlag_TC3( DMA_TypeDef* DMAx );
+void LL_DMA_ClearFlag_TC5( DMA_TypeDef* DMAx );
 
 /**
  * @brief Get Stream 1 transfer error flag.
