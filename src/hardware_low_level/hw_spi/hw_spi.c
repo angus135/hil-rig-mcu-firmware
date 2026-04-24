@@ -81,25 +81,37 @@
 
 // DMA Definitions
 #define SPI_CHANNEL_0_RX_DMA DMA2
-#define SPI_CHANNEL_0_RX_DMA_STREAM LL_DMA_STREAM_2
-#define SPI_CHANNEL_0_RX_DMA_IRQ DMA2_Stream2_IRQHandler
-#define SPI_CHANNEL_0_RX_DMA_IRQN DMA2_Stream2_IRQn
+#define SPI_CHANNEL_0_RX_DMA_STREAM LL_DMA_STREAM_0
+#define SPI_CHANNEL_0_RX_DMA_IRQ DMA2_Stream0_IRQHandler
+#define SPI_CHANNEL_0_RX_DMA_IRQN DMA2_Stream0_IRQn
 #define SPI_CHANNEL_0_TX_DMA DMA2
-#define SPI_CHANNEL_0_TX_DMA_STREAM LL_DMA_STREAM_3
-#define SPI_CHANNEL_0_TX_DMA_IRQ DMA2_Stream3_IRQHandler
-#define SPI_CHANNEL_0_TX_DMA_IRQN DMA2_Stream3_IRQn
+#define SPI_CHANNEL_0_TX_DMA_STREAM LL_DMA_STREAM_5
+#define SPI_CHANNEL_0_TX_DMA_IRQ DMA2_Stream5_IRQHandler
+#define SPI_CHANNEL_0_TX_DMA_IRQN DMA2_Stream5_IRQn
+#define SPI_CHANNEL_0_TX_DMA_IS_ACTIVE_TC LL_DMA_IsActiveFlag_TC5
+#define SPI_CHANNEL_0_TX_DMA_IS_ACTIVE_TE LL_DMA_IsActiveFlag_TE5
+#define SPI_CHANNEL_0_TX_DMA_CLEAR_TC LL_DMA_ClearFlag_TC5
+#define SPI_CHANNEL_0_TX_DMA_CLEAR_TE LL_DMA_ClearFlag_TE5
 #define SPI_CHANNEL_1_RX_DMA DMA2
-#define SPI_CHANNEL_1_RX_DMA_STREAM LL_DMA_STREAM_0
-#define SPI_CHANNEL_1_RX_DMA_IRQ DMA2_Stream0_IRQHandler
-#define SPI_CHANNEL_1_RX_DMA_IRQN DMA2_Stream0_IRQn
+#define SPI_CHANNEL_1_RX_DMA_STREAM LL_DMA_STREAM_3
+#define SPI_CHANNEL_1_RX_DMA_IRQ DMA2_Stream3_IRQHandler
+#define SPI_CHANNEL_1_RX_DMA_IRQN DMA2_Stream3_IRQn
 #define SPI_CHANNEL_1_TX_DMA DMA2
 #define SPI_CHANNEL_1_TX_DMA_STREAM LL_DMA_STREAM_1
 #define SPI_CHANNEL_1_TX_DMA_IRQ DMA2_Stream1_IRQHandler
 #define SPI_CHANNEL_1_TX_DMA_IRQN DMA2_Stream1_IRQn
+#define SPI_CHANNEL_1_TX_DMA_IS_ACTIVE_TC LL_DMA_IsActiveFlag_TC1
+#define SPI_CHANNEL_1_TX_DMA_IS_ACTIVE_TE LL_DMA_IsActiveFlag_TE1
+#define SPI_CHANNEL_1_TX_DMA_CLEAR_TC LL_DMA_ClearFlag_TC1
+#define SPI_CHANNEL_1_TX_DMA_CLEAR_TE LL_DMA_ClearFlag_TE1
 #define SPI_DAC_TX_DMA DMA2
 #define SPI_DAC_TX_DMA_STREAM LL_DMA_STREAM_1
 #define SPI_DAC_TX_DMA_IRQ DMA2_Stream1_IRQHandler
 #define SPI_DAC_TX_DMA_IRQN DMA2_Stream1_IRQn
+#define SPI_DAC_TX_DMA_IS_ACTIVE_TC LL_DMA_IsActiveFlag_TC1
+#define SPI_DAC_TX_DMA_IS_ACTIVE_TE LL_DMA_IsActiveFlag_TE1
+#define SPI_DAC_TX_DMA_CLEAR_TC LL_DMA_ClearFlag_TC1
+#define SPI_DAC_TX_DMA_CLEAR_TE LL_DMA_ClearFlag_TE1
 
 #define RX_BUFFER_SIZE_BYTES 1024
 #define TX_BUFFER_SIZE_BYTES 1024
@@ -400,41 +412,39 @@ void SPI_CHANNEL_1_RX_DMA_IRQ( void )
 {
 }
 
-void SPI_CHANNEL_0_TX_DMA_IRQ(
-    void )  // TODO: If the DMA stream/channel changes, will need to change TE3/TC3 etc.
+void SPI_CHANNEL_0_TX_DMA_IRQ( void )
 {
     /*
      * Handle transfer error first. If both TE and TC are somehow latched, error
      * handling wins and no normal completion processing is performed.
      */
-    if ( LL_DMA_IsActiveFlag_TE3( SPI_CHANNEL_0_TX_DMA ) != 0U )
+    if ( SPI_CHANNEL_0_TX_DMA_IS_ACTIVE_TE( SPI_CHANNEL_0_TX_DMA ) != 0U )
     {
-        LL_DMA_ClearFlag_TE3( SPI_CHANNEL_0_TX_DMA );
+        SPI_CHANNEL_0_TX_DMA_CLEAR_TE( SPI_CHANNEL_0_TX_DMA );
         HW_SPI_TX_Error_Handler( SPI_CHANNEL_0 );
         return;
     }
 
-    if ( LL_DMA_IsActiveFlag_TC3( SPI_CHANNEL_0_TX_DMA ) != 0U )
+    if ( SPI_CHANNEL_0_TX_DMA_IS_ACTIVE_TC( SPI_CHANNEL_0_TX_DMA ) != 0U )
     {
-        LL_DMA_ClearFlag_TC3( SPI_CHANNEL_0_TX_DMA );
+        SPI_CHANNEL_0_TX_DMA_CLEAR_TC( SPI_CHANNEL_0_TX_DMA );
         HW_SPI_TX_IRQ_Handler( SPI_CHANNEL_0 );
         return;
     }
 }
 
-void SPI_CHANNEL_1_TX_DMA_IRQ(
-    void )  // TODO: If the DMA stream/channel changes, will need to change TE3/TC3 etc.
+void SPI_CHANNEL_1_TX_DMA_IRQ( void )
 {
-    if ( LL_DMA_IsActiveFlag_TE1( SPI_CHANNEL_1_TX_DMA ) != 0U )
+    if ( SPI_CHANNEL_1_TX_DMA_IS_ACTIVE_TE( SPI_CHANNEL_1_TX_DMA ) != 0U )
     {
-        LL_DMA_ClearFlag_TE1( SPI_CHANNEL_1_TX_DMA );
+        SPI_CHANNEL_1_TX_DMA_CLEAR_TE( SPI_CHANNEL_1_TX_DMA );
         HW_SPI_TX_Error_Handler( SPI_CHANNEL_1 );
         return;
     }
 
-    if ( LL_DMA_IsActiveFlag_TC1( SPI_CHANNEL_1_TX_DMA ) != 0U )
+    if ( SPI_CHANNEL_1_TX_DMA_IS_ACTIVE_TC( SPI_CHANNEL_1_TX_DMA ) != 0U )
     {
-        LL_DMA_ClearFlag_TC1( SPI_CHANNEL_1_TX_DMA );
+        SPI_CHANNEL_1_TX_DMA_CLEAR_TC( SPI_CHANNEL_1_TX_DMA );
         HW_SPI_TX_IRQ_Handler( SPI_CHANNEL_1 );
         return;
     }
@@ -1057,18 +1067,18 @@ void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral )
     switch ( peripheral )
     {
         case SPI_CHANNEL_0:
-            LL_DMA_ClearFlag_TC3( peripheral_state->tx_dma );
-            LL_DMA_ClearFlag_TE3( peripheral_state->tx_dma );
+            SPI_CHANNEL_0_TX_DMA_CLEAR_TC( peripheral_state->tx_dma );
+            SPI_CHANNEL_0_TX_DMA_CLEAR_TE( peripheral_state->tx_dma );
             break;
 
         case SPI_CHANNEL_1:
-            LL_DMA_ClearFlag_TC1( peripheral_state->tx_dma );
-            LL_DMA_ClearFlag_TE1( peripheral_state->tx_dma );
+            SPI_CHANNEL_1_TX_DMA_CLEAR_TC( peripheral_state->tx_dma );
+            SPI_CHANNEL_1_TX_DMA_CLEAR_TE( peripheral_state->tx_dma );
             break;
 
         case SPI_DAC:
-            LL_DMA_ClearFlag_TC1( peripheral_state->tx_dma );
-            LL_DMA_ClearFlag_TE1( peripheral_state->tx_dma );
+            SPI_DAC_TX_DMA_CLEAR_TC( peripheral_state->tx_dma );
+            SPI_DAC_TX_DMA_CLEAR_TE( peripheral_state->tx_dma );
             break;
 
         default:
