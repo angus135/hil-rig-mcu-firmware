@@ -301,15 +301,20 @@ void HW_SPI_Rx_Consume( SPIPeripheral_T peripheral, uint32_t bytes_to_consume );
  * This function does not immediately start SPI transmission. It only appends
  * bytes to the low-level driver's internal TX queue.
  *
- * The TX buffer used by this driver is a linear software queue rather than a
- * circular queue. Buffered data remains in the queue until transmitted by the
- * TX engine and the queue is reset back to empty when all queued data has been
- * sent.
+ * The TX buffer used by this driver is a circular software queue. Buffered data
+ * remains in the queue until transmitted by the TX engine. If queued data wraps
+ * around the end of the internal buffer, it is transmitted as multiple
+ * contiguous DMA transfers.
  *
  * This function does not define message framing or protocol semantics. It only
  * stores raw bytes to be shifted out by the SPI peripheral. Higher-level
  * software is responsible for deciding what those bytes mean and when queued
  * transmission should be triggered.
+ *
+ * When the channel is configured for 16-bit SPI operation, @p size must be a
+ * multiple of 2 bytes so that the queued TX data remains aligned to SPI frames.
+ * The driver remains byte-oriented at the public API boundary, but misaligned
+ * byte counts are rejected in 16-bit mode.
  *
  * @param peripheral
  *     The SPI peripheral/channel whose TX queue is to be updated.
