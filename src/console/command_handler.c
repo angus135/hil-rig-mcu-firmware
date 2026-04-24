@@ -19,6 +19,7 @@
 #include "execution_manager.h"
 #include "hw_gpio.h"
 #include "exec_uart.h"
+#include "hw_spi.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -62,6 +63,7 @@ static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_LED( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_UART_Loopback( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] );
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
@@ -76,7 +78,8 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"execution_manager",    CONSOLE_Command_Test_Scheduler,       "Starts the test scheduler."},
     {"clear",  CONSOLE_Command_Clear,       "Clears the console."},
     {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <green|blue|red|test>"},
-    {"uart_loopback", CONSOLE_Command_UART_Loopback, "Configuring Channels and Rx/Tx loopback testing for Uart"}
+    {"uart_loopback", CONSOLE_Command_UART_Loopback, "Configuring Channels and Rx/Tx loopback testing for Uart"},
+    {"spi_loop",    CONSOLE_Command_SPI_Loopback,         "Does a loopback test"},
 
 };
 

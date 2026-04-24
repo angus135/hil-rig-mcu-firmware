@@ -24,7 +24,6 @@
 #include "dma.h"
 #include "fmpi2c.h"
 #include "i2c.h"
-#include "quadspi.h"
 #include "spi.h"
 #include "tim.h"
 #include "usart.h"
@@ -103,7 +102,6 @@ int main(void)
   MX_TIM1_Init();
   MX_ADC1_Init();
   MX_SPI1_Init();
-  MX_I2C1_Init();
   MX_TIM2_Init();
   MX_FMPI2C1_Init();
   MX_I2C2_Init();
@@ -111,7 +109,6 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART6_UART_Init();
   MX_SPI4_Init();
-  MX_QUADSPI_Init();
   MX_CAN1_Init();
   MX_CAN2_Init();
   /* USER CODE BEGIN 2 */
@@ -321,20 +318,6 @@ void SysTick_Handler( void )
 /* For the available peripheral interrupt handler names,                      */
 /* please refer to the startup file (startup_stm32f4xx.s).                    */
 /******************************************************************************/
-
-/**
- * @brief This function handles SPI1 global interrupt.
- */
-void SPI1_IRQHandler( void )
-{
-    /* USER CODE BEGIN SPI1_IRQn 0 */
-
-    /* USER CODE END SPI1_IRQn 0 */
-    HAL_SPI_IRQHandler( &hspi1 );
-    /* USER CODE BEGIN SPI1_IRQn 1 */
-
-    /* USER CODE END SPI1_IRQn 1 */
-}
 
 /**
  * @brief This function handles USART2 global interrupt.
