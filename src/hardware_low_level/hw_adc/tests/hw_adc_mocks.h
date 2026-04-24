@@ -41,7 +41,7 @@ extern "C"
 #define ADC_SAMPLETIME_15CYCLES ( 15U )
 
 /* DMA-related mock macros */
-#define DMA2 ( ( void* )0x40026400U )
+#define DMA2 ( ( DMA_TypeDef* )0x40026400U )
 #define LL_DMA_STREAM_4 ( 4 )
 
 /**-----------------------------------------------------------------------------
