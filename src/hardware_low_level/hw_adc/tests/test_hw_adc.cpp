@@ -66,6 +66,17 @@ public:
     MOCK_METHOD( uint32_t, GetValue, ( ADC_HandleTypeDef * hadc ), () );
 
     MOCK_METHOD( HAL_StatusTypeDef, StopADC, ( ADC_HandleTypeDef * hadc ), () );
+
+    MOCK_METHOD( void, DisableDMATransferHalfInterrupt, ( DMA_TypeDef * dma_x, uint32_t stream ),
+                 () );
+
+    MOCK_METHOD( void, DisableDMATransferCompleteInterrupt,
+                 ( DMA_TypeDef * dma_x, uint32_t stream ), () );
+
+    MOCK_METHOD( void, DisableDMATransferErrorInterrupt, ( DMA_TypeDef * dma_x, uint32_t stream ),
+                 () );
+
+    MOCK_METHOD( void, DisableIRQ, ( IRQn_Type irqn ), () );
 };
 
 static MockHWADC* g_mock = nullptr;
@@ -143,6 +154,42 @@ extern "C" HAL_StatusTypeDef HAL_ADC_Stop( ADC_HandleTypeDef* hadc )
         return HAL_ERROR;
     }
     return g_mock->StopADC( hadc );
+}
+
+extern "C" void LL_DMA_DisableIT_HT( DMA_TypeDef* DMAx, uint32_t Stream )
+{
+    if ( !g_mock )
+    {
+        return;
+    }
+    g_mock->DisableDMATransferHalfInterrupt( DMAx, Stream );
+}
+
+extern "C" void LL_DMA_DisableIT_TC( DMA_TypeDef* DMAx, uint32_t Stream )
+{
+    if ( !g_mock )
+    {
+        return;
+    }
+    g_mock->DisableDMATransferCompleteInterrupt( DMAx, Stream );
+}
+
+extern "C" void LL_DMA_DisableIT_TE( DMA_TypeDef* DMAx, uint32_t Stream )
+{
+    if ( !g_mock )
+    {
+        return;
+    }
+    g_mock->DisableDMATransferErrorInterrupt( DMAx, Stream );
+}
+
+extern "C" void NVIC_DisableIRQ( IRQn_Type IRQn )
+{
+    if ( !g_mock )
+    {
+        return;
+    }
+    g_mock->DisableIRQ( IRQn );
 }
 // NOLINTEND
 
