@@ -27,6 +27,7 @@
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
+<<<<<<< HEAD
 TIM_HandleTypeDef htim4;
 TIM_HandleTypeDef htim5;
 TIM_HandleTypeDef htim6;
@@ -35,6 +36,8 @@ TIM_HandleTypeDef htim11;
 TIM_HandleTypeDef htim12;
 TIM_HandleTypeDef htim13;
 TIM_HandleTypeDef htim14;
+=======
+>>>>>>> 623c8e9 (DEV-78 SPI)
 
 /* TIM1 init function */
 void MX_TIM1_Init(void)
@@ -204,6 +207,7 @@ void MX_TIM3_Init(void)
   /* USER CODE END TIM3_Init 2 */
 
 }
+<<<<<<< HEAD
 /* TIM4 init function */
 void MX_TIM4_Init(void)
 {
@@ -536,6 +540,8 @@ void MX_TIM14_Init(void)
   HAL_TIM_MspPostInit(&htim14);
 
 }
+=======
+>>>>>>> 623c8e9 (DEV-78 SPI)
 
 void HAL_TIM_OC_MspInit(TIM_HandleTypeDef* tim_ocHandle)
 {
@@ -595,6 +601,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* tim_baseHandle)
 
   /* USER CODE END TIM3_MspInit 1 */
   }
+<<<<<<< HEAD
   else if(tim_baseHandle->Instance==TIM4)
   {
   /* USER CODE BEGIN TIM4_MspInit 0 */
@@ -784,6 +791,8 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef* timHandle)
   /* USER CODE END TIM14_MspPostInit 1 */
   }
 
+=======
+>>>>>>> 623c8e9 (DEV-78 SPI)
 }
 
 void HAL_TIM_OC_MspDeInit(TIM_HandleTypeDef* tim_ocHandle)
@@ -843,6 +852,7 @@ void HAL_TIM_Base_MspDeInit(TIM_HandleTypeDef* tim_baseHandle)
 
   /* USER CODE END TIM3_MspDeInit 1 */
   }
+<<<<<<< HEAD
   else if(tim_baseHandle->Instance==TIM4)
   {
   /* USER CODE BEGIN TIM4_MspDeInit 0 */
@@ -961,6 +971,8 @@ void HAL_TIM_PWM_MspDeInit(TIM_HandleTypeDef* tim_pwmHandle)
 
   /* USER CODE END TIM12_MspDeInit 1 */
   }
+=======
+>>>>>>> 623c8e9 (DEV-78 SPI)
 }
 
 /* USER CODE BEGIN 1 */
