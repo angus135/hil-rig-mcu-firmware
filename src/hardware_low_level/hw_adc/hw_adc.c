@@ -43,7 +43,7 @@
  */
 
 #define HW_ADC_DMA_CHANNEL DMA2
-#define HW_ADC_DMA_STREAM LL_DMA_STREAM_0
+#define HW_ADC_DMA_STREAM LL_DMA_STREAM_4
 #define HW_ADC_ADC_PERIPHERAL &hadc1
 
 #define VIN_ADC_HANDLE &hadc3
@@ -66,6 +66,8 @@
 #define ADC_SAMPLE_1K_PSC 9
 #define ADC_SAMPLE_500_ARR 8999
 #define ADC_SAMPLE_500_PSC 19
+
+#define ADC_CHANNELS_PER_MEASUREMENT ( sizeof( ADCMeasurement_T ) / sizeof( uint16_t ) )
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -110,18 +112,27 @@ ADCMeasurement_T adc_dma_buf[ADC_DMA_LEN];
 bool HW_ADC_Start_DMA_Measurements( void )
 {
     // TODO: add the ability to set the number of channels to 1 or more rather than default to 2.
-    HW_TIMER_Start_Timer( ANALOGUE_INPUT_TIMER );
-    HAL_StatusTypeDef status =
-        HAL_ADC_Start_DMA( HW_ADC_ADC_PERIPHERAL, ( uint32_t* )adc_dma_buf,
-                           ADC_DMA_LEN * sizeof( ADCMeasurement_T ) / sizeof( uint16_t ) );
+    NVIC_DisableIRQ( ADC_IRQn );
+    HAL_StatusTypeDef status = HAL_ADC_Start_DMA( HW_ADC_ADC_PERIPHERAL, ( uint32_t* )adc_dma_buf,
+                                                  ADC_DMA_LEN * ADC_CHANNELS_PER_MEASUREMENT );
+
     if ( status == HAL_OK )
     {
+        /* Force DMA stream into polling-only operation.
+         * Circular mode still runs, but no DMA IRQs will be generated.
+         */
+        LL_DMA_DisableIT_HT( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM );
+        LL_DMA_DisableIT_TC( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM );
+        LL_DMA_DisableIT_TE( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM );
+
+        /* Optional but recommended if you truly do not want this stream to interrupt. */
+        NVIC_DisableIRQ( DMA2_Stream4_IRQn );
+
+        HW_TIMER_Start_Timer( ANALOGUE_INPUT_TIMER );
         return true;
     }
-    else
-    {
-        return false;
-    }
+
+    return false;
 }
 
 /**
@@ -226,17 +237,17 @@ bool HW_ADC_Configure_ADC_Measurement_Frequency( ADCSampleRates_T rate )
  */
 inline void HW_ADC_Read_DMA_Measurements( ADCMeasurement_T* measurements, uint32_t number )
 {
-    uint32_t current_index = ADC_DMA_LEN
-                             - ( LL_DMA_GetDataLength( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM )
-                                 >> 1 );  // Dividing by 2 because of 2 ADC measurements per struct
+    uint32_t remaining_dma_items = LL_DMA_GetDataLength( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM );
 
-    if ( current_index >= ADC_DMA_LEN )
+    uint32_t completed_dma_items =
+        ( ADC_DMA_LEN * ADC_CHANNELS_PER_MEASUREMENT ) - remaining_dma_items;
+
+    uint32_t current_index =
+        ( completed_dma_items / ADC_CHANNELS_PER_MEASUREMENT ) & ( ADC_DMA_LEN - 1U );
+
+    for ( uint32_t i = 0U; i < number; i++ )
     {
-        current_index = 0U;
-    }
-    for ( uint32_t i = 0; i < number; i++ )
-    {
-        measurements[i] = adc_dma_buf[( current_index - i - 1 ) & ( ADC_DMA_LEN - 1 )];
+        measurements[i] = adc_dma_buf[( current_index - i - 1U ) & ( ADC_DMA_LEN - 1U )];
     }
 }
 
