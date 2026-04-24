@@ -74,31 +74,26 @@ static void CONSOLE_Command_UART_Loopback( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] );
 static bool CONSOLE_Parse_Expander_Port( const char* arg, LogicExpanderPort_T* port );
-static bool CONSOLE_Parse_I2C_Master_And_Slave( const char* arg,
-                                                 EXECI2CExternalChannel_T* master_channel,
-                                                 EXECI2CExternalChannel_T* slave_channel );
-static bool CONSOLE_Parse_I2C_Loopback_Direction( const char* arg,
-                                                   ConsoleI2CLoopbackDirection_T* direction );
+static bool CONSOLE_Parse_I2C_Master_And_Slave( const char*               arg,
+                                                EXECI2CExternalChannel_T* master_channel,
+                                                EXECI2CExternalChannel_T* slave_channel );
+static bool CONSOLE_Parse_I2C_Loopback_Direction( const char*                    arg,
+                                                  ConsoleI2CLoopbackDirection_T* direction );
 static bool CONSOLE_Parse_I2C_Speed( const char* arg, EXECI2CSpeed_T* speed );
-static bool CONSOLE_Parse_I2C_Transfer_Path( const char* arg, EXECI2CTransferPath_T* transfer_path );
+static bool CONSOLE_Parse_I2C_Transfer_Path( const char*            arg,
+                                             EXECI2CTransferPath_T* transfer_path );
 static bool CONSOLE_Build_I2C_Message( uint16_t argc, char* argv[], char* out_message,
                                        size_t out_message_size, uint16_t* out_message_length );
 static bool CONSOLE_Run_I2C_Loopback_M2S( EXECI2CExternalChannel_T master_channel,
                                           EXECI2CExternalChannel_T slave_channel,
-                                          uint16_t slave_addr,
-                                          const char* tx_message,
-                                          uint16_t tx_len,
-                                          char* rx_message,
-                                          uint16_t rx_message_size,
-                                          uint16_t* out_received_len );
+                                          uint16_t slave_addr, const char* tx_message,
+                                          uint16_t tx_len, char* rx_message,
+                                          uint16_t rx_message_size, uint16_t* out_received_len );
 static bool CONSOLE_Run_I2C_Loopback_S2M( EXECI2CExternalChannel_T master_channel,
                                           EXECI2CExternalChannel_T slave_channel,
-                                          uint16_t slave_addr,
-                                          const char* tx_message,
-                                          uint16_t tx_len,
-                                          char* rx_message,
-                                          uint16_t rx_message_size,
-                                          uint16_t* out_received_len );
+                                          uint16_t slave_addr, const char* tx_message,
+                                          uint16_t tx_len, char* rx_message,
+                                          uint16_t rx_message_size, uint16_t* out_received_len );
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
@@ -114,8 +109,8 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"clear",  CONSOLE_Command_Clear,       "Clears the console."},
     {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <green|blue|red|test>"},
     {"uart_loopback", CONSOLE_Command_UART_Loopback, "Configuring Channels and Rx/Tx loopback testing for Uart"},
-    {"expander", CONSOLE_Command_Expander,  "Expander test commands. Usage: expander <config|set|send|reset> [args]"},
-    {"i2c_loopback", CONSOLE_Command_I2C_Loopback, "Loopback test. Usage: i2c_loopback <master:1|2> <dir:m2s|s2m> <speed:100|400> \n\r <op:interrupt|dma> <message...>"}
+    {"expander", CONSOLE_Command_Expander,  "Command set allowing user to configure and control the logic expander"},
+    {"i2c_loopback", CONSOLE_Command_I2C_Loopback, "Loopback testing for I2C master and slave channels."}
 };
 
 // clang-format on
@@ -155,7 +150,8 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
     {
         CONSOLE_Printf( "Usage:\r\n" );
         CONSOLE_Printf( "  expander config      - Initialize all active expanders\r\n" );
-        CONSOLE_Printf( "  expander set <addr> <port> <value> - Set control bits (e.g. expander set 0x20 A 0xFF)\r\n" );
+        CONSOLE_Printf( "  expander set <addr> <port> <value> - Set control bits (e.g. expander "
+                        "set 0x20 A 0xFF)\r\n" );
         CONSOLE_Printf( "  expander send       - Send all staged bits to hardware\r\n" );
         CONSOLE_Printf( "  expander reset      - Reset all bits to 0 and send\r\n" );
         return;
@@ -166,7 +162,8 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         EXECI2CStatus_T i2c_status = EXEC_I2C_Configuration_Internal();
         if ( i2c_status != EXEC_I2C_STATUS_OK )
         {
-            CONSOLE_Printf( "Expander internal I2C config failed (status=%d)\r\n", ( int )i2c_status );
+            CONSOLE_Printf( "Expander internal I2C config failed (status=%d)\r\n",
+                            ( int )i2c_status );
             return;
         }
 
@@ -207,15 +204,14 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         uint8_t expander_index = ( uint8_t )( addr - 0x20U );
 
         LogicExpanderStateSnapshot_T snapshot_before = { 0 };
-        LogicExpanderStatus_T snapshot_status =
+        LogicExpanderStatus_T        snapshot_status =
             expander_get_state_snapshot( expander_index, &snapshot_before );
         if ( snapshot_status == LOGIC_EXPANDER_STATUS_OK )
         {
-            CONSOLE_Printf( "Expander state before set: idx=%u addr=0x%04X OLATA=0x%02X OLATB=0x%02X\r\n",
-                            ( unsigned int )expander_index,
-                            ( unsigned int )snapshot_before.device_address_7bit,
-                            ( unsigned int )snapshot_before.olat_a,
-                            ( unsigned int )snapshot_before.olat_b );
+            CONSOLE_Printf(
+                "Expander state before set: idx=%u addr=0x%04X OLATA=0x%02X OLATB=0x%02X\r\n",
+                ( unsigned int )expander_index, ( unsigned int )snapshot_before.device_address_7bit,
+                ( unsigned int )snapshot_before.olat_a, ( unsigned int )snapshot_before.olat_b );
         }
 
         LogicExpanderPort_T port = LOGIC_EXPANDER_PORT_A;
@@ -242,8 +238,9 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
 
         for ( uint8_t bit_idx = 0U; bit_idx < 8U; ++bit_idx )
         {
-            bool bit_set = ( byte_value & ( 1U << bit_idx ) ) != 0U;
-            LogicExpanderStatus_T status = expander_load_control_bit( expander_index, port, bit_idx, bit_set );
+            bool                  bit_set = ( byte_value & ( 1U << bit_idx ) ) != 0U;
+            LogicExpanderStatus_T status =
+                expander_load_control_bit( expander_index, port, bit_idx, bit_set );
             if ( status != LOGIC_EXPANDER_STATUS_OK )
             {
                 CONSOLE_Printf( "Failed to set bit %u (status=%d)\r\n", ( unsigned int )bit_idx,
@@ -256,11 +253,10 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         snapshot_status = expander_get_state_snapshot( expander_index, &snapshot_after );
         if ( snapshot_status == LOGIC_EXPANDER_STATUS_OK )
         {
-            CONSOLE_Printf( "Expander state after set:  idx=%u addr=0x%04X OLATA=0x%02X OLATB=0x%02X\r\n",
-                            ( unsigned int )expander_index,
-                            ( unsigned int )snapshot_after.device_address_7bit,
-                            ( unsigned int )snapshot_after.olat_a,
-                            ( unsigned int )snapshot_after.olat_b );
+            CONSOLE_Printf(
+                "Expander state after set:  idx=%u addr=0x%04X OLATA=0x%02X OLATB=0x%02X\r\n",
+                ( unsigned int )expander_index, ( unsigned int )snapshot_after.device_address_7bit,
+                ( unsigned int )snapshot_after.olat_a, ( unsigned int )snapshot_after.olat_b );
         }
 
         CONSOLE_Printf( "Set expander 0x%02X port %c = 0x%02X\r\n", ( unsigned int )addr,
@@ -308,9 +304,9 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
     CONSOLE_Printf( "Unknown expander subcommand: %s\r\n", argv[1] );
 }
 
-static bool CONSOLE_Parse_I2C_Master_And_Slave( const char* arg,
-                                                 EXECI2CExternalChannel_T* master_channel,
-                                                 EXECI2CExternalChannel_T* slave_channel )
+static bool CONSOLE_Parse_I2C_Master_And_Slave( const char*               arg,
+                                                EXECI2CExternalChannel_T* master_channel,
+                                                EXECI2CExternalChannel_T* slave_channel )
 {
     if ( ( arg == NULL ) || ( master_channel == NULL ) || ( slave_channel == NULL ) )
     {
@@ -341,15 +337,15 @@ static bool CONSOLE_Parse_I2C_Speed( const char* arg, EXECI2CSpeed_T* speed )
         return false;
     }
 
-    if ( ( strcmp( arg, "100" ) == 0 ) || ( strcmp( arg, "100k" ) == 0 ) ||
-         ( strcmp( arg, "100khz" ) == 0 ) )
+    if ( ( strcmp( arg, "100" ) == 0 ) || ( strcmp( arg, "100k" ) == 0 )
+         || ( strcmp( arg, "100khz" ) == 0 ) )
     {
         *speed = EXEC_I2C_SPEED_100KHZ;
         return true;
     }
 
-    if ( ( strcmp( arg, "400" ) == 0 ) || ( strcmp( arg, "400k" ) == 0 ) ||
-         ( strcmp( arg, "400khz" ) == 0 ) )
+    if ( ( strcmp( arg, "400" ) == 0 ) || ( strcmp( arg, "400k" ) == 0 )
+         || ( strcmp( arg, "400khz" ) == 0 ) )
     {
         *speed = EXEC_I2C_SPEED_400KHZ;
         return true;
@@ -358,8 +354,8 @@ static bool CONSOLE_Parse_I2C_Speed( const char* arg, EXECI2CSpeed_T* speed )
     return false;
 }
 
-static bool CONSOLE_Parse_I2C_Loopback_Direction( const char* arg,
-                                                   ConsoleI2CLoopbackDirection_T* direction )
+static bool CONSOLE_Parse_I2C_Loopback_Direction( const char*                    arg,
+                                                  ConsoleI2CLoopbackDirection_T* direction )
 {
     if ( ( arg == NULL ) || ( direction == NULL ) )
     {
@@ -443,12 +439,9 @@ static bool CONSOLE_Build_I2C_Message( uint16_t argc, char* argv[], char* out_me
 
 static bool CONSOLE_Run_I2C_Loopback_M2S( EXECI2CExternalChannel_T master_channel,
                                           EXECI2CExternalChannel_T slave_channel,
-                                          uint16_t slave_addr,
-                                          const char* tx_message,
-                                          uint16_t tx_len,
-                                          char* rx_message,
-                                          uint16_t rx_message_size,
-                                          uint16_t* out_received_len )
+                                          uint16_t slave_addr, const char* tx_message,
+                                          uint16_t tx_len, char* rx_message,
+                                          uint16_t rx_message_size, uint16_t* out_received_len )
 {
     EXECI2CStatus_T status = EXEC_I2C_Start_Slave_Receive( slave_channel, tx_len );
     if ( status != EXEC_I2C_STATUS_OK )
@@ -459,7 +452,8 @@ static bool CONSOLE_Run_I2C_Loopback_M2S( EXECI2CExternalChannel_T master_channe
 
     vTaskDelay( pdMS_TO_TICKS( 2 ) );
 
-    status = EXEC_I2C_Master_Send( master_channel, slave_addr, ( const uint8_t* )tx_message, tx_len );
+    status =
+        EXEC_I2C_Master_Send( master_channel, slave_addr, ( const uint8_t* )tx_message, tx_len );
     if ( status != EXEC_I2C_STATUS_OK )
     {
         CONSOLE_Printf( "Master send failed (status=%d).\r\n", ( int )status );
@@ -472,7 +466,7 @@ static bool CONSOLE_Run_I2C_Loopback_M2S( EXECI2CExternalChannel_T master_channe
     for ( uint16_t wait_ms = 0U; wait_ms < 500U; ++wait_ms )
     {
         uint16_t chunk = 0U;
-        status = EXEC_I2C_Receive_Copy_And_Consume(
+        status         = EXEC_I2C_Receive_Copy_And_Consume(
             slave_channel, ( uint8_t* )&rx_message[received_len],
             ( uint16_t )( rx_message_size - 1U - received_len ), &chunk );
 
@@ -498,12 +492,9 @@ static bool CONSOLE_Run_I2C_Loopback_M2S( EXECI2CExternalChannel_T master_channe
 
 static bool CONSOLE_Run_I2C_Loopback_S2M( EXECI2CExternalChannel_T master_channel,
                                           EXECI2CExternalChannel_T slave_channel,
-                                          uint16_t slave_addr,
-                                          const char* tx_message,
-                                          uint16_t tx_len,
-                                          char* rx_message,
-                                          uint16_t rx_message_size,
-                                          uint16_t* out_received_len )
+                                          uint16_t slave_addr, const char* tx_message,
+                                          uint16_t tx_len, char* rx_message,
+                                          uint16_t rx_message_size, uint16_t* out_received_len )
 {
     EXECI2CStatus_T status =
         EXEC_I2C_Slave_Send( slave_channel, ( const uint8_t* )tx_message, tx_len );
@@ -528,7 +519,7 @@ static bool CONSOLE_Run_I2C_Loopback_S2M( EXECI2CExternalChannel_T master_channe
     for ( uint16_t wait_ms = 0U; wait_ms < 500U; ++wait_ms )
     {
         uint16_t chunk = 0U;
-        status = EXEC_I2C_Receive_Copy_And_Consume(
+        status         = EXEC_I2C_Receive_Copy_And_Consume(
             master_channel, ( uint8_t* )&rx_message[received_len],
             ( uint16_t )( rx_message_size - 1U - received_len ), &chunk );
 
@@ -556,7 +547,8 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
 {
     if ( argc < 6U )
     {
-        CONSOLE_Printf( "Usage: i2c_loopback <master:1|2> <dir:m2s|s2m> <speed:100|400> <op:interrupt|dma> <message...>\r\n" );
+        CONSOLE_Printf( "Usage: i2c_loopback <master:1|2> <dir:m2s|s2m> <speed:100|400> "
+                        "<op:interrupt|dma> <message...>\r\n" );
         return;
     }
 
@@ -589,7 +581,7 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
         return;
     }
 
-    char tx_message[200];
+    char     tx_message[200];
     uint16_t tx_len = 0U;
     if ( !CONSOLE_Build_I2C_Message( argc, argv, tx_message, sizeof( tx_message ), &tx_len ) )
     {
@@ -603,7 +595,8 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
     const uint16_t fmpi_addr = 0x33U;
 
     EXECI2CChannelConfig_T i2c1_cfg = {
-        .mode             = ( master_channel == EXEC_I2C_EXTERNAL_1 ) ? EXEC_I2C_MODE_MASTER : EXEC_I2C_MODE_SLAVE,
+        .mode =
+            ( master_channel == EXEC_I2C_EXTERNAL_1 ) ? EXEC_I2C_MODE_MASTER : EXEC_I2C_MODE_SLAVE,
         .speed            = speed,
         .tx_transfer_path = EXEC_I2C_TRANSFER_INTERRUPT,
         .rx_transfer_path = EXEC_I2C_TRANSFER_INTERRUPT,
@@ -611,7 +604,8 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
     };
 
     EXECI2CChannelConfig_T i2c2_cfg = {
-        .mode             = ( master_channel == EXEC_I2C_EXTERNAL_2 ) ? EXEC_I2C_MODE_MASTER : EXEC_I2C_MODE_SLAVE,
+        .mode =
+            ( master_channel == EXEC_I2C_EXTERNAL_2 ) ? EXEC_I2C_MODE_MASTER : EXEC_I2C_MODE_SLAVE,
         .speed            = speed,
         .tx_transfer_path = transfer_path,
         .rx_transfer_path = transfer_path,
@@ -627,20 +621,20 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
 
     const uint16_t slave_addr = ( slave_channel == EXEC_I2C_EXTERNAL_1 ) ? i2c1_addr : i2c2_addr;
 
-    char rx_message[200];
+    char     rx_message[200];
     uint16_t received_len = 0U;
-    bool transfer_ok = false;
+    bool     transfer_ok  = false;
     if ( direction == CONSOLE_I2C_LOOPBACK_DIR_M2S )
     {
-        transfer_ok = CONSOLE_Run_I2C_Loopback_M2S( master_channel, slave_channel, slave_addr,
-                                                     tx_message, tx_len, rx_message,
-                                                     sizeof( rx_message ), &received_len );
+        transfer_ok =
+            CONSOLE_Run_I2C_Loopback_M2S( master_channel, slave_channel, slave_addr, tx_message,
+                                          tx_len, rx_message, sizeof( rx_message ), &received_len );
     }
     else
     {
-        transfer_ok = CONSOLE_Run_I2C_Loopback_S2M( master_channel, slave_channel, slave_addr,
-                                                     tx_message, tx_len, rx_message,
-                                                     sizeof( rx_message ), &received_len );
+        transfer_ok =
+            CONSOLE_Run_I2C_Loopback_S2M( master_channel, slave_channel, slave_addr, tx_message,
+                                          tx_len, rx_message, sizeof( rx_message ), &received_len );
     }
 
     if ( !transfer_ok )
@@ -648,19 +642,20 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
         return;
     }
 
-    CONSOLE_Printf( "I2C loopback: master=I2C%s slave=I2C%s dir=%s speed=%s i2c1_op=Interrupt i2c2_op=%s\r\n",
-                    ( master_channel == EXEC_I2C_EXTERNAL_1 ) ? "1" : "2",
-                    ( slave_channel == EXEC_I2C_EXTERNAL_1 ) ? "1" : "2",
-                    ( direction == CONSOLE_I2C_LOOPBACK_DIR_M2S ) ? "m2s" : "s2m",
-                    ( speed == EXEC_I2C_SPEED_400KHZ ) ? "400kHz" : "100kHz",
-                    ( transfer_path == EXEC_I2C_TRANSFER_DMA ) ? "DMA" : "Interrupt" );
+    CONSOLE_Printf(
+        "I2C loopback: master=I2C%s slave=I2C%s dir=%s speed=%s i2c1_op=Interrupt i2c2_op=%s\r\n",
+        ( master_channel == EXEC_I2C_EXTERNAL_1 ) ? "1" : "2",
+        ( slave_channel == EXEC_I2C_EXTERNAL_1 ) ? "1" : "2",
+        ( direction == CONSOLE_I2C_LOOPBACK_DIR_M2S ) ? "m2s" : "s2m",
+        ( speed == EXEC_I2C_SPEED_400KHZ ) ? "400kHz" : "100kHz",
+        ( transfer_path == EXEC_I2C_TRANSFER_DMA ) ? "DMA" : "Interrupt" );
 
     CONSOLE_Printf( "Sent    (%u): %.*s\r\n", ( unsigned int )tx_len, ( int )tx_len, tx_message );
     CONSOLE_Printf( "Received(%u): %.*s\r\n", ( unsigned int )received_len, ( int )received_len,
                     rx_message );
 
-    const bool pass = ( received_len == ( uint16_t )tx_len ) &&
-                      ( memcmp( tx_message, rx_message, tx_len ) == 0 );
+    const bool pass =
+        ( received_len == ( uint16_t )tx_len ) && ( memcmp( tx_message, rx_message, tx_len ) == 0 );
     CONSOLE_Printf( "Result: %s\r\n", pass ? "PASS" : "FAIL" );
 }
 
