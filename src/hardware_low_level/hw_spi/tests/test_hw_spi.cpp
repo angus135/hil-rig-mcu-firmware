@@ -77,10 +77,10 @@ public:
     MOCK_METHOD( void, DMADisableITTE, ( DMA_TypeDef * dma, uint32_t stream ), () );
     MOCK_METHOD( void, SPIDisableDMAReqTX, ( SPI_TypeDef * spi ), () );
 
-    MOCK_METHOD( uint32_t, DMAIsActiveFlagTE3, ( DMA_TypeDef * dma ), () );
-    MOCK_METHOD( void, DMAClearFlagTE3, ( DMA_TypeDef * dma ), () );
-    MOCK_METHOD( uint32_t, DMAIsActiveFlagTC3, ( DMA_TypeDef * dma ), () );
-    MOCK_METHOD( void, DMAClearFlagTC3, ( DMA_TypeDef * dma ), () );
+    MOCK_METHOD( uint32_t, DMAIsActiveFlagTE5, ( DMA_TypeDef * dma ), () );
+    MOCK_METHOD( void, DMAClearFlagTE5, ( DMA_TypeDef * dma ), () );
+    MOCK_METHOD( uint32_t, DMAIsActiveFlagTC5, ( DMA_TypeDef * dma ), () );
+    MOCK_METHOD( void, DMAClearFlagTC5, ( DMA_TypeDef * dma ), () );
     MOCK_METHOD( uint32_t, DMAIsActiveFlagTE1, ( DMA_TypeDef * dma ), () );
     MOCK_METHOD( void, DMAClearFlagTE1, ( DMA_TypeDef * dma ), () );
     MOCK_METHOD( uint32_t, DMAIsActiveFlagTC1, ( DMA_TypeDef * dma ), () );
@@ -242,37 +242,37 @@ extern "C" void LL_SPI_DisableDMAReq_TX( SPI_TypeDef* SPIx )
     }
 }
 
-extern "C" uint32_t LL_DMA_IsActiveFlag_TE3( DMA_TypeDef* DMAx )
+extern "C" uint32_t LL_DMA_IsActiveFlag_TE5( DMA_TypeDef* DMAx )
 {
     if ( !g_mock )
     {
         return 0U;
     }
-    return g_mock->DMAIsActiveFlagTE3( DMAx );
+    return g_mock->DMAIsActiveFlagTE5( DMAx );
 }
 
-extern "C" void LL_DMA_ClearFlag_TE3( DMA_TypeDef* DMAx )
+extern "C" void LL_DMA_ClearFlag_TE5( DMA_TypeDef* DMAx )
 {
     if ( g_mock )
     {
-        g_mock->DMAClearFlagTE3( DMAx );
+        g_mock->DMAClearFlagTE5( DMAx );
     }
 }
 
-extern "C" uint32_t LL_DMA_IsActiveFlag_TC3( DMA_TypeDef* DMAx )
+extern "C" uint32_t LL_DMA_IsActiveFlag_TC5( DMA_TypeDef* DMAx )
 {
     if ( !g_mock )
     {
         return 0U;
     }
-    return g_mock->DMAIsActiveFlagTC3( DMAx );
+    return g_mock->DMAIsActiveFlagTC5( DMAx );
 }
 
-extern "C" void LL_DMA_ClearFlag_TC3( DMA_TypeDef* DMAx )
+extern "C" void LL_DMA_ClearFlag_TC5( DMA_TypeDef* DMAx )
 {
     if ( g_mock )
     {
-        g_mock->DMAClearFlagTC3( DMAx );
+        g_mock->DMAClearFlagTC5( DMAx );
     }
 }
 
@@ -830,8 +830,8 @@ TEST_F( HWSPITest, TxTrigger_Channel0StartsDmaTransferIn8BitMode )
 
     InSequence seq;
     EXPECT_CALL( mock, NVICDisableIRQ( DMA2_Stream3_IRQn ) );
-    EXPECT_CALL( mock, DMAClearFlagTC3( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) );
-    EXPECT_CALL( mock, DMAClearFlagTE3( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) );
+    EXPECT_CALL( mock, DMAClearFlagTC5( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) );
+    EXPECT_CALL( mock, DMAClearFlagTE5( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) );
     EXPECT_CALL( mock, DMADisableStream( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ),
                                          Eq( LL_DMA_STREAM_3 ) ) );
     EXPECT_CALL( mock, DMAIsEnabledStream( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ),
@@ -932,9 +932,9 @@ TEST_F( HWSPITest, Channel0TxIRQ_ErrorFlagTakesPriorityOverTransferComplete )
     channel_0_state->tx_num_bytes_in_transmission = 4U;
 
     InSequence seq;
-    EXPECT_CALL( mock, DMAIsActiveFlagTE3( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) )
+    EXPECT_CALL( mock, DMAIsActiveFlagTE5( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) )
         .WillOnce( Return( 1U ) );
-    EXPECT_CALL( mock, DMAClearFlagTE3( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) );
+    EXPECT_CALL( mock, DMAClearFlagTE5( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) );
     EXPECT_CALL( mock, DMADisableITTC( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ),
                                        Eq( LL_DMA_STREAM_3 ) ) );
     EXPECT_CALL( mock, DMADisableITTE( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ),
@@ -959,11 +959,11 @@ TEST_F( HWSPITest, Channel0TxIRQ_TransferCompleteResetsQueueWhenAllDataSent )
     channel_0_state->tx_write_position            = 5U;
     channel_0_state->tx_num_bytes_in_transmission = 5U;
 
-    EXPECT_CALL( mock, DMAIsActiveFlagTE3( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) )
+    EXPECT_CALL( mock, DMAIsActiveFlagTE5( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) )
         .WillOnce( Return( 0U ) );
-    EXPECT_CALL( mock, DMAIsActiveFlagTC3( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) )
+    EXPECT_CALL( mock, DMAIsActiveFlagTC5( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) )
         .WillOnce( Return( 1U ) );
-    EXPECT_CALL( mock, DMAClearFlagTC3( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) );
+    EXPECT_CALL( mock, DMAClearFlagTC5( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) );
 
     SPI_CHANNEL_0_TX_DMA_IRQ();
 
@@ -979,11 +979,11 @@ TEST_F( HWSPITest, Channel0TxIRQ_TransferCompleteRearmsDmaWhenMoreQueuedDataExis
     channel_0_state->tx_num_bytes_in_transmission = 4U;
 
     InSequence seq;
-    EXPECT_CALL( mock, DMAIsActiveFlagTE3( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) )
+    EXPECT_CALL( mock, DMAIsActiveFlagTE5( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) )
         .WillOnce( Return( 0U ) );
-    EXPECT_CALL( mock, DMAIsActiveFlagTC3( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) )
+    EXPECT_CALL( mock, DMAIsActiveFlagTC5( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) )
         .WillOnce( Return( 1U ) );
-    EXPECT_CALL( mock, DMAClearFlagTC3( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) );
+    EXPECT_CALL( mock, DMAClearFlagTC5( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) );
     EXPECT_CALL( mock, DMADisableStream( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ),
                                          Eq( LL_DMA_STREAM_3 ) ) );
     EXPECT_CALL( mock, DMAIsEnabledStream( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ),
@@ -1066,9 +1066,9 @@ TEST_F( HWSPITest, Channel0TxIRQ_DoesNothingWhenNoFlagsAreActive )
     channel_0_state->tx_write_position            = 5U;
     channel_0_state->tx_num_bytes_in_transmission = 2U;
 
-    EXPECT_CALL( mock, DMAIsActiveFlagTE3( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) )
+    EXPECT_CALL( mock, DMAIsActiveFlagTE5( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) )
         .WillOnce( Return( 0U ) );
-    EXPECT_CALL( mock, DMAIsActiveFlagTC3( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) )
+    EXPECT_CALL( mock, DMAIsActiveFlagTC5( Eq( reinterpret_cast<DMA_TypeDef*>( DMA2 ) ) ) )
         .WillOnce( Return( 0U ) );
 
     SPI_CHANNEL_0_TX_DMA_IRQ();
