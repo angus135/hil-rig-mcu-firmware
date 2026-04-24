@@ -89,6 +89,7 @@ extern "C" HAL_StatusTypeDef HAL_ADC_Start_DMA( ADC_HandleTypeDef* hadc, uint32_
     {
         return HAL_ERROR;
     }
+
     return g_mock->StartDMA( hadc, p_data, length );
 }
 
@@ -98,6 +99,7 @@ extern "C" HAL_StatusTypeDef HAL_ADC_Stop_DMA( ADC_HandleTypeDef* hadc )
     {
         return HAL_ERROR;
     }
+
     return g_mock->StopDMA( hadc );
 }
 
@@ -107,6 +109,7 @@ extern "C" uint32_t LL_DMA_GetDataLength( void* dma_x, uint32_t stream )
     {
         return 0U;
     }
+
     return g_mock->GetDMALength( dma_x, stream );
 }
 
@@ -117,6 +120,7 @@ extern "C" HAL_StatusTypeDef HAL_ADC_ConfigChannel( ADC_HandleTypeDef*      hadc
     {
         return HAL_ERROR;
     }
+
     return g_mock->ConfigChannel( hadc, s_config );
 }
 
@@ -126,6 +130,7 @@ extern "C" HAL_StatusTypeDef HAL_ADC_Start( ADC_HandleTypeDef* hadc )
     {
         return HAL_ERROR;
     }
+
     return g_mock->StartADC( hadc );
 }
 
@@ -135,6 +140,7 @@ extern "C" HAL_StatusTypeDef HAL_ADC_PollForConversion( ADC_HandleTypeDef* hadc,
     {
         return HAL_ERROR;
     }
+
     return g_mock->PollForConversion( hadc, timeout );
 }
 
@@ -144,6 +150,7 @@ extern "C" uint32_t HAL_ADC_GetValue( ADC_HandleTypeDef* hadc )
     {
         return 0U;
     }
+
     return g_mock->GetValue( hadc );
 }
 
@@ -153,43 +160,40 @@ extern "C" HAL_StatusTypeDef HAL_ADC_Stop( ADC_HandleTypeDef* hadc )
     {
         return HAL_ERROR;
     }
+
     return g_mock->StopADC( hadc );
 }
 
 extern "C" void LL_DMA_DisableIT_HT( DMA_TypeDef* DMAx, uint32_t Stream )
 {
-    if ( !g_mock )
+    if ( g_mock )
     {
-        return;
+        g_mock->DisableDMATransferHalfInterrupt( DMAx, Stream );
     }
-    g_mock->DisableDMATransferHalfInterrupt( DMAx, Stream );
 }
 
 extern "C" void LL_DMA_DisableIT_TC( DMA_TypeDef* DMAx, uint32_t Stream )
 {
-    if ( !g_mock )
+    if ( g_mock )
     {
-        return;
+        g_mock->DisableDMATransferCompleteInterrupt( DMAx, Stream );
     }
-    g_mock->DisableDMATransferCompleteInterrupt( DMAx, Stream );
 }
 
 extern "C" void LL_DMA_DisableIT_TE( DMA_TypeDef* DMAx, uint32_t Stream )
 {
-    if ( !g_mock )
+    if ( g_mock )
     {
-        return;
+        g_mock->DisableDMATransferErrorInterrupt( DMAx, Stream );
     }
-    g_mock->DisableDMATransferErrorInterrupt( DMAx, Stream );
 }
 
 extern "C" void NVIC_DisableIRQ( IRQn_Type IRQn )
 {
-    if ( !g_mock )
+    if ( g_mock )
     {
-        return;
+        g_mock->DisableIRQ( IRQn );
     }
-    g_mock->DisableIRQ( IRQn );
 }
 // NOLINTEND
 
@@ -215,7 +219,7 @@ protected:
         hadc1.Instance = 1U;
         hadc3.Instance = 3U;
 
-        for ( uint32_t i = 0U; i < 100U; i++ )
+        for ( uint32_t i = 0U; i < ADC_DMA_LEN; i++ )
         {
             adc_dma_buf[i].ch_0 = 0U;
             adc_dma_buf[i].ch_1 = 0U;
@@ -235,33 +239,56 @@ protected:
 
 TEST_F( HWADCTest, StartDMAMeasurements_StartsADCWithExpectedBufferAndLength )
 {
-    EXPECT_CALL( mock, StartDMA( Eq( &hadc1 ), Eq( reinterpret_cast<uint32_t*>( adc_dma_buf ) ),
-                                 Eq( 256U ) ) )
+    EXPECT_CALL( mock, DisableIRQ( Eq( ADC_IRQn ) ) );
+
+    EXPECT_CALL( mock, StartDMA( Eq( HW_ADC_ADC_PERIPHERAL ),
+                                 Eq( reinterpret_cast<uint32_t*>( adc_dma_buf ) ),
+                                 Eq( ADC_DMA_LEN * ADC_CHANNELS_PER_MEASUREMENT ) ) )
         .WillOnce( Return( HAL_OK ) );
 
-    HW_ADC_Start_DMA_Measurements();
+    EXPECT_CALL( mock, DisableDMATransferHalfInterrupt( Eq( HW_ADC_DMA_CHANNEL ),
+                                                        Eq( HW_ADC_DMA_STREAM ) ) );
+
+    EXPECT_CALL( mock, DisableDMATransferCompleteInterrupt( Eq( HW_ADC_DMA_CHANNEL ),
+                                                            Eq( HW_ADC_DMA_STREAM ) ) );
+
+    EXPECT_CALL( mock, DisableDMATransferErrorInterrupt( Eq( HW_ADC_DMA_CHANNEL ),
+                                                         Eq( HW_ADC_DMA_STREAM ) ) );
+
+    EXPECT_CALL( mock, DisableIRQ( Eq( DMA2_Stream4_IRQn ) ) );
+
+    EXPECT_TRUE( HW_ADC_Start_DMA_Measurements() );
 }
 
 TEST_F( HWADCTest, StopDMAMeasurements_StopsADC )
 {
-    EXPECT_CALL( mock, StopDMA( Eq( &hadc1 ) ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, StopDMA( Eq( HW_ADC_ADC_PERIPHERAL ) ) ).WillOnce( Return( HAL_OK ) );
 
-    HW_ADC_Stop_DMA_Measurements();
+    EXPECT_TRUE( HW_ADC_Stop_DMA_Measurements() );
 }
 
 TEST_F( HWADCTest, ReadDMAMeasurements_ReadsMostRecentSamplesInReverseOrder )
 {
-    adc_dma_buf[8].ch_0  = 80U;
-    adc_dma_buf[8].ch_1  = 81U;
-    adc_dma_buf[9].ch_0  = 90U;
-    adc_dma_buf[9].ch_1  = 91U;
-    adc_dma_buf[10].ch_0 = 100U;
-    adc_dma_buf[10].ch_1 = 101U;
+    constexpr uint32_t current_index = 11U;
+    constexpr uint32_t number        = 3U;
 
-    ADCMeasurement_T results[3] = { 0 };
+    adc_dma_buf[current_index - 3U].ch_0 = 80U;
+    adc_dma_buf[current_index - 3U].ch_1 = 81U;
+    adc_dma_buf[current_index - 2U].ch_0 = 90U;
+    adc_dma_buf[current_index - 2U].ch_1 = 91U;
+    adc_dma_buf[current_index - 1U].ch_0 = 100U;
+    adc_dma_buf[current_index - 1U].ch_1 = 101U;
 
-    EXPECT_CALL( mock, GetDMALength( Eq( DMA2 ), Eq( 0U ) ) ).WillOnce( Return( 234U ) );
-    HW_ADC_Read_DMA_Measurements( results, 3U );
+    const uint32_t completed_dma_items = current_index * ADC_CHANNELS_PER_MEASUREMENT;
+    const uint32_t remaining_dma_items =
+        ( ADC_DMA_LEN * ADC_CHANNELS_PER_MEASUREMENT ) - completed_dma_items;
+
+    ADCMeasurement_T results[number] = { 0 };
+
+    EXPECT_CALL( mock, GetDMALength( Eq( HW_ADC_DMA_CHANNEL ), Eq( HW_ADC_DMA_STREAM ) ) )
+        .WillOnce( Return( remaining_dma_items ) );
+
+    HW_ADC_Read_DMA_Measurements( results, number );
 
     EXPECT_EQ( results[0].ch_0, 100U );
     EXPECT_EQ( results[0].ch_1, 101U );
@@ -280,10 +307,10 @@ TEST_F( HWADCTest, ReadPolledMeasurements_ReturnsMaxForInvalidSource )
 
 TEST_F( HWADCTest, ReadPolledMeasurements_ReturnsMaxWhenConfigChannelFails )
 {
-    EXPECT_CALL( mock, ConfigChannel( Eq( &hadc3 ), _ ) )
+    EXPECT_CALL( mock, ConfigChannel( Eq( VIN_ADC_HANDLE ), _ ) )
         .WillOnce( Invoke( []( ADC_HandleTypeDef* hadc, ADC_ChannelConfTypeDef* s_config ) {
-            EXPECT_EQ( hadc, &hadc3 );
-            EXPECT_EQ( s_config->Channel, ADC_CHANNEL_14 );
+            EXPECT_EQ( hadc, VIN_ADC_HANDLE );
+            EXPECT_EQ( s_config->Channel, VIN_ADC_CHANNEL );
             EXPECT_EQ( s_config->Rank, 1U );
             EXPECT_EQ( s_config->SamplingTime, ADC_SAMPLETIME_15CYCLES );
             EXPECT_EQ( s_config->Offset, 0U );
@@ -302,8 +329,9 @@ TEST_F( HWADCTest, ReadPolledMeasurements_ReturnsMaxWhenConfigChannelFails )
 
 TEST_F( HWADCTest, ReadPolledMeasurements_ReturnsMaxWhenStartFails )
 {
-    EXPECT_CALL( mock, ConfigChannel( Eq( &hadc3 ), _ ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_CALL( mock, StartADC( Eq( &hadc3 ) ) ).WillOnce( Return( HAL_ERROR ) );
+    EXPECT_CALL( mock, ConfigChannel( Eq( VIN_ADC_HANDLE ), _ ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, StartADC( Eq( VIN_ADC_HANDLE ) ) ).WillOnce( Return( HAL_ERROR ) );
+
     EXPECT_CALL( mock, PollForConversion( _, _ ) ).Times( 0 );
     EXPECT_CALL( mock, GetValue( _ ) ).Times( 0 );
     EXPECT_CALL( mock, StopADC( _ ) ).Times( 0 );
@@ -315,11 +343,11 @@ TEST_F( HWADCTest, ReadPolledMeasurements_ReturnsMaxWhenStartFails )
 
 TEST_F( HWADCTest, ReadPolledMeasurements_ReturnsMaxWhenPollFailsAndStillStopsADC )
 {
-    EXPECT_CALL( mock, ConfigChannel( Eq( &hadc3 ), _ ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_CALL( mock, StartADC( Eq( &hadc3 ) ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_CALL( mock, PollForConversion( Eq( &hadc3 ), Eq( 10U ) ) )
+    EXPECT_CALL( mock, ConfigChannel( Eq( VIN_ADC_HANDLE ), _ ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, StartADC( Eq( VIN_ADC_HANDLE ) ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, PollForConversion( Eq( VIN_ADC_HANDLE ), Eq( 10U ) ) )
         .WillOnce( Return( HAL_ERROR ) );
-    EXPECT_CALL( mock, StopADC( Eq( &hadc3 ) ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, StopADC( Eq( VIN_ADC_HANDLE ) ) ).WillOnce( Return( HAL_OK ) );
     EXPECT_CALL( mock, GetValue( _ ) ).Times( 0 );
 
     const uint16_t value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_VIN );
@@ -329,11 +357,12 @@ TEST_F( HWADCTest, ReadPolledMeasurements_ReturnsMaxWhenPollFailsAndStillStopsAD
 
 TEST_F( HWADCTest, ReadPolledMeasurements_ReturnsMaxWhenFinalStopFails )
 {
-    EXPECT_CALL( mock, ConfigChannel( Eq( &hadc3 ), _ ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_CALL( mock, StartADC( Eq( &hadc3 ) ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_CALL( mock, PollForConversion( Eq( &hadc3 ), Eq( 10U ) ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_CALL( mock, GetValue( Eq( &hadc3 ) ) ).WillOnce( Return( 1234U ) );
-    EXPECT_CALL( mock, StopADC( Eq( &hadc3 ) ) ).WillOnce( Return( HAL_ERROR ) );
+    EXPECT_CALL( mock, ConfigChannel( Eq( VIN_ADC_HANDLE ), _ ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, StartADC( Eq( VIN_ADC_HANDLE ) ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, PollForConversion( Eq( VIN_ADC_HANDLE ), Eq( 10U ) ) )
+        .WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, GetValue( Eq( VIN_ADC_HANDLE ) ) ).WillOnce( Return( 1234U ) );
+    EXPECT_CALL( mock, StopADC( Eq( VIN_ADC_HANDLE ) ) ).WillOnce( Return( HAL_ERROR ) );
 
     const uint16_t value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_VIN );
 
@@ -342,20 +371,21 @@ TEST_F( HWADCTest, ReadPolledMeasurements_ReturnsMaxWhenFinalStopFails )
 
 TEST_F( HWADCTest, ReadPolledMeasurements_ReturnsADCValueWhenSequenceSucceeds )
 {
-    EXPECT_CALL( mock, ConfigChannel( Eq( &hadc3 ), _ ) )
+    EXPECT_CALL( mock, ConfigChannel( Eq( VIN_ADC_HANDLE ), _ ) )
         .WillOnce( Invoke( []( ADC_HandleTypeDef* hadc, ADC_ChannelConfTypeDef* s_config ) {
-            EXPECT_EQ( hadc, &hadc3 );
-            EXPECT_EQ( s_config->Channel, ADC_CHANNEL_14 );
+            EXPECT_EQ( hadc, VIN_ADC_HANDLE );
+            EXPECT_EQ( s_config->Channel, VIN_ADC_CHANNEL );
             EXPECT_EQ( s_config->Rank, 1U );
             EXPECT_EQ( s_config->SamplingTime, ADC_SAMPLETIME_15CYCLES );
             EXPECT_EQ( s_config->Offset, 0U );
             return HAL_OK;
         } ) );
 
-    EXPECT_CALL( mock, StartADC( Eq( &hadc3 ) ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_CALL( mock, PollForConversion( Eq( &hadc3 ), Eq( 10U ) ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_CALL( mock, GetValue( Eq( &hadc3 ) ) ).WillOnce( Return( 2048U ) );
-    EXPECT_CALL( mock, StopADC( Eq( &hadc3 ) ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, StartADC( Eq( VIN_ADC_HANDLE ) ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, PollForConversion( Eq( VIN_ADC_HANDLE ), Eq( 10U ) ) )
+        .WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, GetValue( Eq( VIN_ADC_HANDLE ) ) ).WillOnce( Return( 2048U ) );
+    EXPECT_CALL( mock, StopADC( Eq( VIN_ADC_HANDLE ) ) ).WillOnce( Return( HAL_OK ) );
 
     const uint16_t value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_VIN );
 
