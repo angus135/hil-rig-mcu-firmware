@@ -64,12 +64,6 @@ typedef enum DigitalInput_T
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
-/**
- * @brief Checks and caches if all digital input pins are on the same port.
- *
- * This should be called at system configuration time.
- */
-void HW_GPIO_CheckSamePort( void );
 
 /**
  * @brief Toggles a digital output using the underlying GPIO HAL.

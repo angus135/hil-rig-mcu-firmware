@@ -35,27 +35,13 @@
 #include "hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
-#include <stddef.h>  // for NULL
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
 #define NUM_DIGITAL_INPUTS 10
-
-
-
-#if Digital_Input_1_GPIO_Port == s_digital_inputs_port \
-    && Digital_Input_2_GPIO_Port == s_digital_inputs_port \
-    && Digital_Input_3_GPIO_Port == s_digital_inputs_port \
-    && Digital_Input_4_GPIO_Port == s_digital_inputs_port \
-    && Digital_Input_5_GPIO_Port == s_digital_inputs_port \
-    && Digital_Input_6_GPIO_Port == s_digital_inputs_port \
-    && Digital_Input_7_GPIO_Port == s_digital_inputs_port \
-    && Digital_Input_8_GPIO_Port == s_digital_inputs_port \
-    && Digital_Input_9_GPIO_Port == s_digital_inputs_port
-#define ALL_DIGITAL_INPUTS_SAME_PORT
-#endif
+#define DIGITAL_INPUTS_PORT Digital_Input_0_GPIO_Port
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -75,8 +61,8 @@
 // Digital input pins: PF3, PF4, PF5, PF7, PF10, PF11, PF12, PF13, PF14, PF15
 // static const uint8_t DIGITAL_INPUT_PIN_MAP[NUM_DIGITAL_INPUTS] = { 3, 4, 5, 7, 10, 11, 12, 13,
 // 14, 15 };
-static bool        s_all_digital_inputs_same_port = false;
-static const void* s_digital_inputs_port          = NULL;
+// static bool        s_all_digital_inputs_same_port = false;
+// static const void* s_digital_inputs_port          = NULL;
 
 static const uint8_t DIGITAL_INPUT_PIN_POSITIONS[NUM_DIGITAL_INPUTS] = {
     __builtin_ctz( Digital_Input_0_Pin ), __builtin_ctz( Digital_Input_1_Pin ),
@@ -98,19 +84,6 @@ static const uint8_t DIGITAL_INPUT_PIN_POSITIONS[NUM_DIGITAL_INPUTS] = {
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
-void HW_GPIO_CheckSamePort( void )
-{
-    s_digital_inputs_port          = Digital_Input_0_GPIO_Port;
-    s_all_digital_inputs_same_port = Digital_Input_1_GPIO_Port == s_digital_inputs_port
-                                     && Digital_Input_2_GPIO_Port == s_digital_inputs_port
-                                     && Digital_Input_3_GPIO_Port == s_digital_inputs_port
-                                     && Digital_Input_4_GPIO_Port == s_digital_inputs_port
-                                     && Digital_Input_5_GPIO_Port == s_digital_inputs_port
-                                     && Digital_Input_6_GPIO_Port == s_digital_inputs_port
-                                     && Digital_Input_7_GPIO_Port == s_digital_inputs_port
-                                     && Digital_Input_8_GPIO_Port == s_digital_inputs_port
-                                     && Digital_Input_9_GPIO_Port == s_digital_inputs_port;
-}
 
 /**
  * @brief Toggles a digital output using the underlying GPIO LL library.
@@ -164,19 +137,9 @@ inline void HW_GPIO_Read_All_Digital_Inputs( bool* input_states )
         input_states[i] = false;
     }
 #else
-    if ( s_all_digital_inputs_same_port && s_digital_inputs_port != NULL )
-    {
-        // Use fast single-port read
-        uint32_t port_state = LL_GPIO_ReadInputPort( s_digital_inputs_port );
-        for ( uint8_t i = 0; i < NUM_DIGITAL_INPUTS; ++i )
-            input_states[i] = ( port_state >> DIGITAL_INPUT_PIN_POSITIONS[i] ) & 0x1;
-    }
-    else
-    {
-        // Use slow per-pin read
-        for ( uint8_t i = 0; i < NUM_DIGITAL_INPUTS; ++i )
-            input_states[i] = HW_GPIO_Read_Digital_Input( ( DigitalInput_T )i );
-    }
+    uint32_t port_state = LL_GPIO_ReadInputPort( DIGITAL_INPUTS_PORT );
+    for ( uint8_t i = 0; i < NUM_DIGITAL_INPUTS; ++i )
+        input_states[i] = ( port_state >> DIGITAL_INPUT_PIN_POSITIONS[i] ) & 0x1;
 #endif
 }
 

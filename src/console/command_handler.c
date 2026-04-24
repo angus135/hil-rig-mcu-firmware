@@ -120,7 +120,7 @@ static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
             CONSOLE_Printf( "Invalid channel. Must be 0-9.\r\n" );
             return;
         }
-        bool state = EXEC_DigitalInput_Sample( ( DIGITAL_INPUT_T )channel );
+        bool state = EXEC_DigitalInput_Sample( ( DigitalInput_T )channel );
         CONSOLE_Printf( "Digital Input %d: %d\r\n", channel, state ? 1 : 0 );
     }
 }
