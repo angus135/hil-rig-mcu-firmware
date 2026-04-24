@@ -172,6 +172,14 @@ typedef struct
     uint32_t Offset;
 } ADC_ChannelConfTypeDef;
 
+typedef struct
+{
+    uint32_t LISR;  /*!< DMA low interrupt status register,      Address offset: 0x00 */
+    uint32_t HISR;  /*!< DMA high interrupt status register,     Address offset: 0x04 */
+    uint32_t LIFCR; /*!< DMA low interrupt flag clear register,  Address offset: 0x08 */
+    uint32_t HIFCR; /*!< DMA high interrupt flag clear register, Address offset: 0x0C */
+} DMA_TypeDef;
+
 /**-----------------------------------------------------------------------------
  *  Public Variables
  *------------------------------------------------------------------------------
