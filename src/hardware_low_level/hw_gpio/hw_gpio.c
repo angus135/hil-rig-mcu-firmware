@@ -12,8 +12,9 @@
  *
  *  Notes:
  *      There are two implementations of the "read all digital inputs" function:
- *      - HW_GPIO_Read_All_Digital_Inputs: Reads each input individually using LL_GPIO_IsInputPinSet,
- *        which is straightforward but may be less efficient due to multiple hardware accesses.
+ *      - HW_GPIO_Read_All_Digital_Inputs: Reads each input individually using
+ *LL_GPIO_IsInputPinSet, which is straightforward but may be less efficient due to multiple hardware
+ *accesses.
  *      - HW_GPIO_Read_All_Digital_InputsSinglePort: Reads the entire GPIO port state once using
  *        LL_GPIO_ReadInputPort and then extracts individual pin states, which is more efficient
  *        but assumes all inputs are on the same GPIO port.

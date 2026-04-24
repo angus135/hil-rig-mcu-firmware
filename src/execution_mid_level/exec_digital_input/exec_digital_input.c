@@ -64,7 +64,6 @@ void EXEC_DigitalInput_Configure( const DigitalInputMode_T* modes, uint8_t num_c
     // 'num_channels' is the number of digital input channels
     ( void )modes;
     ( void )num_channels;
-
 }
 
 void EXEC_DigitalInput_SampleAll( bool* dest_buffer )
