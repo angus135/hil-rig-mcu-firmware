@@ -4,10 +4,32 @@
  *  Created:    25-Apr-2026
  *
  *  Description:
- *      <Short description of the module, what it exposes, and how it should be used>
+ *      Execution-level SPI wrapper used by the HIL-RIG execution manager.
+ *
+ *      This module provides a lightweight interface between the execution
+ *      manager and the low-level hardware SPI driver. It does not implement SPI
+ *      protocol framing, transaction validation, chip-select policy, message
+ *      scheduling, or higher-level semantic checks. Those responsibilities are
+ *      handled by the execution validation and scheduling layers above this
+ *      module.
+ *
+ *      The purpose of this module is to provide a small execution-facing API
+ *      for configuring SPI channels, submitting raw TX bytes, copying available
+ *      RX bytes, and checking whether the low-level transmit path has fully
+ *      completed.
  *
  *  Notes:
- *      <Public assumptions, required initialisation order, dependencies, etc.>
+ *      - This module is intentionally lightweight because it may be used by
+ *        timing-sensitive execution-manager code.
+ *      - The caller is responsible for validating peripheral selection,
+ *        requested transfer sizes, configured SPI mode, frame alignment, buffer
+ *        sizes, and protocol-level correctness before calling this module.
+ *      - RX data is copied from the low-level driver's DMA-backed circular RX
+ *        stream into caller-owned storage.
+ *      - TX data is copied into the low-level driver's internal TX queue and
+ *        then transmission is triggered.
+ *      - In 16-bit SPI mode, callers must ensure TX and RX byte counts are
+ *        aligned to complete SPI frames.
  ******************************************************************************/
 
 #ifndef EXEC_SPI_H
