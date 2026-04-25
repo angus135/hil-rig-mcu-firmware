@@ -43,7 +43,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-// Add other required includes here
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
