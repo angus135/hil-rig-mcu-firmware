@@ -1090,10 +1090,6 @@ HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIPeripheral_T peripheral )
 void HW_SPI_Rx_Consume( SPIPeripheral_T peripheral, uint32_t bytes_to_consume )
 {
     SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
-    if ( peripheral_state == NULL )
-    {
-        return;
-    }
 
     // Advance only the software consume index. The DMA write index is hardware
     // controlled and is derived from NDTR when peeking.
