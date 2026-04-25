@@ -273,25 +273,25 @@ static void CONSOLE_Command_Set_Pin( uint16_t argc, char* argv[] )
         return;
     }
     GPIOOutput_T pin;
-    bool         check = HW_GPIO_StringToEnum( argv[2], &pin );
+    bool         check = HW_GPIO_StringToEnum( argv[1], &pin );
     if ( !check )
     {
-        CONSOLE_Printf( "Unrecognised pin name: %s", argv[2] );
+        CONSOLE_Printf( "Unrecognised pin name: %s", argv[1] );
         return;
     }
-    if ( argv[3][0] == '0' )
+    if ( argv[2][0] == '0' )
     {
         HW_GPIO_Reset_Single_Pin( pin );
         return;
     }
-    else if ( argv[3][0] == '1' )
+    else if ( argv[2][0] == '1' )
     {
         HW_GPIO_Set_Single_Pin( pin );
         return;
     }
     else
     {
-        CONSOLE_Printf( "Unrecognised input, expected 1 or 0 but recieved %c", argv[3] );
+        CONSOLE_Printf( "Unrecognised input, expected 1 or 0 but recieved %c", argv[2][0] );
         return;
     }
 }
@@ -315,7 +315,7 @@ static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char* argv[] )
     }
 
     GPIOOutput_T pins[arg_limit];
-    for ( int i = 0; i < arg_limit - 1; i++ )
+    for ( int i = 0; i < argc - 2; i++ )
     {
         bool check = HW_GPIO_StringToEnum( argv[i + 1], &( pins[i] ) );
         if ( !check )
@@ -324,17 +324,17 @@ static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char* argv[] )
             return;
         }
     }
-    if ( argv[argc - 2][0] == '0' )
+    if ( argv[argc - 1][0] == '0' )
     {
         HW_GPIO_Reset_Many_Pins( pins, argc - 2 );
         return;
     }
-    if ( argv[argc - 2][0] == '1' )
+    if ( argv[argc - 1][0] == '1' )
     {
         HW_GPIO_Set_Many_Pins( pins, argc - 2 );
         return;
     }
-    CONSOLE_Printf( "Unrecognised input, expected 1 or 0 but recieved %c", argv[3] );
+    CONSOLE_Printf( "Unrecognised input, expected 1 or 0 but recieved %c", argv[argc-1] );
 }
 
 static void CONSOLE_Command_UART_Loopback( uint16_t argc, char* argv[] )
