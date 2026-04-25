@@ -52,18 +52,19 @@ typedef enum GPIO_T
 
 typedef enum GPIOOutput_T
 {
-    DIGITAL_OUT_CH_0,  // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_1,  // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_2,  // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_3,  // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_4,  // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_5,  // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_6,  // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_7,  // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_8,  // Added by Tim for DEV-68
-    DIGITAL_OUT_CH_9,  // Added by Tim for DEV-68
-    UART_TTL_3V3_EN,   // Added by Tim as an example, whoever does UART should replace
-    UART_TTL_5V_EN,    // Added by Tim as an example, whoever does UART should replace
+    DIGITAL_OUTPUT_0,  // Added by Tim for DEV-68
+    DIGITAL_OUTPUT_1,  // Added by Tim for DEV-68
+    DIGITAL_OUTPUT_2,  // Added by Tim for DEV-68
+    DIGITAL_OUTPUT_3,  // Added by Tim for DEV-68
+    DIGITAL_OUTPUT_4,  // Added by Tim for DEV-68
+    DIGITAL_OUTPUT_5,  // Added by Tim for DEV-68
+    DIGITAL_OUTPUT_6,  // Added by Tim for DEV-68
+    DIGITAL_OUTPUT_7,  // Added by Tim for DEV-68
+    DIGITAL_OUTPUT_8,  // Added by Tim for DEV-68
+    DIGITAL_OUTPUT_9,  // Added by Tim for DEV-68
+    USB_POWERSWITCH,   // Added by Tim as an example, whoever does power firmware can replace
+    USB_OVER_CURRENT,  // Added by Tim as an example, whoever does power firmware can replace
+    LD1,               // Added by Tim for DEV-68
     LD2,               // Added by Tim for DEV-68
     LD3                // Added by Tim for DEV-68
 } GPIOOutput_T;
@@ -75,18 +76,19 @@ typedef struct
 } GPIO_Name_Map;
 
 static const GPIO_Name_Map gpio_name_map[] = {
-    { "DIGITAL_OUT_CH_0", DIGITAL_OUT_CH_0 },
-    { "DIGITAL_OUT_CH_1", DIGITAL_OUT_CH_1 },
-    { "DIGITAL_OUT_CH_2", DIGITAL_OUT_CH_2 },
-    { "DIGITAL_OUT_CH_3", DIGITAL_OUT_CH_3 },
-    { "DIGITAL_OUT_CH_4", DIGITAL_OUT_CH_4 },
-    { "DIGITAL_OUT_CH_5", DIGITAL_OUT_CH_5 },
-    { "DIGITAL_OUT_CH_6", DIGITAL_OUT_CH_6 },
-    { "DIGITAL_OUT_CH_7", DIGITAL_OUT_CH_7 },
-    { "DIGITAL_OUT_CH_8", DIGITAL_OUT_CH_8 },
-    { "DIGITAL_OUT_CH_9", DIGITAL_OUT_CH_9 },
-    { "UART_TTL_3V3_EN", UART_TTL_3V3_EN },
-    { "UART_TTL_5V_EN", UART_TTL_5V_EN },
+    { "DIGITAL_OUTPUT_0", DIGITAL_OUTPUT_0 },
+    { "DIGITAL_OUTPUT_1", DIGITAL_OUTPUT_1 },
+    { "DIGITAL_OUTPUT_2", DIGITAL_OUTPUT_2 },
+    { "DIGITAL_OUTPUT_3", DIGITAL_OUTPUT_3 },
+    { "DIGITAL_OUTPUT_4", DIGITAL_OUTPUT_4 },
+    { "DIGITAL_OUTPUT_5", DIGITAL_OUTPUT_5 },
+    { "DIGITAL_OUTPUT_6", DIGITAL_OUTPUT_6 },
+    { "DIGITAL_OUTPUT_7", DIGITAL_OUTPUT_7 },
+    { "DIGITAL_OUTPUT_8", DIGITAL_OUTPUT_8 },
+    { "DIGITAL_OUTPUT_9", DIGITAL_OUTPUT_9 },
+    { "USB_POWERSWITCH", USB_POWERSWITCH },
+    { "USB_OVER_CURRENT", USB_OVER_CURRENT },
+    { "LD1", LD1 },
     { "LD2", LD2 },
     { "LD3", LD3 },
 };

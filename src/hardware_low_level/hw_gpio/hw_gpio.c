@@ -51,7 +51,7 @@ GPIO_TypeDef* gpio_ports[] = {
 #define NUM_GPIO_PORTS ( sizeof( gpio_ports ) / sizeof( gpio_ports[0] ) )
 #define MAX_NUM_GPIO_PORTS 8
 #ifndef TEST_BUILD
-#define GPIO_TypeDef *DIGITAL_OUTPUT_PORT GPIOG
+#define DIGITAL_OUTPUT_PORT ( GPIO_TypeDef* )GPIOG
 #endif
 
 /**-----------------------------------------------------------------------------
@@ -87,6 +87,7 @@ GPIO_TypeDef* gpio_ports[] = {
 
 static GPIOPortPacket_T HW_GPIO_Port_Pin_Association( GPIOOutput_T gpio_name )
 {
+#ifndef TEST_BUILD
     switch ( gpio_name )
     {
         // ==== HOW TO ADD DIGITAL OUTPUT PINS ====
@@ -107,29 +108,32 @@ static GPIOPortPacket_T HW_GPIO_Port_Pin_Association( GPIOOutput_T gpio_name )
         // the name chosen (DIGITAL_OUT_CH_0)
         // would then be added to the GPIOOutput_T enum in hw_gpio.h
         // as well as to the string mapping gpio_name_map in hw_gpio.h
-        case DIGITAL_OUT_CH_0:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
-        case DIGITAL_OUT_CH_1:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
-        case DIGITAL_OUT_CH_2:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
-        case DIGITAL_OUT_CH_3:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
-        case DIGITAL_OUT_CH_4:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
-        case DIGITAL_OUT_CH_5:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
-        case DIGITAL_OUT_CH_6:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
-        case DIGITAL_OUT_CH_7:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
-        case DIGITAL_OUT_CH_8:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
-        case DIGITAL_OUT_CH_9:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
-        case UART_TTL_3V3_EN:  // Added by Tim as an example, whoever does UART should replace
-            return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
-        case UART_TTL_5V_EN:  // Added by Tim as an example, whoever does UART should replace
+        case DIGITAL_OUTPUT_0:  // Added by Tim for DEV-68
+            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_0_Pin };
+        case DIGITAL_OUTPUT_1:  // Added by Tim for DEV-68
+            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_1_Pin };
+        case DIGITAL_OUTPUT_2:  // Added by Tim for DEV-68
+            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_2_Pin };
+        case DIGITAL_OUTPUT_3:  // Added by Tim for DEV-68
+            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_3_Pin };
+        case DIGITAL_OUTPUT_4:  // Added by Tim for DEV-68
+            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_4_Pin };
+        case DIGITAL_OUTPUT_5:  // Added by Tim for DEV-68
+            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_5_Pin };
+        case DIGITAL_OUTPUT_6:  // Added by Tim for DEV-68
+            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_6_Pin };
+        case DIGITAL_OUTPUT_7:  // Added by Tim for DEV-68
+            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_7_Pin };
+        case DIGITAL_OUTPUT_8:  // Added by Tim for DEV-68
+            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_8_Pin };
+        case DIGITAL_OUTPUT_9:  // Added by Tim for DEV-68
+            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_9_Pin };
+        case USB_POWERSWITCH:  // Added by Tim as an example in DEV-68
+            return ( struct GPIOPortPacket_T ){ USB_PowerSwitchOn_GPIO_Port,
+                                                USB_PowerSwitchOn_Pin };
+        case USB_OVER_CURRENT:  // Added by Tim as an example in DEV-68
+            return ( struct GPIOPortPacket_T ){ USB_OverCurrent_GPIO_Port, USB_OverCurrent_Pin };
+        case LD1:  // Added by Tim for DEV-68
             return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
         case LD2:  // Added by Tim for DEV-68
             return ( struct GPIOPortPacket_T ){ LD2_GPIO_Port, LD2_Pin };
@@ -138,6 +142,12 @@ static GPIOPortPacket_T HW_GPIO_Port_Pin_Association( GPIOOutput_T gpio_name )
         default:  // Added by Tim, should be updated to set the warning LED once IOC is decided
             return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
     }
+    // Added by Tim, should be updated to set the warning LED once IOC is decided
+    return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
+#else
+    // Added by Tim, should be updated to set the warning LED once IOC is decided
+    return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
+#endif
 }
 
 /**
@@ -197,6 +207,75 @@ int HW_GPIO_split_about_ports( GPIOOutput_T* gpio_names, uint16_t length,
         }
     }
     return counter;
+}
+
+/**
+ * @brief Sets the state of all digital outputs in a GPIO Port using the underlying GPIO LL library.
+ *
+ * @param PinMask   Carrys the information about which pins to set
+                    If a lower 16 bit is 1 this sets the associated digital output
+                    If any bit is 0 this indicates no change
+                    0th bit corresponds to digital output 0, 1st bit to output 1 etc
+ *
+ *
+ * This function wraps the LL_GPIO_ResetOutputPin( ... ) function provided by the
+ * LL layer. It can be used to set a single output pin or many output pins (on the same port).
+ * EXAMPLE: HW_GPIO_Set_To_Port( GPIOA, LL_GPIO_PIN_5 ) sets LL_GPIO_PIN_5 of port A high
+ * EXAMPLE: HW_GPIO_Set_To_Port( GPIOA, LL_GPIO_PIN_5 | LL_GPIO_PIN_4 ) sets LL_GPIO_PIN_5 and
+LL_GPIO_PIN_4 of port A high
+ * Setting multiple pins works because LL_GPIO_PIN_5 and LL_GPIO_PIN_4 are just uint32_t
+ * in this case likely 0x0000_0020 0x0000_0010, so 0x0000_0030 is written to the BSR register
+ * 0x0000_0030 = 0000_0000_0000_0000_0000_0000_0011_0000 setting pins 4 and 5 high
+ * mocked using GoogleMock.
+ * Note: This implementation assumes all digital outputs are on the same GPIO port.
+ * By doing so, we can set all the outputs in a single hardware access.
+ */
+static void HW_GPIO_Set_To_Port( GPIO_TypeDef* gpiox, int32_t pin_mask )
+{
+#ifdef TEST_BUILD
+    // For unit testing, do nothing
+    ( void )pin_mask;
+    ( void )gpiox;
+#else
+    // LL_GPIO_XOutputPin functions write to the BSR port register,
+    // The lower 16 bits of the pin_mask bit 0 = pin0, bit 1 = pin1 etc
+    LL_GPIO_SetOutputPin( gpiox, pin_mask );
+#endif
+}
+
+/**
+ * @brief Resets the state of all digital outputs in a GPIO Port using the underlying GPIO LL
+library.
+ *
+ * @param PinMask   Carrys the information about which pins to reset
+                    If a lower 16 bit is 1 this resets the associated digital output
+                    If any bit is 0 this indicates no change
+                    0th bit corresponds to pin 0, 1st bit to pin 1 etc
+ *
+ *
+ * This function wraps the LL_GPIO_ResetOutputPin( ... ) function provided by the
+ * LL layer. It can be used to resset a single output pin or many output pins (on the same port).
+ * EXAMPLE: HW_GPIO_Reset_To_Port( GPIOA, LL_GPIO_PIN_5 ) sets LL_GPIO_PIN_5 of port A low
+ * EXAMPLE: HW_GPIO_Reset_To_Port( GPIOA, LL_GPIO_PIN_5 | LL_GPIO_PIN_4 ) sets LL_GPIO_PIN_5 and
+LL_GPIO_PIN_4 of port A low
+ * Reseting multiple pins works because LL_GPIO_PIN_5 and LL_GPIO_PIN_4 are just uint32_t
+ * in this case likely 0x0000_0020 0x0000_0010, so 0x0000_0030 is written to the BSR register
+ * 0x0000_0030 = 0000_0000_0000_0000_0000_0000_0011_0000 reseting pins 4 and 5 high
+ * mocked using GoogleMock.
+ * Note: This implementation assumes all digital outputs are on the same GPIO port.
+ * By doing so, we can set all the outputs in a single hardware access.
+ */
+static void HW_GPIO_Reset_To_Port( GPIO_TypeDef* gpiox, int32_t pin_mask )
+{
+#ifdef TEST_BUILD
+    // For unit testing, do nothing
+    ( void )pin_mask;
+    ( void )gpiox;
+#else
+    // LL_GPIO_XOutputPin functions write to the BSR port register,
+    // The lower 16 bits of the pin_mask bit 0 = pin0, bit 1 = pin1 etc
+    LL_GPIO_ResetOutputPin( gpiox, pin_mask );
+#endif
 }
 
 /**-----------------------------------------------------------------------------
@@ -297,6 +376,7 @@ inline void HW_GPIO_Reset_Output( uint32_t pin_mask )
 #ifdef TEST_BUILD
     // For unit testing, do nothing
     ( void )pin_mask;
+    return;
 #else
     // LL_GPIO_XOutputPin functions write to the BSR port register,
     // The lower 16 bits of the pin_mask bit 0 = pin0, bit 1 = pin1 etc
@@ -442,73 +522,4 @@ DigitalOutputPinmask_T HW_GPIO_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names,
         pin_mask = pin_mask | port_packet.pin_mask;  // combine pin masks
     }
     return pin_mask;
-}
-
-/**
- * @brief Sets the state of all digital outputs in a GPIO Port using the underlying GPIO LL library.
- *
- * @param PinMask   Carrys the information about which pins to set
-                    If a lower 16 bit is 1 this sets the associated digital output
-                    If any bit is 0 this indicates no change
-                    0th bit corresponds to digital output 0, 1st bit to output 1 etc
- *
- *
- * This function wraps the LL_GPIO_ResetOutputPin( ... ) function provided by the
- * LL layer. It can be used to set a single output pin or many output pins (on the same port).
- * EXAMPLE: HW_GPIO_Set_To_Port( GPIOA, LL_GPIO_PIN_5 ) sets LL_GPIO_PIN_5 of port A high
- * EXAMPLE: HW_GPIO_Set_To_Port( GPIOA, LL_GPIO_PIN_5 | LL_GPIO_PIN_4 ) sets LL_GPIO_PIN_5 and
-LL_GPIO_PIN_4 of port A high
- * Setting multiple pins works because LL_GPIO_PIN_5 and LL_GPIO_PIN_4 are just uint32_t
- * in this case likely 0x0000_0020 0x0000_0010, so 0x0000_0030 is written to the BSR register
- * 0x0000_0030 = 0000_0000_0000_0000_0000_0000_0011_0000 setting pins 4 and 5 high
- * mocked using GoogleMock.
- * Note: This implementation assumes all digital outputs are on the same GPIO port.
- * By doing so, we can set all the outputs in a single hardware access.
- */
-inline void HW_GPIO_Set_To_Port( GPIO_TypeDef* gpiox, int32_t pin_mask )
-{
-#ifdef TEST_BUILD
-    // For unit testing, do nothing
-    ( void )pin_mask;
-    ( void )gpiox;
-#else
-    // LL_GPIO_XOutputPin functions write to the BSR port register,
-    // The lower 16 bits of the pin_mask bit 0 = pin0, bit 1 = pin1 etc
-    LL_GPIO_SetOutputPin( gpiox, pin_mask );
-#endif
-}
-
-/**
- * @brief Resets the state of all digital outputs in a GPIO Port using the underlying GPIO LL
-library.
- *
- * @param PinMask   Carrys the information about which pins to reset
-                    If a lower 16 bit is 1 this resets the associated digital output
-                    If any bit is 0 this indicates no change
-                    0th bit corresponds to pin 0, 1st bit to pin 1 etc
- *
- *
- * This function wraps the LL_GPIO_ResetOutputPin( ... ) function provided by the
- * LL layer. It can be used to resset a single output pin or many output pins (on the same port).
- * EXAMPLE: HW_GPIO_Reset_To_Port( GPIOA, LL_GPIO_PIN_5 ) sets LL_GPIO_PIN_5 of port A low
- * EXAMPLE: HW_GPIO_Reset_To_Port( GPIOA, LL_GPIO_PIN_5 | LL_GPIO_PIN_4 ) sets LL_GPIO_PIN_5 and
-LL_GPIO_PIN_4 of port A low
- * Reseting multiple pins works because LL_GPIO_PIN_5 and LL_GPIO_PIN_4 are just uint32_t
- * in this case likely 0x0000_0020 0x0000_0010, so 0x0000_0030 is written to the BSR register
- * 0x0000_0030 = 0000_0000_0000_0000_0000_0000_0011_0000 reseting pins 4 and 5 high
- * mocked using GoogleMock.
- * Note: This implementation assumes all digital outputs are on the same GPIO port.
- * By doing so, we can set all the outputs in a single hardware access.
- */
-inline void HW_GPIO_Reset_To_Port( GPIO_TypeDef* gpiox, int32_t pin_mask )
-{
-#ifdef TEST_BUILD
-    // For unit testing, do nothing
-    ( void )pin_mask;
-    ( void )gpiox;
-#else
-    // LL_GPIO_XOutputPin functions write to the BSR port register,
-    // The lower 16 bits of the pin_mask bit 0 = pin0, bit 1 = pin1 etc
-    LL_GPIO_ResetOutputPin( gpiox, pin_mask );
-#endif
 }
