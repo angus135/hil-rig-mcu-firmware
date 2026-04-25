@@ -248,8 +248,7 @@ bool EXEC_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T confi
  *     was triggered.
  *     false if the low-level TX queue could not accept the requested data.
  */
-inline bool EXEC_SPI_Transmit( SPIPeripheral_T peripheral, const uint8_t* data_src,
-                               uint32_t size_bytes )
+bool EXEC_SPI_Transmit( SPIPeripheral_T peripheral, const uint8_t* data_src, uint32_t size_bytes )
 {
     if ( !HW_SPI_Load_Tx_Buffer( peripheral, data_src, size_bytes ) )
     {
@@ -302,7 +301,7 @@ inline bool EXEC_SPI_Transmit( SPIPeripheral_T peripheral, const uint8_t* data_s
  *     false if the unread RX byte count exceeds the provided destination
  *     capacity.
  */
-inline bool EXEC_SPI_Receive( SPIPeripheral_T peripheral, uint8_t* data_dst, uint32_t* size_bytes )
+bool EXEC_SPI_Receive( SPIPeripheral_T peripheral, uint8_t* data_dst, uint32_t* size_bytes )
 {
     HWSPIRxSpans_T data_spans = HW_SPI_Rx_Peek( peripheral );
     if ( data_spans.total_length_bytes > *size_bytes )
@@ -342,7 +341,7 @@ inline bool EXEC_SPI_Receive( SPIPeripheral_T peripheral, uint8_t* data_dst, uin
  *     true if the low-level TX path is empty and no transmission is in progress.
  *     false if bytes are still queued or currently being transmitted.
  */
-inline bool EXEC_SPI_Is_Transmission_Complete( SPIPeripheral_T peripheral )
+bool EXEC_SPI_Is_Transmission_Complete( SPIPeripheral_T peripheral )
 {
     return HW_SPI_Tx_Buffer_Empty( peripheral );
 }
