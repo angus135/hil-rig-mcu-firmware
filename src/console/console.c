@@ -12,6 +12,8 @@
  *  Notes:
  *     None
  ******************************************************************************/
+#include "global_config.h"
+#if GLOBAL_CONFIG__CONSOLE_ENABLED
 
 /**-----------------------------------------------------------------------------
  *  Includes
@@ -39,7 +41,7 @@
 #define CONSOLE_PRINTF_BUFFER_SIZE 128U
 #define CONSOLE_RX_BUFFER_SIZE 32U
 
-#define CONSOLE_TX_BUFFER_SIZE 512U
+#define CONSOLE_TX_BUFFER_SIZE 1024U
 #define CONSOLE_TX_FLUSH_CHUNK_SIZE 64U
 #define CONSOLE_TX_TIMEOUT_MS 100U
 
@@ -706,3 +708,4 @@ void CONSOLE_Task( void* task_parameters )
         vTaskDelayUntil( &initial_ticks, pdMS_TO_TICKS( CONSOLE_TASK_PERIOD ) );
     }
 }
+#endif

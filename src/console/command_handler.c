@@ -9,6 +9,8 @@
  *  Notes:
  *
  ******************************************************************************/
+#include "global_config.h"
+#if GLOBAL_CONFIG__CONSOLE_ENABLED
 
 /**-----------------------------------------------------------------------------
  *  Includes
@@ -16,6 +18,7 @@
  */
 
 #include "console.h"
+#include "command_helpers.h"
 #include "execution_manager.h"
 #include "hw_gpio.h"
 #include "exec_uart.h"
@@ -62,6 +65,7 @@ static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_LED( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_UART_Loopback( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] );
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
@@ -76,7 +80,8 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"execution_manager",    CONSOLE_Command_Test_Scheduler,       "Starts the test scheduler."},
     {"clear",  CONSOLE_Command_Clear,       "Clears the console."},
     {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <green|blue|red|test>"},
-    {"uart_loopback", CONSOLE_Command_UART_Loopback, "Configuring Channels and Rx/Tx loopback testing for Uart"}
+    {"uart_loopback", CONSOLE_Command_UART_Loopback, "Configuring Channels and Rx/Tx loopback testing for Uart"},
+    {"spi_loop",    CONSOLE_Command_SPI_Loopback,         "Does a loopback test"},
 
 };
 
@@ -201,6 +206,57 @@ static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] )
     ( void )argc;
     ( void )argv;
     CONSOLE_Printf( "\033[2J\033[1;1H" );
+}
+
+/**
+ * @brief Handles the SPI loopback command
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
+static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] )
+{
+    if ( argc < 2 || argv[1] == NULL )
+    {
+        CONSOLE_SPI_Loopback_Print_Usage();
+        return;
+    }
+
+    if ( strcmp( argv[1], "help" ) == 0 )
+    {
+        CONSOLE_SPI_Loopback_Print_Usage();
+    }
+    else if ( strcmp( argv[1], "config" ) == 0 )
+    {
+        CONSOLE_SPI_Loopback_Config( argc, argv );
+    }
+    else if ( strcmp( argv[1], "apply" ) == 0 )
+    {
+        CONSOLE_SPI_Loopback_Apply( argc, argv );
+    }
+    else if ( strcmp( argv[1], "load" ) == 0 )
+    {
+        CONSOLE_SPI_Loopback_Load( argc, argv );
+    }
+    else if ( strcmp( argv[1], "run" ) == 0 )
+    {
+        CONSOLE_SPI_Loopback_Run( argc, argv );
+    }
+    else if ( strcmp( argv[1], "clear" ) == 0 )
+    {
+        CONSOLE_SPI_Loopback_Clear();
+    }
+    else if ( strcmp( argv[1], "status" ) == 0 )
+    {
+        CONSOLE_SPI_Loopback_Status();
+    }
+    else
+    {
+        CONSOLE_Printf( "Unknown action: %s\r\n", argv[1] );
+        CONSOLE_SPI_Loopback_Print_Usage();
+    }
 }
 
 /**
@@ -534,3 +590,5 @@ void CONSOLE_Command_Handler( uint16_t argc, char* argv[] )
     CONSOLE_Printf( "%s", argv[0] );
     CONSOLE_Printf( "\r\n" );
 }
+
+#endif
