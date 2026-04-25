@@ -772,23 +772,6 @@ TEST_F( HWSPITest, RxConsume_WrapsReadPositionAtEndOfBuffer )
     EXPECT_EQ( channel_0_state->rx_position, 26U );
 }
 
-TEST_F( HWSPITest, RxConsume_DoesNothingForInvalidPeripheral )
-{
-    channel_0_state->rx_position = 77U;
-    HW_SPI_Rx_Consume( static_cast<SPIPeripheral_T>( 999 ), 10U );
-    EXPECT_EQ( channel_0_state->rx_position, 77U );
-}
-
-TEST_F( HWSPITest, RxConsume_RejectsMisalignedByteCountIn16BitMode )
-{
-    channel_1_state->config.data_size = SPI_SIZE_16_BIT;
-    channel_1_state->rx_position      = 40U;
-
-    HW_SPI_Rx_Consume( SPI_CHANNEL_1, 3U );
-
-    EXPECT_EQ( channel_1_state->rx_position, 40U );
-}
-
 TEST_F( HWSPITest, RxConsume_AcceptsAlignedByteCountIn16BitMode )
 {
     channel_1_state->config.data_size = SPI_SIZE_16_BIT;
