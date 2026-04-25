@@ -12,6 +12,8 @@
  *  Notes:
  *     None
  ******************************************************************************/
+#include "global_config.h"
+#if GLOBAL_CONFIG__CONSOLE_ENABLED
 
 /**-----------------------------------------------------------------------------
  *  Includes
@@ -706,3 +708,4 @@ void CONSOLE_Task( void* task_parameters )
         vTaskDelayUntil( &initial_ticks, pdMS_TO_TICKS( CONSOLE_TASK_PERIOD ) );
     }
 }
+#endif
