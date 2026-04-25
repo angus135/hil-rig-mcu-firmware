@@ -105,8 +105,7 @@ bool EXEC_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T confi
  *     was triggered.
  *     false if the low-level TX queue could not accept the requested data.
  */
-inline bool EXEC_SPI_Transmit( SPIPeripheral_T peripheral, const uint8_t* data_src,
-                               uint32_t size_bytes );
+bool EXEC_SPI_Transmit( SPIPeripheral_T peripheral, const uint8_t* data_src, uint32_t size_bytes );
 
 /**
  * @brief Copy all currently unread RX bytes from a SPI channel.
@@ -148,7 +147,7 @@ inline bool EXEC_SPI_Transmit( SPIPeripheral_T peripheral, const uint8_t* data_s
  *     false if the unread RX byte count exceeds the provided destination
  *     capacity.
  */
-inline bool EXEC_SPI_Receive( SPIPeripheral_T peripheral, uint8_t* data_dst, uint32_t* size_bytes );
+bool EXEC_SPI_Receive( SPIPeripheral_T peripheral, uint8_t* data_dst, uint32_t* size_bytes );
 
 /**
  * @brief Check whether the SPI transmit path has completed.
@@ -167,7 +166,7 @@ inline bool EXEC_SPI_Receive( SPIPeripheral_T peripheral, uint8_t* data_dst, uin
  *     true if the low-level TX path is empty and no transmission is in progress.
  *     false if bytes are still queued or currently being transmitted.
  */
-inline bool EXEC_SPI_Is_Transmission_Complete( SPIPeripheral_T peripheral );
+bool EXEC_SPI_Is_Transmission_Complete( SPIPeripheral_T peripheral );
 
 #ifdef __cplusplus
 }
