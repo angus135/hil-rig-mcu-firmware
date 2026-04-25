@@ -219,5 +219,5 @@ Both approaches are expected to coexist within the modules layer.
 - There should be a STMicroelectronics tab with which COM port it is attached to, eg. (COM3)
 
 ### 3. Enter settings into putty
-- Enter the COM Port found in step 2 into putty, set the baud rate to 115200 and the channel to serial.
+- Enter the COM Port found in step 2 into putty, set the baud rate to 1152000 and the channel to serial.
 - Click open
