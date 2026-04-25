@@ -279,12 +279,12 @@ static void CONSOLE_Command_Set_Pin( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "Unrecognised pin name: %s", argv[2] );
         return;
     }
-    if ( argv[3] == '0' )
+    if ( argv[3][0] == '0' )
     {
         HW_GPIO_Reset_Single_Pin( pin );
         return;
     }
-    else if ( argv[3] == '1' )
+    else if ( argv[3][0] == '1' )
     {
         HW_GPIO_Set_Single_Pin( pin );
         return;
@@ -307,7 +307,7 @@ static void CONSOLE_Command_Set_Pin( uint16_t argc, char* argv[] )
 static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char* argv[] )
 {
     int arg_limit = 10;
-    if ( argc < 3 | argc > 10 + 1 )
+    if ( ( argc < 3 ) | ( argc > ( arg_limit + 1 ) ) )
     {
         CONSOLE_Printf( "Incorrect number of inputs, expected >2 and <%dbut recieved %d", arg_limit,
                         argc );
@@ -324,21 +324,17 @@ static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char* argv[] )
             return;
         }
     }
-    if ( argv[3] == '0' )
+    if ( argv[argc - 2][0] == '0' )
     {
         HW_GPIO_Reset_Many_Pins( pins, argc - 2 );
         return;
     }
-    else if ( argv[3] == '1' )
+    if ( argv[argc - 2][0] == '1' )
     {
         HW_GPIO_Set_Many_Pins( pins, argc - 2 );
         return;
     }
-    else
-    {
-        CONSOLE_Printf( "Unrecognised input, expected 1 or 0 but recieved %c", argv[3] );
-        return;
-    }
+    CONSOLE_Printf( "Unrecognised input, expected 1 or 0 but recieved %c", argv[3] );
 }
 
 static void CONSOLE_Command_UART_Loopback( uint16_t argc, char* argv[] )
