@@ -360,6 +360,34 @@ bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uin
  */
 void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral );
 
+/**
+ * @brief Check whether the TX buffer is empty for a SPI channel.
+ *
+ * Reports whether the selected channel has no TX data waiting in the software
+ * ring and no TX data currently owned by DMA.
+ *
+ * In the TX ring-buffer model, data can exist in two places:
+ * - pending bytes still waiting in the software TX ring, and
+ * - in-flight bytes that have already been handed to DMA but have not completed.
+ *
+ * This function treats the TX path as empty only when both of those counts are
+ * zero. It is intended for higher-level code that needs to know whether all
+ * previously loaded TX data has been fully transmitted.
+ *
+ * This function assumes the caller provides a valid SPI peripheral. Invalid
+ * peripheral validation is intentionally not performed here because this is a
+ * lightweight low-level helper intended for frequent use.
+ *
+ * @param peripheral
+ *     The SPI peripheral/channel to inspect.
+ *
+ * @return
+ *     true if there are no pending or in-flight TX bytes.
+ *     false if any TX data is still pending in the ring or currently being
+ *     transmitted by DMA.
+ */
+bool HW_SPI_Tx_Buffer_Empty( SPIPeripheral_T peripheral );
+
 #ifdef __cplusplus
 }
 #endif
