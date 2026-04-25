@@ -105,12 +105,6 @@ void Error_Handler(void);
 #define Digital_Output_4_GPIO_Port GPIOG
 #define Test_GPIO_Output_Pin GPIO_PIN_8
 #define Test_GPIO_Output_GPIO_Port GPIOC
-#define USB_SOF_Pin GPIO_PIN_8
-#define USB_SOF_GPIO_Port GPIOA
-#define USB_VBUS_Pin GPIO_PIN_9
-#define USB_VBUS_GPIO_Port GPIOA
-#define USB_ID_Pin GPIO_PIN_10
-#define USB_ID_GPIO_Port GPIOA
 #define USB_DM_Pin GPIO_PIN_11
 #define USB_DM_GPIO_Port GPIOA
 #define USB_DP_Pin GPIO_PIN_12

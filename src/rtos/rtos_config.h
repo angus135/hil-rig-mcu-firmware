@@ -96,6 +96,32 @@ typedef enum
     eSetValueWithoutOverwrite /* Set the task's notification value if the previous value has been
                                  read by the task. */
 } eNotifyAction;
+
+typedef struct StreamBufferDef_t /*lint !e9058 Style convention uses tag. */
+{
+    volatile size_t xTail;     /* Index to the next item to read within the buffer. */
+    volatile size_t xHead;     /* Index to the next item to write within the buffer. */
+    size_t          xLength;   /* The length of the buffer pointed to by pucBuffer. */
+    size_t xTriggerLevelBytes; /* The number of bytes that must be in the stream buffer before a
+                                  task that is waiting for data is unblocked. */
+    volatile TaskHandle_t xTaskWaitingToReceive; /* Holds the handle of a task waiting for data, or
+                                                    NULL if no tasks are waiting. */
+    volatile TaskHandle_t xTaskWaitingToSend; /* Holds the handle of a task waiting to send data to
+                                                 a message buffer that is full. */
+    uint8_t* pucBuffer; /* Points to the buffer itself - that is - the RAM that stores the data
+                           passed through the buffer. */
+    uint8_t ucFlags;
+
+} StreamBuffer_t;
+
+struct StreamBufferDef_t;
+typedef struct StreamBufferDef_t* StreamBufferHandle_t;
+
+#define xStreamBufferCreate( xBufferSizeBytes, xTriggerLevelBytes )                                \
+    xStreamBufferGenericCreate( xBufferSizeBytes, xTriggerLevelBytes, pdFALSE )
+
+#define portYIELD_FROM_ISR( x ) ( ( void )( x ) )
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -192,6 +218,20 @@ BaseType_t xQueuePeek( QueueHandle_t xQueue, void* pvBuffer, TickType_t xTicksTo
  * @brief stub implementing FreeRTOS xQueuePeekFromISR
  */
 BaseType_t xQueuePeekFromISR( QueueHandle_t xQueue, void* pvBuffer );
+
+// stream_buffer.c functions
+
+StreamBufferHandle_t xStreamBufferGenericCreate( size_t xBufferSizeBytes, size_t xTriggerLevelBytes,
+                                                 BaseType_t xIsMessageBuffer );
+
+size_t xStreamBufferSendFromISR( StreamBufferHandle_t xStreamBuffer, const void* pvTxData,
+                                 size_t            xDataLengthBytes,
+                                 BaseType_t* const pxHigherPriorityTaskWoken );
+
+size_t xStreamBufferReceive( StreamBufferHandle_t xStreamBuffer, void* pvRxData,
+                             size_t xBufferLengthBytes, TickType_t xTicksToWait );
+
+size_t xStreamBufferSpacesAvailable( StreamBufferHandle_t xStreamBuffer );
 
 // semphr.c functions
 

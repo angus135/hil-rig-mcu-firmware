@@ -115,6 +115,7 @@ int main(void)
   MX_CAN1_Init();
   MX_CAN2_Init();
   /* USER CODE BEGIN 2 */
+  MX_USB_DEVICE_Init();
   APP_MAIN_Application();
   // Nothing after here is ever called but if it does, run the error handler
   Error_Handler();
