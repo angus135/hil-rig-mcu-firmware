@@ -6,6 +6,8 @@
 
 set(CONSOLE_SOURCES
     console.c
+    command_handler.c
+    spi_loop_command.c
 )
 
 set(CONSOLE_HEADERS
@@ -32,6 +34,7 @@ target_link_libraries(console
         exec_uart
         hw_uart
         hw_spi
+        exec_spi
         execution_manager
 )
 
