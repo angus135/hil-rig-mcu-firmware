@@ -24,17 +24,37 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-#include <stdint.h>
-
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
  */
 
+#define I2C1 ( ( void* )0x40005400u )
+#define I2C2 ( ( void* )0x40005800u )
+#define FMPI2C1 ( ( void* )0x40006000u )
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+
+typedef struct
+{
+    void* Instance;
+} I2C_HandleTypeDef;
+
+typedef struct
+{
+    void* Instance;
+} FMPI2C_HandleTypeDef;
+
+typedef enum
+{
+    HAL_OK = 0,
+    HAL_ERROR,
+    HAL_BUSY,
+    HAL_TIMEOUT
+} HAL_StatusTypeDef;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
