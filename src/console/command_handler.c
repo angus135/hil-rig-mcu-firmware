@@ -80,8 +80,8 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"clear",  CONSOLE_Command_Clear,       "Clears the console."},
     {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <green|blue|red|test>"},
     {"uart_loopback", CONSOLE_Command_UART_Loopback, "Configuring Channels and Rx/Tx loopback testing for Uart"},
-    {"set_pin", CONSOLE_Command_Set_Pin, "Set or reset didital output, Usage: set_pin PIN_NAME <0|1>"},
-    {"set_pins", CONSOLE_Command_Set_Many_Pins, "Set or reset many didital output, Usage: set_pin PIN_NAME0 PIN_NAME1 ... PIN_NAMEX <0|1>"}
+    {"set_pin", CONSOLE_Command_Set_Pin, "Set or reset digital output, Usage: set_pin PIN_NAME <0|1>"},
+    {"set_pins", CONSOLE_Command_Set_Many_Pins, "Set or reset many digital output, Usage: set_pin PIN_NAME0 PIN_NAME1 ... PIN_NAMEX <0|1>"}
 
 };
 
@@ -334,7 +334,7 @@ static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char* argv[] )
         HW_GPIO_Set_Many_Pins( pins, argc - 2 );
         return;
     }
-    CONSOLE_Printf( "Unrecognised input, expected 1 or 0 but recieved %c", argv[argc-1] );
+    CONSOLE_Printf( "Unrecognised input, expected 1 or 0 but recieved %c", argv[argc - 1] );
 }
 
 static void CONSOLE_Command_UART_Loopback( uint16_t argc, char* argv[] )
