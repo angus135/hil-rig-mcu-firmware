@@ -39,8 +39,22 @@
 #define HW_I2C_RxPeek_T HWI2CRxPeek_T
 #define HW_I2C_TransferKind_T HWI2CTransferKind_T
 #define HW_I2C_ChannelState_T HWI2CChannelState_T
+
 #define HW_I2C_CHANNEL_2_DMA_RX_STREAM DMA1_Stream2
 #define HW_I2C_CHANNEL_2_DMA_TX_STREAM DMA1_Stream7
+
+#ifndef TEST_BUILD
+#define HW_I2C_APB1_HZ 45000000UL
+#define FMPI2C1_TIMINGR 0xC0000E12U
+#define HW_I2C_CHANNEL_2_DMA_RX_TC_FLAG DMA_LISR_TCIF2
+#define HW_I2C_CHANNEL_2_DMA_RX_TE_FLAG DMA_LISR_TEIF2
+#define HW_I2C_CHANNEL_2_DMA_TX_TC_FLAG DMA_HISR_TCIF7
+#define HW_I2C_CHANNEL_2_DMA_TX_TE_FLAG DMA_HISR_TEIF7
+#define HW_I2C_CHANNEL_2_DMA_RX_CLEAR_FLAGS_MASK                                          \
+    ( DMA_LIFCR_CTCIF2 | DMA_LIFCR_CTEIF2 | DMA_LIFCR_CDMEIF2 | DMA_LIFCR_CFEIF2 )
+#define HW_I2C_CHANNEL_2_DMA_TX_CLEAR_FLAGS_MASK                                          \
+    ( DMA_HIFCR_CTCIF7 | DMA_HIFCR_CTEIF7 | DMA_HIFCR_CDMEIF7 | DMA_HIFCR_CFEIF7 )
+#endif
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -98,10 +112,6 @@ typedef struct HWI2CChannelState_T
  */
 
 static HW_I2C_ChannelState_T hw_i2c_channel_state[HW_I2C_CHANNEL_COUNT] = { 0 };
-
-#ifndef TEST_BUILD
-static const uint32_t HW_I2C_APB1_HZ = 45000000UL;
-#endif
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -468,11 +478,11 @@ static inline bool hw_i2c_dma_stream_has_tc( DMA_Stream_TypeDef* stream )
 {
     if ( stream == HW_I2C_CHANNEL_2_DMA_RX_STREAM )
     {
-        return ( ( DMA1->LISR & DMA_LISR_TCIF2 ) != 0U );
+        return ( ( DMA1->LISR & HW_I2C_CHANNEL_2_DMA_RX_TC_FLAG ) != 0U );
     }
     if ( stream == HW_I2C_CHANNEL_2_DMA_TX_STREAM )
     {
-        return ( ( DMA1->HISR & DMA_HISR_TCIF7 ) != 0U );
+        return ( ( DMA1->HISR & HW_I2C_CHANNEL_2_DMA_TX_TC_FLAG ) != 0U );
     }
     return false;
 }
@@ -481,11 +491,11 @@ static inline bool hw_i2c_dma_stream_has_te( DMA_Stream_TypeDef* stream )
 {
     if ( stream == HW_I2C_CHANNEL_2_DMA_RX_STREAM )
     {
-        return ( ( DMA1->LISR & DMA_LISR_TEIF2 ) != 0U );
+        return ( ( DMA1->LISR & HW_I2C_CHANNEL_2_DMA_RX_TE_FLAG ) != 0U );
     }
     if ( stream == HW_I2C_CHANNEL_2_DMA_TX_STREAM )
     {
-        return ( ( DMA1->HISR & DMA_HISR_TEIF7 ) != 0U );
+        return ( ( DMA1->HISR & HW_I2C_CHANNEL_2_DMA_TX_TE_FLAG ) != 0U );
     }
     return false;
 }
@@ -494,11 +504,11 @@ static inline void hw_i2c_dma_stream_clear_flags( DMA_Stream_TypeDef* stream )
 {
     if ( stream == HW_I2C_CHANNEL_2_DMA_RX_STREAM )
     {
-        DMA1->LIFCR = DMA_LIFCR_CTCIF2 | DMA_LIFCR_CTEIF2 | DMA_LIFCR_CDMEIF2 | DMA_LIFCR_CFEIF2;
+        DMA1->LIFCR = HW_I2C_CHANNEL_2_DMA_RX_CLEAR_FLAGS_MASK;
     }
     else if ( stream == HW_I2C_CHANNEL_2_DMA_TX_STREAM )
     {
-        DMA1->HIFCR = DMA_HIFCR_CTCIF7 | DMA_HIFCR_CTEIF7 | DMA_HIFCR_CDMEIF7 | DMA_HIFCR_CFEIF7;
+        DMA1->HIFCR = HW_I2C_CHANNEL_2_DMA_TX_CLEAR_FLAGS_MASK;
     }
 }
 
@@ -747,7 +757,7 @@ HW_I2C_Status_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
     hw_i2c_enable_clock_for_channel( HW_I2C_CHANNEL_FMPI2C1 );
 
     FMPI2C1->CR1 &= ~FMPI2C_CR1_PE;
-    FMPI2C1->TIMINGR = 0xC0000E12U;
+    FMPI2C1->TIMINGR = FMPI2C1_TIMINGR;
     FMPI2C1->OAR1    = ( ( uint32_t )own_address_7bit << 1U ) | FMPI2C_OAR1_OA1EN;
     FMPI2C1->CR1     = FMPI2C_CR1_PE | FMPI2C_CR1_TXIE | FMPI2C_CR1_RXIE | FMPI2C_CR1_TCIE
                    | FMPI2C_CR1_STOPIE | FMPI2C_CR1_ERRIE;
