@@ -78,6 +78,14 @@ static uint32_t EXEC_enabled_inputs_pin_mask = Digital_Input_0_Pin | Digital_Inp
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
+/**
+ * @brief Configures digital input channel modes for execution-time sampling.
+ *
+ * @param channel_config  Pointer to per-channel mode configuration.
+ *
+ * This function builds the enabled-input bitmask used during sampling. Any
+ * channel with mode DIGITAL_INPUT_MODE_DISABLED is excluded from the mask.
+ */
 void EXEC_DigitalInput_Configure( const DigitalInputChannelConfig_T* channel_config )
 {
     uint32_t enabled_mask = 0U;
@@ -111,6 +119,14 @@ void EXEC_DigitalInput_Configure( const DigitalInputChannelConfig_T* channel_con
     EXEC_enabled_inputs_pin_mask = enabled_mask;
 }
 
+/**
+ * @brief Samples all configured digital inputs and writes a masked input word.
+ *
+ * @param dest_addr  Pointer to destination for sampled input bits.
+ *
+ * This function reads the raw digital input port state and applies the current
+ * enabled-input mask before returning the result through dest_addr.
+ */
 void EXEC_DigitalInput_SampleAll( uint32_t* dest_addr )
 {
     if ( dest_addr == NULL )

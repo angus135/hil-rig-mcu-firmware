@@ -573,7 +573,7 @@ DigitalOutputPinmask_T HW_GPIO_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names,
 }
 
 /** 
- * @brief Reads the state of all digital inputs using the underlying GPIO LL library.
+ * @brief Reads the state of GPIO pins using the underlying GPIO LL library.
  *
  * @param input  The GPIO input pin to read
  *
