@@ -1,6 +1,6 @@
 /******************************************************************************
  *  File:       hw_pwm_gen.c
- *  Author:     Callum Rafferty
+ *  Author:     Timothy Vogelsang
  *  Created:    25-Mar-2026
  *
  *  Description:

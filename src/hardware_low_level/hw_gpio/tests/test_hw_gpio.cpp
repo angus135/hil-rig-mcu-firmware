@@ -1,6 +1,6 @@
 /******************************************************************************
  *  File:       test_hw_gpio.cpp
- *  Author:     Callum Rafferty
+ *  Author:     Callum Rafferty, Tim Vogelsang
  *  Created:    25-Mar-2026
  *
  *  Description:
@@ -55,31 +55,12 @@ extern "C"
  * mock them here using GoogleMock.
  *
  */
-Example :
-
-    extern "C"
-{
-    void HAL_GPIO_WritePin( uint32_t pin, bool level );
-}
-
-class MockHalGpio
-{
-public:
-    MOCK_METHOD( void, HAL_GPIO_WritePin, ( uint32_t pin, bool level ) );
-};
 
 /**-----------------------------------------------------------------------------
  *  Link seam: mocked functions definitions
  *------------------------------------------------------------------------------
  */
 // NOLINTBEGIN
-
-// Provide a fake C binding that forwards to the mock instance:
-MockHalGpio     mock_gpio;
-extern "C" void HAL_GPIO_WritePin( uint32_t pin, bool level )
-{
-    mock_gpio.HAL_GPIO_WritePin( pin, level );
-}
 
 // Add mocks or stubs here as needed
 
@@ -110,46 +91,3 @@ protected:
         // Verify mock expectations if needed
     }
 };
-
-/**-----------------------------------------------------------------------------
- *  Test Cases
- *------------------------------------------------------------------------------
- */
-
-/**
- * @test Module initialisation should set the module state to known defaults.
- */
-TEST_F( ModuleTest, ModuleInitialisesCorrectly )
-{
-    MODULE_Init();
-
-    // EXPECT_* and ASSERT_* macros from GoogleTest
-    // Example assertions:
-    EXPECT_EQ( MODULE_GetState(), 0U );
-    EXPECT_FALSE( MODULE_IsReady() );
-}
-
-/**
- * @test Processing a value should produce the correct output.
- */
-TEST_F( ModuleTest, ProcessingProducesCorrectOutput )
-{
-    MODULE_Init();
-
-    uint16_t result = MODULE_Process( TEST_INPUT_VALUE );
-
-    EXPECT_EQ( result, TEST_EXPECTED_OUTPUT );
-}
-
-/**
- * @test Example demonstrating GoogleMock usage for dependencies.
- *
- */
-TEST_F( ModuleTest, CallsExternalDependency )
-{
-    EXPECT_CALL( mock_gpio, HAL_GPIO_WritePin( /*pin=*/3U, /*level=*/true ) );
-
-    MODULE_DoSomethingThatCallsHal();
-
-    // No additional ASSERTs needed; GoogleMock handles verification.
-}
