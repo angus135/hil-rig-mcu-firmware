@@ -30,6 +30,7 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
+#define NUM_DIGITAL_INPUTS 10
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -100,34 +101,53 @@ static ConsoleUartLoopbackState_T s_uart_loopback_state = { 0 };
 
 static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
 {
+    uint32_t sampled_inputs = 0U;
+
+    DigitalInputChannelConfig_T config = {
+        .channel_0_mode = DIGITAL_INPUT_MODE_3V3,
+        .channel_1_mode = DIGITAL_INPUT_MODE_3V3,
+        .channel_2_mode = DIGITAL_INPUT_MODE_3V3,
+        .channel_3_mode = DIGITAL_INPUT_MODE_3V3,
+        .channel_4_mode = DIGITAL_INPUT_MODE_3V3,
+        .channel_5_mode = DIGITAL_INPUT_MODE_3V3,
+        .channel_6_mode = DIGITAL_INPUT_MODE_3V3,
+        .channel_7_mode = DIGITAL_INPUT_MODE_3V3,
+        .channel_8_mode = DIGITAL_INPUT_MODE_3V3,
+        .channel_9_mode = DIGITAL_INPUT_MODE_3V3
+    };
+
     if ( argc != 2 || argv[1] == NULL )
     {
         CONSOLE_Printf( "Usage: digital_input <channel 0-9> or digital_input all\r\n" );
         return;
     }
 
+    EXEC_DigitalInput_Configure( &config );
+
     if ( strcmp( argv[1], "all" ) == 0 )
     {
-        ( void )argc;
-        ( void )argv;
-        bool input_states[10] = { 0 };
-        EXEC_DigitalInput_SampleAll( input_states );
+        EXEC_DigitalInput_SampleAll( &sampled_inputs );
+
+        uint32_t lower_bits_mask = ( uint32_t )( ( 1UL << NUM_DIGITAL_INPUTS ) - 1UL );
+        uint32_t lower_bits      = sampled_inputs & lower_bits_mask;
+
         CONSOLE_Printf( "Digital Inputs: " );
-        for ( uint8_t i = 0; i < 10; ++i )
+        for ( int8_t bit = ( int8_t )NUM_DIGITAL_INPUTS - 1; bit >= 0; --bit )
         {
-            CONSOLE_Printf( "%d", input_states[i] ? 1 : 0 );
+            CONSOLE_Printf( "%d", ( lower_bits >> bit ) & 0x1U );
         }
         CONSOLE_Printf( "\r\n" );
     }
     else
     {
         int channel = atoi( argv[1] );
-        if ( channel < 0 || channel > 9 )
+        if ( channel < 0 || channel >= NUM_DIGITAL_INPUTS )
         {
             CONSOLE_Printf( "Invalid channel. Must be 0-9.\r\n" );
             return;
         }
-        bool state = EXEC_DigitalInput_Sample( ( GPIOInput_T )channel );
+
+        bool state = HW_GPIO_Read_Pin( ( GPIOInput_T )channel );
         CONSOLE_Printf( "Digital Input %d: %d\r\n", channel, state ? 1 : 0 );
     }
 }
