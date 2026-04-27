@@ -17,15 +17,23 @@
  *  Includes
  *------------------------------------------------------------------------------
  */
+#ifdef TEST_BUILD
+#include "tests/exec_digital_input_mocks.h"
+#else
+#include "main.h"
+#endif
+
 #include "exec_digital_input.h"
 #include "hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
+#define NUM_DIGITAL_INPUTS 10
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -42,6 +50,20 @@
  *------------------------------------------------------------------------------
  */
 
+// TODO: align with Tim's pin masking later
+static const uint8_t DIGITAL_INPUT_PIN_POSITIONS[NUM_DIGITAL_INPUTS] = {
+    __builtin_ctz( Digital_Input_0_Pin ), __builtin_ctz( Digital_Input_1_Pin ),
+    __builtin_ctz( Digital_Input_2_Pin ), __builtin_ctz( Digital_Input_3_Pin ),
+    __builtin_ctz( Digital_Input_4_Pin ), __builtin_ctz( Digital_Input_5_Pin ),
+    __builtin_ctz( Digital_Input_6_Pin ), __builtin_ctz( Digital_Input_7_Pin ),
+    __builtin_ctz( Digital_Input_8_Pin ), __builtin_ctz( Digital_Input_9_Pin ) };
+
+static uint32_t EXEC_enabled_inputs_pin_mask = Digital_Input_0_Pin | Digital_Input_1_Pin |
+                                            Digital_Input_2_Pin | Digital_Input_3_Pin |
+                                            Digital_Input_4_Pin | Digital_Input_5_Pin |
+                                            Digital_Input_6_Pin | Digital_Input_7_Pin |
+                                            Digital_Input_8_Pin | Digital_Input_9_Pin;
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -56,24 +78,47 @@
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
-
-void EXEC_DigitalInput_Configure( const DigitalInputMode_T* modes, uint8_t num_channels )
+void EXEC_DigitalInput_Configure( const DigitalInputChannelConfig_T* channel_config )
 {
-    // TODO: Implement configuration via multiplexer/output expander/I2C for each channel
-    // 'modes' is an array of DigitalInputMode_T, one per channel
-    // 'num_channels' is the number of digital input channels
-    ( void )modes;
-    ( void )num_channels;
+    uint32_t enabled_mask = 0U;
+
+    if ( channel_config == NULL )
+    {
+        return;
+    }
+
+    const DigitalInputMode_T channel_modes[NUM_DIGITAL_INPUTS] = {
+        channel_config->channel_0_mode,
+        channel_config->channel_1_mode,
+        channel_config->channel_2_mode,
+        channel_config->channel_3_mode,
+        channel_config->channel_4_mode,
+        channel_config->channel_5_mode,
+        channel_config->channel_6_mode,
+        channel_config->channel_7_mode,
+        channel_config->channel_8_mode,
+        channel_config->channel_9_mode
+    };
+
+    for ( uint8_t i = 0U; i < NUM_DIGITAL_INPUTS; ++i )
+    {
+        if ( channel_modes[i] != DIGITAL_INPUT_MODE_DISABLED )
+        {
+            enabled_mask |= ( uint32_t )1U << DIGITAL_INPUT_PIN_POSITIONS[i];
+        }
+    }
+
+    EXEC_enabled_inputs_pin_mask = enabled_mask;
 }
 
-void EXEC_DigitalInput_SampleAll( bool* dest_buffer )
+void EXEC_DigitalInput_SampleAll( uint32_t* dest_addr )
 {
-    // Call the low-level function to read all digital inputs
-    HW_GPIO_Read_All_Digital_Inputs( dest_buffer );
+    if ( dest_addr == NULL )
+    {
+        return;
+    }
+
+    uint32_t port_state = HW_GPIO_Read_All_Digital_Inputs();
+    *dest_addr = port_state & EXEC_enabled_inputs_pin_mask;
 }
 
-bool EXEC_DigitalInput_Sample( GPIOInput_T input )
-{
-    // Call the low-level function to read the specified digital input
-    return HW_GPIO_Read_Pin( input );
-}
