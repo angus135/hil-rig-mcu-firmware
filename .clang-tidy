@@ -16,6 +16,8 @@ Checks: >
   -cppcoreguidelines-pro-type-vararg,
   -cppcoreguidelines-avoid-non-const-global-variables,
   -bugprone-easily-swappable-parameters
+  -cppcoreguidelines-avoid-c-arrays
+  -cppcoreguidelines-pro-type-reinterpret-cast
 WarningsAsErrors: ''
 HeaderFilterRegex: 'src/.*|include/.*'
 FormatStyle:     none

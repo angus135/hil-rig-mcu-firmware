@@ -77,51 +77,89 @@ void TIM2_IRQHandler( void )
 #endif
 }
 
-void HW_TIMER_Configure_Test_Scheduling_Timer( uint32_t psc, uint32_t arr )
+void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t arr )
 {
-    HW_TIMER_Stop_Test_Scheduling_Timer();
+
 #ifdef TEST_BUILD
+    ( void )timer;
     ( void )psc;
     ( void )arr;
 #else
-    htim2.Init.Prescaler = psc;
-    htim2.Init.Period    = arr;
-    if ( HAL_TIM_Base_Init( &htim2 ) != HAL_OK )
+    switch ( timer )
     {
-        Error_Handler();
+        case EXECUTION_MANAGER_TIMER:
+            HW_TIMER_Stop_Timer( EXECUTION_MANAGER_TIMER );
+            htim2.Init.Prescaler = psc;
+            htim2.Init.Period    = arr;
+            if ( HAL_TIM_Base_Init( &htim2 ) != HAL_OK )
+            {
+                Error_Handler();
+            }
+            break;
+        case ANALOGUE_INPUT_TIMER:
+            htim3.Init.Prescaler = psc;
+            htim3.Init.Period    = arr;
+            if ( HAL_TIM_Base_Init( &htim3 ) != HAL_OK )
+            {
+                Error_Handler();
+            }
+            break;
+        default:
+            break;
     }
 #endif
 }
 
-void HW_TIMER_Start_Test_Scheduling_Timer( void )
+void HW_TIMER_Start_Timer( Timer_T timer )
 {
 #ifdef TEST_BUILD
+    ( void )timer;
 #else
-    // Ensure counter is stopped while configuring
-    LL_TIM_DisableCounter( TIM2 );
+    switch ( timer )
+    {
+        case EXECUTION_MANAGER_TIMER:
+            // Ensure counter is stopped while configuring
+            LL_TIM_DisableCounter( TIM2 );
 
-    // Clear any pending update flag
-    LL_TIM_ClearFlag_UPDATE( TIM2 );
+            // Clear any pending update flag
+            LL_TIM_ClearFlag_UPDATE( TIM2 );
 
-    // Enable update interrupt
-    LL_TIM_EnableIT_UPDATE( TIM2 );
+            // Enable update interrupt
+            LL_TIM_EnableIT_UPDATE( TIM2 );
 
-    // Enable counter
-    LL_TIM_EnableCounter( TIM2 );
+            // Enable counter
+            LL_TIM_EnableCounter( TIM2 );
+        case ANALOGUE_INPUT_TIMER:
+            HAL_TIM_Base_Start( &htim3 );
+            break;
+        default:
+            break;
+    }
 #endif
 }
 
-void HW_TIMER_Stop_Test_Scheduling_Timer( void )
+void HW_TIMER_Stop_Timer( Timer_T timer )
 {
 #ifdef TEST_BUILD
+    ( void )timer;
 #else
-    // Disable update interrupt first (prevents new IRQs)
-    LL_TIM_DisableIT_UPDATE( TIM2 );
 
-    // Stop the counter
-    LL_TIM_DisableCounter( TIM2 );
+    switch ( timer )
+    {
+        case EXECUTION_MANAGER_TIMER:
+            // Disable update interrupt first (prevents new IRQs)
+            LL_TIM_DisableIT_UPDATE( TIM2 );
 
-    // Clear any pending update flag (important)
-    LL_TIM_ClearFlag_UPDATE( TIM2 );
+            // Stop the counter
+            LL_TIM_DisableCounter( TIM2 );
+
+            // Clear any pending update flag (important)
+            LL_TIM_ClearFlag_UPDATE( TIM2 );
+        case ANALOGUE_INPUT_TIMER:
+            HAL_TIM_Base_Stop( &htim3 );
+            break;
+        default:
+            break;
+    }
 #endif
 }

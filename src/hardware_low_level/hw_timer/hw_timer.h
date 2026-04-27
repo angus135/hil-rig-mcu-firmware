@@ -36,35 +36,45 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+typedef enum Timer_T
+{
+    EXECUTION_MANAGER_TIMER,
+    ANALOGUE_INPUT_TIMER,
+
+} Timer_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
 
 /**
- * @brief Configures the test scheduling timer.
+ * @brief Configures the specified timer.
  *
+ * @param timer - the timer to configure
  * @param psc - Prescalar
  * @param arr - AutoReload Register
  *
- * Configures the timer used for test scheduling with a specified prescalar and autoreload register
+ * Configures the timer with a specified prescalar and autoreload register
 value.
- * Note: Also stops the timer if it is currently running.
  */
-void HW_TIMER_Configure_Test_Scheduling_Timer( uint32_t psc, uint32_t arr );
+void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t arr );
 
 /**
- * @brief Starts the timer for test scheduling
+ * @brief Starts the specified timer
  *
- * Starts the timer that generates interrupts at a certain frequency as configured by
- * HW_TIMER_Configure_Test_Scheduling_Timer.
+ * @param timer - the timer to configure
+ *
  */
-void HW_TIMER_Start_Test_Scheduling_Timer( void );
+void HW_TIMER_Start_Timer( Timer_T timer );
 
 /**
- * @brief Stops the timer for test scheduling
+ * @brief Stops the specified timer
+ *
+ * @param timer - the timer to configure
+ *
  */
-void HW_TIMER_Stop_Test_Scheduling_Timer( void );
+void HW_TIMER_Stop_Timer( Timer_T timer );
 
 #ifdef __cplusplus
 }
