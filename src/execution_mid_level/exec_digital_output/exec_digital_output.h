@@ -37,10 +37,32 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+typedef enum OutputMode_T
+{
+    M3V3,
+    M5V,
+    M12V,
+    M24V,
+    MOFF
+} OutputMode_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief configure the gpio outputs.
+ *
+ * @param gpio_names   an array of GPIO pin names used in the design, all of which are on the same
+port
+ * @param length       the nubmer of GPIOOutput_T in gpio_names
+ * @param modes         the modes of operation corresponding to the pins
+ *
+ * This function configures all of the digital outputs, leveraging the output expander
+ */
+bool EXEC_DIGITAL_Output_Configuration( GPIOOutput_T* gpio_names, uint16_t length,
+                                        OutputMode_T* modes );
 
 /**
  * @brief combines many GPIO's (on the same port) into one pin mask.

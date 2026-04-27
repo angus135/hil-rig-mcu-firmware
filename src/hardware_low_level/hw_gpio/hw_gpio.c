@@ -143,7 +143,7 @@ static GPIOPortPacket_T HW_GPIO_Port_Pin_Association( GPIOOutput_T gpio_name )
             return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
     }
     // Added by Tim, should be updated to set the warning LED once IOC is decided
-    return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
+    return ( struct GPIOPortPacket_T ){ NULL, 0 };
 #else
     // Added by Tim, should be updated to set the warning LED once IOC is decided
     return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
@@ -517,7 +517,7 @@ DigitalOutputPinmask_T HW_GPIO_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names,
         if ( checker != port_packet.gpiox )
         {
             // Not all of the pins had the same port, so return an error
-            return 0xFFFF0000;  // 4294901760 = 0xFFFF0000
+            return NULL;  // 4294901760 = 0xFFFF0000
         }
         pin_mask = pin_mask | port_packet.pin_mask;  // combine pin masks
     }
