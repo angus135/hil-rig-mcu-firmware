@@ -32,17 +32,14 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-// #define MODULE_FEATURE_FLAG   (1U)
-// Add macros intended for use outside this module here
+#define PWM_CHANNEL1_TIMER (TIM_HandleTypeDef) htim1     // TO DO - UPDATE BASED ON IOC
+#define PWM_CHANNEL2_TIMER (TIM_HandleTypeDef) htim1     // TO DO - UPDATE BASED ON IOC
+#define PWM_CHANNEL3_TIMER (TIM_HandleTypeDef) htim1     // TO DO - UPDATE BASED ON IOC
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
-
-// typedef enum { STATE_IDLE, STATE_BUSY } Module_State_T;
-// typedef struct { uint16_t value; bool ready; } Module_Data_T;
-// Add types that must be visible to other modules here
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
