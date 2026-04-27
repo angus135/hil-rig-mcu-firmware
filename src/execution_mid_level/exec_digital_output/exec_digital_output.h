@@ -42,7 +42,6 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-
 /**
  * @brief combines many GPIO's (on the same port) into one pin mask.
  *
@@ -64,7 +63,7 @@ if (p.pin_mask == 0xFFFF0000){
  * mocked using GoogleMock.
  */
 inline DigitalOutputPinmask_T EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names,
-                                                                     uint8_t       length );
+                                                                          uint8_t       length );
 
 /**
  * @brief Sets the state of all digital pins on the Digital GPIO Port (assigned in hw_gpio).
