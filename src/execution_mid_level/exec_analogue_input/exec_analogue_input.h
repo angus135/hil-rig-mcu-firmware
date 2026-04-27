@@ -66,29 +66,56 @@ typedef struct AnalogueInputVoltages_T
  */
 
 /**
- * @brief Configures the Analogue Inputs to run
+ * @brief Configures the execution-layer analogue input path.
  *
- * @param configuration - a struct containing all the configuration information for during execution
+ * This function validates the requested analogue input configuration and applies
+ * the ADC measurement sample rate required during execution.
  *
- * @returns bool - returns true if configuration is valid, returns false otherwise
+ * At present, both analogue input channels must be enabled. Dynamic channel
+ * enable/disable support has not yet been implemented, so the function returns
+ * false if either channel is disabled.
  *
- * Returns UINT16_MAX if there is a problem in retrieving the selected source adc value.
+ * The ADC hardware setup itself is handled by the hw_adc module. This function
+ * only requests the configured measurement frequency and reports whether that
+ * configuration succeeded.
  *
+ * @param configuration
+ *      Analogue input configuration used during execution. This currently
+ *      includes the channel enable flags and requested ADC sample rate.
+ *
+ * @return true
+ *      The configuration was accepted and the ADC measurement frequency was
+ *      configured successfully.
+ *
+ * @return false
+ *      The configuration is not currently supported, or the ADC measurement
+ *      frequency could not be configured.
  */
 bool EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( AnalogueInputConfiguration_T configuration );
 
 /**
- * @brief Reads Analogue Inputs
+ * @brief Reads and processes the latest analogue input measurements.
  *
- * Note: voltage destinations must be valid as this function does not validate pointers
- * Additionally, this function does not contain any validation of the DMA buffers, DMA peripheral or
- * ADC peripheral, and mearly acts as a low cost way of accessing the DMA buffer and providing
- * conversion. If validation of the peripherals is to be done it will need to be done somewhere
- * outside of this
+ * This function reads the most recent ADC DMA measurements from hw_adc,
+ * averages a fixed power-of-two number of samples, converts the averaged ADC
+ * values into the execution-layer voltage representation, and writes the
+ * results to the supplied output destinations.
  *
- * @param voltage_destination - struct containing the pointers to where the voltages should be
- * stored
+ * The number of samples averaged is controlled by SAMPLES_TAKEN. Since this is
+ * a power of two, the average is calculated using a right shift rather than an
+ * integer division to reduce execution cost in the time-critical path.
  *
+ * This function is intentionally lightweight and performs no pointer,
+ * peripheral, DMA, or configuration validation. The caller must ensure that:
+ *
+ * - voltage_destination.channel_0_voltage is valid
+ * - voltage_destination.channel_1_voltage is valid
+ * - ADC DMA sampling has already been configured and started
+ * - hw_adc contains recent measurements to read
+ *
+ * @param voltage_destination
+ *      Struct containing pointers to the locations where the processed channel
+ *      voltage values should be stored.
  */
 void EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( AnalogueInputVoltages_T voltage_destination );
 
