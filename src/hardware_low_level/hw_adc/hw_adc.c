@@ -67,7 +67,7 @@
 #define ADC_SAMPLE_500_ARR 8999
 #define ADC_SAMPLE_500_PSC 19
 
-#define ADC_CHANNELS_PER_MEASUREMENT ( sizeof( ADCMeasurement_T ) / sizeof( uint16_t ) )
+#define ADC_CHANNELS_PER_MEASUREMENT ( sizeof( ADCMeasurement_T ) / sizeof( adc_dma_buf[0].ch_0 ) )
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -113,6 +113,10 @@ bool HW_ADC_Start_DMA_Measurements( void )
 {
     // TODO: add the ability to set the number of channels to 1 or more rather than default to 2.
     NVIC_DisableIRQ( ADC_IRQn );
+    if ( HW_ADC_ADC_PERIPHERAL == NULL )
+    {
+        return false;
+    }
     HAL_StatusTypeDef status = HAL_ADC_Start_DMA( HW_ADC_ADC_PERIPHERAL, ( uint32_t* )adc_dma_buf,
                                                   ADC_DMA_LEN * ADC_CHANNELS_PER_MEASUREMENT );
 
@@ -274,6 +278,11 @@ uint16_t HW_ADC_Read_Polled_Measurement( ADCSource_T source )
             break;
         default:
             return UINT16_MAX;
+    }
+
+    if ( hadc == NULL )
+    {
+        return UINT16_MAX;
     }
 
     ADC_ChannelConfTypeDef s_config = { 0 };
