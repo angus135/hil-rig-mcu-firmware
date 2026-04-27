@@ -103,18 +103,16 @@ static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
 {
     uint32_t sampled_inputs = 0U;
 
-    DigitalInputChannelConfig_T config = {
-        .channel_0_mode = DIGITAL_INPUT_MODE_3V3,
-        .channel_1_mode = DIGITAL_INPUT_MODE_3V3,
-        .channel_2_mode = DIGITAL_INPUT_MODE_3V3,
-        .channel_3_mode = DIGITAL_INPUT_MODE_3V3,
-        .channel_4_mode = DIGITAL_INPUT_MODE_3V3,
-        .channel_5_mode = DIGITAL_INPUT_MODE_3V3,
-        .channel_6_mode = DIGITAL_INPUT_MODE_3V3,
-        .channel_7_mode = DIGITAL_INPUT_MODE_3V3,
-        .channel_8_mode = DIGITAL_INPUT_MODE_3V3,
-        .channel_9_mode = DIGITAL_INPUT_MODE_3V3
-    };
+    DigitalInputChannelConfig_T config = { .channel_0_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_1_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_2_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_3_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_4_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_5_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_6_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_7_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_8_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_9_mode = DIGITAL_INPUT_MODE_3V3 };
 
     if ( argc != 2 || argv[1] == NULL )
     {

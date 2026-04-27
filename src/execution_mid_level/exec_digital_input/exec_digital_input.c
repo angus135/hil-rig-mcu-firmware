@@ -58,11 +58,10 @@ static const uint8_t DIGITAL_INPUT_PIN_POSITIONS[NUM_DIGITAL_INPUTS] = {
     __builtin_ctz( Digital_Input_6_Pin ), __builtin_ctz( Digital_Input_7_Pin ),
     __builtin_ctz( Digital_Input_8_Pin ), __builtin_ctz( Digital_Input_9_Pin ) };
 
-static uint32_t EXEC_enabled_inputs_pin_mask = Digital_Input_0_Pin | Digital_Input_1_Pin |
-                                            Digital_Input_2_Pin | Digital_Input_3_Pin |
-                                            Digital_Input_4_Pin | Digital_Input_5_Pin |
-                                            Digital_Input_6_Pin | Digital_Input_7_Pin |
-                                            Digital_Input_8_Pin | Digital_Input_9_Pin;
+static uint32_t EXEC_enabled_inputs_pin_mask =
+    Digital_Input_0_Pin | Digital_Input_1_Pin | Digital_Input_2_Pin | Digital_Input_3_Pin
+    | Digital_Input_4_Pin | Digital_Input_5_Pin | Digital_Input_6_Pin | Digital_Input_7_Pin
+    | Digital_Input_8_Pin | Digital_Input_9_Pin;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -96,17 +95,11 @@ void EXEC_DigitalInput_Configure( const DigitalInputChannelConfig_T* channel_con
     }
 
     const DigitalInputMode_T channel_modes[NUM_DIGITAL_INPUTS] = {
-        channel_config->channel_0_mode,
-        channel_config->channel_1_mode,
-        channel_config->channel_2_mode,
-        channel_config->channel_3_mode,
-        channel_config->channel_4_mode,
-        channel_config->channel_5_mode,
-        channel_config->channel_6_mode,
-        channel_config->channel_7_mode,
-        channel_config->channel_8_mode,
-        channel_config->channel_9_mode
-    };
+        channel_config->channel_0_mode, channel_config->channel_1_mode,
+        channel_config->channel_2_mode, channel_config->channel_3_mode,
+        channel_config->channel_4_mode, channel_config->channel_5_mode,
+        channel_config->channel_6_mode, channel_config->channel_7_mode,
+        channel_config->channel_8_mode, channel_config->channel_9_mode };
 
     for ( uint8_t i = 0U; i < NUM_DIGITAL_INPUTS; ++i )
     {
@@ -135,6 +128,5 @@ void EXEC_DigitalInput_SampleAll( uint32_t* dest_addr )
     }
 
     uint32_t port_state = HW_GPIO_Read_All_Digital_Inputs();
-    *dest_addr = port_state & EXEC_enabled_inputs_pin_mask;
+    *dest_addr          = port_state & EXEC_enabled_inputs_pin_mask;
 }
-
