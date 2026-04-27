@@ -1,15 +1,25 @@
 # hw_gpio  
 ## Overview
 
-`hw_gpio` contains the low-level application code for controlling digital output pins.
+`hw_gpio` provides a low-level GPIO abstraction used by higher-level modules.
 
 This module is responsible for:
 
+- Toggling selected board indicator outputs.
+- Reading individual digital input channels.
+- Reading the full digital input port in a single call for efficient sampling.
 - mapping software-defined GPIO output names to physical MCU ports and pins  
 - setting and resetting individual digital outputs  
 - efficiently setting and resetting multiple outputs using port-level operations  
 - grouping GPIO operations by port to minimise hardware access overhead  
 - providing a string-to-enum interface for configurable GPIO control  
+
+How it works:
+
+- `HW_GPIO_Toggle(...)` maps logical GPIO enum values to board pins and calls LL toggle APIs.
+- `HW_GPIO_Read_Pin(...)` maps logical input channels to board pins and returns each pin state.
+- `HW_GPIO_Read_All_Digital_Inputs(...)` returns a raw input-port snapshot, which is then interpreted by execution-level modules.
+- In `TEST_BUILD`, hardware-facing calls are replaced with deterministic/mockable behavior via test mocks.
 
 `hw_gpio` exists to separate GPIO hardware access from higher-level execution logic. In the
 HIL-RIG, digital outputs may need to be updated deterministically and with minimal latency.
@@ -43,10 +53,10 @@ as it significantly reduces execution overhead and improves determinism.
 
 ## Files
 
-| File        | Role |
-|-------------|------|
-| `hw_gpio.c` | Public API implementation and internal helpers |
-| `hw_gpio.h` | Public API header and GPIO definitions |
+| File                      | Role |
+|---------------------------|------|
+| `hw_gpio.c`                | Low-level GPIO implementation and LL wrapper functions |
+| `hw_gpio.h`                | Public low-level GPIO API and enum definitions |
 
 ---
 
