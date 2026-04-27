@@ -49,6 +49,39 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief Computes the auto reloader register (ARR).
+ *
+ * @param freq_hz   the desired frequency of the PWM signal
+ * @param timer_clk_hz the frequency of the timer being used to drive the PWM
+ * @param prescaler the prescaler associated with the driving timer
+ *
+ * @return a uint16_t which can be placed directly in the ARR, (some advanced timers eg TIM1 use 32
+bits)
+ * This function computes the value of the auto reloader register (ARR)
+ * which is needed to achieve the desired frequency
+ * These functions should be use during configuration to prepare
+ * the frequency and duty cycle instructions for quick running
+ */
+uint16_t HW_PWM_GEN_compute_arr( uint32_t freq_hz, uint32_t timer_clk_hz, uint32_t prescaler );
+
+/**
+ * @brief Computes the compare register (CCR) for a given duty cycle.
+ *
+ * @param duty_pm   the desired duty cycle (0>=duty_pm<=1000)
+ * @param arr the value of the auto reloader register ARR associated with this PWM signal
+ *
+ * @return a uint16_t which can be placed directly in the CCR, (some advanced timers eg TIM1 use 32
+bits)
+ * This function computes the value of the compare register (CCR)
+ * which is needed to achieve the desired duty cycle.
+ * These functions should be use during configuration to prepare
+ * the frequency and duty cycle instructions for quick running
+ */
+uint16_t HW_PWM_GEN_compute_ccr( uint16_t duty_pm, uint16_t arr );
+
+
+
 #ifdef __cplusplus
 }
 #endif
