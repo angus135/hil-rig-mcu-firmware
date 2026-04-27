@@ -55,79 +55,6 @@
  */
 
 /**
- * @brief Sets the state of a digital output pin using the underlying GPIO HW
-functions. NOT TO BE USED DURING EXECUTION
- *
- * @param pin   the name of the pin that will be set
- *
- *
- * This function wraps the HW_GPIO_Set_Single_Pin( ... ) function.
- * This is a high level function that does lots of processing to match the pin name to a pin port.
- * As such it should not be used during execution, instead use EXEC_DIGITAL_OUTPUT_Set_Output
- * EXAMPLE: EXEC_DIGITAL_OUTPUT_set_pin( DIGITALoutput1 ) sets DIGITALoutput1
- * If you are struggling with ports the functions exist in hardware_low_level/hw_gpio.c to help
-manage ports
- */
-inline void EXEC_DIGITAL_OUTPUT_set_pin( GPIOOutput_T pin )
-{
-    HW_GPIO_Set_Single_Pin( pin );
-}
-
-/**
- * @brief Sets the state of all digital outputs pins given to it, regardless of their port
-functions. NOT TO BE USED DURING EXECUTION
- *
- * @param pins   list of pin names
- * @param length   the number of pin names in pins
- *
- * This function wraps the HW_GPIO_Set_Many_Pins( ... ) function.
- * It does lots or processing in the background to match the pin names to the pins, and as such
-should not be used during execution
- * EXAMPLE: EXEC_DIGITAL_OUTPUT_set_many_pins({DIGITALoutput1, UART3V3_En}, 2) sets DIGITALoutput1
-and UART3V3_En
- * If you are struggling with ports the functions exist in hardware_low_level/hw_gpio.c to help
-manage ports
- */
-inline void EXEC_DIGITAL_OUTPUT_set_many_pins( GPIOOutput_T* pins, uint16_t length )
-{
-    HW_GPIO_Set_Many_Pins( pins, length );
-}
-
-/**
- * @brief Resets the state of a digital output pin using the underlying GPIO HW
-functions. NOT TO BE USED DURING EXECUTION
- *
- * @param pin   the name of the pin that will be reset
- *
- * This function wraps the HW_GPIO_Reset_Single_Pin( ... ) function.
- * This is a high level function that does lots of processing to match the pin name to a pin port.
- * As such it should not be used during execution, instead use EXEC_DIGITAL_OUTPUT_Reset_Output
- * EXAMPLE: EXEC_DIGITAL_OUTPUT_reset_pin( DIGITALoutput1 ) resets DIGITALoutput1
- * If you are struggling with ports the functions exist in hardware_low_level/hw_gpio.c to help
-manage ports
- */
-inline void EXEC_DIGITAL_OUTPUT_reset_pin( GPIOOutput_T pin )
-{
-    HW_GPIO_Reset_Single_Pin( pin );
-}
-
-/**
- * @brief Resets the state of many digital output pins given to it, regardless of their port.
-THIS SHOULD NOT BE USED DURING EXECUTION
- *
- * @param pins   list of pin names
- * @param length   the number of pin names in pins
- *
- * This function wraps the HW_GPIO_Reset_Many_Pins( ... ) function.
- * similar examples to EXEC_DIGITAL_OUTPUT_set_many_pins()
- * functions exist in hardware_low_level/hw_gpio.c to help manage ports
- */
-inline void EXEC_DIGITAL_OUTPUT_reset_many_pins( GPIOOutput_T* pins, uint16_t length )
-{
-    HW_GPIO_Reset_Many_Pins( pins, length );
-}
-
-/**
  * @brief combines many GPIO's (on the same port) into one pin mask.
  *
  * @param gpio_names   an array of GPIO pin names, all of which are on the same port
@@ -147,7 +74,7 @@ if (p.pin_mask == 0xFFFF0000){
 }
  * mocked using GoogleMock.
  */
-inline DigitalOutputPinmask_T DIGITAL_OUTPUT_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names,
+inline DigitalOutputPinmask_T EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names,
                                                                      uint8_t       length )
 {
     return HW_GPIO_Combine_Port_Pin_Masks( gpio_names, length );
