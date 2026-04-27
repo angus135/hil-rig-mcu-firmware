@@ -43,7 +43,7 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
- #define DIGITAL_INPUTS_PORT Digital_Input_0_GPIO_Port
+#define DIGITAL_INPUTS_PORT Digital_Input_0_GPIO_Port
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures

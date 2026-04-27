@@ -25,7 +25,7 @@ extern "C"
 #include "hw_gpio.h"
 #include <stdint.h>
 
-//NOLINTBEGIN
+// NOLINTBEGIN
 
 /* ---- Fake GPIO port type ---- */
 typedef struct
@@ -122,7 +122,7 @@ static GPIO_PortMock GPIOH_mock = { .id = 0x11 };
 #define Digital_Input_8_GPIO_Port GPIOF
 #define Digital_Input_9_GPIO_Port GPIOF
 
-//NOLINTEND
+// NOLINTEND
 
 #ifdef __cplusplus
 }
