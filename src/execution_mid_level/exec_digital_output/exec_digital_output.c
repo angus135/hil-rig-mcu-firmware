@@ -16,6 +16,7 @@
  */
 
 #include "exec_digital_output.h"
+#include "hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -53,6 +54,67 @@
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief configure the gpio outputs.
+ *
+ * @param gpio_names   an array of GPIO pin names used in the design, all of which are on the same
+port
+ * @param length       the nubmer of GPIOOutput_T in gpio_names
+ * @param modes         the modes of operation corresponding to the pins
+ *
+ * This function configures all of the digital outputs, leveraging the output expander
+ */
+bool EXEC_DIGITAL_Output_Configuration( GPIOOutput_T* gpio_names, uint16_t length,
+                                        OutputMode_T* modes )
+{
+    // Set the modes of all of the used output pins
+    if ( length != MAX_NUM_DIGITAL_OUTPUT_PINS )
+    {
+        for ( int j = 0; j < MAX_NUM_DIGITAL_OUTPUT_PINS; j++ )
+        {
+            // Call output expander to switch off all GPIO output pins
+        }
+        return false;
+    }
+    for ( int i = 0; i < MAX_NUM_DIGITAL_OUTPUT_PINS; i++ )
+    {
+        if ( modes[i] == M3V3 )
+        {
+            return false;  // TO DO- remove this line
+            // Call output expander
+        }
+        else if ( modes[i] == M5V )
+        {
+            return false;  // TO DO- remove this line
+            // Call output expander
+        }
+        else if ( modes[i] == M12V )
+        {
+            return false;  // TO DO- remove this line
+            // Call output expander
+        }
+        else if ( modes[i] == M24V )
+        {
+            return false;  // TO DO- remove this line
+            // Call output expander
+        }
+        else if ( modes[i] == MOFF )
+        {
+            return false;  // TO DO- remove this line
+            // Call output expander
+        }
+        else
+        {
+            for ( int j = 0; j < MAX_NUM_DIGITAL_OUTPUT_PINS; j++ )
+            {
+                // Call output expander to switch off all GPIO output pins
+            }
+            return false;
+        }
+    }
+    return true;
+}
 
 /**
  * @brief combines many GPIO's (on the same port) into one pin mask.
