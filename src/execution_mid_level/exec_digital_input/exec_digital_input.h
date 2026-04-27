@@ -67,8 +67,24 @@ typedef struct DigitalInputChannelConfig_T
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief Configures digital input channel modes for execution-time sampling.
+ *
+ * @param channel_config  Pointer to per-channel mode configuration.
+ *
+ * This function stores which digital input channels are enabled or disabled
+ * based on the provided mode for each channel.
+ */
 void EXEC_DigitalInput_Configure( const DigitalInputChannelConfig_T* channel_config );
 
+/**
+ * @brief Samples all configured digital inputs.
+ *
+ * @param dest_addr  Pointer to destination for the masked input word.
+ *
+ * This function reads the digital input port state and writes back a masked
+ * result containing only channels currently enabled by configuration.
+ */
 void EXEC_DigitalInput_SampleAll( uint32_t* dest_addr );
 
 #ifdef __cplusplus
