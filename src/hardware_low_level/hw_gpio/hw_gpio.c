@@ -595,13 +595,13 @@ DigitalOutputPinmask_T HW_GPIO_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names,
 /** 
  * @brief Reads the state of all digital inputs using the underlying GPIO LL library.
  *
- * @param input  The digital input channel to read
+ * @param input  The GPIO input pin to read
  *
  * This function wraps the LL_GPIO_IsInputPinSet( ... ) function provided by the
  * LL layer. It is a convenient seam for unit testing where the LL call is
  * mocked using GoogleMock.
  */
-inline bool HW_GPIO_Read_Digital_Input( DigitalInput_T input )
+inline bool HW_GPIO_Read_Pin( GPIOInput_T input )
 {
 #ifdef TEST_BUILD
     // For unit testing, always return false or mock as needed

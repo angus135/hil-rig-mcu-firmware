@@ -57,7 +57,7 @@ void EXEC_DigitalInput_Configure( const DigitalInputMode_T* modes, uint8_t num_c
 
 void EXEC_DigitalInput_SampleAll( bool* dest_buffer );
 
-bool EXEC_DigitalInput_Sample( DigitalInput_T input );
+bool EXEC_DigitalInput_Sample( GPIOInput_T input );
 
 #ifdef __cplusplus
 }

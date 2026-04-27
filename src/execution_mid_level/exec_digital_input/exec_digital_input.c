@@ -72,8 +72,8 @@ void EXEC_DigitalInput_SampleAll( bool* dest_buffer )
     HW_GPIO_Read_All_Digital_Inputs( dest_buffer );
 }
 
-bool EXEC_DigitalInput_Sample( DigitalInput_T input )
+bool EXEC_DigitalInput_Sample( GPIOInput_T input )
 {
     // Call the low-level function to read the specified digital input
-    return HW_GPIO_Read_Digital_Input( input );
+    return HW_GPIO_Read_Pin( input );
 }

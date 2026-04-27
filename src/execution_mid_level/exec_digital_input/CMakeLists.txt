@@ -39,11 +39,11 @@ option(EXEC_DIGITAL_INPUT_ENABLE_TESTS "Build tests for exec_digital_input modul
 
 if(EXEC_DIGITAL_INPUT_ENABLE_TESTS AND BUILD_TESTING)
 
-    add_executable(exec_DigitalInput_Tests
+    add_executable(exec_GPIOInput_Tests
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_exec_digital_input.cpp
     )
 
-    target_link_libraries(exec_DigitalInput_Tests
+    target_link_libraries(exec_GPIOInput_Tests
         PRIVATE
             exec_digital_input
             gtest
@@ -51,12 +51,12 @@ if(EXEC_DIGITAL_INPUT_ENABLE_TESTS AND BUILD_TESTING)
             gmock
     )
 
-    target_include_directories(exec_DigitalInput_Tests
+    target_include_directories(exec_GPIOInput_Tests
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
 
-    add_test(NAME exec_DigitalInput_Tests COMMAND exec_DigitalInput_Tests)
+    add_test(NAME exec_GPIOInput_Tests COMMAND exec_GPIOInput_Tests)
 
 endif()

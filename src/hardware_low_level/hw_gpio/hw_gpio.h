@@ -98,7 +98,8 @@ static const GPIO_Name_Map gpio_name_map[] = {
     { "LD3", LD3 },
 };
 
-typedef enum DigitalInput_T
+// If needed, more specific input types can be added here
+typedef enum GPIOInput_T
 {
     DIGITAL_INPUT_CH_0,
     DIGITAL_INPUT_CH_1,
@@ -110,7 +111,7 @@ typedef enum DigitalInput_T
     DIGITAL_INPUT_CH_7,
     DIGITAL_INPUT_CH_8,
     DIGITAL_INPUT_CH_9,
-} DigitalInput_T;
+} GPIOInput_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -227,7 +228,7 @@ void HW_GPIO_Read_All_Digital_Inputs( bool* input_states );
  * LL layer. It is a convenient seam for unit testing where the LL call is
  * mocked using GoogleMock.
  */
-bool HW_GPIO_Read_Digital_Input( DigitalInput_T input );
+bool HW_GPIO_Read_Pin( GPIOInput_T input );
 
 #ifdef __cplusplus
 }
