@@ -27,7 +27,6 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 #include "hw_gpio.h"
-#include <stdint.h>
 #include <stdbool.h>
 
 /**-----------------------------------------------------------------------------
@@ -42,22 +41,35 @@ extern "C"
 
 typedef enum DigitalInputMode_T
 {
+    DIGITAL_INPUT_MODE_DISABLED,
     DIGITAL_INPUT_MODE_3V3,
     DIGITAL_INPUT_MODE_5V,
     DIGITAL_INPUT_MODE_12V,
     DIGITAL_INPUT_MODE_24V
 } DigitalInputMode_T;
 
+typedef struct DigitalInputChannelConfig_T
+{
+    DigitalInputMode_T channel_0_mode;
+    DigitalInputMode_T channel_1_mode;
+    DigitalInputMode_T channel_2_mode;
+    DigitalInputMode_T channel_3_mode;
+    DigitalInputMode_T channel_4_mode;
+    DigitalInputMode_T channel_5_mode;
+    DigitalInputMode_T channel_6_mode;
+    DigitalInputMode_T channel_7_mode;
+    DigitalInputMode_T channel_8_mode;
+    DigitalInputMode_T channel_9_mode;
+
+} DigitalInputChannelConfig_T;
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
 
-void EXEC_DigitalInput_Configure( const DigitalInputMode_T* modes, uint8_t num_channels );
+void EXEC_DigitalInput_Configure( const DigitalInputChannelConfig_T* channel_config );
 
-void EXEC_DigitalInput_SampleAll( bool* dest_buffer );
-
-bool EXEC_DigitalInput_Sample( GPIOInput_T input );
+void EXEC_DigitalInput_SampleAll( uint32_t* dest_addr );
 
 #ifdef __cplusplus
 }

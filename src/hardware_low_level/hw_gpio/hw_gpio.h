@@ -211,13 +211,11 @@ inline void HW_GPIO_Reset_Output( uint32_t pin_mask );
 /** 
 * @brief Reads the state of all digital inputs using the underlying GPIO LL library.
  *
- * @param input_states   Array to store the states of the digital inputs
- *
  * This function wraps the LL_GPIO_ReadInputPort( ... )/LL_GPIO_IsInputPinSet( ... ) function
  * provided by the LL layer. It is a convenient seam for unit testing where the LL call is mocked
  * using GoogleMock.
  */
-void HW_GPIO_Read_All_Digital_Inputs( bool* input_states );
+uint32_t HW_GPIO_Read_All_Digital_Inputs( void );
 
 /**
  * @brief Reads the state of all digital inputs using the underlying GPIO LL library.

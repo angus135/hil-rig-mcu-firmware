@@ -43,8 +43,7 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
-#define NUM_DIGITAL_INPUTS 10
-#define DIGITAL_INPUTS_PORT Digital_Input_0_GPIO_Port
+ #define DIGITAL_INPUTS_PORT Digital_Input_0_GPIO_Port
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -76,18 +75,6 @@ static GPIO_TypeDef* gpio_ports[] = {
  *------------------------------------------------------------------------------
  */
 
-// Digital input pins: PF3, PF4, PF5, PF7, PF10, PF11, PF12, PF13, PF14, PF15
-// static const uint8_t DIGITAL_INPUT_PIN_MAP[NUM_DIGITAL_INPUTS] = { 3, 4, 5, 7, 10, 11, 12, 13,
-// 14, 15 };
-// static bool        s_all_digital_inputs_same_port = false;
-// static const void* s_digital_inputs_port          = NULL;
-
-static const uint8_t DIGITAL_INPUT_PIN_POSITIONS[NUM_DIGITAL_INPUTS] = {
-    __builtin_ctz( Digital_Input_0_Pin ), __builtin_ctz( Digital_Input_1_Pin ),
-    __builtin_ctz( Digital_Input_2_Pin ), __builtin_ctz( Digital_Input_3_Pin ),
-    __builtin_ctz( Digital_Input_4_Pin ), __builtin_ctz( Digital_Input_5_Pin ),
-    __builtin_ctz( Digital_Input_6_Pin ), __builtin_ctz( Digital_Input_7_Pin ),
-    __builtin_ctz( Digital_Input_8_Pin ), __builtin_ctz( Digital_Input_9_Pin ) };
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -392,24 +379,17 @@ inline void HW_GPIO_Set_Output( uint32_t pin_mask )
 /**
  * @brief Reads the state of all digital inputs using the underlying GPIO LL library.
  *
- * @param input_states   Array to store the states of the digital inputs
- *
  * This function wraps the LL_GPIO_ReadInputPort( ... )/LL_GPIO_IsInputPinSet( ... ) function
  * provided by the LL layer. It is a convenient seam for unit testing where the LL call is mocked
  * using GoogleMock.
  */
-inline void HW_GPIO_Read_All_Digital_Inputs( bool* input_states )
+uint32_t HW_GPIO_Read_All_Digital_Inputs( void )
 {
 #ifdef TEST_BUILD
-    // For unit testing, just set all to false or mock as needed
-    for ( uint8_t i = 0; i < NUM_DIGITAL_INPUTS; ++i )
-    {
-        input_states[i] = false;
-    }
+    // For unit testing, return a deterministic default value.
+    return 0U;
 #else
-    uint32_t port_state = LL_GPIO_ReadInputPort( DIGITAL_INPUTS_PORT );
-    for ( uint8_t i = 0; i < NUM_DIGITAL_INPUTS; ++i )
-        input_states[i] = ( port_state >> DIGITAL_INPUT_PIN_POSITIONS[i] ) & 0x1;
+    return LL_GPIO_ReadInputPort( DIGITAL_INPUTS_PORT );
 #endif
 }
 
