@@ -44,11 +44,10 @@ typedef struct GPIOPortPacket_T
     uint32_t      pin_mask;
 } GPIOPortPacket_T;
 
-GPIO_TypeDef* gpio_ports[] = {
+static GPIO_TypeDef* gpio_ports[] = {
     GPIOA, GPIOB, GPIOC, GPIOD, GPIOE, GPIOF, GPIOG, GPIOH,
 };
 
-#define NUM_GPIO_PORTS ( sizeof( gpio_ports ) / sizeof( gpio_ports[0] ) )
 #define MAX_NUM_GPIO_PORTS 8
 #ifndef TEST_BUILD
 #define DIGITAL_OUTPUT_PORT ( GPIO_TypeDef* )GPIOG
@@ -71,6 +70,11 @@ GPIO_TypeDef* gpio_ports[] = {
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
+ *------------------------------------------------------------------------------
+ */
+
+/**-----------------------------------------------------------------------------
+ *  Configuration/pin-mapping Private Function Definitions
  *------------------------------------------------------------------------------
  */
 
@@ -171,12 +175,12 @@ for (int i=0; i<8; i++){
 }
 HW_GPIO_Set_To_Port(p.gpiox, p.pin_mask)
  */
-int HW_GPIO_split_about_ports( GPIOOutput_T* gpio_names, uint16_t length,
-                               GPIOPortPacket_T* destination )
+uint16_t HW_GPIO_split_about_ports( GPIOOutput_T* gpio_names, uint16_t length,
+                                    GPIOPortPacket_T* destination )
 {
     GPIOPortPacket_T port_packet;
     GPIOPortPacket_T temp[MAX_NUM_GPIO_PORTS];
-    int              counter = 0;
+    uint16_t         counter = 0;
     // reset data at destination
     for ( int j = 0; j < MAX_NUM_GPIO_PORTS; j++ )
     {
@@ -208,6 +212,11 @@ int HW_GPIO_split_about_ports( GPIOOutput_T* gpio_names, uint16_t length,
     }
     return counter;
 }
+
+/**-----------------------------------------------------------------------------
+ *  pin_writing Private Function Definitions
+ *------------------------------------------------------------------------------
+ */
 
 /**
  * @brief Sets the state of all digital outputs in a GPIO Port using the underlying GPIO LL library.
@@ -317,6 +326,11 @@ void HW_GPIO_Toggle( GPIO_T gpio )
 #endif
 }
 
+/**-----------------------------------------------------------------------------
+ *  Pin-Writing Public Function Definitions
+ *------------------------------------------------------------------------------
+ */
+
 /**
  * @brief Sets the state of all digital outputs in a GPIO Port using the underlying GPIO LL library.
  *
@@ -382,29 +396,6 @@ inline void HW_GPIO_Reset_Output( uint32_t pin_mask )
     // The lower 16 bits of the pin_mask bit 0 = pin0, bit 1 = pin1 etc
     LL_GPIO_ResetOutputPin( DIGITAL_OUTPUT_PORT, pin_mask );
 #endif
-}
-
-/**
- * @brief Converts a string to a digital pin name
- *
- * @param str   the input string
- * @param out   a space to write the associated pin name enum
- *
- * @return returns true if a match was found and false otherwise
- * This function is designed to split split pins into groups based on their ports
- * because we can write to an entire port at once this increases speed.
- */
-bool HW_GPIO_StringToEnum( const char* str, GPIOOutput_T* out )
-{
-    for ( size_t i = 0; i < sizeof( gpio_name_map ) / sizeof( gpio_name_map[0] ); i++ )
-    {
-        if ( strcmp( str, gpio_name_map[i].name ) == 0 )
-        {
-            *out = gpio_name_map[i].value;
-            return true;
-        }
-    }
-    return false;
 }
 
 /**
@@ -484,6 +475,34 @@ void HW_GPIO_Reset_Many_Pins( GPIOOutput_T* pins, uint16_t length )
     }
 #endif
     ( void )pins;  // If testing then do nothing
+}
+
+/**-----------------------------------------------------------------------------
+ *  Configuration/pin-mapping Public Function Definitions
+ *------------------------------------------------------------------------------
+ */
+
+/**
+ * @brief Converts a string to a digital pin name
+ *
+ * @param str   the input string
+ * @param out   a space to write the associated pin name enum
+ *
+ * @return returns true if a match was found and false otherwise
+ * This function is designed to split split pins into groups based on their ports
+ * because we can write to an entire port at once this increases speed.
+ */
+bool HW_GPIO_StringToEnum( const char* str, GPIOOutput_T* out )
+{
+    for ( size_t i = 0; i < sizeof( gpio_name_map ) / sizeof( gpio_name_map[0] ); i++ )
+    {
+        if ( strcmp( str, gpio_name_map[i].name ) == 0 )
+        {
+            *out = gpio_name_map[i].value;
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
