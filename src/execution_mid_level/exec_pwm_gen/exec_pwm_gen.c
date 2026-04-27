@@ -1,6 +1,6 @@
 /******************************************************************************
  *  File:       exec_pwm_gen.c
- *  Author:     Angus Corr
+ *  Author:     Tim Vogelsang
  *  Created:    25-Mar-2026
  *
  *  Description:
