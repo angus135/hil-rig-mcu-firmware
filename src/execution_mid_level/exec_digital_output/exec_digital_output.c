@@ -139,6 +139,7 @@ if (p.pin_mask == 0xFFFF0000){
 inline DigitalOutputPinmask_T EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names,
                                                                           uint8_t       length )
 {
+    // TODO: What is this?
     return HW_GPIO_Combine_Port_Pin_Masks( gpio_names, length );
 }
 
