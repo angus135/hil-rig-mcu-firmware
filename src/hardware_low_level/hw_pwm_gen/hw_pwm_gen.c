@@ -19,12 +19,12 @@
 #ifndef TEST_BUILD
 #include "gpio.h"
 #include "stm32f4xx_ll_gpio.h"
+#include "tim.h"
 #endif
 
 #include "hw_pwm_gen.h"
 #include <stdint.h>
 #include <stdbool.h>
-#include "tim.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -35,6 +35,8 @@
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+
+typedef enum 
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -67,10 +69,11 @@
  * This function is designed to be very fast and should be implemented in the execution phase
  */
 #ifndef TEST_BUILD
-inline void HW_PWM_GEN_set_pwm_direct( uint32_t arr, uint32_t ccr, TIM_TypeDef* tim )
+inline void HW_PWM_GEN_set_pwm_direct( uint16_t arr, uint16_t ccr, uint16_t psc, TIM_TypeDef* tim )
 {
     tim->CCER = ccr;
     tim->ARR  = arr;
+    tim->PSC = psc;
     return;
 }
 #endif
@@ -79,6 +82,37 @@ inline void HW_PWM_GEN_set_pwm_direct( uint32_t arr, uint32_t ccr, TIM_TypeDef* 
  *  Configure Stage Public Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Configures the voltage levels for the PWM output.
+ *
+ * @param ch1_voltage   the desired frequency of the PWM signal
+ * @param timer_clk_hz the frequency of the timer being used to drive the PWM
+ *
+ * @return a uint16_t which can be placed directly in the PSC,
+ * This function computes the value of the prescaler (PSC)
+ * which is needed to achieve the desired frequency
+ * These functions should be use during configuration to prepare
+ * the frequency and duty cycle instructions for quick running
+ */
+uint16_t HW_PWM_GEN_configure( uint16_t freq_hz, uint16_t timer_clk_hz )
+{
+    uint16_t prescaler_p1 = 1;  // the prescaler plus 1
+    uint16_t temp         = ( timer_clk_hz / ( freq_hz * ( prescaler_p1 ) ) ) - 1;
+    // Inverted Binary search to find prescaler value
+    while ( temp > 65535 )
+    {
+        prescaler_p1 = prescaler_p1 * 2;
+        temp         = ( timer_clk_hz / ( freq_hz * ( prescaler_p1 ) ) ) - 1;
+    }
+    while ( temp < 65535 )
+    {
+        prescaler_p1 -= 1;
+        temp = ( timer_clk_hz / ( freq_hz * ( prescaler_p1 ) ) ) - 1;
+    }
+    // above -1 loop overcompensated by 1 so we plus 1
+    return prescaler_p1;
+}
 
 /**
  * @brief Computes the prescaler register (PSC).
