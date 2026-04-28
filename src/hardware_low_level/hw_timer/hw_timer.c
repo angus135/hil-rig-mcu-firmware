@@ -26,7 +26,6 @@
 #include <stdbool.h>
 #include "hw_timer.h"
 #include <stdint.h>
-#include "execution_manager.h"  // Include for EXECUTION_MANAGER_Process_From_ISR()
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
