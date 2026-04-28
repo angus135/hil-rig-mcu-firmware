@@ -278,9 +278,9 @@ HwPWMCaptureResult_T HW_PWM_Capture_Peek_Result( HwPWMCaptureChannel_T channel )
     HwPWMCaptureResult_T          result  = { 0 };
 
     /*
-     * The period capture flag is used as the "new complete measurement" indicator.
-     * Direct SR access is used because the period flag maps to different capture
-     * channels depending on the timer IOC configuration.
+     * The period capture flag indicates a new complete PWM measurement.
+     * Direct SR access is used to keep the implementation table-driven, since
+     * the period flag (CC1 or CC2) depends on the IOC configuration.
      */
     if ( ( context->timer->SR & context->period_capture_flag ) == 0U )
     {
@@ -297,10 +297,11 @@ HwPWMCaptureResult_T HW_PWM_Capture_Peek_Result( HwPWMCaptureChannel_T channel )
 void HW_PWM_Capture_Consume_Result( HwPWMCaptureChannel_T channel )
 {
     HwPWMCaptureChannelContext_T* context = &hw_pwm_capture_channels[channel];
+
     /*
-     * The period capture flag is used as the "new complete measurement" indicator.
-     * Direct SR access is used because the period flag maps to different capture
-     * channels depending on the timer IOC configuration.
+     * The period capture flag indicates a new complete PWM measurement.
+     * Direct SR access is used to keep the implementation table-driven, since
+     * the period flag (CC1 or CC2) depends on the IOC configuration.
      */
     context->timer->SR &= ~( context->period_capture_flag );
 }
