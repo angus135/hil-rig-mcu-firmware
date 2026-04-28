@@ -53,6 +53,7 @@
 #define HW_PWM_CAPTURE_CH_1_INSTANCE TIM2
 #define HW_PWM_CAPTURE_CH_1_PERIOD_CCR CCR1
 #define HW_PWM_CAPTURE_CH_1_HIGH_CCR CCR2
+#define HW_PWM_CAPTURE_CH_1_PERIOD_FLAG TIM_SR_CC1IF
 
 /*
  * PWM capture channel 2 timer mapping.
@@ -65,6 +66,7 @@
 #define HW_PWM_CAPTURE_CH_2_INSTANCE TIM5
 #define HW_PWM_CAPTURE_CH_2_PERIOD_CCR CCR2
 #define HW_PWM_CAPTURE_CH_2_HIGH_CCR CCR1
+#define HW_PWM_CAPTURE_CH_2_PERIOD_FLAG TIM_SR_CC2IF
 
 /*
  * PWM capture timers run at full timer resolution.
@@ -95,6 +97,9 @@ typedef struct
     volatile uint32_t* period_ccr;
     volatile uint32_t* high_ccr;
 
+    uint32_t period_capture_flag;  // SR flag bit corresponding to a new period capture event for
+                                   // this channel
+
     HwPWMCaptureConfig_T config;
     bool                 is_configured;
 } HwPWMCaptureChannelContext_T;
@@ -117,18 +122,20 @@ typedef struct
  */
 static HwPWMCaptureChannelContext_T hw_pwm_capture_channels[PWM_CAPTURE_CHANNEL_COUNT] = {
     {
-        .timer         = HW_PWM_CAPTURE_CH_1_INSTANCE,
-        .timer_role    = PWM_CAPTURE_TIMER_CH1,
-        .period_ccr    = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_PERIOD_CCR,
-        .high_ccr      = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_HIGH_CCR,
-        .is_configured = false,
+        .timer               = HW_PWM_CAPTURE_CH_1_INSTANCE,
+        .timer_role          = PWM_CAPTURE_TIMER_CH1,
+        .period_ccr          = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_PERIOD_CCR,
+        .high_ccr            = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_HIGH_CCR,
+        .period_capture_flag = HW_PWM_CAPTURE_CH_1_PERIOD_FLAG,
+        .is_configured       = false,
     },
     {
-        .timer         = HW_PWM_CAPTURE_CH_2_INSTANCE,
-        .timer_role    = PWM_CAPTURE_TIMER_CH2,
-        .period_ccr    = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_PERIOD_CCR,
-        .high_ccr      = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_HIGH_CCR,
-        .is_configured = false,
+        .timer               = HW_PWM_CAPTURE_CH_2_INSTANCE,
+        .timer_role          = PWM_CAPTURE_TIMER_CH2,
+        .period_ccr          = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_PERIOD_CCR,
+        .high_ccr            = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_HIGH_CCR,
+        .period_capture_flag = HW_PWM_CAPTURE_CH_2_PERIOD_FLAG,
+        .is_configured       = false,
     },
 };
 
@@ -265,20 +272,35 @@ bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T       channel,
     return true;
 }
 
-void HW_PWM_Capture_Get_Result( HwPWMCaptureChannel_T channel, HwPWMCaptureResult_T* result )
+HwPWMCaptureResult_T HW_PWM_Capture_Peek_Result( HwPWMCaptureChannel_T channel )
 {
-    /*
-     * Contract:
-     * - channel must be valid
-     * - result must not be NULL
-     * - channel must already be configured and enabled
-     *
-     * This function intentionally performs no runtime validation because it is
-     * expected to be called from the deterministic execution path.
-     */
-
     HwPWMCaptureChannelContext_T* context = &hw_pwm_capture_channels[channel];
+    HwPWMCaptureResult_T          result  = { 0 };
 
-    result->period_ticks = context->period_ccr;
-    result->high_ticks   = context->high_ccr;
+    /*
+     * The period capture flag is used as the "new complete measurement" indicator.
+     * Direct SR access is used because the period flag maps to different capture
+     * channels depending on the timer IOC configuration.
+     */
+    if ( ( context->timer->SR & context->period_capture_flag ) == 0U )
+    {
+        return result;
+    }
+
+    result.has_new_data = true;
+    result.period_ticks = context->period_ccr;
+    result.high_ticks   = context->high_ccr;
+
+    return result;
+}
+
+void HW_PWM_Capture_Consume_Result( HwPWMCaptureChannel_T channel )
+{
+    HwPWMCaptureChannelContext_T* context = &hw_pwm_capture_channels[channel];
+    /*
+     * The period capture flag is used as the "new complete measurement" indicator.
+     * Direct SR access is used because the period flag maps to different capture
+     * channels depending on the timer IOC configuration.
+     */
+    context->timer->SR &= ~( context->period_capture_flag );
 }
