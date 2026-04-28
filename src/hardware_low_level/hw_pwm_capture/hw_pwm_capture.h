@@ -159,7 +159,11 @@ bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T       channel,
  * high-time capture registers.
  *
  * If no new measurement is available, returns a zero-initialised result with
- * has_new_data set to false.
+ * has_new_data set to false and pointer fields set to NULL.
+ *
+ * @note A new result is only available once per completed PWM period. For slow
+ * signals, this function may return has_new_data = false for multiple execution
+ * ticks between capture events. This is expected behaviour.
  *
  * @param channel Logical PWM capture channel to inspect.
  *
