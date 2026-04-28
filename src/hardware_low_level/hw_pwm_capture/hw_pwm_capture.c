@@ -323,6 +323,10 @@ void HW_PWM_Capture_Consume_Result( HwPWMCaptureChannel_T channel )
      * The period capture flag indicates a new complete PWM measurement.
      * Direct SR access is used to keep the implementation table-driven, since
      * the period flag (CC1 or CC2) depends on the IOC configuration.
+     *
+     * TIM status flags are cleared by writing 0 to the target flag bit.
+     * Avoid read-modify-write here because hardware may set another flag between
+     * the read and write, which could cause an event to be lost.
      */
-    context->timer->SR &= ~( context->period_capture_flag );
+    context->timer->SR = ~( context->period_capture_flag );
 }

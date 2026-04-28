@@ -43,10 +43,14 @@
 #define PWM_CAPTURE_TIMER_CH1_HANDLE htim2
 #define PWM_CAPTURE_TIMER_CH1_PRIMARY_CHANNEL TIM_CHANNEL_1
 #define PWM_CAPTURE_TIMER_CH1_SECONDARY_CHANNEL TIM_CHANNEL_2
+#define PWM_CAPTURE_TIMER_CH1_PRIMARY_FLAG TIM_FLAG_CC1
+#define PWM_CAPTURE_TIMER_CH1_SECONDARY_FLAG TIM_FLAG_CC2
 
 #define PWM_CAPTURE_TIMER_CH2_HANDLE htim5
-#define PWM_CAPTURE_TIMER_CH2_PRIMARY_CHANNEL TIM_CHANNEL_1
-#define PWM_CAPTURE_TIMER_CH2_SECONDARY_CHANNEL TIM_CHANNEL_2
+#define PWM_CAPTURE_TIMER_CH2_PRIMARY_CHANNEL TIM_CHANNEL_2
+#define PWM_CAPTURE_TIMER_CH2_SECONDARY_CHANNEL TIM_CHANNEL_1
+#define PWM_CAPTURE_TIMER_CH2_PRIMARY_FLAG TIM_FLAG_CC2
+#define PWM_CAPTURE_TIMER_CH2_SECONDARY_FLAG TIM_FLAG_CC1
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -176,21 +180,29 @@ void HW_TIMER_Start_Timer( Timer_T timer )
             HAL_TIM_Base_Start( &ANALOGUE_INPUT_TIMER_HANDLE );
             break;
         case PWM_CAPTURE_TIMER_CH1:
-            // Reset counter to ensure consistent capture timing
-            __HAL_TIM_SET_COUNTER( &PWM_CAPTURE_TIMER_CH1_HANDLE, 0u );
-            // Start input capture on both channels for PWM capture
+            __HAL_TIM_SET_COUNTER( &PWM_CAPTURE_TIMER_CH1_HANDLE, 0U );
+
+            __HAL_TIM_CLEAR_FLAG( &PWM_CAPTURE_TIMER_CH1_HANDLE,
+                                  PWM_CAPTURE_TIMER_CH1_PRIMARY_FLAG
+                                      | PWM_CAPTURE_TIMER_CH1_SECONDARY_FLAG );
+
             HAL_TIM_IC_Start( &PWM_CAPTURE_TIMER_CH1_HANDLE,
                               PWM_CAPTURE_TIMER_CH1_PRIMARY_CHANNEL );
+
             HAL_TIM_IC_Start( &PWM_CAPTURE_TIMER_CH1_HANDLE,
                               PWM_CAPTURE_TIMER_CH1_SECONDARY_CHANNEL );
             break;
 
         case PWM_CAPTURE_TIMER_CH2:
-            // Reset counter to ensure consistent capture timing
-            __HAL_TIM_SET_COUNTER( &PWM_CAPTURE_TIMER_CH2_HANDLE, 0u );
-            // Start input capture on both channels for PWM capture
+            __HAL_TIM_SET_COUNTER( &PWM_CAPTURE_TIMER_CH2_HANDLE, 0U );
+
+            __HAL_TIM_CLEAR_FLAG( &PWM_CAPTURE_TIMER_CH2_HANDLE,
+                                  PWM_CAPTURE_TIMER_CH2_PRIMARY_FLAG
+                                      | PWM_CAPTURE_TIMER_CH2_SECONDARY_FLAG );
+
             HAL_TIM_IC_Start( &PWM_CAPTURE_TIMER_CH2_HANDLE,
                               PWM_CAPTURE_TIMER_CH2_PRIMARY_CHANNEL );
+
             HAL_TIM_IC_Start( &PWM_CAPTURE_TIMER_CH2_HANDLE,
                               PWM_CAPTURE_TIMER_CH2_SECONDARY_CHANNEL );
             break;
@@ -226,6 +238,9 @@ void HW_TIMER_Stop_Timer( Timer_T timer )
             HAL_TIM_IC_Stop( &PWM_CAPTURE_TIMER_CH1_HANDLE, PWM_CAPTURE_TIMER_CH1_PRIMARY_CHANNEL );
             HAL_TIM_IC_Stop( &PWM_CAPTURE_TIMER_CH1_HANDLE,
                              PWM_CAPTURE_TIMER_CH1_SECONDARY_CHANNEL );
+            __HAL_TIM_CLEAR_FLAG( &PWM_CAPTURE_TIMER_CH1_HANDLE,
+                                  PWM_CAPTURE_TIMER_CH1_PRIMARY_FLAG
+                                      | PWM_CAPTURE_TIMER_CH1_SECONDARY_FLAG );
             // Reset counter to ensure consistent capture timing when restarted
             __HAL_TIM_SET_COUNTER( &PWM_CAPTURE_TIMER_CH1_HANDLE, 0u );
             break;
@@ -235,6 +250,9 @@ void HW_TIMER_Stop_Timer( Timer_T timer )
             HAL_TIM_IC_Stop( &PWM_CAPTURE_TIMER_CH2_HANDLE, PWM_CAPTURE_TIMER_CH2_PRIMARY_CHANNEL );
             HAL_TIM_IC_Stop( &PWM_CAPTURE_TIMER_CH2_HANDLE,
                              PWM_CAPTURE_TIMER_CH2_SECONDARY_CHANNEL );
+            __HAL_TIM_CLEAR_FLAG( &PWM_CAPTURE_TIMER_CH2_HANDLE,
+                                  PWM_CAPTURE_TIMER_CH2_PRIMARY_FLAG
+                                      | PWM_CAPTURE_TIMER_CH2_SECONDARY_FLAG );
             // Reset counter to ensure consistent capture timing when restarted
             __HAL_TIM_SET_COUNTER( &PWM_CAPTURE_TIMER_CH2_HANDLE, 0u );
             break;
