@@ -27,7 +27,7 @@
 #define ARR_100HZ 59999u
 #define PSC_1KHZ 29u
 #define ARR_1KHZ 5999u
-#define PSC_10KHZ 29
+#define PSC_10KHZ 29u
 #define ARR_10KHZ 599u
 
 /**-----------------------------------------------------------------------------
