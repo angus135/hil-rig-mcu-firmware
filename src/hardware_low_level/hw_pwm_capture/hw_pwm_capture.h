@@ -1,13 +1,37 @@
 /******************************************************************************
  *  File:       hw_pwm_capture.h
  *  Author:     Callum Rafferty
- *  Created:    25-Mar-2026
+ *  Created:    28-04-2026
  *
  *  Description:
- *      <Short description of the module, what it exposes, and how it should be used>
+ *      Hardware layer interface for PWM capture.
+ *
+ *      This module provides an abstraction over the underlying timer capture
+ *      peripherals and analogue front-end configuration required to measure
+ *      PWM signals. It exposes zero-copy access to raw timer capture registers
+ *      and provides mechanisms to detect and consume new capture events.
  *
  *  Notes:
- *      <Public assumptions, required initialisation order, dependencies, etc.>
+ *      Responsibilities:
+ *      - Configure PWM capture analogue front-end modes
+ *      - Start and stop timer-based PWM capture
+ *      - Map logical channels to timer capture registers (CCR)
+ *      - Expose new capture availability via hardware flags
+ *
+ *      Non-Responsibilities:
+ *      - Validating captured data
+ *      - Interpreting duty cycle or frequency
+ *      - Timestamping or result ownership
+ *
+ *      Usage:
+ *      - Configure channels using HW_PWM_Capture_Configure_Channel()
+ *      - Use HW_PWM_Capture_Peek_Result() to inspect new data
+ *      - Use HW_PWM_Capture_Consume_Result() to clear capture flags
+ *
+ *      Assumptions:
+ *      - Timer PWM input mode is configured via IOC
+ *      - Execution layer consumes data before clearing flags
+ *      - Hardware mapping is fixed at compile time
  ******************************************************************************/
 
 #ifndef HW_PWM_CAPTURE_H
