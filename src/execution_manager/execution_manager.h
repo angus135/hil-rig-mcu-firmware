@@ -77,8 +77,11 @@ void EXECUTION_MANAGER_Set_Frequency_Mode( FrequencyMode_T mode );
 void EXECUTION_MANAGER_Init( void );
 
 /**
- * @brief
+ * @brief Processes scheduler work from interrupt context.
  *
+ * Intended to be called directly from an ISR to perform the minimal
+ * execution-manager processing required for the current scheduler tick.
+ * This API is expected to remain ISR-safe and execute quickly.
  */
 void EXECUTION_MANAGER_Process_From_ISR( void );
 

@@ -27,7 +27,6 @@ target_link_libraries(hw_timer
     PUBLIC
         global_config
         rtos
-        execution_manager
 )
 
 # -----------------------------
