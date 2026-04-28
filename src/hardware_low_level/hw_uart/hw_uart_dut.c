@@ -1051,9 +1051,9 @@ void HW_UART_CH1_TX_DMA_IRQ_HANDLER( void )
  *         clears the corresponding DMA flags, and dispatches to the appropriate
  *         low-level TX handler.
  *
- * @note   DMA completion indicates that the staged TX buffer has been fully
- *         consumed by the DMA engine. It does not guarantee that the final
- *         UART stop bit has left the wire.
+ * @note   DMA completion indicates that the active linear TX buffer span has
+ *         been fully consumed by the DMA engine. It does not guarantee that the
+ *         final UART stop bit has left the wire.
  *
  * @note   This handler must remain minimal and deterministic. No blocking or
  *         heavy processing should be introduced here.
