@@ -91,6 +91,7 @@ typedef struct
  */
 typedef struct
 {
+    bool               has_new_data;
     volatile uint32_t* period_ticks;
     volatile uint32_t* high_ticks;
 } HwPWMCaptureResult_T;
@@ -127,22 +128,30 @@ bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T       channel,
                                        const HwPWMCaptureConfig_T* config );
 
 /**
- * @brief Get zero-copy access to the latest PWM capture timer registers.
+ * @brief Peek the latest PWM capture result without consuming it.
  *
- * Provides direct pointers to the timer capture registers containing the
- * captured period and high-time tick counts.
+ * Checks the period capture flag for the selected channel. If a new complete
+ * PWM measurement is available, returns direct pointers to the period and
+ * high-time capture registers.
  *
- * Contract:
- * The caller must ensure that channel is valid, result is not NULL, and the
- * channel has already been configured and enabled.
+ * If no new measurement is available, returns a zero-initialised result with
+ * has_new_data set to false.
  *
- * This function intentionally performs no runtime validation so it can be used
- * in the deterministic execution path.
+ * @param channel Logical PWM capture channel to inspect.
  *
- * @param channel Logical PWM capture channel to read.
- * @param result Output structure populated with period and high-time register pointers.
+ * @return Zero-copy capture result descriptor.
  */
-void HW_PWM_Capture_Get_Result( HwPWMCaptureChannel_T channel, HwPWMCaptureResult_T* result );
+HwPWMCaptureResult_T HW_PWM_Capture_Peek_Result( HwPWMCaptureChannel_T channel );
+
+/**
+ * @brief Consume the current PWM capture result.
+ *
+ * Clears the period capture flag for the selected channel. This marks the
+ * current hardware capture result as consumed by the execution layer.
+ *
+ * @param channel Logical PWM capture channel to consume.
+ */
+void HW_PWM_Capture_Consume_Result( HwPWMCaptureChannel_T channel );
 
 #ifdef __cplusplus
 }
