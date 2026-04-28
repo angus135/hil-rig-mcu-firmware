@@ -76,7 +76,7 @@ extern "C"
 #define HW_UART_TX_BUFFER_SIZE 256U
 
 /* Number of UART channels supported by the hardware */
-#define HW_UART_CHANNEL_COUNT 3U /* Update to 2U when removing console channel */
+#define HW_UART_CHANNEL_COUNT 2U
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -93,7 +93,6 @@ typedef enum
 {
     HW_UART_CHANNEL_1 = 0,  // First DUT facing UART channel
     HW_UART_CHANNEL_2 = 1,  // Second DUT facing UART channel
-    HW_UART_CHANNEL_3 = 2,  // Temporary Console UART channel
 } HwUartChannel_T;
 
 /**
