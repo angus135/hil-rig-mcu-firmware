@@ -196,6 +196,9 @@ static UART_HandleTypeDef huart3 = { 0 };
 #define SET_BIT( REG, BIT ) ( ( REG ) |= ( BIT ) )
 #define CLEAR_BIT( REG, BIT ) ( ( REG ) &= ~( BIT ) )
 
+extern uint32_t mock_primask;
+extern uint32_t mock_irq_disable_count;
+extern uint32_t mock_irq_enable_count;
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -229,6 +232,10 @@ void LL_DMA_SetDataLength( DMA_TypeDef* dma, uint32_t stream, uint32_t length );
 void LL_DMA_DisableIT_HT( DMA_TypeDef* dma, uint32_t stream );
 void LL_DMA_EnableIT_TC( DMA_TypeDef* dma, uint32_t stream );
 void LL_DMA_EnableIT_TE( DMA_TypeDef* dma, uint32_t stream );
+
+uint32_t __get_PRIMASK( void );
+void     __disable_irq( void );
+void     __enable_irq( void );
 
 // NOLINTEND
 
