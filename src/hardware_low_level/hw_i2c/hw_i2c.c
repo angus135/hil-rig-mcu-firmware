@@ -50,9 +50,9 @@
 #define HW_I2C_CHANNEL_2_DMA_RX_TE_FLAG DMA_LISR_TEIF2
 #define HW_I2C_CHANNEL_2_DMA_TX_TC_FLAG DMA_HISR_TCIF7
 #define HW_I2C_CHANNEL_2_DMA_TX_TE_FLAG DMA_HISR_TEIF7
-#define HW_I2C_CHANNEL_2_DMA_RX_CLEAR_FLAGS_MASK                                          \
+#define HW_I2C_CHANNEL_2_DMA_RX_CLEAR_FLAGS_MASK                                                   \
     ( DMA_LIFCR_CTCIF2 | DMA_LIFCR_CTEIF2 | DMA_LIFCR_CDMEIF2 | DMA_LIFCR_CFEIF2 )
-#define HW_I2C_CHANNEL_2_DMA_TX_CLEAR_FLAGS_MASK                                          \
+#define HW_I2C_CHANNEL_2_DMA_TX_CLEAR_FLAGS_MASK                                                   \
     ( DMA_HIFCR_CTCIF7 | DMA_HIFCR_CTEIF7 | DMA_HIFCR_CDMEIF7 | DMA_HIFCR_CFEIF7 )
 #endif
 
