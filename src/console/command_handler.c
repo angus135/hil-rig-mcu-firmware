@@ -32,6 +32,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include "exec_pwm_capture.h"
+
+#include "subsystem_command_apis/console_uart.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
