@@ -64,6 +64,27 @@ DMA_TypeDef fake_dma1 = { 0U, 0U, 0U, 0U };
 DMA_TypeDef fake_dma2 = { 0U, 0U, 0U, 0U };
 }
 
+uint32_t mock_primask           = 0U;
+uint32_t mock_irq_disable_count = 0U;
+uint32_t mock_irq_enable_count  = 0U;
+
+uint32_t __get_PRIMASK( void )
+{
+    return mock_primask;
+}
+
+void __disable_irq( void )
+{
+    mock_primask = 1U;
+    mock_irq_disable_count++;
+}
+
+void __enable_irq( void )
+{
+    mock_primask = 0U;
+    mock_irq_enable_count++;
+}
+
 /**-----------------------------------------------------------------------------
  *  Private Helper Functions
  *------------------------------------------------------------------------------
@@ -306,6 +327,10 @@ protected:
         DMA2_Stream6->PAR  = 0U;
         DMA2_Stream6->M0AR = 0U;
         DMA2_Stream6->FCR  = 0U;
+
+        mock_primask           = 0U;
+        mock_irq_disable_count = 0U;
+        mock_irq_enable_count  = 0U;
     }
 
     void TearDown() override
