@@ -32,30 +32,62 @@
  *------------------------------------------------------------------------------
  */
 
-// Number of PWM capture channels supported by the hardware
+/* Number of logical PWM capture channels supported by this driver. */
 #define PWM_CAPTURE_CHANNEL_COUNT 2
 
-// Default safe mode for capture when disabled
+/*
+ * Safe analogue front-end mode applied when PWM capture is disabled.
+ * The hardware has no true disabled mode, so disabled capture forces the
+ * lowest-voltage input path while the timer capture path is stopped.
+ */
 #define HW_PWM_CAPTURE_DEFAULT_SAFE_MODE HW_PWM_CAPTURE_LV_3V3
 
-/* Timer Hardware Map Definitions*/
-
+/*
+ * PWM capture channel 1 timer mapping.
+ *
+ * IOC configuration:
+ * - TIM2 PWM input mode on CH1
+ * - CCR1 stores measured period
+ * - CCR2 stores measured high time
+ */
 #define HW_PWM_CAPTURE_CH_1_INSTANCE TIM2
 #define HW_PWM_CAPTURE_CH_1_PERIOD_CCR CCR1
 #define HW_PWM_CAPTURE_CH_1_HIGH_CCR CCR2
 
+/*
+ * PWM capture channel 2 timer mapping.
+ *
+ * IOC configuration:
+ * - TIM5 PWM input mode on CH2
+ * - CCR2 stores measured period
+ * - CCR1 stores measured high time
+ */
 #define HW_PWM_CAPTURE_CH_2_INSTANCE TIM5
 #define HW_PWM_CAPTURE_CH_2_PERIOD_CCR CCR2
 #define HW_PWM_CAPTURE_CH_2_HIGH_CCR CCR1
 
-/* Timer Settings*/
+/*
+ * PWM capture timers run at full timer resolution.
+ * PSC = 0 gives maximum timestamp precision.
+ * ARR = 0xFFFFFFFF uses the full 32-bit counter range.
+ */
 #define HW_PWM_CAPTURE_TIMER_PSC 0U
 #define HW_PWM_CAPTURE_TIMER_ARR 0xFFFFFFFFU
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief Per-channel PWM capture hardware and software context.
+ *
+ * Stores the timer binding, CCR register mapping, timer role used by hw_timer,
+ * and the latest software configuration for one logical PWM capture channel.
+ *
+ * period_ccr and high_ccr point directly to timer capture registers so the
+ * execution path can read captured values without copying.
+ */
 typedef struct
 {
     TIM_TypeDef*       timer;
@@ -77,6 +109,12 @@ typedef struct
  *------------------------------------------------------------------------------
  */
 
+/*
+ * Static context table for all PWM capture channels.
+ *
+ * This table is the single source of truth for mapping logical PWM capture
+ * channels to timer peripherals, hw_timer roles, and CCR register meanings.
+ */
 static HwPWMCaptureChannelContext_T hw_pwm_capture_channels[PWM_CAPTURE_CHANNEL_COUNT] = {
     {
         .timer         = HW_PWM_CAPTURE_CH_1_INSTANCE,
@@ -104,10 +142,17 @@ static HwPWMCaptureChannelContext_T hw_pwm_capture_channels[PWM_CAPTURE_CHANNEL_
  *------------------------------------------------------------------------------
  */
 
-/*
- * There is no hardware disabled mode.
- * When capture is disabled, the analogue front end is forced to LV 3.3 V.
- * Timer capture must be disabled separately.
+/**
+ * @brief Apply the static analogue front-end selection for a PWM capture mode.
+ *
+ * The selected mode controls the PWM_MODE[1:0] hardware selection bits, which
+ * choose the active LV/HV input path and threshold. The actual GPIO or expander
+ * writes are implemented here once the hardware control path is available.
+ *
+ * @param mode PWM capture hardware mode to apply.
+ *
+ * @return true if the mode is valid and was accepted.
+ * @return false if the mode is invalid.
  */
 static bool HW_PWM_Capture_Apply_Static_Hardware_Selection( HwPWMCaptureMode_T mode )
 {
@@ -136,6 +181,17 @@ static bool HW_PWM_Capture_Apply_Static_Hardware_Selection( HwPWMCaptureMode_T m
     return true;
 }
 
+/**
+ * @brief Validate a PWM capture channel configuration.
+ *
+ * Checks that the configuration pointer is valid and that the requested capture
+ * mode is one of the supported hardware modes.
+ *
+ * @param config Pointer to configuration to validate.
+ *
+ * @return true if the configuration is valid.
+ * @return false if the configuration is NULL or contains an invalid mode.
+ */
 static bool HW_PWM_Capture_Configuration_Is_Valid( const HwPWMCaptureConfig_T* config )
 {
     if ( config == NULL )
