@@ -43,17 +43,17 @@ extern "C"
  *
  * Provides a consistent setup/teardown environment for all test cases.
  */
-class ExecPWMGenTest : public ::testing::Test
-{
-protected:
-    void SetUp( void ) override
-    {
-    }
+// class ExecPWMGenTest : public ::testing::Test
+// {
+// protected:
+//     void SetUp( void ) override
+//     {
+//     }
 
-    void TearDown( void ) override
-    {
-    }
-};
+//     void TearDown( void ) override
+//     {
+//     }
+// };
 
 /**-----------------------------------------------------------------------------
  *  Test Cases
