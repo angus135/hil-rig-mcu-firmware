@@ -334,3 +334,14 @@ TEST_F( ExecPWMCaptureTest, StopChannelReturnsFalseWhenHardwareConfigurationFail
 
     EXPECT_FALSE( result );
 }
+
+TEST_F( ExecPWMCaptureTest, StopThenStartChannelSucceeds )
+{
+    HwPWMCaptureConfig_T config = {};
+    config.mode                 = HW_PWM_CAPTURE_LV_3V3;
+    config.is_enabled           = true;
+
+    EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Stop_Channel( HW_PWM_CAPTURE_CHANNEL_1 ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config ) );
+}
