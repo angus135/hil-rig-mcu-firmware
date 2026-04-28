@@ -22,7 +22,7 @@
  *        full payload cannot fit in the low-level TX ring buffer, transmission
  *        is rejected and no partial payload is queued.
  *      - The execution layer is the sole producer of DUT-facing UART TX data.
- */
+ ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
  *  Includes
