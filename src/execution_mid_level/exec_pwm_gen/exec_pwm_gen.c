@@ -65,9 +65,9 @@
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void EXEC_PWM_GEN_set_pwm1( uint16_t arr, uint16_t ccr )
+inline void EXEC_PWM_GEN_set_pwm1( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
-    HW_PWM_GEN_set_pwm1_direct( arr, ccr );
+    HW_PWM_GEN_set_pwm1_direct( arr, ccr, psc );
 }
 
 /**
@@ -80,9 +80,9 @@ inline void EXEC_PWM_GEN_set_pwm1( uint16_t arr, uint16_t ccr )
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void EXEC_PWM_GEN_set_pwm2( uint16_t arr, uint16_t ccr )
+inline void EXEC_PWM_GEN_set_pwm2( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
-    HW_PWM_GEN_set_pwm2_direct( arr, ccr );
+    HW_PWM_GEN_set_pwm2_direct( arr, ccr, psc );
 }
 
 /**
@@ -95,7 +95,7 @@ inline void EXEC_PWM_GEN_set_pwm2( uint16_t arr, uint16_t ccr )
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void EXEC_PWM_GEN_set_pwm3( uint16_t arr, uint16_t ccr )
+inline void EXEC_PWM_GEN_set_pwm3( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
-    HW_PWM_GEN_set_pwm3_direct( arr, ccr );
+    HW_PWM_GEN_set_pwm3_direct( arr, ccr, psc );
 }

@@ -51,7 +51,7 @@ extern "C"
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void EXEC_PWM_GEN_set_pwm1( uint16_t arr, uint16_t ccr );
+inline void EXEC_PWM_GEN_set_pwm1( uint16_t arr, uint16_t ccr, uint16_t psc );
 
 /**
  * @brief Updates the PWM registers associated with channel 2.
@@ -63,7 +63,7 @@ inline void EXEC_PWM_GEN_set_pwm1( uint16_t arr, uint16_t ccr );
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void EXEC_PWM_GEN_set_pwm2( uint16_t arr, uint16_t ccr );
+inline void EXEC_PWM_GEN_set_pwm2( uint16_t arr, uint16_t ccr, uint16_t psc );
 
 /**
  * @brief Updates the PWM registers associated with channel 3.
@@ -75,7 +75,7 @@ inline void EXEC_PWM_GEN_set_pwm2( uint16_t arr, uint16_t ccr );
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void EXEC_PWM_GEN_set_pwm3( uint16_t arr, uint16_t ccr );
+inline void EXEC_PWM_GEN_set_pwm3( uint16_t arr, uint16_t ccr, uint16_t psc );
 
 #ifdef __cplusplus
 }

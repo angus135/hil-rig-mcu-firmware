@@ -169,11 +169,11 @@ uint16_t HW_PWM_GEN_compute_ccr( uint16_t duty_pm, uint16_t arr )
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr )
+inline void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
 #ifndef TEST_BUILD
     HW_PWM_GEN_set_pwm_direct(
-        arr, ccr,
+        arr, ccr, psc,
         htim5.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
 #endif
     ( void )arr;
@@ -190,11 +190,11 @@ inline void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr )
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void HW_PWM_GEN_set_pwm2_direct( uint16_t arr, uint16_t ccr )
+inline void HW_PWM_GEN_set_pwm2_direct( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
 #ifndef TEST_BUILD
     HW_PWM_GEN_set_pwm_direct(
-        arr, ccr,
+        arr, ccr, psc,
         htim5.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
 #endif
     ( void )arr;
@@ -211,11 +211,11 @@ inline void HW_PWM_GEN_set_pwm2_direct( uint16_t arr, uint16_t ccr )
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void HW_PWM_GEN_set_pwm3_direct( uint16_t arr, uint16_t ccr )
+inline void HW_PWM_GEN_set_pwm3_direct( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
 #ifndef TEST_BUILD
     HW_PWM_GEN_set_pwm_direct(
-        arr, ccr,
+        arr, ccr, psc,
         htim5.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
 #endif
     ( void )arr;
