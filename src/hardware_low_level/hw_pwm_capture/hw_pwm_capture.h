@@ -140,6 +140,9 @@ bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T       channel,
  * @param channel Logical PWM capture channel to inspect.
  *
  * @return Zero-copy capture result descriptor.
+ *
+ * Contract:
+ * The caller must ensure channel is valid and configured.
  */
 HwPWMCaptureResult_T HW_PWM_Capture_Peek_Result( HwPWMCaptureChannel_T channel );
 
@@ -150,6 +153,10 @@ HwPWMCaptureResult_T HW_PWM_Capture_Peek_Result( HwPWMCaptureChannel_T channel )
  * current hardware capture result as consumed by the execution layer.
  *
  * @param channel Logical PWM capture channel to consume.
+ *
+ * Contract:
+ * This must only be called after a successful peek where has_new_data is true.
+ * Calling this without a corresponding peek may result in lost capture events.
  */
 void HW_PWM_Capture_Consume_Result( HwPWMCaptureChannel_T channel );
 
