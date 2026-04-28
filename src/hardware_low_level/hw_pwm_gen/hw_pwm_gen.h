@@ -32,10 +32,6 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-#define PWM_CHANNEL1_TIMER (TIM_HandleTypeDef) htim1     // TO DO - UPDATE BASED ON IOC
-#define PWM_CHANNEL2_TIMER (TIM_HandleTypeDef) htim1     // TO DO - UPDATE BASED ON IOC
-#define PWM_CHANNEL3_TIMER (TIM_HandleTypeDef) htim1     // TO DO - UPDATE BASED ON IOC
-
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -45,6 +41,19 @@ extern "C"
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+/**
+ * @brief Computes the prescaler register (PSC).
+ *
+ * @param freq_hz   the desired frequency of the PWM signal
+ * @param timer_clk_hz the frequency of the timer being used to drive the PWM
+ *
+ * @return a uint16_t which can be placed directly in the PSC,
+ * This function computes the value of the prescaler (PSC)
+ * which is needed to achieve the desired frequency
+ * These functions should be use during configuration to prepare
+ * the frequency and duty cycle instructions for quick running
+ */
+uint16_t HW_PWM_GEN_compute_psc( uint16_t freq_hz, uint16_t timer_clk_hz );
 
 /**
  * @brief Computes the auto reloader register (ARR).
@@ -60,7 +69,7 @@ bits)
  * These functions should be use during configuration to prepare
  * the frequency and duty cycle instructions for quick running
  */
-uint16_t HW_PWM_GEN_compute_arr( uint32_t freq_hz, uint32_t timer_clk_hz, uint32_t prescaler );
+uint16_t HW_PWM_GEN_compute_arr( uint16_t freq_hz, uint16_t timer_clk_hz, uint16_t prescaler );
 
 /**
  * @brief Computes the compare register (CCR) for a given duty cycle.
@@ -90,15 +99,15 @@ uint16_t HW_PWM_GEN_compute_ccr( uint16_t duty_pm, uint16_t arr );
 inline void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr );
 
 /**
-* @brief Updates the PWM registers associated with channel 2.
-*
-* @param arr   the value of the auto reloader register (ARR) associated with this PWM signal
-* @param ccr the value of the compare register (CCR) associated with this PWM signal
-*
-* This function sets the values of the PWM channel 2 registers
-* To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
-* This function is designed to be very fast and should be implemented in the execution phase
-*/
+ * @brief Updates the PWM registers associated with channel 2.
+ *
+ * @param arr   the value of the auto reloader register (ARR) associated with this PWM signal
+ * @param ccr the value of the compare register (CCR) associated with this PWM signal
+ *
+ * This function sets the values of the PWM channel 2 registers
+ * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
+ * This function is designed to be very fast and should be implemented in the execution phase
+ */
 inline void HW_PWM_GEN_set_pwm2_direct( uint16_t arr, uint16_t ccr );
 
 /**
@@ -111,8 +120,7 @@ inline void HW_PWM_GEN_set_pwm2_direct( uint16_t arr, uint16_t ccr );
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void HW_PWM_GEN_set_pwm3_direct( uint16_t arr, uint16_t ccr);
-
+inline void HW_PWM_GEN_set_pwm3_direct( uint16_t arr, uint16_t ccr );
 
 #ifdef __cplusplus
 }

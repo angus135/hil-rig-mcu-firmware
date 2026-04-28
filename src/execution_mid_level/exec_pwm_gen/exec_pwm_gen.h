@@ -41,6 +41,42 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief Updates the PWM registers associated with channel 1.
+ *
+ * @param arr   the value of the auto reloader register (ARR) associated with this PWM signal
+ * @param ccr the value of the compare register (CCR) associated with this PWM signal
+ *
+ * This function sets the values of the PWM channel 1 registers
+ * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
+ * This function is designed to be very fast and should be implemented in the execution phase
+ */
+inline void EXEC_PWM_GEN_set_pwm1( uint16_t arr, uint16_t ccr );
+
+/**
+ * @brief Updates the PWM registers associated with channel 2.
+ *
+ * @param arr   the value of the auto reloader register (ARR) associated with this PWM signal
+ * @param ccr the value of the compare register (CCR) associated with this PWM signal
+ *
+ * This function sets the values of the PWM channel 2 registers
+ * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
+ * This function is designed to be very fast and should be implemented in the execution phase
+ */
+inline void EXEC_PWM_GEN_set_pwm2( uint16_t arr, uint16_t ccr );
+
+/**
+ * @brief Updates the PWM registers associated with channel 3.
+ *
+ * @param arr   the value of the auto reloader register (ARR) associated with this PWM signal
+ * @param ccr the value of the compare register (CCR) associated with this PWM signal
+ *
+ * This function sets the values of the PWM channel 3 registers
+ * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
+ * This function is designed to be very fast and should be implemented in the execution phase
+ */
+inline void EXEC_PWM_GEN_set_pwm3( uint16_t arr, uint16_t ccr );
+
 #ifdef __cplusplus
 }
 #endif
