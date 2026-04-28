@@ -76,6 +76,12 @@ void EXECUTION_MANAGER_Set_Frequency_Mode( FrequencyMode_T mode );
  */
 void EXECUTION_MANAGER_Init( void );
 
+/**
+ * @brief
+ *
+ */
+void EXECUTION_MANAGER_Process_From_ISR( void );
+
 #ifdef __cplusplus
 }
 #endif
