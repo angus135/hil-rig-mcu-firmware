@@ -4,7 +4,8 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      This file is responsible for the low level hardware interraction neccesary for controlling PWM generation
+ *      This file is responsible for the low level hardware interraction neccesary for controlling
+ *PWM generation
  *
  *  Notes:
  *      <Any design notes, dependencies, or assumptions go here>
@@ -33,7 +34,6 @@
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
-
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -66,10 +66,10 @@
  * This function is designed to be very fast and should be implemented in the execution phase
  */
 #ifndef TEST_BUILD
-inline void HW_PWM_GEN_set_pwm_direct( uint16_t arr, uint16_t ccr, TIM_TypeDef* tim )
+inline void HW_PWM_GEN_set_pwm_direct( uint32_t arr, uint32_t ccr, TIM_TypeDef* tim )
 {
-    tim->CCR = ccr;
-    tim->ARR = arr;
+    tim->CCER = ccr;
+    tim->ARR  = arr;
     return
 }
 #endif
@@ -78,6 +78,37 @@ inline void HW_PWM_GEN_set_pwm_direct( uint16_t arr, uint16_t ccr, TIM_TypeDef* 
  *  Configure Stage Public Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Computes the prescaler register (PSC).
+ *
+ * @param freq_hz   the desired frequency of the PWM signal
+ * @param timer_clk_hz the frequency of the timer being used to drive the PWM
+ *
+ * @return a uint16_t which can be placed directly in the PSC,
+ * This function computes the value of the prescaler (PSC)
+ * which is needed to achieve the desired frequency
+ * These functions should be use during configuration to prepare
+ * the frequency and duty cycle instructions for quick running
+ */
+uint16_t HW_PWM_GEN_compute_psc( uint16_t freq_hz, uint16_t timer_clk_hz )
+{
+    uint16_t prescaler_p1 = 1;  // the prescaler plus 1
+    uint16_t temp         = ( timer_clk_hz / ( freq_hz * ( prescaler_p1 ) ) ) - 1;
+    // Inverted Binary search to find prescaler value
+    while ( temp > 65535 )
+    {
+        prescaler_p1 = prescaler_p1 * 2;
+        temp         = ( timer_clk_hz / ( freq_hz * ( prescaler_p1 ) ) ) - 1;
+    }
+    while ( temp < 65535 )
+    {
+        prescaler_p1 -= 1;
+        temp = ( timer_clk_hz / ( freq_hz * ( prescaler_p1 ) ) ) - 1;
+    }
+    // above -1 loop overcompensated by 1 so we plus 1
+    return prescaler_p1;
+}
 
 /**
  * @brief Computes the auto reloader register (ARR).
@@ -93,10 +124,10 @@ bits)
  * These functions should be use during configuration to prepare
  * the frequency and duty cycle instructions for quick running
  */
-uint16_t HW_PWM_GEN_compute_arr(uint32_t freq_hz, uint32_t timer_clk_hz, uint32_t prescaler)
+uint16_t HW_PWM_GEN_compute_arr( uint16_t freq_hz, uint16_t timer_clk_hz, uint16_t prescaler )
 {
-    uint32_t arr = (timer_clk_hz / (freq_hz*(prescaler+1))) - 1;
-    return (uint16_t) arr;
+
+    return ( timer_clk_hz / ( freq_hz * ( prescaler + 1 ) ) ) - 1;
 }
 
 /**
@@ -112,13 +143,13 @@ bits)
  * These functions should be use during configuration to prepare
  * the frequency and duty cycle instructions for quick running
  */
-uint16_t HW_PWM_GEN_compute_ccr(uint16_t duty_pm, uint16_t arr)
+uint16_t HW_PWM_GEN_compute_ccr( uint16_t duty_pm, uint16_t arr )
 {
     if ( duty_pm >= 1000 )
     {
-        return (arr + 1);
+        return ( arr + 1 );
     }
-    return ((arr + 1) * duty_pm) / 1000;
+    return ( ( arr + 1 ) * duty_pm ) / 1000;
 }
 
 /**-----------------------------------------------------------------------------
@@ -136,13 +167,15 @@ uint16_t HW_PWM_GEN_compute_ccr(uint16_t duty_pm, uint16_t arr)
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr)
+inline void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr )
 {
 #ifndef TEST_BUILD
-    HW_PWM_GEN_set_pwm_direct( arr, ccr, htim1.Instance ); // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
+    HW_PWM_GEN_set_pwm_direct(
+        arr, ccr,
+        htim5.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
 #endif
     ( void )arr;
-    (void) ccr;
+    ( void )ccr;
 }
 
 /**
@@ -155,13 +188,15 @@ inline void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr)
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void HW_PWM_GEN_set_pwm2_direct( uint16_t arr, uint16_t ccr)
+inline void HW_PWM_GEN_set_pwm2_direct( uint16_t arr, uint16_t ccr )
 {
 #ifndef TEST_BUILD
-    HW_PWM_GEN_set_pwm_direct( arr, ccr, htim1.Instance ); // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
+    HW_PWM_GEN_set_pwm_direct(
+        arr, ccr,
+        htim5.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
 #endif
     ( void )arr;
-    (void) ccr;
+    ( void )ccr;
 }
 
 /**
@@ -174,12 +209,13 @@ inline void HW_PWM_GEN_set_pwm2_direct( uint16_t arr, uint16_t ccr)
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void HW_PWM_GEN_set_pwm3_direct( uint16_t arr, uint16_t ccr)
+inline void HW_PWM_GEN_set_pwm3_direct( uint16_t arr, uint16_t ccr )
 {
 #ifndef TEST_BUILD
-    HW_PWM_GEN_set_pwm_direct( arr, ccr, htim1.Instance ); // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
+    HW_PWM_GEN_set_pwm_direct(
+        arr, ccr,
+        htim5.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
 #endif
     ( void )arr;
-    (void) ccr;
+    ( void )ccr;
 }
-

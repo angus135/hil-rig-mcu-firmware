@@ -34,3 +34,10 @@ ARR = timer_hz/((prescaler+1)*pwm_hz)-1
 1_000_000_000 =< timer_hz/(prescaler+1)
 This means 0.1% resolution possible on the STM32 timers, 
 but also suggests a prescaler of 0 for highest resolution.
+
+Looking at the other end for 1Hz signal 
+ARR = timer_hz = 90_000_000 meaning we will have to use a 32 bit ARR (timer 5)
+alternativley we can use the prescaler since 16 bit ARR has a limit of 65_535
+ARR = timer_hz/((prescaler+1)*1)-1 <= 65_535
+timer_hz/(prescaler+1) <= 65_536
+
