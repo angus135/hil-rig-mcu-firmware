@@ -24,6 +24,7 @@
 #include "hw_pwm_gen.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include "tim.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -70,7 +71,7 @@ inline void HW_PWM_GEN_set_pwm_direct( uint32_t arr, uint32_t ccr, TIM_TypeDef* 
 {
     tim->CCER = ccr;
     tim->ARR  = arr;
-    return
+    return;
 }
 #endif
 
