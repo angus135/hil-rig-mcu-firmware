@@ -36,16 +36,10 @@
 /* Timer Hardware Map Definitions*/
 
 #define HW_PWM_CAPTURE_CH_1_INSTANCE TIM2
-#define HW_PWM_CAPTURE_CH_1_HANDLE htim2
-// For TIM2, CCR1 is used for period measurement and CCR2 is used for high time measurement in PWM
-// Input mode
 #define HW_PWM_CAPTURE_CH_1_PERIOD_CCR CCR1
 #define HW_PWM_CAPTURE_CH_1_HIGH_CCR CCR2
 
 #define HW_PWM_CAPTURE_CH_2_INSTANCE TIM5
-#define HW_PWM_CAPTURE_CH_2_HANDLE htim5
-// For TIM5, CCR2 is used for period measurement and CCR1 is used for high time measurement in PWM
-// Input mode
 #define HW_PWM_CAPTURE_CH_2_PERIOD_CCR CCR2
 #define HW_PWM_CAPTURE_CH_2_HIGH_CCR CCR1
 
