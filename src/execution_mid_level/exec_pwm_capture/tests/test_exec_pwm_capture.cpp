@@ -100,6 +100,7 @@ protected:
 
         mock_consume_called        = false;
         mock_last_consumed_channel = HW_PWM_CAPTURE_CHANNEL_1;
+        EXEC_PWM_Capture_Test_Reset();
     }
 
     void TearDown( void ) override
@@ -111,7 +112,7 @@ protected:
  *  Test Cases
  *------------------------------------------------------------------------------
  */
-TEST_F( ExecPWMCaptureTest, StartChannelForwardsConfigurationToHardwareLayer )
+TEST_F( ExecPWMCaptureTest, StartChannelForwardsEnabledConfigurationToHardwareLayer )
 {
     HwPWMCaptureConfig_T config = {};
     config.mode                 = HW_PWM_CAPTURE_LV_5V;
@@ -247,4 +248,89 @@ TEST_F( ExecPWMCaptureTest, ConsumeAcceptsHundredPercentDuty )
     EXPECT_TRUE( result.is_valid );
     EXPECT_EQ( result.period_ticks, 1000U );
     EXPECT_EQ( result.high_ticks, 1000U );
+}
+
+TEST_F( ExecPWMCaptureTest, StartChannelReturnsFalseForNullConfig )
+{
+    bool result = EXEC_PWM_Capture_Start_Channel( HW_PWM_CAPTURE_CHANNEL_1, nullptr );
+
+    EXPECT_FALSE( result );
+}
+
+TEST_F( ExecPWMCaptureTest, StartChannelReturnsFalseForInvalidChannel )
+{
+    HwPWMCaptureConfig_T config = {};
+    config.mode                 = HW_PWM_CAPTURE_LV_3V3;
+    config.is_enabled           = true;
+
+    bool result =
+        EXEC_PWM_Capture_Start_Channel( static_cast<HwPWMCaptureChannel_T>( 2U ), &config );
+
+    EXPECT_FALSE( result );
+}
+
+TEST_F( ExecPWMCaptureTest, StartChannelReturnsFalseWhenConfigIsDisabled )
+{
+    HwPWMCaptureConfig_T config = {};
+    config.mode                 = HW_PWM_CAPTURE_LV_3V3;
+    config.is_enabled           = false;
+
+    bool result = EXEC_PWM_Capture_Start_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config );
+
+    EXPECT_FALSE( result );
+}
+
+TEST_F( ExecPWMCaptureTest, StartChannelReturnsFalseWhenChannelAlreadyStarted )
+{
+    HwPWMCaptureConfig_T config = {};
+    config.mode                 = HW_PWM_CAPTURE_LV_3V3;
+    config.is_enabled           = true;
+
+    EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config ) );
+    EXPECT_FALSE( EXEC_PWM_Capture_Start_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config ) );
+}
+
+TEST_F( ExecPWMCaptureTest, StopChannelReturnsFalseForInvalidChannel )
+{
+    bool result = EXEC_PWM_Capture_Stop_Channel( static_cast<HwPWMCaptureChannel_T>( 2U ) );
+
+    EXPECT_FALSE( result );
+}
+
+TEST_F( ExecPWMCaptureTest, StopChannelReturnsFalseWhenChannelNotStarted )
+{
+    bool result = EXEC_PWM_Capture_Stop_Channel( HW_PWM_CAPTURE_CHANNEL_1 );
+
+    EXPECT_FALSE( result );
+}
+
+TEST_F( ExecPWMCaptureTest, StopChannelAppliesDisabledConfiguration )
+{
+    HwPWMCaptureConfig_T config = {};
+    config.mode                 = HW_PWM_CAPTURE_LV_5V;
+    config.is_enabled           = true;
+
+    EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config ) );
+
+    bool result = EXEC_PWM_Capture_Stop_Channel( HW_PWM_CAPTURE_CHANNEL_1 );
+
+    EXPECT_TRUE( result );
+    EXPECT_EQ( mock_last_configure_channel, HW_PWM_CAPTURE_CHANNEL_1 );
+    EXPECT_EQ( mock_last_config.mode, HW_PWM_CAPTURE_LV_3V3 );
+    EXPECT_FALSE( mock_last_config.is_enabled );
+}
+
+TEST_F( ExecPWMCaptureTest, StopChannelReturnsFalseWhenHardwareConfigurationFails )
+{
+    HwPWMCaptureConfig_T config = {};
+    config.mode                 = HW_PWM_CAPTURE_LV_3V3;
+    config.is_enabled           = true;
+
+    EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config ) );
+
+    mock_configure_result = false;
+
+    bool result = EXEC_PWM_Capture_Stop_Channel( HW_PWM_CAPTURE_CHANNEL_1 );
+
+    EXPECT_FALSE( result );
 }
