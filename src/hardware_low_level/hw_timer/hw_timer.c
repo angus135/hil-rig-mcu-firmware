@@ -37,8 +37,15 @@
 #define EXECUTION_MANAGER_TIMER_IRQ_HANDLER TIM4_IRQHandler
 #define EXECUTION_MANAGER_TIMER_HANDLE htim4
 
-/* Analogue Input Timer Defines */
 #define ANALOGUE_INPUT_TIMER_HANDLE htim3
+
+#define PWM_CAPTURE_TIMER_CH1_HANDLE htim2
+#define PWM_CAPTURE_TIMER_CH1_PRIMARY_CHANNEL TIM_CHANNEL_1
+#define PWM_CAPTURE_TIMER_CH1_SECONDARY_CHANNEL TIM_CHANNEL_2
+
+#define PWM_CAPTURE_TIMER_CH2_HANDLE htim5
+#define PWM_CAPTURE_TIMER_CH2_PRIMARY_CHANNEL TIM_CHANNEL_1
+#define PWM_CAPTURE_TIMER_CH2_SECONDARY_CHANNEL TIM_CHANNEL_2
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -115,6 +122,29 @@ void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t arr )
                 Error_Handler();
             }
             break;
+        case PWM_CAPTURE_TIMER_CH1:
+            PWM_CAPTURE_TIMER_CH1_HANDLE.Init.Prescaler = psc;
+            PWM_CAPTURE_TIMER_CH1_HANDLE.Init.Period    = arr;
+
+            if ( HAL_TIM_IC_Init( &PWM_CAPTURE_TIMER_CH1_HANDLE ) != HAL_OK )
+            {
+                Error_Handler();
+            }
+
+            __HAL_TIM_SET_COUNTER( &PWM_CAPTURE_TIMER_CH1_HANDLE, 0u );
+            break;
+
+        case PWM_CAPTURE_TIMER_CH2:
+            PWM_CAPTURE_TIMER_CH2_HANDLE.Init.Prescaler = psc;
+            PWM_CAPTURE_TIMER_CH2_HANDLE.Init.Period    = arr;
+
+            if ( HAL_TIM_IC_Init( &PWM_CAPTURE_TIMER_CH2_HANDLE ) != HAL_OK )
+            {
+                Error_Handler();
+            }
+
+            __HAL_TIM_SET_COUNTER( &PWM_CAPTURE_TIMER_CH2_HANDLE, 0u );
+            break;
         default:
             break;
     }
@@ -144,6 +174,25 @@ void HW_TIMER_Start_Timer( Timer_T timer )
         case ANALOGUE_INPUT_TIMER:
             HAL_TIM_Base_Start( &ANALOGUE_INPUT_TIMER_HANDLE );
             break;
+        case PWM_CAPTURE_TIMER_CH1:
+            // Reset counter to ensure consistent capture timing
+            __HAL_TIM_SET_COUNTER( &PWM_CAPTURE_TIMER_CH1_HANDLE, 0u );
+            // Start input capture on both channels for PWM capture
+            HAL_TIM_IC_Start( &PWM_CAPTURE_TIMER_CH1_HANDLE,
+                              PWM_CAPTURE_TIMER_CH1_PRIMARY_CHANNEL );
+            HAL_TIM_IC_Start( &PWM_CAPTURE_TIMER_CH1_HANDLE,
+                              PWM_CAPTURE_TIMER_CH1_SECONDARY_CHANNEL );
+            break;
+
+        case PWM_CAPTURE_TIMER_CH2:
+            // Reset counter to ensure consistent capture timing
+            __HAL_TIM_SET_COUNTER( &PWM_CAPTURE_TIMER_CH2_HANDLE, 0u );
+            // Start input capture on both channels for PWM capture
+            HAL_TIM_IC_Start( &PWM_CAPTURE_TIMER_CH2_HANDLE,
+                              PWM_CAPTURE_TIMER_CH2_PRIMARY_CHANNEL );
+            HAL_TIM_IC_Start( &PWM_CAPTURE_TIMER_CH2_HANDLE,
+                              PWM_CAPTURE_TIMER_CH2_SECONDARY_CHANNEL );
+            break;
         default:
             break;
     }
@@ -170,6 +219,23 @@ void HW_TIMER_Stop_Timer( Timer_T timer )
             break;
         case ANALOGUE_INPUT_TIMER:
             HAL_TIM_Base_Stop( &ANALOGUE_INPUT_TIMER_HANDLE );
+            break;
+        case PWM_CAPTURE_TIMER_CH1:
+            // Stop input capture on both channels for PWM capture
+            HAL_TIM_IC_Stop( &PWM_CAPTURE_TIMER_CH1_HANDLE, PWM_CAPTURE_TIMER_CH1_PRIMARY_CHANNEL );
+            HAL_TIM_IC_Stop( &PWM_CAPTURE_TIMER_CH1_HANDLE,
+                             PWM_CAPTURE_TIMER_CH1_SECONDARY_CHANNEL );
+            // Reset counter to ensure consistent capture timing when restarted
+            __HAL_TIM_SET_COUNTER( &PWM_CAPTURE_TIMER_CH1_HANDLE, 0u );
+            break;
+
+        case PWM_CAPTURE_TIMER_CH2:
+            // Stop input capture on both channels for PWM capture
+            HAL_TIM_IC_Stop( &PWM_CAPTURE_TIMER_CH2_HANDLE, PWM_CAPTURE_TIMER_CH2_PRIMARY_CHANNEL );
+            HAL_TIM_IC_Stop( &PWM_CAPTURE_TIMER_CH2_HANDLE,
+                             PWM_CAPTURE_TIMER_CH2_SECONDARY_CHANNEL );
+            // Reset counter to ensure consistent capture timing when restarted
+            __HAL_TIM_SET_COUNTER( &PWM_CAPTURE_TIMER_CH2_HANDLE, 0u );
             break;
         default:
             break;

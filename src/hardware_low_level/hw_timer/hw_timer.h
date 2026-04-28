@@ -36,10 +36,18 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+/*
+ * PWM_CAPTURE_TIMER_CH1 maps to PWM capture logical channel 1 (TIM2)
+ * PWM_CAPTURE_TIMER_CH2 maps to PWM capture logical channel 2 (TIM5)
+ *
+ * This does NOT correspond to TIM_CHANNEL_1 / TIM_CHANNEL_2.
+ */
 typedef enum Timer_T
 {
     EXECUTION_MANAGER_TIMER,
     ANALOGUE_INPUT_TIMER,
+    PWM_CAPTURE_TIMER_CH1,
+    PWM_CAPTURE_TIMER_CH2,
 
 } Timer_T;
 
