@@ -229,3 +229,13 @@ bool EXEC_PWM_Capture_Consume( HwPWMCaptureChannel_T channel, ExecPwmCaptureResu
 
     return true;
 }
+
+#ifdef TEST_BUILD
+void EXEC_PWM_Capture_Test_Reset( void )
+{
+    for ( uint32_t i = 0U; i < EXEC_PWM_CAPTURE_CHANNEL_COUNT; i++ )
+    {
+        exec_pwm_capture_channel_started[i] = false;
+    }
+}
+#endif
