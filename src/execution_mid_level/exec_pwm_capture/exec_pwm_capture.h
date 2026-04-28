@@ -29,6 +29,7 @@
  *      Usage:
  *      - Call EXEC_PWM_Capture_Start_Channel() during configuration
  *      - Call EXEC_PWM_Capture_Consume() during execution to retrieve new data
+ *      - Call EXEC_PWM_Capture_Stop_Channel() to disable capture when no longer needed
  *
  *      Assumptions:
  *      - Channels are configured before use
@@ -98,24 +99,63 @@ typedef struct
  *
  * @return true if a new valid measurement was consumed.
  * @return false if no new measurement was available or the measurement was invalid.
+ *
+ * Contract:
+ * - channel must be valid
+ * - result must not be NULL
+ * - channel must already be started
+ *
+ * These preconditions are not checked at runtime to minimise execution-path
+ * overhead. Violating them is caller error.
  */
 bool EXEC_PWM_Capture_Consume( HwPWMCaptureChannel_T channel, ExecPwmCaptureResult_T* result );
 
 /**
- * @brief Start or configure a PWM capture channel.
+ * @brief Start a PWM capture channel.
  *
- * Passes the requested channel configuration to the hardware PWM capture layer.
- * This applies the analogue front-end mode and starts or stops the underlying
- * timer capture path according to config->is_enabled.
+ * Validates the requested configuration and starts the specified channel.
+ * The configuration must be enabled and the channel must not already be started.
  *
- * @param channel Logical PWM capture channel to configure.
+ * Delegates hardware configuration to the hardware PWM capture layer.
+ *
+ * @param channel Logical PWM capture channel to start.
  * @param config Pointer to requested hardware capture configuration.
  *
- * @return true if the channel was configured successfully.
- * @return false if the channel or configuration was invalid.
+ * @return true if the channel was started successfully.
+ * @return false if:
+ *         - the channel is invalid
+ *         - config is NULL
+ *         - config->is_enabled is false
+ *         - the channel is already started
+ *         - the hardware layer rejected the configuration
  */
 bool EXEC_PWM_Capture_Start_Channel( HwPWMCaptureChannel_T       channel,
                                      const HwPWMCaptureConfig_T* config );
+
+/**
+ * @brief Stop PWM capture on the specified channel.
+ *
+ * Applies a disabled configuration to the hardware layer, stopping the
+ * underlying timer capture and returning the channel to a safe default state.
+ * Updates execution layer state to reflect that the channel is no longer active.
+ *
+ * Behaviour:
+ * - Stops capture only if the channel is currently started
+ * - Delegates hardware state change to the hardware layer
+ * - Clears internal execution-layer started state on success
+ *
+ * @param channel Logical PWM capture channel to stop.
+ *
+ * @return true if the channel was successfully stopped.
+ * @return false if:
+ *         - the channel is invalid
+ *         - the channel was not previously started
+ *         - the hardware layer rejected the configuration request
+ *
+ * Contract:
+ * The caller must ensure channel is valid within system context.
+ */
+bool EXEC_PWM_Capture_Stop_Channel( HwPWMCaptureChannel_T channel );
 
 #ifdef __cplusplus
 }
