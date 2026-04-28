@@ -29,6 +29,7 @@ target_link_libraries(hw_pwm_capture
         project_warnings
         cubeide_hal
         rtos
+        hw_timer
         # include any other relevant modules
 )
 

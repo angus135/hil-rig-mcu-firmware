@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include "hw_timer.h"
 // Add other required includes here
 
 /**-----------------------------------------------------------------------------
@@ -31,6 +32,22 @@
 
 // Default safe mode for capture when disabled
 #define HW_PWM_CAPTURE_DEFAULT_SAFE_MODE HW_PWM_CAPTURE_LV_3V3
+
+/* Timer Hardware Map Definitions*/
+
+#define HW_PWM_CAPTURE_CH_1_INSTANCE TIM2
+#define HW_PWM_CAPTURE_CH_1_HANDLE htim2
+// For TIM2, CCR1 is used for period measurement and CCR2 is used for high time measurement in PWM
+// Input mode
+#define HW_PWM_CAPTURE_CH_1_PERIOD_CCR CCR1
+#define HW_PWM_CAPTURE_CH_1_HIGH_CCR CCR2
+
+#define HW_PWM_CAPTURE_CH_2_INSTANCE TIM5
+#define HW_PWM_CAPTURE_CH_2_HANDLE htim5
+// For TIM5, CCR2 is used for period measurement and CCR1 is used for high time measurement in PWM
+// Input mode
+#define HW_PWM_CAPTURE_CH_2_PERIOD_CCR CCR2
+#define HW_PWM_CAPTURE_CH_2_HIGH_CCR CCR1
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -59,10 +76,19 @@ typedef struct
 
 typedef struct
 {
-    uint32_t             timer_base;     // Base address of the timer used for capture
-    HwPWMCaptureConfig_T config;         // Current configuration of the capture channel
-    bool                 is_configured;  // Flag to indicate if the capture module is initialized
-} HwPWMCaptureState_T;
+    TIM_TypeDef*       timer;
+    volatile uint32_t* period_ccr;
+    volatile uint32_t* high_ccr;
+
+    HwPWMCaptureConfig_T config;
+    bool                 is_configured;
+} HwPWMCaptureChannelContext_T;
+
+typedef struct
+{
+    volatile uint32_t* period_ticks;
+    volatile uint32_t* high_ticks;
+} HwPWMCaptureResult_T;
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -74,7 +100,20 @@ typedef struct
  *------------------------------------------------------------------------------
  */
 
-static HwPWMCaptureState_T hw_pwm_capture_states[PWM_CAPTURE_CHANNEL_COUNT];
+static HwPWMCaptureChannelContext_T hw_pwm_capture_channels[PWM_CAPTURE_CHANNEL_COUNT] = {
+    {
+        .timer         = HW_PWM_CAPTURE_CH_1_INSTANCE,
+        .period_ccr    = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_PERIOD_CCR,
+        .high_ccr      = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_HIGH_CCR,
+        .is_configured = false,
+    },
+    {
+        .timer         = HW_PWM_CAPTURE_CH_2_INSTANCE,
+        .period_ccr    = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_PERIOD_CCR,
+        .high_ccr      = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_HIGH_CCR,
+        .is_configured = false,
+    },
+};
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -97,19 +136,19 @@ static bool HW_PWM_Capture_Apply_Static_Hardware_Selection( HwPWMCaptureMode_T m
     {
         case HW_PWM_CAPTURE_LV_3V3:
             // Configure hardware for 3.3V capture mode
-            // SET MODE0[0:1] to [0, 0] to select the 3.3V capture mode
+            // SET PWM_MODE[1:0] to [0, 0] to select the 3.3V capture mode
             break;
         case HW_PWM_CAPTURE_LV_5V:
             // Configure hardware for 5V capture mode
-            // SET MODE0[0:1] to [0, 1] to select the 5V capture mode
+            // SET PWM_MODE[1:0] to [0, 1] to select the 5V capture mode
             break;
         case HW_PWM_CAPTURE_HV_12V:
             // Configure hardware for 12V capture mode
-            // SET MODE0[0:1] to [1, 0] to select the 12V capture mode
+            // SET PWM_MODE[1:0] to [1, 0] to select the 12V capture mode
             break;
         case HW_PWM_CAPTURE_HV_24V:
             // Configure hardware for 24V capture mode
-            // SET MODE0[0:1] to [1, 1] to select the 24V capture mode
+            // SET PWM_MODE[1:0] to [1, 1] to select the 24V capture mode
             break;
         default:
             return false;  // Invalid mode
@@ -168,8 +207,26 @@ bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T       channel,
         return false;
     }
 
-    hw_pwm_capture_states[channel].config        = *config;
-    hw_pwm_capture_states[channel].is_configured = true;
+    hw_pwm_capture_channels[channel].config        = *config;
+    hw_pwm_capture_channels[channel].is_configured = true;
 
     return true;
+}
+
+void HW_PWM_Capture_Get_Result( HwPWMCaptureChannel_T channel, HwPWMCaptureResult_T* result )
+{
+    /*
+     * Contract:
+     * - channel must be valid
+     * - result must not be NULL
+     * - channel must already be configured and enabled
+     *
+     * This function intentionally performs no runtime validation because it is
+     * expected to be called from the deterministic execution path.
+     */
+
+    HwPWMCaptureChannelContext_T* context = &hw_pwm_capture_channels[channel];
+
+    result->period_ticks = context->period_ccr;
+    result->high_ticks   = context->high_ccr;
 }
