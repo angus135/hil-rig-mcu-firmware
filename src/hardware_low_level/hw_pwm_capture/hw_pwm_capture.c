@@ -34,7 +34,9 @@
  *------------------------------------------------------------------------------
  */
 
-#ifdef TEST_BUILD
+#ifndef TEST_BUILD
+#include "stm32f4xx.h"
+#else
 #include "tests/hw_pwm_capture_mocks.h"
 #endif
 
