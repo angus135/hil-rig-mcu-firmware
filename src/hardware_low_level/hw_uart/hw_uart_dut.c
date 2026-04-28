@@ -82,18 +82,6 @@
     ( DMA_HIFCR_CTCIF6 | DMA_HIFCR_CTEIF6 | DMA_HIFCR_CFEIF6 | DMA_HIFCR_CDMEIF6                   \
       | DMA_HIFCR_CHTIF6 )
 
-#define HW_UART_CH3_USART USART3
-#define HW_UART_CH3_DMA_RX_STREAM DMA1_Stream1
-#define HW_UART_CH3_DMA_TX_STREAM DMA1_Stream3
-#define HW_UART_CH3_TX_DMA_IRQ_HANDLER DMA1_Stream3_IRQHandler
-#define HW_UART_CH3_HANDLE ( &huart3 )
-#define HW_UART_CH3_DMA_CONTROLLER DMA1
-#define HW_UART_CH3_DMA_TX_LL_STREAM LL_DMA_STREAM_3
-#define HW_UART_CH3_DMA_TX_IFCR_REG ( &DMA1->LIFCR )
-#define HW_UART_CH3_DMA_TX_IFCR_MASK                                                               \
-    ( DMA_LIFCR_CTCIF3 | DMA_LIFCR_CTEIF3 | DMA_LIFCR_CFEIF3 | DMA_LIFCR_CDMEIF3                   \
-      | DMA_LIFCR_CHTIF3 )
-
 /* Placeholder interface selection line definitions. */
 #define HW_UART_CH1_MODE_SEL0_LINE GPIO_PIN_0
 #define HW_UART_CH1_MODE_SEL1_LINE GPIO_PIN_1
@@ -257,16 +245,7 @@ static const HwUartHardwareMap_T hw_uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
                             .tx_dma_controller = HW_UART_CH2_DMA_CONTROLLER,
                             .tx_ll_stream      = HW_UART_CH2_DMA_TX_LL_STREAM,
                             .tx_dma_ifcr_reg   = HW_UART_CH2_DMA_TX_IFCR_REG,
-                            .tx_dma_ifcr_mask  = HW_UART_CH2_DMA_TX_IFCR_MASK },
-
-    [HW_UART_CHANNEL_3] = { .uart_instance     = HW_UART_CH3_USART,
-                            .rx_dma_stream     = HW_UART_CH3_DMA_RX_STREAM,
-                            .tx_dma_stream     = HW_UART_CH3_DMA_TX_STREAM,
-                            .uart_handle       = HW_UART_CH3_HANDLE,
-                            .tx_dma_controller = HW_UART_CH3_DMA_CONTROLLER,
-                            .tx_ll_stream      = HW_UART_CH3_DMA_TX_LL_STREAM,
-                            .tx_dma_ifcr_reg   = HW_UART_CH3_DMA_TX_IFCR_REG,
-                            .tx_dma_ifcr_mask  = HW_UART_CH3_DMA_TX_IFCR_MASK } };
+                            .tx_dma_ifcr_mask  = HW_UART_CH2_DMA_TX_IFCR_MASK } };
 
 /* Fixed board-level mapping from logical UART channels to interface selection lines */
 static const HwUartSelectionLines_T uart_selection_lines[HW_UART_CHANNEL_COUNT] = {
@@ -281,7 +260,13 @@ static const HwUartSelectionLines_T uart_selection_lines[HW_UART_CHANNEL_COUNT] 
 
 void HW_UART_CH1_TX_DMA_IRQ_HANDLER( void );
 void HW_UART_CH2_TX_DMA_IRQ_HANDLER( void );
-void HW_UART_CH3_TX_DMA_IRQ_HANDLER( void );
+
+/**-----------------------------------------------------------------------------
+ *  Private (static) Function Prototypes
+ *------------------------------------------------------------------------------
+ */
+static inline void HW_UART_Tx_Complete_Handler( HwUartChannel_T channel );
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Definitions
  *------------------------------------------------------------------------------
@@ -444,11 +429,6 @@ static inline uint32_t HW_UART_Advance_Index_Helper( uint32_t current_index, uin
 static bool HW_UART_Apply_Static_Hardware_Selection( HwUartChannel_T       channel,
                                                      HwUartInterfaceMode_T interface_mode )
 {
-    if ( channel == HW_UART_CHANNEL_3 )
-    {
-        // Console for Nucleo board does not need selection
-        return true;
-    }
 
     const HwUartSelectionLines_T* selection = &uart_selection_lines[channel];
     ( void )selection;
@@ -707,7 +687,6 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* c
     state->runtime.tx_count            = 0U;
     state->runtime.tx_dma_length_bytes = 0U;
     state->runtime.tx_running          = false;
-    ;
 
     if ( !HW_UART_Init_Channel( channel ) )
     {
@@ -938,8 +917,9 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
     return true;
 }
 
-/* If a TX DMA transfer is already active, the pump is already running and there is
- * nothing to do. Newly queued data will be picked up by the completion handler.
+/* Starts the TX DMA pump if queued TX data exists and no TX DMA transfer is active.
+ * If a TX DMA transfer is already active, newly queued data will be picked up by
+ * the completion handler.
  */
 bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
 {
@@ -1032,9 +1012,9 @@ bool HW_UART_Is_Tx_Busy( HwUartChannel_T channel )
  *         clears the corresponding DMA flags, and dispatches to the appropriate
  *         low-level TX handler.
  *
- * @note   DMA completion indicates that the staged TX buffer has been fully
- *         consumed by the DMA engine. It does not guarantee that the final
- *         UART stop bit has left the wire.
+ * @note   DMA completion indicates that the active linear TX buffer span has
+ *         been fully consumed by the DMA engine. It does not guarantee that the
+ *         final UART stop bit has left the wire.
  *
  * @note   This handler must remain minimal and deterministic. No blocking or
  *         heavy processing should be introduced here.
@@ -1092,44 +1072,5 @@ void HW_UART_CH2_TX_DMA_IRQ_HANDLER( void )
     {
         *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
         HW_UART_Tx_Error_Handler( HW_UART_CHANNEL_2 );
-    }
-}
-
-/**
- * @brief  DMA interrupt service routine for TX on UART Channel 3.
- *
- * @note   This function is bound to the MCU interrupt vector via the
- *         HW_UART_CH3_TX_DMA_IRQ_HANDLER macro, which expands to the
- *         device-specific DMA stream IRQ handler (e.g. DMA1_Stream3_IRQHandler).
- *
- * @note   This ISR is not declared in the public header as it is not intended
- *         to be called by application code. It exists solely to service the
- *         hardware interrupt vector.
- *
- * @note   The ISR checks for DMA transfer-complete and transfer-error conditions,
- *         clears the corresponding DMA flags, and dispatches to the appropriate
- *         low-level TX handler.
- *
- * @note   DMA completion indicates that the staged TX buffer has been fully
- *         consumed by the DMA engine. It does not guarantee that the final
- *         UART stop bit has left the wire.
- *
- * @note   This handler must remain minimal and deterministic. No blocking or
- *         heavy processing should be introduced here.
- */
-void HW_UART_CH3_TX_DMA_IRQ_HANDLER( void )
-{
-    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[HW_UART_CHANNEL_3];
-
-    if ( LL_DMA_IsActiveFlag_TC3( DMA1 ) )
-    {
-        *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
-        HW_UART_Tx_Complete_Handler( HW_UART_CHANNEL_3 );
-    }
-
-    else if ( LL_DMA_IsActiveFlag_TE3( DMA1 ) )
-    {
-        *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
-        HW_UART_Tx_Error_Handler( HW_UART_CHANNEL_3 );
     }
 }
