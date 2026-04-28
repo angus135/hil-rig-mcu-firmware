@@ -21,8 +21,8 @@
  *        hw_uart driver.
  *      - RX data returned through this interface is copied from low-level
  *        driver owned DMA buffers into caller-provided storage.
- *      - TX operations are sequenced through the low-level driver staging and
- *        trigger path.
+ *      - TX operations are sequenced through the low-level driver TX ring buffer
+ *        and DMA pump.
  ******************************************************************************/
 
 #ifndef EXEC_UART_H
@@ -47,6 +47,11 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+/*
+ * Maximum single payload size accepted by the exec UART transmit API.
+ * Larger logical UART outputs must be split by higher layers before calling
+ * EXEC_UART_Transmit().
+ */
 #define EXEC_UART_MAX_CHUNK_SIZE HW_UART_TX_BUFFER_SIZE
 
 /**-----------------------------------------------------------------------------
@@ -95,24 +100,26 @@ bool EXEC_UART_Apply_Configuration( HwUartChannel_T channel, const HwUartConfig_
 bool EXEC_UART_Deconfigure( HwUartChannel_T channel );
 
 /**
- * @brief  Transmits a UART payload through the exec layer.
+ * @brief  Queues a UART TX payload and starts the low-level TX DMA pump if required.
  *
  * @param  channel      UART channel to transmit on.
  * @param  data         Pointer to the payload bytes to transmit.
  * @param  length_bytes Number of payload bytes to transmit.
  *
- * @return true if the payload was successfully staged and transmission was
- *         successfully launched.
- * @return false if the channel is already in an exec-level staged lock state,
- *         low-level staging fails, or low-level trigger fails.
+ * @return true if the payload was successfully queued and the TX DMA pump is running,
+ *         already running, or did not require action.
+ * @return false if the low-level driver rejects the payload, usually because the full
+ *         payload cannot fit in the TX ring buffer, or if low-level trigger fails.
  *
  * @note   This function performs a combined transmit operation by:
- *         1. staging the payload into the low-level TX buffer,
- *         2. triggering low-level DMA-based transmission.
+ *         1. queueing the complete payload into the low-level TX ring buffer,
+ *         2. triggering the low-level DMA pump.
  *
- * @note   If low-level trigger fails after low-level staging succeeds, the
- *         channel remains in an exec-level staged lock state for higher-level
- *         recovery.
+ * @note   Payload queueing is all-or-nothing. If the full payload cannot fit in the
+ *         low-level TX ring buffer, no bytes are queued and this function returns false.
+ *
+ * @note   New TX data may be queued while a previous TX DMA transfer is still active,
+ *         provided sufficient free space remains in the low-level TX ring buffer.
  */
 bool EXEC_UART_Transmit( HwUartChannel_T channel, const uint8_t* data, uint32_t length_bytes );
 
@@ -142,14 +149,19 @@ bool EXEC_UART_Read( HwUartChannel_T channel, uint8_t* dest, uint32_t dest_size,
                      uint32_t* bytes_read );
 
 /**
- * @brief  Reports whether the UART TX path is currently busy.
+ * @brief  Reports whether the UART TX path currently has queued or in-flight data.
  *
- * @param  channel UART channel to query
+ * @param  channel UART channel to query.
  *
- * @return true if TX is currently in progress or data is staged
- * @return false if the channel is ready to accept a new transmit
+ * @return true if the low-level TX ring buffer contains queued data or a TX DMA transfer
+ *         is currently active.
+ * @return false if no TX data is queued or in flight.
  *
- * @note   This reflects both mid-level staged state and low-level TX activity.
+ * @note   This function reports TX ownership and drain state only.
+ *
+ * @note   A true return value does not mean the channel cannot accept more TX data.
+ *         Additional payloads may still be queued if sufficient free space remains in
+ *         the low-level TX ring buffer.
  */
 bool EXEC_UART_Is_Tx_Busy( HwUartChannel_T channel );
 

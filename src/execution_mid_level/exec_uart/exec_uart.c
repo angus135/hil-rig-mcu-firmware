@@ -3,22 +3,26 @@
  *  Author:     Callum Rafferty
  *  Created:    25-Mar-2025
  *
+ *
  *  Description:
  *      Implementation of the mid-level UART driver responsible for sequencing
  *      low-level UART operations for configuration and execution use.
  *
  *      This module:
  *      - sequences configuration and deconfiguration operations,
- *      - bridges execution-level TX requests to low-level staged DMA transmit,
+ *      - bridges execution-level TX requests to the low-level TX ring buffer
+ *        and DMA pump,
  *      - copies low-level RX spans into caller-owned storage.
  *
  *  Notes:
  *      - Hardware access, DMA ownership, and buffer ownership remain in the
  *        low-level hw_uart driver.
  *      - RX data is copied from low-level circular buffers into caller storage.
- *      - TX staging state is tracked to detect and preserve fault conditions
- *        where a payload is accepted but transmit launch fails.
- ******************************************************************************/
+ *      - TX payloads are queued atomically through the low-level driver. If the
+ *        full payload cannot fit in the low-level TX ring buffer, transmission
+ *        is rejected and no partial payload is queued.
+ *      - The execution layer is the sole producer of DUT-facing UART TX data.
+ */
 
 /**-----------------------------------------------------------------------------
  *  Includes
@@ -45,19 +49,14 @@
  * @brief  Exec-level UART channel state.
  *
  * @note   This state tracks execution-layer lifecycle only.
- *         Hardware state and DMA ownership remain in the low-level driver.
- *
- * @note   tx_staged indicates that a payload has been accepted by the low-level
- *         staging buffer but has not yet successfully transitioned into an
- *         active transmit. If transmit launch fails, this flag remains set and
- *         the channel is considered locked until higher-level recovery.
+ *         Hardware state, DMA ownership, RX buffering, and TX ring buffering
+ *         remain in the low-level driver.
  */
 typedef struct
 {
     bool is_configured;
     bool rx_enabled;
     bool tx_enabled;
-    bool tx_staged;
 } ExecUartChannelState_T;
 
 /**-----------------------------------------------------------------------------
@@ -172,7 +171,6 @@ bool EXEC_UART_Apply_Configuration( HwUartChannel_T channel, const HwUartConfig_
     state->is_configured = true;
     state->rx_enabled    = config->rx_enabled;
     state->tx_enabled    = config->tx_enabled;
-    state->tx_staged     = false;
 
     return true;
 }
@@ -203,40 +201,18 @@ bool EXEC_UART_Deconfigure( HwUartChannel_T channel )
     exec_uart_channel_states[channel].is_configured = false;
     exec_uart_channel_states[channel].rx_enabled    = false;
     exec_uart_channel_states[channel].tx_enabled    = false;
-    exec_uart_channel_states[channel].tx_staged     = false;
 
     return true;
 }
 
 bool EXEC_UART_Transmit( HwUartChannel_T channel, const uint8_t* data, uint32_t length_bytes )
 {
-    /*
-     * Prevent re-entry if a previous payload was staged but not successfully launched.
-     * In this condition, the channel is considered locked and requires recovery.
-     */
-    if ( exec_uart_channel_states[channel].tx_staged )
-    {
-        return false;
-    }
-
     if ( !HW_UART_Tx_Load_Buffer( channel, data, length_bytes ) )
     {
         return false;
     }
 
-    /*
-     * Mark staged ownership before trigger so that a failed trigger leaves
-     * the channel in a known locked state.
-     */
-    exec_uart_channel_states[channel].tx_staged = true;
-
-    if ( !HW_UART_Tx_Trigger( channel ) )
-    {
-        return false;
-    }
-
-    exec_uart_channel_states[channel].tx_staged = false;
-    return true;
+    return HW_UART_Tx_Trigger( channel );
 }
 
 bool EXEC_UART_Read( HwUartChannel_T channel, uint8_t* dest, uint32_t dest_size,
