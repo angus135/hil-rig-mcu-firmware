@@ -208,8 +208,8 @@ DigitalOutputPinmask_T HW_GPIO_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names,
 inline void HW_GPIO_Set_Output( uint32_t pin_mask );
 
 inline void HW_GPIO_Reset_Output( uint32_t pin_mask );
-/** 
-* @brief Reads the state of all digital inputs using the underlying GPIO LL library.
+/**
+ * @brief Reads the state of all digital inputs using the underlying GPIO LL library.
  *
  * This function wraps the LL_GPIO_ReadInputPort( ... )/LL_GPIO_IsInputPinSet( ... ) function
  * provided by the LL layer. It is a convenient seam for unit testing where the LL call is mocked
