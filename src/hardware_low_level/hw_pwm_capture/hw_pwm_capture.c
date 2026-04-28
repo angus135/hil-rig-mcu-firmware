@@ -4,10 +4,29 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      <Short description of the module's purpose and responsibilities>
+ *      Hardware layer implementation for PWM capture.
+ *
+ *      This module configures the PWM capture analogue front end, manages the
+ *      associated timer capture paths, and exposes zero-copy access to raw
+ *      timer capture registers for the execution layer.
  *
  *  Notes:
- *      <Any design notes, dependencies, or assumptions go here>
+ *      Responsibilities:
+ *      - Apply PWM capture hardware mode selection
+ *      - Start and stop the associated timer capture path
+ *      - Map logical PWM capture channels to timer CCR registers
+ *      - Expose new capture availability through hardware capture flags
+ *
+ *      Non-Responsibilities:
+ *      - Interpreting captured values
+ *      - Validating duty cycle or frequency measurements
+ *      - Timestamping captured data
+ *      - Packaging results for transfer
+ *
+ *      Assumptions:
+ *      - Timer PWM input mode is configured in the IOC
+ *      - Timer capture is stopped before analogue mode changes
+ *      - The execution layer consumes capture results before clearing flags
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
