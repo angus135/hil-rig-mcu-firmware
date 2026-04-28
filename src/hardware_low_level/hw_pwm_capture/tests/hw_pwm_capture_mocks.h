@@ -34,6 +34,8 @@ extern "C"
 
 #define TIM2 ( &mock_tim2 )
 #define TIM5 ( &mock_tim5 )
+#define TIM_SR_CC1IF ( 1u << 1 )
+#define TIM_SR_CC2IF ( 1u << 2 )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -44,6 +46,7 @@ typedef struct
 {
     volatile uint32_t CCR1;
     volatile uint32_t CCR2;
+    volatile uint32_t SR;
 } TIM_TypeDef;
 
 extern TIM_TypeDef mock_tim2;
