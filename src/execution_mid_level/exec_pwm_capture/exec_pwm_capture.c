@@ -42,6 +42,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include "exec_pwm_capture.h"
 
 /**-----------------------------------------------------------------------------
@@ -49,6 +50,8 @@
  *------------------------------------------------------------------------------
  */
 #define EXEC_PWM_CAPTURE_CHANNEL_COUNT 2U
+
+#define EXEC_PWM_CAPTURE_DEFAULT_MODE HW_PWM_CAPTURE_LV_3V3
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -64,6 +67,8 @@
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
+
+static bool exec_pwm_capture_channel_started[EXEC_PWM_CAPTURE_CHANNEL_COUNT];
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -115,10 +120,67 @@ bool EXEC_PWM_Capture_Start_Channel( HwPWMCaptureChannel_T       channel,
 {
     /*
      * Contract:
-     * - channel must be valid and not already configured
+     * - channel must be valid
+     * - config must not be NULL
+     * - config->is_enabled must be true
+     * - channel must not already be started
      */
 
-    return HW_PWM_Capture_Configure_Channel( channel, config );
+    if ( config == NULL )
+    {
+        return false;
+    }
+
+    if ( channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    if ( config->is_enabled == false )
+    {
+        return false;
+    }
+
+    if ( exec_pwm_capture_channel_started[channel] )
+    {
+        return false;
+    }
+
+    if ( !HW_PWM_Capture_Configure_Channel( channel, config ) )
+    {
+        return false;
+    }
+
+    exec_pwm_capture_channel_started[channel] = true;
+
+    return true;
+}
+
+bool EXEC_PWM_Capture_Stop_Channel( HwPWMCaptureChannel_T channel )
+{
+    HwPWMCaptureConfig_T config = {};
+
+    if ( channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    if ( !exec_pwm_capture_channel_started[channel] )
+    {
+        return false;
+    }
+
+    config.mode       = EXEC_PWM_CAPTURE_DEFAULT_MODE;
+    config.is_enabled = false;
+
+    if ( !HW_PWM_Capture_Configure_Channel( channel, &config ) )
+    {
+        return false;
+    }
+
+    exec_pwm_capture_channel_started[channel] = false;
+
+    return true;
 }
 
 bool EXEC_PWM_Capture_Consume( HwPWMCaptureChannel_T channel, ExecPwmCaptureResult_T* result )
