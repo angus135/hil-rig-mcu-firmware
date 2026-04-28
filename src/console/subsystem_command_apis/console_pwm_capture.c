@@ -233,10 +233,7 @@ void CONSOLE_PWM_Capture_Command( uint16_t argc, char* argv[] )
             return;
         }
 
-        config.mode       = HW_PWM_CAPTURE_LV_3V3;
-        config.is_enabled = false;
-
-        if ( !EXEC_PWM_Capture_Start_Channel( channel, &config ) )
+        if ( !EXEC_PWM_Capture_Stop_Channel( channel ) )
         {
             CONSOLE_Printf( "PWM capture stop failed\r\n" );
             return;
