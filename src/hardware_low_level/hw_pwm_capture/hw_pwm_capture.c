@@ -15,11 +15,16 @@
  *------------------------------------------------------------------------------
  */
 
+#ifdef TEST_BUILD
+#include "tests/hw_pwm_capture_mocks.h"
+#endif
+
 #include "hw_pwm_capture.h"
 #include <stdint.h>
 #include <stdbool.h>
-#include <string.h>
+#include <stddef.h>
 #include "hw_timer.h"
+
 // Add other required includes here
 
 /**-----------------------------------------------------------------------------
@@ -43,46 +48,24 @@
 #define HW_PWM_CAPTURE_CH_2_PERIOD_CCR CCR2
 #define HW_PWM_CAPTURE_CH_2_HIGH_CCR CCR1
 
+/* Timer Settings*/
+#define HW_PWM_CAPTURE_TIMER_PSC 0U
+#define HW_PWM_CAPTURE_TIMER_ARR 0xFFFFFFFFU
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
 
-typedef enum
-{
-    HW_PWM_CAPTURE_LV_3V3 = 0u,  // Capture voltage level at 3.3V (Hardware state)
-    HW_PWM_CAPTURE_LV_5V,        // Capture voltage level at 5V (Hardware state)
-    HW_PWM_CAPTURE_HV_12V,       // Capture voltage level at 12V (Hardware state)
-    HW_PWM_CAPTURE_HV_24V        // Capture voltage level at 24V (Hardware state)
-} HwPWMCaptureMode_T;
-
-typedef enum
-{
-    HW_PWM_CAPTURE_CHANNEL_1 = 0u,  // First PWM capture channel
-    HW_PWM_CAPTURE_CHANNEL_2        // Second PWM capture channel
-} HwPWMCaptureChannel_T;
-
-typedef struct
-{
-    HwPWMCaptureMode_T mode;        // Desired capture mode (voltage level)
-    bool               is_enabled;  // Flag to indicate if capture is enabled for this channel
-} HwPWMCaptureConfig_T;
-
 typedef struct
 {
     TIM_TypeDef*       timer;
+    Timer_T            timer_role;
     volatile uint32_t* period_ccr;
     volatile uint32_t* high_ccr;
 
     HwPWMCaptureConfig_T config;
     bool                 is_configured;
 } HwPWMCaptureChannelContext_T;
-
-typedef struct
-{
-    volatile uint32_t* period_ticks;
-    volatile uint32_t* high_ticks;
-} HwPWMCaptureResult_T;
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -97,12 +80,14 @@ typedef struct
 static HwPWMCaptureChannelContext_T hw_pwm_capture_channels[PWM_CAPTURE_CHANNEL_COUNT] = {
     {
         .timer         = HW_PWM_CAPTURE_CH_1_INSTANCE,
+        .timer_role    = PWM_CAPTURE_TIMER_CH1,
         .period_ccr    = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_PERIOD_CCR,
         .high_ccr      = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_HIGH_CCR,
         .is_configured = false,
     },
     {
         .timer         = HW_PWM_CAPTURE_CH_2_INSTANCE,
+        .timer_role    = PWM_CAPTURE_TIMER_CH2,
         .period_ccr    = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_PERIOD_CCR,
         .high_ccr      = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_HIGH_CCR,
         .is_configured = false,
@@ -178,8 +163,7 @@ static bool HW_PWM_Capture_Configuration_Is_Valid( const HwPWMCaptureConfig_T* c
 bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T       channel,
                                        const HwPWMCaptureConfig_T* config )
 {
-
-    HwPWMCaptureMode_T mode_to_apply = HW_PWM_CAPTURE_DEFAULT_SAFE_MODE;
+    HwPWMCaptureChannelContext_T* context;
 
     if ( channel >= PWM_CAPTURE_CHANNEL_COUNT )
     {
@@ -191,18 +175,36 @@ bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T       channel,
         return false;
     }
 
-    if ( config->is_enabled )
+    context = &hw_pwm_capture_channels[channel];
+
+    // Stop the timer to ensure safe configuration of hardware and to prevent unintended captures
+    // during reconfiguration
+    HW_TIMER_Stop_Timer( context->timer_role );
+
+    if ( !config->is_enabled )
     {
-        mode_to_apply = config->mode;
+        if ( !HW_PWM_Capture_Apply_Static_Hardware_Selection( HW_PWM_CAPTURE_DEFAULT_SAFE_MODE ) )
+        {
+            return false;
+        }
+
+        context->config        = *config;
+        context->is_configured = true;
+        return true;
     }
 
-    if ( !HW_PWM_Capture_Apply_Static_Hardware_Selection( mode_to_apply ) )
+    if ( !HW_PWM_Capture_Apply_Static_Hardware_Selection( config->mode ) )
     {
         return false;
     }
 
-    hw_pwm_capture_channels[channel].config        = *config;
-    hw_pwm_capture_channels[channel].is_configured = true;
+    HW_TIMER_Configure_Timer( context->timer_role, HW_PWM_CAPTURE_TIMER_PSC,
+                              HW_PWM_CAPTURE_TIMER_ARR );
+
+    HW_TIMER_Start_Timer( context->timer_role );
+
+    context->config        = *config;
+    context->is_configured = true;
 
     return true;
 }

@@ -25,16 +25,29 @@ extern "C"
  */
 
 #include <stdint.h>
+#include <stdbool.h>
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
  */
 
+#define TIM2 ( &mock_tim2 )
+#define TIM5 ( &mock_tim5 )
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+
+typedef struct
+{
+    volatile uint32_t CCR1;
+    volatile uint32_t CCR2;
+} TIM_TypeDef;
+
+extern TIM_TypeDef mock_tim2;
+extern TIM_TypeDef mock_tim5;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -47,4 +60,4 @@ extern "C"
 }
 #endif
 
-#endif /* HW_I2C_MOCKS_H */
+#endif /* HW_PWM_CAPTURE_MOCKS_H */
