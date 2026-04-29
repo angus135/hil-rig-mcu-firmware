@@ -56,8 +56,10 @@
 
 typedef struct
 {
-    bool     is_configured;
-    uint32_t baud_rate;
+    bool        is_configured;
+    uint32_t    baud_rate;
+    const char* framing_text;
+    uint32_t    wire_bits_per_byte;
 } ConsoleUartLoopbackState_T;
 
 /**-----------------------------------------------------------------------------
@@ -113,6 +115,10 @@ static bool CONSOLE_UART_Transmit_Buffer_Chunked( HwUartChannel_T sender_ch, con
 static bool CONSOLE_UART_Read_And_Compare_Buffer( HwUartChannel_T receiver_ch,
                                                   const uint8_t* expected, uint32_t expected_length,
                                                   uint32_t iteration );
+static bool CONSOLE_UART_Parse_Framing( const char* text, HwUartWordLength_T* word_length_out,
+                                        HwUartParity_T* parity_out, HwUartStopBits_T* stop_bits_out,
+                                        const char** framing_text_out,
+                                        uint32_t*    wire_bits_per_byte_out );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -131,14 +137,16 @@ static void CONSOLE_UART_Print_Usage( void )
 static void CONSOLE_UART_Loopback_Print_Usage( void )
 {
     CONSOLE_Printf( "Usage:\r\n" );
-    CONSOLE_Printf( "  uart loopback configure <baud>\r\n" );
+    CONSOLE_Printf( "  uart loopback configure <baud> [framing]\r\n" );
     CONSOLE_Printf( "  uart loopback deconfigure\r\n" );
     CONSOLE_Printf( "  uart loopback status\r\n" );
     CONSOLE_Printf( "  uart loopback start <sender_ch> <receiver_ch> <data ...>\r\n" );
     CONSOLE_Printf( "  uart loopback blast_random <sender_ch> <receiver_ch> <length> <seed> "
                     "[iterations] [chunk_size]\r\n" );
     CONSOLE_Printf( "    note: sender_ch and receiver_ch must be in {ch1,ch2}\r\n" );
-    CONSOLE_Printf( "    note: configure uses fixed mode TTL_3V3, 8N1, RX+TX enabled\r\n" );
+    CONSOLE_Printf( "    note: configure uses fixed mode TTL_3V3 with RX+TX enabled\r\n" );
+    CONSOLE_Printf( "    note: default framing is 8N1\r\n" );
+    CONSOLE_Printf( "    note: supported framing values are 8N1, 8E1, 8O1, 8N2, 9N1\r\n" );
     CONSOLE_Printf( "    note: blast_random uses deterministic pseudo-random data\r\n" );
     CONSOLE_Printf( "    note: chunk_size 0 sends the payload in one transmit call\r\n" );
 }
@@ -183,6 +191,72 @@ static bool CONSOLE_UART_Parse_Channel( const char* text, HwUartChannel_T* chann
     if ( strcmp( text, "ch2" ) == 0 )
     {
         *channel_out = HW_UART_CHANNEL_2;
+        return true;
+    }
+
+    return false;
+}
+
+static bool CONSOLE_UART_Parse_Framing( const char* text, HwUartWordLength_T* word_length_out,
+                                        HwUartParity_T* parity_out, HwUartStopBits_T* stop_bits_out,
+                                        const char** framing_text_out,
+                                        uint32_t*    wire_bits_per_byte_out )
+{
+    if ( strcmp( text, "8N1" ) == 0 )
+    {
+        *word_length_out        = HW_UART_WORD_LENGTH_8_BITS;
+        *parity_out             = HW_UART_PARITY_NONE;
+        *stop_bits_out          = HW_UART_STOP_BITS_1;
+        *framing_text_out       = "8N1";
+        *wire_bits_per_byte_out = 10U;
+        return true;
+    }
+
+    if ( strcmp( text, "8E1" ) == 0 )
+    {
+        /*
+         * STM32 word length includes the parity bit when parity is enabled.
+         * To transmit 8 data bits plus parity, configure 9-bit word length.
+         */
+        *word_length_out        = HW_UART_WORD_LENGTH_9_BITS;
+        *parity_out             = HW_UART_PARITY_EVEN;
+        *stop_bits_out          = HW_UART_STOP_BITS_1;
+        *framing_text_out       = "8E1";
+        *wire_bits_per_byte_out = 11U;
+        return true;
+    }
+
+    if ( strcmp( text, "8O1" ) == 0 )
+    {
+        /*
+         * STM32 word length includes the parity bit when parity is enabled.
+         * To transmit 8 data bits plus parity, configure 9-bit word length.
+         */
+        *word_length_out        = HW_UART_WORD_LENGTH_9_BITS;
+        *parity_out             = HW_UART_PARITY_ODD;
+        *stop_bits_out          = HW_UART_STOP_BITS_1;
+        *framing_text_out       = "8O1";
+        *wire_bits_per_byte_out = 11U;
+        return true;
+    }
+
+    if ( strcmp( text, "8N2" ) == 0 )
+    {
+        *word_length_out        = HW_UART_WORD_LENGTH_8_BITS;
+        *parity_out             = HW_UART_PARITY_NONE;
+        *stop_bits_out          = HW_UART_STOP_BITS_2;
+        *framing_text_out       = "8N2";
+        *wire_bits_per_byte_out = 11U;
+        return true;
+    }
+
+    if ( strcmp( text, "9N1" ) == 0 )
+    {
+        *word_length_out        = HW_UART_WORD_LENGTH_9_BITS;
+        *parity_out             = HW_UART_PARITY_NONE;
+        *stop_bits_out          = HW_UART_STOP_BITS_1;
+        *framing_text_out       = "9N1";
+        *wire_bits_per_byte_out = 11U;
         return true;
     }
 
@@ -300,13 +374,24 @@ static uint32_t CONSOLE_UART_Calc_Loopback_Delay_Ms( uint32_t length_bytes )
     }
 
     /*
-     * Approximate UART frame time for the current fixed loopback framing:
-     * 1 start bit + 8 data bits + 1 stop bit = 10 bits per byte.
+     * Approximate UART frame time for the configured loopback framing.
+     *
+     * Examples:
+     * 8N1 uses 10 wire bits per byte.
+     * 8E1, 8O1, 8N2, and 9N1 use 11 wire bits per byte.
      *
      * A margin is added to cover scheduler latency, DMA interrupt handling, and
      * RX polling delay.
      */
-    uint32_t wire_time_ms = ( ( length_bytes * 10U * 1000U ) + baud_rate - 1U ) / baud_rate;
+    uint32_t wire_bits_per_byte = s_uart_loopback_state.wire_bits_per_byte;
+
+    if ( wire_bits_per_byte == 0U )
+    {
+        wire_bits_per_byte = 10U;
+    }
+
+    uint32_t wire_time_ms =
+        ( ( length_bytes * wire_bits_per_byte * 1000U ) + baud_rate - 1U ) / baud_rate;
 
     return wire_time_ms + CONSOLE_UART_LOOPBACK_DELAY_MARGIN_MS;
 }
@@ -382,7 +467,13 @@ static void CONSOLE_UART_Loopback_Configure( uint16_t argc, char* argv[] )
 {
     uint32_t baud_rate = 0U;
 
-    if ( argc != 4U )
+    HwUartWordLength_T word_length        = HW_UART_WORD_LENGTH_8_BITS;
+    HwUartParity_T     parity             = HW_UART_PARITY_NONE;
+    HwUartStopBits_T   stop_bits          = HW_UART_STOP_BITS_1;
+    const char*        framing_text       = "8N1";
+    uint32_t           wire_bits_per_byte = 10U;
+
+    if ( ( argc != 4U ) && ( argc != 5U ) )
     {
         CONSOLE_UART_Loopback_Print_Usage();
         return;
@@ -393,14 +484,25 @@ static void CONSOLE_UART_Loopback_Configure( uint16_t argc, char* argv[] )
         return;
     }
 
+    if ( argc == 5U )
+    {
+        if ( !CONSOLE_UART_Parse_Framing( argv[4], &word_length, &parity, &stop_bits, &framing_text,
+                                          &wire_bits_per_byte ) )
+        {
+            CONSOLE_Printf( "Invalid framing: %s\r\n", argv[4] );
+            CONSOLE_Printf( "Supported framing: 8N1, 8E1, 8O1, 8N2, 9N1\r\n" );
+            return;
+        }
+    }
+
     HwUartConfig_T config = { 0 };
     config.interface_mode = HW_UART_MODE_TTL_3V3;
     config.rx_enabled     = true;
     config.tx_enabled     = true;
     config.baud_rate      = baud_rate;
-    config.word_length    = HW_UART_WORD_LENGTH_8_BITS;
-    config.parity         = HW_UART_PARITY_NONE;
-    config.stop_bits      = HW_UART_STOP_BITS_1;
+    config.word_length    = word_length;
+    config.parity         = parity;
+    config.stop_bits      = stop_bits;
 
     if ( !EXEC_UART_Apply_Configuration( HW_UART_CHANNEL_1, &config ) )
     {
@@ -415,14 +517,16 @@ static void CONSOLE_UART_Loopback_Configure( uint16_t argc, char* argv[] )
         return;
     }
 
-    s_uart_loopback_state.is_configured = true;
-    s_uart_loopback_state.baud_rate     = baud_rate;
+    s_uart_loopback_state.is_configured      = true;
+    s_uart_loopback_state.baud_rate          = baud_rate;
+    s_uart_loopback_state.framing_text       = framing_text;
+    s_uart_loopback_state.wire_bits_per_byte = wire_bits_per_byte;
 
     CONSOLE_Printf( "uart loopback configured\r\n" );
     CONSOLE_Printf( "  channels: ch1 + ch2\r\n" );
     CONSOLE_Printf( "  mode: TTL_3V3\r\n" );
     CONSOLE_Printf( "  baud: %lu\r\n", ( unsigned long )baud_rate );
-    CONSOLE_Printf( "  framing: 8N1\r\n" );
+    CONSOLE_Printf( "  framing: %s\r\n", framing_text );
     CONSOLE_Printf( "  rx/tx: enabled\r\n" );
 }
 
@@ -439,8 +543,10 @@ static void CONSOLE_UART_Loopback_Deconfigure( uint16_t argc, char* argv[] )
     bool ch1_ok = EXEC_UART_Deconfigure( HW_UART_CHANNEL_1 );
     bool ch2_ok = EXEC_UART_Deconfigure( HW_UART_CHANNEL_2 );
 
-    s_uart_loopback_state.is_configured = false;
-    s_uart_loopback_state.baud_rate     = 0U;
+    s_uart_loopback_state.is_configured      = false;
+    s_uart_loopback_state.baud_rate          = 0U;
+    s_uart_loopback_state.framing_text       = NULL;
+    s_uart_loopback_state.wire_bits_per_byte = 0U;
 
     if ( ch1_ok && ch2_ok )
     {
@@ -661,7 +767,7 @@ static void CONSOLE_UART_Loopback_Status( uint16_t argc, char* argv[] )
     CONSOLE_Printf( "  channels: ch1 + ch2\r\n" );
     CONSOLE_Printf( "  mode: TTL_3V3\r\n" );
     CONSOLE_Printf( "  baud: %lu\r\n", ( unsigned long )s_uart_loopback_state.baud_rate );
-    CONSOLE_Printf( "  framing: 8N1\r\n" );
+    CONSOLE_Printf( "  framing: %s\r\n", s_uart_loopback_state.framing_text );
     CONSOLE_Printf( "  rx/tx: enabled\r\n" );
 }
 
