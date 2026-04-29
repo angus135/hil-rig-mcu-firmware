@@ -57,8 +57,6 @@ static_assert( USB_RECEIVE_STREAM_TRIGGER_LEVEL_BYTES == EXPECTED_USB_RECEIVE_TR
  */
 // NOLINTBEGIN
 
-extern "C" void HW_USB_Test_PortYieldFromISR( BaseType_t higher_priority_task_woken );
-
 class MockHWUSB
 {
 public:
@@ -79,7 +77,6 @@ public:
 
     MOCK_METHOD( size_t, StreamBufferSpacesAvailable, ( StreamBufferHandle_t stream_buffer ), () );
 
-    MOCK_METHOD( void, PortYieldFromISR, ( BaseType_t higher_priority_task_woken ), () );
 };
 
 static MockHWUSB* g_mock = nullptr;
@@ -115,11 +112,6 @@ extern "C" size_t xStreamBufferReceive( StreamBufferHandle_t xStreamBuffer, void
 extern "C" size_t xStreamBufferSpacesAvailable( StreamBufferHandle_t xStreamBuffer )
 {
     return g_mock->StreamBufferSpacesAvailable( xStreamBuffer );
-}
-
-extern "C" void HW_USB_Test_PortYieldFromISR( BaseType_t higher_priority_task_woken )
-{
-    g_mock->PortYieldFromISR( higher_priority_task_woken );
 }
 
 // NOLINTEND
@@ -232,8 +224,6 @@ TEST_F( HWUSBTest, ReceiveFromISRCopiesAllBytesToReceiveStreamAndYields )
                 return sent_length;
             } ) );
 
-    EXPECT_CALL( mock, PortYieldFromISR( pdTRUE ) );
-
     HW_USB_Receive_From_ISR( data, &size );
 
     EXPECT_EQ( 0U, usb_state.receive_stream_bytes_dropped );
@@ -253,8 +243,6 @@ TEST_F( HWUSBTest, ReceiveFromISRCountsBytesNotWrittenToStreamAsDropped )
             *higher_priority_task_woken = pdFALSE;
             return 2U;
         } ) );
-
-    EXPECT_CALL( mock, PortYieldFromISR( pdFALSE ) );
 
     HW_USB_Receive_From_ISR( data, &size );
 
