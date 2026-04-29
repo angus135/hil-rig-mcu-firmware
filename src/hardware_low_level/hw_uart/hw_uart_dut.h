@@ -1,56 +1,65 @@
 /******************************************************************************
  *  File:       hw_uart_dut.h
  *  Author:     Callum Rafferty
- *  Created:    16-Dec-2025
- *
+ *  Created:    16 Dec 2025
  *
  *  Description:
- *      Public API for the low-level UART driver used by DUT-facing UART channels.
+ *      Public API for the low level UART driver used by DUT facing UART channels.
  *
  *      This module provides:
- *      - configuration of UART channels and interface modes,
- *      - DMA-backed continuous RX operation,
- *      - efficient access to received data via zero-copy RX span views,
- *      - software ring buffered TX queueing,
- *      - normal mode DMA TX pumping over contiguous buffer spans.
+ *      1. Configuration of UART channels and interface modes.
+ *      2. DMA backed continuous RX operation.
+ *      3. Efficient access to received data through zero copy RX span views.
+ *      4. DMA source TX ring buffering.
+ *      5. Normal mode DMA TX pumping over contiguous TX buffer spans.
  *
- *      The low-level driver owns the RX DMA circular buffer, the TX software ring buffer, and all
- *      associated buffer management state.
+ *      The low level driver owns the RX DMA circular buffer, the TX DMA source
+ *      ring buffer, and all associated buffer management state.
  *
- *      RX data is exposed to higher layers through transient span views. Higher layers are
- *      responsible for copying received data into stable storage if it must persist beyond the
- *      current processing step. After processing, higher layers must explicitly report RX
- *      consumption to advance the internal read index.
+ *      RX data is exposed to higher layers through transient span views. Higher
+ *      layers are responsible for copying received data into stable storage if it
+ *      must persist beyond the current processing step. After processing, higher
+ *      layers must explicitly report RX consumption to advance the internal read
+ *      index.
  *
- *      TX data is copied into a driver-owned software ring buffer. The DMA TX stream is operated
- *      in normal mode and only transmits one contiguous buffer span at a time. If queued TX data
- *      wraps around the end of the software buffer, the low-level driver transmits it using
- *      multiple normal mode DMA launches.
+ *      TX data is copied directly into a driver owned TX ring buffer. This ring
+ *      buffer is also the DMA source buffer. The DMA TX stream is operated in
+ *      normal mode and only transmits one contiguous buffer span at a time. If
+ *      queued TX data wraps around the end of the TX buffer, the low level driver
+ *      transmits it using multiple normal mode DMA launches.
+ *
+ *  Execution path API contract:
+ *      Unless stated otherwise, execution path functions assume valid input.
+ *      The caller must provide a valid channel, must ensure the channel has been
+ *      configured for the requested direction, and must respect buffer ownership
+ *      rules. These functions avoid defensive parameter checks to minimise
+ *      execution path overhead.
  *
  *  Notes:
- *      - RX data is provided as a transient view into a DMA-backed circular buffer.
- *      - Returned RX pointers must not be retained beyond the valid processing window.
- *      - TX payloads are queued atomically at the payload level. If a full payload cannot fit in
- *        the available TX buffer space, no bytes are copied and the load operation fails.
- *      - TX data may be queued while a DMA TX transfer is already active.
- *      - The active DMA TX transfer is not modified by later queueing operations.
- *      - This module does not define result storage or execution semantics.
+ *      1. RX data is provided as a transient view into a DMA backed circular buffer.
+ *      2. Returned RX pointers must not be retained beyond the valid processing window.
+ *      3. TX payloads are queued atomically at the payload level. If a full payload
+ *         cannot fit in the available TX buffer space, no bytes are copied and the
+ *         load operation fails.
+ *      4. TX data may be queued while a DMA TX transfer is already active.
+ *      5. The active DMA TX transfer is not modified by later queueing operations.
+ *      6. This module does not define result storage or execution semantics.
  *
  *  Typical RX usage:
- *      1. Configure channel using HW_UART_Configure_Channel()
- *      2. Start RX using HW_UART_Rx_Start()
- *      3. Call HW_UART_Rx_Peek() to inspect unread data
- *      4. Copy data if persistence is required
- *      5. Call HW_UART_Rx_Consume() after processing to advance the read index
+ *      1. Configure channel using HW_UART_Configure_Channel().
+ *      2. Start RX using HW_UART_Rx_Start().
+ *      3. Call HW_UART_Rx_Peek() to inspect unread data.
+ *      4. Copy data if persistence is required.
+ *      5. Call HW_UART_Rx_Consume() after processing to advance the read index.
  *
  *  Typical TX usage:
- *      1. Configure channel using HW_UART_Configure_Channel()
- *      2. Queue TX data using HW_UART_Tx_Load_Buffer()
- *      3. Call HW_UART_Tx_Trigger() to start the DMA pump if it is idle
- *      4. Continue queueing additional TX data while buffer space remains
- *      5. Treat a false return from HW_UART_Tx_Load_Buffer() as TX buffer overflow or scheduling
- *         failure
- */
+ *      1. Configure channel using HW_UART_Configure_Channel().
+ *      2. Queue TX data using HW_UART_Tx_Load_Buffer().
+ *      3. Call HW_UART_Tx_Trigger() to start the DMA pump if it is idle.
+ *      4. Continue queueing additional TX data while buffer space remains.
+ *      5. Treat a false return from HW_UART_Tx_Load_Buffer() as TX buffer capacity
+ *         exhaustion or scheduling failure.
+ ******************************************************************************/
 
 #ifndef HW_UART_DUT_H
 #define HW_UART_DUT_H
@@ -265,135 +274,149 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* c
 bool HW_UART_Rx_Start( HwUartChannel_T channel );
 
 /**
- * @brief  Exposes a transient zero-copy view of the current unread RX data for the specified UART
- *         channel as one or two contiguous spans into the LL driver owned DMA circular buffer.
+ * @brief  Exposes a transient zero copy view of the current unread RX data.
  *
- * @param channel The UART channel to inspect.
+ * @param  channel The UART channel to inspect.
  *
- * @return HwUartRxSpans_T
- *         A structure containing up to two readable spans and the total unread byte count.
+ * @return A structure containing up to two readable spans and the total unread
+ *         byte count.
  *
- * @note   This function does not copy data. It provides a read-only view into the low-level driver
- *         owned DMA buffer. Buffer allocation, DMA write ownership, wrap handling, and consume
- *         semantics remain the responsibility of the low-level driver.
+ * @note   Execution path function. Assumes valid input.
  *
- * @note   The returned spans are intended for immediate higher-level processing. Higher layers may
- *         copy the data into execution-owned result storage if persistence is required beyond the
- *         current processing step.
+ * @note   Contract:
+ *         The caller must provide a valid UART channel.
+ *         The channel must already be configured and RX DMA must be running.
  *
- * @note   Higher layers must not directly manage the DMA buffer, modify the returned memory, or
- *         retain the returned pointers beyond the valid processing window. Once the required copy
- *         or processing is complete, the caller shall report consumption through
- *         HW_UART_Rx_Consume().
+ * @note   This function does not copy data. It provides a read only view into
+ *         the low level driver owned RX DMA circular buffer.
  *
- * @note   This interface preserves a clean ownership boundary:
- *         - the low-level driver owns the DMA circular buffer and its management,
- *         - the mid-level driver owns adaptation from raw UART bytes to execution-level data,
- *         - the execution manager owns result storage and tick association.
+ * @note   The returned spans are intended for immediate higher level processing.
+ *         Higher layers must copy the data into stable storage if persistence is
+ *         required beyond the current processing step.
+ *
+ * @note   Higher layers must not directly manage the DMA buffer, modify the
+ *         returned memory, or retain returned pointers beyond the valid processing
+ *         window. Once processing is complete, the caller shall report consumption
+ *         through HW_UART_Rx_Consume().
  */
 HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel );
 
 /**
- * @brief  Marks unread RX data as consumed by advancing the LL driver managed read index.
+ * @brief  Marks unread RX data as consumed by advancing the driver managed read index.
  *
- * @param channel The UART channel to update.
- * @param bytes_to_consume Number of bytes previously obtained via HW_UART_Rx_Peek() that have been
- *                         processed by higher layers.
+ * @param  channel The UART channel to update.
+ * @param  bytes_to_consume Number of bytes previously obtained through
+ *         HW_UART_Rx_Peek() that have been processed by higher layers.
  *
- * @note   The LL driver retains ownership of the DMA buffer. This function only updates the read
- *         index and does not copy or modify buffer contents.
+ * @note   Execution path function. Assumes valid input.
  *
- * @note   The caller shall only consume data that has already been processed or copied into
- *         stable storage. Consuming data allows the DMA buffer region to be reused.
+ * @note   Contract:
+ *         The caller must provide a valid UART channel.
+ *         bytes_to_consume must not exceed the unread byte count previously
+ *         reported by HW_UART_Rx_Peek().
+ *
+ * @note   The low level driver retains ownership of the RX DMA buffer. This
+ *         function only updates the read index and does not copy or modify buffer
+ *         contents.
  */
 void HW_UART_Rx_Consume( HwUartChannel_T channel, uint32_t bytes_to_consume );
 
 /**
- * @brief  Copies a transmit payload into the low-level driver owned TX ring buffer.
+ * @brief  Copies a complete transmit payload into the TX DMA source ring buffer.
  *
- * @param  channel       The UART channel whose TX ring buffer is to be loaded.
- * @param  data          Pointer to the source payload to copy into the TX ring buffer.
- * @param  length_bytes  Number of payload bytes to queue for transmission.
+ * @param  channel The UART channel whose TX ring buffer is to be loaded.
+ * @param  data Pointer to the source payload to copy into the TX ring buffer.
+ * @param  length_bytes Number of payload bytes to queue for transmission.
  *
  * @return true if the full payload was successfully queued.
- * @return false if the channel is invalid, the payload pointer is null, the payload length is
- *         zero, the channel is not ready for TX, the payload exceeds total TX buffer capacity,
- *         or insufficient free TX buffer space is available.
+ * @return false if insufficient free TX buffer space is available.
  *
- * @note   This function appends a complete payload to the driver-owned TX software ring buffer.
+ * @note   Execution path function. Assumes valid input.
  *
- * @note   Data may be queued while a DMA TX transfer is already active. The active DMA transfer
- *         is not modified. Newly queued data will be transmitted by a later DMA launch.
+ * @note   Contract:
+ *         The caller must provide a valid UART channel.
+ *         data must point to at least length_bytes bytes.
+ *         length_bytes must be greater than zero.
+ *         The channel must already be configured for TX.
+ *         The execution layer is the sole producer for each UART channel.
  *
- * @note   This function is atomic at the payload level. If the full payload cannot fit in the
- *         available TX buffer space, no bytes are copied.
+ * @note   The TX buffer is both the driver owned queue and the DMA source buffer.
+ *         DMA transfers read directly from this buffer.
  *
- * @note   This function does not start transmission by itself. After a successful load, the caller
- *         should call HW_UART_Tx_Trigger() to start the TX DMA pump if it is currently idle.
+ * @note   Data may be queued while a DMA TX transfer is already active. The active
+ *         DMA transfer is not modified. Newly queued data will be transmitted by
+ *         a later DMA launch.
+ *
+ * @note   This function is atomic at the payload level. If the full payload cannot
+ *         fit in the available TX buffer space, no bytes are copied.
+ *
+ * @note   This function does not start transmission by itself. After a successful
+ *         load, the caller should call HW_UART_Tx_Trigger() to start the TX DMA
+ *         pump if it is currently idle.
  */
 bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint32_t length_bytes );
 
 /**
- * @brief  Starts the TX DMA pump for the specified UART channel if queued TX data exists and
- *         no TX DMA transfer is currently active.
+ * @brief  Starts the TX DMA pump for the next contiguous TX buffer span.
  *
  * @param  channel The UART channel whose queued TX data should be transmitted.
  *
- * @return true if the TX pump is already active, no queued data exists, or a DMA transfer was
- *         successfully started.
- * @return false if the channel is invalid, not configured for TX, or DMA launch fails.
+ * @return true if the TX pump is already active, no queued data exists, or a DMA
+ *         transfer was started.
  *
- * @note   This function does not copy payload data. Payload data must first be queued into the
- *         low-level driver owned TX ring buffer via HW_UART_Tx_Load_Buffer().
+ * @note   Execution path function. Assumes valid input.
  *
- * @note   The TX buffer is managed as a software ring buffer. The DMA itself is operated in
- *         normal mode and is only ever programmed with one contiguous linear span from the
- *         current TX tail position.
+ * @note   Contract:
+ *         The caller must provide a valid UART channel.
+ *         The channel must already be configured for TX.
  *
- * @note   If queued TX data wraps around the end of the software buffer, the wrapped payload is
- *         transmitted using multiple normal mode DMA transfers. The first transfer sends the
- *         contiguous span from the current tail to the end of the buffer. The DMA completion
- *         handler then advances the tail and restarts the pump for the remaining wrapped span.
+ * @note   This function does not copy payload data. Payload data must first be
+ *         queued into the low level driver owned TX DMA source ring buffer using
+ *         HW_UART_Tx_Load_Buffer().
  *
- * @note   If a TX DMA transfer is already running, this function does not modify the active
- *         transfer and simply returns true.
+ * @note   The TX buffer is managed as a ring buffer. DMA is operated in normal
+ *         mode and is only programmed with one contiguous span from the current
+ *         TX tail position.
  *
- * @note   If no TX data is queued, this function performs no hardware action and returns true.
+ * @note   If queued TX data wraps around the end of the TX buffer, only the first
+ *         contiguous span is launched. The wrapped span is launched by the DMA
+ *         completion handler after the first span completes.
  *
- * @note   This implementation does not use HAL. Instead, it directly controls the DMA stream and
- *         UART DMA request using LL functions and register access.
+ * @note   If a TX DMA transfer is already active, this function leaves the active
+ *         transfer untouched and returns true.
  *
- * @note   Prior to launching a new transfer, the DMA stream is explicitly disabled and all
- *         pending interrupt flags are cleared. This ensures that the DMA registers can be safely
- *         reprogrammed and that stale flags do not interfere with the new transfer.
+ * @note   If no TX data is queued, this function performs no hardware action and
+ *         returns true.
  *
- * @note   This function assumes that the DMA stream configuration, including channel selection,
- *         direction, increment modes, data width, priority, interrupt enables, and normal mode
- *         operation, has already been performed during channel initialisation. Only the
- *         transfer-specific memory address, peripheral address, and transfer length are updated
- *         here.
- *
- * @note   The UART DMA transmit request is enabled immediately before the DMA stream is started.
+ * @note   This implementation does not use HAL for TX transfer setup. It directly
+ *         controls the DMA stream and UART DMA request using LL functions and
+ *         register access.
  */
 bool HW_UART_Tx_Trigger( HwUartChannel_T channel );
 
 /**
- * @brief  Reports whether the specified UART channel currently has queued or in-flight TX data.
+ * @brief  Reports whether the low level driver still owns any TX bytes.
  *
  * @param  channel The UART channel to inspect.
  *
- * @return true if the TX ring buffer contains queued data or a TX DMA transfer is currently
- *         active.
- * @return false if the channel is invalid, not configured for TX, or no TX data is queued or
- *         in flight.
+ * @return true if TX bytes remain queued or in flight.
+ * @return false if the low level driver owns no TX bytes for this channel.
  *
- * @note   This function reflects low-level TX ownership state only.
+ * @note   Execution path function. Assumes valid input.
  *
- * @note   A return value of true indicates that the low-level driver still owns TX data for this
- *         channel. It does not necessarily mean that the software TX ring buffer is full.
+ * @note   Contract:
+ *         The caller must provide a valid UART channel.
+ *         The channel must already be configured for TX.
  *
- * @note   New TX data may still be queued while this function returns true, provided sufficient
- *         free space remains in the TX ring buffer.
+ * @note   This function reflects low level TX ownership state only. A true return
+ *         means bytes remain in the TX DMA source ring buffer or a DMA transfer
+ *         is active.
+ *
+ * @note   This function does not prove that the final UART stop bit has left the
+ *         wire.
+ *
+ * @note   New TX data may still be queued while this function returns true,
+ *         provided sufficient free space remains in the TX buffer.
  */
 bool HW_UART_Is_Tx_Busy( HwUartChannel_T channel );
 

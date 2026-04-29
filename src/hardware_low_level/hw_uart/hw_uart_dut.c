@@ -12,7 +12,7 @@
  *      - static hardware interface selection sequencing,
  *      - DMA-backed circular RX buffering,
  *      - lightweight access to unread RX data through zero-copy spans,
- *      - software ring buffered TX queueing,
+ *      - DMA-source TX ring buffering,
  *      - normal mode DMA TX pumping over contiguous TX buffer spans.
  *
  *      Non-execution stage functions such as configuration and RX startup may use HAL
@@ -20,14 +20,23 @@
  *      lightweight and avoids unnecessary copying. TX transfer setup uses LL DMA and
  *      USART access to avoid HAL state-machine overhead during execution.
  *
+ *
+ *      Execution path API contract:
+ *      Unless stated otherwise, execution path functions assume valid input.
+ *      The caller must provide a valid channel, must ensure the channel has been
+ *      configured for the requested direction, and must respect buffer ownership
+ *      rules. These functions avoid defensive parameter checks to minimise execution
+ *      path overhead.
+ *
  *  Notes:
- *      - The low-level driver owns the RX DMA circular buffer, the TX software
+ *      - The low-level driver owns the RX DMA circular buffer, the TX DMA-source
  *        ring buffer, and all associated buffer management state.
  *      - Higher layers may inspect unread RX data through transient span views and
  *        must copy data into stable storage if persistence is required.
  *      - Higher layers must explicitly report RX consumption after processing.
- *      - Higher layers queue TX data by copying complete payloads into the TX ring
- *        buffer. If insufficient free space exists, no bytes are copied.
+ *      - Higher layers queue TX data by copying complete payloads directly into
+ *        the TX DMA-source ring buffer. If insufficient free space exists, no
+ *        bytes are copied.
  *      - The TX DMA stream is operated in normal mode. Software handles wrap-around
  *        by launching one DMA transfer per contiguous TX buffer span.
  *      - This module does not define execution result storage or tick semantics.
@@ -59,7 +68,7 @@
 
 /* Fixed UART hardware mapping definitions. */
 #define HW_UART_CH1_USART USART6
-#define HW_UART_CH1_DMA_RX_STREAM DMA2_Stream1
+#define HW_UART_CH1_DMA_RX_STREAM DMA2_Stream2
 #define HW_UART_CH1_DMA_TX_STREAM DMA2_Stream6
 #define HW_UART_CH1_TX_DMA_IRQ_HANDLER DMA2_Stream6_IRQHandler
 #define HW_UART_CH1_HANDLE ( &huart6 )
@@ -155,11 +164,17 @@ typedef struct
  *         RX consumption state, TX ring buffer state, latched faults, configuration
  *         status, and whether RX or TX DMA operation is currently active.
  *
- * @note   The TX fields implement a single-producer, single-consumer ring buffer:
+ * @note   The TX fields implement a single-producer, single-consumer DMA-source
+ *         ring buffer:
  *         - higher-level TX scheduling appends data at tx_head,
- *         - the TX DMA completion path consumes data from tx_tail,
- *         - tx_count tracks the total number of queued or in-flight bytes,
- *         - tx_dma_length_bytes records the active linear DMA transfer length.
+ *         - the TX DMA engine reads a contiguous span starting at tx_tail,
+ *         - the TX DMA completion path advances tx_tail after DMA has consumed
+ *           the active span,
+ *         - tx_count tracks the total number of bytes owned by the driver,
+ *           including queued bytes and bytes currently being consumed by DMA,
+ *         - tx_dma_length_bytes records the active linear DMA transfer length,
+ *         - tx_dma_active indicates that a normal-mode DMA transfer is currently
+ *           reading from the TX ring buffer.
  */
 typedef struct
 {
@@ -174,7 +189,7 @@ typedef struct
     uint32_t tx_tail;
     uint32_t tx_count;
     uint32_t tx_dma_length_bytes;
-    bool     tx_running;
+    bool     tx_dma_active;
 
 } HwUartRuntimeState_T;
 
@@ -182,8 +197,11 @@ typedef struct
  * @brief  Aggregates all low-level state for a UART channel.
  *
  * @note   This includes the stored channel configuration, runtime state, the
- *         DMA-backed circular RX buffer, and the software-managed TX ring buffer
- *         owned by the low-level driver.
+ *         DMA-backed circular RX buffer, and the DMA-source TX ring buffer owned
+ *         by the low-level driver.
+ *
+ * @note   The TX buffer is both the software queue and the DMA source buffer.
+ *         Normal-mode DMA transfers read directly from this buffer.
  */
 typedef struct
 {
@@ -580,14 +598,15 @@ static bool HW_UART_Init_Channel( HwUartChannel_T channel )
  * @note   This function is called from the DMA stream interrupt path once the DMA
  *         controller has finished reading the active linear TX buffer span.
  *
- * @note   DMA completion is sufficient to release the transmitted software buffer
- *         span because the DMA engine has already consumed those bytes.
+ * @note   DMA completion is sufficient to release the active TX buffer span
+ *         because the DMA engine has finished reading those bytes from the
+ *         DMA-source ring buffer.
  *
  * @note   This function advances tx_tail by the completed DMA length, reduces
  *         tx_count, clears the active transfer state, and restarts the TX DMA pump
  *         if queued data remains.
  *
- * @note   If the queued TX data wraps around the end of the software ring buffer,
+ * @note   If the queued TX data wraps around the end of the TX ring buffer,
  *         this completion handler causes the next contiguous span to be launched
  *         as a separate normal mode DMA transfer.
  *
@@ -607,7 +626,7 @@ static inline void HW_UART_Tx_Complete_Handler( HwUartChannel_T channel )
 
     runtime->tx_count -= completed_length;
     runtime->tx_dma_length_bytes = 0U;
-    runtime->tx_running          = false;
+    runtime->tx_dma_active       = false;
 
     if ( runtime->tx_count > 0U )
     {
@@ -642,7 +661,7 @@ static inline void HW_UART_Tx_Error_Handler( HwUartChannel_T channel )
     runtime->tx_tail             = 0U;
     runtime->tx_count            = 0U;
     runtime->tx_dma_length_bytes = 0U;
-    runtime->tx_running          = false;
+    runtime->tx_dma_active       = false;
 
     /* Future fault implementation:
      * runtime->latched_faults |= HW_UART_FAULT_DMA_ERROR;
@@ -686,7 +705,7 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* c
     state->runtime.tx_tail             = 0U;
     state->runtime.tx_count            = 0U;
     state->runtime.tx_dma_length_bytes = 0U;
-    state->runtime.tx_running          = false;
+    state->runtime.tx_dma_active       = false;
 
     if ( !HW_UART_Init_Channel( channel ) )
     {
@@ -780,24 +799,21 @@ bool HW_UART_Rx_Is_Running( HwUartChannel_T channel )
     return state->runtime.rx_running;
 }
 
-/* Provides spans into the DMA buffer with the unread data */
+/*
+ * Returns spans into the RX DMA circular buffer containing unread data.
+ *
+ * Contract:
+ * The caller must provide a valid UART channel.
+ * The channel must already be configured and RX DMA must be running.
+ * The returned spans are transient views into the driver owned RX DMA buffer.
+ * Higher layers must copy data if it must persist beyond the current processing step.
+ */
 HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
 {
-
-    if ( channel >= HW_UART_CHANNEL_COUNT )
-    {
-        return ( HwUartRxSpans_T ){ 0 };
-    }  // Remove for optimisation, but for safety in case of misuse.
-
     HwUartChannelState_T*      state      = &hw_uart_channel_states[channel];
     const HwUartHardwareMap_T* hw_map     = &hw_uart_hardware_map[channel];
     uint8_t*                   rx_buffer  = state->rx_buffer;
     uint32_t                   read_index = state->runtime.rx_read_index;
-
-    if ( !state->runtime.is_configured_and_initialised || !state->runtime.rx_running )
-    {
-        return ( HwUartRxSpans_T ){ 0 };
-    }  // Remove for optimisation, but for safety in case of misuse.
 
     /* Derive the current DMA write index from NDTR. */
     uint32_t dma_remaining   = hw_map->rx_dma_stream->NDTR;
@@ -837,7 +853,15 @@ HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
         .total_length_bytes = unread_bytes };
 }
 
-/* Advances the read pointer by bytes_to_consume amount */
+/*
+ * Advances the RX read index after higher layers have consumed bytes from the
+ * spans returned by HW_UART_Rx_Peek().
+ *
+ * Contract:
+ * The caller must provide a valid UART channel.
+ * bytes_to_consume must not exceed the unread byte count previously reported by
+ * HW_UART_Rx_Peek().
+ */
 void HW_UART_Rx_Consume( HwUartChannel_T channel, uint32_t bytes_to_consume )
 {
     HwUartChannelState_T* state = &hw_uart_channel_states[channel];
@@ -847,15 +871,25 @@ void HW_UART_Rx_Consume( HwUartChannel_T channel, uint32_t bytes_to_consume )
 }
 
 /*
- * TX concurrency model:
- * - The execution layer is the sole producer for DUT-facing UART TX data.
- * - The DMA completion ISR is the sole consumer.
- * - This function may copy into the TX ring buffer outside the critical section because newly
- *   copied bytes are not made visible to the DMA pump until tx_count is committed.
- * - Concurrent producers for the same channel are not supported without an external lock.
+ * Copies a complete payload directly into the TX DMA source ring buffer.
+ *
+ * Contract:
+ * The caller must provide a valid UART channel.
+ * data must point to at least length_bytes bytes.
+ * length_bytes must be greater than zero.
+ * The channel must already be configured for TX.
+ * The execution layer is the sole producer for each UART channel.
+ *
+ * The TX buffer is both the driver owned queue and the DMA source buffer. The
+ * DMA engine consumes one contiguous span at a time in normal mode. Newly copied
+ * bytes are not visible to the DMA pump until tx_head and tx_count are committed
+ * with interrupts disabled.
+ *
+ * Returns false only when there is insufficient free TX buffer space.
  */
 bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint32_t length_bytes )
 {
+
     HwUartChannelState_T* state = &hw_uart_channel_states[channel];
 
     uint32_t start_head;
@@ -917,9 +951,21 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
     return true;
 }
 
-/* Starts the TX DMA pump if queued TX data exists and no TX DMA transfer is active.
- * If a TX DMA transfer is already active, newly queued data will be picked up by
- * the completion handler.
+/*
+ * Starts a normal mode TX DMA transfer for the next contiguous span in the TX
+ * DMA source ring buffer.
+ *
+ * Contract:
+ * The caller must provide a valid UART channel.
+ * The channel must already be configured for TX.
+ *
+ * If a TX DMA transfer is already active, this function leaves the current
+ * transfer untouched. Newly queued data will be considered after the active DMA
+ * transfer completes and the completion handler calls this function again.
+ *
+ * If queued data wraps around the end of the ring buffer, only the first
+ * contiguous span is launched. The wrapped span is launched by the completion
+ * handler after the first span completes.
  */
 bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
 {
@@ -929,14 +975,26 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
     DMA_TypeDef*               tx_dma_controller = hw_map->tx_dma_controller;
     uint32_t                   tx_ll_stream      = hw_map->tx_ll_stream;
 
-    if ( state->runtime.tx_running )
+    /* Enter critical section */
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+
+    if ( state->runtime.tx_dma_active )
     {
+        if ( primask == 0U )
+        {
+            __enable_irq();
+        }
         return true;
     }
 
     /* No queued data exists, so there is no DMA transfer to launch. */
     if ( state->runtime.tx_count == 0U )
     {
+        if ( primask == 0U )
+        {
+            __enable_irq();
+        }
         return true;
     }
 
@@ -948,6 +1006,16 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
     }
 
     state->runtime.tx_dma_length_bytes = dma_length;
+    state->runtime.tx_dma_active       = true;
+
+    /* Capture the starting index for the DMA transfer*/
+    uint32_t dma_start_index = state->runtime.tx_tail;
+
+    /* Exit critical section before enabling the DMA stream to allow the completion ISR to run. */
+    if ( primask == 0U )
+    {
+        __enable_irq();
+    }
 
     LL_DMA_DisableStream( tx_dma_controller, tx_ll_stream );
 
@@ -958,7 +1026,7 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
     *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
 
     LL_DMA_SetMemoryAddress( tx_dma_controller, tx_ll_stream,
-                             ( uint32_t )( uintptr_t )&state->tx_buffer[state->runtime.tx_tail] );
+                             ( uint32_t )( uintptr_t )&state->tx_buffer[dma_start_index] );
 
     LL_DMA_SetPeriphAddress( tx_dma_controller, tx_ll_stream,
                              ( uint32_t )( uintptr_t )( &( uart->DR ) ) );
@@ -970,8 +1038,6 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
     LL_DMA_EnableIT_TC( tx_dma_controller, tx_ll_stream );
     LL_DMA_EnableIT_TE( tx_dma_controller, tx_ll_stream );
 
-    state->runtime.tx_running = true;
-
     LL_USART_EnableDMAReq_TX( uart );
 
     LL_DMA_EnableStream( tx_dma_controller, tx_ll_stream );
@@ -979,22 +1045,22 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
     return true;
 }
 
-/* Reports whether queued or in-flight TX data is still owned by the low-level driver. */
+/*
+ * Reports whether the low level driver still owns any TX bytes.
+ *
+ * Contract:
+ * The caller must provide a valid UART channel.
+ * The channel must already be configured for TX.
+ *
+ * This returns true while bytes remain queued in the TX DMA source ring buffer
+ * or while a DMA transfer is active. It does not prove that the final UART stop
+ * bit has left the wire.
+ */
 bool HW_UART_Is_Tx_Busy( HwUartChannel_T channel )
 {
-    if ( channel >= HW_UART_CHANNEL_COUNT )
-    {
-        return false;
-    }
-
     HwUartChannelState_T* state = &hw_uart_channel_states[channel];
 
-    if ( !state->runtime.is_configured_and_initialised || !state->config.tx_enabled )
-    {
-        return false;
-    }
-
-    return ( state->runtime.tx_count > 0U ) || state->runtime.tx_running;
+    return ( state->runtime.tx_count > 0U ) || state->runtime.tx_dma_active;
 }
 
 /**

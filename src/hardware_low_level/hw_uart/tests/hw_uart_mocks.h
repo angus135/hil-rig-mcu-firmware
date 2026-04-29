@@ -180,12 +180,12 @@ extern DMA_TypeDef fake_dma2;
  * DMA1 Stream5 is channel 2 RX.
  * DMA1 Stream6 is channel 2 TX.
  */
-static DMA_Stream_TypeDef DMA2_Stream1_mock = { 0U, 0U, 0U, 0U, 0U };
+static DMA_Stream_TypeDef DMA2_Stream2_mock = { 0U, 0U, 0U, 0U, 0U };
 static DMA_Stream_TypeDef DMA2_Stream6_mock = { 0U, 0U, 0U, 0U, 0U };
 static DMA_Stream_TypeDef DMA1_Stream5_mock = { 0U, 0U, 0U, 0U, 0U };
 static DMA_Stream_TypeDef DMA1_Stream6_mock = { 0U, 0U, 0U, 0U, 0U };
 
-#define DMA2_Stream1 ( &DMA2_Stream1_mock )
+#define DMA2_Stream2 ( &DMA2_Stream2_mock )
 #define DMA2_Stream6 ( &DMA2_Stream6_mock )
 #define DMA1_Stream5 ( &DMA1_Stream5_mock )
 #define DMA1_Stream6 ( &DMA1_Stream6_mock )
