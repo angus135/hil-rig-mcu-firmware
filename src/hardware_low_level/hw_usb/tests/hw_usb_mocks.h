@@ -1,7 +1,7 @@
 /******************************************************************************
  *  File:       hw_usb_mocks.h
- *  Author:     Callum Rafferty
- *  Created:    25-Mar-2026
+ *  Author:     Angus Corr
+ *  Created:    25-Apr-2026
  *
  *  Description:
  *      Mock definitions of HAL types and functions for unit testing hw_usb module.
