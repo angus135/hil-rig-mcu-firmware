@@ -93,7 +93,7 @@ inline void HW_PWM_GEN_set_pwm_direct( uint16_t arr, uint16_t ccr, uint16_t psc,
  * These functions should be use during configuration to prepare
  * the frequency and duty cycle instructions for quick running
  */
-uint16_t HW_PWM_GEN_compute_psc( uint16_t freq_hz, uint16_t timer_clk_hz )
+uint16_t HW_PWM_GEN_compute_psc( uint16_t freq_hz, uint32_t timer_clk_hz )
 {
     uint16_t prescaler_p1 = 1;  // the prescaler plus 1
     uint16_t temp         = ( timer_clk_hz / ( freq_hz * ( prescaler_p1 ) ) ) - 1;
@@ -126,7 +126,7 @@ bits)
  * These functions should be use during configuration to prepare
  * the frequency and duty cycle instructions for quick running
  */
-uint16_t HW_PWM_GEN_compute_arr( uint16_t freq_hz, uint16_t timer_clk_hz, uint16_t prescaler )
+uint16_t HW_PWM_GEN_compute_arr( uint16_t freq_hz, uint32_t timer_clk_hz, uint16_t prescaler )
 {
 
     return ( timer_clk_hz / ( freq_hz * ( prescaler + 1 ) ) ) - 1;
@@ -178,6 +178,7 @@ inline void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr, uint16_t psc
 #endif
     ( void )arr;
     ( void )ccr;
+    ( void )psc;
 }
 
 /**
@@ -199,6 +200,7 @@ inline void HW_PWM_GEN_set_pwm2_direct( uint16_t arr, uint16_t ccr, uint16_t psc
 #endif
     ( void )arr;
     ( void )ccr;
+    ( void )psc;
 }
 
 /**
@@ -220,4 +222,5 @@ inline void HW_PWM_GEN_set_pwm3_direct( uint16_t arr, uint16_t ccr, uint16_t psc
 #endif
     ( void )arr;
     ( void )ccr;
+    ( void )psc;
 }
