@@ -53,7 +53,7 @@ extern "C"
  * These functions should be use during configuration to prepare
  * the frequency and duty cycle instructions for quick running
  */
-uint16_t HW_PWM_GEN_compute_psc( uint16_t freq_hz, uint16_t timer_clk_hz );
+uint16_t HW_PWM_GEN_compute_psc( uint16_t freq_hz, uint32_t timer_clk_hz );
 
 /**
  * @brief Computes the auto reloader register (ARR).
@@ -69,7 +69,7 @@ bits)
  * These functions should be use during configuration to prepare
  * the frequency and duty cycle instructions for quick running
  */
-uint16_t HW_PWM_GEN_compute_arr( uint16_t freq_hz, uint16_t timer_clk_hz, uint16_t prescaler );
+uint16_t HW_PWM_GEN_compute_arr( uint16_t freq_hz, uint32_t timer_clk_hz, uint16_t prescaler );
 
 /**
  * @brief Computes the compare register (CCR) for a given duty cycle.
