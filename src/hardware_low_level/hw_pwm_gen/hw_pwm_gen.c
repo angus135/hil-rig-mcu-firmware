@@ -20,6 +20,7 @@
 #include "gpio.h"
 #include "stm32f4xx_ll_gpio.h"
 #include "tim.h"
+#include "stm32f4xx_hal_tim.h"
 #endif
 
 #include "hw_pwm_gen.h"
@@ -67,12 +68,29 @@
  * This function is designed to be very fast and should be implemented in the execution phase
  */
 #ifndef TEST_BUILD
-static inline void HW_PWM_GEN_set_pwm_direct( uint16_t arr, uint16_t ccr, uint16_t psc,
-                                              TIM_TypeDef* tim )
+static inline void HW_PWM_GEN_set_pwm_direct( uint16_t ccr_num, uint16_t arr, uint16_t ccr,
+                                              uint16_t psc, TIM_TypeDef* tim )
 {
-    tim->CCER = ccr;
-    tim->ARR  = arr;
-    tim->PSC  = psc;
+    if ( ccr_num == 1 )
+    {
+        tim->CCR1 = ccr;
+    }
+    else if ( ccr_num == 2 )
+    {
+        tim->CCR2 = ccr;
+    }
+    else if ( ccr_num == 3 )
+    {
+        tim->CCR3 = ccr;
+    }
+    else if ( ccr_num == 4 )
+    {
+        tim->CCR4 = ccr;
+    }
+    tim->ARR = arr;
+    tim->PSC = psc;
+
+    tim->EGR = TIM_EGR_UG;
     return;
 }
 #endif
@@ -81,6 +99,35 @@ static inline void HW_PWM_GEN_set_pwm_direct( uint16_t arr, uint16_t ccr, uint16
  *  Configure Stage Public Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Computes the pwm output.
+ *
+ * @param channel   The channel you want to configure
+ *
+ */
+void HW_PWM_GEN_config( int channel )
+{
+#ifndef TEST_BUILD
+
+    // Call to output expander to set voltage levels
+
+    if ( channel == 1 )
+    {
+        HAL_TIM_PWM_Start( &htim12, TIM_CHANNEL_2 );
+    }
+    else if ( channel == 2 )
+    {
+        HAL_TIM_PWM_Start( &htim13, TIM_CHANNEL_1 );
+    }
+    else if ( channel == 3 )
+    {
+        HAL_TIM_PWM_Start( &htim14, TIM_CHANNEL_1 );
+    }
+#endif
+    ( void )channel;
+    return;
+}
 
 /**
  * @brief Computes the prescaler register (PSC).
@@ -96,21 +143,29 @@ static inline void HW_PWM_GEN_set_pwm_direct( uint16_t arr, uint16_t ccr, uint16
  */
 uint16_t HW_PWM_GEN_compute_psc( uint16_t freq_hz, uint32_t timer_clk_hz )
 {
-    uint16_t prescaler_p1 = 1;  // the prescaler plus 1
-    uint16_t temp         = ( timer_clk_hz / ( freq_hz * ( prescaler_p1 ) ) ) - 1;
+    if ( freq_hz > timer_clk_hz )
+    {
+        return 0;
+    }
+    if ( freq_hz == 0 )
+    {
+        return 0xFFFF;
+    }
+    uint32_t prescaler_p1 = 1;  // the prescaler plus 1
+    uint32_t arr          = ( timer_clk_hz / ( freq_hz * ( prescaler_p1 ) ) ) - 1;
     // Inverted Binary search to find prescaler value
-    while ( temp > 65535 )
+    while ( arr > 65535 )
     {
         prescaler_p1 = prescaler_p1 * 2;
-        temp         = ( timer_clk_hz / ( freq_hz * ( prescaler_p1 ) ) ) - 1;
+        arr          = ( timer_clk_hz / ( freq_hz * ( prescaler_p1 ) ) ) - 1;
     }
-    while ( temp < 65535 )
+    while ( arr < 65535 && prescaler_p1 > 2 )
     {
         prescaler_p1 -= 1;
-        temp = ( timer_clk_hz / ( freq_hz * ( prescaler_p1 ) ) ) - 1;
+        arr = ( timer_clk_hz / ( freq_hz * ( prescaler_p1 ) ) ) - 1;
     }
     // above -1 loop overcompensated by 1 so we plus 1
-    return prescaler_p1;
+    return ( uint16_t )prescaler_p1;
 }
 
 /**
@@ -174,8 +229,8 @@ inline void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr, uint16_t psc
 {
 #ifndef TEST_BUILD
     HW_PWM_GEN_set_pwm_direct(
-        arr, ccr, psc,
-        htim5.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
+        2, arr, ccr, psc,
+        htim12.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
 #endif
     ( void )arr;
     ( void )ccr;
@@ -196,8 +251,8 @@ inline void HW_PWM_GEN_set_pwm2_direct( uint16_t arr, uint16_t ccr, uint16_t psc
 {
 #ifndef TEST_BUILD
     HW_PWM_GEN_set_pwm_direct(
-        arr, ccr, psc,
-        htim5.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
+        1, arr, ccr, psc,
+        htim13.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
 #endif
     ( void )arr;
     ( void )ccr;
@@ -218,8 +273,8 @@ inline void HW_PWM_GEN_set_pwm3_direct( uint16_t arr, uint16_t ccr, uint16_t psc
 {
 #ifndef TEST_BUILD
     HW_PWM_GEN_set_pwm_direct(
-        arr, ccr, psc,
-        htim5.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
+        1, arr, ccr, psc,
+        htim14.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
 #endif
     ( void )arr;
     ( void )ccr;
