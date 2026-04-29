@@ -45,6 +45,7 @@ target_link_libraries(console
     hw_i2c
     exec_i2c
     logic_expander
+    hw_usb
 )
 
 # -----------------------------

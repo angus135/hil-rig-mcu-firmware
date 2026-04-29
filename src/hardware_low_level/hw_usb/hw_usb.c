@@ -326,13 +326,14 @@ void HW_USB_Receive_From_ISR( uint8_t* data_received, uint32_t* size_bytes )
  * interrupt. It reads bytes previously copied into the stream buffer by
  * HW_USB_Receive_From_ISR().
  *
+ * Note: This function is non blocking and will only do a check of the stream buffer.
+ *
  * @param destination Buffer to copy received bytes into.
  * @param max_size_bytes Maximum number of bytes to read.
- * @param timeout_ticks FreeRTOS timeout, in ticks, to wait for data.
  *
  * @return Number of bytes copied into destination.
  */
-uint32_t HW_USB_Receive( uint8_t* destination, uint32_t max_size_bytes, uint32_t timeout_ticks )
+uint32_t HW_USB_Receive( uint8_t* destination, uint32_t max_size_bytes )
 {
     size_t bytes_read = 0;
 
@@ -351,8 +352,7 @@ uint32_t HW_USB_Receive( uint8_t* destination, uint32_t max_size_bytes, uint32_t
         return 0U;
     }
 
-    bytes_read = xStreamBufferReceive( usb_state.receive_stream, destination, max_size_bytes,
-                                       timeout_ticks );
+    bytes_read = xStreamBufferReceive( usb_state.receive_stream, destination, max_size_bytes, 0U );
 
     return ( uint32_t )bytes_read;
 }

@@ -27,6 +27,7 @@
 #include "hw_adc.h"
 #include "exec_digital_input.h"
 #include "hw_spi.h"
+#include "hw_usb.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -38,6 +39,9 @@
  *------------------------------------------------------------------------------
  */
 #define NUM_DIGITAL_INPUTS 10
+
+#define USB_TEST_READ_TIMEOUT_MS 5000U
+#define USB_TEST_READ_BUFFER_SIZE_BYTES 256U
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -71,8 +75,9 @@ static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] );
-
 static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_USB_Test( uint16_t argc, char* argv[] );
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
@@ -95,10 +100,15 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"expander", CONSOLE_Command_Expander,  "Command set allowing user to configure and control the logic expander"},
     {"i2c_loopback", CONSOLE_Command_I2C_Loopback, "Loopback testing for I2C master and slave channels."},
     {"spi_loop",    CONSOLE_Command_SPI_Loopback,         "Does a loopback test"},
+    {"usb_test", CONSOLE_Command_USB_Test, "Runs a simple USB Test Program"}
 
 };
 
 // clang-format on
+
+static ConsoleUartLoopbackState_T s_uart_loopback_state = { 0 };
+
+static bool usb_initialised = false;
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -822,6 +832,176 @@ static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "  analogue_inputs read\r\n" );
         CONSOLE_Printf( "  analogue_inputs frequency\r\n" );
     }
+}
+
+static void CONSOLE_Command_USB_Test( uint16_t argc, char* argv[] )
+{
+    uint8_t  read_buffer[USB_TEST_READ_BUFFER_SIZE_BYTES] = { 0 };
+    uint32_t bytes_read                                   = 0U;
+    uint16_t arg_idx                                      = 0U;
+    uint16_t write_len                                    = 0U;
+
+    if ( !usb_initialised )
+    {
+        HW_USB_Init();
+        usb_initialised = true;
+    }
+
+    if ( argc < 2U )
+    {
+        CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  usb_test write <ascii bytes ...>\r\n" );
+        CONSOLE_Printf( "  usb_test read\r\n" );
+        CONSOLE_Printf( "  usb_test status\r\n" );
+        CONSOLE_Printf( "\r\n" );
+        CONSOLE_Printf( "Examples:\r\n" );
+        CONSOLE_Printf( "  usb_test write hello\r\n" );
+        CONSOLE_Printf( "  usb_test write hello world\r\n" );
+        CONSOLE_Printf( "  usb_test read\r\n" );
+        CONSOLE_Printf( "\r\n" );
+        CONSOLE_Printf( "Notes:\r\n" );
+        CONSOLE_Printf( "  write sends the provided ASCII arguments over USB CDC.\r\n" );
+        CONSOLE_Printf( "  read waits up to 5 seconds for received USB CDC data.\r\n" );
+        CONSOLE_Printf( "  status prints RX stream buffer usage and dropped byte count.\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "write" ) == 0 )
+    {
+        if ( argc < 3U )
+        {
+            CONSOLE_Printf( "Usage: usb_test write <ascii bytes ...>\r\n" );
+            return;
+        }
+
+        /*
+         * Send each argument as ASCII text. Spaces between arguments are
+         * reinserted so:
+         *
+         *   usb_test write hello world
+         *
+         * transmits:
+         *
+         *   "hello world"
+         */
+        for ( arg_idx = 2U; arg_idx < argc; arg_idx++ )
+        {
+            write_len = ( uint16_t )strlen( argv[arg_idx] );
+
+            if ( write_len > 0U )
+            {
+                if ( HW_USB_Transmit( ( const uint8_t* )argv[arg_idx], write_len ) == false )
+                {
+                    CONSOLE_Printf( "USB write failed while queueing argument %u\r\n", arg_idx );
+                    return;
+                }
+            }
+
+            if ( arg_idx < ( argc - 1U ) )
+            {
+                const uint8_t space = ( uint8_t )' ';
+
+                if ( HW_USB_Transmit( &space, 1U ) == false )
+                {
+                    CONSOLE_Printf( "USB write failed while queueing space separator\r\n" );
+                    return;
+                }
+            }
+        }
+
+        CONSOLE_Printf( "USB write queued\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "read" ) == 0 )
+    {
+        TickType_t start_tick      = xTaskGetTickCount();
+        TickType_t timeout_ticks   = pdMS_TO_TICKS( USB_TEST_READ_TIMEOUT_MS );
+        TickType_t poll_ticks      = pdMS_TO_TICKS( 20U );
+        TickType_t elapsed_ticks   = 0U;
+        TickType_t remaining_ticks = 0U;
+        TickType_t wait_ticks      = 0U;
+
+        uint32_t total_bytes_read = 0U;
+
+        /*
+         * Read for up to 5 seconds total.
+         *
+         * This keeps collecting USB RX data until either:
+         *   - 5 seconds has elapsed, or
+         *   - read_buffer is full.
+         */
+        while ( total_bytes_read < sizeof( read_buffer ) )
+        {
+            elapsed_ticks = xTaskGetTickCount() - start_tick;
+
+            if ( elapsed_ticks >= timeout_ticks )
+            {
+                break;
+            }
+
+            remaining_ticks = timeout_ticks - elapsed_ticks;
+
+            if ( remaining_ticks < poll_ticks )
+            {
+                wait_ticks = remaining_ticks;
+            }
+            else
+            {
+                wait_ticks = poll_ticks;
+            }
+
+            bytes_read = HW_USB_Receive( &read_buffer[total_bytes_read],
+                                         sizeof( read_buffer ) - total_bytes_read );
+
+            if ( bytes_read > 0U )
+            {
+                total_bytes_read += bytes_read;
+            }
+        }
+
+        if ( total_bytes_read == 0U )
+        {
+            CONSOLE_Printf( "USB read received no data after %lu ms\r\n",
+                            USB_TEST_READ_TIMEOUT_MS );
+            return;
+        }
+
+        CONSOLE_Printf( "USB read %lu byte(s): ", total_bytes_read );
+
+        for ( uint32_t i = 0U; i < total_bytes_read; i++ )
+        {
+            // Print printable ASCII directly. Print other bytes as escaped hex.
+            if ( ( read_buffer[i] >= 0x20U ) && ( read_buffer[i] <= 0x7EU ) )
+            {
+                CONSOLE_Printf( "%c", read_buffer[i] );
+            }
+            else
+            {
+                CONSOLE_Printf( "\\x%02X", read_buffer[i] );
+            }
+        }
+
+        CONSOLE_Printf( "\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "status" ) == 0 )
+    {
+        CONSOLE_Printf( "USB RX stream used bytes: %lu\r\n",
+                        HW_USB_Get_Receive_Stream_Used_Bytes() );
+
+        CONSOLE_Printf( "USB RX dropped bytes: %lu\r\n",
+                        HW_USB_Get_Receive_Stream_Dropped_Bytes() );
+
+        return;
+    }
+
+    CONSOLE_Printf( "Unknown usb_test option: %s\r\n", argv[1] );
+    CONSOLE_Printf( "Usage:\r\n" );
+    CONSOLE_Printf( "  usb_test write <ascii bytes ...>\r\n" );
+    CONSOLE_Printf( "  usb_test read\r\n" );
+    CONSOLE_Printf( "  usb_test status\r\n" );
 }
 
 /**-----------------------------------------------------------------------------
