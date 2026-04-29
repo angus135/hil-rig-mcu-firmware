@@ -1,10 +1,10 @@
 /******************************************************************************
  *  File:       test_hw_uart.cpp
  *  Author:     Callum Rafferty
- *  Created:    14-04-2026
+ *  Created:    14 04 2026
  *
  *  Description:
- *      Unit test harness for the DUT-facing low-level UART driver and console
+ *      Unit test harness for the DUT facing low level UART driver and console
  *      UART driver.
  *
  *      The HAL, LL, CMSIS, DMA, and USART entry points required by the current
@@ -179,7 +179,7 @@ static void TEST_HW_UART_Reset_Dma_Handle( DMA_HandleTypeDef* handle, DMA_Stream
 }
 
 /**-----------------------------------------------------------------------------
- *  Link seam: mocked functions definitions
+ *  Link seam: mocked function definitions
  *------------------------------------------------------------------------------
  */
 // NOLINTBEGIN
@@ -479,6 +479,24 @@ extern "C" uint32_t LL_DMA_IsActiveFlag_HT5( DMA_TypeDef* dma )
     }
 
     return ( ( dma->HISR & DMA_HISR_HTIF5 ) != 0U ) ? 1U : 0U;
+}
+
+extern "C" uint32_t LL_USART_IsActiveFlag_TC( USART_TypeDef* usart )
+{
+    if ( usart == nullptr )
+    {
+        return 0U;
+    }
+
+    return ( ( usart->SR & USART_SR_TC ) != 0U ) ? 1U : 0U;
+}
+
+extern "C" void LL_USART_ClearFlag_TC( USART_TypeDef* usart )
+{
+    if ( usart != nullptr )
+    {
+        CLEAR_BIT( usart->SR, USART_SR_TC );
+    }
 }
 
 // NOLINTEND
@@ -862,7 +880,7 @@ TEST_F( UartTest, DutTxLoadAcceptsPayloadWhenSpaceAvailable )
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
     EXPECT_TRUE( HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
-    EXPECT_TRUE( HW_UART_Is_Tx_Busy( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
     EXPECT_EQ( mock_irq_disable_count, 2U );
     EXPECT_EQ( mock_irq_enable_count, 2U );
 }
@@ -898,7 +916,7 @@ TEST_F( UartTest, DutTxLoadAcceptsSequentialPayloadsUntilFull )
     EXPECT_TRUE(
         HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, half_payload, sizeof( half_payload ) ) );
 
-    EXPECT_TRUE( HW_UART_Is_Tx_Busy( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
     EXPECT_EQ( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_count, HW_UART_TX_BUFFER_SIZE );
 }
 
@@ -937,11 +955,14 @@ TEST_F( UartTest, DutTxTriggerDoesNothingWhenNoDataQueued )
 {
     HwUartConfig_T config = TEST_HW_UART_Make_Tx_Only_Config();
 
+    SET_BIT( USART6->SR, USART_SR_TC );
+
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
     EXPECT_TRUE( HW_UART_Tx_Trigger( HW_UART_CHANNEL_1 ) );
     EXPECT_EQ( DMA2_Stream6->CR & DMA_SxCR_EN, 0U );
     EXPECT_EQ( USART6->CR3 & USART_CR3_DMAT, 0U );
+    EXPECT_TRUE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
 }
 
 TEST_F( UartTest, DutTxTriggerStartsDmaForChannel1 )
@@ -960,6 +981,23 @@ TEST_F( UartTest, DutTxTriggerStartsDmaForChannel1 )
     EXPECT_EQ( DMA2_Stream6->NDTR, sizeof( payload ) );
     EXPECT_NE( USART6->CR3 & USART_CR3_DMAT, 0U );
     EXPECT_EQ( DMA2_Stream6->PAR, ( uint32_t )( uintptr_t )( &( USART6->DR ) ) );
+    EXPECT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
+}
+
+TEST_F( UartTest, DutTxTriggerClearsTransmissionCompleteFlagWhenStartingDma )
+{
+    HwUartConfig_T config     = TEST_HW_UART_Make_Tx_Only_Config();
+    uint8_t        payload[3] = { 0x11U, 0x22U, 0x33U };
+
+    SET_BIT( USART6->SR, USART_SR_TC );
+
+    ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+    ASSERT_TRUE( HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
+
+    ASSERT_TRUE( HW_UART_Tx_Trigger( HW_UART_CHANNEL_1 ) );
+
+    EXPECT_EQ( USART6->SR & USART_SR_TC, 0U );
+    EXPECT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
 }
 
 TEST_F( UartTest, DutTxTriggerStartsDmaFromTxRingBufferTail )
@@ -978,6 +1016,7 @@ TEST_F( UartTest, DutTxTriggerStartsDmaFromTxRingBufferTail )
     EXPECT_EQ( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_tail, 0U );
     EXPECT_EQ( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_count, sizeof( payload ) );
     EXPECT_TRUE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_dma_active );
+    EXPECT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
 }
 
 TEST_F( UartTest, DutTxTriggerStartsDmaForChannel2 )
@@ -998,6 +1037,7 @@ TEST_F( UartTest, DutTxTriggerStartsDmaForChannel2 )
     EXPECT_EQ( DMA1_Stream6->PAR, ( uint32_t )( uintptr_t )( &( USART2->DR ) ) );
     EXPECT_EQ( DMA1_Stream6->M0AR,
                ( uint32_t )( uintptr_t )&hw_uart_channel_states[HW_UART_CHANNEL_2].tx_buffer[0] );
+    EXPECT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_2 ) );
 }
 
 TEST_F( UartTest, DutTxTriggerDoesNotConsumeBufferUntilDmaCompletes )
@@ -1013,7 +1053,7 @@ TEST_F( UartTest, DutTxTriggerDoesNotConsumeBufferUntilDmaCompletes )
     EXPECT_EQ( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_tail, 0U );
     EXPECT_EQ( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_count, sizeof( payload ) );
     EXPECT_TRUE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_dma_active );
-    EXPECT_TRUE( HW_UART_Is_Tx_Busy( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
 
     fake_dma2.HISR |= DMA_HISR_TCIF6;
     DMA2_Stream6_IRQHandler();
@@ -1021,7 +1061,10 @@ TEST_F( UartTest, DutTxTriggerDoesNotConsumeBufferUntilDmaCompletes )
     EXPECT_EQ( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_tail, sizeof( payload ) );
     EXPECT_EQ( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_count, 0U );
     EXPECT_FALSE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_dma_active );
-    EXPECT_FALSE( HW_UART_Is_Tx_Busy( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
+
+    SET_BIT( USART6->SR, USART_SR_TC );
+    EXPECT_TRUE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
 }
 
 TEST_F( UartTest, DutTxTriggerDoesNothingWhenAlreadyRunning )
@@ -1065,9 +1108,10 @@ TEST_F( UartTest, DutTxLoadWhileDmaActiveDoesNotModifyActiveDmaSpan )
     EXPECT_EQ( DMA2_Stream6->NDTR, active_ndtr );
     EXPECT_EQ( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_count,
                sizeof( first_payload ) + sizeof( second_payload ) );
+    EXPECT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
 }
 
-TEST_F( UartTest, DutTxCompleteInterruptDrainsBusyState )
+TEST_F( UartTest, DutTxCompleteInterruptDrainsDmaStateButRequiresUsartTcForComplete )
 {
     HwUartConfig_T config     = TEST_HW_UART_Make_Tx_Only_Config();
     uint8_t        payload[3] = { 0x11U, 0x22U, 0x33U };
@@ -1076,12 +1120,15 @@ TEST_F( UartTest, DutTxCompleteInterruptDrainsBusyState )
     ASSERT_TRUE( HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
     ASSERT_TRUE( HW_UART_Tx_Trigger( HW_UART_CHANNEL_1 ) );
 
-    ASSERT_TRUE( HW_UART_Is_Tx_Busy( HW_UART_CHANNEL_1 ) );
+    ASSERT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
 
     fake_dma2.HISR |= DMA_HISR_TCIF6;
     DMA2_Stream6_IRQHandler();
 
-    EXPECT_FALSE( HW_UART_Is_Tx_Busy( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
+
+    SET_BIT( USART6->SR, USART_SR_TC );
+    EXPECT_TRUE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
     EXPECT_EQ( USART6->CR3 & USART_CR3_DMAT, 0U );
     EXPECT_EQ( fake_dma2.HIFCR, DMA_HIFCR_CTCIF6 | DMA_HIFCR_CTEIF6 | DMA_HIFCR_CFEIF6
                                     | DMA_HIFCR_CDMEIF6 | DMA_HIFCR_CHTIF6 );
@@ -1106,7 +1153,7 @@ TEST_F( UartTest, DutTxCompleteRestartsPumpWhenQueuedDataRemains )
     fake_dma2.HISR |= DMA_HISR_TCIF6;
     DMA2_Stream6_IRQHandler();
 
-    EXPECT_TRUE( HW_UART_Is_Tx_Busy( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
     EXPECT_EQ( DMA2_Stream6->NDTR, sizeof( second_payload ) );
     EXPECT_NE( DMA2_Stream6->CR & DMA_SxCR_EN, 0U );
     EXPECT_EQ( DMA2_Stream6->M0AR,
@@ -1114,7 +1161,7 @@ TEST_F( UartTest, DutTxCompleteRestartsPumpWhenQueuedDataRemains )
                    .tx_buffer[sizeof( first_payload )] );
 }
 
-TEST_F( UartTest, DutTxErrorInterruptClearsBusyState )
+TEST_F( UartTest, DutTxErrorInterruptClearsTxDriverState )
 {
     HwUartConfig_T config     = TEST_HW_UART_Make_Tx_Only_Config();
     uint8_t        payload[3] = { 0x11U, 0x22U, 0x33U };
@@ -1123,12 +1170,15 @@ TEST_F( UartTest, DutTxErrorInterruptClearsBusyState )
     ASSERT_TRUE( HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
     ASSERT_TRUE( HW_UART_Tx_Trigger( HW_UART_CHANNEL_1 ) );
 
-    ASSERT_TRUE( HW_UART_Is_Tx_Busy( HW_UART_CHANNEL_1 ) );
+    ASSERT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
 
     fake_dma2.HISR |= DMA_HISR_TEIF6;
     DMA2_Stream6_IRQHandler();
 
-    EXPECT_FALSE( HW_UART_Is_Tx_Busy( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
+
+    SET_BIT( USART6->SR, USART_SR_TC );
+    EXPECT_TRUE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
     EXPECT_EQ( USART6->CR3 & USART_CR3_DMAT, 0U );
     EXPECT_EQ( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_head, 0U );
     EXPECT_EQ( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_tail, 0U );
@@ -1154,7 +1204,8 @@ TEST_F( UartTest, DutTxWrapLoadCopiesPayloadAcrossRingBoundary )
     DMA2_Stream6_IRQHandler();
     fake_dma2.HISR = 0U;
 
-    ASSERT_FALSE( HW_UART_Is_Tx_Busy( HW_UART_CHANNEL_1 ) );
+    SET_BIT( USART6->SR, USART_SR_TC );
+    ASSERT_TRUE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
 
     ASSERT_TRUE(
         HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, wrap_payload, sizeof( wrap_payload ) ) );
@@ -1185,7 +1236,8 @@ TEST_F( UartTest, DutTxWrapIsSentAsTwoLinearDmaTransfers )
     DMA2_Stream6_IRQHandler();
     fake_dma2.HISR = 0U;
 
-    ASSERT_FALSE( HW_UART_Is_Tx_Busy( HW_UART_CHANNEL_1 ) );
+    SET_BIT( USART6->SR, USART_SR_TC );
+    ASSERT_TRUE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
 
     ASSERT_TRUE(
         HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, wrap_payload, sizeof( wrap_payload ) ) );
@@ -1201,7 +1253,7 @@ TEST_F( UartTest, DutTxWrapIsSentAsTwoLinearDmaTransfers )
     DMA2_Stream6_IRQHandler();
     fake_dma2.HISR = 0U;
 
-    EXPECT_TRUE( HW_UART_Is_Tx_Busy( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
     EXPECT_EQ( DMA2_Stream6->M0AR,
                ( uint32_t )( uintptr_t )&hw_uart_channel_states[HW_UART_CHANNEL_1].tx_buffer[0] );
     EXPECT_EQ( DMA2_Stream6->NDTR, 2U );
@@ -1209,7 +1261,10 @@ TEST_F( UartTest, DutTxWrapIsSentAsTwoLinearDmaTransfers )
     fake_dma2.HISR |= DMA_HISR_TCIF6;
     DMA2_Stream6_IRQHandler();
 
-    EXPECT_FALSE( HW_UART_Is_Tx_Busy( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
+
+    SET_BIT( USART6->SR, USART_SR_TC );
+    EXPECT_TRUE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
 }
 
 TEST_F( UartTest, ConsoleInitConfiguresUsart3AndArmsRxInterrupt )
@@ -1549,6 +1604,7 @@ TEST_F( UartTest, DutRxDmaChannel2UnexpectedTransferCompleteClearsRxStreamFlags 
 
     EXPECT_EQ( fake_dma1.HIFCR, HW_UART_CH2_DMA_RX_IFCR_MASK );
 }
+
 TEST_F( UartTest, DutRxDmaErrorDoesNotChangeRxRunningStateBeforeFaultPolicyExists )
 {
     HwUartConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();

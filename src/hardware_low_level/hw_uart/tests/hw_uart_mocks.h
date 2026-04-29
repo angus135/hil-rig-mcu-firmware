@@ -116,6 +116,7 @@ extern "C"
 #define SET_BIT( REG, BIT ) ( ( REG ) |= ( BIT ) )
 #define CLEAR_BIT( REG, BIT ) ( ( REG ) &= ~( BIT ) )
 
+#define USART_SR_TC ( 1U << 6 )
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -307,6 +308,9 @@ void LL_USART_DisableDMAReq_TX( USART_TypeDef* usart );
 uint32_t __get_PRIMASK( void );
 void     __disable_irq( void );
 void     __enable_irq( void );
+
+uint32_t LL_USART_IsActiveFlag_TC( USART_TypeDef* usart );
+void     LL_USART_ClearFlag_TC( USART_TypeDef* usart );
 
 /* NOLINTEND */
 

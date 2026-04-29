@@ -1086,6 +1086,7 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
     LL_DMA_EnableIT_TC( tx_dma_controller, tx_ll_stream );
     LL_DMA_EnableIT_TE( tx_dma_controller, tx_ll_stream );
 
+    LL_USART_ClearFlag_TC( uart );
     LL_USART_EnableDMAReq_TX( uart );
 
     LL_DMA_EnableStream( tx_dma_controller, tx_ll_stream );
@@ -1093,22 +1094,16 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
     return true;
 }
 
-/*
- * Reports whether the low level driver still owns any TX bytes.
- *
- * Contract:
- * The caller must provide a valid UART channel.
- * The channel must already be configured for TX.
- *
- * This returns true while bytes remain queued in the TX DMA source ring buffer
- * or while a DMA transfer is active. It does not prove that the final UART stop
- * bit has left the wire.
- */
-bool HW_UART_Is_Tx_Busy( HwUartChannel_T channel )
+bool HW_UART_Is_Tx_Complete( HwUartChannel_T channel )
 {
-    HwUartChannelState_T* state = &hw_uart_channel_states[channel];
+    HwUartRuntimeState_T* runtime = &hw_uart_channel_states[channel].runtime;
+    USART_TypeDef*        uart    = hw_uart_hardware_map[channel].uart_instance;
 
-    return ( state->runtime.tx_count > 0U ) || state->runtime.tx_dma_active;
+    const bool dma_idle = ( runtime->tx_count == 0U ) && ( runtime->tx_dma_active == false );
+
+    const bool wire_idle = ( LL_USART_IsActiveFlag_TC( uart ) != 0U );
+
+    return dma_idle && wire_idle;
 }
 
 /**

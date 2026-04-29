@@ -395,30 +395,23 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
 bool HW_UART_Tx_Trigger( HwUartChannel_T channel );
 
 /**
- * @brief  Reports whether the low level driver still owns any TX bytes.
+ * @brief Reports whether TX is fully complete for a DUT UART channel.
  *
- * @param  channel The UART channel to inspect.
+ * TX is complete only when:
+ * 1. The low-level TX DMA source ring buffer has no queued bytes.
+ * 2. No TX DMA transfer is active.
+ * 3. The USART transmission-complete flag is set, indicating that the final
+ *    stop bit has left the UART.
  *
- * @return true if TX bytes remain queued or in flight.
- * @return false if the low level driver owns no TX bytes for this channel.
+ * @note Execution path function. Assumes valid input.
  *
- * @note   Execution path function. Assumes valid input.
+ * @param channel UART channel to inspect.
  *
- * @note   Contract:
- *         The caller must provide a valid UART channel.
- *         The channel must already be configured for TX.
- *
- * @note   This function reflects low level TX ownership state only. A true return
- *         means bytes remain in the TX DMA source ring buffer or a DMA transfer
- *         is active.
- *
- * @note   This function does not prove that the final UART stop bit has left the
- *         wire.
- *
- * @note   New TX data may still be queued while this function returns true,
- *         provided sufficient free space remains in the TX buffer.
+ * @return true if the TX path is fully complete.
+ * @return false if bytes remain queued, DMA is active, or the UART is still
+ *         shifting the final byte.
  */
-bool HW_UART_Is_Tx_Busy( HwUartChannel_T channel );
+bool HW_UART_Is_Tx_Complete( HwUartChannel_T channel );
 
 /**
  * @brief  Stops UART reception for the specified channel and halts DMA-based RX.

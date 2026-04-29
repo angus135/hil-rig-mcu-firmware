@@ -149,21 +149,17 @@ bool EXEC_UART_Read( HwUartChannel_T channel, uint8_t* dest, uint32_t dest_size,
                      uint32_t* bytes_read );
 
 /**
- * @brief  Reports whether the UART TX path currently has queued or in-flight data.
+ * @brief Reports whether UART TX is fully complete.
  *
- * @param  channel UART channel to query.
+ * TX is complete when the low-level TX queue is empty, no TX DMA transfer is
+ * active, and the UART has shifted out the final stop bit.
  *
- * @return true if the low-level TX ring buffer contains queued data or a TX DMA transfer
- *         is currently active.
- * @return false if no TX data is queued or in flight.
+ * @param channel UART channel to inspect.
  *
- * @note   This function reports TX ownership and drain state only.
- *
- * @note   A true return value does not mean the channel cannot accept more TX data.
- *         Additional payloads may still be queued if sufficient free space remains in
- *         the low-level TX ring buffer.
+ * @return true if TX is fully complete.
+ * @return false otherwise.
  */
-bool EXEC_UART_Is_Tx_Busy( HwUartChannel_T channel );
+bool EXEC_UART_Is_Tx_Complete( HwUartChannel_T channel );
 
 #ifdef __cplusplus
 }

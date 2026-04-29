@@ -8,7 +8,7 @@
  *
  *      The low-level HW_UART API is mocked so these tests verify exec-level
  *      sequencing, lifecycle state, transmit forwarding, RX span copying, and
- *      TX busy delegation without retesting the low-level UART driver.
+ *      TX completion delegation without retesting the low-level UART driver.
  *
  *  Notes:
  *      This test target includes exec_uart.c directly. Do not also compile
@@ -54,7 +54,7 @@ static bool mock_hw_configure_result;
 static bool mock_hw_rx_start_result;
 static bool mock_hw_tx_load_result;
 static bool mock_hw_tx_trigger_result;
-static bool mock_hw_tx_busy_result;
+static bool mock_hw_tx_complete_result;
 
 static uint32_t mock_hw_rx_is_running_count;
 static uint32_t mock_hw_rx_stop_count;
@@ -64,7 +64,7 @@ static uint32_t mock_hw_tx_load_count;
 static uint32_t mock_hw_tx_trigger_count;
 static uint32_t mock_hw_rx_peek_count;
 static uint32_t mock_hw_rx_consume_count;
-static uint32_t mock_hw_tx_busy_count;
+static uint32_t mock_hw_tx_complete_count;
 
 static uint32_t mock_sequence_counter;
 static uint32_t mock_hw_rx_is_running_order;
@@ -237,12 +237,12 @@ extern "C" void HW_UART_Rx_Consume( HwUartChannel_T channel, uint32_t bytes_to_c
     mock_hw_last_consume_count = bytes_to_consume;
 }
 
-extern "C" bool HW_UART_Is_Tx_Busy( HwUartChannel_T channel )
+extern "C" bool HW_UART_Is_Tx_Complete( HwUartChannel_T channel )
 {
-    mock_hw_tx_busy_count++;
+    mock_hw_tx_complete_count++;
     mock_hw_last_channel = channel;
 
-    return mock_hw_tx_busy_result;
+    return mock_hw_tx_complete_result;
 }
 
 // NOLINTEND
@@ -275,12 +275,12 @@ protected:
         mock_hw_rx_is_running_result[HW_UART_CHANNEL_1] = false;
         mock_hw_rx_is_running_result[HW_UART_CHANNEL_2] = false;
 
-        mock_hw_rx_stop_result    = true;
-        mock_hw_configure_result  = true;
-        mock_hw_rx_start_result   = true;
-        mock_hw_tx_load_result    = true;
-        mock_hw_tx_trigger_result = true;
-        mock_hw_tx_busy_result    = false;
+        mock_hw_rx_stop_result     = true;
+        mock_hw_configure_result   = true;
+        mock_hw_rx_start_result    = true;
+        mock_hw_tx_load_result     = true;
+        mock_hw_tx_trigger_result  = true;
+        mock_hw_tx_complete_result = true;
 
         mock_hw_rx_is_running_count = 0U;
         mock_hw_rx_stop_count       = 0U;
@@ -290,7 +290,7 @@ protected:
         mock_hw_tx_trigger_count    = 0U;
         mock_hw_rx_peek_count       = 0U;
         mock_hw_rx_consume_count    = 0U;
-        mock_hw_tx_busy_count       = 0U;
+        mock_hw_tx_complete_count   = 0U;
 
         mock_sequence_counter       = 0U;
         mock_hw_rx_is_running_order = 0U;
@@ -710,12 +710,22 @@ TEST_F( ExecUARTTest, ReadCopiesPartialWrappedSecondSpanWhenDestinationIsLimited
     EXPECT_EQ( mock_hw_last_consume_count, 3U );
 }
 
-TEST_F( ExecUARTTest, IsTxBusyDelegatesToLowLevelDriver )
+TEST_F( ExecUARTTest, IsTxCompleteDelegatesToLowLevelDriver )
 {
-    mock_hw_tx_busy_result = true;
+    mock_hw_tx_complete_result = true;
 
-    EXPECT_TRUE( EXEC_UART_Is_Tx_Busy( HW_UART_CHANNEL_2 ) );
+    EXPECT_TRUE( EXEC_UART_Is_Tx_Complete( HW_UART_CHANNEL_2 ) );
 
-    EXPECT_EQ( mock_hw_tx_busy_count, 1U );
+    EXPECT_EQ( mock_hw_tx_complete_count, 1U );
     EXPECT_EQ( mock_hw_last_channel, HW_UART_CHANNEL_2 );
+}
+
+TEST_F( ExecUARTTest, IsTxCompleteReturnsFalseWhenLowLevelDriverReportsIncomplete )
+{
+    mock_hw_tx_complete_result = false;
+
+    EXPECT_FALSE( EXEC_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
+
+    EXPECT_EQ( mock_hw_tx_complete_count, 1U );
+    EXPECT_EQ( mock_hw_last_channel, HW_UART_CHANNEL_1 );
 }
