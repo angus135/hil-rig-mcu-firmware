@@ -114,7 +114,9 @@ int main(void)
   MX_QUADSPI_Init();
   MX_CAN1_Init();
   MX_CAN2_Init();
-  MX_TIM5_Init();
+  MX_TIM12_Init();
+  MX_TIM13_Init();
+  MX_TIM14_Init();
   /* USER CODE BEGIN 2 */
   APP_MAIN_Application();
   // Nothing after here is ever called but if it does, run the error handler

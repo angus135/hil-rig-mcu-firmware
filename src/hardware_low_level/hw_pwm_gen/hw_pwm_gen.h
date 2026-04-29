@@ -41,6 +41,15 @@ extern "C"
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Computes the pwm output.
+ *
+ * @param channel   The channel you want to configure
+ *
+ */
+void HW_PWM_GEN_config( int channel );
+
 /**
  * @brief Computes the prescaler register (PSC).
  *
