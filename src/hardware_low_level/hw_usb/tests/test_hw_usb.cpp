@@ -64,7 +64,7 @@ class MockHWUSB
 public:
     MOCK_METHOD( uint8_t, CDCTransmitFS, ( uint8_t * buffer, uint16_t length ), () );
 
-    MOCK_METHOD( StreamBufferHandle_t, StreamBufferCreate,
+    MOCK_METHOD( StreamBufferHandle_t, xStreamBufferCreate,
                  ( size_t buffer_size_bytes, size_t trigger_level_bytes ), () );
 
     MOCK_METHOD( size_t, StreamBufferSendFromISR,
@@ -72,7 +72,7 @@ public:
                    BaseType_t* higher_priority_task_woken ),
                  () );
 
-    MOCK_METHOD( size_t, StreamBufferReceive,
+    MOCK_METHOD( size_t, xStreamBufferReceive,
                  ( StreamBufferHandle_t stream_buffer, void* destination, size_t max_length,
                    TickType_t ticks_to_wait ),
                  () );
@@ -91,10 +91,10 @@ extern "C" uint8_t CDC_Transmit_FS( uint8_t* Buf, uint16_t Len )
     return g_mock->CDCTransmitFS( Buf, Len );
 }
 
-extern "C" StreamBufferHandle_t StreamBufferCreate( size_t xBufferSizeBytes,
-                                                    size_t xTriggerLevelBytes )
+extern "C" StreamBufferHandle_t xStreamBufferCreate( size_t xBufferSizeBytes,
+                                                     size_t xTriggerLevelBytes )
 {
-    return g_mock->StreamBufferCreate( xBufferSizeBytes, xTriggerLevelBytes );
+    return g_mock->xStreamBufferCreate( xBufferSizeBytes, xTriggerLevelBytes );
 }
 
 extern "C" size_t xStreamBufferSendFromISR( StreamBufferHandle_t xStreamBuffer,
@@ -108,7 +108,8 @@ extern "C" size_t xStreamBufferSendFromISR( StreamBufferHandle_t xStreamBuffer,
 extern "C" size_t xStreamBufferReceive( StreamBufferHandle_t xStreamBuffer, void* pvRxData,
                                         size_t xBufferLengthBytes, TickType_t xTicksToWait )
 {
-    return g_mock->StreamBufferReceive( xStreamBuffer, pvRxData, xBufferLengthBytes, xTicksToWait );
+    return g_mock->xStreamBufferReceive( xStreamBuffer, pvRxData, xBufferLengthBytes,
+                                         xTicksToWait );
 }
 
 extern "C" size_t xStreamBufferSpacesAvailable( StreamBufferHandle_t xStreamBuffer )
@@ -169,8 +170,8 @@ TEST_F( HWUSBTest, InitCreatesReceiveStreamAndClearsDroppedCount )
 {
     usb_state.receive_stream_bytes_dropped = 123U;
 
-    EXPECT_CALL( mock, StreamBufferCreate( MAX_USB_RECEIVE_STREAM_BYTES,
-                                           USB_RECEIVE_STREAM_TRIGGER_LEVEL_BYTES ) )
+    EXPECT_CALL( mock, xStreamBufferCreate( MAX_USB_RECEIVE_STREAM_BYTES,
+                                            USB_RECEIVE_STREAM_TRIGGER_LEVEL_BYTES ) )
         .WillOnce( testing::Return( fake_stream ) );
 
     EXPECT_TRUE( HW_USB_Init() );
@@ -182,8 +183,8 @@ TEST_F( HWUSBTest, InitReturnsFalseWhenReceiveStreamCreationFails )
 {
     usb_state.receive_stream_bytes_dropped = 55U;
 
-    EXPECT_CALL( mock, StreamBufferCreate( MAX_USB_RECEIVE_STREAM_BYTES,
-                                           USB_RECEIVE_STREAM_TRIGGER_LEVEL_BYTES ) )
+    EXPECT_CALL( mock, xStreamBufferCreate( MAX_USB_RECEIVE_STREAM_BYTES,
+                                            USB_RECEIVE_STREAM_TRIGGER_LEVEL_BYTES ) )
         .WillOnce( testing::Return( nullptr ) );
 
     EXPECT_FALSE( HW_USB_Init() );
@@ -276,7 +277,7 @@ TEST_F( HWUSBTest, ReceiveReadsAvailableBytesWithoutBlocking )
 
     usb_state.receive_stream = fake_stream;
 
-    EXPECT_CALL( mock, StreamBufferReceive( fake_stream, destination, sizeof( destination ), 0U ) )
+    EXPECT_CALL( mock, xStreamBufferReceive( fake_stream, destination, sizeof( destination ), 0U ) )
         .WillOnce( testing::Invoke(
             [&]( StreamBufferHandle_t, void* receive_destination, size_t, TickType_t ) -> size_t {
                 std::memcpy( receive_destination, expected, sizeof( expected ) );
