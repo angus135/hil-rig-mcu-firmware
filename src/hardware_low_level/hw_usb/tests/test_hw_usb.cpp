@@ -76,7 +76,6 @@ public:
                  () );
 
     MOCK_METHOD( size_t, StreamBufferSpacesAvailable, ( StreamBufferHandle_t stream_buffer ), () );
-
 };
 
 static MockHWUSB* g_mock = nullptr;
