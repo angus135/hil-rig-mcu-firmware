@@ -1,14 +1,15 @@
 /******************************************************************************
  *  File:       hw_uart_mocks.h
  *  Author:     Callum Rafferty
- *  Created:    21-Dec-2025
+ *  Created:    21 Dec 2025
  *
  *  Description:
  *      Mock definitions of HAL, LL, CMSIS, USART, and DMA types and functions
  *      required for unit testing the DUT UART driver and console UART driver.
  *
  *  Notes:
- *
+ *      This header provides only the subset of STM32 HAL, LL, CMSIS, USART, and
+ *      DMA definitions required by the current unit tests.
  ******************************************************************************/
 
 #ifndef HW_UART_MOCKS_H
@@ -18,7 +19,8 @@
 extern "C"
 {
 #endif
-// NOLINTBEGIN
+
+/* NOLINTBEGIN */
 
 /**-----------------------------------------------------------------------------
  *  Includes
@@ -57,11 +59,16 @@ extern "C"
 #define GPIO_PIN_6 ( ( uint16_t )0x0040 )
 #define GPIO_PIN_7 ( ( uint16_t )0x0080 )
 
-/* DMA stream control bits used by DUT TX DMA tests. */
+/* DMA stream control bits used by DUT DMA tests. */
 #define DMA_SxCR_EN ( 1U << 0 )
 #define DMA_SxCR_HTIE ( 1U << 2 )
 #define DMA_SxCR_TCIE ( 1U << 4 )
 #define DMA_SxCR_TEIE ( 1U << 5 )
+
+/* HAL DMA interrupt masks used by DUT RX DMA startup. */
+#define DMA_IT_TC 0x00000010U
+#define DMA_IT_HT 0x00000008U
+#define DMA_IT_TE 0x00000004U
 
 /* USART control bits used by DUT TX DMA tests. */
 #define USART_CR3_DMAT ( 1U << 7 )
@@ -79,6 +86,32 @@ extern "C"
 /* DMA interrupt status flags used by DUT TX DMA tests. */
 #define DMA_HISR_TCIF6 ( 1U << 2 )
 #define DMA_HISR_TEIF6 ( 1U << 3 )
+
+/* DMA interrupt status and clear flags for DMA2 Stream 2. */
+#define DMA_LISR_FEIF2 ( 1UL << 16 )
+#define DMA_LISR_DMEIF2 ( 1UL << 18 )
+#define DMA_LISR_TEIF2 ( 1UL << 19 )
+#define DMA_LISR_HTIF2 ( 1UL << 20 )
+#define DMA_LISR_TCIF2 ( 1UL << 21 )
+
+#define DMA_LIFCR_CFEIF2 ( 1UL << 16 )
+#define DMA_LIFCR_CDMEIF2 ( 1UL << 18 )
+#define DMA_LIFCR_CTEIF2 ( 1UL << 19 )
+#define DMA_LIFCR_CHTIF2 ( 1UL << 20 )
+#define DMA_LIFCR_CTCIF2 ( 1UL << 21 )
+
+/* DMA interrupt status and clear flags for DMA1 Stream 5. */
+#define DMA_HISR_FEIF5 ( 1UL << 6 )
+#define DMA_HISR_DMEIF5 ( 1UL << 8 )
+#define DMA_HISR_TEIF5 ( 1UL << 9 )
+#define DMA_HISR_HTIF5 ( 1UL << 10 )
+#define DMA_HISR_TCIF5 ( 1UL << 11 )
+
+#define DMA_HIFCR_CFEIF5 ( 1UL << 6 )
+#define DMA_HIFCR_CDMEIF5 ( 1UL << 8 )
+#define DMA_HIFCR_CTEIF5 ( 1UL << 9 )
+#define DMA_HIFCR_CHTIF5 ( 1UL << 10 )
+#define DMA_HIFCR_CTCIF5 ( 1UL << 11 )
 
 #define SET_BIT( REG, BIT ) ( ( REG ) |= ( BIT ) )
 #define CLEAR_BIT( REG, BIT ) ( ( REG ) &= ~( BIT ) )
@@ -101,29 +134,6 @@ typedef struct
 
 typedef struct
 {
-    uint32_t BaudRate;
-    uint32_t WordLength;
-    uint32_t StopBits;
-    uint32_t Parity;
-    uint32_t Mode;
-} UART_InitTypeDef;
-
-typedef struct
-{
-    USART_TypeDef*   Instance;
-    UART_InitTypeDef Init;
-} UART_HandleTypeDef;
-
-typedef enum
-{
-    HAL_OK = 0,
-    HAL_ERROR,
-    HAL_BUSY,
-    HAL_TIMEOUT
-} HAL_StatusTypeDef;
-
-typedef struct
-{
     uint32_t CR;
     uint32_t NDTR;
     uint32_t PAR;
@@ -138,6 +148,51 @@ typedef struct
     uint32_t LIFCR;
     uint32_t HIFCR;
 } DMA_TypeDef;
+
+typedef struct
+{
+    DMA_Stream_TypeDef* Instance;
+    uint32_t            disabled_interrupt_mask;
+} DMA_HandleTypeDef;
+
+typedef struct
+{
+    uint32_t BaudRate;
+    uint32_t WordLength;
+    uint32_t StopBits;
+    uint32_t Parity;
+    uint32_t Mode;
+} UART_InitTypeDef;
+
+typedef struct
+{
+    USART_TypeDef*     Instance;
+    UART_InitTypeDef   Init;
+    DMA_HandleTypeDef* hdmarx;
+    DMA_HandleTypeDef* hdmatx;
+} UART_HandleTypeDef;
+
+typedef enum
+{
+    HAL_OK = 0,
+    HAL_ERROR,
+    HAL_BUSY,
+    HAL_TIMEOUT
+} HAL_StatusTypeDef;
+
+/**-----------------------------------------------------------------------------
+ *  HAL Helper Macros
+ *------------------------------------------------------------------------------
+ */
+
+#define __HAL_DMA_DISABLE_IT( __HANDLE__, __INTERRUPT__ )                                          \
+    do                                                                                             \
+    {                                                                                              \
+        if ( ( __HANDLE__ ) != 0 )                                                                 \
+        {                                                                                          \
+            ( __HANDLE__ )->disabled_interrupt_mask |= ( __INTERRUPT__ );                          \
+        }                                                                                          \
+    } while ( 0 )
 
 /**-----------------------------------------------------------------------------
  *  Mock Peripheral Instances
@@ -157,15 +212,6 @@ static USART_TypeDef USART3_mock = { 0U, 0U, 0U, 0U, 0U, 0U, 0U };
 #define USART2 ( &USART2_mock )
 #define USART3 ( &USART3_mock )
 
-/* UART handle mocks.
- *
- * huart6 and huart2 are used by the DUT UART driver.
- * huart3 is used by the console UART driver.
- */
-static UART_HandleTypeDef huart6 = { 0 };
-static UART_HandleTypeDef huart2 = { 0 };
-static UART_HandleTypeDef huart3 = { 0 };
-
 /* DMA controller mocks used by the DUT UART driver. */
 extern DMA_TypeDef fake_dma1;
 extern DMA_TypeDef fake_dma2;
@@ -175,10 +221,10 @@ extern DMA_TypeDef fake_dma2;
 
 /* DUT UART DMA stream mocks.
  *
- * DMA2 Stream1 is channel 1 RX.
- * DMA2 Stream6 is channel 1 TX.
- * DMA1 Stream5 is channel 2 RX.
- * DMA1 Stream6 is channel 2 TX.
+ * DMA2 Stream 2 is channel 1 RX.
+ * DMA2 Stream 6 is channel 1 TX.
+ * DMA1 Stream 5 is channel 2 RX.
+ * DMA1 Stream 6 is channel 2 TX.
  */
 static DMA_Stream_TypeDef DMA2_Stream2_mock = { 0U, 0U, 0U, 0U, 0U };
 static DMA_Stream_TypeDef DMA2_Stream6_mock = { 0U, 0U, 0U, 0U, 0U };
@@ -189,6 +235,20 @@ static DMA_Stream_TypeDef DMA1_Stream6_mock = { 0U, 0U, 0U, 0U, 0U };
 #define DMA2_Stream6 ( &DMA2_Stream6_mock )
 #define DMA1_Stream5 ( &DMA1_Stream5_mock )
 #define DMA1_Stream6 ( &DMA1_Stream6_mock )
+
+/* DMA handle mocks used by UART handle RX DMA fields. */
+static DMA_HandleTypeDef hdma_usart6_rx = { 0 };
+static DMA_HandleTypeDef hdma_usart2_rx = { 0 };
+static DMA_HandleTypeDef hdma_usart3_rx = { 0 };
+
+/* UART handle mocks.
+ *
+ * huart6 and huart2 are used by the DUT UART driver.
+ * huart3 is used by the console UART driver.
+ */
+static UART_HandleTypeDef huart6 = { 0 };
+static UART_HandleTypeDef huart2 = { 0 };
+static UART_HandleTypeDef huart3 = { 0 };
 
 /**-----------------------------------------------------------------------------
  *  Mock State
@@ -228,6 +288,18 @@ void LL_DMA_EnableIT_TE( DMA_TypeDef* dma, uint32_t stream );
 uint32_t LL_DMA_IsActiveFlag_TC6( DMA_TypeDef* dma );
 uint32_t LL_DMA_IsActiveFlag_TE6( DMA_TypeDef* dma );
 
+uint32_t LL_DMA_IsActiveFlag_TC2( DMA_TypeDef* dma );
+uint32_t LL_DMA_IsActiveFlag_TE2( DMA_TypeDef* dma );
+uint32_t LL_DMA_IsActiveFlag_DME2( DMA_TypeDef* dma );
+uint32_t LL_DMA_IsActiveFlag_FE2( DMA_TypeDef* dma );
+uint32_t LL_DMA_IsActiveFlag_HT2( DMA_TypeDef* dma );
+
+uint32_t LL_DMA_IsActiveFlag_TC5( DMA_TypeDef* dma );
+uint32_t LL_DMA_IsActiveFlag_TE5( DMA_TypeDef* dma );
+uint32_t LL_DMA_IsActiveFlag_DME5( DMA_TypeDef* dma );
+uint32_t LL_DMA_IsActiveFlag_FE5( DMA_TypeDef* dma );
+uint32_t LL_DMA_IsActiveFlag_HT5( DMA_TypeDef* dma );
+
 void LL_USART_EnableDMAReq_TX( USART_TypeDef* usart );
 void LL_USART_DisableDMAReq_TX( USART_TypeDef* usart );
 
@@ -236,7 +308,7 @@ uint32_t __get_PRIMASK( void );
 void     __disable_irq( void );
 void     __enable_irq( void );
 
-// NOLINTEND
+/* NOLINTEND */
 
 #ifdef __cplusplus
 }

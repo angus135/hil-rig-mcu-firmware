@@ -172,6 +172,12 @@ static void TEST_HW_UART_Reset_Dma_Stream( DMA_Stream_TypeDef* stream )
     stream->FCR  = 0U;
 }
 
+static void TEST_HW_UART_Reset_Dma_Handle( DMA_HandleTypeDef* handle, DMA_Stream_TypeDef* stream )
+{
+    handle->Instance                = stream;
+    handle->disabled_interrupt_mask = 0U;
+}
+
 /**-----------------------------------------------------------------------------
  *  Link seam: mocked functions definitions
  *------------------------------------------------------------------------------
@@ -375,6 +381,106 @@ extern "C" void LL_USART_DisableDMAReq_TX( USART_TypeDef* usart )
     }
 }
 
+extern "C" uint32_t LL_DMA_IsActiveFlag_TC2( DMA_TypeDef* dma )
+{
+    if ( dma == nullptr )
+    {
+        return 0U;
+    }
+
+    return ( ( dma->LISR & DMA_LISR_TCIF2 ) != 0U ) ? 1U : 0U;
+}
+
+extern "C" uint32_t LL_DMA_IsActiveFlag_TE2( DMA_TypeDef* dma )
+{
+    if ( dma == nullptr )
+    {
+        return 0U;
+    }
+
+    return ( ( dma->LISR & DMA_LISR_TEIF2 ) != 0U ) ? 1U : 0U;
+}
+
+extern "C" uint32_t LL_DMA_IsActiveFlag_DME2( DMA_TypeDef* dma )
+{
+    if ( dma == nullptr )
+    {
+        return 0U;
+    }
+
+    return ( ( dma->LISR & DMA_LISR_DMEIF2 ) != 0U ) ? 1U : 0U;
+}
+
+extern "C" uint32_t LL_DMA_IsActiveFlag_FE2( DMA_TypeDef* dma )
+{
+    if ( dma == nullptr )
+    {
+        return 0U;
+    }
+
+    return ( ( dma->LISR & DMA_LISR_FEIF2 ) != 0U ) ? 1U : 0U;
+}
+
+extern "C" uint32_t LL_DMA_IsActiveFlag_HT2( DMA_TypeDef* dma )
+{
+    if ( dma == nullptr )
+    {
+        return 0U;
+    }
+
+    return ( ( dma->LISR & DMA_LISR_HTIF2 ) != 0U ) ? 1U : 0U;
+}
+
+extern "C" uint32_t LL_DMA_IsActiveFlag_TC5( DMA_TypeDef* dma )
+{
+    if ( dma == nullptr )
+    {
+        return 0U;
+    }
+
+    return ( ( dma->HISR & DMA_HISR_TCIF5 ) != 0U ) ? 1U : 0U;
+}
+
+extern "C" uint32_t LL_DMA_IsActiveFlag_TE5( DMA_TypeDef* dma )
+{
+    if ( dma == nullptr )
+    {
+        return 0U;
+    }
+
+    return ( ( dma->HISR & DMA_HISR_TEIF5 ) != 0U ) ? 1U : 0U;
+}
+
+extern "C" uint32_t LL_DMA_IsActiveFlag_DME5( DMA_TypeDef* dma )
+{
+    if ( dma == nullptr )
+    {
+        return 0U;
+    }
+
+    return ( ( dma->HISR & DMA_HISR_DMEIF5 ) != 0U ) ? 1U : 0U;
+}
+
+extern "C" uint32_t LL_DMA_IsActiveFlag_FE5( DMA_TypeDef* dma )
+{
+    if ( dma == nullptr )
+    {
+        return 0U;
+    }
+
+    return ( ( dma->HISR & DMA_HISR_FEIF5 ) != 0U ) ? 1U : 0U;
+}
+
+extern "C" uint32_t LL_DMA_IsActiveFlag_HT5( DMA_TypeDef* dma )
+{
+    if ( dma == nullptr )
+    {
+        return 0U;
+    }
+
+    return ( ( dma->HISR & DMA_HISR_HTIF5 ) != 0U ) ? 1U : 0U;
+}
+
 // NOLINTEND
 
 /**-----------------------------------------------------------------------------
@@ -412,12 +518,18 @@ protected:
         fake_dma2.LIFCR = 0U;
         fake_dma2.HIFCR = 0U;
 
+        TEST_HW_UART_Reset_Dma_Handle( &hdma_usart6_rx, DMA2_Stream2 );
+        TEST_HW_UART_Reset_Dma_Handle( &hdma_usart2_rx, DMA1_Stream5 );
+        TEST_HW_UART_Reset_Dma_Handle( &hdma_usart3_rx, nullptr );
+
         huart6.Instance        = USART6;
         huart6.Init.BaudRate   = 0U;
         huart6.Init.WordLength = 0U;
         huart6.Init.StopBits   = 0U;
         huart6.Init.Parity     = 0U;
         huart6.Init.Mode       = 0U;
+        huart6.hdmarx          = &hdma_usart6_rx;
+        huart6.hdmatx          = nullptr;
 
         huart2.Instance        = USART2;
         huart2.Init.BaudRate   = 0U;
@@ -425,6 +537,8 @@ protected:
         huart2.Init.StopBits   = 0U;
         huart2.Init.Parity     = 0U;
         huart2.Init.Mode       = 0U;
+        huart2.hdmarx          = &hdma_usart2_rx;
+        huart2.hdmatx          = nullptr;
 
         huart3.Instance        = USART3;
         huart3.Init.BaudRate   = 0U;
@@ -432,6 +546,8 @@ protected:
         huart3.Init.StopBits   = 0U;
         huart3.Init.Parity     = 0U;
         huart3.Init.Mode       = 0U;
+        huart3.hdmarx          = &hdma_usart3_rx;
+        huart3.hdmatx          = nullptr;
 
         TEST_HW_UART_Reset_Usart( USART6 );
         TEST_HW_UART_Reset_Usart( USART2 );
@@ -1342,4 +1458,133 @@ TEST_F( UartTest, ConsoleIrqHandlerDispatchesToHal )
 
     EXPECT_EQ( mock_irq_handler_huart, &huart3 );
     EXPECT_EQ( mock_irq_handler_count, 1U );
+}
+
+TEST_F( UartTest, DutRxDmaChannel1TransferErrorClearsRxStreamFlags )
+{
+    fake_dma2.LISR |= DMA_LISR_TEIF2;
+
+    DMA2_Stream2_IRQHandler();
+
+    EXPECT_EQ( fake_dma2.LIFCR, HW_UART_CH1_DMA_RX_IFCR_MASK );
+}
+
+TEST_F( UartTest, DutRxDmaChannel1DirectModeErrorClearsRxStreamFlags )
+{
+    fake_dma2.LISR |= DMA_LISR_DMEIF2;
+
+    DMA2_Stream2_IRQHandler();
+
+    EXPECT_EQ( fake_dma2.LIFCR, HW_UART_CH1_DMA_RX_IFCR_MASK );
+}
+
+TEST_F( UartTest, DutRxDmaChannel1FifoErrorClearsRxStreamFlags )
+{
+    fake_dma2.LISR |= DMA_LISR_FEIF2;
+
+    DMA2_Stream2_IRQHandler();
+
+    EXPECT_EQ( fake_dma2.LIFCR, HW_UART_CH1_DMA_RX_IFCR_MASK );
+}
+
+TEST_F( UartTest, DutRxDmaChannel1UnexpectedHalfTransferClearsRxStreamFlags )
+{
+    fake_dma2.LISR |= DMA_LISR_HTIF2;
+
+    DMA2_Stream2_IRQHandler();
+
+    EXPECT_EQ( fake_dma2.LIFCR, HW_UART_CH1_DMA_RX_IFCR_MASK );
+}
+
+TEST_F( UartTest, DutRxDmaChannel1UnexpectedTransferCompleteClearsRxStreamFlags )
+{
+    fake_dma2.LISR |= DMA_LISR_TCIF2;
+
+    DMA2_Stream2_IRQHandler();
+
+    EXPECT_EQ( fake_dma2.LIFCR, HW_UART_CH1_DMA_RX_IFCR_MASK );
+}
+
+TEST_F( UartTest, DutRxDmaChannel2TransferErrorClearsRxStreamFlags )
+{
+    fake_dma1.HISR |= DMA_HISR_TEIF5;
+
+    DMA1_Stream5_IRQHandler();
+
+    EXPECT_EQ( fake_dma1.HIFCR, HW_UART_CH2_DMA_RX_IFCR_MASK );
+}
+
+TEST_F( UartTest, DutRxDmaChannel2DirectModeErrorClearsRxStreamFlags )
+{
+    fake_dma1.HISR |= DMA_HISR_DMEIF5;
+
+    DMA1_Stream5_IRQHandler();
+
+    EXPECT_EQ( fake_dma1.HIFCR, HW_UART_CH2_DMA_RX_IFCR_MASK );
+}
+
+TEST_F( UartTest, DutRxDmaChannel2FifoErrorClearsRxStreamFlags )
+{
+    fake_dma1.HISR |= DMA_HISR_FEIF5;
+
+    DMA1_Stream5_IRQHandler();
+
+    EXPECT_EQ( fake_dma1.HIFCR, HW_UART_CH2_DMA_RX_IFCR_MASK );
+}
+
+TEST_F( UartTest, DutRxDmaChannel2UnexpectedHalfTransferClearsRxStreamFlags )
+{
+    fake_dma1.HISR |= DMA_HISR_HTIF5;
+
+    DMA1_Stream5_IRQHandler();
+
+    EXPECT_EQ( fake_dma1.HIFCR, HW_UART_CH2_DMA_RX_IFCR_MASK );
+}
+
+TEST_F( UartTest, DutRxDmaChannel2UnexpectedTransferCompleteClearsRxStreamFlags )
+{
+    fake_dma1.HISR |= DMA_HISR_TCIF5;
+
+    DMA1_Stream5_IRQHandler();
+
+    EXPECT_EQ( fake_dma1.HIFCR, HW_UART_CH2_DMA_RX_IFCR_MASK );
+}
+TEST_F( UartTest, DutRxDmaErrorDoesNotChangeRxRunningStateBeforeFaultPolicyExists )
+{
+    HwUartConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
+
+    ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+    ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
+    ASSERT_TRUE( HW_UART_Rx_Is_Running( HW_UART_CHANNEL_1 ) );
+
+    fake_dma2.LISR |= DMA_LISR_TEIF2;
+
+    DMA2_Stream2_IRQHandler();
+
+    EXPECT_TRUE( HW_UART_Rx_Is_Running( HW_UART_CHANNEL_1 ) );
+    EXPECT_EQ( fake_dma2.LIFCR, HW_UART_CH1_DMA_RX_IFCR_MASK );
+}
+
+TEST_F( UartTest, DutRxStartChannel1DisablesUnusedRxDmaHalfAndCompleteInterrupts )
+{
+    HwUartConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
+
+    ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+    ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
+
+    ASSERT_NE( huart6.hdmarx, nullptr );
+    EXPECT_NE( huart6.hdmarx->disabled_interrupt_mask & DMA_IT_HT, 0U );
+    EXPECT_NE( huart6.hdmarx->disabled_interrupt_mask & DMA_IT_TC, 0U );
+}
+
+TEST_F( UartTest, DutRxStartChannel2DisablesUnusedRxDmaHalfAndCompleteInterrupts )
+{
+    HwUartConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
+
+    ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_2, &config ) );
+    ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_2 ) );
+
+    ASSERT_NE( huart2.hdmarx, nullptr );
+    EXPECT_NE( huart2.hdmarx->disabled_interrupt_mask & DMA_IT_HT, 0U );
+    EXPECT_NE( huart2.hdmarx->disabled_interrupt_mask & DMA_IT_TC, 0U );
 }

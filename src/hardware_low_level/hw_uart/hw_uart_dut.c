@@ -71,6 +71,7 @@
 #define HW_UART_CH1_DMA_RX_STREAM DMA2_Stream2
 #define HW_UART_CH1_DMA_TX_STREAM DMA2_Stream6
 #define HW_UART_CH1_TX_DMA_IRQ_HANDLER DMA2_Stream6_IRQHandler
+#define HW_UART_CH1_RX_DMA_IRQ_HANDLER DMA2_Stream2_IRQHandler
 #define HW_UART_CH1_HANDLE ( &huart6 )
 #define HW_UART_CH1_DMA_CONTROLLER DMA2
 #define HW_UART_CH1_DMA_TX_LL_STREAM LL_DMA_STREAM_6
@@ -78,11 +79,16 @@
 #define HW_UART_CH1_DMA_TX_IFCR_MASK                                                               \
     ( DMA_HIFCR_CTCIF6 | DMA_HIFCR_CTEIF6 | DMA_HIFCR_CFEIF6 | DMA_HIFCR_CDMEIF6                   \
       | DMA_HIFCR_CHTIF6 )
+#define HW_UART_CH1_DMA_RX_IFCR_REG ( &DMA2->LIFCR )
+#define HW_UART_CH1_DMA_RX_IFCR_MASK                                                               \
+    ( DMA_LIFCR_CTCIF2 | DMA_LIFCR_CTEIF2 | DMA_LIFCR_CFEIF2 | DMA_LIFCR_CDMEIF2                   \
+      | DMA_LIFCR_CHTIF2 )
 
 #define HW_UART_CH2_USART USART2
 #define HW_UART_CH2_DMA_RX_STREAM DMA1_Stream5
 #define HW_UART_CH2_DMA_TX_STREAM DMA1_Stream6
 #define HW_UART_CH2_TX_DMA_IRQ_HANDLER DMA1_Stream6_IRQHandler
+#define HW_UART_CH2_RX_DMA_IRQ_HANDLER DMA1_Stream5_IRQHandler
 #define HW_UART_CH2_HANDLE ( &huart2 )
 #define HW_UART_CH2_DMA_CONTROLLER DMA1
 #define HW_UART_CH2_DMA_TX_LL_STREAM LL_DMA_STREAM_6
@@ -90,6 +96,10 @@
 #define HW_UART_CH2_DMA_TX_IFCR_MASK                                                               \
     ( DMA_HIFCR_CTCIF6 | DMA_HIFCR_CTEIF6 | DMA_HIFCR_CFEIF6 | DMA_HIFCR_CDMEIF6                   \
       | DMA_HIFCR_CHTIF6 )
+#define HW_UART_CH2_DMA_RX_IFCR_REG ( &DMA1->HIFCR )
+#define HW_UART_CH2_DMA_RX_IFCR_MASK                                                               \
+    ( DMA_HIFCR_CTCIF5 | DMA_HIFCR_CTEIF5 | DMA_HIFCR_CFEIF5 | DMA_HIFCR_CDMEIF5                   \
+      | DMA_HIFCR_CHTIF5 )
 
 /* Placeholder interface selection line definitions. */
 #define HW_UART_CH1_MODE_SEL0_LINE GPIO_PIN_0
@@ -220,15 +230,18 @@ typedef struct
  */
 typedef struct
 {
-    USART_TypeDef*      uart_instance;      // Pointer to the UART peripheral instance (e.g. USART2)
-    DMA_Stream_TypeDef* rx_dma_stream;      // Pointer to the DMA stream used for RX operations
-    DMA_Stream_TypeDef* tx_dma_stream;      // Pointer to the DMA stream used for TX operations
-    UART_HandleTypeDef* uart_handle;        // HAL UART handle for initialisation and configuration
-    DMA_TypeDef*        tx_dma_controller;  // Pointer to the DMA controller for TX stream
-    uint32_t            tx_ll_stream;       // LL stream identifier for TX (e.g. LL_DMA_STREAM_6)
-    volatile uint32_t*  tx_dma_ifcr_reg;    // Pointer to the DMA IFCR register for the TX stream
-    uint32_t            tx_dma_ifcr_mask;   // Bitmask for clearing the relevant flags in the IFCR
-                                            // register for the TX stream
+    USART_TypeDef*      uart_instance;
+    DMA_Stream_TypeDef* rx_dma_stream;
+    DMA_Stream_TypeDef* tx_dma_stream;
+    UART_HandleTypeDef* uart_handle;
+
+    DMA_TypeDef*       tx_dma_controller;
+    uint32_t           tx_ll_stream;
+    volatile uint32_t* tx_dma_ifcr_reg;
+    uint32_t           tx_dma_ifcr_mask;
+
+    volatile uint32_t* rx_dma_ifcr_reg;
+    uint32_t           rx_dma_ifcr_mask;
 } HwUartHardwareMap_T;
 
 /**-----------------------------------------------------------------------------
@@ -254,7 +267,9 @@ static const HwUartHardwareMap_T hw_uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
                             .tx_dma_controller = HW_UART_CH1_DMA_CONTROLLER,
                             .tx_ll_stream      = HW_UART_CH1_DMA_TX_LL_STREAM,
                             .tx_dma_ifcr_reg   = HW_UART_CH1_DMA_TX_IFCR_REG,
-                            .tx_dma_ifcr_mask  = HW_UART_CH1_DMA_TX_IFCR_MASK },
+                            .tx_dma_ifcr_mask  = HW_UART_CH1_DMA_TX_IFCR_MASK,
+                            .rx_dma_ifcr_reg   = HW_UART_CH1_DMA_RX_IFCR_REG,
+                            .rx_dma_ifcr_mask  = HW_UART_CH1_DMA_RX_IFCR_MASK },
 
     [HW_UART_CHANNEL_2] = { .uart_instance     = HW_UART_CH2_USART,
                             .rx_dma_stream     = HW_UART_CH2_DMA_RX_STREAM,
@@ -263,7 +278,9 @@ static const HwUartHardwareMap_T hw_uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
                             .tx_dma_controller = HW_UART_CH2_DMA_CONTROLLER,
                             .tx_ll_stream      = HW_UART_CH2_DMA_TX_LL_STREAM,
                             .tx_dma_ifcr_reg   = HW_UART_CH2_DMA_TX_IFCR_REG,
-                            .tx_dma_ifcr_mask  = HW_UART_CH2_DMA_TX_IFCR_MASK } };
+                            .tx_dma_ifcr_mask  = HW_UART_CH2_DMA_TX_IFCR_MASK,
+                            .rx_dma_ifcr_reg   = HW_UART_CH2_DMA_RX_IFCR_REG,
+                            .rx_dma_ifcr_mask  = HW_UART_CH2_DMA_RX_IFCR_MASK } };
 
 /* Fixed board-level mapping from logical UART channels to interface selection lines */
 static const HwUartSelectionLines_T uart_selection_lines[HW_UART_CHANNEL_COUNT] = {
@@ -276,15 +293,22 @@ static const HwUartSelectionLines_T uart_selection_lines[HW_UART_CHANNEL_COUNT] 
                             .volt_sel0_line = HW_UART_CH2_VOLT_SEL0_LINE,
                             .volt_sel1_line = HW_UART_CH2_VOLT_SEL1_LINE } };
 
-void HW_UART_CH1_TX_DMA_IRQ_HANDLER( void );
-void HW_UART_CH2_TX_DMA_IRQ_HANDLER( void );
-
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
 static inline void HW_UART_Tx_Complete_Handler( HwUartChannel_T channel );
+static inline void HW_UART_Tx_Error_Handler( HwUartChannel_T channel );
+static inline void HW_UART_Rx_Error_Handler( HwUartChannel_T channel );
 
+/**-----------------------------------------------------------------------------
+ *  Interrupt Handler Prototypes
+ *------------------------------------------------------------------------------
+ */
+void HW_UART_CH1_TX_DMA_IRQ_HANDLER( void );
+void HW_UART_CH2_TX_DMA_IRQ_HANDLER( void );
+void HW_UART_CH1_RX_DMA_IRQ_HANDLER( void );
+void HW_UART_CH2_RX_DMA_IRQ_HANDLER( void );
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Definitions
  *------------------------------------------------------------------------------
@@ -668,6 +692,23 @@ static inline void HW_UART_Tx_Error_Handler( HwUartChannel_T channel )
      */
 }
 
+/**
+ * @brief Handles an RX DMA error for the specified UART channel.
+ *
+ * @note This function intentionally performs no recovery while the UART fault
+ *       model is not yet implemented. It exists as the future insertion point
+ *       for fault latching and error policy.
+ */
+static inline void HW_UART_Rx_Error_Handler( HwUartChannel_T channel )
+{
+    HwUartRuntimeState_T* runtime = &hw_uart_channel_states[channel].runtime;
+    ( void )runtime;
+
+    /* Future fault implementation:
+     * runtime->latched_faults |= HW_UART_FAULT_DMA_ERROR;
+     */
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
@@ -750,6 +791,13 @@ bool HW_UART_Rx_Start( HwUartChannel_T channel )
     {
         return false;
     }
+
+    if ( huart->hdmarx != NULL )
+    {
+        __HAL_DMA_DISABLE_IT( huart->hdmarx, DMA_IT_HT );
+        __HAL_DMA_DISABLE_IT( huart->hdmarx, DMA_IT_TC );
+    }
+
     state->runtime.rx_running = true;
     return true;
 }
@@ -1138,5 +1186,101 @@ void HW_UART_CH2_TX_DMA_IRQ_HANDLER( void )
     {
         *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
         HW_UART_Tx_Error_Handler( HW_UART_CHANNEL_2 );
+    }
+}
+
+/**
+ * @brief  DMA interrupt service routine for RX on UART Channel 1.
+ *
+ * @note   This function is bound to the MCU interrupt vector via the
+ *         HW_UART_CH1_RX_DMA_IRQ_HANDLER macro, which expands to the
+ *         device-specific DMA stream IRQ handler, DMA2_Stream2_IRQHandler.
+ *
+ * @note   RX DMA half-transfer and transfer-complete events are not used by the
+ *         polling RX design. They are cleared if they occur unexpectedly.
+ *
+ * @note   RX DMA error handling is intentionally minimal until the UART fault
+ *         bitmask is implemented. This handler exists to provide a valid vector,
+ *         clear interrupt flags, and provide the future framework for fault
+ *         reporting.
+ */
+void HW_UART_CH1_RX_DMA_IRQ_HANDLER( void )
+{
+    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[HW_UART_CHANNEL_1];
+
+    if ( LL_DMA_IsActiveFlag_TE2( DMA2 ) )
+    {
+        *( hw_map->rx_dma_ifcr_reg ) = hw_map->rx_dma_ifcr_mask;
+        HW_UART_Rx_Error_Handler( HW_UART_CHANNEL_1 );
+    }
+
+    else if ( LL_DMA_IsActiveFlag_DME2( DMA2 ) )
+    {
+        *( hw_map->rx_dma_ifcr_reg ) = hw_map->rx_dma_ifcr_mask;
+        HW_UART_Rx_Error_Handler( HW_UART_CHANNEL_1 );
+    }
+
+    else if ( LL_DMA_IsActiveFlag_FE2( DMA2 ) )
+    {
+        *( hw_map->rx_dma_ifcr_reg ) = hw_map->rx_dma_ifcr_mask;
+        HW_UART_Rx_Error_Handler( HW_UART_CHANNEL_1 );
+    }
+
+    else if ( LL_DMA_IsActiveFlag_HT2( DMA2 ) )
+    {
+        *( hw_map->rx_dma_ifcr_reg ) = hw_map->rx_dma_ifcr_mask;
+    }
+
+    else if ( LL_DMA_IsActiveFlag_TC2( DMA2 ) )
+    {
+        *( hw_map->rx_dma_ifcr_reg ) = hw_map->rx_dma_ifcr_mask;
+    }
+}
+
+/**
+ * @brief  DMA interrupt service routine for RX on UART Channel 2.
+ *
+ * @note   This function is bound to the MCU interrupt vector via the
+ *         HW_UART_CH2_RX_DMA_IRQ_HANDLER macro, which expands to the
+ *         device-specific DMA stream IRQ handler, DMA1_Stream5_IRQHandler.
+ *
+ * @note   RX DMA half-transfer and transfer-complete events are not used by the
+ *         polling RX design. They are cleared if they occur unexpectedly.
+ *
+ * @note   RX DMA error handling is intentionally minimal until the UART fault
+ *         bitmask is implemented. This handler exists to provide a valid vector,
+ *         clear interrupt flags, and provide the future framework for fault
+ *         reporting.
+ */
+void HW_UART_CH2_RX_DMA_IRQ_HANDLER( void )
+{
+    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[HW_UART_CHANNEL_2];
+
+    if ( LL_DMA_IsActiveFlag_TE5( DMA1 ) )
+    {
+        *( hw_map->rx_dma_ifcr_reg ) = hw_map->rx_dma_ifcr_mask;
+        HW_UART_Rx_Error_Handler( HW_UART_CHANNEL_2 );
+    }
+
+    else if ( LL_DMA_IsActiveFlag_DME5( DMA1 ) )
+    {
+        *( hw_map->rx_dma_ifcr_reg ) = hw_map->rx_dma_ifcr_mask;
+        HW_UART_Rx_Error_Handler( HW_UART_CHANNEL_2 );
+    }
+
+    else if ( LL_DMA_IsActiveFlag_FE5( DMA1 ) )
+    {
+        *( hw_map->rx_dma_ifcr_reg ) = hw_map->rx_dma_ifcr_mask;
+        HW_UART_Rx_Error_Handler( HW_UART_CHANNEL_2 );
+    }
+
+    else if ( LL_DMA_IsActiveFlag_HT5( DMA1 ) )
+    {
+        *( hw_map->rx_dma_ifcr_reg ) = hw_map->rx_dma_ifcr_mask;
+    }
+
+    else if ( LL_DMA_IsActiveFlag_TC5( DMA1 ) )
+    {
+        *( hw_map->rx_dma_ifcr_reg ) = hw_map->rx_dma_ifcr_mask;
     }
 }
