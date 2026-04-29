@@ -67,7 +67,7 @@
  * This function is designed to be very fast and should be implemented in the execution phase
  */
 #ifndef TEST_BUILD
-inline void HW_PWM_GEN_set_pwm_direct( uint16_t arr, uint16_t ccr, uint16_t psc, TIM_TypeDef* tim )
+static inline void HW_PWM_GEN_set_pwm_direct( uint16_t arr, uint16_t ccr, uint16_t psc, TIM_TypeDef* tim )
 {
     tim->CCER = ccr;
     tim->ARR  = arr;
