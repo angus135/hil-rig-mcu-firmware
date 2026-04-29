@@ -117,9 +117,6 @@ typedef struct StreamBufferDef_t /*lint !e9058 Style convention uses tag. */
 struct StreamBufferDef_t;
 typedef struct StreamBufferDef_t* StreamBufferHandle_t;
 
-#define xStreamBufferCreate( xBufferSizeBytes, xTriggerLevelBytes )                                \
-    xStreamBufferGenericCreate( xBufferSizeBytes, xTriggerLevelBytes, pdFALSE )
-
 #define portYIELD_FROM_ISR( x ) ( ( void )( x ) )
 
 /**-----------------------------------------------------------------------------
@@ -225,8 +222,7 @@ BaseType_t xQueuePeekFromISR( QueueHandle_t xQueue, void* pvBuffer );
 
 // stream_buffer.c functions
 
-StreamBufferHandle_t xStreamBufferGenericCreate( size_t xBufferSizeBytes, size_t xTriggerLevelBytes,
-                                                 BaseType_t xIsMessageBuffer );
+StreamBufferHandle_t xStreamBufferCreate( size_t xBufferSizeBytes, size_t xTriggerLevelBytes );
 
 size_t xStreamBufferSendFromISR( StreamBufferHandle_t xStreamBuffer, const void* pvTxData,
                                  size_t            xDataLengthBytes,
