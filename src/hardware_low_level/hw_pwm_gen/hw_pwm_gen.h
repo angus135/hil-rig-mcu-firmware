@@ -45,10 +45,11 @@ extern "C"
 /**
  * @brief Computes the pwm output.
  *
- * @param channel   The channel you want to configure
+ * @param channel   The channel you want to configure <1|2|3|4>
+ * @param volt_lvl  The voltage level you want (low or high <0|1>)
  *
  */
-void HW_PWM_GEN_config( int channel );
+void HW_PWM_GEN_config( int channel, int volt_lvl );
 
 /**
  * @brief Computes the prescaler register (PSC).
