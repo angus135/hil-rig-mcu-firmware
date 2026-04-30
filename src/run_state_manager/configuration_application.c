@@ -23,12 +23,14 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
-#define PSC_100HZ 89
-#define ARR_100HZ 9999
-#define PSC_1KHZ 89
-#define ARR_1KHZ 999
-#define PSC_10KHZ 89
-#define ARR_10KHZ 99
+#define PSC_100HZ 14u
+#define ARR_100HZ 59999u
+
+#define PSC_1KHZ 1u
+#define ARR_1KHZ 44999u
+
+#define PSC_10KHZ 0u
+#define ARR_10KHZ 8999u
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
