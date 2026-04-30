@@ -103,10 +103,11 @@ static inline void HW_PWM_GEN_set_pwm_direct( uint16_t ccr_num, uint16_t arr, ui
 /**
  * @brief Computes the pwm output.
  *
- * @param channel   The channel you want to configure
+ * @param channel   The channel you want to configure <1|2|3|4>
+ * @param volt_lvl  The voltage level you want (low or high <0|1>)
  *
  */
-void HW_PWM_GEN_config( int channel )
+void HW_PWM_GEN_config( int channel, int volt_lvl )
 {
 #ifndef TEST_BUILD
 
@@ -114,15 +115,42 @@ void HW_PWM_GEN_config( int channel )
 
     if ( channel == 1 )
     {
-        HAL_TIM_PWM_Start( &htim12, TIM_CHANNEL_2 );
+        if ( volt_lvl == 0 )
+        {
+            // Call to output expander to set voltage levels
+            HAL_TIM_PWM_Start( &htim12, TIM_CHANNEL_2 );
+        }
+        else if ( volt_lvl == 1 )
+        {
+            // Call to output expander to set voltage levels
+            HAL_TIM_PWM_Start( &htim12, TIM_CHANNEL_2 );
+        }
     }
     else if ( channel == 2 )
     {
-        HAL_TIM_PWM_Start( &htim13, TIM_CHANNEL_1 );
+        if ( volt_lvl == 0 )
+        {
+            // Call to output expander to set voltage levels
+            HAL_TIM_PWM_Start( &htim12, TIM_CHANNEL_2 );
+        }
+        else if ( volt_lvl == 1 )
+        {
+            // Call to output expander to set voltage levels
+            HAL_TIM_PWM_Start( &htim12, TIM_CHANNEL_2 );
+        }
     }
     else if ( channel == 3 )
     {
-        HAL_TIM_PWM_Start( &htim14, TIM_CHANNEL_1 );
+        if ( volt_lvl == 0 )
+        {
+            // Call to output expander to set voltage levels
+            HAL_TIM_PWM_Start( &htim12, TIM_CHANNEL_2 );
+        }
+        else if ( volt_lvl == 1 )
+        {
+            // Call to output expander to set voltage levels
+            HAL_TIM_PWM_Start( &htim12, TIM_CHANNEL_2 );
+        }
     }
 #endif
     ( void )channel;
