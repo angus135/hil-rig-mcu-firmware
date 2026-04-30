@@ -23,12 +23,35 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
-#define PSC_100HZ 29u
+/*
+ * Timer update frequency:
+ *     update_hz = 90,000,000 / ((PSC + 1) * (ARR + 1))
+ *
+ * Values below are chosen to produce exact 100 Hz, 1 kHz, and 10 kHz update
+ * rates while keeping PSC as small as possible for the best counter resolution.
+ *
+ * 100 Hz:
+ *     90,000,000 / 100 = 900,000 timer counts per update.
+ *     ARR cannot hold 899,999 on TIM4, so divide by PSC + 1 = 15.
+ *     900,000 / 15 = 60,000 counts, so PSC = 14 and ARR = 59,999.
+ *
+ * 1 kHz:
+ *     90,000,000 / 1,000 = 90,000 timer counts per update.
+ *     ARR cannot hold 89,999 on TIM4, so divide by PSC + 1 = 2.
+ *     90,000 / 2 = 45,000 counts, so PSC = 1 and ARR = 44,999.
+ *
+ * 10 kHz:
+ *     90,000,000 / 10,000 = 9,000 timer counts per update.
+ *     ARR can hold 8,999 directly, so PSC = 0 and ARR = 8,999.
+ */
+#define PSC_100HZ 14u
 #define ARR_100HZ 59999u
-#define PSC_1KHZ 29u
-#define ARR_1KHZ 5999u
-#define PSC_10KHZ 29u
-#define ARR_10KHZ 599u
+
+#define PSC_1KHZ 1u
+#define ARR_1KHZ 44999u
+
+#define PSC_10KHZ 0u
+#define ARR_10KHZ 8999u
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
