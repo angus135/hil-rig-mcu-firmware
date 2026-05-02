@@ -407,7 +407,7 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
 
     long volt_mv = ( long )( voltage * 1000.0F );
     CONSOLE_Printf( "Starting write: ch=%ld volt_mV=%ld\r\n", channel, volt_mv );
-    CONSOLE_Printf( "TX buffer before: %s\r\n", HW_SPI_Tx_Buffer_Empty( SPI_DAC ) ? "empty" : "not empty" );
+    CONSOLE_Printf( "TX buffer before: %s\r\n", HW_SPI_Tx_Buffer_Empty( SPI_CHANNEL_1 ) ? "empty" : "not empty" );
 
     if ( !analogue_output_write_voltage( ( uint8_t )channel, voltage ) )
     {

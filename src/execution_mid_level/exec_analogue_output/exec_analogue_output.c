@@ -1,7 +1,7 @@
 /******************************************************************************
  *  File:       exec_analogue_output.c
- *  Author:     Angus Corr
- *  Created:    25-Mar-2026
+ *  Author:     Coen Pasitchnyj
+ *  Created:    02-May-2026
  *
  *  Description:
  *      <Short description of the module's purpose and responsibilities>
@@ -20,6 +20,11 @@
 
 #include "exec_analogue_output.h"
 #include "hw_spi.h"
+
+#include "gpio.h"
+#include "stm32f4xx_ll_gpio.h"
+#include "stm32f446xx.h"
+
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -85,7 +90,7 @@ static bool ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, uint16_t data_
 		( uint8_t )( data_word & 0xFFU ),
 	};
 
-	return HW_SPI_Load_Tx_Buffer( SPI_DAC, frame, sizeof( frame ) );
+	return HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, frame, sizeof( frame ) );
 }
 
 static uint16_t ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_v )
@@ -151,16 +156,29 @@ static bool ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
 	{
 		frame_bytes[frame_index_bytes] = ANALOGUE_OUTPUT_Pack_Command_Byte( frames[index].register_address );
 		frame_bytes[frame_index_bytes + 1U] = ( uint8_t )( ( frames[index].data_word >> 8U ) & 0xFFU );
-		frame_bytes[frame_index_bytes + 2U] = ( uint8_t )( frames[index].data_word & 0xFFU );
+        frame_bytes[frame_index_bytes + 2U] = ( uint8_t )( frames[index].data_word & 0xFFU );
+
+        LL_GPIO_ResetOutputPin(nCS_GPIO_Port, nCS_Pin);  // CS low
+
+        if ( !HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, &frame_bytes[frame_index_bytes], 3U ) )
+	    {
+		    return false;
+	    }
+
+	    HW_SPI_Tx_Trigger( SPI_CHANNEL_0 );
+        while ( !HW_SPI_Tx_Buffer_Empty( SPI_CHANNEL_0 ) )
+        {
+            /* Wait for the frame to be transmitted before loading the next one to ensure
+             * the DAC receives them in the correct order. */
+        }
+
+        LL_GPIO_SetOutputPin( nCS_GPIO_Port, nCS_Pin );  // CS high
+        
 		frame_index_bytes += 3U;
+        
 	}
 
-	if ( !HW_SPI_Load_Tx_Buffer( SPI_DAC, frame_bytes, frame_index_bytes ) )
-	{
-		return false;
-	}
 
-	HW_SPI_Tx_Trigger( SPI_DAC );
 	return true;
 }
 
@@ -173,7 +191,7 @@ static bool ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
  * @brief Configure and start the SPI4 hardware channel dedicated to DAC communication.
  *
  * Sets up the SPI4 peripheral with the configuration required by the
- * MCP48CVB28T-20E_ST octal DAC: 8-bit data size, 1M406 baud rate, MSB first,
+ * MCP48CVB28T-20E_ST octal DAC: 8-bit data size, 352K baud rate, MSB first,
  * CPOL low, CPHA 1 edge.
  *
  * This function must be called once during system initialization to prepare
@@ -197,17 +215,17 @@ bool analogue_output_spi_channel_setup( void )
 		.spi_mode  = SPI_MASTER_MODE,
 		.data_size = SPI_SIZE_8_BIT,
 		.first_bit = SPI_FIRST_MSB,
-		.baud_rate = SPI_BAUD_1M406BIT,
+		.baud_rate = SPI_BAUD_352KBIT,
 		.cpol      = SPI_CPOL_LOW,
 		.cpha      = SPI_CPHA_1_EDGE,
 	};
 
-	if ( !HW_SPI_Configure_Channel( SPI_DAC, configuration ) )
+	if ( !HW_SPI_Configure_Channel( SPI_CHANNEL_0, configuration ) )
 	{
 		return false;
 	}
 
-	HW_SPI_Start_Channel( SPI_DAC );
+	HW_SPI_Start_Channel( SPI_CHANNEL_0 );
 	return true;
 }
 
@@ -234,6 +252,8 @@ bool analogue_output_spi_channel_setup( void )
  */
 bool analogue_output_config( bool use_external_vref )
 {
+    LL_GPIO_SetOutputPin( nCS_GPIO_Port, nCS_Pin );  // CS high
+    
 	if ( !ANALOGUE_OUTPUT_Queue_Startup_Frames( use_external_vref ) )
 	{
 		s_analogue_output_configured = false;
@@ -295,13 +315,18 @@ bool analogue_output_write_voltage( uint8_t channel, float input_voltage_v )
 		return false;
 	}
 
-	count = ANALOGUE_OUTPUT_Clamp_And_Scale_Count( input_voltage_v );
+    count = ANALOGUE_OUTPUT_Clamp_And_Scale_Count( input_voltage_v );
+
+    LL_GPIO_ResetOutputPin(nCS_GPIO_Port, nCS_Pin);  // CS low
 
 	if ( !ANALOGUE_OUTPUT_Send_Frame( ( uint8_t )( ANALOGUE_OUTPUT_REG_DAC_BASE + channel ), count ) )
 	{
 		return false;
 	}
 
-	HW_SPI_Tx_Trigger( SPI_DAC );
+    HW_SPI_Tx_Trigger( SPI_CHANNEL_0 );
+
+    LL_GPIO_SetOutputPin( nCS_GPIO_Port, nCS_Pin );  // CS high
+    
 	return true;
 }
