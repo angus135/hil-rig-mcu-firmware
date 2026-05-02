@@ -28,6 +28,7 @@ target_link_libraries(exec_analogue_output
         global_config
         rtos
         cubeide_hal
+        hw_spi
 )
 
 # -----------------------------
