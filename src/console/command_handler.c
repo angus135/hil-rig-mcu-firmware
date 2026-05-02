@@ -73,6 +73,7 @@ static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char** argv );
 static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] );
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
@@ -93,6 +94,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"analogue_inputs", CONSOLE_Command_Analogue_Inputs, "Allows for interaction with Analogue Inputs."},
     {"digital_input", CONSOLE_Command_DigitalInput, "Print digital input states as 1s and 0s."},
     {"spi_loop",    CONSOLE_Command_SPI_Loopback,         "Does a loopback test"},
+    {"anlg_out",    CONSOLE_Command_Analogue_Output,      "DAC config and write commands"},
 
 };
 
@@ -319,6 +321,101 @@ static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "Unknown action: %s\r\n", argv[1] );
         CONSOLE_SPI_Loopback_Print_Usage();
     }
+}
+
+/**
+ * @brief Handles analogue output console commands.
+ *
+ * Usage:
+ *   anlg_out config
+ *     - Configures SPI and the DAC to use VDD as reference (no external VREF).
+ *   anlg_out <channel> <voltage>
+ *     - Write voltage (0-20V, clamped) to channel 0-5.
+ */
+static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
+{
+    if ( argc < 2 || argv[1] == NULL )
+    {
+        CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  anlg_out config\r\n" );
+        CONSOLE_Printf( "  anlg_out <channel 0-5> <voltage 0-20V>\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "help" ) == 0 )
+    {
+        CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  anlg_out config\r\n" );
+        CONSOLE_Printf( "  anlg_out <channel 0-5> <voltage 0-20V>\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "config" ) == 0 )
+    {
+        /* For console testing we configure SPI then configure DAC to use VDD */
+        if ( !analogue_output_spi_channel_setup() )
+        {
+            CONSOLE_Printf( "Failed to configure SPI channel for DAC\r\n" );
+            return;
+        }
+
+        if ( !analogue_output_config( false ) )
+        {
+            CONSOLE_Printf( "Failed to configure DAC registers\r\n" );
+            return;
+        }
+
+        CONSOLE_Printf( "DAC configured to use VDD as reference\r\n" );
+        return;
+    }
+
+    /* Otherwise expect: anlg_out <channel> <voltage> */
+    if ( argc < 3 )
+    {
+        CONSOLE_Printf( "Usage: anlg_out <channel 0-5> <voltage 0-20V>\r\n" );
+        return;
+    }
+
+    char* endptr = NULL;
+    long channel = strtol( argv[1], &endptr, 10 );
+    if ( ( endptr == argv[1] ) || ( *endptr != '\0' ) )
+    {
+        CONSOLE_Printf( "Invalid channel\r\n" );
+        return;
+    }
+
+    if ( channel < 0 || channel > 5 )
+    {
+        CONSOLE_Printf( "Channel out of range (0-5)\r\n" );
+        return;
+    }
+
+    char* endptr2 = NULL;
+    float voltage = strtof( argv[2], &endptr2 );
+    if ( endptr2 == argv[2] )
+    {
+        CONSOLE_Printf( "Invalid voltage\r\n" );
+        return;
+    }
+
+    /* Ensure module configured */
+    if ( !analogue_output_is_configured() )
+    {
+        CONSOLE_Printf( "DAC module not configured. Run 'anlg_out config' first.\r\n" );
+        return;
+    }
+
+    long volt_mv = ( long )( voltage * 1000.0F );
+    CONSOLE_Printf( "Starting write: ch=%ld volt_mV=%ld\r\n", channel, volt_mv );
+    CONSOLE_Printf( "TX buffer before: %s\r\n", HW_SPI_Tx_Buffer_Empty( SPI_DAC ) ? "empty" : "not empty" );
+
+    if ( !analogue_output_write_voltage( ( uint8_t )channel, voltage ) )
+    {
+        CONSOLE_Printf( "Failed to write voltage to channel %ld\r\n", channel );
+        return;
+    }
+
+    CONSOLE_Printf( "Wrote (requested) %ld mV to channel %ld\r\n", volt_mv, channel );
 }
 
 /**
@@ -561,8 +658,8 @@ static void CONSOLE_Command_UART_Loopback( uint16_t argc, char* argv[] )
     }
     else if ( strcmp( argv[1], "start" ) == 0 && argc >= 5U )
     {
-        HwUartChannel_T sender_ch;
-        HwUartChannel_T receiver_ch;
+        HwUartChannel_T sender_ch = HW_UART_CHANNEL_1;
+        HwUartChannel_T receiver_ch = HW_UART_CHANNEL_1;
         char            tx_text[EXEC_UART_MAX_CHUNK_SIZE];
         uint32_t        tx_length = 0U;
 
@@ -820,3 +917,4 @@ void CONSOLE_Command_Handler( uint16_t argc, char* argv[] )
 }
 
 #endif
+
