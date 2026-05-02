@@ -40,6 +40,7 @@ target_link_libraries(console
     hw_adc
     hw_spi
     exec_spi
+    exec_analogue_output
     execution_manager
     exec_digital_input
     hw_gpio
