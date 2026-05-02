@@ -87,6 +87,8 @@ void Error_Handler(void);
 #define SPI1_CS_TEST_GPIO_Port GPIOE
 #define LD3_Pin GPIO_PIN_14
 #define LD3_GPIO_Port GPIOB
+#define nCS_Pin GPIO_PIN_15
+#define nCS_GPIO_Port GPIOB
 #define STLK_RX_Pin GPIO_PIN_8
 #define STLK_RX_GPIO_Port GPIOD
 #define STLK_TX_Pin GPIO_PIN_9
