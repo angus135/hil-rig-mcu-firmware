@@ -612,3 +612,5 @@ void HAL_DisableMemorySwappingBank(void)
 /**
   * @}
   */
+
+
