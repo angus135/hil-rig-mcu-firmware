@@ -32,7 +32,7 @@ target_link_libraries(logic_expander
         hw_timer
         hw_gpio
         exec_i2c
-        console
+        hw_i2c
 )
 
 # -----------------------------

@@ -106,16 +106,16 @@ static bool                 logic_expander_ready                       = false;
  *------------------------------------------------------------------------------
  */
 
-static inline bool                  logic_expander_index_is_valid( uint8_t expander_index );
-static inline bool                  logic_expander_port_is_valid( LogicExpanderPort_T port );
-static inline LogicExpanderStatus_T logic_expander_from_exec_status( EXECI2CStatus_T status );
+static inline bool                  LOGIC_EXPANDER_Index_Is_Valid( uint8_t expander_index );
+static inline bool                  LOGIC_EXPANDER_Port_Is_Valid( LogicExpanderPort_T port );
+static inline LogicExpanderStatus_T LOGIC_EXPANDER_From_Exec_Status( EXECI2CStatus_T status );
 static LogicExpanderStatus_T
-logic_expander_internal_send_with_busy_retry( uint16_t device_address_7bit, const uint8_t* payload,
+LOGIC_EXPANDER_Internal_Send_With_Busy_Retry( uint16_t device_address_7bit, const uint8_t* payload,
                                               uint16_t payload_length );
-static LogicExpanderStatus_T logic_expander_write_register( uint16_t device_address_7bit,
+static LogicExpanderStatus_T LOGIC_EXPANDER_Write_Register( uint16_t device_address_7bit,
                                                             uint8_t  register_address,
                                                             uint8_t  register_value );
-static LogicExpanderStatus_T logic_expander_write_register_pair( uint16_t device_address_7bit,
+static LogicExpanderStatus_T LOGIC_EXPANDER_Write_Register_Pair( uint16_t device_address_7bit,
                                                                  uint8_t  register_address,
                                                                  uint8_t  first_value,
                                                                  uint8_t  second_value );
@@ -125,22 +125,22 @@ static LogicExpanderStatus_T logic_expander_write_register_pair( uint16_t device
  *------------------------------------------------------------------------------
  */
 
-static inline bool logic_expander_index_is_valid( uint8_t expander_index )
+static inline bool LOGIC_EXPANDER_Index_Is_Valid( uint8_t expander_index )
 {
     return expander_index < LOGIC_EXPANDER_COUNT;
 }
 
-static inline bool logic_expander_index_is_active( uint8_t expander_index )
+static inline bool LOGIC_EXPANDER_Index_Is_Active( uint8_t expander_index )
 {
     return ( LOGIC_EXPANDER_ACTIVE_BITMASK & ( 1U << expander_index ) ) != 0U;
 }
 
-static inline bool logic_expander_port_is_valid( LogicExpanderPort_T port )
+static inline bool LOGIC_EXPANDER_Port_Is_Valid( LogicExpanderPort_T port )
 {
     return ( port == LOGIC_EXPANDER_PORT_A ) || ( port == LOGIC_EXPANDER_PORT_B );
 }
 
-static inline LogicExpanderStatus_T logic_expander_from_exec_status( EXECI2CStatus_T status )
+static inline LogicExpanderStatus_T LOGIC_EXPANDER_From_Exec_Status( EXECI2CStatus_T status )
 {
     switch ( status )
     {
@@ -158,7 +158,7 @@ static inline LogicExpanderStatus_T logic_expander_from_exec_status( EXECI2CStat
 }
 
 static LogicExpanderStatus_T
-logic_expander_internal_send_with_busy_retry( uint16_t device_address_7bit, const uint8_t* payload,
+LOGIC_EXPANDER_Internal_Send_With_Busy_Retry( uint16_t device_address_7bit, const uint8_t* payload,
                                               uint16_t payload_length )
 {
     for ( uint32_t retry = 0U; retry < LOGIC_EXPANDER_INTERNAL_SEND_BUSY_RETRY_LIMIT; ++retry )
@@ -172,29 +172,29 @@ logic_expander_internal_send_with_busy_retry( uint16_t device_address_7bit, cons
 
         if ( status != EXEC_I2C_STATUS_BUSY )
         {
-            return logic_expander_from_exec_status( status );
+            return LOGIC_EXPANDER_From_Exec_Status( status );
         }
     }
 
     return LOGIC_EXPANDER_STATUS_BUSY;
 }
 
-static LogicExpanderStatus_T logic_expander_write_register( uint16_t device_address_7bit,
+static LogicExpanderStatus_T LOGIC_EXPANDER_Write_Register( uint16_t device_address_7bit,
                                                             uint8_t  register_address,
                                                             uint8_t  register_value )
 {
     uint8_t payload[2] = { register_address, register_value };
-    return logic_expander_internal_send_with_busy_retry( device_address_7bit, payload,
+    return LOGIC_EXPANDER_Internal_Send_With_Busy_Retry( device_address_7bit, payload,
                                                          ( uint16_t )sizeof( payload ) );
 }
 
-static LogicExpanderStatus_T logic_expander_write_register_pair( uint16_t device_address_7bit,
+static LogicExpanderStatus_T LOGIC_EXPANDER_Write_Register_Pair( uint16_t device_address_7bit,
                                                                  uint8_t  register_address,
                                                                  uint8_t  first_value,
                                                                  uint8_t  second_value )
 {
     uint8_t payload[3] = { register_address, first_value, second_value };
-    return logic_expander_internal_send_with_busy_retry( device_address_7bit, payload,
+    return LOGIC_EXPANDER_Internal_Send_With_Busy_Retry( device_address_7bit, payload,
                                                          ( uint16_t )sizeof( payload ) );
 }
 
@@ -203,11 +203,11 @@ static LogicExpanderStatus_T logic_expander_write_register_pair( uint16_t device
  *------------------------------------------------------------------------------
  */
 
-LogicExpanderStatus_T expander_self_config( void )
+LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void )
 {
     for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
     {
-        if ( !logic_expander_index_is_active( idx ) )
+        if ( !LOGIC_EXPANDER_Index_Is_Active( idx ) )
         {
             continue;
         }
@@ -217,7 +217,7 @@ LogicExpanderStatus_T expander_self_config( void )
         logic_expander_state[idx].olat_b              = LOGIC_EXPANDER_INIT_OLAT_B[idx];
 
         LogicExpanderStatus_T status =
-            logic_expander_write_register( logic_expander_state[idx].device_address_7bit,
+            LOGIC_EXPANDER_Write_Register( logic_expander_state[idx].device_address_7bit,
                                            MCP23017_REG_IOCON, MCP23017_IOCON_SIMPLE_NO_INTERRUPT );
         if ( status != LOGIC_EXPANDER_STATUS_OK )
         {
@@ -225,7 +225,7 @@ LogicExpanderStatus_T expander_self_config( void )
             return status;
         }
 
-        status = logic_expander_write_register_pair( logic_expander_state[idx].device_address_7bit,
+        status = LOGIC_EXPANDER_Write_Register_Pair( logic_expander_state[idx].device_address_7bit,
                                                      MCP23017_REG_IODIRA, MCP23017_ALL_OUTPUTS,
                                                      MCP23017_ALL_OUTPUTS );
         if ( status != LOGIC_EXPANDER_STATUS_OK )
@@ -234,7 +234,7 @@ LogicExpanderStatus_T expander_self_config( void )
             return status;
         }
 
-        status = logic_expander_write_register_pair( logic_expander_state[idx].device_address_7bit,
+        status = LOGIC_EXPANDER_Write_Register_Pair( logic_expander_state[idx].device_address_7bit,
                                                      MCP23017_REG_IPOLA, MCP23017_POLARITY_NORMAL,
                                                      MCP23017_POLARITY_NORMAL );
         if ( status != LOGIC_EXPANDER_STATUS_OK )
@@ -243,7 +243,7 @@ LogicExpanderStatus_T expander_self_config( void )
             return status;
         }
 
-        status = logic_expander_write_register_pair(
+        status = LOGIC_EXPANDER_Write_Register_Pair(
             logic_expander_state[idx].device_address_7bit, MCP23017_REG_GPINTENA,
             MCP23017_INTERRUPTS_DISABLED, MCP23017_INTERRUPTS_DISABLED );
         if ( status != LOGIC_EXPANDER_STATUS_OK )
@@ -252,7 +252,7 @@ LogicExpanderStatus_T expander_self_config( void )
             return status;
         }
 
-        status = logic_expander_write_register_pair( logic_expander_state[idx].device_address_7bit,
+        status = LOGIC_EXPANDER_Write_Register_Pair( logic_expander_state[idx].device_address_7bit,
                                                      MCP23017_REG_DEFVALA, 0x00U, 0x00U );
         if ( status != LOGIC_EXPANDER_STATUS_OK )
         {
@@ -260,7 +260,7 @@ LogicExpanderStatus_T expander_self_config( void )
             return status;
         }
 
-        status = logic_expander_write_register_pair( logic_expander_state[idx].device_address_7bit,
+        status = LOGIC_EXPANDER_Write_Register_Pair( logic_expander_state[idx].device_address_7bit,
                                                      MCP23017_REG_INTCONA, 0x00U, 0x00U );
         if ( status != LOGIC_EXPANDER_STATUS_OK )
         {
@@ -268,7 +268,7 @@ LogicExpanderStatus_T expander_self_config( void )
             return status;
         }
 
-        status = logic_expander_write_register_pair( logic_expander_state[idx].device_address_7bit,
+        status = LOGIC_EXPANDER_Write_Register_Pair( logic_expander_state[idx].device_address_7bit,
                                                      MCP23017_REG_GPPUA, MCP23017_PULLUPS_DISABLED,
                                                      MCP23017_PULLUPS_DISABLED );
         if ( status != LOGIC_EXPANDER_STATUS_OK )
@@ -277,7 +277,7 @@ LogicExpanderStatus_T expander_self_config( void )
             return status;
         }
 
-        status = logic_expander_write_register_pair(
+        status = LOGIC_EXPANDER_Write_Register_Pair(
             logic_expander_state[idx].device_address_7bit, MCP23017_REG_OLATA,
             logic_expander_state[idx].olat_a, logic_expander_state[idx].olat_b );
         if ( status != LOGIC_EXPANDER_STATUS_OK )
@@ -291,10 +291,10 @@ LogicExpanderStatus_T expander_self_config( void )
     return LOGIC_EXPANDER_STATUS_OK;
 }
 
-LogicExpanderStatus_T expander_load_control_bit( uint8_t expander_index, LogicExpanderPort_T port,
+LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( uint8_t expander_index, LogicExpanderPort_T port,
                                                  uint8_t bit_index, bool bit_value )
 {
-    if ( !logic_expander_index_is_valid( expander_index ) || !logic_expander_port_is_valid( port )
+    if ( !LOGIC_EXPANDER_Index_Is_Valid( expander_index ) || !LOGIC_EXPANDER_Port_Is_Valid( port )
          || ( bit_index >= LOGIC_EXPANDER_PORT_WIDTH_BITS ) )
     {
         return LOGIC_EXPANDER_STATUS_INVALID_PARAM;
@@ -317,7 +317,7 @@ LogicExpanderStatus_T expander_load_control_bit( uint8_t expander_index, LogicEx
     return LOGIC_EXPANDER_STATUS_OK;
 }
 
-LogicExpanderStatus_T expander_send_control_bits( void )
+LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void )
 {
     if ( !logic_expander_ready )
     {
@@ -326,12 +326,12 @@ LogicExpanderStatus_T expander_send_control_bits( void )
 
     for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
     {
-        if ( !logic_expander_index_is_active( idx ) )
+        if ( !LOGIC_EXPANDER_Index_Is_Active( idx ) )
         {
             continue;
         }
 
-        LogicExpanderStatus_T status = logic_expander_write_register_pair(
+        LogicExpanderStatus_T status = LOGIC_EXPANDER_Write_Register_Pair(
             logic_expander_state[idx].device_address_7bit, MCP23017_REG_OLATA,
             logic_expander_state[idx].olat_a, logic_expander_state[idx].olat_b );
         if ( status != LOGIC_EXPANDER_STATUS_OK )
@@ -343,10 +343,10 @@ LogicExpanderStatus_T expander_send_control_bits( void )
     return LOGIC_EXPANDER_STATUS_OK;
 }
 
-LogicExpanderStatus_T expander_get_state_snapshot( uint8_t                       expander_index,
+LogicExpanderStatus_T LOGIC_EXPANDER_Get_State_Snapshot( uint8_t                       expander_index,
                                                    LogicExpanderStateSnapshot_T* out_snapshot )
 {
-    if ( !logic_expander_index_is_valid( expander_index ) || ( out_snapshot == 0 ) )
+    if ( !LOGIC_EXPANDER_Index_Is_Valid( expander_index ) || ( out_snapshot == 0 ) )
     {
         return LOGIC_EXPANDER_STATUS_INVALID_PARAM;
     }
