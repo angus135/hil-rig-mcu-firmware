@@ -229,7 +229,7 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
             return;
         }
 
-        LogicExpanderStatus_T status = expander_self_config();
+        LogicExpanderStatus_T status = LOGIC_EXPANDER_Self_Config();
         if ( status == LOGIC_EXPANDER_STATUS_OK )
         {
             CONSOLE_Printf( "Expander config: OK\r\n" );
@@ -267,7 +267,7 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
 
         LogicExpanderStateSnapshot_T snapshot_before = { 0 };
         LogicExpanderStatus_T        snapshot_status =
-            expander_get_state_snapshot( expander_index, &snapshot_before );
+            LOGIC_EXPANDER_Get_State_Snapshot( expander_index, &snapshot_before );
         if ( snapshot_status == LOGIC_EXPANDER_STATUS_OK )
         {
             CONSOLE_Printf(
@@ -302,7 +302,7 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         {
             bool                  bit_set = ( byte_value & ( 1U << bit_idx ) ) != 0U;
             LogicExpanderStatus_T status =
-                expander_load_control_bit( expander_index, port, bit_idx, bit_set );
+                LOGIC_EXPANDER_Load_Control_Bit( expander_index, port, bit_idx, bit_set );
             if ( status != LOGIC_EXPANDER_STATUS_OK )
             {
                 CONSOLE_Printf( "Failed to set bit %u (status=%d)\r\n", ( unsigned int )bit_idx,
@@ -312,7 +312,7 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         }
 
         LogicExpanderStateSnapshot_T snapshot_after = { 0 };
-        snapshot_status = expander_get_state_snapshot( expander_index, &snapshot_after );
+        snapshot_status = LOGIC_EXPANDER_Get_State_Snapshot( expander_index, &snapshot_after );
         if ( snapshot_status == LOGIC_EXPANDER_STATUS_OK )
         {
             CONSOLE_Printf(
@@ -328,7 +328,7 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[1], "send" ) == 0 )
     {
-        LogicExpanderStatus_T status = expander_send_control_bits();
+        LogicExpanderStatus_T status = LOGIC_EXPANDER_Send_Control_Bits();
         if ( status == LOGIC_EXPANDER_STATUS_OK )
         {
             CONSOLE_Printf( "Expander send: OK\r\n" );
@@ -346,12 +346,12 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         {
             for ( uint8_t bit_idx = 0U; bit_idx < 8U; ++bit_idx )
             {
-                ( void )expander_load_control_bit( idx, LOGIC_EXPANDER_PORT_A, bit_idx, false );
-                ( void )expander_load_control_bit( idx, LOGIC_EXPANDER_PORT_B, bit_idx, false );
+                ( void )LOGIC_EXPANDER_Load_Control_Bit( idx, LOGIC_EXPANDER_PORT_A, bit_idx, false );
+                ( void )LOGIC_EXPANDER_Load_Control_Bit( idx, LOGIC_EXPANDER_PORT_B, bit_idx, false );
             }
         }
 
-        LogicExpanderStatus_T status = expander_send_control_bits();
+        LogicExpanderStatus_T status = LOGIC_EXPANDER_Send_Control_Bits();
         if ( status == LOGIC_EXPANDER_STATUS_OK )
         {
             CONSOLE_Printf( "Expander reset: OK (all bits cleared and sent)\r\n" );
