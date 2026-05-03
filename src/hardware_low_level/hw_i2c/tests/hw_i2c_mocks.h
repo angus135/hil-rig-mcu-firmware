@@ -1,7 +1,7 @@
 /******************************************************************************
  *  File:       hw_i2c_mocks.h
- *  Author:     Callum Rafferty
- *  Created:    25-Mar-2026
+ *  Author:     Coen Pasitchnyj
+ *  Created:    20-Apr-2026
  *
  *  Description:
  *      Mock definitions of HAL types and functions for unit testing hw_i2c module.
