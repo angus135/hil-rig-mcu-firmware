@@ -246,15 +246,15 @@ static inline void HW_I2C_Ring_Push_Byte( HW_I2C_ChannelState_T* state, uint8_t 
     state->rx_head = ( uint16_t )( ( state->rx_head + 1U ) % HW_I2C_RX_BUFFER_SIZE );
 }
 
-static inline HW_I2C_Status_T HW_I2C_Validate_Active_Channel( HW_I2C_Channel_T        channel,
-                                                              HW_I2C_ChannelState_T** out_state )
-{
+// static inline HW_I2C_Status_T HW_I2C_Validate_Active_Channel( HW_I2C_Channel_T        channel,
+//                                                               HW_I2C_ChannelState_T** out_state )
+// {
 
-    HW_I2C_ChannelState_T* state = &hw_i2c_channel_state[channel];
+//     HW_I2C_ChannelState_T* state = &hw_i2c_channel_state[channel];
 
-    *out_state = state;
-    return HW_I2C_STATUS_OK;
-}
+//     *out_state = state;
+//     return HW_I2C_STATUS_OK;
+// }
 
 #ifndef TEST_BUILD
 static inline I2C_TypeDef* HW_I2C_Channel_To_Instance( HW_I2C_Channel_T channel )
@@ -761,8 +761,7 @@ HW_I2C_Status_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
 HW_I2C_Status_T HW_I2C_Load_Stage_Buffer( HW_I2C_Channel_T channel, const uint8_t* data,
                                           uint16_t length )
 {
-    HW_I2C_ChannelState_T* state  = NULL;
-    HW_I2C_Status_T        status = HW_I2C_Validate_Active_Channel( channel, &state );
+    HW_I2C_ChannelState_T* state  = &hw_i2c_channel_state[channel];
 
     for ( uint16_t idx = 0U; idx < length; ++idx )
     {
@@ -776,8 +775,7 @@ HW_I2C_Status_T HW_I2C_Load_Stage_Buffer( HW_I2C_Channel_T channel, const uint8_
 HW_I2C_Status_T HW_I2C_Trigger_Master_Transmit( HW_I2C_Channel_T channel,
                                                 uint16_t         device_address_7bit )
 {
-    HW_I2C_ChannelState_T* state  = NULL;
-    HW_I2C_Status_T        status = HW_I2C_Validate_Active_Channel( channel, &state );
+    HW_I2C_ChannelState_T* state  = &hw_i2c_channel_state[channel];
 
     state->target_address_7bit      = device_address_7bit;
     state->transfer_kind            = HW_I2C_TRANSFER_KIND_MASTER_TX;
@@ -830,8 +828,7 @@ HW_I2C_Status_T HW_I2C_Trigger_Master_Receive( HW_I2C_Channel_T channel,
                                                uint16_t         device_address_7bit,
                                                uint16_t         expected_length )
 {
-    HW_I2C_ChannelState_T* state  = NULL;
-    HW_I2C_Status_T        status = HW_I2C_Validate_Active_Channel( channel, &state );
+    HW_I2C_ChannelState_T* state  = &hw_i2c_channel_state[channel];
 
     state->target_address_7bit    = device_address_7bit;
     state->transfer_kind          = HW_I2C_TRANSFER_KIND_MASTER_RX;
@@ -883,8 +880,7 @@ HW_I2C_Status_T HW_I2C_Trigger_Master_Receive( HW_I2C_Channel_T channel,
 
 HW_I2C_Status_T HW_I2C_Trigger_Slave_Transmit( HW_I2C_Channel_T channel )
 {
-    HW_I2C_ChannelState_T* state  = NULL;
-    HW_I2C_Status_T        status = HW_I2C_Validate_Active_Channel( channel, &state );
+    HW_I2C_ChannelState_T* state  = &hw_i2c_channel_state[channel];
 
     state->transfer_kind            = HW_I2C_TRANSFER_KIND_SLAVE_TX;
     state->transfer_in_progress     = true;
@@ -931,8 +927,7 @@ HW_I2C_Status_T HW_I2C_Trigger_Slave_Transmit( HW_I2C_Channel_T channel )
 
 HW_I2C_Status_T HW_I2C_Trigger_Slave_Receive( HW_I2C_Channel_T channel, uint16_t expected_length )
 {
-    HW_I2C_ChannelState_T* state  = NULL;
-    HW_I2C_Status_T        status = HW_I2C_Validate_Active_Channel( channel, &state );
+    HW_I2C_ChannelState_T* state  = &hw_i2c_channel_state[channel];
 
     state->transfer_kind          = HW_I2C_TRANSFER_KIND_SLAVE_RX;
     state->transfer_in_progress   = true;
@@ -981,8 +976,7 @@ HW_I2C_Status_T HW_I2C_Trigger_Slave_Receive( HW_I2C_Channel_T channel, uint16_t
 
 HW_I2C_Status_T HW_I2C_Peek_Received( HW_I2C_Channel_T channel, HW_I2C_RxPeek_T* peek )
 {
-    HW_I2C_ChannelState_T* state  = NULL;
-    HW_I2C_Status_T        status = HW_I2C_Validate_Active_Channel( channel, &state );
+    HW_I2C_ChannelState_T* state  = &hw_i2c_channel_state[channel];
 
     const uint16_t count = HW_I2C_Ring_Count( state );
     peek->total_length   = count;
@@ -1019,8 +1013,7 @@ HW_I2C_Status_T HW_I2C_Peek_Received( HW_I2C_Channel_T channel, HW_I2C_RxPeek_T*
 
 HW_I2C_Status_T HW_I2C_Consume_Received( HW_I2C_Channel_T channel, uint16_t bytes_to_consume )
 {
-    HW_I2C_ChannelState_T* state  = NULL;
-    HW_I2C_Status_T        status = HW_I2C_Validate_Active_Channel( channel, &state );
+    HW_I2C_ChannelState_T* state  = &hw_i2c_channel_state[channel];
 
     const uint16_t count = HW_I2C_Ring_Count( state );
     if ( bytes_to_consume > count )
