@@ -14,7 +14,7 @@
  *------------------------------------------------------------------------------
  */
 #include "logic_expander.h"
-#include "exec_i2c.h"
+#include "hw_i2c.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -108,7 +108,7 @@ static bool                 logic_expander_ready                       = false;
 
 static inline bool                  LOGIC_EXPANDER_Index_Is_Valid( uint8_t expander_index );
 static inline bool                  LOGIC_EXPANDER_Port_Is_Valid( LogicExpanderPort_T port );
-static inline LogicExpanderStatus_T LOGIC_EXPANDER_From_Exec_Status( EXECI2CStatus_T status );
+static inline LogicExpanderStatus_T LOGIC_EXPANDER_From_Exec_Status( LogicExpanderI2CStatus_T status );
 static LogicExpanderStatus_T
 LOGIC_EXPANDER_Internal_Send_With_Busy_Retry( uint16_t device_address_7bit, const uint8_t* payload,
                                               uint16_t payload_length );
@@ -119,6 +119,8 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Write_Register_Pair( uint16_t device
                                                                  uint8_t  register_address,
                                                                  uint8_t  first_value,
                                                                  uint8_t  second_value );
+static inline LogicExpanderI2CStatus_T LOGIC_EXPANDER_From_HW_Status( HWI2CStatus_T status );
+static LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t* payload, uint16_t payload_length );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -140,18 +142,18 @@ static inline bool LOGIC_EXPANDER_Port_Is_Valid( LogicExpanderPort_T port )
     return ( port == LOGIC_EXPANDER_PORT_A ) || ( port == LOGIC_EXPANDER_PORT_B );
 }
 
-static inline LogicExpanderStatus_T LOGIC_EXPANDER_From_Exec_Status( EXECI2CStatus_T status )
+static inline LogicExpanderStatus_T LOGIC_EXPANDER_From_Exec_Status( LogicExpanderI2CStatus_T status )
 {
     switch ( status )
     {
-        case EXEC_I2C_STATUS_OK:
+        case LOGIC_EXPANDER_I2C_STATUS_OK:
             return LOGIC_EXPANDER_STATUS_OK;
-        case EXEC_I2C_STATUS_BUSY:
+        case LOGIC_EXPANDER_I2C_STATUS_BUSY:
             return LOGIC_EXPANDER_STATUS_BUSY;
-        case EXEC_I2C_STATUS_INVALID_PARAM:
+        case LOGIC_EXPANDER_I2C_STATUS_INVALID_PARAM:
             return LOGIC_EXPANDER_STATUS_INVALID_PARAM;
-        case EXEC_I2C_STATUS_OVERFLOW:
-        case EXEC_I2C_STATUS_ERROR:
+        case LOGIC_EXPANDER_I2C_STATUS_OVERFLOW:
+        case LOGIC_EXPANDER_I2C_STATUS_ERROR:
         default:
             return LOGIC_EXPANDER_STATUS_ERROR;
     }
@@ -163,14 +165,14 @@ LOGIC_EXPANDER_Internal_Send_With_Busy_Retry( uint16_t device_address_7bit, cons
 {
     for ( uint32_t retry = 0U; retry < LOGIC_EXPANDER_INTERNAL_SEND_BUSY_RETRY_LIMIT; ++retry )
     {
-        EXECI2CStatus_T status =
-            EXEC_I2C_Internal_Master_Send( device_address_7bit, payload, payload_length );
-        if ( status == EXEC_I2C_STATUS_OK )
+        LogicExpanderI2CStatus_T status =
+            LOGIC_EXPANDER_I2C_Internal_Master_Send( device_address_7bit, payload, payload_length );
+        if ( status == LOGIC_EXPANDER_I2C_STATUS_OK )
         {
             return LOGIC_EXPANDER_STATUS_OK;
         }
 
-        if ( status != EXEC_I2C_STATUS_BUSY )
+        if ( status != LOGIC_EXPANDER_I2C_STATUS_BUSY )
         {
             return LOGIC_EXPANDER_From_Exec_Status( status );
         }
@@ -196,6 +198,41 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Write_Register_Pair( uint16_t device
     uint8_t payload[3] = { register_address, first_value, second_value };
     return LOGIC_EXPANDER_Internal_Send_With_Busy_Retry( device_address_7bit, payload,
                                                          ( uint16_t )sizeof( payload ) );
+}
+
+static inline LogicExpanderI2CStatus_T LOGIC_EXPANDER_From_HW_Status( HWI2CStatus_T status )
+{
+    switch ( status )
+    {
+        case HW_I2C_STATUS_OK:
+            return LOGIC_EXPANDER_I2C_STATUS_OK;
+        case HW_I2C_STATUS_BUSY:
+            return LOGIC_EXPANDER_I2C_STATUS_BUSY;
+        case HW_I2C_STATUS_INVALID_PARAM:
+        case HW_I2C_STATUS_NOT_CONFIGURED:
+            return LOGIC_EXPANDER_I2C_STATUS_INVALID_PARAM;
+        case HW_I2C_STATUS_OVERFLOW:
+            return LOGIC_EXPANDER_I2C_STATUS_OVERFLOW;
+        case HW_I2C_STATUS_ERROR:
+        default:
+            return LOGIC_EXPANDER_I2C_STATUS_ERROR;
+    }
+}
+
+LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t* payload,
+                                                                  uint16_t payload_length )
+{
+    HWI2CStatus_T hw_status =
+        HW_I2C_Load_Stage_Buffer( HW_I2C_CHANNEL_FMPI2C1, payload, payload_length );
+
+    // DELETING THIS BREAKS EXPANDER
+    if ( hw_status != HW_I2C_STATUS_OK )
+    {
+        return LOGIC_EXPANDER_From_HW_Status( hw_status );
+    }
+
+    hw_status = HW_I2C_Trigger_Master_Transmit( HW_I2C_CHANNEL_FMPI2C1, device_address_7bit );
+    return LOGIC_EXPANDER_From_HW_Status( hw_status );
 }
 
 /**-----------------------------------------------------------------------------
