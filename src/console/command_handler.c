@@ -28,6 +28,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include "subsystem_command_apis/console_logic_expander.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -80,7 +81,6 @@ static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] );
-static bool CONSOLE_Parse_Expander_Port( const char* arg, LogicExpanderPort_T* port );
 static bool CONSOLE_Parse_I2C_Master_And_Slave( const char*               arg,
                                                 EXECI2CExternalChannel_T* master_channel,
                                                 EXECI2CExternalChannel_T* slave_channel );
@@ -182,28 +182,6 @@ static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
         bool state = HW_GPIO_Read_Pin( ( GPIOInput_T )channel );
         CONSOLE_Printf( "Digital Input %d: %d\r\n", channel, state ? 1 : 0 );
     }
-}
-
-static bool CONSOLE_Parse_Expander_Port( const char* arg, LogicExpanderPort_T* port )
-{
-    if ( ( arg == NULL ) || ( port == NULL ) )
-    {
-        return false;
-    }
-
-    if ( strcmp( arg, "A" ) == 0 )
-    {
-        *port = LOGIC_EXPANDER_PORT_A;
-        return true;
-    }
-
-    if ( strcmp( arg, "B" ) == 0 )
-    {
-        *port = LOGIC_EXPANDER_PORT_B;
-        return true;
-    }
-
-    return false;
 }
 
 static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
