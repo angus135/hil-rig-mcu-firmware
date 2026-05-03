@@ -65,14 +65,14 @@ typedef struct LogicExpanderStateSnapshot_T
  *------------------------------------------------------------------------------
  */
 
-LogicExpanderStatus_T expander_self_config( void );
+LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void );
 
-LogicExpanderStatus_T expander_load_control_bit( uint8_t expander_index, LogicExpanderPort_T port,
+LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( uint8_t expander_index, LogicExpanderPort_T port,
                                                  uint8_t bit_index, bool bit_value );
 
-LogicExpanderStatus_T expander_send_control_bits( void );
+LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void );
 
-LogicExpanderStatus_T expander_get_state_snapshot( uint8_t                       expander_index,
+LogicExpanderStatus_T LOGIC_EXPANDER_Get_State_Snapshot( uint8_t                       expander_index,
                                                    LogicExpanderStateSnapshot_T* out_snapshot );
 
 #ifdef __cplusplus
