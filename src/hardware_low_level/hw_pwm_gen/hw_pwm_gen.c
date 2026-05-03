@@ -19,6 +19,7 @@
 #ifndef TEST_BUILD
 #include "gpio.h"
 #include "stm32f4xx_ll_gpio.h"
+#include "stm32f4xx_ll_tim.h"
 #include "tim.h"
 #include "stm32f4xx_hal_tim.h"
 #endif
@@ -73,22 +74,22 @@ static inline void HW_PWM_GEN_set_pwm_direct( uint16_t ccr_num, uint16_t arr, ui
 {
     if ( ccr_num == 1 )
     {
-        LL_TIM_OC_SetCompareCHx( tim, 1, ccr );
+        LL_TIM_OC_SetCompareCH1( tim, ccr );
         // tim->CCR1 = ccr;
     }
     else if ( ccr_num == 2 )
     {
-        LL_TIM_OC_SetCompareCHx( tim, 2, ccr );
+        LL_TIM_OC_SetCompareCH2( tim, ccr );
         // tim->CCR2 = ccr;
     }
     else if ( ccr_num == 3 )
     {
-        LL_TIM_OC_SetCompareCHx( tim, 3, ccr );
+        LL_TIM_OC_SetCompareCH3( tim, ccr );
         // tim->CCR3 = ccr;
     }
     else if ( ccr_num == 4 )
     {
-        LL_TIM_OC_SetCompareCHx( tim, 4, ccr );
+        LL_TIM_OC_SetCompareCH4( tim, ccr );
         // tim->CCR4 = ccr;
     }
     // Examples of direct register access
