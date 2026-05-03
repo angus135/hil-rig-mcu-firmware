@@ -222,6 +222,11 @@ static inline LogicExpanderI2CStatus_T LOGIC_EXPANDER_From_HW_Status( HWI2CStatu
 LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t* payload,
                                                                   uint16_t payload_length )
 {
+    if ( ( device_address_7bit > 0x7FU ) || ( payload == NULL ) || ( payload_length == 0U ) )
+    {
+        return LOGIC_EXPANDER_STATUS_INVALID_PARAM;
+    }
+
     HWI2CStatus_T hw_status =
         HW_I2C_Load_Stage_Buffer( HW_I2C_CHANNEL_FMPI2C1, payload, payload_length );
 
