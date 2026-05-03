@@ -204,18 +204,9 @@ EXECI2CStatus_T EXEC_I2C_Master_Send( EXECI2CExternalChannel_T channel,
                                       uint16_t device_address_7bit, const uint8_t* payload,
                                       uint16_t payload_length )
 {
-    if ( !EXEC_I2C_Is_Valid_External_Channel( channel ) || ( device_address_7bit > 0x7FU ) )
-    {
-        return EXEC_I2C_STATUS_INVALID_PARAM;
-    }
-
     HWI2CChannel_T hw_channel = EXEC_I2C_To_Hw_Channel( channel );
 
     HWI2CStatus_T hw_status = HW_I2C_Load_Stage_Buffer( hw_channel, payload, payload_length );
-    if ( hw_status != HW_I2C_STATUS_OK )
-    {
-        return EXEC_I2C_From_HW_Status( hw_status );
-    }
 
     hw_status = HW_I2C_Trigger_Master_Transmit( hw_channel, device_address_7bit );
     return EXEC_I2C_From_HW_Status( hw_status );
@@ -224,13 +215,10 @@ EXECI2CStatus_T EXEC_I2C_Master_Send( EXECI2CExternalChannel_T channel,
 EXECI2CStatus_T EXEC_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t* payload,
                                                uint16_t payload_length )
 {
-    if ( ( device_address_7bit > 0x7FU ) || ( payload == NULL ) || ( payload_length == 0U ) )
-    {
-        return EXEC_I2C_STATUS_INVALID_PARAM;
-    }
-
     HWI2CStatus_T hw_status =
         HW_I2C_Load_Stage_Buffer( HW_I2C_CHANNEL_FMPI2C1, payload, payload_length );
+
+    // DELETING THIS BREAKS EXPANDER
     if ( hw_status != HW_I2C_STATUS_OK )
     {
         return EXEC_I2C_From_HW_Status( hw_status );
@@ -243,18 +231,9 @@ EXECI2CStatus_T EXEC_I2C_Internal_Master_Send( uint16_t device_address_7bit, con
 EXECI2CStatus_T EXEC_I2C_Slave_Send( EXECI2CExternalChannel_T channel, const uint8_t* payload,
                                      uint16_t payload_length )
 {
-    if ( !EXEC_I2C_Is_Valid_External_Channel( channel ) )
-    {
-        return EXEC_I2C_STATUS_INVALID_PARAM;
-    }
-
     HWI2CChannel_T hw_channel = EXEC_I2C_To_Hw_Channel( channel );
 
     HWI2CStatus_T hw_status = HW_I2C_Load_Stage_Buffer( hw_channel, payload, payload_length );
-    if ( hw_status != HW_I2C_STATUS_OK )
-    {
-        return EXEC_I2C_From_HW_Status( hw_status );
-    }
 
     hw_status = HW_I2C_Trigger_Slave_Transmit( hw_channel );
     return EXEC_I2C_From_HW_Status( hw_status );
@@ -264,11 +243,6 @@ EXECI2CStatus_T EXEC_I2C_Start_Master_Receive( EXECI2CExternalChannel_T channel,
                                                uint16_t                 device_address_7bit,
                                                uint16_t                 expected_length )
 {
-    if ( !EXEC_I2C_Is_Valid_External_Channel( channel ) || ( device_address_7bit > 0x7FU ) )
-    {
-        return EXEC_I2C_STATUS_INVALID_PARAM;
-    }
-
     HWI2CChannel_T hw_channel = EXEC_I2C_To_Hw_Channel( channel );
     return EXEC_I2C_From_HW_Status(
         HW_I2C_Trigger_Master_Receive( hw_channel, device_address_7bit, expected_length ) );
@@ -277,11 +251,6 @@ EXECI2CStatus_T EXEC_I2C_Start_Master_Receive( EXECI2CExternalChannel_T channel,
 EXECI2CStatus_T EXEC_I2C_Start_Slave_Receive( EXECI2CExternalChannel_T channel,
                                               uint16_t                 expected_length )
 {
-    if ( !EXEC_I2C_Is_Valid_External_Channel( channel ) )
-    {
-        return EXEC_I2C_STATUS_INVALID_PARAM;
-    }
-
     HWI2CChannel_T hw_channel = EXEC_I2C_To_Hw_Channel( channel );
     return EXEC_I2C_From_HW_Status( HW_I2C_Trigger_Slave_Receive( hw_channel, expected_length ) );
 }
@@ -291,20 +260,10 @@ EXECI2CStatus_T EXEC_I2C_Receive_Copy_And_Consume( EXECI2CExternalChannel_T chan
                                                    uint16_t                 result_storage_capacity,
                                                    uint16_t*                bytes_copied )
 {
-    if ( !EXEC_I2C_Is_Valid_External_Channel( channel ) || ( result_storage == NULL )
-         || ( bytes_copied == NULL ) )
-    {
-        return EXEC_I2C_STATUS_INVALID_PARAM;
-    }
-
     *bytes_copied = 0U;
 
     HWI2CRxPeek_T peek      = { 0 };
     HWI2CStatus_T hw_status = HW_I2C_Peek_Received( EXEC_I2C_To_Hw_Channel( channel ), &peek );
-    if ( hw_status != HW_I2C_STATUS_OK )
-    {
-        return EXEC_I2C_From_HW_Status( hw_status );
-    }
 
     uint16_t bytes_to_copy = peek.total_length;
     if ( bytes_to_copy > result_storage_capacity )
@@ -326,10 +285,6 @@ EXECI2CStatus_T EXEC_I2C_Receive_Copy_And_Consume( EXECI2CExternalChannel_T chan
     }
 
     hw_status = HW_I2C_Consume_Received( EXEC_I2C_To_Hw_Channel( channel ), copied );
-    if ( hw_status != HW_I2C_STATUS_OK )
-    {
-        return EXEC_I2C_From_HW_Status( hw_status );
-    }
 
     *bytes_copied = copied;
     return EXEC_I2C_STATUS_OK;
