@@ -73,22 +73,30 @@ static inline void HW_PWM_GEN_set_pwm_direct( uint16_t ccr_num, uint16_t arr, ui
 {
     if ( ccr_num == 1 )
     {
-        tim->CCR1 = ccr;
+        LL_TIM_OC_SetCompareCHx(tim, 1, ccr);
+        // tim->CCR1 = ccr;
     }
     else if ( ccr_num == 2 )
     {
-        tim->CCR2 = ccr;
+        LL_TIM_OC_SetCompareCHx(tim, 2, ccr);
+        // tim->CCR2 = ccr;
     }
     else if ( ccr_num == 3 )
     {
-        tim->CCR3 = ccr;
+        LL_TIM_OC_SetCompareCHx(tim, 3, ccr);
+        // tim->CCR3 = ccr;
     }
     else if ( ccr_num == 4 )
     {
-        tim->CCR4 = ccr;
+        LL_TIM_OC_SetCompareCHx(tim, 4, ccr);
+        // tim->CCR4 = ccr;
     }
-    tim->ARR = arr;
-    tim->PSC = psc;
+    // Examples of direct register access
+    // tim->ARR = arr;
+    // tim->PSC = psc;
+    // Equivalent LL functions
+    LL_TIM_SetAutoReload(tim, arr);
+    LL_TIM_SetPrescaler(tim, psc);
 
     tim->EGR = TIM_EGR_UG;
     return;
@@ -98,6 +106,8 @@ static inline void HW_PWM_GEN_set_pwm_direct( uint16_t ccr_num, uint16_t arr, ui
 /**-----------------------------------------------------------------------------
  *  Configure Stage Public Function Definitions
  *------------------------------------------------------------------------------
+ * These functions should not be run during execution,
+ * instead they should be run previously to pre-compute the required values
  */
 
 /**
