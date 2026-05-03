@@ -1,7 +1,7 @@
 /******************************************************************************
  *  File:       hw_i2c.h
- *  Author:     Coen Pasitchnyj
- *  Created:    20-Apr-2026
+ *  Author:     Callum Rafferty
+ *  Created:    25-Mar-2024
  *
  *  Description:
  *      <Short description of the module, what it exposes, and how it should be used>
