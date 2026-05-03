@@ -32,8 +32,6 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-bool CONSOLE_Parse_Expander_Port( const char* arg, LogicExpanderPort_T* port );
-
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -44,6 +42,8 @@ bool CONSOLE_Parse_Expander_Port( const char* arg, LogicExpanderPort_T* port );
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+bool CONSOLE_Parse_Expander_Port( const char* arg, LogicExpanderPort_T* port );
 
 #ifdef __cplusplus
 }
