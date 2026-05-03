@@ -1,7 +1,7 @@
 /******************************************************************************
  *  File:       logic_expander.c
- *  Author:     Angus Corr
- *  Created:    25-Mar-2026
+ *  Author:     Coen Pasitchnyj
+ *  Created:    20-Apr-2026
  *
  *  Description:
  *
