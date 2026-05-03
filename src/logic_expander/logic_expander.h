@@ -60,6 +60,15 @@ typedef struct LogicExpanderStateSnapshot_T
     uint8_t  olat_b;
 } LogicExpanderStateSnapshot_T;
 
+typedef enum LogicExpanderI2CStatus_T
+{
+    LOGIC_EXPANDER_I2C_STATUS_OK,
+    LOGIC_EXPANDER_I2C_STATUS_BUSY,
+    LOGIC_EXPANDER_I2C_STATUS_ERROR,
+    LOGIC_EXPANDER_I2C_STATUS_INVALID_PARAM,
+    LOGIC_EXPANDER_I2C_STATUS_OVERFLOW,
+} LogicExpanderI2CStatus_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
