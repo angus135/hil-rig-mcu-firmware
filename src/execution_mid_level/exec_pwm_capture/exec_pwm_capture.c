@@ -14,15 +14,15 @@
  *
  *  Notes:
  *      Responsibilities:
- *      - Detect new PWM capture events via hardware flags
- *      - Read period and high-time timer capture values
+ *      - Detect availability of new PWM capture data
+ *      - Read raw timer capture values (period and high time)
  *      - Consume hardware capture flags
- *      - Validate captured values for logical correctness
+ *      - Perform minimal validation of captured data
+ *      - Convert validated tick values to frequency and duty cycle
  *
  *      Non-Responsibilities:
  *      - Timer configuration or hardware register access (handled by hw layer)
  *      - Timestamping of results (handled by execution manager)
- *      - Conversion to physical units such as frequency or duty cycle
  *
  *      Design Considerations:
  *      - Execution path is kept minimal to meet real-time constraints
@@ -200,11 +200,15 @@ bool EXEC_PWM_Capture_Consume( HwPWMCaptureChannel_T channel, ExecPwmCaptureResu
      * - returns false if no new data or invalid capture
      */
 
+    result->has_new_data = false;
+    result->is_valid     = false;
+    result->period_ticks = 0U;
+    result->high_ticks   = 0U;
+
     hw_result = HW_PWM_Capture_Peek_Result( channel );
 
     if ( !hw_result.has_new_data )
     {
-        result->is_valid = false;
         return false;
     }
 
@@ -217,15 +221,44 @@ bool EXEC_PWM_Capture_Consume( HwPWMCaptureChannel_T channel, ExecPwmCaptureResu
 
     HW_PWM_Capture_Consume_Result( channel );
 
+    result->has_new_data = true;
+
     if ( !EXEC_PWM_Capture_Result_Is_Valid( period_ticks, high_ticks ) )
     {
-        result->is_valid = false;
         return false;
     }
 
     result->period_ticks = period_ticks;
     result->high_ticks   = high_ticks;
     result->is_valid     = true;
+
+    return true;
+}
+
+bool EXEC_PWM_Capture_Convert( HwPWMCaptureChannel_T channel, const ExecPwmCaptureResult_T* raw,
+                               ExecPwmCapturePhysical_T* out )
+{
+    uint32_t clock_hz;
+
+    if ( raw == NULL || out == NULL )
+    {
+        return false;
+    }
+
+    if ( !raw->is_valid )
+    {
+        return false;
+    }
+
+    clock_hz = HW_PWM_Capture_Get_Timer_Clock_Hz( channel );
+
+    if ( clock_hz == 0U )
+    {
+        return false;
+    }
+
+    out->frequency_hz  = clock_hz / raw->period_ticks;
+    out->duty_cycle_bp = ( raw->high_ticks * 10000U ) / raw->period_ticks;
 
     return true;
 }
