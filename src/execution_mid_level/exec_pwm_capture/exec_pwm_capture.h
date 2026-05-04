@@ -189,16 +189,6 @@ bool EXEC_PWM_Capture_Stop_Channel( HwPWMCaptureChannel_T channel );
 bool EXEC_PWM_Capture_Convert( HwPWMCaptureChannel_T channel, const ExecPwmCaptureResult_T* raw,
                                ExecPwmCapturePhysical_T* out );
 
-#ifdef TEST_BUILD
-/**
- * @brief Reset internal execution-layer state for unit testing.
- *
- * Clears all channel started flags to ensure test isolation.
- * This function is only available in test builds.
- */
-void EXEC_PWM_Capture_Test_Reset( void );
-#endif
-
 #ifdef __cplusplus
 }
 #endif

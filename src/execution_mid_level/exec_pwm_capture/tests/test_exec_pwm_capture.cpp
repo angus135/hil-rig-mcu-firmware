@@ -18,10 +18,10 @@
 
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
+#include "exec_pwm_capture.c"
 
 extern "C"
 {
-#include "exec_pwm_capture.h"
 #include "hw_pwm_capture.h"
 #include <stdint.h>
 #include <stdbool.h>
@@ -43,9 +43,24 @@ static HwPWMCaptureConfig_T  mock_last_config;
 
 static bool                  mock_consume_called;
 static HwPWMCaptureChannel_T mock_last_consumed_channel;
+static uint32_t              mock_clock_hz;
+
+static void Reset_Exec_PWM_Capture_State( void )
+{
+    for ( uint32_t i = 0U; i < EXEC_PWM_CAPTURE_CHANNEL_COUNT; i++ )
+    {
+        exec_pwm_capture_channel_started[i] = false;
+    }
+}
 
 extern "C"
 {
+uint32_t HW_PWM_Capture_Get_Timer_Clock_Hz( HwPWMCaptureChannel_T channel )
+{
+    ( void )channel;
+    return mock_clock_hz;
+}
+
 bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T       channel,
                                        const HwPWMCaptureConfig_T* config )
 {
@@ -97,10 +112,11 @@ protected:
         mock_configure_result       = true;
         mock_last_configure_channel = HW_PWM_CAPTURE_CHANNEL_1;
         mock_last_config            = {};
+        mock_clock_hz               = 0U;
 
         mock_consume_called        = false;
         mock_last_consumed_channel = HW_PWM_CAPTURE_CHANNEL_1;
-        EXEC_PWM_Capture_Test_Reset();
+        Reset_Exec_PWM_Capture_State();
     }
 
     void TearDown( void ) override
