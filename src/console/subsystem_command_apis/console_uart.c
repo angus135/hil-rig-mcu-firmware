@@ -49,6 +49,23 @@
 #define CONSOLE_UART_BLAST_RANDOM_DEFAULT_CHUNK_SIZE 0U
 #define CONSOLE_UART_BLAST_RANDOM_MAX_LENGTH EXEC_UART_MAX_CHUNK_SIZE
 
+/*
+ * argv index constants for the "uart loopback <subcommand> [params...]" layout.
+ *
+ * argv[0] = "uart"
+ * argv[1] = "loopback"
+ * argv[2] = subcommand name
+ * argv[3..8] = subcommand parameters
+ */
+#define CONSOLE_UART_ARGV_NAMESPACE 1U
+#define CONSOLE_UART_ARGV_SUBCOMMAND 2U
+#define CONSOLE_UART_ARGV_PARAM_1 3U
+#define CONSOLE_UART_ARGV_PARAM_2 4U
+#define CONSOLE_UART_ARGV_PARAM_3 5U
+#define CONSOLE_UART_ARGV_PARAM_4 6U
+#define CONSOLE_UART_ARGV_PARAM_5 7U
+#define CONSOLE_UART_ARGV_PARAM_6 8U
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -61,6 +78,12 @@ typedef struct
     const char* framing_text;
     uint32_t    wire_bits_per_byte;
 } ConsoleUartLoopbackState_T;
+
+typedef struct
+{
+    const char* name;
+    void ( *handler )( uint16_t, char** );
+} ConsoleUartSubcommand_T;
 
 /**-----------------------------------------------------------------------------
  *  Private Variables
@@ -92,6 +115,10 @@ static bool CONSOLE_UART_Parse_Baud_Rate( const char* text, uint32_t* baud_rate_
 static bool CONSOLE_UART_Parse_Channel( const char* text, HwUartChannel_T* channel_out );
 static bool CONSOLE_UART_Parse_U32( const char* text, const char* field_name, uint32_t min_value,
                                     uint32_t max_value, uint32_t* value_out );
+static bool CONSOLE_UART_Parse_Framing( const char* text, HwUartWordLength_T* word_length_out,
+                                        HwUartParity_T* parity_out, HwUartStopBits_T* stop_bits_out,
+                                        const char** framing_text_out,
+                                        uint32_t*    wire_bits_per_byte_out );
 
 static uint32_t CONSOLE_UART_Prng_Next( uint32_t* state );
 static void     CONSOLE_UART_Fill_Random_Buffer( uint8_t* buffer, uint32_t length, uint32_t seed );
@@ -100,6 +127,7 @@ static bool CONSOLE_UART_Build_Tx_Text( uint16_t argc, char* argv[], uint16_t fi
                                         char* tx_text, uint32_t tx_text_size,
                                         uint32_t* tx_length_out );
 
+static void     CONSOLE_UART_Drain_Channel( HwUartChannel_T channel );
 static void     CONSOLE_UART_Clear_Rx_Data( void );
 static uint32_t CONSOLE_UART_Calc_Loopback_Delay_Ms( uint32_t length_bytes );
 static bool     CONSOLE_UART_Read_Until_Length( HwUartChannel_T receiver_ch, uint8_t* rx_buf,
@@ -115,10 +143,19 @@ static bool CONSOLE_UART_Transmit_Buffer_Chunked( HwUartChannel_T sender_ch, con
 static bool CONSOLE_UART_Read_And_Compare_Buffer( HwUartChannel_T receiver_ch,
                                                   const uint8_t* expected, uint32_t expected_length,
                                                   uint32_t iteration );
-static bool CONSOLE_UART_Parse_Framing( const char* text, HwUartWordLength_T* word_length_out,
-                                        HwUartParity_T* parity_out, HwUartStopBits_T* stop_bits_out,
-                                        const char** framing_text_out,
-                                        uint32_t*    wire_bits_per_byte_out );
+
+/**-----------------------------------------------------------------------------
+ *  Private Variables: Dispatch Tables
+ *------------------------------------------------------------------------------
+ */
+
+static const ConsoleUartSubcommand_T LOOPBACK_SUBCOMMANDS[] = {
+    { "configure", CONSOLE_UART_Loopback_Configure },
+    { "deconfigure", CONSOLE_UART_Loopback_Deconfigure },
+    { "status", CONSOLE_UART_Loopback_Status },
+    { "start", CONSOLE_UART_Loopback_Start },
+    { "blast_random", CONSOLE_UART_Loopback_Blast_Random },
+};
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -320,48 +357,29 @@ static bool CONSOLE_UART_Build_Tx_Text( uint16_t argc, char* argv[], uint16_t fi
     return true;
 }
 
-static void CONSOLE_UART_Clear_Rx_Data( void )
+static void CONSOLE_UART_Drain_Channel( HwUartChannel_T channel )
 {
     uint8_t  discard_buf[CONSOLE_UART_DISCARD_BUFFER_SIZE];
     uint32_t bytes_read = 0U;
-    uint32_t ch1_reads  = 0U;
-    uint32_t ch2_reads  = 0U;
 
-    for ( ch1_reads = 0U; ch1_reads < CONSOLE_UART_CLEAR_RX_MAX_READS; ch1_reads++ )
+    for ( uint32_t reads = 0U; reads < CONSOLE_UART_CLEAR_RX_MAX_READS; reads++ )
     {
         bytes_read = 0U;
-
-        ( void )EXEC_UART_Read( HW_UART_CHANNEL_1, discard_buf, sizeof( discard_buf ),
-                                &bytes_read );
+        ( void )EXEC_UART_Read( channel, discard_buf, sizeof( discard_buf ), &bytes_read );
 
         if ( bytes_read == 0U )
         {
-            break;
+            return;
         }
     }
 
-    for ( ch2_reads = 0U; ch2_reads < CONSOLE_UART_CLEAR_RX_MAX_READS; ch2_reads++ )
-    {
-        bytes_read = 0U;
+    CONSOLE_Printf( "WARN: ch%u RX clear reached max reads\r\n", ( unsigned )channel + 1U );
+}
 
-        ( void )EXEC_UART_Read( HW_UART_CHANNEL_2, discard_buf, sizeof( discard_buf ),
-                                &bytes_read );
-
-        if ( bytes_read == 0U )
-        {
-            break;
-        }
-    }
-
-    if ( ch1_reads >= CONSOLE_UART_CLEAR_RX_MAX_READS )
-    {
-        CONSOLE_Printf( "WARN: ch1 RX clear reached max reads\r\n" );
-    }
-
-    if ( ch2_reads >= CONSOLE_UART_CLEAR_RX_MAX_READS )
-    {
-        CONSOLE_Printf( "WARN: ch2 RX clear reached max reads\r\n" );
-    }
+static void CONSOLE_UART_Clear_Rx_Data( void )
+{
+    CONSOLE_UART_Drain_Channel( HW_UART_CHANNEL_1 );
+    CONSOLE_UART_Drain_Channel( HW_UART_CHANNEL_2 );
 }
 
 static uint32_t CONSOLE_UART_Calc_Loopback_Delay_Ms( uint32_t length_bytes )
@@ -479,17 +497,17 @@ static void CONSOLE_UART_Loopback_Configure( uint16_t argc, char* argv[] )
         return;
     }
 
-    if ( !CONSOLE_UART_Parse_Baud_Rate( argv[3], &baud_rate ) )
+    if ( !CONSOLE_UART_Parse_Baud_Rate( argv[CONSOLE_UART_ARGV_PARAM_1], &baud_rate ) )
     {
         return;
     }
 
     if ( argc == 5U )
     {
-        if ( !CONSOLE_UART_Parse_Framing( argv[4], &word_length, &parity, &stop_bits, &framing_text,
-                                          &wire_bits_per_byte ) )
+        if ( !CONSOLE_UART_Parse_Framing( argv[CONSOLE_UART_ARGV_PARAM_2], &word_length, &parity,
+                                          &stop_bits, &framing_text, &wire_bits_per_byte ) )
         {
-            CONSOLE_Printf( "Invalid framing: %s\r\n", argv[4] );
+            CONSOLE_Printf( "Invalid framing: %s\r\n", argv[CONSOLE_UART_ARGV_PARAM_2] );
             CONSOLE_Printf( "Supported framing: 8N1, 8E1, 8O1, 8N2, 9N1\r\n" );
             return;
         }
@@ -564,6 +582,78 @@ static void CONSOLE_UART_Loopback_Deconfigure( uint16_t argc, char* argv[] )
     {
         CONSOLE_Printf( "Failed to deconfigure ch2\r\n" );
     }
+}
+
+static void CONSOLE_UART_Loopback_Status( uint16_t argc, char* argv[] )
+{
+    ( void )argv;
+
+    if ( argc != 3U )
+    {
+        CONSOLE_UART_Loopback_Print_Usage();
+        return;
+    }
+
+    if ( !s_uart_loopback_state.is_configured )
+    {
+        CONSOLE_Printf( "uart loopback: not configured\r\n" );
+        return;
+    }
+
+    CONSOLE_Printf( "uart loopback: configured\r\n" );
+    CONSOLE_Printf( "  channels: ch1 + ch2\r\n" );
+    CONSOLE_Printf( "  mode: TTL_3V3\r\n" );
+    CONSOLE_Printf( "  baud: %lu\r\n", ( unsigned long )s_uart_loopback_state.baud_rate );
+    CONSOLE_Printf( "  framing: %s\r\n", s_uart_loopback_state.framing_text );
+    CONSOLE_Printf( "  rx/tx: enabled\r\n" );
+}
+
+static void CONSOLE_UART_Loopback_Start( uint16_t argc, char* argv[] )
+{
+    HwUartChannel_T sender_ch;
+    HwUartChannel_T receiver_ch;
+    char            tx_text[EXEC_UART_MAX_CHUNK_SIZE];
+    uint32_t        tx_length = 0U;
+
+    if ( argc < 6U )
+    {
+        CONSOLE_UART_Loopback_Print_Usage();
+        return;
+    }
+
+    if ( !s_uart_loopback_state.is_configured )
+    {
+        CONSOLE_Printf( "uart loopback not configured\r\n" );
+        return;
+    }
+
+    if ( !CONSOLE_UART_Parse_Channel( argv[CONSOLE_UART_ARGV_PARAM_1], &sender_ch ) )
+    {
+        CONSOLE_Printf( "Invalid sender channel: use ch1 or ch2\r\n" );
+        return;
+    }
+
+    if ( !CONSOLE_UART_Parse_Channel( argv[CONSOLE_UART_ARGV_PARAM_2], &receiver_ch ) )
+    {
+        CONSOLE_Printf( "Invalid receiver channel: use ch1 or ch2\r\n" );
+        return;
+    }
+
+    if ( !CONSOLE_UART_Build_Tx_Text( argc, argv, CONSOLE_UART_ARGV_PARAM_3, tx_text,
+                                      sizeof( tx_text ), &tx_length ) )
+    {
+        return;
+    }
+
+    CONSOLE_UART_Clear_Rx_Data();
+
+    if ( !EXEC_UART_Transmit( sender_ch, ( const uint8_t* )tx_text, tx_length ) )
+    {
+        CONSOLE_Printf( "TX failed\r\n" );
+        return;
+    }
+
+    ( void )CONSOLE_UART_Read_And_Report_Loopback_Result( receiver_ch, tx_text, tx_length );
 }
 
 static bool CONSOLE_UART_Transmit_Buffer_Chunked( HwUartChannel_T sender_ch, const uint8_t* data,
@@ -659,32 +749,32 @@ static void CONSOLE_UART_Loopback_Blast_Random( uint16_t argc, char* argv[] )
         return;
     }
 
-    if ( !CONSOLE_UART_Parse_Channel( argv[3], &sender_ch ) )
+    if ( !CONSOLE_UART_Parse_Channel( argv[CONSOLE_UART_ARGV_PARAM_1], &sender_ch ) )
     {
         CONSOLE_Printf( "Invalid sender channel: use ch1 or ch2\r\n" );
         return;
     }
 
-    if ( !CONSOLE_UART_Parse_Channel( argv[4], &receiver_ch ) )
+    if ( !CONSOLE_UART_Parse_Channel( argv[CONSOLE_UART_ARGV_PARAM_2], &receiver_ch ) )
     {
         CONSOLE_Printf( "Invalid receiver channel: use ch1 or ch2\r\n" );
         return;
     }
 
-    if ( !CONSOLE_UART_Parse_U32( argv[5], "length", 1U, CONSOLE_UART_BLAST_RANDOM_MAX_LENGTH,
-                                  &length ) )
+    if ( !CONSOLE_UART_Parse_U32( argv[CONSOLE_UART_ARGV_PARAM_3], "length", 1U,
+                                  CONSOLE_UART_BLAST_RANDOM_MAX_LENGTH, &length ) )
     {
         return;
     }
 
-    if ( !CONSOLE_UART_Parse_U32( argv[6], "seed", 0U, UINT32_MAX, &seed ) )
+    if ( !CONSOLE_UART_Parse_U32( argv[CONSOLE_UART_ARGV_PARAM_4], "seed", 0U, UINT32_MAX, &seed ) )
     {
         return;
     }
 
     if ( argc >= 8U )
     {
-        if ( !CONSOLE_UART_Parse_U32( argv[7], "iterations", 1U,
+        if ( !CONSOLE_UART_Parse_U32( argv[CONSOLE_UART_ARGV_PARAM_5], "iterations", 1U,
                                       CONSOLE_UART_BLAST_RANDOM_MAX_ITERATIONS, &iterations ) )
         {
             return;
@@ -693,7 +783,7 @@ static void CONSOLE_UART_Loopback_Blast_Random( uint16_t argc, char* argv[] )
 
     if ( argc >= 9U )
     {
-        if ( !CONSOLE_UART_Parse_U32( argv[8], "chunk_size", 0U,
+        if ( !CONSOLE_UART_Parse_U32( argv[CONSOLE_UART_ARGV_PARAM_6], "chunk_size", 0U,
                                       CONSOLE_UART_BLAST_RANDOM_MAX_LENGTH, &chunk_size ) )
         {
             return;
@@ -733,89 +823,10 @@ static void CONSOLE_UART_Loopback_Blast_Random( uint16_t argc, char* argv[] )
         }
     }
 
-    if ( failed == 0U )
-    {
-        CONSOLE_Printf( "PASS\r\n" );
-    }
-    else
-    {
-        CONSOLE_Printf( "FAIL\r\n" );
-    }
-
+    CONSOLE_Printf( failed == 0U ? "PASS\r\n" : "FAIL\r\n" );
     CONSOLE_Printf( "  passed: %lu\r\n", ( unsigned long )passed );
     CONSOLE_Printf( "  failed: %lu\r\n", ( unsigned long )failed );
     CONSOLE_Printf( "  bytes tested: %lu\r\n", ( unsigned long )( passed * length ) );
-}
-
-static void CONSOLE_UART_Loopback_Status( uint16_t argc, char* argv[] )
-{
-    ( void )argv;
-
-    if ( argc != 3U )
-    {
-        CONSOLE_UART_Loopback_Print_Usage();
-        return;
-    }
-
-    if ( !s_uart_loopback_state.is_configured )
-    {
-        CONSOLE_Printf( "uart loopback: not configured\r\n" );
-        return;
-    }
-
-    CONSOLE_Printf( "uart loopback: configured\r\n" );
-    CONSOLE_Printf( "  channels: ch1 + ch2\r\n" );
-    CONSOLE_Printf( "  mode: TTL_3V3\r\n" );
-    CONSOLE_Printf( "  baud: %lu\r\n", ( unsigned long )s_uart_loopback_state.baud_rate );
-    CONSOLE_Printf( "  framing: %s\r\n", s_uart_loopback_state.framing_text );
-    CONSOLE_Printf( "  rx/tx: enabled\r\n" );
-}
-
-static void CONSOLE_UART_Loopback_Start( uint16_t argc, char* argv[] )
-{
-    HwUartChannel_T sender_ch;
-    HwUartChannel_T receiver_ch;
-    char            tx_text[EXEC_UART_MAX_CHUNK_SIZE];
-    uint32_t        tx_length = 0U;
-
-    if ( argc < 6U )
-    {
-        CONSOLE_UART_Loopback_Print_Usage();
-        return;
-    }
-
-    if ( !s_uart_loopback_state.is_configured )
-    {
-        CONSOLE_Printf( "uart loopback not configured\r\n" );
-        return;
-    }
-
-    if ( !CONSOLE_UART_Parse_Channel( argv[3], &sender_ch ) )
-    {
-        CONSOLE_Printf( "Invalid sender channel: use ch1 or ch2\r\n" );
-        return;
-    }
-
-    if ( !CONSOLE_UART_Parse_Channel( argv[4], &receiver_ch ) )
-    {
-        CONSOLE_Printf( "Invalid receiver channel: use ch1 or ch2\r\n" );
-        return;
-    }
-
-    if ( !CONSOLE_UART_Build_Tx_Text( argc, argv, 5U, tx_text, sizeof( tx_text ), &tx_length ) )
-    {
-        return;
-    }
-
-    CONSOLE_UART_Clear_Rx_Data();
-
-    if ( !EXEC_UART_Transmit( sender_ch, ( const uint8_t* )tx_text, tx_length ) )
-    {
-        CONSOLE_Printf( "TX failed\r\n" );
-        return;
-    }
-
-    ( void )CONSOLE_UART_Read_And_Report_Loopback_Result( receiver_ch, tx_text, tx_length );
 }
 
 static void CONSOLE_UART_Command_Loopback( uint16_t argc, char* argv[] )
@@ -826,34 +837,13 @@ static void CONSOLE_UART_Command_Loopback( uint16_t argc, char* argv[] )
         return;
     }
 
-    if ( strcmp( argv[2], "configure" ) == 0 )
+    for ( size_t i = 0U; i < ARRAY_LEN( LOOPBACK_SUBCOMMANDS ); i++ )
     {
-        CONSOLE_UART_Loopback_Configure( argc, argv );
-        return;
-    }
-
-    if ( strcmp( argv[2], "deconfigure" ) == 0 )
-    {
-        CONSOLE_UART_Loopback_Deconfigure( argc, argv );
-        return;
-    }
-
-    if ( strcmp( argv[2], "status" ) == 0 )
-    {
-        CONSOLE_UART_Loopback_Status( argc, argv );
-        return;
-    }
-
-    if ( strcmp( argv[2], "start" ) == 0 )
-    {
-        CONSOLE_UART_Loopback_Start( argc, argv );
-        return;
-    }
-
-    if ( strcmp( argv[2], "blast_random" ) == 0 )
-    {
-        CONSOLE_UART_Loopback_Blast_Random( argc, argv );
-        return;
+        if ( strcmp( argv[CONSOLE_UART_ARGV_SUBCOMMAND], LOOPBACK_SUBCOMMANDS[i].name ) == 0 )
+        {
+            LOOPBACK_SUBCOMMANDS[i].handler( argc, argv );
+            return;
+        }
     }
 
     CONSOLE_Printf( "Unknown uart loopback command\r\n" );
@@ -873,7 +863,7 @@ void CONSOLE_UART_Command_Handler( uint16_t argc, char* argv[] )
         return;
     }
 
-    if ( strcmp( argv[1], "loopback" ) == 0 )
+    if ( strcmp( argv[CONSOLE_UART_ARGV_NAMESPACE], "loopback" ) == 0 )
     {
         CONSOLE_UART_Command_Loopback( argc, argv );
         return;
