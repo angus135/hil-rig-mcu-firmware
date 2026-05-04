@@ -121,6 +121,8 @@ typedef struct
     uint32_t period_capture_flag;  // SR flag bit corresponding to a new period capture event for
                                    // this channel
 
+    uint32_t timer_clock_hz;
+
     HwPWMCaptureConfig_T config;
     bool                 is_configured;
 } HwPWMCaptureChannelContext_T;
@@ -272,8 +274,9 @@ bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T       channel,
             return false;
         }
 
-        context->config        = *config;
-        context->is_configured = true;
+        context->timer_clock_hz = 0U;
+        context->config         = *config;
+        context->is_configured  = true;
         return true;
     }
 
@@ -287,8 +290,9 @@ bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T       channel,
 
     HW_TIMER_Start_Timer( context->timer_role );
 
-    context->config        = *config;
-    context->is_configured = true;
+    context->timer_clock_hz = HW_TIMER_Get_Clock_Hz( context->timer_role );
+    context->config         = *config;
+    context->is_configured  = true;
 
     return true;
 }
@@ -328,5 +332,20 @@ void HW_PWM_Capture_Consume_Result( HwPWMCaptureChannel_T channel )
      * Avoid read-modify-write here because hardware may set another flag between
      * the read and write, which could cause an event to be lost.
      */
+
+    /*
+     * Clear only the period capture flag.
+     * Writing 0 clears the target flag, writing 1 preserves all others.
+     */
     context->timer->SR = ~( context->period_capture_flag );
+}
+
+uint32_t HW_PWM_Capture_Get_Timer_Clock_Hz( HwPWMCaptureChannel_T channel )
+{
+    if ( channel >= PWM_CAPTURE_CHANNEL_COUNT )
+    {
+        return 0U;
+    }
+
+    return hw_pwm_capture_channels[channel].timer_clock_hz;
 }

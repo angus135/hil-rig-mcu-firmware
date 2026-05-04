@@ -90,6 +90,14 @@ void HW_TIMER_Start_Timer( Timer_T timer );
  */
 void HW_TIMER_Stop_Timer( Timer_T timer );
 
+/**
+ * @brief Gets the clock frequency of the specified timer in Hz.
+ *
+ * @param timer The timer for which to get the clock frequency.
+ * @return uint32_t The clock frequency in Hz.
+ */
+uint32_t HW_TIMER_Get_Clock_Hz( Timer_T timer );
+
 #ifdef __cplusplus
 }
 #endif

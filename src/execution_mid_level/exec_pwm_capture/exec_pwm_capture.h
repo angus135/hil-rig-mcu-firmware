@@ -20,11 +20,11 @@
  *      - Read raw timer capture values (period and high time)
  *      - Consume hardware capture flags
  *      - Perform minimal validation of captured data
+ *      - Convert validated tick values to frequency and duty cycle
  *
  *      Non-Responsibilities:
  *      - Timer configuration or hardware register access (handled by hw layer)
  *      - Timestamping of results (handled by execution manager)
- *      - Conversion to frequency or duty cycle units (handled by higher layers)
  *
  *      Usage:
  *      - Call EXEC_PWM_Capture_Start_Channel() during configuration
@@ -73,10 +73,23 @@ extern "C"
  */
 typedef struct
 {
+    bool     has_new_data;
     bool     is_valid;
     uint32_t period_ticks;
     uint32_t high_ticks;
 } ExecPwmCaptureResult_T;
+
+/**
+ * @brief Physical PWM measurement converted from raw timer ticks.
+ *
+ * frequency_hz is the PWM signal frequency in Hz.
+ * duty_cycle_bp is the duty cycle in basis points (0–10000, where 10000 = 100%).
+ */
+typedef struct
+{
+    uint32_t frequency_hz;
+    uint32_t duty_cycle_bp;  // basis points, 0–10000 (1bp = 0.01%)
+} ExecPwmCapturePhysical_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -156,6 +169,25 @@ bool EXEC_PWM_Capture_Start_Channel( HwPWMCaptureChannel_T       channel,
  * The caller must ensure channel is valid within system context.
  */
 bool EXEC_PWM_Capture_Stop_Channel( HwPWMCaptureChannel_T channel );
+
+/**
+ * @brief Convert a validated PWM capture result to physical units.
+ *
+ * Converts raw timer tick values into frequency and duty cycle using the
+ * timer clock frequency cached by the hardware layer at configuration time.
+ *
+ * @param channel Logical PWM capture channel the result was consumed from.
+ * @param raw     Pointer to a validated ExecPwmCaptureResult_T.
+ * @param out     Pointer to output physical measurement storage.
+ *
+ * @return true if conversion succeeded.
+ * @return false if:
+ *         - raw or out is NULL
+ *         - raw->is_valid is false
+ *         - the hardware layer reports no clock (channel disabled or unconfigured)
+ */
+bool EXEC_PWM_Capture_Convert( HwPWMCaptureChannel_T channel, const ExecPwmCaptureResult_T* raw,
+                               ExecPwmCapturePhysical_T* out );
 
 #ifdef TEST_BUILD
 /**
