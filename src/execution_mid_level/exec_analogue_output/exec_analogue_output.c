@@ -23,6 +23,7 @@
 
 #include "gpio.h"
 #include "stm32f4xx_ll_gpio.h"
+#include "stm32f4xx_ll_spi.h"
 #include "stm32f446xx.h"
 
 
@@ -44,6 +45,7 @@
 #define ANALOGUE_OUTPUT_VREF_EXT_BUFFERED 0xFFFFU
 #define ANALOGUE_OUTPUT_GAIN_1X 0x0000U
 #define ANALOGUE_OUTPUT_PD_OPEN_CIRCUIT 0xF000U
+#define ANALOGUE_OUTPUT_SPI_INSTANCE SPI1
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -170,6 +172,10 @@ static bool ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
         {
             /* Wait for the frame to be transmitted before loading the next one to ensure
              * the DAC receives them in the correct order. */
+        }
+		while ( LL_SPI_IsActiveFlag_BSY( ANALOGUE_OUTPUT_SPI_INSTANCE ) )
+        {
+            // wait until SPI fully finished shifting
         }
 
         LL_GPIO_SetOutputPin( nCS_GPIO_Port, nCS_Pin );  // CS high
@@ -325,6 +331,15 @@ bool analogue_output_write_voltage( uint8_t channel, float input_voltage_v )
 	}
 
     HW_SPI_Tx_Trigger( SPI_CHANNEL_0 );
+
+    while ( !HW_SPI_Tx_Buffer_Empty( SPI_CHANNEL_0 ) )
+    {
+        /* Wait for SPI transfer to complete before raising CS */
+    }
+	while ( LL_SPI_IsActiveFlag_BSY( ANALOGUE_OUTPUT_SPI_INSTANCE ) )
+    {
+        // wait until SPI fully finished shifting
+    }
 
     LL_GPIO_SetOutputPin( nCS_GPIO_Port, nCS_Pin );  // CS high
     
