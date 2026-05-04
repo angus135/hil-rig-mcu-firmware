@@ -29,6 +29,7 @@
  */
 
 #include <gtest/gtest.h>
+#include <gmock/gmock.h>
 
 extern "C"
 {
@@ -48,10 +49,30 @@ extern "C"
 #define TEST_HW_UART_RX_BUFFER_SIZE 4096U
 #define TEST_HW_UART_CONSOLE_RX_CAPACITY 127U
 
+using ::testing::_;
+using ::testing::DoAll;
+using ::testing::NiceMock;
+using ::testing::NotNull;
+using ::testing::Return;
+using ::testing::SaveArg;
+
 /**-----------------------------------------------------------------------------
  *  Test Doubles / Mocks
  *------------------------------------------------------------------------------
  */
+
+class MockHalUart
+{
+public:
+    MOCK_METHOD( HAL_StatusTypeDef, Init, ( UART_HandleTypeDef* ));
+    MOCK_METHOD( HAL_StatusTypeDef, ReceiveDMA, ( UART_HandleTypeDef*, uint8_t*, uint16_t ) );
+    MOCK_METHOD( HAL_StatusTypeDef, DMAStop, ( UART_HandleTypeDef* ));
+    MOCK_METHOD( int, ReceiveIT, ( UART_HandleTypeDef*, uint8_t*, uint16_t ) );
+    MOCK_METHOD( int, Transmit, ( UART_HandleTypeDef*, uint8_t*, uint16_t, uint32_t ) );
+    MOCK_METHOD( void, IRQHandler, ( UART_HandleTypeDef* ));
+};
+
+static MockHalUart* g_mock_hal = nullptr;
 
 extern "C"
 {
@@ -62,30 +83,6 @@ DMA_TypeDef fake_dma2 = { 0U, 0U, 0U, 0U };
 uint32_t mock_primask           = 0U;
 uint32_t mock_irq_disable_count = 0U;
 uint32_t mock_irq_enable_count  = 0U;
-
-static UART_HandleTypeDef* mock_receive_dma_huart = nullptr;
-static uint8_t*            mock_receive_dma_data  = nullptr;
-static uint16_t            mock_receive_dma_size  = 0U;
-
-static UART_HandleTypeDef* mock_receive_it_huart = nullptr;
-static uint8_t*            mock_receive_it_data  = nullptr;
-static uint16_t            mock_receive_it_size  = 0U;
-static uint32_t            mock_receive_it_count = 0U;
-
-static UART_HandleTypeDef* mock_transmit_huart   = nullptr;
-static uint8_t*            mock_transmit_data    = nullptr;
-static uint16_t            mock_transmit_size    = 0U;
-static uint32_t            mock_transmit_timeout = 0U;
-static uint32_t            mock_transmit_count   = 0U;
-
-static UART_HandleTypeDef* mock_irq_handler_huart = nullptr;
-static uint32_t            mock_irq_handler_count = 0U;
-
-static HAL_StatusTypeDef mock_hal_uart_init_result   = HAL_OK;
-static HAL_StatusTypeDef mock_hal_receive_dma_result = HAL_OK;
-static HAL_StatusTypeDef mock_hal_dma_stop_result    = HAL_OK;
-static int               mock_hal_receive_it_result  = HAL_OK;
-static int               mock_hal_transmit_result    = HAL_OK;
 
 /**-----------------------------------------------------------------------------
  *  Private Helper Functions
@@ -179,9 +176,10 @@ static void TEST_HW_UART_Reset_Dma_Handle( DMA_HandleTypeDef* handle, DMA_Stream
 }
 
 /**-----------------------------------------------------------------------------
- *  Link seam: mocked function definitions
+ *  Link seam: HAL mocked via GMock, LL and CMSIS mocked manually
  *------------------------------------------------------------------------------
  */
+
 // NOLINTBEGIN
 
 extern "C" uint32_t __get_PRIMASK( void )
@@ -203,54 +201,34 @@ extern "C" void __enable_irq( void )
 
 extern "C" HAL_StatusTypeDef HAL_UART_Init( UART_HandleTypeDef* huart )
 {
-    ( void )huart;
-
-    return mock_hal_uart_init_result;
+    return g_mock_hal->Init( huart );
 }
 
 extern "C" HAL_StatusTypeDef HAL_UART_Receive_DMA( UART_HandleTypeDef* huart, uint8_t* pData,
                                                    uint16_t Size )
 {
-    mock_receive_dma_huart = huart;
-    mock_receive_dma_data  = pData;
-    mock_receive_dma_size  = Size;
-
-    return mock_hal_receive_dma_result;
+    return g_mock_hal->ReceiveDMA( huart, pData, Size );
 }
 
 extern "C" HAL_StatusTypeDef HAL_UART_DMAStop( UART_HandleTypeDef* huart )
 {
-    ( void )huart;
-
-    return mock_hal_dma_stop_result;
+    return g_mock_hal->DMAStop( huart );
 }
 
 extern "C" int HAL_UART_Receive_IT( UART_HandleTypeDef* huart, uint8_t* data, uint16_t size )
 {
-    mock_receive_it_huart = huart;
-    mock_receive_it_data  = data;
-    mock_receive_it_size  = size;
-    mock_receive_it_count++;
-
-    return mock_hal_receive_it_result;
+    return g_mock_hal->ReceiveIT( huart, data, size );
 }
 
 extern "C" int HAL_UART_Transmit( UART_HandleTypeDef* huart, uint8_t* data, uint16_t size,
                                   uint32_t timeout )
 {
-    mock_transmit_huart   = huart;
-    mock_transmit_data    = data;
-    mock_transmit_size    = size;
-    mock_transmit_timeout = timeout;
-    mock_transmit_count++;
-
-    return mock_hal_transmit_result;
+    return g_mock_hal->Transmit( huart, data, size, timeout );
 }
 
 extern "C" void HAL_UART_IRQHandler( UART_HandleTypeDef* huart )
 {
-    mock_irq_handler_huart = huart;
-    mock_irq_handler_count++;
+    g_mock_hal->IRQHandler( huart );
 }
 
 extern "C" void LL_DMA_DisableStream( DMA_TypeDef* dma, uint32_t stream )
@@ -524,8 +502,23 @@ void USART3_IRQHandler( void );
 class UartTest : public ::testing::Test
 {
 protected:
+    NiceMock<MockHalUart> mock_hal;
+    uint8_t*              captured_rx_it_data = nullptr;
+
     void SetUp() override
     {
+        g_mock_hal = &mock_hal;
+
+        ON_CALL( mock_hal, Init( _ ) ).WillByDefault( Return( HAL_OK ) );
+        ON_CALL( mock_hal, ReceiveDMA( _, _, _ ) ).WillByDefault( Return( HAL_OK ) );
+        ON_CALL( mock_hal, DMAStop( _ ) ).WillByDefault( Return( HAL_OK ) );
+        ON_CALL( mock_hal, ReceiveIT( _, _, _ ) )
+            .WillByDefault( [this]( UART_HandleTypeDef*, uint8_t* data, uint16_t ) {
+                captured_rx_it_data = data;
+                return HAL_OK;
+            } );
+        ON_CALL( mock_hal, Transmit( _, _, _, _ ) ).WillByDefault( Return( HAL_OK ) );
+
         fake_dma1.LISR  = 0U;
         fake_dma1.HISR  = 0U;
         fake_dma1.LIFCR = 0U;
@@ -580,30 +573,6 @@ protected:
         mock_irq_disable_count = 0U;
         mock_irq_enable_count  = 0U;
 
-        mock_receive_dma_huart = nullptr;
-        mock_receive_dma_data  = nullptr;
-        mock_receive_dma_size  = 0U;
-
-        mock_receive_it_huart = nullptr;
-        mock_receive_it_data  = nullptr;
-        mock_receive_it_size  = 0U;
-        mock_receive_it_count = 0U;
-
-        mock_transmit_huart   = nullptr;
-        mock_transmit_data    = nullptr;
-        mock_transmit_size    = 0U;
-        mock_transmit_timeout = 0U;
-        mock_transmit_count   = 0U;
-
-        mock_irq_handler_huart = nullptr;
-        mock_irq_handler_count = 0U;
-
-        mock_hal_uart_init_result   = HAL_OK;
-        mock_hal_receive_dma_result = HAL_OK;
-        mock_hal_dma_stop_result    = HAL_OK;
-        mock_hal_receive_it_result  = HAL_OK;
-        mock_hal_transmit_result    = HAL_OK;
-
         memset( hw_uart_channel_states, 0, sizeof( hw_uart_channel_states ) );
         memset( &uart_console_state, 0, sizeof( uart_console_state ) );
         memset( uart_console_rx_buffer, 0, sizeof( uart_console_rx_buffer ) );
@@ -614,6 +583,7 @@ protected:
 
     void TearDown() override
     {
+        g_mock_hal = nullptr;
     }
 };
 
@@ -677,6 +647,8 @@ TEST_F( UartTest, DutConfigureChannel1AppliesUartSettings )
 {
     HwUartConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
+    EXPECT_CALL( mock_hal, Init( &huart6 ) ).WillOnce( Return( HAL_OK ) );
+
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
     EXPECT_EQ( huart6.Init.BaudRate, 115200U );
@@ -690,6 +662,8 @@ TEST_F( UartTest, DutConfigureChannel2AppliesUartSettings )
 {
     HwUartConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
+    EXPECT_CALL( mock_hal, Init( &huart2 ) ).WillOnce( Return( HAL_OK ) );
+
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_2, &config ) );
 
     EXPECT_EQ( huart2.Init.BaudRate, 115200U );
@@ -701,6 +675,8 @@ TEST_F( UartTest, DutConfigureChannel2AppliesUartSettings )
 
 TEST_F( UartTest, DutConfigureRejectsNullConfig )
 {
+    EXPECT_CALL( mock_hal, Init( _ ) ).Times( 0 );
+
     EXPECT_FALSE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, nullptr ) );
 }
 
@@ -709,6 +685,8 @@ TEST_F( UartTest, DutConfigureRejectsInvalidBaudRate )
     HwUartConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
     config.baud_rate = 0U;
+
+    EXPECT_CALL( mock_hal, Init( _ ) ).Times( 0 );
 
     EXPECT_FALSE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 }
@@ -724,7 +702,7 @@ TEST_F( UartTest, DutConfigureReturnsFalseWhenHalInitFails )
 {
     HwUartConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
-    mock_hal_uart_init_result = HAL_ERROR;
+    EXPECT_CALL( mock_hal, Init( _ ) ).WillOnce( Return( HAL_ERROR ) );
 
     EXPECT_FALSE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 }
@@ -733,18 +711,21 @@ TEST_F( UartTest, DutRxStartStartsDmaAndReportsRunning )
 {
     HwUartConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
+    EXPECT_CALL( mock_hal, ReceiveDMA( &huart6, NotNull(),
+                                       static_cast<uint16_t>( TEST_HW_UART_RX_BUFFER_SIZE ) ) )
+        .WillOnce( Return( HAL_OK ) );
+
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
     ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
 
     EXPECT_TRUE( HW_UART_Rx_Is_Running( HW_UART_CHANNEL_1 ) );
-    EXPECT_EQ( mock_receive_dma_huart, &huart6 );
-    EXPECT_NE( mock_receive_dma_data, nullptr );
-    EXPECT_EQ( mock_receive_dma_size, TEST_HW_UART_RX_BUFFER_SIZE );
 }
 
 TEST_F( UartTest, DutRxStartRejectsWhenRxDisabled )
 {
     HwUartConfig_T config = TEST_HW_UART_Make_Tx_Only_Config();
+
+    EXPECT_CALL( mock_hal, ReceiveDMA( _, _, _ ) ).Times( 0 );
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
@@ -754,6 +735,8 @@ TEST_F( UartTest, DutRxStartRejectsWhenRxDisabled )
 TEST_F( UartTest, DutRxStartRejectsSecondStart )
 {
     HwUartConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
+
+    EXPECT_CALL( mock_hal, ReceiveDMA( _, _, _ ) ).Times( 1 ).WillOnce( Return( HAL_OK ) );
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
     ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
@@ -765,9 +748,9 @@ TEST_F( UartTest, DutRxStartReturnsFalseWhenHalReceiveDmaFails )
 {
     HwUartConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
-    ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+    EXPECT_CALL( mock_hal, ReceiveDMA( _, _, _ ) ).WillOnce( Return( HAL_ERROR ) );
 
-    mock_hal_receive_dma_result = HAL_ERROR;
+    ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
     EXPECT_FALSE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
     EXPECT_FALSE( HW_UART_Rx_Is_Running( HW_UART_CHANNEL_1 ) );
@@ -780,6 +763,8 @@ TEST_F( UartTest, DutRxStopStopsRunningRx )
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
     ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
 
+    EXPECT_CALL( mock_hal, DMAStop( &huart6 ) ).WillOnce( Return( HAL_OK ) );
+
     EXPECT_TRUE( HW_UART_Rx_Stop( HW_UART_CHANNEL_1 ) );
     EXPECT_FALSE( HW_UART_Rx_Is_Running( HW_UART_CHANNEL_1 ) );
 }
@@ -787,6 +772,8 @@ TEST_F( UartTest, DutRxStopStopsRunningRx )
 TEST_F( UartTest, DutRxStopReturnsFalseWhenNotRunning )
 {
     HwUartConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
+
+    EXPECT_CALL( mock_hal, DMAStop( _ ) ).Times( 0 );
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
@@ -800,7 +787,7 @@ TEST_F( UartTest, DutRxStopReturnsFalseWhenHalDmaStopFails )
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
     ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
 
-    mock_hal_dma_stop_result = HAL_ERROR;
+    EXPECT_CALL( mock_hal, DMAStop( _ ) ).WillOnce( Return( HAL_ERROR ) );
 
     EXPECT_FALSE( HW_UART_Rx_Stop( HW_UART_CHANNEL_1 ) );
 }
@@ -1269,6 +1256,10 @@ TEST_F( UartTest, DutTxWrapIsSentAsTwoLinearDmaTransfers )
 
 TEST_F( UartTest, ConsoleInitConfiguresUsart3AndArmsRxInterrupt )
 {
+    EXPECT_CALL( mock_hal, Init( &huart3 ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock_hal, ReceiveIT( &huart3, NotNull(), 1U ) )
+        .WillOnce( DoAll( SaveArg<1>( &captured_rx_it_data ), Return( HAL_OK ) ) );
+
     ASSERT_TRUE( HW_UART_CONSOLE_Init( 115200U ) );
 
     EXPECT_EQ( huart3.Instance, USART3 );
@@ -1277,23 +1268,21 @@ TEST_F( UartTest, ConsoleInitConfiguresUsart3AndArmsRxInterrupt )
     EXPECT_EQ( huart3.Init.StopBits, UART_STOPBITS_1 );
     EXPECT_EQ( huart3.Init.Parity, UART_PARITY_NONE );
     EXPECT_EQ( huart3.Init.Mode, UART_MODE_TX_RX );
-
-    EXPECT_EQ( mock_receive_it_huart, &huart3 );
-    EXPECT_NE( mock_receive_it_data, nullptr );
-    EXPECT_EQ( mock_receive_it_size, 1U );
-    EXPECT_EQ( mock_receive_it_count, 1U );
+    EXPECT_NE( captured_rx_it_data, nullptr );
 }
 
 TEST_F( UartTest, ConsoleInitFailsIfHalInitFails )
 {
-    mock_hal_uart_init_result = HAL_ERROR;
+    EXPECT_CALL( mock_hal, Init( _ ) ).WillOnce( Return( HAL_ERROR ) );
+    EXPECT_CALL( mock_hal, ReceiveIT( _, _, _ ) ).Times( 0 );
 
     EXPECT_FALSE( HW_UART_CONSOLE_Init( 115200U ) );
 }
 
 TEST_F( UartTest, ConsoleInitFailsIfReceiveItFails )
 {
-    mock_hal_receive_it_result = HAL_ERROR;
+    EXPECT_CALL( mock_hal, ReceiveIT( _, _, _ ) )
+        .WillOnce( DoAll( SaveArg<1>( &captured_rx_it_data ), Return( HAL_ERROR ) ) );
 
     EXPECT_FALSE( HW_UART_CONSOLE_Init( 115200U ) );
 }
@@ -1343,10 +1332,14 @@ TEST_F( UartTest, ConsoleRxCallbackStoresByteAndReadReturnsIt )
     uint8_t  buffer[4]  = {};
     uint32_t bytes_read = 0U;
 
-    ASSERT_TRUE( HW_UART_CONSOLE_Init( 115200U ) );
-    ASSERT_NE( mock_receive_it_data, nullptr );
+    EXPECT_CALL( mock_hal, ReceiveIT( &huart3, _, 1U ) )
+        .Times( 2 )
+        .WillRepeatedly( DoAll( SaveArg<1>( &captured_rx_it_data ), Return( HAL_OK ) ) );
 
-    *mock_receive_it_data = 'A';
+    ASSERT_TRUE( HW_UART_CONSOLE_Init( 115200U ) );
+    ASSERT_NE( captured_rx_it_data, nullptr );
+
+    *captured_rx_it_data = 'A';
 
     HAL_UART_RxCpltCallback( &huart3 );
 
@@ -1354,7 +1347,6 @@ TEST_F( UartTest, ConsoleRxCallbackStoresByteAndReadReturnsIt )
 
     EXPECT_EQ( bytes_read, 1U );
     EXPECT_EQ( buffer[0], 'A' );
-    EXPECT_EQ( mock_receive_it_count, 2U );
 }
 
 TEST_F( UartTest, ConsoleRxCallbackStoresMultipleBytesInOrder )
@@ -1363,15 +1355,15 @@ TEST_F( UartTest, ConsoleRxCallbackStoresMultipleBytesInOrder )
     uint32_t bytes_read = 0U;
 
     ASSERT_TRUE( HW_UART_CONSOLE_Init( 115200U ) );
-    ASSERT_NE( mock_receive_it_data, nullptr );
+    ASSERT_NE( captured_rx_it_data, nullptr );
 
-    *mock_receive_it_data = 'A';
+    *captured_rx_it_data = 'A';
     HAL_UART_RxCpltCallback( &huart3 );
 
-    *mock_receive_it_data = 'B';
+    *captured_rx_it_data = 'B';
     HAL_UART_RxCpltCallback( &huart3 );
 
-    *mock_receive_it_data = 'C';
+    *captured_rx_it_data = 'C';
     HAL_UART_RxCpltCallback( &huart3 );
 
     ASSERT_TRUE( HW_UART_CONSOLE_Read( buffer, sizeof( buffer ), &bytes_read ) );
@@ -1388,15 +1380,15 @@ TEST_F( UartTest, ConsoleRxCallbackDropsByteWhenRingBufferFull )
     uint32_t bytes_read                             = 0U;
 
     ASSERT_TRUE( HW_UART_CONSOLE_Init( 115200U ) );
-    ASSERT_NE( mock_receive_it_data, nullptr );
+    ASSERT_NE( captured_rx_it_data, nullptr );
 
     for ( uint32_t i = 0U; i < TEST_HW_UART_CONSOLE_RX_CAPACITY; i++ )
     {
-        *mock_receive_it_data = ( uint8_t )i;
+        *captured_rx_it_data = ( uint8_t )i;
         HAL_UART_RxCpltCallback( &huart3 );
     }
 
-    *mock_receive_it_data = 0xFFU;
+    *captured_rx_it_data = 0xFFU;
     HAL_UART_RxCpltCallback( &huart3 );
 
     ASSERT_TRUE( HW_UART_CONSOLE_Read( buffer, sizeof( buffer ), &bytes_read ) );
@@ -1410,41 +1402,42 @@ TEST_F( UartTest, ConsoleRxCallbackIgnoresOtherUart )
     uint8_t  buffer[4]  = {};
     uint32_t bytes_read = 0U;
 
-    ASSERT_TRUE( HW_UART_CONSOLE_Init( 115200U ) );
-    ASSERT_NE( mock_receive_it_data, nullptr );
+    EXPECT_CALL( mock_hal, ReceiveIT( &huart3, _, 1U ) )
+        .Times( 1 )
+        .WillOnce( DoAll( SaveArg<1>( &captured_rx_it_data ), Return( HAL_OK ) ) );
 
-    *mock_receive_it_data = 'A';
+    ASSERT_TRUE( HW_UART_CONSOLE_Init( 115200U ) );
+    ASSERT_NE( captured_rx_it_data, nullptr );
+
+    *captured_rx_it_data = 'A';
 
     HAL_UART_RxCpltCallback( &huart6 );
 
     ASSERT_TRUE( HW_UART_CONSOLE_Read( buffer, sizeof( buffer ), &bytes_read ) );
 
     EXPECT_EQ( bytes_read, 0U );
-    EXPECT_EQ( mock_receive_it_count, 1U );
 }
 
 TEST_F( UartTest, ConsoleErrorCallbackRearmsRxForConsoleUart )
 {
+    EXPECT_CALL( mock_hal, ReceiveIT( &huart3, _, 1U ) )
+        .Times( 2 )
+        .WillRepeatedly( DoAll( SaveArg<1>( &captured_rx_it_data ), Return( HAL_OK ) ) );
+
     ASSERT_TRUE( HW_UART_CONSOLE_Init( 115200U ) );
 
-    uint32_t count_before = mock_receive_it_count;
-
     HAL_UART_ErrorCallback( &huart3 );
-
-    EXPECT_EQ( mock_receive_it_count, count_before + 1U );
-    EXPECT_EQ( mock_receive_it_huart, &huart3 );
-    EXPECT_EQ( mock_receive_it_size, 1U );
 }
 
 TEST_F( UartTest, ConsoleErrorCallbackIgnoresOtherUart )
 {
+    EXPECT_CALL( mock_hal, ReceiveIT( &huart3, _, 1U ) )
+        .Times( 1 )
+        .WillOnce( DoAll( SaveArg<1>( &captured_rx_it_data ), Return( HAL_OK ) ) );
+
     ASSERT_TRUE( HW_UART_CONSOLE_Init( 115200U ) );
 
-    uint32_t count_before = mock_receive_it_count;
-
     HAL_UART_ErrorCallback( &huart6 );
-
-    EXPECT_EQ( mock_receive_it_count, count_before );
 }
 
 TEST_F( UartTest, ConsoleWriteRejectsNullData )
@@ -1467,8 +1460,9 @@ TEST_F( UartTest, ConsoleWriteZeroLengthSucceedsAfterInitWithoutTransmit )
 
     ASSERT_TRUE( HW_UART_CONSOLE_Init( 115200U ) );
 
+    EXPECT_CALL( mock_hal, Transmit( _, _, _, _ ) ).Times( 0 );
+
     EXPECT_TRUE( HW_UART_CONSOLE_Write_Blocking( payload, 0U, 100U ) );
-    EXPECT_EQ( mock_transmit_count, 0U );
 }
 
 TEST_F( UartTest, ConsoleWriteRejectsZeroTimeout )
@@ -1477,8 +1471,9 @@ TEST_F( UartTest, ConsoleWriteRejectsZeroTimeout )
 
     ASSERT_TRUE( HW_UART_CONSOLE_Init( 115200U ) );
 
+    EXPECT_CALL( mock_hal, Transmit( _, _, _, _ ) ).Times( 0 );
+
     EXPECT_FALSE( HW_UART_CONSOLE_Write_Blocking( payload, sizeof( payload ), 0U ) );
-    EXPECT_EQ( mock_transmit_count, 0U );
 }
 
 TEST_F( UartTest, ConsoleWriteCallsBlockingHalTransmit )
@@ -1487,13 +1482,11 @@ TEST_F( UartTest, ConsoleWriteCallsBlockingHalTransmit )
 
     ASSERT_TRUE( HW_UART_CONSOLE_Init( 115200U ) );
 
-    EXPECT_TRUE( HW_UART_CONSOLE_Write_Blocking( payload, sizeof( payload ), 100U ) );
+    EXPECT_CALL( mock_hal,
+                 Transmit( &huart3, payload, static_cast<uint16_t>( sizeof( payload ) ), 100U ) )
+        .WillOnce( Return( HAL_OK ) );
 
-    EXPECT_EQ( mock_transmit_huart, &huart3 );
-    EXPECT_EQ( mock_transmit_data, payload );
-    EXPECT_EQ( mock_transmit_size, sizeof( payload ) );
-    EXPECT_EQ( mock_transmit_timeout, 100U );
-    EXPECT_EQ( mock_transmit_count, 1U );
+    EXPECT_TRUE( HW_UART_CONSOLE_Write_Blocking( payload, sizeof( payload ), 100U ) );
 }
 
 TEST_F( UartTest, ConsoleWriteFailsIfHalTransmitFails )
@@ -1502,17 +1495,16 @@ TEST_F( UartTest, ConsoleWriteFailsIfHalTransmitFails )
 
     ASSERT_TRUE( HW_UART_CONSOLE_Init( 115200U ) );
 
-    mock_hal_transmit_result = HAL_ERROR;
+    EXPECT_CALL( mock_hal, Transmit( _, _, _, _ ) ).WillOnce( Return( HAL_ERROR ) );
 
     EXPECT_FALSE( HW_UART_CONSOLE_Write_Blocking( payload, sizeof( payload ), 100U ) );
 }
 
 TEST_F( UartTest, ConsoleIrqHandlerDispatchesToHal )
 {
-    USART3_IRQHandler();
+    EXPECT_CALL( mock_hal, IRQHandler( &huart3 ) ).Times( 1 );
 
-    EXPECT_EQ( mock_irq_handler_huart, &huart3 );
-    EXPECT_EQ( mock_irq_handler_count, 1U );
+    USART3_IRQHandler();
 }
 
 TEST_F( UartTest, DutRxDmaChannel1TransferErrorClearsRxStreamFlags )
