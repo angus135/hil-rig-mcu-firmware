@@ -261,3 +261,45 @@ void HW_TIMER_Stop_Timer( Timer_T timer )
     }
 #endif
 }
+
+uint32_t HW_TIMER_Get_Clock_Hz( Timer_T timer )
+{
+#ifdef TEST_BUILD
+    ( void )timer;
+    return 0U;
+#else
+    uint32_t pclk;
+    uint32_t apb_prescaler;
+
+    switch ( timer )
+    {
+        /*
+         * TIM2 and TIM5 are on APB1 (STM32F446).
+         */
+        case PWM_CAPTURE_TIMER_CH1:
+        case PWM_CAPTURE_TIMER_CH2:
+        case ANALOGUE_INPUT_TIMER:
+        case EXECUTION_MANAGER_TIMER: {
+            pclk = HAL_RCC_GetPCLK1Freq();
+
+            /*
+             * Read APB1 prescaler.
+             * If prescaler != 1, timer clock = 2 × PCLK1.
+             */
+            apb_prescaler = LL_RCC_GetAPB1Prescaler();
+
+            if ( apb_prescaler == LL_RCC_APB1_DIV_1 )
+            {
+                return pclk;
+            }
+            else
+            {
+                return pclk * 2U;
+            }
+        }
+
+        default:
+            return 0U;
+    }
+#endif
+}

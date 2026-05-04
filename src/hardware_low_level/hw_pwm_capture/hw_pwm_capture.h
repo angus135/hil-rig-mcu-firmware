@@ -188,6 +188,17 @@ HwPWMCaptureResult_T HW_PWM_Capture_Peek_Result( HwPWMCaptureChannel_T channel )
  */
 void HW_PWM_Capture_Consume_Result( HwPWMCaptureChannel_T channel );
 
+/**
+ * @brief Return the timer input clock frequency for a PWM capture channel.
+ *
+ * The value is cached at configure time. Returns 0 if the channel has not
+ * been configured or is currently disabled.
+ *
+ * @param channel Logical PWM capture channel.
+ * @return Timer clock in Hz, or 0 if unavailable.
+ */
+uint32_t HW_PWM_Capture_Get_Timer_Clock_Hz( HwPWMCaptureChannel_T channel );
+
 #ifdef __cplusplus
 }
 #endif
