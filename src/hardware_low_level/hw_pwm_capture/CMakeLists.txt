@@ -30,7 +30,6 @@ target_link_libraries(hw_pwm_capture
         cubeide_hal
         rtos
         hw_timer
-        # include any other relevant modules
 )
 
 # -----------------------------
