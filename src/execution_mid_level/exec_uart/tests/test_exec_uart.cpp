@@ -42,59 +42,40 @@ extern "C"
 
 #define TEST_EXEC_UART_RX_BUFFER_SIZE 16U
 
+using ::testing::_;
+using ::testing::DoAll;
+using ::testing::Field;
+using ::testing::InSequence;
+using ::testing::NiceMock;
+using ::testing::Pointee;
+using ::testing::Return;
+using ::testing::SaveArg;
+
 /**-----------------------------------------------------------------------------
  *  Test Doubles / Mocks
  *------------------------------------------------------------------------------
  */
 
-static bool mock_hw_rx_is_running_result[HW_UART_CHANNEL_COUNT];
+class MockHwUart
+{
+public:
+    MOCK_METHOD( bool, Rx_Is_Running, ( HwUartChannel_T ) );
+    MOCK_METHOD( bool, Rx_Stop, ( HwUartChannel_T ) );
+    MOCK_METHOD( bool, Configure_Channel, ( HwUartChannel_T, const HwUartConfig_T* ));
+    MOCK_METHOD( bool, Rx_Start, ( HwUartChannel_T ) );
+    MOCK_METHOD( bool, Tx_Load_Buffer, ( HwUartChannel_T, const uint8_t*, uint32_t ) );
+    MOCK_METHOD( bool, Tx_Trigger, ( HwUartChannel_T ) );
+    MOCK_METHOD( HwUartRxSpans_T, Rx_Peek, ( HwUartChannel_T ) );
+    MOCK_METHOD( void, Rx_Consume, ( HwUartChannel_T, uint32_t ) );
+    MOCK_METHOD( bool, Is_Tx_Complete, ( HwUartChannel_T ) );
+};
 
-static bool mock_hw_rx_stop_result;
-static bool mock_hw_configure_result;
-static bool mock_hw_rx_start_result;
-static bool mock_hw_tx_load_result;
-static bool mock_hw_tx_trigger_result;
-static bool mock_hw_tx_complete_result;
-
-static uint32_t mock_hw_rx_is_running_count;
-static uint32_t mock_hw_rx_stop_count;
-static uint32_t mock_hw_configure_count;
-static uint32_t mock_hw_rx_start_count;
-static uint32_t mock_hw_tx_load_count;
-static uint32_t mock_hw_tx_trigger_count;
-static uint32_t mock_hw_rx_peek_count;
-static uint32_t mock_hw_rx_consume_count;
-static uint32_t mock_hw_tx_complete_count;
-
-static uint32_t mock_sequence_counter;
-static uint32_t mock_hw_rx_is_running_order;
-static uint32_t mock_hw_rx_stop_order;
-static uint32_t mock_hw_configure_order;
-static uint32_t mock_hw_rx_start_order;
-static uint32_t mock_hw_tx_load_order;
-static uint32_t mock_hw_tx_trigger_order;
-
-static HwUartChannel_T mock_hw_last_channel;
-static HwUartConfig_T  mock_hw_last_config;
-
-static const uint8_t* mock_hw_last_tx_data;
-static uint32_t       mock_hw_last_tx_length;
-
-static HwUartRxSpans_T mock_hw_rx_spans;
-static uint32_t        mock_hw_last_consume_count;
-
-static uint8_t mock_rx_first_span_data[TEST_EXEC_UART_RX_BUFFER_SIZE];
-static uint8_t mock_rx_second_span_data[TEST_EXEC_UART_RX_BUFFER_SIZE];
+static MockHwUart* g_mock_hw = nullptr;
 
 /**-----------------------------------------------------------------------------
  *  Private Helper Functions
  *------------------------------------------------------------------------------
  */
-
-static uint32_t TEST_EXEC_UART_Channel_To_Index( HwUartChannel_T channel )
-{
-    return static_cast<uint32_t>( channel );
-}
 
 static HwUartChannel_T TEST_EXEC_UART_Invalid_Channel( void )
 {
@@ -137,112 +118,70 @@ static HwUartConfig_T TEST_EXEC_UART_Make_Rx_Only_Config( void )
     return config;
 }
 
-static void TEST_EXEC_UART_Set_Rx_Spans( const uint8_t* first_data, uint32_t first_length,
-                                         const uint8_t* second_data, uint32_t second_length )
+static HwUartRxSpans_T TEST_EXEC_UART_Make_Spans( const uint8_t* first_data, uint32_t first_length,
+                                                  const uint8_t* second_data,
+                                                  uint32_t       second_length )
 {
-    mock_hw_rx_spans.first_span.data          = first_data;
-    mock_hw_rx_spans.first_span.length_bytes  = first_length;
-    mock_hw_rx_spans.second_span.data         = second_data;
-    mock_hw_rx_spans.second_span.length_bytes = second_length;
-    mock_hw_rx_spans.total_length_bytes       = first_length + second_length;
+    HwUartRxSpans_T spans          = {};
+    spans.first_span.data          = first_data;
+    spans.first_span.length_bytes  = first_length;
+    spans.second_span.data         = second_data;
+    spans.second_span.length_bytes = second_length;
+    spans.total_length_bytes       = first_length + second_length;
+    return spans;
 }
 
 /**-----------------------------------------------------------------------------
- *  Link seam: mocked function definitions
+ *  Link seam: HW_UART functions delegated to GMock
  *------------------------------------------------------------------------------
  */
+
 // NOLINTBEGIN
 
 extern "C" bool HW_UART_Rx_Is_Running( HwUartChannel_T channel )
 {
-    mock_hw_rx_is_running_count++;
-    mock_hw_rx_is_running_order = ++mock_sequence_counter;
-    mock_hw_last_channel        = channel;
-
-    uint32_t index = TEST_EXEC_UART_Channel_To_Index( channel );
-
-    if ( index >= HW_UART_CHANNEL_COUNT )
-    {
-        return false;
-    }
-
-    return mock_hw_rx_is_running_result[index];
+    return g_mock_hw->Rx_Is_Running( channel );
 }
 
 extern "C" bool HW_UART_Rx_Stop( HwUartChannel_T channel )
 {
-    mock_hw_rx_stop_count++;
-    mock_hw_rx_stop_order = ++mock_sequence_counter;
-    mock_hw_last_channel  = channel;
-
-    return mock_hw_rx_stop_result;
+    return g_mock_hw->Rx_Stop( channel );
 }
 
 extern "C" bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* config )
 {
-    mock_hw_configure_count++;
-    mock_hw_configure_order = ++mock_sequence_counter;
-    mock_hw_last_channel    = channel;
-
-    if ( config != nullptr )
-    {
-        mock_hw_last_config = *config;
-    }
-
-    return mock_hw_configure_result;
+    return g_mock_hw->Configure_Channel( channel, config );
 }
 
 extern "C" bool HW_UART_Rx_Start( HwUartChannel_T channel )
 {
-    mock_hw_rx_start_count++;
-    mock_hw_rx_start_order = ++mock_sequence_counter;
-    mock_hw_last_channel   = channel;
-
-    return mock_hw_rx_start_result;
+    return g_mock_hw->Rx_Start( channel );
 }
 
 extern "C" bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data,
                                         uint32_t length_bytes )
 {
-    mock_hw_tx_load_count++;
-    mock_hw_tx_load_order  = ++mock_sequence_counter;
-    mock_hw_last_channel   = channel;
-    mock_hw_last_tx_data   = data;
-    mock_hw_last_tx_length = length_bytes;
-
-    return mock_hw_tx_load_result;
+    return g_mock_hw->Tx_Load_Buffer( channel, data, length_bytes );
 }
 
 extern "C" bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
 {
-    mock_hw_tx_trigger_count++;
-    mock_hw_tx_trigger_order = ++mock_sequence_counter;
-    mock_hw_last_channel     = channel;
-
-    return mock_hw_tx_trigger_result;
+    return g_mock_hw->Tx_Trigger( channel );
 }
 
 extern "C" HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
 {
-    mock_hw_rx_peek_count++;
-    mock_hw_last_channel = channel;
-
-    return mock_hw_rx_spans;
+    return g_mock_hw->Rx_Peek( channel );
 }
 
 extern "C" void HW_UART_Rx_Consume( HwUartChannel_T channel, uint32_t bytes_to_consume )
 {
-    mock_hw_rx_consume_count++;
-    mock_hw_last_channel       = channel;
-    mock_hw_last_consume_count = bytes_to_consume;
+    g_mock_hw->Rx_Consume( channel, bytes_to_consume );
 }
 
 extern "C" bool HW_UART_Is_Tx_Complete( HwUartChannel_T channel )
 {
-    mock_hw_tx_complete_count++;
-    mock_hw_last_channel = channel;
-
-    return mock_hw_tx_complete_result;
+    return g_mock_hw->Is_Tx_Complete( channel );
 }
 
 // NOLINTEND
@@ -262,63 +201,41 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-/**
- * @brief Test fixture for module tests.
- *
- * Provides a consistent setup and teardown environment for all test cases.
- */
 class ExecUARTTest : public ::testing::Test
 {
 protected:
+    NiceMock<MockHwUart> mock_hw;
+
+    static uint8_t s_first_span_data[TEST_EXEC_UART_RX_BUFFER_SIZE];
+    static uint8_t s_second_span_data[TEST_EXEC_UART_RX_BUFFER_SIZE];
+
     void SetUp( void ) override
     {
-        mock_hw_rx_is_running_result[HW_UART_CHANNEL_1] = false;
-        mock_hw_rx_is_running_result[HW_UART_CHANNEL_2] = false;
+        g_mock_hw = &mock_hw;
 
-        mock_hw_rx_stop_result     = true;
-        mock_hw_configure_result   = true;
-        mock_hw_rx_start_result    = true;
-        mock_hw_tx_load_result     = true;
-        mock_hw_tx_trigger_result  = true;
-        mock_hw_tx_complete_result = true;
+        ON_CALL( mock_hw, Rx_Is_Running( _ ) ).WillByDefault( Return( false ) );
+        ON_CALL( mock_hw, Rx_Stop( _ ) ).WillByDefault( Return( true ) );
+        ON_CALL( mock_hw, Configure_Channel( _, _ ) ).WillByDefault( Return( true ) );
+        ON_CALL( mock_hw, Rx_Start( _ ) ).WillByDefault( Return( true ) );
+        ON_CALL( mock_hw, Tx_Load_Buffer( _, _, _ ) ).WillByDefault( Return( true ) );
+        ON_CALL( mock_hw, Tx_Trigger( _ ) ).WillByDefault( Return( true ) );
+        ON_CALL( mock_hw, Rx_Peek( _ ) )
+            .WillByDefault( Return( TEST_EXEC_UART_Make_Spans( nullptr, 0U, nullptr, 0U ) ) );
+        ON_CALL( mock_hw, Is_Tx_Complete( _ ) ).WillByDefault( Return( true ) );
 
-        mock_hw_rx_is_running_count = 0U;
-        mock_hw_rx_stop_count       = 0U;
-        mock_hw_configure_count     = 0U;
-        mock_hw_rx_start_count      = 0U;
-        mock_hw_tx_load_count       = 0U;
-        mock_hw_tx_trigger_count    = 0U;
-        mock_hw_rx_peek_count       = 0U;
-        mock_hw_rx_consume_count    = 0U;
-        mock_hw_tx_complete_count   = 0U;
-
-        mock_sequence_counter       = 0U;
-        mock_hw_rx_is_running_order = 0U;
-        mock_hw_rx_stop_order       = 0U;
-        mock_hw_configure_order     = 0U;
-        mock_hw_rx_start_order      = 0U;
-        mock_hw_tx_load_order       = 0U;
-        mock_hw_tx_trigger_order    = 0U;
-
-        mock_hw_last_channel = HW_UART_CHANNEL_1;
-        memset( &mock_hw_last_config, 0, sizeof( mock_hw_last_config ) );
-
-        mock_hw_last_tx_data   = nullptr;
-        mock_hw_last_tx_length = 0U;
-
-        memset( &mock_hw_rx_spans, 0, sizeof( mock_hw_rx_spans ) );
-        memset( mock_rx_first_span_data, 0, sizeof( mock_rx_first_span_data ) );
-        memset( mock_rx_second_span_data, 0, sizeof( mock_rx_second_span_data ) );
-
-        mock_hw_last_consume_count = 0U;
-
+        memset( s_first_span_data, 0, sizeof( s_first_span_data ) );
+        memset( s_second_span_data, 0, sizeof( s_second_span_data ) );
         memset( exec_uart_channel_states, 0, sizeof( exec_uart_channel_states ) );
     }
 
     void TearDown( void ) override
     {
+        g_mock_hw = nullptr;
     }
 };
+
+uint8_t ExecUARTTest::s_first_span_data[TEST_EXEC_UART_RX_BUFFER_SIZE]  = {};
+uint8_t ExecUARTTest::s_second_span_data[TEST_EXEC_UART_RX_BUFFER_SIZE] = {};
 
 /**-----------------------------------------------------------------------------
  *  Test Cases
@@ -351,39 +268,41 @@ TEST_F( ExecUARTTest, PrivateValidChannelRejectsOutOfRangeChannel )
 
 TEST_F( ExecUARTTest, ApplyConfigurationRejectsNullConfig )
 {
-    EXPECT_FALSE( EXEC_UART_Apply_Configuration( HW_UART_CHANNEL_1, nullptr ) );
+    EXPECT_CALL( mock_hw, Rx_Is_Running( _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw, Rx_Start( _ ) ).Times( 0 );
 
-    EXPECT_EQ( mock_hw_rx_is_running_count, 0U );
-    EXPECT_EQ( mock_hw_configure_count, 0U );
-    EXPECT_EQ( mock_hw_rx_start_count, 0U );
+    EXPECT_FALSE( EXEC_UART_Apply_Configuration( HW_UART_CHANNEL_1, nullptr ) );
 }
 
 TEST_F( ExecUARTTest, ApplyConfigurationRejectsInvalidChannel )
 {
     HwUartConfig_T config = TEST_EXEC_UART_Make_Tx_Rx_Config();
 
-    EXPECT_FALSE( EXEC_UART_Apply_Configuration( TEST_EXEC_UART_Invalid_Channel(), &config ) );
+    EXPECT_CALL( mock_hw, Rx_Is_Running( _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw, Rx_Start( _ ) ).Times( 0 );
 
-    EXPECT_EQ( mock_hw_rx_is_running_count, 0U );
-    EXPECT_EQ( mock_hw_configure_count, 0U );
-    EXPECT_EQ( mock_hw_rx_start_count, 0U );
+    EXPECT_FALSE( EXEC_UART_Apply_Configuration( TEST_EXEC_UART_Invalid_Channel(), &config ) );
 }
 
 TEST_F( ExecUARTTest, ApplyConfigurationConfiguresTxOnlyWithoutStartingRx )
 {
     HwUartConfig_T config = TEST_EXEC_UART_Make_Tx_Only_Config();
 
+    EXPECT_CALL( mock_hw, Rx_Is_Running( HW_UART_CHANNEL_1 ) ).Times( 1 );
+    EXPECT_CALL( mock_hw, Rx_Stop( _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw,
+                 Configure_Channel(
+                     HW_UART_CHANNEL_1,
+                     Pointee( AllOf( Field( &HwUartConfig_T::interface_mode, HW_UART_MODE_TTL_3V3 ),
+                                     Field( &HwUartConfig_T::baud_rate, 115200U ),
+                                     Field( &HwUartConfig_T::rx_enabled, false ),
+                                     Field( &HwUartConfig_T::tx_enabled, true ) ) ) ) )
+        .Times( 1 );
+    EXPECT_CALL( mock_hw, Rx_Start( _ ) ).Times( 0 );
+
     ASSERT_TRUE( EXEC_UART_Apply_Configuration( HW_UART_CHANNEL_1, &config ) );
-
-    EXPECT_EQ( mock_hw_rx_is_running_count, 1U );
-    EXPECT_EQ( mock_hw_rx_stop_count, 0U );
-    EXPECT_EQ( mock_hw_configure_count, 1U );
-    EXPECT_EQ( mock_hw_rx_start_count, 0U );
-
-    EXPECT_EQ( mock_hw_last_config.interface_mode, HW_UART_MODE_TTL_3V3 );
-    EXPECT_EQ( mock_hw_last_config.baud_rate, 115200U );
-    EXPECT_FALSE( mock_hw_last_config.rx_enabled );
-    EXPECT_TRUE( mock_hw_last_config.tx_enabled );
 
     EXPECT_TRUE( exec_uart_channel_states[HW_UART_CHANNEL_1].is_configured );
     EXPECT_FALSE( exec_uart_channel_states[HW_UART_CHANNEL_1].rx_enabled );
@@ -394,14 +313,16 @@ TEST_F( ExecUARTTest, ApplyConfigurationStartsRxWhenRequested )
 {
     HwUartConfig_T config = TEST_EXEC_UART_Make_Rx_Only_Config();
 
+    {
+        InSequence seq;
+        EXPECT_CALL( mock_hw, Rx_Is_Running( HW_UART_CHANNEL_1 ) );
+        EXPECT_CALL( mock_hw, Configure_Channel( HW_UART_CHANNEL_1, _ ) );
+        EXPECT_CALL( mock_hw, Rx_Start( HW_UART_CHANNEL_1 ) );
+    }
+
+    EXPECT_CALL( mock_hw, Rx_Stop( _ ) ).Times( 0 );
+
     ASSERT_TRUE( EXEC_UART_Apply_Configuration( HW_UART_CHANNEL_1, &config ) );
-
-    EXPECT_EQ( mock_hw_rx_is_running_count, 1U );
-    EXPECT_EQ( mock_hw_rx_stop_count, 0U );
-    EXPECT_EQ( mock_hw_configure_count, 1U );
-    EXPECT_EQ( mock_hw_rx_start_count, 1U );
-
-    EXPECT_LT( mock_hw_configure_order, mock_hw_rx_start_order );
 
     EXPECT_TRUE( exec_uart_channel_states[HW_UART_CHANNEL_1].is_configured );
     EXPECT_TRUE( exec_uart_channel_states[HW_UART_CHANNEL_1].rx_enabled );
@@ -412,47 +333,37 @@ TEST_F( ExecUARTTest, ApplyConfigurationStopsRxBeforeReconfiguringWhenRxAlreadyR
 {
     HwUartConfig_T config = TEST_EXEC_UART_Make_Tx_Rx_Config();
 
-    mock_hw_rx_is_running_result[HW_UART_CHANNEL_1] = true;
+    {
+        InSequence seq;
+        EXPECT_CALL( mock_hw, Rx_Is_Running( HW_UART_CHANNEL_1 ) ).WillOnce( Return( true ) );
+        EXPECT_CALL( mock_hw, Rx_Stop( HW_UART_CHANNEL_1 ) );
+        EXPECT_CALL( mock_hw, Configure_Channel( HW_UART_CHANNEL_1, _ ) );
+        EXPECT_CALL( mock_hw, Rx_Start( HW_UART_CHANNEL_1 ) );
+    }
 
     ASSERT_TRUE( EXEC_UART_Apply_Configuration( HW_UART_CHANNEL_1, &config ) );
-
-    EXPECT_EQ( mock_hw_rx_is_running_count, 1U );
-    EXPECT_EQ( mock_hw_rx_stop_count, 1U );
-    EXPECT_EQ( mock_hw_configure_count, 1U );
-    EXPECT_EQ( mock_hw_rx_start_count, 1U );
-
-    EXPECT_LT( mock_hw_rx_is_running_order, mock_hw_rx_stop_order );
-    EXPECT_LT( mock_hw_rx_stop_order, mock_hw_configure_order );
-    EXPECT_LT( mock_hw_configure_order, mock_hw_rx_start_order );
 }
 
 TEST_F( ExecUARTTest, ApplyConfigurationReturnsFalseIfRxStopFails )
 {
     HwUartConfig_T config = TEST_EXEC_UART_Make_Tx_Rx_Config();
 
-    mock_hw_rx_is_running_result[HW_UART_CHANNEL_1] = true;
-    mock_hw_rx_stop_result                          = false;
+    EXPECT_CALL( mock_hw, Rx_Is_Running( HW_UART_CHANNEL_1 ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw, Rx_Stop( _ ) ).WillOnce( Return( false ) );
+    EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw, Rx_Start( _ ) ).Times( 0 );
 
     EXPECT_FALSE( EXEC_UART_Apply_Configuration( HW_UART_CHANNEL_1, &config ) );
-
-    EXPECT_EQ( mock_hw_rx_is_running_count, 1U );
-    EXPECT_EQ( mock_hw_rx_stop_count, 1U );
-    EXPECT_EQ( mock_hw_configure_count, 0U );
-    EXPECT_EQ( mock_hw_rx_start_count, 0U );
 }
 
 TEST_F( ExecUARTTest, ApplyConfigurationReturnsFalseIfLowLevelConfigurationFails )
 {
     HwUartConfig_T config = TEST_EXEC_UART_Make_Tx_Rx_Config();
 
-    mock_hw_configure_result = false;
+    EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).WillOnce( Return( false ) );
+    EXPECT_CALL( mock_hw, Rx_Start( _ ) ).Times( 0 );
 
     EXPECT_FALSE( EXEC_UART_Apply_Configuration( HW_UART_CHANNEL_1, &config ) );
-
-    EXPECT_EQ( mock_hw_rx_is_running_count, 1U );
-    EXPECT_EQ( mock_hw_rx_stop_count, 0U );
-    EXPECT_EQ( mock_hw_configure_count, 1U );
-    EXPECT_EQ( mock_hw_rx_start_count, 0U );
 
     EXPECT_FALSE( exec_uart_channel_states[HW_UART_CHANNEL_1].is_configured );
 }
@@ -461,24 +372,20 @@ TEST_F( ExecUARTTest, ApplyConfigurationReturnsFalseIfRxStartFails )
 {
     HwUartConfig_T config = TEST_EXEC_UART_Make_Tx_Rx_Config();
 
-    mock_hw_rx_start_result = false;
+    EXPECT_CALL( mock_hw, Rx_Start( _ ) ).WillOnce( Return( false ) );
 
     EXPECT_FALSE( EXEC_UART_Apply_Configuration( HW_UART_CHANNEL_1, &config ) );
-
-    EXPECT_EQ( mock_hw_rx_is_running_count, 1U );
-    EXPECT_EQ( mock_hw_configure_count, 1U );
-    EXPECT_EQ( mock_hw_rx_start_count, 1U );
 
     EXPECT_FALSE( exec_uart_channel_states[HW_UART_CHANNEL_1].is_configured );
 }
 
 TEST_F( ExecUARTTest, DeconfigureRejectsInvalidChannel )
 {
-    EXPECT_FALSE( EXEC_UART_Deconfigure( TEST_EXEC_UART_Invalid_Channel() ) );
+    EXPECT_CALL( mock_hw, Rx_Is_Running( _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw, Rx_Stop( _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).Times( 0 );
 
-    EXPECT_EQ( mock_hw_rx_is_running_count, 0U );
-    EXPECT_EQ( mock_hw_rx_stop_count, 0U );
-    EXPECT_EQ( mock_hw_configure_count, 0U );
+    EXPECT_FALSE( EXEC_UART_Deconfigure( TEST_EXEC_UART_Invalid_Channel() ) );
 }
 
 TEST_F( ExecUARTTest, DeconfigureAppliesDisabledConfigWhenRxIsNotRunning )
@@ -487,16 +394,18 @@ TEST_F( ExecUARTTest, DeconfigureAppliesDisabledConfigWhenRxIsNotRunning )
     exec_uart_channel_states[HW_UART_CHANNEL_1].rx_enabled    = true;
     exec_uart_channel_states[HW_UART_CHANNEL_1].tx_enabled    = true;
 
+    EXPECT_CALL( mock_hw, Rx_Stop( _ ) ).Times( 0 );
+    EXPECT_CALL(
+        mock_hw,
+        Configure_Channel(
+            HW_UART_CHANNEL_1,
+            Pointee( AllOf( Field( &HwUartConfig_T::interface_mode, HW_UART_MODE_DISABLED ),
+                            Field( &HwUartConfig_T::baud_rate, 0U ),
+                            Field( &HwUartConfig_T::rx_enabled, false ),
+                            Field( &HwUartConfig_T::tx_enabled, false ) ) ) ) )
+        .Times( 1 );
+
     ASSERT_TRUE( EXEC_UART_Deconfigure( HW_UART_CHANNEL_1 ) );
-
-    EXPECT_EQ( mock_hw_rx_is_running_count, 1U );
-    EXPECT_EQ( mock_hw_rx_stop_count, 0U );
-    EXPECT_EQ( mock_hw_configure_count, 1U );
-
-    EXPECT_EQ( mock_hw_last_config.interface_mode, HW_UART_MODE_DISABLED );
-    EXPECT_EQ( mock_hw_last_config.baud_rate, 0U );
-    EXPECT_FALSE( mock_hw_last_config.rx_enabled );
-    EXPECT_FALSE( mock_hw_last_config.tx_enabled );
 
     EXPECT_FALSE( exec_uart_channel_states[HW_UART_CHANNEL_1].is_configured );
     EXPECT_FALSE( exec_uart_channel_states[HW_UART_CHANNEL_1].rx_enabled );
@@ -505,135 +414,123 @@ TEST_F( ExecUARTTest, DeconfigureAppliesDisabledConfigWhenRxIsNotRunning )
 
 TEST_F( ExecUARTTest, DeconfigureStopsRxBeforeApplyingDisabledConfigWhenRxIsRunning )
 {
-    mock_hw_rx_is_running_result[HW_UART_CHANNEL_1] = true;
+    {
+        InSequence seq;
+        EXPECT_CALL( mock_hw, Rx_Is_Running( HW_UART_CHANNEL_1 ) ).WillOnce( Return( true ) );
+        EXPECT_CALL( mock_hw, Rx_Stop( HW_UART_CHANNEL_1 ) );
+        EXPECT_CALL( mock_hw, Configure_Channel( HW_UART_CHANNEL_1, _ ) );
+    }
 
     ASSERT_TRUE( EXEC_UART_Deconfigure( HW_UART_CHANNEL_1 ) );
-
-    EXPECT_EQ( mock_hw_rx_is_running_count, 1U );
-    EXPECT_EQ( mock_hw_rx_stop_count, 1U );
-    EXPECT_EQ( mock_hw_configure_count, 1U );
-
-    EXPECT_LT( mock_hw_rx_is_running_order, mock_hw_rx_stop_order );
-    EXPECT_LT( mock_hw_rx_stop_order, mock_hw_configure_order );
 }
 
 TEST_F( ExecUARTTest, DeconfigureReturnsFalseIfRxStopFails )
 {
-    mock_hw_rx_is_running_result[HW_UART_CHANNEL_1] = true;
-    mock_hw_rx_stop_result                          = false;
+    EXPECT_CALL( mock_hw, Rx_Is_Running( _ ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw, Rx_Stop( _ ) ).WillOnce( Return( false ) );
+    EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).Times( 0 );
 
     EXPECT_FALSE( EXEC_UART_Deconfigure( HW_UART_CHANNEL_1 ) );
-
-    EXPECT_EQ( mock_hw_rx_is_running_count, 1U );
-    EXPECT_EQ( mock_hw_rx_stop_count, 1U );
-    EXPECT_EQ( mock_hw_configure_count, 0U );
 }
 
 TEST_F( ExecUARTTest, DeconfigureReturnsFalseIfDisabledConfigFails )
 {
-    mock_hw_configure_result = false;
+    EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).WillOnce( Return( false ) );
 
     EXPECT_FALSE( EXEC_UART_Deconfigure( HW_UART_CHANNEL_1 ) );
-
-    EXPECT_EQ( mock_hw_rx_is_running_count, 1U );
-    EXPECT_EQ( mock_hw_configure_count, 1U );
 }
 
 TEST_F( ExecUARTTest, TransmitLoadsBufferThenTriggersPump )
 {
     uint8_t payload[3] = { 1U, 2U, 3U };
 
-    ASSERT_TRUE( EXEC_UART_Transmit( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
+    {
+        InSequence seq;
+        EXPECT_CALL( mock_hw, Tx_Load_Buffer( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
+        EXPECT_CALL( mock_hw, Tx_Trigger( HW_UART_CHANNEL_1 ) );
+    }
 
-    EXPECT_EQ( mock_hw_tx_load_count, 1U );
-    EXPECT_EQ( mock_hw_tx_trigger_count, 1U );
-    EXPECT_EQ( mock_hw_last_channel, HW_UART_CHANNEL_1 );
-    EXPECT_EQ( mock_hw_last_tx_data, payload );
-    EXPECT_EQ( mock_hw_last_tx_length, sizeof( payload ) );
-
-    EXPECT_LT( mock_hw_tx_load_order, mock_hw_tx_trigger_order );
+    EXPECT_TRUE( EXEC_UART_Transmit( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
 }
 
 TEST_F( ExecUARTTest, TransmitReturnsFalseAndDoesNotTriggerWhenLoadFails )
 {
     uint8_t payload[3] = { 1U, 2U, 3U };
 
-    mock_hw_tx_load_result = false;
+    EXPECT_CALL( mock_hw, Tx_Load_Buffer( _, _, _ ) ).WillOnce( Return( false ) );
+    EXPECT_CALL( mock_hw, Tx_Trigger( _ ) ).Times( 0 );
 
     EXPECT_FALSE( EXEC_UART_Transmit( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
-
-    EXPECT_EQ( mock_hw_tx_load_count, 1U );
-    EXPECT_EQ( mock_hw_tx_trigger_count, 0U );
 }
 
 TEST_F( ExecUARTTest, TransmitReturnsFalseWhenTriggerFails )
 {
     uint8_t payload[3] = { 1U, 2U, 3U };
 
-    mock_hw_tx_trigger_result = false;
+    EXPECT_CALL( mock_hw, Tx_Trigger( _ ) ).WillOnce( Return( false ) );
 
     EXPECT_FALSE( EXEC_UART_Transmit( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
-
-    EXPECT_EQ( mock_hw_tx_load_count, 1U );
-    EXPECT_EQ( mock_hw_tx_trigger_count, 1U );
 }
 
 TEST_F( ExecUARTTest, ReadRejectsNullDestination )
 {
+    EXPECT_CALL( mock_hw, Rx_Peek( _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw, Rx_Consume( _, _ ) ).Times( 0 );
+
     uint32_t bytes_read = 123U;
 
     EXPECT_FALSE( EXEC_UART_Read( HW_UART_CHANNEL_1, nullptr, 4U, &bytes_read ) );
-
-    EXPECT_EQ( mock_hw_rx_peek_count, 0U );
-    EXPECT_EQ( mock_hw_rx_consume_count, 0U );
 }
 
 TEST_F( ExecUARTTest, ReadRejectsNullBytesRead )
 {
+    EXPECT_CALL( mock_hw, Rx_Peek( _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw, Rx_Consume( _, _ ) ).Times( 0 );
+
     uint8_t dest[4] = {};
 
     EXPECT_FALSE( EXEC_UART_Read( HW_UART_CHANNEL_1, dest, sizeof( dest ), nullptr ) );
-
-    EXPECT_EQ( mock_hw_rx_peek_count, 0U );
-    EXPECT_EQ( mock_hw_rx_consume_count, 0U );
 }
 
 TEST_F( ExecUARTTest, ReadWithZeroDestinationSizeReturnsZeroWithoutPeeking )
 {
+    EXPECT_CALL( mock_hw, Rx_Peek( _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw, Rx_Consume( _, _ ) ).Times( 0 );
+
     uint8_t  dest[4]    = {};
     uint32_t bytes_read = 123U;
 
     ASSERT_TRUE( EXEC_UART_Read( HW_UART_CHANNEL_1, dest, 0U, &bytes_read ) );
 
     EXPECT_EQ( bytes_read, 0U );
-    EXPECT_EQ( mock_hw_rx_peek_count, 0U );
-    EXPECT_EQ( mock_hw_rx_consume_count, 0U );
 }
 
 TEST_F( ExecUARTTest, ReadReturnsZeroWhenNoDataAvailable )
 {
+    EXPECT_CALL( mock_hw, Rx_Peek( HW_UART_CHANNEL_1 ) )
+        .WillOnce( Return( TEST_EXEC_UART_Make_Spans( nullptr, 0U, nullptr, 0U ) ) );
+    EXPECT_CALL( mock_hw, Rx_Consume( _, _ ) ).Times( 0 );
+
     uint8_t  dest[4]    = {};
     uint32_t bytes_read = 123U;
-
-    TEST_EXEC_UART_Set_Rx_Spans( nullptr, 0U, nullptr, 0U );
 
     ASSERT_TRUE( EXEC_UART_Read( HW_UART_CHANNEL_1, dest, sizeof( dest ), &bytes_read ) );
 
     EXPECT_EQ( bytes_read, 0U );
-    EXPECT_EQ( mock_hw_rx_peek_count, 1U );
-    EXPECT_EQ( mock_hw_rx_consume_count, 0U );
 }
 
 TEST_F( ExecUARTTest, ReadCopiesSingleSpanAndConsumesCopiedBytes )
 {
+    s_first_span_data[0] = 10U;
+    s_first_span_data[1] = 11U;
+    s_first_span_data[2] = 12U;
+
+    EXPECT_CALL( mock_hw, Rx_Peek( HW_UART_CHANNEL_1 ) )
+        .WillOnce( Return( TEST_EXEC_UART_Make_Spans( s_first_span_data, 3U, nullptr, 0U ) ) );
+    EXPECT_CALL( mock_hw, Rx_Consume( HW_UART_CHANNEL_1, 3U ) ).Times( 1 );
+
     uint8_t  dest[8]    = {};
     uint32_t bytes_read = 0U;
-
-    mock_rx_first_span_data[0] = 10U;
-    mock_rx_first_span_data[1] = 11U;
-    mock_rx_first_span_data[2] = 12U;
-
-    TEST_EXEC_UART_Set_Rx_Spans( mock_rx_first_span_data, 3U, nullptr, 0U );
 
     ASSERT_TRUE( EXEC_UART_Read( HW_UART_CHANNEL_1, dest, sizeof( dest ), &bytes_read ) );
 
@@ -641,41 +538,42 @@ TEST_F( ExecUARTTest, ReadCopiesSingleSpanAndConsumesCopiedBytes )
     EXPECT_EQ( dest[0], 10U );
     EXPECT_EQ( dest[1], 11U );
     EXPECT_EQ( dest[2], 12U );
-    EXPECT_EQ( mock_hw_rx_consume_count, 1U );
-    EXPECT_EQ( mock_hw_last_consume_count, 3U );
 }
 
 TEST_F( ExecUARTTest, ReadCopiesOnlyDestinationSizeFromFirstSpan )
 {
+    s_first_span_data[0] = 10U;
+    s_first_span_data[1] = 11U;
+    s_first_span_data[2] = 12U;
+
+    EXPECT_CALL( mock_hw, Rx_Peek( _ ) )
+        .WillOnce( Return( TEST_EXEC_UART_Make_Spans( s_first_span_data, 3U, nullptr, 0U ) ) );
+    EXPECT_CALL( mock_hw, Rx_Consume( _, 2U ) ).Times( 1 );
+
     uint8_t  dest[2]    = {};
     uint32_t bytes_read = 0U;
-
-    mock_rx_first_span_data[0] = 10U;
-    mock_rx_first_span_data[1] = 11U;
-    mock_rx_first_span_data[2] = 12U;
-
-    TEST_EXEC_UART_Set_Rx_Spans( mock_rx_first_span_data, 3U, nullptr, 0U );
 
     ASSERT_TRUE( EXEC_UART_Read( HW_UART_CHANNEL_1, dest, sizeof( dest ), &bytes_read ) );
 
     EXPECT_EQ( bytes_read, 2U );
     EXPECT_EQ( dest[0], 10U );
     EXPECT_EQ( dest[1], 11U );
-    EXPECT_EQ( mock_hw_rx_consume_count, 1U );
-    EXPECT_EQ( mock_hw_last_consume_count, 2U );
 }
 
 TEST_F( ExecUARTTest, ReadCopiesWrappedSpansInOrder )
 {
+    s_first_span_data[0]  = 1U;
+    s_first_span_data[1]  = 2U;
+    s_second_span_data[0] = 3U;
+    s_second_span_data[1] = 4U;
+
+    EXPECT_CALL( mock_hw, Rx_Peek( _ ) )
+        .WillOnce(
+            Return( TEST_EXEC_UART_Make_Spans( s_first_span_data, 2U, s_second_span_data, 2U ) ) );
+    EXPECT_CALL( mock_hw, Rx_Consume( _, 4U ) ).Times( 1 );
+
     uint8_t  dest[8]    = {};
     uint32_t bytes_read = 0U;
-
-    mock_rx_first_span_data[0]  = 1U;
-    mock_rx_first_span_data[1]  = 2U;
-    mock_rx_second_span_data[0] = 3U;
-    mock_rx_second_span_data[1] = 4U;
-
-    TEST_EXEC_UART_Set_Rx_Spans( mock_rx_first_span_data, 2U, mock_rx_second_span_data, 2U );
 
     ASSERT_TRUE( EXEC_UART_Read( HW_UART_CHANNEL_1, dest, sizeof( dest ), &bytes_read ) );
 
@@ -684,21 +582,22 @@ TEST_F( ExecUARTTest, ReadCopiesWrappedSpansInOrder )
     EXPECT_EQ( dest[1], 2U );
     EXPECT_EQ( dest[2], 3U );
     EXPECT_EQ( dest[3], 4U );
-    EXPECT_EQ( mock_hw_rx_consume_count, 1U );
-    EXPECT_EQ( mock_hw_last_consume_count, 4U );
 }
 
 TEST_F( ExecUARTTest, ReadCopiesPartialWrappedSecondSpanWhenDestinationIsLimited )
 {
+    s_first_span_data[0]  = 1U;
+    s_first_span_data[1]  = 2U;
+    s_second_span_data[0] = 3U;
+    s_second_span_data[1] = 4U;
+
+    EXPECT_CALL( mock_hw, Rx_Peek( _ ) )
+        .WillOnce(
+            Return( TEST_EXEC_UART_Make_Spans( s_first_span_data, 2U, s_second_span_data, 2U ) ) );
+    EXPECT_CALL( mock_hw, Rx_Consume( _, 3U ) ).Times( 1 );
+
     uint8_t  dest[3]    = {};
     uint32_t bytes_read = 0U;
-
-    mock_rx_first_span_data[0]  = 1U;
-    mock_rx_first_span_data[1]  = 2U;
-    mock_rx_second_span_data[0] = 3U;
-    mock_rx_second_span_data[1] = 4U;
-
-    TEST_EXEC_UART_Set_Rx_Spans( mock_rx_first_span_data, 2U, mock_rx_second_span_data, 2U );
 
     ASSERT_TRUE( EXEC_UART_Read( HW_UART_CHANNEL_1, dest, sizeof( dest ), &bytes_read ) );
 
@@ -706,26 +605,18 @@ TEST_F( ExecUARTTest, ReadCopiesPartialWrappedSecondSpanWhenDestinationIsLimited
     EXPECT_EQ( dest[0], 1U );
     EXPECT_EQ( dest[1], 2U );
     EXPECT_EQ( dest[2], 3U );
-    EXPECT_EQ( mock_hw_rx_consume_count, 1U );
-    EXPECT_EQ( mock_hw_last_consume_count, 3U );
 }
 
 TEST_F( ExecUARTTest, IsTxCompleteDelegatesToLowLevelDriver )
 {
-    mock_hw_tx_complete_result = true;
+    EXPECT_CALL( mock_hw, Is_Tx_Complete( HW_UART_CHANNEL_2 ) ).WillOnce( Return( true ) );
 
     EXPECT_TRUE( EXEC_UART_Is_Tx_Complete( HW_UART_CHANNEL_2 ) );
-
-    EXPECT_EQ( mock_hw_tx_complete_count, 1U );
-    EXPECT_EQ( mock_hw_last_channel, HW_UART_CHANNEL_2 );
 }
 
 TEST_F( ExecUARTTest, IsTxCompleteReturnsFalseWhenLowLevelDriverReportsIncomplete )
 {
-    mock_hw_tx_complete_result = false;
+    EXPECT_CALL( mock_hw, Is_Tx_Complete( HW_UART_CHANNEL_1 ) ).WillOnce( Return( false ) );
 
     EXPECT_FALSE( EXEC_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
-
-    EXPECT_EQ( mock_hw_tx_complete_count, 1U );
-    EXPECT_EQ( mock_hw_last_channel, HW_UART_CHANNEL_1 );
 }
