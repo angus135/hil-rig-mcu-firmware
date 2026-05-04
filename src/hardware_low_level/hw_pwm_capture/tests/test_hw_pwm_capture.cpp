@@ -20,11 +20,13 @@
 extern "C"
 {
 #include "hw_pwm_capture_mocks.h"
-#include "hw_pwm_capture.h"  //Module under test
+#include "hw_pwm_capture.h"
 #include "hw_timer.h"
 #include <stdint.h>
 #include <stdbool.h>
 }
+
+using ::testing::_;
 
 /**-----------------------------------------------------------------------------
  *  Test Constants / Macros
@@ -35,6 +37,18 @@ extern "C"
  *  Test Doubles / Mocks
  *------------------------------------------------------------------------------
  */
+
+class MockHwTimer
+{
+public:
+    MOCK_METHOD( void, Stop_Timer, ( Timer_T ) );
+    MOCK_METHOD( void, Configure_Timer, ( Timer_T, uint32_t, uint32_t ) );
+    MOCK_METHOD( void, Start_Timer, ( Timer_T ) );
+    MOCK_METHOD( uint32_t, Get_Clock_Hz, ( Timer_T ) );
+};
+
+static MockHwTimer* g_mock_timer = nullptr;
+
 extern "C"
 {
 TIM_TypeDef mock_tim2;
@@ -42,19 +56,22 @@ TIM_TypeDef mock_tim5;
 
 void HW_TIMER_Stop_Timer( Timer_T timer )
 {
-    ( void )timer;
+    g_mock_timer->Stop_Timer( timer );
 }
 
 void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t arr )
 {
-    ( void )timer;
-    ( void )psc;
-    ( void )arr;
+    g_mock_timer->Configure_Timer( timer, psc, arr );
 }
 
 void HW_TIMER_Start_Timer( Timer_T timer )
 {
-    ( void )timer;
+    g_mock_timer->Start_Timer( timer );
+}
+
+uint32_t HW_TIMER_Get_Clock_Hz( Timer_T timer )
+{
+    return g_mock_timer->Get_Clock_Hz( timer );
 }
 }
 
@@ -63,22 +80,21 @@ void HW_TIMER_Start_Timer( Timer_T timer )
  *------------------------------------------------------------------------------
  */
 
-/**
- * @brief Test fixture for module tests.
- *
- * Provides a consistent setup/teardown environment for all test cases.
- */
 class HWPWMCaptureTest : public ::testing::Test
 {
 protected:
+    MockHwTimer mock_timer;
+
     void SetUp( void ) override
     {
-        mock_tim2 = {};
-        mock_tim5 = {};
+        g_mock_timer = &mock_timer;
+        mock_tim2    = {};
+        mock_tim5    = {};
     }
 
     void TearDown( void ) override
     {
+        g_mock_timer = nullptr;
     }
 };
 
@@ -93,6 +109,11 @@ TEST_F( HWPWMCaptureTest, ConfigureEnabledChannel1ReturnsTrue )
     config.mode                 = HW_PWM_CAPTURE_LV_3V3;
     config.is_enabled           = true;
 
+    EXPECT_CALL( mock_timer, Stop_Timer( _ ) );
+    EXPECT_CALL( mock_timer, Configure_Timer( _, _, _ ) );
+    EXPECT_CALL( mock_timer, Start_Timer( _ ) );
+    EXPECT_CALL( mock_timer, Get_Clock_Hz( _ ) ).WillOnce( testing::Return( 1000000U ) );
+
     EXPECT_TRUE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config ) );
 }
 
@@ -102,7 +123,28 @@ TEST_F( HWPWMCaptureTest, ConfigureDisabledChannel1ReturnsTrue )
     config.mode                 = HW_PWM_CAPTURE_LV_3V3;
     config.is_enabled           = false;
 
+    EXPECT_CALL( mock_timer, Stop_Timer( _ ) );
+    EXPECT_CALL( mock_timer, Configure_Timer( _, _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock_timer, Start_Timer( _ ) ).Times( 0 );
+    EXPECT_CALL( mock_timer, Get_Clock_Hz( _ ) ).Times( 0 );
+
     EXPECT_TRUE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config ) );
+}
+
+TEST_F( HWPWMCaptureTest, ConfigureEnabledChannelStartsTimerAfterConfigure )
+{
+    HwPWMCaptureConfig_T config = {};
+    config.mode                 = HW_PWM_CAPTURE_LV_3V3;
+    config.is_enabled           = true;
+
+    testing::InSequence seq;
+    EXPECT_CALL( mock_timer, Stop_Timer( PWM_CAPTURE_TIMER_CH1 ) );
+    EXPECT_CALL( mock_timer, Configure_Timer( PWM_CAPTURE_TIMER_CH1, 0U, 0xFFFFFFFFU ) );
+    EXPECT_CALL( mock_timer, Start_Timer( PWM_CAPTURE_TIMER_CH1 ) );
+    EXPECT_CALL( mock_timer, Get_Clock_Hz( PWM_CAPTURE_TIMER_CH1 ) )
+        .WillOnce( testing::Return( 1000000U ) );
+
+    HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config );
 }
 
 TEST_F( HWPWMCaptureTest, ConfigureAllValidModesReturnsTrue )
@@ -120,8 +162,45 @@ TEST_F( HWPWMCaptureTest, ConfigureAllValidModesReturnsTrue )
         config.mode                 = mode;
         config.is_enabled           = true;
 
+        EXPECT_CALL( mock_timer, Stop_Timer( _ ) );
+        EXPECT_CALL( mock_timer, Configure_Timer( _, _, _ ) );
+        EXPECT_CALL( mock_timer, Start_Timer( _ ) );
+        EXPECT_CALL( mock_timer, Get_Clock_Hz( _ ) ).WillOnce( testing::Return( 1000000U ) );
+
         EXPECT_TRUE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config ) );
     }
+}
+
+TEST_F( HWPWMCaptureTest, ConfigureReturnsFalseForNullConfig )
+{
+    EXPECT_CALL( mock_timer, Stop_Timer( _ ) ).Times( 0 );
+
+    EXPECT_FALSE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, nullptr ) );
+}
+
+TEST_F( HWPWMCaptureTest, ConfigureReturnsFalseForInvalidChannel )
+{
+    HwPWMCaptureConfig_T config = {};
+    config.mode                 = HW_PWM_CAPTURE_LV_3V3;
+    config.is_enabled           = true;
+
+    EXPECT_CALL( mock_timer, Stop_Timer( _ ) ).Times( 0 );
+
+    EXPECT_FALSE(
+        HW_PWM_Capture_Configure_Channel( static_cast<HwPWMCaptureChannel_T>( 2U ), &config ) );
+}
+
+TEST_F( HWPWMCaptureTest, ConfigureReturnsFalseForInvalidMode )
+{
+    HwPWMCaptureConfig_T config = {};
+    config.mode                 = static_cast<HwPWMCaptureMode_T>( 99U );
+    config.is_enabled           = true;
+
+    EXPECT_CALL( mock_timer, Stop_Timer( _ ) ).Times( 0 );
+    EXPECT_CALL( mock_timer, Configure_Timer( _, _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock_timer, Start_Timer( _ ) ).Times( 0 );
+
+    EXPECT_FALSE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config ) );
 }
 
 TEST_F( HWPWMCaptureTest, PeekChannel1ReturnsNoDataWhenNoNewCaptureFlag )
@@ -182,6 +261,18 @@ TEST_F( HWPWMCaptureTest, PeekChannel2ReturnsMappedRegisterPointersWhenNewCaptur
     EXPECT_EQ( *( result.high_ticks ), 1200U );
 }
 
+TEST_F( HWPWMCaptureTest, PeekDoesNotClearFlag )
+{
+    mock_tim2.SR = TIM_SR_CC1IF;
+
+    auto result1 = HW_PWM_Capture_Peek_Result( HW_PWM_CAPTURE_CHANNEL_1 );
+    auto result2 = HW_PWM_Capture_Peek_Result( HW_PWM_CAPTURE_CHANNEL_1 );
+
+    EXPECT_TRUE( result1.has_new_data );
+    EXPECT_TRUE( result2.has_new_data );
+    EXPECT_EQ( mock_tim2.SR & TIM_SR_CC1IF, TIM_SR_CC1IF );
+}
+
 TEST_F( HWPWMCaptureTest, ConsumeChannel1AfterSuccessfulPeekClearsPeriodFlag )
 {
     mock_tim2.SR = TIM_SR_CC1IF;
@@ -234,41 +325,4 @@ TEST_F( HWPWMCaptureTest, ConsumeChannel2PreservesOtherStatusFlags )
 
     EXPECT_EQ( mock_tim5.SR & TIM_SR_CC2IF, 0U );
     EXPECT_NE( mock_tim5.SR & TIM_SR_CC1IF, 0U );
-}
-
-TEST_F( HWPWMCaptureTest, ConfigureReturnsFalseForNullConfig )
-{
-    EXPECT_FALSE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, nullptr ) );
-}
-
-TEST_F( HWPWMCaptureTest, ConfigureReturnsFalseForInvalidChannel )
-{
-    HwPWMCaptureConfig_T config = {};
-    config.mode                 = HW_PWM_CAPTURE_LV_3V3;
-    config.is_enabled           = true;
-
-    EXPECT_FALSE(
-        HW_PWM_Capture_Configure_Channel( static_cast<HwPWMCaptureChannel_T>( 2U ), &config ) );
-}
-
-TEST_F( HWPWMCaptureTest, ConfigureReturnsFalseForInvalidMode )
-{
-    HwPWMCaptureConfig_T config = {};
-    config.mode                 = static_cast<HwPWMCaptureMode_T>( 99U );
-    config.is_enabled           = true;
-
-    EXPECT_FALSE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config ) );
-}
-
-TEST_F( HWPWMCaptureTest, PeekDoesNotClearFlag )
-{
-    mock_tim2.SR = TIM_SR_CC1IF;
-
-    auto result1 = HW_PWM_Capture_Peek_Result( HW_PWM_CAPTURE_CHANNEL_1 );
-    auto result2 = HW_PWM_Capture_Peek_Result( HW_PWM_CAPTURE_CHANNEL_1 );
-
-    EXPECT_TRUE( result1.has_new_data );
-    EXPECT_TRUE( result2.has_new_data );
-
-    EXPECT_EQ( mock_tim2.SR & TIM_SR_CC1IF, TIM_SR_CC1IF );
 }
