@@ -782,27 +782,27 @@ void CONSOLE_SPI_Loopback_Run( uint16_t argc, char* argv[] )
     }
 
     HW_SPI_Tx_Trigger( slave_channel->peripheral );
-    // for ( int i = 0; i < 20; i++ )
-    // {
-    //     if ( !HW_SPI_Load_Tx_Buffer( master_channel->peripheral, spi_loop_state.master_tx,
-    //                                  spi_loop_state.master_tx_size_bytes ) )
-    //     {
-    //         CONSOLE_Printf( "FAIL: could not load master TX buffer\r\n" );
-    //         return;
-    //     }
-
-    //     HW_SPI_Tx_Trigger( master_channel->peripheral );
-    //     vTaskDelay( 1 );
-    // }
-
-    if ( !HW_SPI_Load_Tx_Buffer( master_channel->peripheral, spi_loop_state.master_tx,
-                                 spi_loop_state.master_tx_size_bytes ) )
+    for ( int i = 0; i < 20; i++ )
     {
-        CONSOLE_Printf( "FAIL: could not load master TX buffer\r\n" );
-        return;
+        if ( !HW_SPI_Load_Tx_Buffer( master_channel->peripheral, spi_loop_state.master_tx,
+                                     spi_loop_state.master_tx_size_bytes ) )
+        {
+            CONSOLE_Printf( "FAIL: could not load master TX buffer\r\n" );
+            return;
+        }
+
+        HW_SPI_Tx_Trigger( master_channel->peripheral );
+        vTaskDelay( 1 );
     }
 
-    HW_SPI_Tx_Trigger( master_channel->peripheral );
+    // if ( !HW_SPI_Load_Tx_Buffer( master_channel->peripheral, spi_loop_state.master_tx,
+    //                              spi_loop_state.master_tx_size_bytes ) )
+    // {
+    //     CONSOLE_Printf( "FAIL: could not load master TX buffer\r\n" );
+    //     return;
+    // }
+
+    // HW_SPI_Tx_Trigger( master_channel->peripheral );
 
     vTaskDelay( SPI_LOOP_TRANSFER_DELAY_MS );
 
