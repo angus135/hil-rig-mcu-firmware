@@ -91,8 +91,8 @@ static bool external_flash_session_active = false;
 static HW_NAND_Geometry_T external_flash_geometry = { 0U, 0U, 0U, 0U };
 
 /** Bad-block bitmap indexed by physical block number. */
-static bool external_flash_bad_block_table[EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT +
-                                           EXTERNAL_FLASH_RESULT_BLOCK_COUNT] = { false };
+static bool external_flash_bad_block_table[EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT
+                                           + EXTERNAL_FLASH_RESULT_BLOCK_COUNT] = { false };
 
 /** Number of bad blocks found across the configured instruction and result partitions. */
 static uint32_t external_flash_bad_block_count = 0U;
@@ -161,8 +161,9 @@ static bool EXTERNAL_FLASH_IsPhysicalBlockBad( uint32_t block );
  * Logical block indexes count only good blocks. This is the central bad-block
  * skipping decision for instruction reads, result writes, and result readback.
  */
-static bool EXTERNAL_FLASH_GetPhysicalBlockForLogicalBlock(
-    const ExternalFlashPartition_T* partition, uint32_t logical_block, uint32_t* physical_block );
+static bool
+EXTERNAL_FLASH_GetPhysicalBlockForLogicalBlock( const ExternalFlashPartition_T* partition,
+                                                uint32_t logical_block, uint32_t* physical_block );
 
 /**
  * Converts a partition byte offset to a usable physical page and column.
@@ -171,12 +172,11 @@ static bool EXTERNAL_FLASH_GetPhysicalBlockForLogicalBlock(
  * pages, blocks, and bad-block gaps from buffer_manager and transfer managers.
  */
 static bool EXTERNAL_FLASH_GetPhysicalAddress( const ExternalFlashPartition_T* partition,
-                                               uint32_t offset, uint32_t* page,
-                                               uint16_t* column );
+                                               uint32_t offset, uint32_t* page, uint16_t* column );
 
 /** Returns the logical byte capacity of a partition after bad-block removal. */
-static uint32_t EXTERNAL_FLASH_GetPartitionCapacityBytes(
-    const ExternalFlashPartition_T* partition );
+static uint32_t
+EXTERNAL_FLASH_GetPartitionCapacityBytes( const ExternalFlashPartition_T* partition );
 
 /** Scans both configured partitions and caches factory bad-block markers. */
 static ExternalFlashStatus_T EXTERNAL_FLASH_ScanBadBlocks( void );
@@ -196,9 +196,10 @@ static void EXTERNAL_FLASH_ClearResultPageBuffer( void );
 static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramStagedResultPage( void );
 
 /** Reads opaque bytes from a partition by logical byte offset. */
-static ExternalFlashStatus_T EXTERNAL_FLASH_ReadFromPartition(
-    const ExternalFlashPartition_T* partition, uint32_t readable_length, uint32_t offset,
-    uint8_t* data, uint32_t length );
+static ExternalFlashStatus_T
+EXTERNAL_FLASH_ReadFromPartition( const ExternalFlashPartition_T* partition,
+                                  uint32_t readable_length, uint32_t offset, uint8_t* data,
+                                  uint32_t length );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -247,8 +248,9 @@ static bool EXTERNAL_FLASH_IsPhysicalBlockBad( uint32_t block )
     return external_flash_bad_block_table[block];
 }
 
-static bool EXTERNAL_FLASH_GetPhysicalBlockForLogicalBlock(
-    const ExternalFlashPartition_T* partition, uint32_t logical_block, uint32_t* physical_block )
+static bool
+EXTERNAL_FLASH_GetPhysicalBlockForLogicalBlock( const ExternalFlashPartition_T* partition,
+                                                uint32_t logical_block, uint32_t* physical_block )
 {
     if ( ( partition == NULL ) || ( physical_block == NULL ) )
     {
@@ -277,11 +279,10 @@ static bool EXTERNAL_FLASH_GetPhysicalBlockForLogicalBlock(
 }
 
 static bool EXTERNAL_FLASH_GetPhysicalAddress( const ExternalFlashPartition_T* partition,
-                                               uint32_t offset, uint32_t* page,
-                                               uint16_t* column )
+                                               uint32_t offset, uint32_t* page, uint16_t* column )
 {
-    if ( ( partition == NULL ) || ( page == NULL ) || ( column == NULL ) ||
-         ( external_flash_geometry.page_size_bytes == 0U ) )
+    if ( ( partition == NULL ) || ( page == NULL ) || ( column == NULL )
+         || ( external_flash_geometry.page_size_bytes == 0U ) )
     {
         return false;
     }
@@ -292,10 +293,10 @@ static bool EXTERNAL_FLASH_GetPhysicalAddress( const ExternalFlashPartition_T* p
         return false;
     }
 
-    uint32_t logical_block = offset / block_data_size;
-    uint32_t block_offset  = offset % block_data_size;
-    uint32_t page_in_block = block_offset / external_flash_geometry.page_size_bytes;
-    uint32_t page_offset   = block_offset % external_flash_geometry.page_size_bytes;
+    uint32_t logical_block  = offset / block_data_size;
+    uint32_t block_offset   = offset % block_data_size;
+    uint32_t page_in_block  = block_offset / external_flash_geometry.page_size_bytes;
+    uint32_t page_offset    = block_offset % external_flash_geometry.page_size_bytes;
     uint32_t physical_block = EXTERNAL_FLASH_INVALID_BLOCK;
 
     if ( !EXTERNAL_FLASH_GetPhysicalBlockForLogicalBlock( partition, logical_block,
@@ -310,8 +311,8 @@ static bool EXTERNAL_FLASH_GetPhysicalAddress( const ExternalFlashPartition_T* p
     return true;
 }
 
-static uint32_t EXTERNAL_FLASH_GetPartitionCapacityBytes(
-    const ExternalFlashPartition_T* partition )
+static uint32_t
+EXTERNAL_FLASH_GetPartitionCapacityBytes( const ExternalFlashPartition_T* partition )
 {
     if ( partition == NULL )
     {
@@ -411,15 +412,14 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramStagedResultPage( void )
         uint16_t column = 0U;
 
         if ( !EXTERNAL_FLASH_GetPhysicalAddress( &external_flash_result_partition,
-                                                 page_start_offset, &page, &column ) ||
-             ( column != 0U ) )
+                                                 page_start_offset, &page, &column )
+             || ( column != 0U ) )
         {
             return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
         }
 
-        ExternalFlashStatus_T status = EXTERNAL_FLASH_MapNandStatus(
-            HW_NAND_ProgramLoadDma( 0U, external_flash_result_page_buffer,
-                                    external_flash_geometry.page_size_bytes ) );
+        ExternalFlashStatus_T status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_ProgramLoadDma(
+            0U, external_flash_result_page_buffer, external_flash_geometry.page_size_bytes ) );
         if ( status != EXTERNAL_FLASH_STATUS_OK )
         {
             return status;
@@ -468,9 +468,10 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramStagedResultPage( void )
     return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
 }
 
-static ExternalFlashStatus_T EXTERNAL_FLASH_ReadFromPartition(
-    const ExternalFlashPartition_T* partition, uint32_t readable_length, uint32_t offset,
-    uint8_t* data, uint32_t length )
+static ExternalFlashStatus_T
+EXTERNAL_FLASH_ReadFromPartition( const ExternalFlashPartition_T* partition,
+                                  uint32_t readable_length, uint32_t offset, uint8_t* data,
+                                  uint32_t length )
 {
     if ( !external_flash_initialised )
     {
@@ -499,8 +500,8 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_ReadFromPartition(
             return EXTERNAL_FLASH_STATUS_INVALID_ARG;
         }
 
-        uint32_t page_remaining = external_flash_geometry.page_size_bytes - column;
-        uint32_t remaining      = length - bytes_read;
+        uint32_t page_remaining  = external_flash_geometry.page_size_bytes - column;
+        uint32_t remaining       = length - bytes_read;
         uint32_t bytes_this_page = ( remaining < page_remaining ) ? remaining : page_remaining;
 
         ExternalFlashStatus_T status = EXTERNAL_FLASH_MapNandStatus(
@@ -523,12 +524,12 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_ReadFromPartition(
 
 ExternalFlashStatus_T EXTERNAL_FLASH_Init( void )
 {
-    external_flash_initialised           = false;
-    external_flash_session_active        = false;
-    external_flash_result_length_bytes   = 0U;
+    external_flash_initialised                   = false;
+    external_flash_session_active                = false;
+    external_flash_result_length_bytes           = 0U;
     external_flash_committed_result_length_bytes = 0U;
-    external_flash_result_page_fill      = 0U;
-    external_flash_bad_block_count       = 0U;
+    external_flash_result_page_fill              = 0U;
+    external_flash_bad_block_count               = 0U;
 
     ExternalFlashStatus_T status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_Init() );
     if ( status != EXTERNAL_FLASH_STATUS_OK )
@@ -547,8 +548,8 @@ ExternalFlashStatus_T EXTERNAL_FLASH_Init( void )
         return EXTERNAL_FLASH_STATUS_ERROR;
     }
 
-    if ( ( EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT + EXTERNAL_FLASH_RESULT_BLOCK_COUNT ) >
-         external_flash_geometry.block_count )
+    if ( ( EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT + EXTERNAL_FLASH_RESULT_BLOCK_COUNT )
+         > external_flash_geometry.block_count )
     {
         return EXTERNAL_FLASH_STATUS_ERROR;
     }
@@ -595,8 +596,8 @@ ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void )
         return status;
     }
 
-    external_flash_session_active      = true;
-    external_flash_result_length_bytes = 0U;
+    external_flash_session_active                = true;
+    external_flash_result_length_bytes           = 0U;
     external_flash_committed_result_length_bytes = 0U;
     EXTERNAL_FLASH_ClearResultPageBuffer();
 
@@ -622,8 +623,8 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteResults( const uint8_t* data, uint32_t
 
     uint32_t result_capacity =
         EXTERNAL_FLASH_GetPartitionCapacityBytes( &external_flash_result_partition );
-    if ( ( external_flash_result_length_bytes > result_capacity ) ||
-         ( length > ( result_capacity - external_flash_result_length_bytes ) ) )
+    if ( ( external_flash_result_length_bytes > result_capacity )
+         || ( length > ( result_capacity - external_flash_result_length_bytes ) ) )
     {
         return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
     }
@@ -632,8 +633,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteResults( const uint8_t* data, uint32_t
 
     while ( bytes_written < length )
     {
-        uint32_t page_space = external_flash_geometry.page_size_bytes - external_flash_result_page_fill;
-        uint32_t remaining  = length - bytes_written;
+        uint32_t page_space =
+            external_flash_geometry.page_size_bytes - external_flash_result_page_fill;
+        uint32_t remaining       = length - bytes_written;
         uint32_t bytes_this_page = ( remaining < page_space ) ? remaining : page_space;
 
         ( void )memcpy( &external_flash_result_page_buffer[external_flash_result_page_fill],

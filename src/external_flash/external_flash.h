@@ -63,7 +63,7 @@ extern "C"
 #define EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT ( 2048U )
 
 /** First physical NAND block reserved for result storage. */
-#define EXTERNAL_FLASH_RESULT_START_BLOCK \
+#define EXTERNAL_FLASH_RESULT_START_BLOCK                                                          \
     ( EXTERNAL_FLASH_INSTRUCTION_START_BLOCK + EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT )
 
 /** Number of physical NAND blocks reserved for result storage. */
@@ -188,8 +188,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructions( uint32_t offset, uint8_t*
  * @note result_transfer_manager should use this to stream committed result bytes
  *       to the host. Unflushed staged bytes are intentionally not readable.
  */
-ExternalFlashStatus_T EXTERNAL_FLASH_ReadResults( uint32_t offset, uint8_t* data,
-                                                  uint32_t length );
+ExternalFlashStatus_T EXTERNAL_FLASH_ReadResults( uint32_t offset, uint8_t* data, uint32_t length );
 
 /**
  * @brief Returns whether the external flash service is currently initialised.

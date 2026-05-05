@@ -91,7 +91,8 @@ typedef struct
 /**
  * @brief Initialises the SPI NAND device.
  *
- * @return HW_NAND_STATUS_OK when reset, ID verification, block unlock, and ECC configuration succeed.
+ * @return HW_NAND_STATUS_OK when reset, ID verification, block unlock, and ECC configuration
+ * succeed.
  *
  * @note This driver is currently configured for the S35ML04G3 device ID.
  */

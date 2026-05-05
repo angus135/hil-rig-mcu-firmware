@@ -54,7 +54,7 @@
 #define HW_NAND_CONFIGURATION_ECC_ENABLE_MASK ( 0x10U )
 #define HW_NAND_CONFIGURATION_MODE_MASK ( 0xC2U )
 #define HW_NAND_CONFIGURATION_NORMAL_MODE ( 0x00U )
-#define HW_NAND_CONFIGURATION_ECC_ENABLE_NORMAL_MODE \
+#define HW_NAND_CONFIGURATION_ECC_ENABLE_NORMAL_MODE                                               \
     ( HW_NAND_CONFIGURATION_ECC_ENABLE_MASK | HW_NAND_CONFIGURATION_NORMAL_MODE )
 
 #define HW_NAND_STATUS_OIP_MASK ( 1U << 0U )
@@ -138,7 +138,7 @@ static HW_QSPI_Command_T HW_NAND_Make_Address_Command( uint8_t opcode, uint32_t 
                                                        HW_QSPI_AddressSize_T address_size );
 
 /** Builds a NAND data command that does not include an address phase. */
-static HW_QSPI_Command_T HW_NAND_Make_No_Address_Data_Command( uint8_t opcode,
+static HW_QSPI_Command_T HW_NAND_Make_No_Address_Data_Command( uint8_t         opcode,
                                                                HW_QSPI_Lines_T data_lines,
                                                                uint32_t        dummy_cycles );
 
@@ -165,9 +165,8 @@ static HW_NAND_Status_T HW_NAND_CheckReadyStatus( uint8_t status, bool check_pro
                                                   bool check_erase_fail, bool check_ecc );
 
 /** Polls C0h until OIP clears and then applies the requested status checks. */
-static HW_NAND_Status_T HW_NAND_WaitReadyWithChecks( uint32_t timeout_ms,
-                                                     bool     check_program_fail,
-                                                     bool     check_erase_fail, bool check_ecc );
+static HW_NAND_Status_T HW_NAND_WaitReadyWithChecks( uint32_t timeout_ms, bool check_program_fail,
+                                                     bool check_erase_fail, bool check_ecc );
 
 /** Applies startup feature configuration required before normal operation. */
 static HW_NAND_Status_T HW_NAND_ConfigureDevice( void );
@@ -244,7 +243,7 @@ static HW_QSPI_Command_T HW_NAND_Make_Address_Command( uint8_t opcode, uint32_t 
     return command;
 }
 
-static HW_QSPI_Command_T HW_NAND_Make_No_Address_Data_Command( uint8_t opcode,
+static HW_QSPI_Command_T HW_NAND_Make_No_Address_Data_Command( uint8_t         opcode,
                                                                HW_QSPI_Lines_T data_lines,
                                                                uint32_t        dummy_cycles )
 {
@@ -336,9 +335,8 @@ static HW_NAND_Status_T HW_NAND_CheckReadyStatus( uint8_t status, bool check_pro
     return HW_NAND_STATUS_OK;
 }
 
-static HW_NAND_Status_T HW_NAND_WaitReadyWithChecks( uint32_t timeout_ms,
-                                                     bool     check_program_fail,
-                                                     bool     check_erase_fail, bool check_ecc )
+static HW_NAND_Status_T HW_NAND_WaitReadyWithChecks( uint32_t timeout_ms, bool check_program_fail,
+                                                     bool check_erase_fail, bool check_ecc )
 {
     uint32_t poll_count = timeout_ms * HW_NAND_READY_POLLS_PER_TIMEOUT_MS;
     if ( poll_count == 0U )
@@ -401,8 +399,8 @@ static HW_NAND_Status_T HW_NAND_ConfigureDevice( void )
         return status;
     }
 
-    if ( ( configuration & HW_NAND_CONFIGURATION_ECC_ENABLE_MASK ) !=
-         HW_NAND_CONFIGURATION_ECC_ENABLE_MASK )
+    if ( ( configuration & HW_NAND_CONFIGURATION_ECC_ENABLE_MASK )
+         != HW_NAND_CONFIGURATION_ECC_ENABLE_MASK )
     {
         return HW_NAND_STATUS_ERROR;
     }
@@ -425,8 +423,8 @@ static HW_NAND_Status_T HW_NAND_VerifyDeviceId( void )
         return status;
     }
 
-    if ( ( id.manufacturer_id != HW_NAND_EXPECTED_MANUFACTURER_ID ) ||
-         ( id.device_id != HW_NAND_EXPECTED_DEVICE_ID ) )
+    if ( ( id.manufacturer_id != HW_NAND_EXPECTED_MANUFACTURER_ID )
+         || ( id.device_id != HW_NAND_EXPECTED_DEVICE_ID ) )
     {
         return HW_NAND_STATUS_UNSUPPORTED_DEVICE;
     }
@@ -481,7 +479,7 @@ static bool HW_NAND_Is_Valid_Column_Range( uint16_t column, uint32_t length )
 
 HW_NAND_Status_T HW_NAND_Init( void )
 {
-    nand_initialised = true;
+    nand_initialised     = true;
     nand_last_ecc_status = HW_NAND_ECC_STATUS_UNKNOWN;
 
     HW_NAND_Status_T status = HW_NAND_Reset();
@@ -544,9 +542,8 @@ HW_NAND_Status_T HW_NAND_ReadId( HW_NAND_Id_T* id )
     HW_QSPI_Command_T command =
         HW_NAND_Make_No_Address_Data_Command( HW_NAND_OPCODE_READ_ID, HW_QSPI_LINES_1, 8U );
 
-    HW_NAND_Status_T status =
-        HW_NAND_Map_QSPI_Status( HW_QSPI_ReadBlocking( &command, id_bytes,
-                                                       HW_NAND_ID_LENGTH_BYTES ) );
+    HW_NAND_Status_T status = HW_NAND_Map_QSPI_Status(
+        HW_QSPI_ReadBlocking( &command, id_bytes, HW_NAND_ID_LENGTH_BYTES ) );
     if ( status != HW_NAND_STATUS_OK )
     {
         return status;
@@ -594,9 +591,8 @@ HW_NAND_Status_T HW_NAND_GetFeature( uint8_t feature_address, uint8_t* value )
         return HW_NAND_STATUS_INVALID_ARG;
     }
 
-    HW_QSPI_Command_T command =
-        HW_NAND_Make_Data_Command( HW_NAND_OPCODE_GET_FEATURE, feature_address,
-                                   HW_QSPI_ADDR_8_BITS, HW_QSPI_LINES_1, 0U );
+    HW_QSPI_Command_T command = HW_NAND_Make_Data_Command(
+        HW_NAND_OPCODE_GET_FEATURE, feature_address, HW_QSPI_ADDR_8_BITS, HW_QSPI_LINES_1, 0U );
 
     return HW_NAND_Map_QSPI_Status( HW_QSPI_ReadBlocking( &command, value, 1U ) );
 }
@@ -608,9 +604,8 @@ HW_NAND_Status_T HW_NAND_SetFeature( uint8_t feature_address, uint8_t value )
         return HW_NAND_STATUS_NOT_INITIALISED;
     }
 
-    HW_QSPI_Command_T command =
-        HW_NAND_Make_Data_Command( HW_NAND_OPCODE_SET_FEATURE, feature_address,
-                                   HW_QSPI_ADDR_8_BITS, HW_QSPI_LINES_1, 0U );
+    HW_QSPI_Command_T command = HW_NAND_Make_Data_Command(
+        HW_NAND_OPCODE_SET_FEATURE, feature_address, HW_QSPI_ADDR_8_BITS, HW_QSPI_LINES_1, 0U );
 
     HW_NAND_Status_T status =
         HW_NAND_Map_QSPI_Status( HW_QSPI_WriteBlocking( &command, &value, 1U ) );
@@ -721,9 +716,8 @@ HW_NAND_Status_T HW_NAND_ReadCacheBlocking( uint16_t column, uint8_t* data, uint
         return HW_NAND_STATUS_INVALID_ARG;
     }
 
-    HW_QSPI_Command_T command =
-        HW_NAND_Make_Data_Command( HW_NAND_OPCODE_READ_CACHE_QUAD, column, HW_QSPI_ADDR_16_BITS,
-                                   HW_QSPI_LINES_4, 8U );
+    HW_QSPI_Command_T command = HW_NAND_Make_Data_Command(
+        HW_NAND_OPCODE_READ_CACHE_QUAD, column, HW_QSPI_ADDR_16_BITS, HW_QSPI_LINES_4, 8U );
 
     return HW_NAND_Map_QSPI_Status( HW_QSPI_ReadBlocking( &command, data, length ) );
 }
@@ -740,9 +734,8 @@ HW_NAND_Status_T HW_NAND_ReadCacheDma( uint16_t column, uint8_t* data, uint32_t 
         return HW_NAND_STATUS_INVALID_ARG;
     }
 
-    HW_QSPI_Command_T command =
-        HW_NAND_Make_Data_Command( HW_NAND_OPCODE_READ_CACHE_QUAD, column, HW_QSPI_ADDR_16_BITS,
-                                   HW_QSPI_LINES_4, 8U );
+    HW_QSPI_Command_T command = HW_NAND_Make_Data_Command(
+        HW_NAND_OPCODE_READ_CACHE_QUAD, column, HW_QSPI_ADDR_16_BITS, HW_QSPI_LINES_4, 8U );
 
     return HW_NAND_Map_QSPI_Status( HW_QSPI_ReadDma( &command, data, length ) );
 }
@@ -800,9 +793,8 @@ HW_NAND_Status_T HW_NAND_ProgramLoadBlocking( uint16_t column, const uint8_t* da
         return status;
     }
 
-    HW_QSPI_Command_T command =
-        HW_NAND_Make_Data_Command( HW_NAND_OPCODE_PROGRAM_LOAD_QUAD, column,
-                                   HW_QSPI_ADDR_16_BITS, HW_QSPI_LINES_4, 0U );
+    HW_QSPI_Command_T command = HW_NAND_Make_Data_Command(
+        HW_NAND_OPCODE_PROGRAM_LOAD_QUAD, column, HW_QSPI_ADDR_16_BITS, HW_QSPI_LINES_4, 0U );
 
     return HW_NAND_Map_QSPI_Status( HW_QSPI_WriteBlocking( &command, data, length ) );
 }
@@ -825,9 +817,8 @@ HW_NAND_Status_T HW_NAND_ProgramLoadDma( uint16_t column, const uint8_t* data, u
         return status;
     }
 
-    HW_QSPI_Command_T command =
-        HW_NAND_Make_Data_Command( HW_NAND_OPCODE_PROGRAM_LOAD_QUAD, column,
-                                   HW_QSPI_ADDR_16_BITS, HW_QSPI_LINES_4, 0U );
+    HW_QSPI_Command_T command = HW_NAND_Make_Data_Command(
+        HW_NAND_OPCODE_PROGRAM_LOAD_QUAD, column, HW_QSPI_ADDR_16_BITS, HW_QSPI_LINES_4, 0U );
 
     return HW_NAND_Map_QSPI_Status( HW_QSPI_WriteDma( &command, data, length ) );
 }

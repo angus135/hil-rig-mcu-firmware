@@ -59,10 +59,10 @@ public:
                  ( QSPI_HandleTypeDef * hqspi, uint8_t* p_data, uint32_t timeout ), () );
     MOCK_METHOD( HAL_StatusTypeDef, Receive,
                  ( QSPI_HandleTypeDef * hqspi, uint8_t* p_data, uint32_t timeout ), () );
-    MOCK_METHOD( HAL_StatusTypeDef, TransmitDma,
-                 ( QSPI_HandleTypeDef * hqspi, uint8_t* p_data ), () );
-    MOCK_METHOD( HAL_StatusTypeDef, ReceiveDma,
-                 ( QSPI_HandleTypeDef * hqspi, uint8_t* p_data ), () );
+    MOCK_METHOD( HAL_StatusTypeDef, TransmitDma, ( QSPI_HandleTypeDef * hqspi, uint8_t* p_data ),
+                 () );
+    MOCK_METHOD( HAL_StatusTypeDef, ReceiveDma, ( QSPI_HandleTypeDef * hqspi, uint8_t* p_data ),
+                 () );
     MOCK_METHOD( HAL_QSPI_StateTypeDef, GetState, ( const QSPI_HandleTypeDef* hqspi ), () );
     MOCK_METHOD( HAL_StatusTypeDef, Abort, ( QSPI_HandleTypeDef * hqspi ), () );
 };
@@ -80,8 +80,8 @@ extern "C" HAL_StatusTypeDef HAL_QSPI_Init( QSPI_HandleTypeDef* hqspi )
     return g_mock->Init( hqspi );
 }
 
-extern "C" HAL_StatusTypeDef HAL_QSPI_Command( QSPI_HandleTypeDef* hqspi,
-                                               QSPI_CommandTypeDef* cmd, uint32_t timeout )
+extern "C" HAL_StatusTypeDef HAL_QSPI_Command( QSPI_HandleTypeDef* hqspi, QSPI_CommandTypeDef* cmd,
+                                               uint32_t timeout )
 {
     if ( g_mock == nullptr )
     {
@@ -169,9 +169,9 @@ class HWQSPITest : public ::testing::Test
 protected:
     NiceMock<MockHWQSPI> mock;
 
-    QSPI_HandleTypeDef qspi_hal_handle = {};
-    HW_QSPI_Config_T   qspi_config     = {};
-    HW_QSPI_Command_T  qspi_command    = {};
+    QSPI_HandleTypeDef qspi_hal_handle                          = {};
+    HW_QSPI_Config_T   qspi_config                              = {};
+    HW_QSPI_Command_T  qspi_command                             = {};
     uint8_t            transfer_data[TEST_TRANSFER_DATA_LENGTH] = {};
 
     void SetUp( void ) override
@@ -293,7 +293,8 @@ TEST_F( HWQSPITest, TransfersRejectInvalidArguments )
                HW_QSPI_ReadBlocking( nullptr, transfer_data, TEST_TRANSFER_DATA_LENGTH ) );
     EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
                HW_QSPI_ReadBlocking( &qspi_command, nullptr, TEST_TRANSFER_DATA_LENGTH ) );
-    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG, HW_QSPI_ReadBlocking( &qspi_command, transfer_data, 0U ) );
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_ReadBlocking( &qspi_command, transfer_data, 0U ) );
 
     EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
                HW_QSPI_WriteDma( nullptr, transfer_data, TEST_TRANSFER_DATA_LENGTH ) );
@@ -335,27 +336,27 @@ TEST_F( HWQSPITest, CommandBuildsExpectedHalCommand )
     InitDriver();
 
     EXPECT_CALL( mock, Command( Eq( &qspi_hal_handle ), _, Eq( qspi_command.timeout_ms ) ) )
-        .WillOnce( Invoke( [this]( QSPI_HandleTypeDef* hqspi, QSPI_CommandTypeDef* cmd,
-                                   uint32_t timeout ) {
-            ( void )hqspi;
-            ( void )timeout;
+        .WillOnce( Invoke(
+            [this]( QSPI_HandleTypeDef* hqspi, QSPI_CommandTypeDef* cmd, uint32_t timeout ) {
+                ( void )hqspi;
+                ( void )timeout;
 
-            EXPECT_EQ( cmd->Instruction, qspi_command.instruction );
-            EXPECT_EQ( cmd->InstructionMode, QSPI_INSTRUCTION_1_LINE );
-            EXPECT_EQ( cmd->Address, qspi_command.address );
-            EXPECT_EQ( cmd->AddressMode, QSPI_ADDRESS_1_LINE );
-            EXPECT_EQ( cmd->AddressSize, QSPI_ADDRESS_24_BITS );
-            EXPECT_EQ( cmd->AlternateBytes, qspi_command.alternate_bytes );
-            EXPECT_EQ( cmd->AlternateByteMode, QSPI_ALTERNATE_BYTES_4_LINES );
-            EXPECT_EQ( cmd->AlternateBytesSize, QSPI_ALTERNATE_BYTES_8_BITS );
-            EXPECT_EQ( cmd->DummyCycles, qspi_command.dummy_cycles );
-            EXPECT_EQ( cmd->DataMode, QSPI_DATA_NONE );
-            EXPECT_EQ( cmd->NbData, 0U );
-            EXPECT_EQ( cmd->DdrMode, QSPI_DDR_MODE_DISABLE );
-            EXPECT_EQ( cmd->DdrHoldHalfCycle, QSPI_DDR_HHC_ANALOG_DELAY );
-            EXPECT_EQ( cmd->SIOOMode, QSPI_SIOO_INST_EVERY_CMD );
-            return HAL_OK;
-        } ) );
+                EXPECT_EQ( cmd->Instruction, qspi_command.instruction );
+                EXPECT_EQ( cmd->InstructionMode, QSPI_INSTRUCTION_1_LINE );
+                EXPECT_EQ( cmd->Address, qspi_command.address );
+                EXPECT_EQ( cmd->AddressMode, QSPI_ADDRESS_1_LINE );
+                EXPECT_EQ( cmd->AddressSize, QSPI_ADDRESS_24_BITS );
+                EXPECT_EQ( cmd->AlternateBytes, qspi_command.alternate_bytes );
+                EXPECT_EQ( cmd->AlternateByteMode, QSPI_ALTERNATE_BYTES_4_LINES );
+                EXPECT_EQ( cmd->AlternateBytesSize, QSPI_ALTERNATE_BYTES_8_BITS );
+                EXPECT_EQ( cmd->DummyCycles, qspi_command.dummy_cycles );
+                EXPECT_EQ( cmd->DataMode, QSPI_DATA_NONE );
+                EXPECT_EQ( cmd->NbData, 0U );
+                EXPECT_EQ( cmd->DdrMode, QSPI_DDR_MODE_DISABLE );
+                EXPECT_EQ( cmd->DdrHoldHalfCycle, QSPI_DDR_HHC_ANALOG_DELAY );
+                EXPECT_EQ( cmd->SIOOMode, QSPI_SIOO_INST_EVERY_CMD );
+                return HAL_OK;
+            } ) );
 
     EXPECT_EQ( HW_QSPI_STATUS_OK, HW_QSPI_Command( &qspi_command ) );
 }
@@ -367,22 +368,21 @@ TEST_F( HWQSPITest, WriteBlockingIssuesCommandThenTransmit )
     constexpr uint32_t length = 8U;
 
     EXPECT_CALL( mock, Command( Eq( &qspi_hal_handle ), _, Eq( qspi_command.timeout_ms ) ) )
-        .WillOnce( Invoke( [length]( QSPI_HandleTypeDef* hqspi, QSPI_CommandTypeDef* cmd,
-                                     uint32_t timeout ) {
-            ( void )hqspi;
-            ( void )timeout;
+        .WillOnce( Invoke(
+            [length]( QSPI_HandleTypeDef* hqspi, QSPI_CommandTypeDef* cmd, uint32_t timeout ) {
+                ( void )hqspi;
+                ( void )timeout;
 
-            EXPECT_EQ( cmd->DataMode, QSPI_DATA_4_LINES );
-            EXPECT_EQ( cmd->NbData, length );
-            return HAL_OK;
-        } ) );
+                EXPECT_EQ( cmd->DataMode, QSPI_DATA_4_LINES );
+                EXPECT_EQ( cmd->NbData, length );
+                return HAL_OK;
+            } ) );
 
-    EXPECT_CALL( mock,
-                 Transmit( Eq( &qspi_hal_handle ), Eq( transfer_data ), Eq( qspi_command.timeout_ms ) ) )
+    EXPECT_CALL( mock, Transmit( Eq( &qspi_hal_handle ), Eq( transfer_data ),
+                                 Eq( qspi_command.timeout_ms ) ) )
         .WillOnce( Return( HAL_OK ) );
 
-    EXPECT_EQ( HW_QSPI_STATUS_OK,
-               HW_QSPI_WriteBlocking( &qspi_command, transfer_data, length ) );
+    EXPECT_EQ( HW_QSPI_STATUS_OK, HW_QSPI_WriteBlocking( &qspi_command, transfer_data, length ) );
     EXPECT_FALSE( HW_QSPI_IsTransferComplete() );
 }
 
@@ -394,8 +394,8 @@ TEST_F( HWQSPITest, ReadBlockingIssuesCommandThenReceive )
 
     EXPECT_CALL( mock, Command( Eq( &qspi_hal_handle ), _, Eq( qspi_command.timeout_ms ) ) )
         .WillOnce( Return( HAL_OK ) );
-    EXPECT_CALL( mock,
-                 Receive( Eq( &qspi_hal_handle ), Eq( transfer_data ), Eq( qspi_command.timeout_ms ) ) )
+    EXPECT_CALL( mock, Receive( Eq( &qspi_hal_handle ), Eq( transfer_data ),
+                                Eq( qspi_command.timeout_ms ) ) )
         .WillOnce( Return( HAL_OK ) );
 
     EXPECT_EQ( HW_QSPI_STATUS_OK, HW_QSPI_ReadBlocking( &qspi_command, transfer_data, length ) );
