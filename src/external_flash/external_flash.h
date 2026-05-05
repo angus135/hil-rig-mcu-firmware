@@ -30,11 +30,14 @@
  *      - The instruction and result regions are fixed compile time partitions.
  *      - Instructions and results are volatile for now. They are not recovered
  *        after reset.
+ *      - Repeated instruction uploads and result sessions use volatile
+ *        erase-count-aware block allocation so short images do not always
+ *        program the first good blocks in each partition.
  *      - Result bytes are stored exactly as supplied. This layer does not parse
  *        result records or add per page metadata yet.
  *      - Bad blocks are scanned at init and skipped by logical byte addressing.
- *      - The result partition is erased at the start of a session to keep
- *        execution time writes deterministic.
+ *      - Result storage is prepared at the start of a session to keep execution
+ *        time writes deterministic.
  ******************************************************************************/
 
 #ifndef EXTERNAL_FLASH_H
@@ -69,7 +72,14 @@ extern "C"
     ( EXTERNAL_FLASH_INSTRUCTION_START_BLOCK + EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT )
 
 /** Number of physical NAND blocks reserved for result storage. */
-#define EXTERNAL_FLASH_RESULT_BLOCK_COUNT ( 2048U )
+#define EXTERNAL_FLASH_RESULT_BLOCK_COUNT ( 2032U )
+
+/** First physical NAND block reserved for external_flash metadata. */
+#define EXTERNAL_FLASH_METADATA_START_BLOCK                                                   \
+    ( EXTERNAL_FLASH_RESULT_START_BLOCK + EXTERNAL_FLASH_RESULT_BLOCK_COUNT )
+
+/** Number of physical NAND blocks reserved for wear and allocation metadata. */
+#define EXTERNAL_FLASH_METADATA_BLOCK_COUNT ( 16U )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -133,7 +143,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_Init( void );
 ExternalFlashStatus_T EXTERNAL_FLASH_GetInfo( ExternalFlashInfo_T* info );
 
 /**
- * @brief Erases the result partition and starts a new volatile result session.
+ * @brief Prepares result storage and starts a new volatile result session.
  *
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
@@ -144,7 +154,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_GetInfo( ExternalFlashInfo_T* info );
 ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void );
 
 /**
- * @brief Erases the instruction partition and starts a new instruction upload.
+ * @brief Prepares instruction storage and starts a new instruction upload.
  *
  * @param expected_length Total instruction byte count expected from the host package.
  *
@@ -204,23 +214,6 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionPage( const uint8_t* data,
 ExternalFlashStatus_T EXTERNAL_FLASH_FinishInstructionUpload( void );
 
 /**
- * @brief Appends opaque execution result bytes to the result partition.
- *
- * @param data   Result bytes drained from flash_manager owned result buffers.
- * @param length Number of bytes to append.
- *
- * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
- *
- * @note This is the byte stream write path. It may accept arbitrary length
- *       result spans and internally stages partial NAND pages.
- * @note The byte format is owned by the execution data model. This function
- *       only preserves byte order and appends data to NAND.
- * @note For page sized zero copy result writes, use
- *       EXTERNAL_FLASH_WriteResultPage instead.
- */
-ExternalFlashStatus_T EXTERNAL_FLASH_WriteResultBytes( const uint8_t* data, uint32_t length );
-
-/**
  * @brief Writes one logical result page to the result partition.
  *
  * @param data         Result page data supplied by the flash manager.
@@ -235,41 +228,10 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteResultBytes( const uint8_t* data, uint
  *       final partial page and padded internally with 0xFF before programming.
  * @note After a partial page write succeeds, no further result page writes
  *       should be appended in the same session.
- * @note This API is page scoped and must not be mixed with a partially staged
- *       EXTERNAL_FLASH_WriteResultBytes call.
+ * @note This is the only result write API. Results should be supplied as full
+ *       pages during execution and as one final partial page after execution.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_WriteResultPage( const uint8_t* data, uint32_t valid_length );
-
-/**
- * @brief Flushes any partial result page staged by the byte stream write path.
- *
- * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
- *
- * @note Call this when execution ends or before result_transfer_manager starts
- *       returning data to the host if EXTERNAL_FLASH_WriteResultBytes was used.
- * @note This is not required after EXTERNAL_FLASH_WriteResultPage, because a
- *       partial page passed to that API is programmed immediately.
- */
-ExternalFlashStatus_T EXTERNAL_FLASH_FlushResults( void );
-
-/**
- * @brief Reads instruction bytes by logical byte offset from the instruction partition.
- *
- * @param offset Logical instruction byte offset.
- * @param data   Destination buffer.
- * @param length Number of bytes to read.
- *
- * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
- *
- * @note This is the byte stream read path. It may read arbitrary byte ranges and
- *       may cross physical page boundaries.
- * @note Reads are limited to the instruction bytes committed by the most recent
- *       successful instruction upload.
- * @note For flash manager instruction queue page refills, prefer
- *       EXTERNAL_FLASH_ReadInstructionPage.
- */
-ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructions( uint32_t offset, uint8_t* data,
-                                                       uint32_t length );
 
 /**
  * @brief Reads one instruction page or partial instruction page using DMA internally.
@@ -301,7 +263,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructionPage( uint32_t offset, uint8
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
  * @note result_transfer_manager should use this to stream committed result bytes
- *       to the host. Unflushed staged bytes are intentionally not readable.
+ *       to the host.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_ReadResults( uint32_t offset, uint8_t* data, uint32_t length );
 
