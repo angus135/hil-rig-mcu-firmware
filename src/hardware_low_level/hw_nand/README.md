@@ -12,6 +12,9 @@ This module is responsible for:
 - Cache read operations
 - Program-load and program-execute operations
 - Block erase operations
+- Factory bad-block marker reads
+- Bad-block marker programming for retired blocks
+- ECC status decode after page reads
 - NAND geometry reporting
 
 
@@ -41,3 +44,48 @@ The public API is declared in `hw_nand.h`.
 `hw_nand` uses `hw_qspi` for bus transactions.
 
 Higher level storage policy belongs in `external_flash`, not in this module.
+
+`hw_nand` should not know about result records, append-log allocation,
+pre-erase queues, logical page numbers, host transfer framing, or execution
+manager timing. It exposes physical NAND operations so `external_flash` can
+implement those policies above the hardware layer.
+
+
+---
+
+## Transfer Model
+
+Small command and feature-register operations are blocking because they move one
+or two bytes and are outside the hard real-time execution loop.
+
+Bulk cache transfers expose DMA entry points:
+
+- `HW_NAND_ReadCacheDma`
+- `HW_NAND_ReadPageDma`
+- `HW_NAND_ProgramLoadDma`
+
+The caller owns buffer lifetime until `HW_NAND_IsTransferComplete()` reports
+true. Page read, program execute, and block erase also have start-only entry
+points so the flash manager can issue a long NAND operation and decide how to
+wait from its own RTOS task context.
+
+Use the matching completion helper for each long operation:
+
+- `HW_NAND_WaitPageReadComplete` checks ECC status.
+- `HW_NAND_WaitProgramComplete` checks program-fail status.
+- `HW_NAND_WaitBlockEraseComplete` checks erase-fail status.
+- `HW_NAND_WaitReady` only waits for OIP to clear.
+
+
+---
+
+## Bad Blocks
+
+The driver exposes physical bad-block primitives only:
+
+- `HW_NAND_IsBlockBad` checks the marker byte in the spare area of the first,
+  second, and last page of a block.
+- `HW_NAND_MarkBlockBad` programs the marker in the first page spare area.
+
+Skipping bad blocks, retiring failed blocks, maintaining a bad-block table, and
+mapping logical result storage onto physical blocks belong in `external_flash`.

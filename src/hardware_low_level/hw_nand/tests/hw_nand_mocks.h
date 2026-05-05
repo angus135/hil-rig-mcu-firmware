@@ -27,9 +27,17 @@ extern "C"
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "hw_qspi.h"
+
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
+ */
+
+/*
+ * hw_nand unit tests mock the public hw_qspi API. The concrete mock object and
+ * function shims live in test_hw_nand.cpp, matching the structure used by the
+ * other hardware_low_level tests.
  */
 
 /**-----------------------------------------------------------------------------
