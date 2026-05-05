@@ -95,12 +95,37 @@ extern "C"
 #define TX_BUFFER_SIZE_BYTES 1024U
 #define TX_PACKET_QUEUE_DEPTH 16U
 
+#define RX_BUFFER_INDEX_MASK ( RX_BUFFER_SIZE_BYTES - 1U )
+#define TX_BUFFER_INDEX_MASK ( TX_BUFFER_SIZE_BYTES - 1U )
+#define TX_PACKET_QUEUE_INDEX_MASK ( TX_PACKET_QUEUE_DEPTH - 1U )
+#define SPI_FINAL_DRAIN_GUARD_CYCLES 16U
+
+#ifndef HW_SPI_ALWAYS_INLINE
+#define HW_SPI_ALWAYS_INLINE static inline __attribute__( ( always_inline ) )
+#endif
+
+#ifndef HW_SPI_COLD_NOINLINE
+#define HW_SPI_COLD_NOINLINE __attribute__( ( cold, noinline ) )
+#endif
+
 #if RX_BUFFER_SIZE_BYTES % 2 != 0
 #error "RX Buffer Must be a size that is a multiple of 2"
 #endif
 
 #if TX_BUFFER_SIZE_BYTES % 2 != 0
 #error "TX Buffer Must be a size that is a multiple of 2"
+#endif
+
+#if ( RX_BUFFER_SIZE_BYTES & ( RX_BUFFER_SIZE_BYTES - 1U ) ) != 0
+#error "RX Buffer size must be a power of two for mask-based wrapping"
+#endif
+
+#if ( TX_BUFFER_SIZE_BYTES & ( TX_BUFFER_SIZE_BYTES - 1U ) ) != 0
+#error "TX Buffer size must be a power of two for mask-based wrapping"
+#endif
+
+#if ( TX_PACKET_QUEUE_DEPTH & ( TX_PACKET_QUEUE_DEPTH - 1U ) ) != 0
+#error "TX packet queue depth must be a power of two for mask-based wrapping"
 #endif
 
 /**-----------------------------------------------------------------------------
@@ -147,8 +172,9 @@ typedef struct SPIPeripheralState_T SPIPeripheralState_T;
  *
  * @details
  *     Master mode loads one packet descriptor per public load call. Slave mode
- *     appends raw stream bytes. The public API dispatches through this pointer
- *     so runtime TX paths avoid repeated master/slave branching.
+ *     appends raw stream bytes. The direct hot paths now branch explicitly on
+ *     the configured mode; these pointers are retained for non-hot internal
+ *     compatibility and configuration readability.
  */
 typedef bool ( *HWSPI_TX_Load_Function_T )( SPIPeripheralState_T* peripheral_state,
                                             const uint8_t* data, uint32_t size );
@@ -180,6 +206,14 @@ typedef void ( *HWSPI_TX_Clear_DMA_Flags_Function_T )( DMA_TypeDef* dma );
 struct SPIPeripheralState_T
 {
     HWSPIConfig_T config;  ///< Last configuration applied to this logical channel.
+
+    SPIPeripheral_T logical_peripheral;  ///< Logical peripheral owning this state block.
+    bool            is_master;           ///< Precomputed master/slave mode flag for hot paths.
+    uint8_t         frame_size_bytes;    ///< Precomputed SPI frame size: 1 byte or 2 bytes.
+    uint8_t         frame_shift;         ///< 0 for 8-bit frames; 1 for 16-bit frames.
+    bool            tx_uses_final_drain_timer;  ///< Precomputed final-drain strategy.
+    uint16_t        tx_final_drain_cycles;      ///< Fast-baud inline final-drain wait count.
+    Timer_T         tx_final_drain_timer;       ///< One-shot timer used for slow-baud final drain.
 
     uint8_t rx_buffer[RX_BUFFER_SIZE_BYTES]
         __attribute__( ( aligned( 2 ) ) );  ///< DMA-backed circular RX buffer.
@@ -232,6 +266,119 @@ extern SPIPeripheralState_T* channel_1_state;
 extern SPIPeripheralState_T* dac_state;
 
 /**-----------------------------------------------------------------------------
+ *  Internal Hot-Path Inline Helpers
+ *------------------------------------------------------------------------------
+ */
+
+HW_SPI_ALWAYS_INLINE uint32_t
+HW_SPI_Get_Frame_Size_Bytes_Fast( const SPIPeripheralState_T* peripheral_state )
+{
+    return peripheral_state->frame_size_bytes;
+}
+
+HW_SPI_ALWAYS_INLINE uint16_t HW_SPI_Bytes_To_DMA_Elements_Fast(
+    const SPIPeripheralState_T* peripheral_state, uint32_t size_bytes )
+{
+    return ( uint16_t )( size_bytes >> peripheral_state->frame_shift );
+}
+
+HW_SPI_ALWAYS_INLINE uint32_t HW_SPI_DMA_Elements_To_Bytes_Fast(
+    const SPIPeripheralState_T* peripheral_state, uint32_t num_elements )
+{
+    return num_elements << peripheral_state->frame_shift;
+}
+
+HW_SPI_ALWAYS_INLINE bool
+HW_SPI_Is_Frame_Aligned_Size_Fast( const SPIPeripheralState_T* peripheral_state,
+                                   uint32_t                    size_bytes )
+{
+    return ( size_bytes & ( peripheral_state->frame_size_bytes - 1U ) ) == 0U;
+}
+
+HW_SPI_ALWAYS_INLINE uint32_t
+HW_SPI_TX_Get_Used_Space_Fast( const SPIPeripheralState_T* peripheral_state )
+{
+    return peripheral_state->tx_num_bytes_pending + peripheral_state->tx_num_bytes_in_transmission;
+}
+
+HW_SPI_ALWAYS_INLINE uint32_t
+HW_SPI_TX_Get_Free_Space_Fast( const SPIPeripheralState_T* peripheral_state )
+{
+    return TX_BUFFER_SIZE_BYTES - HW_SPI_TX_Get_Used_Space_Fast( peripheral_state );
+}
+
+HW_SPI_ALWAYS_INLINE uint32_t HW_SPI_Wrap_Tx_Buffer_Index( uint32_t index )
+{
+    return index & TX_BUFFER_INDEX_MASK;
+}
+
+HW_SPI_ALWAYS_INLINE uint32_t HW_SPI_Wrap_Rx_Buffer_Index( uint32_t index )
+{
+    return index & RX_BUFFER_INDEX_MASK;
+}
+
+HW_SPI_ALWAYS_INLINE uint8_t HW_SPI_Wrap_Tx_Packet_Index( uint32_t index )
+{
+    return ( uint8_t )( index & TX_PACKET_QUEUE_INDEX_MASK );
+}
+
+HW_SPI_ALWAYS_INLINE void
+HW_SPI_TX_Clear_DMA_Flags_For_State( const SPIPeripheralState_T* peripheral_state )
+{
+    switch ( peripheral_state->logical_peripheral )
+    {
+        case SPI_CHANNEL_0:
+            SPI_CHANNEL_0_TX_DMA_CLEAR_TC( SPI_CHANNEL_0_TX_DMA );
+            SPI_CHANNEL_0_TX_DMA_CLEAR_TE( SPI_CHANNEL_0_TX_DMA );
+            break;
+
+        case SPI_CHANNEL_1:
+            SPI_CHANNEL_1_TX_DMA_CLEAR_TC( SPI_CHANNEL_1_TX_DMA );
+            SPI_CHANNEL_1_TX_DMA_CLEAR_TE( SPI_CHANNEL_1_TX_DMA );
+            break;
+
+        case SPI_DAC:
+        default:
+            SPI_DAC_TX_DMA_CLEAR_TC( SPI_DAC_TX_DMA );
+            SPI_DAC_TX_DMA_CLEAR_TE( SPI_DAC_TX_DMA );
+            break;
+    }
+}
+
+/**
+ * @brief Program one TX DMA transfer using already-selected buffer ownership.
+ *
+ * @details
+ *     This is intentionally inline because it is entered for every transmitted
+ *     master packet and every slave stream span. Configuration has already
+ *     supplied valid DMA/SPI resources and programmed the fixed peripheral
+ *     address, data widths, and DMA interrupts.
+ */
+HW_SPI_ALWAYS_INLINE bool HW_SPI_TX_Program_DMA( SPIPeripheralState_T* peripheral_state,
+                                                 uint8_t* tx_ptr, uint32_t size_bytes )
+{
+    uint32_t dma_elements = HW_SPI_Bytes_To_DMA_Elements_Fast( peripheral_state, size_bytes );
+
+    LL_SPI_DisableDMAReq_TX( peripheral_state->spi_peripheral );
+
+    LL_DMA_DisableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+    while ( LL_DMA_IsEnabledStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream )
+            != 0U )
+    {
+    }
+
+    HW_SPI_TX_Clear_DMA_Flags_For_State( peripheral_state );
+
+    LL_DMA_SetMemoryAddress( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
+                             ( uintptr_t )tx_ptr );
+    LL_DMA_SetDataLength( peripheral_state->tx_dma, peripheral_state->tx_dma_stream, dma_elements );
+    LL_DMA_EnableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+    LL_SPI_EnableDMAReq_TX( peripheral_state->spi_peripheral );
+
+    return true;
+}
+
+/**-----------------------------------------------------------------------------
  *  Internal Function Prototypes
  *------------------------------------------------------------------------------
  */
@@ -270,8 +417,6 @@ void     HW_SPI_TX_Master_CS_Assert( SPIPeripheralState_T* peripheral_state );
 void     HW_SPI_TX_Master_CS_Deassert( SPIPeripheralState_T* peripheral_state );
 uint32_t HW_SPI_TX_Get_Used_Space( const SPIPeripheralState_T* peripheral_state );
 uint32_t HW_SPI_TX_Get_Free_Space( const SPIPeripheralState_T* peripheral_state );
-bool     HW_SPI_TX_Program_DMA( SPIPeripheralState_T* peripheral_state, uint8_t* tx_ptr,
-                                uint32_t size_bytes );
 bool     HW_SPI_TX_Should_Use_Final_Drain_Timer( const SPIPeripheralState_T* peripheral_state );
 Timer_T  HW_SPI_Get_Tx_Timer( const SPIPeripheralState_T* peripheral_state );
 /** @} */

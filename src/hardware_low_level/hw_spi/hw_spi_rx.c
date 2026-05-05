@@ -84,7 +84,8 @@ bool HW_SPI_RX_Start_Passive_DMA( SPIPeripheralState_T* peripheral_state )
     // The software buffer size is in bytes, but the DMA NDTR length is in DMA
     // elements. In 8-bit mode bytes == elements; in 16-bit mode two bytes are
     // one DMA element.
-    rx_length_elements = HW_SPI_Bytes_To_DMA_Elements( peripheral_state, RX_BUFFER_SIZE_BYTES );
+    rx_length_elements =
+        HW_SPI_Bytes_To_DMA_Elements_Fast( peripheral_state, RX_BUFFER_SIZE_BYTES );
 
     // Reset the software consume index. The DMA write index is calculated later
     // from NDTR in HW_SPI_Rx_Peek().
@@ -247,7 +248,8 @@ HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIPeripheral_T peripheral )
 
     // DMA NDTR is expressed in DMA elements, not bytes. Convert back to bytes
     // so the software RX stream remains byte-oriented.
-    dma_remaining_bytes = HW_SPI_DMA_Elements_To_Bytes( peripheral_state, dma_remaining_elements );
+    dma_remaining_bytes =
+        HW_SPI_DMA_Elements_To_Bytes_Fast( peripheral_state, dma_remaining_elements );
 
     // In circular RX mode, NDTR counts down from the full buffer length to 0
     // and then reloads. Subtracting the remaining count gives the current DMA
@@ -261,7 +263,7 @@ HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIPeripheral_T peripheral )
 
     // The modulo subtraction handles both non-wrapped and wrapped unread RX
     // regions.
-    unread_bytes = ( dma_write_index + RX_BUFFER_SIZE_BYTES - read_index ) % RX_BUFFER_SIZE_BYTES;
+    unread_bytes = ( dma_write_index - read_index ) & RX_BUFFER_INDEX_MASK;
 
     if ( unread_bytes == 0U )
     {
@@ -319,10 +321,24 @@ HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIPeripheral_T peripheral )
  */
 void HW_SPI_Rx_Consume( SPIPeripheral_T peripheral, uint32_t bytes_to_consume )
 {
-    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
+    SPIPeripheralState_T* peripheral_state = NULL;
+
+    switch ( peripheral )
+    {
+        case SPI_CHANNEL_0:
+            peripheral_state = channel_0_state;
+            break;
+        case SPI_CHANNEL_1:
+            peripheral_state = channel_1_state;
+            break;
+        case SPI_DAC:
+        default:
+            peripheral_state = dac_state;
+            break;
+    }
 
     // Advance only the software consume index. The DMA write index is hardware
     // controlled and is derived from NDTR when peeking.
     peripheral_state->rx_position =
-        ( peripheral_state->rx_position + bytes_to_consume ) % RX_BUFFER_SIZE_BYTES;
+        HW_SPI_Wrap_Rx_Buffer_Index( peripheral_state->rx_position + bytes_to_consume );
 }
