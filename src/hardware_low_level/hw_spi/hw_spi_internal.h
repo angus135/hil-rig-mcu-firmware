@@ -44,6 +44,9 @@ extern "C"
 {
 #endif
 
+// #define HW_SPI_INTERNAL
+// #include "hw_spi.h"
+// #include "hw_timer.h"
 #ifdef HW_SPI_INTERNAL
 
 /**-----------------------------------------------------------------------------
@@ -60,6 +63,7 @@ extern "C"
 #include "stm32f4xx_ll_spi.h"
 #include "stm32f4xx_it.h"
 #endif
+#include "hw_timer.h"
 #include <stddef.h>
 #include <string.h>
 
@@ -206,6 +210,21 @@ void     HW_SPI_TX_Reset_State( SPIPeripheralState_T* peripheral_state );
 void     HW_SPI_TX_Error_Handler( SPIPeripheral_T peripheral );
 void     HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral );
 uint32_t HW_SPI_TX_Get_Used_Space( const SPIPeripheralState_T* peripheral_state );
+uint32_t HW_SPI_TX_Get_Free_Space( const SPIPeripheralState_T* peripheral_state );
+bool     HW_SPI_TX_Program_DMA( SPIPeripheralState_T* peripheral_state, uint8_t* tx_ptr,
+                                uint32_t size_bytes );
+bool     HW_SPI_TX_Should_Use_Final_Drain_Timer( const SPIPeripheralState_T* peripheral_state );
+Timer_T  HW_SPI_Get_Tx_Timer( const SPIPeripheralState_T* peripheral_state );
+
+bool HW_SPI_TX_Master_Has_Pending( const SPIPeripheralState_T* peripheral_state );
+bool HW_SPI_TX_Load_Master_Packet( SPIPeripheralState_T* peripheral_state, const uint8_t* data,
+                                   uint32_t size );
+bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state );
+
+bool HW_SPI_TX_Slave_Has_Pending( const SPIPeripheralState_T* peripheral_state );
+bool HW_SPI_TX_Load_Slave_Stream( SPIPeripheralState_T* peripheral_state, const uint8_t* data,
+                                  uint32_t size );
+bool HW_SPI_TX_Start_Slave_Stream_DMA( SPIPeripheralState_T* peripheral_state );
 
 #endif /* HW_SPI_INTERNAL */
 

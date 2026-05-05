@@ -7,7 +7,9 @@
 set(HW_SPI_SOURCES
     hw_spi_config.c
     hw_spi_rx.c
-    hw_spi_tx.c
+    hw_spi_tx_config.c
+    hw_spi_tx_master.c
+    hw_spi_tx_slave.c
 )
 
 set(HW_SPI_HEADERS
@@ -31,7 +33,7 @@ target_link_libraries(hw_spi
         project_warnings
         cubeide_hal
         rtos
-        # include any other relevant modules
+        hw_timer
 )
 
 # -----------------------------

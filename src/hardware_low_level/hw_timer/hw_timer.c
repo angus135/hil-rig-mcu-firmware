@@ -25,6 +25,7 @@
 
 #include <stdbool.h>
 #include "hw_timer.h"
+#include "hw_spi.h"
 #include <stdint.h>
 
 /**-----------------------------------------------------------------------------
@@ -39,6 +40,21 @@
 
 /* Analogue Input Timer Defines */
 #define ANALOGUE_INPUT_TIMER_HANDLE htim3
+
+/* SPI Channel 0 Timer Defines*/
+#define SPI_CHANNEL_0_TIMER_INSTANCE TIM11
+#define SPI_CHANNEL_0_TIMER_IRQ_HANDLER TIM1_TRG_COM_TIM11_IRQHandler
+#define SPI_CHANNEL_0_TIMER_HANDLE htim11
+
+/* SPI Channel 1 Timer Defines*/
+#define SPI_CHANNEL_1_TIMER_INSTANCE TIM6
+#define SPI_CHANNEL_1_TIMER_IRQ_HANDLER TIM6_DAC_IRQHandler
+#define SPI_CHANNEL_1_TIMER_HANDLE htim6
+
+/* SPI DAC Timer Defines*/
+#define SPI_DAC_TIMER_INSTANCE TIM7
+#define SPI_DAC_TIMER_IRQ_HANDLER TIM7_IRQHandler
+#define SPI_DAC_TIMER_HANDLE htim7
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -84,6 +100,53 @@ void EXECUTION_MANAGER_TIMER_IRQ_HANDLER( void )
 #endif
 }
 
+void SPI_CHANNEL_0_TIMER_IRQ_HANDLER( void )
+{
+#ifdef TEST_BUILD
+#else
+    if ( LL_TIM_IsActiveFlag_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE )
+         && LL_TIM_IsEnabledIT_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE ) )
+    {
+        LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE );
+        LL_TIM_DisableIT_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE );
+
+        // Running Process
+        HW_SPI_Timer_Callback_From_ISR( SPI_CHANNEL_0 );
+    }
+#endif
+}
+
+void SPI_CHANNEL_1_TIMER_IRQ_HANDLER( void )
+{
+#ifdef TEST_BUILD
+#else
+    if ( LL_TIM_IsActiveFlag_UPDATE( SPI_CHANNEL_1_TIMER_INSTANCE )
+         && LL_TIM_IsEnabledIT_UPDATE( SPI_CHANNEL_1_TIMER_INSTANCE ) )
+    {
+        LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_1_TIMER_INSTANCE );
+        LL_TIM_DisableIT_UPDATE( SPI_CHANNEL_1_TIMER_INSTANCE );
+
+        // Running Process
+        HW_SPI_Timer_Callback_From_ISR( SPI_CHANNEL_1 );
+    }
+#endif
+}
+void SPI_DAC_TIMER_IRQ_HANDLER( void )
+{
+#ifdef TEST_BUILD
+#else
+    if ( LL_TIM_IsActiveFlag_UPDATE( SPI_DAC_TIMER_INSTANCE )
+         && LL_TIM_IsEnabledIT_UPDATE( SPI_DAC_TIMER_INSTANCE ) )
+    {
+        LL_TIM_ClearFlag_UPDATE( SPI_DAC_TIMER_INSTANCE );
+        LL_TIM_DisableIT_UPDATE( SPI_DAC_TIMER_INSTANCE );
+
+        // Running Process
+        HW_SPI_Timer_Callback_From_ISR( SPI_DAC );
+    }
+#endif
+}
+
 void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t arr )
 {
 
@@ -115,6 +178,45 @@ void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t arr )
                 Error_Handler();
             }
             break;
+        case SPI_CHANNEL_0_TIMER:
+            HW_TIMER_Stop_Timer( SPI_CHANNEL_0_TIMER );
+            SPI_CHANNEL_0_TIMER_HANDLE.Init.Prescaler = psc;
+            SPI_CHANNEL_0_TIMER_HANDLE.Init.Period    = arr;
+            if ( HAL_TIM_Base_Init( &SPI_CHANNEL_0_TIMER_HANDLE ) != HAL_OK )
+            {
+                Error_Handler();
+            }
+            // Reset counter to ensure consistent timing
+            __HAL_TIM_SET_COUNTER( &SPI_CHANNEL_0_TIMER_HANDLE, 0u );
+            // Clear any pending update flag to prevent immediate IRQs
+            LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE );
+            break;
+        case SPI_CHANNEL_1_TIMER:
+            HW_TIMER_Stop_Timer( SPI_CHANNEL_1_TIMER );
+            SPI_CHANNEL_1_TIMER_HANDLE.Init.Prescaler = psc;
+            SPI_CHANNEL_1_TIMER_HANDLE.Init.Period    = arr;
+            if ( HAL_TIM_Base_Init( &SPI_CHANNEL_1_TIMER_HANDLE ) != HAL_OK )
+            {
+                Error_Handler();
+            }
+            // Reset counter to ensure consistent timing
+            __HAL_TIM_SET_COUNTER( &SPI_CHANNEL_1_TIMER_HANDLE, 0u );
+            // Clear any pending update flag to prevent immediate IRQs
+            LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_1_TIMER_INSTANCE );
+            break;
+        case SPI_DAC_TIMER:
+            HW_TIMER_Stop_Timer( SPI_DAC_TIMER );
+            SPI_DAC_TIMER_HANDLE.Init.Prescaler = psc;
+            SPI_DAC_TIMER_HANDLE.Init.Period    = arr;
+            if ( HAL_TIM_Base_Init( &SPI_DAC_TIMER_HANDLE ) != HAL_OK )
+            {
+                Error_Handler();
+            }
+            // Reset counter to ensure consistent timing
+            __HAL_TIM_SET_COUNTER( &SPI_DAC_TIMER_HANDLE, 0u );
+            // Clear any pending update flag to prevent immediate IRQs
+            LL_TIM_ClearFlag_UPDATE( SPI_DAC_TIMER_INSTANCE );
+            break;
         default:
             break;
     }
@@ -140,6 +242,51 @@ void HW_TIMER_Start_Timer( Timer_T timer )
 
             // Enable counter
             LL_TIM_EnableCounter( EXECUTION_MANAGER_TIMER_INSTANCE );
+            break;
+        case SPI_CHANNEL_0_TIMER:
+            // Ensure counter is stopped while configuring
+            LL_TIM_DisableCounter( SPI_CHANNEL_0_TIMER_INSTANCE );
+
+            LL_TIM_SetCounter( SPI_CHANNEL_0_TIMER_INSTANCE, 0U );
+
+            // Clear any pending update flag
+            LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE );
+
+            // Enable update interrupt
+            LL_TIM_EnableIT_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE );
+
+            // Enable counter
+            LL_TIM_EnableCounter( SPI_CHANNEL_0_TIMER_INSTANCE );
+            break;
+        case SPI_CHANNEL_1_TIMER:
+            // Ensure counter is stopped while configuring
+            LL_TIM_DisableCounter( SPI_CHANNEL_1_TIMER_INSTANCE );
+
+            LL_TIM_SetCounter( SPI_CHANNEL_1_TIMER_INSTANCE, 0U );
+
+            // Clear any pending update flag
+            LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_1_TIMER_INSTANCE );
+
+            // Enable update interrupt
+            LL_TIM_EnableIT_UPDATE( SPI_CHANNEL_1_TIMER_INSTANCE );
+
+            // Enable counter
+            LL_TIM_EnableCounter( SPI_CHANNEL_1_TIMER_INSTANCE );
+            break;
+        case SPI_DAC_TIMER:
+            // Ensure counter is stopped while configuring
+            LL_TIM_DisableCounter( SPI_DAC_TIMER_INSTANCE );
+
+            LL_TIM_SetCounter( SPI_DAC_TIMER_INSTANCE, 0U );
+
+            // Clear any pending update flag
+            LL_TIM_ClearFlag_UPDATE( SPI_DAC_TIMER_INSTANCE );
+
+            // Enable update interrupt
+            LL_TIM_EnableIT_UPDATE( SPI_DAC_TIMER_INSTANCE );
+
+            // Enable counter
+            LL_TIM_EnableCounter( SPI_DAC_TIMER_INSTANCE );
             break;
         case ANALOGUE_INPUT_TIMER:
             HAL_TIM_Base_Start( &ANALOGUE_INPUT_TIMER_HANDLE );
@@ -170,6 +317,23 @@ void HW_TIMER_Stop_Timer( Timer_T timer )
             break;
         case ANALOGUE_INPUT_TIMER:
             HAL_TIM_Base_Stop( &ANALOGUE_INPUT_TIMER_HANDLE );
+            break;
+        case SPI_CHANNEL_0_TIMER:
+            LL_TIM_DisableIT_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE );
+            LL_TIM_DisableCounter( SPI_CHANNEL_0_TIMER_INSTANCE );
+            LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE );
+            break;
+
+        case SPI_CHANNEL_1_TIMER:
+            LL_TIM_DisableIT_UPDATE( SPI_CHANNEL_1_TIMER_INSTANCE );
+            LL_TIM_DisableCounter( SPI_CHANNEL_1_TIMER_INSTANCE );
+            LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_1_TIMER_INSTANCE );
+            break;
+
+        case SPI_DAC_TIMER:
+            LL_TIM_DisableIT_UPDATE( SPI_DAC_TIMER_INSTANCE );
+            LL_TIM_DisableCounter( SPI_DAC_TIMER_INSTANCE );
+            LL_TIM_ClearFlag_UPDATE( SPI_DAC_TIMER_INSTANCE );
             break;
         default:
             break;
