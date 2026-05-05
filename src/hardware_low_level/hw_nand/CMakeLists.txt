@@ -28,7 +28,6 @@ target_link_libraries(hw_nand
         global_config
         project_warnings
         hw_qspi
-        # include any other relevant modules
 )
 
 # -----------------------------
