@@ -388,6 +388,8 @@ void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral );
  */
 bool HW_SPI_Tx_Buffer_Empty( SPIPeripheral_T peripheral );
 
+void HW_SPI_Timer_Callback_From_ISR( SPIPeripheral_T peripheral );
+
 #include "hw_spi_internal.h"
 
 #ifdef __cplusplus
