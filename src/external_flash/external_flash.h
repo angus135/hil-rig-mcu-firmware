@@ -263,6 +263,8 @@ ExternalFlashStatus_T EXTERNAL_FLASH_FlushResults( void );
  *
  * @note This is the byte stream read path. It may read arbitrary byte ranges and
  *       may cross physical page boundaries.
+ * @note Reads are limited to the instruction bytes committed by the most recent
+ *       successful instruction upload.
  * @note For flash manager instruction queue page refills, prefer
  *       EXTERNAL_FLASH_ReadInstructionPage.
  */
@@ -280,6 +282,8 @@ ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructions( uint32_t offset, uint8_t*
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
  * @note This API is intended for flash manager instruction queue refills.
+ * @note Reads are limited to the instruction bytes committed by the most recent
+ *       successful instruction upload.
  * @note The caller must keep data valid and writable until the function returns.
  * @note This API is synchronous from the caller perspective. Internally it uses
  *       the NAND DMA read path and waits for DMA completion before returning.
