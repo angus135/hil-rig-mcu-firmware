@@ -1,7 +1,7 @@
 # List modules here
 add_subdirectory(app_main)
 add_subdirectory(background)
-add_subdirectory(buffer_manager)
+add_subdirectory(flash_manager)
 add_subdirectory(console)
 add_subdirectory(example)
 add_subdirectory(execution_manager)
