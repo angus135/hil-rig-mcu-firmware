@@ -46,13 +46,11 @@ option(HW_SPI_ENABLE_TESTS "Build tests for HW_SPI module" ON)
 
 if(HW_SPI_ENABLE_TESTS AND BUILD_TESTING)
 
-    add_executable(hw_spi_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hw_spi_rx.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hw_spi_tx_master.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hw_spi_tx_slave.cpp
+    add_executable(hw_spi_rx_tests
+        tests/test_hw_spi_rx.cpp
     )
 
-    target_link_libraries(hw_spi_tests
+    target_link_libraries(hw_spi_rx_tests
         PRIVATE
             project_warnings
             hw_spi
@@ -61,13 +59,56 @@ if(HW_SPI_ENABLE_TESTS AND BUILD_TESTING)
             gmock
     )
 
-    target_include_directories(hw_spi_tests
+    target_include_directories(hw_spi_rx_tests
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
 
-    add_test(NAME hw_spi_tests COMMAND hw_spi_tests)
+    add_test(NAME hw_spi_rx_tests COMMAND hw_spi_rx_tests)
+
+
+    add_executable(hw_spi_tx_slave_tests
+        tests/test_hw_spi_tx_slave.cpp
+    )
+
+    target_link_libraries(hw_spi_tx_slave_tests
+        PRIVATE
+            project_warnings
+            hw_spi
+            gtest
+            gtest_main
+            gmock
+    )
+
+    target_include_directories(hw_spi_tx_slave_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+
+    add_test(NAME hw_spi_tx_slave_tests COMMAND hw_spi_tx_slave_tests)
+
+
+    add_executable(hw_spi_tx_master_tests
+        tests/test_hw_spi_tx_master.cpp
+    )
+
+    target_link_libraries(hw_spi_tx_master_tests
+        PRIVATE
+            project_warnings
+            hw_spi
+            gtest
+            gtest_main
+            gmock
+    )
+
+    target_include_directories(hw_spi_tx_master_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+
+    add_test(NAME hw_spi_tx_master_tests COMMAND hw_spi_tx_master_tests)
 
 endif()
-
