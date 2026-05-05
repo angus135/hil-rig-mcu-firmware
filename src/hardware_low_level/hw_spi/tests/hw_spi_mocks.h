@@ -724,4 +724,4 @@ void DMA2_Stream3_IRQHandler( void );
 }
 #endif
 
-#endif /* HW_QSPI_MOCKS_H */
+#endif /* HW_SPI_MOCKS_H */
