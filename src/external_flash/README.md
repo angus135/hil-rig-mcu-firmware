@@ -20,6 +20,7 @@ This module is responsible for:
 - Supporting page scoped zero copy result writes from flash manager owned buffers.
 - Padding final partial result pages with `0xFF`.
 - Retiring blocks that fail program or erase operations.
+- Rotating the logical start block for repeated instruction uploads and result sessions.
 - Providing the flash facing API used by the flash manager and result transfer path.
 
 ---
@@ -42,16 +43,13 @@ The public API is declared in `external_flash.h`.
 The main API functions are:
 
 - `EXTERNAL_FLASH_Init` prepares the NAND storage service.
-- `EXTERNAL_FLASH_StartInstructionUpload` erases the instruction partition and starts a new package instruction upload.
+- `EXTERNAL_FLASH_StartInstructionUpload` prepares the required instruction blocks and starts a new package instruction upload.
 - `EXTERNAL_FLASH_WriteInstructionBytes` appends arbitrary instruction bytes during package upload.
 - `EXTERNAL_FLASH_WriteInstructionPage` writes one logical instruction page during package upload.
 - `EXTERNAL_FLASH_FinishInstructionUpload` commits the final partial instruction page and closes the upload.
-- `EXTERNAL_FLASH_StartSession` erases the result partition for a new test run.
+- `EXTERNAL_FLASH_StartSession` prepares the result partition for a new test run.
 - `EXTERNAL_FLASH_WriteResultPage` writes one logical result page.
-- `EXTERNAL_FLASH_WriteResultBytes` appends arbitrary result bytes through the byte stream compatibility path.
-- `EXTERNAL_FLASH_FlushResults` commits a partial result page staged by the byte stream write path.
 - `EXTERNAL_FLASH_ReadInstructionPage` reads one instruction page or partial instruction page using DMA internally.
-- `EXTERNAL_FLASH_ReadInstructions` reads arbitrary instruction byte ranges through the byte stream compatibility path.
 - `EXTERNAL_FLASH_ReadResults` reads committed result bytes for host transfer.
 - `EXTERNAL_FLASH_GetInfo` reports capacity, committed result length, and bad block count.
 
@@ -62,8 +60,6 @@ The preferred execution time instruction refill path is `EXTERNAL_FLASH_ReadInst
 The preferred package upload path is `EXTERNAL_FLASH_WriteInstructionBytes`. Host transfer chunk sizes do not need to match the NAND page size; the driver stages partial pages and programs full pages internally.
 
 `EXTERNAL_FLASH_WriteInstructionPage` is available when `test_package_recieve` already has page sized instruction chunks. Full page calls DMA directly from the caller supplied buffer. A final partial page is padded internally with `0xFF`.
-
-The byte stream paths, `EXTERNAL_FLASH_WriteResultBytes` and `EXTERNAL_FLASH_ReadInstructions`, remain available for simple use, tests, and non page structured paths.
 
 The driver does not expose physical NAND pages, physical blocks, QSPI commands, ECC fields, or bad block markers to application managers.
 
@@ -103,6 +99,8 @@ Instruction reads are logical byte offset based and are limited to the committed
 
 Instruction upload is sequential and append only. Random instruction patching is intentionally not exposed yet because the host package receive path naturally streams one package image before execution begins.
 
+`external_flash` applies best-practice-lite wear allocation inside each fixed partition. Each new instruction upload and result session builds an active logical-to-physical block map using the lowest known erase counts. Logical offsets remain stable for the active upload or result session.
+
 ---
 
 ## Instruction Uploads
@@ -118,7 +116,7 @@ EXTERNAL_FLASH_WriteInstructionBytes( chunk_b, len_b );
 EXTERNAL_FLASH_FinishInstructionUpload();
 ```
 
-`EXTERNAL_FLASH_StartInstructionUpload` erases all good blocks in the instruction partition, resets the volatile committed instruction length, and records the expected instruction byte count.
+`EXTERNAL_FLASH_StartInstructionUpload` erases only the instruction blocks required for the expected image, resets the volatile committed instruction length, and records the expected instruction byte count.
 
 `EXTERNAL_FLASH_WriteInstructionBytes` accepts arbitrary host chunk sizes. Full staged NAND pages are programmed immediately. A final partial staged page is programmed by `EXTERNAL_FLASH_FinishInstructionUpload`.
 
@@ -143,16 +141,15 @@ Partial page instruction writes are only valid for the final page of the expecte
 
 ## Result Sessions
 
-`EXTERNAL_FLASH_StartSession` erases all good blocks in the result partition and starts a new volatile result session.
+`EXTERNAL_FLASH_StartSession` prepares the full writable result capacity and starts a new volatile result session.
 
 The result partition is append only during a session.
 
-Two result write paths are supported:
-
-1. Page scoped writes with `EXTERNAL_FLASH_WriteResultPage`.
-2. Byte stream writes with `EXTERNAL_FLASH_WriteResultBytes` and `EXTERNAL_FLASH_FlushResults`.
+One result write path is supported: page scoped writes with `EXTERNAL_FLASH_WriteResultPage`.
 
 Only bytes successfully committed to NAND are exposed through `EXTERNAL_FLASH_ReadResults`.
+
+The active result session keeps its logical-to-physical rotation stable until the next result session starts. This allows `result_transfer_manager` to read committed bytes in logical order after execution, even though the physical NAND blocks may not start at the first block of the result partition.
 
 ---
 
@@ -184,7 +181,7 @@ In this case, `external_flash` copies the valid bytes into its private staging b
 
 After a partial page write succeeds, no further result page writes should be appended in the same session.
 
-This API must not be mixed with a partially staged `EXTERNAL_FLASH_WriteResultBytes` call.
+`EXTERNAL_FLASH_WriteResultPage` is the only result write API. During execution the flash manager should pass full pages. After execution it should pass one final partial page if required.
 
 ---
 
@@ -213,38 +210,6 @@ The logical offset must be aligned to the NAND page size. The length must be gre
 `external_flash` maps the logical instruction offset to a physical NAND page, skips bad block gaps, starts the NAND DMA read path, and waits for DMA completion before returning.
 
 The caller must keep the destination buffer valid and writable until the function returns.
-
----
-
-## Byte Stream Result Writes
-
-`EXTERNAL_FLASH_WriteResultBytes` appends arbitrary result bytes to the active result session.
-
-This path is intended for simple use, tests, and non page structured code paths.
-
-The byte stream path internally stages data into a private page sized buffer. Full staged pages are programmed immediately. A final partial staged page is programmed by calling `EXTERNAL_FLASH_FlushResults`.
-
-Example:
-
-```c
-EXTERNAL_FLASH_WriteResultBytes( data_a, len_a );
-EXTERNAL_FLASH_WriteResultBytes( data_b, len_b );
-EXTERNAL_FLASH_FlushResults();
-```
-
-`EXTERNAL_FLASH_FlushResults` is only required for the byte stream path. It is not required after `EXTERNAL_FLASH_WriteResultPage`, because a partial page passed to that API is programmed immediately.
-
----
-
-## Byte Stream Instruction Reads
-
-`EXTERNAL_FLASH_ReadInstructions` reads arbitrary instruction byte ranges from the instruction partition.
-
-This path is intended for simple use, tests, and non page structured code paths.
-
-It may read across physical NAND page boundaries and uses blocking NAND reads internally.
-
-For execution time instruction queue refills, prefer `EXTERNAL_FLASH_ReadInstructionPage`.
 
 ---
 
@@ -283,7 +248,7 @@ Before execution starts:
 
 1. System startup calls `EXTERNAL_FLASH_Init`.
 2. The flash manager calls `EXTERNAL_FLASH_StartSession`.
-3. `EXTERNAL_FLASH_StartSession` erases all good result blocks and resets volatile result state.
+3. `EXTERNAL_FLASH_StartSession` prepares the full writable result capacity and resets volatile result state.
 4. The flash manager primes its instruction queue by calling `EXTERNAL_FLASH_ReadInstructionPage`.
 
 During execution:
@@ -300,13 +265,12 @@ The execution manager remains a producer and consumer of RAM buffers only. It do
 
 After execution ends:
 
-1. If using the page scoped API, the flash manager writes the final partial result page through `EXTERNAL_FLASH_WriteResultPage`.
-2. If using the byte stream API, the flash manager calls `EXTERNAL_FLASH_FlushResults`.
-3. `result_transfer_manager` queries committed length with `EXTERNAL_FLASH_GetInfo`.
-4. `result_transfer_manager` repeatedly calls `EXTERNAL_FLASH_ReadResults` with byte offsets and host transfer sized buffers.
-5. The host interface sends those bytes to the host in order.
+1. The flash manager writes the final partial result page through `EXTERNAL_FLASH_WriteResultPage` if any result bytes remain.
+2. `result_transfer_manager` queries committed length with `EXTERNAL_FLASH_GetInfo`.
+3. `result_transfer_manager` repeatedly calls `EXTERNAL_FLASH_ReadResults` with byte offsets and host transfer sized buffers.
+4. The host interface sends those bytes to the host in order.
 
-Only committed bytes are readable. Bytes still staged in the byte stream page buffer are not visible to `EXTERNAL_FLASH_ReadResults` until `EXTERNAL_FLASH_FlushResults` succeeds.
+Only committed bytes are readable.
 
 ---
 
@@ -317,9 +281,7 @@ Only committed bytes are readable. Bytes still staged in the byte stream page bu
 - Owns instruction and result RAM buffers.
 - Presents empty, filling, ready, active, and reusable spans to producers and consumers.
 - Refills page sized instruction buffers by calling `EXTERNAL_FLASH_ReadInstructionPage`.
-- May use `EXTERNAL_FLASH_ReadInstructions` for non page structured instruction reads.
 - Drains page sized result buffers by calling `EXTERNAL_FLASH_WriteResultPage`.
-- May use `EXTERNAL_FLASH_WriteResultBytes` for non page structured result writes.
 - Calls `EXTERNAL_FLASH_StartSession` before execution starts.
 - Writes the final partial result page after execution ends.
 - Is the only normal runtime task responsible for talking to flash.
@@ -352,7 +314,7 @@ Only committed bytes are readable. Bytes still staged in the byte stream page bu
 
 ## Bad Blocks
 
-At initialisation, the module scans the configured instruction and result partitions using `HW_NAND_IsBlockBad`.
+At initialisation, the module scans the configured instruction, result, and metadata partitions using `HW_NAND_IsBlockBad`.
 
 Bad blocks are skipped when translating logical byte offsets to physical NAND pages.
 
@@ -361,6 +323,32 @@ If erase fails at runtime, the block is marked bad in RAM and `HW_NAND_MarkBlock
 If program fails at runtime, the block is marked bad in RAM and `HW_NAND_MarkBlockBad` is called. The same logical result page is retried on the next good physical block.
 
 The same retire-and-retry policy is used for instruction upload page programs.
+
+---
+
+## Wear Rotation
+
+This implementation uses a best-practice-lite wear policy.
+
+The instruction, result, and metadata partitions remain fixed. Within the instruction and result partitions, `external_flash` builds an active logical-to-physical block map using the lowest known erase counts:
+
+- `EXTERNAL_FLASH_StartInstructionUpload` erases and maps only the blocks needed for the expected instruction image, while leaving spare blocks available for program-failure replacement.
+- `EXTERNAL_FLASH_StartSession` currently prepares the full writable result capacity because the final result length is not known before execution.
+- Program failures retire the failed block and replace it with an already-erased spare selected by the allocator.
+- Runtime erase counts are updated whenever `external_flash` successfully erases a block.
+
+The metadata partition is reserved now so persistent snapshots can be added without changing the physical layout. The current erase counts and active maps are RAM only.
+
+A later metadata journal should persist:
+
+- erase counts
+- retired block state
+- active logical-to-physical maps
+- committed instruction/result lengths if recovery after reset is required
+
+Future result storage should move to an erase-ahead or pre-erased block queue. That is better than synchronous erase-as-you-go in the execution path: the flash manager can keep a small supply of erased result blocks ready outside the hard real-time loop, then append into them without blocking on block erase latency. Direct erase-as-needed during result writes should remain a fallback only.
+
+Until that metadata exists, callers must treat instruction and result contents as volatile after reset.
 
 ---
 
@@ -386,10 +374,9 @@ A future asynchronous version may split these states into separate operations, s
 
 - Hardware validation is still required.
 - Instruction and result lengths are currently volatile RAM state only.
+- Wear erase counts and active block maps are currently volatile RAM state only.
 - Instruction recovery after reset is not implemented yet.
 - Result recovery after reset is not implemented yet.
 - `EXTERNAL_FLASH_WriteResultPage` is the preferred execution time result write API.
 - `EXTERNAL_FLASH_ReadInstructionPage` is the preferred execution time instruction refill API.
 - `EXTERNAL_FLASH_WriteInstructionBytes` is the preferred test package upload API.
-- `EXTERNAL_FLASH_WriteResultBytes` remains available for byte stream compatibility and tests.
-- `EXTERNAL_FLASH_ReadInstructions` remains available for byte stream compatibility and tests.
