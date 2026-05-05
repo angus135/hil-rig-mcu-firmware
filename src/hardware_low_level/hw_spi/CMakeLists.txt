@@ -47,14 +47,15 @@ option(HW_SPI_ENABLE_TESTS "Build tests for HW_SPI module" ON)
 if(HW_SPI_ENABLE_TESTS AND BUILD_TESTING)
 
     add_executable(hw_spi_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hw_spi.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hw_spi_rx.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hw_spi_tx_master.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hw_spi_tx_slave.cpp
     )
 
     target_link_libraries(hw_spi_tests
         PRIVATE
             project_warnings
             hw_spi
-            # include any other dependent libraries here
             gtest
             gtest_main
             gmock
