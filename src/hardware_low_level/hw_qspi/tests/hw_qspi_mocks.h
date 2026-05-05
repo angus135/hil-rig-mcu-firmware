@@ -36,6 +36,12 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+typedef struct
+{
+    // Mock structure to represent the QSPI handle used in the HAL
+    int dummy;  // Placeholder member
+} QSPI_HandleTypeDef;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
