@@ -14,6 +14,7 @@ set(HW_SPI_SOURCES
 
 set(HW_SPI_HEADERS
     hw_spi.h
+    hw_spi_internal.h
 )
 
 add_library(hw_spi STATIC
@@ -34,6 +35,7 @@ target_link_libraries(hw_spi
         cubeide_hal
         rtos
         hw_timer
+        hw_gpio
 )
 
 # -----------------------------

@@ -57,6 +57,7 @@ extern "C"
 // HAL defined NSS (chip select management)
 #define SPI_NSS_HARD_INPUT ( 0 )
 #define SPI_NSS_HARD_OUTPUT ( 1 )
+#define SPI_NSS_SOFT ( 2 )
 
 // HAL defined baud rate prescalar
 #define SPI_BAUDRATEPRESCALER_2 2
@@ -679,6 +680,21 @@ void LL_SPI_EnableDMAReq_RX( SPI_TypeDef* SPIx );
  * @retval None
  */
 void LL_SPI_Enable( SPI_TypeDef* SPIx );
+
+/**
+ * @brief  Get busy flag
+ * @note   The BSY flag is cleared under any one of the following conditions:
+ * -When the SPI is correctly disabled
+ * -When a fault is detected in Master mode (MODF bit set to 1)
+ * -In Master mode, when it finishes a data transmission and no new data is ready to be
+ * sent
+ * -In Slave mode, when the BSY flag is set to '0' for at least one SPI clock cycle between
+ * each data transfer.
+ * @rmtoll SR           BSY           LL_SPI_IsActiveFlag_BSY
+ * @param  SPIx SPI Instance
+ * @retval State of bit (1 or 0).
+ */
+uint32_t LL_SPI_IsActiveFlag_BSY( const SPI_TypeDef* SPIx );
 
 /**
   \brief   Disable Interrupt
