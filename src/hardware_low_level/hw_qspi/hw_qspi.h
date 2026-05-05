@@ -106,7 +106,6 @@ typedef struct
     uint32_t dummy_cycles;
 
     HW_QSPI_Lines_T data_lines;
-    uint32_t        data_length;
 
     uint32_t timeout_ms;
 } HW_QSPI_Command_T;
@@ -152,10 +151,14 @@ HW_QSPI_Status_T HW_QSPI_WriteBlocking( const HW_QSPI_Command_T* command, const 
 HW_QSPI_Status_T HW_QSPI_ReadBlocking( const HW_QSPI_Command_T* command, uint8_t* data,
                                        uint32_t length );
 
+HW_QSPI_Status_T HW_QSPI_WriteDma( const HW_QSPI_Command_T* command, const uint8_t* data,
+                                   uint32_t length );
+
+bool HW_QSPI_IsTransferComplete( void );
+
 bool HW_QSPI_IsBusy( void );
 
 HW_QSPI_Status_T HW_QSPI_Abort( void );
-
 #ifdef __cplusplus
 }
 #endif
