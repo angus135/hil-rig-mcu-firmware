@@ -976,12 +976,17 @@ EXTERNAL_FLASH_ReadFromPartition( const ExternalFlashPartition_T* partition,
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_Init( void )
 {
-    external_flash_initialised                   = false;
-    external_flash_session_active                = false;
-    external_flash_result_length_bytes           = 0U;
-    external_flash_committed_result_length_bytes = 0U;
-    external_flash_result_page_fill              = 0U;
-    external_flash_bad_block_count               = 0U;
+    external_flash_initialised                         = false;
+    external_flash_session_active                      = false;
+    external_flash_instruction_upload_active           = false;
+    external_flash_instruction_expected_length_bytes   = 0U;
+    external_flash_instruction_length_bytes            = 0U;
+    external_flash_committed_instruction_length_bytes  = 0U;
+    external_flash_instruction_page_fill               = 0U;
+    external_flash_result_length_bytes                 = 0U;
+    external_flash_committed_result_length_bytes       = 0U;
+    external_flash_result_page_fill                    = 0U;
+    external_flash_bad_block_count                     = 0U;
 
     ExternalFlashStatus_T status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_Init() );
     if ( status != EXTERNAL_FLASH_STATUS_OK )
@@ -995,7 +1000,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_Init( void )
         return status;
     }
 
-    if ( external_flash_geometry.page_size_bytes > sizeof( external_flash_result_page_buffer ) )
+    if ( ( external_flash_geometry.page_size_bytes > sizeof( external_flash_result_page_buffer ) )
+         || ( external_flash_geometry.page_size_bytes
+              > sizeof( external_flash_instruction_page_buffer ) ) )
     {
         return EXTERNAL_FLASH_STATUS_ERROR;
     }
@@ -1013,6 +1020,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_Init( void )
     }
 
     EXTERNAL_FLASH_ClearResultPageBuffer();
+    EXTERNAL_FLASH_ClearInstructionPageBuffer();
     external_flash_initialised = true;
 
     return EXTERNAL_FLASH_STATUS_OK;
@@ -1032,8 +1040,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_GetInfo( ExternalFlashInfo_T* info )
         EXTERNAL_FLASH_GetPartitionCapacityBytes( &external_flash_instruction_partition );
     info->result_capacity_bytes =
         EXTERNAL_FLASH_GetPartitionCapacityBytes( &external_flash_result_partition );
-    info->result_length_bytes = external_flash_committed_result_length_bytes;
-    info->bad_block_count     = external_flash_bad_block_count;
+    info->instruction_length_bytes = external_flash_committed_instruction_length_bytes;
+    info->result_length_bytes      = external_flash_committed_result_length_bytes;
+    info->bad_block_count          = external_flash_bad_block_count;
 
     return EXTERNAL_FLASH_STATUS_OK;
 }
@@ -1058,6 +1067,219 @@ ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void )
     external_flash_result_length_bytes           = 0U;
     external_flash_committed_result_length_bytes = 0U;
     EXTERNAL_FLASH_ClearResultPageBuffer();
+
+    return EXTERNAL_FLASH_STATUS_OK;
+}
+
+/**
+ * @brief Erases the instruction partition and starts a new volatile instruction upload.
+ */
+ExternalFlashStatus_T EXTERNAL_FLASH_StartInstructionUpload( uint32_t expected_length )
+{
+    if ( !external_flash_initialised )
+    {
+        return EXTERNAL_FLASH_STATUS_NOT_INITIALISED;
+    }
+
+    if ( expected_length == 0U )
+    {
+        return EXTERNAL_FLASH_STATUS_INVALID_ARG;
+    }
+
+    uint32_t instruction_capacity =
+        EXTERNAL_FLASH_GetPartitionCapacityBytes( &external_flash_instruction_partition );
+    if ( expected_length > instruction_capacity )
+    {
+        return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
+    }
+
+    ExternalFlashStatus_T status = EXTERNAL_FLASH_EraseInstructionPartition();
+    if ( status != EXTERNAL_FLASH_STATUS_OK )
+    {
+        return status;
+    }
+
+    external_flash_instruction_upload_active          = true;
+    external_flash_instruction_expected_length_bytes  = expected_length;
+    external_flash_instruction_length_bytes           = 0U;
+    external_flash_committed_instruction_length_bytes = 0U;
+    EXTERNAL_FLASH_ClearInstructionPageBuffer();
+
+    return EXTERNAL_FLASH_STATUS_OK;
+}
+
+/**
+ * @brief Appends arbitrary instruction bytes through the byte stream upload path.
+ */
+ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionBytes( const uint8_t* data, uint32_t length )
+{
+    if ( !external_flash_initialised )
+    {
+        return EXTERNAL_FLASH_STATUS_NOT_INITIALISED;
+    }
+
+    if ( !external_flash_instruction_upload_active )
+    {
+        return EXTERNAL_FLASH_STATUS_ERROR;
+    }
+
+    if ( ( data == NULL ) || ( length == 0U ) )
+    {
+        return EXTERNAL_FLASH_STATUS_INVALID_ARG;
+    }
+
+    if ( ( external_flash_instruction_length_bytes
+           > external_flash_instruction_expected_length_bytes )
+         || ( length
+              > ( external_flash_instruction_expected_length_bytes
+                  - external_flash_instruction_length_bytes ) ) )
+    {
+        return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
+    }
+
+    uint32_t bytes_written = 0U;
+
+    while ( bytes_written < length )
+    {
+        uint32_t page_space =
+            external_flash_geometry.page_size_bytes - external_flash_instruction_page_fill;
+        uint32_t remaining       = length - bytes_written;
+        uint32_t bytes_this_page = ( remaining < page_space ) ? remaining : page_space;
+
+        ( void )memcpy(
+            &external_flash_instruction_page_buffer[external_flash_instruction_page_fill],
+            &data[bytes_written], bytes_this_page );
+
+        external_flash_instruction_page_fill += bytes_this_page;
+        external_flash_instruction_length_bytes += bytes_this_page;
+        bytes_written += bytes_this_page;
+
+        if ( external_flash_instruction_page_fill == external_flash_geometry.page_size_bytes )
+        {
+            ExternalFlashStatus_T status = EXTERNAL_FLASH_ProgramStagedInstructionPage();
+            if ( status != EXTERNAL_FLASH_STATUS_OK )
+            {
+                return status;
+            }
+        }
+    }
+
+    return EXTERNAL_FLASH_STATUS_OK;
+}
+
+/**
+ * @brief Writes one page scoped instruction buffer during an active upload.
+ */
+ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionPage( const uint8_t* data,
+                                                           uint32_t valid_length )
+{
+    if ( !external_flash_initialised )
+    {
+        return EXTERNAL_FLASH_STATUS_NOT_INITIALISED;
+    }
+
+    if ( !external_flash_instruction_upload_active )
+    {
+        return EXTERNAL_FLASH_STATUS_ERROR;
+    }
+
+    if ( data == NULL )
+    {
+        return EXTERNAL_FLASH_STATUS_INVALID_ARG;
+    }
+
+    if ( ( valid_length == 0U ) || ( valid_length > external_flash_geometry.page_size_bytes ) )
+    {
+        return EXTERNAL_FLASH_STATUS_INVALID_ARG;
+    }
+
+    if ( external_flash_instruction_page_fill != 0U )
+    {
+        return EXTERNAL_FLASH_STATUS_ERROR;
+    }
+
+    if ( ( external_flash_instruction_length_bytes % external_flash_geometry.page_size_bytes )
+         != 0U )
+    {
+        return EXTERNAL_FLASH_STATUS_ERROR;
+    }
+
+    if ( external_flash_instruction_length_bytes
+         > external_flash_instruction_expected_length_bytes )
+    {
+        return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
+    }
+
+    uint32_t remaining_expected =
+        external_flash_instruction_expected_length_bytes - external_flash_instruction_length_bytes;
+
+    if ( valid_length > remaining_expected )
+    {
+        return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
+    }
+
+    if ( ( valid_length < external_flash_geometry.page_size_bytes )
+         && ( valid_length != remaining_expected ) )
+    {
+        return EXTERNAL_FLASH_STATUS_INVALID_ARG;
+    }
+
+    uint32_t              page_start_offset = external_flash_instruction_length_bytes;
+    ExternalFlashStatus_T status            = EXTERNAL_FLASH_STATUS_OK;
+
+    if ( valid_length == external_flash_geometry.page_size_bytes )
+    {
+        status =
+            EXTERNAL_FLASH_ProgramInstructionPageBuffer( data, page_start_offset, valid_length );
+    }
+    else
+    {
+        EXTERNAL_FLASH_ClearInstructionPageBuffer();
+
+        ( void )memcpy( external_flash_instruction_page_buffer, data, valid_length );
+
+        status = EXTERNAL_FLASH_ProgramInstructionPageBuffer(
+            external_flash_instruction_page_buffer, page_start_offset, valid_length );
+
+        EXTERNAL_FLASH_ClearInstructionPageBuffer();
+    }
+
+    if ( status == EXTERNAL_FLASH_STATUS_OK )
+    {
+        external_flash_instruction_length_bytes += valid_length;
+    }
+
+    return status;
+}
+
+/**
+ * @brief Commits any final staged instruction page and closes the upload.
+ */
+ExternalFlashStatus_T EXTERNAL_FLASH_FinishInstructionUpload( void )
+{
+    if ( !external_flash_initialised )
+    {
+        return EXTERNAL_FLASH_STATUS_NOT_INITIALISED;
+    }
+
+    if ( !external_flash_instruction_upload_active )
+    {
+        return EXTERNAL_FLASH_STATUS_ERROR;
+    }
+
+    ExternalFlashStatus_T status = EXTERNAL_FLASH_ProgramStagedInstructionPage();
+    if ( status != EXTERNAL_FLASH_STATUS_OK )
+    {
+        return status;
+    }
+
+    if ( external_flash_committed_instruction_length_bytes
+         != external_flash_instruction_expected_length_bytes )
+    {
+        return EXTERNAL_FLASH_STATUS_ERROR;
+    }
+
+    external_flash_instruction_upload_active = false;
 
     return EXTERNAL_FLASH_STATUS_OK;
 }
@@ -1213,10 +1435,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_FlushResults( void )
 ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructions( uint32_t offset, uint8_t* data,
                                                        uint32_t length )
 {
-    return EXTERNAL_FLASH_ReadFromPartition(
-        &external_flash_instruction_partition,
-        EXTERNAL_FLASH_GetPartitionCapacityBytes( &external_flash_instruction_partition ), offset,
-        data, length );
+    return EXTERNAL_FLASH_ReadFromPartition( &external_flash_instruction_partition,
+                                             external_flash_committed_instruction_length_bytes,
+                                             offset, data, length );
 }
 
 /**
@@ -1226,9 +1447,8 @@ ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructionPage( uint32_t offset, uint8
                                                           uint32_t length )
 {
     return EXTERNAL_FLASH_ReadPartitionPageDma(
-        &external_flash_instruction_partition,
-        EXTERNAL_FLASH_GetPartitionCapacityBytes( &external_flash_instruction_partition ), offset,
-        data, length );
+        &external_flash_instruction_partition, external_flash_committed_instruction_length_bytes,
+        offset, data, length );
 }
 
 /**
