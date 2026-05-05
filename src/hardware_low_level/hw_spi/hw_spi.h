@@ -53,7 +53,6 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
-// Add any needed standard or project-specific includes here
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -64,76 +63,112 @@ extern "C"
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Supported SPI baud-rate selections.
+ *
+ * @details
+ *     The values are intentionally enumerated rather than arbitrary so the
+ *     low-level driver can map directly to known STM32 prescalers and final
+ *     drain timing values.
+ */
 typedef enum SPIBaudRate_T
 {
-    SPI_BAUD_45MBIT,
-    SPI_BAUD_22M5BIT,
-    SPI_BAUD_11M25BIT,
-    SPI_BAUD_5M625BIT,
-    SPI_BAUD_2M813BIT,
-    SPI_BAUD_1M406BIT,
-    SPI_BAUD_703KBIT,
-    SPI_BAUD_352KBIT,
+    SPI_BAUD_45MBIT,    ///< Approximately 45 Mbit/s.
+    SPI_BAUD_22M5BIT,   ///< Approximately 22.5 Mbit/s.
+    SPI_BAUD_11M25BIT,  ///< Approximately 11.25 Mbit/s.
+    SPI_BAUD_5M625BIT,  ///< Approximately 5.625 Mbit/s.
+    SPI_BAUD_2M813BIT,  ///< Approximately 2.813 Mbit/s.
+    SPI_BAUD_1M406BIT,  ///< Approximately 1.406 Mbit/s.
+    SPI_BAUD_703KBIT,   ///< Approximately 703 kbit/s.
+    SPI_BAUD_352KBIT,   ///< Approximately 352 kbit/s.
 } SPIBaudRate_T;
 
+/**
+ * @brief SPI clock polarity selection.
+ */
 typedef enum SPICPOL_T
 {
-    SPI_CPOL_LOW,
-    SPI_CPOL_HIGH,
+    SPI_CPOL_LOW,   ///< SCK idles low.
+    SPI_CPOL_HIGH,  ///< SCK idles high.
 } SPICPOL_T;
 
+/**
+ * @brief SPI clock phase selection.
+ */
 typedef enum SPICPHA_T
 {
-    SPI_CPHA_1_EDGE,
-    SPI_CPHA_2_EDGE,
+    SPI_CPHA_1_EDGE,  ///< Data is sampled on the first clock edge.
+    SPI_CPHA_2_EDGE,  ///< Data is sampled on the second clock edge.
 } SPICPHA_T;
 
+/**
+ * @brief SPI frame size selection.
+ */
 typedef enum SPIDataSize_T
 {
-    SPI_SIZE_8_BIT,
-    SPI_SIZE_16_BIT,
+    SPI_SIZE_8_BIT,   ///< SPI frames are 8 bits wide.
+    SPI_SIZE_16_BIT,  ///< SPI frames are 16 bits wide; public byte counts must be even.
 } SPIDataSize_T;
 
+/**
+ * @brief SPI bit-order selection.
+ */
 typedef enum SPIFirstBit_T
 {
-    SPI_FIRST_MSB,
-    SPI_FIRST_LSB,
+    SPI_FIRST_MSB,  ///< Most-significant bit first.
+    SPI_FIRST_LSB,  ///< Least-significant bit first.
 } SPIFirstBit_T;
 
+/**
+ * @brief SPI operating mode selection.
+ */
 typedef enum SPIMode_T
 {
-    SPI_MASTER_MODE,
-    SPI_SLAVE_MODE,
+    SPI_MASTER_MODE,  ///< Driver generates SCK and frames each loaded packet with software CS.
+    SPI_SLAVE_MODE,   ///< External master owns SCK/NSS and TX is treated as a byte stream.
 } SPIMode_T;
 
+/**
+ * @brief Logical SPI peripherals exposed by the HIL-RIG firmware.
+ */
 typedef enum SPIPeripheral_T
 {
-    SPI_CHANNEL_0,
-    SPI_CHANNEL_1,
-    SPI_DAC,
+    SPI_CHANNEL_0,  ///< General-purpose logical SPI channel 0.
+    SPI_CHANNEL_1,  ///< General-purpose logical SPI channel 1.
+    SPI_DAC,        ///< Dedicated DAC SPI channel.
 } SPIPeripheral_T;
 
+/**
+ * @brief Public configuration applied to one logical SPI peripheral.
+ */
 typedef struct HWSPIConfig_T
 {
-    SPIMode_T     spi_mode;
-    SPIDataSize_T data_size;
-    SPIFirstBit_T first_bit;
-    SPIBaudRate_T baud_rate;
-    SPICPOL_T     cpol;
-    SPICPHA_T     cpha;
+    SPIMode_T     spi_mode;   ///< Master/slave operating mode.
+    SPIDataSize_T data_size;  ///< SPI frame width.
+    SPIFirstBit_T first_bit;  ///< Bit transmission order.
+    SPIBaudRate_T baud_rate;  ///< Baud-rate enum mapped to STM32 prescaler settings.
+    SPICPOL_T     cpol;       ///< Clock polarity.
+    SPICPHA_T     cpha;       ///< Clock phase.
 } HWSPIConfig_T;
 
+/**
+ * @brief One contiguous unread RX span inside the driver-owned RX buffer.
+ */
 typedef struct
 {
-    const uint8_t* data;          // Pointer to the start of the unread data span
-    uint32_t       length_bytes;  // Length of the unread data span in bytes
+    const uint8_t* data;          ///< Pointer to the first unread byte in this span.
+    uint32_t       length_bytes;  ///< Length of this span in bytes.
 } HWSPIRxSpan_T;
 
+/**
+ * @brief RX peek result containing the unread region as one or two spans.
+ */
 typedef struct
 {
-    HWSPIRxSpan_T first_span;   // First contiguous unread span
-    HWSPIRxSpan_T second_span;  // Second contiguous unread span, non-zero only if wrapping occurs
-    uint32_t      total_length_bytes;  // Total unread bytes across both spans
+    HWSPIRxSpan_T first_span;          ///< First contiguous unread span.
+    HWSPIRxSpan_T second_span;         ///< Wrapped span; length is zero when no wrap occurs.
+    uint32_t      total_length_bytes;  ///< Total unread byte count across both spans.
 } HWSPIRxSpans_T;
 
 /**-----------------------------------------------------------------------------
@@ -394,6 +429,18 @@ void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral );
  */
 bool HW_SPI_Tx_Buffer_Empty( SPIPeripheral_T peripheral );
 
+/**
+ * @brief Complete slow-baud master final-drain handling from a timer ISR.
+ *
+ * @details
+ *     This callback is invoked by the hardware timer layer after a slow SPI
+ *     packet has waited long enough for its final frame to drain. It is part of
+ *     the master software-CS completion path and should only be called from the
+ *     configured SPI final-drain timer interrupt.
+ *
+ * @param peripheral
+ *     Logical SPI peripheral whose final-drain timer elapsed.
+ */
 void HW_SPI_Timer_Callback_From_ISR( SPIPeripheral_T peripheral );
 
 #include "hw_spi_internal.h"

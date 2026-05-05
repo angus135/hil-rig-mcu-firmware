@@ -7,10 +7,15 @@
  *      Configuration and shared-state implementation for the low-level SPI
  *      driver used by the HIL-RIG firmware.
  *
- *      This file owns the private per-peripheral state structures and the
- *      shared helper functions used by the RX and TX implementation files. It
- *      also contains public configuration/stop functions that are not specific
- *      to RX or TX buffering behaviour.
+ *      This file owns the per-peripheral state structures, logical peripheral
+ *      lookup, frame-size conversions, DMA data-width configuration, HAL SPI
+ *      initialisation, and channel stop behaviour. It also contains public
+ *      configuration/stop functions that are not specific to RX or TX buffering
+ *      behaviour.
+ *  Notes:
+ *      Runtime TX/RX paths intentionally keep validation minimal. Configuration
+ *      functions perform setup-time checks; ISR and hot-path functions assume
+ *      the selected peripheral has already been configured correctly.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -53,6 +58,16 @@ SPIPeripheralState_T* dac_state       = &dac_state_struct;
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief Return the private state block for a logical SPI peripheral.
+ *
+ * @param peripheral
+ *     Logical SPI channel requested by the caller.
+ *
+ * @return
+ *     Pointer to the matching private state block, or NULL for an invalid
+ *     peripheral enum.
+ */
 SPIPeripheralState_T* HW_SPI_Get_State( SPIPeripheral_T peripheral )
 {
     switch ( peripheral )
@@ -71,6 +86,16 @@ SPIPeripheralState_T* HW_SPI_Get_State( SPIPeripheral_T peripheral )
     }
 }
 
+/**
+ * @brief Return the configured SPI frame size in bytes.
+ *
+ * @param peripheral_state
+ *     Configured SPI channel state. Runtime callers are expected to pass a
+ *     valid state pointer that was initialised by HW_SPI_Configure_Channel().
+ *
+ * @return
+ *     1 for 8-bit SPI frames; 2 for 16-bit SPI frames.
+ */
 uint32_t HW_SPI_Get_Frame_Size_Bytes( const SPIPeripheralState_T* peripheral_state )
 {
     if ( peripheral_state->config.data_size == SPI_SIZE_16_BIT )
@@ -81,18 +106,55 @@ uint32_t HW_SPI_Get_Frame_Size_Bytes( const SPIPeripheralState_T* peripheral_sta
     return 1U;
 }
 
+/**
+ * @brief Convert a byte count into a DMA element count for the configured frame size.
+ *
+ * @param peripheral_state
+ *     Configured SPI channel state.
+ *
+ * @param size_bytes
+ *     Number of software-visible bytes to transfer.
+ *
+ * @return
+ *     DMA NDTR element count corresponding to @p size_bytes.
+ */
 uint16_t HW_SPI_Bytes_To_DMA_Elements( const SPIPeripheralState_T* peripheral_state,
                                        uint32_t                    size_bytes )
 {
     return size_bytes / HW_SPI_Get_Frame_Size_Bytes( peripheral_state );
 }
 
+/**
+ * @brief Convert a byte count into a DMA element count for the configured frame size.
+ *
+ * @param peripheral_state
+ *     Configured SPI channel state.
+ *
+ * @param size_bytes
+ *     Number of software-visible bytes to transfer.
+ *
+ * @return
+ *     DMA NDTR element count corresponding to @p size_bytes.
+ */
 uint32_t HW_SPI_DMA_Elements_To_Bytes( const SPIPeripheralState_T* peripheral_state,
                                        uint32_t                    num_elements )
 {
     return num_elements * HW_SPI_Get_Frame_Size_Bytes( peripheral_state );
 }
 
+/**
+ * @brief Check whether a byte count is aligned to the configured SPI frame size.
+ *
+ * @param peripheral_state
+ *     Configured SPI channel state.
+ *
+ * @param size_bytes
+ *     Byte count supplied by the caller.
+ *
+ * @return
+ *     true if @p size_bytes is legal for the configured frame size; false
+ *     otherwise.
+ */
 bool HW_SPI_Is_Frame_Aligned_Size( const SPIPeripheralState_T* peripheral_state,
                                    uint32_t                    size_bytes )
 {
@@ -147,6 +209,42 @@ void HW_SPI_Configure_DMA_Data_Widths( SPIPeripheralState_T* peripheral_state )
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief Configure a hardware SPI channel and initialise its low-level driver state.
+ *
+ * Applies the provided configuration to the selected SPI peripheral and stores
+ * the configuration and hardware resource mappings required by the low-level
+ * SPI driver.
+ *
+ * This function is responsible for:
+ * - selecting the SPI hardware instance associated with the requested channel,
+ * - storing the requested SPI configuration in the channel state,
+ * - storing the DMA resources associated with the channel,
+ * - configuring the STM32 HAL SPI handle,
+ * - and initialising the peripheral using HAL_SPI_Init().
+ *
+ * This function prepares the channel for later runtime use but does not start
+ * continuous RX DMA or begin any TX activity. After successful configuration,
+ * HW_SPI_Start_Channel() must be called before the channel is used.
+ *
+ * This low-level driver does not enforce higher-level protocol semantics. In
+ * particular, although the configuration includes master/slave mode, the
+ * generic TX queue and RX stream APIs exposed by this module are intentionally
+ * mode-agnostic at the public interface level. Higher-level software is
+ * responsible for ensuring correct use of the channel according to the
+ * configured mode.
+ *
+ * @param peripheral
+ *     The SPI peripheral/channel to configure.
+ *
+ * @param configuration
+ *     The SPI configuration to apply to the selected channel.
+ *
+ * @return
+ *     true if configuration and hardware initialisation completed successfully.
+ *     false if the peripheral selection was invalid, the configuration was not
+ *     supported, or HAL initialisation failed.
+ */
 bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configuration )
 {
     SPI_HandleTypeDef*    hspi             = NULL;
@@ -199,12 +297,10 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
     {
         case SPI_MASTER_MODE:
             hspi->Init.Mode = SPI_MODE_MASTER;
-            /*
-             * Master-mode chip-select is always software controlled by this
-             * driver around each DMA-backed master packet. The SPI peripheral
-             * must therefore not drive hardware NSS as the transaction framing
-             * signal.
-             */
+            // Master-mode chip-select is always software controlled by this
+            // driver around each DMA-backed master packet. The SPI peripheral
+            // must therefore not drive hardware NSS as the transaction framing
+            // signal.
             hspi->Init.NSS = SPI_NSS_SOFT;
             break;
         case SPI_SLAVE_MODE:
@@ -312,10 +408,8 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
         return false;
     }
 
-    /*
-     * Ensure DMA memory/peripheral data widths match the configured SPI frame size.
-     * This is essential when switching between 8-bit and 16-bit operation.
-     */
+    // Ensure DMA memory/peripheral data widths match the configured SPI frame size.
+    // This is essential when switching between 8-bit and 16-bit operation.
     switch ( peripheral )
     {
         case SPI_CHANNEL_0:
@@ -337,6 +431,24 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
     return true;
 }
 
+/**
+ * @brief Stop runtime operation of a configured SPI channel.
+ *
+ * Stops the active low-level runtime mechanisms used by the selected SPI
+ * channel, such as DMA-based reception and any other ongoing SPI/DMA activity
+ * managed by this driver.
+ *
+ * This function is intended to place the channel into a stopped state in which
+ * its continuous RX path is no longer active and no further low-level activity
+ * is expected until HW_SPI_Start_Channel() is called again.
+ *
+ * This function does not clear higher-level protocol state, message assembly
+ * state, or any interpretation of queued/transferred data. Those concerns are
+ * owned by higher-level software.
+ *
+ * @param peripheral
+ *     The SPI peripheral/channel to stop.
+ */
 void HW_SPI_Stop_Channel( SPIPeripheral_T peripheral )
 {
     SPI_HandleTypeDef* hspi = NULL;

@@ -10,6 +10,10 @@
  *      This file contains the RX DMA start helper, RX DMA IRQ entry points, and
  *      public RX peek/consume functions. Shared state and common helpers are
  *      declared through hw_spi.h when HW_SPI_INTERNAL is enabled.
+ *  Notes:
+ *      Runtime TX/RX paths intentionally keep validation minimal. Configuration
+ *      functions perform setup-time checks; ISR and hot-path functions assume
+ *      the selected peripheral has already been configured correctly.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -127,14 +131,44 @@ bool HW_SPI_RX_Start_Passive_DMA( SPIPeripheralState_T* peripheral_state )
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief RX DMA IRQ entry point for SPI channel 0.
+ *
+ * @details
+ *     RX DMA is configured as a circular passive stream. No transfer-complete
+ *     handling is currently required because the software read position is
+ *     calculated from NDTR when HW_SPI_Rx_Peek() is called.
+ */
 void SPI_CHANNEL_0_RX_DMA_IRQ( void )
 {
+    // Circular RX DMA does not require per-interrupt work in the current design.
 }
 
+/**
+ * @brief RX DMA IRQ entry point for SPI channel 1.
+ *
+ * @details
+ *     RX DMA is configured as a circular passive stream. No transfer-complete
+ *     handling is currently required because the software read position is
+ *     calculated from NDTR when HW_SPI_Rx_Peek() is called.
+ */
 void SPI_CHANNEL_1_RX_DMA_IRQ( void )
 {
+    // Circular RX DMA does not require per-interrupt work in the current design.
 }
 
+/**
+ * @brief Start the runtime RX side of a configured SPI channel.
+ *
+ * @details
+ *     This function arms passive RX DMA for channels that support reception. It
+ *     deliberately does not start TX activity and does not generate master-mode
+ *     clocks. TX activity is started separately by loading data and kicking the
+ *     TX engine.
+ *
+ * @param peripheral
+ *     Logical SPI peripheral to start.
+ */
 void HW_SPI_Start_Channel( SPIPeripheral_T peripheral )
 {
     SPIPeripheralState_T* peripheral_state = NULL;
@@ -162,6 +196,20 @@ void HW_SPI_Start_Channel( SPIPeripheral_T peripheral )
     ( void )HW_SPI_RX_Start_Passive_DMA( peripheral_state );
 }
 
+/**
+ * @brief Return unread RX data as one or two spans into the DMA buffer.
+ *
+ * @details
+ *     The RX DMA stream writes circularly into rx_buffer. This function converts
+ *     the DMA NDTR element count into a byte write index and returns a stable
+ *     view of unread data without copying or consuming it.
+ *
+ * @param peripheral
+ *     Logical SPI peripheral whose RX stream should be inspected.
+ *
+ * @return
+ *     Up to two read-only spans that cover the unread region.
+ */
 HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIPeripheral_T peripheral )
 {
     SPIPeripheralState_T* peripheral_state       = NULL;

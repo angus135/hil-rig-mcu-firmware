@@ -58,6 +58,21 @@
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief Return the next contiguous slave TX span length.
+ *
+ * @details
+ *     Slave TX uses the original byte-stream ring-buffer model. DMA can only be
+ *     programmed with one linear span, so this helper returns the number of
+ *     bytes available from tx_read_position until either pending data ends or
+ *     tx_buffer wraps.
+ *
+ * @param peripheral_state
+ *     SPI channel state containing slave TX ring positions and byte counts.
+ *
+ * @return
+ *     Number of contiguous bytes available for the next slave TX DMA transfer.
+ */
 static inline uint32_t
 HW_SPI_TX_Get_Contiguous_Read_Bytes( const SPIPeripheralState_T* peripheral_state );
 
@@ -76,12 +91,10 @@ HW_SPI_TX_Get_Contiguous_Read_Bytes( const SPIPeripheralState_T* peripheral_stat
         return 0U;
     }
 
-    /*
-     * DMA can only be programmed with a single linear memory span. If the TX
-     * ring has wrapped, only the bytes from tx_read_position to the end of the
-     * buffer are returned here. The IRQ will start another transfer for the
-     * wrapped span.
-     */
+    // DMA can only be programmed with a single linear memory span. If the TX
+    // ring has wrapped, only the bytes from tx_read_position to the end of the
+    // buffer are returned here. The IRQ will start another transfer for the
+    // wrapped span.
     bytes_until_end = TX_BUFFER_SIZE_BYTES - peripheral_state->tx_read_position;
 
     if ( peripheral_state->tx_num_bytes_pending < bytes_until_end )
@@ -117,8 +130,25 @@ bool HW_SPI_TX_Slave_Has_Pending( const SPIPeripheralState_T* peripheral_state )
 /**
  * @brief Load slave-mode byte-stream TX data into the software TX buffer.
  *
- * This keeps the original stream behaviour: the source data may wrap inside the
- * TX ring and later be sent as one or more contiguous DMA spans.
+ * @details
+ *     This keeps the original stream behaviour: the source data may wrap inside
+ *     the TX ring and later be sent as one or more contiguous DMA spans. Unlike
+ *     master mode, this path does not create packet descriptors or software-CS
+ *     transaction boundaries.
+ *
+ * @param peripheral_state
+ *     SPI channel state containing the slave TX stream queue.
+ *
+ * @param data
+ *     Caller-owned data to copy into tx_buffer.
+ *
+ * @param size
+ *     Number of bytes to append to the stream. Must be aligned to the configured
+ *     SPI frame size.
+ *
+ * @return
+ *     true if the bytes were queued; false if alignment or free-space checks
+ *     failed.
  */
 bool HW_SPI_TX_Load_Slave_Stream( SPIPeripheralState_T* peripheral_state, const uint8_t* data,
                                   uint32_t size )
@@ -161,7 +191,18 @@ bool HW_SPI_TX_Load_Slave_Stream( SPIPeripheralState_T* peripheral_state, const 
 /**
  * @brief Start a slave-mode TX DMA transfer for the next contiguous stream span.
  *
- * This is the original byte-stream behaviour separated from master packet TX.
+ * @details
+ *     This is the original byte-stream behaviour separated from master packet
+ *     TX. The function hands one contiguous span to DMA, updates the TX ring
+ *     positions, and leaves any wrapped remainder pending for a later DMA TC
+ *     re-arm.
+ *
+ * @param peripheral_state
+ *     SPI channel state containing the slave stream queue and DMA resources.
+ *
+ * @return
+ *     true if a contiguous stream span was handed to DMA; false if no data was
+ *     available or a transfer was already active.
  */
 bool HW_SPI_TX_Start_Slave_Stream_DMA( SPIPeripheralState_T* peripheral_state )
 {
