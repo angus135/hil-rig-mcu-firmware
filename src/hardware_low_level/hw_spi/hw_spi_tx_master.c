@@ -61,8 +61,36 @@
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief Check whether the master packet descriptor queue has room.
+ *
+ * @param peripheral_state
+ *     SPI channel state containing the master packet queue.
+ *
+ * @return
+ *     true when at least one descriptor slot is free; false when the queue is full.
+ */
 static inline bool
 HW_SPI_TX_Packet_Queue_Has_Free_Slot( const SPIPeripheralState_T* peripheral_state );
+
+/**
+ * @brief Return the free linear TX-buffer space from a candidate write index.
+ *
+ * @details
+ *     Master packets must be contiguous so each packet can be represented by a
+ *     single DMA transfer and a single software-CS transaction. This helper
+ *     reports how many bytes can be written without crossing either the end of
+ *     tx_buffer or unread/in-flight data.
+ *
+ * @param peripheral_state
+ *     SPI channel state containing TX ring positions and byte counts.
+ *
+ * @param write_index
+ *     Candidate byte index where a new master packet would start.
+ *
+ * @return
+ *     Number of contiguous free bytes starting at @p write_index.
+ */
 static uint32_t
 HW_SPI_TX_Get_Contiguous_Free_Bytes_From_Index( const SPIPeripheralState_T* peripheral_state,
                                                 uint32_t                    write_index );
@@ -87,21 +115,17 @@ HW_SPI_TX_Get_Contiguous_Free_Bytes_From_Index( const SPIPeripheralState_T* peri
         return 0U;
     }
 
-    /*
-     * If the candidate write index is behind the read position, the contiguous
-     * free region ends at the read position. This prevents queued data or
-     * in-flight DMA-owned data from being overwritten after wrapping.
-     */
+    // If the candidate write index is behind the read position, the contiguous
+    // free region ends at the read position. This prevents queued data or
+    // in-flight DMA-owned data from being overwritten after wrapping.
     if ( write_index < peripheral_state->tx_read_position )
     {
         return peripheral_state->tx_read_position - write_index;
     }
 
-    /*
-     * Otherwise, the contiguous free region runs to the end of tx_buffer. If a
-     * master packet does not fit here, the load path may wrap the whole packet
-     * to index 0 and intentionally leave the tail bytes unused.
-     */
+    // Otherwise, the contiguous free region runs to the end of tx_buffer. If a
+    // master packet does not fit here, the load path may wrap the whole packet
+    // to index 0 and intentionally leave the tail bytes unused.
     return TX_BUFFER_SIZE_BYTES - write_index;
 }
 
@@ -132,9 +156,25 @@ bool HW_SPI_TX_Master_Has_Pending( const SPIPeripheralState_T* peripheral_state 
 /**
  * @brief Load one contiguous master-mode TX packet into the software TX buffer.
  *
- * Each public load call is treated as one logical master packet. Packets are not
- * allowed to wrap inside tx_buffer so one packet can later be transmitted by one
- * DMA transfer.
+ * @details
+ *     Each public load call is treated as one logical master packet. Packets are
+ *     not allowed to wrap inside tx_buffer so one packet can later be
+ *     transmitted by one DMA transfer and framed by one software-CS pulse. This
+ *     function only queues the packet; HW_SPI_Tx_Trigger() or the TX completion
+ *     chain starts transmission later.
+ *
+ * @param peripheral_state
+ *     SPI channel state containing the master packet queue.
+ *
+ * @param data
+ *     Caller-owned packet bytes to copy into tx_buffer.
+ *
+ * @param size
+ *     Packet size in bytes. Must be aligned to the configured SPI frame size.
+ *
+ * @return
+ *     true if the packet was queued; false if alignment, descriptor space, or
+ *     buffer-space checks failed.
  */
 bool HW_SPI_TX_Load_Master_Packet( SPIPeripheralState_T* peripheral_state, const uint8_t* data,
                                    uint32_t size )
@@ -162,11 +202,9 @@ bool HW_SPI_TX_Load_Master_Packet( SPIPeripheralState_T* peripheral_state, const
 
     if ( size > contiguous_free )
     {
-        /*
-         * Preserve the contiguous-packet rule by wrapping the entire packet to
-         * the start of the raw TX buffer. If the write pointer is already behind
-         * the read pointer, wrapping to zero could overwrite queued data.
-         */
+        // Preserve the contiguous-packet rule by wrapping the entire packet to
+        // the start of the raw TX buffer. If the write pointer is already behind
+        // the read pointer, wrapping to zero could overwrite queued data.
         if ( peripheral_state->tx_write_position < peripheral_state->tx_read_position )
         {
             return false;
@@ -206,9 +244,18 @@ bool HW_SPI_TX_Load_Master_Packet( SPIPeripheralState_T* peripheral_state, const
 /**
  * @brief Start a master-mode TX DMA transfer for exactly one queued packet.
  *
- * Master TX progresses from the packet descriptor queue. Each DMA transfer is
- * therefore one logical packet, preserving transaction boundaries for the later
- * software chip-select layer.
+ * @details
+ *     Master TX progresses from the packet descriptor queue. Starting a packet
+ *     consumes one descriptor, moves the packet bytes from pending to in-flight,
+ *     asserts software CS, and arms one TX DMA transfer. The DMA completion path
+ *     is responsible for final-drain handling and CS release.
+ *
+ * @param peripheral_state
+ *     SPI channel state containing the queued packet and DMA resources.
+ *
+ * @return
+ *     true when one packet was successfully handed to DMA; false if no packet
+ *     was available, another transaction was active, or DMA setup failed.
  */
 bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state )
 {
@@ -238,13 +285,11 @@ bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state )
     packet_size_bytes = packet->size_bytes;
     tx_ptr            = &( peripheral_state->tx_buffer[packet->start_index] );
 
-    /*
-     * Move exactly this packet out of the pending software state and into the
-     * in-flight DMA state. The descriptor is consumed before DMA is armed. The
-     * DMA completion IRQ must not start another packet until the automatic-CS
-     * completion path has waited for the final SPI frame to drain and released
-     * CS for this packet.
-     */
+    // Move exactly this packet out of the pending software state and into the
+    // in-flight DMA state. The descriptor is consumed before DMA is armed. The
+    // DMA completion IRQ must not start another packet until the automatic-CS
+    // completion path has waited for the final SPI frame to drain and released
+    // CS for this packet.
     peripheral_state->tx_packet_read_position =
         ( peripheral_state->tx_packet_read_position + 1U ) % TX_PACKET_QUEUE_DEPTH;
     peripheral_state->tx_num_packets_pending--;
@@ -256,20 +301,16 @@ bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state )
     peripheral_state->tx_read_position =
         ( packet->start_index + packet_size_bytes ) % TX_BUFFER_SIZE_BYTES;
 
-    /*
-     * Descriptor clearing is for debug/readability only. Descriptor ownership is
-     * controlled by tx_packet_read_position and tx_num_packets_pending.
-     */
+    // Descriptor clearing is for debug/readability only. Descriptor ownership is
+    // controlled by tx_packet_read_position and tx_num_packets_pending.
     packet->start_index = 0U;
     packet->size_bytes  = 0U;
 
     peripheral_state->tx_transaction_state = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
 
-    /*
-     * Master software CS is asserted immediately before arming the DMA transfer
-     * for this packet. The actual GPIO access is intentionally hidden behind
-     * HW_SPI_TX_Master_CS_Assert(), which should call the separate GPIO driver.
-     */
+    // Master software CS is asserted immediately before arming the DMA transfer
+    // for this packet. The actual GPIO access is intentionally hidden behind
+    // HW_SPI_TX_Master_CS_Assert(), which should call the separate GPIO driver.
     HW_SPI_TX_Master_CS_Assert( peripheral_state );
 
     if ( HW_SPI_TX_Program_DMA( peripheral_state, tx_ptr, packet_size_bytes ) == false )

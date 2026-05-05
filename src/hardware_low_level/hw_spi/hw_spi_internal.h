@@ -4,36 +4,15 @@
  *  Created:    10-Apr-2026
  *
  *  Description:
- *      Public interface for the low-level SPI driver used by the HIL-RIG
- *      firmware.
- *
- *      This module exposes configuration and runtime control functions for the
- *      supported SPI peripherals, along with a generic RX peek/consume API and
- *      TX load/trigger API. The interface is designed to present SPI traffic as
- *      a raw byte stream and to hide the underlying DMA and peripheral control
- *      details from higher-level software.
- *
- *      The driver supports both 8-bit and 16-bit SPI data sizes while keeping
- *      the public RX and TX interfaces byte-based. Higher-level software is
- *      responsible for protocol framing, message construction/parsing,
- *      scheduling decisions, and correct semantic use of the configured SPI
- *      channel.
+ *      Defines private DMA resource mappings, TX/RX buffers, master packet
+ *      descriptors, transaction state, function-pointer dispatch hooks, and
+ *      internal helper prototypes shared by the split SPI implementation files.
+ *      This header is only exposed when HW_SPI_INTERNAL is defined.
  *
  *  Notes:
- *      - This is a low-level transport-style driver, not a protocol driver.
- *      - RX data is exposed as unread spans into an internal DMA-backed buffer.
- *      - TX data is copied into an internal queue before being transmitted.
- *      - The caller does not retain ownership of returned RX span storage and
- *        must not modify it.
- *      - In 16-bit SPI mode, TX buffer load sizes and RX consume sizes must be
- *        multiples of 2 bytes.
- *      - RX span lengths are always reported in bytes, including in 16-bit
- *        mode.
- *      - The driver does not define packet/message boundaries.
- *      - The driver does not perform byte swapping or data repacking for
- *        16-bit mode; higher-level software must provide data in the intended
- *        in-memory order.
- *      - A channel must be configured before it is started or used.
+ *      Runtime TX/RX paths intentionally keep validation minimal. Configuration
+ *      functions perform setup-time checks; ISR and hot-path functions assume
+ *      the selected peripheral has already been configured correctly.
  ******************************************************************************/
 
 #ifndef HW_SPI_INTERNAL_H
@@ -44,9 +23,6 @@ extern "C"
 {
 #endif
 
-// #define HW_SPI_INTERNAL
-// #include "hw_spi.h"
-// #include "hw_timer.h"
 #ifdef HW_SPI_INTERNAL
 
 /**-----------------------------------------------------------------------------
@@ -132,64 +108,115 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief Describes one queued master-mode TX packet.
+ *
+ * @details
+ *     Master TX must preserve packet boundaries because every packet is framed
+ *     by software chip-select and transmitted as exactly one DMA transfer. The
+ *     descriptor records where the packet lives inside tx_buffer and how many
+ *     bytes belong to it.
+ */
 typedef struct SPITxPacketDescriptor_T
 {
-    uint16_t start_index;
-    uint16_t size_bytes;
+    uint16_t start_index;  ///< Byte index into tx_buffer where this packet starts.
+    uint16_t size_bytes;   ///< Number of bytes in this packet; must be frame aligned.
 } SPITxPacketDescriptor_T;
 
+/**
+ * @brief Tracks the electrical completion state of a master TX transaction.
+ *
+ * @details
+ *     DMA TC is not the same as SPI bus completion. Master mode therefore uses
+ *     this state machine to distinguish an idle channel, a DMA-active packet,
+ *     a packet waiting for final-frame drain before CS release, and a faulted
+ *     transaction that requires higher-level recovery.
+ */
 typedef enum HWSPI_TX_Transaction_State_T
 {
-    HW_SPI_TX_TRANSACTION_IDLE,
-    HW_SPI_TX_TRANSACTION_DMA_ACTIVE,
-    HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN,
-    HW_SPI_TX_TRANSACTION_ERROR,
+    HW_SPI_TX_TRANSACTION_IDLE,              ///< No master packet is currently active.
+    HW_SPI_TX_TRANSACTION_DMA_ACTIVE,        ///< One packet has been handed to TX DMA.
+    HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN,  ///< DMA is complete, but SPI may still be busy.
+    HW_SPI_TX_TRANSACTION_ERROR,             ///< TX transaction fault; recovery is required.
 } HWSPI_TX_Transaction_State_T;
 
 typedef struct SPIPeripheralState_T SPIPeripheralState_T;
+
+/**
+ * @brief Mode-specific TX load operation.
+ *
+ * @details
+ *     Master mode loads one packet descriptor per public load call. Slave mode
+ *     appends raw stream bytes. The public API dispatches through this pointer
+ *     so runtime TX paths avoid repeated master/slave branching.
+ */
 typedef bool ( *HWSPI_TX_Load_Function_T )( SPIPeripheralState_T* peripheral_state,
                                             const uint8_t* data, uint32_t size );
+
+/**
+ * @brief Mode-specific TX DMA start operation.
+ */
 typedef bool ( *HWSPI_TX_Start_DMA_Function_T )( SPIPeripheralState_T* peripheral_state );
+
+/**
+ * @brief Mode-specific pending-work query.
+ */
 typedef bool ( *HWSPI_TX_Has_Pending_Function_T )( const SPIPeripheralState_T* peripheral_state );
+
+/**
+ * @brief Channel-specific helper for clearing TX DMA flags.
+ */
 typedef void ( *HWSPI_TX_Clear_DMA_Flags_Function_T )( DMA_TypeDef* dma );
 
+/**
+ * @brief Complete private state for one logical SPI peripheral.
+ *
+ * @details
+ *     The state block deliberately contains both hardware resource pointers and
+ *     software queue bookkeeping so hot TX/RX paths can operate without looking
+ *     up mappings repeatedly. Configuration code initialises the structure; ISR
+ *     and fast-path code assumes the fields are valid.
+ */
 struct SPIPeripheralState_T
 {
-    HWSPIConfig_T config;
+    HWSPIConfig_T config;  ///< Last configuration applied to this logical channel.
 
-    uint8_t  rx_buffer[RX_BUFFER_SIZE_BYTES] __attribute__( ( aligned( 2 ) ) );
-    uint32_t rx_position;
+    uint8_t rx_buffer[RX_BUFFER_SIZE_BYTES]
+        __attribute__( ( aligned( 2 ) ) );  ///< DMA-backed circular RX buffer.
+    uint32_t rx_position;  ///< Software consume index into rx_buffer, expressed in bytes.
 
-    uint8_t  tx_buffer[TX_BUFFER_SIZE_BYTES] __attribute__( ( aligned( 2 ) ) );
-    uint32_t tx_write_position;
-    uint32_t tx_read_position;
-    uint32_t tx_num_bytes_pending;
-    uint32_t tx_num_bytes_in_transmission;
+    uint8_t tx_buffer[TX_BUFFER_SIZE_BYTES]
+        __attribute__( ( aligned( 2 ) ) );  ///< Software TX queue storage.
+    uint32_t tx_write_position;             ///< Next byte index to write when loading TX data.
+    uint32_t tx_read_position;              ///< Next byte index to hand to DMA.
+    uint32_t tx_num_bytes_pending;          ///< Bytes queued in software but not yet owned by DMA.
+    uint32_t tx_num_bytes_in_transmission;  ///< Bytes currently owned by an active TX DMA transfer.
 
-    /*
-     * Master-mode TX is always software-chip-select framed. Each queued master
-     * packet is sent as one DMA transfer and one electrical SPI transaction.
-     * DMA TC therefore moves the state into transaction completion rather than
-     * immediately making the channel idle. Slave mode leaves this state idle.
-     */
+    // Master-mode TX is always software-chip-select framed. Each queued master
+    // packet is sent as one DMA transfer and one electrical SPI transaction.
+    // DMA TC therefore moves the state into transaction completion rather than
+    // immediately making the channel idle. Slave mode leaves this state idle.
     HWSPI_TX_Transaction_State_T tx_transaction_state;
 
-    SPITxPacketDescriptor_T tx_packet_descriptors[TX_PACKET_QUEUE_DEPTH];
-    uint8_t                 tx_packet_write_position;
-    uint8_t                 tx_packet_read_position;
-    uint8_t                 tx_num_packets_pending;
+    SPITxPacketDescriptor_T tx_packet_descriptors[TX_PACKET_QUEUE_DEPTH];  ///< Master packet queue.
+    uint8_t                 tx_packet_write_position;  ///< Next descriptor slot to fill.
+    uint8_t                 tx_packet_read_position;   ///< Next descriptor slot to start via DMA.
+    uint8_t tx_num_packets_pending;  ///< Number of queued master packet descriptors.
 
-    DMA_TypeDef* rx_dma;
-    uint32_t     rx_dma_stream;
-    DMA_TypeDef* tx_dma;
-    uint32_t     tx_dma_stream;
-    SPI_TypeDef* spi_peripheral;
-    IRQn_Type    tx_dma_irqn;
+    DMA_TypeDef* rx_dma;          ///< RX DMA controller instance.
+    uint32_t     rx_dma_stream;   ///< RX DMA stream selection.
+    DMA_TypeDef* tx_dma;          ///< TX DMA controller instance.
+    uint32_t     tx_dma_stream;   ///< TX DMA stream selection.
+    SPI_TypeDef* spi_peripheral;  ///< STM32 SPI peripheral instance.
+    IRQn_Type    tx_dma_irqn;     ///< NVIC IRQn for the TX DMA stream.
 
-    HWSPI_TX_Load_Function_T            tx_load_function;
-    HWSPI_TX_Start_DMA_Function_T       tx_start_dma_function;
-    HWSPI_TX_Has_Pending_Function_T     tx_has_pending_function;
-    HWSPI_TX_Clear_DMA_Flags_Function_T tx_clear_dma_flags_function;
+    HWSPI_TX_Load_Function_T tx_load_function;  ///< Selected master/slave load implementation.
+    HWSPI_TX_Start_DMA_Function_T
+        tx_start_dma_function;  ///< Selected master/slave DMA start implementation.
+    HWSPI_TX_Has_Pending_Function_T
+        tx_has_pending_function;  ///< Selected master/slave pending query.
+    HWSPI_TX_Clear_DMA_Flags_Function_T
+        tx_clear_dma_flags_function;  ///< Channel-specific DMA flag clear helper.
 };
 
 /**-----------------------------------------------------------------------------
@@ -209,6 +236,10 @@ extern SPIPeripheralState_T* dac_state;
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @name Shared configuration and conversion helpers
+ * @{
+ */
 SPIPeripheralState_T* HW_SPI_Get_State( SPIPeripheral_T peripheral );
 uint32_t              HW_SPI_Get_Frame_Size_Bytes( const SPIPeripheralState_T* peripheral_state );
 uint16_t              HW_SPI_Bytes_To_DMA_Elements( const SPIPeripheralState_T* peripheral_state,
@@ -218,9 +249,19 @@ uint32_t              HW_SPI_DMA_Elements_To_Bytes( const SPIPeripheralState_T* 
 bool                  HW_SPI_Is_Frame_Aligned_Size( const SPIPeripheralState_T* peripheral_state,
                                                     uint32_t                    size_bytes );
 void                  HW_SPI_Configure_DMA_Data_Widths( SPIPeripheralState_T* peripheral_state );
+/** @} */
 
+/**
+ * @name RX implementation hooks
+ * @{
+ */
 bool HW_SPI_RX_Start_Passive_DMA( SPIPeripheralState_T* peripheral_state );
+/** @} */
 
+/**
+ * @name TX common implementation hooks
+ * @{
+ */
 void     HW_SPI_TX_Configure_Operations( SPIPeripheralState_T* peripheral_state );
 void     HW_SPI_TX_Reset_State( SPIPeripheralState_T* peripheral_state );
 void     HW_SPI_TX_Error_Handler( SPIPeripheral_T peripheral );
@@ -233,17 +274,27 @@ bool     HW_SPI_TX_Program_DMA( SPIPeripheralState_T* peripheral_state, uint8_t*
                                 uint32_t size_bytes );
 bool     HW_SPI_TX_Should_Use_Final_Drain_Timer( const SPIPeripheralState_T* peripheral_state );
 Timer_T  HW_SPI_Get_Tx_Timer( const SPIPeripheralState_T* peripheral_state );
+/** @} */
 
+/**
+ * @name Master-mode TX packet implementation hooks
+ * @{
+ */
 bool HW_SPI_TX_Master_Has_Pending( const SPIPeripheralState_T* peripheral_state );
 bool HW_SPI_TX_Load_Master_Packet( SPIPeripheralState_T* peripheral_state, const uint8_t* data,
                                    uint32_t size );
 bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state );
+/** @} */
 
+/**
+ * @name Slave-mode TX stream implementation hooks
+ * @{
+ */
 bool HW_SPI_TX_Slave_Has_Pending( const SPIPeripheralState_T* peripheral_state );
 bool HW_SPI_TX_Load_Slave_Stream( SPIPeripheralState_T* peripheral_state, const uint8_t* data,
                                   uint32_t size );
 bool HW_SPI_TX_Start_Slave_Stream_DMA( SPIPeripheralState_T* peripheral_state );
-
+/** @} */
 #endif /* HW_SPI_INTERNAL */
 
 #ifdef __cplusplus
