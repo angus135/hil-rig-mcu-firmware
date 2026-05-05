@@ -19,9 +19,9 @@
  *      2. The flash manager calls EXTERNAL_FLASH_StartSession before execution.
  *         This erases the result partition so result writes never block on
  *         just-in-time erases during the execution run.
- *      3. buffer_manager drains execution result buffers and calls
+ *      3. flash_manager drains execution result buffers and calls
  *         EXTERNAL_FLASH_WriteResults with opaque byte spans.
- *      4. buffer_manager refills instruction buffers by calling
+ *      4. flash_manager refills instruction buffers by calling
  *         EXTERNAL_FLASH_ReadInstructions with logical byte offsets.
  *      5. result_transfer_manager calls EXTERNAL_FLASH_FlushResults, then
  *         EXTERNAL_FLASH_ReadResults to stream committed result bytes to the
@@ -29,11 +29,12 @@
  *
  *      Design boundaries:
  *      - execution_manager never calls this module directly.
- *      - buffer_manager owns RAM buffer lifetime and producer/consumer state.
+ *      - flash_manager owns RAM instruction/result buffer lifetime and
+ *        producer/consumer state.
+ *      - flash_manager is the only normal runtime task responsible for flash
+ *        access.
  *      - external_flash owns NAND partitioning, result page packing, bad-block
  *        skipping, erase-at-session-start, and committed result length.
- *      - hw_nand owns physical NAND commands, ECC status, and bad-block marker
- *        primitives.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -169,7 +170,7 @@ EXTERNAL_FLASH_GetPhysicalBlockForLogicalBlock( const ExternalFlashPartition_T* 
  * Converts a partition byte offset to a usable physical page and column.
  *
  * All public read/write APIs use logical byte offsets. This helper hides NAND
- * pages, blocks, and bad-block gaps from buffer_manager and transfer managers.
+ * pages, blocks, and bad-block gaps from flash_manager and transfer managers.
  */
 static bool EXTERNAL_FLASH_GetPhysicalAddress( const ExternalFlashPartition_T* partition,
                                                uint32_t offset, uint32_t* page, uint16_t* column );

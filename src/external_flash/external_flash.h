@@ -17,11 +17,14 @@
  *        responsible for arranging/programming the instruction partition. This
  *        first driver version only reads instructions; instruction write support
  *        should be added when the package-upload path is implemented.
- *      - buffer_manager owns the RAM instruction/result buffers. It supplies
- *        opaque result byte spans to EXTERNAL_FLASH_WriteResults and receives
- *        opaque instruction byte spans from EXTERNAL_FLASH_ReadInstructions.
+ *      - flash_manager owns the RAM instruction and result buffers used by
+ *        execution_manager.
+ *      - flash_manager is the only task that calls external_flash during normal
+ *        execution. It refills instruction buffers with
+ *        EXTERNAL_FLASH_ReadInstructions and drains result buffers with
+ *        EXTERNAL_FLASH_WriteResults.
  *      - execution_manager consumes instruction bytes and produces result bytes
- *        through buffer_manager-owned buffers. It must not call external_flash.
+ *        through flash_manager-owned buffers. It must not call external_flash.
  *      - result_transfer_manager reads committed result bytes with
  *        EXTERNAL_FLASH_ReadResults and passes them to the host interface.
  *
@@ -113,7 +116,7 @@ typedef struct
  *
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
- * @note Call this once before buffer_manager, result_transfer_manager, or
+ * @note Call this once before flash_manager, result_transfer_manager, or
  *       test_package_recieve attempts to access the NAND-backed storage.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_Init( void );
@@ -141,13 +144,13 @@ ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void );
 /**
  * @brief Appends opaque execution-result bytes to the result partition.
  *
- * @param data   Result bytes supplied by the buffer manager.
+ * @param data   Result bytes drained from flash_manager-owned result buffers.
  * @param length Number of bytes to append.
  *
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
- * @note The byte format is owned by execution_manager/buffer_manager. This
- *       function only preserves byte order and appends data to NAND.
+ * @note The byte format is owned by the execution data model. This function
+ *       only preserves byte order and appends data to NAND.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_WriteResults( const uint8_t* data, uint32_t length );
 
@@ -170,7 +173,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_FlushResults( void );
  *
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
- * @note buffer_manager should use this to refill instruction buffers for the
+ * @note flash_manager should use this to refill its instruction buffers for the
  *       execution_manager. The instruction byte format is not interpreted here.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructions( uint32_t offset, uint8_t* data,
