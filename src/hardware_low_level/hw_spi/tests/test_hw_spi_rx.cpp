@@ -44,6 +44,7 @@ extern "C"
 }
 
 using ::testing::_;
+using ::testing::AnyNumber;
 using ::testing::AtLeast;
 using ::testing::Eq;
 using ::testing::InSequence;
@@ -425,6 +426,8 @@ protected:
         channel_0_state = &channel_0_state_struct;
         channel_1_state = &channel_1_state_struct;
         dac_state       = &dac_state_struct;
+
+        EXPECT_CALL( mock, TimerConfigure( _, _, _ ) ).Times( AnyNumber() );
 
         InitialiseState( channel_0_state, SPI_CHANNEL_0, MakeMasterConfig(), SPI_CHANNEL_0_RX_DMA,
                          SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA,
