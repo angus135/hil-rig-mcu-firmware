@@ -25,7 +25,7 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "exec_i2c.h"
+#include "hw_i2c.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -59,9 +59,9 @@ bool CONSOLE_Parse_I2C_Master_And_Slave( const char*               arg,
                                          HWI2CChannel_T* slave_channel );
 bool CONSOLE_Parse_I2C_Loopback_Direction( const char*                    arg,
                                                   ConsoleI2CLoopbackDirection_T* direction );
-bool CONSOLE_Parse_I2C_Speed( const char* arg, EXECI2CSpeed_T* speed );
-bool CONSOLE_Parse_I2C_Transfer_Path( const char*            arg,
-                                             EXECI2CTransferPath_T* transfer_path );
+bool CONSOLE_Parse_I2C_Speed( const char* arg, HWI2CSpeed_T* speed );
+bool CONSOLE_Parse_I2C_Transfer_Path( const char*        arg,
+                                     HWI2CTransferPath_T* transfer_path );
 bool CONSOLE_Build_I2C_Message( uint16_t argc, char* argv[], char* out_message,
                                 uint16_t out_message_size, uint16_t* out_message_length );
 bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels,
