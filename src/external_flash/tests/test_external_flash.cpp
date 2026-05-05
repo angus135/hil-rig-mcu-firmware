@@ -6,9 +6,9 @@
  *  Description:
  *      Unit tests for the external_flash module using GoogleTest and GoogleMock.
  *      These tests validate the storage policy layer above hw_nand: bad block
- *      scanning, instruction upload, result session erase, byte stream result
- *      page packing, page scoped zero copy result writes, instruction page DMA
- *      reads, committed result readback, and instruction byte reads.
+ *      scanning, instruction upload, result session erase, page scoped zero
+ *      copy result writes, instruction page DMA reads, and committed result
+ *      readback.
  *
  *  Notes:
  *      - Production code is written in C; tests are written in C++.
@@ -224,13 +224,17 @@ protected:
         external_flash_instruction_upload_active           = false;
         external_flash_geometry                            = { 0U, 0U, 0U, 0U };
         external_flash_bad_block_count                     = 0U;
+        external_flash_instruction_next_start_offset       = 0U;
+        external_flash_instruction_block_map_count         = 0U;
+        external_flash_result_next_start_offset            = 0U;
+        external_flash_result_block_map_count              = 0U;
         external_flash_instruction_expected_length_bytes   = 0U;
         external_flash_instruction_length_bytes            = 0U;
         external_flash_committed_instruction_length_bytes  = 0U;
         external_flash_instruction_page_fill               = 0U;
         external_flash_result_length_bytes                 = 0U;
         external_flash_committed_result_length_bytes       = 0U;
-        external_flash_result_page_fill                    = 0U;
+        external_flash_result_session_capacity_bytes       = 0U;
 
         for ( uint32_t i = 0U; i < TEST_PAGE_SIZE_BYTES; i++ )
         {
@@ -239,11 +243,15 @@ protected:
             external_flash_instruction_page_buffer[i] = 0xFFU;
         }
 
-        for ( uint32_t i = 0U;
-              i < ( EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT + EXTERNAL_FLASH_RESULT_BLOCK_COUNT );
-              i++ )
+        EXTERNAL_FLASH_ClearBlockMap( external_flash_instruction_block_map,
+                                      EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT );
+        EXTERNAL_FLASH_ClearBlockMap( external_flash_result_block_map,
+                                      EXTERNAL_FLASH_RESULT_BLOCK_COUNT );
+
+        for ( uint32_t i = 0U; i < EXTERNAL_FLASH_MANAGED_BLOCK_COUNT; i++ )
         {
             external_flash_bad_block_table[i] = false;
+            external_flash_block_erase_counts[i] = 0U;
         }
     }
 
@@ -266,7 +274,7 @@ protected:
     void ExpectBadBlockScanAllGood( void )
     {
         EXPECT_CALL( mock, IsBlockBad( _, _ ) )
-            .Times( EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT + EXTERNAL_FLASH_RESULT_BLOCK_COUNT )
+            .Times( EXTERNAL_FLASH_MANAGED_BLOCK_COUNT )
             .WillRepeatedly( Invoke( []( uint32_t block, bool* is_bad ) {
                 ( void )block;
                 *is_bad = false;
@@ -339,9 +347,9 @@ TEST_F( ExternalFlashTest, InitInitialisesNandGetsGeometryAndScansBadBlocks )
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_GetInfo( &info ) );
     EXPECT_EQ( info.bad_block_count, 0U );
     EXPECT_EQ( info.instruction_capacity_bytes,
-               EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT * TEST_BLOCK_DATA_BYTES );
+               ( EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT - 1U ) * TEST_BLOCK_DATA_BYTES );
     EXPECT_EQ( info.result_capacity_bytes,
-               EXTERNAL_FLASH_RESULT_BLOCK_COUNT * TEST_BLOCK_DATA_BYTES );
+               ( EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 1U ) * TEST_BLOCK_DATA_BYTES );
     EXPECT_EQ( info.instruction_length_bytes, 0U );
 }
 
@@ -350,7 +358,7 @@ TEST_F( ExternalFlashTest, InitRemovesBadBlocksFromCapacity )
     EXPECT_CALL( mock, Init() ).WillOnce( Return( HW_NAND_STATUS_OK ) );
     ExpectGeometry();
     EXPECT_CALL( mock, IsBlockBad( _, _ ) )
-        .Times( EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT + EXTERNAL_FLASH_RESULT_BLOCK_COUNT )
+        .Times( EXTERNAL_FLASH_MANAGED_BLOCK_COUNT )
         .WillRepeatedly( Invoke( []( uint32_t block, bool* is_bad ) {
             *is_bad = ( block == 0U ) || ( block == EXTERNAL_FLASH_RESULT_START_BLOCK );
             return HW_NAND_STATUS_OK;
@@ -362,9 +370,9 @@ TEST_F( ExternalFlashTest, InitRemovesBadBlocksFromCapacity )
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_GetInfo( &info ) );
     EXPECT_EQ( info.bad_block_count, 2U );
     EXPECT_EQ( info.instruction_capacity_bytes,
-               ( EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT - 1U ) * TEST_BLOCK_DATA_BYTES );
+               ( EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT - 2U ) * TEST_BLOCK_DATA_BYTES );
     EXPECT_EQ( info.result_capacity_bytes,
-               ( EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 1U ) * TEST_BLOCK_DATA_BYTES );
+               ( EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 2U ) * TEST_BLOCK_DATA_BYTES );
 }
 
 TEST_F( ExternalFlashTest, StartSessionErasesOnlyGoodResultBlocks )
@@ -373,7 +381,7 @@ TEST_F( ExternalFlashTest, StartSessionErasesOnlyGoodResultBlocks )
     external_flash_bad_block_table[TEST_RESULT_BLOCK + 1U] = true;
 
     EXPECT_CALL( mock, BlockErase( _ ) )
-        .Times( EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 1U )
+        .Times( EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 2U )
         .WillRepeatedly( Invoke( []( uint32_t block ) {
             EXPECT_GE( block, EXTERNAL_FLASH_RESULT_START_BLOCK );
             EXPECT_NE( block, TEST_RESULT_BLOCK + 1U );
@@ -389,7 +397,7 @@ TEST_F( ExternalFlashTest, StartInstructionUploadErasesOnlyGoodInstructionBlocks
     external_flash_bad_block_table[1U] = true;
 
     EXPECT_CALL( mock, BlockErase( _ ) )
-        .Times( EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT - 1U )
+        .Times( 1U )
         .WillRepeatedly( Invoke( []( uint32_t block ) {
             EXPECT_LT( block, EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT );
             EXPECT_NE( block, 1U );
@@ -468,6 +476,26 @@ TEST_F( ExternalFlashTest, WriteInstructionPageFullPageUsesCallerBufferDirectly 
     EXPECT_EQ( info.instruction_length_bytes, TEST_PAGE_SIZE_BYTES );
 }
 
+TEST_F( ExternalFlashTest, InstructionUploadUsesWearRotationStartOffset )
+{
+    InitDriverAllGood();
+    external_flash_instruction_next_start_offset = 1U;
+    StartInstructionUploadAllGood( TEST_PAGE_SIZE_BYTES );
+
+    InSequence sequence;
+    EXPECT_CALL( mock, ProgramLoadDma( Eq( 0U ), Eq( transfer_data ), Eq( TEST_PAGE_SIZE_BYTES ) ) )
+        .WillOnce( Return( HW_NAND_STATUS_OK ) );
+    EXPECT_CALL( mock, IsTransferComplete() ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock, StartProgramExecute( Eq( TEST_PAGES_PER_BLOCK ) ) )
+        .WillOnce( Return( HW_NAND_STATUS_OK ) );
+    EXPECT_CALL( mock, WaitProgramComplete( Eq( 1U ) ) ).WillOnce( Return( HW_NAND_STATUS_OK ) );
+
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
+               EXTERNAL_FLASH_WriteInstructionPage( transfer_data, TEST_PAGE_SIZE_BYTES ) );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_FinishInstructionUpload() );
+    EXPECT_EQ( external_flash_instruction_next_start_offset, 2U );
+}
+
 TEST_F( ExternalFlashTest, FinishInstructionUploadRejectsIncompleteUpload )
 {
     InitDriverAllGood();
@@ -485,65 +513,24 @@ TEST_F( ExternalFlashTest, FinishInstructionUploadRejectsIncompleteUpload )
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_ERROR, EXTERNAL_FLASH_FinishInstructionUpload() );
 }
 
-TEST_F( ExternalFlashTest, WriteResultBytesStagesPartialPageUntilFlush )
+TEST_F( ExternalFlashTest, ResultSessionUsesWearRotationStartOffset )
 {
     InitDriverAllGood();
+    external_flash_result_next_start_offset = 1U;
     StartSessionAllGood();
 
-    EXPECT_CALL( mock, ProgramLoadDma( _, _, _ ) ).Times( 0 );
-
-    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
-               EXTERNAL_FLASH_WriteResultBytes( transfer_data, TEST_SMALL_LENGTH ) );
-
-    ExternalFlashInfo_T info = {};
-    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_GetInfo( &info ) );
-    EXPECT_EQ( info.result_length_bytes, 0U );
-}
-
-TEST_F( ExternalFlashTest, FlushProgramsPartialByteStreamPageAndReportsCommittedLength )
-{
-    InitDriverAllGood();
-    StartSessionAllGood();
-
-    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
-               EXTERNAL_FLASH_WriteResultBytes( transfer_data, TEST_SMALL_LENGTH ) );
+    uint32_t expected_page = ( TEST_RESULT_BLOCK + 1U ) * TEST_PAGES_PER_BLOCK;
 
     InSequence sequence;
-    EXPECT_CALL( mock, ProgramLoadDma( Eq( 0U ), _, Eq( TEST_PAGE_SIZE_BYTES ) ) )
-        .WillOnce( Invoke( []( uint16_t column, const uint8_t* data, uint32_t length ) {
-            EXPECT_EQ( column, 0U );
-            EXPECT_EQ( length, TEST_PAGE_SIZE_BYTES );
-            EXPECT_EQ( data[0], 0U );
-            EXPECT_EQ( data[TEST_SMALL_LENGTH - 1U],
-                       static_cast<uint8_t>( TEST_SMALL_LENGTH - 1U ) );
-            EXPECT_EQ( data[TEST_SMALL_LENGTH], 0xFFU );
-            return HW_NAND_STATUS_OK;
-        } ) );
+    EXPECT_CALL( mock, ProgramLoadDma( Eq( 0U ), Eq( transfer_data ), Eq( TEST_PAGE_SIZE_BYTES ) ) )
+        .WillOnce( Return( HW_NAND_STATUS_OK ) );
     EXPECT_CALL( mock, IsTransferComplete() ).WillOnce( Return( true ) );
-    EXPECT_CALL( mock, StartProgramExecute( Eq( TEST_RESULT_PAGE ) ) )
+    EXPECT_CALL( mock, StartProgramExecute( Eq( expected_page ) ) )
         .WillOnce( Return( HW_NAND_STATUS_OK ) );
     EXPECT_CALL( mock, WaitProgramComplete( Eq( 1U ) ) ).WillOnce( Return( HW_NAND_STATUS_OK ) );
 
-    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_FlushResults() );
-
-    ExternalFlashInfo_T info = {};
-    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_GetInfo( &info ) );
-    EXPECT_EQ( info.result_length_bytes, TEST_SMALL_LENGTH );
-}
-
-TEST_F( ExternalFlashTest, WriteResultBytesFullPageProgramsImmediately )
-{
-    InitDriverAllGood();
-    StartSessionAllGood();
-
-    ExpectOneSuccessfulProgram( TEST_RESULT_PAGE );
-
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
-               EXTERNAL_FLASH_WriteResultBytes( transfer_data, TEST_PAGE_SIZE_BYTES ) );
-
-    ExternalFlashInfo_T info = {};
-    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_GetInfo( &info ) );
-    EXPECT_EQ( info.result_length_bytes, TEST_PAGE_SIZE_BYTES );
+               EXTERNAL_FLASH_WriteResultPage( transfer_data, TEST_PAGE_SIZE_BYTES ) );
 }
 
 TEST_F( ExternalFlashTest, WriteResultPageRejectsInvalidArguments )
@@ -608,18 +595,6 @@ TEST_F( ExternalFlashTest, WriteResultPagePartialPagePadsWithErasedBytes )
     EXPECT_EQ( info.result_length_bytes, TEST_SMALL_LENGTH );
 }
 
-TEST_F( ExternalFlashTest, WriteResultPageRejectsWhenByteStreamPageIsPartiallyStaged )
-{
-    InitDriverAllGood();
-    StartSessionAllGood();
-
-    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
-               EXTERNAL_FLASH_WriteResultBytes( transfer_data, TEST_SMALL_LENGTH ) );
-
-    EXPECT_EQ( EXTERNAL_FLASH_STATUS_ERROR,
-               EXTERNAL_FLASH_WriteResultPage( transfer_data, TEST_PAGE_SIZE_BYTES ) );
-}
-
 TEST_F( ExternalFlashTest, WriteResultPageRejectsAppendAfterPartialPage )
 {
     InitDriverAllGood();
@@ -649,41 +624,21 @@ TEST_F( ExternalFlashTest, ProgramFailureRetiresBlockAndRetriesNextGoodBlock )
         .WillOnce( Return( HW_NAND_STATUS_PROGRAM_FAIL ) );
     EXPECT_CALL( mock, MarkBlockBad( Eq( TEST_RESULT_BLOCK ) ) )
         .WillOnce( Return( HW_NAND_STATUS_OK ) );
+    EXPECT_CALL( mock,
+                 BlockErase( Eq( TEST_RESULT_BLOCK + EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 1U ) ) )
+        .WillOnce( Return( HW_NAND_STATUS_OK ) );
     EXPECT_CALL( mock, ProgramLoadDma( Eq( 0U ), Eq( transfer_data ), Eq( TEST_PAGE_SIZE_BYTES ) ) )
         .WillOnce( Return( HW_NAND_STATUS_OK ) );
     EXPECT_CALL( mock, IsTransferComplete() ).WillOnce( Return( true ) );
     EXPECT_CALL( mock,
-                 StartProgramExecute( Eq( ( TEST_RESULT_BLOCK + 1U ) * TEST_PAGES_PER_BLOCK ) ) )
+                 StartProgramExecute( Eq( ( TEST_RESULT_BLOCK
+                                            + EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 1U )
+                                          * TEST_PAGES_PER_BLOCK ) ) )
         .WillOnce( Return( HW_NAND_STATUS_OK ) );
     EXPECT_CALL( mock, WaitProgramComplete( Eq( 1U ) ) ).WillOnce( Return( HW_NAND_STATUS_OK ) );
 
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
                EXTERNAL_FLASH_WriteResultPage( transfer_data, TEST_PAGE_SIZE_BYTES ) );
-}
-
-TEST_F( ExternalFlashTest, ReadInstructionsMapsLogicalOffsetToInstructionPartition )
-{
-    InitDriverAllGood();
-    external_flash_committed_instruction_length_bytes = TEST_SMALL_LENGTH;
-
-    uint8_t read_buffer[TEST_SMALL_LENGTH] = {};
-
-    EXPECT_CALL( mock, ReadPageBlocking( Eq( TEST_INSTRUCTION_PAGE ), Eq( 0U ), Eq( read_buffer ),
-                                         Eq( TEST_SMALL_LENGTH ) ) )
-        .WillOnce( Invoke( []( uint32_t page, uint16_t column, uint8_t* data, uint32_t length ) {
-            ( void )page;
-            ( void )column;
-            for ( uint32_t i = 0U; i < length; i++ )
-            {
-                data[i] = static_cast<uint8_t>( i + 1U );
-            }
-            return HW_NAND_STATUS_OK;
-        } ) );
-
-    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
-               EXTERNAL_FLASH_ReadInstructions( 0U, read_buffer, TEST_SMALL_LENGTH ) );
-    EXPECT_EQ( read_buffer[0], 1U );
-    EXPECT_EQ( read_buffer[TEST_SMALL_LENGTH - 1U], TEST_SMALL_LENGTH );
 }
 
 TEST_F( ExternalFlashTest, ReadInstructionPageRejectsInvalidArguments )
@@ -744,46 +699,6 @@ TEST_F( ExternalFlashTest, ReadInstructionPageTimesOutIfDmaDoesNotComplete )
 
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_TIMEOUT,
                EXTERNAL_FLASH_ReadInstructionPage( 0U, read_buffer, TEST_PAGE_SIZE_BYTES ) );
-}
-
-TEST_F( ExternalFlashTest, ReadResultsRejectsUnflushedByteStreamBytes )
-{
-    InitDriverAllGood();
-    StartSessionAllGood();
-
-    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
-               EXTERNAL_FLASH_WriteResultBytes( transfer_data, TEST_SMALL_LENGTH ) );
-
-    uint8_t read_buffer[TEST_SMALL_LENGTH] = {};
-    EXPECT_CALL( mock, ReadPageBlocking( _, _, _, _ ) ).Times( 0 );
-
-    EXPECT_EQ( EXTERNAL_FLASH_STATUS_INVALID_ARG,
-               EXTERNAL_FLASH_ReadResults( 0U, read_buffer, TEST_SMALL_LENGTH ) );
-}
-
-TEST_F( ExternalFlashTest, ReadResultsReadsCommittedByteStreamBytes )
-{
-    InitDriverAllGood();
-    StartSessionAllGood();
-
-    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
-               EXTERNAL_FLASH_WriteResultBytes( transfer_data, TEST_SMALL_LENGTH ) );
-
-    EXPECT_CALL( mock, ProgramLoadDma( _, _, _ ) ).WillOnce( Return( HW_NAND_STATUS_OK ) );
-    EXPECT_CALL( mock, IsTransferComplete() ).WillOnce( Return( true ) );
-    EXPECT_CALL( mock, StartProgramExecute( Eq( TEST_RESULT_PAGE ) ) )
-        .WillOnce( Return( HW_NAND_STATUS_OK ) );
-    EXPECT_CALL( mock, WaitProgramComplete( Eq( 1U ) ) ).WillOnce( Return( HW_NAND_STATUS_OK ) );
-    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_FlushResults() );
-
-    uint8_t read_buffer[TEST_SMALL_LENGTH] = {};
-
-    EXPECT_CALL( mock, ReadPageBlocking( Eq( TEST_RESULT_PAGE ), Eq( 0U ), Eq( read_buffer ),
-                                         Eq( TEST_SMALL_LENGTH ) ) )
-        .WillOnce( Return( HW_NAND_STATUS_OK ) );
-
-    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
-               EXTERNAL_FLASH_ReadResults( 0U, read_buffer, TEST_SMALL_LENGTH ) );
 }
 
 TEST_F( ExternalFlashTest, ReadResultsReadsCommittedPageWriteBytes )

@@ -50,21 +50,23 @@ EXTERNAL_FLASH_WriteResultPage(result_page_buffer, valid_length);
 
 These APIs are page scoped and use DMA internally.
 
-### Compatibility APIs
+### Package upload APIs
 
-Avoid these in the normal execution loop unless there is a specific reason:
+The test package receive path should program instructions before execution using:
 
 ```c
-EXTERNAL_FLASH_ReadInstructions(offset, buffer, length);
-EXTERNAL_FLASH_WriteResultBytes(data, length);
-EXTERNAL_FLASH_FlushResults();
+EXTERNAL_FLASH_StartInstructionUpload(instruction_length);
+EXTERNAL_FLASH_WriteInstructionBytes(chunk, length);
+EXTERNAL_FLASH_FinishInstructionUpload();
 ```
 
-These are byte stream compatibility paths for tests, simple access, or non page structured use.
+When the package receive path already has page sized instruction spans, it may use:
 
-`EXTERNAL_FLASH_FlushResults()` is only required if `EXTERNAL_FLASH_WriteResultBytes()` was used.
+```c
+EXTERNAL_FLASH_WriteInstructionPage(page_buffer, valid_length);
+```
 
-It is not required after `EXTERNAL_FLASH_WriteResultPage()`, because a partial page passed to that API is programmed immediately.
+Execution must not start until `EXTERNAL_FLASH_FinishInstructionUpload()` succeeds.
 
 ---
 
@@ -189,6 +191,31 @@ EXTERNAL_FLASH_ReadResults(offset, buffer, length);
 
 ---
 
+## Wear And Erase Policy
+
+The flash manager does not perform wear levelling directly. It must preserve the `external_flash` boundaries so the storage layer can manage wear:
+
+- Program instructions only through `EXTERNAL_FLASH_StartInstructionUpload`, `EXTERNAL_FLASH_WriteInstructionBytes` or `EXTERNAL_FLASH_WriteInstructionPage`, and `EXTERNAL_FLASH_FinishInstructionUpload`.
+- Start each execution run with `EXTERNAL_FLASH_StartSession`.
+- Write result data only through `EXTERNAL_FLASH_WriteResultPage`.
+- Do not call `hw_nand` or `hw_qspi` directly.
+
+Current policy:
+
+- Instruction upload erases only the blocks required for the uploaded instruction image.
+- Result session preparation currently prepares the full writable result capacity because the final result length is not known before execution.
+- `external_flash` keeps a spare block outside each active map so a program-failed block can be retired and replaced.
+- Runtime erase counts are currently RAM only; a metadata partition is reserved for future persistent snapshots.
+
+Future policy:
+
+- Add an erase-ahead or pre-erased result block queue.
+- The flash manager can request/maintain erased result blocks outside the hard real-time execution path.
+- Result page writes should consume already-erased blocks.
+- Direct erase-as-needed during execution should be avoided because block erase latency is too large and non-deterministic.
+
+---
+
 ## Error Handling
 
 If any `external_flash` call fails, the flash manager should:
@@ -221,5 +248,4 @@ Important statuses to handle:
 - Use page sized slots to avoid DMA wraparound.
 - Only write full result pages during execution.
 - Write the final partial result page once after execution ends.
-- Do not call `EXTERNAL_FLASH_FlushResults()` when using the page scoped result write path.
 - Do not call `hw_nand` or `hw_qspi` directly from the flash manager.

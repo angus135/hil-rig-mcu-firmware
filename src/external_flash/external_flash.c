@@ -18,8 +18,8 @@
  *         EXTERNAL_FLASH_WriteInstructionBytes or EXTERNAL_FLASH_WriteInstructionPage,
  *         and EXTERNAL_FLASH_FinishInstructionUpload.
  *      2. The flash manager calls EXTERNAL_FLASH_StartSession before execution.
- *         This erases the result partition so result writes never block on
- *         just in time erases during the execution run.
+ *         This prepares the writable result capacity so result writes never
+ *         block on just in time erases during the execution run.
  *      3. flash_manager drains page sized execution result buffers and calls
  *         EXTERNAL_FLASH_WriteResultPage.
  *      4. flash_manager refills page sized instruction buffers by calling
@@ -36,7 +36,7 @@
  *      - external_flash owns NAND partitioning, page level result programming,
  *        instruction upload programming, page level instruction reading, bad
  *        block skipping, erase at session start, committed instruction length,
- *        and committed result length.
+ *        committed result length, and best-practice-lite wear allocation.
  ******************************************************************************/
 
 /**=============================================================================
@@ -73,6 +73,14 @@
  */
 #define EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES ( 2048U )
 
+/** Number of physical blocks managed by external_flash, including metadata blocks. */
+#define EXTERNAL_FLASH_MANAGED_BLOCK_COUNT                                                    \
+    ( EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT + EXTERNAL_FLASH_RESULT_BLOCK_COUNT               \
+      + EXTERNAL_FLASH_METADATA_BLOCK_COUNT )
+
+/** Good blocks kept outside each active map so failed program blocks can be replaced. */
+#define EXTERNAL_FLASH_PARTITION_SPARE_BLOCK_COUNT ( 1U )
+
 /**=============================================================================
  *  Typedefs / Enums / Structures
  *==============================================================================
@@ -103,7 +111,7 @@ typedef struct
 /** Tracks whether the NAND device and partition scan completed successfully. */
 static bool external_flash_initialised = false;
 
-/** Tracks whether the current result partition has been erased for a new session. */
+/** Tracks whether result storage has been prepared for a new session. */
 static bool external_flash_session_active = false;
 
 /** Tracks whether a host package instruction upload is currently active. */
@@ -113,11 +121,47 @@ static bool external_flash_instruction_upload_active = false;
 static HW_NAND_Geometry_T external_flash_geometry = { 0U, 0U, 0U, 0U };
 
 /** Bad block bitmap indexed by physical block number. */
-static bool external_flash_bad_block_table[EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT
-                                           + EXTERNAL_FLASH_RESULT_BLOCK_COUNT] = { false };
+static bool external_flash_bad_block_table[EXTERNAL_FLASH_MANAGED_BLOCK_COUNT] = { false };
+
+/** Volatile erase counts used by the best-practice-lite block allocator. */
+static uint32_t external_flash_block_erase_counts[EXTERNAL_FLASH_MANAGED_BLOCK_COUNT] = { 0U };
 
 /** Number of bad blocks found across the configured instruction and result partitions. */
 static uint32_t external_flash_bad_block_count = 0U;
+
+/**
+ * Next partition local physical block offset used to break erase-count ties for instructions.
+ *
+ * This is volatile allocator state. It spreads repeated instruction uploads
+ * during one power cycle, but is not recovered after reset until metadata
+ * support is added.
+ */
+static uint32_t external_flash_instruction_next_start_offset = 0U;
+
+/** Active logical-to-physical block map for the current instruction image. */
+static uint32_t external_flash_instruction_block_map[EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT] = {
+    EXTERNAL_FLASH_INVALID_BLOCK
+};
+
+/** Number of entries currently valid in the instruction block map. */
+static uint32_t external_flash_instruction_block_map_count = 0U;
+
+/**
+ * Next partition local physical block offset used to break erase-count ties for results.
+ *
+ * This is volatile allocator state. It spreads repeated result sessions during
+ * one power cycle, but is not recovered after reset until metadata support is
+ * added.
+ */
+static uint32_t external_flash_result_next_start_offset = 0U;
+
+/** Active logical-to-physical block map for the current result session. */
+static uint32_t external_flash_result_block_map[EXTERNAL_FLASH_RESULT_BLOCK_COUNT] = {
+    EXTERNAL_FLASH_INVALID_BLOCK
+};
+
+/** Number of entries currently valid in the result block map. */
+static uint32_t external_flash_result_block_map_count = 0U;
 
 /** Total instruction bytes expected from the active host package upload. */
 static uint32_t external_flash_instruction_expected_length_bytes = 0U;
@@ -145,9 +189,7 @@ static uint32_t external_flash_instruction_page_fill = 0U;
 /**
  * Total logical result bytes accepted in the current volatile session.
  *
- * For EXTERNAL_FLASH_WriteResultBytes, this includes bytes still staged in RAM.
- * For EXTERNAL_FLASH_WriteResultPage, this advances only after the page write
- * succeeds.
+ * This advances only after EXTERNAL_FLASH_WriteResultPage succeeds.
  *
  * This value is used to choose the logical destination offset for the next
  * result page program.
@@ -162,12 +204,11 @@ static uint32_t external_flash_result_length_bytes = 0U;
  */
 static uint32_t external_flash_committed_result_length_bytes = 0U;
 
-/** Number of bytes currently staged in the private result page buffer. */
-static uint32_t external_flash_result_page_fill = 0U;
+/** Logical result capacity prepared for the active session. */
+static uint32_t external_flash_result_session_capacity_bytes = 0U;
 
 /**
- * Page sized staging buffer used by the byte write path and by the final
- * partial page path in the page scoped write API.
+ * Page sized staging buffer used by the final partial result page path.
  *
  * Full page calls to EXTERNAL_FLASH_WriteResultPage do not use this buffer.
  * Those calls DMA directly from the caller supplied flash manager buffer.
@@ -193,12 +234,24 @@ static const ExternalFlashPartition_T external_flash_instruction_partition = {
 /**
  * Fixed partition used for volatile execution result storage.
  *
- * The partition is erased at session start and is append only while the test is
- * running.
+ * The active result map is prepared at session start and is append only while
+ * the test is running.
  */
 static const ExternalFlashPartition_T external_flash_result_partition = {
     EXTERNAL_FLASH_RESULT_START_BLOCK,
     EXTERNAL_FLASH_RESULT_BLOCK_COUNT,
+};
+
+/**
+ * Fixed partition reserved for future persistent metadata snapshots.
+ *
+ * The best-practice-lite allocator already keeps RAM erase counts and active
+ * maps. The metadata partition is reserved now so the physical layout does not
+ * have to change when those counters are persisted.
+ */
+static const ExternalFlashPartition_T external_flash_metadata_partition = {
+    EXTERNAL_FLASH_METADATA_START_BLOCK,
+    EXTERNAL_FLASH_METADATA_BLOCK_COUNT,
 };
 
 /**=============================================================================
@@ -223,6 +276,47 @@ static uint32_t EXTERNAL_FLASH_BlockDataSizeBytes( void );
 
 /** Checks whether a physical block index is marked bad in the cached bad block table. */
 static bool EXTERNAL_FLASH_IsPhysicalBlockBad( uint32_t block );
+
+/** Clears all entries in an active logical-to-physical block map. */
+static void EXTERNAL_FLASH_ClearBlockMap( uint32_t* block_map, uint32_t block_map_capacity );
+
+/** Returns the active block map for a partition. */
+static uint32_t* EXTERNAL_FLASH_GetPartitionBlockMap( const ExternalFlashPartition_T* partition );
+
+/** Returns the active block map count storage for a partition. */
+static uint32_t*
+EXTERNAL_FLASH_GetPartitionBlockMapCount( const ExternalFlashPartition_T* partition );
+
+/** Returns the active block map capacity for a partition. */
+static uint32_t
+EXTERNAL_FLASH_GetPartitionBlockMapCapacity( const ExternalFlashPartition_T* partition );
+
+/** Checks whether a physical block is already present in a map. */
+static bool EXTERNAL_FLASH_IsBlockInMap( const uint32_t* block_map, uint32_t block_map_count,
+                                         uint32_t block );
+
+/** Selects a low-wear replacement block for a partition map. */
+static bool EXTERNAL_FLASH_SelectWearAwareBlock( const ExternalFlashPartition_T* partition,
+                                                 const uint32_t* block_map,
+                                                 uint32_t block_map_count, uint32_t* block );
+
+/** Builds and erases a wear-aware logical-to-physical block map for a partition image. */
+static ExternalFlashStatus_T
+EXTERNAL_FLASH_PreparePartitionMap( const ExternalFlashPartition_T* partition,
+                                    uint32_t required_length_bytes );
+
+/** Replaces a failed mapped block and erases the replacement before retrying. */
+static ExternalFlashStatus_T
+EXTERNAL_FLASH_ReplaceMappedBlock( const ExternalFlashPartition_T* partition,
+                                   uint32_t logical_block, uint32_t failed_block );
+
+/** Returns the next wear rotation start offset for a partition. */
+static uint32_t*
+EXTERNAL_FLASH_GetPartitionNextStartOffset( const ExternalFlashPartition_T* partition );
+
+/** Advances the next wear rotation start offset after committing a partition image. */
+static void EXTERNAL_FLASH_AdvancePartitionWearRotation( const ExternalFlashPartition_T* partition,
+                                                         uint32_t committed_length_bytes );
 
 /**
  * Converts a partition local logical block index to a usable physical block.
@@ -249,16 +343,6 @@ EXTERNAL_FLASH_GetPartitionCapacityBytes( const ExternalFlashPartition_T* partit
 
 /** Scans both configured partitions and caches factory bad block markers. */
 static ExternalFlashStatus_T EXTERNAL_FLASH_ScanBadBlocks( void );
-
-/** Erases all good blocks in a partition. */
-static ExternalFlashStatus_T
-EXTERNAL_FLASH_ErasePartition( const ExternalFlashPartition_T* partition );
-
-/** Erases all good blocks in the instruction partition. */
-static ExternalFlashStatus_T EXTERNAL_FLASH_EraseInstructionPartition( void );
-
-/** Erases all good blocks in the result partition. */
-static ExternalFlashStatus_T EXTERNAL_FLASH_EraseResultPartition( void );
 
 /**
  * Clears the private result page staging buffer to erased NAND state.
@@ -303,15 +387,6 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramResultPageBuffer( const uint8
 
 /** Programs the currently staged instruction page into the next instruction partition page. */
 static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramStagedInstructionPage( void );
-
-/**
- * Programs the currently staged result page into the next result partition page.
- *
- * Full staged pages are programmed during EXTERNAL_FLASH_WriteResultBytes.
- * Partial staged pages are programmed by EXTERNAL_FLASH_FlushResults before host
- * result transfer.
- */
-static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramStagedResultPage( void );
 
 /**
  * Reads one page or partial page from a partition using NAND DMA internally.
@@ -425,12 +500,345 @@ static uint32_t EXTERNAL_FLASH_BlockDataSizeBytes( void )
  */
 static bool EXTERNAL_FLASH_IsPhysicalBlockBad( uint32_t block )
 {
-    if ( block >= ( EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT + EXTERNAL_FLASH_RESULT_BLOCK_COUNT ) )
+    if ( block >= EXTERNAL_FLASH_MANAGED_BLOCK_COUNT )
     {
         return true;
     }
 
     return external_flash_bad_block_table[block];
+}
+
+/**
+ * @brief Clears an active logical-to-physical block map.
+ *
+ * @param block_map          Map to clear.
+ * @param block_map_capacity Number of entries in the map.
+ */
+static void EXTERNAL_FLASH_ClearBlockMap( uint32_t* block_map, uint32_t block_map_capacity )
+{
+    if ( block_map == NULL )
+    {
+        return;
+    }
+
+    for ( uint32_t i = 0U; i < block_map_capacity; i++ )
+    {
+        block_map[i] = EXTERNAL_FLASH_INVALID_BLOCK;
+    }
+}
+
+/**
+ * @brief Returns the active logical-to-physical map for a partition.
+ */
+static uint32_t* EXTERNAL_FLASH_GetPartitionBlockMap( const ExternalFlashPartition_T* partition )
+{
+    if ( partition == &external_flash_instruction_partition )
+    {
+        return external_flash_instruction_block_map;
+    }
+
+    if ( partition == &external_flash_result_partition )
+    {
+        return external_flash_result_block_map;
+    }
+
+    return NULL;
+}
+
+/**
+ * @brief Returns the active map count storage for a partition.
+ */
+static uint32_t*
+EXTERNAL_FLASH_GetPartitionBlockMapCount( const ExternalFlashPartition_T* partition )
+{
+    if ( partition == &external_flash_instruction_partition )
+    {
+        return &external_flash_instruction_block_map_count;
+    }
+
+    if ( partition == &external_flash_result_partition )
+    {
+        return &external_flash_result_block_map_count;
+    }
+
+    return NULL;
+}
+
+/**
+ * @brief Returns the maximum number of mapped blocks supported by a partition.
+ */
+static uint32_t
+EXTERNAL_FLASH_GetPartitionBlockMapCapacity( const ExternalFlashPartition_T* partition )
+{
+    if ( partition == &external_flash_instruction_partition )
+    {
+        return EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT;
+    }
+
+    if ( partition == &external_flash_result_partition )
+    {
+        return EXTERNAL_FLASH_RESULT_BLOCK_COUNT;
+    }
+
+    return 0U;
+}
+
+/**
+ * @brief Checks whether a physical block has already been selected in a map.
+ */
+static bool EXTERNAL_FLASH_IsBlockInMap( const uint32_t* block_map, uint32_t block_map_count,
+                                         uint32_t block )
+{
+    if ( block_map == NULL )
+    {
+        return false;
+    }
+
+    for ( uint32_t i = 0U; i < block_map_count; i++ )
+    {
+        if ( block_map[i] == block )
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * @brief Selects the lowest-wear usable block in a partition.
+ *
+ * @param partition       Partition to allocate from.
+ * @param block_map       Existing active map entries to avoid.
+ * @param block_map_count Number of existing active map entries.
+ * @param block           Destination for the selected physical block.
+ *
+ * @return true if a block was selected, otherwise false.
+ */
+static bool EXTERNAL_FLASH_SelectWearAwareBlock( const ExternalFlashPartition_T* partition,
+                                                 const uint32_t* block_map,
+                                                 uint32_t block_map_count, uint32_t* block )
+{
+    if ( ( partition == NULL ) || ( block == NULL ) || ( partition->block_count == 0U ) )
+    {
+        return false;
+    }
+
+    uint32_t  best_block       = EXTERNAL_FLASH_INVALID_BLOCK;
+    uint32_t  best_erase_count = UINT32_MAX;
+    bool      found            = false;
+    uint32_t* next_start       = EXTERNAL_FLASH_GetPartitionNextStartOffset( partition );
+    uint32_t  search_start     = ( next_start == NULL ) ? 0U : ( *next_start % partition->block_count );
+
+    for ( uint32_t i = 0U; i < partition->block_count; i++ )
+    {
+        uint32_t candidate_offset = ( search_start + i ) % partition->block_count;
+        uint32_t candidate_block  = partition->start_block + candidate_offset;
+
+        if ( EXTERNAL_FLASH_IsPhysicalBlockBad( candidate_block )
+             || EXTERNAL_FLASH_IsBlockInMap( block_map, block_map_count, candidate_block ) )
+        {
+            continue;
+        }
+
+        uint32_t candidate_erase_count = external_flash_block_erase_counts[candidate_block];
+
+        if ( ( !found ) || ( candidate_erase_count < best_erase_count ) )
+        {
+            found            = true;
+            best_block       = candidate_block;
+            best_erase_count = candidate_erase_count;
+        }
+    }
+
+    if ( found )
+    {
+        *block = best_block;
+    }
+
+    return found;
+}
+
+/**
+ * @brief Builds and erases an active map for a new partition image.
+ *
+ * @param partition             Partition to prepare.
+ * @param required_length_bytes Logical bytes expected for the image.
+ *
+ * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
+ */
+static ExternalFlashStatus_T
+EXTERNAL_FLASH_PreparePartitionMap( const ExternalFlashPartition_T* partition,
+                                    uint32_t required_length_bytes )
+{
+    if ( ( partition == NULL ) || ( required_length_bytes == 0U ) )
+    {
+        return EXTERNAL_FLASH_STATUS_INVALID_ARG;
+    }
+
+    uint32_t block_data_size = EXTERNAL_FLASH_BlockDataSizeBytes();
+    if ( block_data_size == 0U )
+    {
+        return EXTERNAL_FLASH_STATUS_ERROR;
+    }
+
+    uint32_t required_blocks = ( required_length_bytes + block_data_size - 1U ) / block_data_size;
+    uint32_t map_capacity    = EXTERNAL_FLASH_GetPartitionBlockMapCapacity( partition );
+    uint32_t* block_map      = EXTERNAL_FLASH_GetPartitionBlockMap( partition );
+    uint32_t* block_count    = EXTERNAL_FLASH_GetPartitionBlockMapCount( partition );
+
+    if ( ( block_map == NULL ) || ( block_count == NULL ) || ( required_blocks > map_capacity ) )
+    {
+        return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
+    }
+
+    EXTERNAL_FLASH_ClearBlockMap( block_map, map_capacity );
+    *block_count = 0U;
+
+    while ( *block_count < required_blocks )
+    {
+        uint32_t selected_block = EXTERNAL_FLASH_INVALID_BLOCK;
+        if ( !EXTERNAL_FLASH_SelectWearAwareBlock( partition, block_map, *block_count,
+                                                   &selected_block ) )
+        {
+            return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
+        }
+
+        ExternalFlashStatus_T status =
+            EXTERNAL_FLASH_MapNandStatus( HW_NAND_BlockErase( selected_block ) );
+        if ( status == EXTERNAL_FLASH_STATUS_ERASE_FAIL )
+        {
+            external_flash_bad_block_table[selected_block] = true;
+            external_flash_bad_block_count++;
+            ( void )HW_NAND_MarkBlockBad( selected_block );
+            continue;
+        }
+
+        if ( status != EXTERNAL_FLASH_STATUS_OK )
+        {
+            return status;
+        }
+
+        external_flash_block_erase_counts[selected_block]++;
+        block_map[*block_count] = selected_block;
+        ( *block_count )++;
+    }
+
+    return EXTERNAL_FLASH_STATUS_OK;
+}
+
+/**
+ * @brief Replaces a failed mapped block with another erased low-wear block.
+ */
+static ExternalFlashStatus_T
+EXTERNAL_FLASH_ReplaceMappedBlock( const ExternalFlashPartition_T* partition,
+                                   uint32_t logical_block, uint32_t failed_block )
+{
+    uint32_t* block_map   = EXTERNAL_FLASH_GetPartitionBlockMap( partition );
+    uint32_t* block_count = EXTERNAL_FLASH_GetPartitionBlockMapCount( partition );
+
+    if ( ( block_map == NULL ) || ( block_count == NULL ) || ( logical_block >= *block_count ) )
+    {
+        return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
+    }
+
+    if ( !external_flash_bad_block_table[failed_block] )
+    {
+        external_flash_bad_block_table[failed_block] = true;
+        external_flash_bad_block_count++;
+    }
+    ( void )HW_NAND_MarkBlockBad( failed_block );
+
+    uint32_t replacement_block = EXTERNAL_FLASH_INVALID_BLOCK;
+    if ( !EXTERNAL_FLASH_SelectWearAwareBlock( partition, block_map, *block_count,
+                                               &replacement_block ) )
+    {
+        return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
+    }
+
+    ExternalFlashStatus_T status =
+        EXTERNAL_FLASH_MapNandStatus( HW_NAND_BlockErase( replacement_block ) );
+    if ( status == EXTERNAL_FLASH_STATUS_ERASE_FAIL )
+    {
+        if ( !external_flash_bad_block_table[replacement_block] )
+        {
+            external_flash_bad_block_table[replacement_block] = true;
+            external_flash_bad_block_count++;
+        }
+        ( void )HW_NAND_MarkBlockBad( replacement_block );
+        return EXTERNAL_FLASH_ReplaceMappedBlock( partition, logical_block, failed_block );
+    }
+
+    if ( status != EXTERNAL_FLASH_STATUS_OK )
+    {
+        return status;
+    }
+
+    external_flash_block_erase_counts[replacement_block]++;
+    block_map[logical_block] = replacement_block;
+
+    return EXTERNAL_FLASH_STATUS_OK;
+}
+
+/**
+ * @brief Returns the next wear rotation cursor storage for a partition.
+ *
+ * @param partition Partition whose next cursor should be returned.
+ *
+ * @return Pointer to the cursor, or NULL for an unknown partition.
+ */
+static uint32_t*
+EXTERNAL_FLASH_GetPartitionNextStartOffset( const ExternalFlashPartition_T* partition )
+{
+    if ( partition == &external_flash_instruction_partition )
+    {
+        return &external_flash_instruction_next_start_offset;
+    }
+
+    if ( partition == &external_flash_result_partition )
+    {
+        return &external_flash_result_next_start_offset;
+    }
+
+    return NULL;
+}
+
+/**
+ * @brief Advances a partition wear cursor after data has been committed.
+ *
+ * @param partition              Partition whose cursor should move.
+ * @param committed_length_bytes Number of logical bytes committed in the image.
+ *
+ * @note This is intentionally volatile and low risk. A future metadata journal
+ *       can persist these cursors and erase counts across reset.
+ */
+static void EXTERNAL_FLASH_AdvancePartitionWearRotation( const ExternalFlashPartition_T* partition,
+                                                         uint32_t committed_length_bytes )
+{
+    if ( ( partition == NULL ) || ( partition->block_count == 0U ) )
+    {
+        return;
+    }
+
+    uint32_t* next_start = EXTERNAL_FLASH_GetPartitionNextStartOffset( partition );
+    if ( next_start == NULL )
+    {
+        return;
+    }
+
+    uint32_t block_data_size = EXTERNAL_FLASH_BlockDataSizeBytes();
+    if ( block_data_size == 0U )
+    {
+        return;
+    }
+
+    uint32_t blocks_used = ( committed_length_bytes + block_data_size - 1U ) / block_data_size;
+    if ( blocks_used == 0U )
+    {
+        blocks_used = 1U;
+    }
+
+    *next_start = ( *next_start + blocks_used ) % partition->block_count;
 }
 
 /**
@@ -449,6 +857,16 @@ EXTERNAL_FLASH_GetPhysicalBlockForLogicalBlock( const ExternalFlashPartition_T* 
     if ( ( partition == NULL ) || ( physical_block == NULL ) )
     {
         return false;
+    }
+
+    uint32_t* block_map   = EXTERNAL_FLASH_GetPartitionBlockMap( partition );
+    uint32_t* block_count = EXTERNAL_FLASH_GetPartitionBlockMapCount( partition );
+
+    if ( ( block_map != NULL ) && ( block_count != NULL ) && ( logical_block < *block_count )
+         && ( block_map[logical_block] != EXTERNAL_FLASH_INVALID_BLOCK ) )
+    {
+        *physical_block = block_map[logical_block];
+        return true;
     }
 
     uint32_t good_blocks_seen = 0U;
@@ -542,7 +960,13 @@ EXTERNAL_FLASH_GetPartitionCapacityBytes( const ExternalFlashPartition_T* partit
         }
     }
 
-    return good_block_count * EXTERNAL_FLASH_BlockDataSizeBytes();
+    if ( good_block_count <= EXTERNAL_FLASH_PARTITION_SPARE_BLOCK_COUNT )
+    {
+        return 0U;
+    }
+
+    return ( good_block_count - EXTERNAL_FLASH_PARTITION_SPARE_BLOCK_COUNT )
+           * EXTERNAL_FLASH_BlockDataSizeBytes();
 }
 
 /**
@@ -557,9 +981,7 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_ScanBadBlocks( void )
 {
     external_flash_bad_block_count = 0U;
 
-    for ( uint32_t block = 0U;
-          block < ( EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT + EXTERNAL_FLASH_RESULT_BLOCK_COUNT );
-          block++ )
+    for ( uint32_t block = 0U; block < EXTERNAL_FLASH_MANAGED_BLOCK_COUNT; block++ )
     {
         bool is_bad = false;
 
@@ -581,71 +1003,12 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_ScanBadBlocks( void )
 }
 
 /**
- * @brief Erases all good blocks in a partition.
- *
- * @param partition Partition whose good physical blocks should be erased.
- *
- * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
- *
- * @note Blocks that fail erase are retired in RAM and marked bad through hw_nand.
- */
-static ExternalFlashStatus_T
-EXTERNAL_FLASH_ErasePartition( const ExternalFlashPartition_T* partition )
-{
-    if ( partition == NULL )
-    {
-        return EXTERNAL_FLASH_STATUS_INVALID_ARG;
-    }
-
-    for ( uint32_t i = 0U; i < partition->block_count; i++ )
-    {
-        uint32_t block = partition->start_block + i;
-
-        if ( !EXTERNAL_FLASH_IsPhysicalBlockBad( block ) )
-        {
-            ExternalFlashStatus_T status =
-                EXTERNAL_FLASH_MapNandStatus( HW_NAND_BlockErase( block ) );
-
-            if ( status == EXTERNAL_FLASH_STATUS_ERASE_FAIL )
-            {
-                external_flash_bad_block_table[block] = true;
-                external_flash_bad_block_count++;
-                ( void )HW_NAND_MarkBlockBad( block );
-            }
-            else if ( status != EXTERNAL_FLASH_STATUS_OK )
-            {
-                return status;
-            }
-        }
-    }
-
-    return EXTERNAL_FLASH_STATUS_OK;
-}
-
-/**
- * @brief Erases all good blocks in the instruction partition.
- */
-static ExternalFlashStatus_T EXTERNAL_FLASH_EraseInstructionPartition( void )
-{
-    return EXTERNAL_FLASH_ErasePartition( &external_flash_instruction_partition );
-}
-
-/**
- * @brief Erases all good blocks in the result partition.
- */
-static ExternalFlashStatus_T EXTERNAL_FLASH_EraseResultPartition( void )
-{
-    return EXTERNAL_FLASH_ErasePartition( &external_flash_result_partition );
-}
-
-/**
  * @brief Resets the private result page staging buffer to erased NAND state.
  */
 static void EXTERNAL_FLASH_ClearResultPageBuffer( void )
 {
     ( void )memset( external_flash_result_page_buffer, 0xFF,
                     external_flash_geometry.page_size_bytes );
-    external_flash_result_page_fill = 0U;
 }
 
 /**
@@ -699,6 +1062,7 @@ EXTERNAL_FLASH_ProgramPartitionPageBuffer( const ExternalFlashPartition_T* parti
     {
         uint32_t page   = 0U;
         uint16_t column = 0U;
+        uint32_t logical_block = page_start_offset / EXTERNAL_FLASH_BlockDataSizeBytes();
 
         if ( !EXTERNAL_FLASH_GetPhysicalAddress( partition, page_start_offset, &page, &column )
              || ( column != 0U ) )
@@ -730,13 +1094,11 @@ EXTERNAL_FLASH_ProgramPartitionPageBuffer( const ExternalFlashPartition_T* parti
         {
             uint32_t failed_block = page / external_flash_geometry.pages_per_block;
 
-            if ( !external_flash_bad_block_table[failed_block] )
+            status = EXTERNAL_FLASH_ReplaceMappedBlock( partition, logical_block, failed_block );
+            if ( status != EXTERNAL_FLASH_STATUS_OK )
             {
-                external_flash_bad_block_table[failed_block] = true;
-                external_flash_bad_block_count++;
+                return status;
             }
-
-            ( void )HW_NAND_MarkBlockBad( failed_block );
         }
         else if ( status != EXTERNAL_FLASH_STATUS_OK )
         {
@@ -799,37 +1161,6 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramStagedInstructionPage( void )
     if ( status == EXTERNAL_FLASH_STATUS_OK )
     {
         EXTERNAL_FLASH_ClearInstructionPageBuffer();
-    }
-
-    return status;
-}
-
-/**
- * @brief Programs the current private staged result page.
- *
- * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
- *
- * @note This helper is used only by the byte stream write path and its flush
- *       operation. Page scoped writes bypass the private staging buffer for full
- *       pages.
- */
-static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramStagedResultPage( void )
-{
-    if ( external_flash_result_page_fill == 0U )
-    {
-        return EXTERNAL_FLASH_STATUS_OK;
-    }
-
-    uint32_t page_start_offset =
-        external_flash_result_length_bytes - external_flash_result_page_fill;
-    uint32_t bytes_to_commit = external_flash_result_page_fill;
-
-    ExternalFlashStatus_T status = EXTERNAL_FLASH_ProgramResultPageBuffer(
-        external_flash_result_page_buffer, page_start_offset, bytes_to_commit );
-
-    if ( status == EXTERNAL_FLASH_STATUS_OK )
-    {
-        EXTERNAL_FLASH_ClearResultPageBuffer();
     }
 
     return status;
@@ -914,8 +1245,8 @@ EXTERNAL_FLASH_ReadPartitionPageDma( const ExternalFlashPartition_T* partition,
  *
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
- * @note This is the compatibility path for arbitrary byte reads. The page scoped
- *       instruction queue path should use EXTERNAL_FLASH_ReadPartitionPageDma.
+ * @note Result transfer may request host-sized spans that cross NAND page
+ *       boundaries, so this helper keeps that logic private to external_flash.
  */
 static ExternalFlashStatus_T
 EXTERNAL_FLASH_ReadFromPartition( const ExternalFlashPartition_T* partition,
@@ -979,14 +1310,27 @@ ExternalFlashStatus_T EXTERNAL_FLASH_Init( void )
     external_flash_initialised                         = false;
     external_flash_session_active                      = false;
     external_flash_instruction_upload_active           = false;
+    external_flash_instruction_next_start_offset       = 0U;
+    external_flash_instruction_block_map_count         = 0U;
+    external_flash_result_next_start_offset            = 0U;
+    external_flash_result_block_map_count              = 0U;
     external_flash_instruction_expected_length_bytes   = 0U;
     external_flash_instruction_length_bytes            = 0U;
     external_flash_committed_instruction_length_bytes  = 0U;
     external_flash_instruction_page_fill               = 0U;
     external_flash_result_length_bytes                 = 0U;
     external_flash_committed_result_length_bytes       = 0U;
-    external_flash_result_page_fill                    = 0U;
+    external_flash_result_session_capacity_bytes       = 0U;
     external_flash_bad_block_count                     = 0U;
+    EXTERNAL_FLASH_ClearBlockMap( external_flash_instruction_block_map,
+                                  EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT );
+    EXTERNAL_FLASH_ClearBlockMap( external_flash_result_block_map,
+                                  EXTERNAL_FLASH_RESULT_BLOCK_COUNT );
+
+    for ( uint32_t block = 0U; block < EXTERNAL_FLASH_MANAGED_BLOCK_COUNT; block++ )
+    {
+        external_flash_block_erase_counts[block] = 0U;
+    }
 
     ExternalFlashStatus_T status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_Init() );
     if ( status != EXTERNAL_FLASH_STATUS_OK )
@@ -1007,7 +1351,13 @@ ExternalFlashStatus_T EXTERNAL_FLASH_Init( void )
         return EXTERNAL_FLASH_STATUS_ERROR;
     }
 
-    if ( ( EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT + EXTERNAL_FLASH_RESULT_BLOCK_COUNT )
+    if ( EXTERNAL_FLASH_MANAGED_BLOCK_COUNT > external_flash_geometry.block_count )
+    {
+        return EXTERNAL_FLASH_STATUS_ERROR;
+    }
+
+    if ( ( external_flash_metadata_partition.start_block
+           + external_flash_metadata_partition.block_count )
          > external_flash_geometry.block_count )
     {
         return EXTERNAL_FLASH_STATUS_ERROR;
@@ -1048,7 +1398,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_GetInfo( ExternalFlashInfo_T* info )
 }
 
 /**
- * @brief Erases the result partition and starts a new volatile result session.
+ * @brief Prepares result storage and starts a new volatile result session.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void )
 {
@@ -1057,7 +1407,11 @@ ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void )
         return EXTERNAL_FLASH_STATUS_NOT_INITIALISED;
     }
 
-    ExternalFlashStatus_T status = EXTERNAL_FLASH_EraseResultPartition();
+    uint32_t result_capacity =
+        EXTERNAL_FLASH_GetPartitionCapacityBytes( &external_flash_result_partition );
+
+    ExternalFlashStatus_T status =
+        EXTERNAL_FLASH_PreparePartitionMap( &external_flash_result_partition, result_capacity );
     if ( status != EXTERNAL_FLASH_STATUS_OK )
     {
         return status;
@@ -1066,6 +1420,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void )
     external_flash_session_active                = true;
     external_flash_result_length_bytes           = 0U;
     external_flash_committed_result_length_bytes = 0U;
+    external_flash_result_session_capacity_bytes = result_capacity;
     EXTERNAL_FLASH_ClearResultPageBuffer();
 
     return EXTERNAL_FLASH_STATUS_OK;
@@ -1093,7 +1448,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_StartInstructionUpload( uint32_t expected_l
         return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
     }
 
-    ExternalFlashStatus_T status = EXTERNAL_FLASH_EraseInstructionPartition();
+    ExternalFlashStatus_T status =
+        EXTERNAL_FLASH_PreparePartitionMap( &external_flash_instruction_partition,
+                                            expected_length );
     if ( status != EXTERNAL_FLASH_STATUS_OK )
     {
         return status;
@@ -1280,63 +1637,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_FinishInstructionUpload( void )
     }
 
     external_flash_instruction_upload_active = false;
-
-    return EXTERNAL_FLASH_STATUS_OK;
-}
-
-/**
- * @brief Appends arbitrary result bytes through the byte stream compatibility path.
- */
-ExternalFlashStatus_T EXTERNAL_FLASH_WriteResultBytes( const uint8_t* data, uint32_t length )
-{
-    if ( !external_flash_initialised )
-    {
-        return EXTERNAL_FLASH_STATUS_NOT_INITIALISED;
-    }
-
-    if ( !external_flash_session_active )
-    {
-        return EXTERNAL_FLASH_STATUS_ERROR;
-    }
-
-    if ( ( data == NULL ) || ( length == 0U ) )
-    {
-        return EXTERNAL_FLASH_STATUS_INVALID_ARG;
-    }
-
-    uint32_t result_capacity =
-        EXTERNAL_FLASH_GetPartitionCapacityBytes( &external_flash_result_partition );
-    if ( ( external_flash_result_length_bytes > result_capacity )
-         || ( length > ( result_capacity - external_flash_result_length_bytes ) ) )
-    {
-        return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
-    }
-
-    uint32_t bytes_written = 0U;
-
-    while ( bytes_written < length )
-    {
-        uint32_t page_space =
-            external_flash_geometry.page_size_bytes - external_flash_result_page_fill;
-        uint32_t remaining       = length - bytes_written;
-        uint32_t bytes_this_page = ( remaining < page_space ) ? remaining : page_space;
-
-        ( void )memcpy( &external_flash_result_page_buffer[external_flash_result_page_fill],
-                        &data[bytes_written], bytes_this_page );
-
-        external_flash_result_page_fill += bytes_this_page;
-        external_flash_result_length_bytes += bytes_this_page;
-        bytes_written += bytes_this_page;
-
-        if ( external_flash_result_page_fill == external_flash_geometry.page_size_bytes )
-        {
-            ExternalFlashStatus_T status = EXTERNAL_FLASH_ProgramStagedResultPage();
-            if ( status != EXTERNAL_FLASH_STATUS_OK )
-            {
-                return status;
-            }
-        }
-    }
+    EXTERNAL_FLASH_AdvancePartitionWearRotation(
+        &external_flash_instruction_partition,
+        external_flash_committed_instruction_length_bytes );
 
     return EXTERNAL_FLASH_STATUS_OK;
 }
@@ -1366,20 +1669,15 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteResultPage( const uint8_t* data, uint3
         return EXTERNAL_FLASH_STATUS_INVALID_ARG;
     }
 
-    if ( external_flash_result_page_fill != 0U )
-    {
-        return EXTERNAL_FLASH_STATUS_ERROR;
-    }
-
     if ( ( external_flash_result_length_bytes % external_flash_geometry.page_size_bytes ) != 0U )
     {
         return EXTERNAL_FLASH_STATUS_ERROR;
     }
 
-    uint32_t result_capacity =
-        EXTERNAL_FLASH_GetPartitionCapacityBytes( &external_flash_result_partition );
-    if ( ( external_flash_result_length_bytes > result_capacity )
-         || ( valid_length > ( result_capacity - external_flash_result_length_bytes ) ) )
+    if ( ( external_flash_result_length_bytes > external_flash_result_session_capacity_bytes )
+         || ( valid_length
+              > ( external_flash_result_session_capacity_bytes
+                  - external_flash_result_length_bytes ) ) )
     {
         return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
     }
@@ -1406,38 +1704,15 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteResultPage( const uint8_t* data, uint3
     if ( status == EXTERNAL_FLASH_STATUS_OK )
     {
         external_flash_result_length_bytes += valid_length;
+
+        if ( valid_length < external_flash_geometry.page_size_bytes )
+        {
+            EXTERNAL_FLASH_AdvancePartitionWearRotation(
+                &external_flash_result_partition, external_flash_committed_result_length_bytes );
+        }
     }
 
     return status;
-}
-
-/**
- * @brief Commits any partial result page staged by the byte stream write path.
- */
-ExternalFlashStatus_T EXTERNAL_FLASH_FlushResults( void )
-{
-    if ( !external_flash_initialised )
-    {
-        return EXTERNAL_FLASH_STATUS_NOT_INITIALISED;
-    }
-
-    if ( !external_flash_session_active )
-    {
-        return EXTERNAL_FLASH_STATUS_ERROR;
-    }
-
-    return EXTERNAL_FLASH_ProgramStagedResultPage();
-}
-
-/**
- * @brief Reads arbitrary instruction bytes through the byte oriented compatibility path.
- */
-ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructions( uint32_t offset, uint8_t* data,
-                                                       uint32_t length )
-{
-    return EXTERNAL_FLASH_ReadFromPartition( &external_flash_instruction_partition,
-                                             external_flash_committed_instruction_length_bytes,
-                                             offset, data, length );
 }
 
 /**
