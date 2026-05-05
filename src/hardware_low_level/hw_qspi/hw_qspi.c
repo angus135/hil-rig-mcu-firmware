@@ -62,13 +62,13 @@ typedef enum
  *------------------------------------------------------------------------------
  */
 /** HAL QSPI handle currently owned by this wrapper. NULL means the module is not initialised. */
-static QSPI_HandleTypeDef*                      qspi_handle             = NULL;
+static QSPI_HandleTypeDef* qspi_handle = NULL;
 
 /** Timeout used when a command does not provide a per-command timeout override. */
-static uint32_t                                 qspi_default_timeout_ms = 0U;
+static uint32_t qspi_default_timeout_ms = 0U;
 
 /** Tracks asynchronous QSPI transfer progress for DMA completion polling. */
-static volatile HW_QSPI_InternalTransferState_T qspi_transfer_state     = HW_QSPI_TRANSFER_IDLE;
+static volatile HW_QSPI_InternalTransferState_T qspi_transfer_state = HW_QSPI_TRANSFER_IDLE;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -80,15 +80,15 @@ static uint32_t         HW_QSPI_Get_Instruction_Mode( HW_QSPI_Lines_T lines );
 static uint32_t         HW_QSPI_Get_Address_Mode( HW_QSPI_Lines_T lines );
 static uint32_t         HW_QSPI_Get_Address_Size( HW_QSPI_AddressSize_T address_size );
 static uint32_t         HW_QSPI_Get_Alternate_Bytes_Mode( HW_QSPI_Lines_T lines );
-static uint32_t HW_QSPI_Get_Alternate_Bytes_Size(
-    HW_QSPI_AlternateBytesSize_T alternate_bytes_size );
+static uint32_t
+HW_QSPI_Get_Alternate_Bytes_Size( HW_QSPI_AlternateBytesSize_T alternate_bytes_size );
 static uint32_t         HW_QSPI_Get_Data_Mode( HW_QSPI_Lines_T lines );
 static bool             HW_QSPI_Is_HAL_Busy_State( HAL_QSPI_StateTypeDef state );
 static HW_QSPI_Status_T HW_QSPI_Build_Command( const HW_QSPI_Command_T* command, uint32_t length,
                                                QSPI_CommandTypeDef* qspi_command );
 static HW_QSPI_Status_T HW_QSPI_Issue_Command_For_Data( const HW_QSPI_Command_T* command,
                                                         uint32_t                 length,
-                                                        QSPI_CommandTypeDef* qspi_command );
+                                                        QSPI_CommandTypeDef*     qspi_command );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -236,8 +236,8 @@ static uint32_t HW_QSPI_Get_Alternate_Bytes_Mode( HW_QSPI_Lines_T lines )
  *
  * @return STM32 HAL QSPI alternate-byte size constant.
  */
-static uint32_t HW_QSPI_Get_Alternate_Bytes_Size(
-    HW_QSPI_AlternateBytesSize_T alternate_bytes_size )
+static uint32_t
+HW_QSPI_Get_Alternate_Bytes_Size( HW_QSPI_AlternateBytesSize_T alternate_bytes_size )
 {
     switch ( alternate_bytes_size )
     {
@@ -330,9 +330,9 @@ static HW_QSPI_Status_T HW_QSPI_Build_Command( const HW_QSPI_Command_T* command,
     qspi_command->AddressMode = HW_QSPI_Get_Address_Mode( command->address_lines );
     qspi_command->AddressSize = HW_QSPI_Get_Address_Size( command->address_size );
 
-    qspi_command->AlternateBytes     = command->alternate_bytes;
-    qspi_command->AlternateByteMode  = HW_QSPI_Get_Alternate_Bytes_Mode(
-        command->alternate_bytes_lines );
+    qspi_command->AlternateBytes = command->alternate_bytes;
+    qspi_command->AlternateByteMode =
+        HW_QSPI_Get_Alternate_Bytes_Mode( command->alternate_bytes_lines );
     qspi_command->AlternateBytesSize =
         HW_QSPI_Get_Alternate_Bytes_Size( command->alternate_bytes_size );
 
@@ -367,7 +367,7 @@ static HW_QSPI_Status_T HW_QSPI_Build_Command( const HW_QSPI_Command_T* command,
  */
 static HW_QSPI_Status_T HW_QSPI_Issue_Command_For_Data( const HW_QSPI_Command_T* command,
                                                         uint32_t                 length,
-                                                        QSPI_CommandTypeDef* qspi_command )
+                                                        QSPI_CommandTypeDef*     qspi_command )
 {
     HW_QSPI_Status_T status = HW_QSPI_Build_Command( command, length, qspi_command );
     if ( status != HW_QSPI_STATUS_OK )
@@ -443,8 +443,8 @@ HW_QSPI_Status_T HW_QSPI_Command( const HW_QSPI_Command_T* command )
 
     status = HW_QSPI_Map_HAL_Status(
         HAL_QSPI_Command( qspi_handle, &qspi_command, HW_QSPI_Get_Timeout( command ) ) );
-    qspi_transfer_state = ( status == HW_QSPI_STATUS_OK ) ? HW_QSPI_TRANSFER_IDLE
-                                                          : HW_QSPI_TRANSFER_ERROR;
+    qspi_transfer_state =
+        ( status == HW_QSPI_STATUS_OK ) ? HW_QSPI_TRANSFER_IDLE : HW_QSPI_TRANSFER_ERROR;
 
     return status;
 }
@@ -479,8 +479,8 @@ HW_QSPI_Status_T HW_QSPI_ReadBlocking( const HW_QSPI_Command_T* command, uint8_t
     qspi_transfer_state = HW_QSPI_TRANSFER_ACTIVE;
     status              = HW_QSPI_Map_HAL_Status(
         HAL_QSPI_Receive( qspi_handle, data, HW_QSPI_Get_Timeout( command ) ) );
-    qspi_transfer_state = ( status == HW_QSPI_STATUS_OK ) ? HW_QSPI_TRANSFER_IDLE
-                                                          : HW_QSPI_TRANSFER_ERROR;
+    qspi_transfer_state =
+        ( status == HW_QSPI_STATUS_OK ) ? HW_QSPI_TRANSFER_IDLE : HW_QSPI_TRANSFER_ERROR;
 
     return status;
 }
@@ -515,8 +515,8 @@ HW_QSPI_Status_T HW_QSPI_WriteBlocking( const HW_QSPI_Command_T* command, const 
     qspi_transfer_state = HW_QSPI_TRANSFER_ACTIVE;
     status              = HW_QSPI_Map_HAL_Status(
         HAL_QSPI_Transmit( qspi_handle, ( uint8_t* )data, HW_QSPI_Get_Timeout( command ) ) );
-    qspi_transfer_state = ( status == HW_QSPI_STATUS_OK ) ? HW_QSPI_TRANSFER_IDLE
-                                                          : HW_QSPI_TRANSFER_ERROR;
+    qspi_transfer_state =
+        ( status == HW_QSPI_STATUS_OK ) ? HW_QSPI_TRANSFER_IDLE : HW_QSPI_TRANSFER_ERROR;
 
     return status;
 }
@@ -622,8 +622,8 @@ HW_QSPI_Status_T HW_QSPI_Abort( void )
     }
 
     HW_QSPI_Status_T status = HW_QSPI_Map_HAL_Status( HAL_QSPI_Abort( qspi_handle ) );
-    qspi_transfer_state = ( status == HW_QSPI_STATUS_OK ) ? HW_QSPI_TRANSFER_IDLE
-                                                          : HW_QSPI_TRANSFER_ERROR;
+    qspi_transfer_state =
+        ( status == HW_QSPI_STATUS_OK ) ? HW_QSPI_TRANSFER_IDLE : HW_QSPI_TRANSFER_ERROR;
 
     return status;
 }
