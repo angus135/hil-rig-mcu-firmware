@@ -61,9 +61,9 @@
  *------------------------------------------------------------------------------
  */
 
-bool CONSOLE_Parse_I2C_Master_And_Slave( const char*               arg,
-                                                EXECI2CExternalChannel_T* master_channel,
-                                                EXECI2CExternalChannel_T* slave_channel )
+bool CONSOLE_Parse_I2C_Master_And_Slave( const char* arg,
+                                         HWI2CChannel_T* master_channel,
+                                         HWI2CChannel_T* slave_channel )
 {
     if ( ( arg == NULL ) || ( master_channel == NULL ) || ( slave_channel == NULL ) )
     {
@@ -72,15 +72,15 @@ bool CONSOLE_Parse_I2C_Master_And_Slave( const char*               arg,
 
     if ( strcmp( arg, "1" ) == 0 )
     {
-        *master_channel = EXEC_I2C_EXTERNAL_1;
-        *slave_channel  = EXEC_I2C_EXTERNAL_2;
+        *master_channel = HW_I2C_CHANNEL_1;
+        *slave_channel  = HW_I2C_CHANNEL_2;
         return true;
     }
 
     if ( strcmp( arg, "2" ) == 0 )
     {
-        *master_channel = EXEC_I2C_EXTERNAL_2;
-        *slave_channel  = EXEC_I2C_EXTERNAL_1;
+        *master_channel = HW_I2C_CHANNEL_2;
+        *slave_channel  = HW_I2C_CHANNEL_1;
         return true;
     }
 
@@ -157,19 +157,19 @@ bool CONSOLE_Parse_I2C_Transfer_Path( const char* arg, EXECI2CTransferPath_T* tr
 }
 
 bool CONSOLE_Build_I2C_Message( uint16_t argc, char* argv[], char* out_message,
-                                size_t out_message_size, uint16_t* out_message_length )
+                                uint16_t out_message_size, uint16_t* out_message_length )
 {
     if ( ( out_message == NULL ) || ( out_message_length == NULL ) || ( out_message_size == 0U ) )
     {
         return false;
     }
 
-    size_t tx_len = 0U;
+    uint16_t tx_len = 0U;
     memset( out_message, 0, out_message_size );
 
     for ( uint16_t arg_idx = 5U; arg_idx < argc; ++arg_idx )
     {
-        const size_t part_len = strlen( argv[arg_idx] );
+        const uint16_t part_len = ( uint16_t )strlen( argv[arg_idx] );
         if ( tx_len + part_len + 1U >= out_message_size )
         {
             return false;
@@ -194,13 +194,12 @@ bool CONSOLE_Build_I2C_Message( uint16_t argc, char* argv[], char* out_message,
     return true;
 }
 
-bool CONSOLE_Run_I2C_Loopback_M2S( EXECI2CExternalChannel_T master_channel,
-                                          EXECI2CExternalChannel_T slave_channel,
+bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels,
                                           uint16_t slave_addr, const char* tx_message,
                                           uint16_t tx_len, char* rx_message,
                                           uint16_t rx_message_size, uint16_t* out_received_len )
 {
-    EXECI2CStatus_T status = EXEC_I2C_Start_Slave_Receive( slave_channel, tx_len );
+    EXECI2CStatus_T status = EXEC_I2C_Start_Slave_Receive( channels.slave, tx_len );
     if ( status != EXEC_I2C_STATUS_OK )
     {
         CONSOLE_Printf( "Failed to start slave receive (status=%d).\r\n", ( int )status );
@@ -210,7 +209,7 @@ bool CONSOLE_Run_I2C_Loopback_M2S( EXECI2CExternalChannel_T master_channel,
     vTaskDelay( pdMS_TO_TICKS( 2 ) );
 
     status =
-        EXEC_I2C_Master_Send( master_channel, slave_addr, ( const uint8_t* )tx_message, tx_len );
+        EXEC_I2C_Master_Send( channels.master, slave_addr, ( const uint8_t* )tx_message, tx_len );
     if ( status != EXEC_I2C_STATUS_OK )
     {
         CONSOLE_Printf( "Master send failed (status=%d).\r\n", ( int )status );
@@ -224,7 +223,7 @@ bool CONSOLE_Run_I2C_Loopback_M2S( EXECI2CExternalChannel_T master_channel,
     {
         uint16_t chunk = 0U;
         status         = EXEC_I2C_Receive_Copy_And_Consume(
-            slave_channel, ( uint8_t* )&rx_message[received_len],
+            channels.slave, ( uint8_t* )&rx_message[received_len],
             ( uint16_t )( rx_message_size - 1U - received_len ), &chunk );
 
         if ( status != EXEC_I2C_STATUS_OK )
@@ -247,14 +246,13 @@ bool CONSOLE_Run_I2C_Loopback_M2S( EXECI2CExternalChannel_T master_channel,
     return true;
 }
 
-bool CONSOLE_Run_I2C_Loopback_S2M( EXECI2CExternalChannel_T master_channel,
-                                          EXECI2CExternalChannel_T slave_channel,
+bool CONSOLE_Run_I2C_Loopback_S2M( CONSOLEI2CLoopbackChannels_T channels,
                                           uint16_t slave_addr, const char* tx_message,
                                           uint16_t tx_len, char* rx_message,
                                           uint16_t rx_message_size, uint16_t* out_received_len )
 {
     EXECI2CStatus_T status =
-        EXEC_I2C_Slave_Send( slave_channel, ( const uint8_t* )tx_message, tx_len );
+        EXEC_I2C_Slave_Send( channels.slave, ( const uint8_t* )tx_message, tx_len );
     if ( status != EXEC_I2C_STATUS_OK )
     {
         CONSOLE_Printf( "Failed to start slave send (status=%d).\r\n", ( int )status );
@@ -263,7 +261,7 @@ bool CONSOLE_Run_I2C_Loopback_S2M( EXECI2CExternalChannel_T master_channel,
 
     vTaskDelay( pdMS_TO_TICKS( 2 ) );
 
-    status = EXEC_I2C_Start_Master_Receive( master_channel, slave_addr, tx_len );
+    status = EXEC_I2C_Start_Master_Receive( channels.master, slave_addr, tx_len );
     if ( status != EXEC_I2C_STATUS_OK )
     {
         CONSOLE_Printf( "Master receive start failed (status=%d).\r\n", ( int )status );
@@ -277,7 +275,7 @@ bool CONSOLE_Run_I2C_Loopback_S2M( EXECI2CExternalChannel_T master_channel,
     {
         uint16_t chunk = 0U;
         status         = EXEC_I2C_Receive_Copy_And_Consume(
-            master_channel, ( uint8_t* )&rx_message[received_len],
+            channels.master, ( uint8_t* )&rx_message[received_len],
             ( uint16_t )( rx_message_size - 1U - received_len ), &chunk );
 
         if ( status != EXEC_I2C_STATUS_OK )
