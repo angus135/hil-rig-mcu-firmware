@@ -1,8 +1,7 @@
 # external_flash
 ## Overview
 
-`external_flash` contains the flash storage service used by the buffer manager
-and flash manager task.
+`external_flash` contains the flash storage service used by the flash manager.
 
 This module is responsible for:
 
@@ -14,7 +13,7 @@ This module is responsible for:
 - Erasing the result partition at the start of each result session
 - Packing result bytes into NAND pages
 - Retiring blocks that fail program or erase operations
-- Providing the flash-facing API used by the buffer and transfer managers
+- Providing the flash-facing API used by the flash manager and result transfer path
 
 
 ---
@@ -59,9 +58,10 @@ QSPI commands directly.
 
 The execution manager should not call this module. The intended ownership is:
 
-- `execution_manager` produces result bytes and consumes instruction bytes.
-- `buffer_manager` owns the RAM buffers and exposes byte spans.
-- `flash_manager` calls `external_flash` to move byte spans between RAM and NAND.
+- `execution_manager` produces result bytes and consumes instruction bytes through flash-manager-owned RAM buffers.
+- `flash_manager` owns the RAM instruction and result buffers.
+- `flash_manager` is the only normal runtime task that calls `external_flash`.
+- `flash_manager` moves byte spans between RAM buffers and NAND by calling `external_flash`.
 - `external_flash` owns storage policy.
 - `hw_nand` owns physical NAND command sequencing.
 
@@ -79,7 +79,7 @@ The first implementation uses fixed compile-time partitions:
 - Instruction partition: starts at block 0.
 - Result partition: starts after the instruction partition.
 
-Execution results are stored exactly as supplied by the buffer manager. The
+Execution results are stored exactly as drained from flash-manager-owned result buffers. The
 driver does not parse result records or add page metadata in this first version.
 The current result length is tracked in RAM, so result recovery after reset is
 not supported yet.
@@ -134,8 +134,8 @@ Intended upload sequence:
    spans.
 3. A future `external_flash` instruction-write API stores those bytes in the
    instruction partition.
-4. `buffer_manager` later reads those same opaque bytes back using
-   `EXTERNAL_FLASH_ReadInstructions`.
+4. `flash_manager` later reads those same opaque bytes back into its instruction
+   buffers using `EXTERNAL_FLASH_ReadInstructions`.
 
 The instruction byte format is owned by the package/execution format, not by
 `external_flash`.
@@ -151,14 +151,14 @@ Before execution starts:
 
 During execution:
 
-1. `execution_manager` consumes instruction bytes from buffer-manager-owned
+1. `execution_manager` consumes instruction bytes from flash-manager-owned
    instruction buffers.
-2. `buffer_manager` refills those instruction buffers with
+2. `flash_manager` refills those instruction buffers with
    `EXTERNAL_FLASH_ReadInstructions`.
-3. `execution_manager` writes result bytes into buffer-manager-owned result
+3. `execution_manager` writes result bytes into flash-manager-owned result
    buffers.
-4. `buffer_manager` or the flash manager drains full/ready result spans by
-   calling `EXTERNAL_FLASH_WriteResults`.
+4. `flash_manager` drains full/ready result spans by calling
+   `EXTERNAL_FLASH_WriteResults`.
 5. `external_flash` packs those bytes into NAND pages, starts DMA program-load
    transfers, executes NAND page programs, skips bad blocks, and tracks committed
    length.
@@ -188,15 +188,16 @@ succeeds.
 
 ## Manager Responsibilities
 
-`buffer_manager`
+`flash_manager`
 
 - Owns instruction and result RAM buffers.
 - Presents full/empty/ready spans to producers and consumers.
-- Calls or coordinates calls to `EXTERNAL_FLASH_ReadInstructions` to feed
-  instruction buffers.
-- Calls or coordinates calls to `EXTERNAL_FLASH_WriteResults` to drain result
-  buffers.
-- Does not understand NAND pages, blocks, bad-block markers, or erase timing.
+- Refills instruction buffers by calling `EXTERNAL_FLASH_ReadInstructions`.
+- Drains result buffers by calling `EXTERNAL_FLASH_WriteResults`.
+- Calls `EXTERNAL_FLASH_StartSession` before execution starts.
+- Calls `EXTERNAL_FLASH_FlushResults` before committed results are transferred.
+- Is the only normal runtime task responsible for talking to flash.
+- Does not expose NAND pages, blocks, bad-block markers, erase timing, or QSPI details to `execution_manager`.
 
 `test_package_recieve`
 
