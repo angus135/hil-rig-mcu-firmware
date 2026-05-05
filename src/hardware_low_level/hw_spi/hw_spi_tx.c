@@ -293,10 +293,10 @@ static inline bool HW_SPI_TX_Program_DMA( SPIPeripheralState_T* peripheral_state
 
     LL_DMA_SetDataLength( peripheral_state->tx_dma, peripheral_state->tx_dma_stream, dma_elements );
 
-    LL_SPI_EnableDMAReq_TX( peripheral_state->spi_peripheral );
     LL_DMA_EnableIT_TC( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
     LL_DMA_EnableIT_TE( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
     LL_DMA_EnableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+    LL_SPI_EnableDMAReq_TX( peripheral_state->spi_peripheral );
 
     return true;
 }
