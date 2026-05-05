@@ -16,26 +16,26 @@
  *      - test_package_recieve receives a test package from the host and is
  *        responsible for arranging/programming the instruction partition. This
  *        first driver version only reads instructions; instruction write support
- *        should be added when the package-upload path is implemented.
+ *        should be added when the package upload path is implemented.
  *      - flash_manager owns the RAM instruction and result buffers used by
  *        execution_manager.
  *      - flash_manager is the only task that calls external_flash during normal
- *        execution. It refills instruction buffers with
- *        EXTERNAL_FLASH_ReadInstructions and drains result buffers with
- *        EXTERNAL_FLASH_WriteResults.
+ *        execution. It refills page sized instruction buffers with
+ *        EXTERNAL_FLASH_ReadInstructionPage and drains page sized result buffers
+ *        with EXTERNAL_FLASH_WriteResultPage.
  *      - execution_manager consumes instruction bytes and produces result bytes
- *        through flash_manager-owned buffers. It must not call external_flash.
+ *        through flash_manager owned buffers. It must not call external_flash.
  *      - result_transfer_manager reads committed result bytes with
  *        EXTERNAL_FLASH_ReadResults and passes them to the host interface.
  *
  *      Design decisions:
- *      - The instruction and result regions are fixed compile-time partitions.
+ *      - The instruction and result regions are fixed compile time partitions.
  *      - Results are volatile for now. They are not recovered after reset.
- *      - Result bytes are stored exactly as supplied; this layer does not parse
- *        result records or add per-page metadata yet.
+ *      - Result bytes are stored exactly as supplied. This layer does not parse
+ *        result records or add per page metadata yet.
  *      - Bad blocks are scanned at init and skipped by logical byte addressing.
  *      - The result partition is erased at the start of a session to keep
- *        execution-time writes deterministic.
+ *        execution time writes deterministic.
  ******************************************************************************/
 
 #ifndef EXTERNAL_FLASH_H
@@ -93,10 +93,10 @@ typedef enum
 
 typedef struct
 {
-    /** Usable instruction capacity after bad-block removal. */
+    /** Usable instruction capacity after bad block removal. */
     uint32_t instruction_capacity_bytes;
 
-    /** Usable result capacity after bad-block removal. */
+    /** Usable result capacity after bad block removal. */
     uint32_t result_capacity_bytes;
 
     /** Result bytes committed to NAND in the active volatile result session. */
@@ -117,12 +117,12 @@ typedef struct
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
  * @note Call this once before flash_manager, result_transfer_manager, or
- *       test_package_recieve attempts to access the NAND-backed storage.
+ *       test_package_recieve attempts to access the NAND backed storage.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_Init( void );
 
 /**
- * @brief Returns partition capacity and current result-session state.
+ * @brief Returns partition capacity and current result session state.
  *
  * @param info Destination for capacity and session information.
  *
@@ -142,25 +142,51 @@ ExternalFlashStatus_T EXTERNAL_FLASH_GetInfo( ExternalFlashInfo_T* info );
 ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void );
 
 /**
- * @brief Appends opaque execution-result bytes to the result partition.
+ * @brief Appends opaque execution result bytes to the result partition.
  *
- * @param data   Result bytes drained from flash_manager-owned result buffers.
+ * @param data   Result bytes drained from flash_manager owned result buffers.
  * @param length Number of bytes to append.
  *
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
+ * @note This is the byte stream write path. It may accept arbitrary length
+ *       result spans and internally stages partial NAND pages.
  * @note The byte format is owned by the execution data model. This function
  *       only preserves byte order and appends data to NAND.
+ * @note For page sized zero copy result writes, use
+ *       EXTERNAL_FLASH_WriteResultPage instead.
  */
-ExternalFlashStatus_T EXTERNAL_FLASH_WriteResults( const uint8_t* data, uint32_t length );
+ExternalFlashStatus_T EXTERNAL_FLASH_WriteResultBytes( const uint8_t* data, uint32_t length );
 
 /**
- * @brief Flushes any partial result page to NAND.
+ * @brief Writes one logical result page to the result partition.
+ *
+ * @param data         Result page data supplied by the flash manager.
+ * @param valid_length Number of valid logical result bytes in this page.
+ *
+ * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
+ *
+ * @note If valid_length equals the NAND page size, data is programmed directly
+ *       from the caller supplied buffer. The caller must keep this buffer valid
+ *       and unchanged until the function returns.
+ * @note If valid_length is less than the NAND page size, this is treated as the
+ *       final partial page and padded internally with 0xFF before programming.
+ * @note After a partial page write succeeds, no further result page writes
+ *       should be appended in the same session.
+ * @note This API is page scoped and must not be mixed with a partially staged
+ *       EXTERNAL_FLASH_WriteResultBytes call.
+ */
+ExternalFlashStatus_T EXTERNAL_FLASH_WriteResultPage( const uint8_t* data, uint32_t valid_length );
+
+/**
+ * @brief Flushes any partial result page staged by the byte stream write path.
  *
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
  * @note Call this when execution ends or before result_transfer_manager starts
- *       returning data to the host.
+ *       returning data to the host if EXTERNAL_FLASH_WriteResultBytes was used.
+ * @note This is not required after EXTERNAL_FLASH_WriteResultPage, because a
+ *       partial page passed to that API is programmed immediately.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_FlushResults( void );
 
@@ -173,11 +199,31 @@ ExternalFlashStatus_T EXTERNAL_FLASH_FlushResults( void );
  *
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
- * @note flash_manager should use this to refill its instruction buffers for the
- *       execution_manager. The instruction byte format is not interpreted here.
+ * @note This is the byte stream read path. It may read arbitrary byte ranges and
+ *       may cross physical page boundaries.
+ * @note For flash manager instruction queue page refills, prefer
+ *       EXTERNAL_FLASH_ReadInstructionPage.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructions( uint32_t offset, uint8_t* data,
                                                        uint32_t length );
+
+/**
+ * @brief Reads one instruction page or partial instruction page using DMA internally.
+ *
+ * @param offset Logical instruction byte offset. Must be page aligned.
+ * @param data   Destination buffer supplied by the flash manager.
+ * @param length Number of bytes to read. Must be greater than zero and no larger
+ *               than the NAND page size.
+ *
+ * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
+ *
+ * @note This API is intended for flash manager instruction queue refills.
+ * @note The caller must keep data valid and writable until the function returns.
+ * @note This API is synchronous from the caller perspective. Internally it uses
+ *       the NAND DMA read path and waits for DMA completion before returning.
+ */
+ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructionPage( uint32_t offset, uint8_t* data,
+                                                          uint32_t length );
 
 /**
  * @brief Reads stored result bytes by logical byte offset from the current session.
