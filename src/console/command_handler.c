@@ -330,8 +330,8 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
         return;
     }
 
-    EXECI2CExternalChannel_T master_channel = EXEC_I2C_EXTERNAL_1;
-    EXECI2CExternalChannel_T slave_channel  = EXEC_I2C_EXTERNAL_2;
+    HWI2CChannel_T master_channel = HW_I2C_CHANNEL_1;
+    HWI2CChannel_T slave_channel  = HW_I2C_CHANNEL_2;
     if ( !CONSOLE_Parse_I2C_Master_And_Slave( argv[1], &master_channel, &slave_channel ) )
     {
         CONSOLE_Printf( "Invalid master channel. Use 1 or 2.\r\n" );
@@ -374,7 +374,7 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
 
     EXECI2CChannelConfig_T i2c1_cfg = {
         .mode =
-            ( master_channel == EXEC_I2C_EXTERNAL_1 ) ? EXEC_I2C_MODE_MASTER : EXEC_I2C_MODE_SLAVE,
+            ( master_channel == HW_I2C_CHANNEL_1 ) ? EXEC_I2C_MODE_MASTER : EXEC_I2C_MODE_SLAVE,
         .speed            = speed,
         .tx_transfer_path = EXEC_I2C_TRANSFER_INTERRUPT,
         .rx_transfer_path = EXEC_I2C_TRANSFER_INTERRUPT,
@@ -383,7 +383,7 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
 
     EXECI2CChannelConfig_T i2c2_cfg = {
         .mode =
-            ( master_channel == EXEC_I2C_EXTERNAL_2 ) ? EXEC_I2C_MODE_MASTER : EXEC_I2C_MODE_SLAVE,
+            ( master_channel == HW_I2C_CHANNEL_2 ) ? EXEC_I2C_MODE_MASTER : EXEC_I2C_MODE_SLAVE,
         .speed            = speed,
         .tx_transfer_path = transfer_path,
         .rx_transfer_path = transfer_path,
@@ -397,22 +397,27 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
         return;
     }
 
-    const uint16_t slave_addr = ( slave_channel == EXEC_I2C_EXTERNAL_1 ) ? i2c1_addr : i2c2_addr;
+    const uint16_t slave_addr = ( slave_channel == HW_I2C_CHANNEL_1 ) ? i2c1_addr : i2c2_addr;
 
     char     rx_message[200];
     uint16_t received_len = 0U;
     bool     transfer_ok  = false;
+    CONSOLEI2CLoopbackChannels_T loopback_channels = {
+        .master = master_channel,
+        .slave  = slave_channel,
+    };
+
     if ( direction == CONSOLE_I2C_LOOPBACK_DIR_M2S )
     {
-        transfer_ok =
-            CONSOLE_Run_I2C_Loopback_M2S( master_channel, slave_channel, slave_addr, tx_message,
-                                          tx_len, rx_message, sizeof( rx_message ), &received_len );
+        transfer_ok = CONSOLE_Run_I2C_Loopback_M2S( loopback_channels, slave_addr, tx_message,
+                                                    tx_len, rx_message, sizeof( rx_message ),
+                                                    &received_len );
     }
     else
     {
-        transfer_ok =
-            CONSOLE_Run_I2C_Loopback_S2M( master_channel, slave_channel, slave_addr, tx_message,
-                                          tx_len, rx_message, sizeof( rx_message ), &received_len );
+        transfer_ok = CONSOLE_Run_I2C_Loopback_S2M( loopback_channels, slave_addr, tx_message,
+                                                    tx_len, rx_message, sizeof( rx_message ),
+                                                    &received_len );
     }
 
     if ( !transfer_ok )
@@ -422,8 +427,8 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
 
     CONSOLE_Printf(
         "I2C loopback: master=I2C%s slave=I2C%s dir=%s speed=%s i2c1_op=Interrupt i2c2_op=%s\r\n",
-        ( master_channel == EXEC_I2C_EXTERNAL_1 ) ? "1" : "2",
-        ( slave_channel == EXEC_I2C_EXTERNAL_1 ) ? "1" : "2",
+        ( master_channel == HW_I2C_CHANNEL_1 ) ? "1" : "2",
+        ( slave_channel == HW_I2C_CHANNEL_1 ) ? "1" : "2",
         ( direction == CONSOLE_I2C_LOOPBACK_DIR_M2S ) ? "m2s" : "s2m",
         ( speed == EXEC_I2C_SPEED_400KHZ ) ? "400kHz" : "100kHz",
         ( transfer_path == EXEC_I2C_TRANSFER_DMA ) ? "DMA" : "Interrupt" );
