@@ -138,6 +138,14 @@ typedef struct SPITxPacketDescriptor_T
     uint16_t size_bytes;
 } SPITxPacketDescriptor_T;
 
+typedef enum HWSPI_TX_Transaction_State_T
+{
+    HW_SPI_TX_TRANSACTION_IDLE,
+    HW_SPI_TX_TRANSACTION_DMA_ACTIVE,
+    HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN,
+    HW_SPI_TX_TRANSACTION_ERROR,
+} HWSPI_TX_Transaction_State_T;
+
 typedef struct SPIPeripheralState_T SPIPeripheralState_T;
 typedef bool ( *HWSPI_TX_Load_Function_T )( SPIPeripheralState_T* peripheral_state,
                                             const uint8_t* data, uint32_t size );
@@ -157,6 +165,14 @@ struct SPIPeripheralState_T
     uint32_t tx_read_position;
     uint32_t tx_num_bytes_pending;
     uint32_t tx_num_bytes_in_transmission;
+
+    /*
+     * Master-mode TX is always software-chip-select framed. Each queued master
+     * packet is sent as one DMA transfer and one electrical SPI transaction.
+     * DMA TC therefore moves the state into transaction completion rather than
+     * immediately making the channel idle. Slave mode leaves this state idle.
+     */
+    HWSPI_TX_Transaction_State_T tx_transaction_state;
 
     SPITxPacketDescriptor_T tx_packet_descriptors[TX_PACKET_QUEUE_DEPTH];
     uint8_t                 tx_packet_write_position;
@@ -209,6 +225,8 @@ void     HW_SPI_TX_Configure_Operations( SPIPeripheralState_T* peripheral_state 
 void     HW_SPI_TX_Reset_State( SPIPeripheralState_T* peripheral_state );
 void     HW_SPI_TX_Error_Handler( SPIPeripheral_T peripheral );
 void     HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral );
+void     HW_SPI_TX_Master_CS_Assert( SPIPeripheralState_T* peripheral_state );
+void     HW_SPI_TX_Master_CS_Deassert( SPIPeripheralState_T* peripheral_state );
 uint32_t HW_SPI_TX_Get_Used_Space( const SPIPeripheralState_T* peripheral_state );
 uint32_t HW_SPI_TX_Get_Free_Space( const SPIPeripheralState_T* peripheral_state );
 bool     HW_SPI_TX_Program_DMA( SPIPeripheralState_T* peripheral_state, uint8_t* tx_ptr,

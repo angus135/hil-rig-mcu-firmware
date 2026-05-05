@@ -795,14 +795,14 @@ void CONSOLE_SPI_Loopback_Run( uint16_t argc, char* argv[] )
         vTaskDelay( 1 );
     }
 
-    // if ( !HW_SPI_Load_Tx_Buffer( master_channel->peripheral, spi_loop_state.master_tx,
-    //                              spi_loop_state.master_tx_size_bytes ) )
-    // {
-    //     CONSOLE_Printf( "FAIL: could not load master TX buffer\r\n" );
-    //     return;
-    // }
+    if ( !HW_SPI_Load_Tx_Buffer( master_channel->peripheral, spi_loop_state.master_tx,
+                                 spi_loop_state.master_tx_size_bytes ) )
+    {
+        CONSOLE_Printf( "FAIL: could not load master TX buffer\r\n" );
+        return;
+    }
 
-    // HW_SPI_Tx_Trigger( master_channel->peripheral );
+    HW_SPI_Tx_Trigger( master_channel->peripheral );
 
     vTaskDelay( SPI_LOOP_TRANSFER_DELAY_MS );
 
