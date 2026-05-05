@@ -97,17 +97,42 @@ extern "C"
 bool EXEC_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configuration );
 
 /**
- * @brief Queue raw bytes for SPI transmission and trigger the TX path.
+ * @brief Queue one or more SPI packets for transmission and trigger the TX path.
  *
- * Copies the supplied bytes into the low-level SPI driver's internal TX queue
- * and then triggers the low-level TX DMA path.
+ * Copies packetised source data into the low-level SPI driver's internal TX
+ * queue, then triggers the low-level TX engine once after all packets have been
+ * queued.
+ *
+ * The source data is provided as one contiguous byte array. Packet boundaries
+ * are provided separately through @p packet_sizes_bytes. Each entry in
+ * @p packet_sizes_bytes describes the size of one SPI packet inside
+ * @p data_src.
+ *
+ * For master-mode SPI, each low-level HW_SPI_Load_Tx_Buffer() call becomes one
+ * software-chip-select-framed SPI transaction. This function therefore calls
+ * HW_SPI_Load_Tx_Buffer() once per packet, then calls HW_SPI_Tx_Trigger() only
+ * once after all packet loads have completed.
+ *
+ * Example:
+ * @code
+ * const uint8_t data[] = {
+ *     0x01, 0x02,        // packet 0, 2 bytes
+ *     0xAA, 0xBB, 0xCC,  // packet 1, 3 bytes
+ *     0x10               // packet 2, 1 byte
+ * };
+ *
+ * const uint32_t packet_sizes[] = { 2U, 3U, 1U };
+ *
+ * EXEC_SPI_Transmit( SPI_CHANNEL_0, data, packet_sizes, 3U );
+ * @endcode
  *
  * This function is intentionally a thin wrapper around the low-level
  * load/trigger sequence. It does not check whether the channel is configured,
  * whether the requested transfer is valid for the configured SPI mode, whether
- * the transfer is frame-aligned in 16-bit mode, or whether the operation is
- * valid for the current test schedule. Those checks are expected to be handled
- * before this function is called.
+ * each packet is frame-aligned in 16-bit mode, whether the total packet size is
+ * correct for the caller's data buffer, or whether the operation is valid for
+ * the current test schedule. Those checks are expected to be handled before this
+ * function is called.
  *
  * The source data is copied into the low-level driver's internal TX queue, so
  * the caller does not need to keep the source buffer alive after this function
@@ -117,17 +142,22 @@ bool EXEC_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T confi
  *     The SPI peripheral/channel whose TX path should be used.
  *
  * @param data_src
- *     Pointer to the source bytes to queue for transmission.
+ *     Pointer to the contiguous source bytes containing all packets back-to-back.
  *
- * @param size_bytes
- *     Number of bytes to queue for transmission.
+ * @param packet_sizes_bytes
+ *     Pointer to an array of packet sizes. Each entry gives the size, in bytes,
+ *     of the corresponding SPI packet in @p data_src.
+ *
+ * @param num_packets
+ *     Number of entries in @p packet_sizes_bytes.
  *
  * @return
- *     true if the data was accepted by the low-level TX queue and transmission
- *     was triggered.
- *     false if the low-level TX queue could not accept the requested data.
+ *     true if all packets were accepted by the low-level TX queue and
+ *     transmission was triggered.
+ *     false if any packet could not be accepted by the low-level TX queue.
  */
-bool EXEC_SPI_Transmit( SPIPeripheral_T peripheral, const uint8_t* data_src, uint32_t size_bytes );
+bool EXEC_SPI_Transmit( SPIPeripheral_T peripheral, const uint8_t* data_src,
+                        const uint32_t* packet_sizes_bytes, uint32_t num_packets );
 
 /**
  * @brief Copy all currently unread RX bytes from a SPI channel.
