@@ -120,8 +120,9 @@
 #define SPI_DAC_TX_DMA_CLEAR_TC LL_DMA_ClearFlag_TC1
 #define SPI_DAC_TX_DMA_CLEAR_TE LL_DMA_ClearFlag_TE1
 
-#define RX_BUFFER_SIZE_BYTES 1024
-#define TX_BUFFER_SIZE_BYTES 1024
+#define RX_BUFFER_SIZE_BYTES 1024U
+#define TX_BUFFER_SIZE_BYTES 1024U
+#define TX_PACKET_QUEUE_DEPTH 16U
 
 #if RX_BUFFER_SIZE_BYTES % 2 != 0
 #error "RX Buffer Must be a size that is a multiple of 2"
@@ -135,6 +136,16 @@
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+
+// Lightweight private descriptor used only for master-mode transmit packet
+// boundaries. The raw TX data is still stored in tx_buffer; this descriptor only
+// records where one logical packet starts and how many bytes it contains.
+typedef struct SPITxPacketDescriptor_T
+{
+    uint16_t start_index;
+    uint16_t size_bytes;
+} SPITxPacketDescriptor_T;
+
 typedef struct SPIPeripheralState_T
 {
     HWSPIConfig_T config;
@@ -160,6 +171,16 @@ typedef struct SPIPeripheralState_T
     // bytes; for 16-bit SPI it is converted to DMA halfword elements only when
     // programming the DMA stream length.
     uint32_t tx_num_bytes_in_transmission;
+
+    // In master mode, each HW_SPI_Load_Tx_Buffer() call is treated as one
+    // logical TX packet. The packet descriptor ring stores packet boundaries
+    // without inserting delimiter bytes into tx_buffer. Packet data is required
+    // to be contiguous in tx_buffer so each packet can be sent using one DMA
+    // transfer. Slave mode continues to use the original byte-stream behaviour.
+    SPITxPacketDescriptor_T tx_packet_descriptors[TX_PACKET_QUEUE_DEPTH];
+    uint8_t                 tx_packet_write_position;
+    uint8_t                 tx_packet_read_position;
+    uint8_t                 tx_num_packets_pending;
 
     // Hardware information
     DMA_TypeDef* rx_dma;
@@ -205,9 +226,15 @@ static void            HW_SPI_TX_Reset_State( SPIPeripheralState_T* peripheral_s
 static inline uint32_t HW_SPI_TX_Get_Used_Space( const SPIPeripheralState_T* peripheral_state );
 static inline uint32_t HW_SPI_TX_Get_Free_Space( const SPIPeripheralState_T* peripheral_state );
 static inline uint32_t
-            HW_SPI_TX_Get_Contiguous_Read_Bytes( const SPIPeripheralState_T* peripheral_state );
+HW_SPI_TX_Get_Contiguous_Read_Bytes( const SPIPeripheralState_T* peripheral_state );
+static inline bool
+HW_SPI_TX_Packet_Queue_Has_Free_Slot( const SPIPeripheralState_T* peripheral_state );
+static uint32_t
+HW_SPI_TX_Get_Contiguous_Free_Bytes_From_Index( const SPIPeripheralState_T* peripheral_state,
+                                                uint32_t                    write_index );
 static void HW_SPI_Configure_DMA_Data_Widths( SPIPeripheralState_T* peripheral_state );
 static bool HW_SPI_RX_Start_Passive_DMA( SPIPeripheralState_T* peripheral_state );
+static bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state );
 static bool
 HW_SPI_TX_Start_DMA_From_Current_Read_Position( SPIPeripheralState_T* peripheral_state );
 
@@ -283,16 +310,30 @@ static inline void HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral )
     // ring read pointer; it only marks the active DMA span as complete.
     peripheral_state->tx_num_bytes_in_transmission = 0U;
 
-    // If no more bytes were queued while DMA was active, TX is now idle. The
-    // read and write indices are intentionally left at their current ring
-    // positions rather than being reset to zero.
-    if ( peripheral_state->tx_num_bytes_pending == 0U )
+    // Master mode progresses packet-by-packet using the descriptor queue. Do
+    // not use the byte pending count alone to decide whether another master TX
+    // DMA transfer should start, because packet descriptors define the DMA
+    // boundaries. Slave mode keeps the original byte-stream continuation rule.
+    if ( peripheral_state->config.spi_mode == SPI_MASTER_MODE )
     {
-        return;
+        if ( peripheral_state->tx_num_packets_pending == 0U )
+        {
+            return;
+        }
+    }
+    else
+    {
+        // If no more bytes were queued while DMA was active, TX is now idle.
+        // The read and write indices are intentionally left at their current
+        // ring positions rather than being reset to zero.
+        if ( peripheral_state->tx_num_bytes_pending == 0U )
+        {
+            return;
+        }
     }
 
-    // More data is pending, so start the next contiguous TX ring span. If the
-    // queue wrapped, this second transfer will normally begin at index 0.
+    // More data is pending, so start the next master packet or slave-mode
+    // contiguous TX ring span.
     if ( HW_SPI_TX_Start_DMA_From_Current_Read_Position( peripheral_state ) == false )
     {
         HW_SPI_TX_Error_Handler( peripheral );
@@ -340,6 +381,15 @@ static void HW_SPI_TX_Reset_State( SPIPeripheralState_T* peripheral_state )
     peripheral_state->tx_read_position             = 0U;
     peripheral_state->tx_num_bytes_pending         = 0U;
     peripheral_state->tx_num_bytes_in_transmission = 0U;
+
+    // Reset packet descriptor queue state. Descriptor contents are cleared only
+    // for debug/readability; queue validity is controlled by the explicit
+    // packet read/write/count fields rather than by descriptor contents.
+    peripheral_state->tx_packet_write_position = 0U;
+    peripheral_state->tx_packet_read_position  = 0U;
+    peripheral_state->tx_num_packets_pending   = 0U;
+    memset( peripheral_state->tx_packet_descriptors, 0,
+            sizeof( peripheral_state->tx_packet_descriptors ) );
 }
 
 static inline uint32_t HW_SPI_TX_Get_Used_Space( const SPIPeripheralState_T* peripheral_state )
@@ -378,6 +428,41 @@ HW_SPI_TX_Get_Contiguous_Read_Bytes( const SPIPeripheralState_T* peripheral_stat
     }
 
     return bytes_until_end;
+}
+
+// Packet descriptors are a second small circular queue used only by master-mode
+// TX. A free descriptor slot is required before a new master-mode packet can be
+// accepted.
+static inline bool
+HW_SPI_TX_Packet_Queue_Has_Free_Slot( const SPIPeripheralState_T* peripheral_state )
+{
+    return peripheral_state->tx_num_packets_pending < TX_PACKET_QUEUE_DEPTH;
+}
+
+// Return the number of contiguous free bytes available from a candidate write
+// index. This allows master-mode packet loading to enforce the rule that each
+// packet must be stored contiguously in tx_buffer.
+static uint32_t
+HW_SPI_TX_Get_Contiguous_Free_Bytes_From_Index( const SPIPeripheralState_T* peripheral_state,
+                                                uint32_t                    write_index )
+{
+    if ( HW_SPI_TX_Get_Used_Space( peripheral_state ) == TX_BUFFER_SIZE_BYTES )
+    {
+        return 0U;
+    }
+
+    // If the candidate write index is behind the read position, the contiguous
+    // free region ends at the read position. This prevents queued data or
+    // in-flight DMA-owned data from being overwritten after wrapping.
+    if ( write_index < peripheral_state->tx_read_position )
+    {
+        return peripheral_state->tx_read_position - write_index;
+    }
+
+    // Otherwise, the contiguous free region runs to the end of tx_buffer. If a
+    // master packet does not fit here, the load path may wrap the whole packet
+    // to index 0 and intentionally leave the tail bytes unused.
+    return TX_BUFFER_SIZE_BYTES - write_index;
 }
 
 /**
@@ -497,6 +582,94 @@ static bool HW_SPI_RX_Start_Passive_DMA( SPIPeripheralState_T* peripheral_state 
 }
 
 /**
+ * @brief Start a master-mode TX DMA transfer for exactly one queued packet.
+ *
+ * In master mode, DMA is deliberately armed packet-by-packet instead of sending
+ * all available contiguous TX bytes. This preserves transaction boundaries for
+ * a future software chip-select layer without inserting delimiter bytes into
+ * the transmitted SPI stream.
+ */
+static bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state )
+{
+    SPITxPacketDescriptor_T* packet       = NULL;
+    uint32_t                 dma_elements = 0U;
+    uint8_t*                 tx_ptr       = NULL;
+
+    if ( peripheral_state->tx_num_bytes_in_transmission > 0U )
+    {
+        return false;
+    }
+
+    if ( peripheral_state->tx_num_packets_pending == 0U )
+    {
+        return false;
+    }
+
+    packet =
+        &( peripheral_state->tx_packet_descriptors[peripheral_state->tx_packet_read_position] );
+
+    if ( packet->size_bytes == 0U )
+    {
+        return false;
+    }
+
+    if ( HW_SPI_Is_Frame_Aligned_Size( peripheral_state, packet->size_bytes ) == false )
+    {
+        return false;
+    }
+
+    dma_elements = HW_SPI_Bytes_To_DMA_Elements( peripheral_state, packet->size_bytes );
+
+    // Reconfigure TX DMA from a known disabled state. TX DMA remains normal
+    // mode so the master only clocks the bytes belonging to this one packet.
+    LL_DMA_DisableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+    while ( LL_DMA_IsEnabledStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream )
+            != 0U )
+    {
+    }
+
+    tx_ptr = &( peripheral_state->tx_buffer[packet->start_index] );
+
+    // Move exactly this packet out of the pending software state and into the
+    // in-flight DMA state. The packet descriptor is consumed here; completion
+    // is still reported later by the DMA TC IRQ via tx_num_bytes_in_transmission.
+    peripheral_state->tx_packet_read_position =
+        ( peripheral_state->tx_packet_read_position + 1U ) % TX_PACKET_QUEUE_DEPTH;
+    peripheral_state->tx_num_packets_pending--;
+
+    peripheral_state->tx_num_bytes_pending =
+        peripheral_state->tx_num_bytes_pending - packet->size_bytes;
+    peripheral_state->tx_num_bytes_in_transmission = packet->size_bytes;
+
+    // Keep the existing byte-ring read pointer consistent with the packet that
+    // has just been handed to DMA. Packet data is guaranteed contiguous, so the
+    // next unread byte position is simply packet start + packet size modulo the
+    // raw TX buffer size.
+    peripheral_state->tx_read_position =
+        ( packet->start_index + packet->size_bytes ) % TX_BUFFER_SIZE_BYTES;
+
+    // Descriptor clearing is for debug/readability only. Descriptor ownership is
+    // controlled by tx_packet_read_position and tx_num_packets_pending.
+    packet->start_index = 0U;
+    packet->size_bytes  = 0U;
+
+    LL_DMA_SetMemoryAddress( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
+                             ( uintptr_t )tx_ptr );
+
+    LL_DMA_SetPeriphAddress( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
+                             LL_SPI_DMA_GetRegAddr( peripheral_state->spi_peripheral ) );
+
+    LL_DMA_SetDataLength( peripheral_state->tx_dma, peripheral_state->tx_dma_stream, dma_elements );
+
+    LL_SPI_EnableDMAReq_TX( peripheral_state->spi_peripheral );
+    LL_DMA_EnableIT_TC( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+    LL_DMA_EnableIT_TE( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+    LL_DMA_EnableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+
+    return true;
+}
+
+/**
  * @brief Start a TX DMA transfer from the current software read position.
  *
  * Software state remains byte-oriented. DMA length is configured in DMA elements,
@@ -511,6 +684,14 @@ static bool HW_SPI_TX_Start_DMA_From_Current_Read_Position( SPIPeripheralState_T
     if ( peripheral_state->tx_num_bytes_in_transmission > 0U )
     {
         return false;
+    }
+
+    // Master-mode DMA starts from the packet descriptor queue so each DMA
+    // transfer corresponds to one logical packet. Slave mode continues through
+    // the original byte-stream contiguous-span path below.
+    if ( peripheral_state->config.spi_mode == SPI_MASTER_MODE )
+    {
+        return HW_SPI_TX_Start_Master_Packet_DMA( peripheral_state );
     }
 
     // Select only the next contiguous region of the ring. If pending data wraps
@@ -1143,6 +1324,8 @@ bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uin
     SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
     uint32_t              first_copy_size  = 0U;
     uint32_t              second_copy_size = 0U;
+    uint32_t              packet_start     = 0U;
+    uint32_t              contiguous_free  = 0U;
 
     // The public API stays byte-oriented, but in 16-bit mode queued TX data
     // must still be an integer number of SPI frames. This is one of the few
@@ -1157,6 +1340,79 @@ bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uin
     // function is calculating free space and updating the write pointer. This
     // disables only the channel's TX DMA IRQ, not global interrupts.
     NVIC_DisableIRQ( peripheral_state->tx_dma_irqn );
+
+    // For master mode, each load call is one logical packet. Packet bytes must
+    // be stored contiguously in tx_buffer so the DMA can send one whole packet
+    // as one transfer. If the packet does not fit before the end of tx_buffer,
+    // the whole packet is wrapped to index 0 and the tail bytes are deliberately
+    // left unused.
+    if ( peripheral_state->config.spi_mode == SPI_MASTER_MODE )
+    {
+        if ( HW_SPI_TX_Packet_Queue_Has_Free_Slot( peripheral_state ) == false )
+        {
+            NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
+            return false;
+        }
+
+        // Free space accounts for both bytes still pending in the software ring
+        // and bytes currently owned by DMA, because both occupy tx_buffer.
+        if ( size > HW_SPI_TX_Get_Free_Space( peripheral_state ) )
+        {
+            NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
+            return false;
+        }
+
+        contiguous_free = HW_SPI_TX_Get_Contiguous_Free_Bytes_From_Index(
+            peripheral_state, peripheral_state->tx_write_position );
+
+        if ( size > contiguous_free )
+        {
+            // Preserve the contiguous-packet rule by wrapping the entire packet
+            // to the start of the raw TX buffer, but only when the current write
+            // position is at or beyond the read position. If write is already
+            // behind read, then bytes before write may still contain queued
+            // packets, so wrapping to zero could overwrite valid TX data.
+            if ( peripheral_state->tx_write_position < peripheral_state->tx_read_position )
+            {
+                NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
+                return false;
+            }
+
+            // The unused tail region is deliberately skipped. It is not counted
+            // as pending data and will become naturally usable again once the
+            // byte ring catches up.
+            peripheral_state->tx_write_position = 0U;
+
+            contiguous_free = HW_SPI_TX_Get_Contiguous_Free_Bytes_From_Index(
+                peripheral_state, peripheral_state->tx_write_position );
+
+            if ( size > contiguous_free )
+            {
+                NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
+                return false;
+            }
+        }
+
+        packet_start = peripheral_state->tx_write_position;
+
+        memcpy( &( peripheral_state->tx_buffer[packet_start] ), data, size );
+
+        peripheral_state->tx_packet_descriptors[peripheral_state->tx_packet_write_position]
+            .start_index = ( uint16_t )packet_start;
+        peripheral_state->tx_packet_descriptors[peripheral_state->tx_packet_write_position]
+            .size_bytes = ( uint16_t )size;
+
+        peripheral_state->tx_packet_write_position =
+            ( peripheral_state->tx_packet_write_position + 1U ) % TX_PACKET_QUEUE_DEPTH;
+        peripheral_state->tx_num_packets_pending++;
+
+        peripheral_state->tx_write_position =
+            ( peripheral_state->tx_write_position + size ) % TX_BUFFER_SIZE_BYTES;
+        peripheral_state->tx_num_bytes_pending = peripheral_state->tx_num_bytes_pending + size;
+
+        NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
+        return true;
+    }
 
     // Free space accounts for both bytes still pending in the software ring and
     // bytes currently owned by DMA, because both occupy storage in tx_buffer.
@@ -1241,6 +1497,27 @@ void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral )
     {
         NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
         return;
+    }
+
+    // Master mode uses packet descriptors, so packet_count determines whether
+    // there is work to transmit. Slave mode keeps the original byte-stream
+    // pending-byte check. This avoids treating a wrapped write position of zero
+    // as empty.
+    if ( peripheral_state->config.spi_mode == SPI_MASTER_MODE )
+    {
+        if ( peripheral_state->tx_num_packets_pending == 0U )
+        {
+            NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
+            return;
+        }
+    }
+    else
+    {
+        if ( peripheral_state->tx_num_bytes_pending == 0U )
+        {
+            NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
+            return;
+        }
     }
 
     // Clear stale terminal flags before starting a fresh transfer. These are
