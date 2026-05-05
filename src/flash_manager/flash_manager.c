@@ -13,7 +13,7 @@
  *  Includes
  *------------------------------------------------------------------------------
  */
-#include "buffer_manager.h"
+#include "flash_manager.h"
 #include <stdint.h>
 #include <stdbool.h>
 
