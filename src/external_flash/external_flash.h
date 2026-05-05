@@ -13,10 +13,8 @@
  *      transfer.
  *
  *      Intended HIL-RIG use:
- *      - test_package_recieve receives a test package from the host and is
- *        responsible for arranging/programming the instruction partition. This
- *        first driver version only reads instructions; instruction write support
- *        should be added when the package upload path is implemented.
+ *      - test_package_recieve receives a test package from the host and
+ *        programs the instruction partition through the instruction upload API.
  *      - flash_manager owns the RAM instruction and result buffers used by
  *        execution_manager.
  *      - flash_manager is the only task that calls external_flash during normal
@@ -30,7 +28,8 @@
  *
  *      Design decisions:
  *      - The instruction and result regions are fixed compile time partitions.
- *      - Results are volatile for now. They are not recovered after reset.
+ *      - Instructions and results are volatile for now. They are not recovered
+ *        after reset.
  *      - Result bytes are stored exactly as supplied. This layer does not parse
  *        result records or add per page metadata yet.
  *      - Bad blocks are scanned at init and skipped by logical byte addressing.
@@ -99,6 +98,9 @@ typedef struct
     /** Usable result capacity after bad block removal. */
     uint32_t result_capacity_bytes;
 
+    /** Instruction bytes committed to NAND by the current volatile upload. */
+    uint32_t instruction_length_bytes;
+
     /** Result bytes committed to NAND in the active volatile result session. */
     uint32_t result_length_bytes;
 
@@ -140,6 +142,66 @@ ExternalFlashStatus_T EXTERNAL_FLASH_GetInfo( ExternalFlashInfo_T* info );
  *       package and before execution_manager starts consuming instructions.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void );
+
+/**
+ * @brief Erases the instruction partition and starts a new instruction upload.
+ *
+ * @param expected_length Total instruction byte count expected from the host package.
+ *
+ * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
+ *
+ * @note Existing instruction bytes are discarded. Instruction metadata is RAM
+ *       only in this first version, so instructions are not recovered after reset.
+ * @note test_package_recieve should call this before streaming package
+ *       instruction bytes through EXTERNAL_FLASH_WriteInstructionBytes or
+ *       EXTERNAL_FLASH_WriteInstructionPage.
+ */
+ExternalFlashStatus_T EXTERNAL_FLASH_StartInstructionUpload( uint32_t expected_length );
+
+/**
+ * @brief Appends opaque instruction bytes to the instruction partition upload.
+ *
+ * @param data   Instruction bytes received from the host package.
+ * @param length Number of bytes to append.
+ *
+ * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
+ *
+ * @note This is the preferred package upload API. It accepts arbitrary host
+ *       transfer chunk sizes and internally stages partial NAND pages.
+ * @note The instruction byte format is owned by the package and execution data
+ *       model. This function only preserves byte order and appends data to NAND.
+ */
+ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionBytes( const uint8_t* data,
+                                                            uint32_t length );
+
+/**
+ * @brief Writes one logical instruction page during an active upload.
+ *
+ * @param data         Instruction page data supplied by test_package_recieve.
+ * @param valid_length Number of valid instruction bytes in this page.
+ *
+ * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
+ *
+ * @note Full page writes are programmed directly from the caller supplied
+ *       buffer. Partial page writes are padded internally with 0xFF.
+ * @note This API is optional. It is useful when the package receiver already
+ *       has page sized instruction chunks.
+ * @note This API must not be mixed with a partially staged
+ *       EXTERNAL_FLASH_WriteInstructionBytes call.
+ */
+ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionPage( const uint8_t* data,
+                                                           uint32_t valid_length );
+
+/**
+ * @brief Finishes an instruction upload and commits any final partial page.
+ *
+ * @return EXTERNAL_FLASH_STATUS_OK if the expected instruction length has been
+ *         committed to NAND, otherwise an error status.
+ *
+ * @note Call this after all host package instruction bytes have been supplied.
+ *       Execution should not start until this function succeeds.
+ */
+ExternalFlashStatus_T EXTERNAL_FLASH_FinishInstructionUpload( void );
 
 /**
  * @brief Appends opaque execution result bytes to the result partition.
