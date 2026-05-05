@@ -19,8 +19,10 @@
  *      GPIO, QSPI peripheral clock, and optional DMA MSP setup are expected
  *      to be provided by the STM32 HAL / CubeMX generated MSP code.
  *
- *      Initial bringup should use blocking transfers. DMA support should be
- *      added later through separate APIs.
+ *      Initial bringup should use blocking transfers. DMA write is provided for
+ *      full page program-load transfers once the blocking path is validated.
+ *      DMA read and memory mapped mode are intentionally omitted from the first
+ *      implementation.
  ******************************************************************************/
 
 #ifndef HW_QSPI_H
@@ -35,6 +37,7 @@ extern "C"
  *  Includes
  *------------------------------------------------------------------------------
  */
+
 #ifdef TEST_BUILD
 #include "tests/hw_qspi_mocks.h"
 #else
@@ -141,23 +144,94 @@ typedef struct
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief Initialises the QSPI peripheral wrapper.
+ *
+ * @param config Pointer to the QSPI configuration and HAL handle to use.
+ *
+ * @return HW_QSPI_STATUS_OK if the peripheral is initialised, otherwise an error status.
+ *
+ * @note This function must be called before any other HW_QSPI function.
+ * @note GPIO, clocks, and DMA MSP setup are provided by CubeMX/HAL MSP code.
+ */
 HW_QSPI_Status_T HW_QSPI_Init( const HW_QSPI_Config_T* config );
 
+/**
+ * @brief Issues a QSPI command that has no data phase.
+ *
+ * @param command Pointer to the command phase description.
+ *
+ * @return HW_QSPI_STATUS_OK if the command is accepted by the HAL, otherwise an error status.
+ *
+ * @note Use this for opcode-only transactions or transactions with instruction/address/dummy
+ *       phases but no transmit or receive data buffer.
+ */
 HW_QSPI_Status_T HW_QSPI_Command( const HW_QSPI_Command_T* command );
 
+/**
+ * @brief Issues a QSPI command followed by a blocking transmit data phase.
+ *
+ * @param command Pointer to the command phase description.
+ * @param data    Pointer to the bytes to transmit.
+ * @param length  Number of bytes to transmit.
+ *
+ * @return HW_QSPI_STATUS_OK if the complete transaction succeeds, otherwise an error status.
+ *
+ * @note The command's data_lines field selects the bus width for the data phase.
+ * @note The buffer must remain valid until this blocking call returns.
+ */
 HW_QSPI_Status_T HW_QSPI_WriteBlocking( const HW_QSPI_Command_T* command, const uint8_t* data,
                                         uint32_t length );
 
+/**
+ * @brief Issues a QSPI command followed by a blocking receive data phase.
+ *
+ * @param command Pointer to the command phase description.
+ * @param data    Pointer to the destination buffer.
+ * @param length  Number of bytes to receive.
+ *
+ * @return HW_QSPI_STATUS_OK if the complete transaction succeeds, otherwise an error status.
+ *
+ * @note The command's data_lines field selects the bus width for the data phase.
+ * @note The destination buffer must have capacity for at least length bytes.
+ */
 HW_QSPI_Status_T HW_QSPI_ReadBlocking( const HW_QSPI_Command_T* command, uint8_t* data,
                                        uint32_t length );
 
+/**
+ * @brief Issues a QSPI command followed by a DMA transmit data phase.
+ *
+ * @param command Pointer to the command phase description.
+ * @param data    Pointer to the bytes to transmit.
+ * @param length  Number of bytes to transmit.
+ *
+ * @return HW_QSPI_STATUS_OK if the DMA transfer is started, otherwise an error status.
+ *
+ * @note The source buffer must remain valid until HW_QSPI_IsTransferComplete() reports true or the
+ *       transfer is aborted.
+ */
 HW_QSPI_Status_T HW_QSPI_WriteDma( const HW_QSPI_Command_T* command, const uint8_t* data,
                                    uint32_t length );
 
+/**
+ * @brief Checks whether the most recent asynchronous QSPI transfer has completed.
+ *
+ * @return true if the current asynchronous transfer is complete, otherwise false.
+ */
 bool HW_QSPI_IsTransferComplete( void );
 
+/**
+ * @brief Checks whether the QSPI peripheral or wrapper has an operation in progress.
+ *
+ * @return true if QSPI is busy, otherwise false.
+ */
 bool HW_QSPI_IsBusy( void );
 
+/**
+ * @brief Aborts the current QSPI operation.
+ *
+ * @return HW_QSPI_STATUS_OK if the abort succeeds, otherwise an error status.
+ */
 HW_QSPI_Status_T HW_QSPI_Abort( void );
 #ifdef __cplusplus
 }
