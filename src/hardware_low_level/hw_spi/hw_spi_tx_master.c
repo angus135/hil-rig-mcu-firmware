@@ -19,7 +19,9 @@
  *  Notes:
  *      - In master mode, each call to HW_SPI_Load_Tx_Buffer() is treated as one
  *        logical TX packet.
- *      - Master packets are required to be contiguous in tx_buffer so a later
+ *      - Master software chip-select is always automatic: each master packet is
+ *        framed by CS and transmitted as exactly one DMA transfer.
+ *      - Master packets are required to be contiguous in tx_buffer so the
  *        automatic software-CS path can map one packet to one DMA transfer.
  *      - If a packet does not fit before the end of tx_buffer, the load path may
  *        wrap the whole packet to index 0 and intentionally leave the unused
@@ -214,7 +216,8 @@ bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state )
     uint8_t*                 tx_ptr            = NULL;
     uint32_t                 packet_size_bytes = 0U;
 
-    if ( peripheral_state->tx_num_bytes_in_transmission > 0U )
+    if ( peripheral_state->tx_num_bytes_in_transmission > 0U
+         || peripheral_state->tx_transaction_state != HW_SPI_TX_TRANSACTION_IDLE )
     {
         return false;
     }
@@ -237,8 +240,10 @@ bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state )
 
     /*
      * Move exactly this packet out of the pending software state and into the
-     * in-flight DMA state. The descriptor is consumed before DMA is armed so the
-     * IRQ can immediately start the next queued packet if required.
+     * in-flight DMA state. The descriptor is consumed before DMA is armed. The
+     * DMA completion IRQ must not start another packet until the automatic-CS
+     * completion path has waited for the final SPI frame to drain and released
+     * CS for this packet.
      */
     peripheral_state->tx_packet_read_position =
         ( peripheral_state->tx_packet_read_position + 1U ) % TX_PACKET_QUEUE_DEPTH;
@@ -258,5 +263,22 @@ bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state )
     packet->start_index = 0U;
     packet->size_bytes  = 0U;
 
-    return HW_SPI_TX_Program_DMA( peripheral_state, tx_ptr, packet_size_bytes );
+    peripheral_state->tx_transaction_state = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
+
+    /*
+     * Master software CS is asserted immediately before arming the DMA transfer
+     * for this packet. The actual GPIO access is intentionally hidden behind
+     * HW_SPI_TX_Master_CS_Assert(), which should call the separate GPIO driver.
+     */
+    HW_SPI_TX_Master_CS_Assert( peripheral_state );
+
+    if ( HW_SPI_TX_Program_DMA( peripheral_state, tx_ptr, packet_size_bytes ) == false )
+    {
+        HW_SPI_TX_Master_CS_Deassert( peripheral_state );
+        peripheral_state->tx_transaction_state         = HW_SPI_TX_TRANSACTION_ERROR;
+        peripheral_state->tx_num_bytes_in_transmission = 0U;
+        return false;
+    }
+
+    return true;
 }

@@ -58,6 +58,9 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOB, LD1_Pin|LD3_Pin|LD2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(SPI1_CS_TEST_GPIO_Port, SPI1_CS_TEST_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOG, Digital_Output_0_Pin|Digital_Output_1_Pin|Digital_Output_2_Pin|Digital_Output_3_Pin
                           |USB_PowerSwitchOn_Pin|Digital_Output_4_Pin|Digital_Output_5_Pin|Digital_Output_6_Pin
                           |Digital_Output_7_Pin|Digital_Output_8_Pin|Digital_Output_9_Pin, GPIO_PIN_RESET);
@@ -87,6 +90,13 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : SPI1_CS_TEST_Pin */
+  GPIO_InitStruct.Pin = SPI1_CS_TEST_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(SPI1_CS_TEST_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : Digital_Output_0_Pin Digital_Output_1_Pin Digital_Output_2_Pin Digital_Output_3_Pin
                            USB_PowerSwitchOn_Pin Digital_Output_4_Pin Digital_Output_5_Pin Digital_Output_6_Pin

@@ -29,7 +29,9 @@
  *        multiples of 2 bytes.
  *      - RX span lengths are always reported in bytes, including in 16-bit
  *        mode.
- *      - The driver does not define packet/message boundaries.
+ *      - In master mode, each HW_SPI_Load_Tx_Buffer() call is treated as one
+ *        DMA-backed packet and is automatically framed by software chip-select.
+ *      - In slave mode, the driver does not define packet/message boundaries.
  *      - The driver does not perform byte swapping or data repacking for
  *        16-bit mode; higher-level software must provide data in the intended
  *        in-memory order.
@@ -304,10 +306,12 @@ void HW_SPI_Rx_Consume( SPIPeripheral_T peripheral, uint32_t bytes_to_consume );
  * data remains pending until a contiguous span is handed to DMA. Once a span is
  * handed to DMA it is tracked as in-flight rather than pending.
  *
- * This function does not define message framing or protocol semantics. It only
- * stores raw bytes to be shifted out by the SPI peripheral. Higher-level
- * software is responsible for deciding what those bytes mean and when queued
- * transmission should be triggered.
+ * In master mode, each call to this function creates one packet descriptor. That
+ * packet will later be transmitted as one DMA transfer and framed by the
+ * driver's automatic software chip-select completion path. In slave mode, the
+ * function remains a raw stream append. Higher-level software is responsible for
+ * deciding what the bytes mean and when queued transmission should be
+ * triggered.
  *
  * When the channel is configured for 16-bit SPI operation, @p size must be a
  * multiple of 2 bytes so that the queued TX data remains aligned to SPI frames.
@@ -352,8 +356,10 @@ bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uin
  * transmitting the remaining queued bytes.
  *
  * This function only starts transmission of data already stored in the
- * internal TX queue. It does not define message boundaries, chip-select
- * policy, or higher-level framing semantics.
+ * internal TX queue. In master mode, the next queued packet is automatically
+ * framed by software chip-select for the duration of its one DMA transfer. The
+ * chip-select line is not released until DMA TC has occurred and the SPI
+ * peripheral is no longer busy.
  *
  * @param peripheral
  *     The SPI peripheral/channel whose queued TX data should be transmitted.

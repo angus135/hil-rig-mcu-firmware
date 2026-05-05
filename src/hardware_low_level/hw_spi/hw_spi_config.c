@@ -199,7 +199,13 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
     {
         case SPI_MASTER_MODE:
             hspi->Init.Mode = SPI_MODE_MASTER;
-            hspi->Init.NSS  = SPI_NSS_HARD_OUTPUT;
+            /*
+             * Master-mode chip-select is always software controlled by this
+             * driver around each DMA-backed master packet. The SPI peripheral
+             * must therefore not drive hardware NSS as the transaction framing
+             * signal.
+             */
+            hspi->Init.NSS = SPI_NSS_SOFT;
             break;
         case SPI_SLAVE_MODE:
             hspi->Init.Mode = SPI_MODE_SLAVE;
@@ -210,6 +216,7 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
     }
 
     HW_SPI_TX_Configure_Operations( peripheral_state );
+    HW_SPI_TX_Reset_State( peripheral_state );
 
     // Direction (always 2 lines (MISO and MOSI))
     hspi->Init.Direction = SPI_DIRECTION_2LINES;

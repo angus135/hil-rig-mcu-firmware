@@ -83,6 +83,8 @@ void Error_Handler(void);
 #define Digital_Input_8_GPIO_Port GPIOF
 #define Digital_Input_9_Pin GPIO_PIN_14
 #define Digital_Input_9_GPIO_Port GPIOF
+#define SPI1_CS_TEST_Pin GPIO_PIN_9
+#define SPI1_CS_TEST_GPIO_Port GPIOE
 #define LD3_Pin GPIO_PIN_14
 #define LD3_GPIO_Port GPIOB
 #define STLK_RX_Pin GPIO_PIN_8

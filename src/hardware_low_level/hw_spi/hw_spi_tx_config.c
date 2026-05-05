@@ -22,9 +22,9 @@
  *        place so the master and slave implementation files stay focused.
  *      - TX DMA is programmed as a normal/one-shot transfer, not circular.
  *      - RX DMA remains separate and is implemented in hw_spi_rx.c.
- *      - The final-drain timer configuration is prepared here, but the later
- *        automatic software-CS completion path will decide whether to use a
- *        timer or an inline bounded wait after TX DMA completion.
+ *      - In master mode, every queued packet is automatically framed by
+ *        software chip-select. DMA TC starts the transaction-completion path;
+ *        CS is not released until the final SPI frame has drained.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -33,6 +33,7 @@
  */
 
 #define HW_SPI_INTERNAL
+#include "hw_gpio.h"
 #include "hw_spi.h"
 #include "hw_timer.h"
 
@@ -108,6 +109,17 @@
  */
 #define SPI_FINAL_DRAIN_UNUSED_TIMER_ARR 1U
 
+/*
+ * Small guard added to the calculated final-frame wait. This is deliberately
+ * conservative because the loop is only used after DMA TC, where the remaining
+ * work should be at most the final SPI frame plus software latency margin.
+ */
+#define SPI_FINAL_DRAIN_GUARD_CYCLES 16U
+
+#ifndef HW_SPI_WEAK
+#define HW_SPI_WEAK __attribute__( ( weak ) )
+#endif
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -134,6 +146,18 @@ static inline void HW_SPI_TX_Clear_DAC_DMA_Flags( DMA_TypeDef* dma );
 static uint32_t    HW_SPI_Get_Tx_Timer_Psc( const SPIPeripheralState_T* peripheral_state );
 static uint32_t HW_SPI_Get_Tx_Final_Drain_Timer_Arr( const SPIPeripheralState_T* peripheral_state );
 static void     HW_SPI_Configure_Tx_Timer( SPIPeripheralState_T* peripheral_state );
+static bool     HW_SPI_TX_Is_Master( const SPIPeripheralState_T* peripheral_state );
+static uint32_t HW_SPI_TX_Get_Cycles_Per_SCK( SPIBaudRate_T baud_rate );
+static uint32_t HW_SPI_TX_Get_Final_Drain_Cycles( const SPIPeripheralState_T* peripheral_state );
+static void     HW_SPI_TX_Bounded_Final_Drain_Wait( const SPIPeripheralState_T* peripheral_state );
+static void     HW_SPI_TX_Complete_Master_Transaction( SPIPeripheral_T       peripheral,
+                                                       SPIPeripheralState_T* peripheral_state );
+static void     HW_SPI_TX_Fault_Master_Transaction( SPIPeripheral_T       peripheral,
+                                                    SPIPeripheralState_T* peripheral_state );
+static bool     HW_SPI_TX_Try_Start_Final_Drain_Timer( SPIPeripheral_T       peripheral,
+                                                       SPIPeripheralState_T* peripheral_state );
+static void     HW_SPI_TX_Handle_Master_DMA_TC( SPIPeripheral_T       peripheral,
+                                                SPIPeripheralState_T* peripheral_state );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -290,6 +314,202 @@ static void HW_SPI_Configure_Tx_Timer( SPIPeripheralState_T* peripheral_state )
     HW_TIMER_Configure_Timer( tx_timer, psc, arr );
 }
 
+static bool HW_SPI_TX_Is_Master( const SPIPeripheralState_T* peripheral_state )
+{
+    return ( peripheral_state != NULL ) && ( peripheral_state->config.spi_mode == SPI_MASTER_MODE );
+}
+
+static uint32_t HW_SPI_TX_Get_Cycles_Per_SCK( SPIBaudRate_T baud_rate )
+{
+    switch ( baud_rate )
+    {
+        case SPI_BAUD_45MBIT:
+            return 4U;
+        case SPI_BAUD_22M5BIT:
+            return 8U;
+        case SPI_BAUD_11M25BIT:
+            return 16U;
+        case SPI_BAUD_5M625BIT:
+            return 32U;
+        case SPI_BAUD_2M813BIT:
+            return 64U;
+        case SPI_BAUD_1M406BIT:
+            return 128U;
+        case SPI_BAUD_703KBIT:
+            return 256U;
+        case SPI_BAUD_352KBIT:
+        default:
+            return 512U;
+    }
+}
+
+static uint32_t HW_SPI_TX_Get_Final_Drain_Cycles( const SPIPeripheralState_T* peripheral_state )
+{
+    uint32_t frame_bits = 8U;
+
+    if ( peripheral_state == NULL )
+    {
+        return 0U;
+    }
+
+    if ( peripheral_state->config.data_size == SPI_SIZE_16_BIT )
+    {
+        frame_bits = 16U;
+    }
+
+    return ( frame_bits * HW_SPI_TX_Get_Cycles_Per_SCK( peripheral_state->config.baud_rate ) )
+           + SPI_FINAL_DRAIN_GUARD_CYCLES;
+}
+
+static void HW_SPI_TX_Bounded_Final_Drain_Wait( const SPIPeripheralState_T* peripheral_state )
+{
+    volatile uint32_t wait_cycles = HW_SPI_TX_Get_Final_Drain_Cycles( peripheral_state );
+
+    while ( wait_cycles > 0U )
+    {
+        __asm volatile( "nop" );
+        wait_cycles--;
+    }
+}
+
+HW_SPI_WEAK void HW_SPI_TX_Master_CS_Assert( SPIPeripheralState_T* peripheral_state )
+{
+    // /*
+    //  * Integration point for the separate GPIO driver. This is where the master
+    //  * packet's software CS line must be driven active immediately before DMA is
+    //  * armed.
+    //  */
+    // ( void )peripheral_state;
+    HAL_GPIO_WritePin( SPI1_CS_TEST_GPIO_Port, SPI1_CS_TEST_Pin, 0 );
+}
+
+HW_SPI_WEAK void HW_SPI_TX_Master_CS_Deassert( SPIPeripheralState_T* peripheral_state )
+{
+    // /*
+    //  * Integration point for the separate GPIO driver. This is where the master
+    //  * packet's software CS line must be driven inactive after the final SPI
+    //  * frame has drained and BSY is clear.
+    //  */
+    // ( void )peripheral_state;
+    HAL_GPIO_WritePin( SPI1_CS_TEST_GPIO_Port, SPI1_CS_TEST_Pin, 1 );
+}
+
+static bool HW_SPI_TX_Try_Start_Final_Drain_Timer( SPIPeripheral_T       peripheral,
+                                                   SPIPeripheralState_T* peripheral_state )
+{
+    /*
+     * The final-drain timer is only valid after TX DMA TC has occurred.
+     * At this point DMA has finished feeding the SPI peripheral, but the final
+     * SPI frame may still be shifting out. Move the transaction into the
+     * final-drain wait state before starting the timer so the timer callback can
+     * distinguish a valid final-drain timeout from a stale/incorrect callback.
+     */
+    peripheral_state->tx_transaction_state = HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN;
+
+    Timer_T timer = HW_SPI_Get_Tx_Timer( peripheral_state );
+
+    /*
+     * Ensure there is no stale pending timer state from a previous transaction.
+     * HW_TIMER_Start_Timer() also resets the counter in your implementation, but
+     * stopping first makes the state transition explicit and defensive.
+     */
+    HW_TIMER_Stop_Timer( timer );
+    HW_TIMER_Start_Timer( timer );
+
+    ( void )peripheral;
+
+    return true;
+}
+
+static void HW_SPI_TX_Complete_Master_Transaction( SPIPeripheral_T       peripheral,
+                                                   SPIPeripheralState_T* peripheral_state )
+{
+    HW_SPI_TX_Master_CS_Deassert( peripheral_state );
+
+    if ( peripheral_state->tx_has_pending_function( peripheral_state ) == false )
+    {
+        peripheral_state->tx_transaction_state = HW_SPI_TX_TRANSACTION_IDLE;
+        return;
+    }
+
+    /*
+     * The previous CS-framed transaction is now complete. If another master
+     * packet is already queued, start it immediately so the DMA/IRQ chain drains
+     * the packet queue without requiring another external trigger.
+     *
+     * The state is set back to IDLE before starting the next packet because
+     * HW_SPI_TX_Start_Master_Packet_DMA() is the function that owns the
+     * transition into DMA_ACTIVE for the next transaction.
+     */
+    peripheral_state->tx_transaction_state = HW_SPI_TX_TRANSACTION_IDLE;
+
+    if ( peripheral_state->tx_start_dma_function( peripheral_state ) == false )
+    {
+        HW_SPI_TX_Fault_Master_Transaction( peripheral, peripheral_state );
+    }
+}
+
+static void HW_SPI_TX_Fault_Master_Transaction( SPIPeripheral_T       peripheral,
+                                                SPIPeripheralState_T* peripheral_state )
+{
+    ( void )peripheral;
+
+    LL_SPI_DisableDMAReq_TX( peripheral_state->spi_peripheral );
+    HW_SPI_TX_Master_CS_Deassert( peripheral_state );
+    peripheral_state->tx_num_bytes_in_transmission = 0U;
+    peripheral_state->tx_transaction_state         = HW_SPI_TX_TRANSACTION_ERROR;
+}
+
+static void HW_SPI_TX_Handle_Master_DMA_TC( SPIPeripheral_T       peripheral,
+                                            SPIPeripheralState_T* peripheral_state )
+{
+    if ( peripheral_state == NULL )
+    {
+        return;
+    }
+
+    peripheral_state->tx_num_bytes_in_transmission = 0U;
+
+    /*
+     * The one-shot DMA transfer has finished feeding the SPI TX path. Stop
+     * further DMA requests before waiting for the peripheral to physically drain
+     * the final frame.
+     */
+    LL_SPI_DisableDMAReq_TX( peripheral_state->spi_peripheral );
+
+    if ( peripheral_state->tx_transaction_state != HW_SPI_TX_TRANSACTION_DMA_ACTIVE )
+    {
+        HW_SPI_TX_Fault_Master_Transaction( peripheral, peripheral_state );
+        return;
+    }
+
+    /*
+     * DMA TC does not mean the last SPI bit is already off the pin. Check BSY
+     * late, after the unavoidable ISR bookkeeping, then wait only if required.
+     */
+    if ( LL_SPI_IsActiveFlag_BSY( peripheral_state->spi_peripheral ) == 0U )
+    {
+        HW_SPI_TX_Complete_Master_Transaction( peripheral, peripheral_state );
+        return;
+    }
+
+    if ( HW_SPI_TX_Should_Use_Final_Drain_Timer( peripheral_state ) != false
+         && HW_SPI_TX_Try_Start_Final_Drain_Timer( peripheral, peripheral_state ) != false )
+    {
+        return;
+    }
+
+    HW_SPI_TX_Bounded_Final_Drain_Wait( peripheral_state );
+
+    if ( LL_SPI_IsActiveFlag_BSY( peripheral_state->spi_peripheral ) == 0U )
+    {
+        HW_SPI_TX_Complete_Master_Transaction( peripheral, peripheral_state );
+        return;
+    }
+
+    HW_SPI_TX_Fault_Master_Transaction( peripheral, peripheral_state );
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
@@ -401,6 +621,11 @@ bool HW_SPI_TX_Program_DMA( SPIPeripheralState_T* peripheral_state, uint8_t* tx_
 {
     uint32_t dma_elements = 0U;
 
+    if ( peripheral_state == NULL || tx_ptr == NULL || size_bytes == 0U )
+    {
+        return false;
+    }
+
     if ( HW_SPI_Is_Frame_Aligned_Size( peripheral_state, size_bytes ) == false )
     {
         return false;
@@ -408,11 +633,25 @@ bool HW_SPI_TX_Program_DMA( SPIPeripheralState_T* peripheral_state, uint8_t* tx_
 
     dma_elements = HW_SPI_Bytes_To_DMA_Elements( peripheral_state, size_bytes );
 
+    /*
+     * Disable the SPI-side DMA request before touching the DMA stream. This
+     * prevents the peripheral from requesting a transfer while the stream is
+     * being reconfigured for the next one-shot packet.
+     */
+    LL_SPI_DisableDMAReq_TX( peripheral_state->spi_peripheral );
+
     LL_DMA_DisableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
     while ( LL_DMA_IsEnabledStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream )
             != 0U )
     {
     }
+
+    if ( peripheral_state->tx_clear_dma_flags_function == NULL )
+    {
+        return false;
+    }
+
+    peripheral_state->tx_clear_dma_flags_function( peripheral_state->tx_dma );
 
     LL_DMA_SetMemoryAddress( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
                              ( uintptr_t )tx_ptr );
@@ -425,6 +664,8 @@ bool HW_SPI_TX_Program_DMA( SPIPeripheralState_T* peripheral_state, uint8_t* tx_
     LL_DMA_EnableIT_TC( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
     LL_DMA_EnableIT_TE( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
     LL_DMA_EnableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+
+    /* Enable the SPI request only after the DMA stream is fully armed. */
     LL_SPI_EnableDMAReq_TX( peripheral_state->spi_peripheral );
 
     return true;
@@ -471,6 +712,12 @@ void HW_SPI_TX_Error_Handler( SPIPeripheral_T peripheral )
      */
     peripheral_state->tx_num_bytes_in_transmission = 0U;
 
+    if ( HW_SPI_TX_Is_Master( peripheral_state ) != false )
+    {
+        HW_SPI_TX_Master_CS_Deassert( peripheral_state );
+        peripheral_state->tx_transaction_state = HW_SPI_TX_TRANSACTION_ERROR;
+    }
+
     /* TODO: Add fault logging, error counters, or escalation here if desired. */
 }
 
@@ -483,10 +730,17 @@ void HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral )
         return;
     }
 
+    if ( HW_SPI_TX_Is_Master( peripheral_state ) != false )
+    {
+        HW_SPI_TX_Handle_Master_DMA_TC( peripheral, peripheral_state );
+        return;
+    }
+
     /*
-     * The completed TX span was already removed from the pending software
-     * state when DMA was started. The IRQ only marks the active DMA span as
-     * complete, then dispatches to the mode-specific pending/start handlers.
+     * Slave mode remains a raw stream. The completed TX span was already
+     * removed from the pending software state when DMA was started. The IRQ only
+     * marks the active DMA span as complete, then starts more pending stream data
+     * if available.
      */
     peripheral_state->tx_num_bytes_in_transmission = 0U;
 
@@ -516,6 +770,7 @@ void HW_SPI_TX_Reset_State( SPIPeripheralState_T* peripheral_state )
     peripheral_state->tx_read_position             = 0U;
     peripheral_state->tx_num_bytes_pending         = 0U;
     peripheral_state->tx_num_bytes_in_transmission = 0U;
+    peripheral_state->tx_transaction_state         = HW_SPI_TX_TRANSACTION_IDLE;
 
     /*
      * Reset packet descriptor queue state. Descriptor contents are cleared only
@@ -647,7 +902,21 @@ void SPI_CHANNEL_1_TX_DMA_IRQ( void )
 
 void HW_SPI_Timer_Callback_From_ISR( SPIPeripheral_T peripheral )
 {
-    ( void )peripheral;
+    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
+
+    if ( HW_SPI_TX_Is_Master( peripheral_state ) == false
+         || peripheral_state->tx_transaction_state != HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN )
+    {
+        return;
+    }
+
+    if ( LL_SPI_IsActiveFlag_BSY( peripheral_state->spi_peripheral ) == 0U )
+    {
+        HW_SPI_TX_Complete_Master_Transaction( peripheral, peripheral_state );
+        return;
+    }
+
+    HW_SPI_TX_Fault_Master_Transaction( peripheral, peripheral_state );
 }
 
 bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uint32_t size )
@@ -690,8 +959,9 @@ bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uin
  * transmitting the remaining queued bytes.
  *
  * This function only starts transmission of data already stored in the
- * internal TX queue. It does not define message boundaries, chip-select
- * policy, or higher-level framing semantics.
+ * internal TX queue. In master mode, the next queued packet is automatically
+ * framed by software chip-select and CS is released only after the SPI final
+ * frame has drained.
  *
  * @param peripheral
  *     The SPI peripheral/channel whose queued TX data should be transmitted.
@@ -712,17 +982,28 @@ void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral )
      * through the configured function pointer.
      */
     if ( peripheral_state->tx_num_bytes_in_transmission > 0U
+         || peripheral_state->tx_transaction_state != HW_SPI_TX_TRANSACTION_IDLE
          || peripheral_state->tx_has_pending_function( peripheral_state ) == false )
     {
         NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
         return;
     }
 
-    peripheral_state->tx_clear_dma_flags_function( peripheral_state->tx_dma );
+    if ( peripheral_state->tx_clear_dma_flags_function != NULL )
+    {
+        peripheral_state->tx_clear_dma_flags_function( peripheral_state->tx_dma );
+    }
 
     if ( peripheral_state->tx_start_dma_function( peripheral_state ) == false )
     {
-        HW_SPI_TX_Error_Handler( peripheral );
+        if ( peripheral_state->config.spi_mode == SPI_MASTER_MODE )
+        {
+            HW_SPI_TX_Fault_Master_Transaction( peripheral, peripheral_state );
+        }
+        else
+        {
+            HW_SPI_TX_Error_Handler( peripheral );
+        }
     }
 
     NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
