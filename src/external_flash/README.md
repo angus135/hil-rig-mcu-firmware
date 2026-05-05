@@ -7,11 +7,14 @@
 This module is responsible for:
 
 - Storing execution results as opaque bytes.
+- Programming execution instructions as opaque bytes.
 - Reading execution instructions as opaque bytes.
 - Reading stored execution results for host transfer.
 - Managing fixed instruction and result NAND partitions.
 - Scanning and skipping factory bad blocks.
 - Erasing the result partition at the start of each result session.
+- Erasing the instruction partition at the start of each instruction upload.
+- Programming instruction data into NAND pages.
 - Programming result data into NAND pages.
 - Reading instruction queue pages directly into flash manager owned buffers.
 - Supporting page scoped zero copy result writes from flash manager owned buffers.
@@ -39,6 +42,10 @@ The public API is declared in `external_flash.h`.
 The main API functions are:
 
 - `EXTERNAL_FLASH_Init` prepares the NAND storage service.
+- `EXTERNAL_FLASH_StartInstructionUpload` erases the instruction partition and starts a new package instruction upload.
+- `EXTERNAL_FLASH_WriteInstructionBytes` appends arbitrary instruction bytes during package upload.
+- `EXTERNAL_FLASH_WriteInstructionPage` writes one logical instruction page during package upload.
+- `EXTERNAL_FLASH_FinishInstructionUpload` commits the final partial instruction page and closes the upload.
 - `EXTERNAL_FLASH_StartSession` erases the result partition for a new test run.
 - `EXTERNAL_FLASH_WriteResultPage` writes one logical result page.
 - `EXTERNAL_FLASH_WriteResultBytes` appends arbitrary result bytes through the byte stream compatibility path.
@@ -51,6 +58,10 @@ The main API functions are:
 The preferred execution time write path is `EXTERNAL_FLASH_WriteResultPage`. This lets the flash manager pass page sized result buffers directly to `external_flash`, allowing DMA to read from the flash manager owned buffer without an extra copy.
 
 The preferred execution time instruction refill path is `EXTERNAL_FLASH_ReadInstructionPage`. This lets the flash manager pass an instruction queue page buffer directly to `external_flash`, allowing DMA to write into the flash manager owned buffer without an extra copy.
+
+The preferred package upload path is `EXTERNAL_FLASH_WriteInstructionBytes`. Host transfer chunk sizes do not need to match the NAND page size; the driver stages partial pages and programs full pages internally.
+
+`EXTERNAL_FLASH_WriteInstructionPage` is available when `test_package_recieve` already has page sized instruction chunks. Full page calls DMA directly from the caller supplied buffer. A final partial page is padded internally with `0xFF`.
 
 The byte stream paths, `EXTERNAL_FLASH_WriteResultBytes` and `EXTERNAL_FLASH_ReadInstructions`, remain available for simple use, tests, and non page structured paths.
 
@@ -84,13 +95,49 @@ The first implementation uses fixed compile time partitions:
 - Instruction partition starts at block `0`.
 - Result partition starts after the instruction partition.
 
-Execution results are stored exactly as supplied by the flash manager. The driver does not parse result records or add per page metadata in this first version.
+Instruction bytes are stored exactly as supplied by `test_package_recieve`. Execution results are stored exactly as supplied by the flash manager. The driver does not parse instructions, result records, or add per page metadata in this first version.
 
-The current result length is tracked in RAM, so result recovery after reset is not supported yet.
+The current instruction length and result length are tracked in RAM, so instruction and result recovery after reset is not supported yet.
 
-Instruction reads are logical byte offset based. The module assumes instructions have already been programmed into the instruction partition using the same logical bad block skipping policy.
+Instruction reads are logical byte offset based and are limited to the committed instruction length from the most recent successful instruction upload.
 
-Instruction upload and programming are not implemented in this first version. When `test_package_recieve` grows the host upload path, it should add an instruction write API to `external_flash` rather than writing directly through `hw_nand`.
+Instruction upload is sequential and append only. Random instruction patching is intentionally not exposed yet because the host package receive path naturally streams one package image before execution begins.
+
+---
+
+## Instruction Uploads
+
+`test_package_recieve` should use the instruction upload API when the host sends a new test package.
+
+Typical byte stream upload:
+
+```c
+EXTERNAL_FLASH_StartInstructionUpload( instruction_length );
+EXTERNAL_FLASH_WriteInstructionBytes( chunk_a, len_a );
+EXTERNAL_FLASH_WriteInstructionBytes( chunk_b, len_b );
+EXTERNAL_FLASH_FinishInstructionUpload();
+```
+
+`EXTERNAL_FLASH_StartInstructionUpload` erases all good blocks in the instruction partition, resets the volatile committed instruction length, and records the expected instruction byte count.
+
+`EXTERNAL_FLASH_WriteInstructionBytes` accepts arbitrary host chunk sizes. Full staged NAND pages are programmed immediately. A final partial staged page is programmed by `EXTERNAL_FLASH_FinishInstructionUpload`.
+
+`EXTERNAL_FLASH_FinishInstructionUpload` succeeds only when the committed instruction byte count matches the expected length supplied at the start of upload. Execution should not start until this function returns `EXTERNAL_FLASH_STATUS_OK`.
+
+When the package receiver already has page sized instruction spans, it may use:
+
+```c
+EXTERNAL_FLASH_StartInstructionUpload( instruction_length );
+EXTERNAL_FLASH_WriteInstructionPage( page_a, page_size );
+EXTERNAL_FLASH_WriteInstructionPage( final_page, final_valid_length );
+EXTERNAL_FLASH_FinishInstructionUpload();
+```
+
+For a full page, `external_flash` DMA loads directly from the caller supplied buffer. The caller must keep the buffer valid and unchanged until the function returns.
+
+For a final partial page, `external_flash` copies the valid bytes into its private staging buffer, pads the remainder of the physical NAND page with `0xFF`, and programs one full physical page.
+
+Partial page instruction writes are only valid for the final page of the expected upload length.
 
 ---
 
@@ -209,21 +256,24 @@ The following flows describe how the managers should use this driver.
 
 `test_package_recieve` is responsible for receiving the test package from the host interface.
 
-In the final design, it should store instruction bytes into the instruction partition through `external_flash`.
+It stores instruction bytes into the instruction partition through `external_flash`.
 
-Current first version behaviour:
+Current behaviour:
 
-- `external_flash` provides `EXTERNAL_FLASH_ReadInstructionPage`.
-- `external_flash` also provides `EXTERNAL_FLASH_ReadInstructions` for arbitrary instruction byte reads.
-- Instruction write and upload support are still future work.
-- `test_package_recieve` should not call `hw_nand` directly when that write path is added.
+- `external_flash` provides `EXTERNAL_FLASH_StartInstructionUpload`.
+- `external_flash` provides `EXTERNAL_FLASH_WriteInstructionBytes` for natural host chunk sized writes.
+- `external_flash` provides `EXTERNAL_FLASH_WriteInstructionPage` for page sized package chunks.
+- `external_flash` provides `EXTERNAL_FLASH_FinishInstructionUpload` to commit the final partial page and validate the expected length.
+- `test_package_recieve` must not bypass `external_flash` and call `hw_nand` directly.
 
 Intended upload sequence:
 
 1. Host sends a test package to `test_package_recieve`.
 2. `test_package_recieve` validates or fragments the package into instruction byte spans.
-3. A future `external_flash` instruction write API stores those bytes in the instruction partition.
-4. `flash_manager` later reads those same opaque bytes back into its instruction buffers using `EXTERNAL_FLASH_ReadInstructionPage`.
+3. `test_package_recieve` calls `EXTERNAL_FLASH_StartInstructionUpload` with the expected instruction byte count.
+4. `test_package_recieve` appends the package instruction bytes with `EXTERNAL_FLASH_WriteInstructionBytes`, or page spans with `EXTERNAL_FLASH_WriteInstructionPage`.
+5. `test_package_recieve` calls `EXTERNAL_FLASH_FinishInstructionUpload`.
+6. `flash_manager` later reads those same opaque bytes back into its instruction buffers using `EXTERNAL_FLASH_ReadInstructionPage`.
 
 The instruction byte format is owned by the package and execution format, not by `external_flash`.
 
@@ -285,7 +335,10 @@ Only committed bytes are readable. Bytes still staged in the byte stream page bu
 ### `test_package_recieve`
 
 - Owns host package reception and validation.
-- Should use `external_flash` for instruction partition writes once that API is added.
+- Uses `external_flash` for instruction partition writes.
+- Calls `EXTERNAL_FLASH_StartInstructionUpload` before writing a new package image.
+- Writes package instruction bytes with `EXTERNAL_FLASH_WriteInstructionBytes` or page spans with `EXTERNAL_FLASH_WriteInstructionPage`.
+- Calls `EXTERNAL_FLASH_FinishInstructionUpload` before allowing execution to start.
 - Should not bypass `external_flash` and call `hw_nand` directly.
 
 ### `result_transfer_manager`
@@ -306,6 +359,8 @@ Bad blocks are skipped when translating logical byte offsets to physical NAND pa
 If erase fails at runtime, the block is marked bad in RAM and `HW_NAND_MarkBlockBad` is called.
 
 If program fails at runtime, the block is marked bad in RAM and `HW_NAND_MarkBlockBad` is called. The same logical result page is retried on the next good physical block.
+
+The same retire-and-retry policy is used for instruction upload page programs.
 
 ---
 
@@ -330,10 +385,11 @@ A future asynchronous version may split these states into separate operations, s
 ## Notes and Limitations
 
 - Hardware validation is still required.
-- Instruction upload and programming support is not implemented yet.
+- Instruction and result lengths are currently volatile RAM state only.
+- Instruction recovery after reset is not implemented yet.
 - Result recovery after reset is not implemented yet.
-- The result length is stored in RAM only.
 - `EXTERNAL_FLASH_WriteResultPage` is the preferred execution time result write API.
 - `EXTERNAL_FLASH_ReadInstructionPage` is the preferred execution time instruction refill API.
+- `EXTERNAL_FLASH_WriteInstructionBytes` is the preferred test package upload API.
 - `EXTERNAL_FLASH_WriteResultBytes` remains available for byte stream compatibility and tests.
 - `EXTERNAL_FLASH_ReadInstructions` remains available for byte stream compatibility and tests.
