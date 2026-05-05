@@ -5,7 +5,9 @@
 # -----------------------------
 
 set(HW_SPI_SOURCES
-    hw_spi.c
+    hw_spi_config.c
+    hw_spi_rx.c
+    hw_spi_tx.c
 )
 
 set(HW_SPI_HEADERS
