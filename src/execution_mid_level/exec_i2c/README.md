@@ -7,7 +7,6 @@
 This module is responsible for:
 
 - Validating higher-layer I2C channel configuration requests for the two external buses.
-- Translating execution-layer enums/types into low-level hardware-layer enums/types.
 - Calling low-level `hw_i2c` configuration APIs for:
 	- `I2C1` external channel
 	- `I2C2` external channel
@@ -39,7 +38,7 @@ This module is responsible for:
 It is a coordination layer between higher-level logic and `hw_i2c`.
 
 - Higher layers call `exec_i2c` APIs.
-- `exec_i2c` validates parameters and maps types.
+- `exec_i2c` validates parameters.
 - `exec_i2c` forwards operations to `hw_i2c`.
 - `hw_i2c` owns hardware-facing resources:
   - receive buffers
@@ -48,13 +47,13 @@ It is a coordination layer between higher-level logic and `hw_i2c`.
 
 ### TX flow
 
-1. Higher layer calls `EXEC_I2C_Master_Send(...)` or `EXEC_I2C_Slave_Send(...)`.
+1. Higher layer calls `EXEC_I2C_Master_Send(...)` or `EXEC_I2C_Slave_Send(...)` with `HWI2CChannel_T`.
 2. `exec_i2c` calls `HW_I2C_Load_Stage_Buffer(...)`.
 3. `exec_i2c` calls `HW_I2C_Trigger_*_Transmit(...)`.
 
 ### RX flow
 
-1. Higher layer calls `EXEC_I2C_Start_Master_Receive(...)` or `EXEC_I2C_Start_Slave_Receive(...)`.
+1. Higher layer calls `EXEC_I2C_Start_Master_Receive(...)` or `EXEC_I2C_Start_Slave_Receive(...)` with `HWI2CChannel_T`.
 2. Higher layer later calls `EXEC_I2C_Receive_Copy_And_Consume(...)`.
 3. `exec_i2c`:
 	- peeks low-level spans with `HW_I2C_Peek_Received(...)`

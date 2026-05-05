@@ -17,6 +17,9 @@
 #include "hw_i2c.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
