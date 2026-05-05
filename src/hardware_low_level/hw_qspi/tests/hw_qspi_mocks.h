@@ -140,10 +140,8 @@ typedef struct
 HAL_StatusTypeDef HAL_QSPI_Init( QSPI_HandleTypeDef* hqspi );
 HAL_StatusTypeDef HAL_QSPI_Command( QSPI_HandleTypeDef* hqspi, QSPI_CommandTypeDef* cmd,
                                     uint32_t timeout );
-HAL_StatusTypeDef HAL_QSPI_Transmit( QSPI_HandleTypeDef* hqspi, uint8_t* p_data,
-                                     uint32_t timeout );
-HAL_StatusTypeDef HAL_QSPI_Receive( QSPI_HandleTypeDef* hqspi, uint8_t* p_data,
-                                    uint32_t timeout );
+HAL_StatusTypeDef HAL_QSPI_Transmit( QSPI_HandleTypeDef* hqspi, uint8_t* p_data, uint32_t timeout );
+HAL_StatusTypeDef HAL_QSPI_Receive( QSPI_HandleTypeDef* hqspi, uint8_t* p_data, uint32_t timeout );
 HAL_StatusTypeDef HAL_QSPI_Transmit_DMA( QSPI_HandleTypeDef* hqspi, uint8_t* p_data );
 HAL_StatusTypeDef HAL_QSPI_Receive_DMA( QSPI_HandleTypeDef* hqspi, uint8_t* p_data );
 HAL_QSPI_StateTypeDef HAL_QSPI_GetState( const QSPI_HandleTypeDef* hqspi );

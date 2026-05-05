@@ -47,15 +47,15 @@ using ::testing::Invoke;
 using ::testing::NiceMock;
 using ::testing::Return;
 
-static constexpr uint32_t TEST_PAGE_SIZE_BYTES   = 2048U;
-static constexpr uint32_t TEST_SPARE_SIZE_BYTES  = 128U;
-static constexpr uint32_t TEST_PAGES_PER_BLOCK   = 64U;
-static constexpr uint32_t TEST_BLOCK_COUNT       = 4096U;
-static constexpr uint32_t TEST_RESULT_BLOCK      = EXTERNAL_FLASH_RESULT_START_BLOCK;
-static constexpr uint32_t TEST_RESULT_PAGE       = TEST_RESULT_BLOCK * TEST_PAGES_PER_BLOCK;
-static constexpr uint32_t TEST_INSTRUCTION_PAGE  = 0U;
-static constexpr uint32_t TEST_BLOCK_DATA_BYTES  = TEST_PAGE_SIZE_BYTES * TEST_PAGES_PER_BLOCK;
-static constexpr uint32_t TEST_SMALL_LENGTH      = 16U;
+static constexpr uint32_t TEST_PAGE_SIZE_BYTES  = 2048U;
+static constexpr uint32_t TEST_SPARE_SIZE_BYTES = 128U;
+static constexpr uint32_t TEST_PAGES_PER_BLOCK  = 64U;
+static constexpr uint32_t TEST_BLOCK_COUNT      = 4096U;
+static constexpr uint32_t TEST_RESULT_BLOCK     = EXTERNAL_FLASH_RESULT_START_BLOCK;
+static constexpr uint32_t TEST_RESULT_PAGE      = TEST_RESULT_BLOCK * TEST_PAGES_PER_BLOCK;
+static constexpr uint32_t TEST_INSTRUCTION_PAGE = 0U;
+static constexpr uint32_t TEST_BLOCK_DATA_BYTES = TEST_PAGE_SIZE_BYTES * TEST_PAGES_PER_BLOCK;
+static constexpr uint32_t TEST_SMALL_LENGTH     = 16U;
 
 /**-----------------------------------------------------------------------------
  *  Test Doubles / Mocks
@@ -173,8 +173,8 @@ extern "C" HW_NAND_Status_T HW_NAND_WaitProgramComplete( uint32_t timeout_ms )
     return g_mock->WaitProgramComplete( timeout_ms );
 }
 
-extern "C" HW_NAND_Status_T HW_NAND_ReadPageBlocking( uint32_t page, uint16_t column,
-                                                      uint8_t* data, uint32_t length )
+extern "C" HW_NAND_Status_T HW_NAND_ReadPageBlocking( uint32_t page, uint16_t column, uint8_t* data,
+                                                      uint32_t length )
 {
     if ( g_mock == nullptr )
     {
@@ -205,17 +205,17 @@ protected:
     {
         g_mock = &mock;
 
-        external_flash_initialised = false;
-        external_flash_session_active = false;
-        external_flash_geometry = { 0U, 0U, 0U, 0U };
-        external_flash_bad_block_count = 0U;
-        external_flash_result_length_bytes = 0U;
+        external_flash_initialised                   = false;
+        external_flash_session_active                = false;
+        external_flash_geometry                      = { 0U, 0U, 0U, 0U };
+        external_flash_bad_block_count               = 0U;
+        external_flash_result_length_bytes           = 0U;
         external_flash_committed_result_length_bytes = 0U;
-        external_flash_result_page_fill = 0U;
+        external_flash_result_page_fill              = 0U;
 
         for ( uint32_t i = 0U; i < TEST_PAGE_SIZE_BYTES; i++ )
         {
-            transfer_data[i] = static_cast<uint8_t>( i & 0xFFU );
+            transfer_data[i]                     = static_cast<uint8_t>( i & 0xFFU );
             external_flash_result_page_buffer[i] = 0xFFU;
         }
 
@@ -234,14 +234,13 @@ protected:
 
     void ExpectGeometry( void )
     {
-        EXPECT_CALL( mock, GetGeometry( _ ) )
-            .WillOnce( Invoke( []( HW_NAND_Geometry_T* geometry ) {
-                geometry->page_size_bytes  = TEST_PAGE_SIZE_BYTES;
-                geometry->spare_size_bytes = TEST_SPARE_SIZE_BYTES;
-                geometry->pages_per_block  = TEST_PAGES_PER_BLOCK;
-                geometry->block_count      = TEST_BLOCK_COUNT;
-                return HW_NAND_STATUS_OK;
-            } ) );
+        EXPECT_CALL( mock, GetGeometry( _ ) ).WillOnce( Invoke( []( HW_NAND_Geometry_T* geometry ) {
+            geometry->page_size_bytes  = TEST_PAGE_SIZE_BYTES;
+            geometry->spare_size_bytes = TEST_SPARE_SIZE_BYTES;
+            geometry->pages_per_block  = TEST_PAGES_PER_BLOCK;
+            geometry->block_count      = TEST_BLOCK_COUNT;
+            return HW_NAND_STATUS_OK;
+        } ) );
     }
 
     void ExpectBadBlockScanAllGood( void )
@@ -426,9 +425,8 @@ TEST_F( ExternalFlashTest, ReadInstructionsMapsLogicalOffsetToInstructionPartiti
 
     uint8_t read_buffer[TEST_SMALL_LENGTH] = {};
 
-    EXPECT_CALL( mock,
-                 ReadPageBlocking( Eq( TEST_INSTRUCTION_PAGE ), Eq( 0U ), Eq( read_buffer ),
-                                   Eq( TEST_SMALL_LENGTH ) ) )
+    EXPECT_CALL( mock, ReadPageBlocking( Eq( TEST_INSTRUCTION_PAGE ), Eq( 0U ), Eq( read_buffer ),
+                                         Eq( TEST_SMALL_LENGTH ) ) )
         .WillOnce( Invoke( []( uint32_t page, uint16_t column, uint8_t* data, uint32_t length ) {
             ( void )page;
             ( void )column;
@@ -477,9 +475,8 @@ TEST_F( ExternalFlashTest, ReadResultsReadsCommittedBytes )
 
     uint8_t read_buffer[TEST_SMALL_LENGTH] = {};
 
-    EXPECT_CALL( mock,
-                 ReadPageBlocking( Eq( TEST_RESULT_PAGE ), Eq( 0U ), Eq( read_buffer ),
-                                   Eq( TEST_SMALL_LENGTH ) ) )
+    EXPECT_CALL( mock, ReadPageBlocking( Eq( TEST_RESULT_PAGE ), Eq( 0U ), Eq( read_buffer ),
+                                         Eq( TEST_SMALL_LENGTH ) ) )
         .WillOnce( Return( HW_NAND_STATUS_OK ) );
 
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
