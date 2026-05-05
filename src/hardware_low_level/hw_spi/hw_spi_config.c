@@ -53,10 +53,70 @@ SPIPeripheralState_T* dac_state       = &dac_state_struct;
  *------------------------------------------------------------------------------
  */
 
-/**-----------------------------------------------------------------------------
- *  Private Function Definitions
- *------------------------------------------------------------------------------
- */
+static uint16_t HW_SPI_Config_Get_Cycles_Per_SCK( SPIBaudRate_T baud_rate )
+{
+    switch ( baud_rate )
+    {
+        case SPI_BAUD_45MBIT:
+            return 4U;
+        case SPI_BAUD_22M5BIT:
+            return 8U;
+        case SPI_BAUD_11M25BIT:
+            return 16U;
+        case SPI_BAUD_5M625BIT:
+            return 32U;
+        case SPI_BAUD_2M813BIT:
+            return 64U;
+        case SPI_BAUD_1M406BIT:
+            return 128U;
+        case SPI_BAUD_703KBIT:
+            return 256U;
+        case SPI_BAUD_352KBIT:
+        default:
+            return 512U;
+    }
+}
+
+static bool HW_SPI_Config_Uses_Final_Drain_Timer( SPIBaudRate_T baud_rate )
+{
+    return baud_rate >= SPI_BAUD_2M813BIT;
+}
+
+static void HW_SPI_Config_Precompute_Hot_Fields( SPIPeripheralState_T* peripheral_state,
+                                                 SPIPeripheral_T       peripheral,
+                                                 HWSPIConfig_T         configuration )
+{
+    uint16_t frame_bits = 8U;
+
+    peripheral_state->logical_peripheral = peripheral;
+    peripheral_state->is_master          = configuration.spi_mode == SPI_MASTER_MODE;
+    peripheral_state->frame_size_bytes   = ( configuration.data_size == SPI_SIZE_16_BIT ) ? 2U : 1U;
+    peripheral_state->frame_shift        = ( configuration.data_size == SPI_SIZE_16_BIT ) ? 1U : 0U;
+    peripheral_state->tx_uses_final_drain_timer =
+        HW_SPI_Config_Uses_Final_Drain_Timer( configuration.baud_rate );
+    switch ( peripheral )
+    {
+        case SPI_CHANNEL_0:
+            peripheral_state->tx_final_drain_timer = SPI_CHANNEL_0_TIMER;
+            break;
+        case SPI_CHANNEL_1:
+            peripheral_state->tx_final_drain_timer = SPI_CHANNEL_1_TIMER;
+            break;
+        case SPI_DAC:
+        default:
+            peripheral_state->tx_final_drain_timer = SPI_DAC_TIMER;
+            break;
+    }
+
+    if ( configuration.data_size == SPI_SIZE_16_BIT )
+    {
+        frame_bits = 16U;
+    }
+
+    peripheral_state->tx_final_drain_cycles =
+        ( uint16_t )( ( frame_bits * HW_SPI_Config_Get_Cycles_Per_SCK( configuration.baud_rate ) )
+                      + SPI_FINAL_DRAIN_GUARD_CYCLES );
+}
 
 /**
  * @brief Return the private state block for a logical SPI peripheral.
@@ -98,12 +158,7 @@ SPIPeripheralState_T* HW_SPI_Get_State( SPIPeripheral_T peripheral )
  */
 uint32_t HW_SPI_Get_Frame_Size_Bytes( const SPIPeripheralState_T* peripheral_state )
 {
-    if ( peripheral_state->config.data_size == SPI_SIZE_16_BIT )
-    {
-        return 2U;
-    }
-
-    return 1U;
+    return HW_SPI_Get_Frame_Size_Bytes_Fast( peripheral_state );
 }
 
 /**
@@ -121,7 +176,7 @@ uint32_t HW_SPI_Get_Frame_Size_Bytes( const SPIPeripheralState_T* peripheral_sta
 uint16_t HW_SPI_Bytes_To_DMA_Elements( const SPIPeripheralState_T* peripheral_state,
                                        uint32_t                    size_bytes )
 {
-    return size_bytes / HW_SPI_Get_Frame_Size_Bytes( peripheral_state );
+    return HW_SPI_Bytes_To_DMA_Elements_Fast( peripheral_state, size_bytes );
 }
 
 /**
@@ -139,7 +194,7 @@ uint16_t HW_SPI_Bytes_To_DMA_Elements( const SPIPeripheralState_T* peripheral_st
 uint32_t HW_SPI_DMA_Elements_To_Bytes( const SPIPeripheralState_T* peripheral_state,
                                        uint32_t                    num_elements )
 {
-    return num_elements * HW_SPI_Get_Frame_Size_Bytes( peripheral_state );
+    return HW_SPI_DMA_Elements_To_Bytes_Fast( peripheral_state, num_elements );
 }
 
 /**
@@ -158,7 +213,7 @@ uint32_t HW_SPI_DMA_Elements_To_Bytes( const SPIPeripheralState_T* peripheral_st
 bool HW_SPI_Is_Frame_Aligned_Size( const SPIPeripheralState_T* peripheral_state,
                                    uint32_t                    size_bytes )
 {
-    return ( size_bytes % HW_SPI_Get_Frame_Size_Bytes( peripheral_state ) ) == 0U;
+    return HW_SPI_Is_Frame_Aligned_Size_Fast( peripheral_state, size_bytes );
 }
 /**
  * @brief Configure DMA memory/peripheral data widths to match the SPI frame size.
@@ -193,6 +248,8 @@ void HW_SPI_Configure_DMA_Data_Widths( SPIPeripheralState_T* peripheral_state )
                               memory_width );
         LL_DMA_SetPeriphSize( peripheral_state->rx_dma, peripheral_state->rx_dma_stream,
                               peripheral_width );
+        LL_DMA_SetPeriphAddress( peripheral_state->rx_dma, peripheral_state->rx_dma_stream,
+                                 LL_SPI_DMA_GetRegAddr( peripheral_state->spi_peripheral ) );
     }
 
     if ( peripheral_state->tx_dma != NULL )
@@ -201,6 +258,10 @@ void HW_SPI_Configure_DMA_Data_Widths( SPIPeripheralState_T* peripheral_state )
                               memory_width );
         LL_DMA_SetPeriphSize( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
                               peripheral_width );
+        LL_DMA_SetPeriphAddress( peripheral_state->tx_dma, peripheral_state->tx_dma_stream,
+                                 LL_SPI_DMA_GetRegAddr( peripheral_state->spi_peripheral ) );
+        LL_DMA_EnableIT_TC( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+        LL_DMA_EnableIT_TE( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
     }
 }
 
@@ -291,6 +352,8 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
         default:
             return false;
     }
+
+    HW_SPI_Config_Precompute_Hot_Fields( peripheral_state, peripheral, configuration );
 
     // Mode + chip select logic
     switch ( configuration.spi_mode )

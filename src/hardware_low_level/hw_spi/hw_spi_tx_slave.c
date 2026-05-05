@@ -73,7 +73,7 @@
  * @return
  *     Number of contiguous bytes available for the next slave TX DMA transfer.
  */
-static inline uint32_t
+HW_SPI_ALWAYS_INLINE uint32_t
 HW_SPI_TX_Get_Contiguous_Read_Bytes( const SPIPeripheralState_T* peripheral_state );
 
 /**-----------------------------------------------------------------------------
@@ -81,7 +81,7 @@ HW_SPI_TX_Get_Contiguous_Read_Bytes( const SPIPeripheralState_T* peripheral_stat
  *------------------------------------------------------------------------------
  */
 
-static inline uint32_t
+HW_SPI_ALWAYS_INLINE uint32_t
 HW_SPI_TX_Get_Contiguous_Read_Bytes( const SPIPeripheralState_T* peripheral_state )
 {
     uint32_t bytes_until_end = 0U;
@@ -156,12 +156,12 @@ bool HW_SPI_TX_Load_Slave_Stream( SPIPeripheralState_T* peripheral_state, const 
     uint32_t first_copy_size  = 0U;
     uint32_t second_copy_size = 0U;
 
-    if ( HW_SPI_Is_Frame_Aligned_Size( peripheral_state, size ) == false )
+    if ( HW_SPI_Is_Frame_Aligned_Size_Fast( peripheral_state, size ) == false )
     {
         return false;
     }
 
-    if ( size > HW_SPI_TX_Get_Free_Space( peripheral_state ) )
+    if ( size > HW_SPI_TX_Get_Free_Space_Fast( peripheral_state ) )
     {
         return false;
     }
@@ -182,7 +182,7 @@ bool HW_SPI_TX_Load_Slave_Stream( SPIPeripheralState_T* peripheral_state, const 
     }
 
     peripheral_state->tx_write_position =
-        ( peripheral_state->tx_write_position + size ) % TX_BUFFER_SIZE_BYTES;
+        HW_SPI_Wrap_Tx_Buffer_Index( peripheral_state->tx_write_position + size );
     peripheral_state->tx_num_bytes_pending = peripheral_state->tx_num_bytes_pending + size;
 
     return true;
@@ -223,7 +223,7 @@ bool HW_SPI_TX_Start_Slave_Stream_DMA( SPIPeripheralState_T* peripheral_state )
     tx_ptr = &( peripheral_state->tx_buffer[peripheral_state->tx_read_position] );
 
     peripheral_state->tx_read_position =
-        ( peripheral_state->tx_read_position + bytes_to_send ) % TX_BUFFER_SIZE_BYTES;
+        HW_SPI_Wrap_Tx_Buffer_Index( peripheral_state->tx_read_position + bytes_to_send );
     peripheral_state->tx_num_bytes_pending = peripheral_state->tx_num_bytes_pending - bytes_to_send;
     peripheral_state->tx_num_bytes_in_transmission = bytes_to_send;
 

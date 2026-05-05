@@ -70,7 +70,7 @@
  * @return
  *     true when at least one descriptor slot is free; false when the queue is full.
  */
-static inline bool
+HW_SPI_ALWAYS_INLINE bool
 HW_SPI_TX_Packet_Queue_Has_Free_Slot( const SPIPeripheralState_T* peripheral_state );
 
 /**
@@ -91,26 +91,24 @@ HW_SPI_TX_Packet_Queue_Has_Free_Slot( const SPIPeripheralState_T* peripheral_sta
  * @return
  *     Number of contiguous free bytes starting at @p write_index.
  */
-static uint32_t
-HW_SPI_TX_Get_Contiguous_Free_Bytes_From_Index( const SPIPeripheralState_T* peripheral_state,
-                                                uint32_t                    write_index );
+HW_SPI_ALWAYS_INLINE uint32_t HW_SPI_TX_Get_Contiguous_Free_Bytes_From_Index(
+    const SPIPeripheralState_T* peripheral_state, uint32_t write_index );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
 
-static inline bool
+HW_SPI_ALWAYS_INLINE bool
 HW_SPI_TX_Packet_Queue_Has_Free_Slot( const SPIPeripheralState_T* peripheral_state )
 {
     return peripheral_state->tx_num_packets_pending < TX_PACKET_QUEUE_DEPTH;
 }
 
-static uint32_t
-HW_SPI_TX_Get_Contiguous_Free_Bytes_From_Index( const SPIPeripheralState_T* peripheral_state,
-                                                uint32_t                    write_index )
+HW_SPI_ALWAYS_INLINE uint32_t HW_SPI_TX_Get_Contiguous_Free_Bytes_From_Index(
+    const SPIPeripheralState_T* peripheral_state, uint32_t write_index )
 {
-    if ( HW_SPI_TX_Get_Used_Space( peripheral_state ) == TX_BUFFER_SIZE_BYTES )
+    if ( HW_SPI_TX_Get_Used_Space_Fast( peripheral_state ) == TX_BUFFER_SIZE_BYTES )
     {
         return 0U;
     }
@@ -182,7 +180,7 @@ bool HW_SPI_TX_Load_Master_Packet( SPIPeripheralState_T* peripheral_state, const
     uint32_t packet_start    = 0U;
     uint32_t contiguous_free = 0U;
 
-    if ( HW_SPI_Is_Frame_Aligned_Size( peripheral_state, size ) == false )
+    if ( HW_SPI_Is_Frame_Aligned_Size_Fast( peripheral_state, size ) == false )
     {
         return false;
     }
@@ -192,7 +190,7 @@ bool HW_SPI_TX_Load_Master_Packet( SPIPeripheralState_T* peripheral_state, const
         return false;
     }
 
-    if ( size > HW_SPI_TX_Get_Free_Space( peripheral_state ) )
+    if ( size > HW_SPI_TX_Get_Free_Space_Fast( peripheral_state ) )
     {
         return false;
     }
@@ -231,11 +229,11 @@ bool HW_SPI_TX_Load_Master_Packet( SPIPeripheralState_T* peripheral_state, const
         ( uint16_t )size;
 
     peripheral_state->tx_packet_write_position =
-        ( peripheral_state->tx_packet_write_position + 1U ) % TX_PACKET_QUEUE_DEPTH;
+        HW_SPI_Wrap_Tx_Packet_Index( peripheral_state->tx_packet_write_position + 1U );
     peripheral_state->tx_num_packets_pending++;
 
     peripheral_state->tx_write_position =
-        ( peripheral_state->tx_write_position + size ) % TX_BUFFER_SIZE_BYTES;
+        HW_SPI_Wrap_Tx_Buffer_Index( peripheral_state->tx_write_position + size );
     peripheral_state->tx_num_bytes_pending = peripheral_state->tx_num_bytes_pending + size;
 
     return true;
@@ -291,7 +289,7 @@ bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state )
     // completion path has waited for the final SPI frame to drain and released
     // CS for this packet.
     peripheral_state->tx_packet_read_position =
-        ( peripheral_state->tx_packet_read_position + 1U ) % TX_PACKET_QUEUE_DEPTH;
+        HW_SPI_Wrap_Tx_Packet_Index( peripheral_state->tx_packet_read_position + 1U );
     peripheral_state->tx_num_packets_pending--;
 
     peripheral_state->tx_num_bytes_pending =
@@ -299,7 +297,7 @@ bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state )
     peripheral_state->tx_num_bytes_in_transmission = packet_size_bytes;
 
     peripheral_state->tx_read_position =
-        ( packet->start_index + packet_size_bytes ) % TX_BUFFER_SIZE_BYTES;
+        HW_SPI_Wrap_Tx_Buffer_Index( packet->start_index + packet_size_bytes );
 
     // Descriptor clearing is for debug/readability only. Descriptor ownership is
     // controlled by tx_packet_read_position and tx_num_packets_pending.
