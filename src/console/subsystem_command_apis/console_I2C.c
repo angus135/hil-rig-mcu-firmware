@@ -24,6 +24,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
+#include "exec_i2c.h"
 #include "console_I2C.h"
 
 /**-----------------------------------------------------------------------------
@@ -87,7 +88,7 @@ bool CONSOLE_Parse_I2C_Master_And_Slave( const char* arg,
     return false;
 }
 
-bool CONSOLE_Parse_I2C_Speed( const char* arg, EXECI2CSpeed_T* speed )
+bool CONSOLE_Parse_I2C_Speed( const char* arg, HWI2CSpeed_T* speed )
 {
     if ( ( arg == NULL ) || ( speed == NULL ) )
     {
@@ -97,14 +98,14 @@ bool CONSOLE_Parse_I2C_Speed( const char* arg, EXECI2CSpeed_T* speed )
     if ( ( strcmp( arg, "100" ) == 0 ) || ( strcmp( arg, "100k" ) == 0 )
          || ( strcmp( arg, "100khz" ) == 0 ) )
     {
-        *speed = EXEC_I2C_SPEED_100KHZ;
+        *speed = HW_I2C_SPEED_100KHZ;
         return true;
     }
 
     if ( ( strcmp( arg, "400" ) == 0 ) || ( strcmp( arg, "400k" ) == 0 )
          || ( strcmp( arg, "400khz" ) == 0 ) )
     {
-        *speed = EXEC_I2C_SPEED_400KHZ;
+        *speed = HW_I2C_SPEED_400KHZ;
         return true;
     }
 
@@ -134,7 +135,7 @@ bool CONSOLE_Parse_I2C_Loopback_Direction( const char*                    arg,
     return false;
 }
 
-bool CONSOLE_Parse_I2C_Transfer_Path( const char* arg, EXECI2CTransferPath_T* transfer_path )
+bool CONSOLE_Parse_I2C_Transfer_Path( const char* arg, HWI2CTransferPath_T* transfer_path )
 {
     if ( ( arg == NULL ) || ( transfer_path == NULL ) )
     {
@@ -143,13 +144,13 @@ bool CONSOLE_Parse_I2C_Transfer_Path( const char* arg, EXECI2CTransferPath_T* tr
 
     if ( ( strcmp( arg, "interrupt" ) == 0 ) || ( strcmp( arg, "irq" ) == 0 ) )
     {
-        *transfer_path = EXEC_I2C_TRANSFER_INTERRUPT;
+        *transfer_path = HW_I2C_TRANSFER_INTERRUPT;
         return true;
     }
 
     if ( strcmp( arg, "dma" ) == 0 )
     {
-        *transfer_path = EXEC_I2C_TRANSFER_DMA;
+        *transfer_path = HW_I2C_TRANSFER_DMA;
         return true;
     }
 

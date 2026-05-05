@@ -344,14 +344,14 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
         return;
     }
 
-    EXECI2CSpeed_T speed = EXEC_I2C_SPEED_100KHZ;
+    HWI2CSpeed_T speed = HW_I2C_SPEED_100KHZ;
     if ( !CONSOLE_Parse_I2C_Speed( argv[3], &speed ) )
     {
         CONSOLE_Printf( "Invalid speed. Use 100 or 400.\r\n" );
         return;
     }
 
-    EXECI2CTransferPath_T transfer_path = EXEC_I2C_TRANSFER_INTERRUPT;
+    HWI2CTransferPath_T transfer_path = HW_I2C_TRANSFER_INTERRUPT;
     if ( !CONSOLE_Parse_I2C_Transfer_Path( argv[4], &transfer_path ) )
     {
         CONSOLE_Printf( "Invalid op. Use interrupt|irq or dma.\r\n" );
@@ -373,16 +373,16 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
 
     EXECI2CChannelConfig_T i2c1_cfg = {
         .mode =
-            ( master_channel == HW_I2C_CHANNEL_1 ) ? EXEC_I2C_MODE_MASTER : EXEC_I2C_MODE_SLAVE,
+            ( master_channel == HW_I2C_CHANNEL_1 ) ? HW_I2C_MODE_MASTER : HW_I2C_MODE_SLAVE,
         .speed            = speed,
-        .tx_transfer_path = EXEC_I2C_TRANSFER_INTERRUPT,
-        .rx_transfer_path = EXEC_I2C_TRANSFER_INTERRUPT,
+        .tx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
+        .rx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
         .own_address_7bit = i2c1_addr,
     };
 
     EXECI2CChannelConfig_T i2c2_cfg = {
         .mode =
-            ( master_channel == HW_I2C_CHANNEL_2 ) ? EXEC_I2C_MODE_MASTER : EXEC_I2C_MODE_SLAVE,
+            ( master_channel == HW_I2C_CHANNEL_2 ) ? HW_I2C_MODE_MASTER : HW_I2C_MODE_SLAVE,
         .speed            = speed,
         .tx_transfer_path = transfer_path,
         .rx_transfer_path = transfer_path,
@@ -429,8 +429,8 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
         ( master_channel == HW_I2C_CHANNEL_1 ) ? "1" : "2",
         ( slave_channel == HW_I2C_CHANNEL_1 ) ? "1" : "2",
         ( direction == CONSOLE_I2C_LOOPBACK_DIR_M2S ) ? "m2s" : "s2m",
-        ( speed == EXEC_I2C_SPEED_400KHZ ) ? "400kHz" : "100kHz",
-        ( transfer_path == EXEC_I2C_TRANSFER_DMA ) ? "DMA" : "Interrupt" );
+        ( speed == HW_I2C_SPEED_400KHZ ) ? "400kHz" : "100kHz",
+        ( transfer_path == HW_I2C_TRANSFER_DMA ) ? "DMA" : "Interrupt" );
 
     CONSOLE_Printf( "Sent    (%u): %.*s\r\n", ( unsigned int )tx_len, ( int )tx_len, tx_message );
     CONSOLE_Printf( "Received(%u): %.*s\r\n", ( unsigned int )received_len, ( int )received_len,

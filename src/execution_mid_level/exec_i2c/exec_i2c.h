@@ -39,24 +39,6 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-typedef enum EXECI2CMode_T
-{
-    EXEC_I2C_MODE_MASTER,
-    EXEC_I2C_MODE_SLAVE,
-} EXECI2CMode_T;
-
-typedef enum EXECI2CSpeed_T
-{
-    EXEC_I2C_SPEED_100KHZ,
-    EXEC_I2C_SPEED_400KHZ,
-} EXECI2CSpeed_T;
-
-typedef enum EXECI2CTransferPath_T
-{
-    EXEC_I2C_TRANSFER_INTERRUPT,
-    EXEC_I2C_TRANSFER_DMA,
-} EXECI2CTransferPath_T;
-
 typedef enum EXECI2CStatus_T
 {
     EXEC_I2C_STATUS_OK,
@@ -68,11 +50,11 @@ typedef enum EXECI2CStatus_T
 
 typedef struct EXECI2CChannelConfig_T
 {
-    EXECI2CMode_T         mode;
-    EXECI2CSpeed_T        speed;
-    EXECI2CTransferPath_T tx_transfer_path;
-    EXECI2CTransferPath_T rx_transfer_path;
-    uint16_t              own_address_7bit;
+    HWI2CMode_T         mode;
+    HWI2CSpeed_T        speed;
+    HWI2CTransferPath_T tx_transfer_path;
+    HWI2CTransferPath_T rx_transfer_path;
+    uint16_t            own_address_7bit;
 } EXECI2CChannelConfig_T;
 
 /**-----------------------------------------------------------------------------
