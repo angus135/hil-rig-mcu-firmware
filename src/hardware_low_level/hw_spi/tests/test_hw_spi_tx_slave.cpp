@@ -17,12 +17,11 @@
  *        sources separately instead of including them in each test file.
  ******************************************************************************/
 
-
 /**-----------------------------------------------------------------------------
  *  Includes
  *------------------------------------------------------------------------------
  */
-
+#define HW_SPI_INTERNAL
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
@@ -51,7 +50,6 @@ using ::testing::InSequence;
 using ::testing::Invoke;
 using ::testing::Return;
 using ::testing::StrictMock;
-
 
 /**-----------------------------------------------------------------------------
  *  Test Constants / Macros
@@ -112,8 +110,6 @@ public:
     MOCK_METHOD( void, TimerConfigure, ( Timer_T timer, uint32_t psc, uint32_t arr ), () );
     MOCK_METHOD( void, TimerStart, ( Timer_T timer ), () );
     MOCK_METHOD( void, TimerStop, ( Timer_T timer ), () );
-
-    MOCK_METHOD( void, GPIOWritePin, ( void* port, uint16_t pin, uint32_t state ), () );
 };
 
 static MockHWSPI* g_mock = nullptr;
@@ -141,7 +137,10 @@ extern "C" uint32_t LL_DMA_GetDataLength( void* DMAx, uint32_t Stream )
 
 extern "C" void LL_DMA_DisableStream( DMA_TypeDef* DMAx, uint32_t Stream )
 {
-    if ( g_mock ) { g_mock->DMADisableStream( DMAx, Stream ); }
+    if ( g_mock )
+    {
+        g_mock->DMADisableStream( DMAx, Stream );
+    }
 }
 
 extern "C" uint32_t LL_DMA_IsEnabledStream( DMA_TypeDef* DMAx, uint32_t Stream )
@@ -152,13 +151,19 @@ extern "C" uint32_t LL_DMA_IsEnabledStream( DMA_TypeDef* DMAx, uint32_t Stream )
 extern "C" void LL_DMA_SetMemoryAddress( DMA_TypeDef* DMAx, uint32_t Stream,
                                          uint32_t MemoryAddress )
 {
-    if ( g_mock ) { g_mock->DMASetMemoryAddress( DMAx, Stream, MemoryAddress ); }
+    if ( g_mock )
+    {
+        g_mock->DMASetMemoryAddress( DMAx, Stream, MemoryAddress );
+    }
 }
 
 extern "C" void LL_DMA_SetPeriphAddress( DMA_TypeDef* DMAx, uint32_t Stream,
                                          uint32_t PeriphAddress )
 {
-    if ( g_mock ) { g_mock->DMASetPeriphAddress( DMAx, Stream, PeriphAddress ); }
+    if ( g_mock )
+    {
+        g_mock->DMASetPeriphAddress( DMAx, Stream, PeriphAddress );
+    }
 }
 
 extern "C" uint32_t LL_SPI_DMA_GetRegAddr( const SPI_TypeDef* SPIx )
@@ -168,52 +173,82 @@ extern "C" uint32_t LL_SPI_DMA_GetRegAddr( const SPI_TypeDef* SPIx )
 
 extern "C" void LL_DMA_SetDataLength( DMA_TypeDef* DMAx, uint32_t Stream, uint32_t NbData )
 {
-    if ( g_mock ) { g_mock->DMASetDataLength( DMAx, Stream, NbData ); }
+    if ( g_mock )
+    {
+        g_mock->DMASetDataLength( DMAx, Stream, NbData );
+    }
 }
 
 extern "C" void LL_SPI_EnableDMAReq_TX( SPI_TypeDef* SPIx )
 {
-    if ( g_mock ) { g_mock->SPIEnableDMAReqTX( SPIx ); }
+    if ( g_mock )
+    {
+        g_mock->SPIEnableDMAReqTX( SPIx );
+    }
 }
 
 extern "C" void LL_SPI_EnableDMAReq_RX( SPI_TypeDef* SPIx )
 {
-    if ( g_mock ) { g_mock->SPIEnableDMAReqRX( SPIx ); }
+    if ( g_mock )
+    {
+        g_mock->SPIEnableDMAReqRX( SPIx );
+    }
 }
 
 extern "C" void LL_SPI_Enable( SPI_TypeDef* SPIx )
 {
-    if ( g_mock ) { g_mock->SPIEnable( SPIx ); }
+    if ( g_mock )
+    {
+        g_mock->SPIEnable( SPIx );
+    }
 }
 
 extern "C" void LL_DMA_EnableIT_TC( DMA_TypeDef* DMAx, uint32_t Stream )
 {
-    if ( g_mock ) { g_mock->DMAEnableITTC( DMAx, Stream ); }
+    if ( g_mock )
+    {
+        g_mock->DMAEnableITTC( DMAx, Stream );
+    }
 }
 
 extern "C" void LL_DMA_EnableIT_TE( DMA_TypeDef* DMAx, uint32_t Stream )
 {
-    if ( g_mock ) { g_mock->DMAEnableITTE( DMAx, Stream ); }
+    if ( g_mock )
+    {
+        g_mock->DMAEnableITTE( DMAx, Stream );
+    }
 }
 
 extern "C" void LL_DMA_EnableStream( DMA_TypeDef* DMAx, uint32_t Stream )
 {
-    if ( g_mock ) { g_mock->DMAEnableStream( DMAx, Stream ); }
+    if ( g_mock )
+    {
+        g_mock->DMAEnableStream( DMAx, Stream );
+    }
 }
 
 extern "C" void LL_DMA_DisableIT_TC( DMA_TypeDef* DMAx, uint32_t Stream )
 {
-    if ( g_mock ) { g_mock->DMADisableITTC( DMAx, Stream ); }
+    if ( g_mock )
+    {
+        g_mock->DMADisableITTC( DMAx, Stream );
+    }
 }
 
 extern "C" void LL_DMA_DisableIT_TE( DMA_TypeDef* DMAx, uint32_t Stream )
 {
-    if ( g_mock ) { g_mock->DMADisableITTE( DMAx, Stream ); }
+    if ( g_mock )
+    {
+        g_mock->DMADisableITTE( DMAx, Stream );
+    }
 }
 
 extern "C" void LL_SPI_DisableDMAReq_TX( SPI_TypeDef* SPIx )
 {
-    if ( g_mock ) { g_mock->SPIDisableDMAReqTX( SPIx ); }
+    if ( g_mock )
+    {
+        g_mock->SPIDisableDMAReqTX( SPIx );
+    }
 }
 
 extern "C" uint32_t LL_SPI_IsActiveFlag_BSY( const SPI_TypeDef* SPIx )
@@ -228,7 +263,10 @@ extern "C" uint32_t LL_DMA_IsActiveFlag_TE5( DMA_TypeDef* DMAx )
 
 extern "C" void LL_DMA_ClearFlag_TE5( DMA_TypeDef* DMAx )
 {
-    if ( g_mock ) { g_mock->DMAClearFlagTE5( DMAx ); }
+    if ( g_mock )
+    {
+        g_mock->DMAClearFlagTE5( DMAx );
+    }
 }
 
 extern "C" uint32_t LL_DMA_IsActiveFlag_TC5( DMA_TypeDef* DMAx )
@@ -238,7 +276,10 @@ extern "C" uint32_t LL_DMA_IsActiveFlag_TC5( DMA_TypeDef* DMAx )
 
 extern "C" void LL_DMA_ClearFlag_TC5( DMA_TypeDef* DMAx )
 {
-    if ( g_mock ) { g_mock->DMAClearFlagTC5( DMAx ); }
+    if ( g_mock )
+    {
+        g_mock->DMAClearFlagTC5( DMAx );
+    }
 }
 
 extern "C" uint32_t LL_DMA_IsActiveFlag_TE1( DMA_TypeDef* DMAx )
@@ -248,7 +289,10 @@ extern "C" uint32_t LL_DMA_IsActiveFlag_TE1( DMA_TypeDef* DMAx )
 
 extern "C" void LL_DMA_ClearFlag_TE1( DMA_TypeDef* DMAx )
 {
-    if ( g_mock ) { g_mock->DMAClearFlagTE1( DMAx ); }
+    if ( g_mock )
+    {
+        g_mock->DMAClearFlagTE1( DMAx );
+    }
 }
 
 extern "C" uint32_t LL_DMA_IsActiveFlag_TC1( DMA_TypeDef* DMAx )
@@ -258,49 +302,66 @@ extern "C" uint32_t LL_DMA_IsActiveFlag_TC1( DMA_TypeDef* DMAx )
 
 extern "C" void LL_DMA_ClearFlag_TC1( DMA_TypeDef* DMAx )
 {
-    if ( g_mock ) { g_mock->DMAClearFlagTC1( DMAx ); }
+    if ( g_mock )
+    {
+        g_mock->DMAClearFlagTC1( DMAx );
+    }
 }
 
 extern "C" void LL_DMA_SetMemorySize( DMA_TypeDef* DMAx, uint32_t Stream, uint32_t Size )
 {
-    if ( g_mock ) { g_mock->DMASetMemorySize( DMAx, Stream, Size ); }
+    if ( g_mock )
+    {
+        g_mock->DMASetMemorySize( DMAx, Stream, Size );
+    }
 }
 
 extern "C" void LL_DMA_SetPeriphSize( DMA_TypeDef* DMAx, uint32_t Stream, uint32_t Size )
 {
-    if ( g_mock ) { g_mock->DMASetPeriphSize( DMAx, Stream, Size ); }
+    if ( g_mock )
+    {
+        g_mock->DMASetPeriphSize( DMAx, Stream, Size );
+    }
 }
 
 extern "C" void NVIC_DisableIRQ( IRQn_Type IRQn )
 {
-    if ( g_mock ) { g_mock->NVICDisableIRQ( IRQn ); }
+    if ( g_mock )
+    {
+        g_mock->NVICDisableIRQ( IRQn );
+    }
 }
 
 extern "C" void NVIC_EnableIRQ( IRQn_Type IRQn )
 {
-    if ( g_mock ) { g_mock->NVICEnableIRQ( IRQn ); }
+    if ( g_mock )
+    {
+        g_mock->NVICEnableIRQ( IRQn );
+    }
 }
 
 extern "C" void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t arr )
 {
-    if ( g_mock ) { g_mock->TimerConfigure( timer, psc, arr ); }
+    if ( g_mock )
+    {
+        g_mock->TimerConfigure( timer, psc, arr );
+    }
 }
 
 extern "C" void HW_TIMER_Start_Timer( Timer_T timer )
 {
-    if ( g_mock ) { g_mock->TimerStart( timer ); }
+    if ( g_mock )
+    {
+        g_mock->TimerStart( timer );
+    }
 }
 
 extern "C" void HW_TIMER_Stop_Timer( Timer_T timer )
 {
-    if ( g_mock ) { g_mock->TimerStop( timer ); }
-}
-
-extern "C" void HAL_GPIO_WritePin( GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin,
-                                   GPIO_PinState PinState )
-{
-    if ( g_mock ) { g_mock->GPIOWritePin( static_cast<void*>( GPIOx ), GPIO_Pin,
-                                          static_cast<uint32_t>( PinState ) ); }
+    if ( g_mock )
+    {
+        g_mock->TimerStop( timer );
+    }
 }
 
 /**-----------------------------------------------------------------------------
@@ -341,26 +402,26 @@ protected:
     }
 
     static void InitialiseState( SPIPeripheralState_T* state, SPIPeripheral_T logical,
-                                 HWSPIConfig_T config, DMA_TypeDef* rx_dma,
-                                 uint32_t rx_stream, DMA_TypeDef* tx_dma, uint32_t tx_stream,
-                                 SPI_TypeDef* spi, IRQn_Type tx_irqn, Timer_T timer )
+                                 HWSPIConfig_T config, DMA_TypeDef* rx_dma, uint32_t rx_stream,
+                                 DMA_TypeDef* tx_dma, uint32_t tx_stream, SPI_TypeDef* spi,
+                                 IRQn_Type tx_irqn, Timer_T timer )
     {
         memset( state, 0, sizeof( *state ) );
-        state->config                 = config;
-        state->logical_peripheral     = logical;
-        state->is_master              = config.spi_mode == SPI_MASTER_MODE;
-        state->frame_size_bytes       = config.data_size == SPI_SIZE_16_BIT ? 2U : 1U;
-        state->frame_shift            = config.data_size == SPI_SIZE_16_BIT ? 1U : 0U;
+        state->config                    = config;
+        state->logical_peripheral        = logical;
+        state->is_master                 = config.spi_mode == SPI_MASTER_MODE;
+        state->frame_size_bytes          = config.data_size == SPI_SIZE_16_BIT ? 2U : 1U;
+        state->frame_shift               = config.data_size == SPI_SIZE_16_BIT ? 1U : 0U;
         state->tx_uses_final_drain_timer = config.baud_rate > SPI_BAUD_5M625BIT;
-        state->tx_final_drain_cycles  = 0U;
-        state->tx_final_drain_timer   = timer;
-        state->rx_dma                 = rx_dma;
-        state->rx_dma_stream          = rx_stream;
-        state->tx_dma                 = tx_dma;
-        state->tx_dma_stream          = tx_stream;
-        state->spi_peripheral         = spi;
-        state->tx_dma_irqn            = tx_irqn;
-        state->tx_transaction_state   = HW_SPI_TX_TRANSACTION_IDLE;
+        state->tx_final_drain_cycles     = 0U;
+        state->tx_final_drain_timer      = timer;
+        state->rx_dma                    = rx_dma;
+        state->rx_dma_stream             = rx_stream;
+        state->tx_dma                    = tx_dma;
+        state->tx_dma_stream             = tx_stream;
+        state->spi_peripheral            = spi;
+        state->tx_dma_irqn               = tx_irqn;
+        state->tx_transaction_state      = HW_SPI_TX_TRANSACTION_IDLE;
         HW_SPI_TX_Configure_Operations( state );
         HW_SPI_TX_Reset_State( state );
     }
@@ -403,10 +464,11 @@ protected:
             .WillOnce( Return( 0U ) );
         EXPECT_CALL( mock, DMAClearFlagTC5( Eq( SPI_CHANNEL_0_TX_DMA ) ) );
         EXPECT_CALL( mock, DMAClearFlagTE5( Eq( SPI_CHANNEL_0_TX_DMA ) ) );
-        EXPECT_CALL( mock, DMASetMemoryAddress( Eq( SPI_CHANNEL_0_TX_DMA ),
-                                                Eq( SPI_CHANNEL_0_TX_DMA_STREAM ),
-                                                Eq( static_cast<uint32_t>(
-                                                    reinterpret_cast<uintptr_t>( expected_ptr ) ) ) ) );
+        EXPECT_CALL(
+            mock,
+            DMASetMemoryAddress(
+                Eq( SPI_CHANNEL_0_TX_DMA ), Eq( SPI_CHANNEL_0_TX_DMA_STREAM ),
+                Eq( static_cast<uint32_t>( reinterpret_cast<uintptr_t>( expected_ptr ) ) ) ) );
         EXPECT_CALL( mock, DMASetDataLength( Eq( SPI_CHANNEL_0_TX_DMA ),
                                              Eq( SPI_CHANNEL_0_TX_DMA_STREAM ),
                                              Eq( expected_elements ) ) );
@@ -425,10 +487,11 @@ protected:
             .WillOnce( Return( 0U ) );
         EXPECT_CALL( mock, DMAClearFlagTC1( Eq( SPI_CHANNEL_1_TX_DMA ) ) );
         EXPECT_CALL( mock, DMAClearFlagTE1( Eq( SPI_CHANNEL_1_TX_DMA ) ) );
-        EXPECT_CALL( mock, DMASetMemoryAddress( Eq( SPI_CHANNEL_1_TX_DMA ),
-                                                Eq( SPI_CHANNEL_1_TX_DMA_STREAM ),
-                                                Eq( static_cast<uint32_t>(
-                                                    reinterpret_cast<uintptr_t>( expected_ptr ) ) ) ) );
+        EXPECT_CALL(
+            mock,
+            DMASetMemoryAddress(
+                Eq( SPI_CHANNEL_1_TX_DMA ), Eq( SPI_CHANNEL_1_TX_DMA_STREAM ),
+                Eq( static_cast<uint32_t>( reinterpret_cast<uintptr_t>( expected_ptr ) ) ) ) );
         EXPECT_CALL( mock, DMASetDataLength( Eq( SPI_CHANNEL_1_TX_DMA ),
                                              Eq( SPI_CHANNEL_1_TX_DMA_STREAM ),
                                              Eq( expected_elements ) ) );
@@ -452,9 +515,8 @@ protected:
 TEST_F( HWSpiSlaveTxTest, LoadTxBuffer_SlaveCopiesLinearStreamAndAdvancesByteQueue )
 {
     InitialiseState( channel_0_state, SPI_CHANNEL_0, MakeSlaveConfig(), SPI_CHANNEL_0_RX_DMA,
-                     SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA,
-                     SPI_CHANNEL_0_TX_DMA_STREAM, SPI_CHANNEL_0_INSTANCE,
-                     SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
+                     SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA, SPI_CHANNEL_0_TX_DMA_STREAM,
+                     SPI_CHANNEL_0_INSTANCE, SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
     const uint8_t data[4] = { 0x11U, 0x22U, 0x33U, 0x44U };
 
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
@@ -470,10 +532,9 @@ TEST_F( HWSpiSlaveTxTest, LoadTxBuffer_SlaveCopiesLinearStreamAndAdvancesByteQue
 TEST_F( HWSpiSlaveTxTest, LoadTxBuffer_SlaveWrapsStreamAcrossEndOfRing )
 {
     InitialiseState( channel_0_state, SPI_CHANNEL_0, MakeSlaveConfig(), SPI_CHANNEL_0_RX_DMA,
-                     SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA,
-                     SPI_CHANNEL_0_TX_DMA_STREAM, SPI_CHANNEL_0_INSTANCE,
-                     SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
-    const uint8_t data[6] = { 1U, 2U, 3U, 4U, 5U, 6U };
+                     SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA, SPI_CHANNEL_0_TX_DMA_STREAM,
+                     SPI_CHANNEL_0_INSTANCE, SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
+    const uint8_t data[6]              = { 1U, 2U, 3U, 4U, 5U, 6U };
     channel_0_state->tx_write_position = TX_BUFFER_SIZE_BYTES - 2U;
 
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
@@ -494,8 +555,8 @@ TEST_F( HWSpiSlaveTxTest, LoadTxBuffer_SlaveRejectsFrameMisalignmentIn16BitMode 
 {
     InitialiseState( channel_1_state, SPI_CHANNEL_1, MakeSlaveConfig( SPI_SIZE_16_BIT ),
                      SPI_CHANNEL_1_RX_DMA, SPI_CHANNEL_1_RX_DMA_STREAM, SPI_CHANNEL_1_TX_DMA,
-                     SPI_CHANNEL_1_TX_DMA_STREAM, SPI_CHANNEL_1_INSTANCE,
-                     SPI_CHANNEL_1_TX_DMA_IRQN, SPI_CHANNEL_1_TIMER );
+                     SPI_CHANNEL_1_TX_DMA_STREAM, SPI_CHANNEL_1_INSTANCE, SPI_CHANNEL_1_TX_DMA_IRQN,
+                     SPI_CHANNEL_1_TIMER );
     const uint8_t data[3] = { 1U, 2U, 3U };
 
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_1_TX_DMA_IRQN ) );
@@ -509,9 +570,8 @@ TEST_F( HWSpiSlaveTxTest, LoadTxBuffer_SlaveRejectsFrameMisalignmentIn16BitMode 
 TEST_F( HWSpiSlaveTxTest, TxTrigger_SlaveStartsOneContiguousSpanOnly )
 {
     InitialiseState( channel_0_state, SPI_CHANNEL_0, MakeSlaveConfig(), SPI_CHANNEL_0_RX_DMA,
-                     SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA,
-                     SPI_CHANNEL_0_TX_DMA_STREAM, SPI_CHANNEL_0_INSTANCE,
-                     SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
+                     SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA, SPI_CHANNEL_0_TX_DMA_STREAM,
+                     SPI_CHANNEL_0_INSTANCE, SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
     channel_0_state->tx_read_position     = TX_BUFFER_SIZE_BYTES - 3U;
     channel_0_state->tx_write_position    = 2U;
     channel_0_state->tx_num_bytes_pending = 5U;
@@ -531,9 +591,8 @@ TEST_F( HWSpiSlaveTxTest, TxTrigger_SlaveStartsOneContiguousSpanOnly )
 TEST_F( HWSpiSlaveTxTest, TxTrigger_SlaveDoesNothingWhenAlreadyInFlight )
 {
     InitialiseState( channel_0_state, SPI_CHANNEL_0, MakeSlaveConfig(), SPI_CHANNEL_0_RX_DMA,
-                     SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA,
-                     SPI_CHANNEL_0_TX_DMA_STREAM, SPI_CHANNEL_0_INSTANCE,
-                     SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
+                     SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA, SPI_CHANNEL_0_TX_DMA_STREAM,
+                     SPI_CHANNEL_0_INSTANCE, SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
     channel_0_state->tx_num_bytes_pending         = 12U;
     channel_0_state->tx_num_bytes_in_transmission = 4U;
 
@@ -549,9 +608,8 @@ TEST_F( HWSpiSlaveTxTest, TxTrigger_SlaveDoesNothingWhenAlreadyInFlight )
 TEST_F( HWSpiSlaveTxTest, TxDmaIrq_SlaveTransferCompleteRearmsWrappedRemainder )
 {
     InitialiseState( channel_0_state, SPI_CHANNEL_0, MakeSlaveConfig(), SPI_CHANNEL_0_RX_DMA,
-                     SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA,
-                     SPI_CHANNEL_0_TX_DMA_STREAM, SPI_CHANNEL_0_INSTANCE,
-                     SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
+                     SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA, SPI_CHANNEL_0_TX_DMA_STREAM,
+                     SPI_CHANNEL_0_INSTANCE, SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
     channel_0_state->tx_read_position             = 0U;
     channel_0_state->tx_num_bytes_pending         = 2U;
     channel_0_state->tx_num_bytes_in_transmission = 3U;
@@ -573,9 +631,8 @@ TEST_F( HWSpiSlaveTxTest, TxDmaIrq_SlaveTransferCompleteRearmsWrappedRemainder )
 TEST_F( HWSpiSlaveTxTest, TxDmaIrq_SlaveTransferCompleteGoesIdleWhenNoPendingBytes )
 {
     InitialiseState( channel_0_state, SPI_CHANNEL_0, MakeSlaveConfig(), SPI_CHANNEL_0_RX_DMA,
-                     SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA,
-                     SPI_CHANNEL_0_TX_DMA_STREAM, SPI_CHANNEL_0_INSTANCE,
-                     SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
+                     SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA, SPI_CHANNEL_0_TX_DMA_STREAM,
+                     SPI_CHANNEL_0_INSTANCE, SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
     channel_0_state->tx_num_bytes_pending         = 0U;
     channel_0_state->tx_num_bytes_in_transmission = 7U;
 
@@ -592,19 +649,23 @@ TEST_F( HWSpiSlaveTxTest, TxDmaIrq_SlaveTransferCompleteGoesIdleWhenNoPendingByt
 TEST_F( HWSpiSlaveTxTest, TxDmaIrq_TransferErrorDisablesDmaAndClearsInFlight )
 {
     InitialiseState( channel_0_state, SPI_CHANNEL_0, MakeSlaveConfig(), SPI_CHANNEL_0_RX_DMA,
-                     SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA,
-                     SPI_CHANNEL_0_TX_DMA_STREAM, SPI_CHANNEL_0_INSTANCE,
-                     SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
+                     SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA, SPI_CHANNEL_0_TX_DMA_STREAM,
+                     SPI_CHANNEL_0_INSTANCE, SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
     channel_0_state->tx_num_bytes_in_transmission = 4U;
 
     InSequence seq;
     EXPECT_CALL( mock, DMAIsActiveFlagTE5( Eq( SPI_CHANNEL_0_TX_DMA ) ) ).WillOnce( Return( 1U ) );
     EXPECT_CALL( mock, DMAClearFlagTE5( Eq( SPI_CHANNEL_0_TX_DMA ) ) );
-    EXPECT_CALL( mock, DMADisableITTC( Eq( SPI_CHANNEL_0_TX_DMA ), Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) );
-    EXPECT_CALL( mock, DMADisableITTE( Eq( SPI_CHANNEL_0_TX_DMA ), Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) );
+    EXPECT_CALL( mock,
+                 DMADisableITTC( Eq( SPI_CHANNEL_0_TX_DMA ), Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) );
+    EXPECT_CALL( mock,
+                 DMADisableITTE( Eq( SPI_CHANNEL_0_TX_DMA ), Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) );
     EXPECT_CALL( mock, SPIDisableDMAReqTX( Eq( SPI_CHANNEL_0_INSTANCE ) ) );
-    EXPECT_CALL( mock, DMADisableStream( Eq( SPI_CHANNEL_0_TX_DMA ), Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) );
-    EXPECT_CALL( mock, DMAIsEnabledStream( Eq( SPI_CHANNEL_0_TX_DMA ), Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) ).WillOnce( Return( 0U ) );
+    EXPECT_CALL(
+        mock, DMADisableStream( Eq( SPI_CHANNEL_0_TX_DMA ), Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) );
+    EXPECT_CALL(
+        mock, DMAIsEnabledStream( Eq( SPI_CHANNEL_0_TX_DMA ), Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) )
+        .WillOnce( Return( 0U ) );
 
     SPI_CHANNEL_0_TX_DMA_IRQ();
 
@@ -616,8 +677,8 @@ TEST_F( HWSpiSlaveTxTest, TxTrigger_Slave16BitProgramsHalfwordElementCount )
 {
     InitialiseState( channel_1_state, SPI_CHANNEL_1, MakeSlaveConfig( SPI_SIZE_16_BIT ),
                      SPI_CHANNEL_1_RX_DMA, SPI_CHANNEL_1_RX_DMA_STREAM, SPI_CHANNEL_1_TX_DMA,
-                     SPI_CHANNEL_1_TX_DMA_STREAM, SPI_CHANNEL_1_INSTANCE,
-                     SPI_CHANNEL_1_TX_DMA_IRQN, SPI_CHANNEL_1_TIMER );
+                     SPI_CHANNEL_1_TX_DMA_STREAM, SPI_CHANNEL_1_INSTANCE, SPI_CHANNEL_1_TX_DMA_IRQN,
+                     SPI_CHANNEL_1_TIMER );
     const uint8_t data[4] = { 1U, 2U, 3U, 4U };
     memcpy( channel_1_state->tx_buffer, data, sizeof( data ) );
     channel_1_state->tx_num_bytes_pending = sizeof( data );
