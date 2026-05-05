@@ -145,8 +145,14 @@ HAL_StatusTypeDef HAL_QSPI_Transmit( QSPI_HandleTypeDef* hqspi, uint8_t* p_data,
 HAL_StatusTypeDef HAL_QSPI_Receive( QSPI_HandleTypeDef* hqspi, uint8_t* p_data,
                                     uint32_t timeout );
 HAL_StatusTypeDef HAL_QSPI_Transmit_DMA( QSPI_HandleTypeDef* hqspi, uint8_t* p_data );
+HAL_StatusTypeDef HAL_QSPI_Receive_DMA( QSPI_HandleTypeDef* hqspi, uint8_t* p_data );
 HAL_QSPI_StateTypeDef HAL_QSPI_GetState( const QSPI_HandleTypeDef* hqspi );
 HAL_StatusTypeDef     HAL_QSPI_Abort( QSPI_HandleTypeDef* hqspi );
+
+void HAL_QSPI_TxCpltCallback( QSPI_HandleTypeDef* hqspi );
+void HAL_QSPI_RxCpltCallback( QSPI_HandleTypeDef* hqspi );
+void HAL_QSPI_ErrorCallback( QSPI_HandleTypeDef* hqspi );
+void HAL_QSPI_AbortCpltCallback( QSPI_HandleTypeDef* hqspi );
 
 // NOLINTEND
 

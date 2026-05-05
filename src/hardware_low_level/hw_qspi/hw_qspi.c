@@ -83,8 +83,12 @@ static uint32_t         HW_QSPI_Get_Alternate_Bytes_Mode( HW_QSPI_Lines_T lines 
 static uint32_t HW_QSPI_Get_Alternate_Bytes_Size(
     HW_QSPI_AlternateBytesSize_T alternate_bytes_size );
 static uint32_t         HW_QSPI_Get_Data_Mode( HW_QSPI_Lines_T lines );
+static bool             HW_QSPI_Is_HAL_Busy_State( HAL_QSPI_StateTypeDef state );
 static HW_QSPI_Status_T HW_QSPI_Build_Command( const HW_QSPI_Command_T* command, uint32_t length,
                                                QSPI_CommandTypeDef* qspi_command );
+static HW_QSPI_Status_T HW_QSPI_Issue_Command_For_Data( const HW_QSPI_Command_T* command,
+                                                        uint32_t                 length,
+                                                        QSPI_CommandTypeDef* qspi_command );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -275,6 +279,32 @@ static uint32_t HW_QSPI_Get_Data_Mode( HW_QSPI_Lines_T lines )
 }
 
 /**
+ * @brief Determines whether a HAL QSPI state represents an active operation.
+ *
+ * @param state HAL QSPI state to inspect.
+ *
+ * @return true when the HAL state is busy or aborting, otherwise false.
+ */
+static bool HW_QSPI_Is_HAL_Busy_State( HAL_QSPI_StateTypeDef state )
+{
+    switch ( state )
+    {
+        case HAL_QSPI_STATE_BUSY:
+        case HAL_QSPI_STATE_BUSY_INDIRECT_TX:
+        case HAL_QSPI_STATE_BUSY_INDIRECT_RX:
+        case HAL_QSPI_STATE_BUSY_AUTO_POLLING:
+        case HAL_QSPI_STATE_BUSY_MEM_MAPPED:
+        case HAL_QSPI_STATE_ABORT:
+            return true;
+        case HAL_QSPI_STATE_RESET:
+        case HAL_QSPI_STATE_READY:
+        case HAL_QSPI_STATE_ERROR:
+        default:
+            return false;
+    }
+}
+
+/**
  * @brief Builds an STM32 HAL QSPI command from the project-level command description.
  *
  * @param command      Project-level QSPI command description.
@@ -326,22 +356,86 @@ static HW_QSPI_Status_T HW_QSPI_Build_Command( const HW_QSPI_Command_T* command,
     return HW_QSPI_STATUS_OK;
 }
 
+/**
+ * @brief Builds and issues a HAL command that will be followed by a data phase.
+ *
+ * @param command      Project-level QSPI command description.
+ * @param length       Number of data bytes that will be transferred.
+ * @param qspi_command Destination HAL command structure.
+ *
+ * @return HW_QSPI_STATUS_OK when the command phase succeeds, otherwise an error status.
+ */
+static HW_QSPI_Status_T HW_QSPI_Issue_Command_For_Data( const HW_QSPI_Command_T* command,
+                                                        uint32_t                 length,
+                                                        QSPI_CommandTypeDef* qspi_command )
+{
+    HW_QSPI_Status_T status = HW_QSPI_Build_Command( command, length, qspi_command );
+    if ( status != HW_QSPI_STATUS_OK )
+    {
+        return status;
+    }
+
+    return HW_QSPI_Map_HAL_Status(
+        HAL_QSPI_Command( qspi_handle, qspi_command, HW_QSPI_Get_Timeout( command ) ) );
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
 
-HW_QSPI_Status_T HW_QSPI_ReadBlocking( const HW_QSPI_Command_T* command, uint8_t* data,
-                                       uint32_t length )
+HW_QSPI_Status_T HW_QSPI_Init( const HW_QSPI_Config_T* config )
 {
-    if ( ( qspi_handle == NULL ) || ( command == NULL ) || ( data == NULL ) || ( length == 0U ) )
+    if ( ( config == NULL ) || ( config->hal_handle == NULL ) )
     {
         return HW_QSPI_STATUS_INVALID_ARG;
     }
 
+    config->hal_handle->Init.ClockPrescaler     = config->clock_prescaler;
+    config->hal_handle->Init.FifoThreshold      = config->fifo_threshold;
+    config->hal_handle->Init.SampleShifting     = config->sample_shifting;
+    config->hal_handle->Init.FlashSize          = config->flash_size;
+    config->hal_handle->Init.ChipSelectHighTime = config->chip_select_high_time;
+    config->hal_handle->Init.ClockMode          = config->clock_mode;
+    config->hal_handle->Init.FlashID            = QSPI_FLASH_ID_1;
+    config->hal_handle->Init.DualFlash          = QSPI_DUALFLASH_DISABLE;
+
+    HW_QSPI_Status_T status = HW_QSPI_Map_HAL_Status( HAL_QSPI_Init( config->hal_handle ) );
+    if ( status != HW_QSPI_STATUS_OK )
+    {
+        qspi_handle             = NULL;
+        qspi_default_timeout_ms = 0U;
+        qspi_transfer_state     = HW_QSPI_TRANSFER_ERROR;
+        return status;
+    }
+
+    qspi_handle             = config->hal_handle;
+    qspi_default_timeout_ms = config->default_timeout_ms;
+    qspi_transfer_state     = HW_QSPI_TRANSFER_IDLE;
+
+    return HW_QSPI_STATUS_OK;
+}
+
+HW_QSPI_Status_T HW_QSPI_Command( const HW_QSPI_Command_T* command )
+{
+    if ( qspi_handle == NULL )
+    {
+        return HW_QSPI_STATUS_NOT_INITIALISED;
+    }
+
+    if ( command == NULL )
+    {
+        return HW_QSPI_STATUS_INVALID_ARG;
+    }
+
+    if ( HW_QSPI_IsBusy() )
+    {
+        return HW_QSPI_STATUS_BUSY;
+    }
+
     QSPI_CommandTypeDef qspi_command = { 0 };
 
-    HW_QSPI_Status_T status = HW_QSPI_Build_Command( command, length, &qspi_command );
+    HW_QSPI_Status_T status = HW_QSPI_Build_Command( command, 0U, &qspi_command );
     if ( status != HW_QSPI_STATUS_OK )
     {
         return status;
@@ -349,40 +443,219 @@ HW_QSPI_Status_T HW_QSPI_ReadBlocking( const HW_QSPI_Command_T* command, uint8_t
 
     status = HW_QSPI_Map_HAL_Status(
         HAL_QSPI_Command( qspi_handle, &qspi_command, HW_QSPI_Get_Timeout( command ) ) );
+    qspi_transfer_state = ( status == HW_QSPI_STATUS_OK ) ? HW_QSPI_TRANSFER_IDLE
+                                                          : HW_QSPI_TRANSFER_ERROR;
 
+    return status;
+}
+
+HW_QSPI_Status_T HW_QSPI_ReadBlocking( const HW_QSPI_Command_T* command, uint8_t* data,
+                                       uint32_t length )
+{
+    if ( qspi_handle == NULL )
+    {
+        return HW_QSPI_STATUS_NOT_INITIALISED;
+    }
+
+    if ( ( command == NULL ) || ( data == NULL ) || ( length == 0U ) )
+    {
+        return HW_QSPI_STATUS_INVALID_ARG;
+    }
+
+    if ( HW_QSPI_IsBusy() )
+    {
+        return HW_QSPI_STATUS_BUSY;
+    }
+
+    QSPI_CommandTypeDef qspi_command = { 0 };
+
+    HW_QSPI_Status_T status = HW_QSPI_Issue_Command_For_Data( command, length, &qspi_command );
     if ( status != HW_QSPI_STATUS_OK )
     {
+        qspi_transfer_state = HW_QSPI_TRANSFER_ERROR;
         return status;
     }
 
-    return HW_QSPI_Map_HAL_Status(
+    qspi_transfer_state = HW_QSPI_TRANSFER_ACTIVE;
+    status              = HW_QSPI_Map_HAL_Status(
         HAL_QSPI_Receive( qspi_handle, data, HW_QSPI_Get_Timeout( command ) ) );
+    qspi_transfer_state = ( status == HW_QSPI_STATUS_OK ) ? HW_QSPI_TRANSFER_IDLE
+                                                          : HW_QSPI_TRANSFER_ERROR;
+
+    return status;
 }
 
 HW_QSPI_Status_T HW_QSPI_WriteBlocking( const HW_QSPI_Command_T* command, const uint8_t* data,
                                         uint32_t length )
 {
-    if ( ( qspi_handle == NULL ) || ( command == NULL ) || ( data == NULL ) || ( length == 0U ) )
+    if ( qspi_handle == NULL )
+    {
+        return HW_QSPI_STATUS_NOT_INITIALISED;
+    }
+
+    if ( ( command == NULL ) || ( data == NULL ) || ( length == 0U ) )
     {
         return HW_QSPI_STATUS_INVALID_ARG;
     }
 
+    if ( HW_QSPI_IsBusy() )
+    {
+        return HW_QSPI_STATUS_BUSY;
+    }
+
     QSPI_CommandTypeDef qspi_command = { 0 };
 
-    HW_QSPI_Status_T status = HW_QSPI_Build_Command( command, length, &qspi_command );
+    HW_QSPI_Status_T status = HW_QSPI_Issue_Command_For_Data( command, length, &qspi_command );
     if ( status != HW_QSPI_STATUS_OK )
     {
+        qspi_transfer_state = HW_QSPI_TRANSFER_ERROR;
         return status;
     }
 
-    status = HW_QSPI_Map_HAL_Status(
-        HAL_QSPI_Command( qspi_handle, &qspi_command, HW_QSPI_Get_Timeout( command ) ) );
-
-    if ( status != HW_QSPI_STATUS_OK )
-    {
-        return status;
-    }
-
-    return HW_QSPI_Map_HAL_Status(
+    qspi_transfer_state = HW_QSPI_TRANSFER_ACTIVE;
+    status              = HW_QSPI_Map_HAL_Status(
         HAL_QSPI_Transmit( qspi_handle, ( uint8_t* )data, HW_QSPI_Get_Timeout( command ) ) );
+    qspi_transfer_state = ( status == HW_QSPI_STATUS_OK ) ? HW_QSPI_TRANSFER_IDLE
+                                                          : HW_QSPI_TRANSFER_ERROR;
+
+    return status;
+}
+
+HW_QSPI_Status_T HW_QSPI_WriteDma( const HW_QSPI_Command_T* command, const uint8_t* data,
+                                   uint32_t length )
+{
+    if ( qspi_handle == NULL )
+    {
+        return HW_QSPI_STATUS_NOT_INITIALISED;
+    }
+
+    if ( ( command == NULL ) || ( data == NULL ) || ( length == 0U ) )
+    {
+        return HW_QSPI_STATUS_INVALID_ARG;
+    }
+
+    if ( HW_QSPI_IsBusy() )
+    {
+        return HW_QSPI_STATUS_BUSY;
+    }
+
+    QSPI_CommandTypeDef qspi_command = { 0 };
+
+    HW_QSPI_Status_T status = HW_QSPI_Issue_Command_For_Data( command, length, &qspi_command );
+    if ( status != HW_QSPI_STATUS_OK )
+    {
+        qspi_transfer_state = HW_QSPI_TRANSFER_ERROR;
+        return status;
+    }
+
+    qspi_transfer_state = HW_QSPI_TRANSFER_ACTIVE;
+    status = HW_QSPI_Map_HAL_Status( HAL_QSPI_Transmit_DMA( qspi_handle, ( uint8_t* )data ) );
+    if ( status != HW_QSPI_STATUS_OK )
+    {
+        qspi_transfer_state = HW_QSPI_TRANSFER_ERROR;
+    }
+
+    return status;
+}
+
+HW_QSPI_Status_T HW_QSPI_ReadDma( const HW_QSPI_Command_T* command, uint8_t* data, uint32_t length )
+{
+    if ( qspi_handle == NULL )
+    {
+        return HW_QSPI_STATUS_NOT_INITIALISED;
+    }
+
+    if ( ( command == NULL ) || ( data == NULL ) || ( length == 0U ) )
+    {
+        return HW_QSPI_STATUS_INVALID_ARG;
+    }
+
+    if ( HW_QSPI_IsBusy() )
+    {
+        return HW_QSPI_STATUS_BUSY;
+    }
+
+    QSPI_CommandTypeDef qspi_command = { 0 };
+
+    HW_QSPI_Status_T status = HW_QSPI_Issue_Command_For_Data( command, length, &qspi_command );
+    if ( status != HW_QSPI_STATUS_OK )
+    {
+        qspi_transfer_state = HW_QSPI_TRANSFER_ERROR;
+        return status;
+    }
+
+    qspi_transfer_state = HW_QSPI_TRANSFER_ACTIVE;
+    status              = HW_QSPI_Map_HAL_Status( HAL_QSPI_Receive_DMA( qspi_handle, data ) );
+    if ( status != HW_QSPI_STATUS_OK )
+    {
+        qspi_transfer_state = HW_QSPI_TRANSFER_ERROR;
+    }
+
+    return status;
+}
+
+bool HW_QSPI_IsTransferComplete( void )
+{
+    return qspi_transfer_state == HW_QSPI_TRANSFER_COMPLETE;
+}
+
+bool HW_QSPI_IsBusy( void )
+{
+    if ( qspi_handle == NULL )
+    {
+        return false;
+    }
+
+    if ( qspi_transfer_state == HW_QSPI_TRANSFER_ACTIVE )
+    {
+        return true;
+    }
+
+    return HW_QSPI_Is_HAL_Busy_State( HAL_QSPI_GetState( qspi_handle ) );
+}
+
+HW_QSPI_Status_T HW_QSPI_Abort( void )
+{
+    if ( qspi_handle == NULL )
+    {
+        return HW_QSPI_STATUS_NOT_INITIALISED;
+    }
+
+    HW_QSPI_Status_T status = HW_QSPI_Map_HAL_Status( HAL_QSPI_Abort( qspi_handle ) );
+    qspi_transfer_state = ( status == HW_QSPI_STATUS_OK ) ? HW_QSPI_TRANSFER_IDLE
+                                                          : HW_QSPI_TRANSFER_ERROR;
+
+    return status;
+}
+
+void HAL_QSPI_TxCpltCallback( QSPI_HandleTypeDef* hqspi )
+{
+    if ( hqspi == qspi_handle )
+    {
+        qspi_transfer_state = HW_QSPI_TRANSFER_COMPLETE;
+    }
+}
+
+void HAL_QSPI_RxCpltCallback( QSPI_HandleTypeDef* hqspi )
+{
+    if ( hqspi == qspi_handle )
+    {
+        qspi_transfer_state = HW_QSPI_TRANSFER_COMPLETE;
+    }
+}
+
+void HAL_QSPI_ErrorCallback( QSPI_HandleTypeDef* hqspi )
+{
+    if ( hqspi == qspi_handle )
+    {
+        qspi_transfer_state = HW_QSPI_TRANSFER_ERROR;
+    }
+}
+
+void HAL_QSPI_AbortCpltCallback( QSPI_HandleTypeDef* hqspi )
+{
+    if ( hqspi == qspi_handle )
+    {
+        qspi_transfer_state = HW_QSPI_TRANSFER_IDLE;
+    }
 }

@@ -19,10 +19,9 @@
  *      GPIO, QSPI peripheral clock, and optional DMA MSP setup are expected
  *      to be provided by the STM32 HAL / CubeMX generated MSP code.
  *
- *      Initial bringup should use blocking transfers. DMA write is provided for
- *      full page program-load transfers once the blocking path is validated.
- *      DMA read and memory mapped mode are intentionally omitted from the first
- *      implementation.
+ *      Initial bringup should use blocking transfers. DMA read and write are
+ *      provided for bulk transfers once the blocking path is validated.
+ *      Memory mapped mode is intentionally omitted from the first implementation.
  ******************************************************************************/
 
 #ifndef HW_QSPI_H
@@ -212,6 +211,21 @@ HW_QSPI_Status_T HW_QSPI_ReadBlocking( const HW_QSPI_Command_T* command, uint8_t
  */
 HW_QSPI_Status_T HW_QSPI_WriteDma( const HW_QSPI_Command_T* command, const uint8_t* data,
                                    uint32_t length );
+
+/**
+ * @brief Issues a QSPI command followed by a DMA receive data phase.
+ *
+ * @param command Pointer to the command phase description.
+ * @param data    Pointer to the destination buffer.
+ * @param length  Number of bytes to receive.
+ *
+ * @return HW_QSPI_STATUS_OK if the DMA transfer is started, otherwise an error status.
+ *
+ * @note The destination buffer must remain valid until HW_QSPI_IsTransferComplete() reports true or
+ *       the transfer is aborted.
+ */
+HW_QSPI_Status_T HW_QSPI_ReadDma( const HW_QSPI_Command_T* command, uint8_t* data,
+                                  uint32_t length );
 
 /**
  * @brief Checks whether the most recent asynchronous QSPI transfer has completed.
