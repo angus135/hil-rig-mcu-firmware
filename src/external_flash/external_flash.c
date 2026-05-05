@@ -8,14 +8,15 @@
  *
  *  Notes:
  *      This module stores execution results as opaque bytes in a fixed NAND
- *      result partition and reads instruction bytes from a fixed instruction
- *      partition. Physical NAND command sequencing remains in hw_nand.
+ *      result partition and stores or reads instruction bytes in a fixed
+ *      instruction partition. Physical NAND command sequencing remains in
+ *      hw_nand.
  *
  *      The intended runtime path is:
- *      1. test_package_recieve receives a host test package and arranges for
- *         instruction bytes to be present in the instruction partition. This
- *         first implementation only reads instructions. Package upload writes
- *         should be added here when that manager is implemented.
+ *      1. test_package_recieve receives a host test package and programs
+ *         instruction bytes through EXTERNAL_FLASH_StartInstructionUpload,
+ *         EXTERNAL_FLASH_WriteInstructionBytes or EXTERNAL_FLASH_WriteInstructionPage,
+ *         and EXTERNAL_FLASH_FinishInstructionUpload.
  *      2. The flash manager calls EXTERNAL_FLASH_StartSession before execution.
  *         This erases the result partition so result writes never block on
  *         just in time erases during the execution run.
@@ -33,8 +34,9 @@
  *      - flash_manager is the only normal runtime task responsible for flash
  *        access.
  *      - external_flash owns NAND partitioning, page level result programming,
- *        page level instruction reading, bad block skipping, erase at session
- *        start, and committed result length.
+ *        instruction upload programming, page level instruction reading, bad
+ *        block skipping, erase at session start, committed instruction length,
+ *        and committed result length.
  ******************************************************************************/
 
 /**=============================================================================
@@ -104,6 +106,9 @@ static bool external_flash_initialised = false;
 /** Tracks whether the current result partition has been erased for a new session. */
 static bool external_flash_session_active = false;
 
+/** Tracks whether a host package instruction upload is currently active. */
+static bool external_flash_instruction_upload_active = false;
+
 /** Geometry cached from hw_nand during initialisation. */
 static HW_NAND_Geometry_T external_flash_geometry = { 0U, 0U, 0U, 0U };
 
@@ -113,6 +118,29 @@ static bool external_flash_bad_block_table[EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUN
 
 /** Number of bad blocks found across the configured instruction and result partitions. */
 static uint32_t external_flash_bad_block_count = 0U;
+
+/** Total instruction bytes expected from the active host package upload. */
+static uint32_t external_flash_instruction_expected_length_bytes = 0U;
+
+/**
+ * Total logical instruction bytes accepted in the active upload.
+ *
+ * This includes bytes still staged in RAM by EXTERNAL_FLASH_WriteInstructionBytes.
+ * It is used to choose the logical destination offset for the next instruction
+ * page program.
+ */
+static uint32_t external_flash_instruction_length_bytes = 0U;
+
+/**
+ * Total logical instruction bytes successfully committed to NAND.
+ *
+ * Instruction reads are limited to this value so execution cannot read beyond
+ * the uploaded package image.
+ */
+static uint32_t external_flash_committed_instruction_length_bytes = 0U;
+
+/** Number of instruction bytes currently staged in the private instruction page buffer. */
+static uint32_t external_flash_instruction_page_fill = 0U;
 
 /**
  * Total logical result bytes accepted in the current volatile session.
@@ -147,10 +175,15 @@ static uint32_t external_flash_result_page_fill = 0U;
 static uint8_t external_flash_result_page_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES] = { 0xFFU };
 
 /**
- * Fixed partition used for preloaded execution instructions.
- *
- * This driver version reads from the partition but does not yet provide the
- * upload or programming API that test_package_recieve will eventually need.
+ * Page sized staging buffer used by the instruction byte upload path and by
+ * final partial page writes through EXTERNAL_FLASH_WriteInstructionPage.
+ */
+static uint8_t external_flash_instruction_page_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES] = {
+    0xFFU
+};
+
+/**
+ * Fixed partition used for uploaded execution instructions.
  */
 static const ExternalFlashPartition_T external_flash_instruction_partition = {
     EXTERNAL_FLASH_INSTRUCTION_START_BLOCK,
@@ -217,6 +250,13 @@ EXTERNAL_FLASH_GetPartitionCapacityBytes( const ExternalFlashPartition_T* partit
 /** Scans both configured partitions and caches factory bad block markers. */
 static ExternalFlashStatus_T EXTERNAL_FLASH_ScanBadBlocks( void );
 
+/** Erases all good blocks in a partition. */
+static ExternalFlashStatus_T
+EXTERNAL_FLASH_ErasePartition( const ExternalFlashPartition_T* partition );
+
+/** Erases all good blocks in the instruction partition. */
+static ExternalFlashStatus_T EXTERNAL_FLASH_EraseInstructionPartition( void );
+
 /** Erases all good blocks in the result partition. */
 static ExternalFlashStatus_T EXTERNAL_FLASH_EraseResultPartition( void );
 
@@ -229,18 +269,40 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_EraseResultPartition( void );
 static void EXTERNAL_FLASH_ClearResultPageBuffer( void );
 
 /**
- * Programs one physical NAND page into the result partition.
+ * Clears the private instruction page staging buffer to erased NAND state.
+ *
+ * The buffer is filled with 0xFF so that partial final pages are padded as
+ * erased NAND bytes before programming.
+ */
+static void EXTERNAL_FLASH_ClearInstructionPageBuffer( void );
+
+/**
+ * Programs one physical NAND page into a partition.
  *
  * page_buffer must point to a full NAND page worth of data. bytes_to_commit is
- * the number of valid logical result bytes represented by that physical page.
- * For a full result page, bytes_to_commit equals the NAND page size. For a final
- * partial result page, bytes_to_commit is smaller than the NAND page size.
+ * the number of valid logical bytes represented by that physical page.
  *
  * The NAND program operation still writes one full physical page.
  */
+static ExternalFlashStatus_T
+EXTERNAL_FLASH_ProgramPartitionPageBuffer( const ExternalFlashPartition_T* partition,
+                                           const uint8_t* page_buffer,
+                                           uint32_t page_start_offset, uint32_t bytes_to_commit,
+                                           uint32_t* committed_length_bytes );
+
+/** Programs one physical NAND page into the instruction partition. */
+static ExternalFlashStatus_T
+EXTERNAL_FLASH_ProgramInstructionPageBuffer( const uint8_t* page_buffer,
+                                             uint32_t page_start_offset,
+                                             uint32_t bytes_to_commit );
+
+/** Programs one physical NAND page into the result partition. */
 static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramResultPageBuffer( const uint8_t* page_buffer,
                                                                      uint32_t page_start_offset,
                                                                      uint32_t bytes_to_commit );
+
+/** Programs the currently staged instruction page into the next instruction partition page. */
+static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramStagedInstructionPage( void );
 
 /**
  * Programs the currently staged result page into the next result partition page.
@@ -519,17 +581,25 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_ScanBadBlocks( void )
 }
 
 /**
- * @brief Erases all good blocks in the result partition.
+ * @brief Erases all good blocks in a partition.
+ *
+ * @param partition Partition whose good physical blocks should be erased.
  *
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
  * @note Blocks that fail erase are retired in RAM and marked bad through hw_nand.
  */
-static ExternalFlashStatus_T EXTERNAL_FLASH_EraseResultPartition( void )
+static ExternalFlashStatus_T
+EXTERNAL_FLASH_ErasePartition( const ExternalFlashPartition_T* partition )
 {
-    for ( uint32_t i = 0U; i < external_flash_result_partition.block_count; i++ )
+    if ( partition == NULL )
     {
-        uint32_t block = external_flash_result_partition.start_block + i;
+        return EXTERNAL_FLASH_STATUS_INVALID_ARG;
+    }
+
+    for ( uint32_t i = 0U; i < partition->block_count; i++ )
+    {
+        uint32_t block = partition->start_block + i;
 
         if ( !EXTERNAL_FLASH_IsPhysicalBlockBad( block ) )
         {
@@ -553,6 +623,22 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_EraseResultPartition( void )
 }
 
 /**
+ * @brief Erases all good blocks in the instruction partition.
+ */
+static ExternalFlashStatus_T EXTERNAL_FLASH_EraseInstructionPartition( void )
+{
+    return EXTERNAL_FLASH_ErasePartition( &external_flash_instruction_partition );
+}
+
+/**
+ * @brief Erases all good blocks in the result partition.
+ */
+static ExternalFlashStatus_T EXTERNAL_FLASH_EraseResultPartition( void )
+{
+    return EXTERNAL_FLASH_ErasePartition( &external_flash_result_partition );
+}
+
+/**
  * @brief Resets the private result page staging buffer to erased NAND state.
  */
 static void EXTERNAL_FLASH_ClearResultPageBuffer( void )
@@ -563,24 +649,38 @@ static void EXTERNAL_FLASH_ClearResultPageBuffer( void )
 }
 
 /**
- * @brief Programs one physical NAND result page.
+ * @brief Resets the private instruction page staging buffer to erased NAND state.
+ */
+static void EXTERNAL_FLASH_ClearInstructionPageBuffer( void )
+{
+    ( void )memset( external_flash_instruction_page_buffer, 0xFF,
+                    external_flash_geometry.page_size_bytes );
+    external_flash_instruction_page_fill = 0U;
+}
+
+/**
+ * @brief Programs one physical NAND page in a logical partition.
  *
- * @param page_buffer       Full physical page buffer to program.
- * @param page_start_offset Logical byte offset for the start of this result page.
- * @param bytes_to_commit   Number of valid logical result bytes represented by the page.
+ * @param partition                Destination partition.
+ * @param page_buffer              Full physical page buffer to program.
+ * @param page_start_offset        Logical byte offset for the start of this page.
+ * @param bytes_to_commit          Number of valid logical bytes represented by the page.
+ * @param committed_length_bytes   Destination committed byte counter to advance.
  *
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
  * @note The NAND receives one full physical page from page_buffer, but committed
- *       result length is advanced only by bytes_to_commit.
+ *       length is advanced only by bytes_to_commit.
  * @note If program fails, the failed block is retired and the same logical page
- *       is retried on the next good physical block.
+ *       is retried on the next good physical block in the same partition.
  */
-static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramResultPageBuffer( const uint8_t* page_buffer,
-                                                                     uint32_t page_start_offset,
-                                                                     uint32_t bytes_to_commit )
+static ExternalFlashStatus_T
+EXTERNAL_FLASH_ProgramPartitionPageBuffer( const ExternalFlashPartition_T* partition,
+                                           const uint8_t* page_buffer,
+                                           uint32_t page_start_offset, uint32_t bytes_to_commit,
+                                           uint32_t* committed_length_bytes )
 {
-    if ( page_buffer == NULL )
+    if ( ( partition == NULL ) || ( page_buffer == NULL ) || ( committed_length_bytes == NULL ) )
     {
         return EXTERNAL_FLASH_STATUS_INVALID_ARG;
     }
@@ -595,14 +695,12 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramResultPageBuffer( const uint8
         return EXTERNAL_FLASH_STATUS_INVALID_ARG;
     }
 
-    for ( uint32_t attempts = 0U; attempts < external_flash_result_partition.block_count;
-          attempts++ )
+    for ( uint32_t attempts = 0U; attempts < partition->block_count; attempts++ )
     {
         uint32_t page   = 0U;
         uint16_t column = 0U;
 
-        if ( !EXTERNAL_FLASH_GetPhysicalAddress( &external_flash_result_partition,
-                                                 page_start_offset, &page, &column )
+        if ( !EXTERNAL_FLASH_GetPhysicalAddress( partition, page_start_offset, &page, &column )
              || ( column != 0U ) )
         {
             return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
@@ -646,12 +744,64 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramResultPageBuffer( const uint8
         }
         else
         {
-            external_flash_committed_result_length_bytes += bytes_to_commit;
+            *committed_length_bytes += bytes_to_commit;
             return EXTERNAL_FLASH_STATUS_OK;
         }
     }
 
     return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
+}
+
+/**
+ * @brief Programs one physical NAND instruction page.
+ */
+static ExternalFlashStatus_T
+EXTERNAL_FLASH_ProgramInstructionPageBuffer( const uint8_t* page_buffer,
+                                             uint32_t page_start_offset,
+                                             uint32_t bytes_to_commit )
+{
+    return EXTERNAL_FLASH_ProgramPartitionPageBuffer(
+        &external_flash_instruction_partition, page_buffer, page_start_offset, bytes_to_commit,
+        &external_flash_committed_instruction_length_bytes );
+}
+
+/**
+ * @brief Programs one physical NAND result page.
+ */
+static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramResultPageBuffer( const uint8_t* page_buffer,
+                                                                     uint32_t page_start_offset,
+                                                                     uint32_t bytes_to_commit )
+{
+    return EXTERNAL_FLASH_ProgramPartitionPageBuffer(
+        &external_flash_result_partition, page_buffer, page_start_offset, bytes_to_commit,
+        &external_flash_committed_result_length_bytes );
+}
+
+/**
+ * @brief Programs the current private staged instruction page.
+ *
+ * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
+ */
+static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramStagedInstructionPage( void )
+{
+    if ( external_flash_instruction_page_fill == 0U )
+    {
+        return EXTERNAL_FLASH_STATUS_OK;
+    }
+
+    uint32_t page_start_offset =
+        external_flash_instruction_length_bytes - external_flash_instruction_page_fill;
+    uint32_t bytes_to_commit = external_flash_instruction_page_fill;
+
+    ExternalFlashStatus_T status = EXTERNAL_FLASH_ProgramInstructionPageBuffer(
+        external_flash_instruction_page_buffer, page_start_offset, bytes_to_commit );
+
+    if ( status == EXTERNAL_FLASH_STATUS_OK )
+    {
+        EXTERNAL_FLASH_ClearInstructionPageBuffer();
+    }
+
+    return status;
 }
 
 /**
