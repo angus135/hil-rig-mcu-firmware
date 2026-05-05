@@ -104,7 +104,7 @@ REUSABLE
 Suggested refill policy:
 
 ```text
-If available instruction bytes <= 0.7 page:
+If available instruction bytes <= 1.5 page:
     refill one free instruction page slot
 ```
 
