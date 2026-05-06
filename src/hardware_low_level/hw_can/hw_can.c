@@ -7,7 +7,7 @@
  *      Implementation of the CAN hardware abstraction layer.
  *
  *  Notes:
-HAL Typedef Hierachy 
+HAL Typedef Hierachy
  CAN_HandleTypeDef        ← "Driver instance / state"
     ↓
 CAN_InitTypeDef          ← "Peripheral configuration"
@@ -34,8 +34,8 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
  */
 
 #define CAN_TIMER_HZ 90000000
-#define TOTAL_TQ ( uint32_t ) 18
-#define MBPS_SAMPLE_POINT ( uint32_t ) 800
+#define TOTAL_TQ ( uint32_t )18
+#define MBPS_SAMPLE_POINT ( uint32_t )800
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -83,7 +83,8 @@ typedef struct CanProperties_T
  * @param sample_point_1t1000 the desired sample point, range 700 to 1000 (typically %)
  *
  */
-CanProperties_T HW_CAN_compute_properties( uint32_t bitrate, uint32_t total_TQ, uint32_t sample_point_1t1000 )
+CanProperties_T HW_CAN_compute_properties( uint32_t bitrate, uint32_t total_TQ,
+                                           uint32_t sample_point_1t1000 )
 {
     if ( bitrate < 1 || bitrate > 1000000 )
     {
@@ -103,13 +104,12 @@ CanProperties_T HW_CAN_compute_properties( uint32_t bitrate, uint32_t total_TQ, 
     return ( CanProperties_T ){ bs1, bs2, psc, timer_hz };
 }
 
-
 #ifndef TEST_BUILD
 /**
  * @brief Applies the CAN timing peripherals
  *
  * @param CAN The base register address of the can peripheral, either CAN1 or CAN2
- * @param hcan the handle for the can peripheral 
+ * @param hcan the handle for the can peripheral
  * @param props the can properties, as calculated by HW_CAN_compute_properties
  *
  * This function takes and applies the desired can properties using the HAL library
@@ -221,26 +221,26 @@ void HW_CAN_apply_timing_HAL( CAN_HandleTypeDef hcan, CanProperties_T props )
  * @brief Applies the filter to the can peripherals
  *
  * @param filter The filter struct associated with hcan
- * @param hcan the handle for the can peripheral 
+ * @param hcan the handle for the can peripheral
  *
  * This function takes and applies the desired can filter properties using the HAL library
  *
  */
-void HW_CAN_apply_filter_HAL( CAN_FilterTypeDef filter, CAN_HandleTypeDef hcan)
+void HW_CAN_apply_filter_HAL( CAN_FilterTypeDef filter, CAN_HandleTypeDef hcan )
 {
-    filter.FilterBank = 0;
-    filter.FilterMode = CAN_FILTERMODE_IDMASK;
+    filter.FilterBank  = 0;
+    filter.FilterMode  = CAN_FILTERMODE_IDMASK;
     filter.FilterScale = CAN_FILTERSCALE_32BIT;
 
-    filter.FilterIdHigh = 0x0000;
-    filter.FilterIdLow  = 0x0000;
+    filter.FilterIdHigh     = 0x0000;
+    filter.FilterIdLow      = 0x0000;
     filter.FilterMaskIdHigh = 0x0000;
     filter.FilterMaskIdLow  = 0x0000;
 
     filter.FilterFIFOAssignment = CAN_FILTER_FIFO0;
-    filter.FilterActivation = ENABLE;
+    filter.FilterActivation     = ENABLE;
 
-    HAL_CAN_ConfigFilter(&hcan, &filter);
+    HAL_CAN_ConfigFilter( &hcan, &filter );
 }
 
 /**
@@ -264,12 +264,12 @@ void HW_CAN_apply_filter_HAL( CAN_FilterTypeDef filter, CAN_HandleTypeDef hcan)
  *          FIFO assignment for accepted frames
  *
  */
-void HW_CAN_configure(CAN_HandleTypeDef hcan, uint32_t bitrate)
+void HW_CAN_configure( CAN_HandleTypeDef hcan, uint32_t bitrate )
 {
     CAN_FilterTypeDef filter;
-    CanProperties_T can_props = HW_CAN_compute_properties( bitrate, TOTAL_TQ, MBPS_SAMPLE_POINT );
+    CanProperties_T   can_props = HW_CAN_compute_properties( bitrate, TOTAL_TQ, MBPS_SAMPLE_POINT );
     HW_CAN_apply_timing_HAL( hcan, can_props );
-    HW_CAN_apply_filter_HAL(filter, hcan);
+    HW_CAN_apply_filter_HAL( filter, hcan );
     return;
 }
 #endif
