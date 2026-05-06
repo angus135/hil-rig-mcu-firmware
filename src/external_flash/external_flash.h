@@ -150,6 +150,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_GetInfo( ExternalFlashInfo_T* info );
  * @note Existing result bytes are discarded. Results are not recovered after reset.
  * @note The flash manager should call this after the host has uploaded the test
  *       package and before execution_manager starts consuming instructions.
+ * @note If the previous result session ended exactly on a page boundary, this
+ *       call advances the internal wear-rotation cursor before preparing the
+ *       next session.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void );
 
@@ -228,6 +231,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_FinishInstructionUpload( void );
  *       final partial page and padded internally with 0xFF before programming.
  * @note After a partial page write succeeds, no further result page writes
  *       should be appended in the same session.
+ * @note If the final result length is exactly page aligned, no explicit result
+ *       finalize call is required. The next EXTERNAL_FLASH_StartSession()
+ *       advances the result wear-rotation cursor.
  * @note This is the only result write API. Results should be supplied as full
  *       pages during execution and as one final partial page after execution.
  */
