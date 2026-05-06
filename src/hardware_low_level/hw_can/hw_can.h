@@ -37,10 +37,26 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+typedef struct CanProperties_T
+{
+    uint32_t bs1;
+    uint32_t bs2;
+    uint32_t psc;
+    uint32_t timer_hz;
+} CanProperties_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+void HW_CAN_configure1( uint32_t bitrate );
+
+void HW_CAN_configure2( uint32_t bitrate );
+
+void HW_CAN_recieve1(uint8_t * rxData);
+
+void HW_CAN_transmit1( uint8_t * txData);
 
 #ifdef __cplusplus
 }

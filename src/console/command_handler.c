@@ -20,13 +20,12 @@
 #include "hw_gpio.h"
 #include "exec_uart.h"
 #include "hw_adc.h"
+#include "hw_can.h"
 #include "exec_digital_input.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
-
-#include "subsystem_command_apis/console_uart.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -46,6 +45,12 @@ typedef struct Command_T
     const char* command_description;
 } Command_T;
 
+typedef struct
+{
+    bool     is_configured;
+    uint32_t baud_rate;
+} ConsoleUartLoopbackState_T;
+
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
@@ -60,10 +65,14 @@ static void CONSOLE_Command_Echo( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_LED( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_UART_Loopback( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Set_Pin( uint16_t argc, char** argv );
 static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char** argv );
 static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] );
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
@@ -78,14 +87,19 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"execution_manager",    CONSOLE_Command_Test_Scheduler,       "Starts the test scheduler."},
     {"clear",  CONSOLE_Command_Clear,       "Clears the console."},
     {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <green|blue|red|test>"},
-    {"uart", CONSOLE_UART_Command_Handler, "Configuring Channels and Rx/Tx loopback testing for Uart"},
+    {"uart_loopback", CONSOLE_Command_UART_Loopback, "Configuring Channels and Rx/Tx loopback testing for Uart"},
     {"set_pin", CONSOLE_Command_Set_Pin, "Set or reset digital output, Usage: set_pin PIN_NAME <0|1>"},
-    {"set_pins", CONSOLE_Command_Set_Many_Pins, "Set or reset many digital output, Usage: set_pin PIN_NAME0 PIN_NAME1 ... PIN_NAMEX <0|1>"},
+    {"set_pins", CONSOLE_Command_Set_Many_Pins, "Set or reset many digital output"},
     {"analogue_inputs", CONSOLE_Command_Analogue_Inputs, "Allows for interaction with Analogue Inputs."},
-    {"digital_input", CONSOLE_Command_DigitalInput, "Print digital input states as 1s and 0s."}
+    {"digital_input", CONSOLE_Command_DigitalInput, "Print digital input states as 1s and 0s."},
+    {"can_tx", CONSOLE_Command_Can_tx, "Transmit a 8 byte message."},
+    {"can_rx", CONSOLE_Command_Can_rx, "Read and print an 8 byte message"},
+    {"can_config", CONSOLE_Command_Can_config, "Configures Can channel1"}
 };
 
 // clang-format on
+
+static ConsoleUartLoopbackState_T s_uart_loopback_state = { 0 };
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -318,7 +332,7 @@ static void CONSOLE_Command_Set_Pin( uint16_t argc, char* argv[] )
 {
     if ( argc != 3 )
     {
-        CONSOLE_Printf( "Incorrect number of inputs, expected 2 but recieved %d", argc );
+        CONSOLE_Printf( "Incorrect number of inputs, expected 2 but recieved %d", argc -1);
         return;
     }
     GPIOOutput_T pin;
@@ -360,6 +374,7 @@ static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char* argv[] )
     {
         CONSOLE_Printf( "Incorrect number of inputs, expected >2 and <%dbut recieved %d", arg_limit,
                         argc );
+        CONSOLE_Printf("Usage: set_pin PIN_NAME0 PIN_NAME1 ... PIN_NAMEX <0|1>");
         return;
     }
 
@@ -384,6 +399,312 @@ static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char* argv[] )
         return;
     }
     CONSOLE_Printf( "Unrecognised input, expected 1 or 0 but recieved %c", argv[argc - 1] );
+}
+
+/**
+ * @brief Transmits a 8 byte message over xbCan
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
+static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
+{
+    if ( argc != 2 )
+    {
+        CONSOLE_Printf( "Incorrect number of inputs, expected 1 but recieved %d", argc-1 );
+        return;
+    }
+   int len = strlen( argv[1] );
+    char out[8] = "________";
+    if ( len > 8 )
+    {
+        len = 8;
+    }
+    for ( int i = 0; i < len; i++ )
+    {
+        out[i] = argv[1][i];
+    }
+    HW_CAN_transmit1(out);
+}
+
+/**
+ * @brief Transmits a 8 byte message over xbCan
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
+static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] )
+{
+    HW_CAN_configure1(1000000);
+}
+
+/**
+ * @brief Transmits a 8 byte message over xbCan
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
+static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
+{
+    if ( argc != 1 )
+    {
+        CONSOLE_Printf( "Incorrect number of inputs, expected 1 but recieved %d", argc-1 );
+        return;
+    }
+    char out[8] = "00000000";
+    HW_CAN_recieve1( out );
+    CONSOLE_Printf( "Recieved: %s", out );
+}
+
+static void CONSOLE_Command_UART_Loopback( uint16_t argc, char* argv[] )
+{
+    if ( argc < 2U )
+    {
+        CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  uart_loopback configure <baud>\r\n" );
+        CONSOLE_Printf( "  uart_loopback deconfigure\r\n" );
+        CONSOLE_Printf( "  uart_loopback status\r\n" );
+        CONSOLE_Printf( "  uart_loopback start <sender_ch> <receiver_ch> <data ...>\r\n" );
+        CONSOLE_Printf( "    note: sender_ch and receiver_ch must be in {ch1,ch2}\r\n" );
+        CONSOLE_Printf( "    note: configure uses fixed mode TTL_3V3, 8N1, RX+TX enabled\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "configure" ) == 0 && argc == 3U )
+    {
+        char*    end_ptr   = NULL;
+        uint32_t baud_rate = ( uint32_t )strtoul( argv[2], &end_ptr, 10 );
+
+        if ( ( end_ptr == argv[2] ) || ( *end_ptr != '\0' ) )
+        {
+            CONSOLE_Printf( "Invalid baud rate\r\n" );
+            return;
+        }
+
+        if ( baud_rate == 0U )
+        {
+            CONSOLE_Printf( "Invalid baud rate: must be greater than 0\r\n" );
+            return;
+        }
+
+        if ( baud_rate > 2000000U )
+        {
+            CONSOLE_Printf( "Invalid baud rate: TTL loopback supports up to 2000000 baud\r\n" );
+            return;
+        }
+
+        HwUartConfig_T config = { 0 };
+        config.interface_mode = HW_UART_MODE_TTL_3V3;
+        config.rx_enabled     = true;
+        config.tx_enabled     = true;
+        config.baud_rate      = baud_rate;
+        config.word_length    = HW_UART_WORD_LENGTH_8_BITS;
+        config.parity         = HW_UART_PARITY_NONE;
+        config.stop_bits      = HW_UART_STOP_BITS_1;
+
+        if ( !EXEC_UART_Apply_Configuration( HW_UART_CHANNEL_1, &config ) )
+        {
+            CONSOLE_Printf( "Failed to configure ch1\r\n" );
+            return;
+        }
+
+        if ( !EXEC_UART_Apply_Configuration( HW_UART_CHANNEL_2, &config ) )
+        {
+            ( void )EXEC_UART_Deconfigure( HW_UART_CHANNEL_1 );
+            CONSOLE_Printf( "Failed to configure ch2\r\n" );
+            return;
+        }
+
+        s_uart_loopback_state.is_configured = true;
+        s_uart_loopback_state.baud_rate     = baud_rate;
+
+        CONSOLE_Printf( "uart_loopback configured\r\n" );
+        CONSOLE_Printf( "  channels: ch1 + ch2\r\n" );
+        CONSOLE_Printf( "  mode: TTL_3V3\r\n" );
+        CONSOLE_Printf( "  baud: %lu\r\n", ( unsigned long )baud_rate );
+        CONSOLE_Printf( "  framing: 8N1\r\n" );
+        CONSOLE_Printf( "  rx/tx: enabled\r\n" );
+    }
+    else if ( strcmp( argv[1], "deconfigure" ) == 0 && argc == 2U )
+    {
+        bool ch1_ok = EXEC_UART_Deconfigure( HW_UART_CHANNEL_1 );
+        bool ch2_ok = EXEC_UART_Deconfigure( HW_UART_CHANNEL_2 );
+
+        s_uart_loopback_state.is_configured = false;
+        s_uart_loopback_state.baud_rate     = 0U;
+
+        if ( ch1_ok && ch2_ok )
+        {
+            CONSOLE_Printf( "uart_loopback deconfigured: ch1 + ch2\r\n" );
+        }
+        else if ( !ch1_ok && !ch2_ok )
+        {
+            CONSOLE_Printf( "Failed to deconfigure ch1 and ch2\r\n" );
+        }
+        else if ( !ch1_ok )
+        {
+            CONSOLE_Printf( "Failed to deconfigure ch1\r\n" );
+        }
+        else
+        {
+            CONSOLE_Printf( "Failed to deconfigure ch2\r\n" );
+        }
+    }
+    else if ( strcmp( argv[1], "status" ) == 0 && argc == 2U )
+    {
+        if ( !s_uart_loopback_state.is_configured )
+        {
+            CONSOLE_Printf( "uart_loopback: not configured\r\n" );
+            return;
+        }
+
+        CONSOLE_Printf( "uart_loopback: configured\r\n" );
+        CONSOLE_Printf( "  channels: ch1 + ch2\r\n" );
+        CONSOLE_Printf( "  mode: TTL_3V3\r\n" );
+        CONSOLE_Printf( "  baud: %lu\r\n", ( unsigned long )s_uart_loopback_state.baud_rate );
+        CONSOLE_Printf( "  framing: 8N1\r\n" );
+        CONSOLE_Printf( "  rx/tx: enabled\r\n" );
+    }
+    else if ( strcmp( argv[1], "start" ) == 0 && argc >= 5U )
+    {
+        HwUartChannel_T sender_ch;
+        HwUartChannel_T receiver_ch;
+        char            tx_text[EXEC_UART_MAX_CHUNK_SIZE];
+        uint32_t        tx_length = 0U;
+
+        if ( !s_uart_loopback_state.is_configured )
+        {
+            CONSOLE_Printf( "uart_loopback not configured\r\n" );
+            return;
+        }
+
+        if ( strcmp( argv[2], "ch1" ) == 0 )
+        {
+            sender_ch = HW_UART_CHANNEL_1;
+        }
+        else if ( strcmp( argv[2], "ch2" ) == 0 )
+        {
+            sender_ch = HW_UART_CHANNEL_2;
+        }
+        else
+        {
+            CONSOLE_Printf( "Invalid sender channel: use ch1 or ch2\r\n" );
+            return;
+        }
+
+        if ( strcmp( argv[3], "ch1" ) == 0 )
+        {
+            receiver_ch = HW_UART_CHANNEL_1;
+        }
+        else if ( strcmp( argv[3], "ch2" ) == 0 )
+        {
+            receiver_ch = HW_UART_CHANNEL_2;
+        }
+        else
+        {
+            CONSOLE_Printf( "Invalid receiver channel: use ch1 or ch2\r\n" );
+            return;
+        }
+
+        tx_text[0] = '\0';
+
+        for ( uint16_t i = 4U; i < argc; i++ )
+        {
+            size_t token_len = strlen( argv[i] );
+            size_t sep_len   = ( i > 4U ) ? 1U : 0U;
+
+            if ( ( tx_length + sep_len + token_len ) >= sizeof( tx_text ) )
+            {
+                CONSOLE_Printf( "Data too long: max %lu bytes\r\n",
+                                ( unsigned long )( sizeof( tx_text ) - 1U ) );
+                return;
+            }
+
+            if ( i > 4U )
+            {
+                tx_text[tx_length] = ' ';
+                tx_length++;
+            }
+
+            memcpy( &tx_text[tx_length], argv[i], token_len );
+            tx_length += ( uint32_t )token_len;
+            tx_text[tx_length] = '\0';
+        }
+
+        if ( tx_length == 0U )
+        {
+            CONSOLE_Printf( "No data provided\r\n" );
+            return;
+        }
+
+        {
+            uint8_t  discard_buf[128];
+            uint32_t bytes_read = 0U;
+
+            do
+            {
+                bytes_read = 0U;
+                ( void )EXEC_UART_Read( HW_UART_CHANNEL_1, discard_buf, sizeof( discard_buf ),
+                                        &bytes_read );
+            } while ( bytes_read > 0U );
+
+            do
+            {
+                bytes_read = 0U;
+                ( void )EXEC_UART_Read( HW_UART_CHANNEL_2, discard_buf, sizeof( discard_buf ),
+                                        &bytes_read );
+            } while ( bytes_read > 0U );
+        }
+
+        if ( !EXEC_UART_Transmit( sender_ch, ( const uint8_t* )tx_text, tx_length ) )
+        {
+            CONSOLE_Printf( "TX failed\r\n" );
+            return;
+        }
+
+        vTaskDelay( pdMS_TO_TICKS( 10U ) );
+
+        {
+            uint8_t  rx_buf[EXEC_UART_MAX_CHUNK_SIZE];
+            uint32_t bytes_read = 0U;
+
+            if ( !EXEC_UART_Read( receiver_ch, rx_buf, sizeof( rx_buf ), &bytes_read ) )
+            {
+                CONSOLE_Printf( "RX read failed\r\n" );
+                return;
+            }
+
+            CONSOLE_Printf( "sent: %s\r\n", tx_text );
+            CONSOLE_Printf( "received: " );
+
+            for ( uint32_t i = 0U; i < bytes_read; i++ )
+            {
+                CONSOLE_Printf( "%c", rx_buf[i] );
+            }
+
+            CONSOLE_Printf( "\r\n" );
+
+            if ( ( bytes_read == tx_length ) && ( memcmp( rx_buf, tx_text, tx_length ) == 0 ) )
+            {
+                CONSOLE_Printf( "PASS\r\n" );
+            }
+            else
+            {
+                CONSOLE_Printf( "FAIL\r\n" );
+            }
+        }
+    }
+    else
+    {
+        CONSOLE_Printf( "Unknown uart_loopback command\r\n" );
+        CONSOLE_Printf( "Use 'uart_loopback' for usage.\r\n" );
+    }
 }
 
 static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] )
