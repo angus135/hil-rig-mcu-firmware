@@ -35,6 +35,7 @@ target_link_libraries(console
     cubeide_hal
     rtos
     exec_uart
+    hw_can
     hw_uart
     hw_adc
     hw_spi
