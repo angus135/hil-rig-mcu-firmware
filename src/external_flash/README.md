@@ -31,6 +31,8 @@ This module is responsible for:
 |---|---|
 | `external_flash.c` | Public API implementation |
 | `external_flash.h` | Public API header |
+| `external_flash_allocator.c` | Private wear-aware block allocator implementation |
+| `external_flash_allocator.h` | Private allocator interface used only by `external_flash` |
 | `tests/external_flash_mocks.h` | Unit test mock definitions |
 | `tests/test_external_flash.cpp` | Unit tests |
 
@@ -150,6 +152,8 @@ One result write path is supported: page scoped writes with `EXTERNAL_FLASH_Writ
 Only bytes successfully committed to NAND are exposed through `EXTERNAL_FLASH_ReadResults`.
 
 The active result session keeps its logical-to-physical rotation stable until the next result session starts. This allows `result_transfer_manager` to read committed bytes in logical order after execution, even though the physical NAND blocks may not start at the first block of the result partition.
+
+There is intentionally no public result flush or result byte write API. A final partial page write closes the append stream naturally because later page writes are rejected. If the result length ends exactly on a page boundary, the session stays readable and the wear rotation cursor is advanced when the next `EXTERNAL_FLASH_StartSession` begins.
 
 ---
 
@@ -334,8 +338,10 @@ The instruction, result, and metadata partitions remain fixed. Within the instru
 
 - `EXTERNAL_FLASH_StartInstructionUpload` erases and maps only the blocks needed for the expected instruction image, while leaving spare blocks available for program-failure replacement.
 - `EXTERNAL_FLASH_StartSession` currently prepares the full writable result capacity because the final result length is not known before execution.
+- Active maps are prepared in erase-count passes, using the rotation cursor to break ties. This keeps full result-session preparation bounded and avoids repeatedly scanning the growing active map.
 - Program failures retire the failed block and replace it with an already-erased spare selected by the allocator.
 - Runtime erase counts are updated whenever `external_flash` successfully erases a block.
+- Completed instruction uploads advance their rotation cursor immediately. Result sessions advance their cursor after a final partial page, or at the start of the next session when the previous result length ended on a page boundary.
 
 The metadata partition is reserved now so persistent snapshots can be added without changing the physical layout. The current erase counts and active maps are RAM only.
 
