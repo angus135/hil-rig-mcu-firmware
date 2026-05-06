@@ -21,7 +21,6 @@
 #include "exec_analogue_output.h"
 #include "hw_spi.h"
 
-#include "gpio.h"
 #include "stm32f4xx_ll_gpio.h"
 #include "stm32f4xx_ll_spi.h"
 #include "stm32f446xx.h"
@@ -160,30 +159,31 @@ static bool ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
 		frame_bytes[frame_index_bytes + 1U] = ( uint8_t )( ( frames[index].data_word >> 8U ) & 0xFFU );
         frame_bytes[frame_index_bytes + 2U] = ( uint8_t )( frames[index].data_word & 0xFFU );
 
-        LL_GPIO_ResetOutputPin(nCS_GPIO_Port, nCS_Pin);  // CS low
+        // LL_GPIO_ResetOutputPin(nCS_GPIO_Port, nCS_Pin);  // CS low
 
         if ( !HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, &frame_bytes[frame_index_bytes], 3U ) )
 	    {
 		    return false;
 	    }
 
-	    HW_SPI_Tx_Trigger( SPI_CHANNEL_0 );
-        while ( !HW_SPI_Tx_Buffer_Empty( SPI_CHANNEL_0 ) )
-        {
-            /* Wait for the frame to be transmitted before loading the next one to ensure
-             * the DAC receives them in the correct order. */
-        }
-		while ( LL_SPI_IsActiveFlag_BSY( ANALOGUE_OUTPUT_SPI_INSTANCE ) )
-        {
-            // wait until SPI fully finished shifting
-        }
+	    
+        // while ( !HW_SPI_Tx_Buffer_Empty( SPI_CHANNEL_0 ) )
+        // {
+        //     /* Wait for the frame to be transmitted before loading the next one to ensure
+        //      * the DAC receives them in the correct order. */
+        // }
+		// while ( LL_SPI_IsActiveFlag_BSY( ANALOGUE_OUTPUT_SPI_INSTANCE ) )
+        // {
+        //     // wait until SPI fully finished shifting
+        // }
 
-        LL_GPIO_SetOutputPin( nCS_GPIO_Port, nCS_Pin );  // CS high
+        // LL_GPIO_SetOutputPin( nCS_GPIO_Port, nCS_Pin );  // CS high
         
 		frame_index_bytes += 3U;
         
 	}
 
+	HW_SPI_Tx_Trigger( SPI_CHANNEL_0 );
 
 	return true;
 }
@@ -221,7 +221,7 @@ bool analogue_output_spi_channel_setup( void )
 		.spi_mode  = SPI_MASTER_MODE,
 		.data_size = SPI_SIZE_8_BIT,
 		.first_bit = SPI_FIRST_MSB,
-		.baud_rate = SPI_BAUD_352KBIT,
+		.baud_rate = SPI_BAUD_2M813BIT,
 		.cpol      = SPI_CPOL_LOW,
 		.cpha      = SPI_CPHA_1_EDGE,
 	};
@@ -258,7 +258,7 @@ bool analogue_output_spi_channel_setup( void )
  */
 bool analogue_output_config( bool use_external_vref )
 {
-    LL_GPIO_SetOutputPin( nCS_GPIO_Port, nCS_Pin );  // CS high
+    // LL_GPIO_SetOutputPin( nCS_GPIO_Port, nCS_Pin );  // CS high
     
 	if ( !ANALOGUE_OUTPUT_Queue_Startup_Frames( use_external_vref ) )
 	{
@@ -323,7 +323,7 @@ bool analogue_output_write_voltage( uint8_t channel, float input_voltage_v )
 
     count = ANALOGUE_OUTPUT_Clamp_And_Scale_Count( input_voltage_v );
 
-    LL_GPIO_ResetOutputPin(nCS_GPIO_Port, nCS_Pin);  // CS low
+    // LL_GPIO_ResetOutputPin(nCS_GPIO_Port, nCS_Pin);  // CS low
 
 	if ( !ANALOGUE_OUTPUT_Send_Frame( ( uint8_t )( ANALOGUE_OUTPUT_REG_DAC_BASE + channel ), count ) )
 	{
@@ -332,16 +332,16 @@ bool analogue_output_write_voltage( uint8_t channel, float input_voltage_v )
 
     HW_SPI_Tx_Trigger( SPI_CHANNEL_0 );
 
-    while ( !HW_SPI_Tx_Buffer_Empty( SPI_CHANNEL_0 ) )
-    {
-        /* Wait for SPI transfer to complete before raising CS */
-    }
-	while ( LL_SPI_IsActiveFlag_BSY( ANALOGUE_OUTPUT_SPI_INSTANCE ) )
-    {
-        // wait until SPI fully finished shifting
-    }
+    // while ( !HW_SPI_Tx_Buffer_Empty( SPI_CHANNEL_0 ) )
+    // {
+    //     /* Wait for SPI transfer to complete before raising CS */
+    // }
+	// while ( LL_SPI_IsActiveFlag_BSY( ANALOGUE_OUTPUT_SPI_INSTANCE ) )
+    // {
+    //     // wait until SPI fully finished shifting
+    // }
 
-    LL_GPIO_SetOutputPin( nCS_GPIO_Port, nCS_Pin );  // CS high
+    // LL_GPIO_SetOutputPin( nCS_GPIO_Port, nCS_Pin );  // CS high
     
 	return true;
 }

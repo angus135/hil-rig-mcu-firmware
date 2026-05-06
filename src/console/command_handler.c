@@ -21,6 +21,8 @@
 #include "command_helpers.h"
 #include "execution_manager.h"
 #include "hw_gpio.h"
+#include "hw_spi.h"
+#include "exec_analogue_output.h"
 #include "exec_uart.h"
 #include "hw_adc.h"
 #include "exec_digital_input.h"
