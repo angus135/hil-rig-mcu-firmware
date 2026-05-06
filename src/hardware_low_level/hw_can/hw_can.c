@@ -52,14 +52,6 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
  *------------------------------------------------------------------------------
  */
 
-typedef struct CanProperties_T
-{
-    uint32_t bs1;
-    uint32_t bs2;
-    uint32_t psc;
-    uint32_t timer_hz;
-} CanProperties_T;
-
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -115,65 +107,64 @@ CanProperties_T HW_CAN_compute_properties( uint32_t bitrate, uint32_t total_TQ,
  * This function takes and applies the desired can properties using the HAL library
  *
  */
-void HW_CAN_apply_timing_HAL( CAN_HandleTypeDef hcan, CanProperties_T props )
+void HW_CAN_apply_timing_HAL( CAN_HandleTypeDef *hcan, CanProperties_T props )
 {
-    CAN_TypeDef* CAN = hcan.Instance;
+    hcan->Init.Prescaler = props.psc;
+    // hcan.Init.Mode      = CAN_MODE_NORMAL;
+    hcan->Init.Mode      = CAN_MODE_LOOPBACK;  // Testing mode
 
-    hcan.Init.Prescaler = props.psc;
-    hcan.Init.Mode      = CAN_MODE_NORMAL;
-
-    hcan.Init.SyncJumpWidth = CAN_SJW_1TQ;
+    hcan->Init.SyncJumpWidth = CAN_SJW_1TQ;
 
     // Map BS1
     switch ( props.bs1 )
     {
         case 1:
-            hcan.Init.TimeSeg1 = CAN_BS1_1TQ;
+            hcan->Init.TimeSeg1 = CAN_BS1_1TQ;
             break;
         case 2:
-            hcan.Init.TimeSeg1 = CAN_BS1_2TQ;
+            hcan->Init.TimeSeg1 = CAN_BS1_2TQ;
             break;
         case 3:
-            hcan.Init.TimeSeg1 = CAN_BS1_3TQ;
+            hcan->Init.TimeSeg1 = CAN_BS1_3TQ;
             break;
         case 4:
-            hcan.Init.TimeSeg1 = CAN_BS1_4TQ;
+            hcan->Init.TimeSeg1 = CAN_BS1_4TQ;
             break;
         case 5:
-            hcan.Init.TimeSeg1 = CAN_BS1_5TQ;
+            hcan->Init.TimeSeg1 = CAN_BS1_5TQ;
             break;
         case 6:
-            hcan.Init.TimeSeg1 = CAN_BS1_6TQ;
+            hcan->Init.TimeSeg1 = CAN_BS1_6TQ;
             break;
         case 7:
-            hcan.Init.TimeSeg1 = CAN_BS1_7TQ;
+            hcan->Init.TimeSeg1 = CAN_BS1_7TQ;
             break;
         case 8:
-            hcan.Init.TimeSeg1 = CAN_BS1_8TQ;
+            hcan->Init.TimeSeg1 = CAN_BS1_8TQ;
             break;
         case 9:
-            hcan.Init.TimeSeg1 = CAN_BS1_9TQ;
+            hcan->Init.TimeSeg1 = CAN_BS1_9TQ;
             break;
         case 10:
-            hcan.Init.TimeSeg1 = CAN_BS1_10TQ;
+            hcan->Init.TimeSeg1 = CAN_BS1_10TQ;
             break;
         case 11:
-            hcan.Init.TimeSeg1 = CAN_BS1_11TQ;
+            hcan->Init.TimeSeg1 = CAN_BS1_11TQ;
             break;
         case 12:
-            hcan.Init.TimeSeg1 = CAN_BS1_12TQ;
+            hcan->Init.TimeSeg1 = CAN_BS1_12TQ;
             break;
         case 13:
-            hcan.Init.TimeSeg1 = CAN_BS1_13TQ;
+            hcan->Init.TimeSeg1 = CAN_BS1_13TQ;
             break;
         case 14:
-            hcan.Init.TimeSeg1 = CAN_BS1_14TQ;
+            hcan->Init.TimeSeg1 = CAN_BS1_14TQ;
             break;
         case 15:
-            hcan.Init.TimeSeg1 = CAN_BS1_15TQ;
+            hcan->Init.TimeSeg1 = CAN_BS1_15TQ;
             break;
         case 16:
-            hcan.Init.TimeSeg1 = CAN_BS1_16TQ;
+            hcan->Init.TimeSeg1 = CAN_BS1_16TQ;
             break;
     }
 
@@ -181,40 +172,40 @@ void HW_CAN_apply_timing_HAL( CAN_HandleTypeDef hcan, CanProperties_T props )
     switch ( props.bs2 )
     {
         case 1:
-            hcan.Init.TimeSeg2 = CAN_BS2_1TQ;
+            hcan->Init.TimeSeg2 = CAN_BS2_1TQ;
             break;
         case 2:
-            hcan.Init.TimeSeg2 = CAN_BS2_2TQ;
+            hcan->Init.TimeSeg2 = CAN_BS2_2TQ;
             break;
         case 3:
-            hcan.Init.TimeSeg2 = CAN_BS2_3TQ;
+            hcan->Init.TimeSeg2 = CAN_BS2_3TQ;
             break;
         case 4:
-            hcan.Init.TimeSeg2 = CAN_BS2_4TQ;
+            hcan->Init.TimeSeg2 = CAN_BS2_4TQ;
             break;
         case 5:
-            hcan.Init.TimeSeg2 = CAN_BS2_5TQ;
+            hcan->Init.TimeSeg2 = CAN_BS2_5TQ;
             break;
         case 6:
-            hcan.Init.TimeSeg2 = CAN_BS2_6TQ;
+            hcan->Init.TimeSeg2 = CAN_BS2_6TQ;
             break;
         case 7:
-            hcan.Init.TimeSeg2 = CAN_BS2_7TQ;
+            hcan->Init.TimeSeg2 = CAN_BS2_7TQ;
             break;
         case 8:
-            hcan.Init.TimeSeg2 = CAN_BS2_8TQ;
+            hcan->Init.TimeSeg2 = CAN_BS2_8TQ;
             break;
     }
 
     // Other required settings
-    hcan.Init.TimeTriggeredMode    = DISABLE;
-    hcan.Init.AutoBusOff           = DISABLE;
-    hcan.Init.AutoWakeUp           = DISABLE;
-    hcan.Init.AutoRetransmission   = ENABLE;
-    hcan.Init.ReceiveFifoLocked    = DISABLE;
-    hcan.Init.TransmitFifoPriority = DISABLE;
+    hcan->Init.TimeTriggeredMode    = DISABLE;
+    hcan->Init.AutoBusOff           = DISABLE;
+    hcan->Init.AutoWakeUp           = DISABLE;
+    hcan->Init.AutoRetransmission   = ENABLE;
+    hcan->Init.ReceiveFifoLocked    = DISABLE;
+    hcan->Init.TransmitFifoPriority = DISABLE;
 
-    HAL_CAN_Init( &hcan );
+    HAL_CAN_Init( hcan );
 }
 
 /**
@@ -226,7 +217,7 @@ void HW_CAN_apply_timing_HAL( CAN_HandleTypeDef hcan, CanProperties_T props )
  * This function takes and applies the desired can filter properties using the HAL library
  *
  */
-void HW_CAN_apply_filter_HAL( CAN_FilterTypeDef filter, CAN_HandleTypeDef hcan )
+void HW_CAN_apply_filter_HAL( CAN_FilterTypeDef filter, CAN_HandleTypeDef *hcan )
 {
     filter.FilterBank  = 0;
     filter.FilterMode  = CAN_FILTERMODE_IDMASK;
@@ -240,7 +231,7 @@ void HW_CAN_apply_filter_HAL( CAN_FilterTypeDef filter, CAN_HandleTypeDef hcan )
     filter.FilterFIFOAssignment = CAN_FILTER_FIFO0;
     filter.FilterActivation     = ENABLE;
 
-    HAL_CAN_ConfigFilter( &hcan, &filter );
+    HAL_CAN_ConfigFilter( hcan, &filter );
 }
 
 /**
@@ -264,17 +255,115 @@ void HW_CAN_apply_filter_HAL( CAN_FilterTypeDef filter, CAN_HandleTypeDef hcan )
  *          FIFO assignment for accepted frames
  *
  */
-void HW_CAN_configure( CAN_HandleTypeDef hcan, uint32_t bitrate )
+void HW_CAN_configure( CAN_HandleTypeDef *hcan, uint32_t bitrate )
 {
     CAN_FilterTypeDef filter;
     CanProperties_T   can_props = HW_CAN_compute_properties( bitrate, TOTAL_TQ, MBPS_SAMPLE_POINT );
     HW_CAN_apply_timing_HAL( hcan, can_props );
     HW_CAN_apply_filter_HAL( filter, hcan );
+    HAL_CAN_Start(hcan);
     return;
 }
+
+/**
+ * @brief Configures the CAN peripherals
+ *
+ * @param XXXX
+ *
+ *
+ * Provides the configuration of the following:
+ *      Prescaler
+ *      Time Quanta in Bit Segment 1
+ *      Time Quanta in Bit Segment 2
+ *      ReSynchronization Jump Width
+ *      Operating Modes:
+ *          Normal
+ *          Loopback
+ *          Silent
+ *      Filter and Mask:
+ *          Acceptance filters and masks
+ *          Acceptance of standard and extended frames via filter configuration
+ *          FIFO assignment for accepted frames
+ *
+ */
+void HW_CAN_configure1( uint32_t bitrate )
+{
+    HW_CAN_configure(&hcan1, bitrate);
+    return;
+}
+
+/**
+ * @brief Configures the CAN peripherals
+ *
+ * @param XXXX
+ *
+ *
+ * Provides the configuration of the following:
+ *      Prescaler
+ *      Time Quanta in Bit Segment 1
+ *      Time Quanta in Bit Segment 2
+ *      ReSynchronization Jump Width
+ *      Operating Modes:
+ *          Normal
+ *          Loopback
+ *          Silent
+ *      Filter and Mask:
+ *          Acceptance filters and masks
+ *          Acceptance of standard and extended frames via filter configuration
+ *          FIFO assignment for accepted frames
+ *
+ */
+void HW_CAN_configure2( uint32_t bitrate )
+{
+    HW_CAN_configure(&hcan2, bitrate);
+    return;
+}
+
+
 #endif
 
 /**-----------------------------------------------------------------------------
  *  Public Execution Function Definitions
  *------------------------------------------------------------------------------
  */
+
+#ifndef TEST_BUILD
+void HW_CAN_transmit1( uint8_t * txData)
+{
+    CAN_TxHeaderTypeDef txHeader;
+    uint32_t txMailbox;
+
+    txHeader.StdId = 0x123;
+    txHeader.IDE = CAN_ID_STD;
+    txHeader.RTR = CAN_RTR_DATA;
+    txHeader.DLC = 8;
+
+    HAL_CAN_AddTxMessage(&hcan1, &txHeader, txData, &txMailbox);
+}
+
+void HW_CAN_recieve1(uint8_t * rxData)
+{
+    CAN_RxHeaderTypeDef rxHeader;
+    HAL_CAN_GetRxMessage( &hcan1, CAN_RX_FIFO0, &rxHeader, rxData );
+}
+
+void HW_CAN_transmit2( uint8_t * txData)
+{
+    CAN_TxHeaderTypeDef txHeader;
+    uint32_t txMailbox;
+
+    txHeader.StdId = 0x123;
+    txHeader.IDE = CAN_ID_STD;
+    txHeader.RTR = CAN_RTR_DATA;
+    txHeader.DLC = 8;
+
+    HAL_CAN_AddTxMessage(&hcan2, &txHeader, txData, &txMailbox);
+}
+
+void HW_CAN_recieve2(uint8_t * rxData)
+{
+    CAN_RxHeaderTypeDef rxHeader;
+    HAL_CAN_GetRxMessage( &hcan2, CAN_RX_FIFO0, &rxHeader, rxData );
+}
+#endif
+
