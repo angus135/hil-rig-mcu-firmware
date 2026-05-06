@@ -33,6 +33,7 @@ extern "C"
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "external_flash_allocator.c" /* Private module under test */  // NOLINT
 #include "external_flash.c" /* Module under test */  // NOLINT
 }
 
@@ -221,13 +222,9 @@ protected:
 
         external_flash_initialised                         = false;
         external_flash_session_active                      = false;
+        external_flash_result_cursor_advanced              = false;
         external_flash_instruction_upload_active           = false;
         external_flash_geometry                            = { 0U, 0U, 0U, 0U };
-        external_flash_bad_block_count                     = 0U;
-        external_flash_instruction_next_start_offset       = 0U;
-        external_flash_instruction_block_map_count         = 0U;
-        external_flash_result_next_start_offset            = 0U;
-        external_flash_result_block_map_count              = 0U;
         external_flash_instruction_expected_length_bytes   = 0U;
         external_flash_instruction_length_bytes            = 0U;
         external_flash_committed_instruction_length_bytes  = 0U;
@@ -243,16 +240,7 @@ protected:
             external_flash_instruction_page_buffer[i] = 0xFFU;
         }
 
-        EXTERNAL_FLASH_ClearBlockMap( external_flash_instruction_block_map,
-                                      EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT );
-        EXTERNAL_FLASH_ClearBlockMap( external_flash_result_block_map,
-                                      EXTERNAL_FLASH_RESULT_BLOCK_COUNT );
-
-        for ( uint32_t i = 0U; i < EXTERNAL_FLASH_MANAGED_BLOCK_COUNT; i++ )
-        {
-            external_flash_bad_block_table[i] = false;
-            external_flash_block_erase_counts[i] = 0U;
-        }
+        EXTERNAL_FLASH_ALLOCATOR_Reset();
     }
 
     void TearDown( void ) override
@@ -274,7 +262,7 @@ protected:
     void ExpectBadBlockScanAllGood( void )
     {
         EXPECT_CALL( mock, IsBlockBad( _, _ ) )
-            .Times( EXTERNAL_FLASH_MANAGED_BLOCK_COUNT )
+            .Times( EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT )
             .WillRepeatedly( Invoke( []( uint32_t block, bool* is_bad ) {
                 ( void )block;
                 *is_bad = false;
@@ -353,12 +341,36 @@ TEST_F( ExternalFlashTest, InitInitialisesNandGetsGeometryAndScansBadBlocks )
     EXPECT_EQ( info.instruction_length_bytes, 0U );
 }
 
+TEST_F( ExternalFlashTest, PublicTransactionsRejectCallsBeforeInit )
+{
+    ExternalFlashInfo_T info                         = {};
+    uint8_t             buffer[TEST_PAGE_SIZE_BYTES] = {};
+
+    EXPECT_FALSE( EXTERNAL_FLASH_IsInitialised() );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_NOT_INITIALISED, EXTERNAL_FLASH_GetInfo( &info ) );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_NOT_INITIALISED, EXTERNAL_FLASH_StartSession() );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_NOT_INITIALISED,
+               EXTERNAL_FLASH_StartInstructionUpload( TEST_SMALL_LENGTH ) );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_NOT_INITIALISED,
+               EXTERNAL_FLASH_WriteInstructionBytes( buffer, TEST_SMALL_LENGTH ) );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_NOT_INITIALISED,
+               EXTERNAL_FLASH_WriteInstructionPage( buffer, TEST_SMALL_LENGTH ) );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_NOT_INITIALISED,
+               EXTERNAL_FLASH_FinishInstructionUpload() );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_NOT_INITIALISED,
+               EXTERNAL_FLASH_WriteResultPage( buffer, TEST_SMALL_LENGTH ) );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_NOT_INITIALISED,
+               EXTERNAL_FLASH_ReadInstructionPage( 0U, buffer, TEST_SMALL_LENGTH ) );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_NOT_INITIALISED,
+               EXTERNAL_FLASH_ReadResults( 0U, buffer, TEST_SMALL_LENGTH ) );
+}
+
 TEST_F( ExternalFlashTest, InitRemovesBadBlocksFromCapacity )
 {
     EXPECT_CALL( mock, Init() ).WillOnce( Return( HW_NAND_STATUS_OK ) );
     ExpectGeometry();
     EXPECT_CALL( mock, IsBlockBad( _, _ ) )
-        .Times( EXTERNAL_FLASH_MANAGED_BLOCK_COUNT )
+        .Times( EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT )
         .WillRepeatedly( Invoke( []( uint32_t block, bool* is_bad ) {
             *is_bad = ( block == 0U ) || ( block == EXTERNAL_FLASH_RESULT_START_BLOCK );
             return HW_NAND_STATUS_OK;
@@ -378,7 +390,7 @@ TEST_F( ExternalFlashTest, InitRemovesBadBlocksFromCapacity )
 TEST_F( ExternalFlashTest, StartSessionErasesOnlyGoodResultBlocks )
 {
     InitDriverAllGood();
-    external_flash_bad_block_table[TEST_RESULT_BLOCK + 1U] = true;
+    external_flash_allocator_bad_blocks[TEST_RESULT_BLOCK + 1U] = true;
 
     EXPECT_CALL( mock, BlockErase( _ ) )
         .Times( EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 2U )
@@ -394,7 +406,7 @@ TEST_F( ExternalFlashTest, StartSessionErasesOnlyGoodResultBlocks )
 TEST_F( ExternalFlashTest, StartInstructionUploadErasesOnlyGoodInstructionBlocks )
 {
     InitDriverAllGood();
-    external_flash_bad_block_table[1U] = true;
+    external_flash_allocator_bad_blocks[1U] = true;
 
     EXPECT_CALL( mock, BlockErase( _ ) )
         .Times( 1U )
@@ -479,7 +491,7 @@ TEST_F( ExternalFlashTest, WriteInstructionPageFullPageUsesCallerBufferDirectly 
 TEST_F( ExternalFlashTest, InstructionUploadUsesWearRotationStartOffset )
 {
     InitDriverAllGood();
-    external_flash_instruction_next_start_offset = 1U;
+    external_flash_allocator_instruction_next_offset = 1U;
     StartInstructionUploadAllGood( TEST_PAGE_SIZE_BYTES );
 
     InSequence sequence;
@@ -493,7 +505,7 @@ TEST_F( ExternalFlashTest, InstructionUploadUsesWearRotationStartOffset )
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
                EXTERNAL_FLASH_WriteInstructionPage( transfer_data, TEST_PAGE_SIZE_BYTES ) );
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_FinishInstructionUpload() );
-    EXPECT_EQ( external_flash_instruction_next_start_offset, 2U );
+    EXPECT_EQ( external_flash_allocator_instruction_next_offset, 2U );
 }
 
 TEST_F( ExternalFlashTest, FinishInstructionUploadRejectsIncompleteUpload )
@@ -516,7 +528,7 @@ TEST_F( ExternalFlashTest, FinishInstructionUploadRejectsIncompleteUpload )
 TEST_F( ExternalFlashTest, ResultSessionUsesWearRotationStartOffset )
 {
     InitDriverAllGood();
-    external_flash_result_next_start_offset = 1U;
+    external_flash_allocator_result_next_offset = 1U;
     StartSessionAllGood();
 
     uint32_t expected_page = ( TEST_RESULT_BLOCK + 1U ) * TEST_PAGES_PER_BLOCK;
@@ -531,6 +543,26 @@ TEST_F( ExternalFlashTest, ResultSessionUsesWearRotationStartOffset )
 
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
                EXTERNAL_FLASH_WriteResultPage( transfer_data, TEST_PAGE_SIZE_BYTES ) );
+}
+
+TEST_F( ExternalFlashTest, NextResultSessionAdvancesWearCursorAfterExactPageResultLength )
+{
+    InitDriverAllGood();
+    StartSessionAllGood();
+
+    ExpectOneSuccessfulProgram( TEST_RESULT_PAGE );
+
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
+               EXTERNAL_FLASH_WriteResultPage( transfer_data, TEST_PAGE_SIZE_BYTES ) );
+    EXPECT_FALSE( external_flash_result_cursor_advanced );
+    EXPECT_EQ( external_flash_allocator_result_next_offset, 0U );
+
+    ::testing::Mock::VerifyAndClearExpectations( &mock );
+
+    EXPECT_CALL( mock, BlockErase( _ ) ).WillRepeatedly( Return( HW_NAND_STATUS_OK ) );
+
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_StartSession() );
+    EXPECT_EQ( external_flash_allocator_result_next_offset, 1U );
 }
 
 TEST_F( ExternalFlashTest, WriteResultPageRejectsInvalidArguments )

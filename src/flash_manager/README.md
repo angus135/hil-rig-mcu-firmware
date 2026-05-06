@@ -182,6 +182,8 @@ write final partial result page if needed
 make committed results available to result_transfer_manager
 ```
 
+If the final result length is exactly page aligned, there is no separate external flash finalize call. Leave the session readable for result transfer; `external_flash` advances its result wear-rotation cursor when the next `EXTERNAL_FLASH_StartSession()` begins.
+
 Result transfer should use:
 
 ```c
@@ -205,6 +207,7 @@ Current policy:
 - Instruction upload erases only the blocks required for the uploaded instruction image.
 - Result session preparation currently prepares the full writable result capacity because the final result length is not known before execution.
 - `external_flash` keeps a spare block outside each active map so a program-failed block can be retired and replaced.
+- Exact-page result sessions do not need a flush/finalize call; the next `EXTERNAL_FLASH_StartSession()` advances the wear cursor for the previous committed result length.
 - Runtime erase counts are currently RAM only; a metadata partition is reserved for future persistent snapshots.
 
 Future policy:

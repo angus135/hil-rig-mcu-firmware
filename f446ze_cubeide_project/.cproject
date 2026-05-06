@@ -310,10 +310,12 @@
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_uart"/>
 									<listOptionValue builtIn="false" value="../../src/external_flash"/>
 									<listOptionValue builtIn="false" value="../../src/feasibility_analyser"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_adc"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_can"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_gpio"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_i2c"/>
+									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_nand"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_pwm_capture"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_pwm_gen"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_qspi"/>
