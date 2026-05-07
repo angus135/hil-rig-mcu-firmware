@@ -32,7 +32,7 @@
  */
 
 #define ANALOGUE_OUTPUT_DAC_CHANNEL_COUNT 8U
-#define ANALOGUE_OUTPUT_CONFIGURED_CHANNEL_COUNT 6U
+#define EXEC_ANALOGUE_OUTPUT_ConfigURED_CHANNEL_COUNT 6U
 #define ANALOGUE_OUTPUT_DAC_MAX_COUNT 4095U
 #define ANALOGUE_OUTPUT_INPUT_MAX_V 20.0F
 
@@ -61,32 +61,32 @@
  *------------------------------------------------------------------------------
  */
 
-static bool s_analogue_output_configured = false;
+static bool s_EXEC_ANALOGUE_OUTPUT_Configured = false;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
 
-static uint8_t ANALOGUE_OUTPUT_Pack_Command_Byte( uint8_t register_address );
-static bool ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, uint16_t data_word );
-static uint16_t ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_v );
-static bool ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref );
+static uint8_t EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( uint8_t register_address );
+static bool EXEC_ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, uint16_t data_word );
+static uint16_t EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_v );
+static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
 
-static uint8_t ANALOGUE_OUTPUT_Pack_Command_Byte( uint8_t register_address )
+static uint8_t EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( uint8_t register_address )
 {
 	return ( uint8_t )( ( register_address & 0x1FU ) << 3U );
 }
 
-static bool ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, uint16_t data_word )
+static bool EXEC_ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, uint16_t data_word )
 {
 	uint8_t frame[3] = {
-		ANALOGUE_OUTPUT_Pack_Command_Byte( register_address ),
+		EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( register_address ),
 		( uint8_t )( ( data_word >> 8U ) & 0xFFU ),
 		( uint8_t )( data_word & 0xFFU ),
 	};
@@ -94,7 +94,7 @@ static bool ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, uint16_t data_
 	return HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, frame, sizeof( frame ) );
 }
 
-static uint16_t ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_v )
+static uint16_t EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_v )
 {
 	float clamped_voltage_v = input_voltage_v;
 
@@ -119,7 +119,7 @@ static uint16_t ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_v )
 	return count;
 }
 
-static bool ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
+static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
 {
 	uint8_t  frame_bytes[3U * ( 3U + ANALOGUE_OUTPUT_DAC_CHANNEL_COUNT )] = { 0 };
 	uint32_t frame_index_bytes                                            = 0U;
@@ -155,7 +155,7 @@ static bool ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
 
 	for ( uint32_t index = 0U; index < ( uint32_t )( sizeof( frames ) / sizeof( frames[0] ) ); index++ )
 	{
-		frame_bytes[frame_index_bytes] = ANALOGUE_OUTPUT_Pack_Command_Byte( frames[index].register_address );
+		frame_bytes[frame_index_bytes] = EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( frames[index].register_address );
 		frame_bytes[frame_index_bytes + 1U] = ( uint8_t )( ( frames[index].data_word >> 8U ) & 0xFFU );
         frame_bytes[frame_index_bytes + 2U] = ( uint8_t )( frames[index].data_word & 0xFFU );
 
@@ -215,7 +215,7 @@ static bool ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
  *     true if SPI4 configuration and startup completed successfully.
  *     false if hardware configuration or startup failed.
  */
-bool analogue_output_spi_channel_setup( void )
+bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void )
 {
 	HWSPIConfig_T configuration = {
 		.spi_mode  = SPI_MASTER_MODE,
@@ -240,7 +240,7 @@ bool analogue_output_spi_channel_setup( void )
  *
  * Configures the DAC's volatile control registers and sets all output channels
  * to zero voltage. This function assumes that the SPI4 hardware channel has
- * already been configured and started (via analogue_output_spi_channel_setup()
+ * already been configured and started (via EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup()
  * or the system initialization layer).
  *
  * Configuration includes:
@@ -250,29 +250,29 @@ bool analogue_output_spi_channel_setup( void )
  * - DAC output registers (00h-07h): All channels initialized to 0V
  *
  * After this function completes successfully, the module is ready to accept
- * voltage write commands via analogue_output_write_voltage().
+ * voltage write commands via EXEC_ANALOG_OUTPUT_Write_Voltage().
  *
  * @return
  *     true if DAC initialization completed successfully.
  *     false if SPI transmission of the initialization frames failed.
  */
-bool analogue_output_config( bool use_external_vref )
+bool EXEC_ANALOGUE_OUTPUT_Config( bool use_external_vref )
 {
     // LL_GPIO_SetOutputPin( nCS_GPIO_Port, nCS_Pin );  // CS high
     
-	if ( !ANALOGUE_OUTPUT_Queue_Startup_Frames( use_external_vref ) )
+	if ( !EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( use_external_vref ) )
 	{
-		s_analogue_output_configured = false;
+		s_EXEC_ANALOGUE_OUTPUT_Configured = false;
 		return false;
 	}
 
-	s_analogue_output_configured = true;
+	s_EXEC_ANALOGUE_OUTPUT_Configured = true;
 	return true;
 }
 
-bool analogue_output_is_configured( void )
+bool EXEC_ANALOG_OUTPUT_Is_Configured( void )
 {
-	return s_analogue_output_configured;
+	return s_EXEC_ANALOGUE_OUTPUT_Configured;
 }
 
 /**
@@ -293,7 +293,7 @@ bool analogue_output_is_configured( void )
  * fail with false return code because those channels are disabled (configured
  * in open-circuit mode).
  *
- * The module must be initialized via analogue_output_config() before this
+ * The module must be initialized via EXEC_ANALOGUE_OUTPUT_Config() before this
  * function is called. Writing to an uninitialized module returns false.
  *
  * @param channel
@@ -307,25 +307,25 @@ bool analogue_output_is_configured( void )
  *     false if the module is not initialized, the channel is invalid (>= 6),
  *     or SPI transmission failed.
  */
-bool analogue_output_write_voltage( uint8_t channel, float input_voltage_v )
+bool EXEC_ANALOG_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v )
 {
 	uint16_t count = 0U;
 
-	if ( !s_analogue_output_configured )
+	if ( !s_EXEC_ANALOGUE_OUTPUT_Configured )
 	{
 		return false;
 	}
 
-	if ( channel >= ANALOGUE_OUTPUT_CONFIGURED_CHANNEL_COUNT )
+	if ( channel >= EXEC_ANALOGUE_OUTPUT_ConfigURED_CHANNEL_COUNT )
 	{
 		return false;
 	}
 
-    count = ANALOGUE_OUTPUT_Clamp_And_Scale_Count( input_voltage_v );
+    count = EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( input_voltage_v );
 
     // LL_GPIO_ResetOutputPin(nCS_GPIO_Port, nCS_Pin);  // CS low
 
-	if ( !ANALOGUE_OUTPUT_Send_Frame( ( uint8_t )( ANALOGUE_OUTPUT_REG_DAC_BASE + channel ), count ) )
+	if ( !EXEC_ANALOGUE_OUTPUT_Send_Frame( ( uint8_t )( ANALOGUE_OUTPUT_REG_DAC_BASE + channel ), count ) )
 	{
 		return false;
 	}
