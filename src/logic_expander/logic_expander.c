@@ -4,9 +4,19 @@
  *  Created:    20-Apr-2026
  *
  *  Description:
+ *      High-level MCP23017 I2C GPIO expander driver implementation.
+ *      Manages initialization, configuration, and bit-level control of up to 8
+ *      MCP23017 devices on the internal FMPI2C1 channel. Uses shadow registers
+ *      (OLAT A/B) for efficient batch updates and includes retry logic for
+ *      robustness during concurrent I2C activity.
  *
  *  Notes:
- *     None
+ *      - All I2C communication via the internal FMPI2C1 channel (high-speed)
+ *      - Devices must be pre-addressed via hardware jumpers (A2:A0 pins)
+ *      - Active devices controlled via LOGIC_EXPANDER_ACTIVE_BITMASK define
+ *      - Configuration registers set all pins as outputs (IODIRA/B = 0x00)
+ *      - Retries up to 200,000 times on I2C busy condition
+ *      - Thread-safety must be ensured at higher layers
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -227,6 +237,18 @@ LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_t devic
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief Initialize and configure all active MCP23017 devices.
+ *
+ * Discovers active devices (based on LOGIC_EXPANDER_ACTIVE_BITMASK),
+ * sends configuration registers (IODIR, IPOL, GPINTEN, etc.) to set all
+ * pins as outputs, and initializes OLAT registers.
+ * Must be called before any other operations.
+ *
+ * @return LOGIC_EXPANDER_STATUS_OK if all devices configured successfully
+ * @return LOGIC_EXPANDER_STATUS_BUSY if I2C channel is busy
+ * @return LOGIC_EXPANDER_STATUS_ERROR on communication error
+ */
 LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void )
 {
     for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
@@ -315,6 +337,21 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void )
     return LOGIC_EXPANDER_STATUS_OK;
 }
 
+/**
+ * @brief Load a single control bit into the shadow register.
+ *
+ * Modifies the bit in the local OLAT shadow register (OLAT A or OLAT B)
+ * for the specified expander. Does not immediately transmit; use
+ * LOGIC_EXPANDER_Send_Control_Bits() to apply changes.
+ *
+ * @param[in] expander_index  Device index (0 to LOGIC_EXPANDER_COUNT-1)
+ * @param[in] port            Port A or Port B
+ * @param[in] bit_index       Bit position within port (0 to 7)
+ * @param[in] bit_value       Value to set (true for 1, false for 0)
+ *
+ * @return LOGIC_EXPANDER_STATUS_OK on success
+ * @return LOGIC_EXPANDER_STATUS_INVALID_PARAM if parameters are out of range
+ */
 LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( uint8_t expander_index, LogicExpanderPort_T port,
                                                  uint8_t bit_index, bool bit_value )
 {
@@ -341,6 +378,18 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( uint8_t expander_index, L
     return LOGIC_EXPANDER_STATUS_OK;
 }
 
+/**
+ * @brief Transmit shadow register state to all active devices.
+ *
+ * Sends all accumulated bit changes (from LOGIC_EXPANDER_Load_Control_Bit)
+ * to their respective MCP23017 devices via I2C.
+ * Includes retry logic for robustness against temporary I2C bus congestion.
+ *
+ * @return LOGIC_EXPANDER_STATUS_OK if all devices updated successfully
+ * @return LOGIC_EXPANDER_STATUS_BUSY if I2C remains busy after retry limit
+ * @return LOGIC_EXPANDER_STATUS_NOT_READY if self-config has not been called
+ * @return LOGIC_EXPANDER_STATUS_ERROR on communication error
+ */
 LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void )
 {
     if ( !logic_expander_ready )
@@ -367,6 +416,18 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void )
     return LOGIC_EXPANDER_STATUS_OK;
 }
 
+/**
+ * @brief Retrieve the current shadow state of a single expander.
+ *
+ * Returns a snapshot of the device's OLAT A, OLAT B, and address.
+ * Reflects the last known state; not a direct hardware read.
+ *
+ * @param[in]  expander_index  Device index (0 to LOGIC_EXPANDER_COUNT-1)
+ * @param[out] out_snapshot    Pointer to snapshot structure to fill
+ *
+ * @return LOGIC_EXPANDER_STATUS_OK on success
+ * @return LOGIC_EXPANDER_STATUS_INVALID_PARAM if parameters are invalid
+ */
 LogicExpanderStatus_T LOGIC_EXPANDER_Get_State_Snapshot( uint8_t                       expander_index,
                                                    LogicExpanderStateSnapshot_T* out_snapshot )
 {
