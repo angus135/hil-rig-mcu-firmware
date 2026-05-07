@@ -723,6 +723,13 @@ HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
     LL_FMPI2C_EnableOwnAddress1( FMPI2C1 );
     LL_FMPI2C_Enable( FMPI2C1 );
 
+    LL_FMPI2C_Enable( FMPI2C1 );
+    LL_FMPI2C_EnableIT_TX( FMPI2C1 );
+    LL_FMPI2C_EnableIT_RX( FMPI2C1 );
+    LL_FMPI2C_EnableIT_TC( FMPI2C1 );
+    LL_FMPI2C_EnableIT_STOP( FMPI2C1 );
+    LL_FMPI2C_EnableIT_ERR( FMPI2C1 );
+
     return HW_I2C_STATUS_OK;
 }
 
@@ -732,6 +739,11 @@ bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data,
     HWI2CChannelState_T* state  = &hw_i2c_channel_state[channel];
 
     if ( length > HW_I2C_TX_STAGE_SIZE )
+    {
+        return false;
+    }
+
+    if ( state->transfer_in_progress )
     {
         return false;
     }
@@ -748,7 +760,12 @@ bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data,
 bool HW_I2C_Trigger_Master_Transmit( HWI2CChannel_T channel,
                                      uint16_t         device_address_7bit )
 {
-    HWI2CChannelState_T* state  = &hw_i2c_channel_state[channel];
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+
+    if ( state->transfer_in_progress )
+    {
+        return false;
+    }
 
     state->target_address_7bit      = device_address_7bit;
     state->transfer_kind            = HW_I2C_TRANSFER_KIND_MASTER_TX;
@@ -781,7 +798,10 @@ bool HW_I2C_Trigger_Master_Transmit( HWI2CChannel_T channel,
     }
     else
     {
-        LL_FMPI2C_GenerateStartCondition( FMPI2C1 );
+        // LL_FMPI2C_GenerateStartCondition( FMPI2C1 );
+        FMPI2C1->CR2 = ( ( uint32_t )device_address_7bit << 1U )
+                   | ( ( uint32_t )state->tx_stage_length << FMPI2C_CR2_NBYTES_Pos )
+                   | FMPI2C_CR2_START | FMPI2C_CR2_AUTOEND;
     }
 
     return true;
@@ -822,7 +842,10 @@ bool HW_I2C_Trigger_Master_Receive( HWI2CChannel_T channel,
     }
     else
     {
-        LL_FMPI2C_GenerateStartCondition( FMPI2C1 );
+        // LL_FMPI2C_GenerateStartCondition( FMPI2C1 );
+        FMPI2C1->CR2 = ( ( uint32_t )device_address_7bit << 1U ) | FMPI2C_CR2_RD_WRN
+                   | ( ( uint32_t )expected_length << FMPI2C_CR2_NBYTES_Pos )
+                   | FMPI2C_CR2_START | FMPI2C_CR2_AUTOEND;
     }
 
     return true;
