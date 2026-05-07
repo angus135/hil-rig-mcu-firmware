@@ -200,20 +200,20 @@ bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels,
                                           uint16_t tx_len, char* rx_message,
                                           uint16_t rx_message_size, uint16_t* out_received_len )
 {
-    EXECI2CStatus_T status = EXEC_I2C_Start_Slave_Receive( channels.slave, tx_len );
-    if ( status != EXEC_I2C_STATUS_OK )
+    bool is_ok = EXEC_I2C_Start_Slave_Receive( channels.slave, tx_len );
+    if ( !is_ok )
     {
-        CONSOLE_Printf( "Failed to start slave receive (status=%d).\r\n", ( int )status );
+        CONSOLE_Printf( "Failed to start slave receive.\r\n" );
         return false;
     }
 
     vTaskDelay( pdMS_TO_TICKS( 2 ) );
 
-    status =
+    is_ok =
         EXEC_I2C_Master_Send( channels.master, slave_addr, ( const uint8_t* )tx_message, tx_len );
-    if ( status != EXEC_I2C_STATUS_OK )
+    if ( !is_ok )
     {
-        CONSOLE_Printf( "Master send failed (status=%d).\r\n", ( int )status );
+        CONSOLE_Printf( "Master send failed.\r\n" );
         return false;
     }
 
@@ -223,13 +223,13 @@ bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels,
     for ( uint16_t wait_ms = 0U; wait_ms < 500U; ++wait_ms )
     {
         uint16_t chunk = 0U;
-        status         = EXEC_I2C_Receive_Copy_And_Consume(
+        is_ok          = EXEC_I2C_Receive_Copy_And_Consume(
             channels.slave, ( uint8_t* )&rx_message[received_len],
             ( uint16_t )( rx_message_size - 1U - received_len ), &chunk );
 
-        if ( status != EXEC_I2C_STATUS_OK )
+        if ( !is_ok )
         {
-            CONSOLE_Printf( "Receive failed (status=%d).\r\n", ( int )status );
+            CONSOLE_Printf( "Receive failed.\r\n" );
             return false;
         }
 
@@ -252,20 +252,19 @@ bool CONSOLE_Run_I2C_Loopback_S2M( CONSOLEI2CLoopbackChannels_T channels,
                                           uint16_t tx_len, char* rx_message,
                                           uint16_t rx_message_size, uint16_t* out_received_len )
 {
-    EXECI2CStatus_T status =
-        EXEC_I2C_Slave_Send( channels.slave, ( const uint8_t* )tx_message, tx_len );
-    if ( status != EXEC_I2C_STATUS_OK )
+    bool is_ok = EXEC_I2C_Slave_Send( channels.slave, ( const uint8_t* )tx_message, tx_len );
+    if ( !is_ok )
     {
-        CONSOLE_Printf( "Failed to start slave send (status=%d).\r\n", ( int )status );
+        CONSOLE_Printf( "Failed to start slave send.\r\n" );
         return false;
     }
 
     vTaskDelay( pdMS_TO_TICKS( 2 ) );
 
-    status = EXEC_I2C_Start_Master_Receive( channels.master, slave_addr, tx_len );
-    if ( status != EXEC_I2C_STATUS_OK )
+    is_ok = EXEC_I2C_Start_Master_Receive( channels.master, slave_addr, tx_len );
+    if ( !is_ok )
     {
-        CONSOLE_Printf( "Master receive start failed (status=%d).\r\n", ( int )status );
+        CONSOLE_Printf( "Master receive start failed.\r\n" );
         return false;
     }
 
@@ -275,13 +274,13 @@ bool CONSOLE_Run_I2C_Loopback_S2M( CONSOLEI2CLoopbackChannels_T channels,
     for ( uint16_t wait_ms = 0U; wait_ms < 500U; ++wait_ms )
     {
         uint16_t chunk = 0U;
-        status         = EXEC_I2C_Receive_Copy_And_Consume(
+        is_ok          = EXEC_I2C_Receive_Copy_And_Consume(
             channels.master, ( uint8_t* )&rx_message[received_len],
             ( uint16_t )( rx_message_size - 1U - received_len ), &chunk );
 
-        if ( status != EXEC_I2C_STATUS_OK )
+        if ( !is_ok )
         {
-            CONSOLE_Printf( "Receive failed (status=%d).\r\n", ( int )status );
+            CONSOLE_Printf( "Receive failed.\r\n" );
             return false;
         }
 
