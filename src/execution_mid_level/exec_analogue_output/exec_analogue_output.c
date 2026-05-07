@@ -21,9 +21,11 @@
 #include "exec_analogue_output.h"
 #include "hw_spi.h"
 
+#ifndef TEST_BUILD
 #include "stm32f4xx_ll_gpio.h"
 #include "stm32f4xx_ll_spi.h"
 #include "stm32f446xx.h"
+#endif
 
 
 /**-----------------------------------------------------------------------------
