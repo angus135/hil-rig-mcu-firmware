@@ -116,25 +116,25 @@ HWI2CStatus_T HW_I2C_Configure_Channel( HWI2CChannel_T              channel,
 
 HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit );
 
-HWI2CStatus_T HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data,
-                                        uint16_t length );
+bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data,
+                              uint16_t length );
 
-HWI2CStatus_T HW_I2C_Trigger_Master_Transmit( HWI2CChannel_T channel,
-                                              uint16_t       device_address_7bit );
-HWI2CStatus_T HW_I2C_Trigger_Master_Receive( HWI2CChannel_T channel, uint16_t device_address_7bit,
-                                             uint16_t expected_length );
-HWI2CStatus_T HW_I2C_Trigger_Slave_Transmit( HWI2CChannel_T channel );
-HWI2CStatus_T HW_I2C_Trigger_Slave_Receive( HWI2CChannel_T channel, uint16_t expected_length );
+bool HW_I2C_Trigger_Master_Transmit( HWI2CChannel_T channel,
+                                     uint16_t       device_address_7bit );
+bool HW_I2C_Trigger_Master_Receive( HWI2CChannel_T channel, uint16_t device_address_7bit,
+                                    uint16_t expected_length );
+bool HW_I2C_Trigger_Slave_Transmit( HWI2CChannel_T channel );
+bool HW_I2C_Trigger_Slave_Receive( HWI2CChannel_T channel, uint16_t expected_length );
 
-HWI2CStatus_T HW_I2C_Peek_Received( HWI2CChannel_T channel, HWI2CRxPeek_T* peek );
-HWI2CStatus_T HW_I2C_Consume_Received( HWI2CChannel_T channel, uint16_t bytes_to_consume );
+bool HW_I2C_Peek_Received( HWI2CChannel_T channel, HWI2CRxPeek_T* peek );
+bool HW_I2C_Consume_Received( HWI2CChannel_T channel, uint16_t bytes_to_consume );
 
 void HW_I2C_Service_Event_IRQ( HWI2CChannel_T channel );
 void HW_I2C_Service_Error_IRQ( HWI2CChannel_T channel );
 void HW_I2C_Service_DMA_Rx_IRQ( HWI2CChannel_T channel );
 void HW_I2C_Service_DMA_Tx_IRQ( HWI2CChannel_T channel );
 
-HWI2CStatus_T HW_I2C_Get_Last_Error( HWI2CChannel_T channel );
+/* last-error tracking removed; low-level functions return bool for success/failure */
 
 #ifdef __cplusplus
 }
