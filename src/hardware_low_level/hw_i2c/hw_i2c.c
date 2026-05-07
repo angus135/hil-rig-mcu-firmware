@@ -30,6 +30,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <string.h>
 
 #define HW_I2C_CHANNEL_2_DMA_RX_STREAM DMA1_Stream2
 #define HW_I2C_CHANNEL_2_DMA_TX_STREAM DMA1_Stream7
@@ -739,9 +740,9 @@ HWI2CStatus_T HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* d
 {
     HWI2CChannelState_T* state  = &hw_i2c_channel_state[channel];
 
-    for ( uint16_t idx = 0U; idx < length; ++idx )
+    if ( ( data != NULL ) && ( length > 0U ) )
     {
-        state->tx_stage_buffer[idx] = data[idx];
+        memcpy( state->tx_stage_buffer, data, ( size_t )length );
     }
 
     state->tx_stage_length = length;
