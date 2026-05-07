@@ -391,6 +391,31 @@ static inline void LL_FMPI2C_EnableOwnAddress1( FMPI2C_TypeDef* fmpi2c_instance 
     fmpi2c_instance->OAR1 |= FMPI2C_OAR1_OA1EN;
 }
 
+static inline void LL_FMPI2C_EnableIT_TX( FMPI2C_TypeDef* fmpi2c_instance )
+{
+    fmpi2c_instance->CR1 |= FMPI2C_CR1_TXIE;
+}
+
+static inline void LL_FMPI2C_EnableIT_RX( FMPI2C_TypeDef* fmpi2c_instance )
+{
+    fmpi2c_instance->CR1 |= FMPI2C_CR1_RXIE;
+}
+
+static inline void LL_FMPI2C_EnableIT_TC( FMPI2C_TypeDef* fmpi2c_instance )
+{
+    fmpi2c_instance->CR1 |= FMPI2C_CR1_TCIE;
+}
+
+static inline void LL_FMPI2C_EnableIT_STOP( FMPI2C_TypeDef* fmpi2c_instance )
+{
+    fmpi2c_instance->CR1 |= FMPI2C_CR1_STOPIE;
+}
+
+static inline void LL_FMPI2C_EnableIT_ERR( FMPI2C_TypeDef* fmpi2c_instance )
+{
+    fmpi2c_instance->CR1 |= FMPI2C_CR1_ERRIE;
+}
+
 static inline void LL_FMPI2C_GenerateStartCondition( FMPI2C_TypeDef* fmpi2c_instance )
 {
     fmpi2c_instance->CR2 |= FMPI2C_CR2_START;
