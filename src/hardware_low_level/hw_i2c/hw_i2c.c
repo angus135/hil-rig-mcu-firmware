@@ -46,6 +46,12 @@
 #define HW_I2C_CHANNEL_2_DMA_TX_CLEAR_FLAGS_MASK                                                   \
     ( DMA_HIFCR_CTCIF7 | DMA_HIFCR_CTEIF7 | DMA_HIFCR_CDMEIF7 | DMA_HIFCR_CFEIF7 )
 
+#define HW_I2C_EV_IRQ_CHANNEL_1 I2C1_EV_IRQHandler
+#define HW_I2C_EV_IRQ_CHANNEL_2 I2C2_EV_IRQHandler
+#define HW_I2C_EV_IRQ_FMPI2C1 FMPI2C1_EV_IRQHandler
+#define HW_I2C_DMA_RX_IRQ_CHANNEL_2 DMA1_Stream2_IRQHandler
+#define HW_I2C_DMA_TX_IRQ_CHANNEL_2 DMA1_Stream7_IRQHandler
+
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
@@ -1108,7 +1114,7 @@ void HW_I2C_Service_DMA_Tx_IRQ( HWI2CChannel_T channel )
 /**
  * @brief This function handles I2C1 event interrupt.
  */
-void I2C1_EV_IRQHandler( void )
+void HW_I2C_EV_IRQ_CHANNEL_1( void )
 {
     HW_I2C_Service_Event_IRQ( HW_I2C_CHANNEL_1 );
 }
@@ -1116,7 +1122,7 @@ void I2C1_EV_IRQHandler( void )
 /**
  * @brief This function handles I2C2 event interrupt.
  */
-void I2C2_EV_IRQHandler( void )
+void HW_I2C_EV_IRQ_CHANNEL_2( void )
 {
     HW_I2C_Service_Event_IRQ( HW_I2C_CHANNEL_2 );
 }
@@ -1124,7 +1130,7 @@ void I2C2_EV_IRQHandler( void )
 /**
  * @brief This function handles FMPI2C1 event interrupt.
  */
-void FMPI2C1_EV_IRQHandler( void )
+void HW_I2C_EV_IRQ_FMPI2C1( void )
 {
     HW_I2C_Service_Event_IRQ( HW_I2C_CHANNEL_FMPI2C1 );
 }
@@ -1132,7 +1138,7 @@ void FMPI2C1_EV_IRQHandler( void )
 /**
  * @brief This function handles DMA1 stream2 global interrupt.
  */
-void DMA1_Stream2_IRQHandler( void )
+void HW_I2C_DMA_RX_IRQ_CHANNEL_2( void )
 {
     HW_I2C_Service_DMA_Rx_IRQ( HW_I2C_CHANNEL_2 );
 }
@@ -1140,7 +1146,7 @@ void DMA1_Stream2_IRQHandler( void )
 /**
  * @brief This function handles DMA1 stream7 global interrupt.
  */
-void DMA1_Stream7_IRQHandler( void )
+void HW_I2C_DMA_TX_IRQ_CHANNEL_2( void )
 {
     HW_I2C_Service_DMA_Tx_IRQ( HW_I2C_CHANNEL_2 );
 }
