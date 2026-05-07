@@ -378,8 +378,8 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
         return;
     }
 
-    char* endptr = NULL;
-    long channel = strtol( argv[1], &endptr, 10 );
+    char* endptr  = NULL;
+    long  channel = strtol( argv[1], &endptr, 10 );
     if ( ( endptr == argv[1] ) || ( *endptr != '\0' ) )
     {
         CONSOLE_Printf( "Invalid channel\r\n" );
@@ -407,7 +407,8 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
         return;
     }
 
-    CONSOLE_Printf( "TX buffer before: %s\r\n", HW_SPI_Tx_Buffer_Empty( SPI_CHANNEL_0 ) ? "empty" : "not empty" );
+    CONSOLE_Printf( "TX buffer before: %s\r\n",
+                    HW_SPI_Tx_Buffer_Empty( SPI_CHANNEL_0 ) ? "empty" : "not empty" );
 
     if ( !EXEC_ANALOG_OUTPUT_Write_Voltage( ( uint8_t )channel, voltage ) )
     {
@@ -415,7 +416,8 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
         return;
     }
 
-    CONSOLE_Printf( "TX buffer after: %s\r\n", HW_SPI_Tx_Buffer_Empty( SPI_CHANNEL_0 ) ? "empty" : "not empty" );
+    CONSOLE_Printf( "TX buffer after: %s\r\n",
+                    HW_SPI_Tx_Buffer_Empty( SPI_CHANNEL_0 ) ? "empty" : "not empty" );
     CONSOLE_Printf( "Wrote (requested) %s V to channel %ld\r\n", argv[2], channel );
 }
 
@@ -659,7 +661,7 @@ static void CONSOLE_Command_UART_Loopback( uint16_t argc, char* argv[] )
     }
     else if ( strcmp( argv[1], "start" ) == 0 && argc >= 5U )
     {
-        HwUartChannel_T sender_ch = HW_UART_CHANNEL_1;
+        HwUartChannel_T sender_ch   = HW_UART_CHANNEL_1;
         HwUartChannel_T receiver_ch = HW_UART_CHANNEL_1;
         char            tx_text[EXEC_UART_MAX_CHUNK_SIZE];
         uint32_t        tx_length = 0U;
@@ -918,4 +920,3 @@ void CONSOLE_Command_Handler( uint16_t argc, char* argv[] )
 }
 
 #endif
-
