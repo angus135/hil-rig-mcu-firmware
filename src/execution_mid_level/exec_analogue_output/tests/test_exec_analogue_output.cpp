@@ -34,41 +34,42 @@ extern "C"
 #include <stdbool.h>
 }
 
-static constexpr std::array<std::array<uint8_t, 3U>, 11U> ANALOGUE_OUTPUT_STARTUP_FRAMES_EXTERNAL_VREF = {{
-    { 0x40U, 0xFFU, 0xFFU },
-    { 0x50U, 0x00U, 0x00U },
-    { 0x48U, 0xF0U, 0x00U },
-    { 0x00U, 0x00U, 0x00U },
-    { 0x08U, 0x00U, 0x00U },
-    { 0x10U, 0x00U, 0x00U },
-    { 0x18U, 0x00U, 0x00U },
-    { 0x20U, 0x00U, 0x00U },
-    { 0x28U, 0x00U, 0x00U },
-    { 0x30U, 0x00U, 0x00U },
-    { 0x38U, 0x00U, 0x00U },
-}};
+static constexpr std::array<std::array<uint8_t, 3U>, 11U>
+    ANALOGUE_OUTPUT_STARTUP_FRAMES_EXTERNAL_VREF = { {
+        { 0x40U, 0xFFU, 0xFFU },
+        { 0x50U, 0x00U, 0x00U },
+        { 0x48U, 0xF0U, 0x00U },
+        { 0x00U, 0x00U, 0x00U },
+        { 0x08U, 0x00U, 0x00U },
+        { 0x10U, 0x00U, 0x00U },
+        { 0x18U, 0x00U, 0x00U },
+        { 0x20U, 0x00U, 0x00U },
+        { 0x28U, 0x00U, 0x00U },
+        { 0x30U, 0x00U, 0x00U },
+        { 0x38U, 0x00U, 0x00U },
+    } };
 
-static constexpr std::array<std::array<uint8_t, 3U>, 11U> ANALOGUE_OUTPUT_STARTUP_FRAMES_INTERNAL_VREF = {{
-    { 0x40U, 0x00U, 0x00U },
-    { 0x50U, 0x00U, 0x00U },
-    { 0x48U, 0xF0U, 0x00U },
-    { 0x00U, 0x00U, 0x00U },
-    { 0x08U, 0x00U, 0x00U },
-    { 0x10U, 0x00U, 0x00U },
-    { 0x18U, 0x00U, 0x00U },
-    { 0x20U, 0x00U, 0x00U },
-    { 0x28U, 0x00U, 0x00U },
-    { 0x30U, 0x00U, 0x00U },
-    { 0x38U, 0x00U, 0x00U },
-}};
+static constexpr std::array<std::array<uint8_t, 3U>, 11U>
+    ANALOGUE_OUTPUT_STARTUP_FRAMES_INTERNAL_VREF = { {
+        { 0x40U, 0x00U, 0x00U },
+        { 0x50U, 0x00U, 0x00U },
+        { 0x48U, 0xF0U, 0x00U },
+        { 0x00U, 0x00U, 0x00U },
+        { 0x08U, 0x00U, 0x00U },
+        { 0x10U, 0x00U, 0x00U },
+        { 0x18U, 0x00U, 0x00U },
+        { 0x20U, 0x00U, 0x00U },
+        { 0x28U, 0x00U, 0x00U },
+        { 0x30U, 0x00U, 0x00U },
+        { 0x38U, 0x00U, 0x00U },
+    } };
 
 class MockHWSPI;
 
-static bool VerifySpiChannelSetupConfig( SPIPeripheral_T peripheral,
+static bool VerifySpiChannelSetupConfig( SPIPeripheral_T     peripheral,
                                          const HWSPIConfig_T configuration )
 {
-    EXPECT_TRUE( ( peripheral == SPI_CHANNEL_0 )
-                 && ( configuration.spi_mode == SPI_MASTER_MODE )
+    EXPECT_TRUE( ( peripheral == SPI_CHANNEL_0 ) && ( configuration.spi_mode == SPI_MASTER_MODE )
                  && ( configuration.data_size == SPI_SIZE_8_BIT )
                  && ( configuration.first_bit == SPI_FIRST_MSB )
                  && ( configuration.baud_rate == SPI_BAUD_2M813BIT )
@@ -78,15 +79,15 @@ static bool VerifySpiChannelSetupConfig( SPIPeripheral_T peripheral,
     return true;
 }
 
-static void VerifyLoadedFrame( SPIPeripheral_T peripheral, const uint8_t* data,
-                               uint32_t size_bytes, const std::array<uint8_t, 3U>& expected_frame )
+static void VerifyLoadedFrame( SPIPeripheral_T peripheral, const uint8_t* data, uint32_t size_bytes,
+                               const std::array<uint8_t, 3U>& expected_frame )
 {
     EXPECT_EQ( peripheral, SPI_CHANNEL_0 );
     EXPECT_EQ( size_bytes, 3U );
     EXPECT_EQ( 0, memcmp( data, expected_frame.data(), expected_frame.size() ) );
 }
 
-static void ExpectFrameLoad( MockHWSPI& mock_hw_spi,
+static void ExpectFrameLoad( MockHWSPI&                     mock_hw_spi,
                              const std::array<uint8_t, 3U>& expected_frame );
 
 /**-----------------------------------------------------------------------------
@@ -137,18 +138,16 @@ void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral )
 {
     g_mock_hw_spi->TxTrigger( peripheral );
 }
-
 }
 
-static void ExpectFrameLoad( MockHWSPI& mock_hw_spi,
-                             const std::array<uint8_t, 3U>& expected_frame )
+static void ExpectFrameLoad( MockHWSPI& mock_hw_spi, const std::array<uint8_t, 3U>& expected_frame )
 {
     using ::testing::_;
     using ::testing::Invoke;
 
     EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, _, 3U ) )
         .WillOnce( Invoke( [expected_frame]( SPIPeripheral_T peripheral, const uint8_t* data,
-                                            uint32_t size_bytes ) {
+                                             uint32_t size_bytes ) {
             VerifyLoadedFrame( peripheral, data, size_bytes, expected_frame );
             return true;
         } ) );
@@ -185,8 +184,7 @@ protected:
         using ::testing::_;
         using ::testing::Return;
 
-        EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, _, _ ) )
-            .WillOnce( Return( false ) );
+        EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, _, _ ) ).WillOnce( Return( false ) );
 
         bool result = EXEC_ANALOGUE_OUTPUT_Config( false );
 
@@ -200,8 +198,9 @@ protected:
         using ::testing::_;
         using ::testing::InSequence;
 
-        const auto& expected_frames = use_external_vref ? ANALOGUE_OUTPUT_STARTUP_FRAMES_EXTERNAL_VREF
-                                                        : ANALOGUE_OUTPUT_STARTUP_FRAMES_INTERNAL_VREF;
+        const auto& expected_frames = use_external_vref
+                                          ? ANALOGUE_OUTPUT_STARTUP_FRAMES_EXTERNAL_VREF
+                                          : ANALOGUE_OUTPUT_STARTUP_FRAMES_INTERNAL_VREF;
 
         InSequence sequence;
 
@@ -242,7 +241,7 @@ protected:
 
         EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, _, 3U ) )
             .WillOnce( Invoke( [expected_frame]( SPIPeripheral_T peripheral, const uint8_t* data,
-                                                uint32_t size_bytes ) {
+                                                 uint32_t size_bytes ) {
                 EXPECT_EQ( peripheral, SPI_CHANNEL_0 );
                 EXPECT_EQ( size_bytes, 3U );
                 EXPECT_EQ( 0, memcmp( data, expected_frame.data(), expected_frame.size() ) );
