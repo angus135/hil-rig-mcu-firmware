@@ -4,10 +4,17 @@
  *  Created:    20-Apr-2026
  *
  *  Description:
- *      <Short description of the module's purpose and responsibilities>
+ *      Low-level hardware I2C driver implementation. Manages I2C peripheral
+ *      configuration, state machines for master/slave operations, and interrupt/DMA
+ *      service routines. Uses ring-buffered receives and stage-buffered transmits.
  *
  *  Notes:
- *      <Any design notes, dependencies, or assumptions go here>
+ *      - Requires STM32F4xx HAL/LL driver libraries
+ *      - FMPI2C1 operates at 100 kHz with fixed timing register value
+ *      - I2C1 interrupt-only; I2C2 supports DMA; FMPI2C1 interrupt-only
+ *      - Receive buffers are 512 bytes; transmit stage is 256 bytes
+ *      - Not thread-safe; assumes single-threaded execution or external synchronization
+ *      - Interrupt handlers must be called from corresponding ISRs in stm32f4xx_it.c
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -637,6 +644,19 @@ static inline void HW_I2C_Service_Event_FMPI2C1( HWI2CChannelState_T* state )
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief Configure an external I2C channel (I2C1 or I2C2).
+ *
+ * Initializes an I2C channel with the specified configuration including mode
+ * (master/slave), speed (100 kHz / 400 kHz), and transfer path (interrupt/DMA).
+ * Must be called before any transfers on the channel.
+ *
+ * @param[in] channel       I2C channel to configure (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
+ * @param[in] config        Pointer to configuration structure. Must not be NULL.
+ *
+ * @return HW_I2C_STATUS_OK on success
+ * @return HW_I2C_STATUS_INVALID_PARAM if parameters are invalid or channel is not external
+ */
 HWI2CStatus_T HW_I2C_Configure_Channel( HWI2CChannel_T              channel,
                                           const HWI2CChannelConfig_T* config )
 {
@@ -697,6 +717,17 @@ HWI2CStatus_T HW_I2C_Configure_Channel( HWI2CChannel_T              channel,
     return HW_I2C_STATUS_OK;
 }
 
+/**
+ * @brief Configure the internal FMPI2C1 channel.
+ *
+ * Initializes the high-speed internal FMPI2C1 channel with a specified own address.
+ * Channel operates in master mode with interrupt-based transfer path.
+ *
+ * @param[in] own_address_7bit  7-bit own address for the channel (0x00-0x7F)
+ *
+ * @return HW_I2C_STATUS_OK on success
+ * @return HW_I2C_STATUS_INVALID_PARAM if address exceeds 7 bits
+ */
 HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
 {
     if ( own_address_7bit > 0x7FU )
@@ -739,6 +770,19 @@ HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
     return HW_I2C_STATUS_OK;
 }
 
+/**
+ * @brief Load data into the transmit stage buffer.
+ *
+ * Prepares data for transmission. Must be called before triggering a transmit.
+ * Cannot be called while a transfer is in progress on the channel.
+ *
+ * @param[in] channel  I2C channel
+ * @param[in] data     Pointer to data to transmit. May be NULL if length is 0.
+ * @param[in] length   Number of bytes to transmit (max HW_I2C_TX_STAGE_SIZE)
+ *
+ * @return true if data was loaded successfully
+ * @return false if transfer is in progress or length exceeds buffer size
+ */
 bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data,
                                uint16_t length )
 {
@@ -763,6 +807,18 @@ bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data,
     return true;
 }
 
+/**
+ * @brief Trigger a master transmit operation.
+ *
+ * Initiates an I2C master transmit to the specified device address using
+ * data previously loaded with HW_I2C_Load_Stage_Buffer().
+ *
+ * @param[in] channel               I2C channel
+ * @param[in] device_address_7bit   7-bit slave address to transmit to
+ *
+ * @return true if transfer was initiated successfully
+ * @return false if another transfer is already in progress
+ */
 bool HW_I2C_Trigger_Master_Transmit( HWI2CChannel_T channel,
                                      uint16_t         device_address_7bit )
 {
@@ -813,6 +869,20 @@ bool HW_I2C_Trigger_Master_Transmit( HWI2CChannel_T channel,
     return true;
 }
 
+/**
+ * @brief Trigger a master receive operation.
+ *
+ * Initiates an I2C master receive from the specified device address.
+ * Received data will be available via HW_I2C_Peek_Received() and consumed
+ * with HW_I2C_Consume_Received().
+ *
+ * @param[in] channel               I2C channel
+ * @param[in] device_address_7bit   7-bit slave address to receive from
+ * @param[in] expected_length       Number of bytes expected to receive
+ *
+ * @return true if transfer was initiated successfully
+ * @return false if another transfer is already in progress
+ */
 bool HW_I2C_Trigger_Master_Receive( HWI2CChannel_T channel,
                                     uint16_t         device_address_7bit,
                                     uint16_t         expected_length )
@@ -857,6 +927,17 @@ bool HW_I2C_Trigger_Master_Receive( HWI2CChannel_T channel,
     return true;
 }
 
+/**
+ * @brief Trigger a slave transmit operation.
+ *
+ * Prepares the channel to transmit data in slave mode when the master
+ * requests it. Data must be pre-loaded with HW_I2C_Load_Stage_Buffer().
+ *
+ * @param[in] channel  I2C channel
+ *
+ * @return true if transmit was prepared successfully
+ * @return false if another transfer is already in progress
+ */
 bool HW_I2C_Trigger_Slave_Transmit( HWI2CChannel_T channel )
 {
     HWI2CChannelState_T* state  = &hw_i2c_channel_state[channel];
@@ -896,6 +977,19 @@ bool HW_I2C_Trigger_Slave_Transmit( HWI2CChannel_T channel )
     return true;
 }
 
+/**
+ * @brief Trigger a slave receive operation.
+ *
+ * Prepares the channel to receive data in slave mode from a master.
+ * Received data will be available via HW_I2C_Peek_Received() and consumed
+ * with HW_I2C_Consume_Received().
+ *
+ * @param[in] channel           I2C channel
+ * @param[in] expected_length   Number of bytes expected to receive
+ *
+ * @return true if receive was prepared successfully
+ * @return false if another transfer is already in progress
+ */
 bool HW_I2C_Trigger_Slave_Receive( HWI2CChannel_T channel, uint16_t expected_length )
 {
     HWI2CChannelState_T* state  = &hw_i2c_channel_state[channel];
@@ -934,6 +1028,18 @@ bool HW_I2C_Trigger_Slave_Receive( HWI2CChannel_T channel, uint16_t expected_len
     return true;
 }
 
+/**
+ * @brief Peek at received data without consuming it.
+ *
+ * Provides zero-copy access to received data in the ring buffer via two
+ * spans (first and second), which may wrap around the buffer.
+ *
+ * @param[in]  channel  I2C channel
+ * @param[out] peek     Pointer to receive peek structure with first and second spans
+ *
+ * @return true on success
+ * @return false on failure
+ */
 bool HW_I2C_Peek_Received( HWI2CChannel_T channel, HWI2CRxPeek_T* peek )
 {
     HWI2CChannelState_T* state  = &hw_i2c_channel_state[channel];
@@ -971,6 +1077,18 @@ bool HW_I2C_Peek_Received( HWI2CChannel_T channel, HWI2CRxPeek_T* peek )
     return true;
 }
 
+/**
+ * @brief Consume received bytes from the ring buffer.
+ *
+ * Advances the tail pointer of the receive ring buffer to discard
+ * the specified number of bytes.
+ *
+ * @param[in] channel           I2C channel
+ * @param[in] bytes_to_consume  Number of bytes to consume
+ *
+ * @return true if bytes were consumed successfully
+ * @return false if bytes_to_consume exceeds available data
+ */
 bool HW_I2C_Consume_Received( HWI2CChannel_T channel, uint16_t bytes_to_consume )
 {
     HWI2CChannelState_T* state  = &hw_i2c_channel_state[channel];
@@ -985,6 +1103,14 @@ bool HW_I2C_Consume_Received( HWI2CChannel_T channel, uint16_t bytes_to_consume 
     return true;
 }
 
+/**
+ * @brief Service I2C event interrupt.
+ *
+ * Should be called from the I2C event interrupt handler for the channel.
+ * Manages state machine for master/slave operations and data transfers.
+ *
+ * @param[in] channel  I2C channel experiencing the event
+ */
 void HW_I2C_Service_Event_IRQ( HWI2CChannel_T channel )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
@@ -1007,6 +1133,14 @@ void HW_I2C_Service_Event_IRQ( HWI2CChannel_T channel )
     HW_I2C_Service_Event_External( channel, i2c_instance );
 }
 
+/**
+ * @brief Service I2C error interrupt.
+ *
+ * Should be called from the I2C error interrupt handler for the channel.
+ * Clears error flags and aborts any in-progress transfer.
+ *
+ * @param[in] channel  I2C channel with the error
+ */
 void HW_I2C_Service_Error_IRQ( HWI2CChannel_T channel )
 {
     if ( channel == HW_I2C_CHANNEL_FMPI2C1 )
@@ -1031,6 +1165,14 @@ void HW_I2C_Service_Error_IRQ( HWI2CChannel_T channel )
     }
 }
 
+/**
+ * @brief Service DMA receive interrupt.
+ *
+ * Should be called from the DMA stream interrupt handler for I2C receive.
+ * Transfers DMA-received data into the ring buffer and detects completion.
+ *
+ * @param[in] channel  I2C channel with pending DMA receive completion
+ */
 void HW_I2C_Service_DMA_Rx_IRQ( HWI2CChannel_T channel )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
@@ -1066,6 +1208,14 @@ void HW_I2C_Service_DMA_Rx_IRQ( HWI2CChannel_T channel )
     }
 }
 
+/**
+ * @brief Service DMA transmit interrupt.
+ *
+ * Should be called from the DMA stream interrupt handler for I2C transmit.
+ * Detects DMA transmit completion and updates transfer state.
+ *
+ * @param[in] channel  I2C channel with pending DMA transmit completion
+ */
 void HW_I2C_Service_DMA_Tx_IRQ( HWI2CChannel_T channel )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
