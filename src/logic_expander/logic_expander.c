@@ -215,7 +215,7 @@ LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_t devic
     // DELETING THIS BREAKS EXPANDER
     if ( !is_ok )
     {
-        return LOGIC_EXPANDER_I2C_STATUS_ERROR;
+        return LOGIC_EXPANDER_I2C_STATUS_BUSY;
     }
 
     is_ok = HW_I2C_Trigger_Master_Transmit( HW_I2C_CHANNEL_FMPI2C1, device_address_7bit );
