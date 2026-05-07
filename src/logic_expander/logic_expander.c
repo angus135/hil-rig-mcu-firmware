@@ -122,7 +122,6 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Write_Register_Pair( uint16_t device
                                                                  uint8_t  register_address,
                                                                  uint8_t  first_value,
                                                                  uint8_t  second_value );
-static inline LogicExpanderI2CStatus_T LOGIC_EXPANDER_From_HW_Status( HWI2CStatus_T status );
 static LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t* payload, uint16_t payload_length );
 
 /**-----------------------------------------------------------------------------
@@ -203,44 +202,24 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Write_Register_Pair( uint16_t device
                                                          ( uint16_t )sizeof( payload ) );
 }
 
-static inline LogicExpanderI2CStatus_T LOGIC_EXPANDER_From_HW_Status( HWI2CStatus_T status )
-{
-    switch ( status )
-    {
-        case HW_I2C_STATUS_OK:
-            return LOGIC_EXPANDER_I2C_STATUS_OK;
-        case HW_I2C_STATUS_BUSY:
-            return LOGIC_EXPANDER_I2C_STATUS_BUSY;
-        case HW_I2C_STATUS_INVALID_PARAM:
-        case HW_I2C_STATUS_NOT_CONFIGURED:
-            return LOGIC_EXPANDER_I2C_STATUS_INVALID_PARAM;
-        case HW_I2C_STATUS_OVERFLOW:
-            return LOGIC_EXPANDER_I2C_STATUS_OVERFLOW;
-        case HW_I2C_STATUS_ERROR:
-        default:
-            return LOGIC_EXPANDER_I2C_STATUS_ERROR;
-    }
-}
-
 LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t* payload,
                                                                   uint16_t payload_length )
 {
     if ( ( device_address_7bit > 0x7FU ) || ( payload == NULL ) || ( payload_length == 0U ) )
     {
-        return LOGIC_EXPANDER_STATUS_INVALID_PARAM;
+        return LOGIC_EXPANDER_I2C_STATUS_INVALID_PARAM;
     }
 
-    HWI2CStatus_T hw_status =
-        HW_I2C_Load_Stage_Buffer( HW_I2C_CHANNEL_FMPI2C1, payload, payload_length );
+    bool is_ok = HW_I2C_Load_Stage_Buffer( HW_I2C_CHANNEL_FMPI2C1, payload, payload_length );
 
     // DELETING THIS BREAKS EXPANDER
-    if ( hw_status != HW_I2C_STATUS_OK )
+    if ( !is_ok )
     {
-        return LOGIC_EXPANDER_From_HW_Status( hw_status );
+        return LOGIC_EXPANDER_I2C_STATUS_ERROR;
     }
 
-    hw_status = HW_I2C_Trigger_Master_Transmit( HW_I2C_CHANNEL_FMPI2C1, device_address_7bit );
-    return LOGIC_EXPANDER_From_HW_Status( hw_status );
+    is_ok = HW_I2C_Trigger_Master_Transmit( HW_I2C_CHANNEL_FMPI2C1, device_address_7bit );
+    return is_ok ? LOGIC_EXPANDER_I2C_STATUS_OK : LOGIC_EXPANDER_I2C_STATUS_ERROR;
 }
 
 /**-----------------------------------------------------------------------------

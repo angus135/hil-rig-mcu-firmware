@@ -68,24 +68,20 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
 
 EXECI2CStatus_T EXEC_I2C_Configuration_Internal( void );
 
-EXECI2CStatus_T EXEC_I2C_Master_Send( HWI2CChannel_T channel,
-                                      uint16_t device_address_7bit, const uint8_t* payload,
-                                      uint16_t payload_length );
-EXECI2CStatus_T EXEC_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t* payload,
-                                               uint16_t payload_length );
-EXECI2CStatus_T EXEC_I2C_Slave_Send( HWI2CChannel_T channel, const uint8_t* payload,
-                                     uint16_t payload_length );
+bool EXEC_I2C_Master_Send( HWI2CChannel_T channel, uint16_t device_address_7bit,
+                           const uint8_t* payload, uint16_t payload_length );
+bool EXEC_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t* payload,
+                                    uint16_t payload_length );
+bool EXEC_I2C_Slave_Send( HWI2CChannel_T channel, const uint8_t* payload,
+                          uint16_t payload_length );
 
-EXECI2CStatus_T EXEC_I2C_Start_Master_Receive( HWI2CChannel_T channel,
-                                               uint16_t                 device_address_7bit,
-                                               uint16_t                 expected_length );
-EXECI2CStatus_T EXEC_I2C_Start_Slave_Receive( HWI2CChannel_T channel,
-                                              uint16_t                 expected_length );
+bool EXEC_I2C_Start_Master_Receive( HWI2CChannel_T channel, uint16_t device_address_7bit,
+                                    uint16_t expected_length );
+bool EXEC_I2C_Start_Slave_Receive( HWI2CChannel_T channel, uint16_t expected_length );
 
-EXECI2CStatus_T EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel,
-                                                   uint8_t*                 result_storage,
-                                                   uint16_t                 result_storage_capacity,
-                                                   uint16_t*                bytes_copied );
+bool EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel, uint8_t* result_storage,
+                                        uint16_t result_storage_capacity,
+                                        uint16_t* bytes_copied );
 
 #ifdef __cplusplus
 }

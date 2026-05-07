@@ -175,67 +175,71 @@ EXECI2CStatus_T EXEC_I2C_Configuration_Internal( void )
         HW_I2C_Configure_Internal_FMPI2C1( EXEC_I2C_INTERNAL_FMPI2C1_OWN_ADDRESS_7BIT ) );
 }
 
-EXECI2CStatus_T EXEC_I2C_Master_Send( HWI2CChannel_T channel,
-                                      uint16_t device_address_7bit, const uint8_t* payload,
-                                      uint16_t payload_length )
+bool EXEC_I2C_Master_Send( HWI2CChannel_T channel, uint16_t device_address_7bit,
+                           const uint8_t* payload, uint16_t payload_length )
 {
-    HWI2CStatus_T hw_status = HW_I2C_Load_Stage_Buffer( channel, payload, payload_length );
-
-    hw_status = HW_I2C_Trigger_Master_Transmit( channel, device_address_7bit );
-    return EXEC_I2C_From_HW_Status( hw_status );
-}
-
-EXECI2CStatus_T EXEC_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t* payload,
-                                               uint16_t payload_length )
-{
-    HWI2CStatus_T hw_status =
-        HW_I2C_Load_Stage_Buffer( HW_I2C_CHANNEL_FMPI2C1, payload, payload_length );
-
-    // DELETING THIS BREAKS EXPANDER
-    if ( hw_status != HW_I2C_STATUS_OK )
+    bool is_ok = HW_I2C_Load_Stage_Buffer( channel, payload, payload_length );
+    if ( !is_ok )
     {
-        return EXEC_I2C_From_HW_Status( hw_status );
+        return false;
     }
 
-    hw_status = HW_I2C_Trigger_Master_Transmit( HW_I2C_CHANNEL_FMPI2C1, device_address_7bit );
-    return EXEC_I2C_From_HW_Status( hw_status );
+    is_ok = HW_I2C_Trigger_Master_Transmit( channel, device_address_7bit );
+    return is_ok;
 }
 
-EXECI2CStatus_T EXEC_I2C_Slave_Send( HWI2CChannel_T channel, const uint8_t* payload,
-                                     uint16_t payload_length )
+bool EXEC_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t* payload,
+                                    uint16_t payload_length )
 {
-    HWI2CStatus_T hw_status = HW_I2C_Load_Stage_Buffer( channel, payload, payload_length );
+    bool is_ok = HW_I2C_Load_Stage_Buffer( HW_I2C_CHANNEL_FMPI2C1, payload, payload_length );
 
-    hw_status = HW_I2C_Trigger_Slave_Transmit( channel );
-    return EXEC_I2C_From_HW_Status( hw_status );
+    // DELETING THIS BREAKS EXPANDER
+    if ( !is_ok )
+    {
+        return false;
+    }
+
+    is_ok = HW_I2C_Trigger_Master_Transmit( HW_I2C_CHANNEL_FMPI2C1, device_address_7bit );
+    return is_ok;
 }
 
-EXECI2CStatus_T EXEC_I2C_Start_Master_Receive( HWI2CChannel_T channel,
-                                               uint16_t                 device_address_7bit,
-                                               uint16_t                 expected_length )
+bool EXEC_I2C_Slave_Send( HWI2CChannel_T channel, const uint8_t* payload,
+                          uint16_t payload_length )
 {
-    return EXEC_I2C_From_HW_Status(
-        HW_I2C_Trigger_Master_Receive( channel, device_address_7bit, expected_length ) );
+    bool is_ok = HW_I2C_Load_Stage_Buffer( channel, payload, payload_length );
+    if ( !is_ok )
+    {
+        return false;
+    }
+
+    is_ok = HW_I2C_Trigger_Slave_Transmit( channel );
+    return is_ok;
 }
 
-EXECI2CStatus_T EXEC_I2C_Start_Slave_Receive( HWI2CChannel_T channel,
-                                              uint16_t                 expected_length )
+bool EXEC_I2C_Start_Master_Receive( HWI2CChannel_T channel, uint16_t device_address_7bit,
+                                    uint16_t expected_length )
 {
-    return EXEC_I2C_From_HW_Status( HW_I2C_Trigger_Slave_Receive( channel, expected_length ) );
+    bool is_ok = HW_I2C_Trigger_Master_Receive( channel, device_address_7bit, expected_length );
+    return is_ok;
 }
 
-EXECI2CStatus_T EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel,
-                                                   uint8_t*                 result_storage,
-                                                   uint16_t                 result_storage_capacity,
-                                                   uint16_t*                bytes_copied )
+bool EXEC_I2C_Start_Slave_Receive( HWI2CChannel_T channel, uint16_t expected_length )
+{
+    bool is_ok = HW_I2C_Trigger_Slave_Receive( channel, expected_length );
+    return is_ok;
+}
+
+bool EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel, uint8_t* result_storage,
+                                        uint16_t result_storage_capacity,
+                                        uint16_t* bytes_copied )
 {
     *bytes_copied = 0U;
 
     HWI2CRxPeek_T peek      = { 0 };
-    HWI2CStatus_T hw_status = HW_I2C_Peek_Received( channel, &peek );
-    if ( hw_status != HW_I2C_STATUS_OK )
+    bool is_ok = HW_I2C_Peek_Received( channel, &peek );
+    if ( !is_ok )
     {
-        return EXEC_I2C_From_HW_Status( hw_status );
+        return false;
     }
 
     uint16_t bytes_to_copy = peek.total_length;
@@ -257,12 +261,12 @@ EXECI2CStatus_T EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel,
         ++copied;
     }
 
-    hw_status = HW_I2C_Consume_Received( channel, copied );
-    if ( hw_status != HW_I2C_STATUS_OK )
+    is_ok = HW_I2C_Consume_Received( channel, copied );
+    if ( !is_ok )
     {
-        return EXEC_I2C_From_HW_Status( hw_status );
+        return false;
     }
 
     *bytes_copied = copied;
-    return EXEC_I2C_From_HW_Status( hw_status );
+    return true;
 }
