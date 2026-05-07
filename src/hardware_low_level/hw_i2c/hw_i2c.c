@@ -121,10 +121,11 @@ static inline uint32_t            HWI2CChannel_To_DMA_Channel_Bits( HWI2CChannel
 static inline uint32_t            HWI2CSpeed_To_Hz( HWI2CSpeed_T speed );
 static inline void                HW_I2C_Enable_Clock_For_Channel( HWI2CChannel_T channel );
 static inline void                HW_I2C_Disable_All_Runtime_Irq_Bits( I2C_TypeDef* i2c_instance );
+static inline void                HW_I2C_Disable_DMA_Request( I2C_TypeDef* i2c_instance );
 static inline void HW_I2C_Set_Speed_And_Address( I2C_TypeDef* i2c_instance, HWI2CSpeed_T speed,
                                                  uint16_t own_address_7bit );
 static inline void HW_I2C_Prepare_Interrupt_Path( I2C_TypeDef* i2c_instance );
-static inline void HW_I2C_Prepare_DMA_Path( I2C_TypeDef* i2c_instance );
+static inline void HW_I2C_Prepare_DMA_Path( I2C_TypeDef* i2c_instance, HWI2CTransferKind_T transfer_kind );
 static inline void HW_I2C_Start_Master_Transfer( I2C_TypeDef*          i2c_instance,
                                                  HWI2CTransferKind_T transfer_kind,
                                                  bool                  use_dma );
@@ -310,61 +311,51 @@ static inline void HW_I2C_Enable_Clock_For_Channel( HWI2CChannel_T channel )
 
 static inline void HW_I2C_Disable_All_Runtime_Irq_Bits( I2C_TypeDef* i2c_instance )
 {
-    i2c_instance->CR2 &= ~( I2C_CR2_ITERREN | I2C_CR2_ITEVTEN | I2C_CR2_ITBUFEN );
+    LL_I2C_DisableIT_ERR( i2c_instance );
+    LL_I2C_DisableIT_EVT( i2c_instance );
+    LL_I2C_DisableIT_BUF( i2c_instance );
+}
+
+static inline void HW_I2C_Disable_DMA_Request( I2C_TypeDef* i2c_instance )
+{
+    LL_I2C_DisableDMAReq_TX( i2c_instance );
+    LL_I2C_DisableDMAReq_RX( i2c_instance );
 }
 
 static inline void HW_I2C_Set_Speed_And_Address( I2C_TypeDef* i2c_instance, HWI2CSpeed_T speed,
                                                  uint16_t own_address_7bit )
 {
-    const uint32_t pclk_mhz       = HW_I2C_APB1_HZ / 1000000UL;
-    const uint32_t speed_hz       = HWI2CSpeed_To_Hz( speed );
-    uint32_t       ccr_register   = 0UL;
-    uint32_t       trise_register = 0UL;
-
-    i2c_instance->CR1 &= ~I2C_CR1_PE;
-
-    i2c_instance->CR2 &= ~I2C_CR2_FREQ;
-    i2c_instance->CR2 |= ( pclk_mhz & I2C_CR2_FREQ );
-
-    if ( speed == HW_I2C_SPEED_400KHZ )
-    {
-        uint32_t ccr_value = HW_I2C_APB1_HZ / ( speed_hz * 3UL );
-        if ( ccr_value < 1UL )
-        {
-            ccr_value = 1UL;
-        }
-        ccr_register   = I2C_CCR_FS | ( ccr_value & I2C_CCR_CCR );
-        trise_register = ( ( pclk_mhz * 300UL ) / 1000UL ) + 1UL;
-    }
-    else
-    {
-        uint32_t ccr_value = HW_I2C_APB1_HZ / ( speed_hz * 2UL );
-        if ( ccr_value < 4UL )
-        {
-            ccr_value = 4UL;
-        }
-        ccr_register   = ( ccr_value & I2C_CCR_CCR );
-        trise_register = pclk_mhz + 1UL;
-    }
-
-    i2c_instance->CCR   = ccr_register;
-    i2c_instance->TRISE = ( trise_register & I2C_TRISE_TRISE );
-    i2c_instance->OAR1  = I2C_OAR1_ADDMODE | ( ( uint32_t )own_address_7bit << 1U );
-
-    i2c_instance->CR1 |= I2C_CR1_PE;
+    LL_I2C_Disable( i2c_instance );
+    LL_I2C_SetPeriphClock( i2c_instance, HW_I2C_APB1_HZ );
+    LL_I2C_ConfigSpeed( i2c_instance, HW_I2C_APB1_HZ, HWI2CSpeed_To_Hz( speed ), LL_I2C_DUTYCYCLE_2 );
+    LL_I2C_SetOwnAddress1( i2c_instance, ( uint32_t )own_address_7bit << 1U, LL_I2C_OWNADDRESS1_7BIT );
+    LL_I2C_Enable( i2c_instance );
 }
 
 static inline void HW_I2C_Prepare_Interrupt_Path( I2C_TypeDef* i2c_instance )
 {
-    i2c_instance->CR2 &= ~I2C_CR2_DMAEN;
-    i2c_instance->CR2 |= ( I2C_CR2_ITERREN | I2C_CR2_ITEVTEN | I2C_CR2_ITBUFEN );
+    HW_I2C_Disable_DMA_Request( i2c_instance );
+    LL_I2C_EnableIT_ERR( i2c_instance );
+    LL_I2C_EnableIT_EVT( i2c_instance );
+    LL_I2C_EnableIT_BUF( i2c_instance );
 }
 
-static inline void HW_I2C_Prepare_DMA_Path( I2C_TypeDef* i2c_instance )
+static inline void HW_I2C_Prepare_DMA_Path( I2C_TypeDef* i2c_instance,
+                                            HWI2CTransferKind_T transfer_kind )
 {
-    i2c_instance->CR2 |= ( I2C_CR2_ITERREN | I2C_CR2_ITEVTEN );
-    i2c_instance->CR2 &= ~I2C_CR2_ITBUFEN;
-    i2c_instance->CR2 |= I2C_CR2_DMAEN;
+    LL_I2C_EnableIT_ERR( i2c_instance );
+    LL_I2C_EnableIT_EVT( i2c_instance );
+    LL_I2C_DisableIT_BUF( i2c_instance );
+
+    if ( ( transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_RX )
+         || ( transfer_kind == HW_I2C_TRANSFER_KIND_SLAVE_RX ) )
+    {
+        LL_I2C_EnableDMAReq_RX( i2c_instance );
+    }
+    else
+    {
+        LL_I2C_EnableDMAReq_TX( i2c_instance );
+    }
 }
 
 static inline void HW_I2C_Start_Master_Transfer( I2C_TypeDef*          i2c_instance,
@@ -372,19 +363,19 @@ static inline void HW_I2C_Start_Master_Transfer( I2C_TypeDef*          i2c_insta
 {
     if ( transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_RX )
     {
-        i2c_instance->CR1 |= I2C_CR1_ACK;
+        LL_I2C_AcknowledgeNextData( i2c_instance, LL_I2C_ACK );
     }
 
     if ( use_dma )
     {
-        HW_I2C_Prepare_DMA_Path( i2c_instance );
+        HW_I2C_Prepare_DMA_Path( i2c_instance, transfer_kind );
     }
     else
     {
         HW_I2C_Prepare_Interrupt_Path( i2c_instance );
     }
 
-    i2c_instance->CR1 |= I2C_CR1_START;
+    LL_I2C_GenerateStartCondition( i2c_instance );
 }
 
 static inline void HW_I2C_Finish_Transfer( HWI2CChannel_T channel, I2C_TypeDef* i2c_instance )
@@ -394,7 +385,7 @@ static inline void HW_I2C_Finish_Transfer( HWI2CChannel_T channel, I2C_TypeDef* 
     if ( state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_TX
          || state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_RX )
     {
-        i2c_instance->CR1 |= I2C_CR1_STOP;
+        LL_I2C_GenerateStopCondition( i2c_instance );
     }
 
     if ( state->config.tx_transfer_path == HW_I2C_TRANSFER_DMA
@@ -410,7 +401,7 @@ static inline void HW_I2C_Finish_Transfer( HWI2CChannel_T channel, I2C_TypeDef* 
         {
             tx_stream->CR &= ~DMA_SxCR_EN;
         }
-        i2c_instance->CR2 &= ~I2C_CR2_DMAEN;
+        HW_I2C_Disable_DMA_Request( i2c_instance );
     }
 
     HW_I2C_Disable_All_Runtime_Irq_Bits( i2c_instance );
@@ -509,7 +500,7 @@ static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
         {
             if ( state->rx_expected_length <= 1U )
             {
-                i2c_instance->CR1 &= ~I2C_CR1_ACK;
+                LL_I2C_AcknowledgeNextData( i2c_instance, LL_I2C_NACK );
             }
         }
         return;
@@ -560,8 +551,8 @@ static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
             if ( ( state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_RX )
                  && ( state->rx_expected_length <= 1U ) )
             {
-                i2c_instance->CR1 &= ~I2C_CR1_ACK;
-                i2c_instance->CR1 |= I2C_CR1_STOP;
+                LL_I2C_AcknowledgeNextData( i2c_instance, LL_I2C_NACK );
+                LL_I2C_GenerateStopCondition( i2c_instance );
             }
 
             if ( state->rx_expected_length == 0U )
@@ -574,9 +565,7 @@ static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
 
     if ( ( sr1 & I2C_SR1_STOPF ) != 0U )
     {
-        volatile uint32_t clear_stop = i2c_instance->SR1;
-        i2c_instance->CR1 |= I2C_CR1_PE;
-        ( void )clear_stop;
+        LL_I2C_ClearFlag_STOP( i2c_instance );
         HW_I2C_Finish_Transfer( channel, i2c_instance );
     }
 }
@@ -607,7 +596,7 @@ static inline void HW_I2C_Service_Event_FMPI2C1( HWI2CChannelState_T* state )
 
     if ( ( isr & FMPI2C_ISR_STOPF ) != 0U )
     {
-        FMPI2C1->ICR                = FMPI2C_ICR_STOPCF;
+        LL_FMPI2C_ClearFlag_STOP( FMPI2C1 );
         state->transfer_in_progress = false;
         state->transfer_kind        = HW_I2C_TRANSFER_KIND_IDLE;
         return;
@@ -615,12 +604,12 @@ static inline void HW_I2C_Service_Event_FMPI2C1( HWI2CChannelState_T* state )
 
     if ( ( isr & FMPI2C_ISR_TC ) != 0U )
     {
-        FMPI2C1->CR2 |= FMPI2C_CR2_STOP;
+        LL_FMPI2C_GenerateStopCondition( FMPI2C1 );
     }
 
     if ( ( isr & FMPI2C_ISR_NACKF ) != 0U )
     {
-        FMPI2C1->ICR                = FMPI2C_ICR_NACKCF;
+        LL_FMPI2C_ClearFlag_NACK( FMPI2C1 );
         state->transfer_in_progress = false;
         state->transfer_kind        = HW_I2C_TRANSFER_KIND_IDLE;
     }
@@ -628,8 +617,10 @@ static inline void HW_I2C_Service_Event_FMPI2C1( HWI2CChannelState_T* state )
     if ( ( isr & ( FMPI2C_ISR_BERR | FMPI2C_ISR_ARLO | FMPI2C_ISR_OVR | FMPI2C_ISR_TIMEOUT ) )
          != 0U )
     {
-        FMPI2C1->ICR =
-            FMPI2C_ICR_BERRCF | FMPI2C_ICR_ARLOCF | FMPI2C_ICR_OVRCF | FMPI2C_ICR_TIMOUTCF;
+        LL_FMPI2C_ClearFlag_BERR( FMPI2C1 );
+        LL_FMPI2C_ClearFlag_ARLO( FMPI2C1 );
+        LL_FMPI2C_ClearFlag_OVR( FMPI2C1 );
+        LL_FMPI2C_ClearSMBusFlag_TIMEOUT( FMPI2C1 );
         state->transfer_in_progress = false;
         state->transfer_kind        = HW_I2C_TRANSFER_KIND_IDLE;
     }
@@ -671,21 +662,28 @@ HWI2CStatus_T HW_I2C_Configure_Channel( HWI2CChannel_T              channel,
 
     if ( config->mode == HW_I2C_MODE_SLAVE )
     {
-        i2c_instance->CR1 |= I2C_CR1_ACK;
+        LL_I2C_AcknowledgeNextData( i2c_instance, LL_I2C_ACK );
     }
     else
     {
-        i2c_instance->CR1 &= ~I2C_CR1_ACK;
+        LL_I2C_AcknowledgeNextData( i2c_instance, LL_I2C_NACK );
     }
 
     if ( config->tx_transfer_path == HW_I2C_TRANSFER_DMA
          || config->rx_transfer_path == HW_I2C_TRANSFER_DMA )
     {
-        i2c_instance->CR2 |= I2C_CR2_DMAEN;
+        if ( config->rx_transfer_path == HW_I2C_TRANSFER_DMA )
+        {
+            LL_I2C_EnableDMAReq_RX( i2c_instance );
+        }
+        else
+        {
+            LL_I2C_EnableDMAReq_TX( i2c_instance );
+        }
     }
     else
     {
-        i2c_instance->CR2 &= ~I2C_CR2_DMAEN;
+        HW_I2C_Disable_DMA_Request( i2c_instance );
     }
 
     HW_I2C_Disable_All_Runtime_Irq_Bits( i2c_instance );
@@ -718,11 +716,12 @@ HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
     state->config.own_address_7bit  = own_address_7bit;
     HW_I2C_Enable_Clock_For_Channel( HW_I2C_CHANNEL_FMPI2C1 );
 
-    FMPI2C1->CR1 &= ~FMPI2C_CR1_PE;
-    FMPI2C1->TIMINGR = FMPI2C1_TIMINGR;
-    FMPI2C1->OAR1    = ( ( uint32_t )own_address_7bit << 1U ) | FMPI2C_OAR1_OA1EN;
-    FMPI2C1->CR1     = FMPI2C_CR1_PE | FMPI2C_CR1_TXIE | FMPI2C_CR1_RXIE | FMPI2C_CR1_TCIE
-                   | FMPI2C_CR1_STOPIE | FMPI2C_CR1_ERRIE;
+    LL_FMPI2C_Disable( FMPI2C1 );
+    LL_FMPI2C_SetTiming( FMPI2C1, FMPI2C1_TIMINGR );
+    LL_FMPI2C_SetOwnAddress1( FMPI2C1, ( uint32_t )own_address_7bit << 1U,
+                              LL_FMPI2C_OWNADDRESS1_7BIT );
+    LL_FMPI2C_EnableOwnAddress1( FMPI2C1 );
+    LL_FMPI2C_Enable( FMPI2C1 );
 
     return HW_I2C_STATUS_OK;
 }
@@ -782,9 +781,7 @@ bool HW_I2C_Trigger_Master_Transmit( HWI2CChannel_T channel,
     }
     else
     {
-        FMPI2C1->CR2 = ( ( uint32_t )device_address_7bit << 1U )
-                       | ( ( uint32_t )state->tx_stage_length << FMPI2C_CR2_NBYTES_Pos )
-                       | FMPI2C_CR2_START | FMPI2C_CR2_AUTOEND;
+        LL_FMPI2C_GenerateStartCondition( FMPI2C1 );
     }
 
     return true;
@@ -825,9 +822,7 @@ bool HW_I2C_Trigger_Master_Receive( HWI2CChannel_T channel,
     }
     else
     {
-        FMPI2C1->CR2 = ( ( uint32_t )device_address_7bit << 1U ) | FMPI2C_CR2_RD_WRN
-                       | ( ( uint32_t )expected_length << FMPI2C_CR2_NBYTES_Pos ) | FMPI2C_CR2_START
-                       | FMPI2C_CR2_AUTOEND;
+        LL_FMPI2C_GenerateStartCondition( FMPI2C1 );
     }
 
     return true;
@@ -859,14 +854,14 @@ bool HW_I2C_Trigger_Slave_Transmit( HWI2CChannel_T channel )
                                          true, ( uint32_t )( uintptr_t )&i2c_instance->DR,
                                          ( uint32_t )( uintptr_t )state->tx_stage_buffer,
                                          state->tx_stage_length );
-            HW_I2C_Prepare_DMA_Path( i2c_instance );
+            HW_I2C_Prepare_DMA_Path( i2c_instance, state->transfer_kind );
         }
         else
         {
             HW_I2C_Prepare_Interrupt_Path( i2c_instance );
         }
 
-        i2c_instance->CR1 |= I2C_CR1_ACK;
+        LL_I2C_AcknowledgeNextData( i2c_instance, LL_I2C_ACK );
     }
 
     return true;
@@ -897,14 +892,14 @@ bool HW_I2C_Trigger_Slave_Receive( HWI2CChannel_T channel, uint16_t expected_len
                                          false, ( uint32_t )( uintptr_t )&i2c_instance->DR,
                                          ( uint32_t )( uintptr_t )state->dma_rx_linear_buffer,
                                          expected_length );
-            HW_I2C_Prepare_DMA_Path( i2c_instance );
+            HW_I2C_Prepare_DMA_Path( i2c_instance, state->transfer_kind );
         }
         else
         {
             HW_I2C_Prepare_Interrupt_Path( i2c_instance );
         }
 
-        i2c_instance->CR1 |= I2C_CR1_ACK;
+        LL_I2C_AcknowledgeNextData( i2c_instance, LL_I2C_ACK );
     }
 
     return true;
