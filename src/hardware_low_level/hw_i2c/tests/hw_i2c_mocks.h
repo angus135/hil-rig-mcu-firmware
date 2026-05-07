@@ -175,6 +175,268 @@ static FMPI2C_TypeDef     hw_i2c_mock_fmpi2c1 = { 0 };
 #define FMPI2C_ICR_OVRCF ( 1U << 10 )
 #define FMPI2C_ICR_TIMOUTCF ( 1U << 12 )
 
+#define LL_I2C_ACK ( I2C_CR1_ACK )
+#define LL_I2C_NACK ( 0U )
+#define LL_I2C_OWNADDRESS1_7BIT ( 0x00004000U )
+#define LL_I2C_DUTYCYCLE_2 ( 0x00000000U )
+#define LL_FMPI2C_OWNADDRESS1_7BIT ( 0x00000000U )
+
+static inline void LL_I2C_Disable( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR1 &= ~I2C_CR1_PE;
+}
+
+static inline void LL_I2C_Enable( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR1 |= I2C_CR1_PE;
+}
+
+static inline void LL_I2C_SetPeriphClock( I2C_TypeDef* i2c_instance, uint32_t PeriphClock )
+{
+    i2c_instance->CR2 = ( i2c_instance->CR2 & ~I2C_CR2_FREQ ) | ( ( PeriphClock / 1000000U ) & I2C_CR2_FREQ );
+}
+
+static inline void LL_I2C_SetClockPeriod( I2C_TypeDef* i2c_instance, uint32_t ClockPeriod )
+{
+    i2c_instance->CCR = ( i2c_instance->CCR & ~I2C_CCR_CCR ) | ( ClockPeriod & I2C_CCR_CCR );
+}
+
+static inline void LL_I2C_SetRiseTime( I2C_TypeDef* i2c_instance, uint32_t RiseTime )
+{
+    i2c_instance->TRISE = RiseTime & I2C_TRISE_TRISE;
+}
+
+static inline void LL_I2C_SetOwnAddress1( I2C_TypeDef* i2c_instance, uint32_t OwnAddress1,
+                                          uint32_t OwnAddrSize )
+{
+    i2c_instance->OAR1 = OwnAddress1 | OwnAddrSize;
+}
+
+static inline void LL_I2C_ConfigSpeed( I2C_TypeDef* i2c_instance, uint32_t PeriphClock,
+                                       uint32_t ClockSpeed, uint32_t DutyCycle )
+{
+    const uint32_t pclk_mhz = PeriphClock / 1000000U;
+
+    i2c_instance->CR2 = ( i2c_instance->CR2 & ~I2C_CR2_FREQ ) | ( pclk_mhz & I2C_CR2_FREQ );
+
+    if ( ClockSpeed > 100000U )
+    {
+        uint32_t ccr_value = PeriphClock / ( ClockSpeed * 3U );
+        if ( ccr_value < 1U )
+        {
+            ccr_value = 1U;
+        }
+        i2c_instance->CCR = I2C_CCR_FS | ( ccr_value & I2C_CCR_CCR ) | DutyCycle;
+        i2c_instance->TRISE = ( ( pclk_mhz * 300U ) / 1000U + 1U ) & I2C_TRISE_TRISE;
+    }
+    else
+    {
+        uint32_t ccr_value = PeriphClock / ( ClockSpeed * 2U );
+        if ( ccr_value < 4U )
+        {
+            ccr_value = 4U;
+        }
+        i2c_instance->CCR = ccr_value & I2C_CCR_CCR;
+        i2c_instance->TRISE = ( pclk_mhz + 1U ) & I2C_TRISE_TRISE;
+    }
+}
+
+static inline void LL_I2C_EnableIT_ERR( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR2 |= I2C_CR2_ITERREN;
+}
+
+static inline void LL_I2C_DisableIT_ERR( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR2 &= ~I2C_CR2_ITERREN;
+}
+
+static inline void LL_I2C_EnableIT_EVT( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR2 |= I2C_CR2_ITEVTEN;
+}
+
+static inline void LL_I2C_DisableIT_EVT( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR2 &= ~I2C_CR2_ITEVTEN;
+}
+
+static inline void LL_I2C_EnableIT_BUF( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR2 |= I2C_CR2_ITBUFEN;
+}
+
+static inline void LL_I2C_DisableIT_BUF( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR2 &= ~I2C_CR2_ITBUFEN;
+}
+
+static inline void LL_I2C_EnableIT_TX( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR2 |= ( I2C_CR2_ITEVTEN | I2C_CR2_ITBUFEN );
+}
+
+static inline void LL_I2C_DisableIT_TX( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR2 &= ~( I2C_CR2_ITEVTEN | I2C_CR2_ITBUFEN );
+}
+
+static inline void LL_I2C_EnableIT_RX( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR2 |= ( I2C_CR2_ITEVTEN | I2C_CR2_ITBUFEN );
+}
+
+static inline void LL_I2C_DisableIT_RX( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR2 &= ~( I2C_CR2_ITEVTEN | I2C_CR2_ITBUFEN );
+}
+
+static inline void LL_I2C_EnableDMAReq_TX( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR2 |= I2C_CR2_DMAEN;
+}
+
+static inline void LL_I2C_DisableDMAReq_TX( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR2 &= ~I2C_CR2_DMAEN;
+}
+
+static inline void LL_I2C_EnableDMAReq_RX( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR2 |= I2C_CR2_DMAEN;
+}
+
+static inline void LL_I2C_DisableDMAReq_RX( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR2 &= ~I2C_CR2_DMAEN;
+}
+
+static inline void LL_I2C_AcknowledgeNextData( I2C_TypeDef* i2c_instance, uint32_t TypeAcknowledge )
+{
+    if ( TypeAcknowledge == LL_I2C_ACK )
+    {
+        i2c_instance->CR1 |= I2C_CR1_ACK;
+    }
+    else
+    {
+        i2c_instance->CR1 &= ~I2C_CR1_ACK;
+    }
+}
+
+static inline void LL_I2C_GenerateStartCondition( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR1 |= I2C_CR1_START;
+}
+
+static inline void LL_I2C_GenerateStopCondition( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->CR1 |= I2C_CR1_STOP;
+}
+
+static inline void LL_I2C_ClearFlag_ADDR( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->SR1 &= ~I2C_SR1_ADDR;
+    ( void )i2c_instance->SR2;
+}
+
+static inline void LL_I2C_ClearFlag_STOP( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->SR1 &= ~I2C_SR1_STOPF;
+    i2c_instance->CR1 |= I2C_CR1_PE;
+}
+
+static inline void LL_I2C_ClearFlag_AF( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->SR1 &= ~I2C_SR1_AF;
+}
+
+static inline void LL_I2C_ClearFlag_BERR( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->SR1 &= ~I2C_SR1_BERR;
+}
+
+static inline void LL_I2C_ClearFlag_ARLO( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->SR1 &= ~I2C_SR1_ARLO;
+}
+
+static inline void LL_I2C_ClearFlag_OVR( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->SR1 &= ~I2C_SR1_OVR;
+}
+
+static inline void LL_FMPI2C_Enable( FMPI2C_TypeDef* fmpi2c_instance )
+{
+    fmpi2c_instance->CR1 |= FMPI2C_CR1_PE;
+}
+
+static inline void LL_FMPI2C_Disable( FMPI2C_TypeDef* fmpi2c_instance )
+{
+    fmpi2c_instance->CR1 &= ~FMPI2C_CR1_PE;
+}
+
+static inline void LL_FMPI2C_SetTiming( FMPI2C_TypeDef* fmpi2c_instance, uint32_t Timing )
+{
+    fmpi2c_instance->TIMINGR = Timing;
+}
+
+static inline void LL_FMPI2C_SetOwnAddress1( FMPI2C_TypeDef* fmpi2c_instance, uint32_t OwnAddress1,
+                                             uint32_t OwnAddrSize )
+{
+    fmpi2c_instance->OAR1 = OwnAddress1 | OwnAddrSize;
+}
+
+static inline void LL_FMPI2C_EnableOwnAddress1( FMPI2C_TypeDef* fmpi2c_instance )
+{
+    fmpi2c_instance->OAR1 |= FMPI2C_OAR1_OA1EN;
+}
+
+static inline void LL_FMPI2C_GenerateStartCondition( FMPI2C_TypeDef* fmpi2c_instance )
+{
+    fmpi2c_instance->CR2 |= FMPI2C_CR2_START;
+}
+
+static inline void LL_FMPI2C_GenerateStopCondition( FMPI2C_TypeDef* fmpi2c_instance )
+{
+    fmpi2c_instance->CR2 |= FMPI2C_CR2_STOP;
+}
+
+static inline void LL_FMPI2C_ClearFlag_STOP( FMPI2C_TypeDef* fmpi2c_instance )
+{
+    fmpi2c_instance->ISR &= ~FMPI2C_ISR_STOPF;
+    fmpi2c_instance->ICR |= FMPI2C_ICR_STOPCF;
+}
+
+static inline void LL_FMPI2C_ClearFlag_NACK( FMPI2C_TypeDef* fmpi2c_instance )
+{
+    fmpi2c_instance->ISR &= ~FMPI2C_ISR_NACKF;
+    fmpi2c_instance->ICR |= FMPI2C_ICR_NACKCF;
+}
+
+static inline void LL_FMPI2C_ClearFlag_BERR( FMPI2C_TypeDef* fmpi2c_instance )
+{
+    fmpi2c_instance->ISR &= ~FMPI2C_ISR_BERR;
+    fmpi2c_instance->ICR |= FMPI2C_ICR_BERRCF;
+}
+
+static inline void LL_FMPI2C_ClearFlag_ARLO( FMPI2C_TypeDef* fmpi2c_instance )
+{
+    fmpi2c_instance->ISR &= ~FMPI2C_ISR_ARLO;
+    fmpi2c_instance->ICR |= FMPI2C_ICR_ARLOCF;
+}
+
+static inline void LL_FMPI2C_ClearFlag_OVR( FMPI2C_TypeDef* fmpi2c_instance )
+{
+    fmpi2c_instance->ISR &= ~FMPI2C_ISR_OVR;
+    fmpi2c_instance->ICR |= FMPI2C_ICR_OVRCF;
+}
+
+static inline void LL_FMPI2C_ClearSMBusFlag_TIMEOUT( FMPI2C_TypeDef* fmpi2c_instance )
+{
+    fmpi2c_instance->ISR &= ~FMPI2C_ISR_TIMEOUT;
+    fmpi2c_instance->ICR |= FMPI2C_ICR_TIMOUTCF;
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
