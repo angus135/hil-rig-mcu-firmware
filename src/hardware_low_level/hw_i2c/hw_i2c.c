@@ -1105,20 +1105,12 @@ void HW_I2C_Service_DMA_Tx_IRQ( HWI2CChannel_T channel )
     }
 }
 
-/* last-error reporting removed; callers should rely on boolean success/failure */
-
 /**
  * @brief This function handles I2C1 event interrupt.
  */
 void I2C1_EV_IRQHandler( void )
 {
-    /* USER CODE BEGIN I2C1_EV_IRQn 0 */
     HW_I2C_Service_Event_IRQ( HW_I2C_CHANNEL_1 );
-    /* USER CODE END I2C1_EV_IRQn 0 */
-
-    /* USER CODE BEGIN I2C1_EV_IRQn 1 */
-
-    /* USER CODE END I2C1_EV_IRQn 1 */
 }
 
 /**
@@ -1126,13 +1118,7 @@ void I2C1_EV_IRQHandler( void )
  */
 void I2C2_EV_IRQHandler( void )
 {
-    /* USER CODE BEGIN I2C2_EV_IRQn 0 */
     HW_I2C_Service_Event_IRQ( HW_I2C_CHANNEL_2 );
-    /* USER CODE END I2C2_EV_IRQn 0 */
-
-    /* USER CODE BEGIN I2C2_EV_IRQn 1 */
-
-    /* USER CODE END I2C2_EV_IRQn 1 */
 }
 
 /**
@@ -1140,13 +1126,7 @@ void I2C2_EV_IRQHandler( void )
  */
 void FMPI2C1_EV_IRQHandler( void )
 {
-    /* USER CODE BEGIN FMPI2C1_EV_IRQn 0 */
     HW_I2C_Service_Event_IRQ( HW_I2C_CHANNEL_FMPI2C1 );
-    /* USER CODE END FMPI2C1_EV_IRQn 0 */
-
-    /* USER CODE BEGIN FMPI2C1_EV_IRQn 1 */
-
-    /* USER CODE END FMPI2C1_EV_IRQn 1 */
 }
 
 /**
@@ -1154,13 +1134,7 @@ void FMPI2C1_EV_IRQHandler( void )
  */
 void DMA1_Stream2_IRQHandler( void )
 {
-    /* USER CODE BEGIN DMA1_Stream2_IRQn 0 */
-
-    /* USER CODE END DMA1_Stream2_IRQn 0 */
     HW_I2C_Service_DMA_Rx_IRQ( HW_I2C_CHANNEL_2 );
-    /* USER CODE BEGIN DMA1_Stream2_IRQn 1 */
-
-    /* USER CODE END DMA1_Stream2_IRQn 1 */
 }
 
 /**
@@ -1168,11 +1142,5 @@ void DMA1_Stream2_IRQHandler( void )
  */
 void DMA1_Stream7_IRQHandler( void )
 {
-    /* USER CODE BEGIN DMA1_Stream7_IRQn 0 */
-
-    /* USER CODE END DMA1_Stream7_IRQn 0 */
     HW_I2C_Service_DMA_Tx_IRQ( HW_I2C_CHANNEL_2 );
-    /* USER CODE BEGIN DMA1_Stream7_IRQn 1 */
-
-    /* USER CODE END DMA1_Stream7_IRQn 1 */
 }
