@@ -664,13 +664,13 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
     if ( strcmp( argv[1], "config" ) == 0 )
     {
         /* For console testing we configure SPI then configure DAC to use VDD */
-        if ( !analogue_output_spi_channel_setup() )
+        if ( !EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup() )
         {
             CONSOLE_Printf( "Failed to configure SPI channel for DAC\r\n" );
             return;
         }
 
-        if ( !analogue_output_config( false ) )
+        if ( !EXEC_ANALOGUE_OUTPUT_Config( false ) )
         {
             CONSOLE_Printf( "Failed to configure DAC registers\r\n" );
             return;
@@ -710,7 +710,7 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
     }
 
     /* Ensure module configured */
-    if ( !analogue_output_is_configured() )
+    if ( !EXEC_ANALOG_OUTPUT_Is_Configured() )
     {
         CONSOLE_Printf( "DAC module not configured. Run 'anlg_out config' first.\r\n" );
         return;
@@ -718,7 +718,7 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
 
     CONSOLE_Printf( "TX buffer before: %s\r\n", HW_SPI_Tx_Buffer_Empty( SPI_CHANNEL_0 ) ? "empty" : "not empty" );
 
-    if ( !analogue_output_write_voltage( ( uint8_t )channel, voltage ) )
+    if ( !EXEC_ANALOG_OUTPUT_Write_Voltage( ( uint8_t )channel, voltage ) )
     {
         CONSOLE_Printf( "Failed to write voltage to channel %ld\r\n", channel );
         return;

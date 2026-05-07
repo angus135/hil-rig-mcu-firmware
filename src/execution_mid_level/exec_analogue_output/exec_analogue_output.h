@@ -41,19 +41,19 @@ extern "C"
  * @return
  *     true on success, false on SPI transmission failure.
  */
-bool analogue_output_config( bool use_external_vref );
+bool EXEC_ANALOGUE_OUTPUT_Config( bool use_external_vref );
 
-bool analogue_output_spi_channel_setup( void );
+bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void );
 
 /**
  * @brief Return whether the analogue output module has been configured.
  *
- * Useful for console commands to know if `analogue_output_config()` has
+ * Useful for console commands to know if `EXEC_ANALOGUE_OUTPUT_Config()` has
  * previously been called successfully.
  */
-bool analogue_output_is_configured( void );
+bool EXEC_ANALOG_OUTPUT_Is_Configured( void );
 
-bool analogue_output_write_voltage( uint8_t channel, float input_voltage_v );
+bool EXEC_ANALOG_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v );
 
 #ifdef __cplusplus
 }
