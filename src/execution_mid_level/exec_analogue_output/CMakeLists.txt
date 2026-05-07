@@ -28,6 +28,7 @@ target_link_libraries(exec_analogue_output
         global_config
         rtos
         cubeide_hal
+        hw_spi
 )
 
 # -----------------------------
@@ -53,6 +54,7 @@ if(EXEC_ANALOGUE_OUTPUT_ENABLE_TESTS AND BUILD_TESTING)
     target_include_directories(exec_analogue_output_tests
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_spi
             ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
 
