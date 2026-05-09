@@ -819,8 +819,8 @@ bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data,
  * @return true if transfer was initiated successfully
  * @return false if another transfer is already in progress
  */
-bool HW_I2C_Trigger_Master_Transmit( HWI2CChannel_T channel,
-                                     uint16_t         device_address_7bit )
+bool HW_I2C_Trigger_Master_Transmit_External( HWI2CChannel_T channel,
+                                              uint16_t         device_address_7bit )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
 
@@ -836,45 +836,74 @@ bool HW_I2C_Trigger_Master_Transmit( HWI2CChannel_T channel,
     state->tx_remaining             = state->tx_stage_length;
     state->dma_tx_transfer_complete = false;
     state->rx_expected_length       = 0U;
-    if ( HW_I2C_Is_External_Channel( channel ) )
+
+    I2C_TypeDef* i2c_instance = HWI2CChannel_To_Instance( channel );
+    bool         use_dma      = ( state->config.tx_transfer_path == HW_I2C_TRANSFER_DMA );
+
+    if ( use_dma )
     {
-        I2C_TypeDef* i2c_instance = HWI2CChannel_To_Instance( channel );
-        bool         use_dma      = ( state->config.tx_transfer_path == HW_I2C_TRANSFER_DMA );
-
-        if ( use_dma )
+        DMA_Stream_TypeDef* tx_stream = HWI2CChannel_To_DMA_Tx_Stream( channel );
+        if ( tx_stream == NULL )
         {
-            DMA_Stream_TypeDef* tx_stream = HWI2CChannel_To_DMA_Tx_Stream( channel );
-                if ( tx_stream == NULL )
-                {
-                    return false;
-                }
-
-            HW_I2C_DMA_Stream_Clear_Flags( tx_stream );
-            HW_I2C_Configure_DMA_Stream( tx_stream, HWI2CChannel_To_DMA_Channel_Bits( channel ),
-                                         true, ( uint32_t )( uintptr_t )&i2c_instance->DR,
-                                         ( uint32_t )( uintptr_t )state->tx_stage_buffer,
-                                         state->tx_stage_length );
+            return false;
         }
 
-        HW_I2C_Start_Master_Transfer( i2c_instance, state->transfer_kind, use_dma );
+        HW_I2C_DMA_Stream_Clear_Flags( tx_stream );
+        HW_I2C_Configure_DMA_Stream( tx_stream, HWI2CChannel_To_DMA_Channel_Bits( channel ),
+                                     true, ( uint32_t )( uintptr_t )&i2c_instance->DR,
+                                     ( uint32_t )( uintptr_t )state->tx_stage_buffer,
+                                     state->tx_stage_length );
     }
-    else
+
+    HW_I2C_Start_Master_Transfer( i2c_instance, state->transfer_kind, use_dma );
+    return true;
+}
+
+/**
+ * @brief Trigger a master transmit operation.
+ *
+ * Initiates an I2C master transmit to the specified device address using
+ * data previously loaded with HW_I2C_Load_Stage_Buffer().
+ *
+ * @param[in] channel               I2C channel
+ * @param[in] device_address_7bit   7-bit slave address to transmit to
+ *
+ * @return true if transfer was initiated successfully
+ * @return false if another transfer is already in progress
+ */
+bool HW_I2C_Trigger_Master_Transmit_Internal( HWI2CChannel_T channel,
+                                              uint16_t         device_address_7bit )
+{
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+
+    if ( state->transfer_in_progress )
     {
-        // LL_FMPI2C_GenerateStartCondition( FMPI2C1 );
-        FMPI2C1->CR2 = ( ( uint32_t )device_address_7bit << 1U )
-                   | ( ( uint32_t )state->tx_stage_length << FMPI2C_CR2_NBYTES_Pos )
-                   | FMPI2C_CR2_START | FMPI2C_CR2_AUTOEND;
+        return false;
     }
+
+    state->target_address_7bit      = device_address_7bit;
+    state->transfer_kind            = HW_I2C_TRANSFER_KIND_MASTER_TX;
+    state->transfer_in_progress     = true;
+    state->tx_ptr                   = state->tx_stage_buffer;
+    state->tx_remaining             = state->tx_stage_length;
+    state->dma_tx_transfer_complete = false;
+    state->rx_expected_length       = 0U;
+
+    /* FMPI2C1 internal path */
+    // LL_FMPI2C_GenerateStartCondition( FMPI2C1 );
+    FMPI2C1->CR2 = ( ( uint32_t )device_address_7bit << 1U )
+               | ( ( uint32_t )state->tx_stage_length << FMPI2C_CR2_NBYTES_Pos )
+               | FMPI2C_CR2_START | FMPI2C_CR2_AUTOEND;
 
     return true;
 }
 
 /**
- * @brief Trigger a master receive operation.
+ * @brief Trigger a master receive operation on an external channel.
  *
- * Initiates an I2C master receive from the specified device address.
- * Received data will be available via HW_I2C_Peek_Received() and consumed
- * with HW_I2C_Consume_Received().
+ * Initiates a master receive on the given external I2C channel. This
+ * implementation prepares DMA (if configured) and starts the transfer
+ * using the regular I2C instance.
  *
  * @param[in] channel               I2C channel
  * @param[in] device_address_7bit   7-bit slave address to receive from
@@ -883,9 +912,9 @@ bool HW_I2C_Trigger_Master_Transmit( HWI2CChannel_T channel,
  * @return true if transfer was initiated successfully
  * @return false if another transfer is already in progress
  */
-bool HW_I2C_Trigger_Master_Receive( HWI2CChannel_T channel,
-                                    uint16_t         device_address_7bit,
-                                    uint16_t         expected_length )
+bool HW_I2C_Trigger_Master_Receive_External( HWI2CChannel_T channel,
+                                             uint16_t         device_address_7bit,
+                                             uint16_t         expected_length )
 {
     HWI2CChannelState_T* state  = &hw_i2c_channel_state[channel];
 
@@ -894,35 +923,60 @@ bool HW_I2C_Trigger_Master_Receive( HWI2CChannel_T channel,
     state->transfer_in_progress   = true;
     state->rx_expected_length     = expected_length;
     state->dma_rx_expected_length = expected_length;
-    if ( HW_I2C_Is_External_Channel( channel ) )
+
+    I2C_TypeDef* i2c_instance = HWI2CChannel_To_Instance( channel );
+    bool         use_dma      = ( state->config.rx_transfer_path == HW_I2C_TRANSFER_DMA );
+
+    if ( use_dma )
     {
-        I2C_TypeDef* i2c_instance = HWI2CChannel_To_Instance( channel );
-        bool         use_dma      = ( state->config.rx_transfer_path == HW_I2C_TRANSFER_DMA );
-
-        if ( use_dma )
+        DMA_Stream_TypeDef* rx_stream = HWI2CChannel_To_DMA_Rx_Stream( channel );
+        if ( rx_stream == NULL )
         {
-            DMA_Stream_TypeDef* rx_stream = HWI2CChannel_To_DMA_Rx_Stream( channel );
-                if ( rx_stream == NULL )
-                {
-                    return false;
-                }
-
-            HW_I2C_DMA_Stream_Clear_Flags( rx_stream );
-            HW_I2C_Configure_DMA_Stream( rx_stream, HWI2CChannel_To_DMA_Channel_Bits( channel ),
-                                         false, ( uint32_t )( uintptr_t )&i2c_instance->DR,
-                                         ( uint32_t )( uintptr_t )state->dma_rx_linear_buffer,
-                                         expected_length );
+            return false;
         }
 
-        HW_I2C_Start_Master_Transfer( i2c_instance, state->transfer_kind, use_dma );
+        HW_I2C_DMA_Stream_Clear_Flags( rx_stream );
+        HW_I2C_Configure_DMA_Stream( rx_stream, HWI2CChannel_To_DMA_Channel_Bits( channel ),
+                                     false, ( uint32_t )( uintptr_t )&i2c_instance->DR,
+                                     ( uint32_t )( uintptr_t )state->dma_rx_linear_buffer,
+                                     expected_length );
     }
-    else
-    {
-        // LL_FMPI2C_GenerateStartCondition( FMPI2C1 );
-        FMPI2C1->CR2 = ( ( uint32_t )device_address_7bit << 1U ) | FMPI2C_CR2_RD_WRN
-                   | ( ( uint32_t )expected_length << FMPI2C_CR2_NBYTES_Pos )
-                   | FMPI2C_CR2_START | FMPI2C_CR2_AUTOEND;
-    }
+
+    HW_I2C_Start_Master_Transfer( i2c_instance, state->transfer_kind, use_dma );
+    return true;
+}
+
+/**
+ * @brief Trigger a master receive operation on an external channel.
+ *
+ * Initiates a master receive on the given external I2C channel. This
+ * implementation prepares DMA (if configured) and starts the transfer
+ * using the regular I2C instance.
+ *
+ * @param[in] channel               I2C channel
+ * @param[in] device_address_7bit   7-bit slave address to receive from
+ * @param[in] expected_length       Number of bytes expected to receive
+ *
+ * @return true if transfer was initiated successfully
+ * @return false if another transfer is already in progress
+ */
+bool HW_I2C_Trigger_Master_Receive_Internal( HWI2CChannel_T channel,
+                                             uint16_t         device_address_7bit,
+                                             uint16_t         expected_length )
+{
+    HWI2CChannelState_T* state  = &hw_i2c_channel_state[channel];
+
+    state->target_address_7bit    = device_address_7bit;
+    state->transfer_kind          = HW_I2C_TRANSFER_KIND_MASTER_RX;
+    state->transfer_in_progress   = true;
+    state->rx_expected_length     = expected_length;
+    state->dma_rx_expected_length = expected_length;
+
+    /* FMPI2C1 internal path */
+    // LL_FMPI2C_GenerateStartCondition( FMPI2C1 );
+    FMPI2C1->CR2 = ( ( uint32_t )device_address_7bit << 1U ) | FMPI2C_CR2_RD_WRN
+               | ( ( uint32_t )expected_length << FMPI2C_CR2_NBYTES_Pos )
+               | FMPI2C_CR2_START | FMPI2C_CR2_AUTOEND;
 
     return true;
 }
@@ -947,32 +1001,30 @@ bool HW_I2C_Trigger_Slave_Transmit( HWI2CChannel_T channel )
     state->tx_ptr                   = state->tx_stage_buffer;
     state->tx_remaining             = state->tx_stage_length;
     state->dma_tx_transfer_complete = false;
-    if ( HW_I2C_Is_External_Channel( channel ) )
+
+    I2C_TypeDef* i2c_instance = HWI2CChannel_To_Instance( channel );
+
+    if ( state->config.tx_transfer_path == HW_I2C_TRANSFER_DMA )
     {
-        I2C_TypeDef* i2c_instance = HWI2CChannel_To_Instance( channel );
-
-        if ( state->config.tx_transfer_path == HW_I2C_TRANSFER_DMA )
+        DMA_Stream_TypeDef* tx_stream = HWI2CChannel_To_DMA_Tx_Stream( channel );
+        if ( tx_stream == NULL )
         {
-            DMA_Stream_TypeDef* tx_stream = HWI2CChannel_To_DMA_Tx_Stream( channel );
-                if ( tx_stream == NULL )
-                {
-                    return false;
-                }
-
-            HW_I2C_DMA_Stream_Clear_Flags( tx_stream );
-            HW_I2C_Configure_DMA_Stream( tx_stream, HWI2CChannel_To_DMA_Channel_Bits( channel ),
-                                         true, ( uint32_t )( uintptr_t )&i2c_instance->DR,
-                                         ( uint32_t )( uintptr_t )state->tx_stage_buffer,
-                                         state->tx_stage_length );
-            HW_I2C_Prepare_DMA_Path( i2c_instance, state->transfer_kind );
-        }
-        else
-        {
-            HW_I2C_Prepare_Interrupt_Path( i2c_instance );
+            return false;
         }
 
-        LL_I2C_AcknowledgeNextData( i2c_instance, LL_I2C_ACK );
+        HW_I2C_DMA_Stream_Clear_Flags( tx_stream );
+        HW_I2C_Configure_DMA_Stream( tx_stream, HWI2CChannel_To_DMA_Channel_Bits( channel ),
+                                     true, ( uint32_t )( uintptr_t )&i2c_instance->DR,
+                                     ( uint32_t )( uintptr_t )state->tx_stage_buffer,
+                                     state->tx_stage_length );
+        HW_I2C_Prepare_DMA_Path( i2c_instance, state->transfer_kind );
     }
+    else
+    {
+        HW_I2C_Prepare_Interrupt_Path( i2c_instance );
+    }
+
+    LL_I2C_AcknowledgeNextData( i2c_instance, LL_I2C_ACK );
 
     return true;
 }
@@ -998,32 +1050,30 @@ bool HW_I2C_Trigger_Slave_Receive( HWI2CChannel_T channel, uint16_t expected_len
     state->transfer_in_progress   = true;
     state->rx_expected_length     = expected_length;
     state->dma_rx_expected_length = expected_length;
-    if ( HW_I2C_Is_External_Channel( channel ) )
+
+    I2C_TypeDef* i2c_instance = HWI2CChannel_To_Instance( channel );
+
+    if ( state->config.rx_transfer_path == HW_I2C_TRANSFER_DMA )
     {
-        I2C_TypeDef* i2c_instance = HWI2CChannel_To_Instance( channel );
-
-        if ( state->config.rx_transfer_path == HW_I2C_TRANSFER_DMA )
+        DMA_Stream_TypeDef* rx_stream = HWI2CChannel_To_DMA_Rx_Stream( channel );
+        if ( rx_stream == NULL )
         {
-            DMA_Stream_TypeDef* rx_stream = HWI2CChannel_To_DMA_Rx_Stream( channel );
-                if ( rx_stream == NULL )
-                {
-                    return false;
-                }
-
-            HW_I2C_DMA_Stream_Clear_Flags( rx_stream );
-            HW_I2C_Configure_DMA_Stream( rx_stream, HWI2CChannel_To_DMA_Channel_Bits( channel ),
-                                         false, ( uint32_t )( uintptr_t )&i2c_instance->DR,
-                                         ( uint32_t )( uintptr_t )state->dma_rx_linear_buffer,
-                                         expected_length );
-            HW_I2C_Prepare_DMA_Path( i2c_instance, state->transfer_kind );
-        }
-        else
-        {
-            HW_I2C_Prepare_Interrupt_Path( i2c_instance );
+            return false;
         }
 
-        LL_I2C_AcknowledgeNextData( i2c_instance, LL_I2C_ACK );
+        HW_I2C_DMA_Stream_Clear_Flags( rx_stream );
+        HW_I2C_Configure_DMA_Stream( rx_stream, HWI2CChannel_To_DMA_Channel_Bits( channel ),
+                                     false, ( uint32_t )( uintptr_t )&i2c_instance->DR,
+                                     ( uint32_t )( uintptr_t )state->dma_rx_linear_buffer,
+                                     expected_length );
+        HW_I2C_Prepare_DMA_Path( i2c_instance, state->transfer_kind );
     }
+    else
+    {
+        HW_I2C_Prepare_Interrupt_Path( i2c_instance );
+    }
+
+    LL_I2C_AcknowledgeNextData( i2c_instance, LL_I2C_ACK );
 
     return true;
 }
