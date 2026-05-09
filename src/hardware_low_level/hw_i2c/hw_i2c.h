@@ -177,25 +177,55 @@ bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data,
  * @return true if transfer was initiated successfully
  * @return false if another transfer is already in progress
  */
-bool HW_I2C_Trigger_Master_Transmit( HWI2CChannel_T channel,
-                                     uint16_t       device_address_7bit );
+bool HW_I2C_Trigger_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit );
 
 /**
- * @brief Trigger a master receive operation.
+ * @brief Trigger a master transmit operation.
  *
- * Initiates an I2C master receive from the specified device address.
- * Received data will be available via HW_I2C_Peek_Received() and consumed
- * with HW_I2C_Consume_Received().
+ * Initiates an I2C master transmit to the specified device address using
+ * data previously loaded with HW_I2C_Load_Stage_Buffer().
  *
  * @param[in] channel               I2C channel
- * @param[in] device_address_7bit   7-bit slave address to receive from
- * @param[in] expected_length       Number of bytes expected to receive
+ * @param[in] device_address_7bit   7-bit slave address to transmit to
  *
  * @return true if transfer was initiated successfully
  * @return false if another transfer is already in progress
  */
-bool HW_I2C_Trigger_Master_Receive( HWI2CChannel_T channel, uint16_t device_address_7bit,
-                                    uint16_t expected_length );
+bool HW_I2C_Trigger_Master_Transmit_Internal( HWI2CChannel_T channel, uint16_t device_address_7bit );
+
+/**
+ * @brief Trigger a master receive operation (external channel).
+ *
+ * Initiates an I2C master receive from the specified device address on an
+ * external I2C channel (I2C1 or I2C2). Received data will be available via
+ * `HW_I2C_Peek_Received()` and consumed with `HW_I2C_Consume_Received()`.
+ *
+ * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
+ * @param[in] device_address_7bit   7-bit slave address to receive from
+ * @param[in] expected_length       Number of bytes expected to receive
+ *
+ * @return true if transfer was initiated successfully
+ * @return false if another transfer is already in progress or parameters are invalid
+ */
+bool HW_I2C_Trigger_Master_Receive_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
+                                             uint16_t expected_length );
+
+/**
+ * @brief Trigger a master receive operation (internal FMPI2C1 channel).
+ *
+ * Initiates an I2C master receive on the internal FMPI2C1 channel. This
+ * variant assumes FMPI2C1-specific configuration and does not perform
+ * external-channel checks.
+ *
+ * @param[in] channel               Must be HW_I2C_CHANNEL_FMPI2C1
+ * @param[in] device_address_7bit   7-bit slave address to receive from
+ * @param[in] expected_length       Number of bytes expected to receive
+ *
+ * @return true if transfer was initiated successfully
+ * @return false if another transfer is already in progress or parameters are invalid
+ */
+bool HW_I2C_Trigger_Master_Receive_Internal( HWI2CChannel_T channel, uint16_t device_address_7bit,
+                                             uint16_t expected_length );
 
 /**
  * @brief Trigger a slave transmit operation.
