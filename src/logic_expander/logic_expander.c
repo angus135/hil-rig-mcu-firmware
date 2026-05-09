@@ -228,7 +228,7 @@ LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_t devic
         return LOGIC_EXPANDER_I2C_STATUS_BUSY;
     }
 
-    is_ok = HW_I2C_Trigger_Master_Transmit( HW_I2C_CHANNEL_FMPI2C1, device_address_7bit );
+    is_ok = HW_I2C_Trigger_Master_Transmit_Internal( HW_I2C_CHANNEL_FMPI2C1, device_address_7bit );
     return is_ok ? LOGIC_EXPANDER_I2C_STATUS_OK : LOGIC_EXPANDER_I2C_STATUS_ERROR;
 }
 
