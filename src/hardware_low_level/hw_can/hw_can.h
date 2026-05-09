@@ -50,13 +50,17 @@ typedef struct CanProperties_T
  *------------------------------------------------------------------------------
  */
 
-void HW_CAN_configure1( uint32_t bitrate );
+int HW_CAN_configure1( uint32_t bitrate );
 
-void HW_CAN_configure2( uint32_t bitrate );
+int HW_CAN_configure2( uint32_t bitrate );
 
-void HW_CAN_recieve1(uint8_t * rxData);
+int HW_CAN_recieve1(uint8_t * rxData);
 
-void HW_CAN_transmit1( uint8_t * txData);
+int HW_CAN_transmit1( uint8_t* txData );
+
+int HW_CAN_recieve2(uint8_t * rxData);
+
+int HW_CAN_transmit2( uint8_t * txData);
 
 #ifdef __cplusplus
 }

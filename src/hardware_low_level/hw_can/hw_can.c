@@ -33,8 +33,8 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
  *------------------------------------------------------------------------------
  */
 
-#define CAN_TIMER_HZ 90000000
-#define TOTAL_TQ ( uint32_t )18
+#define CAN_TIMER_HZ 45000000
+#define TOTAL_TQ ( uint32_t )15
 #define MBPS_SAMPLE_POINT ( uint32_t )800
 
 /**-----------------------------------------------------------------------------
@@ -107,7 +107,7 @@ CanProperties_T HW_CAN_compute_properties( uint32_t bitrate, uint32_t total_TQ,
  * This function takes and applies the desired can properties using the HAL library
  *
  */
-void HW_CAN_apply_timing_HAL( CAN_HandleTypeDef *hcan, CanProperties_T props )
+HAL_StatusTypeDef HW_CAN_apply_timing_HAL( CAN_HandleTypeDef *hcan, CanProperties_T props )
 {
     hcan->Init.Prescaler = props.psc;
     // hcan.Init.Mode      = CAN_MODE_NORMAL;
@@ -205,7 +205,7 @@ void HW_CAN_apply_timing_HAL( CAN_HandleTypeDef *hcan, CanProperties_T props )
     hcan->Init.ReceiveFifoLocked    = DISABLE;
     hcan->Init.TransmitFifoPriority = DISABLE;
 
-    HAL_CAN_Init( hcan );
+    return HAL_CAN_Init( hcan );
 }
 
 /**
@@ -217,7 +217,7 @@ void HW_CAN_apply_timing_HAL( CAN_HandleTypeDef *hcan, CanProperties_T props )
  * This function takes and applies the desired can filter properties using the HAL library
  *
  */
-void HW_CAN_apply_filter_HAL( CAN_FilterTypeDef filter, CAN_HandleTypeDef *hcan )
+HAL_StatusTypeDef HW_CAN_apply_filter_HAL( CAN_FilterTypeDef filter, CAN_HandleTypeDef *hcan )
 {
     filter.FilterBank  = 0;
     filter.FilterMode  = CAN_FILTERMODE_IDMASK;
@@ -231,7 +231,7 @@ void HW_CAN_apply_filter_HAL( CAN_FilterTypeDef filter, CAN_HandleTypeDef *hcan 
     filter.FilterFIFOAssignment = CAN_FILTER_FIFO0;
     filter.FilterActivation     = ENABLE;
 
-    HAL_CAN_ConfigFilter( hcan, &filter );
+    return HAL_CAN_ConfigFilter( hcan, &filter );
 }
 
 /**
@@ -255,14 +255,26 @@ void HW_CAN_apply_filter_HAL( CAN_FilterTypeDef filter, CAN_HandleTypeDef *hcan 
  *          FIFO assignment for accepted frames
  *
  */
-void HW_CAN_configure( CAN_HandleTypeDef *hcan, uint32_t bitrate )
+int HW_CAN_configure( CAN_HandleTypeDef *hcan, uint32_t bitrate )
 {
     CAN_FilterTypeDef filter;
     CanProperties_T   can_props = HW_CAN_compute_properties( bitrate, TOTAL_TQ, MBPS_SAMPLE_POINT );
-    HW_CAN_apply_timing_HAL( hcan, can_props );
-    HW_CAN_apply_filter_HAL( filter, hcan );
-    HAL_CAN_Start(hcan);
-    return;
+    __HAL_RCC_CAN1_FORCE_RESET();
+    __HAL_RCC_CAN1_RELEASE_RESET();
+    __HAL_RCC_CAN1_CLK_ENABLE();
+    if ( HW_CAN_apply_timing_HAL( hcan, can_props ) != HAL_OK )
+    {
+        return 1;
+    }
+    if ( HW_CAN_apply_filter_HAL( filter, hcan ) != HAL_OK )
+    {
+        return 2;
+    }
+    if (  HAL_CAN_Start( hcan ) != HAL_OK )
+    {
+        return 3;
+    }
+    return 0;
 }
 
 /**
@@ -286,10 +298,9 @@ void HW_CAN_configure( CAN_HandleTypeDef *hcan, uint32_t bitrate )
  *          FIFO assignment for accepted frames
  *
  */
-void HW_CAN_configure1( uint32_t bitrate )
+int HW_CAN_configure1( uint32_t bitrate )
 {
-    HW_CAN_configure(&hcan1, bitrate);
-    return;
+    return HW_CAN_configure(&hcan1, bitrate);
 }
 
 /**
@@ -313,10 +324,9 @@ void HW_CAN_configure1( uint32_t bitrate )
  *          FIFO assignment for accepted frames
  *
  */
-void HW_CAN_configure2( uint32_t bitrate )
+int HW_CAN_configure2( uint32_t bitrate )
 {
-    HW_CAN_configure(&hcan2, bitrate);
-    return;
+    return HW_CAN_configure(&hcan2, bitrate);
 }
 
 
@@ -328,7 +338,7 @@ void HW_CAN_configure2( uint32_t bitrate )
  */
 
 #ifndef TEST_BUILD
-void HW_CAN_transmit1( uint8_t * txData)
+int HW_CAN_transmit1( uint8_t * txData)
 {
     CAN_TxHeaderTypeDef txHeader;
     uint32_t txMailbox;
@@ -338,16 +348,26 @@ void HW_CAN_transmit1( uint8_t * txData)
     txHeader.RTR = CAN_RTR_DATA;
     txHeader.DLC = 8;
 
-    HAL_CAN_AddTxMessage(&hcan1, &txHeader, txData, &txMailbox);
+    if (HAL_CAN_AddTxMessage( &hcan1, &txHeader, txData, &txMailbox ) != HAL_OK)
+    {
+        // print error
+        return 1;
+    }
+    return 0;
 }
 
-void HW_CAN_recieve1(uint8_t * rxData)
+int HW_CAN_recieve1(uint8_t * rxData)
 {
     CAN_RxHeaderTypeDef rxHeader;
-    HAL_CAN_GetRxMessage( &hcan1, CAN_RX_FIFO0, &rxHeader, rxData );
+    if (HAL_CAN_GetRxMessage(&hcan1, CAN_RX_FIFO0, &rxHeader, rxData) != HAL_OK)
+    {
+        // print error
+        return 1;
+    }
+    return 0;
 }
 
-void HW_CAN_transmit2( uint8_t * txData)
+int HW_CAN_transmit2( uint8_t * txData)
 {
     CAN_TxHeaderTypeDef txHeader;
     uint32_t txMailbox;
@@ -357,13 +377,23 @@ void HW_CAN_transmit2( uint8_t * txData)
     txHeader.RTR = CAN_RTR_DATA;
     txHeader.DLC = 8;
 
-    HAL_CAN_AddTxMessage(&hcan2, &txHeader, txData, &txMailbox);
+    if (HAL_CAN_AddTxMessage( &hcan2, &txHeader, txData, &txMailbox ) != HAL_OK)
+    {
+        // print error
+        return 1;
+    }
+    return 0;
 }
 
-void HW_CAN_recieve2(uint8_t * rxData)
+int HW_CAN_recieve2(uint8_t * rxData)
 {
     CAN_RxHeaderTypeDef rxHeader;
-    HAL_CAN_GetRxMessage( &hcan2, CAN_RX_FIFO0, &rxHeader, rxData );
+    if (HAL_CAN_GetRxMessage(&hcan2, CAN_RX_FIFO0, &rxHeader, rxData) != HAL_OK)
+    {
+        // print error
+        return 1;
+    }
+    return 0;
 }
 #endif
 
