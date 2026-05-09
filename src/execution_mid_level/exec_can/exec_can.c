@@ -64,7 +64,7 @@
  *
  * Uses HAL to recieve message over CAN channel 1
  */
-int EXEC_CAN_recieve1( uint8_t** rxData, uint32_t length)
+int EXEC_CAN_recieve1( uint8_t** rxData, uint32_t length )
 {
     for ( int i = 0; i < length; i++ )
     {
@@ -84,7 +84,7 @@ int EXEC_CAN_recieve1( uint8_t** rxData, uint32_t length)
  *
  * Uses HAL to recieve message over CAN channel 2
  */
-int EXEC_CAN_recieve2( uint8_t** rxData, uint32_t length)
+int EXEC_CAN_recieve2( uint8_t** rxData, uint32_t length )
 {
     for ( int i = 0; i < length; i++ )
     {
@@ -95,7 +95,6 @@ int EXEC_CAN_recieve2( uint8_t** rxData, uint32_t length)
     }
     return 0;
 }
-
 
 /**
  * @brief transmits a number of the txData (8 bytes) over CAN channel 1
