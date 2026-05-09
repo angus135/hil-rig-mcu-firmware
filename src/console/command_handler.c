@@ -690,7 +690,7 @@ static void CONSOLE_Command_Set_Pin( uint16_t argc, char* argv[] )
 {
     if ( argc != 3 )
     {
-        CONSOLE_Printf( "Incorrect number of inputs, expected 2 but recieved %d", argc -1);
+        CONSOLE_Printf( "Incorrect number of inputs, expected 2 but recieved %d", argc - 1 );
         return;
     }
     GPIOOutput_T pin;
@@ -732,7 +732,7 @@ static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char* argv[] )
     {
         CONSOLE_Printf( "Incorrect number of inputs, expected >2 and <%dbut recieved %d", arg_limit,
                         argc );
-        CONSOLE_Printf("Usage: set_pin PIN_NAME0 PIN_NAME1 ... PIN_NAMEX <0|1>");
+        CONSOLE_Printf( "Usage: set_pin PIN_NAME0 PIN_NAME1 ... PIN_NAMEX <0|1>" );
         return;
     }
 
@@ -771,10 +771,10 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
 {
     if ( argc != 2 )
     {
-        CONSOLE_Printf( "Incorrect number of inputs, expected 1 but recieved %d", argc-1 );
+        CONSOLE_Printf( "Incorrect number of inputs, expected 1 but recieved %d", argc - 1 );
         return;
     }
-   int len = strlen( argv[1] );
+    int  len    = strlen( argv[1] );
     char out[8] = "________";
     if ( len > 8 )
     {
@@ -816,7 +816,7 @@ static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] )
     {
         CONSOLE_Printf( "CAN Start set up error" );
         return;
-    } 
+    }
     CONSOLE_Printf( "Set up correctly" );
 }
 
@@ -832,11 +832,11 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
 {
     if ( argc != 1 )
     {
-        CONSOLE_Printf( "Incorrect number of inputs, expected 1 but recieved %d", argc-1 );
+        CONSOLE_Printf( "Incorrect number of inputs, expected 1 but recieved %d", argc - 1 );
         return;
     }
     char out[8] = "00000000";
-    int check = HW_CAN_recieve1( out );
+    int  check  = HW_CAN_recieve1( out );
     if ( check == 1 )
     {
         CONSOLE_Printf( "Transmission Error" );
