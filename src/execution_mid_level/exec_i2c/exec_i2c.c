@@ -228,7 +228,7 @@ bool EXEC_I2C_Master_Send( HWI2CChannel_T channel, uint16_t device_address_7bit,
         return false;
     }
 
-    is_ok = HW_I2C_Trigger_Master_Transmit_External( channel, device_address_7bit );
+    is_ok = HW_I2C_Trigger_Master_Transmit( channel, device_address_7bit );
     return is_ok;
 }
 
@@ -256,7 +256,7 @@ bool EXEC_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t*
         return false;
     }
 
-    is_ok = HW_I2C_Trigger_Master_Transmit_Internal( HW_I2C_CHANNEL_FMPI2C1, device_address_7bit );
+    is_ok = HW_I2C_Trigger_Master_Transmit( HW_I2C_CHANNEL_FMPI2C1, device_address_7bit );
     return is_ok;
 }
 
@@ -288,41 +288,20 @@ bool EXEC_I2C_Slave_Send( HWI2CChannel_T channel, const uint8_t* payload,
 /**
  * @brief Initiate master receive on an external channel.
  *
- * Requests data from a slave device on an external channel (I2C1 or I2C2).
- * Received data is buffered internally and can be retrieved with
- * `EXEC_I2C_Receive_Copy_And_Consume()`.
+ * Requests data from a slave device. Received data is buffered internally
+ * and can be retrieved with EXEC_I2C_Receive_Copy_And_Consume().
  *
- * @param[in] channel               External I2C channel
+ * @param[in] channel               I2C channel
  * @param[in] device_address_7bit   7-bit slave address
  * @param[in] expected_length       Number of bytes expected from slave
  *
  * @return true if receive was initiated
  * @return false on failure
  */
-bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
-                                            uint16_t expected_length )
+bool EXEC_I2C_Start_Master_Receive( HWI2CChannel_T channel, uint16_t device_address_7bit,
+                                    uint16_t expected_length )
 {
-    bool is_ok = HW_I2C_Trigger_Master_Receive_External( channel, device_address_7bit, expected_length );
-    return is_ok;
-}
-
-/**
- * @brief Initiate master receive on the internal FMPI2C1 channel.
- *
- * Requests data from a slave device on the internal FMPI2C1 channel.
- * Received data is buffered internally and can be retrieved with
- * `EXEC_I2C_Receive_Copy_And_Consume()`.
- *
- * @param[in] device_address_7bit   7-bit slave address
- * @param[in] expected_length       Number of bytes expected from slave
- *
- * @return true if receive was initiated
- * @return false on failure
- */
-bool EXEC_I2C_Start_Master_Receive_Internal( HWI2CChannel_T channel, uint16_t device_address_7bit,
-                                            uint16_t expected_length )
-{
-    bool is_ok = HW_I2C_Trigger_Master_Receive_Internal( channel, device_address_7bit, expected_length );
+    bool is_ok = HW_I2C_Trigger_Master_Receive( channel, device_address_7bit, expected_length );
     return is_ok;
 }
 
