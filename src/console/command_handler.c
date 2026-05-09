@@ -784,7 +784,11 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
     {
         out[i] = argv[1][i];
     }
-    HW_CAN_transmit1(out);
+    int check = HW_CAN_transmit1( out );
+    if ( check == 1 )
+    {
+        CONSOLE_Printf( "Transmission Error" );
+    }
 }
 
 /**
@@ -797,7 +801,23 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
  */
 static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] )
 {
-    HW_CAN_configure1(1000000);
+    int check = HW_CAN_configure1( 1000000 );
+    if ( check == 1 )
+    {
+        CONSOLE_Printf( "Timing set up error" );
+        return;
+    }
+    if ( check == 2 )
+    {
+        CONSOLE_Printf( "Filter set up error" );
+        return;
+    }
+    if ( check == 3 )
+    {
+        CONSOLE_Printf( "CAN Start set up error" );
+        return;
+    } 
+    CONSOLE_Printf( "Set up correctly" );
 }
 
 /**
@@ -816,7 +836,12 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
         return;
     }
     char out[8] = "00000000";
-    HW_CAN_recieve1( out );
+    int check = HW_CAN_recieve1( out );
+    if ( check == 1 )
+    {
+        CONSOLE_Printf( "Transmission Error" );
+        return;
+    }
     CONSOLE_Printf( "Recieved: %s", out );
 }
 
