@@ -261,7 +261,7 @@ bool CONSOLE_Run_I2C_Loopback_S2M( CONSOLEI2CLoopbackChannels_T channels,
 
     vTaskDelay( pdMS_TO_TICKS( 2 ) );
 
-    is_ok = EXEC_I2C_Start_Master_Receive_External( channels.master, slave_addr, tx_len );
+    is_ok = EXEC_I2C_Start_Master_Receive( channels.master, slave_addr, tx_len );
     if ( !is_ok )
     {
         CONSOLE_Printf( "Master receive start failed.\r\n" );
