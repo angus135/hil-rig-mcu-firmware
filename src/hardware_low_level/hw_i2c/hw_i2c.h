@@ -166,36 +166,68 @@ bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data,
                               uint16_t length );
 
 /**
- * @brief Trigger a master transmit operation.
+ * @brief Trigger a master transmit operation on an external I2C channel.
  *
- * Initiates an I2C master transmit to the specified device address using
- * data previously loaded with HW_I2C_Load_Stage_Buffer().
+ * Initiates an I2C master transmit to the specified device address on an external channel
+ * (I2C1 or I2C2) using data previously loaded with HW_I2C_Load_Stage_Buffer().
+ * Supports both interrupt and DMA-based transfer paths as configured.
  *
- * @param[in] channel               I2C channel
+ * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
  * @param[in] device_address_7bit   7-bit slave address to transmit to
  *
  * @return true if transfer was initiated successfully
  * @return false if another transfer is already in progress
  */
-bool HW_I2C_Trigger_Master_Transmit( HWI2CChannel_T channel,
-                                     uint16_t       device_address_7bit );
+bool HW_I2C_Trigger_Master_Transmit_External( HWI2CChannel_T channel,
+                                              uint16_t       device_address_7bit );
 
 /**
- * @brief Trigger a master receive operation.
+ * @brief Trigger a master transmit operation on the internal FMPI2C1 channel.
  *
- * Initiates an I2C master receive from the specified device address.
- * Received data will be available via HW_I2C_Peek_Received() and consumed
- * with HW_I2C_Consume_Received().
+ * Initiates an I2C master transmit to the specified device address on the internal
+ * FMPI2C1 channel using data previously loaded with HW_I2C_Load_Stage_Buffer().
+ * The FMPI2C1 channel uses interrupt-based transfer path only.
  *
- * @param[in] channel               I2C channel
+ * @param[in] device_address_7bit   7-bit slave address to transmit to
+ *
+ * @return true if transfer was initiated successfully
+ * @return false if another transfer is already in progress
+ */
+bool HW_I2C_Trigger_Master_Transmit_Internal( uint16_t device_address_7bit );
+
+/**
+ * @brief Trigger a master receive operation on an external I2C channel.
+ *
+ * Initiates an I2C master receive from the specified device address on an external channel
+ * (I2C1 or I2C2). Received data will be available via HW_I2C_Peek_Received() and consumed
+ * with HW_I2C_Consume_Received(). Supports both interrupt and DMA-based transfer paths
+ * as configured.
+ *
+ * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
  * @param[in] device_address_7bit   7-bit slave address to receive from
  * @param[in] expected_length       Number of bytes expected to receive
  *
  * @return true if transfer was initiated successfully
  * @return false if another transfer is already in progress
  */
-bool HW_I2C_Trigger_Master_Receive( HWI2CChannel_T channel, uint16_t device_address_7bit,
-                                    uint16_t expected_length );
+bool HW_I2C_Trigger_Master_Receive_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
+                                             uint16_t expected_length );
+
+/**
+ * @brief Trigger a master receive operation on the internal FMPI2C1 channel.
+ *
+ * Initiates an I2C master receive from the specified device address on the internal
+ * FMPI2C1 channel. Received data will be available via HW_I2C_Peek_Received() and consumed
+ * with HW_I2C_Consume_Received(). The FMPI2C1 channel uses interrupt-based transfer path only.
+ *
+ * @param[in] device_address_7bit   7-bit slave address to receive from
+ * @param[in] expected_length       Number of bytes expected to receive
+ *
+ * @return true if transfer was initiated successfully
+ * @return false if another transfer is already in progress
+ */
+bool HW_I2C_Trigger_Master_Receive_Internal( uint16_t device_address_7bit,
+                                             uint16_t expected_length );
 
 /**
  * @brief Trigger a slave transmit operation.
@@ -208,7 +240,7 @@ bool HW_I2C_Trigger_Master_Receive( HWI2CChannel_T channel, uint16_t device_addr
  * @return true if transmit was prepared successfully
  * @return false if another transfer is already in progress
  */
-bool HW_I2C_Trigger_Slave_Transmit( HWI2CChannel_T channel );
+bool HW_I2C_Trigger_Slave_Transmit_External( HWI2CChannel_T channel );
 
 /**
  * @brief Trigger a slave receive operation.
@@ -223,7 +255,7 @@ bool HW_I2C_Trigger_Slave_Transmit( HWI2CChannel_T channel );
  * @return true if receive was prepared successfully
  * @return false if another transfer is already in progress
  */
-bool HW_I2C_Trigger_Slave_Receive( HWI2CChannel_T channel, uint16_t expected_length );
+bool HW_I2C_Trigger_Slave_Receive_External( HWI2CChannel_T channel, uint16_t expected_length );
 
 /**
  * @brief Peek at received data without consuming it.
