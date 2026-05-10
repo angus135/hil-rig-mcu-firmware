@@ -37,6 +37,15 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
 #define TOTAL_TQ ( uint32_t )15
 #define MBPS_SAMPLE_POINT ( uint32_t )800
 
+#define RECIEVE_BUFFER_WIDTH 10
+#define TRANSMIT_BUFFER_WIDTH 10
+#define CAN_PACKET_SIZE 8
+
+#define HW_UART_CH1_TX_IRQ_HANDLER CAN1_TX_IRQHandler
+#define HW_UART_CH1_RX_IRQ_HANDLER CAN1_RX0_IRQHandler
+#define HW_UART_CH2_TX_IRQ_HANDLER CAN2_TX_IRQHandler
+#define HW_UART_CH2_RX_IRQ_HANDLER CAN2_RX0_IRQHandler
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -52,13 +61,145 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
  *------------------------------------------------------------------------------
  */
 
+static uint8_t  can_rx_buffer[RECIEVE_BUFFER_WIDTH][CAN_PACKET_SIZE];
+static uint16_t can_rx_wp = 0;  // Writing to RX buffer handled by ISR
+static uint16_t can_rx_rp = 0;  // Reading from RX buffer handled by HW_CAN_rx_buffer_read
+
+static uint8_t  can_tx_buffer[TRANSMIT_BUFFER_WIDTH][CAN_PACKET_SIZE];
+static uint16_t can_tx_wp = 0;  // Writing to TX buffer handled by HW_CAN_tx_buffer_write
+static uint16_t can_tx_rp = 0;  // Reading from TX buffer handled by ISR
+
+/** Buffer example:
+ *          [0,0,0,0,0,0,0,0],  <- rp
+ *          [0,0,0,0,0,0,0,0],
+ *          [0,0,0,0,0,0,0,0],
+ *   wp ->  [0,0,0,0,0,0,0,0],
+ *          [0,0,0,0,0,0,0,0],
+ *          [0,0,0,0,0,0,0,0],
+ *          [0,0,0,0,0,0,0,0],
+ *
+ */
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
 
 /**-----------------------------------------------------------------------------
- *  Private Function Definitions
+ *  Private Execution Function Definitions
+ *------------------------------------------------------------------------------
+ */
+
+inline uint8_t HW_CAN_buffer_write( uint8_t** buffer, uint16_t* wp, uint16_t* rp,
+                                    uint16_t buffer_width, uint8_t** source, uint16_t length )
+{
+    for ( int i = 0; i < length; i++ )
+    {
+        if ( ( ( *wp + 1 ) % buffer_width ) == *rp )
+        {
+            return 1;
+        }
+        for ( int j = 0; j < CAN_PACKET_SIZE; j++ )
+        {
+            buffer[*wp][j] = source[i][j];
+        }
+        *wp = ( *wp + 1 ) % buffer_width;
+    }
+    return 0;
+}
+
+inline uint16_t HW_CAN_buffer_read( uint8_t** buffer, uint16_t* wp, uint16_t* rp,
+                                    uint16_t buffer_width, uint8_t** dest )
+{
+    uint16_t count = 0;
+    for ( int i = 0; i < buffer_width; i++ )
+    {
+        if ( *wp == *rp )
+        {
+            return count;
+        }
+        for ( int j = 0; j < CAN_PACKET_SIZE; j++ )
+        {
+            dest[i][j] = buffer[*rp][j];
+        }
+        *rp = ( *rp + 1 ) % buffer_width;
+        count += 1;
+    }
+    return count;
+}
+
+uint16_t HW_CAN_tx_buffer_write( uint8_t** source, uint16_t length )
+{
+    return HW_CAN_buffer_write( can_tx_buffer, &can_tx_wp, &can_tx_rp, TRANSMIT_BUFFER_WIDTH,
+                                source, length );
+}
+
+uint16_t HW_CAN_tx_buffer_read( uint8_t** dest )
+{
+    return HW_CAN_buffer_read( can_tx_buffer, &can_tx_wp, &can_tx_rp, TRANSMIT_BUFFER_WIDTH, dest );
+}
+
+uint16_t HW_CAN_rx_buffer_write( uint8_t** source, uint16_t length )
+{
+    return HW_CAN_buffer_write( can_rx_buffer, &can_rx_wp, &can_rx_rp, RECIEVE_BUFFER_WIDTH, source,
+                                length );
+}
+
+uint16_t HW_CAN_rx_buffer_read( uint8_t** dest )
+{
+    return HW_CAN_buffer_read( can_rx_buffer, &can_rx_wp, &can_rx_rp, RECIEVE_BUFFER_WIDTH, dest );
+}
+
+#ifndef TEST_BUILD
+/**
+ * @brief transmits the txData (8 bytes) over the hcan CAN channel
+ *
+ * @param hcan the pointer to the handle for the can peripheral
+ * @param txData pointer to 8 bytes of data
+ *
+ * Uses HAL to transmit message over CAN channel
+ */
+int HW_CAN_transmit( CAN_HandleTypeDef* hcan, uint8_t* txData )
+{
+    CAN_TxHeaderTypeDef txHeader;
+    uint32_t            txMailbox;
+
+    txHeader.StdId = 0x123;
+    txHeader.IDE   = CAN_ID_STD;
+    txHeader.RTR   = CAN_RTR_DATA;
+    txHeader.DLC   = 8;
+
+    if ( HAL_CAN_AddTxMessage( hcan, &txHeader, txData, &txMailbox ) != HAL_OK )
+    {
+        // print error
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * @brief recieves data and stores it in rxData (8 bytes) over the hcan CAN channel
+ *
+ * @param hcan the pointer to the handle for the can peripheral
+ * @param rxData pointer to 8 bytes of available storage
+ *
+ * Uses HAL to recieve message over CAN channel
+ */
+int HW_CAN_recieve( CAN_HandleTypeDef* hcan, uint8_t* rxData )
+{
+    CAN_RxHeaderTypeDef rxHeader;
+    if ( HAL_CAN_GetRxMessage( hcan, CAN_RX_FIFO0, &rxHeader, rxData ) != HAL_OK )
+    {
+        // print error
+        return 1;
+    }
+    return 0;
+}
+
+#endif
+
+/**-----------------------------------------------------------------------------
+ *  Private Configuration Function Definitions
  *------------------------------------------------------------------------------
  */
 
@@ -251,51 +392,6 @@ int HW_CAN_configure( CAN_HandleTypeDef* hcan, uint32_t bitrate )
     if ( HAL_CAN_Start( hcan ) != HAL_OK )
     {
         return 3;
-    }
-    return 0;
-}
-
-/**
- * @brief transmits the txData (8 bytes) over the hcan CAN channel
- *
- * @param hcan the pointer to the handle for the can peripheral
- * @param txData pointer to 8 bytes of data
- *
- * Uses HAL to transmit message over CAN channel
- */
-int HW_CAN_transmit( CAN_HandleTypeDef* hcan, uint8_t* txData )
-{
-    CAN_TxHeaderTypeDef txHeader;
-    uint32_t            txMailbox;
-
-    txHeader.StdId = 0x123;
-    txHeader.IDE   = CAN_ID_STD;
-    txHeader.RTR   = CAN_RTR_DATA;
-    txHeader.DLC   = 8;
-
-    if ( HAL_CAN_AddTxMessage( hcan, &txHeader, txData, &txMailbox ) != HAL_OK )
-    {
-        // print error
-        return 1;
-    }
-    return 0;
-}
-
-/**
- * @brief recieves data and stores it in rxData (8 bytes) over the hcan CAN channel
- *
- * @param hcan the pointer to the handle for the can peripheral
- * @param rxData pointer to 8 bytes of available storage
- *
- * Uses HAL to recieve message over CAN channel
- */
-int HW_CAN_recieve( CAN_HandleTypeDef* hcan, uint8_t* rxData )
-{
-    CAN_RxHeaderTypeDef rxHeader;
-    if ( HAL_CAN_GetRxMessage( hcan, CAN_RX_FIFO0, &rxHeader, rxData ) != HAL_OK )
-    {
-        // print error
-        return 1;
     }
     return 0;
 }
