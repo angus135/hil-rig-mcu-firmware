@@ -80,6 +80,11 @@ static uint16_t can_tx_rp = 0;  // Reading from TX buffer handled by ISR
  *
  */
 
+void HW_UART_CH1_TX_IRQ_HANDLER( void );
+void HW_UART_CH1_RX_IRQ_HANDLER( void );
+void HW_UART_CH2_TX_IRQ_HANDLER( void );
+void HW_UART_CH2_RX_IRQ_HANDLER( void );
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -126,28 +131,6 @@ inline uint16_t HW_CAN_buffer_read( uint8_t** buffer, uint16_t* wp, uint16_t* rp
         count += 1;
     }
     return count;
-}
-
-uint16_t HW_CAN_tx_buffer_write( uint8_t** source, uint16_t length )
-{
-    return HW_CAN_buffer_write( can_tx_buffer, &can_tx_wp, &can_tx_rp, TRANSMIT_BUFFER_WIDTH,
-                                source, length );
-}
-
-uint16_t HW_CAN_tx_buffer_read( uint8_t** dest )
-{
-    return HW_CAN_buffer_read( can_tx_buffer, &can_tx_wp, &can_tx_rp, TRANSMIT_BUFFER_WIDTH, dest );
-}
-
-uint16_t HW_CAN_rx_buffer_write( uint8_t** source, uint16_t length )
-{
-    return HW_CAN_buffer_write( can_rx_buffer, &can_rx_wp, &can_rx_rp, RECIEVE_BUFFER_WIDTH, source,
-                                length );
-}
-
-uint16_t HW_CAN_rx_buffer_read( uint8_t** dest )
-{
-    return HW_CAN_buffer_read( can_rx_buffer, &can_rx_wp, &can_rx_rp, RECIEVE_BUFFER_WIDTH, dest );
 }
 
 #ifndef TEST_BUILD
@@ -576,4 +559,108 @@ int HW_CAN_recieve2( uint8_t* rxData )
 #else
     ( void )rxData;
 #endif
+}
+
+/**
+ * @brief Writes a number of 8 byte packets (source) to the tx buffer
+ *
+ * @param source an array of arrays, type:
+uint8_t can_tx_buffer[X][CAN_PACKET_SIZE];
+ * @param length the number of can packets to be written (seen as X above)
+ *
+ * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ */
+uint16_t HW_CAN_tx_buffer_write( uint8_t** source, uint16_t length )
+{
+    return HW_CAN_buffer_write( can_tx_buffer, &can_tx_wp, &can_tx_rp, TRANSMIT_BUFFER_WIDTH,
+                                source, length );
+}
+
+/**
+ * @brief Reads the values in the tx buffer and writes them to dest
+ *
+ * @param dest an array of arrays, type:
+uint8_t can_tx_buffer[RECIEVE_BUFFER_WIDTH][CAN_PACKET_SIZE];
+ *
+ * @return The number of bytes read (can be 0)
+ */
+uint16_t HW_CAN_tx_buffer_read( uint8_t** dest )
+{
+    return HW_CAN_buffer_read( can_tx_buffer, &can_tx_wp, &can_tx_rp, TRANSMIT_BUFFER_WIDTH, dest );
+}
+
+/**
+ * @brief Writes a number of 8 byte packets (source) to the rx buffer
+ *
+ * @param source an array of arrays, type:
+uint8_t can_rx_buffer[X][CAN_PACKET_SIZE];
+ * @param length the number of can packets to be written (seen as X above)
+ *
+ * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ */
+uint16_t HW_CAN_rx_buffer_write( uint8_t** source, uint16_t length )
+{
+    return HW_CAN_buffer_write( can_rx_buffer, &can_rx_wp, &can_rx_rp, RECIEVE_BUFFER_WIDTH, source,
+                                length );
+}
+
+/**
+ * @brief Reads the values in the rx buffer and writes them to dest
+ *
+ * @param dest an array of arrays, type:
+uint8_t can_rx_buffer[RECIEVE_BUFFER_WIDTH][CAN_PACKET_SIZE];
+ *
+ * @return The number of bytes read (can be 0)
+ */
+uint16_t HW_CAN_rx_buffer_read( uint8_t** dest )
+{
+    return HW_CAN_buffer_read( can_rx_buffer, &can_rx_wp, &can_rx_rp, RECIEVE_BUFFER_WIDTH, dest );
+}
+
+/**
+ * @brief  ...
+ *
+ *
+ * @note   This handler must remain minimal and deterministic. No blocking or
+ *         heavy processing should be introduced here.
+ */
+void HW_CAN_CH1_TX_IRQ_HANDLER( void )
+{
+    return;
+}
+
+/**
+ * @brief  ...
+ *
+ *
+ * @note   This handler must remain minimal and deterministic. No blocking or
+ *         heavy processing should be introduced here.
+ */
+void HW_CAN_CH1_RX_IRQ_HANDLER( void )
+{
+    return;
+}
+
+/**
+ * @brief  ...
+ *
+ *
+ * @note   This handler must remain minimal and deterministic. No blocking or
+ *         heavy processing should be introduced here.
+ */
+void HW_CAN_CH2_TX_IRQ_HANDLER( void )
+{
+    return;
+}
+
+/**
+ * @brief  ...
+ *
+ *
+ * @note   This handler must remain minimal and deterministic. No blocking or
+ *         heavy processing should be introduced here.
+ */
+void HW_CAN_CH2_RX_IRQ_HANDLER( void )
+{
+    return;
 }
