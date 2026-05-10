@@ -113,7 +113,7 @@ EXECI2CStatus_T EXEC_I2C_Configuration_Internal( void );
  * @return true if transmission was initiated
  * @return false on failure
  */
-bool EXEC_I2C_Master_Send( HWI2CChannel_T channel, uint16_t device_address_7bit,
+bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
                            const uint8_t* payload, uint16_t payload_length );
 
 /**
@@ -129,7 +129,7 @@ bool EXEC_I2C_Master_Send( HWI2CChannel_T channel, uint16_t device_address_7bit,
  * @return true if transmission was initiated
  * @return false on failure
  */
-bool EXEC_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t* payload,
+bool EXEC_I2C_Master_Transmit_Internal( uint16_t device_address_7bit, const uint8_t* payload,
                                     uint16_t payload_length );
 
 /**
@@ -144,24 +144,39 @@ bool EXEC_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t*
  * @return true if slave transmit was prepared
  * @return false on failure
  */
-bool EXEC_I2C_Slave_Send( HWI2CChannel_T channel, const uint8_t* payload,
+bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* payload,
                           uint16_t payload_length );
 
 /**
- * @brief Initiate master receive on an external channel.
+ * @brief Initiate master receive on an external I2C channel.
  *
- * Requests data from a slave device. Received data is buffered internally
- * and can be retrieved with EXEC_I2C_Receive_Copy_And_Consume().
+ * Requests data from a slave device on the specified external channel (I2C1 or I2C2).
+ * Received data is buffered internally and can be retrieved with EXEC_I2C_Receive_Copy_And_Consume().
  *
- * @param[in] channel               I2C channel
+ * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
  * @param[in] device_address_7bit   7-bit slave address
  * @param[in] expected_length       Number of bytes expected from slave
  *
  * @return true if receive was initiated
  * @return false on failure
  */
-bool EXEC_I2C_Start_Master_Receive( HWI2CChannel_T channel, uint16_t device_address_7bit,
-                                    uint16_t expected_length );
+bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
+                                             uint16_t expected_length );
+
+/**
+ * @brief Initiate master receive on the internal FMPI2C1 channel.
+ *
+ * Requests data from a slave device on the internal FMPI2C1 channel.
+ * Received data is buffered internally and can be retrieved with EXEC_I2C_Receive_Copy_And_Consume().
+ *
+ * @param[in] device_address_7bit   7-bit slave address
+ * @param[in] expected_length       Number of bytes expected from slave
+ *
+ * @return true if receive was initiated
+ * @return false on failure
+ */
+bool EXEC_I2C_Start_Master_Receive_Internal( uint16_t device_address_7bit,
+                                             uint16_t expected_length );
 
 /**
  * @brief Initiate slave receive on an external channel.
@@ -175,7 +190,7 @@ bool EXEC_I2C_Start_Master_Receive( HWI2CChannel_T channel, uint16_t device_addr
  * @return true if receive was prepared
  * @return false on failure
  */
-bool EXEC_I2C_Start_Slave_Receive( HWI2CChannel_T channel, uint16_t expected_length );
+bool EXEC_I2C_Start_Slave_Receive_External( HWI2CChannel_T channel, uint16_t expected_length );
 
 /**
  * @brief Copy received data and advance the receive pointer.

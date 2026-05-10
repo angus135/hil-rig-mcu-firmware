@@ -8,17 +8,16 @@ This module is responsible for:
 
 - Validating higher-layer I2C channel configuration requests for the two external buses.
 - Calling low-level `hw_i2c` configuration APIs for:
-	- `I2C1` external channel
-	- `I2C2` external channel
-	- `FMPI2C1` internal channel
+  - `I2C1` external channel
+  - `I2C2` external channel
+  - `FMPI2C1` internal channel
 - Handling transmit orchestration using the stage-buffer pattern:
-	- load stage buffer in low level
-	- trigger transfer in low level
+  - load stage buffer in low level
+  - trigger transfer in low level
 - Handling receive orchestration using the peek/copy/consume pattern:
-	- peek zero-copy spans from low level
-	- copy to execution-manager-owned storage
-	- consume copied bytes in low level
-
+  - peek zero-copy spans from low level
+  - copy to execution-manager-owned storage
+  - consume copied bytes in low level
 
 ---
 
@@ -28,7 +27,6 @@ This module is responsible for:
 |---------------------------|------|
 | `exec_i2c.c`        | Public API implementation |
 | `exec_i2c.h`        | Public API header |
-
 
 ---
 
@@ -47,19 +45,19 @@ It is a coordination layer between higher-level logic and `hw_i2c`.
 
 ### TX flow
 
-1. Higher layer calls `EXEC_I2C_Master_Send(...)` or `EXEC_I2C_Slave_Send(...)` with `HWI2CChannel_T`.
+1. Higher layer calls `EXEC_I2C_Master_Transmit_External(...)` or `EXEC_I2C_Slave_Transmit_External(...)` with `HWI2CChannel_T`.
 2. `exec_i2c` calls `HW_I2C_Load_Stage_Buffer(...)`.
 3. `exec_i2c` calls `HW_I2C_Trigger_*_Transmit(...)`.
 
 ### RX flow
 
-1. Higher layer calls `EXEC_I2C_Start_Master_Receive(...)` or `EXEC_I2C_Start_Slave_Receive(...)` with `HWI2CChannel_T`.
+1. Higher layer calls `EXEC_I2C_Start_Master_Receive(...)` or `EXEC_I2C_Start_Slave_Receive_External(...)` with `HWI2CChannel_T`.
 2. Higher layer later calls `EXEC_I2C_Receive_Copy_And_Consume(...)`.
 3. `exec_i2c`:
-	- peeks low-level spans with `HW_I2C_Peek_Received(...)`
-	- copies into caller-provided result storage
-	- consumes copied bytes via `HW_I2C_Consume_Received(...)`
 
+- peeks low-level spans with `HW_I2C_Peek_Received(...)`
+- copies into caller-provided result storage
+- consumes copied bytes via `HW_I2C_Consume_Received(...)`
 
 ---
 
@@ -76,12 +74,11 @@ For each external channel, higher layer provides:
 - Mode: `HW_I2C_MODE_MASTER` or `HW_I2C_MODE_SLAVE`
 - Speed: `HW_I2C_SPEED_100KHZ` or `HW_I2C_SPEED_400KHZ`
 - Transfer path:
-	- `I2C1`: `HW_I2C_TRANSFER_INTERRUPT` only
-	- `I2C2`: `HW_I2C_TRANSFER_INTERRUPT` or `HW_I2C_TRANSFER_DMA`
+  - `I2C1`: `HW_I2C_TRANSFER_INTERRUPT` only
+  - `I2C2`: `HW_I2C_TRANSFER_INTERRUPT` or `HW_I2C_TRANSFER_DMA`
 - Own address: 7-bit value (`0x00` to `0x7F`)
 
 Input validation rejects invalid enum/address values with `EXEC_I2C_STATUS_INVALID_PARAM`.
-
 
 ---
 
@@ -93,18 +90,17 @@ Configuration:
 
 Transmit:
 
-- `EXEC_I2C_Master_Send(...)`
-- `EXEC_I2C_Slave_Send(...)`
+- `EXEC_I2C_Master_Transmit_External(...)`
+- `EXEC_I2C_Slave_Transmit_External(...)`
 
 Receive start:
 
 - `EXEC_I2C_Start_Master_Receive(...)`
-- `EXEC_I2C_Start_Slave_Receive(...)`
+- `EXEC_I2C_Start_Slave_Receive_External(...)`
 
 Receive extraction:
 
 - `EXEC_I2C_Receive_Copy_And_Consume(...)`
-
 
 ---
 
@@ -113,9 +109,10 @@ Receive extraction:
 1. Build two `EXECI2CChannelConfig_T` objects for external channels.
 2. Call `EXEC_I2C_Configuration(&i2c1_cfg, &i2c2_cfg, internal_fmpi2c1_addr)` once at startup.
 3. At runtime:
-	- Use `EXEC_I2C_Master_Send`/`EXEC_I2C_Slave_Send` for transmit.
-	- Use `EXEC_I2C_Start_*_Receive` to arm receive.
-	- Use `EXEC_I2C_Receive_Copy_And_Consume` to fetch received bytes into execution-manager storage.
+
+- Use `EXEC_I2C_Master_Transmit_External`/`EXEC_I2C_Slave_Transmit_External` for transmit.
+- Use `EXEC_I2C_Start_*_Receive` to arm receive.
+- Use `EXEC_I2C_Receive_Copy_And_Consume` to fetch received bytes into execution-manager storage.
 
 ---
 
