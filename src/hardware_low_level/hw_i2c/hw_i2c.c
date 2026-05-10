@@ -338,6 +338,14 @@ static inline void HW_I2C_Disable_DMA_Request( I2C_TypeDef* i2c_instance )
 static inline void HW_I2C_Set_Speed_And_Address( I2C_TypeDef* i2c_instance, HWI2CSpeed_T speed,
                                                  uint16_t own_address_7bit )
 {
+    // // Must clear STOPF before disabling PE - the clearing sequence requires
+    // // PE=1 (read SR1, write CR1). Disabling PE with STOPF set corrupts
+    // // the peripheral state on re-enable.
+    // if ( LL_I2C_IsActiveFlag_STOP( i2c_instance ) )
+    // {
+    //     LL_I2C_ClearFlag_STOP( i2c_instance );
+    // }
+
     LL_I2C_Disable( i2c_instance );
     LL_I2C_SetPeriphClock( i2c_instance, HW_I2C_APB1_HZ );
     LL_I2C_ConfigSpeed( i2c_instance, HW_I2C_APB1_HZ, HWI2CSpeed_To_Hz( speed ), LL_I2C_DUTYCYCLE_2 );
@@ -403,7 +411,7 @@ static inline void HW_I2C_Finish_Transfer( HWI2CChannel_T channel, I2C_TypeDef* 
 
     if ( state->config.tx_transfer_path == HW_I2C_TRANSFER_DMA
          || state->config.rx_transfer_path == HW_I2C_TRANSFER_DMA )
-    {
+    {        
         DMA_Stream_TypeDef* rx_stream = HWI2CChannel_To_DMA_Rx_Stream( channel );
         DMA_Stream_TypeDef* tx_stream = HWI2CChannel_To_DMA_Tx_Stream( channel );
         if ( rx_stream != NULL )
@@ -546,6 +554,13 @@ static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
             HW_I2C_Finish_Transfer( channel, i2c_instance );
             return;
         }
+        if ( ( state->transfer_kind == HW_I2C_TRANSFER_KIND_SLAVE_TX )
+            && tx_dma_mode
+            && state->dma_tx_transfer_complete
+            && ( ( sr1 & I2C_SR1_BTF ) != 0U ) )
+        {
+            i2c_instance->DR = 0xFFU;
+        }
     }
 
     if ( state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_RX
@@ -553,19 +568,33 @@ static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
     {
         if ( ( sr1 & I2C_SR1_RXNE ) != 0U )
         {
-            uint8_t data_byte = ( uint8_t )i2c_instance->DR;
-            HW_I2C_Ring_Push_Byte( state, data_byte );
-
-            if ( state->rx_expected_length > 0U )
-            {
-                state->rx_expected_length--;
-            }
-
             if ( ( state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_RX )
                  && ( state->rx_expected_length <= 1U ) )
             {
                 LL_I2C_AcknowledgeNextData( i2c_instance, LL_I2C_NACK );
                 LL_I2C_GenerateStopCondition( i2c_instance );
+            }
+
+            uint8_t data_byte = ( uint8_t )i2c_instance->DR;
+            HW_I2C_Ring_Push_Byte( state, data_byte );
+
+            
+
+            // // At 400kHz, BTF may already be set meaning DR has the next
+            // // byte too — drain it before we finish or it poisons the next transfer
+            // if ( ( state->rx_expected_length > 0U )
+            //     && ( ( i2c_instance->SR1 & I2C_SR1_BTF ) != 0U ) )
+            // {
+            //     data_byte = ( uint8_t )i2c_instance->DR;
+            //     HW_I2C_Ring_Push_Byte( state, data_byte );
+            //     state->rx_expected_length--;
+            // }
+
+            
+
+            if ( state->rx_expected_length > 0U )
+            {
+                state->rx_expected_length--;
             }
 
             if ( state->rx_expected_length == 0U )
@@ -940,7 +969,7 @@ bool HW_I2C_Trigger_Master_Receive( HWI2CChannel_T channel,
  */
 bool HW_I2C_Trigger_Slave_Transmit( HWI2CChannel_T channel )
 {
-    HWI2CChannelState_T* state  = &hw_i2c_channel_state[channel];
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
 
     state->transfer_kind            = HW_I2C_TRANSFER_KIND_SLAVE_TX;
     state->transfer_in_progress     = true;
