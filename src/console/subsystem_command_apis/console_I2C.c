@@ -200,7 +200,7 @@ bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels,
                                           uint16_t tx_len, char* rx_message,
                                           uint16_t rx_message_size, uint16_t* out_received_len )
 {
-    bool is_ok = EXEC_I2C_Start_Slave_Receive( channels.slave, tx_len );
+    bool is_ok = EXEC_I2C_Start_Slave_Receive_External( channels.slave, tx_len );
     if ( !is_ok )
     {
         CONSOLE_Printf( "Failed to start slave receive.\r\n" );
@@ -210,7 +210,7 @@ bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels,
     vTaskDelay( pdMS_TO_TICKS( 2 ) );
 
     is_ok =
-        EXEC_I2C_Master_Send( channels.master, slave_addr, ( const uint8_t* )tx_message, tx_len );
+        EXEC_I2C_Master_Transmit_External( channels.master, slave_addr, ( const uint8_t* )tx_message, tx_len );
     if ( !is_ok )
     {
         CONSOLE_Printf( "Master send failed.\r\n" );
@@ -252,7 +252,7 @@ bool CONSOLE_Run_I2C_Loopback_S2M( CONSOLEI2CLoopbackChannels_T channels,
                                           uint16_t tx_len, char* rx_message,
                                           uint16_t rx_message_size, uint16_t* out_received_len )
 {
-    bool is_ok = EXEC_I2C_Slave_Send( channels.slave, ( const uint8_t* )tx_message, tx_len );
+    bool is_ok = EXEC_I2C_Slave_Transmit_External( channels.slave, ( const uint8_t* )tx_message, tx_len );
     if ( !is_ok )
     {
         CONSOLE_Printf( "Failed to start slave send.\r\n" );
@@ -261,7 +261,7 @@ bool CONSOLE_Run_I2C_Loopback_S2M( CONSOLEI2CLoopbackChannels_T channels,
 
     vTaskDelay( pdMS_TO_TICKS( 2 ) );
 
-    is_ok = EXEC_I2C_Start_Master_Receive( channels.master, slave_addr, tx_len );
+    is_ok = EXEC_I2C_Start_Master_Receive_External( channels.master, slave_addr, tx_len );
     if ( !is_ok )
     {
         CONSOLE_Printf( "Master receive start failed.\r\n" );
