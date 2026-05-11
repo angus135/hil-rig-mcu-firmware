@@ -43,6 +43,9 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief Parses the expander port selector.
+ */
 bool CONSOLE_Parse_Expander_Port( const char* arg, LogicExpanderPort_T* port );
 
 #ifdef __cplusplus
