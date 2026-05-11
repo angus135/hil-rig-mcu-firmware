@@ -63,7 +63,7 @@ void HW_PWM_GEN_config( int channel, int volt_lvl );
  * These functions should be use during configuration to prepare
  * the frequency and duty cycle instructions for quick running
  */
-uint16_t HW_PWM_GEN_compute_psc( uint16_t freq_hz, uint32_t timer_clk_hz );
+uint16_t HW_PWM_GEN_compute_psc( uint32_t freq_hz, uint32_t timer_clk_hz );
 
 /**
  * @brief Computes the auto reloader register (ARR).
@@ -119,7 +119,6 @@ void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr, uint16_t psc );
  * This function is designed to be very fast and should be implemented in the execution phase
  */
 void HW_PWM_GEN_set_pwm2_direct( uint16_t arr, uint16_t ccr, uint16_t psc );
-
 
 #ifdef __cplusplus
 }
