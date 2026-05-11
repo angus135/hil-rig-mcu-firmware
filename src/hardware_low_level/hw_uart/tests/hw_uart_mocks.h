@@ -122,6 +122,12 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+typedef enum
+{
+    DMA1_Stream6_IRQn = 0,
+    DMA2_Stream6_IRQn = 1
+} IRQn_Type;
+
 typedef struct
 {
     volatile uint32_t SR;
@@ -256,7 +262,6 @@ static UART_HandleTypeDef huart3 = { 0 };
  *------------------------------------------------------------------------------
  */
 
-extern uint32_t mock_primask;
 extern uint32_t mock_irq_disable_count;
 extern uint32_t mock_irq_enable_count;
 
@@ -304,10 +309,9 @@ uint32_t LL_DMA_IsActiveFlag_HT5( DMA_TypeDef* dma );
 void LL_USART_EnableDMAReq_TX( USART_TypeDef* usart );
 void LL_USART_DisableDMAReq_TX( USART_TypeDef* usart );
 
-/* CMSIS IRQ masking seams used by DUT TX ring buffer critical sections. */
-uint32_t __get_PRIMASK( void );
-void     __disable_irq( void );
-void     __enable_irq( void );
+uint32_t NVIC_GetEnableIRQ( IRQn_Type IRQn );
+void     NVIC_DisableIRQ( IRQn_Type IRQn );
+void     NVIC_EnableIRQ( IRQn_Type IRQn );
 
 uint32_t LL_USART_IsActiveFlag_TC( USART_TypeDef* usart );
 void     LL_USART_ClearFlag_TC( USART_TypeDef* usart );
