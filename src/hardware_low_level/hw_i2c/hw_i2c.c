@@ -338,14 +338,6 @@ static inline void HW_I2C_Disable_DMA_Request( I2C_TypeDef* i2c_instance )
 static inline void HW_I2C_Set_Speed_And_Address( I2C_TypeDef* i2c_instance, HWI2CSpeed_T speed,
                                                  uint16_t own_address_7bit )
 {
-    // // Must clear STOPF before disabling PE - the clearing sequence requires
-    // // PE=1 (read SR1, write CR1). Disabling PE with STOPF set corrupts
-    // // the peripheral state on re-enable.
-    // if ( LL_I2C_IsActiveFlag_STOP( i2c_instance ) )
-    // {
-    //     LL_I2C_ClearFlag_STOP( i2c_instance );
-    // }
-
     LL_I2C_Disable( i2c_instance );
     LL_I2C_SetPeriphClock( i2c_instance, HW_I2C_APB1_HZ );
     LL_I2C_ConfigSpeed( i2c_instance, HW_I2C_APB1_HZ, HWI2CSpeed_To_Hz( speed ), LL_I2C_DUTYCYCLE_2 );
