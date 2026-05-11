@@ -182,7 +182,7 @@ void HW_PWM_GEN_config( int channel, int volt_lvl )
  */
 uint16_t HW_PWM_GEN_compute_psc( uint32_t freq_hz, uint32_t timer_clk_hz )
 {
-    if ( freq_hz > timer_clk_hz || freq_hz > 1000000)
+    if ( freq_hz > timer_clk_hz || freq_hz > 1000000 )
     {
         return 0;
     }
