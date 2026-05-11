@@ -80,7 +80,7 @@ DMA_TypeDef fake_dma1 = { 0U, 0U, 0U, 0U };
 DMA_TypeDef fake_dma2 = { 0U, 0U, 0U, 0U };
 }
 
-uint32_t mock_primask           = 0U;
+uint32_t mock_nvic_enabled[2]   = { 1U, 1U };
 uint32_t mock_irq_disable_count = 0U;
 uint32_t mock_irq_enable_count  = 0U;
 
@@ -182,20 +182,20 @@ static void TEST_HW_UART_Reset_Dma_Handle( DMA_HandleTypeDef* handle, DMA_Stream
 
 // NOLINTBEGIN
 
-extern "C" uint32_t __get_PRIMASK( void )
+extern "C" uint32_t NVIC_GetEnableIRQ( IRQn_Type IRQn )
 {
-    return mock_primask;
+    return mock_nvic_enabled[IRQn];
 }
 
-extern "C" void __disable_irq( void )
+extern "C" void NVIC_DisableIRQ( IRQn_Type IRQn )
 {
-    mock_primask = 1U;
+    mock_nvic_enabled[IRQn] = 0U;
     mock_irq_disable_count++;
 }
 
-extern "C" void __enable_irq( void )
+extern "C" void NVIC_EnableIRQ( IRQn_Type IRQn )
 {
-    mock_primask = 0U;
+    mock_nvic_enabled[IRQn] = 1U;
     mock_irq_enable_count++;
 }
 
@@ -569,7 +569,8 @@ protected:
         TEST_HW_UART_Reset_Dma_Stream( DMA1_Stream5 );
         TEST_HW_UART_Reset_Dma_Stream( DMA1_Stream6 );
 
-        mock_primask           = 0U;
+        mock_nvic_enabled[DMA1_Stream6_IRQn] = 1U;
+        mock_nvic_enabled[DMA2_Stream6_IRQn] = 1U;
         mock_irq_disable_count = 0U;
         mock_irq_enable_count  = 0U;
 
@@ -922,18 +923,18 @@ TEST_F( UartTest, DutTxLoadRejectsPayloadWhenInsufficientSpace )
         HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, extra_payload, sizeof( extra_payload ) ) );
 }
 
-TEST_F( UartTest, DutTxLoadPreservesExistingPrimaskState )
+TEST_F( UartTest, DutTxLoadPreservesDisabledTxDmaIrqState )
 {
     HwUartConfig_T config     = TEST_HW_UART_Make_Tx_Only_Config();
     uint8_t        payload[2] = { 1U, 2U };
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
-    mock_primask = 1U;
+    mock_nvic_enabled[DMA2_Stream6_IRQn] = 0U;
 
     ASSERT_TRUE( HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
 
-    EXPECT_EQ( mock_primask, 1U );
+    EXPECT_EQ( mock_nvic_enabled[DMA2_Stream6_IRQn], 0U );
     EXPECT_EQ( mock_irq_disable_count, 2U );
     EXPECT_EQ( mock_irq_enable_count, 0U );
 }

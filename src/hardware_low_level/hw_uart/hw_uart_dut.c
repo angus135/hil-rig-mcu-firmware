@@ -68,13 +68,18 @@
 
 /* Fixed UART hardware mapping definitions. */
 #define HW_UART_CH1_USART USART6
+#define HW_UART_CH1_HANDLE ( &huart6 )
+
 #define HW_UART_CH1_DMA_RX_STREAM DMA2_Stream2
 #define HW_UART_CH1_DMA_TX_STREAM DMA2_Stream6
+
+#define HW_UART_CH1_TX_DMA_IRQ DMA2_Stream6_IRQn
 #define HW_UART_CH1_TX_DMA_IRQ_HANDLER DMA2_Stream6_IRQHandler
 #define HW_UART_CH1_RX_DMA_IRQ_HANDLER DMA2_Stream2_IRQHandler
-#define HW_UART_CH1_HANDLE ( &huart6 )
+
 #define HW_UART_CH1_DMA_CONTROLLER DMA2
 #define HW_UART_CH1_DMA_TX_LL_STREAM LL_DMA_STREAM_6
+
 #define HW_UART_CH1_DMA_TX_IFCR_REG ( &DMA2->HIFCR )
 #define HW_UART_CH1_DMA_TX_IFCR_MASK                                                               \
     ( DMA_HIFCR_CTCIF6 | DMA_HIFCR_CTEIF6 | DMA_HIFCR_CFEIF6 | DMA_HIFCR_CDMEIF6                   \
@@ -85,13 +90,18 @@
       | DMA_LIFCR_CHTIF2 )
 
 #define HW_UART_CH2_USART USART2
+#define HW_UART_CH2_HANDLE ( &huart2 )
+
 #define HW_UART_CH2_DMA_RX_STREAM DMA1_Stream5
 #define HW_UART_CH2_DMA_TX_STREAM DMA1_Stream6
+
+#define HW_UART_CH2_TX_DMA_IRQ DMA1_Stream6_IRQn
 #define HW_UART_CH2_TX_DMA_IRQ_HANDLER DMA1_Stream6_IRQHandler
 #define HW_UART_CH2_RX_DMA_IRQ_HANDLER DMA1_Stream5_IRQHandler
-#define HW_UART_CH2_HANDLE ( &huart2 )
+
 #define HW_UART_CH2_DMA_CONTROLLER DMA1
 #define HW_UART_CH2_DMA_TX_LL_STREAM LL_DMA_STREAM_6
+
 #define HW_UART_CH2_DMA_TX_IFCR_REG ( &DMA1->HIFCR )
 #define HW_UART_CH2_DMA_TX_IFCR_MASK                                                               \
     ( DMA_HIFCR_CTCIF6 | DMA_HIFCR_CTEIF6 | DMA_HIFCR_CFEIF6 | DMA_HIFCR_CDMEIF6                   \
@@ -237,6 +247,7 @@ typedef struct
 
     DMA_TypeDef*       tx_dma_controller;
     uint32_t           tx_ll_stream;
+    IRQn_Type          tx_dma_irq;
     volatile uint32_t* tx_dma_ifcr_reg;
     uint32_t           tx_dma_ifcr_mask;
 
@@ -266,6 +277,7 @@ static const HwUartHardwareMap_T hw_uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
                             .uart_handle       = HW_UART_CH1_HANDLE,
                             .tx_dma_controller = HW_UART_CH1_DMA_CONTROLLER,
                             .tx_ll_stream      = HW_UART_CH1_DMA_TX_LL_STREAM,
+                            .tx_dma_irq        = HW_UART_CH1_TX_DMA_IRQ,
                             .tx_dma_ifcr_reg   = HW_UART_CH1_DMA_TX_IFCR_REG,
                             .tx_dma_ifcr_mask  = HW_UART_CH1_DMA_TX_IFCR_MASK,
                             .rx_dma_ifcr_reg   = HW_UART_CH1_DMA_RX_IFCR_REG,
@@ -277,6 +289,7 @@ static const HwUartHardwareMap_T hw_uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
                             .uart_handle       = HW_UART_CH2_HANDLE,
                             .tx_dma_controller = HW_UART_CH2_DMA_CONTROLLER,
                             .tx_ll_stream      = HW_UART_CH2_DMA_TX_LL_STREAM,
+                            .tx_dma_irq        = HW_UART_CH2_TX_DMA_IRQ,
                             .tx_dma_ifcr_reg   = HW_UART_CH2_DMA_TX_IFCR_REG,
                             .tx_dma_ifcr_mask  = HW_UART_CH2_DMA_TX_IFCR_MASK,
                             .rx_dma_ifcr_reg   = HW_UART_CH2_DMA_RX_IFCR_REG,
@@ -440,6 +453,24 @@ static inline uint32_t HW_UART_Advance_Index_Helper( uint32_t current_index, uin
 {
     // Power of 2 buffer wrap using bitmask.
     return ( current_index + advance_by ) & ( HW_UART_RX_BUFFER_SIZE - 1U );
+}
+
+static inline uint32_t HW_UART_Tx_Dma_Irq_Disable( HwUartChannel_T channel )
+{
+    IRQn_Type irq         = hw_uart_hardware_map[channel].tx_dma_irq;
+    uint32_t  was_enabled = NVIC_GetEnableIRQ( irq );
+
+    NVIC_DisableIRQ( irq );
+
+    return was_enabled;
+}
+
+static inline void HW_UART_Tx_Dma_Irq_Restore( HwUartChannel_T channel, uint32_t was_enabled )
+{
+    if ( was_enabled != 0U )
+    {
+        NVIC_EnableIRQ( hw_uart_hardware_map[channel].tx_dma_irq );
+    }
 }
 
 /**
@@ -945,27 +976,19 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
     uint32_t first_chunk;
     uint32_t second_chunk;
 
-    uint32_t primask = __get_PRIMASK();
-    __disable_irq();
+    uint32_t tx_irq_was_enabled = HW_UART_Tx_Dma_Irq_Disable( channel );
 
     uint32_t free_space = HW_UART_TX_BUFFER_SIZE - state->runtime.tx_count;
 
     if ( length_bytes > free_space )
     {
-        if ( primask == 0U )
-        {
-            __enable_irq();
-        }
-
+        HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
         return false;
     }
 
     start_head = state->runtime.tx_head;
 
-    if ( primask == 0U )
-    {
-        __enable_irq();
-    }
+    HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
 
     first_chunk = HW_UART_TX_BUFFER_SIZE - start_head;
 
@@ -985,16 +1008,12 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
 
     new_head = ( start_head + length_bytes ) % HW_UART_TX_BUFFER_SIZE;
 
-    primask = __get_PRIMASK();
-    __disable_irq();
+    tx_irq_was_enabled = HW_UART_Tx_Dma_Irq_Disable( channel );
 
     state->runtime.tx_head = new_head;
     state->runtime.tx_count += length_bytes;
 
-    if ( primask == 0U )
-    {
-        __enable_irq();
-    }
+    HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
 
     return true;
 }
@@ -1024,25 +1043,18 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
     uint32_t                   tx_ll_stream      = hw_map->tx_ll_stream;
 
     /* Enter critical section */
-    uint32_t primask = __get_PRIMASK();
-    __disable_irq();
+    uint32_t tx_irq_was_enabled = HW_UART_Tx_Dma_Irq_Disable( channel );
 
     if ( state->runtime.tx_dma_active )
     {
-        if ( primask == 0U )
-        {
-            __enable_irq();
-        }
+        HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
         return true;
     }
 
     /* No queued data exists, so there is no DMA transfer to launch. */
     if ( state->runtime.tx_count == 0U )
     {
-        if ( primask == 0U )
-        {
-            __enable_irq();
-        }
+        HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
         return true;
     }
 
@@ -1058,12 +1070,6 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
 
     /* Capture the starting index for the DMA transfer*/
     uint32_t dma_start_index = state->runtime.tx_tail;
-
-    /* Exit critical section before enabling the DMA stream to allow the completion ISR to run. */
-    if ( primask == 0U )
-    {
-        __enable_irq();
-    }
 
     LL_DMA_DisableStream( tx_dma_controller, tx_ll_stream );
 
@@ -1090,6 +1096,8 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
     LL_USART_EnableDMAReq_TX( uart );
 
     LL_DMA_EnableStream( tx_dma_controller, tx_ll_stream );
+
+    HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
 
     return true;
 }
