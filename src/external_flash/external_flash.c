@@ -75,9 +75,9 @@
 #define EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES ( 2048U )
 
 /** Maximum physical block count of the writable external_flash partitions. */
-#define EXTERNAL_FLASH_MAX_PARTITION_BLOCK_COUNT                                             \
-    ( ( EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT > EXTERNAL_FLASH_RESULT_BLOCK_COUNT )          \
-          ? EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT                                            \
+#define EXTERNAL_FLASH_MAX_PARTITION_BLOCK_COUNT                                                   \
+    ( ( EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT > EXTERNAL_FLASH_RESULT_BLOCK_COUNT )               \
+          ? EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT                                                 \
           : EXTERNAL_FLASH_RESULT_BLOCK_COUNT )
 
 /**=============================================================================
@@ -162,8 +162,7 @@ static uint8_t external_flash_result_page_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BY
  * final partial page writes through EXTERNAL_FLASH_WriteInstructionPage.
  */
 static uint8_t external_flash_instruction_page_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES] = {
-    0xFFU
-};
+    0xFFU };
 
 /**=============================================================================
  *  Private (static) Function Prototypes
@@ -232,16 +231,13 @@ static void EXTERNAL_FLASH_ClearInstructionPageBuffer( void );
  *
  * The NAND program operation still writes one full physical page.
  */
-static ExternalFlashStatus_T
-EXTERNAL_FLASH_ProgramPartitionPageBuffer( ExternalFlashAllocatorPartition_T partition,
-                                           const uint8_t* page_buffer,
-                                           uint32_t page_start_offset, uint32_t bytes_to_commit,
-                                           uint32_t* committed_length_bytes );
+static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramPartitionPageBuffer(
+    ExternalFlashAllocatorPartition_T partition, const uint8_t* page_buffer,
+    uint32_t page_start_offset, uint32_t bytes_to_commit, uint32_t* committed_length_bytes );
 
 /** Programs one physical NAND page into the instruction partition. */
 static ExternalFlashStatus_T
-EXTERNAL_FLASH_ProgramInstructionPageBuffer( const uint8_t* page_buffer,
-                                             uint32_t page_start_offset,
+EXTERNAL_FLASH_ProgramInstructionPageBuffer( const uint8_t* page_buffer, uint32_t page_start_offset,
                                              uint32_t bytes_to_commit );
 
 /** Programs one physical NAND page into the result partition. */
@@ -388,7 +384,8 @@ EXTERNAL_FLASH_GetPhysicalBlockForLogicalBlock( ExternalFlashAllocatorPartition_
 static bool EXTERNAL_FLASH_GetPhysicalAddress( ExternalFlashAllocatorPartition_T partition,
                                                uint32_t offset, uint32_t* page, uint16_t* column )
 {
-    if ( ( page == NULL ) || ( column == NULL ) || ( external_flash_geometry.page_size_bytes == 0U ) )
+    if ( ( page == NULL ) || ( column == NULL )
+         || ( external_flash_geometry.page_size_bytes == 0U ) )
     {
         return false;
     }
@@ -466,11 +463,9 @@ static void EXTERNAL_FLASH_ClearInstructionPageBuffer( void )
  * @note If program fails, the failed block is retired and the same logical page
  *       is retried on the next good physical block in the same partition.
  */
-static ExternalFlashStatus_T
-EXTERNAL_FLASH_ProgramPartitionPageBuffer( ExternalFlashAllocatorPartition_T partition,
-                                           const uint8_t* page_buffer,
-                                           uint32_t page_start_offset, uint32_t bytes_to_commit,
-                                           uint32_t* committed_length_bytes )
+static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramPartitionPageBuffer(
+    ExternalFlashAllocatorPartition_T partition, const uint8_t* page_buffer,
+    uint32_t page_start_offset, uint32_t bytes_to_commit, uint32_t* committed_length_bytes )
 {
     if ( ( page_buffer == NULL ) || ( committed_length_bytes == NULL ) )
     {
@@ -487,11 +482,10 @@ EXTERNAL_FLASH_ProgramPartitionPageBuffer( ExternalFlashAllocatorPartition_T par
         return EXTERNAL_FLASH_STATUS_INVALID_ARG;
     }
 
-    for ( uint32_t attempts = 0U; attempts < EXTERNAL_FLASH_MAX_PARTITION_BLOCK_COUNT;
-          attempts++ )
+    for ( uint32_t attempts = 0U; attempts < EXTERNAL_FLASH_MAX_PARTITION_BLOCK_COUNT; attempts++ )
     {
-        uint32_t page   = 0U;
-        uint16_t column = 0U;
+        uint32_t page          = 0U;
+        uint16_t column        = 0U;
         uint32_t logical_block = page_start_offset / EXTERNAL_FLASH_BlockDataSizeBytes();
 
         if ( !EXTERNAL_FLASH_GetPhysicalAddress( partition, page_start_offset, &page, &column )
@@ -549,14 +543,12 @@ EXTERNAL_FLASH_ProgramPartitionPageBuffer( ExternalFlashAllocatorPartition_T par
  * @brief Programs one physical NAND instruction page.
  */
 static ExternalFlashStatus_T
-EXTERNAL_FLASH_ProgramInstructionPageBuffer( const uint8_t* page_buffer,
-                                             uint32_t page_start_offset,
+EXTERNAL_FLASH_ProgramInstructionPageBuffer( const uint8_t* page_buffer, uint32_t page_start_offset,
                                              uint32_t bytes_to_commit )
 {
     return EXTERNAL_FLASH_ProgramPartitionPageBuffer(
         EXTERNAL_FLASH_ALLOCATOR_PARTITION_INSTRUCTION, page_buffer, page_start_offset,
-        bytes_to_commit,
-        &external_flash_committed_instruction_length_bytes );
+        bytes_to_commit, &external_flash_committed_instruction_length_bytes );
 }
 
 /**
@@ -567,8 +559,7 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramResultPageBuffer( const uint8
                                                                      uint32_t bytes_to_commit )
 {
     return EXTERNAL_FLASH_ProgramPartitionPageBuffer(
-        EXTERNAL_FLASH_ALLOCATOR_PARTITION_RESULT, page_buffer, page_start_offset,
-        bytes_to_commit,
+        EXTERNAL_FLASH_ALLOCATOR_PARTITION_RESULT, page_buffer, page_start_offset, bytes_to_commit,
         &external_flash_committed_result_length_bytes );
 }
 
@@ -740,21 +731,21 @@ EXTERNAL_FLASH_ReadFromPartition( ExternalFlashAllocatorPartition_T partition,
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_Init( void )
 {
-    external_flash_initialised                         = false;
-    external_flash_session_active                      = false;
-    external_flash_result_cursor_advanced              = false;
-    external_flash_instruction_upload_active           = false;
-    external_flash_geometry.page_size_bytes            = 0U;
-    external_flash_geometry.spare_size_bytes           = 0U;
-    external_flash_geometry.pages_per_block            = 0U;
-    external_flash_geometry.block_count                = 0U;
-    external_flash_instruction_expected_length_bytes   = 0U;
-    external_flash_instruction_length_bytes            = 0U;
-    external_flash_committed_instruction_length_bytes  = 0U;
-    external_flash_instruction_page_fill               = 0U;
-    external_flash_result_length_bytes                 = 0U;
-    external_flash_committed_result_length_bytes       = 0U;
-    external_flash_result_session_capacity_bytes       = 0U;
+    external_flash_initialised                        = false;
+    external_flash_session_active                     = false;
+    external_flash_result_cursor_advanced             = false;
+    external_flash_instruction_upload_active          = false;
+    external_flash_geometry.page_size_bytes           = 0U;
+    external_flash_geometry.spare_size_bytes          = 0U;
+    external_flash_geometry.pages_per_block           = 0U;
+    external_flash_geometry.block_count               = 0U;
+    external_flash_instruction_expected_length_bytes  = 0U;
+    external_flash_instruction_length_bytes           = 0U;
+    external_flash_committed_instruction_length_bytes = 0U;
+    external_flash_instruction_page_fill              = 0U;
+    external_flash_result_length_bytes                = 0U;
+    external_flash_committed_result_length_bytes      = 0U;
+    external_flash_result_session_capacity_bytes      = 0U;
     EXTERNAL_FLASH_ALLOCATOR_Reset();
 
     ExternalFlashStatus_T status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_Init() );
@@ -817,8 +808,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_GetInfo( ExternalFlashInfo_T* info )
     }
 
     info->instruction_capacity_bytes =
-        EXTERNAL_FLASH_GetPartitionCapacityBytes(
-            EXTERNAL_FLASH_ALLOCATOR_PARTITION_INSTRUCTION );
+        EXTERNAL_FLASH_GetPartitionCapacityBytes( EXTERNAL_FLASH_ALLOCATOR_PARTITION_INSTRUCTION );
     info->result_capacity_bytes =
         EXTERNAL_FLASH_GetPartitionCapacityBytes( EXTERNAL_FLASH_ALLOCATOR_PARTITION_RESULT );
     info->instruction_length_bytes = external_flash_committed_instruction_length_bytes;
@@ -841,9 +831,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void )
     if ( external_flash_session_active && !external_flash_result_cursor_advanced
          && ( external_flash_committed_result_length_bytes > 0U ) )
     {
-        EXTERNAL_FLASH_ALLOCATOR_AdvanceCursor(
-            EXTERNAL_FLASH_ALLOCATOR_PARTITION_RESULT,
-            external_flash_committed_result_length_bytes, EXTERNAL_FLASH_BlockDataSizeBytes() );
+        EXTERNAL_FLASH_ALLOCATOR_AdvanceCursor( EXTERNAL_FLASH_ALLOCATOR_PARTITION_RESULT,
+                                                external_flash_committed_result_length_bytes,
+                                                EXTERNAL_FLASH_BlockDataSizeBytes() );
     }
 
     uint32_t result_capacity =
@@ -853,10 +843,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void )
         return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
     }
 
-    ExternalFlashStatus_T status =
-        EXTERNAL_FLASH_ALLOCATOR_PreparePartition( EXTERNAL_FLASH_ALLOCATOR_PARTITION_RESULT,
-                                                   result_capacity,
-                                                   EXTERNAL_FLASH_BlockDataSizeBytes() );
+    ExternalFlashStatus_T status = EXTERNAL_FLASH_ALLOCATOR_PreparePartition(
+        EXTERNAL_FLASH_ALLOCATOR_PARTITION_RESULT, result_capacity,
+        EXTERNAL_FLASH_BlockDataSizeBytes() );
     if ( status != EXTERNAL_FLASH_STATUS_OK )
     {
         return status;
@@ -888,17 +877,15 @@ ExternalFlashStatus_T EXTERNAL_FLASH_StartInstructionUpload( uint32_t expected_l
     }
 
     uint32_t instruction_capacity =
-        EXTERNAL_FLASH_GetPartitionCapacityBytes(
-            EXTERNAL_FLASH_ALLOCATOR_PARTITION_INSTRUCTION );
+        EXTERNAL_FLASH_GetPartitionCapacityBytes( EXTERNAL_FLASH_ALLOCATOR_PARTITION_INSTRUCTION );
     if ( expected_length > instruction_capacity )
     {
         return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
     }
 
-    ExternalFlashStatus_T status =
-        EXTERNAL_FLASH_ALLOCATOR_PreparePartition(
-            EXTERNAL_FLASH_ALLOCATOR_PARTITION_INSTRUCTION, expected_length,
-            EXTERNAL_FLASH_BlockDataSizeBytes() );
+    ExternalFlashStatus_T status = EXTERNAL_FLASH_ALLOCATOR_PreparePartition(
+        EXTERNAL_FLASH_ALLOCATOR_PARTITION_INSTRUCTION, expected_length,
+        EXTERNAL_FLASH_BlockDataSizeBytes() );
     if ( status != EXTERNAL_FLASH_STATUS_OK )
     {
         return status;
@@ -935,9 +922,8 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionBytes( const uint8_t* data,
 
     if ( ( external_flash_instruction_length_bytes
            > external_flash_instruction_expected_length_bytes )
-         || ( length
-              > ( external_flash_instruction_expected_length_bytes
-                  - external_flash_instruction_length_bytes ) ) )
+         || ( length > ( external_flash_instruction_expected_length_bytes
+                         - external_flash_instruction_length_bytes ) ) )
     {
         return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
     }
@@ -976,7 +962,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionBytes( const uint8_t* data,
  * @brief Writes one page scoped instruction buffer during an active upload.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionPage( const uint8_t* data,
-                                                           uint32_t valid_length )
+                                                           uint32_t       valid_length )
 {
     if ( !external_flash_initialised )
     {
@@ -1085,9 +1071,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_FinishInstructionUpload( void )
     }
 
     external_flash_instruction_upload_active = false;
-    EXTERNAL_FLASH_ALLOCATOR_AdvanceCursor(
-        EXTERNAL_FLASH_ALLOCATOR_PARTITION_INSTRUCTION,
-        external_flash_committed_instruction_length_bytes, EXTERNAL_FLASH_BlockDataSizeBytes() );
+    EXTERNAL_FLASH_ALLOCATOR_AdvanceCursor( EXTERNAL_FLASH_ALLOCATOR_PARTITION_INSTRUCTION,
+                                            external_flash_committed_instruction_length_bytes,
+                                            EXTERNAL_FLASH_BlockDataSizeBytes() );
 
     return EXTERNAL_FLASH_STATUS_OK;
 }
@@ -1123,9 +1109,8 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteResultPage( const uint8_t* data, uint3
     }
 
     if ( ( external_flash_result_length_bytes > external_flash_result_session_capacity_bytes )
-         || ( valid_length
-              > ( external_flash_result_session_capacity_bytes
-                  - external_flash_result_length_bytes ) ) )
+         || ( valid_length > ( external_flash_result_session_capacity_bytes
+                               - external_flash_result_length_bytes ) ) )
     {
         return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
     }
@@ -1155,10 +1140,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteResultPage( const uint8_t* data, uint3
 
         if ( valid_length < external_flash_geometry.page_size_bytes )
         {
-            EXTERNAL_FLASH_ALLOCATOR_AdvanceCursor(
-                EXTERNAL_FLASH_ALLOCATOR_PARTITION_RESULT,
-                external_flash_committed_result_length_bytes,
-                EXTERNAL_FLASH_BlockDataSizeBytes() );
+            EXTERNAL_FLASH_ALLOCATOR_AdvanceCursor( EXTERNAL_FLASH_ALLOCATOR_PARTITION_RESULT,
+                                                    external_flash_committed_result_length_bytes,
+                                                    EXTERNAL_FLASH_BlockDataSizeBytes() );
             external_flash_result_cursor_advanced = true;
         }
     }
@@ -1172,9 +1156,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteResultPage( const uint8_t* data, uint3
 ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructionPage( uint32_t offset, uint8_t* data,
                                                           uint32_t length )
 {
-    return EXTERNAL_FLASH_ReadPartitionPageDma(
-        EXTERNAL_FLASH_ALLOCATOR_PARTITION_INSTRUCTION,
-        external_flash_committed_instruction_length_bytes, offset, data, length );
+    return EXTERNAL_FLASH_ReadPartitionPageDma( EXTERNAL_FLASH_ALLOCATOR_PARTITION_INSTRUCTION,
+                                                external_flash_committed_instruction_length_bytes,
+                                                offset, data, length );
 }
 
 /**
