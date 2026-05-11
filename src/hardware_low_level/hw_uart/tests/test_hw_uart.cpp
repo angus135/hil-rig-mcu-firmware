@@ -571,8 +571,8 @@ protected:
 
         mock_nvic_enabled[DMA1_Stream6_IRQn] = 1U;
         mock_nvic_enabled[DMA2_Stream6_IRQn] = 1U;
-        mock_irq_disable_count = 0U;
-        mock_irq_enable_count  = 0U;
+        mock_irq_disable_count               = 0U;
+        mock_irq_enable_count                = 0U;
 
         memset( hw_uart_channel_states, 0, sizeof( hw_uart_channel_states ) );
         memset( &uart_console_state, 0, sizeof( uart_console_state ) );
