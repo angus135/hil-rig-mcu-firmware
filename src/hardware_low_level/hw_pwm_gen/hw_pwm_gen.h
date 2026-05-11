@@ -79,7 +79,7 @@ bits)
  * These functions should be use during configuration to prepare
  * the frequency and duty cycle instructions for quick running
  */
-uint16_t HW_PWM_GEN_compute_arr( uint16_t freq_hz, uint32_t timer_clk_hz, uint16_t prescaler );
+uint16_t HW_PWM_GEN_compute_arr( uint32_t freq_hz, uint32_t timer_clk_hz, uint16_t prescaler );
 
 /**
  * @brief Computes the compare register (CCR) for a given duty cycle.
@@ -120,17 +120,6 @@ void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr, uint16_t psc );
  */
 void HW_PWM_GEN_set_pwm2_direct( uint16_t arr, uint16_t ccr, uint16_t psc );
 
-/**
- * @brief Updates the PWM registers associated with channel 3.
- *
- * @param arr   the value of the auto reloader register (ARR) associated with this PWM signal
- * @param ccr the value of the compare register (CCR) associated with this PWM signal
- *
- * This function sets the values of the PWM channel 3 registers
- * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
- * This function is designed to be very fast and should be implemented in the execution phase
- */
-void HW_PWM_GEN_set_pwm3_direct( uint16_t arr, uint16_t ccr, uint16_t psc );
 
 #ifdef __cplusplus
 }
