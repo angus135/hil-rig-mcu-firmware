@@ -222,14 +222,8 @@ EXECI2CStatus_T EXEC_I2C_Configuration_Internal( void )
 bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
                            const uint8_t* payload, uint16_t payload_length )
 {
-    bool is_ok = HW_I2C_Load_Stage_Buffer( channel, payload, payload_length );
-    if ( !is_ok )
-    {
-        return false;
-    }
-
-    is_ok = HW_I2C_Trigger_Master_Transmit_External( channel, device_address_7bit );
-    return is_ok;
+    return HW_I2C_Load_Stage_Buffer( channel, payload, payload_length )
+           && HW_I2C_Trigger_Master_Transmit_External( channel, device_address_7bit );
 }
 
 /**
@@ -248,16 +242,8 @@ bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_
 bool EXEC_I2C_Master_Transmit_Internal( uint16_t device_address_7bit, const uint8_t* payload,
                                     uint16_t payload_length )
 {
-    bool is_ok = HW_I2C_Load_Stage_Buffer( HW_I2C_CHANNEL_FMPI2C1, payload, payload_length );
-
-    // DELETING THIS BREAKS EXPANDER
-    if ( !is_ok )
-    {
-        return false;
-    }
-
-    is_ok = HW_I2C_Trigger_Master_Transmit_Internal( device_address_7bit );
-    return is_ok;
+    return HW_I2C_Load_Stage_Buffer( HW_I2C_CHANNEL_FMPI2C1, payload, payload_length )
+           && HW_I2C_Trigger_Master_Transmit_Internal( device_address_7bit );
 }
 
 /**
@@ -275,14 +261,8 @@ bool EXEC_I2C_Master_Transmit_Internal( uint16_t device_address_7bit, const uint
 bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* payload,
                           uint16_t payload_length )
 {
-    bool is_ok = HW_I2C_Load_Stage_Buffer( channel, payload, payload_length );
-    if ( !is_ok )
-    {
-        return false;
-    }
-
-    is_ok = HW_I2C_Trigger_Slave_Transmit_External( channel );
-    return is_ok;
+    return HW_I2C_Load_Stage_Buffer( channel, payload, payload_length )
+           && HW_I2C_Trigger_Slave_Transmit_External( channel );
 }
 
 /**
@@ -301,8 +281,7 @@ bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* pa
 bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
                                              uint16_t expected_length )
 {
-    bool is_ok = HW_I2C_Trigger_Master_Receive_External( channel, device_address_7bit, expected_length );
-    return is_ok;
+    return HW_I2C_Trigger_Master_Receive_External( channel, device_address_7bit, expected_length );
 }
 
 /**
@@ -320,8 +299,7 @@ bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t de
 bool EXEC_I2C_Start_Master_Receive_Internal( uint16_t device_address_7bit,
                                              uint16_t expected_length )
 {
-    bool is_ok = HW_I2C_Trigger_Master_Receive_Internal( device_address_7bit, expected_length );
-    return is_ok;
+    return HW_I2C_Trigger_Master_Receive_Internal( device_address_7bit, expected_length );
 }
 
 /**
@@ -338,8 +316,7 @@ bool EXEC_I2C_Start_Master_Receive_Internal( uint16_t device_address_7bit,
  */
 bool EXEC_I2C_Start_Slave_Receive_External( HWI2CChannel_T channel, uint16_t expected_length )
 {
-    bool is_ok = HW_I2C_Trigger_Slave_Receive_External( channel, expected_length );
-    return is_ok;
+    return HW_I2C_Trigger_Slave_Receive_External( channel, expected_length );
 }
 
 /**
