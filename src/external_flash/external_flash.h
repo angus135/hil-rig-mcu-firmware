@@ -75,7 +75,7 @@ extern "C"
 #define EXTERNAL_FLASH_RESULT_BLOCK_COUNT ( 2032U )
 
 /** First physical NAND block reserved for external_flash metadata. */
-#define EXTERNAL_FLASH_METADATA_START_BLOCK                                                   \
+#define EXTERNAL_FLASH_METADATA_START_BLOCK                                                        \
     ( EXTERNAL_FLASH_RESULT_START_BLOCK + EXTERNAL_FLASH_RESULT_BLOCK_COUNT )
 
 /** Number of physical NAND blocks reserved for wear and allocation metadata. */
@@ -184,8 +184,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_StartInstructionUpload( uint32_t expected_l
  * @note The instruction byte format is owned by the package and execution data
  *       model. This function only preserves byte order and appends data to NAND.
  */
-ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionBytes( const uint8_t* data,
-                                                            uint32_t length );
+ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionBytes( const uint8_t* data, uint32_t length );
 
 /**
  * @brief Writes one logical instruction page during an active upload.
@@ -203,7 +202,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionBytes( const uint8_t* data,
  *       EXTERNAL_FLASH_WriteInstructionBytes call.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionPage( const uint8_t* data,
-                                                           uint32_t valid_length );
+                                                           uint32_t       valid_length );
 
 /**
  * @brief Finishes an instruction upload and commits any final partial page.

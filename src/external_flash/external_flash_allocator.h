@@ -78,9 +78,8 @@ uint32_t EXTERNAL_FLASH_ALLOCATOR_GetBadBlockCount( void );
  *
  * @return Usable logical bytes after bad blocks and reserved spare blocks.
  */
-uint32_t
-EXTERNAL_FLASH_ALLOCATOR_GetCapacityBytes( ExternalFlashAllocatorPartition_T partition,
-                                           uint32_t block_data_size );
+uint32_t EXTERNAL_FLASH_ALLOCATOR_GetCapacityBytes( ExternalFlashAllocatorPartition_T partition,
+                                                    uint32_t block_data_size );
 
 /**
  * @brief Prepares an active logical-to-physical map for a partition image.
@@ -93,8 +92,8 @@ EXTERNAL_FLASH_ALLOCATOR_GetCapacityBytes( ExternalFlashAllocatorPartition_T par
  */
 ExternalFlashStatus_T
 EXTERNAL_FLASH_ALLOCATOR_PreparePartition( ExternalFlashAllocatorPartition_T partition,
-                                           uint32_t required_length_bytes,
-                                           uint32_t block_data_size );
+                                           uint32_t                          required_length_bytes,
+                                           uint32_t                          block_data_size );
 
 /**
  * @brief Resolves a logical block to a physical NAND block.
@@ -106,8 +105,7 @@ EXTERNAL_FLASH_ALLOCATOR_PreparePartition( ExternalFlashAllocatorPartition_T par
  * @return true if the logical block can be resolved, otherwise false.
  */
 bool EXTERNAL_FLASH_ALLOCATOR_GetPhysicalBlock( ExternalFlashAllocatorPartition_T partition,
-                                                uint32_t logical_block,
-                                                uint32_t* physical_block );
+                                                uint32_t logical_block, uint32_t* physical_block );
 
 /**
  * @brief Replaces a failed mapped block with a newly erased spare block.

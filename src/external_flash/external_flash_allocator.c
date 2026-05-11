@@ -34,7 +34,7 @@
 #define EXTERNAL_FLASH_ALLOCATOR_INVALID_BLOCK ( 0xFFFFFFFFU )
 
 /** Number of physical blocks managed by external_flash, including metadata blocks. */
-#define EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT                                          \
+#define EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT                                               \
     ( EXTERNAL_FLASH_METADATA_START_BLOCK + EXTERNAL_FLASH_METADATA_BLOCK_COUNT )
 
 /** Good blocks kept outside each active map so failed program blocks can be replaced. */
@@ -57,8 +57,7 @@ typedef struct
  */
 
 static bool external_flash_allocator_bad_blocks[EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT] = {
-    false
-};
+    false };
 
 static uint32_t
     external_flash_allocator_erase_counts[EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT] = { 0U };
@@ -69,12 +68,10 @@ static uint32_t external_flash_allocator_instruction_next_offset = 0U;
 static uint32_t external_flash_allocator_result_next_offset      = 0U;
 
 static uint32_t external_flash_allocator_instruction_map[EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT] = {
-    EXTERNAL_FLASH_ALLOCATOR_INVALID_BLOCK
-};
+    EXTERNAL_FLASH_ALLOCATOR_INVALID_BLOCK };
 
 static uint32_t external_flash_allocator_result_map[EXTERNAL_FLASH_RESULT_BLOCK_COUNT] = {
-    EXTERNAL_FLASH_ALLOCATOR_INVALID_BLOCK
-};
+    EXTERNAL_FLASH_ALLOCATOR_INVALID_BLOCK };
 
 static uint32_t external_flash_allocator_instruction_map_count = 0U;
 static uint32_t external_flash_allocator_result_map_count      = 0U;
@@ -83,26 +80,24 @@ static const ExternalFlashAllocatorPartitionConfig_T
     external_flash_allocator_instruction_partition = {
         EXTERNAL_FLASH_INSTRUCTION_START_BLOCK,
         EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT,
-    };
+};
 
 static const ExternalFlashAllocatorPartitionConfig_T external_flash_allocator_result_partition = {
     EXTERNAL_FLASH_RESULT_START_BLOCK,
     EXTERNAL_FLASH_RESULT_BLOCK_COUNT,
 };
 
-static const ExternalFlashAllocatorPartitionConfig_T
-    external_flash_allocator_metadata_partition = {
-        EXTERNAL_FLASH_METADATA_START_BLOCK,
-        EXTERNAL_FLASH_METADATA_BLOCK_COUNT,
-    };
+static const ExternalFlashAllocatorPartitionConfig_T external_flash_allocator_metadata_partition = {
+    EXTERNAL_FLASH_METADATA_START_BLOCK,
+    EXTERNAL_FLASH_METADATA_BLOCK_COUNT,
+};
 
 /**=============================================================================
  *  Private (static) Function Prototypes
  *==============================================================================
  */
 
-static ExternalFlashStatus_T EXTERNAL_FLASH_ALLOCATOR_MapNandStatus(
-    HW_NAND_Status_T nand_status );
+static ExternalFlashStatus_T EXTERNAL_FLASH_ALLOCATOR_MapNandStatus( HW_NAND_Status_T nand_status );
 
 static const ExternalFlashAllocatorPartitionConfig_T*
 EXTERNAL_FLASH_ALLOCATOR_GetPartitionConfig( ExternalFlashAllocatorPartition_T partition );
@@ -123,14 +118,13 @@ static bool EXTERNAL_FLASH_ALLOCATOR_IsPhysicalBlockBad( uint32_t block );
 
 static void EXTERNAL_FLASH_ALLOCATOR_SetPhysicalBlockBad( uint32_t block );
 
-static void EXTERNAL_FLASH_ALLOCATOR_ClearMap( uint32_t* block_map,
-                                               uint32_t block_map_capacity );
+static void EXTERNAL_FLASH_ALLOCATOR_ClearMap( uint32_t* block_map, uint32_t block_map_capacity );
 
 static bool EXTERNAL_FLASH_ALLOCATOR_IsBlockInMap( const uint32_t* block_map,
                                                    uint32_t block_map_count, uint32_t block );
 
 static bool EXTERNAL_FLASH_ALLOCATOR_SelectBlock( ExternalFlashAllocatorPartition_T partition,
-                                                  const uint32_t* block_map,
+                                                  const uint32_t*                   block_map,
                                                   uint32_t block_map_count, uint32_t* block );
 
 /**=============================================================================
@@ -138,8 +132,7 @@ static bool EXTERNAL_FLASH_ALLOCATOR_SelectBlock( ExternalFlashAllocatorPartitio
  *==============================================================================
  */
 
-static ExternalFlashStatus_T EXTERNAL_FLASH_ALLOCATOR_MapNandStatus(
-    HW_NAND_Status_T nand_status )
+static ExternalFlashStatus_T EXTERNAL_FLASH_ALLOCATOR_MapNandStatus( HW_NAND_Status_T nand_status )
 {
     switch ( nand_status )
     {
@@ -285,8 +278,7 @@ static void EXTERNAL_FLASH_ALLOCATOR_SetPhysicalBlockBad( uint32_t block )
     }
 }
 
-static void EXTERNAL_FLASH_ALLOCATOR_ClearMap( uint32_t* block_map,
-                                               uint32_t block_map_capacity )
+static void EXTERNAL_FLASH_ALLOCATOR_ClearMap( uint32_t* block_map, uint32_t block_map_capacity )
 {
     if ( block_map == NULL )
     {
@@ -319,7 +311,7 @@ static bool EXTERNAL_FLASH_ALLOCATOR_IsBlockInMap( const uint32_t* block_map,
 }
 
 static bool EXTERNAL_FLASH_ALLOCATOR_SelectBlock( ExternalFlashAllocatorPartition_T partition,
-                                                  const uint32_t* block_map,
+                                                  const uint32_t*                   block_map,
                                                   uint32_t block_map_count, uint32_t* block )
 {
     const ExternalFlashAllocatorPartitionConfig_T* config =
@@ -329,12 +321,11 @@ static bool EXTERNAL_FLASH_ALLOCATOR_SelectBlock( ExternalFlashAllocatorPartitio
         return false;
     }
 
-    uint32_t* next_offset = EXTERNAL_FLASH_ALLOCATOR_GetPartitionNextOffset( partition );
-    uint32_t  search_start =
-        ( next_offset == NULL ) ? 0U : ( *next_offset % config->block_count );
-    uint32_t best_block       = EXTERNAL_FLASH_ALLOCATOR_INVALID_BLOCK;
-    uint32_t best_erase_count = UINT32_MAX;
-    bool     found            = false;
+    uint32_t* next_offset  = EXTERNAL_FLASH_ALLOCATOR_GetPartitionNextOffset( partition );
+    uint32_t  search_start = ( next_offset == NULL ) ? 0U : ( *next_offset % config->block_count );
+    uint32_t  best_block   = EXTERNAL_FLASH_ALLOCATOR_INVALID_BLOCK;
+    uint32_t  best_erase_count = UINT32_MAX;
+    bool      found            = false;
 
     for ( uint32_t i = 0U; i < config->block_count; i++ )
     {
@@ -348,8 +339,7 @@ static bool EXTERNAL_FLASH_ALLOCATOR_SelectBlock( ExternalFlashAllocatorPartitio
             continue;
         }
 
-        uint32_t candidate_erase_count =
-            external_flash_allocator_erase_counts[candidate_block];
+        uint32_t candidate_erase_count = external_flash_allocator_erase_counts[candidate_block];
         if ( ( !found ) || ( candidate_erase_count < best_erase_count ) )
         {
             found            = true;
@@ -373,11 +363,11 @@ static bool EXTERNAL_FLASH_ALLOCATOR_SelectBlock( ExternalFlashAllocatorPartitio
 
 void EXTERNAL_FLASH_ALLOCATOR_Reset( void )
 {
-    external_flash_allocator_bad_block_count          = 0U;
-    external_flash_allocator_instruction_next_offset  = 0U;
-    external_flash_allocator_result_next_offset       = 0U;
-    external_flash_allocator_instruction_map_count    = 0U;
-    external_flash_allocator_result_map_count         = 0U;
+    external_flash_allocator_bad_block_count         = 0U;
+    external_flash_allocator_instruction_next_offset = 0U;
+    external_flash_allocator_result_next_offset      = 0U;
+    external_flash_allocator_instruction_map_count   = 0U;
+    external_flash_allocator_result_map_count        = 0U;
 
     EXTERNAL_FLASH_ALLOCATOR_ClearMap( external_flash_allocator_instruction_map,
                                        EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT );
@@ -421,9 +411,8 @@ uint32_t EXTERNAL_FLASH_ALLOCATOR_GetBadBlockCount( void )
     return external_flash_allocator_bad_block_count;
 }
 
-uint32_t
-EXTERNAL_FLASH_ALLOCATOR_GetCapacityBytes( ExternalFlashAllocatorPartition_T partition,
-                                           uint32_t block_data_size )
+uint32_t EXTERNAL_FLASH_ALLOCATOR_GetCapacityBytes( ExternalFlashAllocatorPartition_T partition,
+                                                    uint32_t block_data_size )
 {
     const ExternalFlashAllocatorPartitionConfig_T* config =
         EXTERNAL_FLASH_ALLOCATOR_GetPartitionConfig( partition );
@@ -453,8 +442,8 @@ EXTERNAL_FLASH_ALLOCATOR_GetCapacityBytes( ExternalFlashAllocatorPartition_T par
 
 ExternalFlashStatus_T
 EXTERNAL_FLASH_ALLOCATOR_PreparePartition( ExternalFlashAllocatorPartition_T partition,
-                                           uint32_t required_length_bytes,
-                                           uint32_t block_data_size )
+                                           uint32_t                          required_length_bytes,
+                                           uint32_t                          block_data_size )
 {
     if ( ( required_length_bytes == 0U ) || ( block_data_size == 0U ) )
     {
@@ -463,11 +452,11 @@ EXTERNAL_FLASH_ALLOCATOR_PreparePartition( ExternalFlashAllocatorPartition_T par
 
     const ExternalFlashAllocatorPartitionConfig_T* config =
         EXTERNAL_FLASH_ALLOCATOR_GetPartitionConfig( partition );
-    uint32_t required_blocks = ( required_length_bytes + block_data_size - 1U ) / block_data_size;
-    uint32_t map_capacity    = EXTERNAL_FLASH_ALLOCATOR_GetPartitionMapCapacity( partition );
-    uint32_t* block_map      = EXTERNAL_FLASH_ALLOCATOR_GetPartitionMap( partition );
-    uint32_t* block_count    = EXTERNAL_FLASH_ALLOCATOR_GetPartitionMapCount( partition );
-    uint32_t* next_offset    = EXTERNAL_FLASH_ALLOCATOR_GetPartitionNextOffset( partition );
+    uint32_t  required_blocks = ( required_length_bytes + block_data_size - 1U ) / block_data_size;
+    uint32_t  map_capacity    = EXTERNAL_FLASH_ALLOCATOR_GetPartitionMapCapacity( partition );
+    uint32_t* block_map       = EXTERNAL_FLASH_ALLOCATOR_GetPartitionMap( partition );
+    uint32_t* block_count     = EXTERNAL_FLASH_ALLOCATOR_GetPartitionMapCount( partition );
+    uint32_t* next_offset     = EXTERNAL_FLASH_ALLOCATOR_GetPartitionNextOffset( partition );
 
     if ( ( config == NULL ) || ( block_map == NULL ) || ( block_count == NULL )
          || ( required_blocks > map_capacity ) )
@@ -478,13 +467,12 @@ EXTERNAL_FLASH_ALLOCATOR_PreparePartition( ExternalFlashAllocatorPartition_T par
     EXTERNAL_FLASH_ALLOCATOR_ClearMap( block_map, map_capacity );
     *block_count = 0U;
 
-    bool selected_blocks[EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT] = { false };
-    uint32_t search_start =
-        ( next_offset == NULL ) ? 0U : ( *next_offset % config->block_count );
+    bool     selected_blocks[EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT] = { false };
+    uint32_t search_start = ( next_offset == NULL ) ? 0U : ( *next_offset % config->block_count );
 
     while ( *block_count < required_blocks )
     {
-        bool     found_candidate  = false;
+        bool     found_candidate    = false;
         uint32_t lowest_erase_count = UINT32_MAX;
 
         for ( uint32_t i = 0U; i < config->block_count; i++ )
@@ -498,8 +486,7 @@ EXTERNAL_FLASH_ALLOCATOR_PreparePartition( ExternalFlashAllocatorPartition_T par
                 continue;
             }
 
-            uint32_t candidate_erase_count =
-                external_flash_allocator_erase_counts[candidate_block];
+            uint32_t candidate_erase_count = external_flash_allocator_erase_counts[candidate_block];
             if ( ( !found_candidate ) || ( candidate_erase_count < lowest_erase_count ) )
             {
                 found_candidate    = true;
@@ -560,8 +547,7 @@ EXTERNAL_FLASH_ALLOCATOR_PreparePartition( ExternalFlashAllocatorPartition_T par
 }
 
 bool EXTERNAL_FLASH_ALLOCATOR_GetPhysicalBlock( ExternalFlashAllocatorPartition_T partition,
-                                                uint32_t logical_block,
-                                                uint32_t* physical_block )
+                                                uint32_t logical_block, uint32_t* physical_block )
 {
     if ( physical_block == NULL )
     {
