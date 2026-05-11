@@ -180,9 +180,9 @@ void HW_PWM_GEN_config( int channel, int volt_lvl )
  * These functions should be use during configuration to prepare
  * the frequency and duty cycle instructions for quick running
  */
-uint16_t HW_PWM_GEN_compute_psc( uint16_t freq_hz, uint32_t timer_clk_hz )
+uint16_t HW_PWM_GEN_compute_psc( uint32_t freq_hz, uint32_t timer_clk_hz )
 {
-    if ( freq_hz > timer_clk_hz )
+    if ( freq_hz > timer_clk_hz || freq_hz > 1000000)
     {
         return 0;
     }
@@ -221,7 +221,7 @@ bits)
  * These functions should be use during configuration to prepare
  * the frequency and duty cycle instructions for quick running
  */
-uint16_t HW_PWM_GEN_compute_arr( uint16_t freq_hz, uint32_t timer_clk_hz, uint16_t prescaler )
+uint16_t HW_PWM_GEN_compute_arr( uint32_t freq_hz, uint32_t timer_clk_hz, uint16_t prescaler )
 {
 
     return ( timer_clk_hz / ( freq_hz * ( prescaler + 1 ) ) ) - 1;
@@ -292,28 +292,6 @@ inline void HW_PWM_GEN_set_pwm2_direct( uint16_t arr, uint16_t ccr, uint16_t psc
     HW_PWM_GEN_set_pwm_direct(
         1, arr, ccr, psc,
         htim13.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
-#endif
-    ( void )arr;
-    ( void )ccr;
-    ( void )psc;
-}
-
-/**
- * @brief Updates the PWM registers associated with channel 3.
- *
- * @param arr   the value of the auto reloader register (ARR) associated with this PWM signal
- * @param ccr the value of the compare register (CCR) associated with this PWM signal
- *
- * This function sets the values of the PWM channel 3 registers
- * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
- * This function is designed to be very fast and should be implemented in the execution phase
- */
-inline void HW_PWM_GEN_set_pwm3_direct( uint16_t arr, uint16_t ccr, uint16_t psc )
-{
-#ifndef TEST_BUILD
-    HW_PWM_GEN_set_pwm_direct(
-        1, arr, ccr, psc,
-        htim14.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
 #endif
     ( void )arr;
     ( void )ccr;
