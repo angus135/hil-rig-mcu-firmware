@@ -54,24 +54,44 @@ typedef struct
  *------------------------------------------------------------------------------
  */
 
-bool CONSOLE_Parse_I2C_Master_And_Slave( const char*               arg,
-                                         HWI2CChannel_T* master_channel,
-                                         HWI2CChannel_T* slave_channel );
-bool CONSOLE_Parse_I2C_Loopback_Direction( const char*                    arg,
-                                                  ConsoleI2CLoopbackDirection_T* direction );
+/**
+ * @brief Parses the master and slave I2C channel selection.
+ */
+bool CONSOLE_Parse_I2C_Master_And_Slave( const char* arg,
+                                          HWI2CChannel_T* master_channel,
+                                          HWI2CChannel_T* slave_channel );
+/**
+ * @brief Parses the loopback direction selector.
+ */
+bool CONSOLE_Parse_I2C_Loopback_Direction( const char* arg,
+                                           ConsoleI2CLoopbackDirection_T* direction );
+/**
+ * @brief Parses the requested I2C bus speed.
+ */
 bool CONSOLE_Parse_I2C_Speed( const char* arg, HWI2CSpeed_T* speed );
-bool CONSOLE_Parse_I2C_Transfer_Path( const char*        arg,
-                                     HWI2CTransferPath_T* transfer_path );
+/**
+ * @brief Parses the I2C transfer path selection.
+ */
+bool CONSOLE_Parse_I2C_Transfer_Path( const char* arg, HWI2CTransferPath_T* transfer_path );
+/**
+ * @brief Builds the loopback payload from command arguments.
+ */
 bool CONSOLE_Build_I2C_Message( uint16_t argc, char* argv[], char* out_message,
                                 uint16_t out_message_size, uint16_t* out_message_length );
+/**
+ * @brief Runs a master-to-slave I2C loopback transfer.
+ */
 bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels,
-                                          uint16_t slave_addr, const char* tx_message,
-                                          uint16_t tx_len, char* rx_message,
-                                          uint16_t rx_message_size, uint16_t* out_received_len );
+                                   uint16_t slave_addr, const char* tx_message,
+                                   uint16_t tx_len, char* rx_message,
+                                   uint16_t rx_message_size, uint16_t* out_received_len );
+/**
+ * @brief Runs a slave-to-master I2C loopback transfer.
+ */
 bool CONSOLE_Run_I2C_Loopback_S2M( CONSOLEI2CLoopbackChannels_T channels,
-                                          uint16_t slave_addr, const char* tx_message,
-                                          uint16_t tx_len, char* rx_message,
-                                          uint16_t rx_message_size, uint16_t* out_received_len );
+                                   uint16_t slave_addr, const char* tx_message,
+                                   uint16_t tx_len, char* rx_message,
+                                   uint16_t rx_message_size, uint16_t* out_received_len );
 
 #ifdef __cplusplus
 }

@@ -159,6 +159,14 @@ static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
     }
 }
 
+/**
+ * @brief Handles the expander console command.
+ *
+ * @param argc - Number of command arguments.
+ * @param argv - Command argument array.
+ *
+ * @returns void
+ */
 static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
 {
     if ( argc < 2 )
@@ -321,6 +329,14 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
     CONSOLE_Printf( "Unknown expander subcommand: %s\r\n", argv[1] );
 }
 
+/**
+ * @brief Handles the i2c_loopback console command.
+ *
+ * @param argc - Number of command arguments.
+ * @param argv - Command argument array.
+ *
+ * @returns void
+ */
 static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
 {
     if ( argc < 6U )
