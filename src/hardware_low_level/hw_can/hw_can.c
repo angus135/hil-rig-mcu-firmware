@@ -70,10 +70,10 @@ static uint16_t can_tx_wp = 0;  // Writing to TX buffer handled by HW_CAN_tx_buf
 static uint16_t can_tx_rp = 0;  // Reading from TX buffer handled by ISR
 
 /** Buffer example:
- *          [0,0,0,0,0,0,0,0],  <- rp
+ *          [0,0,0,0,0,0,0,0],  <- r_p
  *          [0,0,0,0,0,0,0,0],
  *          [0,0,0,0,0,0,0,0],
- *   wp ->  [0,0,0,0,0,0,0,0],
+ *   w_p ->  [0,0,0,0,0,0,0,0],
  *          [0,0,0,0,0,0,0,0],
  *          [0,0,0,0,0,0,0,0],
  *          [0,0,0,0,0,0,0,0],
@@ -95,39 +95,39 @@ void HW_UART_CH2_RX_IRQ_HANDLER( void );
  *------------------------------------------------------------------------------
  */
 
-inline uint8_t HW_CAN_buffer_write( uint8_t** buffer, uint16_t* wp, uint16_t* rp,
+inline uint8_t HW_CAN_buffer_write( uint8_t** buffer, uint16_t* w_p, uint16_t* r_p,
                                     uint16_t buffer_width, uint8_t** source, uint16_t length )
 {
     for ( int i = 0; i < length; i++ )
     {
-        if ( ( ( *wp + 1 ) % buffer_width ) == *rp )
+        if ( ( ( *w_p + 1 ) % buffer_width ) == *r_p )
         {
             return 1;
         }
         for ( int j = 0; j < CAN_PACKET_SIZE; j++ )
         {
-            buffer[*wp][j] = source[i][j];
+            buffer[*w_p][j] = source[i][j];
         }
-        *wp = ( *wp + 1 ) % buffer_width;
+        *w_p = ( *w_p + 1 ) % buffer_width;
     }
     return 0;
 }
 
-inline uint16_t HW_CAN_buffer_read( uint8_t** buffer, uint16_t* wp, uint16_t* rp,
+inline uint16_t HW_CAN_buffer_read( uint8_t** buffer, uint16_t* w_p, uint16_t* r_p,
                                     uint16_t buffer_width, uint8_t** dest )
 {
     uint16_t count = 0;
     for ( int i = 0; i < buffer_width; i++ )
     {
-        if ( *wp == *rp )
+        if ( *w_p == *r_p )
         {
             return count;
         }
         for ( int j = 0; j < CAN_PACKET_SIZE; j++ )
         {
-            dest[i][j] = buffer[*rp][j];
+            dest[i][j] = buffer[*r_p][j];
         }
-        *rp = ( *rp + 1 ) % buffer_width;
+        *r_p = ( *r_p + 1 ) % buffer_width;
         count += 1;
     }
     return count;
@@ -142,21 +142,39 @@ inline uint16_t HW_CAN_buffer_read( uint8_t** buffer, uint16_t* wp, uint16_t* rp
  *
  * Uses HAL to transmit message over CAN channel
  */
-int HW_CAN_transmit( CAN_HandleTypeDef* hcan, uint8_t* txData )
+int HW_CAN_transmit(CAN_HandleTypeDef* hcan, uint8_t* txData)
 {
-    CAN_TxHeaderTypeDef txHeader;
-    uint32_t            txMailbox;
+    CAN_TypeDef* can = hcan->Instance;
 
-    txHeader.StdId = 0x123;
-    txHeader.IDE   = CAN_ID_STD;
-    txHeader.RTR   = CAN_RTR_DATA;
-    txHeader.DLC   = 8;
-
-    if ( HAL_CAN_AddTxMessage( hcan, &txHeader, txData, &txMailbox ) != HAL_OK )
+    // Check mailbox available
+    if ((can->TSR & CAN_TSR_TME0) == 0)
     {
-        // print error
         return 1;
     }
+
+    // Standard ID = 0x123
+    can->sTxMailBox[0].TIR = (0x123 << 21);
+
+    // DLC = 8
+    can->sTxMailBox[0].TDTR = 8;
+
+    // Load first 4 bytes
+    can->sTxMailBox[0].TDLR =
+          ((uint32_t)txData[0] << 0)
+        | ((uint32_t)txData[1] << 8)
+        | ((uint32_t)txData[2] << 16)
+        | ((uint32_t)txData[3] << 24);
+
+    // Load second 4 bytes
+    can->sTxMailBox[0].TDHR =
+          ((uint32_t)txData[4] << 0)
+        | ((uint32_t)txData[5] << 8)
+        | ((uint32_t)txData[6] << 16)
+        | ((uint32_t)txData[7] << 24);
+
+    // Request transmission
+    can->sTxMailBox[0].TIR |= CAN_TI0R_TXRQ;
+
     return 0;
 }
 
@@ -168,14 +186,32 @@ int HW_CAN_transmit( CAN_HandleTypeDef* hcan, uint8_t* txData )
  *
  * Uses HAL to recieve message over CAN channel
  */
-int HW_CAN_recieve( CAN_HandleTypeDef* hcan, uint8_t* rxData )
+int HW_CAN_receive(CAN_HandleTypeDef* hcan, uint8_t* rxData)
 {
-    CAN_RxHeaderTypeDef rxHeader;
-    if ( HAL_CAN_GetRxMessage( hcan, CAN_RX_FIFO0, &rxHeader, rxData ) != HAL_OK )
+    CAN_TypeDef* can = hcan->Instance;
+
+    // Check FIFO0 has pending message
+    if ((can->RF0R & CAN_RF0R_FMP0) == 0)
     {
-        // print error
         return 1;
     }
+
+    uint32_t low  = can->sFIFOMailBox[0].RDLR;
+    uint32_t high = can->sFIFOMailBox[0].RDHR;
+
+    rxData[0] = (low >> 0) & 0xFF;
+    rxData[1] = (low >> 8) & 0xFF;
+    rxData[2] = (low >> 16) & 0xFF;
+    rxData[3] = (low >> 24) & 0xFF;
+
+    rxData[4] = (high >> 0) & 0xFF;
+    rxData[5] = (high >> 8) & 0xFF;
+    rxData[6] = (high >> 16) & 0xFF;
+    rxData[7] = (high >> 24) & 0xFF;
+
+    // Release FIFO
+    can->RF0R |= CAN_RF0R_RFOM0;
+
     return 0;
 }
 
