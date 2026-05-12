@@ -34,7 +34,6 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
-// Add any needed standard or project-specific includes here
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -43,9 +42,6 @@ extern "C"
 
 #define HW_I2C_RX_BUFFER_SIZE ( 512U )
 #define HW_I2C_TX_STAGE_SIZE ( 256U )
-
-// #define MODULE_FEATURE_FLAG   (1U)
-// Add macros intended for use outside this module here
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -110,10 +106,6 @@ typedef struct HWI2CRxPeek_T
     HWI2CSpan_T second;
     uint16_t    total_length;
 } HWI2CRxPeek_T;
-
-// typedef enum { STATE_IDLE, STATE_BUSY } Module_State_T;
-// typedef struct { uint16_t value; bool ready; } Module_Data_T;
-// Add types that must be visible to other modules here
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
