@@ -44,14 +44,16 @@ extern "C"
 bool EXEC_ANALOGUE_OUTPUT_Config( bool use_external_vref );
 
 /**
- * @brief Configure and start the SPI4 hardware channel dedicated to DAC communication.
+ * @brief Configure and start the SPI hardware channel dedicated to DAC communication.
  *
- * Sets up the SPI4 peripheral with the configuration required by the
+ * Intended to only be used for console testing to set up the SPI channel independently
+ * 
+ * Sets up the SPI peripheral with the configuration required by the
  * MCP48CVB28T-20E_ST octal DAC: 8-bit data size, 352K baud rate, MSB first,
  * CPOL low, CPHA 1 edge.
  *
  * This function must be called once during system initialization to prepare
- * SPI4 for use before any DAC operations are performed. In the real project,
+ * SPI for use before any DAC operations are performed. In the real project,
  * this setup will be performed by the system/board initialization layer.
  *
  * This function is provided as a separate helper for console testing so that
@@ -62,7 +64,7 @@ bool EXEC_ANALOGUE_OUTPUT_Config( bool use_external_vref );
  * successfully, the channel is ready to transmit frames to the DAC.
  *
  * @return
- *     true if SPI4 configuration and startup completed successfully.
+ *     true if SPI configuration and startup completed successfully.
  *     false if hardware configuration or startup failed.
  */
 bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void );
