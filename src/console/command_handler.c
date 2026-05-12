@@ -426,7 +426,7 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
     {
         out[i] = argv[1][i];
     }
-    int check = HW_CAN_transmit1( out );
+    int check = HW_CAN_Transmit1( out );
     if ( check == 1 )
     {
         CONSOLE_Printf( "Transmission Error" );
@@ -443,7 +443,7 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
  */
 static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] )
 {
-    int check = HW_CAN_configure1( 1000000 );
+    int check = HW_CAN_Configure1( 1000000 );
     if ( check == 1 )
     {
         CONSOLE_Printf( "Timing set up error" );
@@ -478,7 +478,7 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
         return;
     }
     char out[8] = "00000000";
-    int  check  = HW_CAN_recieve1( out );
+    int  check  = HW_CAN_Recieve1( out );
     if ( check == 1 )
     {
         CONSOLE_Printf( "Transmission Error" );
