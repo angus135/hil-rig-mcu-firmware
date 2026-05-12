@@ -150,35 +150,29 @@ inline uint16_t HW_CAN_buffer_read( uint8_t buffer[][CAN_PACKET_SIZE], uint16_t*
  *
  * Uses HAL to transmit message over CAN channel
  */
-int HW_CAN_transmit(CAN_HandleTypeDef* hcan, uint8_t* txData)
+int HW_CAN_transmit( CAN_HandleTypeDef* hcan, uint8_t* txData )
 {
     CAN_TypeDef* can = hcan->Instance;
 
     // Check mailbox available
-    if ((can->TSR & CAN_TSR_TME0) == 0)
+    if ( ( can->TSR & CAN_TSR_TME0 ) == 0 )
     {
         return 1;
     }
 
     // Standard ID = 0x123
-    can->sTxMailBox[0].TIR = (0x123 << 21);
+    can->sTxMailBox[0].TIR = ( 0x123 << 21 );
 
     // DLC = 8
     can->sTxMailBox[0].TDTR = 8;
 
     // Load first 4 bytes
-    can->sTxMailBox[0].TDLR =
-          ((uint32_t)txData[0] << 0)
-        | ((uint32_t)txData[1] << 8)
-        | ((uint32_t)txData[2] << 16)
-        | ((uint32_t)txData[3] << 24);
+    can->sTxMailBox[0].TDLR = ( ( uint32_t )txData[0] << 0 ) | ( ( uint32_t )txData[1] << 8 )
+                              | ( ( uint32_t )txData[2] << 16 ) | ( ( uint32_t )txData[3] << 24 );
 
     // Load second 4 bytes
-    can->sTxMailBox[0].TDHR =
-          ((uint32_t)txData[4] << 0)
-        | ((uint32_t)txData[5] << 8)
-        | ((uint32_t)txData[6] << 16)
-        | ((uint32_t)txData[7] << 24);
+    can->sTxMailBox[0].TDHR = ( ( uint32_t )txData[4] << 0 ) | ( ( uint32_t )txData[5] << 8 )
+                              | ( ( uint32_t )txData[6] << 16 ) | ( ( uint32_t )txData[7] << 24 );
 
     // Request transmission
     can->sTxMailBox[0].TIR |= CAN_TI0R_TXRQ;
@@ -194,12 +188,12 @@ int HW_CAN_transmit(CAN_HandleTypeDef* hcan, uint8_t* txData)
  *
  * Uses HAL to receive message over CAN channel
  */
-int HW_CAN_receive(CAN_HandleTypeDef* hcan, uint8_t* rxData)
+int HW_CAN_receive( CAN_HandleTypeDef* hcan, uint8_t* rxData )
 {
     CAN_TypeDef* can = hcan->Instance;
 
     // Check FIFO0 has pending message
-    if ((can->RF0R & CAN_RF0R_FMP0) == 0)
+    if ( ( can->RF0R & CAN_RF0R_FMP0 ) == 0 )
     {
         return 1;
     }
@@ -207,15 +201,15 @@ int HW_CAN_receive(CAN_HandleTypeDef* hcan, uint8_t* rxData)
     uint32_t low  = can->sFIFOMailBox[0].RDLR;
     uint32_t high = can->sFIFOMailBox[0].RDHR;
 
-    rxData[0] = (low >> 0) & 0xFF;
-    rxData[1] = (low >> 8) & 0xFF;
-    rxData[2] = (low >> 16) & 0xFF;
-    rxData[3] = (low >> 24) & 0xFF;
+    rxData[0] = ( low >> 0 ) & 0xFF;
+    rxData[1] = ( low >> 8 ) & 0xFF;
+    rxData[2] = ( low >> 16 ) & 0xFF;
+    rxData[3] = ( low >> 24 ) & 0xFF;
 
-    rxData[4] = (high >> 0) & 0xFF;
-    rxData[5] = (high >> 8) & 0xFF;
-    rxData[6] = (high >> 16) & 0xFF;
-    rxData[7] = (high >> 24) & 0xFF;
+    rxData[4] = ( high >> 0 ) & 0xFF;
+    rxData[5] = ( high >> 8 ) & 0xFF;
+    rxData[6] = ( high >> 16 ) & 0xFF;
+    rxData[7] = ( high >> 24 ) & 0xFF;
 
     // Release FIFO
     can->RF0R |= CAN_RF0R_RFOM0;
@@ -630,7 +624,8 @@ uint8_t can_tx_buffer1[RECEIVE_BUFFER_WIDTH][CAN_PACKET_SIZE];
  */
 // uint16_t HW_CAN_tx_buffer_read1( uint8_t** dest )
 // {
-//     return HW_CAN_buffer_read( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH, dest );
+//     return HW_CAN_buffer_read( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
+//     dest );
 // }
 
 /**
@@ -644,8 +639,8 @@ uint8_t can_rx_buffer1[X][CAN_PACKET_SIZE];
  */
 uint16_t HW_CAN_rx_buffer_write1( uint8_t** source, uint16_t length )
 {
-    return HW_CAN_buffer_write( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH, source,
-                                length );
+    return HW_CAN_buffer_write( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH,
+                                source, length );
 }
 
 /**
@@ -658,7 +653,8 @@ uint8_t can_rx_buffer1[RECEIVE_BUFFER_WIDTH][CAN_PACKET_SIZE];
  */
 // uint16_t HW_CAN_rx_buffer_read1( uint8_t** dest )
 // {
-//     return HW_CAN_buffer_read( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH, dest );
+//     return HW_CAN_buffer_read( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH,
+//     dest );
 // }
 
 /**
@@ -686,7 +682,8 @@ uint8_t can_tx_buffer1[RECEIVE_BUFFER_WIDTH][CAN_PACKET_SIZE];
  */
 // uint16_t HW_CAN_tx_buffer_read2( uint8_t** dest )
 // {
-//     return HW_CAN_buffer_read( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH, dest );
+//     return HW_CAN_buffer_read( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
+//     dest );
 // }
 
 /**
@@ -700,8 +697,8 @@ uint8_t can_rx_buffer1[X][CAN_PACKET_SIZE];
  */
 uint16_t HW_CAN_rx_buffer_write2( uint8_t** source, uint16_t length )
 {
-    return HW_CAN_buffer_write( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH, source,
-                                length );
+    return HW_CAN_buffer_write( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH,
+                                source, length );
 }
 
 /**
@@ -714,94 +711,63 @@ uint8_t can_rx_buffer1[RECEIVE_BUFFER_WIDTH][CAN_PACKET_SIZE];
  */
 // uint16_t HW_CAN_rx_buffer_read2( uint8_t** dest )
 // {
-//     return HW_CAN_buffer_read( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH, dest );
+//     return HW_CAN_buffer_read( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH,
+//     dest );
 // }
 
-uint16_t HW_CAN_buffer_pop(
-    uint8_t buffer[][CAN_PACKET_SIZE],
-    volatile uint16_t* w_p,
-    volatile uint16_t* r_p,
-    uint16_t buffer_width,
-    uint8_t dest[CAN_PACKET_SIZE]
-)
+uint16_t HW_CAN_buffer_pop( uint8_t buffer[][CAN_PACKET_SIZE], volatile uint16_t* w_p,
+                            volatile uint16_t* r_p, uint16_t buffer_width,
+                            uint8_t dest[CAN_PACKET_SIZE] )
 {
-    if (*w_p == *r_p)
+    if ( *w_p == *r_p )
     {
         return 0;
     }
 
-    for (int i = 0; i < CAN_PACKET_SIZE; i++)
+    for ( int i = 0; i < CAN_PACKET_SIZE; i++ )
     {
         dest[i] = buffer[*r_p][i];
     }
 
-    *r_p = (*r_p + 1) % buffer_width;
+    *r_p = ( *r_p + 1 ) % buffer_width;
 
     return 1;
 }
 
-uint16_t HW_CAN_rx_buffer_pop1(
-    uint8_t dest[CAN_PACKET_SIZE]
-)
+uint16_t HW_CAN_rx_buffer_pop1( uint8_t dest[CAN_PACKET_SIZE] )
 {
-    return HW_CAN_buffer_pop(
-        can_rx_buffer1,
-        &can_rx_wp1,
-        &can_rx_rp1,
-        RECEIVE_BUFFER_WIDTH,
-        dest
-    );
+    return HW_CAN_buffer_pop( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH,
+                              dest );
 }
 
-uint16_t HW_CAN_rx_buffer_pop2(
-    uint8_t dest[CAN_PACKET_SIZE]
-)
+uint16_t HW_CAN_rx_buffer_pop2( uint8_t dest[CAN_PACKET_SIZE] )
 {
-    return HW_CAN_buffer_pop(
-        can_rx_buffer2,
-        &can_rx_wp2,
-        &can_rx_rp2,
-        RECEIVE_BUFFER_WIDTH,
-        dest
-    );
+    return HW_CAN_buffer_pop( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH,
+                              dest );
 }
 
-uint16_t HW_CAN_tx_buffer_pop1(
-    uint8_t dest[CAN_PACKET_SIZE]
-)
+uint16_t HW_CAN_tx_buffer_pop1( uint8_t dest[CAN_PACKET_SIZE] )
 {
-    return HW_CAN_buffer_pop(
-        can_tx_buffer1,
-        &can_tx_wp1,
-        &can_tx_rp1,
-        TRANSMIT_BUFFER_WIDTH,
-        dest
-    );
+    return HW_CAN_buffer_pop( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
+                              dest );
 }
 
-uint16_t HW_CAN_tx_buffer_pop2(
-    uint8_t dest[CAN_PACKET_SIZE]
-)
+uint16_t HW_CAN_tx_buffer_pop2( uint8_t dest[CAN_PACKET_SIZE] )
 {
-    return HW_CAN_buffer_pop(
-        can_tx_buffer2,
-        &can_tx_wp2,
-        &can_tx_rp2,
-        TRANSMIT_BUFFER_WIDTH,
-        dest
-    );
+    return HW_CAN_buffer_pop( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
+                              dest );
 }
 
 #ifndef TEST_BUILD
 
-void HW_CAN_tx_trigger1(void)
+void HW_CAN_tx_trigger1( void )
 {
-    __HAL_CAN_ENABLE_IT(&hcan1, CAN_IT_TX_MAILBOX_EMPTY);
+    __HAL_CAN_ENABLE_IT( &hcan1, CAN_IT_TX_MAILBOX_EMPTY );
 }
 
-void HW_CAN_tx_trigger2(void)
+void HW_CAN_tx_trigger2( void )
 {
-    __HAL_CAN_ENABLE_IT(&hcan2, CAN_IT_TX_MAILBOX_EMPTY);
+    __HAL_CAN_ENABLE_IT( &hcan2, CAN_IT_TX_MAILBOX_EMPTY );
 }
 /**
  * @brief  ...
@@ -814,20 +780,17 @@ void HW_CAN_CH1_TX_IRQ_HANDLER( void )
 {
     uint8_t packet[CAN_PACKET_SIZE];
 
-    if (HW_CAN_tx_buffer_pop1(packet))
+    if ( HW_CAN_tx_buffer_pop1( packet ) )
     {
-        HW_CAN_transmit(&hcan1, packet);
+        HW_CAN_transmit( &hcan1, packet );
     }
     else
     {
         // TO DO - DONT USE HAL
-        __HAL_CAN_DISABLE_IT(
-            &hcan1,
-            CAN_IT_TX_MAILBOX_EMPTY
-        );
+        __HAL_CAN_DISABLE_IT( &hcan1, CAN_IT_TX_MAILBOX_EMPTY );
     }
 
-    HAL_CAN_IRQHandler(&hcan1);
+    HAL_CAN_IRQHandler( &hcan1 );
 }
 
 /**
@@ -841,12 +804,12 @@ void HW_CAN_CH1_RX_IRQ_HANDLER( void )
 {
     uint8_t packet[1][CAN_PACKET_SIZE];
 
-    if (HW_CAN_receive(&hcan1, packet[0]) == 0)
+    if ( HW_CAN_receive( &hcan1, packet[0] ) == 0 )
     {
-        HW_CAN_rx_buffer_write1(packet, 1);
+        HW_CAN_rx_buffer_write1( packet, 1 );
     }
 
-    HAL_CAN_IRQHandler(&hcan1);
+    HAL_CAN_IRQHandler( &hcan1 );
 }
 
 /**
@@ -860,20 +823,17 @@ void HW_CAN_CH2_TX_IRQ_HANDLER( void )
 {
     uint8_t packet[CAN_PACKET_SIZE];
 
-    if (HW_CAN_tx_buffer_pop2(packet))
+    if ( HW_CAN_tx_buffer_pop2( packet ) )
     {
-        HW_CAN_transmit(&hcan2, packet);
+        HW_CAN_transmit( &hcan2, packet );
     }
     else
     {
         // TO DO DONT USE HAL
-        __HAL_CAN_DISABLE_IT(
-            &hcan2,
-            CAN_IT_TX_MAILBOX_EMPTY
-        );
+        __HAL_CAN_DISABLE_IT( &hcan2, CAN_IT_TX_MAILBOX_EMPTY );
     }
 
-    HAL_CAN_IRQHandler(&hcan2);
+    HAL_CAN_IRQHandler( &hcan2 );
 }
 
 /**
@@ -887,11 +847,11 @@ void HW_CAN_CH2_RX_IRQ_HANDLER( void )
 {
     uint8_t packet[1][CAN_PACKET_SIZE];
 
-    if (HW_CAN_receive(&hcan2, packet[0]) == 0)
+    if ( HW_CAN_receive( &hcan2, packet[0] ) == 0 )
     {
-        HW_CAN_rx_buffer_write2(packet, 1);
+        HW_CAN_rx_buffer_write2( packet, 1 );
     }
 
-    HAL_CAN_IRQHandler(&hcan2);
+    HAL_CAN_IRQHandler( &hcan2 );
 }
 #endif
