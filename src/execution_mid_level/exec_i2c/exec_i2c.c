@@ -219,7 +219,7 @@ EXECI2CStatus_T EXEC_I2C_Configuration_Internal( void )
  * @return true if transmission was initiated
  * @return false on failure
  */
-bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
+inline bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
                            const uint8_t* payload, uint16_t payload_length )
 {
     return HW_I2C_Load_Stage_Buffer( channel, payload, payload_length )
@@ -239,7 +239,7 @@ bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_
  * @return true if transmission was initiated
  * @return false on failure
  */
-bool EXEC_I2C_Master_Transmit_Internal( uint16_t device_address_7bit, const uint8_t* payload,
+inline bool EXEC_I2C_Master_Transmit_Internal( uint16_t device_address_7bit, const uint8_t* payload,
                                     uint16_t payload_length )
 {
     return HW_I2C_Load_Stage_Buffer( HW_I2C_CHANNEL_FMPI2C1, payload, payload_length )
@@ -258,7 +258,7 @@ bool EXEC_I2C_Master_Transmit_Internal( uint16_t device_address_7bit, const uint
  * @return true if slave transmit was prepared
  * @return false on failure
  */
-bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* payload,
+inline bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* payload,
                           uint16_t payload_length )
 {
     return HW_I2C_Load_Stage_Buffer( channel, payload, payload_length )
@@ -278,7 +278,7 @@ bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* pa
  * @return true if receive was initiated
  * @return false on failure
  */
-bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
+inline bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
                                              uint16_t expected_length )
 {
     return HW_I2C_Trigger_Master_Receive_External( channel, device_address_7bit, expected_length );
@@ -314,7 +314,7 @@ bool EXEC_I2C_Start_Master_Receive_Internal( uint16_t device_address_7bit,
  * @return true if receive was prepared
  * @return false on failure
  */
-bool EXEC_I2C_Start_Slave_Receive_External( HWI2CChannel_T channel, uint16_t expected_length )
+inline bool EXEC_I2C_Start_Slave_Receive_External( HWI2CChannel_T channel, uint16_t expected_length )
 {
     return HW_I2C_Trigger_Slave_Receive_External( channel, expected_length );
 }
@@ -323,7 +323,7 @@ bool EXEC_I2C_Start_Slave_Receive_External( HWI2CChannel_T channel, uint16_t exp
  * @brief Copy received data and advance the receive pointer.
  *
  * Copies received data from the internal ring buffer into caller-provided storage,
- * then consumes (advances pointer past) the copied bytes. Atomic operation.
+ * then consumes (advances pointer past) the copied bytes.
  *
  * @param[in]  channel                     I2C channel
  * @param[out] result_storage              Buffer to copy received data into
@@ -337,8 +337,10 @@ bool EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel, uint8_t* result_
                                         uint16_t result_storage_capacity,
                                         uint16_t* bytes_copied )
 {
+    /* Default output to 0 bytes so callers can rely on deterministic state on failure. */
     *bytes_copied = 0U;
 
+    /* Snapshot current RX data layout (may be split across ring-buffer wrap). */
     HWI2CRxPeek_T peek      = { 0 };
     bool is_ok = HW_I2C_Peek_Received( channel, &peek );
     if ( !is_ok )
@@ -346,12 +348,14 @@ bool EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel, uint8_t* result_
         return false;
     }
 
+    /* Clamp copy length to caller buffer capacity to avoid overflow. */
     uint16_t bytes_to_copy = peek.total_length;
     if ( bytes_to_copy > result_storage_capacity )
     {
         bytes_to_copy = result_storage_capacity;
     }
 
+    /* Copy from the first contiguous region returned by peek. */
     uint16_t copied = 0U;
     for ( uint16_t idx = 0U; ( idx < peek.first.length ) && ( copied < bytes_to_copy ); ++idx )
     {
@@ -359,18 +363,21 @@ bool EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel, uint8_t* result_
         ++copied;
     }
 
+    /* Copy remaining bytes from the second region when data wrapped in the ring buffer. */
     for ( uint16_t idx = 0U; ( idx < peek.second.length ) && ( copied < bytes_to_copy ); ++idx )
     {
         result_storage[copied] = peek.second.data[idx];
         ++copied;
     }
 
+    /* Consume exactly what we copied so caller-visible data and RX cursor stay aligned. */
     is_ok = HW_I2C_Consume_Received( channel, copied );
     if ( !is_ok )
     {
         return false;
     }
 
+    /* Report bytes successfully copied and consumed. */
     *bytes_copied = copied;
     return true;
 }
