@@ -34,7 +34,7 @@
 #define ANALOGUE_OUTPUT_SPI_CHANNEL SPI_CHANNEL_0
 
 #define ANALOGUE_OUTPUT_DAC_CHANNEL_COUNT 8U
-#define EXEC_ANALOGUE_OUTPUT_ConfigURED_CHANNEL_COUNT 6U
+#define EXEC_ANALOGUE_OUTPUT_CONFIGURED_CHANNEL_COUNT 6U
 #define ANALOGUE_OUTPUT_DAC_MAX_COUNT 4095U
 #define ANALOGUE_OUTPUT_INPUT_MAX_V 20.0F
 
@@ -185,8 +185,10 @@ static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
 /**
  * @brief Configure and start the SPI hardware channel dedicated to DAC communication.
  *
+ * Intended to only be used for console testing to set up the SPI channel independently
+ * 
  * Sets up the SPI peripheral with the configuration required by the
- * MCP48CVB28T-20E_ST octal DAC: 8-bit data size, 352K baud rate, MSB first,
+ * MCP48CVB28T-20E_ST octal DAC: 8-bit data size, MSB first,
  * CPOL low, CPHA 1 edge.
  *
  * This function must be called once during system initialization to prepare
@@ -303,7 +305,7 @@ bool EXEC_ANALOG_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v )
         return false;
     }
 
-    if ( channel >= EXEC_ANALOGUE_OUTPUT_ConfigURED_CHANNEL_COUNT )
+    if ( channel >= EXEC_ANALOGUE_OUTPUT_CONFIGURED_CHANNEL_COUNT )
     {
         return false;
     }
