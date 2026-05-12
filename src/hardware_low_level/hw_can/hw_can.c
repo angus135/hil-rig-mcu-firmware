@@ -184,7 +184,7 @@ int HW_CAN_transmit(CAN_HandleTypeDef* hcan, uint8_t* txData)
  * @param hcan the pointer to the handle for the can peripheral
  * @param rxData pointer to 8 bytes of available storage
  *
- * Uses HAL to recieve message over CAN channel
+ * Uses HAL to receive message over CAN channel
  */
 int HW_CAN_receive(CAN_HandleTypeDef* hcan, uint8_t* rxData)
 {
@@ -554,12 +554,12 @@ int HW_CAN_transmit1( uint8_t* txData )
  *
  * @param rxData pointer to 8 bytes of available storage
  *
- * Uses HAL to recieve message over CAN channel 1
+ * Uses HAL to receive message over CAN channel 1
  */
 int HW_CAN_recieve1( uint8_t* rxData )
 {
 #ifndef TEST_BUILD
-    return HW_CAN_recieve( &hcan1, rxData );
+    return HW_CAN_receive( &hcan1, rxData );
 #else
     ( void )rxData;
 #endif
@@ -586,7 +586,7 @@ int HW_CAN_transmit2( uint8_t* txData )
  *
  * @param rxData pointer to 8 bytes of available storage
  *
- * Uses HAL to recieve message over CAN channel 2
+ * Uses HAL to receive message over CAN channel 2
  */
 int HW_CAN_recieve2( uint8_t* rxData )
 {

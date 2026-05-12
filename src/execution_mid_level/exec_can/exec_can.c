@@ -62,7 +62,7 @@
  * @param rxData pointer to array of 8 bytes sections of available storage
  * @param length the number of 8 byte sections in rxData (the amount of CAN packages being read)
  *
- * Uses HAL to recieve message over CAN channel 1
+ * Uses HAL to receive message over CAN channel 1
  */
 int EXEC_CAN_recieve1( uint8_t** rxData, uint32_t length )
 {
@@ -82,7 +82,7 @@ int EXEC_CAN_recieve1( uint8_t** rxData, uint32_t length )
  * @param rxData pointer to array of 8 bytes sections of available storage
  * @param length the number of 8 byte sections in rxData (the amount of CAN packages being read)
  *
- * Uses HAL to recieve message over CAN channel 2
+ * Uses HAL to receive message over CAN channel 2
  */
 int EXEC_CAN_recieve2( uint8_t** rxData, uint32_t length )
 {
