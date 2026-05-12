@@ -59,7 +59,7 @@ typedef struct CanProperties_T
  *
  * Computes the register values for the given conditions
  */
-CanProperties_T HW_CAN_compute_properties( uint32_t bitrate, uint32_t total_TQ,
+CanProperties_T HW_CAN_Compute_Properties( uint32_t bitrate, uint32_t total_TQ,
                                            uint32_t sample_point_1t1000 );
 
 /**
@@ -88,7 +88,7 @@ CanProperties_T HW_CAN_compute_properties( uint32_t bitrate, uint32_t total_TQ,
  *          FIFO assignment for accepted frames
  *
  */
-int HW_CAN_configure1( uint32_t bitrate );
+int HW_CAN_Configure1( uint32_t bitrate );
 
 /**
  * @brief Configures the peripherals of CAN channel 2
@@ -116,7 +116,7 @@ int HW_CAN_configure1( uint32_t bitrate );
  *          FIFO assignment for accepted frames
  *
  */
-int HW_CAN_configure2( uint32_t bitrate );
+int HW_CAN_Configure2( uint32_t bitrate );
 
 /**
  * @brief recieves data and stores it in rxData (8 bytes) over the hcan CAN channel 1
@@ -126,7 +126,7 @@ int HW_CAN_configure2( uint32_t bitrate );
  *
  * Uses HAL to receive message over CAN channel 1
  */
-int HW_CAN_recieve1( uint8_t* rxData );
+int HW_CAN_Recieve1( uint8_t* rxData );
 
 /**
  * @brief transmits the txData (8 bytes) over CAN channel 1
@@ -135,7 +135,7 @@ int HW_CAN_recieve1( uint8_t* rxData );
  *
  * Uses HAL to transmit message over CAN channel 1
  */
-int HW_CAN_transmit1( uint8_t* txData );
+int HW_CAN_Transmit1( uint8_t* txData );
 
 /**
  * @brief recieves data and stores it in rxData (8 bytes) over the hcan CAN channel 2
@@ -145,7 +145,7 @@ int HW_CAN_transmit1( uint8_t* txData );
  *
  * Uses HAL to receive message over CAN channel 2
  */
-int HW_CAN_recieve2( uint8_t* rxData );
+int HW_CAN_Recieve2( uint8_t* rxData );
 
 /**
  * @brief transmits the txData (8 bytes) over CAN channel 2
@@ -154,7 +154,7 @@ int HW_CAN_recieve2( uint8_t* rxData );
  *
  * Uses HAL to transmit message over CAN channel 2
  */
-int HW_CAN_transmit2( uint8_t* txData );
+int HW_CAN_Transmit2( uint8_t* txData );
 
 #ifdef __cplusplus
 }
