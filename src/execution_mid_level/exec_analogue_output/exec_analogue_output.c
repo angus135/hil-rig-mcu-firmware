@@ -31,6 +31,7 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
+#define ANALOGUE_OUTPUT_SPI_CHANNEL SPI_CHANNEL_0
 
 #define ANALOGUE_OUTPUT_DAC_CHANNEL_COUNT 8U
 #define EXEC_ANALOGUE_OUTPUT_ConfigURED_CHANNEL_COUNT 6U
@@ -92,7 +93,7 @@ static bool EXEC_ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, uint16_t 
         ( uint8_t )( data_word & 0xFFU ),
     };
 
-    return HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, frame, sizeof( frame ) );
+    return HW_SPI_Load_Tx_Buffer( ANALOGUE_OUTPUT_SPI_CHANNEL, frame, sizeof( frame ) );
 }
 
 static uint16_t EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_v )
@@ -163,7 +164,7 @@ static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
             ( uint8_t )( ( frames[index].data_word >> 8U ) & 0xFFU );
         frame_bytes[frame_index_bytes + 2U] = ( uint8_t )( frames[index].data_word & 0xFFU );
 
-        if ( !HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, &frame_bytes[frame_index_bytes], 3U ) )
+        if ( !HW_SPI_Load_Tx_Buffer( ANALOGUE_OUTPUT_SPI_CHANNEL, &frame_bytes[frame_index_bytes], 3U ) )
         {
             return false;
         }
@@ -171,7 +172,7 @@ static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
         frame_index_bytes += 3U;
     }
 
-    HW_SPI_Tx_Trigger( SPI_CHANNEL_0 );
+    HW_SPI_Tx_Trigger( ANALOGUE_OUTPUT_SPI_CHANNEL );
 
     return true;
 }
@@ -182,14 +183,14 @@ static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
  */
 
 /**
- * @brief Configure and start the SPI4 hardware channel dedicated to DAC communication.
+ * @brief Configure and start the SPI hardware channel dedicated to DAC communication.
  *
- * Sets up the SPI4 peripheral with the configuration required by the
+ * Sets up the SPI peripheral with the configuration required by the
  * MCP48CVB28T-20E_ST octal DAC: 8-bit data size, 352K baud rate, MSB first,
  * CPOL low, CPHA 1 edge.
  *
  * This function must be called once during system initialization to prepare
- * SPI4 for use before any DAC operations are performed. In the real project,
+ * SPI for use before any DAC operations are performed. In the real project,
  * this setup will be performed by the system/board initialization layer.
  *
  * This function is provided as a separate helper for console testing so that
@@ -200,7 +201,7 @@ static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
  * successfully, the channel is ready to transmit frames to the DAC.
  *
  * @return
- *     true if SPI4 configuration and startup completed successfully.
+ *     true if SPI configuration and startup completed successfully.
  *     false if hardware configuration or startup failed.
  */
 bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void )
@@ -214,12 +215,12 @@ bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void )
         .cpha      = SPI_CPHA_1_EDGE,
     };
 
-    if ( !HW_SPI_Configure_Channel( SPI_CHANNEL_0, configuration ) )
+    if ( !HW_SPI_Configure_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL, configuration ) )
     {
         return false;
     }
 
-    HW_SPI_Start_Channel( SPI_CHANNEL_0 );
+    HW_SPI_Start_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL );
     return true;
 }
 
@@ -315,7 +316,7 @@ bool EXEC_ANALOG_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v )
         return false;
     }
 
-    HW_SPI_Tx_Trigger( SPI_CHANNEL_0 );
+    HW_SPI_Tx_Trigger( ANALOGUE_OUTPUT_SPI_CHANNEL );
 
     return true;
 }
