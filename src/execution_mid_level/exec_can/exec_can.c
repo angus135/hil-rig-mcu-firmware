@@ -68,7 +68,7 @@ int EXEC_CAN_recieve1( uint8_t** rxData, uint32_t length )
 {
     for ( int i = 0; i < length; i++ )
     {
-        if ( HW_CAN_recieve1( rxData[i] ) != 0 )
+        if ( HW_CAN_Recieve1( rxData[i] ) != 0 )
         {
             return 1;
         }
@@ -88,7 +88,7 @@ int EXEC_CAN_recieve2( uint8_t** rxData, uint32_t length )
 {
     for ( int i = 0; i < length; i++ )
     {
-        if ( HW_CAN_recieve2( rxData[i] ) != 0 )
+        if ( HW_CAN_Recieve2( rxData[i] ) != 0 )
         {
             return 1;
         }
@@ -107,7 +107,7 @@ int EXEC_CAN_transmit1( uint8_t** txData, uint32_t length )
 {
     for ( int i = 0; i < length; i++ )
     {
-        if ( HW_CAN_transmit1( txData[i] ) != 0 )
+        if ( HW_CAN_Transmit1( txData[i] ) != 0 )
         {
             return 1;
         }
@@ -126,7 +126,7 @@ int EXEC_CAN_transmit2( uint8_t** txData, uint32_t length )
 {
     for ( int i = 0; i < length; i++ )
     {
-        if ( HW_CAN_transmit2( txData[i] ) != 0 )
+        if ( HW_CAN_Transmit2( txData[i] ) != 0 )
         {
             return 1;
         }

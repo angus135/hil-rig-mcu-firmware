@@ -103,7 +103,7 @@ void HW_UART_CH2_RX_IRQ_HANDLER( void );
  *------------------------------------------------------------------------------
  */
 
-inline uint8_t HW_CAN_buffer_write( uint8_t buffer[][CAN_PACKET_SIZE], uint16_t* w_p, uint16_t* r_p,
+static inline uint8_t HW_CAN_Buffer_Write( uint8_t buffer[][CAN_PACKET_SIZE], uint16_t* w_p, uint16_t* r_p,
                                     uint16_t buffer_width, uint8_t** source, uint16_t length )
 {
     for ( int i = 0; i < length; i++ )
@@ -121,7 +121,7 @@ inline uint8_t HW_CAN_buffer_write( uint8_t buffer[][CAN_PACKET_SIZE], uint16_t*
     return 0;
 }
 
-inline uint16_t HW_CAN_buffer_read( uint8_t buffer[][CAN_PACKET_SIZE], uint16_t* w_p, uint16_t* r_p,
+static inline uint16_t HW_CAN_Buffer_Read( uint8_t buffer[][CAN_PACKET_SIZE], uint16_t* w_p, uint16_t* r_p,
                                     uint16_t buffer_width, uint8_t** dest )
 {
     uint16_t count = 0;
@@ -150,7 +150,7 @@ inline uint16_t HW_CAN_buffer_read( uint8_t buffer[][CAN_PACKET_SIZE], uint16_t*
  *
  * Uses HAL to transmit message over CAN channel
  */
-int HW_CAN_transmit( CAN_HandleTypeDef* hcan, uint8_t* txData )
+int HW_CAN_Transmit( CAN_HandleTypeDef* hcan, uint8_t* txData )
 {
     CAN_TypeDef* can = hcan->Instance;
 
@@ -188,7 +188,7 @@ int HW_CAN_transmit( CAN_HandleTypeDef* hcan, uint8_t* txData )
  *
  * Uses HAL to receive message over CAN channel
  */
-int HW_CAN_receive( CAN_HandleTypeDef* hcan, uint8_t* rxData )
+int HW_CAN_Receive( CAN_HandleTypeDef* hcan, uint8_t* rxData )
 {
     CAN_TypeDef* can = hcan->Instance;
 
@@ -229,12 +229,12 @@ int HW_CAN_receive( CAN_HandleTypeDef* hcan, uint8_t* rxData )
  * @brief Applies the CAN timing peripherals, part of CAN configuration
  *
  * @param hcan pointer to the handle for the can peripheral
- * @param props the can properties, as calculated by HW_CAN_compute_properties
+ * @param props the can properties, as calculated by HW_CAN_Compute_Properties
  *
  * This function takes and applies the desired can properties using the HAL library
  *
  */
-HAL_StatusTypeDef HW_CAN_apply_timing_HAL( CAN_HandleTypeDef* hcan, CanProperties_T props )
+HAL_StatusTypeDef HW_CAN_Apply_Timing_HAL( CAN_HandleTypeDef* hcan, CanProperties_T props )
 {
     if ( props.bs2 == 0 || props.bs2 == 0 || props.psc == 0 || props.timer_hz == 0 )
     {
@@ -351,7 +351,7 @@ HAL_StatusTypeDef HW_CAN_apply_timing_HAL( CAN_HandleTypeDef* hcan, CanPropertie
  * This function applies the desired can filter properties using the HAL library
  *
  */
-HAL_StatusTypeDef HW_CAN_apply_filter_HAL( CAN_FilterTypeDef filter, CAN_HandleTypeDef* hcan )
+HAL_StatusTypeDef HW_CAN_Apply_Filter_HAL( CAN_FilterTypeDef filter, CAN_HandleTypeDef* hcan )
 {
     filter.FilterBank  = 0;
     filter.FilterMode  = CAN_FILTERMODE_IDMASK;
@@ -395,18 +395,18 @@ HAL_StatusTypeDef HW_CAN_apply_filter_HAL( CAN_FilterTypeDef filter, CAN_HandleT
  *          FIFO assignment for accepted frames
  *
  */
-int HW_CAN_configure( CAN_HandleTypeDef* hcan, uint32_t bitrate )
+int HW_CAN_Configure( CAN_HandleTypeDef* hcan, uint32_t bitrate )
 {
     CAN_FilterTypeDef filter;
-    CanProperties_T   can_props = HW_CAN_compute_properties( bitrate, TOTAL_TQ, MBPS_SAMPLE_POINT );
+    CanProperties_T   can_props = HW_CAN_Compute_Properties( bitrate, TOTAL_TQ, MBPS_SAMPLE_POINT );
     __HAL_RCC_CAN1_FORCE_RESET();
     __HAL_RCC_CAN1_RELEASE_RESET();
     __HAL_RCC_CAN1_CLK_ENABLE();
-    if ( HW_CAN_apply_timing_HAL( hcan, can_props ) != HAL_OK )
+    if ( HW_CAN_Apply_Timing_HAL( hcan, can_props ) != HAL_OK )
     {
         return 1;
     }
-    if ( HW_CAN_apply_filter_HAL( filter, hcan ) != HAL_OK )
+    if ( HW_CAN_Apply_Filter_HAL( filter, hcan ) != HAL_OK )
     {
         return 2;
     }
@@ -433,7 +433,7 @@ int HW_CAN_configure( CAN_HandleTypeDef* hcan, uint32_t bitrate )
  *
  * Computes the register values for the given conditions
  */
-CanProperties_T HW_CAN_compute_properties( uint32_t bitrate, uint32_t total_TQ,
+CanProperties_T HW_CAN_Compute_Properties( uint32_t bitrate, uint32_t total_TQ,
                                            uint32_t sample_point_1t1000 )
 {
     if ( bitrate < 1 || bitrate > 1000000 )
@@ -492,9 +492,9 @@ CanProperties_T HW_CAN_compute_properties( uint32_t bitrate, uint32_t total_TQ,
  *          FIFO assignment for accepted frames
  *
  */
-int HW_CAN_configure1( uint32_t bitrate )
+int HW_CAN_Configure1( uint32_t bitrate )
 {
-    return HW_CAN_configure( &hcan1, bitrate );
+    return HW_CAN_Configure( &hcan1, bitrate );
 }
 
 /**
@@ -523,9 +523,9 @@ int HW_CAN_configure1( uint32_t bitrate )
  *          FIFO assignment for accepted frames
  *
  */
-int HW_CAN_configure2( uint32_t bitrate )
+int HW_CAN_Configure2( uint32_t bitrate )
 {
-    return HW_CAN_configure( &hcan2, bitrate );
+    return HW_CAN_Configure( &hcan2, bitrate );
 }
 
 #endif
@@ -542,10 +542,10 @@ int HW_CAN_configure2( uint32_t bitrate )
  *
  * Uses HAL to transmit message over CAN channel 1
  */
-int HW_CAN_transmit1( uint8_t* txData )
+int HW_CAN_Transmit1( uint8_t* txData )
 {
 #ifndef TEST_BUILD
-    return HW_CAN_transmit( &hcan1, txData );
+    return HW_CAN_Transmit( &hcan1, txData );
 #else
     ( void )txData;
 #endif
@@ -558,10 +558,10 @@ int HW_CAN_transmit1( uint8_t* txData )
  *
  * Uses HAL to receive message over CAN channel 1
  */
-int HW_CAN_recieve1( uint8_t* rxData )
+int HW_CAN_Recieve1( uint8_t* rxData )
 {
 #ifndef TEST_BUILD
-    return HW_CAN_receive( &hcan1, rxData );
+    return HW_CAN_Receive( &hcan1, rxData );
 #else
     ( void )rxData;
 #endif
@@ -574,10 +574,10 @@ int HW_CAN_recieve1( uint8_t* rxData )
  *
  * Uses HAL to transmit message over CAN channel 2
  */
-int HW_CAN_transmit2( uint8_t* txData )
+int HW_CAN_Transmit2( uint8_t* txData )
 {
 #ifndef TEST_BUILD
-    return HW_CAN_transmit( &hcan2, txData );
+    return HW_CAN_Transmit( &hcan2, txData );
 #else
     ( void )txData;
 #endif
@@ -590,10 +590,10 @@ int HW_CAN_transmit2( uint8_t* txData )
  *
  * Uses HAL to receive message over CAN channel 2
  */
-int HW_CAN_recieve2( uint8_t* rxData )
+int HW_CAN_Recieve2( uint8_t* rxData )
 {
 #ifndef TEST_BUILD
-    return HW_CAN_recieve( &hcan2, rxData );
+    return HW_CAN_Recieve( &hcan2, rxData );
 #else
     ( void )rxData;
 #endif
@@ -608,9 +608,9 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t HW_CAN_tx_buffer_write1( uint8_t** source, uint16_t length )
+uint16_t HW_CAN_Tx_Buffer_Write1( uint8_t** source, uint16_t length )
 {
-    return HW_CAN_buffer_write( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
+    return HW_CAN_Buffer_Write( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
                                 source, length );
 }
 
@@ -624,7 +624,7 @@ uint8_t can_tx_buffer1[RECEIVE_BUFFER_WIDTH][CAN_PACKET_SIZE];
  */
 // uint16_t HW_CAN_tx_buffer_read1( uint8_t** dest )
 // {
-//     return HW_CAN_buffer_read( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
+//     return HW_CAN_Buffer_Read( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
 //     dest );
 // }
 
@@ -637,9 +637,9 @@ uint8_t can_rx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t HW_CAN_rx_buffer_write1( uint8_t** source, uint16_t length )
+uint16_t HW_CAN_Rx_Buffer_Write1( uint8_t** source, uint16_t length )
 {
-    return HW_CAN_buffer_write( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH,
+    return HW_CAN_Buffer_Write( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH,
                                 source, length );
 }
 
@@ -653,7 +653,7 @@ uint8_t can_rx_buffer1[RECEIVE_BUFFER_WIDTH][CAN_PACKET_SIZE];
  */
 // uint16_t HW_CAN_rx_buffer_read1( uint8_t** dest )
 // {
-//     return HW_CAN_buffer_read( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH,
+//     return HW_CAN_Buffer_Read( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH,
 //     dest );
 // }
 
@@ -666,9 +666,9 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t HW_CAN_tx_buffer_write2( uint8_t** source, uint16_t length )
+uint16_t HW_CAN_Tx_Buffer_Write2( uint8_t** source, uint16_t length )
 {
-    return HW_CAN_buffer_write( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
+    return HW_CAN_Buffer_Write( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
                                 source, length );
 }
 
@@ -682,7 +682,7 @@ uint8_t can_tx_buffer1[RECEIVE_BUFFER_WIDTH][CAN_PACKET_SIZE];
  */
 // uint16_t HW_CAN_tx_buffer_read2( uint8_t** dest )
 // {
-//     return HW_CAN_buffer_read( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
+//     return HW_CAN_Buffer_Read( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
 //     dest );
 // }
 
@@ -695,9 +695,9 @@ uint8_t can_rx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t HW_CAN_rx_buffer_write2( uint8_t** source, uint16_t length )
+uint16_t HW_CAN_Rx_Buffer_Write2( uint8_t** source, uint16_t length )
 {
-    return HW_CAN_buffer_write( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH,
+    return HW_CAN_Buffer_Write( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH,
                                 source, length );
 }
 
@@ -711,11 +711,11 @@ uint8_t can_rx_buffer1[RECEIVE_BUFFER_WIDTH][CAN_PACKET_SIZE];
  */
 // uint16_t HW_CAN_rx_buffer_read2( uint8_t** dest )
 // {
-//     return HW_CAN_buffer_read( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH,
+//     return HW_CAN_Buffer_Read( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH,
 //     dest );
 // }
 
-uint16_t HW_CAN_buffer_pop( uint8_t buffer[][CAN_PACKET_SIZE], volatile uint16_t* w_p,
+uint16_t HW_CAN_Buffer_Pop( uint8_t buffer[][CAN_PACKET_SIZE], volatile uint16_t* w_p,
                             volatile uint16_t* r_p, uint16_t buffer_width,
                             uint8_t dest[CAN_PACKET_SIZE] )
 {
@@ -734,38 +734,38 @@ uint16_t HW_CAN_buffer_pop( uint8_t buffer[][CAN_PACKET_SIZE], volatile uint16_t
     return 1;
 }
 
-uint16_t HW_CAN_rx_buffer_pop1( uint8_t dest[CAN_PACKET_SIZE] )
+uint16_t HW_CAN_Rx_Buffer_Pop1( uint8_t dest[CAN_PACKET_SIZE] )
 {
-    return HW_CAN_buffer_pop( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH,
+    return HW_CAN_Buffer_Pop( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH,
                               dest );
 }
 
-uint16_t HW_CAN_rx_buffer_pop2( uint8_t dest[CAN_PACKET_SIZE] )
+uint16_t HW_CAN_Rx_Buffer_Pop2( uint8_t dest[CAN_PACKET_SIZE] )
 {
-    return HW_CAN_buffer_pop( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH,
+    return HW_CAN_Buffer_Pop( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH,
                               dest );
 }
 
-uint16_t HW_CAN_tx_buffer_pop1( uint8_t dest[CAN_PACKET_SIZE] )
+uint16_t HW_CAN_Tx_Buffer_Pop1( uint8_t dest[CAN_PACKET_SIZE] )
 {
-    return HW_CAN_buffer_pop( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
+    return HW_CAN_Buffer_Pop( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
                               dest );
 }
 
-uint16_t HW_CAN_tx_buffer_pop2( uint8_t dest[CAN_PACKET_SIZE] )
+uint16_t HW_CAN_Tx_Buffer_Pop2( uint8_t dest[CAN_PACKET_SIZE] )
 {
-    return HW_CAN_buffer_pop( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
+    return HW_CAN_Buffer_Pop( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
                               dest );
 }
 
 #ifndef TEST_BUILD
 
-void HW_CAN_tx_trigger1( void )
+void HW_CAN_Tx_Trigger1( void )
 {
     __HAL_CAN_ENABLE_IT( &hcan1, CAN_IT_TX_MAILBOX_EMPTY );
 }
 
-void HW_CAN_tx_trigger2( void )
+void HW_CAN_Tx_Trigger2( void )
 {
     __HAL_CAN_ENABLE_IT( &hcan2, CAN_IT_TX_MAILBOX_EMPTY );
 }
@@ -780,9 +780,9 @@ void HW_CAN_CH1_TX_IRQ_HANDLER( void )
 {
     uint8_t packet[CAN_PACKET_SIZE];
 
-    if ( HW_CAN_tx_buffer_pop1( packet ) )
+    if ( HW_CAN_Tx_Buffer_Pop1( packet ) )
     {
-        HW_CAN_transmit( &hcan1, packet );
+        HW_CAN_Transmit( &hcan1, packet );
     }
     else
     {
@@ -804,9 +804,9 @@ void HW_CAN_CH1_RX_IRQ_HANDLER( void )
 {
     uint8_t packet[1][CAN_PACKET_SIZE];
 
-    if ( HW_CAN_receive( &hcan1, packet[0] ) == 0 )
+    if ( HW_CAN_Receive( &hcan1, packet[0] ) == 0 )
     {
-        HW_CAN_rx_buffer_write1( packet, 1 );
+        HW_CAN_Rx_Buffer_Write1( packet, 1 );
     }
 
     HAL_CAN_IRQHandler( &hcan1 );
@@ -823,9 +823,9 @@ void HW_CAN_CH2_TX_IRQ_HANDLER( void )
 {
     uint8_t packet[CAN_PACKET_SIZE];
 
-    if ( HW_CAN_tx_buffer_pop2( packet ) )
+    if ( HW_CAN_Tx_Buffer_Pop2( packet ) )
     {
-        HW_CAN_transmit( &hcan2, packet );
+        HW_CAN_Transmit( &hcan2, packet );
     }
     else
     {
@@ -847,9 +847,9 @@ void HW_CAN_CH2_RX_IRQ_HANDLER( void )
 {
     uint8_t packet[1][CAN_PACKET_SIZE];
 
-    if ( HW_CAN_receive( &hcan2, packet[0] ) == 0 )
+    if ( HW_CAN_Receive( &hcan2, packet[0] ) == 0 )
     {
-        HW_CAN_rx_buffer_write2( packet, 1 );
+        HW_CAN_Rx_Buffer_Write2( packet, 1 );
     }
 
     HAL_CAN_IRQHandler( &hcan2 );
