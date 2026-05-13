@@ -59,6 +59,7 @@ if(LOGIC_EXPANDER_ENABLE_TESTS AND BUILD_TESTING)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_i2c
     )
 
     add_test(NAME logic_expander_tests COMMAND logic_expander_tests)

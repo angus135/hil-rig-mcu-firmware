@@ -120,6 +120,7 @@ static bool                 logic_expander_ready                       = false;
  */
 
 static inline bool                  LOGIC_EXPANDER_Index_Is_Valid( LogicExpanderIndex_T expander_index );
+static inline bool                  LOGIC_EXPANDER_Index_Is_Active( LogicExpanderIndex_T expander_index );
 static inline bool                  LOGIC_EXPANDER_Port_Is_Valid( LogicExpanderPort_T port );
 static inline LogicExpanderStatus_T LOGIC_EXPANDER_From_Exec_Status( LogicExpanderI2CStatus_T status );
 static LogicExpanderStatus_T
