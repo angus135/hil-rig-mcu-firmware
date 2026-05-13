@@ -40,6 +40,7 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
 #define RECEIVE_BUFFER_WIDTH 20
 #define TRANSMIT_BUFFER_WIDTH 20
 
+// IRQ Re-Definitions
 #define HW_CAN_CH1_TX_IRQ_HANDLER CAN1_TX_IRQHandler
 #define HW_CAN_CH1_RX_IRQ_HANDLER CAN1_RX0_IRQHandler
 #define HW_CAN_CH2_TX_IRQ_HANDLER CAN2_TX_IRQHandler
@@ -60,18 +61,22 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
  *------------------------------------------------------------------------------
  */
 
+// Buffer for rx channel 1
 static volatile uint8_t  can_rx_buffer1[RECEIVE_BUFFER_WIDTH][CAN_PACKET_SIZE];
 static volatile uint16_t can_rx_wp1 = 0;  // Writing to RX buffer handled by ISR
 static volatile uint16_t can_rx_rp1 = 0;  // Reading from RX buffer handled by HW_CAN_rx_buffer_read
 
+// Buffer for tx channel 1
 static volatile uint8_t  can_tx_buffer1[TRANSMIT_BUFFER_WIDTH][CAN_PACKET_SIZE];
 static volatile uint16_t can_tx_wp1 = 0;  // Writing to TX buffer handled by HW_CAN_tx_buffer_write
 static volatile uint16_t can_tx_rp1 = 0;  // Reading from TX buffer handled by ISR
 
+// Buffer for rx channel 2
 static volatile uint8_t  can_rx_buffer2[RECEIVE_BUFFER_WIDTH][CAN_PACKET_SIZE];
 static volatile uint16_t can_rx_wp2 = 0;  // Writing to RX buffer handled by ISR
 static volatile uint16_t can_rx_rp2 = 0;  // Reading from RX buffer handled by HW_CAN_rx_buffer_read
 
+// Buffer for tx channel 2
 static volatile uint8_t  can_tx_buffer2[TRANSMIT_BUFFER_WIDTH][CAN_PACKET_SIZE];
 static volatile uint16_t can_tx_wp2 = 0;  // Writing to TX buffer handled by HW_CAN_tx_buffer_write
 static volatile uint16_t can_tx_rp2 = 0;  // Reading from TX buffer handled by ISR
@@ -87,6 +92,7 @@ static volatile uint16_t can_tx_rp2 = 0;  // Reading from TX buffer handled by I
  *
  */
 
+// IRQ Re-Definitions
 void HW_CAN_CH1_TX_IRQ_HANDLER( void );
 void HW_CAN_CH1_RX_IRQ_HANDLER( void );
 void HW_CAN_CH2_TX_IRQ_HANDLER( void );
@@ -102,27 +108,72 @@ void HW_CAN_CH2_RX_IRQ_HANDLER( void );
  *------------------------------------------------------------------------------
  */
 
-static inline uint8_t HW_CAN_Buffer_Write( volatile uint8_t buffer[][CAN_PACKET_SIZE], volatile uint16_t* w_p,
-                                           volatile uint16_t* r_p, uint16_t buffer_width, uint8_t source[][CAN_PACKET_SIZE],
+/**
+ * @brief writes source to the buffer
+ *
+ * @param buffer    A pointer to the buffer being used
+ * @param w_p       the address of the write pointer
+ * @param r_p       the address of the read pointer
+ * @param buffer_width  The width of the buffer CAN_PACKET_SIZE (8)
+ * @param source    A pointer to the source being used
+ * @param length    the number of packets being written from source
+ *
+ * @return 1 if there is no room in the buffer
+ * @return 0 if all of the elements have been written to the buffer
+ *
+ * @note The w_p always points to the next available position.
+Meaning if the next position in the buffer has the r_p then the buffer is full.
+e.g. here the buffer is 'full', even if ther is technically 1 spot left
+ *          [0,0,0,0,0,0,0,0], 
+ *          [0,0,0,0,0,0,0,0],
+ *          [0,0,0,0,0,0,0,0],  <- w_p
+ *   r_p -> [0,0,0,0,0,0,0,0],
+ *          [0,0,0,0,0,0,0,0],
+ *          [0,0,0,0,0,0,0,0],
+ *          [0,0,0,0,0,0,0,0],
+ */
+static inline uint8_t HW_CAN_Buffer_Write( volatile uint8_t   buffer[][CAN_PACKET_SIZE],
+                                           volatile uint16_t* w_p, volatile uint16_t* r_p,
+                                           uint16_t buffer_width, uint8_t source[][CAN_PACKET_SIZE],
                                            uint16_t length )
 {
     for ( int i = 0; i < length; i++ )
     {
+        // buffer full?
         if ( ( ( *w_p + 1 ) % buffer_width ) == *r_p )
         {
             return 1;
         }
+        // iterate through packet
         for ( int j = 0; j < CAN_PACKET_SIZE; j++ )
         {
             buffer[*w_p][j] = source[i][j];
         }
+        // update w_p
         *w_p = ( *w_p + 1 ) % buffer_width;
     }
     return 0;
 }
 
-static inline uint16_t HW_CAN_Buffer_Read( volatile uint8_t buffer[][CAN_PACKET_SIZE], volatile uint16_t* w_p,
-                                           volatile uint16_t* r_p, uint16_t buffer_width, uint8_t dest[][CAN_PACKET_SIZE] )
+/**
+ * @brief reads many entries from the buffer
+ *
+ * @param buffer    A pointer to the buffer being used
+ * @param w_p       the address of the write pointer
+ * @param r_p       the address of the read pointer
+ * @param buffer_width  The width of the buffer CAN_PACKET_SIZE (8)
+ * @param dest      the destination array it writes to
+ *
+ * @return the number of entries read (can be 0)
+ *
+ * @note The w_p always points to the next available position.
+Meaning if the next position in the buffer has the r_p then the buffer is full.
+e.g. here the buffer is 'full', even if ther is technically 1 spot left
+ * 
+ */
+static inline uint16_t HW_CAN_Buffer_Read( volatile uint8_t   buffer[][CAN_PACKET_SIZE],
+                                           volatile uint16_t* w_p, volatile uint16_t* r_p,
+                                           uint16_t buffer_width, uint8_t dest[][CAN_PACKET_SIZE] )
 {
     uint16_t count = 0;
     for ( int i = 0; i < buffer_width; i++ )
@@ -220,12 +271,18 @@ int HW_CAN_Receive( CAN_HandleTypeDef* hcan, uint8_t* rxData )
 #endif
 
 /**
- * @brief Reads the values in the rx buffer and writes them to dest
+ * @brief reads one entrie from the buffer
  *
- * @param dest an array of arrays, type:
-uint8_t can_rx_buffer1[RECEIVE_BUFFER_WIDTH][CAN_PACKET_SIZE];
+ * @param buffer    A pointer to the buffer being used
+ * @param w_p       the address of the write pointer
+ * @param r_p       the address of the read pointer
+ * @param buffer_width  The width of the buffer CAN_PACKET_SIZE (8)
+ * @param dest      the destination array it writes to
  *
- * @return The number of bytes read (can be 0)
+ * @return 1 if there was nothing to read
+ * @return 0 if the buffer was read correctly
+ *
+ * 
  */
 uint16_t HW_CAN_Buffer_Pop( volatile uint8_t buffer[][CAN_PACKET_SIZE], volatile uint16_t* w_p,
                             volatile uint16_t* r_p, uint16_t buffer_width,
@@ -241,7 +298,7 @@ uint16_t HW_CAN_Buffer_Pop( volatile uint8_t buffer[][CAN_PACKET_SIZE], volatile
     {
         dest[i] = buffer[*r_p][i];
     }
-
+    // update read pointer
     *r_p = ( *r_p + 1 ) % buffer_width;
 
     return 0;
@@ -442,7 +499,7 @@ int HW_CAN_Configure( CAN_HandleTypeDef* hcan, uint32_t bitrate )
     {
         return 3;
     }
-    if ( HAL_CAN_ActivateNotification( hcan, CAN_IT_RX_FIFO0_MSG_PENDING | CAN_IT_TX_MAILBOX_EMPTY)
+    if ( HAL_CAN_ActivateNotification( hcan, CAN_IT_RX_FIFO0_MSG_PENDING | CAN_IT_TX_MAILBOX_EMPTY )
          != HAL_OK )
     {
         return 4;
@@ -754,7 +811,7 @@ void HW_CAN_Tx_Trigger1( void )
 {
 #ifndef TEST_BUILD
     SET_BIT( CAN1->IER, CAN_IER_TMEIE );
-    HW_CAN_CH1_TX_IRQ_HANDLER();
+    HW_CAN_CH1_TX_IRQ_HANDLER(); // ISR doesn't trigger automatically
 #endif
 }
 
@@ -768,7 +825,7 @@ void HW_CAN_Tx_Trigger2( void )
 {
 #ifndef TEST_BUILD
     SET_BIT( CAN2->IER, CAN_IER_TMEIE );
-    HW_CAN_CH2_TX_IRQ_HANDLER();
+    HW_CAN_CH2_TX_IRQ_HANDLER(); // ISR doesn't trigger automatically
 #endif
 }
 
@@ -784,17 +841,17 @@ void HW_CAN_CH1_TX_IRQ_HANDLER( void )
     uint8_t packet[CAN_PACKET_SIZE];
 #ifndef TEST_BUILD
     CAN1->TSR |= CAN_TSR_RQCP0;
-    if ( HW_CAN_Tx_Buffer_Pop1( packet ) == 0)
+    if ( HW_CAN_Tx_Buffer_Pop1( packet ) == 0 )
     {
         HW_CAN_Transmit( &hcan1, packet );
     }
     else
     {
-         /*
-        * No more packets to send.
-        * Disable TX mailbox empty interrupt.
-        */
-        CLEAR_BIT(CAN1->IER, CAN_IER_TMEIE);
+        /*
+         * No more packets to send.
+         * Disable TX mailbox empty interrupt.
+         */
+        CLEAR_BIT( CAN1->IER, CAN_IER_TMEIE );
     }
 #endif
 }
@@ -831,16 +888,16 @@ void HW_CAN_CH2_TX_IRQ_HANDLER( void )
     CAN2->TSR |= CAN_TSR_RQCP0;
     uint8_t packet[CAN_PACKET_SIZE];
 
-    if ( HW_CAN_Tx_Buffer_Pop2( packet ) == 0)
+    if ( HW_CAN_Tx_Buffer_Pop2( packet ) == 0 )
     {
         HW_CAN_Transmit( &hcan2, packet );
     }
     else
     {
         /*
-        * No more packets to send.
-        * Disable TX mailbox empty interrupt.
-        */
+         * No more packets to send.
+         * Disable TX mailbox empty interrupt.
+         */
         CLEAR_BIT( CAN2->IER, CAN_IER_TMEIE );
     }
 #endif
