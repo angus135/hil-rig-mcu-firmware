@@ -1085,7 +1085,7 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
 
     LL_DMA_DisableStream( tx_dma_controller, tx_ll_stream );
 
-    uint32_t timeout = HW_UART_DMA_DISABLE_TIMEOUT_ITERATIONS;
+    uint32_t timeout = HW_UART_TX_DMA_DISABLE_TIMEOUT_ITERATIONS;
 
     while ( LL_DMA_IsEnabledStream( tx_dma_controller, tx_ll_stream ) )
     {
@@ -1164,16 +1164,15 @@ void HW_UART_CH1_TX_DMA_IRQ_HANDLER( void )
 {
     const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[HW_UART_CHANNEL_1];
 
-    if ( LL_DMA_IsActiveFlag_TC6( DMA2 ) )
-    {
-        *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
-        HW_UART_Tx_Complete_Handler( HW_UART_CHANNEL_1 );
-    }
-
-    else if ( LL_DMA_IsActiveFlag_TE6( DMA2 ) )
+    if ( LL_DMA_IsActiveFlag_TE6( DMA2 ) )
     {
         *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
         HW_UART_Tx_Error_Handler( HW_UART_CHANNEL_1 );
+    }
+    else if ( LL_DMA_IsActiveFlag_TC6( DMA2 ) )
+    {
+        *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
+        HW_UART_Tx_Complete_Handler( HW_UART_CHANNEL_1 );
     }
 }
 
@@ -1203,16 +1202,15 @@ void HW_UART_CH2_TX_DMA_IRQ_HANDLER( void )
 {
     const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[HW_UART_CHANNEL_2];
 
-    if ( LL_DMA_IsActiveFlag_TC6( DMA1 ) )
-    {
-        *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
-        HW_UART_Tx_Complete_Handler( HW_UART_CHANNEL_2 );
-    }
-
-    else if ( LL_DMA_IsActiveFlag_TE6( DMA1 ) )
+    if ( LL_DMA_IsActiveFlag_TE6( DMA1 ) )
     {
         *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
         HW_UART_Tx_Error_Handler( HW_UART_CHANNEL_2 );
+    }
+    else if ( LL_DMA_IsActiveFlag_TC6( DMA1 ) )
+    {
+        *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
+        HW_UART_Tx_Complete_Handler( HW_UART_CHANNEL_2 );
     }
 }
 

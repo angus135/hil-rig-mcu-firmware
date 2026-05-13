@@ -66,7 +66,7 @@ class MockHalUart
 public:
     MOCK_METHOD( HAL_StatusTypeDef, Init, ( UART_HandleTypeDef* ));
     MOCK_METHOD( HAL_StatusTypeDef, ReceiveDMA, ( UART_HandleTypeDef*, uint8_t*, uint16_t ) );
-    MOCK_METHOD( HAL_StatusTypeDef, DMAStop, ( UART_HandleTypeDef* ));
+    MOCK_METHOD( HAL_StatusTypeDef, AbortReceive, ( UART_HandleTypeDef* ));
     MOCK_METHOD( int, ReceiveIT, ( UART_HandleTypeDef*, uint8_t*, uint16_t ) );
     MOCK_METHOD( int, Transmit, ( UART_HandleTypeDef*, uint8_t*, uint16_t, uint32_t ) );
     MOCK_METHOD( void, IRQHandler, ( UART_HandleTypeDef* ));
@@ -210,9 +210,9 @@ extern "C" HAL_StatusTypeDef HAL_UART_Receive_DMA( UART_HandleTypeDef* huart, ui
     return g_mock_hal->ReceiveDMA( huart, pData, Size );
 }
 
-extern "C" HAL_StatusTypeDef HAL_UART_DMAStop( UART_HandleTypeDef* huart )
+extern "C" HAL_StatusTypeDef HAL_UART_AbortReceive( UART_HandleTypeDef* huart )
 {
-    return g_mock_hal->DMAStop( huart );
+    return g_mock_hal->AbortReceive( huart );
 }
 
 extern "C" int HAL_UART_Receive_IT( UART_HandleTypeDef* huart, uint8_t* data, uint16_t size )
@@ -511,7 +511,7 @@ protected:
 
         ON_CALL( mock_hal, Init( _ ) ).WillByDefault( Return( HAL_OK ) );
         ON_CALL( mock_hal, ReceiveDMA( _, _, _ ) ).WillByDefault( Return( HAL_OK ) );
-        ON_CALL( mock_hal, DMAStop( _ ) ).WillByDefault( Return( HAL_OK ) );
+        ON_CALL( mock_hal, AbortReceive( _ ) ).WillByDefault( Return( HAL_OK ) );
         ON_CALL( mock_hal, ReceiveIT( _, _, _ ) )
             .WillByDefault( [this]( UART_HandleTypeDef*, uint8_t* data, uint16_t ) {
                 captured_rx_it_data = data;
@@ -764,7 +764,7 @@ TEST_F( UartTest, DutRxStopStopsRunningRx )
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
     ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
 
-    EXPECT_CALL( mock_hal, DMAStop( &huart6 ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock_hal, AbortReceive( &huart6 ) ).WillOnce( Return( HAL_OK ) );
 
     EXPECT_TRUE( HW_UART_Rx_Stop( HW_UART_CHANNEL_1 ) );
     EXPECT_FALSE( HW_UART_Rx_Is_Running( HW_UART_CHANNEL_1 ) );
@@ -774,21 +774,21 @@ TEST_F( UartTest, DutRxStopReturnsFalseWhenNotRunning )
 {
     HwUartConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
-    EXPECT_CALL( mock_hal, DMAStop( _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hal, AbortReceive( _ ) ).Times( 0 );
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
     EXPECT_FALSE( HW_UART_Rx_Stop( HW_UART_CHANNEL_1 ) );
 }
 
-TEST_F( UartTest, DutRxStopReturnsFalseWhenHalDmaStopFails )
+TEST_F( UartTest, DutRxStopReturnsFalseWhenHalAbortReceiveFails )
 {
     HwUartConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
     ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
 
-    EXPECT_CALL( mock_hal, DMAStop( _ ) ).WillOnce( Return( HAL_ERROR ) );
+    EXPECT_CALL( mock_hal, AbortReceive( _ ) ).WillOnce( Return( HAL_ERROR ) );
 
     EXPECT_FALSE( HW_UART_Rx_Stop( HW_UART_CHANNEL_1 ) );
 }
