@@ -413,13 +413,15 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
 {
     if ( argc < 2 )
     {
-        CONSOLE_Printf( "Incorrect number of inputs, expected atleast 1 but recieved %d", argc - 1 );
+        CONSOLE_Printf( "Incorrect number of inputs, expected atleast 1 but recieved %d",
+                        argc - 1 );
         return;
     }
     char out[argc - 1][8];
-    for ( int j = 0; j < ( argc - 1); j++  )
+    for ( int j = 0; j < ( argc - 1 ); j++ )
     {
-        int  len = strlen( argv[j+1] );
+        int len = strlen( argv[j + 1] );
+        // fill packet with '_'
         for ( int i = 0; i < 8; i++ )
         {
             out[j][i] = '_';
@@ -428,12 +430,14 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
         {
             len = 8;
         }
+        // move data into packet
+        CONSOLE_Printf( "Adding %s to buffer...\n\r", argv[j+1] );
         for ( int i = 0; i < len; i++ )
         {
-            out[j][i] = argv[j+1][i];
+            out[j][i] = argv[j + 1][i];
         }
     }
-    if ( HW_CAN_Tx_Buffer_Write1( out, argc-1 ) != 0 )
+    if ( HW_CAN_Tx_Buffer_Write1( out, argc - 1 ) != 0 )
     {
         CONSOLE_Printf( "Transmission Error" );
         return;
