@@ -143,6 +143,37 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expa
 LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void );
 
 /**
+ * @brief Master transmit on the internal FMPI2C1 channel.
+ *
+ * Sends data to a slave device on the internal FMPI2C1 channel.
+ * Data must be provided directly in the payload; internally handles buffering.
+ *
+ * @param[in] device_address_7bit   7-bit slave address
+ * @param[in] payload               Data to transmit
+ * @param[in] payload_length        Number of bytes to transmit
+ *
+ * @return true if transmission was initiated
+ * @return false on failure
+ */
+inline bool LOGIC_EXPANDER_Master_Transmit_Internal( uint16_t device_address_7bit, const uint8_t* payload,
+                                              uint16_t payload_length );
+
+/**
+ * @brief Initiate master receive on the internal FMPI2C1 channel.
+ *
+ * Requests data from a slave device on the internal FMPI2C1 channel.
+ * Received data is buffered internally and can be retrieved with EXEC_I2C_Receive_Copy_And_Consume().
+ *
+ * @param[in] device_address_7bit   7-bit slave address
+ * @param[in] expected_length       Number of bytes expected from slave
+ *
+ * @return true if receive was initiated
+ * @return false on failure
+ */
+inline bool LOGIC_EXPANDER_Start_Master_Receive_Internal( uint16_t device_address_7bit,
+                                                   uint16_t expected_length );
+
+/**
  * @brief Retrieve the current shadow state of a single expander.
  *
  * Returns a snapshot of the device's OLAT A, OLAT B, and address.

@@ -11,7 +11,7 @@
  *      robustness during concurrent I2C activity.
  *
  *  Notes:
- *      - All I2C communication via the internal FMPI2C1 channel (high-speed)
+ *      - All I2C communication via the internal FMPI2C1 channel
  *      - Devices must be pre-addressed via hardware jumpers (A2:A0 pins)
  *      - Active devices controlled via LOGIC_EXPANDER_ACTIVE_BITMASK define
  *      - Configuration registers set all pins as outputs (IODIRA/B = 0x00)
@@ -30,6 +30,8 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#define LOGIC_EXPANDER_INTERNAL_FMPI2C1_OWN_ADDRESS_7BIT ( 0x33U )
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -134,6 +136,7 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Write_Register_Pair( uint16_t device
                                                                  uint8_t  first_value,
                                                                  uint8_t  second_value );
 static LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t* payload, uint16_t payload_length );
+LogicExpanderStatus_T LOGIC_EXPANDER_I2C_Internal_Config( void );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -285,6 +288,25 @@ LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_t devic
     return is_ok ? LOGIC_EXPANDER_I2C_STATUS_OK : LOGIC_EXPANDER_I2C_STATUS_ERROR;
 }
 
+/**
+ * @brief Configure the internal FMPI2C1 channel with default settings.
+ *
+ * Initializes FMPI2C1 with a predefined own address (0x33).
+ * Convenience function for internal channel initialization.
+ *
+ * @return EXEC_I2C_STATUS_OK on success
+ * @return EXEC_I2C_STATUS_ERROR on failure
+ */
+LogicExpanderStatus_T LOGIC_EXPANDER_I2C_Internal_Config( void )
+{
+    if (LOGIC_EXPANDER_INTERNAL_FMPI2C1_OWN_ADDRESS_7BIT > 0x7FU)
+    {
+        return LOGIC_EXPANDER_STATUS_INVALID_PARAM;
+    }
+    HWI2CStatus_T hw_status = HW_I2C_Configure_Internal_FMPI2C1( LOGIC_EXPANDER_INTERNAL_FMPI2C1_OWN_ADDRESS_7BIT );
+    return ( hw_status == HW_I2C_STATUS_OK ) ? LOGIC_EXPANDER_STATUS_OK : LOGIC_EXPANDER_STATUS_ERROR;
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
@@ -304,11 +326,19 @@ LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_t devic
  */
 LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void )
 {
+    /* Configure internal FMPI2C1 used exclusively by the logic expander */
+    LogicExpanderStatus_T internal_status = LOGIC_EXPANDER_I2C_Internal_Config();
+    if ( internal_status != LOGIC_EXPANDER_STATUS_OK )
+    {
+        logic_expander_ready = false;
+        return internal_status;
+    }
+
     /* Iterate through all available expander slots. */
     for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
     {
         /* Skip devices marked as inactive via LOGIC_EXPANDER_ACTIVE_BITMASK. */
-        if ( !LOGIC_EXPANDER_Index_Is_Active( idx ) )
+        if ( !LOGIC_EXPANDER_Index_Is_Active( ( LogicExpanderIndex_T )idx ) )
         {
             continue;
         }
@@ -472,7 +502,7 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void )
     for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
     {
         /* Skip inactive devices. */
-        if ( !LOGIC_EXPANDER_Index_Is_Active( idx ) )
+        if ( !LOGIC_EXPANDER_Index_Is_Active( ( LogicExpanderIndex_T )idx ) )
         {
             continue;
         }
@@ -518,4 +548,41 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Get_State_Snapshot( LogicExpanderIndex_T   
     out_snapshot->olat_b              = logic_expander_state[( uint8_t )expander_index].olat_b;
 
     return LOGIC_EXPANDER_STATUS_OK;
+}
+
+/**
+ * @brief Master transmit on the internal FMPI2C1 channel.
+ *
+ * Sends data to a slave device on the internal FMPI2C1 channel.
+ * Data must be provided directly in the payload; internally handles buffering.
+ *
+ * @param[in] device_address_7bit   7-bit slave address
+ * @param[in] payload               Data to transmit
+ * @param[in] payload_length        Number of bytes to transmit
+ *
+ * @return true if transmission was initiated
+ * @return false on failure
+ */
+inline bool LOGIC_EXPANDER_Master_Transmit_Internal( uint16_t device_address_7bit, const uint8_t* payload,
+                                                           uint16_t payload_length )
+{
+    return HW_I2C_Load_Stage_Buffer( HW_I2C_CHANNEL_FMPI2C1, payload, payload_length )
+           && HW_I2C_Trigger_Master_Transmit_Internal( device_address_7bit );
+}
+
+/**
+ * @brief Initiate master receive on the internal FMPI2C1 channel.
+ *
+ * Requests data from a slave device on the internal FMPI2C1 channel.
+ * Received data is buffered internally and can be retrieved with EXEC_I2C_Receive_Copy_And_Consume().
+ *
+ * @param[in] device_address_7bit   7-bit slave address
+ * @param[in] expected_length       Number of bytes expected from slave
+ *
+ * @return true if receive was initiated
+ * @return false on failure
+ */
+inline bool LOGIC_EXPANDER_Start_Master_Receive_Internal( uint16_t device_address_7bit, uint16_t expected_length )
+{
+    return HW_I2C_Trigger_Master_Receive_Internal( device_address_7bit, expected_length );
 }
