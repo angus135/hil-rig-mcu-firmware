@@ -227,8 +227,8 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         uint8_t expander_index = ( uint8_t )( addr - 0x20U );
 
         LogicExpanderStateSnapshot_T snapshot_before = { 0 };
-        LogicExpanderStatus_T        snapshot_status =
-            LOGIC_EXPANDER_Get_State_Snapshot( expander_index, &snapshot_before );
+        LogicExpanderStatus_T        snapshot_status = LOGIC_EXPANDER_Get_State_Snapshot(
+            ( LogicExpanderIndex_T )expander_index, &snapshot_before );
         if ( snapshot_status == LOGIC_EXPANDER_STATUS_OK )
         {
             CONSOLE_Printf(
@@ -262,8 +262,8 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         for ( uint8_t bit_idx = 0U; bit_idx < 8U; ++bit_idx )
         {
             bool                  bit_set = ( byte_value & ( 1U << bit_idx ) ) != 0U;
-            LogicExpanderStatus_T status =
-                LOGIC_EXPANDER_Load_Control_Bit( expander_index, port, bit_idx, bit_set );
+            LogicExpanderStatus_T status  = LOGIC_EXPANDER_Load_Control_Bit(
+                ( LogicExpanderIndex_T )expander_index, port, bit_idx, bit_set );
             if ( status != LOGIC_EXPANDER_STATUS_OK )
             {
                 CONSOLE_Printf( "Failed to set bit %u (status=%d)\r\n", ( unsigned int )bit_idx,
@@ -273,7 +273,8 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         }
 
         LogicExpanderStateSnapshot_T snapshot_after = { 0 };
-        snapshot_status = LOGIC_EXPANDER_Get_State_Snapshot( expander_index, &snapshot_after );
+        snapshot_status = LOGIC_EXPANDER_Get_State_Snapshot( ( LogicExpanderIndex_T )expander_index,
+                                                             &snapshot_after );
         if ( snapshot_status == LOGIC_EXPANDER_STATUS_OK )
         {
             CONSOLE_Printf(
@@ -307,10 +308,10 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         {
             for ( uint8_t bit_idx = 0U; bit_idx < 8U; ++bit_idx )
             {
-                ( void )LOGIC_EXPANDER_Load_Control_Bit( idx, LOGIC_EXPANDER_PORT_A, bit_idx,
-                                                         false );
-                ( void )LOGIC_EXPANDER_Load_Control_Bit( idx, LOGIC_EXPANDER_PORT_B, bit_idx,
-                                                         false );
+                ( void )LOGIC_EXPANDER_Load_Control_Bit( ( LogicExpanderIndex_T )idx,
+                                                         LOGIC_EXPANDER_PORT_A, bit_idx, false );
+                ( void )LOGIC_EXPANDER_Load_Control_Bit( ( LogicExpanderIndex_T )idx,
+                                                         LOGIC_EXPANDER_PORT_B, bit_idx, false );
             }
         }
 
@@ -389,18 +390,16 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
     const uint16_t fmpi_addr = 0x33U;
 
     EXECI2CChannelConfig_T i2c1_cfg = {
-        .mode =
-            ( master_channel == HW_I2C_CHANNEL_1 ) ? HW_I2C_MODE_MASTER : HW_I2C_MODE_SLAVE,
-        .speed            = speed,
+        .mode  = ( master_channel == HW_I2C_CHANNEL_1 ) ? HW_I2C_MODE_MASTER : HW_I2C_MODE_SLAVE,
+        .speed = speed,
         .tx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
         .rx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
         .own_address_7bit = i2c1_addr,
     };
 
     EXECI2CChannelConfig_T i2c2_cfg = {
-        .mode =
-            ( master_channel == HW_I2C_CHANNEL_2 ) ? HW_I2C_MODE_MASTER : HW_I2C_MODE_SLAVE,
-        .speed            = speed,
+        .mode  = ( master_channel == HW_I2C_CHANNEL_2 ) ? HW_I2C_MODE_MASTER : HW_I2C_MODE_SLAVE,
+        .speed = speed,
         .tx_transfer_path = transfer_path,
         .rx_transfer_path = transfer_path,
         .own_address_7bit = i2c2_addr,
@@ -415,9 +414,9 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
 
     const uint16_t slave_addr = ( slave_channel == HW_I2C_CHANNEL_1 ) ? i2c1_addr : i2c2_addr;
 
-    char     rx_message[200];
-    uint16_t received_len = 0U;
-    bool     transfer_ok  = false;
+    char                         rx_message[200];
+    uint16_t                     received_len      = 0U;
+    bool                         transfer_ok       = false;
     CONSOLEI2CLoopbackChannels_T loopback_channels = {
         .master = master_channel,
         .slave  = slave_channel,
@@ -425,15 +424,15 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
 
     if ( direction == CONSOLE_I2C_LOOPBACK_DIR_M2S )
     {
-        transfer_ok = CONSOLE_Run_I2C_Loopback_M2S( loopback_channels, slave_addr, tx_message,
-                                                    tx_len, rx_message, sizeof( rx_message ),
-                                                    &received_len );
+        transfer_ok =
+            CONSOLE_Run_I2C_Loopback_M2S( loopback_channels, slave_addr, tx_message, tx_len,
+                                          rx_message, sizeof( rx_message ), &received_len );
     }
     else
     {
-        transfer_ok = CONSOLE_Run_I2C_Loopback_S2M( loopback_channels, slave_addr, tx_message,
-                                                    tx_len, rx_message, sizeof( rx_message ),
-                                                    &received_len );
+        transfer_ok =
+            CONSOLE_Run_I2C_Loopback_S2M( loopback_channels, slave_addr, tx_message, tx_len,
+                                          rx_message, sizeof( rx_message ), &received_len );
     }
 
     if ( !transfer_ok )
