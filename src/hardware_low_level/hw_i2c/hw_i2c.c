@@ -1297,12 +1297,6 @@ inline void HW_I2C_Service_Event_IRQ( HWI2CChannel_T channel )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
 
-    /* If channel not configured, nothing to do. */
-    if ( !state->configured )
-    {
-        return;
-    }
-
     /* FMPI2C1 has a different register interface; route to dedicated handler. */
     if ( channel == HW_I2C_CHANNEL_FMPI2C1 )
     {
@@ -1371,19 +1365,9 @@ inline void HW_I2C_Service_DMA_Rx_IRQ( HWI2CChannel_T channel )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
 
-    /* If channel not configured, nothing to do. */
-    if ( !state->configured )
-    {
-        return;
-    }
-
     /* Get the DMA stream and I2C peripheral for this channel. */
     DMA_Stream_TypeDef* rx_stream    = HWI2CChannel_To_DMA_Rx_Stream( channel );
     I2C_TypeDef*        i2c_instance = HWI2CChannel_To_Instance( channel );
-    if ( ( rx_stream == NULL ) || ( i2c_instance == NULL ) )
-    {
-        return;
-    }
 
     /* Check for DMA transfer error (e.g., FIFO error). */
     if ( HW_I2C_DMA_Stream_Has_TE( rx_stream ) )
@@ -1424,19 +1408,9 @@ inline void HW_I2C_Service_DMA_Tx_IRQ( HWI2CChannel_T channel )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
 
-    /* If channel not configured, nothing to do. */
-    if ( !state->configured )
-    {
-        return;
-    }
-
     /* Get the DMA stream and I2C peripheral for this channel. */
     DMA_Stream_TypeDef* tx_stream    = HWI2CChannel_To_DMA_Tx_Stream( channel );
     I2C_TypeDef*        i2c_instance = HWI2CChannel_To_Instance( channel );
-    if ( ( tx_stream == NULL ) || ( i2c_instance == NULL ) )
-    {
-        return;
-    }
 
     /* Check for DMA transfer error (e.g., FIFO error). */
     if ( HW_I2C_DMA_Stream_Has_TE( tx_stream ) )
