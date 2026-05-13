@@ -411,26 +411,36 @@ static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char* argv[] )
  */
 static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
 {
-    if ( argc != 2 )
+    if ( argc < 2 )
     {
-        CONSOLE_Printf( "Incorrect number of inputs, expected 1 but recieved %d", argc - 1 );
+        CONSOLE_Printf( "Incorrect number of inputs, expected atleast 1 but recieved %d", argc - 1 );
         return;
     }
-    int  len    = strlen( argv[1] );
-    char out[8] = "________";
-    if ( len > 8 )
+    char out[argc - 1][8];
+    for ( int j = 0; j < ( argc - 1); j++  )
     {
-        len = 8;
+        int  len = strlen( argv[j+1] );
+        for ( int i = 0; i < 8; i++ )
+        {
+            out[j][i] = '_';
+        }
+        if ( len > 8 )
+        {
+            len = 8;
+        }
+        for ( int i = 0; i < len; i++ )
+        {
+            out[j][i] = argv[j+1][i];
+        }
     }
-    for ( int i = 0; i < len; i++ )
-    {
-        out[i] = argv[1][i];
-    }
-    int check = HW_CAN_Transmit1( out );
-    if ( check == 1 )
+    if ( HW_CAN_Tx_Buffer_Write1( out, argc-1 ) != 0 )
     {
         CONSOLE_Printf( "Transmission Error" );
+        return;
     }
+    CONSOLE_Printf( "Written to buffer...\n\r" );
+    HW_CAN_Tx_Trigger1();
+    CONSOLE_Printf( "Transmitted" );
 }
 
 /**
@@ -459,6 +469,11 @@ static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "CAN Start set up error" );
         return;
     }
+    if ( check != 0 )
+    {
+        CONSOLE_Printf( "Config Error" );
+        return;
+    }
     CONSOLE_Printf( "Set up correctly" );
 }
 
@@ -474,14 +489,17 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
 {
     if ( argc != 1 )
     {
-        CONSOLE_Printf( "Incorrect number of inputs, expected 1 but recieved %d", argc - 1 );
+        CONSOLE_Printf( "Incorrect number of inputs, expected 0 but recieved %d", argc - 1 );
         return;
     }
-    char out[8] = "00000000";
-    int  check  = HW_CAN_Recieve1( out );
-    if ( check == 1 )
+    char out[8];
+    for ( int i = 0; i < 8; i++ )
     {
-        CONSOLE_Printf( "Transmission Error" );
+        out[i] = '0';
+    }
+    if ( HW_CAN_Rx_Buffer_Pop1( out ) != 0 )
+    {
+        CONSOLE_Printf( "Nothing in buffer\n\r" );
         return;
     }
     CONSOLE_Printf( "Recieved: %s", out );
