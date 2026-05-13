@@ -97,14 +97,14 @@ static EXECI2CStatus_T EXEC_I2C_Validate_Config( HWI2CChannel_T                c
         return EXEC_I2C_STATUS_INVALID_PARAM;
     }
 
-        if ( ( config->tx_transfer_path != HW_I2C_TRANSFER_INTERRUPT )
-            && ( config->tx_transfer_path != HW_I2C_TRANSFER_DMA ) )
+    if ( ( config->tx_transfer_path != HW_I2C_TRANSFER_INTERRUPT )
+        && ( config->tx_transfer_path != HW_I2C_TRANSFER_DMA ) )
     {
         return EXEC_I2C_STATUS_INVALID_PARAM;
     }
 
-        if ( ( config->rx_transfer_path != HW_I2C_TRANSFER_INTERRUPT )
-            && ( config->rx_transfer_path != HW_I2C_TRANSFER_DMA ) )
+    if ( ( config->rx_transfer_path != HW_I2C_TRANSFER_INTERRUPT )
+        && ( config->rx_transfer_path != HW_I2C_TRANSFER_DMA ) )
     {
         return EXEC_I2C_STATUS_INVALID_PARAM;
     }
@@ -116,8 +116,8 @@ static EXECI2CStatus_T EXEC_I2C_Validate_Config( HWI2CChannel_T                c
 
     if ( channel == HW_I2C_CHANNEL_1 )
     {
-           if ( ( config->tx_transfer_path == HW_I2C_TRANSFER_DMA )
-               || ( config->rx_transfer_path == HW_I2C_TRANSFER_DMA ) )
+        if ( ( config->tx_transfer_path == HW_I2C_TRANSFER_DMA )
+            || ( config->rx_transfer_path == HW_I2C_TRANSFER_DMA ) )
         {
             return EXEC_I2C_STATUS_INVALID_PARAM;
         }
