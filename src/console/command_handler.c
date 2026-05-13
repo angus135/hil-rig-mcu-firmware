@@ -431,7 +431,7 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
             len = 8;
         }
         // move data into packet
-        CONSOLE_Printf( "Adding %s to buffer...\n\r", argv[j+1] );
+        CONSOLE_Printf( "Adding %s to buffer...\n\r", argv[j + 1] );
         for ( int i = 0; i < len; i++ )
         {
             out[j][i] = argv[j + 1][i];

@@ -124,7 +124,7 @@ void HW_CAN_CH2_RX_IRQ_HANDLER( void );
  * @note The w_p always points to the next available position.
 Meaning if the next position in the buffer has the r_p then the buffer is full.
 e.g. here the buffer is 'full', even if ther is technically 1 spot left
- *          [0,0,0,0,0,0,0,0], 
+ *          [0,0,0,0,0,0,0,0],
  *          [0,0,0,0,0,0,0,0],
  *          [0,0,0,0,0,0,0,0],  <- w_p
  *   r_p -> [0,0,0,0,0,0,0,0],
@@ -169,7 +169,7 @@ static inline uint8_t HW_CAN_Buffer_Write( volatile uint8_t   buffer[][CAN_PACKE
  * @note The w_p always points to the next available position.
 Meaning if the next position in the buffer has the r_p then the buffer is full.
 e.g. here the buffer is 'full', even if ther is technically 1 spot left
- * 
+ *
  */
 static inline uint16_t HW_CAN_Buffer_Read( volatile uint8_t   buffer[][CAN_PACKET_SIZE],
                                            volatile uint16_t* w_p, volatile uint16_t* r_p,
@@ -282,7 +282,7 @@ int HW_CAN_Receive( CAN_HandleTypeDef* hcan, uint8_t* rxData )
  * @return 1 if there was nothing to read
  * @return 0 if the buffer was read correctly
  *
- * 
+ *
  */
 uint16_t HW_CAN_Buffer_Pop( volatile uint8_t buffer[][CAN_PACKET_SIZE], volatile uint16_t* w_p,
                             volatile uint16_t* r_p, uint16_t buffer_width,
@@ -811,7 +811,7 @@ void HW_CAN_Tx_Trigger1( void )
 {
 #ifndef TEST_BUILD
     SET_BIT( CAN1->IER, CAN_IER_TMEIE );
-    HW_CAN_CH1_TX_IRQ_HANDLER(); // ISR doesn't trigger automatically
+    HW_CAN_CH1_TX_IRQ_HANDLER();  // ISR doesn't trigger automatically
 #endif
 }
 
@@ -825,7 +825,7 @@ void HW_CAN_Tx_Trigger2( void )
 {
 #ifndef TEST_BUILD
     SET_BIT( CAN2->IER, CAN_IER_TMEIE );
-    HW_CAN_CH2_TX_IRQ_HANDLER(); // ISR doesn't trigger automatically
+    HW_CAN_CH2_TX_IRQ_HANDLER();  // ISR doesn't trigger automatically
 #endif
 }
 
