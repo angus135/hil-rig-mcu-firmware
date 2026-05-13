@@ -753,15 +753,27 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* c
         return false;
     }
 
-    HwUartChannelState_T* state                  = &hw_uart_channel_states[channel];
-    state->runtime.is_configured_and_initialised = false;
+    HwUartChannelState_T* state = &hw_uart_channel_states[channel];
 
     if ( !HW_UART_Configuration_Is_Valid( config ) )
     {
         return false;
     }
 
-    state->config = *config;
+    // Check that RX is not running
+    if ( state->runtime.rx_running )
+    {
+        return false;
+    }
+
+    // Check that TX is not active or pending
+    if ( !HW_UART_Is_Tx_Complete( channel ) )
+    {
+        return false;
+    }
+
+    state->runtime.is_configured_and_initialised = false;
+    state->config                                = *config;
 
     if ( !HW_UART_Apply_Static_Hardware_Selection( channel, config->interface_mode ) )
     {
