@@ -129,6 +129,9 @@
 #error "HW_UART_RX_BUFFER_SIZE must be a power of 2"
 #endif
 
+/* TX DMA disable timeout iterations */
+#define HW_UART_TX_DMA_DISABLE_TIMEOUT_ITERATIONS 1000U
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -862,11 +865,11 @@ bool HW_UART_Rx_Stop( HwUartChannel_T channel )
         return false;
     }
 
-    if ( HAL_UART_DMAStop( huart ) != HAL_OK )
+    if ( HAL_UART_AbortReceive( huart ) != HAL_OK )
     {
-
         return false;
     }
+
     state->runtime.rx_running    = false;
     state->runtime.rx_read_index = 0U;
     return true;
@@ -1077,17 +1080,26 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
         dma_length = state->runtime.tx_count;
     }
 
-    state->runtime.tx_dma_length_bytes = dma_length;
-    state->runtime.tx_dma_active       = true;
-
     /* Capture the starting index for the DMA transfer*/
     uint32_t dma_start_index = state->runtime.tx_tail;
 
     LL_DMA_DisableStream( tx_dma_controller, tx_ll_stream );
 
+    uint32_t timeout = HW_UART_DMA_DISABLE_TIMEOUT_ITERATIONS;
+
     while ( LL_DMA_IsEnabledStream( tx_dma_controller, tx_ll_stream ) )
     {
+        if ( timeout == 0U )
+        {
+            HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
+            return false;
+        }
+
+        timeout--;
     }
+
+    state->runtime.tx_dma_length_bytes = dma_length;
+    state->runtime.tx_dma_active       = true;
 
     *( hw_map->tx_dma_ifcr_reg ) = hw_map->tx_dma_ifcr_mask;
 
