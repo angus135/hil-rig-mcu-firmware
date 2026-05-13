@@ -151,7 +151,7 @@ static DMA_Stream_TypeDef* TEST_HW_UART_Get_Tx_Stream( DMA_TypeDef* dma, uint32_
 
 static void TEST_HW_UART_Reset_Usart( USART_TypeDef* usart )
 {
-    usart->SR   = 0U;
+    usart->SR   = USART_SR_TC;
     usart->DR   = 0U;
     usart->BRR  = 0U;
     usart->CR1  = 0U;

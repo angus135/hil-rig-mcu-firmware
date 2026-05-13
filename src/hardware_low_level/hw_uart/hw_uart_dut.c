@@ -756,34 +756,33 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* c
         return false;
     }
 
-    HwUartChannelState_T* state = &hw_uart_channel_states[channel];
-
     if ( !HW_UART_Configuration_Is_Valid( config ) )
     {
         return false;
     }
 
-    // Check that RX is not running
+    HwUartChannelState_T* state = &hw_uart_channel_states[channel];
+
+    /* Refuse to reconfigure while RX DMA is active. */
     if ( state->runtime.rx_running )
     {
         return false;
     }
-
-    // Check that TX is not active or pending
-    if ( !HW_UART_Is_Tx_Complete( channel ) )
+    /* Refuse to reconfigure while TX DMA is active or queued data remains. */
+    if ( state->runtime.tx_dma_active || state->runtime.tx_count > 0U )
     {
         return false;
     }
-
-    state->runtime.is_configured_and_initialised = false;
-    state->config                                = *config;
 
     if ( !HW_UART_Apply_Static_Hardware_Selection( channel, config->interface_mode ) )
     {
         return false;
     }
 
-    /* Reset runtime state before reinitialising the channel. */
+    /* Store the new configuration and reset runtime state. */
+    state->runtime.is_configured_and_initialised = false;
+    state->config                                = *config;
+
     state->runtime.latched_faults = 0U;
     state->runtime.rx_read_index  = 0U;
     state->runtime.rx_running     = false;
