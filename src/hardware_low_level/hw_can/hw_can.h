@@ -31,6 +31,7 @@ extern "C"
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
  */
+#define CAN_PACKET_SIZE 8
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -155,6 +156,102 @@ int HW_CAN_Recieve2( uint8_t* rxData );
  * Uses HAL to transmit message over CAN channel 2
  */
 int HW_CAN_Transmit2( uint8_t* txData );
+
+/**
+ * @brief Writes a number of 8 byte packets (source) to the tx buffer
+ *
+ * @param source an array of arrays, type:
+uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
+ * @param length the number of can packets to be written (seen as X above)
+ *
+ * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ */
+uint16_t HW_CAN_Tx_Buffer_Write1( uint8_t source[][CAN_PACKET_SIZE], uint16_t length );
+
+/**
+ * @brief Writes a number of 8 byte packets (source) to the rx buffer
+ *
+ * @param source an array of arrays, type:
+uint8_t can_rx_buffer1[X][CAN_PACKET_SIZE];
+ * @param length the number of can packets to be written (seen as X above)
+ *
+ * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ */
+uint16_t HW_CAN_Rx_Buffer_Write1( uint8_t source[][CAN_PACKET_SIZE], uint16_t length );
+
+/**
+ * @brief Writes a number of 8 byte packets (source) to the tx buffer
+ *
+ * @param source an array of arrays, type:
+uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
+ * @param length the number of can packets to be written (seen as X above)
+ *
+ * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ */
+uint16_t HW_CAN_Tx_Buffer_Write2( uint8_t source[][CAN_PACKET_SIZE], uint16_t length );
+
+/**
+ * @brief Writes a number of 8 byte packets (source) to the rx buffer
+ *
+ * @param source an array of arrays, type:
+uint8_t can_rx_buffer1[X][CAN_PACKET_SIZE];
+ * @param length the number of can packets to be written (seen as X above)
+ *
+ * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ */
+uint16_t HW_CAN_Rx_Buffer_Write2( uint8_t source[][CAN_PACKET_SIZE], uint16_t length );
+
+/**
+ * @brief Reads an 8 byte packet from the rx buffer (channel 2) and writes it to dest
+ *
+ * @param dest the destination where the value will be written
+ *
+ * @return 0 if there was nothing to read, 1 otherwise
+ */
+uint16_t HW_CAN_Rx_Buffer_Pop1( uint8_t dest[CAN_PACKET_SIZE] );
+
+/**
+ * @brief Reads an 8 byte packet from the rx buffer (channel 2) and writes it to dest
+ *
+ * @param dest the destination where the value will be written
+ *
+ * @return 0 if there was nothing to read, 1 otherwise
+ */
+uint16_t HW_CAN_Rx_Buffer_Pop2( uint8_t dest[CAN_PACKET_SIZE] );
+
+/**
+ * @brief Reads an 8 byte packet from the tx buffer (channel 1) and writes it to dest
+ *
+ * @param dest the destination where the value will be written
+ *
+ * @return 0 if there was nothing to read, 1 otherwise
+ */
+uint16_t HW_CAN_Tx_Buffer_Pop1( uint8_t dest[CAN_PACKET_SIZE] );
+
+/**
+ * @brief Reads an 8 byte packet from the tx buffer (channel 2) and writes it to dest
+ *
+ * @param dest the destination where the value will be written
+ *
+ * @return 0 if there was nothing to read, 1 otherwise
+ */
+uint16_t HW_CAN_Tx_Buffer_Pop2( uint8_t dest[CAN_PACKET_SIZE] );
+
+/**
+ * @brief Enables tx interrupts on channel 1
+ *
+ * Used to enable the sending of messages through CAN channel 1
+ * Once the write buffer is empty the ISR will disable again
+ */
+void HW_CAN_Tx_Trigger1( void );
+
+/**
+ * @brief Enables tx interrupts on channel 2
+ *
+ * Used to enable the sending of messages through CAN channel 2
+ * Once the write buffer is empty the ISR will disable again
+ */
+void HW_CAN_Tx_Trigger2( void );
 
 #ifdef __cplusplus
 }
