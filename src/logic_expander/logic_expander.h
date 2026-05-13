@@ -48,6 +48,18 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+typedef enum LogicExpanderIndex_T
+{
+    LOGIC_EXPANDER_RESERVED_0,
+    LOGIC_EXPANDER_RESERVED_1,
+    LOGIC_EXPANDER_RESERVED_2,
+    LOGIC_EXPANDER_RESERVED_3,
+    LOGIC_EXPANDER_RESERVED_4,
+    LOGIC_EXPANDER_RESERVED_5,
+    LOGIC_EXPANDER_RESERVED_6,
+    LOGIC_EXPANDER_RESERVED_7,
+} LogicExpanderIndex_T;
+
 typedef enum LogicExpanderPort_T
 {
     LOGIC_EXPANDER_PORT_A,
@@ -105,7 +117,7 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void );
  * for the specified expander. Does not immediately transmit; use
  * LOGIC_EXPANDER_Send_Control_Bits() to apply changes.
  *
- * @param[in] expander_index  Device index (0 to LOGIC_EXPANDER_COUNT-1)
+ * @param[in] expander_index  Device index (LogicExpanderIndex_T)
  * @param[in] port            Port A or Port B
  * @param[in] bit_index       Bit position within port (0 to 7)
  * @param[in] bit_value       Value to set (true for 1, false for 0)
@@ -113,7 +125,7 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void );
  * @return LOGIC_EXPANDER_STATUS_OK on success
  * @return LOGIC_EXPANDER_STATUS_INVALID_PARAM if parameters are out of range
  */
-LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( uint8_t expander_index, LogicExpanderPort_T port,
+LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expander_index, LogicExpanderPort_T port,
                                                  uint8_t bit_index, bool bit_value );
 
 /**
@@ -136,13 +148,13 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void );
  * Returns a snapshot of the device's OLAT A, OLAT B, and address.
  * Reflects the last known state; not a direct hardware read.
  *
- * @param[in]  expander_index  Device index (0 to LOGIC_EXPANDER_COUNT-1)
+ * @param[in]  expander_index  Device index (LogicExpanderIndex_T)
  * @param[out] out_snapshot    Pointer to snapshot structure to fill
  *
  * @return LOGIC_EXPANDER_STATUS_OK on success
  * @return LOGIC_EXPANDER_STATUS_INVALID_PARAM if parameters are invalid
  */
-LogicExpanderStatus_T LOGIC_EXPANDER_Get_State_Snapshot( uint8_t                       expander_index,
+LogicExpanderStatus_T LOGIC_EXPANDER_Get_State_Snapshot( LogicExpanderIndex_T          expander_index,
                                                    LogicExpanderStateSnapshot_T* out_snapshot );
 
 #ifdef __cplusplus

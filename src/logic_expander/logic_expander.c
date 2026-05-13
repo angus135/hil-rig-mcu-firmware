@@ -119,7 +119,7 @@ static bool                 logic_expander_ready                       = false;
  *------------------------------------------------------------------------------
  */
 
-static inline bool                  LOGIC_EXPANDER_Index_Is_Valid( uint8_t expander_index );
+static inline bool                  LOGIC_EXPANDER_Index_Is_Valid( LogicExpanderIndex_T expander_index );
 static inline bool                  LOGIC_EXPANDER_Port_Is_Valid( LogicExpanderPort_T port );
 static inline LogicExpanderStatus_T LOGIC_EXPANDER_From_Exec_Status( LogicExpanderI2CStatus_T status );
 static LogicExpanderStatus_T
@@ -139,16 +139,16 @@ static LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_
  *------------------------------------------------------------------------------
  */
 
-static inline bool LOGIC_EXPANDER_Index_Is_Valid( uint8_t expander_index )
+static inline bool LOGIC_EXPANDER_Index_Is_Valid( LogicExpanderIndex_T expander_index )
 {
     /* Check if the expander index is within the valid range */
     return expander_index < LOGIC_EXPANDER_COUNT;
 }
 
-static inline bool LOGIC_EXPANDER_Index_Is_Active( uint8_t expander_index )
+static inline bool LOGIC_EXPANDER_Index_Is_Active( LogicExpanderIndex_T expander_index )
 {
     /* Check if the expander index is active */
-    return ( LOGIC_EXPANDER_ACTIVE_BITMASK & ( 1U << expander_index ) ) != 0U;
+    return ( LOGIC_EXPANDER_ACTIVE_BITMASK & ( 1U << ( uint8_t )expander_index ) ) != 0U;
 }
 
 static inline bool LOGIC_EXPANDER_Port_Is_Valid( LogicExpanderPort_T port )
@@ -408,7 +408,7 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void )
  * for the specified expander. Does not immediately transmit; use
  * LOGIC_EXPANDER_Send_Control_Bits() to apply changes.
  *
- * @param[in] expander_index  Device index (0 to LOGIC_EXPANDER_COUNT-1)
+ * @param[in] expander_index  Device index (LogicExpanderIndex_T)
  * @param[in] port            Port A or Port B
  * @param[in] bit_index       Bit position within port (0 to 7)
  * @param[in] bit_value       Value to set (true for 1, false for 0)
@@ -416,7 +416,7 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void )
  * @return LOGIC_EXPANDER_STATUS_OK on success
  * @return LOGIC_EXPANDER_STATUS_INVALID_PARAM if parameters are out of range
  */
-LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( uint8_t expander_index, LogicExpanderPort_T port,
+LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expander_index, LogicExpanderPort_T port,
                                                  uint8_t bit_index, bool bit_value )
 {
     /* Validate index, port, and bit position. */
@@ -428,8 +428,8 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( uint8_t expander_index, L
 
     /* Select the appropriate shadow register (OLAT A or OLAT B). */
     uint8_t* target_register = ( port == LOGIC_EXPANDER_PORT_A )
-                                   ? &logic_expander_state[expander_index].olat_a
-                                   : &logic_expander_state[expander_index].olat_b;
+                                   ? &logic_expander_state[( uint8_t )expander_index].olat_a
+                                   : &logic_expander_state[( uint8_t )expander_index].olat_b;
 
     /* Create a bit mask for the target bit position. */
     uint8_t bit_mask = ( uint8_t )( 1U << bit_index );
@@ -496,13 +496,13 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void )
  * Returns a snapshot of the device's OLAT A, OLAT B, and address.
  * Reflects the last known state; not a direct hardware read.
  *
- * @param[in]  expander_index  Device index (0 to LOGIC_EXPANDER_COUNT-1)
+ * @param[in]  expander_index  Device index (LogicExpanderIndex_T)
  * @param[out] out_snapshot    Pointer to snapshot structure to fill
  *
  * @return LOGIC_EXPANDER_STATUS_OK on success
  * @return LOGIC_EXPANDER_STATUS_INVALID_PARAM if parameters are invalid
  */
-LogicExpanderStatus_T LOGIC_EXPANDER_Get_State_Snapshot( uint8_t                       expander_index,
+LogicExpanderStatus_T LOGIC_EXPANDER_Get_State_Snapshot( LogicExpanderIndex_T          expander_index,
                                                    LogicExpanderStateSnapshot_T* out_snapshot )
 {
     /* Validate expander index and snapshot pointer. */
@@ -512,9 +512,9 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Get_State_Snapshot( uint8_t                
     }
 
     /* Copy current device address and shadow register state to snapshot. */
-    out_snapshot->device_address_7bit = logic_expander_state[expander_index].device_address_7bit;
-    out_snapshot->olat_a              = logic_expander_state[expander_index].olat_a;
-    out_snapshot->olat_b              = logic_expander_state[expander_index].olat_b;
+    out_snapshot->device_address_7bit = logic_expander_state[( uint8_t )expander_index].device_address_7bit;
+    out_snapshot->olat_a              = logic_expander_state[( uint8_t )expander_index].olat_a;
+    out_snapshot->olat_b              = logic_expander_state[( uint8_t )expander_index].olat_b;
 
     return LOGIC_EXPANDER_STATUS_OK;
 }
