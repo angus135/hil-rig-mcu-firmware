@@ -205,11 +205,11 @@ typedef struct
     bool is_configured_and_initialised;
     bool rx_running;
 
-    uint32_t tx_head;
-    uint32_t tx_tail;
-    uint32_t tx_count;
-    uint32_t tx_dma_length_bytes;
-    bool     tx_dma_active;
+    volatile uint32_t tx_head;
+    volatile uint32_t tx_tail;
+    volatile uint32_t tx_count;
+    volatile uint32_t tx_dma_length_bytes;
+    volatile bool     tx_dma_active;
 
 } HwUartRuntimeState_T;
 
