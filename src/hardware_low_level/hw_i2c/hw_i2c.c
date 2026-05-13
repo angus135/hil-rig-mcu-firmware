@@ -900,7 +900,7 @@ HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
  * @return true if data was loaded successfully
  * @return false if transfer is in progress or length exceeds buffer size
  */
-bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data,
+inline bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data,
                                uint16_t length )
 {
     HWI2CChannelState_T* state  = &hw_i2c_channel_state[channel];
@@ -990,7 +990,7 @@ bool HW_I2C_Trigger_Master_Transmit_External( HWI2CChannel_T channel,
  * @return true if transfer was initiated successfully
  * @return false if another transfer is already in progress
  */
-bool HW_I2C_Trigger_Master_Transmit_Internal( uint16_t device_address_7bit )
+inline bool HW_I2C_Trigger_Master_Transmit_Internal( uint16_t device_address_7bit )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[HW_I2C_CHANNEL_FMPI2C1];
 
@@ -1083,7 +1083,7 @@ bool HW_I2C_Trigger_Master_Receive_External( HWI2CChannel_T channel,
  * @return true if transfer was initiated successfully
  * @return false if another transfer is already in progress
  */
-bool HW_I2C_Trigger_Master_Receive_Internal( uint16_t device_address_7bit,
+inline bool HW_I2C_Trigger_Master_Receive_Internal( uint16_t device_address_7bit,
                                              uint16_t expected_length )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[HW_I2C_CHANNEL_FMPI2C1];
@@ -1216,7 +1216,7 @@ bool HW_I2C_Trigger_Slave_Receive_External( HWI2CChannel_T channel, uint16_t exp
  * @return true on success
  * @return false on failure
  */
-bool HW_I2C_Peek_Received( HWI2CChannel_T channel, HWI2CRxPeek_T* peek )
+inline bool HW_I2C_Peek_Received( HWI2CChannel_T channel, HWI2CRxPeek_T* peek )
 {
     HWI2CChannelState_T* state  = &hw_i2c_channel_state[channel];
 
@@ -1265,7 +1265,7 @@ bool HW_I2C_Peek_Received( HWI2CChannel_T channel, HWI2CRxPeek_T* peek )
  * @return true if bytes were consumed successfully
  * @return false if bytes_to_consume exceeds available data
  */
-bool HW_I2C_Consume_Received( HWI2CChannel_T channel, uint16_t bytes_to_consume )
+inline bool HW_I2C_Consume_Received( HWI2CChannel_T channel, uint16_t bytes_to_consume )
 {
     HWI2CChannelState_T* state  = &hw_i2c_channel_state[channel];
 
@@ -1287,7 +1287,7 @@ bool HW_I2C_Consume_Received( HWI2CChannel_T channel, uint16_t bytes_to_consume 
  *
  * @param[in] channel  I2C channel experiencing the event
  */
-void HW_I2C_Service_Event_IRQ( HWI2CChannel_T channel )
+inline void HW_I2C_Service_Event_IRQ( HWI2CChannel_T channel )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
     if ( !state->configured )
@@ -1317,7 +1317,7 @@ void HW_I2C_Service_Event_IRQ( HWI2CChannel_T channel )
  *
  * @param[in] channel  I2C channel with the error
  */
-void HW_I2C_Service_Error_IRQ( HWI2CChannel_T channel )
+inline void HW_I2C_Service_Error_IRQ( HWI2CChannel_T channel )
 {
     if ( channel == HW_I2C_CHANNEL_FMPI2C1 )
     {
@@ -1349,7 +1349,7 @@ void HW_I2C_Service_Error_IRQ( HWI2CChannel_T channel )
  *
  * @param[in] channel  I2C channel with pending DMA receive completion
  */
-void HW_I2C_Service_DMA_Rx_IRQ( HWI2CChannel_T channel )
+inline void HW_I2C_Service_DMA_Rx_IRQ( HWI2CChannel_T channel )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
     if ( !state->configured )
@@ -1392,7 +1392,7 @@ void HW_I2C_Service_DMA_Rx_IRQ( HWI2CChannel_T channel )
  *
  * @param[in] channel  I2C channel with pending DMA transmit completion
  */
-void HW_I2C_Service_DMA_Tx_IRQ( HWI2CChannel_T channel )
+inline void HW_I2C_Service_DMA_Tx_IRQ( HWI2CChannel_T channel )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
     if ( !state->configured )
