@@ -277,46 +277,6 @@ bool HW_I2C_Peek_Received( HWI2CChannel_T channel, HWI2CRxPeek_T* peek );
  */
 bool HW_I2C_Consume_Received( HWI2CChannel_T channel, uint16_t bytes_to_consume );
 
-/**
- * @brief Service I2C event interrupt.
- *
- * Should be called from the I2C event interrupt handler for the channel.
- * Manages state machine for master/slave operations and data transfers.
- *
- * @param[in] channel  I2C channel experiencing the event
- */
-void HW_I2C_Service_Event_IRQ( HWI2CChannel_T channel );
-
-/**
- * @brief Service I2C error interrupt.
- *
- * Should be called from the I2C error interrupt handler for the channel.
- * Clears error flags and aborts any in-progress transfer.
- *
- * @param[in] channel  I2C channel with the error
- */
-void HW_I2C_Service_Error_IRQ( HWI2CChannel_T channel );
-
-/**
- * @brief Service DMA receive interrupt.
- *
- * Should be called from the DMA stream interrupt handler for I2C receive.
- * Transfers DMA-received data into the ring buffer and detects completion.
- *
- * @param[in] channel  I2C channel with pending DMA receive completion
- */
-void HW_I2C_Service_DMA_Rx_IRQ( HWI2CChannel_T channel );
-
-/**
- * @brief Service DMA transmit interrupt.
- *
- * Should be called from the DMA stream interrupt handler for I2C transmit.
- * Detects DMA transmit completion and updates transfer state.
- *
- * @param[in] channel  I2C channel with pending DMA transmit completion
- */
-void HW_I2C_Service_DMA_Tx_IRQ( HWI2CChannel_T channel );
-
 #ifdef __cplusplus
 }
 #endif
