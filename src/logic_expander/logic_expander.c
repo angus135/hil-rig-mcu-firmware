@@ -141,16 +141,19 @@ static LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_
 
 static inline bool LOGIC_EXPANDER_Index_Is_Valid( uint8_t expander_index )
 {
+    /* Check if the expander index is within the valid range */
     return expander_index < LOGIC_EXPANDER_COUNT;
 }
 
 static inline bool LOGIC_EXPANDER_Index_Is_Active( uint8_t expander_index )
 {
+    /* Check if the expander index is active */
     return ( LOGIC_EXPANDER_ACTIVE_BITMASK & ( 1U << expander_index ) ) != 0U;
 }
 
 static inline bool LOGIC_EXPANDER_Port_Is_Valid( LogicExpanderPort_T port )
 {
+    /* Expander only has ports A and B*/
     return ( port == LOGIC_EXPANDER_PORT_A ) || ( port == LOGIC_EXPANDER_PORT_B );
 }
 
@@ -171,63 +174,112 @@ static inline LogicExpanderStatus_T LOGIC_EXPANDER_From_Exec_Status( LogicExpand
     }
 }
 
+/**
+ * @brief Retry wrapper for I2C send with busy-wait handling.
+ *
+ * Attempts to send a payload up to LOGIC_EXPANDER_INTERNAL_SEND_BUSY_RETRY_LIMIT times.
+ * If the I2C channel reports BUSY, retries; for other errors, fails immediately.
+ */
 static LogicExpanderStatus_T
 LOGIC_EXPANDER_Internal_Send_With_Busy_Retry( uint16_t device_address_7bit, const uint8_t* payload,
                                               uint16_t payload_length )
 {
+    /* Retry loop: attempt to send payload up to the retry limit. */
     for ( uint32_t retry = 0U; retry < LOGIC_EXPANDER_INTERNAL_SEND_BUSY_RETRY_LIMIT; ++retry )
     {
         LogicExpanderI2CStatus_T status =
             LOGIC_EXPANDER_I2C_Internal_Master_Send( device_address_7bit, payload, payload_length );
+
+        /* Success: return immediately. */
         if ( status == LOGIC_EXPANDER_I2C_STATUS_OK )
         {
             return LOGIC_EXPANDER_STATUS_OK;
         }
 
+        /* Non-busy error (invalid param, overflow, etc.): fail fast without retrying. */
         if ( status != LOGIC_EXPANDER_I2C_STATUS_BUSY )
         {
             return LOGIC_EXPANDER_From_Exec_Status( status );
         }
+        /* BUSY: continue loop and retry. */
     }
 
+    /* Exhausted retries; still busy. */
     return LOGIC_EXPANDER_STATUS_BUSY;
 }
 
+/**
+ * @brief Write a single 8-bit register to an MCP23017 device.
+ *
+ * Constructs a 2-byte I2C message [register_address, register_value] and
+ * sends via I2C with retry logic for busy conditions.
+ */
 static LogicExpanderStatus_T LOGIC_EXPANDER_Write_Register( uint16_t device_address_7bit,
                                                             uint8_t  register_address,
                                                             uint8_t  register_value )
 {
+    /* Build payload: [reg_addr, reg_val] */
     uint8_t payload[2] = { register_address, register_value };
     return LOGIC_EXPANDER_Internal_Send_With_Busy_Retry( device_address_7bit, payload,
                                                          ( uint16_t )sizeof( payload ) );
 }
 
+/**
+ * @brief Write two consecutive 8-bit registers to an MCP23017 device.
+ *
+ * Constructs a 3-byte I2C message [register_address, first_value, second_value].
+ * Leverages MCP23017's auto-increment feature to update port A and B in one transaction.
+ */
 static LogicExpanderStatus_T LOGIC_EXPANDER_Write_Register_Pair( uint16_t device_address_7bit,
                                                                  uint8_t  register_address,
                                                                  uint8_t  first_value,
                                                                  uint8_t  second_value )
 {
+    /* Build payload: [reg_addr, first_val, second_val].
+       MCP23017 auto-increments register pointer, so the second value is
+       written to (register_address + 1). */
     uint8_t payload[3] = { register_address, first_value, second_value };
     return LOGIC_EXPANDER_Internal_Send_With_Busy_Retry( device_address_7bit, payload,
                                                          ( uint16_t )sizeof( payload ) );
 }
 
+/**
+ * @brief Initiate an I2C master transmit on the internal FMPI2C1 channel.
+ *
+ * Validates parameters, loads the payload into the I2C transmit stage buffer,
+ * and triggers the master transmit. If the stage buffer is full (another transfer
+ * in progress), reports BUSY to allow the caller to retry.
+ *
+ * @param device_address_7bit  7-bit slave address
+ * @param payload              Data to transmit (must not be NULL)
+ * @param payload_length       Number of bytes to transmit (must be > 0)
+ *
+ * @return LOGIC_EXPANDER_I2C_STATUS_OK on success
+ * @return LOGIC_EXPANDER_I2C_STATUS_BUSY if stage buffer is full or transfer in progress
+ * @return LOGIC_EXPANDER_I2C_STATUS_INVALID_PARAM if address/payload invalid
+ * @return LOGIC_EXPANDER_I2C_STATUS_ERROR if trigger fails
+ */
 LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t* payload,
                                                                   uint16_t payload_length )
 {
+    /* Validate parameters: address must be 7-bit, payload non-NULL and non-empty. */
     if ( ( device_address_7bit > 0x7FU ) || ( payload == NULL ) || ( payload_length == 0U ) )
     {
         return LOGIC_EXPANDER_I2C_STATUS_INVALID_PARAM;
     }
 
+    /* Load payload into the I2C transmit stage buffer. Returns false if the
+       buffer is already full or a transfer is in progress; in that case,
+       signal BUSY to allow the caller to retry. This check is CRITICAL:
+       removing it breaks the expander because payloads may be corrupted if
+       the stage buffer is overwritten while a transfer is still in flight. */
     bool is_ok = HW_I2C_Load_Stage_Buffer( HW_I2C_CHANNEL_FMPI2C1, payload, payload_length );
-
-    // DELETING THIS BREAKS EXPANDER
     if ( !is_ok )
     {
         return LOGIC_EXPANDER_I2C_STATUS_BUSY;
     }
 
+    /* Payload loaded; trigger the I2C master transmit to the target address. */
     is_ok = HW_I2C_Trigger_Master_Transmit_Internal( device_address_7bit );
     return is_ok ? LOGIC_EXPANDER_I2C_STATUS_OK : LOGIC_EXPANDER_I2C_STATUS_ERROR;
 }
