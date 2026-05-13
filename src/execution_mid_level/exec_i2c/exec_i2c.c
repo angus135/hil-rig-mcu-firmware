@@ -12,7 +12,6 @@
  *      - Configuration validation includes mode, speed, transfer path, and address checks
  *      - I2C1 does not support DMA transfers (interrupt-only)
  *      - I2C2 supports both interrupt and DMA transfer paths
- *      - FMPI2C1 is internal, interrupt-only, with fixed 100 kHz speed
  *      - All functions delegate to hw_i2c for actual hardware operations
  *      - Thread-safety must be ensured at higher layers
  ******************************************************************************/
@@ -32,8 +31,6 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
-
-#define EXEC_I2C_INTERNAL_FMPI2C1_OWN_ADDRESS_7BIT ( 0x33U )
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -141,25 +138,22 @@ static EXECI2CStatus_T EXEC_I2C_Validate_Config( HWI2CChannel_T                c
  * @brief Configure all I2C channels with validation.
  *
  * Validates configuration parameters for both external channels (I2C1 and I2C2)
- * and the internal FMPI2C1 channel, then delegates configuration to hw_i2c.
+ * and delegates configuration to hw_i2c.
  * Must be called before any transfers.
  *
  * @param[in] i2c1_config                           Configuration for I2C1 channel
  * @param[in] i2c2_config                           Configuration for I2C2 channel
- * @param[in] internal_fmpi2c1_own_address_7bit     Own address for FMPI2C1
  *
  * @return EXEC_I2C_STATUS_OK on success
  * @return EXEC_I2C_STATUS_INVALID_PARAM if any parameter is invalid
  */
 EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_config,
-                                        const EXECI2CChannelConfig_T* i2c2_config,
-                                        uint16_t internal_fmpi2c1_own_address_7bit )
+                                        const EXECI2CChannelConfig_T* i2c2_config )
 {
     EXECI2CStatus_T status_1 = EXEC_I2C_Validate_Config( HW_I2C_CHANNEL_1, i2c1_config );
     EXECI2CStatus_T status_2 = EXEC_I2C_Validate_Config( HW_I2C_CHANNEL_2, i2c2_config );
 
-    if ( ( status_1 != EXEC_I2C_STATUS_OK ) || ( status_2 != EXEC_I2C_STATUS_OK )
-         || ( internal_fmpi2c1_own_address_7bit > 0x7FU ) )
+    if ( ( status_1 != EXEC_I2C_STATUS_OK ) || ( status_2 != EXEC_I2C_STATUS_OK ) )
     {
         return EXEC_I2C_STATUS_INVALID_PARAM;
     }
@@ -192,23 +186,7 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
         return EXEC_I2C_From_HW_Status( hw_status );
     }
 
-    hw_status = HW_I2C_Configure_Internal_FMPI2C1( internal_fmpi2c1_own_address_7bit );
-    return EXEC_I2C_From_HW_Status( hw_status );
-}
-
-/**
- * @brief Configure the internal FMPI2C1 channel with default settings.
- *
- * Initializes FMPI2C1 with a predefined own address (0x33).
- * Convenience function for internal channel initialization.
- *
- * @return EXEC_I2C_STATUS_OK on success
- * @return EXEC_I2C_STATUS_ERROR on failure
- */
-EXECI2CStatus_T EXEC_I2C_Configuration_Internal( void )
-{
-    return EXEC_I2C_From_HW_Status(
-        HW_I2C_Configure_Internal_FMPI2C1( EXEC_I2C_INTERNAL_FMPI2C1_OWN_ADDRESS_7BIT ) );
+    return EXEC_I2C_STATUS_OK;
 }
 
 /**
@@ -225,31 +203,11 @@ EXECI2CStatus_T EXEC_I2C_Configuration_Internal( void )
  * @return true if transmission was initiated
  * @return false on failure
  */
-inline bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
-                           const uint8_t* payload, uint16_t payload_length )
+bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
+                                        const uint8_t* payload, uint16_t payload_length )
 {
     return HW_I2C_Load_Stage_Buffer( channel, payload, payload_length )
            && HW_I2C_Trigger_Master_Transmit_External( channel, device_address_7bit );
-}
-
-/**
- * @brief Master transmit on the internal FMPI2C1 channel.
- *
- * Sends data to a slave device on the internal FMPI2C1 channel.
- * Data must be provided directly in the payload; internally handles buffering.
- *
- * @param[in] device_address_7bit   7-bit slave address
- * @param[in] payload               Data to transmit
- * @param[in] payload_length        Number of bytes to transmit
- *
- * @return true if transmission was initiated
- * @return false on failure
- */
-inline bool EXEC_I2C_Master_Transmit_Internal( uint16_t device_address_7bit, const uint8_t* payload,
-                                    uint16_t payload_length )
-{
-    return HW_I2C_Load_Stage_Buffer( HW_I2C_CHANNEL_FMPI2C1, payload, payload_length )
-           && HW_I2C_Trigger_Master_Transmit_Internal( device_address_7bit );
 }
 
 /**
@@ -264,8 +222,8 @@ inline bool EXEC_I2C_Master_Transmit_Internal( uint16_t device_address_7bit, con
  * @return true if slave transmit was prepared
  * @return false on failure
  */
-inline bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* payload,
-                          uint16_t payload_length )
+bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* payload,
+                                       uint16_t payload_length )
 {
     return HW_I2C_Load_Stage_Buffer( channel, payload, payload_length )
            && HW_I2C_Trigger_Slave_Transmit_External( channel );
@@ -284,29 +242,12 @@ inline bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint
  * @return true if receive was initiated
  * @return false on failure
  */
-inline bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
+bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
                                              uint16_t expected_length )
 {
     return HW_I2C_Trigger_Master_Receive_External( channel, device_address_7bit, expected_length );
 }
 
-/**
- * @brief Initiate master receive on the internal FMPI2C1 channel.
- *
- * Requests data from a slave device on the internal FMPI2C1 channel.
- * Received data is buffered internally and can be retrieved with EXEC_I2C_Receive_Copy_And_Consume().
- *
- * @param[in] device_address_7bit   7-bit slave address
- * @param[in] expected_length       Number of bytes expected from slave
- *
- * @return true if receive was initiated
- * @return false on failure
- */
-bool EXEC_I2C_Start_Master_Receive_Internal( uint16_t device_address_7bit,
-                                             uint16_t expected_length )
-{
-    return HW_I2C_Trigger_Master_Receive_Internal( device_address_7bit, expected_length );
-}
 
 /**
  * @brief Initiate slave receive on an external channel.
@@ -320,7 +261,7 @@ bool EXEC_I2C_Start_Master_Receive_Internal( uint16_t device_address_7bit,
  * @return true if receive was prepared
  * @return false on failure
  */
-inline bool EXEC_I2C_Start_Slave_Receive_External( HWI2CChannel_T channel, uint16_t expected_length )
+bool EXEC_I2C_Start_Slave_Receive_External( HWI2CChannel_T channel, uint16_t expected_length )
 {
     return HW_I2C_Trigger_Slave_Receive_External( channel, expected_length );
 }

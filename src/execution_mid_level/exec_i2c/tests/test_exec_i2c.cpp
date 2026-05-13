@@ -49,18 +49,14 @@ class MockHWI2C
 public:
     MOCK_METHOD( HWI2CStatus_T, ConfigureChannel,
                  ( HWI2CChannel_T channel, const HWI2CChannelConfig_T* config ), () );
-    MOCK_METHOD( HWI2CStatus_T, ConfigureInternal, ( uint16_t own_address_7bit ), () );
     MOCK_METHOD( bool, LoadStageBuffer,
                  ( HWI2CChannel_T channel, const uint8_t* data, uint16_t length ), () );
     MOCK_METHOD( bool, TriggerMasterTransmitExternal,
                  ( HWI2CChannel_T channel, uint16_t device_address_7bit ), () );
-    MOCK_METHOD( bool, TriggerMasterTransmitInternal, ( uint16_t device_address_7bit ), () );
     MOCK_METHOD( bool, TriggerSlaveTransmitExternal, ( HWI2CChannel_T channel ), () );
     MOCK_METHOD( bool, TriggerMasterReceiveExternal,
                  ( HWI2CChannel_T channel, uint16_t device_address_7bit,
                    uint16_t expected_length ), () );
-    MOCK_METHOD( bool, TriggerMasterReceiveInternal,
-                 ( uint16_t device_address_7bit, uint16_t expected_length ), () );
     MOCK_METHOD( bool, TriggerSlaveReceiveExternal,
                  ( HWI2CChannel_T channel, uint16_t expected_length ), () );
     MOCK_METHOD( bool, PeekReceived, ( HWI2CChannel_T channel, HWI2CRxPeek_T* peek ), () );
@@ -76,11 +72,6 @@ HWI2CStatus_T HW_I2C_Configure_Channel( HWI2CChannel_T channel, const HWI2CChann
     return g_mock_hw_i2c->ConfigureChannel( channel, config );
 }
 
-HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
-{
-    return g_mock_hw_i2c->ConfigureInternal( own_address_7bit );
-}
-
 bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data, uint16_t length )
 {
     return g_mock_hw_i2c->LoadStageBuffer( channel, data, length );
@@ -90,11 +81,6 @@ bool HW_I2C_Trigger_Master_Transmit_External( HWI2CChannel_T channel,
                                               uint16_t       device_address_7bit )
 {
     return g_mock_hw_i2c->TriggerMasterTransmitExternal( channel, device_address_7bit );
-}
-
-bool HW_I2C_Trigger_Master_Transmit_Internal( uint16_t device_address_7bit )
-{
-    return g_mock_hw_i2c->TriggerMasterTransmitInternal( device_address_7bit );
 }
 
 bool HW_I2C_Trigger_Slave_Transmit_External( HWI2CChannel_T channel )
@@ -107,12 +93,6 @@ bool HW_I2C_Trigger_Master_Receive_External( HWI2CChannel_T channel, uint16_t de
 {
     return g_mock_hw_i2c->TriggerMasterReceiveExternal( channel, device_address_7bit,
                                                         expected_length );
-}
-
-bool HW_I2C_Trigger_Master_Receive_Internal( uint16_t device_address_7bit,
-                                              uint16_t expected_length )
-{
-    return g_mock_hw_i2c->TriggerMasterReceiveInternal( device_address_7bit, expected_length );
 }
 
 bool HW_I2C_Trigger_Slave_Receive_External( HWI2CChannel_T channel, uint16_t expected_length )
@@ -179,11 +159,11 @@ TEST_F( ExecI2CTest, Configuration_RejectsInvalidExternalConfigWithoutLowLevelCa
         .own_address_7bit = 0x12U,
     };
 
-    EXPECT_EQ( EXEC_I2C_Configuration( &invalid_config, &invalid_config, 0x33U ),
+    EXPECT_EQ( EXEC_I2C_Configuration( &invalid_config, &invalid_config ),
                EXEC_I2C_STATUS_INVALID_PARAM );
 }
 
-TEST_F( ExecI2CTest, Configuration_MapsAndForwardsAllThreeChannels )
+TEST_F( ExecI2CTest, Configuration_MapsAndForwardsExternalChannels )
 {
     EXECI2CChannelConfig_T i2c1_config = {
         .mode             = HW_I2C_MODE_MASTER,
@@ -224,11 +204,9 @@ TEST_F( ExecI2CTest, Configuration_MapsAndForwardsAllThreeChannels )
                 EXPECT_EQ( config->own_address_7bit, 0x34U );
                 return HW_I2C_STATUS_OK;
             } );
-
-        EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) ).WillOnce( Return( HW_I2C_STATUS_OK ) );
     }
 
-    EXPECT_EQ( EXEC_I2C_Configuration( &i2c1_config, &i2c2_config, 0x33U ), EXEC_I2C_STATUS_OK );
+    EXPECT_EQ( EXEC_I2C_Configuration( &i2c1_config, &i2c2_config ), EXEC_I2C_STATUS_OK );
 }
 
 TEST_F( ExecI2CTest, Configuration_StopsWhenFirstLowLevelCallFails )
@@ -244,16 +222,8 @@ TEST_F( ExecI2CTest, Configuration_StopsWhenFirstLowLevelCallFails )
     EXPECT_CALL( mock_hw_i2c, ConfigureChannel( HW_I2C_CHANNEL_1, _ ) )
         .WillOnce( Return( HW_I2C_STATUS_BUSY ) );
     EXPECT_CALL( mock_hw_i2c, ConfigureChannel( HW_I2C_CHANNEL_2, _ ) ).Times( 0 );
-    EXPECT_CALL( mock_hw_i2c, ConfigureInternal( _ ) ).Times( 0 );
 
-    EXPECT_EQ( EXEC_I2C_Configuration( &config, &config, 0x33U ), EXEC_I2C_STATUS_BUSY );
-}
-
-TEST_F( ExecI2CTest, ConfigurationInternal_MapsLowLevelStatus )
-{
-    EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) ).WillOnce( Return( HW_I2C_STATUS_OVERFLOW ) );
-
-    EXPECT_EQ( EXEC_I2C_Configuration_Internal(), EXEC_I2C_STATUS_OVERFLOW );
+    EXPECT_EQ( EXEC_I2C_Configuration( &config, &config ), EXEC_I2C_STATUS_BUSY );
 }
 
 TEST_F( ExecI2CTest, MasterTransmitExternal_LoadsThenTriggers )
@@ -283,20 +253,6 @@ TEST_F( ExecI2CTest, MasterTransmitExternal_LoadFailureStopsBeforeTrigger )
                                                      sizeof( payload ) ) );
 }
 
-TEST_F( ExecI2CTest, MasterTransmitInternal_ForwardsToInternalChannel )
-{
-    const uint8_t payload[] = { 0x01U, 0x02U, 0x03U };
-
-    {
-        InSequence sequence;
-        EXPECT_CALL( mock_hw_i2c, LoadStageBuffer( HW_I2C_CHANNEL_FMPI2C1, payload, sizeof( payload ) ) )
-            .WillOnce( Return( true ) );
-        EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x33U ) ).WillOnce( Return( true ) );
-    }
-
-    EXPECT_TRUE( EXEC_I2C_Master_Transmit_Internal( 0x33U, payload, sizeof( payload ) ) );
-}
-
 TEST_F( ExecI2CTest, SlaveTransmitExternal_ForwardsBothCalls )
 {
     const uint8_t payload[] = { 0x55U };
@@ -318,14 +274,6 @@ TEST_F( ExecI2CTest, MasterReceiveExternal_ForwardsToLowLevel )
         .WillOnce( Return( true ) );
 
     EXPECT_TRUE( EXEC_I2C_Start_Master_Receive_External( HW_I2C_CHANNEL_2, 0x55U, 9U ) );
-}
-
-TEST_F( ExecI2CTest, MasterReceiveInternal_ForwardsToLowLevel )
-{
-    EXPECT_CALL( mock_hw_i2c, TriggerMasterReceiveInternal( 0x33U, 12U ) )
-        .WillOnce( Return( true ) );
-
-    EXPECT_TRUE( EXEC_I2C_Start_Master_Receive_Internal( 0x33U, 12U ) );
 }
 
 TEST_F( ExecI2CTest, SlaveReceiveExternal_ForwardsToLowLevel )

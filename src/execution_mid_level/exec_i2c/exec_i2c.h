@@ -74,30 +74,17 @@ typedef struct EXECI2CChannelConfig_T
  * @brief Configure all I2C channels with validation.
  *
  * Validates configuration parameters for both external channels (I2C1 and I2C2)
- * and the internal FMPI2C1 channel, then delegates configuration to hw_i2c.
+ * and delegates configuration to hw_i2c.
  * Must be called before any transfers.
  *
  * @param[in] i2c1_config                           Configuration for I2C1 channel
  * @param[in] i2c2_config                           Configuration for I2C2 channel
- * @param[in] internal_fmpi2c1_own_address_7bit     Own address for FMPI2C1
  *
  * @return EXEC_I2C_STATUS_OK on success
  * @return EXEC_I2C_STATUS_INVALID_PARAM if any parameter is invalid
  */
 EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_config,
-                                        const EXECI2CChannelConfig_T* i2c2_config,
-                                        uint16_t internal_fmpi2c1_own_address_7bit );
-
-/**
- * @brief Configure the internal FMPI2C1 channel with default settings.
- *
- * Initializes FMPI2C1 with a predefined own address (0x33).
- * Convenience function for internal channel initialization.
- *
- * @return EXEC_I2C_STATUS_OK on success
- * @return EXEC_I2C_STATUS_ERROR on failure
- */
-EXECI2CStatus_T EXEC_I2C_Configuration_Internal( void );
+                                        const EXECI2CChannelConfig_T* i2c2_config );
 
 /**
  * @brief Master transmit on an external channel.
@@ -115,22 +102,6 @@ EXECI2CStatus_T EXEC_I2C_Configuration_Internal( void );
  */
 bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
                            const uint8_t* payload, uint16_t payload_length );
-
-/**
- * @brief Master transmit on the internal FMPI2C1 channel.
- *
- * Sends data to a slave device on the internal FMPI2C1 channel.
- * Data must be provided directly in the payload; internally handles buffering.
- *
- * @param[in] device_address_7bit   7-bit slave address
- * @param[in] payload               Data to transmit
- * @param[in] payload_length        Number of bytes to transmit
- *
- * @return true if transmission was initiated
- * @return false on failure
- */
-bool EXEC_I2C_Master_Transmit_Internal( uint16_t device_address_7bit, const uint8_t* payload,
-                                    uint16_t payload_length );
 
 /**
  * @brief Slave transmit on an external channel.
@@ -161,21 +132,6 @@ bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* pa
  * @return false on failure
  */
 bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
-                                             uint16_t expected_length );
-
-/**
- * @brief Initiate master receive on the internal FMPI2C1 channel.
- *
- * Requests data from a slave device on the internal FMPI2C1 channel.
- * Received data is buffered internally and can be retrieved with EXEC_I2C_Receive_Copy_And_Consume().
- *
- * @param[in] device_address_7bit   7-bit slave address
- * @param[in] expected_length       Number of bytes expected from slave
- *
- * @return true if receive was initiated
- * @return false on failure
- */
-bool EXEC_I2C_Start_Master_Receive_Internal( uint16_t device_address_7bit,
                                              uint16_t expected_length );
 
 /**

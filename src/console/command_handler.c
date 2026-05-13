@@ -183,14 +183,6 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[1], "config" ) == 0 )
     {
-        EXECI2CStatus_T i2c_status = EXEC_I2C_Configuration_Internal();
-        if ( i2c_status != EXEC_I2C_STATUS_OK )
-        {
-            CONSOLE_Printf( "Expander internal I2C config failed (status=%d)\r\n",
-                            ( int )i2c_status );
-            return;
-        }
-
         LogicExpanderStatus_T status = LOGIC_EXPANDER_Self_Config();
         if ( status == LOGIC_EXPANDER_STATUS_OK )
         {
@@ -385,7 +377,6 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
 
     const uint16_t i2c1_addr = 0x31U;
     const uint16_t i2c2_addr = 0x32U;
-    const uint16_t fmpi_addr = 0x33U;
 
     EXECI2CChannelConfig_T i2c1_cfg = {
         .mode =
@@ -405,7 +396,7 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
         .own_address_7bit = i2c2_addr,
     };
 
-    EXECI2CStatus_T status = EXEC_I2C_Configuration( &i2c1_cfg, &i2c2_cfg, fmpi_addr );
+    EXECI2CStatus_T status = EXEC_I2C_Configuration( &i2c1_cfg, &i2c2_cfg );
     if ( status != EXEC_I2C_STATUS_OK )
     {
         CONSOLE_Printf( "I2C configuration failed (status=%d).\r\n", ( int )status );

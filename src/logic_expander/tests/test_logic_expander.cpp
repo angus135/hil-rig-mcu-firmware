@@ -51,15 +51,23 @@ extern "C"
 class MockHWI2C
 {
 public:
+    MOCK_METHOD( HWI2CStatus_T, ConfigureInternal, ( uint16_t own_address_7bit ), () );
     MOCK_METHOD( bool, LoadStageBuffer,
                  ( HWI2CChannel_T channel, const uint8_t* data, uint16_t length ), () );
     MOCK_METHOD( bool, TriggerMasterTransmitInternal, ( uint16_t device_address_7bit ), () );
+    MOCK_METHOD( bool, TriggerMasterReceiveInternal,
+                 ( uint16_t device_address_7bit, uint16_t expected_length ), () );
 };
 
 static MockHWI2C* g_mock_hw_i2c = nullptr;
 
 extern "C"
 {
+HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
+{
+    return g_mock_hw_i2c->ConfigureInternal( own_address_7bit );
+}
+
 bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data, uint16_t length )
 {
     return g_mock_hw_i2c->LoadStageBuffer( channel, data, length );
@@ -68,6 +76,12 @@ bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data, uint
 bool HW_I2C_Trigger_Master_Transmit_Internal( uint16_t device_address_7bit )
 {
     return g_mock_hw_i2c->TriggerMasterTransmitInternal( device_address_7bit );
+}
+
+bool HW_I2C_Trigger_Master_Receive_Internal( uint16_t device_address_7bit,
+                                             uint16_t expected_length )
+{
+    return g_mock_hw_i2c->TriggerMasterReceiveInternal( device_address_7bit, expected_length );
 }
 }
 
@@ -110,6 +124,7 @@ protected:
 
 TEST_F( ExampleTest, SelfConfig_InitializesActiveDeviceAndReportsSuccess )
 {
+    EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) ).WillOnce( Return( HW_I2C_STATUS_OK ) );
     EXPECT_CALL( mock_hw_i2c, LoadStageBuffer( HW_I2C_CHANNEL_FMPI2C1, ::testing::_, ::testing::_ ) )
         .Times( 8 );
     EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x20U ) ).Times( 8 );
@@ -123,14 +138,43 @@ TEST_F( ExampleTest, SelfConfig_InitializesActiveDeviceAndReportsSuccess )
 
 TEST_F( ExampleTest, SelfConfig_PropagatesHardwareErrorAndLeavesNotReady )
 {
+    EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) )
+        .WillOnce( Return( HW_I2C_STATUS_BUSY ) );
     EXPECT_CALL( mock_hw_i2c,
                  LoadStageBuffer( HW_I2C_CHANNEL_FMPI2C1, ::testing::_, ::testing::_ ) )
-        .WillOnce( Return( true ) );
-    EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x20U ) )
-        .WillOnce( Return( false ) );
+        .Times( 0 );
+    EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( ::testing::_ ) ).Times( 0 );
 
     EXPECT_EQ( LOGIC_EXPANDER_Self_Config(), LOGIC_EXPANDER_STATUS_ERROR );
     EXPECT_FALSE( logic_expander_ready );
+}
+
+TEST_F( ExampleTest, InternalConfig_CallsLowLevelConfiguration )
+{
+    EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) ).WillOnce( Return( HW_I2C_STATUS_OK ) );
+
+    EXPECT_EQ( LOGIC_EXPANDER_I2C_Internal_Config(), LOGIC_EXPANDER_STATUS_OK );
+}
+
+TEST_F( ExampleTest, InternalTransmit_ForwardsToInternalChannel )
+{
+    const std::array<uint8_t, 2U> payload = { 0xA1U, 0xB2U };
+
+    {
+        InSequence sequence;
+        EXPECT_CALL( mock_hw_i2c, LoadStageBuffer( HW_I2C_CHANNEL_FMPI2C1, payload.data(), payload.size() ) )
+            .WillOnce( Return( true ) );
+        EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x33U ) ).WillOnce( Return( true ) );
+    }
+
+    EXPECT_TRUE( LOGIC_EXPANDER_Master_Transmit_Internal( 0x33U, payload.data(), payload.size() ) );
+}
+
+TEST_F( ExampleTest, InternalReceive_ForwardsToInternalChannel )
+{
+    EXPECT_CALL( mock_hw_i2c, TriggerMasterReceiveInternal( 0x33U, 12U ) ).WillOnce( Return( true ) );
+
+    EXPECT_TRUE( LOGIC_EXPANDER_Start_Master_Receive_Internal( 0x33U, 12U ) );
 }
 
 TEST_F( ExampleTest, LoadControlBit_ValidatesInputsAndUpdatesShadowState )
