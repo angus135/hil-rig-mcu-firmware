@@ -80,27 +80,33 @@ typedef enum HWI2CTransferKind_T
 
 typedef struct HWI2CChannelState_T
 {
-    bool                   configured;
-    HWI2CChannelConfig_T config;
+    /* Configuration state */
+    bool                   configured;           /* True if channel has been configured */
+    HWI2CChannelConfig_T   config;               /* Runtime configuration (mode, speed, transfer paths) */
 
-    volatile bool            transfer_in_progress;
-    HWI2CTransferKind_T    transfer_kind;
+    /* Transfer control and state */
+    volatile bool          transfer_in_progress; /* True while a transfer (master or slave) is active */
+    HWI2CTransferKind_T    transfer_kind;        /* Current transfer type (idle, master TX/RX, slave TX/RX) */
 
-    uint16_t target_address_7bit;
-    uint16_t rx_expected_length;
+    /* Master-mode addressing */
+    uint16_t               target_address_7bit;  /* 7-bit slave address for master transfers */
+    uint16_t               rx_expected_length;   /* Expected receive count; decremented as bytes arrive */
 
-    uint8_t        tx_stage_buffer[HW_I2C_TX_STAGE_SIZE];
-    uint16_t       tx_stage_length;
-    const uint8_t* tx_ptr;
-    uint16_t       tx_remaining;
-    volatile bool  dma_tx_transfer_complete;
+    /* Transmit path: shadow buffer and pointers */
+    uint8_t                tx_stage_buffer[HW_I2C_TX_STAGE_SIZE]; /* Holds data to be transmitted */
+    uint16_t               tx_stage_length;      /* Number of bytes in tx_stage_buffer */
+    const uint8_t*         tx_ptr;               /* Current position in tx_stage_buffer during transfer */
+    uint16_t               tx_remaining;         /* Bytes left to transmit */
+    volatile bool          dma_tx_transfer_complete; /* Flag set when DMA TX finishes (for master TX detection) */
 
-    uint8_t  dma_rx_linear_buffer[HW_I2C_RX_BUFFER_SIZE];
-    uint16_t dma_rx_expected_length;
+    /* Receive path: DMA linear buffer (used by DMA transfers on I2C2) */
+    uint8_t                dma_rx_linear_buffer[HW_I2C_RX_BUFFER_SIZE]; /* Linear buffer filled by DMA */
+    uint16_t               dma_rx_expected_length; /* Expected DMA receive count */
 
-    uint8_t           rx_ring_buffer[HW_I2C_RX_BUFFER_SIZE];
-    volatile uint16_t rx_head;
-    volatile uint16_t rx_tail;
+    /* Receive path: ring buffer (used by interrupt-driven receives and exported to caller) */
+    uint8_t                rx_ring_buffer[HW_I2C_RX_BUFFER_SIZE]; /* Ring buffer for received data */
+    volatile uint16_t      rx_head;              /* Write pointer (advanced by RX ISR/DMA) */
+    volatile uint16_t      rx_tail;              /* Read pointer (advanced by consumer) */
 } HWI2CChannelState_T;
 
 /**-----------------------------------------------------------------------------
