@@ -1290,16 +1290,21 @@ inline bool HW_I2C_Consume_Received( HWI2CChannel_T channel, uint16_t bytes_to_c
 inline void HW_I2C_Service_Event_IRQ( HWI2CChannel_T channel )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+
+    /* If channel not configured, nothing to do. */
     if ( !state->configured )
     {
         return;
     }
+
+    /* FMPI2C1 has a different register interface; route to dedicated handler. */
     if ( channel == HW_I2C_CHANNEL_FMPI2C1 )
     {
         HW_I2C_Service_Event_FMPI2C1( state );
         return;
     }
 
+    /* External channels (I2C1, I2C2) route to their dedicated handler. */
     I2C_TypeDef* i2c_instance = HWI2CChannel_To_Instance( channel );
     if ( i2c_instance == NULL )
     {
@@ -1319,24 +1324,31 @@ inline void HW_I2C_Service_Event_IRQ( HWI2CChannel_T channel )
  */
 inline void HW_I2C_Service_Error_IRQ( HWI2CChannel_T channel )
 {
+    /* FMPI2C1 uses a different clear mechanism; clear all error flags at once. */
     if ( channel == HW_I2C_CHANNEL_FMPI2C1 )
     {
         hw_i2c_channel_state[channel].transfer_in_progress = false;
         hw_i2c_channel_state[channel].transfer_kind        = HW_I2C_TRANSFER_KIND_IDLE;
+        /* Clear bus error, arbitration loss, overflow, and timeout. */
         FMPI2C1->ICR =
             FMPI2C_ICR_BERRCF | FMPI2C_ICR_ARLOCF | FMPI2C_ICR_OVRCF | FMPI2C_ICR_TIMOUTCF;
         return;
     }
 
+    /* External channels (I2C1, I2C2). */
     I2C_TypeDef* i2c_instance = HWI2CChannel_To_Instance( channel );
     if ( i2c_instance == NULL )
     {
         return;
     }
 
-    if ( ( i2c_instance->SR1 & ( I2C_SR1_BERR | I2C_SR1_ARLO | I2C_SR1_AF | I2C_SR1_OVR ) ) != 0U )
+    /* Check if any error flags are set in SR1. */
+    if ( ( i2c_instance->SR1 & ( I2C_SR1_BERR | I2C_SR1_ARLO | I2C_SR1_AF | I2C_SR1_OVR ) )
+         != 0U )
     {
+        /* Clear error flags by writing 0 to the appropriate bits. */
         i2c_instance->SR1 &= ~( I2C_SR1_BERR | I2C_SR1_ARLO | I2C_SR1_AF | I2C_SR1_OVR );
+        /* Abort ongoing transfer and cleanup. */
         HW_I2C_Abort_Transfer( channel, i2c_instance );
     }
 }
@@ -1352,10 +1364,14 @@ inline void HW_I2C_Service_Error_IRQ( HWI2CChannel_T channel )
 inline void HW_I2C_Service_DMA_Rx_IRQ( HWI2CChannel_T channel )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+
+    /* If channel not configured, nothing to do. */
     if ( !state->configured )
     {
         return;
     }
+
+    /* Get the DMA stream and I2C peripheral for this channel. */
     DMA_Stream_TypeDef* rx_stream    = HWI2CChannel_To_DMA_Rx_Stream( channel );
     I2C_TypeDef*        i2c_instance = HWI2CChannel_To_Instance( channel );
     if ( ( rx_stream == NULL ) || ( i2c_instance == NULL ) )
@@ -1363,23 +1379,29 @@ inline void HW_I2C_Service_DMA_Rx_IRQ( HWI2CChannel_T channel )
         return;
     }
 
+    /* Check for DMA transfer error (e.g., FIFO error). */
     if ( HW_I2C_DMA_Stream_Has_TE( rx_stream ) )
     {
         HW_I2C_DMA_Stream_Clear_Flags( rx_stream );
+        /* Error detected; abort the transfer and cleanup. */
         HW_I2C_Abort_Transfer( channel, i2c_instance );
         return;
     }
 
+    /* Check for DMA transfer completion. */
     if ( HW_I2C_DMA_Stream_Has_TC( rx_stream ) )
     {
         HW_I2C_DMA_Stream_Clear_Flags( rx_stream );
 
+        /* Copy all received bytes from the linear DMA buffer into the ring buffer
+           so they can be retrieved via HW_I2C_Peek_Received/Consume_Received. */
         for ( uint16_t idx = 0U; idx < state->dma_rx_expected_length; ++idx )
         {
             HW_I2C_Ring_Push_Byte( state, state->dma_rx_linear_buffer[idx] );
         }
 
         state->dma_rx_expected_length = 0U;
+        /* Transfer complete; cleanup and release I2C resources. */
         HW_I2C_Finish_Transfer( channel, i2c_instance );
     }
 }
@@ -1395,10 +1417,14 @@ inline void HW_I2C_Service_DMA_Rx_IRQ( HWI2CChannel_T channel )
 inline void HW_I2C_Service_DMA_Tx_IRQ( HWI2CChannel_T channel )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+
+    /* If channel not configured, nothing to do. */
     if ( !state->configured )
     {
         return;
     }
+
+    /* Get the DMA stream and I2C peripheral for this channel. */
     DMA_Stream_TypeDef* tx_stream    = HWI2CChannel_To_DMA_Tx_Stream( channel );
     I2C_TypeDef*        i2c_instance = HWI2CChannel_To_Instance( channel );
     if ( ( tx_stream == NULL ) || ( i2c_instance == NULL ) )
@@ -1406,18 +1432,23 @@ inline void HW_I2C_Service_DMA_Tx_IRQ( HWI2CChannel_T channel )
         return;
     }
 
+    /* Check for DMA transfer error (e.g., FIFO error). */
     if ( HW_I2C_DMA_Stream_Has_TE( tx_stream ) )
     {
         HW_I2C_DMA_Stream_Clear_Flags( tx_stream );
+        /* Error detected; abort the transfer and cleanup. */
         HW_I2C_Abort_Transfer( channel, i2c_instance );
         return;
     }
 
+    /* Check for DMA transfer completion. */
     if ( HW_I2C_DMA_Stream_Has_TC( tx_stream ) )
     {
         HW_I2C_DMA_Stream_Clear_Flags( tx_stream );
         state->tx_remaining = 0U;
 
+        /* For master transmit, mark DMA complete and check if the I2C peripheral
+           has finished (BTF = Byte Transfer Finished). If so, finish the transfer. */
         if ( state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_TX )
         {
             state->dma_tx_transfer_complete = true;
@@ -1426,10 +1457,13 @@ inline void HW_I2C_Service_DMA_Tx_IRQ( HWI2CChannel_T channel )
                 HW_I2C_Finish_Transfer( channel, i2c_instance );
             }
         }
+        /* For slave transmit, mark DMA complete but don't finish yet; wait for
+           the bus transaction to complete naturally. */
         else if ( state->transfer_kind == HW_I2C_TRANSFER_KIND_SLAVE_TX )
         {
             state->dma_tx_transfer_complete = true;
         }
+        /* For other transfer types (e.g., slave receive), finish immediately. */
         else
         {
             HW_I2C_Finish_Transfer( channel, i2c_instance );
