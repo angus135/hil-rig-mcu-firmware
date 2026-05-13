@@ -63,11 +63,10 @@ It is a coordination layer between higher-level logic and `hw_i2c`.
 
 ## Configuration model
 
-`EXEC_I2C_Configuration(...)` configures all three channels in one call.
+`EXEC_I2C_Configuration(...)` configures the two external channels in one call.
 
 - External `I2C1`: configurable from higher layer.
 - External `I2C2`: configurable from higher layer.
-- Internal `FMPI2C1`: configured through dedicated low-level internal configuration call.
 
 For each external channel, higher layer provides:
 
@@ -107,7 +106,7 @@ Receive extraction:
 ## Typical usage sequence
 
 1. Build two `EXECI2CChannelConfig_T` objects for external channels.
-2. Call `EXEC_I2C_Configuration(&i2c1_cfg, &i2c2_cfg, internal_fmpi2c1_addr)` once at startup.
+2. Call `EXEC_I2C_Configuration(&i2c1_cfg, &i2c2_cfg)` once at startup.
 3. At runtime:
 
 - Use `EXEC_I2C_Master_Transmit_External`/`EXEC_I2C_Slave_Transmit_External` for transmit.
