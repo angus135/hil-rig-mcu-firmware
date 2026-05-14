@@ -83,15 +83,16 @@ static bool HW_SPI_Config_Uses_Final_Drain_Timer( SPIBaudRate_T baud_rate )
 }
 
 static void HW_SPI_Config_Precompute_Hot_Fields( SPIPeripheralState_T* peripheral_state,
-                                                 SPIChannel_T       peripheral,
+                                                 SPIChannel_T          peripheral,
                                                  HWSPIConfig_T         configuration )
 {
     uint16_t frame_bits = 8U;
-
+    // Setting basic channel configurations
     peripheral_state->logical_peripheral = peripheral;
     peripheral_state->is_master          = configuration.spi_mode == SPI_MASTER_MODE;
     peripheral_state->frame_size_bytes   = ( configuration.data_size == SPI_SIZE_16_BIT ) ? 2U : 1U;
     peripheral_state->frame_shift        = ( configuration.data_size == SPI_SIZE_16_BIT ) ? 1U : 0U;
+    // Based on the baud rate determines whether to use a timer to wait after dma complete for tx
     peripheral_state->tx_uses_final_drain_timer =
         HW_SPI_Config_Uses_Final_Drain_Timer( configuration.baud_rate );
     switch ( peripheral )
@@ -113,6 +114,7 @@ static void HW_SPI_Config_Precompute_Hot_Fields( SPIPeripheralState_T* periphera
         frame_bits = 16U;
     }
 
+    // Determines number of cycles to check
     peripheral_state->tx_final_drain_cycles =
         ( uint16_t )( ( frame_bits * HW_SPI_Config_Get_Cycles_Per_SCK( configuration.baud_rate ) )
                       + SPI_FINAL_DRAIN_GUARD_CYCLES );
@@ -310,50 +312,24 @@ bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configurat
 {
     SPI_HandleTypeDef*    hspi             = NULL;
     SPIPeripheralState_T* peripheral_state = NULL;
-    // Select the HAL handle, SPI instance, DMA streams, and state block for the
-    // requested logical SPI channel. The rest of the function can then configure
-    // the selected HAL handle generically.
+    // Configuring and making sure HAL is configured correctly
     switch ( peripheral )
     {
         case SPI_CHANNEL_0:
-            hspi             = &SPI_CHANNEL_0_HANDLE;
-            peripheral_state = channel_0_state;
-            hspi->Instance   = SPI_CHANNEL_0_INSTANCE;
-            memcpy( &( channel_0_state->config ), &configuration, sizeof( HWSPIConfig_T ) );
-            channel_0_state->rx_dma         = SPI_CHANNEL_0_RX_DMA;
-            channel_0_state->rx_dma_stream  = SPI_CHANNEL_0_RX_DMA_STREAM;
-            channel_0_state->tx_dma         = SPI_CHANNEL_0_TX_DMA;
-            channel_0_state->tx_dma_stream  = SPI_CHANNEL_0_TX_DMA_STREAM;
-            channel_0_state->spi_peripheral = SPI_CHANNEL_0_INSTANCE;
-            channel_0_state->tx_dma_irqn    = SPI_CHANNEL_0_TX_DMA_IRQN;
+            hspi           = &SPI_CHANNEL_0_HANDLE;
+            hspi->Instance = SPI_CHANNEL_0_INSTANCE;
             break;
         case SPI_CHANNEL_1:
-            hspi             = &SPI_CHANNEL_1_HANDLE;
-            peripheral_state = channel_1_state;
-            hspi->Instance   = SPI_CHANNEL_1_INSTANCE;
-            memcpy( &( channel_1_state->config ), &configuration, sizeof( HWSPIConfig_T ) );
-            channel_1_state->rx_dma         = SPI_CHANNEL_1_RX_DMA;
-            channel_1_state->rx_dma_stream  = SPI_CHANNEL_1_RX_DMA_STREAM;
-            channel_1_state->tx_dma         = SPI_CHANNEL_1_TX_DMA;
-            channel_1_state->tx_dma_stream  = SPI_CHANNEL_1_TX_DMA_STREAM;
-            channel_1_state->spi_peripheral = SPI_CHANNEL_1_INSTANCE;
-            channel_1_state->tx_dma_irqn    = SPI_CHANNEL_1_TX_DMA_IRQN;
+            hspi           = &SPI_CHANNEL_1_HANDLE;
+            hspi->Instance = SPI_CHANNEL_1_INSTANCE;
             break;
         case SPI_DAC:
-            hspi             = &SPI_DAC_HANDLE;
-            peripheral_state = dac_state;
-            hspi->Instance   = SPI_DAC_INSTANCE;
-            memcpy( &( dac_state->config ), &configuration, sizeof( HWSPIConfig_T ) );
-            dac_state->tx_dma         = SPI_DAC_TX_DMA;
-            dac_state->tx_dma_stream  = SPI_DAC_TX_DMA_STREAM;
-            dac_state->spi_peripheral = SPI_DAC_INSTANCE;
-            dac_state->tx_dma_irqn    = SPI_DAC_TX_DMA_IRQN;
+            hspi           = &SPI_DAC_HANDLE;
+            hspi->Instance = SPI_DAC_INSTANCE;
             break;
         default:
             return false;
     }
-
-    HW_SPI_Config_Precompute_Hot_Fields( peripheral_state, peripheral, configuration );
 
     // Mode + chip select logic
     switch ( configuration.spi_mode )
@@ -373,9 +349,6 @@ bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configurat
         default:
             return false;
     }
-
-    HW_SPI_TX_Configure_Operations( peripheral_state );
-    HW_SPI_TX_Reset_State( peripheral_state );
 
     // Direction (always 2 lines (MISO and MOSI))
     hspi->Init.Direction = SPI_DIRECTION_2LINES;
@@ -470,6 +443,47 @@ bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configurat
     {
         return false;
     }
+
+    // Select the SPI instance, DMA streams, and state block for the
+    // requested logical SPI channel. The rest of the function can then configure state
+    switch ( peripheral )
+    {
+        case SPI_CHANNEL_0:
+            peripheral_state = channel_0_state;
+            memcpy( &( channel_0_state->config ), &configuration, sizeof( HWSPIConfig_T ) );
+            channel_0_state->rx_dma         = SPI_CHANNEL_0_RX_DMA;
+            channel_0_state->rx_dma_stream  = SPI_CHANNEL_0_RX_DMA_STREAM;
+            channel_0_state->tx_dma         = SPI_CHANNEL_0_TX_DMA;
+            channel_0_state->tx_dma_stream  = SPI_CHANNEL_0_TX_DMA_STREAM;
+            channel_0_state->spi_peripheral = SPI_CHANNEL_0_INSTANCE;
+            channel_0_state->tx_dma_irqn    = SPI_CHANNEL_0_TX_DMA_IRQN;
+            break;
+        case SPI_CHANNEL_1:
+            peripheral_state = channel_1_state;
+            memcpy( &( channel_1_state->config ), &configuration, sizeof( HWSPIConfig_T ) );
+            channel_1_state->rx_dma         = SPI_CHANNEL_1_RX_DMA;
+            channel_1_state->rx_dma_stream  = SPI_CHANNEL_1_RX_DMA_STREAM;
+            channel_1_state->tx_dma         = SPI_CHANNEL_1_TX_DMA;
+            channel_1_state->tx_dma_stream  = SPI_CHANNEL_1_TX_DMA_STREAM;
+            channel_1_state->spi_peripheral = SPI_CHANNEL_1_INSTANCE;
+            channel_1_state->tx_dma_irqn    = SPI_CHANNEL_1_TX_DMA_IRQN;
+            break;
+        case SPI_DAC:
+            peripheral_state = dac_state;
+            memcpy( &( dac_state->config ), &configuration, sizeof( HWSPIConfig_T ) );
+            dac_state->tx_dma         = SPI_DAC_TX_DMA;
+            dac_state->tx_dma_stream  = SPI_DAC_TX_DMA_STREAM;
+            dac_state->spi_peripheral = SPI_DAC_INSTANCE;
+            dac_state->tx_dma_irqn    = SPI_DAC_TX_DMA_IRQN;
+            break;
+        default:
+            return false;
+    }
+
+    HW_SPI_Config_Precompute_Hot_Fields( peripheral_state, peripheral, configuration );
+
+    HW_SPI_TX_Configure_Operations( peripheral_state );
+    HW_SPI_TX_Reset_State( peripheral_state );
 
     // Ensure DMA memory/peripheral data widths match the configured SPI frame size.
     // This is essential when switching between 8-bit and 16-bit operation.
