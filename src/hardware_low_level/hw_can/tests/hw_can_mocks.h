@@ -29,69 +29,69 @@ extern "C"
  * Public Defines / Macros
  *----------------------------------------------------------------------------*/
 
-#define HAL_OK     (0)
-#define HAL_ERROR  (1)
+#define HAL_OK ( 0 )
+#define HAL_ERROR ( 1 )
 
-#define ENABLE     (1U)
-#define DISABLE    (0U)
+#define ENABLE ( 1U )
+#define DISABLE ( 0U )
 
-#define CAN_PACKET_SIZE (8U)
+#define CAN_PACKET_SIZE ( 8U )
 
 /* CAN modes */
-#define CAN_MODE_NORMAL    (0U)
-#define CAN_MODE_LOOPBACK  (1U)
+#define CAN_MODE_NORMAL ( 0U )
+#define CAN_MODE_LOOPBACK ( 1U )
 
 /* SJW */
-#define CAN_SJW_1TQ        (1U)
+#define CAN_SJW_1TQ ( 1U )
 
 /* BS1 */
-#define CAN_BS1_1TQ   (1U)
-#define CAN_BS1_2TQ   (2U)
-#define CAN_BS1_3TQ   (3U)
-#define CAN_BS1_4TQ   (4U)
-#define CAN_BS1_5TQ   (5U)
-#define CAN_BS1_6TQ   (6U)
-#define CAN_BS1_7TQ   (7U)
-#define CAN_BS1_8TQ   (8U)
-#define CAN_BS1_9TQ   (9U)
-#define CAN_BS1_10TQ  (10U)
-#define CAN_BS1_11TQ  (11U)
-#define CAN_BS1_12TQ  (12U)
-#define CAN_BS1_13TQ  (13U)
-#define CAN_BS1_14TQ  (14U)
-#define CAN_BS1_15TQ  (15U)
-#define CAN_BS1_16TQ  (16U)
+#define CAN_BS1_1TQ ( 1U )
+#define CAN_BS1_2TQ ( 2U )
+#define CAN_BS1_3TQ ( 3U )
+#define CAN_BS1_4TQ ( 4U )
+#define CAN_BS1_5TQ ( 5U )
+#define CAN_BS1_6TQ ( 6U )
+#define CAN_BS1_7TQ ( 7U )
+#define CAN_BS1_8TQ ( 8U )
+#define CAN_BS1_9TQ ( 9U )
+#define CAN_BS1_10TQ ( 10U )
+#define CAN_BS1_11TQ ( 11U )
+#define CAN_BS1_12TQ ( 12U )
+#define CAN_BS1_13TQ ( 13U )
+#define CAN_BS1_14TQ ( 14U )
+#define CAN_BS1_15TQ ( 15U )
+#define CAN_BS1_16TQ ( 16U )
 
 /* BS2 */
-#define CAN_BS2_1TQ   (1U)
-#define CAN_BS2_2TQ   (2U)
-#define CAN_BS2_3TQ   (3U)
-#define CAN_BS2_4TQ   (4U)
-#define CAN_BS2_5TQ   (5U)
-#define CAN_BS2_6TQ   (6U)
-#define CAN_BS2_7TQ   (7U)
-#define CAN_BS2_8TQ   (8U)
+#define CAN_BS2_1TQ ( 1U )
+#define CAN_BS2_2TQ ( 2U )
+#define CAN_BS2_3TQ ( 3U )
+#define CAN_BS2_4TQ ( 4U )
+#define CAN_BS2_5TQ ( 5U )
+#define CAN_BS2_6TQ ( 6U )
+#define CAN_BS2_7TQ ( 7U )
+#define CAN_BS2_8TQ ( 8U )
 
 /* Filters */
-#define CAN_FILTERMODE_IDMASK   (0U)
-#define CAN_FILTERSCALE_32BIT   (0U)
-#define CAN_FILTER_FIFO0        (0U)
+#define CAN_FILTERMODE_IDMASK ( 0U )
+#define CAN_FILTERSCALE_32BIT ( 0U )
+#define CAN_FILTER_FIFO0 ( 0U )
 
 /* Notifications */
-#define CAN_IT_RX_FIFO0_MSG_PENDING   (1U << 0)
-#define CAN_IT_TX_MAILBOX_EMPTY       (1U << 1)
+#define CAN_IT_RX_FIFO0_MSG_PENDING ( 1U << 0 )
+#define CAN_IT_TX_MAILBOX_EMPTY ( 1U << 1 )
 
 /* Register bits */
-#define CAN_TSR_TME0      (1U << 26)
-#define CAN_TI0R_TXRQ     (1U << 0)
-#define CAN_RF0R_FMP0     (0x3U)
-#define CAN_RF0R_RFOM0    (1U << 5)
-#define CAN_IER_TMEIE     (1U << 0)
-#define CAN_TSR_RQCP0     (1U << 0)
+#define CAN_TSR_TME0 ( 1U << 26 )
+#define CAN_TI0R_TXRQ ( 1U << 0 )
+#define CAN_RF0R_FMP0 ( 0x3U )
+#define CAN_RF0R_RFOM0 ( 1U << 5 )
+#define CAN_IER_TMEIE ( 1U << 0 )
+#define CAN_TSR_RQCP0 ( 1U << 0 )
 
 /* Helpers */
-#define SET_BIT(REG, BIT)    ((REG) |= (BIT))
-#define CLEAR_BIT(REG, BIT)  ((REG) &= ~(BIT))
+#define SET_BIT( REG, BIT ) ( ( REG ) |= ( BIT ) )
+#define CLEAR_BIT( REG, BIT ) ( ( REG ) &= ~( BIT ) )
 
 /* RCC macros */
 #define __HAL_RCC_CAN1_FORCE_RESET()
@@ -153,7 +153,7 @@ typedef struct
 
 typedef struct
 {
-    CAN_TypeDef* Instance;
+    CAN_TypeDef*    Instance;
     CAN_InitTypeDef Init;
 
 } CAN_HandleTypeDef;
@@ -185,24 +185,20 @@ extern CAN_HandleTypeDef hcan2;
 extern CAN_TypeDef mock_can1_regs;
 extern CAN_TypeDef mock_can2_regs;
 
-#define CAN1 (&mock_can1_regs)
-#define CAN2 (&mock_can2_regs)
+#define CAN1 ( &mock_can1_regs )
+#define CAN2 ( &mock_can2_regs )
 
 /**-----------------------------------------------------------------------------
  * Public Function Prototypes
  *----------------------------------------------------------------------------*/
 
-HAL_StatusTypeDef HAL_CAN_Init(CAN_HandleTypeDef* hcan);
+HAL_StatusTypeDef HAL_CAN_Init( CAN_HandleTypeDef* hcan );
 
-HAL_StatusTypeDef HAL_CAN_ConfigFilter(
-    CAN_HandleTypeDef* hcan,
-    CAN_FilterTypeDef* filter);
+HAL_StatusTypeDef HAL_CAN_ConfigFilter( CAN_HandleTypeDef* hcan, CAN_FilterTypeDef* filter );
 
-HAL_StatusTypeDef HAL_CAN_Start(CAN_HandleTypeDef* hcan);
+HAL_StatusTypeDef HAL_CAN_Start( CAN_HandleTypeDef* hcan );
 
-HAL_StatusTypeDef HAL_CAN_ActivateNotification(
-    CAN_HandleTypeDef* hcan,
-    uint32_t notifications);
+HAL_StatusTypeDef HAL_CAN_ActivateNotification( CAN_HandleTypeDef* hcan, uint32_t notifications );
 
 // NOLINTEND
 
