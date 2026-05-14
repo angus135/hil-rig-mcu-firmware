@@ -22,6 +22,8 @@
 #include "stm32f4xx_ll_tim.h"
 #include "tim.h"
 #include "stm32f4xx_hal_tim.h"
+#else
+#include "tests/hw_pwm_gen_mocks.h"
 #endif
 
 #include "hw_pwm_gen.h"
@@ -68,8 +70,7 @@
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-#ifndef TEST_BUILD
-static inline void HW_PWM_GEN_set_pwm_direct( uint16_t ccr_num, uint16_t arr, uint16_t ccr,
+void HW_PWM_GEN_set_pwm_direct( uint16_t ccr_num, uint16_t arr, uint16_t ccr,
                                               uint16_t psc, TIM_TypeDef* tim )
 {
     if ( ccr_num == 1 )
@@ -100,9 +101,7 @@ static inline void HW_PWM_GEN_set_pwm_direct( uint16_t ccr_num, uint16_t arr, ui
     LL_TIM_SetPrescaler( tim, psc );
 
     tim->EGR = TIM_EGR_UG;
-    return;
 }
-#endif
 
 /**-----------------------------------------------------------------------------
  *  Configure Stage Public Function Definitions
@@ -120,8 +119,6 @@ static inline void HW_PWM_GEN_set_pwm_direct( uint16_t ccr_num, uint16_t arr, ui
  */
 void HW_PWM_GEN_config( int channel, int volt_lvl )
 {
-#ifndef TEST_BUILD
-
     // Call to output expander to set voltage levels
 
     if ( channel == 1 )
@@ -163,9 +160,7 @@ void HW_PWM_GEN_config( int channel, int volt_lvl )
             HAL_TIM_PWM_Start( &htim12, TIM_CHANNEL_2 );
         }
     }
-#endif
     ( void )channel;
-    return;
 }
 
 /**
@@ -266,14 +261,9 @@ uint16_t HW_PWM_GEN_compute_ccr( uint16_t duty_pm, uint16_t arr )
  */
 inline void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
-#ifndef TEST_BUILD
     HW_PWM_GEN_set_pwm_direct(
         2, arr, ccr, psc,
         htim12.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
-#endif
-    ( void )arr;
-    ( void )ccr;
-    ( void )psc;
 }
 
 /**
@@ -288,12 +278,7 @@ inline void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr, uint16_t psc
  */
 inline void HW_PWM_GEN_set_pwm2_direct( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
-#ifndef TEST_BUILD
     HW_PWM_GEN_set_pwm_direct(
         1, arr, ccr, psc,
         htim13.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
-#endif
-    ( void )arr;
-    ( void )ccr;
-    ( void )psc;
 }
