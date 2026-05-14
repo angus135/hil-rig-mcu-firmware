@@ -945,23 +945,6 @@ HWI2CStatus_T HW_I2C_Configure_Channel( HWI2CChannel_T              channel,
         LL_I2C_AcknowledgeNextData( i2c_instance, LL_I2C_NACK );
     }
 
-    if ( config->tx_transfer_path == HW_I2C_TRANSFER_DMA
-         || config->rx_transfer_path == HW_I2C_TRANSFER_DMA )
-    {
-        if ( config->rx_transfer_path == HW_I2C_TRANSFER_DMA )
-        {
-            LL_I2C_EnableDMAReq_RX( i2c_instance );
-        }
-        else
-        {
-            LL_I2C_EnableDMAReq_TX( i2c_instance );
-        }
-    }
-    else
-    {
-        HW_I2C_Disable_DMA_Request( i2c_instance );
-    }
-
     HW_I2C_Disable_All_Runtime_Irq_Bits( i2c_instance );
 
     return HW_I2C_STATUS_OK;
