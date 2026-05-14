@@ -23,6 +23,8 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
 #ifndef TEST_BUILD
 #include "can.h"
 #include "stm32f4xx_hal_can.h"
+#else
+#include "tests/hw_can_mocks.h"
 #endif
 #include "hw_can.h"
 #include <stdint.h>
@@ -192,7 +194,7 @@ static inline uint16_t HW_CAN_Buffer_Read( volatile uint8_t   buffer[][CAN_PACKE
     return count;
 }
 
-#ifndef TEST_BUILD
+
 /**
  * @brief transmits the txData (8 bytes) over the hcan CAN channel
  *
@@ -268,7 +270,6 @@ int HW_CAN_Receive( CAN_HandleTypeDef* hcan, uint8_t* rxData )
     return 0;
 }
 
-#endif
 
 /**
  * @brief reads one entrie from the buffer
@@ -309,7 +310,7 @@ uint16_t HW_CAN_Buffer_Pop( volatile uint8_t buffer[][CAN_PACKET_SIZE], volatile
  *------------------------------------------------------------------------------
  */
 
-#ifndef TEST_BUILD
+
 /**
  * @brief Applies the CAN timing peripherals, part of CAN configuration
  *
@@ -507,7 +508,6 @@ int HW_CAN_Configure( CAN_HandleTypeDef* hcan, uint32_t bitrate )
     return 0;
 }
 
-#endif
 
 /**-----------------------------------------------------------------------------
  *  Public Configure Function Definitions
@@ -553,8 +553,6 @@ CanProperties_T HW_CAN_Compute_Properties( uint32_t bitrate, uint32_t total_TQ,
     }
     return ( CanProperties_T ){ bs1, bs2, psc, timer_hz };
 }
-
-#ifndef TEST_BUILD
 
 /**
  * @brief Configures the peripherals of CAN channel 1
@@ -618,7 +616,6 @@ int HW_CAN_Configure2( uint32_t bitrate )
     return HW_CAN_Configure( &hcan2, bitrate );
 }
 
-#endif
 
 /**-----------------------------------------------------------------------------
  *  Public Execution Function Definitions
@@ -634,11 +631,7 @@ int HW_CAN_Configure2( uint32_t bitrate )
  */
 int HW_CAN_Transmit1( uint8_t* txData )
 {
-#ifndef TEST_BUILD
     return HW_CAN_Transmit( &hcan1, txData );
-#else
-    ( void )txData;
-#endif
 }
 
 /**
@@ -650,11 +643,7 @@ int HW_CAN_Transmit1( uint8_t* txData )
  */
 int HW_CAN_Recieve1( uint8_t* rxData )
 {
-#ifndef TEST_BUILD
     return HW_CAN_Receive( &hcan1, rxData );
-#else
-    ( void )rxData;
-#endif
 }
 
 /**
@@ -666,11 +655,7 @@ int HW_CAN_Recieve1( uint8_t* rxData )
  */
 int HW_CAN_Transmit2( uint8_t* txData )
 {
-#ifndef TEST_BUILD
     return HW_CAN_Transmit( &hcan2, txData );
-#else
-    ( void )txData;
-#endif
 }
 
 /**
@@ -682,11 +667,7 @@ int HW_CAN_Transmit2( uint8_t* txData )
  */
 int HW_CAN_Recieve2( uint8_t* rxData )
 {
-#ifndef TEST_BUILD
     return HW_CAN_Receive( &hcan2, rxData );
-#else
-    ( void )rxData;
-#endif
 }
 
 /**
@@ -809,10 +790,8 @@ uint16_t HW_CAN_Tx_Buffer_Pop2( uint8_t dest[CAN_PACKET_SIZE] )
  */
 void HW_CAN_Tx_Trigger1( void )
 {
-#ifndef TEST_BUILD
     SET_BIT( CAN1->IER, CAN_IER_TMEIE );
     HW_CAN_CH1_TX_IRQ_HANDLER();  // ISR doesn't trigger automatically
-#endif
 }
 
 /**
@@ -823,10 +802,8 @@ void HW_CAN_Tx_Trigger1( void )
  */
 void HW_CAN_Tx_Trigger2( void )
 {
-#ifndef TEST_BUILD
     SET_BIT( CAN2->IER, CAN_IER_TMEIE );
     HW_CAN_CH2_TX_IRQ_HANDLER();  // ISR doesn't trigger automatically
-#endif
 }
 
 /**
@@ -839,7 +816,6 @@ void HW_CAN_Tx_Trigger2( void )
 void HW_CAN_CH1_TX_IRQ_HANDLER( void )
 {
     uint8_t packet[CAN_PACKET_SIZE];
-#ifndef TEST_BUILD
     CAN1->TSR |= CAN_TSR_RQCP0;
     if ( HW_CAN_Tx_Buffer_Pop1( packet ) == 0 )
     {
@@ -853,7 +829,6 @@ void HW_CAN_CH1_TX_IRQ_HANDLER( void )
          */
         CLEAR_BIT( CAN1->IER, CAN_IER_TMEIE );
     }
-#endif
 }
 
 /**
@@ -865,14 +840,12 @@ void HW_CAN_CH1_TX_IRQ_HANDLER( void )
  */
 void HW_CAN_CH1_RX_IRQ_HANDLER( void )
 {
-#ifndef TEST_BUILD
     uint8_t packet[1][CAN_PACKET_SIZE];
 
     if ( HW_CAN_Receive( &hcan1, packet[0] ) == 0 )
     {
         HW_CAN_Rx_Buffer_Write1( packet, 1 );
     }
-#endif
 }
 
 /**
@@ -884,7 +857,6 @@ void HW_CAN_CH1_RX_IRQ_HANDLER( void )
  */
 void HW_CAN_CH2_TX_IRQ_HANDLER( void )
 {
-#ifndef TEST_BUILD
     CAN2->TSR |= CAN_TSR_RQCP0;
     uint8_t packet[CAN_PACKET_SIZE];
 
@@ -900,7 +872,6 @@ void HW_CAN_CH2_TX_IRQ_HANDLER( void )
          */
         CLEAR_BIT( CAN2->IER, CAN_IER_TMEIE );
     }
-#endif
 }
 
 /**
@@ -912,12 +883,10 @@ void HW_CAN_CH2_TX_IRQ_HANDLER( void )
  */
 void HW_CAN_CH2_RX_IRQ_HANDLER( void )
 {
-#ifndef TEST_BUILD
     uint8_t packet[1][CAN_PACKET_SIZE];
 
     if ( HW_CAN_Receive( &hcan2, packet[0] ) == 0 )
     {
         HW_CAN_Rx_Buffer_Write2( packet, 1 );
     }
-#endif
 }
