@@ -52,8 +52,8 @@ static constexpr uint32_t TEST_SMALL_RX_BUFFER_SIZE = 4U;
 class MockHWSPI
 {
 public:
-    MOCK_METHOD( bool, ConfigureChannel,
-                 ( SPIChannel_T peripheral, HWSPIConfig_T configuration ), () );
+    MOCK_METHOD( bool, ConfigureChannel, ( SPIChannel_T peripheral, HWSPIConfig_T configuration ),
+                 () );
 
     MOCK_METHOD( void, StartChannel, ( SPIChannel_T peripheral ), () );
 
@@ -312,8 +312,8 @@ TEST_F( ExecSPITest, Transmit_MultiplePackets_LoadsEachPacketThenTriggersOnce )
         InSequence sequence;
 
         EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, &tx_data[0], packet_sizes[0] ) )
-            .WillOnce( Invoke(
-                [&]( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ) {
+            .WillOnce(
+                Invoke( [&]( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ) {
                     EXPECT_EQ( peripheral, SPI_CHANNEL_0 );
                     EXPECT_EQ( size_bytes, 2U );
                     EXPECT_EQ( 0, std::memcmp( data, &tx_data[0], 2U ) );
@@ -321,8 +321,8 @@ TEST_F( ExecSPITest, Transmit_MultiplePackets_LoadsEachPacketThenTriggersOnce )
                 } ) );
 
         EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, &tx_data[2], packet_sizes[1] ) )
-            .WillOnce( Invoke(
-                [&]( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ) {
+            .WillOnce(
+                Invoke( [&]( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ) {
                     EXPECT_EQ( peripheral, SPI_CHANNEL_0 );
                     EXPECT_EQ( size_bytes, 3U );
                     EXPECT_EQ( 0, std::memcmp( data, &tx_data[2], 3U ) );
@@ -330,8 +330,8 @@ TEST_F( ExecSPITest, Transmit_MultiplePackets_LoadsEachPacketThenTriggersOnce )
                 } ) );
 
         EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, &tx_data[5], packet_sizes[2] ) )
-            .WillOnce( Invoke(
-                [&]( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ) {
+            .WillOnce(
+                Invoke( [&]( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ) {
                     EXPECT_EQ( peripheral, SPI_CHANNEL_0 );
                     EXPECT_EQ( size_bytes, 1U );
                     EXPECT_EQ( 0, std::memcmp( data, &tx_data[5], 1U ) );

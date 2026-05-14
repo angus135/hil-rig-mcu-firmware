@@ -207,13 +207,13 @@ struct SPIPeripheralState_T
 {
     HWSPIConfig_T config;  ///< Last configuration applied to this logical channel.
 
-    SPIChannel_T logical_peripheral;  ///< Logical peripheral owning this state block.
-    bool            is_master;           ///< Precomputed master/slave mode flag for hot paths.
-    uint8_t         frame_size_bytes;    ///< Precomputed SPI frame size: 1 byte or 2 bytes.
-    uint8_t         frame_shift;         ///< 0 for 8-bit frames; 1 for 16-bit frames.
-    bool            tx_uses_final_drain_timer;  ///< Precomputed final-drain strategy.
-    uint16_t        tx_final_drain_cycles;      ///< Fast-baud inline final-drain wait count.
-    Timer_T         tx_final_drain_timer;       ///< One-shot timer used for slow-baud final drain.
+    SPIChannel_T logical_peripheral;         ///< Logical peripheral owning this state block.
+    bool         is_master;                  ///< Precomputed master/slave mode flag for hot paths.
+    uint8_t      frame_size_bytes;           ///< Precomputed SPI frame size: 1 byte or 2 bytes.
+    uint8_t      frame_shift;                ///< 0 for 8-bit frames; 1 for 16-bit frames.
+    bool         tx_uses_final_drain_timer;  ///< Precomputed final-drain strategy.
+    uint16_t     tx_final_drain_cycles;      ///< Fast-baud inline final-drain wait count.
+    Timer_T      tx_final_drain_timer;       ///< One-shot timer used for slow-baud final drain.
 
     uint8_t rx_buffer[RX_BUFFER_SIZE_BYTES]
         __attribute__( ( aligned( 2 ) ) );  ///< DMA-backed circular RX buffer.
