@@ -122,14 +122,14 @@ static EXECSPIState_T spi_dac_state       = { 0 };
  *     Pointer to the execution-level state structure for the requested channel.
  *     NULL if the peripheral identifier is not recognised.
  */
-static inline EXECSPIState_T* EXEC_SPI_Get_State( SPIPeripheral_T peripheral );
+static inline EXECSPIState_T* EXEC_SPI_Get_State( SPIChannel_T peripheral );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
 
-static inline EXECSPIState_T* EXEC_SPI_Get_State( SPIPeripheral_T peripheral )
+static inline EXECSPIState_T* EXEC_SPI_Get_State( SPIChannel_T peripheral )
 {
     switch ( peripheral )
     {
@@ -184,7 +184,7 @@ static inline EXECSPIState_T* EXEC_SPI_Get_State( SPIPeripheral_T peripheral )
  *     false if the channel state could not be resolved, the current state was
  *     invalid, or the low-level driver failed to configure the channel.
  */
-bool EXEC_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configuration )
+bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configuration )
 {
     EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
     if ( state == NULL )
@@ -277,7 +277,7 @@ bool EXEC_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T confi
  *     transmission was triggered.
  *     false if any packet could not be accepted by the low-level TX queue.
  */
-bool EXEC_SPI_Transmit( SPIPeripheral_T peripheral, const uint8_t* data_src,
+bool EXEC_SPI_Transmit( SPIChannel_T peripheral, const uint8_t* data_src,
                         const uint32_t* packet_sizes_bytes, uint32_t num_packets )
 {
     uint32_t data_offset_bytes = 0U;
@@ -345,7 +345,7 @@ bool EXEC_SPI_Transmit( SPIPeripheral_T peripheral, const uint8_t* data_src,
  *     false if the unread RX byte count exceeds the provided destination
  *     capacity.
  */
-bool EXEC_SPI_Receive( SPIPeripheral_T peripheral, uint8_t* data_dst, uint32_t* size_bytes )
+bool EXEC_SPI_Receive( SPIChannel_T peripheral, uint8_t* data_dst, uint32_t* size_bytes )
 {
     HWSPIRxSpans_T data_spans = HW_SPI_Rx_Peek( peripheral );
     if ( data_spans.total_length_bytes > *size_bytes )
@@ -385,7 +385,7 @@ bool EXEC_SPI_Receive( SPIPeripheral_T peripheral, uint8_t* data_dst, uint32_t* 
  *     true if the low-level TX path is empty and no transmission is in progress.
  *     false if bytes are still queued or currently being transmitted.
  */
-bool EXEC_SPI_Is_Transmission_Complete( SPIPeripheral_T peripheral )
+bool EXEC_SPI_Is_Transmission_Complete( SPIChannel_T peripheral )
 {
     return HW_SPI_Tx_Buffer_Empty( peripheral );
 }

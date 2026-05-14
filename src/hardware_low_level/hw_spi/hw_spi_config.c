@@ -83,7 +83,7 @@ static bool HW_SPI_Config_Uses_Final_Drain_Timer( SPIBaudRate_T baud_rate )
 }
 
 static void HW_SPI_Config_Precompute_Hot_Fields( SPIPeripheralState_T* peripheral_state,
-                                                 SPIPeripheral_T       peripheral,
+                                                 SPIChannel_T       peripheral,
                                                  HWSPIConfig_T         configuration )
 {
     uint16_t frame_bits = 8U;
@@ -128,7 +128,7 @@ static void HW_SPI_Config_Precompute_Hot_Fields( SPIPeripheralState_T* periphera
  *     Pointer to the matching private state block, or NULL for an invalid
  *     peripheral enum.
  */
-SPIPeripheralState_T* HW_SPI_Get_State( SPIPeripheral_T peripheral )
+SPIPeripheralState_T* HW_SPI_Get_State( SPIChannel_T peripheral )
 {
     switch ( peripheral )
     {
@@ -306,7 +306,7 @@ void HW_SPI_Configure_DMA_Data_Widths( SPIPeripheralState_T* peripheral_state )
  *     false if the peripheral selection was invalid, the configuration was not
  *     supported, or HAL initialisation failed.
  */
-bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configuration )
+bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configuration )
 {
     SPI_HandleTypeDef*    hspi             = NULL;
     SPIPeripheralState_T* peripheral_state = NULL;
@@ -512,7 +512,7 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
  * @param peripheral
  *     The SPI peripheral/channel to stop.
  */
-void HW_SPI_Stop_Channel( SPIPeripheral_T peripheral )
+void HW_SPI_Stop_Channel( SPIChannel_T peripheral )
 {
     SPI_HandleTypeDef* hspi = NULL;
     switch ( peripheral )

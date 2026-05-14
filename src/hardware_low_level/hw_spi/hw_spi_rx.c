@@ -170,7 +170,7 @@ void SPI_CHANNEL_1_RX_DMA_IRQ( void )
  * @param peripheral
  *     Logical SPI peripheral to start.
  */
-void HW_SPI_Start_Channel( SPIPeripheral_T peripheral )
+void HW_SPI_Start_Channel( SPIChannel_T peripheral )
 {
     SPIPeripheralState_T* peripheral_state = NULL;
 
@@ -211,7 +211,7 @@ void HW_SPI_Start_Channel( SPIPeripheral_T peripheral )
  * @return
  *     Up to two read-only spans that cover the unread region.
  */
-HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIPeripheral_T peripheral )
+HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIChannel_T peripheral )
 {
     SPIPeripheralState_T* peripheral_state       = NULL;
     uint8_t*              rx_buffer              = NULL;
@@ -319,7 +319,7 @@ HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIPeripheral_T peripheral )
  * @param bytes_to_consume
  *     The number of unread RX bytes to mark as consumed.
  */
-void HW_SPI_Rx_Consume( SPIPeripheral_T peripheral, uint32_t bytes_to_consume )
+void HW_SPI_Rx_Consume( SPIChannel_T peripheral, uint32_t bytes_to_consume )
 {
     SPIPeripheralState_T* peripheral_state = NULL;
 

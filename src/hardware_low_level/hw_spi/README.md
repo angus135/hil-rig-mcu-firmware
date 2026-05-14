@@ -71,15 +71,15 @@ application-level transaction semantics, or decide whether a particular device c
 The public data path is intentionally mode-agnostic:
 
 ```c
-bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configuration );
-void HW_SPI_Start_Channel( SPIPeripheral_T peripheral );
-void HW_SPI_Stop_Channel( SPIPeripheral_T peripheral );
+bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configuration );
+void HW_SPI_Start_Channel( SPIChannel_T peripheral );
+void HW_SPI_Stop_Channel( SPIChannel_T peripheral );
 
-HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIPeripheral_T peripheral );
-void HW_SPI_Rx_Consume( SPIPeripheral_T peripheral, uint32_t bytes_to_consume );
+HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIChannel_T peripheral );
+void HW_SPI_Rx_Consume( SPIChannel_T peripheral, uint32_t bytes_to_consume );
 
-bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uint32_t size );
-void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral );
+bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32_t size );
+void HW_SPI_Tx_Trigger( SPIChannel_T peripheral );
 ```
 
 The same TX load and trigger calls are used for master and slave mode, but the internal behaviour is

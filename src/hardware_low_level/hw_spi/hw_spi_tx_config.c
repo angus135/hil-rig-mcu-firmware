@@ -156,16 +156,16 @@ static void     HW_SPI_Configure_Tx_Timer( SPIPeripheralState_T* peripheral_stat
 HW_SPI_ALWAYS_INLINE void
 HW_SPI_TX_Bounded_Final_Drain_Wait( const SPIPeripheralState_T* peripheral_state );
 HW_SPI_ALWAYS_INLINE void
-                                 HW_SPI_TX_Complete_Master_Transaction( SPIPeripheral_T       peripheral,
+                                 HW_SPI_TX_Complete_Master_Transaction( SPIChannel_T       peripheral,
                                                                         SPIPeripheralState_T* peripheral_state );
 static void HW_SPI_COLD_NOINLINE HW_SPI_TX_Fault_Master_Transaction(
-    SPIPeripheral_T peripheral, SPIPeripheralState_T* peripheral_state );
+    SPIChannel_T peripheral, SPIPeripheralState_T* peripheral_state );
 HW_SPI_ALWAYS_INLINE bool
-                          HW_SPI_TX_Try_Start_Final_Drain_Timer( SPIPeripheral_T       peripheral,
+                          HW_SPI_TX_Try_Start_Final_Drain_Timer( SPIChannel_T       peripheral,
                                                                  SPIPeripheralState_T* peripheral_state );
-HW_SPI_ALWAYS_INLINE void HW_SPI_TX_Handle_Master_DMA_TC( SPIPeripheral_T       peripheral,
+HW_SPI_ALWAYS_INLINE void HW_SPI_TX_Handle_Master_DMA_TC( SPIChannel_T       peripheral,
                                                           SPIPeripheralState_T* peripheral_state );
-HW_SPI_ALWAYS_INLINE void HW_SPI_TX_Handle_Slave_DMA_TC( SPIPeripheral_T       peripheral,
+HW_SPI_ALWAYS_INLINE void HW_SPI_TX_Handle_Slave_DMA_TC( SPIChannel_T       peripheral,
                                                          SPIPeripheralState_T* peripheral_state );
 
 /**-----------------------------------------------------------------------------
@@ -377,7 +377,7 @@ void HW_SPI_TX_Master_CS_Deassert( SPIPeripheralState_T* peripheral_state )
  *     true when the one-shot timer has been started.
  */
 HW_SPI_ALWAYS_INLINE bool
-HW_SPI_TX_Try_Start_Final_Drain_Timer( SPIPeripheral_T       peripheral,
+HW_SPI_TX_Try_Start_Final_Drain_Timer( SPIChannel_T       peripheral,
                                        SPIPeripheralState_T* peripheral_state )
 {
     ( void )peripheral;
@@ -409,7 +409,7 @@ HW_SPI_TX_Try_Start_Final_Drain_Timer( SPIPeripheral_T       peripheral,
  *     SPI channel state containing the master packet queue.
  */
 HW_SPI_ALWAYS_INLINE void
-HW_SPI_TX_Complete_Master_Transaction( SPIPeripheral_T       peripheral,
+HW_SPI_TX_Complete_Master_Transaction( SPIChannel_T       peripheral,
                                        SPIPeripheralState_T* peripheral_state )
 {
     HW_SPI_TX_Master_CS_Deassert( peripheral_state );
@@ -451,7 +451,7 @@ HW_SPI_TX_Complete_Master_Transaction( SPIPeripheral_T       peripheral,
  *     SPI channel state to mark as failed.
  */
 static void HW_SPI_COLD_NOINLINE HW_SPI_TX_Fault_Master_Transaction(
-    SPIPeripheral_T peripheral, SPIPeripheralState_T* peripheral_state )
+    SPIChannel_T peripheral, SPIPeripheralState_T* peripheral_state )
 {
     ( void )peripheral;
 
@@ -475,7 +475,7 @@ static void HW_SPI_COLD_NOINLINE HW_SPI_TX_Fault_Master_Transaction(
  * @param peripheral_state
  *     SPI channel state for the active master transaction.
  */
-HW_SPI_ALWAYS_INLINE void HW_SPI_TX_Handle_Master_DMA_TC( SPIPeripheral_T       peripheral,
+HW_SPI_ALWAYS_INLINE void HW_SPI_TX_Handle_Master_DMA_TC( SPIChannel_T       peripheral,
                                                           SPIPeripheralState_T* peripheral_state )
 {
     peripheral_state->tx_num_bytes_in_transmission = 0U;
@@ -516,7 +516,7 @@ HW_SPI_ALWAYS_INLINE void HW_SPI_TX_Handle_Master_DMA_TC( SPIPeripheral_T       
     HW_SPI_TX_Fault_Master_Transaction( peripheral, peripheral_state );
 }
 
-HW_SPI_ALWAYS_INLINE void HW_SPI_TX_Handle_Slave_DMA_TC( SPIPeripheral_T       peripheral,
+HW_SPI_ALWAYS_INLINE void HW_SPI_TX_Handle_Slave_DMA_TC( SPIChannel_T       peripheral,
                                                          SPIPeripheralState_T* peripheral_state )
 {
     peripheral_state->tx_num_bytes_in_transmission = 0U;
@@ -596,7 +596,7 @@ uint32_t HW_SPI_TX_Get_Free_Space( const SPIPeripheralState_T* peripheral_state 
  * @param peripheral
  *     The SPI peripheral/channel that encountered the TX DMA error.
  */
-void HW_SPI_COLD_NOINLINE HW_SPI_TX_Error_Handler( SPIPeripheral_T peripheral )
+void HW_SPI_COLD_NOINLINE HW_SPI_TX_Error_Handler( SPIChannel_T peripheral )
 {
     SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
 
@@ -639,7 +639,7 @@ void HW_SPI_COLD_NOINLINE HW_SPI_TX_Error_Handler( SPIPeripheral_T peripheral )
  * @param peripheral
  *     Logical SPI peripheral whose TX DMA IRQ fired.
  */
-void HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral )
+void HW_SPI_TX_IRQ_Handler( SPIChannel_T peripheral )
 {
     SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
 
@@ -833,7 +833,7 @@ void SPI_CHANNEL_1_TX_DMA_IRQ( void )
  * @param peripheral
  *     Logical SPI peripheral whose final-drain timer elapsed.
  */
-void HW_SPI_Timer_Callback_From_ISR( SPIPeripheral_T peripheral )
+void HW_SPI_Timer_Callback_From_ISR( SPIChannel_T peripheral )
 {
     SPIPeripheralState_T* peripheral_state = NULL;
 
@@ -890,7 +890,7 @@ void HW_SPI_Timer_Callback_From_ISR( SPIPeripheral_T peripheral )
  *     true if the data was queued; false if the peripheral is invalid, no load
  *     operation is configured, or insufficient queue space is available.
  */
-bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uint32_t size )
+bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32_t size )
 {
     SPIPeripheralState_T* peripheral_state = NULL;
     bool                  accepted         = false;
@@ -942,7 +942,7 @@ bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uin
  * @param peripheral
  *     Logical SPI peripheral whose TX engine should be kicked.
  */
-void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral )
+void HW_SPI_Tx_Trigger( SPIChannel_T peripheral )
 {
     SPIPeripheralState_T* peripheral_state = NULL;
 
@@ -1013,7 +1013,7 @@ void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral )
  *     true when no software-pending bytes and no DMA-owned bytes remain; false
  *     otherwise.
  */
-bool HW_SPI_Tx_Buffer_Empty( SPIPeripheral_T peripheral )
+bool HW_SPI_Tx_Buffer_Empty( SPIChannel_T peripheral )
 {
     SPIPeripheralState_T* state = NULL;
 

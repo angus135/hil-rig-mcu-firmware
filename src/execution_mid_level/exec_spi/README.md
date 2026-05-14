@@ -52,7 +52,7 @@ details that matter to this module are:
 ### `EXEC_SPI_Configure_Channel()`
 
 ```c
-bool EXEC_SPI_Configure_Channel( SPIPeripheral_T peripheral,
+bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral,
                                  HWSPIConfig_T configuration );
 ```
 
@@ -69,7 +69,7 @@ appropriate for a particular test or protocol.
 ### `EXEC_SPI_Transmit()`
 
 ```c
-bool EXEC_SPI_Transmit( SPIPeripheral_T peripheral,
+bool EXEC_SPI_Transmit( SPIChannel_T peripheral,
                         const uint8_t* data_src,
                         const uint32_t* packet_sizes_bytes,
                         uint32_t num_packets );
@@ -91,7 +91,7 @@ buffer alive after a successful call. If any low-level packet load fails, this f
 ### `EXEC_SPI_Receive()`
 
 ```c
-bool EXEC_SPI_Receive( SPIPeripheral_T peripheral,
+bool EXEC_SPI_Receive( SPIChannel_T peripheral,
                        uint8_t* data_dst,
                        uint32_t* size_bytes );
 ```
@@ -111,7 +111,7 @@ receives the data as one contiguous buffer.
 ### `EXEC_SPI_Is_Transmission_Complete()`
 
 ```c
-bool EXEC_SPI_Is_Transmission_Complete( SPIPeripheral_T peripheral );
+bool EXEC_SPI_Is_Transmission_Complete( SPIChannel_T peripheral );
 ```
 
 Returns whether the low-level TX path is empty.

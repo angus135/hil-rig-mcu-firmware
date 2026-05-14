@@ -402,7 +402,7 @@ protected:
                               .cpha      = SPI_CPHA_1_EDGE };
     }
 
-    static void InitialiseState( SPIPeripheralState_T* state, SPIPeripheral_T logical,
+    static void InitialiseState( SPIPeripheralState_T* state, SPIChannel_T logical,
                                  HWSPIConfig_T config, DMA_TypeDef* rx_dma, uint32_t rx_stream,
                                  DMA_TypeDef* tx_dma, uint32_t tx_stream, SPI_TypeDef* spi,
                                  IRQn_Type tx_irqn, Timer_T timer )
