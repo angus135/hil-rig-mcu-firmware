@@ -792,45 +792,6 @@ static inline void HW_I2C_Service_Event_IRQ( HWI2CChannel_T channel )
 }
 
 /**
- * @brief Service I2C error interrupt.
- *
- * Should be called from the I2C error interrupt handler for the channel.
- * Clears error flags and aborts any in-progress transfer.
- *
- * @param[in] channel  I2C channel with the error
- */
-static inline void HW_I2C_Service_Error_IRQ( HWI2CChannel_T channel )
-{
-    /* FMPI2C1 uses a different clear mechanism; clear all error flags at once. */
-    if ( channel == HW_I2C_CHANNEL_FMPI2C1 )
-    {
-        hw_i2c_channel_state[channel].transfer_in_progress = false;
-        hw_i2c_channel_state[channel].transfer_kind        = HW_I2C_TRANSFER_KIND_IDLE;
-        /* Clear bus error, arbitration loss, overflow, and timeout. */
-        FMPI2C1->ICR =
-            FMPI2C_ICR_BERRCF | FMPI2C_ICR_ARLOCF | FMPI2C_ICR_OVRCF | FMPI2C_ICR_TIMOUTCF;
-        return;
-    }
-
-    /* External channels (I2C1, I2C2). */
-    I2C_TypeDef* i2c_instance = HWI2CChannel_To_Instance( channel );
-    if ( i2c_instance == NULL )
-    {
-        return;
-    }
-
-    /* Check if any error flags are set in SR1. */
-    if ( ( i2c_instance->SR1 & ( I2C_SR1_BERR | I2C_SR1_ARLO | I2C_SR1_AF | I2C_SR1_OVR ) )
-         != 0U )
-    {
-        /* Clear error flags by writing 0 to the appropriate bits. */
-        i2c_instance->SR1 &= ~( I2C_SR1_BERR | I2C_SR1_ARLO | I2C_SR1_AF | I2C_SR1_OVR );
-        /* Abort ongoing transfer and cleanup. */
-        HW_I2C_Abort_Transfer( channel, i2c_instance );
-    }
-}
-
-/**
  * @brief Service DMA receive interrupt.
  *
  * Should be called from the DMA stream interrupt handler for I2C receive.
