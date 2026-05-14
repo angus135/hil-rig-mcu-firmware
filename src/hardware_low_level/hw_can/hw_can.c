@@ -194,7 +194,6 @@ static inline uint16_t HW_CAN_Buffer_Read( volatile uint8_t   buffer[][CAN_PACKE
     return count;
 }
 
-
 /**
  * @brief transmits the txData (8 bytes) over the hcan CAN channel
  *
@@ -270,7 +269,6 @@ int HW_CAN_Receive( CAN_HandleTypeDef* hcan, uint8_t* rxData )
     return 0;
 }
 
-
 /**
  * @brief reads one entrie from the buffer
  *
@@ -309,7 +307,6 @@ uint16_t HW_CAN_Buffer_Pop( volatile uint8_t buffer[][CAN_PACKET_SIZE], volatile
  *  Private Configuration Function Definitions
  *------------------------------------------------------------------------------
  */
-
 
 /**
  * @brief Applies the CAN timing peripherals, part of CAN configuration
@@ -508,7 +505,6 @@ int HW_CAN_Configure( CAN_HandleTypeDef* hcan, uint32_t bitrate )
     return 0;
 }
 
-
 /**-----------------------------------------------------------------------------
  *  Public Configure Function Definitions
  *------------------------------------------------------------------------------
@@ -615,7 +611,6 @@ int HW_CAN_Configure2( uint32_t bitrate )
 {
     return HW_CAN_Configure( &hcan2, bitrate );
 }
-
 
 /**-----------------------------------------------------------------------------
  *  Public Execution Function Definitions
