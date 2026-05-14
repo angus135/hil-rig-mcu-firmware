@@ -1048,8 +1048,6 @@ HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
                               LL_FMPI2C_OWNADDRESS1_7BIT );
     LL_FMPI2C_EnableOwnAddress1( FMPI2C1 );
     LL_FMPI2C_Enable( FMPI2C1 );
-
-    LL_FMPI2C_Enable( FMPI2C1 );
     LL_FMPI2C_EnableIT_TX( FMPI2C1 );
     LL_FMPI2C_EnableIT_RX( FMPI2C1 );
     LL_FMPI2C_EnableIT_TC( FMPI2C1 );
