@@ -1092,10 +1092,6 @@ bool HW_I2C_Trigger_Master_Transmit_External( HWI2CChannel_T channel,
     if ( use_dma )
     {
         DMA_Stream_TypeDef* tx_stream = HWI2CChannel_To_DMA_Tx_Stream( channel );
-        if ( tx_stream == NULL )
-        {
-            return false;
-        }
 
         HW_I2C_DMA_Stream_Clear_Flags( tx_stream );
         HW_I2C_Configure_DMA_Stream( tx_stream, HWI2CChannel_To_DMA_Channel_Bits( channel ),
@@ -1184,10 +1180,6 @@ bool HW_I2C_Trigger_Master_Receive_External( HWI2CChannel_T channel,
     if ( use_dma )
     {
         DMA_Stream_TypeDef* rx_stream = HWI2CChannel_To_DMA_Rx_Stream( channel );
-        if ( rx_stream == NULL )
-        {
-            return false;
-        }
 
         HW_I2C_DMA_Stream_Clear_Flags( rx_stream );
         HW_I2C_Configure_DMA_Stream( rx_stream, HWI2CChannel_To_DMA_Channel_Bits( channel ),
@@ -1230,7 +1222,6 @@ inline bool HW_I2C_Trigger_Master_Receive_Internal( uint16_t device_address_7bit
     state->rx_expected_length     = expected_length;
     state->dma_rx_expected_length = expected_length;
 
-    // LL_FMPI2C_GenerateStartCondition( FMPI2C1 );
     FMPI2C1->CR2 = ( ( uint32_t )device_address_7bit << 1U ) | FMPI2C_CR2_RD_WRN
                | ( ( uint32_t )expected_length << FMPI2C_CR2_NBYTES_Pos )
                | FMPI2C_CR2_START | FMPI2C_CR2_AUTOEND;
@@ -1264,10 +1255,6 @@ bool HW_I2C_Trigger_Slave_Transmit_External( HWI2CChannel_T channel )
     if ( state->config.tx_transfer_path == HW_I2C_TRANSFER_DMA )
     {
         DMA_Stream_TypeDef* tx_stream = HWI2CChannel_To_DMA_Tx_Stream( channel );
-            if ( tx_stream == NULL )
-            {
-                return false;
-            }
 
         HW_I2C_DMA_Stream_Clear_Flags( tx_stream );
         HW_I2C_Configure_DMA_Stream( tx_stream, HWI2CChannel_To_DMA_Channel_Bits( channel ),
@@ -1313,10 +1300,6 @@ bool HW_I2C_Trigger_Slave_Receive_External( HWI2CChannel_T channel, uint16_t exp
     if ( state->config.rx_transfer_path == HW_I2C_TRANSFER_DMA )
     {
         DMA_Stream_TypeDef* rx_stream = HWI2CChannel_To_DMA_Rx_Stream( channel );
-            if ( rx_stream == NULL )
-            {
-                return false;
-            }
 
         HW_I2C_DMA_Stream_Clear_Flags( rx_stream );
         HW_I2C_Configure_DMA_Stream( rx_stream, HWI2CChannel_To_DMA_Channel_Bits( channel ),
