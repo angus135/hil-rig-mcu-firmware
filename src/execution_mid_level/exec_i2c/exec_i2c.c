@@ -289,8 +289,7 @@ bool EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel, uint8_t* result_
 
     /* Snapshot current RX data layout (may be split across ring-buffer wrap). */
     HWI2CRxPeek_T peek      = { 0 };
-    bool is_ok = HW_I2C_Peek_Received( channel, &peek );
-    if ( !is_ok )
+    if ( !HW_I2C_Peek_Received( channel, &peek ) )
     {
         return false;
     }
@@ -318,8 +317,7 @@ bool EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel, uint8_t* result_
     }
 
     /* Consume exactly what we copied so caller-visible data and RX cursor stay aligned. */
-    is_ok = HW_I2C_Consume_Received( channel, copied );
-    if ( !is_ok )
+    if ( !HW_I2C_Consume_Received( channel, copied ) )
     {
         return false;
     }
