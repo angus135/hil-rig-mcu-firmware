@@ -1,6 +1,6 @@
 /******************************************************************************
  *  File:       test_hw_can.cpp
- *  Author:     Callum Rafferty
+ *  Author:     timothy vogelsang
  *  Created:    25-Mar-2026
  *
  *  Description:
