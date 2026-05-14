@@ -30,20 +30,20 @@ extern "C"
  * Public Defines / Macros
  *----------------------------------------------------------------------------*/
 
-#define HAL_OK     (0)
-#define HAL_ERROR  (1)
+#define HAL_OK ( 0 )
+#define HAL_ERROR ( 1 )
 
-#define ENABLE     (1U)
-#define DISABLE    (0U)
+#define ENABLE ( 1U )
+#define DISABLE ( 0U )
 
 /* Timer channels */
-#define TIM_CHANNEL_1    (1U)
-#define TIM_CHANNEL_2    (2U)
-#define TIM_CHANNEL_3    (3U)
-#define TIM_CHANNEL_4    (4U)
+#define TIM_CHANNEL_1 ( 1U )
+#define TIM_CHANNEL_2 ( 2U )
+#define TIM_CHANNEL_3 ( 3U )
+#define TIM_CHANNEL_4 ( 4U )
 
 /* Event generation register */
-#define TIM_EGR_UG       (1U << 0)
+#define TIM_EGR_UG ( 1U << 0 )
 
 /**-----------------------------------------------------------------------------
  * Public Typedefs / Structures
@@ -103,35 +103,21 @@ extern TIM_TypeDef mock_tim13_regs;
 
 /* HAL Functions */
 
-HAL_StatusTypeDef HAL_TIM_PWM_Start(
-    TIM_HandleTypeDef* htim,
-    uint32_t channel);
+HAL_StatusTypeDef HAL_TIM_PWM_Start( TIM_HandleTypeDef* htim, uint32_t channel );
 
 /* LL Functions */
 
-void LL_TIM_OC_SetCompareCH1(
-    TIM_TypeDef* TIMx,
-    uint32_t CompareValue);
+void LL_TIM_OC_SetCompareCH1( TIM_TypeDef* TIMx, uint32_t CompareValue );
 
-void LL_TIM_OC_SetCompareCH2(
-    TIM_TypeDef* TIMx,
-    uint32_t CompareValue);
+void LL_TIM_OC_SetCompareCH2( TIM_TypeDef* TIMx, uint32_t CompareValue );
 
-void LL_TIM_OC_SetCompareCH3(
-    TIM_TypeDef* TIMx,
-    uint32_t CompareValue);
+void LL_TIM_OC_SetCompareCH3( TIM_TypeDef* TIMx, uint32_t CompareValue );
 
-void LL_TIM_OC_SetCompareCH4(
-    TIM_TypeDef* TIMx,
-    uint32_t CompareValue);
+void LL_TIM_OC_SetCompareCH4( TIM_TypeDef* TIMx, uint32_t CompareValue );
 
-void LL_TIM_SetAutoReload(
-    TIM_TypeDef* TIMx,
-    uint32_t AutoReload);
+void LL_TIM_SetAutoReload( TIM_TypeDef* TIMx, uint32_t AutoReload );
 
-void LL_TIM_SetPrescaler(
-    TIM_TypeDef* TIMx,
-    uint32_t Prescaler);
+void LL_TIM_SetPrescaler( TIM_TypeDef* TIMx, uint32_t Prescaler );
 
 // NOLINTEND
 
