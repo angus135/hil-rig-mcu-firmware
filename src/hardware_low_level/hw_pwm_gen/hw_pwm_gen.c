@@ -70,8 +70,8 @@
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-void HW_PWM_GEN_set_pwm_direct( uint16_t ccr_num, uint16_t arr, uint16_t ccr,
-                                              uint16_t psc, TIM_TypeDef* tim )
+void HW_PWM_GEN_set_pwm_direct( uint16_t ccr_num, uint16_t arr, uint16_t ccr, uint16_t psc,
+                                TIM_TypeDef* tim )
 {
     if ( ccr_num == 1 )
     {

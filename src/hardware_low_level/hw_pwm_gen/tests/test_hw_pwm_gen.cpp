@@ -36,17 +36,14 @@ extern "C"
  * Mock Register Instances
  *----------------------------------------------------------------------------*/
 
-TIM_TypeDef mock_tim12_regs = {0};
-TIM_TypeDef mock_tim13_regs = {0};
+TIM_TypeDef mock_tim12_regs = { 0 };
+TIM_TypeDef mock_tim13_regs = { 0 };
 
 /**-----------------------------------------------------------------------------
  * Mock HAL Handles
  *----------------------------------------------------------------------------*/
 
-TIM_HandleTypeDef htim12 =
-{
-    .Instance = &mock_tim12_regs
-};
+TIM_HandleTypeDef htim12 = { .Instance = &mock_tim12_regs };
 
 TIM_HandleTypeDef htim13 = { .Instance = &mock_tim13_regs };
 
