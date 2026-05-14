@@ -207,7 +207,7 @@ struct SPIPeripheralState_T
 {
     HWSPIConfig_T config;  ///< Last configuration applied to this logical channel.
 
-    SPIPeripheral_T logical_peripheral;  ///< Logical peripheral owning this state block.
+    SPIChannel_T logical_peripheral;  ///< Logical peripheral owning this state block.
     bool            is_master;           ///< Precomputed master/slave mode flag for hot paths.
     uint8_t         frame_size_bytes;    ///< Precomputed SPI frame size: 1 byte or 2 bytes.
     uint8_t         frame_shift;         ///< 0 for 8-bit frames; 1 for 16-bit frames.
@@ -387,7 +387,7 @@ HW_SPI_ALWAYS_INLINE bool HW_SPI_TX_Program_DMA( SPIPeripheralState_T* periphera
  * @name Shared configuration and conversion helpers
  * @{
  */
-SPIPeripheralState_T* HW_SPI_Get_State( SPIPeripheral_T peripheral );
+SPIPeripheralState_T* HW_SPI_Get_State( SPIChannel_T peripheral );
 uint32_t              HW_SPI_Get_Frame_Size_Bytes( const SPIPeripheralState_T* peripheral_state );
 uint16_t              HW_SPI_Bytes_To_DMA_Elements( const SPIPeripheralState_T* peripheral_state,
                                                     uint32_t                    size_bytes );
@@ -411,8 +411,8 @@ bool HW_SPI_RX_Start_Passive_DMA( SPIPeripheralState_T* peripheral_state );
  */
 void     HW_SPI_TX_Configure_Operations( SPIPeripheralState_T* peripheral_state );
 void     HW_SPI_TX_Reset_State( SPIPeripheralState_T* peripheral_state );
-void     HW_SPI_TX_Error_Handler( SPIPeripheral_T peripheral );
-void     HW_SPI_TX_IRQ_Handler( SPIPeripheral_T peripheral );
+void     HW_SPI_TX_Error_Handler( SPIChannel_T peripheral );
+void     HW_SPI_TX_IRQ_Handler( SPIChannel_T peripheral );
 void     HW_SPI_TX_Master_CS_Assert( SPIPeripheralState_T* peripheral_state );
 void     HW_SPI_TX_Master_CS_Deassert( SPIPeripheralState_T* peripheral_state );
 uint32_t HW_SPI_TX_Get_Used_Space( const SPIPeripheralState_T* peripheral_state );

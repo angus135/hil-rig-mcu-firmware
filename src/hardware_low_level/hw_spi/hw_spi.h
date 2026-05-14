@@ -132,12 +132,12 @@ typedef enum SPIMode_T
 /**
  * @brief Logical SPI peripherals exposed by the HIL-RIG firmware.
  */
-typedef enum SPIPeripheral_T
+typedef enum SPIChannel_T
 {
     SPI_CHANNEL_0,  ///< General-purpose logical SPI channel 0.
     SPI_CHANNEL_1,  ///< General-purpose logical SPI channel 1.
     SPI_DAC,        ///< Dedicated DAC SPI channel.
-} SPIPeripheral_T;
+} SPIChannel_T;
 
 /**
  * @brief Public configuration applied to one logical SPI peripheral.
@@ -212,7 +212,7 @@ typedef struct
  *     false if the peripheral selection was invalid, the configuration was not
  *     supported, or HAL initialisation failed.
  */
-bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configuration );
+bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configuration );
 
 /**
  * @brief Start runtime operation of a configured SPI channel.
@@ -240,7 +240,7 @@ bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configu
  * @param peripheral
  *     The SPI peripheral/channel to start.
  */
-void HW_SPI_Start_Channel( SPIPeripheral_T peripheral );
+void HW_SPI_Start_Channel( SPIChannel_T peripheral );
 
 /**
  * @brief Stop runtime operation of a configured SPI channel.
@@ -260,7 +260,7 @@ void HW_SPI_Start_Channel( SPIPeripheral_T peripheral );
  * @param peripheral
  *     The SPI peripheral/channel to stop.
  */
-void HW_SPI_Stop_Channel( SPIPeripheral_T peripheral );
+void HW_SPI_Stop_Channel( SPIChannel_T peripheral );
 
 /**
  * @brief Return the unread received data as one or two spans into the internal RX buffer.
@@ -294,7 +294,7 @@ void HW_SPI_Stop_Channel( SPIPeripheral_T peripheral );
  * @return
  *     A structure describing the unread RX data as one or two spans.
  */
-HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIPeripheral_T peripheral );
+HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIChannel_T peripheral );
 
 /**
  * @brief Mark previously received RX bytes as consumed.
@@ -322,7 +322,7 @@ HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIPeripheral_T peripheral );
  * @param bytes_to_consume
  *     The number of unread RX bytes to mark as consumed.
  */
-void HW_SPI_Rx_Consume( SPIPeripheral_T peripheral, uint32_t bytes_to_consume );
+void HW_SPI_Rx_Consume( SPIChannel_T peripheral, uint32_t bytes_to_consume );
 
 /**
  * @brief Load data into the channel's internal transmit queue.
@@ -367,7 +367,7 @@ void HW_SPI_Rx_Consume( SPIPeripheral_T peripheral, uint32_t bytes_to_consume );
  *     false if the buffer could not accept the requested data or the channel
  *     selection was invalid.
  */
-bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uint32_t size );
+bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32_t size );
 
 /**
  * @brief Trigger transmission of queued TX data for a channel.
@@ -399,7 +399,7 @@ bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uin
  * @param peripheral
  *     The SPI peripheral/channel whose queued TX data should be transmitted.
  */
-void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral );
+void HW_SPI_Tx_Trigger( SPIChannel_T peripheral );
 
 /**
  * @brief Check whether the TX buffer is empty for a SPI channel.
@@ -427,7 +427,7 @@ void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral );
  *     false if any TX data is still pending in the ring or currently being
  *     transmitted by DMA.
  */
-bool HW_SPI_Tx_Buffer_Empty( SPIPeripheral_T peripheral );
+bool HW_SPI_Tx_Buffer_Empty( SPIChannel_T peripheral );
 
 /**
  * @brief Complete slow-baud master final-drain handling from a timer ISR.
@@ -441,7 +441,7 @@ bool HW_SPI_Tx_Buffer_Empty( SPIPeripheral_T peripheral );
  * @param peripheral
  *     Logical SPI peripheral whose final-drain timer elapsed.
  */
-void HW_SPI_Timer_Callback_From_ISR( SPIPeripheral_T peripheral );
+void HW_SPI_Timer_Callback_From_ISR( SPIChannel_T peripheral );
 
 #include "hw_spi_internal.h"
 

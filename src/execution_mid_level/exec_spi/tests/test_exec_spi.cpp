@@ -53,22 +53,22 @@ class MockHWSPI
 {
 public:
     MOCK_METHOD( bool, ConfigureChannel,
-                 ( SPIPeripheral_T peripheral, HWSPIConfig_T configuration ), () );
+                 ( SPIChannel_T peripheral, HWSPIConfig_T configuration ), () );
 
-    MOCK_METHOD( void, StartChannel, ( SPIPeripheral_T peripheral ), () );
+    MOCK_METHOD( void, StartChannel, ( SPIChannel_T peripheral ), () );
 
-    MOCK_METHOD( void, StopChannel, ( SPIPeripheral_T peripheral ), () );
+    MOCK_METHOD( void, StopChannel, ( SPIChannel_T peripheral ), () );
 
     MOCK_METHOD( bool, LoadTxBuffer,
-                 ( SPIPeripheral_T peripheral, const uint8_t* data, uint32_t size_bytes ), () );
+                 ( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ), () );
 
-    MOCK_METHOD( void, TxTrigger, ( SPIPeripheral_T peripheral ), () );
+    MOCK_METHOD( void, TxTrigger, ( SPIChannel_T peripheral ), () );
 
-    MOCK_METHOD( HWSPIRxSpans_T, RxPeek, ( SPIPeripheral_T peripheral ), () );
+    MOCK_METHOD( HWSPIRxSpans_T, RxPeek, ( SPIChannel_T peripheral ), () );
 
-    MOCK_METHOD( void, RxConsume, ( SPIPeripheral_T peripheral, uint32_t bytes_to_consume ), () );
+    MOCK_METHOD( void, RxConsume, ( SPIChannel_T peripheral, uint32_t bytes_to_consume ), () );
 
-    MOCK_METHOD( bool, TxBufferEmpty, ( SPIPeripheral_T peripheral ), () );
+    MOCK_METHOD( bool, TxBufferEmpty, ( SPIChannel_T peripheral ), () );
 };
 
 static MockHWSPI* g_mock_hw_spi = nullptr;
@@ -76,42 +76,42 @@ static MockHWSPI* g_mock_hw_spi = nullptr;
 extern "C"
 {
 
-bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configuration )
+bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configuration )
 {
     return g_mock_hw_spi->ConfigureChannel( peripheral, configuration );
 }
 
-void HW_SPI_Start_Channel( SPIPeripheral_T peripheral )
+void HW_SPI_Start_Channel( SPIChannel_T peripheral )
 {
     g_mock_hw_spi->StartChannel( peripheral );
 }
 
-void HW_SPI_Stop_Channel( SPIPeripheral_T peripheral )
+void HW_SPI_Stop_Channel( SPIChannel_T peripheral )
 {
     g_mock_hw_spi->StopChannel( peripheral );
 }
 
-bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uint32_t size )
+bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32_t size )
 {
     return g_mock_hw_spi->LoadTxBuffer( peripheral, data, size );
 }
 
-void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral )
+void HW_SPI_Tx_Trigger( SPIChannel_T peripheral )
 {
     g_mock_hw_spi->TxTrigger( peripheral );
 }
 
-HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIPeripheral_T peripheral )
+HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIChannel_T peripheral )
 {
     return g_mock_hw_spi->RxPeek( peripheral );
 }
 
-void HW_SPI_Rx_Consume( SPIPeripheral_T peripheral, uint32_t bytes_to_consume )
+void HW_SPI_Rx_Consume( SPIChannel_T peripheral, uint32_t bytes_to_consume )
 {
     g_mock_hw_spi->RxConsume( peripheral, bytes_to_consume );
 }
 
-bool HW_SPI_Tx_Buffer_Empty( SPIPeripheral_T peripheral )
+bool HW_SPI_Tx_Buffer_Empty( SPIChannel_T peripheral )
 {
     return g_mock_hw_spi->TxBufferEmpty( peripheral );
 }
@@ -153,7 +153,7 @@ protected:
         g_mock_hw_spi = nullptr;
     }
 
-    void ForceChannelUnconfigured( SPIPeripheral_T peripheral )
+    void ForceChannelUnconfigured( SPIChannel_T peripheral )
     {
         using ::testing::_;
         using ::testing::AnyNumber;
@@ -258,7 +258,7 @@ TEST_F( ExecSPITest, ConfigureChannel_LowLevelConfigureFails_DoesNotStartChannel
 
 TEST_F( ExecSPITest, ConfigureChannel_InvalidPeripheral_ReturnsFalseWithoutLowLevelCalls )
 {
-    SPIPeripheral_T invalid_peripheral = static_cast<SPIPeripheral_T>( 99 );
+    SPIChannel_T invalid_peripheral = static_cast<SPIChannel_T>( 99 );
 
     EXPECT_CALL( mock_hw_spi, StopChannel( ::testing::_ ) ).Times( 0 );
 
@@ -313,7 +313,7 @@ TEST_F( ExecSPITest, Transmit_MultiplePackets_LoadsEachPacketThenTriggersOnce )
 
         EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, &tx_data[0], packet_sizes[0] ) )
             .WillOnce( Invoke(
-                [&]( SPIPeripheral_T peripheral, const uint8_t* data, uint32_t size_bytes ) {
+                [&]( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ) {
                     EXPECT_EQ( peripheral, SPI_CHANNEL_0 );
                     EXPECT_EQ( size_bytes, 2U );
                     EXPECT_EQ( 0, std::memcmp( data, &tx_data[0], 2U ) );
@@ -322,7 +322,7 @@ TEST_F( ExecSPITest, Transmit_MultiplePackets_LoadsEachPacketThenTriggersOnce )
 
         EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, &tx_data[2], packet_sizes[1] ) )
             .WillOnce( Invoke(
-                [&]( SPIPeripheral_T peripheral, const uint8_t* data, uint32_t size_bytes ) {
+                [&]( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ) {
                     EXPECT_EQ( peripheral, SPI_CHANNEL_0 );
                     EXPECT_EQ( size_bytes, 3U );
                     EXPECT_EQ( 0, std::memcmp( data, &tx_data[2], 3U ) );
@@ -331,7 +331,7 @@ TEST_F( ExecSPITest, Transmit_MultiplePackets_LoadsEachPacketThenTriggersOnce )
 
         EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, &tx_data[5], packet_sizes[2] ) )
             .WillOnce( Invoke(
-                [&]( SPIPeripheral_T peripheral, const uint8_t* data, uint32_t size_bytes ) {
+                [&]( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ) {
                     EXPECT_EQ( peripheral, SPI_CHANNEL_0 );
                     EXPECT_EQ( size_bytes, 1U );
                     EXPECT_EQ( 0, std::memcmp( data, &tx_data[5], 1U ) );
