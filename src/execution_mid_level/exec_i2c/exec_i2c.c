@@ -206,6 +206,8 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
  *       - payload is non-NULL if payload_length > 0
  *       Invalid channel access will result in undefined behavior (no range checking).
  *
+ * Caller should call EXEC_I2C_Did_Last_Transfer_Overflow afterwards to check for overflow.
+ *
  * @param[in] channel               I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
  * @param[in] device_address_7bit   7-bit slave address
  * @param[in] payload               Data to transmit
@@ -232,6 +234,8 @@ bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_
  *       - payload is non-NULL if payload_length > 0
  *       Invalid channel access will result in undefined behavior (no range checking).
  *
+ * Caller should call EXEC_I2C_Did_Last_Transfer_Overflow afterwards to check for overflow.
+ *
  * @param[in] channel               I2C channel
  * @param[in] payload               Data to transmit when master requests
  * @param[in] payload_length        Number of bytes available to transmit
@@ -250,12 +254,15 @@ bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* pa
  * @brief Initiate master receive on an external I2C channel.
  *
  * Requests data from a slave device on the specified external channel (I2C1 or I2C2).
- * Received data is buffered internally and can be retrieved with EXEC_I2C_Receive_Copy_And_Consume().
+ * Received data is buffered internally and can be retrieved with
+EXEC_I2C_Receive_Copy_And_Consume().
  *
  * @note Validity checks are minimal. Callers must ensure:
  *       - channel is a valid external I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
  *       - channel has been previously configured via EXEC_I2C_Configuration()
  *       Invalid channel access will result in undefined behavior (no range checking).
+ *
+ * Caller should call EXEC_I2C_Did_Last_Transfer_Overflow afterwards to check for overflow.
  *
  * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
  * @param[in] device_address_7bit   7-bit slave address
@@ -281,6 +288,8 @@ bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t de
  *       - channel is a valid external I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
  *       - channel has been previously configured via EXEC_I2C_Configuration()
  *       Invalid channel access will result in undefined behavior (no range checking).
+ *
+ * Caller should call EXEC_I2C_Did_Last_Transfer_Overflow afterwards to check for overflow.
  *
  * @param[in] channel           I2C channel
  * @param[in] expected_length   Number of bytes expected from master
@@ -359,4 +368,22 @@ bool EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel, uint8_t* result_
     /* Report bytes successfully copied and consumed. */
     *bytes_copied = copied;
     return true;
+}
+
+/**
+ * @brief Check if the last transfer on the channel resulted in an overflow.
+ *
+ * Returns true if the ring buffer overflowed during the last receive transfer, indicating
+ * that data was lost. This can be used by callers to detect when they are not consuming
+ * received data fast enough.
+ *
+ * @param[in]  channel      I2C channel
+ *
+ * @return true if overflow was detected
+ * @return false otherwise
+ */
+bool EXEC_I2C_Did_Last_Transfer_Overflow( HWI2CChannel_T channel )
+{
+    // Delegate to hw_i2c
+    return HW_I2C_Get_Overflow_Status(channel);
 }

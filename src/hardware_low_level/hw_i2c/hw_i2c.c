@@ -107,6 +107,9 @@ typedef struct HWI2CChannelState_T
     uint8_t                rx_ring_buffer[HW_I2C_RX_BUFFER_SIZE]; /* Ring buffer for received data */
     volatile uint16_t      rx_head;              /* Write pointer (advanced by RX ISR/DMA) */
     volatile uint16_t      rx_tail;              /* Read pointer (advanced by consumer) */
+
+    /* Error tracking */
+    volatile bool          overflow_occurred;    /* True if ring buffer overflow detected during receive */
 } HWI2CChannelState_T;
 
 /**-----------------------------------------------------------------------------
@@ -669,7 +672,13 @@ static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
             }
 
             uint8_t data_byte = ( uint8_t )i2c_instance->DR;
-            HW_I2C_Ring_Push_Byte( state, data_byte );
+            if ( !HW_I2C_Ring_Push_Byte( state, data_byte ) )
+            {
+                /* Ring buffer overflow - abort transfer and mark error. */
+                state->overflow_occurred = true;
+                HW_I2C_Abort_Transfer( channel, i2c_instance );
+                return;
+            }
 
             if ( state->rx_expected_length > 0U )
             {
@@ -719,7 +728,14 @@ static inline void HW_I2C_Service_Event_FMPI2C1( HWI2CChannelState_T* state )
     if ( ( isr & FMPI2C_ISR_RXNE ) != 0U )
     {
         uint8_t data_byte = ( uint8_t )FMPI2C1->RXDR;
-        HW_I2C_Ring_Push_Byte( state, data_byte );
+        if ( !HW_I2C_Ring_Push_Byte( state, data_byte ) )
+        {
+            /* Ring buffer overflow - abort transfer and mark error. */
+            state->overflow_occurred = true;
+            state->transfer_in_progress = false;
+            state->transfer_kind        = HW_I2C_TRANSFER_KIND_IDLE;
+            return;
+        }
         if ( state->rx_expected_length > 0U )
         {
             state->rx_expected_length--;
@@ -825,7 +841,13 @@ static inline void HW_I2C_Service_DMA_Rx_IRQ( HWI2CChannel_T channel )
            so they can be retrieved via HW_I2C_Peek_Received/Consume_Received. */
         for ( uint16_t idx = 0U; idx < state->dma_rx_expected_length; ++idx )
         {
-            HW_I2C_Ring_Push_Byte( state, state->dma_rx_linear_buffer[idx] );
+            if ( !HW_I2C_Ring_Push_Byte( state, state->dma_rx_linear_buffer[idx] ) )
+            {
+                /* Ring buffer overflow - abort transfer and mark error. */
+                state->overflow_occurred = true;
+                HW_I2C_Abort_Transfer( channel, i2c_instance );
+                return;
+            }
         }
 
         state->dma_rx_expected_length = 0U;
@@ -927,6 +949,7 @@ HWI2CStatus_T HW_I2C_Configure_Channel( HWI2CChannel_T              channel,
     state->dma_rx_expected_length   = 0U;
     state->rx_head                  = 0U;
     state->rx_tail                  = 0U;
+    state->overflow_occurred        = false;
     I2C_TypeDef* i2c_instance = HWI2CChannel_To_Instance( channel );
     if ( i2c_instance == NULL )
     {
@@ -979,6 +1002,7 @@ HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
     state->dma_rx_expected_length   = 0U;
     state->rx_head                  = 0U;
     state->rx_tail                  = 0U;
+    state->overflow_occurred        = false;
     state->config.mode              = HW_I2C_MODE_MASTER;
     state->config.speed             = HW_I2C_SPEED_100KHZ;
     state->config.tx_transfer_path  = HW_I2C_TRANSFER_INTERRUPT;
@@ -1133,6 +1157,9 @@ inline bool HW_I2C_Trigger_Master_Transmit_Internal( uint16_t device_address_7bi
  * with HW_I2C_Consume_Received(). Supports both interrupt and DMA-based transfer paths
  * as configured.
  *
+ * The overflow flag is cleared when this new receive transfer is armed so the next
+ * overflow report only reflects the current transfer.
+ *
  * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
  * @param[in] device_address_7bit   7-bit slave address to receive from
  * @param[in] expected_length       Number of bytes expected to receive
@@ -1156,6 +1183,7 @@ bool HW_I2C_Trigger_Master_Receive_External( HWI2CChannel_T channel,
     state->transfer_in_progress   = true;
     state->rx_expected_length     = expected_length;
     state->dma_rx_expected_length = expected_length;
+    state->overflow_occurred      = false;
 
     I2C_TypeDef* i2c_instance = HWI2CChannel_To_Instance( channel );
     bool         use_dma      = ( state->config.rx_transfer_path == HW_I2C_TRANSFER_DMA );
@@ -1183,6 +1211,9 @@ bool HW_I2C_Trigger_Master_Receive_External( HWI2CChannel_T channel,
  * FMPI2C1 channel. Received data will be available via HW_I2C_Peek_Received() and consumed
  * with HW_I2C_Consume_Received(). The FMPI2C1 channel uses interrupt-based transfer path only.
  *
+ * The overflow flag is cleared when this new receive transfer is armed so the next
+ * overflow report only reflects the current transfer.
+ *
  * @param[in] device_address_7bit   7-bit slave address to receive from
  * @param[in] expected_length       Number of bytes expected to receive
  *
@@ -1204,6 +1235,7 @@ inline bool HW_I2C_Trigger_Master_Receive_Internal( uint16_t device_address_7bit
     state->transfer_in_progress   = true;
     state->rx_expected_length     = expected_length;
     state->dma_rx_expected_length = expected_length;
+    state->overflow_occurred      = false;
 
     FMPI2C1->CR2 = ( ( uint32_t )device_address_7bit << 1U ) | FMPI2C_CR2_RD_WRN
                | ( ( uint32_t )expected_length << FMPI2C_CR2_NBYTES_Pos )
@@ -1263,6 +1295,9 @@ bool HW_I2C_Trigger_Slave_Transmit_External( HWI2CChannel_T channel )
  * Received data will be available via HW_I2C_Peek_Received() and consumed
  * with HW_I2C_Consume_Received().
  *
+ * The overflow flag is cleared when this new receive transfer is armed so the next
+ * overflow report only reflects the current transfer.
+ *
  * @param[in] channel           I2C channel
  * @param[in] expected_length   Number of bytes expected to receive
  *
@@ -1277,6 +1312,7 @@ bool HW_I2C_Trigger_Slave_Receive_External( HWI2CChannel_T channel, uint16_t exp
     state->transfer_in_progress   = true;
     state->rx_expected_length     = expected_length;
     state->dma_rx_expected_length = expected_length;
+    state->overflow_occurred      = false;
     
     I2C_TypeDef* i2c_instance = HWI2CChannel_To_Instance( channel );
 
@@ -1374,6 +1410,25 @@ inline bool HW_I2C_Consume_Received( HWI2CChannel_T channel, uint16_t bytes_to_c
 
     state->rx_tail = ( uint16_t )( ( state->rx_tail + bytes_to_consume ) % HW_I2C_RX_BUFFER_SIZE );
     return true;
+}
+
+/**
+ * @brief Check if an overflow occurred on the channel.
+ *
+ * Returns true if the ring buffer overflowed during the last receive transfer.
+ * Once read, the flag is cleared.
+ *
+ * @param[in] channel  I2C channel
+ *
+ * @return true if overflow was detected
+ * @return false if no overflow
+ */
+bool HW_I2C_Get_Overflow_Status( HWI2CChannel_T channel )
+{
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+    bool overflow_status = state->overflow_occurred;
+    state->overflow_occurred = false;
+    return overflow_status;
 }
 
 /**
