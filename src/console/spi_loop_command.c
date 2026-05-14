@@ -38,7 +38,7 @@
 
 typedef struct SPILoopChannel_T
 {
-    SPIPeripheral_T peripheral;
+    SPIChannel_T peripheral;
     HWSPIConfig_T   configuration;
     bool            configured;
 } SPILoopChannel_T;
@@ -395,7 +395,7 @@ static void CONSOLE_SPI_Loopback_Print_Channel_Status( const char*             n
                     CONSOLE_SPI_Loopback_CPHA_To_String( channel->configuration.cpha ) );
 }
 
-static uint32_t CONSOLE_SPI_Loopback_Copy_Rx( SPIPeripheral_T peripheral, uint8_t* data_dst,
+static uint32_t CONSOLE_SPI_Loopback_Copy_Rx( SPIChannel_T peripheral, uint8_t* data_dst,
                                               uint32_t data_dst_size_bytes )
 {
     uint32_t copied_bytes = 0U;
