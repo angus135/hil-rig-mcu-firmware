@@ -179,8 +179,8 @@ typedef struct
  * Public Variables
  *----------------------------------------------------------------------------*/
 
-CAN_HandleTypeDef hcan1;
-CAN_HandleTypeDef hcan2;
+extern CAN_HandleTypeDef hcan1;
+extern CAN_HandleTypeDef hcan2;
 
 CAN_TypeDef mock_can1_regs;
 CAN_TypeDef mock_can2_regs;
