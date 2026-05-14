@@ -38,9 +38,9 @@
 
 typedef struct SPILoopChannel_T
 {
-    SPIChannel_T peripheral;
-    HWSPIConfig_T   configuration;
-    bool            configured;
+    SPIChannel_T  peripheral;
+    HWSPIConfig_T configuration;
+    bool          configured;
 } SPILoopChannel_T;
 
 typedef struct SPILoopState_T
