@@ -277,6 +277,19 @@ bool HW_I2C_Peek_Received( HWI2CChannel_T channel, HWI2CRxPeek_T* peek );
  */
 bool HW_I2C_Consume_Received( HWI2CChannel_T channel, uint16_t bytes_to_consume );
 
+/**
+ * @brief Check if an overflow occurred on the channel.
+ *
+ * Returns true if the ring buffer overflowed during the last receive transfer.
+ * Once read, the flag is cleared. This is an atomic operation.
+ *
+ * @param[in] channel  I2C channel
+ *
+ * @return true if overflow was detected
+ * @return false if no overflow
+ */
+bool HW_I2C_Get_Overflow_Status( HWI2CChannel_T channel );
+
 #ifdef __cplusplus
 }
 #endif
