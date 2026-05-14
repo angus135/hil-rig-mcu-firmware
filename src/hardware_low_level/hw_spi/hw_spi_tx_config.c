@@ -904,9 +904,10 @@ bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32
             peripheral_state = channel_1_state;
             break;
         case SPI_DAC:
-        default:
             peripheral_state = dac_state;
             break;
+        default:
+            return false;
     }
 
     // Prevent the TX DMA IRQ from modifying pending/in-flight state while the
@@ -955,9 +956,10 @@ void HW_SPI_Tx_Trigger( SPIChannel_T peripheral )
             peripheral_state = channel_1_state;
             break;
         case SPI_DAC:
-        default:
             peripheral_state = dac_state;
             break;
+        default:
+            return;
     }
 
     // Protect against a race with the TX DMA IRQ handler. We only disable the
@@ -1026,9 +1028,10 @@ bool HW_SPI_Tx_Buffer_Empty( SPIChannel_T peripheral )
             state = channel_1_state;
             break;
         case SPI_DAC:
-        default:
             state = dac_state;
             break;
+        default:
+            return false;
     }
 
     /* Empty only means no pending software-ring bytes and no in-flight DMA bytes. */
