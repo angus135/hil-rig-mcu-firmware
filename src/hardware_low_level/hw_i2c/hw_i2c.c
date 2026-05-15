@@ -1172,7 +1172,7 @@ inline bool HW_I2C_Trigger_Master_Receive_Internal( uint16_t device_address_7bit
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[HW_I2C_CHANNEL_FMPI2C1];
 
-    if ( state->transfer_in_progress )
+    if ( state->transfer_in_progress || expected_length < HW_I2C_RX_BUFFER_SIZE )
     {
         return false;
     }
@@ -1254,6 +1254,11 @@ bool HW_I2C_Trigger_Slave_Transmit_External( HWI2CChannel_T channel )
 bool HW_I2C_Trigger_Slave_Receive_External( HWI2CChannel_T channel, uint16_t expected_length )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+
+    if ( expected_length < HW_I2C_RX_BUFFER_SIZE )
+    {
+        return false;
+    }
 
     state->transfer_kind          = HW_I2C_TRANSFER_KIND_SLAVE_RX;
     state->transfer_in_progress   = true;
