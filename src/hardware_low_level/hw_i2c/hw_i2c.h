@@ -50,9 +50,9 @@ extern "C"
 
 typedef enum HWI2CChannel_T
 {
-    HW_I2C_CHANNEL_1,
-    HW_I2C_CHANNEL_2,
-    HW_I2C_CHANNEL_FMPI2C1,
+    HW_I2C_CHANNEL_1       = 0,
+    HW_I2C_CHANNEL_2       = 1,
+    HW_I2C_CHANNEL_FMPI2C1 = 2,
 
     HW_I2C_CHANNEL_COUNT,
 } HWI2CChannel_T;
@@ -154,8 +154,7 @@ HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit );
  * @return true if data was loaded successfully
  * @return false if transfer is in progress or length exceeds buffer size
  */
-bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data,
-                              uint16_t length );
+bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data, uint16_t length );
 
 /**
  * @brief Trigger a master transmit operation on an external I2C channel.

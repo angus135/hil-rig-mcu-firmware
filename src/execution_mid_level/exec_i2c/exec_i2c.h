@@ -114,7 +114,7 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
  * @return false on failure
  */
 bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
-                           const uint8_t* payload, uint16_t payload_length );
+                                        const uint8_t* payload, uint16_t payload_length );
 
 /**
  * @brief Slave transmit on an external channel.
@@ -137,7 +137,7 @@ bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_
  * @return false on failure
  */
 bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* payload,
-                          uint16_t payload_length );
+                                       uint16_t payload_length );
 
 /**
  * @brief Initiate master receive on an external I2C channel.

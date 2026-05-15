@@ -125,7 +125,8 @@ protected:
 TEST_F( ExampleTest, SelfConfig_InitializesActiveDeviceAndReportsSuccess )
 {
     EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) ).WillOnce( Return( HW_I2C_STATUS_OK ) );
-    EXPECT_CALL( mock_hw_i2c, LoadStageBuffer( HW_I2C_CHANNEL_FMPI2C1, ::testing::_, ::testing::_ ) )
+    EXPECT_CALL( mock_hw_i2c,
+                 LoadStageBuffer( HW_I2C_CHANNEL_FMPI2C1, ::testing::_, ::testing::_ ) )
         .Times( 8 );
     EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x20U ) ).Times( 8 );
 
@@ -138,8 +139,7 @@ TEST_F( ExampleTest, SelfConfig_InitializesActiveDeviceAndReportsSuccess )
 
 TEST_F( ExampleTest, SelfConfig_PropagatesHardwareErrorAndLeavesNotReady )
 {
-    EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) )
-        .WillOnce( Return( HW_I2C_STATUS_BUSY ) );
+    EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) ).WillOnce( Return( HW_I2C_STATUS_BUSY ) );
     EXPECT_CALL( mock_hw_i2c,
                  LoadStageBuffer( HW_I2C_CHANNEL_FMPI2C1, ::testing::_, ::testing::_ ) )
         .Times( 0 );
@@ -162,9 +162,11 @@ TEST_F( ExampleTest, InternalTransmit_ForwardsToInternalChannel )
 
     {
         InSequence sequence;
-        EXPECT_CALL( mock_hw_i2c, LoadStageBuffer( HW_I2C_CHANNEL_FMPI2C1, payload.data(), payload.size() ) )
+        EXPECT_CALL( mock_hw_i2c,
+                     LoadStageBuffer( HW_I2C_CHANNEL_FMPI2C1, payload.data(), payload.size() ) )
             .WillOnce( Return( true ) );
-        EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x33U ) ).WillOnce( Return( true ) );
+        EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x33U ) )
+            .WillOnce( Return( true ) );
     }
 
     EXPECT_TRUE( LOGIC_EXPANDER_Master_Transmit_Internal( 0x33U, payload.data(), payload.size() ) );
@@ -172,24 +174,25 @@ TEST_F( ExampleTest, InternalTransmit_ForwardsToInternalChannel )
 
 TEST_F( ExampleTest, InternalReceive_ForwardsToInternalChannel )
 {
-    EXPECT_CALL( mock_hw_i2c, TriggerMasterReceiveInternal( 0x33U, 12U ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_i2c, TriggerMasterReceiveInternal( 0x33U, 12U ) )
+        .WillOnce( Return( true ) );
 
     EXPECT_TRUE( LOGIC_EXPANDER_Start_Master_Receive_Internal( 0x33U, 12U ) );
 }
 
 TEST_F( ExampleTest, LoadControlBit_ValidatesInputsAndUpdatesShadowState )
 {
-    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_RESERVED_0,
-                                                LOGIC_EXPANDER_PORT_A, 8U, true ),
+    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_RESERVED_0, LOGIC_EXPANDER_PORT_A,
+                                                8U, true ),
                LOGIC_EXPANDER_STATUS_INVALID_PARAM );
 
-    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_RESERVED_0,
-                                                LOGIC_EXPANDER_PORT_A, 3U, true ),
+    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_RESERVED_0, LOGIC_EXPANDER_PORT_A,
+                                                3U, true ),
                LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( logic_expander_state[0].olat_a, 0x08U );
 
-    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_RESERVED_0,
-                                                LOGIC_EXPANDER_PORT_A, 3U, false ),
+    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_RESERVED_0, LOGIC_EXPANDER_PORT_A,
+                                                3U, false ),
                LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( logic_expander_state[0].olat_a, 0x00U );
 }
@@ -201,16 +204,15 @@ TEST_F( ExampleTest, SendControlBits_ReturnsNotReadyBeforeSelfConfig )
 
 TEST_F( ExampleTest, SendControlBits_WritesActiveShadowRegisters )
 {
-    logic_expander_ready = true;
+    logic_expander_ready                        = true;
     logic_expander_state[0].device_address_7bit = 0x20U;
     logic_expander_state[0].olat_a              = 0x5AU;
     logic_expander_state[0].olat_b              = 0xA5U;
 
     const std::array<uint8_t, 3U> expected_payload = { 0x14U, 0x5AU, 0xA5U };
 
-    EXPECT_CALL( mock_hw_i2c,
-                 LoadStageBuffer( HW_I2C_CHANNEL_FMPI2C1, expected_payload.data(),
-                                  expected_payload.size() ) )
+    EXPECT_CALL( mock_hw_i2c, LoadStageBuffer( HW_I2C_CHANNEL_FMPI2C1, expected_payload.data(),
+                                               expected_payload.size() ) )
         .WillOnce( Return( true ) );
     EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x20U ) ).WillOnce( Return( true ) );
 
@@ -225,9 +227,9 @@ TEST_F( ExampleTest, GetStateSnapshot_CopiesShadowState )
 
     LogicExpanderStateSnapshot_T snapshot{};
 
-    EXPECT_EQ( LOGIC_EXPANDER_Get_State_Snapshot( static_cast<LogicExpanderIndex_T>( 2U ),
-                                                  &snapshot ),
-               LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ(
+        LOGIC_EXPANDER_Get_State_Snapshot( static_cast<LogicExpanderIndex_T>( 2U ), &snapshot ),
+        LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( snapshot.device_address_7bit, 0x25U );
     EXPECT_EQ( snapshot.olat_a, 0x11U );
     EXPECT_EQ( snapshot.olat_b, 0x22U );
@@ -235,7 +237,7 @@ TEST_F( ExampleTest, GetStateSnapshot_CopiesShadowState )
 
 TEST_F( ExampleTest, GetStateSnapshot_RejectsInvalidParameters )
 {
-    EXPECT_EQ( LOGIC_EXPANDER_Get_State_Snapshot( static_cast<LogicExpanderIndex_T>( LOGIC_EXPANDER_COUNT ),
-                                                  nullptr ),
+    EXPECT_EQ( LOGIC_EXPANDER_Get_State_Snapshot(
+                   static_cast<LogicExpanderIndex_T>( LOGIC_EXPANDER_COUNT ), nullptr ),
                LOGIC_EXPANDER_STATUS_INVALID_PARAM );
 }

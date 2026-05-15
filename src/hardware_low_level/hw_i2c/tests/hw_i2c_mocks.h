@@ -74,12 +74,12 @@ typedef struct
     volatile uint32_t TXDR;
 } FMPI2C_TypeDef;
 
-static I2C_TypeDef        hw_i2c_mock_i2c1 = { 0 };
-static I2C_TypeDef        hw_i2c_mock_i2c2 = { 0 };
-static DMA_TypeDef        hw_i2c_mock_dma1 = { 0 };
+static I2C_TypeDef        hw_i2c_mock_i2c1         = { 0 };
+static I2C_TypeDef        hw_i2c_mock_i2c2         = { 0 };
+static DMA_TypeDef        hw_i2c_mock_dma1         = { 0 };
 static DMA_Stream_TypeDef hw_i2c_mock_dma1_stream2 = { 0 };
 static DMA_Stream_TypeDef hw_i2c_mock_dma1_stream7 = { 0 };
-static FMPI2C_TypeDef     hw_i2c_mock_fmpi2c1 = { 0 };
+static FMPI2C_TypeDef     hw_i2c_mock_fmpi2c1      = { 0 };
 
 #define I2C1 ( &hw_i2c_mock_i2c1 )
 #define I2C2 ( &hw_i2c_mock_i2c2 )
@@ -193,7 +193,8 @@ static inline void LL_I2C_Enable( I2C_TypeDef* i2c_instance )
 
 static inline void LL_I2C_SetPeriphClock( I2C_TypeDef* i2c_instance, uint32_t PeriphClock )
 {
-    i2c_instance->CR2 = ( i2c_instance->CR2 & ~I2C_CR2_FREQ ) | ( ( PeriphClock / 1000000U ) & I2C_CR2_FREQ );
+    i2c_instance->CR2 =
+        ( i2c_instance->CR2 & ~I2C_CR2_FREQ ) | ( ( PeriphClock / 1000000U ) & I2C_CR2_FREQ );
 }
 
 static inline void LL_I2C_SetClockPeriod( I2C_TypeDef* i2c_instance, uint32_t ClockPeriod )
@@ -226,7 +227,7 @@ static inline void LL_I2C_ConfigSpeed( I2C_TypeDef* i2c_instance, uint32_t Perip
         {
             ccr_value = 1U;
         }
-        i2c_instance->CCR = I2C_CCR_FS | ( ccr_value & I2C_CCR_CCR ) | DutyCycle;
+        i2c_instance->CCR   = I2C_CCR_FS | ( ccr_value & I2C_CCR_CCR ) | DutyCycle;
         i2c_instance->TRISE = ( ( pclk_mhz * 300U ) / 1000U + 1U ) & I2C_TRISE_TRISE;
     }
     else
@@ -236,7 +237,7 @@ static inline void LL_I2C_ConfigSpeed( I2C_TypeDef* i2c_instance, uint32_t Perip
         {
             ccr_value = 4U;
         }
-        i2c_instance->CCR = ccr_value & I2C_CCR_CCR;
+        i2c_instance->CCR   = ccr_value & I2C_CCR_CCR;
         i2c_instance->TRISE = ( pclk_mhz + 1U ) & I2C_TRISE_TRISE;
     }
 }
