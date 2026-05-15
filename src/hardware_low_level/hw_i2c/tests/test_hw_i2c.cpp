@@ -69,7 +69,7 @@ class HWI2CTest : public ::testing::Test
 protected:
     void SetUp( void ) override
     {
-    std::memset( hw_i2c_channel_state, 0, sizeof( hw_i2c_channel_state ) );
+        std::memset( hw_i2c_channel_state, 0, sizeof( hw_i2c_channel_state ) );
         std::memset( &hw_i2c_mock_i2c1, 0, sizeof( hw_i2c_mock_i2c1 ) );
         std::memset( &hw_i2c_mock_i2c2, 0, sizeof( hw_i2c_mock_i2c2 ) );
         std::memset( &hw_i2c_mock_dma1, 0, sizeof( hw_i2c_mock_dma1 ) );
@@ -156,9 +156,8 @@ TEST_F( HWI2CTest, TriggerMasterTransmitInternal_ProgramsStartFrame )
                HW_I2C_TRANSFER_KIND_MASTER_TX );
     EXPECT_EQ( hw_i2c_channel_state[HW_I2C_CHANNEL_FMPI2C1].target_address_7bit, 0x2AU );
     EXPECT_EQ( hw_i2c_channel_state[HW_I2C_CHANNEL_FMPI2C1].tx_remaining, 5U );
-    EXPECT_EQ( FMPI2C1->CR2,
-               ( 0x2AU << 1U ) | ( 5U << FMPI2C_CR2_NBYTES_Pos ) | FMPI2C_CR2_START
-                   | FMPI2C_CR2_AUTOEND );
+    EXPECT_EQ( FMPI2C1->CR2, ( 0x2AU << 1U ) | ( 5U << FMPI2C_CR2_NBYTES_Pos ) | FMPI2C_CR2_START
+                                 | FMPI2C_CR2_AUTOEND );
 }
 
 TEST_F( HWI2CTest, TriggerMasterReceiveInternal_ProgramsReadStartFrame )
@@ -170,9 +169,8 @@ TEST_F( HWI2CTest, TriggerMasterReceiveInternal_ProgramsReadStartFrame )
                HW_I2C_TRANSFER_KIND_MASTER_RX );
     EXPECT_EQ( hw_i2c_channel_state[HW_I2C_CHANNEL_FMPI2C1].rx_expected_length, 7U );
     EXPECT_EQ( hw_i2c_channel_state[HW_I2C_CHANNEL_FMPI2C1].dma_rx_expected_length, 7U );
-    EXPECT_EQ( FMPI2C1->CR2,
-               ( 0x33U << 1U ) | FMPI2C_CR2_RD_WRN | ( 7U << FMPI2C_CR2_NBYTES_Pos )
-                   | FMPI2C_CR2_START | FMPI2C_CR2_AUTOEND );
+    EXPECT_EQ( FMPI2C1->CR2, ( 0x33U << 1U ) | FMPI2C_CR2_RD_WRN | ( 7U << FMPI2C_CR2_NBYTES_Pos )
+                                 | FMPI2C_CR2_START | FMPI2C_CR2_AUTOEND );
 }
 
 TEST_F( HWI2CTest, PeekReceived_EmptyBufferReturnsEmptySpans )

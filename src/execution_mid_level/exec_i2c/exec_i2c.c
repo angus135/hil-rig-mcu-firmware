@@ -98,14 +98,14 @@ static EXECI2CStatus_T EXEC_I2C_Validate_Config( HWI2CChannel_T                c
 
     /* Transfer paths must be interrupt or DMA */
     if ( ( config->tx_transfer_path != HW_I2C_TRANSFER_INTERRUPT )
-        && ( config->tx_transfer_path != HW_I2C_TRANSFER_DMA ) )
+         && ( config->tx_transfer_path != HW_I2C_TRANSFER_DMA ) )
     {
         return EXEC_I2C_STATUS_INVALID_PARAM;
     }
 
     /* Receive path must be interrupt or DMA */
     if ( ( config->rx_transfer_path != HW_I2C_TRANSFER_INTERRUPT )
-        && ( config->rx_transfer_path != HW_I2C_TRANSFER_DMA ) )
+         && ( config->rx_transfer_path != HW_I2C_TRANSFER_DMA ) )
     {
         return EXEC_I2C_STATUS_INVALID_PARAM;
     }
@@ -120,7 +120,7 @@ static EXECI2CStatus_T EXEC_I2C_Validate_Config( HWI2CChannel_T                c
     if ( channel == HW_I2C_CHANNEL_1 )
     {
         if ( ( config->tx_transfer_path == HW_I2C_TRANSFER_DMA )
-            || ( config->rx_transfer_path == HW_I2C_TRANSFER_DMA ) )
+             || ( config->rx_transfer_path == HW_I2C_TRANSFER_DMA ) )
         {
             return EXEC_I2C_STATUS_INVALID_PARAM;
         }
@@ -277,7 +277,6 @@ bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t de
     return HW_I2C_Trigger_Master_Receive_External( channel, device_address_7bit, expected_length );
 }
 
-
 /**
  * @brief Initiate slave receive on an external channel.
  *
@@ -324,14 +323,13 @@ bool EXEC_I2C_Start_Slave_Receive_External( HWI2CChannel_T channel, uint16_t exp
  * @return false on failure
  */
 bool EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel, uint8_t* result_storage,
-                                        uint16_t result_storage_capacity,
-                                        uint16_t* bytes_copied )
+                                        uint16_t result_storage_capacity, uint16_t* bytes_copied )
 {
     /* Default output to 0 bytes so callers can rely on deterministic state on failure. */
     *bytes_copied = 0U;
 
     /* Snapshot current RX data layout (may be split across ring-buffer wrap). */
-    HWI2CRxPeek_T peek      = { 0 };
+    HWI2CRxPeek_T peek = { 0 };
     if ( !HW_I2C_Peek_Received( channel, &peek ) )
     {
         return false;
@@ -385,5 +383,5 @@ bool EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel, uint8_t* result_
 bool EXEC_I2C_Did_Last_Transfer_Overflow( HWI2CChannel_T channel )
 {
     // Delegate to hw_i2c
-    return HW_I2C_Get_Overflow_Status(channel);
+    return HW_I2C_Get_Overflow_Status( channel );
 }

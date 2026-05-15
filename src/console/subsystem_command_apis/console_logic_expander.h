@@ -1,7 +1,7 @@
 /******************************************************************************
  *  File:      console_logic_expander.h
  *  Author:    Coen Pasitchnyj
-*  Created:    3-May-2026
+ *  Created:    3-May-2026
  *
  *  Description:
  *      <Short description of the module, what it exposes, and how it should be used>
@@ -36,7 +36,6 @@ extern "C"
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
-
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes

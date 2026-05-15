@@ -121,10 +121,11 @@ static bool                 logic_expander_ready                       = false;
  *------------------------------------------------------------------------------
  */
 
-static inline bool                  LOGIC_EXPANDER_Index_Is_Valid( LogicExpanderIndex_T expander_index );
-static inline bool                  LOGIC_EXPANDER_Index_Is_Active( LogicExpanderIndex_T expander_index );
-static inline bool                  LOGIC_EXPANDER_Port_Is_Valid( LogicExpanderPort_T port );
-static inline LogicExpanderStatus_T LOGIC_EXPANDER_From_Exec_Status( LogicExpanderI2CStatus_T status );
+static inline bool LOGIC_EXPANDER_Index_Is_Valid( LogicExpanderIndex_T expander_index );
+static inline bool LOGIC_EXPANDER_Index_Is_Active( LogicExpanderIndex_T expander_index );
+static inline bool LOGIC_EXPANDER_Port_Is_Valid( LogicExpanderPort_T port );
+static inline LogicExpanderStatus_T
+LOGIC_EXPANDER_From_Exec_Status( LogicExpanderI2CStatus_T status );
 static LogicExpanderStatus_T
 LOGIC_EXPANDER_Internal_Send_With_Busy_Retry( uint16_t device_address_7bit, const uint8_t* payload,
                                               uint16_t payload_length );
@@ -135,7 +136,9 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Write_Register_Pair( uint16_t device
                                                                  uint8_t  register_address,
                                                                  uint8_t  first_value,
                                                                  uint8_t  second_value );
-static LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t* payload, uint16_t payload_length );
+static LogicExpanderI2CStatus_T
+LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t* payload,
+                                         uint16_t payload_length );
 LogicExpanderStatus_T LOGIC_EXPANDER_I2C_Internal_Config( void );
 
 /**-----------------------------------------------------------------------------
@@ -161,7 +164,8 @@ static inline bool LOGIC_EXPANDER_Port_Is_Valid( LogicExpanderPort_T port )
     return ( port == LOGIC_EXPANDER_PORT_A ) || ( port == LOGIC_EXPANDER_PORT_B );
 }
 
-static inline LogicExpanderStatus_T LOGIC_EXPANDER_From_Exec_Status( LogicExpanderI2CStatus_T status )
+static inline LogicExpanderStatus_T
+LOGIC_EXPANDER_From_Exec_Status( LogicExpanderI2CStatus_T status )
 {
     switch ( status )
     {
@@ -263,8 +267,9 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Write_Register_Pair( uint16_t device
  * @return LOGIC_EXPANDER_I2C_STATUS_INVALID_PARAM if address/payload invalid
  * @return LOGIC_EXPANDER_I2C_STATUS_ERROR if trigger fails
  */
-LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_t device_address_7bit, const uint8_t* payload,
-                                                                  uint16_t payload_length )
+LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_t device_address_7bit,
+                                                                  const uint8_t* payload,
+                                                                  uint16_t       payload_length )
 {
     /* Validate parameters: address must be 7-bit, payload non-NULL and non-empty. */
     if ( ( device_address_7bit > 0x7FU ) || ( payload == NULL ) || ( payload_length == 0U ) )
@@ -299,12 +304,14 @@ LogicExpanderI2CStatus_T LOGIC_EXPANDER_I2C_Internal_Master_Send( uint16_t devic
  */
 LogicExpanderStatus_T LOGIC_EXPANDER_I2C_Internal_Config( void )
 {
-    if (LOGIC_EXPANDER_INTERNAL_FMPI2C1_OWN_ADDRESS_7BIT > 0x7FU)
+    if ( LOGIC_EXPANDER_INTERNAL_FMPI2C1_OWN_ADDRESS_7BIT > 0x7FU )
     {
         return LOGIC_EXPANDER_STATUS_INVALID_PARAM;
     }
-    HWI2CStatus_T hw_status = HW_I2C_Configure_Internal_FMPI2C1( LOGIC_EXPANDER_INTERNAL_FMPI2C1_OWN_ADDRESS_7BIT );
-    return ( hw_status == HW_I2C_STATUS_OK ) ? LOGIC_EXPANDER_STATUS_OK : LOGIC_EXPANDER_STATUS_ERROR;
+    HWI2CStatus_T hw_status =
+        HW_I2C_Configure_Internal_FMPI2C1( LOGIC_EXPANDER_INTERNAL_FMPI2C1_OWN_ADDRESS_7BIT );
+    return ( hw_status == HW_I2C_STATUS_OK ) ? LOGIC_EXPANDER_STATUS_OK
+                                             : LOGIC_EXPANDER_STATUS_ERROR;
 }
 
 /**-----------------------------------------------------------------------------
@@ -447,8 +454,9 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void )
  * @return LOGIC_EXPANDER_STATUS_OK on success
  * @return LOGIC_EXPANDER_STATUS_INVALID_PARAM if parameters are out of range
  */
-LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expander_index, LogicExpanderPort_T port,
-                                                 uint8_t bit_index, bool bit_value )
+LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expander_index,
+                                                       LogicExpanderPort_T port, uint8_t bit_index,
+                                                       bool bit_value )
 {
     /* Validate index, port, and bit position. */
     if ( !LOGIC_EXPANDER_Index_Is_Valid( expander_index ) || !LOGIC_EXPANDER_Port_Is_Valid( port )
@@ -468,11 +476,11 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expa
     /* Set or clear the bit based on the requested value. */
     if ( bit_value )
     {
-        *target_register |= bit_mask;  /* Set bit to 1. */
+        *target_register |= bit_mask; /* Set bit to 1. */
     }
     else
     {
-        *target_register &= ( uint8_t )~bit_mask;  /* Clear bit to 0. */
+        *target_register &= ( uint8_t )~bit_mask; /* Clear bit to 0. */
     }
 
     return LOGIC_EXPANDER_STATUS_OK;
@@ -533,8 +541,9 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void )
  * @return LOGIC_EXPANDER_STATUS_OK on success
  * @return LOGIC_EXPANDER_STATUS_INVALID_PARAM if parameters are invalid
  */
-LogicExpanderStatus_T LOGIC_EXPANDER_Get_State_Snapshot( LogicExpanderIndex_T          expander_index,
-                                                   LogicExpanderStateSnapshot_T* out_snapshot )
+LogicExpanderStatus_T
+LOGIC_EXPANDER_Get_State_Snapshot( LogicExpanderIndex_T          expander_index,
+                                   LogicExpanderStateSnapshot_T* out_snapshot )
 {
     /* Validate expander index and snapshot pointer. */
     if ( !LOGIC_EXPANDER_Index_Is_Valid( expander_index ) || ( out_snapshot == 0 ) )
@@ -543,9 +552,10 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Get_State_Snapshot( LogicExpanderIndex_T   
     }
 
     /* Copy current device address and shadow register state to snapshot. */
-    out_snapshot->device_address_7bit = logic_expander_state[( uint8_t )expander_index].device_address_7bit;
-    out_snapshot->olat_a              = logic_expander_state[( uint8_t )expander_index].olat_a;
-    out_snapshot->olat_b              = logic_expander_state[( uint8_t )expander_index].olat_b;
+    out_snapshot->device_address_7bit =
+        logic_expander_state[( uint8_t )expander_index].device_address_7bit;
+    out_snapshot->olat_a = logic_expander_state[( uint8_t )expander_index].olat_a;
+    out_snapshot->olat_b = logic_expander_state[( uint8_t )expander_index].olat_b;
 
     return LOGIC_EXPANDER_STATUS_OK;
 }
@@ -563,8 +573,9 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Get_State_Snapshot( LogicExpanderIndex_T   
  * @return true if transmission was initiated
  * @return false on failure
  */
-inline bool LOGIC_EXPANDER_Master_Transmit_Internal( uint16_t device_address_7bit, const uint8_t* payload,
-                                                           uint16_t payload_length )
+inline bool LOGIC_EXPANDER_Master_Transmit_Internal( uint16_t       device_address_7bit,
+                                                     const uint8_t* payload,
+                                                     uint16_t       payload_length )
 {
     return HW_I2C_Load_Stage_Buffer( HW_I2C_CHANNEL_FMPI2C1, payload, payload_length )
            && HW_I2C_Trigger_Master_Transmit_Internal( device_address_7bit );
@@ -574,7 +585,8 @@ inline bool LOGIC_EXPANDER_Master_Transmit_Internal( uint16_t device_address_7bi
  * @brief Initiate master receive on the internal FMPI2C1 channel.
  *
  * Requests data from a slave device on the internal FMPI2C1 channel.
- * Received data is buffered internally and can be retrieved with EXEC_I2C_Receive_Copy_And_Consume().
+ * Received data is buffered internally and can be retrieved with
+ * EXEC_I2C_Receive_Copy_And_Consume().
  *
  * @param[in] device_address_7bit   7-bit slave address
  * @param[in] expected_length       Number of bytes expected from slave
@@ -582,7 +594,8 @@ inline bool LOGIC_EXPANDER_Master_Transmit_Internal( uint16_t device_address_7bi
  * @return true if receive was initiated
  * @return false on failure
  */
-inline bool LOGIC_EXPANDER_Start_Master_Receive_Internal( uint16_t device_address_7bit, uint16_t expected_length )
+inline bool LOGIC_EXPANDER_Start_Master_Receive_Internal( uint16_t device_address_7bit,
+                                                          uint16_t expected_length )
 {
     return HW_I2C_Trigger_Master_Receive_Internal( device_address_7bit, expected_length );
 }
