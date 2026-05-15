@@ -32,19 +32,15 @@
  *------------------------------------------------------------------------------
  */
 
-
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
 
-
-
 /**-----------------------------------------------------------------------------
  *  Private Variables
  *------------------------------------------------------------------------------
  */
-
 
 /**-----------------------------------------------------------------------------
  *  Private Function Prototypes
@@ -56,7 +52,6 @@
  *------------------------------------------------------------------------------
  */
 
-
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
@@ -65,8 +60,7 @@
 /**
  * @brief Parses the master and slave I2C channel selection.
  */
-bool CONSOLE_Parse_I2C_Master_And_Slave( const char* arg,
-                                         HWI2CChannel_T* master_channel,
+bool CONSOLE_Parse_I2C_Master_And_Slave( const char* arg, HWI2CChannel_T* master_channel,
                                          HWI2CChannel_T* slave_channel )
 {
     if ( ( arg == NULL ) || ( master_channel == NULL ) || ( slave_channel == NULL ) )
@@ -213,9 +207,8 @@ bool CONSOLE_Build_I2C_Message( uint16_t argc, char* argv[], char* out_message,
 /**
  * @brief Runs a master-to-slave I2C loopback transfer.
  */
-bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels,
-                                   uint16_t slave_addr, const char* tx_message,
-                                   uint16_t tx_len, char* rx_message,
+bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels, uint16_t slave_addr,
+                                   const char* tx_message, uint16_t tx_len, char* rx_message,
                                    uint16_t rx_message_size, uint16_t* out_received_len )
 {
     bool is_ok = EXEC_I2C_Start_Slave_Receive_External( channels.slave, tx_len );
@@ -227,8 +220,8 @@ bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels,
 
     vTaskDelay( pdMS_TO_TICKS( 2 ) );
 
-    is_ok =
-        EXEC_I2C_Master_Transmit_External( channels.master, slave_addr, ( const uint8_t* )tx_message, tx_len );
+    is_ok = EXEC_I2C_Master_Transmit_External( channels.master, slave_addr,
+                                               ( const uint8_t* )tx_message, tx_len );
     if ( !is_ok )
     {
         CONSOLE_Printf( "Master send failed.\r\n" );
@@ -268,12 +261,12 @@ bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels,
 /**
  * @brief Runs a slave-to-master I2C loopback transfer.
  */
-bool CONSOLE_Run_I2C_Loopback_S2M( CONSOLEI2CLoopbackChannels_T channels,
-                                   uint16_t slave_addr, const char* tx_message,
-                                   uint16_t tx_len, char* rx_message,
+bool CONSOLE_Run_I2C_Loopback_S2M( CONSOLEI2CLoopbackChannels_T channels, uint16_t slave_addr,
+                                   const char* tx_message, uint16_t tx_len, char* rx_message,
                                    uint16_t rx_message_size, uint16_t* out_received_len )
 {
-    bool is_ok = EXEC_I2C_Slave_Transmit_External( channels.slave, ( const uint8_t* )tx_message, tx_len );
+    bool is_ok =
+        EXEC_I2C_Slave_Transmit_External( channels.slave, ( const uint8_t* )tx_message, tx_len );
     if ( !is_ok )
     {
         CONSOLE_Printf( "Failed to start slave send.\r\n" );
@@ -318,4 +311,3 @@ bool CONSOLE_Run_I2C_Loopback_S2M( CONSOLEI2CLoopbackChannels_T channels,
     *out_received_len = received_len;
     return true;
 }
-

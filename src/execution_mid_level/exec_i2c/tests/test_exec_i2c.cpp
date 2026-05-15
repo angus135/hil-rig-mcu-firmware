@@ -55,8 +55,8 @@ public:
                  ( HWI2CChannel_T channel, uint16_t device_address_7bit ), () );
     MOCK_METHOD( bool, TriggerSlaveTransmitExternal, ( HWI2CChannel_T channel ), () );
     MOCK_METHOD( bool, TriggerMasterReceiveExternal,
-                 ( HWI2CChannel_T channel, uint16_t device_address_7bit,
-                   uint16_t expected_length ), () );
+                 ( HWI2CChannel_T channel, uint16_t device_address_7bit, uint16_t expected_length ),
+                 () );
     MOCK_METHOD( bool, TriggerSlaveReceiveExternal,
                  ( HWI2CChannel_T channel, uint16_t expected_length ), () );
     MOCK_METHOD( bool, PeekReceived, ( HWI2CChannel_T channel, HWI2CRxPeek_T* peek ), () );
@@ -77,8 +77,7 @@ bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data, uint
     return g_mock_hw_i2c->LoadStageBuffer( channel, data, length );
 }
 
-bool HW_I2C_Trigger_Master_Transmit_External( HWI2CChannel_T channel,
-                                              uint16_t       device_address_7bit )
+bool HW_I2C_Trigger_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit )
 {
     return g_mock_hw_i2c->TriggerMasterTransmitExternal( channel, device_address_7bit );
 }
@@ -238,8 +237,8 @@ TEST_F( ExecI2CTest, MasterTransmitExternal_LoadsThenTriggers )
             .WillOnce( Return( true ) );
     }
 
-    EXPECT_TRUE( EXEC_I2C_Master_Transmit_External( HW_I2C_CHANNEL_2, 0x45U, payload,
-                                                    sizeof( payload ) ) );
+    EXPECT_TRUE(
+        EXEC_I2C_Master_Transmit_External( HW_I2C_CHANNEL_2, 0x45U, payload, sizeof( payload ) ) );
 }
 
 TEST_F( ExecI2CTest, MasterTransmitExternal_LoadFailureStopsBeforeTrigger )
@@ -249,8 +248,8 @@ TEST_F( ExecI2CTest, MasterTransmitExternal_LoadFailureStopsBeforeTrigger )
     EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitExternal( _, _ ) ).Times( 0 );
 
     const uint8_t payload[] = { 1U, 2U, 3U, 4U };
-    EXPECT_FALSE( EXEC_I2C_Master_Transmit_External( HW_I2C_CHANNEL_1, 0x11U, payload,
-                                                     sizeof( payload ) ) );
+    EXPECT_FALSE(
+        EXEC_I2C_Master_Transmit_External( HW_I2C_CHANNEL_1, 0x11U, payload, sizeof( payload ) ) );
 }
 
 TEST_F( ExecI2CTest, SlaveTransmitExternal_ForwardsBothCalls )
@@ -288,12 +287,12 @@ TEST_F( ExecI2CTest, ReceiveCopyAndConsume_CopiesSingleSpanAndConsumesExactCount
 {
     const uint8_t source[] = { 0x10U, 0x11U, 0x12U };
     HWI2CRxPeek_T peek     = {
-        .first        = { .data = source, .length = 3U },
-        .second       = { .data = nullptr, .length = 0U },
-        .total_length = 3U,
+            .first        = { .data = source, .length = 3U },
+            .second       = { .data = nullptr, .length = 0U },
+            .total_length = 3U,
     };
-    uint8_t destination[4] = { 0 };
-    uint16_t bytes_copied  = 99U;
+    uint8_t  destination[4] = { 0 };
+    uint16_t bytes_copied   = 99U;
 
     {
         InSequence sequence;
@@ -302,7 +301,8 @@ TEST_F( ExecI2CTest, ReceiveCopyAndConsume_CopiesSingleSpanAndConsumesExactCount
                 *out_peek = peek;
                 return true;
             } );
-        EXPECT_CALL( mock_hw_i2c, ConsumeReceived( HW_I2C_CHANNEL_1, 3U ) ).WillOnce( Return( true ) );
+        EXPECT_CALL( mock_hw_i2c, ConsumeReceived( HW_I2C_CHANNEL_1, 3U ) )
+            .WillOnce( Return( true ) );
     }
 
     EXPECT_TRUE( EXEC_I2C_Receive_Copy_And_Consume( HW_I2C_CHANNEL_1, destination,
@@ -316,12 +316,12 @@ TEST_F( ExecI2CTest, ReceiveCopyAndConsume_CopiesWrappedSpansInOrder )
     const uint8_t first[]  = { 0x21U, 0x22U };
     const uint8_t second[] = { 0x23U, 0x24U };
     HWI2CRxPeek_T peek     = {
-        .first        = { .data = first, .length = 2U },
-        .second       = { .data = second, .length = 2U },
-        .total_length = 4U,
+            .first        = { .data = first, .length = 2U },
+            .second       = { .data = second, .length = 2U },
+            .total_length = 4U,
     };
-    uint8_t destination[4] = { 0 };
-    uint16_t bytes_copied  = 0U;
+    uint8_t  destination[4] = { 0 };
+    uint16_t bytes_copied   = 0U;
 
     EXPECT_CALL( mock_hw_i2c, PeekReceived( HW_I2C_CHANNEL_2, _ ) )
         .WillOnce( [&]( HWI2CChannel_T, HWI2CRxPeek_T* out_peek ) {
@@ -343,12 +343,12 @@ TEST_F( ExecI2CTest, ReceiveCopyAndConsume_ClampsToDestinationCapacity )
 {
     const uint8_t source[] = { 0x31U, 0x32U, 0x33U, 0x34U };
     HWI2CRxPeek_T peek     = {
-        .first        = { .data = source, .length = 4U },
-        .second       = { .data = nullptr, .length = 0U },
-        .total_length = 4U,
+            .first        = { .data = source, .length = 4U },
+            .second       = { .data = nullptr, .length = 0U },
+            .total_length = 4U,
     };
-    uint8_t destination[3] = { 0 };
-    uint16_t bytes_copied  = 0U;
+    uint8_t  destination[3] = { 0 };
+    uint16_t bytes_copied   = 0U;
 
     EXPECT_CALL( mock_hw_i2c, PeekReceived( HW_I2C_CHANNEL_1, _ ) )
         .WillOnce( [&]( HWI2CChannel_T, HWI2CRxPeek_T* out_peek ) {
@@ -365,8 +365,8 @@ TEST_F( ExecI2CTest, ReceiveCopyAndConsume_ClampsToDestinationCapacity )
 
 TEST_F( ExecI2CTest, ReceiveCopyAndConsume_ReturnsFalseWhenPeekFails )
 {
-    uint8_t destination[4] = { 0 };
-    uint16_t bytes_copied  = 123U;
+    uint8_t  destination[4] = { 0 };
+    uint16_t bytes_copied   = 123U;
 
     EXPECT_CALL( mock_hw_i2c, PeekReceived( HW_I2C_CHANNEL_1, _ ) ).WillOnce( Return( false ) );
     EXPECT_CALL( mock_hw_i2c, ConsumeReceived( _, _ ) ).Times( 0 );

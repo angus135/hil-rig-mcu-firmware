@@ -125,8 +125,9 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void );
  * @return LOGIC_EXPANDER_STATUS_OK on success
  * @return LOGIC_EXPANDER_STATUS_INVALID_PARAM if parameters are out of range
  */
-LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expander_index, LogicExpanderPort_T port,
-                                                 uint8_t bit_index, bool bit_value );
+LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expander_index,
+                                                       LogicExpanderPort_T port, uint8_t bit_index,
+                                                       bool bit_value );
 
 /**
  * @brief Transmit shadow register state to all active devices.
@@ -155,14 +156,16 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void );
  * @return true if transmission was initiated
  * @return false on failure
  */
-inline bool LOGIC_EXPANDER_Master_Transmit_Internal( uint16_t device_address_7bit, const uint8_t* payload,
-                                              uint16_t payload_length );
+inline bool LOGIC_EXPANDER_Master_Transmit_Internal( uint16_t       device_address_7bit,
+                                                     const uint8_t* payload,
+                                                     uint16_t       payload_length );
 
 /**
  * @brief Initiate master receive on the internal FMPI2C1 channel.
  *
  * Requests data from a slave device on the internal FMPI2C1 channel.
- * Received data is buffered internally and can be retrieved with EXEC_I2C_Receive_Copy_And_Consume().
+ * Received data is buffered internally and can be retrieved with
+ * EXEC_I2C_Receive_Copy_And_Consume().
  *
  * @param[in] device_address_7bit   7-bit slave address
  * @param[in] expected_length       Number of bytes expected from slave
@@ -171,7 +174,7 @@ inline bool LOGIC_EXPANDER_Master_Transmit_Internal( uint16_t device_address_7bi
  * @return false on failure
  */
 inline bool LOGIC_EXPANDER_Start_Master_Receive_Internal( uint16_t device_address_7bit,
-                                                   uint16_t expected_length );
+                                                          uint16_t expected_length );
 
 /**
  * @brief Retrieve the current shadow state of a single expander.
@@ -185,8 +188,9 @@ inline bool LOGIC_EXPANDER_Start_Master_Receive_Internal( uint16_t device_addres
  * @return LOGIC_EXPANDER_STATUS_OK on success
  * @return LOGIC_EXPANDER_STATUS_INVALID_PARAM if parameters are invalid
  */
-LogicExpanderStatus_T LOGIC_EXPANDER_Get_State_Snapshot( LogicExpanderIndex_T          expander_index,
-                                                   LogicExpanderStateSnapshot_T* out_snapshot );
+LogicExpanderStatus_T
+LOGIC_EXPANDER_Get_State_Snapshot( LogicExpanderIndex_T          expander_index,
+                                   LogicExpanderStateSnapshot_T* out_snapshot );
 
 #ifdef __cplusplus
 }
