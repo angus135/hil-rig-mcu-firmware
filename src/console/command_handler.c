@@ -805,7 +805,8 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "Written to buffer...\n\r" );
         HW_CAN_Tx_Trigger1();
         CONSOLE_Printf( "Transmitted" );
-    } else if ( strcmp( argv[1], "2" ) == 0 )
+    }
+    else if ( strcmp( argv[1], "2" ) == 0 )
     {
         if ( HW_CAN_Tx_Buffer_Write2( out, argc - 1 ) != 0 )
         {
@@ -904,7 +905,8 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
             CONSOLE_Printf( "Nothing in buffer\n\r" );
             return;
         }
-    } else if ( strcmp( argv[1], "2" ) == 0 )
+    }
+    else if ( strcmp( argv[1], "2" ) == 0 )
     {
         if ( HW_CAN_Rx_Buffer_Pop2( out ) != 0 )
         {
