@@ -63,6 +63,10 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
  *------------------------------------------------------------------------------
  */
 
+// This flag is set to true when tx finishes sending
+static volatile bool can_sent_flag1 = false;
+static volatile bool can_sent_flag2 = false;
+
 // Buffer for rx channel 1
 static volatile uint8_t  can_rx_buffer1[RECEIVE_BUFFER_WIDTH][CAN_PACKET_SIZE];
 static volatile uint16_t can_rx_wp1 = 0;  // Writing to RX buffer handled by ISR
@@ -326,7 +330,7 @@ HAL_StatusTypeDef HW_CAN_Apply_Timing_HAL( CAN_HandleTypeDef* hcan, CanPropertie
     // set prescaler
     hcan->Init.Prescaler = props.psc;
     // set CAN operating mode
-    // hcan.Init.Mode      = CAN_MODE_NORMAL;
+    // hcan->Init.Mode      = CAN_MODE_NORMAL;
     hcan->Init.Mode = CAN_MODE_LOOPBACK;  // Testing mode
 
     // set the sync jump width
@@ -818,11 +822,11 @@ void HW_CAN_CH1_TX_IRQ_HANDLER( void )
     }
     else
     {
-        /*
-         * No more packets to send.
-         * Disable TX mailbox empty interrupt.
-         */
+        // No more packets to send.
+        // Disable TX mailbox empty interrupt.
         CLEAR_BIT( hcan1.Instance->IER, CAN_IER_TMEIE );
+        // all can messages that were in the buffer have been sent
+        can_sent_flag1 = true;
     }
 }
 
@@ -861,11 +865,11 @@ void HW_CAN_CH2_TX_IRQ_HANDLER( void )
     }
     else
     {
-        /*
-         * No more packets to send.
-         * Disable TX mailbox empty interrupt.
-         */
+        // No more packets to send.
+        // Disable TX mailbox empty interrupt.
         CLEAR_BIT( hcan2.Instance->IER, CAN_IER_TMEIE );
+        // all can messages that were in the buffer have been sent
+        can_sent_flag2 = true;
     }
 }
 
