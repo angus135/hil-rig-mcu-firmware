@@ -811,7 +811,7 @@ void HW_CAN_Tx_Trigger2( void )
 void HW_CAN_CH1_TX_IRQ_HANDLER( void )
 {
     uint8_t packet[CAN_PACKET_SIZE];
-    CAN1->TSR |= CAN_TSR_RQCP0;
+    hcan1.Instance->TSR |= CAN_TSR_RQCP0;
     if ( HW_CAN_Tx_Buffer_Pop1( packet ) == 0 )
     {
         HW_CAN_Transmit( &hcan1, packet );
@@ -822,7 +822,7 @@ void HW_CAN_CH1_TX_IRQ_HANDLER( void )
          * No more packets to send.
          * Disable TX mailbox empty interrupt.
          */
-        CLEAR_BIT( CAN1->IER, CAN_IER_TMEIE );
+        CLEAR_BIT( hcan1.Instance->IER, CAN_IER_TMEIE );
     }
 }
 
@@ -852,7 +852,7 @@ void HW_CAN_CH1_RX_IRQ_HANDLER( void )
  */
 void HW_CAN_CH2_TX_IRQ_HANDLER( void )
 {
-    CAN2->TSR |= CAN_TSR_RQCP0;
+    hcan2.Instance->TSR |= CAN_TSR_RQCP0;
     uint8_t packet[CAN_PACKET_SIZE];
 
     if ( HW_CAN_Tx_Buffer_Pop2( packet ) == 0 )
@@ -865,7 +865,7 @@ void HW_CAN_CH2_TX_IRQ_HANDLER( void )
          * No more packets to send.
          * Disable TX mailbox empty interrupt.
          */
-        CLEAR_BIT( CAN2->IER, CAN_IER_TMEIE );
+        CLEAR_BIT( hcan2.Instance->IER, CAN_IER_TMEIE );
     }
 }
 

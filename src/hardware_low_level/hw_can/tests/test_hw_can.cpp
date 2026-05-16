@@ -46,6 +46,27 @@ static CAN_TypeDef fake_can2{};
 CAN_HandleTypeDef hcan1{};
 CAN_HandleTypeDef hcan2{};
 
+static void ResetCANBuffers()
+{
+    can_tx_wp1 = 0;
+    can_tx_rp1 = 0;
+
+    can_tx_wp2 = 0;
+    can_tx_rp2 = 0;
+
+    can_rx_wp1 = 0;
+    can_rx_rp1 = 0;
+
+    can_rx_wp2 = 0;
+    can_rx_rp2 = 0;
+
+    memset((void*)can_tx_buffer1, 0, sizeof(can_tx_buffer1));
+    memset((void*)can_tx_buffer2, 0, sizeof(can_tx_buffer2));
+
+    memset((void*)can_rx_buffer1, 0, sizeof(can_rx_buffer1));
+    memset((void*)can_rx_buffer2, 0, sizeof(can_rx_buffer2));
+}
+
 /**-----------------------------------------------------------------------------
  *  Test Doubles / Mocks
  *------------------------------------------------------------------------------
@@ -106,6 +127,7 @@ protected:
     void SetUp() override
     {
         g_mock = &mock;
+        ResetCANBuffers();
 
         memset( &fake_can1, 0, sizeof( fake_can1 ) );
         memset( &fake_can2, 0, sizeof( fake_can2 ) );
@@ -258,7 +280,7 @@ TEST_F( HWCANTest, TxIRQDisablesInterruptWhenBufferEmpty )
     HW_CAN_CH1_TX_IRQ_HANDLER();
 
     EXPECT_FALSE( fake_can1.IER & CAN_IER_TMEIE );
-}
+}   
 
 TEST_F( HWCANTest, TxIRQTransmitsBufferedPacket )
 {
@@ -301,4 +323,126 @@ TEST_F( HWCANTest, ConfigureReturns1WhenInitFails )
     int result = HW_CAN_Configure1( 1000000 );
 
     EXPECT_EQ( result, 1 );
+}
+
+/*-----------------------------------------------------------------------------
+ * Full Buffer Tests
+ *---------------------------------------------------------------------------*/
+
+TEST_F( HWCANTest, TxBufferWriteFailsWhenFull )
+{
+    uint8_t tx[1][CAN_PACKET_SIZE] =
+    {
+        { 1,2,3,4,5,6,7,8 }
+    };
+
+    /* Buffer capacity is width - 1 */
+    for( int i = 0; i < TRANSMIT_BUFFER_WIDTH - 1; i++ )
+    {
+        EXPECT_EQ(
+            HW_CAN_Tx_Buffer_Write1( tx, 1 ),
+            0
+        );
+    }
+
+    /* Next write should fail */
+    EXPECT_EQ(
+        HW_CAN_Tx_Buffer_Write1( tx, 1 ),
+        1
+    );
+}
+
+TEST_F( HWCANTest, RxBufferWriteFailsWhenFull )
+{
+    uint8_t rx[1][CAN_PACKET_SIZE] =
+    {
+        { 9,8,7,6,5,4,3,2 }
+    };
+
+    for( int i = 0; i < RECEIVE_BUFFER_WIDTH - 1; i++ )
+    {
+        EXPECT_EQ(
+            HW_CAN_Rx_Buffer_Write1( rx, 1 ),
+            0
+        );
+    }
+
+    EXPECT_EQ(
+        HW_CAN_Rx_Buffer_Write1( rx, 1 ),
+        1
+    );
+}
+
+TEST_F( HWCANTest, TxBufferWraparoundWorksCorrectly )
+{
+    uint8_t tx[1][CAN_PACKET_SIZE];
+
+    /* Fill buffer */
+    for( int i = 0; i < TRANSMIT_BUFFER_WIDTH - 1; i++ )
+    {
+        memset( tx[0], i, CAN_PACKET_SIZE );
+
+        EXPECT_EQ(
+            HW_CAN_Tx_Buffer_Write1( tx, 1 ),
+            0
+        );
+    }
+
+    /* Pop 10 packets */
+    for( int i = 0; i < 10; i++ )
+    {
+        uint8_t out[CAN_PACKET_SIZE];
+
+        EXPECT_EQ(
+            HW_CAN_Tx_Buffer_Pop1( out ),
+            0
+        );
+
+        EXPECT_EQ( out[0], i );
+    }
+
+    /* Force wraparound */
+    for( int i = 0; i < 10; i++ )
+    {
+        memset( tx[0], 100 + i, CAN_PACKET_SIZE );
+
+        EXPECT_EQ(
+            HW_CAN_Tx_Buffer_Write1( tx, 1 ),
+            0
+        );
+    }
+
+    /* Verify remaining original packets */
+    for( int i = 10; i < TRANSMIT_BUFFER_WIDTH - 1; i++ )
+    {
+        uint8_t out[CAN_PACKET_SIZE];
+
+        EXPECT_EQ(
+            HW_CAN_Tx_Buffer_Pop1( out ),
+            0
+        );
+
+        EXPECT_EQ( out[0], i );
+    }
+
+    /* Verify wrapped packets */
+    for( int i = 0; i < 10; i++ )
+    {
+        uint8_t out[CAN_PACKET_SIZE];
+
+        EXPECT_EQ(
+            HW_CAN_Tx_Buffer_Pop1( out ),
+            0
+        );
+
+        EXPECT_EQ( out[0], 100 + i );
+    }
+
+    /* Buffer should now be empty */
+    uint8_t out[CAN_PACKET_SIZE];
+
+    EXPECT_EQ(
+        HW_CAN_Tx_Buffer_Pop1( out ),
+        1
+    );
 }
