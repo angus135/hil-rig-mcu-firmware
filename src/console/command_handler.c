@@ -769,7 +769,7 @@ static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char* argv[] )
  */
 static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
 {
-    if ( argc < 2 )
+    if ( argc < 3 )
     {
         CONSOLE_Printf( "Incorrect number of inputs, expected atleast 1 but recieved %d",
                         argc - 1 );
@@ -795,14 +795,31 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
             out[j][i] = argv[j + 1][i];
         }
     }
-    if ( HW_CAN_Tx_Buffer_Write1( out, argc - 1 ) != 0 )
+    if ( strcmp( argv[1], "1" ) == 0 )
     {
-        CONSOLE_Printf( "Transmission Error" );
-        return;
+        if ( HW_CAN_Tx_Buffer_Write1( out, argc - 1 ) != 0 )
+        {
+            CONSOLE_Printf( "Buffer Error" );
+            return;
+        }
+        CONSOLE_Printf( "Written to buffer...\n\r" );
+        HW_CAN_Tx_Trigger1();
+        CONSOLE_Printf( "Transmitted" );
+    } else if ( strcmp( argv[1], "2" ) == 0 )
+    {
+        if ( HW_CAN_Tx_Buffer_Write2( out, argc - 1 ) != 0 )
+        {
+            CONSOLE_Printf( "Buffer Error" );
+            return;
+        }
+        CONSOLE_Printf( "Written to buffer...\n\r" );
+        HW_CAN_Tx_Trigger2();
+        CONSOLE_Printf( "Transmitted" );
     }
-    CONSOLE_Printf( "Written to buffer...\n\r" );
-    HW_CAN_Tx_Trigger1();
-    CONSOLE_Printf( "Transmitted" );
+    else
+    {
+        CONSOLE_Printf( "Unknown channel %s\n\r", argv[1] );
+    }
 }
 
 /**
@@ -818,25 +835,46 @@ static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] )
     int check = HW_CAN_Configure1( 1000000 );
     if ( check == 1 )
     {
-        CONSOLE_Printf( "Timing set up error" );
+        CONSOLE_Printf( "Can 1  Timing set up error" );
         return;
     }
     if ( check == 2 )
     {
-        CONSOLE_Printf( "Filter set up error" );
+        CONSOLE_Printf( "Can 1  Filter set up error" );
         return;
     }
     if ( check == 3 )
     {
-        CONSOLE_Printf( "CAN Start set up error" );
+        CONSOLE_Printf( "Can 1 Start set up error" );
         return;
     }
     if ( check != 0 )
     {
-        CONSOLE_Printf( "Config Error" );
+        CONSOLE_Printf( "Can 1 Config Error" );
         return;
     }
-    CONSOLE_Printf( "Set up correctly" );
+    check = HW_CAN_Configure2( 1000000 );
+    if ( check == 1 )
+    {
+        CONSOLE_Printf( "Can 2  Timing set up error" );
+        return;
+    }
+    if ( check == 2 )
+    {
+        CONSOLE_Printf( "Can 2  Filter set up error" );
+        return;
+    }
+    if ( check == 3 )
+    {
+        CONSOLE_Printf( "Can 2 Start set up error" );
+        return;
+    }
+    if ( check != 0 )
+    {
+        CONSOLE_Printf( "Can 2 Config Error" );
+        return;
+    }
+    CONSOLE_Printf( "Can 1&2 Set up correctly" );
 }
 
 /**
@@ -849,9 +887,9 @@ static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] )
  */
 static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
 {
-    if ( argc != 1 )
+    if ( argc != 2 )
     {
-        CONSOLE_Printf( "Incorrect number of inputs, expected 0 but recieved %d", argc - 1 );
+        CONSOLE_Printf( "Incorrect number of inputs, expected 1 but recieved %d", argc - 1 );
         return;
     }
     char out[8];
@@ -859,9 +897,24 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
     {
         out[i] = '0';
     }
-    if ( HW_CAN_Rx_Buffer_Pop1( out ) != 0 )
+    if ( strcmp( argv[1], "1" ) == 0 )
     {
-        CONSOLE_Printf( "Nothing in buffer\n\r" );
+        if ( HW_CAN_Rx_Buffer_Pop1( out ) != 0 )
+        {
+            CONSOLE_Printf( "Nothing in buffer\n\r" );
+            return;
+        }
+    } else if ( strcmp( argv[1], "2" ) == 0 )
+    {
+        if ( HW_CAN_Rx_Buffer_Pop2( out ) != 0 )
+        {
+            CONSOLE_Printf( "Nothing in buffer\n\r" );
+            return;
+        }
+    }
+    else
+    {
+        CONSOLE_Printf( "Unknown parameter %s\n\r", argv[1] );
         return;
     }
     CONSOLE_Printf( "Recieved: %s", out );
