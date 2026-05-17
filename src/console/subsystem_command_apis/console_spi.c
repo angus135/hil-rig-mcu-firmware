@@ -1,7 +1,7 @@
 /******************************************************************************
- *  File:       <filename>.c
- *  Author:     <your name>
- *  Created:    <DD-MMM-YYYY>
+ *  File:       console_spi.c
+ *  Author:     Angus Corr
+ *  Created:    17-May-2026
  *
  *  Description:
  *      <Short description of the module's purpose and responsibilities>
@@ -14,19 +14,20 @@
  *  Includes
  *------------------------------------------------------------------------------
  */
-
+#include "command_helpers.h"
 #include "exec_spi.h"
 #include "hw_spi.h"
 #include "console.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-// Add other required includes here
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
+
+#define CONSOLE_SPI_BANDWIDTH_TEST 0
 
 #define SPI_LOOP_MAX_MESSAGE_BYTES 128U
 #define SPI_LOOP_TRANSFER_DELAY_MS 100U
@@ -782,6 +783,8 @@ void CONSOLE_SPI_Loopback_Run( uint16_t argc, char* argv[] )
     }
 
     HW_SPI_Tx_Trigger( slave_channel->peripheral );
+
+#if CONSOLE_SPI_BANDWIDTH_TEST == 1
     for ( int i = 0; i < 20; i++ )
     {
         if ( !HW_SPI_Load_Tx_Buffer( master_channel->peripheral, spi_loop_state.master_tx,
@@ -794,6 +797,7 @@ void CONSOLE_SPI_Loopback_Run( uint16_t argc, char* argv[] )
         HW_SPI_Tx_Trigger( master_channel->peripheral );
         vTaskDelay( 1 );
     }
+#endif
 
     if ( !HW_SPI_Load_Tx_Buffer( master_channel->peripheral, spi_loop_state.master_tx,
                                  spi_loop_state.master_tx_size_bytes ) )
