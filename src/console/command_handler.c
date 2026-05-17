@@ -35,8 +35,6 @@
 #include "subsystem_command_apis/console_logic_expander.h"
 #include "subsystem_command_apis/console_I2C.h"
 
-#include "subsystem_command_apis/console_uart.h"
-
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------

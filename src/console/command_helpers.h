@@ -45,6 +45,19 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief Handles UART-related console commands.
+ *
+ * Supported command namespace:
+ *   uart_loopback ...
+ *
+ * @param argc Number of parsed command arguments.
+ * @param argv Parsed command argument array.
+ *
+ * @returns void
+ */
+void CONSOLE_UART_Command_Handler( uint16_t argc, char* argv[] );
+
 void CONSOLE_SPI_Loopback_Print_Usage( void );
 
 void CONSOLE_SPI_Loopback_Config( uint16_t argc, char* argv[] );
