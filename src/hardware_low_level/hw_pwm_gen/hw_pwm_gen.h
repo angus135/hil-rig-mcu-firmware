@@ -61,7 +61,7 @@ typedef enum
  * @param volt_lvl  The voltage level you want (low or high <0|1>)
  *
  */
-void HW_PWM_GEN_config( uint32_t channel, PwmGenVoltageLevel_T volt_lvl );
+void HW_PWM_GEN_config( PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl );
 
 /**
  * @brief Computes the prescaler register (PSC).
