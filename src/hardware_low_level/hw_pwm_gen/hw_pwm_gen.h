@@ -37,6 +37,18 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+typedef enum
+{
+    PWM_GEN_VOLTAGE_LOW,
+    PWM_GEN_VOLTAGE_HIGH
+} PwmGenVoltageLevel_T;
+
+typedef enum
+{
+    PWM_GEN_CHANNEL_LV,
+    PWM_GEN_CHANNEL_HV
+} PwmGenChannel_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -49,7 +61,7 @@ extern "C"
  * @param volt_lvl  The voltage level you want (low or high <0|1>)
  *
  */
-void HW_PWM_GEN_config( int channel, int volt_lvl );
+void HW_PWM_GEN_config( uint32_t channel, PwmGenVoltageLevel_T volt_lvl );
 
 /**
  * @brief Computes the prescaler register (PSC).

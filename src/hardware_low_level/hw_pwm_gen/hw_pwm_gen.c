@@ -29,15 +29,22 @@
 #include "hw_pwm_gen.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include <math.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
 
+#define CHANNEL1_TIM &htim12
+#define CHANNEL2_TIM &htim13
+
+#define MAX_ARR_COUNTS 65535  // the max value of our ARR register (atm uint16_t)
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
- *------------------------------------------------------------------------------
+ *------
+------------------------------------------------------------------------
  */
 
 /**-----------------------------------------------------------------------------
@@ -60,49 +67,6 @@
  *------------------------------------------------------------------------------
  */
 
-/**
- * @brief Updates the PWM registers with the given ARR and CCR values.
- *
- * @param arr   the value of the auto reloader register (ARR) associated with this PWM signal
- * @param ccr the value of the compare register (CCR) associated with this PWM signal
- *
- * This function sets the values of the PWM registers
- * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
- * This function is designed to be very fast and should be implemented in the execution phase
- */
-void HW_PWM_GEN_set_pwm_direct( uint16_t ccr_num, uint16_t arr, uint16_t ccr, uint16_t psc,
-                                TIM_TypeDef* tim )
-{
-    if ( ccr_num == 1 )
-    {
-        LL_TIM_OC_SetCompareCH1( tim, ccr );
-        // tim->CCR1 = ccr;
-    }
-    else if ( ccr_num == 2 )
-    {
-        LL_TIM_OC_SetCompareCH2( tim, ccr );
-        // tim->CCR2 = ccr;
-    }
-    else if ( ccr_num == 3 )
-    {
-        LL_TIM_OC_SetCompareCH3( tim, ccr );
-        // tim->CCR3 = ccr;
-    }
-    else if ( ccr_num == 4 )
-    {
-        LL_TIM_OC_SetCompareCH4( tim, ccr );
-        // tim->CCR4 = ccr;
-    }
-    // Examples of direct register access
-    // tim->ARR = arr;
-    // tim->PSC = psc;
-    // Equivalent LL functions
-    LL_TIM_SetAutoReload( tim, arr );
-    LL_TIM_SetPrescaler( tim, psc );
-
-    tim->EGR = TIM_EGR_UG;
-}
-
 /**-----------------------------------------------------------------------------
  *  Configure Stage Public Function Definitions
  *------------------------------------------------------------------------------
@@ -117,50 +81,36 @@ void HW_PWM_GEN_set_pwm_direct( uint16_t ccr_num, uint16_t arr, uint16_t ccr, ui
  * @param volt_lvl  The voltage level you want (low or high <0|1>)
  *
  */
-void HW_PWM_GEN_config( int channel, int volt_lvl )
+void HW_PWM_GEN_config( PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl )
 {
     // Call to output expander to set voltage levels
 
-    if ( channel == 1 )
+    if ( channel == PWM_GEN_CHANNEL_LV )
     {
-        if ( volt_lvl == 0 )
+        if ( volt_lvl == PWM_GEN_VOLTAGE_LOW )
         {
             // Call to output expander to set voltage levels
-            HAL_TIM_PWM_Start( &htim12, TIM_CHANNEL_2 );
+            HAL_TIM_PWM_Start( CHANNEL1_TIM, TIM_CHANNEL_1 );
         }
-        else if ( volt_lvl == 1 )
+        else if ( volt_lvl == PWM_GEN_VOLTAGE_HIGH )
         {
             // Call to output expander to set voltage levels
-            HAL_TIM_PWM_Start( &htim12, TIM_CHANNEL_2 );
+            HAL_TIM_PWM_Start( CHANNEL1_TIM, TIM_CHANNEL_1 );
         }
     }
-    else if ( channel == 2 )
+    else if ( channel == PWM_GEN_CHANNEL_HV )
     {
-        if ( volt_lvl == 0 )
+        if ( volt_lvl == PWM_GEN_VOLTAGE_LOW )
         {
             // Call to output expander to set voltage levels
-            HAL_TIM_PWM_Start( &htim12, TIM_CHANNEL_2 );
+            HAL_TIM_PWM_Start( CHANNEL2_TIM, TIM_CHANNEL_2 );
         }
-        else if ( volt_lvl == 1 )
+        else if ( volt_lvl == PWM_GEN_VOLTAGE_HIGH )
         {
             // Call to output expander to set voltage levels
-            HAL_TIM_PWM_Start( &htim12, TIM_CHANNEL_2 );
+            HAL_TIM_PWM_Start( CHANNEL2_TIM, TIM_CHANNEL_2 );
         }
     }
-    else if ( channel == 3 )
-    {
-        if ( volt_lvl == 0 )
-        {
-            // Call to output expander to set voltage levels
-            HAL_TIM_PWM_Start( &htim12, TIM_CHANNEL_2 );
-        }
-        else if ( volt_lvl == 1 )
-        {
-            // Call to output expander to set voltage levels
-            HAL_TIM_PWM_Start( &htim12, TIM_CHANNEL_2 );
-        }
-    }
-    ( void )channel;
 }
 
 /**
@@ -179,27 +129,26 @@ uint16_t HW_PWM_GEN_compute_psc( uint32_t freq_hz, uint32_t timer_clk_hz )
 {
     if ( freq_hz > timer_clk_hz || freq_hz > 1000000 )
     {
-        return 0;
+        return 0xFFFF;  // TO DO - replace with proper error communication
     }
     if ( freq_hz == 0 )
     {
-        return 0xFFFF;
+        return 0xFFFF;  // TO DO - replace with proper error communication
     }
-    uint32_t prescaler_p1 = 1;  // the prescaler plus 1
-    uint32_t arr          = ( timer_clk_hz / ( freq_hz * ( prescaler_p1 ) ) ) - 1;
-    // Inverted Binary search to find prescaler value
-    while ( arr > 65535 )
+    uint32_t temp = ( timer_clk_hz / freq_hz );
+    uint32_t divider;
+    // if temp is an exact multiple then we don't need rounding
+    if ( temp % MAX_ARR_COUNTS == 0 )
     {
-        prescaler_p1 = prescaler_p1 * 2;
-        arr          = ( timer_clk_hz / ( freq_hz * ( prescaler_p1 ) ) ) - 1;
+        return ( uint16_t )( ( timer_clk_hz / freq_hz ) / MAX_ARR_COUNTS ) - 1;
     }
-    while ( arr < 65535 && prescaler_p1 > 2 )
+    // if temp is not exact multiple then we need rounding (+1)
+    divider = ( ( timer_clk_hz / freq_hz ) / MAX_ARR_COUNTS ) + 1;  // the prescaler plus 1
+    if ( divider == 0 )
     {
-        prescaler_p1 -= 1;
-        arr = ( timer_clk_hz / ( freq_hz * ( prescaler_p1 ) ) ) - 1;
+        return 0xFFFF;  // TO DO - replace with proper error communication
     }
-    // above -1 loop overcompensated by 1 so we plus 1
-    return ( uint16_t )prescaler_p1;
+    return ( uint16_t )( divider - 1 );
 }
 
 /**
@@ -261,9 +210,10 @@ uint16_t HW_PWM_GEN_compute_ccr( uint16_t duty_pm, uint16_t arr )
  */
 inline void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
-    HW_PWM_GEN_set_pwm_direct(
-        2, arr, ccr, psc,
-        htim12.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
+    TIM_TypeDef* tim = ( *CHANNEL1_TIM ).Instance;
+    LL_TIM_OC_SetCompareCH2( tim, ccr );
+    LL_TIM_SetAutoReload( tim, arr );
+    LL_TIM_SetPrescaler( tim, psc );
 }
 
 /**
@@ -278,7 +228,8 @@ inline void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr, uint16_t psc
  */
 inline void HW_PWM_GEN_set_pwm2_direct( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
-    HW_PWM_GEN_set_pwm_direct(
-        1, arr, ccr, psc,
-        htim13.Instance );  // TOO DO - UPDAET THIS htim FOR THE ACTUAL TIMER CHANNEL AFTER IOC
+    TIM_TypeDef* tim = ( *CHANNEL1_TIM ).Instance;
+    LL_TIM_OC_SetCompareCH1( tim, ccr );
+    LL_TIM_SetAutoReload( tim, arr );
+    LL_TIM_SetPrescaler( tim, psc );
 }

@@ -148,7 +148,7 @@ void MX_TIM12_Init(void)
   htim12.Init.Period = 65535;
   htim12.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim12.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
-  if (HAL_TIM_PWM_Init(&htim12) != HAL_OK)
+  if (HAL_TIM_PWM_Init(CHANNEL1_TIM) != HAL_OK)
   {
     Error_Handler();
   }
@@ -156,14 +156,14 @@ void MX_TIM12_Init(void)
   sConfigOC.Pulse = 0;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim12, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  if (HAL_TIM_PWM_ConfigChannel(CHANNEL1_TIM, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
   }
   /* USER CODE BEGIN TIM12_Init 2 */
 
   /* USER CODE END TIM12_Init 2 */
-  HAL_TIM_MspPostInit(&htim12);
+  HAL_TIM_MspPostInit(CHANNEL1_TIM);
 
 }
 /* TIM13 init function */
