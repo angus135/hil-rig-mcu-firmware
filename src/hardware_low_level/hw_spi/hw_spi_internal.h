@@ -94,6 +94,7 @@ extern "C"
 #define RX_BUFFER_SIZE_BYTES 1024U
 #define TX_BUFFER_SIZE_BYTES 1024U
 #define TX_PACKET_QUEUE_DEPTH 16U
+#define HW_SPI_DMA_DISABLE_TIMEOUT_ITERATIONS 1000U
 
 #define RX_BUFFER_INDEX_MASK ( RX_BUFFER_SIZE_BYTES - 1U )
 #define TX_BUFFER_INDEX_MASK ( TX_BUFFER_SIZE_BYTES - 1U )
@@ -362,9 +363,16 @@ HW_SPI_ALWAYS_INLINE bool HW_SPI_TX_Program_DMA( SPIPeripheralState_T* periphera
     LL_SPI_DisableDMAReq_TX( peripheral_state->spi_peripheral );
 
     LL_DMA_DisableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+    uint32_t timeout = HW_SPI_DMA_DISABLE_TIMEOUT_ITERATIONS;
     while ( LL_DMA_IsEnabledStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream )
             != 0U )
     {
+        if ( timeout == 0U )
+        {
+            LL_DMA_DisableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+            return false;
+        }
+        timeout--;
     }
 
     HW_SPI_TX_Clear_DMA_Flags_For_State( peripheral_state );
