@@ -340,9 +340,10 @@ void HW_SPI_Rx_Consume( SPIChannel_T peripheral, uint32_t bytes_to_consume )
             peripheral_state = channel_1_state;
             break;
         case SPI_DAC:
-        default:
             peripheral_state = dac_state;
             break;
+        default:
+            return;  // Caller's responsibility to ensure peripheral is correct so do nothing
     }
 
     // Advance only the software consume index. The DMA write index is hardware

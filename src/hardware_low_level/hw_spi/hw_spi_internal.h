@@ -339,10 +339,11 @@ HW_SPI_TX_Clear_DMA_Flags_For_State( const SPIPeripheralState_T* peripheral_stat
             break;
 
         case SPI_DAC:
-        default:
             SPI_DAC_TX_DMA_CLEAR_TC( SPI_DAC_TX_DMA );
             SPI_DAC_TX_DMA_CLEAR_TE( SPI_DAC_TX_DMA );
             break;
+        default:
+            return;  // Do nothing, caller's responsibility to pass in correct data
     }
 }
 
