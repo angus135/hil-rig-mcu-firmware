@@ -124,6 +124,12 @@
  *------------------------------------------------------------------------------
  */
 
+static const uint32_t SPI_FINAL_DRAIN_TIMER_PSC_ARRAY[SPI_NUM_CHANNELS] = {
+    [SPI_CHANNEL_0] = SPI_CHANNEL_0_FINAL_DRAIN_TIMER_PSC,
+    [SPI_CHANNEL_1] = SPI_CHANNEL_1_FINAL_DRAIN_TIMER_PSC,
+    [SPI_DAC]       = SPI_DAC_FINAL_DRAIN_TIMER_PSC,
+};
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -167,22 +173,7 @@ HW_SPI_ALWAYS_INLINE void HW_SPI_TX_Handle_Slave_DMA_TC( SPIChannel_T          p
  */
 static uint32_t HW_SPI_Get_Tx_Timer_Psc( const SPIPeripheralState_T* peripheral_state )
 {
-    if ( peripheral_state == channel_0_state )
-    {
-        return SPI_CHANNEL_0_FINAL_DRAIN_TIMER_PSC;
-    }
-
-    if ( peripheral_state == channel_1_state )
-    {
-        return SPI_CHANNEL_1_FINAL_DRAIN_TIMER_PSC;
-    }
-
-    if ( peripheral_state == dac_state )
-    {
-        return SPI_DAC_FINAL_DRAIN_TIMER_PSC;
-    }
-
-    return SPI_DAC_FINAL_DRAIN_TIMER_PSC;
+    return SPI_FINAL_DRAIN_TIMER_PSC_ARRAY[( uint32_t )peripheral_state->logical_peripheral];
 }
 
 /**
@@ -530,6 +521,10 @@ Timer_T HW_SPI_Get_Tx_Timer( const SPIPeripheralState_T* peripheral_state )
 void HW_SPI_COLD_NOINLINE HW_SPI_TX_Error_Handler( SPIChannel_T peripheral )
 {
     SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
+    if ( peripheral_state == NULL )
+    {
+        return;  // TODO: hnalde this
+    }
 
     // Stop further TX DMA activity for this channel. The error path disables
     // the stream and the SPI TX DMA request so the peripheral cannot keep
@@ -637,6 +632,7 @@ void HW_SPI_TX_Configure_Timer( SPIPeripheralState_T* peripheral_state )
 
 void SPI_CHANNEL_0_TX_DMA_IRQ( void )
 {
+    SPIPeripheralState_T* peripheral_state = &( channel_state_array[SPI_CHANNEL_0] );
     // Handle transfer error first. If TE and TC are both latched, error
     // handling wins and normal completion processing is skipped.
     if ( SPI_CHANNEL_0_TX_DMA_IS_ACTIVE_TE( SPI_CHANNEL_0_TX_DMA ) != 0U )
@@ -649,13 +645,13 @@ void SPI_CHANNEL_0_TX_DMA_IRQ( void )
     if ( SPI_CHANNEL_0_TX_DMA_IS_ACTIVE_TC( SPI_CHANNEL_0_TX_DMA ) != 0U )
     {
         SPI_CHANNEL_0_TX_DMA_CLEAR_TC( SPI_CHANNEL_0_TX_DMA );
-        if ( channel_0_state->is_master != false )
+        if ( peripheral_state->is_master != false )
         {
-            HW_SPI_TX_Handle_Master_DMA_TC( SPI_CHANNEL_0, channel_0_state );
+            HW_SPI_TX_Handle_Master_DMA_TC( SPI_CHANNEL_0, peripheral_state );
         }
         else
         {
-            HW_SPI_TX_Handle_Slave_DMA_TC( SPI_CHANNEL_0, channel_0_state );
+            HW_SPI_TX_Handle_Slave_DMA_TC( SPI_CHANNEL_0, peripheral_state );
         }
         return;
     }
@@ -663,6 +659,7 @@ void SPI_CHANNEL_0_TX_DMA_IRQ( void )
 
 void SPI_CHANNEL_1_TX_DMA_IRQ( void )
 {
+    SPIPeripheralState_T* peripheral_state = &( channel_state_array[SPI_CHANNEL_1] );
     // Handle transfer error first. If TE and TC are both latched, error
     // handling wins and normal completion processing is skipped.
     if ( SPI_CHANNEL_1_TX_DMA_IS_ACTIVE_TE( SPI_CHANNEL_1_TX_DMA ) != 0U )
@@ -675,13 +672,13 @@ void SPI_CHANNEL_1_TX_DMA_IRQ( void )
     if ( SPI_CHANNEL_1_TX_DMA_IS_ACTIVE_TC( SPI_CHANNEL_1_TX_DMA ) != 0U )
     {
         SPI_CHANNEL_1_TX_DMA_CLEAR_TC( SPI_CHANNEL_1_TX_DMA );
-        if ( channel_1_state->is_master != false )
+        if ( peripheral_state->is_master != false )
         {
-            HW_SPI_TX_Handle_Master_DMA_TC( SPI_CHANNEL_1, channel_1_state );
+            HW_SPI_TX_Handle_Master_DMA_TC( SPI_CHANNEL_1, peripheral_state );
         }
         else
         {
-            HW_SPI_TX_Handle_Slave_DMA_TC( SPI_CHANNEL_1, channel_1_state );
+            HW_SPI_TX_Handle_Slave_DMA_TC( SPI_CHANNEL_1, peripheral_state );
         }
         return;
     }
@@ -731,22 +728,7 @@ void SPI_CHANNEL_1_TX_DMA_IRQ( void )
  */
 void HW_SPI_Timer_Callback_From_ISR( SPIChannel_T peripheral )
 {
-    SPIPeripheralState_T* peripheral_state = NULL;
-
-    switch ( peripheral )
-    {
-        case SPI_CHANNEL_0:
-            peripheral_state = channel_0_state;
-            break;
-        case SPI_CHANNEL_1:
-            peripheral_state = channel_1_state;
-            break;
-        case SPI_DAC:
-            peripheral_state = dac_state;
-            break;
-        default:
-            return;  // Caller's responsibility for peripheral to be valid so do nothing
-    }
+    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State_Fast( peripheral );
 
     if ( peripheral_state->is_master == false
          || peripheral_state->tx_transaction_state != HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN )
@@ -788,23 +770,8 @@ void HW_SPI_Timer_Callback_From_ISR( SPIChannel_T peripheral )
  */
 bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32_t size )
 {
-    SPIPeripheralState_T* peripheral_state = NULL;
+    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State_Fast( peripheral );
     bool                  accepted         = false;
-
-    switch ( peripheral )
-    {
-        case SPI_CHANNEL_0:
-            peripheral_state = channel_0_state;
-            break;
-        case SPI_CHANNEL_1:
-            peripheral_state = channel_1_state;
-            break;
-        case SPI_DAC:
-            peripheral_state = dac_state;
-            break;
-        default:
-            return false;
-    }
 
     // Prevent the TX DMA IRQ from modifying pending/in-flight state while the
     // selected TX load implementation calculates free space and updates the
@@ -841,22 +808,7 @@ bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32
  */
 void HW_SPI_Tx_Trigger( SPIChannel_T peripheral )
 {
-    SPIPeripheralState_T* peripheral_state = NULL;
-
-    switch ( peripheral )
-    {
-        case SPI_CHANNEL_0:
-            peripheral_state = channel_0_state;
-            break;
-        case SPI_CHANNEL_1:
-            peripheral_state = channel_1_state;
-            break;
-        case SPI_DAC:
-            peripheral_state = dac_state;
-            break;
-        default:
-            return;
-    }
+    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State_Fast( peripheral );
 
     // Protect against a race with the TX DMA IRQ handler. We only disable the
     // specific DMA IRQ for this channel, not global interrupts.
@@ -938,25 +890,7 @@ void HW_SPI_Tx_Trigger( SPIChannel_T peripheral )
  */
 bool HW_SPI_Tx_Is_Complete( SPIChannel_T peripheral )
 {
-    SPIPeripheralState_T* state = NULL;
-
-    switch ( peripheral )
-    {
-        case SPI_CHANNEL_0:
-            state = channel_0_state;
-            break;
-
-        case SPI_CHANNEL_1:
-            state = channel_1_state;
-            break;
-
-        case SPI_DAC:
-            state = dac_state;
-            break;
-
-        default:
-            return false;
-    }
+    SPIPeripheralState_T* state = HW_SPI_Get_State_Fast( peripheral );
 
     // First check the driver-owned TX storage. This includes both bytes still
     // waiting in the software queue and bytes already handed to DMA.

@@ -365,6 +365,16 @@ extern "C" void HW_TIMER_Stop_Timer( Timer_T timer )
     }
 }
 
+/**-----------------------------------------------------------------------------
+ *  Test Fixture
+ *------------------------------------------------------------------------------
+ */
+
+/**
+ * @brief Test fixture for module tests.
+ *
+ * Provides a consistent setup/teardown environment for all test cases.
+ */
 class HWSPIRxTest : public ::testing::Test
 {
 protected:
@@ -423,23 +433,19 @@ protected:
         memset( &SPI_CHANNEL_0_HANDLE, 0, sizeof( SPI_CHANNEL_0_HANDLE ) );
         memset( &SPI_CHANNEL_1_HANDLE, 0, sizeof( SPI_CHANNEL_1_HANDLE ) );
 
-        channel_0_state = &channel_0_state_struct;
-        channel_1_state = &channel_1_state_struct;
-        dac_state       = &dac_state_struct;
-
         EXPECT_CALL( mock, TimerConfigure( _, _, _ ) ).Times( AnyNumber() );
 
-        InitialiseState( channel_0_state, SPI_CHANNEL_0, MakeMasterConfig(), SPI_CHANNEL_0_RX_DMA,
-                         SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA,
+        InitialiseState( HW_SPI_STATE( SPI_CHANNEL_0 ), SPI_CHANNEL_0, MakeMasterConfig(),
+                         SPI_CHANNEL_0_RX_DMA, SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA,
                          SPI_CHANNEL_0_TX_DMA_STREAM, SPI_CHANNEL_0_INSTANCE,
                          SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
-        InitialiseState( channel_1_state, SPI_CHANNEL_1, MakeMasterConfig(), SPI_CHANNEL_1_RX_DMA,
-                         SPI_CHANNEL_1_RX_DMA_STREAM, SPI_CHANNEL_1_TX_DMA,
+        InitialiseState( HW_SPI_STATE( SPI_CHANNEL_1 ), SPI_CHANNEL_1, MakeMasterConfig(),
+                         SPI_CHANNEL_1_RX_DMA, SPI_CHANNEL_1_RX_DMA_STREAM, SPI_CHANNEL_1_TX_DMA,
                          SPI_CHANNEL_1_TX_DMA_STREAM, SPI_CHANNEL_1_INSTANCE,
                          SPI_CHANNEL_1_TX_DMA_IRQN, SPI_CHANNEL_1_TIMER );
-        InitialiseState( dac_state, SPI_DAC, MakeMasterConfig(), NULL, 0U, SPI_DAC_TX_DMA,
-                         SPI_DAC_TX_DMA_STREAM, SPI_DAC_INSTANCE, SPI_DAC_TX_DMA_IRQN,
-                         SPI_DAC_TIMER );
+        InitialiseState( HW_SPI_STATE( SPI_DAC ), SPI_DAC, MakeMasterConfig(), NULL, 0U,
+                         SPI_DAC_TX_DMA, SPI_DAC_TX_DMA_STREAM, SPI_DAC_INSTANCE,
+                         SPI_DAC_TX_DMA_IRQN, SPI_DAC_TIMER );
     }
 
     void TearDown( void ) override
@@ -495,21 +501,14 @@ protected:
 };
 
 /**-----------------------------------------------------------------------------
- *  Test Fixture
+ *  Tests
  *------------------------------------------------------------------------------
  */
-
-/**
- * @brief Test fixture for module tests.
- *
- * Provides a consistent setup/teardown environment for all test cases.
- */
-
 TEST_F( HWSPIRxTest, StartChannel_Channel0ArmsPassiveRxDmaIn8BitMode )
 {
-    channel_0_state->config.data_size = SPI_SIZE_8_BIT;
-    channel_0_state->frame_size_bytes = 1U;
-    channel_0_state->frame_shift      = 0U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->config.data_size = SPI_SIZE_8_BIT;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->frame_size_bytes = 1U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->frame_shift      = 0U;
 
     InSequence seq;
     EXPECT_CALL(
@@ -520,7 +519,7 @@ TEST_F( HWSPIRxTest, StartChannel_Channel0ArmsPassiveRxDmaIn8BitMode )
     EXPECT_CALL( mock,
                  DMASetMemoryAddress( Eq( SPI_CHANNEL_0_RX_DMA ), Eq( SPI_CHANNEL_0_RX_DMA_STREAM ),
                                       Eq( static_cast<uint32_t>( reinterpret_cast<uintptr_t>(
-                                          channel_0_state->rx_buffer ) ) ) ) );
+                                          HW_SPI_STATE( SPI_CHANNEL_0 )->rx_buffer ) ) ) ) );
     EXPECT_CALL( mock, SPIDMAGetRegAddr( Eq( SPI_CHANNEL_0_INSTANCE ) ) )
         .WillOnce( Return( 0x12345678U ) );
     EXPECT_CALL( mock,
@@ -536,14 +535,14 @@ TEST_F( HWSPIRxTest, StartChannel_Channel0ArmsPassiveRxDmaIn8BitMode )
 
     HW_SPI_Start_Channel( SPI_CHANNEL_0 );
 
-    EXPECT_EQ( channel_0_state->rx_position, 0U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->rx_position, 0U );
 }
 
 TEST_F( HWSPIRxTest, StartChannel_Channel1UsesHalfAsManyDmaElementsIn16BitMode )
 {
-    channel_1_state->config.data_size = SPI_SIZE_16_BIT;
-    channel_1_state->frame_size_bytes = 2U;
-    channel_1_state->frame_shift      = 1U;
+    HW_SPI_STATE( SPI_CHANNEL_1 )->config.data_size = SPI_SIZE_16_BIT;
+    HW_SPI_STATE( SPI_CHANNEL_1 )->frame_size_bytes = 2U;
+    HW_SPI_STATE( SPI_CHANNEL_1 )->frame_shift      = 1U;
 
     InSequence seq;
     EXPECT_CALL(
@@ -554,7 +553,7 @@ TEST_F( HWSPIRxTest, StartChannel_Channel1UsesHalfAsManyDmaElementsIn16BitMode )
     EXPECT_CALL( mock,
                  DMASetMemoryAddress( Eq( SPI_CHANNEL_1_RX_DMA ), Eq( SPI_CHANNEL_1_RX_DMA_STREAM ),
                                       Eq( static_cast<uint32_t>( reinterpret_cast<uintptr_t>(
-                                          channel_1_state->rx_buffer ) ) ) ) );
+                                          HW_SPI_STATE( SPI_CHANNEL_1 )->rx_buffer ) ) ) ) );
     EXPECT_CALL( mock, SPIDMAGetRegAddr( Eq( SPI_CHANNEL_1_INSTANCE ) ) )
         .WillOnce( Return( 0xCAFEBABEU ) );
     EXPECT_CALL( mock,
@@ -573,58 +572,58 @@ TEST_F( HWSPIRxTest, StartChannel_Channel1UsesHalfAsManyDmaElementsIn16BitMode )
 
 TEST_F( HWSPIRxTest, RxPeek_ReturnsEmptySpansWhenDmaWriteEqualsRead )
 {
-    channel_0_state->rx_position = 0U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->rx_position = 0U;
     EXPECT_CALL( mock,
                  DMAGetDataLength( Eq( SPI_CHANNEL_0_RX_DMA ), Eq( SPI_CHANNEL_0_RX_DMA_STREAM ) ) )
         .WillOnce( Return( RX_BUFFER_SIZE_BYTES ) );
 
     HWSPIRxSpans_T spans = HW_SPI_Rx_Peek( SPI_CHANNEL_0 );
 
-    EXPECT_EQ( spans.first_span.data, &channel_0_state->rx_buffer[0] );
+    EXPECT_EQ( spans.first_span.data, &HW_SPI_STATE( SPI_CHANNEL_0 )->rx_buffer[0] );
     EXPECT_EQ( spans.first_span.length_bytes, 0U );
-    EXPECT_EQ( spans.second_span.data, &channel_0_state->rx_buffer[0] );
+    EXPECT_EQ( spans.second_span.data, &HW_SPI_STATE( SPI_CHANNEL_0 )->rx_buffer[0] );
     EXPECT_EQ( spans.second_span.length_bytes, 0U );
     EXPECT_EQ( spans.total_length_bytes, 0U );
 }
 
 TEST_F( HWSPIRxTest, RxPeek_ReturnsSingleSpanWhenUnreadDataDoesNotWrap )
 {
-    channel_0_state->rx_position = 100U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->rx_position = 100U;
     EXPECT_CALL( mock,
                  DMAGetDataLength( Eq( SPI_CHANNEL_0_RX_DMA ), Eq( SPI_CHANNEL_0_RX_DMA_STREAM ) ) )
         .WillOnce( Return( 824U ) );  // write index = 200
 
     HWSPIRxSpans_T spans = HW_SPI_Rx_Peek( SPI_CHANNEL_0 );
 
-    EXPECT_EQ( spans.first_span.data, &channel_0_state->rx_buffer[100] );
+    EXPECT_EQ( spans.first_span.data, &HW_SPI_STATE( SPI_CHANNEL_0 )->rx_buffer[100] );
     EXPECT_EQ( spans.first_span.length_bytes, 100U );
-    EXPECT_EQ( spans.second_span.data, &channel_0_state->rx_buffer[0] );
+    EXPECT_EQ( spans.second_span.data, &HW_SPI_STATE( SPI_CHANNEL_0 )->rx_buffer[0] );
     EXPECT_EQ( spans.second_span.length_bytes, 0U );
     EXPECT_EQ( spans.total_length_bytes, 100U );
 }
 
 TEST_F( HWSPIRxTest, RxPeek_ReturnsTwoSpansWhenUnreadDataWraps )
 {
-    channel_0_state->rx_position = 1000U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->rx_position = 1000U;
     EXPECT_CALL( mock,
                  DMAGetDataLength( Eq( SPI_CHANNEL_0_RX_DMA ), Eq( SPI_CHANNEL_0_RX_DMA_STREAM ) ) )
         .WillOnce( Return( 974U ) );  // write index = 50
 
     HWSPIRxSpans_T spans = HW_SPI_Rx_Peek( SPI_CHANNEL_0 );
 
-    EXPECT_EQ( spans.first_span.data, &channel_0_state->rx_buffer[1000] );
+    EXPECT_EQ( spans.first_span.data, &HW_SPI_STATE( SPI_CHANNEL_0 )->rx_buffer[1000] );
     EXPECT_EQ( spans.first_span.length_bytes, 24U );
-    EXPECT_EQ( spans.second_span.data, &channel_0_state->rx_buffer[0] );
+    EXPECT_EQ( spans.second_span.data, &HW_SPI_STATE( SPI_CHANNEL_0 )->rx_buffer[0] );
     EXPECT_EQ( spans.second_span.length_bytes, 50U );
     EXPECT_EQ( spans.total_length_bytes, 74U );
 }
 
 TEST_F( HWSPIRxTest, RxPeek_ConvertsDmaElementsBackToBytesIn16BitMode )
 {
-    channel_1_state->config.data_size = SPI_SIZE_16_BIT;
-    channel_1_state->frame_size_bytes = 2U;
-    channel_1_state->frame_shift      = 1U;
-    channel_1_state->rx_position      = 8U;
+    HW_SPI_STATE( SPI_CHANNEL_1 )->config.data_size = SPI_SIZE_16_BIT;
+    HW_SPI_STATE( SPI_CHANNEL_1 )->frame_size_bytes = 2U;
+    HW_SPI_STATE( SPI_CHANNEL_1 )->frame_shift      = 1U;
+    HW_SPI_STATE( SPI_CHANNEL_1 )->rx_position      = 8U;
 
     EXPECT_CALL( mock,
                  DMAGetDataLength( Eq( SPI_CHANNEL_1_RX_DMA ), Eq( SPI_CHANNEL_1_RX_DMA_STREAM ) ) )
@@ -632,21 +631,21 @@ TEST_F( HWSPIRxTest, RxPeek_ConvertsDmaElementsBackToBytesIn16BitMode )
 
     HWSPIRxSpans_T spans = HW_SPI_Rx_Peek( SPI_CHANNEL_1 );
 
-    EXPECT_EQ( spans.first_span.data, &channel_1_state->rx_buffer[8] );
+    EXPECT_EQ( spans.first_span.data, &HW_SPI_STATE( SPI_CHANNEL_1 )->rx_buffer[8] );
     EXPECT_EQ( spans.first_span.length_bytes, 2U );
     EXPECT_EQ( spans.total_length_bytes, 2U );
 }
 
 TEST_F( HWSPIRxTest, RxPeek_TreatsNdtrReloadToZeroAsWriteIndexZero )
 {
-    channel_0_state->rx_position = 100U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->rx_position = 100U;
     EXPECT_CALL( mock,
                  DMAGetDataLength( Eq( SPI_CHANNEL_0_RX_DMA ), Eq( SPI_CHANNEL_0_RX_DMA_STREAM ) ) )
         .WillOnce( Return( 0U ) );
 
     HWSPIRxSpans_T spans = HW_SPI_Rx_Peek( SPI_CHANNEL_0 );
 
-    EXPECT_EQ( spans.first_span.data, &channel_0_state->rx_buffer[100] );
+    EXPECT_EQ( spans.first_span.data, &HW_SPI_STATE( SPI_CHANNEL_0 )->rx_buffer[100] );
     EXPECT_EQ( spans.first_span.length_bytes, RX_BUFFER_SIZE_BYTES - 100U );
     EXPECT_EQ( spans.second_span.length_bytes, 0U );
     EXPECT_EQ( spans.total_length_bytes, RX_BUFFER_SIZE_BYTES - 100U );
@@ -654,18 +653,80 @@ TEST_F( HWSPIRxTest, RxPeek_TreatsNdtrReloadToZeroAsWriteIndexZero )
 
 TEST_F( HWSPIRxTest, RxConsume_UsesMaskBasedWrapAtEndOfBuffer )
 {
-    channel_0_state->rx_position = 1000U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->rx_position = 1000U;
 
     HW_SPI_Rx_Consume( SPI_CHANNEL_0, 50U );
 
-    EXPECT_EQ( channel_0_state->rx_position, 26U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->rx_position, 26U );
 }
 
 TEST_F( HWSPIRxTest, RxConsume_HandlesLargePowerOfTwoDistanceWithoutDivision )
 {
-    channel_0_state->rx_position = 17U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->rx_position = 17U;
 
     HW_SPI_Rx_Consume( SPI_CHANNEL_0, RX_BUFFER_SIZE_BYTES * 3U + 9U );
 
-    EXPECT_EQ( channel_0_state->rx_position, 26U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->rx_position, 26U );
+}
+
+/**
+ * @brief Starting a channel with no RX DMA should fail without touching DMA.
+ *
+ * The DAC channel is TX-only in the current resource map. This test protects
+ * the state-array lookup path from accidentally treating DAC as channel 0/1 RX.
+ */
+TEST_F( HWSPIRxTest, StartChannel_DacReturnsFalseBecauseItHasNoRxDma )
+{
+    EXPECT_FALSE( HW_SPI_Start_Channel( SPI_DAC ) );
+}
+
+/**
+ * @brief Passive RX start must wait on the RX DMA stream it just disabled.
+ *
+ * This catches copy-paste mistakes where the TX DMA stream is polled during RX
+ * setup. The RX path should not depend on the TX DMA stream state.
+ */
+TEST_F( HWSPIRxTest, StartChannel_WaitsForRxDmaStreamToDisableNotTxDmaStream )
+{
+    InSequence seq;
+    EXPECT_CALL(
+        mock, DMADisableStream( Eq( SPI_CHANNEL_0_RX_DMA ), Eq( SPI_CHANNEL_0_RX_DMA_STREAM ) ) );
+    EXPECT_CALL(
+        mock, DMAIsEnabledStream( Eq( SPI_CHANNEL_0_RX_DMA ), Eq( SPI_CHANNEL_0_RX_DMA_STREAM ) ) )
+        .WillOnce( Return( 1U ) )
+        .WillOnce( Return( 0U ) );
+    EXPECT_CALL( mock,
+                 DMASetMemoryAddress( Eq( SPI_CHANNEL_0_RX_DMA ), Eq( SPI_CHANNEL_0_RX_DMA_STREAM ),
+                                      Eq( static_cast<uint32_t>( reinterpret_cast<uintptr_t>(
+                                          HW_SPI_STATE( SPI_CHANNEL_0 )->rx_buffer ) ) ) ) );
+    EXPECT_CALL( mock, SPIDMAGetRegAddr( Eq( SPI_CHANNEL_0_INSTANCE ) ) )
+        .WillOnce( Return( 0x20000000U ) );
+    EXPECT_CALL( mock,
+                 DMASetPeriphAddress( Eq( SPI_CHANNEL_0_RX_DMA ), Eq( SPI_CHANNEL_0_RX_DMA_STREAM ),
+                                      Eq( 0x20000000U ) ) );
+    EXPECT_CALL( mock,
+                 DMASetDataLength( Eq( SPI_CHANNEL_0_RX_DMA ), Eq( SPI_CHANNEL_0_RX_DMA_STREAM ),
+                                   Eq( RX_BUFFER_SIZE_BYTES ) ) );
+    EXPECT_CALL( mock,
+                 DMAEnableStream( Eq( SPI_CHANNEL_0_RX_DMA ), Eq( SPI_CHANNEL_0_RX_DMA_STREAM ) ) );
+    EXPECT_CALL( mock, SPIEnableDMAReqRX( Eq( SPI_CHANNEL_0_INSTANCE ) ) );
+    EXPECT_CALL( mock, SPIEnable( Eq( SPI_CHANNEL_0_INSTANCE ) ) );
+
+    EXPECT_TRUE( HW_SPI_Start_Channel( SPI_CHANNEL_0 ) );
+}
+
+/**
+ * @brief RX consume on channel 1 must update only channel 1 state.
+ *
+ * This is a low-cost regression check for the state-array indexing change.
+ */
+TEST_F( HWSPIRxTest, RxConsume_Channel1DoesNotModifyChannel0 )
+{
+    HW_SPI_STATE( SPI_CHANNEL_0 )->rx_position = 100U;
+    HW_SPI_STATE( SPI_CHANNEL_1 )->rx_position = 200U;
+
+    HW_SPI_Rx_Consume( SPI_CHANNEL_1, 30U );
+
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->rx_position, 100U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_1 )->rx_position, 230U );
 }

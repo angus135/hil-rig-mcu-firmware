@@ -428,23 +428,19 @@ protected:
         memset( &SPI_CHANNEL_0_HANDLE, 0, sizeof( SPI_CHANNEL_0_HANDLE ) );
         memset( &SPI_CHANNEL_1_HANDLE, 0, sizeof( SPI_CHANNEL_1_HANDLE ) );
 
-        channel_0_state = &channel_0_state_struct;
-        channel_1_state = &channel_1_state_struct;
-        dac_state       = &dac_state_struct;
-
         EXPECT_CALL( mock, TimerConfigure( _, _, _ ) ).Times( AnyNumber() );
 
-        InitialiseState( channel_0_state, SPI_CHANNEL_0, MakeMasterConfig(), SPI_CHANNEL_0_RX_DMA,
-                         SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA,
+        InitialiseState( HW_SPI_STATE( SPI_CHANNEL_0 ), SPI_CHANNEL_0, MakeMasterConfig(),
+                         SPI_CHANNEL_0_RX_DMA, SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA,
                          SPI_CHANNEL_0_TX_DMA_STREAM, SPI_CHANNEL_0_INSTANCE,
                          SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
-        InitialiseState( channel_1_state, SPI_CHANNEL_1, MakeMasterConfig(), SPI_CHANNEL_1_RX_DMA,
-                         SPI_CHANNEL_1_RX_DMA_STREAM, SPI_CHANNEL_1_TX_DMA,
+        InitialiseState( HW_SPI_STATE( SPI_CHANNEL_1 ), SPI_CHANNEL_1, MakeMasterConfig(),
+                         SPI_CHANNEL_1_RX_DMA, SPI_CHANNEL_1_RX_DMA_STREAM, SPI_CHANNEL_1_TX_DMA,
                          SPI_CHANNEL_1_TX_DMA_STREAM, SPI_CHANNEL_1_INSTANCE,
                          SPI_CHANNEL_1_TX_DMA_IRQN, SPI_CHANNEL_1_TIMER );
-        InitialiseState( dac_state, SPI_DAC, MakeMasterConfig(), NULL, 0U, SPI_DAC_TX_DMA,
-                         SPI_DAC_TX_DMA_STREAM, SPI_DAC_INSTANCE, SPI_DAC_TX_DMA_IRQN,
-                         SPI_DAC_TIMER );
+        InitialiseState( HW_SPI_STATE( SPI_DAC ), SPI_DAC, MakeMasterConfig(), NULL, 0U,
+                         SPI_DAC_TX_DMA, SPI_DAC_TX_DMA_STREAM, SPI_DAC_INSTANCE,
+                         SPI_DAC_TX_DMA_IRQN, SPI_DAC_TIMER );
     }
 
     void TearDown( void ) override
@@ -514,35 +510,39 @@ TEST_F( HWSpiMasterTxTest, LoadTxBuffer_MasterCreatesOnePacketDescriptorPerLoad 
     EXPECT_TRUE( HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, first, sizeof( first ) ) );
     EXPECT_TRUE( HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, second, sizeof( second ) ) );
 
-    EXPECT_EQ( channel_0_state->tx_num_packets_pending, 2U );
-    EXPECT_EQ( channel_0_state->tx_packet_descriptors[0].start_index, 0U );
-    EXPECT_EQ( channel_0_state->tx_packet_descriptors[0].size_bytes, sizeof( first ) );
-    EXPECT_EQ( channel_0_state->tx_packet_descriptors[1].start_index, sizeof( first ) );
-    EXPECT_EQ( channel_0_state->tx_packet_descriptors[1].size_bytes, sizeof( second ) );
-    EXPECT_EQ( channel_0_state->tx_num_bytes_pending, sizeof( first ) + sizeof( second ) );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_packets_pending, 2U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_packet_descriptors[0].start_index, 0U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_packet_descriptors[0].size_bytes,
+               sizeof( first ) );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_packet_descriptors[1].start_index,
+               sizeof( first ) );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_packet_descriptors[1].size_bytes,
+               sizeof( second ) );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_pending,
+               sizeof( first ) + sizeof( second ) );
 }
 
 TEST_F( HWSpiMasterTxTest, LoadTxBuffer_MasterWrapsWholePacketRatherThanSplittingPacket )
 {
-    const uint8_t data[6]              = { 1U, 2U, 3U, 4U, 5U, 6U };
-    channel_0_state->tx_write_position = TX_BUFFER_SIZE_BYTES - 2U;
-    channel_0_state->tx_read_position  = 20U;
+    const uint8_t data[6]                            = { 1U, 2U, 3U, 4U, 5U, 6U };
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_write_position = TX_BUFFER_SIZE_BYTES - 2U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_read_position  = 20U;
 
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
     EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
 
     EXPECT_TRUE( HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, data, sizeof( data ) ) );
 
-    EXPECT_EQ( channel_0_state->tx_packet_descriptors[0].start_index, 0U );
-    EXPECT_EQ( channel_0_state->tx_packet_descriptors[0].size_bytes, sizeof( data ) );
-    EXPECT_EQ( memcmp( &channel_0_state->tx_buffer[0], data, sizeof( data ) ), 0 );
-    EXPECT_EQ( channel_0_state->tx_write_position, 6U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_packet_descriptors[0].start_index, 0U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_packet_descriptors[0].size_bytes, sizeof( data ) );
+    EXPECT_EQ( memcmp( &HW_SPI_STATE( SPI_CHANNEL_0 )->tx_buffer[0], data, sizeof( data ) ), 0 );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_write_position, 6U );
 }
 
 TEST_F( HWSpiMasterTxTest, LoadTxBuffer_MasterRejectsWhenDescriptorQueueIsFull )
 {
-    const uint8_t one_byte                  = 0x55U;
-    channel_0_state->tx_num_packets_pending = TX_PACKET_QUEUE_DEPTH;
+    const uint8_t one_byte                                = 0x55U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_packets_pending = TX_PACKET_QUEUE_DEPTH;
 
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
     EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
@@ -563,29 +563,30 @@ TEST_F( HWSpiMasterTxTest, TxTrigger_MasterStartsOnlyFirstQueuedPacketAndLeavesR
 
     InSequence seq;
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
-    ExpectChannel0DmaProgram( &channel_0_state->tx_buffer[0], sizeof( first ) );
+    ExpectChannel0DmaProgram( &HW_SPI_STATE( SPI_CHANNEL_0 )->tx_buffer[0], sizeof( first ) );
     EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
 
     HW_SPI_Tx_Trigger( SPI_CHANNEL_0 );
 
-    EXPECT_EQ( channel_0_state->tx_transaction_state, HW_SPI_TX_TRANSACTION_DMA_ACTIVE );
-    EXPECT_EQ( channel_0_state->tx_num_packets_pending, 1U );
-    EXPECT_EQ( channel_0_state->tx_num_bytes_pending, sizeof( second ) );
-    EXPECT_EQ( channel_0_state->tx_num_bytes_in_transmission, sizeof( first ) );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state,
+               HW_SPI_TX_TRANSACTION_DMA_ACTIVE );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_packets_pending, 1U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_pending, sizeof( second ) );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_in_transmission, sizeof( first ) );
 }
 
 TEST_F( HWSpiMasterTxTest, TxTrigger_MasterDoesNothingWhenTransactionAlreadyActive )
 {
-    channel_0_state->tx_transaction_state         = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
-    channel_0_state->tx_num_bytes_in_transmission = 1U;
-    channel_0_state->tx_num_packets_pending       = 1U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state         = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_in_transmission = 1U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_packets_pending       = 1U;
 
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
     EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
 
     HW_SPI_Tx_Trigger( SPI_CHANNEL_0 );
 
-    EXPECT_EQ( channel_0_state->tx_num_packets_pending, 1U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_packets_pending, 1U );
 }
 
 TEST_F( HWSpiMasterTxTest, TxDmaIrq_MasterCompletesFastTransactionWhenBsyAlreadyClear )
@@ -598,7 +599,7 @@ TEST_F( HWSpiMasterTxTest, TxDmaIrq_MasterCompletesFastTransactionWhenBsyAlready
 
     InSequence start_seq;
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
-    ExpectChannel0DmaProgram( &channel_0_state->tx_buffer[0], 1U );
+    ExpectChannel0DmaProgram( &HW_SPI_STATE( SPI_CHANNEL_0 )->tx_buffer[0], 1U );
     EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
     HW_SPI_Tx_Trigger( SPI_CHANNEL_0 );
     testing::Mock::VerifyAndClearExpectations( &mock );
@@ -612,18 +613,18 @@ TEST_F( HWSpiMasterTxTest, TxDmaIrq_MasterCompletesFastTransactionWhenBsyAlready
 
     SPI_CHANNEL_0_TX_DMA_IRQ();
 
-    EXPECT_EQ( channel_0_state->tx_transaction_state, HW_SPI_TX_TRANSACTION_IDLE );
-    EXPECT_EQ( channel_0_state->tx_num_bytes_in_transmission, 0U );
-    EXPECT_EQ( channel_0_state->tx_num_packets_pending, 0U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state, HW_SPI_TX_TRANSACTION_IDLE );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_in_transmission, 0U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_packets_pending, 0U );
 }
 
 TEST_F( HWSpiMasterTxTest, TxDmaIrq_MasterStartsFinalDrainTimerWhenSlowBsyStillSet )
 {
-    channel_0_state->config.baud_rate             = SPI_BAUD_352KBIT;
-    channel_0_state->tx_uses_final_drain_timer    = true;
-    channel_0_state->tx_final_drain_timer         = SPI_CHANNEL_0_TIMER;
-    channel_0_state->tx_transaction_state         = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
-    channel_0_state->tx_num_bytes_in_transmission = 1U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->config.baud_rate             = SPI_BAUD_352KBIT;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_uses_final_drain_timer    = true;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_final_drain_timer         = SPI_CHANNEL_0_TIMER;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state         = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_in_transmission = 1U;
 
     InSequence irq_seq;
     EXPECT_CALL( mock, DMAIsActiveFlagTE5( Eq( SPI_CHANNEL_0_TX_DMA ) ) ).WillOnce( Return( 0U ) );
@@ -635,62 +636,66 @@ TEST_F( HWSpiMasterTxTest, TxDmaIrq_MasterStartsFinalDrainTimerWhenSlowBsyStillS
 
     SPI_CHANNEL_0_TX_DMA_IRQ();
 
-    EXPECT_EQ( channel_0_state->tx_transaction_state, HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN );
-    EXPECT_EQ( channel_0_state->tx_num_bytes_in_transmission, 0U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state,
+               HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_in_transmission, 0U );
 }
 
 TEST_F( HWSpiMasterTxTest, TimerCallback_CompletesSlowTransactionAndStartsNextQueuedPacket )
 {
     const uint8_t next_packet[2] = { 0x22U, 0x23U };
-    memcpy( &channel_0_state->tx_buffer[10], next_packet, sizeof( next_packet ) );
-    channel_0_state->tx_packet_descriptors[0].start_index = 10U;
-    channel_0_state->tx_packet_descriptors[0].size_bytes  = sizeof( next_packet );
-    channel_0_state->tx_packet_read_position              = 0U;
-    channel_0_state->tx_packet_write_position             = 1U;
-    channel_0_state->tx_num_packets_pending               = 1U;
-    channel_0_state->tx_num_bytes_pending                 = sizeof( next_packet );
-    channel_0_state->tx_transaction_state                 = HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN;
-    channel_0_state->tx_final_drain_timer                 = SPI_CHANNEL_0_TIMER;
+    memcpy( &HW_SPI_STATE( SPI_CHANNEL_0 )->tx_buffer[10], next_packet, sizeof( next_packet ) );
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_packet_descriptors[0].start_index = 10U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_packet_descriptors[0].size_bytes  = sizeof( next_packet );
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_packet_read_position              = 0U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_packet_write_position             = 1U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_packets_pending               = 1U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_pending                 = sizeof( next_packet );
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state = HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_final_drain_timer = SPI_CHANNEL_0_TIMER;
 
     InSequence seq;
     EXPECT_CALL( mock, SPIIsBusy( Eq( SPI_CHANNEL_0_INSTANCE ) ) ).WillOnce( Return( 0U ) );
-    ExpectChannel0DmaProgram( &channel_0_state->tx_buffer[10], sizeof( next_packet ) );
+    ExpectChannel0DmaProgram( &HW_SPI_STATE( SPI_CHANNEL_0 )->tx_buffer[10],
+                              sizeof( next_packet ) );
 
     HW_SPI_Timer_Callback_From_ISR( SPI_CHANNEL_0 );
 
-    EXPECT_EQ( channel_0_state->tx_transaction_state, HW_SPI_TX_TRANSACTION_DMA_ACTIVE );
-    EXPECT_EQ( channel_0_state->tx_num_packets_pending, 0U );
-    EXPECT_EQ( channel_0_state->tx_num_bytes_in_transmission, sizeof( next_packet ) );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state,
+               HW_SPI_TX_TRANSACTION_DMA_ACTIVE );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_packets_pending, 0U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_in_transmission, sizeof( next_packet ) );
 }
 
 TEST_F( HWSpiMasterTxTest, TimerCallback_FaultsTransactionWhenBsyStillSet )
 {
-    channel_0_state->tx_transaction_state         = HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN;
-    channel_0_state->tx_num_bytes_in_transmission = 0U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state = HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_in_transmission = 0U;
 
     InSequence seq;
     EXPECT_CALL( mock, SPIIsBusy( Eq( SPI_CHANNEL_0_INSTANCE ) ) ).WillOnce( Return( 1U ) );
     EXPECT_CALL( mock, SPIDisableDMAReqTX( Eq( SPI_CHANNEL_0_INSTANCE ) ) );
     HW_SPI_Timer_Callback_From_ISR( SPI_CHANNEL_0 );
 
-    EXPECT_EQ( channel_0_state->tx_transaction_state, HW_SPI_TX_TRANSACTION_ERROR );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state, HW_SPI_TX_TRANSACTION_ERROR );
 }
 
 TEST_F( HWSpiMasterTxTest, TimerCallback_IgnoresStaleCallbackWhileDmaActive )
 {
-    channel_0_state->tx_transaction_state         = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
-    channel_0_state->tx_num_bytes_in_transmission = 1U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state         = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_in_transmission = 1U;
 
     HW_SPI_Timer_Callback_From_ISR( SPI_CHANNEL_0 );
 
-    EXPECT_EQ( channel_0_state->tx_transaction_state, HW_SPI_TX_TRANSACTION_DMA_ACTIVE );
-    EXPECT_EQ( channel_0_state->tx_num_bytes_in_transmission, 1U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state,
+               HW_SPI_TX_TRANSACTION_DMA_ACTIVE );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_in_transmission, 1U );
 }
 
 TEST_F( HWSpiMasterTxTest, TxDmaIrq_TransferErrorWinsOverTransferComplete )
 {
-    channel_0_state->tx_transaction_state         = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
-    channel_0_state->tx_num_bytes_in_transmission = 4U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state         = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_in_transmission = 4U;
 
     InSequence seq;
     EXPECT_CALL( mock, DMAIsActiveFlagTE5( Eq( SPI_CHANNEL_0_TX_DMA ) ) ).WillOnce( Return( 1U ) );
@@ -708,16 +713,16 @@ TEST_F( HWSpiMasterTxTest, TxDmaIrq_TransferErrorWinsOverTransferComplete )
 
     SPI_CHANNEL_0_TX_DMA_IRQ();
 
-    EXPECT_EQ( channel_0_state->tx_num_bytes_in_transmission, 0U );
-    EXPECT_EQ( channel_0_state->tx_transaction_state, HW_SPI_TX_TRANSACTION_ERROR );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_in_transmission, 0U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state, HW_SPI_TX_TRANSACTION_ERROR );
 }
 
 TEST_F( HWSpiMasterTxTest, Master16BitTriggerProgramsDmaInHalfwordElements )
 {
-    InitialiseState( channel_0_state, SPI_CHANNEL_0, MakeMasterConfig( SPI_SIZE_16_BIT ),
-                     SPI_CHANNEL_0_RX_DMA, SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA,
-                     SPI_CHANNEL_0_TX_DMA_STREAM, SPI_CHANNEL_0_INSTANCE, SPI_CHANNEL_0_TX_DMA_IRQN,
-                     SPI_CHANNEL_0_TIMER );
+    InitialiseState( HW_SPI_STATE( SPI_CHANNEL_0 ), SPI_CHANNEL_0,
+                     MakeMasterConfig( SPI_SIZE_16_BIT ), SPI_CHANNEL_0_RX_DMA,
+                     SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA, SPI_CHANNEL_0_TX_DMA_STREAM,
+                     SPI_CHANNEL_0_INSTANCE, SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
     const uint8_t data[4] = { 0x01U, 0x02U, 0x03U, 0x04U };
 
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
@@ -727,10 +732,110 @@ TEST_F( HWSpiMasterTxTest, Master16BitTriggerProgramsDmaInHalfwordElements )
 
     InSequence seq;
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
-    ExpectChannel0DmaProgram( &channel_0_state->tx_buffer[0], 2U );
+    ExpectChannel0DmaProgram( &HW_SPI_STATE( SPI_CHANNEL_0 )->tx_buffer[0], 2U );
     EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
 
     HW_SPI_Tx_Trigger( SPI_CHANNEL_0 );
 
-    EXPECT_EQ( channel_0_state->tx_num_bytes_in_transmission, sizeof( data ) );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_in_transmission, sizeof( data ) );
+}
+
+/**
+ * @brief Confirms that the public state lookup follows the SPIChannel_T index
+ *        mapping used by the state-array refactor.
+ *
+ * This catches regressions where a future channel reorder or array definition
+ * accidentally maps a logical channel to the wrong state object.
+ */
+TEST_F( HWSpiMasterTxTest, StateArray_GetStateReturnsMatchingArrayEntry )
+{
+    EXPECT_EQ( HW_SPI_Get_State( SPI_CHANNEL_0 ), HW_SPI_STATE( SPI_CHANNEL_0 ) );
+    EXPECT_EQ( HW_SPI_Get_State( SPI_CHANNEL_1 ), HW_SPI_STATE( SPI_CHANNEL_1 ) );
+    EXPECT_EQ( HW_SPI_Get_State( SPI_DAC ), HW_SPI_STATE( SPI_DAC ) );
+    EXPECT_EQ( HW_SPI_Get_State( static_cast<SPIChannel_T>( SPI_NUM_CHANNELS ) ), nullptr );
+}
+
+/**
+ * @brief TX completion is stricter than software-buffer empty.
+ *
+ * The queue and DMA byte counters can be zero before the master transaction is
+ * actually complete. The completion helper must also wait for BSY to clear and
+ * for the master final-drain state machine to return to IDLE.
+ */
+TEST_F( HWSpiMasterTxTest, TxIsComplete_MasterRequiresEmptyCountsClearBsyAndIdleState )
+{
+    SPIPeripheralState_T* state = HW_SPI_STATE( SPI_CHANNEL_0 );
+
+    state->tx_num_bytes_pending         = 0U;
+    state->tx_num_bytes_in_transmission = 0U;
+    state->tx_transaction_state         = HW_SPI_TX_TRANSACTION_IDLE;
+
+    EXPECT_CALL( mock, SPIIsBusy( Eq( SPI_CHANNEL_0_INSTANCE ) ) ).WillOnce( Return( 1U ) );
+    EXPECT_FALSE( HW_SPI_Tx_Is_Complete( SPI_CHANNEL_0 ) );
+    testing::Mock::VerifyAndClearExpectations( &mock );
+
+    state->tx_transaction_state = HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN;
+    EXPECT_CALL( mock, SPIIsBusy( Eq( SPI_CHANNEL_0_INSTANCE ) ) ).WillOnce( Return( 0U ) );
+    EXPECT_FALSE( HW_SPI_Tx_Is_Complete( SPI_CHANNEL_0 ) );
+    testing::Mock::VerifyAndClearExpectations( &mock );
+
+    state->tx_transaction_state = HW_SPI_TX_TRANSACTION_IDLE;
+    EXPECT_CALL( mock, SPIIsBusy( Eq( SPI_CHANNEL_0_INSTANCE ) ) ).WillOnce( Return( 0U ) );
+    EXPECT_TRUE( HW_SPI_Tx_Is_Complete( SPI_CHANNEL_0 ) );
+}
+
+/**
+ * @brief Master descriptor queue indices must wrap independently of TX buffer indices.
+ *
+ * This exercises the descriptor ring boundary without involving DMA. It protects
+ * the packet queue ownership model used by the master CS-framed transfer path.
+ */
+TEST_F( HWSpiMasterTxTest, LoadTxBuffer_MasterDescriptorWriteIndexWrapsAtQueueDepth )
+{
+    const uint8_t first[1]  = { 0xA1U };
+    const uint8_t second[1] = { 0xB2U };
+
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_packet_write_position = TX_PACKET_QUEUE_DEPTH - 1U;
+
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) ).Times( 2 );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) ).Times( 2 );
+
+    EXPECT_TRUE( HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, first, sizeof( first ) ) );
+    EXPECT_TRUE( HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, second, sizeof( second ) ) );
+
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )
+                   ->tx_packet_descriptors[TX_PACKET_QUEUE_DEPTH - 1U]
+                   .start_index,
+               0U );
+    EXPECT_EQ(
+        HW_SPI_STATE( SPI_CHANNEL_0 )->tx_packet_descriptors[TX_PACKET_QUEUE_DEPTH - 1U].size_bytes,
+        sizeof( first ) );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_packet_descriptors[0].start_index,
+               sizeof( first ) );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_packet_descriptors[0].size_bytes,
+               sizeof( second ) );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_packet_write_position, 1U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_packets_pending, 2U );
+}
+
+/**
+ * @brief Master packets must remain contiguous after wrapping to the buffer head.
+ *
+ * If the tail cannot fit the packet and the free space before tx_read_position is
+ * too small, the load must fail rather than splitting one CS-framed transaction
+ * across the ring boundary.
+ */
+TEST_F( HWSpiMasterTxTest, LoadTxBuffer_MasterRejectsWhenWrappedHeadSpaceIsTooSmall )
+{
+    const uint8_t data[8] = { 0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U };
+
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_write_position = TX_BUFFER_SIZE_BYTES - 2U;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_read_position  = 4U;
+
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+
+    EXPECT_FALSE( HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, data, sizeof( data ) ) );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_packets_pending, 0U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_pending, 0U );
 }

@@ -129,6 +129,8 @@ extern "C"
 #error "TX packet queue depth must be a power of two for mask-based wrapping"
 #endif
 
+#define HW_SPI_STATE( peripheral ) ( &channel_state_array[( uint32_t )( peripheral )] )
+
 /**-----------------------------------------------------------------------------
  *  Internal Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -224,17 +226,22 @@ struct SPIPeripheralState_T
  *------------------------------------------------------------------------------
  */
 
-extern SPIPeripheralState_T  channel_0_state_struct;
-extern SPIPeripheralState_T  channel_1_state_struct;
-extern SPIPeripheralState_T  dac_state_struct;
-extern SPIPeripheralState_T* channel_0_state;
-extern SPIPeripheralState_T* channel_1_state;
-extern SPIPeripheralState_T* dac_state;
+extern SPIPeripheralState_T channel_state_array[SPI_NUM_CHANNELS];
 
 /**-----------------------------------------------------------------------------
  *  Internal Hot-Path Inline Helpers
  *------------------------------------------------------------------------------
  */
+
+HW_SPI_ALWAYS_INLINE bool HW_SPI_Is_Valid_Channel( SPIChannel_T peripheral )
+{
+    return ( uint32_t )peripheral < ( uint32_t )SPI_NUM_CHANNELS;
+}
+
+HW_SPI_ALWAYS_INLINE SPIPeripheralState_T* HW_SPI_Get_State_Fast( SPIChannel_T peripheral )
+{
+    return &( channel_state_array[( uint32_t )peripheral] );
+}
 
 HW_SPI_ALWAYS_INLINE uint32_t
 HW_SPI_Get_Frame_Size_Bytes_Fast( const SPIPeripheralState_T* peripheral_state )

@@ -95,7 +95,7 @@ bool HW_SPI_RX_Start_Passive_DMA( SPIPeripheralState_T* peripheral_state )
     // circular, so once enabled it continuously drains SPI->DR into rx_buffer.
     LL_DMA_DisableStream( peripheral_state->rx_dma, peripheral_state->rx_dma_stream );
     uint32_t timeout = HW_SPI_DMA_DISABLE_TIMEOUT_ITERATIONS;
-    while ( LL_DMA_IsEnabledStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream )
+    while ( LL_DMA_IsEnabledStream( peripheral_state->rx_dma, peripheral_state->rx_dma_stream )
             != 0U )
     {
         // Add timeout here to prevent waiting too long
@@ -179,23 +179,18 @@ void SPI_CHANNEL_1_RX_DMA_IRQ( void )
  */
 bool HW_SPI_Start_Channel( SPIChannel_T peripheral )
 {
-    SPIPeripheralState_T* peripheral_state = NULL;
-
     // Start only the RX side here. TX is deliberately separate and is started by
     // HW_SPI_Load_Tx_Buffer() plus HW_SPI_Tx_Trigger().
-    switch ( peripheral )
+    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
+
+    if ( peripheral_state == NULL )
     {
-        case SPI_CHANNEL_0:
-            peripheral_state = channel_0_state;
-            break;
+        return false;
+    }
 
-        case SPI_CHANNEL_1:
-            peripheral_state = channel_1_state;
-            break;
-
-        case SPI_DAC:  // SPI will not be receiving anything
-        default:
-            return false;
+    if ( peripheral_state->rx_dma == NULL )
+    {
+        return false;
     }
 
     // Arm RX DMA directly instead of using HAL_SPI_Receive_DMA(). This keeps
@@ -220,48 +215,23 @@ bool HW_SPI_Start_Channel( SPIChannel_T peripheral )
  */
 HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIChannel_T peripheral )
 {
-    SPIPeripheralState_T* peripheral_state       = NULL;
-    uint8_t*              rx_buffer              = NULL;
-    uint32_t              read_index             = 0U;
-    uint32_t              dma_remaining_elements = 0U;
-    uint32_t              dma_remaining_bytes    = 0U;
-    uint32_t              dma_write_index        = 0U;
-    uint32_t              unread_bytes           = 0U;
+    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State_Fast( peripheral );
 
-    switch ( peripheral )
-    {
-        case SPI_CHANNEL_0:
-            peripheral_state = channel_0_state;
-            rx_buffer        = channel_0_state->rx_buffer;
-            read_index       = channel_0_state->rx_position;
-            dma_remaining_elements =
-                LL_DMA_GetDataLength( SPI_CHANNEL_0_RX_DMA, SPI_CHANNEL_0_RX_DMA_STREAM );
-            break;
+    uint8_t* rx_buffer  = peripheral_state->rx_buffer;
+    uint32_t read_index = peripheral_state->rx_position;
 
-        case SPI_CHANNEL_1:
-            peripheral_state = channel_1_state;
-            rx_buffer        = channel_1_state->rx_buffer;
-            read_index       = channel_1_state->rx_position;
-            dma_remaining_elements =
-                LL_DMA_GetDataLength( SPI_CHANNEL_1_RX_DMA, SPI_CHANNEL_1_RX_DMA_STREAM );
-            break;
-
-        case SPI_DAC:
-        default:
-            return ( HWSPIRxSpans_T ){ .first_span         = { .data = NULL, .length_bytes = 0U },
-                                       .second_span        = { .data = NULL, .length_bytes = 0U },
-                                       .total_length_bytes = 0U };
-    }
+    uint32_t dma_remaining_elements =
+        LL_DMA_GetDataLength( peripheral_state->rx_dma, peripheral_state->rx_dma_stream );
 
     // DMA NDTR is expressed in DMA elements, not bytes. Convert back to bytes
     // so the software RX stream remains byte-oriented.
-    dma_remaining_bytes =
+    uint32_t dma_remaining_bytes =
         HW_SPI_DMA_Elements_To_Bytes_Fast( peripheral_state, dma_remaining_elements );
 
     // In circular RX mode, NDTR counts down from the full buffer length to 0
     // and then reloads. Subtracting the remaining count gives the current DMA
     // write index in byte units.
-    dma_write_index = RX_BUFFER_SIZE_BYTES - dma_remaining_bytes;
+    uint32_t dma_write_index = RX_BUFFER_SIZE_BYTES - dma_remaining_bytes;
 
     if ( dma_write_index == RX_BUFFER_SIZE_BYTES )
     {
@@ -270,7 +240,7 @@ HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIChannel_T peripheral )
 
     // The modulo subtraction handles both non-wrapped and wrapped unread RX
     // regions.
-    unread_bytes = ( dma_write_index - read_index ) & RX_BUFFER_INDEX_MASK;
+    uint32_t unread_bytes = ( dma_write_index - read_index ) & RX_BUFFER_INDEX_MASK;
 
     if ( unread_bytes == 0U )
     {
@@ -328,22 +298,7 @@ HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIChannel_T peripheral )
  */
 void HW_SPI_Rx_Consume( SPIChannel_T peripheral, uint32_t bytes_to_consume )
 {
-    SPIPeripheralState_T* peripheral_state = NULL;
-
-    switch ( peripheral )
-    {
-        case SPI_CHANNEL_0:
-            peripheral_state = channel_0_state;
-            break;
-        case SPI_CHANNEL_1:
-            peripheral_state = channel_1_state;
-            break;
-        case SPI_DAC:
-            peripheral_state = dac_state;
-            break;
-        default:
-            return;  // Caller's responsibility to ensure peripheral is correct so do nothing
-    }
+    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State_Fast( peripheral );
 
     // Advance only the software consume index. The DMA write index is hardware
     // controlled and is derived from NDTR when peeking.
