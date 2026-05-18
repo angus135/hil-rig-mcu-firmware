@@ -238,10 +238,6 @@ bool HW_SPI_TX_Load_Master_Packet( SPIPeripheralState_T* peripheral_state, const
  */
 bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state )
 {
-    SPITxPacketDescriptor_T* packet            = NULL;
-    uint8_t*                 tx_ptr            = NULL;
-    uint32_t                 packet_size_bytes = 0U;
-
     if ( peripheral_state->tx_num_bytes_in_transmission > 0U
          || peripheral_state->tx_transaction_state != HW_SPI_TX_TRANSACTION_IDLE )
     {
@@ -254,7 +250,7 @@ bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state )
         return false;
     }
 
-    packet =
+    SPITxPacketDescriptor_T* packet =
         &( peripheral_state->tx_packet_descriptors[peripheral_state->tx_packet_read_position] );
 
     if ( packet->size_bytes == 0U )
@@ -262,31 +258,16 @@ bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state )
         return false;
     }
 
-    packet_size_bytes = packet->size_bytes;
-    tx_ptr            = &( peripheral_state->tx_buffer[packet->start_index] );
+    uint32_t packet_size_bytes = packet->size_bytes;
+    uint8_t* tx_ptr            = &( peripheral_state->tx_buffer[packet->start_index] );
 
-    // Move exactly this packet out of the pending software state and into the
-    // in-flight DMA state. The descriptor is consumed before DMA is armed. The
-    // DMA completion IRQ must not start another packet until the automatic-CS
-    // completion path has waited for the final SPI frame to drain and released
-    // CS for this packet.
-    peripheral_state->tx_packet_read_position =
-        HW_SPI_Wrap_Tx_Packet_Index( peripheral_state->tx_packet_read_position + 1U );
-    peripheral_state->tx_num_packets_pending--;
-
-    peripheral_state->tx_num_bytes_pending =
-        peripheral_state->tx_num_bytes_pending - packet_size_bytes;
+    // Mark the transaction as DMA-active before enabling DMA. The DMA TC IRQ
+    // may run very soon after LL_SPI_EnableDMAReq_TX(), especially for short
+    // packets, so the IRQ must not observe the transaction as idle.
+    // The packet descriptor and pending byte counts are not consumed until DMA
+    // programming succeeds.
     peripheral_state->tx_num_bytes_in_transmission = packet_size_bytes;
-
-    peripheral_state->tx_read_position =
-        HW_SPI_Wrap_Tx_Buffer_Index( packet->start_index + packet_size_bytes );
-
-    // Descriptor clearing is for debug/readability only. Descriptor ownership is
-    // controlled by tx_packet_read_position and tx_num_packets_pending.
-    packet->start_index = 0U;
-    packet->size_bytes  = 0U;
-
-    peripheral_state->tx_transaction_state = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
+    peripheral_state->tx_transaction_state         = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
 
     // Master software CS is asserted immediately before arming the DMA transfer
     // for this packet. The actual GPIO access is intentionally hidden behind
@@ -300,6 +281,26 @@ bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state )
         peripheral_state->tx_num_bytes_in_transmission = 0U;
         return false;
     }
+
+    // Move exactly this packet out of the pending software state and into the
+    // in-flight DMA state. The descriptor is consumed after DMA is armed. The
+    // DMA completion IRQ must not start another packet until the automatic-CS
+    // completion path has waited for the final SPI frame to drain and released
+    // CS for this packet.
+    peripheral_state->tx_packet_read_position =
+        HW_SPI_Wrap_Tx_Packet_Index( peripheral_state->tx_packet_read_position + 1U );
+    peripheral_state->tx_num_packets_pending--;
+
+    peripheral_state->tx_num_bytes_pending =
+        peripheral_state->tx_num_bytes_pending - packet_size_bytes;
+
+    peripheral_state->tx_read_position =
+        HW_SPI_Wrap_Tx_Buffer_Index( packet->start_index + packet_size_bytes );
+
+    // Descriptor clearing is for debug/readability only. Descriptor ownership is
+    // controlled by tx_packet_read_position and tx_num_packets_pending.
+    packet->start_index = 0U;
+    packet->size_bytes  = 0U;
 
     return true;
 }
