@@ -221,8 +221,8 @@ static uint32_t HW_SPI_Get_Tx_Final_Drain_Timer_Arr( const SPIPeripheralState_T*
             return use_16_bit ? SPI_FINAL_DRAIN_ARR_352K_16BIT : SPI_FINAL_DRAIN_ARR_352K_8BIT;
 
         default:
-            // Conservative fallback for unknown/invalid baud setting.
-            return use_16_bit ? SPI_FINAL_DRAIN_ARR_352K_16BIT : SPI_FINAL_DRAIN_ARR_352K_8BIT;
+            // Return 0 if invalid
+            return 0;
     }
 }
 
