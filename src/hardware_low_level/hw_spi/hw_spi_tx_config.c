@@ -852,9 +852,10 @@ void HW_SPI_Timer_Callback_From_ISR( SPIChannel_T peripheral )
             peripheral_state = channel_1_state;
             break;
         case SPI_DAC:
-        default:
             peripheral_state = dac_state;
             break;
+        default:
+            return;  // Caller's responsibility for peripheral to be valid so do nothing
     }
 
     if ( peripheral_state->is_master == false

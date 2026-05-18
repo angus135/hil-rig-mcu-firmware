@@ -104,9 +104,10 @@ static void HW_SPI_Config_Precompute_Hot_Fields( SPIPeripheralState_T* periphera
             peripheral_state->tx_final_drain_timer = SPI_CHANNEL_1_TIMER;
             break;
         case SPI_DAC:
-        default:
             peripheral_state->tx_final_drain_timer = SPI_DAC_TIMER;
             break;
+        default:
+            return;  // TODO: need to return false here since false
     }
 
     if ( configuration.data_size == SPI_SIZE_16_BIT )
