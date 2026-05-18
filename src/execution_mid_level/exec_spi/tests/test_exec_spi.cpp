@@ -55,7 +55,7 @@ public:
     MOCK_METHOD( bool, ConfigureChannel, ( SPIChannel_T peripheral, HWSPIConfig_T configuration ),
                  () );
 
-    MOCK_METHOD( void, StartChannel, ( SPIChannel_T peripheral ), () );
+    MOCK_METHOD( bool, StartChannel, ( SPIChannel_T peripheral ), () );
 
     MOCK_METHOD( void, StopChannel, ( SPIChannel_T peripheral ), () );
 
@@ -81,9 +81,9 @@ bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configurat
     return g_mock_hw_spi->ConfigureChannel( peripheral, configuration );
 }
 
-void HW_SPI_Start_Channel( SPIChannel_T peripheral )
+bool HW_SPI_Start_Channel( SPIChannel_T peripheral )
 {
-    g_mock_hw_spi->StartChannel( peripheral );
+    return g_mock_hw_spi->StartChannel( peripheral );
 }
 
 void HW_SPI_Stop_Channel( SPIChannel_T peripheral )

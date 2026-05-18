@@ -446,7 +446,10 @@ static bool CONSOLE_SPI_Loopback_Apply_Channel( SPILoopChannel_T* channel )
         return false;
     }
 
-    HW_SPI_Start_Channel( channel->peripheral );
+    if ( !HW_SPI_Start_Channel( channel->peripheral ) )
+    {
+        return false;
+    }
 
     channel->configured = true;
 

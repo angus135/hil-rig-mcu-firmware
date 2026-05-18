@@ -133,25 +133,6 @@ HW_SPI_ALWAYS_INLINE uint32_t HW_SPI_TX_Get_Contiguous_Free_Bytes_From_Index(
  */
 
 /**
- * @brief Check whether the master packet queue has pending packet descriptors.
- *
- * In master mode, DMA is deliberately armed packet-by-packet instead of sending
- * all available contiguous TX bytes. This preserves transaction boundaries for
- * a future software chip-select layer without inserting delimiter bytes into
- * the transmitted SPI stream.
- *
- * @param peripheral_state
- *     SPI channel state containing the master packet descriptor queue.
- *
- * @return
- *     true if at least one master packet descriptor is pending; false otherwise.
- */
-bool HW_SPI_TX_Master_Has_Pending( const SPIPeripheralState_T* peripheral_state )
-{
-    return peripheral_state->tx_num_packets_pending > 0U;
-}
-
-/**
  * @brief Load one contiguous master-mode TX packet into the software TX buffer.
  *
  * @details
@@ -267,7 +248,8 @@ bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state )
         return false;
     }
 
-    if ( HW_SPI_TX_Master_Has_Pending( peripheral_state ) == false )
+    // Check if there are any packets pending
+    if ( peripheral_state->tx_num_packets_pending == 0U )
     {
         return false;
     }

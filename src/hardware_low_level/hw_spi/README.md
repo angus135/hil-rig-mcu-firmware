@@ -72,7 +72,7 @@ The public data path is intentionally mode-agnostic:
 
 ```c
 bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configuration );
-void HW_SPI_Start_Channel( SPIChannel_T peripheral );
+bool HW_SPI_Start_Channel( SPIChannel_T peripheral );
 void HW_SPI_Stop_Channel( SPIChannel_T peripheral );
 
 HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIChannel_T peripheral );

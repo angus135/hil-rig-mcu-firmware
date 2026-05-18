@@ -211,7 +211,10 @@ bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configur
     }
 
     // Start arms the low-level runtime path, including passive RX DMA capture.
-    HW_SPI_Start_Channel( peripheral );
+    if ( !HW_SPI_Start_Channel( peripheral ) )
+    {
+        return false;
+    }
     state->state         = EXEC_SPI_STATE_ACTIVE;
     state->configuration = configuration;
     return true;

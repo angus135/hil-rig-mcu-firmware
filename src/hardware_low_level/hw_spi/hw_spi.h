@@ -240,7 +240,7 @@ bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configurat
  * @param peripheral
  *     The SPI peripheral/channel to start.
  */
-void HW_SPI_Start_Channel( SPIChannel_T peripheral );
+bool HW_SPI_Start_Channel( SPIChannel_T peripheral );
 
 /**
  * @brief Stop runtime operation of a configured SPI channel.

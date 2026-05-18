@@ -565,31 +565,6 @@ void HW_SPI_COLD_NOINLINE HW_SPI_TX_Error_Handler( SPIChannel_T peripheral )
 }
 
 /**
- * @brief Shared TX DMA IRQ completion handler.
- *
- * @details
- *     Dispatches TX DMA completion differently for master and slave mode. Master
- *     mode enters the software-CS completion path because DMA TC is not the end
- *     of the electrical SPI transaction. Slave mode preserves stream behaviour
- *     and immediately arms the next pending contiguous span when available.
- *
- * @param peripheral
- *     Logical SPI peripheral whose TX DMA IRQ fired.
- */
-void HW_SPI_TX_IRQ_Handler( SPIChannel_T peripheral )
-{
-    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
-
-    if ( peripheral_state->is_master != false )
-    {
-        HW_SPI_TX_Handle_Master_DMA_TC( peripheral, peripheral_state );
-        return;
-    }
-
-    HW_SPI_TX_Handle_Slave_DMA_TC( peripheral, peripheral_state );
-}
-
-/**
  * @brief Reset TX queue, descriptor, and transaction bookkeeping.
  *
  * @details
@@ -626,7 +601,7 @@ void HW_SPI_TX_Reset_State( SPIPeripheralState_T* peripheral_state )
 }
 
 /**
- * @brief Configure TX support for a SPI channel.
+ * @brief Configure TX Timer support for a SPI channel.
  *
  * @details
  *     Performs TX-side setup that depends on the configured channel mode.
@@ -647,7 +622,7 @@ void HW_SPI_TX_Reset_State( SPIPeripheralState_T* peripheral_state )
  * @param peripheral_state
  *     SPI channel state whose TX support should be configured.
  */
-void HW_SPI_TX_Configure_Operations( SPIPeripheralState_T* peripheral_state )
+void HW_SPI_TX_Configure_Timer( SPIPeripheralState_T* peripheral_state )
 {
     if ( peripheral_state == NULL )
     {
@@ -717,19 +692,28 @@ void SPI_CHANNEL_1_TX_DMA_IRQ( void )
  *
  * void SPI_DAC_TX_DMA_IRQ( void )
  * {
- *     if ( LL_DMA_IsActiveFlag_TE1( SPI_DAC_TX_DMA ) != 0U )
- *     {
- *         LL_DMA_ClearFlag_TE1( SPI_DAC_TX_DMA );
- *         HW_SPI_TX_Error_Handler( SPI_DAC );
- *         return;
- *     }
+ *    // Handle transfer error first. If TE and TC are both latched, error
+ *    // handling wins and normal completion processing is skipped.
+ *    if ( SPI_DAC_TX_DMA_IS_ACTIVE_TE( SPI_DAC_TX_DMA ) != 0U )
+ *    {
+ *        SPI_DAC_TX_DMA_CLEAR_TE( SPI_DAC_TX_DMA );
+ *        HW_SPI_TX_Error_Handler( SPI_DAC );
+ *        return;
+ *    }
  *
- *     if ( LL_DMA_IsActiveFlag_TC1( SPI_DAC_TX_DMA ) != 0U )
- *     {
- *         LL_DMA_ClearFlag_TC1( SPI_DAC_TX_DMA );
- *         HW_SPI_TX_IRQ_Handler( SPI_DAC );
- *         return;
- *     }
+ *    if ( SPI_DAC_TX_DMA_IS_ACTIVE_TC( SPI_DAC_TX_DMA ) != 0U )
+ *    {
+ *        SPI_DAC_TX_DMA_CLEAR_TC( SPI_DAC_TX_DMA );
+ *        if ( dac_state->is_master != false )
+ *        {
+ *            HW_SPI_TX_Handle_Master_DMA_TC( SPI_DAC, dac_state );
+ *        }
+ *        else
+ *        {
+ *            HW_SPI_TX_Handle_Slave_DMA_TC( SPI_DAC, dac_state );
+ *        }
+ *        return;
+ *    }
  * }
  */
 
@@ -783,11 +767,10 @@ void HW_SPI_Timer_Callback_From_ISR( SPIChannel_T peripheral )
  * @brief Public TX load wrapper.
  *
  * @details
- *     Copies caller data into the selected channel's internal TX storage and
- *     dispatches to the configured master/slave load function. Master mode
- *     records one packet descriptor per call; slave mode appends raw stream
- *     bytes. This function only queues data and does not require the TX engine
- *     to be idle.
+ *     Copies caller data into the selected channel's internal TX storage.
+ *     Master mode records one packet descriptor per call; slave mode appends raw
+ *     stream bytes. This function only queues data and does not require the TX
+ *     engine to be idle.
  *
  * @param peripheral
  *     Logical SPI peripheral whose TX queue should receive data.
@@ -800,8 +783,8 @@ void HW_SPI_Timer_Callback_From_ISR( SPIChannel_T peripheral )
  *     size.
  *
  * @return
- *     true if the data was queued; false if the peripheral is invalid, no load
- *     operation is configured, or insufficient queue space is available.
+ *     true if the data was queued; false if the peripheral is invalid, the size
+ *     is not frame-aligned, or insufficient queue space is available.
  */
 bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32_t size )
 {

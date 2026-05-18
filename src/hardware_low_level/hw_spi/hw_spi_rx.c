@@ -101,7 +101,6 @@ bool HW_SPI_RX_Start_Passive_DMA( SPIPeripheralState_T* peripheral_state )
         // Add timeout here to prevent waiting too long
         if ( timeout == 0U )
         {
-            LL_DMA_DisableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
             return false;
         }
         timeout--;
@@ -178,7 +177,7 @@ void SPI_CHANNEL_1_RX_DMA_IRQ( void )
  * @param peripheral
  *     Logical SPI peripheral to start.
  */
-void HW_SPI_Start_Channel( SPIChannel_T peripheral )
+bool HW_SPI_Start_Channel( SPIChannel_T peripheral )
 {
     SPIPeripheralState_T* peripheral_state = NULL;
 
@@ -196,13 +195,13 @@ void HW_SPI_Start_Channel( SPIChannel_T peripheral )
 
         case SPI_DAC:  // SPI will not be receiving anything
         default:
-            return;
+            return false;
     }
 
     // Arm RX DMA directly instead of using HAL_SPI_Receive_DMA(). This keeps
     // master-mode RX passive: no clocks are generated until the caller starts a
     // TX transfer.
-    ( void )HW_SPI_RX_Start_Passive_DMA( peripheral_state );
+    return HW_SPI_RX_Start_Passive_DMA( peripheral_state );
 }
 
 /**
