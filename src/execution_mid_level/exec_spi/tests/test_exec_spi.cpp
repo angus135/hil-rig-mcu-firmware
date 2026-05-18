@@ -165,7 +165,9 @@ protected:
          * making configuration fail. If a previous test left the channel active,
          * EXEC_SPI_Configure_Channel() may also stop it first.
          */
-        EXPECT_CALL( mock_hw_spi, StopChannel( peripheral ) ).Times( AnyNumber() );
+        EXPECT_CALL( mock_hw_spi, StopChannel( peripheral ) )
+            .Times( AnyNumber() )
+            .WillRepeatedly( Return( true ) );
 
         EXPECT_CALL( mock_hw_spi, ConfigureChannel( peripheral, _ ) ).WillOnce( Return( false ) );
 
@@ -197,7 +199,7 @@ TEST_F( ExecSPITest, ConfigureChannel_UnconfiguredChannel_ConfiguresAndStartsCha
     EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_0, _ ) )
         .WillOnce( ::testing::Return( true ) );
 
-    EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_0 ) ).Times( 1 );
+    EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_0 ) ).WillOnce( ::testing::Return( true ) );
 
     bool result = EXEC_SPI_Configure_Channel( SPI_CHANNEL_0, default_config );
 
@@ -215,7 +217,8 @@ TEST_F( ExecSPITest, ConfigureChannel_ActiveChannel_StopsBeforeReconfiguring )
 
         EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_0, _ ) ).WillOnce( Return( true ) );
 
-        EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_0 ) ).Times( 1 );
+        EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_0 ) )
+            .WillOnce( ::testing::Return( true ) );
     }
 
     ASSERT_TRUE( EXEC_SPI_Configure_Channel( SPI_CHANNEL_0, default_config ) );
@@ -230,11 +233,12 @@ TEST_F( ExecSPITest, ConfigureChannel_ActiveChannel_StopsBeforeReconfiguring )
     {
         InSequence sequence;
 
-        EXPECT_CALL( mock_hw_spi, StopChannel( SPI_CHANNEL_0 ) ).Times( 1 );
+        EXPECT_CALL( mock_hw_spi, StopChannel( SPI_CHANNEL_0 ) ).WillOnce( Return( true ) );
 
         EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_0, _ ) ).WillOnce( Return( true ) );
 
-        EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_0 ) ).Times( 1 );
+        EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_0 ) )
+            .WillOnce( ::testing::Return( true ) );
     }
 
     bool result = EXEC_SPI_Configure_Channel( SPI_CHANNEL_0, updated_config );
