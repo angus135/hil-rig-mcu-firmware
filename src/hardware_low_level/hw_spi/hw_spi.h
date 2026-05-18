@@ -262,7 +262,7 @@ bool HW_SPI_Start_Channel( SPIChannel_T peripheral );
  * @param peripheral
  *     The SPI peripheral/channel to stop.
  */
-void HW_SPI_Stop_Channel( SPIChannel_T peripheral );
+bool HW_SPI_Stop_Channel( SPIChannel_T peripheral );
 
 /**
  * @brief Return the unread received data as one or two spans into the internal RX buffer.
