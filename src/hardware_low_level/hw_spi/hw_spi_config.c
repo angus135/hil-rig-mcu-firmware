@@ -150,75 +150,6 @@ SPIPeripheralState_T* HW_SPI_Get_State( SPIChannel_T peripheral )
 }
 
 /**
- * @brief Return the configured SPI frame size in bytes.
- *
- * @param peripheral_state
- *     Configured SPI channel state. Runtime callers are expected to pass a
- *     valid state pointer that was initialised by HW_SPI_Configure_Channel().
- *
- * @return
- *     1 for 8-bit SPI frames; 2 for 16-bit SPI frames.
- */
-uint32_t HW_SPI_Get_Frame_Size_Bytes( const SPIPeripheralState_T* peripheral_state )
-{
-    return HW_SPI_Get_Frame_Size_Bytes_Fast( peripheral_state );
-}
-
-/**
- * @brief Convert a byte count into a DMA element count for the configured frame size.
- *
- * @param peripheral_state
- *     Configured SPI channel state.
- *
- * @param size_bytes
- *     Number of software-visible bytes to transfer.
- *
- * @return
- *     DMA NDTR element count corresponding to @p size_bytes.
- */
-uint16_t HW_SPI_Bytes_To_DMA_Elements( const SPIPeripheralState_T* peripheral_state,
-                                       uint32_t                    size_bytes )
-{
-    return HW_SPI_Bytes_To_DMA_Elements_Fast( peripheral_state, size_bytes );
-}
-
-/**
- * @brief Convert a byte count into a DMA element count for the configured frame size.
- *
- * @param peripheral_state
- *     Configured SPI channel state.
- *
- * @param size_bytes
- *     Number of software-visible bytes to transfer.
- *
- * @return
- *     DMA NDTR element count corresponding to @p size_bytes.
- */
-uint32_t HW_SPI_DMA_Elements_To_Bytes( const SPIPeripheralState_T* peripheral_state,
-                                       uint32_t                    num_elements )
-{
-    return HW_SPI_DMA_Elements_To_Bytes_Fast( peripheral_state, num_elements );
-}
-
-/**
- * @brief Check whether a byte count is aligned to the configured SPI frame size.
- *
- * @param peripheral_state
- *     Configured SPI channel state.
- *
- * @param size_bytes
- *     Byte count supplied by the caller.
- *
- * @return
- *     true if @p size_bytes is legal for the configured frame size; false
- *     otherwise.
- */
-bool HW_SPI_Is_Frame_Aligned_Size( const SPIPeripheralState_T* peripheral_state,
-                                   uint32_t                    size_bytes )
-{
-    return HW_SPI_Is_Frame_Aligned_Size_Fast( peripheral_state, size_bytes );
-}
-/**
  * @brief Configure DMA memory/peripheral data widths to match the SPI frame size.
  *
  * This must match the selected SPI data size. For 8-bit SPI, DMA transfers bytes.
@@ -540,8 +471,6 @@ void HW_SPI_Stop_Channel( SPIChannel_T peripheral )
             break;
         case SPI_DAC:
             hspi = &SPI_DAC_HANDLE;
-            return;
-            break;
         default:
             return;
     }

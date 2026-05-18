@@ -27,7 +27,7 @@
  *------------------------------------------------------------------------------
  */
 
-#define CONSOLE_SPI_BANDWIDTH_TEST 0
+#define CONSOLE_SPI_BANDWIDTH_TEST 1
 
 #define SPI_LOOP_MAX_MESSAGE_BYTES 128U
 #define SPI_LOOP_TRANSFER_DELAY_MS 100U
