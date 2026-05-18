@@ -7,7 +7,7 @@
  *      Shared TX configuration and common TX-side implementation for the
  *      low-level SPI driver used by the HIL-RIG firmware.
  *
- *      This file contains TX operation selection, common DMA flag handling,
+ *      This file contains common DMA flag handling,
  *      final-drain timer configuration, shared TX DMA programming, TX DMA IRQ
  *      entry points, TX error handling, and the public TX API functions that
  *      dispatch into the master/slave TX implementations.
@@ -129,28 +129,7 @@
  *------------------------------------------------------------------------------
  */
 
-/**
- * @brief Clear TX DMA terminal/error flags for SPI channel 0.
- *
- * @param dma
- *     DMA controller instance associated with the channel 0 TX stream.
- */
-static inline void HW_SPI_TX_Clear_Channel_0_DMA_Flags( DMA_TypeDef* dma );
-/**
- * @brief Clear TX DMA terminal/error flags for SPI channel 1.
- *
- * @param dma
- *     DMA controller instance associated with the channel 1 TX stream.
- */
-static inline void HW_SPI_TX_Clear_Channel_1_DMA_Flags( DMA_TypeDef* dma );
-/**
- * @brief Clear TX DMA terminal/error flags for the DAC SPI channel.
- *
- * @param dma
- *     DMA controller instance associated with the DAC TX stream.
- */
-static inline void HW_SPI_TX_Clear_DAC_DMA_Flags( DMA_TypeDef* dma );
-static uint32_t    HW_SPI_Get_Tx_Timer_Psc( const SPIPeripheralState_T* peripheral_state );
+static uint32_t HW_SPI_Get_Tx_Timer_Psc( const SPIPeripheralState_T* peripheral_state );
 static uint32_t HW_SPI_Get_Tx_Final_Drain_Timer_Arr( const SPIPeripheralState_T* peripheral_state );
 static void     HW_SPI_Configure_Tx_Timer( SPIPeripheralState_T* peripheral_state );
 HW_SPI_ALWAYS_INLINE void
@@ -172,24 +151,6 @@ HW_SPI_ALWAYS_INLINE void HW_SPI_TX_Handle_Slave_DMA_TC( SPIChannel_T          p
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
-
-static inline void HW_SPI_TX_Clear_Channel_0_DMA_Flags( DMA_TypeDef* dma )
-{
-    SPI_CHANNEL_0_TX_DMA_CLEAR_TC( dma );
-    SPI_CHANNEL_0_TX_DMA_CLEAR_TE( dma );
-}
-
-static inline void HW_SPI_TX_Clear_Channel_1_DMA_Flags( DMA_TypeDef* dma )
-{
-    SPI_CHANNEL_1_TX_DMA_CLEAR_TC( dma );
-    SPI_CHANNEL_1_TX_DMA_CLEAR_TE( dma );
-}
-
-static inline void HW_SPI_TX_Clear_DAC_DMA_Flags( DMA_TypeDef* dma )
-{
-    SPI_DAC_TX_DMA_CLEAR_TC( dma );
-    SPI_DAC_TX_DMA_CLEAR_TE( dma );
-}
 
 /**
  * @brief Return the timer prescaler used for this SPI channel's final-drain timer.
@@ -538,26 +499,6 @@ HW_SPI_ALWAYS_INLINE void HW_SPI_TX_Handle_Slave_DMA_TC( SPIChannel_T          p
  */
 
 /**
- * @brief Return whether this SPI baud rate should use a final-drain timer.
- *
- * Fast SPI baud rates use a short inline bounded wait after TX DMA completion.
- * Slower SPI baud rates use a timer one-shot so the DMA ISR does not block for
- * several microseconds to tens of microseconds while waiting for the final SPI
- * frame to leave the peripheral.
- *
- * @param peripheral_state
- *     SPI channel state containing the configured baud rate.
- *
- * @return
- *     true if the timer path should be used; false if the inline wait path is
- *     preferred.
- */
-bool HW_SPI_TX_Should_Use_Final_Drain_Timer( const SPIPeripheralState_T* peripheral_state )
-{
-    return peripheral_state->tx_uses_final_drain_timer;
-}
-
-/**
  * @brief Return the timer assigned to a SPI peripheral's final-drain delay.
  *
  * Each SPI logical peripheral is mapped to a hardware timer used by the later
@@ -573,16 +514,6 @@ bool HW_SPI_TX_Should_Use_Final_Drain_Timer( const SPIPeripheralState_T* periphe
 Timer_T HW_SPI_Get_Tx_Timer( const SPIPeripheralState_T* peripheral_state )
 {
     return peripheral_state->tx_final_drain_timer;
-}
-
-uint32_t HW_SPI_TX_Get_Used_Space( const SPIPeripheralState_T* peripheral_state )
-{
-    return HW_SPI_TX_Get_Used_Space_Fast( peripheral_state );
-}
-
-uint32_t HW_SPI_TX_Get_Free_Space( const SPIPeripheralState_T* peripheral_state )
-{
-    return HW_SPI_TX_Get_Free_Space_Fast( peripheral_state );
 }
 
 /**
@@ -695,17 +626,26 @@ void HW_SPI_TX_Reset_State( SPIPeripheralState_T* peripheral_state )
 }
 
 /**
- * @brief Select mode-specific TX compatibility hooks and timer configuration.
+ * @brief Configure TX support for a SPI channel.
  *
  * @details
- *     Master and slave TX have different queue semantics. The timing-critical
- *     paths now call the concrete master/slave implementations directly to
- *     avoid indirect-call overhead. These function pointers are still populated
- *     for internal compatibility and readability, while the final-drain timer is
- *     configured here for master-mode channels.
+ *     Performs TX-side setup that depends on the configured channel mode.
+ *
+ *     The current TX implementation calls the concrete master/slave functions
+ *     directly in the runtime paths rather than using mode-specific function
+ *     pointers. This avoids indirect-call overhead in ISR and frequently used
+ *     TX paths.
+ *
+ *     For master-mode channels, this function configures the final-drain timer
+ *     used after TX DMA completion. The timer allows slower SPI transfers to
+ *     wait for the final frame to physically leave the peripheral without
+ *     blocking inside the DMA interrupt for the full drain time.
+ *
+ *     Slave-mode channels do not require final-drain timer configuration because
+ *     the external SPI master owns clocking and chip-select timing.
  *
  * @param peripheral_state
- *     SPI channel state whose TX support hooks should be selected.
+ *     SPI channel state whose TX support should be configured.
  */
 void HW_SPI_TX_Configure_Operations( SPIPeripheralState_T* peripheral_state )
 {
@@ -714,43 +654,9 @@ void HW_SPI_TX_Configure_Operations( SPIPeripheralState_T* peripheral_state )
         return;
     }
 
-    switch ( peripheral_state->config.spi_mode )
+    if ( peripheral_state->is_master )
     {
-        case SPI_MASTER_MODE:
-            peripheral_state->tx_load_function        = HW_SPI_TX_Load_Master_Packet;
-            peripheral_state->tx_start_dma_function   = HW_SPI_TX_Start_Master_Packet_DMA;
-            peripheral_state->tx_has_pending_function = HW_SPI_TX_Master_Has_Pending;
-            HW_SPI_Configure_Tx_Timer( peripheral_state );
-            break;
-
-        case SPI_SLAVE_MODE:
-            peripheral_state->tx_load_function        = HW_SPI_TX_Load_Slave_Stream;
-            peripheral_state->tx_start_dma_function   = HW_SPI_TX_Start_Slave_Stream_DMA;
-            peripheral_state->tx_has_pending_function = HW_SPI_TX_Slave_Has_Pending;
-            break;
-
-        default:
-            peripheral_state->tx_load_function        = NULL;
-            peripheral_state->tx_start_dma_function   = NULL;
-            peripheral_state->tx_has_pending_function = NULL;
-            break;
-    }
-
-    if ( peripheral_state == channel_0_state )
-    {
-        peripheral_state->tx_clear_dma_flags_function = HW_SPI_TX_Clear_Channel_0_DMA_Flags;
-    }
-    else if ( peripheral_state == channel_1_state )
-    {
-        peripheral_state->tx_clear_dma_flags_function = HW_SPI_TX_Clear_Channel_1_DMA_Flags;
-    }
-    else if ( peripheral_state == dac_state )
-    {
-        peripheral_state->tx_clear_dma_flags_function = HW_SPI_TX_Clear_DAC_DMA_Flags;
-    }
-    else
-    {
-        peripheral_state->tx_clear_dma_flags_function = NULL;
+        HW_SPI_Configure_Tx_Timer( peripheral_state );
     }
 }
 

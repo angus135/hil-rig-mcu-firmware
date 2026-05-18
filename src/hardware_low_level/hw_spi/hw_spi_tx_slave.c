@@ -111,23 +111,6 @@ HW_SPI_TX_Get_Contiguous_Read_Bytes( const SPIPeripheralState_T* peripheral_stat
  */
 
 /**
- * @brief Check whether the slave byte-stream TX queue has pending bytes.
- *
- * Slave mode keeps the original stream behaviour: pending TX is represented by
- * byte count in the software ring rather than by packet descriptors.
- *
- * @param peripheral_state
- *     SPI channel state containing the slave TX stream queue.
- *
- * @return
- *     true if pending stream bytes exist; false otherwise.
- */
-bool HW_SPI_TX_Slave_Has_Pending( const SPIPeripheralState_T* peripheral_state )
-{
-    return peripheral_state->tx_num_bytes_pending > 0U;
-}
-
-/**
  * @brief Load slave-mode byte-stream TX data into the software TX buffer.
  *
  * @details

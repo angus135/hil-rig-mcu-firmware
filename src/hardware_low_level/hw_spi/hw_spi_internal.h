@@ -5,7 +5,7 @@
  *
  *  Description:
  *      Defines private DMA resource mappings, TX/RX buffers, master packet
- *      descriptors, transaction state, function-pointer dispatch hooks, and
+ *      descriptors, transaction state, function-pointer and
  *      internal helper prototypes shared by the split SPI implementation files.
  *      This header is only exposed when HW_SPI_INTERNAL is defined.
  *
@@ -169,33 +169,6 @@ typedef enum HWSPI_TX_Transaction_State_T
 typedef struct SPIPeripheralState_T SPIPeripheralState_T;
 
 /**
- * @brief Mode-specific TX load operation.
- *
- * @details
- *     Master mode loads one packet descriptor per public load call. Slave mode
- *     appends raw stream bytes. The direct hot paths now branch explicitly on
- *     the configured mode; these pointers are retained for non-hot internal
- *     compatibility and configuration readability.
- */
-typedef bool ( *HWSPI_TX_Load_Function_T )( SPIPeripheralState_T* peripheral_state,
-                                            const uint8_t* data, uint32_t size );
-
-/**
- * @brief Mode-specific TX DMA start operation.
- */
-typedef bool ( *HWSPI_TX_Start_DMA_Function_T )( SPIPeripheralState_T* peripheral_state );
-
-/**
- * @brief Mode-specific pending-work query.
- */
-typedef bool ( *HWSPI_TX_Has_Pending_Function_T )( const SPIPeripheralState_T* peripheral_state );
-
-/**
- * @brief Channel-specific helper for clearing TX DMA flags.
- */
-typedef void ( *HWSPI_TX_Clear_DMA_Flags_Function_T )( DMA_TypeDef* dma );
-
-/**
  * @brief Complete private state for one logical SPI peripheral.
  *
  * @details
@@ -244,14 +217,6 @@ struct SPIPeripheralState_T
     uint32_t     tx_dma_stream;   ///< TX DMA stream selection.
     SPI_TypeDef* spi_peripheral;  ///< STM32 SPI peripheral instance.
     IRQn_Type    tx_dma_irqn;     ///< NVIC IRQn for the TX DMA stream.
-
-    HWSPI_TX_Load_Function_T tx_load_function;  ///< Selected master/slave load implementation.
-    HWSPI_TX_Start_DMA_Function_T
-        tx_start_dma_function;  ///< Selected master/slave DMA start implementation.
-    HWSPI_TX_Has_Pending_Function_T
-        tx_has_pending_function;  ///< Selected master/slave pending query.
-    HWSPI_TX_Clear_DMA_Flags_Function_T
-        tx_clear_dma_flags_function;  ///< Channel-specific DMA flag clear helper.
 };
 
 /**-----------------------------------------------------------------------------
@@ -397,13 +362,6 @@ HW_SPI_ALWAYS_INLINE bool HW_SPI_TX_Program_DMA( SPIPeripheralState_T* periphera
  * @{
  */
 SPIPeripheralState_T* HW_SPI_Get_State( SPIChannel_T peripheral );
-uint32_t              HW_SPI_Get_Frame_Size_Bytes( const SPIPeripheralState_T* peripheral_state );
-uint16_t              HW_SPI_Bytes_To_DMA_Elements( const SPIPeripheralState_T* peripheral_state,
-                                                    uint32_t                    size_bytes );
-uint32_t              HW_SPI_DMA_Elements_To_Bytes( const SPIPeripheralState_T* peripheral_state,
-                                                    uint32_t                    num_elements );
-bool                  HW_SPI_Is_Frame_Aligned_Size( const SPIPeripheralState_T* peripheral_state,
-                                                    uint32_t                    size_bytes );
 void                  HW_SPI_Configure_DMA_Data_Widths( SPIPeripheralState_T* peripheral_state );
 /** @} */
 
@@ -418,16 +376,13 @@ bool HW_SPI_RX_Start_Passive_DMA( SPIPeripheralState_T* peripheral_state );
  * @name TX common implementation hooks
  * @{
  */
-void     HW_SPI_TX_Configure_Operations( SPIPeripheralState_T* peripheral_state );
-void     HW_SPI_TX_Reset_State( SPIPeripheralState_T* peripheral_state );
-void     HW_SPI_TX_Error_Handler( SPIChannel_T peripheral );
-void     HW_SPI_TX_IRQ_Handler( SPIChannel_T peripheral );
-void     HW_SPI_TX_Master_CS_Assert( SPIPeripheralState_T* peripheral_state );
-void     HW_SPI_TX_Master_CS_Deassert( SPIPeripheralState_T* peripheral_state );
-uint32_t HW_SPI_TX_Get_Used_Space( const SPIPeripheralState_T* peripheral_state );
-uint32_t HW_SPI_TX_Get_Free_Space( const SPIPeripheralState_T* peripheral_state );
-bool     HW_SPI_TX_Should_Use_Final_Drain_Timer( const SPIPeripheralState_T* peripheral_state );
-Timer_T  HW_SPI_Get_Tx_Timer( const SPIPeripheralState_T* peripheral_state );
+void    HW_SPI_TX_Configure_Operations( SPIPeripheralState_T* peripheral_state );
+void    HW_SPI_TX_Reset_State( SPIPeripheralState_T* peripheral_state );
+void    HW_SPI_TX_Error_Handler( SPIChannel_T peripheral );
+void    HW_SPI_TX_IRQ_Handler( SPIChannel_T peripheral );
+void    HW_SPI_TX_Master_CS_Assert( SPIPeripheralState_T* peripheral_state );
+void    HW_SPI_TX_Master_CS_Deassert( SPIPeripheralState_T* peripheral_state );
+Timer_T HW_SPI_Get_Tx_Timer( const SPIPeripheralState_T* peripheral_state );
 /** @} */
 
 /**
@@ -444,7 +399,6 @@ bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state )
  * @name Slave-mode TX stream implementation hooks
  * @{
  */
-bool HW_SPI_TX_Slave_Has_Pending( const SPIPeripheralState_T* peripheral_state );
 bool HW_SPI_TX_Load_Slave_Stream( SPIPeripheralState_T* peripheral_state, const uint8_t* data,
                                   uint32_t size );
 bool HW_SPI_TX_Start_Slave_Stream_DMA( SPIPeripheralState_T* peripheral_state );
