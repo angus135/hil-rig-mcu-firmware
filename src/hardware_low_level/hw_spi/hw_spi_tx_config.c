@@ -1006,16 +1006,41 @@ void HW_SPI_Tx_Trigger( SPIChannel_T peripheral )
 }
 
 /**
- * @brief Return whether a channel has no pending or active TX data.
+ * @brief Check whether TX activity has fully completed for an SPI channel.
+ *
+ * Reports whether the selected channel has no TX data waiting in the software
+ * queue, no TX data currently owned by DMA, and no frame still being shifted by
+ * the SPI peripheral.
+ *
+ * In the TX path, data/activity can exist in several places:
+ * - pending bytes still waiting in the software TX queue,
+ * - in-flight bytes that have already been handed to DMA,
+ * - a final SPI frame that has left DMA but is still shifting out of the SPI
+ *   peripheral, and
+ * - in master mode, a software-CS-framed transaction that is still waiting for
+ *   final-drain completion.
+ *
+ * This function treats TX as complete only when all software/DMA byte counts are
+ * zero, the SPI peripheral BSY flag is clear, and, for master mode, the internal
+ * TX transaction state has returned to idle. This makes the function suitable
+ * for higher-level code that needs to know whether previously loaded TX data has
+ * fully completed electrically, not just whether the software TX buffer has
+ * available space.
+ *
+ * This function assumes the caller provides a valid SPI peripheral. Invalid
+ * peripheral validation is intentionally not performed here because this is a
+ * lightweight low-level helper intended for frequent use.
  *
  * @param peripheral
- *     Logical SPI peripheral to inspect.
+ *     The SPI peripheral/channel to inspect.
  *
  * @return
- *     true when no software-pending bytes and no DMA-owned bytes remain; false
- *     otherwise.
+ *     true if there are no pending bytes, no DMA-owned bytes, the SPI peripheral
+ *     is not busy, and any master-mode software-CS transaction has completed.
+ *     false if TX data is still pending, DMA is still active, the SPI peripheral
+ *     is still busy, or a master-mode final-drain transaction is still active.
  */
-bool HW_SPI_Tx_Buffer_Empty( SPIChannel_T peripheral )
+bool HW_SPI_Tx_Is_Complete( SPIChannel_T peripheral )
 {
     SPIPeripheralState_T* state = NULL;
 
@@ -1024,16 +1049,41 @@ bool HW_SPI_Tx_Buffer_Empty( SPIChannel_T peripheral )
         case SPI_CHANNEL_0:
             state = channel_0_state;
             break;
+
         case SPI_CHANNEL_1:
             state = channel_1_state;
             break;
+
         case SPI_DAC:
             state = dac_state;
             break;
+
         default:
             return false;
     }
 
-    /* Empty only means no pending software-ring bytes and no in-flight DMA bytes. */
-    return HW_SPI_TX_Get_Used_Space_Fast( state ) == 0U;
+    // First check the driver-owned TX storage. This includes both bytes still
+    // waiting in the software queue and bytes already handed to DMA.
+    if ( HW_SPI_TX_Get_Used_Space_Fast( state ) != 0U )
+    {
+        return false;
+    }
+
+    // DMA transfer-complete does not guarantee that the SPI peripheral has
+    // physically shifted the final frame out. BSY must be clear before the
+    // transfer can be considered electrically complete.
+    if ( LL_SPI_IsActiveFlag_BSY( state->spi_peripheral ) != 0U )
+    {
+        return false;
+    }
+
+    // In master mode, the driver also owns software chip-select framing. Even
+    // after the byte counts reach zero and BSY clears, the final-drain path may
+    // still be completing the transaction and releasing CS.
+    if ( state->is_master != false && state->tx_transaction_state != HW_SPI_TX_TRANSACTION_IDLE )
+    {
+        return false;
+    }
+
+    return true;
 }

@@ -111,7 +111,7 @@ void HW_SPI_Rx_Consume( SPIChannel_T peripheral, uint32_t bytes_to_consume )
     g_mock_hw_spi->RxConsume( peripheral, bytes_to_consume );
 }
 
-bool HW_SPI_Tx_Buffer_Empty( SPIChannel_T peripheral )
+bool HW_SPI_Tx_Is_Complete( SPIChannel_T peripheral )
 {
     return g_mock_hw_spi->TxBufferEmpty( peripheral );
 }
