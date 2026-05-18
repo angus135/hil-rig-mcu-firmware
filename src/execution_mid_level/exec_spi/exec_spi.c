@@ -387,5 +387,5 @@ bool EXEC_SPI_Receive( SPIChannel_T peripheral, uint8_t* data_dst, uint32_t* siz
  */
 bool EXEC_SPI_Is_Transmission_Complete( SPIChannel_T peripheral )
 {
-    return HW_SPI_Tx_Buffer_Empty( peripheral );
+    return HW_SPI_Tx_Is_Complete( peripheral );
 }

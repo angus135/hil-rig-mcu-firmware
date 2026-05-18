@@ -402,18 +402,26 @@ bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32
 void HW_SPI_Tx_Trigger( SPIChannel_T peripheral );
 
 /**
- * @brief Check whether the TX buffer is empty for a SPI channel.
+ * @brief Check whether TX activity has fully completed for an SPI channel.
  *
  * Reports whether the selected channel has no TX data waiting in the software
- * ring and no TX data currently owned by DMA.
+ * queue, no TX data currently owned by DMA, and no frame still being shifted by
+ * the SPI peripheral.
  *
- * In the TX ring-buffer model, data can exist in two places:
- * - pending bytes still waiting in the software TX ring, and
- * - in-flight bytes that have already been handed to DMA but have not completed.
+ * In the TX path, data/activity can exist in several places:
+ * - pending bytes still waiting in the software TX queue,
+ * - in-flight bytes that have already been handed to DMA,
+ * - a final SPI frame that has left DMA but is still shifting out of the SPI
+ *   peripheral, and
+ * - in master mode, a software-CS-framed transaction that is still waiting for
+ *   final-drain completion.
  *
- * This function treats the TX path as empty only when both of those counts are
- * zero. It is intended for higher-level code that needs to know whether all
- * previously loaded TX data has been fully transmitted.
+ * This function treats TX as complete only when all software/DMA byte counts are
+ * zero, the SPI peripheral BSY flag is clear, and, for master mode, the internal
+ * TX transaction state has returned to idle. This makes the function suitable
+ * for higher-level code that needs to know whether previously loaded TX data has
+ * fully completed electrically, not just whether the software TX buffer has
+ * available space.
  *
  * This function assumes the caller provides a valid SPI peripheral. Invalid
  * peripheral validation is intentionally not performed here because this is a
@@ -423,11 +431,12 @@ void HW_SPI_Tx_Trigger( SPIChannel_T peripheral );
  *     The SPI peripheral/channel to inspect.
  *
  * @return
- *     true if there are no pending or in-flight TX bytes.
- *     false if any TX data is still pending in the ring or currently being
- *     transmitted by DMA.
+ *     true if there are no pending bytes, no DMA-owned bytes, the SPI peripheral
+ *     is not busy, and any master-mode software-CS transaction has completed.
+ *     false if TX data is still pending, DMA is still active, the SPI peripheral
+ *     is still busy, or a master-mode final-drain transaction is still active.
  */
-bool HW_SPI_Tx_Buffer_Empty( SPIChannel_T peripheral );
+bool HW_SPI_Tx_Is_Complete( SPIChannel_T peripheral );
 
 /**
  * @brief Complete slow-baud master final-drain handling from a timer ISR.
