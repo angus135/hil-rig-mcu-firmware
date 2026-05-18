@@ -5,8 +5,8 @@
  *
  *  Description:
  *      Defines private DMA resource mappings, TX/RX buffers, master packet
- *      descriptors, transaction state, function-pointer and
- *      internal helper prototypes shared by the split SPI implementation files.
+ *      descriptors, transaction state and internal helper prototypes shared
+ *      by the split SPI implementation files.
  *      This header is only exposed when HW_SPI_INTERNAL is defined.
  *
  *  Notes:
@@ -376,10 +376,9 @@ bool HW_SPI_RX_Start_Passive_DMA( SPIPeripheralState_T* peripheral_state );
  * @name TX common implementation hooks
  * @{
  */
-void    HW_SPI_TX_Configure_Operations( SPIPeripheralState_T* peripheral_state );
+void    HW_SPI_TX_Configure_Timer( SPIPeripheralState_T* peripheral_state );
 void    HW_SPI_TX_Reset_State( SPIPeripheralState_T* peripheral_state );
 void    HW_SPI_TX_Error_Handler( SPIChannel_T peripheral );
-void    HW_SPI_TX_IRQ_Handler( SPIChannel_T peripheral );
 void    HW_SPI_TX_Master_CS_Assert( SPIPeripheralState_T* peripheral_state );
 void    HW_SPI_TX_Master_CS_Deassert( SPIPeripheralState_T* peripheral_state );
 Timer_T HW_SPI_Get_Tx_Timer( const SPIPeripheralState_T* peripheral_state );
@@ -389,7 +388,6 @@ Timer_T HW_SPI_Get_Tx_Timer( const SPIPeripheralState_T* peripheral_state );
  * @name Master-mode TX packet implementation hooks
  * @{
  */
-bool HW_SPI_TX_Master_Has_Pending( const SPIPeripheralState_T* peripheral_state );
 bool HW_SPI_TX_Load_Master_Packet( SPIPeripheralState_T* peripheral_state, const uint8_t* data,
                                    uint32_t size );
 bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state );

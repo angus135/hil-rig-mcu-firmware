@@ -423,7 +423,7 @@ protected:
         state->spi_peripheral            = spi;
         state->tx_dma_irqn               = tx_irqn;
         state->tx_transaction_state      = HW_SPI_TX_TRANSACTION_IDLE;
-        HW_SPI_TX_Configure_Operations( state );
+        HW_SPI_TX_Configure_Timer( state );
         HW_SPI_TX_Reset_State( state );
     }
 

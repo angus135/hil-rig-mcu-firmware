@@ -414,7 +414,7 @@ bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configurat
 
     HW_SPI_Config_Precompute_Hot_Fields( peripheral_state, peripheral, configuration );
 
-    HW_SPI_TX_Configure_Operations( peripheral_state );
+    HW_SPI_TX_Configure_Timer( peripheral_state );
     HW_SPI_TX_Reset_State( peripheral_state );
 
     // Ensure DMA memory/peripheral data widths match the configured SPI frame size.
