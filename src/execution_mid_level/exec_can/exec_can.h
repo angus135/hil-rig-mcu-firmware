@@ -44,6 +44,24 @@ extern "C"
  */
 
 /**
+ * @brief If True then all channel 1 messages have been sent, since the last trigger
+ *
+ *
+ * The sent flag is set flase after trigger is called when CAN has emptied the buffer
+ * and set true when the last message is sent and the buffer is ready for a new message
+ */
+bool EXEC_CAN_Channl1_sent();
+
+/**
+ * @brief If True then all channel 2 messages have been sent, since the last trigger
+ *
+ *
+ * The sent flag is set flase after trigger is called when CAN has emptied the buffer
+ * and set true when the last message is sent and the buffer is ready for a new message
+ */
+bool EXEC_CAN_Channl2_sent();
+
+/**
  * @brief Activates can channel 1 to immidiatley begin sending messages from the tx buffer
  *
  */
