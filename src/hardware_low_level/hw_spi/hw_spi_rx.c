@@ -94,9 +94,17 @@ bool HW_SPI_RX_Start_Passive_DMA( SPIPeripheralState_T* peripheral_state )
     // Reprogram the RX stream from a known disabled state. The stream is
     // circular, so once enabled it continuously drains SPI->DR into rx_buffer.
     LL_DMA_DisableStream( peripheral_state->rx_dma, peripheral_state->rx_dma_stream );
-    while ( LL_DMA_IsEnabledStream( peripheral_state->rx_dma, peripheral_state->rx_dma_stream )
+    uint32_t timeout = HW_SPI_DMA_DISABLE_TIMEOUT_ITERATIONS;
+    while ( LL_DMA_IsEnabledStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream )
             != 0U )
     {
+        // Add timeout here to prevent waiting too long
+        if ( timeout == 0U )
+        {
+            LL_DMA_DisableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+            return false;
+        }
+        timeout--;
     }
 
     // Memory address is the start of the circular RX buffer. The stream itself

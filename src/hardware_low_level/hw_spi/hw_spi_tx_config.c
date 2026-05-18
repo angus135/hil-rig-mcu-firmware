@@ -608,9 +608,15 @@ void HW_SPI_COLD_NOINLINE HW_SPI_TX_Error_Handler( SPIChannel_T peripheral )
     LL_SPI_DisableDMAReq_TX( peripheral_state->spi_peripheral );
     LL_DMA_DisableStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
 
+    uint32_t timeout = HW_SPI_DMA_DISABLE_TIMEOUT_ITERATIONS;
     while ( LL_DMA_IsEnabledStream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream )
             != 0U )
     {
+        if ( timeout == 0U )
+        {
+            break;
+        }
+        timeout--;
     }
 
     // Drop knowledge of the currently active DMA transfer. The pending ring
