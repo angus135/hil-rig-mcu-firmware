@@ -7,7 +7,8 @@
 set(CONSOLE_SOURCES
     console.c
     command_handler.c
-    spi_loop_command.c
+    subsystem_command_apis/console_spi.c
+    subsystem_command_apis/console_uart.c
 )
 
 set(CONSOLE_HEADERS
