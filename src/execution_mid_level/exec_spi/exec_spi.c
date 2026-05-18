@@ -198,7 +198,10 @@ bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configur
             break;
         case EXEC_SPI_STATE_ACTIVE:
             // Reconfiguration is treated as stop-then-configure-then-start.
-            HW_SPI_Stop_Channel( peripheral );
+            if ( !HW_SPI_Stop_Channel( peripheral ) )
+            {
+                return false;
+            }
             break;
         default:
             return false;

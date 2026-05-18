@@ -430,12 +430,12 @@ bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configurat
  * @param peripheral
  *     The SPI peripheral/channel to stop.
  */
-void HW_SPI_Stop_Channel( SPIChannel_T peripheral )
+bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
 {
     if ( HW_SPI_Is_Valid_Channel( peripheral ) == false )
     {
-        return;
+        return false;
     }
 
-    HAL_SPI_DMAStop( SPI_HAL_HANDLE_ARRAY[( uint32_t )peripheral] );
+    return HAL_SPI_DMAStop( SPI_HAL_HANDLE_ARRAY[( uint32_t )peripheral] );
 }

@@ -57,7 +57,7 @@ public:
 
     MOCK_METHOD( bool, StartChannel, ( SPIChannel_T peripheral ), () );
 
-    MOCK_METHOD( void, StopChannel, ( SPIChannel_T peripheral ), () );
+    MOCK_METHOD( bool, StopChannel, ( SPIChannel_T peripheral ), () );
 
     MOCK_METHOD( bool, LoadTxBuffer,
                  ( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ), () );
@@ -86,9 +86,9 @@ bool HW_SPI_Start_Channel( SPIChannel_T peripheral )
     return g_mock_hw_spi->StartChannel( peripheral );
 }
 
-void HW_SPI_Stop_Channel( SPIChannel_T peripheral )
+bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
 {
-    g_mock_hw_spi->StopChannel( peripheral );
+    return g_mock_hw_spi->StopChannel( peripheral );
 }
 
 bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32_t size )
