@@ -52,6 +52,24 @@ typedef struct CanProperties_T
  */
 
 /**
+ * @brief Returns the sent flag for channel 1
+ *
+ *
+ * The sent flag is set after trigger is called when CAN has emptied the buffer and the last message
+ * is sent
+ */
+bool HW_CAN_Channl1_sent();
+
+/**
+ * @brief Returns the sent flag for channel 2
+ *
+ *
+ * The sent flag is set after trigger is called when CAN has emptied the buffer and the last message
+ * is sent
+ */
+bool HW_CAN_Channl2_sent();
+
+/**
  * @brief Calculates the required CAN protperties
  *
  * @param bitrate the desired bitrate in bits per second, eg 1Mbps = 1000000

@@ -622,6 +622,30 @@ int HW_CAN_Configure2( uint32_t bitrate )
  */
 
 /**
+ * @brief If True then all channel 1 messages have been sent, since the last trigger
+ *
+ *
+ * The sent flag is set flase after trigger is called when CAN has emptied the buffer
+ * and set true when the last message is sent and the buffer is ready for a new message
+ */
+bool HW_CAN_Channl1_sent()
+{
+    return can_sent_flag1;
+}
+
+/**
+ * @brief If True then all channel 2 messages have been sent, since the last trigger
+ *
+ *
+ * The sent flag is set flase after trigger is called when CAN has emptied the buffer
+ * and set true when the last message is sent and the buffer is ready for a new message
+ */
+bool HW_CAN_Channl2_sent()
+{
+    return can_sent_flag2;
+}
+
+/**
  * @brief transmits the txData (8 bytes) over CAN channel 1
  *
  * @param txData pointer to 8 bytes of data
