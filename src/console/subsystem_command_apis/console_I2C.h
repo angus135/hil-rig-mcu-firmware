@@ -79,9 +79,12 @@ bool CONSOLE_Build_I2C_Message( uint16_t argc, char* argv[], char* out_message,
                                 uint16_t out_message_size, uint16_t* out_message_length );
 /**
  * @brief Runs a master-to-slave I2C loopback transfer.
+ *
+ * For this helper, each trailing payload token is queued as its own master TX
+ * message so the I2C transmit queue can be exercised from the console.
  */
 bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels, uint16_t slave_addr,
-                                   const char* tx_message, uint16_t tx_len, char* rx_message,
+                                   uint16_t argc, char* argv[], char* rx_message,
                                    uint16_t rx_message_size, uint16_t* out_received_len );
 /**
  * @brief Runs a slave-to-master I2C loopback transfer.

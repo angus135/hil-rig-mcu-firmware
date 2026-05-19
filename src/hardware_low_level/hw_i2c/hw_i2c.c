@@ -22,6 +22,7 @@
  *------------------------------------------------------------------------------
  */
 
+#include <iso646.h>
 #ifdef TEST_BUILD
 #include "tests/hw_i2c_mocks.h"
 #else
@@ -92,13 +93,29 @@ typedef struct HWI2CChannelState_T
     uint16_t target_address_7bit; /* 7-bit slave address for master transfers */
     uint16_t rx_expected_length;  /* Expected receive count; decremented as bytes arrive */
 
-    /* Transmit path: shadow buffer and pointers */
+    /* Transmit path: legacy stage buffer (for backward compatibility) */
     uint8_t        tx_stage_buffer[HW_I2C_TX_STAGE_SIZE]; /* Holds data to be transmitted */
     uint16_t       tx_stage_length;                       /* Number of bytes in tx_stage_buffer */
-    const uint8_t* tx_ptr;       /* Current position in tx_stage_buffer during transfer */
+    const uint8_t* tx_ptr;       /* Current position in tx buffer during transfer */
     uint16_t       tx_remaining; /* Bytes left to transmit */
+    bool           tx_send_stop; /* True if the active master TX should end with STOP */
     volatile bool
         dma_tx_transfer_complete; /* Flag set when DMA TX finishes (for master TX detection) */
+
+    /* Transmit path: queued message ring buffer and transaction descriptors */
+    uint8_t                tx_ring_buffer[HW_I2C_TX_RING_SIZE]; /* Ring buffer for TX payload data */
+    volatile uint16_t      tx_ring_head;                         /* Write pointer for ring buffer */
+    volatile uint16_t      tx_ring_tail;                         /* Read pointer for ring buffer */
+    volatile uint16_t      tx_ring_count;                        /* Count of bytes pending in ring */
+     /* Active transmit bookkeeping: offset/length of the message currently
+         being driven on the bus. These are used to free ring space when the
+         transfer completes. */
+     uint16_t               tx_active_offset;
+     uint16_t               tx_active_length;
+    HWI2CTxTransaction_T   tx_queue[HW_I2C_TX_QUEUE_DEPTH];     /* Transaction descriptor queue */
+    volatile uint16_t      tx_queue_head;                        /* Write pointer for descriptor queue */
+    volatile uint16_t      tx_queue_tail;                        /* Read pointer for descriptor queue */
+    volatile uint16_t      tx_queue_count;                       /* Count of transactions pending */
 
     /* Receive path: DMA linear buffer (used by DMA transfers on I2C2) */
     uint8_t  dma_rx_linear_buffer[HW_I2C_RX_BUFFER_SIZE]; /* Linear buffer filled by DMA */
@@ -164,6 +181,7 @@ static inline void     HW_I2C_Start_Master_Transfer( I2C_TypeDef*        i2c_ins
                                                      HWI2CTransferKind_T transfer_kind, bool use_dma );
 static inline void     HW_I2C_Finish_Transfer( HWI2CChannel_T channel, I2C_TypeDef* i2c_instance );
 static inline void     HW_I2C_Abort_Transfer( HWI2CChannel_T channel, I2C_TypeDef* i2c_instance );
+static inline void     HW_I2C_Start_Next_Queued_Tx( HWI2CChannel_T channel, I2C_TypeDef* i2c_instance );
 static void        HW_I2C_Configure_DMA_Stream( DMA_Stream_TypeDef* stream, uint32_t channel_bits,
                                                 bool memory_to_peripheral, uint32_t peripheral_address,
                                                 uint32_t memory_address, uint16_t length );
@@ -173,6 +191,13 @@ static inline void HW_I2C_DMA_Stream_Clear_Flags( DMA_Stream_TypeDef* stream );
 static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
                                                   I2C_TypeDef*   i2c_instance );
 static inline void HW_I2C_Service_Event_FMPI2C1( HWI2CChannelState_T* state );
+static inline bool     HW_I2C_TX_Enqueue_Descriptor( HWI2CChannel_T channel,
+                                                     uint16_t       address_7bit,
+                                                     uint16_t       data_offset, uint16_t length,
+                                                     bool send_stop );
+static inline uint32_t HW_I2C_TX_Get_IRQ_State( HWI2CChannel_T channel );
+static inline void     HW_I2C_TX_Restore_IRQ_State( HWI2CChannel_T channel, uint32_t irq_state );
+static inline void     HW_I2C_TX_Start_Next_From_Queue( HWI2CChannel_T channel );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -395,11 +420,11 @@ static inline void HW_I2C_Start_Master_Transfer( I2C_TypeDef*        i2c_instanc
  * This helper performs the canonical end-of-transfer tasks:
  * - issue a STOP condition for master transfers that generated traffic
  * - disable DMA streams if they were used for the channel
- * - disable runtime IRQ/DMA requests and reset transfer state fields
+ * - check if transactions remain in the queue; if so, auto-start the next one
+ * - disable runtime IRQ/DMA requests only if no queued transactions remain
  *
- * Caller expectation: the peripheral/ISR may already have placed the
- * device into a quiescent state; this call ensures all runtime
- * resources are released and the software state reflects idle.
+ * This enables automatic queuing: each completion triggers the next message
+ * without requiring explicit application calls between transactions.
  *
  * @param channel       Channel index for state bookkeeping.
  * @param i2c_instance  Peripheral register base for STOP generation.
@@ -412,8 +437,17 @@ static inline void HW_I2C_Finish_Transfer( HWI2CChannel_T channel, I2C_TypeDef* 
     if ( state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_TX
          || state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_RX )
     {
-        LL_I2C_GenerateStopCondition( i2c_instance );
+        if ( ( state->transfer_kind != HW_I2C_TRANSFER_KIND_MASTER_TX ) || state->tx_send_stop )
+        {
+            LL_I2C_GenerateStopCondition( i2c_instance );
+        }
     }
+
+    // if ( state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_RX
+    //      || ( state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_TX && state->tx_send_stop ) )
+    // {
+    //     LL_I2C_GenerateStopCondition(i2c_instance);
+    // }
 
     /* If DMA was configured for either path, ensure DMA streams are
        disabled and clear the peripheral DMA request lines. */
@@ -433,8 +467,23 @@ static inline void HW_I2C_Finish_Transfer( HWI2CChannel_T channel, I2C_TypeDef* 
         HW_I2C_Disable_DMA_Request( i2c_instance );
     }
 
-    /* Disable runtime IRQ bits (ERR/EVT/BUF) to stop further ISR traffic. */
-    HW_I2C_Disable_All_Runtime_Irq_Bits( i2c_instance );
+    /* If we had an active queued TX, free its bytes from the ring buffer now
+       that the peripheral/DMA/IRQ are no longer reading from it. */
+    if ( state->tx_active_length > 0U )
+    {
+        state->tx_ring_tail = ( uint16_t )( ( state->tx_ring_tail + state->tx_active_length ) % HW_I2C_TX_RING_SIZE );
+        if ( state->tx_ring_count >= state->tx_active_length )
+        {
+            state->tx_ring_count = ( uint16_t )( state->tx_ring_count - state->tx_active_length );
+        }
+        else
+        {
+            state->tx_ring_count = 0U;
+        }
+
+        state->tx_active_length = 0U;
+        state->tx_active_offset = 0U;
+    }
 
     /* Reset channel state so it can be reused for future transfers. */
     state->transfer_in_progress     = false;
@@ -442,6 +491,19 @@ static inline void HW_I2C_Finish_Transfer( HWI2CChannel_T channel, I2C_TypeDef* 
     state->tx_remaining             = 0U;
     state->dma_tx_transfer_complete = false;
     state->rx_expected_length       = 0U;
+
+    /* Check if there are queued transactions remaining. If so, start the next one
+       before disabling IRQ bits; this ensures the SB interrupt will fire immediately. */
+    if ( state->tx_queue_count > 0U )
+    {
+        HW_I2C_Prepare_Interrupt_Path( i2c_instance );
+        HW_I2C_Start_Next_Queued_Tx( channel, i2c_instance );
+    }
+    else
+    {
+        /* No more queued transactions; disable runtime IRQ bits. */
+        HW_I2C_Disable_All_Runtime_Irq_Bits( i2c_instance );
+    }
 }
 
 /**
@@ -455,6 +517,87 @@ static inline void HW_I2C_Abort_Transfer( HWI2CChannel_T channel, I2C_TypeDef* i
 {
     /* Delegate to Finish which handles STOP, DMA and state cleanup. */
     HW_I2C_Finish_Transfer( channel, i2c_instance );
+}
+
+/**
+ * @brief Dequeue next TX transaction and initiate the transfer.
+ *
+ * Called after the previous transaction completes (from ISR context via
+ * HW_I2C_Finish_Transfer or from enqueue when the channel is idle). If a
+ * transaction descriptor exists in the queue, this function:
+ *   1. Dequeues the descriptor
+ *   2. Sets up tx_ptr and tx_remaining for interrupt-driven path or
+ *      configures DMA for DMA-capable channels
+ *   3. Sets target_address_7bit from the descriptor
+ *   4. Marks transfer_in_progress and generates I2C START
+ *
+ * If the queue is empty or the channel is not configured, does nothing.
+ *
+ * @param[in] channel       I2C channel index
+ * @param[in] i2c_instance  Peripheral register base
+ */
+static inline void HW_I2C_Start_Next_Queued_Tx( HWI2CChannel_T channel, I2C_TypeDef* i2c_instance )
+{
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+
+    /* If queue is empty, nothing to do. */
+    if ( state->tx_queue_count == 0U )
+    {
+        return;
+    }
+
+    /* Dequeue the next transaction descriptor. */
+    const HWI2CTxTransaction_T* desc = &state->tx_queue[state->tx_queue_tail];
+    state->tx_queue_tail = ( state->tx_queue_tail + 1U ) % HW_I2C_TX_QUEUE_DEPTH;
+    state->tx_queue_count--;
+
+    /* Extract transaction parameters. */
+    state->target_address_7bit = desc->address_7bit;
+    const uint16_t data_offset = desc->data_offset;
+    const uint16_t data_length = desc->length;
+    const bool     send_stop   = desc->send_stop;
+
+    /* Set up transfer kind based on whether we'll send STOP after this message. */
+    state->transfer_kind = HW_I2C_TRANSFER_KIND_MASTER_TX;
+
+    /* Configure the transmit path: either interrupt-driven or DMA. */
+    bool use_dma = ( state->config.tx_transfer_path == HW_I2C_TRANSFER_DMA );
+
+    if ( use_dma )
+    {
+        /* For DMA: data source is tx_ring_buffer[offset], destination is I2C DR. */
+        DMA_Stream_TypeDef* tx_stream = HW_I2C_MAP[channel].dma_tx;
+        if ( tx_stream != NULL )
+        {
+            /* Configure DMA stream to transfer from ring to peripheral.
+               data_offset is the read pointer; data is contiguous (non-wrapping). */
+            HW_I2C_Configure_DMA_Stream(
+                tx_stream, HW_I2C_MAP[channel].dma_channel_bits, true,
+                ( uint32_t )&i2c_instance->DR,
+                ( uint32_t )&state->tx_ring_buffer[data_offset], data_length );
+            state->tx_remaining             = 0U; /* DMA is handling transfer */
+            state->dma_tx_transfer_complete = false;
+        }
+    }
+    else
+    {
+        /* For interrupt-driven: set tx_ptr and tx_remaining for TXE ISR to consume. */
+        state->tx_ptr       = &state->tx_ring_buffer[data_offset];
+        state->tx_remaining = data_length;
+    }
+
+    /* Mark transfer in progress and generate START condition. */
+    state->transfer_in_progress = true;
+     /* Record active transfer's ring offset/length so we can free space when it
+         completes. This prevents subsequent enqueues from overwriting still-active
+         DMA/IRQ transfers. */
+     state->tx_active_offset = data_offset;
+     state->tx_active_length = data_length;
+    state->tx_send_stop         = send_stop;
+    HW_I2C_Start_Master_Transfer( i2c_instance, state->transfer_kind, use_dma );
+
+    /* If this is the last message or caller wants STOP, prepare for it. */
+    ( void )send_stop; /* Currently not used; in future, could optimize STOP generation. */
 }
 
 static void HW_I2C_Configure_DMA_Stream( DMA_Stream_TypeDef* stream, uint32_t channel_bits,
@@ -894,12 +1037,19 @@ HWI2CStatus_T HW_I2C_Configure_Channel( HWI2CChannel_T channel, const HWI2CChann
     state->transfer_kind            = HW_I2C_TRANSFER_KIND_IDLE;
     state->tx_stage_length          = 0U;
     state->tx_remaining             = 0U;
+    state->tx_send_stop             = true;
     state->dma_tx_transfer_complete = false;
     state->rx_expected_length       = 0U;
     state->dma_rx_expected_length   = 0U;
     state->rx_head                  = 0U;
     state->rx_tail                  = 0U;
     state->overflow_occurred        = false;
+    state->tx_ring_head             = 0U;
+    state->tx_ring_tail             = 0U;
+    state->tx_ring_count            = 0U;
+    state->tx_queue_head            = 0U;
+    state->tx_queue_tail            = 0U;
+    state->tx_queue_count           = 0U;
     I2C_TypeDef* i2c_instance       = HW_I2C_MAP[channel].instance;
     if ( i2c_instance == NULL )
     {
@@ -947,12 +1097,19 @@ HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
     state->transfer_kind            = HW_I2C_TRANSFER_KIND_IDLE;
     state->tx_stage_length          = 0U;
     state->tx_remaining             = 0U;
+    state->tx_send_stop             = true;
     state->dma_tx_transfer_complete = false;
     state->rx_expected_length       = 0U;
     state->dma_rx_expected_length   = 0U;
     state->rx_head                  = 0U;
     state->rx_tail                  = 0U;
     state->overflow_occurred        = false;
+    state->tx_ring_head             = 0U;
+    state->tx_ring_tail             = 0U;
+    state->tx_ring_count            = 0U;
+    state->tx_queue_head            = 0U;
+    state->tx_queue_tail            = 0U;
+    state->tx_queue_count           = 0U;
     state->config.mode              = HW_I2C_MODE_MASTER;
     state->config.speed             = HW_I2C_SPEED_100KHZ;
     state->config.tx_transfer_path  = HW_I2C_TRANSFER_INTERRUPT;
@@ -1172,7 +1329,8 @@ inline bool HW_I2C_Trigger_Master_Receive_Internal( uint16_t device_address_7bit
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[HW_I2C_CHANNEL_FMPI2C1];
 
-    if ( state->transfer_in_progress || expected_length < HW_I2C_RX_BUFFER_SIZE )
+    if ( state->transfer_in_progress || ( expected_length == 0U )
+         || ( expected_length > HW_I2C_RX_BUFFER_SIZE ) )
     {
         return false;
     }
@@ -1255,7 +1413,7 @@ bool HW_I2C_Trigger_Slave_Receive_External( HWI2CChannel_T channel, uint16_t exp
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
 
-    if ( expected_length < HW_I2C_RX_BUFFER_SIZE )
+    if ( ( expected_length == 0U ) || ( expected_length > HW_I2C_RX_BUFFER_SIZE ) )
     {
         return false;
     }
@@ -1381,6 +1539,184 @@ bool HW_I2C_Get_Overflow_Status( HWI2CChannel_T channel )
     bool                 overflow_status = state->overflow_occurred;
     state->overflow_occurred             = false;
     return overflow_status;
+}
+
+/**
+ * @brief Enqueue a master transmit transaction for an external I2C channel.
+ *
+ * Copies the payload into the TX ring buffer, enqueues a transaction descriptor,
+ * and either starts the transfer immediately (if idle) or schedules it for later
+ * (if transfers are in progress or queued).
+ *
+ * Enforces a non-wrapping per-message rule: each message must fit contiguously
+ * in the ring to preserve transaction semantics (START/ADDR/(data)/STOP).
+ * If a message would wrap around the ring, the ring is first reset to the start,
+ * and the message is placed at position 0.
+ *
+ * Runs with TX event IRQ disabled to protect queue pointer updates.
+ *
+ * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
+ * @param[in] device_address_7bit   7-bit slave address for this transaction
+ * @param[in] payload               Pointer to bytes to transmit. Must not be NULL if payload_length > 0.
+ * @param[in] payload_length        Number of bytes to transmit (must fit in HW_I2C_TX_RING_SIZE)
+ * @param[in] send_stop             True to issue STOP after this message; false for repeated START
+ *
+ * @return true if the transaction was enqueued successfully
+ * @return false if channel is not configured, invalid parameters, or queue is full
+ */
+bool HW_I2C_Enqueue_Master_Transmit_External( HWI2CChannel_T channel,
+                                              uint16_t       device_address_7bit,
+                                              const uint8_t* payload,
+                                              uint16_t       payload_length,
+                                              bool           send_stop )
+{
+    /* Validate parameters. */
+    if ( !HW_I2C_Is_External_Channel( channel ) || payload_length > HW_I2C_TX_RING_SIZE )
+    {
+        return false;
+    }
+
+    if ( payload_length > 0U && payload == NULL )
+    {
+        return false;
+    }
+
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+    if ( !state->configured )
+    {
+        return false;
+    }
+
+    bool start_now = false;
+    bool success = false;
+
+    /* Disable TX event IRQ to protect queue pointer updates. */
+    I2C_TypeDef* i2c_instance = HW_I2C_MAP[channel].instance;
+    uint32_t     sr1_backup   = i2c_instance->CR2;
+    i2c_instance->CR2 &= ~I2C_CR2_ITEVTEN;
+
+    /* Check if descriptor queue is full. */
+    if ( state->tx_queue_count >= HW_I2C_TX_QUEUE_DEPTH )
+    {
+        goto restore_and_return;   // queue full
+    }
+
+    /* Check if this message would wrap in the ring. If so, reset ring pointers to start. */
+    uint16_t available_space;
+    if ( state->tx_ring_head >= state->tx_ring_tail )
+    {
+        available_space = HW_I2C_TX_RING_SIZE - state->tx_ring_head;
+    }
+    else
+    {
+        available_space = state->tx_ring_tail - state->tx_ring_head;
+    }
+
+    uint16_t data_offset;
+    if ( payload_length > available_space && payload_length > 0U )
+    {
+        /* Not enough contiguous space at the current head. Try wrapping to index 0. */
+        /* Space from 0 up to (but not including) tail. */
+        uint16_t space_at_start = state->tx_ring_tail; // tail is the read fence
+        if ( payload_length > space_at_start )
+        {
+            /* Genuinely no room anywhere — caller must retry later. */
+            goto restore_and_return;   // ring full
+        }
+        data_offset         = 0U;
+        state->tx_ring_head = payload_length;
+        state->tx_ring_count += payload_length;
+    }
+    else
+    {
+        /* Message fits without wrapping (or is empty). Copy to current head position. */
+        data_offset         = state->tx_ring_head;
+        state->tx_ring_head = ( state->tx_ring_head + payload_length ) % HW_I2C_TX_RING_SIZE;
+        if ( payload_length > 0U )
+        {
+            state->tx_ring_count += payload_length;
+        }
+    }
+
+    /* Copy payload into ring buffer. */
+    if ( payload_length > 0U )
+    {
+        memcpy( &state->tx_ring_buffer[data_offset], payload, ( size_t )payload_length );
+    }
+
+    /* Enqueue transaction descriptor. */
+    HWI2CTxTransaction_T* desc = &state->tx_queue[state->tx_queue_head];
+    desc->address_7bit         = device_address_7bit;
+    desc->data_offset          = data_offset;
+    desc->length               = payload_length;
+    desc->send_stop            = send_stop;
+    state->tx_queue_head       = ( state->tx_queue_head + 1U ) % HW_I2C_TX_QUEUE_DEPTH;
+    state->tx_queue_count++;
+
+    /* If no transfer is in progress, start immediately. */
+    start_now = !state->transfer_in_progress;
+
+    success = true;
+
+    restore_and_return:
+    /* Re-enable TX event IRQ. */
+    i2c_instance->CR2 = sr1_backup;
+
+    if ( start_now )
+    {
+        HW_I2C_Prepare_Interrupt_Path( i2c_instance );
+        HW_I2C_Start_Next_Queued_Tx( channel, i2c_instance );
+    }
+
+    return success;
+}
+
+/**
+ * @brief Check if all transmit operations are complete.
+ *
+ * Returns true when:
+ *  - TX descriptor queue is empty (no queued transactions)
+ *  - No transfer is currently in progress
+ *
+ * Can be polled to wait for all queued transmissions to finish.
+ *
+ * @param[in] channel  External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
+ *
+ * @return true if all transmissions are complete and TX is idle
+ * @return false if transfers are in progress or queued
+ */
+bool HW_I2C_Is_Tx_Complete( HWI2CChannel_T channel )
+{
+    if ( !HW_I2C_Is_External_Channel( channel ) )
+    {
+        return false;
+    }
+
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+
+    /* Queue must be empty and transfer must not be in progress. */
+    if ( state->tx_queue_count > 0U || state->transfer_in_progress )
+    {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @brief Check if the TX descriptor queue is empty (internal helper).
+ *
+ * Returns true if no transactions are queued (though a transfer may still be
+ * in progress). Useful for internal operations.
+ *
+ * @param[in] channel  I2C channel index
+ *
+ * @return true if queue is empty
+ * @return false if queue contains pending transactions
+ */
+static inline bool HW_I2C_Is_Tx_Queue_Empty( HWI2CChannel_T channel )
+{
+    return hw_i2c_channel_state[channel].tx_queue_count == 0U;
 }
 
 /**

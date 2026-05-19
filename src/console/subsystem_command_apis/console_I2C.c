@@ -24,6 +24,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
+#include "hw_i2c.h"
 #include "exec_i2c.h"
 #include "console_I2C.h"
 
@@ -208,50 +209,82 @@ bool CONSOLE_Build_I2C_Message( uint16_t argc, char* argv[], char* out_message,
  * @brief Runs a master-to-slave I2C loopback transfer.
  */
 bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels, uint16_t slave_addr,
-                                   const char* tx_message, uint16_t tx_len, char* rx_message,
+                                   uint16_t argc, char* argv[], char* rx_message,
                                    uint16_t rx_message_size, uint16_t* out_received_len )
 {
-    bool is_ok = EXEC_I2C_Start_Slave_Receive_External( channels.slave, tx_len );
-    if ( !is_ok )
+    if ( ( argc < 6U ) || ( argv == NULL ) || ( rx_message == NULL ) || ( out_received_len == NULL ) )
     {
-        CONSOLE_Printf( "Failed to start slave receive.\r\n" );
-        return false;
-    }
-
-    vTaskDelay( pdMS_TO_TICKS( 2 ) );
-
-    is_ok = EXEC_I2C_Master_Transmit_External( channels.master, slave_addr,
-                                               ( const uint8_t* )tx_message, tx_len );
-    if ( !is_ok )
-    {
-        CONSOLE_Printf( "Master send failed.\r\n" );
         return false;
     }
 
     uint16_t received_len = 0U;
     memset( rx_message, 0, rx_message_size );
 
-    for ( uint16_t wait_ms = 0U; wait_ms < 500U; ++wait_ms )
+    for ( uint16_t arg_idx = 5U; arg_idx < argc; ++arg_idx )
     {
-        uint16_t chunk = 0U;
-        is_ok          = EXEC_I2C_Receive_Copy_And_Consume(
-            channels.slave, ( uint8_t* )&rx_message[received_len],
-            ( uint16_t )( rx_message_size - 1U - received_len ), &chunk );
+        const char*    tx_message = argv[arg_idx];
+        const uint16_t tx_len     = ( uint16_t )strlen( tx_message );
 
-        if ( !is_ok )
+        if ( tx_len == 0U ) continue;
+
+        if ( received_len + tx_len >= rx_message_size )
         {
-            CONSOLE_Printf( "Receive failed.\r\n" );
+            CONSOLE_Printf( "RX buffer too small.\r\n" );
             return false;
         }
 
-        received_len = ( uint16_t )( received_len + chunk );
-        if ( received_len >= tx_len )
+        if ( !EXEC_I2C_Start_Slave_Receive_External( channels.slave, tx_len ) )
         {
+            CONSOLE_Printf( "Failed to arm slave receive.\r\n" );
+            return false;
+        }
+
+        vTaskDelay( pdMS_TO_TICKS( 2 ) );
+
+        if ( !HW_I2C_Enqueue_Master_Transmit_External( channels.master, slave_addr,
+                                                    ( const uint8_t* )tx_message, tx_len,
+                                                    true ) )
+        {
+            CONSOLE_Printf( "Master enqueue failed for token %u.\r\n",
+                            ( unsigned int )( arg_idx - 4U ) );
+            return false;
+        }
+
+        bool     token_received     = false;
+        uint16_t token_received_len = 0U;
+
+        for ( uint16_t wait_ms = 0U; wait_ms < 500U; ++wait_ms )
+        {
+            uint16_t chunk = 0U;
+            if ( !EXEC_I2C_Receive_Copy_And_Consume(
+                    channels.slave,
+                    ( uint8_t* )&rx_message[received_len],
+                    ( uint16_t )( rx_message_size - 1U - received_len ),
+                    &chunk ) )
+            {
+                CONSOLE_Printf( "Receive failed.\r\n" );
+                return false;
+            }
+
+            received_len       = ( uint16_t )( received_len + chunk );
+            token_received_len = ( uint16_t )( token_received_len + chunk );
+
+            if ( token_received_len >= tx_len )
+            {
+                token_received = true;
+                break;
+            }
+
+            vTaskDelay( pdMS_TO_TICKS( 1 ) );
+        }
+
+        if ( !token_received )
+        {
+            CONSOLE_Printf( "Timeout waiting for token %u.\r\n",
+                            ( unsigned int )( arg_idx - 4U ) );
             *out_received_len = received_len;
             return true;
         }
-
-        vTaskDelay( pdMS_TO_TICKS( 1 ) );
     }
 
     *out_received_len = received_len;

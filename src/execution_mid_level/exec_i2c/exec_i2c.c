@@ -219,8 +219,8 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
 bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
                                         const uint8_t* payload, uint16_t payload_length )
 {
-    return HW_I2C_Load_Stage_Buffer( channel, payload, payload_length )
-           && HW_I2C_Trigger_Master_Transmit_External( channel, device_address_7bit );
+    return HW_I2C_Enqueue_Master_Transmit_External( channel, device_address_7bit, payload,
+                                                    payload_length, true );
 }
 
 /**

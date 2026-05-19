@@ -7,8 +7,8 @@
  *      Mid-level execution layer for I2C communication. Provides a coordination
  *      interface between high-level application logic and low-level hw_i2c driver.
  *      Validates configuration and transfer requests, then delegates to hw_i2c.
- *      Handles transmit orchestration via stage-buffer pattern and receive
- *      orchestration via peek/copy/consume pattern.
+ *      Handles queued transmit orchestration via the low-level TX queue and
+ *      receive orchestration via peek/copy/consume pattern.
  *
  *  Notes:
  *      - Manages I2C1, I2C2 (external) and FMPI2C1 (internal) channels
@@ -95,7 +95,8 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
  * @brief Master transmit on an external channel.
  *
  * Sends data to a slave device on the specified channel.
- * Data must be provided directly in the payload; internally handles buffering.
+ * Data is queued in the low-level I2C TX ring and sent after any in-flight
+ * message completes.
  *
  * @note Validity checks are minimal. Callers must ensure:
  *       - channel is a valid external I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)

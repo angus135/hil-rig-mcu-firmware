@@ -369,13 +369,38 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
         return;
     }
 
-    char     tx_message[200];
-    uint16_t tx_len = 0U;
-    if ( !CONSOLE_Build_I2C_Message( argc, argv, tx_message, sizeof( tx_message ), &tx_len ) )
+    char     tx_message[200] = { 0 };
+    uint16_t tx_len          = 0U;
+    uint16_t queued_tx_len   = 0U;
+
+    if ( direction == CONSOLE_I2C_LOOPBACK_DIR_S2M )
     {
-        CONSOLE_Printf( "Invalid message (empty or too long, max %u chars).\r\n",
-                        ( unsigned int )( sizeof( tx_message ) - 1U ) );
-        return;
+        if ( !CONSOLE_Build_I2C_Message( argc, argv, tx_message, sizeof( tx_message ),
+                                         &tx_len ) )
+        {
+            CONSOLE_Printf( "Invalid message (empty or too long, max %u chars).\r\n",
+                            ( unsigned int )( sizeof( tx_message ) - 1U ) );
+            return;
+        }
+    }
+    else
+    {
+        for ( uint16_t arg_idx = 5U; arg_idx < argc; ++arg_idx )
+        {
+            const uint16_t part_len = ( uint16_t )strlen( argv[arg_idx] );
+            if ( part_len == 0U )
+            {
+                continue;
+            }
+
+            queued_tx_len = ( uint16_t )( queued_tx_len + part_len );
+        }
+
+        if ( queued_tx_len == 0U )
+        {
+            CONSOLE_Printf( "No message tokens provided.\r\n" );
+            return;
+        }
     }
 
     const uint16_t i2c1_addr = 0x31U;
@@ -416,9 +441,9 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
 
     if ( direction == CONSOLE_I2C_LOOPBACK_DIR_M2S )
     {
-        transfer_ok =
-            CONSOLE_Run_I2C_Loopback_M2S( loopback_channels, slave_addr, tx_message, tx_len,
-                                          rx_message, sizeof( rx_message ), &received_len );
+        transfer_ok = CONSOLE_Run_I2C_Loopback_M2S( loopback_channels, slave_addr, argc, argv,
+                                                    rx_message, sizeof( rx_message ),
+                                                    &received_len );
     }
     else
     {
@@ -440,12 +465,27 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
         ( speed == HW_I2C_SPEED_400KHZ ) ? "400kHz" : "100kHz",
         ( transfer_path == HW_I2C_TRANSFER_DMA ) ? "DMA" : "Interrupt" );
 
-    CONSOLE_Printf( "Sent    (%u): %.*s\r\n", ( unsigned int )tx_len, ( int )tx_len, tx_message );
+    if ( direction == CONSOLE_I2C_LOOPBACK_DIR_S2M )
+    {
+        CONSOLE_Printf( "Sent    (%u): %.*s\r\n", ( unsigned int )tx_len, ( int )tx_len,
+                        tx_message );
+    }
+    else
+    {
+        CONSOLE_Printf( "Sent    (%u):", ( unsigned int )queued_tx_len );
+        for ( uint16_t arg_idx = 5U; arg_idx < argc; ++arg_idx )
+        {
+            CONSOLE_Printf( " %s", argv[arg_idx] );
+        }
+        CONSOLE_Printf( "\r\n" );
+    }
     CONSOLE_Printf( "Received(%u): %.*s\r\n", ( unsigned int )received_len, ( int )received_len,
                     rx_message );
 
-    const bool pass =
-        ( received_len == ( uint16_t )tx_len ) && ( memcmp( tx_message, rx_message, tx_len ) == 0 );
+    const bool pass = ( direction == CONSOLE_I2C_LOOPBACK_DIR_S2M )
+                          ? ( received_len == ( uint16_t )tx_len )
+                                && ( memcmp( tx_message, rx_message, tx_len ) == 0 )
+                          : ( received_len == queued_tx_len );
     CONSOLE_Printf( "Result: %s\r\n", pass ? "PASS" : "FAIL" );
 }
 

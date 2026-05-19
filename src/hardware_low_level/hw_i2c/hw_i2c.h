@@ -42,6 +42,8 @@ extern "C"
 
 #define HW_I2C_RX_BUFFER_SIZE ( 512U )
 #define HW_I2C_TX_STAGE_SIZE ( 256U )
+#define HW_I2C_TX_RING_SIZE ( 512U )
+#define HW_I2C_TX_QUEUE_DEPTH ( 16U )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -107,6 +109,22 @@ typedef struct HWI2CRxPeek_T
     uint16_t    total_length;
 } HWI2CRxPeek_T;
 
+/**
+ * @brief Descriptor for one queued I2C master transmit transaction.
+ *
+ * Encodes the address, payload location (offset into TX ring), length, and
+ * STOP condition flag for one logical I2C message. Multiple descriptors can
+ * be queued, allowing sequential transmit of different messages to different
+ * addresses without requiring new enqueue calls between sends.
+ */
+typedef struct HWI2CTxTransaction_T
+{
+    uint16_t address_7bit; /* 7-bit slave address for this transaction */
+    uint16_t data_offset;  /* Byte offset into TX ring where payload starts */
+    uint16_t length;       /* Number of bytes to transmit for this transaction */
+    bool     send_stop;    /* True to issue STOP at transaction end; false for repeated START */
+} HWI2CTxTransaction_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -142,7 +160,12 @@ HWI2CStatus_T HW_I2C_Configure_Channel( HWI2CChannel_T              channel,
 HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit );
 
 /**
- * @brief Load data into the transmit stage buffer.
+ * @brief Load data into the transmit stage buffer (deprecated; use HW_I2C_Enqueue_Master_Transmit_External instead).
+ *
+ * DEPRECATED: This function is maintained for backward compatibility with existing code
+ * that uses the single-stage-buffer transmit model. New code should use the queued
+ * transmit API (HW_I2C_Enqueue_Master_Transmit_External) to allow multiple messages
+ * to be queued and sent sequentially.
  *
  * Prepares data for transmission. Must be called before triggering a transmit.
  * Cannot be called while a transfer is in progress on the channel.
@@ -157,17 +180,24 @@ HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit );
 bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data, uint16_t length );
 
 /**
- * @brief Trigger a master transmit operation on an external I2C channel.
+ * @brief Trigger a master transmit operation on an external I2C channel (deprecated; use HW_I2C_Enqueue_Master_Transmit_External instead).
  *
- * Initiates an I2C master transmit to the specified device address on an external channel
- * (I2C1 or I2C2) using data previously loaded with HW_I2C_Load_Stage_Buffer().
+ * DEPRECATED: This function is maintained for backward compatibility with existing code
+ * that uses the single-stage-buffer transmit model. New code should use the queued
+ * transmit API (HW_I2C_Enqueue_Master_Transmit_External) to allow multiple messages
+ * to be queued and sent sequentially.
+ *
+ * When called with no transfer in progress, initiates an I2C master transmit using
+ * data previously loaded with HW_I2C_Load_Stage_Buffer().
+ * When called with a transfer already in progress, returns success without action
+ * (the load/trigger model is incompatible with queueing; use the new enqueue API).
  * Supports both interrupt and DMA-based transfer paths as configured.
  *
  * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
  * @param[in] device_address_7bit   7-bit slave address to transmit to
  *
- * @return true if transfer was initiated successfully
- * @return false if another transfer is already in progress
+ * @return true if transfer was initiated successfully or queuing is in use
+ * @return false if channel is not configured
  */
 bool HW_I2C_Trigger_Master_Transmit_External( HWI2CChannel_T channel,
                                               uint16_t       device_address_7bit );
@@ -288,6 +318,55 @@ bool HW_I2C_Consume_Received( HWI2CChannel_T channel, uint16_t bytes_to_consume 
  * @return false if no overflow
  */
 bool HW_I2C_Get_Overflow_Status( HWI2CChannel_T channel );
+
+/**
+ * @brief Queue a master transmit transaction for an external I2C channel.
+ *
+ * Enqueues one logical I2C transaction (address + payload) into the driver's
+ * internal TX queue. Data is copied into the TX ring buffer, and a descriptor
+ * is pushed onto the transaction queue. The transaction will be sent after any
+ * currently in-flight message completes.
+ *
+ * This function uses a critical section to protect queue updates from races
+ * with the TX DMA/IRQ completion handlers.
+ *
+ * Callers must ensure that the total queued data does not exceed the TX ring
+ * buffer size. Individual messages are never wrapped: if a message does not fit
+ * contiguously at the current write position, the entire message is moved to
+ * index 0. If no contiguous space exists anywhere, this function returns false.
+ *
+ * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
+ * @param[in] device_address_7bit   7-bit slave address
+ * @param[in] payload               Data to transmit. May be NULL if payload_length is 0.
+ * @param[in] payload_length        Number of bytes to transmit (max HW_I2C_TX_RING_SIZE)
+ * @param[in] send_stop             True to issue STOP; false for repeated START
+ *
+ * @return true if the transaction was queued successfully
+ * @return false if the queue is full, data does not fit, or channel is not configured
+ */
+bool HW_I2C_Enqueue_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
+                                              const uint8_t* payload, uint16_t payload_length,
+                                              bool send_stop );
+
+/**
+ * @brief Check whether all queued TX transactions have completed transmission.
+ *
+ * Returns true only when:
+ * - The TX transaction queue is empty (no pending messages)
+ * - No transfer is currently in progress
+ * - DMA (if used) is not active
+ * - The I2C peripheral has finished transmitting (BTF/BUSY flags indicate idle)
+ *
+ * This is intended for callers that must wait for full transmission completion
+ * before performing other operations (e.g., switching I2C mode or de-asserting
+ * a chip-select line).
+ *
+ * @param[in] channel  External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
+ *
+ * @return true if no transmissions are pending or in progress
+ * @return false if transmissions are queued or active
+ */
+bool HW_I2C_Is_Tx_Complete( HWI2CChannel_T channel );
 
 #ifdef __cplusplus
 }
