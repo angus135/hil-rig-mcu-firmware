@@ -771,14 +771,14 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
 {
     if ( argc < 3 )
     {
-        CONSOLE_Printf( "Incorrect number of inputs, expected atleast 1 but recieved %d",
-                        argc - 1 );
+        CONSOLE_Printf( "Incorrect number of inputs, expected atleast 2 but recieved %d",
+                        argc - 2 );
         return;
     }
-    char out[argc - 1][8];
-    for ( int j = 0; j < ( argc - 1 ); j++ )
+    char out[argc - 2][8];
+    for ( int j = 0; j < ( argc - 2 ); j++ )
     {
-        int len = strlen( argv[j + 1] );
+        int len = strlen( argv[j + 2] );
         // fill packet with '_'
         for ( int i = 0; i < 8; i++ )
         {
@@ -789,33 +789,33 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
             len = 8;
         }
         // move data into packet
-        CONSOLE_Printf( "Adding %s to buffer...\n\r", argv[j + 1] );
+        CONSOLE_Printf( "Adding %s to buffer...\n\r", argv[j + 2] );
         for ( int i = 0; i < len; i++ )
         {
-            out[j][i] = argv[j + 1][i];
+            out[j][i] = argv[j + 2][i];
         }
     }
     if ( strcmp( argv[1], "1" ) == 0 )
     {
-        if ( HW_CAN_Tx_Buffer_Write1( out, argc - 1 ) != 0 )
+        if ( HW_CAN_Tx_Buffer_Write1( out, argc - 2 ) != 0 )
         {
             CONSOLE_Printf( "Buffer Error" );
             return;
         }
         CONSOLE_Printf( "Written to buffer...\n\r" );
         HW_CAN_Tx_Trigger1();
-        CONSOLE_Printf( "Transmitted" );
+        CONSOLE_Printf( "Transmitted on channel 1" );
     }
     else if ( strcmp( argv[1], "2" ) == 0 )
     {
-        if ( HW_CAN_Tx_Buffer_Write2( out, argc - 1 ) != 0 )
+        if ( HW_CAN_Tx_Buffer_Write2( out, argc - 2 ) != 0 )
         {
             CONSOLE_Printf( "Buffer Error" );
             return;
         }
         CONSOLE_Printf( "Written to buffer...\n\r" );
         HW_CAN_Tx_Trigger2();
-        CONSOLE_Printf( "Transmitted" );
+        CONSOLE_Printf( "Transmitted on channel 2" );
     }
     else
     {
@@ -902,7 +902,7 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
     {
         if ( HW_CAN_Rx_Buffer_Pop1( out ) != 0 )
         {
-            CONSOLE_Printf( "Nothing in buffer\n\r" );
+            CONSOLE_Printf( "Nothing in channel 1 buffer\n\r" );
             return;
         }
     }
@@ -910,7 +910,7 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
     {
         if ( HW_CAN_Rx_Buffer_Pop2( out ) != 0 )
         {
-            CONSOLE_Printf( "Nothing in buffer\n\r" );
+            CONSOLE_Printf( "Nothing in channel 2 buffer\n\r" );
             return;
         }
     }

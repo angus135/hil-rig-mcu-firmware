@@ -98,6 +98,10 @@ extern "C"
 #define __HAL_RCC_CAN1_RELEASE_RESET()
 #define __HAL_RCC_CAN1_CLK_ENABLE()
 
+#define __HAL_RCC_CAN2_FORCE_RESET()
+#define __HAL_RCC_CAN2_RELEASE_RESET()
+#define __HAL_RCC_CAN2_CLK_ENABLE()
+
 /**-----------------------------------------------------------------------------
  * Public Typedefs / Structures
  *----------------------------------------------------------------------------*/
@@ -172,6 +176,8 @@ typedef struct
 
     uint32_t FilterFIFOAssignment;
     uint32_t FilterActivation;
+
+    uint32_t SlaveStartFilterBank;
 
 } CAN_FilterTypeDef;
 

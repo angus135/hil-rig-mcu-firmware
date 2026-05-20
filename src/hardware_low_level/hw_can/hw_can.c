@@ -63,7 +63,16 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
  *------------------------------------------------------------------------------
  */
 
-// This flag is set to true when tx finishes sending
+/**
+ * At the moment these flags are set to true by the tx ISR when it has finished emptying the buffer
+ * How I expect it to work is we call trigger, in time step x, then at x+1 we check if the flag
+ * if the flag is true that means that all messages that were in the buffer when it was triggered
+ * have been sent. Even tho this diverges slightly from what we discussed I think it is the best
+ * approach because CAN messages are so small.
+ *
+ * If we think its absolutely neccesary to be able to check the status of each message
+ * then I have an implementation in mind. 
+ */
 static volatile bool can_sent_flag1 = false;
 static volatile bool can_sent_flag2 = false;
 
@@ -323,15 +332,15 @@ uint16_t HW_CAN_Buffer_Pop( volatile uint8_t buffer[][CAN_PACKET_SIZE], volatile
  */
 HAL_StatusTypeDef HW_CAN_Apply_Timing_HAL( CAN_HandleTypeDef* hcan, CanProperties_T props )
 {
-    if ( props.bs2 == 0 || props.bs2 == 0 || props.psc == 0 || props.timer_hz == 0 )
+    if ( props.bs1 == 0 || props.bs2 == 0 || props.psc == 0 || props.timer_hz == 0 )
     {
         return HAL_ERROR;
     }
     // set prescaler
     hcan->Init.Prescaler = props.psc;
     // set CAN operating mode
-    // hcan->Init.Mode      = CAN_MODE_NORMAL;
-    hcan->Init.Mode = CAN_MODE_LOOPBACK;  // Testing mode
+    hcan->Init.Mode = CAN_MODE_NORMAL;
+    // hcan->Init.Mode = CAN_MODE_LOOPBACK;  // Testing mode
 
     // set the sync jump width
     hcan->Init.SyncJumpWidth = CAN_SJW_1TQ;
@@ -387,6 +396,8 @@ HAL_StatusTypeDef HW_CAN_Apply_Timing_HAL( CAN_HandleTypeDef* hcan, CanPropertie
         case 16:
             hcan->Init.TimeSeg1 = CAN_BS1_16TQ;
             break;
+        default:
+            return HAL_ERROR;
     }
 
     // Map BS2
@@ -416,6 +427,8 @@ HAL_StatusTypeDef HW_CAN_Apply_Timing_HAL( CAN_HandleTypeDef* hcan, CanPropertie
         case 8:
             hcan->Init.TimeSeg2 = CAN_BS2_8TQ;
             break;
+        default:
+            return HAL_ERROR;
     }
 
     // Other required settings
@@ -438,21 +451,35 @@ HAL_StatusTypeDef HW_CAN_Apply_Timing_HAL( CAN_HandleTypeDef* hcan, CanPropertie
  * This function applies the desired can filter properties using the HAL library
  *
  */
-HAL_StatusTypeDef HW_CAN_Apply_Filter_HAL( CAN_FilterTypeDef filter, CAN_HandleTypeDef* hcan )
+HAL_StatusTypeDef HW_CAN_Apply_Filter_HAL( CAN_FilterTypeDef* filter, CAN_HandleTypeDef* hcan )
 {
-    filter.FilterBank  = 0;
-    filter.FilterMode  = CAN_FILTERMODE_IDMASK;
-    filter.FilterScale = CAN_FILTERSCALE_32BIT;
+    ( *filter ).FilterMode  = CAN_FILTERMODE_IDMASK;
+    ( *filter ).FilterScale = CAN_FILTERSCALE_32BIT;
 
-    filter.FilterIdHigh     = 0x0000;
-    filter.FilterIdLow      = 0x0000;
-    filter.FilterMaskIdHigh = 0x0000;
-    filter.FilterMaskIdLow  = 0x0000;
+    ( *filter ).FilterIdHigh     = 0x0000;
+    ( *filter ).FilterIdLow      = 0x0000;
+    ( *filter ).FilterMaskIdHigh = 0x0000;
+    ( *filter ).FilterMaskIdLow  = 0x0000;
 
-    filter.FilterFIFOAssignment = CAN_FILTER_FIFO0;
-    filter.FilterActivation     = ENABLE;
+    ( *filter ).SlaveStartFilterBank = 14;
 
-    return HAL_CAN_ConfigFilter( hcan, &filter );
+    if ( hcan->Instance == CAN1 )
+    {
+        ( *filter ).FilterBank = 0;
+    }
+    else if ( hcan->Instance == CAN2 )
+    {
+        ( *filter ).FilterBank = 14;
+    }
+    else
+    {
+        return HAL_ERROR;
+    }
+
+    ( *filter ).FilterFIFOAssignment = CAN_FILTER_FIFO0;
+    ( *filter ).FilterActivation     = ENABLE;
+
+    return HAL_CAN_ConfigFilter( hcan, filter );
 }
 
 /**
@@ -484,16 +511,13 @@ HAL_StatusTypeDef HW_CAN_Apply_Filter_HAL( CAN_FilterTypeDef filter, CAN_HandleT
  */
 int HW_CAN_Configure( CAN_HandleTypeDef* hcan, uint32_t bitrate )
 {
-    CAN_FilterTypeDef filter;
+    CAN_FilterTypeDef filter    = { 0 };
     CanProperties_T   can_props = HW_CAN_Compute_Properties( bitrate, TOTAL_TQ, MBPS_SAMPLE_POINT );
-    __HAL_RCC_CAN1_FORCE_RESET();
-    __HAL_RCC_CAN1_RELEASE_RESET();
-    __HAL_RCC_CAN1_CLK_ENABLE();
     if ( HW_CAN_Apply_Timing_HAL( hcan, can_props ) != HAL_OK )
     {
         return 1;
     }
-    if ( HW_CAN_Apply_Filter_HAL( filter, hcan ) != HAL_OK )
+    if ( HW_CAN_Apply_Filter_HAL( &filter, hcan ) != HAL_OK )
     {
         return 2;
     }
@@ -582,6 +606,9 @@ CanProperties_T HW_CAN_Compute_Properties( uint32_t bitrate, uint32_t total_TQ,
  */
 int HW_CAN_Configure1( uint32_t bitrate )
 {
+    // __HAL_RCC_CAN1_FORCE_RESET();
+    // __HAL_RCC_CAN1_RELEASE_RESET();
+    __HAL_RCC_CAN1_CLK_ENABLE();
     return HW_CAN_Configure( &hcan1, bitrate );
 }
 
@@ -613,6 +640,9 @@ int HW_CAN_Configure1( uint32_t bitrate )
  */
 int HW_CAN_Configure2( uint32_t bitrate )
 {
+    // __HAL_RCC_CAN2_FORCE_RESET();
+    // __HAL_RCC_CAN2_RELEASE_RESET();
+    __HAL_RCC_CAN2_CLK_ENABLE();
     return HW_CAN_Configure( &hcan2, bitrate );
 }
 
