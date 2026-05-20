@@ -71,7 +71,7 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
  * approach because CAN messages are so small.
  *
  * If we think its absolutely neccesary to be able to check the status of each message
- * then I have an implementation in mind. 
+ * then I have an implementation in mind.
  */
 static volatile bool can_sent_flag1 = false;
 static volatile bool can_sent_flag2 = false;
