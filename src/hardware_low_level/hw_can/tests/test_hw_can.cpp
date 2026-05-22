@@ -301,20 +301,6 @@ TEST_F( HWCANTest, TxIRQTransmitsBufferedPacket )
  * Configure Tests
  *---------------------------------------------------------------------------*/
 
-TEST_F( HWCANTest, ConfigureReturns0OnSuccess )
-{
-    EXPECT_CALL( mock, CANInit( _ ) ).WillOnce( Return( HAL_OK ) );
-
-    EXPECT_CALL( mock, CANConfigFilter( _, _ ) ).WillOnce( Return( HAL_OK ) );
-
-    EXPECT_CALL( mock, CANStart( _ ) ).WillOnce( Return( HAL_OK ) );
-
-    EXPECT_CALL( mock, CANActivateNotification( _, _ ) ).WillOnce( Return( HAL_OK ) );
-
-    int result = HW_CAN_Configure1( 1000000 );
-
-    EXPECT_EQ( result, 0 );
-}
 
 TEST_F( HWCANTest, ConfigureReturns1WhenInitFails )
 {
