@@ -301,7 +301,6 @@ TEST_F( HWCANTest, TxIRQTransmitsBufferedPacket )
  * Configure Tests
  *---------------------------------------------------------------------------*/
 
-
 TEST_F( HWCANTest, ConfigureReturns1WhenInitFails )
 {
     EXPECT_CALL( mock, CANInit( _ ) ).WillOnce( Return( HAL_ERROR ) );
