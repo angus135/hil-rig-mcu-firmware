@@ -127,8 +127,10 @@ TEST_F( ExampleTest, SelfConfig_InitializesActiveDeviceAndReportsSuccess )
     EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) ).WillOnce( Return( HW_I2C_STATUS_OK ) );
     EXPECT_CALL( mock_hw_i2c,
                  LoadStageBuffer( HW_I2C_CHANNEL_FMPI2C1, ::testing::_, ::testing::_ ) )
-        .Times( 8 );
-    EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x20U ) ).Times( 8 );
+        .Times( 8 )
+        .WillRepeatedly( Return( true ) );
+    EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x20U ) ).Times( 8 )
+        .WillRepeatedly( Return( true ) );
 
     EXPECT_EQ( LOGIC_EXPANDER_Self_Config(), LOGIC_EXPANDER_STATUS_OK );
     EXPECT_TRUE( logic_expander_ready );
@@ -211,9 +213,14 @@ TEST_F( ExampleTest, SendControlBits_WritesActiveShadowRegisters )
 
     const std::array<uint8_t, 3U> expected_payload = { 0x14U, 0x5AU, 0xA5U };
 
-    EXPECT_CALL( mock_hw_i2c, LoadStageBuffer( HW_I2C_CHANNEL_FMPI2C1, expected_payload.data(),
+    EXPECT_CALL( mock_hw_i2c, LoadStageBuffer( HW_I2C_CHANNEL_FMPI2C1, ::testing::_,
                                                expected_payload.size() ) )
-        .WillOnce( Return( true ) );
+        .WillOnce( [&]( HWI2CChannel_T channel, const uint8_t* data, uint16_t length ) {
+            EXPECT_EQ( channel, HW_I2C_CHANNEL_FMPI2C1 );
+            EXPECT_EQ( length, expected_payload.size() );
+            EXPECT_EQ( std::memcmp( data, expected_payload.data(), length ), 0 );
+            return true;
+        } );
     EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x20U ) ).WillOnce( Return( true ) );
 
     EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
