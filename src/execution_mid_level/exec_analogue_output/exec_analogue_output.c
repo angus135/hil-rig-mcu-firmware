@@ -164,7 +164,8 @@ static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
             ( uint8_t )( ( frames[index].data_word >> 8U ) & 0xFFU );
         frame_bytes[frame_index_bytes + 2U] = ( uint8_t )( frames[index].data_word & 0xFFU );
 
-        if ( !HW_SPI_Load_Tx_Buffer( ANALOGUE_OUTPUT_SPI_CHANNEL, &frame_bytes[frame_index_bytes], 3U ) )
+        if ( !HW_SPI_Load_Tx_Buffer( ANALOGUE_OUTPUT_SPI_CHANNEL, &frame_bytes[frame_index_bytes],
+                                     3U ) )
         {
             return false;
         }
@@ -186,7 +187,7 @@ static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
  * @brief Configure and start the SPI hardware channel dedicated to DAC communication.
  *
  * Intended to only be used for console testing to set up the SPI channel independently
- * 
+ *
  * Sets up the SPI peripheral with the configuration required by the
  * MCP48CVB28T-20E_ST octal DAC: 8-bit data size, MSB first,
  * CPOL low, CPHA 1 edge.
