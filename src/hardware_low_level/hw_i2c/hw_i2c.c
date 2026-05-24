@@ -135,7 +135,10 @@ typedef struct HWI2CMapping_T
 
 static const HWI2CMapping_T HW_I2C_MAP[HW_I2C_CHANNEL_COUNT] = {
     { .instance = I2C1, .dma_rx = NULL, .dma_tx = NULL, .dma_channel_bits = 0UL },
-    { .instance = I2C2, .dma_rx = HW_I2C_CHANNEL_2_DMA_RX_STREAM, .dma_tx = HW_I2C_CHANNEL_2_DMA_TX_STREAM, .dma_channel_bits = ( 7UL << DMA_SxCR_CHSEL_Pos ) },
+    { .instance         = I2C2,
+      .dma_rx           = HW_I2C_CHANNEL_2_DMA_RX_STREAM,
+      .dma_tx           = HW_I2C_CHANNEL_2_DMA_TX_STREAM,
+      .dma_channel_bits = ( 7UL << DMA_SxCR_CHSEL_Pos ) },
     { .instance = NULL, .dma_rx = NULL, .dma_tx = NULL, .dma_channel_bits = 0UL },
 };
 
