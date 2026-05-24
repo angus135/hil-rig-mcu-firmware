@@ -47,7 +47,7 @@ bool EXEC_ANALOGUE_OUTPUT_Config( bool use_external_vref );
  * @brief Configure and start the SPI hardware channel dedicated to DAC communication.
  *
  * Intended to only be used for console testing to set up the SPI channel independently
- * 
+ *
  * Sets up the SPI peripheral with the configuration required by the
  * MCP48CVB28T-20E_ST octal DAC: 8-bit data size, 352K baud rate, MSB first,
  * CPOL low, CPHA 1 edge.
