@@ -1172,7 +1172,7 @@ inline bool HW_I2C_Trigger_Master_Receive_Internal( uint16_t device_address_7bit
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[HW_I2C_CHANNEL_FMPI2C1];
 
-    if ( state->transfer_in_progress || expected_length < HW_I2C_RX_BUFFER_SIZE )
+    if ( state->transfer_in_progress || expected_length > HW_I2C_RX_BUFFER_SIZE )
     {
         return false;
     }
