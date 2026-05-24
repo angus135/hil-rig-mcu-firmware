@@ -45,7 +45,6 @@ if(EXEC_I2C_ENABLE_TESTS AND BUILD_TESTING)
 
     target_link_libraries(exec_i2c_tests
         PRIVATE
-            exec_i2c
             gtest
             gtest_main
             gmock
@@ -55,6 +54,7 @@ if(EXEC_I2C_ENABLE_TESTS AND BUILD_TESTING)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_i2c
     )
 
     add_test(NAME exec_i2c_tests COMMAND exec_i2c_tests)

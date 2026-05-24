@@ -61,6 +61,7 @@ public:
                  ( HWI2CChannel_T channel, uint16_t expected_length ), () );
     MOCK_METHOD( bool, PeekReceived, ( HWI2CChannel_T channel, HWI2CRxPeek_T* peek ), () );
     MOCK_METHOD( bool, ConsumeReceived, ( HWI2CChannel_T channel, uint16_t bytes_to_consume ), () );
+    MOCK_METHOD( bool, GetOverflowStatus, ( HWI2CChannel_T channel ), () );
 };
 
 static MockHWI2C* g_mock_hw_i2c = nullptr;
@@ -107,6 +108,11 @@ bool HW_I2C_Peek_Received( HWI2CChannel_T channel, HWI2CRxPeek_T* peek )
 bool HW_I2C_Consume_Received( HWI2CChannel_T channel, uint16_t bytes_to_consume )
 {
     return g_mock_hw_i2c->ConsumeReceived( channel, bytes_to_consume );
+}
+
+bool HW_I2C_Get_Overflow_Status( HWI2CChannel_T channel )
+{
+    return g_mock_hw_i2c->GetOverflowStatus( channel );
 }
 }
 
