@@ -31,6 +31,7 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
+// TODO: change this to the DAC channel during board bring-up
 #define ANALOGUE_OUTPUT_SPI_CHANNEL SPI_CHANNEL_0
 
 #define ANALOGUE_OUTPUT_DAC_CHANNEL_COUNT 8U
@@ -70,8 +71,8 @@ static bool s_EXEC_ANALOGUE_OUTPUT_Configured = false;
  *------------------------------------------------------------------------------
  */
 
-static uint8_t  EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( uint8_t register_address );
-static bool     EXEC_ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, uint16_t data_word );
+static inline uint8_t  EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( uint8_t register_address );
+static inline bool     EXEC_ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, uint16_t data_word );
 static uint16_t EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_v );
 static bool     EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref );
 
@@ -80,19 +81,35 @@ static bool     EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vre
  *------------------------------------------------------------------------------
  */
 
-static uint8_t EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( uint8_t register_address )
+static inline uint8_t EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( uint8_t register_address )
 {
+    /* Pack the DAC register address into the 8-bit command byte.
+     * The MCP48 octal DAC expects the 5-bit register address in bits [7:3]
+     * of the first byte, so mask to 5 bits then shift left by 3.
+     */
     return ( uint8_t )( ( register_address & 0x1FU ) << 3U );
 }
 
-static bool EXEC_ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, uint16_t data_word )
+static inline bool EXEC_ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, uint16_t data_word )
 {
+    /* Frame layout sent to the DAC over SPI:
+     *   byte 0: command byte (register address packed into bits [7:3])
+     *   byte 1: data MSB (upper 8 bits of the 16-bit data word)
+     *   byte 2: data LSB (lower 8 bits of the 16-bit data word)
+     *
+     * Data is split into two bytes explicitly to make the SPI payload clear
+     * and to avoid endianness assumptions.
+     */
     uint8_t frame[3] = {
         EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( register_address ),
         ( uint8_t )( ( data_word >> 8U ) & 0xFFU ),
         ( uint8_t )( data_word & 0xFFU ),
     };
 
+    /* Queue the 3-byte frame into the SPI driver's TX buffer for the
+     * analogue output SPI channel. The hardware driver returns true if the
+     * buffer was loaded successfully.
+     */
     return HW_SPI_Load_Tx_Buffer( ANALOGUE_OUTPUT_SPI_CHANNEL, frame, sizeof( frame ) );
 }
 
@@ -123,6 +140,10 @@ static uint16_t EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_
 
 static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
 {
+    /* Allocate a contiguous buffer large enough to hold all 3-byte frames
+     * we'll send: 3 control frames (VREF/Gain/Power) + one frame per DAC
+     * channel. `frame_index_bytes` tracks the next free byte offset.
+     */
     uint8_t  frame_bytes[3U * ( 3U + ANALOGUE_OUTPUT_DAC_CHANNEL_COUNT )] = { 0 };
     uint32_t frame_index_bytes                                            = 0U;
 
@@ -144,7 +165,10 @@ static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
         { ANALOGUE_OUTPUT_REG_DAC_BASE + 7U, 0U },
     };
 
-    /* Set VREF control based on requested mode */
+    /* Configure the VREF control word depending on whether an external
+     * buffered reference is requested. This updates the placeholder in the
+     * first entry of the `frames` array before packing.
+     */
     if ( use_external_vref )
     {
         frames[0].data_word = ANALOGUE_OUTPUT_VREF_EXT_BUFFERED;
@@ -158,12 +182,20 @@ static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
     for ( uint32_t index = 0U; index < ( uint32_t )( sizeof( frames ) / sizeof( frames[0] ) );
           index++ )
     {
+        /* Pack command and data bytes for this frame into the local buffer
+         * at the current byte index. The command byte encodes the register
+         * address; the 16-bit data_word is split into MSB/LSB bytes.
+         */
         frame_bytes[frame_index_bytes] =
             EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( frames[index].register_address );
         frame_bytes[frame_index_bytes + 1U] =
             ( uint8_t )( ( frames[index].data_word >> 8U ) & 0xFFU );
         frame_bytes[frame_index_bytes + 2U] = ( uint8_t )( frames[index].data_word & 0xFFU );
 
+        /* Load this 3-byte frame into the SPI driver's TX buffer. The SPI
+         * driver manages its own queue; a false return indicates the frame
+         * could not be queued (e.g. buffer full) and we must abort.
+         */
         if ( !HW_SPI_Load_Tx_Buffer( ANALOGUE_OUTPUT_SPI_CHANNEL, &frame_bytes[frame_index_bytes],
                                      3U ) )
         {
@@ -173,6 +205,9 @@ static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
         frame_index_bytes += 3U;
     }
 
+    /* All frames queued; trigger the SPI peripheral to start the
+     * transmission of queued frames on the analogue output channel.
+     */
     HW_SPI_Tx_Trigger( ANALOGUE_OUTPUT_SPI_CHANNEL );
 
     return true;
@@ -213,6 +248,7 @@ bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void )
         .spi_mode  = SPI_MASTER_MODE,
         .data_size = SPI_SIZE_8_BIT,
         .first_bit = SPI_FIRST_MSB,
+        // TODO: change this to faster baud rate during board bring up
         .baud_rate = SPI_BAUD_2M813BIT,
         .cpol      = SPI_CPOL_LOW,
         .cpha      = SPI_CPHA_1_EDGE,
