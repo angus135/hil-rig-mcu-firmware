@@ -538,7 +538,7 @@ int HW_CAN_Configure( CAN_HandleTypeDef* hcan, uint32_t bitrate )
  */
 
 /**
- * @brief Calculates the required CAN protperties
+ * @brief Calculates the required CAN properties
  *
  * @param bitrate the desired bitrate in bits per second, eg 1Mbps = 1000000
  * @param total_TQ the total time quanta
