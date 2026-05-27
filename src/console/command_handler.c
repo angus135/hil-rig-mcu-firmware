@@ -538,7 +538,7 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "Incorrect number of inputs, expected 1 but recieved %d", argc - 1 );
         return;
     }
-    char out[20][8];
+    char     out[20][8];
     uint16_t read = 0;
     for ( int i = 0; i < 20; i++ )
     {
@@ -550,7 +550,7 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
     if ( strcmp( argv[1], "1" ) == 0 )
     {
         read = EXEC_CAN_Rx_Buffer_Read1( out );
-        if (read == 0)
+        if ( read == 0 )
         {
             CONSOLE_Printf( "Nothing in channel 1 buffer\n\r" );
             return;
@@ -559,7 +559,7 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
     else if ( strcmp( argv[1], "2" ) == 0 )
     {
         read = EXEC_CAN_Rx_Buffer_Read2( out );
-        if (read == 0)
+        if ( read == 0 )
         {
             CONSOLE_Printf( "Nothing in channel 2 buffer\n\r" );
             return;

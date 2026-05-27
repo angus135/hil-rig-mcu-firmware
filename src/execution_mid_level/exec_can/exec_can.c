@@ -136,7 +136,7 @@ uint16_t EXEC_CAN_Load_Tx2( uint8_t source[][CAN_PACKET_SIZE], uint16_t length )
 uint16_t EXEC_CAN_Rx_Buffer_Read1( uint8_t dest[][CAN_PACKET_SIZE] )
 {
     uint16_t count = HW_CAN_Rx_Buffer_Read1( dest );
-    HW_CAN_Rx_Buffer_consume1(count);
+    HW_CAN_Rx_Buffer_consume1( count );
     return count;
 }
 
@@ -147,9 +147,9 @@ uint16_t EXEC_CAN_Rx_Buffer_Read1( uint8_t dest[][CAN_PACKET_SIZE] )
  *
  * @return the number of entries read from the rx buffer (can be 0)
  */
-uint16_t EXEC_CAN_Rx_Buffer_Read2( uint8_t dest[][CAN_PACKET_SIZE])
+uint16_t EXEC_CAN_Rx_Buffer_Read2( uint8_t dest[][CAN_PACKET_SIZE] )
 {
     uint16_t count = HW_CAN_Rx_Buffer_Read2( dest );
-    HW_CAN_Rx_Buffer_consume2(count);
+    HW_CAN_Rx_Buffer_consume2( count );
     return count;
 }

@@ -43,7 +43,6 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
 #define RECEIVE_BUFFER_WIDTH 20
 #define TRANSMIT_BUFFER_WIDTH 20
 
-
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -188,9 +187,15 @@ static inline uint16_t HW_CAN_Buffer_Read( volatile uint8_t   buffer[][CAN_PACKE
 {
     uint16_t temp_r_p = *r_p;
     uint16_t temp_w_p = *w_p;
-    uint16_t count =
-        temp_w_p < temp_r_p ? buffer_width - temp_r_p + temp_w_p + 1 : temp_w_p - temp_r_p;
-    memcpy(dest, buffer, count);
+    if ( temp_w_p < temp_r_p )
+    {
+        uint16_t count = buffer_width - temp_r_p + temp_w_p;
+        memcpy( dest, ( const void* )&buffer[temp_r_p], (buffer_width - temp_r_p) * CAN_PACKET_SIZE );
+        memcpy( &dest[buffer_width - temp_r_p], ( const void* )buffer, (temp_w_p)*CAN_PACKET_SIZE );
+        return count;
+    }
+    uint16_t count = temp_w_p - temp_r_p;
+    memcpy( dest, ( const void* )&buffer[temp_r_p], count*CAN_PACKET_SIZE );
     return count;
 }
 
@@ -202,7 +207,8 @@ static inline uint16_t HW_CAN_Buffer_Read( volatile uint8_t   buffer[][CAN_PACKE
  * @param buffer_width  The width of the buffer CAN_PACKET_SIZE (8)
  *
  */
-static inline void HW_CAN_Buffer_consume( volatile uint16_t* pointer, uint16_t update, uint16_t buffer_width )
+static inline void HW_CAN_Buffer_consume( volatile uint16_t* pointer, uint16_t update,
+                                          uint16_t buffer_width )
 {
     *pointer = ( *pointer + update ) % buffer_width;
 }
@@ -328,7 +334,8 @@ uint16_t HW_CAN_Buffer_Pop( volatile uint8_t buffer[][CAN_PACKET_SIZE], volatile
  */
 uint16_t HW_CAN_Tx_Buffer_Pop1( uint8_t dest[CAN_PACKET_SIZE] )
 {
-    return HW_CAN_Buffer_Pop(can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH, dest);
+    return HW_CAN_Buffer_Pop( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
+                              dest );
 }
 
 /**
@@ -343,7 +350,8 @@ uint16_t HW_CAN_Tx_Buffer_Pop1( uint8_t dest[CAN_PACKET_SIZE] )
  */
 uint16_t HW_CAN_Tx_Buffer_Pop2( uint8_t dest[CAN_PACKET_SIZE] )
 {
-    return HW_CAN_Buffer_Pop(can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH, dest);
+    return HW_CAN_Buffer_Pop( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
+                              dest );
 }
 
 /**-----------------------------------------------------------------------------
@@ -822,7 +830,7 @@ uint16_t HW_CAN_Rx_Buffer_Write2( uint8_t source[][CAN_PACKET_SIZE], uint16_t le
 uint16_t HW_CAN_Rx_Buffer_Read1( uint8_t dest[][CAN_PACKET_SIZE] )
 {
     return HW_CAN_Buffer_Read( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH,
-                              dest );
+                               dest );
 }
 
 /**
@@ -833,7 +841,7 @@ uint16_t HW_CAN_Rx_Buffer_Read1( uint8_t dest[][CAN_PACKET_SIZE] )
  */
 void HW_CAN_Rx_Buffer_consume1( uint16_t update )
 {
-    HW_CAN_Buffer_consume(&can_rx_rp1, update, RECEIVE_BUFFER_WIDTH);
+    HW_CAN_Buffer_consume( &can_rx_rp1, update, RECEIVE_BUFFER_WIDTH );
 }
 
 /**
@@ -846,7 +854,7 @@ void HW_CAN_Rx_Buffer_consume1( uint16_t update )
 uint16_t HW_CAN_Rx_Buffer_Read2( uint8_t dest[][CAN_PACKET_SIZE] )
 {
     return HW_CAN_Buffer_Read( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH,
-                              dest );
+                               dest );
 }
 
 /**
@@ -857,7 +865,7 @@ uint16_t HW_CAN_Rx_Buffer_Read2( uint8_t dest[][CAN_PACKET_SIZE] )
  */
 void HW_CAN_Rx_Buffer_consume2( uint16_t update )
 {
-    HW_CAN_Buffer_consume(&can_rx_rp2, update, RECEIVE_BUFFER_WIDTH);
+    HW_CAN_Buffer_consume( &can_rx_rp2, update, RECEIVE_BUFFER_WIDTH );
 }
 
 /**
@@ -870,7 +878,7 @@ void HW_CAN_Rx_Buffer_consume2( uint16_t update )
 uint16_t HW_CAN_Tx_Buffer_Read1( uint8_t dest[][CAN_PACKET_SIZE] )
 {
     return HW_CAN_Buffer_Read( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
-                              dest );
+                               dest );
 }
 
 /**
@@ -883,7 +891,7 @@ uint16_t HW_CAN_Tx_Buffer_Read1( uint8_t dest[][CAN_PACKET_SIZE] )
 uint16_t HW_CAN_Tx_Buffer_Read2( uint8_t dest[][CAN_PACKET_SIZE] )
 {
     return HW_CAN_Buffer_Read( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
-                              dest );
+                               dest );
 }
 
 /**

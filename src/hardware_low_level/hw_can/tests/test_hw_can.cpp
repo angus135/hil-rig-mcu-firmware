@@ -28,6 +28,13 @@ extern "C"
 #include <stdbool.h>
 
 // Add any other C headers required by the module
+#include <string.h>
+}
+
+#include <cstring>
+
+extern "C"
+{
 #include "hw_can.c"
 }
 
@@ -254,17 +261,17 @@ TEST_F( HWCANTest, TxBufferWriteAndPopWorks )
 
     EXPECT_EQ( HW_CAN_Tx_Buffer_Write1( tx, 1 ), 0 );
 
-    uint8_t out[CAN_PACKET_SIZE] = { 0 };
+    uint8_t out[1][CAN_PACKET_SIZE] = { 0 };
 
     EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 0 );
 
-    EXPECT_EQ( out[0], 1 );
-    EXPECT_EQ( out[7], 8 );
+    EXPECT_EQ( out[0][0], 1 );
+    EXPECT_EQ( out[0][7], 8 );
 }
 
 TEST_F( HWCANTest, BufferPopFailsWhenEmpty )
 {
-    uint8_t out[CAN_PACKET_SIZE];
+    uint8_t out[1][CAN_PACKET_SIZE];
 
     EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 1 );
 }
@@ -355,11 +362,11 @@ TEST_F( HWCANTest, TxBufferWraparoundWorksCorrectly )
     /* Pop 10 packets */
     for ( int i = 0; i < 10; i++ )
     {
-        uint8_t out[CAN_PACKET_SIZE];
+        uint8_t out[10][CAN_PACKET_SIZE];
 
         EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 0 );
 
-        EXPECT_EQ( out[0], i );
+        EXPECT_EQ( out[i][0], i );
     }
 
     /* Force wraparound */
@@ -373,25 +380,25 @@ TEST_F( HWCANTest, TxBufferWraparoundWorksCorrectly )
     /* Verify remaining original packets */
     for ( int i = 10; i < TRANSMIT_BUFFER_WIDTH - 1; i++ )
     {
-        uint8_t out[CAN_PACKET_SIZE];
+        uint8_t out[10][CAN_PACKET_SIZE];
 
         EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 0 );
 
-        EXPECT_EQ( out[0], i );
+        EXPECT_EQ( out[i][0], i );
     }
 
     /* Verify wrapped packets */
     for ( int i = 0; i < 10; i++ )
     {
-        uint8_t out[CAN_PACKET_SIZE];
+        uint8_t out[10][CAN_PACKET_SIZE];
 
         EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 0 );
 
-        EXPECT_EQ( out[0], 100 + i );
+        EXPECT_EQ( out[i][0], 100 + i );
     }
 
     /* Buffer should now be empty */
-    uint8_t out[CAN_PACKET_SIZE];
+    uint8_t out[1][CAN_PACKET_SIZE];
 
     EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 1 );
 }
