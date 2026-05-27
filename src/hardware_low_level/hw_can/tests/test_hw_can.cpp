@@ -255,7 +255,7 @@ TEST_F( HWCANTest, ReceiveReadsFIFODataCorrectly )
  * Buffer Tests
  *---------------------------------------------------------------------------*/
 
-TEST_F( HWCANTest, TxBufferWriteAndPopWorks )
+TEST_F( HWCANTest, TxBufferWriteAndReadWorks )
 {
     uint8_t tx[1][CAN_PACKET_SIZE] = { { 1, 2, 3, 4, 5, 6, 7, 8 } };
 
@@ -263,17 +263,25 @@ TEST_F( HWCANTest, TxBufferWriteAndPopWorks )
 
     uint8_t out[1][CAN_PACKET_SIZE] = { 0 };
 
-    EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 0 );
+    uint16_t count = HW_CAN_Tx_Buffer_Read1( out );
+
+    EXPECT_EQ( count, 1 );
 
     EXPECT_EQ( out[0][0], 1 );
+    EXPECT_EQ( out[0][1], 2 );
     EXPECT_EQ( out[0][7], 8 );
+
+    /* Read does not consume */
+    EXPECT_EQ( can_tx_rp1, 0 );
+
+    HW_CAN_Rx_Buffer_consume1( 1 );
 }
 
-TEST_F( HWCANTest, BufferPopFailsWhenEmpty )
+TEST_F( HWCANTest, BufferReadReturnsZeroWhenEmpty )
 {
     uint8_t out[1][CAN_PACKET_SIZE];
 
-    EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 1 );
+    EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 0 );
 }
 
 /*-----------------------------------------------------------------------------
@@ -351,54 +359,49 @@ TEST_F( HWCANTest, TxBufferWraparoundWorksCorrectly )
 {
     uint8_t tx[1][CAN_PACKET_SIZE];
 
-    /* Fill buffer */
-    for ( int i = 0; i < TRANSMIT_BUFFER_WIDTH - 1; i++ )
+    /* Fill with known values */
+    for ( int i = 0; i < 10; i++ )
     {
         memset( tx[0], i, CAN_PACKET_SIZE );
 
         EXPECT_EQ( HW_CAN_Tx_Buffer_Write1( tx, 1 ), 0 );
     }
 
-    /* Pop 10 packets */
+    uint8_t out[20][CAN_PACKET_SIZE] = { 0 };
+
+    uint16_t count = HW_CAN_Tx_Buffer_Read1( out );
+
+    EXPECT_EQ( count, 10 );
+
     for ( int i = 0; i < 10; i++ )
     {
-        uint8_t out[10][CAN_PACKET_SIZE];
-
-        EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 0 );
-
         EXPECT_EQ( out[i][0], i );
     }
 
+    /* Consume first 8 packets */
+    HW_CAN_Buffer_consume( &can_tx_rp1, 8, TRANSMIT_BUFFER_WIDTH );
+
     /* Force wraparound */
-    for ( int i = 0; i < 10; i++ )
+    for ( int i = 0; i < 8; i++ )
     {
         memset( tx[0], 100 + i, CAN_PACKET_SIZE );
 
         EXPECT_EQ( HW_CAN_Tx_Buffer_Write1( tx, 1 ), 0 );
     }
 
-    /* Verify remaining original packets */
-    for ( int i = 10; i < TRANSMIT_BUFFER_WIDTH - 1; i++ )
+    memset( out, 0, sizeof( out ) );
+
+    count = HW_CAN_Tx_Buffer_Read1( out );
+
+    EXPECT_EQ( count, 10 );
+
+    /* Remaining original packets */
+    EXPECT_EQ( out[0][0], 8 );
+    EXPECT_EQ( out[1][0], 9 );
+
+    /* Wrapped packets */
+    for ( int i = 0; i < 8; i++ )
     {
-        uint8_t out[10][CAN_PACKET_SIZE];
-
-        EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 0 );
-
-        EXPECT_EQ( out[i][0], i );
+        EXPECT_EQ( out[i + 2][0], 100 + i );
     }
-
-    /* Verify wrapped packets */
-    for ( int i = 0; i < 10; i++ )
-    {
-        uint8_t out[10][CAN_PACKET_SIZE];
-
-        EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 0 );
-
-        EXPECT_EQ( out[i][0], 100 + i );
-    }
-
-    /* Buffer should now be empty */
-    uint8_t out[1][CAN_PACKET_SIZE];
-
-    EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 1 );
 }
