@@ -43,10 +43,10 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
 #define TRANSMIT_BUFFER_WIDTH 20
 
 // IRQ Re-Definitions
-#define HW_CAN_CH1_TX_IRQ_HANDLER CAN1_TX_IRQHandler
-#define HW_CAN_CH1_RX_IRQ_HANDLER CAN1_RX0_IRQHandler
-#define HW_CAN_CH2_TX_IRQ_HANDLER CAN2_TX_IRQHandler
-#define HW_CAN_CH2_RX_IRQ_HANDLER CAN2_RX0_IRQHandler
+// #define HW_CAN_CH1_TX_IRQ_HANDLER CAN1_TX_IRQHandler
+// #define HW_CAN_CH1_RX_IRQ_HANDLER CAN1_RX0_IRQHandler
+// #define HW_CAN_CH2_TX_IRQ_HANDLER CAN2_TX_IRQHandler
+// #define HW_CAN_CH2_RX_IRQ_HANDLER CAN2_RX0_IRQHandler
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
