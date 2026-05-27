@@ -316,6 +316,36 @@ uint16_t HW_CAN_Buffer_Pop( volatile uint8_t buffer[][CAN_PACKET_SIZE], volatile
     return 0;
 }
 
+/**
+ * @brief reads one entrie from the tx channel 1 buffer
+ *
+ * @param dest      the destination array it writes to
+ *
+ * @return 1 if there was nothing to read
+ * @return 0 if the buffer was read correctly
+ *
+ *
+ */
+uint16_t HW_CAN_Tx_Buffer_Pop1( uint8_t dest[CAN_PACKET_SIZE] )
+{
+    return HW_CAN_Buffer_Pop(can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH, dest);
+}
+
+/**
+ * @brief reads one entrie from the tx channel 2 buffer
+ *
+ * @param dest      the destination array it writes to
+ *
+ * @return 1 if there was nothing to read
+ * @return 0 if the buffer was read correctly
+ *
+ *
+ */
+uint16_t HW_CAN_Tx_Buffer_Pop2( uint8_t dest[CAN_PACKET_SIZE] )
+{
+    return HW_CAN_Buffer_Pop(can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH, dest);
+}
+
 /**-----------------------------------------------------------------------------
  *  Private Configuration Function Definitions
  *------------------------------------------------------------------------------
@@ -891,7 +921,7 @@ void HW_CAN_CH1_TX_IRQ_HANDLER( void )
 {
     uint8_t packet[CAN_PACKET_SIZE];
     hcan1.Instance->TSR |= CAN_TSR_RQCP0;
-    if ( HW_CAN_Tx_Buffer_Read1( packet ) == 0 )
+    if ( HW_CAN_Tx_Buffer_Pop1( packet ) == 0 )
     {
         HW_CAN_Transmit( &hcan1, packet );
     }
@@ -934,7 +964,7 @@ void HW_CAN_CH2_TX_IRQ_HANDLER( void )
     hcan2.Instance->TSR |= CAN_TSR_RQCP0;
     uint8_t packet[CAN_PACKET_SIZE];
 
-    if ( HW_CAN_Tx_Buffer_Read2( packet ) == 0 )
+    if ( HW_CAN_Tx_Buffer_Pop2( packet ) == 0 )
     {
         HW_CAN_Transmit( &hcan2, packet );
     }
