@@ -76,6 +76,7 @@ static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_Can( uint16_t argc, char* argv[] );
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
@@ -97,7 +98,8 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"digital_input", CONSOLE_Command_DigitalInput, "Print digital input states as 1s and 0s."},
     {"can_tx", CONSOLE_Command_Can_tx, "Transmit a 8 byte message Usage: can_tx <1|2> <message1> <message2> ..."},
     {"can_rx", CONSOLE_Command_Can_rx, "Read and print an 8 byte message Usage: can_rx <1|2>"},
-    {"can_config", CONSOLE_Command_Can_config, "Configures Can channel 1&2"}
+    {"can_config", CONSOLE_Command_Can_config, "Configures Can channel 1&2"},
+    {"can", CONSOLE_Command_Can, "tx, rx and can config functions"}
 };
 
 // clang-format on
@@ -402,6 +404,115 @@ static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char* argv[] )
         return;
     }
     CONSOLE_Printf( "Unrecognised input, expected 1 or 0 but recieved %c", argv[argc - 1] );
+}
+
+/**
+ * @brief Transmits a 8 byte message over xbCan
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
+static void CONSOLE_Command_Can( uint16_t argc, char* argv[] )
+{
+    uint16_t pass_argc = 0;
+    char*    pass_argv[8];
+    if ( argc < 2 )
+    {
+        CONSOLE_Printf( "Incorrect number of inputs, expected atleast 1 but recieved %d",
+                        argc - 1 );
+        return;
+    }
+    if ( strcmp( argv[1], "tx" ) == 0 )
+    {
+        if ( argc < 3 )
+        {
+            CONSOLE_Printf( "Incorrect number of inputs, expected atleast 2 but recieved %d",
+                            argc - 1 );
+            return;
+        }
+        if ( strcmp( argv[2], "1" ) == 0 )
+        {
+            if ( argc < 4 )
+            {
+                CONSOLE_Printf( "Incorrect number of inputs, expected atleast 3 but recieved %d",
+                                argc - 1 );
+                return;
+            }
+            // transmitting on channel 1
+            pass_argc = argc - 1;
+            for ( int i = 1; i < argc - 2; i++ )
+            {
+                pass_argv[i] = argv[i + 1];
+            }
+            CONSOLE_Command_Can_rx( pass_argc, pass_argv );
+            return;
+        }
+        else if ( strcmp( argv[2], "2" ) == 0 )
+        {
+            if ( argc < 4 )
+            {
+                CONSOLE_Printf( "Incorrect number of inputs, expected atleast 3 but recieved %d",
+                                argc - 1 );
+                return;
+            }
+            // transmitting on channel 2
+            pass_argc = argc - 1;
+            for ( int i = 1; i < argc - 2; i++ )
+            {
+                pass_argv[i] = argv[i + 1];
+            }
+            CONSOLE_Command_Can_rx( pass_argc, pass_argv );
+            return;
+        }
+        else
+        {
+            CONSOLE_Printf( "Uknown channel, expected <1|2> but recieved %d", argv[2] );
+            return;
+        }
+    }
+    else if ( strcmp( argv[1], "rx" ) == 0 )
+    {
+        if ( argc < 3 )
+        {
+            CONSOLE_Printf( "Incorrect number of inputs, expected atleast 2 but recieved %d",
+                            argc - 1 );
+            return;
+        }
+        if ( strcmp( argv[2], "1" ) == 0 )
+        {
+            // recieving on channel 1
+            pass_argc    = 2;
+            pass_argv[1] = "1";
+            CONSOLE_Command_Can_rx( pass_argc, pass_argv );
+            return;
+        }
+        else if ( strcmp( argv[2], "2" ) == 0 )
+        {
+            // recieving on channel 2
+            pass_argc    = 2;
+            pass_argv[1] = "2";
+            CONSOLE_Command_Can_rx( pass_argc, pass_argv );
+            return;
+        }
+        else
+        {
+            CONSOLE_Printf( "Uknown channel, expected <1|2> but recieved %d", argv[2] );
+            return;
+        }
+    }
+    else if ( strcmp( argv[1], "config" ) == 0 )
+    {
+        // can configure
+        CONSOLE_Command_Can_config( pass_argc, pass_argv );
+        return;
+    }
+    else
+    {
+        CONSOLE_Printf( "Uknown command, expected <tx|rx> but recieved %s", argv[1] );
+        return;
+    }
 }
 
 /**
