@@ -151,7 +151,7 @@ uint8_t HW_CAN_Buffer_Write( volatile uint8_t buffer[][CAN_PACKET_SIZE], volatil
     uint16_t total    = ( ( temp_w_p + length ) % buffer_width );
     uint16_t free     = ( temp_r_p - temp_w_p - 1 + buffer_width ) % buffer_width;
     // buffer full?
-    if ( total > free )
+    if ( length > free )
     {
         return 1;
     }
