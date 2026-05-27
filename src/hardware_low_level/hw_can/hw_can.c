@@ -340,7 +340,6 @@ HAL_StatusTypeDef HW_CAN_Apply_Timing_HAL( CAN_HandleTypeDef* hcan, CanPropertie
     hcan->Init.Prescaler = props.psc;
     // set CAN operating mode
     hcan->Init.Mode = CAN_MODE_NORMAL;
-    // hcan->Init.Mode = CAN_MODE_LOOPBACK;  // Testing mode
 
     // set the sync jump width
     hcan->Init.SyncJumpWidth = CAN_SJW_1TQ;
