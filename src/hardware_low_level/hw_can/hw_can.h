@@ -52,6 +52,16 @@ typedef struct CanProperties_T
  */
 
 /**
+ * @brief Moves the pointer x times
+ *
+ * @param pointer       the address of the read pointer
+ * @param update        the number of times we want to move the pointer
+ * @param buffer_width  The width of the buffer CAN_PACKET_SIZE (8)
+ *
+ */
+static inline void HW_CAN_Buffer_consume( volatile uint16_t* pointer, uint16_t update, uint16_t buffer_width );
+
+/**
  * @brief Returns the sent flag for channel 1
  *
  *
@@ -220,40 +230,56 @@ uint8_t can_rx_buffer1[X][CAN_PACKET_SIZE];
 uint16_t HW_CAN_Rx_Buffer_Write2( uint8_t source[][CAN_PACKET_SIZE], uint16_t length );
 
 /**
- * @brief Reads an 8 byte packet from the rx buffer (channel 2) and writes it to dest
+ * @brief Reads from the rx buffer (channel 2) and writes it to dest
  *
  * @param dest the destination where the value will be written
  *
- * @return 0 if there was nothing to read, 1 otherwise
+ * @return the number of CAN_PACKET_SIZE's read
  */
-uint16_t HW_CAN_Rx_Buffer_Pop1( uint8_t dest[CAN_PACKET_SIZE] );
+uint16_t HW_CAN_Rx_Buffer_Read1( uint8_t dest[][CAN_PACKET_SIZE] );
 
 /**
- * @brief Reads an 8 byte packet from the rx buffer (channel 2) and writes it to dest
+ * @brief Moves the channe 1 read pointer x times
  *
- * @param dest the destination where the value will be written
+ * @param update        the number of times we want to move the pointer
  *
- * @return 0 if there was nothing to read, 1 otherwise
  */
-uint16_t HW_CAN_Rx_Buffer_Pop2( uint8_t dest[CAN_PACKET_SIZE] );
+void HW_CAN_Rx_Buffer_consume1( uint16_t update );
 
 /**
- * @brief Reads an 8 byte packet from the tx buffer (channel 1) and writes it to dest
+ * @brief Reads from the rx buffer (channel 2) and writes it to dest
  *
  * @param dest the destination where the value will be written
  *
- * @return 0 if there was nothing to read, 1 otherwise
+ * @return the number of CAN_PACKET_SIZE's read
  */
-uint16_t HW_CAN_Tx_Buffer_Pop1( uint8_t dest[CAN_PACKET_SIZE] );
+uint16_t HW_CAN_Rx_Buffer_Read2( uint8_t dest[][CAN_PACKET_SIZE] );
 
 /**
- * @brief Reads an 8 byte packet from the tx buffer (channel 2) and writes it to dest
+ * @brief Moves the channe 2 read pointer x times
+ *
+ * @param update        the number of times we want to move the pointer
+ *
+ */
+void HW_CAN_Rx_Buffer_consume2( uint16_t update );
+
+/**
+ * @brief Reads from the tx buffer (channel 1) and writes it to dest
  *
  * @param dest the destination where the value will be written
  *
- * @return 0 if there was nothing to read, 1 otherwise
+ * @return the number of CAN_PACKET_SIZE's read
  */
-uint16_t HW_CAN_Tx_Buffer_Pop2( uint8_t dest[CAN_PACKET_SIZE] );
+uint16_t HW_CAN_Tx_Buffer_Read1( uint8_t dest[][CAN_PACKET_SIZE] );
+
+/**
+ * @brief Reads from the tx buffer (channel 2) and writes it to dest
+ *
+ * @param dest the destination where the value will be written
+ *
+ * @return the number of CAN_PACKET_SIZE's read
+ */
+uint16_t HW_CAN_Tx_Buffer_Read2( uint8_t dest[][CAN_PACKET_SIZE] );
 
 /**
  * @brief Enables tx interrupts on channel 1

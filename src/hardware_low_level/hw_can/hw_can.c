@@ -19,7 +19,8 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
  *  Includes
  *------------------------------------------------------------------------------
  */
-#include <stddef.h>
+
+#include <string.h>
 #ifndef TEST_BUILD
 #include "can.h"
 #include "stm32f4xx_hal_can.h"
@@ -185,21 +186,25 @@ static inline uint16_t HW_CAN_Buffer_Read( volatile uint8_t   buffer[][CAN_PACKE
                                            volatile uint16_t* w_p, volatile uint16_t* r_p,
                                            uint16_t buffer_width, uint8_t dest[][CAN_PACKET_SIZE] )
 {
-    uint16_t count = 0;
-    for ( int i = 0; i < buffer_width; i++ )
-    {
-        if ( *w_p == *r_p )
-        {
-            return count;
-        }
-        for ( int j = 0; j < CAN_PACKET_SIZE; j++ )
-        {
-            dest[i][j] = buffer[*r_p][j];
-        }
-        *r_p = ( *r_p + 1 ) % buffer_width;
-        count += 1;
-    }
+    uint16_t temp_r_p = *r_p;
+    uint16_t temp_w_p = *w_p;
+    uint16_t count =
+        temp_w_p < temp_r_p ? buffer_width - temp_r_p + temp_w_p + 1 : temp_w_p - temp_r_p;
+    memcpy(dest, buffer, count);
     return count;
+}
+
+/**
+ * @brief Moves the pointer x times
+ *
+ * @param pointer       the address of the read pointer
+ * @param update        the number of times we want to move the pointer
+ * @param buffer_width  The width of the buffer CAN_PACKET_SIZE (8)
+ *
+ */
+static inline void HW_CAN_Buffer_consume( volatile uint16_t* pointer, uint16_t update, uint16_t buffer_width )
+{
+    *pointer = ( *pointer + update ) % buffer_width;
 }
 
 /**
@@ -778,54 +783,76 @@ uint16_t HW_CAN_Rx_Buffer_Write2( uint8_t source[][CAN_PACKET_SIZE], uint16_t le
 }
 
 /**
- * @brief Reads an 8 byte packet from the rx buffer (channel 2) and writes it to dest
+ * @brief Reads from the rx buffer (channel 2) and writes it to dest
  *
  * @param dest the destination where the value will be written
  *
- * @return 1 if there was nothing to read, 0 otherwise
+ * @return the number of CAN_PACKET_SIZE's read
  */
-uint16_t HW_CAN_Rx_Buffer_Pop1( uint8_t dest[CAN_PACKET_SIZE] )
+uint16_t HW_CAN_Rx_Buffer_Read1( uint8_t dest[][CAN_PACKET_SIZE] )
 {
-    return HW_CAN_Buffer_Pop( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH,
+    return HW_CAN_Buffer_Read( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH,
                               dest );
 }
 
 /**
- * @brief Reads an 8 byte packet from the rx buffer (channel 2) and writes it to dest
+ * @brief Moves the channe 1 read pointer x times
+ *
+ * @param update        the number of times we want to move the pointer
+ *
+ */
+void HW_CAN_Rx_Buffer_consume1( uint16_t update )
+{
+    HW_CAN_Buffer_consume(&can_rx_rp1, update, RECEIVE_BUFFER_WIDTH);
+}
+
+/**
+ * @brief Reads from the rx buffer (channel 2) and writes it to dest
  *
  * @param dest the destination where the value will be written
  *
- * @return 1 if there was nothing to read, 0 otherwise
+ * @return the number of CAN_PACKET_SIZE's read
  */
-uint16_t HW_CAN_Rx_Buffer_Pop2( uint8_t dest[CAN_PACKET_SIZE] )
+uint16_t HW_CAN_Rx_Buffer_Read2( uint8_t dest[][CAN_PACKET_SIZE] )
 {
-    return HW_CAN_Buffer_Pop( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH,
+    return HW_CAN_Buffer_Read( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH,
                               dest );
 }
 
 /**
- * @brief Reads an 8 byte packet from the tx buffer (channel 1) and writes it to dest
+ * @brief Moves the channe 2 read pointer x times
+ *
+ * @param update        the number of times we want to move the pointer
+ *
+ */
+void HW_CAN_Rx_Buffer_consume2( uint16_t update )
+{
+    HW_CAN_Buffer_consume(&can_rx_rp2, update, RECEIVE_BUFFER_WIDTH);
+}
+
+/**
+ * @brief Reads from the tx buffer (channel 1) and writes it to dest
  *
  * @param dest the destination where the value will be written
  *
- * @return 1 if there was nothing to read, 0 otherwise
+ * @return the number of CAN_PACKET_SIZE's read
  */
-uint16_t HW_CAN_Tx_Buffer_Pop1( uint8_t dest[CAN_PACKET_SIZE] )
+uint16_t HW_CAN_Tx_Buffer_Read1( uint8_t dest[][CAN_PACKET_SIZE] )
 {
-    return HW_CAN_Buffer_Pop( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
+    return HW_CAN_Buffer_Read( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
                               dest );
 }
 
 /**
- * @brief Reads an 8 byte packet from the tx buffer (channel 2) and writes it to dest
+ * @brief Reads from the tx buffer (channel 2) and writes it to dest
  *
  * @param dest the destination where the value will be written
  *
- * @return 1 if there was nothing to read, 0 otherwise
+ * @return the number of CAN_PACKET_SIZE's read
  */
-uint16_t HW_CAN_Tx_Buffer_Pop2( uint8_t dest[CAN_PACKET_SIZE] )
+uint16_t HW_CAN_Tx_Buffer_Read2( uint8_t dest[][CAN_PACKET_SIZE] )
 {
-    return HW_CAN_Buffer_Pop( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
+    return HW_CAN_Buffer_Read( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
                               dest );
 }
 
@@ -864,7 +891,7 @@ void HW_CAN_CH1_TX_IRQ_HANDLER( void )
 {
     uint8_t packet[CAN_PACKET_SIZE];
     hcan1.Instance->TSR |= CAN_TSR_RQCP0;
-    if ( HW_CAN_Tx_Buffer_Pop1( packet ) == 0 )
+    if ( HW_CAN_Tx_Buffer_Read1( packet ) == 0 )
     {
         HW_CAN_Transmit( &hcan1, packet );
     }
@@ -907,7 +934,7 @@ void HW_CAN_CH2_TX_IRQ_HANDLER( void )
     hcan2.Instance->TSR |= CAN_TSR_RQCP0;
     uint8_t packet[CAN_PACKET_SIZE];
 
-    if ( HW_CAN_Tx_Buffer_Pop2( packet ) == 0 )
+    if ( HW_CAN_Tx_Buffer_Read2( packet ) == 0 )
     {
         HW_CAN_Transmit( &hcan2, packet );
     }

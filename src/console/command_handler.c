@@ -21,6 +21,7 @@
 #include "exec_uart.h"
 #include "hw_adc.h"
 #include "hw_can.h"
+#include "exec_can.h"
 #include "exec_digital_input.h"
 #include <stdint.h>
 #include <stdbool.h>
@@ -537,14 +538,19 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "Incorrect number of inputs, expected 1 but recieved %d", argc - 1 );
         return;
     }
-    char out[8];
-    for ( int i = 0; i < 8; i++ )
+    char out[20][8];
+    uint16_t read = 0;
+    for ( int i = 0; i < 20; i++ )
     {
-        out[i] = '0';
+        for ( int j = 0; j < 8; j++ )
+        {
+            out[i][j] = '0';
+        }
     }
     if ( strcmp( argv[1], "1" ) == 0 )
     {
-        if ( HW_CAN_Rx_Buffer_Pop1( out ) != 0 )
+        read = EXEC_CAN_Rx_Buffer_Read1( out );
+        if (read == 0)
         {
             CONSOLE_Printf( "Nothing in channel 1 buffer\n\r" );
             return;
@@ -552,7 +558,8 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
     }
     else if ( strcmp( argv[1], "2" ) == 0 )
     {
-        if ( HW_CAN_Rx_Buffer_Pop2( out ) != 0 )
+        read = EXEC_CAN_Rx_Buffer_Read2( out );
+        if (read == 0)
         {
             CONSOLE_Printf( "Nothing in channel 2 buffer\n\r" );
             return;
@@ -563,7 +570,10 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "Unknown parameter %s\n\r", argv[1] );
         return;
     }
-    CONSOLE_Printf( "Recieved: %s", out );
+    for ( int i = 0; i < read; i++ )
+    {
+        CONSOLE_Printf( "Recieved: %s", out );
+    }
 }
 
 static void CONSOLE_Command_UART_Loopback( uint16_t argc, char* argv[] )

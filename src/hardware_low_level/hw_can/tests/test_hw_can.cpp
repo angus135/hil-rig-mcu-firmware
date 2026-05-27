@@ -256,7 +256,7 @@ TEST_F( HWCANTest, TxBufferWriteAndPopWorks )
 
     uint8_t out[CAN_PACKET_SIZE] = { 0 };
 
-    EXPECT_EQ( HW_CAN_Tx_Buffer_Pop1( out ), 0 );
+    EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 0 );
 
     EXPECT_EQ( out[0], 1 );
     EXPECT_EQ( out[7], 8 );
@@ -266,7 +266,7 @@ TEST_F( HWCANTest, BufferPopFailsWhenEmpty )
 {
     uint8_t out[CAN_PACKET_SIZE];
 
-    EXPECT_EQ( HW_CAN_Tx_Buffer_Pop1( out ), 1 );
+    EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 1 );
 }
 
 /*-----------------------------------------------------------------------------
@@ -357,7 +357,7 @@ TEST_F( HWCANTest, TxBufferWraparoundWorksCorrectly )
     {
         uint8_t out[CAN_PACKET_SIZE];
 
-        EXPECT_EQ( HW_CAN_Tx_Buffer_Pop1( out ), 0 );
+        EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 0 );
 
         EXPECT_EQ( out[0], i );
     }
@@ -375,7 +375,7 @@ TEST_F( HWCANTest, TxBufferWraparoundWorksCorrectly )
     {
         uint8_t out[CAN_PACKET_SIZE];
 
-        EXPECT_EQ( HW_CAN_Tx_Buffer_Pop1( out ), 0 );
+        EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 0 );
 
         EXPECT_EQ( out[0], i );
     }
@@ -385,7 +385,7 @@ TEST_F( HWCANTest, TxBufferWraparoundWorksCorrectly )
     {
         uint8_t out[CAN_PACKET_SIZE];
 
-        EXPECT_EQ( HW_CAN_Tx_Buffer_Pop1( out ), 0 );
+        EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 0 );
 
         EXPECT_EQ( out[0], 100 + i );
     }
@@ -393,5 +393,5 @@ TEST_F( HWCANTest, TxBufferWraparoundWorksCorrectly )
     /* Buffer should now be empty */
     uint8_t out[CAN_PACKET_SIZE];
 
-    EXPECT_EQ( HW_CAN_Tx_Buffer_Pop1( out ), 1 );
+    EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 1 );
 }

@@ -33,6 +33,7 @@ target_link_libraries(console
         hw_uart
         hw_adc
         hw_can
+        exec_can
         execution_manager
         exec_digital_input
         hw_gpio
