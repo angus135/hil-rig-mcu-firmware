@@ -142,7 +142,7 @@ e.g. here the buffer is 'full', even if ther is technically 1 spot left
  *          [0,0,0,0,0,0,0,0],
  *          [0,0,0,0,0,0,0,0],
  */
-static inline uint8_t HW_CAN_Buffer_Write( volatile uint8_t   buffer[][CAN_PACKET_SIZE],
+uint8_t HW_CAN_Buffer_Write( volatile uint8_t   buffer[][CAN_PACKET_SIZE],
                                            volatile uint16_t* w_p, volatile uint16_t* r_p,
                                            uint16_t buffer_width, uint8_t source[][CAN_PACKET_SIZE],
                                            uint16_t length )
@@ -160,13 +160,13 @@ static inline uint8_t HW_CAN_Buffer_Write( volatile uint8_t   buffer[][CAN_PACKE
     uint16_t space_to_end = ( buffer_width - temp_w_p );
     if ( total <= space_to_end )  // if total > temp_w_p then no wrap around
     {
-        memcpy( ( const void* )&buffer[temp_w_p], source, length * CAN_PACKET_SIZE );
+        memcpy( ( void* )&buffer[temp_w_p], source, length * CAN_PACKET_SIZE );
         *w_p = ( *w_p + length ) % buffer_width;
         return 0;
     }
     // wrap around required
-    memcpy( ( const void* )&buffer[temp_w_p], source, space_to_end * CAN_PACKET_SIZE );
-    memcpy( ( const void* )buffer, &source[space_to_end],
+    memcpy( ( void* )&buffer[temp_w_p], source, space_to_end * CAN_PACKET_SIZE );
+    memcpy( ( void* )buffer, &source[space_to_end],
             ( length - space_to_end ) * CAN_PACKET_SIZE );
     *w_p = ( *w_p + length ) % buffer_width;
     return 0;
@@ -188,7 +188,7 @@ Meaning if the next position in the buffer has the r_p then the buffer is full.
 e.g. here the buffer is 'full', even if ther is technically 1 spot left
  *
  */
-static inline uint16_t HW_CAN_Buffer_Read( volatile uint8_t   buffer[][CAN_PACKET_SIZE],
+uint16_t HW_CAN_Buffer_Read( volatile uint8_t   buffer[][CAN_PACKET_SIZE],
                                            volatile uint16_t* w_p, volatile uint16_t* r_p,
                                            uint16_t buffer_width, uint8_t dest[][CAN_PACKET_SIZE] )
 {
@@ -216,7 +216,7 @@ static inline uint16_t HW_CAN_Buffer_Read( volatile uint8_t   buffer[][CAN_PACKE
  * @param buffer_width  The width of the buffer CAN_PACKET_SIZE (8)
  *
  */
-static inline void HW_CAN_Buffer_consume( volatile uint16_t* pointer, uint16_t update,
+void HW_CAN_Buffer_consume( volatile uint16_t* pointer, uint16_t update,
                                           uint16_t buffer_width )
 {
     *pointer = ( *pointer + update ) % buffer_width;

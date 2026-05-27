@@ -59,7 +59,7 @@ typedef struct CanProperties_T
  * @param buffer_width  The width of the buffer CAN_PACKET_SIZE (8)
  *
  */
-static inline void HW_CAN_Buffer_consume( volatile uint16_t* pointer, uint16_t update,
+void HW_CAN_Buffer_consume( volatile uint16_t* pointer, uint16_t update,
                                           uint16_t buffer_width );
 
 /**
