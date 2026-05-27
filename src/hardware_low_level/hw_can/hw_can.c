@@ -147,21 +147,28 @@ static inline uint8_t HW_CAN_Buffer_Write( volatile uint8_t   buffer[][CAN_PACKE
                                            uint16_t buffer_width, uint8_t source[][CAN_PACKET_SIZE],
                                            uint16_t length )
 {
-    for ( int i = 0; i < length; i++ )
+    uint16_t temp_w_p = *w_p;
+    uint16_t temp_r_p = *r_p;
+    uint16_t total    = ( ( temp_w_p + length ) % buffer_width );
+    uint16_t free     = ( temp_r_p - temp_w_p - 1 + buffer_width ) % buffer_width;
+    // buffer full?
+    if ( total > free )
     {
-        // buffer full?
-        if ( ( ( *w_p + 1 ) % buffer_width ) == *r_p )
-        {
-            return 1;
-        }
-        // iterate through packet
-        for ( int j = 0; j < CAN_PACKET_SIZE; j++ )
-        {
-            buffer[*w_p][j] = source[i][j];
-        }
-        // update w_p
-        *w_p = ( *w_p + 1 ) % buffer_width;
+        return 1;
     }
+    // Do we wrap around to fit in new elements?
+    uint16_t space_to_end = ( buffer_width - temp_w_p );
+    if ( total <= space_to_end )  // if total > temp_w_p then no wrap around
+    {
+        memcpy( ( const void* )&buffer[temp_w_p], source, length * CAN_PACKET_SIZE );
+        *w_p = ( *w_p + length ) % buffer_width;
+        return 0;
+    }
+    // wrap around required
+    memcpy( ( const void* )&buffer[temp_w_p], source, space_to_end * CAN_PACKET_SIZE );
+    memcpy( ( const void* )buffer, &source[space_to_end],
+            ( length - space_to_end ) * CAN_PACKET_SIZE );
+    *w_p = ( *w_p + length ) % buffer_width;
     return 0;
 }
 
