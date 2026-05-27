@@ -190,12 +190,14 @@ static inline uint16_t HW_CAN_Buffer_Read( volatile uint8_t   buffer[][CAN_PACKE
     if ( temp_w_p < temp_r_p )
     {
         uint16_t count = buffer_width - temp_r_p + temp_w_p;
-        memcpy( dest, ( const void* )&buffer[temp_r_p], (buffer_width - temp_r_p) * CAN_PACKET_SIZE );
-        memcpy( &dest[buffer_width - temp_r_p], ( const void* )buffer, (temp_w_p)*CAN_PACKET_SIZE );
+        memcpy( dest, ( const void* )&buffer[temp_r_p],
+                ( buffer_width - temp_r_p ) * CAN_PACKET_SIZE );
+        memcpy( &dest[buffer_width - temp_r_p], ( const void* )buffer,
+                ( temp_w_p )*CAN_PACKET_SIZE );
         return count;
     }
     uint16_t count = temp_w_p - temp_r_p;
-    memcpy( dest, ( const void* )&buffer[temp_r_p], count*CAN_PACKET_SIZE );
+    memcpy( dest, ( const void* )&buffer[temp_r_p], count * CAN_PACKET_SIZE );
     return count;
 }
 
