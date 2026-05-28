@@ -28,6 +28,7 @@ target_link_libraries(exec_pwm_capture
         global_config
         rtos
         cubeide_hal
+        hw_pwm_capture
 )
 
 # -----------------------------

@@ -26,6 +26,9 @@
 #include <string.h>
 #include <stdlib.h>
 
+/* Includes for PWM Capture*/
+#include "subsystem_command_apis/console_pwm_capture.h"
+
 #include "subsystem_command_apis/console_uart.h"
 
 /**-----------------------------------------------------------------------------
@@ -82,7 +85,9 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"set_pin", CONSOLE_Command_Set_Pin, "Set or reset digital output, Usage: set_pin PIN_NAME <0|1>"},
     {"set_pins", CONSOLE_Command_Set_Many_Pins, "Set or reset many digital output, Usage: set_pin PIN_NAME0 PIN_NAME1 ... PIN_NAMEX <0|1>"},
     {"analogue_inputs", CONSOLE_Command_Analogue_Inputs, "Allows for interaction with Analogue Inputs."},
-    {"digital_input", CONSOLE_Command_DigitalInput, "Print digital input states as 1s and 0s."}
+    {"digital_input", CONSOLE_Command_DigitalInput, "Print digital input states as 1s and 0s."},
+   {"pwm_capture", CONSOLE_PWM_Capture_Command, "Configure/read PWM capture. Usage: pwm_capture <start|stop|read> ..."},
+
 };
 
 // clang-format on
