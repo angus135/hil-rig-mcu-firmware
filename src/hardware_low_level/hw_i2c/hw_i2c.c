@@ -1258,7 +1258,7 @@ bool HW_I2C_Trigger_Slave_Receive_External( HWI2CChannel_T channel, uint16_t exp
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
 
-    if ( expected_length < HW_I2C_RX_BUFFER_SIZE )
+    if ( expected_length > HW_I2C_RX_BUFFER_SIZE )
     {
         return false;
     }
