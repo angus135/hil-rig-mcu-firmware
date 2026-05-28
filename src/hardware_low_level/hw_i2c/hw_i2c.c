@@ -6,7 +6,7 @@
  *  Description:
  *      Low-level hardware I2C driver implementation. Manages I2C peripheral
  *      configuration, state machines for master/slave operations, and interrupt/DMA
- *      service routines. Uses ring-buffered receives and stage-buffered transmits.
+ *      service routines. Uses ring-buffered receives and stage-buffered transmits. 
  *
  *  Notes:
  *      - Requires STM32F4xx HAL/LL driver libraries
