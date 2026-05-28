@@ -100,6 +100,7 @@ typedef struct HWI2CChannelState_T
     volatile bool
         dma_tx_transfer_complete; /* Flag set when DMA TX finishes (for master TX detection) */
 
+    // TODO: store Rx metadata
     /* Receive path: DMA linear buffer (used by DMA transfers on I2C2) */
     uint8_t  dma_rx_linear_buffer[HW_I2C_RX_BUFFER_SIZE]; /* Linear buffer filled by DMA */
     uint16_t dma_rx_expected_length;                      /* Expected DMA receive count */
@@ -991,6 +992,7 @@ HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
  * @return true if data was loaded successfully
  * @return false if transfer is in progress or length exceeds buffer size
  */
+// TODO: allow for queueing system of Tx data
 inline bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data, uint16_t length )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
