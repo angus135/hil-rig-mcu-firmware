@@ -51,12 +51,6 @@ typedef struct Command_T
     const char* command_description;
 } Command_T;
 
-typedef enum
-{
-    CONSOLE_I2C_LOOPBACK_DIR_M2S,
-    CONSOLE_I2C_LOOPBACK_DIR_S2M,
-} ConsoleI2CLoopbackDirection_T;
-
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
