@@ -75,6 +75,7 @@ typedef enum LogicExpanderStatus_T
     LOGIC_EXPANDER_STATUS_NOT_READY,
 } LogicExpanderStatus_T;
 
+// TODO: add type which indicates which expander it is using
 typedef struct LogicExpanderStateSnapshot_T
 {
     uint16_t device_address_7bit;
