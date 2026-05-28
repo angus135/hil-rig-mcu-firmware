@@ -34,12 +34,12 @@
 #define CONSOLE_TASK_PERIOD 5  // 200Hz
 
 #define CONSOLE_LINE_MAX 80U  // max characters in a command line (excluding NUL)
-#define CONSOLE_MAX_ARGS 8U   // max argv entries
+#define CONSOLE_MAX_ARGS 12U  // max argv entries
 
 #define CONSOLE_PRINTF_BUFFER_SIZE 128U
 #define CONSOLE_RX_BUFFER_SIZE 32U
 
-#define CONSOLE_TX_BUFFER_SIZE 512U
+#define CONSOLE_TX_BUFFER_SIZE 2048U
 #define CONSOLE_TX_FLUSH_CHUNK_SIZE 64U
 #define CONSOLE_TX_TIMEOUT_MS 100U
 
@@ -88,6 +88,14 @@ static size_t s_line_len = 0U;
 
 // Used to swallow the second char of CRLF / LFCR so you don't process two "empty" commands.
 static bool s_last_was_newline = false;
+
+/* Shared printf formatting buffer.
+ * This avoids allocating CONSOLE_PRINTF_BUFFER_SIZE bytes on the console task stack.
+ * Not reentrant. CONSOLE_Printf() must not be called concurrently from multiple tasks or ISRs.
+ */
+static char s_console_printf_buffer[CONSOLE_PRINTF_BUFFER_SIZE];
+
+static volatile UBaseType_t dbg_console_stack_high_water = 0U;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -639,26 +647,34 @@ static void CONSOLE_History_Down( void )
  */
 
 /**
- * @brief Printf-style formatted output to the console UART
+ * @brief Printf-style formatted output to the console UART.
  *
- * Formats the input string into a fixed-size buffer using vsnprintf()
- * and transmits the resulting string over the console UART.
+ * Formats the input string into a fixed-size static buffer using vsnprintf()
+ * and queues the resulting string for console transmission.
  *
  * Output is truncated if it exceeds the internal buffer size.
  *
- * @param format  Standard printf-style format string
- * @param ...     Variable arguments corresponding to the format string
+ * @warning This function is not reentrant because it uses a shared static
+ *          formatting buffer. It must only be called from one context at a time,
+ *          typically the console task.
+ *
+ * @param format  Standard printf-style format string.
+ * @param ...     Variable arguments corresponding to the format string.
  *
  * @returns void
  */
 void CONSOLE_Printf( const char* format, ... )
 {
-    char buffer[CONSOLE_PRINTF_BUFFER_SIZE];
+    if ( format == NULL )
+    {
+        return;
+    }
 
     va_list args;
     va_start( args, format );
 
-    const int len = vsnprintf( buffer, sizeof( buffer ), format, args );
+    const int len =
+        vsnprintf( s_console_printf_buffer, sizeof( s_console_printf_buffer ), format, args );
 
     va_end( args );
 
@@ -667,11 +683,11 @@ void CONSOLE_Printf( const char* format, ... )
         return;
     }
 
-    // Clamp length to buffer size
-    uint32_t count =
-        ( len < ( int )sizeof( buffer ) ) ? ( uint32_t )len : ( uint32_t )( sizeof( buffer ) - 1U );
+    const uint32_t count = ( len < ( int )sizeof( s_console_printf_buffer ) )
+                               ? ( uint32_t )len
+                               : ( uint32_t )( sizeof( s_console_printf_buffer ) - 1U );
 
-    CONSOLE_Write_Raw( ( const uint8_t* )buffer, count );
+    CONSOLE_Write_Raw( ( const uint8_t* )s_console_printf_buffer, count );
 }
 
 /**
@@ -703,6 +719,18 @@ void CONSOLE_Task( void* task_parameters )
     {
         CONSOLE_Process();
         CONSOLE_Flush_Tx();
+
+#ifndef TEST_BUILD
+        /*
+         * Monitor the console task's worst-case remaining stack.
+         *
+         * Some console commands use relatively deep call paths and formatted output.
+         * This value is used during bring-up to confirm that the console task stack is
+         * sized with adequate margin.
+         */
+        dbg_console_stack_high_water = uxTaskGetStackHighWaterMark( NULL );
+#endif
+
         vTaskDelayUntil( &initial_ticks, pdMS_TO_TICKS( CONSOLE_TASK_PERIOD ) );
     }
 }
