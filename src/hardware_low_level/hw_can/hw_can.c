@@ -157,7 +157,7 @@ uint8_t HW_CAN_Buffer_Write( volatile uint8_t buffer[][CAN_PACKET_SIZE], volatil
     }
     // Do we wrap around to fit in new elements?
     uint16_t space_to_end = ( buffer_width - temp_w_p );
-    if ( total <= space_to_end )  // if total > temp_w_p then no wrap around
+    if ( length <= space_to_end )  // if total > temp_w_p then no wrap around
     {
         memcpy( ( void* )&buffer[temp_w_p], source, length * CAN_PACKET_SIZE );
         *w_p = ( *w_p + length ) % buffer_width;
