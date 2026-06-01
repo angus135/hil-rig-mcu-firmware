@@ -29,7 +29,6 @@
 #include "hw_pwm_gen.h"
 #include <stdint.h>
 #include <stdbool.h>
-#include <math.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
