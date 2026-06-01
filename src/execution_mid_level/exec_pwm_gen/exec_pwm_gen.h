@@ -25,6 +25,7 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "hw_pwm_gen.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -64,6 +65,15 @@ inline void EXEC_PWM_GEN_Set_PWM_LV( uint16_t arr, uint16_t ccr, uint16_t psc );
  * This function is designed to be very fast and should be implemented in the execution phase
  */
 inline void EXEC_PWM_GEN_Set_PWM_HV( uint16_t arr, uint16_t ccr, uint16_t psc );
+
+/**
+ * @brief Configures the pwm output.
+ *
+ * @param channel   The channel you want to configure
+ * @param volt_lvl  The voltage level you want
+ *
+ */
+void Exec_PWM_GEN_Config( PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl );
 
 #ifdef __cplusplus
 }
