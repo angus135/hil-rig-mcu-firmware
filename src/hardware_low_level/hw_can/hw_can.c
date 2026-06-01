@@ -192,6 +192,11 @@ uint16_t HW_CAN_Buffer_Read( volatile uint8_t buffer[][CAN_PACKET_SIZE], volatil
 {
     uint16_t temp_r_p = *r_p;
     uint16_t temp_w_p = *w_p;
+    // check if nothing to read
+    if ( temp_r_p == temp_w_p )
+    {
+        return 0;
+    }
     // Check if we need to wrap around
     if ( temp_w_p < temp_r_p )
     {

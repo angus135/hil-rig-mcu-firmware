@@ -272,11 +272,11 @@ void CONSOLE_CAN_Command_Handler( uint16_t argc, char* argv[] )
             }
             // transmitting on channel 1
             pass_argc = argc - 1;
-            for ( int i = 1; i < argc - 2; i++ )
+            for ( int i = 1; i < argc - 1; i++ )
             {
                 pass_argv[i] = argv[i + 1];
             }
-            CONSOLE_Command_Can_rx( pass_argc, pass_argv );
+            CONSOLE_Command_Can_tx( pass_argc, pass_argv );
             return;
         }
         else if ( strcmp( argv[2], "2" ) == 0 )
@@ -289,11 +289,11 @@ void CONSOLE_CAN_Command_Handler( uint16_t argc, char* argv[] )
             }
             // transmitting on channel 2
             pass_argc = argc - 1;
-            for ( int i = 1; i < argc - 2; i++ )
+            for ( int i = 1; i < argc - 1; i++ )
             {
                 pass_argv[i] = argv[i + 1];
             }
-            CONSOLE_Command_Can_rx( pass_argc, pass_argv );
+            CONSOLE_Command_Can_tx( pass_argc, pass_argv );
             return;
         }
         else
