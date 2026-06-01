@@ -84,3 +84,15 @@ inline void EXEC_PWM_GEN_Set_PWM_HV( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
     HW_PWM_GEN_set_pwm2_direct( arr, ccr, psc );
 }
+
+
+/**
+ * @brief Configures the pwm output.
+ *
+ * @param channel   The channel you want to configure 
+ * @param volt_lvl  The voltage level you want 
+ *
+ */
+void Exec_PWM_GEN_Config(PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl) {
+    HW_PWM_GEN_config(channel, volt_lvl);
+}

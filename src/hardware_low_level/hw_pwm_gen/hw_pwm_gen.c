@@ -74,8 +74,9 @@
  * instead they should be run previously to pre-compute the required values
  */
 
+
 /**
- * @brief Computes the pwm output.
+ * @brief Configures the pwm output.
  *
  * @param channel   The channel you want to configure <1|2|3|4>
  * @param volt_lvl  The voltage level you want (low or high <0|1>)
@@ -208,7 +209,7 @@ uint16_t HW_PWM_GEN_compute_ccr( uint16_t duty_pm, uint16_t arr )
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr, uint16_t psc )
+inline void HW_PWM_GEN_Set_PWM1_Direct( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
     TIM_TypeDef* tim = ( *CHANNEL1_TIM ).Instance;
     LL_TIM_OC_SetCompareCH2( tim, ccr );
@@ -226,7 +227,7 @@ inline void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr, uint16_t psc
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void HW_PWM_GEN_set_pwm2_direct( uint16_t arr, uint16_t ccr, uint16_t psc )
+inline void HW_PWM_GEN_Set_PWM2_Direct( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
     TIM_TypeDef* tim = ( *CHANNEL1_TIM ).Instance;
     LL_TIM_OC_SetCompareCH1( tim, ccr );
