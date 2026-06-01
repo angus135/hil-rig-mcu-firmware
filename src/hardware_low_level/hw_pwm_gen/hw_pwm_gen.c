@@ -80,7 +80,7 @@
  * @param volt_lvl  The voltage level you want (low or high <0|1>)
  *
  */
-void HW_PWM_GEN_config( PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl )
+void HW_PWM_GEN_Config( PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl )
 {
     // Call to output expander to set voltage levels
 

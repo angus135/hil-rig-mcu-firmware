@@ -244,7 +244,7 @@ TEST_F( HWPWMGenTest, ComputeCCRClampsDutyAbove100Percent )
 
 TEST_F( HWPWMGenTest, SetPWM1DirectUpdatesTIM12Registers )
 {
-    HW_PWM_GEN_set_pwm1_direct( 1000, 250, 4 );
+    HW_PWM_GEN_Set_PWM1_Direct( 1000, 250, 4 );
 
     EXPECT_EQ( mock_tim12_regs.CCR2, 250 );
     EXPECT_EQ( mock_tim12_regs.ARR, 1000 );
@@ -253,7 +253,7 @@ TEST_F( HWPWMGenTest, SetPWM1DirectUpdatesTIM12Registers )
 
 TEST_F( HWPWMGenTest, SetPWM2DirectUpdatesTIM12Registers )
 {
-    HW_PWM_GEN_set_pwm2_direct( 2000, 500, 8 );
+    HW_PWM_GEN_Set_PWM2_Direct( 2000, 500, 8 );
 
     EXPECT_EQ( mock_tim12_regs.CCR1, 500 );
     EXPECT_EQ( mock_tim12_regs.ARR, 2000 );
@@ -262,7 +262,7 @@ TEST_F( HWPWMGenTest, SetPWM2DirectUpdatesTIM12Registers )
 
 TEST_F( HWPWMGenTest, SetPWM1DirectDoesNotModifyOtherChannels )
 {
-    HW_PWM_GEN_set_pwm1_direct( 1000, 111, 2 );
+    HW_PWM_GEN_Set_PWM1_Direct( 1000, 111, 2 );
 
     EXPECT_EQ( mock_tim12_regs.CCR1, 0 );
     EXPECT_EQ( mock_tim12_regs.CCR2, 111 );
@@ -272,7 +272,7 @@ TEST_F( HWPWMGenTest, SetPWM1DirectDoesNotModifyOtherChannels )
 
 TEST_F( HWPWMGenTest, SetPWM2DirectDoesNotModifyOtherChannels )
 {
-    HW_PWM_GEN_set_pwm2_direct( 1000, 222, 3 );
+    HW_PWM_GEN_Set_PWM2_Direct( 1000, 222, 3 );
 
     EXPECT_EQ( mock_tim12_regs.CCR1, 222 );
     EXPECT_EQ( mock_tim12_regs.CCR2, 0 );
@@ -290,7 +290,7 @@ TEST_F( HWPWMGenTest, ConfigStartsLVChannelLowVoltagePWM )
         .Times( 1 )
         .WillOnce( Return( HAL_OK ) );
 
-    HW_PWM_GEN_config( PWM_GEN_CHANNEL_LV, PWM_GEN_VOLTAGE_LOW );
+    HW_PWM_GEN_Config( PWM_GEN_CHANNEL_LV, PWM_GEN_VOLTAGE_LOW );
 }
 
 TEST_F( HWPWMGenTest, ConfigStartsLVChannelHighVoltagePWM )
@@ -299,7 +299,7 @@ TEST_F( HWPWMGenTest, ConfigStartsLVChannelHighVoltagePWM )
         .Times( 1 )
         .WillOnce( Return( HAL_OK ) );
 
-    HW_PWM_GEN_config( PWM_GEN_CHANNEL_LV, PWM_GEN_VOLTAGE_HIGH );
+    HW_PWM_GEN_Config( PWM_GEN_CHANNEL_LV, PWM_GEN_VOLTAGE_HIGH );
 }
 
 TEST_F( HWPWMGenTest, ConfigStartsHVChannelLowVoltagePWM )
@@ -308,7 +308,7 @@ TEST_F( HWPWMGenTest, ConfigStartsHVChannelLowVoltagePWM )
         .Times( 1 )
         .WillOnce( Return( HAL_OK ) );
 
-    HW_PWM_GEN_config( PWM_GEN_CHANNEL_HV, PWM_GEN_VOLTAGE_LOW );
+    HW_PWM_GEN_Config( PWM_GEN_CHANNEL_HV, PWM_GEN_VOLTAGE_LOW );
 }
 
 TEST_F( HWPWMGenTest, ConfigStartsHVChannelHighVoltagePWM )
@@ -317,7 +317,7 @@ TEST_F( HWPWMGenTest, ConfigStartsHVChannelHighVoltagePWM )
         .Times( 1 )
         .WillOnce( Return( HAL_OK ) );
 
-    HW_PWM_GEN_config( PWM_GEN_CHANNEL_HV, PWM_GEN_VOLTAGE_HIGH );
+    HW_PWM_GEN_Config( PWM_GEN_CHANNEL_HV, PWM_GEN_VOLTAGE_HIGH );
 }
 
 /*-----------------------------------------------------------------------------
