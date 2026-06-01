@@ -61,7 +61,7 @@ typedef enum
  * @param volt_lvl  The voltage level you want (low or high <0|1>)
  *
  */
-void HW_PWM_GEN_config( PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl );
+void HW_PWM_GEN_Config( PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl );
 
 /**
  * @brief Computes the prescaler register (PSC).
@@ -118,7 +118,7 @@ uint16_t HW_PWM_GEN_compute_ccr( uint16_t duty_pm, uint16_t arr );
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr, uint16_t psc );
+void HW_PWM_GEN_Set_PWM1_Direct( uint16_t arr, uint16_t ccr, uint16_t psc );
 
 /**
  * @brief Updates the PWM registers associated with channel 2.
@@ -130,7 +130,7 @@ void HW_PWM_GEN_set_pwm1_direct( uint16_t arr, uint16_t ccr, uint16_t psc );
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-void HW_PWM_GEN_set_pwm2_direct( uint16_t arr, uint16_t ccr, uint16_t psc );
+void HW_PWM_GEN_Set_PWM2_Direct( uint16_t arr, uint16_t ccr, uint16_t psc );
 
 #ifdef __cplusplus
 }
