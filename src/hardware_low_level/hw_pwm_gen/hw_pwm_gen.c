@@ -73,7 +73,6 @@
  * instead they should be run previously to pre-compute the required values
  */
 
-
 /**
  * @brief Configures the pwm output.
  *
