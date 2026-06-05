@@ -32,22 +32,105 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-// #define MODULE_FEATURE_FLAG   (1U)
-// Add macros intended for use outside this module here
-
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
 
-// typedef enum { STATE_IDLE, STATE_BUSY } Module_State_T;
-// typedef struct { uint16_t value; bool ready; } Module_Data_T;
-// Add types that must be visible to other modules here
+typedef enum
+{
+    PWM_GEN_VOLTAGE_LOW,
+    PWM_GEN_VOLTAGE_HIGH
+} PwmGenVoltageLevel_T;
+
+typedef enum
+{
+    PWM_GEN_CHANNEL_LV,
+    PWM_GEN_CHANNEL_HV
+} PwmGenChannel_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Computes the pwm output.
+ *
+ * @param channel   The channel you want to configure <1|2|3|4>
+ * @param volt_lvl  The voltage level you want (low or high <0|1>)
+ *
+ */
+void HW_PWM_GEN_Config( PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl );
+
+/**
+ * @brief Computes the prescaler register (PSC).
+ *
+ * @param freq_hz   the desired frequency of the PWM signal
+ * @param timer_clk_hz the frequency of the timer being used to drive the PWM
+ *
+ * @return a uint16_t which can be placed directly in the PSC,
+ * This function computes the value of the prescaler (PSC)
+ * which is needed to achieve the desired frequency
+ * These functions should be use during configuration to prepare
+ * the frequency and duty cycle instructions for quick running
+ */
+uint16_t HW_PWM_GEN_compute_psc( uint32_t freq_hz, uint32_t timer_clk_hz );
+
+/**
+ * @brief Computes the auto reloader register (ARR).
+ *
+ * @param freq_hz   the desired frequency of the PWM signal
+ * @param timer_clk_hz the frequency of the timer being used to drive the PWM
+ * @param prescaler the prescaler associated with the driving timer
+ *
+ * @return a uint16_t which can be placed directly in the ARR, (some advanced timers eg TIM1 use 32
+bits)
+ * This function computes the value of the auto reloader register (ARR)
+ * which is needed to achieve the desired frequency
+ * These functions should be use during configuration to prepare
+ * the frequency and duty cycle instructions for quick running
+ */
+uint16_t HW_PWM_GEN_compute_arr( uint32_t freq_hz, uint32_t timer_clk_hz, uint16_t prescaler );
+
+/**
+ * @brief Computes the compare register (CCR) for a given duty cycle.
+ *
+ * @param duty_pm   the desired duty cycle (0>=duty_pm<=1000)
+ * @param arr the value of the auto reloader register ARR associated with this PWM signal
+ *
+ * @return a uint16_t which can be placed directly in the CCR, (some advanced timers eg TIM1 use 32
+bits)
+ * This function computes the value of the compare register (CCR)
+ * which is needed to achieve the desired duty cycle.
+ * These functions should be use during configuration to prepare
+ * the frequency and duty cycle instructions for quick running
+ */
+uint16_t HW_PWM_GEN_compute_ccr( uint16_t duty_pm, uint16_t arr );
+
+/**
+ * @brief Updates the PWM registers associated with channel 1.
+ *
+ * @param arr   the value of the auto reloader register (ARR) associated with this PWM signal
+ * @param ccr the value of the compare register (CCR) associated with this PWM signal
+ *
+ * This function sets the values of the PWM channel 1 registers
+ * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
+ * This function is designed to be very fast and should be implemented in the execution phase
+ */
+void HW_PWM_GEN_Set_PWM1_Direct( uint16_t arr, uint16_t ccr, uint16_t psc );
+
+/**
+ * @brief Updates the PWM registers associated with channel 2.
+ *
+ * @param arr   the value of the auto reloader register (ARR) associated with this PWM signal
+ * @param ccr the value of the compare register (CCR) associated with this PWM signal
+ *
+ * This function sets the values of the PWM channel 2 registers
+ * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
+ * This function is designed to be very fast and should be implemented in the execution phase
+ */
+void HW_PWM_GEN_Set_PWM2_Direct( uint16_t arr, uint16_t ccr, uint16_t psc );
 
 #ifdef __cplusplus
 }

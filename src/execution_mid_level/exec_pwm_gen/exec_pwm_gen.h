@@ -25,6 +25,7 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "hw_pwm_gen.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -40,6 +41,39 @@ extern "C"
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Updates the PWM registers associated with channel 1.
+ *
+ * @param arr   the value of the auto reloader register (ARR) associated with this PWM signal
+ * @param ccr the value of the compare register (CCR) associated with this PWM signal
+ *
+ * This function sets the values of the PWM channel 1 registers
+ * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
+ * This function is designed to be very fast and should be implemented in the execution phase
+ */
+inline void EXEC_PWM_GEN_Set_PWM_LV( uint16_t arr, uint16_t ccr, uint16_t psc );
+
+/**
+ * @brief Updates the PWM registers associated with channel 2.
+ *
+ * @param arr   the value of the auto reloader register (ARR) associated with this PWM signal
+ * @param ccr the value of the compare register (CCR) associated with this PWM signal
+ *
+ * This function sets the values of the PWM channel 2 registers
+ * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
+ * This function is designed to be very fast and should be implemented in the execution phase
+ */
+inline void EXEC_PWM_GEN_Set_PWM_HV( uint16_t arr, uint16_t ccr, uint16_t psc );
+
+/**
+ * @brief Configures the pwm output.
+ *
+ * @param channel   The channel you want to configure
+ * @param volt_lvl  The voltage level you want
+ *
+ */
+void Exec_PWM_GEN_Config( PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl );
 
 #ifdef __cplusplus
 }
