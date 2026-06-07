@@ -16,7 +16,6 @@
  */
 #include "command_helpers.h"
 #include "exec_spi.h"
-#include "hw_spi.h"
 #include "console.h"
 #include <stdint.h>
 #include <stdbool.h>

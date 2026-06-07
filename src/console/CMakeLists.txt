@@ -9,6 +9,8 @@ set(CONSOLE_SOURCES
     command_handler.c
     subsystem_command_apis/console_spi.c
     subsystem_command_apis/console_uart.c
+    subsystem_command_apis/console_logic_expander.c
+    subsystem_command_apis/console_I2C.c
 )
 
 set(CONSOLE_HEADERS
@@ -40,6 +42,7 @@ target_link_libraries(console
     execution_manager
     exec_digital_input
     hw_gpio
+    hw_i2c
     exec_i2c
     logic_expander
 )

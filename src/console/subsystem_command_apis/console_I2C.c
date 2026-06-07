@@ -24,8 +24,9 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
+#include "hw_i2c.h"
 #include "exec_i2c.h"
-#include "console_I2C.h"
+#include "command_helpers.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros

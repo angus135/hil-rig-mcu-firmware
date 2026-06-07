@@ -32,8 +32,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include "subsystem_command_apis/console_logic_expander.h"
-#include "subsystem_command_apis/console_I2C.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
