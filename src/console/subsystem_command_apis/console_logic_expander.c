@@ -24,7 +24,8 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
-#include "console_logic_expander.h"
+#include "logic_expander.h"
+#include "command_helpers.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
