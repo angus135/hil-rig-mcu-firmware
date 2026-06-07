@@ -72,6 +72,7 @@ typedef enum GPIOOutput_T
     LD1,               // Added by Tim for DEV-68
     LD2,               // Added by Tim for DEV-68
     LD3                // Added by Tim for DEV-68
+    // TODO: Add pins for SPI CH1 and CH2 NSS
 } GPIOOutput_T;
 
 typedef struct
