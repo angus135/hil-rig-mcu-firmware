@@ -506,6 +506,9 @@ void HW_GPIO_Reset_Many_Pins( GPIOOutput_T* pins, uint16_t length )
  *------------------------------------------------------------------------------
  */
 
+// TODO: Create a hardware configuration function where the GPIO peripherals are configured,
+// should be matched to work for NSS for SPI
+
 /**
  * @brief Converts a string to a digital pin name
  *
