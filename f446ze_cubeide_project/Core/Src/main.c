@@ -120,8 +120,8 @@ int main(void)
   MX_TIM12_Init();
   MX_TIM13_Init();
   MX_TIM14_Init();
-  MX_TIM7_Init();
   MX_TIM6_Init();
+  MX_TIM7_Init();
   MX_TIM11_Init();
   /* USER CODE BEGIN 2 */
   APP_MAIN_Application();
@@ -143,7 +143,6 @@ int main(void)
     while ( 1 )
     {
     /* USER CODE END WHILE */
-
 
     /* USER CODE BEGIN 3 */
     }
