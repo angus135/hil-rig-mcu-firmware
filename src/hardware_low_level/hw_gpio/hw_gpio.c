@@ -144,11 +144,6 @@ static GPIOPortPacket_T HW_GPIO_Port_Pin_Association( GPIOOutput_T gpio_name )
             return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_8_Pin };
         case DIGITAL_OUTPUT_9:  // Added by Tim for DEV-68
             return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_9_Pin };
-        case USB_POWERSWITCH:  // Added by Tim as an example in DEV-68
-            return ( struct GPIOPortPacket_T ){ USB_PowerSwitchOn_GPIO_Port,
-                                                USB_PowerSwitchOn_Pin };
-        case USB_OVER_CURRENT:  // Added by Tim as an example in DEV-68
-            return ( struct GPIOPortPacket_T ){ USB_OverCurrent_GPIO_Port, USB_OverCurrent_Pin };
         case LD1:  // Added by Tim for DEV-68
             return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
         case LD2:  // Added by Tim for DEV-68

@@ -67,8 +67,6 @@ typedef enum GPIOOutput_T
     DIGITAL_OUTPUT_7,  // Added by Tim for DEV-68
     DIGITAL_OUTPUT_8,  // Added by Tim for DEV-68
     DIGITAL_OUTPUT_9,  // Added by Tim for DEV-68
-    USB_POWERSWITCH,   // Added by Tim as an example, whoever does power firmware can replace
-    USB_OVER_CURRENT,  // Added by Tim as an example, whoever does power firmware can replace
     LD1,               // Added by Tim for DEV-68
     LD2,               // Added by Tim for DEV-68
     LD3                // Added by Tim for DEV-68
@@ -91,8 +89,6 @@ static const GPIO_Name_Map gpio_name_map[] = {
     { "DIGITAL_OUTPUT_7", DIGITAL_OUTPUT_7 },
     { "DIGITAL_OUTPUT_8", DIGITAL_OUTPUT_8 },
     { "DIGITAL_OUTPUT_9", DIGITAL_OUTPUT_9 },
-    { "USB_POWERSWITCH", USB_POWERSWITCH },
-    { "USB_OVER_CURRENT", USB_OVER_CURRENT },
     { "LD1", LD1 },
     { "LD2", LD2 },
     { "LD3", LD3 },
