@@ -106,8 +106,6 @@ const Command_T CONSOLE_COMMANDS[] = {
 
 // clang-format on
 
-static ConsoleUartLoopbackState_T s_uart_loopback_state = { 0 };
-
 static bool usb_initialised = false;
 
 /**-----------------------------------------------------------------------------
