@@ -79,7 +79,7 @@ void HAL_PCD_MspInit(PCD_HandleTypeDef* pcdHandle)
   /** Initializes the peripherals clock
   */
     PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_CLK48;
-    PeriphClkInitStruct.PLLSAI.PLLSAIM = 16;
+    PeriphClkInitStruct.PLLSAI.PLLSAIM = 8;
     PeriphClkInitStruct.PLLSAI.PLLSAIN = 192;
     PeriphClkInitStruct.PLLSAI.PLLSAIQ = 2;
     PeriphClkInitStruct.PLLSAI.PLLSAIP = RCC_PLLSAIP_DIV4;
