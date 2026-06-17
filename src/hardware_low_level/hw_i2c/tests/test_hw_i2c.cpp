@@ -7,7 +7,7 @@
  *      Unit tests for the low-level hardware I2C driver.
  *
  *      These tests verify configuration, transfer setup, and receive-buffer
- *      behavior for the STM32F446ZE I2C1, I2C2, and FMPI2C1 channels.
+ *      behavior for the STM32F446ZE I2C3, I2C2, and FMPI2C1 channels.
  *
  *  Notes:
  *      - Production code is written in C; tests are written in C++.
@@ -61,7 +61,7 @@ extern "C"
  *      Unit tests for the low-level hardware I2C driver.
  *
  *      These tests verify configuration, transfer setup, and receive-buffer
- *      behavior for the STM32F446ZE I2C1, I2C2, and FMPI2C1 channels.
+ *      behavior for the STM32F446ZE I2C3, I2C2, and FMPI2C1 channels.
  * Provides a consistent setup/teardown environment for all test cases.
  */
 class HWI2CTest : public ::testing::Test

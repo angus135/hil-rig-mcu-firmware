@@ -11,7 +11,7 @@
  *      orchestration via peek/copy/consume pattern.
  *
  *  Notes:
- *      - Manages I2C1, I2C2 (external) and FMPI2C1 (internal) channels
+ *      - Manages I2C3, I2C2 (external) and FMPI2C1 (internal) channels
  *      - Does not directly manipulate hardware; all operations go through hw_i2c
  *      - Stage buffer size: 256 bytes (defined in hw_i2c)
  *      - Receive ring buffer size: 512 bytes (defined in hw_i2c)
@@ -73,7 +73,7 @@ typedef struct EXECI2CChannelConfig_T
 /**
  * @brief Configure all I2C channels with validation.
  *
- * Validates configuration parameters for both external channels (I2C1 and I2C2)
+ * Validates configuration parameters for both external channels (I2C3 and I2C2)
  * and delegates configuration to hw_i2c.
  * Must be called before any transfers.
  *
@@ -82,7 +82,7 @@ typedef struct EXECI2CChannelConfig_T
  *       - i2c2_config is non-NULL
  *       Configuration validation occurs; invalid configs will be rejected.
  *
- * @param[in] i2c1_config                           Configuration for I2C1 channel
+ * @param[in] i2c1_config                           Configuration for I2C3 channel
  * @param[in] i2c2_config                           Configuration for I2C2 channel
  *
  * @return EXEC_I2C_STATUS_OK on success
@@ -142,7 +142,7 @@ bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* pa
 /**
  * @brief Initiate master receive on an external I2C channel.
  *
- * Requests data from a slave device on the specified external channel (I2C1 or I2C2).
+ * Requests data from a slave device on the specified external channel (I2C3 or I2C2).
  * Received data is buffered internally and can be retrieved with
 EXEC_I2C_Receive_Copy_And_Consume().
  *

@@ -6,7 +6,7 @@
 
 This module is responsible for:
 
-- Configuring I2C channels (I2C1, I2C2, and internal FMPI2C1) in master or slave mode
+- Configuring I2C channels (I2C3, I2C2, and internal FMPI2C1) in master or slave mode
 - Managing I2C transfers at the hardware level using interrupt and DMA pathways
 - Implementing ring-buffered receive mechanisms for efficient data handling
 - Orchestrating master and slave transmit operations using stage-buffer patterns
@@ -31,7 +31,7 @@ This module is responsible for:
 
 ### Channel Support
 
-- **I2C1**: External channel (interrupt-based transfers only, no DMA)
+- **I2C3**: External channel (interrupt-based transfers only, no DMA)
 - **I2C2**: External channel (interrupt or DMA-based transfers)
 - **FMPI2C1**: Internal high-speed channel (interrupt-based transfers only)
 

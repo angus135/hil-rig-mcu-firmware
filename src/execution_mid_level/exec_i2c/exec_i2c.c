@@ -10,7 +10,7 @@
  *
  *  Notes:
  *      - Configuration validation includes mode, speed, transfer path, and address checks
- *      - I2C1 does not support DMA transfers (interrupt-only)
+ *      - I2C3 does not support DMA transfers (interrupt-only)
  *      - I2C2 supports both interrupt and DMA transfer paths
  *      - All functions delegate to hw_i2c for actual hardware operations
  *      - Thread-safety must be ensured at higher layers
@@ -116,7 +116,7 @@ static EXECI2CStatus_T EXEC_I2C_Validate_Config( HWI2CChannel_T                c
         return EXEC_I2C_STATUS_INVALID_PARAM;
     }
 
-    /* I2C1 does not support DMA transfers */
+    /* I2C3 does not support DMA transfers */
     if ( channel == HW_I2C_CHANNEL_1 )
     {
         if ( ( config->tx_transfer_path == HW_I2C_TRANSFER_DMA )
@@ -137,7 +137,7 @@ static EXECI2CStatus_T EXEC_I2C_Validate_Config( HWI2CChannel_T                c
 /**
  * @brief Configure all I2C channels with validation.
  *
- * Validates configuration parameters for both external channels (I2C1 and I2C2)
+ * Validates configuration parameters for both external channels (I2C3 and I2C2)
  * and delegates configuration to hw_i2c.
  * Must be called before any transfers.
  *
@@ -146,7 +146,7 @@ static EXECI2CStatus_T EXEC_I2C_Validate_Config( HWI2CChannel_T                c
  *       - i2c2_config is non-NULL
  *       Configuration validation occurs; invalid configs will be rejected.
  *
- * @param[in] i2c1_config                           Configuration for I2C1 channel
+ * @param[in] i2c1_config                           Configuration for I2C3 channel
  * @param[in] i2c2_config                           Configuration for I2C2 channel
  *
  * @return EXEC_I2C_STATUS_OK on success
@@ -253,7 +253,7 @@ bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* pa
 /**
  * @brief Initiate master receive on an external I2C channel.
  *
- * Requests data from a slave device on the specified external channel (I2C1 or I2C2).
+ * Requests data from a slave device on the specified external channel (I2C3 or I2C2).
  * Received data is buffered internally and can be retrieved with
 EXEC_I2C_Receive_Copy_And_Consume().
  *
