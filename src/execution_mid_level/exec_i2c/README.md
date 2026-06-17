@@ -8,7 +8,7 @@ This module is responsible for:
 
 - Validating higher-layer I2C channel configuration requests for the two external buses.
 - Calling low-level `hw_i2c` configuration APIs for:
-  - `I2C1` external channel
+  - `I2C3` external channel
   - `I2C2` external channel
   - `FMPI2C1` internal channel
 - Handling transmit orchestration using the stage-buffer pattern:
@@ -65,7 +65,7 @@ It is a coordination layer between higher-level logic and `hw_i2c`.
 
 `EXEC_I2C_Configuration(...)` configures the two external channels in one call.
 
-- External `I2C1`: configurable from higher layer.
+- External `I2C3`: configurable from higher layer.
 - External `I2C2`: configurable from higher layer.
 
 For each external channel, higher layer provides:
@@ -73,7 +73,7 @@ For each external channel, higher layer provides:
 - Mode: `HW_I2C_MODE_MASTER` or `HW_I2C_MODE_SLAVE`
 - Speed: `HW_I2C_SPEED_100KHZ` or `HW_I2C_SPEED_400KHZ`
 - Transfer path:
-  - `I2C1`: `HW_I2C_TRANSFER_INTERRUPT` only
+  - `I2C3`: `HW_I2C_TRANSFER_INTERRUPT` only
   - `I2C2`: `HW_I2C_TRANSFER_INTERRUPT` or `HW_I2C_TRANSFER_DMA`
 - Own address: 7-bit value (`0x00` to `0x7F`)
 

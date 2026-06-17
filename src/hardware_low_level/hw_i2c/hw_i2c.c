@@ -11,7 +11,7 @@
  *  Notes:
  *      - Requires STM32F4xx HAL/LL driver libraries
  *      - FMPI2C1 operates at 100 kHz with fixed timing register value
- *      - I2C1 interrupt-only; I2C2 supports DMA; FMPI2C1 interrupt-only
+ *      - I2C3 interrupt-only; I2C2 supports DMA; FMPI2C1 interrupt-only
  *      - Receive buffers are 512 bytes; transmit stage is 256 bytes
  *      - Not thread-safe; assumes single-threaded execution or external synchronization
  *      - Interrupt handlers must be called from corresponding ISRs in stm32f4xx_it.c
@@ -53,7 +53,7 @@
 #define HW_I2C_CHANNEL_2_DMA_TX_CLEAR_FLAGS_MASK                                                   \
     ( DMA_HIFCR_CTCIF7 | DMA_HIFCR_CTEIF7 | DMA_HIFCR_CDMEIF7 | DMA_HIFCR_CFEIF7 )
 
-#define HW_I2C_EV_IRQ_CHANNEL_1 I2C1_EV_IRQHandler
+#define HW_I2C_EV_IRQ_CHANNEL_1 I2C3_EV_IRQHandler
 #define HW_I2C_EV_IRQ_CHANNEL_2 I2C2_EV_IRQHandler
 #define HW_I2C_EV_IRQ_FMPI2C1 FMPI2C1_EV_IRQHandler
 #define HW_I2C_DMA_RX_IRQ_CHANNEL_2 DMA1_Stream2_IRQHandler
@@ -134,7 +134,7 @@ typedef struct HWI2CMapping_T
 } HWI2CMapping_T;
 
 static const HWI2CMapping_T HW_I2C_MAP[HW_I2C_CHANNEL_COUNT] = {
-    { .instance = I2C1, .dma_rx = NULL, .dma_tx = NULL, .dma_channel_bits = 0UL },
+    { .instance = I2C3, .dma_rx = NULL, .dma_tx = NULL, .dma_channel_bits = 0UL },
     { .instance         = I2C2,
       .dma_rx           = HW_I2C_CHANNEL_2_DMA_RX_STREAM,
       .dma_tx           = HW_I2C_CHANNEL_2_DMA_TX_STREAM,
@@ -227,7 +227,7 @@ static inline bool HW_I2C_Config_Is_Valid( HWI2CChannel_T              channel,
         return false;
     }
 
-    /* I2C1 does not support DMA */
+    /* I2C3 does not support DMA */
     if ( channel == HW_I2C_CHANNEL_1 )
     {
         if ( ( config->tx_transfer_path == HW_I2C_TRANSFER_DMA )
@@ -285,7 +285,7 @@ static inline void HW_I2C_Enable_Clock_For_Channel( HWI2CChannel_T channel )
     switch ( channel )
     {
         case HW_I2C_CHANNEL_1:
-            LL_APB1_GRP1_EnableClock( LL_APB1_GRP1_PERIPH_I2C1 );
+            LL_APB1_GRP1_EnableClock( LL_APB1_GRP1_PERIPH_I2C3 );
             break;
         case HW_I2C_CHANNEL_2:
             LL_APB1_GRP1_EnableClock( LL_APB1_GRP1_PERIPH_I2C2 );
@@ -522,7 +522,7 @@ static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
                                                   I2C_TypeDef*   i2c_instance )
 {
     /**
-     * @brief Service I2C events for an external I2C channel (I2C1/I2C2).
+     * @brief Service I2C events for an external I2C channel (I2C3/I2C2).
      *
      * This function is intended to be called from the I2C event interrupt
      * handler. It inspects SR1 to determine the event and then updates
@@ -751,7 +751,7 @@ static inline void HW_I2C_Service_Event_IRQ( HWI2CChannel_T channel )
         return;
     }
 
-    /* External channels (I2C1, I2C2) route to their dedicated handler. */
+    /* External channels (I2C3, I2C2) route to their dedicated handler. */
     I2C_TypeDef* i2c_instance = HW_I2C_MAP[channel].instance;
     if ( i2c_instance == NULL )
     {
@@ -871,7 +871,7 @@ static inline void HW_I2C_Service_DMA_Tx_IRQ( HWI2CChannel_T channel )
  */
 
 /**
- * @brief Configure an external I2C channel (I2C1 or I2C2).
+ * @brief Configure an external I2C channel (I2C3 or I2C2).
  *
  * Initializes an I2C channel with the specified configuration including mode
  * (master/slave), speed (100 kHz / 400 kHz), and transfer path (interrupt/DMA).
@@ -1018,7 +1018,7 @@ inline bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* dat
  * @brief Trigger a master transmit operation on an external I2C channel.
  *
  * Initiates an I2C master transmit to the specified device address on an external channel
- * (I2C1 or I2C2) using data previously loaded with HW_I2C_Load_Stage_Buffer().
+ * (I2C3 or I2C2) using data previously loaded with HW_I2C_Load_Stage_Buffer().
  * Supports both interrupt and DMA-based transfer paths as configured.
  *
  * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
@@ -1104,7 +1104,7 @@ inline bool HW_I2C_Trigger_Master_Transmit_Internal( uint16_t device_address_7bi
  * @brief Trigger a master receive operation on an external I2C channel.
  *
  * Initiates an I2C master receive from the specified device address on an external channel
- * (I2C1 or I2C2). Received data will be available via HW_I2C_Peek_Received() and consumed
+ * (I2C3 or I2C2). Received data will be available via HW_I2C_Peek_Received() and consumed
  * with HW_I2C_Consume_Received(). Supports both interrupt and DMA-based transfer paths
  * as configured.
  *
@@ -1387,7 +1387,7 @@ bool HW_I2C_Get_Overflow_Status( HWI2CChannel_T channel )
 }
 
 /**
- * @brief This function handles I2C1 event interrupt.
+ * @brief This function handles I2C3 event interrupt.
  */
 void HW_I2C_EV_IRQ_CHANNEL_1( void )
 {
