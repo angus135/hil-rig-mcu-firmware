@@ -28,6 +28,7 @@ target_link_libraries(exec_pwm_gen
         global_config
         rtos
         cubeide_hal
+        hw_pwm_gen
 )
 
 # -----------------------------
