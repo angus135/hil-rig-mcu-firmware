@@ -37,7 +37,13 @@ extern "C"
 #define HAL_ERROR ( 1 )
 
 /* ADC-related mock macros */
+#define ADC_CHANNEL_2 ( 2U )
+#define ADC_CHANNEL_3 ( 3U )
+#define ADC_CHANNEL_9 ( 9U )
+#define ADC_CHANNEL_10 ( 10U )
+#define ADC_CHANNEL_13 ( 13U )
 #define ADC_CHANNEL_14 ( 14U )
+#define ADC_CHANNEL_15 ( 15U )
 #define ADC_SAMPLETIME_15CYCLES ( 15U )
 
 /* DMA-related mock macros */
@@ -186,6 +192,7 @@ typedef struct
  */
 
 ADC_HandleTypeDef hadc1;
+ADC_HandleTypeDef hadc2;
 ADC_HandleTypeDef hadc3;
 
 /**-----------------------------------------------------------------------------
