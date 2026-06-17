@@ -1298,6 +1298,18 @@ static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "DMA Input 1: %u\r\n", measurement.ch_1 );
         uint16_t value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_VIN );
         CONSOLE_Printf( "Vin: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_5V_CURRENT );
+        CONSOLE_Printf( "OUT 5V Current: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_5V_VOLTAGE );
+        CONSOLE_Printf( "OUT 5V Voltage: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_12V_CURRENT );
+        CONSOLE_Printf( "OUT 12V Current: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_12V_VOLTAGE );
+        CONSOLE_Printf( "OUT 12V Voltage: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_24V_CURRENT );
+        CONSOLE_Printf( "OUT 24V Current: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_24V_VOLTAGE );
+        CONSOLE_Printf( "OUT 24V Voltage: %u\r\n", value );
     }
     else if ( strcmp( argv[1], "frequency" ) == 0 )
     {

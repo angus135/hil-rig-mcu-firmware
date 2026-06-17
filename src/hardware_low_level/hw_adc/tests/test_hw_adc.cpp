@@ -217,6 +217,7 @@ protected:
         g_mock = &mock;
 
         hadc1.Instance = 1U;
+        hadc2.Instance = 2U;
         hadc3.Instance = 3U;
 
         for ( uint32_t i = 0U; i < ADC_DMA_LEN; i++ )
