@@ -47,14 +47,6 @@ extern "C"
 
 typedef uint32_t DigitalOutputPinmask_T;
 
-typedef enum GPIO_T
-{
-    GPIO_GREEN_LED_INDICATOR,
-    GPIO_BLUE_LED_INDICATOR,
-    GPIO_RED_LED_INDICATOR,
-    GPIO_TEST_INDICATOR
-} GPIO_T;
-
 typedef enum GPIOOutput_T
 {
     DIGITAL_OUTPUT_0,  // Added by Tim for DEV-68
@@ -67,9 +59,18 @@ typedef enum GPIOOutput_T
     DIGITAL_OUTPUT_7,  // Added by Tim for DEV-68
     DIGITAL_OUTPUT_8,  // Added by Tim for DEV-68
     DIGITAL_OUTPUT_9,  // Added by Tim for DEV-68
-    LD1,               // Added by Tim for DEV-68
-    LD2,               // Added by Tim for DEV-68
-    LD3                // Added by Tim for DEV-68
+    USER_LED_RED_0,
+    USER_LED_RED_1,
+    USER_LED_RED_2,
+    USER_LED_RED_3,
+    USER_LED_RED_4,
+    USER_LED_RED_5,
+    USER_LED_BLUE_0,
+    USER_LED_BLUE_1,
+    USER_LED_BLUE_2,
+    USER_LED_BLUE_3,
+    USER_LED_BLUE_4,
+    USER_LED_BLUE_5
 } GPIOOutput_T;
 
 typedef struct
@@ -79,19 +80,17 @@ typedef struct
 } GPIO_Name_Map;
 
 static const GPIO_Name_Map gpio_name_map[] = {
-    { "DIGITAL_OUTPUT_0", DIGITAL_OUTPUT_0 },
-    { "DIGITAL_OUTPUT_1", DIGITAL_OUTPUT_1 },
-    { "DIGITAL_OUTPUT_2", DIGITAL_OUTPUT_2 },
-    { "DIGITAL_OUTPUT_3", DIGITAL_OUTPUT_3 },
-    { "DIGITAL_OUTPUT_4", DIGITAL_OUTPUT_4 },
-    { "DIGITAL_OUTPUT_5", DIGITAL_OUTPUT_5 },
-    { "DIGITAL_OUTPUT_6", DIGITAL_OUTPUT_6 },
-    { "DIGITAL_OUTPUT_7", DIGITAL_OUTPUT_7 },
-    { "DIGITAL_OUTPUT_8", DIGITAL_OUTPUT_8 },
-    { "DIGITAL_OUTPUT_9", DIGITAL_OUTPUT_9 },
-    { "LD1", LD1 },
-    { "LD2", LD2 },
-    { "LD3", LD3 },
+    { "DIGITAL_OUTPUT_0", DIGITAL_OUTPUT_0 }, { "DIGITAL_OUTPUT_1", DIGITAL_OUTPUT_1 },
+    { "DIGITAL_OUTPUT_2", DIGITAL_OUTPUT_2 }, { "DIGITAL_OUTPUT_3", DIGITAL_OUTPUT_3 },
+    { "DIGITAL_OUTPUT_4", DIGITAL_OUTPUT_4 }, { "DIGITAL_OUTPUT_5", DIGITAL_OUTPUT_5 },
+    { "DIGITAL_OUTPUT_6", DIGITAL_OUTPUT_6 }, { "DIGITAL_OUTPUT_7", DIGITAL_OUTPUT_7 },
+    { "DIGITAL_OUTPUT_8", DIGITAL_OUTPUT_8 }, { "DIGITAL_OUTPUT_9", DIGITAL_OUTPUT_9 },
+    { "USER_LED_RED_0", USER_LED_RED_0 },     { "USER_LED_RED_1", USER_LED_RED_1 },
+    { "USER_LED_RED_2", USER_LED_RED_2 },     { "USER_LED_RED_3", USER_LED_RED_3 },
+    { "USER_LED_RED_4", USER_LED_RED_4 },     { "USER_LED_RED_5", USER_LED_RED_5 },
+    { "USER_LED_BLUE_0", USER_LED_BLUE_0 },   { "USER_LED_BLUE_1", USER_LED_BLUE_1 },
+    { "USER_LED_BLUE_2", USER_LED_BLUE_2 },   { "USER_LED_BLUE_3", USER_LED_BLUE_3 },
+    { "USER_LED_BLUE_4", USER_LED_BLUE_4 },   { "USER_LED_BLUE_5", USER_LED_BLUE_5 },
 };
 
 // If needed, more specific input types can be added here
@@ -107,6 +106,7 @@ typedef enum GPIOInput_T
     DIGITAL_INPUT_CH_7,
     DIGITAL_INPUT_CH_8,
     DIGITAL_INPUT_CH_9,
+    GPIO_INPUT_STATUS_5V,
 } GPIOInput_T;
 
 /**-----------------------------------------------------------------------------
@@ -127,15 +127,11 @@ typedef enum GPIOInput_T
 bool HW_GPIO_StringToEnum( const char* str, GPIOOutput_T* out );
 
 /**
- * @brief Toggles a digital output using the underlying GPIO HAL.
+ * @brief Toggles a GPIO output pin by output enum.
  *
- * @param gpio   The GPIO to toggle
- *
- * This function wraps the HAL_GPIO_WritePin( ... ) function provided by the
- * HAL layer. It is a convenient seam for unit testing where the HAL call is
- * mocked using GoogleMock.
+ * @param pin The GPIO output to toggle.
  */
-void HW_GPIO_Toggle( GPIO_T gpio );
+void HW_GPIO_Toggle_Output( GPIOOutput_T pin );
 
 /**
  * @brief Sets a GPIO pin
@@ -223,6 +219,16 @@ uint32_t HW_GPIO_Read_All_Digital_Inputs( void );
  * mocked using GoogleMock.
  */
 bool HW_GPIO_Read_Pin( GPIOInput_T input );
+
+/**
+ * @brief Converts a string to a GPIO input name.
+ *
+ * @param str the input string
+ * @param out a space to write the associated input enum
+ *
+ * @return true if a match was found, false otherwise
+ */
+bool HW_GPIO_InputStringToEnum( const char* str, GPIOInput_T* out );
 
 #ifdef __cplusplus
 }

@@ -16,7 +16,7 @@ This module is responsible for:
 
 How it works:
 
-- `HW_GPIO_Toggle(...)` maps logical GPIO enum values to board pins and calls LL toggle APIs.
+- `HW_GPIO_Toggle_Output(...)` maps logical GPIO output enum values to board pins and calls LL toggle APIs.
 - `HW_GPIO_Read_Pin(...)` maps logical input channels to board pins and returns each pin state.
 - `HW_GPIO_Read_All_Digital_Inputs(...)` returns a raw input-port snapshot, which is then interpreted by execution-level modules.
 - In `TEST_BUILD`, hardware-facing calls are replaced with deterministic/mockable behavior via test mocks.

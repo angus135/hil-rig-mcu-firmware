@@ -56,19 +56,19 @@ This is done using the TEST_BUILD compile definition.
 
 Example pattern:
 ```c
-void HW_GPIO_Toggle(GPIO_T gpio)
+void HW_GPIO_Toggle_Output(GPIOOutput_T pin)
 {
 #ifdef TEST_BUILD
     // Unit test path:
     // No hardware access. Parameters are typically unused.
-    (void)gpio;
+    (void)pin;
 #else
     // Embedded path:
     // Real hardware mapping using STM32 HAL.
-    switch (gpio)
+    switch (pin)
     {
-        case GPIO_GREEN_LED_INDICATOR:
-            HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
+        case USER_LED_RED_0:
+            HAL_GPIO_TogglePin(LED_R_0_GPIO_Port, LED_R_0_Pin);
             break;
 
         default:
@@ -80,7 +80,7 @@ void HW_GPIO_Toggle(GPIO_T gpio)
 
 In this pattern:
 
-- The enum (`GPIO_T`) is defined in `hw_gpio.h` and represents logical GPIOs
+- The enum (`GPIOOutput_T`) is defined in `hw_gpio.h` and represents logical GPIOs
     known to the application.
 - The embedded path maps those logical values to concrete HAL pins, ports,
     and peripherals.

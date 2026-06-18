@@ -42,13 +42,6 @@ typedef struct
 #define GPIOG ( ( GPIO_TypeDef* )( 7 ) )
 #define GPIOH ( ( GPIO_TypeDef* )( 8 ) )
 
-#define LD1_GPIO_Port GPIOA
-#define LD1_Pin 1
-#define LD2_GPIO_Port GPIOA
-#define LD2_Pin 2
-#define LD3_GPIO_Port GPIOA
-#define LD3_Pin 3
-
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -99,28 +92,80 @@ static GPIO_PortMock GPIOH_mock = { .id = 0x11 };
 #define GPIOH ( ( void* )&GPIOH_mock )
 
 /* ---- Pin bitmasks (match STM32 HAL style: GPIO_PIN_x == (1u<<x)) ---- */
-#define Digital_Input_0_Pin ( 1u << 3 )
-#define Digital_Input_1_Pin ( 1u << 4 )
-#define Digital_Input_2_Pin ( 1u << 5 )
-#define Digital_Input_3_Pin ( 1u << 7 )
-#define Digital_Input_4_Pin ( 1u << 10 )
-#define Digital_Input_5_Pin ( 1u << 11 )
-#define Digital_Input_6_Pin ( 1u << 12 )
-#define Digital_Input_7_Pin ( 1u << 13 )
-#define Digital_Input_8_Pin ( 1u << 14 )
-#define Digital_Input_9_Pin ( 1u << 15 )
+#define Digital_Input_0_Pin ( 1u << 8 )
+#define Digital_Input_1_Pin ( 1u << 9 )
+#define Digital_Input_2_Pin ( 1u << 10 )
+#define Digital_Input_3_Pin ( 1u << 11 )
+#define Digital_Input_4_Pin ( 1u << 14 )
+#define Digital_Input_5_Pin ( 1u << 15 )
+#define Digital_Input_6_Pin ( 1u << 0 )
+#define Digital_Input_7_Pin ( 1u << 1 )
+#define Digital_Input_8_Pin ( 1u << 2 )
+#define Digital_Input_9_Pin ( 1u << 3 )
 
-/* ---- Port assignments (all inputs on GPIOF like the real board) ---- */
-#define Digital_Input_0_GPIO_Port GPIOF
-#define Digital_Input_1_GPIO_Port GPIOF
-#define Digital_Input_2_GPIO_Port GPIOF
-#define Digital_Input_3_GPIO_Port GPIOF
-#define Digital_Input_4_GPIO_Port GPIOF
-#define Digital_Input_5_GPIO_Port GPIOF
-#define Digital_Input_6_GPIO_Port GPIOF
-#define Digital_Input_7_GPIO_Port GPIOF
-#define Digital_Input_8_GPIO_Port GPIOF
-#define Digital_Input_9_GPIO_Port GPIOF
+#define Digital_Output_0_Pin ( 1u << 2 )
+#define Digital_Output_1_Pin ( 1u << 3 )
+#define Digital_Output_2_Pin ( 1u << 4 )
+#define Digital_Output_3_Pin ( 1u << 5 )
+#define Digital_Output_4_Pin ( 1u << 7 )
+#define Digital_Output_5_Pin ( 1u << 8 )
+#define Digital_Output_6_Pin ( 1u << 9 )
+#define Digital_Output_7_Pin ( 1u << 10 )
+#define Digital_Output_8_Pin ( 1u << 11 )
+#define Digital_Output_9_Pin ( 1u << 12 )
+
+#define STATUS_5V_Pin ( 1u << 0 )
+
+#define LED_R_0_Pin ( 1u << 15 )
+#define LED_R_1_Pin ( 1u << 14 )
+#define LED_R_2_Pin ( 1u << 13 )
+#define LED_R_3_Pin ( 1u << 6 )
+#define LED_R_4_Pin ( 1u << 5 )
+#define LED_R_5_Pin ( 1u << 4 )
+#define LED_B_0_Pin ( 1u << 3 )
+#define LED_B_1_Pin ( 1u << 2 )
+#define LED_B_2_Pin ( 1u << 1 )
+#define LED_B_3_Pin ( 1u << 0 )
+#define LED_B_4_Pin ( 1u << 7 )
+#define LED_B_5_Pin ( 1u << 4 )
+
+/* ---- Port assignments ---- */
+#define Digital_Input_0_GPIO_Port GPIOD
+#define Digital_Input_1_GPIO_Port GPIOD
+#define Digital_Input_2_GPIO_Port GPIOD
+#define Digital_Input_3_GPIO_Port GPIOD
+#define Digital_Input_4_GPIO_Port GPIOD
+#define Digital_Input_5_GPIO_Port GPIOD
+#define Digital_Input_6_GPIO_Port GPIOD
+#define Digital_Input_7_GPIO_Port GPIOD
+#define Digital_Input_8_GPIO_Port GPIOD
+#define Digital_Input_9_GPIO_Port GPIOD
+
+#define Digital_Output_0_GPIO_Port GPIOG
+#define Digital_Output_1_GPIO_Port GPIOG
+#define Digital_Output_2_GPIO_Port GPIOG
+#define Digital_Output_3_GPIO_Port GPIOG
+#define Digital_Output_4_GPIO_Port GPIOG
+#define Digital_Output_5_GPIO_Port GPIOG
+#define Digital_Output_6_GPIO_Port GPIOG
+#define Digital_Output_7_GPIO_Port GPIOG
+#define Digital_Output_8_GPIO_Port GPIOG
+#define Digital_Output_9_GPIO_Port GPIOG
+
+#define STATUS_5V_GPIO_Port GPIOF
+
+#define LED_R_0_GPIO_Port GPIOC
+#define LED_R_1_GPIO_Port GPIOC
+#define LED_R_2_GPIO_Port GPIOC
+#define LED_R_3_GPIO_Port GPIOE
+#define LED_R_4_GPIO_Port GPIOE
+#define LED_R_5_GPIO_Port GPIOE
+#define LED_B_0_GPIO_Port GPIOE
+#define LED_B_1_GPIO_Port GPIOE
+#define LED_B_2_GPIO_Port GPIOE
+#define LED_B_3_GPIO_Port GPIOE
+#define LED_B_4_GPIO_Port GPIOB
+#define LED_B_5_GPIO_Port GPIOB
 
 // NOLINTEND
 
