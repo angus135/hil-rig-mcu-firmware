@@ -86,7 +86,7 @@ static FrequencyMode_T frequency_mode = FREQUENCY_10KHZ;
 
 void EXECUTION_MANAGER_Process_From_ISR( void )
 {
-    HW_GPIO_Toggle_Output( USER_LED_RED_0 );
+    HW_GPIO_Toggle_Output( USER_LED_BLUE_4 );
     // TODO: This is where all the I/O will actually run, this needs to be quick
 }
 

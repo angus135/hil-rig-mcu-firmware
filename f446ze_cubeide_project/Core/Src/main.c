@@ -142,9 +142,10 @@ int main(void)
   /* Set PD8 and PD9 mode to analog: MODERy = 0b11 */
   GPIOD->MODER |=  (GPIO_MODER_MODER8_Msk | GPIO_MODER_MODER9_Msk);
 
-  /* Disable pull-up / pull-down on PD8 and PD9: PUPDRy = 0b00 */
-  GPIOD->PUPDR &= ~(GPIO_PUPDR_PUPDR8_Msk | GPIO_PUPDR_PUPDR9_Msk);
+  /* Disable pull-up / pull-down on PD8 and PD9: PUPDy = 0b00 */
+  GPIOD->PUPDR &= ~(GPIO_PUPDR_PUPD8_Msk | GPIO_PUPDR_PUPD9_Msk);
 
+//  NVIC_DisableIRQ(USART2_IRQn);
   APP_MAIN_Application();
   // Nothing after here is ever called but if it does, run the error handler
   Error_Handler();
@@ -226,10 +227,26 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 extern PCD_HandleTypeDef  hpcd_USB_OTG_FS;
-extern UART_HandleTypeDef huart2;
+extern TIM_HandleTypeDef htim14;
+
 /******************************************************************************/
 /*           Cortex-M4 Processor Interruption and Exception Handlers          */
 /******************************************************************************/
+
+/**
+  * @brief This function handles TIM8 trigger and commutation interrupts and TIM14 global interrupt.
+  */
+void TIM8_TRG_COM_TIM14_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM8_TRG_COM_TIM14_IRQn 0 */
+
+  /* USER CODE END TIM8_TRG_COM_TIM14_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim8);
+  HAL_TIM_IRQHandler(&htim14);
+  /* USER CODE BEGIN TIM8_TRG_COM_TIM14_IRQn 1 */
+
+  /* USER CODE END TIM8_TRG_COM_TIM14_IRQn 1 */
+}
 
 /**
  * @brief This function handles Non maskable interrupt.
@@ -317,42 +334,6 @@ void DebugMon_Handler( void )
     /* USER CODE BEGIN DebugMonitor_IRQn 1 */
 
     /* USER CODE END DebugMonitor_IRQn 1 */
-}
-
-/**
- * @brief This function handles System tick timer.
- */
-void SysTick_Handler( void )
-{
-    /* USER CODE BEGIN SysTick_IRQn 0 */
-
-    /* USER CODE END SysTick_IRQn 0 */
-    HAL_IncTick();
-#if ( INCLUDE_xTaskGetSchedulerState == 1 )
-    if ( xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED )
-    {
-#endif /* INCLUDE_xTaskGetSchedulerState */
-        xPortSysTickHandler();
-#if ( INCLUDE_xTaskGetSchedulerState == 1 )
-    }
-#endif /* INCLUDE_xTaskGetSchedulerState */
-       /* USER CODE BEGIN SysTick_IRQn 1 */
-
-    /* USER CODE END SysTick_IRQn 1 */
-}
-
-/**
- * @brief This function handles USART2 global interrupt.
- */
-void USART2_IRQHandler( void )
-{
-    /* USER CODE BEGIN USART2_IRQn 0 */
-
-    /* USER CODE END USART2_IRQn 0 */
-    HAL_UART_IRQHandler( &huart2 );
-    /* USER CODE BEGIN USART2_IRQn 1 */
-
-    /* USER CODE END USART2_IRQn 1 */
 }
 
 /**
