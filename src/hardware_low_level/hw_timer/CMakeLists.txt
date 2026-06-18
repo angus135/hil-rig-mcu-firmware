@@ -27,6 +27,7 @@ target_link_libraries(hw_timer
     PUBLIC
         global_config
         rtos
+        hw_spi
 )
 
 # -----------------------------

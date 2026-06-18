@@ -17,7 +17,8 @@
 extern "C"
 {
 #endif
-
+#include "global_config.h"
+#if GLOBAL_CONFIG__CONSOLE_ENABLED
 /**-----------------------------------------------------------------------------
  *  Includes
  *------------------------------------------------------------------------------
@@ -82,6 +83,8 @@ void CONSOLE_Task( void* task_parameters );
  * @returns void
  */
 void CONSOLE_Command_Handler( uint16_t argc, char* argv[] );
+
+#endif
 
 #ifdef __cplusplus
 }

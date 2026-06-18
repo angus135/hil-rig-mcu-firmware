@@ -1,13 +1,16 @@
 /******************************************************************************
- *  File:       hw_spi.c
- *  Author:     Callum Rafferty
- *  Created:    25-Mar-2026
+ *  File:       console_logic_expander.c
+ *  Author:     Coen Pasitchnyj
+ *  Created:    3-May-2026
  *
  *  Description:
- *      <Short description of the module's purpose and responsibilities>
+ *      Console command API for logic expander functionality.
+ *
+ *      This module owns logic expander related console command handling.
  *
  *  Notes:
- *      <Any design notes, dependencies, or assumptions go here>
+ *      The top level console command handler dispatches to this module for the
+ *      "expander" command namespace.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -15,10 +18,14 @@
  *------------------------------------------------------------------------------
  */
 
-#include "hw_spi.h"
-#include <stdint.h>
+#include "console.h"
 #include <stdbool.h>
-// Add other required includes here
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <stdlib.h>
+#include "logic_expander.h"
+#include "command_helpers.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -31,17 +38,12 @@
  */
 
 /**-----------------------------------------------------------------------------
- *  Public (global) and Extern Variables
+ *  Private Variables
  *------------------------------------------------------------------------------
  */
 
 /**-----------------------------------------------------------------------------
- *  Private (static) Variables
- *------------------------------------------------------------------------------
- */
-
-/**-----------------------------------------------------------------------------
- *  Private (static) Function Prototypes
+ *  Private Function Prototypes
  *------------------------------------------------------------------------------
  */
 
@@ -54,3 +56,28 @@
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Parses the expander port selector.
+ */
+bool CONSOLE_Parse_Expander_Port( const char* arg, LogicExpanderPort_T* port )
+{
+    if ( ( arg == NULL ) || ( port == NULL ) )
+    {
+        return false;
+    }
+
+    if ( strcmp( arg, "A" ) == 0 )
+    {
+        *port = LOGIC_EXPANDER_PORT_A;
+        return true;
+    }
+
+    if ( strcmp( arg, "B" ) == 0 )
+    {
+        *port = LOGIC_EXPANDER_PORT_B;
+        return true;
+    }
+
+    return false;
+}

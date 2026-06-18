@@ -19,7 +19,7 @@
  *------------------------------------------------------------------------------
  */
 
-#include "console_uart.h"
+#include "command_helpers.h"
 
 #include "console.h"
 #include "exec_uart.h"

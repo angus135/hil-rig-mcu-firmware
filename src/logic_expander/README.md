@@ -5,7 +5,9 @@
 
 This module is responsible for:
 
-- TODO
+- Holding a software shadow-map of control outputs for up to 8x MCP23017 devices.
+- Providing a config-stage API for other modules to set individual control bits.
+- Sending all staged control bytes to the expanders on the internal FMPI2C1 bus.
 
 
 ---
@@ -23,3 +25,69 @@ This module is responsible for:
 ## Public API
 
 The public API is declared in `logic_expander.h`.
+
+- `LOGIC_EXPANDER_Self_Config()`
+	- Initializes all configured MCP23017 devices (`0x20..0x27`).
+	- Applies default setup (IOCON, direction, pull-up, interrupt defaults).
+	- Seeds the internal A/B output shadow bytes from file-level init tables.
+
+- `LOGIC_EXPANDER_Load_Control_Bit(expander_index, port, bit_index, bit_value)`
+	- Updates one bit in the local shadow map only (does not immediately write I2C).
+	- `expander_index`: `0..7`
+	- `port`: `LOGIC_EXPANDER_PORT_A` or `LOGIC_EXPANDER_PORT_B`
+	- `bit_index`: `0..7`
+	- `bit_value`: `true` sets bit high, `false` clears bit low
+
+- `LOGIC_EXPANDER_Send_Control_Bits()`
+	- Writes staged `OLATA` and `OLATB` values to all 8 expanders.
+	- Intended to be called once after all config modules have loaded their bits.
+
+---
+
+## Required config-stage flow
+
+Use the logic expander API in this order:
+
+1. Call `LOGIC_EXPANDER_Self_Config()` once at the start of project configuration.
+2. From each config module, call `LOGIC_EXPANDER_Load_Control_Bit(...)` for the bits that module owns.
+3. After all modules are done loading bits, call `LOGIC_EXPANDER_Send_Control_Bits()` once.
+
+This keeps each module independent while still sending one consolidated output image to the hardware.
+
+---
+
+## Example usage
+
+```c
+#include "logic_expander.h"
+
+void CONFIG_MANAGER_Run_Config( void )
+{
+	( void )LOGIC_EXPANDER_Self_Config();
+
+	/* Example: module A sets Expander 0, Port A, bit 3 high */
+	( void )LOGIC_EXPANDER_Load_Control_Bit( 0U, LOGIC_EXPANDER_PORT_A, 3U, true );
+
+	/* Example: module B sets Expander 2, Port B, bit 1 low */
+	( void )LOGIC_EXPANDER_Load_Control_Bit( 2U, LOGIC_EXPANDER_PORT_B, 1U, false );
+
+	( void )LOGIC_EXPANDER_Send_Control_Bits();
+}
+```
+
+---
+
+## Mapping source of truth (important)
+
+To determine the correct target for `LOGIC_EXPANDER_Load_Control_Bit(...)`:
+
+- Which expander index (`0..7`)
+- Which port (`A` or `B`)
+- Which bit (`0..7`)
+
+Use the project hardware documentation as the source of truth:
+
+- Altium project/schematic
+- Project interface/control mapping documentation
+
+Do not guess mappings in firmware code. If mapping is unclear, resolve it in hardware/docs first.

@@ -9,6 +9,8 @@
  *  Notes:
  *
  ******************************************************************************/
+#include "global_config.h"
+#if GLOBAL_CONFIG__CONSOLE_ENABLED
 
 /**-----------------------------------------------------------------------------
  *  Includes
@@ -16,16 +18,21 @@
  */
 
 #include "console.h"
+#include "exec_i2c.h"
+#include "logic_expander.h"
+#include "command_helpers.h"
 #include "execution_manager.h"
 #include "hw_gpio.h"
 #include "exec_uart.h"
 #include "hw_adc.h"
 #include "hw_can.h"
 #include "exec_digital_input.h"
+#include "hw_spi.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -73,6 +80,10 @@ static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] );
+
+static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] );
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
@@ -95,6 +106,10 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"can_tx", CONSOLE_Command_Can_tx, "Transmit a 8 byte message Usage: can_tx <1|2> <message1> <message2> ..."},
     {"can_rx", CONSOLE_Command_Can_rx, "Read and print an 8 byte message Usage: can_rx <1|2>"},
     {"can_config", CONSOLE_Command_Can_config, "Configures Can channel 1&2"}
+    {"expander", CONSOLE_Command_Expander,  "Command set allowing user to configure and control the logic expander"},
+    {"i2c_loopback", CONSOLE_Command_I2C_Loopback, "Loopback testing for I2C master and slave channels."},
+    {"spi_loop",    CONSOLE_Command_SPI_Loopback,         "Does a loopback test"},
+
 };
 
 // clang-format on
@@ -155,6 +170,295 @@ static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
         bool state = HW_GPIO_Read_Pin( ( GPIOInput_T )channel );
         CONSOLE_Printf( "Digital Input %d: %d\r\n", channel, state ? 1 : 0 );
     }
+}
+
+/**
+ * @brief Handles the expander console command.
+ *
+ * @param argc - Number of command arguments.
+ * @param argv - Command argument array.
+ *
+ * @returns void
+ */
+static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
+{
+    if ( argc < 2 )
+    {
+        CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  expander config      - Initialize all active expanders\r\n" );
+        CONSOLE_Printf( "  expander set <addr> <port> <value> - Set control bits (e.g. expander "
+                        "set 0x20 A 0xFF)\r\n" );
+        CONSOLE_Printf( "  expander send       - Send all staged bits to hardware\r\n" );
+        CONSOLE_Printf( "  expander reset      - Reset all bits to 0 and send\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "config" ) == 0 )
+    {
+        LogicExpanderStatus_T status = LOGIC_EXPANDER_Self_Config();
+        if ( status == LOGIC_EXPANDER_STATUS_OK )
+        {
+            CONSOLE_Printf( "Expander config: OK\r\n" );
+        }
+        else
+        {
+            CONSOLE_Printf( "Expander config failed (status=%d)\r\n", ( int )status );
+        }
+        return;
+    }
+
+    if ( strcmp( argv[1], "set" ) == 0 )
+    {
+        if ( argc < 5 )
+        {
+            CONSOLE_Printf( "Usage: expander set <addr> <port> <value>\r\n" );
+            CONSOLE_Printf( "Example: expander set 0x20 A 0xFF\r\n" );
+            return;
+        }
+
+        uint32_t addr = 0U;
+        if ( sscanf( argv[2], "0x%x", ( unsigned int* )&addr ) != 1 )
+        {
+            CONSOLE_Printf( "Invalid address format. Use 0x20, 0x21, etc.\r\n" );
+            return;
+        }
+
+        if ( addr < 0x20U || addr > 0x27U )
+        {
+            CONSOLE_Printf( "Address out of range (0x20-0x27).\r\n" );
+            return;
+        }
+
+        uint8_t expander_index = ( uint8_t )( addr - 0x20U );
+
+        LogicExpanderStateSnapshot_T snapshot_before = { 0 };
+        LogicExpanderStatus_T        snapshot_status = LOGIC_EXPANDER_Get_State_Snapshot(
+            ( LogicExpanderIndex_T )expander_index, &snapshot_before );
+        if ( snapshot_status == LOGIC_EXPANDER_STATUS_OK )
+        {
+            CONSOLE_Printf(
+                "Expander state before set: idx=%u addr=0x%04X OLATA=0x%02X OLATB=0x%02X\r\n",
+                ( unsigned int )expander_index, ( unsigned int )snapshot_before.device_address_7bit,
+                ( unsigned int )snapshot_before.olat_a, ( unsigned int )snapshot_before.olat_b );
+        }
+
+        LogicExpanderPort_T port = LOGIC_EXPANDER_PORT_A;
+        if ( !CONSOLE_Parse_Expander_Port( argv[3], &port ) )
+        {
+            CONSOLE_Printf( "Invalid port. Use exact 'A' or 'B'.\r\n" );
+            return;
+        }
+
+        uint32_t value = 0U;
+        if ( sscanf( argv[4], "0x%x", ( unsigned int* )&value ) != 1 )
+        {
+            CONSOLE_Printf( "Invalid value format. Use 0x00, 0xFF, etc.\r\n" );
+            return;
+        }
+
+        if ( value > 0xFFU )
+        {
+            CONSOLE_Printf( "Value out of range (0x00-0xFF).\r\n" );
+            return;
+        }
+
+        uint8_t byte_value = ( uint8_t )value;
+
+        for ( uint8_t bit_idx = 0U; bit_idx < 8U; ++bit_idx )
+        {
+            bool                  bit_set = ( byte_value & ( 1U << bit_idx ) ) != 0U;
+            LogicExpanderStatus_T status  = LOGIC_EXPANDER_Load_Control_Bit(
+                ( LogicExpanderIndex_T )expander_index, port, bit_idx, bit_set );
+            if ( status != LOGIC_EXPANDER_STATUS_OK )
+            {
+                CONSOLE_Printf( "Failed to set bit %u (status=%d)\r\n", ( unsigned int )bit_idx,
+                                ( int )status );
+                return;
+            }
+        }
+
+        LogicExpanderStateSnapshot_T snapshot_after = { 0 };
+        snapshot_status = LOGIC_EXPANDER_Get_State_Snapshot( ( LogicExpanderIndex_T )expander_index,
+                                                             &snapshot_after );
+        if ( snapshot_status == LOGIC_EXPANDER_STATUS_OK )
+        {
+            CONSOLE_Printf(
+                "Expander state after set:  idx=%u addr=0x%04X OLATA=0x%02X OLATB=0x%02X\r\n",
+                ( unsigned int )expander_index, ( unsigned int )snapshot_after.device_address_7bit,
+                ( unsigned int )snapshot_after.olat_a, ( unsigned int )snapshot_after.olat_b );
+        }
+
+        CONSOLE_Printf( "Set expander 0x%02X port %c = 0x%02X\r\n", ( unsigned int )addr,
+                        ( port == LOGIC_EXPANDER_PORT_A ) ? 'A' : 'B', ( unsigned int )byte_value );
+        return;
+    }
+
+    if ( strcmp( argv[1], "send" ) == 0 )
+    {
+        LogicExpanderStatus_T status = LOGIC_EXPANDER_Send_Control_Bits();
+        if ( status == LOGIC_EXPANDER_STATUS_OK )
+        {
+            CONSOLE_Printf( "Expander send: OK\r\n" );
+        }
+        else
+        {
+            CONSOLE_Printf( "Expander send failed (status=%d)\r\n", ( int )status );
+        }
+        return;
+    }
+
+    if ( strcmp( argv[1], "reset" ) == 0 )
+    {
+        for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
+        {
+            for ( uint8_t bit_idx = 0U; bit_idx < 8U; ++bit_idx )
+            {
+                ( void )LOGIC_EXPANDER_Load_Control_Bit( ( LogicExpanderIndex_T )idx,
+                                                         LOGIC_EXPANDER_PORT_A, bit_idx, false );
+                ( void )LOGIC_EXPANDER_Load_Control_Bit( ( LogicExpanderIndex_T )idx,
+                                                         LOGIC_EXPANDER_PORT_B, bit_idx, false );
+            }
+        }
+
+        LogicExpanderStatus_T status = LOGIC_EXPANDER_Send_Control_Bits();
+        if ( status == LOGIC_EXPANDER_STATUS_OK )
+        {
+            CONSOLE_Printf( "Expander reset: OK (all bits cleared and sent)\r\n" );
+        }
+        else
+        {
+            CONSOLE_Printf( "Expander reset failed (status=%d)\r\n", ( int )status );
+        }
+        return;
+    }
+
+    CONSOLE_Printf( "Unknown expander subcommand: %s\r\n", argv[1] );
+}
+
+/**
+ * @brief Handles the i2c_loopback console command.
+ *
+ * @param argc - Number of command arguments.
+ * @param argv - Command argument array.
+ *
+ * @returns void
+ */
+static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
+{
+    if ( argc < 6U )
+    {
+        CONSOLE_Printf( "Usage: i2c_loopback <master:1|2> <dir:m2s|s2m> <speed:100|400> "
+                        "<op:interrupt|dma> <message...>\r\n" );
+        return;
+    }
+
+    HWI2CChannel_T master_channel = HW_I2C_CHANNEL_1;
+    HWI2CChannel_T slave_channel  = HW_I2C_CHANNEL_2;
+    if ( !CONSOLE_Parse_I2C_Master_And_Slave( argv[1], &master_channel, &slave_channel ) )
+    {
+        CONSOLE_Printf( "Invalid master channel. Use 1 or 2.\r\n" );
+        return;
+    }
+
+    ConsoleI2CLoopbackDirection_T direction = CONSOLE_I2C_LOOPBACK_DIR_M2S;
+    if ( !CONSOLE_Parse_I2C_Loopback_Direction( argv[2], &direction ) )
+    {
+        CONSOLE_Printf( "Invalid direction. Use m2s or s2m.\r\n" );
+        return;
+    }
+
+    HWI2CSpeed_T speed = HW_I2C_SPEED_100KHZ;
+    if ( !CONSOLE_Parse_I2C_Speed( argv[3], &speed ) )
+    {
+        CONSOLE_Printf( "Invalid speed. Use 100 or 400.\r\n" );
+        return;
+    }
+
+    HWI2CTransferPath_T transfer_path = HW_I2C_TRANSFER_INTERRUPT;
+    if ( !CONSOLE_Parse_I2C_Transfer_Path( argv[4], &transfer_path ) )
+    {
+        CONSOLE_Printf( "Invalid op. Use interrupt|irq or dma.\r\n" );
+        return;
+    }
+
+    char     tx_message[200];
+    uint16_t tx_len = 0U;
+    if ( !CONSOLE_Build_I2C_Message( argc, argv, tx_message, sizeof( tx_message ), &tx_len ) )
+    {
+        CONSOLE_Printf( "Invalid message (empty or too long, max %u chars).\r\n",
+                        ( unsigned int )( sizeof( tx_message ) - 1U ) );
+        return;
+    }
+
+    const uint16_t i2c1_addr = 0x31U;
+    const uint16_t i2c2_addr = 0x32U;
+
+    EXECI2CChannelConfig_T i2c1_cfg = {
+        .mode  = ( master_channel == HW_I2C_CHANNEL_1 ) ? HW_I2C_MODE_MASTER : HW_I2C_MODE_SLAVE,
+        .speed = speed,
+        .tx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
+        .rx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
+        .own_address_7bit = i2c1_addr,
+    };
+
+    EXECI2CChannelConfig_T i2c2_cfg = {
+        .mode  = ( master_channel == HW_I2C_CHANNEL_2 ) ? HW_I2C_MODE_MASTER : HW_I2C_MODE_SLAVE,
+        .speed = speed,
+        .tx_transfer_path = transfer_path,
+        .rx_transfer_path = transfer_path,
+        .own_address_7bit = i2c2_addr,
+    };
+
+    EXECI2CStatus_T status = EXEC_I2C_Configuration( &i2c1_cfg, &i2c2_cfg );
+    if ( status != EXEC_I2C_STATUS_OK )
+    {
+        CONSOLE_Printf( "I2C configuration failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    const uint16_t slave_addr = ( slave_channel == HW_I2C_CHANNEL_1 ) ? i2c1_addr : i2c2_addr;
+
+    char                         rx_message[200];
+    uint16_t                     received_len      = 0U;
+    bool                         transfer_ok       = false;
+    CONSOLEI2CLoopbackChannels_T loopback_channels = {
+        .master = master_channel,
+        .slave  = slave_channel,
+    };
+
+    if ( direction == CONSOLE_I2C_LOOPBACK_DIR_M2S )
+    {
+        transfer_ok =
+            CONSOLE_Run_I2C_Loopback_M2S( loopback_channels, slave_addr, tx_message, tx_len,
+                                          rx_message, sizeof( rx_message ), &received_len );
+    }
+    else
+    {
+        transfer_ok =
+            CONSOLE_Run_I2C_Loopback_S2M( loopback_channels, slave_addr, tx_message, tx_len,
+                                          rx_message, sizeof( rx_message ), &received_len );
+    }
+
+    if ( !transfer_ok )
+    {
+        return;
+    }
+
+    CONSOLE_Printf(
+        "I2C loopback: master=I2C%s slave=I2C%s dir=%s speed=%s i2c1_op=Interrupt i2c2_op=%s\r\n",
+        ( master_channel == HW_I2C_CHANNEL_1 ) ? "1" : "2",
+        ( slave_channel == HW_I2C_CHANNEL_1 ) ? "1" : "2",
+        ( direction == CONSOLE_I2C_LOOPBACK_DIR_M2S ) ? "m2s" : "s2m",
+        ( speed == HW_I2C_SPEED_400KHZ ) ? "400kHz" : "100kHz",
+        ( transfer_path == HW_I2C_TRANSFER_DMA ) ? "DMA" : "Interrupt" );
+
+    CONSOLE_Printf( "Sent    (%u): %.*s\r\n", ( unsigned int )tx_len, ( int )tx_len, tx_message );
+    CONSOLE_Printf( "Received(%u): %.*s\r\n", ( unsigned int )received_len, ( int )received_len,
+                    rx_message );
+
+    const bool pass =
+        ( received_len == ( uint16_t )tx_len ) && ( memcmp( tx_message, rx_message, tx_len ) == 0 );
+    CONSOLE_Printf( "Result: %s\r\n", pass ? "PASS" : "FAIL" );
 }
 
 /**
@@ -269,6 +573,57 @@ static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] )
     ( void )argc;
     ( void )argv;
     CONSOLE_Printf( "\033[2J\033[1;1H" );
+}
+
+/**
+ * @brief Handles the SPI loopback command
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
+static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] )
+{
+    if ( argc < 2 || argv[1] == NULL )
+    {
+        CONSOLE_SPI_Loopback_Print_Usage();
+        return;
+    }
+
+    if ( strcmp( argv[1], "help" ) == 0 )
+    {
+        CONSOLE_SPI_Loopback_Print_Usage();
+    }
+    else if ( strcmp( argv[1], "config" ) == 0 )
+    {
+        CONSOLE_SPI_Loopback_Config( argc, argv );
+    }
+    else if ( strcmp( argv[1], "apply" ) == 0 )
+    {
+        CONSOLE_SPI_Loopback_Apply( argc, argv );
+    }
+    else if ( strcmp( argv[1], "load" ) == 0 )
+    {
+        CONSOLE_SPI_Loopback_Load( argc, argv );
+    }
+    else if ( strcmp( argv[1], "run" ) == 0 )
+    {
+        CONSOLE_SPI_Loopback_Run( argc, argv );
+    }
+    else if ( strcmp( argv[1], "clear" ) == 0 )
+    {
+        CONSOLE_SPI_Loopback_Clear();
+    }
+    else if ( strcmp( argv[1], "status" ) == 0 )
+    {
+        CONSOLE_SPI_Loopback_Status();
+    }
+    else
+    {
+        CONSOLE_Printf( "Unknown action: %s\r\n", argv[1] );
+        CONSOLE_SPI_Loopback_Print_Usage();
+    }
 }
 
 /**
@@ -932,3 +1287,5 @@ void CONSOLE_Command_Handler( uint16_t argc, char* argv[] )
     CONSOLE_Printf( "%s", argv[0] );
     CONSOLE_Printf( "\r\n" );
 }
+
+#endif

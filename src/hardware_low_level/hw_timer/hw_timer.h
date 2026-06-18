@@ -40,6 +40,9 @@ typedef enum Timer_T
 {
     EXECUTION_MANAGER_TIMER,
     ANALOGUE_INPUT_TIMER,
+    SPI_CHANNEL_0_TIMER,
+    SPI_CHANNEL_1_TIMER,
+    SPI_DAC_TIMER,
 
 } Timer_T;
 
