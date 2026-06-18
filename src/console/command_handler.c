@@ -38,6 +38,7 @@
  *------------------------------------------------------------------------------
  */
 #define NUM_DIGITAL_INPUTS 10
+#define MAX_CONSOLE_SET_PINS 22
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -86,7 +87,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"echo",    CONSOLE_Command_Echo,       "Echoes the provided arguments."},
     {"execution_manager",    CONSOLE_Command_Test_Scheduler,       "Starts the test scheduler."},
     {"clear",  CONSOLE_Command_Clear,       "Clears the console."},
-    {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <green|blue|red|test>"},
+    {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <USER_LED_RED_0..USER_LED_RED_5|USER_LED_BLUE_0..USER_LED_BLUE_5>"},
     {"uart", CONSOLE_UART_Command_Handler, "Configuring Channels and Rx/Tx loopback testing for Uart"},
     {"set_pin", CONSOLE_Command_Set_Pin, "Set or reset digital output, Usage: set_pin PIN_NAME <0|1>"},
     {"set_pins", CONSOLE_Command_Set_Many_Pins, "Set or reset many digital output, Usage: set_pin PIN_NAME0 PIN_NAME1 ... PIN_NAMEX <0|1>"},
@@ -122,7 +123,7 @@ static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
 
     if ( argc != 2 || argv[1] == NULL )
     {
-        CONSOLE_Printf( "Usage: digital_input <channel 0-9> or digital_input all\r\n" );
+        CONSOLE_Printf( "Usage: digital_input <channel 0-9|STATUS_5V> or digital_input all\r\n" );
         return;
     }
 
@@ -144,10 +145,18 @@ static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
     }
     else
     {
+        GPIOInput_T named_input = DIGITAL_INPUT_CH_0;
+        if ( HW_GPIO_InputStringToEnum( argv[1], &named_input ) )
+        {
+            bool state = HW_GPIO_Read_Pin( named_input );
+            CONSOLE_Printf( "%s: %d\r\n", argv[1], state ? 1 : 0 );
+            return;
+        }
+
         int channel = atoi( argv[1] );
         if ( channel < 0 || channel >= NUM_DIGITAL_INPUTS )
         {
-            CONSOLE_Printf( "Invalid channel. Must be 0-9.\r\n" );
+            CONSOLE_Printf( "Invalid channel. Must be 0-9 or STATUS_5V.\r\n" );
             return;
         }
 
@@ -622,39 +631,26 @@ static void CONSOLE_Command_LED( uint16_t argc, char* argv[] )
 {
     if ( argc != 3 )
     {
-        CONSOLE_Printf( "Usage: led toggle <green|blue|red|test>\r\n" );
+        CONSOLE_Printf( "Usage: led toggle "
+                        "<USER_LED_RED_0..USER_LED_RED_5|USER_LED_BLUE_0..USER_LED_BLUE_5>\r\n" );
         return;
     }
     if ( strcmp( argv[1], "toggle" ) == 0 )
     {
-        GPIO_T led = GPIO_TEST_INDICATOR;  // default to test indicator if color parsing fails
-        if ( strcmp( argv[2], "green" ) == 0 )
-        {
-            led = GPIO_GREEN_LED_INDICATOR;
-        }
-        else if ( strcmp( argv[2], "blue" ) == 0 )
-        {
-            led = GPIO_BLUE_LED_INDICATOR;
-        }
-        else if ( strcmp( argv[2], "red" ) == 0 )
-        {
-            led = GPIO_RED_LED_INDICATOR;
-        }
-        else if ( strcmp( argv[2], "test" ) == 0 )
-        {
-            led = GPIO_TEST_INDICATOR;
-        }
-        else
+        GPIOOutput_T led;
+        if ( !HW_GPIO_StringToEnum( argv[2], &led ) || led < USER_LED_RED_0
+             || led > USER_LED_BLUE_5 )
         {
             CONSOLE_Printf( "Unknown LED: %s\r\n", argv[2] );
             return;
         }
-        HW_GPIO_Toggle( led );
+        HW_GPIO_Toggle_Output( led );
         CONSOLE_Printf( "Toggled %s LED\r\n", argv[2] );
     }
     else
     {
-        CONSOLE_Printf( "Unknown action: %s\r\nUsage: led toggle <green|blue|red|test>\r\n",
+        CONSOLE_Printf( "Unknown action: %s\r\nUsage: led toggle "
+                        "<USER_LED_RED_0..USER_LED_RED_5|USER_LED_BLUE_0..USER_LED_BLUE_5>\r\n",
                         argv[1] );
     }
 }
@@ -708,7 +704,7 @@ static void CONSOLE_Command_Set_Pin( uint16_t argc, char* argv[] )
  */
 static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char* argv[] )
 {
-    int arg_limit = 10;
+    int arg_limit = MAX_CONSOLE_SET_PINS;
     if ( ( argc < 3 ) | ( argc > ( arg_limit + 1 ) ) )
     {
         CONSOLE_Printf( "Incorrect number of inputs, expected >2 and <%dbut recieved %d", arg_limit,

@@ -44,6 +44,7 @@
  *------------------------------------------------------------------------------
  */
 #define DIGITAL_INPUTS_PORT Digital_Input_0_GPIO_Port
+#define DIGITAL_OUTPUT_PORT Digital_Output_0_GPIO_Port
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -61,9 +62,6 @@ static GPIO_TypeDef* gpio_ports[] = {
 };
 
 #define MAX_NUM_GPIO_PORTS 8
-#ifndef TEST_BUILD
-#define DIGITAL_OUTPUT_PORT ( GPIO_TypeDef* )GPIOG
-#endif
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -103,7 +101,6 @@ static GPIO_TypeDef* gpio_ports[] = {
 
 static GPIOPortPacket_T HW_GPIO_Port_Pin_Association( GPIOOutput_T gpio_name )
 {
-#ifndef TEST_BUILD
     switch ( gpio_name )
     {
         // ==== HOW TO ADD DIGITAL OUTPUT PINS ====
@@ -125,40 +122,52 @@ static GPIOPortPacket_T HW_GPIO_Port_Pin_Association( GPIOOutput_T gpio_name )
         // would then be added to the GPIOOutput_T enum in hw_gpio.h
         // as well as to the string mapping gpio_name_map in hw_gpio.h
         case DIGITAL_OUTPUT_0:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_0_Pin };
+            return ( struct GPIOPortPacket_T ){ Digital_Output_0_GPIO_Port, Digital_Output_0_Pin };
         case DIGITAL_OUTPUT_1:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_1_Pin };
+            return ( struct GPIOPortPacket_T ){ Digital_Output_1_GPIO_Port, Digital_Output_1_Pin };
         case DIGITAL_OUTPUT_2:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_2_Pin };
+            return ( struct GPIOPortPacket_T ){ Digital_Output_2_GPIO_Port, Digital_Output_2_Pin };
         case DIGITAL_OUTPUT_3:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_3_Pin };
+            return ( struct GPIOPortPacket_T ){ Digital_Output_3_GPIO_Port, Digital_Output_3_Pin };
         case DIGITAL_OUTPUT_4:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_4_Pin };
+            return ( struct GPIOPortPacket_T ){ Digital_Output_4_GPIO_Port, Digital_Output_4_Pin };
         case DIGITAL_OUTPUT_5:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_5_Pin };
+            return ( struct GPIOPortPacket_T ){ Digital_Output_5_GPIO_Port, Digital_Output_5_Pin };
         case DIGITAL_OUTPUT_6:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_6_Pin };
+            return ( struct GPIOPortPacket_T ){ Digital_Output_6_GPIO_Port, Digital_Output_6_Pin };
         case DIGITAL_OUTPUT_7:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_7_Pin };
+            return ( struct GPIOPortPacket_T ){ Digital_Output_7_GPIO_Port, Digital_Output_7_Pin };
         case DIGITAL_OUTPUT_8:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_8_Pin };
+            return ( struct GPIOPortPacket_T ){ Digital_Output_8_GPIO_Port, Digital_Output_8_Pin };
         case DIGITAL_OUTPUT_9:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ DIGITAL_OUTPUT_PORT, Digital_Input_9_Pin };
-        case LD1:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
-        case LD2:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ LD2_GPIO_Port, LD2_Pin };
-        case LD3:  // Added by Tim for DEV-68
-            return ( struct GPIOPortPacket_T ){ LD3_GPIO_Port, LD3_Pin };
-        default:  // Added by Tim, should be updated to set the warning LED once IOC is decided
-            return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
+            return ( struct GPIOPortPacket_T ){ Digital_Output_9_GPIO_Port, Digital_Output_9_Pin };
+        case USER_LED_RED_0:
+            return ( struct GPIOPortPacket_T ){ LED_R_0_GPIO_Port, LED_R_0_Pin };
+        case USER_LED_RED_1:
+            return ( struct GPIOPortPacket_T ){ LED_R_1_GPIO_Port, LED_R_1_Pin };
+        case USER_LED_RED_2:
+            return ( struct GPIOPortPacket_T ){ LED_R_2_GPIO_Port, LED_R_2_Pin };
+        case USER_LED_RED_3:
+            return ( struct GPIOPortPacket_T ){ LED_R_3_GPIO_Port, LED_R_3_Pin };
+        case USER_LED_RED_4:
+            return ( struct GPIOPortPacket_T ){ LED_R_4_GPIO_Port, LED_R_4_Pin };
+        case USER_LED_RED_5:
+            return ( struct GPIOPortPacket_T ){ LED_R_5_GPIO_Port, LED_R_5_Pin };
+        case USER_LED_BLUE_0:
+            return ( struct GPIOPortPacket_T ){ LED_B_0_GPIO_Port, LED_B_0_Pin };
+        case USER_LED_BLUE_1:
+            return ( struct GPIOPortPacket_T ){ LED_B_1_GPIO_Port, LED_B_1_Pin };
+        case USER_LED_BLUE_2:
+            return ( struct GPIOPortPacket_T ){ LED_B_2_GPIO_Port, LED_B_2_Pin };
+        case USER_LED_BLUE_3:
+            return ( struct GPIOPortPacket_T ){ LED_B_3_GPIO_Port, LED_B_3_Pin };
+        case USER_LED_BLUE_4:
+            return ( struct GPIOPortPacket_T ){ LED_B_4_GPIO_Port, LED_B_4_Pin };
+        case USER_LED_BLUE_5:
+            return ( struct GPIOPortPacket_T ){ LED_B_5_GPIO_Port, LED_B_5_Pin };
+        default:
+            return ( struct GPIOPortPacket_T ){ NULL, 0 };
     }
-    // Added by Tim, should be updated to set the warning LED once IOC is decided
-    return ( struct GPIOPortPacket_T ){ NULL, 0 };
-#else
-    // Added by Tim, should be updated to set the warning LED once IOC is decided
-    return ( struct GPIOPortPacket_T ){ LD1_GPIO_Port, LD1_Pin };
-#endif
 }
 
 /**
@@ -299,37 +308,16 @@ static void HW_GPIO_Reset_To_Port( GPIO_TypeDef* gpiox, int32_t pin_mask )
  *------------------------------------------------------------------------------
  */
 
-/**
- * @brief Toggles a digital output using the underlying GPIO LL library.
- *
- * @param gpio   The GPIO to toggle
- *
- * This function wraps the LL_GPIO_TogglePin( ... ) function provided by the
- * LL layer. It is a convenient seam for unit testing where the LL call is
- * mocked using GoogleMock.
- */
-void HW_GPIO_Toggle( GPIO_T gpio )
+void HW_GPIO_Toggle_Output( GPIOOutput_T pin )
 {
-#ifdef TEST_BUILD
-    ( void )gpio;
-#else
-    switch ( gpio )
+#ifndef TEST_BUILD
+    GPIOPortPacket_T pack = HW_GPIO_Port_Pin_Association( pin );
+    if ( pack.gpiox != NULL )
     {
-        case GPIO_GREEN_LED_INDICATOR:
-            LL_GPIO_TogglePin( LD1_GPIO_Port, LD1_Pin );
-            break;
-        case GPIO_BLUE_LED_INDICATOR:
-            LL_GPIO_TogglePin( LD2_GPIO_Port, LD2_Pin );
-            break;
-        case GPIO_RED_LED_INDICATOR:
-            LL_GPIO_TogglePin( LD3_GPIO_Port, LD3_Pin );
-            break;
-        case GPIO_TEST_INDICATOR:
-            LL_GPIO_TogglePin( Test_GPIO_Output_GPIO_Port, Test_GPIO_Output_Pin );
-            break;
-        default:
-            break;
+        LL_GPIO_TogglePin( pack.gpiox, pack.pin_mask );
     }
+#else
+    ( void )pin;
 #endif
 }
 
@@ -518,6 +506,11 @@ void HW_GPIO_Reset_Many_Pins( GPIOOutput_T* pins, uint16_t length )
  */
 bool HW_GPIO_StringToEnum( const char* str, GPIOOutput_T* out )
 {
+    if ( str == NULL || out == NULL )
+    {
+        return false;
+    }
+
     for ( size_t i = 0; i < sizeof( gpio_name_map ) / sizeof( gpio_name_map[0] ); i++ )
     {
         if ( strcmp( str, gpio_name_map[i].name ) == 0 )
@@ -526,6 +519,22 @@ bool HW_GPIO_StringToEnum( const char* str, GPIOOutput_T* out )
             return true;
         }
     }
+    return false;
+}
+
+bool HW_GPIO_InputStringToEnum( const char* str, GPIOInput_T* out )
+{
+    if ( str == NULL || out == NULL )
+    {
+        return false;
+    }
+
+    if ( strcmp( str, "STATUS_5V" ) == 0 )
+    {
+        *out = GPIO_INPUT_STATUS_5V;
+        return true;
+    }
+
     return false;
 }
 
@@ -607,6 +616,8 @@ inline bool HW_GPIO_Read_Pin( GPIOInput_T input )
             return LL_GPIO_IsInputPinSet( Digital_Input_8_GPIO_Port, Digital_Input_8_Pin );
         case DIGITAL_INPUT_CH_9:
             return LL_GPIO_IsInputPinSet( Digital_Input_9_GPIO_Port, Digital_Input_9_Pin );
+        case GPIO_INPUT_STATUS_5V:
+            return LL_GPIO_IsInputPinSet( STATUS_5V_GPIO_Port, STATUS_5V_Pin );
         default:
             return false;
     }
