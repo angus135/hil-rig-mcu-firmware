@@ -127,6 +127,24 @@ int main(void)
   MX_USART2_UART_Init();
   MX_CRC_Init();
   /* USER CODE BEGIN 2 */
+
+  /* Temporarily release NUCLEO-F446ZE ST-LINK VCP pins:
+   * PD8  = USART3_TX
+   * PD9  = USART3_RX
+   *
+   * Set both pins to high impedance by putting them in analog mode
+   * with no internal pull-up or pull-down.
+   *
+   * Comment this block out when testing on the actual PCB.
+   */
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+
+  /* Set PD8 and PD9 mode to analog: MODERy = 0b11 */
+  GPIOD->MODER |=  (GPIO_MODER_MODER8_Msk | GPIO_MODER_MODER9_Msk);
+
+  /* Disable pull-up / pull-down on PD8 and PD9: PUPDRy = 0b00 */
+  GPIOD->PUPDR &= ~(GPIO_PUPDR_PUPDR8_Msk | GPIO_PUPDR_PUPDR9_Msk);
+
   APP_MAIN_Application();
   // Nothing after here is ever called but if it does, run the error handler
   Error_Handler();
