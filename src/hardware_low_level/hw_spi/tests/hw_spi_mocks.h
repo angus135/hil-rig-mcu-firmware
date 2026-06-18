@@ -33,6 +33,7 @@ extern "C"
 
 // HAL defined SPI peripherals
 #define SPI1 ( SPI_TypeDef* )1
+#define SPI2 ( SPI_TypeDef* )2
 #define SPI4 ( SPI_TypeDef* )4
 
 // HAL defined SPI modes
@@ -83,6 +84,7 @@ extern "C"
 #define LL_DMA_PDATAALIGN_HALFWORD 0x00000001U /*!< Peripheral data alignment : HalfWord */
 
 // DMA related defines
+#define DMA1 ( ( DMA_TypeDef* )0x40026000U )
 #define DMA2 ( ( DMA_TypeDef* )0x40026400U )
 #define LL_DMA_STREAM_0 0x00000000U
 #define LL_DMA_STREAM_1 0x00000001U
@@ -300,6 +302,7 @@ typedef enum
  */
 
 SPI_HandleTypeDef hspi1;
+SPI_HandleTypeDef hspi2;
 SPI_HandleTypeDef hspi4;
 
 /**-----------------------------------------------------------------------------
@@ -624,6 +627,38 @@ uint32_t LL_DMA_IsActiveFlag_TC1( DMA_TypeDef* DMAx );
 void LL_DMA_ClearFlag_TC1( DMA_TypeDef* DMAx );
 
 /**
+ * @brief Get Stream 4 transfer error flag.
+ * @rmtoll HISR  TEIF4    LL_DMA_IsActiveFlag_TE4
+ * @param  DMAx DMAx Instance
+ * @retval State of bit (1 or 0).
+ */
+uint32_t LL_DMA_IsActiveFlag_TE4( DMA_TypeDef* DMAx );
+
+/**
+ * @brief Clear Stream 4 transfer error flag.
+ * @rmtoll HIFCR  CTEIF4    LL_DMA_ClearFlag_TE4
+ * @param  DMAx DMAx Instance
+ * @retval None
+ */
+void LL_DMA_ClearFlag_TE4( DMA_TypeDef* DMAx );
+
+/**
+ * @brief Get Stream 4 transfer complete flag.
+ * @rmtoll HISR  TCIF4    LL_DMA_IsActiveFlag_TC4
+ * @param  DMAx DMAx Instance
+ * @retval State of bit (1 or 0).
+ */
+uint32_t LL_DMA_IsActiveFlag_TC4( DMA_TypeDef* DMAx );
+
+/**
+ * @brief Clear Stream 4 transfer complete flag.
+ * @rmtoll HIFCR  CTCIF4    LL_DMA_ClearFlag_TC4
+ * @param  DMAx DMAx Instance
+ * @retval None
+ */
+void LL_DMA_ClearFlag_TC4( DMA_TypeDef* DMAx );
+
+/**
  * @brief Set Memory size.
  * @rmtoll CR          MSIZE           LL_DMA_SetMemorySize
  * @param  DMAx DMAx Instance
@@ -713,10 +748,11 @@ void NVIC_DisableIRQ( IRQn_Type IRQn );
 void NVIC_EnableIRQ( IRQn_Type IRQn );
 
 // DMA IRQ Handlers
+void DMA1_Stream3_IRQHandler( void );
+void DMA1_Stream4_IRQHandler( void );
 void DMA2_Stream0_IRQHandler( void );
 void DMA2_Stream1_IRQHandler( void );
 void DMA2_Stream2_IRQHandler( void );
-void DMA2_Stream3_IRQHandler( void );
 
 // NOLINTEND
 

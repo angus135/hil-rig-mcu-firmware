@@ -684,35 +684,32 @@ void SPI_CHANNEL_1_TX_DMA_IRQ( void )
     }
 }
 
-/*
- * Note: Not implemented yet as Channel 1 and DAC are on the same port right now.
- *
- * void SPI_DAC_TX_DMA_IRQ( void )
- * {
- *    // Handle transfer error first. If TE and TC are both latched, error
- *    // handling wins and normal completion processing is skipped.
- *    if ( SPI_DAC_TX_DMA_IS_ACTIVE_TE( SPI_DAC_TX_DMA ) != 0U )
- *    {
- *        SPI_DAC_TX_DMA_CLEAR_TE( SPI_DAC_TX_DMA );
- *        HW_SPI_TX_Error_Handler( SPI_DAC );
- *        return;
- *    }
- *
- *    if ( SPI_DAC_TX_DMA_IS_ACTIVE_TC( SPI_DAC_TX_DMA ) != 0U )
- *    {
- *        SPI_DAC_TX_DMA_CLEAR_TC( SPI_DAC_TX_DMA );
- *        if ( dac_state->is_master != false )
- *        {
- *            HW_SPI_TX_Handle_Master_DMA_TC( SPI_DAC, dac_state );
- *        }
- *        else
- *        {
- *            HW_SPI_TX_Handle_Slave_DMA_TC( SPI_DAC, dac_state );
- *        }
- *        return;
- *    }
- * }
- */
+void SPI_DAC_TX_DMA_IRQ( void )
+{
+    SPIPeripheralState_T* dac_state = &( channel_state_array[SPI_DAC] );
+    // Handle transfer error first. If TE and TC are both latched, error
+    // handling wins and normal completion processing is skipped.
+    if ( SPI_DAC_TX_DMA_IS_ACTIVE_TE( SPI_DAC_TX_DMA ) != 0U )
+    {
+        SPI_DAC_TX_DMA_CLEAR_TE( SPI_DAC_TX_DMA );
+        HW_SPI_TX_Error_Handler( SPI_DAC );
+        return;
+    }
+
+    if ( SPI_DAC_TX_DMA_IS_ACTIVE_TC( SPI_DAC_TX_DMA ) != 0U )
+    {
+        SPI_DAC_TX_DMA_CLEAR_TC( SPI_DAC_TX_DMA );
+        if ( dac_state->is_master != false )
+        {
+            HW_SPI_TX_Handle_Master_DMA_TC( SPI_DAC, dac_state );
+        }
+        else
+        {
+            HW_SPI_TX_Handle_Slave_DMA_TC( SPI_DAC, dac_state );
+        }
+        return;
+    }
+}
 
 /**
  * @brief Complete slow-baud final-drain handling from the SPI timer ISR.

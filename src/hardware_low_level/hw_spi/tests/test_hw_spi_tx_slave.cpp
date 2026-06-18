@@ -99,6 +99,10 @@ public:
     MOCK_METHOD( void, DMAClearFlagTE1, ( DMA_TypeDef * dma ), () );
     MOCK_METHOD( uint32_t, DMAIsActiveFlagTC1, ( DMA_TypeDef * dma ), () );
     MOCK_METHOD( void, DMAClearFlagTC1, ( DMA_TypeDef * dma ), () );
+    MOCK_METHOD( uint32_t, DMAIsActiveFlagTE4, ( DMA_TypeDef * dma ), () );
+    MOCK_METHOD( void, DMAClearFlagTE4, ( DMA_TypeDef * dma ), () );
+    MOCK_METHOD( uint32_t, DMAIsActiveFlagTC4, ( DMA_TypeDef * dma ), () );
+    MOCK_METHOD( void, DMAClearFlagTC4, ( DMA_TypeDef * dma ), () );
 
     MOCK_METHOD( void, DMASetMemorySize, ( DMA_TypeDef * dma, uint32_t stream, uint32_t size ),
                  () );
@@ -309,6 +313,32 @@ extern "C" void LL_DMA_ClearFlag_TC1( DMA_TypeDef* DMAx )
     }
 }
 
+extern "C" uint32_t LL_DMA_IsActiveFlag_TE4( DMA_TypeDef* DMAx )
+{
+    return g_mock ? g_mock->DMAIsActiveFlagTE4( DMAx ) : 0U;
+}
+
+extern "C" void LL_DMA_ClearFlag_TE4( DMA_TypeDef* DMAx )
+{
+    if ( g_mock )
+    {
+        g_mock->DMAClearFlagTE4( DMAx );
+    }
+}
+
+extern "C" uint32_t LL_DMA_IsActiveFlag_TC4( DMA_TypeDef* DMAx )
+{
+    return g_mock ? g_mock->DMAIsActiveFlagTC4( DMAx ) : 0U;
+}
+
+extern "C" void LL_DMA_ClearFlag_TC4( DMA_TypeDef* DMAx )
+{
+    if ( g_mock )
+    {
+        g_mock->DMAClearFlagTC4( DMAx );
+    }
+}
+
 extern "C" void LL_DMA_SetMemorySize( DMA_TypeDef* DMAx, uint32_t Stream, uint32_t Size )
 {
     if ( g_mock )
@@ -484,8 +514,8 @@ protected:
         EXPECT_CALL( mock, DMAIsEnabledStream( Eq( SPI_CHANNEL_1_TX_DMA ),
                                                Eq( SPI_CHANNEL_1_TX_DMA_STREAM ) ) )
             .WillOnce( Return( 0U ) );
-        EXPECT_CALL( mock, DMAClearFlagTC1( Eq( SPI_CHANNEL_1_TX_DMA ) ) );
-        EXPECT_CALL( mock, DMAClearFlagTE1( Eq( SPI_CHANNEL_1_TX_DMA ) ) );
+        EXPECT_CALL( mock, DMAClearFlagTC4( Eq( SPI_CHANNEL_1_TX_DMA ) ) );
+        EXPECT_CALL( mock, DMAClearFlagTE4( Eq( SPI_CHANNEL_1_TX_DMA ) ) );
         EXPECT_CALL(
             mock,
             DMASetMemoryAddress(
