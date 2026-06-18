@@ -105,7 +105,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"digital_input", CONSOLE_Command_DigitalInput, "Print digital input states as 1s and 0s."},
     {"can_tx", CONSOLE_Command_Can_tx, "Transmit a 8 byte message Usage: can_tx <1|2> <message1> <message2> ..."},
     {"can_rx", CONSOLE_Command_Can_rx, "Read and print an 8 byte message Usage: can_rx <1|2>"},
-    {"can_config", CONSOLE_Command_Can_config, "Configures Can channel 1&2"}
+    {"can_config", CONSOLE_Command_Can_config, "Configures Can channel 1&2"},
     {"expander", CONSOLE_Command_Expander,  "Command set allowing user to configure and control the logic expander"},
     {"i2c_loopback", CONSOLE_Command_I2C_Loopback, "Loopback testing for I2C master and slave channels."},
     {"spi_loop",    CONSOLE_Command_SPI_Loopback,         "Does a loopback test"},
