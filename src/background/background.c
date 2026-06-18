@@ -57,7 +57,7 @@ TaskHandle_t* BackgroundTaskHandle = NULL;  // NOLINT(readability-identifier-nam
 
 static void BACKGROUND_Process( void )
 {
-    HW_GPIO_Toggle_Output( USER_LED_RED_0 );
+    HW_GPIO_Toggle_Output( USER_LED_BLUE_4 );
 }
 
 /**-----------------------------------------------------------------------------
