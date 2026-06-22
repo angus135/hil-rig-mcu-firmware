@@ -250,6 +250,11 @@ bool EXEC_PWM_Capture_Convert( HwPWMCaptureChannel_T channel, const ExecPwmCaptu
         return false;
     }
 
+    if ( raw->period_ticks == 0U || raw->high_ticks > raw->period_ticks )
+    {
+        return false;
+    }
+
     clock_hz = HW_PWM_Capture_Get_Timer_Clock_Hz( channel );
 
     if ( clock_hz == 0U )
@@ -258,7 +263,8 @@ bool EXEC_PWM_Capture_Convert( HwPWMCaptureChannel_T channel, const ExecPwmCaptu
     }
 
     out->frequency_hz  = clock_hz / raw->period_ticks;
-    out->duty_cycle_bp = ( raw->high_ticks * 10000U ) / raw->period_ticks;
+    out->duty_cycle_bp =
+        (uint32_t)( ( (uint64_t)raw->high_ticks * 10000U ) / raw->period_ticks );
 
     return true;
 }
