@@ -46,14 +46,11 @@ typedef enum Timer_T
 {
     EXECUTION_MANAGER_TIMER,
     ANALOGUE_INPUT_TIMER,
-<<<<<<< HEAD
     SPI_CHANNEL_0_TIMER,
     SPI_CHANNEL_1_TIMER,
     SPI_DAC_TIMER,
-=======
     PWM_CAPTURE_TIMER_CH1,
     PWM_CAPTURE_TIMER_CH2,
->>>>>>> 244077f (DEV-84 Expanded timer.c  and timer.h to work with PWM timers)
 
 } Timer_T;
 
