@@ -216,11 +216,20 @@ bool EXEC_PWM_Capture_Consume( HwPWMCaptureChannel_T channel, ExecPwmCaptureResu
      * Read CCR values before clearing the capture flag to avoid losing
      * a new capture event that occurs between operations.
      */
+    /*
+     * Hardware contract:
+     * If has_new_data is true, period_ticks and high_ticks point to valid
+     * capture registers.
+     */
     period_ticks = *( hw_result.period_ticks );
     high_ticks   = *( hw_result.high_ticks );
 
     HW_PWM_Capture_Consume_Result( channel );
-
+    /*
+     * A new capture event has been consumed at this point. Mark has_new_data true
+     * before validation so callers can distinguish "no new data" from
+     * "new data was captured but rejected as invalid".
+     */
     result->has_new_data = true;
 
     if ( !EXEC_PWM_Capture_Result_Is_Valid( period_ticks, high_ticks ) )
@@ -262,9 +271,9 @@ bool EXEC_PWM_Capture_Convert( HwPWMCaptureChannel_T channel, const ExecPwmCaptu
         return false;
     }
 
-    out->frequency_hz  = clock_hz / raw->period_ticks;
+    out->frequency_hz = clock_hz / raw->period_ticks;
     out->duty_cycle_bp =
-        (uint32_t)( ( (uint64_t)raw->high_ticks * 10000U ) / raw->period_ticks );
+        ( uint32_t )( ( ( uint64_t )raw->high_ticks * 10000U ) / raw->period_ticks );
 
     return true;
 }
