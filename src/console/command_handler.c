@@ -37,7 +37,6 @@
 /* Includes for PWM Capture*/
 #include "subsystem_command_apis/console_pwm_capture.h"
 
-#include "subsystem_command_apis/console_uart.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -98,13 +97,10 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"set_pins", CONSOLE_Command_Set_Many_Pins, "Set or reset many digital output, Usage: set_pin PIN_NAME0 PIN_NAME1 ... PIN_NAMEX <0|1>"},
     {"analogue_inputs", CONSOLE_Command_Analogue_Inputs, "Allows for interaction with Analogue Inputs."},
     {"digital_input", CONSOLE_Command_DigitalInput, "Print digital input states as 1s and 0s."},
-<<<<<<< HEAD
     {"expander", CONSOLE_Command_Expander,  "Command set allowing user to configure and control the logic expander"},
     {"i2c_loopback", CONSOLE_Command_I2C_Loopback, "Loopback testing for I2C master and slave channels."},
     {"spi_loop",    CONSOLE_Command_SPI_Loopback,         "Does a loopback test"},
-=======
    {"pwm_capture", CONSOLE_PWM_Capture_Command, "Configure/read PWM capture. Usage: pwm_capture <start|stop|read> ..."},
->>>>>>> 36b83e5 (DEV-84 Created console command to begin and read PWM capture on defined channel)
 
 };
 
