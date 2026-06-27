@@ -1,5 +1,8 @@
 build/
 .cache/
+.codex/
+.cache/
+.agents/
 
 # Ignore Unnecessary Cube IDE Generated files and directories
 .metadata/
