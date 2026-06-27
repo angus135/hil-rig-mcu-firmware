@@ -62,6 +62,12 @@ typedef enum ADCSampleRates_T
 typedef enum ADCSource_T
 {
     ADC_SOURCE_VIN,
+    ADC_SOURCE_OUT_5V_CURRENT,
+    ADC_SOURCE_OUT_5V_VOLTAGE,
+    ADC_SOURCE_OUT_12V_CURRENT,
+    ADC_SOURCE_OUT_12V_VOLTAGE,
+    ADC_SOURCE_OUT_24V_CURRENT,
+    ADC_SOURCE_OUT_24V_VOLTAGE,
 } ADCSource_T;
 
 /**-----------------------------------------------------------------------------

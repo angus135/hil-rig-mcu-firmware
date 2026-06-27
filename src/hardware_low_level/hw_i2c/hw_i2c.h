@@ -6,12 +6,12 @@
  *  Description:
  *      Low-level hardware I2C driver for STM32F446ZE microcontroller. Manages
  *      configuration, interrupt handling, and data transfer orchestration for
- *      three I2C channels: I2C1, I2C2 (both external), and FMPI2C1 (internal).
+ *      three I2C channels: I2C3, I2C2 (both external), and FMPI2C1 (internal).
  *      Supports both master and slave modes with selectable interrupt or DMA-based
  *      transfer paths. Uses ring-buffered receive and stage-buffered transmit patterns.
  *
  *  Notes:
- *      - I2C1 supports interrupt-only transfers (no DMA)
+ *      - I2C3 supports interrupt-only transfers (no DMA)
  *      - I2C2 supports both interrupt and DMA transfers
  *      - FMPI2C1 is a high-speed internal channel (interrupt-only)
  *      - Must call configuration function before any transfers
@@ -113,7 +113,7 @@ typedef struct HWI2CRxPeek_T
  */
 
 /**
- * @brief Configure an external I2C channel (I2C1 or I2C2).
+ * @brief Configure an external I2C channel (I2C3 or I2C2).
  *
  * Initializes an I2C channel with the specified configuration including mode
  * (master/slave), speed (100 kHz / 400 kHz), and transfer path (interrupt/DMA).
@@ -160,7 +160,7 @@ bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data, uint
  * @brief Trigger a master transmit operation on an external I2C channel.
  *
  * Initiates an I2C master transmit to the specified device address on an external channel
- * (I2C1 or I2C2) using data previously loaded with HW_I2C_Load_Stage_Buffer().
+ * (I2C3 or I2C2) using data previously loaded with HW_I2C_Load_Stage_Buffer().
  * Supports both interrupt and DMA-based transfer paths as configured.
  *
  * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
@@ -190,7 +190,7 @@ bool HW_I2C_Trigger_Master_Transmit_Internal( uint16_t device_address_7bit );
  * @brief Trigger a master receive operation on an external I2C channel.
  *
  * Initiates an I2C master receive from the specified device address on an external channel
- * (I2C1 or I2C2). Received data will be available via HW_I2C_Peek_Received() and consumed
+ * (I2C3 or I2C2). Received data will be available via HW_I2C_Peek_Received() and consumed
  * with HW_I2C_Consume_Received(). Supports both interrupt and DMA-based transfer paths
  * as configured.
  *

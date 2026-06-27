@@ -49,28 +49,28 @@ static GPIO_PortMock GPIOH_mock = { .id = 0x11 };
 #define GPIOH ( ( void* )&GPIOH_mock )
 
 /* ---- Pin bitmasks (match STM32 HAL style: GPIO_PIN_x == (1u<<x)) ---- */
-#define Digital_Input_0_Pin ( 1u << 3 )
-#define Digital_Input_1_Pin ( 1u << 4 )
-#define Digital_Input_2_Pin ( 1u << 5 )
-#define Digital_Input_3_Pin ( 1u << 7 )
-#define Digital_Input_4_Pin ( 1u << 10 )
-#define Digital_Input_5_Pin ( 1u << 11 )
-#define Digital_Input_6_Pin ( 1u << 12 )
-#define Digital_Input_7_Pin ( 1u << 13 )
-#define Digital_Input_8_Pin ( 1u << 14 )
-#define Digital_Input_9_Pin ( 1u << 15 )
+#define Digital_Input_0_Pin ( 1u << 8 )
+#define Digital_Input_1_Pin ( 1u << 9 )
+#define Digital_Input_2_Pin ( 1u << 10 )
+#define Digital_Input_3_Pin ( 1u << 11 )
+#define Digital_Input_4_Pin ( 1u << 14 )
+#define Digital_Input_5_Pin ( 1u << 15 )
+#define Digital_Input_6_Pin ( 1u << 0 )
+#define Digital_Input_7_Pin ( 1u << 1 )
+#define Digital_Input_8_Pin ( 1u << 2 )
+#define Digital_Input_9_Pin ( 1u << 3 )
 
-/* ---- Port assignments (all inputs on GPIOF like the real board) ---- */
-#define Digital_Input_0_GPIO_Port GPIOF
-#define Digital_Input_1_GPIO_Port GPIOF
-#define Digital_Input_2_GPIO_Port GPIOF
-#define Digital_Input_3_GPIO_Port GPIOF
-#define Digital_Input_4_GPIO_Port GPIOF
-#define Digital_Input_5_GPIO_Port GPIOF
-#define Digital_Input_6_GPIO_Port GPIOF
-#define Digital_Input_7_GPIO_Port GPIOF
-#define Digital_Input_8_GPIO_Port GPIOF
-#define Digital_Input_9_GPIO_Port GPIOF
+/* ---- Port assignments ---- */
+#define Digital_Input_0_GPIO_Port GPIOD
+#define Digital_Input_1_GPIO_Port GPIOD
+#define Digital_Input_2_GPIO_Port GPIOD
+#define Digital_Input_3_GPIO_Port GPIOD
+#define Digital_Input_4_GPIO_Port GPIOD
+#define Digital_Input_5_GPIO_Port GPIOD
+#define Digital_Input_6_GPIO_Port GPIOD
+#define Digital_Input_7_GPIO_Port GPIOD
+#define Digital_Input_8_GPIO_Port GPIOD
+#define Digital_Input_9_GPIO_Port GPIOD
 
 // NOLINTEND
 
