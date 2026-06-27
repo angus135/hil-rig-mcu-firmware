@@ -30,6 +30,7 @@ target_include_directories(console
 
 target_link_libraries(console
     PUBLIC
+    hw_can
     global_config
     project_warnings
     cubeide_hal
