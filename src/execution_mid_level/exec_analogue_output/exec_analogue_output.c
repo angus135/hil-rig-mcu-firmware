@@ -347,6 +347,7 @@ bool EXEC_ANALOG_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v )
         return false;
     }
 
+    // Need to remove the floating point computation from the hot loop
     count = EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( input_voltage_v );
 
     if ( !EXEC_ANALOGUE_OUTPUT_Send_Frame( ( uint8_t )( ANALOGUE_OUTPUT_REG_DAC_BASE + channel ),
