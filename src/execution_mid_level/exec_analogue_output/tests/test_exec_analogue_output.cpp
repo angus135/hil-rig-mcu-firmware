@@ -29,6 +29,7 @@
 extern "C"
 {
 #include "exec_analogue_output.h" /* Module under test */
+// adjust the CMake to include the hw_spi for the unit tests
 #include "../../../hardware_low_level/hw_spi/hw_spi.h"
 #include <stdint.h>
 #include <stdbool.h>
