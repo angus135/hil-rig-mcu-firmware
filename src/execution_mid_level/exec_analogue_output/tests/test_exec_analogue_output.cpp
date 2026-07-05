@@ -1,6 +1,6 @@
 /******************************************************************************
  *  File:       test_exec_analogue_output.cpp
- *  Author:     Angus Corr
+ *  Author:     Coen Pasitchnyj
  *  Created:    25-Mar-2026
  *
  *  Description:
