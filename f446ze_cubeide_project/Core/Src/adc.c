@@ -241,12 +241,12 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* adcHandle)
     PA2     ------> ADC2_IN2
     PA3     ------> ADC2_IN3
     */
-    GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_3;
+    GPIO_InitStruct.Pin = ADC_VIN_Pin|ADC_24V_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-    GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_3;
+    GPIO_InitStruct.Pin = ADC_12V_Pin|ADC_5V_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
@@ -269,7 +269,7 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* adcHandle)
     PF4     ------> ADC3_IN14
     PF5     ------> ADC3_IN15
     */
-    GPIO_InitStruct.Pin = GPIO_PIN_3|GPIO_PIN_4|GPIO_PIN_5;
+    GPIO_InitStruct.Pin = ADC_24V_Current_Pin|ADC_12V_Current_Pin|ADC_5V_Current_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
@@ -317,9 +317,9 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* adcHandle)
     PA2     ------> ADC2_IN2
     PA3     ------> ADC2_IN3
     */
-    HAL_GPIO_DeInit(GPIOC, GPIO_PIN_0|GPIO_PIN_3);
+    HAL_GPIO_DeInit(GPIOC, ADC_VIN_Pin|ADC_24V_Pin);
 
-    HAL_GPIO_DeInit(GPIOA, GPIO_PIN_2|GPIO_PIN_3);
+    HAL_GPIO_DeInit(GPIOA, ADC_12V_Pin|ADC_5V_Pin);
 
   /* USER CODE BEGIN ADC2_MspDeInit 1 */
 
@@ -338,7 +338,7 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* adcHandle)
     PF4     ------> ADC3_IN14
     PF5     ------> ADC3_IN15
     */
-    HAL_GPIO_DeInit(GPIOF, GPIO_PIN_3|GPIO_PIN_4|GPIO_PIN_5);
+    HAL_GPIO_DeInit(GPIOF, ADC_24V_Current_Pin|ADC_12V_Current_Pin|ADC_5V_Current_Pin);
 
   /* USER CODE BEGIN ADC3_MspDeInit 1 */
 
