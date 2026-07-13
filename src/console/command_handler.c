@@ -716,7 +716,7 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
         return;
     }
 
-    CONSOLE_Printf( "TX buffer before: %s\r\n", HW_SPI_Tx_Buffer_Empty( SPI_CHANNEL_0 ) ? "empty" : "not empty" );
+    CONSOLE_Printf( "TX buffer before: %s\r\n", HW_SPI_Tx_Is_Complete( SPI_CHANNEL_0 ) ? "empty" : "not empty" );
 
     if ( !EXEC_ANALOG_OUTPUT_Write_Voltage( ( uint8_t )channel, voltage ) )
     {
@@ -724,7 +724,7 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
         return;
     }
 
-    CONSOLE_Printf( "TX buffer after: %s\r\n", HW_SPI_Tx_Buffer_Empty( SPI_CHANNEL_0 ) ? "empty" : "not empty" );
+    CONSOLE_Printf( "TX buffer after: %s\r\n", HW_SPI_Tx_Is_Complete( SPI_CHANNEL_0 ) ? "empty" : "not empty" );
     CONSOLE_Printf( "Wrote (requested) %s V to channel %ld\r\n", argv[2], channel );
 }
 
