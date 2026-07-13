@@ -1,62 +1,59 @@
 /******************************************************************************
- *  File:       test_buffer_manager.cpp
+ *  File:       hw_nand_mocks.h
  *  Author:     Callum Rafferty
- *  Created:    25-Mar-2026
+ *  Created:    5-May-2026
  *
  *  Description:
+ *      Mock definitions for unit testing hw_nand.
  *
  *  Notes:
  *
  ******************************************************************************/
+
+#ifndef HW_NAND_MOCKS_H
+#define HW_NAND_MOCKS_H
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+// NOLINTBEGIN
 
 /**-----------------------------------------------------------------------------
  *  Includes
  *------------------------------------------------------------------------------
  */
 
-#include <gtest/gtest.h>
-#include <gmock/gmock.h>
-
-extern "C"
-{
-#include "buffer_manager.h" /* Module under test */
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
+
+#include "hw_qspi.h"
+
+/**-----------------------------------------------------------------------------
+ *  Public Defines / Macros
+ *------------------------------------------------------------------------------
+ */
+
+/*
+ * hw_nand unit tests mock the public hw_qspi API. The concrete mock object and
+ * function shims live in test_hw_nand.cpp, matching the structure used by the
+ * other hardware_low_level tests.
+ */
+
+/**-----------------------------------------------------------------------------
+ *  Public Typedefs / Enums / Structures
+ *------------------------------------------------------------------------------
+ */
+
+/**-----------------------------------------------------------------------------
+ *  Public Function Prototypes
+ *------------------------------------------------------------------------------
+ */
+
+// NOLINTEND
+
+#ifdef __cplusplus
 }
+#endif
 
-/**-----------------------------------------------------------------------------
- *  Test Constants / Macros
- *------------------------------------------------------------------------------
- */
-
-/**-----------------------------------------------------------------------------
- *  Test Doubles / Mocks
- *------------------------------------------------------------------------------
- */
-
-/**-----------------------------------------------------------------------------
- *  Test Fixture
- *------------------------------------------------------------------------------
- */
-
-/**
- * @brief Test fixture for module tests.
- *
- * Provides a consistent setup/teardown environment for all test cases.
- */
-class BufferManagerTest : public ::testing::Test
-{
-protected:
-    void SetUp( void ) override
-    {
-    }
-
-    void TearDown( void ) override
-    {
-    }
-};
-
-/**-----------------------------------------------------------------------------
- *  Test Cases
- *------------------------------------------------------------------------------
- */
+#endif /* HW_NAND_MOCKS_H */

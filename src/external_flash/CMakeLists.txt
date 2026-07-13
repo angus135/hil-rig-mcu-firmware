@@ -5,10 +5,12 @@
 # -----------------------------
 
 set(EXTERNAL_FLASH_SOURCES
+    external_flash_allocator.c
     external_flash.c
 )
 
 set(EXTERNAL_FLASH_HEADERS
+    external_flash_allocator.h
     external_flash.h
 )
 
@@ -29,6 +31,7 @@ target_link_libraries(external_flash
         project_warnings
         cubeide_hal
         rtos
+        hw_nand
 )
 
 # -----------------------------
