@@ -67,7 +67,7 @@ static constexpr std::array<std::array<uint8_t, 3U>, 11U>
 
 class MockHWSPI;
 
-static bool VerifySpiChannelSetupConfig( SPIPeripheral_T     peripheral,
+static bool VerifySpiChannelSetupConfig( SPIChannel_T     peripheral,
                                          const HWSPIConfig_T configuration )
 {
     EXPECT_TRUE( ( peripheral == SPI_CHANNEL_0 ) && ( configuration.spi_mode == SPI_MASTER_MODE )
@@ -80,7 +80,7 @@ static bool VerifySpiChannelSetupConfig( SPIPeripheral_T     peripheral,
     return true;
 }
 
-static void VerifyLoadedFrame( SPIPeripheral_T peripheral, const uint8_t* data, uint32_t size_bytes,
+static void VerifyLoadedFrame( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes,
                                const std::array<uint8_t, 3U>& expected_frame )
 {
     EXPECT_EQ( peripheral, SPI_CHANNEL_0 );
@@ -105,14 +105,14 @@ class MockHWSPI
 {
 public:
     MOCK_METHOD( bool, ConfigureChannel,
-                 ( SPIPeripheral_T peripheral, HWSPIConfig_T configuration ), () );
+                 ( SPIChannel_T peripheral, HWSPIConfig_T configuration ), () );
 
-    MOCK_METHOD( void, StartChannel, ( SPIPeripheral_T peripheral ), () );
+    MOCK_METHOD( void, StartChannel, ( SPIChannel_T peripheral ), () );
 
     MOCK_METHOD( bool, LoadTxBuffer,
-                 ( SPIPeripheral_T peripheral, const uint8_t* data, uint32_t size_bytes ), () );
+                 ( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ), () );
 
-    MOCK_METHOD( void, TxTrigger, ( SPIPeripheral_T peripheral ), () );
+    MOCK_METHOD( void, TxTrigger, ( SPIChannel_T peripheral ), () );
 };
 
 static MockHWSPI* g_mock_hw_spi = nullptr;
@@ -120,22 +120,22 @@ static MockHWSPI* g_mock_hw_spi = nullptr;
 extern "C"
 {
 
-bool HW_SPI_Configure_Channel( SPIPeripheral_T peripheral, HWSPIConfig_T configuration )
+bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configuration )
 {
     return g_mock_hw_spi->ConfigureChannel( peripheral, configuration );
 }
 
-void HW_SPI_Start_Channel( SPIPeripheral_T peripheral )
+void HW_SPI_Start_Channel( SPIChannel_T peripheral )
 {
     g_mock_hw_spi->StartChannel( peripheral );
 }
 
-bool HW_SPI_Load_Tx_Buffer( SPIPeripheral_T peripheral, const uint8_t* data, uint32_t size )
+bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32_t size )
 {
     return g_mock_hw_spi->LoadTxBuffer( peripheral, data, size );
 }
 
-void HW_SPI_Tx_Trigger( SPIPeripheral_T peripheral )
+void HW_SPI_Tx_Trigger( SPIChannel_T peripheral )
 {
     g_mock_hw_spi->TxTrigger( peripheral );
 }
@@ -147,7 +147,7 @@ static void ExpectFrameLoad( MockHWSPI& mock_hw_spi, const std::array<uint8_t, 3
     using ::testing::Invoke;
 
     EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, _, 3U ) )
-        .WillOnce( Invoke( [expected_frame]( SPIPeripheral_T peripheral, const uint8_t* data,
+        .WillOnce( Invoke( [expected_frame]( SPIChannel_T peripheral, const uint8_t* data,
                                              uint32_t size_bytes ) {
             VerifyLoadedFrame( peripheral, data, size_bytes, expected_frame );
             return true;
@@ -241,7 +241,7 @@ protected:
         };
 
         EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, _, 3U ) )
-            .WillOnce( Invoke( [expected_frame]( SPIPeripheral_T peripheral, const uint8_t* data,
+            .WillOnce( Invoke( [expected_frame]( SPIChannel_T peripheral, const uint8_t* data,
                                                  uint32_t size_bytes ) {
                 EXPECT_EQ( peripheral, SPI_CHANNEL_0 );
                 EXPECT_EQ( size_bytes, 3U );
