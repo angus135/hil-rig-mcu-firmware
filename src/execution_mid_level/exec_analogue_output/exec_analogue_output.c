@@ -71,10 +71,10 @@ static bool s_EXEC_ANALOGUE_OUTPUT_Configured = false;
  *------------------------------------------------------------------------------
  */
 
-static inline uint8_t  EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( uint8_t register_address );
-static inline bool     EXEC_ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, uint16_t data_word );
-static uint16_t EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_v );
-static bool     EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref );
+static inline uint8_t EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( uint8_t register_address );
+static inline bool EXEC_ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, uint16_t data_word );
+static uint16_t    EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_v );
+static bool        EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
