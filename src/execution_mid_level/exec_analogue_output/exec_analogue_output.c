@@ -32,7 +32,7 @@
  *------------------------------------------------------------------------------
  */
 // TODO: change this to the DAC channel during board bring-up
-#define ANALOGUE_OUTPUT_SPI_CHANNEL SPI_CHANNEL_0
+#define ANALOGUE_OUTPUT_SPI_CHANNEL SPI_DAC
 
 #define ANALOGUE_OUTPUT_DAC_CHANNEL_COUNT 8U
 #define EXEC_ANALOGUE_OUTPUT_CONFIGURED_CHANNEL_COUNT 6U
@@ -249,7 +249,7 @@ bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void )
         .data_size = SPI_SIZE_8_BIT,
         .first_bit = SPI_FIRST_MSB,
         // TODO: change this to faster baud rate during board bring up
-        .baud_rate = SPI_BAUD_2M813BIT,
+        .baud_rate = SPI_BAUD_703KBIT,
         .cpol      = SPI_CPOL_LOW,
         .cpha      = SPI_CPHA_1_EDGE,
     };
