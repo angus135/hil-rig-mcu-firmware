@@ -164,8 +164,11 @@ int main(void)
   /* USER CODE BEGIN WHILE */
     while ( 1 )
     {
+    	HAL_GPIO_WritePin(SPI1_CS_TEST_GPIO_Port, SPI1_CS_TEST_Pin, 0);
+    	HAL_Delay(500);
+    	HAL_GPIO_WritePin(SPI1_CS_TEST_GPIO_Port, SPI1_CS_TEST_Pin, 1);
+    	    	HAL_Delay(500);
     /* USER CODE END WHILE */
-
 
     /* USER CODE BEGIN 3 */
     }
