@@ -36,7 +36,7 @@
  */
 
 #define CHANNEL1_TIM &htim12
-#define CHANNEL2_TIM &htim13
+#define CHANNEL2_TIM &htim8
 
 #define MAX_ARR_COUNTS 65535  // the max value of our ARR register (atm uint16_t)
 
