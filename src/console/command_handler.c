@@ -36,6 +36,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "exec_pwm_capture.h"
+#include "exec_pwm_gen.h"
 
 /* Includes for PWM Capture*/
 #include "subsystem_command_apis/console_pwm_capture.h"
@@ -91,6 +92,7 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] );
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
@@ -118,6 +120,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"can_rx", CONSOLE_Command_Can_rx, "Read and print an 8 byte message"},
     {"can_config", CONSOLE_Command_Can_config, "Configures Can channel1"},
     {"anlg_out",    CONSOLE_Command_Analogue_Output,      "DAC config and write commands"},
+    {"pwm_out",    CONSOLE_Command_PWM_Output,      "Set PWM outputs"},
 
 };
 
@@ -129,6 +132,58 @@ static ConsoleUartLoopbackState_T s_uart_loopback_state = { 0 };
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Set PWM outputs
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
+static void CONSOLE_CommaCONSOLE_Command_PWM_Outputnd_Help( uint16_t argc, char* argv[] )
+{
+    
+    if ( argc != 5 || argv[1] == NULL )
+    {
+        CONSOLE_Printf( "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+        return;
+    }
+    if ( strcmp( argv[1], "0" ) == 0 )
+    {
+        if ( strcmp( argv[2], "0" ) == 0 )
+        {
+            Exec_PWM_GEN_Config(0,0);
+            HW_PWM_GEN_compute_psc();
+            HW_PWM_GEN_compute_arr();
+            HW_PWM_GEN_compute_ccr();
+        } else if ( strcmp( argv[2], "1" ) == 0 ) {
+            Exec_PWM_GEN_Config(0,1);
+        } else {
+            CONSOLE_Printf( "Unknown Voltage level expecting <0|1> but recieved %s \r\n", argv[2] );
+            CONSOLE_Printf( "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+            return;
+        }
+    } else if ( strcmp( argv[1], "1" ) == 0 ) {
+
+    } else {
+        CONSOLE_Printf( "Unknown PWM channel expecting <0|1> but recieved %s \r\n", argv[1] );
+        CONSOLE_Printf( "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+        return;
+    }
+    Exec_PWM_GEN_Config();
+    HW_PWM_GEN_compute_psc();
+    HW_PWM_GEN_compute_arr();
+    HW_PWM_GEN_compute_ccr();
+    EXEC_PWM_GEN_Set_PWM_LV();
+    EXEC_PWM_GEN_Set_PWM_HV();
+    CONSOLE_Printf( "Available commands:\r\n" );
+    for ( size_t command = 0; command < ARRAY_LEN( CONSOLE_COMMANDS ); command++ )
+    {
+        CONSOLE_Printf( "%s\t\t\t- %s\r\n", CONSOLE_COMMANDS[command].command_name,
+                        CONSOLE_COMMANDS[command].command_description );
+    }
+}
 
 static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
 {
