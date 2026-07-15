@@ -20,6 +20,7 @@
 
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
+#include <cstring>
 
 extern "C"
 {
@@ -54,6 +55,8 @@ class MockHWPWM
 public:
     MOCK_METHOD( HAL_StatusTypeDef, TIMPWMStart, ( TIM_HandleTypeDef * htim, uint32_t channel ),
                  () );
+    MOCK_METHOD( HAL_StatusTypeDef, TIMPWMNStart, ( TIM_HandleTypeDef * htim, uint32_t channel ),
+                 () );
 };
 
 static MockHWPWM* g_mock = nullptr;
@@ -66,6 +69,11 @@ static MockHWPWM* g_mock = nullptr;
 extern "C" HAL_StatusTypeDef HAL_TIM_PWM_Start( TIM_HandleTypeDef* htim, uint32_t channel )
 {
     return g_mock->TIMPWMStart( htim, channel );
+}
+
+extern "C" HAL_StatusTypeDef HAL_TIMEx_PWMN_Start( TIM_HandleTypeDef* htim, uint32_t channel )
+{
+    return g_mock->TIMPWMNStart( htim, channel );
 }
 
 /**-----------------------------------------------------------------------------
@@ -199,6 +207,20 @@ TEST_F( HWPWMGenTest, ComputeARRReturnsZeroForMaximumFrequency )
     EXPECT_EQ( arr, 0 );
 }
 
+TEST_F( HWPWMGenTest, ComputeARRReturnsMaxForZeroFrequency )
+{
+    uint16_t arr = HW_PWM_GEN_compute_arr( 0, 1000000, 0 );
+
+    EXPECT_EQ( arr, 0xFFFF );
+}
+
+TEST_F( HWPWMGenTest, ComputeARRReturnsMaxWhenCombinedDividerWrapsToZero )
+{
+    uint16_t arr = HW_PWM_GEN_compute_arr( 65536, 1000000, 65535 );
+
+    EXPECT_EQ( arr, 0xFFFF );
+}
+
 /*-----------------------------------------------------------------------------
  * Compute CCR Tests
  *---------------------------------------------------------------------------*/
@@ -251,13 +273,13 @@ TEST_F( HWPWMGenTest, SetPWM1DirectUpdatesTIM12Registers )
     EXPECT_EQ( mock_tim12_regs.PSC, 4 );
 }
 
-TEST_F( HWPWMGenTest, SetPWM2DirectUpdatesTIM12Registers )
+TEST_F( HWPWMGenTest, SetPWM2DirectUpdatesTIM8Registers )
 {
     HW_PWM_GEN_Set_PWM2_Direct( 2000, 500, 8 );
 
-    EXPECT_EQ( mock_tim12_regs.CCR1, 500 );
-    EXPECT_EQ( mock_tim12_regs.ARR, 2000 );
-    EXPECT_EQ( mock_tim12_regs.PSC, 8 );
+    EXPECT_EQ( mock_tim8_regs.CCR2, 500 );
+    EXPECT_EQ( mock_tim8_regs.ARR, 2000 );
+    EXPECT_EQ( mock_tim8_regs.PSC, 8 );
 }
 
 TEST_F( HWPWMGenTest, SetPWM1DirectDoesNotModifyOtherChannels )
@@ -274,10 +296,10 @@ TEST_F( HWPWMGenTest, SetPWM2DirectDoesNotModifyOtherChannels )
 {
     HW_PWM_GEN_Set_PWM2_Direct( 1000, 222, 3 );
 
-    EXPECT_EQ( mock_tim12_regs.CCR1, 222 );
-    EXPECT_EQ( mock_tim12_regs.CCR2, 0 );
-    EXPECT_EQ( mock_tim12_regs.CCR3, 0 );
-    EXPECT_EQ( mock_tim12_regs.CCR4, 0 );
+    EXPECT_EQ( mock_tim8_regs.CCR1, 0 );
+    EXPECT_EQ( mock_tim8_regs.CCR2, 222 );
+    EXPECT_EQ( mock_tim8_regs.CCR3, 0 );
+    EXPECT_EQ( mock_tim8_regs.CCR4, 0 );
 }
 
 /*-----------------------------------------------------------------------------
@@ -286,7 +308,7 @@ TEST_F( HWPWMGenTest, SetPWM2DirectDoesNotModifyOtherChannels )
 
 TEST_F( HWPWMGenTest, ConfigStartsLVChannelLowVoltagePWM )
 {
-    EXPECT_CALL( mock, TIMPWMStart( &htim12, TIM_CHANNEL_1 ) )
+    EXPECT_CALL( mock, TIMPWMStart( &htim12, TIM_CHANNEL_2 ) )
         .Times( 1 )
         .WillOnce( Return( HAL_OK ) );
 
@@ -295,7 +317,7 @@ TEST_F( HWPWMGenTest, ConfigStartsLVChannelLowVoltagePWM )
 
 TEST_F( HWPWMGenTest, ConfigStartsLVChannelHighVoltagePWM )
 {
-    EXPECT_CALL( mock, TIMPWMStart( &htim12, TIM_CHANNEL_1 ) )
+    EXPECT_CALL( mock, TIMPWMStart( &htim12, TIM_CHANNEL_2 ) )
         .Times( 1 )
         .WillOnce( Return( HAL_OK ) );
 
@@ -304,7 +326,7 @@ TEST_F( HWPWMGenTest, ConfigStartsLVChannelHighVoltagePWM )
 
 TEST_F( HWPWMGenTest, ConfigStartsHVChannelLowVoltagePWM )
 {
-    EXPECT_CALL( mock, TIMPWMStart( &htim8, TIM_CHANNEL_2 ) )
+    EXPECT_CALL( mock, TIMPWMNStart( &htim8, TIM_CHANNEL_2 ) )
         .Times( 1 )
         .WillOnce( Return( HAL_OK ) );
 
@@ -313,7 +335,7 @@ TEST_F( HWPWMGenTest, ConfigStartsHVChannelLowVoltagePWM )
 
 TEST_F( HWPWMGenTest, ConfigStartsHVChannelHighVoltagePWM )
 {
-    EXPECT_CALL( mock, TIMPWMStart( &htim8, TIM_CHANNEL_2 ) )
+    EXPECT_CALL( mock, TIMPWMNStart( &htim8, TIM_CHANNEL_2 ) )
         .Times( 1 )
         .WillOnce( Return( HAL_OK ) );
 

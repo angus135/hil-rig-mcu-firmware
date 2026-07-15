@@ -17,30 +17,34 @@
  */
 
 #ifndef TEST_BUILD
-#include "gpio.h"
-#include "stm32f4xx_ll_gpio.h"
-#include "stm32f4xx_ll_tim.h"
 #include "tim.h"
 #include "stm32f4xx_hal_tim.h"
-#include "tim.h"
+#include "stm32f4xx_ll_tim.h"
 #else
 #include "tests/hw_pwm_gen_mocks.h"
 #endif
 
 #include "hw_pwm_gen.h"
-#include "hw_timer.h"
 #include <stdint.h>
-#include <stdbool.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
 
-#define CHANNEL1_TIM &htim12
-#define CHANNEL2_TIM &htim8
-
 #define MAX_ARR_COUNTS 65535  // the max value of our ARR register (atm uint16_t)
+
+/* PWM1 / LV hardware mapping */
+#define PWM1_TIMER_HANDLE ( &htim12 )
+#define PWM1_HAL_CHANNEL TIM_CHANNEL_2
+#define PWM1_LL_SET_COMPARE LL_TIM_OC_SetCompareCH2
+#define PWM1_START_OUTPUT HAL_TIM_PWM_Start
+
+/* PWM2 / HV hardware mapping */
+#define PWM2_TIMER_HANDLE ( &htim8 )
+#define PWM2_HAL_CHANNEL TIM_CHANNEL_2
+#define PWM2_LL_SET_COMPARE LL_TIM_OC_SetCompareCH2
+#define PWM2_START_OUTPUT HAL_TIMEx_PWMN_Start
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -50,11 +54,6 @@
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
- *------------------------------------------------------------------------------
- */
-
-/**-----------------------------------------------------------------------------
- *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
 
@@ -84,35 +83,20 @@
  */
 void HW_PWM_GEN_Config( PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl )
 {
-    // Call to output expander to set voltage levels
+    if ( volt_lvl != PWM_GEN_VOLTAGE_LOW && volt_lvl != PWM_GEN_VOLTAGE_HIGH )
+    {
+        return;
+    }
 
     if ( channel == PWM_GEN_CHANNEL_LV )
     {
-        if ( volt_lvl == PWM_GEN_VOLTAGE_LOW )
-        {
-            // Call to output expander to set voltage levels
-            HAL_TIM_PWM_Start( CHANNEL1_TIM,
-                               TIM_CHANNEL_2 );  // TIM_CHANNEL_2 need in this and others needs to
-                                                 // be changed so it can be set in a #define
-        }
-        else if ( volt_lvl == PWM_GEN_VOLTAGE_HIGH )
-        {
-            // Call to output expander to set voltage levels
-            HAL_TIM_PWM_Start( CHANNEL1_TIM, TIM_CHANNEL_2 );
-        }
+        // Call to output expander to set voltage levels
+        ( void )PWM1_START_OUTPUT( PWM1_TIMER_HANDLE, PWM1_HAL_CHANNEL );
     }
     else if ( channel == PWM_GEN_CHANNEL_HV )
     {
-        if ( volt_lvl == PWM_GEN_VOLTAGE_LOW )
-        {
-            // Call to output expander to set voltage levels
-            HAL_TIMEx_PWMN_Start( CHANNEL2_TIM, TIM_CHANNEL_2 );
-        }
-        else if ( volt_lvl == PWM_GEN_VOLTAGE_HIGH )
-        {
-            // Call to output expander to set voltage levels
-            HAL_TIMEx_PWMN_Start( CHANNEL2_TIM, TIM_CHANNEL_2 );
-        }
+        // Call to output expander to set voltage levels
+        ( void )PWM2_START_OUTPUT( PWM2_TIMER_HANDLE, PWM2_HAL_CHANNEL );
     }
 }
 
@@ -170,8 +154,14 @@ bits)
  */
 uint16_t HW_PWM_GEN_compute_arr( uint32_t freq_hz, uint32_t timer_clk_hz, uint16_t prescaler )
 {
+    uint32_t divider = freq_hz * ( ( uint32_t )prescaler + 1U );
 
-    return ( timer_clk_hz / ( freq_hz * ( prescaler + 1 ) ) ) - 1;
+    if ( divider == 0U )
+    {
+        return 0xFFFF;
+    }
+
+    return ( uint16_t )( ( timer_clk_hz / divider ) - 1U );
 }
 
 /**
@@ -191,9 +181,9 @@ uint16_t HW_PWM_GEN_compute_ccr( uint16_t duty_pm, uint16_t arr )
 {
     if ( duty_pm >= 1000 )
     {
-        return ( arr + 1 );
+        return ( uint16_t )( arr + 1 );
     }
-    return ( ( arr + 1 ) * duty_pm ) / 1000;
+    return ( uint16_t )( ( ( arr + 1 ) * duty_pm ) / 1000 );
 }
 
 /**-----------------------------------------------------------------------------
@@ -211,12 +201,13 @@ uint16_t HW_PWM_GEN_compute_ccr( uint16_t duty_pm, uint16_t arr )
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void HW_PWM_GEN_Set_PWM1_Direct( uint16_t arr, uint16_t ccr, uint16_t psc )
+void HW_PWM_GEN_Set_PWM1_Direct( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
-    TIM_TypeDef* tim = ( *CHANNEL1_TIM ).Instance;
-    LL_TIM_OC_SetCompareCH2( tim, ccr );
-    LL_TIM_SetAutoReload( tim, arr );
-    LL_TIM_SetPrescaler( tim, psc );
+    TIM_TypeDef* timer = PWM1_TIMER_HANDLE->Instance;
+
+    PWM1_LL_SET_COMPARE( timer, ccr );
+    LL_TIM_SetAutoReload( timer, arr );
+    LL_TIM_SetPrescaler( timer, psc );
 }
 
 /**
@@ -229,10 +220,11 @@ inline void HW_PWM_GEN_Set_PWM1_Direct( uint16_t arr, uint16_t ccr, uint16_t psc
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void HW_PWM_GEN_Set_PWM2_Direct( uint16_t arr, uint16_t ccr, uint16_t psc )
+void HW_PWM_GEN_Set_PWM2_Direct( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
-    TIM_TypeDef* tim = ( *CHANNEL2_TIM ).Instance;
-    LL_TIM_OC_SetCompareCH2( tim, ccr );
-    LL_TIM_SetAutoReload( tim, arr );
-    LL_TIM_SetPrescaler( tim, psc );
+    TIM_TypeDef* timer = PWM2_TIMER_HANDLE->Instance;
+
+    PWM2_LL_SET_COMPARE( timer, ccr );
+    LL_TIM_SetAutoReload( timer, arr );
+    LL_TIM_SetPrescaler( timer, psc );
 }

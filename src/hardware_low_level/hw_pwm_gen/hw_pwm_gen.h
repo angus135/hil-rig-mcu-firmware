@@ -136,4 +136,4 @@ void HW_PWM_GEN_Set_PWM2_Direct( uint16_t arr, uint16_t ccr, uint16_t psc );
 }
 #endif
 
-#endif /* <FILENAME>_H */
+#endif /* HW_PWM_GEN_H */
