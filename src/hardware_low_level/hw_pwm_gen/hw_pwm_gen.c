@@ -91,7 +91,9 @@ void HW_PWM_GEN_Config( PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl )
         if ( volt_lvl == PWM_GEN_VOLTAGE_LOW )
         {
             // Call to output expander to set voltage levels
-            HAL_TIM_PWM_Start( CHANNEL1_TIM, TIM_CHANNEL_2 ); // TIM_CHANNEL_2 need in this and others needs to be changed so it can be set in a #define
+            HAL_TIM_PWM_Start( CHANNEL1_TIM,
+                               TIM_CHANNEL_2 );  // TIM_CHANNEL_2 need in this and others needs to
+                                                 // be changed so it can be set in a #define
         }
         else if ( volt_lvl == PWM_GEN_VOLTAGE_HIGH )
         {
@@ -109,7 +111,7 @@ void HW_PWM_GEN_Config( PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl )
         else if ( volt_lvl == PWM_GEN_VOLTAGE_HIGH )
         {
             // Call to output expander to set voltage levels
-        	HAL_TIMEx_PWMN_Start( CHANNEL2_TIM, TIM_CHANNEL_2 );
+            HAL_TIMEx_PWMN_Start( CHANNEL2_TIM, TIM_CHANNEL_2 );
         }
     }
 }

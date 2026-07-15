@@ -121,7 +121,7 @@ protected:
         memset( &mock_tim8_regs, 0, sizeof( mock_tim8_regs ) );
 
         htim12.Instance = &mock_tim12_regs;
-        htim8.Instance = &mock_tim8_regs;
+        htim8.Instance  = &mock_tim8_regs;
     }
 
     void TearDown() override
