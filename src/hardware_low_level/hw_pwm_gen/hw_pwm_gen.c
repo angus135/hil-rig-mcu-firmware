@@ -22,11 +22,13 @@
 #include "stm32f4xx_ll_tim.h"
 #include "tim.h"
 #include "stm32f4xx_hal_tim.h"
+#include "tim.h"
 #else
 #include "tests/hw_pwm_gen_mocks.h"
 #endif
 
 #include "hw_pwm_gen.h"
+#include "hw_timer.h"
 #include <stdint.h>
 #include <stdbool.h>
 
