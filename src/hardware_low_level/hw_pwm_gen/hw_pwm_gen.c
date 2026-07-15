@@ -91,12 +91,12 @@ void HW_PWM_GEN_Config( PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl )
         if ( volt_lvl == PWM_GEN_VOLTAGE_LOW )
         {
             // Call to output expander to set voltage levels
-            HAL_TIM_PWM_Start( CHANNEL1_TIM, TIM_CHANNEL_1 );
+            HAL_TIM_PWM_Start( CHANNEL1_TIM, TIM_CHANNEL_2 ); // TIM_CHANNEL_2 need in this and others needs to be changed so it can be set in a #define
         }
         else if ( volt_lvl == PWM_GEN_VOLTAGE_HIGH )
         {
             // Call to output expander to set voltage levels
-            HAL_TIM_PWM_Start( CHANNEL1_TIM, TIM_CHANNEL_1 );
+            HAL_TIM_PWM_Start( CHANNEL1_TIM, TIM_CHANNEL_2 );
         }
     }
     else if ( channel == PWM_GEN_CHANNEL_HV )
@@ -104,12 +104,12 @@ void HW_PWM_GEN_Config( PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl )
         if ( volt_lvl == PWM_GEN_VOLTAGE_LOW )
         {
             // Call to output expander to set voltage levels
-            HAL_TIM_PWM_Start( CHANNEL2_TIM, TIM_CHANNEL_2 );
+            HAL_TIMEx_PWMN_Start( CHANNEL2_TIM, TIM_CHANNEL_2 );
         }
         else if ( volt_lvl == PWM_GEN_VOLTAGE_HIGH )
         {
             // Call to output expander to set voltage levels
-            HAL_TIM_PWM_Start( CHANNEL2_TIM, TIM_CHANNEL_2 );
+        	HAL_TIMEx_PWMN_Start( CHANNEL2_TIM, TIM_CHANNEL_2 );
         }
     }
 }
@@ -229,8 +229,8 @@ inline void HW_PWM_GEN_Set_PWM1_Direct( uint16_t arr, uint16_t ccr, uint16_t psc
  */
 inline void HW_PWM_GEN_Set_PWM2_Direct( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
-    TIM_TypeDef* tim = ( *CHANNEL1_TIM ).Instance;
-    LL_TIM_OC_SetCompareCH1( tim, ccr );
+    TIM_TypeDef* tim = ( *CHANNEL2_TIM ).Instance;
+    LL_TIM_OC_SetCompareCH2( tim, ccr );
     LL_TIM_SetAutoReload( tim, arr );
     LL_TIM_SetPrescaler( tim, psc );
 }

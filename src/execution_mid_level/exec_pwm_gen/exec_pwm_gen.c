@@ -65,7 +65,7 @@
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void EXEC_PWM_GEN_Set_PWM_LV( uint16_t arr, uint16_t ccr, uint16_t psc )
+void EXEC_PWM_GEN_Set_PWM_LV( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
     HW_PWM_GEN_Set_PWM1_Direct( arr, ccr, psc );
 }
@@ -80,7 +80,7 @@ inline void EXEC_PWM_GEN_Set_PWM_LV( uint16_t arr, uint16_t ccr, uint16_t psc )
  * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
  * This function is designed to be very fast and should be implemented in the execution phase
  */
-inline void EXEC_PWM_GEN_Set_PWM_HV( uint16_t arr, uint16_t ccr, uint16_t psc )
+void EXEC_PWM_GEN_Set_PWM_HV( uint16_t arr, uint16_t ccr, uint16_t psc )
 {
     HW_PWM_GEN_Set_PWM2_Direct( arr, ccr, psc );
 }
