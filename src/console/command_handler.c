@@ -146,55 +146,78 @@ static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] )
 {
     if ( argc != 5 || argv[1] == NULL )
     {
-        CONSOLE_Printf( "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+        CONSOLE_Printf(
+            "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
         return;
     }
     uint32_t timer_hz = 9000000;
-    uint32_t freq_hz = atoi(argv[3]);
-    if (freq_hz>1000000 || freq_hz<0) {
-        CONSOLE_Printf( "Unkown frequency, expected an integer between 0 and 1000000 but recieved %d \r\n", freq_hz);
-        CONSOLE_Printf( "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+    uint32_t freq_hz  = atoi( argv[3] );
+    if ( freq_hz > 1000000 || freq_hz < 0 )
+    {
+        CONSOLE_Printf(
+            "Unkown frequency, expected an integer between 0 and 1000000 but recieved %d \r\n",
+            freq_hz );
+        CONSOLE_Printf(
+            "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
         return;
     }
-    uint16_t duty = atoi(argv[4]);
-    if (duty>1000 || duty<0) {
-        CONSOLE_Printf( "Unkown duty, expected an integer between 0 and 1000 but recieved %d \r\n", duty);
-        CONSOLE_Printf( "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+    uint16_t duty = atoi( argv[4] );
+    if ( duty > 1000 || duty < 0 )
+    {
+        CONSOLE_Printf( "Unkown duty, expected an integer between 0 and 1000 but recieved %d \r\n",
+                        duty );
+        CONSOLE_Printf(
+            "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
         return;
     }
-    uint16_t psc = HW_PWM_GEN_compute_psc(freq_hz, timer_hz);
-    uint16_t arr = HW_PWM_GEN_compute_arr(freq_hz, timer_hz, psc);
-    uint16_t ccr = HW_PWM_GEN_compute_ccr(duty, arr);
+    uint16_t psc = HW_PWM_GEN_compute_psc( freq_hz, timer_hz );
+    uint16_t arr = HW_PWM_GEN_compute_arr( freq_hz, timer_hz, psc );
+    uint16_t ccr = HW_PWM_GEN_compute_ccr( duty, arr );
     if ( strcmp( argv[1], "0" ) == 0 )
     {
         if ( strcmp( argv[2], "0" ) == 0 )
         {
-            Exec_PWM_GEN_Config(0,0);
-            EXEC_PWM_GEN_Set_PWM_LV(arr, ccr, psc);
-        } else if ( strcmp( argv[2], "1" ) == 0 ) {
-            Exec_PWM_GEN_Config(0,1);
-            EXEC_PWM_GEN_Set_PWM_LV(arr, ccr, psc);
-        } else {
+            Exec_PWM_GEN_Config( 0, 0 );
+            EXEC_PWM_GEN_Set_PWM_LV( arr, ccr, psc );
+        }
+        else if ( strcmp( argv[2], "1" ) == 0 )
+        {
+            Exec_PWM_GEN_Config( 0, 1 );
+            EXEC_PWM_GEN_Set_PWM_LV( arr, ccr, psc );
+        }
+        else
+        {
             CONSOLE_Printf( "Unknown Voltage level expecting <0|1> but recieved %s \r\n", argv[2] );
-            CONSOLE_Printf( "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+            CONSOLE_Printf(
+                "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
             return;
         }
-    } else if ( strcmp( argv[1], "1" ) == 0 ) {
+    }
+    else if ( strcmp( argv[1], "1" ) == 0 )
+    {
         if ( strcmp( argv[2], "0" ) == 0 )
         {
-            Exec_PWM_GEN_Config(1,0);
-            EXEC_PWM_GEN_Set_PWM_HV(arr, ccr, psc);
-        } else if ( strcmp( argv[2], "1" ) == 0 ) {
-            Exec_PWM_GEN_Config(1,1);
-            EXEC_PWM_GEN_Set_PWM_HV(arr, ccr, psc);
-        } else {
+            Exec_PWM_GEN_Config( 1, 0 );
+            EXEC_PWM_GEN_Set_PWM_HV( arr, ccr, psc );
+        }
+        else if ( strcmp( argv[2], "1" ) == 0 )
+        {
+            Exec_PWM_GEN_Config( 1, 1 );
+            EXEC_PWM_GEN_Set_PWM_HV( arr, ccr, psc );
+        }
+        else
+        {
             CONSOLE_Printf( "Unknown Voltage level expecting <0|1> but recieved %s \r\n", argv[2] );
-            CONSOLE_Printf( "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+            CONSOLE_Printf(
+                "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
             return;
         }
-    } else {
+    }
+    else
+    {
         CONSOLE_Printf( "Unknown PWM channel expecting <0|1> but recieved %s \r\n", argv[1] );
-        CONSOLE_Printf( "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+        CONSOLE_Printf(
+            "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
         return;
     }
     CONSOLE_Printf( "PWM Set\r\n" );
