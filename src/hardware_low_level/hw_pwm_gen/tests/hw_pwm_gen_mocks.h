@@ -95,7 +95,7 @@ extern TIM_HandleTypeDef htim12;
 extern TIM_HandleTypeDef htim13;
 
 extern TIM_TypeDef mock_tim12_regs;
-extern TIM_TypeDef mock_tim13_regs;
+extern TIM_TypeDef mock_tim8_regs;
 
 /**-----------------------------------------------------------------------------
  * Public Function Prototypes

@@ -39,10 +39,10 @@ using ::testing::Return;
  */
 
 TIM_TypeDef mock_tim12_regs{};
-TIM_TypeDef mock_tim13_regs{};
+TIM_TypeDef mock_tim8_regs{};
 
 TIM_HandleTypeDef htim12{};
-TIM_HandleTypeDef htim13{};
+TIM_HandleTypeDef htim8{};
 
 /**-----------------------------------------------------------------------------
  *  Test Doubles / Mocks
@@ -118,10 +118,10 @@ protected:
         g_mock = &mock;
 
         memset( &mock_tim12_regs, 0, sizeof( mock_tim12_regs ) );
-        memset( &mock_tim13_regs, 0, sizeof( mock_tim13_regs ) );
+        memset( &mock_tim8_regs, 0, sizeof( mock_tim8_regs ) );
 
         htim12.Instance = &mock_tim12_regs;
-        htim13.Instance = &mock_tim13_regs;
+        htim8.Instance = &mock_tim8_regs;
     }
 
     void TearDown() override
@@ -304,7 +304,7 @@ TEST_F( HWPWMGenTest, ConfigStartsLVChannelHighVoltagePWM )
 
 TEST_F( HWPWMGenTest, ConfigStartsHVChannelLowVoltagePWM )
 {
-    EXPECT_CALL( mock, TIMPWMStart( &htim13, TIM_CHANNEL_2 ) )
+    EXPECT_CALL( mock, TIMPWMStart( &htim8, TIM_CHANNEL_2 ) )
         .Times( 1 )
         .WillOnce( Return( HAL_OK ) );
 
@@ -313,7 +313,7 @@ TEST_F( HWPWMGenTest, ConfigStartsHVChannelLowVoltagePWM )
 
 TEST_F( HWPWMGenTest, ConfigStartsHVChannelHighVoltagePWM )
 {
-    EXPECT_CALL( mock, TIMPWMStart( &htim13, TIM_CHANNEL_2 ) )
+    EXPECT_CALL( mock, TIMPWMStart( &htim8, TIM_CHANNEL_2 ) )
         .Times( 1 )
         .WillOnce( Return( HAL_OK ) );
 
