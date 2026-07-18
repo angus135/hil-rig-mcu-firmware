@@ -1,17 +1,17 @@
 /******************************************************************************
- *  File:       hw_pwm_capture_mocks.h
+ *  File:       hw_pwm_gen_mocks.h
  *  Author:     Callum Rafferty
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Mock definitions of HAL types and functions for unit testing hw_pwm_capture module.
+ *      Mock definitions of HAL types and functions for unit testing hw_pwm_gen module.
  *
  *  Notes:
  *
  ******************************************************************************/
 
-#ifndef HW_PWM_CAPTURE_MOCKS_H
-#define HW_PWM_CAPTURE_MOCKS_H
+#ifndef HW_PWM_GEN_MOCKS_H
+#define HW_PWM_GEN_MOCKS_H
 
 #ifdef __cplusplus
 extern "C"
@@ -92,10 +92,10 @@ typedef struct
  *----------------------------------------------------------------------------*/
 
 extern TIM_HandleTypeDef htim12;
-extern TIM_HandleTypeDef htim13;
+extern TIM_HandleTypeDef htim8;
 
 extern TIM_TypeDef mock_tim12_regs;
-extern TIM_TypeDef mock_tim13_regs;
+extern TIM_TypeDef mock_tim8_regs;
 
 /**-----------------------------------------------------------------------------
  * Public Function Prototypes
@@ -104,6 +104,8 @@ extern TIM_TypeDef mock_tim13_regs;
 /* HAL Functions */
 
 HAL_StatusTypeDef HAL_TIM_PWM_Start( TIM_HandleTypeDef* htim, uint32_t channel );
+
+HAL_StatusTypeDef HAL_TIMEx_PWMN_Start( TIM_HandleTypeDef* htim, uint32_t channel );
 
 /* LL Functions */
 
@@ -125,4 +127,4 @@ void LL_TIM_SetPrescaler( TIM_TypeDef* TIMx, uint32_t Prescaler );
 }
 #endif
 
-#endif /* HW_I2C_MOCKS_H */
+#endif /* HW_PWM_GEN_MOCKS_H */

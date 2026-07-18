@@ -48,13 +48,12 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-// TODO: Change this based on true hardware
 #define SPI_CHANNEL_0_HANDLE hspi1
-#define SPI_CHANNEL_1_HANDLE hspi4
+#define SPI_CHANNEL_1_HANDLE hspi2
 #define SPI_DAC_HANDLE hspi4
 
 #define SPI_CHANNEL_0_INSTANCE SPI1
-#define SPI_CHANNEL_1_INSTANCE SPI4
+#define SPI_CHANNEL_1_INSTANCE SPI2
 #define SPI_DAC_INSTANCE SPI4
 
 // DMA Definitions
@@ -70,18 +69,18 @@ extern "C"
 #define SPI_CHANNEL_0_TX_DMA_IS_ACTIVE_TE LL_DMA_IsActiveFlag_TE5
 #define SPI_CHANNEL_0_TX_DMA_CLEAR_TC LL_DMA_ClearFlag_TC5
 #define SPI_CHANNEL_0_TX_DMA_CLEAR_TE LL_DMA_ClearFlag_TE5
-#define SPI_CHANNEL_1_RX_DMA DMA2
+#define SPI_CHANNEL_1_RX_DMA DMA1
 #define SPI_CHANNEL_1_RX_DMA_STREAM LL_DMA_STREAM_3
-#define SPI_CHANNEL_1_RX_DMA_IRQ DMA2_Stream3_IRQHandler
-#define SPI_CHANNEL_1_RX_DMA_IRQN DMA2_Stream3_IRQn
-#define SPI_CHANNEL_1_TX_DMA DMA2
-#define SPI_CHANNEL_1_TX_DMA_STREAM LL_DMA_STREAM_1
-#define SPI_CHANNEL_1_TX_DMA_IRQ DMA2_Stream1_IRQHandler
-#define SPI_CHANNEL_1_TX_DMA_IRQN DMA2_Stream1_IRQn
-#define SPI_CHANNEL_1_TX_DMA_IS_ACTIVE_TC LL_DMA_IsActiveFlag_TC1
-#define SPI_CHANNEL_1_TX_DMA_IS_ACTIVE_TE LL_DMA_IsActiveFlag_TE1
-#define SPI_CHANNEL_1_TX_DMA_CLEAR_TC LL_DMA_ClearFlag_TC1
-#define SPI_CHANNEL_1_TX_DMA_CLEAR_TE LL_DMA_ClearFlag_TE1
+#define SPI_CHANNEL_1_RX_DMA_IRQ DMA1_Stream3_IRQHandler
+#define SPI_CHANNEL_1_RX_DMA_IRQN DMA1_Stream3_IRQn
+#define SPI_CHANNEL_1_TX_DMA DMA1
+#define SPI_CHANNEL_1_TX_DMA_STREAM LL_DMA_STREAM_4
+#define SPI_CHANNEL_1_TX_DMA_IRQ DMA1_Stream4_IRQHandler
+#define SPI_CHANNEL_1_TX_DMA_IRQN DMA1_Stream4_IRQn
+#define SPI_CHANNEL_1_TX_DMA_IS_ACTIVE_TC LL_DMA_IsActiveFlag_TC4
+#define SPI_CHANNEL_1_TX_DMA_IS_ACTIVE_TE LL_DMA_IsActiveFlag_TE4
+#define SPI_CHANNEL_1_TX_DMA_CLEAR_TC LL_DMA_ClearFlag_TC4
+#define SPI_CHANNEL_1_TX_DMA_CLEAR_TE LL_DMA_ClearFlag_TE4
 #define SPI_DAC_TX_DMA DMA2
 #define SPI_DAC_TX_DMA_STREAM LL_DMA_STREAM_1
 #define SPI_DAC_TX_DMA_IRQ DMA2_Stream1_IRQHandler
@@ -95,6 +94,7 @@ extern "C"
 #define TX_BUFFER_SIZE_BYTES 1024U
 #define TX_PACKET_QUEUE_DEPTH 16U
 #define HW_SPI_DMA_DISABLE_TIMEOUT_ITERATIONS 1000U
+#define SPI_DAC_FINAL_DRAIN_TIMER_MAX_ATTEMPTS 2U
 
 #define RX_BUFFER_INDEX_MASK ( RX_BUFFER_SIZE_BYTES - 1U )
 #define TX_BUFFER_INDEX_MASK ( TX_BUFFER_SIZE_BYTES - 1U )
@@ -190,6 +190,7 @@ struct SPIPeripheralState_T
     bool         tx_uses_final_drain_timer;  ///< Precomputed final-drain strategy.
     uint16_t     tx_final_drain_cycles;      ///< Fast-baud inline final-drain wait count.
     Timer_T      tx_final_drain_timer;       ///< One-shot timer used for slow-baud final drain.
+    uint8_t      tx_final_drain_timer_attempts;  ///< Bounded SPI_DAC drain intervals elapsed.
 
     uint8_t rx_buffer[RX_BUFFER_SIZE_BYTES]
         __attribute__( ( aligned( 2 ) ) );  ///< DMA-backed circular RX buffer.

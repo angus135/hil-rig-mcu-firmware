@@ -94,6 +94,10 @@ public:
     MOCK_METHOD( void, DMAClearFlagTE1, ( DMA_TypeDef * dma ), () );
     MOCK_METHOD( uint32_t, DMAIsActiveFlagTC1, ( DMA_TypeDef * dma ), () );
     MOCK_METHOD( void, DMAClearFlagTC1, ( DMA_TypeDef * dma ), () );
+    MOCK_METHOD( uint32_t, DMAIsActiveFlagTE4, ( DMA_TypeDef * dma ), () );
+    MOCK_METHOD( void, DMAClearFlagTE4, ( DMA_TypeDef * dma ), () );
+    MOCK_METHOD( uint32_t, DMAIsActiveFlagTC4, ( DMA_TypeDef * dma ), () );
+    MOCK_METHOD( void, DMAClearFlagTC4, ( DMA_TypeDef * dma ), () );
 
     MOCK_METHOD( void, DMASetMemorySize, ( DMA_TypeDef * dma, uint32_t stream, uint32_t size ),
                  () );
@@ -304,6 +308,32 @@ extern "C" void LL_DMA_ClearFlag_TC1( DMA_TypeDef* DMAx )
     }
 }
 
+extern "C" uint32_t LL_DMA_IsActiveFlag_TE4( DMA_TypeDef* DMAx )
+{
+    return g_mock ? g_mock->DMAIsActiveFlagTE4( DMAx ) : 0U;
+}
+
+extern "C" void LL_DMA_ClearFlag_TE4( DMA_TypeDef* DMAx )
+{
+    if ( g_mock )
+    {
+        g_mock->DMAClearFlagTE4( DMAx );
+    }
+}
+
+extern "C" uint32_t LL_DMA_IsActiveFlag_TC4( DMA_TypeDef* DMAx )
+{
+    return g_mock ? g_mock->DMAIsActiveFlagTC4( DMAx ) : 0U;
+}
+
+extern "C" void LL_DMA_ClearFlag_TC4( DMA_TypeDef* DMAx )
+{
+    if ( g_mock )
+    {
+        g_mock->DMAClearFlagTC4( DMAx );
+    }
+}
+
 extern "C" void LL_DMA_SetMemorySize( DMA_TypeDef* DMAx, uint32_t Stream, uint32_t Size )
 {
     if ( g_mock )
@@ -479,8 +509,8 @@ protected:
         EXPECT_CALL( mock, DMAIsEnabledStream( Eq( SPI_CHANNEL_1_TX_DMA ),
                                                Eq( SPI_CHANNEL_1_TX_DMA_STREAM ) ) )
             .WillOnce( Return( 0U ) );
-        EXPECT_CALL( mock, DMAClearFlagTC1( Eq( SPI_CHANNEL_1_TX_DMA ) ) );
-        EXPECT_CALL( mock, DMAClearFlagTE1( Eq( SPI_CHANNEL_1_TX_DMA ) ) );
+        EXPECT_CALL( mock, DMAClearFlagTC4( Eq( SPI_CHANNEL_1_TX_DMA ) ) );
+        EXPECT_CALL( mock, DMAClearFlagTE4( Eq( SPI_CHANNEL_1_TX_DMA ) ) );
         EXPECT_CALL(
             mock,
             DMASetMemoryAddress(
@@ -492,6 +522,24 @@ protected:
         EXPECT_CALL( mock, DMAEnableStream( Eq( SPI_CHANNEL_1_TX_DMA ),
                                             Eq( SPI_CHANNEL_1_TX_DMA_STREAM ) ) );
         EXPECT_CALL( mock, SPIEnableDMAReqTX( Eq( SPI_CHANNEL_1_INSTANCE ) ) );
+    }
+
+    void ExpectDacDmaProgram( const uint8_t* expected_ptr, uint32_t expected_elements )
+    {
+        EXPECT_CALL( mock, SPIDisableDMAReqTX( Eq( SPI_DAC_INSTANCE ) ) );
+        EXPECT_CALL( mock, DMADisableStream( Eq( SPI_DAC_TX_DMA ), Eq( SPI_DAC_TX_DMA_STREAM ) ) );
+        EXPECT_CALL( mock, DMAIsEnabledStream( Eq( SPI_DAC_TX_DMA ), Eq( SPI_DAC_TX_DMA_STREAM ) ) )
+            .WillOnce( Return( 0U ) );
+        EXPECT_CALL( mock, DMAClearFlagTC1( Eq( SPI_DAC_TX_DMA ) ) );
+        EXPECT_CALL( mock, DMAClearFlagTE1( Eq( SPI_DAC_TX_DMA ) ) );
+        EXPECT_CALL( mock,
+                     DMASetMemoryAddress( Eq( SPI_DAC_TX_DMA ), Eq( SPI_DAC_TX_DMA_STREAM ),
+                                          Eq( static_cast<uint32_t>(
+                                              reinterpret_cast<uintptr_t>( expected_ptr ) ) ) ) );
+        EXPECT_CALL( mock, DMASetDataLength( Eq( SPI_DAC_TX_DMA ), Eq( SPI_DAC_TX_DMA_STREAM ),
+                                             Eq( expected_elements ) ) );
+        EXPECT_CALL( mock, DMAEnableStream( Eq( SPI_DAC_TX_DMA ), Eq( SPI_DAC_TX_DMA_STREAM ) ) );
+        EXPECT_CALL( mock, SPIEnableDMAReqTX( Eq( SPI_DAC_INSTANCE ) ) );
     }
 };
 
@@ -618,6 +666,39 @@ TEST_F( HWSpiMasterTxTest, TxDmaIrq_MasterCompletesFastTransactionWhenBsyAlready
     EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_packets_pending, 0U );
 }
 
+TEST_F( HWSpiMasterTxTest, DacThreeByteFrameProgramsDma2Stream1AndCompletes )
+{
+    const uint8_t frame[3] = { 0x40U, 0xFFU, 0xFFU };
+
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_DAC_TX_DMA_IRQN ) );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_DAC_TX_DMA_IRQN ) );
+    ASSERT_TRUE( HW_SPI_Load_Tx_Buffer( SPI_DAC, frame, sizeof( frame ) ) );
+    testing::Mock::VerifyAndClearExpectations( &mock );
+
+    InSequence start_sequence;
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_DAC_TX_DMA_IRQN ) );
+    ExpectDacDmaProgram( &HW_SPI_STATE( SPI_DAC )->tx_buffer[0], 3U );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_DAC_TX_DMA_IRQN ) );
+
+    HW_SPI_Tx_Trigger( SPI_DAC );
+    testing::Mock::VerifyAndClearExpectations( &mock );
+
+    EXPECT_EQ( HW_SPI_STATE( SPI_DAC )->tx_num_bytes_in_transmission, 3U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_DAC )->tx_transaction_state, HW_SPI_TX_TRANSACTION_DMA_ACTIVE );
+
+    InSequence completion_sequence;
+    EXPECT_CALL( mock, DMAIsActiveFlagTE1( Eq( SPI_DAC_TX_DMA ) ) ).WillOnce( Return( 0U ) );
+    EXPECT_CALL( mock, DMAIsActiveFlagTC1( Eq( SPI_DAC_TX_DMA ) ) ).WillOnce( Return( 1U ) );
+    EXPECT_CALL( mock, DMAClearFlagTC1( Eq( SPI_DAC_TX_DMA ) ) );
+    EXPECT_CALL( mock, SPIDisableDMAReqTX( Eq( SPI_DAC_INSTANCE ) ) );
+    EXPECT_CALL( mock, SPIIsBusy( Eq( SPI_DAC_INSTANCE ) ) ).WillOnce( Return( 0U ) );
+
+    SPI_DAC_TX_DMA_IRQ();
+
+    EXPECT_EQ( HW_SPI_STATE( SPI_DAC )->tx_num_bytes_in_transmission, 0U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_DAC )->tx_transaction_state, HW_SPI_TX_TRANSACTION_IDLE );
+}
+
 TEST_F( HWSpiMasterTxTest, TxDmaIrq_MasterStartsFinalDrainTimerWhenSlowBsyStillSet )
 {
     HW_SPI_STATE( SPI_CHANNEL_0 )->config.baud_rate             = SPI_BAUD_352KBIT;
@@ -639,6 +720,7 @@ TEST_F( HWSpiMasterTxTest, TxDmaIrq_MasterStartsFinalDrainTimerWhenSlowBsyStillS
     EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state,
                HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN );
     EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_in_transmission, 0U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_final_drain_timer_attempts, 1U );
 }
 
 TEST_F( HWSpiMasterTxTest, TimerCallback_CompletesSlowTransactionAndStartsNextQueuedPacket )
@@ -667,17 +749,36 @@ TEST_F( HWSpiMasterTxTest, TimerCallback_CompletesSlowTransactionAndStartsNextQu
     EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_in_transmission, sizeof( next_packet ) );
 }
 
-TEST_F( HWSpiMasterTxTest, TimerCallback_FaultsTransactionWhenBsyStillSet )
+TEST_F( HWSpiMasterTxTest, TimerCallback_DacRestartsTimerWhenBsyAtFirstCallback )
 {
-    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state = HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN;
-    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_in_transmission = 0U;
+    HW_SPI_STATE( SPI_DAC )->tx_transaction_state          = HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN;
+    HW_SPI_STATE( SPI_DAC )->tx_final_drain_timer          = SPI_DAC_TIMER;
+    HW_SPI_STATE( SPI_DAC )->tx_final_drain_timer_attempts = 1U;
 
-    InSequence seq;
-    EXPECT_CALL( mock, SPIIsBusy( Eq( SPI_CHANNEL_0_INSTANCE ) ) ).WillOnce( Return( 1U ) );
-    EXPECT_CALL( mock, SPIDisableDMAReqTX( Eq( SPI_CHANNEL_0_INSTANCE ) ) );
-    HW_SPI_Timer_Callback_From_ISR( SPI_CHANNEL_0 );
+    InSequence sequence;
+    EXPECT_CALL( mock, SPIIsBusy( Eq( SPI_DAC_INSTANCE ) ) ).WillOnce( Return( 1U ) );
+    EXPECT_CALL( mock, TimerStart( SPI_DAC_TIMER ) );
 
-    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state, HW_SPI_TX_TRANSACTION_ERROR );
+    HW_SPI_Timer_Callback_From_ISR( SPI_DAC );
+
+    EXPECT_EQ( HW_SPI_STATE( SPI_DAC )->tx_transaction_state,
+               HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN );
+    EXPECT_EQ( HW_SPI_STATE( SPI_DAC )->tx_final_drain_timer_attempts, 2U );
+}
+
+TEST_F( HWSpiMasterTxTest, TimerCallback_DacFaultsAfterBoundedDrainWithCsHeld )
+{
+    HW_SPI_STATE( SPI_DAC )->tx_transaction_state          = HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN;
+    HW_SPI_STATE( SPI_DAC )->tx_final_drain_timer_attempts = SPI_DAC_FINAL_DRAIN_TIMER_MAX_ATTEMPTS;
+
+    InSequence sequence;
+    EXPECT_CALL( mock, SPIIsBusy( Eq( SPI_DAC_INSTANCE ) ) ).WillOnce( Return( 1U ) );
+    EXPECT_CALL( mock, SPIDisableDMAReqTX( Eq( SPI_DAC_INSTANCE ) ) );
+
+    HW_SPI_Timer_Callback_From_ISR( SPI_DAC );
+
+    EXPECT_EQ( HW_SPI_STATE( SPI_DAC )->tx_transaction_state, HW_SPI_TX_TRANSACTION_ERROR );
+    EXPECT_EQ( HW_SPI_STATE( SPI_DAC )->tx_final_drain_timer_attempts, 0U );
 }
 
 TEST_F( HWSpiMasterTxTest, TimerCallback_IgnoresStaleCallbackWhileDmaActive )

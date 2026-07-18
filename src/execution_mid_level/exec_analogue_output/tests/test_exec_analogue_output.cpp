@@ -70,10 +70,10 @@ class MockHWSPI;
 static bool VerifySpiChannelSetupConfig( SPIChannel_T        peripheral,
                                          const HWSPIConfig_T configuration )
 {
-    EXPECT_TRUE( ( peripheral == SPI_CHANNEL_0 ) && ( configuration.spi_mode == SPI_MASTER_MODE )
+    EXPECT_TRUE( ( peripheral == SPI_DAC ) && ( configuration.spi_mode == SPI_MASTER_MODE )
                  && ( configuration.data_size == SPI_SIZE_8_BIT )
                  && ( configuration.first_bit == SPI_FIRST_MSB )
-                 && ( configuration.baud_rate == SPI_BAUD_2M813BIT )
+                 && ( configuration.baud_rate == SPI_BAUD_703KBIT )
                  && ( configuration.cpol == SPI_CPOL_LOW )
                  && ( configuration.cpha == SPI_CPHA_1_EDGE ) );
 
@@ -83,7 +83,7 @@ static bool VerifySpiChannelSetupConfig( SPIChannel_T        peripheral,
 static void VerifyLoadedFrame( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes,
                                const std::array<uint8_t, 3U>& expected_frame )
 {
-    EXPECT_EQ( peripheral, SPI_CHANNEL_0 );
+    EXPECT_EQ( peripheral, SPI_DAC );
     EXPECT_EQ( size_bytes, 3U );
     EXPECT_EQ( 0, memcmp( data, expected_frame.data(), expected_frame.size() ) );
 }
@@ -146,7 +146,7 @@ static void ExpectFrameLoad( MockHWSPI& mock_hw_spi, const std::array<uint8_t, 3
     using ::testing::_;
     using ::testing::Invoke;
 
-    EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, _, 3U ) )
+    EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_DAC, _, 3U ) )
         .WillOnce( Invoke(
             [expected_frame]( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ) {
                 VerifyLoadedFrame( peripheral, data, size_bytes, expected_frame );
@@ -185,7 +185,7 @@ protected:
         using ::testing::_;
         using ::testing::Return;
 
-        EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, _, _ ) ).WillOnce( Return( false ) );
+        EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_DAC, _, _ ) ).WillOnce( Return( false ) );
 
         bool result = EXEC_ANALOGUE_OUTPUT_Config( false );
 
@@ -210,7 +210,7 @@ protected:
             ExpectFrameLoad( mock_hw_spi, expected_frame );
         }
 
-        EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_CHANNEL_0 ) ).Times( 1 );
+        EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 1 );
     }
 
     void ExpectSuccessfulSetup( void )
@@ -218,10 +218,10 @@ protected:
         using ::testing::_;
         using ::testing::Return;
 
-        EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_0, _ ) )
+        EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_DAC, _ ) )
             .WillOnce( ::testing::Invoke( VerifySpiChannelSetupConfig ) );
 
-        EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_0 ) ).Times( 1 );
+        EXPECT_CALL( mock_hw_spi, StartChannel( SPI_DAC ) ).WillOnce( Return( true ) );
     }
 
     void ExpectSuccessfulConfig( bool use_external_vref )
@@ -240,16 +240,16 @@ protected:
             static_cast<uint8_t>( count & 0xFFU ),
         };
 
-        EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, _, 3U ) )
+        EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_DAC, _, 3U ) )
             .WillOnce( Invoke( [expected_frame]( SPIChannel_T peripheral, const uint8_t* data,
                                                  uint32_t size_bytes ) {
-                EXPECT_EQ( peripheral, SPI_CHANNEL_0 );
+                EXPECT_EQ( peripheral, SPI_DAC );
                 EXPECT_EQ( size_bytes, 3U );
                 EXPECT_EQ( 0, memcmp( data, expected_frame.data(), expected_frame.size() ) );
                 return true;
             } ) );
 
-        EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_CHANNEL_0 ) ).Times( 1 );
+        EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 1 );
     }
 };
 
@@ -272,12 +272,23 @@ TEST_F( ExecAnalogueOutputTest, SpiChannelSetup_ConfigureFails_DoesNotStartChann
     using ::testing::_;
     using ::testing::Return;
 
-    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_0, _ ) ).WillOnce( Return( false ) );
-    EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_0 ) ).Times( 0 );
+    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_DAC, _ ) ).WillOnce( Return( false ) );
+    EXPECT_CALL( mock_hw_spi, StartChannel( SPI_DAC ) ).Times( 0 );
 
     bool result = EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup();
 
     EXPECT_FALSE( result );
+}
+
+TEST_F( ExecAnalogueOutputTest, SpiChannelSetup_StartFails_ReturnsFalse )
+{
+    using ::testing::_;
+    using ::testing::Return;
+
+    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_DAC, _ ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_spi, StartChannel( SPI_DAC ) ).WillOnce( Return( false ) );
+
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup() );
 }
 
 TEST_F( ExecAnalogueOutputTest, Config_ExternalVref_LoadsStartupFramesAndMarksConfigured )
@@ -295,8 +306,8 @@ TEST_F( ExecAnalogueOutputTest, Config_LoadFailure_ReturnsFalseAndLeavesModuleUn
     using ::testing::_;
     using ::testing::Return;
 
-    EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, _, _ ) ).WillOnce( Return( false ) );
-    EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_CHANNEL_0 ) ).Times( 0 );
+    EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_DAC, _, _ ) ).WillOnce( Return( false ) );
+    EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 0 );
 
     bool result = EXEC_ANALOGUE_OUTPUT_Config( false );
 
@@ -358,9 +369,8 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_InvalidChannel_ReturnsFalseWithoutS
     ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
     ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
 
-    EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, ::testing::_, ::testing::_ ) )
-        .Times( 0 );
-    EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_CHANNEL_0 ) ).Times( 0 );
+    EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_DAC, ::testing::_, ::testing::_ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 0 );
 
     bool result = EXEC_ANALOG_OUTPUT_Write_Voltage( 6U, 12.0F );
 

@@ -21,6 +21,7 @@
 #include "cmsis_os.h"
 #include "adc.h"
 #include "can.h"
+#include "crc.h"
 #include "dma.h"
 #include "fmpi2c.h"
 #include "i2c.h"
@@ -103,12 +104,9 @@ int main(void)
   MX_TIM1_Init();
   MX_ADC1_Init();
   MX_SPI1_Init();
-  MX_I2C1_Init();
   MX_TIM2_Init();
   MX_FMPI2C1_Init();
   MX_I2C2_Init();
-  MX_ADC3_Init();
-  MX_USART2_UART_Init();
   MX_USART6_UART_Init();
   MX_SPI4_Init();
   MX_QUADSPI_Init();
@@ -118,12 +116,36 @@ int main(void)
   MX_TIM4_Init();
   MX_TIM5_Init();
   MX_TIM12_Init();
-  MX_TIM13_Init();
-  MX_TIM14_Init();
   MX_TIM6_Init();
   MX_TIM7_Init();
   MX_TIM11_Init();
+  MX_SPI2_Init();
+  MX_TIM8_Init();
+  MX_ADC2_Init();
+  MX_ADC3_Init();
+  MX_I2C3_Init();
+  MX_USART2_UART_Init();
+  MX_CRC_Init();
   /* USER CODE BEGIN 2 */
+
+  /* Temporarily release NUCLEO-F446ZE ST-LINK VCP pins:
+   * PD8  = USART3_TX
+   * PD9  = USART3_RX
+   *
+   * Set both pins to high impedance by putting them in analog mode
+   * with no internal pull-up or pull-down.
+   *
+   * Comment this block out when testing on the actual PCB.
+   */
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+
+  /* Set PD8 and PD9 mode to analog: MODERy = 0b11 */
+  GPIOD->MODER |=  (GPIO_MODER_MODER8_Msk | GPIO_MODER_MODER9_Msk);
+
+  /* Disable pull-up / pull-down on PD8 and PD9: PUPDy = 0b00 */
+  GPIOD->PUPDR &= ~(GPIO_PUPDR_PUPD8_Msk | GPIO_PUPDR_PUPD9_Msk);
+
+//  NVIC_DisableIRQ(USART2_IRQn);
   APP_MAIN_Application();
   // Nothing after here is ever called but if it does, run the error handler
   Error_Handler();
@@ -142,8 +164,11 @@ int main(void)
   /* USER CODE BEGIN WHILE */
     while ( 1 )
     {
+    	HAL_GPIO_WritePin(SPI1_CS_TEST_GPIO_Port, SPI1_CS_TEST_Pin, 0);
+    	HAL_Delay(500);
+    	HAL_GPIO_WritePin(SPI1_CS_TEST_GPIO_Port, SPI1_CS_TEST_Pin, 1);
+    	    	HAL_Delay(500);
     /* USER CODE END WHILE */
-
 
     /* USER CODE BEGIN 3 */
     }
@@ -205,10 +230,26 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 extern PCD_HandleTypeDef  hpcd_USB_OTG_FS;
-extern UART_HandleTypeDef huart2;
+extern TIM_HandleTypeDef htim14;
+
 /******************************************************************************/
 /*           Cortex-M4 Processor Interruption and Exception Handlers          */
 /******************************************************************************/
+
+/**
+  * @brief This function handles TIM8 trigger and commutation interrupts and TIM14 global interrupt.
+  */
+void TIM8_TRG_COM_TIM14_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM8_TRG_COM_TIM14_IRQn 0 */
+
+  /* USER CODE END TIM8_TRG_COM_TIM14_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim8);
+  HAL_TIM_IRQHandler(&htim14);
+  /* USER CODE BEGIN TIM8_TRG_COM_TIM14_IRQn 1 */
+
+  /* USER CODE END TIM8_TRG_COM_TIM14_IRQn 1 */
+}
 
 /**
  * @brief This function handles Non maskable interrupt.
@@ -299,42 +340,6 @@ void DebugMon_Handler( void )
 }
 
 /**
- * @brief This function handles System tick timer.
- */
-void SysTick_Handler( void )
-{
-    /* USER CODE BEGIN SysTick_IRQn 0 */
-
-    /* USER CODE END SysTick_IRQn 0 */
-    HAL_IncTick();
-#if ( INCLUDE_xTaskGetSchedulerState == 1 )
-    if ( xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED )
-    {
-#endif /* INCLUDE_xTaskGetSchedulerState */
-        xPortSysTickHandler();
-#if ( INCLUDE_xTaskGetSchedulerState == 1 )
-    }
-#endif /* INCLUDE_xTaskGetSchedulerState */
-       /* USER CODE BEGIN SysTick_IRQn 1 */
-
-    /* USER CODE END SysTick_IRQn 1 */
-}
-
-/**
- * @brief This function handles USART2 global interrupt.
- */
-void USART2_IRQHandler( void )
-{
-    /* USER CODE BEGIN USART2_IRQn 0 */
-
-    /* USER CODE END USART2_IRQn 0 */
-    HAL_UART_IRQHandler( &huart2 );
-    /* USER CODE BEGIN USART2_IRQn 1 */
-
-    /* USER CODE END USART2_IRQn 1 */
-}
-
-/**
  * @brief This function handles USB On The Go FS global interrupt.
  */
 void OTG_FS_IRQHandler( void )
@@ -349,6 +354,28 @@ void OTG_FS_IRQHandler( void )
 }
 
 /* USER CODE END 4 */
+
+/**
+  * @brief  Period elapsed callback in non blocking mode
+  * @note   This function is called  when TIM14 interrupt took place, inside
+  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+  * a global variable "uwTick" used as application time base.
+  * @param  htim : TIM handle
+  * @retval None
+  */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* USER CODE BEGIN Callback 0 */
+
+  /* USER CODE END Callback 0 */
+  if (htim->Instance == TIM14)
+  {
+    HAL_IncTick();
+  }
+  /* USER CODE BEGIN Callback 1 */
+
+  /* USER CODE END Callback 1 */
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.

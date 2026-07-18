@@ -36,6 +36,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "exec_pwm_capture.h"
+#include "exec_pwm_gen.h"
+#include "hw_pwm_gen.h"
 
 /* Includes for PWM Capture*/
 #include "subsystem_command_apis/console_pwm_capture.h"
@@ -45,6 +47,7 @@
  *------------------------------------------------------------------------------
  */
 #define NUM_DIGITAL_INPUTS 10
+#define MAX_CONSOLE_SET_PINS 22
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -90,6 +93,7 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] );
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
@@ -103,8 +107,8 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"echo",    CONSOLE_Command_Echo,       "Echoes the provided arguments."},
     {"execution_manager",    CONSOLE_Command_Test_Scheduler,       "Starts the test scheduler."},
     {"clear",  CONSOLE_Command_Clear,       "Clears the console."},
-    {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <green|blue|red|test>"},
-    {"uart_loopback", CONSOLE_Command_UART_Loopback, "Configuring Channels and Rx/Tx loopback testing for Uart"},
+    {"led",    CONSOLE_Command_LED,         "Toggle an LED. Usage: led toggle <USER_LED_RED_0..USER_LED_RED_5|USER_LED_BLUE_0..USER_LED_BLUE_5>"},
+    {"uart", CONSOLE_UART_Command_Handler, "Configuring Channels and Rx/Tx loopback testing for Uart"},
     {"set_pin", CONSOLE_Command_Set_Pin, "Set or reset digital output, Usage: set_pin PIN_NAME <0|1>"},
     {"set_pins", CONSOLE_Command_Set_Many_Pins, "Set or reset many digital output"},
     {"analogue_inputs", CONSOLE_Command_Analogue_Inputs, "Allows for interaction with Analogue Inputs."},
@@ -117,6 +121,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"can_rx", CONSOLE_Command_Can_rx, "Read and print an 8 byte message"},
     {"can_config", CONSOLE_Command_Can_config, "Configures Can channel1"},
     {"anlg_out",    CONSOLE_Command_Analogue_Output,      "DAC config and write commands"},
+    {"pwm_out",    CONSOLE_Command_PWM_Output,      "Set PWM outputs"},
 
 };
 
@@ -128,6 +133,95 @@ static ConsoleUartLoopbackState_T s_uart_loopback_state = { 0 };
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Set PWM outputs
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
+static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] )
+{
+    if ( argc != 5 || argv[1] == NULL )
+    {
+        CONSOLE_Printf(
+            "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+        return;
+    }
+    uint32_t timer_hz = 9000000;
+    uint32_t freq_hz  = atoi( argv[3] );
+    if ( freq_hz > 1000000 || freq_hz < 0 )
+    {
+        CONSOLE_Printf(
+            "Unkown frequency, expected an integer between 0 and 1000000 but recieved %d \r\n",
+            freq_hz );
+        CONSOLE_Printf(
+            "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+        return;
+    }
+    uint16_t duty = atoi( argv[4] );
+    if ( duty > 1000 || duty < 0 )
+    {
+        CONSOLE_Printf( "Unkown duty, expected an integer between 0 and 1000 but recieved %d \r\n",
+                        duty );
+        CONSOLE_Printf(
+            "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+        return;
+    }
+    uint16_t psc = HW_PWM_GEN_compute_psc( freq_hz, timer_hz );
+    uint16_t arr = HW_PWM_GEN_compute_arr( freq_hz, timer_hz, psc );
+    uint16_t ccr = HW_PWM_GEN_compute_ccr( duty, arr );
+    if ( strcmp( argv[1], "0" ) == 0 )
+    {
+        if ( strcmp( argv[2], "0" ) == 0 )
+        {
+            Exec_PWM_GEN_Config( 0, 0 );
+            EXEC_PWM_GEN_Set_PWM_LV( arr, ccr, psc );
+        }
+        else if ( strcmp( argv[2], "1" ) == 0 )
+        {
+            Exec_PWM_GEN_Config( 0, 1 );
+            EXEC_PWM_GEN_Set_PWM_LV( arr, ccr, psc );
+        }
+        else
+        {
+            CONSOLE_Printf( "Unknown Voltage level expecting <0|1> but recieved %s \r\n", argv[2] );
+            CONSOLE_Printf(
+                "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+            return;
+        }
+    }
+    else if ( strcmp( argv[1], "1" ) == 0 )
+    {
+        if ( strcmp( argv[2], "0" ) == 0 )
+        {
+            Exec_PWM_GEN_Config( 1, 0 );
+            EXEC_PWM_GEN_Set_PWM_HV( arr, ccr, psc );
+        }
+        else if ( strcmp( argv[2], "1" ) == 0 )
+        {
+            Exec_PWM_GEN_Config( 1, 1 );
+            EXEC_PWM_GEN_Set_PWM_HV( arr, ccr, psc );
+        }
+        else
+        {
+            CONSOLE_Printf( "Unknown Voltage level expecting <0|1> but recieved %s \r\n", argv[2] );
+            CONSOLE_Printf(
+                "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+            return;
+        }
+    }
+    else
+    {
+        CONSOLE_Printf( "Unknown PWM channel expecting <0|1> but recieved %s \r\n", argv[1] );
+        CONSOLE_Printf(
+            "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+        return;
+    }
+    CONSOLE_Printf( "PWM Set\r\n" );
+}
 
 static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
 {
@@ -146,7 +240,7 @@ static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
 
     if ( argc != 2 || argv[1] == NULL )
     {
-        CONSOLE_Printf( "Usage: digital_input <channel 0-9> or digital_input all\r\n" );
+        CONSOLE_Printf( "Usage: digital_input <channel 0-9|STATUS_5V> or digital_input all\r\n" );
         return;
     }
 
@@ -168,10 +262,18 @@ static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
     }
     else
     {
+        GPIOInput_T named_input = DIGITAL_INPUT_CH_0;
+        if ( HW_GPIO_InputStringToEnum( argv[1], &named_input ) )
+        {
+            bool state = HW_GPIO_Read_Pin( named_input );
+            CONSOLE_Printf( "%s: %d\r\n", argv[1], state ? 1 : 0 );
+            return;
+        }
+
         int channel = atoi( argv[1] );
         if ( channel < 0 || channel >= NUM_DIGITAL_INPUTS )
         {
-            CONSOLE_Printf( "Invalid channel. Must be 0-9.\r\n" );
+            CONSOLE_Printf( "Invalid channel. Must be 0-9 or STATUS_5V.\r\n" );
             return;
         }
 
@@ -742,39 +844,26 @@ static void CONSOLE_Command_LED( uint16_t argc, char* argv[] )
 {
     if ( argc != 3 )
     {
-        CONSOLE_Printf( "Usage: led toggle <green|blue|red|test>\r\n" );
+        CONSOLE_Printf( "Usage: led toggle "
+                        "<USER_LED_RED_0..USER_LED_RED_5|USER_LED_BLUE_0..USER_LED_BLUE_5>\r\n" );
         return;
     }
     if ( strcmp( argv[1], "toggle" ) == 0 )
     {
-        GPIO_T led = GPIO_TEST_INDICATOR;  // default to test indicator if color parsing fails
-        if ( strcmp( argv[2], "green" ) == 0 )
-        {
-            led = GPIO_GREEN_LED_INDICATOR;
-        }
-        else if ( strcmp( argv[2], "blue" ) == 0 )
-        {
-            led = GPIO_BLUE_LED_INDICATOR;
-        }
-        else if ( strcmp( argv[2], "red" ) == 0 )
-        {
-            led = GPIO_RED_LED_INDICATOR;
-        }
-        else if ( strcmp( argv[2], "test" ) == 0 )
-        {
-            led = GPIO_TEST_INDICATOR;
-        }
-        else
+        GPIOOutput_T led;
+        if ( !HW_GPIO_StringToEnum( argv[2], &led ) || led < USER_LED_RED_0
+             || led > USER_LED_BLUE_5 )
         {
             CONSOLE_Printf( "Unknown LED: %s\r\n", argv[2] );
             return;
         }
-        HW_GPIO_Toggle( led );
+        HW_GPIO_Toggle_Output( led );
         CONSOLE_Printf( "Toggled %s LED\r\n", argv[2] );
     }
     else
     {
-        CONSOLE_Printf( "Unknown action: %s\r\nUsage: led toggle <green|blue|red|test>\r\n",
+        CONSOLE_Printf( "Unknown action: %s\r\nUsage: led toggle "
+                        "<USER_LED_RED_0..USER_LED_RED_5|USER_LED_BLUE_0..USER_LED_BLUE_5>\r\n",
                         argv[1] );
     }
 }
@@ -828,7 +917,7 @@ static void CONSOLE_Command_Set_Pin( uint16_t argc, char* argv[] )
  */
 static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char* argv[] )
 {
-    int arg_limit = 10;
+    int arg_limit = MAX_CONSOLE_SET_PINS;
     if ( ( argc < 3 ) | ( argc > ( arg_limit + 1 ) ) )
     {
         CONSOLE_Printf( "Incorrect number of inputs, expected >2 and <%dbut recieved %d", arg_limit,
@@ -1298,6 +1387,18 @@ static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "DMA Input 1: %u\r\n", measurement.ch_1 );
         uint16_t value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_VIN );
         CONSOLE_Printf( "Vin: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_5V_CURRENT );
+        CONSOLE_Printf( "OUT 5V Current: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_5V_VOLTAGE );
+        CONSOLE_Printf( "OUT 5V Voltage: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_12V_CURRENT );
+        CONSOLE_Printf( "OUT 12V Current: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_12V_VOLTAGE );
+        CONSOLE_Printf( "OUT 12V Voltage: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_24V_CURRENT );
+        CONSOLE_Printf( "OUT 24V Current: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_24V_VOLTAGE );
+        CONSOLE_Printf( "OUT 24V Voltage: %u\r\n", value );
     }
     else if ( strcmp( argv[1], "frequency" ) == 0 )
     {

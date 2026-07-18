@@ -81,14 +81,14 @@ static DMA_Stream_TypeDef hw_i2c_mock_dma1_stream2 = { 0 };
 static DMA_Stream_TypeDef hw_i2c_mock_dma1_stream7 = { 0 };
 static FMPI2C_TypeDef     hw_i2c_mock_fmpi2c1      = { 0 };
 
-#define I2C1 ( &hw_i2c_mock_i2c1 )
+#define I2C3 ( &hw_i2c_mock_i2c1 )
 #define I2C2 ( &hw_i2c_mock_i2c2 )
 #define DMA1 ( &hw_i2c_mock_dma1 )
 #define DMA1_Stream2 ( &hw_i2c_mock_dma1_stream2 )
 #define DMA1_Stream7 ( &hw_i2c_mock_dma1_stream7 )
 #define FMPI2C1 ( &hw_i2c_mock_fmpi2c1 )
 
-#define LL_APB1_GRP1_PERIPH_I2C1 ( 0x00000001U )
+#define LL_APB1_GRP1_PERIPH_I2C3 ( 0x00000001U )
 #define LL_APB1_GRP1_PERIPH_I2C2 ( 0x00000002U )
 #define LL_APB1_GRP1_PERIPH_FMPI2C1 ( 0x00000004U )
 

@@ -46,8 +46,26 @@
 #define HW_ADC_DMA_STREAM LL_DMA_STREAM_4
 #define HW_ADC_ADC_PERIPHERAL &hadc1
 
-#define VIN_ADC_HANDLE &hadc3
-#define VIN_ADC_CHANNEL ADC_CHANNEL_14
+#define OUT_5V_CURRENT_ADC_HANDLE &hadc3
+#define OUT_5V_CURRENT_ADC_CHANNEL ADC_CHANNEL_15
+
+#define OUT_5V_VOLTAGE_ADC_HANDLE &hadc2
+#define OUT_5V_VOLTAGE_ADC_CHANNEL ADC_CHANNEL_3
+
+#define OUT_12V_CURRENT_ADC_HANDLE &hadc3
+#define OUT_12V_CURRENT_ADC_CHANNEL ADC_CHANNEL_14
+
+#define OUT_12V_VOLTAGE_ADC_HANDLE &hadc2
+#define OUT_12V_VOLTAGE_ADC_CHANNEL ADC_CHANNEL_2
+
+#define OUT_24V_CURRENT_ADC_HANDLE &hadc3
+#define OUT_24V_CURRENT_ADC_CHANNEL ADC_CHANNEL_9
+
+#define OUT_24V_VOLTAGE_ADC_HANDLE &hadc2
+#define OUT_24V_VOLTAGE_ADC_CHANNEL ADC_CHANNEL_13
+
+#define VIN_ADC_HANDLE &hadc2
+#define VIN_ADC_CHANNEL ADC_CHANNEL_10
 
 // Enforcing DMA buffer to be a power of 2 in size
 #define ADC_DMA_SHIFT_FACTOR 7
@@ -275,6 +293,30 @@ uint16_t HW_ADC_Read_Polled_Measurement( ADCSource_T source )
         case ( ADC_SOURCE_VIN ):
             hadc    = VIN_ADC_HANDLE;
             channel = VIN_ADC_CHANNEL;
+            break;
+        case ( ADC_SOURCE_OUT_5V_CURRENT ):
+            hadc    = OUT_5V_CURRENT_ADC_HANDLE;
+            channel = OUT_5V_CURRENT_ADC_CHANNEL;
+            break;
+        case ( ADC_SOURCE_OUT_5V_VOLTAGE ):
+            hadc    = OUT_5V_VOLTAGE_ADC_HANDLE;
+            channel = OUT_5V_VOLTAGE_ADC_CHANNEL;
+            break;
+        case ( ADC_SOURCE_OUT_12V_CURRENT ):
+            hadc    = OUT_12V_CURRENT_ADC_HANDLE;
+            channel = OUT_12V_CURRENT_ADC_CHANNEL;
+            break;
+        case ( ADC_SOURCE_OUT_12V_VOLTAGE ):
+            hadc    = OUT_12V_VOLTAGE_ADC_HANDLE;
+            channel = OUT_12V_VOLTAGE_ADC_CHANNEL;
+            break;
+        case ( ADC_SOURCE_OUT_24V_CURRENT ):
+            hadc    = OUT_24V_CURRENT_ADC_HANDLE;
+            channel = OUT_24V_CURRENT_ADC_CHANNEL;
+            break;
+        case ( ADC_SOURCE_OUT_24V_VOLTAGE ):
+            hadc    = OUT_24V_VOLTAGE_ADC_HANDLE;
+            channel = OUT_24V_VOLTAGE_ADC_CHANNEL;
             break;
         default:
             return UINT16_MAX;
