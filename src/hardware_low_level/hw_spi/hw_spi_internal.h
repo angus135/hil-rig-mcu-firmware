@@ -94,6 +94,7 @@ extern "C"
 #define TX_BUFFER_SIZE_BYTES 1024U
 #define TX_PACKET_QUEUE_DEPTH 16U
 #define HW_SPI_DMA_DISABLE_TIMEOUT_ITERATIONS 1000U
+#define SPI_DAC_FINAL_DRAIN_TIMER_MAX_ATTEMPTS 2U
 
 #define RX_BUFFER_INDEX_MASK ( RX_BUFFER_SIZE_BYTES - 1U )
 #define TX_BUFFER_INDEX_MASK ( TX_BUFFER_SIZE_BYTES - 1U )
@@ -189,6 +190,7 @@ struct SPIPeripheralState_T
     bool         tx_uses_final_drain_timer;  ///< Precomputed final-drain strategy.
     uint16_t     tx_final_drain_cycles;      ///< Fast-baud inline final-drain wait count.
     Timer_T      tx_final_drain_timer;       ///< One-shot timer used for slow-baud final drain.
+    uint8_t      tx_final_drain_timer_attempts;  ///< Bounded SPI_DAC drain intervals elapsed.
 
     uint8_t rx_buffer[RX_BUFFER_SIZE_BYTES]
         __attribute__( ( aligned( 2 ) ) );  ///< DMA-backed circular RX buffer.

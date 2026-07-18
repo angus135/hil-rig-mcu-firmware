@@ -47,7 +47,6 @@
 #define ANALOGUE_OUTPUT_VREF_EXT_BUFFERED 0xFFFFU
 #define ANALOGUE_OUTPUT_GAIN_1X 0x0000U
 #define ANALOGUE_OUTPUT_PD_OPEN_CIRCUIT 0xF000U
-#define ANALOGUE_OUTPUT_SPI_INSTANCE SPI1
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -259,8 +258,7 @@ bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void )
         return false;
     }
 
-    HW_SPI_Start_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL );
-    return true;
+    return HW_SPI_Start_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL );
 }
 
 /**

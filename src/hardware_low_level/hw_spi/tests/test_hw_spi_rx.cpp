@@ -463,6 +463,7 @@ protected:
         memset( &SPI_CHANNEL_0_HANDLE, 0, sizeof( SPI_CHANNEL_0_HANDLE ) );
         memset( &SPI_CHANNEL_1_HANDLE, 0, sizeof( SPI_CHANNEL_1_HANDLE ) );
 
+        memset( &SPI_DAC_HANDLE, 0, sizeof( SPI_DAC_HANDLE ) );
         EXPECT_CALL( mock, TimerConfigure( _, _, _ ) ).Times( AnyNumber() );
 
         InitialiseState( HW_SPI_STATE( SPI_CHANNEL_0 ), SPI_CHANNEL_0, MakeMasterConfig(),
@@ -700,14 +701,47 @@ TEST_F( HWSPIRxTest, RxConsume_HandlesLargePowerOfTwoDistanceWithoutDivision )
 }
 
 /**
- * @brief Starting a channel with no RX DMA should fail without touching DMA.
- *
- * The DAC channel is TX-only in the current resource map. This test protects
- * the state-array lookup path from accidentally treating DAC as channel 0/1 RX.
+ * @brief Starting a TX-only channel enables SPI without touching RX DMA.
  */
-TEST_F( HWSPIRxTest, StartChannel_DacReturnsFalseBecauseItHasNoRxDma )
+TEST_F( HWSPIRxTest, StartChannel_DacEnablesSpiWithoutRxDma )
 {
-    EXPECT_FALSE( HW_SPI_Start_Channel( SPI_DAC ) );
+    EXPECT_CALL( mock, SPIEnable( Eq( SPI_DAC_INSTANCE ) ) );
+
+    EXPECT_EQ( HW_SPI_STATE( SPI_DAC )->rx_dma, nullptr );
+    EXPECT_TRUE( HW_SPI_Start_Channel( SPI_DAC ) );
+}
+
+/**
+ * @brief DAC configuration selects the runtime resources owned by the SPI driver.
+ */
+TEST_F( HWSPIRxTest, ConfigureChannel_DacSelectsSpi4Dma2Stream1ByteTransferResources )
+{
+    const HWSPIConfig_T config          = MakeMasterConfig( SPI_SIZE_8_BIT, SPI_BAUD_703KBIT );
+    constexpr uint32_t  spi4_dr_address = 0x4001340CU;
+
+    EXPECT_CALL( mock, SPIInit( Eq( &SPI_DAC_HANDLE ) ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, DMASetMemorySize( Eq( SPI_DAC_TX_DMA ), Eq( SPI_DAC_TX_DMA_STREAM ),
+                                         Eq( LL_DMA_MDATAALIGN_BYTE ) ) );
+    EXPECT_CALL( mock, DMASetPeriphSize( Eq( SPI_DAC_TX_DMA ), Eq( SPI_DAC_TX_DMA_STREAM ),
+                                         Eq( LL_DMA_PDATAALIGN_BYTE ) ) );
+    EXPECT_CALL( mock, SPIDMAGetRegAddr( Eq( SPI_DAC_INSTANCE ) ) )
+        .WillOnce( Return( spi4_dr_address ) );
+    EXPECT_CALL( mock, DMASetPeriphAddress( Eq( SPI_DAC_TX_DMA ), Eq( SPI_DAC_TX_DMA_STREAM ),
+                                            Eq( spi4_dr_address ) ) );
+    EXPECT_CALL( mock, DMAEnableITTC( Eq( SPI_DAC_TX_DMA ), Eq( SPI_DAC_TX_DMA_STREAM ) ) );
+    EXPECT_CALL( mock, DMAEnableITTE( Eq( SPI_DAC_TX_DMA ), Eq( SPI_DAC_TX_DMA_STREAM ) ) );
+
+    ASSERT_TRUE( HW_SPI_Configure_Channel( SPI_DAC, config ) );
+
+    EXPECT_EQ( SPI_DAC_HANDLE.Instance, SPI_DAC_INSTANCE );
+    EXPECT_EQ( SPI_DAC_HANDLE.Init.Direction, SPI_DIRECTION_2LINES );
+    EXPECT_EQ( SPI_DAC_HANDLE.Init.DataSize, SPI_DATASIZE_8BIT );
+    EXPECT_EQ( SPI_DAC_HANDLE.Init.BaudRatePrescaler, SPI_BAUDRATEPRESCALER_128 );
+    EXPECT_EQ( HW_SPI_STATE( SPI_DAC )->rx_dma, nullptr );
+    EXPECT_EQ( HW_SPI_STATE( SPI_DAC )->tx_dma, SPI_DAC_TX_DMA );
+    EXPECT_EQ( HW_SPI_STATE( SPI_DAC )->tx_dma_stream, SPI_DAC_TX_DMA_STREAM );
+    EXPECT_EQ( HW_SPI_STATE( SPI_DAC )->spi_peripheral, SPI_DAC_INSTANCE );
+    EXPECT_EQ( HW_SPI_STATE( SPI_DAC )->tx_dma_irqn, SPI_DAC_TX_DMA_IRQN );
 }
 
 /**
