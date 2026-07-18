@@ -228,6 +228,7 @@ void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t arr )
             __HAL_TIM_SET_COUNTER( &SPI_DAC_TIMER_HANDLE, 0u );
             // Clear any pending update flag to prevent immediate IRQs
             LL_TIM_ClearFlag_UPDATE( SPI_DAC_TIMER_INSTANCE );
+            break;
         case PWM_CAPTURE_TIMER_CH1:
             PWM_CAPTURE_TIMER_CH1_HANDLE.Init.Prescaler = psc;
             PWM_CAPTURE_TIMER_CH1_HANDLE.Init.Period    = arr;
@@ -395,6 +396,7 @@ void HW_TIMER_Stop_Timer( Timer_T timer )
             LL_TIM_DisableIT_UPDATE( SPI_DAC_TIMER_INSTANCE );
             LL_TIM_DisableCounter( SPI_DAC_TIMER_INSTANCE );
             LL_TIM_ClearFlag_UPDATE( SPI_DAC_TIMER_INSTANCE );
+            break;
         case PWM_CAPTURE_TIMER_CH1:
             // Stop input capture on both channels for PWM capture
             HAL_TIM_IC_Stop( &PWM_CAPTURE_TIMER_CH1_HANDLE, PWM_CAPTURE_TIMER_CH1_PRIMARY_CHANNEL );

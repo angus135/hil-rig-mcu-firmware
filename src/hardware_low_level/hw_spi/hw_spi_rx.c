@@ -169,10 +169,10 @@ void SPI_CHANNEL_1_RX_DMA_IRQ( void )
  * @brief Start the runtime RX side of a configured SPI channel.
  *
  * @details
- *     This function arms passive RX DMA for channels that support reception. It
- *     deliberately does not start TX activity and does not generate master-mode
- *     clocks. TX activity is started separately by loading data and kicking the
- *     TX engine.
+ *     This function arms passive RX DMA for channels that support reception.
+ *     TX-only channels have no RX DMA to arm, so their SPI peripheral is enabled
+ *     directly. Neither path starts TX activity or generates master-mode clocks;
+ *     TX activity is started separately by loading data and kicking the TX engine.
  *
  * @param peripheral
  *     Logical SPI peripheral to start.
@@ -190,7 +190,8 @@ bool HW_SPI_Start_Channel( SPIChannel_T peripheral )
 
     if ( peripheral_state->rx_dma == NULL )
     {
-        return false;
+        LL_SPI_Enable( peripheral_state->spi_peripheral );
+        return true;
     }
 
     // Arm RX DMA directly instead of using HAL_SPI_Receive_DMA(). This keeps

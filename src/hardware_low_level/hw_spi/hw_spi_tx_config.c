@@ -73,6 +73,8 @@
  *   - 1 MHz timer tick
  *   - ARR is programmed directly as a delay count, not delay_us - 1
  *   - a small guard margin is included
+ *   - the SPI DAC timer may run for two bounded intervals because DMA TC can
+ *     leave one frame shifting while another frame is buffered in SPI->DR
  *
  * Approximate 8-bit final-drain times:
  *   2.813 Mbit/s  -> 2.84 us
@@ -338,7 +340,8 @@ HW_SPI_TX_Try_Start_Final_Drain_Timer( SPIChannel_T          peripheral,
     // SPI frame may still be shifting out. Move the transaction into the
     // final-drain wait state before starting the timer so the timer callback can
     // distinguish a valid final-drain timeout from a stale/incorrect callback.
-    peripheral_state->tx_transaction_state = HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN;
+    peripheral_state->tx_transaction_state          = HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN;
+    peripheral_state->tx_final_drain_timer_attempts = 1U;
 
     HW_TIMER_Start_Timer( peripheral_state->tx_final_drain_timer );
 
@@ -364,6 +367,18 @@ HW_SPI_ALWAYS_INLINE void
 HW_SPI_TX_Complete_Master_Transaction( SPIChannel_T          peripheral,
                                        SPIPeripheralState_T* peripheral_state )
 {
+#ifndef TEST_BUILD
+    // A two-line channel without RX DMA still receives a frame for every frame
+    // transmitted. Once BSY is clear, read DR then SR to clear RXNE/OVR before
+    // starting the next software-CS transaction. Full-duplex channels continue
+    // to have RX DMA drain DR and do not use this path.
+    if ( peripheral_state->rx_dma == NULL )
+    {
+        LL_SPI_ClearFlag_OVR( peripheral_state->spi_peripheral );
+    }
+#endif
+
+    peripheral_state->tx_final_drain_timer_attempts = 0U;
     HW_SPI_TX_Master_CS_Deassert( peripheral_state );
 
     if ( peripheral_state->tx_num_packets_pending == 0U )
@@ -409,8 +424,9 @@ static void HW_SPI_COLD_NOINLINE HW_SPI_TX_Fault_Master_Transaction(
 
     LL_SPI_DisableDMAReq_TX( peripheral_state->spi_peripheral );
     HW_SPI_TX_Master_CS_Deassert( peripheral_state );
-    peripheral_state->tx_num_bytes_in_transmission = 0U;
-    peripheral_state->tx_transaction_state         = HW_SPI_TX_TRANSACTION_ERROR;
+    peripheral_state->tx_num_bytes_in_transmission  = 0U;
+    peripheral_state->tx_final_drain_timer_attempts = 0U;
+    peripheral_state->tx_transaction_state          = HW_SPI_TX_TRANSACTION_ERROR;
 }
 /**
  * @brief Handle TX DMA transfer-complete for a master software-CS packet.
@@ -548,7 +564,8 @@ void HW_SPI_COLD_NOINLINE HW_SPI_TX_Error_Handler( SPIChannel_T peripheral )
     // Drop knowledge of the currently active DMA transfer. The pending ring
     // state is left alone so a higher layer can decide whether to flush,
     // rebuild, or retry the transaction.
-    peripheral_state->tx_num_bytes_in_transmission = 0U;
+    peripheral_state->tx_num_bytes_in_transmission  = 0U;
+    peripheral_state->tx_final_drain_timer_attempts = 0U;
 
     if ( peripheral_state->is_master != false )
     {
@@ -579,11 +596,12 @@ void HW_SPI_TX_Reset_State( SPIPeripheralState_T* peripheral_state )
 
     // Reset the circular TX queue state. Pending bytes are bytes still in the
     // software ring. In-flight bytes are bytes already handed to DMA.
-    peripheral_state->tx_write_position            = 0U;
-    peripheral_state->tx_read_position             = 0U;
-    peripheral_state->tx_num_bytes_pending         = 0U;
-    peripheral_state->tx_num_bytes_in_transmission = 0U;
-    peripheral_state->tx_transaction_state         = HW_SPI_TX_TRANSACTION_IDLE;
+    peripheral_state->tx_write_position             = 0U;
+    peripheral_state->tx_read_position              = 0U;
+    peripheral_state->tx_num_bytes_pending          = 0U;
+    peripheral_state->tx_num_bytes_in_transmission  = 0U;
+    peripheral_state->tx_final_drain_timer_attempts = 0U;
+    peripheral_state->tx_transaction_state          = HW_SPI_TX_TRANSACTION_IDLE;
 
     // Reset packet descriptor queue state. Descriptor contents are cleared only
     // for debug/readability; queue validity is controlled by the explicit
@@ -718,7 +736,8 @@ void SPI_DAC_TX_DMA_IRQ( void )
  *     This callback is valid only while a master transaction is in
  *     HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN. It checks BSY after the one-shot
  *     timer delay and either completes the software-CS transaction or marks it
- *     faulted.
+ *     faulted. SPI_DAC may start one final bounded interval and keeps CS asserted
+ *     if SPI remains busy after that interval.
  *
  * @param peripheral
  *     Logical SPI peripheral whose final-drain timer elapsed.
@@ -736,6 +755,26 @@ void HW_SPI_Timer_Callback_From_ISR( SPIChannel_T peripheral )
     if ( LL_SPI_IsActiveFlag_BSY( peripheral_state->spi_peripheral ) == 0U )
     {
         HW_SPI_TX_Complete_Master_Transaction( peripheral, peripheral_state );
+        return;
+    }
+
+    if ( peripheral == SPI_DAC
+         && peripheral_state->tx_final_drain_timer_attempts
+                < SPI_DAC_FINAL_DRAIN_TIMER_MAX_ATTEMPTS )
+    {
+        peripheral_state->tx_final_drain_timer_attempts++;
+        HW_TIMER_Start_Timer( peripheral_state->tx_final_drain_timer );
+        return;
+    }
+
+    if ( peripheral == SPI_DAC )
+    {
+        // The bounded DAC drain period expired with SPI still busy. Stop further DMA
+        // requests and expose the existing error state, but keep CS asserted.
+        LL_SPI_DisableDMAReq_TX( peripheral_state->spi_peripheral );
+        peripheral_state->tx_num_bytes_in_transmission  = 0U;
+        peripheral_state->tx_final_drain_timer_attempts = 0U;
+        peripheral_state->tx_transaction_state          = HW_SPI_TX_TRANSACTION_ERROR;
         return;
     }
 
