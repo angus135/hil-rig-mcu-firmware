@@ -71,6 +71,23 @@ typedef struct
  */
 void CONSOLE_UART_Command_Handler( uint16_t argc, char* argv[] );
 
+/**
+ * @brief Handle the top-level classic-CAN console namespace.
+ *
+ * Supported subcommands configure or deconfigure one physical CAN controller,
+ * queue standard or extended data/remote frames, read complete received frames,
+ * inspect non-blocking diagnostics, and recover a faulted controller.
+ *
+ * Parsing and presentation remain in console task context. The implementation
+ * delegates hardware lifecycle and frame movement exclusively to EXEC_CAN.
+ *
+ * @param argc Number of parsed command arguments, including the leading "can".
+ * @param argv Parsed command argument array.
+ *
+ * @returns void
+ */
+void CONSOLE_CAN_Command_Handler( uint16_t argc, char* argv[] );
+
 void CONSOLE_SPI_Loopback_Print_Usage( void );
 
 void CONSOLE_SPI_Loopback_Config( uint16_t argc, char* argv[] );
