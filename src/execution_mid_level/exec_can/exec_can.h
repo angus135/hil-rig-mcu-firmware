@@ -1,13 +1,14 @@
 /******************************************************************************
  *  File:       exec_can.h
- *  Author:     Angus Corr
+ *  Author:     HIL-RIG Firmware Team
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      <Short description of the module, what it exposes, and how it should be used>
+ *      Execution-level lifecycle and frame API for DUT-facing classic CAN.
  *
- *  Notes:
- *      <Public assumptions, required initialisation order, dependencies, etc.>
+ *      This layer mirrors the configuration, load/trigger and receive patterns
+ *      used by exec_spi and exec_uart while preserving CAN frame boundaries and
+ *      identifiers.
  ******************************************************************************/
 
 #ifndef EXEC_CAN_H
@@ -23,20 +24,10 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-#include <stdint.h>
-#include <stdbool.h>
-
 #include "hw_can.h"
 
-/**-----------------------------------------------------------------------------
- *  Public Defines / Macros
- *------------------------------------------------------------------------------
- */
-
-/**-----------------------------------------------------------------------------
- *  Public Typedefs / Enums / Structures
- *------------------------------------------------------------------------------
- */
+#include <stdbool.h>
+#include <stdint.h>
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -44,76 +35,91 @@ extern "C"
  */
 
 /**
- * @brief If True then all channel 1 messages have been sent, since the last trigger
+ * @brief Configure and start one CAN channel.
  *
+ * Configuration is intended for setup time, before the 100 us execution loop is
+ * started. If the channel is already active or faulted, a hardware stop is
+ * attempted before the new configuration is applied. Execution state becomes
+ * active only after both the low-level configure and start operations succeed.
  *
- * The sent flag is set flase after trigger is called when CAN has emptied the buffer
- * and set true when the last message is sent and the buffer is ready for a new message
+ * @param channel Physical CAN channel.
+ * @param config Complete timing, mode, retransmission and filter configuration.
+ *
+ * @return The precise low-level result. On failure no normal transmit/receive
+ * operation is permitted. The execution channel is unconfigured when cleanup
+ * succeeds, or faulted when cleanup itself fails so a later configure/recover
+ * operation can retry the physical shutdown.
  */
-bool EXEC_CAN_Channl1_sent();
+HwCanResult_T EXEC_CAN_Configure_Channel( HwCanChannel_T channel, const HwCanConfig_T* config );
 
 /**
- * @brief If True then all channel 2 messages have been sent, since the last trigger
+ * @brief Stop and deconfigure one CAN channel.
  *
- *
- * The sent flag is set flase after trigger is called when CAN has emptied the buffer
- * and set true when the last message is sent and the buffer is ready for a new message
+ * Queued TX frames, unread RX frames and diagnostics are discarded as part of
+ * deconfiguration. Calling this for an already unconfigured channel succeeds.
  */
-bool EXEC_CAN_Channl2_sent();
+HwCanResult_T EXEC_CAN_Deconfigure_Channel( HwCanChannel_T channel );
 
 /**
- * @brief Activates can channel 1 to immidiatley begin sending messages from the tx buffer
+ * @brief Reapply stored hardware configuration after a bus fault.
  *
+ * Recovery is a non-ISR operation. Frames still waiting in the software TX
+ * queue are retained; frames that had already entered hardware mailboxes are
+ * classified as aborted because their final bus outcome cannot be guaranteed.
  */
-void EXEC_CAN_Tx_Trigger1();
+HwCanResult_T EXEC_CAN_Recover_Channel( HwCanChannel_T channel );
 
 /**
- * @brief Activates can channel 2 to immidiatley begin sending messages from the tx buffer
+ * @brief Queue and asynchronously trigger a complete CAN frame batch.
  *
+ * Each frame carries its own standard/extended identifier, DLC and data/remote
+ * type. The low-level load operation is all-or-nothing. A successful return
+ * means every frame was queued and TX servicing was requested; it does not mean
+ * the frames have already been acknowledged on the bus.
+ *
+ * Loading transfers ownership before triggering. If triggering then reports
+ * HW_CAN_RESULT_BUS_OFF, the complete batch remains queued and must not be
+ * submitted again; EXEC_CAN_Recover_Channel() preserves and retriggers it.
+ *
+ * The caller is the single execution-level TX producer for the channel.
+ * Concurrent calls from multiple contexts are not supported.
  */
-void EXEC_CAN_Tx_Trigger2();
+HwCanResult_T EXEC_CAN_Transmit( HwCanChannel_T channel, const HwCanFrame_T* frames,
+                                 uint32_t frame_count );
 
 /**
- * @brief Writes a number of 8 byte packets (source) to the tx buffer of channel 1
+ * @brief Copy up to destination_capacity_frames unread frames into caller storage.
  *
- * @param source an array of arrays, type:
-uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
- * @param length the number of can packets to be written (seen as X above)
+ * The function performs one low-level peek, copies at most the caller-provided
+ * capacity from the first and optional wrapped span, and consumes exactly the
+ * number copied. A small destination capacity therefore provides a direct,
+ * deterministic per-call work bound for the execution scheduler.
  *
- * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ * @param channel CAN channel to read.
+ * @param destination Caller-owned frame array. May be NULL only when capacity is zero.
+ * @param destination_capacity_frames Number of complete frames destination can hold.
+ * @param frames_read Receives the number of complete frames copied.
  */
-uint16_t EXEC_CAN_Load_Tx1( uint8_t source[][CAN_PACKET_SIZE], uint16_t length );
+HwCanResult_T EXEC_CAN_Receive( HwCanChannel_T channel, HwCanRxFrame_T* destination,
+                                uint32_t destination_capacity_frames, uint32_t* frames_read );
 
 /**
- * @brief Writes a number of 8 byte packets (source) to the tx buffer of channel 2
+ * @brief Return true when no TX queue entry or hardware mailbox remains pending.
  *
- * @param source an array of arrays, type:
-uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
- * @param length the number of can packets to be written (seen as X above)
- *
- * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ * Idle does not imply success. Call EXEC_CAN_Get_Status() to inspect any
+ * arbitration, transmission, abort or bus-state faults.
  */
-uint16_t EXEC_CAN_Load_Tx2( uint8_t source[][CAN_PACKET_SIZE], uint16_t length );
+bool EXEC_CAN_Is_Transmission_Complete( HwCanChannel_T channel );
 
 /**
- * @brief Reads values from the rx channel 1 buffer one at a time and places them in dest
- *
- * @param dest pointer to array of 8 bytes sections of available storage
- * @param len the number of 8 byte sections in dest (the amount of CAN packages being read)
- *
- * @return the number of entries read from the rx buffer (can be 0)
+ * @brief Retrieve a non-blocking low-level status and diagnostic snapshot.
  */
-uint16_t EXEC_CAN_Read_Rx1_Buffer( uint8_t dest[][CAN_PACKET_SIZE], uint16_t len );
+HwCanResult_T EXEC_CAN_Get_Status( HwCanChannel_T channel, HwCanStatus_T* status );
 
 /**
- * @brief Reads values from the rx channel 2 buffer one at a time and places them in dest
- *
- * @param dest pointer to array of 8 bytes sections of available storage
- * @param len the number of 8 byte sections in dest (the amount of CAN packages being read)
- *
- * @return the number of entries read from the rx buffer (can be 0)
+ * @brief Clear diagnostics while the channel is configured but stopped.
  */
-uint16_t EXEC_CAN_Read_Rx2_Buffer( uint8_t dest[][CAN_PACKET_SIZE], uint16_t len );
+HwCanResult_T EXEC_CAN_Clear_Diagnostics( HwCanChannel_T channel );
 
 #ifdef __cplusplus
 }

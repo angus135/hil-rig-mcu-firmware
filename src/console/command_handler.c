@@ -27,7 +27,6 @@
 #include "exec_analogue_output.h"
 #include "exec_uart.h"
 #include "hw_adc.h"
-#include "hw_can.h"
 #include "exec_digital_input.h"
 #include "hw_spi.h"
 #include <stdint.h>
@@ -89,9 +88,6 @@ static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] );
-static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] );
-static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] );
-static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] );
 /**-----------------------------------------------------------------------------
@@ -117,9 +113,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"i2c_loopback", CONSOLE_Command_I2C_Loopback, "Loopback testing for I2C master and slave channels."},
     {"spi_loop",    CONSOLE_Command_SPI_Loopback,         "Does a loopback test"},
    {"pwm_capture", CONSOLE_PWM_Capture_Command, "Configure/read PWM capture. Usage: pwm_capture <start|stop|read> ..."},
-    {"can_tx", CONSOLE_Command_Can_tx, "Transmit a 8 byte message."},
-    {"can_rx", CONSOLE_Command_Can_rx, "Read and print an 8 byte message"},
-    {"can_config", CONSOLE_Command_Can_config, "Configures Can channel1"},
+    {"can", CONSOLE_CAN_Command_Handler, "Configure, transmit, receive and inspect classic CAN frames."},
     {"anlg_out",    CONSOLE_Command_Analogue_Output,      "DAC config and write commands"},
     {"pwm_out",    CONSOLE_Command_PWM_Output,      "Set PWM outputs"},
 
@@ -947,169 +941,6 @@ static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char* argv[] )
         return;
     }
     CONSOLE_Printf( "Unrecognised input, expected 1 or 0 but recieved %c", argv[argc - 1] );
-}
-
-/**
- * @brief Transmits a 8 byte message over xbCan
- *
- * @param argc - The number of arguments
- * @param argv - pointer to each argument string
- *
- * @returns void
- */
-static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
-{
-    if ( argc < 3 )
-    {
-        CONSOLE_Printf( "Incorrect number of inputs, expected atleast 2 but recieved %d",
-                        argc - 2 );
-        return;
-    }
-    char out[argc - 2][8];
-    for ( int j = 0; j < ( argc - 2 ); j++ )
-    {
-        int len = strlen( argv[j + 2] );
-        // fill packet with '_'
-        for ( int i = 0; i < 8; i++ )
-        {
-            out[j][i] = '_';
-        }
-        if ( len > 8 )
-        {
-            len = 8;
-        }
-        // move data into packet
-        CONSOLE_Printf( "Adding %s to buffer...\n\r", argv[j + 2] );
-        for ( int i = 0; i < len; i++ )
-        {
-            out[j][i] = argv[j + 2][i];
-        }
-    }
-    if ( strcmp( argv[1], "1" ) == 0 )
-    {
-        if ( HW_CAN_Tx_Buffer_Write1( out, argc - 2 ) != 0 )
-        {
-            CONSOLE_Printf( "Buffer Error" );
-            return;
-        }
-        CONSOLE_Printf( "Written to buffer...\n\r" );
-        HW_CAN_Tx_Trigger1();
-        CONSOLE_Printf( "Transmitted on channel 1" );
-    }
-    else if ( strcmp( argv[1], "2" ) == 0 )
-    {
-        if ( HW_CAN_Tx_Buffer_Write2( out, argc - 2 ) != 0 )
-        {
-            CONSOLE_Printf( "Buffer Error" );
-            return;
-        }
-        CONSOLE_Printf( "Written to buffer...\n\r" );
-        HW_CAN_Tx_Trigger2();
-        CONSOLE_Printf( "Transmitted on channel 2" );
-    }
-    else
-    {
-        CONSOLE_Printf( "Unknown channel %s\n\r", argv[1] );
-    }
-}
-
-/**
- * @brief Transmits a 8 byte message over xbCan
- *
- * @param argc - The number of arguments
- * @param argv - pointer to each argument string
- *
- * @returns void
- */
-static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] )
-{
-    int check = HW_CAN_Configure1( 1000000 );
-    if ( check == 1 )
-    {
-        CONSOLE_Printf( "Can 1  Timing set up error" );
-        return;
-    }
-    if ( check == 2 )
-    {
-        CONSOLE_Printf( "Can 1  Filter set up error" );
-        return;
-    }
-    if ( check == 3 )
-    {
-        CONSOLE_Printf( "Can 1 Start set up error" );
-        return;
-    }
-    if ( check != 0 )
-    {
-        CONSOLE_Printf( "Can 1 Config Error" );
-        return;
-    }
-    check = HW_CAN_Configure2( 1000000 );
-    if ( check == 1 )
-    {
-        CONSOLE_Printf( "Can 2  Timing set up error" );
-        return;
-    }
-    if ( check == 2 )
-    {
-        CONSOLE_Printf( "Can 2  Filter set up error" );
-        return;
-    }
-    if ( check == 3 )
-    {
-        CONSOLE_Printf( "Can 2 Start set up error" );
-        return;
-    }
-    if ( check != 0 )
-    {
-        CONSOLE_Printf( "Can 2 Config Error" );
-        return;
-    }
-    CONSOLE_Printf( "Can 1&2 Set up correctly" );
-}
-
-/**
- * @brief Transmits a 8 byte message over xbCan
- *
- * @param argc - The number of arguments
- * @param argv - pointer to each argument string
- *
- * @returns void
- */
-static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
-{
-    if ( argc != 2 )
-    {
-        CONSOLE_Printf( "Incorrect number of inputs, expected 1 but recieved %d", argc - 1 );
-        return;
-    }
-    char out[8];
-    for ( int i = 0; i < 8; i++ )
-    {
-        out[i] = '0';
-    }
-    if ( strcmp( argv[1], "1" ) == 0 )
-    {
-        if ( HW_CAN_Rx_Buffer_Pop1( out ) != 0 )
-        {
-            CONSOLE_Printf( "Nothing in channel 1 buffer\n\r" );
-            return;
-        }
-    }
-    else if ( strcmp( argv[1], "2" ) == 0 )
-    {
-        if ( HW_CAN_Rx_Buffer_Pop2( out ) != 0 )
-        {
-            CONSOLE_Printf( "Nothing in channel 2 buffer\n\r" );
-            return;
-        }
-    }
-    else
-    {
-        CONSOLE_Printf( "Unknown parameter %s\n\r", argv[1] );
-        return;
-    }
-    CONSOLE_Printf( "Recieved: %s", out );
 }
 
 static void CONSOLE_Command_UART_Loopback( uint16_t argc, char* argv[] )

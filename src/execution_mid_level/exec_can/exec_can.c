@@ -1,13 +1,15 @@
 /******************************************************************************
  *  File:       exec_can.c
- *  Author:     Timothy Vogelsang
+ *  Author:     HIL-RIG Firmware Team
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      <Short description of the module's purpose and responsibilities>
+ *      Execution-level lifecycle and bounded frame-transfer composition for CAN.
  *
  *  Notes:
- *      <Any design notes, dependencies, or assumptions go here>
+ *      Configuration and recovery are cold-path operations. Transmit performs
+ *      one all-or-nothing low-level load followed by one trigger. Receive uses
+ *      the low-level frame-span peek/consume ownership model.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -15,157 +17,278 @@
  *------------------------------------------------------------------------------
  */
 
-#include <stdint.h>
-#include <stdbool.h>
-
 #include "exec_can.h"
 #include "hw_can.h"
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
 
+#if defined( __GNUC__ )
+#define EXEC_CAN_ALWAYS_INLINE static inline __attribute__( ( always_inline ) )
+#else
+#define EXEC_CAN_ALWAYS_INLINE static inline
+#endif
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief Execution layer's lifecycle view for one CAN channel.
+ */
+typedef enum ExecCanChannelState_T
+{
+    EXEC_CAN_STATE_UNCONFIGURED = 0U,
+    EXEC_CAN_STATE_ACTIVE,
+    EXEC_CAN_STATE_FAULT,
+} ExecCanChannelState_T;
+
 /**-----------------------------------------------------------------------------
- *  Public (global) and Extern Variables
+ *  Private Variables
  *------------------------------------------------------------------------------
  */
 
+static ExecCanChannelState_T exec_can_channel_states[HW_CAN_CHANNEL_COUNT];
+
 /**-----------------------------------------------------------------------------
- *  Private (static) Variables
+ *  Private Helpers
  *------------------------------------------------------------------------------
  */
 
+EXEC_CAN_ALWAYS_INLINE bool EXEC_CAN_Is_Valid_Channel( HwCanChannel_T channel )
+{
+    return ( uint32_t )channel < HW_CAN_CHANNEL_COUNT;
+}
+
 /**-----------------------------------------------------------------------------
- *  Private (static) Function Prototypes
+ *  Public Configuration and Lifecycle Functions
  *------------------------------------------------------------------------------
  */
 
-/**-----------------------------------------------------------------------------
- *  Private Function Definitions
- *------------------------------------------------------------------------------
- */
-
-/**-----------------------------------------------------------------------------
- *  Public Function Definitions
- *------------------------------------------------------------------------------
- */
-
-/**
- * @brief If True then all channel 1 messages have been sent, since the last trigger
- *
- *
- * The sent flag is set flase after trigger is called when CAN has emptied the buffer
- * and set true when the last message is sent and the buffer is ready for a new message
- */
-bool EXEC_CAN_Channl1_sent()
+HwCanResult_T EXEC_CAN_Configure_Channel( HwCanChannel_T channel, const HwCanConfig_T* config )
 {
-    return HW_CAN_Channl1_sent();
-}
-
-/**
- * @brief If True then all channel 2 messages have been sent, since the last trigger
- *
- *
- * The sent flag is set flase after trigger is called when CAN has emptied the buffer
- * and set true when the last message is sent and the buffer is ready for a new message
- */
-bool EXEC_CAN_Channl2_sent()
-{
-    return HW_CAN_Channl2_sent();
-}
-
-/**
- * @brief Activates can channel 1 to immidiatley begin sending messages from the tx buffer
- *
- */
-void EXEC_CAN_Tx_Trigger1()
-{
-    HW_CAN_Tx_Trigger1();
-}
-
-/**
- * @brief Activates can channel 2 to immidiatley begin sending messages from the tx buffer
- *
- */
-void EXEC_CAN_Tx_Trigger2()
-{
-    HW_CAN_Tx_Trigger2();
-}
-
-/**
- * @brief Writes a number of 8 byte packets (source) to the tx buffer of channel 1
- *
- * @param source an array of arrays, type:
-uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
- * @param length the number of can packets to be written (seen as X above)
- *
- * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
- */
-uint16_t EXEC_CAN_Load_Tx1( uint8_t source[][CAN_PACKET_SIZE], uint16_t length )
-{
-    return HW_CAN_Tx_Buffer_Write1( source, length );
-}
-
-/**
- * @brief Writes a number of 8 byte packets (source) to the tx buffer of channel 2
- *
- * @param source an array of arrays, type:
-uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
- * @param length the number of can packets to be written (seen as X above)
- *
- * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
- */
-uint16_t EXEC_CAN_Load_Tx2( uint8_t source[][CAN_PACKET_SIZE], uint16_t length )
-{
-    return HW_CAN_Tx_Buffer_Write2( source, length );
-}
-
-/**
- * @brief Reads values from the rx channel 1 buffer one at a time and places them in dest
- *
- * @param dest pointer to array of 8 bytes sections of available storage
- * @param len the number of 8 byte sections in dest (the amount of CAN packages being read)
- *
- * @return the number of entries read from the rx buffer (can be 0)
- */
-uint16_t EXEC_CAN_Read_Rx1_Buffer( uint8_t dest[][CAN_PACKET_SIZE], uint16_t len )
-{
-    uint16_t count = 0;
-    for ( uint16_t i = 0; i < len; i++ )
+    if ( !EXEC_CAN_Is_Valid_Channel( channel ) )
     {
-        if ( HW_CAN_Rx_Buffer_Pop1( dest[i] ) == 1 )
-        {
-            return count;
-        }
-        count += 1;
+        return HW_CAN_RESULT_INVALID_CHANNEL;
     }
-    return count;
+
+    if ( config == NULL )
+    {
+        return HW_CAN_RESULT_INVALID_ARGUMENT;
+    }
+
+    if ( exec_can_channel_states[channel] != EXEC_CAN_STATE_UNCONFIGURED )
+    {
+        // A faulted execution channel can still correspond to a physically
+        // started bxCAN peripheral when an earlier HAL rollback failed. Stop
+        // both active and faulted channels before applying new configuration.
+        HwCanResult_T stop_result = HW_CAN_Stop_Channel( channel );
+        if ( stop_result != HW_CAN_RESULT_OK )
+        {
+            exec_can_channel_states[channel] = EXEC_CAN_STATE_FAULT;
+            return stop_result;
+        }
+    }
+
+    HwCanResult_T configure_result = HW_CAN_Configure_Channel( channel, config );
+    if ( configure_result != HW_CAN_RESULT_OK )
+    {
+        // Configuration can fail after HAL has accepted timing but while the
+        // shared filter banks are being programmed. Best-effort deconfiguration
+        // makes the execution-level guarantee explicit: callers never inherit a
+        // partially configured channel after this function reports failure.
+        HwCanResult_T rollback_result    = HW_CAN_Deconfigure_Channel( channel );
+        exec_can_channel_states[channel] = rollback_result == HW_CAN_RESULT_OK
+                                               ? EXEC_CAN_STATE_UNCONFIGURED
+                                               : EXEC_CAN_STATE_FAULT;
+        return configure_result;
+    }
+
+    HwCanResult_T start_result = HW_CAN_Start_Channel( channel );
+    if ( start_result != HW_CAN_RESULT_OK )
+    {
+        // Best-effort deconfiguration prevents a partially configured channel
+        // from appearing active to later execution-path calls.
+        HwCanResult_T rollback_result    = HW_CAN_Deconfigure_Channel( channel );
+        exec_can_channel_states[channel] = rollback_result == HW_CAN_RESULT_OK
+                                               ? EXEC_CAN_STATE_UNCONFIGURED
+                                               : EXEC_CAN_STATE_FAULT;
+        return start_result;
+    }
+
+    exec_can_channel_states[channel] = EXEC_CAN_STATE_ACTIVE;
+    return HW_CAN_RESULT_OK;
 }
 
-/**
- * @brief Reads values from the rx channel 2 buffer one at a time and places them in dest
- *
- * @param dest pointer to array of 8 bytes sections of available storage
- * @param len the number of 8 byte sections in dest (the amount of CAN packages being read)
- *
- * @return the number of entries read from the rx buffer (can be 0)
- */
-uint16_t EXEC_CAN_Read_Rx2_Buffer( uint8_t dest[][CAN_PACKET_SIZE], uint16_t len )
+HwCanResult_T EXEC_CAN_Deconfigure_Channel( HwCanChannel_T channel )
 {
-    uint16_t count = 0;
-    for ( uint16_t i = 0; i < len; i++ )
+    if ( !EXEC_CAN_Is_Valid_Channel( channel ) )
     {
-        if ( HW_CAN_Rx_Buffer_Pop2( dest[i] ) == 1 )
-        {
-            return count;
-        }
-        count += 1;
+        return HW_CAN_RESULT_INVALID_CHANNEL;
     }
-    return count;
+
+    HwCanResult_T result = HW_CAN_Deconfigure_Channel( channel );
+    if ( result == HW_CAN_RESULT_OK )
+    {
+        exec_can_channel_states[channel] = EXEC_CAN_STATE_UNCONFIGURED;
+    }
+    else
+    {
+        exec_can_channel_states[channel] = EXEC_CAN_STATE_FAULT;
+    }
+
+    return result;
+}
+
+HwCanResult_T EXEC_CAN_Recover_Channel( HwCanChannel_T channel )
+{
+    if ( !EXEC_CAN_Is_Valid_Channel( channel ) )
+    {
+        return HW_CAN_RESULT_INVALID_CHANNEL;
+    }
+
+    if ( exec_can_channel_states[channel] == EXEC_CAN_STATE_UNCONFIGURED )
+    {
+        return HW_CAN_RESULT_NOT_CONFIGURED;
+    }
+
+    HwCanResult_T result = HW_CAN_Recover_Channel( channel );
+    exec_can_channel_states[channel] =
+        result == HW_CAN_RESULT_OK ? EXEC_CAN_STATE_ACTIVE : EXEC_CAN_STATE_FAULT;
+
+    return result;
+}
+
+/**-----------------------------------------------------------------------------
+ *  Public Transfer Functions
+ *------------------------------------------------------------------------------
+ */
+
+HwCanResult_T EXEC_CAN_Transmit( HwCanChannel_T channel, const HwCanFrame_T* frames,
+                                 uint32_t frame_count )
+{
+    if ( !EXEC_CAN_Is_Valid_Channel( channel ) )
+    {
+        return HW_CAN_RESULT_INVALID_CHANNEL;
+    }
+
+    if ( exec_can_channel_states[channel] != EXEC_CAN_STATE_ACTIVE )
+    {
+        return HW_CAN_RESULT_NOT_CONFIGURED;
+    }
+
+    HwCanResult_T load_result = HW_CAN_Load_Tx_Buffer( channel, frames, frame_count );
+    if ( load_result != HW_CAN_RESULT_OK )
+    {
+        if ( load_result == HW_CAN_RESULT_BUS_OFF || load_result == HW_CAN_RESULT_HARDWARE_ERROR )
+        {
+            exec_can_channel_states[channel] = EXEC_CAN_STATE_FAULT;
+        }
+        return load_result;
+    }
+
+    HwCanResult_T trigger_result = HW_CAN_Tx_Trigger( channel );
+    if ( trigger_result == HW_CAN_RESULT_BUS_OFF || trigger_result == HW_CAN_RESULT_HARDWARE_ERROR )
+    {
+        // The frames remain queued. Recovery can preserve and resubmit them.
+        exec_can_channel_states[channel] = EXEC_CAN_STATE_FAULT;
+    }
+
+    return trigger_result;
+}
+
+HwCanResult_T EXEC_CAN_Receive( HwCanChannel_T channel, HwCanRxFrame_T* destination,
+                                uint32_t destination_capacity_frames, uint32_t* frames_read )
+{
+    if ( !EXEC_CAN_Is_Valid_Channel( channel ) )
+    {
+        return HW_CAN_RESULT_INVALID_CHANNEL;
+    }
+
+    if ( frames_read == NULL || ( destination == NULL && destination_capacity_frames != 0U ) )
+    {
+        return HW_CAN_RESULT_INVALID_ARGUMENT;
+    }
+
+    if ( exec_can_channel_states[channel] != EXEC_CAN_STATE_ACTIVE )
+    {
+        return HW_CAN_RESULT_NOT_CONFIGURED;
+    }
+
+    *frames_read = 0U;
+
+    if ( destination_capacity_frames == 0U )
+    {
+        return HW_CAN_RESULT_OK;
+    }
+
+    HwCanRxSpans_T spans          = HW_CAN_Rx_Peek( channel );
+    uint32_t       frames_to_copy = spans.total_frame_count;
+
+    if ( frames_to_copy > destination_capacity_frames )
+    {
+        frames_to_copy = destination_capacity_frames;
+    }
+
+    uint32_t first_copy = spans.first_span.frame_count;
+    if ( first_copy > frames_to_copy )
+    {
+        first_copy = frames_to_copy;
+    }
+
+    if ( first_copy != 0U )
+    {
+        memcpy( destination, spans.first_span.frames, first_copy * sizeof( HwCanRxFrame_T ) );
+    }
+
+    uint32_t second_copy = frames_to_copy - first_copy;
+    if ( second_copy != 0U )
+    {
+        memcpy( &destination[first_copy], spans.second_span.frames,
+                second_copy * sizeof( HwCanRxFrame_T ) );
+    }
+
+    HwCanResult_T consume_result = HW_CAN_Rx_Consume( channel, frames_to_copy );
+    if ( consume_result != HW_CAN_RESULT_OK )
+    {
+        return consume_result;
+    }
+
+    *frames_read = frames_to_copy;
+    return HW_CAN_RESULT_OK;
+}
+
+bool EXEC_CAN_Is_Transmission_Complete( HwCanChannel_T channel )
+{
+    return EXEC_CAN_Is_Valid_Channel( channel )
+           && exec_can_channel_states[channel] == EXEC_CAN_STATE_ACTIVE
+           && HW_CAN_Is_Tx_Complete( channel );
+}
+
+HwCanResult_T EXEC_CAN_Get_Status( HwCanChannel_T channel, HwCanStatus_T* status )
+{
+    if ( !EXEC_CAN_Is_Valid_Channel( channel ) )
+    {
+        return HW_CAN_RESULT_INVALID_CHANNEL;
+    }
+
+    return HW_CAN_Get_Status( channel, status );
+}
+
+HwCanResult_T EXEC_CAN_Clear_Diagnostics( HwCanChannel_T channel )
+{
+    if ( !EXEC_CAN_Is_Valid_Channel( channel ) )
+    {
+        return HW_CAN_RESULT_INVALID_CHANNEL;
+    }
+
+    return HW_CAN_Clear_Diagnostics( channel );
 }

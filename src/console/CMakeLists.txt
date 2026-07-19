@@ -7,6 +7,7 @@
 set(CONSOLE_SOURCES
     console.c
     command_handler.c
+    subsystem_command_apis/console_can.c
     subsystem_command_apis/console_spi.c
     subsystem_command_apis/console_uart.c
     subsystem_command_apis/console_logic_expander.c
@@ -35,7 +36,7 @@ target_link_libraries(console
     cubeide_hal
     rtos
     exec_uart
-    hw_can
+    exec_can
     hw_uart
     hw_adc
     hw_spi
@@ -60,6 +61,7 @@ option(CONSOLE_ENABLE_TESTS "Build tests for console module" ON)
 if(CONSOLE_ENABLE_TESTS AND BUILD_TESTING)
     add_executable(console_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_console.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/subsystem_command_apis/console_can.c
     )
 
     target_link_libraries(console_tests

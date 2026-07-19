@@ -1,4 +1,4 @@
-# src/hardware/hw_uart/CMakeLists.txt
+# src/hardware_low_level/hw_can/CMakeLists.txt
 
 # -----------------------------
 # Library sources / headers
@@ -26,8 +26,9 @@ target_include_directories(hw_can
 target_link_libraries(hw_can
     PUBLIC
         global_config
-        rtos
+        project_warnings
         cubeide_hal
+        rtos
 )
 
 # -----------------------------
@@ -44,6 +45,7 @@ if(HW_CAN_ENABLE_TESTS AND BUILD_TESTING)
 
     target_link_libraries(hw_can_tests
         PRIVATE
+            project_warnings
             hw_can
             gtest
             gtest_main
@@ -54,6 +56,16 @@ if(HW_CAN_ENABLE_TESTS AND BUILD_TESTING)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+
+    # The existing test seam includes the C implementation in a C++ fixture so
+    # private queue state can be reset without adding test-only production APIs.
+    # Suppress only the two diagnostics caused by valid C zero/designated
+    # initializers being parsed as C++17 extensions.
+    target_compile_options(hw_can_tests
+        PRIVATE
+            -Wno-c++20-extensions
+            -Wno-missing-field-initializers
     )
 
     add_test(NAME hw_can_tests COMMAND hw_can_tests)
