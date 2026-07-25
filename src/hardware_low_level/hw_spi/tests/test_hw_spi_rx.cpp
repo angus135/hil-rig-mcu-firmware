@@ -418,7 +418,8 @@ protected:
                               .first_bit = SPI_FIRST_MSB,
                               .baud_rate = baud,
                               .cpol      = SPI_CPOL_LOW,
-                              .cpha      = SPI_CPHA_1_EDGE };
+                              .cpha      = SPI_CPHA_1_EDGE,
+                              .nss_pin   = GPIO_SPI1_NSS };
     }
 
     static HWSPIConfig_T MakeSlaveConfig( SPIDataSize_T size = SPI_SIZE_8_BIT,
@@ -429,7 +430,8 @@ protected:
                               .first_bit = SPI_FIRST_MSB,
                               .baud_rate = baud,
                               .cpol      = SPI_CPOL_LOW,
-                              .cpha      = SPI_CPHA_1_EDGE };
+                              .cpha      = SPI_CPHA_1_EDGE,
+                              .nss_pin   = GPIO_SPI1_NSS };
     }
 
     static void InitialiseState( SPIPeripheralState_T* state, SPIChannel_T logical,
@@ -440,6 +442,10 @@ protected:
         memset( state, 0, sizeof( *state ) );
         state->config                    = config;
         state->logical_peripheral        = logical;
+        state->nss_pin                   = config.nss_pin;
+        state->is_configured             = true;
+        state->is_started                = false;
+        state->cs_asserted               = false;
         state->is_master                 = config.spi_mode == SPI_MASTER_MODE;
         state->frame_size_bytes          = config.data_size == SPI_SIZE_16_BIT ? 2U : 1U;
         state->frame_shift               = config.data_size == SPI_SIZE_16_BIT ? 1U : 0U;

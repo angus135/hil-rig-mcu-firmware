@@ -46,6 +46,27 @@ extern "C"
  */
 
 typedef uint32_t DigitalOutputPinmask_T;
+/**
+ * @brief Logical pins whose runtime ownership may change.
+ *
+ * @details
+ *     This deliberately small pin namespace is separate from GPIOOutput_T:
+ *     an SPI NSS pin is an output while used as software CS, but is an
+ *     alternate-function input/output while owned by an SPI peripheral.
+ *     Physical ports, pin masks, and alternate-function numbers remain private
+ *     to hw_gpio.
+ */
+typedef enum GPIOPin_T
+{
+    GPIO_PIN_NONE = 0U,  ///< Invalid/unselected configurable pin.
+    GPIO_SPI1_NSS,       ///< PA4, SPI1 NSS (AF5 when peripheral-owned).
+    GPIO_SPI2_NSS,       ///< PB12, SPI2 NSS (AF5 when peripheral-owned).
+    GPIO_SPI4_NSS,       ///< PE11, SPI4 NSS (AF5 when peripheral-owned).
+    GPIO_SPI1_CS_TEST,   ///< PE9 dedicated software-CS/test output.
+
+    GPIO_NUM_PINS
+} GPIOPin_T;
+
 
 typedef enum GPIOOutput_T
 {
@@ -125,6 +146,36 @@ typedef enum GPIOInput_T
  * because we can write to an entire port at once this increases speed.
  */
 bool HW_GPIO_StringToEnum( const char* str, GPIOOutput_T* out );
+/**
+ * @brief Return whether a runtime-configurable logical pin is mapped.
+ */
+bool HW_GPIO_Is_Valid_Pin( GPIOPin_T pin );
+
+/**
+ * @brief Configure a logical pin as push-pull output.
+ *
+ * The output latch is written to @p initial_high before the pin mode changes,
+ * preventing a transient assertion when an active-low CS becomes an output.
+ */
+bool HW_GPIO_Configure_Pin_As_Output( GPIOPin_T pin, bool initial_high );
+
+/**
+ * @brief Return a supported logical pin to its fixed alternate-function mode.
+ *
+ * Software-only pins, such as GPIO_SPI1_CS_TEST, are rejected.
+ */
+bool HW_GPIO_Configure_Pin_As_Alternate_Function( GPIOPin_T pin );
+
+/** @brief Drive a runtime-configurable logical output high. */
+void HW_GPIO_Set_Pin( GPIOPin_T pin );
+
+/** @brief Drive a runtime-configurable logical output low. */
+void HW_GPIO_Reset_Pin( GPIOPin_T pin );
+
+/**-----------------------------------------------------------------------------
+ *  Existing digital-I/O API
+ *----------------------------------------------------------------------------*/
+
 
 /**
  * @brief Toggles a GPIO output pin by output enum.

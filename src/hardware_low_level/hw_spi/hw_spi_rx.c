@@ -188,7 +188,8 @@ bool HW_SPI_Start_Channel( SPIChannel_T peripheral )
         return false;
     }
 
-    if ( peripheral_state->rx_dma == NULL )
+    if ( peripheral_state->is_configured == false || peripheral_state->is_started
+         || peripheral_state->rx_dma == NULL )
     {
         LL_SPI_Enable( peripheral_state->spi_peripheral );
         return true;
@@ -197,7 +198,13 @@ bool HW_SPI_Start_Channel( SPIChannel_T peripheral )
     // Arm RX DMA directly instead of using HAL_SPI_Receive_DMA(). This keeps
     // master-mode RX passive: no clocks are generated until the caller starts a
     // TX transfer.
-    return HW_SPI_RX_Start_Passive_DMA( peripheral_state );
+    if ( HW_SPI_RX_Start_Passive_DMA( peripheral_state ) == false )
+    {
+        return false;
+    }
+
+    peripheral_state->is_started = true;
+    return true;
 }
 
 /**

@@ -292,24 +292,26 @@ HW_SPI_TX_Bounded_Final_Drain_Wait( const SPIPeripheralState_T* peripheral_state
 
 void HW_SPI_TX_Master_CS_Assert( SPIPeripheralState_T* peripheral_state )
 {
-    // TODO: Replace this hard-coded development CS assertion with the project GPIO driver.
-    // The assert point must remain immediately before DMA is armed for the packet.
-    // peripheral_state will be used once the CS line is selected via the GPIO driver.
-    ( void )peripheral_state;
-#ifndef TEST_BUILD  // TODO: this
-    HAL_GPIO_WritePin( SPI1_CS_TEST_GPIO_Port, SPI1_CS_TEST_Pin, 0 );
-#endif
+    if ( peripheral_state == NULL || peripheral_state->is_master == false
+         || HW_GPIO_Is_Valid_Pin( peripheral_state->nss_pin ) == false )
+    {
+        return;
+    }
+
+    HW_GPIO_Reset_Pin( peripheral_state->nss_pin );
+    peripheral_state->cs_asserted = true;
 }
 
 void HW_SPI_TX_Master_CS_Deassert( SPIPeripheralState_T* peripheral_state )
 {
-    // TODO: Replace this hard-coded development CS deassertion with the project GPIO driver.
-    // The deassert point must remain after final drain and BSY-clear confirmation.
-    // peripheral_state will be used once the CS line is selected via the GPIO driver.
-    ( void )peripheral_state;
-#ifndef TEST_BUILD  // TODO: this
-    HAL_GPIO_WritePin( SPI1_CS_TEST_GPIO_Port, SPI1_CS_TEST_Pin, 1 );
-#endif
+    if ( peripheral_state == NULL || peripheral_state->is_master == false
+         || HW_GPIO_Is_Valid_Pin( peripheral_state->nss_pin ) == false )
+    {
+        return;
+    }
+
+    HW_GPIO_Set_Pin( peripheral_state->nss_pin );
+    peripheral_state->cs_asserted = false;
 }
 
 /**
