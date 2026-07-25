@@ -35,6 +35,7 @@ target_link_libraries(host_interface
         rtos
         hw_timer
         hw_gpio
+        hw_usb
 )
 
 # -----------------------------

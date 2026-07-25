@@ -32,6 +32,7 @@ target_link_libraries(app_main
         console
         execution_manager
         background
+        host_interface
 )
 
 # -----------------------------
