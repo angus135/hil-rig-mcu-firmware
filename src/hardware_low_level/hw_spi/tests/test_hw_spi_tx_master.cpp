@@ -1035,7 +1035,7 @@ TEST_F( HWSpiMasterTxTest, LoadTxBuffer_MasterRejectsWhenWrappedHeadSpaceIsTooSm
 TEST_F( HWSpiMasterTxTest, MasterChannelsDriveOnlyTheirConfiguredCsPins )
 {
     HW_SPI_STATE( SPI_CHANNEL_0 )->nss_pin = GPIO_SPI1_NSS;
-    HW_SPI_STATE( SPI_CHANNEL_1 )->nss_pin = GPIO_SPI1_CS_TEST;
+    HW_SPI_STATE( SPI_CHANNEL_1 )->nss_pin = GPIO_SPI2_NSS;
 
     HW_SPI_TX_Master_CS_Assert( HW_SPI_STATE( SPI_CHANNEL_0 ) );
     HW_SPI_TX_Master_CS_Assert( HW_SPI_STATE( SPI_CHANNEL_1 ) );
@@ -1046,17 +1046,17 @@ TEST_F( HWSpiMasterTxTest, MasterChannelsDriveOnlyTheirConfiguredCsPins )
     EXPECT_EQ( gpio_events[0].kind, GPIOEventKind::RESET_LOW );
     EXPECT_EQ( gpio_events[0].pin, GPIO_SPI1_NSS );
     EXPECT_EQ( gpio_events[1].kind, GPIOEventKind::RESET_LOW );
-    EXPECT_EQ( gpio_events[1].pin, GPIO_SPI1_CS_TEST );
+    EXPECT_EQ( gpio_events[1].pin, GPIO_SPI2_NSS );
     EXPECT_EQ( gpio_events[2].kind, GPIOEventKind::SET_HIGH );
     EXPECT_EQ( gpio_events[2].pin, GPIO_SPI1_NSS );
     EXPECT_EQ( gpio_events[3].kind, GPIOEventKind::SET_HIGH );
-    EXPECT_EQ( gpio_events[3].pin, GPIO_SPI1_CS_TEST );
+    EXPECT_EQ( gpio_events[3].pin, GPIO_SPI2_NSS );
 }
 
 TEST_F( HWSpiMasterTxTest, MasterConfigurationPreloadsSelectedCsHighAndStoresIt )
 {
     HWSPIConfig_T config = MakeMasterConfig();
-    config.nss_pin       = GPIO_SPI1_CS_TEST;
+    config.nss_pin       = GPIO_SPI1_NSS;
     memset( HW_SPI_STATE( SPI_CHANNEL_0 ), 0, sizeof( *HW_SPI_STATE( SPI_CHANNEL_0 ) ) );
 
     ExpectChannel0ConfigurationHardware();
@@ -1065,10 +1065,10 @@ TEST_F( HWSpiMasterTxTest, MasterConfigurationPreloadsSelectedCsHighAndStoresIt 
 
     ASSERT_EQ( gpio_events.size(), 1U );
     EXPECT_EQ( gpio_events[0].kind, GPIOEventKind::CONFIGURE_OUTPUT );
-    EXPECT_EQ( gpio_events[0].pin, GPIO_SPI1_CS_TEST );
+    EXPECT_EQ( gpio_events[0].pin, GPIO_SPI1_NSS );
     EXPECT_TRUE( gpio_events[0].initial_high );
     EXPECT_EQ( SPI_CHANNEL_0_HANDLE.Init.NSS, SPI_NSS_SOFT );
-    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->nss_pin, GPIO_SPI1_CS_TEST );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->nss_pin, GPIO_SPI1_NSS );
     EXPECT_FALSE( HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted );
     EXPECT_FALSE( HW_SPI_STATE( SPI_CHANNEL_0 )->is_started );
 }
@@ -1098,7 +1098,7 @@ TEST_F( HWSpiMasterTxTest, SlaveToMasterReconfigurationCreatesInactiveHighCsWith
                      SPI_CHANNEL_0_TX_DMA_STREAM, SPI_CHANNEL_0_INSTANCE, SPI_CHANNEL_0_TX_DMA_IRQN,
                      SPI_CHANNEL_0_TIMER );
     HWSPIConfig_T config = MakeMasterConfig();
-    config.nss_pin       = GPIO_SPI1_CS_TEST;
+    config.nss_pin       = GPIO_SPI1_NSS;
 
     gpio_events.clear();
     ExpectChannel0ConfigurationHardware();
@@ -1107,7 +1107,7 @@ TEST_F( HWSpiMasterTxTest, SlaveToMasterReconfigurationCreatesInactiveHighCsWith
 
     ASSERT_EQ( gpio_events.size(), 1U );
     EXPECT_EQ( gpio_events[0].kind, GPIOEventKind::CONFIGURE_OUTPUT );
-    EXPECT_EQ( gpio_events[0].pin, GPIO_SPI1_CS_TEST );
+    EXPECT_EQ( gpio_events[0].pin, GPIO_SPI1_NSS );
     EXPECT_TRUE( gpio_events[0].initial_high );
     EXPECT_FALSE( HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted );
 }
@@ -1115,9 +1115,6 @@ TEST_F( HWSpiMasterTxTest, SlaveToMasterReconfigurationCreatesInactiveHighCsWith
 TEST_F( HWSpiMasterTxTest, InvalidSlavePinCombinationIsRejectedWithoutHardwareChanges )
 {
     HWSPIConfig_T config = MakeSlaveConfig();
-
-    config.nss_pin = GPIO_SPI1_CS_TEST;
-    EXPECT_FALSE( HW_SPI_Configure_Channel( SPI_CHANNEL_0, config ) );
 
     config.nss_pin = GPIO_SPI2_NSS;
     EXPECT_FALSE( HW_SPI_Configure_Channel( SPI_CHANNEL_0, config ) );
@@ -1130,7 +1127,7 @@ TEST_F( HWSpiMasterTxTest, InvalidSlavePinCombinationIsRejectedWithoutHardwareCh
 TEST_F( HWSpiMasterTxTest, ReconfigurationIsRejectedWhileTransactionOwnsCs )
 {
     HWSPIConfig_T config = MakeMasterConfig();
-    config.nss_pin       = GPIO_SPI1_CS_TEST;
+    config.nss_pin       = GPIO_SPI1_NSS;
 
     HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
     HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted          = true;
@@ -1225,7 +1222,7 @@ TEST_F( HWSpiMasterTxTest, StopReleasesTheConfiguredMasterCs )
 
 TEST_F( HWSpiMasterTxTest, TxErrorReleasesTheConfiguredMasterCs )
 {
-    HW_SPI_STATE( SPI_CHANNEL_0 )->nss_pin                      = GPIO_SPI1_CS_TEST;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->nss_pin                      = GPIO_SPI1_NSS;
     HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted                  = true;
     HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state         = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
     HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_in_transmission = 4U;
@@ -1245,6 +1242,6 @@ TEST_F( HWSpiMasterTxTest, TxErrorReleasesTheConfiguredMasterCs )
 
     ASSERT_EQ( gpio_events.size(), 1U );
     EXPECT_EQ( gpio_events[0].kind, GPIOEventKind::SET_HIGH );
-    EXPECT_EQ( gpio_events[0].pin, GPIO_SPI1_CS_TEST );
+    EXPECT_EQ( gpio_events[0].pin, GPIO_SPI1_NSS );
     EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state, HW_SPI_TX_TRANSACTION_ERROR );
 }

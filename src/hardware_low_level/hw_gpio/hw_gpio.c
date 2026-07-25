@@ -132,14 +132,6 @@ static bool HW_GPIO_Get_Configurable_Pin( GPIOPin_T pin, GPIOConfigurablePin_T* 
                 .has_alternate_function = true,
             };
             return true;
-        case GPIO_SPI1_CS_TEST:
-            *configuration = ( GPIOConfigurablePin_T ){
-                .gpiox                  = SPI1_CS_TEST_GPIO_Port,
-                .pin_mask               = SPI1_CS_TEST_Pin,
-                .alternate_function     = 0U,
-                .has_alternate_function = false,
-            };
-            return true;
         case GPIO_PIN_NONE:
         case GPIO_NUM_PINS:
         default:
@@ -563,7 +555,6 @@ bool HW_GPIO_Is_Valid_Pin( GPIOPin_T pin )
         case GPIO_SPI1_NSS:
         case GPIO_SPI2_NSS:
         case GPIO_SPI4_NSS:
-        case GPIO_SPI1_CS_TEST:
             return true;
         case GPIO_PIN_NONE:
         case GPIO_NUM_PINS:

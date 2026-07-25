@@ -97,8 +97,6 @@ void Error_Handler(void);
 #define ADC_5V_GPIO_Port GPIOA
 #define PWM_GEN_HV_Pin GPIO_PIN_0
 #define PWM_GEN_HV_GPIO_Port GPIOB
-#define SPI1_CS_TEST_Pin GPIO_PIN_9
-#define SPI1_CS_TEST_GPIO_Port GPIOE
 #define PWM_GEN_LV_Pin GPIO_PIN_15
 #define PWM_GEN_LV_GPIO_Port GPIOB
 #define Digital_Input_0_Pin GPIO_PIN_8

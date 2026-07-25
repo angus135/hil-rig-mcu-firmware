@@ -62,7 +62,6 @@ typedef enum GPIOPin_T
     GPIO_SPI1_NSS,       ///< PA4, SPI1 NSS (AF5 when peripheral-owned).
     GPIO_SPI2_NSS,       ///< PB12, SPI2 NSS (AF5 when peripheral-owned).
     GPIO_SPI4_NSS,       ///< PE11, SPI4 NSS (AF5 when peripheral-owned).
-    GPIO_SPI1_CS_TEST,   ///< PE9 dedicated software-CS/test output.
 
     GPIO_NUM_PINS
 } GPIOPin_T;
@@ -161,7 +160,6 @@ bool HW_GPIO_Configure_Pin_As_Output( GPIOPin_T pin, bool initial_high );
 /**
  * @brief Return a supported logical pin to its fixed alternate-function mode.
  *
- * Software-only pins, such as GPIO_SPI1_CS_TEST, are rejected.
  */
 bool HW_GPIO_Configure_Pin_As_Alternate_Function( GPIOPin_T pin );
 
