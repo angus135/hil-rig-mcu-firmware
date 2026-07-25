@@ -50,6 +50,7 @@ target_link_libraries(console
     exec_pwm_capture
     exec_pwm_gen
     hw_pwm_gen
+    hw_usb
 )
 
 # -----------------------------
