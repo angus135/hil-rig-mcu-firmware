@@ -191,6 +191,7 @@ bool HW_SPI_Start_Channel( SPIChannel_T peripheral )
     if ( peripheral_state->is_configured == false || peripheral_state->is_started
          || peripheral_state->rx_dma == NULL )
     {
+        peripheral_state->is_started = true;
         LL_SPI_Enable( peripheral_state->spi_peripheral );
         return true;
     }
