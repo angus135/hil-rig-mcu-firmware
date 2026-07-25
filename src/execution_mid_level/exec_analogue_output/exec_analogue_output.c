@@ -251,6 +251,7 @@ bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void )
         .baud_rate = SPI_BAUD_703KBIT,
         .cpol      = SPI_CPOL_LOW,
         .cpha      = SPI_CPHA_1_EDGE,
+        .nss_pin   = GPIO_SPI4_NSS,
     };
 
     if ( !HW_SPI_Configure_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL, configuration ) )

@@ -75,7 +75,8 @@ static bool VerifySpiChannelSetupConfig( SPIChannel_T        peripheral,
                  && ( configuration.first_bit == SPI_FIRST_MSB )
                  && ( configuration.baud_rate == SPI_BAUD_703KBIT )
                  && ( configuration.cpol == SPI_CPOL_LOW )
-                 && ( configuration.cpha == SPI_CPHA_1_EDGE ) );
+                 && ( configuration.cpha == SPI_CPHA_1_EDGE )
+                 && ( configuration.nss_pin == GPIO_SPI4_NSS ) );
 
     return true;
 }
