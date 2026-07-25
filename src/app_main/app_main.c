@@ -20,6 +20,7 @@
 #include "rtos_config.h"
 #include "app_main.h"
 #include "console.h"
+#include "host_communications.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -35,8 +36,9 @@
  *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
  */
-extern TaskHandle_t* ConsoleTaskHandle;     // NOLINT(readability-identifier-naming)
-extern TaskHandle_t* BackgroundTaskHandle;  // NOLINT(readability-identifier-naming)
+extern TaskHandle_t* ConsoleTaskHandle;        // NOLINT(readability-identifier-naming)
+extern TaskHandle_t* BackgroundTaskHandle;     // NOLINT(readability-identifier-naming)
+extern TaskHandle_t* HostInterfaceTaskHandle;  // NOLINT(readability-identifier-naming)
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
@@ -69,6 +71,9 @@ void APP_MAIN_Application( void )
 #endif
     CREATE_TASK( BACKGROUND_Task, "Background Task", BACKGROUND_TASK_MEMORY,
                  BACKGROUND_TASK_PRIORITY, BackgroundTaskHandle );
+
+    CREATE_TASK( HOST_INTERFACE_Task, "Host Interface Task", HOST_INTERFACE_TASK_MEMORY,
+                 HOST_INTERFACE_TASK_PRIORITY, HostInterfaceTaskHandle );
 
     vTaskStartScheduler();
 }

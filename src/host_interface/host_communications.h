@@ -31,6 +31,9 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+#define HOST_INTERFACE_TASK_MEMORY 256
+#define HOST_INTERFACE_TASK_PRIORITY 3
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -40,6 +43,13 @@ extern "C"
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Host Interface Task
+ *
+ * The FreeRTOS task that runs all the host interface related logic
+ */
+void HOST_INTERFACE_Task( void* task_parameters );
 
 #ifdef __cplusplus
 }
