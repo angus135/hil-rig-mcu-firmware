@@ -24,6 +24,7 @@
 #define HW_SPI_INTERNAL
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
+#include <vector>
 
 extern "C"
 {
@@ -52,6 +53,52 @@ using ::testing::Invoke;
 using ::testing::Return;
 using ::testing::StrictMock;
 
+enum class GPIOEventKind
+{
+    CONFIGURE_OUTPUT,
+    CONFIGURE_ALTERNATE,
+    SET_HIGH,
+    RESET_LOW,
+    DMA_ARM,
+};
+
+struct GPIOEvent
+{
+    GPIOEventKind kind;
+    GPIOPin_T     pin;
+    bool          initial_high;
+};
+
+static std::vector<GPIOEvent> gpio_events;
+static bool                   gpio_output_configuration_succeeds    = true;
+static bool                   gpio_alternate_configuration_succeeds = true;
+
+extern "C" bool HW_GPIO_Is_Valid_Pin( GPIOPin_T pin )
+{
+    return pin > GPIO_PIN_NONE && pin < GPIO_NUM_PINS;
+}
+
+extern "C" bool HW_GPIO_Configure_Pin_As_Output( GPIOPin_T pin, bool initial_high )
+{
+    gpio_events.push_back( { GPIOEventKind::CONFIGURE_OUTPUT, pin, initial_high } );
+    return gpio_output_configuration_succeeds;
+}
+
+extern "C" bool HW_GPIO_Configure_Pin_As_Alternate_Function( GPIOPin_T pin )
+{
+    gpio_events.push_back( { GPIOEventKind::CONFIGURE_ALTERNATE, pin, false } );
+    return gpio_alternate_configuration_succeeds;
+}
+
+extern "C" void HW_GPIO_Set_Pin( GPIOPin_T pin )
+{
+    gpio_events.push_back( { GPIOEventKind::SET_HIGH, pin, true } );
+}
+
+extern "C" void HW_GPIO_Reset_Pin( GPIOPin_T pin )
+{
+    gpio_events.push_back( { GPIOEventKind::RESET_LOW, pin, false } );
+}
 /**-----------------------------------------------------------------------------
  *  Test Doubles / Mocks
  *------------------------------------------------------------------------------
@@ -221,6 +268,7 @@ extern "C" void LL_DMA_EnableIT_TE( DMA_TypeDef* DMAx, uint32_t Stream )
 
 extern "C" void LL_DMA_EnableStream( DMA_TypeDef* DMAx, uint32_t Stream )
 {
+    gpio_events.push_back( { GPIOEventKind::DMA_ARM, GPIO_PIN_NONE, false } );
     if ( g_mock )
     {
         g_mock->DMAEnableStream( DMAx, Stream );
@@ -413,7 +461,8 @@ protected:
                               .first_bit = SPI_FIRST_MSB,
                               .baud_rate = baud,
                               .cpol      = SPI_CPOL_LOW,
-                              .cpha      = SPI_CPHA_1_EDGE };
+                              .cpha      = SPI_CPHA_1_EDGE,
+                              .nss_pin   = GPIO_SPI1_NSS };
     }
 
     static HWSPIConfig_T MakeSlaveConfig( SPIDataSize_T size = SPI_SIZE_8_BIT,
@@ -424,7 +473,8 @@ protected:
                               .first_bit = SPI_FIRST_MSB,
                               .baud_rate = baud,
                               .cpol      = SPI_CPOL_LOW,
-                              .cpha      = SPI_CPHA_1_EDGE };
+                              .cpha      = SPI_CPHA_1_EDGE,
+                              .nss_pin   = GPIO_SPI1_NSS };
     }
 
     static void InitialiseState( SPIPeripheralState_T* state, SPIChannel_T logical,
@@ -435,6 +485,10 @@ protected:
         memset( state, 0, sizeof( *state ) );
         state->config                    = config;
         state->logical_peripheral        = logical;
+        state->nss_pin                   = config.nss_pin;
+        state->is_configured             = true;
+        state->is_started                = false;
+        state->cs_asserted               = false;
         state->is_master                 = config.spi_mode == SPI_MASTER_MODE;
         state->frame_size_bytes          = config.data_size == SPI_SIZE_16_BIT ? 2U : 1U;
         state->frame_shift               = config.data_size == SPI_SIZE_16_BIT ? 1U : 0U;
@@ -456,6 +510,9 @@ protected:
     {
         g_mock = &mock;
         memset( &SPI_CHANNEL_0_HANDLE, 0, sizeof( SPI_CHANNEL_0_HANDLE ) );
+        gpio_events.clear();
+        gpio_output_configuration_succeeds    = true;
+        gpio_alternate_configuration_succeeds = true;
         memset( &SPI_CHANNEL_1_HANDLE, 0, sizeof( SPI_CHANNEL_1_HANDLE ) );
 
         EXPECT_CALL( mock, TimerConfigure( _, _, _ ) ).Times( AnyNumber() );
@@ -540,6 +597,48 @@ protected:
                                              Eq( expected_elements ) ) );
         EXPECT_CALL( mock, DMAEnableStream( Eq( SPI_DAC_TX_DMA ), Eq( SPI_DAC_TX_DMA_STREAM ) ) );
         EXPECT_CALL( mock, SPIEnableDMAReqTX( Eq( SPI_DAC_INSTANCE ) ) );
+    }
+
+    void ExpectChannel0ConfigurationHardware()
+    {
+        constexpr uint32_t spi_data_register_address = 0x12345678U;
+
+        EXPECT_CALL( mock, SPIInit( Eq( &SPI_CHANNEL_0_HANDLE ) ) ).WillOnce( Return( HAL_OK ) );
+
+        EXPECT_CALL( mock,
+                     DMASetMemorySize( Eq( SPI_CHANNEL_0_RX_DMA ),
+                                       Eq( SPI_CHANNEL_0_RX_DMA_STREAM ),
+                                       Eq( LL_DMA_MDATAALIGN_BYTE ) ) );
+        EXPECT_CALL( mock,
+                     DMASetPeriphSize( Eq( SPI_CHANNEL_0_RX_DMA ),
+                                       Eq( SPI_CHANNEL_0_RX_DMA_STREAM ),
+                                       Eq( LL_DMA_PDATAALIGN_BYTE ) ) );
+        EXPECT_CALL( mock, SPIDMAGetRegAddr( Eq( SPI_CHANNEL_0_INSTANCE ) ) )
+            .Times( 2 )
+            .WillRepeatedly( Return( spi_data_register_address ) );
+        EXPECT_CALL( mock,
+                     DMASetPeriphAddress( Eq( SPI_CHANNEL_0_RX_DMA ),
+                                          Eq( SPI_CHANNEL_0_RX_DMA_STREAM ),
+                                          Eq( spi_data_register_address ) ) );
+
+        EXPECT_CALL( mock,
+                     DMASetMemorySize( Eq( SPI_CHANNEL_0_TX_DMA ),
+                                       Eq( SPI_CHANNEL_0_TX_DMA_STREAM ),
+                                       Eq( LL_DMA_MDATAALIGN_BYTE ) ) );
+        EXPECT_CALL( mock,
+                     DMASetPeriphSize( Eq( SPI_CHANNEL_0_TX_DMA ),
+                                       Eq( SPI_CHANNEL_0_TX_DMA_STREAM ),
+                                       Eq( LL_DMA_PDATAALIGN_BYTE ) ) );
+        EXPECT_CALL( mock,
+                     DMASetPeriphAddress( Eq( SPI_CHANNEL_0_TX_DMA ),
+                                          Eq( SPI_CHANNEL_0_TX_DMA_STREAM ),
+                                          Eq( spi_data_register_address ) ) );
+        EXPECT_CALL( mock,
+                     DMAEnableITTC( Eq( SPI_CHANNEL_0_TX_DMA ),
+                                    Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) );
+        EXPECT_CALL( mock,
+                     DMAEnableITTE( Eq( SPI_CHANNEL_0_TX_DMA ),
+                                    Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) );
     }
 };
 
@@ -939,4 +1038,224 @@ TEST_F( HWSpiMasterTxTest, LoadTxBuffer_MasterRejectsWhenWrappedHeadSpaceIsTooSm
     EXPECT_FALSE( HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, data, sizeof( data ) ) );
     EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_packets_pending, 0U );
     EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_pending, 0U );
+}
+
+TEST_F( HWSpiMasterTxTest, MasterChannelsDriveOnlyTheirConfiguredCsPins )
+{
+    HW_SPI_STATE( SPI_CHANNEL_0 )->nss_pin = GPIO_SPI1_NSS;
+    HW_SPI_STATE( SPI_CHANNEL_1 )->nss_pin = GPIO_SPI1_CS_TEST;
+
+    HW_SPI_TX_Master_CS_Assert( HW_SPI_STATE( SPI_CHANNEL_0 ) );
+    HW_SPI_TX_Master_CS_Assert( HW_SPI_STATE( SPI_CHANNEL_1 ) );
+    HW_SPI_TX_Master_CS_Deassert( HW_SPI_STATE( SPI_CHANNEL_0 ) );
+    HW_SPI_TX_Master_CS_Deassert( HW_SPI_STATE( SPI_CHANNEL_1 ) );
+
+    ASSERT_EQ( gpio_events.size(), 4U );
+    EXPECT_EQ( gpio_events[0].kind, GPIOEventKind::RESET_LOW );
+    EXPECT_EQ( gpio_events[0].pin, GPIO_SPI1_NSS );
+    EXPECT_EQ( gpio_events[1].kind, GPIOEventKind::RESET_LOW );
+    EXPECT_EQ( gpio_events[1].pin, GPIO_SPI1_CS_TEST );
+    EXPECT_EQ( gpio_events[2].kind, GPIOEventKind::SET_HIGH );
+    EXPECT_EQ( gpio_events[2].pin, GPIO_SPI1_NSS );
+    EXPECT_EQ( gpio_events[3].kind, GPIOEventKind::SET_HIGH );
+    EXPECT_EQ( gpio_events[3].pin, GPIO_SPI1_CS_TEST );
+}
+
+TEST_F( HWSpiMasterTxTest, MasterConfigurationPreloadsSelectedCsHighAndStoresIt )
+{
+    HWSPIConfig_T config = MakeMasterConfig();
+    config.nss_pin       = GPIO_SPI1_CS_TEST;
+    memset( HW_SPI_STATE( SPI_CHANNEL_0 ), 0, sizeof( *HW_SPI_STATE( SPI_CHANNEL_0 ) ) );
+
+    ExpectChannel0ConfigurationHardware();
+
+    ASSERT_TRUE( HW_SPI_Configure_Channel( SPI_CHANNEL_0, config ) );
+
+    ASSERT_EQ( gpio_events.size(), 1U );
+    EXPECT_EQ( gpio_events[0].kind, GPIOEventKind::CONFIGURE_OUTPUT );
+    EXPECT_EQ( gpio_events[0].pin, GPIO_SPI1_CS_TEST );
+    EXPECT_TRUE( gpio_events[0].initial_high );
+    EXPECT_EQ( SPI_CHANNEL_0_HANDLE.Init.NSS, SPI_NSS_SOFT );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->nss_pin, GPIO_SPI1_CS_TEST );
+    EXPECT_FALSE( HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted );
+    EXPECT_FALSE( HW_SPI_STATE( SPI_CHANNEL_0 )->is_started );
+}
+
+TEST_F( HWSpiMasterTxTest, MasterToSlaveReconfigurationReleasesCsThenRestoresHardwareNss )
+{
+    HWSPIConfig_T config = MakeSlaveConfig();
+    config.nss_pin       = GPIO_SPI1_NSS;
+
+    ExpectChannel0ConfigurationHardware();
+
+    ASSERT_TRUE( HW_SPI_Configure_Channel( SPI_CHANNEL_0, config ) );
+
+    ASSERT_EQ( gpio_events.size(), 2U );
+    EXPECT_EQ( gpio_events[0].kind, GPIOEventKind::SET_HIGH );
+    EXPECT_EQ( gpio_events[0].pin, GPIO_SPI1_NSS );
+    EXPECT_EQ( gpio_events[1].kind, GPIOEventKind::CONFIGURE_ALTERNATE );
+    EXPECT_EQ( gpio_events[1].pin, GPIO_SPI1_NSS );
+    EXPECT_EQ( SPI_CHANNEL_0_HANDLE.Init.NSS, SPI_NSS_HARD_INPUT );
+    EXPECT_FALSE( HW_SPI_STATE( SPI_CHANNEL_0 )->is_master );
+}
+
+TEST_F( HWSpiMasterTxTest, SlaveToMasterReconfigurationCreatesInactiveHighCsWithoutLowPulse )
+{
+    InitialiseState( HW_SPI_STATE( SPI_CHANNEL_0 ), SPI_CHANNEL_0, MakeSlaveConfig(),
+                     SPI_CHANNEL_0_RX_DMA, SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA,
+                     SPI_CHANNEL_0_TX_DMA_STREAM, SPI_CHANNEL_0_INSTANCE,
+                     SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
+    HWSPIConfig_T config = MakeMasterConfig();
+    config.nss_pin       = GPIO_SPI1_CS_TEST;
+
+    gpio_events.clear();
+    ExpectChannel0ConfigurationHardware();
+
+    ASSERT_TRUE( HW_SPI_Configure_Channel( SPI_CHANNEL_0, config ) );
+
+    ASSERT_EQ( gpio_events.size(), 1U );
+    EXPECT_EQ( gpio_events[0].kind, GPIOEventKind::CONFIGURE_OUTPUT );
+    EXPECT_EQ( gpio_events[0].pin, GPIO_SPI1_CS_TEST );
+    EXPECT_TRUE( gpio_events[0].initial_high );
+    EXPECT_FALSE( HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted );
+}
+
+TEST_F( HWSpiMasterTxTest, InvalidSlavePinCombinationIsRejectedWithoutHardwareChanges )
+{
+    HWSPIConfig_T config = MakeSlaveConfig();
+
+    config.nss_pin = GPIO_SPI1_CS_TEST;
+    EXPECT_FALSE( HW_SPI_Configure_Channel( SPI_CHANNEL_0, config ) );
+
+    config.nss_pin = GPIO_SPI2_NSS;
+    EXPECT_FALSE( HW_SPI_Configure_Channel( SPI_CHANNEL_0, config ) );
+
+    EXPECT_TRUE( gpio_events.empty() );
+    EXPECT_TRUE( HW_SPI_STATE( SPI_CHANNEL_0 )->is_master );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->nss_pin, GPIO_SPI1_NSS );
+}
+
+TEST_F( HWSpiMasterTxTest, ReconfigurationIsRejectedWhileTransactionOwnsCs )
+{
+    HWSPIConfig_T config = MakeMasterConfig();
+    config.nss_pin       = GPIO_SPI1_CS_TEST;
+
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted           = true;
+
+    EXPECT_FALSE( HW_SPI_Configure_Channel( SPI_CHANNEL_0, config ) );
+    EXPECT_TRUE( gpio_events.empty() );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->nss_pin, GPIO_SPI1_NSS );
+}
+
+TEST_F( HWSpiMasterTxTest, SlaveModeNeverUsesSoftwareCsOperations )
+{
+    InitialiseState( HW_SPI_STATE( SPI_CHANNEL_0 ), SPI_CHANNEL_0, MakeSlaveConfig(),
+                     SPI_CHANNEL_0_RX_DMA, SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA,
+                     SPI_CHANNEL_0_TX_DMA_STREAM, SPI_CHANNEL_0_INSTANCE,
+                     SPI_CHANNEL_0_TX_DMA_IRQN, SPI_CHANNEL_0_TIMER );
+
+    gpio_events.clear();
+    HW_SPI_TX_Master_CS_Assert( HW_SPI_STATE( SPI_CHANNEL_0 ) );
+    HW_SPI_TX_Master_CS_Deassert( HW_SPI_STATE( SPI_CHANNEL_0 ) );
+
+    EXPECT_TRUE( gpio_events.empty() );
+    EXPECT_FALSE( HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted );
+}
+
+TEST_F( HWSpiMasterTxTest, CsStaysAssertedUntilSlowFinalDrainCompletes )
+{
+    const uint8_t data = 0x5AU;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_uses_final_drain_timer = true;
+
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    ASSERT_TRUE( HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, &data, sizeof( data ) ) );
+    testing::Mock::VerifyAndClearExpectations( &mock );
+
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    ExpectChannel0DmaProgram( &HW_SPI_STATE( SPI_CHANNEL_0 )->tx_buffer[0], 1U );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+
+    gpio_events.clear();
+    HW_SPI_Tx_Trigger( SPI_CHANNEL_0 );
+
+    ASSERT_EQ( gpio_events.size(), 2U );
+    EXPECT_EQ( gpio_events[0].kind, GPIOEventKind::RESET_LOW );
+    EXPECT_EQ( gpio_events[0].pin, GPIO_SPI1_NSS );
+    EXPECT_EQ( gpio_events[1].kind, GPIOEventKind::DMA_ARM );
+    EXPECT_TRUE( HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted );
+    testing::Mock::VerifyAndClearExpectations( &mock );
+
+    EXPECT_CALL( mock, DMAIsActiveFlagTE5( Eq( SPI_CHANNEL_0_TX_DMA ) ) ).WillOnce( Return( 0U ) );
+    EXPECT_CALL( mock, DMAIsActiveFlagTC5( Eq( SPI_CHANNEL_0_TX_DMA ) ) ).WillOnce( Return( 1U ) );
+    EXPECT_CALL( mock, DMAClearFlagTC5( Eq( SPI_CHANNEL_0_TX_DMA ) ) );
+    EXPECT_CALL( mock, SPIDisableDMAReqTX( Eq( SPI_CHANNEL_0_INSTANCE ) ) );
+    EXPECT_CALL( mock, SPIIsBusy( Eq( SPI_CHANNEL_0_INSTANCE ) ) ).WillOnce( Return( 1U ) );
+    EXPECT_CALL( mock, TimerStart( SPI_CHANNEL_0_TIMER ) );
+
+    gpio_events.clear();
+    SPI_CHANNEL_0_TX_DMA_IRQ();
+
+    EXPECT_TRUE( gpio_events.empty() );
+    EXPECT_TRUE( HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state,
+               HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN );
+    testing::Mock::VerifyAndClearExpectations( &mock );
+
+    EXPECT_CALL( mock, SPIIsBusy( Eq( SPI_CHANNEL_0_INSTANCE ) ) ).WillOnce( Return( 0U ) );
+    HW_SPI_Timer_Callback_From_ISR( SPI_CHANNEL_0 );
+
+    ASSERT_EQ( gpio_events.size(), 1U );
+    EXPECT_EQ( gpio_events[0].kind, GPIOEventKind::SET_HIGH );
+    EXPECT_EQ( gpio_events[0].pin, GPIO_SPI1_NSS );
+    EXPECT_FALSE( HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state,
+               HW_SPI_TX_TRANSACTION_IDLE );
+}
+
+TEST_F( HWSpiMasterTxTest, StopReleasesTheConfiguredMasterCs )
+{
+    HW_SPI_STATE( SPI_CHANNEL_0 )->nss_pin             = GPIO_SPI4_NSS;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->is_started          = true;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted         = true;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
+
+    EXPECT_CALL( mock, SPIDMAStop( Eq( &SPI_CHANNEL_0_HANDLE ) ) ).WillOnce( Return( HAL_OK ) );
+
+    ASSERT_TRUE( HW_SPI_Stop_Channel( SPI_CHANNEL_0 ) );
+
+    ASSERT_EQ( gpio_events.size(), 1U );
+    EXPECT_EQ( gpio_events[0].kind, GPIOEventKind::SET_HIGH );
+    EXPECT_EQ( gpio_events[0].pin, GPIO_SPI4_NSS );
+    EXPECT_FALSE( HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted );
+    EXPECT_FALSE( HW_SPI_STATE( SPI_CHANNEL_0 )->is_started );
+}
+
+TEST_F( HWSpiMasterTxTest, TxErrorReleasesTheConfiguredMasterCs )
+{
+    HW_SPI_STATE( SPI_CHANNEL_0 )->nss_pin                     = GPIO_SPI1_CS_TEST;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted                 = true;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state         =
+        HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_in_transmission = 4U;
+
+    EXPECT_CALL( mock,
+                 DMADisableITTC( Eq( SPI_CHANNEL_0_TX_DMA ), Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) );
+    EXPECT_CALL( mock,
+                 DMADisableITTE( Eq( SPI_CHANNEL_0_TX_DMA ), Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) );
+    EXPECT_CALL( mock, SPIDisableDMAReqTX( Eq( SPI_CHANNEL_0_INSTANCE ) ) );
+    EXPECT_CALL(
+        mock, DMADisableStream( Eq( SPI_CHANNEL_0_TX_DMA ), Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) );
+    EXPECT_CALL(
+        mock, DMAIsEnabledStream( Eq( SPI_CHANNEL_0_TX_DMA ), Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) )
+        .WillOnce( Return( 0U ) );
+
+    HW_SPI_TX_Error_Handler( SPI_CHANNEL_0 );
+
+    ASSERT_EQ( gpio_events.size(), 1U );
+    EXPECT_EQ( gpio_events[0].kind, GPIOEventKind::SET_HIGH );
+    EXPECT_EQ( gpio_events[0].pin, GPIO_SPI1_CS_TEST );
+    EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state,
+               HW_SPI_TX_TRANSACTION_ERROR );
 }

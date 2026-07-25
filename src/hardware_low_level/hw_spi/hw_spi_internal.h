@@ -184,6 +184,10 @@ struct SPIPeripheralState_T
     HWSPIConfig_T config;  ///< Last configuration applied to this logical channel.
 
     SPIChannel_T logical_peripheral;         ///< Logical peripheral owning this state block.
+    GPIOPin_T    nss_pin;                    ///< Channel-specific active-low NSS/CS pin.
+    bool         is_configured;              ///< A complete configuration has been applied.
+    bool         is_started;                 ///< Runtime RX/DMA operation has been started.
+    bool         cs_asserted;                ///< Software CS is currently held low.
     bool         is_master;                  ///< Precomputed master/slave mode flag for hot paths.
     uint8_t      frame_size_bytes;           ///< Precomputed SPI frame size: 1 byte or 2 bytes.
     uint8_t      frame_shift;                ///< 0 for 8-bit frames; 1 for 16-bit frames.

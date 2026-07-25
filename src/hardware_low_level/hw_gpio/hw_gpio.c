@@ -57,6 +57,13 @@ typedef struct GPIOPortPacket_T
     uint32_t      pin_mask;
 } GPIOPortPacket_T;
 
+typedef struct GPIOConfigurablePin_T
+{
+    GPIO_TypeDef* gpiox;
+    uint32_t      pin_mask;
+    uint32_t      alternate_function;
+    bool          has_alternate_function;
+} GPIOConfigurablePin_T;
 static GPIO_TypeDef* gpio_ports[] = {
     GPIOA, GPIOB, GPIOC, GPIOD, GPIOE, GPIOF, GPIOG, GPIOH,
 };
@@ -88,6 +95,58 @@ static GPIO_TypeDef* gpio_ports[] = {
  *------------------------------------------------------------------------------
  */
 
+#ifndef TEST_BUILD
+/**
+ * @brief Resolve a configurable logical pin to its fixed board mapping.
+ */
+static bool HW_GPIO_Get_Configurable_Pin( GPIOPin_T pin, GPIOConfigurablePin_T* configuration )
+{
+    if ( configuration == NULL )
+    {
+        return false;
+    }
+
+    switch ( pin )
+    {
+        case GPIO_SPI1_NSS:
+            *configuration = ( GPIOConfigurablePin_T ){
+                .gpiox                  = GPIOA,
+                .pin_mask               = GPIO_PIN_4,
+                .alternate_function     = GPIO_AF5_SPI1,
+                .has_alternate_function = true,
+            };
+            return true;
+        case GPIO_SPI2_NSS:
+            *configuration = ( GPIOConfigurablePin_T ){
+                .gpiox                  = GPIOB,
+                .pin_mask               = GPIO_PIN_12,
+                .alternate_function     = GPIO_AF5_SPI2,
+                .has_alternate_function = true,
+            };
+            return true;
+        case GPIO_SPI4_NSS:
+            *configuration = ( GPIOConfigurablePin_T ){
+                .gpiox                  = GPIOE,
+                .pin_mask               = GPIO_PIN_11,
+                .alternate_function     = GPIO_AF5_SPI4,
+                .has_alternate_function = true,
+            };
+            return true;
+        case GPIO_SPI1_CS_TEST:
+            *configuration = ( GPIOConfigurablePin_T ){
+                .gpiox                  = SPI1_CS_TEST_GPIO_Port,
+                .pin_mask               = SPI1_CS_TEST_Pin,
+                .alternate_function     = 0U,
+                .has_alternate_function = false,
+            };
+            return true;
+        case GPIO_PIN_NONE:
+        case GPIO_NUM_PINS:
+        default:
+            return false;
+    }
+}
+#endif
 /**
  * @brief Returns the hardware port and pin associated with the  software pin name passed into it
  *
@@ -494,8 +553,123 @@ void HW_GPIO_Reset_Many_Pins( GPIOOutput_T* pins, uint16_t length )
  *------------------------------------------------------------------------------
  */
 
-// TODO: Create a hardware configuration function where the GPIO peripherals are configured,
-// should be matched to work for NSS for SPI
+/**
+ * Runtime-configurable pin ownership and level operations.
+ */
+bool HW_GPIO_Is_Valid_Pin( GPIOPin_T pin )
+{
+    switch ( pin )
+    {
+        case GPIO_SPI1_NSS:
+        case GPIO_SPI2_NSS:
+        case GPIO_SPI4_NSS:
+        case GPIO_SPI1_CS_TEST:
+            return true;
+        case GPIO_PIN_NONE:
+        case GPIO_NUM_PINS:
+        default:
+            return false;
+    }
+}
+
+bool HW_GPIO_Configure_Pin_As_Output( GPIOPin_T pin, bool initial_high )
+{
+    if ( HW_GPIO_Is_Valid_Pin( pin ) == false )
+    {
+        return false;
+    }
+
+#ifndef TEST_BUILD
+    GPIOConfigurablePin_T pin_configuration;
+    GPIO_InitTypeDef      gpio_configuration = { 0 };
+
+    if ( HW_GPIO_Get_Configurable_Pin( pin, &pin_configuration ) == false )
+    {
+        return false;
+    }
+
+    // Preload the output data latch before changing MODER. This is essential
+    // for active-low CS: selecting output mode must never create a low pulse.
+    if ( initial_high )
+    {
+        LL_GPIO_SetOutputPin( pin_configuration.gpiox, pin_configuration.pin_mask );
+    }
+    else
+    {
+        LL_GPIO_ResetOutputPin( pin_configuration.gpiox, pin_configuration.pin_mask );
+    }
+
+    gpio_configuration.Pin   = pin_configuration.pin_mask;
+    gpio_configuration.Mode  = GPIO_MODE_OUTPUT_PP;
+    gpio_configuration.Pull  = GPIO_NOPULL;
+    gpio_configuration.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    HAL_GPIO_Init( pin_configuration.gpiox, &gpio_configuration );
+#else
+    ( void )initial_high;
+#endif
+
+    return true;
+}
+
+bool HW_GPIO_Configure_Pin_As_Alternate_Function( GPIOPin_T pin )
+{
+    if ( pin != GPIO_SPI1_NSS && pin != GPIO_SPI2_NSS && pin != GPIO_SPI4_NSS )
+    {
+        return false;
+    }
+
+#ifndef TEST_BUILD
+    GPIOConfigurablePin_T pin_configuration;
+    GPIO_InitTypeDef      gpio_configuration = { 0 };
+
+    if ( HW_GPIO_Get_Configurable_Pin( pin, &pin_configuration ) == false
+         || pin_configuration.has_alternate_function == false )
+    {
+        return false;
+    }
+
+    gpio_configuration.Pin       = pin_configuration.pin_mask;
+    gpio_configuration.Mode      = GPIO_MODE_AF_PP;
+    gpio_configuration.Pull      = GPIO_NOPULL;
+    gpio_configuration.Speed     = GPIO_SPEED_FREQ_VERY_HIGH;
+    gpio_configuration.Alternate = pin_configuration.alternate_function;
+    HAL_GPIO_Init( pin_configuration.gpiox, &gpio_configuration );
+#endif
+
+    return true;
+}
+
+void HW_GPIO_Set_Pin( GPIOPin_T pin )
+{
+#ifndef TEST_BUILD
+    GPIOConfigurablePin_T pin_configuration;
+
+    if ( HW_GPIO_Get_Configurable_Pin( pin, &pin_configuration ) == false )
+    {
+        return;
+    }
+
+    LL_GPIO_SetOutputPin( pin_configuration.gpiox, pin_configuration.pin_mask );
+#else
+    ( void )pin;
+#endif
+}
+
+void HW_GPIO_Reset_Pin( GPIOPin_T pin )
+{
+#ifndef TEST_BUILD
+    GPIOConfigurablePin_T pin_configuration;
+
+    if ( HW_GPIO_Get_Configurable_Pin( pin, &pin_configuration ) == false )
+    {
+        return;
+    }
+
+    LL_GPIO_ResetOutputPin( pin_configuration.gpiox, pin_configuration.pin_mask );
+#else
+    ( void )pin;
+#endif
+}
 
 /**
  * @brief Converts a string to a digital pin name

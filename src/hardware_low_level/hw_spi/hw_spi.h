@@ -53,6 +53,7 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "hw_gpio.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -152,6 +153,7 @@ typedef struct HWSPIConfig_T
     SPIBaudRate_T baud_rate;  ///< Baud-rate enum mapped to STM32 prescaler settings.
     SPICPOL_T     cpol;       ///< Clock polarity.
     SPICPHA_T     cpha;       ///< Clock phase.
+    GPIOPin_T     nss_pin;    ///< Logical active-low NSS/CS pin selected for this channel.
 } HWSPIConfig_T;
 
 /**

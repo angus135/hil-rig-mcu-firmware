@@ -139,6 +139,7 @@ protected:
         .baud_rate = SPI_BAUD_352KBIT,
         .cpol      = SPI_CPOL_LOW,
         .cpha      = SPI_CPHA_1_EDGE,
+        .nss_pin   = GPIO_SPI1_NSS,
     };
 
     void SetUp( void ) override
