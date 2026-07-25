@@ -125,7 +125,7 @@ static bool HW_SPI_Config_Uses_Final_Drain_Timer( SPIBaudRate_T baud_rate )
     return baud_rate >= SPI_BAUD_2M813BIT;
 }
 
-static bool HW_SPI_Config_Is_Valid_NSS( SPIChannel_T peripheral,
+static bool HW_SPI_Config_Is_Valid_NSS( SPIChannel_T         peripheral,
                                         const HWSPIConfig_T* configuration )
 {
     if ( configuration == NULL || HW_GPIO_Is_Valid_Pin( configuration->nss_pin ) == false )
@@ -160,7 +160,7 @@ static bool HW_SPI_Config_Is_Valid_NSS( SPIChannel_T peripheral,
 }
 
 static bool HW_SPI_Config_Build_HAL_Init( const HWSPIConfig_T* configuration,
-                                          SPI_InitTypeDef*      requested_init )
+                                          SPI_InitTypeDef*     requested_init )
 {
     if ( configuration == NULL || requested_init == NULL )
     {
