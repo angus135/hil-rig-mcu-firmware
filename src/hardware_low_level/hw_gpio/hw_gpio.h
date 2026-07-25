@@ -67,7 +67,6 @@ typedef enum GPIOPin_T
     GPIO_NUM_PINS
 } GPIOPin_T;
 
-
 typedef enum GPIOOutput_T
 {
     DIGITAL_OUTPUT_0,  // Added by Tim for DEV-68
@@ -175,7 +174,6 @@ void HW_GPIO_Reset_Pin( GPIOPin_T pin );
 /**-----------------------------------------------------------------------------
  *  Existing digital-I/O API
  *----------------------------------------------------------------------------*/
-
 
 /**
  * @brief Toggles a GPIO output pin by output enum.
