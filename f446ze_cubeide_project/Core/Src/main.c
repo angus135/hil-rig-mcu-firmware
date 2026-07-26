@@ -35,6 +35,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "app_main/app_main.h"
+#include "hw_usb.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -146,7 +147,6 @@ int main(void)
   GPIOD->PUPDR &= ~(GPIO_PUPDR_PUPD8_Msk | GPIO_PUPDR_PUPD9_Msk);
 
 //  NVIC_DisableIRQ(USART2_IRQn);
-  MX_USB_DEVICE_Init();
   APP_MAIN_Application();
   // Nothing after here is ever called but if it does, run the error handler
   Error_Handler();
