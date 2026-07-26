@@ -347,6 +347,13 @@ bool EXEC_ANALOG_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v )
     }
 
     // Need to remove the floating point computation from the hot loop
+    /*I think that we need to change how this is working so that clamping and scaling is not run in
+    the hot loop and is instead run in the configuration stage, then you can leave the floating
+    point operations in and you just pass the raw output frame into this function. So you'll need to
+    make a new function that does the conversion to the actual pure frame information and make it
+    public so that the exact frame can be stored in the flash memory and then the execution manager
+    will pass in the exact frame later rather than a floating point number. Means that the clamping
+    and scaling can be completely removed from the hot path*/
     count = EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( input_voltage_v );
 
     if ( !EXEC_ANALOGUE_OUTPUT_Send_Frame( ( uint8_t )( ANALOGUE_OUTPUT_REG_DAC_BASE + channel ),
