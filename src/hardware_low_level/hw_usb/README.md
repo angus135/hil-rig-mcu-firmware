@@ -8,7 +8,7 @@ This module is responsible for:
 
 - isolating the application from most CubeMX-generated USB Device code
 - copying received USB CDC bytes into a FreeRTOS stream buffer from the CDC receive callback
-- providing a non-blocking receive API for higher-level application code
+- providing non-blocking and timed receive APIs for higher-level application code
 - buffering transmit data in a module-owned ring buffer before passing it to the STM32 CDC driver
 - allowing application transmit buffers to be stack/local data, because the USB wrapper copies them internally
 - periodically advancing queued USB transmissions when the CDC driver is idle
@@ -153,8 +153,8 @@ The public API is declared in `hw_usb.h`.
 bool HW_USB_Init(void);
 ```
 
-Creates the receive stream buffer and resets receive dropped-byte diagnostics. This should be
-called before USB receive callbacks are allowed to write into the module.
+Creates the transmit mutex and receive stream buffer, then resets receive diagnostics. This must
+complete before MX_USB_DEVICE_Init() enables USB receive callbacks.
 
 ### Transmit
 
@@ -179,10 +179,12 @@ function should be called from the generated CDC receive callback before the end
 
 ```c
 uint32_t HW_USB_Receive(uint8_t* destination, uint32_t max_size_bytes);
+uint32_t HW_USB_Receive_With_Timeout(uint8_t* destination, uint32_t max_size_bytes,
+                                     uint32_t timeout_ms);
 ```
 
-Reads available bytes from the receive stream buffer without blocking. Returns the number of bytes
-copied into `destination`.
+Reads bytes from the receive stream either immediately or with a bounded wait. Both functions
+return the number of bytes copied into `destination`.
 
 ### Receive stream diagnostics
 
@@ -211,8 +213,9 @@ service-loop context.
 - The receive callback should remain short and should not parse protocol messages.
 - Received bytes must be copied before the CDC OUT endpoint is re-armed.
 - `HW_USB_Receive()` is non-blocking and returns immediately with currently available bytes.
+- `HW_USB_Receive_With_Timeout()` blocks only the calling task while it waits for data.
 - `HW_USB_Transmit()` copies transmit data, so caller buffers do not need to remain valid after the function returns.
 - `HW_USB_Monitor_Process()` must be called periodically or queued transmit data may not be sent.
 - Higher-level protocol code is responsible for framing, validation, sequencing, retries, and recovery from dropped bytes.
-- If `HW_USB_Transmit()` and `HW_USB_Monitor_Process()` are called from different tasks, or from mixed ISR/task contexts, access to the internal USB state should be protected with a mutex or critical section.
+- Task-level transmit access is protected internally; transmit APIs must not be called from an ISR.
 - The module is not intended to provide deterministic timing guarantees for the HIL-RIG execution loop.

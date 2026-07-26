@@ -134,8 +134,6 @@ const Command_T CONSOLE_COMMANDS[] = {
 
 // clang-format on
 
-static bool usb_initialised = false;
-
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
@@ -1223,18 +1221,6 @@ static void CONSOLE_Command_USB_Test( uint16_t argc, char* argv[] )
     uint16_t arg_idx                                      = 0U;
     uint16_t write_len                                    = 0U;
 
-    if ( !usb_initialised )
-    {
-        if ( !HW_USB_Init() )
-        {
-            CONSOLE_Printf( "USB failed to initialise.\r\n" );
-        }
-        else
-        {
-            usb_initialised = true;
-        }
-    }
-
     if ( argc < 2U )
     {
         CONSOLE_Printf( "Usage:\r\n" );
@@ -1303,51 +1289,23 @@ static void CONSOLE_Command_USB_Test( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[1], "read" ) == 0 )
     {
-        TickType_t start_tick      = xTaskGetTickCount();
-        TickType_t timeout_ticks   = pdMS_TO_TICKS( USB_TEST_READ_TIMEOUT_MS );
-        TickType_t poll_ticks      = pdMS_TO_TICKS( 20U );
-        TickType_t elapsed_ticks   = 0U;
-        TickType_t remaining_ticks = 0U;
-        TickType_t wait_ticks      = 1U;
-
         uint32_t total_bytes_read = 0U;
 
-        /*
-         * Read for up to 5 seconds total.
-         *
-         * This keeps collecting USB RX data until either:
-         *   - 5 seconds has elapsed, or
-         *   - read_buffer is full.
-         */
+        total_bytes_read = HW_USB_Receive_With_Timeout( read_buffer, sizeof( read_buffer ),
+                                                        USB_TEST_READ_TIMEOUT_MS );
+
+        // Drain bytes that were queued alongside the data that woke this task.
         while ( total_bytes_read < sizeof( read_buffer ) )
         {
-            elapsed_ticks = xTaskGetTickCount() - start_tick;
+            bytes_read = HW_USB_Receive( &read_buffer[total_bytes_read],
+                                         sizeof( read_buffer ) - total_bytes_read );
 
-            if ( elapsed_ticks >= timeout_ticks )
+            if ( bytes_read == 0U )
             {
                 break;
             }
 
-            remaining_ticks = timeout_ticks - elapsed_ticks;
-
-            if ( remaining_ticks < poll_ticks )
-            {
-                wait_ticks = remaining_ticks;
-            }
-            else
-            {
-                wait_ticks = poll_ticks;
-            }
-
-            bytes_read = HW_USB_Receive( &read_buffer[total_bytes_read],
-                                         sizeof( read_buffer ) - total_bytes_read );
-
-            if ( bytes_read > 0U )
-            {
-                total_bytes_read += bytes_read;
-            }
-
-            vTaskDelay( pdMS_TO_TICKS( wait_ticks ) );
+            total_bytes_read += bytes_read;
         }
 
         if ( total_bytes_read == 0U )
