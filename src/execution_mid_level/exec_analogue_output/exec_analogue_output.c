@@ -31,7 +31,6 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
-// TODO: change this to the DAC channel during board bring-up
 #define ANALOGUE_OUTPUT_SPI_CHANNEL SPI_DAC
 
 #define ANALOGUE_OUTPUT_DAC_CHANNEL_COUNT 8U
@@ -112,6 +111,9 @@ static inline bool EXEC_ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, ui
     return HW_SPI_Load_Tx_Buffer( ANALOGUE_OUTPUT_SPI_CHANNEL, frame, sizeof( frame ) );
 }
 
+// TODO(DEV-80): NaN bypasses these comparisons and can reach the float-to-uint16_t conversion.
+// Suggested resolution: validate finite values in the configuration-time preparation API and
+// define whether out-of-range voltages are rejected or deliberately saturated.
 static uint16_t EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_v )
 {
     float clamped_voltage_v = input_voltage_v;
@@ -125,6 +127,10 @@ static uint16_t EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_
         clamped_voltage_v = ANALOGUE_OUTPUT_INPUT_MAX_V;
     }
 
+    // TODO(DEV-80): This assumes an ideal fixed 0-20 V transfer, without actual VREF, analogue
+    // gain, offset, or per-channel calibration. Verify whether the MCP48CVB28's 4096-step transfer
+    // should scale by 4095 or by 4096 then saturate to 4095; do this in frame preparation, not
+    // here.
     float scaled_count = ( clamped_voltage_v / ANALOGUE_OUTPUT_INPUT_MAX_V )
                          * ( float )ANALOGUE_OUTPUT_DAC_MAX_COUNT;
     uint16_t count = ( uint16_t )( scaled_count + 0.5F );
@@ -146,6 +152,10 @@ static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
     uint8_t  frame_bytes[3U * ( 3U + ANALOGUE_OUTPUT_DAC_CHANNEL_COUNT )] = { 0 };
     uint32_t frame_index_bytes                                            = 0U;
 
+    // TODO(DEV-80): The DAC powers up at 12-bit mid-scale with channels in normal operation, so
+    // this order may drive channels 0-5 before they are zeroed. Verify against the schematic; the
+    // safe order is likely power-down all, set VREF/gain, preload zeros, then enable channels 0-5.
+    // Use LAT or an external output enable if exposed by the PCB; schematic confirmation is needed.
     struct
     {
         uint8_t  register_address;
@@ -178,6 +188,9 @@ static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
         frames[0].data_word = 0x0000U;
     }
 
+    // TODO(DEV-80): Eleven independent loads are non-atomic; a later failure leaves earlier frames
+    // queued while configuration reports failure. Prefer one frame_bytes packet if the DAC and
+    // hw_spi support it; otherwise reserve or verify full capacity before loading any frame.
     for ( uint32_t index = 0U; index < ( uint32_t )( sizeof( frames ) / sizeof( frames[0] ) );
           index++ )
     {
@@ -247,7 +260,10 @@ bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void )
         .spi_mode  = SPI_MASTER_MODE,
         .data_size = SPI_SIZE_8_BIT,
         .first_bit = SPI_FIRST_MSB,
-        // TODO: change this to faster baud rate during board bring up
+        // TODO(DEV-80): At 703 kbit/s a 24-bit frame is about 34 us and six take about 205 us,
+        // excluding software/CS overhead, but an execution tick may be only 100 us.
+        // Suggested resolution: test the highest reliable rate (expected about 45 Mbit/s); the
+        // MCP48CVB28 permits up to 50 MHz at the intended supply, but validate the rate on the PCB.
         .baud_rate = SPI_BAUD_703KBIT,
         .cpol      = SPI_CPOL_LOW,
         .cpha      = SPI_CPHA_1_EDGE,
@@ -291,6 +307,10 @@ bool EXEC_ANALOGUE_OUTPUT_Config( bool use_external_vref )
         return false;
     }
 
+    // TODO(DEV-80): Queue acceptance and the void trigger do not prove DMA start, completion,
+    // correct CS timing, or DAC acceptance. Distinguish "initialization queued" from "hardware
+    // ready", observe completion/faults with a timeout or asynchronous lifecycle, and clear the
+    // state when SPI is reconfigured, stopped, or faulted.
     s_EXEC_ANALOGUE_OUTPUT_Configured = true;
     return true;
 }
@@ -332,6 +352,11 @@ bool EXEC_ANALOG_OUTPUT_Is_Configured( void )
  *     false if the module is not initialized, the channel is invalid (>= 6),
  *     or SPI transmission failed.
  */
+// TODO(DEV-80): This floating-point API validates, clamps, scales, and constructs a DAC frame in
+// the deterministic execution hot path. Add a public configuration/upload-time preparation API
+// that converts channel and voltage to a validated three-byte frame stored with the flash test
+// instruction, then pass it to a minimal runtime queue API; consider a fixed-size frame type that
+// makes byte count and order explicit rather than prescribing a raw pointer.
 bool EXEC_ANALOG_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v )
 {
     uint16_t count = 0U;
@@ -346,22 +371,20 @@ bool EXEC_ANALOG_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v )
         return false;
     }
 
-    // Need to remove the floating point computation from the hot loop
-    /*I think that we need to change how this is working so that clamping and scaling is not run in
-    the hot loop and is instead run in the configuration stage, then you can leave the floating
-    point operations in and you just pass the raw output frame into this function. So you'll need to
-    make a new function that does the conversion to the actual pure frame information and make it
-    public so that the exact frame can be stored in the flash memory and then the execution manager
-    will pass in the exact frame later rather than a floating point number. Means that the clamping
-    and scaling can be completely removed from the hot path*/
     count = EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( input_voltage_v );
 
     if ( !EXEC_ANALOGUE_OUTPUT_Send_Frame( ( uint8_t )( ANALOGUE_OUTPUT_REG_DAC_BASE + channel ),
                                            count ) )
     {
+        // TODO(DEV-80): A full SPI queue skips this update and leaves the previous physical output
+        // active. The execution manager should latch a test fault or stop safely; pre-run
+        // feasibility analysis should reject schedules above the sustainable DAC/SPI rate.
         return false;
     }
 
+    // TODO(DEV-80): Separate transactions make same-tick channel updates occur at different times.
+    // Investigate per-tick batching and, if the schematic confirms LAT is exposed, simultaneous
+    // application; otherwise document the skew and include it in feasibility analysis.
     HW_SPI_Tx_Trigger( ANALOGUE_OUTPUT_SPI_CHANNEL );
 
     return true;
