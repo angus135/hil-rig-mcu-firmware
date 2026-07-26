@@ -84,6 +84,11 @@ typedef int32_t BaseType_t;
 typedef int32_t UBaseType_t;
 typedef void*   TaskHandle_t;
 typedef void*   QueueHandle_t;
+typedef void*   SemaphoreHandle_t;
+typedef struct
+{
+    uint8_t storage;
+} StaticSemaphore_t;
 #define configSTACK_DEPTH_TYPE uint16_t
 /* Actions that can be performed when vTaskNotify() is called. */
 typedef enum
@@ -180,6 +185,12 @@ BaseType_t xTaskNotify( TaskHandle_t xTaskToNotify, uint32_t ulValue, eNotifyAct
  */
 BaseType_t xTaskNotifyFromISR( TaskHandle_t xTaskToNotify, uint32_t ulValue, eNotifyAction eAction,
                                BaseType_t* pxHigherPriorityTaskWoken );
+
+// semaphore functions
+
+SemaphoreHandle_t xSemaphoreCreateMutexStatic( StaticSemaphore_t* mutex_buffer );
+BaseType_t        xSemaphoreTake( SemaphoreHandle_t semaphore, TickType_t ticks_to_wait );
+BaseType_t        xSemaphoreGive( SemaphoreHandle_t semaphore );
 
 // queue.c functions
 

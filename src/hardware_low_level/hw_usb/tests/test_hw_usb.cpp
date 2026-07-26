@@ -78,7 +78,15 @@ public:
     MOCK_METHOD( size_t, StreamBufferSpacesAvailable, ( StreamBufferHandle_t stream_buffer ), () );
 };
 
-static MockHWUSB* g_mock = nullptr;
+static MockHWUSB*        g_mock                = nullptr;
+static SemaphoreHandle_t g_mutex_create_return = nullptr;
+static BaseType_t        g_mutex_take_return   = pdTRUE;
+static uint32_t          g_mutex_create_calls  = 0U;
+static uint32_t          g_mutex_take_calls    = 0U;
+static uint32_t          g_mutex_give_calls    = 0U;
+static SemaphoreHandle_t g_last_mutex_taken    = nullptr;
+static SemaphoreHandle_t g_last_mutex_given    = nullptr;
+static TickType_t        g_last_mutex_wait     = 0U;
 
 extern "C" USBD_HandleTypeDef hUsbDeviceFS = {};
 
@@ -113,6 +121,28 @@ extern "C" size_t xStreamBufferSpacesAvailable( StreamBufferHandle_t xStreamBuff
     return g_mock->StreamBufferSpacesAvailable( xStreamBuffer );
 }
 
+extern "C" SemaphoreHandle_t xSemaphoreCreateMutexStatic( StaticSemaphore_t* mutex_buffer )
+{
+    EXPECT_NE( nullptr, mutex_buffer );
+    g_mutex_create_calls++;
+    return g_mutex_create_return;
+}
+
+extern "C" BaseType_t xSemaphoreTake( SemaphoreHandle_t semaphore, TickType_t ticks_to_wait )
+{
+    g_mutex_take_calls++;
+    g_last_mutex_taken = semaphore;
+    g_last_mutex_wait  = ticks_to_wait;
+    return g_mutex_take_return;
+}
+
+extern "C" BaseType_t xSemaphoreGive( SemaphoreHandle_t semaphore )
+{
+    g_mutex_give_calls++;
+    g_last_mutex_given = semaphore;
+    return pdTRUE;
+}
+
 // NOLINTEND
 
 /**-----------------------------------------------------------------------------
@@ -137,8 +167,18 @@ protected:
         std::memset( &hUsbDeviceFS, 0, sizeof( hUsbDeviceFS ) );
         std::memset( &cdc_handle, 0, sizeof( cdc_handle ) );
 
-        hUsbDeviceFS.pClassData = &cdc_handle;
-        fake_stream             = reinterpret_cast<StreamBufferHandle_t>( &fake_stream_storage );
+        g_mutex_create_return = reinterpret_cast<SemaphoreHandle_t>( &fake_mutex_storage );
+        g_mutex_take_return   = pdTRUE;
+        g_mutex_create_calls  = 0U;
+        g_mutex_take_calls    = 0U;
+        g_mutex_give_calls    = 0U;
+        g_last_mutex_taken    = nullptr;
+        g_last_mutex_given    = nullptr;
+        g_last_mutex_wait     = 0U;
+
+        hUsbDeviceFS.pClassData  = &cdc_handle;
+        fake_stream              = reinterpret_cast<StreamBufferHandle_t>( &fake_stream_storage );
+        usb_state.transmit_mutex = g_mutex_create_return;
     }
 
     void TearDown( void ) override
@@ -149,6 +189,7 @@ protected:
     testing::StrictMock<MockHWUSB> mock;
     USBD_CDC_HandleTypeDef         cdc_handle          = {};
     uint8_t                        fake_stream_storage = 0U;
+    uint8_t                        fake_mutex_storage  = 0U;
     StreamBufferHandle_t           fake_stream         = nullptr;
 };
 
@@ -167,7 +208,18 @@ TEST_F( HWUSBTest, InitCreatesReceiveStreamAndClearsDroppedCount )
 
     EXPECT_TRUE( HW_USB_Init() );
     EXPECT_EQ( fake_stream, usb_state.receive_stream );
+    EXPECT_EQ( g_mutex_create_return, usb_state.transmit_mutex );
+    EXPECT_EQ( 1U, g_mutex_create_calls );
     EXPECT_EQ( 0U, usb_state.receive_stream_bytes_dropped );
+}
+
+TEST_F( HWUSBTest, InitReturnsFalseWhenTransmitMutexCreationFails )
+{
+    g_mutex_create_return = nullptr;
+
+    EXPECT_FALSE( HW_USB_Init() );
+    EXPECT_EQ( nullptr, usb_state.transmit_mutex );
+    EXPECT_EQ( 1U, g_mutex_create_calls );
 }
 
 TEST_F( HWUSBTest, InitReturnsFalseWhenReceiveStreamCreationFails )
@@ -180,6 +232,7 @@ TEST_F( HWUSBTest, InitReturnsFalseWhenReceiveStreamCreationFails )
 
     EXPECT_FALSE( HW_USB_Init() );
     EXPECT_EQ( nullptr, usb_state.receive_stream );
+    EXPECT_EQ( nullptr, usb_state.transmit_mutex );
     EXPECT_EQ( 55U, usb_state.receive_stream_bytes_dropped );
 }
 
@@ -275,6 +328,26 @@ TEST_F( HWUSBTest, ReceiveReadsAvailableBytesWithoutBlocking )
     EXPECT_EQ( 0, std::memcmp( destination, expected, sizeof( expected ) ) );
 }
 
+TEST_F( HWUSBTest, ReceiveWithTimeoutPassesTimeoutToStreamBuffer )
+{
+    uint8_t destination[4] = {};
+    uint8_t expected[]     = { 0xA1U, 0xB2U };
+
+    usb_state.receive_stream = fake_stream;
+
+    EXPECT_CALL( mock, xStreamBufferReceive( fake_stream, destination, sizeof( destination ),
+                                             pdMS_TO_TICKS( 5000U ) ) )
+        .WillOnce( testing::Invoke(
+            [&]( StreamBufferHandle_t, void* receive_destination, size_t, TickType_t ) -> size_t {
+                std::memcpy( receive_destination, expected, sizeof( expected ) );
+                return sizeof( expected );
+            } ) );
+
+    EXPECT_EQ( sizeof( expected ),
+               HW_USB_Receive_With_Timeout( destination, sizeof( destination ), 5000U ) );
+    EXPECT_EQ( 0, std::memcmp( destination, expected, sizeof( expected ) ) );
+}
+
 TEST_F( HWUSBTest, ReceiveStreamDiagnosticFunctionsReturnZeroWhenStreamIsNotCreated )
 {
     usb_state.receive_stream_bytes_dropped = 77U;
@@ -327,6 +400,12 @@ TEST_F( HWUSBTest, TransmitCopiesDataIntoInternalBufferAndStartsTransferWhenIdle
         } ) );
 
     EXPECT_TRUE( HW_USB_Transmit( data, sizeof( data ) ) );
+
+    EXPECT_EQ( 1U, g_mutex_take_calls );
+    EXPECT_EQ( 1U, g_mutex_give_calls );
+    EXPECT_EQ( usb_state.transmit_mutex, g_last_mutex_taken );
+    EXPECT_EQ( usb_state.transmit_mutex, g_last_mutex_given );
+    EXPECT_EQ( portMAX_DELAY, g_last_mutex_wait );
 
     data[0] = 0x99U;
     EXPECT_EQ( 0x11U, usb_state.transmit_buffer[0] );
@@ -398,6 +477,8 @@ TEST_F( HWUSBTest, MonitorProcessDoesNothingWhenNoDataIsQueued )
 {
     HW_USB_Monitor_Process();
 
+    EXPECT_EQ( 1U, g_mutex_take_calls );
+    EXPECT_EQ( 1U, g_mutex_give_calls );
     EXPECT_EQ( 0U, usb_state.transmit_num_buffered );
     EXPECT_EQ( 0U, usb_state.transmit_num_in_transmission );
 }

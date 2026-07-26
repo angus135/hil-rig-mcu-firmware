@@ -23,9 +23,8 @@
  *        callback in usbd_cdc_if.c.
  *      - HW_USB_Monitor_Process() must be called periodically by an application
  *        task or main loop to advance queued USB transmissions.
- *      - If HW_USB_Transmit() and HW_USB_Monitor_Process() are called from
- *        different tasks, access to usb_state should be protected by a mutex or
- *        critical section.
+ *      - Task-level transmit access is serialized internally.
+ *      - Transmit APIs must not be called from an interrupt context.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -37,6 +36,7 @@
 #include "tests/hw_usb_mocks.h"
 #else
 #include "usbd_cdc_if.h"
+#include "usb_device.h"
 #endif
 #include "rtos_config.h"
 #include "hw_usb.h"
@@ -97,6 +97,9 @@ typedef struct HWUSBState_T
     // This includes the active CDC transmission and any queued waiting data.
     uint32_t transmit_num_buffered;
 
+    // Serializes task-level access to the transmit ring and CDC transmit state.
+    SemaphoreHandle_t transmit_mutex;
+
     // FreeRTOS stream buffer used to store bytes received from USB CDC.
     StreamBufferHandle_t receive_stream;
 
@@ -117,7 +120,8 @@ extern USBD_HandleTypeDef hUsbDeviceFS;  // NOLINT
  *------------------------------------------------------------------------------
  */
 
-static HWUSBState_T usb_state = { 0 };
+static HWUSBState_T      usb_state = { 0 };
+static StaticSemaphore_t s_USB_Transmit_Mutex_Storage;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -135,6 +139,9 @@ static HWUSBState_T usb_state = { 0 };
  * @return false if CDC is not initialised or a transmit is still active.
  */
 static inline bool HW_USB_Transmit_Is_Complete( void );
+static void        HW_USB_Monitor_Process_Locked( void );
+static uint32_t    HW_USB_Receive_Internal( uint8_t* destination, uint32_t max_size_bytes,
+                                            TickType_t timeout_ticks );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -168,24 +175,35 @@ static inline bool HW_USB_Transmit_Is_Complete( void )
 /**
  * @brief Initialise the USB wrapper module.
  *
- * Creates the FreeRTOS stream buffer used by the receive path and resets the
- * receive dropped-byte counter. This function must be called before USB receive
- * callbacks are allowed to write data into the module.
+ * Creates the mutex used to serialize task-level transmit access and the
+ * FreeRTOS stream buffer used by the receive path. This function must be called
+ * before the USB device is enabled and receive callbacks can run.
  *
- * @return true if the receive stream buffer was created successfully.
- * @return false if the receive stream buffer could not be created.
+ * @return true if the synchronization objects were created successfully.
+ * @return false if either synchronization object could not be created.
  */
 bool HW_USB_Init( void )
 {
+    usb_state.transmit_mutex = xSemaphoreCreateMutexStatic( &s_USB_Transmit_Mutex_Storage );
+
+    if ( usb_state.transmit_mutex == NULL )
+    {
+        return false;
+    }
+
     usb_state.receive_stream =
         xStreamBufferCreate( MAX_USB_RECEIVE_STREAM_BYTES, USB_RECEIVE_STREAM_TRIGGER_LEVEL_BYTES );
 
     if ( usb_state.receive_stream == NULL )
     {
+        usb_state.transmit_mutex = NULL;
         return false;
     }
 
     usb_state.receive_stream_bytes_dropped = 0U;
+
+    // Initialising USB Device Driver
+    MX_USB_DEVICE_Init();
 
     return true;
 }
@@ -221,11 +239,22 @@ bool HW_USB_Transmit( const uint8_t* data, uint16_t size_bytes )
         return true;
     }
 
+    if ( usb_state.transmit_mutex == NULL )
+    {
+        return false;
+    }
+
+    if ( xSemaphoreTake( usb_state.transmit_mutex, portMAX_DELAY ) != pdTRUE )
+    {
+        return false;
+    }
+
     // Only accept the transmit request if the complete message can be queued.
     free_bytes = MAX_USB_TRANSMIT_BYTES - usb_state.transmit_num_buffered;
 
     if ( size_bytes > free_bytes )
     {
+        ( void )xSemaphoreGive( usb_state.transmit_mutex );
         return false;
     }
 
@@ -257,7 +286,9 @@ bool HW_USB_Transmit( const uint8_t* data, uint16_t size_bytes )
 
     // Attempt to start transmission immediately. If CDC is busy, the queued
     // data will remain buffered and will be retried by HW_USB_Monitor_Process().
-    HW_USB_Monitor_Process();
+    HW_USB_Monitor_Process_Locked();
+
+    ( void )xSemaphoreGive( usb_state.transmit_mutex );
 
     return true;
 }
@@ -335,7 +366,19 @@ void HW_USB_Receive_From_ISR( uint8_t* data_received, uint32_t* size_bytes )
  */
 uint32_t HW_USB_Receive( uint8_t* destination, uint32_t max_size_bytes )
 {
-    size_t bytes_read = 0;
+    return HW_USB_Receive_Internal( destination, max_size_bytes, 0U );
+}
+
+uint32_t HW_USB_Receive_With_Timeout( uint8_t* destination, uint32_t max_size_bytes,
+                                      uint32_t timeout_ms )
+{
+    return HW_USB_Receive_Internal( destination, max_size_bytes, pdMS_TO_TICKS( timeout_ms ) );
+}
+
+static uint32_t HW_USB_Receive_Internal( uint8_t* destination, uint32_t max_size_bytes,
+                                         TickType_t timeout_ticks )
+{
+    size_t bytes_read = 0U;
 
     if ( destination == NULL )
     {
@@ -352,7 +395,8 @@ uint32_t HW_USB_Receive( uint8_t* destination, uint32_t max_size_bytes )
         return 0U;
     }
 
-    bytes_read = xStreamBufferReceive( usb_state.receive_stream, destination, max_size_bytes, 0U );
+    bytes_read = xStreamBufferReceive( usb_state.receive_stream, destination, max_size_bytes,
+                                       timeout_ticks );
 
     return ( uint32_t )bytes_read;
 }
@@ -416,7 +460,7 @@ uint32_t HW_USB_Get_Receive_Stream_Free_Bytes( void )
  * transmits up to the end of the physical ring buffer in a single call. If more
  * bytes are queued after wraparound, they will be transmitted by a later call.
  */
-void HW_USB_Monitor_Process( void )
+static void HW_USB_Monitor_Process_Locked( void )
 {
     uint32_t contiguous_bytes_available = 0;
     uint16_t bytes_to_transmit          = 0;
@@ -484,4 +528,21 @@ void HW_USB_Monitor_Process( void )
 
     usb_state.transmit_live_end =
         ( usb_state.transmit_live_start + bytes_to_transmit ) % MAX_USB_TRANSMIT_BYTES;
+}
+
+void HW_USB_Monitor_Process( void )
+{
+    if ( usb_state.transmit_mutex == NULL )
+    {
+        return;
+    }
+
+    if ( xSemaphoreTake( usb_state.transmit_mutex, portMAX_DELAY ) != pdTRUE )
+    {
+        return;
+    }
+
+    HW_USB_Monitor_Process_Locked();
+
+    ( void )xSemaphoreGive( usb_state.transmit_mutex );
 }

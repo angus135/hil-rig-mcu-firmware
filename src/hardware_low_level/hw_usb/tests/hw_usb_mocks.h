@@ -31,6 +31,11 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 #define CDC_DATA_HS_MAX_PACKET_SIZE 512U /* Endpoint IN & OUT Packet size */
+/**
+ * Init USB device Library, add supported class and start the library
+ * @retval None
+ */
+#define MX_USB_DEVICE_Init()
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -107,4 +112,4 @@ uint8_t CDC_Transmit_FS( uint8_t* Buf, uint16_t Len );
 }
 #endif
 
-#endif /* HW_QSPI_MOCKS_H */
+#endif /* HW_USB_MOCKS_H */

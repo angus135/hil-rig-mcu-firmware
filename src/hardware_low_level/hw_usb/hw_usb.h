@@ -23,9 +23,7 @@
  *        callback in usbd_cdc_if.c.
  *      - HW_USB_Monitor_Process() must be called periodically by an application
  *        task or main loop to advance queued USB transmissions.
- *      - If HW_USB_Transmit() and HW_USB_Monitor_Process() are called from
- *        different tasks, access to usb_state should be protected by a mutex or
- *        critical section.
+ *      - Task-level transmit access is serialized internally.
  ******************************************************************************/
 
 #ifndef HW_USB_H
@@ -63,12 +61,12 @@ extern "C"
 /**
  * @brief Initialise the USB wrapper module.
  *
- * Creates the FreeRTOS stream buffer used by the receive path and resets the
- * receive dropped-byte counter. This function must be called before USB receive
- * callbacks are allowed to write data into the module.
+ * Creates the mutex used to serialize task-level transmit access and the
+ * FreeRTOS stream buffer used by the receive path. This function must be called
+ * before the USB device is enabled and receive callbacks can run.
  *
- * @return true if the receive stream buffer was created successfully.
- * @return false if the receive stream buffer could not be created.
+ * @return true if the synchronization objects were created successfully.
+ * @return false if either synchronization object could not be created.
  */
 bool HW_USB_Init( void );
 
@@ -120,6 +118,19 @@ void HW_USB_Receive_From_ISR( uint8_t* data_received, uint32_t* size_bytes );
  * @return Number of bytes copied into destination.
  */
 uint32_t HW_USB_Receive( uint8_t* destination, uint32_t max_size_bytes );
+
+/**
+ * @brief Wait for and read received USB CDC bytes from the receive stream buffer.
+ *
+ * @param destination Buffer to copy received bytes into.
+ * @param max_size_bytes Maximum number of bytes to read.
+ * @param timeout_ms Maximum time to wait for received data, in milliseconds.
+ *
+ * @return Number of bytes copied into destination, or zero if the timeout expires
+ *         or the arguments/module state are invalid.
+ */
+uint32_t HW_USB_Receive_With_Timeout( uint8_t* destination, uint32_t max_size_bytes,
+                                      uint32_t timeout_ms );
 
 /**
  * @brief Get the number of bytes currently stored in the receive stream buffer.
