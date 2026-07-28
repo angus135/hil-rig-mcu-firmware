@@ -88,6 +88,36 @@ static FMPI2C_TypeDef     hw_i2c_mock_fmpi2c1      = { 0 };
 #define DMA1_Stream7 ( &hw_i2c_mock_dma1_stream7 )
 #define FMPI2C1 ( &hw_i2c_mock_fmpi2c1 )
 
+typedef enum IRQn_Type
+{
+    I2C3_EV_IRQn = 0,
+    I2C3_ER_IRQn,
+    I2C2_EV_IRQn,
+    I2C2_ER_IRQn,
+    DMA1_Stream2_IRQn,
+    DMA1_Stream7_IRQn,
+    FMPI2C1_EV_IRQn,
+    FMPI2C1_ER_IRQn,
+    HW_I2C_MOCK_IRQ_COUNT,
+} IRQn_Type;
+
+static uint32_t hw_i2c_mock_nvic_enabled[HW_I2C_MOCK_IRQ_COUNT] = { 0 };
+
+static inline uint32_t NVIC_GetEnableIRQ( IRQn_Type irq )
+{
+    return hw_i2c_mock_nvic_enabled[irq];
+}
+
+static inline void NVIC_DisableIRQ( IRQn_Type irq )
+{
+    hw_i2c_mock_nvic_enabled[irq] = 0U;
+}
+
+static inline void NVIC_EnableIRQ( IRQn_Type irq )
+{
+    hw_i2c_mock_nvic_enabled[irq] = 1U;
+}
+
 #define LL_APB1_GRP1_PERIPH_I2C3 ( 0x00000001U )
 #define LL_APB1_GRP1_PERIPH_I2C2 ( 0x00000002U )
 #define LL_APB1_GRP1_PERIPH_FMPI2C1 ( 0x00000004U )
@@ -122,6 +152,9 @@ static FMPI2C_TypeDef     hw_i2c_mock_fmpi2c1      = { 0 };
 #define I2C_SR1_ARLO ( 1U << 9 )
 #define I2C_SR1_AF ( 1U << 10 )
 #define I2C_SR1_OVR ( 1U << 11 )
+#define I2C_SR1_TIMEOUT ( 1U << 14 )
+
+#define I2C_SR2_BUSY ( 1U << 1 )
 
 #define DMA_SxCR_EN ( 1U << 0 )
 #define DMA_SxCR_DIR_0 ( 1U << 6 )
@@ -146,9 +179,10 @@ static FMPI2C_TypeDef     hw_i2c_mock_fmpi2c1      = { 0 };
 #define FMPI2C_CR1_PE ( 1U << 0 )
 #define FMPI2C_CR1_TXIE ( 1U << 1 )
 #define FMPI2C_CR1_RXIE ( 1U << 2 )
-#define FMPI2C_CR1_TCIE ( 1U << 3 )
-#define FMPI2C_CR1_STOPIE ( 1U << 4 )
-#define FMPI2C_CR1_ERRIE ( 1U << 5 )
+#define FMPI2C_CR1_NACKIE ( 1U << 4 )
+#define FMPI2C_CR1_STOPIE ( 1U << 5 )
+#define FMPI2C_CR1_TCIE ( 1U << 6 )
+#define FMPI2C_CR1_ERRIE ( 1U << 7 )
 
 #define FMPI2C_CR2_START ( 1U << 13 )
 #define FMPI2C_CR2_STOP ( 1U << 14 )
@@ -167,6 +201,7 @@ static FMPI2C_TypeDef     hw_i2c_mock_fmpi2c1      = { 0 };
 #define FMPI2C_ISR_ARLO ( 1U << 9 )
 #define FMPI2C_ISR_OVR ( 1U << 10 )
 #define FMPI2C_ISR_TIMEOUT ( 1U << 12 )
+#define FMPI2C_ISR_BUSY ( 1U << 15 )
 
 #define FMPI2C_ICR_STOPCF ( 1U << 5 )
 #define FMPI2C_ICR_NACKCF ( 1U << 4 )
@@ -366,6 +401,11 @@ static inline void LL_I2C_ClearFlag_OVR( I2C_TypeDef* i2c_instance )
     i2c_instance->SR1 &= ~I2C_SR1_OVR;
 }
 
+static inline void LL_I2C_ClearFlag_TIMEOUT( I2C_TypeDef* i2c_instance )
+{
+    i2c_instance->SR1 &= ~I2C_SR1_TIMEOUT;
+}
+
 static inline void LL_FMPI2C_Enable( FMPI2C_TypeDef* fmpi2c_instance )
 {
     fmpi2c_instance->CR1 |= FMPI2C_CR1_PE;
@@ -400,6 +440,11 @@ static inline void LL_FMPI2C_EnableIT_TX( FMPI2C_TypeDef* fmpi2c_instance )
 static inline void LL_FMPI2C_EnableIT_RX( FMPI2C_TypeDef* fmpi2c_instance )
 {
     fmpi2c_instance->CR1 |= FMPI2C_CR1_RXIE;
+}
+
+static inline void LL_FMPI2C_EnableIT_NACK( FMPI2C_TypeDef* fmpi2c_instance )
+{
+    fmpi2c_instance->CR1 |= FMPI2C_CR1_NACKIE;
 }
 
 static inline void LL_FMPI2C_EnableIT_TC( FMPI2C_TypeDef* fmpi2c_instance )

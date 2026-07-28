@@ -6,14 +6,15 @@
  *  Description:
  *      Low-level hardware I2C driver implementation. Manages I2C peripheral
  *      configuration, state machines for master/slave operations, and interrupt/DMA
- *      service routines. Uses ring-buffered receives and stage-buffered transmits. 
+ *      service routines. Queues complete master transactions and publishes
+ *      complete received messages.
  *
  *  Notes:
  *      - Requires STM32F4xx HAL/LL driver libraries
  *      - FMPI2C1 operates at 100 kHz with fixed timing register value
  *      - I2C3 interrupt-only; I2C2 supports DMA; FMPI2C1 interrupt-only
- *      - Receive buffers are 512 bytes; transmit stage is 256 bytes
- *      - Not thread-safe; assumes single-threaded execution or external synchronization
+ *      - Receive storage is 512 bytes; maximum transmit message is 256 bytes
+ *      - Queue state is protected against the channel's I2C/DMA interrupts
  *      - Interrupt handlers must be called from corresponding ISRs in stm32f4xx_it.c
  ******************************************************************************/
 
@@ -56,8 +57,20 @@
 #define HW_I2C_EV_IRQ_CHANNEL_1 I2C3_EV_IRQHandler
 #define HW_I2C_EV_IRQ_CHANNEL_2 I2C2_EV_IRQHandler
 #define HW_I2C_EV_IRQ_FMPI2C1 FMPI2C1_EV_IRQHandler
+#define HW_I2C_ER_IRQ_CHANNEL_1 I2C3_ER_IRQHandler
+#define HW_I2C_ER_IRQ_CHANNEL_2 I2C2_ER_IRQHandler
+#define HW_I2C_ER_IRQ_FMPI2C1 FMPI2C1_ER_IRQHandler
 #define HW_I2C_DMA_RX_IRQ_CHANNEL_2 DMA1_Stream2_IRQHandler
 #define HW_I2C_DMA_TX_IRQ_CHANNEL_2 DMA1_Stream7_IRQHandler
+
+void HW_I2C_EV_IRQ_CHANNEL_1( void );
+void HW_I2C_EV_IRQ_CHANNEL_2( void );
+void HW_I2C_EV_IRQ_FMPI2C1( void );
+void HW_I2C_ER_IRQ_CHANNEL_1( void );
+void HW_I2C_ER_IRQ_CHANNEL_2( void );
+void HW_I2C_ER_IRQ_FMPI2C1( void );
+void HW_I2C_DMA_RX_IRQ_CHANNEL_2( void );
+void HW_I2C_DMA_TX_IRQ_CHANNEL_2( void );
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -69,14 +82,21 @@
  *------------------------------------------------------------------------------
  */
 
-typedef enum HWI2CTransferKind_T
+typedef struct HWI2CMasterTransaction_T
 {
-    HW_I2C_TRANSFER_KIND_IDLE,
-    HW_I2C_TRANSFER_KIND_MASTER_TX,
-    HW_I2C_TRANSFER_KIND_MASTER_RX,
-    HW_I2C_TRANSFER_KIND_SLAVE_TX,
-    HW_I2C_TRANSFER_KIND_SLAVE_RX,
-} HWI2CTransferKind_T;
+    HWI2CTransferKind_T transfer_kind;
+    uint16_t            target_address_7bit;
+    uint16_t            length;
+    uint8_t             tx_payload[HW_I2C_TX_MAX_MESSAGE_SIZE];
+} HWI2CMasterTransaction_T;
+
+typedef struct HWI2CIrqState_T
+{
+    uint32_t event_irq_enabled;
+    uint32_t error_irq_enabled;
+    uint32_t dma_rx_irq_enabled;
+    uint32_t dma_tx_irq_enabled;
+} HWI2CIrqState_T;
 
 typedef struct HWI2CChannelState_T
 {
@@ -85,33 +105,50 @@ typedef struct HWI2CChannelState_T
     HWI2CChannelConfig_T config;     /* Runtime configuration (mode, speed, transfer paths) */
 
     /* Transfer control and state */
-    volatile bool transfer_in_progress; /* True while a transfer (master or slave) is active */
-    HWI2CTransferKind_T transfer_kind; /* Current transfer type (idle, master TX/RX, slave TX/RX) */
+    volatile bool       transfer_in_progress;
+    HWI2CTransferKind_T transfer_kind;
+    volatile bool       master_queue_active;
+    volatile bool       completion_condition_seen;
+    volatile bool       restart_pending;
+    bool                active_uses_dma;
+
+    /* Complete master transactions. Count includes the active queue head. */
+    HWI2CMasterTransaction_T master_queue[HW_I2C_MASTER_TRANSACTION_QUEUE_DEPTH];
+    volatile uint8_t         master_queue_head;
+    volatile uint8_t         master_queue_tail;
+    volatile uint8_t         master_queue_count;
 
     /* Master-mode addressing */
     uint16_t target_address_7bit; /* 7-bit slave address for master transfers */
-    uint16_t rx_expected_length;  /* Expected receive count; decremented as bytes arrive */
+    uint16_t rx_expected_length;  /* Remaining interrupt-driven receive count */
 
-    /* Transmit path: shadow buffer and pointers */
-    uint8_t        tx_stage_buffer[HW_I2C_TX_STAGE_SIZE]; /* Holds data to be transmitted */
-    uint16_t       tx_stage_length;                       /* Number of bytes in tx_stage_buffer */
-    const uint8_t* tx_ptr;       /* Current position in tx_stage_buffer during transfer */
-    uint16_t       tx_remaining; /* Bytes left to transmit */
-    volatile bool
-        dma_tx_transfer_complete; /* Flag set when DMA TX finishes (for master TX detection) */
+    /* Non-queued slave TX compatibility storage plus active TX pointers. */
+    uint8_t        slave_tx_stage_buffer[HW_I2C_TX_STAGE_SIZE];
+    uint16_t       slave_tx_stage_length;
+    const uint8_t* tx_ptr;
+    uint16_t       tx_remaining;
+    volatile bool  dma_tx_transfer_complete;
 
-    // TODO: store Rx metadata
-    /* Receive path: DMA linear buffer (used by DMA transfers on I2C2) */
-    uint8_t  dma_rx_linear_buffer[HW_I2C_RX_BUFFER_SIZE]; /* Linear buffer filled by DMA */
-    uint16_t dma_rx_expected_length;                      /* Expected DMA receive count */
+    /* One private linear staging area is shared by DMA and IRQ receive paths. */
+    uint8_t       rx_staging_buffer[HW_I2C_RX_BUFFER_SIZE];
+    uint16_t      rx_transfer_length;
+    uint16_t      rx_received_length;
+    uint16_t      dma_rx_expected_length;
+    volatile bool dma_rx_transfer_complete;
 
-    /* Receive path: ring buffer (used by interrupt-driven receives and exported to caller) */
-    uint8_t           rx_ring_buffer[HW_I2C_RX_BUFFER_SIZE]; /* Ring buffer for received data */
-    volatile uint16_t rx_head; /* Write pointer (advanced by RX ISR/DMA) */
-    volatile uint16_t rx_tail; /* Read pointer (advanced by consumer) */
+    /* Complete received messages: byte storage plus parallel descriptors. */
+    uint8_t                    rx_ring_buffer[HW_I2C_RX_BUFFER_SIZE];
+    volatile uint16_t          rx_head;
+    volatile uint16_t          rx_tail;
+    volatile uint16_t          rx_count;
+    HWI2CRxMessageDescriptor_T rx_message_queue[HW_I2C_RX_MESSAGE_QUEUE_DEPTH];
+    volatile uint8_t           rx_message_head;
+    volatile uint8_t           rx_message_tail;
+    volatile uint8_t           rx_message_count;
 
     /* Error tracking */
-    volatile bool overflow_occurred; /* True if ring buffer overflow detected during receive */
+    volatile bool          overflow_occurred;
+    volatile HWI2CStatus_T transfer_result;
 } HWI2CChannelState_T;
 
 /**-----------------------------------------------------------------------------
@@ -149,14 +186,20 @@ static const HWI2CMapping_T HW_I2C_MAP[HW_I2C_CHANNEL_COUNT] = {
  */
 
 static inline bool     HW_I2C_Is_External_Channel( HWI2CChannel_T channel );
+static inline bool     HW_I2C_Channel_Is_Valid( HWI2CChannel_T channel );
+static inline bool     HW_I2C_Address_Is_Valid( uint16_t device_address_7bit );
 static inline bool     HW_I2C_Config_Is_Valid( HWI2CChannel_T              channel,
                                                const HWI2CChannelConfig_T* config );
 static inline uint16_t HW_I2C_Ring_Count( const HWI2CChannelState_T* state );
 static inline uint16_t HW_I2C_Ring_Free( const HWI2CChannelState_T* state );
-static inline bool     HW_I2C_Ring_Push_Byte( HWI2CChannelState_T* state, uint8_t data_byte );
+static inline bool     HW_I2C_Peripheral_Is_Busy( HWI2CChannel_T channel );
+static HWI2CIrqState_T HW_I2C_Channel_Irqs_Disable( HWI2CChannel_T channel );
+static void HW_I2C_Channel_Irqs_Restore( HWI2CChannel_T channel, HWI2CIrqState_T irq_state );
+static bool HW_I2C_Publish_Received_Message( HWI2CChannelState_T* state );
 
 static inline uint32_t HWI2CSpeed_To_Hz( HWI2CSpeed_T speed );
 static inline void     HW_I2C_Enable_Clock_For_Channel( HWI2CChannel_T channel );
+static inline void     HW_I2C_Enable_Error_IRQ_For_Channel( HWI2CChannel_T channel );
 static inline void     HW_I2C_Disable_All_Runtime_Irq_Bits( I2C_TypeDef* i2c_instance );
 static inline void     HW_I2C_Disable_DMA_Request( I2C_TypeDef* i2c_instance );
 static inline void     HW_I2C_Set_Speed_And_Address( I2C_TypeDef* i2c_instance, HWI2CSpeed_T speed,
@@ -166,8 +209,12 @@ static inline void     HW_I2C_Prepare_DMA_Path( I2C_TypeDef*        i2c_instance
                                                 HWI2CTransferKind_T transfer_kind );
 static inline void     HW_I2C_Start_Master_Transfer( I2C_TypeDef*        i2c_instance,
                                                      HWI2CTransferKind_T transfer_kind, bool use_dma );
-static inline void     HW_I2C_Finish_Transfer( HWI2CChannel_T channel, I2C_TypeDef* i2c_instance );
-static inline void     HW_I2C_Abort_Transfer( HWI2CChannel_T channel, I2C_TypeDef* i2c_instance );
+static void            HW_I2C_Cleanup_Active_Transfer( HWI2CChannel_T channel );
+static void        HW_I2C_Latch_Transfer_Result( HWI2CChannelState_T* state, HWI2CStatus_T result );
+static void        HW_I2C_Abort_Transfer( HWI2CChannel_T channel, HWI2CStatus_T result );
+static void        HW_I2C_Request_Master_Stop( HWI2CChannel_T channel );
+static bool        HW_I2C_Pump_Master_Queue( HWI2CChannel_T channel );
+static void        HW_I2C_Complete_Master_Queue_Head( HWI2CChannel_T channel );
 static void        HW_I2C_Configure_DMA_Stream( DMA_Stream_TypeDef* stream, uint32_t channel_bits,
                                                 bool memory_to_peripheral, uint32_t peripheral_address,
                                                 uint32_t memory_address, uint16_t length );
@@ -176,7 +223,7 @@ static inline bool HW_I2C_DMA_Stream_Has_TE( DMA_Stream_TypeDef* stream );
 static inline void HW_I2C_DMA_Stream_Clear_Flags( DMA_Stream_TypeDef* stream );
 static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
                                                   I2C_TypeDef*   i2c_instance );
-static inline void HW_I2C_Service_Event_FMPI2C1( HWI2CChannelState_T* state );
+static inline void HW_I2C_Service_Event_FMPI2C1( HWI2CChannel_T channel );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -186,6 +233,16 @@ static inline void HW_I2C_Service_Event_FMPI2C1( HWI2CChannelState_T* state );
 static inline bool HW_I2C_Is_External_Channel( HWI2CChannel_T channel )
 {
     return ( channel == HW_I2C_CHANNEL_1 ) || ( channel == HW_I2C_CHANNEL_2 );
+}
+
+static inline bool HW_I2C_Channel_Is_Valid( HWI2CChannel_T channel )
+{
+    return ( channel >= HW_I2C_CHANNEL_1 ) && ( channel < HW_I2C_CHANNEL_COUNT );
+}
+
+static inline bool HW_I2C_Address_Is_Valid( uint16_t device_address_7bit )
+{
+    return device_address_7bit <= 0x7FU;
 }
 
 static inline bool HW_I2C_Config_Is_Valid( HWI2CChannel_T              channel,
@@ -243,36 +300,141 @@ static inline bool HW_I2C_Config_Is_Valid( HWI2CChannel_T              channel,
 
 static inline uint16_t HW_I2C_Ring_Count( const HWI2CChannelState_T* state )
 {
-    /* Return number of bytes currently stored in the ring buffer.
-       When head >= tail the bytes are contiguous; when head < tail the
-       buffer has wrapped and the count is computed accordingly. */
-    if ( state->rx_head >= state->rx_tail )
-    {
-        return ( uint16_t )( state->rx_head - state->rx_tail );
-    }
-
-    /* Wrapped case: available data is buffer size minus the unused gap. */
-    return ( uint16_t )( HW_I2C_RX_BUFFER_SIZE - ( state->rx_tail - state->rx_head ) );
+    return state->rx_count;
 }
 
 static inline uint16_t HW_I2C_Ring_Free( const HWI2CChannelState_T* state )
 {
-    /* Calculate free space in the ring buffer. One slot is intentionally
-       left unused to distinguish full from empty, so subtract one. */
-    return ( uint16_t )( ( HW_I2C_RX_BUFFER_SIZE - 1U ) - HW_I2C_Ring_Count( state ) );
+    return ( uint16_t )( HW_I2C_RX_BUFFER_SIZE - HW_I2C_Ring_Count( state ) );
 }
 
-static inline bool HW_I2C_Ring_Push_Byte( HWI2CChannelState_T* state, uint8_t data_byte )
+static inline bool HW_I2C_Peripheral_Is_Busy( HWI2CChannel_T channel )
 {
-    /* Fail if no free space available. */
-    if ( HW_I2C_Ring_Free( state ) == 0U )
+    if ( channel == HW_I2C_CHANNEL_FMPI2C1 )
     {
+        return ( FMPI2C1->ISR & FMPI2C_ISR_BUSY ) != 0U;
+    }
+
+    return ( HW_I2C_MAP[channel].instance->SR2 & I2C_SR2_BUSY ) != 0U;
+}
+
+static HWI2CIrqState_T HW_I2C_Channel_Irqs_Disable( HWI2CChannel_T channel )
+{
+    HWI2CIrqState_T irq_state = { 0 };
+
+    switch ( channel )
+    {
+        case HW_I2C_CHANNEL_1:
+            irq_state.event_irq_enabled = NVIC_GetEnableIRQ( I2C3_EV_IRQn );
+            irq_state.error_irq_enabled = NVIC_GetEnableIRQ( I2C3_ER_IRQn );
+            NVIC_DisableIRQ( I2C3_EV_IRQn );
+            NVIC_DisableIRQ( I2C3_ER_IRQn );
+            break;
+        case HW_I2C_CHANNEL_2:
+            irq_state.event_irq_enabled  = NVIC_GetEnableIRQ( I2C2_EV_IRQn );
+            irq_state.error_irq_enabled  = NVIC_GetEnableIRQ( I2C2_ER_IRQn );
+            irq_state.dma_rx_irq_enabled = NVIC_GetEnableIRQ( DMA1_Stream2_IRQn );
+            irq_state.dma_tx_irq_enabled = NVIC_GetEnableIRQ( DMA1_Stream7_IRQn );
+            NVIC_DisableIRQ( I2C2_EV_IRQn );
+            NVIC_DisableIRQ( I2C2_ER_IRQn );
+            NVIC_DisableIRQ( DMA1_Stream2_IRQn );
+            NVIC_DisableIRQ( DMA1_Stream7_IRQn );
+            break;
+        case HW_I2C_CHANNEL_FMPI2C1:
+            irq_state.event_irq_enabled = NVIC_GetEnableIRQ( FMPI2C1_EV_IRQn );
+            irq_state.error_irq_enabled = NVIC_GetEnableIRQ( FMPI2C1_ER_IRQn );
+            NVIC_DisableIRQ( FMPI2C1_EV_IRQn );
+            NVIC_DisableIRQ( FMPI2C1_ER_IRQn );
+            break;
+        case HW_I2C_CHANNEL_COUNT:
+        default:
+            break;
+    }
+
+    return irq_state;
+}
+
+static void HW_I2C_Channel_Irqs_Restore( HWI2CChannel_T channel, HWI2CIrqState_T irq_state )
+{
+    switch ( channel )
+    {
+        case HW_I2C_CHANNEL_1:
+            if ( irq_state.event_irq_enabled != 0U )
+            {
+                NVIC_EnableIRQ( I2C3_EV_IRQn );
+            }
+            if ( irq_state.error_irq_enabled != 0U )
+            {
+                NVIC_EnableIRQ( I2C3_ER_IRQn );
+            }
+            break;
+        case HW_I2C_CHANNEL_2:
+            if ( irq_state.event_irq_enabled != 0U )
+            {
+                NVIC_EnableIRQ( I2C2_EV_IRQn );
+            }
+            if ( irq_state.error_irq_enabled != 0U )
+            {
+                NVIC_EnableIRQ( I2C2_ER_IRQn );
+            }
+            if ( irq_state.dma_rx_irq_enabled != 0U )
+            {
+                NVIC_EnableIRQ( DMA1_Stream2_IRQn );
+            }
+            if ( irq_state.dma_tx_irq_enabled != 0U )
+            {
+                NVIC_EnableIRQ( DMA1_Stream7_IRQn );
+            }
+            break;
+        case HW_I2C_CHANNEL_FMPI2C1:
+            if ( irq_state.event_irq_enabled != 0U )
+            {
+                NVIC_EnableIRQ( FMPI2C1_EV_IRQn );
+            }
+            if ( irq_state.error_irq_enabled != 0U )
+            {
+                NVIC_EnableIRQ( FMPI2C1_ER_IRQn );
+            }
+            break;
+        case HW_I2C_CHANNEL_COUNT:
+        default:
+            break;
+    }
+}
+
+static bool HW_I2C_Publish_Received_Message( HWI2CChannelState_T* state )
+{
+    const uint16_t message_length = state->rx_received_length;
+
+    if ( ( message_length > HW_I2C_Ring_Free( state ) )
+         || ( state->rx_message_count >= HW_I2C_RX_MESSAGE_QUEUE_DEPTH ) )
+    {
+        state->overflow_occurred = true;
+        HW_I2C_Latch_Transfer_Result( state, HW_I2C_STATUS_OVERFLOW );
         return false;
     }
 
-    /* Store byte at head and advance head (wrapping via modulo). */
-    state->rx_ring_buffer[state->rx_head] = data_byte;
-    state->rx_head = ( uint16_t )( ( state->rx_head + 1U ) % HW_I2C_RX_BUFFER_SIZE );
+    uint16_t new_head = state->rx_head;
+    for ( uint16_t index = 0U; index < message_length; ++index )
+    {
+        state->rx_ring_buffer[new_head] = state->rx_staging_buffer[index];
+        new_head                        = ( uint16_t )( ( new_head + 1U ) % HW_I2C_RX_BUFFER_SIZE );
+    }
+
+    HWI2CRxMessageDescriptor_T* descriptor = &state->rx_message_queue[state->rx_message_head];
+    descriptor->transfer_kind              = state->transfer_kind;
+    descriptor->target_address_7bit = ( state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_RX )
+                                          ? state->target_address_7bit
+                                          : 0U;
+    descriptor->length              = message_length;
+    descriptor->status              = HW_I2C_STATUS_OK;
+
+    state->rx_head  = new_head;
+    state->rx_count = ( uint16_t )( state->rx_count + message_length );
+    state->rx_message_head =
+        ( uint8_t )( ( state->rx_message_head + 1U ) % HW_I2C_RX_MESSAGE_QUEUE_DEPTH );
+    state->rx_message_count++;
+
     return true;
 }
 
@@ -293,6 +455,25 @@ static inline void HW_I2C_Enable_Clock_For_Channel( HWI2CChannel_T channel )
             break;
         case HW_I2C_CHANNEL_FMPI2C1:
             LL_APB1_GRP1_EnableClock( LL_APB1_GRP1_PERIPH_FMPI2C1 );
+            break;
+        case HW_I2C_CHANNEL_COUNT:
+        default:
+            break;
+    }
+}
+
+static inline void HW_I2C_Enable_Error_IRQ_For_Channel( HWI2CChannel_T channel )
+{
+    switch ( channel )
+    {
+        case HW_I2C_CHANNEL_1:
+            NVIC_EnableIRQ( I2C3_ER_IRQn );
+            break;
+        case HW_I2C_CHANNEL_2:
+            NVIC_EnableIRQ( I2C2_ER_IRQn );
+            break;
+        case HW_I2C_CHANNEL_FMPI2C1:
+            NVIC_EnableIRQ( FMPI2C1_ER_IRQn );
             break;
         case HW_I2C_CHANNEL_COUNT:
         default:
@@ -393,37 +574,14 @@ static inline void HW_I2C_Start_Master_Transfer( I2C_TypeDef*        i2c_instanc
     LL_I2C_GenerateStartCondition( i2c_instance );
 }
 
-/**
- * @brief Complete an ongoing transfer and clean up runtime state.
- *
- * This helper performs the canonical end-of-transfer tasks:
- * - issue a STOP condition for master transfers that generated traffic
- * - disable DMA streams if they were used for the channel
- * - disable runtime IRQ/DMA requests and reset transfer state fields
- *
- * Caller expectation: the peripheral/ISR may already have placed the
- * device into a quiescent state; this call ensures all runtime
- * resources are released and the software state reflects idle.
- *
- * @param channel       Channel index for state bookkeeping.
- * @param i2c_instance  Peripheral register base for STOP generation.
- */
-static inline void HW_I2C_Finish_Transfer( HWI2CChannel_T channel, I2C_TypeDef* i2c_instance )
+static void HW_I2C_Cleanup_Active_Transfer( HWI2CChannel_T channel )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
 
-    /* Generate STOP for transfers that actually drove the bus as master. */
-    if ( state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_TX
-         || state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_RX )
+    if ( HW_I2C_Is_External_Channel( channel ) )
     {
-        LL_I2C_GenerateStopCondition( i2c_instance );
-    }
+        I2C_TypeDef* i2c_instance = HW_I2C_MAP[channel].instance;
 
-    /* If DMA was configured for either path, ensure DMA streams are
-       disabled and clear the peripheral DMA request lines. */
-    if ( state->config.tx_transfer_path == HW_I2C_TRANSFER_DMA
-         || state->config.rx_transfer_path == HW_I2C_TRANSFER_DMA )
-    {
         DMA_Stream_TypeDef* rx_stream = HW_I2C_MAP[channel].dma_rx;
         DMA_Stream_TypeDef* tx_stream = HW_I2C_MAP[channel].dma_tx;
         if ( rx_stream != NULL )
@@ -435,30 +593,221 @@ static inline void HW_I2C_Finish_Transfer( HWI2CChannel_T channel, I2C_TypeDef* 
             tx_stream->CR &= ~DMA_SxCR_EN;
         }
         HW_I2C_Disable_DMA_Request( i2c_instance );
+        HW_I2C_Disable_All_Runtime_Irq_Bits( i2c_instance );
     }
 
-    /* Disable runtime IRQ bits (ERR/EVT/BUF) to stop further ISR traffic. */
-    HW_I2C_Disable_All_Runtime_Irq_Bits( i2c_instance );
-
-    /* Reset channel state so it can be reused for future transfers. */
     state->transfer_in_progress     = false;
     state->transfer_kind            = HW_I2C_TRANSFER_KIND_IDLE;
+    state->master_queue_active      = false;
+    state->active_uses_dma          = false;
     state->tx_remaining             = 0U;
     state->dma_tx_transfer_complete = false;
     state->rx_expected_length       = 0U;
+    state->rx_transfer_length       = 0U;
+    state->rx_received_length       = 0U;
+    state->dma_rx_expected_length   = 0U;
+    state->dma_rx_transfer_complete = false;
 }
 
-/**
- * @brief Abort an in-progress transfer and release resources.
- *
- * This is a thin wrapper that performs the same cleanup as
- * HW_I2C_Finish_Transfer. It exists to provide a clear semantic
- * name when error paths need to terminate a transfer prematurely.
- */
-static inline void HW_I2C_Abort_Transfer( HWI2CChannel_T channel, I2C_TypeDef* i2c_instance )
+static void HW_I2C_Latch_Transfer_Result( HWI2CChannelState_T* state, HWI2CStatus_T result )
 {
-    /* Delegate to Finish which handles STOP, DMA and state cleanup. */
-    HW_I2C_Finish_Transfer( channel, i2c_instance );
+    if ( ( result != HW_I2C_STATUS_OK ) && ( state->transfer_result == HW_I2C_STATUS_OK ) )
+    {
+        state->transfer_result = result;
+    }
+}
+
+static void HW_I2C_Abort_Transfer( HWI2CChannel_T channel, HWI2CStatus_T result )
+{
+    HWI2CIrqState_T      irq_state = HW_I2C_Channel_Irqs_Disable( channel );
+    HWI2CChannelState_T* state     = &hw_i2c_channel_state[channel];
+
+    if ( state->master_queue_active )
+    {
+        if ( channel == HW_I2C_CHANNEL_FMPI2C1 )
+        {
+            LL_FMPI2C_GenerateStopCondition( FMPI2C1 );
+        }
+        else
+        {
+            LL_I2C_GenerateStopCondition( HW_I2C_MAP[channel].instance );
+        }
+    }
+
+    HW_I2C_Cleanup_Active_Transfer( channel );
+    state->master_queue_head         = 0U;
+    state->master_queue_tail         = 0U;
+    state->master_queue_count        = 0U;
+    state->restart_pending           = true;
+    state->completion_condition_seen = false;
+    if ( result == HW_I2C_STATUS_OVERFLOW )
+    {
+        state->overflow_occurred = true;
+    }
+    HW_I2C_Latch_Transfer_Result( state, result );
+
+    if ( channel == HW_I2C_CHANNEL_FMPI2C1 )
+    {
+        LL_FMPI2C_Disable( FMPI2C1 );
+        FMPI2C1->CR2 = 0U;
+        LL_FMPI2C_Enable( FMPI2C1 );
+    }
+    else
+    {
+        I2C_TypeDef* i2c_instance = HW_I2C_MAP[channel].instance;
+        LL_I2C_Disable( i2c_instance );
+        LL_I2C_Enable( i2c_instance );
+        LL_I2C_AcknowledgeNextData(
+            i2c_instance, ( state->config.mode == HW_I2C_MODE_SLAVE ) ? LL_I2C_ACK : LL_I2C_NACK );
+    }
+
+    HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+}
+
+static void HW_I2C_Request_Master_Stop( HWI2CChannel_T channel )
+{
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+
+    if ( !state->master_queue_active )
+    {
+        return;
+    }
+
+    if ( channel == HW_I2C_CHANNEL_FMPI2C1 )
+    {
+        LL_FMPI2C_GenerateStopCondition( FMPI2C1 );
+        return;
+    }
+
+    if ( !state->completion_condition_seen )
+    {
+        I2C_TypeDef* i2c_instance = HW_I2C_MAP[channel].instance;
+        LL_I2C_GenerateStopCondition( i2c_instance );
+        LL_I2C_DisableIT_EVT( i2c_instance );
+        LL_I2C_DisableIT_BUF( i2c_instance );
+        state->completion_condition_seen = true;
+        state->restart_pending           = true;
+    }
+}
+
+static bool HW_I2C_Pump_Master_Queue( HWI2CChannel_T channel )
+{
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+
+    if ( state->master_queue_active || ( state->master_queue_count == 0U ) )
+    {
+        return true;
+    }
+
+    if ( HW_I2C_Peripheral_Is_Busy( channel ) )
+    {
+        state->restart_pending = true;
+        return true;
+    }
+
+    HWI2CMasterTransaction_T* transaction = &state->master_queue[state->master_queue_head];
+
+    state->target_address_7bit       = transaction->target_address_7bit;
+    state->transfer_kind             = transaction->transfer_kind;
+    state->transfer_in_progress      = true;
+    state->master_queue_active       = true;
+    state->completion_condition_seen = false;
+    state->restart_pending           = false;
+    state->dma_tx_transfer_complete  = false;
+    state->dma_rx_transfer_complete  = false;
+    state->rx_transfer_length        = 0U;
+    state->rx_received_length        = 0U;
+    state->rx_expected_length        = 0U;
+    state->dma_rx_expected_length    = 0U;
+
+    if ( transaction->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_TX )
+    {
+        state->tx_ptr       = transaction->tx_payload;
+        state->tx_remaining = transaction->length;
+    }
+    else
+    {
+        state->tx_ptr                 = NULL;
+        state->tx_remaining           = 0U;
+        state->rx_transfer_length     = transaction->length;
+        state->rx_expected_length     = transaction->length;
+        state->dma_rx_expected_length = transaction->length;
+    }
+
+    if ( channel == HW_I2C_CHANNEL_FMPI2C1 )
+    {
+        uint32_t cr2 = ( ( uint32_t )transaction->target_address_7bit << 1U )
+                       | ( ( uint32_t )transaction->length << FMPI2C_CR2_NBYTES_Pos )
+                       | FMPI2C_CR2_START | FMPI2C_CR2_AUTOEND;
+        if ( transaction->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_RX )
+        {
+            cr2 |= FMPI2C_CR2_RD_WRN;
+        }
+        FMPI2C1->CR2           = cr2;
+        state->active_uses_dma = false;
+        return true;
+    }
+
+    I2C_TypeDef* i2c_instance = HW_I2C_MAP[channel].instance;
+    const bool   use_dma      = ( transaction->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_TX )
+                                    ? ( ( state->config.tx_transfer_path == HW_I2C_TRANSFER_DMA )
+                                 && ( transaction->length > 0U ) )
+                                    : ( state->config.rx_transfer_path == HW_I2C_TRANSFER_DMA );
+    state->active_uses_dma    = use_dma;
+
+    if ( use_dma )
+    {
+        DMA_Stream_TypeDef* stream =
+            ( transaction->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_TX )
+                ? HW_I2C_MAP[channel].dma_tx
+                : HW_I2C_MAP[channel].dma_rx;
+        const bool memory_to_peripheral =
+            transaction->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_TX;
+        const uint8_t* memory =
+            memory_to_peripheral ? transaction->tx_payload : state->rx_staging_buffer;
+
+        HW_I2C_DMA_Stream_Clear_Flags( stream );
+        HW_I2C_Configure_DMA_Stream( stream, HW_I2C_MAP[channel].dma_channel_bits,
+                                     memory_to_peripheral,
+                                     ( uint32_t )( uintptr_t )&i2c_instance->DR,
+                                     ( uint32_t )( uintptr_t )memory, transaction->length );
+    }
+
+    HW_I2C_Start_Master_Transfer( i2c_instance, transaction->transfer_kind, use_dma );
+    return true;
+}
+
+static void HW_I2C_Complete_Master_Queue_Head( HWI2CChannel_T channel )
+{
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+
+    if ( !state->master_queue_active || ( state->master_queue_count == 0U ) )
+    {
+        return;
+    }
+
+    if ( ( state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_RX )
+         && !HW_I2C_Publish_Received_Message( state ) )
+    {
+        HW_I2C_Abort_Transfer( channel, HW_I2C_STATUS_OVERFLOW );
+        return;
+    }
+
+    HW_I2C_Cleanup_Active_Transfer( channel );
+    state->master_queue_head =
+        ( uint8_t )( ( state->master_queue_head + 1U ) % HW_I2C_MASTER_TRANSACTION_QUEUE_DEPTH );
+    state->master_queue_count--;
+
+    if ( state->master_queue_count == 0U )
+    {
+        state->restart_pending           = false;
+        state->completion_condition_seen = true;
+    }
+    else
+    {
+        state->restart_pending           = true;
+        state->completion_condition_seen = false;
+    }
 }
 
 static void HW_I2C_Configure_DMA_Stream( DMA_Stream_TypeDef* stream, uint32_t channel_bits,
@@ -522,25 +871,36 @@ static inline void HW_I2C_DMA_Stream_Clear_Flags( DMA_Stream_TypeDef* stream )
 static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
                                                   I2C_TypeDef*   i2c_instance )
 {
-    /**
-     * @brief Service I2C events for an external I2C channel (I2C3/I2C2).
-     *
-     * This function is intended to be called from the I2C event interrupt
-     * handler. It inspects SR1 to determine the event and then updates
-     * peripheral registers and the software state machine accordingly.
-     *
-     * Events handled (non-exhaustive):
-     * - SB: Start bit detected, send address+R/W
-     * - ADDR: Address matched, adjust ACK behaviour for short reads
-     * - TXE/BTF: Transmit data register empty / byte transfer finished
-     * - RXNE: Received byte available, push into ring buffer
-     * - STOPF: Stop detected, finish transfer and cleanup
-     */
-
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
     uint32_t             sr1   = i2c_instance->SR1;
 
-    /* Start bit - master has sent START; write (addr<<1 | R/W) into DR */
+    if ( ( sr1 & ( I2C_SR1_AF | I2C_SR1_ARLO | I2C_SR1_BERR | I2C_SR1_OVR | I2C_SR1_TIMEOUT ) )
+         != 0U )
+    {
+        if ( ( sr1 & I2C_SR1_AF ) != 0U )
+        {
+            LL_I2C_ClearFlag_AF( i2c_instance );
+        }
+        if ( ( sr1 & I2C_SR1_ARLO ) != 0U )
+        {
+            LL_I2C_ClearFlag_ARLO( i2c_instance );
+        }
+        if ( ( sr1 & I2C_SR1_BERR ) != 0U )
+        {
+            LL_I2C_ClearFlag_BERR( i2c_instance );
+        }
+        if ( ( sr1 & I2C_SR1_OVR ) != 0U )
+        {
+            LL_I2C_ClearFlag_OVR( i2c_instance );
+        }
+        if ( ( sr1 & I2C_SR1_TIMEOUT ) != 0U )
+        {
+            LL_I2C_ClearFlag_TIMEOUT( i2c_instance );
+        }
+        HW_I2C_Abort_Transfer( channel, HW_I2C_STATUS_ERROR );
+        return;
+    }
+
     if ( ( sr1 & I2C_SR1_SB ) != 0U )
     {
         const uint8_t direction_bit =
@@ -550,9 +910,6 @@ static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
         return;
     }
 
-    /* Address matched - read SR1/SR2 to clear the flag. For master RX with
-       a short expected length, prepare to NACK so the peripheral stops after
-       the final byte. */
     if ( ( sr1 & I2C_SR1_ADDR ) != 0U )
     {
         volatile uint32_t clear_addr = i2c_instance->SR1;
@@ -569,13 +926,10 @@ static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
         return;
     }
 
-    /* Transmit path: if not using DMA, service TXE by writing next byte
-       or sending a filler byte for slave TX when data exhausted. When BTF
-       indicates completion and no data remains, finish the transfer. */
     if ( state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_TX
          || state->transfer_kind == HW_I2C_TRANSFER_KIND_SLAVE_TX )
     {
-        bool tx_dma_mode = ( state->config.tx_transfer_path == HW_I2C_TRANSFER_DMA );
+        const bool tx_dma_mode = state->active_uses_dma;
 
         if ( !tx_dma_mode && ( ( sr1 & I2C_SR1_TXE ) != 0U ) )
         {
@@ -597,7 +951,7 @@ static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
              && ( ( !tx_dma_mode ) || state->dma_tx_transfer_complete )
              && ( ( sr1 & I2C_SR1_BTF ) != 0U ) )
         {
-            HW_I2C_Finish_Transfer( channel, i2c_instance );
+            HW_I2C_Request_Master_Stop( channel );
             return;
         }
 
@@ -611,8 +965,6 @@ static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
         }
     }
 
-    /* Receive path: read DR when RXNE set and push into ring buffer. If the
-       transfer expected length reaches 0, finish the transfer. */
     if ( state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_RX
          || state->transfer_kind == HW_I2C_TRANSFER_KIND_SLAVE_RX )
     {
@@ -621,52 +973,88 @@ static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
             if ( ( state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_RX )
                  && ( state->rx_expected_length <= 1U ) )
             {
-                /* For the final byte(s), NACK and generate STOP to end read. */
                 LL_I2C_AcknowledgeNextData( i2c_instance, LL_I2C_NACK );
-                LL_I2C_GenerateStopCondition( i2c_instance );
             }
 
             uint8_t data_byte = ( uint8_t )i2c_instance->DR;
-            if ( !HW_I2C_Ring_Push_Byte( state, data_byte ) )
+            if ( state->rx_received_length >= state->rx_transfer_length )
             {
-                /* Ring buffer overflow - abort transfer and mark error. */
-                state->overflow_occurred = true;
-                HW_I2C_Abort_Transfer( channel, i2c_instance );
+                HW_I2C_Abort_Transfer( channel, HW_I2C_STATUS_OVERFLOW );
                 return;
             }
+            state->rx_staging_buffer[state->rx_received_length] = data_byte;
+            state->rx_received_length++;
 
             if ( state->rx_expected_length > 0U )
             {
                 state->rx_expected_length--;
             }
 
-            if ( state->rx_expected_length == 0U )
+            if ( ( state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_RX )
+                 && ( state->rx_expected_length == 0U ) )
             {
-                HW_I2C_Finish_Transfer( channel, i2c_instance );
+                HW_I2C_Request_Master_Stop( channel );
                 return;
             }
         }
     }
 
-    /* STOP detected by peripheral - clear flag and finish transfer. */
     if ( ( sr1 & I2C_SR1_STOPF ) != 0U )
     {
         LL_I2C_ClearFlag_STOP( i2c_instance );
-        HW_I2C_Finish_Transfer( channel, i2c_instance );
+
+        if ( state->master_queue_active )
+        {
+            state->completion_condition_seen = true;
+            state->restart_pending           = true;
+            return;
+        }
+
+        if ( state->transfer_kind == HW_I2C_TRANSFER_KIND_SLAVE_RX )
+        {
+            if ( state->active_uses_dma )
+            {
+                const uint16_t remaining = ( uint16_t )HW_I2C_MAP[channel].dma_rx->NDTR;
+                state->rx_received_length =
+                    ( remaining <= state->rx_transfer_length )
+                        ? ( uint16_t )( state->rx_transfer_length - remaining )
+                        : 0U;
+            }
+
+            if ( !HW_I2C_Publish_Received_Message( state ) )
+            {
+                HW_I2C_Abort_Transfer( channel, HW_I2C_STATUS_OVERFLOW );
+                return;
+            }
+        }
+
+        HW_I2C_Cleanup_Active_Transfer( channel );
+        state->completion_condition_seen = !HW_I2C_Peripheral_Is_Busy( channel );
     }
 }
 
-static inline void HW_I2C_Service_Event_FMPI2C1( HWI2CChannelState_T* state )
+static inline void HW_I2C_Service_Event_FMPI2C1( HWI2CChannel_T channel )
 {
-    /**
-     * @brief Service FMPI2C1 events.
-     *
-     * FMPI2C1 (internal high-speed I2C) uses different register names but
-     * the handling pattern is similar: write TXDR on TXIS, read RXDR on
-     * RXNE and push to ring buffer, and respond to STOP/TC/NACK/error flags.
-     */
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+    uint32_t             isr   = FMPI2C1->ISR;
 
-    uint32_t isr = FMPI2C1->ISR;
+    if ( ( isr & FMPI2C_ISR_NACKF ) != 0U )
+    {
+        LL_FMPI2C_ClearFlag_NACK( FMPI2C1 );
+        HW_I2C_Abort_Transfer( channel, HW_I2C_STATUS_ERROR );
+        return;
+    }
+
+    if ( ( isr & ( FMPI2C_ISR_BERR | FMPI2C_ISR_ARLO | FMPI2C_ISR_OVR | FMPI2C_ISR_TIMEOUT ) )
+         != 0U )
+    {
+        LL_FMPI2C_ClearFlag_BERR( FMPI2C1 );
+        LL_FMPI2C_ClearFlag_ARLO( FMPI2C1 );
+        LL_FMPI2C_ClearFlag_OVR( FMPI2C1 );
+        LL_FMPI2C_ClearSMBusFlag_TIMEOUT( FMPI2C1 );
+        HW_I2C_Abort_Transfer( channel, HW_I2C_STATUS_ERROR );
+        return;
+    }
 
     /* Transmit ready: write next byte if available. */
     if ( ( isr & FMPI2C_ISR_TXIS ) != 0U )
@@ -679,30 +1067,27 @@ static inline void HW_I2C_Service_Event_FMPI2C1( HWI2CChannelState_T* state )
         }
     }
 
-    /* Receive ready: read byte and push into ring buffer. */
     if ( ( isr & FMPI2C_ISR_RXNE ) != 0U )
     {
         uint8_t data_byte = ( uint8_t )FMPI2C1->RXDR;
-        if ( !HW_I2C_Ring_Push_Byte( state, data_byte ) )
+        if ( state->rx_received_length >= state->rx_transfer_length )
         {
-            /* Ring buffer overflow - abort transfer and mark error. */
-            state->overflow_occurred    = true;
-            state->transfer_in_progress = false;
-            state->transfer_kind        = HW_I2C_TRANSFER_KIND_IDLE;
+            HW_I2C_Abort_Transfer( channel, HW_I2C_STATUS_OVERFLOW );
             return;
         }
+        state->rx_staging_buffer[state->rx_received_length] = data_byte;
+        state->rx_received_length++;
         if ( state->rx_expected_length > 0U )
         {
             state->rx_expected_length--;
         }
     }
 
-    /* STOP flag: clear and mark transfer finished. */
     if ( ( isr & FMPI2C_ISR_STOPF ) != 0U )
     {
         LL_FMPI2C_ClearFlag_STOP( FMPI2C1 );
-        state->transfer_in_progress = false;
-        state->transfer_kind        = HW_I2C_TRANSFER_KIND_IDLE;
+        state->completion_condition_seen = true;
+        state->restart_pending           = true;
         return;
     }
 
@@ -710,26 +1095,6 @@ static inline void HW_I2C_Service_Event_FMPI2C1( HWI2CChannelState_T* state )
     if ( ( isr & FMPI2C_ISR_TC ) != 0U )
     {
         LL_FMPI2C_GenerateStopCondition( FMPI2C1 );
-    }
-
-    /* NACK received: clear and abort transfer. */
-    if ( ( isr & FMPI2C_ISR_NACKF ) != 0U )
-    {
-        LL_FMPI2C_ClearFlag_NACK( FMPI2C1 );
-        state->transfer_in_progress = false;
-        state->transfer_kind        = HW_I2C_TRANSFER_KIND_IDLE;
-    }
-
-    /* Bus error conditions: clear peripheral flags and abort. */
-    if ( ( isr & ( FMPI2C_ISR_BERR | FMPI2C_ISR_ARLO | FMPI2C_ISR_OVR | FMPI2C_ISR_TIMEOUT ) )
-         != 0U )
-    {
-        LL_FMPI2C_ClearFlag_BERR( FMPI2C1 );
-        LL_FMPI2C_ClearFlag_ARLO( FMPI2C1 );
-        LL_FMPI2C_ClearFlag_OVR( FMPI2C1 );
-        LL_FMPI2C_ClearSMBusFlag_TIMEOUT( FMPI2C1 );
-        state->transfer_in_progress = false;
-        state->transfer_kind        = HW_I2C_TRANSFER_KIND_IDLE;
     }
 }
 
@@ -743,12 +1108,10 @@ static inline void HW_I2C_Service_Event_FMPI2C1( HWI2CChannelState_T* state )
  */
 static inline void HW_I2C_Service_Event_IRQ( HWI2CChannel_T channel )
 {
-    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
-
     /* FMPI2C1 has a different register interface; route to dedicated handler. */
     if ( channel == HW_I2C_CHANNEL_FMPI2C1 )
     {
-        HW_I2C_Service_Event_FMPI2C1( state );
+        HW_I2C_Service_Event_FMPI2C1( channel );
         return;
     }
 
@@ -774,16 +1137,13 @@ static inline void HW_I2C_Service_DMA_Rx_IRQ( HWI2CChannel_T channel )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
 
-    /* Get the DMA stream and I2C peripheral for this channel. */
-    DMA_Stream_TypeDef* rx_stream    = HW_I2C_MAP[channel].dma_rx;
-    I2C_TypeDef*        i2c_instance = HW_I2C_MAP[channel].instance;
+    DMA_Stream_TypeDef* rx_stream = HW_I2C_MAP[channel].dma_rx;
 
     /* Check for DMA transfer error (e.g., FIFO error). */
     if ( HW_I2C_DMA_Stream_Has_TE( rx_stream ) )
     {
         HW_I2C_DMA_Stream_Clear_Flags( rx_stream );
-        /* Error detected; abort the transfer and cleanup. */
-        HW_I2C_Abort_Transfer( channel, i2c_instance );
+        HW_I2C_Abort_Transfer( channel, HW_I2C_STATUS_ERROR );
         return;
     }
 
@@ -792,22 +1152,14 @@ static inline void HW_I2C_Service_DMA_Rx_IRQ( HWI2CChannel_T channel )
     {
         HW_I2C_DMA_Stream_Clear_Flags( rx_stream );
 
-        /* Copy all received bytes from the linear DMA buffer into the ring buffer
-           so they can be retrieved via HW_I2C_Peek_Received/Consume_Received. */
-        for ( uint16_t idx = 0U; idx < state->dma_rx_expected_length; ++idx )
-        {
-            if ( !HW_I2C_Ring_Push_Byte( state, state->dma_rx_linear_buffer[idx] ) )
-            {
-                /* Ring buffer overflow - abort transfer and mark error. */
-                state->overflow_occurred = true;
-                HW_I2C_Abort_Transfer( channel, i2c_instance );
-                return;
-            }
-        }
+        rx_stream->CR &= ~DMA_SxCR_EN;
+        state->rx_received_length       = state->dma_rx_expected_length;
+        state->dma_rx_transfer_complete = true;
 
-        state->dma_rx_expected_length = 0U;
-        /* Transfer complete; cleanup and release I2C resources. */
-        HW_I2C_Finish_Transfer( channel, i2c_instance );
+        if ( state->transfer_kind == HW_I2C_TRANSFER_KIND_MASTER_RX )
+        {
+            HW_I2C_Request_Master_Stop( channel );
+        }
     }
 }
 
@@ -831,8 +1183,7 @@ static inline void HW_I2C_Service_DMA_Tx_IRQ( HWI2CChannel_T channel )
     if ( HW_I2C_DMA_Stream_Has_TE( tx_stream ) )
     {
         HW_I2C_DMA_Stream_Clear_Flags( tx_stream );
-        /* Error detected; abort the transfer and cleanup. */
-        HW_I2C_Abort_Transfer( channel, i2c_instance );
+        HW_I2C_Abort_Transfer( channel, HW_I2C_STATUS_ERROR );
         return;
     }
 
@@ -849,7 +1200,7 @@ static inline void HW_I2C_Service_DMA_Tx_IRQ( HWI2CChannel_T channel )
             state->dma_tx_transfer_complete = true;
             if ( ( i2c_instance->SR1 & I2C_SR1_BTF ) != 0U )
             {
-                HW_I2C_Finish_Transfer( channel, i2c_instance );
+                HW_I2C_Request_Master_Stop( channel );
             }
         }
         /* For slave transmit, mark DMA complete but don't finish yet; wait for
@@ -857,11 +1208,6 @@ static inline void HW_I2C_Service_DMA_Tx_IRQ( HWI2CChannel_T channel )
         else if ( state->transfer_kind == HW_I2C_TRANSFER_KIND_SLAVE_TX )
         {
             state->dma_tx_transfer_complete = true;
-        }
-        /* For other transfer types (e.g., slave receive), finish immediately. */
-        else
-        {
-            HW_I2C_Finish_Transfer( channel, i2c_instance );
         }
     }
 }
@@ -891,26 +1237,21 @@ HWI2CStatus_T HW_I2C_Configure_Channel( HWI2CChannel_T channel, const HWI2CChann
         return HW_I2C_STATUS_INVALID_PARAM;
     }
 
-    HWI2CChannelState_T* state      = &hw_i2c_channel_state[channel];
-    state->config                   = *config;
-    state->configured               = true;
-    state->transfer_in_progress     = false;
-    state->transfer_kind            = HW_I2C_TRANSFER_KIND_IDLE;
-    state->tx_stage_length          = 0U;
-    state->tx_remaining             = 0U;
-    state->dma_tx_transfer_complete = false;
-    state->rx_expected_length       = 0U;
-    state->dma_rx_expected_length   = 0U;
-    state->rx_head                  = 0U;
-    state->rx_tail                  = 0U;
-    state->overflow_occurred        = false;
-    I2C_TypeDef* i2c_instance       = HW_I2C_MAP[channel].instance;
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+    memset( state, 0, sizeof( *state ) );
+    state->config                    = *config;
+    state->configured                = true;
+    state->transfer_kind             = HW_I2C_TRANSFER_KIND_IDLE;
+    state->completion_condition_seen = true;
+    state->transfer_result           = HW_I2C_STATUS_OK;
+    I2C_TypeDef* i2c_instance        = HW_I2C_MAP[channel].instance;
     if ( i2c_instance == NULL )
     {
         return HW_I2C_STATUS_INVALID_PARAM;
     }
 
     HW_I2C_Enable_Clock_For_Channel( channel );
+    HW_I2C_Enable_Error_IRQ_For_Channel( channel );
     HW_I2C_Set_Speed_And_Address( i2c_instance, config->speed, config->own_address_7bit );
 
     if ( config->mode == HW_I2C_MODE_SLAVE )
@@ -945,24 +1286,19 @@ HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
         return HW_I2C_STATUS_INVALID_PARAM;
     }
 
-    HWI2CChannelState_T* state      = &hw_i2c_channel_state[HW_I2C_CHANNEL_FMPI2C1];
-    state->configured               = true;
-    state->transfer_in_progress     = false;
-    state->transfer_kind            = HW_I2C_TRANSFER_KIND_IDLE;
-    state->tx_stage_length          = 0U;
-    state->tx_remaining             = 0U;
-    state->dma_tx_transfer_complete = false;
-    state->rx_expected_length       = 0U;
-    state->dma_rx_expected_length   = 0U;
-    state->rx_head                  = 0U;
-    state->rx_tail                  = 0U;
-    state->overflow_occurred        = false;
-    state->config.mode              = HW_I2C_MODE_MASTER;
-    state->config.speed             = HW_I2C_SPEED_100KHZ;
-    state->config.tx_transfer_path  = HW_I2C_TRANSFER_INTERRUPT;
-    state->config.rx_transfer_path  = HW_I2C_TRANSFER_INTERRUPT;
-    state->config.own_address_7bit  = own_address_7bit;
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[HW_I2C_CHANNEL_FMPI2C1];
+    memset( state, 0, sizeof( *state ) );
+    state->configured                = true;
+    state->transfer_kind             = HW_I2C_TRANSFER_KIND_IDLE;
+    state->completion_condition_seen = true;
+    state->transfer_result           = HW_I2C_STATUS_OK;
+    state->config.mode               = HW_I2C_MODE_MASTER;
+    state->config.speed              = HW_I2C_SPEED_100KHZ;
+    state->config.tx_transfer_path   = HW_I2C_TRANSFER_INTERRUPT;
+    state->config.rx_transfer_path   = HW_I2C_TRANSFER_INTERRUPT;
+    state->config.own_address_7bit   = own_address_7bit;
     HW_I2C_Enable_Clock_For_Channel( HW_I2C_CHANNEL_FMPI2C1 );
+    HW_I2C_Enable_Error_IRQ_For_Channel( HW_I2C_CHANNEL_FMPI2C1 );
 
     LL_FMPI2C_Disable( FMPI2C1 );
     LL_FMPI2C_SetTiming( FMPI2C1, FMPI2C1_TIMINGR );
@@ -972,6 +1308,7 @@ HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
     LL_FMPI2C_Enable( FMPI2C1 );
     LL_FMPI2C_EnableIT_TX( FMPI2C1 );
     LL_FMPI2C_EnableIT_RX( FMPI2C1 );
+    LL_FMPI2C_EnableIT_NACK( FMPI2C1 );
     LL_FMPI2C_EnableIT_TC( FMPI2C1 );
     LL_FMPI2C_EnableIT_STOP( FMPI2C1 );
     LL_FMPI2C_EnableIT_ERR( FMPI2C1 );
@@ -979,221 +1316,231 @@ HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
     return HW_I2C_STATUS_OK;
 }
 
-/**
- * @brief Load data into the transmit stage buffer.
- *
- * Prepares data for transmission. Must be called before triggering a transmit.
- * Cannot be called while a transfer is in progress on the channel.
- *
- * @param[in] channel  I2C channel
- * @param[in] data     Pointer to data to transmit. May be NULL if length is 0.
- * @param[in] length   Number of bytes to transmit (max HW_I2C_TX_STAGE_SIZE)
- *
- * @return true if data was loaded successfully
- * @return false if transfer is in progress or length exceeds buffer size
- */
-// TODO: allow for queueing system of Tx data
+HWI2CStatus_T HW_I2C_Enqueue_Master_Transmit( HWI2CChannel_T channel, uint16_t device_address_7bit,
+                                              const uint8_t* payload, uint16_t payload_length )
+{
+    if ( !HW_I2C_Channel_Is_Valid( channel ) || !HW_I2C_Address_Is_Valid( device_address_7bit )
+         || ( ( payload == NULL ) && ( payload_length > 0U ) )
+         || ( payload_length > HW_I2C_TX_MAX_MESSAGE_SIZE )
+         || ( ( channel == HW_I2C_CHANNEL_FMPI2C1 ) && ( payload_length > 255U ) ) )
+    {
+        return HW_I2C_STATUS_INVALID_PARAM;
+    }
+
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+    if ( !state->configured || ( state->config.mode != HW_I2C_MODE_MASTER ) )
+    {
+        return HW_I2C_STATUS_NOT_CONFIGURED;
+    }
+
+    HWI2CIrqState_T irq_state = HW_I2C_Channel_Irqs_Disable( channel );
+    if ( state->transfer_result != HW_I2C_STATUS_OK )
+    {
+        HWI2CStatus_T result = state->transfer_result;
+        HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+        return result;
+    }
+
+    if ( state->master_queue_count >= HW_I2C_MASTER_TRANSACTION_QUEUE_DEPTH )
+    {
+        HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+        return HW_I2C_STATUS_BUSY;
+    }
+
+    HWI2CMasterTransaction_T* transaction = &state->master_queue[state->master_queue_tail];
+    transaction->transfer_kind            = HW_I2C_TRANSFER_KIND_MASTER_TX;
+    transaction->target_address_7bit      = device_address_7bit;
+    transaction->length                   = payload_length;
+    if ( payload_length > 0U )
+    {
+        memcpy( transaction->tx_payload, payload, ( size_t )payload_length );
+    }
+
+    state->master_queue_tail =
+        ( uint8_t )( ( state->master_queue_tail + 1U ) % HW_I2C_MASTER_TRANSACTION_QUEUE_DEPTH );
+    state->master_queue_count++;
+    state->completion_condition_seen = false;
+    ( void )HW_I2C_Pump_Master_Queue( channel );
+    HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+
+    return HW_I2C_STATUS_OK;
+}
+
+HWI2CStatus_T HW_I2C_Enqueue_Master_Receive( HWI2CChannel_T channel, uint16_t device_address_7bit,
+                                             uint16_t expected_length )
+{
+    if ( !HW_I2C_Channel_Is_Valid( channel ) || !HW_I2C_Address_Is_Valid( device_address_7bit )
+         || ( expected_length == 0U ) || ( expected_length > HW_I2C_RX_BUFFER_SIZE )
+         || ( ( channel == HW_I2C_CHANNEL_FMPI2C1 ) && ( expected_length > 255U ) ) )
+    {
+        return HW_I2C_STATUS_INVALID_PARAM;
+    }
+
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+    if ( !state->configured || ( state->config.mode != HW_I2C_MODE_MASTER ) )
+    {
+        return HW_I2C_STATUS_NOT_CONFIGURED;
+    }
+
+    HWI2CIrqState_T irq_state = HW_I2C_Channel_Irqs_Disable( channel );
+    if ( state->transfer_result != HW_I2C_STATUS_OK )
+    {
+        HWI2CStatus_T result = state->transfer_result;
+        HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+        return result;
+    }
+
+    if ( state->master_queue_count >= HW_I2C_MASTER_TRANSACTION_QUEUE_DEPTH )
+    {
+        HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+        return HW_I2C_STATUS_BUSY;
+    }
+
+    HWI2CMasterTransaction_T* transaction = &state->master_queue[state->master_queue_tail];
+    transaction->transfer_kind            = HW_I2C_TRANSFER_KIND_MASTER_RX;
+    transaction->target_address_7bit      = device_address_7bit;
+    transaction->length                   = expected_length;
+
+    state->master_queue_tail =
+        ( uint8_t )( ( state->master_queue_tail + 1U ) % HW_I2C_MASTER_TRANSACTION_QUEUE_DEPTH );
+    state->master_queue_count++;
+    state->completion_condition_seen = false;
+    ( void )HW_I2C_Pump_Master_Queue( channel );
+    HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+
+    return HW_I2C_STATUS_OK;
+}
+
+void HW_I2C_Service_Transaction_Queue( HWI2CChannel_T channel )
+{
+    if ( !HW_I2C_Channel_Is_Valid( channel ) )
+    {
+        return;
+    }
+
+    HWI2CIrqState_T      irq_state = HW_I2C_Channel_Irqs_Disable( channel );
+    HWI2CChannelState_T* state     = &hw_i2c_channel_state[channel];
+    const bool           bus_idle  = !HW_I2C_Peripheral_Is_Busy( channel );
+
+    if ( state->master_queue_active && state->completion_condition_seen && bus_idle )
+    {
+        HW_I2C_Complete_Master_Queue_Head( channel );
+    }
+
+    if ( !state->master_queue_active && ( state->master_queue_count > 0U )
+         && !HW_I2C_Peripheral_Is_Busy( channel ) )
+    {
+        ( void )HW_I2C_Pump_Master_Queue( channel );
+    }
+
+    if ( ( state->master_queue_count == 0U ) && !state->transfer_in_progress
+         && !HW_I2C_Peripheral_Is_Busy( channel ) )
+    {
+        state->restart_pending           = false;
+        state->completion_condition_seen = true;
+    }
+
+    HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+}
+
+bool HW_I2C_Is_Transaction_Queue_Complete( HWI2CChannel_T channel )
+{
+    if ( !HW_I2C_Channel_Is_Valid( channel ) )
+    {
+        return false;
+    }
+
+    HW_I2C_Service_Transaction_Queue( channel );
+    HWI2CIrqState_T      irq_state   = HW_I2C_Channel_Irqs_Disable( channel );
+    HWI2CChannelState_T* state       = &hw_i2c_channel_state[channel];
+    const bool           is_complete = state->configured && ( state->master_queue_count == 0U )
+                             && !state->master_queue_active && !state->transfer_in_progress
+                             && !HW_I2C_Peripheral_Is_Busy( channel )
+                             && state->completion_condition_seen;
+    HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+    return is_complete;
+}
+
+HWI2CStatus_T HW_I2C_Get_And_Clear_Transfer_Result( HWI2CChannel_T channel )
+{
+    if ( !HW_I2C_Channel_Is_Valid( channel ) )
+    {
+        return HW_I2C_STATUS_INVALID_PARAM;
+    }
+
+    HWI2CIrqState_T      irq_state = HW_I2C_Channel_Irqs_Disable( channel );
+    HWI2CChannelState_T* state     = &hw_i2c_channel_state[channel];
+    HWI2CStatus_T        result    = state->transfer_result;
+    state->transfer_result         = HW_I2C_STATUS_OK;
+    HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+    return result;
+}
+
 inline bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data, uint16_t length )
 {
-    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
-
-    if ( length > HW_I2C_TX_STAGE_SIZE )
+    if ( !HW_I2C_Channel_Is_Valid( channel ) || ( length > HW_I2C_TX_STAGE_SIZE )
+         || ( ( data == NULL ) && ( length > 0U ) ) )
     {
         return false;
     }
 
+    HWI2CIrqState_T      irq_state = HW_I2C_Channel_Irqs_Disable( channel );
+    HWI2CChannelState_T* state     = &hw_i2c_channel_state[channel];
     if ( state->transfer_in_progress )
     {
+        HW_I2C_Channel_Irqs_Restore( channel, irq_state );
         return false;
     }
 
-    if ( ( data != NULL ) && ( length > 0U ) )
+    if ( length > 0U )
     {
-        memcpy( state->tx_stage_buffer, data, ( size_t )length );
+        memcpy( state->slave_tx_stage_buffer, data, ( size_t )length );
     }
-
-    state->tx_stage_length = length;
+    state->slave_tx_stage_length = length;
+    HW_I2C_Channel_Irqs_Restore( channel, irq_state );
     return true;
 }
 
-/**
- * @brief Trigger a master transmit operation on an external I2C channel.
- *
- * Initiates an I2C master transmit to the specified device address on an external channel
- * (I2C3 or I2C2) using data previously loaded with HW_I2C_Load_Stage_Buffer().
- * Supports both interrupt and DMA-based transfer paths as configured.
- *
- * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
- * @param[in] device_address_7bit   7-bit slave address to transmit to
- *
- * @return true if transfer was initiated successfully
- * @return false if another transfer is already in progress
- */
 bool HW_I2C_Trigger_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit )
 {
-    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
-
-    if ( state->transfer_in_progress )
+    if ( !HW_I2C_Is_External_Channel( channel ) )
     {
         return false;
     }
 
-    state->target_address_7bit      = device_address_7bit;
-    state->transfer_kind            = HW_I2C_TRANSFER_KIND_MASTER_TX;
-    state->transfer_in_progress     = true;
-    state->tx_ptr                   = state->tx_stage_buffer;
-    state->tx_remaining             = state->tx_stage_length;
-    state->dma_tx_transfer_complete = false;
-    state->rx_expected_length       = 0U;
-
-    I2C_TypeDef* i2c_instance = HW_I2C_MAP[channel].instance;
-    bool         use_dma      = ( state->config.tx_transfer_path == HW_I2C_TRANSFER_DMA );
-
-    if ( use_dma )
-    {
-        DMA_Stream_TypeDef* tx_stream = HW_I2C_MAP[channel].dma_tx;
-
-        HW_I2C_DMA_Stream_Clear_Flags( tx_stream );
-        HW_I2C_Configure_DMA_Stream( tx_stream, HW_I2C_MAP[channel].dma_channel_bits, true,
-                                     ( uint32_t )( uintptr_t )&i2c_instance->DR,
-                                     ( uint32_t )( uintptr_t )state->tx_stage_buffer,
-                                     state->tx_stage_length );
-    }
-
-    HW_I2C_Start_Master_Transfer( i2c_instance, state->transfer_kind, use_dma );
-
-    return true;
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+    return HW_I2C_Enqueue_Master_Transmit( channel, device_address_7bit,
+                                           state->slave_tx_stage_buffer,
+                                           state->slave_tx_stage_length )
+           == HW_I2C_STATUS_OK;
 }
 
-/**
- * @brief Trigger a master transmit operation on the internal FMPI2C1 channel.
- *
- * Initiates an I2C master transmit to the specified device address on the internal
- * FMPI2C1 channel using data previously loaded with HW_I2C_Load_Stage_Buffer().
- * The FMPI2C1 channel uses interrupt-based transfer path only.
- *
- * @param[in] device_address_7bit   7-bit slave address to transmit to
- *
- * @return true if transfer was initiated successfully
- * @return false if another transfer is already in progress
- */
 inline bool HW_I2C_Trigger_Master_Transmit_Internal( uint16_t device_address_7bit )
 {
     HWI2CChannelState_T* state = &hw_i2c_channel_state[HW_I2C_CHANNEL_FMPI2C1];
-
-    if ( state->transfer_in_progress )
-    {
-        return false;
-    }
-
-    state->target_address_7bit      = device_address_7bit;
-    state->transfer_kind            = HW_I2C_TRANSFER_KIND_MASTER_TX;
-    state->transfer_in_progress     = true;
-    state->tx_ptr                   = state->tx_stage_buffer;
-    state->tx_remaining             = state->tx_stage_length;
-    state->dma_tx_transfer_complete = false;
-    state->rx_expected_length       = 0U;
-
-    // LL_FMPI2C_GenerateStartCondition( FMPI2C1 );
-    FMPI2C1->CR2 = ( ( uint32_t )device_address_7bit << 1U )
-                   | ( ( uint32_t )state->tx_stage_length << FMPI2C_CR2_NBYTES_Pos )
-                   | FMPI2C_CR2_START | FMPI2C_CR2_AUTOEND;
-
-    return true;
+    return HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_FMPI2C1, device_address_7bit,
+                                           state->slave_tx_stage_buffer,
+                                           state->slave_tx_stage_length )
+           == HW_I2C_STATUS_OK;
 }
 
-/**
- * @brief Trigger a master receive operation on an external I2C channel.
- *
- * Initiates an I2C master receive from the specified device address on an external channel
- * (I2C3 or I2C2). Received data will be available via HW_I2C_Peek_Received() and consumed
- * with HW_I2C_Consume_Received(). Supports both interrupt and DMA-based transfer paths
- * as configured.
- *
- * The overflow flag is cleared when this new receive transfer is armed so the next
- * overflow report only reflects the current transfer.
- *
- * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
- * @param[in] device_address_7bit   7-bit slave address to receive from
- * @param[in] expected_length       Number of bytes expected to receive
- *
- * @return true if transfer was initiated successfully
- * @return false if another transfer is already in progress
- */
 bool HW_I2C_Trigger_Master_Receive_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
                                              uint16_t expected_length )
 {
-    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
-
-    if ( state->transfer_in_progress )
+    if ( !HW_I2C_Is_External_Channel( channel ) )
     {
         return false;
     }
-
-    state->target_address_7bit    = device_address_7bit;
-    state->transfer_kind          = HW_I2C_TRANSFER_KIND_MASTER_RX;
-    state->transfer_in_progress   = true;
-    state->rx_expected_length     = expected_length;
-    state->dma_rx_expected_length = expected_length;
-    state->overflow_occurred      = false;
-
-    I2C_TypeDef* i2c_instance = HW_I2C_MAP[channel].instance;
-    bool         use_dma      = ( state->config.rx_transfer_path == HW_I2C_TRANSFER_DMA );
-
-    if ( use_dma )
-    {
-        DMA_Stream_TypeDef* rx_stream = HW_I2C_MAP[channel].dma_rx;
-
-        HW_I2C_DMA_Stream_Clear_Flags( rx_stream );
-        HW_I2C_Configure_DMA_Stream( rx_stream, HW_I2C_MAP[channel].dma_channel_bits, false,
-                                     ( uint32_t )( uintptr_t )&i2c_instance->DR,
-                                     ( uint32_t )( uintptr_t )state->dma_rx_linear_buffer,
-                                     expected_length );
-    }
-
-    HW_I2C_Start_Master_Transfer( i2c_instance, state->transfer_kind, use_dma );
-
-    return true;
+    return HW_I2C_Enqueue_Master_Receive( channel, device_address_7bit, expected_length )
+           == HW_I2C_STATUS_OK;
 }
 
-/**
- * @brief Trigger a master receive operation on the internal FMPI2C1 channel.
- *
- * Initiates an I2C master receive from the specified device address on the internal
- * FMPI2C1 channel. Received data will be available via HW_I2C_Peek_Received() and consumed
- * with HW_I2C_Consume_Received(). The FMPI2C1 channel uses interrupt-based transfer path only.
- *
- * The overflow flag is cleared when this new receive transfer is armed so the next
- * overflow report only reflects the current transfer.
- *
- * @param[in] device_address_7bit   7-bit slave address to receive from
- * @param[in] expected_length       Number of bytes expected to receive
- *
- * @return true if transfer was initiated successfully
- * @return false if another transfer is already in progress
- */
 inline bool HW_I2C_Trigger_Master_Receive_Internal( uint16_t device_address_7bit,
                                                     uint16_t expected_length )
 {
-    HWI2CChannelState_T* state = &hw_i2c_channel_state[HW_I2C_CHANNEL_FMPI2C1];
-
-    if ( state->transfer_in_progress || expected_length > HW_I2C_RX_BUFFER_SIZE )
-    {
-        return false;
-    }
-
-    state->target_address_7bit    = device_address_7bit;
-    state->transfer_kind          = HW_I2C_TRANSFER_KIND_MASTER_RX;
-    state->transfer_in_progress   = true;
-    state->rx_expected_length     = expected_length;
-    state->dma_rx_expected_length = expected_length;
-    state->overflow_occurred      = false;
-
-    FMPI2C1->CR2 = ( ( uint32_t )device_address_7bit << 1U ) | FMPI2C_CR2_RD_WRN
-                   | ( ( uint32_t )expected_length << FMPI2C_CR2_NBYTES_Pos ) | FMPI2C_CR2_START
-                   | FMPI2C_CR2_AUTOEND;
-
-    return true;
+    return HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_FMPI2C1, device_address_7bit,
+                                          expected_length )
+           == HW_I2C_STATUS_OK;
 }
 
 /**
@@ -1209,25 +1556,39 @@ inline bool HW_I2C_Trigger_Master_Receive_Internal( uint16_t device_address_7bit
  */
 bool HW_I2C_Trigger_Slave_Transmit_External( HWI2CChannel_T channel )
 {
-    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+    if ( !HW_I2C_Is_External_Channel( channel ) )
+    {
+        return false;
+    }
+
+    HWI2CIrqState_T      irq_state = HW_I2C_Channel_Irqs_Disable( channel );
+    HWI2CChannelState_T* state     = &hw_i2c_channel_state[channel];
+    if ( !state->configured || ( state->config.mode != HW_I2C_MODE_SLAVE )
+         || state->transfer_in_progress || ( state->master_queue_count > 0U ) )
+    {
+        HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+        return false;
+    }
 
     state->transfer_kind            = HW_I2C_TRANSFER_KIND_SLAVE_TX;
     state->transfer_in_progress     = true;
-    state->tx_ptr                   = state->tx_stage_buffer;
-    state->tx_remaining             = state->tx_stage_length;
+    state->tx_ptr                   = state->slave_tx_stage_buffer;
+    state->tx_remaining             = state->slave_tx_stage_length;
     state->dma_tx_transfer_complete = false;
+    state->active_uses_dma          = ( state->config.tx_transfer_path == HW_I2C_TRANSFER_DMA )
+                             && ( state->slave_tx_stage_length > 0U );
 
     I2C_TypeDef* i2c_instance = HW_I2C_MAP[channel].instance;
 
-    if ( state->config.tx_transfer_path == HW_I2C_TRANSFER_DMA )
+    if ( state->active_uses_dma )
     {
         DMA_Stream_TypeDef* tx_stream = HW_I2C_MAP[channel].dma_tx;
 
         HW_I2C_DMA_Stream_Clear_Flags( tx_stream );
         HW_I2C_Configure_DMA_Stream( tx_stream, HW_I2C_MAP[channel].dma_channel_bits, true,
                                      ( uint32_t )( uintptr_t )&i2c_instance->DR,
-                                     ( uint32_t )( uintptr_t )state->tx_stage_buffer,
-                                     state->tx_stage_length );
+                                     ( uint32_t )( uintptr_t )state->slave_tx_stage_buffer,
+                                     state->slave_tx_stage_length );
         HW_I2C_Prepare_DMA_Path( i2c_instance, state->transfer_kind );
     }
     else
@@ -1236,6 +1597,7 @@ bool HW_I2C_Trigger_Slave_Transmit_External( HWI2CChannel_T channel )
     }
 
     LL_I2C_AcknowledgeNextData( i2c_instance, LL_I2C_ACK );
+    HW_I2C_Channel_Irqs_Restore( channel, irq_state );
 
     return true;
 }
@@ -1258,29 +1620,41 @@ bool HW_I2C_Trigger_Slave_Transmit_External( HWI2CChannel_T channel )
  */
 bool HW_I2C_Trigger_Slave_Receive_External( HWI2CChannel_T channel, uint16_t expected_length )
 {
-    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
-
-    if ( expected_length > HW_I2C_RX_BUFFER_SIZE )
+    if ( !HW_I2C_Is_External_Channel( channel ) || ( expected_length == 0U )
+         || ( expected_length > HW_I2C_RX_BUFFER_SIZE ) )
     {
         return false;
     }
 
-    state->transfer_kind          = HW_I2C_TRANSFER_KIND_SLAVE_RX;
-    state->transfer_in_progress   = true;
-    state->rx_expected_length     = expected_length;
-    state->dma_rx_expected_length = expected_length;
-    state->overflow_occurred      = false;
+    HWI2CIrqState_T      irq_state = HW_I2C_Channel_Irqs_Disable( channel );
+    HWI2CChannelState_T* state     = &hw_i2c_channel_state[channel];
+    if ( !state->configured || ( state->config.mode != HW_I2C_MODE_SLAVE )
+         || state->transfer_in_progress || ( state->master_queue_count > 0U ) )
+    {
+        HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+        return false;
+    }
+
+    state->transfer_kind            = HW_I2C_TRANSFER_KIND_SLAVE_RX;
+    state->transfer_in_progress     = true;
+    state->rx_transfer_length       = expected_length;
+    state->rx_received_length       = 0U;
+    state->rx_expected_length       = expected_length;
+    state->dma_rx_expected_length   = expected_length;
+    state->dma_rx_transfer_complete = false;
+    state->overflow_occurred        = false;
+    state->active_uses_dma          = state->config.rx_transfer_path == HW_I2C_TRANSFER_DMA;
 
     I2C_TypeDef* i2c_instance = HW_I2C_MAP[channel].instance;
 
-    if ( state->config.rx_transfer_path == HW_I2C_TRANSFER_DMA )
+    if ( state->active_uses_dma )
     {
         DMA_Stream_TypeDef* rx_stream = HW_I2C_MAP[channel].dma_rx;
 
         HW_I2C_DMA_Stream_Clear_Flags( rx_stream );
         HW_I2C_Configure_DMA_Stream( rx_stream, HW_I2C_MAP[channel].dma_channel_bits, false,
                                      ( uint32_t )( uintptr_t )&i2c_instance->DR,
-                                     ( uint32_t )( uintptr_t )state->dma_rx_linear_buffer,
+                                     ( uint32_t )( uintptr_t )state->rx_staging_buffer,
                                      expected_length );
         HW_I2C_Prepare_DMA_Path( i2c_instance, state->transfer_kind );
     }
@@ -1290,6 +1664,7 @@ bool HW_I2C_Trigger_Slave_Receive_External( HWI2CChannel_T channel, uint16_t exp
     }
 
     LL_I2C_AcknowledgeNextData( i2c_instance, LL_I2C_ACK );
+    HW_I2C_Channel_Irqs_Restore( channel, irq_state );
 
     return true;
 }
@@ -1306,67 +1681,125 @@ bool HW_I2C_Trigger_Slave_Receive_External( HWI2CChannel_T channel, uint16_t exp
  * @return true on success
  * @return false on failure
  */
-inline bool HW_I2C_Peek_Received( HWI2CChannel_T channel, HWI2CRxPeek_T* peek )
+bool HW_I2C_Peek_Received_Message( HWI2CChannel_T channel, HWI2CRxMessagePeek_T* message )
 {
-    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
-
-    const uint16_t count = HW_I2C_Ring_Count( state );
-    peek->total_length   = count;
-
-    if ( count == 0U )
-    {
-        peek->first.data    = NULL;
-        peek->first.length  = 0U;
-        peek->second.data   = NULL;
-        peek->second.length = 0U;
-        return true;
-    }
-
-    if ( state->rx_head > state->rx_tail )
-    {
-        peek->first.data    = &state->rx_ring_buffer[state->rx_tail];
-        peek->first.length  = count;
-        peek->second.data   = NULL;
-        peek->second.length = 0U;
-    }
-    else
-    {
-        const uint16_t first_length  = ( uint16_t )( HW_I2C_RX_BUFFER_SIZE - state->rx_tail );
-        const uint16_t second_length = ( uint16_t )( count - first_length );
-
-        peek->first.data    = &state->rx_ring_buffer[state->rx_tail];
-        peek->first.length  = first_length;
-        peek->second.data   = &state->rx_ring_buffer[0];
-        peek->second.length = second_length;
-    }
-
-    return true;
-}
-
-/**
- * @brief Consume received bytes from the ring buffer.
- *
- * Advances the tail pointer of the receive ring buffer to discard
- * the specified number of bytes.
- *
- * @param[in] channel           I2C channel
- * @param[in] bytes_to_consume  Number of bytes to consume
- *
- * @return true if bytes were consumed successfully
- * @return false if bytes_to_consume exceeds available data
- */
-inline bool HW_I2C_Consume_Received( HWI2CChannel_T channel, uint16_t bytes_to_consume )
-{
-    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
-
-    const uint16_t count = HW_I2C_Ring_Count( state );
-    if ( bytes_to_consume > count )
+    if ( !HW_I2C_Channel_Is_Valid( channel ) || ( message == NULL ) )
     {
         return false;
     }
 
-    state->rx_tail = ( uint16_t )( ( state->rx_tail + bytes_to_consume ) % HW_I2C_RX_BUFFER_SIZE );
+    HWI2CIrqState_T      irq_state = HW_I2C_Channel_Irqs_Disable( channel );
+    HWI2CChannelState_T* state     = &hw_i2c_channel_state[channel];
+
+    if ( state->rx_message_count == 0U )
+    {
+        memset( message, 0, sizeof( *message ) );
+        message->descriptor.transfer_kind = HW_I2C_TRANSFER_KIND_IDLE;
+        message->descriptor.status        = HW_I2C_STATUS_OK;
+        HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+        return true;
+    }
+
+    message->descriptor           = state->rx_message_queue[state->rx_message_tail];
+    const uint16_t message_length = message->descriptor.length;
+    const uint16_t first_length =
+        ( message_length < ( uint16_t )( HW_I2C_RX_BUFFER_SIZE - state->rx_tail ) )
+            ? message_length
+            : ( uint16_t )( HW_I2C_RX_BUFFER_SIZE - state->rx_tail );
+    const uint16_t second_length = ( uint16_t )( message_length - first_length );
+
+    if ( first_length > 0U )
+    {
+        message->first.data   = &state->rx_ring_buffer[state->rx_tail];
+        message->first.length = first_length;
+    }
+    else
+    {
+        message->first.data   = NULL;
+        message->first.length = 0U;
+    }
+
+    if ( second_length > 0U )
+    {
+        message->second.data   = &state->rx_ring_buffer[0];
+        message->second.length = second_length;
+    }
+    else
+    {
+        message->second.data   = NULL;
+        message->second.length = 0U;
+    }
+
+    HW_I2C_Channel_Irqs_Restore( channel, irq_state );
     return true;
+}
+
+bool HW_I2C_Consume_Received_Message( HWI2CChannel_T channel )
+{
+    if ( !HW_I2C_Channel_Is_Valid( channel ) )
+    {
+        return false;
+    }
+
+    HWI2CIrqState_T      irq_state = HW_I2C_Channel_Irqs_Disable( channel );
+    HWI2CChannelState_T* state     = &hw_i2c_channel_state[channel];
+
+    if ( state->rx_message_count == 0U )
+    {
+        HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+        return false;
+    }
+
+    const uint16_t message_length = state->rx_message_queue[state->rx_message_tail].length;
+    state->rx_tail  = ( uint16_t )( ( state->rx_tail + message_length ) % HW_I2C_RX_BUFFER_SIZE );
+    state->rx_count = ( uint16_t )( state->rx_count - message_length );
+    state->rx_message_tail =
+        ( uint8_t )( ( state->rx_message_tail + 1U ) % HW_I2C_RX_MESSAGE_QUEUE_DEPTH );
+    state->rx_message_count--;
+
+    HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+    return true;
+}
+
+inline bool HW_I2C_Peek_Received( HWI2CChannel_T channel, HWI2CRxPeek_T* peek )
+{
+    if ( peek == NULL )
+    {
+        return false;
+    }
+
+    HWI2CRxMessagePeek_T message;
+    memset( &message, 0, sizeof( message ) );
+    if ( !HW_I2C_Peek_Received_Message( channel, &message ) )
+    {
+        return false;
+    }
+
+    peek->first        = message.first;
+    peek->second       = message.second;
+    peek->total_length = message.descriptor.length;
+    return true;
+}
+
+inline bool HW_I2C_Consume_Received( HWI2CChannel_T channel, uint16_t bytes_to_consume )
+{
+    if ( !HW_I2C_Channel_Is_Valid( channel ) )
+    {
+        return false;
+    }
+
+    HWI2CIrqState_T      irq_state = HW_I2C_Channel_Irqs_Disable( channel );
+    HWI2CChannelState_T* state     = &hw_i2c_channel_state[channel];
+    if ( state->rx_message_count == 0U )
+    {
+        HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+        return bytes_to_consume == 0U;
+    }
+
+    const bool exact_message =
+        bytes_to_consume == state->rx_message_queue[state->rx_message_tail].length;
+    HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+    return exact_message ? HW_I2C_Consume_Received_Message( channel ) : false;
 }
 
 /**
@@ -1382,9 +1815,16 @@ inline bool HW_I2C_Consume_Received( HWI2CChannel_T channel, uint16_t bytes_to_c
  */
 bool HW_I2C_Get_Overflow_Status( HWI2CChannel_T channel )
 {
+    if ( !HW_I2C_Channel_Is_Valid( channel ) )
+    {
+        return false;
+    }
+
+    HWI2CIrqState_T      irq_state       = HW_I2C_Channel_Irqs_Disable( channel );
     HWI2CChannelState_T* state           = &hw_i2c_channel_state[channel];
     bool                 overflow_status = state->overflow_occurred;
     state->overflow_occurred             = false;
+    HW_I2C_Channel_Irqs_Restore( channel, irq_state );
     return overflow_status;
 }
 
@@ -1408,6 +1848,21 @@ void HW_I2C_EV_IRQ_CHANNEL_2( void )
  * @brief This function handles FMPI2C1 event interrupt.
  */
 void HW_I2C_EV_IRQ_FMPI2C1( void )
+{
+    HW_I2C_Service_Event_IRQ( HW_I2C_CHANNEL_FMPI2C1 );
+}
+
+void HW_I2C_ER_IRQ_CHANNEL_1( void )
+{
+    HW_I2C_Service_Event_IRQ( HW_I2C_CHANNEL_1 );
+}
+
+void HW_I2C_ER_IRQ_CHANNEL_2( void )
+{
+    HW_I2C_Service_Event_IRQ( HW_I2C_CHANNEL_2 );
+}
+
+void HW_I2C_ER_IRQ_FMPI2C1( void )
 {
     HW_I2C_Service_Event_IRQ( HW_I2C_CHANNEL_FMPI2C1 );
 }
