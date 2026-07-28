@@ -8,15 +8,15 @@
  *      Manages up to 8 MCP23017 devices on the internal FMPI2C1 channel.
  *      Provides bit-level control of the 16-bit output ports (OLAT A/B).
  *      Handles device initialization, configuration register setup, and
- *      batched bit updates with retry logic for robustness.
+ *      batched bit updates through the internal I2C transaction queue.
  *
  *  Notes:
  *      - Communicates with MCP23017 devices via FMPI2C1 internal I2C channel
  *      - Default I2C addresses: 0x20-0x27 (configured via device jumpers)
- *      - Active devices controlled via LOGIC_EXPANDER_ACTIVE_BITMASK
+ *      - Active devices are selected by the module's role-indexed bitmask
  *      - All output bits default to 0x00 (OLAT A) or 0xFF (OLAT B)
  *      - Must call LOGIC_EXPANDER_Self_Config() before any other operations
- *      - Retry logic provides up to 200,000 attempts on busy conditions
+ *      - Queue-full is reported immediately so callers can retry without spinning
  ******************************************************************************/
 
 #ifndef LOGIC_EXPANDER_H
@@ -40,7 +40,6 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-#define LOGIC_EXPANDER_COUNT ( 8U )
 #define LOGIC_EXPANDER_PORT_WIDTH_BITS ( 8U )
 
 /**-----------------------------------------------------------------------------
@@ -50,14 +49,15 @@ extern "C"
 
 typedef enum LogicExpanderIndex_T
 {
-    LOGIC_EXPANDER_RESERVED_0,
-    LOGIC_EXPANDER_RESERVED_1,
-    LOGIC_EXPANDER_RESERVED_2,
-    LOGIC_EXPANDER_RESERVED_3,
-    LOGIC_EXPANDER_RESERVED_4,
-    LOGIC_EXPANDER_RESERVED_5,
-    LOGIC_EXPANDER_RESERVED_6,
-    LOGIC_EXPANDER_RESERVED_7,
+    LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT = 0,
+    LOGIC_EXPANDER_UNASSIGNED_1          = 1,
+    LOGIC_EXPANDER_UNASSIGNED_2          = 2,
+    LOGIC_EXPANDER_UNASSIGNED_3          = 3,
+    LOGIC_EXPANDER_UNASSIGNED_4          = 4,
+    LOGIC_EXPANDER_UNASSIGNED_5          = 5,
+    LOGIC_EXPANDER_UNASSIGNED_6          = 6,
+    LOGIC_EXPANDER_UNASSIGNED_7          = 7,
+    LOGIC_EXPANDER_COUNT                 = 8,
 } LogicExpanderIndex_T;
 
 typedef enum LogicExpanderPort_T
@@ -75,7 +75,6 @@ typedef enum LogicExpanderStatus_T
     LOGIC_EXPANDER_STATUS_NOT_READY,
 } LogicExpanderStatus_T;
 
-// TODO: add type which indicates which expander it is using
 typedef struct LogicExpanderStateSnapshot_T
 {
     uint16_t device_address_7bit;
@@ -112,6 +111,15 @@ typedef enum LogicExpanderI2CStatus_T
 LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void );
 
 /**
+ * @brief Advance non-blocking configuration and observe its physical completion.
+ *
+ * Call periodically after LOGIC_EXPANDER_Self_Config(). The expander becomes
+ * ready only after every configuration transaction has completed with STOP and
+ * the low-level transfer result is successful.
+ */
+LogicExpanderStatus_T LOGIC_EXPANDER_Process( void );
+
+/**
  * @brief Load a single control bit into the shadow register.
  *
  * Modifies the bit in the local OLAT shadow register (OLAT A or OLAT B)
@@ -135,10 +143,11 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expa
  *
  * Sends all accumulated bit changes (from LOGIC_EXPANDER_Load_Control_Bit)
  * to their respective MCP23017 devices via I2C.
- * Includes retry logic for robustness against temporary I2C bus congestion.
+ * Only dirty devices are enqueued. Queue-full is returned immediately; devices
+ * already accepted are clean and unsent devices remain dirty for a later call.
  *
  * @return LOGIC_EXPANDER_STATUS_OK if all devices updated successfully
- * @return LOGIC_EXPANDER_STATUS_BUSY if I2C remains busy after retry limit
+ * @return LOGIC_EXPANDER_STATUS_BUSY if the transaction queue is full
  * @return LOGIC_EXPANDER_STATUS_NOT_READY if self-config has not been called
  * @return LOGIC_EXPANDER_STATUS_ERROR on communication error
  */
@@ -148,18 +157,17 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void );
  * @brief Master transmit on the internal FMPI2C1 channel.
  *
  * Sends data to a slave device on the internal FMPI2C1 channel.
- * Data must be provided directly in the payload; internally handles buffering.
+ * Data is copied into one driver-owned transaction queue slot.
  *
  * @param[in] device_address_7bit   7-bit slave address
  * @param[in] payload               Data to transmit
  * @param[in] payload_length        Number of bytes to transmit
  *
- * @return true if transmission was initiated
+ * @return true if the complete transaction was accepted
  * @return false on failure
  */
-inline bool LOGIC_EXPANDER_Master_Transmit_Internal( uint16_t       device_address_7bit,
-                                                     const uint8_t* payload,
-                                                     uint16_t       payload_length );
+bool LOGIC_EXPANDER_Master_Transmit_Internal( uint16_t device_address_7bit, const uint8_t* payload,
+                                              uint16_t payload_length );
 
 /**
  * @brief Initiate master receive on the internal FMPI2C1 channel.
@@ -171,11 +179,11 @@ inline bool LOGIC_EXPANDER_Master_Transmit_Internal( uint16_t       device_addre
  * @param[in] device_address_7bit   7-bit slave address
  * @param[in] expected_length       Number of bytes expected from slave
  *
- * @return true if receive was initiated
+ * @return true if the complete receive transaction was accepted
  * @return false on failure
  */
-inline bool LOGIC_EXPANDER_Start_Master_Receive_Internal( uint16_t device_address_7bit,
-                                                          uint16_t expected_length );
+bool LOGIC_EXPANDER_Start_Master_Receive_Internal( uint16_t device_address_7bit,
+                                                   uint16_t expected_length );
 
 /**
  * @brief Retrieve the current shadow state of a single expander.

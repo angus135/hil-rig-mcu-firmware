@@ -1,93 +1,46 @@
 # logic_expander
+
 ## Overview
 
-`logic_expander` contains the code for the logic_expander module, containing any logic_expander functionality that does nto require a dedicated task.
+`logic_expander` holds OLATA/OLATB shadow state for the MCP23017 devices on
+FMPI2C1. State and lookup tables are indexed by `LogicExpanderIndex_T`.
+`LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT` is the known role at index/address
+0/`0x20`; the remaining explicit indices are named unassigned until their
+hardware roles are established.
 
-This module is responsible for:
+Address and initial-state tables use designated initializers so the physical
+role-to-address mapping is visible in code. `LOGIC_EXPANDER_COUNT` is the final
+enum value and therefore also the state-array size.
 
-- Holding a software shadow-map of control outputs for up to 8x MCP23017 devices.
-- Providing a config-stage API for other modules to set individual control bits.
-- Sending all staged control bytes to the expanders on the internal FMPI2C1 bus.
+## Non-blocking configuration
 
+`LOGIC_EXPANDER_Self_Config()` configures FMPI2C1 and begins enqueueing the eight
+MCP23017 setup writes for each active device. It can return `BUSY` after writes
+were accepted because queue acceptance is not bus completion.
 
----
+Call `LOGIC_EXPANDER_Process()` from later execution ticks. It resumes partial
+queue submission, services deferred I2C progress, and waits for physical queue
+completion. The module becomes ready only after the final STOP and an `OK`
+latched transfer result. A later asynchronous error leaves configuration not
+ready. There is no CPU busy-retry loop.
 
-## Files
+## Dirty shadow writes
 
-| File                      | Role |
-|---------------------------|------|
-| `logic_expander.c`        | Public API implementation |
-| `logic_expander.h`        | Public API header |
+`LOGIC_EXPANDER_Load_Control_Bit()` marks an expander dirty only when its shadow
+byte actually changes. `LOGIC_EXPANDER_Send_Control_Bits()` submits OLATA/B only
+for dirty active devices.
 
+After a device's complete write is accepted, its dirty bit is cleared. If the
+queue fills partway through a pass, accepted devices remain clean and the
+current and remaining devices stay dirty, so a later call resumes without
+duplicating accepted messages. A successful return means all dirty writes were
+accepted, not that they have physically completed.
 
----
+## Typical flow
 
-## Public API
-
-The public API is declared in `logic_expander.h`.
-
-- `LOGIC_EXPANDER_Self_Config()`
-	- Initializes all configured MCP23017 devices (`0x20..0x27`).
-	- Applies default setup (IOCON, direction, pull-up, interrupt defaults).
-	- Seeds the internal A/B output shadow bytes from file-level init tables.
-
-- `LOGIC_EXPANDER_Load_Control_Bit(expander_index, port, bit_index, bit_value)`
-	- Updates one bit in the local shadow map only (does not immediately write I2C).
-	- `expander_index`: `0..7`
-	- `port`: `LOGIC_EXPANDER_PORT_A` or `LOGIC_EXPANDER_PORT_B`
-	- `bit_index`: `0..7`
-	- `bit_value`: `true` sets bit high, `false` clears bit low
-
-- `LOGIC_EXPANDER_Send_Control_Bits()`
-	- Writes staged `OLATA` and `OLATB` values to all 8 expanders.
-	- Intended to be called once after all config modules have loaded their bits.
-
----
-
-## Required config-stage flow
-
-Use the logic expander API in this order:
-
-1. Call `LOGIC_EXPANDER_Self_Config()` once at the start of project configuration.
-2. From each config module, call `LOGIC_EXPANDER_Load_Control_Bit(...)` for the bits that module owns.
-3. After all modules are done loading bits, call `LOGIC_EXPANDER_Send_Control_Bits()` once.
-
-This keeps each module independent while still sending one consolidated output image to the hardware.
-
----
-
-## Example usage
-
-```c
-#include "logic_expander.h"
-
-void CONFIG_MANAGER_Run_Config( void )
-{
-	( void )LOGIC_EXPANDER_Self_Config();
-
-	/* Example: module A sets Expander 0, Port A, bit 3 high */
-	( void )LOGIC_EXPANDER_Load_Control_Bit( 0U, LOGIC_EXPANDER_PORT_A, 3U, true );
-
-	/* Example: module B sets Expander 2, Port B, bit 1 low */
-	( void )LOGIC_EXPANDER_Load_Control_Bit( 2U, LOGIC_EXPANDER_PORT_B, 1U, false );
-
-	( void )LOGIC_EXPANDER_Send_Control_Bits();
-}
-```
-
----
-
-## Mapping source of truth (important)
-
-To determine the correct target for `LOGIC_EXPANDER_Load_Control_Bit(...)`:
-
-- Which expander index (`0..7`)
-- Which port (`A` or `B`)
-- Which bit (`0..7`)
-
-Use the project hardware documentation as the source of truth:
-
-- Altium project/schematic
-- Project interface/control mapping documentation
-
-Do not guess mappings in firmware code. If mapping is unclear, resolve it in hardware/docs first.
+1. Call `LOGIC_EXPANDER_Self_Config()`.
+2. Call `LOGIC_EXPANDER_Process()` on subsequent ticks until it returns `OK`.
+3. Load output changes with `LOGIC_EXPANDER_Load_Control_Bit()`.
+4. Call `LOGIC_EXPANDER_Send_Control_Bits()`; retry later if it returns `BUSY`.
+5. Use the low-level completion/result APIs, or the module process path, when
+   physical completion matters.
