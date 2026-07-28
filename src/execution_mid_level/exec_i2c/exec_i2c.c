@@ -26,6 +26,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <string.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -219,8 +220,8 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
 bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
                                         const uint8_t* payload, uint16_t payload_length )
 {
-    return HW_I2C_Load_Stage_Buffer( channel, payload, payload_length )
-           && HW_I2C_Trigger_Master_Transmit_External( channel, device_address_7bit );
+    return HW_I2C_Enqueue_Master_Transmit( channel, device_address_7bit, payload, payload_length )
+           == HW_I2C_STATUS_OK;
 }
 
 /**
@@ -274,7 +275,8 @@ EXEC_I2C_Receive_Copy_And_Consume().
 bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
                                              uint16_t expected_length )
 {
-    return HW_I2C_Trigger_Master_Receive_External( channel, device_address_7bit, expected_length );
+    return HW_I2C_Enqueue_Master_Receive( channel, device_address_7bit, expected_length )
+           == HW_I2C_STATUS_OK;
 }
 
 /**
@@ -301,6 +303,77 @@ bool EXEC_I2C_Start_Slave_Receive_External( HWI2CChannel_T channel, uint16_t exp
     return HW_I2C_Trigger_Slave_Receive_External( channel, expected_length );
 }
 
+void EXEC_I2C_Service_Transaction_Queue( HWI2CChannel_T channel )
+{
+    HW_I2C_Service_Transaction_Queue( channel );
+}
+
+bool EXEC_I2C_Is_Transaction_Queue_Complete( HWI2CChannel_T channel )
+{
+    return HW_I2C_Is_Transaction_Queue_Complete( channel );
+}
+
+EXECI2CStatus_T EXEC_I2C_Get_And_Clear_Transfer_Result( HWI2CChannel_T channel )
+{
+    return EXEC_I2C_From_HW_Status( HW_I2C_Get_And_Clear_Transfer_Result( channel ) );
+}
+
+EXECI2CStatus_T EXEC_I2C_Receive_Message_Copy_And_Consume(
+    HWI2CChannel_T channel, uint8_t* result_storage, uint16_t result_storage_capacity,
+    HWI2CRxMessageDescriptor_T* descriptor, uint16_t* bytes_copied, uint16_t* required_length )
+{
+    if ( ( descriptor == NULL ) || ( bytes_copied == NULL ) || ( required_length == NULL ) )
+    {
+        return EXEC_I2C_STATUS_INVALID_PARAM;
+    }
+
+    memset( descriptor, 0, sizeof( *descriptor ) );
+    descriptor->transfer_kind = HW_I2C_TRANSFER_KIND_IDLE;
+    *bytes_copied             = 0U;
+    *required_length          = 0U;
+
+    HWI2CRxMessagePeek_T message;
+    memset( &message, 0, sizeof( message ) );
+    if ( !HW_I2C_Peek_Received_Message( channel, &message ) )
+    {
+        return EXEC_I2C_STATUS_INVALID_PARAM;
+    }
+
+    if ( message.descriptor.transfer_kind == HW_I2C_TRANSFER_KIND_IDLE )
+    {
+        return EXEC_I2C_STATUS_NO_DATA;
+    }
+
+    *descriptor      = message.descriptor;
+    *required_length = message.descriptor.length;
+    if ( result_storage_capacity < message.descriptor.length )
+    {
+        return EXEC_I2C_STATUS_BUFFER_TOO_SMALL;
+    }
+
+    if ( ( result_storage == NULL ) && ( message.descriptor.length > 0U ) )
+    {
+        return EXEC_I2C_STATUS_INVALID_PARAM;
+    }
+
+    if ( message.first.length > 0U )
+    {
+        memcpy( result_storage, message.first.data, message.first.length );
+    }
+    if ( message.second.length > 0U )
+    {
+        memcpy( &result_storage[message.first.length], message.second.data, message.second.length );
+    }
+
+    if ( !HW_I2C_Consume_Received_Message( channel ) )
+    {
+        return EXEC_I2C_STATUS_ERROR;
+    }
+
+    *bytes_copied = message.descriptor.length;
+    return EXEC_I2C_STATUS_OK;
+}
+
 /**
  * @brief Copy received data and advance the receive pointer.
  *
@@ -325,47 +398,18 @@ bool EXEC_I2C_Start_Slave_Receive_External( HWI2CChannel_T channel, uint16_t exp
 bool EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel, uint8_t* result_storage,
                                         uint16_t result_storage_capacity, uint16_t* bytes_copied )
 {
-    /* Default output to 0 bytes so callers can rely on deterministic state on failure. */
-    *bytes_copied = 0U;
-
-    /* Snapshot current RX data layout (may be split across ring-buffer wrap). */
-    HWI2CRxPeek_T peek = { 0 };
-    if ( !HW_I2C_Peek_Received( channel, &peek ) )
+    if ( bytes_copied == NULL )
     {
         return false;
     }
 
-    /* Clamp copy length to caller buffer capacity to avoid overflow. */
-    uint16_t bytes_to_copy = peek.total_length;
-    if ( bytes_to_copy > result_storage_capacity )
-    {
-        bytes_to_copy = result_storage_capacity;
-    }
+    HWI2CRxMessageDescriptor_T descriptor;
+    uint16_t                   required_length = 0U;
+    const EXECI2CStatus_T      status =
+        EXEC_I2C_Receive_Message_Copy_And_Consume( channel, result_storage, result_storage_capacity,
+                                                   &descriptor, bytes_copied, &required_length );
 
-    /* Copy from the first contiguous region returned by peek. */
-    uint16_t copied = 0U;
-    for ( uint16_t idx = 0U; ( idx < peek.first.length ) && ( copied < bytes_to_copy ); ++idx )
-    {
-        result_storage[copied] = peek.first.data[idx];
-        ++copied;
-    }
-
-    /* Copy remaining bytes from the second region when data wrapped in the ring buffer. */
-    for ( uint16_t idx = 0U; ( idx < peek.second.length ) && ( copied < bytes_to_copy ); ++idx )
-    {
-        result_storage[copied] = peek.second.data[idx];
-        ++copied;
-    }
-
-    /* Consume exactly what we copied so caller-visible data and RX cursor stay aligned. */
-    if ( !HW_I2C_Consume_Received( channel, copied ) )
-    {
-        return false;
-    }
-
-    /* Report bytes successfully copied and consumed. */
-    *bytes_copied = copied;
-    return true;
+    return ( status == EXEC_I2C_STATUS_OK ) || ( status == EXEC_I2C_STATUS_NO_DATA );
 }
 
 /**

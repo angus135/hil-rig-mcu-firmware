@@ -2,120 +2,48 @@
 
 ## Overview
 
-`exec_i2c` is the mid-level execution module for I2C communication.
+`exec_i2c` validates the two external-channel configurations and provides the
+execution-facing wrapper around `hw_i2c` queues and complete receive messages.
+It does not manipulate peripheral registers.
 
-This module is responsible for:
+## Accepted versus complete
 
-- Validating higher-layer I2C channel configuration requests for the two external buses.
-- Calling low-level `hw_i2c` configuration APIs for:
-  - `I2C3` external channel
-  - `I2C2` external channel
-  - `FMPI2C1` internal channel
-- Handling transmit orchestration using the stage-buffer pattern:
-  - load stage buffer in low level
-  - trigger transfer in low level
-- Handling receive orchestration using the peek/copy/consume pattern:
-  - peek zero-copy spans from low level
-  - copy to execution-manager-owned storage
-  - consume copied bytes in low level
+`EXEC_I2C_Master_Transmit_External()` and
+`EXEC_I2C_Start_Master_Receive_External()` submit one complete request through
+the atomic low-level enqueue API. Their existing boolean return value is
+preserved: `true` means the request and its full payload/expected length were
+accepted into driver-owned queue storage.
 
----
+Acceptance is not physical completion. Call
+`EXEC_I2C_Service_Transaction_Queue()` from normal execution context and use
+`EXEC_I2C_Is_Transaction_Queue_Complete()` when a tick must wait for all bus
+work, including the final STOP and idle peripheral. Later NACK, bus, or DMA
+failures are returned and cleared by
+`EXEC_I2C_Get_And_Clear_Transfer_Result()`.
 
-## Files
+Slave transmit and receive retain their non-queued semantics.
 
-| File                      | Role |
-|---------------------------|------|
-| `exec_i2c.c`        | Public API implementation |
-| `exec_i2c.h`        | Public API header |
+## Complete receive messages
 
----
+`EXEC_I2C_Receive_Message_Copy_And_Consume()` returns exactly one low-level RX
+descriptor and its bytes. It returns:
 
-## Architecture and data flow
+- `EXEC_I2C_STATUS_OK` after copying and consuming one complete message
+- `EXEC_I2C_STATUS_NO_DATA` when no complete message is available
+- `EXEC_I2C_STATUS_BUFFER_TOO_SMALL` with `required_length` when the destination
+  cannot hold the next message
 
-`exec_i2c` does not directly manipulate hardware registers.
-It is a coordination layer between higher-level logic and `hw_i2c`.
+An undersized destination never receives a partial copy and the message remains
+unconsumed. Wrapped byte-ring spans are combined only when they belong to that
+same descriptor.
 
-- Higher layers call `exec_i2c` APIs.
-- `exec_i2c` validates parameters.
-- `exec_i2c` forwards operations to `hw_i2c`.
-- `hw_i2c` owns hardware-facing resources:
-  - receive buffers
-  - stage/transmit buffers
-  - interrupt/DMA servicing
+`EXEC_I2C_Receive_Copy_And_Consume()` remains for console compatibility. It
+still treats no-data polling as successful with zero bytes, but now retrieves at
+most one complete message and fails without consuming when storage is too small.
 
-### TX flow
+## Configuration constraints
 
-1. Higher layer calls `EXEC_I2C_Master_Transmit_External(...)` or `EXEC_I2C_Slave_Transmit_External(...)` with `HWI2CChannel_T`.
-2. `exec_i2c` calls `HW_I2C_Load_Stage_Buffer(...)`.
-3. `exec_i2c` calls `HW_I2C_Trigger_*_Transmit(...)`.
-
-### RX flow
-
-1. Higher layer calls `EXEC_I2C_Start_Master_Receive(...)` or `EXEC_I2C_Start_Slave_Receive_External(...)` with `HWI2CChannel_T`.
-2. Higher layer later calls `EXEC_I2C_Receive_Copy_And_Consume(...)`.
-3. `exec_i2c`:
-
-- peeks low-level spans with `HW_I2C_Peek_Received(...)`
-- copies into caller-provided result storage
-- consumes copied bytes via `HW_I2C_Consume_Received(...)`
-
----
-
-## Configuration model
-
-`EXEC_I2C_Configuration(...)` configures the two external channels in one call.
-
-- External `I2C3`: configurable from higher layer.
-- External `I2C2`: configurable from higher layer.
-
-For each external channel, higher layer provides:
-
-- Mode: `HW_I2C_MODE_MASTER` or `HW_I2C_MODE_SLAVE`
-- Speed: `HW_I2C_SPEED_100KHZ` or `HW_I2C_SPEED_400KHZ`
-- Transfer path:
-  - `I2C3`: `HW_I2C_TRANSFER_INTERRUPT` only
-  - `I2C2`: `HW_I2C_TRANSFER_INTERRUPT` or `HW_I2C_TRANSFER_DMA`
-- Own address: 7-bit value (`0x00` to `0x7F`)
-
-Input validation rejects invalid enum/address values with `EXEC_I2C_STATUS_INVALID_PARAM`.
-
----
-
-## Public API summary
-
-Configuration:
-
-- `EXEC_I2C_Configuration(...)`
-
-Transmit:
-
-- `EXEC_I2C_Master_Transmit_External(...)`
-- `EXEC_I2C_Slave_Transmit_External(...)`
-
-Receive start:
-
-- `EXEC_I2C_Start_Master_Receive(...)`
-- `EXEC_I2C_Start_Slave_Receive_External(...)`
-
-Receive extraction:
-
-- `EXEC_I2C_Receive_Copy_And_Consume(...)`
-
----
-
-## Typical usage sequence
-
-1. Build two `EXECI2CChannelConfig_T` objects for external channels.
-2. Call `EXEC_I2C_Configuration(&i2c1_cfg, &i2c2_cfg)` once at startup.
-3. At runtime:
-
-- Use `EXEC_I2C_Master_Transmit_External`/`EXEC_I2C_Slave_Transmit_External` for transmit.
-- Use `EXEC_I2C_Start_*_Receive` to arm receive.
-- Use `EXEC_I2C_Receive_Copy_And_Consume` to fetch received bytes into execution-manager storage.
-
----
-
-## Notes
-
-- This module expects low-level IRQ/DMA service routines to be integrated in the platform interrupt handlers.
-- Status codes from low level are mapped into `EXEC_I2C_STATUS_*` for upper-layer consistency.
+- I2C3 is interrupt-only.
+- I2C2 supports interrupt and DMA paths.
+- Addresses are seven-bit.
+- Low-level per-message and FMPI2C1 length limits apply.
