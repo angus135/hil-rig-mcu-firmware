@@ -7,13 +7,13 @@
  *      Mid-level execution layer for I2C communication. Provides a coordination
  *      interface between high-level application logic and low-level hw_i2c driver.
  *      Validates configuration and transfer requests, then delegates to hw_i2c.
- *      Handles transmit orchestration via stage-buffer pattern and receive
- *      orchestration via peek/copy/consume pattern.
+ *      Submits complete master transactions to the low-level queue and retrieves
+ *      complete receive messages without losing transaction boundaries.
  *
  *  Notes:
  *      - Manages I2C3, I2C2 (external) and FMPI2C1 (internal) channels
  *      - Does not directly manipulate hardware; all operations go through hw_i2c
- *      - Stage buffer size: 256 bytes (defined in hw_i2c)
+ *      - Master requests are accepted asynchronously into the hw_i2c queue
  *      - Receive ring buffer size: 512 bytes (defined in hw_i2c)
  *      - Not thread-safe; assumes single-threaded execution or external synchronization
  ******************************************************************************/
@@ -54,6 +54,8 @@ typedef enum EXECI2CStatus_T
     EXEC_I2C_STATUS_ERROR,
     EXEC_I2C_STATUS_INVALID_PARAM,
     EXEC_I2C_STATUS_OVERFLOW,
+    EXEC_I2C_STATUS_BUFFER_TOO_SMALL,
+    EXEC_I2C_STATUS_NO_DATA,
 } EXECI2CStatus_T;
 
 typedef struct EXECI2CChannelConfig_T
@@ -95,22 +97,14 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
  * @brief Master transmit on an external channel.
  *
  * Sends data to a slave device on the specified channel.
- * Data must be provided directly in the payload; internally handles buffering.
- *
- * @note Validity checks are minimal. Callers must ensure:
- *       - channel is a valid external I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
- *       - channel has been previously configured via EXEC_I2C_Configuration()
- *       - payload is non-NULL if payload_length > 0
- *       Invalid channel access will result in undefined behavior (no range checking).
- *
- * Caller should call EXEC_I2C_Did_Last_Transfer_Overflow afterwards to check for overflow.
+ * The complete payload is validated and copied into driver-owned queue storage.
  *
  * @param[in] channel               I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
  * @param[in] device_address_7bit   7-bit slave address
  * @param[in] payload               Data to transmit
  * @param[in] payload_length        Number of bytes to transmit
  *
- * @return true if transmission was initiated
+ * @return true if the complete request was accepted into the driver queue
  * @return false on failure
  */
 bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
@@ -121,13 +115,7 @@ bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_
  *
  * Prepares the channel to respond to a master read request with the provided data.
  *
- * @note Validity checks are minimal. Callers must ensure:
- *       - channel is a valid external I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
- *       - channel has been previously configured via EXEC_I2C_Configuration()
- *       - payload is non-NULL if payload_length > 0
- *       Invalid channel access will result in undefined behavior (no range checking).
- *
- * Caller should call EXEC_I2C_Did_Last_Transfer_Overflow afterwards to check for overflow.
+ * The low-level trigger validates channel state and rejects an active slave transfer.
  *
  * @param[in] channel               I2C channel
  * @param[in] payload               Data to transmit when master requests
@@ -146,18 +134,13 @@ bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* pa
  * Received data is buffered internally and can be retrieved with
 EXEC_I2C_Receive_Copy_And_Consume().
  *
- * @note Validity checks are minimal. Callers must ensure:
- *       - channel is a valid external I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
- *       - channel has been previously configured via EXEC_I2C_Configuration()
- *       Invalid channel access will result in undefined behavior (no range checking).
- *
- * Caller should call EXEC_I2C_Did_Last_Transfer_Overflow afterwards to check for overflow.
+ * The complete receive request is validated and queued atomically.
  *
  * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
  * @param[in] device_address_7bit   7-bit slave address
  * @param[in] expected_length       Number of bytes expected from slave
  *
- * @return true if receive was initiated
+ * @return true if the complete receive request was accepted into the queue
  * @return false on failure
  */
 bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
@@ -169,12 +152,7 @@ bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t de
  * Prepares the channel to receive data from a master. Received data
  * is buffered internally and can be retrieved with EXEC_I2C_Receive_Copy_And_Consume().
  *
- * @note Validity checks are minimal. Callers must ensure:
- *       - channel is a valid external I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
- *       - channel has been previously configured via EXEC_I2C_Configuration()
- *       Invalid channel access will result in undefined behavior (no range checking).
- *
- * Caller should call EXEC_I2C_Did_Last_Transfer_Overflow afterwards to check for overflow.
+ * The low-level trigger validates expected length and rejects an active transfer.
  *
  * @param[in] channel           I2C channel
  * @param[in] expected_length   Number of bytes expected from master
@@ -185,17 +163,47 @@ bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t de
 bool EXEC_I2C_Start_Slave_Receive_External( HWI2CChannel_T channel, uint16_t expected_length );
 
 /**
+ * @brief Service deferred queue progress from normal execution context.
+ */
+void EXEC_I2C_Service_Transaction_Queue( HWI2CChannel_T channel );
+
+/**
+ * @brief Determine whether every accepted master transaction has physically completed.
+ *
+ * This includes final STOP observation and an idle peripheral; it is distinct
+ * from a successful enqueue return.
+ */
+bool EXEC_I2C_Is_Transaction_Queue_Complete( HWI2CChannel_T channel );
+
+/**
+ * @brief Retrieve and clear the channel's latched asynchronous transfer result.
+ */
+EXECI2CStatus_T EXEC_I2C_Get_And_Clear_Transfer_Result( HWI2CChannel_T channel );
+
+/**
+ * @brief Copy and consume exactly one complete receive transaction.
+ *
+ * If the destination is too small, required_length reports the next complete
+ * message size and the message remains unconsumed.
+ *
+ * @return EXEC_I2C_STATUS_OK when one message was copied and consumed
+ * @return EXEC_I2C_STATUS_NO_DATA when no complete message is available
+ * @return EXEC_I2C_STATUS_BUFFER_TOO_SMALL when capacity is insufficient
+ * @return EXEC_I2C_STATUS_INVALID_PARAM for invalid output pointers
+ */
+EXECI2CStatus_T EXEC_I2C_Receive_Message_Copy_And_Consume(
+    HWI2CChannel_T channel, uint8_t* result_storage, uint16_t result_storage_capacity,
+    HWI2CRxMessageDescriptor_T* descriptor, uint16_t* bytes_copied, uint16_t* required_length );
+
+/**
  * @brief Copy received data and advance the receive pointer.
  *
- * Copies received data from the internal ring buffer into caller-provided storage,
- * then consumes (advances pointer past) the copied bytes. Atomic operation.
+ * Compatibility wrapper around EXEC_I2C_Receive_Message_Copy_And_Consume(). It
+ * retrieves at most one complete message. No-data polling remains successful
+ * with bytes_copied set to zero for existing console callers. A message that
+ * does not fit returns false and remains unconsumed.
  *
- * @note Validity checks are minimal. Callers must ensure:
- *       - channel is a valid external I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
- *       - channel has been previously configured via EXEC_I2C_Configuration()
- *       - result_storage is non-NULL
- *       - bytes_copied is non-NULL
- *       Invalid channel access will result in undefined behavior (no range checking).
+ * Parameters are validated by the message-oriented implementation.
  *
  * @param[in]  channel                     I2C channel
  * @param[out] result_storage              Buffer to copy received data into
