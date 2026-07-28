@@ -8,7 +8,8 @@
  *      configuration, interrupt handling, and data transfer orchestration for
  *      three I2C channels: I2C3, I2C2 (both external), and FMPI2C1 (internal).
  *      Supports both master and slave modes with selectable interrupt or DMA-based
- *      transfer paths. Uses ring-buffered receive and stage-buffered transmit patterns.
+ *      transfer paths. Master requests are queued as complete transactions and
+ *      received data is published as complete messages.
  *
  *  Notes:
  *      - I2C3 supports interrupt-only transfers (no DMA)
@@ -16,7 +17,7 @@
  *      - FMPI2C1 is a high-speed internal channel (interrupt-only)
  *      - Must call configuration function before any transfers
  *      - Interrupt handlers (HW_I2C_Service_*_IRQ) must be called from application ISRs
- *      - Ring buffer size is 512 bytes; stage buffer size is 256 bytes
+ *      - RX byte storage is 512 bytes; maximum TX message size is 256 bytes
  ******************************************************************************/
 
 #ifndef HW_I2C_H
@@ -41,7 +42,12 @@ extern "C"
  */
 
 #define HW_I2C_RX_BUFFER_SIZE ( 512U )
-#define HW_I2C_TX_STAGE_SIZE ( 256U )
+#define HW_I2C_TX_MAX_MESSAGE_SIZE ( 256U )
+#define HW_I2C_MASTER_TRANSACTION_QUEUE_DEPTH ( 8U )
+#define HW_I2C_RX_MESSAGE_QUEUE_DEPTH ( 8U )
+
+/* Compatibility name retained for the non-queued slave TX staging API. */
+#define HW_I2C_TX_STAGE_SIZE HW_I2C_TX_MAX_MESSAGE_SIZE
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -85,6 +91,15 @@ typedef enum HWI2CStatus_T
     HW_I2C_STATUS_OVERFLOW,
 } HWI2CStatus_T;
 
+typedef enum HWI2CTransferKind_T
+{
+    HW_I2C_TRANSFER_KIND_IDLE = 0,
+    HW_I2C_TRANSFER_KIND_MASTER_TX,
+    HW_I2C_TRANSFER_KIND_MASTER_RX,
+    HW_I2C_TRANSFER_KIND_SLAVE_TX,
+    HW_I2C_TRANSFER_KIND_SLAVE_RX,
+} HWI2CTransferKind_T;
+
 typedef struct HWI2CChannelConfig_T
 {
     HWI2CMode_T         mode;
@@ -106,6 +121,21 @@ typedef struct HWI2CRxPeek_T
     HWI2CSpan_T second;
     uint16_t    total_length;
 } HWI2CRxPeek_T;
+
+typedef struct HWI2CRxMessageDescriptor_T
+{
+    HWI2CTransferKind_T transfer_kind;
+    uint16_t            target_address_7bit;
+    uint16_t            length;
+    HWI2CStatus_T       status;
+} HWI2CRxMessageDescriptor_T;
+
+typedef struct HWI2CRxMessagePeek_T
+{
+    HWI2CRxMessageDescriptor_T descriptor;
+    HWI2CSpan_T                first;
+    HWI2CSpan_T                second;
+} HWI2CRxMessagePeek_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -142,6 +172,51 @@ HWI2CStatus_T HW_I2C_Configure_Channel( HWI2CChannel_T              channel,
 HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit );
 
 /**
+ * @brief Atomically enqueue one complete master transmit transaction.
+ *
+ * The payload is copied into driver-owned storage before the queue entry is
+ * published. A successful return means the complete request was accepted; it
+ * does not mean the bus transaction has completed.
+ *
+ * @return HW_I2C_STATUS_OK when accepted
+ * @return HW_I2C_STATUS_BUSY when the fixed-depth queue is full
+ * @return HW_I2C_STATUS_INVALID_PARAM for an invalid channel, address, payload, or length
+ * @return HW_I2C_STATUS_NOT_CONFIGURED when the channel is not configured as a master
+ */
+HWI2CStatus_T HW_I2C_Enqueue_Master_Transmit( HWI2CChannel_T channel, uint16_t device_address_7bit,
+                                              const uint8_t* payload, uint16_t payload_length );
+
+/**
+ * @brief Atomically enqueue one complete master receive transaction.
+ *
+ * The transaction remains in the queue until STOP/bus completion. Received
+ * bytes become visible only as one complete RX message.
+ */
+HWI2CStatus_T HW_I2C_Enqueue_Master_Receive( HWI2CChannel_T channel, uint16_t device_address_7bit,
+                                             uint16_t expected_length );
+
+/**
+ * @brief Service deferred queue completion and start the next safe transaction.
+ *
+ * Call from normal context while queued work is outstanding. The function does
+ * not wait for BUSY to clear.
+ */
+void HW_I2C_Service_Transaction_Queue( HWI2CChannel_T channel );
+
+/**
+ * @brief Report whether all accepted transactions have physically completed.
+ *
+ * Completion requires an empty queue, no active transfer, an idle peripheral,
+ * and observation of the final STOP/completion condition.
+ */
+bool HW_I2C_Is_Transaction_Queue_Complete( HWI2CChannel_T channel );
+
+/**
+ * @brief Return and clear the channel's latched asynchronous transfer result.
+ */
+HWI2CStatus_T HW_I2C_Get_And_Clear_Transfer_Result( HWI2CChannel_T channel );
+
+/**
  * @brief Load data into the transmit stage buffer.
  *
  * Prepares data for transmission. Must be called before triggering a transmit.
@@ -166,7 +241,7 @@ bool HW_I2C_Load_Stage_Buffer( HWI2CChannel_T channel, const uint8_t* data, uint
  * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
  * @param[in] device_address_7bit   7-bit slave address to transmit to
  *
- * @return true if transfer was initiated successfully
+ * @return true if the staged data was accepted into the master queue
  * @return false if another transfer is already in progress
  */
 bool HW_I2C_Trigger_Master_Transmit_External( HWI2CChannel_T channel,
@@ -181,7 +256,7 @@ bool HW_I2C_Trigger_Master_Transmit_External( HWI2CChannel_T channel,
  *
  * @param[in] device_address_7bit   7-bit slave address to transmit to
  *
- * @return true if transfer was initiated successfully
+ * @return true if the staged data was accepted into the master queue
  * @return false if another transfer is already in progress
  */
 bool HW_I2C_Trigger_Master_Transmit_Internal( uint16_t device_address_7bit );
@@ -198,7 +273,7 @@ bool HW_I2C_Trigger_Master_Transmit_Internal( uint16_t device_address_7bit );
  * @param[in] device_address_7bit   7-bit slave address to receive from
  * @param[in] expected_length       Number of bytes expected to receive
  *
- * @return true if transfer was initiated successfully
+ * @return true if the receive transaction was accepted into the master queue
  * @return false if another transfer is already in progress
  */
 bool HW_I2C_Trigger_Master_Receive_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
@@ -214,7 +289,7 @@ bool HW_I2C_Trigger_Master_Receive_External( HWI2CChannel_T channel, uint16_t de
  * @param[in] device_address_7bit   7-bit slave address to receive from
  * @param[in] expected_length       Number of bytes expected to receive
  *
- * @return true if transfer was initiated successfully
+ * @return true if the receive transaction was accepted into the master queue
  * @return false if another transfer is already in progress
  */
 bool HW_I2C_Trigger_Master_Receive_Internal( uint16_t device_address_7bit,
@@ -275,6 +350,19 @@ bool HW_I2C_Peek_Received( HWI2CChannel_T channel, HWI2CRxPeek_T* peek );
  * @return false if bytes_to_consume exceeds available data
  */
 bool HW_I2C_Consume_Received( HWI2CChannel_T channel, uint16_t bytes_to_consume );
+
+/**
+ * @brief Peek exactly one complete received message without consuming it.
+ *
+ * For slave RX, target_address_7bit is zero because I2C does not expose a
+ * master source address.
+ */
+bool HW_I2C_Peek_Received_Message( HWI2CChannel_T channel, HWI2CRxMessagePeek_T* message );
+
+/**
+ * @brief Consume the complete message returned by HW_I2C_Peek_Received_Message().
+ */
+bool HW_I2C_Consume_Received_Message( HWI2CChannel_T channel );
 
 /**
  * @brief Check if an overflow occurred on the channel.

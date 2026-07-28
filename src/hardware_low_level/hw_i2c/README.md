@@ -2,71 +2,69 @@
 
 ## Overview
 
-`hw_i2c` is the low-level hardware I2C driver module for the STM32F446ZE microcontroller.
+`hw_i2c` owns I2C3, I2C2, and FMPI2C1 register/DMA state. Master requests are
+stored as complete transactions so several messages can be accepted during one
+execution tick without sharing a mutable staging payload.
 
-This module is responsible for:
+## Channels
 
-- Configuring I2C channels (I2C3, I2C2, and internal FMPI2C1) in master or slave mode
-- Managing I2C transfers at the hardware level using interrupt and DMA pathways
-- Implementing ring-buffered receive mechanisms for efficient data handling
-- Orchestrating master and slave transmit operations using stage-buffer patterns
-- Servicing hardware interrupts and DMA completion events
-- Supporting both standard I2C (100 kHz, 400 kHz) and fast I2C modes
-- Handling I2C bus errors and protocol violations
+- I2C3: external, interrupt transfers
+- I2C2: external, interrupt or DMA transfers
+- FMPI2C1: internal, interrupt transfers with `AUTOEND`
 
----
+## Master transaction queue
 
-## Files
+Each channel has `HW_I2C_MASTER_TRANSACTION_QUEUE_DEPTH` (currently 8) fixed
+slots. A slot contains the transfer kind, seven-bit target address, length, and
+`HW_I2C_TX_MAX_MESSAGE_SIZE` (256) bytes of driver-owned TX storage. On the
+current ABI a slot is 264 bytes, so the slot array costs 2,112 bytes per channel,
+plus queue indices and state flags.
 
-| File                      | Role |
-|---------------------------|------|
-| `hw_i2c.c`        | Public API implementation |
-| `hw_i2c.h`        | Public API header |
+`HW_I2C_Enqueue_Master_Transmit()` and
+`HW_I2C_Enqueue_Master_Receive()` validate and publish a complete request under
+the channel's I2C/DMA IRQ critical section. TX payload bytes are copied before
+the tail and count are advanced. `HW_I2C_STATUS_OK` means accepted into the
+queue; it does not mean the bus transaction is complete.
 
----
+The active transaction remains the queue head until bus completion:
 
-## Architecture and Data Flow
+- DMA transfer-complete only marks the data movement complete.
+- I2C2/I2C3 master TX also requires BTF, STOP generation, and an idle bus.
+- FMPI2C1 `AUTOEND` requires STOPF and an idle bus.
+- `HW_I2C_Service_Transaction_Queue()` performs deferred normal-context head
+  removal and starts the next entry without polling BUSY in an ISR.
 
-`hw_i2c` directly manages hardware I2C peripherals and buffers. It provides low-level primitives that are coordinated by higher-layer modules like `exec_i2c`.
+`HW_I2C_Is_Transaction_Queue_Complete()` is true only when there is no queued or
+active transfer, the peripheral is idle, and the final completion condition was
+observed. NACK, arbitration loss, bus error, timeout, overrun, or DMA error
+latches a failure, aborts the active entry, flushes the remaining queue, and
+returns the peripheral to idle. Read and clear that result with
+`HW_I2C_Get_And_Clear_Transfer_Result()`.
 
-### Channel Support
+FMPI2C1 has an eight-bit `NBYTES` field, so one internal transaction is limited
+to 255 bytes. Reload/TCR and repeated-start grouping are not implemented.
 
-- **I2C3**: External channel (interrupt-based transfers only, no DMA)
-- **I2C2**: External channel (interrupt or DMA-based transfers)
-- **FMPI2C1**: Internal high-speed channel (interrupt-based transfers only)
+## Receive messages
 
-### Transfer Mechanisms
+The 512-byte RX ring has a parallel fixed-depth descriptor queue. A descriptor
+records transfer kind, complete length, master target address (zero for slave
+RX), and status. Interrupt and DMA receive paths use a private linear staging
+buffer; partial data is never published.
 
-- **Interrupt Path**: Suitable for small transfers; CPU-driven byte-by-byte handling
-- **DMA Path**: Suitable for bulk transfers; hardware-accelerated, available only on I2C2
+On STOP/completion, the driver atomically checks space, copies the complete
+message into the byte ring, and publishes its descriptor. Early STOP on a DMA
+slave receive uses configured length minus the DMA remaining count. If either
+the byte ring or descriptor queue lacks room, the complete message is rejected
+and overflow is latched.
 
-### RX Flow
+Use `HW_I2C_Peek_Received_Message()` and
+`HW_I2C_Consume_Received_Message()` to retrieve one complete transaction. The
+legacy byte-oriented peek/consume names remain as compatibility wrappers, but
+they expose and consume only the next complete message.
 
-1. Caller loads stage buffer with `HW_I2C_Load_Stage_Buffer()`
-2. Caller triggers transfer with `HW_I2C_Trigger_Master_Receive()` or `HW_I2C_Trigger_Slave_Receive_External()`
-3. Hardware/DMA receives data into internal ring buffer
-4. Interrupt handler services I2C events and manages state machine
-5. Caller peeks received data with `HW_I2C_Peek_Received()` (zero-copy)
-6. Caller consumes read bytes with `HW_I2C_Consume_Received()`
+## Compatibility and deferred work
 
-### TX Flow
-
-1. Caller loads stage buffer with `HW_I2C_Load_Stage_Buffer()`
-2. Caller triggers transfer with `HW_I2C_Trigger_Master_Transmit()` or `HW_I2C_Trigger_Slave_Transmit()`
-3. Hardware/DMA transmits buffered data over I2C bus
-4. Interrupt/DMA handler manages transmit progress and detects completion
-5. Caller detects completion via interrupt callbacks in higher layers
-
----
-
-## Public API
-
-The public API is declared in `hw_i2c.h`. Key functions include:
-
-- `HW_I2C_Configure_Channel()` - Configure an external I2C channel
-- `HW_I2C_Configure_Internal_FMPI2C1()` - Configure the internal FMPI2C1 channel
-- `HW_I2C_Load_Stage_Buffer()` - Load data into transmit stage buffer
-- `HW_I2C_Trigger_Master_Transmit()` / `HW_I2C_Trigger_Master_Receive()` - Master operations
-- `HW_I2C_Trigger_Slave_Transmit()` / `HW_I2C_Trigger_Slave_Receive_External()` - Slave operations
-- `HW_I2C_Peek_Received()` / `HW_I2C_Consume_Received()` - Receive management
-- `HW_I2C_Service_*_IRQ()` - Interrupt handlers called by application ISRs
+The stage-buffer/trigger API remains for non-queued slave responses and old
+callers. Slave TX/RX stays single-active and returns busy rather than replacing
+an active transfer. Queued slave responses, repeated starts, grouped
+transactions, and configurable STOP behavior are deliberately deferred.
