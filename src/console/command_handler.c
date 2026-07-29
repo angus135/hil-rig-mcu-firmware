@@ -20,8 +20,6 @@
 #include "hw_gpio.h"
 #include "exec_uart.h"
 #include "hw_adc.h"
-#include "hw_can.h"
-#include "exec_can.h"
 #include "exec_digital_input.h"
 #include <stdint.h>
 #include <stdbool.h>

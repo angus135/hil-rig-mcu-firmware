@@ -117,7 +117,7 @@ CanProperties_T HW_CAN_Compute_Properties( uint32_t bitrate, uint32_t total_TQ,
  *          FIFO assignment for accepted frames
  *
  */
-int HW_CAN_Configure1( uint32_t bitrate );
+int HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id, uint16_t filter_mask );
 
 /**
  * @brief Configures the peripherals of CAN channel 2
@@ -145,7 +145,7 @@ int HW_CAN_Configure1( uint32_t bitrate );
  *          FIFO assignment for accepted frames
  *
  */
-int HW_CAN_Configure2( uint32_t bitrate );
+int HW_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id, uint16_t filter_mask );
 
 /**
  * @brief recieves data and stores it in rxData (8 bytes) over the hcan CAN channel 1

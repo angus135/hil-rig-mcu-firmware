@@ -498,35 +498,80 @@ HAL_StatusTypeDef HW_CAN_Apply_Timing_HAL( CAN_HandleTypeDef* hcan, CanPropertie
  * @param hcan the pointer to the handle for the can peripheral
  *
  * This function applies the desired can filter properties using the HAL library
+    Can filtering works as follows:
+    The ID of each incoming frame is compared in hardware to the filter banks via:
+    (received_ID & mask) == (filter_id & mask)
+
+    Incoming CAN Frame
+            │
+            ▼
+    Check Bank 0
+            │
+            ├── Match?
+            │
+            ▼
+    Check Bank 1
+            │
+            ├── Match?
+            │
+            ▼
+    Check Bank 2
+            │
+            ...
+            |
+    Check Bank 27
+            │
+            ├── Match?
+            |
+        discard
  *
  */
-HAL_StatusTypeDef HW_CAN_Apply_Filter_HAL( CAN_FilterTypeDef* filter, CAN_HandleTypeDef* hcan )
+HAL_StatusTypeDef HW_CAN_Apply_Filter_HAL( CAN_FilterTypeDef* filter, CAN_HandleTypeDef* hcan, uint16_t filter_bank, uint16_t filter_id, uint16_t filter_mask )
 {
+    // Either CAN_FILTERMODE_IDMASK, or CAN_FILTERMODE_IDLIST
+    // CAN_FILTERMODE_IDMASK accepts a range of ID's based on the filter ID and the mask
+    // CAN_FILTERMODE_IDLIST accepts an id if it is in the ID list
     ( *filter ).FilterMode  = CAN_FILTERMODE_IDMASK;
+    // Use one 32-bit filter entry per filter bank.
     ( *filter ).FilterScale = CAN_FILTERSCALE_32BIT;
 
-    ( *filter ).FilterIdHigh     = 0x0000;
-    ( *filter ).FilterIdLow      = 0x0000;
-    ( *filter ).FilterMaskIdHigh = 0x0000;
-    ( *filter ).FilterMaskIdLow  = 0x0000;
-
-    ( *filter ).SlaveStartFilterBank = 14;
-
-    if ( hcan->Instance == CAN1 )
+    if (filter_id > 0x7FF || filter_mask > 0x7FF)
     {
-        ( *filter ).FilterBank = 0;
+        return HAL_ERROR;
     }
-    else if ( hcan->Instance == CAN2 )
+
+    // Standard CAN ID's are 11 bits long and only use the High bits 15-5 
+    ( *filter ).FilterIdHigh     = filter_id << 5;  // the upper 16 bits of the filter ID value
+    ( *filter ).FilterIdLow      = 0x0000;  // the lower 16 bits of the filter ID value
+    ( *filter ).FilterMaskIdHigh = filter_mask << 5;  // the upper 16 bits of the filter mask value
+    ( *filter ).FilterMaskIdLow  = 0x0000;  // the lower 16 bits of the filter mask value
+
+    ( *filter ).SlaveStartFilterBank = 14;  // divides the two filter banks (CAN1 & CAN2) 0----------------13 |14----------------27
+
+    if (hcan->Instance == CAN1)
     {
-        ( *filter ).FilterBank = 14;
+        if (filter_bank > 13)
+        {
+            return HAL_ERROR;
+        }
+
+    }
+    else if (hcan->Instance == CAN2)
+    {
+        if (filter_bank < 14 || filter_bank > 27)
+        {
+            return HAL_ERROR;
+        }
     }
     else
     {
         return HAL_ERROR;
     }
 
-    ( *filter ).FilterFIFOAssignment = CAN_FILTER_FIFO0;
-    ( *filter ).FilterActivation     = ENABLE;
+    (*filter).FilterBank = filter_bank;
+
+    ( *filter ).FilterFIFOAssignment = CAN_FILTER_FIFO0;    // filter FIFO assignment
+    ( *filter ).FilterActivation     = ENABLE;  // enables the filter
 
     return HAL_CAN_ConfigFilter( hcan, filter );
 }
@@ -558,7 +603,7 @@ HAL_StatusTypeDef HW_CAN_Apply_Filter_HAL( CAN_FilterTypeDef* filter, CAN_Handle
  *          FIFO assignment for accepted frames
  *
  */
-int HW_CAN_Configure( CAN_HandleTypeDef* hcan, uint32_t bitrate )
+int HW_CAN_Configure( CAN_HandleTypeDef* hcan, uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id, uint16_t filter_mask )
 {
     CAN_FilterTypeDef filter    = { 0 };
     CanProperties_T   can_props = HW_CAN_Compute_Properties( bitrate, TOTAL_TQ, MBPS_SAMPLE_POINT );
@@ -566,7 +611,7 @@ int HW_CAN_Configure( CAN_HandleTypeDef* hcan, uint32_t bitrate )
     {
         return 1;
     }
-    if ( HW_CAN_Apply_Filter_HAL( &filter, hcan ) != HAL_OK )
+    if ( HW_CAN_Apply_Filter_HAL( &filter, hcan, filter_bank, filter_id, filter_mask ) != HAL_OK )
     {
         return 2;
     }
@@ -653,12 +698,12 @@ CanProperties_T HW_CAN_Compute_Properties( uint32_t bitrate, uint32_t total_TQ,
  *          FIFO assignment for accepted frames
  *
  */
-int HW_CAN_Configure1( uint32_t bitrate )
+int HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id, uint16_t filter_mask )
 {
     // __HAL_RCC_CAN1_FORCE_RESET();
     // __HAL_RCC_CAN1_RELEASE_RESET();
     __HAL_RCC_CAN1_CLK_ENABLE();
-    return HW_CAN_Configure( &hcan1, bitrate );
+    return HW_CAN_Configure( &hcan1, bitrate, filter_bank, filter_id, filter_mask );
 }
 
 /**
@@ -687,12 +732,12 @@ int HW_CAN_Configure1( uint32_t bitrate )
  *          FIFO assignment for accepted frames
  *
  */
-int HW_CAN_Configure2( uint32_t bitrate )
+int HW_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id, uint16_t filter_mask )
 {
     // __HAL_RCC_CAN2_FORCE_RESET();
     // __HAL_RCC_CAN2_RELEASE_RESET();
     __HAL_RCC_CAN2_CLK_ENABLE();
-    return HW_CAN_Configure( &hcan2, bitrate );
+    return HW_CAN_Configure( &hcan2, bitrate, filter_bank, filter_id, filter_mask );
 }
 
 /**-----------------------------------------------------------------------------
