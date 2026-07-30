@@ -340,6 +340,9 @@ void CONSOLE_CAN_Command_Handler( uint16_t argc, char* argv[] )
     else if ( strcmp( argv[1], "config" ) == 0 )
     {
         // can configure
+        pass_argv[1] = argv[2];  // filter_bank
+        pass_argv[2] = argv[3];  // filter_id
+        pass_argv[3] = argv[4];  // filter_mask
         CONSOLE_Command_Can_config( pass_argc, pass_argv );
         return;
     }

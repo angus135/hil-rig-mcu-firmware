@@ -187,7 +187,7 @@ TEST_F( HWCANTest, TransmitFailsWhenMailboxBusy )
 
     uint8_t data[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
 
-    int result = HW_CAN_Transmit( &hcan1, data );
+    int result = HW_CAN_Transmit( &hcan1, data, 123, 8 );
 
     EXPECT_EQ( result, 1 );
 }
@@ -198,7 +198,7 @@ TEST_F( HWCANTest, TransmitLoadsMailboxCorrectly )
 
     uint8_t data[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
 
-    int result = HW_CAN_Transmit( &hcan1, data );
+    int result = HW_CAN_Transmit( &hcan1, data, 123, 8 );
 
     EXPECT_EQ( result, 0 );
 
@@ -257,11 +257,11 @@ TEST_F( HWCANTest, ReceiveReadsFIFODataCorrectly )
 
 TEST_F( HWCANTest, TxBufferWriteAndReadWorks )
 {
-    uint8_t tx[1][CAN_PACKET_SIZE] = { { 1, 2, 3, 4, 5, 6, 7, 8 } };
+    uint8_t tx[1][CAN_PACKET_SIZE + 1] = { { 1, 2, 3, 4, 5, 6, 7, 8 } };
 
     EXPECT_EQ( HW_CAN_Tx_Buffer_Write1( tx, 1 ), 0 );
 
-    uint8_t out[1][CAN_PACKET_SIZE] = { 0 };
+    uint8_t out[1][CAN_PACKET_SIZE + 1] = { 0 };
 
     uint16_t count = HW_CAN_Tx_Buffer_Read1( out );
 
@@ -279,7 +279,7 @@ TEST_F( HWCANTest, TxBufferWriteAndReadWorks )
 
 TEST_F( HWCANTest, BufferReadReturnsZeroWhenEmpty )
 {
-    uint8_t out[1][CAN_PACKET_SIZE];
+    uint8_t out[1][CAN_PACKET_SIZE + 1];
 
     EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 0 );
 }
@@ -301,7 +301,7 @@ TEST_F( HWCANTest, TxIRQTransmitsBufferedPacket )
 {
     fake_can1.TSR = CAN_TSR_TME0;
 
-    uint8_t tx[1][CAN_PACKET_SIZE] = { { 9, 8, 7, 6, 5, 4, 3, 2 } };
+    uint8_t tx[1][CAN_PACKET_SIZE + 1] = { { 9, 8, 7, 6, 5, 4, 3, 2 } };
 
     HW_CAN_Tx_Buffer_Write1( tx, 1 );
 
@@ -320,7 +320,7 @@ TEST_F( HWCANTest, ConfigureReturns1WhenInitFails )
 {
     EXPECT_CALL( mock, CANInit( _ ) ).WillOnce( Return( HAL_ERROR ) );
 
-    int result = HW_CAN_Configure1( 1000000 );
+    int result = HW_CAN_Configure1( 1000000, 0, 123, 0 );
 
     EXPECT_EQ( result, 1 );
 }
@@ -331,7 +331,7 @@ TEST_F( HWCANTest, ConfigureReturns1WhenInitFails )
 
 TEST_F( HWCANTest, TxBufferWriteFailsWhenFull )
 {
-    uint8_t tx[1][CAN_PACKET_SIZE] = { { 1, 2, 3, 4, 5, 6, 7, 8 } };
+    uint8_t tx[1][CAN_PACKET_SIZE + 1] = { { 1, 2, 3, 4, 5, 6, 7, 8 } };
 
     /* Buffer capacity is width - 1 */
     for ( int i = 0; i < TRANSMIT_BUFFER_WIDTH - 1; i++ )
@@ -345,7 +345,7 @@ TEST_F( HWCANTest, TxBufferWriteFailsWhenFull )
 
 TEST_F( HWCANTest, RxBufferWriteFailsWhenFull )
 {
-    uint8_t rx[1][CAN_PACKET_SIZE] = { { 9, 8, 7, 6, 5, 4, 3, 2 } };
+    uint8_t rx[1][CAN_PACKET_SIZE + 1] = { { 9, 8, 7, 6, 5, 4, 3, 2 } };
 
     for ( int i = 0; i < RECEIVE_BUFFER_WIDTH - 1; i++ )
     {
@@ -357,17 +357,17 @@ TEST_F( HWCANTest, RxBufferWriteFailsWhenFull )
 
 TEST_F( HWCANTest, TxBufferWraparoundWorksCorrectly )
 {
-    uint8_t tx[1][CAN_PACKET_SIZE];
+    uint8_t tx[1][CAN_PACKET_SIZE + 1];
 
     /* Fill with known values */
     for ( int i = 0; i < 10; i++ )
     {
-        memset( tx[0], i, CAN_PACKET_SIZE );
+        memset( tx[0], i, CAN_PACKET_SIZE + 1 );
 
         EXPECT_EQ( HW_CAN_Tx_Buffer_Write1( tx, 1 ), 0 );
     }
 
-    uint8_t out[20][CAN_PACKET_SIZE] = { 0 };
+    uint8_t out[20][CAN_PACKET_SIZE + 1] = { 0 };
 
     uint16_t count = HW_CAN_Tx_Buffer_Read1( out );
 
@@ -384,7 +384,7 @@ TEST_F( HWCANTest, TxBufferWraparoundWorksCorrectly )
     /* Force wraparound */
     for ( int i = 0; i < 8; i++ )
     {
-        memset( tx[0], 100 + i, CAN_PACKET_SIZE );
+        memset( tx[0], 100 + i, CAN_PACKET_SIZE + 1 );
 
         EXPECT_EQ( HW_CAN_Tx_Buffer_Write1( tx, 1 ), 0 );
     }

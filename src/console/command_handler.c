@@ -72,10 +72,10 @@ static void CONSOLE_Command_Set_Pin( uint16_t argc, char** argv );
 static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char** argv );
 static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] );
-static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] );
-static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] );
-static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] );
-static void CONSOLE_Command_Can( uint16_t argc, char* argv[] );
+// static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] );
+// static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] );
+// static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] );
+// static void CONSOLE_Command_Can( uint16_t argc, char* argv[] );
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
