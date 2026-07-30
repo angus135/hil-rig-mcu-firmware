@@ -20,6 +20,7 @@
  */
 
 #include "console_can.h"
+#include <stdlib.h>
 
 #include "console.h"
 #include "exec_can.h"
@@ -133,7 +134,11 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
  */
 static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] )
 {
-    int check = HW_CAN_Configure1( 1000000 );
+    uint16_t filter_bank = atoi( argv[1] );
+    uint16_t filter_id   = atoi( argv[2] );
+    uint16_t filter_mask = atoi( argv[3] );
+
+    int check = HW_CAN_Configure1( 1000000, filter_bank, filter_id, filter_mask );
     if ( check == 1 )
     {
         CONSOLE_Printf( "Can 1  Timing set up error" );
@@ -154,7 +159,7 @@ static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "Can 1 Config Error" );
         return;
     }
-    check = HW_CAN_Configure2( 1000000 );
+    check = HW_CAN_Configure2( 1000000, filter_bank, filter_id, filter_mask );
     if ( check == 1 )
     {
         CONSOLE_Printf( "Can 2  Timing set up error" );
