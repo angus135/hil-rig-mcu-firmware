@@ -83,6 +83,8 @@ extern "C"
 
 /* Register bits */
 #define CAN_TSR_TME0 ( 1U << 26 )
+#define CAN_TSR_TME1 ( 1U << 27 )
+#define CAN_TSR_TME2 ( 1U << 28 )
 #define CAN_TI0R_TXRQ ( 1U << 0 )
 #define CAN_RF0R_FMP0 ( 0x3U )
 #define CAN_RF0R_RFOM0 ( 1U << 5 )

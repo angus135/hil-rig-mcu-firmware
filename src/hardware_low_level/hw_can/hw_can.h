@@ -164,7 +164,7 @@ int HW_CAN_Recieve1( uint8_t* rxData );
  *
  * Uses HAL to transmit message over CAN channel 1
  */
-int HW_CAN_Transmit1( uint8_t* txData );
+int HW_CAN_Transmit1( uint8_t* txData, uint16_t id );
 
 /**
  * @brief recieves data and stores it in rxData (8 bytes) over the hcan CAN channel 2
@@ -183,7 +183,7 @@ int HW_CAN_Recieve2( uint8_t* rxData );
  *
  * Uses HAL to transmit message over CAN channel 2
  */
-int HW_CAN_Transmit2( uint8_t* txData );
+int HW_CAN_Transmit2( uint8_t* txData, uint16_t id );
 
 /**
  * @brief Writes a number of 8 byte packets (source) to the tx buffer
@@ -194,7 +194,7 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t HW_CAN_Tx_Buffer_Write1( uint8_t source[][CAN_PACKET_SIZE], uint16_t length );
+uint16_t HW_CAN_Tx_Buffer_Write1( uint8_t source[][CAN_PACKET_SIZE+1], uint16_t length );
 
 /**
  * @brief Writes a number of 8 byte packets (source) to the rx buffer
@@ -205,7 +205,7 @@ uint8_t can_rx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t HW_CAN_Rx_Buffer_Write1( uint8_t source[][CAN_PACKET_SIZE], uint16_t length );
+uint16_t HW_CAN_Rx_Buffer_Write1( uint8_t source[][CAN_PACKET_SIZE+1], uint16_t length );
 
 /**
  * @brief Writes a number of 8 byte packets (source) to the tx buffer
@@ -216,7 +216,7 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t HW_CAN_Tx_Buffer_Write2( uint8_t source[][CAN_PACKET_SIZE], uint16_t length );
+uint16_t HW_CAN_Tx_Buffer_Write2( uint8_t source[][CAN_PACKET_SIZE+1], uint16_t length );
 
 /**
  * @brief Writes a number of 8 byte packets (source) to the rx buffer
@@ -227,7 +227,7 @@ uint8_t can_rx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t HW_CAN_Rx_Buffer_Write2( uint8_t source[][CAN_PACKET_SIZE], uint16_t length );
+uint16_t HW_CAN_Rx_Buffer_Write2( uint8_t source[][CAN_PACKET_SIZE+1], uint16_t length );
 
 /**
  * @brief Reads from the rx buffer (channel 2) and writes it to dest
@@ -236,7 +236,7 @@ uint16_t HW_CAN_Rx_Buffer_Write2( uint8_t source[][CAN_PACKET_SIZE], uint16_t le
  *
  * @return the number of CAN_PACKET_SIZE's read
  */
-uint16_t HW_CAN_Rx_Buffer_Read1( uint8_t dest[][CAN_PACKET_SIZE] );
+uint16_t HW_CAN_Rx_Buffer_Read1( uint8_t dest[][CAN_PACKET_SIZE+1] );
 
 /**
  * @brief Moves the channe 1 read pointer x times
@@ -253,7 +253,7 @@ void HW_CAN_Rx_Buffer_consume1( uint16_t update );
  *
  * @return the number of CAN_PACKET_SIZE's read
  */
-uint16_t HW_CAN_Rx_Buffer_Read2( uint8_t dest[][CAN_PACKET_SIZE] );
+uint16_t HW_CAN_Rx_Buffer_Read2( uint8_t dest[][CAN_PACKET_SIZE+1] );
 
 /**
  * @brief Moves the channe 2 read pointer x times
@@ -270,7 +270,7 @@ void HW_CAN_Rx_Buffer_consume2( uint16_t update );
  *
  * @return the number of CAN_PACKET_SIZE's read
  */
-uint16_t HW_CAN_Tx_Buffer_Read1( uint8_t dest[][CAN_PACKET_SIZE] );
+uint16_t HW_CAN_Tx_Buffer_Read1( uint8_t dest[][CAN_PACKET_SIZE+1] );
 
 /**
  * @brief Reads from the tx buffer (channel 2) and writes it to dest
@@ -279,7 +279,7 @@ uint16_t HW_CAN_Tx_Buffer_Read1( uint8_t dest[][CAN_PACKET_SIZE] );
  *
  * @return the number of CAN_PACKET_SIZE's read
  */
-uint16_t HW_CAN_Tx_Buffer_Read2( uint8_t dest[][CAN_PACKET_SIZE] );
+uint16_t HW_CAN_Tx_Buffer_Read2( uint8_t dest[][CAN_PACKET_SIZE+1] );
 
 /**
  * @brief Enables tx interrupts on channel 1
