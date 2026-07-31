@@ -310,6 +310,10 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         {
             CONSOLE_Printf( "Expander config: OK\r\n" );
         }
+        else if ( status == LOGIC_EXPANDER_STATUS_BUSY )
+        {
+            CONSOLE_Printf( "Expander config: pending\r\n" );
+        }
         else
         {
             CONSOLE_Printf( "Expander config failed (status=%d)\r\n", ( int )status );

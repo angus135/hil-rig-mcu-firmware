@@ -134,6 +134,14 @@ TEST_F( LogicExpanderTest, SelfConfigWaitsForPhysicalCompletionBeforeReady )
     EXPECT_TRUE( logic_expander_ready );
 }
 
+TEST_F( LogicExpanderTest, ProcessDoesNotServiceI2CUntilConfigurationStarts )
+{
+    EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( _ ) ).Times( 0 );
+
+    EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_NOT_READY );
+}
+
 TEST_F( LogicExpanderTest, SelfConfigPhysicalErrorNeverMarksReady )
 {
     EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) ).WillOnce( Return( HW_I2C_STATUS_OK ) );
@@ -240,6 +248,25 @@ TEST_F( LogicExpanderTest, PartialQueueFullRetryDoesNotDuplicateAcceptedExpander
         .WillOnce( Return( HW_I2C_STATUS_OK ) );
     EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( logic_expander_dirty_bitmask, 0U );
+}
+
+TEST_F( LogicExpanderTest, ReadyProcessRedirtiesActiveExpandersAfterAsynchronousFailure )
+{
+    logic_expander_ready          = true;
+    logic_expander_config_state   = LOGIC_EXPANDER_CONFIG_READY;
+    logic_expander_active_bitmask = 0x03U;
+    logic_expander_dirty_bitmask  = 0U;
+
+    InSequence sequence;
+    EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+    EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( HW_I2C_CHANNEL_FMPI2C1 ) )
+        .WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_i2c, GetAndClearTransferResult( HW_I2C_CHANNEL_FMPI2C1 ) )
+        .WillOnce( Return( HW_I2C_STATUS_ERROR ) );
+
+    EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_ERROR );
+    EXPECT_TRUE( logic_expander_ready );
+    EXPECT_EQ( logic_expander_dirty_bitmask, 0x03U );
 }
 
 TEST_F( LogicExpanderTest, GetStateSnapshotUsesRoleIndexedAddressAndShadowTables )
