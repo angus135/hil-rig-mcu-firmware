@@ -183,6 +183,8 @@ EXECI2CStatus_T EXEC_I2C_Get_And_Clear_Transfer_Result( HWI2CChannel_T channel )
 /**
  * @brief Copy and consume exactly one complete receive transaction.
  *
+ * Services deferred queue progress before checking for a complete message.
+ *
  * If the destination is too small, required_length reports the next complete
  * message size and the message remains unconsumed.
  *

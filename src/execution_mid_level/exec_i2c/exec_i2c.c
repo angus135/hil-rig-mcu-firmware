@@ -77,6 +77,11 @@ static inline EXECI2CStatus_T EXEC_I2C_From_HW_Status( HWI2CStatus_T status )
     }
 }
 
+static inline bool EXEC_I2C_Is_External_Channel( HWI2CChannel_T channel )
+{
+    return ( channel == HW_I2C_CHANNEL_1 ) || ( channel == HW_I2C_CHANNEL_2 );
+}
+
 static EXECI2CStatus_T EXEC_I2C_Validate_Config( HWI2CChannel_T                channel,
                                                  const EXECI2CChannelConfig_T* config )
 {
@@ -201,25 +206,25 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
  * Sends data to a slave device on the specified channel.
  * Data must be provided directly in the payload; internally handles buffering.
  *
- * @note Validity checks are minimal. Callers must ensure:
- *       - channel is a valid external I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
- *       - channel has been previously configured via EXEC_I2C_Configuration()
- *       - payload is non-NULL if payload_length > 0
- *       Invalid channel access will result in undefined behavior (no range checking).
- *
- * Caller should call EXEC_I2C_Did_Last_Transfer_Overflow afterwards to check for overflow.
+ * The external channel selector is validated here. The low-level enqueue validates
+ * the address, payload, length, configured mode, and available queue capacity.
  *
  * @param[in] channel               I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
  * @param[in] device_address_7bit   7-bit slave address
  * @param[in] payload               Data to transmit
  * @param[in] payload_length        Number of bytes to transmit
  *
- * @return true if transmission was initiated
+ * @return true if the complete request was accepted into the driver queue
  * @return false on failure
  */
 bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
                                         const uint8_t* payload, uint16_t payload_length )
 {
+    if ( !EXEC_I2C_Is_External_Channel( channel ) )
+    {
+        return false;
+    }
+
     return HW_I2C_Enqueue_Master_Transmit( channel, device_address_7bit, payload, payload_length )
            == HW_I2C_STATUS_OK;
 }
@@ -256,25 +261,26 @@ bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* pa
  *
  * Requests data from a slave device on the specified external channel (I2C3 or I2C2).
  * Received data is buffered internally and can be retrieved with
-EXEC_I2C_Receive_Copy_And_Consume().
+ * EXEC_I2C_Receive_Copy_And_Consume().
  *
- * @note Validity checks are minimal. Callers must ensure:
- *       - channel is a valid external I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
- *       - channel has been previously configured via EXEC_I2C_Configuration()
- *       Invalid channel access will result in undefined behavior (no range checking).
- *
- * Caller should call EXEC_I2C_Did_Last_Transfer_Overflow afterwards to check for overflow.
+ * The external channel selector is validated here. The low-level enqueue validates
+ * the address, expected length, configured mode, and available queue capacity.
  *
  * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
  * @param[in] device_address_7bit   7-bit slave address
  * @param[in] expected_length       Number of bytes expected from slave
  *
- * @return true if receive was initiated
+ * @return true if the complete receive request was accepted into the queue
  * @return false on failure
  */
 bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
                                              uint16_t expected_length )
 {
+    if ( !EXEC_I2C_Is_External_Channel( channel ) )
+    {
+        return false;
+    }
+
     return HW_I2C_Enqueue_Master_Receive( channel, device_address_7bit, expected_length )
            == HW_I2C_STATUS_OK;
 }
@@ -331,6 +337,8 @@ EXECI2CStatus_T EXEC_I2C_Receive_Message_Copy_And_Consume(
     descriptor->transfer_kind = HW_I2C_TRANSFER_KIND_IDLE;
     *bytes_copied             = 0U;
     *required_length          = 0U;
+
+    HW_I2C_Service_Transaction_Queue( channel );
 
     HWI2CRxMessagePeek_T message;
     memset( &message, 0, sizeof( message ) );

@@ -276,6 +276,17 @@ TEST_F( ExecI2CTest, MasterTransmitExternalReturnsFalseWhenQueueRejectsRequest )
         EXEC_I2C_Master_Transmit_External( HW_I2C_CHANNEL_1, 0x11U, payload, sizeof( payload ) ) );
 }
 
+TEST_F( ExecI2CTest, MasterTransmitExternalRejectsNonExternalChannelWithoutLowLevelCall )
+{
+    const uint8_t payload = 0x12U;
+    EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( _, _, _, _ ) ).Times( 0 );
+
+    EXPECT_FALSE( EXEC_I2C_Master_Transmit_External( HW_I2C_CHANNEL_FMPI2C1, 0x20U, &payload,
+                                                     sizeof( payload ) ) );
+    EXPECT_FALSE( EXEC_I2C_Master_Transmit_External( HW_I2C_CHANNEL_COUNT, 0x20U, &payload,
+                                                     sizeof( payload ) ) );
+}
+
 TEST_F( ExecI2CTest, SlaveTransmitExternal_ForwardsBothCalls )
 {
     const uint8_t payload[] = { 0x55U };
@@ -297,6 +308,14 @@ TEST_F( ExecI2CTest, MasterReceiveExternal_ForwardsToLowLevel )
         .WillOnce( Return( HW_I2C_STATUS_OK ) );
 
     EXPECT_TRUE( EXEC_I2C_Start_Master_Receive_External( HW_I2C_CHANNEL_2, 0x55U, 9U ) );
+}
+
+TEST_F( ExecI2CTest, MasterReceiveExternalRejectsNonExternalChannelWithoutLowLevelCall )
+{
+    EXPECT_CALL( mock_hw_i2c, EnqueueMasterReceive( _, _, _ ) ).Times( 0 );
+
+    EXPECT_FALSE( EXEC_I2C_Start_Master_Receive_External( HW_I2C_CHANNEL_FMPI2C1, 0x20U, 1U ) );
+    EXPECT_FALSE( EXEC_I2C_Start_Master_Receive_External( HW_I2C_CHANNEL_COUNT, 0x20U, 1U ) );
 }
 
 TEST_F( ExecI2CTest, SlaveReceiveExternal_ForwardsToLowLevel )
@@ -339,6 +358,7 @@ TEST_F( ExecI2CTest, ReceiveMessageCopiesOneCompleteMessageAndConsumesIt )
 
     {
         InSequence sequence;
+        EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_1 ) );
         EXPECT_CALL( mock_hw_i2c, PeekReceivedMessage( HW_I2C_CHANNEL_1, _ ) )
             .WillOnce( [&]( HWI2CChannel_T, HWI2CRxMessagePeek_T* out_message ) {
                 *out_message = message;
@@ -376,13 +396,17 @@ TEST_F( ExecI2CTest, ReceiveMessageCopiesWrappedSpansInOrder )
     uint16_t                   bytes_copied    = 0U;
     uint16_t                   required_length = 0U;
 
-    EXPECT_CALL( mock_hw_i2c, PeekReceivedMessage( HW_I2C_CHANNEL_2, _ ) )
-        .WillOnce( [&]( HWI2CChannel_T, HWI2CRxMessagePeek_T* out_message ) {
-            *out_message = message;
-            return true;
-        } );
-    EXPECT_CALL( mock_hw_i2c, ConsumeReceivedMessage( HW_I2C_CHANNEL_2 ) )
-        .WillOnce( Return( true ) );
+    {
+        InSequence sequence;
+        EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_2 ) );
+        EXPECT_CALL( mock_hw_i2c, PeekReceivedMessage( HW_I2C_CHANNEL_2, _ ) )
+            .WillOnce( [&]( HWI2CChannel_T, HWI2CRxMessagePeek_T* out_message ) {
+                *out_message = message;
+                return true;
+            } );
+        EXPECT_CALL( mock_hw_i2c, ConsumeReceivedMessage( HW_I2C_CHANNEL_2 ) )
+            .WillOnce( Return( true ) );
+    }
 
     EXPECT_EQ( EXEC_I2C_Receive_Message_Copy_And_Consume( HW_I2C_CHANNEL_2, destination,
                                                           sizeof( destination ), &descriptor,
@@ -411,11 +435,15 @@ TEST_F( ExecI2CTest, InsufficientDestinationLeavesCompleteMessageUnconsumed )
     uint16_t                   bytes_copied    = 10U;
     uint16_t                   required_length = 0U;
 
-    EXPECT_CALL( mock_hw_i2c, PeekReceivedMessage( HW_I2C_CHANNEL_1, _ ) )
-        .WillOnce( [&]( HWI2CChannel_T, HWI2CRxMessagePeek_T* out_message ) {
-            *out_message = message;
-            return true;
-        } );
+    {
+        InSequence sequence;
+        EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_1 ) );
+        EXPECT_CALL( mock_hw_i2c, PeekReceivedMessage( HW_I2C_CHANNEL_1, _ ) )
+            .WillOnce( [&]( HWI2CChannel_T, HWI2CRxMessagePeek_T* out_message ) {
+                *out_message = message;
+                return true;
+            } );
+    }
     EXPECT_CALL( mock_hw_i2c, ConsumeReceivedMessage( _ ) ).Times( 0 );
 
     EXPECT_EQ( EXEC_I2C_Receive_Message_Copy_And_Consume( HW_I2C_CHANNEL_1, destination,
@@ -451,6 +479,7 @@ TEST_F( ExecI2CTest, TwoReceivedTransactionsRequireTwoCalls )
 
     {
         InSequence sequence;
+        EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_1 ) );
         EXPECT_CALL( mock_hw_i2c, PeekReceivedMessage( HW_I2C_CHANNEL_1, _ ) )
             .WillOnce( [&]( HWI2CChannel_T, HWI2CRxMessagePeek_T* output ) {
                 *output = first_message;
@@ -458,6 +487,7 @@ TEST_F( ExecI2CTest, TwoReceivedTransactionsRequireTwoCalls )
             } );
         EXPECT_CALL( mock_hw_i2c, ConsumeReceivedMessage( HW_I2C_CHANNEL_1 ) )
             .WillOnce( Return( true ) );
+        EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_1 ) );
         EXPECT_CALL( mock_hw_i2c, PeekReceivedMessage( HW_I2C_CHANNEL_1, _ ) )
             .WillOnce( [&]( HWI2CChannel_T, HWI2CRxMessagePeek_T* output ) {
                 *output = second_message;
@@ -481,12 +511,16 @@ TEST_F( ExecI2CTest, LegacyReceivePollingReturnsSuccessWithZeroBytesWhenNoMessag
     uint8_t  destination[4] = { 0 };
     uint16_t bytes_copied   = 123U;
 
-    EXPECT_CALL( mock_hw_i2c, PeekReceivedMessage( HW_I2C_CHANNEL_1, _ ) )
-        .WillOnce( []( HWI2CChannel_T, HWI2CRxMessagePeek_T* output ) {
-            std::memset( output, 0, sizeof( *output ) );
-            output->descriptor.transfer_kind = HW_I2C_TRANSFER_KIND_IDLE;
-            return true;
-        } );
+    {
+        InSequence sequence;
+        EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_1 ) );
+        EXPECT_CALL( mock_hw_i2c, PeekReceivedMessage( HW_I2C_CHANNEL_1, _ ) )
+            .WillOnce( []( HWI2CChannel_T, HWI2CRxMessagePeek_T* output ) {
+                std::memset( output, 0, sizeof( *output ) );
+                output->descriptor.transfer_kind = HW_I2C_TRANSFER_KIND_IDLE;
+                return true;
+            } );
+    }
     EXPECT_CALL( mock_hw_i2c, ConsumeReceivedMessage( _ ) ).Times( 0 );
 
     EXPECT_TRUE( EXEC_I2C_Receive_Copy_And_Consume( HW_I2C_CHANNEL_1, destination,
