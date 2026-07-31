@@ -27,6 +27,13 @@ the tail and count are advanced. `HW_I2C_STATUS_OK` means accepted into the
 queue; it does not mean the bus transaction is complete. Master TX payloads
 must contain at least one byte; address-only writes are not implemented.
 
+A master-receive enqueue also reserves its eventual byte count and one message
+descriptor. The reservation includes completed unconsumed messages plus every
+active or queued master receive (the active receive is already the queue head).
+The call returns `HW_I2C_STATUS_BUSY` without changing the queue when either
+future byte or descriptor capacity would be exceeded. Consuming a completed
+message releases both forms of capacity.
+
 The active transaction remains the queue head until bus completion:
 
 - DMA transfer-complete only marks the data movement complete.
@@ -48,6 +55,32 @@ following STOP is observed.
 
 FMPI2C1 has an eight-bit `NBYTES` field, so one internal transaction is limited
 to 255 bytes. Reload/TCR and repeated-start grouping are not implemented.
+
+## Timeout recovery
+
+`HW_I2C_Recover_Channel()` is an explicit, non-blocking software recovery path.
+It disables the channel I2C/DMA interrupts, stops DMA, requests STOP when a
+transfer is active, discards active and queued master work and completed RX
+messages, clears transient receive state, and reapplies the saved channel
+configuration. A generic transfer error is latched for the caller to consume.
+It does not wait for BUSY or perform physical stuck-bus clock recovery.
+
+## External master-receive tails
+
+The I2C2/I2C3 interrupt path follows the STM32F446 legacy peripheral tail
+sequences: one byte NACKs and requests STOP while clearing ADDR, two bytes use
+POS and finish from BTF, and longer messages switch from RXNE to the final
+three-byte BTF/RXNE sequence. I2C2 DMA receive enables LAST for the final DMA
+transfer. ACK, POS, and LAST are cleared when the master receive completes or
+is cleaned up so they cannot affect the next transaction.
+
+Manual hardware check:
+
+1. On I2C3 interrupt master receive, request lengths 1, 2, 3, and 16 bytes.
+2. Repeat those lengths on I2C2 interrupt master receive.
+3. Repeat those lengths on I2C2 DMA master receive.
+4. For every case, verify exact data and length, STOP/idle completion, no
+   latched transfer error, and a successful immediately following receive.
 
 ## Receive messages
 

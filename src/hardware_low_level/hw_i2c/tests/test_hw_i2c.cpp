@@ -133,6 +133,85 @@ TEST_F( HWI2CTest, QueueFullRejectsWithoutChangingQueueStateOrPayload )
     EXPECT_EQ( state.master_queue[0].tx_payload[0], original_first_payload );
 }
 
+TEST_F( HWI2CTest, MasterReceiveMayExactlyFillReservedByteCapacity )
+{
+    ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
+    HWI2CChannelState_T&            state = hw_i2c_channel_state[HW_I2C_CHANNEL_1];
+    const std::array<uint8_t, 100U> completed{};
+    StageAndPublish( state, HW_I2C_TRANSFER_KIND_MASTER_RX, 0x20U, completed.data(),
+                     completed.size() );
+
+    EXPECT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_1, 0x21U, 412U ), HW_I2C_STATUS_OK );
+}
+
+TEST_F( HWI2CTest, MasterReceiveRejectsWhenReservedBytesWouldOverflow )
+{
+    ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
+    HWI2CChannelState_T&            state = hw_i2c_channel_state[HW_I2C_CHANNEL_1];
+    const std::array<uint8_t, 100U> completed{};
+    StageAndPublish( state, HW_I2C_TRANSFER_KIND_MASTER_RX, 0x20U, completed.data(),
+                     completed.size() );
+
+    EXPECT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_1, 0x21U, 413U ), HW_I2C_STATUS_BUSY );
+    EXPECT_EQ( state.master_queue_count, 0U );
+}
+
+TEST_F( HWI2CTest, MasterReceiveRejectsWhenFutureDescriptorCapacityWouldOverflow )
+{
+    ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
+    HWI2CChannelState_T& state = hw_i2c_channel_state[HW_I2C_CHANNEL_1];
+    for ( uint8_t index = 0U; index < 7U; ++index )
+    {
+        const uint8_t completed = index;
+        StageAndPublish( state, HW_I2C_TRANSFER_KIND_MASTER_RX, 0x20U, &completed, 1U );
+    }
+
+    EXPECT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_1, 0x21U, 1U ), HW_I2C_STATUS_OK );
+    EXPECT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_1, 0x22U, 1U ), HW_I2C_STATUS_BUSY );
+    EXPECT_EQ( state.master_queue_count, 1U );
+}
+
+TEST_F( HWI2CTest, ConsumingCompletedMessageReleasesReservedCapacity )
+{
+    ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
+    HWI2CChannelState_T&                             state = hw_i2c_channel_state[HW_I2C_CHANNEL_1];
+    const std::array<uint8_t, HW_I2C_RX_BUFFER_SIZE> completed{};
+    StageAndPublish( state, HW_I2C_TRANSFER_KIND_MASTER_RX, 0x20U, completed.data(),
+                     completed.size() );
+
+    EXPECT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_1, 0x21U, 1U ), HW_I2C_STATUS_BUSY );
+    ASSERT_TRUE( HW_I2C_Consume_Received_Message( HW_I2C_CHANNEL_1 ) );
+    EXPECT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_1, 0x21U, HW_I2C_RX_BUFFER_SIZE ),
+               HW_I2C_STATUS_OK );
+}
+
+TEST_F( HWI2CTest, RejectedReceiveReservationDoesNotMutateQueue )
+{
+    ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
+    HWI2CChannelState_T&            state = hw_i2c_channel_state[HW_I2C_CHANNEL_1];
+    const std::array<uint8_t, 500U> completed{};
+    StageAndPublish( state, HW_I2C_TRANSFER_KIND_MASTER_RX, 0x20U, completed.data(),
+                     completed.size() );
+    I2C3->SR2                = I2C_SR2_BUSY;
+    const uint8_t tx_payload = 0x5AU;
+    ASSERT_EQ( HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_1, 0x30U, &tx_payload, 1U ),
+               HW_I2C_STATUS_OK );
+    ASSERT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_1, 0x31U, 12U ), HW_I2C_STATUS_OK );
+
+    const uint8_t original_head  = state.master_queue_head;
+    const uint8_t original_tail  = state.master_queue_tail;
+    const uint8_t original_count = state.master_queue_count;
+    std::array<HWI2CMasterTransaction_T, HW_I2C_MASTER_TRANSACTION_QUEUE_DEPTH> queue_snapshot{};
+    std::memcpy( queue_snapshot.data(), state.master_queue, sizeof( state.master_queue ) );
+
+    EXPECT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_1, 0x32U, 1U ), HW_I2C_STATUS_BUSY );
+    EXPECT_EQ( state.master_queue_head, original_head );
+    EXPECT_EQ( state.master_queue_tail, original_tail );
+    EXPECT_EQ( state.master_queue_count, original_count );
+    EXPECT_EQ(
+        std::memcmp( queue_snapshot.data(), state.master_queue, sizeof( state.master_queue ) ), 0 );
+}
+
 TEST_F( HWI2CTest, DmaCompletionDoesNotReleaseMasterTxBeforePeripheralBtfAndStop )
 {
     ConfigureExternal( HW_I2C_CHANNEL_2, HW_I2C_MODE_MASTER, HW_I2C_TRANSFER_DMA,
@@ -264,6 +343,49 @@ TEST_F( HWI2CTest, DmaErrorLatchesFailureAndFlushesMasterQueue )
     EXPECT_EQ( HW_I2C_Get_And_Clear_Transfer_Result( HW_I2C_CHANNEL_2 ), HW_I2C_STATUS_ERROR );
 }
 
+TEST_F( HWI2CTest, RecoveryDiscardsActiveQueuedAndCompletedReceiveWork )
+{
+    ConfigureExternal( HW_I2C_CHANNEL_2, HW_I2C_MODE_MASTER, HW_I2C_TRANSFER_DMA,
+                       HW_I2C_TRANSFER_DMA );
+    HWI2CChannelState_T& state       = hw_i2c_channel_state[HW_I2C_CHANNEL_2];
+    const uint8_t        completed[] = { 0x11U, 0x22U };
+    StageAndPublish( state, HW_I2C_TRANSFER_KIND_MASTER_RX, 0x40U, completed, sizeof( completed ) );
+
+    ASSERT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_2, 0x41U, 4U ), HW_I2C_STATUS_OK );
+    const uint8_t follower = 0x33U;
+    ASSERT_EQ( HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_2, 0x42U, &follower, 1U ),
+               HW_I2C_STATUS_OK );
+    ASSERT_TRUE( state.master_queue_active );
+    ASSERT_EQ( state.master_queue_count, 2U );
+    ASSERT_NE( DMA1_Stream2->CR & DMA_SxCR_EN, 0U );
+
+    EXPECT_EQ( HW_I2C_Recover_Channel( HW_I2C_CHANNEL_2 ), HW_I2C_STATUS_ERROR );
+
+    EXPECT_FALSE( state.transfer_in_progress );
+    EXPECT_FALSE( state.master_queue_active );
+    EXPECT_EQ( state.transfer_kind, HW_I2C_TRANSFER_KIND_IDLE );
+    EXPECT_EQ( state.master_queue_count, 0U );
+    EXPECT_EQ( state.master_queue_head, 0U );
+    EXPECT_EQ( state.master_queue_tail, 0U );
+    EXPECT_EQ( state.rx_transfer_length, 0U );
+    EXPECT_EQ( state.rx_received_length, 0U );
+    EXPECT_EQ( state.rx_count, 0U );
+    EXPECT_EQ( state.rx_message_count, 0U );
+    EXPECT_EQ( DMA1_Stream2->CR & DMA_SxCR_EN, 0U );
+    EXPECT_EQ( DMA1_Stream7->CR & DMA_SxCR_EN, 0U );
+    EXPECT_EQ( I2C2->CR2 & I2C_CR2_DMAEN, 0U );
+
+    EXPECT_EQ( HW_I2C_Get_And_Clear_Transfer_Result( HW_I2C_CHANNEL_2 ), HW_I2C_STATUS_ERROR );
+    EXPECT_EQ( HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_2, 0x43U, &follower, 1U ),
+               HW_I2C_STATUS_OK );
+}
+
+TEST_F( HWI2CTest, RecoveryValidatesChannelAndConfiguration )
+{
+    EXPECT_EQ( HW_I2C_Recover_Channel( HW_I2C_CHANNEL_COUNT ), HW_I2C_STATUS_INVALID_PARAM );
+    EXPECT_EQ( HW_I2C_Recover_Channel( HW_I2C_CHANNEL_1 ), HW_I2C_STATUS_NOT_CONFIGURED );
+}
+
 TEST_F( HWI2CTest, BusErrorLatchesFailureAndFlushesMasterQueue )
 {
     ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
@@ -336,6 +458,146 @@ TEST_F( HWI2CTest, FmpiAccepts255BytesAndRejects256BytesForTxAndRx )
                HW_I2C_STATUS_OK );
     EXPECT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_FMPI2C1, 0x20U, 256U ),
                HW_I2C_STATUS_INVALID_PARAM );
+}
+
+TEST_F( HWI2CTest, OneByteMasterReceiveNacksAndStopsBeforeReadingRxne )
+{
+    ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
+    ASSERT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_1, 0x20U, 1U ), HW_I2C_STATUS_OK );
+    HWI2CChannelState_T& state = hw_i2c_channel_state[HW_I2C_CHANNEL_1];
+
+    I2C3->SR1 = I2C_SR1_ADDR;
+    HW_I2C_EV_IRQ_CHANNEL_1();
+    EXPECT_EQ( I2C3->SR1 & I2C_SR1_ADDR, 0U );
+    EXPECT_EQ( I2C3->CR1 & I2C_CR1_ACK, 0U );
+    EXPECT_EQ( I2C3->CR1 & I2C_CR1_POS, 0U );
+    EXPECT_NE( I2C3->CR1 & I2C_CR1_STOP, 0U );
+    EXPECT_EQ( state.rx_received_length, 0U );
+
+    I2C3->DR  = 0xA1U;
+    I2C3->SR1 = I2C_SR1_RXNE;
+    HW_I2C_EV_IRQ_CHANNEL_1();
+    EXPECT_EQ( state.rx_expected_length, 0U );
+    EXPECT_EQ( state.rx_received_length, 1U );
+    EXPECT_EQ( state.rx_staging_buffer[0], 0xA1U );
+    EXPECT_TRUE( state.completion_condition_seen );
+}
+
+TEST_F( HWI2CTest, TwoByteMasterReceiveUsesPosAndBtfTail )
+{
+    ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
+    ASSERT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_1, 0x20U, 2U ), HW_I2C_STATUS_OK );
+    HWI2CChannelState_T& state = hw_i2c_channel_state[HW_I2C_CHANNEL_1];
+
+    I2C3->SR1 = I2C_SR1_ADDR;
+    HW_I2C_EV_IRQ_CHANNEL_1();
+    EXPECT_EQ( I2C3->CR1 & I2C_CR1_ACK, 0U );
+    EXPECT_NE( I2C3->CR1 & I2C_CR1_POS, 0U );
+    EXPECT_EQ( I2C3->CR1 & I2C_CR1_STOP, 0U );
+
+    I2C3->DR  = 0xB2U;
+    I2C3->SR1 = I2C_SR1_BTF;
+    HW_I2C_EV_IRQ_CHANNEL_1();
+    EXPECT_EQ( state.rx_expected_length, 0U );
+    EXPECT_EQ( state.rx_received_length, 2U );
+    EXPECT_NE( I2C3->CR1 & I2C_CR1_STOP, 0U );
+    EXPECT_EQ( I2C3->CR1 & I2C_CR1_POS, 0U );
+    EXPECT_TRUE( state.completion_condition_seen );
+}
+
+TEST_F( HWI2CTest, ThreeByteMasterReceiveUsesTwoBtfTailSteps )
+{
+    ConfigureExternal( HW_I2C_CHANNEL_2, HW_I2C_MODE_MASTER );
+    ASSERT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_2, 0x20U, 3U ), HW_I2C_STATUS_OK );
+    HWI2CChannelState_T& state = hw_i2c_channel_state[HW_I2C_CHANNEL_2];
+
+    I2C2->SR1 = I2C_SR1_ADDR;
+    HW_I2C_EV_IRQ_CHANNEL_2();
+    EXPECT_NE( I2C2->CR1 & I2C_CR1_ACK, 0U );
+    EXPECT_NE( I2C2->CR2 & I2C_CR2_ITBUFEN, 0U );
+
+    I2C2->SR1 = I2C_SR1_RXNE;
+    HW_I2C_EV_IRQ_CHANNEL_2();
+    EXPECT_EQ( state.rx_received_length, 0U );
+    EXPECT_EQ( I2C2->CR2 & I2C_CR2_ITBUFEN, 0U );
+
+    I2C2->DR  = 0xC3U;
+    I2C2->SR1 = I2C_SR1_BTF;
+    HW_I2C_EV_IRQ_CHANNEL_2();
+    EXPECT_EQ( state.rx_expected_length, 2U );
+    EXPECT_EQ( state.rx_received_length, 1U );
+    EXPECT_EQ( I2C2->CR1 & I2C_CR1_ACK, 0U );
+    EXPECT_EQ( I2C2->CR1 & I2C_CR1_STOP, 0U );
+    EXPECT_FALSE( state.completion_condition_seen );
+
+    I2C2->DR  = 0xC4U;
+    I2C2->SR1 = I2C_SR1_BTF;
+    HW_I2C_EV_IRQ_CHANNEL_2();
+    EXPECT_EQ( state.rx_expected_length, 0U );
+    EXPECT_EQ( state.rx_received_length, 3U );
+    EXPECT_NE( I2C2->CR1 & I2C_CR1_STOP, 0U );
+    EXPECT_TRUE( state.completion_condition_seen );
+}
+
+TEST_F( HWI2CTest, LongerInterruptMasterReceiveSwitchesFromRxneToBtfTail )
+{
+    ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
+    ASSERT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_1, 0x20U, 4U ), HW_I2C_STATUS_OK );
+    HWI2CChannelState_T& state = hw_i2c_channel_state[HW_I2C_CHANNEL_1];
+
+    I2C3->SR1 = I2C_SR1_ADDR;
+    HW_I2C_EV_IRQ_CHANNEL_1();
+    EXPECT_NE( I2C3->CR1 & I2C_CR1_ACK, 0U );
+    EXPECT_NE( I2C3->CR2 & I2C_CR2_ITBUFEN, 0U );
+
+    I2C3->DR  = 0xD1U;
+    I2C3->SR1 = I2C_SR1_RXNE;
+    HW_I2C_EV_IRQ_CHANNEL_1();
+    EXPECT_EQ( state.rx_expected_length, 3U );
+    EXPECT_EQ( I2C3->CR2 & I2C_CR2_ITBUFEN, 0U );
+
+    I2C3->DR  = 0xD2U;
+    I2C3->SR1 = I2C_SR1_BTF;
+    HW_I2C_EV_IRQ_CHANNEL_1();
+    EXPECT_EQ( state.rx_expected_length, 2U );
+    EXPECT_EQ( state.rx_received_length, 2U );
+    EXPECT_EQ( I2C3->CR1 & I2C_CR1_ACK, 0U );
+    EXPECT_EQ( I2C3->CR1 & I2C_CR1_STOP, 0U );
+
+    I2C3->DR  = 0xD4U;
+    I2C3->SR1 = I2C_SR1_BTF;
+    HW_I2C_EV_IRQ_CHANNEL_1();
+    EXPECT_EQ( state.rx_expected_length, 0U );
+    EXPECT_EQ( state.rx_received_length, 4U );
+    EXPECT_NE( I2C3->CR1 & I2C_CR1_STOP, 0U );
+    EXPECT_TRUE( state.completion_condition_seen );
+}
+
+TEST_F( HWI2CTest, DmaMasterReceiveUsesLastAndClearsTailControlsOnCompletion )
+{
+    ConfigureExternal( HW_I2C_CHANNEL_2, HW_I2C_MODE_MASTER, HW_I2C_TRANSFER_DMA,
+                       HW_I2C_TRANSFER_DMA );
+    ASSERT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_2, 0x20U, 6U ), HW_I2C_STATUS_OK );
+    HWI2CChannelState_T& state = hw_i2c_channel_state[HW_I2C_CHANNEL_2];
+    EXPECT_NE( I2C2->CR2 & I2C_CR2_DMAEN, 0U );
+    EXPECT_NE( I2C2->CR2 & I2C_CR2_LAST, 0U );
+
+    I2C2->SR1 = I2C_SR1_ADDR;
+    HW_I2C_EV_IRQ_CHANNEL_2();
+    EXPECT_EQ( I2C2->SR1 & I2C_SR1_ADDR, 0U );
+    EXPECT_NE( I2C2->CR1 & I2C_CR1_ACK, 0U );
+    EXPECT_NE( I2C2->CR2 & I2C_CR2_LAST, 0U );
+
+    DMA1->LISR = DMA_LISR_TCIF2;
+    HW_I2C_DMA_RX_IRQ_CHANNEL_2();
+    EXPECT_EQ( state.rx_received_length, 6U );
+    EXPECT_TRUE( state.dma_rx_transfer_complete );
+    EXPECT_EQ( DMA1_Stream2->CR & DMA_SxCR_EN, 0U );
+    EXPECT_EQ( I2C2->CR2 & I2C_CR2_DMAEN, 0U );
+    EXPECT_EQ( I2C2->CR2 & I2C_CR2_LAST, 0U );
+    EXPECT_EQ( I2C2->CR1 & ( I2C_CR1_ACK | I2C_CR1_POS ), 0U );
+    EXPECT_NE( I2C2->CR1 & I2C_CR1_STOP, 0U );
+    EXPECT_TRUE( state.completion_condition_seen );
 }
 
 TEST_F( HWI2CTest, SlaveTriggersRejectAnActiveTransfer )

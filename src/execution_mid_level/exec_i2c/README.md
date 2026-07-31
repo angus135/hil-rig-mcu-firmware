@@ -21,7 +21,19 @@ work, including the final STOP and idle peripheral. Later NACK, bus, or DMA
 failures are returned and cleared by
 `EXEC_I2C_Get_And_Clear_Transfer_Result()`.
 
+If a task-level deadline expires, `EXEC_I2C_Recover_Channel()` forwards the
+low-level non-blocking recovery operation. Recovery intentionally discards the
+channel's active and queued transactions and completed RX messages, then
+reapplies the existing configuration and latches a generic error. The console
+loopback uses this path and consumes that error before returning so a later
+loopback can enqueue normally.
+
 Slave transmit and receive retain their non-queued semantics.
+
+Master-receive acceptance can return false/`BUSY` even when a transaction slot
+exists if completed and already queued receives have reserved all future RX
+byte or descriptor capacity. Capacity becomes available after completed
+messages are consumed.
 
 ## Complete receive messages
 

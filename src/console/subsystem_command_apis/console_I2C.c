@@ -75,12 +75,8 @@ static bool CONSOLE_I2C_Report_Timeout( HWI2CChannel_T channel, bool is_complete
 {
     if ( !is_complete )
     {
-        const EXECI2CStatus_T transfer_result = EXEC_I2C_Get_And_Clear_Transfer_Result( channel );
-        if ( transfer_result != EXEC_I2C_STATUS_OK )
-        {
-            CONSOLE_Printf( "Master transfer failed (status=%d).\r\n", ( int )transfer_result );
-            return false;
-        }
+        ( void )EXEC_I2C_Recover_Channel( channel );
+        ( void )EXEC_I2C_Get_And_Clear_Transfer_Result( channel );
     }
 
     CONSOLE_Printf( "I2C loopback timed out.\r\n" );
