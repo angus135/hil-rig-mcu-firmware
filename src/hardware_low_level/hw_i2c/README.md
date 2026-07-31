@@ -24,7 +24,8 @@ plus queue indices and state flags.
 `HW_I2C_Enqueue_Master_Receive()` validate and publish a complete request under
 the channel's I2C/DMA IRQ critical section. TX payload bytes are copied before
 the tail and count are advanced. `HW_I2C_STATUS_OK` means accepted into the
-queue; it does not mean the bus transaction is complete.
+queue; it does not mean the bus transaction is complete. Master TX payloads
+must contain at least one byte; address-only writes are not implemented.
 
 The active transaction remains the queue head until bus completion:
 
@@ -40,6 +41,10 @@ observed. NACK, arbitration loss, bus error, timeout, overrun, or DMA error
 latches a failure, aborts the active entry, flushes the remaining queue, and
 returns the peripheral to idle. Read and clear that result with
 `HW_I2C_Get_And_Clear_Transfer_Result()`.
+
+For external slave transmit, the master's terminal NACK is normal transaction
+completion rather than a transfer error. The response remains active until the
+following STOP is observed.
 
 FMPI2C1 has an eight-bit `NBYTES` field, so one internal transaction is limited
 to 255 bytes. Reload/TCR and repeated-start grouping are not implemented.

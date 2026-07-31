@@ -176,7 +176,8 @@ HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit );
  *
  * The payload is copied into driver-owned storage before the queue entry is
  * published. A successful return means the complete request was accepted; it
- * does not mean the bus transaction has completed.
+ * does not mean the bus transaction has completed. Payload length must be
+ * non-zero; address-only writes are not implemented.
  *
  * @return HW_I2C_STATUS_OK when accepted
  * @return HW_I2C_STATUS_BUSY when the fixed-depth queue is full
@@ -368,7 +369,8 @@ bool HW_I2C_Consume_Received_Message( HWI2CChannel_T channel );
  * @brief Check if an overflow occurred on the channel.
  *
  * Returns true if the ring buffer overflowed during the last receive transfer.
- * Once read, the flag is cleared. This is an atomic operation.
+ * Once read, both the compatibility flag and a matching latched overflow result
+ * are cleared. This is an atomic operation.
  *
  * @param[in] channel  I2C channel
  *
