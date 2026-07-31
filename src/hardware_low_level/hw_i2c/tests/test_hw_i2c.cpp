@@ -279,6 +279,23 @@ TEST_F( HWI2CTest, BusErrorLatchesFailureAndFlushesMasterQueue )
     EXPECT_EQ( HW_I2C_Get_And_Clear_Transfer_Result( HW_I2C_CHANNEL_1 ), HW_I2C_STATUS_ERROR );
 }
 
+TEST_F( HWI2CTest, ExternalMasterNackLatchesFailureAndFlushesMasterQueue )
+{
+    ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
+    const uint8_t payload = 0x63U;
+    ASSERT_EQ( HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_1, 0x40U, &payload, 1U ),
+               HW_I2C_STATUS_OK );
+    ASSERT_EQ( HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_1, 0x41U, &payload, 1U ),
+               HW_I2C_STATUS_OK );
+
+    I2C3->SR1 = I2C_SR1_AF;
+    HW_I2C_ER_IRQ_CHANNEL_1();
+
+    EXPECT_EQ( hw_i2c_channel_state[HW_I2C_CHANNEL_1].master_queue_count, 0U );
+    EXPECT_FALSE( hw_i2c_channel_state[HW_I2C_CHANNEL_1].master_queue_active );
+    EXPECT_EQ( HW_I2C_Get_And_Clear_Transfer_Result( HW_I2C_CHANNEL_1 ), HW_I2C_STATUS_ERROR );
+}
+
 TEST_F( HWI2CTest, MasterRequestValidationRejectsInvalidInputsBeforeStateAccess )
 {
     ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
@@ -289,6 +306,10 @@ TEST_F( HWI2CTest, MasterRequestValidationRejectsInvalidInputsBeforeStateAccess 
     EXPECT_EQ( HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_1, 0x80U, &payload, 1U ),
                HW_I2C_STATUS_INVALID_PARAM );
     EXPECT_EQ( HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_1, 0x20U, nullptr, 1U ),
+               HW_I2C_STATUS_INVALID_PARAM );
+    EXPECT_EQ( HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_1, 0x20U, &payload, 0U ),
+               HW_I2C_STATUS_INVALID_PARAM );
+    EXPECT_EQ( HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_1, 0x20U, nullptr, 0U ),
                HW_I2C_STATUS_INVALID_PARAM );
     EXPECT_FALSE( HW_I2C_Trigger_Master_Receive_External( HW_I2C_CHANNEL_1, 0x20U, 0U ) );
     EXPECT_FALSE( HW_I2C_Trigger_Master_Receive_External(
@@ -325,6 +346,45 @@ TEST_F( HWI2CTest, SlaveTriggersRejectAnActiveTransfer )
     ASSERT_TRUE( HW_I2C_Trigger_Slave_Transmit_External( HW_I2C_CHANNEL_1 ) );
     EXPECT_FALSE( HW_I2C_Trigger_Slave_Transmit_External( HW_I2C_CHANNEL_1 ) );
     EXPECT_FALSE( HW_I2C_Trigger_Slave_Receive_External( HW_I2C_CHANNEL_1, 1U ) );
+}
+
+TEST_F( HWI2CTest, SlaveTransmitTerminalNackWaitsForStopWithoutLatchingError )
+{
+    ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_SLAVE );
+    const uint8_t payload = 0x78U;
+    ASSERT_TRUE( HW_I2C_Load_Stage_Buffer( HW_I2C_CHANNEL_1, &payload, 1U ) );
+    ASSERT_TRUE( HW_I2C_Trigger_Slave_Transmit_External( HW_I2C_CHANNEL_1 ) );
+
+    I2C3->SR1 = I2C_SR1_AF;
+    HW_I2C_ER_IRQ_CHANNEL_1();
+
+    EXPECT_TRUE( hw_i2c_channel_state[HW_I2C_CHANNEL_1].transfer_in_progress );
+    EXPECT_EQ( hw_i2c_channel_state[HW_I2C_CHANNEL_1].transfer_kind,
+               HW_I2C_TRANSFER_KIND_SLAVE_TX );
+    EXPECT_EQ( HW_I2C_Get_And_Clear_Transfer_Result( HW_I2C_CHANNEL_1 ), HW_I2C_STATUS_OK );
+
+    I2C3->SR1 = I2C_SR1_STOPF;
+    I2C3->SR2 = 0U;
+    HW_I2C_EV_IRQ_CHANNEL_1();
+
+    EXPECT_FALSE( hw_i2c_channel_state[HW_I2C_CHANNEL_1].transfer_in_progress );
+    EXPECT_EQ( hw_i2c_channel_state[HW_I2C_CHANNEL_1].transfer_kind, HW_I2C_TRANSFER_KIND_IDLE );
+    EXPECT_EQ( HW_I2C_Get_And_Clear_Transfer_Result( HW_I2C_CHANNEL_1 ), HW_I2C_STATUS_OK );
+}
+
+TEST_F( HWI2CTest, LegacyOverflowQueryClearsMatchingLatchedResult )
+{
+    ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
+    HWI2CChannelState_T& state = hw_i2c_channel_state[HW_I2C_CHANNEL_1];
+    state.overflow_occurred    = true;
+    state.transfer_result      = HW_I2C_STATUS_OVERFLOW;
+
+    EXPECT_TRUE( HW_I2C_Get_Overflow_Status( HW_I2C_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_I2C_Get_Overflow_Status( HW_I2C_CHANNEL_1 ) );
+
+    const uint8_t payload = 0x79U;
+    EXPECT_EQ( HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_1, 0x20U, &payload, 1U ),
+               HW_I2C_STATUS_OK );
 }
 
 TEST_F( HWI2CTest, InterruptReceiveIsNotPublishedUntilStop )

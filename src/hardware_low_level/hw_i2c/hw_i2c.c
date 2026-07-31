@@ -874,8 +874,7 @@ static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
     uint32_t             sr1   = i2c_instance->SR1;
 
-    if ( ( sr1 & ( I2C_SR1_AF | I2C_SR1_ARLO | I2C_SR1_BERR | I2C_SR1_OVR | I2C_SR1_TIMEOUT ) )
-         != 0U )
+    if ( ( sr1 & ( I2C_SR1_ARLO | I2C_SR1_BERR | I2C_SR1_OVR | I2C_SR1_TIMEOUT ) ) != 0U )
     {
         if ( ( sr1 & I2C_SR1_AF ) != 0U )
         {
@@ -897,6 +896,22 @@ static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
         {
             LL_I2C_ClearSMBusFlag_TIMEOUT( i2c_instance );
         }
+        HW_I2C_Abort_Transfer( channel, HW_I2C_STATUS_ERROR );
+        return;
+    }
+
+    if ( ( sr1 & I2C_SR1_AF ) != 0U )
+    {
+        LL_I2C_ClearFlag_AF( i2c_instance );
+
+        /* A master ends a slave-transmit transaction by NACKing the final byte.
+         * Keep the slave transfer active until STOP so a subsequent response cannot
+         * overwrite it before the bus transaction has physically completed. */
+        if ( state->transfer_kind == HW_I2C_TRANSFER_KIND_SLAVE_TX )
+        {
+            return;
+        }
+
         HW_I2C_Abort_Transfer( channel, HW_I2C_STATUS_ERROR );
         return;
     }
@@ -1320,7 +1335,7 @@ HWI2CStatus_T HW_I2C_Enqueue_Master_Transmit( HWI2CChannel_T channel, uint16_t d
                                               const uint8_t* payload, uint16_t payload_length )
 {
     if ( !HW_I2C_Channel_Is_Valid( channel ) || !HW_I2C_Address_Is_Valid( device_address_7bit )
-         || ( ( payload == NULL ) && ( payload_length > 0U ) )
+         || ( payload_length == 0U ) || ( ( payload == NULL ) && ( payload_length > 0U ) )
          || ( payload_length > HW_I2C_TX_MAX_MESSAGE_SIZE )
          || ( ( channel == HW_I2C_CHANNEL_FMPI2C1 ) && ( payload_length > 255U ) ) )
     {
@@ -1824,6 +1839,10 @@ bool HW_I2C_Get_Overflow_Status( HWI2CChannel_T channel )
     HWI2CChannelState_T* state           = &hw_i2c_channel_state[channel];
     bool                 overflow_status = state->overflow_occurred;
     state->overflow_occurred             = false;
+    if ( overflow_status && ( state->transfer_result == HW_I2C_STATUS_OVERFLOW ) )
+    {
+        state->transfer_result = HW_I2C_STATUS_OK;
+    }
     HW_I2C_Channel_Irqs_Restore( channel, irq_state );
     return overflow_status;
 }
