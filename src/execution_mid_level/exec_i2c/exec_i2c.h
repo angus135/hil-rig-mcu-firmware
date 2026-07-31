@@ -181,6 +181,14 @@ bool EXEC_I2C_Is_Transaction_Queue_Complete( HWI2CChannel_T channel );
 EXECI2CStatus_T EXEC_I2C_Get_And_Clear_Transfer_Result( HWI2CChannel_T channel );
 
 /**
+ * @brief Recover a channel after a caller-observed transfer timeout.
+ *
+ * Discards active, queued, and completed receive work for the channel and
+ * reapplies its existing hardware configuration without waiting for bus idle.
+ */
+EXECI2CStatus_T EXEC_I2C_Recover_Channel( HWI2CChannel_T channel );
+
+/**
  * @brief Copy and consume exactly one complete receive transaction.
  *
  * Services deferred queue progress before checking for a complete message.

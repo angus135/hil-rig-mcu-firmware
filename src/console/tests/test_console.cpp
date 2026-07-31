@@ -57,6 +57,7 @@ public:
                  () );
     MOCK_METHOD( bool, IsQueueComplete, ( HWI2CChannel_T channel ), () );
     MOCK_METHOD( EXECI2CStatus_T, GetAndClearResult, ( HWI2CChannel_T channel ), () );
+    MOCK_METHOD( EXECI2CStatus_T, RecoverChannel, ( HWI2CChannel_T channel ), () );
     MOCK_METHOD( bool, Receive,
                  ( HWI2CChannel_T channel, uint8_t* result_storage,
                    uint16_t result_storage_capacity, uint16_t* bytes_copied ),
@@ -114,6 +115,11 @@ bool EXEC_I2C_Is_Transaction_Queue_Complete( HWI2CChannel_T channel )
 EXECI2CStatus_T EXEC_I2C_Get_And_Clear_Transfer_Result( HWI2CChannel_T channel )
 {
     return g_mock_exec_i2c->GetAndClearResult( channel );
+}
+
+EXECI2CStatus_T EXEC_I2C_Recover_Channel( HWI2CChannel_T channel )
+{
+    return g_mock_exec_i2c->RecoverChannel( channel );
 }
 
 bool EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel, uint8_t* result_storage,
@@ -262,8 +268,13 @@ TEST_F( ConsoleI2CTest, LoopbackReturnsFailureWhenPhysicalCompletionTimesOut )
             *bytes_copied = 0U;
             return true;
         } );
-    EXPECT_CALL( mock_exec_i2c, GetAndClearResult( HW_I2C_CHANNEL_1 ) )
-        .WillOnce( Return( EXEC_I2C_STATUS_OK ) );
+    {
+        InSequence sequence;
+        EXPECT_CALL( mock_exec_i2c, RecoverChannel( HW_I2C_CHANNEL_1 ) )
+            .WillOnce( Return( EXEC_I2C_STATUS_ERROR ) );
+        EXPECT_CALL( mock_exec_i2c, GetAndClearResult( HW_I2C_CHANNEL_1 ) )
+            .WillOnce( Return( EXEC_I2C_STATUS_ERROR ) );
+    }
 
     EXPECT_FALSE( CONSOLE_Run_I2C_Loopback_M2S( channels, 0x32U, payload, 4U, received,
                                                 sizeof( received ), &received_length ) );

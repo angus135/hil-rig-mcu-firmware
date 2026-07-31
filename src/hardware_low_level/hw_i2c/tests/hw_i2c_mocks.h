@@ -128,11 +128,13 @@ static inline void NVIC_EnableIRQ( IRQn_Type irq )
 #define I2C_CR1_START ( 1U << 8 )
 #define I2C_CR1_STOP ( 1U << 9 )
 #define I2C_CR1_ACK ( 1U << 10 )
+#define I2C_CR1_POS ( 1U << 11 )
 
 #define I2C_CR2_ITERREN ( 1U << 8 )
 #define I2C_CR2_ITEVTEN ( 1U << 9 )
 #define I2C_CR2_ITBUFEN ( 1U << 10 )
 #define I2C_CR2_DMAEN ( 1U << 11 )
+#define I2C_CR2_LAST ( 1U << 12 )
 #define I2C_CR2_FREQ ( 0x3FU )
 
 #define I2C_CCR_FS ( 1U << 15 )

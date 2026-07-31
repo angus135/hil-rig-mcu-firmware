@@ -64,6 +64,7 @@ public:
     MOCK_METHOD( void, ServiceTransactionQueue, ( HWI2CChannel_T channel ), () );
     MOCK_METHOD( bool, IsTransactionQueueComplete, ( HWI2CChannel_T channel ), () );
     MOCK_METHOD( HWI2CStatus_T, GetAndClearTransferResult, ( HWI2CChannel_T channel ), () );
+    MOCK_METHOD( HWI2CStatus_T, RecoverChannel, ( HWI2CChannel_T channel ), () );
     MOCK_METHOD( bool, PeekReceivedMessage,
                  ( HWI2CChannel_T channel, HWI2CRxMessagePeek_T* message ), () );
     MOCK_METHOD( bool, ConsumeReceivedMessage, ( HWI2CChannel_T channel ), () );
@@ -120,6 +121,11 @@ bool HW_I2C_Is_Transaction_Queue_Complete( HWI2CChannel_T channel )
 HWI2CStatus_T HW_I2C_Get_And_Clear_Transfer_Result( HWI2CChannel_T channel )
 {
     return g_mock_hw_i2c->GetAndClearTransferResult( channel );
+}
+
+HWI2CStatus_T HW_I2C_Recover_Channel( HWI2CChannel_T channel )
+{
+    return g_mock_hw_i2c->RecoverChannel( channel );
 }
 
 bool HW_I2C_Peek_Received_Message( HWI2CChannel_T channel, HWI2CRxMessagePeek_T* message )
@@ -338,6 +344,14 @@ TEST_F( ExecI2CTest, QueueProgressAndAsynchronousResultAreForwarded )
     EXPECT_CALL( mock_hw_i2c, GetAndClearTransferResult( HW_I2C_CHANNEL_2 ) )
         .WillOnce( Return( HW_I2C_STATUS_ERROR ) );
     EXPECT_EQ( EXEC_I2C_Get_And_Clear_Transfer_Result( HW_I2C_CHANNEL_2 ), EXEC_I2C_STATUS_ERROR );
+}
+
+TEST_F( ExecI2CTest, RecoveryStatusIsForwarded )
+{
+    EXPECT_CALL( mock_hw_i2c, RecoverChannel( HW_I2C_CHANNEL_2 ) )
+        .WillOnce( Return( HW_I2C_STATUS_ERROR ) );
+
+    EXPECT_EQ( EXEC_I2C_Recover_Channel( HW_I2C_CHANNEL_2 ), EXEC_I2C_STATUS_ERROR );
 }
 
 TEST_F( ExecI2CTest, ReceiveMessageCopiesOneCompleteMessageAndConsumesIt )

@@ -324,6 +324,11 @@ EXECI2CStatus_T EXEC_I2C_Get_And_Clear_Transfer_Result( HWI2CChannel_T channel )
     return EXEC_I2C_From_HW_Status( HW_I2C_Get_And_Clear_Transfer_Result( channel ) );
 }
 
+EXECI2CStatus_T EXEC_I2C_Recover_Channel( HWI2CChannel_T channel )
+{
+    return EXEC_I2C_From_HW_Status( HW_I2C_Recover_Channel( channel ) );
+}
+
 EXECI2CStatus_T EXEC_I2C_Receive_Message_Copy_And_Consume(
     HWI2CChannel_T channel, uint8_t* result_storage, uint16_t result_storage_capacity,
     HWI2CRxMessageDescriptor_T* descriptor, uint16_t* bytes_copied, uint16_t* required_length )

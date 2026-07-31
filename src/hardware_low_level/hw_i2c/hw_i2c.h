@@ -191,7 +191,13 @@ HWI2CStatus_T HW_I2C_Enqueue_Master_Transmit( HWI2CChannel_T channel, uint16_t d
  * @brief Atomically enqueue one complete master receive transaction.
  *
  * The transaction remains in the queue until STOP/bus completion. Received
- * bytes become visible only as one complete RX message.
+ * bytes become visible only as one complete RX message. Acceptance reserves
+ * both byte storage and one completed-message descriptor, including capacity
+ * already committed to active and queued master receives.
+ *
+ * @return HW_I2C_STATUS_OK when accepted
+ * @return HW_I2C_STATUS_BUSY when queue, reserved byte storage, or future
+ *         descriptor capacity is unavailable
  */
 HWI2CStatus_T HW_I2C_Enqueue_Master_Receive( HWI2CChannel_T channel, uint16_t device_address_7bit,
                                              uint16_t expected_length );
@@ -216,6 +222,21 @@ bool HW_I2C_Is_Transaction_Queue_Complete( HWI2CChannel_T channel );
  * @brief Return and clear the channel's latched asynchronous transfer result.
  */
 HWI2CStatus_T HW_I2C_Get_And_Clear_Transfer_Result( HWI2CChannel_T channel );
+
+/**
+ * @brief Discard channel work and reset the peripheral after a transfer timeout.
+ *
+ * Stops active DMA, clears active and queued master transactions, discards
+ * completed receive messages, and reapplies the existing channel configuration.
+ * This is a non-blocking best-effort software recovery; it does not clock a
+ * physically stuck bus. A generic transfer error is latched for the caller to
+ * retrieve with HW_I2C_Get_And_Clear_Transfer_Result().
+ *
+ * @return HW_I2C_STATUS_ERROR when recovery was performed
+ * @return HW_I2C_STATUS_INVALID_PARAM for an invalid channel
+ * @return HW_I2C_STATUS_NOT_CONFIGURED when the channel is not configured
+ */
+HWI2CStatus_T HW_I2C_Recover_Channel( HWI2CChannel_T channel );
 
 /**
  * @brief Load data into the transmit stage buffer.
