@@ -22,20 +22,20 @@
 #include "exec_i2c.h"
 #include "logic_expander.h"
 #include "command_helpers.h"
+#include "execution_manager.h"
 #include "hw_gpio.h"
 #include "hw_spi.h"
 #include "exec_analogue_output.h"
-#include "exec_analogue_input.h"
 #include "exec_uart.h"
+#include "hw_adc.h"
+#include "hw_can.h"
 #include "exec_digital_input.h"
-#include "exec_digital_output.h"
 #include "hw_spi.h"
 #include "hw_usb.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
-#include <errno.h>
 #include <stdio.h>
 #include "exec_pwm_capture.h"
 #include "exec_pwm_gen.h"
@@ -43,19 +43,19 @@
 
 /* Includes for PWM Capture*/
 #include "subsystem_command_apis/console_pwm_capture.h"
-#include "subsystem_command_apis/console_can.h"
-#include "subsystem_command_apis/console_flash_manager.h"
-#include "subsystem_command_apis/console_run_state_manager.h"
-#include "subsystem_command_apis/console_test_configuration.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
+#define NUM_DIGITAL_INPUTS 10
 #define MAX_CONSOLE_SET_PINS 22
 
 #define USB_TEST_READ_TIMEOUT_MS 5000U
 #define USB_TEST_READ_BUFFER_SIZE_BYTES 256U
+
+/* Development console runs use a fixed count until protocol configuration exists. */
+#define EXECUTION_MANAGER_CONSOLE_DEFAULT_TICK_COUNT 1000U
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -75,18 +75,6 @@ typedef struct
     uint32_t baud_rate;
 } ConsoleUartLoopbackState_T;
 
-typedef struct
-{
-    bool is_configured;
-    /* True while either channel remains started; transfers require both. */
-    bool             is_started;
-    ExecI2CChannel_T master_channel;
-    ExecI2CChannel_T slave_channel;
-    HWI2CSpeed_T     speed;
-    ExecI2CVoltage_T voltage;
-    ExecI2CPullup_T  pullup;
-} ConsoleI2CLifecycleState_T;
-
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
@@ -98,19 +86,19 @@ typedef struct
  */
 static void CONSOLE_Command_Help( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Echo( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_LED( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Set_Pin( uint16_t argc, char** argv );
 static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char** argv );
 static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] );
-static bool CONSOLE_Parse_Digital_Input_Mode( const char* token, ExecDigitalInputMode_T* mode );
-static void CONSOLE_Command_Digital_Output( uint16_t argc, char* argv[] );
-static bool CONSOLE_Parse_Digital_Output_Channel( const char*                       token,
-                                                  ExecDigitalOutputChannelConfig_T* config );
 static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_USB_Test( uint16_t argc, char* argv[] );
@@ -119,8 +107,10 @@ static void CONSOLE_Command_USB_Test( uint16_t argc, char* argv[] );
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
-
-static ConsoleI2CLifecycleState_T s_i2c_loopback_state = { 0 };
+static ExecutionManagerConfig_T execution_manager_console_config = {
+    FREQUENCY_10KHZ,
+    EXECUTION_MANAGER_CONSOLE_DEFAULT_TICK_COUNT,
+};
 
 // clang-format off
 
@@ -128,25 +118,24 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"?",                   CONSOLE_Command_Help,                   "Show available commands."},
     {"help",                CONSOLE_Command_Help,                   "Show available commands."},
     {"echo",                CONSOLE_Command_Echo,                   "Echoes the provided arguments."},
+    {"execution_manager",   CONSOLE_Command_Test_Scheduler,         "Starts the test scheduler."},
     {"clear",               CONSOLE_Command_Clear,                  "Clears the console."},
     {"led",                 CONSOLE_Command_LED,                    "Toggle an LED. Usage: led toggle <USER_LED_RED_0..USER_LED_RED_5|USER_LED_BLUE_0..USER_LED_BLUE_5>"},
     {"uart",                CONSOLE_UART_Command_Handler,           "Configuring Channels and Rx/Tx loopback testing for Uart"},
     {"set_pin",             CONSOLE_Command_Set_Pin,                "Set or reset digital output, Usage: set_pin PIN_NAME <0|1>"},
     {"set_pins",            CONSOLE_Command_Set_Many_Pins,          "Set or reset many digital output"},
-    {"analogue_inputs",     CONSOLE_Command_Analogue_Inputs,        "Configure, start, stop, and read analogue inputs"},
-    {"digital_input",       CONSOLE_Command_DigitalInput,           "Configure, start, stop, and read digital inputs"},
-    {"digital_output",      CONSOLE_Command_Digital_Output,          "Configure, start, stop, and inspect digital outputs"},
+    {"analogue_inputs",     CONSOLE_Command_Analogue_Inputs,        "Allows for interaction with Analogue Inputs."},
+    {"digital_input",       CONSOLE_Command_DigitalInput,           "Print digital input states as 1s and 0s."},
     {"expander",            CONSOLE_Command_Expander,               "Command set allowing user to configure and control the logic expander"},
     {"i2c_loopback",        CONSOLE_Command_I2C_Loopback,           "Loopback testing for I2C master and slave channels."},
     {"spi_loop",            CONSOLE_Command_SPI_Loopback,           "Does a loopback test"},
-    {"pwm_capture",         CONSOLE_PWM_Capture_Command,            "Configure/read PWM capture. Usage: pwm_capture <config|start|stop|disable|read> ..."},
-    {"can",                  CONSOLE_CAN_Command_Handler,           "CAN configure/start/stop and tx/rx diagnostics"},
-    {"anlg_out",            CONSOLE_Command_Analogue_Output,        "DAC configure/start/stop and write commands"},
-    {"pwm_out",             CONSOLE_Command_PWM_Output,             "Configure, start, stop, and inspect PWM outputs"},
+    {"pwm_capture",         CONSOLE_PWM_Capture_Command,            "Configure/read PWM capture. Usage: pwm_capture <start|stop|read> ..."},
+    {"can_tx",              CONSOLE_Command_Can_tx,                 "Transmit a 8 byte message."},
+    {"can_rx",              CONSOLE_Command_Can_rx,                 "Read and print an 8 byte message"},
+    {"can_config",          CONSOLE_Command_Can_config,             "Configures Can channel1"},
+    {"anlg_out",            CONSOLE_Command_Analogue_Output,        "DAC config and write commands"},
+    {"pwm_out",             CONSOLE_Command_PWM_Output,             "Set PWM outputs"},
     {"usb_test",            CONSOLE_Command_USB_Test,               "Testing basic USB functionality"},
-    {"flash",               CONSOLE_FlashManager_Command,           "External Flash and Flash Manager hardware bring-up"},
-    {"run_state",           CONSOLE_RunStateManager_Command,        "Manual lifecycle and execution-timer control"},
-    {"test_config",         CONSOLE_TestConfiguration_Command,      "Commit DUT lifecycle test configurations"},
 
 };
 
@@ -156,174 +145,6 @@ const Command_T CONSOLE_COMMANDS[] = {
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
-
-static bool CONSOLE_Parse_Digital_Output_Channel( const char*                       token,
-                                                  ExecDigitalOutputChannelConfig_T* config )
-{
-    if ( token == NULL || config == NULL )
-    {
-        return false;
-    }
-
-    if ( strcmp( token, "off" ) == 0 )
-    {
-        *config = ( ExecDigitalOutputChannelConfig_T ){
-            .is_enabled   = false,
-            .mode         = EXEC_DIGITAL_OUTPUT_MODE_3V3,
-            .initial_high = false,
-        };
-        return true;
-    }
-
-    const struct
-    {
-        const char*             name;
-        ExecDigitalOutputMode_T mode;
-    } modes[] = {
-        { "3v3", EXEC_DIGITAL_OUTPUT_MODE_3V3 },
-        { "5v", EXEC_DIGITAL_OUTPUT_MODE_5V },
-        { "12v", EXEC_DIGITAL_OUTPUT_MODE_12V },
-        { "24v", EXEC_DIGITAL_OUTPUT_MODE_24V },
-    };
-
-    for ( uint32_t mode = 0U; mode < ( sizeof( modes ) / sizeof( modes[0] ) ); mode++ )
-    {
-        const size_t name_length = strlen( modes[mode].name );
-
-        if ( strncmp( token, modes[mode].name, name_length ) == 0 && token[name_length] == ':'
-             && ( token[name_length + 1U] == '0' || token[name_length + 1U] == '1' )
-             && token[name_length + 2U] == '\0' )
-        {
-            config->is_enabled   = true;
-            config->mode         = modes[mode].mode;
-            config->initial_high = token[name_length + 1U] == '1';
-            return true;
-        }
-    }
-
-    return false;
-}
-
-static void CONSOLE_Command_Digital_Output( uint16_t argc, char* argv[] )
-{
-    if ( argc < 2U || argv[1] == NULL )
-    {
-        CONSOLE_Printf( "Usage:\r\n" );
-        CONSOLE_Printf( "  digital_output configure <ch1> ... <ch10>\r\n" );
-        CONSOLE_Printf( "    channel: off | <3v3|5v|12v|24v>:<0|1>\r\n" );
-        CONSOLE_Printf( "  digital_output start\r\n" );
-        CONSOLE_Printf( "  digital_output stop\r\n" );
-        CONSOLE_Printf( "  digital_output disable\r\n" );
-        CONSOLE_Printf( "  digital_output status\r\n" );
-        CONSOLE_Printf( "  digital_output write <0|1> <ch1> [chN...]\r\n" );
-        return;
-    }
-
-    if ( strcmp( argv[1], "write" ) == 0 )
-    {
-        if ( argc < 4U || argc > ( uint16_t )( EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT + 3U )
-             || ( strcmp( argv[2], "0" ) != 0 && strcmp( argv[2], "1" ) != 0 ) )
-        {
-            CONSOLE_Printf( "Usage: digital_output write <0|1> <ch1> [chN...]\r\n" );
-            return;
-        }
-
-        GPIOOutput_T  gpio_channels[EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT];
-        const uint8_t channel_count = ( uint8_t )( argc - 3U );
-
-        for ( uint8_t index = 0U; index < channel_count; index++ )
-        {
-            char*               end_ptr = NULL;
-            const unsigned long channel = strtoul( argv[index + 3U], &end_ptr, 10 );
-
-            if ( end_ptr == argv[index + 3U] || *end_ptr != '\0' || channel < 1U
-                 || channel > ( unsigned long )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT )
-            {
-                CONSOLE_Printf( "Invalid digital-output channel: %s\r\n", argv[index + 3U] );
-                return;
-            }
-
-            gpio_channels[index] = ( GPIOOutput_T )( DIGITAL_OUTPUT_0 + channel - 1U );
-        }
-
-        const DigitalOutputPinmask_T pin_mask =
-            EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( gpio_channels, channel_count );
-
-        if ( pin_mask == 0U )
-        {
-            CONSOLE_Printf( "Failed to calculate digital-output pin mask\r\n" );
-            return;
-        }
-
-        if ( argv[2][0] == '1' )
-        {
-            EXEC_DIGITAL_OUTPUT_Set_Output( pin_mask );
-        }
-        else
-        {
-            EXEC_DIGITAL_OUTPUT_Reset_Output( pin_mask );
-        }
-
-        CONSOLE_Printf( "Digital outputs written\r\n" );
-        return;
-    }
-
-    if ( strcmp( argv[1], "start" ) == 0 && argc == 2U )
-    {
-        CONSOLE_Printf( "%s", EXEC_DIGITAL_OUTPUT_Start() ? "Digital outputs started\r\n"
-                                                          : "Failed to start digital outputs\r\n" );
-        return;
-    }
-
-    if ( strcmp( argv[1], "stop" ) == 0 && argc == 2U )
-    {
-        CONSOLE_Printf( "%s", EXEC_DIGITAL_OUTPUT_Stop() ? "Digital outputs stopped\r\n"
-                                                         : "Failed to stop digital outputs\r\n" );
-        return;
-    }
-
-    if ( strcmp( argv[1], "status" ) == 0 && argc == 2U )
-    {
-        CONSOLE_Printf( "Digital outputs: configured=%s, started=%s\r\n",
-                        EXEC_DIGITAL_OUTPUT_Is_Configured() ? "yes" : "no",
-                        EXEC_DIGITAL_OUTPUT_Is_Started() ? "yes" : "no" );
-        return;
-    }
-
-    if ( strcmp( argv[1], "disable" ) == 0 && argc == 2U )
-    {
-        const ExecDigitalOutputConfig_T config = { 0 };
-        CONSOLE_Printf( "%s", EXEC_DIGITAL_OUTPUT_Configure( &config )
-                                  ? "Digital outputs configured disabled\r\n"
-                                  : "Failed to disable digital outputs\r\n" );
-        return;
-    }
-
-    if ( strcmp( argv[1], "configure" ) != 0
-         || argc != ( uint16_t )( EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT + 2U ) )
-    {
-        CONSOLE_Printf( "Invalid digital_output command or argument count\r\n" );
-        return;
-    }
-
-    ExecDigitalOutputConfig_T config = { 0 };
-
-    for ( uint32_t channel = 0U; channel < ( uint32_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT;
-          channel++ )
-    {
-        if ( !CONSOLE_Parse_Digital_Output_Channel( argv[channel + 2U],
-                                                    &config.channels[channel] ) )
-        {
-            CONSOLE_Printf( "Invalid configuration for digital-output channel %lu\r\n",
-                            ( unsigned long )( channel + 1U ) );
-            return;
-        }
-    }
-
-    CONSOLE_Printf( "%s", EXEC_DIGITAL_OUTPUT_Configure( &config )
-                              ? "Digital outputs configured and ready to start\r\n"
-                              : "Failed to configure digital outputs\r\n" );
-}
 
 /**
  * @brief Set PWM outputs
@@ -335,276 +156,142 @@ static void CONSOLE_Command_Digital_Output( uint16_t argc, char* argv[] )
  */
 static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] )
 {
-    if ( argc < 2U || argv[1] == NULL )
+    if ( argc != 5 || argv[1] == NULL )
     {
-        CONSOLE_Printf( "Usage:\r\n" );
         CONSOLE_Printf(
-            "  pwm_out configure <lv|hv> <3v3|5v|12v|24v> <frequency_hz> <duty_0-1000>\r\n" );
-        CONSOLE_Printf( "  pwm_out start <lv|hv>\r\n" );
-        CONSOLE_Printf( "  pwm_out stop <lv|hv>\r\n" );
-        CONSOLE_Printf( "  pwm_out disable <lv|hv>\r\n" );
-        CONSOLE_Printf( "  pwm_out status <lv|hv>\r\n" );
+            "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
         return;
     }
-
-    if ( argc < 3U || argv[2] == NULL )
+    uint32_t timer_hz = 9000000;
+    uint32_t freq_hz  = atoi( argv[3] );
+    if ( freq_hz > 1000000 || freq_hz < 0 )
     {
-        CONSOLE_Printf( "Missing PWM channel; expected lv or hv\r\n" );
+        CONSOLE_Printf(
+            "Unkown frequency, expected an integer between 0 and 1000000 but recieved %d \r\n",
+            freq_hz );
+        CONSOLE_Printf(
+            "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
         return;
     }
-
-    ExecPwmGenChannel_T channel;
-    if ( strcmp( argv[2], "lv" ) == 0 )
+    uint16_t duty = atoi( argv[4] );
+    if ( duty > 1000 || duty < 0 )
     {
-        channel = EXEC_PWM_GEN_CHANNEL_LV;
+        CONSOLE_Printf( "Unkown duty, expected an integer between 0 and 1000 but recieved %d \r\n",
+                        duty );
+        CONSOLE_Printf(
+            "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+        return;
     }
-    else if ( strcmp( argv[2], "hv" ) == 0 )
+    uint16_t psc = HW_PWM_GEN_compute_psc( freq_hz, timer_hz );
+    uint16_t arr = HW_PWM_GEN_compute_arr( freq_hz, timer_hz, psc );
+    uint16_t ccr = HW_PWM_GEN_compute_ccr( duty, arr );
+    if ( strcmp( argv[1], "0" ) == 0 )
     {
-        channel = EXEC_PWM_GEN_CHANNEL_HV;
+        if ( strcmp( argv[2], "0" ) == 0 )
+        {
+            Exec_PWM_GEN_Config( 0, 0 );
+            EXEC_PWM_GEN_Set_PWM_LV( arr, ccr, psc );
+        }
+        else if ( strcmp( argv[2], "1" ) == 0 )
+        {
+            Exec_PWM_GEN_Config( 0, 1 );
+            EXEC_PWM_GEN_Set_PWM_LV( arr, ccr, psc );
+        }
+        else
+        {
+            CONSOLE_Printf( "Unknown Voltage level expecting <0|1> but recieved %s \r\n", argv[2] );
+            CONSOLE_Printf(
+                "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+            return;
+        }
+    }
+    else if ( strcmp( argv[1], "1" ) == 0 )
+    {
+        if ( strcmp( argv[2], "0" ) == 0 )
+        {
+            Exec_PWM_GEN_Config( 1, 0 );
+            EXEC_PWM_GEN_Set_PWM_HV( arr, ccr, psc );
+        }
+        else if ( strcmp( argv[2], "1" ) == 0 )
+        {
+            Exec_PWM_GEN_Config( 1, 1 );
+            EXEC_PWM_GEN_Set_PWM_HV( arr, ccr, psc );
+        }
+        else
+        {
+            CONSOLE_Printf( "Unknown Voltage level expecting <0|1> but recieved %s \r\n", argv[2] );
+            CONSOLE_Printf(
+                "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+            return;
+        }
     }
     else
     {
-        CONSOLE_Printf( "Invalid PWM channel; expected lv or hv\r\n" );
+        CONSOLE_Printf( "Unknown PWM channel expecting <0|1> but recieved %s \r\n", argv[1] );
+        CONSOLE_Printf(
+            "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
         return;
     }
-
-    if ( strcmp( argv[1], "start" ) == 0 )
-    {
-        if ( EXEC_PWM_GEN_Start_Channel( channel ) )
-        {
-            CONSOLE_Printf( "PWM channel started\r\n" );
-        }
-        else
-        {
-            CONSOLE_Printf( "Failed to start PWM channel\r\n" );
-        }
-        return;
-    }
-
-    if ( strcmp( argv[1], "stop" ) == 0 )
-    {
-        if ( EXEC_PWM_GEN_Stop_Channel( channel ) )
-        {
-            CONSOLE_Printf( "PWM channel stopped\r\n" );
-        }
-        else
-        {
-            CONSOLE_Printf( "Failed to stop PWM channel\r\n" );
-        }
-        return;
-    }
-
-    if ( strcmp( argv[1], "disable" ) == 0 )
-    {
-        const ExecPwmGenConfig_T config = { .is_enabled = false };
-        if ( EXEC_PWM_GEN_Configure_Channel( channel, &config ) )
-        {
-            CONSOLE_Printf( "PWM channel disabled\r\n" );
-        }
-        else
-        {
-            CONSOLE_Printf( "Failed to disable PWM channel\r\n" );
-        }
-        return;
-    }
-
-    if ( strcmp( argv[1], "status" ) == 0 )
-    {
-        CONSOLE_Printf( "PWM %s: configured=%s, started=%s\r\n",
-                        channel == EXEC_PWM_GEN_CHANNEL_LV ? "lv" : "hv",
-                        EXEC_PWM_GEN_Is_Configured( channel ) ? "yes" : "no",
-                        EXEC_PWM_GEN_Is_Started( channel ) ? "yes" : "no" );
-        return;
-    }
-
-    if ( strcmp( argv[1], "configure" ) != 0 || argc != 6U )
-    {
-        CONSOLE_Printf( "Invalid pwm_out command or argument count\r\n" );
-        return;
-    }
-
-    ExecPwmGenVoltageLevel_T voltage_level;
-    if ( strcmp( argv[3], "3v3" ) == 0 )
-    {
-        voltage_level = EXEC_PWM_GEN_VOLTAGE_3V3;
-    }
-    else if ( strcmp( argv[3], "5v" ) == 0 )
-    {
-        voltage_level = EXEC_PWM_GEN_VOLTAGE_5V;
-    }
-    else if ( strcmp( argv[3], "12v" ) == 0 )
-    {
-        voltage_level = EXEC_PWM_GEN_VOLTAGE_12V;
-    }
-    else if ( strcmp( argv[3], "24v" ) == 0 )
-    {
-        voltage_level = EXEC_PWM_GEN_VOLTAGE_24V;
-    }
-    else
-    {
-        CONSOLE_Printf( "Invalid PWM voltage\r\n" );
-        return;
-    }
-
-    char* end_ptr                    = NULL;
-    errno                            = 0;
-    const unsigned long frequency_hz = strtoul( argv[4], &end_ptr, 10 );
-    if ( errno == ERANGE || end_ptr == argv[4] || *end_ptr != '\0' || argv[4][0] == '-'
-         || frequency_hz == 0UL || frequency_hz > 1000000UL )
-    {
-        CONSOLE_Printf( "Invalid PWM frequency\r\n" );
-        return;
-    }
-
-    end_ptr                  = NULL;
-    errno                    = 0;
-    const unsigned long duty = strtoul( argv[5], &end_ptr, 10 );
-    if ( errno == ERANGE || end_ptr == argv[5] || *end_ptr != '\0' || argv[5][0] == '-'
-         || duty > 1000UL )
-    {
-        CONSOLE_Printf( "Invalid PWM duty\r\n" );
-        return;
-    }
-
-    const uint32_t timer_hz = 90000000U;
-    uint16_t       psc;
-    uint16_t       arr;
-    uint16_t       ccr;
-    if ( !HW_PWM_GEN_compute_psc( ( uint32_t )frequency_hz, timer_hz, &psc )
-         || !HW_PWM_GEN_compute_arr( ( uint32_t )frequency_hz, timer_hz, psc, &arr )
-         || !HW_PWM_GEN_compute_ccr( ( uint16_t )duty, arr, &ccr ) )
-    {
-        CONSOLE_Printf( "PWM frequency/duty cannot be represented by the timer\r\n" );
-        return;
-    }
-
-    const ExecPwmGenConfig_T config = {
-        .is_enabled    = true,
-        .voltage_level = voltage_level,
-        .initial_arr   = arr,
-        .initial_ccr   = ccr,
-        .initial_psc   = psc,
-    };
-    if ( !EXEC_PWM_GEN_Configure_Channel( channel, &config ) )
-    {
-        CONSOLE_Printf( "Failed to configure PWM channel\r\n" );
-        return;
-    }
-
-    CONSOLE_Printf( "PWM channel configured and ready to start\r\n" );
-}
-
-static bool CONSOLE_Parse_Digital_Input_Mode( const char* token, ExecDigitalInputMode_T* mode )
-{
-    if ( token == NULL || mode == NULL )
-    {
-        return false;
-    }
-
-    const struct
-    {
-        const char*            name;
-        ExecDigitalInputMode_T mode;
-    } modes[] = {
-        { "off", EXEC_DIGITAL_INPUT_MODE_DISABLED }, { "3v3", EXEC_DIGITAL_INPUT_MODE_3V3 },
-        { "5v", EXEC_DIGITAL_INPUT_MODE_5V },        { "12v", EXEC_DIGITAL_INPUT_MODE_12V },
-        { "24v", EXEC_DIGITAL_INPUT_MODE_24V },
-    };
-
-    for ( uint32_t index = 0U; index < ( sizeof( modes ) / sizeof( modes[0] ) ); index++ )
-    {
-        if ( strcmp( token, modes[index].name ) == 0 )
-        {
-            *mode = modes[index].mode;
-            return true;
-        }
-    }
-
-    return false;
+    CONSOLE_Printf( "PWM Set\r\n" );
 }
 
 static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
 {
-    if ( argc < 2U || argv[1] == NULL )
+    uint32_t sampled_inputs = 0U;
+
+    DigitalInputChannelConfig_T config = { .channel_0_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_1_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_2_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_3_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_4_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_5_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_6_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_7_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_8_mode = DIGITAL_INPUT_MODE_3V3,
+                                           .channel_9_mode = DIGITAL_INPUT_MODE_3V3 };
+
+    if ( argc != 2 || argv[1] == NULL )
     {
-        CONSOLE_Printf( "Usage:\r\n" );
-        CONSOLE_Printf( "  digital_input configure <ch1> ... <ch10>\r\n" );
-        CONSOLE_Printf( "    channel: off | 3v3 | 5v | 12v | 24v\r\n" );
-        CONSOLE_Printf( "  digital_input start\r\n" );
-        CONSOLE_Printf( "  digital_input stop\r\n" );
-        CONSOLE_Printf( "  digital_input disable\r\n" );
-        CONSOLE_Printf( "  digital_input status\r\n" );
-        CONSOLE_Printf( "  digital_input read\r\n" );
+        CONSOLE_Printf( "Usage: digital_input <channel 0-9|STATUS_5V> or digital_input all\r\n" );
         return;
     }
 
-    if ( strcmp( argv[1], "start" ) == 0 && argc == 2U )
-    {
-        CONSOLE_Printf( "%s", EXEC_DIGITAL_INPUT_Start() ? "Digital inputs started\r\n"
-                                                         : "Failed to start digital inputs\r\n" );
-        return;
-    }
+    EXEC_DigitalInput_Configure( &config );
 
-    if ( strcmp( argv[1], "stop" ) == 0 && argc == 2U )
+    if ( strcmp( argv[1], "all" ) == 0 )
     {
-        CONSOLE_Printf( "%s", EXEC_DIGITAL_INPUT_Stop() ? "Digital inputs stopped\r\n"
-                                                        : "Failed to stop digital inputs\r\n" );
-        return;
-    }
+        EXEC_DigitalInput_SampleAll( &sampled_inputs );
 
-    if ( strcmp( argv[1], "status" ) == 0 && argc == 2U )
-    {
-        CONSOLE_Printf( "Digital inputs: configured=%s, started=%s\r\n",
-                        EXEC_DIGITAL_INPUT_Is_Configured() ? "yes" : "no",
-                        EXEC_DIGITAL_INPUT_Is_Started() ? "yes" : "no" );
-        return;
-    }
+        uint32_t lower_bits_mask = ( uint32_t )( ( 1UL << NUM_DIGITAL_INPUTS ) - 1UL );
+        uint32_t lower_bits      = sampled_inputs & lower_bits_mask;
 
-    if ( strcmp( argv[1], "read" ) == 0 && argc == 2U )
-    {
-        if ( !EXEC_DIGITAL_INPUT_Is_Started() )
+        CONSOLE_Printf( "Digital Inputs: " );
+        for ( int8_t bit = ( int8_t )NUM_DIGITAL_INPUTS - 1; bit >= 0; --bit )
         {
-            CONSOLE_Printf( "Digital inputs must be started before reading\r\n" );
+            CONSOLE_Printf( "%d", ( lower_bits >> bit ) & 0x1U );
+        }
+        CONSOLE_Printf( "\r\n" );
+    }
+    else
+    {
+        GPIOInput_T named_input = DIGITAL_INPUT_CH_0;
+        if ( HW_GPIO_InputStringToEnum( argv[1], &named_input ) )
+        {
+            bool state = HW_GPIO_Read_Pin( named_input );
+            CONSOLE_Printf( "%s: %d\r\n", argv[1], state ? 1 : 0 );
             return;
         }
 
-        uint32_t sampled_inputs = 0U;
-        EXEC_DIGITAL_INPUT_Sample_All( &sampled_inputs );
-        CONSOLE_Printf( "Digital inputs GPIOD mask: 0x%04lX\r\n", ( unsigned long )sampled_inputs );
-        return;
-    }
-
-    if ( strcmp( argv[1], "disable" ) == 0 && argc == 2U )
-    {
-        const ExecDigitalInputConfig_T config = { 0 };
-        CONSOLE_Printf( "%s", EXEC_DIGITAL_INPUT_Configure( &config )
-                                  ? "Digital inputs configured disabled\r\n"
-                                  : "Failed to disable digital inputs\r\n" );
-        return;
-    }
-
-    if ( strcmp( argv[1], "configure" ) != 0
-         || argc != ( uint16_t )( EXEC_DIGITAL_INPUT_CHANNEL_COUNT + 2U ) )
-    {
-        CONSOLE_Printf( "Invalid digital_input command or argument count\r\n" );
-        return;
-    }
-
-    ExecDigitalInputConfig_T config = { 0 };
-
-    for ( uint32_t channel = 0U; channel < ( uint32_t )EXEC_DIGITAL_INPUT_CHANNEL_COUNT; channel++ )
-    {
-        if ( !CONSOLE_Parse_Digital_Input_Mode( argv[channel + 2U], &config.channels[channel] ) )
+        int channel = atoi( argv[1] );
+        if ( channel < 0 || channel >= NUM_DIGITAL_INPUTS )
         {
-            CONSOLE_Printf( "Invalid mode for digital-input channel %lu\r\n",
-                            ( unsigned long )( channel + 1U ) );
+            CONSOLE_Printf( "Invalid channel. Must be 0-9 or STATUS_5V.\r\n" );
             return;
         }
-    }
 
-    CONSOLE_Printf( "%s", EXEC_DIGITAL_INPUT_Configure( &config )
-                              ? "Digital inputs configured and ready to start\r\n"
-                              : "Failed to configure digital inputs\r\n" );
+        bool state = HW_GPIO_Read_Pin( ( GPIOInput_T )channel );
+        CONSOLE_Printf( "Digital Input %d: %d\r\n", channel, state ? 1 : 0 );
+    }
 }
 
 /**
@@ -620,21 +307,11 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
     if ( argc < 2 )
     {
         CONSOLE_Printf( "Usage:\r\n" );
-        CONSOLE_Printf( "  expander status      - Show initialization readiness\r\n" );
         CONSOLE_Printf( "  expander config      - Initialize all active expanders\r\n" );
         CONSOLE_Printf( "  expander set <addr> <port> <value> - Set control bits (e.g. expander "
                         "set 0x20 A 0xFF)\r\n" );
-        CONSOLE_Printf(
-            "  expander on         - Set every output on every expander to 1 and send\r\n" );
         CONSOLE_Printf( "  expander send       - Send all staged bits to hardware\r\n" );
         CONSOLE_Printf( "  expander reset      - Reset all bits to 0 and send\r\n" );
-        return;
-    }
-
-    if ( strcmp( argv[1], "status" ) == 0 )
-    {
-        CONSOLE_Printf( "Logic Expander: %s\r\n",
-                        LOGIC_EXPANDER_Is_Ready() ? "READY" : "NOT READY" );
         return;
     }
 
@@ -645,64 +322,9 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         {
             CONSOLE_Printf( "Expander config: OK\r\n" );
         }
-        else if ( status == LOGIC_EXPANDER_STATUS_BUSY )
-        {
-            CONSOLE_Printf(
-                "Expander config: pending (waiting for background I2C processing)\r\n" );
-        }
         else
         {
             CONSOLE_Printf( "Expander config failed (status=%d)\r\n", ( int )status );
-        }
-        return;
-    }
-
-    if ( strcmp( argv[1], "on" ) == 0 )
-    {
-        for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
-        {
-            for ( uint8_t bit_idx = 0U; bit_idx < LOGIC_EXPANDER_PORT_WIDTH_BITS; ++bit_idx )
-            {
-                LogicExpanderStatus_T status = LOGIC_EXPANDER_Load_Control_Bit(
-                    ( LogicExpanderIndex_T )idx, LOGIC_EXPANDER_PORT_A, bit_idx, true );
-                if ( status != LOGIC_EXPANDER_STATUS_OK )
-                {
-                    CONSOLE_Printf( "Failed to stage expander 0x%02X port A bit %u (status=%d)\r\n",
-                                    ( unsigned int )( 0x20U + idx ), ( unsigned int )bit_idx,
-                                    ( int )status );
-                    return;
-                }
-
-                status = LOGIC_EXPANDER_Load_Control_Bit( ( LogicExpanderIndex_T )idx,
-                                                          LOGIC_EXPANDER_PORT_B, bit_idx, true );
-                if ( status != LOGIC_EXPANDER_STATUS_OK )
-                {
-                    CONSOLE_Printf( "Failed to stage expander 0x%02X port B bit %u (status=%d)\r\n",
-                                    ( unsigned int )( 0x20U + idx ), ( unsigned int )bit_idx,
-                                    ( int )status );
-                    return;
-                }
-            }
-        }
-
-        LogicExpanderStatus_T status = LOGIC_EXPANDER_Send_Control_Bits();
-        if ( status == LOGIC_EXPANDER_STATUS_OK )
-        {
-            CONSOLE_Printf( "Expander on: all outputs staged and queued\r\n" );
-        }
-        else if ( status == LOGIC_EXPANDER_STATUS_BUSY )
-        {
-            CONSOLE_Printf( "Expander on: partially queued; remaining outputs are staged. Run "
-                            "'expander send' again.\r\n" );
-        }
-        else if ( status == LOGIC_EXPANDER_STATUS_NOT_READY )
-        {
-            CONSOLE_Printf( "Expander on failed: not ready. Run 'expander config' and allow "
-                            "configuration to complete.\r\n" );
-        }
-        else
-        {
-            CONSOLE_Printf( "Expander on failed (status=%d)\r\n", ( int )status );
         }
         return;
     }
@@ -800,11 +422,6 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         {
             CONSOLE_Printf( "Expander send: OK\r\n" );
         }
-        else if ( status == LOGIC_EXPANDER_STATUS_NOT_READY )
-        {
-            CONSOLE_Printf( "Expander send failed: not ready. Run 'expander config' and allow "
-                            "configuration to complete.\r\n" );
-        }
         else
         {
             CONSOLE_Printf( "Expander send failed (status=%d)\r\n", ( int )status );
@@ -830,11 +447,6 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         {
             CONSOLE_Printf( "Expander reset: OK (all bits cleared and sent)\r\n" );
         }
-        else if ( status == LOGIC_EXPANDER_STATUS_NOT_READY )
-        {
-            CONSOLE_Printf( "Expander reset failed: not ready. Run 'expander config' and allow "
-                            "configuration to complete.\r\n" );
-        }
         else
         {
             CONSOLE_Printf( "Expander reset failed (status=%d)\r\n", ( int )status );
@@ -855,275 +467,120 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
  */
 static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
 {
-    if ( argc < 2U || argv[1] == NULL || strcmp( argv[1], "help" ) == 0 )
+    if ( argc < 6U )
     {
-        CONSOLE_Printf( "Usage:\r\n" );
-        CONSOLE_Printf( "  i2c_loopback configure <master:1|2> <speed:100|400> "
-                        "<voltage:3v3|5v> <pullup:1k|2k2|4k7|10k>\r\n" );
-        CONSOLE_Printf( "  i2c_loopback start\r\n" );
-        CONSOLE_Printf( "  i2c_loopback run <dir:m2s|s2m> <message...>\r\n" );
-        CONSOLE_Printf( "  i2c_loopback stop\r\n" );
-        CONSOLE_Printf( "  i2c_loopback disable\r\n" );
-        CONSOLE_Printf( "  i2c_loopback status\r\n" );
+        CONSOLE_Printf( "Usage: i2c_loopback <master:1|2> <dir:m2s|s2m> <speed:100|400> "
+                        "<op:interrupt|dma> <message...>\r\n" );
         return;
     }
 
-    if ( strcmp( argv[1], "configure" ) == 0 )
+    HWI2CChannel_T master_channel = HW_I2C_CHANNEL_1;
+    HWI2CChannel_T slave_channel  = HW_I2C_CHANNEL_2;
+    if ( !CONSOLE_Parse_I2C_Master_And_Slave( argv[1], &master_channel, &slave_channel ) )
     {
-        if ( argc != 6U )
-        {
-            CONSOLE_Printf( "Usage: i2c_loopback configure <master:1|2> <speed:100|400> "
-                            "<voltage:3v3|5v> <pullup:1k|2k2|4k7|10k>\r\n" );
-            return;
-        }
-        if ( s_i2c_loopback_state.is_started )
-        {
-            CONSOLE_Printf( "Stop the I2C loopback before reconfiguring.\r\n" );
-            return;
-        }
-
-        ExecI2CChannel_T master = EXEC_I2C_CHANNEL_1;
-        ExecI2CChannel_T slave  = EXEC_I2C_CHANNEL_2;
-        HWI2CSpeed_T     speed  = HW_I2C_SPEED_100KHZ;
-        ExecI2CVoltage_T voltage;
-        ExecI2CPullup_T  pullup;
-
-        if ( !CONSOLE_Parse_I2C_Master_And_Slave( argv[2], &master, &slave )
-             || !CONSOLE_Parse_I2C_Speed( argv[3], &speed ) )
-        {
-            CONSOLE_Printf( "Invalid master or speed. Use master 1|2 and speed 100|400.\r\n" );
-            return;
-        }
-
-        if ( strcmp( argv[4], "3v3" ) == 0 )
-        {
-            voltage = EXEC_I2C_VOLTAGE_3V3;
-        }
-        else if ( strcmp( argv[4], "5v" ) == 0 )
-        {
-            voltage = EXEC_I2C_VOLTAGE_5V;
-        }
-        else
-        {
-            CONSOLE_Printf( "Invalid voltage. Use 3v3 or 5v.\r\n" );
-            return;
-        }
-
-        if ( strcmp( argv[5], "1k" ) == 0 )
-        {
-            pullup = EXEC_I2C_PULLUP_1K;
-        }
-        else if ( strcmp( argv[5], "2k2" ) == 0 )
-        {
-            pullup = EXEC_I2C_PULLUP_2K2;
-        }
-        else if ( strcmp( argv[5], "4k7" ) == 0 )
-        {
-            pullup = EXEC_I2C_PULLUP_4K7;
-        }
-        else if ( strcmp( argv[5], "10k" ) == 0 )
-        {
-            pullup = EXEC_I2C_PULLUP_10K;
-        }
-        else
-        {
-            CONSOLE_Printf( "Invalid pull-up. Use 1k, 2k2, 4k7, or 10k.\r\n" );
-            return;
-        }
-
-        EXECI2CChannelConfig_T channel_1_config = {
-            .is_enabled = true,
-            .mode       = ( master == EXEC_I2C_CHANNEL_1 ) ? HW_I2C_MODE_MASTER : HW_I2C_MODE_SLAVE,
-            .speed      = speed,
-            .own_address_7bit = 0x31U,
-            .pullup           = pullup,
-            .voltage          = voltage,
-        };
-        EXECI2CChannelConfig_T channel_2_config = {
-            .is_enabled = true,
-            .mode       = ( master == EXEC_I2C_CHANNEL_2 ) ? HW_I2C_MODE_MASTER : HW_I2C_MODE_SLAVE,
-            .speed      = speed,
-            .own_address_7bit = 0x32U,
-            .pullup           = pullup,
-            .voltage          = voltage,
-        };
-
-        EXECI2CStatus_T status =
-            EXEC_I2C_Configure_Channel( EXEC_I2C_CHANNEL_1, &channel_1_config );
-        if ( status == EXEC_I2C_STATUS_OK )
-        {
-            status = EXEC_I2C_Configure_Channel( EXEC_I2C_CHANNEL_2, &channel_2_config );
-        }
-        if ( status != EXEC_I2C_STATUS_OK )
-        {
-            const EXECI2CChannelConfig_T disabled = { .is_enabled = false };
-            ( void )EXEC_I2C_Configure_Channel( EXEC_I2C_CHANNEL_1, &disabled );
-            ( void )EXEC_I2C_Configure_Channel( EXEC_I2C_CHANNEL_2, &disabled );
-            CONSOLE_Printf( "I2C configuration failed (status=%d).\r\n", ( int )status );
-            return;
-        }
-
-        s_i2c_loopback_state = ( ConsoleI2CLifecycleState_T ){
-            .is_configured  = true,
-            .is_started     = false,
-            .master_channel = master,
-            .slave_channel  = slave,
-            .speed          = speed,
-            .voltage        = voltage,
-            .pullup         = pullup,
-        };
-        CONSOLE_Printf( "I2C loopback configured; channels stopped\r\n" );
+        CONSOLE_Printf( "Invalid master channel. Use 1 or 2.\r\n" );
         return;
     }
 
-    if ( strcmp( argv[1], "start" ) == 0 && argc == 2U )
+    ConsoleI2CLoopbackDirection_T direction = CONSOLE_I2C_LOOPBACK_DIR_M2S;
+    if ( !CONSOLE_Parse_I2C_Loopback_Direction( argv[2], &direction ) )
     {
-        if ( !s_i2c_loopback_state.is_configured || s_i2c_loopback_state.is_started )
-        {
-            CONSOLE_Printf( "I2C loopback must be configured and stopped before start.\r\n" );
-            return;
-        }
-        EXECI2CStatus_T status = EXEC_I2C_Start_Channel( EXEC_I2C_CHANNEL_1 );
-        if ( status == EXEC_I2C_STATUS_OK )
-        {
-            status = EXEC_I2C_Start_Channel( EXEC_I2C_CHANNEL_2 );
-        }
-        if ( status != EXEC_I2C_STATUS_OK )
-        {
-            if ( EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_1 ) )
-            {
-                ( void )EXEC_I2C_Stop_Channel( EXEC_I2C_CHANNEL_1 );
-            }
-            CONSOLE_Printf( "I2C start failed (status=%d).\r\n", ( int )status );
-            return;
-        }
-        s_i2c_loopback_state.is_started = true;
-        CONSOLE_Printf( "I2C loopback started\r\n" );
+        CONSOLE_Printf( "Invalid direction. Use m2s or s2m.\r\n" );
         return;
     }
 
-    if ( strcmp( argv[1], "stop" ) == 0 && argc == 2U )
+    HWI2CSpeed_T speed = HW_I2C_SPEED_100KHZ;
+    if ( !CONSOLE_Parse_I2C_Speed( argv[3], &speed ) )
     {
-        const bool ch1_started = EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_1 );
-        const bool ch2_started = EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_2 );
-        if ( !ch1_started && !ch2_started )
-        {
-            s_i2c_loopback_state.is_started = false;
-            CONSOLE_Printf( "I2C loopback is not started.\r\n" );
-            return;
-        }
-        /* A retry must not stop a channel that already stopped successfully. */
-        const EXECI2CStatus_T status_1 =
-            ch1_started ? EXEC_I2C_Stop_Channel( EXEC_I2C_CHANNEL_1 ) : EXEC_I2C_STATUS_OK;
-        const EXECI2CStatus_T status_2 =
-            ch2_started ? EXEC_I2C_Stop_Channel( EXEC_I2C_CHANNEL_2 ) : EXEC_I2C_STATUS_OK;
-        const bool ch1_still_started    = EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_1 );
-        const bool ch2_still_started    = EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_2 );
-        s_i2c_loopback_state.is_started = ch1_still_started || ch2_still_started;
-        if ( status_1 != EXEC_I2C_STATUS_OK || status_2 != EXEC_I2C_STATUS_OK )
-        {
-            CONSOLE_Printf( "I2C stop incomplete (ch1=%d, ch2=%d); "
-                            "started: ch1=%s, ch2=%s. Retry stop.\r\n",
-                            ( int )status_1, ( int )status_2, ch1_still_started ? "yes" : "no",
-                            ch2_still_started ? "yes" : "no" );
-            return;
-        }
-        s_i2c_loopback_state.is_started = false;
-        CONSOLE_Printf( "I2C loopback stopped; configuration retained\r\n" );
+        CONSOLE_Printf( "Invalid speed. Use 100 or 400.\r\n" );
         return;
     }
 
-    if ( strcmp( argv[1], "disable" ) == 0 && argc == 2U )
+    HWI2CTransferPath_T transfer_path = HW_I2C_TRANSFER_INTERRUPT;
+    if ( !CONSOLE_Parse_I2C_Transfer_Path( argv[4], &transfer_path ) )
     {
-        const EXECI2CChannelConfig_T disabled = { .is_enabled = false };
-        const EXECI2CStatus_T        status_1 =
-            EXEC_I2C_Configure_Channel( EXEC_I2C_CHANNEL_1, &disabled );
-        const EXECI2CStatus_T status_2 =
-            EXEC_I2C_Configure_Channel( EXEC_I2C_CHANNEL_2, &disabled );
-        if ( status_1 != EXEC_I2C_STATUS_OK || status_2 != EXEC_I2C_STATUS_OK )
-        {
-            CONSOLE_Printf( "I2C disable failed (ch1=%d, ch2=%d).\r\n", ( int )status_1,
-                            ( int )status_2 );
-            return;
-        }
-        memset( &s_i2c_loopback_state, 0, sizeof( s_i2c_loopback_state ) );
-        CONSOLE_Printf( "I2C loopback disabled\r\n" );
+        CONSOLE_Printf( "Invalid op. Use interrupt|irq or dma.\r\n" );
         return;
     }
 
-    if ( strcmp( argv[1], "status" ) == 0 && argc == 2U )
+    char     tx_message[200];
+    uint16_t tx_len = 0U;
+    if ( !CONSOLE_Build_I2C_Message( argc, argv, tx_message, sizeof( tx_message ), &tx_len ) )
     {
-        CONSOLE_Printf( "I2C loopback: configured=%s, started=%s",
-                        s_i2c_loopback_state.is_configured ? "yes" : "no",
-                        s_i2c_loopback_state.is_started ? "yes" : "no" );
-        if ( s_i2c_loopback_state.is_configured )
-        {
-            static const char* const pullup_names[] = { "1k", "2k2", "4k7", "10k" };
-            CONSOLE_Printf( ", master=%u, speed=%s, voltage=%s, pullup=%s",
-                            s_i2c_loopback_state.master_channel == EXEC_I2C_CHANNEL_1 ? 1U : 2U,
-                            s_i2c_loopback_state.speed == HW_I2C_SPEED_400KHZ ? "400" : "100",
-                            s_i2c_loopback_state.voltage == EXEC_I2C_VOLTAGE_5V ? "5v" : "3v3",
-                            pullup_names[( uint32_t )s_i2c_loopback_state.pullup] );
-        }
-        CONSOLE_Printf( "\r\n" );
+        CONSOLE_Printf( "Invalid message (empty or too long, max %u chars).\r\n",
+                        ( unsigned int )( sizeof( tx_message ) - 1U ) );
         return;
     }
 
-    if ( strcmp( argv[1], "run" ) == 0 )
+    const uint16_t i2c1_addr = 0x31U;
+    const uint16_t i2c2_addr = 0x32U;
+
+    EXECI2CChannelConfig_T i2c1_cfg = {
+        .mode  = ( master_channel == HW_I2C_CHANNEL_1 ) ? HW_I2C_MODE_MASTER : HW_I2C_MODE_SLAVE,
+        .speed = speed,
+        .tx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
+        .rx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
+        .own_address_7bit = i2c1_addr,
+    };
+
+    EXECI2CChannelConfig_T i2c2_cfg = {
+        .mode  = ( master_channel == HW_I2C_CHANNEL_2 ) ? HW_I2C_MODE_MASTER : HW_I2C_MODE_SLAVE,
+        .speed = speed,
+        .tx_transfer_path = transfer_path,
+        .rx_transfer_path = transfer_path,
+        .own_address_7bit = i2c2_addr,
+    };
+
+    EXECI2CStatus_T status = EXEC_I2C_Configuration( &i2c1_cfg, &i2c2_cfg );
+    if ( status != EXEC_I2C_STATUS_OK )
     {
-        if ( argc < 4U )
-        {
-            CONSOLE_Printf( "Usage: i2c_loopback run <dir:m2s|s2m> <message...>\r\n" );
-            return;
-        }
-        if ( !s_i2c_loopback_state.is_configured
-             || !EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_1 )
-             || !EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_2 ) )
-        {
-            CONSOLE_Printf( "I2C loopback run requires both channels started.\r\n" );
-            return;
-        }
-        ConsoleI2CLoopbackDirection_T direction;
-        if ( !CONSOLE_Parse_I2C_Loopback_Direction( argv[2], &direction ) )
-        {
-            CONSOLE_Printf( "Invalid direction. Use m2s or s2m.\r\n" );
-            return;
-        }
-        char     tx_message[200];
-        char     rx_message[200];
-        uint16_t tx_len       = 0U;
-        uint16_t received_len = 0U;
-        if ( !CONSOLE_Build_I2C_Message( argc, argv, tx_message, sizeof( tx_message ), &tx_len ) )
-        {
-            CONSOLE_Printf( "Invalid message.\r\n" );
-            return;
-        }
-        const CONSOLEI2CLoopbackChannels_T channels = {
-            .master = s_i2c_loopback_state.master_channel,
-            .slave  = s_i2c_loopback_state.slave_channel,
-        };
-        const uint16_t slave_address =
-            s_i2c_loopback_state.slave_channel == EXEC_I2C_CHANNEL_1 ? 0x31U : 0x32U;
-        const bool transfer_ok =
-            direction == CONSOLE_I2C_LOOPBACK_DIR_M2S
-                ? CONSOLE_Run_I2C_Loopback_M2S( channels, slave_address, tx_message, tx_len,
-                                                rx_message, sizeof( rx_message ), &received_len )
-                : CONSOLE_Run_I2C_Loopback_S2M( channels, slave_address, tx_message, tx_len,
-                                                rx_message, sizeof( rx_message ), &received_len );
-        if ( !transfer_ok )
-        {
-            return;
-        }
-        CONSOLE_Printf( "Sent    (%u): %.*s\r\n", ( unsigned int )tx_len, ( int )tx_len,
-                        tx_message );
-        CONSOLE_Printf( "Received(%u): %.*s\r\n", ( unsigned int )received_len, ( int )received_len,
-                        rx_message );
-        const bool pass = received_len == tx_len && memcmp( tx_message, rx_message, tx_len ) == 0;
-        CONSOLE_Printf( "Result: %s\r\n", pass ? "PASS" : "FAIL" );
+        CONSOLE_Printf( "I2C configuration failed (status=%d).\r\n", ( int )status );
         return;
     }
 
-    CONSOLE_Printf( "Unknown i2c_loopback command. Run 'i2c_loopback help'.\r\n" );
+    const uint16_t slave_addr = ( slave_channel == HW_I2C_CHANNEL_1 ) ? i2c1_addr : i2c2_addr;
+
+    char                         rx_message[200];
+    uint16_t                     received_len      = 0U;
+    bool                         transfer_ok       = false;
+    CONSOLEI2CLoopbackChannels_T loopback_channels = {
+        .master = master_channel,
+        .slave  = slave_channel,
+    };
+
+    if ( direction == CONSOLE_I2C_LOOPBACK_DIR_M2S )
+    {
+        transfer_ok =
+            CONSOLE_Run_I2C_Loopback_M2S( loopback_channels, slave_addr, tx_message, tx_len,
+                                          rx_message, sizeof( rx_message ), &received_len );
+    }
+    else
+    {
+        transfer_ok =
+            CONSOLE_Run_I2C_Loopback_S2M( loopback_channels, slave_addr, tx_message, tx_len,
+                                          rx_message, sizeof( rx_message ), &received_len );
+    }
+
+    if ( !transfer_ok )
+    {
+        return;
+    }
+
+    CONSOLE_Printf(
+        "I2C loopback: master=I2C%s slave=I2C%s dir=%s speed=%s i2c1_op=Interrupt i2c2_op=%s\r\n",
+        ( master_channel == HW_I2C_CHANNEL_1 ) ? "1" : "2",
+        ( slave_channel == HW_I2C_CHANNEL_1 ) ? "1" : "2",
+        ( direction == CONSOLE_I2C_LOOPBACK_DIR_M2S ) ? "m2s" : "s2m",
+        ( speed == HW_I2C_SPEED_400KHZ ) ? "400kHz" : "100kHz",
+        ( transfer_path == HW_I2C_TRANSFER_DMA ) ? "DMA" : "Interrupt" );
+
+    CONSOLE_Printf( "Sent    (%u): %.*s\r\n", ( unsigned int )tx_len, ( int )tx_len, tx_message );
+    CONSOLE_Printf( "Received(%u): %.*s\r\n", ( unsigned int )received_len, ( int )received_len,
+                    rx_message );
+
+    const bool pass =
+        ( received_len == ( uint16_t )tx_len ) && ( memcmp( tx_message, rx_message, tx_len ) == 0 );
+    CONSOLE_Printf( "Result: %s\r\n", pass ? "PASS" : "FAIL" );
 }
 
 /**
@@ -1163,6 +620,89 @@ static void CONSOLE_Command_Echo( uint16_t argc, char* argv[] )
     CONSOLE_Printf( "\r\n" );
 }
 
+/**
+ * @brief Starts the test scheduler
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
+static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] )
+{
+    if ( argc < 2 || argv[1] == NULL )
+    {
+        CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  execution_manager start\r\n" );
+        CONSOLE_Printf( "  execution_manager stop\r\n" );
+        CONSOLE_Printf( "  execution_manager status\r\n" );
+        CONSOLE_Printf( "  execution_manager frequency <desired frequency>\r\n" );
+        CONSOLE_Printf( "    Note: Desired frequencies can only be 100Hz, 1kHz or 10kHz\r\n" );
+        CONSOLE_Printf( "    Runs started from the console execute 1000 ticks\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "start" ) == 0 )
+    {
+        if ( !EXECUTION_MANAGER_Start( &execution_manager_console_config ) )
+        {
+            CONSOLE_Printf( "Execution Manager start rejected\r\n" );
+        }
+    }
+    else if ( strcmp( argv[1], "stop" ) == 0 )
+    {
+        EXECUTION_MANAGER_Abort();
+    }
+    else if ( strcmp( argv[1], "status" ) == 0 )
+    {
+        ExecutionManagerStatus_T status;
+        EXECUTION_MANAGER_Get_Status( &status );
+        CONSOLE_Printf( "Execution Manager state: %u, failure: %u, ticks completed: %lu\r\n",
+                        ( unsigned int )status.state, ( unsigned int )status.failure,
+                        ( unsigned long )status.ticks_completed );
+    }
+    else if ( strcmp( argv[1], "frequency" ) == 0 )
+    {
+        if ( argc < 3 || argv[2] == NULL )
+        {
+            CONSOLE_Printf( "Usage:\r\n" );
+            CONSOLE_Printf( "  execution_manager frequency <desired frequency>\r\n" );
+            CONSOLE_Printf( "    Note: Desired frequencies can only be 100Hz, 1kHz or 10kHz\r\n" );
+            return;
+        }
+
+        if ( ( strcmp( argv[2], "10k" ) == 0 ) || ( strcmp( argv[2], "10000" ) == 0 ) )
+        {
+            execution_manager_console_config.frequency_mode = FREQUENCY_10KHZ;
+            CONSOLE_Printf( "Scheduler Frequency is set to %sHz\r\n", argv[2] );
+        }
+        else if ( ( strcmp( argv[2], "1k" ) == 0 ) || ( strcmp( argv[2], "1000" ) == 0 ) )
+        {
+            execution_manager_console_config.frequency_mode = FREQUENCY_1KHZ;
+            CONSOLE_Printf( "Scheduler Frequency is set to %sHz\r\n", argv[2] );
+        }
+        else if ( strcmp( argv[2], "100" ) == 0 )
+        {
+            execution_manager_console_config.frequency_mode = FREQUENCY_100HZ;
+            CONSOLE_Printf( "Scheduler Frequency is set to %sHz\r\n", argv[2] );
+        }
+        else
+        {
+            CONSOLE_Printf( "Invalid: Desired frequencies can only be 100Hz, 1kHz or 10kHz\r\n" );
+        }
+    }
+    else
+    {
+        CONSOLE_Printf( "Invalid argument: %s\r\n", argv[1] );
+        CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  execution_manager start\r\n" );
+        CONSOLE_Printf( "  execution_manager stop\r\n" );
+        CONSOLE_Printf( "  execution_manager status\r\n" );
+        CONSOLE_Printf( "  execution_manager frequency <desired frequency>\r\n" );
+        CONSOLE_Printf( "    Note: Desired frequencies can only be 100Hz, 1kHz or 10kHz\r\n" );
+    }
+}
+
 static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] )
 {
     ( void )argc;
@@ -1194,21 +734,9 @@ static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] )
     {
         CONSOLE_SPI_Loopback_Config( argc, argv );
     }
-    else if ( strcmp( argv[1], "apply_config" ) == 0 )
+    else if ( strcmp( argv[1], "apply" ) == 0 )
     {
-        CONSOLE_SPI_Loopback_Apply_Config( argc, argv );
-    }
-    else if ( strcmp( argv[1], "start" ) == 0 )
-    {
-        CONSOLE_SPI_Loopback_Start( argc, argv );
-    }
-    else if ( strcmp( argv[1], "stop" ) == 0 )
-    {
-        CONSOLE_SPI_Loopback_Stop( argc, argv );
-    }
-    else if ( strcmp( argv[1], "disable" ) == 0 )
-    {
-        CONSOLE_SPI_Loopback_Disable( argc, argv );
+        CONSOLE_SPI_Loopback_Apply( argc, argv );
     }
     else if ( strcmp( argv[1], "load" ) == 0 )
     {
@@ -1237,201 +765,50 @@ static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] )
  * @brief Handles analogue output console commands.
  *
  * Usage:
- *   anlg_out config [vdd|external]
- *   anlg_out start
- *   anlg_out stop
- *   anlg_out disable
- *   anlg_out status
+ *   anlg_out config
+ *     - Configures SPI and the DAC to use VDD as reference (no external VREF).
  *   anlg_out <channel> <voltage>
  *     - Write voltage (0-20V, clamped) to channel 0-5.
- *   anlg_out batch <channel> <voltage> [<channel> <voltage> ...]
- *     - Atomically queue one to six prepared output updates in argument order.
  */
 static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
 {
-    if ( ( argc < 2U ) || ( argv[1] == NULL ) || ( strcmp( argv[1], "help" ) == 0 ) )
+    if ( argc < 2 || argv[1] == NULL )
     {
         CONSOLE_Printf( "Usage:\r\n" );
-        CONSOLE_Printf( "  anlg_out config [vdd|external]\r\n" );
-        CONSOLE_Printf( "  anlg_out start\r\n" );
-        CONSOLE_Printf( "  anlg_out stop\r\n" );
-        CONSOLE_Printf( "  anlg_out disable\r\n" );
-        CONSOLE_Printf( "  anlg_out status\r\n" );
+        CONSOLE_Printf( "  anlg_out config\r\n" );
         CONSOLE_Printf( "  anlg_out <channel 0-5> <voltage 0-20V>\r\n" );
-        CONSOLE_Printf(
-            "  anlg_out batch <channel 0-5> <voltage 0-20V> [<channel> <voltage> ...]\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "help" ) == 0 )
+    {
+        CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  anlg_out config\r\n" );
+        CONSOLE_Printf( "  anlg_out <channel 0-5> <voltage 0-20V>\r\n" );
         return;
     }
 
     if ( strcmp( argv[1], "config" ) == 0 )
     {
-        bool use_external_vref = false;
-
-        if ( argc >= 3U )
+        /* For console testing we configure SPI then configure DAC to use VDD */
+        if ( !EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup() )
         {
-            if ( strcmp( argv[2], "external" ) == 0 )
-            {
-                use_external_vref = true;
-            }
-            else if ( strcmp( argv[2], "vdd" ) != 0 )
-            {
-                CONSOLE_Printf( "Usage: anlg_out config [vdd|external]\r\n" );
-                return;
-            }
-        }
-
-        const ExecAnalogueOutputConfig_T config = {
-            .is_enabled        = true,
-            .use_external_vref = use_external_vref,
-        };
-
-        if ( !EXEC_ANALOGUE_OUTPUT_Configure( &config ) )
-        {
-            CONSOLE_Printf( "Failed to configure analogue outputs\r\n" );
+            CONSOLE_Printf( "Failed to configure SPI channel for DAC\r\n" );
             return;
         }
 
-        CONSOLE_Printf( "Analogue outputs configured with %s reference; outputs stopped\r\n",
-                        use_external_vref ? "external" : "VDD" );
-        return;
-    }
-
-    if ( strcmp( argv[1], "start" ) == 0 )
-    {
-        if ( !EXEC_ANALOGUE_OUTPUT_Start() )
+        if ( !EXEC_ANALOGUE_OUTPUT_Config( false ) )
         {
-            CONSOLE_Printf( "Failed to start analogue outputs\r\n" );
+            CONSOLE_Printf( "Failed to configure DAC registers\r\n" );
             return;
         }
 
-        CONSOLE_Printf( "Analogue outputs started\r\n" );
-        return;
-    }
-
-    if ( strcmp( argv[1], "stop" ) == 0 )
-    {
-        if ( !EXEC_ANALOGUE_OUTPUT_Stop() )
-        {
-            CONSOLE_Printf( "Failed to stop analogue outputs\r\n" );
-            return;
-        }
-
-        CONSOLE_Printf( "Analogue outputs stopped\r\n" );
-        return;
-    }
-
-    if ( strcmp( argv[1], "disable" ) == 0 )
-    {
-        const ExecAnalogueOutputConfig_T config = {
-            .is_enabled = false,
-        };
-
-        if ( !EXEC_ANALOGUE_OUTPUT_Configure( &config ) )
-        {
-            CONSOLE_Printf( "Failed to disable analogue outputs\r\n" );
-            return;
-        }
-
-        CONSOLE_Printf( "Analogue outputs disabled\r\n" );
-        return;
-    }
-
-    if ( strcmp( argv[1], "status" ) == 0 )
-    {
-        const AnalogueOutputState_T state = EXEC_ANALOGUE_OUTPUT_Get_State();
-
-        CONSOLE_Printf( "Analogue outputs: state=%u, configured=%s, started=%s\r\n",
-                        ( unsigned int )state,
-                        ( state == EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURED
-                          || state == EXEC_ANALOGUE_OUTPUT_STATE_STARTED )
-                            ? "yes"
-                            : "no",
-                        state == EXEC_ANALOGUE_OUTPUT_STATE_STARTED ? "yes" : "no" );
-        return;
-    }
-
-    if ( strcmp( argv[1], "batch" ) == 0 )
-    {
-        AnalogueOutputPreparedBatch_T prepared_batch;
-        uint16_t                      pair_count;
-
-        if ( ( argc < 4U ) || ( ( argc - 2U ) % 2U != 0U ) )
-        {
-            CONSOLE_Printf( "Usage: anlg_out batch <channel 0-5> <voltage 0-20V> [<channel> "
-                            "<voltage> ...]\r\n" );
-            return;
-        }
-
-        pair_count = ( uint16_t )( ( argc - 2U ) / 2U );
-        if ( pair_count > EXEC_ANALOGUE_OUTPUT_BATCH_MAX_FRAMES )
-        {
-            CONSOLE_Printf( "Too many analogue outputs (maximum 6)\r\n" );
-            return;
-        }
-
-        if ( !EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) )
-        {
-            CONSOLE_Printf( "Failed to initialize analogue output batch\r\n" );
-            return;
-        }
-
-        for ( uint16_t pair_index = 0U; pair_index < pair_count; pair_index++ )
-        {
-            const uint16_t argument_index = ( uint16_t )( 2U + ( pair_index * 2U ) );
-            char*          channel_end    = NULL;
-            char*          voltage_end    = NULL;
-            long           channel        = strtol( argv[argument_index], &channel_end, 10 );
-            float          voltage        = strtof( argv[argument_index + 1U], &voltage_end );
-            AnalogueOutputPreparedFrame_T prepared_frame;
-
-            if ( ( channel_end == argv[argument_index] ) || ( *channel_end != '\0' )
-                 || ( channel < 0L ) || ( channel > 5L ) )
-            {
-                CONSOLE_Printf( "Invalid channel at batch position %u\r\n",
-                                ( unsigned int )( pair_index + 1U ) );
-                return;
-            }
-
-            if ( ( voltage_end == argv[argument_index + 1U] ) || ( *voltage_end != '\0' )
-                 || !EXEC_ANALOGUE_OUTPUT_Prepare_Frame( ( uint8_t )channel, voltage,
-                                                         &prepared_frame ) )
-            {
-                CONSOLE_Printf( "Invalid voltage at batch position %u\r\n",
-                                ( unsigned int )( pair_index + 1U ) );
-                return;
-            }
-
-            if ( !EXEC_ANALOGUE_OUTPUT_Batch_Append( &prepared_batch, &prepared_frame ) )
-            {
-                CONSOLE_Printf( "Failed to prepare analogue output batch\r\n" );
-                return;
-            }
-        }
-
-        if ( !EXEC_ANALOGUE_OUTPUT_Is_Configured() )
-        {
-            CONSOLE_Printf( "DAC module not configured. Run 'anlg_out config' first.\r\n" );
-            return;
-        }
-
-        if ( !EXEC_ANALOGUE_OUTPUT_Is_Started() )
-        {
-            CONSOLE_Printf( "Analogue outputs not started. Run 'anlg_out start' first.\r\n" );
-            return;
-        }
-
-        if ( !EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) )
-        {
-            CONSOLE_Printf( "Failed to submit analogue output batch\r\n" );
-            return;
-        }
-
-        CONSOLE_Printf( "Submitted %u analogue output updates\r\n", ( unsigned int )pair_count );
+        CONSOLE_Printf( "DAC configured to use VDD as reference\r\n" );
         return;
     }
 
     /* Otherwise expect: anlg_out <channel> <voltage> */
-    if ( argc < 3U )
+    if ( argc < 3 )
     {
         CONSOLE_Printf( "Usage: anlg_out <channel 0-5> <voltage 0-20V>\r\n" );
         return;
@@ -1453,30 +830,30 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
 
     char* endptr2 = NULL;
     float voltage = strtof( argv[2], &endptr2 );
-    if ( ( endptr2 == argv[2] ) || ( *endptr2 != '\0' ) )
+    if ( endptr2 == argv[2] )
     {
         CONSOLE_Printf( "Invalid voltage\r\n" );
         return;
     }
 
-    if ( !EXEC_ANALOGUE_OUTPUT_Is_Configured() )
+    /* Ensure module configured */
+    if ( !EXEC_ANALOG_OUTPUT_Is_Configured() )
     {
         CONSOLE_Printf( "DAC module not configured. Run 'anlg_out config' first.\r\n" );
         return;
     }
 
-    if ( !EXEC_ANALOGUE_OUTPUT_Is_Started() )
-    {
-        CONSOLE_Printf( "Analogue outputs not started. Run 'anlg_out start' first.\r\n" );
-        return;
-    }
+    CONSOLE_Printf( "TX buffer before: %s\r\n",
+                    HW_SPI_Tx_Is_Complete( SPI_CHANNEL_0 ) ? "empty" : "not empty" );
 
-    if ( !EXEC_ANALOGUE_OUTPUT_Write_Voltage( ( uint8_t )channel, voltage ) )
+    if ( !EXEC_ANALOG_OUTPUT_Write_Voltage( ( uint8_t )channel, voltage ) )
     {
         CONSOLE_Printf( "Failed to write voltage to channel %ld\r\n", channel );
         return;
     }
 
+    CONSOLE_Printf( "TX buffer after: %s\r\n",
+                    HW_SPI_Tx_Is_Complete( SPI_CHANNEL_0 ) ? "empty" : "not empty" );
     CONSOLE_Printf( "Wrote (requested) %s V to channel %ld\r\n", argv[2], channel );
 }
 
@@ -1597,157 +974,263 @@ static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char* argv[] )
     CONSOLE_Printf( "Unrecognised input, expected 1 or 0 but recieved %c", argv[argc - 1] );
 }
 
+/**
+ * @brief Transmits a 8 byte message over xbCan
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
+static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
+{
+    if ( argc < 3 )
+    {
+        CONSOLE_Printf( "Incorrect number of inputs, expected atleast 2 but recieved %d",
+                        argc - 2 );
+        return;
+    }
+    char out[argc - 2][8];
+    for ( int j = 0; j < ( argc - 2 ); j++ )
+    {
+        int len = strlen( argv[j + 2] );
+        // fill packet with '_'
+        for ( int i = 0; i < 8; i++ )
+        {
+            out[j][i] = '_';
+        }
+        if ( len > 8 )
+        {
+            len = 8;
+        }
+        // move data into packet
+        CONSOLE_Printf( "Adding %s to buffer...\n\r", argv[j + 2] );
+        for ( int i = 0; i < len; i++ )
+        {
+            out[j][i] = argv[j + 2][i];
+        }
+    }
+    if ( strcmp( argv[1], "1" ) == 0 )
+    {
+        if ( HW_CAN_Tx_Buffer_Write1( out, argc - 2 ) != 0 )
+        {
+            CONSOLE_Printf( "Buffer Error" );
+            return;
+        }
+        CONSOLE_Printf( "Written to buffer...\n\r" );
+        HW_CAN_Tx_Trigger1();
+        CONSOLE_Printf( "Transmitted on channel 1" );
+    }
+    else if ( strcmp( argv[1], "2" ) == 0 )
+    {
+        if ( HW_CAN_Tx_Buffer_Write2( out, argc - 2 ) != 0 )
+        {
+            CONSOLE_Printf( "Buffer Error" );
+            return;
+        }
+        CONSOLE_Printf( "Written to buffer...\n\r" );
+        HW_CAN_Tx_Trigger2();
+        CONSOLE_Printf( "Transmitted on channel 2" );
+    }
+    else
+    {
+        CONSOLE_Printf( "Unknown channel %s\n\r", argv[1] );
+    }
+}
+
+/**
+ * @brief Transmits a 8 byte message over xbCan
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
+static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] )
+{
+    int check = HW_CAN_Configure1( 1000000 );
+    if ( check == 1 )
+    {
+        CONSOLE_Printf( "Can 1  Timing set up error" );
+        return;
+    }
+    if ( check == 2 )
+    {
+        CONSOLE_Printf( "Can 1  Filter set up error" );
+        return;
+    }
+    if ( check == 3 )
+    {
+        CONSOLE_Printf( "Can 1 Start set up error" );
+        return;
+    }
+    if ( check != 0 )
+    {
+        CONSOLE_Printf( "Can 1 Config Error" );
+        return;
+    }
+    check = HW_CAN_Configure2( 1000000 );
+    if ( check == 1 )
+    {
+        CONSOLE_Printf( "Can 2  Timing set up error" );
+        return;
+    }
+    if ( check == 2 )
+    {
+        CONSOLE_Printf( "Can 2  Filter set up error" );
+        return;
+    }
+    if ( check == 3 )
+    {
+        CONSOLE_Printf( "Can 2 Start set up error" );
+        return;
+    }
+    if ( check != 0 )
+    {
+        CONSOLE_Printf( "Can 2 Config Error" );
+        return;
+    }
+    CONSOLE_Printf( "Can 1&2 Set up correctly" );
+}
+
+/**
+ * @brief Transmits a 8 byte message over xbCan
+ *
+ * @param argc - The number of arguments
+ * @param argv - pointer to each argument string
+ *
+ * @returns void
+ */
+static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
+{
+    if ( argc != 2 )
+    {
+        CONSOLE_Printf( "Incorrect number of inputs, expected 1 but recieved %d", argc - 1 );
+        return;
+    }
+    char out[8];
+    for ( int i = 0; i < 8; i++ )
+    {
+        out[i] = '0';
+    }
+    if ( strcmp( argv[1], "1" ) == 0 )
+    {
+        if ( HW_CAN_Rx_Buffer_Pop1( out ) != 0 )
+        {
+            CONSOLE_Printf( "Nothing in channel 1 buffer\n\r" );
+            return;
+        }
+    }
+    else if ( strcmp( argv[1], "2" ) == 0 )
+    {
+        if ( HW_CAN_Rx_Buffer_Pop2( out ) != 0 )
+        {
+            CONSOLE_Printf( "Nothing in channel 2 buffer\n\r" );
+            return;
+        }
+    }
+    else
+    {
+        CONSOLE_Printf( "Unknown parameter %s\n\r", argv[1] );
+        return;
+    }
+    CONSOLE_Printf( "Recieved: %s", out );
+}
+
 static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] )
 {
     if ( argc < 2 || argv[1] == NULL )
     {
         CONSOLE_Printf( "Usage:\r\n" );
-        CONSOLE_Printf( "  analogue_inputs configure <sample rate>\r\n" );
         CONSOLE_Printf( "  analogue_inputs start\r\n" );
         CONSOLE_Printf( "  analogue_inputs stop\r\n" );
-        CONSOLE_Printf( "  analogue_inputs disable\r\n" );
-        CONSOLE_Printf( "  analogue_inputs status\r\n" );
         CONSOLE_Printf( "  analogue_inputs read\r\n" );
+        CONSOLE_Printf( "  analogue_inputs frequency\r\n" );
         return;
     }
 
     if ( strcmp( argv[1], "start" ) == 0 )
     {
-        if ( EXEC_ANALOGUE_INPUT_Start() )
-        {
-            CONSOLE_Printf( "Analogue inputs started\r\n" );
-        }
-        else
-        {
-            CONSOLE_Printf( "Failed to start analogue inputs\r\n" );
-        }
+        HW_ADC_Start_DMA_Measurements();
+        CONSOLE_Printf( "Analogue Inputs are now being read into DMA\r\n" );
     }
     else if ( strcmp( argv[1], "stop" ) == 0 )
     {
-        if ( EXEC_ANALOGUE_INPUT_Stop() )
-        {
-            CONSOLE_Printf( "Analogue inputs stopped\r\n" );
-        }
-        else
-        {
-            CONSOLE_Printf( "Failed to stop analogue inputs\r\n" );
-        }
-    }
-    else if ( strcmp( argv[1], "disable" ) == 0 )
-    {
-        const ExecAnalogueInputConfig_T configuration = {
-            .is_enabled = false,
-        };
-
-        if ( EXEC_ANALOGUE_INPUT_Configure( &configuration ) )
-        {
-            CONSOLE_Printf( "Analogue inputs disabled\r\n" );
-        }
-        else
-        {
-            CONSOLE_Printf( "Failed to disable analogue inputs\r\n" );
-        }
-    }
-    else if ( strcmp( argv[1], "status" ) == 0 )
-    {
-        CONSOLE_Printf( "Analogue inputs: configured=%s, started=%s\r\n",
-                        EXEC_ANALOGUE_INPUT_Is_Configured() ? "yes" : "no",
-                        EXEC_ANALOGUE_INPUT_Is_Started() ? "yes" : "no" );
+        HW_ADC_Stop_DMA_Measurements();
+        CONSOLE_Printf( "Analogue Inputs are no longer being read into DMA\r\n" );
     }
     else if ( strcmp( argv[1], "read" ) == 0 )
     {
-        if ( !EXEC_ANALOGUE_INPUT_Is_Started() )
-        {
-            CONSOLE_Printf( "Analogue inputs are not started\r\n" );
-            return;
-        }
-
-        uint32_t                          channel_0_voltage   = 0U;
-        uint32_t                          channel_1_voltage   = 0U;
-        const ExecAnalogueInputVoltages_T voltage_destination = {
-            .channel_0_voltage = &channel_0_voltage,
-            .channel_1_voltage = &channel_1_voltage,
-        };
-
-        EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( voltage_destination );
-
-        CONSOLE_Printf( "Analogue input 0: %lu\r\n", ( unsigned long )channel_0_voltage );
-        CONSOLE_Printf( "Analogue input 1: %lu\r\n", ( unsigned long )channel_1_voltage );
+        ADCMeasurement_T measurement;
+        HW_ADC_Read_DMA_Measurements( &measurement, 1 );
+        CONSOLE_Printf( "DMA Input 0: %u\r\n", measurement.ch_0 );
+        CONSOLE_Printf( "DMA Input 1: %u\r\n", measurement.ch_1 );
+        uint16_t value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_VIN );
+        CONSOLE_Printf( "Vin: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_5V_CURRENT );
+        CONSOLE_Printf( "OUT 5V Current: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_5V_VOLTAGE );
+        CONSOLE_Printf( "OUT 5V Voltage: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_12V_CURRENT );
+        CONSOLE_Printf( "OUT 12V Current: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_12V_VOLTAGE );
+        CONSOLE_Printf( "OUT 12V Voltage: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_24V_CURRENT );
+        CONSOLE_Printf( "OUT 24V Current: %u\r\n", value );
+        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_24V_VOLTAGE );
+        CONSOLE_Printf( "OUT 24V Voltage: %u\r\n", value );
     }
-    else if ( strcmp( argv[1], "configure" ) == 0 )
+    else if ( strcmp( argv[1], "frequency" ) == 0 )
     {
         if ( argc < 3 || argv[2] == NULL )
         {
             CONSOLE_Printf( "Usage:\r\n" );
-            CONSOLE_Printf( "  analogue_inputs configure <sample rate>\r\n" );
+            CONSOLE_Printf( "  analogue_inputs frequency <desired frequency>\r\n" );
             CONSOLE_Printf( "    Note: Desired frequencies can only be one of the following:\r\n" );
             CONSOLE_Printf(
                 "\t- 100kHz\r\n\t- 50kHz\r\n\t- 10kHz\r\n\t- 5kHz\r\n\t- 1kHz\r\n\t- 500Hz\r\n" );
-            return;
         }
-
-        ExecAnalogueInputSampleRate_T sample_rate;
-
-        if ( strcmp( argv[2], "100kHz" ) == 0 || strcmp( argv[2], "100k" ) == 0 )
+        else if ( strcmp( argv[2], "100kHz" ) == 0 || strcmp( argv[2], "100k" ) == 0 )
         {
-            sample_rate = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_100K_HZ;
+            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_100K_HZ );
         }
         else if ( strcmp( argv[2], "50kHz" ) == 0 || strcmp( argv[2], "50k" ) == 0 )
         {
-            sample_rate = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_50K_HZ;
+            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_50K_HZ );
         }
         else if ( strcmp( argv[2], "10kHz" ) == 0 || strcmp( argv[2], "10k" ) == 0 )
         {
-            sample_rate = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ;
+            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_10K_HZ );
         }
         else if ( strcmp( argv[2], "5kHz" ) == 0 || strcmp( argv[2], "5k" ) == 0 )
         {
-            sample_rate = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_5K_HZ;
+            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_5K_HZ );
         }
         else if ( strcmp( argv[2], "1kHz" ) == 0 || strcmp( argv[2], "1k" ) == 0 )
         {
-            sample_rate = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_1K_HZ;
+            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_1K_HZ );
         }
         else if ( strcmp( argv[2], "500Hz" ) == 0 || strcmp( argv[2], "500" ) == 0 )
         {
-            sample_rate = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_500_HZ;
+            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_500_HZ );
         }
         else
         {
             CONSOLE_Printf( "Usage:\r\n" );
-            CONSOLE_Printf( "  analogue_inputs configure <sample rate>\r\n" );
+            CONSOLE_Printf( "  analogue_inputs frequency <desired frequency>\r\n" );
             CONSOLE_Printf( "    Note: Desired frequencies can only be one of the following:\r\n" );
             CONSOLE_Printf(
                 "\t- 100kHz\r\n\t- 50kHz\r\n\t- 10kHz\r\n\t- 5kHz\r\n\t- 1kHz\r\n\t- 500Hz\r\n" );
-            return;
-        }
-
-        const ExecAnalogueInputConfig_T configuration = {
-            .is_enabled      = true,
-            .sample_rate     = sample_rate,
-            .ch_0_is_enabled = true,
-            .ch_1_is_enabled = true,
-        };
-
-        if ( EXEC_ANALOGUE_INPUT_Configure( &configuration ) )
-        {
-            CONSOLE_Printf( "Analogue inputs configured\r\n" );
-        }
-        else
-        {
-            CONSOLE_Printf( "Failed to configure analogue inputs\r\n" );
         }
     }
     else
     {
         CONSOLE_Printf( "Invalid argument: %s\r\n", argv[1] );
         CONSOLE_Printf( "Usage:\r\n" );
-        CONSOLE_Printf( "  analogue_inputs configure <sample rate>\r\n" );
         CONSOLE_Printf( "  analogue_inputs start\r\n" );
         CONSOLE_Printf( "  analogue_inputs stop\r\n" );
-        CONSOLE_Printf( "  analogue_inputs disable\r\n" );
-        CONSOLE_Printf( "  analogue_inputs status\r\n" );
         CONSOLE_Printf( "  analogue_inputs read\r\n" );
+        CONSOLE_Printf( "  analogue_inputs frequency\r\n" );
     }
 }
 

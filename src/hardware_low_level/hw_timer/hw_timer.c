@@ -22,7 +22,7 @@
 #include "stm32f4xx_ll_bus.h"
 #include "stm32f4xx_ll_system.h"
 #include "stm32f4xx_ll_rcc.h"
-#include "execution_manager.h"
+#include "execution_manager_isr.h"
 #include "hw_timer_capture_start.h"
 #endif
 
