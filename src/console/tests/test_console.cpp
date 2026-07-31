@@ -159,6 +159,18 @@ protected:
     {
         g_mock_exec_i2c = nullptr;
     }
+
+    void ExpectLoopbackRecovery( CONSOLEI2CLoopbackChannels_T channels )
+    {
+        EXPECT_CALL( mock_exec_i2c, RecoverChannel( channels.master ) )
+            .WillOnce( Return( EXEC_I2C_STATUS_ERROR ) );
+        EXPECT_CALL( mock_exec_i2c, GetAndClearResult( channels.master ) )
+            .WillOnce( Return( EXEC_I2C_STATUS_ERROR ) );
+        EXPECT_CALL( mock_exec_i2c, RecoverChannel( channels.slave ) )
+            .WillOnce( Return( EXEC_I2C_STATUS_ERROR ) );
+        EXPECT_CALL( mock_exec_i2c, GetAndClearResult( channels.slave ) )
+            .WillOnce( Return( EXEC_I2C_STATUS_ERROR ) );
+    }
 };
 
 /**-----------------------------------------------------------------------------
@@ -235,6 +247,7 @@ TEST_F( ConsoleI2CTest, LoopbackReturnsFailureOnAsynchronousMasterError )
     uint16_t                           received_length = 0U;
     const CONSOLEI2CLoopbackChannels_T channels        = { HW_I2C_CHANNEL_2, HW_I2C_CHANNEL_1 };
 
+    InSequence sequence;
     EXPECT_CALL( mock_exec_i2c, SlaveTransmit( HW_I2C_CHANNEL_1, _, 3U ) )
         .WillOnce( Return( true ) );
     EXPECT_CALL( mock_exec_i2c, StartMasterReceive( HW_I2C_CHANNEL_2, 0x31U, 3U ) )
@@ -243,6 +256,7 @@ TEST_F( ConsoleI2CTest, LoopbackReturnsFailureOnAsynchronousMasterError )
     EXPECT_CALL( mock_exec_i2c, GetAndClearResult( HW_I2C_CHANNEL_2 ) )
         .WillOnce( Return( EXEC_I2C_STATUS_ERROR ) );
     EXPECT_CALL( mock_exec_i2c, Receive( _, _, _, _ ) ).Times( 0 );
+    ExpectLoopbackRecovery( channels );
 
     EXPECT_FALSE( CONSOLE_Run_I2C_Loopback_S2M( channels, 0x31U, payload, 3U, received,
                                                 sizeof( received ), &received_length ) );
@@ -268,13 +282,71 @@ TEST_F( ConsoleI2CTest, LoopbackReturnsFailureWhenPhysicalCompletionTimesOut )
             *bytes_copied = 0U;
             return true;
         } );
-    {
-        InSequence sequence;
-        EXPECT_CALL( mock_exec_i2c, RecoverChannel( HW_I2C_CHANNEL_1 ) )
-            .WillOnce( Return( EXEC_I2C_STATUS_ERROR ) );
-        EXPECT_CALL( mock_exec_i2c, GetAndClearResult( HW_I2C_CHANNEL_1 ) )
-            .WillOnce( Return( EXEC_I2C_STATUS_ERROR ) );
-    }
+    ExpectLoopbackRecovery( channels );
+
+    EXPECT_FALSE( CONSOLE_Run_I2C_Loopback_M2S( channels, 0x32U, payload, 4U, received,
+                                                sizeof( received ), &received_length ) );
+    EXPECT_EQ( received_length, 0U );
+}
+
+TEST_F( ConsoleI2CTest, MasterStartFailureRecoversBothChannelsAfterSlaveWasArmed )
+{
+    const char                         payload[] = "fail";
+    char                               received[8]{};
+    uint16_t                           received_length = 0U;
+    const CONSOLEI2CLoopbackChannels_T channels        = { HW_I2C_CHANNEL_1, HW_I2C_CHANNEL_2 };
+
+    InSequence sequence;
+    EXPECT_CALL( mock_exec_i2c, StartSlaveReceive( HW_I2C_CHANNEL_2, 4U ) )
+        .WillOnce( Return( true ) );
+    EXPECT_CALL( mock_exec_i2c, MasterTransmit( HW_I2C_CHANNEL_1, 0x32U, _, 4U ) )
+        .WillOnce( Return( false ) );
+    ExpectLoopbackRecovery( channels );
+
+    EXPECT_FALSE( CONSOLE_Run_I2C_Loopback_M2S( channels, 0x32U, payload, 4U, received,
+                                                sizeof( received ), &received_length ) );
+}
+
+TEST_F( ConsoleI2CTest, MasterReceiveStartFailureRecoversBothChannelsAfterSlaveWasArmed )
+{
+    const char                         payload[] = "fail";
+    char                               received[8]{};
+    uint16_t                           received_length = 0U;
+    const CONSOLEI2CLoopbackChannels_T channels        = { HW_I2C_CHANNEL_2, HW_I2C_CHANNEL_1 };
+
+    InSequence sequence;
+    EXPECT_CALL( mock_exec_i2c, SlaveTransmit( HW_I2C_CHANNEL_1, _, 4U ) )
+        .WillOnce( Return( true ) );
+    EXPECT_CALL( mock_exec_i2c, StartMasterReceive( HW_I2C_CHANNEL_2, 0x31U, 4U ) )
+        .WillOnce( Return( false ) );
+    ExpectLoopbackRecovery( channels );
+
+    EXPECT_FALSE( CONSOLE_Run_I2C_Loopback_S2M( channels, 0x31U, payload, 4U, received,
+                                                sizeof( received ), &received_length ) );
+}
+
+TEST_F( ConsoleI2CTest, TimeoutRecoversBothChannelsWhenMasterAlreadyCompleted )
+{
+    const char                         payload[] = "wait";
+    char                               received[8]{};
+    uint16_t                           received_length = 0U;
+    const CONSOLEI2CLoopbackChannels_T channels        = { HW_I2C_CHANNEL_1, HW_I2C_CHANNEL_2 };
+
+    InSequence sequence;
+    EXPECT_CALL( mock_exec_i2c, StartSlaveReceive( HW_I2C_CHANNEL_2, 4U ) )
+        .WillOnce( Return( true ) );
+    EXPECT_CALL( mock_exec_i2c, MasterTransmit( HW_I2C_CHANNEL_1, 0x32U, _, 4U ) )
+        .WillOnce( Return( true ) );
+    EXPECT_CALL( mock_exec_i2c, IsQueueComplete( HW_I2C_CHANNEL_1 ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_exec_i2c, GetAndClearResult( HW_I2C_CHANNEL_1 ) )
+        .WillOnce( Return( EXEC_I2C_STATUS_OK ) );
+    EXPECT_CALL( mock_exec_i2c, Receive( HW_I2C_CHANNEL_2, _, _, _ ) )
+        .Times( 500 )
+        .WillRepeatedly( []( HWI2CChannel_T, uint8_t*, uint16_t, uint16_t* bytes_copied ) {
+            *bytes_copied = 0U;
+            return true;
+        } );
+    ExpectLoopbackRecovery( channels );
 
     EXPECT_FALSE( CONSOLE_Run_I2C_Loopback_M2S( channels, 0x32U, payload, 4U, received,
                                                 sizeof( received ), &received_length ) );
