@@ -401,7 +401,7 @@ static inline void LL_I2C_ClearFlag_OVR( I2C_TypeDef* i2c_instance )
     i2c_instance->SR1 &= ~I2C_SR1_OVR;
 }
 
-static inline void LL_I2C_ClearFlag_TIMEOUT( I2C_TypeDef* i2c_instance )
+static inline void LL_I2C_ClearSMBusFlag_TIMEOUT( I2C_TypeDef* i2c_instance )
 {
     i2c_instance->SR1 &= ~I2C_SR1_TIMEOUT;
 }
