@@ -53,6 +53,40 @@
  *------------------------------------------------------------------------------
  */
 
+static bool CONSOLE_I2C_Update_Master_Completion( HWI2CChannel_T channel, bool* is_complete )
+{
+    if ( *is_complete || !EXEC_I2C_Is_Transaction_Queue_Complete( channel ) )
+    {
+        return true;
+    }
+
+    const EXECI2CStatus_T transfer_result = EXEC_I2C_Get_And_Clear_Transfer_Result( channel );
+    if ( transfer_result != EXEC_I2C_STATUS_OK )
+    {
+        CONSOLE_Printf( "Master transfer failed (status=%d).\r\n", ( int )transfer_result );
+        return false;
+    }
+
+    *is_complete = true;
+    return true;
+}
+
+static bool CONSOLE_I2C_Report_Timeout( HWI2CChannel_T channel, bool is_complete )
+{
+    if ( !is_complete )
+    {
+        const EXECI2CStatus_T transfer_result = EXEC_I2C_Get_And_Clear_Transfer_Result( channel );
+        if ( transfer_result != EXEC_I2C_STATUS_OK )
+        {
+            CONSOLE_Printf( "Master transfer failed (status=%d).\r\n", ( int )transfer_result );
+            return false;
+        }
+    }
+
+    CONSOLE_Printf( "I2C loopback timed out.\r\n" );
+    return false;
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
@@ -229,11 +263,17 @@ bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels, uint16
         return false;
     }
 
-    uint16_t received_len = 0U;
+    uint16_t received_len    = 0U;
+    bool     master_complete = false;
     memset( rx_message, 0, rx_message_size );
 
     for ( uint16_t wait_ms = 0U; wait_ms < 500U; ++wait_ms )
     {
+        if ( !CONSOLE_I2C_Update_Master_Completion( channels.master, &master_complete ) )
+        {
+            return false;
+        }
+
         uint16_t chunk = 0U;
         is_ok          = EXEC_I2C_Receive_Copy_And_Consume(
             channels.slave, ( uint8_t* )&rx_message[received_len],
@@ -246,7 +286,7 @@ bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels, uint16
         }
 
         received_len = ( uint16_t )( received_len + chunk );
-        if ( received_len >= tx_len )
+        if ( ( received_len >= tx_len ) && master_complete )
         {
             *out_received_len = received_len;
             return true;
@@ -256,7 +296,7 @@ bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels, uint16
     }
 
     *out_received_len = received_len;
-    return true;
+    return CONSOLE_I2C_Report_Timeout( channels.master, master_complete );
 }
 
 /**
@@ -283,11 +323,17 @@ bool CONSOLE_Run_I2C_Loopback_S2M( CONSOLEI2CLoopbackChannels_T channels, uint16
         return false;
     }
 
-    uint16_t received_len = 0U;
+    uint16_t received_len    = 0U;
+    bool     master_complete = false;
     memset( rx_message, 0, rx_message_size );
 
     for ( uint16_t wait_ms = 0U; wait_ms < 500U; ++wait_ms )
     {
+        if ( !CONSOLE_I2C_Update_Master_Completion( channels.master, &master_complete ) )
+        {
+            return false;
+        }
+
         uint16_t chunk = 0U;
         is_ok          = EXEC_I2C_Receive_Copy_And_Consume(
             channels.master, ( uint8_t* )&rx_message[received_len],
@@ -300,7 +346,7 @@ bool CONSOLE_Run_I2C_Loopback_S2M( CONSOLEI2CLoopbackChannels_T channels, uint16
         }
 
         received_len = ( uint16_t )( received_len + chunk );
-        if ( received_len >= tx_len )
+        if ( ( received_len >= tx_len ) && master_complete )
         {
             *out_received_len = received_len;
             return true;
@@ -310,5 +356,5 @@ bool CONSOLE_Run_I2C_Loopback_S2M( CONSOLEI2CLoopbackChannels_T channels, uint16
     }
 
     *out_received_len = received_len;
-    return true;
+    return CONSOLE_I2C_Report_Timeout( channels.master, master_complete );
 }

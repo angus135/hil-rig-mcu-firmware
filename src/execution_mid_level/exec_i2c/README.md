@@ -10,9 +10,9 @@ It does not manipulate peripheral registers.
 
 `EXEC_I2C_Master_Transmit_External()` and
 `EXEC_I2C_Start_Master_Receive_External()` submit one complete request through
-the atomic low-level enqueue API. Their existing boolean return value is
-preserved: `true` means the request and its full payload/expected length were
-accepted into driver-owned queue storage.
+the atomic low-level enqueue API for I2C3 or I2C2. Their existing boolean return
+value is preserved: `true` means the request and its full payload/expected
+length were accepted into driver-owned queue storage.
 
 Acceptance is not physical completion. Call
 `EXEC_I2C_Service_Transaction_Queue()` from normal execution context and use
@@ -26,7 +26,8 @@ Slave transmit and receive retain their non-queued semantics.
 ## Complete receive messages
 
 `EXEC_I2C_Receive_Message_Copy_And_Consume()` returns exactly one low-level RX
-descriptor and its bytes. It returns:
+descriptor and its bytes. Polling this API also services deferred queue progress,
+so a queued master receive can be started once the bus becomes idle. It returns:
 
 - `EXEC_I2C_STATUS_OK` after copying and consuming one complete message
 - `EXEC_I2C_STATUS_NO_DATA` when no complete message is available
