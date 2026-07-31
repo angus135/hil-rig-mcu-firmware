@@ -31,6 +31,7 @@ public:
     MOCK_METHOD( void, ServiceTransactionQueue, ( HWI2CChannel_T channel ), () );
     MOCK_METHOD( bool, IsTransactionQueueComplete, ( HWI2CChannel_T channel ), () );
     MOCK_METHOD( HWI2CStatus_T, GetAndClearTransferResult, ( HWI2CChannel_T channel ), () );
+    MOCK_METHOD( HWI2CStatus_T, RecoverChannel, ( HWI2CChannel_T channel ), () );
 };
 
 static MockHWI2C* g_mock_hw_i2c = nullptr;
@@ -72,6 +73,11 @@ bool HW_I2C_Is_Transaction_Queue_Complete( HWI2CChannel_T channel )
 HWI2CStatus_T HW_I2C_Get_And_Clear_Transfer_Result( HWI2CChannel_T channel )
 {
     return g_mock_hw_i2c->GetAndClearTransferResult( channel );
+}
+
+HWI2CStatus_T HW_I2C_Recover_Channel( HWI2CChannel_T channel )
+{
+    return g_mock_hw_i2c->RecoverChannel( channel );
 }
 
 SemaphoreHandle_t xSemaphoreCreateMutexStatic( StaticSemaphore_t* mutex_buffer )
@@ -203,6 +209,51 @@ TEST_F( LogicExpanderTest, SelfConfigPhysicalErrorNeverMarksReady )
 
     EXPECT_EQ( LOGIC_EXPANDER_Self_Config(), LOGIC_EXPANDER_STATUS_ERROR );
     EXPECT_FALSE( logic_expander_ready );
+}
+
+TEST_F( LogicExpanderTest, SelfConfigIsIdempotentAfterReady )
+{
+    logic_expander_config_state  = LOGIC_EXPANDER_CONFIG_READY;
+    logic_expander_ready         = true;
+    logic_expander_dirty_bitmask = 0x05U;
+    logic_expander_state[0]      = { 0x5AU, 0xA5U };
+
+    EXPECT_CALL( mock_hw_i2c, ConfigureInternal( _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( _, _, _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( _ ) ).Times( 0 );
+
+    EXPECT_EQ( LOGIC_EXPANDER_Self_Config(), LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ( LOGIC_EXPANDER_Self_Config(), LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_TRUE( logic_expander_ready );
+    EXPECT_EQ( logic_expander_config_state, LOGIC_EXPANDER_CONFIG_READY );
+    EXPECT_EQ( logic_expander_dirty_bitmask, 0x05U );
+    EXPECT_EQ( logic_expander_state[0].olat_a, 0x5AU );
+    EXPECT_EQ( logic_expander_state[0].olat_b, 0xA5U );
+}
+
+TEST_F( LogicExpanderTest, SelfConfigRetriesFailedConfigurationThroughRecovery )
+{
+    logic_expander_config_state = LOGIC_EXPANDER_CONFIG_FAILED;
+    logic_expander_ready        = false;
+
+    {
+        InSequence sequence;
+        EXPECT_CALL( mock_hw_i2c, RecoverChannel( HW_I2C_CHANNEL_FMPI2C1 ) )
+            .WillOnce( Return( HW_I2C_STATUS_ERROR ) );
+        EXPECT_CALL( mock_hw_i2c, GetAndClearTransferResult( HW_I2C_CHANNEL_FMPI2C1 ) )
+            .WillOnce( Return( HW_I2C_STATUS_ERROR ) );
+        EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) )
+            .WillOnce( Return( HW_I2C_STATUS_OK ) );
+        EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
+            .Times( 8 )
+            .WillRepeatedly( Return( HW_I2C_STATUS_OK ) );
+        EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( HW_I2C_CHANNEL_FMPI2C1 ) )
+            .WillOnce( Return( false ) );
+    }
+
+    EXPECT_EQ( LOGIC_EXPANDER_Self_Config(), LOGIC_EXPANDER_STATUS_BUSY );
+    EXPECT_EQ( logic_expander_config_state, LOGIC_EXPANDER_CONFIG_WAITING_FOR_COMPLETION );
 }
 
 TEST_F( LogicExpanderTest, SelfConfigPropagatesConfigurationBusyWithoutQueueing )

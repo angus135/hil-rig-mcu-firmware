@@ -289,10 +289,22 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Queue_Config_Writes( void )
 
 static LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config_Locked( void )
 {
+    if ( logic_expander_config_state == LOGIC_EXPANDER_CONFIG_READY )
+    {
+        return LOGIC_EXPANDER_STATUS_OK;
+    }
+
     if ( ( logic_expander_config_state == LOGIC_EXPANDER_CONFIG_QUEUING )
          || ( logic_expander_config_state == LOGIC_EXPANDER_CONFIG_WAITING_FOR_COMPLETION ) )
     {
         return LOGIC_EXPANDER_Process_Locked();
+    }
+
+    if ( logic_expander_config_state == LOGIC_EXPANDER_CONFIG_FAILED )
+    {
+        ( void )HW_I2C_Recover_Channel( HW_I2C_CHANNEL_FMPI2C1 );
+        ( void )HW_I2C_Get_And_Clear_Transfer_Result( HW_I2C_CHANNEL_FMPI2C1 );
+        logic_expander_config_state = LOGIC_EXPANDER_CONFIG_NOT_STARTED;
     }
 
     logic_expander_ready                      = false;

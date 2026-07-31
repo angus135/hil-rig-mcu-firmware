@@ -25,6 +25,13 @@ physical I2C completion.
 MCP23017 setup writes for each active device. It can return `BUSY` after writes
 were accepted because queue acceptance is not bus completion.
 
+Self-configuration is idempotent once the module is ready: repeated calls
+return `OK` without resetting FMPI2C1, replacing shadow state, clearing dirty
+bits, or enqueueing the setup writes again. Calls made while configuration is
+in progress advance the existing operation. A failed operation can be retried;
+the retry explicitly recovers the internal I2C channel before reinitializing
+and queueing a fresh configuration sequence.
+
 The background task calls `LOGIC_EXPANDER_Process()` every 10 ms. It resumes
 partial queue submission, services deferred I2C progress, and observes physical
 queue completion. The module becomes ready only after the final STOP and an `OK`
