@@ -71,15 +71,18 @@ static bool CONSOLE_I2C_Update_Master_Completion( HWI2CChannel_T channel, bool* 
     return true;
 }
 
-static bool CONSOLE_I2C_Report_Timeout( HWI2CChannel_T channel, bool is_complete )
+static bool CONSOLE_I2C_Fail_Loopback( CONSOLEI2CLoopbackChannels_T channels, const char* message )
 {
-    if ( !is_complete )
+    ( void )EXEC_I2C_Recover_Channel( channels.master );
+    ( void )EXEC_I2C_Get_And_Clear_Transfer_Result( channels.master );
+    ( void )EXEC_I2C_Recover_Channel( channels.slave );
+    ( void )EXEC_I2C_Get_And_Clear_Transfer_Result( channels.slave );
+
+    if ( message != NULL )
     {
-        ( void )EXEC_I2C_Recover_Channel( channel );
-        ( void )EXEC_I2C_Get_And_Clear_Transfer_Result( channel );
+        CONSOLE_Printf( "%s", message );
     }
 
-    CONSOLE_Printf( "I2C loopback timed out.\r\n" );
     return false;
 }
 
@@ -255,8 +258,7 @@ bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels, uint16
                                                ( const uint8_t* )tx_message, tx_len );
     if ( !is_ok )
     {
-        CONSOLE_Printf( "Master send failed.\r\n" );
-        return false;
+        return CONSOLE_I2C_Fail_Loopback( channels, "Master send failed.\r\n" );
     }
 
     uint16_t received_len    = 0U;
@@ -267,7 +269,7 @@ bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels, uint16
     {
         if ( !CONSOLE_I2C_Update_Master_Completion( channels.master, &master_complete ) )
         {
-            return false;
+            return CONSOLE_I2C_Fail_Loopback( channels, NULL );
         }
 
         uint16_t chunk = 0U;
@@ -277,8 +279,7 @@ bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels, uint16
 
         if ( !is_ok )
         {
-            CONSOLE_Printf( "Receive failed.\r\n" );
-            return false;
+            return CONSOLE_I2C_Fail_Loopback( channels, "Receive failed.\r\n" );
         }
 
         received_len = ( uint16_t )( received_len + chunk );
@@ -292,7 +293,7 @@ bool CONSOLE_Run_I2C_Loopback_M2S( CONSOLEI2CLoopbackChannels_T channels, uint16
     }
 
     *out_received_len = received_len;
-    return CONSOLE_I2C_Report_Timeout( channels.master, master_complete );
+    return CONSOLE_I2C_Fail_Loopback( channels, "I2C loopback timed out.\r\n" );
 }
 
 /**
@@ -315,8 +316,7 @@ bool CONSOLE_Run_I2C_Loopback_S2M( CONSOLEI2CLoopbackChannels_T channels, uint16
     is_ok = EXEC_I2C_Start_Master_Receive_External( channels.master, slave_addr, tx_len );
     if ( !is_ok )
     {
-        CONSOLE_Printf( "Master receive start failed.\r\n" );
-        return false;
+        return CONSOLE_I2C_Fail_Loopback( channels, "Master receive start failed.\r\n" );
     }
 
     uint16_t received_len    = 0U;
@@ -327,7 +327,7 @@ bool CONSOLE_Run_I2C_Loopback_S2M( CONSOLEI2CLoopbackChannels_T channels, uint16
     {
         if ( !CONSOLE_I2C_Update_Master_Completion( channels.master, &master_complete ) )
         {
-            return false;
+            return CONSOLE_I2C_Fail_Loopback( channels, NULL );
         }
 
         uint16_t chunk = 0U;
@@ -337,8 +337,7 @@ bool CONSOLE_Run_I2C_Loopback_S2M( CONSOLEI2CLoopbackChannels_T channels, uint16
 
         if ( !is_ok )
         {
-            CONSOLE_Printf( "Receive failed.\r\n" );
-            return false;
+            return CONSOLE_I2C_Fail_Loopback( channels, "Receive failed.\r\n" );
         }
 
         received_len = ( uint16_t )( received_len + chunk );
@@ -352,5 +351,5 @@ bool CONSOLE_Run_I2C_Loopback_S2M( CONSOLEI2CLoopbackChannels_T channels, uint16
     }
 
     *out_received_len = received_len;
-    return CONSOLE_I2C_Report_Timeout( channels.master, master_complete );
+    return CONSOLE_I2C_Fail_Loopback( channels, "I2C loopback timed out.\r\n" );
 }
