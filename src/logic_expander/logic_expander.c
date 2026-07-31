@@ -306,6 +306,10 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Process( void )
     {
         return LOGIC_EXPANDER_STATUS_ERROR;
     }
+    if ( logic_expander_config_state == LOGIC_EXPANDER_CONFIG_NOT_STARTED )
+    {
+        return LOGIC_EXPANDER_STATUS_NOT_READY;
+    }
 
     HW_I2C_Service_Transaction_Queue( HW_I2C_CHANNEL_FMPI2C1 );
 

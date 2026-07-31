@@ -18,11 +18,13 @@ enum value and therefore also the state-array size.
 MCP23017 setup writes for each active device. It can return `BUSY` after writes
 were accepted because queue acceptance is not bus completion.
 
-Call `LOGIC_EXPANDER_Process()` from later execution ticks. It resumes partial
-queue submission, services deferred I2C progress, and waits for physical queue
-completion. The module becomes ready only after the final STOP and an `OK`
-latched transfer result. A later asynchronous error leaves configuration not
-ready. There is no CPU busy-retry loop.
+The existing 5 ms console task calls `LOGIC_EXPANDER_Process()` in normal
+context. It resumes partial queue submission, services deferred I2C progress,
+and waits for physical queue completion. The module becomes ready only after
+the final STOP and an `OK` latched transfer result. A later asynchronous error
+leaves configuration not ready. There is no CPU busy-retry loop. If expander
+control is moved out of the console in a future build, that application context
+must take ownership of this periodic call.
 
 ## Dirty shadow writes
 
