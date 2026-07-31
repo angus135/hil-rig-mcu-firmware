@@ -34,6 +34,10 @@ public:
 };
 
 static MockHWI2C* g_mock_hw_i2c = nullptr;
+static uint8_t    g_fake_mutex_storage;
+static uint32_t   g_mutex_create_calls = 0U;
+static uint32_t   g_mutex_take_calls   = 0U;
+static uint32_t   g_mutex_give_calls   = 0U;
 
 extern "C"
 {
@@ -69,6 +73,28 @@ HWI2CStatus_T HW_I2C_Get_And_Clear_Transfer_Result( HWI2CChannel_T channel )
 {
     return g_mock_hw_i2c->GetAndClearTransferResult( channel );
 }
+
+SemaphoreHandle_t xSemaphoreCreateMutexStatic( StaticSemaphore_t* mutex_buffer )
+{
+    ( void )mutex_buffer;
+    g_mutex_create_calls++;
+    return reinterpret_cast<SemaphoreHandle_t>( &g_fake_mutex_storage );
+}
+
+BaseType_t xSemaphoreTake( SemaphoreHandle_t semaphore, TickType_t ticks_to_wait )
+{
+    EXPECT_EQ( semaphore, logic_expander_mutex );
+    EXPECT_EQ( ticks_to_wait, portMAX_DELAY );
+    g_mutex_take_calls++;
+    return pdTRUE;
+}
+
+BaseType_t xSemaphoreGive( SemaphoreHandle_t semaphore )
+{
+    EXPECT_EQ( semaphore, logic_expander_mutex );
+    g_mutex_give_calls++;
+    return pdTRUE;
+}
 }
 
 using ::testing::_;
@@ -91,6 +117,10 @@ protected:
         logic_expander_config_state   = LOGIC_EXPANDER_CONFIG_NOT_STARTED;
         logic_expander_config_index   = 0U;
         logic_expander_config_write   = 0U;
+        logic_expander_mutex = reinterpret_cast<SemaphoreHandle_t>( &g_fake_mutex_storage );
+        g_mutex_create_calls = 0U;
+        g_mutex_take_calls   = 0U;
+        g_mutex_give_calls   = 0U;
     }
 
     void TearDown( void ) override
@@ -112,6 +142,25 @@ TEST_F( LogicExpanderTest, FunctionalIndexValuesMatchAddressTableIndices )
     EXPECT_EQ( LOGIC_EXPANDER_UNASSIGNED_7, 7 );
     EXPECT_EQ( LOGIC_EXPANDER_COUNT, 8 );
     EXPECT_EQ( LOGIC_EXPANDER_I2C_ADDRESSES[LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT], 0x20U );
+}
+
+TEST_F( LogicExpanderTest, InitCreatesMutexOnceBeforeTaskAccess )
+{
+    logic_expander_mutex = nullptr;
+
+    EXPECT_TRUE( LOGIC_EXPANDER_Init() );
+    EXPECT_TRUE( LOGIC_EXPANDER_Init() );
+    EXPECT_EQ( g_mutex_create_calls, 1U );
+}
+
+TEST_F( LogicExpanderTest, PublicStateAccessTakesAndReleasesMutex )
+{
+    LogicExpanderStateSnapshot_T snapshot = {};
+
+    EXPECT_EQ( LOGIC_EXPANDER_Get_State_Snapshot( LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT, &snapshot ),
+               LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ( g_mutex_take_calls, 1U );
+    EXPECT_EQ( g_mutex_give_calls, 1U );
 }
 
 TEST_F( LogicExpanderTest, SelfConfigWaitsForPhysicalCompletionBeforeReady )

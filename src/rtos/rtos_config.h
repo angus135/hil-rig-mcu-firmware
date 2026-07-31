@@ -163,6 +163,11 @@ void vTaskDelayUntil( TickType_t* pxPreviousWakeTime, const TickType_t xTimeIncr
 void vTaskDelay( const TickType_t xTicksToDelay );
 
 /**
+ * @brief stub implementing FreeRTOS vTaskSuspend
+ */
+void vTaskSuspend( TaskHandle_t xTaskToSuspend );
+
+/**
  * @brief stub implementing FreeRTOS xTaskGetTickCount
  */
 volatile TickType_t xTaskGetTickCount( void );
