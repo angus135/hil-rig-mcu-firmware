@@ -11,6 +11,7 @@
 
 #include "logic_expander.h"
 #include "hw_i2c.h"
+#include "rtos_config.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -110,6 +111,21 @@ static uint8_t              logic_expander_dirty_bitmask  = 0U;
 static LogicExpanderConfigState_T logic_expander_config_state = LOGIC_EXPANDER_CONFIG_NOT_STARTED;
 static uint8_t                    logic_expander_config_index = 0U;
 static uint8_t                    logic_expander_config_write = 0U;
+static SemaphoreHandle_t          logic_expander_mutex        = NULL;
+static StaticSemaphore_t          logic_expander_mutex_storage;
+
+static LogicExpanderStatus_T LOGIC_EXPANDER_Process_Locked( void );
+
+static bool LOGIC_EXPANDER_Lock( void )
+{
+    return ( logic_expander_mutex != NULL )
+           && ( xSemaphoreTake( logic_expander_mutex, portMAX_DELAY ) == pdTRUE );
+}
+
+static void LOGIC_EXPANDER_Unlock( void )
+{
+    ( void )xSemaphoreGive( logic_expander_mutex );
+}
 
 static inline bool LOGIC_EXPANDER_Index_Is_Valid( LogicExpanderIndex_T expander_index )
 {
@@ -271,12 +287,12 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Queue_Config_Writes( void )
     return LOGIC_EXPANDER_STATUS_OK;
 }
 
-LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void )
+static LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config_Locked( void )
 {
     if ( ( logic_expander_config_state == LOGIC_EXPANDER_CONFIG_QUEUING )
          || ( logic_expander_config_state == LOGIC_EXPANDER_CONFIG_WAITING_FOR_COMPLETION ) )
     {
-        return LOGIC_EXPANDER_Process();
+        return LOGIC_EXPANDER_Process_Locked();
     }
 
     logic_expander_ready                      = false;
@@ -297,10 +313,10 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void )
     logic_expander_config_index  = 0U;
     logic_expander_config_write  = 0U;
     logic_expander_config_state  = LOGIC_EXPANDER_CONFIG_QUEUING;
-    return LOGIC_EXPANDER_Process();
+    return LOGIC_EXPANDER_Process_Locked();
 }
 
-LogicExpanderStatus_T LOGIC_EXPANDER_Process( void )
+static LogicExpanderStatus_T LOGIC_EXPANDER_Process_Locked( void )
 {
     if ( logic_expander_config_state == LOGIC_EXPANDER_CONFIG_FAILED )
     {
@@ -361,9 +377,10 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Process( void )
     return LOGIC_EXPANDER_STATUS_NOT_READY;
 }
 
-LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expander_index,
-                                                       LogicExpanderPort_T port, uint8_t bit_index,
-                                                       bool bit_value )
+static LogicExpanderStatus_T
+LOGIC_EXPANDER_Load_Control_Bit_Locked( LogicExpanderIndex_T expander_index,
+                                        LogicExpanderPort_T port, uint8_t bit_index,
+                                        bool bit_value )
 {
     if ( !LOGIC_EXPANDER_Index_Is_Valid( expander_index ) || !LOGIC_EXPANDER_Port_Is_Valid( port )
          || ( bit_index >= LOGIC_EXPANDER_PORT_WIDTH_BITS ) )
@@ -393,7 +410,7 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expa
     return LOGIC_EXPANDER_STATUS_OK;
 }
 
-LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void )
+static LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits_Locked( void )
 {
     if ( !logic_expander_ready )
     {
@@ -423,9 +440,9 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void )
     return LOGIC_EXPANDER_STATUS_OK;
 }
 
-LogicExpanderStatus_T
-LOGIC_EXPANDER_Get_State_Snapshot( LogicExpanderIndex_T          expander_index,
-                                   LogicExpanderStateSnapshot_T* out_snapshot )
+static LogicExpanderStatus_T
+LOGIC_EXPANDER_Get_State_Snapshot_Locked( LogicExpanderIndex_T          expander_index,
+                                          LogicExpanderStateSnapshot_T* out_snapshot )
 {
     if ( !LOGIC_EXPANDER_Index_Is_Valid( expander_index ) || ( out_snapshot == NULL ) )
     {
@@ -438,18 +455,108 @@ LOGIC_EXPANDER_Get_State_Snapshot( LogicExpanderIndex_T          expander_index,
     return LOGIC_EXPANDER_STATUS_OK;
 }
 
+bool LOGIC_EXPANDER_Init( void )
+{
+    if ( logic_expander_mutex == NULL )
+    {
+        logic_expander_mutex = xSemaphoreCreateMutexStatic( &logic_expander_mutex_storage );
+    }
+
+    return logic_expander_mutex != NULL;
+}
+
+LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void )
+{
+    if ( !LOGIC_EXPANDER_Lock() )
+    {
+        return LOGIC_EXPANDER_STATUS_ERROR;
+    }
+
+    const LogicExpanderStatus_T status = LOGIC_EXPANDER_Self_Config_Locked();
+    LOGIC_EXPANDER_Unlock();
+    return status;
+}
+
+LogicExpanderStatus_T LOGIC_EXPANDER_Process( void )
+{
+    if ( !LOGIC_EXPANDER_Lock() )
+    {
+        return LOGIC_EXPANDER_STATUS_ERROR;
+    }
+
+    const LogicExpanderStatus_T status = LOGIC_EXPANDER_Process_Locked();
+    LOGIC_EXPANDER_Unlock();
+    return status;
+}
+
+LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expander_index,
+                                                       LogicExpanderPort_T port, uint8_t bit_index,
+                                                       bool bit_value )
+{
+    if ( !LOGIC_EXPANDER_Lock() )
+    {
+        return LOGIC_EXPANDER_STATUS_ERROR;
+    }
+
+    const LogicExpanderStatus_T status =
+        LOGIC_EXPANDER_Load_Control_Bit_Locked( expander_index, port, bit_index, bit_value );
+    LOGIC_EXPANDER_Unlock();
+    return status;
+}
+
+LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void )
+{
+    if ( !LOGIC_EXPANDER_Lock() )
+    {
+        return LOGIC_EXPANDER_STATUS_ERROR;
+    }
+
+    const LogicExpanderStatus_T status = LOGIC_EXPANDER_Send_Control_Bits_Locked();
+    LOGIC_EXPANDER_Unlock();
+    return status;
+}
+
+LogicExpanderStatus_T
+LOGIC_EXPANDER_Get_State_Snapshot( LogicExpanderIndex_T          expander_index,
+                                   LogicExpanderStateSnapshot_T* out_snapshot )
+{
+    if ( !LOGIC_EXPANDER_Lock() )
+    {
+        return LOGIC_EXPANDER_STATUS_ERROR;
+    }
+
+    const LogicExpanderStatus_T status =
+        LOGIC_EXPANDER_Get_State_Snapshot_Locked( expander_index, out_snapshot );
+    LOGIC_EXPANDER_Unlock();
+    return status;
+}
+
 bool LOGIC_EXPANDER_Master_Transmit_Internal( uint16_t device_address_7bit, const uint8_t* payload,
                                               uint16_t payload_length )
 {
-    return HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_FMPI2C1, device_address_7bit, payload,
-                                           payload_length )
-           == HW_I2C_STATUS_OK;
+    if ( !LOGIC_EXPANDER_Lock() )
+    {
+        return false;
+    }
+
+    const bool accepted = HW_I2C_Enqueue_Master_Transmit(
+                              HW_I2C_CHANNEL_FMPI2C1, device_address_7bit, payload, payload_length )
+                          == HW_I2C_STATUS_OK;
+    LOGIC_EXPANDER_Unlock();
+    return accepted;
 }
 
 bool LOGIC_EXPANDER_Start_Master_Receive_Internal( uint16_t device_address_7bit,
                                                    uint16_t expected_length )
 {
-    return HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_FMPI2C1, device_address_7bit,
-                                          expected_length )
-           == HW_I2C_STATUS_OK;
+    if ( !LOGIC_EXPANDER_Lock() )
+    {
+        return false;
+    }
+
+    const bool accepted = HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_FMPI2C1,
+                                                         device_address_7bit, expected_length )
+                          == HW_I2C_STATUS_OK;
+    LOGIC_EXPANDER_Unlock();
+    return accepted;
 }

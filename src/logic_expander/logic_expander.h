@@ -17,6 +17,7 @@
  *      - All output bits default to 0x00 (OLAT A) or 0xFF (OLAT B)
  *      - Must call LOGIC_EXPANDER_Self_Config() before any other operations
  *      - Queue-full is reported immediately so callers can retry without spinning
+ *      - All APIs are thread-safe task-context APIs and must not be called from an ISR
  ******************************************************************************/
 
 #ifndef LOGIC_EXPANDER_H
@@ -97,6 +98,16 @@ typedef enum LogicExpanderI2CStatus_T
  */
 
 /**
+ * @brief Create the mutex protecting shared expander state.
+ *
+ * Must be called before any other module API. The background task performs this
+ * initialisation once at task startup.
+ *
+ * @return true when the mutex is available.
+ */
+bool LOGIC_EXPANDER_Init( void );
+
+/**
  * @brief Initialize and configure all active MCP23017 devices.
  *
  * Discovers active devices (based on LOGIC_EXPANDER_ACTIVE_BITMASK),
@@ -113,9 +124,8 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void );
 /**
  * @brief Advance non-blocking configuration and observe its physical completion.
  *
- * Call periodically after LOGIC_EXPANDER_Self_Config(). The expander becomes
- * ready only after every configuration transaction has completed with STOP and
- * the low-level transfer result is successful.
+ * The background task calls this every 10 ms. It resumes queue submission and
+ * observes physical completion without waiting or busy-spinning.
  */
 LogicExpanderStatus_T LOGIC_EXPANDER_Process( void );
 

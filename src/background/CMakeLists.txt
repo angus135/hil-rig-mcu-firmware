@@ -30,6 +30,7 @@ target_link_libraries(background
         cubeide_hal
         rtos
         hw_gpio
+        logic_expander
 )
 
 # -----------------------------

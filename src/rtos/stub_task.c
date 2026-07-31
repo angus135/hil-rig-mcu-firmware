@@ -116,6 +116,14 @@ void vTaskDelay( const TickType_t xTicksToDelay )
 }
 
 /**
+ * @brief stub implementing FreeRTOS vTaskSuspend
+ */
+void vTaskSuspend( TaskHandle_t xTaskToSuspend )
+{
+    ( void )xTaskToSuspend;
+}
+
+/**
  * @brief stub implementing FreeRTOS xTaskGetCurrentTaskHandle
  */
 TaskHandle_t xTaskGetCurrentTaskHandle( void )

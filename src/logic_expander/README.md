@@ -12,19 +12,25 @@ Address and initial-state tables use designated initializers so the physical
 role-to-address mapping is visible in code. `LOGIC_EXPANDER_COUNT` is the final
 enum value and therefore also the state-array size.
 
-## Non-blocking configuration
+## Task ownership and non-blocking configuration
+
+The background task calls `LOGIC_EXPANDER_Init()` once before periodic
+processing begins. This creates a module-owned mutex that serializes all public
+task-context APIs used by background processing, configuration management, and
+console commands. These APIs must not be called from an ISR. The mutex is held
+only while inspecting state or making non-blocking queue calls; no API waits for
+physical I2C completion.
 
 `LOGIC_EXPANDER_Self_Config()` configures FMPI2C1 and begins enqueueing the eight
 MCP23017 setup writes for each active device. It can return `BUSY` after writes
 were accepted because queue acceptance is not bus completion.
 
-The existing 5 ms console task calls `LOGIC_EXPANDER_Process()` in normal
-context. It resumes partial queue submission, services deferred I2C progress,
-and waits for physical queue completion. The module becomes ready only after
-the final STOP and an `OK` latched transfer result. A later asynchronous error
-leaves configuration not ready. There is no CPU busy-retry loop. If expander
-control is moved out of the console in a future build, that application context
-must take ownership of this periodic call.
+The background task calls `LOGIC_EXPANDER_Process()` every 10 ms. It resumes
+partial queue submission, services deferred I2C progress, and observes physical
+queue completion. The module becomes ready only after the final STOP and an `OK`
+latched transfer result. A later asynchronous error leaves configuration not
+ready. There is no CPU busy-retry loop. Explicit console calls are harmless
+because they use the same mutex.
 
 ## Dirty shadow writes
 

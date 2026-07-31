@@ -7,6 +7,7 @@
 set(RTOS_CONFIG_SOURCES
     stub_task.c
     stub_queue.c
+    stub_semphr.c
 )
 
 set(RTOS_CONFIG_HEADERS

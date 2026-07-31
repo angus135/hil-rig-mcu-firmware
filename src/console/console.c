@@ -22,7 +22,6 @@
 #include "rtos_config.h"
 #include "console.h"
 #include "hw_uart_console.h"
-#include "logic_expander.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -721,7 +720,6 @@ void CONSOLE_Task( void* task_parameters )
     while ( true )
     {
         CONSOLE_Process();
-        ( void )LOGIC_EXPANDER_Process();
         CONSOLE_Flush_Tx();
 
 #ifndef TEST_BUILD
