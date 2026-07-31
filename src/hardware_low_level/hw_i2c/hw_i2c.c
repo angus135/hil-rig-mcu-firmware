@@ -895,7 +895,7 @@ static inline void HW_I2C_Service_Event_External( HWI2CChannel_T channel,
         }
         if ( ( sr1 & I2C_SR1_TIMEOUT ) != 0U )
         {
-            LL_I2C_ClearFlag_TIMEOUT( i2c_instance );
+            LL_I2C_ClearSMBusFlag_TIMEOUT( i2c_instance );
         }
         HW_I2C_Abort_Transfer( channel, HW_I2C_STATUS_ERROR );
         return;
