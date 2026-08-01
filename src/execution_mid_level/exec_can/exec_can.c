@@ -107,7 +107,7 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t EXEC_CAN_Load_Tx1( uint8_t source[][CAN_PACKET_SIZE], uint16_t length )
+uint16_t EXEC_CAN_Load_Tx1( CAN_Packet_T source[], uint16_t length )
 {
     return HW_CAN_Tx_Buffer_Write1( source, length );
 }
@@ -121,7 +121,7 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t EXEC_CAN_Load_Tx2( uint8_t source[][CAN_PACKET_SIZE], uint16_t length )
+uint16_t EXEC_CAN_Load_Tx2( CAN_Packet_T source[], uint16_t length )
 {
     return HW_CAN_Tx_Buffer_Write2( source, length );
 }
@@ -130,42 +130,26 @@ uint16_t EXEC_CAN_Load_Tx2( uint8_t source[][CAN_PACKET_SIZE], uint16_t length )
  * @brief Reads values from the rx channel 1 buffer one at a time and places them in dest
  *
  * @param dest pointer to array of 8 bytes sections of available storage
- * @param len the number of 8 byte sections in dest (the amount of CAN packages being read)
  *
  * @return the number of entries read from the rx buffer (can be 0)
  */
-uint16_t EXEC_CAN_Read_Rx1_Buffer( uint8_t dest[][CAN_PACKET_SIZE], uint16_t len )
+uint16_t EXEC_CAN_Rx_Buffer_Read1( CAN_Packet_T dest[] )
 {
-    uint16_t count = 0;
-    for ( uint16_t i = 0; i < len; i++ )
-    {
-        if ( HW_CAN_Rx_Buffer_Pop1( dest[i] ) == 1 )
-        {
-            return count;
-        }
-        count += 1;
-    }
+    uint16_t count = HW_CAN_Rx_Buffer_Read1( dest );
+    HW_CAN_Rx_Buffer_consume1( count );
     return count;
 }
 
 /**
- * @brief Reads values from the rx channel 2 buffer one at a time and places them in dest
+ * @brief Reads values from the rx channel 2 buffer and places them in dest
  *
  * @param dest pointer to array of 8 bytes sections of available storage
- * @param len the number of 8 byte sections in dest (the amount of CAN packages being read)
  *
  * @return the number of entries read from the rx buffer (can be 0)
  */
-uint16_t EXEC_CAN_Read_Rx2_Buffer( uint8_t dest[][CAN_PACKET_SIZE], uint16_t len )
+uint16_t EXEC_CAN_Rx_Buffer_Read2( CAN_Packet_T dest[] )
 {
-    uint16_t count = 0;
-    for ( uint16_t i = 0; i < len; i++ )
-    {
-        if ( HW_CAN_Rx_Buffer_Pop2( dest[i] ) == 1 )
-        {
-            return count;
-        }
-        count += 1;
-    }
+    uint16_t count = HW_CAN_Rx_Buffer_Read2( dest );
+    HW_CAN_Rx_Buffer_consume2( count );
     return count;
 }
