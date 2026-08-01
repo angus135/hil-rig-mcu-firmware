@@ -40,8 +40,8 @@ using ::testing::SaveArg;
 
 /* Fake CAN1 peripheral registers used to exercise register-level driver code without hardware. */
 // static CAN_TypeDef mock_can1_regs{};
-// /* Fake CAN2 peripheral registers used to exercise register-level driver code without hardware. */
-// static CAN_TypeDef mock_can2_regs{};
+// /* Fake CAN2 peripheral registers used to exercise register-level driver code without hardware.
+// */ static CAN_TypeDef mock_can2_regs{};
 
 /* HAL CAN handle associated with the fake CAN1 peripheral instance. */
 CAN_HandleTypeDef hcan1{};
@@ -151,8 +151,8 @@ class HWCANTest : public ::testing::Test
 protected:
     MockHWCAN mock;
 
-            /* Prepare isolated fake hardware and software state before each test. */
-void SetUp() override
+    /* Prepare isolated fake hardware and software state before each test. */
+    void SetUp() override
     {
         g_mock = &mock;
 
@@ -166,8 +166,8 @@ void SetUp() override
         hcan2.Instance = &mock_can2_regs;
     }
 
-            /* Release the global mock pointer after each test. */
-void TearDown() override
+    /* Release the global mock pointer after each test. */
+    void TearDown() override
     {
         g_mock = nullptr;
     }
@@ -216,7 +216,8 @@ TEST_F( HWCANTest, TransmitFailsWhenMailboxBusy )
     EXPECT_EQ( result, 1 );
 }
 
-/** Verify that a standard CAN frame is encoded into TX mailbox 0 with the expected ID, DLC, and payload. */
+/** Verify that a standard CAN frame is encoded into TX mailbox 0 with the expected ID, DLC, and
+ * payload. */
 TEST_F( HWCANTest, TransmitLoadsMailboxCorrectly )
 {
     mock_can1_regs.TSR = CAN_TSR_TME0;
@@ -229,7 +230,8 @@ TEST_F( HWCANTest, TransmitLoadsMailboxCorrectly )
 
     EXPECT_EQ( result, 0 );
 
-    EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TIR, ( static_cast<uint32_t>( id ) << 21 ) | CAN_TI0R_TXRQ );
+    EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TIR,
+               ( static_cast<uint32_t>( id ) << 21 ) | CAN_TI0R_TXRQ );
 
     EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDTR, 8 );
 
@@ -263,7 +265,8 @@ TEST_F( HWCANTest, TransmitAcceptsMaximum11BitID )
 
     EXPECT_EQ( result, 0 );
 
-    EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TIR, ( static_cast<uint32_t>( id ) << 21 ) | CAN_TI0R_TXRQ );
+    EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TIR,
+               ( static_cast<uint32_t>( id ) << 21 ) | CAN_TI0R_TXRQ );
 }
 
 /**-----------------------------------------------------------------------------
@@ -283,7 +286,8 @@ TEST_F( HWCANTest, ReceiveFailsWhenFIFOEmpty )
     EXPECT_EQ( result, 1 );
 }
 
-/** Verify that a frame is decoded correctly from CAN FIFO 0 and that the FIFO release operation is requested. */
+/** Verify that a frame is decoded correctly from CAN FIFO 0 and that the FIFO release operation is
+ * requested. */
 TEST_F( HWCANTest, ReceiveReadsIDAndDataCorrectly )
 {
     mock_can1_regs.RF0R = CAN_RF0R_FMP0;
@@ -328,7 +332,8 @@ TEST_F( HWCANTest, ReceiveReadsIDAndDataCorrectly )
  *------------------------------------------------------------------------------
  */
 
-/** Verify that a packet written to the channel 1 TX buffer can be read back without changing its ID or payload; reading is non-consuming. */
+/** Verify that a packet written to the channel 1 TX buffer can be read back without changing its ID
+ * or payload; reading is non-consuming. */
 TEST_F( HWCANTest, TxBufferWriteAndReadPreservesIDAndData )
 {
     CAN_Packet_T tx[1] = { { .id = 0x123, .data = { 1, 2, 3, 4, 5, 6, 7, 8 } } };
@@ -355,7 +360,8 @@ TEST_F( HWCANTest, TxBufferWriteAndReadPreservesIDAndData )
     HW_CAN_Buffer_consume( &can_tx_rp1, 1, TRANSMIT_BUFFER_WIDTH );
 }
 
-/** Verify that the TX software buffer preserves the maximum standard CAN ID and all payload bytes. */
+/** Verify that the TX software buffer preserves the maximum standard CAN ID and all payload bytes.
+ */
 TEST_F( HWCANTest, TxBufferPreservesMaximum11BitID )
 {
     CAN_Packet_T tx[1] = { { .id = 0x7FF, .data = { 1, 2, 3, 4, 5, 6, 7, 8 } } };
@@ -387,11 +393,12 @@ TEST_F( HWCANTest, BufferReadReturnsZeroWhenEmpty )
  *------------------------------------------------------------------------------
  */
 
-/** Verify that the TX interrupt handler disables the TX mailbox-empty interrupt when no packet is buffered and reports the channel as sent. */
+/** Verify that the TX interrupt handler disables the TX mailbox-empty interrupt when no packet is
+ * buffered and reports the channel as sent. */
 TEST_F( HWCANTest, TxIRQDisablesInterruptWhenBufferEmpty )
 {
     ResetCANBuffers();
-    mock_can1_regs.IER = CAN_IER_TMEIE;  //enable interrupt
+    mock_can1_regs.IER = CAN_IER_TMEIE;  // enable interrupt
 
     HW_CAN_CH1_TX_IRQ_HANDLER();
 
@@ -401,7 +408,8 @@ TEST_F( HWCANTest, TxIRQDisablesInterruptWhenBufferEmpty )
     EXPECT_TRUE( HW_CAN_Channl1_sent() );
 }
 
-/** Verify that the channel 1 TX interrupt handler loads a buffered packet into the CAN TX mailbox with the expected ID, payload, and DLC. */
+/** Verify that the channel 1 TX interrupt handler loads a buffered packet into the CAN TX mailbox
+ * with the expected ID, payload, and DLC. */
 TEST_F( HWCANTest, TxIRQTransmitsBufferedPacketWithCorrectIDAndData )
 {
     mock_can1_regs.TSR = CAN_TSR_TME0;
@@ -427,7 +435,8 @@ TEST_F( HWCANTest, TxIRQTransmitsBufferedPacketWithCorrectIDAndData )
  *------------------------------------------------------------------------------
  */
 
-/** Verify that the channel 1 RX interrupt handler stores a pending FIFO frame in the channel 1 RX software buffer. */
+/** Verify that the channel 1 RX interrupt handler stores a pending FIFO frame in the channel 1 RX
+ * software buffer. */
 TEST_F( HWCANTest, RxIRQStoresIDAndDataInBuffer )
 {
     uint16_t id = 0x555;
@@ -486,7 +495,8 @@ TEST_F( HWCANTest, RxBufferWriteFailsWhenFull )
     EXPECT_EQ( HW_CAN_Rx_Buffer_Write1( packet, 1 ), 1 );
 }
 
-/** Verify that TX ring-buffer wraparound preserves FIFO ordering after packets are consumed and new packets are written. */
+/** Verify that TX ring-buffer wraparound preserves FIFO ordering after packets are consumed and new
+ * packets are written. */
 TEST_F( HWCANTest, TxBufferWraparoundPreservesPackets )
 {
     CAN_Packet_T packet[1] = {};
@@ -557,7 +567,8 @@ TEST_F( HWCANTest, TxBufferWraparoundPreservesPackets )
  *------------------------------------------------------------------------------
  */
 
-/** Verify that a standard 11-bit CAN ID and mask are translated into the expected STM32 filter configuration. */
+/** Verify that a standard 11-bit CAN ID and mask are translated into the expected STM32 filter
+ * configuration. */
 TEST_F( HWCANTest, FilterConfiguresStandardIDMaskCorrectly )
 {
     CAN_FilterTypeDef filter = {};
@@ -708,7 +719,8 @@ TEST_F( HWCANTest, ConfigureReturns4WhenNotificationActivationFails )
     EXPECT_EQ( result, 4 );
 }
 
-/** Verify that HW_CAN_Configure() completes successfully when each HAL configuration step succeeds. */
+/** Verify that HW_CAN_Configure() completes successfully when each HAL configuration step succeeds.
+ */
 TEST_F( HWCANTest, ConfigureSucceedsWithValidConfiguration )
 {
     EXPECT_CALL( mock, CANInit( _ ) ).WillOnce( Return( HAL_OK ) );
@@ -737,7 +749,8 @@ TEST_F( HWCANTest, SentFlagStartsFalse )
     EXPECT_FALSE( HW_CAN_Channl2_sent() );
 }
 
-/** Verify that the channel 1 TX interrupt handler sets the sent flag and disables the TX interrupt when no packet remains in the TX buffer. */
+/** Verify that the channel 1 TX interrupt handler sets the sent flag and disables the TX interrupt
+ * when no packet remains in the TX buffer. */
 TEST_F( HWCANTest, TxIRQSetsSentFlagWhenBufferEmpty )
 {
     mock_can1_regs.IER = CAN_IER_TMEIE;

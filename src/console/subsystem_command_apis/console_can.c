@@ -195,7 +195,7 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
         return;
     }
     CAN_Packet_T out[20];
-    uint16_t read = 0;
+    uint16_t     read = 0;
     for ( int i = 0; i < 20; i++ )
     {
         for ( int j = 0; j < 8; j++ )
