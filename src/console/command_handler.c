@@ -94,7 +94,6 @@ static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] );
-static void CONSOLE_Command_Can( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_USB_Test( uint16_t argc, char* argv[] );
