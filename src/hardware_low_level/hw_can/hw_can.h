@@ -1,13 +1,17 @@
 /******************************************************************************
  *  File:       hw_can.h
- *  Author:     Callum Rafferty
+ *  Author:     Timothy Vogelsang
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      <Short description of the module, what it exposes, and how it should be used>
+ *      Hardware abstraction layer for the CAN peripherals.
+ *
+ *      Provides CAN configuration, transmission, reception, buffering,
+ *      filtering, and transmit triggering for CAN channels 1 and 2.
  *
  *  Notes:
- *      <Public assumptions, required initialisation order, dependencies, etc.>
+ *      CAN packets use standard 11-bit CAN identifiers and contain up to
+ *      CAN_PACKET_SIZE bytes of data.
  ******************************************************************************/
 
 #ifndef HW_CAN_H
@@ -25,26 +29,45 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
-// Add any needed standard or project-specific includes here
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
  */
-#define CAN_PACKET_SIZE 8
+
+#define CAN_PACKET_SIZE ( 8U )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief CAN timing properties calculated from the requested CAN bitrate.
+ */
 typedef struct CanProperties_T
 {
     uint32_t bs1;
     uint32_t bs2;
     uint32_t psc;
     uint32_t timer_hz;
+
 } CanProperties_T;
+
+/**
+ * @brief CAN packet containing an identifier and CAN data payload.
+ *
+ * The CAN identifier is a standard 11-bit CAN identifier stored in the
+ * lower 11 bits of id.
+ *
+ * data contains CAN_PACKET_SIZE bytes of CAN payload data.
+ */
+typedef struct CAN_Packet_T
+{
+    uint16_t id;
+    uint8_t  data[CAN_PACKET_SIZE];
+
+} CAN_Packet_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -52,222 +75,320 @@ typedef struct CanProperties_T
  */
 
 /**
- * @brief Returns the sent flag for channel 1
+ * @brief Moves a buffer pointer by the requested number of positions.
  *
- *
- * The sent flag is set after trigger is called when CAN has emptied the buffer and the last message
- * is sent
+ * @param pointer       Address of the read/write pointer.
+ * @param update        Number of positions to move the pointer.
+ * @param buffer_width  Width of the circular buffer.
  */
-bool HW_CAN_Channl1_sent();
+void HW_CAN_Buffer_consume( volatile uint16_t* pointer, uint16_t update, uint16_t buffer_width );
 
 /**
- * @brief Returns the sent flag for channel 2
+ * @brief Returns the sent flag for channel 1.
  *
+ * The sent flag is set after the transmit trigger is called, when the CAN
+ * transmit buffer has been emptied and the final message has been sent.
  *
- * The sent flag is set after trigger is called when CAN has emptied the buffer and the last message
- * is sent
+ * @return true if the final buffered CAN message has been sent.
  */
-bool HW_CAN_Channl2_sent();
+bool HW_CAN_Channl1_sent( void );
 
 /**
- * @brief Calculates the required CAN protperties
+ * @brief Returns the sent flag for channel 2.
  *
- * @param bitrate the desired bitrate in bits per second, eg 1Mbps = 1000000
- * @param total_TQ the total time quanta
- * @param sample_point_1t1000 the desired sample point, range 700 to 1000 (typically %)
+ * The sent flag is set after the transmit trigger is called, when the CAN
+ * transmit buffer has been emptied and the final message has been sent.
  *
- * Computes the register values for the given conditions
+ * @return true if the final buffered CAN message has been sent.
+ */
+bool HW_CAN_Channl2_sent( void );
+
+/**
+ * @brief Calculates the required CAN timing properties.
+ *
+ * @param bitrate               Desired bitrate in bits per second.
+ * @param total_TQ              Total number of time quanta per bit.
+ * @param sample_point_1t1000   Desired sample point, expressed from
+ *                             700 to 1000.
+ *
+ * @return Calculated CAN timing properties.
  */
 CanProperties_T HW_CAN_Compute_Properties( uint32_t bitrate, uint32_t total_TQ,
                                            uint32_t sample_point_1t1000 );
 
 /**
- * @brief Configures the peripherals of CAN channel 1
+ * @brief Configures CAN channel 1.
  *
- * @param bitrate the desired bitrate in bits per second, eg 1Mbps = 1000000
+ * @param bitrate       Desired bitrate in bits per second.
+ * @param filter_bank  CAN filter bank to configure.
+ * @param filter_id    CAN standard identifier used by the filter.
+ * @param filter_mask  CAN standard identifier filter mask.
  *
- * @return An int representing error codes:
- *      0: no error, config complete
- *      1: config timing error, not complete
- *      2: config filter error, not complete
- *      3: config start error, not complete
+ * @return Error code:
+ *      0: no error, configuration complete
+ *      1: configuration timing error
+ *      2: configuration filter error
+ *      3: configuration start error
+ *      4: notification activation error
  *
- * Provides the configuration of the following:
- *      Prescaler
- *      Time Quanta in Bit Segment 1
- *      Time Quanta in Bit Segment 2
- *      ReSynchronization Jump Width
- *      Operating Modes:
- *          Normal
- *          Loopback
- *          Silent
- *      Filter and Mask:
- *          Acceptance filters and masks
- *          Acceptance of standard and extended frames via filter configuration
- *          FIFO assignment for accepted frames
- *
+ * Provides configuration of:
+ *      - CAN prescaler
+ *      - Time quanta in Bit Segment 1
+ *      - Time quanta in Bit Segment 2
+ *      - ReSynchronization Jump Width
+ *      - Operating mode
+ *      - Acceptance filter and mask
+ *      - FIFO assignment
+ *      - CAN interrupts
  */
-int HW_CAN_Configure1( uint32_t bitrate );
+int HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
+                       uint16_t filter_mask );
 
 /**
- * @brief Configures the peripherals of CAN channel 2
+ * @brief Configures CAN channel 2.
  *
- * @param bitrate the desired bitrate in bits per second, eg 1Mbps = 1000000
+ * @param bitrate       Desired bitrate in bits per second.
+ * @param filter_bank  CAN filter bank to configure.
+ * @param filter_id    CAN standard identifier used by the filter.
+ * @param filter_mask  CAN standard identifier filter mask.
  *
- * @return An int representing error codes:
- *      0: no error, config complete
- *      1: config timing error, not complete
- *      2: config filter error, not complete
- *      3: config start error, not complete
+ * @return Error code:
+ *      0: no error, configuration complete
+ *      1: configuration timing error
+ *      2: configuration filter error
+ *      3: configuration start error
+ *      4: notification activation error
  *
- * Provides the configuration of the following:
- *      Prescaler
- *      Time Quanta in Bit Segment 1
- *      Time Quanta in Bit Segment 2
- *      ReSynchronization Jump Width
- *      Operating Modes:
- *          Normal
- *          Loopback
- *          Silent
- *      Filter and Mask:
- *          Acceptance filters and masks
- *          Acceptance of standard and extended frames via filter configuration
- *          FIFO assignment for accepted frames
- *
+ * Provides configuration of:
+ *      - CAN prescaler
+ *      - Time quanta in Bit Segment 1
+ *      - Time quanta in Bit Segment 2
+ *      - ReSynchronization Jump Width
+ *      - Operating mode
+ *      - Acceptance filter and mask
+ *      - FIFO assignment
+ *      - CAN interrupts
  */
-int HW_CAN_Configure2( uint32_t bitrate );
+int HW_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
+                       uint16_t filter_mask );
 
 /**
- * @brief recieves data and stores it in rxData (8 bytes) over the hcan CAN channel 1
+ * @brief Receives a CAN packet on channel 1.
  *
- * @param hcan the pointer to the handle for the can peripheral
- * @param rxData pointer to 8 bytes of available storage
+ * @param rxPacket Pointer to the CAN packet where the received identifier
+ *                 and data will be stored.
  *
- * Uses HAL to receive message over CAN channel 1
+ * @return 0 if a CAN packet was received successfully,
+ *         non-zero otherwise.
  */
-int HW_CAN_Recieve1( uint8_t* rxData );
+int HW_CAN_Recieve1( CAN_Packet_T* rxPacket );
 
 /**
- * @brief transmits the txData (8 bytes) over CAN channel 1
+ * @brief Transmits a CAN packet on channel 1.
  *
- * @param txData pointer to 8 bytes of data
+ * @param txData Pointer to CAN_PACKET_SIZE bytes of data.
+ * @param id     Standard 11-bit CAN identifier.
  *
- * Uses HAL to transmit message over CAN channel 1
+ * @return 0 if the transmission was successfully loaded into a mailbox,
+ *         non-zero otherwise.
  */
-int HW_CAN_Transmit1( uint8_t* txData );
+int HW_CAN_Transmit1( uint8_t* txData, uint16_t id );
 
 /**
- * @brief recieves data and stores it in rxData (8 bytes) over the hcan CAN channel 2
+ * @brief Receives a CAN packet on channel 2.
  *
- * @param hcan the pointer to the handle for the can peripheral
- * @param rxData pointer to 8 bytes of available storage
+ * @param rxPacket Pointer to the CAN packet where the received identifier
+ *                 and data will be stored.
  *
- * Uses HAL to receive message over CAN channel 2
+ * @return 0 if a CAN packet was received successfully,
+ *         non-zero otherwise.
  */
-int HW_CAN_Recieve2( uint8_t* rxData );
+int HW_CAN_Recieve2( CAN_Packet_T* rxPacket );
 
 /**
- * @brief transmits the txData (8 bytes) over CAN channel 2
+ * @brief Transmits a CAN packet on channel 2.
  *
- * @param txData pointer to 8 bytes of data
+ * @param txData Pointer to CAN_PACKET_SIZE bytes of data.
+ * @param id     Standard 11-bit CAN identifier.
  *
- * Uses HAL to transmit message over CAN channel 2
+ * @return 0 if the transmission was successfully loaded into a mailbox,
+ *         non-zero otherwise.
  */
-int HW_CAN_Transmit2( uint8_t* txData );
+int HW_CAN_Transmit2( uint8_t* txData, uint16_t id );
+
+/**-----------------------------------------------------------------------------
+ *  Channel 1 Buffer Functions
+ *------------------------------------------------------------------------------
+ */
 
 /**
- * @brief Writes a number of 8 byte packets (source) to the tx buffer
+ * @brief Writes CAN packets to the channel 1 transmit buffer.
  *
- * @param source an array of arrays, type:
-uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
- * @param length the number of can packets to be written (seen as X above)
+ * @param source  Array of CAN_Packet_T packets to write.
+ * @param length  Number of CAN packets to write.
  *
- * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ * @return 0 if the write was successful,
+ *         1 if the buffer could not accept all packets.
  */
-uint16_t HW_CAN_Tx_Buffer_Write1( uint8_t source[][CAN_PACKET_SIZE], uint16_t length );
+uint16_t HW_CAN_Tx_Buffer_Write1( CAN_Packet_T source[], uint16_t length );
 
 /**
- * @brief Writes a number of 8 byte packets (source) to the rx buffer
+ * @brief Writes CAN packets to the channel 1 receive buffer.
  *
- * @param source an array of arrays, type:
-uint8_t can_rx_buffer1[X][CAN_PACKET_SIZE];
- * @param length the number of can packets to be written (seen as X above)
+ * @param source  Array of CAN_Packet_T packets to write.
+ * @param length  Number of CAN packets to write.
  *
- * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ * @return 0 if the write was successful,
+ *         1 if the buffer could not accept all packets.
  */
-uint16_t HW_CAN_Rx_Buffer_Write1( uint8_t source[][CAN_PACKET_SIZE], uint16_t length );
+uint16_t HW_CAN_Rx_Buffer_Write1( CAN_Packet_T source[], uint16_t length );
 
 /**
- * @brief Writes a number of 8 byte packets (source) to the tx buffer
+ * @brief Reads CAN packets from the channel 1 receive buffer.
  *
- * @param source an array of arrays, type:
-uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
- * @param length the number of can packets to be written (seen as X above)
+ * Reading does not consume the packets from the buffer. Use
+ * HW_CAN_Rx_Buffer_consume1() to advance the read pointer.
  *
- * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ * @param dest  Destination array for the CAN packets.
+ *
+ * @return Number of CAN packets available in the buffer.
  */
-uint16_t HW_CAN_Tx_Buffer_Write2( uint8_t source[][CAN_PACKET_SIZE], uint16_t length );
+uint16_t HW_CAN_Rx_Buffer_Read1( CAN_Packet_T dest[] );
 
 /**
- * @brief Writes a number of 8 byte packets (source) to the rx buffer
+ * @brief Reads CAN packets from the channel 1 transmit buffer.
  *
- * @param source an array of arrays, type:
-uint8_t can_rx_buffer1[X][CAN_PACKET_SIZE];
- * @param length the number of can packets to be written (seen as X above)
+ * Reading does not consume the packets from the buffer. Use the appropriate
+ * buffer consume function to advance the read pointer.
  *
- * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ * @param dest  Destination array for the CAN packets.
+ *
+ * @return Number of CAN packets available in the buffer.
  */
-uint16_t HW_CAN_Rx_Buffer_Write2( uint8_t source[][CAN_PACKET_SIZE], uint16_t length );
+uint16_t HW_CAN_Tx_Buffer_Read1( CAN_Packet_T dest[] );
 
 /**
- * @brief Reads an 8 byte packet from the rx buffer (channel 2) and writes it to dest
+ * @brief Moves the channel 1 receive buffer read pointer.
  *
- * @param dest the destination where the value will be written
- *
- * @return 0 if there was nothing to read, 1 otherwise
+ * @param update Number of packets to consume.
  */
-uint16_t HW_CAN_Rx_Buffer_Pop1( uint8_t dest[CAN_PACKET_SIZE] );
+void HW_CAN_Rx_Buffer_consume1( uint16_t update );
 
 /**
- * @brief Reads an 8 byte packet from the rx buffer (channel 2) and writes it to dest
+ * @brief Removes one CAN packet from the channel 1 transmit buffer.
  *
- * @param dest the destination where the value will be written
+ * @param dest Pointer to the destination CAN packet.
  *
- * @return 0 if there was nothing to read, 1 otherwise
+ * @return 0 if a packet was successfully removed,
+ *         1 if the buffer was empty.
  */
-uint16_t HW_CAN_Rx_Buffer_Pop2( uint8_t dest[CAN_PACKET_SIZE] );
+uint16_t HW_CAN_Tx_Buffer_Pop1( CAN_Packet_T* dest );
 
 /**
- * @brief Reads an 8 byte packet from the tx buffer (channel 1) and writes it to dest
+ * @brief Removes one CAN packet from the channel 1 receive buffer.
  *
- * @param dest the destination where the value will be written
+ * @param dest Pointer to the destination CAN packet.
  *
- * @return 0 if there was nothing to read, 1 otherwise
+ * @return 0 if a packet was successfully removed,
+ *         1 if the buffer was empty.
  */
-uint16_t HW_CAN_Tx_Buffer_Pop1( uint8_t dest[CAN_PACKET_SIZE] );
+uint16_t HW_CAN_Rx_Buffer_Pop1( CAN_Packet_T* dest );
+
+/**-----------------------------------------------------------------------------
+ *  Channel 2 Buffer Functions
+ *------------------------------------------------------------------------------
+ */
 
 /**
- * @brief Reads an 8 byte packet from the tx buffer (channel 2) and writes it to dest
+ * @brief Writes CAN packets to the channel 2 transmit buffer.
  *
- * @param dest the destination where the value will be written
+ * @param source  Array of CAN_Packet_T packets to write.
+ * @param length  Number of CAN packets to write.
  *
- * @return 0 if there was nothing to read, 1 otherwise
+ * @return 0 if the write was successful,
+ *         1 if the buffer could not accept all packets.
  */
-uint16_t HW_CAN_Tx_Buffer_Pop2( uint8_t dest[CAN_PACKET_SIZE] );
+uint16_t HW_CAN_Tx_Buffer_Write2( CAN_Packet_T source[], uint16_t length );
 
 /**
- * @brief Enables tx interrupts on channel 1
+ * @brief Writes CAN packets to the channel 2 receive buffer.
  *
- * Used to enable the sending of messages through CAN channel 1
- * Once the write buffer is empty the ISR will disable again
+ * @param source  Array of CAN_Packet_T packets to write.
+ * @param length  Number of CAN packets to write.
+ *
+ * @return 0 if the write was successful,
+ *         1 if the buffer could not accept all packets.
+ */
+uint16_t HW_CAN_Rx_Buffer_Write2( CAN_Packet_T source[], uint16_t length );
+
+/**
+ * @brief Reads CAN packets from the channel 2 receive buffer.
+ *
+ * Reading does not consume the packets from the buffer. Use
+ * HW_CAN_Rx_Buffer_consume2() to advance the read pointer.
+ *
+ * @param dest  Destination array for the CAN packets.
+ *
+ * @return Number of CAN packets available in the buffer.
+ */
+uint16_t HW_CAN_Rx_Buffer_Read2( CAN_Packet_T dest[] );
+
+/**
+ * @brief Reads CAN packets from the channel 2 transmit buffer.
+ *
+ * Reading does not consume the packets from the buffer.
+ *
+ * @param dest  Destination array for the CAN packets.
+ *
+ * @return Number of CAN packets available in the buffer.
+ */
+uint16_t HW_CAN_Tx_Buffer_Read2( CAN_Packet_T dest[] );
+
+/**
+ * @brief Moves the channel 2 receive buffer read pointer.
+ *
+ * @param update Number of packets to consume.
+ */
+void HW_CAN_Rx_Buffer_consume2( uint16_t update );
+
+/**
+ * @brief Removes one CAN packet from the channel 2 transmit buffer.
+ *
+ * @param dest Pointer to the destination CAN packet.
+ *
+ * @return 0 if a packet was successfully removed,
+ *         1 if the buffer was empty.
+ */
+uint16_t HW_CAN_Tx_Buffer_Pop2( CAN_Packet_T* dest );
+
+/**
+ * @brief Removes one CAN packet from the channel 2 receive buffer.
+ *
+ * @param dest Pointer to the destination CAN packet.
+ *
+ * @return 0 if a packet was successfully removed,
+ *         1 if the buffer was empty.
+ */
+uint16_t HW_CAN_Rx_Buffer_Pop2( CAN_Packet_T* dest );
+
+/**-----------------------------------------------------------------------------
+ *  Transmit Trigger Functions
+ *------------------------------------------------------------------------------
+ */
+
+/**
+ * @brief Enables transmit interrupts on channel 1.
+ *
+ * Used to enable transmission of messages through CAN channel 1.
+ * Once the transmit buffer is empty, the ISR disables the interrupt again.
  */
 void HW_CAN_Tx_Trigger1( void );
 
 /**
- * @brief Enables tx interrupts on channel 2
+ * @brief Enables transmit interrupts on channel 2.
  *
- * Used to enable the sending of messages through CAN channel 2
- * Once the write buffer is empty the ISR will disable again
+ * Used to enable transmission of messages through CAN channel 2.
+ * Once the transmit buffer is empty, the ISR disables the interrupt again.
  */
 void HW_CAN_Tx_Trigger2( void );
 
@@ -275,4 +396,4 @@ void HW_CAN_Tx_Trigger2( void );
 }
 #endif
 
-#endif /* <FILENAME>_H */
+#endif /* HW_CAN_H */

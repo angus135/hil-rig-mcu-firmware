@@ -19,7 +19,8 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
  *  Includes
  *------------------------------------------------------------------------------
  */
-#include <stddef.h>
+
+#include <string.h>
 #ifndef TEST_BUILD
 #include "can.h"
 #include "stm32f4xx_hal_can.h"
@@ -41,12 +42,6 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
 
 #define RECEIVE_BUFFER_WIDTH 20
 #define TRANSMIT_BUFFER_WIDTH 20
-
-// IRQ Re-Definitions
-#define HW_CAN_CH1_TX_IRQ_HANDLER CAN1_TX_IRQHandler
-#define HW_CAN_CH1_RX_IRQ_HANDLER CAN1_RX0_IRQHandler
-#define HW_CAN_CH2_TX_IRQ_HANDLER CAN2_TX_IRQHandler
-#define HW_CAN_CH2_RX_IRQ_HANDLER CAN2_RX0_IRQHandler
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -76,25 +71,22 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
 static volatile bool can_sent_flag1 = false;
 static volatile bool can_sent_flag2 = false;
 
-// Buffer for rx channel 1
-static volatile uint8_t  can_rx_buffer1[RECEIVE_BUFFER_WIDTH][CAN_PACKET_SIZE];
-static volatile uint16_t can_rx_wp1 = 0;  // Writing to RX buffer handled by ISR
-static volatile uint16_t can_rx_rp1 = 0;  // Reading from RX buffer handled by HW_CAN_rx_buffer_read
-
-// Buffer for tx channel 1
-static volatile uint8_t  can_tx_buffer1[TRANSMIT_BUFFER_WIDTH][CAN_PACKET_SIZE];
-static volatile uint16_t can_tx_wp1 = 0;  // Writing to TX buffer handled by HW_CAN_tx_buffer_write
-static volatile uint16_t can_tx_rp1 = 0;  // Reading from TX buffer handled by ISR
-
-// Buffer for rx channel 2
-static volatile uint8_t  can_rx_buffer2[RECEIVE_BUFFER_WIDTH][CAN_PACKET_SIZE];
-static volatile uint16_t can_rx_wp2 = 0;  // Writing to RX buffer handled by ISR
-static volatile uint16_t can_rx_rp2 = 0;  // Reading from RX buffer handled by HW_CAN_rx_buffer_read
-
-// Buffer for tx channel 2
-static volatile uint8_t  can_tx_buffer2[TRANSMIT_BUFFER_WIDTH][CAN_PACKET_SIZE];
-static volatile uint16_t can_tx_wp2 = 0;  // Writing to TX buffer handled by HW_CAN_tx_buffer_write
-static volatile uint16_t can_tx_rp2 = 0;  // Reading from TX buffer handled by ISR
+/* Buffer for rx channel 1 */
+static CAN_Packet_T can_rx_buffer1[RECEIVE_BUFFER_WIDTH];
+static volatile uint16_t     can_rx_wp1 = 0;
+static volatile uint16_t     can_rx_rp1 = 0;
+/* Buffer for tx channel 1 */
+static CAN_Packet_T can_tx_buffer1[TRANSMIT_BUFFER_WIDTH];
+static volatile uint16_t     can_tx_wp1 = 0;
+static volatile uint16_t     can_tx_rp1 = 0;
+/* Buffer for rx channel 2 */
+static CAN_Packet_T can_rx_buffer2[RECEIVE_BUFFER_WIDTH];
+static volatile uint16_t     can_rx_wp2 = 0;
+static volatile uint16_t     can_rx_rp2 = 0;
+/* Buffer for tx channel 2 */
+static CAN_Packet_T can_tx_buffer2[TRANSMIT_BUFFER_WIDTH];
+static volatile uint16_t     can_tx_wp2 = 0;
+static volatile uint16_t     can_tx_rp2 = 0;
 
 /** Buffer example:
  *          [0,0,0,0,0,0,0,0],  <- r_p
@@ -147,26 +139,34 @@ e.g. here the buffer is 'full', even if ther is technically 1 spot left
  *          [0,0,0,0,0,0,0,0],
  *          [0,0,0,0,0,0,0,0],
  */
-static inline uint8_t HW_CAN_Buffer_Write( volatile uint8_t   buffer[][CAN_PACKET_SIZE],
-                                           volatile uint16_t* w_p, volatile uint16_t* r_p,
-                                           uint16_t buffer_width, uint8_t source[][CAN_PACKET_SIZE],
-                                           uint16_t length )
+uint8_t HW_CAN_Buffer_Write(
+    CAN_Packet_T buffer[],
+    volatile uint16_t* w_p,
+    volatile uint16_t* r_p,
+    uint16_t buffer_width,
+    CAN_Packet_T source[],
+    uint16_t length )
 {
-    for ( int i = 0; i < length; i++ )
+    uint16_t temp_w_p = *w_p;
+    uint16_t temp_r_p = *r_p;
+
+    uint16_t free =
+        ( temp_r_p - temp_w_p - 1 + buffer_width )
+        % buffer_width;
+
+    /* Buffer full? */
+    if ( length > free )
     {
-        // buffer full?
-        if ( ( ( *w_p + 1 ) % buffer_width ) == *r_p )
-        {
-            return 1;
-        }
-        // iterate through packet
-        for ( int j = 0; j < CAN_PACKET_SIZE; j++ )
-        {
-            buffer[*w_p][j] = source[i][j];
-        }
-        // update w_p
-        *w_p = ( *w_p + 1 ) % buffer_width;
+        return 1;
     }
+
+    for ( uint16_t i = 0; i < length; i++ )
+    {
+        buffer[( temp_w_p + i ) % buffer_width] = source[i];
+    }
+
+    *w_p = ( temp_w_p + length ) % buffer_width;
+
     return 0;
 }
 
@@ -186,100 +186,33 @@ Meaning if the next position in the buffer has the r_p then the buffer is full.
 e.g. here the buffer is 'full', even if ther is technically 1 spot left
  *
  */
-static inline uint16_t HW_CAN_Buffer_Read( volatile uint8_t   buffer[][CAN_PACKET_SIZE],
-                                           volatile uint16_t* w_p, volatile uint16_t* r_p,
-                                           uint16_t buffer_width, uint8_t dest[][CAN_PACKET_SIZE] )
+uint16_t HW_CAN_Buffer_Read(
+    CAN_Packet_T buffer[],
+    volatile uint16_t* w_p,
+    volatile uint16_t* r_p,
+    uint16_t buffer_width,
+    CAN_Packet_T dest[] )
 {
-    uint16_t count = 0;
-    for ( int i = 0; i < buffer_width; i++ )
+    uint16_t temp_r_p = *r_p;
+    uint16_t temp_w_p = *w_p;
+
+    /* Nothing to read */
+    if ( temp_r_p == temp_w_p )
     {
-        if ( *w_p == *r_p )
-        {
-            return count;
-        }
-        for ( int j = 0; j < CAN_PACKET_SIZE; j++ )
-        {
-            dest[i][j] = buffer[*r_p][j];
-        }
-        *r_p = ( *r_p + 1 ) % buffer_width;
-        count += 1;
+        return 0;
     }
+
+    uint16_t count =
+        ( temp_w_p - temp_r_p + buffer_width )
+        % buffer_width;
+
+    for ( uint16_t i = 0; i < count; i++ )
+    {
+        dest[i] =
+            buffer[( temp_r_p + i ) % buffer_width];
+    }
+
     return count;
-}
-
-/**
- * @brief transmits the txData (8 bytes) over the hcan CAN channel
- *
- * @param hcan the pointer to the handle for the can peripheral
- * @param txData pointer to 8 bytes of data
- *
- * Uses HAL to transmit message over CAN channel
- */
-int HW_CAN_Transmit( CAN_HandleTypeDef* hcan, uint8_t* txData )
-{
-    CAN_TypeDef* can = hcan->Instance;
-
-    // Check mailbox available
-    if ( ( can->TSR & CAN_TSR_TME0 ) == 0 )
-    {
-        return 1;
-    }
-
-    // Standard ID = 0x123
-    can->sTxMailBox[0].TIR = ( 0x123 << 21 );
-
-    // DLC = 8
-    can->sTxMailBox[0].TDTR = 8;
-
-    // Load first 4 bytes
-    can->sTxMailBox[0].TDLR = ( ( uint32_t )txData[0] << 0 ) | ( ( uint32_t )txData[1] << 8 )
-                              | ( ( uint32_t )txData[2] << 16 ) | ( ( uint32_t )txData[3] << 24 );
-
-    // Load second 4 bytes
-    can->sTxMailBox[0].TDHR = ( ( uint32_t )txData[4] << 0 ) | ( ( uint32_t )txData[5] << 8 )
-                              | ( ( uint32_t )txData[6] << 16 ) | ( ( uint32_t )txData[7] << 24 );
-
-    // Request transmission
-    can->sTxMailBox[0].TIR |= CAN_TI0R_TXRQ;
-
-    return 0;
-}
-
-/**
- * @brief recieves data and stores it in rxData (8 bytes) over the hcan CAN channel
- *
- * @param hcan the pointer to the handle for the can peripheral
- * @param rxData pointer to 8 bytes of available storage
- *
- * Uses HAL to receive message over CAN channel
- */
-int HW_CAN_Receive( CAN_HandleTypeDef* hcan, uint8_t* rxData )
-{
-    CAN_TypeDef* can = hcan->Instance;
-
-    // Check FIFO0 has pending message
-    if ( ( can->RF0R & CAN_RF0R_FMP0 ) == 0 )
-    {
-        return 1;
-    }
-
-    uint32_t low  = can->sFIFOMailBox[0].RDLR;
-    uint32_t high = can->sFIFOMailBox[0].RDHR;
-
-    rxData[0] = ( low >> 0 ) & 0xFF;
-    rxData[1] = ( low >> 8 ) & 0xFF;
-    rxData[2] = ( low >> 16 ) & 0xFF;
-    rxData[3] = ( low >> 24 ) & 0xFF;
-
-    rxData[4] = ( high >> 0 ) & 0xFF;
-    rxData[5] = ( high >> 8 ) & 0xFF;
-    rxData[6] = ( high >> 16 ) & 0xFF;
-    rxData[7] = ( high >> 24 ) & 0xFF;
-
-    // Release FIFO
-    can->RF0R |= CAN_RF0R_RFOM0;
-
-    return 0;
 }
 
 /**
@@ -296,24 +229,194 @@ int HW_CAN_Receive( CAN_HandleTypeDef* hcan, uint8_t* rxData )
  *
  *
  */
-uint16_t HW_CAN_Buffer_Pop( volatile uint8_t buffer[][CAN_PACKET_SIZE], volatile uint16_t* w_p,
-                            volatile uint16_t* r_p, uint16_t buffer_width,
-                            uint8_t dest[CAN_PACKET_SIZE] )
+uint16_t HW_CAN_Buffer_Pop(
+    CAN_Packet_T buffer[],
+    volatile uint16_t* w_p,
+    volatile uint16_t* r_p,
+    uint16_t buffer_width,
+    CAN_Packet_T* dest )
 {
     if ( *w_p == *r_p )
     {
-        // r_p is up to w_p so nothing to read
         return 1;
     }
 
-    for ( int i = 0; i < CAN_PACKET_SIZE; i++ )
-    {
-        dest[i] = buffer[*r_p][i];
-    }
-    // update read pointer
+    *dest = buffer[*r_p];
+
     *r_p = ( *r_p + 1 ) % buffer_width;
 
     return 0;
+}
+
+/**
+ * @brief Moves the pointer x times
+ *
+ * @param pointer       the address of the read pointer
+ * @param update        the number of times we want to move the pointer
+ * @param buffer_width  The width of the buffer CAN_PACKET_SIZE (8)
+ *
+ */
+void HW_CAN_Buffer_consume(
+    volatile uint16_t* pointer,
+    uint16_t update,
+    uint16_t buffer_width )
+{
+    *pointer =
+        ( *pointer + update )
+        % buffer_width;
+}
+
+/**
+ * @brief transmits the txData (8 bytes) over the hcan CAN channel
+ *
+ * @param hcan the pointer to the handle for the can peripheral
+ * @param txData pointer to 8 bytes of data
+
+    Typical CAN TIR is broken up into sections:
+
+    31                          21 20-19 18-17 16.............0
+
+    +--------------------------------+--+--+-------------------+
+    | Standard ID (11 bits)         |RTR|IDE| Reserved        |
+    +--------------------------------+--+--+-------------------+
+
+    Typical CAN TDTR is broken up into sections:
+
+    31                     16 15........8 7......4 3......0
+
+    +-----------------------+-----------+--------+---------+
+    | Timestamp             | Reserved  | TGT    | DLC     |
+    +-----------------------+-----------+--------+---------+
+ *
+ * Uses HAL to transmit message over CAN channel
+ */
+int HW_CAN_Transmit( CAN_HandleTypeDef* hcan, uint8_t* txData, uint16_t id, uint8_t size )
+{
+    CAN_TypeDef* can     = hcan->Instance;
+    uint8_t      mailbox = 0;
+    if ( id > 0x7FF || size > 8 )
+    {
+        // The address is larger than 11 bits or the size is larger than 8 bytes
+        return 1;
+    }
+
+    // Check mailbox available
+    if ( can->TSR & CAN_TSR_TME0 )
+        mailbox = 0;
+    else if ( can->TSR & CAN_TSR_TME1 )
+        mailbox = 1;
+    else if ( can->TSR & CAN_TSR_TME2 )
+        mailbox = 2;
+    else
+        return 1;
+
+    // Standard ID is 11 bits and has to be shifted to the top 11 bits of the register
+    can->sTxMailBox[mailbox].TIR = ( id << 21 );
+
+    // DLC = 8, (sending 8 bytes)
+    can->sTxMailBox[mailbox].TDTR = size;
+
+    // Less than 4 bytes to load
+    if ( size <= 4 )
+    {
+        // Load first 4 bytes
+        for ( int i = 0; i < size; i++ )
+        {
+            can->sTxMailBox[mailbox].TDLR |= ( ( uint32_t )txData[i] << ( i * 8 ) );
+        }
+        // Request transmission
+        can->sTxMailBox[mailbox].TIR |= CAN_TI0R_TXRQ;
+        return 0;
+    }
+    // Load first 4 bytes
+    can->sTxMailBox[mailbox].TDLR = ( ( uint32_t )txData[0] << 0 ) | ( ( uint32_t )txData[1] << 8 )
+                                    | ( ( uint32_t )txData[2] << 16 )
+                                    | ( ( uint32_t )txData[3] << 24 );
+    // Load the second 4 bytes
+    for ( int i = 4; i < size; i++ )
+    {
+        can->sTxMailBox[mailbox].TDHR |= ( ( uint32_t )txData[i] << ( ( i - 4 ) * 8 ) );
+    }
+    // Request transmission
+    can->sTxMailBox[mailbox].TIR |= CAN_TI0R_TXRQ;
+    return 0;
+}
+
+/**
+ * @brief recieves data and stores it in rxData (8 bytes) over the hcan CAN channel
+ *
+ * @param hcan the pointer to the handle for the can peripheral
+ * @param rxData pointer to 8 bytes of available storage
+ *
+ * Uses HAL to receive message over CAN channel
+ */
+int HW_CAN_Receive(
+    CAN_HandleTypeDef* hcan,
+    CAN_Packet_T* rxPacket )
+{
+    CAN_TypeDef* can = hcan->Instance;
+
+    /* Check FIFO0 has pending message */
+    if ( ( can->RF0R & CAN_RF0R_FMP0 ) == 0 )
+    {
+        return 1;
+    }
+
+    /*
+     * Standard CAN ID is stored in bits 31:21 of RIR.
+     *
+     * The current driver uses standard 11-bit CAN identifiers.
+     */
+    rxPacket->id =
+        ( can->sFIFOMailBox[0].RIR >> 21 ) & 0x7FF;
+
+    uint32_t low  = can->sFIFOMailBox[0].RDLR;
+    uint32_t high = can->sFIFOMailBox[0].RDHR;
+
+    rxPacket->data[0] = ( low  >> 0  ) & 0xFF;
+    rxPacket->data[1] = ( low  >> 8  ) & 0xFF;
+    rxPacket->data[2] = ( low  >> 16 ) & 0xFF;
+    rxPacket->data[3] = ( low  >> 24 ) & 0xFF;
+
+    rxPacket->data[4] = ( high >> 0  ) & 0xFF;
+    rxPacket->data[5] = ( high >> 8  ) & 0xFF;
+    rxPacket->data[6] = ( high >> 16 ) & 0xFF;
+    rxPacket->data[7] = ( high >> 24 ) & 0xFF;
+
+    /* Release FIFO */
+    can->RF0R |= CAN_RF0R_RFOM0;
+
+    return 0;
+}
+
+/**
+ * @brief reads one entrie from the tx channel 1 buffer
+ *
+ * @param dest      the destination array it writes to
+ *
+ * @return 1 if there was nothing to read
+ * @return 0 if the buffer was read correctly
+ *
+ *
+ */
+uint16_t HW_CAN_Tx_Buffer_Pop1( CAN_Packet_T* dest ) 
+{ 
+    return HW_CAN_Buffer_Pop( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH, dest ); 
+}
+
+/**
+ * @brief reads one entrie from the tx channel 2 buffer
+ *
+ * @param dest      the destination array it writes to
+ *
+ * @return 1 if there was nothing to read
+ * @return 0 if the buffer was read correctly
+ *
+ *
+ */
+uint16_t HW_CAN_Tx_Buffer_Pop2( CAN_Packet_T* dest ) 
+{ 
+    return HW_CAN_Buffer_Pop( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH, dest ); 
 }
 
 /**-----------------------------------------------------------------------------
@@ -340,7 +443,6 @@ HAL_StatusTypeDef HW_CAN_Apply_Timing_HAL( CAN_HandleTypeDef* hcan, CanPropertie
     hcan->Init.Prescaler = props.psc;
     // set CAN operating mode
     hcan->Init.Mode = CAN_MODE_NORMAL;
-    // hcan->Init.Mode = CAN_MODE_LOOPBACK;  // Testing mode
 
     // set the sync jump width
     hcan->Init.SyncJumpWidth = CAN_SJW_1TQ;
@@ -449,35 +551,82 @@ HAL_StatusTypeDef HW_CAN_Apply_Timing_HAL( CAN_HandleTypeDef* hcan, CanPropertie
  * @param hcan the pointer to the handle for the can peripheral
  *
  * This function applies the desired can filter properties using the HAL library
+    Can filtering works as follows:
+    The ID of each incoming frame is compared in hardware to the filter banks via:
+    (received_ID & mask) == (filter_id & mask)
+
+    Incoming CAN Frame
+            │
+            ▼
+    Check Bank 0
+            │
+            ├── Match?
+            │
+            ▼
+    Check Bank 1
+            │
+            ├── Match?
+            │
+            ▼
+    Check Bank 2
+            │
+            ...
+            |
+    Check Bank 27
+            │
+            ├── Match?
+            |
+        discard
  *
  */
-HAL_StatusTypeDef HW_CAN_Apply_Filter_HAL( CAN_FilterTypeDef* filter, CAN_HandleTypeDef* hcan )
+HAL_StatusTypeDef HW_CAN_Apply_Filter_HAL( CAN_FilterTypeDef* filter, CAN_HandleTypeDef* hcan,
+                                           uint16_t filter_bank, uint16_t filter_id,
+                                           uint16_t filter_mask )
 {
-    ( *filter ).FilterMode  = CAN_FILTERMODE_IDMASK;
+    // Either CAN_FILTERMODE_IDMASK, or CAN_FILTERMODE_IDLIST
+    // CAN_FILTERMODE_IDMASK accepts a range of ID's based on the filter ID and the mask
+    // CAN_FILTERMODE_IDLIST accepts an id if it is in the ID list
+    ( *filter ).FilterMode = CAN_FILTERMODE_IDMASK;
+    // Use one 32-bit filter entry per filter bank.
     ( *filter ).FilterScale = CAN_FILTERSCALE_32BIT;
 
-    ( *filter ).FilterIdHigh     = 0x0000;
-    ( *filter ).FilterIdLow      = 0x0000;
-    ( *filter ).FilterMaskIdHigh = 0x0000;
-    ( *filter ).FilterMaskIdLow  = 0x0000;
+    if ( filter_id > 0x7FF || filter_mask > 0x7FF )
+    {
+        return HAL_ERROR;
+    }
 
-    ( *filter ).SlaveStartFilterBank = 14;
+    // Standard CAN ID's are 11 bits long and only use the High bits 15-5
+    ( *filter ).FilterIdHigh     = filter_id << 5;    // the upper 16 bits of the filter ID value
+    ( *filter ).FilterIdLow      = 0x0000;            // the lower 16 bits of the filter ID value
+    ( *filter ).FilterMaskIdHigh = filter_mask << 5;  // the upper 16 bits of the filter mask value
+    ( *filter ).FilterMaskIdLow  = 0x0000;            // the lower 16 bits of the filter mask value
+
+    ( *filter ).SlaveStartFilterBank =
+        14;  // divides the two filter banks (CAN1 & CAN2) 0----------------13 |14----------------27
 
     if ( hcan->Instance == CAN1 )
     {
-        ( *filter ).FilterBank = 0;
+        if ( filter_bank > 13 )
+        {
+            return HAL_ERROR;
+        }
     }
     else if ( hcan->Instance == CAN2 )
     {
-        ( *filter ).FilterBank = 14;
+        if ( filter_bank < 14 || filter_bank > 27 )
+        {
+            return HAL_ERROR;
+        }
     }
     else
     {
         return HAL_ERROR;
     }
 
-    ( *filter ).FilterFIFOAssignment = CAN_FILTER_FIFO0;
-    ( *filter ).FilterActivation     = ENABLE;
+    ( *filter ).FilterBank = filter_bank;
+
+    ( *filter ).FilterFIFOAssignment = CAN_FILTER_FIFO0;  // filter FIFO assignment
+    ( *filter ).FilterActivation     = ENABLE;            // enables the filter
 
     return HAL_CAN_ConfigFilter( hcan, filter );
 }
@@ -509,7 +658,8 @@ HAL_StatusTypeDef HW_CAN_Apply_Filter_HAL( CAN_FilterTypeDef* filter, CAN_Handle
  *          FIFO assignment for accepted frames
  *
  */
-int HW_CAN_Configure( CAN_HandleTypeDef* hcan, uint32_t bitrate )
+int HW_CAN_Configure( CAN_HandleTypeDef* hcan, uint32_t bitrate, uint16_t filter_bank,
+                      uint16_t filter_id, uint16_t filter_mask )
 {
     CAN_FilterTypeDef filter    = { 0 };
     CanProperties_T   can_props = HW_CAN_Compute_Properties( bitrate, TOTAL_TQ, MBPS_SAMPLE_POINT );
@@ -517,7 +667,7 @@ int HW_CAN_Configure( CAN_HandleTypeDef* hcan, uint32_t bitrate )
     {
         return 1;
     }
-    if ( HW_CAN_Apply_Filter_HAL( &filter, hcan ) != HAL_OK )
+    if ( HW_CAN_Apply_Filter_HAL( &filter, hcan, filter_bank, filter_id, filter_mask ) != HAL_OK )
     {
         return 2;
     }
@@ -539,7 +689,7 @@ int HW_CAN_Configure( CAN_HandleTypeDef* hcan, uint32_t bitrate )
  */
 
 /**
- * @brief Calculates the required CAN protperties
+ * @brief Calculates the required CAN properties
  *
  * @param bitrate the desired bitrate in bits per second, eg 1Mbps = 1000000
  * @param total_TQ the total time quanta
@@ -604,12 +754,13 @@ CanProperties_T HW_CAN_Compute_Properties( uint32_t bitrate, uint32_t total_TQ,
  *          FIFO assignment for accepted frames
  *
  */
-int HW_CAN_Configure1( uint32_t bitrate )
+int HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
+                       uint16_t filter_mask )
 {
     // __HAL_RCC_CAN1_FORCE_RESET();
     // __HAL_RCC_CAN1_RELEASE_RESET();
     __HAL_RCC_CAN1_CLK_ENABLE();
-    return HW_CAN_Configure( &hcan1, bitrate );
+    return HW_CAN_Configure( &hcan1, bitrate, filter_bank, filter_id, filter_mask );
 }
 
 /**
@@ -638,12 +789,13 @@ int HW_CAN_Configure1( uint32_t bitrate )
  *          FIFO assignment for accepted frames
  *
  */
-int HW_CAN_Configure2( uint32_t bitrate )
+int HW_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
+                       uint16_t filter_mask )
 {
     // __HAL_RCC_CAN2_FORCE_RESET();
     // __HAL_RCC_CAN2_RELEASE_RESET();
     __HAL_RCC_CAN2_CLK_ENABLE();
-    return HW_CAN_Configure( &hcan2, bitrate );
+    return HW_CAN_Configure( &hcan2, bitrate, filter_bank, filter_id, filter_mask );
 }
 
 /**-----------------------------------------------------------------------------
@@ -682,9 +834,9 @@ bool HW_CAN_Channl2_sent()
  *
  * Uses HAL to transmit message over CAN channel 1
  */
-int HW_CAN_Transmit1( uint8_t* txData )
+int HW_CAN_Transmit1( uint8_t* txData, uint16_t id )
 {
-    return HW_CAN_Transmit( &hcan1, txData );
+    return HW_CAN_Transmit( &hcan1, txData, id, 8 );
 }
 
 /**
@@ -694,10 +846,10 @@ int HW_CAN_Transmit1( uint8_t* txData )
  *
  * Uses HAL to receive message over CAN channel 1
  */
-int HW_CAN_Recieve1( uint8_t* rxData )
-{
-    return HW_CAN_Receive( &hcan1, rxData );
-}
+int HW_CAN_Recieve1( CAN_Packet_T* rxPacket ) 
+{ 
+    return HW_CAN_Receive( &hcan1, rxPacket ); 
+} 
 
 /**
  * @brief transmits the txData (8 bytes) over CAN channel 2
@@ -706,9 +858,9 @@ int HW_CAN_Recieve1( uint8_t* rxData )
  *
  * Uses HAL to transmit message over CAN channel 2
  */
-int HW_CAN_Transmit2( uint8_t* txData )
+int HW_CAN_Transmit2( uint8_t* txData, uint16_t id )
 {
-    return HW_CAN_Transmit( &hcan2, txData );
+    return HW_CAN_Transmit( &hcan2, txData, id, 8 );
 }
 
 /**
@@ -718,9 +870,9 @@ int HW_CAN_Transmit2( uint8_t* txData )
  *
  * Uses HAL to receive message over CAN channel 2
  */
-int HW_CAN_Recieve2( uint8_t* rxData )
-{
-    return HW_CAN_Receive( &hcan2, rxData );
+int HW_CAN_Recieve2( CAN_Packet_T* rxPacket ) 
+{ 
+    return HW_CAN_Receive( &hcan2, rxPacket ); 
 }
 
 /**
@@ -732,10 +884,9 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t HW_CAN_Tx_Buffer_Write1( uint8_t source[][CAN_PACKET_SIZE], uint16_t length )
-{
-    return HW_CAN_Buffer_Write( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
-                                source, length );
+uint16_t HW_CAN_Tx_Buffer_Write1( CAN_Packet_T source[], uint16_t length ) 
+{ 
+    return HW_CAN_Buffer_Write( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH, source, length ); 
 }
 
 /**
@@ -747,10 +898,9 @@ uint8_t can_rx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t HW_CAN_Rx_Buffer_Write1( uint8_t source[][CAN_PACKET_SIZE], uint16_t length )
-{
-    return HW_CAN_Buffer_Write( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH,
-                                source, length );
+uint16_t HW_CAN_Rx_Buffer_Write1( CAN_Packet_T source[], uint16_t length ) 
+{ 
+    return HW_CAN_Buffer_Write( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH, source, length ); 
 }
 
 /**
@@ -762,10 +912,9 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t HW_CAN_Tx_Buffer_Write2( uint8_t source[][CAN_PACKET_SIZE], uint16_t length )
-{
-    return HW_CAN_Buffer_Write( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
-                                source, length );
+uint16_t HW_CAN_Tx_Buffer_Write2( CAN_Packet_T source[], uint16_t length ) 
+{ 
+    return HW_CAN_Buffer_Write( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH, source, length ); 
 }
 
 /**
@@ -777,62 +926,79 @@ uint8_t can_rx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t HW_CAN_Rx_Buffer_Write2( uint8_t source[][CAN_PACKET_SIZE], uint16_t length )
-{
-    return HW_CAN_Buffer_Write( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH,
-                                source, length );
+uint16_t HW_CAN_Rx_Buffer_Write2( CAN_Packet_T source[], uint16_t length ) 
+{ 
+    return HW_CAN_Buffer_Write( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH, source, length ); 
 }
 
 /**
- * @brief Reads an 8 byte packet from the rx buffer (channel 2) and writes it to dest
+ * @brief Reads from the rx buffer (channel 2) and writes it to dest
  *
  * @param dest the destination where the value will be written
  *
- * @return 1 if there was nothing to read, 0 otherwise
+ * @return the number of CAN_PACKET_SIZE's read
  */
-uint16_t HW_CAN_Rx_Buffer_Pop1( uint8_t dest[CAN_PACKET_SIZE] )
-{
-    return HW_CAN_Buffer_Pop( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH,
-                              dest );
+uint16_t HW_CAN_Rx_Buffer_Read1( CAN_Packet_T dest[] ) 
+{ 
+    return HW_CAN_Buffer_Read( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH, dest ); 
 }
 
 /**
- * @brief Reads an 8 byte packet from the rx buffer (channel 2) and writes it to dest
+ * @brief Moves the channe 1 read pointer x times
  *
- * @param dest the destination where the value will be written
+ * @param update        the number of times we want to move the pointer
  *
- * @return 1 if there was nothing to read, 0 otherwise
  */
-uint16_t HW_CAN_Rx_Buffer_Pop2( uint8_t dest[CAN_PACKET_SIZE] )
+void HW_CAN_Rx_Buffer_consume1( uint16_t update )
 {
-    return HW_CAN_Buffer_Pop( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH,
-                              dest );
+    HW_CAN_Buffer_consume( &can_rx_rp1, update, RECEIVE_BUFFER_WIDTH );
 }
 
 /**
- * @brief Reads an 8 byte packet from the tx buffer (channel 1) and writes it to dest
+ * @brief Reads from the rx buffer (channel 2) and writes it to dest
  *
  * @param dest the destination where the value will be written
  *
- * @return 1 if there was nothing to read, 0 otherwise
+ * @return the number of CAN_PACKET_SIZE's read
  */
-uint16_t HW_CAN_Tx_Buffer_Pop1( uint8_t dest[CAN_PACKET_SIZE] )
-{
-    return HW_CAN_Buffer_Pop( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
-                              dest );
+uint16_t HW_CAN_Rx_Buffer_Read2( CAN_Packet_T dest[] ) 
+{ 
+    return HW_CAN_Buffer_Read( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH, dest ); 
 }
 
 /**
- * @brief Reads an 8 byte packet from the tx buffer (channel 2) and writes it to dest
+ * @brief Moves the channe 2 read pointer x times
+ *
+ * @param update        the number of times we want to move the pointer
+ *
+ */
+void HW_CAN_Rx_Buffer_consume2( uint16_t update )
+{
+    HW_CAN_Buffer_consume( &can_rx_rp2, update, RECEIVE_BUFFER_WIDTH );
+}
+
+/**
+ * @brief Reads from the tx buffer (channel 1) and writes it to dest
  *
  * @param dest the destination where the value will be written
  *
- * @return 1 if there was nothing to read, 0 otherwise
+ * @return the number of CAN_PACKET_SIZE's read
  */
-uint16_t HW_CAN_Tx_Buffer_Pop2( uint8_t dest[CAN_PACKET_SIZE] )
-{
-    return HW_CAN_Buffer_Pop( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
-                              dest );
+uint16_t HW_CAN_Tx_Buffer_Read1( CAN_Packet_T dest[] ) 
+{ 
+    return HW_CAN_Buffer_Read( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH, dest ); 
+}
+
+/**
+ * @brief Reads from the tx buffer (channel 2) and writes it to dest
+ *
+ * @param dest the destination where the value will be written
+ *
+ * @return the number of CAN_PACKET_SIZE's read
+ */
+uint16_t HW_CAN_Tx_Buffer_Read2( CAN_Packet_T dest[] ) 
+{ 
+    return HW_CAN_Buffer_Read( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH, dest ); 
 }
 
 /**
@@ -868,21 +1034,25 @@ void HW_CAN_Tx_Trigger2( void )
  */
 void HW_CAN_CH1_TX_IRQ_HANDLER( void )
 {
-    uint8_t packet[CAN_PACKET_SIZE];
+    CAN_Packet_T packet;
+
     hcan1.Instance->TSR |= CAN_TSR_RQCP0;
-    if ( HW_CAN_Tx_Buffer_Pop1( packet ) == 0 )
+
+    if ( HW_CAN_Tx_Buffer_Pop1( &packet ) == 0 )
     {
-        HW_CAN_Transmit( &hcan1, packet );
+        HW_CAN_Transmit(
+            &hcan1,
+            packet.data,
+            packet.id,
+            CAN_PACKET_SIZE );
     }
-    else
+    else    // We are at the end of the packet 
     {
-        // No more packets to send.
-        // Disable TX mailbox empty interrupt.
-        CLEAR_BIT( hcan1.Instance->IER, CAN_IER_TMEIE );
-        // all can messages that were in the buffer have been sent
+        CLEAR_BIT( CAN1->IER, CAN_IER_TMEIE );  // disable the interrupt register
         can_sent_flag1 = true;
     }
 }
+
 
 /**
  * @brief  ...
@@ -893,13 +1063,14 @@ void HW_CAN_CH1_TX_IRQ_HANDLER( void )
  */
 void HW_CAN_CH1_RX_IRQ_HANDLER( void )
 {
-    uint8_t packet[1][CAN_PACKET_SIZE];
+    CAN_Packet_T packet;
 
-    if ( HW_CAN_Receive( &hcan1, packet[0] ) == 0 )
+    if ( HW_CAN_Receive( &hcan1, &packet ) == 0 )
     {
-        HW_CAN_Rx_Buffer_Write1( packet, 1 );
+        HW_CAN_Rx_Buffer_Write1( &packet, 1 );
     }
 }
+
 
 /**
  * @brief  ...
@@ -910,19 +1081,21 @@ void HW_CAN_CH1_RX_IRQ_HANDLER( void )
  */
 void HW_CAN_CH2_TX_IRQ_HANDLER( void )
 {
-    hcan2.Instance->TSR |= CAN_TSR_RQCP0;
-    uint8_t packet[CAN_PACKET_SIZE];
+    CAN_Packet_T packet;
 
-    if ( HW_CAN_Tx_Buffer_Pop2( packet ) == 0 )
+    hcan2.Instance->TSR |= CAN_TSR_RQCP0;
+
+    if ( HW_CAN_Tx_Buffer_Pop2( &packet ) == 0 )
     {
-        HW_CAN_Transmit( &hcan2, packet );
+        HW_CAN_Transmit(
+            &hcan2,
+            packet.data,
+            packet.id,
+            CAN_PACKET_SIZE );
     }
     else
     {
-        // No more packets to send.
-        // Disable TX mailbox empty interrupt.
-        CLEAR_BIT( hcan2.Instance->IER, CAN_IER_TMEIE );
-        // all can messages that were in the buffer have been sent
+        CLEAR_BIT( CAN2->IER, CAN_IER_TMEIE );
         can_sent_flag2 = true;
     }
 }
@@ -936,10 +1109,10 @@ void HW_CAN_CH2_TX_IRQ_HANDLER( void )
  */
 void HW_CAN_CH2_RX_IRQ_HANDLER( void )
 {
-    uint8_t packet[1][CAN_PACKET_SIZE];
+    CAN_Packet_T packet;
 
-    if ( HW_CAN_Receive( &hcan2, packet[0] ) == 0 )
+    if ( HW_CAN_Receive( &hcan2, &packet ) == 0 )
     {
-        HW_CAN_Rx_Buffer_Write2( packet, 1 );
+        HW_CAN_Rx_Buffer_Write2( &packet, 1 );
     }
 }
