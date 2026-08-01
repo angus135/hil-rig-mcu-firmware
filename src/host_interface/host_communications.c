@@ -71,7 +71,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
 {
     ( void )task_parameters;
 
-    if ( HW_USB_Init() )
+    if ( !HW_USB_Init() )
     {
         Error_Handler();
     }
