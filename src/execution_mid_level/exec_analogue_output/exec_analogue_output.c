@@ -17,6 +17,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <math.h>
+#include <stddef.h>
 
 #include "exec_analogue_output.h"
 #include "hw_spi.h"
@@ -70,9 +72,13 @@ static bool s_EXEC_ANALOGUE_OUTPUT_Configured = false;
  */
 
 static inline uint8_t EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( uint8_t register_address );
-static inline bool EXEC_ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, uint16_t data_word );
-static uint16_t    EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_v );
-static bool        EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref );
+static inline void
+EXEC_ANALOGUE_OUTPUT_Prepare_Register_Frame( uint8_t register_address, uint16_t data_word,
+                                             AnalogueOutputPreparedFrame_T* prepared_frame );
+static inline bool
+EXEC_ANALOGUE_OUTPUT_Send_Prepared_Frame( const AnalogueOutputPreparedFrame_T* prepared_frame );
+static uint16_t EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_v );
+static bool     EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -88,7 +94,9 @@ static inline uint8_t EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( uint8_t register_a
     return ( uint8_t )( ( register_address & 0x1FU ) << 3U );
 }
 
-static inline bool EXEC_ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, uint16_t data_word )
+static inline void
+EXEC_ANALOGUE_OUTPUT_Prepare_Register_Frame( uint8_t register_address, uint16_t data_word,
+                                             AnalogueOutputPreparedFrame_T* prepared_frame )
 {
     /* Frame layout sent to the DAC over SPI:
      *   byte 0: command byte (register address packed into bits [7:3])
@@ -98,22 +106,22 @@ static inline bool EXEC_ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, ui
      * Data is split into two bytes explicitly to make the SPI payload clear
      * and to avoid endianness assumptions.
      */
-    uint8_t frame[3] = {
-        EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( register_address ),
-        ( uint8_t )( ( data_word >> 8U ) & 0xFFU ),
-        ( uint8_t )( data_word & 0xFFU ),
-    };
+    prepared_frame->bytes[0] = EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( register_address );
+    prepared_frame->bytes[1] = ( uint8_t )( ( data_word >> 8U ) & 0xFFU );
+    prepared_frame->bytes[2] = ( uint8_t )( data_word & 0xFFU );
+}
 
+static inline bool
+EXEC_ANALOGUE_OUTPUT_Send_Prepared_Frame( const AnalogueOutputPreparedFrame_T* prepared_frame )
+{
     /* Queue the 3-byte frame into the SPI driver's TX buffer for the
      * analogue output SPI channel. The hardware driver returns true if the
      * buffer was loaded successfully.
      */
-    return HW_SPI_Load_Tx_Buffer( ANALOGUE_OUTPUT_SPI_CHANNEL, frame, sizeof( frame ) );
+    return HW_SPI_Load_Tx_Buffer( ANALOGUE_OUTPUT_SPI_CHANNEL, prepared_frame->bytes,
+                                  sizeof( *prepared_frame ) );
 }
 
-// TODO(DEV-80): NaN bypasses these comparisons and can reach the float-to-uint16_t conversion.
-// Suggested resolution: validate finite values in the configuration-time preparation API and
-// define whether out-of-range voltages are rejected or deliberately saturated.
 static uint16_t EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_v )
 {
     float clamped_voltage_v = input_voltage_v;
@@ -145,13 +153,6 @@ static uint16_t EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_
 
 static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
 {
-    /* Allocate a contiguous buffer large enough to hold all 3-byte frames
-     * we'll send: 3 control frames (VREF/Gain/Power) + one frame per DAC
-     * channel. `frame_index_bytes` tracks the next free byte offset.
-     */
-    uint8_t  frame_bytes[3U * ( 3U + ANALOGUE_OUTPUT_DAC_CHANNEL_COUNT )] = { 0 };
-    uint32_t frame_index_bytes                                            = 0U;
-
     // TODO(DEV-80): The DAC powers up at 12-bit mid-scale with channels in normal operation, so
     // this order may drive channels 0-5 before they are zeroed. Verify against the schematic; the
     // safe order is likely power-down all, set VREF/gain, preload zeros, then enable channels 0-5.
@@ -194,27 +195,19 @@ static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
     for ( uint32_t index = 0U; index < ( uint32_t )( sizeof( frames ) / sizeof( frames[0] ) );
           index++ )
     {
-        /* Pack command and data bytes for this frame into the local buffer
-         * at the current byte index. The command byte encodes the register
-         * address; the 16-bit data_word is split into MSB/LSB bytes.
-         */
-        frame_bytes[frame_index_bytes] =
-            EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( frames[index].register_address );
-        frame_bytes[frame_index_bytes + 1U] =
-            ( uint8_t )( ( frames[index].data_word >> 8U ) & 0xFFU );
-        frame_bytes[frame_index_bytes + 2U] = ( uint8_t )( frames[index].data_word & 0xFFU );
+        AnalogueOutputPreparedFrame_T prepared_frame;
+
+        EXEC_ANALOGUE_OUTPUT_Prepare_Register_Frame( frames[index].register_address,
+                                                     frames[index].data_word, &prepared_frame );
 
         /* Load this 3-byte frame into the SPI driver's TX buffer. The SPI
          * driver manages its own queue; a false return indicates the frame
          * could not be queued (e.g. buffer full) and we must abort.
          */
-        if ( !HW_SPI_Load_Tx_Buffer( ANALOGUE_OUTPUT_SPI_CHANNEL, &frame_bytes[frame_index_bytes],
-                                     3U ) )
+        if ( !EXEC_ANALOGUE_OUTPUT_Send_Prepared_Frame( &prepared_frame ) )
         {
             return false;
         }
-
-        frame_index_bytes += 3U;
     }
 
     /* All frames queued; trigger the SPI peripheral to start the
@@ -320,6 +313,36 @@ bool EXEC_ANALOG_OUTPUT_Is_Configured( void )
     return s_EXEC_ANALOGUE_OUTPUT_Configured;
 }
 
+bool EXEC_ANALOG_OUTPUT_Prepare_Frame( uint8_t channel, float input_voltage_v,
+                                       AnalogueOutputPreparedFrame_T* prepared_frame )
+{
+    AnalogueOutputPreparedFrame_T temporary_frame;
+    uint16_t                      count;
+
+    if ( prepared_frame == NULL )
+    {
+        return false;
+    }
+
+    if ( channel >= EXEC_ANALOGUE_OUTPUT_CONFIGURED_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    if ( !isfinite( input_voltage_v ) )
+    {
+        return false;
+    }
+
+    count = EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( input_voltage_v );
+
+    EXEC_ANALOGUE_OUTPUT_Prepare_Register_Frame(
+        ( uint8_t )( ANALOGUE_OUTPUT_REG_DAC_BASE + channel ), count, &temporary_frame );
+    *prepared_frame = temporary_frame;
+
+    return true;
+}
+
 /**
  * @brief Write a voltage to a single DAC output channel.
  *
@@ -352,29 +375,21 @@ bool EXEC_ANALOG_OUTPUT_Is_Configured( void )
  *     false if the module is not initialized, the channel is invalid (>= 6),
  *     or SPI transmission failed.
  */
-// TODO(DEV-80): This floating-point API validates, clamps, scales, and constructs a DAC frame in
-// the deterministic execution hot path. Add a public configuration/upload-time preparation API
-// that converts channel and voltage to a validated three-byte frame stored with the flash test
-// instruction, then pass it to a minimal runtime queue API; consider a fixed-size frame type that
-// makes byte count and order explicit rather than prescribing a raw pointer.
 bool EXEC_ANALOG_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v )
 {
-    uint16_t count = 0U;
+    AnalogueOutputPreparedFrame_T prepared_frame;
 
     if ( !s_EXEC_ANALOGUE_OUTPUT_Configured )
     {
         return false;
     }
 
-    if ( channel >= EXEC_ANALOGUE_OUTPUT_CONFIGURED_CHANNEL_COUNT )
+    if ( !EXEC_ANALOG_OUTPUT_Prepare_Frame( channel, input_voltage_v, &prepared_frame ) )
     {
         return false;
     }
 
-    count = EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( input_voltage_v );
-
-    if ( !EXEC_ANALOGUE_OUTPUT_Send_Frame( ( uint8_t )( ANALOGUE_OUTPUT_REG_DAC_BASE + channel ),
-                                           count ) )
+    if ( !EXEC_ANALOGUE_OUTPUT_Send_Prepared_Frame( &prepared_frame ) )
     {
         // TODO(DEV-80): A full SPI queue skips this update and leaves the previous physical output
         // active. The execution manager should latch a test fault or stop safely; pre-run

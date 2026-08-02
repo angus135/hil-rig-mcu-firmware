@@ -27,6 +27,40 @@ extern "C"
 #include <stdbool.h>
 
 /**-----------------------------------------------------------------------------
+ *  Public Defines / Macros
+ *------------------------------------------------------------------------------
+ */
+
+/** @brief Number of bytes in one DAC write frame on the SPI wire. */
+#define EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES ( 3U )
+
+/**-----------------------------------------------------------------------------
+ *  Public Typedefs / Enums / Structures
+ *------------------------------------------------------------------------------
+ */
+
+/**
+ * @brief Exact SPI wire representation of one prepared DAC write.
+ *
+ * This frame is created during configuration or test preparation. Its bytes
+ * are already in DAC wire order and may be stored directly with a future
+ * flash-backed execution instruction without further channel, register, or
+ * host-endian data packing.
+ */
+typedef struct AnalogueOutputPreparedFrame_T
+{
+    uint8_t bytes[EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES];
+} AnalogueOutputPreparedFrame_T;
+
+#if defined( __cplusplus )
+static_assert( sizeof( AnalogueOutputPreparedFrame_T ) == EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES,
+               "A prepared analogue-output frame must contain exactly three wire bytes" );
+#else
+_Static_assert( sizeof( AnalogueOutputPreparedFrame_T ) == EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES,
+                "A prepared analogue-output frame must contain exactly three wire bytes" );
+#endif
+
+/**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
@@ -78,6 +112,35 @@ bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void );
 bool EXEC_ANALOG_OUTPUT_Is_Configured( void );
 
 /**
+ * @brief Prepare one DAC frame outside the execution hot path.
+ *
+ * Validates channels 0-5 and rejects non-finite voltage requests. Finite
+ * voltages are clamped to 0-20 V and mapped to the existing 12-bit DAC count
+ * using the established round-to-nearest calculation. The resulting command,
+ * data MSB, and data LSB bytes are ready for direct SPI submission.
+ *
+ * This preparation-time API is the intended extension point for future
+ * physical calibration. Such calibration must not change the prepared-frame
+ * format consumed by the execution hot path.
+ *
+ * @param[in] channel
+ *     DAC output channel number. Only channels 0-5 are supported.
+ *
+ * @param[in] input_voltage_v
+ *     Requested output voltage. Finite values are clamped to 0-20 V.
+ *
+ * @param[out] prepared_frame
+ *     Destination for the exact three-byte DAC wire frame. It is not modified
+ *     when validation fails.
+ *
+ * @return true if the frame was prepared successfully.
+ * @return false if the destination is NULL, the channel is unsupported, or
+ *     the requested voltage is NaN or infinity.
+ */
+bool EXEC_ANALOG_OUTPUT_Prepare_Frame( uint8_t channel, float input_voltage_v,
+                                       AnalogueOutputPreparedFrame_T* prepared_frame );
+
+/**
  * @brief Write a voltage to a single DAC output channel.
  *
  * Accepts a voltage in the range 0V to 20V, clamps it to the valid input range,
@@ -97,6 +160,9 @@ bool EXEC_ANALOG_OUTPUT_Is_Configured( void );
  *
  * The module must be initialized via EXEC_ANALOGUE_OUTPUT_Config() before this
  * function is called. Writing to an uninitialized module returns false.
+ * This compatibility API is intended for console commands, manual testing,
+ * and other non-hot-path use. The future execution manager should submit
+ * prepared data directly.
  *
  * @param channel
  *     The DAC output channel number (0-5 for active channels, 6-7 disabled).
