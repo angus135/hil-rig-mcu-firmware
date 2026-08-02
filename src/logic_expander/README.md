@@ -45,11 +45,21 @@ because they use the same mutex.
 byte actually changes. `LOGIC_EXPANDER_Send_Control_Bits()` submits OLATA/B only
 for dirty active devices.
 
-After a device's complete write is accepted, its dirty bit is cleared. If the
-queue fills partway through a pass, accepted devices remain clean and the
-current and remaining devices stay dirty, so a later call resumes without
-duplicating accepted messages. A successful return means all dirty writes were
-accepted, not that they have physically completed.
+After a device's complete write is accepted, its dirty bit is cleared and a
+pending bit tracks it until the I2C queue physically completes. The submitted
+OLATA/OLATB values are also retained separately from the live shadow state. If
+the queue fills partway through a pass, accepted devices remain pending and the
+current and remaining devices stay dirty, so a later explicit send resumes
+without duplicating accepted messages.
+
+When physical completion succeeds, `LOGIC_EXPANDER_Process()` clears the pending
+devices. If completion reports an asynchronous error, only pending output writes
+move to retry state. A later background tick resubmits their retained snapshots;
+`BUSY` leaves the retry scheduled for another tick. A newer shadow change remains
+dirty and is not sent by this automatic path. If a newer value is explicitly
+accepted while an older write is pending, its snapshot supersedes the older one
+for any later retry. A successful send return therefore means all dirty writes
+were accepted, not that they have physically completed.
 
 ## Typical flow
 
@@ -57,5 +67,5 @@ accepted, not that they have physically completed.
 2. Call `LOGIC_EXPANDER_Process()` on subsequent ticks until it returns `OK`.
 3. Load output changes with `LOGIC_EXPANDER_Load_Control_Bit()`.
 4. Call `LOGIC_EXPANDER_Send_Control_Bits()`; retry later if it returns `BUSY`.
-5. Use the low-level completion/result APIs, or the module process path, when
-   physical completion matters.
+5. Continue calling `LOGIC_EXPANDER_Process()` so completion is observed and
+   transient asynchronous failures are retried.
