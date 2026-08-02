@@ -4,11 +4,11 @@
  *  Created:    29-May-2026
  *
  *  Description:
- *      <Short description of the module, what it exposes, and how it should be used>
- *
- *  Notes:
- *      <Public assumptions, required initialisation order, dependencies, etc.>
+ *      Public command handler for CAN console diagnostics.
  ******************************************************************************/
+
+#ifndef CONSOLE_CAN_H
+#define CONSOLE_CAN_H
 
 #ifdef __cplusplus
 extern "C"
@@ -34,10 +34,12 @@ extern "C"
  */
 
 /**
- * @brief Handles UART-related console commands.
+ * @brief Handles CAN diagnostic console commands.
  *
  * Supported command namespace:
- *   uart_loopback ...
+ *   can tx <channel> <id> <payload> [<id> <payload> ...]
+ *   can rx <channel>
+ *   can config <can1_bank> <can2_bank> <filter_id> <filter_mask>
  *
  * @param argc Number of parsed command arguments.
  * @param argv Parsed command argument array.
@@ -54,3 +56,5 @@ void CONSOLE_CAN_Command_Handler( uint16_t argc, char* argv[] );
 #ifdef __cplusplus
 }
 #endif
+
+#endif /* CONSOLE_CAN_H */
