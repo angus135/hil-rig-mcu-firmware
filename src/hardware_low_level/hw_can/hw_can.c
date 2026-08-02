@@ -70,6 +70,8 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
  */
 static volatile bool can_sent_flag1 = false;
 static volatile bool can_sent_flag2 = false;
+static volatile bool can_tx_active1 = false;
+static volatile bool can_tx_active2 = false;
 
 /* Buffer for rx channel 1 */
 static CAN_Packet_T      can_rx_buffer1[RECEIVE_BUFFER_WIDTH];
@@ -105,8 +107,16 @@ void HW_CAN_CH1_RX_IRQ_HANDLER( void );
 void HW_CAN_CH2_TX_IRQ_HANDLER( void );
 void HW_CAN_CH2_RX_IRQ_HANDLER( void );
 
-static void HW_CAN_Tx_Complete_Callback( CAN_HandleTypeDef* hcan );
-static bool HW_CAN_Packet_Is_Valid( const CAN_Packet_T* packet );
+static void            HW_CAN_Tx_Complete_Callback( CAN_HandleTypeDef* hcan );
+static bool            HW_CAN_Packet_Is_Valid( const CAN_Packet_T* packet );
+static HW_CAN_Result_T HW_CAN_Tx_Service( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[],
+                                          volatile uint16_t* w_p, volatile uint16_t* r_p,
+                                          uint16_t buffer_width, volatile bool* active,
+                                          volatile bool* completed );
+static HW_CAN_Result_T HW_CAN_Tx_Trigger( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[],
+                                          volatile uint16_t* w_p, volatile uint16_t* r_p,
+                                          uint16_t buffer_width, volatile bool* active,
+                                          volatile bool* completed );
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -270,14 +280,15 @@ void HW_CAN_Buffer_consume( volatile uint16_t* pointer, uint16_t update, uint16_
  *
  * Uses HAL to transmit message over CAN channel
  */
-int HW_CAN_Transmit( CAN_HandleTypeDef* hcan, uint8_t* txData, uint16_t id, uint8_t size )
+HW_CAN_Result_T HW_CAN_Transmit( CAN_HandleTypeDef* hcan, uint8_t* txData, uint16_t id,
+                                 uint8_t size )
 {
     CAN_TypeDef* can     = hcan->Instance;
     uint8_t      mailbox = 0;
     if ( id > CAN_STANDARD_ID_MAX || size > CAN_PACKET_SIZE )
     {
         // The address is larger than 11 bits or the size is larger than 8 bytes
-        return 1;
+        return HW_CAN_RESULT_ERROR;
     }
 
     // Check mailbox available
@@ -288,7 +299,7 @@ int HW_CAN_Transmit( CAN_HandleTypeDef* hcan, uint8_t* txData, uint16_t id, uint
     else if ( can->TSR & CAN_TSR_TME2 )
         mailbox = 2;
     else
-        return 1;
+        return HW_CAN_RESULT_BUSY;
 
     // Standard ID is 11 bits and has to be shifted to the top 11 bits of the register
     can->sTxMailBox[mailbox].TIR = ( id << 21 );
@@ -314,7 +325,7 @@ int HW_CAN_Transmit( CAN_HandleTypeDef* hcan, uint8_t* txData, uint16_t id, uint
 
     // Request transmission
     can->sTxMailBox[mailbox].TIR |= CAN_TI0R_TXRQ;
-    return 0;
+    return HW_CAN_RESULT_OK;
 }
 
 /**
@@ -813,7 +824,7 @@ bool HW_CAN_Channl2_sent()
  *
  * Uses HAL to transmit message over CAN channel 1
  */
-int HW_CAN_Transmit1( uint8_t* txData, uint16_t id, uint8_t dlc )
+HW_CAN_Result_T HW_CAN_Transmit1( uint8_t* txData, uint16_t id, uint8_t dlc )
 {
     return HW_CAN_Transmit( &hcan1, txData, id, dlc );
 }
@@ -837,7 +848,7 @@ int HW_CAN_Recieve1( CAN_Packet_T* rxPacket )
  *
  * Uses HAL to transmit message over CAN channel 2
  */
-int HW_CAN_Transmit2( uint8_t* txData, uint16_t id, uint8_t dlc )
+HW_CAN_Result_T HW_CAN_Transmit2( uint8_t* txData, uint16_t id, uint8_t dlc )
 {
     return HW_CAN_Transmit( &hcan2, txData, id, dlc );
 }
@@ -863,22 +874,29 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t HW_CAN_Tx_Buffer_Write1( CAN_Packet_T source[], uint16_t length )
+HW_CAN_Result_T HW_CAN_Tx_Buffer_Write1( CAN_Packet_T source[], uint16_t length )
 {
+    if ( can_tx_active1 )
+    {
+        return HW_CAN_RESULT_BUSY;
+    }
     if ( length > 0U && source == NULL )
     {
-        return 1;
+        return HW_CAN_RESULT_ERROR;
     }
     for ( uint16_t i = 0; i < length; i++ )
     {
         if ( !HW_CAN_Packet_Is_Valid( &source[i] ) )
         {
-            return 1;
+            return HW_CAN_RESULT_ERROR;
         }
     }
 
     return HW_CAN_Buffer_Write( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
-                                source, length );
+                                source, length )
+                   == 0
+               ? HW_CAN_RESULT_OK
+               : HW_CAN_RESULT_ERROR;
 }
 
 /**
@@ -905,22 +923,29 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t HW_CAN_Tx_Buffer_Write2( CAN_Packet_T source[], uint16_t length )
+HW_CAN_Result_T HW_CAN_Tx_Buffer_Write2( CAN_Packet_T source[], uint16_t length )
 {
+    if ( can_tx_active2 )
+    {
+        return HW_CAN_RESULT_BUSY;
+    }
     if ( length > 0U && source == NULL )
     {
-        return 1;
+        return HW_CAN_RESULT_ERROR;
     }
     for ( uint16_t i = 0; i < length; i++ )
     {
         if ( !HW_CAN_Packet_Is_Valid( &source[i] ) )
         {
-            return 1;
+            return HW_CAN_RESULT_ERROR;
         }
     }
 
     return HW_CAN_Buffer_Write( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
-                                source, length );
+                                source, length )
+                   == 0
+               ? HW_CAN_RESULT_OK
+               : HW_CAN_RESULT_ERROR;
 }
 
 /**
@@ -1018,10 +1043,10 @@ uint16_t HW_CAN_Tx_Buffer_Read2( CAN_Packet_T dest[] )
  * Used to enable the sending of messages through CAN channel 1
  * Once the write buffer is empty the ISR will disable again
  */
-void HW_CAN_Tx_Trigger1( void )
+HW_CAN_Result_T HW_CAN_Tx_Trigger1( void )
 {
-    SET_BIT( CAN1->IER, CAN_IER_TMEIE );
-    HW_CAN_CH1_TX_IRQ_HANDLER();  // ISR doesn't trigger automatically
+    return HW_CAN_Tx_Trigger( &hcan1, can_tx_buffer1, &can_tx_wp1, &can_tx_rp1,
+                              TRANSMIT_BUFFER_WIDTH, &can_tx_active1, &can_sent_flag1 );
 }
 
 /**
@@ -1030,10 +1055,10 @@ void HW_CAN_Tx_Trigger1( void )
  * Used to enable the sending of messages through CAN channel 2
  * Once the write buffer is empty the ISR will disable again
  */
-void HW_CAN_Tx_Trigger2( void )
+HW_CAN_Result_T HW_CAN_Tx_Trigger2( void )
 {
-    SET_BIT( CAN2->IER, CAN_IER_TMEIE );
-    HW_CAN_CH2_TX_IRQ_HANDLER();  // ISR doesn't trigger automatically
+    return HW_CAN_Tx_Trigger( &hcan2, can_tx_buffer2, &can_tx_wp2, &can_tx_rp2,
+                              TRANSMIT_BUFFER_WIDTH, &can_tx_active2, &can_sent_flag2 );
 }
 
 /**
@@ -1045,17 +1070,8 @@ void HW_CAN_Tx_Trigger2( void )
  */
 void HW_CAN_CH1_TX_IRQ_HANDLER( void )
 {
-    CAN_Packet_T packet;
-
-    if ( HW_CAN_Tx_Buffer_Pop1( &packet ) == 0 )
-    {
-        HW_CAN_Transmit( &hcan1, packet.data, packet.id, packet.dlc );
-    }
-    else  // We are at the end of the packet
-    {
-        CLEAR_BIT( CAN1->IER, CAN_IER_TMEIE );  // disable the interrupt register
-        can_sent_flag1 = true;
-    }
+    ( void )HW_CAN_Tx_Service( &hcan1, can_tx_buffer1, &can_tx_wp1, &can_tx_rp1,
+                               TRANSMIT_BUFFER_WIDTH, &can_tx_active1, &can_sent_flag1 );
 }
 
 /**
@@ -1084,17 +1100,8 @@ void HW_CAN_CH1_RX_IRQ_HANDLER( void )
  */
 void HW_CAN_CH2_TX_IRQ_HANDLER( void )
 {
-    CAN_Packet_T packet;
-
-    if ( HW_CAN_Tx_Buffer_Pop2( &packet ) == 0 )
-    {
-        HW_CAN_Transmit( &hcan2, packet.data, packet.id, packet.dlc );
-    }
-    else
-    {
-        CLEAR_BIT( CAN2->IER, CAN_IER_TMEIE );
-        can_sent_flag2 = true;
-    }
+    ( void )HW_CAN_Tx_Service( &hcan2, can_tx_buffer2, &can_tx_wp2, &can_tx_rp2,
+                               TRANSMIT_BUFFER_WIDTH, &can_tx_active2, &can_sent_flag2 );
 }
 
 /**
@@ -1112,6 +1119,76 @@ void HW_CAN_CH2_RX_IRQ_HANDLER( void )
     {
         HW_CAN_Rx_Buffer_Write2( &packet, 1 );
     }
+}
+
+/**
+ * @brief Services one step of an active buffered transmission.
+ *
+ * The next packet is consumed only after it has been loaded into a hardware
+ * mailbox. A busy mailbox leaves the packet queued for a later completion
+ * interrupt. Completion is set only when an interrupt services an empty queue
+ * after the final packet was loaded.
+ */
+static HW_CAN_Result_T HW_CAN_Tx_Service( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[],
+                                          volatile uint16_t* w_p, volatile uint16_t* r_p,
+                                          uint16_t buffer_width, volatile bool* active,
+                                          volatile bool* completed )
+{
+    if ( !*active )
+    {
+        CLEAR_BIT( hcan->Instance->IER, CAN_IER_TMEIE );
+        return HW_CAN_RESULT_ERROR;
+    }
+
+    if ( *w_p == *r_p )
+    {
+        CLEAR_BIT( hcan->Instance->IER, CAN_IER_TMEIE );
+        *active    = false;
+        *completed = true;
+        return HW_CAN_RESULT_OK;
+    }
+
+    CAN_Packet_T    packet = buffer[*r_p];
+    HW_CAN_Result_T result = HW_CAN_Transmit( hcan, packet.data, packet.id, packet.dlc );
+
+    if ( result == HW_CAN_RESULT_OK )
+    {
+        HW_CAN_Buffer_consume( r_p, 1, buffer_width );
+    }
+    else if ( result == HW_CAN_RESULT_ERROR )
+    {
+        CLEAR_BIT( hcan->Instance->IER, CAN_IER_TMEIE );
+        *active = false;
+    }
+
+    return result;
+}
+
+/**
+ * @brief Starts a buffered CAN transmission if the channel is idle and non-empty.
+ */
+static HW_CAN_Result_T HW_CAN_Tx_Trigger( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[],
+                                          volatile uint16_t* w_p, volatile uint16_t* r_p,
+                                          uint16_t buffer_width, volatile bool* active,
+                                          volatile bool* completed )
+{
+    if ( *active )
+    {
+        return HW_CAN_RESULT_BUSY;
+    }
+    if ( *w_p == *r_p )
+    {
+        return HW_CAN_RESULT_EMPTY;
+    }
+
+    *active    = true;
+    *completed = false;
+    SET_BIT( hcan->Instance->IER, CAN_IER_TMEIE );
+
+    HW_CAN_Result_T result =
+        HW_CAN_Tx_Service( hcan, buffer, w_p, r_p, buffer_width, active, completed );
+
+    return result == HW_CAN_RESULT_ERROR ? HW_CAN_RESULT_ERROR : HW_CAN_RESULT_OK;
 }
 
 /**
