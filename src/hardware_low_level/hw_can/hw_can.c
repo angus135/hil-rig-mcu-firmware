@@ -48,6 +48,13 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
 #define HW_CAN_CH1_RX_IRQ_HANDLER CAN1_RX0_IRQHandler
 #define HW_CAN_CH2_TX_IRQ_HANDLER CAN2_TX_IRQHandler
 #define HW_CAN_CH2_RX_IRQ_HANDLER CAN2_RX0_IRQHandler
+#define HW_CAN_CH1_ERROR_IRQ_HANDLER CAN1_SCE_IRQHandler
+#define HW_CAN_CH2_ERROR_IRQ_HANDLER CAN2_SCE_IRQHandler
+
+#define HW_CAN_RX_INTERRUPT_MASK ( CAN_IER_FMPIE0 | CAN_IER_FFIE0 | CAN_IER_FOVIE0 )
+#define HW_CAN_ERROR_INTERRUPT_MASK                                                                \
+    ( CAN_IER_EWGIE | CAN_IER_EPVIE | CAN_IER_BOFIE | CAN_IER_LECIE | CAN_IER_ERRIE )
+#define HW_CAN_TX_MAILBOX_EMPTY_MASK ( CAN_TSR_TME0 | CAN_TSR_TME1 | CAN_TSR_TME2 )
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -74,14 +81,16 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
  * If we think its absolutely neccesary to be able to check the status of each message
  * then I have an implementation in mind.
  */
-static volatile bool     can_sent_flag1          = false;
-static volatile bool     can_sent_flag2          = false;
-static volatile bool     can_tx_active1          = false;
-static volatile bool     can_tx_active2          = false;
-static volatile uint32_t can_rx_dropped_count1   = 0;
-static volatile uint32_t can_rx_dropped_count2   = 0;
-static volatile uint32_t can_tx_pending_mailbox1 = 0;
-static volatile uint32_t can_tx_pending_mailbox2 = 0;
+static volatile bool               can_sent_flag1          = false;
+static volatile bool               can_sent_flag2          = false;
+static volatile bool               can_tx_active1          = false;
+static volatile bool               can_tx_active2          = false;
+static volatile uint32_t           can_rx_dropped_count1   = 0;
+static volatile uint32_t           can_rx_dropped_count2   = 0;
+static volatile uint32_t           can_tx_pending_mailbox1 = 0;
+static volatile uint32_t           can_tx_pending_mailbox2 = 0;
+static volatile HW_CAN_Tx_Status_T can_tx_status1          = HW_CAN_TX_STATUS_IDLE;
+static volatile HW_CAN_Tx_Status_T can_tx_status2          = HW_CAN_TX_STATUS_IDLE;
 
 /* Buffer for rx channel 1 */
 static CAN_Packet_T      can_rx_buffer1[RECEIVE_BUFFER_WIDTH];
@@ -116,6 +125,8 @@ void HW_CAN_CH1_TX_IRQ_HANDLER( void );
 void HW_CAN_CH1_RX_IRQ_HANDLER( void );
 void HW_CAN_CH2_TX_IRQ_HANDLER( void );
 void HW_CAN_CH2_RX_IRQ_HANDLER( void );
+void HW_CAN_CH1_ERROR_IRQ_HANDLER( void );
+void HW_CAN_CH2_ERROR_IRQ_HANDLER( void );
 
 static bool            HW_CAN_Packet_Is_Valid( const CAN_Packet_T* packet );
 static HW_CAN_Result_T HW_CAN_Transmit_To_Mailbox( CAN_HandleTypeDef* hcan, uint8_t* txData,
@@ -124,24 +135,36 @@ static HW_CAN_Result_T HW_CAN_Transmit_To_Mailbox( CAN_HandleTypeDef* hcan, uint
 static HW_CAN_Result_T HW_CAN_Tx_Service( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[],
                                           volatile uint16_t* w_p, volatile uint16_t* r_p,
                                           uint16_t buffer_width, volatile bool* active,
-                                          volatile bool*     completed,
-                                          volatile uint32_t* pending_mailbox );
+                                          volatile bool*               completed,
+                                          volatile uint32_t*           pending_mailbox,
+                                          volatile HW_CAN_Tx_Status_T* status );
 static HW_CAN_Result_T HW_CAN_Tx_Trigger( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[],
                                           volatile uint16_t* w_p, volatile uint16_t* r_p,
                                           uint16_t buffer_width, volatile bool* active,
-                                          volatile bool*     completed,
-                                          volatile uint32_t* pending_mailbox );
+                                          volatile bool*               completed,
+                                          volatile uint32_t*           pending_mailbox,
+                                          volatile HW_CAN_Tx_Status_T* status );
 static void HW_CAN_Tx_IRQ( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[], volatile uint16_t* w_p,
                            volatile uint16_t* r_p, uint16_t buffer_width, volatile bool* active,
-                           volatile bool* completed, volatile uint32_t* pending_mailbox );
+                           volatile bool* completed, volatile uint32_t* pending_mailbox,
+                           volatile HW_CAN_Tx_Status_T* status );
 static void HW_CAN_Rx_IRQ( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[], volatile uint16_t* w_p,
                            volatile uint16_t* r_p, volatile uint32_t* dropped_count );
+static void HW_CAN_Error_IRQ( CAN_HandleTypeDef* hcan, volatile bool* active,
+                              volatile bool* completed, volatile uint32_t* pending_mailbox,
+                              volatile HW_CAN_Tx_Status_T* status );
 static void HW_CAN_Reset_Channel( CAN_TypeDef* can, IRQn_Type tx_irq, IRQn_Type rx_irq,
-                                  volatile uint16_t* tx_wp, volatile uint16_t* tx_rp,
-                                  volatile uint16_t* rx_wp, volatile uint16_t* rx_rp,
-                                  volatile bool* active, volatile bool* completed,
-                                  volatile uint32_t* dropped_count,
-                                  volatile uint32_t* pending_mailbox );
+                                  IRQn_Type error_irq, volatile uint16_t* tx_wp,
+                                  volatile uint16_t* tx_rp, volatile uint16_t* rx_wp,
+                                  volatile uint16_t* rx_rp, volatile bool* active,
+                                  volatile bool* completed, volatile uint32_t* dropped_count,
+                                  volatile uint32_t*           pending_mailbox,
+                                  volatile HW_CAN_Tx_Status_T* status );
+static HW_CAN_Result_T HW_CAN_Recover( CAN_HandleTypeDef* hcan, IRQn_Type tx_irq, IRQn_Type rx_irq,
+                                       IRQn_Type error_irq, volatile uint16_t* tx_wp,
+                                       volatile uint16_t* tx_rp, volatile bool* active,
+                                       volatile bool* completed, volatile uint32_t* pending_mailbox,
+                                       volatile HW_CAN_Tx_Status_T* status );
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -370,6 +393,14 @@ static HW_CAN_Result_T HW_CAN_Transmit_To_Mailbox( CAN_HandleTypeDef* hcan, uint
 
     // Request transmission
     can->sTxMailBox[mailbox].TIR |= CAN_TI0R_TXRQ;
+#ifdef TEST_BUILD
+    static const uint32_t mailbox_empty_flags[3] = {
+        CAN_TSR_TME0,
+        CAN_TSR_TME1,
+        CAN_TSR_TME2,
+    };
+    can->TSR &= ~mailbox_empty_flags[mailbox];
+#endif
     return HW_CAN_RESULT_OK;
 }
 
@@ -385,6 +416,18 @@ static void HW_CAN_Clear_Tx_Request_Complete( CAN_TypeDef* can, uint32_t request
 {
 #ifdef TEST_BUILD
     can->TSR &= ~( request_complete_flag | mailbox_status_flags );
+    if ( request_complete_flag == CAN_TSR_RQCP0 )
+    {
+        CLEAR_BIT( can->sTxMailBox[0].TIR, CAN_TI0R_TXRQ );
+    }
+    else if ( request_complete_flag == CAN_TSR_RQCP1 )
+    {
+        CLEAR_BIT( can->sTxMailBox[1].TIR, CAN_TI0R_TXRQ );
+    }
+    else if ( request_complete_flag == CAN_TSR_RQCP2 )
+    {
+        CLEAR_BIT( can->sTxMailBox[2].TIR, CAN_TI0R_TXRQ );
+    }
 #else
     can->TSR = request_complete_flag;
 #endif
@@ -752,7 +795,7 @@ int HW_CAN_Configure( CAN_HandleTypeDef* hcan, uint32_t bitrate, uint16_t filter
     {
         return 3;
     }
-    SET_BIT( hcan->Instance->IER, CAN_IER_FMPIE0 | CAN_IER_FFIE0 | CAN_IER_FOVIE0 );
+    SET_BIT( hcan->Instance->IER, HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK );
     return 0;
 }
 
@@ -834,6 +877,10 @@ int HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_i
     // __HAL_RCC_CAN1_RELEASE_RESET();
     __HAL_RCC_CAN1_CLK_ENABLE();
     int result = HW_CAN_Configure( &hcan1, bitrate, filter_bank, filter_id, filter_mask );
+    if ( result == 0 )
+    {
+        NVIC_EnableIRQ( CAN1_SCE_IRQn );
+    }
     HW_CAN_Reset1();
     return result;
 }
@@ -871,6 +918,10 @@ int HW_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_i
     // __HAL_RCC_CAN2_RELEASE_RESET();
     __HAL_RCC_CAN2_CLK_ENABLE();
     int result = HW_CAN_Configure( &hcan2, bitrate, filter_bank, filter_id, filter_mask );
+    if ( result == 0 )
+    {
+        NVIC_EnableIRQ( CAN2_SCE_IRQn );
+    }
     HW_CAN_Reset2();
     return result;
 }
@@ -878,17 +929,31 @@ int HW_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_i
 /** Reset channel 1 software state while its CAN interrupts are masked. */
 void HW_CAN_Reset1( void )
 {
-    HW_CAN_Reset_Channel( CAN1, CAN1_TX_IRQn, CAN1_RX0_IRQn, &can_tx_wp1, &can_tx_rp1, &can_rx_wp1,
-                          &can_rx_rp1, &can_tx_active1, &can_sent_flag1, &can_rx_dropped_count1,
-                          &can_tx_pending_mailbox1 );
+    HW_CAN_Reset_Channel( CAN1, CAN1_TX_IRQn, CAN1_RX0_IRQn, CAN1_SCE_IRQn, &can_tx_wp1,
+                          &can_tx_rp1, &can_rx_wp1, &can_rx_rp1, &can_tx_active1, &can_sent_flag1,
+                          &can_rx_dropped_count1, &can_tx_pending_mailbox1, &can_tx_status1 );
 }
 
 /** Reset channel 2 software state while its CAN interrupts are masked. */
 void HW_CAN_Reset2( void )
 {
-    HW_CAN_Reset_Channel( CAN2, CAN2_TX_IRQn, CAN2_RX0_IRQn, &can_tx_wp2, &can_tx_rp2, &can_rx_wp2,
-                          &can_rx_rp2, &can_tx_active2, &can_sent_flag2, &can_rx_dropped_count2,
-                          &can_tx_pending_mailbox2 );
+    HW_CAN_Reset_Channel( CAN2, CAN2_TX_IRQn, CAN2_RX0_IRQn, CAN2_SCE_IRQn, &can_tx_wp2,
+                          &can_tx_rp2, &can_rx_wp2, &can_rx_rp2, &can_tx_active2, &can_sent_flag2,
+                          &can_rx_dropped_count2, &can_tx_pending_mailbox2, &can_tx_status2 );
+}
+
+HW_CAN_Result_T HW_CAN_Recover1( void )
+{
+    return HW_CAN_Recover( &hcan1, CAN1_TX_IRQn, CAN1_RX0_IRQn, CAN1_SCE_IRQn, &can_tx_wp1,
+                           &can_tx_rp1, &can_tx_active1, &can_sent_flag1, &can_tx_pending_mailbox1,
+                           &can_tx_status1 );
+}
+
+HW_CAN_Result_T HW_CAN_Recover2( void )
+{
+    return HW_CAN_Recover( &hcan2, CAN2_TX_IRQn, CAN2_RX0_IRQn, CAN2_SCE_IRQn, &can_tx_wp2,
+                           &can_tx_rp2, &can_tx_active2, &can_sent_flag2, &can_tx_pending_mailbox2,
+                           &can_tx_status2 );
 }
 
 /**-----------------------------------------------------------------------------
@@ -905,7 +970,7 @@ void HW_CAN_Reset2( void )
  */
 bool HW_CAN_Channl1_sent()
 {
-    return can_sent_flag1;
+    return can_tx_status1 == HW_CAN_TX_STATUS_COMPLETE;
 }
 
 /**
@@ -917,7 +982,17 @@ bool HW_CAN_Channl1_sent()
  */
 bool HW_CAN_Channl2_sent()
 {
-    return can_sent_flag2;
+    return can_tx_status2 == HW_CAN_TX_STATUS_COMPLETE;
+}
+
+HW_CAN_Tx_Status_T HW_CAN_Tx_Status1( void )
+{
+    return can_tx_status1;
+}
+
+HW_CAN_Tx_Status_T HW_CAN_Tx_Status2( void )
+{
+    return can_tx_status2;
 }
 
 /** Return channel 1's sticky software RX dropped-frame count. */
@@ -941,6 +1016,14 @@ uint32_t HW_CAN_Rx_Dropped_Count2( void )
  */
 HW_CAN_Result_T HW_CAN_Transmit1( uint8_t* txData, uint16_t id, uint8_t dlc )
 {
+    if ( can_tx_active1 )
+    {
+        return HW_CAN_RESULT_BUSY;
+    }
+    if ( can_tx_status1 == HW_CAN_TX_STATUS_ERROR )
+    {
+        return HW_CAN_RESULT_ERROR;
+    }
     return HW_CAN_Transmit( &hcan1, txData, id, dlc );
 }
 
@@ -965,6 +1048,14 @@ int HW_CAN_Recieve1( CAN_Packet_T* rxPacket )
  */
 HW_CAN_Result_T HW_CAN_Transmit2( uint8_t* txData, uint16_t id, uint8_t dlc )
 {
+    if ( can_tx_active2 )
+    {
+        return HW_CAN_RESULT_BUSY;
+    }
+    if ( can_tx_status2 == HW_CAN_TX_STATUS_ERROR )
+    {
+        return HW_CAN_RESULT_ERROR;
+    }
     return HW_CAN_Transmit( &hcan2, txData, id, dlc );
 }
 
@@ -1180,7 +1271,7 @@ HW_CAN_Result_T HW_CAN_Tx_Trigger1( void )
 {
     return HW_CAN_Tx_Trigger( &hcan1, can_tx_buffer1, &can_tx_wp1, &can_tx_rp1,
                               TRANSMIT_BUFFER_WIDTH, &can_tx_active1, &can_sent_flag1,
-                              &can_tx_pending_mailbox1 );
+                              &can_tx_pending_mailbox1, &can_tx_status1 );
 }
 
 /**
@@ -1193,7 +1284,7 @@ HW_CAN_Result_T HW_CAN_Tx_Trigger2( void )
 {
     return HW_CAN_Tx_Trigger( &hcan2, can_tx_buffer2, &can_tx_wp2, &can_tx_rp2,
                               TRANSMIT_BUFFER_WIDTH, &can_tx_active2, &can_sent_flag2,
-                              &can_tx_pending_mailbox2 );
+                              &can_tx_pending_mailbox2, &can_tx_status2 );
 }
 
 /**
@@ -1206,7 +1297,7 @@ HW_CAN_Result_T HW_CAN_Tx_Trigger2( void )
 void HW_CAN_CH1_TX_IRQ_HANDLER( void )
 {
     HW_CAN_Tx_IRQ( &hcan1, can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
-                   &can_tx_active1, &can_sent_flag1, &can_tx_pending_mailbox1 );
+                   &can_tx_active1, &can_sent_flag1, &can_tx_pending_mailbox1, &can_tx_status1 );
 }
 
 /**
@@ -1231,7 +1322,7 @@ void HW_CAN_CH1_RX_IRQ_HANDLER( void )
 void HW_CAN_CH2_TX_IRQ_HANDLER( void )
 {
     HW_CAN_Tx_IRQ( &hcan2, can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
-                   &can_tx_active2, &can_sent_flag2, &can_tx_pending_mailbox2 );
+                   &can_tx_active2, &can_sent_flag2, &can_tx_pending_mailbox2, &can_tx_status2 );
 }
 
 /**
@@ -1246,10 +1337,25 @@ void HW_CAN_CH2_RX_IRQ_HANDLER( void )
     HW_CAN_Rx_IRQ( &hcan2, can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, &can_rx_dropped_count2 );
 }
 
+/** Direct CAN1 status/error interrupt vector. */
+void HW_CAN_CH1_ERROR_IRQ_HANDLER( void )
+{
+    HW_CAN_Error_IRQ( &hcan1, &can_tx_active1, &can_sent_flag1, &can_tx_pending_mailbox1,
+                      &can_tx_status1 );
+}
+
+/** Direct CAN2 status/error interrupt vector. */
+void HW_CAN_CH2_ERROR_IRQ_HANDLER( void )
+{
+    HW_CAN_Error_IRQ( &hcan2, &can_tx_active2, &can_sent_flag2, &can_tx_pending_mailbox2,
+                      &can_tx_status2 );
+}
+
 /** Directly service bxCAN transmit completion flags for one channel. */
 static void HW_CAN_Tx_IRQ( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[], volatile uint16_t* w_p,
                            volatile uint16_t* r_p, uint16_t buffer_width, volatile bool* active,
-                           volatile bool* completed, volatile uint32_t* pending_mailbox )
+                           volatile bool* completed, volatile uint32_t* pending_mailbox,
+                           volatile HW_CAN_Tx_Status_T* status )
 {
     static const uint32_t request_complete_flags[3] = {
         CAN_TSR_RQCP0,
@@ -1317,11 +1423,12 @@ static void HW_CAN_Tx_IRQ( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[], volat
         CLEAR_BIT( can->IER, CAN_IER_TMEIE );
         *active    = false;
         *completed = false;
+        *status    = HW_CAN_TX_STATUS_ERROR;
         return;
     }
 
     ( void )HW_CAN_Tx_Service( hcan, buffer, w_p, r_p, buffer_width, active, completed,
-                               pending_mailbox );
+                               pending_mailbox, status );
 }
 
 /** Directly drain at most the hardware FIFO0 depth into one software RX queue. */
@@ -1362,19 +1469,63 @@ static void HW_CAN_Rx_IRQ( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[], volat
     }
 }
 
+/** Acknowledge the bxCAN error interrupt's write-one-to-clear MSR flag. */
+static void HW_CAN_Clear_Error_Interrupt( CAN_TypeDef* can )
+{
+#ifdef TEST_BUILD
+    can->MSR &= ~CAN_MSR_ERRI;
+#else
+    can->MSR = CAN_MSR_ERRI;
+#endif
+}
+
+/** Directly service a bxCAN status/error interrupt for one channel. */
+static void HW_CAN_Error_IRQ( CAN_HandleTypeDef* hcan, volatile bool* active,
+                              volatile bool* completed, volatile uint32_t* pending_mailbox,
+                              volatile HW_CAN_Tx_Status_T* status )
+{
+    CAN_TypeDef* can = hcan->Instance;
+    uint32_t     msr = can->MSR;
+    uint32_t     esr = can->ESR;
+
+    if ( ( msr & CAN_MSR_ERRI ) != 0U )
+    {
+        uint32_t last_error = esr & CAN_ESR_LEC;
+        bool     bus_off    = ( esr & CAN_ESR_BOFF ) != 0U;
+        if ( bus_off )
+        {
+            CLEAR_BIT( can->IER, CAN_IER_TMEIE );
+            *active          = false;
+            *completed       = false;
+            *pending_mailbox = 0U;
+            *status          = HW_CAN_TX_STATUS_ERROR;
+        }
+
+        if ( last_error != 0U )
+        {
+            CLEAR_BIT( can->ESR, CAN_ESR_LEC );
+        }
+    }
+
+    HW_CAN_Clear_Error_Interrupt( can );
+}
+
 /** Reset one channel's software state while preserving its NVIC enable state. */
 static void HW_CAN_Reset_Channel( CAN_TypeDef* can, IRQn_Type tx_irq, IRQn_Type rx_irq,
-                                  volatile uint16_t* tx_wp, volatile uint16_t* tx_rp,
-                                  volatile uint16_t* rx_wp, volatile uint16_t* rx_rp,
-                                  volatile bool* active, volatile bool* completed,
-                                  volatile uint32_t* dropped_count,
-                                  volatile uint32_t* pending_mailbox )
+                                  IRQn_Type error_irq, volatile uint16_t* tx_wp,
+                                  volatile uint16_t* tx_rp, volatile uint16_t* rx_wp,
+                                  volatile uint16_t* rx_rp, volatile bool* active,
+                                  volatile bool* completed, volatile uint32_t* dropped_count,
+                                  volatile uint32_t*           pending_mailbox,
+                                  volatile HW_CAN_Tx_Status_T* status )
 {
-    uint32_t tx_irq_was_enabled = NVIC_GetEnableIRQ( tx_irq );
-    uint32_t rx_irq_was_enabled = NVIC_GetEnableIRQ( rx_irq );
+    uint32_t tx_irq_was_enabled    = NVIC_GetEnableIRQ( tx_irq );
+    uint32_t rx_irq_was_enabled    = NVIC_GetEnableIRQ( rx_irq );
+    uint32_t error_irq_was_enabled = NVIC_GetEnableIRQ( error_irq );
 
     NVIC_DisableIRQ( tx_irq );
     NVIC_DisableIRQ( rx_irq );
+    NVIC_DisableIRQ( error_irq );
 
     CLEAR_BIT( can->IER, CAN_IER_TMEIE );
     *tx_wp           = 0;
@@ -1385,7 +1536,12 @@ static void HW_CAN_Reset_Channel( CAN_TypeDef* can, IRQn_Type tx_irq, IRQn_Type 
     *completed       = false;
     *dropped_count   = 0;
     *pending_mailbox = 0U;
+    *status          = HW_CAN_TX_STATUS_IDLE;
 
+    if ( error_irq_was_enabled != 0U )
+    {
+        NVIC_EnableIRQ( error_irq );
+    }
     if ( rx_irq_was_enabled != 0U )
     {
         NVIC_EnableIRQ( rx_irq );
@@ -1407,8 +1563,9 @@ static void HW_CAN_Reset_Channel( CAN_TypeDef* can, IRQn_Type tx_irq, IRQn_Type 
 static HW_CAN_Result_T HW_CAN_Tx_Service( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[],
                                           volatile uint16_t* w_p, volatile uint16_t* r_p,
                                           uint16_t buffer_width, volatile bool* active,
-                                          volatile bool*     completed,
-                                          volatile uint32_t* pending_mailbox )
+                                          volatile bool*               completed,
+                                          volatile uint32_t*           pending_mailbox,
+                                          volatile HW_CAN_Tx_Status_T* status )
 {
     if ( !*active )
     {
@@ -1421,6 +1578,7 @@ static HW_CAN_Result_T HW_CAN_Tx_Service( CAN_HandleTypeDef* hcan, CAN_Packet_T 
         CLEAR_BIT( hcan->Instance->IER, CAN_IER_TMEIE );
         *active    = false;
         *completed = true;
+        *status    = HW_CAN_TX_STATUS_COMPLETE;
         return HW_CAN_RESULT_OK;
     }
 
@@ -1437,7 +1595,9 @@ static HW_CAN_Result_T HW_CAN_Tx_Service( CAN_HandleTypeDef* hcan, CAN_Packet_T 
     else if ( result == HW_CAN_RESULT_ERROR )
     {
         CLEAR_BIT( hcan->Instance->IER, CAN_IER_TMEIE );
-        *active = false;
+        *active    = false;
+        *completed = false;
+        *status    = HW_CAN_TX_STATUS_ERROR;
     }
 
     return result;
@@ -1449,8 +1609,9 @@ static HW_CAN_Result_T HW_CAN_Tx_Service( CAN_HandleTypeDef* hcan, CAN_Packet_T 
 static HW_CAN_Result_T HW_CAN_Tx_Trigger( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[],
                                           volatile uint16_t* w_p, volatile uint16_t* r_p,
                                           uint16_t buffer_width, volatile bool* active,
-                                          volatile bool*     completed,
-                                          volatile uint32_t* pending_mailbox )
+                                          volatile bool*               completed,
+                                          volatile uint32_t*           pending_mailbox,
+                                          volatile HW_CAN_Tx_Status_T* status )
 {
     if ( *active )
     {
@@ -1460,16 +1621,107 @@ static HW_CAN_Result_T HW_CAN_Tx_Trigger( CAN_HandleTypeDef* hcan, CAN_Packet_T 
     {
         return HW_CAN_RESULT_EMPTY;
     }
+    if ( *status == HW_CAN_TX_STATUS_ERROR )
+    {
+        return HW_CAN_RESULT_ERROR;
+    }
+    if ( ( hcan->Instance->sTxMailBox[0].TIR & CAN_TI0R_TXRQ ) != 0U
+         || ( hcan->Instance->sTxMailBox[1].TIR & CAN_TI0R_TXRQ ) != 0U
+         || ( hcan->Instance->sTxMailBox[2].TIR & CAN_TI0R_TXRQ ) != 0U )
+    {
+        return HW_CAN_RESULT_BUSY;
+    }
+
+    static const uint32_t request_complete_flags[3] = {
+        CAN_TSR_RQCP0,
+        CAN_TSR_RQCP1,
+        CAN_TSR_RQCP2,
+    };
+    static const uint32_t mailbox_status_flags[3] = {
+        CAN_TSR_TXOK0 | CAN_TSR_ALST0 | CAN_TSR_TERR0,
+        CAN_TSR_TXOK1 | CAN_TSR_ALST1 | CAN_TSR_TERR1,
+        CAN_TSR_TXOK2 | CAN_TSR_ALST2 | CAN_TSR_TERR2,
+    };
+    uint32_t stale_status = hcan->Instance->TSR;
+    for ( uint8_t mailbox = 0U; mailbox < 3U; mailbox++ )
+    {
+        if ( ( stale_status & request_complete_flags[mailbox] ) != 0U )
+        {
+            HW_CAN_Clear_Tx_Request_Complete( hcan->Instance, request_complete_flags[mailbox],
+                                              mailbox_status_flags[mailbox] );
+        }
+    }
 
     *active          = true;
     *completed       = false;
     *pending_mailbox = 0U;
+    *status          = HW_CAN_TX_STATUS_ACTIVE;
     SET_BIT( hcan->Instance->IER, CAN_IER_TMEIE );
 
     HW_CAN_Result_T result = HW_CAN_Tx_Service( hcan, buffer, w_p, r_p, buffer_width, active,
-                                                completed, pending_mailbox );
+                                                completed, pending_mailbox, status );
 
     return result == HW_CAN_RESULT_ERROR ? HW_CAN_RESULT_ERROR : HW_CAN_RESULT_OK;
+}
+
+/** Abort all three hardware TX mailboxes using bxCAN command semantics. */
+static void HW_CAN_Abort_Tx_Mailboxes( CAN_TypeDef* can )
+{
+#ifdef TEST_BUILD
+    can->TSR &= ~( CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_ALST0 | CAN_TSR_TERR0 | CAN_TSR_RQCP1
+                   | CAN_TSR_TXOK1 | CAN_TSR_ALST1 | CAN_TSR_TERR1 | CAN_TSR_RQCP2 | CAN_TSR_TXOK2
+                   | CAN_TSR_ALST2 | CAN_TSR_TERR2 );
+    can->TSR |= HW_CAN_TX_MAILBOX_EMPTY_MASK;
+    for ( uint8_t mailbox = 0U; mailbox < 3U; mailbox++ )
+    {
+        CLEAR_BIT( can->sTxMailBox[mailbox].TIR, CAN_TI0R_TXRQ );
+    }
+#else
+    can->TSR = CAN_TSR_ABRQ0 | CAN_TSR_ABRQ1 | CAN_TSR_ABRQ2;
+#endif
+}
+
+/** Recover one CAN channel in task context after a terminal transmit error. */
+static HW_CAN_Result_T HW_CAN_Recover( CAN_HandleTypeDef* hcan, IRQn_Type tx_irq, IRQn_Type rx_irq,
+                                       IRQn_Type error_irq, volatile uint16_t* tx_wp,
+                                       volatile uint16_t* tx_rp, volatile bool* active,
+                                       volatile bool* completed, volatile uint32_t* pending_mailbox,
+                                       volatile HW_CAN_Tx_Status_T* status )
+{
+    CAN_TypeDef* can = hcan->Instance;
+
+    NVIC_DisableIRQ( tx_irq );
+    NVIC_DisableIRQ( rx_irq );
+    NVIC_DisableIRQ( error_irq );
+    CLEAR_BIT( can->IER, CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK );
+
+    HW_CAN_Abort_Tx_Mailboxes( can );
+    HAL_StatusTypeDef stop_result = HAL_CAN_Stop( hcan );
+
+    *tx_wp           = 0U;
+    *tx_rp           = 0U;
+    *active          = false;
+    *completed       = false;
+    *pending_mailbox = 0U;
+    CLEAR_BIT( can->ESR, CAN_ESR_LEC );
+    HW_CAN_Clear_Error_Interrupt( can );
+
+    HAL_StatusTypeDef start_result = stop_result == HAL_OK ? HAL_CAN_Start( hcan ) : HAL_ERROR;
+    if ( stop_result == HAL_OK && start_result == HAL_OK )
+    {
+        *status = HW_CAN_TX_STATUS_IDLE;
+    }
+    else
+    {
+        *status = HW_CAN_TX_STATUS_ERROR;
+    }
+
+    SET_BIT( can->IER, HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK );
+    NVIC_EnableIRQ( error_irq );
+    NVIC_EnableIRQ( rx_irq );
+    NVIC_EnableIRQ( tx_irq );
+
+    return *status == HW_CAN_TX_STATUS_IDLE ? HW_CAN_RESULT_OK : HW_CAN_RESULT_ERROR;
 }
 
 /**

@@ -107,8 +107,8 @@ extern "C" uint32_t EXEC_CAN_Rx_Dropped_Count2( void )
     return dropped_count2;
 }
 
-extern "C" int HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
-                                  uint16_t filter_mask )
+extern "C" int EXEC_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
+                                    uint16_t filter_mask )
 {
     configure_count1++;
     configured_bitrate1 = bitrate;
@@ -118,8 +118,8 @@ extern "C" int HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16
     return configure_result1;
 }
 
-extern "C" int HW_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
-                                  uint16_t filter_mask )
+extern "C" int EXEC_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
+                                    uint16_t filter_mask )
 {
     configure_count2++;
     configured_bitrate2 = bitrate;

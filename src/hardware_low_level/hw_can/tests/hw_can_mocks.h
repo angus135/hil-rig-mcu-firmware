@@ -82,17 +82,21 @@ extern "C"
 #define CAN_TSR_TXOK0 ( 1U << 1 )
 #define CAN_TSR_ALST0 ( 1U << 2 )
 #define CAN_TSR_TERR0 ( 1U << 3 )
+#define CAN_TSR_ABRQ0 ( 1U << 7 )
 #define CAN_TSR_RQCP1 ( 1U << 8 )
 #define CAN_TSR_TXOK1 ( 1U << 9 )
 #define CAN_TSR_ALST1 ( 1U << 10 )
 #define CAN_TSR_TERR1 ( 1U << 11 )
+#define CAN_TSR_ABRQ1 ( 1U << 15 )
 #define CAN_TSR_RQCP2 ( 1U << 16 )
 #define CAN_TSR_TXOK2 ( 1U << 17 )
 #define CAN_TSR_ALST2 ( 1U << 18 )
 #define CAN_TSR_TERR2 ( 1U << 19 )
+#define CAN_TSR_ABRQ2 ( 1U << 23 )
 #define CAN_TSR_TME0 ( 1U << 26 )
 #define CAN_TSR_TME1 ( 1U << 27 )
 #define CAN_TSR_TME2 ( 1U << 28 )
+#define CAN_TSR_TME ( CAN_TSR_TME0 | CAN_TSR_TME1 | CAN_TSR_TME2 )
 #define CAN_TI0R_TXRQ ( 1U << 0 )
 #define CAN_RI0R_RTR ( 1U << 1 )
 #define CAN_RI0R_IDE ( 1U << 2 )
@@ -105,6 +109,19 @@ extern "C"
 #define CAN_IER_FMPIE0 ( 1U << 1 )
 #define CAN_IER_FFIE0 ( 1U << 2 )
 #define CAN_IER_FOVIE0 ( 1U << 3 )
+#define CAN_IER_EWGIE ( 1U << 8 )
+#define CAN_IER_EPVIE ( 1U << 9 )
+#define CAN_IER_BOFIE ( 1U << 10 )
+#define CAN_IER_LECIE ( 1U << 11 )
+#define CAN_IER_ERRIE ( 1U << 15 )
+#define CAN_MSR_ERRI ( 1U << 2 )
+#define CAN_ESR_EWGF ( 1U << 0 )
+#define CAN_ESR_EPVF ( 1U << 1 )
+#define CAN_ESR_BOFF ( 1U << 2 )
+#define CAN_ESR_LEC ( 0x7U << 4 )
+#define CAN_ESR_LEC_0 ( 1U << 4 )
+#define CAN_ESR_LEC_1 ( 1U << 5 )
+#define CAN_ESR_LEC_2 ( 1U << 6 )
 
 /* Helpers */
 #define SET_BIT( REG, BIT ) ( ( REG ) |= ( BIT ) )
@@ -132,6 +149,8 @@ enum
     CAN1_RX0_IRQn,
     CAN2_TX_IRQn,
     CAN2_RX0_IRQn,
+    CAN1_SCE_IRQn,
+    CAN2_SCE_IRQn,
 };
 
 typedef struct
@@ -158,6 +177,7 @@ typedef struct
     uint32_t RF0R;
     uint32_t RF1R;
     uint32_t IER;
+    uint32_t ESR;
 
     CAN_TxMailBox_TypeDef   sTxMailBox[3];
     CAN_FIFOMailBox_TypeDef sFIFOMailBox[2];
@@ -229,6 +249,8 @@ HAL_StatusTypeDef HAL_CAN_Init( CAN_HandleTypeDef* hcan );
 HAL_StatusTypeDef HAL_CAN_ConfigFilter( CAN_HandleTypeDef* hcan, CAN_FilterTypeDef* filter );
 
 HAL_StatusTypeDef HAL_CAN_Start( CAN_HandleTypeDef* hcan );
+
+HAL_StatusTypeDef HAL_CAN_Stop( CAN_HandleTypeDef* hcan );
 
 uint32_t NVIC_GetEnableIRQ( IRQn_Type irq );
 

@@ -80,6 +80,38 @@ bool EXEC_CAN_Channl2_sent()
     return HW_CAN_Channl2_sent();
 }
 
+HW_CAN_Tx_Status_T EXEC_CAN_Tx_Status1( void )
+{
+    return HW_CAN_Tx_Status1();
+}
+
+HW_CAN_Tx_Status_T EXEC_CAN_Tx_Status2( void )
+{
+    return HW_CAN_Tx_Status2();
+}
+
+int EXEC_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
+                         uint16_t filter_mask )
+{
+    return HW_CAN_Configure1( bitrate, filter_bank, filter_id, filter_mask );
+}
+
+int EXEC_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
+                         uint16_t filter_mask )
+{
+    return HW_CAN_Configure2( bitrate, filter_bank, filter_id, filter_mask );
+}
+
+HW_CAN_Result_T EXEC_CAN_Recover1( void )
+{
+    return HW_CAN_Recover1();
+}
+
+HW_CAN_Result_T EXEC_CAN_Recover2( void )
+{
+    return HW_CAN_Recover2();
+}
+
 /** Return channel 1's sticky software RX dropped-frame count. */
 uint32_t EXEC_CAN_Rx_Dropped_Count1( void )
 {

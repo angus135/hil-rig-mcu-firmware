@@ -83,6 +83,17 @@ typedef enum HW_CAN_Result_T
     HW_CAN_RESULT_EMPTY,
 } HW_CAN_Result_T;
 
+/**
+ * @brief Observable state of one buffered CAN transmit batch.
+ */
+typedef enum HW_CAN_Tx_Status_T
+{
+    HW_CAN_TX_STATUS_IDLE = 0,
+    HW_CAN_TX_STATUS_ACTIVE,
+    HW_CAN_TX_STATUS_COMPLETE,
+    HW_CAN_TX_STATUS_ERROR,
+} HW_CAN_Tx_Status_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -116,6 +127,12 @@ bool HW_CAN_Channl1_sent( void );
  * @return true if the final buffered CAN message has been sent.
  */
 bool HW_CAN_Channl2_sent( void );
+
+/** @return Current buffered transmit status for channel 1. */
+HW_CAN_Tx_Status_T HW_CAN_Tx_Status1( void );
+
+/** @return Current buffered transmit status for channel 2. */
+HW_CAN_Tx_Status_T HW_CAN_Tx_Status2( void );
 
 /**
  * @brief Returns the number of channel 1 frames dropped because the software RX buffer was full.
@@ -215,6 +232,22 @@ void HW_CAN_Reset1( void );
 void HW_CAN_Reset2( void );
 
 /**
+ * @brief Recovers channel 1 from a transmit or bus error in task context.
+ *
+ * Outstanding hardware requests and queued software packets are discarded.
+ * Successful recovery leaves the channel idle and ready for a new batch.
+ */
+HW_CAN_Result_T HW_CAN_Recover1( void );
+
+/**
+ * @brief Recovers channel 2 from a transmit or bus error in task context.
+ *
+ * Outstanding hardware requests and queued software packets are discarded.
+ * Successful recovery leaves the channel idle and ready for a new batch.
+ */
+HW_CAN_Result_T HW_CAN_Recover2( void );
+
+/**
  * @brief Receives a CAN packet on channel 1.
  *
  * @param rxPacket Pointer to the CAN packet where the received identifier
@@ -232,8 +265,8 @@ int HW_CAN_Recieve1( CAN_Packet_T* rxPacket );
  * @param id     Standard 11-bit CAN identifier.
  * @param dlc    Number of valid payload bytes, from 0 through 8.
  *
- * @return 0 if the transmission was successfully loaded into a mailbox,
- *         non-zero otherwise.
+ * @return HW_CAN_RESULT_OK if loaded, HW_CAN_RESULT_BUSY while a buffered
+ *         batch is active, or HW_CAN_RESULT_ERROR for invalid input/state.
  */
 HW_CAN_Result_T HW_CAN_Transmit1( uint8_t* txData, uint16_t id, uint8_t dlc );
 
@@ -255,8 +288,8 @@ int HW_CAN_Recieve2( CAN_Packet_T* rxPacket );
  * @param id     Standard 11-bit CAN identifier.
  * @param dlc    Number of valid payload bytes, from 0 through 8.
  *
- * @return 0 if the transmission was successfully loaded into a mailbox,
- *         non-zero otherwise.
+ * @return HW_CAN_RESULT_OK if loaded, HW_CAN_RESULT_BUSY while a buffered
+ *         batch is active, or HW_CAN_RESULT_ERROR for invalid input/state.
  */
 HW_CAN_Result_T HW_CAN_Transmit2( uint8_t* txData, uint16_t id, uint8_t dlc );
 
@@ -426,7 +459,8 @@ uint16_t HW_CAN_Rx_Buffer_Pop2( CAN_Packet_T* dest );
  * @brief Starts transmitting the buffered channel 1 batch.
  *
  * @return HW_CAN_RESULT_OK if the batch was started,
- *         HW_CAN_RESULT_BUSY if a batch is already active,
+ *         HW_CAN_RESULT_BUSY if a batch is already active or a direct
+ *         transmission occupies a hardware mailbox,
  *         HW_CAN_RESULT_EMPTY if no packet is queued, or
  *         HW_CAN_RESULT_ERROR if the first packet could not be transmitted.
  *
@@ -439,7 +473,8 @@ HW_CAN_Result_T HW_CAN_Tx_Trigger1( void );
  * @brief Starts transmitting the buffered channel 2 batch.
  *
  * @return HW_CAN_RESULT_OK if the batch was started,
- *         HW_CAN_RESULT_BUSY if a batch is already active,
+ *         HW_CAN_RESULT_BUSY if a batch is already active or a direct
+ *         transmission occupies a hardware mailbox,
  *         HW_CAN_RESULT_EMPTY if no packet is queued, or
  *         HW_CAN_RESULT_ERROR if the first packet could not be transmitted.
  *

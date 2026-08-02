@@ -48,7 +48,7 @@ CAN_HandleTypeDef hcan1{};
 /* HAL CAN handle associated with the fake CAN2 peripheral instance. */
 CAN_HandleTypeDef hcan2{};
 
-static bool nvic_irq_enabled[4] = {};
+static bool nvic_irq_enabled[6] = {};
 
 /**-----------------------------------------------------------------------------
  *  Test Helpers
@@ -92,6 +92,8 @@ static void ResetCANBuffers()
     can_rx_dropped_count2   = 0;
     can_tx_pending_mailbox1 = 0;
     can_tx_pending_mailbox2 = 0;
+    can_tx_status1          = HW_CAN_TX_STATUS_IDLE;
+    can_tx_status2          = HW_CAN_TX_STATUS_IDLE;
 }
 
 /**-----------------------------------------------------------------------------
@@ -114,6 +116,8 @@ public:
                  ( CAN_HandleTypeDef * hcan, CAN_FilterTypeDef* filter ), () );
 
     MOCK_METHOD( HAL_StatusTypeDef, CANStart, ( CAN_HandleTypeDef * hcan ), () );
+
+    MOCK_METHOD( HAL_StatusTypeDef, CANStop, ( CAN_HandleTypeDef * hcan ), () );
 };
 
 /* Active GoogleMock instance used by the C-linkage HAL wrappers below. */
@@ -133,6 +137,11 @@ extern "C" HAL_StatusTypeDef HAL_CAN_ConfigFilter( CAN_HandleTypeDef* hcan,
 extern "C" HAL_StatusTypeDef HAL_CAN_Start( CAN_HandleTypeDef* hcan )
 {
     return g_mock->CANStart( hcan );
+}
+
+extern "C" HAL_StatusTypeDef HAL_CAN_Stop( CAN_HandleTypeDef* hcan )
+{
+    return g_mock->CANStop( hcan );
 }
 
 extern "C" uint32_t NVIC_GetEnableIRQ( IRQn_Type irq )
@@ -742,6 +751,7 @@ TEST_F( HWCANTest, TXVectorDoesNotCompleteBatchAfterHardwareError )
 
         EXPECT_FALSE( can_tx_active1 );
         EXPECT_FALSE( HW_CAN_Channl1_sent() );
+        EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_ERROR );
         EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
         EXPECT_EQ( mock_can1_regs.TSR & ( CAN_TSR_RQCP0 | error_flag ), 0U );
     }
@@ -1179,6 +1189,7 @@ TEST_F( HWCANTest, ConfigureSucceedsWithValidConfiguration )
     EXPECT_EQ( result, 0 );
     EXPECT_EQ( mock_can1_regs.IER & ( CAN_IER_FMPIE0 | CAN_IER_FFIE0 | CAN_IER_FOVIE0 ),
                CAN_IER_FMPIE0 | CAN_IER_FFIE0 | CAN_IER_FOVIE0 );
+    EXPECT_EQ( mock_can1_regs.IER & HW_CAN_ERROR_INTERRUPT_MASK, HW_CAN_ERROR_INTERRUPT_MASK );
     EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
 }
 
@@ -1204,6 +1215,7 @@ TEST_F( HWCANTest, ChannelConfigurationResetsSoftwareState )
     EXPECT_EQ( can_rx_rp1, 0 );
     EXPECT_FALSE( can_tx_active1 );
     EXPECT_FALSE( can_sent_flag1 );
+    EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_IDLE );
     EXPECT_EQ( HW_CAN_Rx_Dropped_Count1(), 0U );
 }
 
@@ -1218,6 +1230,160 @@ TEST_F( HWCANTest, SentFlagStartsFalse )
     EXPECT_FALSE( HW_CAN_Channl1_sent() );
 
     EXPECT_FALSE( HW_CAN_Channl2_sent() );
+    EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_IDLE );
+    EXPECT_EQ( HW_CAN_Tx_Status2(), HW_CAN_TX_STATUS_IDLE );
+}
+
+/** Verify that the direct SCE vector records and acknowledges a controller error. */
+TEST_F( HWCANTest, SCEVectorChangesActiveBatchToErrorAndClearsFlags )
+{
+    mock_can1_regs.TSR     = CAN_TSR_TME0;
+    CAN_Packet_T packet[1] = { { .id = 0x123, .dlc = 1, .data = { 0xAA } } };
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
+
+    mock_can1_regs.MSR = CAN_MSR_ERRI;
+    mock_can1_regs.ESR = CAN_ESR_BOFF | CAN_ESR_LEC_0;
+    CAN1_SCE_IRQHandler();
+
+    EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_ERROR );
+    EXPECT_FALSE( can_tx_active1 );
+    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_EQ( mock_can1_regs.MSR & CAN_MSR_ERRI, 0U );
+    EXPECT_EQ( mock_can1_regs.ESR & CAN_ESR_LEC, 0U );
+    EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
+}
+
+/** Verify that a bus-off status interrupt puts the affected channel in error. */
+TEST_F( HWCANTest, SCEVectorRecordsBusOffAsError )
+{
+    mock_can2_regs.MSR = CAN_MSR_ERRI;
+    mock_can2_regs.ESR = CAN_ESR_BOFF;
+
+    CAN2_SCE_IRQHandler();
+
+    EXPECT_EQ( HW_CAN_Tx_Status2(), HW_CAN_TX_STATUS_ERROR );
+    EXPECT_FALSE( HW_CAN_Channl2_sent() );
+    EXPECT_EQ( mock_can2_regs.MSR & CAN_MSR_ERRI, 0U );
+}
+
+/** Verify that task-context recovery clears pending work and permits a later batch. */
+TEST_F( HWCANTest, RecoveryClearsFailedWorkAndAllowsSubsequentTransmission )
+{
+    mock_can1_regs.TSR      = CAN_TSR_TME0;
+    CAN_Packet_T packets[2] = {
+        { .id = 0x123, .dlc = 1, .data = { 0xAA } },
+        { .id = 0x124, .dlc = 1, .data = { 0xBB } },
+    };
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packets, 2 ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
+    ASSERT_NE( mock_can1_regs.sTxMailBox[0].TIR & CAN_TI0R_TXRQ, 0U );
+
+    mock_can1_regs.MSR = CAN_MSR_ERRI;
+    mock_can1_regs.ESR = CAN_ESR_BOFF | CAN_ESR_LEC_0;
+    CAN1_SCE_IRQHandler();
+    ASSERT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_ERROR );
+
+    EXPECT_CALL( mock, CANStop( &hcan1 ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, CANStart( &hcan1 ) ).WillOnce( Return( HAL_OK ) );
+    ASSERT_EQ( HW_CAN_Recover1(), HW_CAN_RESULT_OK );
+
+    EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_IDLE );
+    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_EQ( can_tx_wp1, 0U );
+    EXPECT_EQ( can_tx_rp1, 0U );
+    EXPECT_EQ( can_tx_pending_mailbox1, 0U );
+    EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TIR & CAN_TI0R_TXRQ, 0U );
+    EXPECT_EQ( mock_can1_regs.TSR & CAN_TSR_TME, CAN_TSR_TME );
+    EXPECT_EQ( mock_can1_regs.IER & HW_CAN_RX_INTERRUPT_MASK, HW_CAN_RX_INTERRUPT_MASK );
+    EXPECT_EQ( mock_can1_regs.IER & HW_CAN_ERROR_INTERRUPT_MASK, HW_CAN_ERROR_INTERRUPT_MASK );
+    EXPECT_TRUE( nvic_irq_enabled[CAN1_TX_IRQn] );
+    EXPECT_TRUE( nvic_irq_enabled[CAN1_RX0_IRQn] );
+    EXPECT_TRUE( nvic_irq_enabled[CAN1_SCE_IRQn] );
+
+    CAN_Packet_T retry[1] = { { .id = 0x321, .dlc = 1, .data = { 0x5A } } };
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( retry, 1 ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
+    EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_ACTIVE );
+    mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME;
+    CAN1_TX_IRQHandler();
+    EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_COMPLETE );
+    EXPECT_TRUE( HW_CAN_Channl1_sent() );
+}
+
+/** Verify that a failed stop keeps the channel in error and reports recovery failure. */
+TEST_F( HWCANTest, RecoveryFailureDoesNotReportIdleOrComplete )
+{
+    can_tx_status2 = HW_CAN_TX_STATUS_ERROR;
+    EXPECT_CALL( mock, CANStop( &hcan2 ) ).WillOnce( Return( HAL_ERROR ) );
+    EXPECT_CALL( mock, CANStart( &hcan2 ) ).Times( 0 );
+
+    EXPECT_EQ( HW_CAN_Recover2(), HW_CAN_RESULT_ERROR );
+    EXPECT_EQ( HW_CAN_Tx_Status2(), HW_CAN_TX_STATUS_ERROR );
+    EXPECT_FALSE( HW_CAN_Channl2_sent() );
+}
+
+/** Verify that direct transmission cannot overwrite an active buffered batch. */
+TEST_F( HWCANTest, DirectTransmitReturnsBusyDuringBufferedBatch )
+{
+    mock_can1_regs.TSR     = CAN_TSR_TME0;
+    CAN_Packet_T packet[1] = { { .id = 0x123, .dlc = 1, .data = { 0xAA } } };
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
+    uint32_t mailbox_id = mock_can1_regs.sTxMailBox[0].TIR;
+    uint8_t  direct[1]  = { 0x55 };
+
+    EXPECT_EQ( HW_CAN_Transmit1( direct, 0x456, 1 ), HW_CAN_RESULT_BUSY );
+    EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TIR, mailbox_id );
+    EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_ACTIVE );
+}
+
+/** Verify that direct hardware work makes buffered trigger busy without consuming its queue. */
+TEST_F( HWCANTest, BufferedTriggerRetainsQueueWhileDirectTransmitIsPending )
+{
+    mock_can2_regs.TSR = CAN_TSR_TME;
+    uint8_t direct[1]  = { 0x55 };
+    ASSERT_EQ( HW_CAN_Transmit2( direct, 0x456, 1 ), HW_CAN_RESULT_OK );
+
+    CAN_Packet_T packet[1] = { { .id = 0x222, .dlc = 1, .data = { 0xAA } } };
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write2( packet, 1 ), HW_CAN_RESULT_OK );
+    EXPECT_EQ( HW_CAN_Tx_Trigger2(), HW_CAN_RESULT_BUSY );
+    EXPECT_EQ( can_tx_rp2, 0U );
+    EXPECT_EQ( can_tx_wp2, 1U );
+    EXPECT_EQ( HW_CAN_Tx_Status2(), HW_CAN_TX_STATUS_IDLE );
+    EXPECT_FALSE( mock_can2_regs.IER & CAN_IER_TMEIE );
+
+    CAN_Packet_T retained[1] = {};
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Read2( retained ), 1U );
+    EXPECT_EQ( retained[0].id, 0x222U );
+}
+
+/** Verify that a completed direct request cannot complete a later buffered batch. */
+TEST_F( HWCANTest, BufferedTriggerClearsStaleDirectCompletionStatus )
+{
+    mock_can2_regs.TSR = CAN_TSR_TME;
+    uint8_t direct[1]  = { 0x55 };
+    ASSERT_EQ( HW_CAN_Transmit2( direct, 0x456, 1 ), HW_CAN_RESULT_OK );
+
+    CLEAR_BIT( mock_can2_regs.sTxMailBox[0].TIR, CAN_TI0R_TXRQ );
+    mock_can2_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME;
+
+    CAN_Packet_T packet[1] = { { .id = 0x222, .dlc = 1, .data = { 0xAA } } };
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write2( packet, 1 ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Tx_Trigger2(), HW_CAN_RESULT_OK );
+
+    EXPECT_EQ( mock_can2_regs.TSR & ( CAN_TSR_RQCP0 | CAN_TSR_TXOK0 ), 0U );
+    EXPECT_EQ( HW_CAN_Tx_Status2(), HW_CAN_TX_STATUS_ACTIVE );
+    EXPECT_FALSE( HW_CAN_Channl2_sent() );
+
+    CAN2_TX_IRQHandler();
+    EXPECT_EQ( HW_CAN_Tx_Status2(), HW_CAN_TX_STATUS_ACTIVE );
+    EXPECT_FALSE( HW_CAN_Channl2_sent() );
+
+    mock_can2_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME;
+    CAN2_TX_IRQHandler();
+    EXPECT_EQ( HW_CAN_Tx_Status2(), HW_CAN_TX_STATUS_COMPLETE );
+    EXPECT_TRUE( HW_CAN_Channl2_sent() );
 }
 
 /** Verify that one batch becomes active on trigger and complete only after hardware completion. */
@@ -1230,12 +1396,14 @@ TEST_F( HWCANTest, BatchTransitionsFromActiveToCompleted )
     ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
     EXPECT_TRUE( can_tx_active1 );
     EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_ACTIVE );
 
     mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
     CAN1_TX_IRQHandler();
 
     EXPECT_FALSE( can_tx_active1 );
     EXPECT_TRUE( HW_CAN_Channl1_sent() );
+    EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_COMPLETE );
     EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
 }
 
