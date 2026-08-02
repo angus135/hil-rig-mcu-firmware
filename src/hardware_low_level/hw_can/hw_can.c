@@ -295,27 +295,22 @@ int HW_CAN_Transmit( CAN_HandleTypeDef* hcan, uint8_t* txData, uint16_t id, uint
     // DLC = 8, (sending 8 bytes)
     can->sTxMailBox[mailbox].TDTR = size;
 
-    // Less than 4 bytes to load
-    if ( size <= 4 )
+    uint32_t low_data  = 0;
+    uint32_t high_data = 0;
+
+    for ( uint8_t i = 0; i < size && i < 4U; i++ )
     {
-        // Load first 4 bytes
-        for ( int i = 0; i < size; i++ )
-        {
-            can->sTxMailBox[mailbox].TDLR |= ( ( uint32_t )txData[i] << ( i * 8 ) );
-        }
-        // Request transmission
-        can->sTxMailBox[mailbox].TIR |= CAN_TI0R_TXRQ;
-        return 0;
+        low_data |= ( uint32_t )txData[i] << ( i * 8U );
     }
-    // Load first 4 bytes
-    can->sTxMailBox[mailbox].TDLR = ( ( uint32_t )txData[0] << 0 ) | ( ( uint32_t )txData[1] << 8 )
-                                    | ( ( uint32_t )txData[2] << 16 )
-                                    | ( ( uint32_t )txData[3] << 24 );
-    // Load the second 4 bytes
-    for ( int i = 4; i < size; i++ )
+
+    for ( uint8_t i = 4U; i < size; i++ )
     {
-        can->sTxMailBox[mailbox].TDHR |= ( ( uint32_t )txData[i] << ( ( i - 4 ) * 8 ) );
+        high_data |= ( uint32_t )txData[i] << ( ( i - 4U ) * 8U );
     }
+
+    can->sTxMailBox[mailbox].TDLR = low_data;
+    can->sTxMailBox[mailbox].TDHR = high_data;
+
     // Request transmission
     can->sTxMailBox[mailbox].TIR |= CAN_TI0R_TXRQ;
     return 0;

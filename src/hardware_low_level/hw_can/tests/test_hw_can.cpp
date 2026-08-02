@@ -240,6 +240,34 @@ TEST_F( HWCANTest, TransmitLoadsMailboxCorrectly )
     EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDHR, 0x08070605 );
 }
 
+/** Verify that a short frame replaces stale low and high mailbox payload data. */
+TEST_F( HWCANTest, TransmitClearsReusedMailboxForShortPayload )
+{
+    mock_can1_regs.TSR                = CAN_TSR_TME0;
+    mock_can1_regs.sTxMailBox[0].TDLR = 0xFFFFFFFF;
+    mock_can1_regs.sTxMailBox[0].TDHR = 0xFFFFFFFF;
+    uint8_t data[3]                   = { 0x00, 0x10, 0x80 };
+
+    ASSERT_EQ( HW_CAN_Transmit( &hcan1, data, 0x123, 3 ), 0 );
+
+    EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDLR, 0x00801000 );
+    EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDHR, 0x00000000 );
+}
+
+/** Verify that a long frame replaces stale bits in both mailbox payload registers. */
+TEST_F( HWCANTest, TransmitClearsReusedMailboxForLongPayload )
+{
+    mock_can1_regs.TSR                = CAN_TSR_TME0;
+    mock_can1_regs.sTxMailBox[0].TDLR = 0xFFFFFFFF;
+    mock_can1_regs.sTxMailBox[0].TDHR = 0xFFFFFFFF;
+    uint8_t data[6]                   = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x00 };
+
+    ASSERT_EQ( HW_CAN_Transmit( &hcan1, data, 0x123, 6 ), 0 );
+
+    EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDLR, 0x03020100 );
+    EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDHR, 0x00000004 );
+}
+
 /** Verify that an identifier outside the standard 11-bit CAN ID range is rejected. */
 TEST_F( HWCANTest, TransmitRejectsIDAbove11Bits )
 {
