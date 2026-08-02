@@ -228,6 +228,40 @@ TEST_F( HWCANTest, ComputePropertiesRejectsInvalidBitrate )
     EXPECT_EQ( props.psc, 0 );
 }
 
+/** Verify other project bitrates that are exact with the fixed 45 MHz, 15-TQ model. */
+TEST_F( HWCANTest, ComputePropertiesAcceptsExactProjectBitrates )
+{
+    CanProperties_T props_500k = HW_CAN_Compute_Properties( 500000U, 15U, 800U );
+    EXPECT_EQ( props_500k.bs1, 11U );
+    EXPECT_EQ( props_500k.bs2, 3U );
+    EXPECT_EQ( props_500k.psc, 6U );
+
+    CanProperties_T props_250k = HW_CAN_Compute_Properties( 250000U, 15U, 800U );
+    EXPECT_EQ( props_250k.bs1, 11U );
+    EXPECT_EQ( props_250k.bs2, 3U );
+    EXPECT_EQ( props_250k.psc, 12U );
+}
+
+/** Verify that timing which would require prescaler truncation is rejected. */
+TEST_F( HWCANTest, ComputePropertiesRejectsInexact800Kbps )
+{
+    CanProperties_T props = HW_CAN_Compute_Properties( 800000U, 15U, 800U );
+
+    EXPECT_EQ( props.bs1, 0U );
+    EXPECT_EQ( props.bs2, 0U );
+    EXPECT_EQ( props.psc, 0U );
+    EXPECT_EQ( props.timer_hz, 0U );
+}
+
+/** Verify invalid total-TQ, sample-point, and prescaler ranges are rejected safely. */
+TEST_F( HWCANTest, ComputePropertiesRejectsInvalidTimingRanges )
+{
+    EXPECT_EQ( HW_CAN_Compute_Properties( 500000U, 0U, 800U ).psc, 0U );
+    EXPECT_EQ( HW_CAN_Compute_Properties( 500000U, 15U, 699U ).psc, 0U );
+    EXPECT_EQ( HW_CAN_Compute_Properties( 500000U, 15U, 1000U ).psc, 0U );
+    EXPECT_EQ( HW_CAN_Compute_Properties( 1000U, 15U, 800U ).psc, 0U );
+}
+
 /**-----------------------------------------------------------------------------
  *  Transmit Tests
  *------------------------------------------------------------------------------
@@ -378,6 +412,38 @@ TEST_F( HWCANTest, TransmitAcceptsZeroID )
     EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TIR, CAN_TI0R_TXRQ );
 }
 
+/** Verify a null payload is rejected before mailbox or channel state changes. */
+TEST_F( HWCANTest, TransmitRejectsNullPayloadForNonzeroDLCWithoutSideEffects )
+{
+    mock_can1_regs.TSR = CAN_TSR_TME;
+    memset( &mock_can1_regs.sTxMailBox[0], 0xA5, sizeof( mock_can1_regs.sTxMailBox[0] ) );
+    CAN_TxMailBox_TypeDef original_mailbox = mock_can1_regs.sTxMailBox[0];
+    uint32_t              original_tsr     = mock_can1_regs.TSR;
+    can_tx_status1                         = HW_CAN_TX_STATUS_COMPLETE;
+
+    EXPECT_EQ( HW_CAN_Transmit1( NULL, 0x123U, 1U ), HW_CAN_RESULT_ERROR );
+    EXPECT_EQ(
+        memcmp( &mock_can1_regs.sTxMailBox[0], &original_mailbox, sizeof( original_mailbox ) ), 0 );
+    EXPECT_EQ( mock_can1_regs.TSR, original_tsr );
+    EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_COMPLETE );
+}
+
+/** Verify a zero-DLC frame may use a null payload pointer. */
+TEST_F( HWCANTest, TransmitAllowsNullPayloadForZeroDLC )
+{
+    mock_can2_regs.TSR                = CAN_TSR_TME;
+    mock_can2_regs.sTxMailBox[0].TDLR = 0xFFFFFFFFU;
+    mock_can2_regs.sTxMailBox[0].TDHR = 0xFFFFFFFFU;
+
+    ASSERT_EQ( HW_CAN_Transmit2( NULL, 0x321U, 0U ), HW_CAN_RESULT_OK );
+    EXPECT_EQ( mock_can2_regs.sTxMailBox[0].TIR,
+               ( static_cast<uint32_t>( 0x321U ) << 21 ) | CAN_TI0R_TXRQ );
+    EXPECT_EQ( mock_can2_regs.sTxMailBox[0].TDTR, 0U );
+    EXPECT_EQ( mock_can2_regs.sTxMailBox[0].TDLR, 0U );
+    EXPECT_EQ( mock_can2_regs.sTxMailBox[0].TDHR, 0U );
+    EXPECT_EQ( HW_CAN_Tx_Status2(), HW_CAN_TX_STATUS_IDLE );
+}
+
 /**-----------------------------------------------------------------------------
  *  Receive Tests
  *------------------------------------------------------------------------------
@@ -456,6 +522,25 @@ TEST_F( HWCANTest, ReceiveExtractsDLCAndOnlyCopiesValidBytes )
     EXPECT_EQ( packet.data[3], 4 );
     EXPECT_EQ( packet.data[4], 0 );
     EXPECT_EQ( packet.data[7], 0 );
+}
+
+/** Verify a null RX destination cannot consume or alter a pending FIFO entry. */
+TEST_F( HWCANTest, ReceiveRejectsNullDestinationWithoutReleasingFIFO )
+{
+    mock_can1_regs.RF0R                   = 1U | CAN_RF0R_FULL0 | CAN_RF0R_FOVR0;
+    mock_can1_regs.sFIFOMailBox[0].RIR    = static_cast<uint32_t>( 0x456U ) << 21;
+    mock_can1_regs.sFIFOMailBox[0].RDTR   = 1U;
+    mock_can1_regs.sFIFOMailBox[0].RDLR   = 0x5AU;
+    CAN_FIFOMailBox_TypeDef original_fifo = mock_can1_regs.sFIFOMailBox[0];
+    uint32_t                original_rf0r = mock_can1_regs.RF0R;
+
+    EXPECT_NE( HW_CAN_Recieve1( NULL ), 0 );
+    EXPECT_EQ( mock_can1_regs.RF0R, original_rf0r );
+    EXPECT_EQ( memcmp( &mock_can1_regs.sFIFOMailBox[0], &original_fifo, sizeof( original_fifo ) ),
+               0 );
+    EXPECT_EQ( can_rx_wp1, 0U );
+    EXPECT_EQ( can_rx_rp1, 0U );
+    EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_IDLE );
 }
 
 /**-----------------------------------------------------------------------------
@@ -1146,6 +1231,22 @@ TEST_F( HWCANTest, ConfigureReturns1WhenInitFails )
     int result = HW_CAN_Configure( &hcan1, 1000000, 0, 0x123, 0x7FF );
 
     EXPECT_EQ( result, 1 );
+}
+
+/** Verify inexact timing is rejected before HAL or channel state is touched. */
+TEST_F( HWCANTest, ConfigureRejectsInexactTimingWithoutHardwareOrStateChanges )
+{
+    mock_can1_regs.IER = 0xA5A5U;
+    can_tx_status1     = HW_CAN_TX_STATUS_COMPLETE;
+    EXPECT_CALL( mock, CANInit( _ ) ).Times( 0 );
+    EXPECT_CALL( mock, CANConfigFilter( _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock, CANStart( _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_CAN_Configure( &hcan1, 800000U, 0U, 0x123U, 0x7FFU ), 1 );
+    EXPECT_EQ( mock_can1_regs.IER, 0xA5A5U );
+    EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_COMPLETE );
+    EXPECT_EQ( can_tx_wp1, 0U );
+    EXPECT_EQ( can_tx_rp1, 0U );
 }
 
 /** Verify that HW_CAN_Configure() returns error code 2 when filter configuration fails. */
