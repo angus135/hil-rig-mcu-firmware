@@ -24,6 +24,7 @@
 #include <gmock/gmock.h>
 
 #include <array>
+#include <limits>
 #include <string.h>
 
 extern "C"
@@ -86,6 +87,12 @@ static void VerifyLoadedFrame( SPIChannel_T peripheral, const uint8_t* data, uin
     EXPECT_EQ( peripheral, SPI_DAC );
     EXPECT_EQ( size_bytes, 3U );
     EXPECT_EQ( 0, memcmp( data, expected_frame.data(), expected_frame.size() ) );
+}
+
+static void VerifyPreparedFrame( const AnalogueOutputPreparedFrame_T& prepared_frame,
+                                 const std::array<uint8_t, 3U>&       expected_frame )
+{
+    EXPECT_EQ( 0, memcmp( prepared_frame.bytes, expected_frame.data(), expected_frame.size() ) );
 }
 
 static void ExpectFrameLoad( MockHWSPI&                     mock_hw_spi,
@@ -317,6 +324,108 @@ TEST_F( ExecAnalogueOutputTest, Config_LoadFailure_ReturnsFalseAndLeavesModuleUn
 
     EXPECT_FALSE( result );
     EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Is_Configured() );
+}
+
+TEST_F( ExecAnalogueOutputTest, PreparedFrame_ContainsExactlyThreeWireBytes )
+{
+    EXPECT_EQ( sizeof( AnalogueOutputPreparedFrame_T ), 3U );
+}
+
+TEST_F( ExecAnalogueOutputTest, PrepareFrame_AllSupportedChannelsProduceGoldenCommandBytes )
+{
+    constexpr std::array<std::array<uint8_t, 3U>, 6U> EXPECTED_FRAMES = { {
+        { 0x00U, 0x00U, 0x00U },
+        { 0x08U, 0x00U, 0x00U },
+        { 0x10U, 0x00U, 0x00U },
+        { 0x18U, 0x00U, 0x00U },
+        { 0x20U, 0x00U, 0x00U },
+        { 0x28U, 0x00U, 0x00U },
+    } };
+
+    for ( uint8_t channel = 0U; channel < EXPECTED_FRAMES.size(); channel++ )
+    {
+        AnalogueOutputPreparedFrame_T prepared_frame = {};
+
+        ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( channel, 0.0F, &prepared_frame ) );
+        VerifyPreparedFrame( prepared_frame, EXPECTED_FRAMES[channel] );
+    }
+}
+
+TEST_F( ExecAnalogueOutputTest, PrepareFrame_RejectsDisabledAndInvalidChannels )
+{
+    constexpr std::array<uint8_t, 4U> INVALID_CHANNELS = { 6U, 7U, 8U, UINT8_MAX };
+
+    for ( uint8_t channel : INVALID_CHANNELS )
+    {
+        AnalogueOutputPreparedFrame_T prepared_frame = { { 0xAAU, 0x55U, 0xA5U } };
+
+        EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Prepare_Frame( channel, 10.0F, &prepared_frame ) );
+        VerifyPreparedFrame( prepared_frame, { 0xAAU, 0x55U, 0xA5U } );
+    }
+}
+
+TEST_F( ExecAnalogueOutputTest, PrepareFrame_ProducesGoldenZeroMidrangeAndMaximumBytes )
+{
+    AnalogueOutputPreparedFrame_T prepared_frame = {};
+
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 0U, 0.0F, &prepared_frame ) );
+    VerifyPreparedFrame( prepared_frame, { 0x00U, 0x00U, 0x00U } );
+
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 2U, 10.0F, &prepared_frame ) );
+    VerifyPreparedFrame( prepared_frame, { 0x10U, 0x08U, 0x00U } );
+
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 5U, 20.0F, &prepared_frame ) );
+    VerifyPreparedFrame( prepared_frame, { 0x28U, 0x0FU, 0xFFU } );
+}
+
+TEST_F( ExecAnalogueOutputTest, PrepareFrame_PreservesFiniteClamping )
+{
+    AnalogueOutputPreparedFrame_T prepared_frame = {};
+
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 1U, -3.5F, &prepared_frame ) );
+    VerifyPreparedFrame( prepared_frame, { 0x08U, 0x00U, 0x00U } );
+
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 4U, 99.0F, &prepared_frame ) );
+    VerifyPreparedFrame( prepared_frame, { 0x20U, 0x0FU, 0xFFU } );
+}
+
+TEST_F( ExecAnalogueOutputTest, PrepareFrame_PreservesFractionalScalingAndRounding )
+{
+    AnalogueOutputPreparedFrame_T prepared_frame = {};
+
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 1U, 12.34F, &prepared_frame ) );
+    VerifyPreparedFrame( prepared_frame, { 0x08U, 0x09U, 0xDFU } );
+
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 0U, 0.0024F, &prepared_frame ) );
+    VerifyPreparedFrame( prepared_frame, { 0x00U, 0x00U, 0x00U } );
+
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 0U, 0.0025F, &prepared_frame ) );
+    VerifyPreparedFrame( prepared_frame, { 0x00U, 0x00U, 0x01U } );
+
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 0U, 15.0F, &prepared_frame ) );
+    VerifyPreparedFrame( prepared_frame, { 0x00U, 0x0BU, 0xFFU } );
+}
+
+TEST_F( ExecAnalogueOutputTest, PrepareFrame_RejectsNonFiniteVoltagesWithoutChangingDestination )
+{
+    constexpr std::array<float, 3U> NON_FINITE_VOLTAGES = {
+        std::numeric_limits<float>::quiet_NaN(),
+        std::numeric_limits<float>::infinity(),
+        -std::numeric_limits<float>::infinity(),
+    };
+
+    for ( float input_voltage_v : NON_FINITE_VOLTAGES )
+    {
+        AnalogueOutputPreparedFrame_T prepared_frame = { { 0xAAU, 0x55U, 0xA5U } };
+
+        EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 0U, input_voltage_v, &prepared_frame ) );
+        VerifyPreparedFrame( prepared_frame, { 0xAAU, 0x55U, 0xA5U } );
+    }
+}
+
+TEST_F( ExecAnalogueOutputTest, PrepareFrame_RejectsNullDestination )
+{
+    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 0U, 10.0F, nullptr ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, WriteVoltage_NotConfigured_ReturnsFalseWithoutSPITraffic )
