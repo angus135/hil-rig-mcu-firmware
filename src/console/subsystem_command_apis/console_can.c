@@ -4,10 +4,8 @@
  *  Created:    29 Apr 2026
  *
  *  Description:
- *
- *
- *  Notes:
- *      ]
+ *      Diagnostic console commands for configuring, transmitting, and
+ *      receiving classical CAN data frames.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -16,14 +14,15 @@
  */
 
 #include "console_can.h"
-#include <stdlib.h>
 
 #include "console.h"
 #include "exec_can.h"
 #include "hw_can.h"
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 /**-----------------------------------------------------------------------------
@@ -31,205 +30,238 @@
  *------------------------------------------------------------------------------
  */
 
-/**-----------------------------------------------------------------------------
- *  Typedefs / Enums / Structures
- *------------------------------------------------------------------------------
- */
-
-/**-----------------------------------------------------------------------------
- *  Private Variables
- *------------------------------------------------------------------------------
- */
+#define CONSOLE_CAN_BITRATE ( 1000000U )
+#define CONSOLE_CAN_MAX_RX_PACKETS ( 20U )
+#define CONSOLE_CAN_MAX_TX_PACKETS ( 4U )
 
 /**-----------------------------------------------------------------------------
  *  Private Function Prototypes
  *------------------------------------------------------------------------------
  */
 
-/**-----------------------------------------------------------------------------
- *  Private Variables: Dispatch Tables
- *------------------------------------------------------------------------------
- */
+static void CONSOLE_CAN_Print_Usage( void );
+static bool CONSOLE_CAN_Parse_Channel( const char* text, uint8_t* channel );
+static bool CONSOLE_CAN_Parse_U16( const char* text, int base, uint16_t min_value,
+                                   uint16_t max_value, uint16_t* value );
+static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
 
-/**
- * @brief Transmits a 8 byte message over xbCan
- *
- * @param argc - The number of arguments
- * @param argv - pointer to each argument string
- *
- * @returns void
- */
+static void CONSOLE_CAN_Print_Usage( void )
+{
+    CONSOLE_Printf( "Usage:\r\n" );
+    CONSOLE_Printf( "  can tx <channel> <id> <payload> [<id> <payload> ...]\r\n" );
+    CONSOLE_Printf( "  can rx <channel>\r\n" );
+    CONSOLE_Printf( "  can config <can1_bank> <can2_bank> <filter_id> <filter_mask>\r\n" );
+    CONSOLE_Printf( "    channel: 1 or 2; payload: 1 to 8 text bytes\r\n" );
+    CONSOLE_Printf( "    CAN IDs and masks accept decimal or 0x-prefixed hexadecimal\r\n" );
+}
+
+static bool CONSOLE_CAN_Parse_Channel( const char* text, uint8_t* channel )
+{
+    if ( text == NULL || channel == NULL )
+    {
+        return false;
+    }
+    if ( strcmp( text, "1" ) == 0 )
+    {
+        *channel = 1U;
+        return true;
+    }
+    if ( strcmp( text, "2" ) == 0 )
+    {
+        *channel = 2U;
+        return true;
+    }
+    return false;
+}
+
+static bool CONSOLE_CAN_Parse_U16( const char* text, int base, uint16_t min_value,
+                                   uint16_t max_value, uint16_t* value )
+{
+    if ( text == NULL || value == NULL || text[0] == '\0' )
+    {
+        return false;
+    }
+
+    errno                = 0;
+    char*         end    = NULL;
+    unsigned long parsed = strtoul( text, &end, base );
+
+    if ( errno == ERANGE || end == text || *end != '\0' || parsed < min_value
+         || parsed > max_value )
+    {
+        return false;
+    }
+
+    *value = ( uint16_t )parsed;
+    return true;
+}
+
 static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
 {
-    if ( argc < 3 )
+    if ( argc < 5U || ( ( argc - 3U ) % 2U ) != 0U )
     {
-        CONSOLE_Printf( "Incorrect number of inputs, expected atleast 2 but recieved %d",
-                        argc - 2 );
+        CONSOLE_CAN_Print_Usage();
         return;
     }
-    CAN_Packet_T out[argc - 2];
-    for ( int j = 0; j < ( argc - 2 ); j++ )
+
+    uint16_t packet_count = ( uint16_t )( ( argc - 3U ) / 2U );
+    if ( packet_count > CONSOLE_CAN_MAX_TX_PACKETS )
     {
-        int len = strlen( argv[j + 2] );
-        // fill packet with '_'
-        for ( int i = 0; i < 8; i++ )
-        {
-            out[j].data[i] = '_';
-        }
-        if ( len > 8 )
-        {
-            len = 8;
-        }
-        out[j].dlc = ( uint8_t )len;
-        // move data into packet
-        CONSOLE_Printf( "Adding %s to buffer...\n\r", argv[j + 2] );
-        for ( int i = 0; i < len; i++ )
-        {
-            out[j].data[i] = argv[j + 2][i];
-        }
+        CONSOLE_Printf( "Too many CAN frames; maximum is %u\r\n",
+                        ( unsigned int )CONSOLE_CAN_MAX_TX_PACKETS );
+        return;
     }
-    if ( strcmp( argv[1], "1" ) == 0 )
+
+    uint8_t channel = 0U;
+    if ( !CONSOLE_CAN_Parse_Channel( argv[2], &channel ) )
     {
-        if ( HW_CAN_Tx_Buffer_Write1( out, argc - 2 ) != 0 )
+        CONSOLE_Printf( "Invalid CAN channel; expected 1 or 2\r\n" );
+        return;
+    }
+
+    CAN_Packet_T packets[CONSOLE_CAN_MAX_TX_PACKETS] = { 0 };
+    for ( uint16_t i = 0U; i < packet_count; i++ )
+    {
+        uint16_t id_index      = ( uint16_t )( 3U + ( i * 2U ) );
+        uint16_t payload_index = id_index + 1U;
+        uint16_t id            = 0U;
+
+        if ( !CONSOLE_CAN_Parse_U16( argv[id_index], 0, 0U, CAN_STANDARD_ID_MAX, &id ) )
         {
-            CONSOLE_Printf( "Buffer Error" );
+            CONSOLE_Printf( "Invalid standard CAN ID\r\n" );
             return;
         }
-        CONSOLE_Printf( "Written to buffer...\n\r" );
-        HW_CAN_Tx_Trigger1();
-        CONSOLE_Printf( "Transmitted on channel 1" );
-    }
-    else if ( strcmp( argv[1], "2" ) == 0 )
-    {
-        if ( HW_CAN_Tx_Buffer_Write2( out, argc - 2 ) != 0 )
+        if ( argv[payload_index] == NULL )
         {
-            CONSOLE_Printf( "Buffer Error" );
+            CONSOLE_CAN_Print_Usage();
             return;
         }
-        CONSOLE_Printf( "Written to buffer...\n\r" );
-        HW_CAN_Tx_Trigger2();
-        CONSOLE_Printf( "Transmitted on channel 2" );
+
+        size_t payload_length = strlen( argv[payload_index] );
+        if ( payload_length == 0U || payload_length > CAN_PACKET_SIZE )
+        {
+            CONSOLE_Printf( "CAN payload must contain 1 to 8 text bytes\r\n" );
+            return;
+        }
+
+        packets[i].id  = id;
+        packets[i].dlc = ( uint8_t )payload_length;
+        memcpy( packets[i].data, argv[payload_index], payload_length );
+    }
+
+    HW_CAN_Result_T result = channel == 1U ? EXEC_CAN_Load_Tx1( packets, packet_count )
+                                           : EXEC_CAN_Load_Tx2( packets, packet_count );
+    if ( result != HW_CAN_RESULT_OK )
+    {
+        CONSOLE_Printf( result == HW_CAN_RESULT_BUSY ? "CAN channel is busy\r\n"
+                                                     : "Unable to queue CAN batch\r\n" );
+        return;
+    }
+
+    result = channel == 1U ? EXEC_CAN_Tx_Trigger1() : EXEC_CAN_Tx_Trigger2();
+    if ( result == HW_CAN_RESULT_OK )
+    {
+        CONSOLE_Printf( "Started %u CAN frame(s) on channel %u\r\n", ( unsigned int )packet_count,
+                        ( unsigned int )channel );
+    }
+    else if ( result == HW_CAN_RESULT_BUSY )
+    {
+        CONSOLE_Printf( "CAN channel is busy\r\n" );
     }
     else
     {
-        CONSOLE_Printf( "Unknown channel %s\n\r", argv[1] );
+        CONSOLE_Printf( "Unable to start CAN batch\r\n" );
     }
 }
 
-/**
- * @brief Transmits a 8 byte message over xbCan
- *
- * @param argc - The number of arguments
- * @param argv - pointer to each argument string
- *
- * @returns void
- */
 static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] )
 {
-    uint16_t filter_bank = atoi( argv[1] );
-    uint16_t filter_id   = atoi( argv[2] );
-    uint16_t filter_mask = atoi( argv[3] );
+    if ( argc != 6U )
+    {
+        CONSOLE_CAN_Print_Usage();
+        return;
+    }
 
-    int check = HW_CAN_Configure1( 1000000, filter_bank, filter_id, filter_mask );
-    if ( check == 1 )
+    uint16_t can1_bank   = 0U;
+    uint16_t can2_bank   = 0U;
+    uint16_t filter_id   = 0U;
+    uint16_t filter_mask = 0U;
+    if ( !CONSOLE_CAN_Parse_U16( argv[2], 10, 0U, 13U, &can1_bank )
+         || !CONSOLE_CAN_Parse_U16( argv[3], 10, 14U, 27U, &can2_bank )
+         || !CONSOLE_CAN_Parse_U16( argv[4], 0, 0U, CAN_STANDARD_ID_MAX, &filter_id )
+         || !CONSOLE_CAN_Parse_U16( argv[5], 0, 0U, CAN_STANDARD_ID_MAX, &filter_mask ) )
     {
-        CONSOLE_Printf( "Can 1  Timing set up error" );
+        CONSOLE_Printf( "Invalid CAN configuration values\r\n" );
+        CONSOLE_CAN_Print_Usage();
         return;
     }
-    if ( check == 2 )
+
+    int result = HW_CAN_Configure1( CONSOLE_CAN_BITRATE, can1_bank, filter_id, filter_mask );
+    if ( result != 0 )
     {
-        CONSOLE_Printf( "Can 1  Filter set up error" );
+        CONSOLE_Printf( "CAN1 configuration failed with error %d\r\n", result );
         return;
     }
-    if ( check == 3 )
+
+    result = HW_CAN_Configure2( CONSOLE_CAN_BITRATE, can2_bank, filter_id, filter_mask );
+    if ( result != 0 )
     {
-        CONSOLE_Printf( "Can 1 Start set up error" );
+        CONSOLE_Printf( "CAN2 configuration failed with error %d\r\n", result );
         return;
     }
-    if ( check != 0 )
-    {
-        CONSOLE_Printf( "Can 1 Config Error" );
-        return;
-    }
-    check = HW_CAN_Configure2( 1000000, filter_bank, filter_id, filter_mask );
-    if ( check == 1 )
-    {
-        CONSOLE_Printf( "Can 2  Timing set up error" );
-        return;
-    }
-    if ( check == 2 )
-    {
-        CONSOLE_Printf( "Can 2  Filter set up error" );
-        return;
-    }
-    if ( check == 3 )
-    {
-        CONSOLE_Printf( "Can 2 Start set up error" );
-        return;
-    }
-    if ( check != 0 )
-    {
-        CONSOLE_Printf( "Can 2 Config Error" );
-        return;
-    }
-    CONSOLE_Printf( "Can 1&2 Set up correctly" );
+
+    CONSOLE_Printf( "CAN1 and CAN2 configured\r\n" );
 }
 
-/**
- * @brief Transmits a 8 byte message over xbCan
- *
- * @param argc - The number of arguments
- * @param argv - pointer to each argument string
- *
- * @returns void
- */
 static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
 {
-    if ( argc != 2 )
+    if ( argc != 3U )
     {
-        CONSOLE_Printf( "Incorrect number of inputs, expected 1 but recieved %d", argc - 1 );
+        CONSOLE_CAN_Print_Usage();
         return;
     }
-    CAN_Packet_T out[20];
-    uint16_t     read = 0;
-    for ( int i = 0; i < 20; i++ )
+
+    uint8_t channel = 0U;
+    if ( !CONSOLE_CAN_Parse_Channel( argv[2], &channel ) )
     {
-        for ( int j = 0; j < 8; j++ )
-        {
-            out[i].data[j] = '0';
-        }
-    }
-    if ( strcmp( argv[1], "1" ) == 0 )
-    {
-        read = EXEC_CAN_Rx_Buffer_Read1( out, 20 );
-        if ( read == 0 )
-        {
-            CONSOLE_Printf( "Nothing in channel 1 buffer\n\r" );
-            return;
-        }
-    }
-    else if ( strcmp( argv[1], "2" ) == 0 )
-    {
-        read = EXEC_CAN_Rx_Buffer_Read2( out, 20 );
-        if ( read == 0 )
-        {
-            CONSOLE_Printf( "Nothing in channel 2 buffer\n\r" );
-            return;
-        }
-    }
-    else
-    {
-        CONSOLE_Printf( "Unknown parameter %s\n\r", argv[1] );
+        CONSOLE_Printf( "Invalid CAN channel; expected 1 or 2\r\n" );
         return;
     }
-    for ( int i = 0; i < read; i++ )
+
+    CAN_Packet_T packets[CONSOLE_CAN_MAX_RX_PACKETS] = { 0 };
+    uint16_t read = channel == 1U ? EXEC_CAN_Rx_Buffer_Read1( packets, CONSOLE_CAN_MAX_RX_PACKETS )
+                                  : EXEC_CAN_Rx_Buffer_Read2( packets, CONSOLE_CAN_MAX_RX_PACKETS );
+    uint32_t dropped = channel == 1U ? EXEC_CAN_Rx_Dropped_Count1() : EXEC_CAN_Rx_Dropped_Count2();
+
+    if ( dropped != 0U )
     {
-        CONSOLE_Printf( "Recieved id: %s, received data: %s", out[i].id, out[i].data );
+        CONSOLE_Printf( "Warning: CAN channel %u dropped %lu received frame(s)\r\n",
+                        ( unsigned int )channel, ( unsigned long )dropped );
+    }
+    if ( read == 0U )
+    {
+        CONSOLE_Printf( "Nothing in channel %u buffer\r\n", ( unsigned int )channel );
+        return;
+    }
+
+    for ( uint16_t i = 0U; i < read; i++ )
+    {
+        uint8_t payload_length =
+            packets[i].dlc <= CAN_PACKET_SIZE ? packets[i].dlc : CAN_PACKET_SIZE;
+        CONSOLE_Printf( "Received id: 0x%03X, dlc: %u, data:", ( unsigned int )packets[i].id,
+                        ( unsigned int )packets[i].dlc );
+        for ( uint8_t j = 0U; j < payload_length; j++ )
+        {
+            CONSOLE_Printf( " %02X", ( unsigned int )packets[i].data[j] );
+        }
+        CONSOLE_Printf( "\r\n" );
     }
 }
 
@@ -238,114 +270,29 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
  *------------------------------------------------------------------------------
  */
 
-/**
- * @brief Transmits a 8 byte message over xbCan
- *
- * @param argc - The number of arguments
- * @param argv - pointer to each argument string
- *
- * @returns void
- */
 void CONSOLE_CAN_Command_Handler( uint16_t argc, char* argv[] )
 {
-    uint16_t pass_argc = 0;
-    char*    pass_argv[8];
-    if ( argc < 2 )
+    if ( argv == NULL || argc < 2U || argv[1] == NULL )
     {
-        CONSOLE_Printf( "Incorrect number of inputs, expected atleast 1 but recieved %d",
-                        argc - 1 );
+        CONSOLE_CAN_Print_Usage();
         return;
     }
+
     if ( strcmp( argv[1], "tx" ) == 0 )
     {
-        if ( argc < 3 )
-        {
-            CONSOLE_Printf( "Incorrect number of inputs, expected atleast 2 but recieved %d",
-                            argc - 1 );
-            return;
-        }
-        if ( strcmp( argv[2], "1" ) == 0 )
-        {
-            if ( argc < 4 )
-            {
-                CONSOLE_Printf( "Incorrect number of inputs, expected atleast 3 but recieved %d",
-                                argc - 1 );
-                return;
-            }
-            // transmitting on channel 1
-            pass_argc = argc - 1;
-            for ( int i = 1; i < argc - 1; i++ )
-            {
-                pass_argv[i] = argv[i + 1];
-            }
-            CONSOLE_Command_Can_tx( pass_argc, pass_argv );
-            return;
-        }
-        else if ( strcmp( argv[2], "2" ) == 0 )
-        {
-            if ( argc < 4 )
-            {
-                CONSOLE_Printf( "Incorrect number of inputs, expected atleast 3 but recieved %d",
-                                argc - 1 );
-                return;
-            }
-            // transmitting on channel 2
-            pass_argc = argc - 1;
-            for ( int i = 1; i < argc - 1; i++ )
-            {
-                pass_argv[i] = argv[i + 1];
-            }
-            CONSOLE_Command_Can_tx( pass_argc, pass_argv );
-            return;
-        }
-        else
-        {
-            CONSOLE_Printf( "Uknown channel, expected <1|2> but recieved %d", argv[2] );
-            return;
-        }
+        CONSOLE_Command_Can_tx( argc, argv );
     }
     else if ( strcmp( argv[1], "rx" ) == 0 )
     {
-        if ( argc < 3 )
-        {
-            CONSOLE_Printf( "Incorrect number of inputs, expected atleast 2 but recieved %d",
-                            argc - 1 );
-            return;
-        }
-        if ( strcmp( argv[2], "1" ) == 0 )
-        {
-            // recieving on channel 1
-            pass_argc    = 2;
-            pass_argv[1] = "1";
-            CONSOLE_Command_Can_rx( pass_argc, pass_argv );
-            return;
-        }
-        else if ( strcmp( argv[2], "2" ) == 0 )
-        {
-            // recieving on channel 2
-            pass_argc    = 2;
-            pass_argv[1] = "2";
-            CONSOLE_Command_Can_rx( pass_argc, pass_argv );
-            return;
-        }
-        else
-        {
-            CONSOLE_Printf( "Uknown channel, expected <1|2> but recieved %d", argv[2] );
-            return;
-        }
+        CONSOLE_Command_Can_rx( argc, argv );
     }
     else if ( strcmp( argv[1], "config" ) == 0 )
     {
-        // can configure
-        pass_argv[1] = argv[2];  // filter_bank
-        pass_argv[2] = argv[3];  // filter_id
-        pass_argv[3] = argv[4];  // filter_mask
-        CONSOLE_Command_Can_config( pass_argc, pass_argv );
-        return;
+        CONSOLE_Command_Can_config( argc, argv );
     }
     else
     {
-        CONSOLE_Printf( "Uknown command, expected <tx|rx> but recieved %s", argv[1] );
-        return;
+        CONSOLE_Printf( "Unknown CAN command: %s\r\n", argv[1] );
+        CONSOLE_CAN_Print_Usage();
     }
 }

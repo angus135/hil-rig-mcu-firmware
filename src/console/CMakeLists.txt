@@ -11,10 +11,12 @@ set(CONSOLE_SOURCES
     subsystem_command_apis/console_uart.c
     subsystem_command_apis/console_logic_expander.c
     subsystem_command_apis/console_I2C.c
+    subsystem_command_apis/console_can.c
 )
 
 set(CONSOLE_HEADERS
     console.h
+    subsystem_command_apis/console_can.h
 )
 
 add_library(console STATIC
@@ -80,4 +82,28 @@ if(CONSOLE_ENABLE_TESTS AND BUILD_TESTING)
     )
 
     add_test(NAME console_tests COMMAND console_tests)
+
+    add_executable(console_can_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/subsystem_command_apis/console_can.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_console_can.cpp
+    )
+
+    target_link_libraries(console_can_tests
+        PRIVATE
+        project_warnings
+        global_config
+        rtos
+        gtest
+        gtest_main
+    )
+
+    target_include_directories(console_can_tests
+        PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/subsystem_command_apis
+        ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_can
+        ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_can
+    )
+
+    add_test(NAME console_can_tests COMMAND console_can_tests)
 endif()
