@@ -61,6 +61,26 @@ bool EXEC_CAN_Channl1_sent();
  */
 bool EXEC_CAN_Channl2_sent();
 
+/** @return Current buffered transmit status for channel 1. */
+HW_CAN_Tx_Status_T EXEC_CAN_Tx_Status1( void );
+
+/** @return Current buffered transmit status for channel 2. */
+HW_CAN_Tx_Status_T EXEC_CAN_Tx_Status2( void );
+
+/** Configure CAN channel 1 using the low-level timing and filter contract. */
+int EXEC_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
+                         uint16_t filter_mask );
+
+/** Configure CAN channel 2 using the low-level timing and filter contract. */
+int EXEC_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
+                         uint16_t filter_mask );
+
+/** Recover channel 1 in task context, discarding failed pending work. */
+HW_CAN_Result_T EXEC_CAN_Recover1( void );
+
+/** Recover channel 2 in task context, discarding failed pending work. */
+HW_CAN_Result_T EXEC_CAN_Recover2( void );
+
 /**
  * @brief Returns channel 1 frames dropped because its software RX buffer was full.
  *

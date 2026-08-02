@@ -203,14 +203,14 @@ static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] )
         return;
     }
 
-    int result = HW_CAN_Configure1( CONSOLE_CAN_BITRATE, can1_bank, filter_id, filter_mask );
+    int result = EXEC_CAN_Configure1( CONSOLE_CAN_BITRATE, can1_bank, filter_id, filter_mask );
     if ( result != 0 )
     {
         CONSOLE_Printf( "CAN1 configuration failed with error %d\r\n", result );
         return;
     }
 
-    result = HW_CAN_Configure2( CONSOLE_CAN_BITRATE, can2_bank, filter_id, filter_mask );
+    result = EXEC_CAN_Configure2( CONSOLE_CAN_BITRATE, can2_bank, filter_id, filter_mask );
     if ( result != 0 )
     {
         CONSOLE_Printf( "CAN2 configuration failed with error %d\r\n", result );
