@@ -462,6 +462,75 @@ TEST_F( HWCANTest, RxIRQStoresIDAndDataInBuffer )
     EXPECT_EQ( out[0].data[7], 8 );
 }
 
+/** Verify that HAL RX callbacks route pending frames to the matching software buffer. */
+TEST_F( HWCANTest, HALRxCallbackRoutesBothChannels )
+{
+    mock_can1_regs.RF0R                 = CAN_RF0R_FMP0;
+    mock_can1_regs.sFIFOMailBox[0].RIR  = static_cast<uint32_t>( 0x111 ) << 21;
+    mock_can1_regs.sFIFOMailBox[0].RDLR = 0x04030201;
+    mock_can1_regs.sFIFOMailBox[0].RDHR = 0x08070605;
+    mock_can2_regs.RF0R                 = CAN_RF0R_FMP0;
+    mock_can2_regs.sFIFOMailBox[0].RIR  = static_cast<uint32_t>( 0x222 ) << 21;
+    mock_can2_regs.sFIFOMailBox[0].RDLR = 0x0C0B0A09;
+    mock_can2_regs.sFIFOMailBox[0].RDHR = 0x100F0E0D;
+
+    HAL_CAN_RxFifo0MsgPendingCallback( &hcan1 );
+    HAL_CAN_RxFifo0MsgPendingCallback( &hcan2 );
+
+    CAN_Packet_T channel1[1] = {};
+    CAN_Packet_T channel2[1] = {};
+
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Read1( channel1 ), 1 );
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Read2( channel2 ), 1 );
+    EXPECT_EQ( channel1[0].id, 0x111 );
+    EXPECT_EQ( channel1[0].data[0], 1 );
+    EXPECT_EQ( channel2[0].id, 0x222 );
+    EXPECT_EQ( channel2[0].data[0], 9 );
+}
+
+/** Verify that HAL TX completion callbacks advance multi-packet batches on both channels. */
+TEST_F( HWCANTest, HALTxCallbacksAdvanceBothChannelsAndMultiPacketSequence )
+{
+    mock_can1_regs.TSR = CAN_TSR_TME0;
+    mock_can2_regs.TSR = CAN_TSR_TME0;
+
+    CAN_Packet_T channel1[2] = {
+        { .id = 0x101, .data = { 1, 2, 3, 4, 5, 6, 7, 8 } },
+        { .id = 0x102, .data = { 9, 10, 11, 12, 13, 14, 15, 16 } },
+    };
+    CAN_Packet_T channel2[2] = {
+        { .id = 0x201, .data = { 17, 18, 19, 20, 21, 22, 23, 24 } },
+        { .id = 0x202, .data = { 25, 26, 27, 28, 29, 30, 31, 32 } },
+    };
+
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( channel1, 2 ), 0 );
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write2( channel2, 2 ), 0 );
+
+    HW_CAN_Tx_Trigger1();
+    HW_CAN_Tx_Trigger2();
+
+    EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TIR,
+               ( static_cast<uint32_t>( 0x101 ) << 21 ) | CAN_TI0R_TXRQ );
+    EXPECT_EQ( mock_can2_regs.sTxMailBox[0].TIR,
+               ( static_cast<uint32_t>( 0x201 ) << 21 ) | CAN_TI0R_TXRQ );
+
+    HAL_CAN_TxMailbox0CompleteCallback( &hcan1 );
+    HAL_CAN_TxMailbox1CompleteCallback( &hcan2 );
+
+    EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TIR,
+               ( static_cast<uint32_t>( 0x102 ) << 21 ) | CAN_TI0R_TXRQ );
+    EXPECT_EQ( mock_can2_regs.sTxMailBox[0].TIR,
+               ( static_cast<uint32_t>( 0x202 ) << 21 ) | CAN_TI0R_TXRQ );
+    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_FALSE( HW_CAN_Channl2_sent() );
+
+    HAL_CAN_TxMailbox2CompleteCallback( &hcan1 );
+    HAL_CAN_TxMailbox2CompleteCallback( &hcan2 );
+
+    EXPECT_TRUE( HW_CAN_Channl1_sent() );
+    EXPECT_TRUE( HW_CAN_Channl2_sent() );
+}
+
 /**-----------------------------------------------------------------------------
  *  Full Buffer Tests
  *------------------------------------------------------------------------------
