@@ -29,8 +29,7 @@
 extern "C"
 {
 #include "exec_analogue_output.h" /* Module under test */
-// adjust the CMake to include the hw_spi for the unit tests
-#include "../../../hardware_low_level/hw_spi/hw_spi.h"
+#include "hw_spi.h"
 #include <stdint.h>
 #include <stdbool.h>
 }
@@ -230,16 +229,10 @@ protected:
         ExpectStartupFrames( use_external_vref );
     }
 
-    void ExpectSingleWriteFrame( uint8_t channel, uint16_t count )
+    void ExpectSingleWriteFrame( const std::array<uint8_t, 3U>& expected_frame )
     {
         using ::testing::_;
         using ::testing::Invoke;
-
-        const std::array<uint8_t, 3U> expected_frame = {
-            static_cast<uint8_t>( ( channel & 0x1FU ) << 3U ),
-            static_cast<uint8_t>( ( count >> 8U ) & 0xFFU ),
-            static_cast<uint8_t>( count & 0xFFU ),
-        };
 
         EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_DAC, _, 3U ) )
             .WillOnce( Invoke( [expected_frame]( SPIChannel_T peripheral, const uint8_t* data,
@@ -302,6 +295,16 @@ TEST_F( ExecAnalogueOutputTest, Config_ExternalVref_LoadsStartupFramesAndMarksCo
     EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Is_Configured() );
 }
 
+TEST_F( ExecAnalogueOutputTest, Config_VddReference_LoadsStartupFramesAndMarksConfigured )
+{
+    ExpectSuccessfulConfig( false );
+
+    bool result = EXEC_ANALOGUE_OUTPUT_Config( false );
+
+    EXPECT_TRUE( result );
+    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Is_Configured() );
+}
+
 TEST_F( ExecAnalogueOutputTest, Config_LoadFailure_ReturnsFalseAndLeavesModuleUnconfigured )
 {
     using ::testing::_;
@@ -331,7 +334,7 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_ClampsLowVoltageAndWritesZeroCode )
     ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
     ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
 
-    ExpectSingleWriteFrame( 0U, 0U );
+    ExpectSingleWriteFrame( { 0x00U, 0x00U, 0x00U } );
 
     bool result = EXEC_ANALOG_OUTPUT_Write_Voltage( 0U, -3.5F );
 
@@ -344,7 +347,7 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_ClampsHighVoltageAndWritesFullScale
     ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( true ) );
     ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
 
-    ExpectSingleWriteFrame( 5U, 4095U );
+    ExpectSingleWriteFrame( { 0x28U, 0x0FU, 0xFFU } );
 
     bool result = EXEC_ANALOG_OUTPUT_Write_Voltage( 5U, 99.0F );
 
@@ -357,11 +360,93 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_MidScaleVoltageRoundsToNearestCount
     ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
     ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
 
-    ExpectSingleWriteFrame( 2U, 2048U );
+    ExpectSingleWriteFrame( { 0x10U, 0x08U, 0x00U } );
 
     bool result = EXEC_ANALOG_OUTPUT_Write_Voltage( 2U, 10.0F );
 
     EXPECT_TRUE( result );
+}
+
+TEST_F( ExecAnalogueOutputTest, WriteVoltage_ZeroVoltageWritesZeroCode )
+{
+    ExpectSuccessfulConfig( false );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
+    ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+
+    ExpectSingleWriteFrame( { 0x18U, 0x00U, 0x00U } );
+
+    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Write_Voltage( 3U, 0.0F ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, WriteVoltage_MaximumVoltageWritesFullScaleCode )
+{
+    ExpectSuccessfulConfig( false );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
+    ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+
+    ExpectSingleWriteFrame( { 0x20U, 0x0FU, 0xFFU } );
+
+    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Write_Voltage( 4U, 20.0F ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, WriteVoltage_PreservesDataByteOrder )
+{
+    ExpectSuccessfulConfig( false );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
+    ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+
+    /* 12.34 V maps to count 2527 (0x09DF) in the existing implementation. */
+    ExpectSingleWriteFrame( { 0x08U, 0x09U, 0xDFU } );
+
+    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Write_Voltage( 1U, 12.34F ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, WriteVoltage_PreservesRepresentativeRoundingBoundaries )
+{
+    using ::testing::InSequence;
+
+    ExpectSuccessfulConfig( false );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
+    ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+
+    InSequence sequence;
+
+    /* These values fall immediately below and above the first half-count boundary. */
+    ExpectSingleWriteFrame( { 0x00U, 0x00U, 0x00U } );
+    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Write_Voltage( 0U, 0.0024F ) );
+
+    ExpectSingleWriteFrame( { 0x00U, 0x00U, 0x01U } );
+    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Write_Voltage( 0U, 0.0025F ) );
+
+    /* 15 V maps to count 3071 (0x0BFF), preserving round-to-nearest behavior. */
+    ExpectSingleWriteFrame( { 0x00U, 0x0BU, 0xFFU } );
+    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Write_Voltage( 0U, 15.0F ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, WriteVoltage_PacksCommandByteForEverySupportedChannel )
+{
+    using ::testing::InSequence;
+
+    constexpr std::array<std::array<uint8_t, 3U>, 6U> EXPECTED_FRAMES = { {
+        { 0x00U, 0x00U, 0x00U },
+        { 0x08U, 0x00U, 0x00U },
+        { 0x10U, 0x00U, 0x00U },
+        { 0x18U, 0x00U, 0x00U },
+        { 0x20U, 0x00U, 0x00U },
+        { 0x28U, 0x00U, 0x00U },
+    } };
+
+    ExpectSuccessfulConfig( false );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
+    ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+
+    InSequence sequence;
+
+    for ( uint8_t channel = 0U; channel < EXPECTED_FRAMES.size(); channel++ )
+    {
+        ExpectSingleWriteFrame( EXPECTED_FRAMES[channel] );
+        EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Write_Voltage( channel, 0.0F ) );
+    }
 }
 
 TEST_F( ExecAnalogueOutputTest, WriteVoltage_InvalidChannel_ReturnsFalseWithoutSPIWrite )
