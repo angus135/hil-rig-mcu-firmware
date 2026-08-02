@@ -85,6 +85,7 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
         {
             len = 8;
         }
+        out[j].dlc = ( uint8_t )len;
         // move data into packet
         CONSOLE_Printf( "Adding %s to buffer...\n\r", argv[j + 2] );
         for ( int i = 0; i < len; i++ )
