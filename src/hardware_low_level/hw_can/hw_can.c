@@ -341,13 +341,14 @@ static HW_CAN_Result_T HW_CAN_Transmit_To_Mailbox( CAN_HandleTypeDef* hcan, uint
                                                    uint16_t id, uint8_t size,
                                                    uint32_t* request_complete_flag )
 {
-    CAN_TypeDef* can     = hcan->Instance;
-    uint8_t      mailbox = 0;
-    if ( id > CAN_STANDARD_ID_MAX || size > CAN_PACKET_SIZE )
+    if ( id > CAN_STANDARD_ID_MAX || size > CAN_PACKET_SIZE || ( size > 0U && txData == NULL ) )
     {
         // The address is larger than 11 bits or the size is larger than 8 bytes
         return HW_CAN_RESULT_ERROR;
     }
+
+    CAN_TypeDef* can     = hcan->Instance;
+    uint8_t      mailbox = 0;
 
     // Check mailbox available
     if ( can->TSR & CAN_TSR_TME0 )
@@ -468,6 +469,11 @@ static void HW_CAN_Clear_Rx_FIFO0_Flags( CAN_TypeDef* can, uint32_t flags )
  */
 int HW_CAN_Receive( CAN_HandleTypeDef* hcan, CAN_Packet_T* rxPacket )
 {
+    if ( rxPacket == NULL )
+    {
+        return 1;
+    }
+
     CAN_TypeDef* can = hcan->Instance;
 
     /* Check FIFO0 has pending message */
@@ -816,32 +822,44 @@ int HW_CAN_Configure( CAN_HandleTypeDef* hcan, uint32_t bitrate, uint16_t filter
 CanProperties_T HW_CAN_Compute_Properties( uint32_t bitrate, uint32_t total_TQ,
                                            uint32_t sample_point_1t1000 )
 {
-    if ( bitrate < 1 || bitrate > 1000000 )
+    const CanProperties_T invalid_properties = { 0, 0, 0, 0 };
+
+    if ( bitrate == 0U || bitrate > 1000000U || total_TQ < 3U || total_TQ > 25U )
     {
-        // Bitrate out of bounds
-        return ( CanProperties_T ){ 0, 0, 0, 0 };
+        return invalid_properties;
     }
-    if ( sample_point_1t1000 < 700 || sample_point_1t1000 > 1000 )
+    if ( sample_point_1t1000 < 700U || sample_point_1t1000 > 1000U )
     {
-        // sample point out of bounds
-        // sample point should be between 70 and 100 %
-        return ( CanProperties_T ){ 0, 0, 0, 0 };
+        return invalid_properties;
     }
-    uint32_t timer_hz = CAN_TIMER_HZ;
-    uint32_t bs1      = ( sample_point_1t1000 * total_TQ ) / 1000 - 1;
-    uint32_t bs2      = total_TQ - bs1 - 1;
-    uint32_t psc      = timer_hz / ( bitrate * ( 1 + bs1 + bs2 ) );
-    if ( bs1 < 1 || bs1 > 16 )
+
+    uint64_t sample_product = ( uint64_t )sample_point_1t1000 * ( uint64_t )total_TQ;
+    uint64_t sample_tq      = sample_product / 1000U;
+    if ( sample_tq <= 1U || sample_tq >= total_TQ )
     {
-        // bs1 out of bounds
-        return ( CanProperties_T ){ 0, 0, 0, 0 };
+        return invalid_properties;
     }
-    if ( bs2 < 1 || bs2 > 8 )
+
+    uint32_t bs1 = ( uint32_t )sample_tq - 1U;
+    uint32_t bs2 = total_TQ - bs1 - 1U;
+    if ( bs1 < 1U || bs1 > 16U || bs2 < 1U || bs2 > 8U )
     {
-        // bs2 out of bounds
-        return ( CanProperties_T ){ 0, 0, 0, 0 };
+        return invalid_properties;
     }
-    return ( CanProperties_T ){ bs1, bs2, psc, timer_hz };
+
+    uint64_t bitrate_denominator = ( uint64_t )bitrate * ( uint64_t )total_TQ;
+    if ( bitrate_denominator == 0U || ( uint64_t )CAN_TIMER_HZ % bitrate_denominator != 0U )
+    {
+        return invalid_properties;
+    }
+
+    uint64_t prescaler = ( uint64_t )CAN_TIMER_HZ / bitrate_denominator;
+    if ( prescaler < 1U || prescaler > 1024U )
+    {
+        return invalid_properties;
+    }
+
+    return ( CanProperties_T ){ bs1, bs2, ( uint32_t )prescaler, CAN_TIMER_HZ };
 }
 
 /**
@@ -1016,6 +1034,10 @@ uint32_t HW_CAN_Rx_Dropped_Count2( void )
  */
 HW_CAN_Result_T HW_CAN_Transmit1( uint8_t* txData, uint16_t id, uint8_t dlc )
 {
+    if ( dlc > 0U && txData == NULL )
+    {
+        return HW_CAN_RESULT_ERROR;
+    }
     if ( can_tx_active1 )
     {
         return HW_CAN_RESULT_BUSY;
@@ -1048,6 +1070,10 @@ int HW_CAN_Recieve1( CAN_Packet_T* rxPacket )
  */
 HW_CAN_Result_T HW_CAN_Transmit2( uint8_t* txData, uint16_t id, uint8_t dlc )
 {
+    if ( dlc > 0U && txData == NULL )
+    {
+        return HW_CAN_RESULT_ERROR;
+    }
     if ( can_tx_active2 )
     {
         return HW_CAN_RESULT_BUSY;

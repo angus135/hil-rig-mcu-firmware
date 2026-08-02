@@ -156,7 +156,9 @@ uint32_t HW_CAN_Rx_Dropped_Count2( void );
  * @param sample_point_1t1000   Desired sample point, expressed from
  *                             700 to 1000.
  *
- * @return Calculated CAN timing properties.
+ * @return Calculated CAN timing properties, or all-zero properties when the
+ *         timing is invalid or the requested bitrate cannot be represented
+ *         exactly by the bxCAN prescaler.
  */
 CanProperties_T HW_CAN_Compute_Properties( uint32_t bitrate, uint32_t total_TQ,
                                            uint32_t sample_point_1t1000 );
@@ -254,14 +256,15 @@ HW_CAN_Result_T HW_CAN_Recover2( void );
  *                 and data will be stored.
  *
  * @return 0 if a CAN packet was received successfully,
- *         non-zero otherwise.
+ *         non-zero if no packet is pending or rxPacket is null. A null
+ *         destination does not release a FIFO entry.
  */
 int HW_CAN_Recieve1( CAN_Packet_T* rxPacket );
 
 /**
  * @brief Transmits a CAN packet on channel 1.
  *
- * @param txData Pointer to CAN_PACKET_SIZE bytes of data.
+ * @param txData Pointer to payload data. May be null only when dlc is zero.
  * @param id     Standard 11-bit CAN identifier.
  * @param dlc    Number of valid payload bytes, from 0 through 8.
  *
@@ -277,14 +280,15 @@ HW_CAN_Result_T HW_CAN_Transmit1( uint8_t* txData, uint16_t id, uint8_t dlc );
  *                 and data will be stored.
  *
  * @return 0 if a CAN packet was received successfully,
- *         non-zero otherwise.
+ *         non-zero if no packet is pending or rxPacket is null. A null
+ *         destination does not release a FIFO entry.
  */
 int HW_CAN_Recieve2( CAN_Packet_T* rxPacket );
 
 /**
  * @brief Transmits a CAN packet on channel 2.
  *
- * @param txData Pointer to CAN_PACKET_SIZE bytes of data.
+ * @param txData Pointer to payload data. May be null only when dlc is zero.
  * @param id     Standard 11-bit CAN identifier.
  * @param dlc    Number of valid payload bytes, from 0 through 8.
  *
