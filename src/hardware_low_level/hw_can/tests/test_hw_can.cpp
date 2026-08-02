@@ -603,7 +603,7 @@ TEST_F( HWCANTest, RxIRQStoresIDAndDataInBuffer )
 
     CAN_Packet_T out[1] = {};
 
-    EXPECT_EQ( HW_CAN_Rx_Buffer_Read1( out ), 1 );
+    EXPECT_EQ( HW_CAN_Rx_Buffer_Read1( out, 1 ), 1 );
 
     EXPECT_EQ( out[0].id, id );
 
@@ -632,8 +632,8 @@ TEST_F( HWCANTest, HALRxCallbackRoutesBothChannels )
     CAN_Packet_T channel1[1] = {};
     CAN_Packet_T channel2[1] = {};
 
-    ASSERT_EQ( HW_CAN_Rx_Buffer_Read1( channel1 ), 1 );
-    ASSERT_EQ( HW_CAN_Rx_Buffer_Read2( channel2 ), 1 );
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Read1( channel1, 1 ), 1 );
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Read2( channel2, 1 ), 1 );
     EXPECT_EQ( channel1[0].id, 0x111 );
     EXPECT_EQ( channel1[0].data[0], 1 );
     EXPECT_EQ( channel2[0].id, 0x222 );
@@ -714,6 +714,83 @@ TEST_F( HWCANTest, RxBufferWriteFailsWhenFull )
     }
 
     EXPECT_EQ( HW_CAN_Rx_Buffer_Write1( packet, 1 ), 1 );
+}
+
+/** Verify that bounded RX reads preserve order across partial reads and ring wraparound. */
+TEST_F( HWCANTest, RxBufferBoundedReadsPreserveRemainingPacketsAcrossWraparound )
+{
+    CAN_Packet_T packets[15] = {};
+    for ( uint16_t i = 0; i < 15U; i++ )
+    {
+        packets[i].id      = ( uint16_t )( 0x100U + i );
+        packets[i].dlc     = 1;
+        packets[i].data[0] = ( uint8_t )i;
+    }
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Write1( packets, 15 ), 0 );
+
+    CAN_Packet_T first_read[10] = {};
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Read1( first_read, 10 ), 10 );
+    for ( uint16_t i = 0; i < 10U; i++ )
+    {
+        EXPECT_EQ( first_read[i].id, 0x100U + i );
+    }
+
+    CAN_Packet_T wrapped[10] = {};
+    for ( uint16_t i = 0; i < 10U; i++ )
+    {
+        wrapped[i].id      = ( uint16_t )( 0x10FU + i );
+        wrapped[i].dlc     = 1;
+        wrapped[i].data[0] = ( uint8_t )( 15U + i );
+    }
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Write1( wrapped, 10 ), 0 );
+
+    CAN_Packet_T second_read[7] = {};
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Read1( second_read, 7 ), 7 );
+    for ( uint16_t i = 0; i < 7U; i++ )
+    {
+        EXPECT_EQ( second_read[i].id, 0x10AU + i );
+    }
+
+    CAN_Packet_T remaining[8] = {};
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Read1( remaining, 8 ), 8 );
+    for ( uint16_t i = 0; i < 8U; i++ )
+    {
+        EXPECT_EQ( remaining[i].id, 0x111U + i );
+    }
+    EXPECT_EQ( can_rx_rp1, can_rx_wp1 );
+}
+
+/** Verify that zero capacity and a null destination do not consume RX packets. */
+TEST_F( HWCANTest, RxBufferRejectsInvalidDestinationWithoutConsuming )
+{
+    CAN_Packet_T packet[1] = { { .id = 0x123, .dlc = 1, .data = { 0xAA } } };
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Write1( packet, 1 ), 0 );
+
+    CAN_Packet_T out[1] = {};
+    EXPECT_EQ( HW_CAN_Rx_Buffer_Read1( out, 0 ), 0 );
+    EXPECT_EQ( can_rx_rp1, 0 );
+    EXPECT_EQ( HW_CAN_Rx_Buffer_Read1( NULL, 1 ), 0 );
+    EXPECT_EQ( can_rx_rp1, 0 );
+
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Read1( out, 1 ), 1 );
+    EXPECT_EQ( out[0].id, 0x123 );
+}
+
+/** Verify that the public channel RX pop wrappers remove one packet from the selected channel. */
+TEST_F( HWCANTest, RxBufferPopWrappersConsumeSelectedChannel )
+{
+    CAN_Packet_T channel1[1] = { { .id = 0x111, .dlc = 1, .data = { 1 } } };
+    CAN_Packet_T channel2[1] = { { .id = 0x222, .dlc = 1, .data = { 2 } } };
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Write1( channel1, 1 ), 0 );
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Write2( channel2, 1 ), 0 );
+
+    CAN_Packet_T out = {};
+    EXPECT_EQ( HW_CAN_Rx_Buffer_Pop1( &out ), 0 );
+    EXPECT_EQ( out.id, 0x111 );
+    EXPECT_EQ( HW_CAN_Rx_Buffer_Pop1( &out ), 1 );
+    EXPECT_EQ( HW_CAN_Rx_Buffer_Pop2( &out ), 0 );
+    EXPECT_EQ( out.id, 0x222 );
+    EXPECT_EQ( HW_CAN_Rx_Buffer_Pop2( NULL ), 1 );
 }
 
 /** Verify that TX ring-buffer wraparound preserves FIFO ordering after packets are consumed and new

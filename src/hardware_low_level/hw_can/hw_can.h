@@ -264,14 +264,14 @@ uint16_t HW_CAN_Rx_Buffer_Write1( CAN_Packet_T source[], uint16_t length );
 /**
  * @brief Reads CAN packets from the channel 1 receive buffer.
  *
- * Reading does not consume the packets from the buffer. Use
- * HW_CAN_Rx_Buffer_consume1() to advance the read pointer.
+ * @param dest      Destination array for the CAN packets.
+ * @param capacity  Maximum number of packets that fit in dest.
  *
- * @param dest  Destination array for the CAN packets.
- *
- * @return Number of CAN packets available in the buffer.
+ * @return Number of packets copied and consumed. The result is at most
+ *         capacity. A zero capacity, or a null destination with non-zero
+ *         capacity, returns zero without changing the buffer.
  */
-uint16_t HW_CAN_Rx_Buffer_Read1( CAN_Packet_T dest[] );
+uint16_t HW_CAN_Rx_Buffer_Read1( CAN_Packet_T dest[], uint16_t capacity );
 
 /**
  * @brief Reads CAN packets from the channel 1 transmit buffer.
@@ -342,14 +342,14 @@ uint16_t HW_CAN_Rx_Buffer_Write2( CAN_Packet_T source[], uint16_t length );
 /**
  * @brief Reads CAN packets from the channel 2 receive buffer.
  *
- * Reading does not consume the packets from the buffer. Use
- * HW_CAN_Rx_Buffer_consume2() to advance the read pointer.
+ * @param dest      Destination array for the CAN packets.
+ * @param capacity  Maximum number of packets that fit in dest.
  *
- * @param dest  Destination array for the CAN packets.
- *
- * @return Number of CAN packets available in the buffer.
+ * @return Number of packets copied and consumed. The result is at most
+ *         capacity. A zero capacity, or a null destination with non-zero
+ *         capacity, returns zero without changing the buffer.
  */
-uint16_t HW_CAN_Rx_Buffer_Read2( CAN_Packet_T dest[] );
+uint16_t HW_CAN_Rx_Buffer_Read2( CAN_Packet_T dest[], uint16_t capacity );
 
 /**
  * @brief Reads CAN packets from the channel 2 transmit buffer.

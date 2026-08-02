@@ -206,7 +206,7 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
     }
     if ( strcmp( argv[1], "1" ) == 0 )
     {
-        read = EXEC_CAN_Rx_Buffer_Read1( out );
+        read = EXEC_CAN_Rx_Buffer_Read1( out, 20 );
         if ( read == 0 )
         {
             CONSOLE_Printf( "Nothing in channel 1 buffer\n\r" );
@@ -215,7 +215,7 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
     }
     else if ( strcmp( argv[1], "2" ) == 0 )
     {
-        read = EXEC_CAN_Rx_Buffer_Read2( out );
+        read = EXEC_CAN_Rx_Buffer_Read2( out, 20 );
         if ( read == 0 )
         {
             CONSOLE_Printf( "Nothing in channel 2 buffer\n\r" );

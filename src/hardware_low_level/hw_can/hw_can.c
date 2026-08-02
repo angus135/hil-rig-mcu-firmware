@@ -193,8 +193,13 @@ e.g. here the buffer is 'full', even if ther is technically 1 spot left
  *
  */
 uint16_t HW_CAN_Buffer_Read( CAN_Packet_T buffer[], volatile uint16_t* w_p, volatile uint16_t* r_p,
-                             uint16_t buffer_width, CAN_Packet_T dest[] )
+                             uint16_t buffer_width, CAN_Packet_T dest[], uint16_t capacity )
 {
+    if ( capacity == 0U || dest == NULL )
+    {
+        return 0;
+    }
+
     uint16_t temp_r_p = *r_p;
     uint16_t temp_w_p = *w_p;
 
@@ -205,6 +210,10 @@ uint16_t HW_CAN_Buffer_Read( CAN_Packet_T buffer[], volatile uint16_t* w_p, vola
     }
 
     uint16_t count = ( temp_w_p - temp_r_p + buffer_width ) % buffer_width;
+    if ( count > capacity )
+    {
+        count = capacity;
+    }
 
     for ( uint16_t i = 0; i < count; i++ )
     {
@@ -231,7 +240,7 @@ uint16_t HW_CAN_Buffer_Read( CAN_Packet_T buffer[], volatile uint16_t* w_p, vola
 uint16_t HW_CAN_Buffer_Pop( CAN_Packet_T buffer[], volatile uint16_t* w_p, volatile uint16_t* r_p,
                             uint16_t buffer_width, CAN_Packet_T* dest )
 {
-    if ( *w_p == *r_p )
+    if ( dest == NULL || *w_p == *r_p )
     {
         return 1;
     }
@@ -970,10 +979,12 @@ uint16_t HW_CAN_Rx_Buffer_Write2( CAN_Packet_T source[], uint16_t length )
  *
  * @return the number of CAN_PACKET_SIZE's read
  */
-uint16_t HW_CAN_Rx_Buffer_Read1( CAN_Packet_T dest[] )
+uint16_t HW_CAN_Rx_Buffer_Read1( CAN_Packet_T dest[], uint16_t capacity )
 {
-    return HW_CAN_Buffer_Read( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH,
-                               dest );
+    uint16_t count = HW_CAN_Buffer_Read( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1,
+                                         RECEIVE_BUFFER_WIDTH, dest, capacity );
+    HW_CAN_Rx_Buffer_consume1( count );
+    return count;
 }
 
 /**
@@ -994,10 +1005,12 @@ void HW_CAN_Rx_Buffer_consume1( uint16_t update )
  *
  * @return the number of CAN_PACKET_SIZE's read
  */
-uint16_t HW_CAN_Rx_Buffer_Read2( CAN_Packet_T dest[] )
+uint16_t HW_CAN_Rx_Buffer_Read2( CAN_Packet_T dest[], uint16_t capacity )
 {
-    return HW_CAN_Buffer_Read( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH,
-                               dest );
+    uint16_t count = HW_CAN_Buffer_Read( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2,
+                                         RECEIVE_BUFFER_WIDTH, dest, capacity );
+    HW_CAN_Rx_Buffer_consume2( count );
+    return count;
 }
 
 /**
@@ -1021,7 +1034,7 @@ void HW_CAN_Rx_Buffer_consume2( uint16_t update )
 uint16_t HW_CAN_Tx_Buffer_Read1( CAN_Packet_T dest[] )
 {
     return HW_CAN_Buffer_Read( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
-                               dest );
+                               dest, TRANSMIT_BUFFER_WIDTH - 1U );
 }
 
 /**
@@ -1034,7 +1047,21 @@ uint16_t HW_CAN_Tx_Buffer_Read1( CAN_Packet_T dest[] )
 uint16_t HW_CAN_Tx_Buffer_Read2( CAN_Packet_T dest[] )
 {
     return HW_CAN_Buffer_Read( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
-                               dest );
+                               dest, TRANSMIT_BUFFER_WIDTH - 1U );
+}
+
+/** Remove one packet from the channel 1 receive buffer. */
+uint16_t HW_CAN_Rx_Buffer_Pop1( CAN_Packet_T* dest )
+{
+    return HW_CAN_Buffer_Pop( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH,
+                              dest );
+}
+
+/** Remove one packet from the channel 2 receive buffer. */
+uint16_t HW_CAN_Rx_Buffer_Pop2( CAN_Packet_T* dest )
+{
+    return HW_CAN_Buffer_Pop( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH,
+                              dest );
 }
 
 /**
