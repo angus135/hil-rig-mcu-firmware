@@ -26,6 +26,7 @@
 #include <array>
 #include <limits>
 #include <string.h>
+#include <type_traits>
 
 extern "C"
 {
@@ -98,6 +99,11 @@ static void VerifyPreparedFrame( const AnalogueOutputPreparedFrame_T& prepared_f
 static void ExpectFrameLoad( MockHWSPI&                     mock_hw_spi,
                              const std::array<uint8_t, 3U>& expected_frame );
 
+template <size_t SIZE_BYTES>
+static void ExpectPayloadLoad( MockHWSPI&                             mock_hw_spi,
+                               const std::array<uint8_t, SIZE_BYTES>& expected_payload,
+                               bool                                   accepted = true );
+
 /**-----------------------------------------------------------------------------
  *  Test Constants / Macros
  *------------------------------------------------------------------------------
@@ -159,6 +165,24 @@ static void ExpectFrameLoad( MockHWSPI& mock_hw_spi, const std::array<uint8_t, 3
                 VerifyLoadedFrame( peripheral, data, size_bytes, expected_frame );
                 return true;
             } ) );
+}
+
+template <size_t SIZE_BYTES>
+static void ExpectPayloadLoad( MockHWSPI&                             mock_hw_spi,
+                               const std::array<uint8_t, SIZE_BYTES>& expected_payload,
+                               bool                                   accepted )
+{
+    using ::testing::_;
+    using ::testing::Invoke;
+
+    EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_DAC, _, ( uint32_t )SIZE_BYTES ) )
+        .WillOnce( Invoke( [expected_payload, accepted](
+                               SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ) {
+            EXPECT_EQ( peripheral, SPI_DAC );
+            EXPECT_EQ( size_bytes, ( uint32_t )SIZE_BYTES );
+            EXPECT_EQ( 0, memcmp( data, expected_payload.data(), expected_payload.size() ) );
+            return accepted;
+        } ) );
 }
 
 /**-----------------------------------------------------------------------------
@@ -428,6 +452,226 @@ TEST_F( ExecAnalogueOutputTest, PrepareFrame_RejectsNullDestination )
     EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 0U, 10.0F, nullptr ) );
 }
 
+TEST_F( ExecAnalogueOutputTest, PreparedBatch_UsesFixedInlineEighteenBytePayload )
+{
+    EXPECT_EQ( EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES, 18U );
+    EXPECT_EQ( sizeof( AnalogueOutputPreparedBatch_T::bytes ), 18U );
+    EXPECT_EQ( sizeof( AnalogueOutputPreparedBatch_T ), 19U );
+    EXPECT_TRUE( std::is_trivially_copyable<AnalogueOutputPreparedBatch_T>::value );
+    EXPECT_TRUE( std::is_standard_layout<AnalogueOutputPreparedBatch_T>::value );
+}
+
+TEST_F( ExecAnalogueOutputTest, BatchInit_CreatesEmptyClearedBatch )
+{
+    AnalogueOutputPreparedBatch_T prepared_batch;
+    memset( &prepared_batch, 0xA5, sizeof( prepared_batch ) );
+
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+
+    EXPECT_EQ( prepared_batch.byte_count, 0U );
+    for ( uint8_t byte : prepared_batch.bytes )
+    {
+        EXPECT_EQ( byte, 0U );
+    }
+}
+
+TEST_F( ExecAnalogueOutputTest, BatchInit_RejectsNullDestination )
+{
+    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Batch_Init( nullptr ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, BatchAppend_OneFrameProducesThreeContiguousBytes )
+{
+    const AnalogueOutputPreparedFrame_T frame = { { 0x18U, 0x09U, 0xDFU } };
+    AnalogueOutputPreparedBatch_T       prepared_batch;
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
+
+    EXPECT_EQ( prepared_batch.byte_count, 3U );
+    EXPECT_EQ( 0, memcmp( prepared_batch.bytes, frame.bytes, sizeof( frame ) ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, BatchAppend_MultipleFramesPreserveExactOrderAndCount )
+{
+    constexpr std::array<AnalogueOutputPreparedFrame_T, 3U> FRAMES         = { {
+        { { 0x10U, 0x01U, 0x23U } },
+        { { 0x00U, 0x04U, 0x56U } },
+        { { 0x28U, 0x07U, 0x89U } },
+    } };
+    constexpr std::array<uint8_t, 9U>                       EXPECTED_BYTES = {
+        0x10U, 0x01U, 0x23U, 0x00U, 0x04U, 0x56U, 0x28U, 0x07U, 0x89U,
+    };
+    AnalogueOutputPreparedBatch_T prepared_batch;
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+
+    for ( uint8_t index = 0U; index < FRAMES.size(); index++ )
+    {
+        ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &FRAMES[index] ) );
+        EXPECT_EQ( prepared_batch.byte_count,
+                   ( uint8_t )( ( index + 1U ) * EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES ) );
+    }
+
+    EXPECT_EQ( 0, memcmp( prepared_batch.bytes, EXPECTED_BYTES.data(), EXPECTED_BYTES.size() ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, BatchAppend_SixFramesAcceptedAndSeventhLeavesBatchUnchanged )
+{
+    constexpr std::array<AnalogueOutputPreparedFrame_T, 7U> FRAMES         = { {
+        { { 0x00U, 0x00U, 0x01U } },
+        { { 0x08U, 0x00U, 0x02U } },
+        { { 0x10U, 0x00U, 0x03U } },
+        { { 0x18U, 0x00U, 0x04U } },
+        { { 0x20U, 0x00U, 0x05U } },
+        { { 0x28U, 0x00U, 0x06U } },
+        { { 0x00U, 0x00U, 0x07U } },
+    } };
+    constexpr std::array<uint8_t, 18U>                      EXPECTED_BYTES = {
+        0x00U, 0x00U, 0x01U, 0x08U, 0x00U, 0x02U, 0x10U, 0x00U, 0x03U,
+        0x18U, 0x00U, 0x04U, 0x20U, 0x00U, 0x05U, 0x28U, 0x00U, 0x06U,
+    };
+    AnalogueOutputPreparedBatch_T prepared_batch;
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+
+    for ( uint8_t index = 0U; index < EXEC_ANALOG_OUTPUT_BATCH_MAX_FRAMES; index++ )
+    {
+        ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &FRAMES[index] ) );
+        EXPECT_EQ( prepared_batch.byte_count,
+                   ( uint8_t )( ( index + 1U ) * EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES ) );
+    }
+
+    EXPECT_EQ( prepared_batch.byte_count, 18U );
+    EXPECT_EQ( 0, memcmp( prepared_batch.bytes, EXPECTED_BYTES.data(), EXPECTED_BYTES.size() ) );
+
+    const AnalogueOutputPreparedBatch_T batch_before_rejection = prepared_batch;
+    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &FRAMES[6] ) );
+    EXPECT_EQ( 0, memcmp( &prepared_batch, &batch_before_rejection, sizeof( prepared_batch ) ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, BatchAppend_RejectsNullAndMalformedInputsWithoutChangingBatch )
+{
+    const AnalogueOutputPreparedFrame_T frame = { { 0x00U, 0x00U, 0x00U } };
+    AnalogueOutputPreparedBatch_T       prepared_batch;
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+
+    const AnalogueOutputPreparedBatch_T empty_batch = prepared_batch;
+    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Batch_Append( nullptr, &frame ) );
+    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, nullptr ) );
+    EXPECT_EQ( 0, memcmp( &prepared_batch, &empty_batch, sizeof( prepared_batch ) ) );
+
+    prepared_batch.byte_count                           = 1U;
+    const AnalogueOutputPreparedBatch_T malformed_batch = prepared_batch;
+    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
+    EXPECT_EQ( 0, memcmp( &prepared_batch, &malformed_batch, sizeof( prepared_batch ) ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_NotConfiguredRejectsWithoutSPITraffic )
+{
+    AnalogueOutputPreparedBatch_T prepared_batch;
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+
+    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_EmptyBatchIsSuccessfulNoOp )
+{
+    ExpectSuccessfulConfig( false );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
+    ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+
+    AnalogueOutputPreparedBatch_T prepared_batch;
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+
+    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_OneFrameLoadsOnceThenTriggersOnce )
+{
+    using ::testing::InSequence;
+
+    constexpr std::array<uint8_t, 3U>   EXPECTED_BYTES = { 0x18U, 0x09U, 0xDFU };
+    const AnalogueOutputPreparedFrame_T frame          = { { 0x18U, 0x09U, 0xDFU } };
+    AnalogueOutputPreparedBatch_T       prepared_batch;
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
+
+    ExpectSuccessfulConfig( false );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
+    ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+
+    InSequence sequence;
+    ExpectPayloadLoad( mock_hw_spi, EXPECTED_BYTES );
+    EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 1 );
+
+    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_SixFramesLoadOneExactEighteenBytePayload )
+{
+    using ::testing::InSequence;
+
+    constexpr std::array<AnalogueOutputPreparedFrame_T, 6U> FRAMES         = { {
+        { { 0x00U, 0x00U, 0x01U } },
+        { { 0x08U, 0x00U, 0x02U } },
+        { { 0x10U, 0x00U, 0x03U } },
+        { { 0x18U, 0x00U, 0x04U } },
+        { { 0x20U, 0x00U, 0x05U } },
+        { { 0x28U, 0x00U, 0x06U } },
+    } };
+    constexpr std::array<uint8_t, 18U>                      EXPECTED_BYTES = {
+        0x00U, 0x00U, 0x01U, 0x08U, 0x00U, 0x02U, 0x10U, 0x00U, 0x03U,
+        0x18U, 0x00U, 0x04U, 0x20U, 0x00U, 0x05U, 0x28U, 0x00U, 0x06U,
+    };
+    AnalogueOutputPreparedBatch_T prepared_batch;
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+    for ( const AnalogueOutputPreparedFrame_T& frame : FRAMES )
+    {
+        ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
+    }
+
+    ExpectSuccessfulConfig( false );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
+    ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+
+    InSequence sequence;
+    ExpectPayloadLoad( mock_hw_spi, EXPECTED_BYTES );
+    EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 1 );
+
+    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_LoadRejectionReturnsFalseWithoutTrigger )
+{
+    constexpr std::array<uint8_t, 3U>   EXPECTED_BYTES = { 0x18U, 0x09U, 0xDFU };
+    const AnalogueOutputPreparedFrame_T frame          = { { 0x18U, 0x09U, 0xDFU } };
+    AnalogueOutputPreparedBatch_T       prepared_batch;
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
+
+    ExpectSuccessfulConfig( false );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
+    ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+
+    ExpectPayloadLoad( mock_hw_spi, EXPECTED_BYTES, false );
+    EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 0 );
+
+    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_RejectsMalformedAndNullBatches )
+{
+    ExpectSuccessfulConfig( false );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
+    ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+
+    AnalogueOutputPreparedBatch_T prepared_batch;
+    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+    prepared_batch.byte_count = 1U;
+
+    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( nullptr ) );
+}
+
 TEST_F( ExecAnalogueOutputTest, WriteVoltage_NotConfigured_ReturnsFalseWithoutSPITraffic )
 {
     EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Is_Configured() );
@@ -558,8 +802,10 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_PacksCommandByteForEverySupportedCh
     }
 }
 
-TEST_F( ExecAnalogueOutputTest, WriteVoltage_InvalidChannel_ReturnsFalseWithoutSPIWrite )
+TEST_F( ExecAnalogueOutputTest, WriteVoltage_InvalidChannelsReturnFalseWithoutSPIWrite )
 {
+    constexpr std::array<uint8_t, 3U> INVALID_CHANNELS = { 6U, 7U, UINT8_MAX };
+
     ExpectSuccessfulConfig( false );
     ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
     ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
@@ -567,7 +813,39 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_InvalidChannel_ReturnsFalseWithoutS
     EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_DAC, ::testing::_, ::testing::_ ) ).Times( 0 );
     EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 0 );
 
-    bool result = EXEC_ANALOG_OUTPUT_Write_Voltage( 6U, 12.0F );
+    for ( uint8_t channel : INVALID_CHANNELS )
+    {
+        EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Write_Voltage( channel, 12.0F ) );
+    }
+}
 
-    EXPECT_FALSE( result );
+TEST_F( ExecAnalogueOutputTest, WriteVoltage_NonFiniteInputsReturnFalseWithoutSPIWrite )
+{
+    constexpr std::array<float, 3U> NON_FINITE_VOLTAGES = {
+        std::numeric_limits<float>::quiet_NaN(),
+        std::numeric_limits<float>::infinity(),
+        -std::numeric_limits<float>::infinity(),
+    };
+
+    ExpectSuccessfulConfig( false );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
+    ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+
+    for ( float input_voltage_v : NON_FINITE_VOLTAGES )
+    {
+        EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Write_Voltage( 0U, input_voltage_v ) );
+    }
+}
+
+TEST_F( ExecAnalogueOutputTest, WriteVoltage_LoadRejectionPropagatesWithoutTrigger )
+{
+    ExpectSuccessfulConfig( false );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
+    ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+
+    constexpr std::array<uint8_t, 3U> EXPECTED_BYTES = { 0x10U, 0x08U, 0x00U };
+    ExpectPayloadLoad( mock_hw_spi, EXPECTED_BYTES, false );
+    EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 0 );
+
+    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Write_Voltage( 2U, 10.0F ) );
 }

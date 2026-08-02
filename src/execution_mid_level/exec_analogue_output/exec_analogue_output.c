@@ -19,6 +19,7 @@
 #include <stdbool.h>
 #include <math.h>
 #include <stddef.h>
+#include <string.h>
 
 #include "exec_analogue_output.h"
 #include "hw_spi.h"
@@ -343,6 +344,83 @@ bool EXEC_ANALOG_OUTPUT_Prepare_Frame( uint8_t channel, float input_voltage_v,
     return true;
 }
 
+bool EXEC_ANALOG_OUTPUT_Batch_Init( AnalogueOutputPreparedBatch_T* prepared_batch )
+{
+    if ( prepared_batch == NULL )
+    {
+        return false;
+    }
+
+    memset( prepared_batch->bytes, 0, sizeof( prepared_batch->bytes ) );
+    prepared_batch->byte_count = 0U;
+
+    return true;
+}
+
+bool EXEC_ANALOG_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       prepared_batch,
+                                      const AnalogueOutputPreparedFrame_T* prepared_frame )
+{
+    if ( ( prepared_batch == NULL ) || ( prepared_frame == NULL ) )
+    {
+        return false;
+    }
+
+    if ( ( prepared_batch->byte_count % EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES ) != 0U )
+    {
+        return false;
+    }
+
+    if ( prepared_batch->byte_count
+         > ( EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES - EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES ) )
+    {
+        return false;
+    }
+
+    memcpy( &prepared_batch->bytes[prepared_batch->byte_count], prepared_frame->bytes,
+            sizeof( *prepared_frame ) );
+    prepared_batch->byte_count =
+        ( uint8_t )( prepared_batch->byte_count + EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES );
+
+    return true;
+}
+
+bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( const AnalogueOutputPreparedBatch_T* prepared_batch )
+{
+    if ( !s_EXEC_ANALOGUE_OUTPUT_Configured )
+    {
+        return false;
+    }
+
+    if ( prepared_batch == NULL )
+    {
+        return false;
+    }
+
+    if ( ( prepared_batch->byte_count > EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES )
+         || ( ( prepared_batch->byte_count % EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES ) != 0U ) )
+    {
+        return false;
+    }
+
+    if ( prepared_batch->byte_count == 0U )
+    {
+        return true;
+    }
+
+    if ( !HW_SPI_Load_Tx_Buffer( ANALOGUE_OUTPUT_SPI_CHANNEL, prepared_batch->bytes,
+                                 prepared_batch->byte_count ) )
+    {
+        return false;
+    }
+
+    HW_SPI_Tx_Trigger( ANALOGUE_OUTPUT_SPI_CHANNEL );
+
+    // TODO(DEV-80): Confirm whether LAT0 and LAT1 are connected and use them if simultaneous
+    // same-tick application is required. Batching preserves a future LAT implementation without
+    // changing the stored prepared-frame format.
+    return true;
+}
+
 /**
  * @brief Write a voltage to a single DAC output channel.
  *
@@ -378,29 +456,22 @@ bool EXEC_ANALOG_OUTPUT_Prepare_Frame( uint8_t channel, float input_voltage_v,
 bool EXEC_ANALOG_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v )
 {
     AnalogueOutputPreparedFrame_T prepared_frame;
-
-    if ( !s_EXEC_ANALOGUE_OUTPUT_Configured )
-    {
-        return false;
-    }
+    AnalogueOutputPreparedBatch_T prepared_batch;
 
     if ( !EXEC_ANALOG_OUTPUT_Prepare_Frame( channel, input_voltage_v, &prepared_frame ) )
     {
         return false;
     }
 
-    if ( !EXEC_ANALOGUE_OUTPUT_Send_Prepared_Frame( &prepared_frame ) )
+    if ( !EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) )
     {
-        // TODO(DEV-80): A full SPI queue skips this update and leaves the previous physical output
-        // active. The execution manager should latch a test fault or stop safely; pre-run
-        // feasibility analysis should reject schedules above the sustainable DAC/SPI rate.
         return false;
     }
 
-    // TODO(DEV-80): Separate transactions make same-tick channel updates occur at different times.
-    // Investigate per-tick batching and, if the schematic confirms LAT is exposed, simultaneous
-    // application; otherwise document the skew and include it in feasibility analysis.
-    HW_SPI_Tx_Trigger( ANALOGUE_OUTPUT_SPI_CHANNEL );
+    if ( !EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &prepared_frame ) )
+    {
+        return false;
+    }
 
-    return true;
+    return EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch );
 }
