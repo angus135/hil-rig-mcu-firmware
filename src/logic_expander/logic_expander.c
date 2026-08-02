@@ -104,10 +104,13 @@ static const LogicExpanderConfigWrite_T LOGIC_EXPANDER_CONFIG_WRITES[] = {
     { MCP23017_REG_OLATA, 0U, 0U, true },
 };
 
-static LogicExpanderState_T logic_expander_state[LOGIC_EXPANDER_COUNT] = { 0 };
-static bool                 logic_expander_ready                       = false;
-static uint8_t              logic_expander_active_bitmask = LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK;
-static uint8_t              logic_expander_dirty_bitmask  = 0U;
+static LogicExpanderState_T logic_expander_state[LOGIC_EXPANDER_COUNT]           = { 0 };
+static LogicExpanderState_T logic_expander_submitted_state[LOGIC_EXPANDER_COUNT] = { 0 };
+static bool                 logic_expander_ready                                 = false;
+static uint8_t              logic_expander_active_bitmask  = LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK;
+static uint8_t              logic_expander_dirty_bitmask   = 0U;
+static uint8_t              logic_expander_pending_bitmask = 0U;
+static uint8_t              logic_expander_retry_bitmask   = 0U;
 static LogicExpanderConfigState_T logic_expander_config_state = LOGIC_EXPANDER_CONFIG_NOT_STARTED;
 static uint8_t                    logic_expander_config_index = 0U;
 static uint8_t                    logic_expander_config_write = 0U;
@@ -115,6 +118,8 @@ static SemaphoreHandle_t          logic_expander_mutex        = NULL;
 static StaticSemaphore_t          logic_expander_mutex_storage;
 
 static LogicExpanderStatus_T LOGIC_EXPANDER_Process_Locked( void );
+static LogicExpanderStatus_T LOGIC_EXPANDER_Enqueue_Control_Bits( uint8_t* source_bitmask,
+                                                                  bool     is_retry );
 
 static bool LOGIC_EXPANDER_Lock( void )
 {
@@ -317,14 +322,17 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config_Locked( void )
 
     for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
     {
-        logic_expander_state[idx].olat_a = LOGIC_EXPANDER_INIT_OLAT_A[idx];
-        logic_expander_state[idx].olat_b = LOGIC_EXPANDER_INIT_OLAT_B[idx];
+        logic_expander_state[idx].olat_a    = LOGIC_EXPANDER_INIT_OLAT_A[idx];
+        logic_expander_state[idx].olat_b    = LOGIC_EXPANDER_INIT_OLAT_B[idx];
+        logic_expander_submitted_state[idx] = logic_expander_state[idx];
     }
 
-    logic_expander_dirty_bitmask = 0U;
-    logic_expander_config_index  = 0U;
-    logic_expander_config_write  = 0U;
-    logic_expander_config_state  = LOGIC_EXPANDER_CONFIG_QUEUING;
+    logic_expander_dirty_bitmask   = 0U;
+    logic_expander_pending_bitmask = 0U;
+    logic_expander_retry_bitmask   = 0U;
+    logic_expander_config_index    = 0U;
+    logic_expander_config_write    = 0U;
+    logic_expander_config_state    = LOGIC_EXPANDER_CONFIG_QUEUING;
     return LOGIC_EXPANDER_Process_Locked();
 }
 
@@ -373,15 +381,28 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Process_Locked( void )
 
     if ( logic_expander_config_state == LOGIC_EXPANDER_CONFIG_READY )
     {
-        if ( HW_I2C_Is_Transaction_Queue_Complete( HW_I2C_CHANNEL_FMPI2C1 ) )
+        if ( logic_expander_pending_bitmask != 0U )
         {
+            if ( !HW_I2C_Is_Transaction_Queue_Complete( HW_I2C_CHANNEL_FMPI2C1 ) )
+            {
+                return LOGIC_EXPANDER_STATUS_OK;
+            }
+
             const HWI2CStatus_T transfer_result =
                 HW_I2C_Get_And_Clear_Transfer_Result( HW_I2C_CHANNEL_FMPI2C1 );
             if ( transfer_result != HW_I2C_STATUS_OK )
             {
-                logic_expander_dirty_bitmask |= logic_expander_active_bitmask;
+                logic_expander_retry_bitmask |= logic_expander_pending_bitmask;
+                logic_expander_pending_bitmask = 0U;
                 return LOGIC_EXPANDER_From_HW_Status( transfer_result );
             }
+
+            logic_expander_pending_bitmask = 0U;
+        }
+
+        if ( logic_expander_retry_bitmask != 0U )
+        {
+            return LOGIC_EXPANDER_Enqueue_Control_Bits( &logic_expander_retry_bitmask, true );
         }
         return LOGIC_EXPANDER_STATUS_OK;
     }
@@ -422,6 +443,40 @@ LOGIC_EXPANDER_Load_Control_Bit_Locked( LogicExpanderIndex_T expander_index,
     return LOGIC_EXPANDER_STATUS_OK;
 }
 
+static LogicExpanderStatus_T LOGIC_EXPANDER_Enqueue_Control_Bits( uint8_t* source_bitmask,
+                                                                  bool     is_retry )
+{
+    for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
+    {
+        const uint8_t expander_bit = ( uint8_t )( 1U << idx );
+        if ( ( *source_bitmask & expander_bit ) == 0U
+             || !LOGIC_EXPANDER_Index_Is_Active( ( LogicExpanderIndex_T )idx ) )
+        {
+            continue;
+        }
+
+        const LogicExpanderState_T* submitted_state =
+            is_retry ? &logic_expander_submitted_state[idx] : &logic_expander_state[idx];
+        const LogicExpanderStatus_T status = LOGIC_EXPANDER_Write_Register_Pair(
+            LOGIC_EXPANDER_I2C_ADDRESSES[idx], MCP23017_REG_OLATA, submitted_state->olat_a,
+            submitted_state->olat_b );
+        if ( status != LOGIC_EXPANDER_STATUS_OK )
+        {
+            return status;
+        }
+
+        if ( !is_retry )
+        {
+            logic_expander_submitted_state[idx] = logic_expander_state[idx];
+            logic_expander_retry_bitmask &= ( uint8_t )~expander_bit;
+        }
+        *source_bitmask &= ( uint8_t )~expander_bit;
+        logic_expander_pending_bitmask |= expander_bit;
+    }
+
+    return LOGIC_EXPANDER_STATUS_OK;
+}
+
 static LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits_Locked( void )
 {
     if ( !logic_expander_ready )
@@ -429,27 +484,7 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits_Locked( void )
         return LOGIC_EXPANDER_STATUS_NOT_READY;
     }
 
-    for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
-    {
-        const uint8_t expander_bit = ( uint8_t )( 1U << idx );
-        if ( ( logic_expander_dirty_bitmask & expander_bit ) == 0U
-             || !LOGIC_EXPANDER_Index_Is_Active( ( LogicExpanderIndex_T )idx ) )
-        {
-            continue;
-        }
-
-        const LogicExpanderStatus_T status = LOGIC_EXPANDER_Write_Register_Pair(
-            LOGIC_EXPANDER_I2C_ADDRESSES[idx], MCP23017_REG_OLATA, logic_expander_state[idx].olat_a,
-            logic_expander_state[idx].olat_b );
-        if ( status != LOGIC_EXPANDER_STATUS_OK )
-        {
-            return status;
-        }
-
-        logic_expander_dirty_bitmask &= ( uint8_t )~expander_bit;
-    }
-
-    return LOGIC_EXPANDER_STATUS_OK;
+    return LOGIC_EXPANDER_Enqueue_Control_Bits( &logic_expander_dirty_bitmask, false );
 }
 
 static LogicExpanderStatus_T

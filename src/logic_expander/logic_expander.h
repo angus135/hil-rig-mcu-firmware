@@ -125,7 +125,9 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void );
  * @brief Advance non-blocking configuration and observe its physical completion.
  *
  * The background task calls this every 10 ms. It resumes queue submission and
- * observes physical completion without waiting or busy-spinning.
+ * observes physical completion without waiting or busy-spinning. Output writes
+ * that fail after being accepted are automatically resubmitted on a later call
+ * using the most recent explicitly submitted snapshot.
  */
 LogicExpanderStatus_T LOGIC_EXPANDER_Process( void );
 
@@ -154,7 +156,10 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expa
  * Sends all accumulated bit changes (from LOGIC_EXPANDER_Load_Control_Bit)
  * to their respective MCP23017 devices via I2C.
  * Only dirty devices are enqueued. Queue-full is returned immediately; devices
- * already accepted are clean and unsent devices remain dirty for a later call.
+ * already accepted are tracked until physical completion and unsent devices
+ * remain dirty for a later explicit call. Asynchronous failures are retried by
+ * LOGIC_EXPANDER_Process() from the last accepted snapshot, without sending
+ * newer unsent shadow changes.
  *
  * @return LOGIC_EXPANDER_STATUS_OK if all devices updated successfully
  * @return LOGIC_EXPANDER_STATUS_BUSY if the transaction queue is full

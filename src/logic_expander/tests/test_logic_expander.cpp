@@ -117,12 +117,15 @@ protected:
     {
         g_mock_hw_i2c = &mock_hw_i2c;
         std::memset( logic_expander_state, 0, sizeof( logic_expander_state ) );
-        logic_expander_ready          = false;
-        logic_expander_active_bitmask = LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK;
-        logic_expander_dirty_bitmask  = 0U;
-        logic_expander_config_state   = LOGIC_EXPANDER_CONFIG_NOT_STARTED;
-        logic_expander_config_index   = 0U;
-        logic_expander_config_write   = 0U;
+        std::memset( logic_expander_submitted_state, 0, sizeof( logic_expander_submitted_state ) );
+        logic_expander_ready           = false;
+        logic_expander_active_bitmask  = LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK;
+        logic_expander_dirty_bitmask   = 0U;
+        logic_expander_pending_bitmask = 0U;
+        logic_expander_retry_bitmask   = 0U;
+        logic_expander_config_state    = LOGIC_EXPANDER_CONFIG_NOT_STARTED;
+        logic_expander_config_index    = 0U;
+        logic_expander_config_write    = 0U;
         logic_expander_mutex = reinterpret_cast<SemaphoreHandle_t>( &g_fake_mutex_storage );
         g_mutex_create_calls = 0U;
         g_mutex_take_calls   = 0U;
@@ -322,6 +325,9 @@ TEST_F( LogicExpanderTest, SendControlBitsEnqueuesOnlyDirtyExpanders )
 
     EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( logic_expander_dirty_bitmask, 0U );
+    EXPECT_EQ( logic_expander_pending_bitmask, 0x01U );
+    EXPECT_EQ( logic_expander_submitted_state[0].olat_a, 0x5AU );
+    EXPECT_EQ( logic_expander_submitted_state[0].olat_b, 0xA5U );
     EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
 }
 
@@ -343,21 +349,114 @@ TEST_F( LogicExpanderTest, PartialQueueFullRetryDoesNotDuplicateAcceptedExpander
 
     EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_BUSY );
     EXPECT_EQ( logic_expander_dirty_bitmask, 0x02U );
+    EXPECT_EQ( logic_expander_pending_bitmask, 0x01U );
+    EXPECT_EQ( logic_expander_submitted_state[0].olat_a, 0x10U );
+    EXPECT_EQ( logic_expander_submitted_state[1].olat_a, 0x00U );
 
     EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x21U, _, 3U ) )
         .WillOnce( Return( HW_I2C_STATUS_OK ) );
     EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( logic_expander_dirty_bitmask, 0U );
+    EXPECT_EQ( logic_expander_pending_bitmask, 0x03U );
+    EXPECT_EQ( logic_expander_submitted_state[1].olat_a, 0x20U );
 }
 
-TEST_F( LogicExpanderTest, ReadyProcessRedirtiesActiveExpandersAfterAsynchronousFailure )
+TEST_F( LogicExpanderTest, ReadyProcessClearsPendingWritesAfterPhysicalCompletion )
 {
-    logic_expander_ready          = true;
-    logic_expander_config_state   = LOGIC_EXPANDER_CONFIG_READY;
-    logic_expander_active_bitmask = 0x03U;
-    logic_expander_dirty_bitmask  = 0U;
+    logic_expander_ready           = true;
+    logic_expander_config_state    = LOGIC_EXPANDER_CONFIG_READY;
+    logic_expander_pending_bitmask = 0x01U;
 
     InSequence sequence;
+    EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+    EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( HW_I2C_CHANNEL_FMPI2C1 ) )
+        .WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_i2c, GetAndClearTransferResult( HW_I2C_CHANNEL_FMPI2C1 ) )
+        .WillOnce( Return( HW_I2C_STATUS_OK ) );
+
+    EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ( logic_expander_pending_bitmask, 0U );
+    EXPECT_EQ( logic_expander_retry_bitmask, 0U );
+}
+
+TEST_F( LogicExpanderTest, ReadyProcessAutomaticallyRetriesAsynchronousFailure )
+{
+    logic_expander_ready              = true;
+    logic_expander_config_state       = LOGIC_EXPANDER_CONFIG_READY;
+    logic_expander_active_bitmask     = 0x03U;
+    logic_expander_dirty_bitmask      = 0U;
+    logic_expander_pending_bitmask    = 0x01U;
+    logic_expander_submitted_state[0] = { 0x31U, 0x32U };
+
+    {
+        InSequence sequence;
+        EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+        EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( HW_I2C_CHANNEL_FMPI2C1 ) )
+            .WillOnce( Return( true ) );
+        EXPECT_CALL( mock_hw_i2c, GetAndClearTransferResult( HW_I2C_CHANNEL_FMPI2C1 ) )
+            .WillOnce( Return( HW_I2C_STATUS_ERROR ) );
+    }
+
+    EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_ERROR );
+    EXPECT_TRUE( logic_expander_ready );
+    EXPECT_EQ( logic_expander_pending_bitmask, 0U );
+    EXPECT_EQ( logic_expander_retry_bitmask, 0x01U );
+
+    EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+    const std::array<uint8_t, 3U> expected_payload = { 0x14U, 0x31U, 0x32U };
+    EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, 3U ) )
+        .WillOnce( [&]( HWI2CChannel_T, uint16_t, const uint8_t* data, uint16_t length ) {
+            EXPECT_EQ( std::memcmp( data, expected_payload.data(), length ), 0 );
+            return HW_I2C_STATUS_OK;
+        } );
+    EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ( logic_expander_retry_bitmask, 0U );
+    EXPECT_EQ( logic_expander_pending_bitmask, 0x01U );
+}
+
+TEST_F( LogicExpanderTest, ReadyProcessKeepsRetryScheduledWhenQueueIsBusy )
+{
+    logic_expander_ready              = true;
+    logic_expander_config_state       = LOGIC_EXPANDER_CONFIG_READY;
+    logic_expander_retry_bitmask      = 0x01U;
+    logic_expander_submitted_state[0] = { 0x41U, 0x42U };
+
+    EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+    EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, 3U ) )
+        .WillOnce( Return( HW_I2C_STATUS_BUSY ) );
+
+    EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_BUSY );
+    EXPECT_EQ( logic_expander_retry_bitmask, 0x01U );
+    EXPECT_EQ( logic_expander_pending_bitmask, 0U );
+}
+
+TEST_F( LogicExpanderTest, ReadyProcessDoesNotSendNewDirtyStateWithoutExplicitSend )
+{
+    logic_expander_ready         = true;
+    logic_expander_config_state  = LOGIC_EXPANDER_CONFIG_READY;
+    logic_expander_dirty_bitmask = 0x01U;
+
+    EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+    EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( _, _, _, _ ) ).Times( 0 );
+
+    EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ( logic_expander_dirty_bitmask, 0x01U );
+}
+
+TEST_F( LogicExpanderTest, RetryUsesSubmittedSnapshotWhileNewerUnsentShadowRemainsDirty )
+{
+    logic_expander_ready         = true;
+    logic_expander_config_state  = LOGIC_EXPANDER_CONFIG_READY;
+    logic_expander_state[0]      = { 0x51U, 0x52U };
+    logic_expander_dirty_bitmask = 0x01U;
+
+    EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, 3U ) )
+        .WillOnce( Return( HW_I2C_STATUS_OK ) );
+    EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
+
+    logic_expander_state[0]      = { 0x61U, 0x62U };
+    logic_expander_dirty_bitmask = 0x01U;
+
     EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
     EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( HW_I2C_CHANNEL_FMPI2C1 ) )
         .WillOnce( Return( true ) );
@@ -365,8 +464,60 @@ TEST_F( LogicExpanderTest, ReadyProcessRedirtiesActiveExpandersAfterAsynchronous
         .WillOnce( Return( HW_I2C_STATUS_ERROR ) );
 
     EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_ERROR );
-    EXPECT_TRUE( logic_expander_ready );
-    EXPECT_EQ( logic_expander_dirty_bitmask, 0x03U );
+    EXPECT_EQ( logic_expander_retry_bitmask, 0x01U );
+    EXPECT_EQ( logic_expander_dirty_bitmask, 0x01U );
+
+    const std::array<uint8_t, 3U> expected_payload = { 0x14U, 0x51U, 0x52U };
+    EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+    EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, 3U ) )
+        .WillOnce( [&]( HWI2CChannel_T, uint16_t, const uint8_t* data, uint16_t length ) {
+            EXPECT_EQ( std::memcmp( data, expected_payload.data(), length ), 0 );
+            return HW_I2C_STATUS_OK;
+        } );
+
+    EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ( logic_expander_retry_bitmask, 0U );
+    EXPECT_EQ( logic_expander_pending_bitmask, 0x01U );
+    EXPECT_EQ( logic_expander_dirty_bitmask, 0x01U );
+}
+
+TEST_F( LogicExpanderTest, NewerExplicitSnapshotSupersedesEarlierPendingSnapshot )
+{
+    logic_expander_ready         = true;
+    logic_expander_config_state  = LOGIC_EXPANDER_CONFIG_READY;
+    logic_expander_state[0]      = { 0x71U, 0x72U };
+    logic_expander_dirty_bitmask = 0x01U;
+
+    EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, 3U ) )
+        .WillOnce( Return( HW_I2C_STATUS_OK ) );
+    EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
+
+    logic_expander_state[0]      = { 0x81U, 0x82U };
+    logic_expander_dirty_bitmask = 0x01U;
+    EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, 3U ) )
+        .WillOnce( Return( HW_I2C_STATUS_OK ) );
+    EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ( logic_expander_submitted_state[0].olat_a, 0x81U );
+    EXPECT_EQ( logic_expander_submitted_state[0].olat_b, 0x82U );
+
+    EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+    EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( HW_I2C_CHANNEL_FMPI2C1 ) )
+        .WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_i2c, GetAndClearTransferResult( HW_I2C_CHANNEL_FMPI2C1 ) )
+        .WillOnce( Return( HW_I2C_STATUS_ERROR ) );
+    EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_ERROR );
+
+    const std::array<uint8_t, 3U> expected_payload = { 0x14U, 0x81U, 0x82U };
+    EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+    EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, 3U ) )
+        .WillOnce( [&]( HWI2CChannel_T, uint16_t, const uint8_t* data, uint16_t length ) {
+            EXPECT_EQ( std::memcmp( data, expected_payload.data(), length ), 0 );
+            return HW_I2C_STATUS_OK;
+        } );
+
+    EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ( logic_expander_retry_bitmask, 0U );
+    EXPECT_EQ( logic_expander_pending_bitmask, 0x01U );
 }
 
 TEST_F( LogicExpanderTest, GetStateSnapshotUsesRoleIndexedAddressAndShadowTables )
