@@ -157,7 +157,6 @@ CanProperties_T HW_CAN_Compute_Properties( uint32_t bitrate, uint32_t total_TQ,
  *      1: configuration timing error
  *      2: configuration filter error
  *      3: configuration start error
- *      4: notification activation error
  *
  * Provides configuration of:
  *      - CAN prescaler
@@ -185,7 +184,6 @@ int HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_i
  *      1: configuration timing error
  *      2: configuration filter error
  *      3: configuration start error
- *      4: notification activation error
  *
  * Provides configuration of:
  *      - CAN prescaler

@@ -84,12 +84,14 @@ static void ResetCANBuffers()
 
     memset( ( void* )can_rx_buffer2, 0, sizeof( can_rx_buffer2 ) );
 
-    can_sent_flag1        = false;
-    can_sent_flag2        = false;
-    can_tx_active1        = false;
-    can_tx_active2        = false;
-    can_rx_dropped_count1 = 0;
-    can_rx_dropped_count2 = 0;
+    can_sent_flag1          = false;
+    can_sent_flag2          = false;
+    can_tx_active1          = false;
+    can_tx_active2          = false;
+    can_rx_dropped_count1   = 0;
+    can_rx_dropped_count2   = 0;
+    can_tx_pending_mailbox1 = 0;
+    can_tx_pending_mailbox2 = 0;
 }
 
 /**-----------------------------------------------------------------------------
@@ -112,9 +114,6 @@ public:
                  ( CAN_HandleTypeDef * hcan, CAN_FilterTypeDef* filter ), () );
 
     MOCK_METHOD( HAL_StatusTypeDef, CANStart, ( CAN_HandleTypeDef * hcan ), () );
-
-    MOCK_METHOD( HAL_StatusTypeDef, CANActivateNotification,
-                 ( CAN_HandleTypeDef * hcan, uint32_t flags ), () );
 };
 
 /* Active GoogleMock instance used by the C-linkage HAL wrappers below. */
@@ -134,11 +133,6 @@ extern "C" HAL_StatusTypeDef HAL_CAN_ConfigFilter( CAN_HandleTypeDef* hcan,
 extern "C" HAL_StatusTypeDef HAL_CAN_Start( CAN_HandleTypeDef* hcan )
 {
     return g_mock->CANStart( hcan );
-}
-
-extern "C" HAL_StatusTypeDef HAL_CAN_ActivateNotification( CAN_HandleTypeDef* hcan, uint32_t flags )
-{
-    return g_mock->CANActivateNotification( hcan, flags );
 }
 
 extern "C" uint32_t NVIC_GetEnableIRQ( IRQn_Type irq )
@@ -396,7 +390,7 @@ TEST_F( HWCANTest, ReceiveFailsWhenFIFOEmpty )
  * requested. */
 TEST_F( HWCANTest, ReceiveReadsIDAndDataCorrectly )
 {
-    mock_can1_regs.RF0R = CAN_RF0R_FMP0;
+    mock_can1_regs.RF0R = 1U;
 
     uint16_t id = 0x456;
 
@@ -432,13 +426,14 @@ TEST_F( HWCANTest, ReceiveReadsIDAndDataCorrectly )
 
     EXPECT_EQ( packet.data[7], 8 );
 
+    EXPECT_EQ( mock_can1_regs.RF0R & CAN_RF0R_FMP0, 0U );
     EXPECT_TRUE( mock_can1_regs.RF0R & CAN_RF0R_RFOM0 );
 }
 
 /** Verify that RX preserves DLC and clears bytes outside the received payload. */
 TEST_F( HWCANTest, ReceiveExtractsDLCAndOnlyCopiesValidBytes )
 {
-    mock_can1_regs.RF0R                 = CAN_RF0R_FMP0;
+    mock_can1_regs.RF0R                 = 1U;
     mock_can1_regs.sFIFOMailBox[0].RIR  = static_cast<uint32_t>( 0x321 ) << 21;
     mock_can1_regs.sFIFOMailBox[0].RDTR = 4;
     mock_can1_regs.sFIFOMailBox[0].RDLR = 0x04030201;
@@ -558,7 +553,7 @@ TEST_F( HWCANTest, TxIRQDisablesInterruptWhenBufferEmpty )
     ResetCANBuffers();
     mock_can1_regs.IER = CAN_IER_TMEIE;  // enable interrupt
 
-    HW_CAN_CH1_TX_IRQ_HANDLER();
+    CAN1_TX_IRQHandler();
 
     // check it disabled the interrupt
     EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
@@ -613,7 +608,7 @@ TEST_F( HWCANTest, RxIRQStoresIDAndDataInBuffer )
 {
     uint16_t id = 0x555;
 
-    mock_can1_regs.RF0R = CAN_RF0R_FMP0;
+    mock_can1_regs.RF0R = 1U;
 
     mock_can1_regs.sFIFOMailBox[0].RIR = static_cast<uint32_t>( id ) << 21;
 
@@ -623,7 +618,7 @@ TEST_F( HWCANTest, RxIRQStoresIDAndDataInBuffer )
 
     mock_can1_regs.sFIFOMailBox[0].RDHR = 0x08070605;
 
-    HW_CAN_CH1_RX_IRQ_HANDLER();
+    CAN1_RX0_IRQHandler();
 
     CAN_Packet_T out[1] = {};
 
@@ -636,22 +631,22 @@ TEST_F( HWCANTest, RxIRQStoresIDAndDataInBuffer )
     EXPECT_EQ( out[0].data[7], 8 );
 }
 
-/** Verify that HAL RX callbacks route pending frames to the matching software buffer. */
-TEST_F( HWCANTest, HALRxCallbackRoutesBothChannels )
+/** Verify that the actual RX0 vectors route pending frames to the matching software buffer. */
+TEST_F( HWCANTest, RX0VectorsRouteBothChannels )
 {
-    mock_can1_regs.RF0R                 = CAN_RF0R_FMP0;
+    mock_can1_regs.RF0R                 = 1U;
     mock_can1_regs.sFIFOMailBox[0].RIR  = static_cast<uint32_t>( 0x111 ) << 21;
     mock_can1_regs.sFIFOMailBox[0].RDTR = 8;
     mock_can1_regs.sFIFOMailBox[0].RDLR = 0x04030201;
     mock_can1_regs.sFIFOMailBox[0].RDHR = 0x08070605;
-    mock_can2_regs.RF0R                 = CAN_RF0R_FMP0;
+    mock_can2_regs.RF0R                 = 1U;
     mock_can2_regs.sFIFOMailBox[0].RIR  = static_cast<uint32_t>( 0x222 ) << 21;
     mock_can2_regs.sFIFOMailBox[0].RDTR = 8;
     mock_can2_regs.sFIFOMailBox[0].RDLR = 0x0C0B0A09;
     mock_can2_regs.sFIFOMailBox[0].RDHR = 0x100F0E0D;
 
-    HAL_CAN_RxFifo0MsgPendingCallback( &hcan1 );
-    HAL_CAN_RxFifo0MsgPendingCallback( &hcan2 );
+    CAN1_RX0_IRQHandler();
+    CAN2_RX0_IRQHandler();
 
     CAN_Packet_T channel1[1] = {};
     CAN_Packet_T channel2[1] = {};
@@ -664,8 +659,8 @@ TEST_F( HWCANTest, HALRxCallbackRoutesBothChannels )
     EXPECT_EQ( channel2[0].data[0], 9 );
 }
 
-/** Verify that HAL TX completion callbacks advance multi-packet batches on both channels. */
-TEST_F( HWCANTest, HALTxCallbacksAdvanceBothChannelsAndMultiPacketSequence )
+/** Verify that the actual TX vectors advance multi-packet batches on both channels. */
+TEST_F( HWCANTest, TXVectorsAdvanceBothChannelsAndMultiPacketSequence )
 {
     mock_can1_regs.TSR = CAN_TSR_TME0;
     mock_can2_regs.TSR = CAN_TSR_TME0;
@@ -690,8 +685,10 @@ TEST_F( HWCANTest, HALTxCallbacksAdvanceBothChannelsAndMultiPacketSequence )
     EXPECT_EQ( mock_can2_regs.sTxMailBox[0].TIR,
                ( static_cast<uint32_t>( 0x201 ) << 21 ) | CAN_TI0R_TXRQ );
 
-    HAL_CAN_TxMailbox0CompleteCallback( &hcan1 );
-    HAL_CAN_TxMailbox1CompleteCallback( &hcan2 );
+    mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
+    mock_can2_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
+    CAN1_TX_IRQHandler();
+    CAN2_TX_IRQHandler();
 
     EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TIR,
                ( static_cast<uint32_t>( 0x102 ) << 21 ) | CAN_TI0R_TXRQ );
@@ -700,14 +697,57 @@ TEST_F( HWCANTest, HALTxCallbacksAdvanceBothChannelsAndMultiPacketSequence )
     EXPECT_FALSE( HW_CAN_Channl1_sent() );
     EXPECT_FALSE( HW_CAN_Channl2_sent() );
 
-    HAL_CAN_TxMailbox2CompleteCallback( &hcan1 );
-    HAL_CAN_TxMailbox2CompleteCallback( &hcan2 );
+    mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
+    mock_can2_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
+    CAN1_TX_IRQHandler();
+    CAN2_TX_IRQHandler();
 
     EXPECT_TRUE( HW_CAN_Channl1_sent() );
     EXPECT_TRUE( HW_CAN_Channl2_sent() );
 }
 
-/** Verify that an RX callback records a frame dropped by a full software buffer. */
+/** Verify that clearing mailbox 0 completion leaves unrelated mailbox 1 status untouched. */
+TEST_F( HWCANTest, TXVectorClearsOnlyCompletedMailboxStatus )
+{
+    mock_can1_regs.TSR     = CAN_TSR_TME0;
+    CAN_Packet_T packet[1] = { { .id = 0x123, .dlc = 1, .data = { 0xAA } } };
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
+
+    uint32_t unrelated_status = CAN_TSR_TXOK1 | CAN_TSR_ALST1 | CAN_TSR_TERR1;
+    mock_can1_regs.TSR        = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0 | unrelated_status;
+    CAN1_TX_IRQHandler();
+
+    EXPECT_EQ( mock_can1_regs.TSR & ( CAN_TSR_RQCP0 | CAN_TSR_TXOK0 ), 0U );
+    EXPECT_EQ( mock_can1_regs.TSR & unrelated_status, unrelated_status );
+    EXPECT_TRUE( HW_CAN_Channl1_sent() );
+}
+
+/** Verify that arbitration loss and transmit errors cannot complete a buffered batch. */
+TEST_F( HWCANTest, TXVectorDoesNotCompleteBatchAfterHardwareError )
+{
+    uint32_t error_flags[2] = { CAN_TSR_ALST0, CAN_TSR_TERR0 };
+
+    for ( uint32_t error_flag : error_flags )
+    {
+        ResetCANBuffers();
+        memset( &mock_can1_regs, 0, sizeof( mock_can1_regs ) );
+        mock_can1_regs.TSR     = CAN_TSR_TME0;
+        CAN_Packet_T packet[1] = { { .id = 0x123, .dlc = 1, .data = { 0xAA } } };
+        ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_OK );
+        ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
+
+        mock_can1_regs.TSR = CAN_TSR_RQCP0 | error_flag | CAN_TSR_TME0;
+        CAN1_TX_IRQHandler();
+
+        EXPECT_FALSE( can_tx_active1 );
+        EXPECT_FALSE( HW_CAN_Channl1_sent() );
+        EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
+        EXPECT_EQ( mock_can1_regs.TSR & ( CAN_TSR_RQCP0 | error_flag ), 0U );
+    }
+}
+
+/** Verify that an RX vector records a frame dropped by a full software buffer. */
 TEST_F( HWCANTest, RxOverflowRecordsDroppedFrame )
 {
     CAN_Packet_T buffered[RECEIVE_BUFFER_WIDTH - 1] = {};
@@ -718,15 +758,36 @@ TEST_F( HWCANTest, RxOverflowRecordsDroppedFrame )
     }
     ASSERT_EQ( HW_CAN_Rx_Buffer_Write1( buffered, RECEIVE_BUFFER_WIDTH - 1 ), 0 );
 
-    mock_can1_regs.RF0R                 = CAN_RF0R_FMP0;
+    mock_can1_regs.RF0R                 = 1U;
     mock_can1_regs.sFIFOMailBox[0].RIR  = static_cast<uint32_t>( 0x321 ) << 21;
     mock_can1_regs.sFIFOMailBox[0].RDTR = 1;
     mock_can1_regs.sFIFOMailBox[0].RDLR = 0xAA;
 
-    HAL_CAN_RxFifo0MsgPendingCallback( &hcan1 );
+    CAN1_RX0_IRQHandler();
 
     EXPECT_EQ( HW_CAN_Rx_Dropped_Count1(), 1U );
     EXPECT_EQ( can_rx_wp1, RECEIVE_BUFFER_WIDTH - 1 );
+}
+
+/** Verify that an RX0 vector releases FIFO entries and clears a latched hardware overrun. */
+TEST_F( HWCANTest, RX0VectorReleasesFIFOAndClearsHardwareOverrun )
+{
+    mock_can2_regs.RF0R                 = 1U | CAN_RF0R_FULL0 | CAN_RF0R_FOVR0;
+    mock_can2_regs.sFIFOMailBox[0].RIR  = static_cast<uint32_t>( 0x456 ) << 21;
+    mock_can2_regs.sFIFOMailBox[0].RDTR = 1U;
+    mock_can2_regs.sFIFOMailBox[0].RDLR = 0x5AU;
+
+    CAN2_RX0_IRQHandler();
+
+    EXPECT_EQ( mock_can2_regs.RF0R & CAN_RF0R_FMP0, 0U );
+    EXPECT_EQ( mock_can2_regs.RF0R & ( CAN_RF0R_FULL0 | CAN_RF0R_FOVR0 ), 0U );
+    EXPECT_TRUE( mock_can2_regs.RF0R & CAN_RF0R_RFOM0 );
+    EXPECT_EQ( HW_CAN_Rx_Dropped_Count2(), 1U );
+
+    CAN_Packet_T packet = {};
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Read2( &packet, 1U ), 1U );
+    EXPECT_EQ( packet.id, 0x456U );
+    EXPECT_EQ( packet.data[0], 0x5AU );
 }
 
 /** Verify that resetting channel 1 clears only channel 1 queue and status state. */
@@ -1103,22 +1164,6 @@ TEST_F( HWCANTest, ConfigureReturns3WhenStartFails )
     EXPECT_EQ( result, 3 );
 }
 
-/** Verify that HW_CAN_Configure() returns error code 4 when CAN notification activation fails. */
-TEST_F( HWCANTest, ConfigureReturns4WhenNotificationActivationFails )
-{
-    EXPECT_CALL( mock, CANInit( _ ) ).WillOnce( Return( HAL_OK ) );
-
-    EXPECT_CALL( mock, CANConfigFilter( _, _ ) ).WillOnce( Return( HAL_OK ) );
-
-    EXPECT_CALL( mock, CANStart( _ ) ).WillOnce( Return( HAL_OK ) );
-
-    EXPECT_CALL( mock, CANActivateNotification( _, _ ) ).WillOnce( Return( HAL_ERROR ) );
-
-    int result = HW_CAN_Configure( &hcan1, 1000000, 0, 0x123, 0x7FF );
-
-    EXPECT_EQ( result, 4 );
-}
-
 /** Verify that HW_CAN_Configure() completes successfully when each HAL configuration step succeeds.
  */
 TEST_F( HWCANTest, ConfigureSucceedsWithValidConfiguration )
@@ -1129,11 +1174,12 @@ TEST_F( HWCANTest, ConfigureSucceedsWithValidConfiguration )
 
     EXPECT_CALL( mock, CANStart( _ ) ).WillOnce( Return( HAL_OK ) );
 
-    EXPECT_CALL( mock, CANActivateNotification( _, _ ) ).WillOnce( Return( HAL_OK ) );
-
     int result = HW_CAN_Configure( &hcan1, 1000000, 0, 0x123, 0x7FF );
 
     EXPECT_EQ( result, 0 );
+    EXPECT_EQ( mock_can1_regs.IER & ( CAN_IER_FMPIE0 | CAN_IER_FFIE0 | CAN_IER_FOVIE0 ),
+               CAN_IER_FMPIE0 | CAN_IER_FFIE0 | CAN_IER_FOVIE0 );
+    EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
 }
 
 /** Verify that reconfiguring one channel starts with deterministic empty software state. */
@@ -1150,8 +1196,6 @@ TEST_F( HWCANTest, ChannelConfigurationResetsSoftwareState )
     EXPECT_CALL( mock, CANInit( &hcan1 ) ).WillOnce( Return( HAL_OK ) );
     EXPECT_CALL( mock, CANConfigFilter( &hcan1, _ ) ).WillOnce( Return( HAL_OK ) );
     EXPECT_CALL( mock, CANStart( &hcan1 ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_CALL( mock, CANActivateNotification( &hcan1, _ ) ).WillOnce( Return( HAL_OK ) );
-
     ASSERT_EQ( HW_CAN_Configure1( 1000000, 0, 0x123, 0x7FF ), 0 );
 
     EXPECT_EQ( can_tx_wp1, 0 );
@@ -1187,7 +1231,8 @@ TEST_F( HWCANTest, BatchTransitionsFromActiveToCompleted )
     EXPECT_TRUE( can_tx_active1 );
     EXPECT_FALSE( HW_CAN_Channl1_sent() );
 
-    HAL_CAN_TxMailbox0CompleteCallback( &hcan1 );
+    mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
+    CAN1_TX_IRQHandler();
 
     EXPECT_FALSE( can_tx_active1 );
     EXPECT_TRUE( HW_CAN_Channl1_sent() );
@@ -1202,7 +1247,8 @@ TEST_F( HWCANTest, StartingSecondBatchClearsCompletedState )
 
     ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_OK );
     ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
-    HAL_CAN_TxMailbox0CompleteCallback( &hcan1 );
+    mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
+    CAN1_TX_IRQHandler();
     ASSERT_TRUE( HW_CAN_Channl1_sent() );
 
     ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_OK );
@@ -1267,14 +1313,15 @@ TEST_F( HWCANTest, MailboxBusyDoesNotConsumeQueuedPacket )
     EXPECT_TRUE( can_tx_active1 );
     EXPECT_FALSE( HW_CAN_Channl1_sent() );
 
-    mock_can1_regs.TSR = CAN_TSR_TME0;
-    HAL_CAN_TxMailbox0CompleteCallback( &hcan1 );
+    mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
+    CAN1_TX_IRQHandler();
 
     EXPECT_EQ( can_tx_rp1, 1 );
     EXPECT_TRUE( can_tx_active1 );
     EXPECT_FALSE( HW_CAN_Channl1_sent() );
 
-    HAL_CAN_TxMailbox0CompleteCallback( &hcan1 );
+    mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
+    CAN1_TX_IRQHandler();
     EXPECT_TRUE( HW_CAN_Channl1_sent() );
 }
 
@@ -1306,11 +1353,13 @@ TEST_F( HWCANTest, MultiFrameBatchCompletesOnlyAfterFinalHardwareEvent )
     ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
     EXPECT_FALSE( HW_CAN_Channl1_sent() );
 
-    HAL_CAN_TxMailbox0CompleteCallback( &hcan1 );
+    mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
+    CAN1_TX_IRQHandler();
     EXPECT_TRUE( can_tx_active1 );
     EXPECT_FALSE( HW_CAN_Channl1_sent() );
 
-    HAL_CAN_TxMailbox0CompleteCallback( &hcan1 );
+    mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
+    CAN1_TX_IRQHandler();
     EXPECT_FALSE( can_tx_active1 );
     EXPECT_TRUE( HW_CAN_Channl1_sent() );
 }

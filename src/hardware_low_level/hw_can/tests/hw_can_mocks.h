@@ -77,11 +77,19 @@ extern "C"
 #define CAN_FILTERSCALE_32BIT ( 0U )
 #define CAN_FILTER_FIFO0 ( 0U )
 
-/* Notifications */
-#define CAN_IT_RX_FIFO0_MSG_PENDING ( 1U << 0 )
-#define CAN_IT_TX_MAILBOX_EMPTY ( 1U << 1 )
-
 /* Register bits */
+#define CAN_TSR_RQCP0 ( 1U << 0 )
+#define CAN_TSR_TXOK0 ( 1U << 1 )
+#define CAN_TSR_ALST0 ( 1U << 2 )
+#define CAN_TSR_TERR0 ( 1U << 3 )
+#define CAN_TSR_RQCP1 ( 1U << 8 )
+#define CAN_TSR_TXOK1 ( 1U << 9 )
+#define CAN_TSR_ALST1 ( 1U << 10 )
+#define CAN_TSR_TERR1 ( 1U << 11 )
+#define CAN_TSR_RQCP2 ( 1U << 16 )
+#define CAN_TSR_TXOK2 ( 1U << 17 )
+#define CAN_TSR_ALST2 ( 1U << 18 )
+#define CAN_TSR_TERR2 ( 1U << 19 )
 #define CAN_TSR_TME0 ( 1U << 26 )
 #define CAN_TSR_TME1 ( 1U << 27 )
 #define CAN_TSR_TME2 ( 1U << 28 )
@@ -90,9 +98,13 @@ extern "C"
 #define CAN_RI0R_IDE ( 1U << 2 )
 #define CAN_RDT0R_DLC ( 0xFU )
 #define CAN_RF0R_FMP0 ( 0x3U )
+#define CAN_RF0R_FULL0 ( 1U << 3 )
+#define CAN_RF0R_FOVR0 ( 1U << 4 )
 #define CAN_RF0R_RFOM0 ( 1U << 5 )
 #define CAN_IER_TMEIE ( 1U << 0 )
-#define CAN_TSR_RQCP0 ( 1U << 0 )
+#define CAN_IER_FMPIE0 ( 1U << 1 )
+#define CAN_IER_FFIE0 ( 1U << 2 )
+#define CAN_IER_FOVIE0 ( 1U << 3 )
 
 /* Helpers */
 #define SET_BIT( REG, BIT ) ( ( REG ) |= ( BIT ) )
@@ -218,21 +230,11 @@ HAL_StatusTypeDef HAL_CAN_ConfigFilter( CAN_HandleTypeDef* hcan, CAN_FilterTypeD
 
 HAL_StatusTypeDef HAL_CAN_Start( CAN_HandleTypeDef* hcan );
 
-HAL_StatusTypeDef HAL_CAN_ActivateNotification( CAN_HandleTypeDef* hcan, uint32_t notifications );
-
 uint32_t NVIC_GetEnableIRQ( IRQn_Type irq );
 
 void NVIC_DisableIRQ( IRQn_Type irq );
 
 void NVIC_EnableIRQ( IRQn_Type irq );
-
-void HAL_CAN_RxFifo0MsgPendingCallback( CAN_HandleTypeDef* hcan );
-
-void HAL_CAN_TxMailbox0CompleteCallback( CAN_HandleTypeDef* hcan );
-
-void HAL_CAN_TxMailbox1CompleteCallback( CAN_HandleTypeDef* hcan );
-
-void HAL_CAN_TxMailbox2CompleteCallback( CAN_HandleTypeDef* hcan );
 
 // NOLINTEND
 
