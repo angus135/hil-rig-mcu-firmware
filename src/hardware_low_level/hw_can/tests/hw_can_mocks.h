@@ -208,6 +208,14 @@ HAL_StatusTypeDef HAL_CAN_Start( CAN_HandleTypeDef* hcan );
 
 HAL_StatusTypeDef HAL_CAN_ActivateNotification( CAN_HandleTypeDef* hcan, uint32_t notifications );
 
+void HAL_CAN_RxFifo0MsgPendingCallback( CAN_HandleTypeDef* hcan );
+
+void HAL_CAN_TxMailbox0CompleteCallback( CAN_HandleTypeDef* hcan );
+
+void HAL_CAN_TxMailbox1CompleteCallback( CAN_HandleTypeDef* hcan );
+
+void HAL_CAN_TxMailbox2CompleteCallback( CAN_HandleTypeDef* hcan );
+
 // NOLINTEND
 
 #ifdef __cplusplus

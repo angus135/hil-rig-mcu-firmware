@@ -105,6 +105,8 @@ void HW_CAN_CH1_RX_IRQ_HANDLER( void );
 void HW_CAN_CH2_TX_IRQ_HANDLER( void );
 void HW_CAN_CH2_RX_IRQ_HANDLER( void );
 
+static void HW_CAN_Tx_Complete_Callback( CAN_HandleTypeDef* hcan );
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -1020,8 +1022,6 @@ void HW_CAN_CH1_TX_IRQ_HANDLER( void )
 {
     CAN_Packet_T packet;
 
-    hcan1.Instance->TSR |= CAN_TSR_RQCP0;
-
     if ( HW_CAN_Tx_Buffer_Pop1( &packet ) == 0 )
     {
         HW_CAN_Transmit( &hcan1, packet.data, packet.id, CAN_PACKET_SIZE );
@@ -1061,8 +1061,6 @@ void HW_CAN_CH2_TX_IRQ_HANDLER( void )
 {
     CAN_Packet_T packet;
 
-    hcan2.Instance->TSR |= CAN_TSR_RQCP0;
-
     if ( HW_CAN_Tx_Buffer_Pop2( &packet ) == 0 )
     {
         HW_CAN_Transmit( &hcan2, packet.data, packet.id, CAN_PACKET_SIZE );
@@ -1089,4 +1087,68 @@ void HW_CAN_CH2_RX_IRQ_HANDLER( void )
     {
         HW_CAN_Rx_Buffer_Write2( &packet, 1 );
     }
+}
+
+/**
+ * @brief Routes a HAL transmit-complete callback to the matching CAN channel.
+ *
+ * @param hcan CAN handle supplied by the HAL interrupt handler.
+ */
+static void HW_CAN_Tx_Complete_Callback( CAN_HandleTypeDef* hcan )
+{
+    if ( hcan->Instance == CAN1 )
+    {
+        HW_CAN_CH1_TX_IRQ_HANDLER();
+    }
+    else if ( hcan->Instance == CAN2 )
+    {
+        HW_CAN_CH2_TX_IRQ_HANDLER();
+    }
+}
+
+/**
+ * @brief Services an RX FIFO 0 pending interrupt reported by the HAL.
+ *
+ * @param hcan CAN handle supplied by the HAL interrupt handler.
+ */
+void HAL_CAN_RxFifo0MsgPendingCallback( CAN_HandleTypeDef* hcan )
+{
+    if ( hcan->Instance == CAN1 )
+    {
+        HW_CAN_CH1_RX_IRQ_HANDLER();
+    }
+    else if ( hcan->Instance == CAN2 )
+    {
+        HW_CAN_CH2_RX_IRQ_HANDLER();
+    }
+}
+
+/**
+ * @brief Services a transmit completion from hardware mailbox 0.
+ *
+ * @param hcan CAN handle supplied by the HAL interrupt handler.
+ */
+void HAL_CAN_TxMailbox0CompleteCallback( CAN_HandleTypeDef* hcan )
+{
+    HW_CAN_Tx_Complete_Callback( hcan );
+}
+
+/**
+ * @brief Services a transmit completion from hardware mailbox 1.
+ *
+ * @param hcan CAN handle supplied by the HAL interrupt handler.
+ */
+void HAL_CAN_TxMailbox1CompleteCallback( CAN_HandleTypeDef* hcan )
+{
+    HW_CAN_Tx_Complete_Callback( hcan );
+}
+
+/**
+ * @brief Services a transmit completion from hardware mailbox 2.
+ *
+ * @param hcan CAN handle supplied by the HAL interrupt handler.
+ */
+void HAL_CAN_TxMailbox2CompleteCallback( CAN_HandleTypeDef* hcan )
+{
+    HW_CAN_Tx_Complete_Callback( hcan );
 }
