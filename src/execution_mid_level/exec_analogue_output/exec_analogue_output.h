@@ -63,7 +63,7 @@ typedef struct AnalogueOutputPreparedFrame_T
  * @brief Fixed-capacity wire payload for one execution tick.
  *
  * Preparation-time code appends zero through six prepared frames in schedule
- * order. The valid prefix of @ref bytes is described by @ref byte_count and
+ * order. The valid prefix of @c bytes is described by @c byte_count and
  * can be submitted directly without allocation, sorting, or concatenation.
  * The fixed representation is suitable for inclusion in future flash-backed
  * execution data.
@@ -73,6 +73,15 @@ typedef struct AnalogueOutputPreparedBatch_T
     uint8_t bytes[EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES];
     uint8_t byte_count;
 } AnalogueOutputPreparedBatch_T;
+
+/** @brief Analogue-output configuration and startup readiness state. */
+typedef enum AnalogueOutputState_T
+{
+    EXEC_ANALOG_OUTPUT_STATE_UNCONFIGURED,  ///< DAC startup has not been submitted.
+    EXEC_ANALOG_OUTPUT_STATE_INITIALIZING,  ///< Complete startup packet is queued or active.
+    EXEC_ANALOG_OUTPUT_STATE_READY,         ///< Startup transmission completed electrically.
+    EXEC_ANALOG_OUTPUT_STATE_FAULTED,       ///< SPI setup or startup submission failed.
+} AnalogueOutputState_T;
 
 #if defined( __cplusplus )
 static_assert( sizeof( AnalogueOutputPreparedFrame_T ) == EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES,
@@ -108,8 +117,13 @@ _Static_assert( sizeof( AnalogueOutputPreparedBatch_T )
  *     If true, configure the DAC to use the external buffered VREF pin.
  *     If false, configure the DAC to use VDD as the reference.
  *
- * @return
- *     true on success, false on SPI transmission failure.
+ * A true return confirms that the complete startup packet was accepted and
+ * triggered, but electrical completion may still be pending. Call
+ * EXEC_ANALOG_OUTPUT_Is_Configured() or EXEC_ANALOG_OUTPUT_Get_State() before
+ * runtime submission.
+ *
+ * @return true if the complete startup packet was accepted and triggered.
+ * @return false on SPI submission failure.
  */
 bool EXEC_ANALOGUE_OUTPUT_Config( bool use_external_vref );
 
@@ -140,12 +154,28 @@ bool EXEC_ANALOGUE_OUTPUT_Config( bool use_external_vref );
 bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void );
 
 /**
- * @brief Return whether the analogue output module has been configured.
+ * @brief Return whether analogue-output startup has completed and is ready.
  *
- * Useful for console commands to know if `EXEC_ANALOGUE_OUTPUT_Config()` has
- * previously been called successfully.
+ * If startup is still queued, this performs one nonblocking SPI completion
+ * sample. Useful for console commands and future execution callers that must
+ * reject runtime writes until the DAC startup packet has completed.
+ *
+ * @return true only when the module state is READY.
  */
 bool EXEC_ANALOG_OUTPUT_Is_Configured( void );
+
+/**
+ * @brief Return the current analogue-output startup readiness state.
+ *
+ * If startup is queued, this performs one nonblocking SPI completion sample
+ * and promotes the module to READY when electrical transmission is complete.
+ * The current SPI API reports busy and faulted transfers identically as "not
+ * complete", so an initializing transfer cannot be classified as faulted
+ * without future SPI status support.
+ *
+ * @return Current module state after the nonblocking readiness update.
+ */
+AnalogueOutputState_T EXEC_ANALOG_OUTPUT_Get_State( void );
 
 /**
  * @brief Prepare one DAC frame outside the execution hot path.

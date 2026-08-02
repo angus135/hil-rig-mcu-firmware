@@ -38,6 +38,11 @@
 
 #define ANALOGUE_OUTPUT_DAC_CHANNEL_COUNT 8U
 #define EXEC_ANALOGUE_OUTPUT_CONFIGURED_CHANNEL_COUNT 6U
+#define ANALOGUE_OUTPUT_STARTUP_CONTROL_FRAME_COUNT 3U
+#define ANALOGUE_OUTPUT_STARTUP_FRAME_COUNT                                                        \
+    ( ANALOGUE_OUTPUT_STARTUP_CONTROL_FRAME_COUNT + ANALOGUE_OUTPUT_DAC_CHANNEL_COUNT )
+#define ANALOGUE_OUTPUT_STARTUP_PACKET_SIZE_BYTES                                                  \
+    ( ANALOGUE_OUTPUT_STARTUP_FRAME_COUNT * EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES )
 #define ANALOGUE_OUTPUT_DAC_MAX_COUNT 4095U
 #define ANALOGUE_OUTPUT_INPUT_MAX_V 20.0F
 
@@ -55,6 +60,14 @@
  *------------------------------------------------------------------------------
  */
 
+typedef struct AnalogueOutputStartupPacket_T
+{
+    uint8_t bytes[ANALOGUE_OUTPUT_STARTUP_PACKET_SIZE_BYTES];
+} AnalogueOutputStartupPacket_T;
+
+_Static_assert( sizeof( AnalogueOutputStartupPacket_T ) == 33U,
+                "The complete DAC startup packet must contain eleven three-byte frames" );
+
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
@@ -65,7 +78,7 @@
  *------------------------------------------------------------------------------
  */
 
-static bool s_EXEC_ANALOGUE_OUTPUT_Configured = false;
+static AnalogueOutputState_T s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_UNCONFIGURED;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -76,10 +89,12 @@ static inline uint8_t EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( uint8_t register_a
 static inline void
 EXEC_ANALOGUE_OUTPUT_Prepare_Register_Frame( uint8_t register_address, uint16_t data_word,
                                              AnalogueOutputPreparedFrame_T* prepared_frame );
-static inline bool
-EXEC_ANALOGUE_OUTPUT_Send_Prepared_Frame( const AnalogueOutputPreparedFrame_T* prepared_frame );
 static uint16_t EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_v );
-static bool     EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref );
+
+static void
+            EXEC_ANALOGUE_OUTPUT_Prepare_Startup_Packet( bool                           use_external_vref,
+                                                         AnalogueOutputStartupPacket_T* startup_packet );
+static void EXEC_ANALOGUE_OUTPUT_Update_Readiness( void );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -112,17 +127,6 @@ EXEC_ANALOGUE_OUTPUT_Prepare_Register_Frame( uint8_t register_address, uint16_t 
     prepared_frame->bytes[2] = ( uint8_t )( data_word & 0xFFU );
 }
 
-static inline bool
-EXEC_ANALOGUE_OUTPUT_Send_Prepared_Frame( const AnalogueOutputPreparedFrame_T* prepared_frame )
-{
-    /* Queue the 3-byte frame into the SPI driver's TX buffer for the
-     * analogue output SPI channel. The hardware driver returns true if the
-     * buffer was loaded successfully.
-     */
-    return HW_SPI_Load_Tx_Buffer( ANALOGUE_OUTPUT_SPI_CHANNEL, prepared_frame->bytes,
-                                  sizeof( *prepared_frame ) );
-}
-
 static uint16_t EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_v )
 {
     float clamped_voltage_v = input_voltage_v;
@@ -152,7 +156,9 @@ static uint16_t EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_
     return count;
 }
 
-static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
+static void
+EXEC_ANALOGUE_OUTPUT_Prepare_Startup_Packet( bool                           use_external_vref,
+                                             AnalogueOutputStartupPacket_T* startup_packet )
 {
     // TODO(DEV-80): The DAC powers up at 12-bit mid-scale with channels in normal operation, so
     // this order may drive channels 0-5 before they are zeroed. Verify against the schematic; the
@@ -190,9 +196,6 @@ static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
         frames[0].data_word = 0x0000U;
     }
 
-    // TODO(DEV-80): Eleven independent loads are non-atomic; a later failure leaves earlier frames
-    // queued while configuration reports failure. Prefer one frame_bytes packet if the DAC and
-    // hw_spi support it; otherwise reserve or verify full capacity before loading any frame.
     for ( uint32_t index = 0U; index < ( uint32_t )( sizeof( frames ) / sizeof( frames[0] ) );
           index++ )
     {
@@ -201,22 +204,21 @@ static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
         EXEC_ANALOGUE_OUTPUT_Prepare_Register_Frame( frames[index].register_address,
                                                      frames[index].data_word, &prepared_frame );
 
-        /* Load this 3-byte frame into the SPI driver's TX buffer. The SPI
-         * driver manages its own queue; a false return indicates the frame
-         * could not be queued (e.g. buffer full) and we must abort.
-         */
-        if ( !EXEC_ANALOGUE_OUTPUT_Send_Prepared_Frame( &prepared_frame ) )
-        {
-            return false;
-        }
+        memcpy( &startup_packet->bytes[index * EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES],
+                prepared_frame.bytes, sizeof( prepared_frame ) );
     }
+}
 
-    /* All frames queued; trigger the SPI peripheral to start the
-     * transmission of queued frames on the analogue output channel.
-     */
-    HW_SPI_Tx_Trigger( ANALOGUE_OUTPUT_SPI_CHANNEL );
-
-    return true;
+static void EXEC_ANALOGUE_OUTPUT_Update_Readiness( void )
+{
+    // TODO(DEV-80): Extend the SPI public status API so an initializing transfer that faulted can
+    // be distinguished from one that is still busy. HW_SPI_Tx_Is_Complete() conservatively reports
+    // false for both states, so this module must otherwise remain INITIALIZING.
+    if ( ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_INITIALIZING )
+         && HW_SPI_Tx_Is_Complete( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
+    {
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_READY;
+    }
 }
 
 /**-----------------------------------------------------------------------------
@@ -254,22 +256,29 @@ bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void )
         .spi_mode  = SPI_MASTER_MODE,
         .data_size = SPI_SIZE_8_BIT,
         .first_bit = SPI_FIRST_MSB,
-        // TODO(DEV-80): At 703 kbit/s a 24-bit frame is about 34 us and six take about 205 us,
-        // excluding software/CS overhead, but an execution tick may be only 100 us.
-        // Suggested resolution: test the highest reliable rate (expected about 45 Mbit/s); the
-        // MCP48CVB28 permits up to 50 MHz at the intended supply, but validate the rate on the PCB.
+        // TODO(DEV-80): Increase SPI_DAC to 45 Mbit/s and validate signal integrity on the final
+        // PCB. The current bring-up wiring requires a conservative rate.
         .baud_rate = SPI_BAUD_703KBIT,
         .cpol      = SPI_CPOL_LOW,
         .cpha      = SPI_CPHA_1_EDGE,
         .nss_pin   = GPIO_SPI4_NSS,
     };
 
+    s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_UNCONFIGURED;
+
     if ( !HW_SPI_Configure_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL, configuration ) )
     {
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
         return false;
     }
 
-    return HW_SPI_Start_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL );
+    if ( !HW_SPI_Start_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
+    {
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+        return false;
+    }
+
+    return true;
 }
 
 /**
@@ -286,32 +295,43 @@ bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void )
  * - Power-down register (09h): Channels 0-5 enabled, channels 6-7 in open-circuit mode
  * - DAC output registers (00h-07h): All channels initialized to 0V
  *
- * After this function completes successfully, the module is ready to accept
- * voltage write commands via EXEC_ANALOG_OUTPUT_Write_Voltage().
+ * A successful return means the complete startup packet was accepted and
+ * triggered. Use EXEC_ANALOG_OUTPUT_Is_Configured() to determine when the
+ * startup transmission has completed and runtime writes are ready.
  *
- * @return
- *     true if DAC initialization completed successfully.
- *     false if SPI transmission of the initialization frames failed.
+ * @return true if the complete startup packet was accepted and triggered.
+ * @return false if SPI rejected the startup packet.
  */
 bool EXEC_ANALOGUE_OUTPUT_Config( bool use_external_vref )
 {
-    if ( !EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( use_external_vref ) )
+    AnalogueOutputStartupPacket_T startup_packet;
+
+    s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_UNCONFIGURED;
+    EXEC_ANALOGUE_OUTPUT_Prepare_Startup_Packet( use_external_vref, &startup_packet );
+
+    if ( !HW_SPI_Load_Tx_Buffer( ANALOGUE_OUTPUT_SPI_CHANNEL, startup_packet.bytes,
+                                 sizeof( startup_packet.bytes ) ) )
     {
-        s_EXEC_ANALOGUE_OUTPUT_Configured = false;
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
         return false;
     }
 
-    // TODO(DEV-80): Queue acceptance and the void trigger do not prove DMA start, completion,
-    // correct CS timing, or DAC acceptance. Distinguish "initialization queued" from "hardware
-    // ready", observe completion/faults with a timeout or asynchronous lifecycle, and clear the
-    // state when SPI is reconfigured, stopped, or faulted.
-    s_EXEC_ANALOGUE_OUTPUT_Configured = true;
+    s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_INITIALIZING;
+    HW_SPI_Tx_Trigger( ANALOGUE_OUTPUT_SPI_CHANNEL );
+    EXEC_ANALOGUE_OUTPUT_Update_Readiness();
+
     return true;
 }
 
 bool EXEC_ANALOG_OUTPUT_Is_Configured( void )
 {
-    return s_EXEC_ANALOGUE_OUTPUT_Configured;
+    return EXEC_ANALOG_OUTPUT_Get_State() == EXEC_ANALOG_OUTPUT_STATE_READY;
+}
+
+AnalogueOutputState_T EXEC_ANALOG_OUTPUT_Get_State( void )
+{
+    EXEC_ANALOGUE_OUTPUT_Update_Readiness();
+    return s_EXEC_ANALOGUE_OUTPUT_State;
 }
 
 bool EXEC_ANALOG_OUTPUT_Prepare_Frame( uint8_t channel, float input_voltage_v,
@@ -386,7 +406,9 @@ bool EXEC_ANALOG_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       prepa
 
 bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( const AnalogueOutputPreparedBatch_T* prepared_batch )
 {
-    if ( !s_EXEC_ANALOGUE_OUTPUT_Configured )
+    EXEC_ANALOGUE_OUTPUT_Update_Readiness();
+
+    if ( s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOG_OUTPUT_STATE_READY )
     {
         return false;
     }
