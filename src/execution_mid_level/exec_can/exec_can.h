@@ -62,16 +62,18 @@ bool EXEC_CAN_Channl1_sent();
 bool EXEC_CAN_Channl2_sent();
 
 /**
- * @brief Activates can channel 1 to immidiatley begin sending messages from the tx buffer
+ * @brief Starts transmitting the buffered channel 1 batch.
  *
+ * @return See HW_CAN_Tx_Trigger1() for success, busy, empty, and error results.
  */
-void EXEC_CAN_Tx_Trigger1();
+HW_CAN_Result_T EXEC_CAN_Tx_Trigger1( void );
 
 /**
- * @brief Activates can channel 2 to immidiatley begin sending messages from the tx buffer
+ * @brief Starts transmitting the buffered channel 2 batch.
  *
+ * @return See HW_CAN_Tx_Trigger2() for success, busy, empty, and error results.
  */
-void EXEC_CAN_Tx_Trigger2();
+HW_CAN_Result_T EXEC_CAN_Tx_Trigger2( void );
 
 /**
  * @brief Writes a number of 8 byte packets (source) to the tx buffer of channel 1
@@ -80,9 +82,9 @@ void EXEC_CAN_Tx_Trigger2();
 uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  * @param length the number of can packets to be written (seen as X above)
  *
- * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ * @return See HW_CAN_Tx_Buffer_Write1() for success, busy, and error results.
  */
-uint16_t EXEC_CAN_Load_Tx1( CAN_Packet_T source[], uint16_t length );
+HW_CAN_Result_T EXEC_CAN_Load_Tx1( CAN_Packet_T source[], uint16_t length );
 
 /**
  * @brief Writes a number of 8 byte packets (source) to the tx buffer of channel 2
@@ -91,9 +93,9 @@ uint16_t EXEC_CAN_Load_Tx1( CAN_Packet_T source[], uint16_t length );
 uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  * @param length the number of can packets to be written (seen as X above)
  *
- * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ * @return See HW_CAN_Tx_Buffer_Write2() for success, busy, and error results.
  */
-uint16_t EXEC_CAN_Load_Tx2( CAN_Packet_T source[], uint16_t length );
+HW_CAN_Result_T EXEC_CAN_Load_Tx2( CAN_Packet_T source[], uint16_t length );
 
 /**
  * @brief Reads values from the rx channel 1 buffer and places them in dest

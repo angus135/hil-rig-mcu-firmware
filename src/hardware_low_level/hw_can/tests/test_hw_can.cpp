@@ -84,6 +84,8 @@ static void ResetCANBuffers()
 
     can_sent_flag1 = false;
     can_sent_flag2 = false;
+    can_tx_active1 = false;
+    can_tx_active2 = false;
 }
 
 /**-----------------------------------------------------------------------------
@@ -213,7 +215,7 @@ TEST_F( HWCANTest, TransmitFailsWhenMailboxBusy )
 
     int result = HW_CAN_Transmit( &hcan1, data, 0x123, 8 );
 
-    EXPECT_EQ( result, 1 );
+    EXPECT_EQ( result, HW_CAN_RESULT_BUSY );
 }
 
 /** Verify that a standard CAN frame is encoded into TX mailbox 0 with the expected ID, DLC, and
@@ -526,8 +528,7 @@ TEST_F( HWCANTest, TxBufferRejectsInvalidIDBatchAtomically )
  *------------------------------------------------------------------------------
  */
 
-/** Verify that the TX interrupt handler disables the TX mailbox-empty interrupt when no packet is
- * buffered and reports the channel as sent. */
+/** Verify that a stray TX service event disables its interrupt without reporting completion. */
 TEST_F( HWCANTest, TxIRQDisablesInterruptWhenBufferEmpty )
 {
     ResetCANBuffers();
@@ -538,7 +539,7 @@ TEST_F( HWCANTest, TxIRQDisablesInterruptWhenBufferEmpty )
     // check it disabled the interrupt
     EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
 
-    EXPECT_TRUE( HW_CAN_Channl1_sent() );
+    EXPECT_FALSE( HW_CAN_Channl1_sent() );
 }
 
 /** Verify that the channel 1 TX interrupt handler loads a buffered packet into the CAN TX mailbox
@@ -551,7 +552,7 @@ TEST_F( HWCANTest, TxIRQTransmitsBufferedPacketWithCorrectIDAndData )
 
     EXPECT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), 0 );
 
-    HW_CAN_CH1_TX_IRQ_HANDLER();
+    ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
 
     EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TIR,
                ( static_cast<uint32_t>( 0x321 ) << 21 ) | CAN_TI0R_TXRQ );
@@ -570,7 +571,7 @@ TEST_F( HWCANTest, TxIRQUsesBufferedPacketDLC )
     CAN_Packet_T packet[1] = { { .id = 0x321, .dlc = 4, .data = { 9, 8, 7, 6, 5, 4, 3, 2 } } };
 
     ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), 0 );
-    HW_CAN_CH1_TX_IRQ_HANDLER();
+    ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
 
     EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDTR, 4 );
     EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDLR, 0x06070809 );
@@ -974,15 +975,141 @@ TEST_F( HWCANTest, SentFlagStartsFalse )
     EXPECT_FALSE( HW_CAN_Channl2_sent() );
 }
 
-/** Verify that the channel 1 TX interrupt handler sets the sent flag and disables the TX interrupt
- * when no packet remains in the TX buffer. */
-TEST_F( HWCANTest, TxIRQSetsSentFlagWhenBufferEmpty )
+/** Verify that one batch becomes active on trigger and complete only after hardware completion. */
+TEST_F( HWCANTest, BatchTransitionsFromActiveToCompleted )
 {
-    mock_can1_regs.IER = CAN_IER_TMEIE;
+    mock_can1_regs.TSR     = CAN_TSR_TME0;
+    CAN_Packet_T packet[1] = { { .id = 0x123, .dlc = 1, .data = { 0xAA } } };
 
-    HW_CAN_CH1_TX_IRQ_HANDLER();
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
+    EXPECT_TRUE( can_tx_active1 );
+    EXPECT_FALSE( HW_CAN_Channl1_sent() );
 
+    HAL_CAN_TxMailbox0CompleteCallback( &hcan1 );
+
+    EXPECT_FALSE( can_tx_active1 );
     EXPECT_TRUE( HW_CAN_Channl1_sent() );
-
     EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
+}
+
+/** Verify that starting a second batch clears the previous completion result. */
+TEST_F( HWCANTest, StartingSecondBatchClearsCompletedState )
+{
+    mock_can1_regs.TSR     = CAN_TSR_TME0;
+    CAN_Packet_T packet[1] = { { .id = 0x123, .dlc = 1, .data = { 0xAA } } };
+
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
+    HAL_CAN_TxMailbox0CompleteCallback( &hcan1 );
+    ASSERT_TRUE( HW_CAN_Channl1_sent() );
+
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
+
+    EXPECT_TRUE( can_tx_active1 );
+    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+}
+
+/** Verify that retriggering an active batch returns busy without changing its queue state. */
+TEST_F( HWCANTest, TriggerWhileActiveReturnsBusy )
+{
+    mock_can1_regs.TSR      = CAN_TSR_TME0;
+    CAN_Packet_T packets[2] = {
+        { .id = 0x123, .dlc = 1, .data = { 0xAA } },
+        { .id = 0x124, .dlc = 1, .data = { 0xBB } },
+    };
+
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packets, 2 ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
+    uint16_t read_position = can_tx_rp1;
+
+    EXPECT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_BUSY );
+    EXPECT_EQ( can_tx_rp1, read_position );
+    EXPECT_TRUE( can_tx_active1 );
+    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+}
+
+/** Verify that loading a new batch while transmission is active returns busy. */
+TEST_F( HWCANTest, LoadWhileActiveReturnsBusy )
+{
+    mock_can1_regs.TSR     = CAN_TSR_TME0;
+    CAN_Packet_T packet[1] = { { .id = 0x123, .dlc = 1, .data = { 0xAA } } };
+
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
+    uint16_t write_position = can_tx_wp1;
+
+    EXPECT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_BUSY );
+    EXPECT_EQ( can_tx_wp1, write_position );
+    EXPECT_TRUE( can_tx_active1 );
+}
+
+/** Verify that an empty trigger reports empty without creating a false operation. */
+TEST_F( HWCANTest, EmptyTriggerReturnsEmpty )
+{
+    EXPECT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_EMPTY );
+    EXPECT_FALSE( can_tx_active1 );
+    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
+}
+
+/** Verify that a busy mailbox leaves the next packet queued for a later service event. */
+TEST_F( HWCANTest, MailboxBusyDoesNotConsumeQueuedPacket )
+{
+    CAN_Packet_T packet[1] = { { .id = 0x123, .dlc = 1, .data = { 0xAA } } };
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_OK );
+    mock_can1_regs.TSR = 0;
+
+    ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
+    EXPECT_EQ( can_tx_rp1, 0 );
+    EXPECT_TRUE( can_tx_active1 );
+    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+
+    mock_can1_regs.TSR = CAN_TSR_TME0;
+    HAL_CAN_TxMailbox0CompleteCallback( &hcan1 );
+
+    EXPECT_EQ( can_tx_rp1, 1 );
+    EXPECT_TRUE( can_tx_active1 );
+    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+
+    HAL_CAN_TxMailbox0CompleteCallback( &hcan1 );
+    EXPECT_TRUE( HW_CAN_Channl1_sent() );
+}
+
+/** Verify that an unexpected invalid queued frame is retained and never reported complete. */
+TEST_F( HWCANTest, InvalidQueuedFrameIsNotSilentlyDiscarded )
+{
+    mock_can1_regs.TSR     = CAN_TSR_TME0;
+    CAN_Packet_T packet[1] = { { .id = 0x123, .dlc = 1, .data = { 0xAA } } };
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_OK );
+    can_tx_buffer1[0].dlc = 9;
+
+    EXPECT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_ERROR );
+    EXPECT_EQ( can_tx_rp1, 0 );
+    EXPECT_FALSE( can_tx_active1 );
+    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
+}
+
+/** Verify that a multi-frame batch completes only after the final hardware completion event. */
+TEST_F( HWCANTest, MultiFrameBatchCompletesOnlyAfterFinalHardwareEvent )
+{
+    mock_can1_regs.TSR      = CAN_TSR_TME0;
+    CAN_Packet_T packets[2] = {
+        { .id = 0x123, .dlc = 1, .data = { 0xAA } },
+        { .id = 0x124, .dlc = 1, .data = { 0xBB } },
+    };
+
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packets, 2 ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
+    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+
+    HAL_CAN_TxMailbox0CompleteCallback( &hcan1 );
+    EXPECT_TRUE( can_tx_active1 );
+    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+
+    HAL_CAN_TxMailbox0CompleteCallback( &hcan1 );
+    EXPECT_FALSE( can_tx_active1 );
+    EXPECT_TRUE( HW_CAN_Channl1_sent() );
 }

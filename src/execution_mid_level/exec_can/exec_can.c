@@ -84,18 +84,18 @@ bool EXEC_CAN_Channl2_sent()
  * @brief Activates can channel 1 to immidiatley begin sending messages from the tx buffer
  *
  */
-void EXEC_CAN_Tx_Trigger1()
+HW_CAN_Result_T EXEC_CAN_Tx_Trigger1( void )
 {
-    HW_CAN_Tx_Trigger1();
+    return HW_CAN_Tx_Trigger1();
 }
 
 /**
  * @brief Activates can channel 2 to immidiatley begin sending messages from the tx buffer
  *
  */
-void EXEC_CAN_Tx_Trigger2()
+HW_CAN_Result_T EXEC_CAN_Tx_Trigger2( void )
 {
-    HW_CAN_Tx_Trigger2();
+    return HW_CAN_Tx_Trigger2();
 }
 
 /**
@@ -107,7 +107,7 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t EXEC_CAN_Load_Tx1( CAN_Packet_T source[], uint16_t length )
+HW_CAN_Result_T EXEC_CAN_Load_Tx1( CAN_Packet_T source[], uint16_t length )
 {
     return HW_CAN_Tx_Buffer_Write1( source, length );
 }
@@ -121,7 +121,7 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
  */
-uint16_t EXEC_CAN_Load_Tx2( CAN_Packet_T source[], uint16_t length )
+HW_CAN_Result_T EXEC_CAN_Load_Tx2( CAN_Packet_T source[], uint16_t length )
 {
     return HW_CAN_Tx_Buffer_Write2( source, length );
 }

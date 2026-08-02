@@ -72,6 +72,17 @@ typedef struct CAN_Packet_T
 
 } CAN_Packet_T;
 
+/**
+ * @brief Result codes returned by buffered CAN load and trigger operations.
+ */
+typedef enum HW_CAN_Result_T
+{
+    HW_CAN_RESULT_OK = 0,
+    HW_CAN_RESULT_ERROR,
+    HW_CAN_RESULT_BUSY,
+    HW_CAN_RESULT_EMPTY,
+} HW_CAN_Result_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -196,7 +207,7 @@ int HW_CAN_Recieve1( CAN_Packet_T* rxPacket );
  * @return 0 if the transmission was successfully loaded into a mailbox,
  *         non-zero otherwise.
  */
-int HW_CAN_Transmit1( uint8_t* txData, uint16_t id, uint8_t dlc );
+HW_CAN_Result_T HW_CAN_Transmit1( uint8_t* txData, uint16_t id, uint8_t dlc );
 
 /**
  * @brief Receives a CAN packet on channel 2.
@@ -219,7 +230,7 @@ int HW_CAN_Recieve2( CAN_Packet_T* rxPacket );
  * @return 0 if the transmission was successfully loaded into a mailbox,
  *         non-zero otherwise.
  */
-int HW_CAN_Transmit2( uint8_t* txData, uint16_t id, uint8_t dlc );
+HW_CAN_Result_T HW_CAN_Transmit2( uint8_t* txData, uint16_t id, uint8_t dlc );
 
 /**-----------------------------------------------------------------------------
  *  Channel 1 Buffer Functions
@@ -232,10 +243,11 @@ int HW_CAN_Transmit2( uint8_t* txData, uint16_t id, uint8_t dlc );
  * @param source  Array of CAN_Packet_T packets to write.
  * @param length  Number of CAN packets to write.
  *
- * @return 0 if the write was successful,
- *         1 if the buffer could not accept all packets.
+ * @return HW_CAN_RESULT_OK if the complete batch was loaded,
+ *         HW_CAN_RESULT_BUSY if transmission is active, or
+ *         HW_CAN_RESULT_ERROR if the batch is invalid or does not fit.
  */
-uint16_t HW_CAN_Tx_Buffer_Write1( CAN_Packet_T source[], uint16_t length );
+HW_CAN_Result_T HW_CAN_Tx_Buffer_Write1( CAN_Packet_T source[], uint16_t length );
 
 /**
  * @brief Writes CAN packets to the channel 1 receive buffer.
@@ -243,8 +255,9 @@ uint16_t HW_CAN_Tx_Buffer_Write1( CAN_Packet_T source[], uint16_t length );
  * @param source  Array of CAN_Packet_T packets to write.
  * @param length  Number of CAN packets to write.
  *
- * @return 0 if the write was successful,
- *         1 if the buffer could not accept all packets.
+ * @return HW_CAN_RESULT_OK if the complete batch was loaded,
+ *         HW_CAN_RESULT_BUSY if transmission is active, or
+ *         HW_CAN_RESULT_ERROR if the batch is invalid or does not fit.
  */
 uint16_t HW_CAN_Rx_Buffer_Write1( CAN_Packet_T source[], uint16_t length );
 
@@ -313,7 +326,7 @@ uint16_t HW_CAN_Rx_Buffer_Pop1( CAN_Packet_T* dest );
  * @return 0 if the write was successful,
  *         1 if the buffer could not accept all packets.
  */
-uint16_t HW_CAN_Tx_Buffer_Write2( CAN_Packet_T source[], uint16_t length );
+HW_CAN_Result_T HW_CAN_Tx_Buffer_Write2( CAN_Packet_T source[], uint16_t length );
 
 /**
  * @brief Writes CAN packets to the channel 2 receive buffer.
@@ -382,20 +395,30 @@ uint16_t HW_CAN_Rx_Buffer_Pop2( CAN_Packet_T* dest );
  */
 
 /**
- * @brief Enables transmit interrupts on channel 1.
+ * @brief Starts transmitting the buffered channel 1 batch.
  *
- * Used to enable transmission of messages through CAN channel 1.
- * Once the transmit buffer is empty, the ISR disables the interrupt again.
+ * @return HW_CAN_RESULT_OK if the batch was started,
+ *         HW_CAN_RESULT_BUSY if a batch is already active,
+ *         HW_CAN_RESULT_EMPTY if no packet is queued, or
+ *         HW_CAN_RESULT_ERROR if the first packet could not be transmitted.
+ *
+ * An empty trigger does not create an active operation or change the previous
+ * completion result.
  */
-void HW_CAN_Tx_Trigger1( void );
+HW_CAN_Result_T HW_CAN_Tx_Trigger1( void );
 
 /**
- * @brief Enables transmit interrupts on channel 2.
+ * @brief Starts transmitting the buffered channel 2 batch.
  *
- * Used to enable transmission of messages through CAN channel 2.
- * Once the transmit buffer is empty, the ISR disables the interrupt again.
+ * @return HW_CAN_RESULT_OK if the batch was started,
+ *         HW_CAN_RESULT_BUSY if a batch is already active,
+ *         HW_CAN_RESULT_EMPTY if no packet is queued, or
+ *         HW_CAN_RESULT_ERROR if the first packet could not be transmitted.
+ *
+ * An empty trigger does not create an active operation or change the previous
+ * completion result.
  */
-void HW_CAN_Tx_Trigger2( void );
+HW_CAN_Result_T HW_CAN_Tx_Trigger2( void );
 
 #ifdef __cplusplus
 }
