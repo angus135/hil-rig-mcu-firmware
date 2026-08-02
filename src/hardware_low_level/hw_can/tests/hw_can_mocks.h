@@ -112,6 +112,15 @@ extern "C"
  *----------------------------------------------------------------------------*/
 
 typedef int HAL_StatusTypeDef;
+typedef int IRQn_Type;
+
+enum
+{
+    CAN1_TX_IRQn = 0,
+    CAN1_RX0_IRQn,
+    CAN2_TX_IRQn,
+    CAN2_RX0_IRQn,
+};
 
 typedef struct
 {
@@ -210,6 +219,12 @@ HAL_StatusTypeDef HAL_CAN_ConfigFilter( CAN_HandleTypeDef* hcan, CAN_FilterTypeD
 HAL_StatusTypeDef HAL_CAN_Start( CAN_HandleTypeDef* hcan );
 
 HAL_StatusTypeDef HAL_CAN_ActivateNotification( CAN_HandleTypeDef* hcan, uint32_t notifications );
+
+uint32_t NVIC_GetEnableIRQ( IRQn_Type irq );
+
+void NVIC_DisableIRQ( IRQn_Type irq );
+
+void NVIC_EnableIRQ( IRQn_Type irq );
 
 void HAL_CAN_RxFifo0MsgPendingCallback( CAN_HandleTypeDef* hcan );
 

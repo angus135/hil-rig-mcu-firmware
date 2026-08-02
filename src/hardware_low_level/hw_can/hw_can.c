@@ -68,10 +68,12 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
  * If we think its absolutely neccesary to be able to check the status of each message
  * then I have an implementation in mind.
  */
-static volatile bool can_sent_flag1 = false;
-static volatile bool can_sent_flag2 = false;
-static volatile bool can_tx_active1 = false;
-static volatile bool can_tx_active2 = false;
+static volatile bool     can_sent_flag1        = false;
+static volatile bool     can_sent_flag2        = false;
+static volatile bool     can_tx_active1        = false;
+static volatile bool     can_tx_active2        = false;
+static volatile uint32_t can_rx_dropped_count1 = 0;
+static volatile uint32_t can_rx_dropped_count2 = 0;
 
 /* Buffer for rx channel 1 */
 static CAN_Packet_T      can_rx_buffer1[RECEIVE_BUFFER_WIDTH];
@@ -117,6 +119,11 @@ static HW_CAN_Result_T HW_CAN_Tx_Trigger( CAN_HandleTypeDef* hcan, CAN_Packet_T 
                                           volatile uint16_t* w_p, volatile uint16_t* r_p,
                                           uint16_t buffer_width, volatile bool* active,
                                           volatile bool* completed );
+static void            HW_CAN_Reset_Channel( CAN_TypeDef* can, IRQn_Type tx_irq, IRQn_Type rx_irq,
+                                             volatile uint16_t* tx_wp, volatile uint16_t* tx_rp,
+                                             volatile uint16_t* rx_wp, volatile uint16_t* rx_rp,
+                                             volatile bool* active, volatile bool* completed,
+                                             volatile uint32_t* dropped_count );
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -759,7 +766,9 @@ int HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_i
     // __HAL_RCC_CAN1_FORCE_RESET();
     // __HAL_RCC_CAN1_RELEASE_RESET();
     __HAL_RCC_CAN1_CLK_ENABLE();
-    return HW_CAN_Configure( &hcan1, bitrate, filter_bank, filter_id, filter_mask );
+    int result = HW_CAN_Configure( &hcan1, bitrate, filter_bank, filter_id, filter_mask );
+    HW_CAN_Reset1();
+    return result;
 }
 
 /**
@@ -794,7 +803,23 @@ int HW_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_i
     // __HAL_RCC_CAN2_FORCE_RESET();
     // __HAL_RCC_CAN2_RELEASE_RESET();
     __HAL_RCC_CAN2_CLK_ENABLE();
-    return HW_CAN_Configure( &hcan2, bitrate, filter_bank, filter_id, filter_mask );
+    int result = HW_CAN_Configure( &hcan2, bitrate, filter_bank, filter_id, filter_mask );
+    HW_CAN_Reset2();
+    return result;
+}
+
+/** Reset channel 1 software state while its CAN interrupts are masked. */
+void HW_CAN_Reset1( void )
+{
+    HW_CAN_Reset_Channel( CAN1, CAN1_TX_IRQn, CAN1_RX0_IRQn, &can_tx_wp1, &can_tx_rp1, &can_rx_wp1,
+                          &can_rx_rp1, &can_tx_active1, &can_sent_flag1, &can_rx_dropped_count1 );
+}
+
+/** Reset channel 2 software state while its CAN interrupts are masked. */
+void HW_CAN_Reset2( void )
+{
+    HW_CAN_Reset_Channel( CAN2, CAN2_TX_IRQn, CAN2_RX0_IRQn, &can_tx_wp2, &can_tx_rp2, &can_rx_wp2,
+                          &can_rx_rp2, &can_tx_active2, &can_sent_flag2, &can_rx_dropped_count2 );
 }
 
 /**-----------------------------------------------------------------------------
@@ -824,6 +849,18 @@ bool HW_CAN_Channl1_sent()
 bool HW_CAN_Channl2_sent()
 {
     return can_sent_flag2;
+}
+
+/** Return channel 1's sticky software RX dropped-frame count. */
+uint32_t HW_CAN_Rx_Dropped_Count1( void )
+{
+    return can_rx_dropped_count1;
+}
+
+/** Return channel 2's sticky software RX dropped-frame count. */
+uint32_t HW_CAN_Rx_Dropped_Count2( void )
+{
+    return can_rx_dropped_count2;
 }
 
 /**
@@ -1114,7 +1151,10 @@ void HW_CAN_CH1_RX_IRQ_HANDLER( void )
 
     if ( HW_CAN_Receive( &hcan1, &packet ) == 0 )
     {
-        HW_CAN_Rx_Buffer_Write1( &packet, 1 );
+        if ( HW_CAN_Rx_Buffer_Write1( &packet, 1 ) != 0U && can_rx_dropped_count1 != UINT32_MAX )
+        {
+            can_rx_dropped_count1++;
+        }
     }
 }
 
@@ -1144,7 +1184,42 @@ void HW_CAN_CH2_RX_IRQ_HANDLER( void )
 
     if ( HW_CAN_Receive( &hcan2, &packet ) == 0 )
     {
-        HW_CAN_Rx_Buffer_Write2( &packet, 1 );
+        if ( HW_CAN_Rx_Buffer_Write2( &packet, 1 ) != 0U && can_rx_dropped_count2 != UINT32_MAX )
+        {
+            can_rx_dropped_count2++;
+        }
+    }
+}
+
+/** Reset one channel's software state while preserving its NVIC enable state. */
+static void HW_CAN_Reset_Channel( CAN_TypeDef* can, IRQn_Type tx_irq, IRQn_Type rx_irq,
+                                  volatile uint16_t* tx_wp, volatile uint16_t* tx_rp,
+                                  volatile uint16_t* rx_wp, volatile uint16_t* rx_rp,
+                                  volatile bool* active, volatile bool* completed,
+                                  volatile uint32_t* dropped_count )
+{
+    uint32_t tx_irq_was_enabled = NVIC_GetEnableIRQ( tx_irq );
+    uint32_t rx_irq_was_enabled = NVIC_GetEnableIRQ( rx_irq );
+
+    NVIC_DisableIRQ( tx_irq );
+    NVIC_DisableIRQ( rx_irq );
+
+    CLEAR_BIT( can->IER, CAN_IER_TMEIE );
+    *tx_wp         = 0;
+    *tx_rp         = 0;
+    *rx_wp         = 0;
+    *rx_rp         = 0;
+    *active        = false;
+    *completed     = false;
+    *dropped_count = 0;
+
+    if ( rx_irq_was_enabled != 0U )
+    {
+        NVIC_EnableIRQ( rx_irq );
+    }
+    if ( tx_irq_was_enabled != 0U )
+    {
+        NVIC_EnableIRQ( tx_irq );
     }
 }
 

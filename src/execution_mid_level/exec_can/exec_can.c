@@ -80,6 +80,18 @@ bool EXEC_CAN_Channl2_sent()
     return HW_CAN_Channl2_sent();
 }
 
+/** Return channel 1's sticky software RX dropped-frame count. */
+uint32_t EXEC_CAN_Rx_Dropped_Count1( void )
+{
+    return HW_CAN_Rx_Dropped_Count1();
+}
+
+/** Return channel 2's sticky software RX dropped-frame count. */
+uint32_t EXEC_CAN_Rx_Dropped_Count2( void )
+{
+    return HW_CAN_Rx_Dropped_Count2();
+}
+
 /**
  * @brief Activates can channel 1 to immidiatley begin sending messages from the tx buffer
  *
