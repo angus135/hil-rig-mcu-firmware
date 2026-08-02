@@ -100,20 +100,26 @@ HW_CAN_Result_T EXEC_CAN_Load_Tx2( CAN_Packet_T source[], uint16_t length );
 /**
  * @brief Reads values from the rx channel 1 buffer and places them in dest
  *
- * @param dest pointer to array of 8 bytes sections of available storage
+ * @param dest      Destination array for received CAN packets.
+ * @param capacity  Maximum number of packets that fit in dest.
  *
- * @return the number of entries read from the rx buffer (can be 0)
+ * @return Number of packets copied and consumed, up to capacity. Zero capacity,
+ *         or a null destination with non-zero capacity, returns zero without
+ *         consuming packets.
  */
-uint16_t EXEC_CAN_Rx_Buffer_Read1( CAN_Packet_T dest[] );
+uint16_t EXEC_CAN_Rx_Buffer_Read1( CAN_Packet_T dest[], uint16_t capacity );
 
 /**
  * @brief Reads values from the rx channel 2 buffer and places them in dest
  *
- * @param dest pointer to array of 8 bytes sections of available storage
+ * @param dest      Destination array for received CAN packets.
+ * @param capacity  Maximum number of packets that fit in dest.
  *
- * @return the number of entries read from the rx buffer (can be 0)
+ * @return Number of packets copied and consumed, up to capacity. Zero capacity,
+ *         or a null destination with non-zero capacity, returns zero without
+ *         consuming packets.
  */
-uint16_t EXEC_CAN_Rx_Buffer_Read2( CAN_Packet_T dest[] );
+uint16_t EXEC_CAN_Rx_Buffer_Read2( CAN_Packet_T dest[], uint16_t capacity );
 
 #ifdef __cplusplus
 }
