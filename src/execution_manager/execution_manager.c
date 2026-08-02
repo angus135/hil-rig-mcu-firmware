@@ -9,6 +9,8 @@
  *  Notes:
  *      Instruction execution and result capture are intentionally not yet
  *      implemented.
+ *      All private functions are declared inline because each has only one
+ *      caller, reducing the number of instructions required for each call.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -57,71 +59,115 @@ static volatile uint32_t current_tick = 0U;
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
-static bool EXECUTION_MANAGER_Is_Frequency_Supported( FrequencyMode_T frequency_mode );
-static bool EXECUTION_MANAGER_Capture_Completed_Interval_From_ISR( void );
-static bool EXECUTION_MANAGER_Finalise_Result_From_ISR( void );
-static bool EXECUTION_MANAGER_Advance_Tick_From_ISR( void );
-static bool EXECUTION_MANAGER_Fetch_Current_Tick_From_ISR( void );
-static bool EXECUTION_MANAGER_Apply_Current_Tick_From_ISR( void );
-static bool EXECUTION_MANAGER_Check_Execution_Status_From_ISR( void );
-static void EXECUTION_MANAGER_Fail_From_ISR( ExecutionManagerFailure_T failure );
-static void EXECUTION_MANAGER_Complete_From_ISR( void );
+static inline bool EXECUTION_MANAGER_Is_Frequency_Supported( FrequencyMode_T frequency_mode );
+static inline bool EXECUTION_MANAGER_Capture_Completed_Interval_From_ISR( void );
+static inline bool EXECUTION_MANAGER_Finalise_Result_From_ISR( void );
+static inline bool EXECUTION_MANAGER_Advance_Tick_From_ISR( void );
+static inline bool EXECUTION_MANAGER_Fetch_Current_Tick_From_ISR( void );
+static inline bool EXECUTION_MANAGER_Apply_Current_Tick_From_ISR( void );
+static inline bool EXECUTION_MANAGER_Check_Execution_Status_From_ISR( void );
+static inline void EXECUTION_MANAGER_Fail_From_ISR( ExecutionManagerFailure_T failure );
+static inline void EXECUTION_MANAGER_Complete_From_ISR( void );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
-static bool EXECUTION_MANAGER_Is_Frequency_Supported( FrequencyMode_T frequency_mode )
+/**
+ * @brief Checks whether the requested execution frequency is supported.
+ *
+ * @param frequency_mode Execution frequency to validate.
+ * @return true if the frequency is supported; otherwise, false.
+ */
+static inline bool EXECUTION_MANAGER_Is_Frequency_Supported( FrequencyMode_T frequency_mode )
 {
     return ( frequency_mode == FREQUENCY_100HZ ) || ( frequency_mode == FREQUENCY_1KHZ )
            || ( frequency_mode == FREQUENCY_10KHZ );
 }
 
-static bool EXECUTION_MANAGER_Capture_Completed_Interval_From_ISR( void )
+/**
+ * @brief Captures inputs and completed asynchronous measurements for the interval.
+ *
+ * @return true if the interval data was captured successfully; otherwise, false.
+ */
+static inline bool EXECUTION_MANAGER_Capture_Completed_Interval_From_ISR( void )
 {
     /* TODO: Capture inputs and drain completed asynchronous measurements. */
     return true;
 }
 
-static bool EXECUTION_MANAGER_Finalise_Result_From_ISR( void )
+/**
+ * @brief Builds and publishes the result for the completed execution tick.
+ *
+ * @return true if the result was finalised successfully; otherwise, false.
+ */
+static inline bool EXECUTION_MANAGER_Finalise_Result_From_ISR( void )
 {
     /* TODO: Construct and publish the completed tick result. */
     return true;
 }
 
-static bool EXECUTION_MANAGER_Advance_Tick_From_ISR( void )
+/**
+ * @brief Advances the current tick and completed-tick count.
+ *
+ * @return true if the tick counters were advanced successfully; otherwise, false.
+ */
+static inline bool EXECUTION_MANAGER_Advance_Tick_From_ISR( void )
 {
     current_tick++;
     execution_status.ticks_completed++;
     return true;
 }
 
-static bool EXECUTION_MANAGER_Fetch_Current_Tick_From_ISR( void )
+/**
+ * @brief Retrieves the prepared instruction for the current execution tick.
+ *
+ * @return true if the instruction was retrieved successfully; otherwise, false.
+ */
+static inline bool EXECUTION_MANAGER_Fetch_Current_Tick_From_ISR( void )
 {
     /* TODO: Retrieve the prepared instruction for the authoritative tick. */
     return true;
 }
 
-static bool EXECUTION_MANAGER_Apply_Current_Tick_From_ISR( void )
+/**
+ * @brief Applies the outputs and starts communications scheduled for the current tick.
+ *
+ * @return true if the instruction was applied successfully; otherwise, false.
+ */
+static inline bool EXECUTION_MANAGER_Apply_Current_Tick_From_ISR( void )
 {
     /* TODO: Apply fixed outputs and initiate scheduled communications. */
     return true;
 }
 
-static bool EXECUTION_MANAGER_Check_Execution_Status_From_ISR( void )
+/**
+ * @brief Checks for peripheral failures and execution tick overruns.
+ *
+ * @return true if execution remains healthy; otherwise, false.
+ */
+static inline bool EXECUTION_MANAGER_Check_Execution_Status_From_ISR( void )
 {
     /* TODO: Detect peripheral runtime failures and execution tick overruns. */
     return true;
 }
 
-static void EXECUTION_MANAGER_Fail_From_ISR( ExecutionManagerFailure_T failure )
+/**
+ * @brief Stops execution and records the supplied failure state.
+ *
+ * @param failure Failure that caused execution to stop.
+ */
+static inline void EXECUTION_MANAGER_Fail_From_ISR( ExecutionManagerFailure_T failure )
 {
     HW_TIMER_Stop_Timer( EXECUTION_MANAGER_TIMER );
     execution_status.failure = failure;
     execution_status.state   = EXECUTION_MANAGER_STATE_FAILED;
 }
 
-static void EXECUTION_MANAGER_Complete_From_ISR( void )
+/**
+ * @brief Stops the execution timer and marks execution as complete.
+ */
+static inline void EXECUTION_MANAGER_Complete_From_ISR( void )
 {
     HW_TIMER_Stop_Timer( EXECUTION_MANAGER_TIMER );
     execution_status.state = EXECUTION_MANAGER_STATE_COMPLETE;
@@ -233,6 +279,8 @@ void EXECUTION_MANAGER_Get_Status( ExecutionManagerStatus_T* status )
         return;
     }
 
+    // Here we're ensuring that the status is accurate by continuously taking snapshots until we get
+    // 2 that agree, ensuring that there hasn't been a change while reading the status
     do
     {
         first_snapshot.state           = execution_status.state;
