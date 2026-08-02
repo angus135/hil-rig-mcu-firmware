@@ -34,6 +34,13 @@ extern "C"
 /** @brief Number of bytes in one DAC write frame on the SPI wire. */
 #define EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES ( 3U )
 
+/** @brief Maximum number of analogue-output changes in one execution tick. */
+#define EXEC_ANALOG_OUTPUT_BATCH_MAX_FRAMES ( 6U )
+
+/** @brief Maximum contiguous DAC payload submitted for one execution tick. */
+#define EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES                                                         \
+    ( EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES * EXEC_ANALOG_OUTPUT_BATCH_MAX_FRAMES )
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -52,12 +59,41 @@ typedef struct AnalogueOutputPreparedFrame_T
     uint8_t bytes[EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES];
 } AnalogueOutputPreparedFrame_T;
 
+/**
+ * @brief Fixed-capacity wire payload for one execution tick.
+ *
+ * Preparation-time code appends zero through six prepared frames in schedule
+ * order. The valid prefix of @ref bytes is described by @ref byte_count and
+ * can be submitted directly without allocation, sorting, or concatenation.
+ * The fixed representation is suitable for inclusion in future flash-backed
+ * execution data.
+ */
+typedef struct AnalogueOutputPreparedBatch_T
+{
+    uint8_t bytes[EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES];
+    uint8_t byte_count;
+} AnalogueOutputPreparedBatch_T;
+
 #if defined( __cplusplus )
 static_assert( sizeof( AnalogueOutputPreparedFrame_T ) == EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES,
                "A prepared analogue-output frame must contain exactly three wire bytes" );
 #else
 _Static_assert( sizeof( AnalogueOutputPreparedFrame_T ) == EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES,
                 "A prepared analogue-output frame must contain exactly three wire bytes" );
+#endif
+
+#if defined( __cplusplus )
+static_assert( EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES == 18U,
+               "Six prepared analogue-output frames must occupy exactly 18 wire bytes" );
+static_assert( sizeof( AnalogueOutputPreparedBatch_T )
+                   == ( EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES + 1U ),
+               "A prepared analogue-output batch must use deterministic inline storage" );
+#else
+_Static_assert( EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES == 18U,
+                "Six prepared analogue-output frames must occupy exactly 18 wire bytes" );
+_Static_assert( sizeof( AnalogueOutputPreparedBatch_T )
+                    == ( EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES + 1U ),
+                "A prepared analogue-output batch must use deterministic inline storage" );
 #endif
 
 /**-----------------------------------------------------------------------------
@@ -139,6 +175,59 @@ bool EXEC_ANALOG_OUTPUT_Is_Configured( void );
  */
 bool EXEC_ANALOG_OUTPUT_Prepare_Frame( uint8_t channel, float input_voltage_v,
                                        AnalogueOutputPreparedFrame_T* prepared_frame );
+
+/**
+ * @brief Initialize an empty prepared batch during test preparation.
+ *
+ * @param[out] prepared_batch
+ *     Fixed-capacity batch to initialize. All inline storage is cleared.
+ *
+ * @return true if the batch was initialized.
+ * @return false if prepared_batch is NULL.
+ */
+bool EXEC_ANALOG_OUTPUT_Batch_Init( AnalogueOutputPreparedBatch_T* prepared_batch );
+
+/**
+ * @brief Append one prepared frame to a per-tick batch.
+ *
+ * Frames remain in append order and their wire bytes are stored contiguously.
+ * A failed append leaves the complete destination batch unchanged.
+ *
+ * @param[in,out] prepared_batch
+ *     Batch previously initialized by EXEC_ANALOG_OUTPUT_Batch_Init().
+ *
+ * @param[in] prepared_frame
+ *     Exact three-byte wire frame to append.
+ *
+ * @return true if the frame was appended.
+ * @return false if either pointer is NULL, the batch is malformed, or six
+ *     frames are already present.
+ */
+bool EXEC_ANALOG_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       prepared_batch,
+                                      const AnalogueOutputPreparedFrame_T* prepared_frame );
+
+/**
+ * @brief Submit one previously prepared per-tick batch on the execution path.
+ *
+ * The valid contiguous byte prefix is loaded into SPI as one operation and
+ * triggered exactly once. An empty batch is a successful no-op. This function
+ * performs no voltage conversion, channel validation, calibration, register
+ * calculation, frame construction, per-frame submission, retry, or wait.
+ *
+ * A false return means the scheduled physical output update did not occur.
+ * The future execution-manager caller must treat it as an execution fault and
+ * must not continue silently.
+ *
+ * @param[in] prepared_batch
+ *     Batch created during configuration or test preparation.
+ *
+ * @return true if an empty batch required no work or the complete payload was
+ *     accepted and triggered.
+ * @return false if the module is not configured, the batch is malformed, or
+ *     SPI rejected the complete payload.
+ */
+bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch(
+    const AnalogueOutputPreparedBatch_T* prepared_batch );
 
 /**
  * @brief Write a voltage to a single DAC output channel.
