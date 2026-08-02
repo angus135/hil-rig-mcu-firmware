@@ -36,6 +36,7 @@ extern "C"
  */
 
 #define CAN_PACKET_SIZE ( 8U )
+#define CAN_STANDARD_ID_MAX ( 0x7FFU )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -60,11 +61,13 @@ typedef struct CanProperties_T
  * The CAN identifier is a standard 11-bit CAN identifier stored in the
  * lower 11 bits of id.
  *
- * data contains CAN_PACKET_SIZE bytes of CAN payload data.
+ * dlc contains the number of valid payload bytes, from 0 through
+ * CAN_PACKET_SIZE. Only data[0] through data[dlc - 1] are valid.
  */
 typedef struct CAN_Packet_T
 {
     uint16_t id;
+    uint8_t  dlc;
     uint8_t  data[CAN_PACKET_SIZE];
 
 } CAN_Packet_T;
@@ -188,11 +191,12 @@ int HW_CAN_Recieve1( CAN_Packet_T* rxPacket );
  *
  * @param txData Pointer to CAN_PACKET_SIZE bytes of data.
  * @param id     Standard 11-bit CAN identifier.
+ * @param dlc    Number of valid payload bytes, from 0 through 8.
  *
  * @return 0 if the transmission was successfully loaded into a mailbox,
  *         non-zero otherwise.
  */
-int HW_CAN_Transmit1( uint8_t* txData, uint16_t id );
+int HW_CAN_Transmit1( uint8_t* txData, uint16_t id, uint8_t dlc );
 
 /**
  * @brief Receives a CAN packet on channel 2.
@@ -210,11 +214,12 @@ int HW_CAN_Recieve2( CAN_Packet_T* rxPacket );
  *
  * @param txData Pointer to CAN_PACKET_SIZE bytes of data.
  * @param id     Standard 11-bit CAN identifier.
+ * @param dlc    Number of valid payload bytes, from 0 through 8.
  *
  * @return 0 if the transmission was successfully loaded into a mailbox,
  *         non-zero otherwise.
  */
-int HW_CAN_Transmit2( uint8_t* txData, uint16_t id );
+int HW_CAN_Transmit2( uint8_t* txData, uint16_t id, uint8_t dlc );
 
 /**-----------------------------------------------------------------------------
  *  Channel 1 Buffer Functions

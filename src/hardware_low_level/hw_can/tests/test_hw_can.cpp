@@ -240,6 +240,48 @@ TEST_F( HWCANTest, TransmitLoadsMailboxCorrectly )
     EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDHR, 0x08070605 );
 }
 
+/** Verify that the four supported DLC boundaries are written to the mailbox exactly. */
+TEST_F( HWCANTest, TransmitSupportsClassicalCANPayloadLengths )
+{
+    uint8_t data[8]       = { 1, 2, 3, 4, 5, 6, 7, 8 };
+    uint8_t valid_dlcs[4] = { 0, 1, 4, 8 };
+
+    for ( uint8_t dlc : valid_dlcs )
+    {
+        memset( &mock_can1_regs.sTxMailBox[0], 0xFF, sizeof( mock_can1_regs.sTxMailBox[0] ) );
+        mock_can1_regs.TSR = CAN_TSR_TME0;
+
+        ASSERT_EQ( HW_CAN_Transmit( &hcan1, data, 0x123, dlc ), 0 );
+        EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDTR, dlc );
+
+        uint32_t expected_low  = 0;
+        uint32_t expected_high = 0;
+        for ( uint8_t i = 0; i < dlc; i++ )
+        {
+            if ( i < 4U )
+            {
+                expected_low |= static_cast<uint32_t>( data[i] ) << ( i * 8U );
+            }
+            else
+            {
+                expected_high |= static_cast<uint32_t>( data[i] ) << ( ( i - 4U ) * 8U );
+            }
+        }
+        EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDLR, expected_low );
+        EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDHR, expected_high );
+    }
+}
+
+/** Verify that a DLC above the classical CAN payload limit is rejected. */
+TEST_F( HWCANTest, TransmitRejectsDLCAboveEight )
+{
+    mock_can1_regs.TSR = CAN_TSR_TME0;
+    uint8_t data[8]    = {};
+
+    EXPECT_EQ( HW_CAN_Transmit( &hcan1, data, 0x123, 9 ), 1 );
+    EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TIR, 0U );
+}
+
 /** Verify that a short frame replaces stale low and high mailbox payload data. */
 TEST_F( HWCANTest, TransmitClearsReusedMailboxForShortPayload )
 {
@@ -297,6 +339,16 @@ TEST_F( HWCANTest, TransmitAcceptsMaximum11BitID )
                ( static_cast<uint32_t>( id ) << 21 ) | CAN_TI0R_TXRQ );
 }
 
+/** Verify that standard identifier zero is accepted. */
+TEST_F( HWCANTest, TransmitAcceptsZeroID )
+{
+    mock_can1_regs.TSR = CAN_TSR_TME0;
+    uint8_t data[1]    = { 0xAA };
+
+    ASSERT_EQ( HW_CAN_Transmit( &hcan1, data, 0x000, 1 ), 0 );
+    EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TIR, CAN_TI0R_TXRQ );
+}
+
 /**-----------------------------------------------------------------------------
  *  Receive Tests
  *------------------------------------------------------------------------------
@@ -323,6 +375,8 @@ TEST_F( HWCANTest, ReceiveReadsIDAndDataCorrectly )
     uint16_t id = 0x456;
 
     mock_can1_regs.sFIFOMailBox[0].RIR = static_cast<uint32_t>( id ) << 21;
+
+    mock_can1_regs.sFIFOMailBox[0].RDTR = 8;
 
     mock_can1_regs.sFIFOMailBox[0].RDLR = 0x04030201;
 
@@ -355,6 +409,25 @@ TEST_F( HWCANTest, ReceiveReadsIDAndDataCorrectly )
     EXPECT_TRUE( mock_can1_regs.RF0R & CAN_RF0R_RFOM0 );
 }
 
+/** Verify that RX preserves DLC and clears bytes outside the received payload. */
+TEST_F( HWCANTest, ReceiveExtractsDLCAndOnlyCopiesValidBytes )
+{
+    mock_can1_regs.RF0R                 = CAN_RF0R_FMP0;
+    mock_can1_regs.sFIFOMailBox[0].RIR  = static_cast<uint32_t>( 0x321 ) << 21;
+    mock_can1_regs.sFIFOMailBox[0].RDTR = 4;
+    mock_can1_regs.sFIFOMailBox[0].RDLR = 0x04030201;
+    mock_can1_regs.sFIFOMailBox[0].RDHR = 0xFFFFFFFF;
+    CAN_Packet_T packet                 = {};
+    memset( packet.data, 0xAA, sizeof( packet.data ) );
+
+    ASSERT_EQ( HW_CAN_Receive( &hcan1, &packet ), 0 );
+    EXPECT_EQ( packet.dlc, 4 );
+    EXPECT_EQ( packet.data[0], 1 );
+    EXPECT_EQ( packet.data[3], 4 );
+    EXPECT_EQ( packet.data[4], 0 );
+    EXPECT_EQ( packet.data[7], 0 );
+}
+
 /**-----------------------------------------------------------------------------
  *  Buffer Tests
  *------------------------------------------------------------------------------
@@ -364,7 +437,7 @@ TEST_F( HWCANTest, ReceiveReadsIDAndDataCorrectly )
  * or payload; reading is non-consuming. */
 TEST_F( HWCANTest, TxBufferWriteAndReadPreservesIDAndData )
 {
-    CAN_Packet_T tx[1] = { { .id = 0x123, .data = { 1, 2, 3, 4, 5, 6, 7, 8 } } };
+    CAN_Packet_T tx[1] = { { .id = 0x123, .dlc = 8, .data = { 1, 2, 3, 4, 5, 6, 7, 8 } } };
 
     EXPECT_EQ( HW_CAN_Tx_Buffer_Write1( tx, 1 ), 0 );
 
@@ -375,6 +448,8 @@ TEST_F( HWCANTest, TxBufferWriteAndReadPreservesIDAndData )
     EXPECT_EQ( count, 1 );
 
     EXPECT_EQ( out[0].id, 0x123 );
+
+    EXPECT_EQ( out[0].dlc, 8 );
 
     EXPECT_EQ( out[0].data[0], 1 );
 
@@ -392,7 +467,7 @@ TEST_F( HWCANTest, TxBufferWriteAndReadPreservesIDAndData )
  */
 TEST_F( HWCANTest, TxBufferPreservesMaximum11BitID )
 {
-    CAN_Packet_T tx[1] = { { .id = 0x7FF, .data = { 1, 2, 3, 4, 5, 6, 7, 8 } } };
+    CAN_Packet_T tx[1] = { { .id = 0x7FF, .dlc = 8, .data = { 1, 2, 3, 4, 5, 6, 7, 8 } } };
 
     EXPECT_EQ( HW_CAN_Tx_Buffer_Write1( tx, 1 ), 0 );
 
@@ -414,6 +489,36 @@ TEST_F( HWCANTest, BufferReadReturnsZeroWhenEmpty )
     CAN_Packet_T out[1] = {};
 
     EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 0 );
+}
+
+/** Verify that a batch containing an invalid DLC is rejected without enqueuing its valid prefix. */
+TEST_F( HWCANTest, TxBufferRejectsInvalidDLCBatchAtomically )
+{
+    CAN_Packet_T packets[2] = {
+        { .id = 0x123, .dlc = 1, .data = { 0xAA } },
+        { .id = 0x124, .dlc = 9, .data = {} },
+    };
+
+    EXPECT_EQ( HW_CAN_Tx_Buffer_Write1( packets, 2 ), 1 );
+    EXPECT_EQ( can_tx_wp1, 0 );
+
+    CAN_Packet_T out[1] = {};
+    EXPECT_EQ( HW_CAN_Tx_Buffer_Read1( out ), 0 );
+}
+
+/** Verify that a batch containing an extended-range ID is rejected without changing the queue. */
+TEST_F( HWCANTest, TxBufferRejectsInvalidIDBatchAtomically )
+{
+    CAN_Packet_T packets[2] = {
+        { .id = 0x7FF, .dlc = 8, .data = {} },
+        { .id = 0x800, .dlc = 8, .data = {} },
+    };
+
+    EXPECT_EQ( HW_CAN_Tx_Buffer_Write2( packets, 2 ), 1 );
+    EXPECT_EQ( can_tx_wp2, 0 );
+
+    CAN_Packet_T out[1] = {};
+    EXPECT_EQ( HW_CAN_Tx_Buffer_Read2( out ), 0 );
 }
 
 /**-----------------------------------------------------------------------------
@@ -442,7 +547,7 @@ TEST_F( HWCANTest, TxIRQTransmitsBufferedPacketWithCorrectIDAndData )
 {
     mock_can1_regs.TSR = CAN_TSR_TME0;
 
-    CAN_Packet_T packet[1] = { { .id = 0x321, .data = { 9, 8, 7, 6, 5, 4, 3, 2 } } };
+    CAN_Packet_T packet[1] = { { .id = 0x321, .dlc = 8, .data = { 9, 8, 7, 6, 5, 4, 3, 2 } } };
 
     EXPECT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), 0 );
 
@@ -456,6 +561,20 @@ TEST_F( HWCANTest, TxIRQTransmitsBufferedPacketWithCorrectIDAndData )
     EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDHR, 0x02030405 );
 
     EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDTR, 8 );
+}
+
+/** Verify that buffered transmission uses the packet DLC instead of always sending eight bytes. */
+TEST_F( HWCANTest, TxIRQUsesBufferedPacketDLC )
+{
+    mock_can1_regs.TSR     = CAN_TSR_TME0;
+    CAN_Packet_T packet[1] = { { .id = 0x321, .dlc = 4, .data = { 9, 8, 7, 6, 5, 4, 3, 2 } } };
+
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), 0 );
+    HW_CAN_CH1_TX_IRQ_HANDLER();
+
+    EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDTR, 4 );
+    EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDLR, 0x06070809 );
+    EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDHR, 0U );
 }
 
 /**-----------------------------------------------------------------------------
@@ -472,6 +591,8 @@ TEST_F( HWCANTest, RxIRQStoresIDAndDataInBuffer )
     mock_can1_regs.RF0R = CAN_RF0R_FMP0;
 
     mock_can1_regs.sFIFOMailBox[0].RIR = static_cast<uint32_t>( id ) << 21;
+
+    mock_can1_regs.sFIFOMailBox[0].RDTR = 8;
 
     mock_can1_regs.sFIFOMailBox[0].RDLR = 0x04030201;
 
@@ -495,10 +616,12 @@ TEST_F( HWCANTest, HALRxCallbackRoutesBothChannels )
 {
     mock_can1_regs.RF0R                 = CAN_RF0R_FMP0;
     mock_can1_regs.sFIFOMailBox[0].RIR  = static_cast<uint32_t>( 0x111 ) << 21;
+    mock_can1_regs.sFIFOMailBox[0].RDTR = 8;
     mock_can1_regs.sFIFOMailBox[0].RDLR = 0x04030201;
     mock_can1_regs.sFIFOMailBox[0].RDHR = 0x08070605;
     mock_can2_regs.RF0R                 = CAN_RF0R_FMP0;
     mock_can2_regs.sFIFOMailBox[0].RIR  = static_cast<uint32_t>( 0x222 ) << 21;
+    mock_can2_regs.sFIFOMailBox[0].RDTR = 8;
     mock_can2_regs.sFIFOMailBox[0].RDLR = 0x0C0B0A09;
     mock_can2_regs.sFIFOMailBox[0].RDHR = 0x100F0E0D;
 
@@ -523,12 +646,12 @@ TEST_F( HWCANTest, HALTxCallbacksAdvanceBothChannelsAndMultiPacketSequence )
     mock_can2_regs.TSR = CAN_TSR_TME0;
 
     CAN_Packet_T channel1[2] = {
-        { .id = 0x101, .data = { 1, 2, 3, 4, 5, 6, 7, 8 } },
-        { .id = 0x102, .data = { 9, 10, 11, 12, 13, 14, 15, 16 } },
+        { .id = 0x101, .dlc = 8, .data = { 1, 2, 3, 4, 5, 6, 7, 8 } },
+        { .id = 0x102, .dlc = 8, .data = { 9, 10, 11, 12, 13, 14, 15, 16 } },
     };
     CAN_Packet_T channel2[2] = {
-        { .id = 0x201, .data = { 17, 18, 19, 20, 21, 22, 23, 24 } },
-        { .id = 0x202, .data = { 25, 26, 27, 28, 29, 30, 31, 32 } },
+        { .id = 0x201, .dlc = 8, .data = { 17, 18, 19, 20, 21, 22, 23, 24 } },
+        { .id = 0x202, .dlc = 8, .data = { 25, 26, 27, 28, 29, 30, 31, 32 } },
     };
 
     ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( channel1, 2 ), 0 );
@@ -567,7 +690,7 @@ TEST_F( HWCANTest, HALTxCallbacksAdvanceBothChannelsAndMultiPacketSequence )
 /** Verify that the TX ring buffer rejects a write once its usable capacity is exhausted. */
 TEST_F( HWCANTest, TxBufferWriteFailsWhenFull )
 {
-    CAN_Packet_T packet[1] = { { .id = 0x123, .data = { 1, 2, 3, 4, 5, 6, 7, 8 } } };
+    CAN_Packet_T packet[1] = { { .id = 0x123, .dlc = 8, .data = { 1, 2, 3, 4, 5, 6, 7, 8 } } };
 
     /* Buffer capacity is width - 1 */
     for ( int i = 0; i < TRANSMIT_BUFFER_WIDTH - 1; i++ )
@@ -582,7 +705,7 @@ TEST_F( HWCANTest, TxBufferWriteFailsWhenFull )
 /** Verify that the RX ring buffer rejects a write once its usable capacity is exhausted. */
 TEST_F( HWCANTest, RxBufferWriteFailsWhenFull )
 {
-    CAN_Packet_T packet[1] = { { .id = 0x456, .data = { 9, 8, 7, 6, 5, 4, 3, 2 } } };
+    CAN_Packet_T packet[1] = { { .id = 0x456, .dlc = 8, .data = { 9, 8, 7, 6, 5, 4, 3, 2 } } };
 
     for ( int i = 0; i < RECEIVE_BUFFER_WIDTH - 1; i++ )
     {
@@ -597,6 +720,7 @@ TEST_F( HWCANTest, RxBufferWriteFailsWhenFull )
 TEST_F( HWCANTest, TxBufferWraparoundPreservesPackets )
 {
     CAN_Packet_T packet[1] = {};
+    packet[0].dlc          = 8;
 
     for ( int i = 0; i < 10; i++ )
     {
@@ -687,6 +811,10 @@ TEST_F( HWCANTest, FilterConfiguresStandardIDMaskCorrectly )
     EXPECT_EQ( filter.FilterIdHigh, static_cast<uint16_t>( filter_id << 5 ) );
 
     EXPECT_EQ( filter.FilterMaskIdHigh, static_cast<uint16_t>( filter_mask << 5 ) );
+
+    EXPECT_EQ( filter.FilterIdLow, 0U );
+
+    EXPECT_EQ( filter.FilterMaskIdLow, CAN_RI0R_IDE | CAN_RI0R_RTR );
 
     EXPECT_EQ( filter.FilterBank, 0 );
 

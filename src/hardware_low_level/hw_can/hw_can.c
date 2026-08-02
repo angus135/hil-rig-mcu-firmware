@@ -106,6 +106,7 @@ void HW_CAN_CH2_TX_IRQ_HANDLER( void );
 void HW_CAN_CH2_RX_IRQ_HANDLER( void );
 
 static void HW_CAN_Tx_Complete_Callback( CAN_HandleTypeDef* hcan );
+static bool HW_CAN_Packet_Is_Valid( const CAN_Packet_T* packet );
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -273,7 +274,7 @@ int HW_CAN_Transmit( CAN_HandleTypeDef* hcan, uint8_t* txData, uint16_t id, uint
 {
     CAN_TypeDef* can     = hcan->Instance;
     uint8_t      mailbox = 0;
-    if ( id > 0x7FF || size > 8 )
+    if ( id > CAN_STANDARD_ID_MAX || size > CAN_PACKET_SIZE )
     {
         // The address is larger than 11 bits or the size is larger than 8 bytes
         return 1;
@@ -339,20 +340,25 @@ int HW_CAN_Receive( CAN_HandleTypeDef* hcan, CAN_Packet_T* rxPacket )
      *
      * The current driver uses standard 11-bit CAN identifiers.
      */
-    rxPacket->id = ( can->sFIFOMailBox[0].RIR >> 21 ) & 0x7FF;
+    rxPacket->id  = ( uint16_t )( ( can->sFIFOMailBox[0].RIR >> 21 ) & CAN_STANDARD_ID_MAX );
+    rxPacket->dlc = ( uint8_t )( can->sFIFOMailBox[0].RDTR & CAN_RDT0R_DLC );
+
+    if ( rxPacket->dlc > CAN_PACKET_SIZE )
+    {
+        can->RF0R |= CAN_RF0R_RFOM0;
+        return 1;
+    }
 
     uint32_t low  = can->sFIFOMailBox[0].RDLR;
     uint32_t high = can->sFIFOMailBox[0].RDHR;
 
-    rxPacket->data[0] = ( low >> 0 ) & 0xFF;
-    rxPacket->data[1] = ( low >> 8 ) & 0xFF;
-    rxPacket->data[2] = ( low >> 16 ) & 0xFF;
-    rxPacket->data[3] = ( low >> 24 ) & 0xFF;
-
-    rxPacket->data[4] = ( high >> 0 ) & 0xFF;
-    rxPacket->data[5] = ( high >> 8 ) & 0xFF;
-    rxPacket->data[6] = ( high >> 16 ) & 0xFF;
-    rxPacket->data[7] = ( high >> 24 ) & 0xFF;
+    memset( rxPacket->data, 0, sizeof( rxPacket->data ) );
+    for ( uint8_t i = 0; i < rxPacket->dlc; i++ )
+    {
+        uint32_t payload  = i < 4U ? low : high;
+        uint8_t  offset   = i < 4U ? i : ( uint8_t )( i - 4U );
+        rxPacket->data[i] = ( uint8_t )( payload >> ( offset * 8U ) );
+    }
 
     /* Release FIFO */
     can->RF0R |= CAN_RF0R_RFOM0;
@@ -563,16 +569,16 @@ HAL_StatusTypeDef HW_CAN_Apply_Filter_HAL( CAN_FilterTypeDef* filter, CAN_Handle
     // Use one 32-bit filter entry per filter bank.
     ( *filter ).FilterScale = CAN_FILTERSCALE_32BIT;
 
-    if ( filter_id > 0x7FF || filter_mask > 0x7FF )
+    if ( filter_id > CAN_STANDARD_ID_MAX || filter_mask > CAN_STANDARD_ID_MAX )
     {
         return HAL_ERROR;
     }
 
     // Standard CAN ID's are 11 bits long and only use the High bits 15-5
     ( *filter ).FilterIdHigh     = filter_id << 5;    // the upper 16 bits of the filter ID value
-    ( *filter ).FilterIdLow      = 0x0000;            // the lower 16 bits of the filter ID value
+    ( *filter ).FilterIdLow      = 0U;                // standard data frame: IDE = 0, RTR = 0
     ( *filter ).FilterMaskIdHigh = filter_mask << 5;  // the upper 16 bits of the filter mask value
-    ( *filter ).FilterMaskIdLow  = 0x0000;            // the lower 16 bits of the filter mask value
+    ( *filter ).FilterMaskIdLow  = CAN_RI0R_IDE | CAN_RI0R_RTR;
 
     ( *filter ).SlaveStartFilterBank =
         14;  // divides the two filter banks (CAN1 & CAN2) 0----------------13 |14----------------27
@@ -807,9 +813,9 @@ bool HW_CAN_Channl2_sent()
  *
  * Uses HAL to transmit message over CAN channel 1
  */
-int HW_CAN_Transmit1( uint8_t* txData, uint16_t id )
+int HW_CAN_Transmit1( uint8_t* txData, uint16_t id, uint8_t dlc )
 {
-    return HW_CAN_Transmit( &hcan1, txData, id, 8 );
+    return HW_CAN_Transmit( &hcan1, txData, id, dlc );
 }
 
 /**
@@ -831,9 +837,9 @@ int HW_CAN_Recieve1( CAN_Packet_T* rxPacket )
  *
  * Uses HAL to transmit message over CAN channel 2
  */
-int HW_CAN_Transmit2( uint8_t* txData, uint16_t id )
+int HW_CAN_Transmit2( uint8_t* txData, uint16_t id, uint8_t dlc )
 {
-    return HW_CAN_Transmit( &hcan2, txData, id, 8 );
+    return HW_CAN_Transmit( &hcan2, txData, id, dlc );
 }
 
 /**
@@ -859,6 +865,18 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  */
 uint16_t HW_CAN_Tx_Buffer_Write1( CAN_Packet_T source[], uint16_t length )
 {
+    if ( length > 0U && source == NULL )
+    {
+        return 1;
+    }
+    for ( uint16_t i = 0; i < length; i++ )
+    {
+        if ( !HW_CAN_Packet_Is_Valid( &source[i] ) )
+        {
+            return 1;
+        }
+    }
+
     return HW_CAN_Buffer_Write( can_tx_buffer1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH,
                                 source, length );
 }
@@ -889,6 +907,18 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  */
 uint16_t HW_CAN_Tx_Buffer_Write2( CAN_Packet_T source[], uint16_t length )
 {
+    if ( length > 0U && source == NULL )
+    {
+        return 1;
+    }
+    for ( uint16_t i = 0; i < length; i++ )
+    {
+        if ( !HW_CAN_Packet_Is_Valid( &source[i] ) )
+        {
+            return 1;
+        }
+    }
+
     return HW_CAN_Buffer_Write( can_tx_buffer2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH,
                                 source, length );
 }
@@ -1019,7 +1049,7 @@ void HW_CAN_CH1_TX_IRQ_HANDLER( void )
 
     if ( HW_CAN_Tx_Buffer_Pop1( &packet ) == 0 )
     {
-        HW_CAN_Transmit( &hcan1, packet.data, packet.id, CAN_PACKET_SIZE );
+        HW_CAN_Transmit( &hcan1, packet.data, packet.id, packet.dlc );
     }
     else  // We are at the end of the packet
     {
@@ -1058,7 +1088,7 @@ void HW_CAN_CH2_TX_IRQ_HANDLER( void )
 
     if ( HW_CAN_Tx_Buffer_Pop2( &packet ) == 0 )
     {
-        HW_CAN_Transmit( &hcan2, packet.data, packet.id, CAN_PACKET_SIZE );
+        HW_CAN_Transmit( &hcan2, packet.data, packet.id, packet.dlc );
     }
     else
     {
@@ -1099,6 +1129,18 @@ static void HW_CAN_Tx_Complete_Callback( CAN_HandleTypeDef* hcan )
     {
         HW_CAN_CH2_TX_IRQ_HANDLER();
     }
+}
+
+/**
+ * @brief Checks whether a packet fits the supported classical CAN data-frame contract.
+ *
+ * @param packet Packet to validate.
+ *
+ * @return true for a standard identifier and DLC from 0 through 8.
+ */
+static bool HW_CAN_Packet_Is_Valid( const CAN_Packet_T* packet )
+{
+    return packet->id <= CAN_STANDARD_ID_MAX && packet->dlc <= CAN_PACKET_SIZE;
 }
 
 /**
