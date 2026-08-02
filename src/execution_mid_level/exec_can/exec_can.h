@@ -62,6 +62,20 @@ bool EXEC_CAN_Channl1_sent();
 bool EXEC_CAN_Channl2_sent();
 
 /**
+ * @brief Returns channel 1 frames dropped because its software RX buffer was full.
+ *
+ * @return Sticky dropped-frame count since the last channel configuration/reset.
+ */
+uint32_t EXEC_CAN_Rx_Dropped_Count1( void );
+
+/**
+ * @brief Returns channel 2 frames dropped because its software RX buffer was full.
+ *
+ * @return Sticky dropped-frame count since the last channel configuration/reset.
+ */
+uint32_t EXEC_CAN_Rx_Dropped_Count2( void );
+
+/**
  * @brief Starts transmitting the buffered channel 1 batch.
  *
  * @return See HW_CAN_Tx_Trigger1() for success, busy, empty, and error results.

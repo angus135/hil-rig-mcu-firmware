@@ -118,6 +118,20 @@ bool HW_CAN_Channl1_sent( void );
 bool HW_CAN_Channl2_sent( void );
 
 /**
+ * @brief Returns the number of channel 1 frames dropped because the software RX buffer was full.
+ *
+ * @return Sticky dropped-frame count since the last channel 1 reset.
+ */
+uint32_t HW_CAN_Rx_Dropped_Count1( void );
+
+/**
+ * @brief Returns the number of channel 2 frames dropped because the software RX buffer was full.
+ *
+ * @return Sticky dropped-frame count since the last channel 2 reset.
+ */
+uint32_t HW_CAN_Rx_Dropped_Count2( void );
+
+/**
  * @brief Calculates the required CAN timing properties.
  *
  * @param bitrate               Desired bitrate in bits per second.
@@ -185,6 +199,22 @@ int HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_i
  */
 int HW_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
                        uint16_t filter_mask );
+
+/**
+ * @brief Clears all channel 1 software queue, transmission, and RX diagnostic state.
+ *
+ * The channel 1 TX and RX interrupts are masked while the state is reset and
+ * restored to their previous enable state before this function returns.
+ */
+void HW_CAN_Reset1( void );
+
+/**
+ * @brief Clears all channel 2 software queue, transmission, and RX diagnostic state.
+ *
+ * The channel 2 TX and RX interrupts are masked while the state is reset and
+ * restored to their previous enable state before this function returns.
+ */
+void HW_CAN_Reset2( void );
 
 /**
  * @brief Receives a CAN packet on channel 1.

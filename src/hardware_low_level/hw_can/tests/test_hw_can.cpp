@@ -48,6 +48,8 @@ CAN_HandleTypeDef hcan1{};
 /* HAL CAN handle associated with the fake CAN2 peripheral instance. */
 CAN_HandleTypeDef hcan2{};
 
+static bool nvic_irq_enabled[4] = {};
+
 /**-----------------------------------------------------------------------------
  *  Test Helpers
  *------------------------------------------------------------------------------
@@ -82,10 +84,12 @@ static void ResetCANBuffers()
 
     memset( ( void* )can_rx_buffer2, 0, sizeof( can_rx_buffer2 ) );
 
-    can_sent_flag1 = false;
-    can_sent_flag2 = false;
-    can_tx_active1 = false;
-    can_tx_active2 = false;
+    can_sent_flag1        = false;
+    can_sent_flag2        = false;
+    can_tx_active1        = false;
+    can_tx_active2        = false;
+    can_rx_dropped_count1 = 0;
+    can_rx_dropped_count2 = 0;
 }
 
 /**-----------------------------------------------------------------------------
@@ -137,6 +141,21 @@ extern "C" HAL_StatusTypeDef HAL_CAN_ActivateNotification( CAN_HandleTypeDef* hc
     return g_mock->CANActivateNotification( hcan, flags );
 }
 
+extern "C" uint32_t NVIC_GetEnableIRQ( IRQn_Type irq )
+{
+    return nvic_irq_enabled[irq] ? 1U : 0U;
+}
+
+extern "C" void NVIC_DisableIRQ( IRQn_Type irq )
+{
+    nvic_irq_enabled[irq] = false;
+}
+
+extern "C" void NVIC_EnableIRQ( IRQn_Type irq )
+{
+    nvic_irq_enabled[irq] = true;
+}
+
 /**-----------------------------------------------------------------------------
  *  Test Fixture
  *------------------------------------------------------------------------------
@@ -163,6 +182,11 @@ protected:
         memset( &mock_can1_regs, 0, sizeof( mock_can1_regs ) );
 
         memset( &mock_can2_regs, 0, sizeof( mock_can2_regs ) );
+
+        for ( bool& enabled : nvic_irq_enabled )
+        {
+            enabled = true;
+        }
 
         hcan1.Instance = &mock_can1_regs;
         hcan2.Instance = &mock_can2_regs;
@@ -683,6 +707,79 @@ TEST_F( HWCANTest, HALTxCallbacksAdvanceBothChannelsAndMultiPacketSequence )
     EXPECT_TRUE( HW_CAN_Channl2_sent() );
 }
 
+/** Verify that an RX callback records a frame dropped by a full software buffer. */
+TEST_F( HWCANTest, RxOverflowRecordsDroppedFrame )
+{
+    CAN_Packet_T buffered[RECEIVE_BUFFER_WIDTH - 1] = {};
+    for ( CAN_Packet_T& packet : buffered )
+    {
+        packet.id  = 0x123;
+        packet.dlc = 1;
+    }
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Write1( buffered, RECEIVE_BUFFER_WIDTH - 1 ), 0 );
+
+    mock_can1_regs.RF0R                 = CAN_RF0R_FMP0;
+    mock_can1_regs.sFIFOMailBox[0].RIR  = static_cast<uint32_t>( 0x321 ) << 21;
+    mock_can1_regs.sFIFOMailBox[0].RDTR = 1;
+    mock_can1_regs.sFIFOMailBox[0].RDLR = 0xAA;
+
+    HAL_CAN_RxFifo0MsgPendingCallback( &hcan1 );
+
+    EXPECT_EQ( HW_CAN_Rx_Dropped_Count1(), 1U );
+    EXPECT_EQ( can_rx_wp1, RECEIVE_BUFFER_WIDTH - 1 );
+}
+
+/** Verify that resetting channel 1 clears only channel 1 queue and status state. */
+TEST_F( HWCANTest, ChannelResetClearsSelectedChannelOnly )
+{
+    CAN_Packet_T channel1[1] = { { .id = 0x111, .dlc = 1, .data = { 1 } } };
+    CAN_Packet_T channel2[1] = { { .id = 0x222, .dlc = 1, .data = { 2 } } };
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( channel1, 1 ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Write1( channel1, 1 ), 0 );
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write2( channel2, 1 ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Write2( channel2, 1 ), 0 );
+
+    can_tx_active1                 = true;
+    can_sent_flag1                 = true;
+    can_rx_dropped_count1          = 3;
+    can_tx_active2                 = true;
+    can_sent_flag2                 = true;
+    can_rx_dropped_count2          = 4;
+    mock_can1_regs.IER             = CAN_IER_TMEIE;
+    mock_can2_regs.IER             = CAN_IER_TMEIE;
+    nvic_irq_enabled[CAN1_TX_IRQn] = false;
+
+    HW_CAN_Reset1();
+
+    EXPECT_EQ( can_tx_wp1, 0 );
+    EXPECT_EQ( can_tx_rp1, 0 );
+    EXPECT_EQ( can_rx_wp1, 0 );
+    EXPECT_EQ( can_rx_rp1, 0 );
+    EXPECT_FALSE( can_tx_active1 );
+    EXPECT_FALSE( can_sent_flag1 );
+    EXPECT_EQ( HW_CAN_Rx_Dropped_Count1(), 0U );
+    EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
+    EXPECT_FALSE( nvic_irq_enabled[CAN1_TX_IRQn] );
+    EXPECT_TRUE( nvic_irq_enabled[CAN1_RX0_IRQn] );
+
+    EXPECT_EQ( can_tx_wp2, 1 );
+    EXPECT_EQ( can_rx_wp2, 1 );
+    EXPECT_TRUE( can_tx_active2 );
+    EXPECT_TRUE( can_sent_flag2 );
+    EXPECT_EQ( HW_CAN_Rx_Dropped_Count2(), 4U );
+    EXPECT_TRUE( mock_can2_regs.IER & CAN_IER_TMEIE );
+}
+
+/** Verify that resetting a channel clears its sticky RX overflow diagnostic. */
+TEST_F( HWCANTest, ChannelResetClearsRxOverflowDiagnostic )
+{
+    can_rx_dropped_count2 = 7;
+
+    HW_CAN_Reset2();
+
+    EXPECT_EQ( HW_CAN_Rx_Dropped_Count2(), 0U );
+}
+
 /**-----------------------------------------------------------------------------
  *  Full Buffer Tests
  *------------------------------------------------------------------------------
@@ -1037,6 +1134,33 @@ TEST_F( HWCANTest, ConfigureSucceedsWithValidConfiguration )
     int result = HW_CAN_Configure( &hcan1, 1000000, 0, 0x123, 0x7FF );
 
     EXPECT_EQ( result, 0 );
+}
+
+/** Verify that reconfiguring one channel starts with deterministic empty software state. */
+TEST_F( HWCANTest, ChannelConfigurationResetsSoftwareState )
+{
+    CAN_Packet_T packet[1] = { { .id = 0x123, .dlc = 1, .data = { 0xAA } } };
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Rx_Buffer_Write1( packet, 1 ), 0 );
+    can_tx_active1        = true;
+    can_sent_flag1        = true;
+    can_rx_dropped_count1 = 2;
+    mock_can1_regs.IER    = CAN_IER_TMEIE;
+
+    EXPECT_CALL( mock, CANInit( &hcan1 ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, CANConfigFilter( &hcan1, _ ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, CANStart( &hcan1 ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, CANActivateNotification( &hcan1, _ ) ).WillOnce( Return( HAL_OK ) );
+
+    ASSERT_EQ( HW_CAN_Configure1( 1000000, 0, 0x123, 0x7FF ), 0 );
+
+    EXPECT_EQ( can_tx_wp1, 0 );
+    EXPECT_EQ( can_tx_rp1, 0 );
+    EXPECT_EQ( can_rx_wp1, 0 );
+    EXPECT_EQ( can_rx_rp1, 0 );
+    EXPECT_FALSE( can_tx_active1 );
+    EXPECT_FALSE( can_sent_flag1 );
+    EXPECT_EQ( HW_CAN_Rx_Dropped_Count1(), 0U );
 }
 
 /**-----------------------------------------------------------------------------
