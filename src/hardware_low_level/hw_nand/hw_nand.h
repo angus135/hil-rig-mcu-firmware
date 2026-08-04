@@ -94,7 +94,7 @@ typedef struct
  * @return HW_NAND_STATUS_OK when reset, ID verification, block unlock, and ECC configuration
  * succeed.
  *
- * @note This driver is currently configured for the S35ML04G3 device ID.
+ * @note This driver is currently configured for the GD5F1GM7UEYIGR device ID.
  */
 HW_NAND_Status_T HW_NAND_Init( void );
 
