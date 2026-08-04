@@ -68,9 +68,8 @@ static uint32_t
  * The allocator is already single-owner and non-reentrant; keeping this at
  * module scope avoids placing one byte per managed NAND block on the task stack.
  */
-static bool
-    external_flash_allocator_selected_blocks[EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT] = {
-        false };
+static bool external_flash_allocator_selected_blocks[EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT] =
+    { false };
 
 static uint32_t external_flash_allocator_bad_block_count = 0U;
 
@@ -531,7 +530,7 @@ EXTERNAL_FLASH_ALLOCATOR_PreparePartition( ExternalFlashAllocatorPartition_T par
             }
 
             external_flash_allocator_selected_blocks[candidate_block] = true;
-            selected_this_pass                                         = true;
+            selected_this_pass                                        = true;
 
             ExternalFlashStatus_T status =
                 EXTERNAL_FLASH_ALLOCATOR_MapNandStatus( HW_NAND_BlockErase( candidate_block ) );
@@ -695,8 +694,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_ALLOCATOR_CommitMappedBlockReplacement(
         return EXTERNAL_FLASH_STATUS_INVALID_ARG;
     }
 
-    ExternalFlashStatus_T status =
-        EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( failed_block );
+    ExternalFlashStatus_T status = EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( failed_block );
     if ( status != EXTERNAL_FLASH_STATUS_OK )
     {
         return status;
