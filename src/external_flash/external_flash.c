@@ -164,6 +164,10 @@ static uint8_t external_flash_result_page_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BY
 static uint8_t external_flash_instruction_page_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES] = {
     0xFFU };
 
+/** Page-sized scratch buffer used to replay data during mapped-block recovery. */
+static uint8_t external_flash_recovery_page_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES] = {
+    0xFFU };
+
 /**=============================================================================
  *  Private (static) Function Prototypes
  *==============================================================================
@@ -222,6 +226,16 @@ static void EXTERNAL_FLASH_ClearResultPageBuffer( void );
  * erased NAND bytes before programming.
  */
 static void EXTERNAL_FLASH_ClearInstructionPageBuffer( void );
+
+/**
+ * Replays the committed page prefix into a spare block and then switches the map.
+ *
+ * The active map continues to reference failed_block until every preceding page
+ * has been copied successfully, so failed recovery cannot expose an empty block.
+ */
+static ExternalFlashStatus_T EXTERNAL_FLASH_RecoverMappedBlock(
+    ExternalFlashAllocatorPartition_T partition, uint32_t logical_block, uint32_t failed_block,
+    uint32_t pages_to_copy );
 
 /**
  * Programs one physical NAND page into a partition.
@@ -447,6 +461,70 @@ static void EXTERNAL_FLASH_ClearInstructionPageBuffer( void )
     external_flash_instruction_page_fill = 0U;
 }
 
+static ExternalFlashStatus_T EXTERNAL_FLASH_RecoverMappedBlock(
+    ExternalFlashAllocatorPartition_T partition, uint32_t logical_block, uint32_t failed_block,
+    uint32_t pages_to_copy )
+{
+    if ( pages_to_copy >= external_flash_geometry.pages_per_block )
+    {
+        return EXTERNAL_FLASH_STATUS_INVALID_ARG;
+    }
+
+    for ( uint32_t attempts = 0U; attempts < EXTERNAL_FLASH_MAX_PARTITION_BLOCK_COUNT; attempts++ )
+    {
+        uint32_t replacement_block = EXTERNAL_FLASH_INVALID_BLOCK;
+        ExternalFlashStatus_T status =
+            EXTERNAL_FLASH_ALLOCATOR_AllocateReplacementBlock( partition, &replacement_block );
+        if ( status != EXTERNAL_FLASH_STATUS_OK )
+        {
+            return status;
+        }
+
+        bool retry_with_another_block = false;
+
+        for ( uint32_t page_in_block = 0U; page_in_block < pages_to_copy; page_in_block++ )
+        {
+            uint32_t source_page =
+                ( failed_block * external_flash_geometry.pages_per_block ) + page_in_block;
+            uint32_t destination_page =
+                ( replacement_block * external_flash_geometry.pages_per_block ) + page_in_block;
+
+            status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_ReadPageBlocking(
+                source_page, 0U, external_flash_recovery_page_buffer,
+                external_flash_geometry.page_size_bytes ) );
+            if ( status != EXTERNAL_FLASH_STATUS_OK )
+            {
+                return status;
+            }
+
+            status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_ProgramPageBlocking(
+                destination_page, 0U, external_flash_recovery_page_buffer,
+                external_flash_geometry.page_size_bytes ) );
+            if ( status == EXTERNAL_FLASH_STATUS_PROGRAM_FAIL )
+            {
+                EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( replacement_block );
+                retry_with_another_block = true;
+                break;
+            }
+
+            if ( status != EXTERNAL_FLASH_STATUS_OK )
+            {
+                return status;
+            }
+        }
+
+        if ( retry_with_another_block )
+        {
+            continue;
+        }
+
+        return EXTERNAL_FLASH_ALLOCATOR_CommitMappedBlockReplacement(
+            partition, logical_block, failed_block, replacement_block );
+    }
+
+    return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
+}
+
 /**
  * @brief Programs one physical NAND page in a logical partition.
  *
@@ -460,8 +538,8 @@ static void EXTERNAL_FLASH_ClearInstructionPageBuffer( void )
  *
  * @note The NAND receives one full physical page from page_buffer, but committed
  *       length is advanced only by bytes_to_commit.
- * @note If program fails, the failed block is retired and the same logical page
- *       is retried on the next good physical block in the same partition.
+ * @note If program fails, preceding pages in the logical block are replayed into
+ *       an erased replacement before the map is switched and this page is retried.
  */
 static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramPartitionPageBuffer(
     ExternalFlashAllocatorPartition_T partition, const uint8_t* page_buffer,
@@ -517,9 +595,10 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramPartitionPageBuffer(
         if ( status == EXTERNAL_FLASH_STATUS_PROGRAM_FAIL )
         {
             uint32_t failed_block = page / external_flash_geometry.pages_per_block;
+            uint32_t page_in_block = page % external_flash_geometry.pages_per_block;
 
-            status = EXTERNAL_FLASH_ALLOCATOR_ReplaceMappedBlock( partition, logical_block,
-                                                                  failed_block );
+            status = EXTERNAL_FLASH_RecoverMappedBlock( partition, logical_block, failed_block,
+                                                        page_in_block );
             if ( status != EXTERNAL_FLASH_STATUS_OK )
             {
                 return status;
