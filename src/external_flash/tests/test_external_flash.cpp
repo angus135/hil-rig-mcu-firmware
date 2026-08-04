@@ -202,7 +202,7 @@ extern "C" HW_NAND_Status_T HW_NAND_ReadPageBlocking( uint32_t page, uint16_t co
 }
 
 extern "C" HW_NAND_Status_T HW_NAND_ProgramPageBlocking( uint32_t page, uint16_t column,
-                                                          const uint8_t* data, uint32_t length )
+                                                         const uint8_t* data, uint32_t length )
 {
     if ( g_mock == nullptr )
     {
@@ -693,9 +693,8 @@ TEST_F( ExternalFlashTest, ProgramFailureReplaysEarlierPagesBeforeSwitchingMappe
     InitDriverAllGood();
     StartSessionAllGood();
 
-    const uint32_t replacement_block =
-        TEST_RESULT_BLOCK + EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 1U;
-    const uint32_t replacement_page = replacement_block * TEST_PAGES_PER_BLOCK;
+    const uint32_t replacement_block = TEST_RESULT_BLOCK + EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 1U;
+    const uint32_t replacement_page  = replacement_block * TEST_PAGES_PER_BLOCK;
 
     InSequence sequence;
 
@@ -718,9 +717,8 @@ TEST_F( ExternalFlashTest, ProgramFailureReplaysEarlierPagesBeforeSwitchingMappe
         .WillOnce( Return( HW_NAND_STATUS_PROGRAM_FAIL ) );
     EXPECT_CALL( mock, BlockErase( Eq( replacement_block ) ) )
         .WillOnce( Return( HW_NAND_STATUS_OK ) );
-    EXPECT_CALL( mock,
-                 ReadPageBlocking( Eq( TEST_RESULT_PAGE ), Eq( 0U ), _,
-                                   Eq( TEST_PAGE_SIZE_BYTES ) ) )
+    EXPECT_CALL(
+        mock, ReadPageBlocking( Eq( TEST_RESULT_PAGE ), Eq( 0U ), _, Eq( TEST_PAGE_SIZE_BYTES ) ) )
         .WillOnce( Invoke( []( uint32_t, uint16_t, uint8_t* data, uint32_t length ) {
             EXPECT_EQ( external_flash_allocator_result_map[0], TEST_RESULT_BLOCK );
             for ( uint32_t i = 0U; i < length; i++ )
@@ -729,9 +727,8 @@ TEST_F( ExternalFlashTest, ProgramFailureReplaysEarlierPagesBeforeSwitchingMappe
             }
             return HW_NAND_STATUS_OK;
         } ) );
-    EXPECT_CALL( mock,
-                 ProgramPageBlocking( Eq( replacement_page ), Eq( 0U ), _,
-                                      Eq( TEST_PAGE_SIZE_BYTES ) ) )
+    EXPECT_CALL( mock, ProgramPageBlocking( Eq( replacement_page ), Eq( 0U ), _,
+                                            Eq( TEST_PAGE_SIZE_BYTES ) ) )
         .WillOnce( Invoke( []( uint32_t, uint16_t, const uint8_t* data, uint32_t length ) {
             EXPECT_EQ( external_flash_allocator_result_map[0], TEST_RESULT_BLOCK );
             for ( uint32_t i = 0U; i < length; i++ )
