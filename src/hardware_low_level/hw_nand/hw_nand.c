@@ -942,6 +942,11 @@ HW_NAND_Status_T HW_NAND_IsBlockBad( uint32_t block, bool* is_bad )
 
     uint8_t marker = 0xFFU;
 
+    /*
+     * GD5F1GM7xExxG Rev. 1.3 section 12.4 defines the factory marker as
+     * byte 2048 on the first page of each block. This device does not specify
+     * additional checks on the second or last page.
+     */
     HW_NAND_Status_T status = HW_NAND_StartPageReadToCache( HW_NAND_Block_First_Page( block ) );
 
     if ( status != HW_NAND_STATUS_OK )

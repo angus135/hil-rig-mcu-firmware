@@ -347,6 +347,8 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_MapNandStatus( HW_NAND_Status_T nand
  *
  * @note Unsigned subtraction makes the elapsed-time check safe across the
  *       HAL millisecond tick rollover.
+ * @note Production firmware sleeps until the next interrupt between checks,
+ *       allowing either QSPI/DMA completion or SysTick to wake the processor.
  */
 static ExternalFlashStatus_T EXTERNAL_FLASH_WaitDmaTransferComplete( void )
 {
@@ -368,6 +370,10 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_WaitDmaTransferComplete( void )
         {
             break;
         }
+
+#ifndef TEST_BUILD
+        __WFI();
+#endif
     }
 
     ExternalFlashStatus_T abort_status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_AbortTransfer() );

@@ -418,6 +418,14 @@ TEST_F( HWNANDTest, GetGeometryReportsSelectedDeviceGeometry )
     EXPECT_EQ( geometry.block_count, 1024U );
 }
 
+TEST_F( HWNANDTest, GetLastEccStatusReportsUnknownBeforeInit )
+{
+    HW_NAND_EccStatus_T ecc_status = HW_NAND_ECC_STATUS_NO_BIT_FLIPS;
+
+    EXPECT_EQ( HW_NAND_STATUS_OK, HW_NAND_GetLastEccStatus( &ecc_status ) );
+    EXPECT_EQ( ecc_status, HW_NAND_ECC_STATUS_UNKNOWN );
+}
+
 TEST_F( HWNANDTest, StartPageReadToCacheIssuesPageReadWithoutPolling )
 {
     SetInitialised();
