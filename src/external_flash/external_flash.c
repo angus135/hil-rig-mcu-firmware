@@ -370,8 +370,7 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_WaitDmaTransferComplete( void )
         }
     }
 
-    ExternalFlashStatus_T abort_status =
-        EXTERNAL_FLASH_MapNandStatus( HW_NAND_AbortTransfer() );
+    ExternalFlashStatus_T abort_status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_AbortTransfer() );
     if ( abort_status != EXTERNAL_FLASH_STATUS_OK )
     {
         return abort_status;
