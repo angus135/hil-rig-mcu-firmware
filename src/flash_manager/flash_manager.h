@@ -37,6 +37,45 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+typedef enum
+{
+    UNINITIALISED = 0,
+    IDLE,
+    INSTRUCTION_UPLOAD,
+    PREPARING_EXECUTION,
+    EXECUTING,
+    FINALISING_RESULTS,
+    RESULT_TRANSFER,
+    FAULT
+
+} FlashManagerState_T;
+
+typedef struct
+{
+    uint32_t timestamp;
+    uint16_t payload_length;
+    uint8_t  peripheral_type;
+    uint8_t  channel;
+} FlashManagerResultHeader_T;
+
+typedef struct
+{
+    /**
+     * Writable storage owned by the flash manager.
+     */
+    uint8_t* payload;
+
+    /**
+     * Opaque ID used to validate commit or cancellation.
+     */
+    uint32_t reservation_id;
+
+    /**
+     * Maximum number of bytes that may be written through payload.
+     */
+    uint16_t payload_capacity;
+} FlashManagerResultLease_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------

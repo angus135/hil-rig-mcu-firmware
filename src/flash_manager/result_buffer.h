@@ -23,6 +23,7 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+#include "flash_manager.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -40,6 +41,14 @@ extern "C"
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Resets all result-buffer ownership and cursor state.
+ *
+ * Any outstanding lease becomes invalid. Stored bytes are not cleared because
+ * they are inaccessible until overwritten and committed again.
+ */
+void RESULT_BUFFER_Reset( void );
 
 #ifdef __cplusplus
 }
