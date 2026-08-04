@@ -41,6 +41,11 @@ This module is responsible for:
 
 The public API is declared in `hw_nand.h`.
 
+Call `HW_NAND_Init()` before any API that communicates with the device.
+`HW_NAND_GetGeometry()` and `HW_NAND_GetLastEccStatus()` are state-only
+accessors and may be called before initialisation; ECC status is `UNKNOWN` until
+a checked page read records a result.
+
 
 ---
 
@@ -93,8 +98,9 @@ Use the matching completion helper for each long operation:
 
 The driver exposes physical bad-block primitives only:
 
-- `HW_NAND_IsBlockBad` checks the marker byte at spare-area byte 0 of the first
-  page of a block, matching the selected device datasheet.
+- `HW_NAND_IsBlockBad` checks byte 2048 (spare-area byte 0) on the first page of
+  a block. GD5F1GM7xExxG Rev. 1.3 section 12.4 explicitly defines this location
+  and does not require checks on the second or last page.
 - `HW_NAND_MarkBlockBad` programs the marker in the first page spare area.
 
 Skipping bad blocks, retiring failed blocks, maintaining a bad-block table, and
