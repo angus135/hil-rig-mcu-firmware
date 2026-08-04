@@ -25,6 +25,12 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#ifndef TEST_BUILD
+#include "stm32f4xx_hal.h"
+#else
+#include "tests/hw_nand_mocks.h"
+#endif
+
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
@@ -99,17 +105,11 @@
 
 /* Transaction and device operation timeouts */
 #define HW_NAND_DEFAULT_TIMEOUT_MS ( 100U )
+#define HW_NAND_STATUS_READ_TIMEOUT_MS ( 1U )
 #define HW_NAND_RESET_TIMEOUT_MS ( 2U )
 #define HW_NAND_PAGE_READ_TIMEOUT_MS ( 1U )
 #define HW_NAND_PROGRAM_TIMEOUT_MS ( 2U )
 #define HW_NAND_BLOCK_ERASE_TIMEOUT_MS ( 15U )
-
-/*
- * The current low-level layer does not own an RTOS delay or tick source. Treat
- * timeout_ms as a bounded polling budget until hw_nand is wired into the flash
- * manager task timing model.
- */
-#define HW_NAND_READY_POLLS_PER_TIMEOUT_MS ( 16U )
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -301,7 +301,12 @@ static HW_NAND_Status_T HW_NAND_ReadStatus( uint8_t* status )
         return HW_NAND_STATUS_INVALID_ARG;
     }
 
-    return HW_NAND_GetFeature( HW_NAND_FEATURE_STATUS, status );
+    HW_QSPI_Command_T command =
+        HW_NAND_Make_Data_Command( HW_NAND_OPCODE_GET_FEATURE, HW_NAND_FEATURE_STATUS,
+                                   HW_QSPI_ADDR_8_BITS, HW_QSPI_LINES_1, 0U );
+    command.timeout_ms = HW_NAND_STATUS_READ_TIMEOUT_MS;
+
+    return HW_NAND_Map_QSPI_Status( HW_QSPI_ReadBlocking( &command, status, 1U ) );
 }
 
 static HW_NAND_EccStatus_T HW_NAND_Decode_Ecc_Status( uint8_t status )
@@ -354,13 +359,9 @@ static HW_NAND_Status_T HW_NAND_CheckReadyStatus( uint8_t status, bool check_pro
 static HW_NAND_Status_T HW_NAND_WaitReadyWithChecks( uint32_t timeout_ms, bool check_program_fail,
                                                      bool check_erase_fail, bool check_ecc )
 {
-    uint32_t poll_count = timeout_ms * HW_NAND_READY_POLLS_PER_TIMEOUT_MS;
-    if ( poll_count == 0U )
-    {
-        poll_count = 1U;
-    }
+    const uint32_t start_time_ms = HAL_GetTick();
 
-    for ( uint32_t i = 0U; i < poll_count; i++ )
+    do
     {
         uint8_t status_register = 0U;
 
@@ -375,7 +376,7 @@ static HW_NAND_Status_T HW_NAND_WaitReadyWithChecks( uint32_t timeout_ms, bool c
             return HW_NAND_CheckReadyStatus( status_register, check_program_fail, check_erase_fail,
                                              check_ecc );
         }
-    }
+    } while ( ( uint32_t )( HAL_GetTick() - start_time_ms ) < timeout_ms );
 
     return HW_NAND_STATUS_TIMEOUT;
 }
