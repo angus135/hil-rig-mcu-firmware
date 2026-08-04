@@ -87,7 +87,7 @@ public:
                  ( uint32_t page, uint16_t column, const uint8_t* data, uint32_t length ), () );
 };
 
-static MockExternalFlashNand* g_mock = nullptr;
+static MockExternalFlashNand* g_mock        = nullptr;
 static uint32_t               g_hal_tick_ms = 0U;
 
 // NOLINTBEGIN
@@ -259,7 +259,7 @@ protected:
 
     void SetUp( void ) override
     {
-        g_mock = &mock;
+        g_mock        = &mock;
         g_hal_tick_ms = 0U;
 
         ON_CALL( mock, IsBusy() ).WillByDefault( Return( true ) );
