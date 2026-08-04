@@ -1,6 +1,9 @@
-## Flash Manager Implementation Notes
+# Flash Manager Design Notes
 
-These notes are  intended for the person writing the flash_manager and can be replaced once implemented with actual README
+`flash_manager.c`, `instruction_buffer.c`, and `result_buffer.c` are currently
+placeholders with no runtime API. These notes define the intended ownership and
+buffering model for their future implementation. They do not describe an active
+firmware task yet.
 
 The flash manager is the only normal runtime task that should call `external_flash`.
 
@@ -21,7 +24,10 @@ Recommended initial sizing:
 #define FLASH_MANAGER_INSTRUCTION_PAGE_COUNT  3U
 ```
 
-The page size should be obtained from `external_flash` or the configured NAND geometry. For the current NAND part, the expected main page size is:
+The current `external_flash` public API does not expose NAND geometry. The first
+flash-manager implementation must therefore share the selected device's
+compile-time main-page size, or extend `ExternalFlashInfo_T` before supporting
+runtime-selectable geometry. For `GD5F1GM7UEYIGR`, the main-page size is:
 
 ```c
 #define FLASH_MANAGER_PAGE_SIZE_BYTES         2048U
@@ -151,12 +157,21 @@ The execution manager may write only to an `EMPTY` or `FILLING` slot. Once a pag
 
 ---
 
-## Session Flow
+## Initialisation and Session Flow
 
-Before execution:
+Once during system startup, after the generated QSPI handle has been adopted:
 
 ```c
 EXTERNAL_FLASH_Init();
+```
+
+Firmware startup makes this call after adopting the generated QSPI handle.
+Integration of the upload, session, refill, drain, and transfer calls is still
+required in the placeholder managers.
+
+Before each execution:
+
+```c
 EXTERNAL_FLASH_StartSession();
 ```
 
@@ -179,12 +194,12 @@ After execution:
 
 ```text
 write final partial result page if needed
-make committed results available to result_transfer_manager
+make committed results available to the future result-transfer path
 ```
 
 If the final result length is exactly page aligned, there is no separate external flash finalize call. Leave the session readable for result transfer; `external_flash` advances its result wear-rotation cursor when the next `EXTERNAL_FLASH_StartSession()` begins.
 
-Result transfer should use:
+The future result-transfer path should use:
 
 ```c
 EXTERNAL_FLASH_GetInfo(&info);

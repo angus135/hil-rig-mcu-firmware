@@ -7,23 +7,26 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        configuration: [Debug, Release]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       # Builds exactly like CubeIDE headless build (Eclipse CDT managedbuilder)
-      - name: Build (STM32CubeIDE)
+      - name: Build ${{ matrix.configuration }} (STM32CubeIDE)
         uses: xanderhendriks/action-build-stm32cubeide@v10.0
         with:
           project-path: 'f446ze_cubeide_project'
-          project-target: 'f446ze_cubeide_project/Debug'
+          project-target: 'f446ze_cubeide_project/${{ matrix.configuration }}'
 
       # Optional: upload the firmware artifact (nice for PRs/releases)
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: firmware
+          name: firmware-${{ matrix.configuration }}
           path: |
             **/*.elf
             **/*.hex

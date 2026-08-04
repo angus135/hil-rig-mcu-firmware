@@ -35,6 +35,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "app_main/app_main.h"
+#include "external_flash.h"
 #include "hw_qspi.h"
 #include "hw_usb.h"
 /* USER CODE END Includes */
@@ -131,6 +132,11 @@ int main( void )
     /* USER CODE BEGIN 2 */
 
     if ( HW_QSPI_AdoptHandle( &hqspi, APP_QSPI_DEFAULT_TIMEOUT_MS ) != HW_QSPI_STATUS_OK )
+    {
+        Error_Handler();
+    }
+
+    if ( EXTERNAL_FLASH_Init() != EXTERNAL_FLASH_STATUS_OK )
     {
         Error_Handler();
     }

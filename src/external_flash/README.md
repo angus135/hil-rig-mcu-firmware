@@ -2,7 +2,14 @@
 
 ## Overview
 
-`external_flash` contains the flash storage service used by the flash manager and the result transfer path.
+`external_flash` contains the NAND-backed storage service intended for the flash
+manager, host package-receive path, and future result-transfer path.
+
+The storage service and its unit tests are implemented, and firmware startup
+adopts the generated QSPI handle before calling `EXTERNAL_FLASH_Init()`. The
+`flash_manager` and `host_interface/test_package_recieve` modules are still
+placeholders, and there is currently no `result_transfer_manager` module. The
+manager flows below describe the remaining application integration.
 
 This module is responsible for:
 
@@ -61,7 +68,7 @@ The preferred execution time instruction refill path is `EXTERNAL_FLASH_ReadInst
 
 The preferred package upload path is `EXTERNAL_FLASH_WriteInstructionBytes`. Host transfer chunk sizes do not need to match the NAND page size; the driver stages partial pages and programs full pages internally.
 
-`EXTERNAL_FLASH_WriteInstructionPage` is available when `test_package_recieve` already has page sized instruction chunks. Full page calls DMA directly from the caller supplied buffer. A final partial page is padded internally with `0xFF`.
+`EXTERNAL_FLASH_WriteInstructionPage` is available when the future package-receive path already has page-sized instruction chunks. Full-page calls DMA directly from the caller-supplied buffer. A final partial page is padded internally with `0xFF`.
 
 The driver does not expose physical NAND pages, physical blocks, QSPI commands, ECC fields, or bad block markers to application managers.
 
@@ -88,12 +95,15 @@ This keeps the 10 kHz execution path deterministic. The execution manager never 
 
 ## Storage Model
 
-The first implementation uses fixed compile time partitions:
+The first implementation uses fixed compile-time partitions:
 
-- Instruction partition starts at block `0`.
-- Result partition starts after the instruction partition.
+| Partition | Physical blocks | Current use |
+|---|---:|---|
+| Instruction | 0-511 | Volatile instruction image |
+| Result | 512-1019 | Volatile execution results |
+| Metadata | 1020-1023 | Reserved; no persistent metadata is written yet |
 
-Instruction bytes are stored exactly as supplied by `test_package_recieve`. Execution results are stored exactly as supplied by the flash manager. The driver does not parse instructions, result records, or add per page metadata in this first version.
+Instruction bytes are stored exactly as supplied by the package-receive path. Execution results are stored exactly as supplied by the flash manager. The driver does not parse instructions, result records, or add per-page metadata in this first version.
 
 The current instruction length and result length are tracked in RAM, so instruction and result recovery after reset is not supported yet.
 
@@ -107,7 +117,7 @@ Instruction upload is sequential and append only. Random instruction patching is
 
 ## Instruction Uploads
 
-`test_package_recieve` should use the instruction upload API when the host sends a new test package.
+The future package-receive path should use the instruction upload API when the host sends a new test package.
 
 Typical byte stream upload:
 
@@ -151,7 +161,7 @@ One result write path is supported: page scoped writes with `EXTERNAL_FLASH_Writ
 
 Only bytes successfully committed to NAND are exposed through `EXTERNAL_FLASH_ReadResults`.
 
-The active result session keeps its logical-to-physical rotation stable until the next result session starts. This allows `result_transfer_manager` to read committed bytes in logical order after execution, even though the physical NAND blocks may not start at the first block of the result partition.
+The active result session keeps its logical-to-physical rotation stable until the next result session starts. This allows a future result-transfer path to read committed bytes in logical order after execution, even though the physical NAND blocks may not start at the first block of the result partition.
 
 There is intentionally no public result flush or result byte write API. A final partial page write closes the append stream naturally because later page writes are rejected. If the result length ends exactly on a page boundary, the session stays readable and the wear rotation cursor is advanced when the next `EXTERNAL_FLASH_StartSession` begins.
 
@@ -219,29 +229,30 @@ The caller must keep the destination buffer valid and writable until the functio
 
 ## HIL RIG Upload, Execute, Return Flow
 
-The following flows describe how the managers should use this driver.
+The following target flows describe how the managers should use this driver once
+their placeholder modules are implemented.
 
 ### 1. Test Package Upload
 
-`test_package_recieve` is responsible for receiving the test package from the host interface.
+The planned package-receive component is responsible for receiving the test package from the host interface.
 
 It stores instruction bytes into the instruction partition through `external_flash`.
 
-Current behaviour:
+Storage APIs already provided by this branch:
 
 - `external_flash` provides `EXTERNAL_FLASH_StartInstructionUpload`.
 - `external_flash` provides `EXTERNAL_FLASH_WriteInstructionBytes` for natural host chunk sized writes.
 - `external_flash` provides `EXTERNAL_FLASH_WriteInstructionPage` for page sized package chunks.
 - `external_flash` provides `EXTERNAL_FLASH_FinishInstructionUpload` to commit the final partial page and validate the expected length.
-- `test_package_recieve` must not bypass `external_flash` and call `hw_nand` directly.
+- The package-receive component must not bypass `external_flash` and call `hw_nand` directly.
 
 Intended upload sequence:
 
-1. Host sends a test package to `test_package_recieve`.
-2. `test_package_recieve` validates or fragments the package into instruction byte spans.
-3. `test_package_recieve` calls `EXTERNAL_FLASH_StartInstructionUpload` with the expected instruction byte count.
-4. `test_package_recieve` appends the package instruction bytes with `EXTERNAL_FLASH_WriteInstructionBytes`, or page spans with `EXTERNAL_FLASH_WriteInstructionPage`.
-5. `test_package_recieve` calls `EXTERNAL_FLASH_FinishInstructionUpload`.
+1. Host sends a test package to the package-receive component.
+2. The package-receive component validates or fragments the package into instruction byte spans.
+3. It calls `EXTERNAL_FLASH_StartInstructionUpload` with the expected instruction byte count.
+4. It appends the instruction bytes with `EXTERNAL_FLASH_WriteInstructionBytes`, or page spans with `EXTERNAL_FLASH_WriteInstructionPage`.
+5. It calls `EXTERNAL_FLASH_FinishInstructionUpload`.
 6. `flash_manager` later reads those same opaque bytes back into its instruction buffers using `EXTERNAL_FLASH_ReadInstructionPage`.
 
 The instruction byte format is owned by the package and execution format, not by `external_flash`.
@@ -270,8 +281,8 @@ The execution manager remains a producer and consumer of RAM buffers only. It do
 After execution ends:
 
 1. The flash manager writes the final partial result page through `EXTERNAL_FLASH_WriteResultPage` if any result bytes remain.
-2. `result_transfer_manager` queries committed length with `EXTERNAL_FLASH_GetInfo`.
-3. `result_transfer_manager` repeatedly calls `EXTERNAL_FLASH_ReadResults` with byte offsets and host transfer sized buffers.
+2. The result-transfer component queries committed length with `EXTERNAL_FLASH_GetInfo`.
+3. It repeatedly calls `EXTERNAL_FLASH_ReadResults` with byte offsets and host-transfer-sized buffers.
 4. The host interface sends those bytes to the host in order.
 
 Only committed bytes are readable.
@@ -298,7 +309,7 @@ Only committed bytes are readable.
 - Does not call `external_flash`, `hw_nand`, or `hw_qspi`.
 - Does not wait for flash operations.
 
-### `test_package_recieve`
+### Package-receive component (planned)
 
 - Owns host package reception and validation.
 - Uses `external_flash` for instruction partition writes.
@@ -307,7 +318,7 @@ Only committed bytes are readable.
 - Calls `EXTERNAL_FLASH_FinishInstructionUpload` before allowing execution to start.
 - Should not bypass `external_flash` and call `hw_nand` directly.
 
-### `result_transfer_manager`
+### Result-transfer component (planned)
 
 - Owns result transfer state for host readback.
 - Uses `EXTERNAL_FLASH_GetInfo` to determine committed result length.
@@ -322,11 +333,16 @@ At initialisation, the module scans the configured instruction, result, and meta
 
 Bad blocks are skipped when translating logical byte offsets to physical NAND pages.
 
-If erase fails at runtime, the block is marked bad in RAM and `HW_NAND_MarkBlockBad` is called.
+If erase fails at runtime, the block is marked bad in RAM and
+`HW_NAND_MarkBlockBad` programs its persistent marker. Marker-program failures
+are returned to the caller rather than silently switching a logical map entry.
+The in-RAM bad-block state remains retired for the current boot even when the
+marker cannot be programmed.
 
-If program fails at runtime, the block is marked bad in RAM and `HW_NAND_MarkBlockBad` is called. The same logical result page is retried on the next good physical block.
-
-The same retire-and-retry policy is used for instruction upload page programs.
+If a page program fails at runtime, the allocator prepares a replacement block,
+replays every preceding page from the failed logical block, switches the map
+only after that replay succeeds, retires the failed block, and retries the
+failed page. The same recovery path is used for instruction and result pages.
 
 ---
 
@@ -360,6 +376,16 @@ Until that metadata exists, callers must treat instruction and result contents a
 
 ## DMA Buffer Lifetime
 
+`hw_qspi.c` owns the QSPI DMA-stream and peripheral interrupt handlers because
+the generated `stm32f4xx_it.c` is excluded from the firmware build. Those
+handlers call the HAL DMA and QSPI dispatchers that drive transfer-completion
+callbacks.
+
+Synchronous external-flash APIs wait against `HAL_GetTick()` with a 100 ms DMA
+deadline. A transfer that stops without a completion callback returns an error;
+an active transfer that reaches the deadline is aborted before timeout is
+returned.
+
 For full page writes through `EXTERNAL_FLASH_WriteResultPage`, DMA reads directly from the caller supplied result buffer.
 
 The caller must not modify or reuse that result buffer until `EXTERNAL_FLASH_WriteResultPage` returns.
@@ -379,6 +405,8 @@ A future asynchronous version may split these states into separate operations, s
 ## Notes and Limitations
 
 - Hardware validation is still required.
+- Firmware startup calls `EXTERNAL_FLASH_Init()`, but no production manager yet
+  calls the upload/session/read/write APIs.
 - Instruction and result lengths are currently volatile RAM state only.
 - Wear erase counts and active block maps are currently volatile RAM state only.
 - Instruction recovery after reset is not implemented yet.
