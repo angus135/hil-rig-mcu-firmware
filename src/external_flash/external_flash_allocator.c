@@ -592,37 +592,34 @@ bool EXTERNAL_FLASH_ALLOCATOR_GetPhysicalBlock( ExternalFlashAllocatorPartition_
     return false;
 }
 
-ExternalFlashStatus_T
-EXTERNAL_FLASH_ALLOCATOR_ReplaceMappedBlock( ExternalFlashAllocatorPartition_T partition,
-                                             uint32_t logical_block, uint32_t failed_block )
+ExternalFlashStatus_T EXTERNAL_FLASH_ALLOCATOR_AllocateReplacementBlock(
+    ExternalFlashAllocatorPartition_T partition, uint32_t* replacement_block )
 {
     uint32_t* block_map    = EXTERNAL_FLASH_ALLOCATOR_GetPartitionMap( partition );
     uint32_t* block_count  = EXTERNAL_FLASH_ALLOCATOR_GetPartitionMapCount( partition );
     uint32_t  map_capacity = EXTERNAL_FLASH_ALLOCATOR_GetPartitionMapCapacity( partition );
 
-    if ( ( block_map == NULL ) || ( block_count == NULL ) || ( logical_block >= *block_count ) )
+    if ( ( replacement_block == NULL ) || ( block_map == NULL ) || ( block_count == NULL ) )
     {
-        return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
+        return EXTERNAL_FLASH_STATUS_INVALID_ARG;
     }
 
-    EXTERNAL_FLASH_ALLOCATOR_SetPhysicalBlockBad( failed_block );
-    ( void )HW_NAND_MarkBlockBad( failed_block );
+    *replacement_block = EXTERNAL_FLASH_ALLOCATOR_INVALID_BLOCK;
 
     for ( uint32_t attempts = 0U; attempts < map_capacity; attempts++ )
     {
-        uint32_t replacement_block = EXTERNAL_FLASH_ALLOCATOR_INVALID_BLOCK;
+        uint32_t candidate_block = EXTERNAL_FLASH_ALLOCATOR_INVALID_BLOCK;
         if ( !EXTERNAL_FLASH_ALLOCATOR_SelectBlock( partition, block_map, *block_count,
-                                                    &replacement_block ) )
+                                                    &candidate_block ) )
         {
             return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
         }
 
         ExternalFlashStatus_T status =
-            EXTERNAL_FLASH_ALLOCATOR_MapNandStatus( HW_NAND_BlockErase( replacement_block ) );
+            EXTERNAL_FLASH_ALLOCATOR_MapNandStatus( HW_NAND_BlockErase( candidate_block ) );
         if ( status == EXTERNAL_FLASH_STATUS_ERASE_FAIL )
         {
-            EXTERNAL_FLASH_ALLOCATOR_SetPhysicalBlockBad( replacement_block );
-            ( void )HW_NAND_MarkBlockBad( replacement_block );
+            EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( candidate_block );
             continue;
         }
 
@@ -631,13 +628,49 @@ EXTERNAL_FLASH_ALLOCATOR_ReplaceMappedBlock( ExternalFlashAllocatorPartition_T p
             return status;
         }
 
-        external_flash_allocator_erase_counts[replacement_block]++;
-        block_map[logical_block] = replacement_block;
+        external_flash_allocator_erase_counts[candidate_block]++;
+        *replacement_block = candidate_block;
 
         return EXTERNAL_FLASH_STATUS_OK;
     }
 
     return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
+}
+
+void EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( uint32_t block )
+{
+    if ( block >= EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT )
+    {
+        return;
+    }
+
+    EXTERNAL_FLASH_ALLOCATOR_SetPhysicalBlockBad( block );
+    ( void )HW_NAND_MarkBlockBad( block );
+}
+
+ExternalFlashStatus_T EXTERNAL_FLASH_ALLOCATOR_CommitMappedBlockReplacement(
+    ExternalFlashAllocatorPartition_T partition, uint32_t logical_block, uint32_t failed_block,
+    uint32_t replacement_block )
+{
+    const ExternalFlashAllocatorPartitionConfig_T* config =
+        EXTERNAL_FLASH_ALLOCATOR_GetPartitionConfig( partition );
+    uint32_t* block_map   = EXTERNAL_FLASH_ALLOCATOR_GetPartitionMap( partition );
+    uint32_t* block_count = EXTERNAL_FLASH_ALLOCATOR_GetPartitionMapCount( partition );
+
+    if ( ( config == NULL ) || ( block_map == NULL ) || ( block_count == NULL )
+         || ( logical_block >= *block_count ) || ( block_map[logical_block] != failed_block )
+         || ( replacement_block < config->start_block )
+         || ( replacement_block >= ( config->start_block + config->block_count ) )
+         || EXTERNAL_FLASH_ALLOCATOR_IsPhysicalBlockBad( replacement_block )
+         || EXTERNAL_FLASH_ALLOCATOR_IsBlockInMap( block_map, *block_count, replacement_block ) )
+    {
+        return EXTERNAL_FLASH_STATUS_INVALID_ARG;
+    }
+
+    EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( failed_block );
+    block_map[logical_block] = replacement_block;
+
+    return EXTERNAL_FLASH_STATUS_OK;
 }
 
 void EXTERNAL_FLASH_ALLOCATOR_AdvanceCursor( ExternalFlashAllocatorPartition_T partition,
