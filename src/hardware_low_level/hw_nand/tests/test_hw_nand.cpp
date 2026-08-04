@@ -78,8 +78,17 @@ public:
 };
 
 static MockHWNANDQspi* g_mock = nullptr;
+static uint32_t        g_hal_tick_ms = 0U;
+static uint32_t        g_hal_tick_step_ms = 0U;
 
 // NOLINTBEGIN
+extern "C" uint32_t HAL_GetTick( void )
+{
+    const uint32_t current_tick_ms = g_hal_tick_ms;
+    g_hal_tick_ms += g_hal_tick_step_ms;
+    return current_tick_ms;
+}
+
 extern "C" HW_QSPI_Status_T HW_QSPI_Init( const HW_QSPI_Config_T* config )
 {
     if ( g_mock == nullptr )
@@ -195,6 +204,8 @@ protected:
     void SetUp( void ) override
     {
         g_mock = &mock;
+        g_hal_tick_ms = 0U;
+        g_hal_tick_step_ms = 0U;
 
         nand_initialised     = false;
         nand_last_ecc_status = HW_NAND_ECC_STATUS_UNKNOWN;
@@ -445,9 +456,10 @@ TEST_F( HWNANDTest, ReadPageToCacheReportsUncorrectableEcc )
 TEST_F( HWNANDTest, WaitReadyTimesOutWhenOipNeverClears )
 {
     SetInitialised();
+    g_hal_tick_step_ms = 1U;
 
     EXPECT_CALL( mock, ReadBlocking( _, _, Eq( 1U ) ) )
-        .Times( HW_NAND_READY_POLLS_PER_TIMEOUT_MS )
+        .Times( 1U )
         .WillRepeatedly(
             Invoke( []( const HW_QSPI_Command_T* command, uint8_t* data, uint32_t length ) {
                 EXPECT_EQ( length, 1U );
