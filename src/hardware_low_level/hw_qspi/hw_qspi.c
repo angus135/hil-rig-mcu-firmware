@@ -416,8 +416,7 @@ HW_QSPI_Status_T HW_QSPI_Init( const HW_QSPI_Config_T* config )
     return HW_QSPI_STATUS_OK;
 }
 
-HW_QSPI_Status_T HW_QSPI_AdoptHandle( QSPI_HandleTypeDef* hal_handle,
-                                      uint32_t            default_timeout_ms )
+HW_QSPI_Status_T HW_QSPI_AdoptHandle( QSPI_HandleTypeDef* hal_handle, uint32_t default_timeout_ms )
 {
     if ( ( hal_handle == NULL ) || ( default_timeout_ms == 0U ) )
     {

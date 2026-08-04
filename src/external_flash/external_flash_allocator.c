@@ -592,8 +592,9 @@ bool EXTERNAL_FLASH_ALLOCATOR_GetPhysicalBlock( ExternalFlashAllocatorPartition_
     return false;
 }
 
-ExternalFlashStatus_T EXTERNAL_FLASH_ALLOCATOR_AllocateReplacementBlock(
-    ExternalFlashAllocatorPartition_T partition, uint32_t* replacement_block )
+ExternalFlashStatus_T
+EXTERNAL_FLASH_ALLOCATOR_AllocateReplacementBlock( ExternalFlashAllocatorPartition_T partition,
+                                                   uint32_t* replacement_block )
 {
     uint32_t* block_map    = EXTERNAL_FLASH_ALLOCATOR_GetPartitionMap( partition );
     uint32_t* block_count  = EXTERNAL_FLASH_ALLOCATOR_GetPartitionMapCount( partition );
