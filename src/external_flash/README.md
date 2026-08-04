@@ -384,7 +384,9 @@ callbacks.
 Synchronous external-flash APIs wait against `HAL_GetTick()` with a 100 ms DMA
 deadline. A transfer that stops without a completion callback returns an error;
 an active transfer that reaches the deadline is aborted before timeout is
-returned.
+returned. Production firmware executes `WFI` between checks, so QSPI/DMA or
+SysTick interrupts wake the processor without a CPU-frequency-dependent poll
+count or a continuous busy-spin.
 
 For full page writes through `EXTERNAL_FLASH_WriteResultPage`, DMA reads directly from the caller supplied result buffer.
 

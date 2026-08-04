@@ -15,8 +15,9 @@
  *
  *  Notes:
  *      HW_NAND_Init() must complete before device transactions are used.
- *      HW_NAND_GetGeometry() may be used independently because it reports the
- *      geometry compiled for the selected device.
+ *      HW_NAND_GetGeometry() and HW_NAND_GetLastEccStatus() do not access the
+ *      device and may be called before initialisation. Before the first checked
+ *      page read, the last ECC status is HW_NAND_ECC_STATUS_UNKNOWN.
  *
  *      This module should not expose STM32 HAL or QSPI HAL types. Application
  *      code should use external_flash rather than calling hw_nand directly.
@@ -122,6 +123,9 @@ HW_NAND_Status_T HW_NAND_ReadId( HW_NAND_Id_T* id );
  * @param geometry Destination for page, spare, block, and block-count values.
  *
  * @return HW_NAND_STATUS_OK on success, or HW_NAND_STATUS_INVALID_ARG.
+ *
+ * @note This accessor does not communicate with the NAND device and may be
+ *       called before HW_NAND_Init().
  */
 HW_NAND_Status_T HW_NAND_GetGeometry( HW_NAND_Geometry_T* geometry );
 
@@ -131,6 +135,9 @@ HW_NAND_Status_T HW_NAND_GetGeometry( HW_NAND_Geometry_T* geometry );
  * @param ecc_status Destination for the decoded ECC state.
  *
  * @return HW_NAND_STATUS_OK on success, or HW_NAND_STATUS_INVALID_ARG.
+ *
+ * @note This accessor may be called before HW_NAND_Init(); it reports
+ *       HW_NAND_ECC_STATUS_UNKNOWN until a checked page read records a result.
  */
 HW_NAND_Status_T HW_NAND_GetLastEccStatus( HW_NAND_EccStatus_T* ecc_status );
 
@@ -299,7 +306,11 @@ HW_NAND_Status_T HW_NAND_StartBlockErase( uint32_t block );
 HW_NAND_Status_T HW_NAND_BlockErase( uint32_t block );
 
 /**
- * @brief Checks the factory bad-block markers for a physical block.
+ * @brief Checks the factory bad-block marker for a physical block.
+ *
+ * @note For GD5F1GM7UEYIGR, datasheet Rev. 1.3 section 12.4 defines the marker
+ *       as non-0xFF data at byte 2048 on the first page of the block. It does
+ *       not require checking the second or last page.
  */
 HW_NAND_Status_T HW_NAND_IsBlockBad( uint32_t block, bool* is_bad );
 
