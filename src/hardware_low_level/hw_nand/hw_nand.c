@@ -1001,3 +1001,8 @@ bool HW_NAND_IsBusy( void )
 {
     return HW_QSPI_IsBusy();
 }
+
+HW_NAND_Status_T HW_NAND_AbortTransfer( void )
+{
+    return HW_NAND_Map_QSPI_Status( HW_QSPI_Abort() );
+}

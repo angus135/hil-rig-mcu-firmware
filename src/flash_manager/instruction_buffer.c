@@ -7,7 +7,8 @@
  *      Implementation for the Instruction Buffer module.
  *
  *  Notes:
- *     None
+ *      This is currently a placeholder; no instruction-buffer implementation
+ *      is provided yet.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------

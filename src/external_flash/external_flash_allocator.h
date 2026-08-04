@@ -120,11 +120,16 @@ EXTERNAL_FLASH_ALLOCATOR_AllocateReplacementBlock( ExternalFlashAllocatorPartiti
                                                    uint32_t* replacement_block );
 
 /**
- * @brief Marks a physical block bad in volatile state and on the NAND device.
+ * @brief Marks a physical block bad in volatile state and programs the NAND
+ *        bad-block marker.
  *
  * @param block Physical NAND block to retire.
+ *
+ * @return EXTERNAL_FLASH_STATUS_OK if the persistent marker is programmed,
+ *         otherwise an error status. Volatile retirement remains effective
+ *         for the current boot even when marker programming fails.
  */
-void EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( uint32_t block );
+ExternalFlashStatus_T EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( uint32_t block );
 
 /**
  * @brief Atomically switches a logical map entry to a prepared replacement block.

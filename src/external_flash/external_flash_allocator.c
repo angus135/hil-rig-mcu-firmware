@@ -62,6 +62,16 @@ static bool external_flash_allocator_bad_blocks[EXTERNAL_FLASH_ALLOCATOR_MANAGED
 static uint32_t
     external_flash_allocator_erase_counts[EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT] = { 0U };
 
+/**
+ * Scratch selection state used while preparing a partition.
+ *
+ * The allocator is already single-owner and non-reentrant; keeping this at
+ * module scope avoids placing one byte per managed NAND block on the task stack.
+ */
+static bool
+    external_flash_allocator_selected_blocks[EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT] = {
+        false };
+
 static uint32_t external_flash_allocator_bad_block_count = 0U;
 
 static uint32_t external_flash_allocator_instruction_next_offset = 0U;
@@ -376,8 +386,9 @@ void EXTERNAL_FLASH_ALLOCATOR_Reset( void )
 
     for ( uint32_t block = 0U; block < EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT; block++ )
     {
-        external_flash_allocator_bad_blocks[block]   = false;
-        external_flash_allocator_erase_counts[block] = 0U;
+        external_flash_allocator_bad_blocks[block]      = false;
+        external_flash_allocator_erase_counts[block]    = 0U;
+        external_flash_allocator_selected_blocks[block] = false;
     }
 }
 
@@ -467,8 +478,12 @@ EXTERNAL_FLASH_ALLOCATOR_PreparePartition( ExternalFlashAllocatorPartition_T par
     EXTERNAL_FLASH_ALLOCATOR_ClearMap( block_map, map_capacity );
     *block_count = 0U;
 
-    bool     selected_blocks[EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT] = { false };
     uint32_t search_start = ( next_offset == NULL ) ? 0U : ( *next_offset % config->block_count );
+
+    for ( uint32_t block = 0U; block < EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT; block++ )
+    {
+        external_flash_allocator_selected_blocks[block] = false;
+    }
 
     while ( *block_count < required_blocks )
     {
@@ -481,7 +496,7 @@ EXTERNAL_FLASH_ALLOCATOR_PreparePartition( ExternalFlashAllocatorPartition_T par
             uint32_t candidate_block  = config->start_block + candidate_offset;
 
             if ( EXTERNAL_FLASH_ALLOCATOR_IsPhysicalBlockBad( candidate_block )
-                 || selected_blocks[candidate_block] )
+                 || external_flash_allocator_selected_blocks[candidate_block] )
             {
                 continue;
             }
@@ -508,22 +523,27 @@ EXTERNAL_FLASH_ALLOCATOR_PreparePartition( ExternalFlashAllocatorPartition_T par
             uint32_t candidate_block  = config->start_block + candidate_offset;
 
             if ( EXTERNAL_FLASH_ALLOCATOR_IsPhysicalBlockBad( candidate_block )
-                 || selected_blocks[candidate_block]
+                 || external_flash_allocator_selected_blocks[candidate_block]
                  || ( external_flash_allocator_erase_counts[candidate_block]
                       != lowest_erase_count ) )
             {
                 continue;
             }
 
-            selected_blocks[candidate_block] = true;
-            selected_this_pass               = true;
+            external_flash_allocator_selected_blocks[candidate_block] = true;
+            selected_this_pass                                         = true;
 
             ExternalFlashStatus_T status =
                 EXTERNAL_FLASH_ALLOCATOR_MapNandStatus( HW_NAND_BlockErase( candidate_block ) );
             if ( status == EXTERNAL_FLASH_STATUS_ERASE_FAIL )
             {
-                EXTERNAL_FLASH_ALLOCATOR_SetPhysicalBlockBad( candidate_block );
-                ( void )HW_NAND_MarkBlockBad( candidate_block );
+                ExternalFlashStatus_T retire_status =
+                    EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( candidate_block );
+                if ( retire_status != EXTERNAL_FLASH_STATUS_OK )
+                {
+                    return retire_status;
+                }
+
                 continue;
             }
 
@@ -620,7 +640,13 @@ EXTERNAL_FLASH_ALLOCATOR_AllocateReplacementBlock( ExternalFlashAllocatorPartiti
             EXTERNAL_FLASH_ALLOCATOR_MapNandStatus( HW_NAND_BlockErase( candidate_block ) );
         if ( status == EXTERNAL_FLASH_STATUS_ERASE_FAIL )
         {
-            EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( candidate_block );
+            ExternalFlashStatus_T retire_status =
+                EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( candidate_block );
+            if ( retire_status != EXTERNAL_FLASH_STATUS_OK )
+            {
+                return retire_status;
+            }
+
             continue;
         }
 
@@ -638,15 +664,16 @@ EXTERNAL_FLASH_ALLOCATOR_AllocateReplacementBlock( ExternalFlashAllocatorPartiti
     return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
 }
 
-void EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( uint32_t block )
+ExternalFlashStatus_T EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( uint32_t block )
 {
     if ( block >= EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT )
     {
-        return;
+        return EXTERNAL_FLASH_STATUS_INVALID_ARG;
     }
 
     EXTERNAL_FLASH_ALLOCATOR_SetPhysicalBlockBad( block );
-    ( void )HW_NAND_MarkBlockBad( block );
+
+    return EXTERNAL_FLASH_ALLOCATOR_MapNandStatus( HW_NAND_MarkBlockBad( block ) );
 }
 
 ExternalFlashStatus_T EXTERNAL_FLASH_ALLOCATOR_CommitMappedBlockReplacement(
@@ -668,7 +695,13 @@ ExternalFlashStatus_T EXTERNAL_FLASH_ALLOCATOR_CommitMappedBlockReplacement(
         return EXTERNAL_FLASH_STATUS_INVALID_ARG;
     }
 
-    EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( failed_block );
+    ExternalFlashStatus_T status =
+        EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( failed_block );
+    if ( status != EXTERNAL_FLASH_STATUS_OK )
+    {
+        return status;
+    }
+
     block_map[logical_block] = replacement_block;
 
     return EXTERNAL_FLASH_STATUS_OK;

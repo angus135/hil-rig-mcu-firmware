@@ -14,7 +14,9 @@
  *      to higher level storage drivers.
  *
  *  Notes:
- *      HW_NAND_Init() must be called before any other HW_NAND function.
+ *      HW_NAND_Init() must complete before device transactions are used.
+ *      HW_NAND_GetGeometry() may be used independently because it reports the
+ *      geometry compiled for the selected device.
  *
  *      This module should not expose STM32 HAL or QSPI HAL types. Application
  *      code should use external_flash rather than calling hw_nand directly.
@@ -239,15 +241,20 @@ HW_NAND_Status_T HW_NAND_ReadPageDma( uint32_t page, uint16_t column, uint8_t* d
                                       uint32_t length );
 
 /**
- * @brief Performs write-enable and blocking quad program-load into the NAND cache.
+ * @brief Performs a blocking quad program-load into the NAND cache.
+ *
+ * @note Write-enable is issued by HW_NAND_StartProgramExecute(), immediately
+ *       before the program-execute command, as required by the selected device.
  */
 HW_NAND_Status_T HW_NAND_ProgramLoadBlocking( uint16_t column, const uint8_t* data,
                                               uint32_t length );
 
 /**
- * @brief Performs write-enable and starts a DMA quad program-load into the NAND cache.
+ * @brief Starts a DMA quad program-load into the NAND cache.
  *
  * @note The caller must wait for HW_NAND_IsTransferComplete() before executing the program.
+ * @note Write-enable is issued by HW_NAND_StartProgramExecute(), immediately
+ *       before the program-execute command.
  */
 HW_NAND_Status_T HW_NAND_ProgramLoadDma( uint16_t column, const uint8_t* data, uint32_t length );
 
@@ -310,6 +317,13 @@ bool HW_NAND_IsTransferComplete( void );
  * @brief Returns whether the QSPI wrapper is busy.
  */
 bool HW_NAND_IsBusy( void );
+
+/**
+ * @brief Aborts the active NAND data transfer through the QSPI wrapper.
+ *
+ * @return HW_NAND_STATUS_OK if the transfer is aborted, otherwise an error status.
+ */
+HW_NAND_Status_T HW_NAND_AbortTransfer( void );
 
 #ifdef __cplusplus
 }

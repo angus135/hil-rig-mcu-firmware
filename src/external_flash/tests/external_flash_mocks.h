@@ -47,6 +47,9 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+/** Test-provided millisecond tick used by the elapsed DMA wait. */
+uint32_t HAL_GetTick( void );
+
 // NOLINTEND
 
 #ifdef __cplusplus
