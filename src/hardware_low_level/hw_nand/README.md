@@ -3,6 +3,11 @@
 
 `hw_nand` contains the low level driver for the external SPI NAND flash device.
 
+The selected device is `GD5F1GM7UEYIGR` (3.3 V), identified by manufacturer
+ID `0xC8` and device ID `0x91`. Its compiled geometry is 1024 blocks, 64 pages
+per block, 2048 main-area bytes per page, and 128 physical spare bytes per page.
+With internal ECC enabled, the first 64 spare bytes remain user accessible.
+
 This module is responsible for:
 
 - NAND reset and identification
@@ -58,6 +63,10 @@ implement those policies above the hardware layer.
 Small command and feature-register operations are blocking because they move one
 or two bytes and are outside the hard real-time execution loop.
 
+Ready waits use elapsed milliseconds from `HAL_GetTick()`. The timeout values in
+`hw_nand.c` are selected above the datasheet maximum reset, page-read, program,
+and block-erase times; they do not assume a fixed duration for each poll.
+
 Bulk cache transfers expose DMA entry points:
 
 - `HW_NAND_ReadCacheDma`
@@ -65,9 +74,10 @@ Bulk cache transfers expose DMA entry points:
 - `HW_NAND_ProgramLoadDma`
 
 The caller owns buffer lifetime until `HW_NAND_IsTransferComplete()` reports
-true. Page read, program execute, and block erase also have start-only entry
-points so the flash manager can issue a long NAND operation and decide how to
-wait from its own RTOS task context.
+true or `HW_NAND_AbortTransfer()` aborts the QSPI operation. Page read, program
+execute, and block erase also have start-only entry points so the flash manager
+can issue a long NAND operation and decide how to wait from its own RTOS task
+context.
 
 Use the matching completion helper for each long operation:
 
@@ -83,8 +93,8 @@ Use the matching completion helper for each long operation:
 
 The driver exposes physical bad-block primitives only:
 
-- `HW_NAND_IsBlockBad` checks the marker byte in the spare area of the first,
-  second, and last page of a block.
+- `HW_NAND_IsBlockBad` checks the marker byte at spare-area byte 0 of the first
+  page of a block, matching the selected device datasheet.
 - `HW_NAND_MarkBlockBad` programs the marker in the first page spare area.
 
 Skipping bad blocks, retiring failed blocks, maintaining a bad-block table, and

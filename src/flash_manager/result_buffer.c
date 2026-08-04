@@ -7,7 +7,8 @@
  *      Implementation for the Result Buffer module.
  *
  *  Notes:
- *     None
+ *      This is currently a placeholder; no result-buffer implementation is
+ *      provided yet.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------

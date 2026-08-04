@@ -1,16 +1,17 @@
 /******************************************************************************
- *  File:       test_<module>.cpp
- *  Author:     <your name>
- *  Created:    <DD-MMM-YYYY>
+ *  File:       test_hw_qspi.cpp
+ *  Author:     Callum Rafferty
+ *  Created:    5-May-2026
  *
  *  Description:
- *      Unit tests for the <module> module using GoogleTest and GoogleMock.
- *      This file validates the public API and behaviour defined in <module>.h.
+ *      Unit tests for the hw_qspi module using GoogleTest and GoogleMock.
+ *      This file validates command construction, HAL status mapping,
+ *      initialisation paths, blocking transfers, and DMA transfer state.
  *
  *  Notes:
  *      - Production code is written in C; tests are written in C++.
  *      - C headers must be included inside an extern "C" block.
- *      - GoogleMock may be used to mock external dependencies.
+ *      - GoogleMock is used to mock the STM32 HAL dependency.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------

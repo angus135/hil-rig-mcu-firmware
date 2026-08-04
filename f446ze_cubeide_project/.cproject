@@ -54,7 +54,7 @@
 									<listOptionValue builtIn="false" value="../../src/rtos"/>
 									<listOptionValue builtIn="false" value="../../src/console"/>
 									<listOptionValue builtIn="false" value="../../src/execution_manager"/>
-									<listOptionValue builtIn="false" value="../../src/buffer_manager"/>
+									<listOptionValue builtIn="false" value="../../src/flash_manager"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_analogue_input"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_analogue_output"/>
@@ -240,7 +240,7 @@
 									<listOptionValue builtIn="false" value="../../src/rtos"/>
 									<listOptionValue builtIn="false" value="../../src/console"/>
 									<listOptionValue builtIn="false" value="../../src/execution_manager"/>
-									<listOptionValue builtIn="false" value="../../src/buffer_manager"/>
+									<listOptionValue builtIn="false" value="../../src/flash_manager"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_analogue_input"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level/exec_analogue_output"/>
@@ -294,7 +294,7 @@
 									<listOptionValue builtIn="false" value="../../src"/>
 									<listOptionValue builtIn="false" value="../../src/app_main"/>
 									<listOptionValue builtIn="false" value="../../src/background"/>
-									<listOptionValue builtIn="false" value="../../src/buffer_manager"/>
+									<listOptionValue builtIn="false" value="../../src/flash_manager"/>
 									<listOptionValue builtIn="false" value="../../src/console"/>
 									<listOptionValue builtIn="false" value="../../src/execution_manager"/>
 									<listOptionValue builtIn="false" value="../../src/execution_mid_level"/>

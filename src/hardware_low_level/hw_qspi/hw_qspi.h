@@ -14,11 +14,16 @@
  *      transactions to an external memory device.
  *
  *  Notes:
- *      HW_QSPI_Init() must be called before any other HW_QSPI function.
+ *      Before using this wrapper, call HW_QSPI_Init(), or call
+ *      HW_QSPI_AdoptHandle() after CubeMX has run MX_QUADSPI_Init().
  *
  *      GPIO, QSPI peripheral clock, and optional DMA MSP setup are expected
  *      to be provided by the STM32 HAL / CubeMX generated MSP code.
  *
+ *      DMA transfers require the configured DMA stream interrupt handler and
+ *      QUADSPI_IRQHandler to call the matching STM32 HAL handlers. The current
+ *      firmware handlers are implemented in hw_qspi.c because its generated
+ *      stm32f4xx_it.c is excluded from the application build.
  *      Initial bringup should use blocking transfers. DMA read and write are
  *      provided for bulk transfers once the blocking path is validated.
  *      Memory mapped mode is intentionally omitted from the first implementation.
@@ -243,7 +248,8 @@ HW_QSPI_Status_T HW_QSPI_ReadDma( const HW_QSPI_Command_T* command, uint8_t* dat
 /**
  * @brief Checks whether the most recent asynchronous QSPI transfer has completed.
  *
- * @return true if the current asynchronous transfer is complete, otherwise false.
+ * @return true only if the most recent asynchronous transfer completed
+ *         successfully; false while active, after an error, or before completion.
  */
 bool HW_QSPI_IsTransferComplete( void );
 
