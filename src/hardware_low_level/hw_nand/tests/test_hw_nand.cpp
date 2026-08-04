@@ -78,8 +78,8 @@ public:
     MOCK_METHOD( HW_QSPI_Status_T, Abort, (), () );
 };
 
-static MockHWNANDQspi* g_mock = nullptr;
-static uint32_t        g_hal_tick_ms = 0U;
+static MockHWNANDQspi* g_mock             = nullptr;
+static uint32_t        g_hal_tick_ms      = 0U;
 static uint32_t        g_hal_tick_step_ms = 0U;
 
 // NOLINTBEGIN
@@ -204,8 +204,8 @@ protected:
 
     void SetUp( void ) override
     {
-        g_mock = &mock;
-        g_hal_tick_ms = 0U;
+        g_mock             = &mock;
+        g_hal_tick_ms      = 0U;
         g_hal_tick_step_ms = 0U;
 
         nand_initialised     = false;
@@ -353,11 +353,9 @@ TEST_F( HWNANDTest, InitResetsVerifiesIdUnlocksBlocksAndEnablesEcc )
     ExpectSetFeature( HW_NAND_FEATURE_BLOCK_LOCK, HW_NAND_BLOCK_LOCK_UNLOCK_ALL );
     ExpectOpcodeCommand( HW_NAND_OPCODE_WRITE_DISABLE );
     ExpectGetFeature( HW_NAND_FEATURE_BLOCK_LOCK, HW_NAND_BLOCK_LOCK_UNLOCK_ALL );
-    ExpectSetFeature( HW_NAND_FEATURE_CONFIGURATION,
-                      HW_NAND_CONFIGURATION_NORMAL_QUAD_ECC_VALUE );
+    ExpectSetFeature( HW_NAND_FEATURE_CONFIGURATION, HW_NAND_CONFIGURATION_NORMAL_QUAD_ECC_VALUE );
     ExpectOpcodeCommand( HW_NAND_OPCODE_WRITE_DISABLE );
-    ExpectGetFeature( HW_NAND_FEATURE_CONFIGURATION,
-                      HW_NAND_CONFIGURATION_NORMAL_QUAD_ECC_VALUE );
+    ExpectGetFeature( HW_NAND_FEATURE_CONFIGURATION, HW_NAND_CONFIGURATION_NORMAL_QUAD_ECC_VALUE );
 
     EXPECT_EQ( HW_NAND_STATUS_OK, HW_NAND_Init() );
 }
@@ -384,8 +382,7 @@ TEST_F( HWNANDTest, InitRejectsConfigurationWithoutNormalMode )
     ExpectSetFeature( HW_NAND_FEATURE_BLOCK_LOCK, HW_NAND_BLOCK_LOCK_UNLOCK_ALL );
     ExpectOpcodeCommand( HW_NAND_OPCODE_WRITE_DISABLE );
     ExpectGetFeature( HW_NAND_FEATURE_BLOCK_LOCK, HW_NAND_BLOCK_LOCK_UNLOCK_ALL );
-    ExpectSetFeature( HW_NAND_FEATURE_CONFIGURATION,
-                      HW_NAND_CONFIGURATION_NORMAL_QUAD_ECC_VALUE );
+    ExpectSetFeature( HW_NAND_FEATURE_CONFIGURATION, HW_NAND_CONFIGURATION_NORMAL_QUAD_ECC_VALUE );
     ExpectOpcodeCommand( HW_NAND_OPCODE_WRITE_DISABLE );
     ExpectGetFeature( HW_NAND_FEATURE_CONFIGURATION, 0x12U );
 

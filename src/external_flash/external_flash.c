@@ -165,8 +165,7 @@ static uint8_t external_flash_instruction_page_buffer[EXTERNAL_FLASH_MAX_PAGE_SI
     0xFFU };
 
 /** Page-sized scratch buffer used to replay data during mapped-block recovery. */
-static uint8_t external_flash_recovery_page_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES] = {
-    0xFFU };
+static uint8_t external_flash_recovery_page_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES] = { 0xFFU };
 
 /**=============================================================================
  *  Private (static) Function Prototypes
@@ -233,9 +232,10 @@ static void EXTERNAL_FLASH_ClearInstructionPageBuffer( void );
  * The active map continues to reference failed_block until every preceding page
  * has been copied successfully, so failed recovery cannot expose an empty block.
  */
-static ExternalFlashStatus_T EXTERNAL_FLASH_RecoverMappedBlock(
-    ExternalFlashAllocatorPartition_T partition, uint32_t logical_block, uint32_t failed_block,
-    uint32_t pages_to_copy );
+static ExternalFlashStatus_T
+EXTERNAL_FLASH_RecoverMappedBlock( ExternalFlashAllocatorPartition_T partition,
+                                   uint32_t logical_block, uint32_t failed_block,
+                                   uint32_t pages_to_copy );
 
 /**
  * Programs one physical NAND page into a partition.
@@ -461,9 +461,10 @@ static void EXTERNAL_FLASH_ClearInstructionPageBuffer( void )
     external_flash_instruction_page_fill = 0U;
 }
 
-static ExternalFlashStatus_T EXTERNAL_FLASH_RecoverMappedBlock(
-    ExternalFlashAllocatorPartition_T partition, uint32_t logical_block, uint32_t failed_block,
-    uint32_t pages_to_copy )
+static ExternalFlashStatus_T
+EXTERNAL_FLASH_RecoverMappedBlock( ExternalFlashAllocatorPartition_T partition,
+                                   uint32_t logical_block, uint32_t failed_block,
+                                   uint32_t pages_to_copy )
 {
     if ( pages_to_copy >= external_flash_geometry.pages_per_block )
     {
@@ -472,7 +473,7 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_RecoverMappedBlock(
 
     for ( uint32_t attempts = 0U; attempts < EXTERNAL_FLASH_MAX_PARTITION_BLOCK_COUNT; attempts++ )
     {
-        uint32_t replacement_block = EXTERNAL_FLASH_INVALID_BLOCK;
+        uint32_t              replacement_block = EXTERNAL_FLASH_INVALID_BLOCK;
         ExternalFlashStatus_T status =
             EXTERNAL_FLASH_ALLOCATOR_AllocateReplacementBlock( partition, &replacement_block );
         if ( status != EXTERNAL_FLASH_STATUS_OK )
@@ -489,9 +490,9 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_RecoverMappedBlock(
             uint32_t destination_page =
                 ( replacement_block * external_flash_geometry.pages_per_block ) + page_in_block;
 
-            status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_ReadPageBlocking(
-                source_page, 0U, external_flash_recovery_page_buffer,
-                external_flash_geometry.page_size_bytes ) );
+            status = EXTERNAL_FLASH_MapNandStatus(
+                HW_NAND_ReadPageBlocking( source_page, 0U, external_flash_recovery_page_buffer,
+                                          external_flash_geometry.page_size_bytes ) );
             if ( status != EXTERNAL_FLASH_STATUS_OK )
             {
                 return status;
@@ -594,7 +595,7 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramPartitionPageBuffer(
         status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_WaitProgramComplete( 1U ) );
         if ( status == EXTERNAL_FLASH_STATUS_PROGRAM_FAIL )
         {
-            uint32_t failed_block = page / external_flash_geometry.pages_per_block;
+            uint32_t failed_block  = page / external_flash_geometry.pages_per_block;
             uint32_t page_in_block = page % external_flash_geometry.pages_per_block;
 
             status = EXTERNAL_FLASH_RecoverMappedBlock( partition, logical_block, failed_block,
