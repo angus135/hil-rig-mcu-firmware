@@ -50,6 +50,9 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+/** Test-build replacement for the STM32 HAL millisecond timebase. */
+uint32_t HAL_GetTick( void );
+
 // NOLINTEND
 
 #ifdef __cplusplus
