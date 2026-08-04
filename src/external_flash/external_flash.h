@@ -106,22 +106,13 @@ typedef enum
 
 typedef struct
 {
-    /** Usable instruction capacity after bad block removal. */
+    uint32_t page_size_bytes;
     uint32_t instruction_capacity_bytes;
-
-    /** Usable result capacity after bad block removal. */
     uint32_t result_capacity_bytes;
-
-    /** Instruction bytes committed to NAND by the current volatile upload. */
     uint32_t instruction_length_bytes;
-
-    /** Result bytes committed to NAND in the active volatile result session. */
     uint32_t result_length_bytes;
-
-    /** Factory and runtime bad blocks found in the configured partitions. */
     uint32_t bad_block_count;
 } ExternalFlashInfo_T;
-
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
