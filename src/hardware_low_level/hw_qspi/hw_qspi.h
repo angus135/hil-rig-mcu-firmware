@@ -156,6 +156,20 @@ typedef struct
 HW_QSPI_Status_T HW_QSPI_Init( const HW_QSPI_Config_T* config );
 
 /**
+ * @brief Adopts a QSPI HAL handle that has already been initialised by CubeMX.
+ *
+ * @param hal_handle         Pointer to an initialised HAL QSPI handle.
+ * @param default_timeout_ms Default timeout for commands without an override.
+ *
+ * @return HW_QSPI_STATUS_OK if the ready HAL handle is adopted, otherwise an error status.
+ *
+ * @note Use this after MX_QUADSPI_Init() when the generated firmware owns peripheral setup.
+ * @note This function does not call HAL_QSPI_Init() or change the HAL configuration.
+ */
+HW_QSPI_Status_T HW_QSPI_AdoptHandle( QSPI_HandleTypeDef* hal_handle,
+                                      uint32_t            default_timeout_ms );
+
+/**
  * @brief Issues a QSPI command that has no data phase.
  *
  * @param command Pointer to the command phase description.

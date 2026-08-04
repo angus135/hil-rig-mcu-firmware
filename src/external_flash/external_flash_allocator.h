@@ -108,17 +108,37 @@ bool EXTERNAL_FLASH_ALLOCATOR_GetPhysicalBlock( ExternalFlashAllocatorPartition_
                                                 uint32_t logical_block, uint32_t* physical_block );
 
 /**
- * @brief Replaces a failed mapped block with a newly erased spare block.
+ * @brief Allocates and erases a spare block without changing the active map.
  *
- * @param partition     Partition containing the failed block.
- * @param logical_block Logical block whose physical block failed.
- * @param failed_block  Physical block that failed program.
+ * @param partition         Partition from which to select a spare block.
+ * @param replacement_block Destination for the erased physical block.
  *
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  */
 ExternalFlashStatus_T
-EXTERNAL_FLASH_ALLOCATOR_ReplaceMappedBlock( ExternalFlashAllocatorPartition_T partition,
-                                             uint32_t logical_block, uint32_t failed_block );
+EXTERNAL_FLASH_ALLOCATOR_AllocateReplacementBlock( ExternalFlashAllocatorPartition_T partition,
+                                                   uint32_t* replacement_block );
+
+/**
+ * @brief Marks a physical block bad in volatile state and on the NAND device.
+ *
+ * @param block Physical NAND block to retire.
+ */
+void EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( uint32_t block );
+
+/**
+ * @brief Atomically switches a logical map entry to a prepared replacement block.
+ *
+ * @param partition         Partition containing the mapped block.
+ * @param logical_block     Logical block whose physical block failed.
+ * @param failed_block      Currently mapped physical block to retire.
+ * @param replacement_block Erased block containing the recovered page prefix.
+ *
+ * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
+ */
+ExternalFlashStatus_T EXTERNAL_FLASH_ALLOCATOR_CommitMappedBlockReplacement(
+    ExternalFlashAllocatorPartition_T partition, uint32_t logical_block, uint32_t failed_block,
+    uint32_t replacement_block );
 
 /**
  * @brief Advances the partition tie-break cursor after committing an image.
