@@ -43,6 +43,7 @@ using ::testing::NiceMock;
 using ::testing::Return;
 
 static constexpr uint32_t TEST_TRANSFER_DATA_LENGTH = 16U;
+static constexpr uint32_t TEST_ADOPTED_TIMEOUT_MS   = 75U;
 
 /**-----------------------------------------------------------------------------
  *  Test Doubles / Mocks
@@ -190,7 +191,7 @@ protected:
         qspi_config.clock_prescaler       = 17U;
         qspi_config.fifo_threshold        = 4U;
         qspi_config.sample_shifting       = 0U;
-        qspi_config.flash_size            = 28U;
+        qspi_config.flash_size            = 26U;
         qspi_config.chip_select_high_time = 4U;
         qspi_config.clock_mode            = 0U;
         qspi_config.default_timeout_ms    = 50U;
@@ -263,6 +264,46 @@ TEST_F( HWQSPITest, InitAppliesConfigToHalHandle )
     EXPECT_EQ( qspi_hal_handle.Init.ClockMode, qspi_config.clock_mode );
     EXPECT_EQ( qspi_hal_handle.Init.FlashID, QSPI_FLASH_ID_1 );
     EXPECT_EQ( qspi_hal_handle.Init.DualFlash, QSPI_DUALFLASH_DISABLE );
+}
+
+TEST_F( HWQSPITest, AdoptHandleRejectsInvalidArguments )
+{
+    EXPECT_CALL( mock, GetState( _ ) ).Times( 0 );
+    EXPECT_CALL( mock, Init( _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_AdoptHandle( nullptr, TEST_ADOPTED_TIMEOUT_MS ) );
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG, HW_QSPI_AdoptHandle( &qspi_hal_handle, 0U ) );
+}
+
+TEST_F( HWQSPITest, AdoptHandleUsesReadyCubeMxHandleWithoutReinitialisingHal )
+{
+    EXPECT_CALL( mock, GetState( Eq( &qspi_hal_handle ) ) )
+        .WillOnce( Return( HAL_QSPI_STATE_READY ) );
+    EXPECT_CALL( mock, Init( _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_QSPI_STATUS_OK,
+               HW_QSPI_AdoptHandle( &qspi_hal_handle, TEST_ADOPTED_TIMEOUT_MS ) );
+    EXPECT_EQ( qspi_handle, &qspi_hal_handle );
+    EXPECT_EQ( qspi_default_timeout_ms, TEST_ADOPTED_TIMEOUT_MS );
+    EXPECT_EQ( qspi_transfer_state, HW_QSPI_TRANSFER_IDLE );
+}
+
+TEST_F( HWQSPITest, AdoptHandleRejectsBusyResetAndErrorStates )
+{
+    EXPECT_CALL( mock, GetState( Eq( &qspi_hal_handle ) ) )
+        .WillOnce( Return( HAL_QSPI_STATE_BUSY_INDIRECT_TX ) )
+        .WillOnce( Return( HAL_QSPI_STATE_RESET ) )
+        .WillOnce( Return( HAL_QSPI_STATE_ERROR ) );
+    EXPECT_CALL( mock, Init( _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_QSPI_STATUS_BUSY,
+               HW_QSPI_AdoptHandle( &qspi_hal_handle, TEST_ADOPTED_TIMEOUT_MS ) );
+    EXPECT_EQ( HW_QSPI_STATUS_NOT_INITIALISED,
+               HW_QSPI_AdoptHandle( &qspi_hal_handle, TEST_ADOPTED_TIMEOUT_MS ) );
+    EXPECT_EQ( HW_QSPI_STATUS_ERROR,
+               HW_QSPI_AdoptHandle( &qspi_hal_handle, TEST_ADOPTED_TIMEOUT_MS ) );
+    EXPECT_EQ( qspi_handle, nullptr );
 }
 
 TEST_F( HWQSPITest, CommandRejectsCallBeforeInit )

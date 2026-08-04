@@ -65,21 +65,21 @@ extern "C"
 #define EXTERNAL_FLASH_INSTRUCTION_START_BLOCK ( 0U )
 
 /** Number of physical NAND blocks reserved for instruction storage. */
-#define EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT ( 2048U )
+#define EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT ( 512U )
 
 /** First physical NAND block reserved for result storage. */
 #define EXTERNAL_FLASH_RESULT_START_BLOCK                                                          \
     ( EXTERNAL_FLASH_INSTRUCTION_START_BLOCK + EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT )
 
 /** Number of physical NAND blocks reserved for result storage. */
-#define EXTERNAL_FLASH_RESULT_BLOCK_COUNT ( 2032U )
+#define EXTERNAL_FLASH_RESULT_BLOCK_COUNT ( 508U )
 
 /** First physical NAND block reserved for external_flash metadata. */
 #define EXTERNAL_FLASH_METADATA_START_BLOCK                                                        \
     ( EXTERNAL_FLASH_RESULT_START_BLOCK + EXTERNAL_FLASH_RESULT_BLOCK_COUNT )
 
 /** Number of physical NAND blocks reserved for wear and allocation metadata. */
-#define EXTERNAL_FLASH_METADATA_BLOCK_COUNT ( 16U )
+#define EXTERNAL_FLASH_METADATA_BLOCK_COUNT ( 4U )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
