@@ -4,8 +4,10 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
+ *      Placeholder GoogleTest fixture for the Flash Manager module.
  *
  *  Notes:
+ *      Runtime flash-manager behavior and test cases have not been implemented.
  *
  ******************************************************************************/
 

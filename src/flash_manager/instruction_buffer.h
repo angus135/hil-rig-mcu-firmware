@@ -7,7 +7,7 @@
  *      Public interface for the Instruction Buffer module.
  *
  *  Notes:
- *      None
+ *      This is currently a placeholder; no instruction-buffer API is exposed.
  ******************************************************************************/
 
 #ifndef INSTRUCTION_BUFFER_H
@@ -45,4 +45,4 @@ extern "C"
 }
 #endif
 
-#endif /* BUFFER_MANAGER_H */
+#endif /* INSTRUCTION_BUFFER_H */

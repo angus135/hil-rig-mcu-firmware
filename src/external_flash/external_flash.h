@@ -12,19 +12,23 @@
  *      fixed instruction partition, and reads stored result bytes back for host
  *      transfer.
  *
- *      Intended HIL-RIG use:
- *      - test_package_recieve receives a test package from the host and
- *        programs the instruction partition through the instruction upload API.
- *      - flash_manager owns the RAM instruction and result buffers used by
+ *      Intended HIL-RIG ownership once the application managers are implemented:
+ *      - The host package-receive path programs the instruction partition
+ *        through the instruction upload API.
+ *      - flash_manager will own the RAM instruction and result buffers used by
  *        execution_manager.
- *      - flash_manager is the only task that calls external_flash during normal
- *        execution. It refills page sized instruction buffers with
- *        EXTERNAL_FLASH_ReadInstructionPage and drains page sized result buffers
+ *      - flash_manager will be the only task that calls external_flash during
+ *        normal execution. It will refill page-sized instruction buffers with
+ *        EXTERNAL_FLASH_ReadInstructionPage and drain page-sized result buffers
  *        with EXTERNAL_FLASH_WriteResultPage.
  *      - execution_manager consumes instruction bytes and produces result bytes
  *        through flash_manager owned buffers. It must not call external_flash.
- *      - result_transfer_manager reads committed result bytes with
- *        EXTERNAL_FLASH_ReadResults and passes them to the host interface.
+ *      - A future result-transfer path will read committed result bytes with
+ *        EXTERNAL_FLASH_ReadResults and pass them to the host interface.
+ *
+ *      Firmware startup adopts the CubeMX QSPI handle and calls
+ *      EXTERNAL_FLASH_Init(). The upload, session, and transfer APIs still need
+ *      to be connected to the placeholder application managers.
  *
  *      Design decisions:
  *      - The instruction and result regions are fixed compile time partitions.
@@ -78,7 +82,7 @@ extern "C"
 #define EXTERNAL_FLASH_METADATA_START_BLOCK                                                        \
     ( EXTERNAL_FLASH_RESULT_START_BLOCK + EXTERNAL_FLASH_RESULT_BLOCK_COUNT )
 
-/** Number of physical NAND blocks reserved for wear and allocation metadata. */
+/** Number of physical NAND blocks reserved for future persistent metadata. */
 #define EXTERNAL_FLASH_METADATA_BLOCK_COUNT ( 4U )
 
 /**-----------------------------------------------------------------------------
@@ -128,8 +132,8 @@ typedef struct
  *
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
- * @note Call this once before flash_manager, result_transfer_manager, or
- *       test_package_recieve attempts to access the NAND backed storage.
+ * @note Call this once after hw_qspi has been initialised or has adopted the
+ *       CubeMX QSPI handle, and before any NAND-backed storage access.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_Init( void );
 
@@ -138,7 +142,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_Init( void );
  *
  * @param info Destination for capacity and session information.
  *
- * @return EXTERNAL_FLASH_STATUS_OK on success, or EXTERNAL_FLASH_STATUS_INVALID_ARG.
+ * @return EXTERNAL_FLASH_STATUS_OK on success,
+ *         EXTERNAL_FLASH_STATUS_NOT_INITIALISED before successful init, or
+ *         EXTERNAL_FLASH_STATUS_INVALID_ARG for a null destination.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_GetInfo( ExternalFlashInfo_T* info );
 
@@ -165,7 +171,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void );
  *
  * @note Existing instruction bytes are discarded. Instruction metadata is RAM
  *       only in this first version, so instructions are not recovered after reset.
- * @note test_package_recieve should call this before streaming package
+ * @note The future host package-receive path should call this before streaming
  *       instruction bytes through EXTERNAL_FLASH_WriteInstructionBytes or
  *       EXTERNAL_FLASH_WriteInstructionPage.
  */
@@ -189,7 +195,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionBytes( const uint8_t* data,
 /**
  * @brief Writes one logical instruction page during an active upload.
  *
- * @param data         Instruction page data supplied by test_package_recieve.
+ * @param data         Instruction page data supplied by the package-receive path.
  * @param valid_length Number of valid instruction bytes in this page.
  *
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
@@ -267,8 +273,8 @@ ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructionPage( uint32_t offset, uint8
  *
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
- * @note result_transfer_manager should use this to stream committed result bytes
- *       to the host.
+ * @note The future result-transfer path should use this to stream committed
+ *       result bytes to the host.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_ReadResults( uint32_t offset, uint8_t* data, uint32_t length );
 

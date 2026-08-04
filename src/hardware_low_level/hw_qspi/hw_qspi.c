@@ -25,7 +25,12 @@
 #include <stdbool.h>
 
 #ifndef TEST_BUILD
+#include "quadspi.h"
 #include "stm32f4xx_hal.h"
+#include "stm32f4xx_it.h"
+
+/** CubeMX-owned DMA handle linked to hqspi by HAL_QSPI_MspInit(). */
+extern DMA_HandleTypeDef hdma_quadspi;
 #endif
 
 /**-----------------------------------------------------------------------------
@@ -685,3 +690,24 @@ void HAL_QSPI_AbortCpltCallback( QSPI_HandleTypeDef* hqspi )
         qspi_transfer_state = HW_QSPI_TRANSFER_IDLE;
     }
 }
+
+#ifndef TEST_BUILD
+/**
+ * @brief Services the DMA stream linked to the generated QSPI handle.
+ *
+ * @note The generated stm32f4xx_it.c file is excluded from this project because
+ *       application hardware modules own their interrupt handlers.
+ */
+void DMA2_Stream7_IRQHandler( void )
+{
+    HAL_DMA_IRQHandler( &hdma_quadspi );
+}
+
+/**
+ * @brief Services the QSPI peripheral interrupt for the generated handle.
+ */
+void QUADSPI_IRQHandler( void )
+{
+    HAL_QSPI_IRQHandler( &hqspi );
+}
+#endif

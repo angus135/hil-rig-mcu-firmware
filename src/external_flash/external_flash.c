@@ -12,8 +12,8 @@
  *      instruction partition. Physical NAND command sequencing remains in
  *      hw_nand.
  *
- *      The intended runtime path is:
- *      1. test_package_recieve receives a host test package and programs
+ *      The intended runtime path, once the application managers are implemented, is:
+ *      1. The host package-receive path receives a test package and programs
  *         instruction bytes through EXTERNAL_FLASH_StartInstructionUpload,
  *         EXTERNAL_FLASH_WriteInstructionBytes or EXTERNAL_FLASH_WriteInstructionPage,
  *         and EXTERNAL_FLASH_FinishInstructionUpload.
@@ -24,7 +24,7 @@
  *         EXTERNAL_FLASH_WriteResultPage.
  *      4. flash_manager refills page sized instruction buffers by calling
  *         EXTERNAL_FLASH_ReadInstructionPage with logical byte offsets.
- *      5. result_transfer_manager calls EXTERNAL_FLASH_ReadResults to stream
+ *      5. The result-transfer path calls EXTERNAL_FLASH_ReadResults to stream
  *         committed result bytes to the host interface.
  *
  *      Design boundaries:
@@ -49,6 +49,12 @@
 #include "external_flash_allocator.h"
 #include "hw_nand.h"
 
+#ifndef TEST_BUILD
+#include "stm32f4xx_hal.h"
+#else
+#include "tests/external_flash_mocks.h"
+#endif
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -59,8 +65,8 @@
  *==============================================================================
  */
 
-/** Maximum number of polls used while waiting for a NAND DMA transfer to complete. */
-#define EXTERNAL_FLASH_DMA_POLL_LIMIT ( 1000000U )
+/** Maximum elapsed time allowed for a NAND DMA data phase. */
+#define EXTERNAL_FLASH_DMA_TIMEOUT_MS ( 100U )
 
 /** Sentinel value used when no valid physical block has been selected. */
 #define EXTERNAL_FLASH_INVALID_BLOCK ( 0xFFFFFFFFU )
@@ -333,22 +339,42 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_MapNandStatus( HW_NAND_Status_T nand
 }
 
 /**
- * @brief Polls the NAND transfer state until the active DMA operation completes.
+ * @brief Waits until the active NAND DMA operation completes or its deadline expires.
  *
- * @return EXTERNAL_FLASH_STATUS_OK when the transfer completes, otherwise
- *         EXTERNAL_FLASH_STATUS_TIMEOUT.
+ * @return EXTERNAL_FLASH_STATUS_OK when the transfer completes,
+ *         EXTERNAL_FLASH_STATUS_ERROR if it stops without completing, or
+ *         EXTERNAL_FLASH_STATUS_TIMEOUT after aborting an expired transfer.
  *
- * @note This is intentionally a bounded polling helper. A future RTOS aware
- *       version may replace this with a notification or semaphore wait.
+ * @note Unsigned subtraction makes the elapsed-time check safe across the
+ *       HAL millisecond tick rollover.
  */
 static ExternalFlashStatus_T EXTERNAL_FLASH_WaitDmaTransferComplete( void )
 {
-    for ( uint32_t poll_count = 0U; poll_count < EXTERNAL_FLASH_DMA_POLL_LIMIT; poll_count++ )
+    const uint32_t start_tick = HAL_GetTick();
+
+    for ( ;; )
     {
         if ( HW_NAND_IsTransferComplete() )
         {
             return EXTERNAL_FLASH_STATUS_OK;
         }
+
+        if ( !HW_NAND_IsBusy() )
+        {
+            return EXTERNAL_FLASH_STATUS_ERROR;
+        }
+
+        if ( ( uint32_t )( HAL_GetTick() - start_tick ) >= EXTERNAL_FLASH_DMA_TIMEOUT_MS )
+        {
+            break;
+        }
+    }
+
+    ExternalFlashStatus_T abort_status =
+        EXTERNAL_FLASH_MapNandStatus( HW_NAND_AbortTransfer() );
+    if ( abort_status != EXTERNAL_FLASH_STATUS_OK )
+    {
+        return abort_status;
     }
 
     return EXTERNAL_FLASH_STATUS_TIMEOUT;
@@ -503,7 +529,12 @@ EXTERNAL_FLASH_RecoverMappedBlock( ExternalFlashAllocatorPartition_T partition,
                 external_flash_geometry.page_size_bytes ) );
             if ( status == EXTERNAL_FLASH_STATUS_PROGRAM_FAIL )
             {
-                EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( replacement_block );
+                status = EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( replacement_block );
+                if ( status != EXTERNAL_FLASH_STATUS_OK )
+                {
+                    return status;
+                }
+
                 retry_with_another_block = true;
                 break;
             }
