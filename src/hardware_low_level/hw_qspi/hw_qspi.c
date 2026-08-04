@@ -416,6 +416,33 @@ HW_QSPI_Status_T HW_QSPI_Init( const HW_QSPI_Config_T* config )
     return HW_QSPI_STATUS_OK;
 }
 
+HW_QSPI_Status_T HW_QSPI_AdoptHandle( QSPI_HandleTypeDef* hal_handle,
+                                      uint32_t            default_timeout_ms )
+{
+    if ( ( hal_handle == NULL ) || ( default_timeout_ms == 0U ) )
+    {
+        return HW_QSPI_STATUS_INVALID_ARG;
+    }
+
+    HAL_QSPI_StateTypeDef hal_state = HAL_QSPI_GetState( hal_handle );
+    if ( hal_state != HAL_QSPI_STATE_READY )
+    {
+        if ( HW_QSPI_Is_HAL_Busy_State( hal_state ) )
+        {
+            return HW_QSPI_STATUS_BUSY;
+        }
+
+        return ( hal_state == HAL_QSPI_STATE_RESET ) ? HW_QSPI_STATUS_NOT_INITIALISED
+                                                     : HW_QSPI_STATUS_ERROR;
+    }
+
+    qspi_handle             = hal_handle;
+    qspi_default_timeout_ms = default_timeout_ms;
+    qspi_transfer_state     = HW_QSPI_TRANSFER_IDLE;
+
+    return HW_QSPI_STATUS_OK;
+}
+
 HW_QSPI_Status_T HW_QSPI_Command( const HW_QSPI_Command_T* command )
 {
     if ( qspi_handle == NULL )

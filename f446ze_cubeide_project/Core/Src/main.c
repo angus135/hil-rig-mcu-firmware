@@ -35,6 +35,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "app_main/app_main.h"
+#include "hw_qspi.h"
 #include "hw_usb.h"
 /* USER CODE END Includes */
 
@@ -45,7 +46,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define APP_QSPI_DEFAULT_TIMEOUT_MS ( 100U )
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -128,6 +129,11 @@ int main(void)
   MX_USART2_UART_Init();
   MX_CRC_Init();
   /* USER CODE BEGIN 2 */
+
+  if (HW_QSPI_AdoptHandle(&hqspi, APP_QSPI_DEFAULT_TIMEOUT_MS) != HW_QSPI_STATUS_OK)
+  {
+    Error_Handler();
+  }
 
   /* Temporarily release NUCLEO-F446ZE ST-LINK VCP pins:
    * PD8  = USART3_TX
