@@ -48,7 +48,8 @@ static constexpr uint8_t  TEST_BUSY_STATUS              = 0x01U;
 static constexpr uint8_t  TEST_PROGRAM_FAIL_STATUS      = 0x08U;
 static constexpr uint8_t  TEST_ERASE_FAIL_STATUS        = 0x04U;
 static constexpr uint8_t  TEST_ECC_CORRECTED_STATUS     = 0x10U;
-static constexpr uint8_t  TEST_ECC_UNCORRECTABLE_STATUS = 0x30U;
+static constexpr uint8_t  TEST_ECC_UNCORRECTABLE_STATUS = 0x20U;
+static constexpr uint8_t  TEST_ECC_CORRECTED_8_STATUS   = 0x30U;
 static constexpr uint32_t TEST_PAGE                     = 1234U;
 static constexpr uint32_t TEST_BLOCK                    = 7U;
 static constexpr uint16_t TEST_COLUMN                   = 32U;
@@ -352,9 +353,11 @@ TEST_F( HWNANDTest, InitResetsVerifiesIdUnlocksBlocksAndEnablesEcc )
     ExpectSetFeature( HW_NAND_FEATURE_BLOCK_LOCK, HW_NAND_BLOCK_LOCK_UNLOCK_ALL );
     ExpectOpcodeCommand( HW_NAND_OPCODE_WRITE_DISABLE );
     ExpectGetFeature( HW_NAND_FEATURE_BLOCK_LOCK, HW_NAND_BLOCK_LOCK_UNLOCK_ALL );
-    ExpectSetFeature( HW_NAND_FEATURE_CONFIGURATION, HW_NAND_CONFIGURATION_ECC_ENABLE_NORMAL_MODE );
+    ExpectSetFeature( HW_NAND_FEATURE_CONFIGURATION,
+                      HW_NAND_CONFIGURATION_NORMAL_QUAD_ECC_VALUE );
     ExpectOpcodeCommand( HW_NAND_OPCODE_WRITE_DISABLE );
-    ExpectGetFeature( HW_NAND_FEATURE_CONFIGURATION, HW_NAND_CONFIGURATION_ECC_ENABLE_NORMAL_MODE );
+    ExpectGetFeature( HW_NAND_FEATURE_CONFIGURATION,
+                      HW_NAND_CONFIGURATION_NORMAL_QUAD_ECC_VALUE );
 
     EXPECT_EQ( HW_NAND_STATUS_OK, HW_NAND_Init() );
 }
@@ -381,7 +384,8 @@ TEST_F( HWNANDTest, InitRejectsConfigurationWithoutNormalMode )
     ExpectSetFeature( HW_NAND_FEATURE_BLOCK_LOCK, HW_NAND_BLOCK_LOCK_UNLOCK_ALL );
     ExpectOpcodeCommand( HW_NAND_OPCODE_WRITE_DISABLE );
     ExpectGetFeature( HW_NAND_FEATURE_BLOCK_LOCK, HW_NAND_BLOCK_LOCK_UNLOCK_ALL );
-    ExpectSetFeature( HW_NAND_FEATURE_CONFIGURATION, HW_NAND_CONFIGURATION_ECC_ENABLE_NORMAL_MODE );
+    ExpectSetFeature( HW_NAND_FEATURE_CONFIGURATION,
+                      HW_NAND_CONFIGURATION_NORMAL_QUAD_ECC_VALUE );
     ExpectOpcodeCommand( HW_NAND_OPCODE_WRITE_DISABLE );
     ExpectGetFeature( HW_NAND_FEATURE_CONFIGURATION, 0x12U );
 
@@ -414,7 +418,7 @@ TEST_F( HWNANDTest, GetGeometryReportsSelectedDeviceGeometry )
     EXPECT_EQ( geometry.page_size_bytes, 2048U );
     EXPECT_EQ( geometry.spare_size_bytes, 128U );
     EXPECT_EQ( geometry.pages_per_block, 64U );
-    EXPECT_EQ( geometry.block_count, 4096U );
+    EXPECT_EQ( geometry.block_count, 1024U );
 }
 
 TEST_F( HWNANDTest, StartPageReadToCacheIssuesPageReadWithoutPolling )
@@ -439,7 +443,22 @@ TEST_F( HWNANDTest, ReadPageToCacheRecordsCorrectedEccStatus )
 
     HW_NAND_EccStatus_T ecc_status = HW_NAND_ECC_STATUS_UNKNOWN;
     EXPECT_EQ( HW_NAND_STATUS_OK, HW_NAND_GetLastEccStatus( &ecc_status ) );
-    EXPECT_EQ( ecc_status, HW_NAND_ECC_STATUS_CORRECTED_1_TO_2 );
+    EXPECT_EQ( ecc_status, HW_NAND_ECC_STATUS_CORRECTED_1_TO_7 );
+}
+
+TEST_F( HWNANDTest, ReadPageToCacheRecordsEightBitCorrectionLimit )
+{
+    SetInitialised();
+    InSequence sequence;
+
+    ExpectAddressCommand( HW_NAND_OPCODE_PAGE_READ, TEST_PAGE, HW_QSPI_ADDR_24_BITS );
+    ExpectStatusRead( TEST_ECC_CORRECTED_8_STATUS );
+
+    EXPECT_EQ( HW_NAND_STATUS_OK, HW_NAND_ReadPageToCache( TEST_PAGE ) );
+
+    HW_NAND_EccStatus_T ecc_status = HW_NAND_ECC_STATUS_UNKNOWN;
+    EXPECT_EQ( HW_NAND_STATUS_OK, HW_NAND_GetLastEccStatus( &ecc_status ) );
+    EXPECT_EQ( ecc_status, HW_NAND_ECC_STATUS_CORRECTED_8 );
 }
 
 TEST_F( HWNANDTest, ReadPageToCacheReportsUncorrectableEcc )
@@ -475,6 +494,24 @@ TEST_F( HWNANDTest, WaitReadyTimesOutWhenOipNeverClears )
     EXPECT_EQ( HW_NAND_STATUS_TIMEOUT, HW_NAND_WaitReady( 1U ) );
 }
 
+TEST_F( HWNANDTest, WaitReadyUsesElapsedHalTicksAndReturnsWhenOipClears )
+{
+    SetInitialised();
+    g_hal_tick_step_ms = 1U;
+
+    EXPECT_CALL( mock, ReadBlocking( _, _, Eq( 1U ) ) )
+        .WillOnce( Invoke( []( const HW_QSPI_Command_T*, uint8_t* data, uint32_t ) {
+            data[0] = TEST_BUSY_STATUS;
+            return HW_QSPI_STATUS_OK;
+        } ) )
+        .WillOnce( Invoke( []( const HW_QSPI_Command_T*, uint8_t* data, uint32_t ) {
+            data[0] = TEST_READY_STATUS;
+            return HW_QSPI_STATUS_OK;
+        } ) );
+
+    EXPECT_EQ( HW_NAND_STATUS_OK, HW_NAND_WaitReady( 2U ) );
+}
+
 TEST_F( HWNANDTest, ReadCacheDmaUsesQuadReadOutputCommand )
 {
     SetInitialised();
@@ -496,12 +533,11 @@ TEST_F( HWNANDTest, ReadCacheDmaUsesQuadReadOutputCommand )
     EXPECT_EQ( HW_NAND_STATUS_OK, HW_NAND_ReadCacheDma( TEST_COLUMN, transfer_data, TEST_LENGTH ) );
 }
 
-TEST_F( HWNANDTest, ProgramLoadDmaWriteEnablesThenStartsQuadProgramLoad )
+TEST_F( HWNANDTest, ProgramLoadDmaStartsQuadProgramLoadWithoutWriteEnable )
 {
     SetInitialised();
-    InSequence sequence;
 
-    ExpectOpcodeCommand( HW_NAND_OPCODE_WRITE_ENABLE );
+    EXPECT_CALL( mock, Command( _ ) ).Times( 0 );
     EXPECT_CALL( mock, WriteDma( _, Eq( transfer_data ), Eq( TEST_LENGTH ) ) )
         .WillOnce(
             Invoke( []( const HW_QSPI_Command_T* command, const uint8_t* data, uint32_t length ) {
@@ -526,6 +562,7 @@ TEST_F( HWNANDTest, ProgramExecuteReportsProgramFailure )
     SetInitialised();
     InSequence sequence;
 
+    ExpectOpcodeCommand( HW_NAND_OPCODE_WRITE_ENABLE );
     ExpectAddressCommand( HW_NAND_OPCODE_PROGRAM_EXECUTE, TEST_PAGE, HW_QSPI_ADDR_24_BITS );
     ExpectStatusRead( TEST_PROGRAM_FAIL_STATUS );
 
@@ -544,18 +581,14 @@ TEST_F( HWNANDTest, BlockEraseWriteEnablesAndReportsEraseFailure )
     EXPECT_EQ( HW_NAND_STATUS_ERASE_FAIL, HW_NAND_BlockErase( TEST_BLOCK ) );
 }
 
-TEST_F( HWNANDTest, IsBlockBadChecksFirstSecondAndLastPageMarkers )
+TEST_F( HWNANDTest, IsBlockBadChecksFirstPageMarker )
 {
     SetInitialised();
     InSequence sequence;
 
-    const uint32_t first_page  = TEST_BLOCK * 64U;
-    const uint32_t second_page = first_page + 1U;
+    const uint32_t first_page = TEST_BLOCK * 64U;
 
     ExpectAddressCommand( HW_NAND_OPCODE_PAGE_READ, first_page, HW_QSPI_ADDR_24_BITS );
-    ExpectStatusRead( TEST_READY_STATUS );
-    ExpectReadCacheBlocking( HW_NAND_BAD_BLOCK_MARKER_COLUMN, 0xFFU );
-    ExpectAddressCommand( HW_NAND_OPCODE_PAGE_READ, second_page, HW_QSPI_ADDR_24_BITS );
     ExpectStatusRead( TEST_READY_STATUS );
     ExpectReadCacheBlocking( HW_NAND_BAD_BLOCK_MARKER_COLUMN, 0x00U );
 
@@ -569,7 +602,6 @@ TEST_F( HWNANDTest, MarkBlockBadProgramsMarkerInFirstPageSpareArea )
     SetInitialised();
     InSequence sequence;
 
-    ExpectOpcodeCommand( HW_NAND_OPCODE_WRITE_ENABLE );
     EXPECT_CALL( mock, WriteBlocking( _, _, Eq( 1U ) ) )
         .WillOnce(
             Invoke( []( const HW_QSPI_Command_T* command, const uint8_t* data, uint32_t length ) {
@@ -581,6 +613,7 @@ TEST_F( HWNANDTest, MarkBlockBadProgramsMarkerInFirstPageSpareArea )
                 EXPECT_EQ( data[0], HW_NAND_BAD_BLOCK_MARKER_VALUE );
                 return HW_QSPI_STATUS_OK;
             } ) );
+    ExpectOpcodeCommand( HW_NAND_OPCODE_WRITE_ENABLE );
     ExpectAddressCommand( HW_NAND_OPCODE_PROGRAM_EXECUTE, TEST_BLOCK * 64U, HW_QSPI_ADDR_24_BITS );
     ExpectStatusRead( TEST_READY_STATUS );
 
