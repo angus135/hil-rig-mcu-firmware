@@ -625,3 +625,10 @@ TEST_F( HWNANDTest, TransferStateQueriesForwardToQspi )
     EXPECT_TRUE( HW_NAND_IsTransferComplete() );
     EXPECT_FALSE( HW_NAND_IsBusy() );
 }
+
+TEST_F( HWNANDTest, AbortTransferMapsQspiStatus )
+{
+    EXPECT_CALL( mock, Abort() ).WillOnce( Return( HW_QSPI_STATUS_TIMEOUT ) );
+
+    EXPECT_EQ( HW_NAND_STATUS_TIMEOUT, HW_NAND_AbortTransfer() );
+}

@@ -7,7 +7,7 @@
  *      Public interface for the Result Buffer module.
  *
  *  Notes:
- *      None
+ *      This is currently a placeholder; no result-buffer API is exposed.
  ******************************************************************************/
 
 #ifndef RESULT_BUFFER_H
@@ -45,4 +45,4 @@ extern "C"
 }
 #endif
 
-#endif /* BUFFER_MANAGER_H */
+#endif /* RESULT_BUFFER_H */
