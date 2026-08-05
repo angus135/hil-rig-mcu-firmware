@@ -4,9 +4,13 @@
  *  Created:    20-Dec-2025
  *
  *  Description:
+ *      Executes one configured test-instruction tick from the execution timer
+ *      interrupt context.
  *
  *  Notes:
- *     None
+ *      See execution_manager.h for the Flash Manager lease, commit, and ISR
+ *      wake integration contract. This module must never access external flash
+ *      or block from EXECUTION_MANAGER_Process_From_ISR().
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -87,7 +91,12 @@ static FrequencyMode_T frequency_mode = FREQUENCY_10KHZ;
 void EXECUTION_MANAGER_Process_From_ISR( void )
 {
     HW_GPIO_Toggle_Output( USER_LED_BLUE_4 );
-    // TODO: This is where all the I/O will actually run, this needs to be quick
+    /*
+     * TODO: Execute the complete instruction sequence for this tick. Reserve
+     * Flash Manager result storage before invoking a result-producing driver,
+     * then commit or cancel every lease before returning. Accumulate any task
+     * wake request and yield only after all tick operations are complete.
+     */
 }
 
 void EXECUTION_MANAGER_Start( void )
