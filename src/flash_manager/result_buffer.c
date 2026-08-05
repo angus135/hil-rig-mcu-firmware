@@ -412,23 +412,26 @@ bool RESULT_BUFFER_Cancel( const FlashManagerResultLease_T* lease )
     return true;
 }
 
+/**
+ * @brief Commits the active lease into the packed result stream.
+ */
 ResultBufferCommitStatus_T RESULT_BUFFER_Commit( const FlashManagerResultLease_T* lease,
                                                  uint32_t timestamp, uint8_t peripheral_type,
                                                  uint8_t channel, uint16_t actual_payload_length )
 {
-    /* Validate Lease */
+    /* Reject stale or modified leases before accessing caller-written bytes. */
     if ( !RESULT_BUFFER_LeaseMatches( lease ) )
     {
         return RESULT_BUFFER_COMMIT_INVALID_LEASE;
     }
 
-    /* Validate the actual payload length against the reserved capacity. */
+    /* Keep an overflowed reservation active so the caller can retry or cancel it. */
     if ( actual_payload_length > result_buffer_context.active_reservation.payload_capacity )
     {
         return RESULT_BUFFER_COMMIT_OVERFLOW;
     }
 
-    /* Initialize the result header. */
+    /* Store only the actual payload length; unused reservation capacity is reclaimed. */
     FlashManagerResultHeader_T header = {
         .timestamp       = timestamp,
         .payload_length  = actual_payload_length,
@@ -482,15 +485,16 @@ ResultBufferCommitStatus_T RESULT_BUFFER_Commit( const FlashManagerResultLease_T
                 &header, sizeof( header ) );
     }
 
-    /* Update the page states for the committed record. */
+    /* Publish page ownership only after the complete record is in its final location. */
     bool page_became_ready = RESULT_BUFFER_UpdatePageStates(
         result_buffer_context.active_reservation.record_offset, record_length );
 
-    /* Update the write offset and occupied bytes. */
+    /* Advance by committed bytes rather than the originally reserved maximum. */
     result_buffer_context.write_offset =
         RESULT_BUFFER_AdvanceOffset( result_buffer_context.write_offset, record_length );
     result_buffer_context.occupied_bytes += record_length;
 
+    /* The caller's lease becomes stale once the committed range is published. */
     RESULT_BUFFER_ClearActiveReservation();
 
     if ( page_became_ready )
