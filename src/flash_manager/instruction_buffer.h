@@ -100,6 +100,8 @@ bool INSTRUCTION_BUFFER_Init( void );
  * @note A zero length prepares an empty instruction stream.
  * @note This function invalidates all previous page-fill leases and instruction
  *       views without accessing NAND.
+ * @note The Flash Manager must ensure that no NAND DMA operation is still using
+ *       instruction storage before resetting the session.
  */
 bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes );
 
@@ -141,6 +143,8 @@ bool INSTRUCTION_BUFFER_AcquireFillPage( InstructionBufferPageFillLease_T* lease
  *
  * @note Any successful completion call makes the supplied lease stale, even
  *       when nand_read_succeeded is false.
+ * @note Invalid completion leaves the active lease and page ownership unchanged
+ *       for fault handling or an explicit session reset.
  */
 bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T* lease,
                                           bool nand_read_succeeded );

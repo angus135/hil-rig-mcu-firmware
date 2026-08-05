@@ -25,6 +25,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -79,8 +80,15 @@ typedef struct
 typedef struct
 {
     /** Geometry is configured by Init and retained across retrieval sessions. */
-    bool     is_initialised;
+    bool is_initialised;
+
+    /** Whether PrepareRead successfully configured an instruction image. */
+    bool is_read_prepared;
+
+    /** Runtime NAND page size used for slot addressing and read lengths. */
     uint32_t page_size_bytes;
+
+    /** Maximum logical instruction image length accepted by PrepareRead. */
     uint32_t instruction_partition_capacity_bytes;
 
     /** Total logical length of the active canonical instruction image. */
@@ -115,6 +123,7 @@ typedef struct
 
     /** The one NAND page-fill reservation that may currently be outstanding. */
     InstructionBufferPageFillReservation_T active_page_fill_reservation;
+
 } InstructionBufferContext_T;
 
 /**-----------------------------------------------------------------------------
@@ -160,7 +169,284 @@ static uint8_t INSTRUCTION_BUFFER_NextPageIndex( uint8_t page_index );
  *------------------------------------------------------------------------------
  */
 
+static uint8_t* INSTRUCTION_BUFFER_GetActivePageFillData( void )
+{
+    /* Page slots are contiguous even though their ownership cycles logically. */
+    uint32_t page_offset_bytes =
+        ( uint32_t )instruction_buffer_context.active_page_fill_reservation.page_index
+        * instruction_buffer_context.page_size_bytes;
+
+    return &instruction_buffer_storage[page_offset_bytes];
+}
+
+static bool INSTRUCTION_BUFFER_PageFillLeaseMatches( const InstructionBufferPageFillLease_T* lease )
+{
+    /* A fill lease is meaningful only within an active prepared read session. */
+    if ( ( lease == NULL ) || !instruction_buffer_context.is_initialised
+         || !instruction_buffer_context.is_read_prepared
+         || !instruction_buffer_context.active_page_fill_reservation.is_active )
+    {
+        return false;
+    }
+
+    uint8_t page_index = instruction_buffer_context.active_page_fill_reservation.page_index;
+
+    if ( page_index >= INSTRUCTION_BUFFER_PAGE_COUNT )
+    {
+        return false;
+    }
+
+    if ( instruction_buffer_context.page_states[page_index]
+         != INSTRUCTION_BUFFER_PAGE_FILLING_FROM_NAND )
+    {
+        return false;
+    }
+
+    if ( instruction_buffer_context.page_valid_bytes[page_index] != 0U )
+    {
+        return false;
+    }
+
+    if ( instruction_buffer_context.active_page_fill_reservation.instruction_offset_bytes
+         != instruction_buffer_context.next_nand_read_offset_bytes )
+    {
+        return false;
+    }
+
+    /* Validate every published field so modified and stale leases are rejected. */
+    return ( lease->page_data == INSTRUCTION_BUFFER_GetActivePageFillData() )
+           && ( lease->instruction_offset_bytes
+                == instruction_buffer_context.active_page_fill_reservation
+                       .instruction_offset_bytes )
+           && ( lease->read_length_bytes
+                == instruction_buffer_context.active_page_fill_reservation.read_length_bytes )
+           && ( lease->lease_id
+                == instruction_buffer_context.active_page_fill_reservation.lease_id );
+}
+
+static void INSTRUCTION_BUFFER_ClearPageFillReservation( void )
+{
+    instruction_buffer_context.active_page_fill_reservation =
+        ( InstructionBufferPageFillReservation_T ){ 0 };
+}
+
+static uint8_t INSTRUCTION_BUFFER_NextPageIndex( uint8_t page_index )
+{
+    return ( uint8_t )( ( page_index + 1U ) % INSTRUCTION_BUFFER_PAGE_COUNT );
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Initialises runtime geometry and invalidates any previous read state.
+ */
+bool INSTRUCTION_BUFFER_Init( void )
+{
+    /* Failed reinitialisation must not leave earlier geometry or leases usable. */
+    instruction_buffer_context = ( InstructionBufferContext_T ){ 0 };
+
+    ExternalFlashInfo_T external_flash_info = { 0 };
+
+    if ( EXTERNAL_FLASH_GetInfo( &external_flash_info ) != EXTERNAL_FLASH_STATUS_OK )
+    {
+        return false;
+    }
+
+    /* Runtime geometry must fit the compile-time backing-storage ceiling. */
+    if ( ( external_flash_info.page_size_bytes == 0U )
+         || ( external_flash_info.page_size_bytes > EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES )
+         || ( external_flash_info.instruction_capacity_bytes == 0U ) )
+    {
+        return false;
+    }
+
+    uint32_t buffer_capacity_bytes =
+        external_flash_info.page_size_bytes * INSTRUCTION_BUFFER_PAGE_COUNT;
+
+    if ( buffer_capacity_bytes > sizeof( instruction_buffer_storage ) )
+    {
+        return false;
+    }
+
+    instruction_buffer_context.page_size_bytes = external_flash_info.page_size_bytes;
+
+    instruction_buffer_context.instruction_partition_capacity_bytes =
+        external_flash_info.instruction_capacity_bytes;
+
+    instruction_buffer_context.next_page_fill_lease_id = 1U;
+    instruction_buffer_context.is_initialised          = true;
+
+    return true;
+}
+
+/**
+ * @brief Resets page ownership and cursors for one instruction image.
+ */
+bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes )
+{
+    if ( !instruction_buffer_context.is_initialised
+         || ( instruction_length_bytes
+              > instruction_buffer_context.instruction_partition_capacity_bytes ) )
+    {
+        return false;
+    }
+
+    /* Keep the session unavailable until every ownership field is reset. */
+    instruction_buffer_context.is_read_prepared             = false;
+    instruction_buffer_context.instruction_length_bytes     = instruction_length_bytes;
+    instruction_buffer_context.next_nand_read_offset_bytes  = 0U;
+    instruction_buffer_context.next_fill_page_index         = 0U;
+    instruction_buffer_context.consumer_stream_offset_bytes = 0U;
+    instruction_buffer_context.consumer_page_index          = 0U;
+    instruction_buffer_context.consumer_page_offset_bytes   = 0U;
+
+    INSTRUCTION_BUFFER_ClearPageFillReservation();
+
+    for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
+    {
+        instruction_buffer_context.page_states[page_index] = INSTRUCTION_BUFFER_PAGE_EMPTY;
+
+        instruction_buffer_context.page_valid_bytes[page_index] = 0U;
+
+        instruction_buffer_context.page_stream_offsets_bytes[page_index] = 0U;
+    }
+
+    /*
+     * Preserve the monotonically changing lease sequence across session resets
+     * so a lease from the previous session cannot match newly reused storage.
+     */
+    if ( instruction_buffer_context.next_page_fill_lease_id == 0U )
+    {
+        instruction_buffer_context.next_page_fill_lease_id = 1U;
+    }
+
+    instruction_buffer_context.is_read_prepared = true;
+
+    return true;
+}
+
+/**
+ * @brief Reserves the next sequential empty page slot for a NAND read.
+ */
+bool INSTRUCTION_BUFFER_AcquireFillPage( InstructionBufferPageFillLease_T* lease )
+{
+    if ( lease == NULL )
+    {
+        return false;
+    }
+
+    *lease = ( InstructionBufferPageFillLease_T ){ 0 };
+
+    if ( !instruction_buffer_context.is_initialised || !instruction_buffer_context.is_read_prepared
+         || instruction_buffer_context.active_page_fill_reservation.is_active
+         || ( instruction_buffer_context.next_nand_read_offset_bytes
+              >= instruction_buffer_context.instruction_length_bytes ) )
+    {
+        return false;
+    }
+
+    uint8_t page_index = instruction_buffer_context.next_fill_page_index;
+
+    if ( page_index >= INSTRUCTION_BUFFER_PAGE_COUNT )
+    {
+        return false;
+    }
+
+    if ( ( instruction_buffer_context.page_states[page_index] != INSTRUCTION_BUFFER_PAGE_EMPTY )
+         || ( instruction_buffer_context.page_valid_bytes[page_index] != 0U ) )
+    {
+        return false;
+    }
+
+    uint32_t remaining_instruction_bytes = instruction_buffer_context.instruction_length_bytes
+                                           - instruction_buffer_context.next_nand_read_offset_bytes;
+
+    uint32_t read_length_bytes = remaining_instruction_bytes;
+
+    if ( read_length_bytes > instruction_buffer_context.page_size_bytes )
+    {
+        read_length_bytes = instruction_buffer_context.page_size_bytes;
+    }
+
+    uint32_t lease_id = instruction_buffer_context.next_page_fill_lease_id++;
+
+    if ( instruction_buffer_context.next_page_fill_lease_id == 0U )
+    {
+        instruction_buffer_context.next_page_fill_lease_id = 1U;
+    }
+
+    /* Record authoritative ownership before publishing the external lease. */
+    instruction_buffer_context.active_page_fill_reservation.is_active  = true;
+    instruction_buffer_context.active_page_fill_reservation.page_index = page_index;
+    instruction_buffer_context.active_page_fill_reservation.instruction_offset_bytes =
+        instruction_buffer_context.next_nand_read_offset_bytes;
+    instruction_buffer_context.active_page_fill_reservation.read_length_bytes = read_length_bytes;
+    instruction_buffer_context.active_page_fill_reservation.lease_id          = lease_id;
+
+    instruction_buffer_context.page_states[page_index] = INSTRUCTION_BUFFER_PAGE_FILLING_FROM_NAND;
+
+    lease->page_data                = INSTRUCTION_BUFFER_GetActivePageFillData();
+    lease->instruction_offset_bytes = instruction_buffer_context.next_nand_read_offset_bytes;
+    lease->read_length_bytes        = read_length_bytes;
+    lease->lease_id                 = lease_id;
+
+    return true;
+}
+
+/**
+ * @brief Publishes or releases the page owned by an active NAND-read lease.
+ */
+bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T* lease,
+                                          bool nand_read_succeeded )
+{
+    if ( !INSTRUCTION_BUFFER_PageFillLeaseMatches( lease ) )
+    {
+        return false;
+    }
+
+    uint8_t page_index = instruction_buffer_context.active_page_fill_reservation.page_index;
+
+    uint32_t instruction_offset_bytes =
+        instruction_buffer_context.active_page_fill_reservation.instruction_offset_bytes;
+
+    uint32_t read_length_bytes =
+        instruction_buffer_context.active_page_fill_reservation.read_length_bytes;
+
+    if ( nand_read_succeeded )
+    {
+        /* Guard the subtraction and ensure the read fits the configured image. */
+        if ( ( instruction_offset_bytes > instruction_buffer_context.instruction_length_bytes )
+             || ( read_length_bytes > ( instruction_buffer_context.instruction_length_bytes
+                                        - instruction_offset_bytes ) ) )
+        {
+            return false;
+        }
+
+        instruction_buffer_context.page_valid_bytes[page_index] = read_length_bytes;
+
+        instruction_buffer_context.page_stream_offsets_bytes[page_index] = instruction_offset_bytes;
+
+        instruction_buffer_context.page_states[page_index] = INSTRUCTION_BUFFER_PAGE_READY;
+
+        instruction_buffer_context.next_nand_read_offset_bytes += read_length_bytes;
+
+        instruction_buffer_context.next_fill_page_index =
+            INSTRUCTION_BUFFER_NextPageIndex( page_index );
+    }
+    else
+    {
+        /* Preserve the NAND offset so the same logical page can be retried. */
+        instruction_buffer_context.page_states[page_index] = INSTRUCTION_BUFFER_PAGE_EMPTY;
+
+        instruction_buffer_context.page_valid_bytes[page_index] = 0U;
+
+        instruction_buffer_context.page_stream_offsets_bytes[page_index] = 0U;
+    }
+
+    INSTRUCTION_BUFFER_ClearPageFillReservation();
+
+    return true;
+}
