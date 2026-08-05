@@ -62,15 +62,6 @@
 /** Sentinel value used when no valid physical block has been selected. */
 #define EXTERNAL_FLASH_INVALID_BLOCK ( 0xFFFFFFFFU )
 
-/**
- * Maximum supported main page size for the private staging buffer.
- *
- * This value must be at least as large as the selected NAND device page size.
- * EXTERNAL_FLASH_Init checks the runtime geometry returned by hw_nand against
- * this buffer size.
- */
-#define EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES ( 2048U )
-
 /** Maximum physical block count of the writable external_flash partitions. */
 #define EXTERNAL_FLASH_MAX_PARTITION_BLOCK_COUNT                                                   \
     ( ( EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT > EXTERNAL_FLASH_RESULT_BLOCK_COUNT )               \
@@ -834,6 +825,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_GetInfo( ExternalFlashInfo_T* info )
         return EXTERNAL_FLASH_STATUS_INVALID_ARG;
     }
 
+    info->page_size_bytes = external_flash_geometry.page_size_bytes;
     info->instruction_capacity_bytes =
         EXTERNAL_FLASH_GetPartitionCapacityBytes( EXTERNAL_FLASH_ALLOCATOR_PARTITION_INSTRUCTION );
     info->result_capacity_bytes =
