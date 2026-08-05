@@ -4,12 +4,12 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Internal interface for the flash-manager result logging buffer.
+ *      Internal interface for the Flash Manager result logging buffer.
  *
  *  Notes:
- *      The execution manager accesses this functionality through the public
- *      flash_manager API. Result records are packed as a fixed header followed
- *      by the committed payload bytes. The flash-manager layer must serialise
+ *      The Execution Manager accesses this functionality through flash_manager.h.
+ *      Result records are packed as a fixed header followed by committed payload
+ *      bytes. The Flash Manager must serialise
  *      calls that change buffer state; record and drain leases may remain
  *      active concurrently because they own distinct byte ranges.
  ******************************************************************************/
@@ -28,8 +28,9 @@ extern "C"
  */
 
 #include "flash_manager.h"
-#include <stdint.h>
+
 #include <stdbool.h>
+#include <stdint.h>
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -41,6 +42,7 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+/** @brief Result of publishing one packed result record. */
 typedef enum
 {
     /** The record was committed without completing a NAND page. */
@@ -57,14 +59,14 @@ typedef enum
 } ResultBufferRecordCommitStatus_T;
 
 /**
- * Temporary ownership of one committed result page being written to NAND.
+ * @brief Temporary ownership of one committed result page being written to NAND.
  *
  * This lease is internal to the flash manager. It keeps the leased page
  * immutable until the NAND write is reported as successful or failed.
  */
 typedef struct
 {
-    /** Page-aligned result data owned by the result buffer. */
+    /** Start of a page-sized result slot owned by the result buffer. */
     const uint8_t* page_data;
 
     /** Number of valid logical result bytes in the page. */
@@ -105,7 +107,7 @@ bool RESULT_BUFFER_Init( void );
  * they are inaccessible until overwritten and committed again.
  *
  * @note Initialised geometry is preserved across reset.
- * @note The flash-manager layer must stop all users of leased pointers before
+ * @note The Flash Manager must stop all users of leased pointers before
  *       reset; invalidating a lease cannot stop an outstanding memory access.
  */
 void RESULT_BUFFER_Reset( void );
@@ -134,8 +136,8 @@ void RESULT_BUFFER_Reset( void );
  *
  * @param[out] lease
  *      Destination for the resulting lease. On success, payload points to
- *      writable flash-manager-owned storage and payload_capacity_bytes equals the
- *      requested capacity. On failure, a non-NULL lease is cleared.
+ *      writable Flash Manager-owned storage and payload_capacity_bytes equals
+ *      the requested capacity. On failure, a non-NULL lease is cleared.
  *
  * @retval true
  *      The reservation succeeded and lease contains valid writable storage.
@@ -200,8 +202,8 @@ bool RESULT_BUFFER_CancelRecord( const FlashManagerResultWriteLease_T* lease );
  * scratch into the end and beginning of the ring.
  *
  * @param[in] lease
- *      Lease returned by RESULT_BUFFER_ReserveRecord(). Its ID, pointer, and capacity
- *      must match the active record reservation.
+ *      Lease returned by RESULT_BUFFER_ReserveRecord(). Its ID, pointer, and
+ *      capacity must match the active record reservation.
  * @param[in] timestamp
  *      Execution timestamp stored in the result header.
  * @param[in] peripheral_type
@@ -220,13 +222,13 @@ bool RESULT_BUFFER_CancelRecord( const FlashManagerResultWriteLease_T* lease );
  * @retval RESULT_BUFFER_RECORD_COMMIT_INVALID_LEASE
  *      No reservation was active or the supplied lease did not match it.
  * @retval RESULT_BUFFER_RECORD_COMMIT_OVERFLOW
- *      actual_payload_length_bytes exceeded the active record reservation capacity.
+ *      actual_payload_length_bytes exceeded the active reservation capacity.
  *      The reservation remains active so it may be cancelled or retried.
  *
  * @note A successful commit invalidates the lease.
  * @note A zero-length payload is stored as a header-only record.
  * @note This function changes RAM ownership only; it does not write NAND or
- *       notify the flash-manager task.
+ *       notify the Flash Manager task.
  * @note This function is not internally synchronised with drain operations.
  */
 ResultBufferRecordCommitStatus_T
@@ -245,7 +247,7 @@ RESULT_BUFFER_CommitRecord( const FlashManagerResultWriteLease_T* lease, uint32_
  *
  * @param[out] lease
  *      Destination for the drain lease. On success, page_data points to
- *      page-aligned result-buffer storage and valid_length_bytes contains the
+ *      the start of a result page slot and valid_length_bytes contains its
  *      logical byte count. On failure, a non-NULL lease is cleared.
  *
  * @retval true
@@ -267,7 +269,7 @@ bool RESULT_BUFFER_AcquireDrainPage( ResultBufferDrainLease_T* lease );
  *
  * A successful NAND write releases the page and advances the oldest-page
  * cursor. A failed NAND write returns the page to READY_TO_DRAIN without
- * releasing its bytes, allowing the flash-manager task to retry it.
+ * releasing its bytes, allowing the Flash Manager task to retry it.
  *
  * @param[in] lease
  *      Lease returned by RESULT_BUFFER_AcquireDrainPage(). Its ID, pointer, and
@@ -321,7 +323,7 @@ bool RESULT_BUFFER_Finalise( void );
  *      The buffer is not initialised, production has not been finalised,
  *      committed bytes remain, or a lease is still active.
  *
- * @note This is an instantaneous state query. The flash-manager layer must
+ * @note This is an instantaneous state query. The Flash Manager must
  *       serialise it with state-changing result-buffer calls.
  */
 bool RESULT_BUFFER_IsDrainComplete( void );
