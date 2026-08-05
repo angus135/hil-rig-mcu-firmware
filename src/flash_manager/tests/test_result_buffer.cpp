@@ -22,6 +22,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include "flash_manager_mocks.h"
 
 extern "C"
 {
@@ -64,6 +65,15 @@ extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_GetInfo( ExternalFlashInfo_T* in
 
     *info = external_flash_info;
     return EXTERNAL_FLASH_STATUS_OK;
+}
+
+extern "C" void FLASH_MANAGER_TEST_ConfigureExternalFlashInfo( ExternalFlashStatus_T status,
+                                                               uint32_t page_size_bytes )
+{
+    external_flash_get_info_status      = status;
+    external_flash_info                 = {};
+    external_flash_info.page_size_bytes = page_size_bytes;
+    external_flash_get_info_calls       = 0U;
 }
 
 /* C11 static assertions are written using the corresponding C++ keyword. */
@@ -111,9 +121,9 @@ protected:
         FlashManagerResultWriteLease_T lease = {};
         ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( TEST_MAX_PAYLOAD_BYTES, &lease ) );
         std::memset( lease.payload, 0x5AU, TEST_MAX_PAYLOAD_BYTES );
-        ASSERT_EQ( RESULT_BUFFER_RECORD_COMMIT_PAGE_READY_TO_DRAIN,
-                   RESULT_BUFFER_CommitRecord( &lease, timestamp, 1U, 1U,
-                                               TEST_MAX_PAYLOAD_BYTES ) );
+        ASSERT_EQ(
+            RESULT_BUFFER_RECORD_COMMIT_PAGE_READY_TO_DRAIN,
+            RESULT_BUFFER_CommitRecord( &lease, timestamp, 1U, 1U, TEST_MAX_PAYLOAD_BYTES ) );
     }
 };
 
@@ -368,9 +378,9 @@ TEST_F( ResultBufferTest, CommitRecordCanCompleteOnePageAndContinueRecordInNextP
 TEST_F( ResultBufferTest, CommitRecordCopiesScratchRecordAcrossPhysicalRingWrap )
 {
     Initialise();
-    result_buffer_context.producer_offset    = TEST_CAPACITY_BYTES - 4U;
-    result_buffer_context.pending_nand_bytes = TEST_PAGE_SIZE_BYTES - 4U;
-    result_buffer_context.page_states[2]     = RESULT_BUFFER_PAGE_FILLING;
+    result_buffer_context.producer_offset     = TEST_CAPACITY_BYTES - 4U;
+    result_buffer_context.pending_nand_bytes  = TEST_PAGE_SIZE_BYTES - 4U;
+    result_buffer_context.page_states[2]      = RESULT_BUFFER_PAGE_FILLING;
     result_buffer_context.page_valid_bytes[2] = TEST_PAGE_SIZE_BYTES - 4U;
 
     FlashManagerResultWriteLease_T lease = {};
@@ -406,11 +416,11 @@ TEST_F( ResultBufferTest, CommitRecordCopiesScratchRecordAcrossPhysicalRingWrap 
 TEST_F( ResultBufferTest, ShortScratchRecordCommitDoesNotCopyPastPhysicalEnd )
 {
     Initialise();
-    result_buffer_context.producer_offset    = TEST_CAPACITY_BYTES - 12U;
-    result_buffer_context.pending_nand_bytes = 20U;
-    result_buffer_context.page_states[2]     = RESULT_BUFFER_PAGE_FILLING;
+    result_buffer_context.producer_offset     = TEST_CAPACITY_BYTES - 12U;
+    result_buffer_context.pending_nand_bytes  = 20U;
+    result_buffer_context.page_states[2]      = RESULT_BUFFER_PAGE_FILLING;
     result_buffer_context.page_valid_bytes[2] = 20U;
-    result_buffer_storage[0]                 = 0xCCU;
+    result_buffer_storage[0]                  = 0xCCU;
 
     FlashManagerResultWriteLease_T lease = {};
     ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( 8U, &lease ) );
@@ -457,9 +467,9 @@ TEST_F( ResultBufferTest, ReserveRecordFailsWhenCommittedDataOccupiesEntireRing 
 TEST_F( ResultBufferTest, AcquireDrainPageRejectsInvalidStateAndClearsLease )
 {
     ResultBufferDrainLease_T lease = {};
-    lease.page_data                 = result_buffer_storage;
-    lease.valid_length_bytes        = 7U;
-    lease.lease_id                  = 42U;
+    lease.page_data                = result_buffer_storage;
+    lease.valid_length_bytes       = 7U;
+    lease.lease_id                 = 42U;
 
     EXPECT_FALSE( RESULT_BUFFER_AcquireDrainPage( &lease ) );
     EXPECT_EQ( nullptr, lease.page_data );
@@ -507,8 +517,7 @@ TEST_F( ResultBufferTest, RecordWriteAndDrainLeasesCanOwnDifferentPagesConcurren
     EXPECT_TRUE( result_buffer_context.active_drain_reservation.is_active );
     EXPECT_TRUE( result_buffer_context.active_record_reservation.is_active );
     EXPECT_EQ( RESULT_BUFFER_PAGE_DRAINING, result_buffer_context.page_states[0] );
-    EXPECT_EQ( &result_buffer_storage[TEST_PAGE_SIZE_BYTES
-                                     + sizeof( FlashManagerResultHeader_T )],
+    EXPECT_EQ( &result_buffer_storage[TEST_PAGE_SIZE_BYTES + sizeof( FlashManagerResultHeader_T )],
                write_lease.payload );
     EXPECT_NE( drain_lease.page_data, write_lease.payload );
 }
@@ -600,8 +609,7 @@ TEST_F( ResultBufferTest, SuccessfulDrainMakesWrappedProducerPageReusable )
 
     FlashManagerResultWriteLease_T write_lease = {};
     ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( TEST_MAX_PAYLOAD_BYTES, &write_lease ) );
-    EXPECT_EQ( &result_buffer_storage[sizeof( FlashManagerResultHeader_T )],
-               write_lease.payload );
+    EXPECT_EQ( &result_buffer_storage[sizeof( FlashManagerResultHeader_T )], write_lease.payload );
 }
 
 /**-----------------------------------------------------------------------------
