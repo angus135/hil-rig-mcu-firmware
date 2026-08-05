@@ -8,8 +8,9 @@
  *
  *  Notes:
  *      Result records are packed into a page-backed circular byte buffer. A
- *      single active lease gives the execution path contiguous payload storage
- *      while the flash-manager task owns page-level NAND transfers.
+ *      record write lease gives the execution path contiguous payload storage
+ *      while an independent drain lease protects a page-level NAND transfer.
+ *      State-transition calls must be serialised by the flash-manager layer.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -70,7 +71,6 @@ typedef struct
     bool     is_active;
     bool     uses_wrap_scratch;
     uint16_t payload_capacity_bytes;
-    uint16_t reserved_record_length_bytes;
     uint32_t lease_id;
     uint32_t record_offset_bytes;
 } ResultBufferRecordReservation_T;
@@ -151,10 +151,19 @@ static bool RESULT_BUFFER_RecordLeaseMatches( const FlashManagerResultWriteLease
 
 static void RESULT_BUFFER_ClearRecordReservation( void );
 
+static bool RESULT_BUFFER_RecordRangeIsWritable( uint32_t record_offset_bytes,
+                                                 uint32_t record_length_bytes );
+
 static bool RESULT_BUFFER_UpdatePagesForCommittedRecord( uint32_t record_offset_bytes,
                                                          uint32_t record_length_bytes );
 
 static uint32_t RESULT_BUFFER_AdvanceProducerOffset( uint32_t offset_bytes, uint32_t length_bytes );
+
+static const uint8_t* RESULT_BUFFER_GetActiveDrainPageData( void );
+
+static bool RESULT_BUFFER_DrainLeaseMatches( const ResultBufferDrainLease_T* lease );
+
+static void RESULT_BUFFER_ClearDrainReservation( void );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -209,6 +218,51 @@ static void RESULT_BUFFER_ClearRecordReservation( void )
     result_buffer_context.active_record_reservation = ( ResultBufferRecordReservation_T ){ 0 };
 }
 
+static bool RESULT_BUFFER_RecordRangeIsWritable( uint32_t record_offset_bytes,
+                                                 uint32_t record_length_bytes )
+{
+    uint32_t page_size_bytes   = result_buffer_context.page_size_bytes;
+    uint32_t page_index        = record_offset_bytes / page_size_bytes;
+    uint32_t page_offset_bytes = record_offset_bytes % page_size_bytes;
+
+    if ( page_index >= RESULT_BUFFER_PAGE_COUNT )
+    {
+        return false;
+    }
+
+    /* A page-aligned producer must begin in a completely released page. */
+    if ( page_offset_bytes == 0U )
+    {
+        if ( ( result_buffer_context.page_states[page_index] != RESULT_BUFFER_PAGE_EMPTY )
+             || ( result_buffer_context.page_valid_bytes[page_index] != 0U ) )
+        {
+            return false;
+        }
+    }
+    /* A partial producer page must end exactly where the next record begins. */
+    else if ( ( result_buffer_context.page_states[page_index] != RESULT_BUFFER_PAGE_FILLING )
+              || ( result_buffer_context.page_valid_bytes[page_index] != page_offset_bytes ) )
+    {
+        return false;
+    }
+
+    uint32_t available_page_bytes = page_size_bytes - page_offset_bytes;
+
+    if ( record_length_bytes > available_page_bytes )
+    {
+        uint32_t next_page_index = ( page_index + 1U ) % RESULT_BUFFER_PAGE_COUNT;
+
+        /* A crossing record begins the following page at offset zero. */
+        if ( ( result_buffer_context.page_states[next_page_index] != RESULT_BUFFER_PAGE_EMPTY )
+             || ( result_buffer_context.page_valid_bytes[next_page_index] != 0U ) )
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static uint32_t RESULT_BUFFER_AdvanceProducerOffset( uint32_t offset_bytes, uint32_t length_bytes )
 {
     uint32_t advanced_offset_bytes = offset_bytes + length_bytes;
@@ -225,31 +279,115 @@ static uint32_t RESULT_BUFFER_AdvanceProducerOffset( uint32_t offset_bytes, uint
 static bool RESULT_BUFFER_UpdatePagesForCommittedRecord( uint32_t record_offset_bytes,
                                                          uint32_t record_length_bytes )
 {
-    uint32_t page_size_bytes   = result_buffer_context.page_size_bytes;
-    uint32_t page_index        = record_offset_bytes / page_size_bytes;
+    uint32_t page_size_bytes = result_buffer_context.page_size_bytes;
+
+    uint32_t page_index = record_offset_bytes / page_size_bytes;
+
     uint32_t page_offset_bytes = record_offset_bytes % page_size_bytes;
-    uint32_t page_fill_bytes   = page_offset_bytes + record_length_bytes;
 
-    result_buffer_context.page_states[page_index] = RESULT_BUFFER_PAGE_FILLING;
+    uint32_t available_page_bytes = page_size_bytes - page_offset_bytes;
 
-    /* The current page remains producer-owned until committed data reaches its end. */
-    if ( page_fill_bytes < page_size_bytes )
+    uint32_t bytes_in_current_page = record_length_bytes;
+
+    if ( bytes_in_current_page > available_page_bytes )
+    {
+        bytes_in_current_page = available_page_bytes;
+    }
+
+    uint32_t current_page_valid_bytes = page_offset_bytes + bytes_in_current_page;
+
+    result_buffer_context.page_valid_bytes[page_index] = current_page_valid_bytes;
+
+    bool page_ready_to_drain = current_page_valid_bytes == page_size_bytes;
+
+    if ( page_ready_to_drain )
+    {
+        result_buffer_context.page_states[page_index] = RESULT_BUFFER_PAGE_READY_TO_DRAIN;
+    }
+    else
+    {
+        result_buffer_context.page_states[page_index] = RESULT_BUFFER_PAGE_FILLING;
+    }
+
+    uint32_t remaining_record_bytes = record_length_bytes - bytes_in_current_page;
+
+    if ( remaining_record_bytes > 0U )
+    {
+        uint32_t next_page_index = ( page_index + 1U ) % RESULT_BUFFER_PAGE_COUNT;
+
+        /*
+         * A record crossing a page boundary begins the following page at
+         * offset zero.
+         */
+        result_buffer_context.page_valid_bytes[next_page_index] = remaining_record_bytes;
+
+        result_buffer_context.page_states[next_page_index] = RESULT_BUFFER_PAGE_FILLING;
+    }
+
+    return page_ready_to_drain;
+}
+
+static const uint8_t* RESULT_BUFFER_GetActiveDrainPageData( void )
+{
+    uint32_t page_offset_bytes =
+        ( uint32_t )result_buffer_context.active_drain_reservation.page_index
+        * result_buffer_context.page_size_bytes;
+
+    return &result_buffer_storage[page_offset_bytes];
+}
+
+static bool RESULT_BUFFER_DrainLeaseMatches( const ResultBufferDrainLease_T* lease )
+{
+    if ( ( lease == NULL ) || !result_buffer_context.active_drain_reservation.is_active )
     {
         return false;
     }
 
-    /* A full page is immutable until the flash-manager task writes and releases it. */
-    result_buffer_context.page_states[page_index] = RESULT_BUFFER_PAGE_READY_TO_DRAIN;
+    uint8_t page_index = result_buffer_context.active_drain_reservation.page_index;
 
-    /* Any bytes beyond the boundary begin filling the following circular page. */
-    if ( page_fill_bytes > page_size_bytes )
+    /*
+     * Protect the array and pointer calculations against corrupted internal
+     * state.
+     */
+    if ( page_index >= RESULT_BUFFER_PAGE_COUNT )
     {
-        uint32_t next_page = ( page_index + 1U ) % RESULT_BUFFER_PAGE_COUNT;
-
-        result_buffer_context.page_states[next_page] = RESULT_BUFFER_PAGE_FILLING;
+        return false;
     }
 
-    return true;
+    if ( result_buffer_context.page_states[page_index] != RESULT_BUFFER_PAGE_DRAINING )
+    {
+        return false;
+    }
+
+    if ( result_buffer_context.page_valid_bytes[page_index]
+         != result_buffer_context.active_drain_reservation.valid_length_bytes )
+    {
+        return false;
+    }
+
+    if ( lease->lease_id != result_buffer_context.active_drain_reservation.lease_id )
+    {
+        return false;
+    }
+
+    if ( lease->valid_length_bytes
+         != result_buffer_context.active_drain_reservation.valid_length_bytes )
+    {
+        return false;
+    }
+
+    if ( ( lease->valid_length_bytes == 0U )
+         || ( lease->valid_length_bytes > result_buffer_context.page_size_bytes ) )
+    {
+        return false;
+    }
+
+    return lease->page_data == RESULT_BUFFER_GetActiveDrainPageData();
+}
+
+static void RESULT_BUFFER_ClearDrainReservation( void )
+{
+    result_buffer_context.active_drain_reservation = ( ResultBufferDrainReservation_T ){ 0 };
 }
 
 /**-----------------------------------------------------------------------------
@@ -259,6 +397,9 @@ static bool RESULT_BUFFER_UpdatePagesForCommittedRecord( uint32_t record_offset_
 
 bool RESULT_BUFFER_Init( void )
 {
+    /* A failed reinitialisation must not leave an earlier geometry usable. */
+    result_buffer_context = ( ResultBufferContext_T ){ 0 };
+
     ExternalFlashInfo_T info = { 0 };
 
     /* Obtain geometry through external_flash rather than depending on hw_nand directly. */
@@ -297,20 +438,25 @@ bool RESULT_BUFFER_Init( void )
 void RESULT_BUFFER_Reset( void )
 {
     /*
-     * Clear only session ownership and cursor state. Geometry remains valid,
-     * and stale bytes need not be erased because no lease or page references
-     * them until they are overwritten and committed again.
+     * Reset session ownership and cursor state while preserving the NAND
+     * geometry configured by RESULT_BUFFER_Init().
      */
+    result_buffer_context.is_finalised         = false;
     result_buffer_context.producer_offset      = 0U;
     result_buffer_context.pending_nand_bytes   = 0U;
     result_buffer_context.drain_page_index     = 0U;
     result_buffer_context.next_record_lease_id = 1U;
+    result_buffer_context.next_drain_lease_id  = 1U;
 
     result_buffer_context.active_record_reservation = ( ResultBufferRecordReservation_T ){ 0 };
+
+    result_buffer_context.active_drain_reservation = ( ResultBufferDrainReservation_T ){ 0 };
 
     for ( uint32_t page_index = 0U; page_index < RESULT_BUFFER_PAGE_COUNT; page_index++ )
     {
         result_buffer_context.page_states[page_index] = RESULT_BUFFER_PAGE_EMPTY;
+
+        result_buffer_context.page_valid_bytes[page_index] = 0U;
     }
 }
 
@@ -335,7 +481,7 @@ bool RESULT_BUFFER_ReserveRecord( uint16_t                        requested_payl
      * The producer may hold only one lease at a time, which keeps reservation and commit
      * ordering deterministic and removes the need for an allocation queue.
      */
-    if ( !result_buffer_context.is_initialised
+    if ( !result_buffer_context.is_initialised || result_buffer_context.is_finalised
          || result_buffer_context.active_record_reservation.is_active
          || ( requested_payload_capacity_bytes == 0U ) )
     {
@@ -370,6 +516,13 @@ bool RESULT_BUFFER_ReserveRecord( uint16_t                        requested_payl
         return false;
     }
 
+    /* Explicitly prevent producer access to a page owned by the drain path. */
+    if ( !RESULT_BUFFER_RecordRangeIsWritable( result_buffer_context.producer_offset,
+                                               total_record_length_bytes ) )
+    {
+        return false;
+    }
+
     uint32_t contiguous_record_bytes =
         result_buffer_context.capacity_bytes - result_buffer_context.producer_offset;
 
@@ -394,15 +547,13 @@ bool RESULT_BUFFER_ReserveRecord( uint16_t                        requested_payl
     result_buffer_context.active_record_reservation.uses_wrap_scratch = uses_wrap_scratch;
     result_buffer_context.active_record_reservation.payload_capacity_bytes =
         requested_payload_capacity_bytes;
-    result_buffer_context.active_record_reservation.reserved_record_length_bytes =
-        ( uint16_t )total_record_length_bytes;
     result_buffer_context.active_record_reservation.lease_id = lease_id;
     result_buffer_context.active_record_reservation.record_offset_bytes =
         result_buffer_context.producer_offset;
 
     /* The caller receives temporary write access; ownership remains with this module. */
-    lease->payload          = RESULT_BUFFER_GetActiveRecordPayload();
-    lease->lease_id         = lease_id;
+    lease->payload                = RESULT_BUFFER_GetActiveRecordPayload();
+    lease->lease_id               = lease_id;
     lease->payload_capacity_bytes = requested_payload_capacity_bytes;
 
     return true;
@@ -452,10 +603,10 @@ RESULT_BUFFER_CommitRecord( const FlashManagerResultWriteLease_T* lease, uint32_
 
     /* Store only the actual payload length; unused reservation capacity is reclaimed. */
     FlashManagerResultHeader_T header = {
-        .timestamp       = timestamp,
-        .payload_length_bytes  = actual_payload_length_bytes,
-        .peripheral_type = peripheral_type,
-        .channel         = channel,
+        .timestamp            = timestamp,
+        .payload_length_bytes = actual_payload_length_bytes,
+        .peripheral_type      = peripheral_type,
+        .channel              = channel,
     };
 
     uint32_t record_length_bytes =
@@ -528,4 +679,258 @@ RESULT_BUFFER_CommitRecord( const FlashManagerResultWriteLease_T* lease, uint32_
         return RESULT_BUFFER_RECORD_COMMIT_PAGE_READY_TO_DRAIN;
     }
     return RESULT_BUFFER_RECORD_COMMIT_OK;
+}
+
+/**
+ * @brief Acquires the oldest result page that is ready to drain to NAND.
+ */
+bool RESULT_BUFFER_AcquireDrainPage( ResultBufferDrainLease_T* lease )
+{
+    if ( lease == NULL )
+    {
+        return false;
+    }
+
+    /*
+     * Ensure a failed acquisition never leaves stale ownership information
+     * in the caller's lease.
+     */
+    *lease = ( ResultBufferDrainLease_T ){ 0 };
+
+    if ( !result_buffer_context.is_initialised
+         || result_buffer_context.active_drain_reservation.is_active )
+    {
+        return false;
+    }
+
+    uint8_t page_index = result_buffer_context.drain_page_index;
+
+    if ( page_index >= RESULT_BUFFER_PAGE_COUNT )
+    {
+        return false;
+    }
+
+    /*
+     * Only the oldest page may be acquired, preserving the logical result
+     * ordering written to NAND.
+     */
+    if ( result_buffer_context.page_states[page_index] != RESULT_BUFFER_PAGE_READY_TO_DRAIN )
+    {
+        return false;
+    }
+
+    uint32_t valid_length_bytes = result_buffer_context.page_valid_bytes[page_index];
+
+    if ( ( valid_length_bytes == 0U )
+         || ( valid_length_bytes > result_buffer_context.page_size_bytes ) )
+    {
+        return false;
+    }
+
+    /*
+     * The page's valid bytes must still be included in the amount waiting to
+     * be committed to NAND.
+     */
+    if ( result_buffer_context.pending_nand_bytes < valid_length_bytes )
+    {
+        return false;
+    }
+
+    uint32_t lease_id = result_buffer_context.next_drain_lease_id;
+
+    result_buffer_context.next_drain_lease_id++;
+
+    /* Zero is reserved for invalid or cleared leases. */
+    if ( result_buffer_context.next_drain_lease_id == 0U )
+    {
+        result_buffer_context.next_drain_lease_id = 1U;
+    }
+
+    /*
+     * Record authoritative internal ownership before publishing the caller's
+     * lease.
+     */
+    result_buffer_context.active_drain_reservation.is_active = true;
+
+    result_buffer_context.active_drain_reservation.page_index = page_index;
+
+    result_buffer_context.active_drain_reservation.valid_length_bytes = valid_length_bytes;
+
+    result_buffer_context.active_drain_reservation.lease_id = lease_id;
+
+    /*
+     * The page must remain immutable while external flash uses it for the NAND
+     * write operation.
+     */
+    result_buffer_context.page_states[page_index] = RESULT_BUFFER_PAGE_DRAINING;
+
+    lease->page_data = RESULT_BUFFER_GetActiveDrainPageData();
+
+    lease->valid_length_bytes = valid_length_bytes;
+    lease->lease_id           = lease_id;
+
+    return true;
+}
+
+/**
+ * @brief Completes the NAND write associated with an active drain lease.
+ */
+bool RESULT_BUFFER_CompleteDrain( const ResultBufferDrainLease_T* lease, bool nand_write_succeeded )
+{
+    if ( !RESULT_BUFFER_DrainLeaseMatches( lease ) )
+    {
+        return false;
+    }
+
+    uint8_t page_index = result_buffer_context.active_drain_reservation.page_index;
+
+    uint32_t valid_length_bytes = result_buffer_context.active_drain_reservation.valid_length_bytes;
+
+    if ( nand_write_succeeded )
+    {
+        /*
+         * Do not release ownership if the committed-byte accounting is
+         * inconsistent. The page remains DRAINING for fault handling or reset.
+         */
+        if ( result_buffer_context.pending_nand_bytes < valid_length_bytes )
+        {
+            return false;
+        }
+
+        /*
+         * EXTERNAL_FLASH_WriteResultPage() completed successfully, so these
+         * bytes no longer need to remain in RAM.
+         */
+        result_buffer_context.pending_nand_bytes -= valid_length_bytes;
+
+        result_buffer_context.page_valid_bytes[page_index] = 0U;
+
+        result_buffer_context.page_states[page_index] = RESULT_BUFFER_PAGE_EMPTY;
+
+        result_buffer_context.drain_page_index =
+            ( uint8_t )( ( page_index + 1U ) % RESULT_BUFFER_PAGE_COUNT );
+    }
+    else
+    {
+        /*
+         * Preserve both the data and its capacity accounting so the
+         * flash-manager task can retry the same page.
+         */
+        result_buffer_context.page_states[page_index] = RESULT_BUFFER_PAGE_READY_TO_DRAIN;
+    }
+
+    /*
+     * Both success and reported failure complete this ownership interval.
+     * The supplied lease is now stale.
+     */
+    RESULT_BUFFER_ClearDrainReservation();
+
+    return true;
+}
+
+/**
+ * @brief Stops result production and publishes the final partial NAND page.
+ */
+bool RESULT_BUFFER_Finalise( void )
+{
+    if ( !result_buffer_context.is_initialised )
+    {
+        return false;
+    }
+
+    /*
+     * A driver may still be writing through an active record lease. Publishing
+     * that page now could expose incomplete data to the drain path.
+     */
+    if ( result_buffer_context.active_record_reservation.is_active )
+    {
+        return false;
+    }
+
+    /* Finalisation is intentionally idempotent. */
+    if ( result_buffer_context.is_finalised )
+    {
+        return true;
+    }
+
+    if ( ( result_buffer_context.page_size_bytes == 0U )
+         || ( result_buffer_context.producer_offset >= result_buffer_context.capacity_bytes ) )
+    {
+        return false;
+    }
+
+    uint32_t partial_page_valid_bytes =
+        result_buffer_context.producer_offset % result_buffer_context.page_size_bytes;
+
+    if ( partial_page_valid_bytes > 0U )
+    {
+        uint32_t partial_page_index =
+            result_buffer_context.producer_offset / result_buffer_context.page_size_bytes;
+
+        if ( partial_page_index >= RESULT_BUFFER_PAGE_COUNT )
+        {
+            return false;
+        }
+
+        /*
+         * The partial page must still be producer-owned and its bookkeeping
+         * must end exactly at the producer cursor.
+         */
+        if ( result_buffer_context.page_states[partial_page_index] != RESULT_BUFFER_PAGE_FILLING )
+        {
+            return false;
+        }
+
+        if ( result_buffer_context.page_valid_bytes[partial_page_index]
+             != partial_page_valid_bytes )
+        {
+            return false;
+        }
+
+        if ( result_buffer_context.pending_nand_bytes < partial_page_valid_bytes )
+        {
+            return false;
+        }
+
+        /*
+         * This is now the final page of the result session. No more records may
+         * be appended after it.
+         */
+        result_buffer_context.page_states[partial_page_index] = RESULT_BUFFER_PAGE_READY_TO_DRAIN;
+    }
+
+    /*
+     * Exact-page-aligned and empty streams do not need an additional partial
+     * page, but result production must still stop.
+     */
+    result_buffer_context.is_finalised = true;
+
+    return true;
+}
+
+bool RESULT_BUFFER_IsDrainComplete( void )
+{
+    if ( !result_buffer_context.is_initialised || !result_buffer_context.is_finalised )
+    {
+        return false;
+    }
+
+    if ( ( result_buffer_context.pending_nand_bytes != 0U )
+         || result_buffer_context.active_record_reservation.is_active
+         || result_buffer_context.active_drain_reservation.is_active )
+    {
+        return false;
+    }
+
+    /* Pending-byte accounting and page ownership must agree before reuse. */
+    for ( uint32_t page_index = 0U; page_index < RESULT_BUFFER_PAGE_COUNT; page_index++ )
+    {
+        if ( ( result_buffer_context.page_states[page_index] != RESULT_BUFFER_PAGE_EMPTY )
+             || ( result_buffer_context.page_valid_bytes[page_index] != 0U ) )
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
