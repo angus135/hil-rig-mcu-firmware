@@ -47,6 +47,7 @@ if(FLASH_MANAGER_ENABLE_TESTS AND BUILD_TESTING)
 
     add_executable(flash_manager_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_flash_manager.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_instruction_buffer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_result_buffer.cpp
     )
 
