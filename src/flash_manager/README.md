@@ -2,7 +2,7 @@
 
 `result_buffer.c` implements packed result-record production and page draining.
 `flash_manager.c` now provides the ISR-facing result write API and the RTOS task
-path that drains ready pages to NAND. Runtime lifecycle commands, instruction
+path that prepares, drains, and finalises result sessions. Instruction
 buffering, result retrieval, and application startup remain to be integrated.
 
 The flash manager is the only normal runtime task that should call `external_flash`.
@@ -201,16 +201,18 @@ EXTERNAL_FLASH_Init();
 Firmware startup makes this call after adopting the generated QSPI handle.
 `FLASH_MANAGER_Init()` must then initialise the manager mutex and result buffer
 before the Flash Manager task is allowed to run. The task creation remains
-commented out in `app_main.c` until that startup order and the lifecycle API are
-connected.
+commented out in `app_main.c` until that startup order is connected.
 
-Before each execution:
+Before each execution, the Run State Manager requests asynchronous preparation:
 
 ```c
-EXTERNAL_FLASH_StartSession();
+FLASH_MANAGER_RequestExecutionPreparation();
 ```
 
-Then prime the instruction queue:
+The Flash Manager task calls `EXTERNAL_FLASH_StartSession()`, resets the result
+buffer, and changes to `FLASH_MANAGER_STATE_EXECUTING`. The Run State Manager
+must observe that state before starting the execution timer. Instruction queue
+priming remains future work and will use:
 
 ```c
 EXTERNAL_FLASH_ReadInstructionPage(offset, page_buffer, length);
@@ -225,13 +227,24 @@ execution_manager appends result bytes into flash manager result slots
 flash_manager writes full result pages using EXTERNAL_FLASH_WriteResultPage
 ```
 
-After execution:
+After execution, the Run State Manager stops the execution timer, ensures the
+active ISR has returned, and requests asynchronous finalisation:
+
+```c
+FLASH_MANAGER_RequestResultFinalisation();
+```
+
+The Flash Manager task then:
 
 ```text
-write final partial result page if needed
-wait until RESULT_BUFFER_IsDrainComplete() reports true
-make committed results available to the future result-transfer path
+publish the final partial page if needed
+drain every remaining full or partial page
+verify RESULT_BUFFER_IsDrainComplete()
+enter FLASH_MANAGER_STATE_RESULTS_READY
 ```
+
+Finalisation fails if an execution write lease remains active. The execution
+path must therefore commit or cancel every lease before its timer ISR returns.
 
 If the final result length is exactly page aligned, there is no separate
 external-flash finalize call. Leave the session readable for result transfer;
