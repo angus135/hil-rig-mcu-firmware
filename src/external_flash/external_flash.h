@@ -85,6 +85,15 @@ extern "C"
 /** Number of physical NAND blocks reserved for future persistent metadata. */
 #define EXTERNAL_FLASH_METADATA_BLOCK_COUNT ( 4U )
 
+/**
+ * Maximum NAND main-page size supported by the external-flash service.
+ *
+ * Application-level page buffers may use this value for static allocation.
+ * The actual selected device page size is reported by
+ * EXTERNAL_FLASH_GetInfo().
+ */
+#define EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES ( 2048U )
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -106,13 +115,25 @@ typedef enum
 
 typedef struct
 {
+    /** Size of each logical page in bytes. */
     uint32_t page_size_bytes;
+
+    /** Usable instruction capacity after bad block removal. */
     uint32_t instruction_capacity_bytes;
+
+    /** Usable result capacity after bad block removal. */
     uint32_t result_capacity_bytes;
+
+    /** Instruction bytes committed to NAND by the current volatile upload. */
     uint32_t instruction_length_bytes;
+
+    /** Result bytes committed to NAND in the active volatile result session. */
     uint32_t result_length_bytes;
+
+    /** Factory and runtime bad blocks found in the configured partitions. */
     uint32_t bad_block_count;
 } ExternalFlashInfo_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
