@@ -5,7 +5,8 @@
  *
  *  Description:
  *      Unit tests for Flash Manager initialisation, ISR-facing result record
- *      production, task notification, NAND page draining, and fault handling.
+ *      production, asynchronous lifecycle requests, NAND page draining,
+ *      partial-page finalisation, and fault handling.
  *
  *  Notes:
  *      Production code is included directly so private state and drain helpers
@@ -50,6 +51,12 @@ static uint32_t          semaphore_give_calls    = 0U;
 
 static TaskHandle_t current_task_handle = TEST_FLASH_MANAGER_TASK_HANDLE;
 
+static BaseType_t    notify_result      = pdPASS;
+static uint32_t      notify_calls       = 0U;
+static TaskHandle_t  notify_task_handle = nullptr;
+static uint32_t      notify_value       = 0U;
+static eNotifyAction notify_action      = eNoAction;
+
 static BaseType_t    notify_from_isr_result            = pdPASS;
 static BaseType_t    notify_from_isr_wake_value        = pdFALSE;
 static bool          notify_from_isr_writes_wake_value = false;
@@ -63,6 +70,9 @@ static ExternalFlashStatus_T write_result_page_status = EXTERNAL_FLASH_STATUS_OK
 static uint32_t              write_result_page_calls  = 0U;
 static const uint8_t*        write_result_page_data   = nullptr;
 static uint32_t              write_result_page_length = 0U;
+
+static ExternalFlashStatus_T start_session_status = EXTERNAL_FLASH_STATUS_OK;
+static uint32_t              start_session_calls  = 0U;
 
 extern "C" SemaphoreHandle_t xSemaphoreCreateMutexStatic( StaticSemaphore_t* mutex_buffer )
 {
@@ -112,6 +122,16 @@ extern "C" void vTaskDelay( TickType_t ticks_to_delay )
     ( void )ticks_to_delay;
 }
 
+extern "C" BaseType_t xTaskNotify( TaskHandle_t task_to_notify, uint32_t value,
+                                    eNotifyAction action )
+{
+    notify_calls++;
+    notify_task_handle = task_to_notify;
+    notify_value       = value;
+    notify_action      = action;
+    return notify_result;
+}
+
 extern "C" BaseType_t xTaskNotifyFromISR( TaskHandle_t task_to_notify, uint32_t value,
                                           eNotifyAction action,
                                           BaseType_t*   higher_priority_task_woken )
@@ -137,6 +157,12 @@ extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_WriteResultPage( const uint8_t* 
     write_result_page_data   = data;
     write_result_page_length = valid_length;
     return write_result_page_status;
+}
+
+extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void )
+{
+    start_session_calls++;
+    return start_session_status;
 }
 
 extern "C"
@@ -176,6 +202,12 @@ protected:
 
         current_task_handle = TEST_FLASH_MANAGER_TASK_HANDLE;
 
+        notify_result      = pdPASS;
+        notify_calls       = 0U;
+        notify_task_handle = nullptr;
+        notify_value       = 0U;
+        notify_action      = eNoAction;
+
         notify_from_isr_result            = pdPASS;
         notify_from_isr_wake_value        = pdFALSE;
         notify_from_isr_writes_wake_value = false;
@@ -189,6 +221,9 @@ protected:
         write_result_page_calls  = 0U;
         write_result_page_data   = nullptr;
         write_result_page_length = 0U;
+
+        start_session_status = EXTERNAL_FLASH_STATUS_OK;
+        start_session_calls  = 0U;
     }
 
     void Initialise( void )
@@ -199,6 +234,11 @@ protected:
     void EnterExecutingState( void )
     {
         flash_manager_context.state       = FLASH_MANAGER_STATE_EXECUTING;
+        flash_manager_context.task_handle = TEST_FLASH_MANAGER_TASK_HANDLE;
+    }
+
+    void RegisterTask( void )
+    {
         flash_manager_context.task_handle = TEST_FLASH_MANAGER_TASK_HANDLE;
     }
 
@@ -255,6 +295,262 @@ TEST_F( FlashManagerTest, InitRejectsReinitialisation )
     EXPECT_FALSE( FLASH_MANAGER_Init() );
     EXPECT_EQ( 1U, semaphore_create_calls );
     EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, GetStateReportsCurrentStateAndRejectsNullDestination )
+{
+    Initialise();
+    FlashManagerState_T state = FLASH_MANAGER_STATE_UNINITIALISED;
+
+    EXPECT_TRUE( FLASH_MANAGER_GetState( &state ) );
+    EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, state );
+    EXPECT_FALSE( FLASH_MANAGER_GetState( nullptr ) );
+}
+
+TEST_F( FlashManagerTest, PreparationRequestRejectsUnavailableManagerAndTask )
+{
+    EXPECT_EQ( FLASH_MANAGER_REQUEST_NOT_INITIALISED,
+               FLASH_MANAGER_RequestExecutionPreparation() );
+
+    Initialise();
+    EXPECT_EQ( FLASH_MANAGER_REQUEST_TASK_NOT_READY,
+               FLASH_MANAGER_RequestExecutionPreparation() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, flash_manager_context.state );
+    EXPECT_EQ( 0U, notify_calls );
+}
+
+TEST_F( FlashManagerTest, PreparationRequestRejectsInvalidLifecycleState )
+{
+    Initialise();
+    EnterExecutingState();
+
+    EXPECT_EQ( FLASH_MANAGER_REQUEST_INVALID_STATE,
+               FLASH_MANAGER_RequestExecutionPreparation() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_EXECUTING, flash_manager_context.state );
+    EXPECT_EQ( 0U, notify_calls );
+}
+
+TEST_F( FlashManagerTest, PreparationRequestChangesStateAndNotifiesTask )
+{
+    Initialise();
+    RegisterTask();
+
+    EXPECT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_PREPARING_EXECUTION, flash_manager_context.state );
+    EXPECT_EQ( 1U, notify_calls );
+    EXPECT_EQ( TEST_FLASH_MANAGER_TASK_HANDLE, notify_task_handle );
+    EXPECT_EQ( FLASH_MANAGER_NOTIFY_PREPARE_EXECUTION, notify_value );
+    EXPECT_EQ( eSetBits, notify_action );
+}
+
+TEST_F( FlashManagerTest, PreparationNotificationFailureEntersFault )
+{
+    Initialise();
+    RegisterTask();
+    notify_result = pdFAIL;
+
+    EXPECT_EQ( FLASH_MANAGER_REQUEST_NOTIFY_FAILED,
+               FLASH_MANAGER_RequestExecutionPreparation() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+    EXPECT_EQ( 1U, notify_calls );
+}
+
+TEST_F( FlashManagerTest, PreparationHandlerStartsSessionResetsBufferAndEntersExecuting )
+{
+    Initialise();
+    CreateReadyPage();
+    RegisterTask();
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+
+    EXPECT_TRUE( FLASH_MANAGER_PrepareExecution() );
+    EXPECT_EQ( 1U, start_session_calls );
+    EXPECT_EQ( FLASH_MANAGER_STATE_EXECUTING, flash_manager_context.state );
+
+    ResultBufferDrainLease_T drain_lease = {};
+    EXPECT_FALSE( RESULT_BUFFER_AcquireDrainPage( &drain_lease ) );
+}
+
+TEST_F( FlashManagerTest, PreparationHandlerRejectsStaleNotificationWithoutStartingSession )
+{
+    Initialise();
+
+    EXPECT_FALSE( FLASH_MANAGER_PrepareExecution() );
+    EXPECT_EQ( 0U, start_session_calls );
+    EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, PreparationHandlerReportsSessionStartFailure )
+{
+    Initialise();
+    RegisterTask();
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+    start_session_status = EXTERNAL_FLASH_STATUS_ERASE_FAIL;
+
+    EXPECT_FALSE( FLASH_MANAGER_PrepareExecution() );
+    EXPECT_EQ( 1U, start_session_calls );
+    EXPECT_EQ( FLASH_MANAGER_STATE_PREPARING_EXECUTION, flash_manager_context.state );
+
+    FLASH_MANAGER_EnterFault();
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, FinalisationRequestRejectsInvalidStateAndMissingTask )
+{
+    EXPECT_EQ( FLASH_MANAGER_REQUEST_NOT_INITIALISED,
+               FLASH_MANAGER_RequestResultFinalisation() );
+
+    Initialise();
+
+    EXPECT_EQ( FLASH_MANAGER_REQUEST_INVALID_STATE,
+               FLASH_MANAGER_RequestResultFinalisation() );
+
+    flash_manager_context.state = FLASH_MANAGER_STATE_EXECUTING;
+    EXPECT_EQ( FLASH_MANAGER_REQUEST_TASK_NOT_READY,
+               FLASH_MANAGER_RequestResultFinalisation() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_EXECUTING, flash_manager_context.state );
+    EXPECT_EQ( 0U, notify_calls );
+}
+
+TEST_F( FlashManagerTest, FinalisationRequestChangesStateAndNotifiesTask )
+{
+    Initialise();
+    EnterExecutingState();
+
+    EXPECT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestResultFinalisation() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FINALISING_RESULTS, flash_manager_context.state );
+    EXPECT_EQ( 1U, notify_calls );
+    EXPECT_EQ( TEST_FLASH_MANAGER_TASK_HANDLE, notify_task_handle );
+    EXPECT_EQ( FLASH_MANAGER_NOTIFY_FINALISE_RESULTS, notify_value );
+    EXPECT_EQ( eSetBits, notify_action );
+}
+
+TEST_F( FlashManagerTest, FinalisationNotificationFailureEntersFault )
+{
+    Initialise();
+    EnterExecutingState();
+    notify_result = pdFAIL;
+
+    EXPECT_EQ( FLASH_MANAGER_REQUEST_NOTIFY_FAILED,
+               FLASH_MANAGER_RequestResultFinalisation() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+    EXPECT_EQ( 1U, notify_calls );
+}
+
+TEST_F( FlashManagerTest, EmptyResultFinalisationEntersResultsReadyWithoutNandWrite )
+{
+    Initialise();
+    EnterExecutingState();
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestResultFinalisation() );
+
+    EXPECT_TRUE( FLASH_MANAGER_FinaliseResults() );
+    EXPECT_EQ( 0U, write_result_page_calls );
+    EXPECT_EQ( FLASH_MANAGER_STATE_RESULTS_READY, flash_manager_context.state );
+    EXPECT_TRUE( RESULT_BUFFER_IsDrainComplete() );
+}
+
+TEST_F( FlashManagerTest, PageAlignedFinalisationWritesNoAdditionalPartialPage )
+{
+    Initialise();
+    EnterExecutingState();
+    CreateReadyPage();
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestResultFinalisation() );
+
+    EXPECT_TRUE( FLASH_MANAGER_FinaliseResults() );
+    EXPECT_EQ( 1U, write_result_page_calls );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES, write_result_page_length );
+    EXPECT_EQ( FLASH_MANAGER_STATE_RESULTS_READY, flash_manager_context.state );
+    EXPECT_TRUE( RESULT_BUFFER_IsDrainComplete() );
+}
+
+TEST_F( FlashManagerTest, PartialResultFinalisationWritesOnlyCommittedRecordBytes )
+{
+    Initialise();
+    EnterExecutingState();
+    FlashManagerResultWriteLease_T lease = ReserveRecord( TEST_PARTIAL_PAYLOAD_BYTES );
+    ASSERT_NE( nullptr, lease.payload );
+    std::memset( lease.payload, 0xC3, TEST_PARTIAL_PAYLOAD_BYTES );
+    ASSERT_EQ( FLASH_MANAGER_RESULT_COMMIT_OK,
+               FLASH_MANAGER_CommitResultRecordFromISR(
+                   &lease, 10U, 2U, 3U, TEST_PARTIAL_PAYLOAD_BYTES, nullptr ) );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestResultFinalisation() );
+
+    EXPECT_TRUE( FLASH_MANAGER_FinaliseResults() );
+    EXPECT_EQ( 1U, write_result_page_calls );
+    EXPECT_EQ( sizeof( FlashManagerResultHeader_T ) + TEST_PARTIAL_PAYLOAD_BYTES,
+               write_result_page_length );
+    EXPECT_EQ( FLASH_MANAGER_STATE_RESULTS_READY, flash_manager_context.state );
+    EXPECT_TRUE( RESULT_BUFFER_IsDrainComplete() );
+}
+
+TEST_F( FlashManagerTest, FinalisationRejectsActiveResultWriteLease )
+{
+    Initialise();
+    EnterExecutingState();
+    FlashManagerResultWriteLease_T lease = ReserveRecord( TEST_PARTIAL_PAYLOAD_BYTES );
+    ASSERT_NE( nullptr, lease.payload );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestResultFinalisation() );
+
+    EXPECT_FALSE( FLASH_MANAGER_FinaliseResults() );
+    EXPECT_EQ( 0U, write_result_page_calls );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FINALISING_RESULTS, flash_manager_context.state );
+
+    FLASH_MANAGER_EnterFault();
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, FinalisationRejectsStaleNotificationWithoutMutatingBuffer )
+{
+    Initialise();
+
+    EXPECT_FALSE( FLASH_MANAGER_FinaliseResults() );
+    EXPECT_EQ( 0U, write_result_page_calls );
+    EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, flash_manager_context.state );
+    EXPECT_FALSE( RESULT_BUFFER_IsDrainComplete() );
+}
+
+TEST_F( FlashManagerTest, FinalisationReportsNandFailureForTaskFaultHandling )
+{
+    Initialise();
+    EnterExecutingState();
+    FlashManagerResultWriteLease_T lease = ReserveRecord( TEST_PARTIAL_PAYLOAD_BYTES );
+    ASSERT_NE( nullptr, lease.payload );
+    ASSERT_EQ( FLASH_MANAGER_RESULT_COMMIT_OK,
+               FLASH_MANAGER_CommitResultRecordFromISR(
+                   &lease, 10U, 2U, 3U, TEST_PARTIAL_PAYLOAD_BYTES, nullptr ) );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestResultFinalisation() );
+    write_result_page_status = EXTERNAL_FLASH_STATUS_PROGRAM_FAIL;
+
+    EXPECT_FALSE( FLASH_MANAGER_FinaliseResults() );
+    EXPECT_EQ( 1U, write_result_page_calls );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FINALISING_RESULTS, flash_manager_context.state );
+
+    FLASH_MANAGER_EnterFault();
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, ExecutionSessionFlowsFromPreparationThroughPartialFinalisation )
+{
+    Initialise();
+    RegisterTask();
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+    ASSERT_TRUE( FLASH_MANAGER_PrepareExecution() );
+
+    FlashManagerResultWriteLease_T lease = ReserveRecord( TEST_PARTIAL_PAYLOAD_BYTES );
+    ASSERT_NE( nullptr, lease.payload );
+    std::memset( lease.payload, 0x7E, TEST_PARTIAL_PAYLOAD_BYTES );
+    ASSERT_EQ( FLASH_MANAGER_RESULT_COMMIT_OK,
+               FLASH_MANAGER_CommitResultRecordFromISR(
+                   &lease, 50U, 4U, 5U, TEST_PARTIAL_PAYLOAD_BYTES, nullptr ) );
+
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestResultFinalisation() );
+    ASSERT_TRUE( FLASH_MANAGER_FinaliseResults() );
+
+    EXPECT_EQ( 1U, start_session_calls );
+    EXPECT_EQ( 2U, notify_calls );
+    EXPECT_EQ( 1U, write_result_page_calls );
+    EXPECT_EQ( sizeof( FlashManagerResultHeader_T ) + TEST_PARTIAL_PAYLOAD_BYTES,
+               write_result_page_length );
+    EXPECT_EQ( FLASH_MANAGER_STATE_RESULTS_READY, flash_manager_context.state );
 }
 
 TEST_F( FlashManagerTest, ReserveClearsLeaseAndRejectsNonExecutingState )

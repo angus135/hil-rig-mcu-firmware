@@ -97,6 +97,10 @@ static void FLASH_MANAGER_EnterFault( void );
 
 static void FLASH_MANAGER_EnterFaultFromISR( void );
 
+static bool FLASH_MANAGER_PrepareExecution( void );
+
+static bool FLASH_MANAGER_FinaliseResults( void );
+
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
@@ -234,6 +238,144 @@ static void FLASH_MANAGER_EnterFaultFromISR( void )
     flash_manager_context.state = FLASH_MANAGER_STATE_FAULT;
 }
 
+/**
+ * @brief Prepares NAND and RAM result storage for a new execution session.
+ *
+ * @return true after the external-flash session starts, the result buffer is
+ *         reset, and the manager enters EXECUTING; otherwise false.
+ *
+ * @note Called only by the Flash Manager task after a preparation notification.
+ */
+static bool FLASH_MANAGER_PrepareExecution( void )
+{
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return false;
+    }
+
+    bool state_is_valid =
+        flash_manager_context.state == FLASH_MANAGER_STATE_PREPARING_EXECUTION;
+
+    FLASH_MANAGER_Unlock();
+
+    /* Reject stale notifications before starting a destructive NAND session. */
+    if ( !state_is_valid )
+    {
+        return false;
+    }
+
+    if ( EXTERNAL_FLASH_StartSession() != EXTERNAL_FLASH_STATUS_OK )
+    {
+        return false;
+    }
+
+    /*
+     * Init has already established valid geometry. Reset is an unconditional
+     * ownership/cursor reset and therefore has no failure result.
+     */
+    taskENTER_CRITICAL();
+    RESULT_BUFFER_Reset();
+    taskEXIT_CRITICAL();
+
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return false;
+    }
+
+    state_is_valid = flash_manager_context.state == FLASH_MANAGER_STATE_PREPARING_EXECUTION;
+
+    if ( state_is_valid )
+    {
+        taskENTER_CRITICAL();
+        flash_manager_context.state = FLASH_MANAGER_STATE_EXECUTING;
+        taskEXIT_CRITICAL();
+    }
+
+    FLASH_MANAGER_Unlock();
+
+    return state_is_valid;
+}
+
+/**
+ * @brief Publishes and drains the final result page for the active session.
+ *
+ * @return true after every committed result byte reaches NAND and the manager
+ *         enters RESULTS_READY; otherwise false.
+ *
+ * @note The Run State Manager must stop the execution timer and ensure its ISR
+ *       has returned before requesting this operation.
+ */
+static bool FLASH_MANAGER_FinaliseResults( void )
+{
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return false;
+    }
+
+    bool state_is_valid =
+        flash_manager_context.state == FLASH_MANAGER_STATE_FINALISING_RESULTS;
+
+    FLASH_MANAGER_Unlock();
+
+    /* A stale notification must not close or mutate an unrelated session. */
+    if ( !state_is_valid )
+    {
+        return false;
+    }
+
+    bool finalise_succeeded;
+
+    /*
+     * Publishes the final partial page, if one exists. An active record lease
+     * causes finalisation to fail.
+     */
+    taskENTER_CRITICAL();
+    finalise_succeeded = RESULT_BUFFER_Finalise();
+    taskEXIT_CRITICAL();
+
+    if ( !finalise_succeeded )
+    {
+        return false;
+    }
+
+    /*
+     * Writes all full pages and the newly published partial page. External
+     * flash pads the physical remainder of the partial page with 0xFF.
+     */
+    if ( !FLASH_MANAGER_DrainResultPages() )
+    {
+        return false;
+    }
+
+    bool drain_complete;
+
+    taskENTER_CRITICAL();
+    drain_complete = RESULT_BUFFER_IsDrainComplete();
+    taskEXIT_CRITICAL();
+
+    if ( !drain_complete )
+    {
+        return false;
+    }
+
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return false;
+    }
+
+    state_is_valid = flash_manager_context.state == FLASH_MANAGER_STATE_FINALISING_RESULTS;
+
+    if ( state_is_valid )
+    {
+        taskENTER_CRITICAL();
+        flash_manager_context.state = FLASH_MANAGER_STATE_RESULTS_READY;
+        taskEXIT_CRITICAL();
+    }
+
+    FLASH_MANAGER_Unlock();
+
+    return state_is_valid;
+}
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
@@ -282,7 +424,10 @@ void FLASH_MANAGER_Task( void* parameters )
 
         if ( ( notifications & FLASH_MANAGER_NOTIFY_PREPARE_EXECUTION ) != 0U )
         {
-            /* Execution-preparation processing will be added next. */
+            if ( !FLASH_MANAGER_PrepareExecution() )
+            {
+                FLASH_MANAGER_EnterFault();
+            }
         }
 
         if ( ( notifications & FLASH_MANAGER_NOTIFY_FINALISE_RESULTS ) != 0U )
@@ -291,6 +436,10 @@ void FLASH_MANAGER_Task( void* parameters )
              * Finalisation must publish the final partial page before result
              * draining is considered complete.
              */
+            if ( !FLASH_MANAGER_FinaliseResults() )
+            {
+                FLASH_MANAGER_EnterFault();
+            }
         }
 
         if ( ( notifications & FLASH_MANAGER_NOTIFY_DRAIN_RESULTS ) != 0U )
@@ -342,6 +491,110 @@ bool FLASH_MANAGER_Init( void )
     flash_manager_context.state = FLASH_MANAGER_STATE_IDLE;
 
     return true;
+}
+
+bool FLASH_MANAGER_GetState( FlashManagerState_T* state )
+{
+    if ( state == NULL )
+    {
+        return false;
+    }
+
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return false;
+    }
+
+    *state = flash_manager_context.state;
+
+    FLASH_MANAGER_Unlock();
+
+    return true;
+}
+
+FlashManagerRequestStatus_T FLASH_MANAGER_RequestExecutionPreparation( void )
+{
+    if ( flash_manager_context.access_mutex == NULL )
+    {
+        return FLASH_MANAGER_REQUEST_NOT_INITIALISED;
+    }
+
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return FLASH_MANAGER_REQUEST_NOT_INITIALISED;
+    }
+
+    if ( flash_manager_context.state != FLASH_MANAGER_STATE_IDLE )
+    {
+        FLASH_MANAGER_Unlock();
+        return FLASH_MANAGER_REQUEST_INVALID_STATE;
+    }
+
+    TaskHandle_t task_handle = flash_manager_context.task_handle;
+
+    if ( task_handle == NULL )
+    {
+        FLASH_MANAGER_Unlock();
+        return FLASH_MANAGER_REQUEST_TASK_NOT_READY;
+    }
+
+    taskENTER_CRITICAL();
+    flash_manager_context.state = FLASH_MANAGER_STATE_PREPARING_EXECUTION;
+    taskEXIT_CRITICAL();
+
+    FLASH_MANAGER_Unlock();
+
+    if ( xTaskNotify( task_handle, FLASH_MANAGER_NOTIFY_PREPARE_EXECUTION, eSetBits ) != pdPASS )
+    {
+        FLASH_MANAGER_EnterFault();
+        return FLASH_MANAGER_REQUEST_NOTIFY_FAILED;
+    }
+
+    return FLASH_MANAGER_REQUEST_OK;
+}
+
+FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void )
+{
+    if ( flash_manager_context.access_mutex == NULL )
+    {
+        return FLASH_MANAGER_REQUEST_NOT_INITIALISED;
+    }
+
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return FLASH_MANAGER_REQUEST_NOT_INITIALISED;
+    }
+
+    if ( flash_manager_context.state != FLASH_MANAGER_STATE_EXECUTING )
+    {
+        FLASH_MANAGER_Unlock();
+        return FLASH_MANAGER_REQUEST_INVALID_STATE;
+    }
+
+    TaskHandle_t task_handle = flash_manager_context.task_handle;
+
+    if ( task_handle == NULL )
+    {
+        FLASH_MANAGER_Unlock();
+        return FLASH_MANAGER_REQUEST_TASK_NOT_READY;
+    }
+
+    /*
+     * Immediately prevent any late ISR call from reserving another result.
+     */
+    taskENTER_CRITICAL();
+    flash_manager_context.state = FLASH_MANAGER_STATE_FINALISING_RESULTS;
+    taskEXIT_CRITICAL();
+
+    FLASH_MANAGER_Unlock();
+
+    if ( xTaskNotify( task_handle, FLASH_MANAGER_NOTIFY_FINALISE_RESULTS, eSetBits ) != pdPASS )
+    {
+        FLASH_MANAGER_EnterFault();
+        return FLASH_MANAGER_REQUEST_NOTIFY_FAILED;
+    }
+
+    return FLASH_MANAGER_REQUEST_OK;
 }
 
 bool FLASH_MANAGER_ReserveResultRecordFromISR( uint16_t payload_capacity_bytes,
