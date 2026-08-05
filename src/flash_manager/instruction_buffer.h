@@ -29,6 +29,8 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+#include "flash_manager.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -63,6 +65,24 @@ typedef struct
     /** Opaque identifier used to reject stale completion calls. */
     uint32_t lease_id;
 } InstructionBufferPageFillLease_T;
+
+/**
+ * @brief Result of consuming the current instruction view.
+ */
+typedef enum
+{
+    /** The instruction was consumed without requiring a NAND refill. */
+    INSTRUCTION_BUFFER_CONSUME_OK = 0,
+
+    /** Consuming the instruction released storage while unread NAND data remains. */
+    INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED,
+
+    /** The supplied view did not match the active instruction view. */
+    INSTRUCTION_BUFFER_CONSUME_INVALID_VIEW,
+
+    /** Internal stream or page accounting was inconsistent. */
+    INSTRUCTION_BUFFER_CONSUME_INTERNAL_ERROR
+} InstructionBufferConsumeStatus_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -148,6 +168,55 @@ bool INSTRUCTION_BUFFER_AcquireFillPage( InstructionBufferPageFillLease_T* lease
  */
 bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T* lease,
                                           bool nand_read_succeeded );
+
+/**
+ * @brief Returns a read-only view of the next complete instruction.
+ *
+ * The consumer position is not advanced. Repeated calls return the same view
+ * until INSTRUCTION_BUFFER_ConsumeInstruction() succeeds.
+ *
+ * @param[out] instruction
+ *      Destination for the instruction view. A non-null output is cleared
+ *      before returning any status other than INSTRUCTION_BUFFER_PEEK_AVAILABLE.
+ *
+ * @return Current buffered instruction status.
+ *
+ * @note This function performs no NAND access and uses no RTOS primitives.
+ * @note The returned payload is contiguous even if its stored record crosses a
+ *       NAND page boundary.
+ * @note The view remains valid until consumed or PrepareRead is called again.
+ */
+InstructionBufferPeekStatus_T
+INSTRUCTION_BUFFER_PeekInstruction( FlashManagerInstructionView_T* instruction );
+
+/**
+ * @brief Consumes the instruction returned by the active successful peek.
+ *
+ * Advances by the stored header and payload length, invalidates the active
+ * view, and releases every page slot containing no unread instruction bytes.
+ *
+ * @param[in] instruction
+ *      Unmodified view returned by INSTRUCTION_BUFFER_PeekInstruction().
+ *
+ * @return Consumption status, including whether a refill is required.
+ *
+ * @note A successful consume makes the supplied view stale.
+ * @note This function performs no NAND access and uses no RTOS primitives.
+ */
+InstructionBufferConsumeStatus_T
+INSTRUCTION_BUFFER_ConsumeInstruction( const FlashManagerInstructionView_T* instruction );
+
+/**
+ * @brief Reports whether the configured instruction stream is fully consumed.
+ *
+ * @retval true
+ *      PrepareRead succeeded, the consumer reached the exact image end, and no
+ *      instruction view remains active.
+ * @retval false
+ *      No read session is prepared, instruction bytes remain, or a view is
+ *      active.
+ */
+bool INSTRUCTION_BUFFER_IsReadComplete( void );
 
 #ifdef __cplusplus
 }
