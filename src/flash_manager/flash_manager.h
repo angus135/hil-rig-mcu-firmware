@@ -52,12 +52,26 @@ typedef enum
 
 typedef struct
 {
+    /** Execution timestamp assigned before the result is committed. */
     uint32_t timestamp;
+
+    /** Number of payload bytes stored immediately after this header. */
     uint16_t payload_length;
+
+    /** Peripheral family that produced the payload. */
     uint8_t  peripheral_type;
+
+    /** Instance or channel within the selected peripheral family. */
     uint8_t  channel;
 } FlashManagerResultHeader_T;
 
+/**
+ * Temporary write access to flash-manager-owned result storage.
+ *
+ * The execution path may write at most payload_capacity bytes through payload,
+ * then must commit or cancel the lease. The complete lease must be returned
+ * unchanged so the result buffer can reject stale or modified leases.
+ */
 typedef struct
 {
     /**
@@ -66,7 +80,7 @@ typedef struct
     uint8_t* payload;
 
     /**
-     * Opaque ID used to validate commit or cancellation.
+     * Opaque ID used to validate commit or cancellation and reject stale leases.
      */
     uint32_t reservation_id;
 
