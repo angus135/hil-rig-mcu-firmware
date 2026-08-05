@@ -52,6 +52,7 @@ typedef enum
 
 typedef struct
 {
+    uint32_t timestamp;
     uint16_t payload_length;
     uint8_t  peripheral_type;
     uint8_t  channel;
