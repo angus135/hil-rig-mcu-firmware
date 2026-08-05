@@ -148,9 +148,8 @@ Recommended result slot states:
 ```text
 EMPTY
 FILLING
-READY
-FLASH_ACTIVE
-REUSABLE
+READY_TO_DRAIN
+DRAINING
 ```
 
 The execution manager may write only to an `EMPTY` or `FILLING` slot. Once a page is passed to `EXTERNAL_FLASH_WriteResultPage()`, it must not be modified until the function returns.
