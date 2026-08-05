@@ -4,10 +4,12 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Public interface for the Result Buffer module.
+ *      Internal interface for the flash-manager result logging buffer.
  *
  *  Notes:
- *      This is currently a placeholder; no result-buffer API is exposed.
+ *      The execution manager accesses this functionality through the public
+ *      flash_manager API. Result records are packed as a fixed header followed
+ *      by the committed payload bytes.
  ******************************************************************************/
 
 #ifndef RESULT_BUFFER_H
@@ -39,9 +41,16 @@ extern "C"
 
 typedef enum
 {
+    /** The record was committed without completing a NAND page. */
     RESULT_BUFFER_COMMIT_OK = 0,
+
+    /** The record was committed and completed one NAND page. */
     RESULT_BUFFER_COMMIT_PAGE_READY,
+
+    /** The supplied lease did not match the active reservation. */
     RESULT_BUFFER_COMMIT_INVALID_LEASE,
+
+    /** The actual payload length exceeded the reserved payload capacity. */
     RESULT_BUFFER_COMMIT_OVERFLOW
 } ResultBufferCommitStatus_T;
 
@@ -55,7 +64,13 @@ typedef enum
  *
  * External flash must be initialised before this function is called.
  *
- * @return true when the reported page geometry is supported.
+ * @retval true
+ *      External flash reported a supported non-zero page size and the result
+ *      buffer was reset using that geometry.
+ *
+ * @retval false
+ *      External flash information was unavailable or its page size could not
+ *      be represented by the statically allocated result buffers.
  */
 bool RESULT_BUFFER_Init( void );
 
@@ -64,6 +79,8 @@ bool RESULT_BUFFER_Init( void );
  *
  * Any outstanding lease becomes invalid. Stored bytes are not cleared because
  * they are inaccessible until overwritten and committed again.
+ *
+ * @note Initialised geometry is preserved across reset.
  */
 void RESULT_BUFFER_Reset( void );
 
@@ -76,9 +93,9 @@ void RESULT_BUFFER_Reset( void );
  *
  * If the record would cross the physical end of the circular result buffer,
  * the returned pointer refers to temporary wrap-scratch storage. Commit later
- * copies that record into the end and beginning of the circular buffer.
- * This adds one extra copy during commit when the circular buffer wraps. Normal reservations write
- * directly into the result ring.
+ * copies that record into the end and beginning of the circular buffer. This
+ * adds one extra copy during commit when the circular buffer wraps. Normal
+ * reservations write directly into the result ring.
  *
  * Reservation does not advance the committed-data cursor or make any bytes
  * available for NAND writing. The lease must be committed or cancelled before
@@ -139,16 +156,44 @@ bool RESULT_BUFFER_Reserve( uint16_t requested_payload_capacity, FlashManagerRes
 bool RESULT_BUFFER_Cancel( const FlashManagerResultLease_T* lease );
 
 /**
- * @brief Commits a previously reserved result buffer region, making it available for NAND write.
+ * @brief Commits the active result lease into the packed result stream.
  *
- * @param lease - The lease to commit.
- * @param timestamp - The timestamp to associate with the committed result record.
- * @param peripheral_type - The peripheral type to associate with the committed result record.
- * @param channel - The channel to associate with the committed result record.
- * @return RESULT_BUFFER_COMMIT_OK if the commit was successful and the reserved region is now
- * available for NAND write.
- * @return RESULT_BUFFER_COMMIT_INVALID_LEASE if the lease was invalid or could not be committed.
- * @return RESULT_BUFFER_COMMIT_OVERFLOW if committing the lease would exceed the buffer's capacity.
+ * Validates the lease and actual payload length, writes the fixed result
+ * header, and advances the circular buffer by the header plus actual payload
+ * length. Unused reserved payload capacity does not consume buffer space.
+ *
+ * For normal reservations, the driver payload is already in its final result
+ * ring location and only the header is copied. For a reservation that crossed
+ * the physical end of the ring, the header and payload are copied from wrap
+ * scratch into the end and beginning of the ring.
+ *
+ * @param[in] lease
+ *      Lease returned by RESULT_BUFFER_Reserve(). Its ID, pointer, and capacity
+ *      must match the active reservation.
+ * @param[in] timestamp
+ *      Execution timestamp stored in the result header.
+ * @param[in] peripheral_type
+ *      Logical peripheral type stored in the result header.
+ * @param[in] channel
+ *      Logical peripheral channel stored in the result header.
+ * @param[in] actual_payload_length
+ *      Number of payload bytes written by the execution driver. This may be
+ *      smaller than the reserved capacity but must not exceed it.
+ *
+ * @retval RESULT_BUFFER_COMMIT_OK
+ *      The record was committed without completing a NAND page.
+ * @retval RESULT_BUFFER_COMMIT_PAGE_READY
+ *      The record was committed and completed one NAND page.
+ * @retval RESULT_BUFFER_COMMIT_INVALID_LEASE
+ *      No reservation was active or the supplied lease did not match it.
+ * @retval RESULT_BUFFER_COMMIT_OVERFLOW
+ *      actual_payload_length exceeded the active reservation capacity. The
+ *      reservation remains active so it may be cancelled or retried.
+ *
+ * @note A successful commit invalidates the lease.
+ * @note A zero-length payload is stored as a header-only record.
+ * @note This function changes RAM ownership only; it does not write NAND or
+ *       notify the flash-manager task.
  */
 ResultBufferCommitStatus_T RESULT_BUFFER_Commit( const FlashManagerResultLease_T* lease,
                                                  uint32_t timestamp, uint8_t peripheral_type,
