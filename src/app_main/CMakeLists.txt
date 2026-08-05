@@ -33,6 +33,7 @@ target_link_libraries(app_main
         execution_manager
         background
         host_interface
+        flash_manager
 )
 
 # -----------------------------
