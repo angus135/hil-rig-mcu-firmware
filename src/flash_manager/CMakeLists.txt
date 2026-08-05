@@ -33,6 +33,8 @@ target_link_libraries(flash_manager
         project_warnings
         cubeide_hal
         rtos
+    PRIVATE
+        external_flash
 )
 
 # -----------------------------
