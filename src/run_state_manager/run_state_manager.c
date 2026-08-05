@@ -4,9 +4,14 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
+ *      Temporary runtime-state implementation pending conversion to the
+ *      Run State Manager RTOS coordinator.
  *
  *  Notes:
- *     None
+ *      The current timer and frequency logic duplicates execution_manager and
+ *      should be replaced by the asynchronous lifecycle described in
+ *      run_state_manager.h. The future task coordinates managers; it does not
+ *      execute peripheral operations from an ISR.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -66,7 +71,11 @@ static FrequencyMode_T frequency_mode = FREQUENCY_10KHZ;
 void RUN_STATE_MANAGER_Process_From_ISR( void )
 {
     HW_GPIO_Toggle_Output( USER_LED_RED_0 );
-    // TODO: This is where all the I/O will actually run, this needs to be quick
+    /*
+     * TODO: Remove this ISR execution path when the Run State Manager becomes
+     * an RTOS task. Timer-driven peripheral execution belongs to
+     * EXECUTION_MANAGER_Process_From_ISR().
+     */
 }
 
 void RUN_STATE_MANAGER_Start( void )
