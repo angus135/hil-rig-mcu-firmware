@@ -11,7 +11,7 @@
  *      The Flash Manager owns result-buffer memory. The execution timer ISR
  *      obtains temporary write leases, while the Flash Manager task drains
  *      completed NAND pages asynchronously after the ISR returns. Result
- *      retrieval and the complete runtime lifecycle API remain future work.
+ *      retrieval and instruction-buffer lifecycle support remain future work.
  ******************************************************************************/
 
 #ifndef FLASH_MANAGER_H
@@ -55,6 +55,22 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+/*
+ * Implemented result lifecycle:
+ *
+ * IDLE
+ *   -> RequestExecutionPreparation()
+ * PREPARING_EXECUTION
+ *   -> Flash Manager task starts the NAND session and resets the result buffer
+ * EXECUTING
+ *   -> Run State Manager stops the timer and waits for the ISR to return
+ *   -> RequestResultFinalisation()
+ * FINALISING_RESULTS
+ *   -> Flash Manager task publishes and drains the final partial page
+ * RESULTS_READY
+ *   -> Future host-transfer request
+ * TRANSFERRING_RESULTS
+ */
 typedef enum
 {
     /** Module startup has not completed. */
@@ -69,11 +85,17 @@ typedef enum
     /** NAND and RAM buffers are being prepared for a new execution session. */
     FLASH_MANAGER_STATE_PREPARING_EXECUTION,
 
-    /** The execution ISR may reserve, populate, and commit result records. */
+    /**
+     * The execution ISR may consume instructions and reserve, populate, and
+     * commit result records.
+     */
     FLASH_MANAGER_STATE_EXECUTING,
 
     /** Production has stopped and remaining result pages are being drained. */
     FLASH_MANAGER_STATE_FINALISING_RESULTS,
+
+    /** All result pages have been drained and the buffer is ready for host transfer. */
+    FLASH_MANAGER_STATE_RESULTS_READY,
 
     /** Stored results are being read and transferred to the host. */
     FLASH_MANAGER_STATE_TRANSFERRING_RESULTS,
@@ -82,6 +104,24 @@ typedef enum
     FLASH_MANAGER_STATE_FAULT
 
 } FlashManagerState_T;
+
+typedef enum
+{
+    /** The asynchronous lifecycle request was accepted. */
+    FLASH_MANAGER_REQUEST_OK = 0,
+
+    /** The request is not permitted from the current lifecycle state. */
+    FLASH_MANAGER_REQUEST_INVALID_STATE,
+
+    /** FLASH_MANAGER_Init() has not completed successfully. */
+    FLASH_MANAGER_REQUEST_NOT_INITIALISED,
+
+    /** The Flash Manager task has not registered its notification handle. */
+    FLASH_MANAGER_REQUEST_TASK_NOT_READY,
+
+    /** The task notification failed and the manager entered FAULT. */
+    FLASH_MANAGER_REQUEST_NOTIFY_FAILED
+} FlashManagerRequestStatus_T;
 
 typedef enum
 {
@@ -264,6 +304,50 @@ bool FLASH_MANAGER_CancelResultRecordFromISR( const FlashManagerResultWriteLease
 FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
     const FlashManagerResultWriteLease_T* lease, uint32_t timestamp, uint8_t peripheral_type,
     uint8_t channel, uint16_t actual_payload_length_bytes, BaseType_t* higher_priority_task_woken );
+
+/**
+ * @brief Requests asynchronous preparation of a new execution result session.
+ *
+ * The request changes IDLE to PREPARING_EXECUTION and notifies the Flash
+ * Manager task. That task starts a new external-flash result session, resets
+ * the RAM result buffer, and enters EXECUTING on success or FAULT on failure.
+ *
+ * @return Request acceptance status.
+ *
+ * @note Call from task context only.
+ * @note The Run State Manager must wait until FLASH_MANAGER_GetState() reports
+ *       EXECUTING before starting the execution timer.
+ */
+FlashManagerRequestStatus_T FLASH_MANAGER_RequestExecutionPreparation( void );
+
+/**
+ * @brief Requests asynchronous publication and draining of final results.
+ *
+ * The request changes EXECUTING to FINALISING_RESULTS and notifies the Flash
+ * Manager task. The task publishes any final partial page, drains all remaining
+ * pages to NAND, and enters RESULTS_READY on success or FAULT on failure.
+ *
+ * @return Request acceptance status.
+ *
+ * @note Call from task context only.
+ * @note Before calling, the Run State Manager must stop the execution timer and
+ *       ensure the active execution ISR has returned. No result write lease may
+ *       remain active.
+ */
+FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void );
+
+/**
+ * @brief Reads the current Flash Manager lifecycle state.
+ *
+ * @param state Destination for the current state.
+ *
+ * @return true when the state was read; false for a null destination or when
+ *         the manager synchronization object is unavailable.
+ *
+ * @note Call from task context only. This function may block on the manager
+ *       mutex and must never be called from an ISR.
+ */
+bool FLASH_MANAGER_GetState( FlashManagerState_T* state );
 
 #ifdef __cplusplus
 }
