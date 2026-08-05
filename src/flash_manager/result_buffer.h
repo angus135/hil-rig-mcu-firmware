@@ -9,7 +9,9 @@
  *  Notes:
  *      The execution manager accesses this functionality through the public
  *      flash_manager API. Result records are packed as a fixed header followed
- *      by the committed payload bytes.
+ *      by the committed payload bytes. The flash-manager layer must serialise
+ *      calls that change buffer state; record and drain leases may remain
+ *      active concurrently because they own distinct byte ranges.
  ******************************************************************************/
 
 #ifndef RESULT_BUFFER_H
@@ -89,6 +91,10 @@ typedef struct
  * @retval false
  *      External flash information was unavailable or its page size could not
  *      be represented by the statically allocated result buffers.
+ *
+ * @note Reinitialisation invalidates all existing leases and geometry before
+ *       querying external flash. It must not occur while a caller is using a
+ *       leased pointer.
  */
 bool RESULT_BUFFER_Init( void );
 
@@ -99,6 +105,8 @@ bool RESULT_BUFFER_Init( void );
  * they are inaccessible until overwritten and committed again.
  *
  * @note Initialised geometry is preserved across reset.
+ * @note The flash-manager layer must stop all users of leased pointers before
+ *       reset; invalidating a lease cannot stop an outstanding memory access.
  */
 void RESULT_BUFFER_Reset( void );
 
@@ -133,9 +141,10 @@ void RESULT_BUFFER_Reset( void );
  *      The reservation succeeded and lease contains valid writable storage.
  *
  * @retval false
- *      The buffer is not initialized, lease is NULL, another reservation is
- *      active, the requested capacity is invalid, or insufficient free buffer
- *      capacity exists.
+ *      The buffer is not initialised, production is finalised, lease is NULL,
+ *      another record reservation is active, the requested capacity is
+ *      invalid, insufficient free capacity exists, or the destination touches
+ *      a page not owned by the producer.
  *
  * @note Only one result write lease may be active at a time.
  * @note The caller must not write more than lease->payload_capacity_bytes bytes.
@@ -143,6 +152,7 @@ void RESULT_BUFFER_Reset( void );
  *       result-buffer reset.
  * @note The driver must not retain the payload pointer after completing its
  *       measurement copy.
+ * @note This function is not internally synchronised with drain operations.
  */
 bool RESULT_BUFFER_ReserveRecord( uint16_t                        requested_payload_capacity_bytes,
                                   FlashManagerResultWriteLease_T* lease );
@@ -173,6 +183,7 @@ bool RESULT_BUFFER_ReserveRecord( uint16_t                        requested_payl
  * @note A successfully cancelled lease is stale and must not be reused.
  * @note The caller-owned lease structure is not cleared because it is supplied
  *       through a const pointer.
+ * @note This function is not internally synchronised with drain operations.
  */
 bool RESULT_BUFFER_CancelRecord( const FlashManagerResultWriteLease_T* lease );
 
@@ -204,7 +215,8 @@ bool RESULT_BUFFER_CancelRecord( const FlashManagerResultWriteLease_T* lease );
  * @retval RESULT_BUFFER_RECORD_COMMIT_OK
  *      The record was committed without completing a NAND page.
  * @retval RESULT_BUFFER_RECORD_COMMIT_PAGE_READY_TO_DRAIN
- *      The record was committed and completed one NAND page.
+ *      The record was committed and made the oldest affected NAND page ready
+ *      for draining.
  * @retval RESULT_BUFFER_RECORD_COMMIT_INVALID_LEASE
  *      No reservation was active or the supplied lease did not match it.
  * @retval RESULT_BUFFER_RECORD_COMMIT_OVERFLOW
@@ -215,6 +227,7 @@ bool RESULT_BUFFER_CancelRecord( const FlashManagerResultWriteLease_T* lease );
  * @note A zero-length payload is stored as a header-only record.
  * @note This function changes RAM ownership only; it does not write NAND or
  *       notify the flash-manager task.
+ * @note This function is not internally synchronised with drain operations.
  */
 ResultBufferRecordCommitStatus_T
 RESULT_BUFFER_CommitRecord( const FlashManagerResultWriteLease_T* lease, uint32_t timestamp,
@@ -239,10 +252,13 @@ RESULT_BUFFER_CommitRecord( const FlashManagerResultWriteLease_T* lease, uint32_
  *      The oldest page was ready and is now owned by this lease.
  * @retval false
  *      The buffer is not initialised, lease is NULL, another drain lease is
- *      active, or the oldest page is not ready.
+ *      active, the oldest page is not ready, or its byte accounting is invalid.
  *
  * @note A full execution-time page has valid_length_bytes equal to the NAND page
  *       size. A shorter length is possible only after finalisation.
+ * @note This function is not internally synchronised with record operations.
+ * @note The returned page_data pointer remains valid and immutable until the
+ *       corresponding completion call or result-buffer reset.
  */
 bool RESULT_BUFFER_AcquireDrainPage( ResultBufferDrainLease_T* lease );
 
@@ -256,19 +272,24 @@ bool RESULT_BUFFER_AcquireDrainPage( ResultBufferDrainLease_T* lease );
  * @param[in] lease
  *      Lease returned by RESULT_BUFFER_AcquireDrainPage(). Its ID, pointer, and
  *      valid length must match the active drain lease.
- * @param[in] write_succeeded
+ * @param[in] nand_write_succeeded
  *      true after EXTERNAL_FLASH_WriteResultPage() succeeds; false after it
  *      fails.
  *
  * @retval true
  *      The lease was valid and the success or failure transition was applied.
  * @retval false
- *      No drain lease was active or the supplied lease did not match it.
+ *      No drain lease was active, the supplied lease did not match it, or a
+ *      successful write could not be reconciled with pending-byte accounting.
  *
  * @note The supplied lease becomes stale after any successful completion call,
- *       including when write_succeeded is false.
+ *       including when nand_write_succeeded is false.
+ * @note This function is not internally synchronised with record operations.
+ * @note An internal accounting failure leaves the valid lease and page in the
+ *       DRAINING state for fault handling or reset.
  */
-bool RESULT_BUFFER_CompleteDrain( const ResultBufferDrainLease_T* lease, bool write_succeeded );
+bool RESULT_BUFFER_CompleteDrain( const ResultBufferDrainLease_T* lease,
+                                  bool                            nand_write_succeeded );
 
 /**
  * @brief Stops result production and publishes the final partial NAND page.
@@ -281,11 +302,29 @@ bool RESULT_BUFFER_CompleteDrain( const ResultBufferDrainLease_T* lease, bool wr
  * @retval true
  *      The buffer is finalised, or had already been finalised.
  * @retval false
- *      The buffer is not initialised or a record reservation is active.
+ *      The buffer is not initialised, a record reservation is active, or the
+ *      final page bookkeeping is inconsistent.
  *
  * @note This function changes RAM ownership only and does not write NAND.
+ * @note This function is not internally synchronised with record or drain
+ *       operations.
  */
 bool RESULT_BUFFER_Finalise( void );
+
+/**
+ * @brief Reports whether a finalised result stream has been fully drained.
+ *
+ * @retval true
+ *      Finalisation has occurred, no committed bytes remain pending for NAND,
+ *      and neither a record nor drain lease is active.
+ * @retval false
+ *      The buffer is not initialised, production has not been finalised,
+ *      committed bytes remain, or a lease is still active.
+ *
+ * @note This is an instantaneous state query. The flash-manager layer must
+ *       serialise it with state-changing result-buffer calls.
+ */
+bool RESULT_BUFFER_IsDrainComplete( void );
 
 #ifdef __cplusplus
 }
