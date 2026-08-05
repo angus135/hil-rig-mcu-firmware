@@ -71,6 +71,15 @@ typedef uint32_t TickType_t;
 
 #define pdMS_TO_TICKS( x ) ( x )
 
+/*
+ * Unit tests execute in one host thread, so these model the production
+ * critical-section interface without masking host interrupts. Tests that need
+ * to verify concurrency boundaries should replace them with instrumented
+ * doubles rather than relying on these no-op definitions.
+ */
+#define taskENTER_CRITICAL() ( ( void )0 )
+#define taskEXIT_CRITICAL() ( ( void )0 )
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------

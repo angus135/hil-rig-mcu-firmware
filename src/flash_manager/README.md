@@ -1,8 +1,9 @@
 # Flash Manager Design Notes
 
 `result_buffer.c` implements packed result-record production and page draining.
-The runtime task in `flash_manager.c`, instruction buffering, public wrappers,
-and result retrieval remain to be integrated.
+`flash_manager.c` now provides the ISR-facing result write API and the RTOS task
+path that drains ready pages to NAND. Runtime lifecycle commands, instruction
+buffering, result retrieval, and application startup remain to be integrated.
 
 The flash manager is the only normal runtime task that should call `external_flash`.
 
@@ -45,9 +46,10 @@ Two slots can work, but gives less tolerance to flash latency.
 
 ## APIs To Use
 
-### Preferred execution time APIs
+### Flash-manager storage APIs
 
-Use these in the normal execution path:
+The Flash Manager task uses these page-scoped external-flash APIs. The execution
+manager does not call them directly:
 
 ```c
 EXTERNAL_FLASH_ReadInstructionPage(instruction_offset, instruction_page_buffer, length);
@@ -123,13 +125,20 @@ into a wrapped circular buffer region.
 
 ## Result Queue
 
-The execution path reserves one packed record at a time:
+The execution timer ISR reserves one packed record at a time through the public
+Flash Manager API:
 
 ```c
-RESULT_BUFFER_ReserveRecord(payload_capacity_bytes, &write_lease);
-RESULT_BUFFER_CommitRecord(&write_lease, timestamp, peripheral_type,
-                           channel, actual_payload_length_bytes);
+FLASH_MANAGER_ReserveResultRecordFromISR(payload_capacity_bytes, &write_lease);
+FLASH_MANAGER_CommitResultRecordFromISR(&write_lease, timestamp,
+                                        peripheral_type, channel,
+                                        actual_payload_length_bytes,
+                                        &higher_priority_task_woken);
 ```
+
+The outer timer ISR accumulates `higher_priority_task_woken` and calls
+`portYIELD_FROM_ISR()` only after the complete execution sequence finishes. A
+ready task can therefore run after ISR return, never partway through execution.
 
 Each stored record contains `FlashManagerResultHeader_T` followed immediately
 by the actual payload bytes. Unused reservation capacity is not committed.
@@ -170,11 +179,14 @@ until the function returns.
 ### Concurrency contract
 
 One record write lease and one drain lease may exist simultaneously because
-they own different regions. Result-buffer functions do not contain an RTOS
-mutex; the future public flash-manager wrappers and task must serialise calls
-that mutate or inspect result-buffer state. Payload filling occurs outside that
-short bookkeeping lock, protected by the active record reservation. A
-`DRAINING` page remains immutable until `RESULT_BUFFER_CompleteDrain()`.
+they own different regions. The execution ISR is the only record producer and
+the Flash Manager task is the only NAND drain consumer. ISR-facing reserve,
+cancel, and commit calls never take a mutex or block. Task-side drain acquire
+and completion operations use short critical sections so the execution ISR
+cannot interrupt buffer metadata changes. NAND programming occurs outside the
+critical section with interrupts enabled. Payload filling is protected by the
+active record reservation, and a `DRAINING` page remains immutable until
+`RESULT_BUFFER_CompleteDrain()`.
 
 ---
 
@@ -187,8 +199,10 @@ EXTERNAL_FLASH_Init();
 ```
 
 Firmware startup makes this call after adopting the generated QSPI handle.
-Integration of the upload, session, task-driven result drain, instruction
-refill, and result transfer calls is still required in the placeholder manager.
+`FLASH_MANAGER_Init()` must then initialise the manager mutex and result buffer
+before the Flash Manager task is allowed to run. The task creation remains
+commented out in `app_main.c` until that startup order and the lifecycle API are
+connected.
 
 Before each execution:
 
@@ -272,7 +286,14 @@ Future policy:
 
 ## Error Handling
 
-If any `external_flash` call fails, the flash manager should:
+If a result-page write or drain completion fails, the current implementation:
+
+- Preserves buffer ownership for diagnosis or explicit recovery.
+- Stops the active drain pass instead of retrying automatically.
+- Enters `FLASH_MANAGER_STATE_FAULT`.
+- Ignores queued drain work while faulted.
+
+The remaining lifecycle integration must also:
 
 - Stop normal execution flow.
 - Preserve the returned error code.
@@ -296,7 +317,8 @@ Important statuses to handle:
 ## Key Rules
 
 - The flash manager owns the instruction and result RAM buffers.
-- The execution manager never calls `external_flash`.
+- The execution ISR uses only the non-blocking Flash Manager result API.
+- The execution manager never calls `external_flash` or takes an RTOS mutex.
 - Use `EXTERNAL_FLASH_ReadInstructionPage()` for instruction queue refills.
 - Use `EXTERNAL_FLASH_WriteResultPage()` for result page writes.
 - Use page sized slots to avoid DMA wraparound.
