@@ -99,10 +99,10 @@ protected:
         ASSERT_TRUE( RESULT_BUFFER_Init() );
     }
 
-    static FlashManagerResultHeader_T ReadHeader( uint32_t offset )
+    static FlashManagerResultHeader_T ReadHeader( uint32_t offset_bytes )
     {
         FlashManagerResultHeader_T header = {};
-        std::memcpy( &header, &result_buffer_storage[offset], sizeof( header ) );
+        std::memcpy( &header, &result_buffer_storage[offset_bytes], sizeof( header ) );
         return header;
     }
 };
@@ -120,9 +120,9 @@ TEST_F( ResultBufferTest, InitUsesExternalFlashGeometryAndResetsState )
     EXPECT_TRUE( result_buffer_context.is_initialised );
     EXPECT_EQ( TEST_PAGE_SIZE_BYTES, result_buffer_context.page_size_bytes );
     EXPECT_EQ( TEST_CAPACITY_BYTES, result_buffer_context.capacity_bytes );
-    EXPECT_EQ( 0U, result_buffer_context.write_offset );
-    EXPECT_EQ( 0U, result_buffer_context.occupied_bytes );
-    EXPECT_EQ( 1U, result_buffer_context.next_reservation_id );
+    EXPECT_EQ( 0U, result_buffer_context.producer_offset );
+    EXPECT_EQ( 0U, result_buffer_context.pending_nand_bytes );
+    EXPECT_EQ( 1U, result_buffer_context.next_record_lease_id );
 
     for ( ResultBufferPageState_T state : result_buffer_context.page_states )
     {
@@ -147,17 +147,17 @@ TEST_F( ResultBufferTest, InitRejectsUnavailableOrUnsupportedGeometry )
 TEST_F( ResultBufferTest, ResetInvalidatesLeaseAndPreservesGeometry )
 {
     Initialise();
-    FlashManagerResultLease_T lease = {};
-    ASSERT_TRUE( RESULT_BUFFER_Reserve( 4U, &lease ) );
+    FlashManagerResultWriteLease_T lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( 4U, &lease ) );
 
     RESULT_BUFFER_Reset();
 
-    EXPECT_FALSE( RESULT_BUFFER_Cancel( &lease ) );
+    EXPECT_FALSE( RESULT_BUFFER_CancelRecord( &lease ) );
     EXPECT_TRUE( result_buffer_context.is_initialised );
     EXPECT_EQ( TEST_PAGE_SIZE_BYTES, result_buffer_context.page_size_bytes );
     EXPECT_EQ( TEST_CAPACITY_BYTES, result_buffer_context.capacity_bytes );
-    EXPECT_EQ( 0U, result_buffer_context.write_offset );
-    EXPECT_EQ( 0U, result_buffer_context.occupied_bytes );
+    EXPECT_EQ( 0U, result_buffer_context.producer_offset );
+    EXPECT_EQ( 0U, result_buffer_context.pending_nand_bytes );
 }
 
 /**-----------------------------------------------------------------------------
@@ -165,63 +165,63 @@ TEST_F( ResultBufferTest, ResetInvalidatesLeaseAndPreservesGeometry )
  *------------------------------------------------------------------------------
  */
 
-TEST_F( ResultBufferTest, ReserveRejectsInvalidRequestsAndClearsLease )
+TEST_F( ResultBufferTest, ReserveRecordRejectsInvalidRequestsAndClearsLease )
 {
-    FlashManagerResultLease_T lease = {};
-    lease.payload                    = result_buffer_storage;
-    lease.reservation_id             = 42U;
-    lease.payload_capacity           = 7U;
+    FlashManagerResultWriteLease_T lease = {};
+    lease.payload                  = result_buffer_storage;
+    lease.lease_id                 = 42U;
+    lease.payload_capacity_bytes         = 7U;
 
-    EXPECT_FALSE( RESULT_BUFFER_Reserve( 1U, &lease ) );
+    EXPECT_FALSE( RESULT_BUFFER_ReserveRecord( 1U, &lease ) );
     EXPECT_EQ( nullptr, lease.payload );
-    EXPECT_EQ( 0U, lease.reservation_id );
-    EXPECT_EQ( 0U, lease.payload_capacity );
+    EXPECT_EQ( 0U, lease.lease_id );
+    EXPECT_EQ( 0U, lease.payload_capacity_bytes );
 
     Initialise();
-    EXPECT_FALSE( RESULT_BUFFER_Reserve( 0U, &lease ) );
-    EXPECT_FALSE( RESULT_BUFFER_Reserve( static_cast<uint16_t>( TEST_MAX_PAYLOAD_BYTES + 1U ),
-                                         &lease ) );
-    EXPECT_FALSE( RESULT_BUFFER_Reserve( 1U, nullptr ) );
+    EXPECT_FALSE( RESULT_BUFFER_ReserveRecord( 0U, &lease ) );
+    EXPECT_FALSE( RESULT_BUFFER_ReserveRecord(
+        static_cast<uint16_t>( TEST_MAX_PAYLOAD_BYTES + 1U ), &lease ) );
+    EXPECT_FALSE( RESULT_BUFFER_ReserveRecord( 1U, nullptr ) );
 }
 
-TEST_F( ResultBufferTest, ReserveReturnsDirectPayloadAndAllowsOnlyOneActiveLease )
+TEST_F( ResultBufferTest, ReserveRecordReturnsDirectPayloadAndAllowsOnlyOneActiveLease )
 {
     Initialise();
-    FlashManagerResultLease_T first_lease  = {};
-    FlashManagerResultLease_T second_lease = {};
+    FlashManagerResultWriteLease_T first_lease  = {};
+    FlashManagerResultWriteLease_T second_lease = {};
 
-    ASSERT_TRUE( RESULT_BUFFER_Reserve( 8U, &first_lease ) );
+    ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( 8U, &first_lease ) );
 
     EXPECT_EQ( &result_buffer_storage[sizeof( FlashManagerResultHeader_T )],
                first_lease.payload );
-    EXPECT_EQ( 1U, first_lease.reservation_id );
-    EXPECT_EQ( 8U, first_lease.payload_capacity );
-    EXPECT_TRUE( result_buffer_context.active_reservation.is_active );
-    EXPECT_FALSE( result_buffer_context.active_reservation.uses_wrap_scratch );
+    EXPECT_EQ( 1U, first_lease.lease_id );
+    EXPECT_EQ( 8U, first_lease.payload_capacity_bytes );
+    EXPECT_TRUE( result_buffer_context.active_record_reservation.is_active );
+    EXPECT_FALSE( result_buffer_context.active_record_reservation.uses_wrap_scratch );
 
-    EXPECT_FALSE( RESULT_BUFFER_Reserve( 4U, &second_lease ) );
+    EXPECT_FALSE( RESULT_BUFFER_ReserveRecord( 4U, &second_lease ) );
     EXPECT_EQ( nullptr, second_lease.payload );
 }
 
-TEST_F( ResultBufferTest, CancelValidatesLeaseWithoutConsumingBufferSpace )
+TEST_F( ResultBufferTest, CancelRecordValidatesLeaseWithoutConsumingBufferSpace )
 {
     Initialise();
-    FlashManagerResultLease_T lease = {};
-    ASSERT_TRUE( RESULT_BUFFER_Reserve( 8U, &lease ) );
+    FlashManagerResultWriteLease_T lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( 8U, &lease ) );
 
-    FlashManagerResultLease_T modified_lease = lease;
-    modified_lease.reservation_id++;
-    EXPECT_FALSE( RESULT_BUFFER_Cancel( &modified_lease ) );
-    EXPECT_TRUE( result_buffer_context.active_reservation.is_active );
+    FlashManagerResultWriteLease_T modified_lease = lease;
+    modified_lease.lease_id++;
+    EXPECT_FALSE( RESULT_BUFFER_CancelRecord( &modified_lease ) );
+    EXPECT_TRUE( result_buffer_context.active_record_reservation.is_active );
 
-    EXPECT_TRUE( RESULT_BUFFER_Cancel( &lease ) );
-    EXPECT_FALSE( RESULT_BUFFER_Cancel( &lease ) );
-    EXPECT_EQ( 0U, result_buffer_context.write_offset );
-    EXPECT_EQ( 0U, result_buffer_context.occupied_bytes );
+    EXPECT_TRUE( RESULT_BUFFER_CancelRecord( &lease ) );
+    EXPECT_FALSE( RESULT_BUFFER_CancelRecord( &lease ) );
+    EXPECT_EQ( 0U, result_buffer_context.producer_offset );
+    EXPECT_EQ( 0U, result_buffer_context.pending_nand_bytes );
 
-    FlashManagerResultLease_T next_lease = {};
-    ASSERT_TRUE( RESULT_BUFFER_Reserve( 8U, &next_lease ) );
-    EXPECT_NE( lease.reservation_id, next_lease.reservation_id );
+    FlashManagerResultWriteLease_T next_lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( 8U, &next_lease ) );
+    EXPECT_NE( lease.lease_id, next_lease.lease_id );
 }
 
 /**-----------------------------------------------------------------------------
@@ -229,100 +229,100 @@ TEST_F( ResultBufferTest, CancelValidatesLeaseWithoutConsumingBufferSpace )
  *------------------------------------------------------------------------------
  */
 
-TEST_F( ResultBufferTest, CommitRejectsInvalidLeaseAndRetainsOverflowedReservation )
+TEST_F( ResultBufferTest, CommitRecordRejectsInvalidLeaseAndRetainsOverflowedReservation )
 {
     Initialise();
-    FlashManagerResultLease_T lease = {};
+    FlashManagerResultWriteLease_T lease = {};
 
-    EXPECT_EQ( RESULT_BUFFER_COMMIT_INVALID_LEASE,
-               RESULT_BUFFER_Commit( &lease, 1U, 2U, 3U, 0U ) );
+    EXPECT_EQ( RESULT_BUFFER_RECORD_COMMIT_INVALID_LEASE,
+               RESULT_BUFFER_CommitRecord( &lease, 1U, 2U, 3U, 0U ) );
 
-    ASSERT_TRUE( RESULT_BUFFER_Reserve( 4U, &lease ) );
-    EXPECT_EQ( RESULT_BUFFER_COMMIT_OVERFLOW,
-               RESULT_BUFFER_Commit( &lease, 1U, 2U, 3U, 5U ) );
-    EXPECT_TRUE( result_buffer_context.active_reservation.is_active );
-    EXPECT_TRUE( RESULT_BUFFER_Cancel( &lease ) );
+    ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( 4U, &lease ) );
+    EXPECT_EQ( RESULT_BUFFER_RECORD_COMMIT_OVERFLOW,
+               RESULT_BUFFER_CommitRecord( &lease, 1U, 2U, 3U, 5U ) );
+    EXPECT_TRUE( result_buffer_context.active_record_reservation.is_active );
+    EXPECT_TRUE( RESULT_BUFFER_CancelRecord( &lease ) );
 }
 
-TEST_F( ResultBufferTest, CommitStoresHeaderAndOnlyTheActualPayloadBytes )
+TEST_F( ResultBufferTest, CommitRecordStoresHeaderAndOnlyTheActualPayloadBytes )
 {
     Initialise();
-    FlashManagerResultLease_T lease = {};
-    ASSERT_TRUE( RESULT_BUFFER_Reserve( 8U, &lease ) );
+    FlashManagerResultWriteLease_T lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( 8U, &lease ) );
 
     const std::array<uint8_t, 4U> payload = { 0x11U, 0x22U, 0x33U, 0x44U };
     std::memcpy( lease.payload, payload.data(), payload.size() );
 
-    EXPECT_EQ( RESULT_BUFFER_COMMIT_OK,
-               RESULT_BUFFER_Commit( &lease, 0x12345678U, 6U, 9U,
-                                     static_cast<uint16_t>( payload.size() ) ) );
+    EXPECT_EQ( RESULT_BUFFER_RECORD_COMMIT_OK,
+               RESULT_BUFFER_CommitRecord( &lease, 0x12345678U, 6U, 9U,
+                                           static_cast<uint16_t>( payload.size() ) ) );
 
     const FlashManagerResultHeader_T header = ReadHeader( 0U );
     EXPECT_EQ( 0x12345678U, header.timestamp );
-    EXPECT_EQ( payload.size(), header.payload_length );
+    EXPECT_EQ( payload.size(), header.payload_length_bytes );
     EXPECT_EQ( 6U, header.peripheral_type );
     EXPECT_EQ( 9U, header.channel );
-    EXPECT_EQ( 12U, result_buffer_context.write_offset );
-    EXPECT_EQ( 12U, result_buffer_context.occupied_bytes );
+    EXPECT_EQ( 12U, result_buffer_context.producer_offset );
+    EXPECT_EQ( 12U, result_buffer_context.pending_nand_bytes );
     EXPECT_EQ( RESULT_BUFFER_PAGE_FILLING, result_buffer_context.page_states[0] );
-    EXPECT_FALSE( result_buffer_context.active_reservation.is_active );
+    EXPECT_FALSE( result_buffer_context.active_record_reservation.is_active );
     EXPECT_EQ( 0, std::memcmp( &result_buffer_storage[sizeof( header )], payload.data(),
                                payload.size() ) );
 }
 
-TEST_F( ResultBufferTest, CommitReturnsPageReadyWhenRecordCompletesPage )
+TEST_F( ResultBufferTest, CommitRecordReturnsPageReadyWhenRecordCompletesPage )
 {
     Initialise();
-    FlashManagerResultLease_T lease = {};
-    ASSERT_TRUE( RESULT_BUFFER_Reserve( TEST_MAX_PAYLOAD_BYTES, &lease ) );
+    FlashManagerResultWriteLease_T lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( TEST_MAX_PAYLOAD_BYTES, &lease ) );
     std::memset( lease.payload, 0x5AU, TEST_MAX_PAYLOAD_BYTES );
 
-    EXPECT_EQ( RESULT_BUFFER_COMMIT_PAGE_READY,
-               RESULT_BUFFER_Commit( &lease, 1U, 2U, 3U, TEST_MAX_PAYLOAD_BYTES ) );
-    EXPECT_EQ( TEST_PAGE_SIZE_BYTES, result_buffer_context.write_offset );
-    EXPECT_EQ( TEST_PAGE_SIZE_BYTES, result_buffer_context.occupied_bytes );
-    EXPECT_EQ( RESULT_BUFFER_PAGE_READY, result_buffer_context.page_states[0] );
+    EXPECT_EQ( RESULT_BUFFER_RECORD_COMMIT_PAGE_READY_TO_DRAIN,
+               RESULT_BUFFER_CommitRecord( &lease, 1U, 2U, 3U, TEST_MAX_PAYLOAD_BYTES ) );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES, result_buffer_context.producer_offset );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES, result_buffer_context.pending_nand_bytes );
+    EXPECT_EQ( RESULT_BUFFER_PAGE_READY_TO_DRAIN, result_buffer_context.page_states[0] );
 }
 
-TEST_F( ResultBufferTest, CommitCanCompleteOnePageAndContinueRecordInNextPage )
+TEST_F( ResultBufferTest, CommitRecordCanCompleteOnePageAndContinueRecordInNextPage )
 {
     Initialise();
-    FlashManagerResultLease_T first_lease = {};
-    ASSERT_TRUE( RESULT_BUFFER_Reserve( 20U, &first_lease ) );
-    ASSERT_EQ( RESULT_BUFFER_COMMIT_OK,
-               RESULT_BUFFER_Commit( &first_lease, 1U, 2U, 3U, 20U ) );
+    FlashManagerResultWriteLease_T first_lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( 20U, &first_lease ) );
+    ASSERT_EQ( RESULT_BUFFER_RECORD_COMMIT_OK,
+               RESULT_BUFFER_CommitRecord( &first_lease, 1U, 2U, 3U, 20U ) );
 
-    FlashManagerResultLease_T crossing_lease = {};
-    ASSERT_TRUE( RESULT_BUFFER_Reserve( 8U, &crossing_lease ) );
+    FlashManagerResultWriteLease_T crossing_lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( 8U, &crossing_lease ) );
     EXPECT_EQ( &result_buffer_storage[28U + sizeof( FlashManagerResultHeader_T )],
                crossing_lease.payload );
     std::memset( crossing_lease.payload, 0xA5, 8U );
 
-    EXPECT_EQ( RESULT_BUFFER_COMMIT_PAGE_READY,
-               RESULT_BUFFER_Commit( &crossing_lease, 4U, 5U, 6U, 8U ) );
-    EXPECT_EQ( 44U, result_buffer_context.write_offset );
-    EXPECT_EQ( 44U, result_buffer_context.occupied_bytes );
-    EXPECT_EQ( RESULT_BUFFER_PAGE_READY, result_buffer_context.page_states[0] );
+    EXPECT_EQ( RESULT_BUFFER_RECORD_COMMIT_PAGE_READY_TO_DRAIN,
+               RESULT_BUFFER_CommitRecord( &crossing_lease, 4U, 5U, 6U, 8U ) );
+    EXPECT_EQ( 44U, result_buffer_context.producer_offset );
+    EXPECT_EQ( 44U, result_buffer_context.pending_nand_bytes );
+    EXPECT_EQ( RESULT_BUFFER_PAGE_READY_TO_DRAIN, result_buffer_context.page_states[0] );
     EXPECT_EQ( RESULT_BUFFER_PAGE_FILLING, result_buffer_context.page_states[1] );
 }
 
-TEST_F( ResultBufferTest, CommitCopiesScratchRecordAcrossPhysicalRingWrap )
+TEST_F( ResultBufferTest, CommitRecordCopiesScratchRecordAcrossPhysicalRingWrap )
 {
     Initialise();
-    result_buffer_context.write_offset   = TEST_CAPACITY_BYTES - 4U;
-    result_buffer_context.occupied_bytes = TEST_PAGE_SIZE_BYTES - 4U;
-    result_buffer_context.page_states[2] = RESULT_BUFFER_PAGE_FILLING;
+    result_buffer_context.producer_offset    = TEST_CAPACITY_BYTES - 4U;
+    result_buffer_context.pending_nand_bytes = TEST_PAGE_SIZE_BYTES - 4U;
+    result_buffer_context.page_states[2]     = RESULT_BUFFER_PAGE_FILLING;
 
-    FlashManagerResultLease_T lease = {};
-    ASSERT_TRUE( RESULT_BUFFER_Reserve( 8U, &lease ) );
+    FlashManagerResultWriteLease_T lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( 8U, &lease ) );
     ASSERT_EQ( &result_buffer_wrap_scratch[sizeof( FlashManagerResultHeader_T )], lease.payload );
 
     const std::array<uint8_t, 8U> payload = { 1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U };
     std::memcpy( lease.payload, payload.data(), payload.size() );
 
-    EXPECT_EQ( RESULT_BUFFER_COMMIT_PAGE_READY,
-               RESULT_BUFFER_Commit( &lease, 123U, 7U, 8U,
-                                     static_cast<uint16_t>( payload.size() ) ) );
+    EXPECT_EQ( RESULT_BUFFER_RECORD_COMMIT_PAGE_READY_TO_DRAIN,
+               RESULT_BUFFER_CommitRecord( &lease, 123U, 7U, 8U,
+                                           static_cast<uint16_t>( payload.size() ) ) );
 
     std::array<uint8_t, 16U> record = {};
     std::memcpy( record.data(), &result_buffer_storage[TEST_CAPACITY_BYTES - 4U], 4U );
@@ -331,49 +331,50 @@ TEST_F( ResultBufferTest, CommitCopiesScratchRecordAcrossPhysicalRingWrap )
     FlashManagerResultHeader_T header = {};
     std::memcpy( &header, record.data(), sizeof( header ) );
     EXPECT_EQ( 123U, header.timestamp );
-    EXPECT_EQ( payload.size(), header.payload_length );
+    EXPECT_EQ( payload.size(), header.payload_length_bytes );
     EXPECT_EQ( 7U, header.peripheral_type );
     EXPECT_EQ( 8U, header.channel );
     EXPECT_EQ( 0, std::memcmp( &record[sizeof( header )], payload.data(), payload.size() ) );
-    EXPECT_EQ( 12U, result_buffer_context.write_offset );
-    EXPECT_EQ( 44U, result_buffer_context.occupied_bytes );
-    EXPECT_EQ( RESULT_BUFFER_PAGE_READY, result_buffer_context.page_states[2] );
+    EXPECT_EQ( 12U, result_buffer_context.producer_offset );
+    EXPECT_EQ( 44U, result_buffer_context.pending_nand_bytes );
+    EXPECT_EQ( RESULT_BUFFER_PAGE_READY_TO_DRAIN, result_buffer_context.page_states[2] );
     EXPECT_EQ( RESULT_BUFFER_PAGE_FILLING, result_buffer_context.page_states[0] );
 }
 
-TEST_F( ResultBufferTest, ShortScratchCommitDoesNotCopyPastPhysicalEnd )
+TEST_F( ResultBufferTest, ShortScratchRecordCommitDoesNotCopyPastPhysicalEnd )
 {
     Initialise();
-    result_buffer_context.write_offset   = TEST_CAPACITY_BYTES - 12U;
-    result_buffer_context.occupied_bytes = 20U;
-    result_buffer_context.page_states[2] = RESULT_BUFFER_PAGE_FILLING;
-    result_buffer_storage[0]             = 0xCCU;
+    result_buffer_context.producer_offset    = TEST_CAPACITY_BYTES - 12U;
+    result_buffer_context.pending_nand_bytes = 20U;
+    result_buffer_context.page_states[2]     = RESULT_BUFFER_PAGE_FILLING;
+    result_buffer_storage[0]                 = 0xCCU;
 
-    FlashManagerResultLease_T lease = {};
-    ASSERT_TRUE( RESULT_BUFFER_Reserve( 8U, &lease ) );
+    FlashManagerResultWriteLease_T lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( 8U, &lease ) );
     ASSERT_EQ( &result_buffer_wrap_scratch[sizeof( FlashManagerResultHeader_T )], lease.payload );
     lease.payload[0] = 0xAAU;
     lease.payload[1] = 0xBBU;
 
-    EXPECT_EQ( RESULT_BUFFER_COMMIT_OK, RESULT_BUFFER_Commit( &lease, 1U, 2U, 3U, 2U ) );
-    EXPECT_EQ( TEST_CAPACITY_BYTES - 2U, result_buffer_context.write_offset );
-    EXPECT_EQ( 30U, result_buffer_context.occupied_bytes );
+    EXPECT_EQ( RESULT_BUFFER_RECORD_COMMIT_OK,
+               RESULT_BUFFER_CommitRecord( &lease, 1U, 2U, 3U, 2U ) );
+    EXPECT_EQ( TEST_CAPACITY_BYTES - 2U, result_buffer_context.producer_offset );
+    EXPECT_EQ( 30U, result_buffer_context.pending_nand_bytes );
     EXPECT_EQ( 0xCCU, result_buffer_storage[0] );
 }
 
-TEST_F( ResultBufferTest, ReserveFailsWhenCommittedDataOccupiesEntireRing )
+TEST_F( ResultBufferTest, ReserveRecordFailsWhenCommittedDataOccupiesEntireRing )
 {
     Initialise();
 
     for ( uint32_t page = 0U; page < 3U; page++ )
     {
-        FlashManagerResultLease_T lease = {};
-        ASSERT_TRUE( RESULT_BUFFER_Reserve( TEST_MAX_PAYLOAD_BYTES, &lease ) );
-        ASSERT_EQ( RESULT_BUFFER_COMMIT_PAGE_READY,
-                   RESULT_BUFFER_Commit( &lease, page, 1U, 1U, TEST_MAX_PAYLOAD_BYTES ) );
+        FlashManagerResultWriteLease_T lease = {};
+        ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( TEST_MAX_PAYLOAD_BYTES, &lease ) );
+        ASSERT_EQ( RESULT_BUFFER_RECORD_COMMIT_PAGE_READY_TO_DRAIN,
+                   RESULT_BUFFER_CommitRecord( &lease, page, 1U, 1U, TEST_MAX_PAYLOAD_BYTES ) );
     }
 
-    EXPECT_EQ( TEST_CAPACITY_BYTES, result_buffer_context.occupied_bytes );
-    FlashManagerResultLease_T lease = {};
-    EXPECT_FALSE( RESULT_BUFFER_Reserve( 1U, &lease ) );
+    EXPECT_EQ( TEST_CAPACITY_BYTES, result_buffer_context.pending_nand_bytes );
+    FlashManagerResultWriteLease_T lease = {};
+    EXPECT_FALSE( RESULT_BUFFER_ReserveRecord( 1U, &lease ) );
 }
