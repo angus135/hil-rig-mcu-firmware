@@ -4,13 +4,14 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Implementation for the Result Buffer module.
+ *      Implementation of the Flash Manager result logging buffer.
  *
  *  Notes:
  *      Result records are packed into a page-backed circular byte buffer. A
  *      record write lease gives the execution path contiguous payload storage
  *      while an independent drain lease protects a page-level NAND transfer.
- *      State-transition calls must be serialised by the flash-manager layer.
+ *      State-transition calls must be serialised by the Flash Manager. This
+ *      module does not contain RTOS synchronisation or NAND-access policy.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -19,17 +20,20 @@
  */
 #include "result_buffer.h"
 #include "external_flash.h"
-#include <stdint.h>
+
 #include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
+
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
 
 /*
- * Three pages allow one page to be filled, one to wait for NAND, and one to be
- * written or retained as latency tolerance.
+ * Three slots allow result production, ready-data buffering, and a NAND page
+ * write to overlap without sharing ownership. The extra slot provides
+ * tolerance for NAND and scheduler latency.
  */
 #define RESULT_BUFFER_PAGE_COUNT ( 3U )
 
@@ -48,23 +52,24 @@ _Static_assert( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES <= UINT16_MAX,
 
 typedef enum
 {
-    /* No committed bytes remain in the page; it may be reused by the producer. */
+    /** No committed bytes remain; the producer may reuse this page. */
     RESULT_BUFFER_PAGE_EMPTY = 0,
 
-    /* The page contains committed data but has not reached a full NAND page. */
+    /** Committed data is present, but the page is not yet ready for NAND. */
     RESULT_BUFFER_PAGE_FILLING,
 
-    /* Every byte in the page is committed and the page may be written to NAND. */
+    /** The page is published and may be acquired for a NAND write. */
     RESULT_BUFFER_PAGE_READY_TO_DRAIN,
 
-    /* A NAND operation currently owns the page, so it must remain unchanged. */
+    /** A drain lease owns the page; its bytes must remain immutable. */
     RESULT_BUFFER_PAGE_DRAINING
 } ResultBufferPageState_T;
 
-/*
- * Authoritative description of the one record reservation that may be
- * outstanding. The public write lease is validated against this state before
- * commit or cancellation.
+/**
+ * @brief Authoritative state for the one active result-record reservation.
+ *
+ * The public write lease is validated against this state before commit or
+ * cancellation.
  */
 typedef struct
 {
@@ -75,7 +80,7 @@ typedef struct
     uint32_t record_offset_bytes;
 } ResultBufferRecordReservation_T;
 
-/* Internal state backing a ResultBufferDrainLease_T. */
+/** @brief Authoritative state for the one active result-page drain lease. */
 typedef struct
 {
     bool     is_active;
@@ -86,33 +91,44 @@ typedef struct
 
 typedef struct
 {
-    /* Geometry is configured once by Init and preserved across session resets. */
+    /** Geometry is configured by Init and preserved across session resets. */
     bool is_initialised;
+
+    /** Prevents further record reservations after the producer is stopped. */
     bool is_finalised;
 
+    /** Runtime NAND page size used by all page and cursor calculations. */
     uint32_t page_size_bytes;
+
+    /** Usable bytes in the circular RAM storage. */
     uint32_t capacity_bytes;
 
-    /**
-     * End of committed data and start of the next result record.
-     */
+    /** Circular byte offset where the next committed result record begins. */
     uint32_t producer_offset;
 
-    /* Committed bytes that have not been successfully written to NAND. */
+    /** Committed bytes not yet successfully persisted to NAND. */
     uint32_t pending_nand_bytes;
 
-    /* Oldest page waiting to be drained to NAND. */
+    /** Oldest occupied page in sequential NAND-write order. */
     uint8_t drain_page_index;
 
+    /** Identifier assigned to the next result-record write lease. */
     uint32_t next_record_lease_id;
+
+    /** Identifier assigned to the next result-page drain lease. */
     uint32_t next_drain_lease_id;
 
-    /* Page ownership is independent of record boundaries. */
+    /** Page ownership is tracked independently of result-record boundaries. */
     ResultBufferPageState_T page_states[RESULT_BUFFER_PAGE_COUNT];
-    uint32_t                page_valid_bytes[RESULT_BUFFER_PAGE_COUNT];
 
+    /** Number of committed logical result bytes held in each page. */
+    uint32_t page_valid_bytes[RESULT_BUFFER_PAGE_COUNT];
+
+    /** The one driver-to-RAM reservation that may remain outstanding. */
     ResultBufferRecordReservation_T active_record_reservation;
-    ResultBufferDrainReservation_T  active_drain_reservation;
+
+    /** The one RAM-to-NAND reservation that may remain outstanding. */
+    ResultBufferDrainReservation_T active_drain_reservation;
 } ResultBufferContext_T;
 
 /**-----------------------------------------------------------------------------
@@ -126,6 +142,8 @@ typedef struct
  */
 
 /**
+ * @brief Page-partitioned circular storage for the packed result byte stream.
+ *
  * Flat storage allows records to cross adjacent page boundaries while
  * remaining contiguous. These bytes are the authoritative RAM copy supplied
  * to the external-flash page-write API.
@@ -133,6 +151,8 @@ typedef struct
 static uint8_t result_buffer_storage[RESULT_BUFFER_MAX_CAPACITY_BYTES];
 
 /**
+ * @brief Contiguous staging for a record that crosses the physical ring end.
+ *
  * Used only when a result would cross the physical end of the circular buffer,
  * where the end and beginning are logically adjacent but not contiguous RAM.
  */
@@ -145,24 +165,33 @@ static ResultBufferContext_T result_buffer_context;
  *------------------------------------------------------------------------------
  */
 
+/** Returns the writable payload pointer owned by the active record reservation. */
 static uint8_t* RESULT_BUFFER_GetActiveRecordPayload( void );
 
+/** Validates a public write lease against the active record reservation. */
 static bool RESULT_BUFFER_RecordLeaseMatches( const FlashManagerResultWriteLease_T* lease );
 
+/** Invalidates the active record reservation without changing committed data. */
 static void RESULT_BUFFER_ClearRecordReservation( void );
 
+/** Reports whether the producer owns every page touched by a record range. */
 static bool RESULT_BUFFER_RecordRangeIsWritable( uint32_t record_offset_bytes,
                                                  uint32_t record_length_bytes );
 
+/** Publishes committed record bytes into their affected page states. */
 static bool RESULT_BUFFER_UpdatePagesForCommittedRecord( uint32_t record_offset_bytes,
                                                          uint32_t record_length_bytes );
 
+/** Advances a circular producer offset by a validated record length. */
 static uint32_t RESULT_BUFFER_AdvanceProducerOffset( uint32_t offset_bytes, uint32_t length_bytes );
 
+/** Returns the immutable page pointer owned by the active drain reservation. */
 static const uint8_t* RESULT_BUFFER_GetActiveDrainPageData( void );
 
+/** Validates a drain lease against its reservation and current page state. */
 static bool RESULT_BUFFER_DrainLeaseMatches( const ResultBufferDrainLease_T* lease );
 
+/** Invalidates the active drain reservation without changing page ownership. */
 static void RESULT_BUFFER_ClearDrainReservation( void );
 
 /**-----------------------------------------------------------------------------
@@ -395,6 +424,9 @@ static void RESULT_BUFFER_ClearDrainReservation( void )
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief Initialises result-buffer geometry and resets session ownership.
+ */
 bool RESULT_BUFFER_Init( void )
 {
     /* A failed reinitialisation must not leave an earlier geometry usable. */
@@ -435,6 +467,9 @@ bool RESULT_BUFFER_Init( void )
     return true;
 }
 
+/**
+ * @brief Resets session ownership while retaining initialised NAND geometry.
+ */
 void RESULT_BUFFER_Reset( void )
 {
     /*
@@ -814,7 +849,7 @@ bool RESULT_BUFFER_CompleteDrain( const ResultBufferDrainLease_T* lease, bool na
     {
         /*
          * Preserve both the data and its capacity accounting so the
-         * flash-manager task can retry the same page.
+         * Flash Manager task can retry the same page.
          */
         result_buffer_context.page_states[page_index] = RESULT_BUFFER_PAGE_READY_TO_DRAIN;
     }
