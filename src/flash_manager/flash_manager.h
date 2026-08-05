@@ -4,14 +4,18 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Public lifecycle types and ISR-facing result-record interface for the
- *      Flash Manager module.
+ *      Public lifecycle and execution-facing interface for the Flash Manager.
  *
  *  Notes:
- *      The Flash Manager owns result-buffer memory. The execution timer ISR
- *      obtains temporary write leases, while the Flash Manager task drains
- *      completed NAND pages asynchronously after the ISR returns. Result
- *      retrieval and instruction-buffer lifecycle support remain future work.
+ *      The Flash Manager owns instruction and result RAM. The execution timer
+ *      ISR writes results through temporary payload leases and reads prefetched
+ *      instructions through immutable views. NAND access remains restricted to
+ *      the Flash Manager task and occurs only after the ISR returns.
+ *
+ *      Result logging and finalisation are implemented. Instruction retrieval
+ *      types and ISR contracts are declared here while their buffer and task
+ *      integration are developed incrementally. Result transfer to the host and
+ *      instruction upload remain future work.
  ******************************************************************************/
 
 #ifndef FLASH_MANAGER_H
@@ -27,9 +31,10 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-#include <stdint.h>
-#include <stdbool.h>
 #include "rtos_config.h"
+
+#include <stdbool.h>
+#include <stdint.h>
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -56,12 +61,13 @@ extern "C"
  */
 
 /*
- * Implemented result lifecycle:
+ * Implemented result lifecycle and planned instruction-preload integration:
  *
  * IDLE
  *   -> RequestExecutionPreparation()
  * PREPARING_EXECUTION
- *   -> Flash Manager task starts the NAND session and resets the result buffer
+ *   -> Flash Manager task starts the result session and resets result RAM
+ *   -> Future integration also preloads instruction RAM before EXECUTING
  * EXECUTING
  *   -> Run State Manager stops the timer and waits for the ISR to return
  *   -> RequestResultFinalisation()
@@ -79,15 +85,16 @@ typedef enum
     /** No upload, execution, finalisation, or transfer is active. */
     FLASH_MANAGER_STATE_IDLE,
 
-    /** An instruction package is being written to NAND. */
+    /** Reserved for writing a canonical instruction image to NAND. */
     FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD,
 
     /** NAND and RAM buffers are being prepared for a new execution session. */
     FLASH_MANAGER_STATE_PREPARING_EXECUTION,
 
     /**
-     * The execution ISR may consume instructions and reserve, populate, and
-     * commit result records.
+     * The execution ISR may reserve, populate, and commit result records.
+     * Instruction consumption is permitted after retrieval integration primes
+     * the instruction buffer.
      */
     FLASH_MANAGER_STATE_EXECUTING,
 
@@ -97,7 +104,7 @@ typedef enum
     /** All result pages have been drained and the buffer is ready for host transfer. */
     FLASH_MANAGER_STATE_RESULTS_READY,
 
-    /** Stored results are being read and transferred to the host. */
+    /** Reserved for reading stored results and transferring them to the host. */
     FLASH_MANAGER_STATE_TRANSFERRING_RESULTS,
 
     /** An unrecoverable manager, buffer, or NAND operation has failed. */
@@ -105,6 +112,7 @@ typedef enum
 
 } FlashManagerState_T;
 
+/** @brief Result of submitting an asynchronous lifecycle request. */
 typedef enum
 {
     /** The asynchronous lifecycle request was accepted. */
@@ -123,6 +131,7 @@ typedef enum
     FLASH_MANAGER_REQUEST_NOTIFY_FAILED
 } FlashManagerRequestStatus_T;
 
+/** @brief Result of committing an ISR-produced result record. */
 typedef enum
 {
     /** The record was committed and any required drain was signalled. */
@@ -164,57 +173,106 @@ typedef struct
 } FlashManagerResultHeader_T;
 
 /**
- * Temporary driver write access to flash-manager-owned result storage.
+ * @brief Temporary driver write access to Flash Manager-owned result storage.
  *
- * The execution path may write at most payload_capacity_bytes bytes through payload,
+ * The execution path may write at most payload_capacity_bytes through payload,
  * then must commit or cancel the lease. The complete lease must be returned
- * unchanged so the result buffer can reject stale or modified leases.
+ * unchanged so stale or modified ownership can be rejected.
  */
 typedef struct
 {
-    /**
-     * Writable storage owned by the flash manager.
-     */
+    /** Writable payload storage owned by the Flash Manager. */
     uint8_t* payload;
 
-    /**
-     * Opaque ID used to validate commit or cancellation and reject stale leases.
-     */
+    /** Opaque identifier used to validate commit or cancellation. */
     uint32_t lease_id;
 
-    /**
-     * Maximum number of bytes that may be written through payload.
-     */
+    /** Maximum number of bytes that may be written through payload. */
     uint16_t payload_capacity_bytes;
 } FlashManagerResultWriteLease_T;
 
 /**
- * @brief Temporary host read access to flash-manager-owned result storage.
+ * @brief Temporary host read access to Flash Manager-owned result storage.
  *
  * Reserved for the future NAND-to-host result retrieval path.
  */
 typedef struct
 {
-    /**
-     * Read-only result bytes owned by the flash manager.
-     */
+    /** Read-only result bytes owned by the Flash Manager. */
     const uint8_t* result_data;
 
-    /**
-     * Number of valid result bytes available.
-     */
+    /** Number of valid result bytes available. */
     uint32_t valid_length_bytes;
 
-    /**
-     * Logical byte offset of this data within the NAND result stream.
-     */
+    /** Logical byte offset of this data within the NAND result stream. */
     uint32_t result_offset_bytes;
 
-    /**
-     * Opaque identifier used to reject stale releases.
-     */
+    /** Opaque identifier used to reject stale releases. */
     uint32_t lease_id;
 } FlashManagerResultReadLease_T;
+
+/**
+ * @brief Fixed header stored before every canonical instruction payload.
+ *
+ * The package application layer creates this representation before upload.
+ * The current storage format uses the MCU structure representation; byte order
+ * must be defined explicitly before instruction images become portable.
+ */
+typedef struct
+{
+    /** Timestamp at which the instruction becomes due. */
+    uint32_t timestamp;
+
+    /** Number of payload bytes following this header. */
+    uint16_t payload_length_bytes;
+
+    /** Peripheral family targeted by the instruction. */
+    uint8_t peripheral_type;
+
+    /** Peripheral instance or channel targeted by the instruction. */
+    uint8_t channel;
+} FlashManagerInstructionHeader_T;
+
+/**
+ * @brief Read-only view of the next buffered execution instruction.
+ *
+ * The view remains valid until consumed or the instruction buffer is reset.
+ * The Execution Manager and peripheral driver must not retain payload after a
+ * successful consume operation.
+ */
+typedef struct
+{
+    /** Parsed copy of the stored instruction header. */
+    FlashManagerInstructionHeader_T header;
+
+    /** Read-only canonical instruction payload. */
+    const uint8_t* payload;
+
+    /** Opaque identifier used to reject stale consumption attempts. */
+    uint32_t view_id;
+} FlashManagerInstructionView_T;
+
+/** @brief Availability and validation status for the next instruction view. */
+typedef enum
+{
+    /** A complete instruction is buffered and available. */
+    FLASH_MANAGER_INSTRUCTION_AVAILABLE = 0,
+
+    /** More instruction bytes exist but the next record is not fully buffered. */
+    FLASH_MANAGER_INSTRUCTION_NOT_BUFFERED,
+
+    /** The complete instruction stream has been consumed. */
+    FLASH_MANAGER_INSTRUCTION_END_OF_STREAM,
+
+    /** Instruction retrieval is unavailable in the current manager state. */
+    FLASH_MANAGER_INSTRUCTION_INVALID_STATE,
+
+    /** The stored header or record length is invalid. */
+    FLASH_MANAGER_INSTRUCTION_CORRUPT,
+
+    /** The supplied output pointer was null. */
+    FLASH_MANAGER_INSTRUCTION_INVALID_ARGUMENT
+} FlashManagerInstructionReadStatus_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -224,8 +282,9 @@ typedef struct
 /**
  * @brief Runs the Flash Manager RTOS task.
  *
- * The task processes asynchronous flash operations such as draining completed
- * result pages to NAND and finalising result storage.
+ * The task processes lifecycle notifications and performs NAND operations.
+ * Currently it prepares, drains, and finalises result storage; instruction-page
+ * preload and refill will be added through the same task.
  *
  * @param parameters Optional FreeRTOS task parameter. Currently unused.
  *
@@ -236,12 +295,16 @@ typedef struct
 void FLASH_MANAGER_Task( void* parameters );
 
 /**
- * @brief Initialises flash-manager synchronization and internal buffers.
+ * @brief Initialises Flash Manager synchronisation and implemented buffers.
  *
- * @return true on success; otherwise false.
+ * @retval true
+ *      Task-context synchronisation and the result buffer were initialised.
+ * @retval false
+ *      The module was already initialised, mutex creation failed, or result
+ *      buffer geometry was invalid.
  *
  * @note EXTERNAL_FLASH_Init() must succeed before this function is called.
- * @note Call once during startup before the scheduler exposes flash-manager
+ * @note Call once during startup before the scheduler exposes Flash Manager
  *       APIs to other tasks.
  */
 bool FLASH_MANAGER_Init( void );
@@ -249,10 +312,11 @@ bool FLASH_MANAGER_Init( void );
 /**
  * @brief Reserves temporary payload storage for one result record.
  *
- * @param payload_capacity_bytes Maximum payload bytes the execution driver may
- *                               write before commit.
- * @param lease Destination for the write lease. It is cleared before any
- *              failure is returned.
+ * @param[in] payload_capacity_bytes
+ *      Maximum payload bytes the execution driver may write before commit.
+ * @param[out] lease
+ *      Destination for the write lease. It is cleared before any failure is
+ *      returned.
  *
  * @return true when storage was reserved; otherwise false.
  *
@@ -266,7 +330,7 @@ bool FLASH_MANAGER_ReserveResultRecordFromISR( uint16_t payload_capacity_bytes,
 /**
  * @brief Cancels the active result-record reservation.
  *
- * @param lease Lease returned by FLASH_MANAGER_ReserveResultRecordFromISR().
+ * @param[in] lease Lease returned by FLASH_MANAGER_ReserveResultRecordFromISR().
  *
  * @return true when the active lease was cancelled; otherwise false.
  *
@@ -283,12 +347,12 @@ bool FLASH_MANAGER_CancelResultRecordFromISR( const FlashManagerResultWriteLease
  * stream. Unused reserved capacity is reclaimed. If the commit completes a
  * NAND page, the Flash Manager task is notified with xTaskNotifyFromISR().
  *
- * @param lease Active write lease returned by the reserve function.
- * @param timestamp Execution timestamp stored in the record header.
- * @param peripheral_type Peripheral family stored in the record header.
- * @param channel Instance or channel stored in the record header.
- * @param actual_payload_length_bytes Number of payload bytes actually written.
- * @param higher_priority_task_woken Optional FreeRTOS ISR wake flag. When
+ * @param[in] lease Active write lease returned by the reserve function.
+ * @param[in] timestamp Execution timestamp stored in the record header.
+ * @param[in] peripheral_type Peripheral family stored in the record header.
+ * @param[in] channel Instance or channel stored in the record header.
+ * @param[in] actual_payload_length_bytes Number of payload bytes actually written.
+ * @param[in,out] higher_priority_task_woken Optional FreeRTOS ISR wake flag. When
  *        supplied, the outer ISR must initialise it to pdFALSE, preserve it
  *        across all ISR operations, and pass it to portYIELD_FROM_ISR() only
  *        after the complete execution sequence has finished.
@@ -306,11 +370,52 @@ FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
     uint8_t channel, uint16_t actual_payload_length_bytes, BaseType_t* higher_priority_task_woken );
 
 /**
- * @brief Requests asynchronous preparation of a new execution result session.
+ * @brief Returns a read-only view of the next buffered instruction.
+ *
+ * The consumer position is not advanced. Repeated calls return the same
+ * instruction until it is consumed.
+ *
+ * @param[out] instruction
+ *      Destination for the instruction view. Cleared before returning any
+ *      status other than FLASH_MANAGER_INSTRUCTION_AVAILABLE.
+ *
+ * @return Current instruction-read status.
+ *
+ * @note Call only from the execution ISR while the manager is EXECUTING.
+ * @note This function never blocks, accesses NAND or uses a mutex.
+ */
+FlashManagerInstructionReadStatus_T
+FLASH_MANAGER_PeekNextInstructionFromISR( FlashManagerInstructionView_T* instruction );
+
+/**
+ * @brief Consumes the instruction returned by the current successful peek.
+ *
+ * @param[in] instruction
+ *      Unmodified view returned by FLASH_MANAGER_PeekNextInstructionFromISR().
+ * @param[in,out] higher_priority_task_woken
+ *      Optional accumulated FreeRTOS ISR wake flag. May be NULL when the caller
+ *      does not require notification of a newly ready task.
+ *
+ * @return true when the matching instruction was consumed; otherwise false.
+ *
+ * @note Consuming an instruction may release page storage and notify the Flash
+ *       Manager task to preload another NAND page.
+ * @note The view becomes stale after successful consumption.
+ * @note The outer timer ISR may yield only after its entire execution sequence
+ *       has finished.
+ */
+bool FLASH_MANAGER_ConsumeInstructionFromISR(
+    const FlashManagerInstructionView_T* instruction,
+    BaseType_t*                          higher_priority_task_woken );
+
+/**
+ * @brief Requests asynchronous preparation of a new execution session.
  *
  * The request changes IDLE to PREPARING_EXECUTION and notifies the Flash
- * Manager task. That task starts a new external-flash result session, resets
- * the RAM result buffer, and enters EXECUTING on success or FAULT on failure.
+ * Manager task. The current task implementation starts a new external-flash
+ * result session, resets result RAM, and enters EXECUTING on success or FAULT
+ * on failure. Instruction preloading must be added before execution integration
+ * is enabled.
  *
  * @return Request acceptance status.
  *
@@ -339,7 +444,7 @@ FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void );
 /**
  * @brief Reads the current Flash Manager lifecycle state.
  *
- * @param state Destination for the current state.
+ * @param[out] state Destination for the current state.
  *
  * @return true when the state was read; false for a null destination or when
  *         the manager synchronization object is unavailable.
