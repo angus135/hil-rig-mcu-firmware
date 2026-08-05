@@ -20,6 +20,7 @@
 #include "rtos_config.h"
 #include "app_main.h"
 #include "console.h"
+#include "flash_manager.h"
 #include "host_communications.h"
 
 /**-----------------------------------------------------------------------------
@@ -74,6 +75,13 @@ void APP_MAIN_Application( void )
 
     CREATE_TASK( HOST_INTERFACE_Task, "Host Interface Task", HOST_INTERFACE_TASK_MEMORY,
                  HOST_INTERFACE_TASK_PRIORITY, HostInterfaceTaskHandle );
+
+    /*
+     * Enable after external-flash and Flash Manager initialization have been
+     * added to the startup sequence.
+     */
+    // CREATE_TASK( FLASH_MANAGER_Task, "Flash Manager Task", FLASH_MANAGER_TASK_MEMORY,
+    //              FLASH_MANAGER_TASK_PRIORITY, NULL );
 
     vTaskStartScheduler();
 }
