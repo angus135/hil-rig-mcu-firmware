@@ -4,13 +4,12 @@
 
 `hw_pwm_capture` contains the low-level PWM capture driver.
 
-This module owns the hardware-facing PWM capture path, including analogue
-front-end mode selection, timer start/stop sequencing, logical channel mapping,
-and zero-copy access to raw timer capture registers.
+This module owns the timer-facing PWM capture path, including timer start/stop
+sequencing, logical channel mapping, and zero-copy access to raw timer capture
+registers.
 
 This module is responsible for:
 
-- Configuring the PWM capture analogue front-end mode.
 - Starting and stopping timer-based PWM capture.
 - Mapping logical capture channels to timer peripherals and CCR registers.
 - Exposing new capture availability through timer status flags.
@@ -48,25 +47,6 @@ layers.
 
 ---
 
-## Capture Modes
-
-The PWM capture mode selects the analogue front-end input path and threshold for
-the incoming PWM signal.
-
-Supported modes:
-
-| Mode | Intended Input Level |
-|------|----------------------|
-| `HW_PWM_CAPTURE_LV_3V3` | 3.3 V logic |
-| `HW_PWM_CAPTURE_LV_5V` | 5 V logic |
-| `HW_PWM_CAPTURE_HV_12V` | 12 V input |
-| `HW_PWM_CAPTURE_HV_24V` | 24 V input |
-
-When a channel is disabled, the timer capture path is stopped and the analogue
-front end is returned to the default safe mode, `HW_PWM_CAPTURE_LV_3V3`.
-
----
-
 ## Capture Flow
 
 Typical hardware-layer usage:
@@ -88,7 +68,7 @@ The public API is declared in `hw_pwm_capture.h`.
 
 | Function | Purpose |
 |----------|---------|
-| `HW_PWM_Capture_Configure_Channel()` | Configure, enable, or disable a capture channel |
+| `HW_PWM_Capture_Configure_Channel()` | Enable or disable a timer capture channel |
 | `HW_PWM_Capture_Peek_Result()` | Inspect whether a new raw capture is available |
 | `HW_PWM_Capture_Consume_Result()` | Clear the consumed period capture flag |
 

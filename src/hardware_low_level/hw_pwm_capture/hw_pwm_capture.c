@@ -6,13 +6,11 @@
  *  Description:
  *      Hardware layer implementation for PWM capture.
  *
- *      This module configures the PWM capture analogue front end, manages the
- *      associated timer capture paths, and exposes zero-copy access to raw
- *      timer capture registers for the execution layer.
+ *      This module manages the timer capture paths and exposes zero-copy
+ *      access to raw timer capture registers for the execution layer.
  *
  *  Notes:
  *      Responsibilities:
- *      - Apply PWM capture hardware mode selection
  *      - Start and stop the associated timer capture path
  *      - Map logical PWM capture channels to timer CCR registers
  *      - Expose new capture availability through hardware capture flags
@@ -25,7 +23,6 @@
  *
  *      Assumptions:
  *      - Timer PWM input mode is configured in the IOC
- *      - Timer capture is stopped before analogue mode changes
  *      - The execution layer consumes capture results before clearing flags
  ******************************************************************************/
 
@@ -55,13 +52,6 @@
 
 /* Number of logical PWM capture channels supported by this driver. */
 #define PWM_CAPTURE_CHANNEL_COUNT 2
-
-/*
- * Safe analogue front-end mode applied when PWM capture is disabled.
- * The hardware has no true disabled mode, so disabled capture forces the
- * lowest-voltage input path while the timer capture path is stopped.
- */
-#define HW_PWM_CAPTURE_DEFAULT_SAFE_MODE HW_PWM_CAPTURE_LV_3V3
 
 /*
  * PWM capture channel 1 timer mapping.
@@ -106,7 +96,7 @@
  * @brief Per-channel PWM capture hardware and software context.
  *
  * Stores the timer binding, CCR register mapping, timer role used by hw_timer,
- * and the latest software configuration for one logical PWM capture channel.
+ * and the timer clock for one logical PWM capture channel.
  *
  * period_ccr and high_ccr point directly to timer capture registers so the
  * execution path can read captured values without copying.
@@ -122,9 +112,6 @@ typedef struct
                                    // this channel
 
     uint32_t timer_clock_hz;
-
-    bool is_enabled;
-    bool is_configured;
 } HwPWMCaptureChannelContext_T;
 
 /**-----------------------------------------------------------------------------
@@ -150,7 +137,6 @@ static HwPWMCaptureChannelContext_T hw_pwm_capture_channels[PWM_CAPTURE_CHANNEL_
         .period_ccr          = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_PERIOD_CCR,
         .high_ccr            = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_HIGH_CCR,
         .period_capture_flag = HW_PWM_CAPTURE_CH_1_PERIOD_FLAG,
-        .is_configured       = false,
     },
     {
         .timer               = HW_PWM_CAPTURE_CH_2_INSTANCE,
@@ -158,7 +144,6 @@ static HwPWMCaptureChannelContext_T hw_pwm_capture_channels[PWM_CAPTURE_CHANNEL_
         .period_ccr          = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_PERIOD_CCR,
         .high_ccr            = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_HIGH_CCR,
         .period_capture_flag = HW_PWM_CAPTURE_CH_2_PERIOD_FLAG,
-        .is_configured       = false,
     },
 };
 
@@ -179,7 +164,7 @@ static HwPWMCaptureChannelContext_T hw_pwm_capture_channels[PWM_CAPTURE_CHANNEL_
 
 bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T channel, bool is_enabled )
 {
-    HwPWMCaptureChannelContext_T* context = { 0 };
+    HwPWMCaptureChannelContext_T* context;
 
     if ( channel >= PWM_CAPTURE_CHANNEL_COUNT )
     {
@@ -194,10 +179,7 @@ bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T channel, bool is_en
 
     if ( !is_enabled )
     {
-
         context->timer_clock_hz = 0U;
-        context->is_enabled     = false;
-        context->is_configured  = true;
         return true;
     }
 
@@ -207,8 +189,6 @@ bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T channel, bool is_en
     HW_TIMER_Start_Timer( context->timer_role );
 
     context->timer_clock_hz = HW_TIMER_Get_Clock_Hz( context->timer_role );
-    context->is_enabled     = true;
-    context->is_configured  = true;
 
     return true;
 }
