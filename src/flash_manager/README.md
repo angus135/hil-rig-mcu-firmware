@@ -246,6 +246,18 @@ execution_manager appends result bytes into flash manager result slots
 flash_manager writes full result pages using EXTERNAL_FLASH_WriteResultPage
 ```
 
+Instruction-stream exhaustion is independent of execution-session completion.
+After the final stored instruction is consumed, instruction peek returns
+`FLASH_MANAGER_INSTRUCTION_END_OF_STREAM` while the Flash Manager remains
+`EXECUTING`. Measurements and result logging may continue. A final-measurement
+instruction or another future mechanism is interpreted outside the Flash
+Manager and eventually asks the Run State Manager to stop the test.
+
+If execution reaches a record whose bytes have not been loaded,
+`FLASH_MANAGER_INSTRUCTION_NOT_BUFFERED` represents a real-time underrun and the
+Flash Manager latches `FAULT`. A corrupt stored record and a NAND refill failure
+also latch `FAULT`.
+
 After execution, the Run State Manager stops the execution timer, ensures the
 active ISR has returned, and requests asynchronous finalisation:
 
@@ -259,11 +271,14 @@ The Flash Manager task then:
 publish the final partial page if needed
 drain every remaining full or partial page
 verify RESULT_BUFFER_IsDrainComplete()
+invalidate the instruction read session and any outstanding instruction view
 enter FLASH_MANAGER_STATE_RESULTS_READY
 ```
 
 Finalisation fails if an execution write lease remains active. The execution
 path must therefore commit or cancel every lease before its timer ISR returns.
+Instruction exhaustion is not required: explicit finalisation closes whatever
+instruction position remains after the execution ISR has stopped.
 
 If the final result length is exactly page aligned, there is no separate
 external-flash finalize call. Leave the session readable for result transfer;

@@ -513,7 +513,7 @@ TEST_F( FlashManagerTest, ConsumingPageNotifiesTaskAndRefillWorkerLoadsReleasedS
                read_instruction_page_offsets[TEST_INSTRUCTION_BUFFER_PAGE_COUNT] );
 }
 
-TEST_F( FlashManagerTest, ConsumingFinalLoadedPageDoesNotNotifyRefillTask )
+TEST_F( FlashManagerTest, InstructionExhaustionRemainsExecutingUntilExplicitFinalisation )
 {
     Initialise();
     RegisterTask();
@@ -529,6 +529,68 @@ TEST_F( FlashManagerTest, ConsumingFinalLoadedPageDoesNotNotifyRefillTask )
     EXPECT_EQ( 0U, notify_from_isr_calls );
     EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_END_OF_STREAM,
                FLASH_MANAGER_PeekNextInstructionFromISR( &view ) );
+    EXPECT_EQ( FLASH_MANAGER_STATE_EXECUTING, flash_manager_context.state );
+
+    FlashManagerResultWriteLease_T result_lease = ReserveRecord( TEST_PARTIAL_PAYLOAD_BYTES );
+    std::memset( result_lease.payload, 0x6AU, TEST_PARTIAL_PAYLOAD_BYTES );
+    ASSERT_EQ( FLASH_MANAGER_RESULT_COMMIT_OK,
+               FLASH_MANAGER_CommitResultRecordFromISR( &result_lease, 100U, 2U, 3U,
+                                                        TEST_PARTIAL_PAYLOAD_BYTES, nullptr ) );
+    EXPECT_EQ( FLASH_MANAGER_STATE_EXECUTING, flash_manager_context.state );
+
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestResultFinalisation() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FINALISING_RESULTS, flash_manager_context.state );
+    ASSERT_TRUE( FLASH_MANAGER_FinaliseResults() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_RESULTS_READY, flash_manager_context.state );
+    EXPECT_FALSE( INSTRUCTION_BUFFER_IsReadComplete() );
+}
+
+TEST_F( FlashManagerTest, ReachingUnloadedInstructionDataLatchesUnderrunFault )
+{
+    Initialise();
+    EnterExecutingState();
+    ConfigurePageAlignedInstructionImage( 2U );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_PrepareRead( TEST_PAGE_SIZE_BYTES * 2U ) );
+
+    InstructionBufferPageFillLease_T fill_lease = {};
+    ASSERT_TRUE( INSTRUCTION_BUFFER_AcquireFillPage( &fill_lease ) );
+    std::memcpy( fill_lease.page_data, instruction_image, fill_lease.read_length_bytes );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &fill_lease, true ) );
+
+    const FlashManagerInstructionView_T* view = nullptr;
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_AVAILABLE,
+               FLASH_MANAGER_PeekNextInstructionFromISR( &view ) );
+    ASSERT_TRUE( FLASH_MANAGER_ConsumeInstructionFromISR( view, nullptr ) );
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_NOT_BUFFERED,
+               FLASH_MANAGER_PeekNextInstructionFromISR( &view ) );
+    EXPECT_EQ( nullptr, view );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, CorruptStoredInstructionLatchesFault )
+{
+    Initialise();
+    EnterExecutingState();
+    ASSERT_TRUE( INSTRUCTION_BUFFER_PrepareRead( TEST_PAGE_SIZE_BYTES ) );
+
+    InstructionBufferPageFillLease_T fill_lease = {};
+    ASSERT_TRUE( INSTRUCTION_BUFFER_AcquireFillPage( &fill_lease ) );
+
+    FlashManagerInstructionHeader_T corrupt_header = {
+        100U,
+        static_cast<uint16_t>( TEST_PAGE_SIZE_BYTES ),
+        2U,
+        3U,
+    };
+    std::memcpy( fill_lease.page_data, &corrupt_header, sizeof( corrupt_header ) );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &fill_lease, true ) );
+
+    const FlashManagerInstructionView_T* view = nullptr;
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_CORRUPT,
+               FLASH_MANAGER_PeekNextInstructionFromISR( &view ) );
+    EXPECT_EQ( nullptr, view );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
 }
 
 TEST_F( FlashManagerTest, RefillWorkerHandlesCoalescedPageReleaseNotifications )
