@@ -40,7 +40,8 @@
 // Does this need to be changed to support multiple expanders?
 #define LOGIC_EXPANDER_ACTIVE_BITMASK                                                              \
     ( ( 1U << LOGIC_EXPANDER_DEVICE_DI_1 ) | ( 1U << LOGIC_EXPANDER_DEVICE_PWM_SPI )               \
-      | ( 1U << LOGIC_EXPANDER_DEVICE_UART_PWR ) )
+      | ( 1U << LOGIC_EXPANDER_DEVICE_UART_PWR )                                                    \
+      | ( 1U << LOGIC_EXPANDER_DEVICE_I2C_AO ) )
 
 #define LOGIC_EXPANDER_I2C_ADDR_TABLE_INIT                                                         \
     {                                                                                              \

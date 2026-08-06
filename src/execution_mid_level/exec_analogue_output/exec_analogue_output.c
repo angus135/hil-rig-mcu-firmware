@@ -20,6 +20,7 @@
 
 #include "exec_analogue_output.h"
 #include "hw_spi.h"
+#include "logic_expander.h"
 
 #ifndef TEST_BUILD
 #include "stm32f4xx_ll_gpio.h"
@@ -39,6 +40,10 @@
 #define ANALOGUE_OUTPUT_DAC_MAX_COUNT 4095U
 #define ANALOGUE_OUTPUT_INPUT_MAX_V 20.0F
 
+#define ANALOGUE_OUTPUT_ENABLE_EXPANDER LOGIC_EXPANDER_DEVICE_I2C_AO
+#define ANALOGUE_OUTPUT_ENABLE_PORT LOGIC_EXPANDER_PORT_B
+#define ANALOGUE_OUTPUT_ENABLE_BIT_INDEX 0U
+
 #define ANALOGUE_OUTPUT_REG_DAC_BASE 0x00U
 #define ANALOGUE_OUTPUT_REG_VREF_CTRL 0x08U
 #define ANALOGUE_OUTPUT_REG_POWER_DOWN 0x09U
@@ -46,7 +51,7 @@
 
 #define ANALOGUE_OUTPUT_VREF_EXT_BUFFERED 0xFFFFU
 #define ANALOGUE_OUTPUT_GAIN_1X 0x0000U
-#define ANALOGUE_OUTPUT_PD_OPEN_CIRCUIT 0xF000U
+#define ANALOGUE_OUTPUT_PD_UNUSED_CHANNELS_OPEN_CIRCUIT 0xF000U
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -64,6 +69,7 @@
  */
 
 static bool s_EXEC_ANALOGUE_OUTPUT_Configured = false;
+static bool s_EXEC_ANALOGUE_OUTPUT_Started    = false;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -74,6 +80,9 @@ static inline uint8_t EXEC_ANALOGUE_OUTPUT_Pack_Command_Byte( uint8_t register_a
 static inline bool EXEC_ANALOGUE_OUTPUT_Send_Frame( uint8_t register_address, uint16_t data_word );
 static uint16_t    EXEC_ANALOGUE_OUTPUT_Clamp_And_Scale_Count( float input_voltage_v );
 static bool        EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref );
+static bool        EXEC_ANALOGUE_OUTPUT_Queue_Safe_Output_Frames( void );
+static bool        EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void );
+static bool        EXEC_ANALOGUE_OUTPUT_Set_Enable_Pin( bool enable );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -153,7 +162,7 @@ static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
     } frames[] = {
         { ANALOGUE_OUTPUT_REG_VREF_CTRL, 0U /* placeholder, set below */ },
         { ANALOGUE_OUTPUT_REG_GAIN_CTRL, ANALOGUE_OUTPUT_GAIN_1X },
-        { ANALOGUE_OUTPUT_REG_POWER_DOWN, ANALOGUE_OUTPUT_PD_OPEN_CIRCUIT },
+        { ANALOGUE_OUTPUT_REG_POWER_DOWN, ANALOGUE_OUTPUT_PD_UNUSED_CHANNELS_OPEN_CIRCUIT },
         { ANALOGUE_OUTPUT_REG_DAC_BASE + 0U, 0U },
         { ANALOGUE_OUTPUT_REG_DAC_BASE + 1U, 0U },
         { ANALOGUE_OUTPUT_REG_DAC_BASE + 2U, 0U },
@@ -212,36 +221,26 @@ static bool EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( bool use_external_vref )
     return true;
 }
 
-/**-----------------------------------------------------------------------------
- *  Public Function Definitions
- *------------------------------------------------------------------------------
- */
+static bool EXEC_ANALOGUE_OUTPUT_Queue_Safe_Output_Frames( void )
+{
+    for ( uint8_t channel = 0U; channel < EXEC_ANALOGUE_OUTPUT_CONFIGURED_CHANNEL_COUNT;
+          channel++ )
+    {
+        if ( !EXEC_ANALOGUE_OUTPUT_Send_Frame(
+                 ( uint8_t )( ANALOGUE_OUTPUT_REG_DAC_BASE + channel ), 0U ) )
+        {
+            return false;
+        }
+    }
+
+    HW_SPI_Tx_Trigger( ANALOGUE_OUTPUT_SPI_CHANNEL );
+    return true;
+}
 
 /**
- * @brief Configure and start the SPI hardware channel dedicated to DAC communication.
- *
- * Intended to only be used for console testing to set up the SPI channel independently
- *
- * Sets up the SPI peripheral with the configuration required by the
- * MCP48CVB28T-20E_ST octal DAC: 8-bit data size, MSB first,
- * CPOL low, CPHA 1 edge.
- *
- * This function must be called once during system initialization to prepare
- * SPI for use before any DAC operations are performed. In the real project,
- * this setup will be performed by the system/board initialization layer.
- *
- * This function is provided as a separate helper for console testing so that
- * test commands can independently set up the SPI channel without integrating
- * into the full system initialization sequence.
- *
- * The SPI channel is activated for immediate use. After this function returns
- * successfully, the channel is ready to transmit frames to the DAC.
- *
- * @return
- *     true if SPI configuration and startup completed successfully.
- *     false if hardware configuration or startup failed.
+ * @brief Configure and start the private SPI transport used to program the DAC.
  */
-bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void )
+static bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void )
 {
     HWSPIConfig_T configuration = {
         .spi_mode  = SPI_MASTER_MODE,
@@ -262,32 +261,77 @@ bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void )
     return HW_SPI_Start_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL );
 }
 
+static bool EXEC_ANALOGUE_OUTPUT_Set_Enable_Pin( bool enable )
+{
+    return LOGIC_EXPANDER_Load_Control_Bit( ANALOGUE_OUTPUT_ENABLE_EXPANDER,
+                                             ANALOGUE_OUTPUT_ENABLE_PORT,
+                                             ANALOGUE_OUTPUT_ENABLE_BIT_INDEX, enable )
+           == LOGIC_EXPANDER_STATUS_OK;
+}
+
+/**-----------------------------------------------------------------------------
+ *  Public Function Definitions
+ *------------------------------------------------------------------------------
+ */
+
 /**
  * @brief Initialize the DAC hardware registers and prepare all output channels.
  *
- * Configures the DAC's volatile control registers and sets all output channels
- * to zero voltage. This function assumes that the SPI4 hardware channel has
- * already been configured and started (via EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup()
- * or the system initialization layer).
+ * Holds the external output path disabled, configures the SPI transport, then
+ * programs the DAC's volatile control registers and sets all channels to zero.
  *
  * Configuration includes:
- * - VREF control register (08h): External 5V VREF in buffered mode
+ * - VREF control register (08h): requested VDD or external buffered reference
  * - Gain register (0Ah): 1x gain (5V full scale with 5V VREF)
  * - Power-down register (09h): Channels 0-5 enabled, channels 6-7 in open-circuit mode
  * - DAC output registers (00h-07h): All channels initialized to 0V
  *
- * After this function completes successfully, the module is ready to accept
- * voltage write commands via EXEC_ANALOG_OUTPUT_Write_Voltage().
+ * After this function completes successfully, EXEC_ANALOGUE_OUTPUT_Start() must
+ * be called before voltage writes are accepted.
  *
  * @return
  *     true if DAC initialization completed successfully.
  *     false if SPI transmission of the initialization frames failed.
  */
-bool EXEC_ANALOGUE_OUTPUT_Config( bool use_external_vref )
+bool EXEC_ANALOGUE_OUTPUT_Configure( bool use_external_vref )
 {
+    if ( s_EXEC_ANALOGUE_OUTPUT_Started )
+    {
+        return false;
+    }
+
+    /* Reconfiguration requires the dedicated SPI runtime to be stopped first. */
+    if ( s_EXEC_ANALOGUE_OUTPUT_Configured
+         && !HW_SPI_Stop_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
+    {
+        return false;
+    }
+
+    s_EXEC_ANALOGUE_OUTPUT_Configured = false;
+    s_EXEC_ANALOGUE_OUTPUT_Started    = false;
+
+    /*
+     * Keep the external output stage disabled while SPI and the DAC are being
+     * configured.
+     */
+    if ( !EXEC_ANALOGUE_OUTPUT_Set_Enable_Pin( false ) )
+    {
+        return false;
+    }
+
+    if ( LOGIC_EXPANDER_Send_Control_Bits() != LOGIC_EXPANDER_STATUS_OK )
+    {
+        return false;
+    }
+
+    if ( !EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup() )
+    {
+        return false;
+    }
+
     if ( !EXEC_ANALOGUE_OUTPUT_Queue_Startup_Frames( use_external_vref ) )
     {
-        s_EXEC_ANALOGUE_OUTPUT_Configured = false;
+        ( void )HW_SPI_Stop_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL );
         return false;
     }
 
@@ -295,7 +339,82 @@ bool EXEC_ANALOGUE_OUTPUT_Config( bool use_external_vref )
     return true;
 }
 
-bool EXEC_ANALOG_OUTPUT_Is_Configured( void )
+bool EXEC_ANALOGUE_OUTPUT_Start( void )
+{
+    if ( !s_EXEC_ANALOGUE_OUTPUT_Configured )
+    {
+        return false;
+    }
+
+    if ( s_EXEC_ANALOGUE_OUTPUT_Started )
+    {
+        return false;
+    }
+
+    /*
+     * Do not expose the outputs until the DAC startup frames have completely
+     * left the SPI driver.
+     */
+    if ( !HW_SPI_Tx_Is_Complete( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
+    {
+        return false;
+    }
+
+    if ( !EXEC_ANALOGUE_OUTPUT_Set_Enable_Pin( true ) )
+    {
+        return false;
+    }
+
+    if ( LOGIC_EXPANDER_Send_Control_Bits() != LOGIC_EXPANDER_STATUS_OK )
+    {
+        /*
+         * The shadow now contains enabled, but applying it failed. Restore the
+         * requested safe shadow state for a subsequent commit.
+         */
+        ( void )EXEC_ANALOGUE_OUTPUT_Set_Enable_Pin( false );
+        return false;
+    }
+
+    s_EXEC_ANALOGUE_OUTPUT_Started = true;
+    return true;
+}
+
+bool EXEC_ANALOGUE_OUTPUT_Stop( void )
+{
+    if ( !s_EXEC_ANALOGUE_OUTPUT_Configured )
+    {
+        return false;
+    }
+
+    if ( !s_EXEC_ANALOGUE_OUTPUT_Started )
+    {
+        return false;
+    }
+
+    if ( !EXEC_ANALOGUE_OUTPUT_Set_Enable_Pin( false ) )
+    {
+        return false;
+    }
+
+    if ( LOGIC_EXPANDER_Send_Control_Bits() != LOGIC_EXPANDER_STATUS_OK )
+    {
+        return false;
+    }
+
+    s_EXEC_ANALOGUE_OUTPUT_Started = false;
+
+    /* Preload a safe value before a subsequent start can expose the DAC outputs. */
+    if ( !EXEC_ANALOGUE_OUTPUT_Queue_Safe_Output_Frames() )
+    {
+        s_EXEC_ANALOGUE_OUTPUT_Configured = false;
+        ( void )HW_SPI_Stop_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL );
+        return false;
+    }
+
+    return true;
+}
+
+bool EXEC_ANALOGUE_OUTPUT_Is_Configured( void )
 {
     return s_EXEC_ANALOGUE_OUTPUT_Configured;
 }
@@ -318,8 +437,7 @@ bool EXEC_ANALOG_OUTPUT_Is_Configured( void )
  * fail with false return code because those channels are disabled (configured
  * in open-circuit mode).
  *
- * The module must be initialized via EXEC_ANALOGUE_OUTPUT_Config() before this
- * function is called. Writing to an uninitialized module returns false.
+ * The module must be configured and started before this function is called.
  *
  * @param channel
  *     The DAC output channel number (0-5 for active channels, 6-7 disabled).
@@ -332,11 +450,11 @@ bool EXEC_ANALOG_OUTPUT_Is_Configured( void )
  *     false if the module is not initialized, the channel is invalid (>= 6),
  *     or SPI transmission failed.
  */
-bool EXEC_ANALOG_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v )
+bool EXEC_ANALOGUE_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v )
 {
     uint16_t count = 0U;
 
-    if ( !s_EXEC_ANALOGUE_OUTPUT_Configured )
+    if ( !s_EXEC_ANALOGUE_OUTPUT_Configured || !s_EXEC_ANALOGUE_OUTPUT_Started )
     {
         return false;
     }
@@ -358,4 +476,9 @@ bool EXEC_ANALOG_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v )
     HW_SPI_Tx_Trigger( ANALOGUE_OUTPUT_SPI_CHANNEL );
 
     return true;
+}
+
+bool EXEC_ANALOGUE_OUTPUT_Is_Started( void )
+{
+    return s_EXEC_ANALOGUE_OUTPUT_Started;
 }
