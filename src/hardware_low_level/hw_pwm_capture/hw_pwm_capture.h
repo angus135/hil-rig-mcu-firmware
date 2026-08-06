@@ -88,21 +88,6 @@ typedef enum
 } HwPWMCaptureChannel_T;
 
 /**
- * @brief Configuration for a PWM capture channel.
- *
- * Defines the desired analogue front-end mode and whether the channel is
- * actively capturing.
- *
- * When disabled, the timer capture is stopped and the analogue front end
- * is forced to a safe default mode.
- */
-typedef struct
-{
-    HwPWMCaptureMode_T mode;        // Desired capture mode (voltage level)
-    bool               is_enabled;  // Flag to indicate if capture is enabled for this channel
-} HwPWMCaptureConfig_T;
-
-/**
  * @brief Zero-copy PWM capture result.
  *
  * Provides direct pointers to the timer capture registers containing the
@@ -148,8 +133,7 @@ typedef struct
  * @return true if the configuration was accepted and applied.
  * @return false if the channel or configuration is invalid.
  */
-bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T       channel,
-                                       const HwPWMCaptureConfig_T* config );
+bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T channel, bool is_enabled );
 
 /**
  * @brief Peek the latest PWM capture result without consuming it.

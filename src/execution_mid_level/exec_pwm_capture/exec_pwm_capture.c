@@ -44,6 +44,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "exec_pwm_capture.h"
+#include "logic_expander.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -51,12 +52,20 @@
  */
 #define EXEC_PWM_CAPTURE_CHANNEL_COUNT 2U
 
-#define EXEC_PWM_CAPTURE_DEFAULT_MODE HW_PWM_CAPTURE_LV_3V3
+#define EXEC_PWM_CAPTURE_DEFAULT_MODE EXEC_PWM_CAPTURE_LV_3V3
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+typedef struct ExecPwmCaptureHardwareMap_T
+{
+    LogicExpanderIndex_T  expander;
+    LogicExpanderPort_T   port;
+    uint8_t               mode_0_bit_i;
+    uint8_t               mode_1_bit_i;
+    HwPWMCaptureChannel_T hw_channel;
+} ExecPwmCaptureHardwareMap_T;
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -67,6 +76,23 @@
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
+static const ExecPwmCaptureHardwareMap_T
+    exec_pwm_capture_hardware_map[EXEC_PWM_CAPTURE_CHANNEL_COUNT] = {
+        {
+            .expander     = LOGIC_EXPANDER_DEVICE_PWM_SPI,  // expander
+            .port         = LOGIC_EXPANDER_PORT_A,          // port
+            .mode_0_bit_i = 0U,                             // mode_0_bit
+            .mode_1_bit_i = 1U,                             // mode_1_bit
+            .hw_channel   = HW_PWM_CAPTURE_CHANNEL_1        // hardware channel
+        },
+        {
+            .expander     = LOGIC_EXPANDER_DEVICE_PWM_SPI,  // expander
+            .port         = LOGIC_EXPANDER_PORT_A,          // port
+            .mode_0_bit_i = 2U,                             // mode_0_bit
+            .mode_1_bit_i = 3U,                             // mode_1_bit
+            .hw_channel   = HW_PWM_CAPTURE_CHANNEL_2        // hardware channel
+        },
+};
 
 static bool exec_pwm_capture_channel_started[EXEC_PWM_CAPTURE_CHANNEL_COUNT];
 
@@ -79,6 +105,79 @@ static bool exec_pwm_capture_channel_started[EXEC_PWM_CAPTURE_CHANNEL_COUNT];
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Apply the static analogue front-end selection for a PWM capture mode.
+ *
+ * The selected mode controls the PWM_MODE[1:0] hardware selection bits, which
+ * choose the active LV/HV input path and threshold. The actual GPIO or expander
+ * writes are implemented here once the hardware control path is available.
+ *
+ * @param mode PWM capture hardware mode to apply.
+ *
+ * @return true if the mode is valid and was accepted.
+ * @return false if the mode is invalid.
+ */
+static bool EXEC_PWM_Capture_Apply_Static_Hardware_Selection( ExecPwmCaptureMode_T    mode,
+                                                              ExecPwmCaptureChannel_T channel )
+{
+
+    bool mode_0;
+    bool mode_1;
+
+    if ( channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    switch ( mode )
+    {
+        case EXEC_PWM_CAPTURE_LV_3V3:
+            // Configure hardware for 3.3V capture mode
+            // SET PWM_MODE[1:0] to [0, 0] to select the 3.3V capture mode
+            mode_0 = false;
+            mode_1 = false;
+            break;
+        case EXEC_PWM_CAPTURE_LV_5V:
+            // Configure hardware for 5V capture mode
+            // SET PWM_MODE[1:0] to [0, 1] to select the 5V capture mode
+            mode_0 = false;
+            mode_1 = true;
+            break;
+        case EXEC_PWM_CAPTURE_HV_12V:
+            // Configure hardware for 12V capture mode
+            // SET PWM_MODE[1:0] to [1, 0] to select the 12V capture mode
+            mode_0 = true;
+            mode_1 = false;
+            break;
+        case EXEC_PWM_CAPTURE_HV_24V:
+            // Configure hardware for 24V capture mode
+            // SET PWM_MODE[1:0] to [1, 1] to select the 24V capture mode
+            mode_0 = true;
+            mode_1 = true;
+            break;
+        default:
+            return false;  // Invalid mode
+    }
+
+    const ExecPwmCaptureHardwareMap_T* hw_map = &exec_pwm_capture_hardware_map[channel];
+
+    if ( LOGIC_EXPANDER_Load_Control_Bit( hw_map->expander, hw_map->port, hw_map->mode_0_bit_i,
+                                          mode_0 )
+         != LOGIC_EXPANDER_STATUS_OK )
+    {
+        return false;
+    }
+    if ( LOGIC_EXPANDER_Load_Control_Bit( hw_map->expander, hw_map->port, hw_map->mode_1_bit_i,
+                                          mode_1 )
+         != LOGIC_EXPANDER_STATUS_OK )
+    {
+        return false;
+    }
+
+    // Remove this and return true when global expander update is implemented
+    return LOGIC_EXPANDER_Send_Control_Bits() == LOGIC_EXPANDER_STATUS_OK;
+}
 
 /**
  * @brief Validate raw PWM capture values.
@@ -115,17 +214,9 @@ static inline bool EXEC_PWM_Capture_Result_Is_Valid( uint32_t period_ticks, uint
  *------------------------------------------------------------------------------
  */
 
-bool EXEC_PWM_Capture_Start_Channel( HwPWMCaptureChannel_T       channel,
-                                     const HwPWMCaptureConfig_T* config )
+bool EXEC_PWM_Capture_Start_Channel( ExecPwmCaptureChannel_T       channel,
+                                     const ExecPwmCaptureConfig_T* config )
 {
-    /*
-     * Contract:
-     * - channel must be valid
-     * - config must not be NULL
-     * - config->is_enabled must be true
-     * - channel must not already be started
-     */
-
     if ( config == NULL )
     {
         return false;
@@ -136,7 +227,7 @@ bool EXEC_PWM_Capture_Start_Channel( HwPWMCaptureChannel_T       channel,
         return false;
     }
 
-    if ( config->is_enabled == false )
+    if ( !config->is_enabled )
     {
         return false;
     }
@@ -146,7 +237,14 @@ bool EXEC_PWM_Capture_Start_Channel( HwPWMCaptureChannel_T       channel,
         return false;
     }
 
-    if ( !HW_PWM_Capture_Configure_Channel( channel, config ) )
+    const ExecPwmCaptureHardwareMap_T* hardware = &exec_pwm_capture_hardware_map[channel];
+
+    if ( !EXEC_PWM_Capture_Apply_Static_Hardware_Selection( config->mode, channel ) )
+    {
+        return false;
+    }
+
+    if ( !HW_PWM_Capture_Configure_Channel( hardware->hw_channel, true ) )
     {
         return false;
     }
@@ -156,9 +254,9 @@ bool EXEC_PWM_Capture_Start_Channel( HwPWMCaptureChannel_T       channel,
     return true;
 }
 
-bool EXEC_PWM_Capture_Stop_Channel( HwPWMCaptureChannel_T channel )
+bool EXEC_PWM_Capture_Stop_Channel( ExecPwmCaptureChannel_T channel )
 {
-    HwPWMCaptureConfig_T config = {};
+    ExecPwmCaptureConfig_T config = { 0 };
 
     if ( channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
     {
@@ -173,21 +271,23 @@ bool EXEC_PWM_Capture_Stop_Channel( HwPWMCaptureChannel_T channel )
     config.mode       = EXEC_PWM_CAPTURE_DEFAULT_MODE;
     config.is_enabled = false;
 
-    if ( !HW_PWM_Capture_Configure_Channel( channel, &config ) )
+    if ( !HW_PWM_Capture_Configure_Channel( exec_pwm_capture_hardware_map[channel].hw_channel,
+                                            config.is_enabled ) )
     {
         return false;
     }
 
     exec_pwm_capture_channel_started[channel] = false;
 
-    return true;
+    return EXEC_PWM_Capture_Apply_Static_Hardware_Selection( EXEC_PWM_CAPTURE_DEFAULT_MODE,
+                                                             channel );
 }
 
-bool EXEC_PWM_Capture_Consume( HwPWMCaptureChannel_T channel, ExecPwmCaptureResult_T* result )
+bool EXEC_PWM_Capture_Consume( ExecPwmCaptureChannel_T channel, ExecPwmCaptureResult_T* result )
 {
-    HwPWMCaptureResult_T hw_result;
-    uint32_t             period_ticks;
-    uint32_t             high_ticks;
+    HwPWMCaptureResult_T hw_result    = { 0 };
+    uint32_t             period_ticks = 0U;
+    uint32_t             high_ticks   = 0U;
 
     /*
      * Contract:
@@ -205,7 +305,7 @@ bool EXEC_PWM_Capture_Consume( HwPWMCaptureChannel_T channel, ExecPwmCaptureResu
     result->period_ticks = 0U;
     result->high_ticks   = 0U;
 
-    hw_result = HW_PWM_Capture_Peek_Result( channel );
+    hw_result = HW_PWM_Capture_Peek_Result( exec_pwm_capture_hardware_map[channel].hw_channel );
 
     if ( !hw_result.has_new_data )
     {
@@ -224,7 +324,7 @@ bool EXEC_PWM_Capture_Consume( HwPWMCaptureChannel_T channel, ExecPwmCaptureResu
     period_ticks = *( hw_result.period_ticks );
     high_ticks   = *( hw_result.high_ticks );
 
-    HW_PWM_Capture_Consume_Result( channel );
+    HW_PWM_Capture_Consume_Result( exec_pwm_capture_hardware_map[channel].hw_channel );
     /*
      * A new capture event has been consumed at this point. Mark has_new_data true
      * before validation so callers can distinguish "no new data" from
@@ -244,10 +344,10 @@ bool EXEC_PWM_Capture_Consume( HwPWMCaptureChannel_T channel, ExecPwmCaptureResu
     return true;
 }
 
-bool EXEC_PWM_Capture_Convert( HwPWMCaptureChannel_T channel, const ExecPwmCaptureResult_T* raw,
+bool EXEC_PWM_Capture_Convert( ExecPwmCaptureChannel_T channel, const ExecPwmCaptureResult_T* raw,
                                ExecPwmCapturePhysical_T* out )
 {
-    uint32_t clock_hz;
+    uint32_t clock_hz = 0U;
 
     if ( raw == NULL || out == NULL )
     {
@@ -264,7 +364,8 @@ bool EXEC_PWM_Capture_Convert( HwPWMCaptureChannel_T channel, const ExecPwmCaptu
         return false;
     }
 
-    clock_hz = HW_PWM_Capture_Get_Timer_Clock_Hz( channel );
+    clock_hz =
+        HW_PWM_Capture_Get_Timer_Clock_Hz( exec_pwm_capture_hardware_map[channel].hw_channel );
 
     if ( clock_hz == 0U )
     {

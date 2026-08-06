@@ -65,8 +65,8 @@
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
-static bool CONSOLE_PWM_Capture_Parse_Channel( const char* arg, HwPWMCaptureChannel_T* channel );
-static bool CONSOLE_PWM_Capture_Parse_Mode( const char* arg, HwPWMCaptureMode_T* mode );
+static bool CONSOLE_PWM_Capture_Parse_Channel( const char* arg, ExecPwmCaptureChannel_T* channel );
+static bool CONSOLE_PWM_Capture_Parse_Mode( const char* arg, ExecPwmCaptureMode_T* mode );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -88,17 +88,17 @@ static bool CONSOLE_PWM_Capture_Parse_Mode( const char* arg, HwPWMCaptureMode_T*
  * @return true if parsing was successful.
  * @return false if the argument is invalid.
  */
-static bool CONSOLE_PWM_Capture_Parse_Channel( const char* arg, HwPWMCaptureChannel_T* channel )
+static bool CONSOLE_PWM_Capture_Parse_Channel( const char* arg, ExecPwmCaptureChannel_T* channel )
 {
     if ( strcmp( arg, "ch1" ) == 0 )
     {
-        *channel = HW_PWM_CAPTURE_CHANNEL_1;
+        *channel = EXEC_PWM_CAPTURE_CHANNEL_1;
         return true;
     }
 
     if ( strcmp( arg, "ch2" ) == 0 )
     {
-        *channel = HW_PWM_CAPTURE_CHANNEL_2;
+        *channel = EXEC_PWM_CAPTURE_CHANNEL_2;
         return true;
     }
 
@@ -122,29 +122,29 @@ static bool CONSOLE_PWM_Capture_Parse_Channel( const char* arg, HwPWMCaptureChan
  * @return true if parsing was successful.
  * @return false if the argument is invalid.
  */
-static bool CONSOLE_PWM_Capture_Parse_Mode( const char* arg, HwPWMCaptureMode_T* mode )
+static bool CONSOLE_PWM_Capture_Parse_Mode( const char* arg, ExecPwmCaptureMode_T* mode )
 {
     if ( strcmp( arg, "3v3" ) == 0 )
     {
-        *mode = HW_PWM_CAPTURE_LV_3V3;
+        *mode = EXEC_PWM_CAPTURE_LV_3V3;
         return true;
     }
 
     if ( strcmp( arg, "5v" ) == 0 )
     {
-        *mode = HW_PWM_CAPTURE_LV_5V;
+        *mode = EXEC_PWM_CAPTURE_LV_5V;
         return true;
     }
 
     if ( strcmp( arg, "12v" ) == 0 )
     {
-        *mode = HW_PWM_CAPTURE_HV_12V;
+        *mode = EXEC_PWM_CAPTURE_HV_12V;
         return true;
     }
 
     if ( strcmp( arg, "24v" ) == 0 )
     {
-        *mode = HW_PWM_CAPTURE_HV_24V;
+        *mode = EXEC_PWM_CAPTURE_HV_24V;
         return true;
     }
 
@@ -173,7 +173,7 @@ static void CONSOLE_PWM_Capture_Print_Usage( void )
 
 void CONSOLE_PWM_Capture_Command( uint16_t argc, char* argv[] )
 {
-    HwPWMCaptureChannel_T channel;
+    ExecPwmCaptureChannel_T channel;
 
     if ( argc < 2U )
     {
@@ -183,8 +183,8 @@ void CONSOLE_PWM_Capture_Command( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[1], "start" ) == 0 )
     {
-        HwPWMCaptureMode_T   mode;
-        HwPWMCaptureConfig_T config;
+        ExecPwmCaptureMode_T   mode;
+        ExecPwmCaptureConfig_T config;
 
         if ( argc != 4U )
         {
@@ -219,8 +219,6 @@ void CONSOLE_PWM_Capture_Command( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[1], "stop" ) == 0 )
     {
-        HwPWMCaptureConfig_T config;
-
         if ( argc != 3U )
         {
             CONSOLE_PWM_Capture_Print_Usage();
