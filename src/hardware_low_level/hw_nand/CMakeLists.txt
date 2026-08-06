@@ -30,6 +30,7 @@ target_link_libraries(hw_nand
         hw_qspi
     PRIVATE
         cubeide_hal
+        rtos
 )
 
 # -----------------------------

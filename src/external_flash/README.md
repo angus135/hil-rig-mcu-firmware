@@ -40,8 +40,7 @@ This module is responsible for:
 | `external_flash.h` | Public API header |
 | `external_flash_allocator.c` | Private wear-aware block allocator implementation |
 | `external_flash_allocator.h` | Private allocator interface used only by `external_flash` |
-| `tests/external_flash_mocks.h` | Unit test mock definitions |
-| `tests/test_external_flash.cpp` | Unit tests |
+| `tests/test_external_flash.cpp` | Unit tests and NAND dependency mocks |
 
 ---
 
@@ -221,7 +220,8 @@ where `valid_length` is less than the NAND page size.
 
 The logical offset must be aligned to the NAND page size. The length must be greater than zero and no larger than the NAND page size.
 
-`external_flash` maps the logical instruction offset to a physical NAND page, skips bad block gaps, starts the NAND DMA read path, and waits for DMA completion before returning.
+`external_flash` maps the logical instruction offset to a physical NAND page,
+skips bad-block gaps, and requests a completed DMA page read from `hw_nand`.
 
 The caller must keep the destination buffer valid and writable until the function returns.
 
@@ -381,12 +381,12 @@ the generated `stm32f4xx_it.c` is excluded from the firmware build. Those
 handlers call the HAL DMA and QSPI dispatchers that drive transfer-completion
 callbacks.
 
-Synchronous external-flash APIs wait against `HAL_GetTick()` with a 100 ms DMA
-deadline. A transfer that stops without a completion callback returns an error;
-an active transfer that reaches the deadline is aborted before timeout is
-returned. Production firmware executes `WFI` between checks, so QSPI/DMA or
-SysTick interrupts wake the processor without a CPU-frequency-dependent poll
-count or a continuous busy-spin.
+`hw_qspi` owns DMA completion signalling, timeout, and abort. Its HAL callbacks
+give a dedicated binary semaphore, so the flash-manager task blocks without
+occupying the CPU while DMA is active. `hw_nand` owns the surrounding NAND
+command sequence. External flash receives one completed physical page operation
+and maps its status into the storage-service status enum. This keeps QSPI and
+NAND transfer state out of the partition and allocation layer.
 
 For full page writes through `EXTERNAL_FLASH_WriteResultPage`, DMA reads directly from the caller supplied result buffer.
 
@@ -399,8 +399,6 @@ The caller must not modify or reuse that instruction buffer until `EXTERNAL_FLAS
 The current implementation is synchronous from the caller perspective. When `EXTERNAL_FLASH_WriteResultPage` returns `EXTERNAL_FLASH_STATUS_OK`, the DMA load and NAND program execute have completed successfully, and the logical result bytes have been counted as committed.
 
 When `EXTERNAL_FLASH_ReadInstructionPage` returns `EXTERNAL_FLASH_STATUS_OK`, the NAND page read and DMA transfer into the caller supplied buffer have completed successfully.
-
-A future asynchronous version may split these states into separate operations, such as DMA load complete and NAND program complete.
 
 ---
 

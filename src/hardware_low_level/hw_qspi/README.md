@@ -8,9 +8,9 @@ The wrapper provides:
 
 - Command-only transactions.
 - Blocking transmit and receive operations.
-- DMA transmit and receive operations.
+- DMA transmit and receive operations with task-blocking completion waits.
 - Wrapper and HAL busy-state checks.
-- Transfer completion callbacks and abort support.
+- ISR-to-task transfer completion signalling and timeout abort support.
 - Status mapping from STM32 HAL values to `HW_QSPI_Status_T`.
 
 ## Files
@@ -42,10 +42,20 @@ firmware interrupt handlers that call:
 - `HAL_DMA_IRQHandler()` for the QSPI DMA stream.
 - `HAL_QSPI_IRQHandler()` from `QUADSPI_IRQHandler()`.
 
-`external_flash` bounds its synchronous DMA wait with `HAL_GetTick()` and calls
-`HW_NAND_AbortTransfer()`/`HW_QSPI_Abort()` if that deadline expires.
+The HAL completion and error callbacks give a dedicated static binary semaphore
+from ISR context. `HW_QSPI_WaitForTransfer()` blocks the calling task on that
+semaphore, allowing other ready RTOS tasks to run while DMA is active. On
+timeout, the wrapper aborts the transfer before returning. The semaphore is
+deliberately separate from flash-manager task notifications so refill and drain
+events cannot be mistaken for DMA completion.
 
-The source buffer for `HW_QSPI_WriteDma()` and destination buffer for `HW_QSPI_ReadDma()` must remain valid until completion or abort. `HW_QSPI_IsTransferComplete()` returns `true` only after a successful completion callback; it remains `false` while active and after an error.
+The source buffer for `HW_QSPI_WriteDma()` and destination buffer for
+`HW_QSPI_ReadDma()` must remain valid until `HW_QSPI_WaitForTransfer()` returns
+or the operation is explicitly aborted. The wait API is task-context only.
+
+The QSPI and QSPI-DMA IRQ priorities must remain compatible with FreeRTOS
+`...FromISR` APIs. The current priority of 5 matches
+`configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`.
 
 ## Layering
 
