@@ -10,6 +10,7 @@ measurements to the execution manager.
 
 This module is responsible for:
 
+- Selecting the PWM capture analogue front-end mode through the LogicExpander.
 - Starting PWM capture channels through the hardware layer.
 - Stopping PWM capture channels through the hardware layer.
 - Tracking execution-layer channel started state.
@@ -42,7 +43,6 @@ PWM capture driver.
 
 The hardware layer owns:
 
-- Analogue front-end selection.
 - Timer configuration.
 - Timer start/stop control.
 - Capture register mapping.
@@ -50,6 +50,7 @@ The hardware layer owns:
 
 The execution layer owns:
 
+- Analogue front-end mode selection and its LogicExpander mapping.
 - Channel lifecycle state.
 - Start/stop sequencing policy.
 - Copying raw capture ticks into caller-owned storage.
@@ -63,8 +64,8 @@ code while still allowing deterministic low-overhead capture reads.
 ## Start/Stop Flow
 
 `EXEC_PWM_Capture_Start_Channel()` starts a capture channel by validating the
-request, rejecting duplicate starts, and delegating the enabled configuration to
-`HW_PWM_Capture_Configure_Channel()`.
+request, rejecting duplicate starts, applying the analogue front-end mode, and
+enabling the mapped hardware capture channel.
 
 A start request fails if:
 
@@ -74,9 +75,8 @@ A start request fails if:
 - the channel is already started,
 - the hardware layer rejects the configuration.
 
-`EXEC_PWM_Capture_Stop_Channel()` stops a previously started channel by applying
-a disabled hardware configuration using the default safe mode
-`HW_PWM_CAPTURE_LV_3V3`.
+`EXEC_PWM_Capture_Stop_Channel()` stops a previously started channel by disabling
+the mapped hardware capture channel.
 
 A stop request fails if:
 
