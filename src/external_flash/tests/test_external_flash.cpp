@@ -305,6 +305,7 @@ TEST_F( ExternalFlashTest, InitInitialisesNandGetsGeometryAndScansBadBlocks )
 
     ExternalFlashInfo_T info = {};
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_GetInfo( &info ) );
+    EXPECT_EQ( info.page_size_bytes, TEST_PAGE_SIZE_BYTES );
     EXPECT_EQ( info.bad_block_count, 0U );
     EXPECT_EQ( info.instruction_capacity_bytes,
                ( EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT - 1U ) * TEST_BLOCK_DATA_BYTES );
