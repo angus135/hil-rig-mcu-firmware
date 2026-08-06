@@ -45,6 +45,7 @@
 #include <stddef.h>
 #include "exec_pwm_capture.h"
 #include "logic_expander.h"
+#include "rtos_config.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -53,6 +54,8 @@
 #define EXEC_PWM_CAPTURE_CHANNEL_COUNT 2U
 
 #define EXEC_PWM_CAPTURE_DEFAULT_MODE EXEC_PWM_CAPTURE_LV_3V3
+
+#define EXEC_PWM_CAPTURE_MODE_SETTLING_DELAY_MS ( 1U )
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -243,6 +246,9 @@ bool EXEC_PWM_Capture_Start_Channel( ExecPwmCaptureChannel_T       channel,
     {
         return false;
     }
+
+    /* < Settling delay for the hardware to stabilize > */
+    vTaskDelay( pdMS_TO_TICKS( EXEC_PWM_CAPTURE_MODE_SETTLING_DELAY_MS ) );
 
     if ( !HW_PWM_Capture_Configure_Channel( hardware->hw_channel, true ) )
     {
