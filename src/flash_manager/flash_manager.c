@@ -4,15 +4,16 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Coordinates Flash Manager lifecycle state, accepts packed result
- *      records from the execution timer ISR, and drains completed result pages
- *      to external NAND from an RTOS task.
+ *      Coordinates Flash Manager lifecycle state, serves prefetched
+ *      instructions and accepts packed result records from the execution timer
+ *      ISR, and performs instruction refill/result drain operations from an
+ *      RTOS task.
  *
  *  Notes:
- *      Execution-facing result APIs are ISR-only and must never block. NAND
- *      access is restricted to the Flash Manager task. Result-buffer metadata
- *      shared by those contexts is protected by short task critical sections;
- *      NAND operations are deliberately performed outside critical sections.
+ *      Execution-facing APIs are ISR-only and must never block. NAND access is
+ *      restricted to the Flash Manager task. Buffer metadata shared by those
+ *      contexts is protected by short task critical sections; NAND operations
+ *      are deliberately performed outside critical sections.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -21,6 +22,7 @@
  */
 #include "flash_manager.h"
 #include "external_flash.h"
+#include "instruction_buffer.h"
 #include "result_buffer.h"
 #include "rtos_config.h"
 
@@ -41,6 +43,9 @@
 /** Requests publication and persistence of the final partial result page. */
 #define FLASH_MANAGER_NOTIFY_FINALISE_RESULTS ( 1UL << 2 )
 
+/** Signals that consumed instruction storage is available for a NAND refill. */
+#define FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS ( 1UL << 3 )
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -58,8 +63,7 @@ typedef struct
 
     /**
      * Serialises task-context lifecycle state and task-handle access. ISR-facing
-     * result functions do
-     * not use this mutex because an ISR must never block. Shared result-buffer
+     * APIs do not use this mutex because an ISR must never block. Shared buffer
      * metadata is instead protected by short task critical sections.
      */
     SemaphoreHandle_t access_mutex;
@@ -99,6 +103,8 @@ static bool FLASH_MANAGER_Lock( void );
 static void FLASH_MANAGER_Unlock( void );
 
 static bool FLASH_MANAGER_DrainResultPages( void );
+
+static bool FLASH_MANAGER_FillInstructionPages( void );
 
 static void FLASH_MANAGER_EnterFault( void );
 
@@ -213,6 +219,60 @@ static bool FLASH_MANAGER_DrainResultPages( void )
 }
 
 /**
+ * @brief Fills every sequential empty instruction page from external NAND.
+ *
+ * Buffer ownership transitions are protected against the execution ISR. The
+ * synchronous NAND/DMA read runs outside the critical section with interrupts
+ * enabled. The loop continues until the buffer applies backpressure or the
+ * complete instruction image has been loaded because notification bits may
+ * coalesce.
+ *
+ * @return true after all currently available slots were filled; false after a
+ *         NAND read or fill-lease completion failure.
+ */
+static bool FLASH_MANAGER_FillInstructionPages( void )
+{
+    InstructionBufferPageFillLease_T fill_lease;
+
+    for ( ;; )
+    {
+        bool fill_allowed;
+        bool page_acquired = false;
+
+        taskENTER_CRITICAL();
+        fill_allowed = ( flash_manager_context.state == FLASH_MANAGER_STATE_PREPARING_EXECUTION )
+                       || ( flash_manager_context.state == FLASH_MANAGER_STATE_EXECUTING );
+
+        if ( fill_allowed )
+        {
+            page_acquired = INSTRUCTION_BUFFER_AcquireFillPage( &fill_lease );
+        }
+        taskEXIT_CRITICAL();
+
+        if ( !fill_allowed || !page_acquired )
+        {
+            return true;
+        }
+
+        ExternalFlashStatus_T nand_read_status = EXTERNAL_FLASH_ReadInstructionPage(
+            fill_lease.instruction_offset_bytes, fill_lease.page_data,
+            fill_lease.read_length_bytes );
+
+        bool fill_completion_succeeded;
+
+        taskENTER_CRITICAL();
+        fill_completion_succeeded = INSTRUCTION_BUFFER_CompleteFillPage(
+            &fill_lease, nand_read_status == EXTERNAL_FLASH_STATUS_OK );
+        taskEXIT_CRITICAL();
+
+        if ( ( nand_read_status != EXTERNAL_FLASH_STATUS_OK ) || !fill_completion_succeeded )
+        {
+            return false;
+        }
+    }
+}
+
+/**
  * @brief Places the Flash Manager into its fault state.
  *
  * Called from Flash Manager task context after an unrecoverable asynchronous
@@ -246,10 +306,11 @@ static void FLASH_MANAGER_EnterFaultFromISR( void )
 }
 
 /**
- * @brief Prepares NAND and RAM result storage for a new execution session.
+ * @brief Prepares NAND and both RAM streams for a new execution session.
  *
- * @return true after the external-flash session starts, the result buffer is
- *         reset, and the manager enters EXECUTING; otherwise false.
+ * @return true after the external-flash session starts, result RAM is reset,
+ *         instruction RAM is preloaded, and the manager enters EXECUTING;
+ *         otherwise false.
  *
  * @note Called only by the Flash Manager task after a preparation notification.
  */
@@ -276,13 +337,27 @@ static bool FLASH_MANAGER_PrepareExecution( void )
         return false;
     }
 
+    ExternalFlashInfo_T external_flash_info = { 0 };
+
+    if ( EXTERNAL_FLASH_GetInfo( &external_flash_info ) != EXTERNAL_FLASH_STATUS_OK )
+    {
+        return false;
+    }
+
     /*
      * Init has already established valid geometry. Reset is an unconditional
      * ownership/cursor reset and therefore has no failure result.
      */
     taskENTER_CRITICAL();
     RESULT_BUFFER_Reset();
+    bool instruction_read_prepared =
+        INSTRUCTION_BUFFER_PrepareRead( external_flash_info.instruction_length_bytes );
     taskEXIT_CRITICAL();
+
+    if ( !instruction_read_prepared || !FLASH_MANAGER_FillInstructionPages() )
+    {
+        return false;
+    }
 
     if ( !FLASH_MANAGER_Lock() )
     {
@@ -463,11 +538,19 @@ void FLASH_MANAGER_Task( void* parameters )
                 FLASH_MANAGER_EnterFault();
             }
         }
+
+        if ( ( notification_bits & FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS ) != 0U )
+        {
+            if ( !FLASH_MANAGER_FillInstructionPages() )
+            {
+                FLASH_MANAGER_EnterFault();
+            }
+        }
     }
 }
 
 /**
- * @brief Initialises task-context synchronisation and result-buffer geometry.
+ * @brief Initialises task synchronisation and both buffer geometries.
  */
 bool FLASH_MANAGER_Init( void )
 {
@@ -494,7 +577,7 @@ bool FLASH_MANAGER_Init( void )
      * External flash must already be initialised so the result buffer can query
      * the active NAND geometry.
      */
-    if ( !RESULT_BUFFER_Init() )
+    if ( !RESULT_BUFFER_Init() || !INSTRUCTION_BUFFER_Init() )
     {
         flash_manager_context.state = FLASH_MANAGER_STATE_FAULT;
 
@@ -722,4 +805,89 @@ FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
         default:
             return FLASH_MANAGER_RESULT_COMMIT_INTERNAL_ERROR;
     }
+}
+
+/**
+ * @brief Exposes the next buffered instruction to the execution ISR.
+ */
+FlashManagerInstructionReadStatus_T
+FLASH_MANAGER_PeekNextInstructionFromISR( const FlashManagerInstructionView_T** instruction )
+{
+    if ( instruction == NULL )
+    {
+        return FLASH_MANAGER_INSTRUCTION_INVALID_ARGUMENT;
+    }
+
+    *instruction = NULL;
+
+    if ( flash_manager_context.state != FLASH_MANAGER_STATE_EXECUTING )
+    {
+        return FLASH_MANAGER_INSTRUCTION_INVALID_STATE;
+    }
+
+    switch ( INSTRUCTION_BUFFER_PeekInstruction( instruction ) )
+    {
+        case INSTRUCTION_BUFFER_PEEK_AVAILABLE:
+            return FLASH_MANAGER_INSTRUCTION_AVAILABLE;
+
+        case INSTRUCTION_BUFFER_PEEK_NOT_BUFFERED:
+            return FLASH_MANAGER_INSTRUCTION_NOT_BUFFERED;
+
+        case INSTRUCTION_BUFFER_PEEK_END_OF_STREAM:
+            return FLASH_MANAGER_INSTRUCTION_END_OF_STREAM;
+
+        case INSTRUCTION_BUFFER_PEEK_CORRUPT:
+            return FLASH_MANAGER_INSTRUCTION_CORRUPT;
+
+        case INSTRUCTION_BUFFER_PEEK_INVALID_ARGUMENT:
+        default:
+            return FLASH_MANAGER_INSTRUCTION_INVALID_ARGUMENT;
+    }
+}
+
+/**
+ * @brief Consumes one instruction and signals task-context refill when needed.
+ */
+bool FLASH_MANAGER_ConsumeInstructionFromISR( const FlashManagerInstructionView_T* instruction,
+                                              BaseType_t* higher_priority_task_woken )
+{
+    if ( flash_manager_context.state != FLASH_MANAGER_STATE_EXECUTING )
+    {
+        return false;
+    }
+
+    InstructionBufferConsumeStatus_T consume_status =
+        INSTRUCTION_BUFFER_ConsumeInstruction( instruction );
+
+    if ( consume_status == INSTRUCTION_BUFFER_CONSUME_OK )
+    {
+        return true;
+    }
+
+    if ( consume_status == INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED )
+    {
+        if ( flash_manager_context.task_handle == NULL )
+        {
+            FLASH_MANAGER_EnterFaultFromISR();
+            return false;
+        }
+
+        if ( xTaskNotifyFromISR( flash_manager_context.task_handle,
+                                 FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS, eSetBits,
+                                 higher_priority_task_woken )
+             != pdPASS )
+        {
+            FLASH_MANAGER_EnterFaultFromISR();
+            return false;
+        }
+
+        return true;
+    }
+
+    if ( consume_status == INSTRUCTION_BUFFER_CONSUME_INTERNAL_ERROR )
+    {
+        FLASH_MANAGER_EnterFaultFromISR();
+    }
+
+    return false;
 }
