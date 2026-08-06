@@ -256,7 +256,7 @@ bool EXEC_PWM_Capture_Start_Channel( ExecPwmCaptureChannel_T       channel,
 
 bool EXEC_PWM_Capture_Stop_Channel( ExecPwmCaptureChannel_T channel )
 {
-    ExecPwmCaptureConfig_T config = { 0 };
+    ExecPwmCaptureConfig_T config;
 
     if ( channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
     {

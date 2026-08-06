@@ -7,13 +7,12 @@
  *      Hardware layer interface for PWM capture.
  *
  *      This module provides an abstraction over the underlying timer capture
- *      peripherals and analogue front-end configuration required to measure
- *      PWM signals. It exposes zero-copy access to raw timer capture registers
- *      and provides mechanisms to detect and consume new capture events.
+ *      peripherals used to measure PWM signals. It exposes zero-copy access
+ *      to raw timer capture registers and provides mechanisms to detect and
+ *      consume new capture events.
  *
  *  Notes:
  *      Responsibilities:
- *      - Configure PWM capture analogue front-end modes
  *      - Start and stop timer-based PWM capture
  *      - Map logical channels to timer capture registers (CCR)
  *      - Expose new capture availability via hardware flags
@@ -55,23 +54,6 @@ extern "C"
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
  */
-
-/**
- * @brief PWM capture analogue front-end mode.
- *
- * Selects the hardware input path and threshold used to interpret the incoming
- * PWM signal. This configures the analogue front end prior to timer capture.
- *
- * These modes correspond directly to hardware voltage domains supported by the
- * input conditioning circuitry.
- */
-typedef enum
-{
-    HW_PWM_CAPTURE_LV_3V3 = 0U,  // Capture voltage level at 3.3V (Hardware state)
-    HW_PWM_CAPTURE_LV_5V,        // Capture voltage level at 5V (Hardware state)
-    HW_PWM_CAPTURE_HV_12V,       // Capture voltage level at 12V (Hardware state)
-    HW_PWM_CAPTURE_HV_24V        // Capture voltage level at 24V (Hardware state)
-} HwPWMCaptureMode_T;
 
 /**
  * @brief Logical PWM capture channel identifier.
@@ -118,20 +100,16 @@ typedef struct
 /**
  * @brief Configure a PWM capture channel.
  *
- * Applies the requested PWM capture front-end mode and starts or stops the
- * associated timer capture path.
+ * Starts or stops the timer capture path for a channel.
  *
- * If the channel is enabled, the requested mode is applied, the capture timer
- * is configured, and input capture is started.
- *
- * If the channel is disabled, the capture timer is stopped and the analogue
- * front end is forced to the default safe mode.
+ * The timer is always stopped before reconfiguration. If enabled, it is then
+ * configured and started. If disabled, it remains stopped.
  *
  * @param channel Logical PWM capture channel to configure.
- * @param config Pointer to the requested channel configuration.
+ * @param is_enabled True to configure and start capture; false to stop capture.
  *
  * @return true if the configuration was accepted and applied.
- * @return false if the channel or configuration is invalid.
+ * @return false if the channel is invalid.
  */
 bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T channel, bool is_enabled );
 

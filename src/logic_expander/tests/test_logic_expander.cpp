@@ -135,9 +135,9 @@ TEST_F( ExampleTest, SelfConfig_InitializesActiveDeviceAndReportsSuccess )
 
     EXPECT_EQ( LOGIC_EXPANDER_Self_Config(), LOGIC_EXPANDER_STATUS_OK );
     EXPECT_TRUE( logic_expander_ready );
-    EXPECT_EQ( logic_expander_state[0].device_address_7bit, 0x20U );
-    EXPECT_EQ( logic_expander_state[0].olat_a, 0x00U );
-    EXPECT_EQ( logic_expander_state[0].olat_b, 0xFFU );
+    EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DEVICE_DI_1].device_address_7bit, 0x20U );
+    EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DEVICE_DI_1].olat_a, 0x00U );
+    EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DEVICE_DI_1].olat_b, 0xFFU );
 }
 
 TEST_F( ExampleTest, SelfConfig_PropagatesHardwareErrorAndLeavesNotReady )
@@ -185,19 +185,19 @@ TEST_F( ExampleTest, InternalReceive_ForwardsToInternalChannel )
 
 TEST_F( ExampleTest, LoadControlBit_ValidatesInputsAndUpdatesShadowState )
 {
-    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_RESERVED_0, LOGIC_EXPANDER_PORT_A,
-                                                8U, true ),
+    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DEVICE_DI_1,
+                                                LOGIC_EXPANDER_PORT_A, 8U, true ),
                LOGIC_EXPANDER_STATUS_INVALID_PARAM );
 
-    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_RESERVED_0, LOGIC_EXPANDER_PORT_A,
-                                                3U, true ),
+    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DEVICE_DI_1,
+                                                LOGIC_EXPANDER_PORT_A, 3U, true ),
                LOGIC_EXPANDER_STATUS_OK );
-    EXPECT_EQ( logic_expander_state[0].olat_a, 0x08U );
+    EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DEVICE_DI_1].olat_a, 0x08U );
 
-    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_RESERVED_0, LOGIC_EXPANDER_PORT_A,
-                                                3U, false ),
+    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DEVICE_DI_1,
+                                                LOGIC_EXPANDER_PORT_A, 3U, false ),
                LOGIC_EXPANDER_STATUS_OK );
-    EXPECT_EQ( logic_expander_state[0].olat_a, 0x00U );
+    EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DEVICE_DI_1].olat_a, 0x00U );
 }
 
 TEST_F( ExampleTest, SendControlBits_ReturnsNotReadyBeforeSelfConfig )
@@ -208,9 +208,9 @@ TEST_F( ExampleTest, SendControlBits_ReturnsNotReadyBeforeSelfConfig )
 TEST_F( ExampleTest, SendControlBits_WritesActiveShadowRegisters )
 {
     logic_expander_ready                        = true;
-    logic_expander_state[0].device_address_7bit = 0x20U;
-    logic_expander_state[0].olat_a              = 0x5AU;
-    logic_expander_state[0].olat_b              = 0xA5U;
+    logic_expander_state[LOGIC_EXPANDER_DEVICE_DI_1].device_address_7bit = 0x20U;
+    logic_expander_state[LOGIC_EXPANDER_DEVICE_DI_1].olat_a              = 0x5AU;
+    logic_expander_state[LOGIC_EXPANDER_DEVICE_DI_1].olat_b              = 0xA5U;
 
     const std::array<uint8_t, 3U> expected_payload = { 0x14U, 0x5AU, 0xA5U };
 
@@ -229,15 +229,14 @@ TEST_F( ExampleTest, SendControlBits_WritesActiveShadowRegisters )
 
 TEST_F( ExampleTest, GetStateSnapshot_CopiesShadowState )
 {
-    logic_expander_state[2].device_address_7bit = 0x25U;
-    logic_expander_state[2].olat_a              = 0x11U;
-    logic_expander_state[2].olat_b              = 0x22U;
+    logic_expander_state[LOGIC_EXPANDER_DEVICE_DO_1].device_address_7bit = 0x25U;
+    logic_expander_state[LOGIC_EXPANDER_DEVICE_DO_1].olat_a              = 0x11U;
+    logic_expander_state[LOGIC_EXPANDER_DEVICE_DO_1].olat_b              = 0x22U;
 
     LogicExpanderStateSnapshot_T snapshot{};
 
-    EXPECT_EQ(
-        LOGIC_EXPANDER_Get_State_Snapshot( static_cast<LogicExpanderIndex_T>( 2U ), &snapshot ),
-        LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ( LOGIC_EXPANDER_Get_State_Snapshot( LOGIC_EXPANDER_DEVICE_DO_1, &snapshot ),
+               LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( snapshot.device_address_7bit, 0x25U );
     EXPECT_EQ( snapshot.olat_a, 0x11U );
     EXPECT_EQ( snapshot.olat_b, 0x22U );
