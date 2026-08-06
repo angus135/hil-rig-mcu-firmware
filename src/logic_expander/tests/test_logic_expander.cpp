@@ -161,10 +161,37 @@ protected:
 
 TEST_F( LogicExpanderTest, FunctionalIndexValuesMatchAddressTableIndices )
 {
+<<<<<<< HEAD
     EXPECT_EQ( LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT, 0 );
     EXPECT_EQ( LOGIC_EXPANDER_UNASSIGNED_7, 7 );
     EXPECT_EQ( LOGIC_EXPANDER_COUNT, 8 );
     EXPECT_EQ( LOGIC_EXPANDER_I2C_ADDRESSES[LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT], 0x20U );
+=======
+    EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) ).WillOnce( Return( HW_I2C_STATUS_OK ) );
+    EXPECT_CALL( mock_hw_i2c,
+                 LoadStageBuffer( HW_I2C_CHANNEL_FMPI2C1, ::testing::_, ::testing::_ ) )
+        .Times( 32 )
+        .WillRepeatedly( Return( true ) );
+    EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x20U ) )
+        .Times( 8 )
+        .WillRepeatedly( Return( true ) );
+    EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x24U ) )
+        .Times( 8 )
+        .WillRepeatedly( Return( true ) );
+    EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x25U ) )
+        .Times( 8 )
+        .WillRepeatedly( Return( true ) );
+    EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x26U ) )
+        .Times( 8 )
+        .WillRepeatedly( Return( true ) );
+
+    EXPECT_EQ( LOGIC_EXPANDER_Self_Config(), LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_TRUE( logic_expander_ready );
+    EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DEVICE_DI_1].device_address_7bit, 0x20U );
+    EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DEVICE_DI_1].olat_a, 0x00U );
+    EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DEVICE_DI_1].olat_b, 0xFFU );
+    EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DEVICE_I2C_AO].device_address_7bit, 0x26U );
+>>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
 }
 
 TEST_F( LogicExpanderTest, DefaultConfigurationMarksSevenExpandersActive )
@@ -412,6 +439,7 @@ TEST_F( LogicExpanderTest, SendControlBitsReturnsNotReadyBeforePhysicalConfigura
 
 TEST_F( LogicExpanderTest, SendControlBitsEnqueuesOnlyDirtyExpanders )
 {
+<<<<<<< HEAD
     logic_expander_ready                           = true;
     logic_expander_dirty_bitmask                   = 0x01U;
     logic_expander_state[0]                        = { 0x5AU, 0xA5U };
@@ -422,6 +450,30 @@ TEST_F( LogicExpanderTest, SendControlBitsEnqueuesOnlyDirtyExpanders )
             EXPECT_EQ( std::memcmp( data, expected_payload.data(), length ), 0 );
             return HW_I2C_STATUS_OK;
         } );
+=======
+    logic_expander_ready                                                     = true;
+    logic_expander_state[LOGIC_EXPANDER_DEVICE_DI_1].device_address_7bit     = 0x20U;
+    logic_expander_state[LOGIC_EXPANDER_DEVICE_DI_1].olat_a                  = 0x5AU;
+    logic_expander_state[LOGIC_EXPANDER_DEVICE_DI_1].olat_b                  = 0xA5U;
+    logic_expander_state[LOGIC_EXPANDER_DEVICE_PWM_SPI].device_address_7bit  = 0x24U;
+    logic_expander_state[LOGIC_EXPANDER_DEVICE_UART_PWR].device_address_7bit = 0x25U;
+    logic_expander_state[LOGIC_EXPANDER_DEVICE_I2C_AO].device_address_7bit   = 0x26U;
+
+    const std::array<uint8_t, 3U> expected_payload = { 0x14U, 0x5AU, 0xA5U };
+
+    EXPECT_CALL( mock_hw_i2c,
+                 LoadStageBuffer( HW_I2C_CHANNEL_FMPI2C1, ::testing::_, expected_payload.size() ) )
+        .Times( 4 )
+        .WillRepeatedly( [&]( HWI2CChannel_T channel, const uint8_t*, uint16_t length ) {
+            EXPECT_EQ( channel, HW_I2C_CHANNEL_FMPI2C1 );
+            EXPECT_EQ( length, expected_payload.size() );
+            return true;
+        } );
+    EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x20U ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x24U ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x25U ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_i2c, TriggerMasterTransmitInternal( 0x26U ) ).WillOnce( Return( true ) );
+>>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
 
     EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( logic_expander_dirty_bitmask, 0U );

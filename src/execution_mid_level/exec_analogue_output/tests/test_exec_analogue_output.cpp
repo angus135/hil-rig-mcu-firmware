@@ -1,29 +1,14 @@
 /******************************************************************************
  *  File:       test_exec_analogue_output.cpp
- *  Author:     Angus Corr
- *  Created:    25-Mar-2026
- *
  *  Description:
- *      Unit tests for the analogue output execution-layer driver.
- *
- *      These tests verify that the module configures the SPI transport with
- *      the expected settings, emits the correct DAC startup frames, clamps and
- *      scales voltage writes, and rejects invalid use before configuration.
- *
- *  Notes:
- *      These tests mock the HW SPI driver functions used by the module.
- *
+ *      Unit tests for the analogue-output execution-layer lifecycle.
  ******************************************************************************/
 
-/**-----------------------------------------------------------------------------
- *  Includes
- *------------------------------------------------------------------------------
- */
-
-#include <gtest/gtest.h>
 #include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
 #include <array>
+<<<<<<< HEAD
 #include <limits>
 #include <string.h>
 #include <type_traits>
@@ -105,10 +90,76 @@ public:
 
 static MockHWSPI* g_mock_hw_spi    = nullptr;
 static bool       g_spi_tx_faulted = false;
+=======
+#include <cstring>
 
 extern "C"
 {
+#include "exec_analogue_output.h"
+#include "hw_spi.h"
+#include "logic_expander.h"
+}
 
+using ::testing::_;
+using ::testing::Invoke;
+using ::testing::Return;
+using ::testing::StrictMock;
+
+static constexpr std::array<std::array<uint8_t, 3U>, 11U>
+    ANALOGUE_OUTPUT_STARTUP_FRAMES_EXTERNAL_VREF = { {
+        { 0x40U, 0xFFU, 0xFFU },
+        { 0x50U, 0x00U, 0x00U },
+        { 0x48U, 0xF0U, 0x00U },
+        { 0x00U, 0x00U, 0x00U },
+        { 0x08U, 0x00U, 0x00U },
+        { 0x10U, 0x00U, 0x00U },
+        { 0x18U, 0x00U, 0x00U },
+        { 0x20U, 0x00U, 0x00U },
+        { 0x28U, 0x00U, 0x00U },
+        { 0x30U, 0x00U, 0x00U },
+        { 0x38U, 0x00U, 0x00U },
+    } };
+
+static constexpr std::array<std::array<uint8_t, 3U>, 11U>
+    ANALOGUE_OUTPUT_STARTUP_FRAMES_VDD = { {
+        { 0x40U, 0x00U, 0x00U },
+        { 0x50U, 0x00U, 0x00U },
+        { 0x48U, 0xF0U, 0x00U },
+        { 0x00U, 0x00U, 0x00U },
+        { 0x08U, 0x00U, 0x00U },
+        { 0x10U, 0x00U, 0x00U },
+        { 0x18U, 0x00U, 0x00U },
+        { 0x20U, 0x00U, 0x00U },
+        { 0x28U, 0x00U, 0x00U },
+        { 0x30U, 0x00U, 0x00U },
+        { 0x38U, 0x00U, 0x00U },
+    } };
+
+class MockHWSPI
+{
+public:
+    MOCK_METHOD( bool, ConfigureChannel, ( SPIChannel_T, HWSPIConfig_T ), () );
+    MOCK_METHOD( bool, StartChannel, ( SPIChannel_T ), () );
+    MOCK_METHOD( bool, StopChannel, ( SPIChannel_T ), () );
+    MOCK_METHOD( bool, LoadTxBuffer, ( SPIChannel_T, const uint8_t*, uint32_t ), () );
+    MOCK_METHOD( void, TxTrigger, ( SPIChannel_T ), () );
+    MOCK_METHOD( bool, TxIsComplete, ( SPIChannel_T ), () );
+};
+
+class MockLogicExpander
+{
+public:
+    MOCK_METHOD( LogicExpanderStatus_T, LoadControlBit,
+                 ( LogicExpanderIndex_T, LogicExpanderPort_T, uint8_t, bool ), () );
+    MOCK_METHOD( LogicExpanderStatus_T, SendControlBits, (), () );
+};
+
+static MockHWSPI*         g_mock_hw_spi         = nullptr;
+static MockLogicExpander* g_mock_logic_expander = nullptr;
+>>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
+
+extern "C"
+{
 bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configuration )
 {
     return g_mock_hw_spi->ConfigureChannel( peripheral, configuration );
@@ -119,8 +170,17 @@ bool HW_SPI_Start_Channel( SPIChannel_T peripheral )
     return g_mock_hw_spi->StartChannel( peripheral );
 }
 
+<<<<<<< HEAD
 bool HW_SPI_Load_Tx_Packets( SPIChannel_T peripheral, const uint8_t* data,
                              uint32_t packet_size_bytes, uint32_t packet_count )
+=======
+bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
+{
+    return g_mock_hw_spi->StopChannel( peripheral );
+}
+
+bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32_t size )
+>>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
 {
     return g_mock_hw_spi->LoadTxPackets( peripheral, data, packet_size_bytes, packet_count );
 }
@@ -129,6 +189,7 @@ void HW_SPI_Tx_Trigger( SPIChannel_T peripheral )
 {
     g_mock_hw_spi->TxTrigger( peripheral );
 }
+<<<<<<< HEAD
 
 bool HW_SPI_Tx_Is_Complete( SPIChannel_T peripheral )
 {
@@ -163,52 +224,123 @@ static void ExpectPacketLoad( MockHWSPI&                             mock_hw_spi
                 EXPECT_EQ( 0, memcmp( data, expected_payload.data(), expected_payload.size() ) );
                 return accepted;
             } ) );
+=======
+
+bool HW_SPI_Tx_Is_Complete( SPIChannel_T peripheral )
+{
+    return g_mock_hw_spi->TxIsComplete( peripheral );
+>>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
 }
 
-/**-----------------------------------------------------------------------------
- *  Test Fixture
- *------------------------------------------------------------------------------
- */
+LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expander_index,
+                                                       LogicExpanderPort_T port, uint8_t bit_index,
+                                                       bool bit_value )
+{
+    return g_mock_logic_expander->LoadControlBit( expander_index, port, bit_index, bit_value );
+}
 
-/**
- * @brief Test fixture for module tests.
- *
- * Provides a consistent setup/teardown environment for all test cases.
- */
+LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void )
+{
+    return g_mock_logic_expander->SendControlBits();
+}
+}
+
+static bool VerifySpiConfiguration( SPIChannel_T peripheral, HWSPIConfig_T configuration )
+{
+    EXPECT_EQ( peripheral, SPI_DAC );
+    EXPECT_EQ( configuration.spi_mode, SPI_MASTER_MODE );
+    EXPECT_EQ( configuration.data_size, SPI_SIZE_8_BIT );
+    EXPECT_EQ( configuration.first_bit, SPI_FIRST_MSB );
+    EXPECT_EQ( configuration.baud_rate, SPI_BAUD_703KBIT );
+    EXPECT_EQ( configuration.cpol, SPI_CPOL_LOW );
+    EXPECT_EQ( configuration.cpha, SPI_CPHA_1_EDGE );
+    EXPECT_EQ( configuration.nss_pin, GPIO_SPI4_NSS );
+    return true;
+}
+
 class ExecAnalogueOutputTest : public ::testing::Test
 {
 protected:
-    ::testing::StrictMock<MockHWSPI> mock_hw_spi;
+    StrictMock<MockHWSPI>         mock_hw_spi;
+    StrictMock<MockLogicExpander> mock_logic_expander;
 
-    void SetUp( void ) override
+    void SetUp() override
     {
+<<<<<<< HEAD
         g_mock_hw_spi    = &mock_hw_spi;
         g_spi_tx_faulted = false;
         ForceModuleUnconfigured();
+=======
+        g_mock_hw_spi         = &mock_hw_spi;
+        g_mock_logic_expander = &mock_logic_expander;
+        ResetModuleState();
+>>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
     }
 
-    void TearDown( void ) override
+    void TearDown() override
     {
-        g_mock_hw_spi = nullptr;
+        g_mock_hw_spi         = nullptr;
+        g_mock_logic_expander = nullptr;
     }
 
-    void ForceModuleUnconfigured( void )
+    void ExpectEnableBit( bool enable, LogicExpanderStatus_T result = LOGIC_EXPANDER_STATUS_OK )
     {
-        using ::testing::_;
-        using ::testing::Return;
+        EXPECT_CALL( mock_logic_expander,
+                     LoadControlBit( LOGIC_EXPANDER_DEVICE_I2C_AO, LOGIC_EXPANDER_PORT_B, 0U,
+                                     enable ) )
+            .WillOnce( Return( result ) );
+    }
 
+<<<<<<< HEAD
         EXPECT_CALL( mock_hw_spi, LoadTxPackets( SPI_DAC, _, 3U, 11U ) )
             .WillOnce( Return( false ) );
 
         bool result = EXEC_ANALOGUE_OUTPUT_Config( false );
 
         EXPECT_FALSE( result );
+=======
+    void ResetModuleState()
+    {
+        if ( EXEC_ANALOGUE_OUTPUT_Is_Started() )
+        {
+            ExpectEnableBit( false );
+            EXPECT_CALL( mock_logic_expander, SendControlBits() )
+                .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
+            ExpectSafeOutputFrames();
+            ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Stop() );
+            ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+            ::testing::Mock::VerifyAndClearExpectations( &mock_logic_expander );
+        }
+>>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
 
+        /* A rejected enable-bit load resets Configure() to the unconfigured state. */
+        if ( EXEC_ANALOGUE_OUTPUT_Is_Configured() )
+        {
+            EXPECT_CALL( mock_hw_spi, StopChannel( SPI_DAC ) ).WillOnce( Return( true ) );
+        }
+        ExpectEnableBit( false, LOGIC_EXPANDER_STATUS_ERROR );
+        ASSERT_FALSE( EXEC_ANALOGUE_OUTPUT_Configure( false ) );
         ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+        ::testing::Mock::VerifyAndClearExpectations( &mock_logic_expander );
+    }
+
+    void ExpectDisabledOutputCommit()
+    {
+        ExpectEnableBit( false );
+        EXPECT_CALL( mock_logic_expander, SendControlBits() )
+            .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
+    }
+
+    void ExpectSpiSetup()
+    {
+        EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_DAC, _ ) )
+            .WillOnce( Invoke( VerifySpiConfiguration ) );
+        EXPECT_CALL( mock_hw_spi, StartChannel( SPI_DAC ) ).WillOnce( Return( true ) );
     }
 
     void ExpectStartupPacket( bool use_external_vref, bool initial_tx_complete = true )
     {
+<<<<<<< HEAD
         using ::testing::InSequence;
         using ::testing::Return;
 
@@ -222,29 +354,49 @@ protected:
         EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 1 );
         EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_DAC ) )
             .WillOnce( Return( initial_tx_complete ) );
+=======
+        const auto& frames = use_external_vref ? ANALOGUE_OUTPUT_STARTUP_FRAMES_EXTERNAL_VREF
+                                               : ANALOGUE_OUTPUT_STARTUP_FRAMES_VDD;
+
+        ::testing::InSequence sequence;
+        for ( const auto& expected_frame : frames )
+        {
+            EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_DAC, _, 3U ) )
+                .WillOnce( Invoke( [expected_frame]( SPIChannel_T, const uint8_t* data,
+                                                     uint32_t size ) {
+                    EXPECT_EQ( size, expected_frame.size() );
+                    EXPECT_EQ( std::memcmp( data, expected_frame.data(), expected_frame.size() ),
+                               0 );
+                    return true;
+                } ) );
+        }
+        EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) );
+>>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
     }
 
-    void ExpectSuccessfulSetup( void )
+    void ExpectSuccessfulConfigure( bool use_external_vref )
     {
-        using ::testing::_;
-        using ::testing::Return;
-
-        EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_DAC, _ ) )
-            .WillOnce( ::testing::Invoke( VerifySpiChannelSetupConfig ) );
-
-        EXPECT_CALL( mock_hw_spi, StartChannel( SPI_DAC ) ).WillOnce( Return( true ) );
-    }
-
-    void ExpectSuccessfulConfig( bool use_external_vref )
-    {
+<<<<<<< HEAD
         ExpectStartupPacket( use_external_vref );
     }
 
     void ExpectSingleWriteFrame( const std::array<uint8_t, 3U>& expected_frame )
-    {
-        using ::testing::_;
-        using ::testing::Invoke;
+=======
+        ExpectDisabledOutputCommit();
+        ExpectSpiSetup();
+        ExpectStartupFrames( use_external_vref );
+    }
 
+    void ConfigureSuccessfully( bool use_external_vref = false )
+>>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
+    {
+        ExpectSuccessfulConfigure( use_external_vref );
+        ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Configure( use_external_vref ) );
+        ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+        ::testing::Mock::VerifyAndClearExpectations( &mock_logic_expander );
+    }
+
+<<<<<<< HEAD
         EXPECT_CALL( mock_hw_spi, LoadTxPackets( SPI_DAC, _, 3U, 1U ) )
             .WillOnce(
                 Invoke( [expected_frame]( SPIChannel_T peripheral, const uint8_t* data,
@@ -255,62 +407,136 @@ protected:
                     EXPECT_EQ( 0, memcmp( data, expected_frame.data(), expected_frame.size() ) );
                     return true;
                 } ) );
+=======
+    void StartSuccessfully()
+    {
+        EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_DAC ) ).WillOnce( Return( true ) );
+        ExpectEnableBit( true );
+        EXPECT_CALL( mock_logic_expander, SendControlBits() )
+            .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
+        ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Start() );
+        ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+        ::testing::Mock::VerifyAndClearExpectations( &mock_logic_expander );
+    }
 
-        EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 1 );
+    void ExpectVoltageFrame( uint8_t channel, uint16_t count )
+    {
+        const std::array<uint8_t, 3U> expected = {
+            static_cast<uint8_t>( ( channel & 0x1FU ) << 3U ),
+            static_cast<uint8_t>( ( count >> 8U ) & 0xFFU ),
+            static_cast<uint8_t>( count & 0xFFU ),
+        };
+
+        EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_DAC, _, 3U ) )
+            .WillOnce( Invoke( [expected]( SPIChannel_T, const uint8_t* data, uint32_t size ) {
+                EXPECT_EQ( size, expected.size() );
+                EXPECT_EQ( std::memcmp( data, expected.data(), expected.size() ), 0 );
+                return true;
+            } ) );
+        EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) );
+    }
+>>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
+
+    void ExpectSafeOutputFrames()
+    {
+        ::testing::InSequence sequence;
+        for ( uint8_t channel = 0U; channel < 6U; channel++ )
+        {
+            const std::array<uint8_t, 3U> expected = {
+                static_cast<uint8_t>( ( channel & 0x1FU ) << 3U ), 0U, 0U
+            };
+
+            EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_DAC, _, 3U ) )
+                .WillOnce( Invoke( [expected]( SPIChannel_T, const uint8_t* data, uint32_t size ) {
+                    EXPECT_EQ( size, expected.size() );
+                    EXPECT_EQ( std::memcmp( data, expected.data(), expected.size() ), 0 );
+                    return true;
+                } ) );
+        }
+        EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) );
     }
 };
 
-/**-----------------------------------------------------------------------------
- *  Test Cases
- *------------------------------------------------------------------------------
- */
-
-TEST_F( ExecAnalogueOutputTest, SpiChannelSetup_ConfiguresAndStartsChannel )
+TEST_F( ExecAnalogueOutputTest, ConfigureDisablesOutputAndProgramsExternalReference )
 {
+<<<<<<< HEAD
     ExpectSuccessfulSetup();
 
     bool result = EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup();
 
     EXPECT_TRUE( result );
     EXPECT_EQ( EXEC_ANALOG_OUTPUT_Get_State(), EXEC_ANALOG_OUTPUT_STATE_UNCONFIGURED );
+=======
+    ExpectSuccessfulConfigure( true );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Configure( true ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Is_Configured() );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Started() );
+>>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
 }
 
-TEST_F( ExecAnalogueOutputTest, SpiChannelSetup_ConfigureFails_DoesNotStartChannel )
+TEST_F( ExecAnalogueOutputTest, ConfigureReturnsFalseWhenEnableBitCannotBeLoaded )
 {
-    using ::testing::_;
-    using ::testing::Return;
+    ExpectEnableBit( false, LOGIC_EXPANDER_STATUS_ERROR );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Configure( false ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Configured() );
+}
 
+TEST_F( ExecAnalogueOutputTest, ConfigureReturnsFalseWhenExpanderCommitFails )
+{
+    ExpectEnableBit( false );
+    EXPECT_CALL( mock_logic_expander, SendControlBits() )
+        .WillOnce( Return( LOGIC_EXPANDER_STATUS_BUSY ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Configure( false ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Configured() );
+}
+
+TEST_F( ExecAnalogueOutputTest, ConfigureReturnsFalseWhenSpiConfigurationFails )
+{
+    ExpectDisabledOutputCommit();
     EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_DAC, _ ) ).WillOnce( Return( false ) );
+<<<<<<< HEAD
     EXPECT_CALL( mock_hw_spi, StartChannel( SPI_DAC ) ).Times( 0 );
 
     bool result = EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup();
 
     EXPECT_FALSE( result );
     EXPECT_EQ( EXEC_ANALOG_OUTPUT_Get_State(), EXEC_ANALOG_OUTPUT_STATE_FAULTED );
+=======
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Configure( false ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Configured() );
+>>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
 }
 
-TEST_F( ExecAnalogueOutputTest, SpiChannelSetup_StartFails_ReturnsFalse )
+TEST_F( ExecAnalogueOutputTest, ConfigureReturnsFalseWhenSpiStartFails )
 {
-    using ::testing::_;
-    using ::testing::Return;
-
-    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_DAC, _ ) ).WillOnce( Return( true ) );
+    ExpectDisabledOutputCommit();
+    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_DAC, _ ) )
+        .WillOnce( Invoke( VerifySpiConfiguration ) );
     EXPECT_CALL( mock_hw_spi, StartChannel( SPI_DAC ) ).WillOnce( Return( false ) );
+<<<<<<< HEAD
 
     EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup() );
     EXPECT_EQ( EXEC_ANALOG_OUTPUT_Get_State(), EXEC_ANALOG_OUTPUT_STATE_FAULTED );
 }
 
 TEST_F( ExecAnalogueOutputTest, Config_ExternalVrefLoadsElevenStartupPacketsAndBecomesReady )
-{
-    ExpectSuccessfulConfig( true );
-
-    bool result = EXEC_ANALOGUE_OUTPUT_Config( true );
-
-    EXPECT_TRUE( result );
-    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Is_Configured() );
+=======
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Configure( false ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Configured() );
 }
 
+TEST_F( ExecAnalogueOutputTest, ConfigureReturnsFalseWhenStartupFrameCannotBeQueued )
+>>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
+{
+    ExpectDisabledOutputCommit();
+    ExpectSpiSetup();
+    EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_DAC, _, 3U ) ).WillOnce( Return( false ) );
+    EXPECT_CALL( mock_hw_spi, StopChannel( SPI_DAC ) ).WillOnce( Return( true ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Configure( false ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Configured() );
+}
+
+<<<<<<< HEAD
 TEST_F( ExecAnalogueOutputTest, Config_VddReferenceLoadsElevenStartupPacketsAndBecomesReady )
 {
     ExpectSuccessfulConfig( false );
@@ -747,32 +973,142 @@ TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_RejectsMalformedAndNullBatch
 
     EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
     EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( nullptr ) );
+=======
+TEST_F( ExecAnalogueOutputTest, ConfigureAgainWhileStoppedRestartsSpiConfiguration )
+{
+    ConfigureSuccessfully();
+    EXPECT_CALL( mock_hw_spi, StopChannel( SPI_DAC ) ).WillOnce( Return( true ) );
+    ExpectSuccessfulConfigure( true );
+
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Configure( true ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Is_Configured() );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Started() );
+>>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
 }
 
-TEST_F( ExecAnalogueOutputTest, WriteVoltage_NotConfigured_ReturnsFalseWithoutSPITraffic )
+TEST_F( ExecAnalogueOutputTest, ConfigureAgainLeavesExistingConfigurationWhenSpiStopFails )
 {
-    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Is_Configured() );
+    ConfigureSuccessfully();
+    EXPECT_CALL( mock_hw_spi, StopChannel( SPI_DAC ) ).WillOnce( Return( false ) );
 
-    bool result = EXEC_ANALOG_OUTPUT_Write_Voltage( 0U, 10.0F );
-
-    EXPECT_FALSE( result );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Configure( true ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Is_Configured() );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Started() );
 }
 
-TEST_F( ExecAnalogueOutputTest, WriteVoltage_ClampsLowVoltageAndWritesZeroCode )
+TEST_F( ExecAnalogueOutputTest, StartRequiresConfiguration )
 {
-    ExpectSuccessfulConfig( false );
-    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Start() );
+}
+
+TEST_F( ExecAnalogueOutputTest, StartWaitsForDacConfigurationTransfer )
+{
+    ConfigureSuccessfully();
+    EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_DAC ) ).WillOnce( Return( false ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Start() );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Started() );
+}
+
+TEST_F( ExecAnalogueOutputTest, StartEnablesOutputAfterDacConfigurationCompletes )
+{
+    ConfigureSuccessfully();
+    StartSuccessfully();
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Is_Started() );
+}
+
+TEST_F( ExecAnalogueOutputTest, StartFailureLeavesOutputStopped )
+{
+    ConfigureSuccessfully();
+    ::testing::InSequence sequence;
+    EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_DAC ) ).WillOnce( Return( true ) );
+    ExpectEnableBit( true );
+    EXPECT_CALL( mock_logic_expander, SendControlBits() )
+        .WillOnce( Return( LOGIC_EXPANDER_STATUS_BUSY ) );
+    ExpectEnableBit( false );
+
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Start() );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Started() );
+}
+
+TEST_F( ExecAnalogueOutputTest, ConfigureIsRejectedWhileOutputIsStarted )
+{
+    ConfigureSuccessfully();
+    StartSuccessfully();
+
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Configure( true ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Is_Configured() );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Is_Started() );
+}
+
+TEST_F( ExecAnalogueOutputTest, StopDisablesOutputAndRetainsConfiguration )
+{
+    ConfigureSuccessfully();
+    StartSuccessfully();
+    ExpectEnableBit( false );
+    EXPECT_CALL( mock_logic_expander, SendControlBits() )
+        .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
+    ExpectSafeOutputFrames();
+
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Stop() );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Is_Configured() );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Started() );
+}
+
+TEST_F( ExecAnalogueOutputTest, StopFailureLeavesStartedStateSetForRetry )
+{
+    ConfigureSuccessfully();
+    StartSuccessfully();
+    ExpectEnableBit( false );
+    EXPECT_CALL( mock_logic_expander, SendControlBits() )
+        .WillOnce( Return( LOGIC_EXPANDER_STATUS_BUSY ) );
+
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Stop() );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Is_Started() );
+}
+
+TEST_F( ExecAnalogueOutputTest, StopSafeFrameFailureRequiresReconfiguration )
+{
+    ConfigureSuccessfully();
+    StartSuccessfully();
+    ExpectEnableBit( false );
+    EXPECT_CALL( mock_logic_expander, SendControlBits() )
+        .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
+    EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_DAC, _, 3U ) ).WillOnce( Return( false ) );
+    EXPECT_CALL( mock_hw_spi, StopChannel( SPI_DAC ) ).WillOnce( Return( true ) );
+
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Stop() );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Started() );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Configured() );
+}
+
+TEST_F( ExecAnalogueOutputTest, RestartWaitsForSafeOutputFramesToComplete )
+{
+    ConfigureSuccessfully();
+    StartSuccessfully();
+    ExpectEnableBit( false );
+    EXPECT_CALL( mock_logic_expander, SendControlBits() )
+        .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
+    ExpectSafeOutputFrames();
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Stop() );
     ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+    ::testing::Mock::VerifyAndClearExpectations( &mock_logic_expander );
 
+<<<<<<< HEAD
     ExpectSingleWriteFrame( { 0x00U, 0x00U, 0x00U } );
 
     bool result = EXEC_ANALOG_OUTPUT_Write_Voltage( 0U, -3.5F );
 
     EXPECT_TRUE( result );
+=======
+    EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_DAC ) ).WillOnce( Return( false ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Start() );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Started() );
+>>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
 }
 
-TEST_F( ExecAnalogueOutputTest, WriteVoltage_ClampsHighVoltageAndWritesFullScaleCode )
+TEST_F( ExecAnalogueOutputTest, StopRequiresStartedState )
 {
+<<<<<<< HEAD
     ExpectSuccessfulConfig( true );
     ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( true ) );
     ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
@@ -782,10 +1118,15 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_ClampsHighVoltageAndWritesFullScale
     bool result = EXEC_ANALOG_OUTPUT_Write_Voltage( 5U, 99.0F );
 
     EXPECT_TRUE( result );
+=======
+    ConfigureSuccessfully();
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Stop() );
+>>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
 }
 
-TEST_F( ExecAnalogueOutputTest, WriteVoltage_MidScaleVoltageRoundsToNearestCount )
+TEST_F( ExecAnalogueOutputTest, WriteVoltageRequiresStartedState )
 {
+<<<<<<< HEAD
     ExpectSuccessfulConfig( false );
     ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Config( false ) );
     ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
@@ -926,4 +1267,39 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_LoadRejectionPropagatesWithoutTrigg
     EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 0 );
 
     EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Write_Voltage( 2U, 10.0F ) );
+=======
+    ConfigureSuccessfully();
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Write_Voltage( 0U, 10.0F ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, WriteVoltageClampsLowValueToZero )
+{
+    ConfigureSuccessfully();
+    StartSuccessfully();
+    ExpectVoltageFrame( 0U, 0U );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Write_Voltage( 0U, -3.5F ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, WriteVoltageClampsHighValueToFullScale )
+{
+    ConfigureSuccessfully();
+    StartSuccessfully();
+    ExpectVoltageFrame( 5U, 4095U );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Write_Voltage( 5U, 99.0F ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, WriteVoltageRoundsMidScaleToNearestCount )
+{
+    ConfigureSuccessfully();
+    StartSuccessfully();
+    ExpectVoltageFrame( 2U, 2048U );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Write_Voltage( 2U, 10.0F ) );
+}
+
+TEST_F( ExecAnalogueOutputTest, WriteVoltageRejectsUnusedDacChannel )
+{
+    ConfigureSuccessfully();
+    StartSuccessfully();
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Write_Voltage( 6U, 12.0F ) );
+>>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
 }
