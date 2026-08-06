@@ -425,8 +425,8 @@ TEST_F( HWNANDTest, PageOperationsRejectInvalidArgumentsBeforeStartingQspi )
     EXPECT_EQ( HW_NAND_STATUS_INVALID_ARG,
                HW_NAND_ReadPageBlocking( TEST_PAGE, 0U, nullptr, TEST_LENGTH ) );
     EXPECT_EQ( HW_NAND_STATUS_INVALID_ARG,
-               HW_NAND_ProgramPageDma( TEST_PAGE, HW_NAND_PROGRAMMABLE_PAGE_BYTES,
-                                       transfer_data, TEST_LENGTH ) );
+               HW_NAND_ProgramPageDma( TEST_PAGE, HW_NAND_PROGRAMMABLE_PAGE_BYTES, transfer_data,
+                                       TEST_LENGTH ) );
     EXPECT_EQ( HW_NAND_STATUS_INVALID_ARG,
                HW_NAND_ProgramPageBlocking( TEST_PAGE, 0U, transfer_data, 0U ) );
 }
@@ -520,8 +520,7 @@ TEST_F( HWNANDTest, StatusWaitUsesElapsedHalTicksAndReturnsWhenOipClears )
             return HW_QSPI_STATUS_OK;
         } ) );
 
-    EXPECT_EQ( HW_NAND_STATUS_OK,
-               HW_NAND_WaitReadyWithChecks( 2U, false, false, false, false ) );
+    EXPECT_EQ( HW_NAND_STATUS_OK, HW_NAND_WaitReadyWithChecks( 2U, false, false, false, false ) );
 }
 
 TEST_F( HWNANDTest, ReadCacheDmaUsesQuadReadOutputCommand )
@@ -600,8 +599,7 @@ TEST_F( HWNANDTest, BlockEraseRechecksStatusAfterDelayedBusyPoll )
     InSequence sequence;
 
     ExpectOpcodeCommand( HW_NAND_OPCODE_WRITE_ENABLE );
-    ExpectAddressCommand( HW_NAND_OPCODE_BLOCK_ERASE, TEST_BLOCK * 64U,
-                          HW_QSPI_ADDR_24_BITS );
+    ExpectAddressCommand( HW_NAND_OPCODE_BLOCK_ERASE, TEST_BLOCK * 64U, HW_QSPI_ADDR_24_BITS );
     ExpectStatusRead( TEST_BUSY_STATUS );
     ExpectStatusRead( TEST_READY_STATUS );
 
