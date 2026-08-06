@@ -4,8 +4,8 @@
  *  Created:    05-Aug-2026
  *
  *  Description:
- *      Unit tests for instruction-buffer geometry, read-session preparation,
- *      and sequential NAND page-fill ownership.
+ *      Unit tests for instruction-buffer geometry, NAND page-fill ownership,
+ *      contiguous instruction views, consumption, and page release.
  *
  *  Notes:
  *      Production code is included directly so tests can verify private page
@@ -38,6 +38,8 @@ extern "C"
 static constexpr uint32_t TEST_INSTRUCTION_PAGE_SIZE_BYTES = 32U;
 static constexpr uint32_t TEST_INSTRUCTION_PARTITION_CAPACITY_BYTES =
     TEST_INSTRUCTION_PAGE_SIZE_BYTES * 8U;
+static constexpr uint16_t TEST_FULL_INSTRUCTION_PAGE_PAYLOAD_BYTES = static_cast<uint16_t>(
+    TEST_INSTRUCTION_PAGE_SIZE_BYTES - sizeof( FlashManagerInstructionHeader_T ) );
 
 /**-----------------------------------------------------------------------------
  *  Module Under Test
@@ -83,6 +85,26 @@ protected:
         InstructionBufferPageFillLease_T lease = {};
         EXPECT_TRUE( INSTRUCTION_BUFFER_AcquireFillPage( &lease ) );
         return lease;
+    }
+
+    static uint32_t StoreInstruction( uint8_t* destination, uint32_t timestamp,
+                                      uint16_t payload_length_bytes, uint8_t payload_seed )
+    {
+        FlashManagerInstructionHeader_T header = {
+            timestamp,
+            payload_length_bytes,
+            2U,
+            3U,
+        };
+
+        std::memcpy( destination, &header, sizeof( header ) );
+
+        for ( uint16_t index = 0U; index < payload_length_bytes; index++ )
+        {
+            destination[sizeof( header ) + index] = static_cast<uint8_t>( payload_seed + index );
+        }
+
+        return static_cast<uint32_t>( sizeof( header ) ) + payload_length_bytes;
     }
 };
 
@@ -387,4 +409,209 @@ TEST_F( InstructionBufferTest, ThreeReadyPagesApplyBackpressureWithoutOverwritin
         EXPECT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES * page_index,
                    instruction_buffer_context.page_stream_offsets_bytes[page_index] );
     }
+}
+
+/**-----------------------------------------------------------------------------
+ *  Instruction View and Consumption Tests
+ *------------------------------------------------------------------------------
+ */
+
+TEST_F( InstructionBufferTest, CompletingSlotZeroCopiesItsValidBytesIntoMirror )
+{
+    Prepare( TEST_INSTRUCTION_PAGE_SIZE_BYTES );
+    InstructionBufferPageFillLease_T lease = AcquirePage();
+
+    for ( uint32_t index = 0U; index < lease.read_length_bytes; index++ )
+    {
+        lease.page_data[index] = static_cast<uint8_t>( 0x40U + index );
+    }
+
+    ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &lease, true ) );
+
+    uint32_t mirror_offset_bytes = TEST_INSTRUCTION_PAGE_SIZE_BYTES * INSTRUCTION_BUFFER_PAGE_COUNT;
+
+    EXPECT_EQ( 0, std::memcmp( instruction_buffer_storage,
+                               &instruction_buffer_storage[mirror_offset_bytes],
+                               TEST_INSTRUCTION_PAGE_SIZE_BYTES ) );
+}
+
+TEST_F( InstructionBufferTest, PeekAndConsumeAdvanceWithinPageWithoutRequestingRefill )
+{
+    constexpr uint16_t first_payload_length_bytes  = 4U;
+    constexpr uint16_t second_payload_length_bytes = 3U;
+    constexpr uint32_t image_length_bytes          = sizeof( FlashManagerInstructionHeader_T ) * 2U
+                                            + first_payload_length_bytes
+                                            + second_payload_length_bytes;
+
+    Prepare( image_length_bytes );
+    InstructionBufferPageFillLease_T lease = AcquirePage();
+
+    uint32_t second_record_offset =
+        StoreInstruction( lease.page_data, 100U, first_payload_length_bytes, 0x10U );
+    StoreInstruction( &lease.page_data[second_record_offset], 200U, second_payload_length_bytes,
+                      0x20U );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &lease, true ) );
+
+    const FlashManagerInstructionView_T* first_view = nullptr;
+    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE,
+               INSTRUCTION_BUFFER_PeekInstruction( &first_view ) );
+    ASSERT_NE( nullptr, first_view );
+    EXPECT_EQ( 100U, first_view->header.timestamp );
+    EXPECT_EQ( first_payload_length_bytes, first_view->header.payload_length_bytes );
+    EXPECT_EQ( 0x10U, first_view->payload[0] );
+
+    EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction( first_view ) );
+    EXPECT_EQ( second_record_offset, instruction_buffer_context.consumer_stream_offset_bytes );
+    EXPECT_EQ( second_record_offset, instruction_buffer_context.consumer_page_offset_bytes );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY, instruction_buffer_context.page_states[0] );
+
+    const FlashManagerInstructionView_T* second_view = nullptr;
+    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE,
+               INSTRUCTION_BUFFER_PeekInstruction( &second_view ) );
+    ASSERT_NE( nullptr, second_view );
+    EXPECT_EQ( 200U, second_view->header.timestamp );
+    EXPECT_FALSE( INSTRUCTION_BUFFER_IsReadComplete() );
+}
+
+TEST_F( InstructionBufferTest, PeekWaitsUntilCompleteCrossPageRecordIsBuffered )
+{
+    constexpr uint16_t payload_length_bytes      = 20U;
+    constexpr uint32_t first_record_length_bytes = sizeof( FlashManagerInstructionHeader_T );
+    constexpr uint32_t second_record_length_bytes =
+        sizeof( FlashManagerInstructionHeader_T ) + payload_length_bytes;
+    constexpr uint32_t image_length_bytes = first_record_length_bytes + second_record_length_bytes;
+
+    uint8_t image[image_length_bytes] = {};
+    ASSERT_EQ( first_record_length_bytes, StoreInstruction( image, 50U, 0U, 0U ) );
+    ASSERT_EQ( second_record_length_bytes, StoreInstruction( &image[first_record_length_bytes],
+                                                             100U, payload_length_bytes, 0x30U ) );
+
+    Prepare( image_length_bytes );
+    InstructionBufferPageFillLease_T first_lease = AcquirePage();
+    std::memcpy( first_lease.page_data, image, first_lease.read_length_bytes );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &first_lease, true ) );
+
+    const FlashManagerInstructionView_T* view = nullptr;
+    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+    ASSERT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction( view ) );
+
+    EXPECT_EQ( INSTRUCTION_BUFFER_PEEK_NOT_BUFFERED, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+    EXPECT_EQ( nullptr, view );
+
+    InstructionBufferPageFillLease_T final_lease = AcquirePage();
+    std::memcpy( final_lease.page_data, &image[final_lease.instruction_offset_bytes],
+                 final_lease.read_length_bytes );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &final_lease, true ) );
+
+    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+    ASSERT_NE( nullptr, view );
+    EXPECT_EQ( 0, std::memcmp(
+                      view->payload,
+                      &image[first_record_length_bytes + sizeof( FlashManagerInstructionHeader_T )],
+                      payload_length_bytes ) );
+}
+
+TEST_F( InstructionBufferTest, ConsumeRejectsCopiedViewWithoutAdvancingActiveInstruction )
+{
+    constexpr uint16_t payload_length_bytes = 4U;
+    constexpr uint32_t record_length_bytes =
+        sizeof( FlashManagerInstructionHeader_T ) + payload_length_bytes;
+
+    Prepare( record_length_bytes );
+    InstructionBufferPageFillLease_T lease = AcquirePage();
+    StoreInstruction( lease.page_data, 100U, payload_length_bytes, 0x50U );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &lease, true ) );
+
+    const FlashManagerInstructionView_T* view = nullptr;
+    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+    FlashManagerInstructionView_T copied_view = *view;
+
+    EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_INVALID_VIEW,
+               INSTRUCTION_BUFFER_ConsumeInstruction( &copied_view ) );
+    EXPECT_EQ( 0U, instruction_buffer_context.consumer_stream_offset_bytes );
+    EXPECT_TRUE( instruction_buffer_context.active_instruction_view.is_active );
+
+    EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction( view ) );
+    EXPECT_TRUE( INSTRUCTION_BUFFER_IsReadComplete() );
+}
+
+TEST_F( InstructionBufferTest, ConsumingExhaustedPageRequestsRefillWhenNandDataRemains )
+{
+    Prepare( TEST_INSTRUCTION_PAGE_SIZE_BYTES * ( INSTRUCTION_BUFFER_PAGE_COUNT + 1U ) );
+
+    for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
+    {
+        InstructionBufferPageFillLease_T lease = AcquirePage();
+        ASSERT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES,
+                   StoreInstruction( lease.page_data, page_index,
+                                     TEST_FULL_INSTRUCTION_PAGE_PAYLOAD_BYTES,
+                                     static_cast<uint8_t>( page_index ) ) );
+        ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &lease, true ) );
+    }
+
+    const FlashManagerInstructionView_T* view = nullptr;
+    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+
+    EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED,
+               INSTRUCTION_BUFFER_ConsumeInstruction( view ) );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY, instruction_buffer_context.page_states[0] );
+    EXPECT_EQ( 1U, instruction_buffer_context.consumer_page_index );
+    EXPECT_EQ( 0U, instruction_buffer_context.consumer_page_offset_bytes );
+
+    InstructionBufferPageFillLease_T refill_lease = AcquirePage();
+    EXPECT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES * INSTRUCTION_BUFFER_PAGE_COUNT,
+               refill_lease.instruction_offset_bytes );
+    EXPECT_EQ( instruction_buffer_storage, refill_lease.page_data );
+}
+
+TEST_F( InstructionBufferTest, RingMirrorMakesCrossBoundaryInstructionPayloadContiguous )
+{
+    constexpr uint32_t image_length_bytes        = TEST_INSTRUCTION_PAGE_SIZE_BYTES * 3U + 8U;
+    uint8_t            image[image_length_bytes] = {};
+    uint32_t           image_offset_bytes        = 0U;
+
+    image_offset_bytes += StoreInstruction( &image[image_offset_bytes], 10U,
+                                            TEST_FULL_INSTRUCTION_PAGE_PAYLOAD_BYTES, 0x10U );
+    image_offset_bytes += StoreInstruction( &image[image_offset_bytes], 20U,
+                                            TEST_FULL_INSTRUCTION_PAGE_PAYLOAD_BYTES, 0x20U );
+    image_offset_bytes += StoreInstruction( &image[image_offset_bytes], 30U, 20U, 0x30U );
+    image_offset_bytes += StoreInstruction( &image[image_offset_bytes], 40U, 4U, 0x40U );
+    ASSERT_EQ( image_length_bytes, image_offset_bytes );
+
+    Prepare( image_length_bytes );
+
+    for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
+    {
+        InstructionBufferPageFillLease_T lease = AcquirePage();
+        std::memcpy( lease.page_data, &image[lease.instruction_offset_bytes],
+                     lease.read_length_bytes );
+        ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &lease, true ) );
+    }
+
+    const FlashManagerInstructionView_T* view = nullptr;
+    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+    ASSERT_EQ( INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED,
+               INSTRUCTION_BUFFER_ConsumeInstruction( view ) );
+
+    InstructionBufferPageFillLease_T refill_lease = AcquirePage();
+    std::memcpy( refill_lease.page_data, &image[refill_lease.instruction_offset_bytes],
+                 refill_lease.read_length_bytes );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &refill_lease, true ) );
+
+    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+    ASSERT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction( view ) );
+    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+    ASSERT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction( view ) );
+
+    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+    ASSERT_NE( nullptr, view );
+    EXPECT_EQ( 40U, view->header.timestamp );
+    EXPECT_EQ( 4U, view->header.payload_length_bytes );
+    EXPECT_EQ( 0, std::memcmp( view->payload, &image[image_length_bytes - 4U], 4U ) );
+
+    EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction( view ) );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY, instruction_buffer_context.page_states[2] );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY, instruction_buffer_context.page_states[0] );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PEEK_END_OF_STREAM, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+    EXPECT_TRUE( INSTRUCTION_BUFFER_IsReadComplete() );
 }

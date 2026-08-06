@@ -12,10 +12,9 @@
  *      instructions through immutable views. NAND access remains restricted to
  *      the Flash Manager task and occurs only after the ISR returns.
  *
- *      Result logging and finalisation are implemented. Instruction retrieval
- *      types and ISR contracts are declared here while their buffer and task
- *      integration are developed incrementally. Result transfer to the host and
- *      instruction upload remain future work.
+ *      Result logging/finalisation and instruction preload/refill are
+ *      implemented. Result transfer to the host and instruction upload remain
+ *      future work.
  ******************************************************************************/
 
 #ifndef FLASH_MANAGER_H
@@ -50,8 +49,8 @@ extern "C"
  * @brief Flash Manager task scheduling priority.
  *
  * The execution timer ISR always preempts this task. This priority must still
- * allow completed pages to drain before the result buffer becomes full and
- * should be validated against NAND latency and the other application tasks.
+ * allow instruction pages to refill before underrun and completed result pages
+ * to drain before overflow. Validate it against NAND latency and other tasks.
  */
 #define FLASH_MANAGER_TASK_PRIORITY ( 3U )
 
@@ -61,13 +60,13 @@ extern "C"
  */
 
 /*
- * Implemented result lifecycle and planned instruction-preload integration:
+ * Implemented execution lifecycle:
  *
  * IDLE
  *   -> RequestExecutionPreparation()
  * PREPARING_EXECUTION
  *   -> Flash Manager task starts the result session and resets result RAM
- *   -> Future integration also preloads instruction RAM before EXECUTING
+ *   -> Flash Manager task preloads instruction RAM before EXECUTING
  * EXECUTING
  *   -> Run State Manager stops the timer and waits for the ISR to return
  *   -> RequestResultFinalisation()
@@ -92,9 +91,8 @@ typedef enum
     FLASH_MANAGER_STATE_PREPARING_EXECUTION,
 
     /**
-     * The execution ISR may reserve, populate, and commit result records.
-     * Instruction consumption is permitted after retrieval integration primes
-     * the instruction buffer.
+     * The execution ISR may consume prefetched instructions and reserve,
+     * populate, and commit result records.
      */
     FLASH_MANAGER_STATE_EXECUTING,
 
@@ -242,7 +240,8 @@ typedef struct
  * The header and payload together represent one complete logical instruction.
  * The fixed header is copied into this aligned view for safe field access; the
  * variable-length payload remains in Flash Manager-owned buffer storage and is
- * exposed without a copy except when the stored record wraps physically.
+ * exposed without a copy. An internal mirror keeps records crossing the
+ * physical end of circular storage contiguous.
  *
  * The view remains valid until consumed or the instruction buffer is reset.
  * The Execution Manager and peripheral driver must not retain payload after a
@@ -291,8 +290,8 @@ typedef enum
  * @brief Runs the Flash Manager RTOS task.
  *
  * The task processes lifecycle notifications and performs NAND operations.
- * Currently it prepares, drains, and finalises result storage; instruction-page
- * preload and refill will be added through the same task.
+ * It prepares and refills instruction storage, drains result storage, and
+ * processes execution-session lifecycle requests.
  *
  * @param parameters Optional FreeRTOS task parameter. Currently unused.
  *
@@ -420,10 +419,9 @@ bool FLASH_MANAGER_ConsumeInstructionFromISR( const FlashManagerInstructionView_
  * @brief Requests asynchronous preparation of a new execution session.
  *
  * The request changes IDLE to PREPARING_EXECUTION and notifies the Flash
- * Manager task. The current task implementation starts a new external-flash
- * result session, resets result RAM, and enters EXECUTING on success or FAULT
- * on failure. Instruction preloading must be added before execution integration
- * is enabled.
+ * Manager task. The task starts a new external-flash result session, resets
+ * result RAM, preloads every available instruction slot, and enters EXECUTING
+ * only after preparation succeeds.
  *
  * @return Request acceptance status.
  *
