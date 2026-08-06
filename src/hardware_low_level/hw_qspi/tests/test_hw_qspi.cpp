@@ -161,8 +161,7 @@ extern "C" HAL_StatusTypeDef HAL_QSPI_Abort( QSPI_HandleTypeDef* hqspi )
     return g_mock->Abort( hqspi );
 }
 
-extern "C" SemaphoreHandle_t
-xSemaphoreCreateBinaryStatic( StaticSemaphore_t* semaphore_storage )
+extern "C" SemaphoreHandle_t xSemaphoreCreateBinaryStatic( StaticSemaphore_t* semaphore_storage )
 {
     if ( g_mock == nullptr )
     {
@@ -182,8 +181,8 @@ extern "C" BaseType_t xSemaphoreTake( SemaphoreHandle_t semaphore, TickType_t ti
     return g_mock->TakeSemaphore( semaphore, ticks_to_wait );
 }
 
-extern "C" BaseType_t
-xSemaphoreGiveFromISR( SemaphoreHandle_t semaphore, BaseType_t* higher_priority_task_woken )
+extern "C" BaseType_t xSemaphoreGiveFromISR( SemaphoreHandle_t semaphore,
+                                             BaseType_t*       higher_priority_task_woken )
 {
     if ( g_mock == nullptr )
     {

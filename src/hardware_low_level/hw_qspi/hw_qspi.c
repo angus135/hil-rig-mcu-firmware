@@ -406,8 +406,7 @@ static HW_QSPI_Status_T HW_QSPI_Issue_Command_For_Data( const HW_QSPI_Command_T*
  */
 static HW_QSPI_Status_T HW_QSPI_InitialiseTransferSemaphore( void )
 {
-    qspi_transfer_semaphore =
-        xSemaphoreCreateBinaryStatic( &qspi_transfer_semaphore_storage );
+    qspi_transfer_semaphore = xSemaphoreCreateBinaryStatic( &qspi_transfer_semaphore_storage );
 
     return ( qspi_transfer_semaphore != NULL ) ? HW_QSPI_STATUS_OK : HW_QSPI_STATUS_ERROR;
 }
@@ -432,8 +431,7 @@ static void HW_QSPI_PrepareDmaTransfer( void )
  */
 static void HW_QSPI_SignalTransferFromIsr( HW_QSPI_InternalTransferState_T transfer_state )
 {
-    if ( ( qspi_transfer_state != HW_QSPI_TRANSFER_ACTIVE )
-         || ( qspi_transfer_semaphore == NULL ) )
+    if ( ( qspi_transfer_state != HW_QSPI_TRANSFER_ACTIVE ) || ( qspi_transfer_semaphore == NULL ) )
     {
         return;
     }
@@ -696,7 +694,7 @@ HW_QSPI_Status_T HW_QSPI_ReadDma( const HW_QSPI_Command_T* command, uint8_t* dat
     }
 
     HW_QSPI_PrepareDmaTransfer();
-    status              = HW_QSPI_Map_HAL_Status( HAL_QSPI_Receive_DMA( qspi_handle, data ) );
+    status = HW_QSPI_Map_HAL_Status( HAL_QSPI_Receive_DMA( qspi_handle, data ) );
     if ( status != HW_QSPI_STATUS_OK )
     {
         qspi_transfer_state = HW_QSPI_TRANSFER_ERROR;

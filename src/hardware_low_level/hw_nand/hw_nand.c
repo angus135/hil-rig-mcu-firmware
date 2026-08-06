@@ -737,8 +737,7 @@ static HW_NAND_Status_T HW_NAND_ReadPageToCache( uint32_t page )
     return HW_NAND_WaitReadyWithChecks( HW_NAND_PAGE_READ_TIMEOUT_MS, false, false, true, false );
 }
 
-static HW_NAND_Status_T HW_NAND_ReadCacheBlocking( uint16_t column, uint8_t* data,
-                                                   uint32_t length )
+static HW_NAND_Status_T HW_NAND_ReadCacheBlocking( uint16_t column, uint8_t* data, uint32_t length )
 {
     if ( !nand_initialised )
     {
@@ -921,8 +920,7 @@ HW_NAND_Status_T HW_NAND_ProgramPageBlocking( uint32_t page, uint16_t column, co
     }
 
     if ( !HW_NAND_Is_Valid_Page( page ) || ( data == NULL )
-         || !HW_NAND_Is_Valid_Column_Range( column, length,
-                                            HW_NAND_PROGRAMMABLE_PAGE_BYTES ) )
+         || !HW_NAND_Is_Valid_Column_Range( column, length, HW_NAND_PROGRAMMABLE_PAGE_BYTES ) )
     {
         return HW_NAND_STATUS_INVALID_ARG;
     }
@@ -945,8 +943,7 @@ HW_NAND_Status_T HW_NAND_ProgramPageDma( uint32_t page, uint16_t column, const u
     }
 
     if ( !HW_NAND_Is_Valid_Page( page ) || ( data == NULL )
-         || !HW_NAND_Is_Valid_Column_Range( column, length,
-                                            HW_NAND_PROGRAMMABLE_PAGE_BYTES ) )
+         || !HW_NAND_Is_Valid_Column_Range( column, length, HW_NAND_PROGRAMMABLE_PAGE_BYTES ) )
     {
         return HW_NAND_STATUS_INVALID_ARG;
     }
