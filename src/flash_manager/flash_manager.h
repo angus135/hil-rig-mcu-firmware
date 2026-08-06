@@ -215,6 +215,9 @@ typedef struct
  * @brief Fixed header stored before every canonical instruction payload.
  *
  * The package application layer creates this representation before upload.
+ * Stored instructions form a packed [header][payload] stream without padding;
+ * the next header immediately follows the preceding payload. Upload processing
+ * must validate every record and reject malformed streams before NAND storage.
  * The current storage format uses the MCU structure representation; byte order
  * must be defined explicitly before instruction images become portable.
  */
@@ -236,6 +239,11 @@ typedef struct
 /**
  * @brief Read-only view of the next buffered execution instruction.
  *
+ * The header and payload together represent one complete logical instruction.
+ * The fixed header is copied into this aligned view for safe field access; the
+ * variable-length payload remains in Flash Manager-owned buffer storage and is
+ * exposed without a copy except when the stored record wraps physically.
+ *
  * The view remains valid until consumed or the instruction buffer is reset.
  * The Execution Manager and peripheral driver must not retain payload after a
  * successful consume operation.
@@ -245,7 +253,7 @@ typedef struct
     /** Parsed copy of the stored instruction header. */
     FlashManagerInstructionHeader_T header;
 
-    /** Read-only canonical instruction payload. */
+    /** Read-only payload belonging to the instruction described by header. */
     const uint8_t* payload;
 
     /** Opaque identifier used to reject stale consumption attempts. */
@@ -376,8 +384,9 @@ FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
  * instruction until it is consumed.
  *
  * @param[out] instruction
- *      Destination for the instruction view. Cleared before returning any
- *      status other than FLASH_MANAGER_INSTRUCTION_AVAILABLE.
+ *      Destination for a pointer to the prepared instruction view. Set to null
+ *      before returning any status other than
+ *      FLASH_MANAGER_INSTRUCTION_AVAILABLE.
  *
  * @return Current instruction-read status.
  *
@@ -385,7 +394,7 @@ FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
  * @note This function never blocks, accesses NAND or uses a mutex.
  */
 FlashManagerInstructionReadStatus_T
-FLASH_MANAGER_PeekNextInstructionFromISR( FlashManagerInstructionView_T* instruction );
+FLASH_MANAGER_PeekNextInstructionFromISR( const FlashManagerInstructionView_T** instruction );
 
 /**
  * @brief Consumes the instruction returned by the current successful peek.
