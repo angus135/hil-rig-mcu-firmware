@@ -91,6 +91,25 @@ typedef struct
     uint32_t duty_cycle_bp;  // basis points, 0–10000 (1bp = 0.01%)
 } ExecPwmCapturePhysical_T;
 
+typedef enum
+{
+    EXEC_PWM_CAPTURE_LV_3V3 = 0U,
+    EXEC_PWM_CAPTURE_LV_5V,
+    EXEC_PWM_CAPTURE_HV_12V,
+    EXEC_PWM_CAPTURE_HV_24V,
+} ExecPwmCaptureMode_T;
+
+typedef enum
+{
+    EXEC_PWM_CAPTURE_CHANNEL_1 = 0U,
+    EXEC_PWM_CAPTURE_CHANNEL_2,
+} ExecPwmCaptureChannel_T;
+
+typedef struct ExecPwmCaptureConfig_T
+{
+    ExecPwmCaptureMode_T mode;
+    bool                 is_enabled;
+} ExecPwmCaptureConfig_T;
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -121,7 +140,7 @@ typedef struct
  * These preconditions are not checked at runtime to minimise execution-path
  * overhead. Violating them is caller error.
  */
-bool EXEC_PWM_Capture_Consume( HwPWMCaptureChannel_T channel, ExecPwmCaptureResult_T* result );
+bool EXEC_PWM_Capture_Consume( ExecPwmCaptureChannel_T channel, ExecPwmCaptureResult_T* result );
 
 /**
  * @brief Start a PWM capture channel.
@@ -142,8 +161,8 @@ bool EXEC_PWM_Capture_Consume( HwPWMCaptureChannel_T channel, ExecPwmCaptureResu
  *         - the channel is already started
  *         - the hardware layer rejected the configuration
  */
-bool EXEC_PWM_Capture_Start_Channel( HwPWMCaptureChannel_T       channel,
-                                     const HwPWMCaptureConfig_T* config );
+bool EXEC_PWM_Capture_Start_Channel( ExecPwmCaptureChannel_T       channel,
+                                     const ExecPwmCaptureConfig_T* config );
 
 /**
  * @brief Stop PWM capture on the specified channel.
@@ -168,7 +187,7 @@ bool EXEC_PWM_Capture_Start_Channel( HwPWMCaptureChannel_T       channel,
  * Contract:
  * The caller must ensure channel is valid within system context.
  */
-bool EXEC_PWM_Capture_Stop_Channel( HwPWMCaptureChannel_T channel );
+bool EXEC_PWM_Capture_Stop_Channel( ExecPwmCaptureChannel_T channel );
 
 /**
  * @brief Convert a validated PWM capture result to physical units.
@@ -186,7 +205,7 @@ bool EXEC_PWM_Capture_Stop_Channel( HwPWMCaptureChannel_T channel );
  *         - raw->is_valid is false
  *         - the hardware layer reports no clock (channel disabled or unconfigured)
  */
-bool EXEC_PWM_Capture_Convert( HwPWMCaptureChannel_T channel, const ExecPwmCaptureResult_T* raw,
+bool EXEC_PWM_Capture_Convert( ExecPwmCaptureChannel_T channel, const ExecPwmCaptureResult_T* raw,
                                ExecPwmCapturePhysical_T* out );
 
 #ifdef __cplusplus
