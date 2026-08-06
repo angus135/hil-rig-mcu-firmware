@@ -105,38 +105,26 @@ protected:
 
 TEST_F( HWPWMCaptureTest, ConfigureEnabledChannel1ReturnsTrue )
 {
-    HwPWMCaptureConfig_T config = {};
-    config.mode                 = HW_PWM_CAPTURE_LV_3V3;
-    config.is_enabled           = true;
-
     EXPECT_CALL( mock_timer, Stop_Timer( _ ) );
     EXPECT_CALL( mock_timer, Configure_Timer( _, _, _ ) );
     EXPECT_CALL( mock_timer, Start_Timer( _ ) );
     EXPECT_CALL( mock_timer, Get_Clock_Hz( _ ) ).WillOnce( testing::Return( 1000000U ) );
 
-    EXPECT_TRUE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config ) );
+    EXPECT_TRUE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, true ) );
 }
 
 TEST_F( HWPWMCaptureTest, ConfigureDisabledChannel1ReturnsTrue )
 {
-    HwPWMCaptureConfig_T config = {};
-    config.mode                 = HW_PWM_CAPTURE_LV_3V3;
-    config.is_enabled           = false;
-
     EXPECT_CALL( mock_timer, Stop_Timer( _ ) );
     EXPECT_CALL( mock_timer, Configure_Timer( _, _, _ ) ).Times( 0 );
     EXPECT_CALL( mock_timer, Start_Timer( _ ) ).Times( 0 );
     EXPECT_CALL( mock_timer, Get_Clock_Hz( _ ) ).Times( 0 );
 
-    EXPECT_TRUE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config ) );
+    EXPECT_TRUE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, false ) );
 }
 
 TEST_F( HWPWMCaptureTest, ConfigureEnabledChannelStartsTimerAfterConfigure )
 {
-    HwPWMCaptureConfig_T config = {};
-    config.mode                 = HW_PWM_CAPTURE_LV_3V3;
-    config.is_enabled           = true;
-
     testing::InSequence seq;
     EXPECT_CALL( mock_timer, Stop_Timer( PWM_CAPTURE_TIMER_CH1 ) );
     EXPECT_CALL( mock_timer, Configure_Timer( PWM_CAPTURE_TIMER_CH1, 0U, 0xFFFFFFFFU ) );
@@ -144,63 +132,15 @@ TEST_F( HWPWMCaptureTest, ConfigureEnabledChannelStartsTimerAfterConfigure )
     EXPECT_CALL( mock_timer, Get_Clock_Hz( PWM_CAPTURE_TIMER_CH1 ) )
         .WillOnce( testing::Return( 1000000U ) );
 
-    HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config );
-}
-
-TEST_F( HWPWMCaptureTest, ConfigureAllValidModesReturnsTrue )
-{
-    const HwPWMCaptureMode_T modes[] = {
-        HW_PWM_CAPTURE_LV_3V3,
-        HW_PWM_CAPTURE_LV_5V,
-        HW_PWM_CAPTURE_HV_12V,
-        HW_PWM_CAPTURE_HV_24V,
-    };
-
-    for ( HwPWMCaptureMode_T mode : modes )
-    {
-        HwPWMCaptureConfig_T config = {};
-        config.mode                 = mode;
-        config.is_enabled           = true;
-
-        EXPECT_CALL( mock_timer, Stop_Timer( _ ) );
-        EXPECT_CALL( mock_timer, Configure_Timer( _, _, _ ) );
-        EXPECT_CALL( mock_timer, Start_Timer( _ ) );
-        EXPECT_CALL( mock_timer, Get_Clock_Hz( _ ) ).WillOnce( testing::Return( 1000000U ) );
-
-        EXPECT_TRUE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config ) );
-    }
-}
-
-TEST_F( HWPWMCaptureTest, ConfigureReturnsFalseForNullConfig )
-{
-    EXPECT_CALL( mock_timer, Stop_Timer( _ ) ).Times( 0 );
-
-    EXPECT_FALSE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, nullptr ) );
+    EXPECT_TRUE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, true ) );
 }
 
 TEST_F( HWPWMCaptureTest, ConfigureReturnsFalseForInvalidChannel )
 {
-    HwPWMCaptureConfig_T config = {};
-    config.mode                 = HW_PWM_CAPTURE_LV_3V3;
-    config.is_enabled           = true;
-
     EXPECT_CALL( mock_timer, Stop_Timer( _ ) ).Times( 0 );
 
     EXPECT_FALSE(
-        HW_PWM_Capture_Configure_Channel( static_cast<HwPWMCaptureChannel_T>( 2U ), &config ) );
-}
-
-TEST_F( HWPWMCaptureTest, ConfigureReturnsFalseForInvalidMode )
-{
-    HwPWMCaptureConfig_T config = {};
-    config.mode                 = static_cast<HwPWMCaptureMode_T>( 99U );
-    config.is_enabled           = true;
-
-    EXPECT_CALL( mock_timer, Stop_Timer( _ ) ).Times( 0 );
-    EXPECT_CALL( mock_timer, Configure_Timer( _, _, _ ) ).Times( 0 );
-    EXPECT_CALL( mock_timer, Start_Timer( _ ) ).Times( 0 );
-
-    EXPECT_FALSE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, &config ) );
+        HW_PWM_Capture_Configure_Channel( static_cast<HwPWMCaptureChannel_T>( 2U ), true ) );
 }
 
 TEST_F( HWPWMCaptureTest, PeekChannel1ReturnsNoDataWhenNoNewCaptureFlag )
