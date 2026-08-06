@@ -539,8 +539,8 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
             uint32_t mirror_offset_bytes =
                 instruction_buffer_context.page_size_bytes * INSTRUCTION_BUFFER_PAGE_COUNT;
 
-            memcpy( &instruction_buffer_storage[mirror_offset_bytes],
-                    instruction_buffer_storage, read_length_bytes );
+            memcpy( &instruction_buffer_storage[mirror_offset_bytes], instruction_buffer_storage,
+                    read_length_bytes );
         }
 
         instruction_buffer_context.page_valid_bytes[page_index] = read_length_bytes;
@@ -625,8 +625,8 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
         return INSTRUCTION_BUFFER_PEEK_CORRUPT;
     }
 
-    uint32_t buffered_unread_bytes = instruction_buffer_context.next_nand_read_offset_bytes
-                                     - record_stream_offset_bytes;
+    uint32_t buffered_unread_bytes =
+        instruction_buffer_context.next_nand_read_offset_bytes - record_stream_offset_bytes;
 
     if ( buffered_unread_bytes < sizeof( FlashManagerInstructionHeader_T ) )
     {
@@ -685,10 +685,10 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
         .is_active                  = true,
         .record_stream_offset_bytes = record_stream_offset_bytes,
         .record_length_bytes        = record_length_bytes,
-        .view = { .header  = header,
-                  .payload = &instruction_buffer_storage[record_storage_offset_bytes
-                                                          + sizeof( header )],
-                  .view_id = INSTRUCTION_BUFFER_AllocateInstructionViewId() } };
+        .view                       = { .header = header,
+                                        .payload =
+                                            &instruction_buffer_storage[record_storage_offset_bytes + sizeof( header )],
+                                        .view_id = INSTRUCTION_BUFFER_AllocateInstructionViewId() } };
 
     *instruction = &instruction_buffer_context.active_instruction_view.view;
 
