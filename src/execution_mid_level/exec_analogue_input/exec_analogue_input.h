@@ -53,12 +53,12 @@ typedef enum ExecAnalogueInputSampleRate_T
     EXEC_ANALOGUE_INPUT_SAMPLE_RATE_500_HZ,
 } ExecAnalogueInputSampleRate_T;
 
-typedef struct ExecAnalogueInputConfiguration_T
+typedef struct ExecAnalogueInputConfig_T
 {
     ExecAnalogueInputSampleRate_T sample_rate;
     bool                          ch_0_is_enabled;
     bool                          ch_1_is_enabled;
-} ExecAnalogueInputConfiguration_T;
+} ExecAnalogueInputConfig_T;
 
 // This struct contains pointers to where the Analogue Input voltages should be stored.
 // The Execution Manager should set the pointers in this struct to the places where the
@@ -100,12 +100,14 @@ typedef struct ExecAnalogueInputVoltages_T
  *      The configuration is not currently supported, or the ADC measurement
  *      frequency could not be configured.
  */
-bool EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs(
-    ExecAnalogueInputConfiguration_T configuration );
+bool EXEC_ANALOGUE_INPUT_Configure( const ExecAnalogueInputConfig_T* config );
 
 bool EXEC_ANALOGUE_INPUT_Start( void );
 
 bool EXEC_ANALOGUE_INPUT_Stop( void );
+
+bool EXEC_ANALOGUE_INPUT_Is_Configured( void );
+bool EXEC_ANALOGUE_INPUT_Is_Started( void );
 
 /**
  * @brief Reads and processes the latest analogue input measurements.
