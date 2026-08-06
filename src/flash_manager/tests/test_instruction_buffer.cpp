@@ -106,22 +106,22 @@ TEST_F( InstructionBufferTest, InitUsesExternalFlashGeometryAndLeavesReadUnprepa
 
 TEST_F( InstructionBufferTest, InitRejectsUnavailableOrUnsupportedGeometry )
 {
-    FLASH_MANAGER_TEST_ConfigureInstructionFlashInfo(
-        EXTERNAL_FLASH_STATUS_NOT_INITIALISED, TEST_INSTRUCTION_PAGE_SIZE_BYTES,
-        TEST_INSTRUCTION_PARTITION_CAPACITY_BYTES );
+    FLASH_MANAGER_TEST_ConfigureInstructionFlashInfo( EXTERNAL_FLASH_STATUS_NOT_INITIALISED,
+                                                      TEST_INSTRUCTION_PAGE_SIZE_BYTES,
+                                                      TEST_INSTRUCTION_PARTITION_CAPACITY_BYTES );
     EXPECT_FALSE( INSTRUCTION_BUFFER_Init() );
 
-    FLASH_MANAGER_TEST_ConfigureInstructionFlashInfo(
-        EXTERNAL_FLASH_STATUS_OK, 0U, TEST_INSTRUCTION_PARTITION_CAPACITY_BYTES );
+    FLASH_MANAGER_TEST_ConfigureInstructionFlashInfo( EXTERNAL_FLASH_STATUS_OK, 0U,
+                                                      TEST_INSTRUCTION_PARTITION_CAPACITY_BYTES );
     EXPECT_FALSE( INSTRUCTION_BUFFER_Init() );
 
-    FLASH_MANAGER_TEST_ConfigureInstructionFlashInfo(
-        EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES + 1U,
-        TEST_INSTRUCTION_PARTITION_CAPACITY_BYTES );
+    FLASH_MANAGER_TEST_ConfigureInstructionFlashInfo( EXTERNAL_FLASH_STATUS_OK,
+                                                      EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES + 1U,
+                                                      TEST_INSTRUCTION_PARTITION_CAPACITY_BYTES );
     EXPECT_FALSE( INSTRUCTION_BUFFER_Init() );
 
-    FLASH_MANAGER_TEST_ConfigureInstructionFlashInfo(
-        EXTERNAL_FLASH_STATUS_OK, TEST_INSTRUCTION_PAGE_SIZE_BYTES, 0U );
+    FLASH_MANAGER_TEST_ConfigureInstructionFlashInfo( EXTERNAL_FLASH_STATUS_OK,
+                                                      TEST_INSTRUCTION_PAGE_SIZE_BYTES, 0U );
     EXPECT_FALSE( INSTRUCTION_BUFFER_Init() );
 
     EXPECT_FALSE( instruction_buffer_context.is_initialised );
@@ -131,9 +131,9 @@ TEST_F( InstructionBufferTest, FailedReinitialisationInvalidatesEarlierGeometry 
 {
     Initialise();
 
-    FLASH_MANAGER_TEST_ConfigureInstructionFlashInfo(
-        EXTERNAL_FLASH_STATUS_ERROR, TEST_INSTRUCTION_PAGE_SIZE_BYTES,
-        TEST_INSTRUCTION_PARTITION_CAPACITY_BYTES );
+    FLASH_MANAGER_TEST_ConfigureInstructionFlashInfo( EXTERNAL_FLASH_STATUS_ERROR,
+                                                      TEST_INSTRUCTION_PAGE_SIZE_BYTES,
+                                                      TEST_INSTRUCTION_PARTITION_CAPACITY_BYTES );
 
     EXPECT_FALSE( INSTRUCTION_BUFFER_Init() );
     EXPECT_FALSE( instruction_buffer_context.is_initialised );
@@ -240,7 +240,7 @@ TEST_F( InstructionBufferTest, AcquireFillPageReservesFirstFullPage )
 TEST_F( InstructionBufferTest, AcquireFillPageAllowsOnlyOneActiveLease )
 {
     Prepare( TEST_INSTRUCTION_PAGE_SIZE_BYTES * 2U );
-    InstructionBufferPageFillLease_T first_lease = AcquirePage();
+    InstructionBufferPageFillLease_T first_lease  = AcquirePage();
     InstructionBufferPageFillLease_T second_lease = {};
 
     EXPECT_FALSE( INSTRUCTION_BUFFER_AcquireFillPage( &second_lease ) );
@@ -287,8 +287,7 @@ TEST_F( InstructionBufferTest, CompleteFillPagePublishesPageAndAdvancesReadPosit
 
     EXPECT_FALSE( instruction_buffer_context.active_page_fill_reservation.is_active );
     EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY, instruction_buffer_context.page_states[0] );
-    EXPECT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES,
-               instruction_buffer_context.page_valid_bytes[0] );
+    EXPECT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES, instruction_buffer_context.page_valid_bytes[0] );
     EXPECT_EQ( 0U, instruction_buffer_context.page_stream_offsets_bytes[0] );
     EXPECT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES,
                instruction_buffer_context.next_nand_read_offset_bytes );
@@ -338,7 +337,7 @@ TEST_F( InstructionBufferTest, FailedFillReleasesSlotWithoutAdvancingAndCanRetry
 TEST_F( InstructionBufferTest, CompleteFillPageRejectsModifiedLeaseAndPreservesOwnership )
 {
     Prepare( TEST_INSTRUCTION_PAGE_SIZE_BYTES );
-    InstructionBufferPageFillLease_T lease = AcquirePage();
+    InstructionBufferPageFillLease_T lease          = AcquirePage();
     InstructionBufferPageFillLease_T modified_lease = lease;
     modified_lease.read_length_bytes--;
 
