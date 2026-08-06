@@ -52,6 +52,9 @@
  *------------------------------------------------------------------------------
  */
 
+static bool analogue_input_is_configured = false;
+static bool analogue_input_is_started    = false;
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -130,10 +133,10 @@ static bool EXEC_ANALOGUE_INPUT_Translate_Sample_Rate( ExecAnalogueInputSampleRa
  * false if either channel is disabled.
  *
  * The ADC hardware setup itself is handled by the hw_adc module. This function
- * only requests the configured measurement frequency and reports whether that
- * configuration succeeded.
+ * translates the execution-layer sample rate and applies the corresponding ADC
+ * measurement frequency without starting DMA acquisition.
  *
- * @param configuration
+ * @param config
  *      Analogue input configuration used during execution. This currently
  *      includes the channel enable flags and requested ADC sample rate.
  *
@@ -145,35 +148,94 @@ static bool EXEC_ANALOGUE_INPUT_Translate_Sample_Rate( ExecAnalogueInputSampleRa
  *      The configuration is not currently supported, or the ADC measurement
  *      frequency could not be configured.
  */
-bool EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( ExecAnalogueInputConfiguration_T configuration )
+bool EXEC_ANALOGUE_INPUT_Configure( const ExecAnalogueInputConfig_T* config )
 {
-    ADCSampleRates_T hw_sample_rate = ADC_SAMPLE_RATE_1K_HZ;
+    if ( config == NULL )
+    {
+        return false;
+    }
+
+    if ( analogue_input_is_started )
+    {
+        return false;
+    }
 
     /*
      * Dynamic channel selection is not currently supported by the ADC scan
      * and DMA configuration.
      */
-    if ( !configuration.ch_0_is_enabled || !configuration.ch_1_is_enabled )
+    if ( !config->ch_0_is_enabled || !config->ch_1_is_enabled )
     {
         return false;
     }
 
-    if ( !EXEC_ANALOGUE_INPUT_Translate_Sample_Rate( configuration.sample_rate, &hw_sample_rate ) )
+    ADCSampleRates_T hw_sample_rate;
+
+    if ( !EXEC_ANALOGUE_INPUT_Translate_Sample_Rate( config->sample_rate, &hw_sample_rate ) )
     {
         return false;
     }
 
-    return HW_ADC_Configure_ADC_Measurement_Frequency( hw_sample_rate );
+    if ( !HW_ADC_Configure_ADC_Measurement_Frequency( hw_sample_rate ) )
+    {
+        analogue_input_is_configured = false;
+        return false;
+    }
+
+    analogue_input_is_configured = true;
+    return true;
 }
 
 bool EXEC_ANALOGUE_INPUT_Start( void )
 {
-    return HW_ADC_Start_DMA_Measurements();
+    if ( !analogue_input_is_configured )
+    {
+        return false;
+    }
+
+    if ( analogue_input_is_started )
+    {
+        return true;
+    }
+
+    if ( !HW_ADC_Start_DMA_Measurements() )
+    {
+        return false;
+    }
+
+    analogue_input_is_started = true;
+    return true;
 }
 
 bool EXEC_ANALOGUE_INPUT_Stop( void )
 {
-    return HW_ADC_Stop_DMA_Measurements();
+    if ( !analogue_input_is_configured )
+    {
+        return false;
+    }
+
+    if ( !analogue_input_is_started )
+    {
+        return true;
+    }
+
+    if ( !HW_ADC_Stop_DMA_Measurements() )
+    {
+        return false;
+    }
+
+    analogue_input_is_started = false;
+    return true;
+}
+
+bool EXEC_ANALOGUE_INPUT_Is_Configured( void )
+{
+    return analogue_input_is_configured;
+}
+
+bool EXEC_ANALOGUE_INPUT_Is_Started( void )
+{
+    return analogue_input_is_started;
 }
 
 /**
