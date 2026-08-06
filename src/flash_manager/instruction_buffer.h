@@ -167,6 +167,18 @@ bool INSTRUCTION_BUFFER_Init( void );
  */
 bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes );
 
+/**
+ * @brief Ends the active instruction read session without implying test completion.
+ *
+ * Invalidates all page-fill leases and instruction views, releases every page
+ * slot, and clears the active image cursors while preserving initialised NAND
+ * geometry and monotonically changing lease/view identifiers.
+ *
+ * @note The Flash Manager must stop the execution ISR before calling this from
+ *       task context.
+ */
+void INSTRUCTION_BUFFER_EndRead( void );
+
 /* NAND-to-RAM page producer interface. */
 
 /**
