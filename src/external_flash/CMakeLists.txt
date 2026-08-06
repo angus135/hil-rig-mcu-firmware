@@ -29,8 +29,6 @@ target_link_libraries(external_flash
     PUBLIC
         global_config
         project_warnings
-        cubeide_hal
-        rtos
         hw_nand
 )
 
