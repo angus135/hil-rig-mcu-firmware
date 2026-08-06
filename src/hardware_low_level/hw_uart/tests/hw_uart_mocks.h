@@ -272,6 +272,7 @@ extern uint32_t mock_irq_enable_count;
 
 /* HAL UART seams used by DUT and console UART drivers. */
 HAL_StatusTypeDef HAL_UART_Init( UART_HandleTypeDef* huart );
+HAL_StatusTypeDef HAL_UART_DeInit( UART_HandleTypeDef* huart );
 HAL_StatusTypeDef HAL_UART_Receive_DMA( UART_HandleTypeDef* huart, uint8_t* pData, uint16_t Size );
 HAL_StatusTypeDef HAL_UART_AbortReceive( UART_HandleTypeDef* huart );
 int               HAL_UART_Receive_IT( UART_HandleTypeDef* huart, uint8_t* data, uint16_t size );
