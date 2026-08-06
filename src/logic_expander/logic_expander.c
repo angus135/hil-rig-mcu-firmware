@@ -37,7 +37,7 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
-
+// Does this need to be changed to support multiple expanders?
 #define LOGIC_EXPANDER_ACTIVE_BITMASK ( 0x01U )
 
 #define LOGIC_EXPANDER_I2C_ADDR_TABLE_INIT                                                         \
