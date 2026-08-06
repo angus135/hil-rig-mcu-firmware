@@ -94,12 +94,12 @@ static HwUartPeripheralConfig_T TEST_HW_UART_Make_Tx_Rx_Config()
 {
     HwUartPeripheralConfig_T config = {};
 
-    config.baud_rate      = 115200U;
-    config.word_length    = HW_UART_WORD_LENGTH_8_BITS;
-    config.stop_bits      = HW_UART_STOP_BITS_1;
-    config.parity         = HW_UART_PARITY_NONE;
-    config.rx_enabled     = true;
-    config.tx_enabled     = true;
+    config.baud_rate   = 115200U;
+    config.word_length = HW_UART_WORD_LENGTH_8_BITS;
+    config.stop_bits   = HW_UART_STOP_BITS_1;
+    config.parity      = HW_UART_PARITY_NONE;
+    config.rx_enabled  = true;
+    config.tx_enabled  = true;
 
     return config;
 }
@@ -684,8 +684,7 @@ TEST_F( UartTest, DutDeconfigureDeinitialisesPeripheralAndClearsConfigurationSta
 
     ASSERT_TRUE( HW_UART_Deconfigure_Channel( HW_UART_CHANNEL_1 ) );
 
-    EXPECT_FALSE(
-        hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.is_configured_and_initialised );
+    EXPECT_FALSE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.is_configured_and_initialised );
     EXPECT_FALSE( hw_uart_channel_states[HW_UART_CHANNEL_1].config.rx_enabled );
     EXPECT_FALSE( hw_uart_channel_states[HW_UART_CHANNEL_1].config.tx_enabled );
 }
@@ -845,7 +844,7 @@ TEST_F( UartTest, DutRxConsumeAdvancesReadIndex )
 TEST_F( UartTest, DutTxLoadAcceptsPayloadWhenSpaceAvailable )
 {
     HwUartPeripheralConfig_T config     = TEST_HW_UART_Make_Tx_Only_Config();
-    uint8_t        payload[4] = { 1U, 2U, 3U, 4U };
+    uint8_t                  payload[4] = { 1U, 2U, 3U, 4U };
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
@@ -858,7 +857,7 @@ TEST_F( UartTest, DutTxLoadAcceptsPayloadWhenSpaceAvailable )
 TEST_F( UartTest, DutTxLoadCopiesPayloadDirectlyIntoDmaSourceRingBuffer )
 {
     HwUartPeripheralConfig_T config     = TEST_HW_UART_Make_Tx_Only_Config();
-    uint8_t        payload[4] = { 0x10U, 0x20U, 0x30U, 0x40U };
+    uint8_t                  payload[4] = { 0x10U, 0x20U, 0x30U, 0x40U };
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
@@ -875,8 +874,8 @@ TEST_F( UartTest, DutTxLoadCopiesPayloadDirectlyIntoDmaSourceRingBuffer )
 
 TEST_F( UartTest, DutTxLoadAcceptsSequentialPayloadsUntilFull )
 {
-    HwUartPeripheralConfig_T config                                    = TEST_HW_UART_Make_Tx_Only_Config();
-    uint8_t        half_payload[HW_UART_TX_BUFFER_SIZE / 2U] = {};
+    HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Only_Config();
+    uint8_t                  half_payload[HW_UART_TX_BUFFER_SIZE / 2U] = {};
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
@@ -892,9 +891,9 @@ TEST_F( UartTest, DutTxLoadAcceptsSequentialPayloadsUntilFull )
 
 TEST_F( UartTest, DutTxLoadRejectsPayloadWhenInsufficientSpace )
 {
-    HwUartPeripheralConfig_T config                               = TEST_HW_UART_Make_Tx_Only_Config();
-    uint8_t        full_payload[HW_UART_TX_BUFFER_SIZE] = {};
-    uint8_t        extra_payload[1]                     = { 0xAAU };
+    HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Only_Config();
+    uint8_t                  full_payload[HW_UART_TX_BUFFER_SIZE] = {};
+    uint8_t                  extra_payload[1]                     = { 0xAAU };
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
@@ -908,7 +907,7 @@ TEST_F( UartTest, DutTxLoadRejectsPayloadWhenInsufficientSpace )
 TEST_F( UartTest, DutTxLoadPreservesDisabledTxDmaIrqState )
 {
     HwUartPeripheralConfig_T config     = TEST_HW_UART_Make_Tx_Only_Config();
-    uint8_t        payload[2] = { 1U, 2U };
+    uint8_t                  payload[2] = { 1U, 2U };
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
@@ -938,7 +937,7 @@ TEST_F( UartTest, DutTxTriggerDoesNothingWhenNoDataQueued )
 TEST_F( UartTest, DutTxTriggerStartsDmaForChannel1 )
 {
     HwUartPeripheralConfig_T config     = TEST_HW_UART_Make_Tx_Only_Config();
-    uint8_t        payload[3] = { 0x11U, 0x22U, 0x33U };
+    uint8_t                  payload[3] = { 0x11U, 0x22U, 0x33U };
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
     ASSERT_TRUE( HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
@@ -957,7 +956,7 @@ TEST_F( UartTest, DutTxTriggerStartsDmaForChannel1 )
 TEST_F( UartTest, DutTxTriggerClearsTransmissionCompleteFlagWhenStartingDma )
 {
     HwUartPeripheralConfig_T config     = TEST_HW_UART_Make_Tx_Only_Config();
-    uint8_t        payload[3] = { 0x11U, 0x22U, 0x33U };
+    uint8_t                  payload[3] = { 0x11U, 0x22U, 0x33U };
 
     SET_BIT( USART6->SR, USART_SR_TC );
 
@@ -973,7 +972,7 @@ TEST_F( UartTest, DutTxTriggerClearsTransmissionCompleteFlagWhenStartingDma )
 TEST_F( UartTest, DutTxTriggerStartsDmaFromTxRingBufferTail )
 {
     HwUartPeripheralConfig_T config     = TEST_HW_UART_Make_Tx_Only_Config();
-    uint8_t        payload[3] = { 0x11U, 0x22U, 0x33U };
+    uint8_t                  payload[3] = { 0x11U, 0x22U, 0x33U };
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
     ASSERT_TRUE( HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
@@ -992,7 +991,7 @@ TEST_F( UartTest, DutTxTriggerStartsDmaFromTxRingBufferTail )
 TEST_F( UartTest, DutTxTriggerStartsDmaForChannel2 )
 {
     HwUartPeripheralConfig_T config     = TEST_HW_UART_Make_Tx_Only_Config();
-    uint8_t        payload[2] = { 0xAAU, 0xBBU };
+    uint8_t                  payload[2] = { 0xAAU, 0xBBU };
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_2, &config ) );
     ASSERT_TRUE( HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_2, payload, sizeof( payload ) ) );
@@ -1013,7 +1012,7 @@ TEST_F( UartTest, DutTxTriggerStartsDmaForChannel2 )
 TEST_F( UartTest, DutTxTriggerDoesNotConsumeBufferUntilDmaCompletes )
 {
     HwUartPeripheralConfig_T config     = TEST_HW_UART_Make_Tx_Only_Config();
-    uint8_t        payload[3] = { 0x11U, 0x22U, 0x33U };
+    uint8_t                  payload[3] = { 0x11U, 0x22U, 0x33U };
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
     ASSERT_TRUE( HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
@@ -1040,7 +1039,7 @@ TEST_F( UartTest, DutTxTriggerDoesNotConsumeBufferUntilDmaCompletes )
 TEST_F( UartTest, DutTxTriggerDoesNothingWhenAlreadyRunning )
 {
     HwUartPeripheralConfig_T config     = TEST_HW_UART_Make_Tx_Only_Config();
-    uint8_t        payload[3] = { 0x11U, 0x22U, 0x33U };
+    uint8_t                  payload[3] = { 0x11U, 0x22U, 0x33U };
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
     ASSERT_TRUE( HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
@@ -1058,8 +1057,8 @@ TEST_F( UartTest, DutTxTriggerDoesNothingWhenAlreadyRunning )
 TEST_F( UartTest, DutTxLoadWhileDmaActiveDoesNotModifyActiveDmaSpan )
 {
     HwUartPeripheralConfig_T config            = TEST_HW_UART_Make_Tx_Only_Config();
-    uint8_t        first_payload[3]  = { 0x11U, 0x22U, 0x33U };
-    uint8_t        second_payload[2] = { 0x44U, 0x55U };
+    uint8_t                  first_payload[3]  = { 0x11U, 0x22U, 0x33U };
+    uint8_t                  second_payload[2] = { 0x44U, 0x55U };
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
@@ -1084,7 +1083,7 @@ TEST_F( UartTest, DutTxLoadWhileDmaActiveDoesNotModifyActiveDmaSpan )
 TEST_F( UartTest, DutTxCompleteInterruptDrainsDmaStateButRequiresUsartTcForComplete )
 {
     HwUartPeripheralConfig_T config     = TEST_HW_UART_Make_Tx_Only_Config();
-    uint8_t        payload[3] = { 0x11U, 0x22U, 0x33U };
+    uint8_t                  payload[3] = { 0x11U, 0x22U, 0x33U };
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
     ASSERT_TRUE( HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
@@ -1107,8 +1106,8 @@ TEST_F( UartTest, DutTxCompleteInterruptDrainsDmaStateButRequiresUsartTcForCompl
 TEST_F( UartTest, DutTxCompleteRestartsPumpWhenQueuedDataRemains )
 {
     HwUartPeripheralConfig_T config            = TEST_HW_UART_Make_Tx_Only_Config();
-    uint8_t        first_payload[3]  = { 0x11U, 0x22U, 0x33U };
-    uint8_t        second_payload[2] = { 0x44U, 0x55U };
+    uint8_t                  first_payload[3]  = { 0x11U, 0x22U, 0x33U };
+    uint8_t                  second_payload[2] = { 0x44U, 0x55U };
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
@@ -1134,7 +1133,7 @@ TEST_F( UartTest, DutTxCompleteRestartsPumpWhenQueuedDataRemains )
 TEST_F( UartTest, DutTxErrorInterruptClearsTxDriverState )
 {
     HwUartPeripheralConfig_T config     = TEST_HW_UART_Make_Tx_Only_Config();
-    uint8_t        payload[3] = { 0x11U, 0x22U, 0x33U };
+    uint8_t                  payload[3] = { 0x11U, 0x22U, 0x33U };
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
     ASSERT_TRUE( HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );

@@ -102,8 +102,8 @@ static const ExecUartHardwareMap_T exec_uart_hardware_map[EXEC_UART_CHANNEL_COUN
 
 static inline bool EXEC_UART_Is_Valid_Channel( ExecUartChannel_T channel );
 static bool        EXEC_UART_Configuration_Is_Valid( const ExecUartConfig_T* config );
-static bool EXEC_UART_Apply_Static_Hardware_Selection( ExecUartChannel_T channel,
-                                                       ExecUartInterfaceMode_T interface_mode );
+static bool        EXEC_UART_Apply_Static_Hardware_Selection( ExecUartChannel_T       channel,
+                                                              ExecUartInterfaceMode_T interface_mode );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -223,14 +223,14 @@ bool EXEC_UART_Apply_Configuration( ExecUartChannel_T channel, const ExecUartCon
         return false;
     }
 
-    const ExecUartHardwareMap_T* hw_map     = &exec_uart_hardware_map[channel];
-    ExecUartChannelState_T*      state      = &exec_uart_channel_states[channel];
-    HwUartPeripheralConfig_T     hw_config  = { .baud_rate   = config->baud_rate,
-                                                .word_length = config->word_length,
-                                                .stop_bits   = config->stop_bits,
-                                                .parity      = config->parity,
-                                                .rx_enabled  = config->rx_enabled,
-                                                .tx_enabled  = config->tx_enabled };
+    const ExecUartHardwareMap_T* hw_map    = &exec_uart_hardware_map[channel];
+    ExecUartChannelState_T*      state     = &exec_uart_channel_states[channel];
+    HwUartPeripheralConfig_T     hw_config = { .baud_rate   = config->baud_rate,
+                                               .word_length = config->word_length,
+                                               .stop_bits   = config->stop_bits,
+                                               .parity      = config->parity,
+                                               .rx_enabled  = config->rx_enabled,
+                                               .tx_enabled  = config->tx_enabled };
 
     /* Stop RX before reconfiguration to avoid modifying LL state while active */
     if ( HW_UART_Rx_Is_Running( hw_map->hw_channel ) )
@@ -264,8 +264,7 @@ bool EXEC_UART_Apply_Configuration( ExecUartChannel_T channel, const ExecUartCon
         if ( !HW_UART_Rx_Start( hw_map->hw_channel ) )
         {
             ( void )HW_UART_Deconfigure_Channel( hw_map->hw_channel );
-            ( void )EXEC_UART_Apply_Static_Hardware_Selection( channel,
-                                                                EXEC_UART_MODE_DISABLED );
+            ( void )EXEC_UART_Apply_Static_Hardware_Selection( channel, EXEC_UART_MODE_DISABLED );
             return false;
         }
     }
