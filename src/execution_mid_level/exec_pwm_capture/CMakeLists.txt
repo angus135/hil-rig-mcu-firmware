@@ -29,6 +29,7 @@ target_link_libraries(exec_pwm_capture
         rtos
         cubeide_hal
         hw_pwm_capture
+        logic_expander
 )
 
 # -----------------------------
