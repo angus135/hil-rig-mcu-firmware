@@ -49,12 +49,6 @@
 #include "external_flash_allocator.h"
 #include "hw_nand.h"
 
-#ifndef TEST_BUILD
-#include "stm32f4xx_hal.h"
-#else
-#include "tests/external_flash_mocks.h"
-#endif
-
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -64,9 +58,6 @@
  *  Defines / Macros
  *==============================================================================
  */
-
-/** Maximum elapsed time allowed for a NAND DMA data phase. */
-#define EXTERNAL_FLASH_DMA_TIMEOUT_MS ( 100U )
 
 /** Sentinel value used when no valid physical block has been selected. */
 #define EXTERNAL_FLASH_INVALID_BLOCK ( 0xFFFFFFFFU )
@@ -180,15 +171,6 @@ static uint8_t external_flash_recovery_page_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_
 
 /** Maps physical NAND status values into the public external_flash status enum. */
 static ExternalFlashStatus_T EXTERNAL_FLASH_MapNandStatus( HW_NAND_Status_T nand_status );
-
-/**
- * Waits for the active NAND DMA transfer to complete.
- *
- * This helper is used by both page scoped result writes and page scoped
- * instruction reads. It keeps the current public APIs synchronous while still
- * using DMA internally.
- */
-static ExternalFlashStatus_T EXTERNAL_FLASH_WaitDmaTransferComplete( void );
 
 /** Returns the number of main area bytes in one physical block. */
 static uint32_t EXTERNAL_FLASH_BlockDataSizeBytes( void );
@@ -336,53 +318,6 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_MapNandStatus( HW_NAND_Status_T nand
         default:
             return EXTERNAL_FLASH_STATUS_ERROR;
     }
-}
-
-/**
- * @brief Waits until the active NAND DMA operation completes or its deadline expires.
- *
- * @return EXTERNAL_FLASH_STATUS_OK when the transfer completes,
- *         EXTERNAL_FLASH_STATUS_ERROR if it stops without completing, or
- *         EXTERNAL_FLASH_STATUS_TIMEOUT after aborting an expired transfer.
- *
- * @note Unsigned subtraction makes the elapsed-time check safe across the
- *       HAL millisecond tick rollover.
- * @note Production firmware sleeps until the next interrupt between checks,
- *       allowing either QSPI/DMA completion or SysTick to wake the processor.
- */
-static ExternalFlashStatus_T EXTERNAL_FLASH_WaitDmaTransferComplete( void )
-{
-    const uint32_t start_tick = HAL_GetTick();
-
-    for ( ;; )
-    {
-        if ( HW_NAND_IsTransferComplete() )
-        {
-            return EXTERNAL_FLASH_STATUS_OK;
-        }
-
-        if ( !HW_NAND_IsBusy() )
-        {
-            return EXTERNAL_FLASH_STATUS_ERROR;
-        }
-
-        if ( ( uint32_t )( HAL_GetTick() - start_tick ) >= EXTERNAL_FLASH_DMA_TIMEOUT_MS )
-        {
-            break;
-        }
-
-#ifndef TEST_BUILD
-        __WFI();
-#endif
-    }
-
-    ExternalFlashStatus_T abort_status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_AbortTransfer() );
-    if ( abort_status != EXTERNAL_FLASH_STATUS_OK )
-    {
-        return abort_status;
-    }
-
-    return EXTERNAL_FLASH_STATUS_TIMEOUT;
 }
 
 /**
@@ -609,26 +544,8 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramPartitionPageBuffer(
             return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
         }
 
-        ExternalFlashStatus_T status = EXTERNAL_FLASH_MapNandStatus(
-            HW_NAND_ProgramLoadDma( 0U, page_buffer, external_flash_geometry.page_size_bytes ) );
-        if ( status != EXTERNAL_FLASH_STATUS_OK )
-        {
-            return status;
-        }
-
-        status = EXTERNAL_FLASH_WaitDmaTransferComplete();
-        if ( status != EXTERNAL_FLASH_STATUS_OK )
-        {
-            return status;
-        }
-
-        status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_StartProgramExecute( page ) );
-        if ( status != EXTERNAL_FLASH_STATUS_OK )
-        {
-            return status;
-        }
-
-        status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_WaitProgramComplete( 1U ) );
+        ExternalFlashStatus_T status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_ProgramPageDma(
+            page, 0U, page_buffer, external_flash_geometry.page_size_bytes ) );
         if ( status == EXTERNAL_FLASH_STATUS_PROGRAM_FAIL )
         {
             uint32_t failed_block  = page / external_flash_geometry.pages_per_block;
@@ -764,14 +681,7 @@ EXTERNAL_FLASH_ReadPartitionPageDma( ExternalFlashAllocatorPartition_T partition
         return EXTERNAL_FLASH_STATUS_INVALID_ARG;
     }
 
-    ExternalFlashStatus_T status =
-        EXTERNAL_FLASH_MapNandStatus( HW_NAND_ReadPageDma( page, column, data, length ) );
-    if ( status != EXTERNAL_FLASH_STATUS_OK )
-    {
-        return status;
-    }
-
-    return EXTERNAL_FLASH_WaitDmaTransferComplete();
+    return EXTERNAL_FLASH_MapNandStatus( HW_NAND_ReadPageDma( page, column, data, length ) );
 }
 
 /**

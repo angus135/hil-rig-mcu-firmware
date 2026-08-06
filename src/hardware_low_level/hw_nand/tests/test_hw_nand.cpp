@@ -73,9 +73,7 @@ public:
                  ( const HW_QSPI_Command_T* command, const uint8_t* data, uint32_t length ), () );
     MOCK_METHOD( HW_QSPI_Status_T, ReadDma,
                  ( const HW_QSPI_Command_T* command, uint8_t* data, uint32_t length ), () );
-    MOCK_METHOD( bool, IsTransferComplete, (), () );
-    MOCK_METHOD( bool, IsBusy, (), () );
-    MOCK_METHOD( HW_QSPI_Status_T, Abort, (), () );
+    MOCK_METHOD( HW_QSPI_Status_T, WaitForTransfer, ( uint32_t timeout_ms ), () );
 };
 
 static MockHWNANDQspi* g_mock             = nullptr;
@@ -154,34 +152,14 @@ extern "C" HW_QSPI_Status_T HW_QSPI_ReadDma( const HW_QSPI_Command_T* command, u
     return g_mock->ReadDma( command, data, length );
 }
 
-extern "C" bool HW_QSPI_IsTransferComplete( void )
-{
-    if ( g_mock == nullptr )
-    {
-        return false;
-    }
-
-    return g_mock->IsTransferComplete();
-}
-
-extern "C" bool HW_QSPI_IsBusy( void )
-{
-    if ( g_mock == nullptr )
-    {
-        return false;
-    }
-
-    return g_mock->IsBusy();
-}
-
-extern "C" HW_QSPI_Status_T HW_QSPI_Abort( void )
+extern "C" HW_QSPI_Status_T HW_QSPI_WaitForTransfer( uint32_t timeout_ms )
 {
     if ( g_mock == nullptr )
     {
         return HW_QSPI_STATUS_ERROR;
     }
 
-    return g_mock->Abort();
+    return g_mock->WaitForTransfer( timeout_ms );
 }
 // NOLINTEND
 
@@ -395,16 +373,22 @@ TEST_F( HWNANDTest, PublicTransactionsRejectCallsBeforeInit )
     EXPECT_CALL( mock, Command( _ ) ).Times( 0 );
     EXPECT_CALL( mock, ReadBlocking( _, _, _ ) ).Times( 0 );
     EXPECT_CALL( mock, WriteBlocking( _, _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock, ReadDma( _, _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock, WriteDma( _, _, _ ) ).Times( 0 );
 
-    HW_NAND_Id_T id = {};
+    EXPECT_EQ( HW_NAND_STATUS_NOT_INITIALISED,
+               HW_NAND_ReadPageBlocking( TEST_PAGE, TEST_COLUMN, transfer_data, TEST_LENGTH ) );
+    EXPECT_EQ( HW_NAND_STATUS_NOT_INITIALISED,
+               HW_NAND_ReadPageDma( TEST_PAGE, TEST_COLUMN, transfer_data, TEST_LENGTH ) );
+    EXPECT_EQ( HW_NAND_STATUS_NOT_INITIALISED,
+               HW_NAND_ProgramPageBlocking( TEST_PAGE, TEST_COLUMN, transfer_data, TEST_LENGTH ) );
+    EXPECT_EQ( HW_NAND_STATUS_NOT_INITIALISED,
+               HW_NAND_ProgramPageDma( TEST_PAGE, TEST_COLUMN, transfer_data, TEST_LENGTH ) );
+    EXPECT_EQ( HW_NAND_STATUS_NOT_INITIALISED, HW_NAND_BlockErase( TEST_BLOCK ) );
 
-    EXPECT_EQ( HW_NAND_STATUS_NOT_INITIALISED, HW_NAND_Reset() );
-    EXPECT_EQ( HW_NAND_STATUS_NOT_INITIALISED, HW_NAND_ReadId( &id ) );
-    EXPECT_EQ( HW_NAND_STATUS_NOT_INITIALISED, HW_NAND_ReadPageToCache( TEST_PAGE ) );
-    EXPECT_EQ( HW_NAND_STATUS_NOT_INITIALISED,
-               HW_NAND_ReadCacheBlocking( TEST_COLUMN, transfer_data, TEST_LENGTH ) );
-    EXPECT_EQ( HW_NAND_STATUS_NOT_INITIALISED,
-               HW_NAND_ProgramLoadBlocking( TEST_COLUMN, transfer_data, TEST_LENGTH ) );
+    bool is_bad = false;
+    EXPECT_EQ( HW_NAND_STATUS_NOT_INITIALISED, HW_NAND_IsBlockBad( TEST_BLOCK, &is_bad ) );
+    EXPECT_EQ( HW_NAND_STATUS_NOT_INITIALISED, HW_NAND_MarkBlockBad( TEST_BLOCK ) );
 }
 
 TEST_F( HWNANDTest, GetGeometryReportsSelectedDeviceGeometry )
@@ -424,6 +408,27 @@ TEST_F( HWNANDTest, GetLastEccStatusReportsUnknownBeforeInit )
 
     EXPECT_EQ( HW_NAND_STATUS_OK, HW_NAND_GetLastEccStatus( &ecc_status ) );
     EXPECT_EQ( ecc_status, HW_NAND_ECC_STATUS_UNKNOWN );
+}
+
+TEST_F( HWNANDTest, PageOperationsRejectInvalidArgumentsBeforeStartingQspi )
+{
+    SetInitialised();
+
+    EXPECT_CALL( mock, Command( _ ) ).Times( 0 );
+    EXPECT_CALL( mock, ReadBlocking( _, _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock, WriteBlocking( _, _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock, ReadDma( _, _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock, WriteDma( _, _, _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_NAND_STATUS_INVALID_ARG,
+               HW_NAND_ReadPageDma( HW_NAND_PAGE_COUNT, 0U, transfer_data, TEST_LENGTH ) );
+    EXPECT_EQ( HW_NAND_STATUS_INVALID_ARG,
+               HW_NAND_ReadPageBlocking( TEST_PAGE, 0U, nullptr, TEST_LENGTH ) );
+    EXPECT_EQ( HW_NAND_STATUS_INVALID_ARG,
+               HW_NAND_ProgramPageDma( TEST_PAGE, HW_NAND_PROGRAMMABLE_PAGE_BYTES,
+                                       transfer_data, TEST_LENGTH ) );
+    EXPECT_EQ( HW_NAND_STATUS_INVALID_ARG,
+               HW_NAND_ProgramPageBlocking( TEST_PAGE, 0U, transfer_data, 0U ) );
 }
 
 TEST_F( HWNANDTest, StartPageReadToCacheIssuesPageReadWithoutPolling )
@@ -477,7 +482,7 @@ TEST_F( HWNANDTest, ReadPageToCacheReportsUncorrectableEcc )
     EXPECT_EQ( HW_NAND_STATUS_ECC_ERROR, HW_NAND_ReadPageToCache( TEST_PAGE ) );
 }
 
-TEST_F( HWNANDTest, WaitReadyTimesOutWhenOipNeverClears )
+TEST_F( HWNANDTest, StatusWaitTimesOutWhenOipNeverClears )
 {
     SetInitialised();
     g_hal_tick_step_ms = 1U;
@@ -496,10 +501,11 @@ TEST_F( HWNANDTest, WaitReadyTimesOutWhenOipNeverClears )
                 return HW_QSPI_STATUS_OK;
             } ) );
 
-    EXPECT_EQ( HW_NAND_STATUS_TIMEOUT, HW_NAND_WaitReady( 1U ) );
+    EXPECT_EQ( HW_NAND_STATUS_TIMEOUT,
+               HW_NAND_WaitReadyWithChecks( 1U, false, false, false, false ) );
 }
 
-TEST_F( HWNANDTest, WaitReadyUsesElapsedHalTicksAndReturnsWhenOipClears )
+TEST_F( HWNANDTest, StatusWaitUsesElapsedHalTicksAndReturnsWhenOipClears )
 {
     SetInitialised();
     g_hal_tick_step_ms = 1U;
@@ -514,7 +520,8 @@ TEST_F( HWNANDTest, WaitReadyUsesElapsedHalTicksAndReturnsWhenOipClears )
             return HW_QSPI_STATUS_OK;
         } ) );
 
-    EXPECT_EQ( HW_NAND_STATUS_OK, HW_NAND_WaitReady( 2U ) );
+    EXPECT_EQ( HW_NAND_STATUS_OK,
+               HW_NAND_WaitReadyWithChecks( 2U, false, false, false, false ) );
 }
 
 TEST_F( HWNANDTest, ReadCacheDmaUsesQuadReadOutputCommand )
@@ -586,6 +593,21 @@ TEST_F( HWNANDTest, BlockEraseWriteEnablesAndReportsEraseFailure )
     EXPECT_EQ( HW_NAND_STATUS_ERASE_FAIL, HW_NAND_BlockErase( TEST_BLOCK ) );
 }
 
+TEST_F( HWNANDTest, BlockEraseRechecksStatusAfterDelayedBusyPoll )
+{
+    SetInitialised();
+    g_hal_tick_step_ms = 1U;
+    InSequence sequence;
+
+    ExpectOpcodeCommand( HW_NAND_OPCODE_WRITE_ENABLE );
+    ExpectAddressCommand( HW_NAND_OPCODE_BLOCK_ERASE, TEST_BLOCK * 64U,
+                          HW_QSPI_ADDR_24_BITS );
+    ExpectStatusRead( TEST_BUSY_STATUS );
+    ExpectStatusRead( TEST_READY_STATUS );
+
+    EXPECT_EQ( HW_NAND_STATUS_OK, HW_NAND_BlockErase( TEST_BLOCK ) );
+}
+
 TEST_F( HWNANDTest, IsBlockBadChecksFirstPageMarker )
 {
     SetInitialised();
@@ -625,18 +647,100 @@ TEST_F( HWNANDTest, MarkBlockBadProgramsMarkerInFirstPageSpareArea )
     EXPECT_EQ( HW_NAND_STATUS_OK, HW_NAND_MarkBlockBad( TEST_BLOCK ) );
 }
 
-TEST_F( HWNANDTest, TransferStateQueriesForwardToQspi )
+TEST_F( HWNANDTest, ReadPageDmaCompletesPageReadAndDmaTransfer )
 {
-    EXPECT_CALL( mock, IsTransferComplete() ).WillOnce( Return( true ) );
-    EXPECT_CALL( mock, IsBusy() ).WillOnce( Return( false ) );
+    SetInitialised();
+    InSequence sequence;
 
-    EXPECT_TRUE( HW_NAND_IsTransferComplete() );
-    EXPECT_FALSE( HW_NAND_IsBusy() );
+    ExpectAddressCommand( HW_NAND_OPCODE_PAGE_READ, TEST_PAGE, HW_QSPI_ADDR_24_BITS );
+    ExpectStatusRead( TEST_READY_STATUS );
+    EXPECT_CALL( mock, ReadDma( _, Eq( transfer_data ), Eq( TEST_LENGTH ) ) )
+        .WillOnce( Invoke( []( const HW_QSPI_Command_T* command, uint8_t*, uint32_t ) {
+            EXPECT_EQ( command->instruction, HW_NAND_OPCODE_READ_CACHE_QUAD );
+            EXPECT_EQ( command->address, TEST_COLUMN );
+            return HW_QSPI_STATUS_OK;
+        } ) );
+    EXPECT_CALL( mock, WaitForTransfer( Eq( HW_NAND_DMA_TIMEOUT_MS ) ) )
+        .WillOnce( Return( HW_QSPI_STATUS_OK ) );
+
+    EXPECT_EQ( HW_NAND_STATUS_OK,
+               HW_NAND_ReadPageDma( TEST_PAGE, TEST_COLUMN, transfer_data, TEST_LENGTH ) );
 }
 
-TEST_F( HWNANDTest, AbortTransferMapsQspiStatus )
+TEST_F( HWNANDTest, ProgramPageDmaCompletesDmaLoadAndProgramExecute )
 {
-    EXPECT_CALL( mock, Abort() ).WillOnce( Return( HW_QSPI_STATUS_TIMEOUT ) );
+    SetInitialised();
+    InSequence sequence;
 
-    EXPECT_EQ( HW_NAND_STATUS_TIMEOUT, HW_NAND_AbortTransfer() );
+    EXPECT_CALL( mock, WriteDma( _, Eq( transfer_data ), Eq( TEST_LENGTH ) ) )
+        .WillOnce( Invoke( []( const HW_QSPI_Command_T* command, const uint8_t*, uint32_t ) {
+            EXPECT_EQ( command->instruction, HW_NAND_OPCODE_PROGRAM_LOAD_QUAD );
+            EXPECT_EQ( command->address, TEST_COLUMN );
+            return HW_QSPI_STATUS_OK;
+        } ) );
+    EXPECT_CALL( mock, WaitForTransfer( Eq( HW_NAND_DMA_TIMEOUT_MS ) ) )
+        .WillOnce( Return( HW_QSPI_STATUS_OK ) );
+    ExpectOpcodeCommand( HW_NAND_OPCODE_WRITE_ENABLE );
+    ExpectAddressCommand( HW_NAND_OPCODE_PROGRAM_EXECUTE, TEST_PAGE, HW_QSPI_ADDR_24_BITS );
+    ExpectStatusRead( TEST_READY_STATUS );
+
+    EXPECT_EQ( HW_NAND_STATUS_OK,
+               HW_NAND_ProgramPageDma( TEST_PAGE, TEST_COLUMN, transfer_data, TEST_LENGTH ) );
+}
+
+TEST_F( HWNANDTest, ReadPageDmaMapsQspiWaitTimeout )
+{
+    SetInitialised();
+
+    ExpectAddressCommand( HW_NAND_OPCODE_PAGE_READ, TEST_PAGE, HW_QSPI_ADDR_24_BITS );
+    ExpectStatusRead( TEST_READY_STATUS );
+    EXPECT_CALL( mock, ReadDma( _, Eq( transfer_data ), Eq( TEST_LENGTH ) ) )
+        .WillOnce( Return( HW_QSPI_STATUS_OK ) );
+    EXPECT_CALL( mock, WaitForTransfer( Eq( HW_NAND_DMA_TIMEOUT_MS ) ) )
+        .WillOnce( Return( HW_QSPI_STATUS_TIMEOUT ) );
+
+    EXPECT_EQ( HW_NAND_STATUS_TIMEOUT,
+               HW_NAND_ReadPageDma( TEST_PAGE, TEST_COLUMN, transfer_data, TEST_LENGTH ) );
+}
+
+TEST_F( HWNANDTest, ReadPageDmaMapsQspiWaitError )
+{
+    SetInitialised();
+
+    ExpectAddressCommand( HW_NAND_OPCODE_PAGE_READ, TEST_PAGE, HW_QSPI_ADDR_24_BITS );
+    ExpectStatusRead( TEST_READY_STATUS );
+    EXPECT_CALL( mock, ReadDma( _, Eq( transfer_data ), Eq( TEST_LENGTH ) ) )
+        .WillOnce( Return( HW_QSPI_STATUS_OK ) );
+    EXPECT_CALL( mock, WaitForTransfer( Eq( HW_NAND_DMA_TIMEOUT_MS ) ) )
+        .WillOnce( Return( HW_QSPI_STATUS_ERROR ) );
+
+    EXPECT_EQ( HW_NAND_STATUS_ERROR,
+               HW_NAND_ReadPageDma( TEST_PAGE, TEST_COLUMN, transfer_data, TEST_LENGTH ) );
+}
+
+TEST_F( HWNANDTest, ProgramPageDmaDoesNotExecuteAfterDmaFailure )
+{
+    SetInitialised();
+
+    EXPECT_CALL( mock, WriteDma( _, Eq( transfer_data ), Eq( TEST_LENGTH ) ) )
+        .WillOnce( Return( HW_QSPI_STATUS_ERROR ) );
+    EXPECT_CALL( mock, WaitForTransfer( _ ) ).Times( 0 );
+    EXPECT_CALL( mock, Command( _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_NAND_STATUS_ERROR,
+               HW_NAND_ProgramPageDma( TEST_PAGE, TEST_COLUMN, transfer_data, TEST_LENGTH ) );
+}
+
+TEST_F( HWNANDTest, ProgramPageDmaDoesNotExecuteAfterDmaWaitFailure )
+{
+    SetInitialised();
+
+    EXPECT_CALL( mock, WriteDma( _, Eq( transfer_data ), Eq( TEST_LENGTH ) ) )
+        .WillOnce( Return( HW_QSPI_STATUS_OK ) );
+    EXPECT_CALL( mock, WaitForTransfer( Eq( HW_NAND_DMA_TIMEOUT_MS ) ) )
+        .WillOnce( Return( HW_QSPI_STATUS_TIMEOUT ) );
+    EXPECT_CALL( mock, Command( _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_NAND_STATUS_TIMEOUT,
+               HW_NAND_ProgramPageDma( TEST_PAGE, TEST_COLUMN, transfer_data, TEST_LENGTH ) );
 }
