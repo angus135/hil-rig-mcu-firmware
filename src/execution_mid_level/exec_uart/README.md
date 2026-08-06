@@ -11,10 +11,11 @@ hardware buffers. Hardware access remains inside the low-level `hw_uart` driver.
 
 This module is responsible for:
 
-- Applying UART channel configurations through the hardware layer.
+- Selecting the external UART electrical mode through the UART/PWR logic expander.
+- Translating execution configuration into STM32 UART peripheral configuration.
 - Stopping active RX before reconfiguration when required.
 - Starting RX after configuration when RX is enabled.
-- Applying a disabled configuration during deconfiguration.
+- Deconfiguring the STM32 peripheral and selecting the disabled external mode.
 - Queueing execution-layer TX payloads through the low-level TX ring buffer.
 - Triggering the low-level TX DMA pump after TX data is queued.
 - Copying unread RX data from low-level RX spans into caller-owned buffers.
@@ -48,7 +49,9 @@ reading received bytes, or checking whether TX is complete.
 - RX circular buffer ownership.
 - TX ring buffer ownership.
 - DMA interrupt handling.
-- Electrical interface selection.
+
+Electrical interface selection remains in `exec_uart` and uses the UART/PWR
+logic expander hardware map.
 
 This keeps execution-layer code independent from direct UART register and DMA
 management.
@@ -112,12 +115,13 @@ Typical behaviour:
 
 1. Validate the channel and configuration pointer.
 2. Stop RX if it is already running.
-3. Apply the requested low-level UART configuration.
-4. Start RX if the supplied configuration enables RX.
-5. Store execution-layer lifecycle state.
+3. Apply the requested external electrical-interface mode.
+4. Apply the translated low-level UART peripheral configuration.
+5. Start RX if the supplied configuration enables RX.
+6. Store execution-layer lifecycle state.
 
-`EXEC_UART_Deconfigure()` stops active RX if required, then applies a canonical
-disabled UART configuration through the low-level driver.
+`EXEC_UART_Deconfigure()` stops active RX if required, deconfigures the STM32
+UART peripheral, and selects the disabled external interface mode.
 
 ---
 
