@@ -535,6 +535,55 @@ TEST_F( InstructionBufferTest, ConsumeRejectsCopiedViewWithoutAdvancingActiveIns
     EXPECT_TRUE( INSTRUCTION_BUFFER_IsReadComplete() );
 }
 
+TEST_F( InstructionBufferTest, EndReadInvalidatesActiveViewWithoutChangingGeometry )
+{
+    constexpr uint16_t payload_length_bytes = 4U;
+    constexpr uint32_t record_length_bytes =
+        sizeof( FlashManagerInstructionHeader_T ) + payload_length_bytes;
+
+    Prepare( record_length_bytes );
+    InstructionBufferPageFillLease_T lease = AcquirePage();
+    StoreInstruction( lease.page_data, 100U, payload_length_bytes, 0x60U );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &lease, true ) );
+
+    const FlashManagerInstructionView_T* view = nullptr;
+    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+    uint32_t next_fill_lease_id = instruction_buffer_context.next_page_fill_lease_id;
+    uint32_t next_view_id       = instruction_buffer_context.next_instruction_view_id;
+
+    INSTRUCTION_BUFFER_EndRead();
+
+    EXPECT_TRUE( instruction_buffer_context.is_initialised );
+    EXPECT_FALSE( instruction_buffer_context.is_read_prepared );
+    EXPECT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES, instruction_buffer_context.page_size_bytes );
+    EXPECT_EQ( next_fill_lease_id, instruction_buffer_context.next_page_fill_lease_id );
+    EXPECT_EQ( next_view_id, instruction_buffer_context.next_instruction_view_id );
+    EXPECT_FALSE( instruction_buffer_context.active_instruction_view.is_active );
+    EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_INVALID_VIEW,
+               INSTRUCTION_BUFFER_ConsumeInstruction( view ) );
+    EXPECT_FALSE( INSTRUCTION_BUFFER_IsReadComplete() );
+
+    for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
+    {
+        EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY,
+                   instruction_buffer_context.page_states[page_index] );
+        EXPECT_EQ( 0U, instruction_buffer_context.page_valid_bytes[page_index] );
+        EXPECT_EQ( 0U, instruction_buffer_context.page_stream_offsets_bytes[page_index] );
+    }
+}
+
+TEST_F( InstructionBufferTest, EndReadInvalidatesActivePageFillLease )
+{
+    Prepare( TEST_INSTRUCTION_PAGE_SIZE_BYTES );
+    InstructionBufferPageFillLease_T lease = AcquirePage();
+
+    INSTRUCTION_BUFFER_EndRead();
+
+    EXPECT_FALSE( instruction_buffer_context.active_page_fill_reservation.is_active );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY, instruction_buffer_context.page_states[0] );
+    EXPECT_FALSE( INSTRUCTION_BUFFER_CompleteFillPage( &lease, true ) );
+}
+
 TEST_F( InstructionBufferTest, ConsumingExhaustedPageRequestsRefillWhenNandDataRemains )
 {
     Prepare( TEST_INSTRUCTION_PAGE_SIZE_BYTES * ( INSTRUCTION_BUFFER_PAGE_COUNT + 1U ) );
