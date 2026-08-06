@@ -404,9 +404,8 @@ FLASH_MANAGER_PeekNextInstructionFromISR( FlashManagerInstructionView_T* instruc
  * @note The outer timer ISR may yield only after its entire execution sequence
  *       has finished.
  */
-bool FLASH_MANAGER_ConsumeInstructionFromISR(
-    const FlashManagerInstructionView_T* instruction,
-    BaseType_t*                          higher_priority_task_woken );
+bool FLASH_MANAGER_ConsumeInstructionFromISR( const FlashManagerInstructionView_T* instruction,
+                                              BaseType_t* higher_priority_task_woken );
 
 /**
  * @brief Requests asynchronous preparation of a new execution session.
