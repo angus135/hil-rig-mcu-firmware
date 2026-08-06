@@ -409,10 +409,15 @@ static bool FLASH_MANAGER_FinaliseResults( void )
     bool finalise_succeeded;
 
     /*
-     * Publishes the final partial page, if one exists. An active record lease
-     * causes finalisation to fail.
+     * The Run State Manager has stopped the timer and waited for the execution
+     * ISR to return. The instruction stream can therefore be invalidated
+     * independently of whether every stored instruction was consumed.
+     *
+     * Publish the final partial result page, if one exists. An active result
+     * record lease causes finalisation to fail.
      */
     taskENTER_CRITICAL();
+    INSTRUCTION_BUFFER_EndRead();
     finalise_succeeded = RESULT_BUFFER_Finalise();
     taskEXIT_CRITICAL();
 
@@ -831,12 +836,15 @@ FLASH_MANAGER_PeekNextInstructionFromISR( const FlashManagerInstructionView_T** 
             return FLASH_MANAGER_INSTRUCTION_AVAILABLE;
 
         case INSTRUCTION_BUFFER_PEEK_NOT_BUFFERED:
+            /* Timing can no longer be guaranteed once execution reaches unloaded data. */
+            FLASH_MANAGER_EnterFaultFromISR();
             return FLASH_MANAGER_INSTRUCTION_NOT_BUFFERED;
 
         case INSTRUCTION_BUFFER_PEEK_END_OF_STREAM:
             return FLASH_MANAGER_INSTRUCTION_END_OF_STREAM;
 
         case INSTRUCTION_BUFFER_PEEK_CORRUPT:
+            FLASH_MANAGER_EnterFaultFromISR();
             return FLASH_MANAGER_INSTRUCTION_CORRUPT;
 
         case INSTRUCTION_BUFFER_PEEK_INVALID_ARGUMENT:

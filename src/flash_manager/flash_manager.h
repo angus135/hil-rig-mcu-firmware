@@ -265,16 +265,22 @@ typedef enum
     /** A complete instruction is buffered and available. */
     FLASH_MANAGER_INSTRUCTION_AVAILABLE = 0,
 
-    /** More instruction bytes exist but the next record is not fully buffered. */
+    /**
+     * More instruction bytes exist but the next record is not fully buffered.
+     * This is an execution underrun and latches FLASH_MANAGER_STATE_FAULT.
+     */
     FLASH_MANAGER_INSTRUCTION_NOT_BUFFERED,
 
-    /** The complete instruction stream has been consumed. */
+    /**
+     * The stored instruction stream is exhausted. This does not end the test or
+     * change FLASH_MANAGER_STATE_EXECUTING.
+     */
     FLASH_MANAGER_INSTRUCTION_END_OF_STREAM,
 
     /** Instruction retrieval is unavailable in the current manager state. */
     FLASH_MANAGER_INSTRUCTION_INVALID_STATE,
 
-    /** The stored header or record length is invalid. */
+    /** The stored record is invalid and FLASH_MANAGER_STATE_FAULT was latched. */
     FLASH_MANAGER_INSTRUCTION_CORRUPT,
 
     /** The supplied output pointer was null. */
@@ -391,6 +397,8 @@ FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
  *
  * @note Call only from the execution ISR while the manager is EXECUTING.
  * @note This function never blocks, accesses NAND or uses a mutex.
+ * @note END_OF_STREAM describes instruction storage only. Measurements and
+ *       result logging may continue until another subsystem ends the test.
  */
 FlashManagerInstructionReadStatus_T
 FLASH_MANAGER_PeekNextInstructionFromISR( const FlashManagerInstructionView_T** instruction );
@@ -436,7 +444,8 @@ FlashManagerRequestStatus_T FLASH_MANAGER_RequestExecutionPreparation( void );
  *
  * The request changes EXECUTING to FINALISING_RESULTS and notifies the Flash
  * Manager task. The task publishes any final partial page, drains all remaining
- * pages to NAND, and enters RESULTS_READY on success or FAULT on failure.
+ * pages to NAND, closes instruction retrieval regardless of stream position,
+ * and enters RESULTS_READY on success or FAULT on failure.
  *
  * @return Request acceptance status.
  *
