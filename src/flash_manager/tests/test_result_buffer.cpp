@@ -77,8 +77,7 @@ extern "C" void FLASH_MANAGER_TEST_ConfigureExternalFlashInfo( ExternalFlashStat
 }
 
 extern "C" void FLASH_MANAGER_TEST_ConfigureInstructionFlashInfo(
-    ExternalFlashStatus_T status, uint32_t page_size_bytes,
-    uint32_t instruction_capacity_bytes )
+    ExternalFlashStatus_T status, uint32_t page_size_bytes, uint32_t instruction_capacity_bytes )
 {
     FLASH_MANAGER_TEST_ConfigureExternalFlashInfo( status, page_size_bytes );
     external_flash_info.instruction_capacity_bytes = instruction_capacity_bytes;
