@@ -21,8 +21,18 @@
  *
  *      Instruction records are packed in the NAND image as a fixed-size
  *      FlashManagerInstructionHeader_T followed immediately by the indicated
- *      payload bytes. Records may cross NAND page boundaries, but an individual
- *      record must not exceed one NAND page.
+ *      payload bytes, with the next header immediately following that payload.
+ *      Records may cross NAND page boundaries, but an individual record must
+ *      not exceed one NAND page.
+ *
+ *      Upload preprocessing is responsible for validating this canonical
+ *      stream before it reaches NAND. Runtime detection of an invalid stored
+ *      length is a session-ending fault rather than a recoverable parse error.
+ *
+ *      The implementation owns three circular NAND-page slots plus one
+ *      page-sized mirror of slot zero. The mirror is populated in Flash Manager
+ *      task context and makes a record crossing the ring end contiguous to the
+ *      execution ISR without an ISR-time payload copy.
  ******************************************************************************/
 
 #ifndef INSTRUCTION_BUFFER_H
@@ -199,6 +209,9 @@ bool INSTRUCTION_BUFFER_AcquireFillPage( InstructionBufferPageFillLease_T* lease
  *       when nand_read_succeeded is false.
  * @note Invalid completion leaves the active lease and page ownership unchanged
  *       for fault handling or an explicit session reset.
+ * @note Completing a successful slot-zero fill copies its valid bytes into the
+ *       internal mirror before publishing the page. This bounded page copy is
+ *       performed in Flash Manager task context, not the execution ISR.
  */
 bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T* lease,
                                           bool nand_read_succeeded );
@@ -208,22 +221,28 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
 /**
  * @brief Returns a read-only view of the next complete instruction.
  *
+ * The returned view contains the instruction's parsed header and a pointer to
+ * its complete payload. Together these fields represent one logical stored
+ * instruction.
+ *
  * The consumer position is not advanced. Repeated calls return the same view
  * until INSTRUCTION_BUFFER_ConsumeInstruction() succeeds.
  *
  * @param[out] instruction
- *      Destination for the instruction view. A non-null output is cleared
- *      before returning any status other than INSTRUCTION_BUFFER_PEEK_AVAILABLE.
+ *      Destination for a read-only pointer to the prepared instruction view.
+ *      A non-null output is set to null before returning any status other than
+ *      INSTRUCTION_BUFFER_PEEK_AVAILABLE.
  *
  * @return Current buffered instruction status.
  *
  * @note This function performs no NAND access and uses no RTOS primitives.
  * @note The returned payload is contiguous even if its stored record crosses a
- *       NAND page boundary.
+ *       NAND page boundary or the physical end of the circular page storage.
+ * @note Peek copies only the fixed-size header; it never copies the payload.
  * @note The view remains valid until consumed or PrepareRead is called again.
  */
 InstructionBufferPeekStatus_T
-INSTRUCTION_BUFFER_PeekInstruction( FlashManagerInstructionView_T* instruction );
+INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instruction );
 
 /**
  * @brief Consumes the instruction returned by the active successful peek.
