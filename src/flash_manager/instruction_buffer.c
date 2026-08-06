@@ -429,6 +429,35 @@ bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes )
     return true;
 }
 
+/**
+ * @brief Invalidates the active instruction stream while retaining geometry.
+ */
+void INSTRUCTION_BUFFER_EndRead( void )
+{
+    if ( !instruction_buffer_context.is_initialised )
+    {
+        return;
+    }
+
+    instruction_buffer_context.is_read_prepared             = false;
+    instruction_buffer_context.instruction_length_bytes     = 0U;
+    instruction_buffer_context.next_nand_read_offset_bytes  = 0U;
+    instruction_buffer_context.next_fill_page_index         = 0U;
+    instruction_buffer_context.consumer_stream_offset_bytes = 0U;
+    instruction_buffer_context.consumer_page_index          = 0U;
+    instruction_buffer_context.consumer_page_offset_bytes   = 0U;
+
+    INSTRUCTION_BUFFER_ClearPageFillReservation();
+    INSTRUCTION_BUFFER_ClearInstructionView();
+
+    for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
+    {
+        instruction_buffer_context.page_states[page_index]      = INSTRUCTION_BUFFER_PAGE_EMPTY;
+        instruction_buffer_context.page_valid_bytes[page_index] = 0U;
+        instruction_buffer_context.page_stream_offsets_bytes[page_index] = 0U;
+    }
+}
+
 /* NAND-to-RAM page producer interface. */
 
 /**
