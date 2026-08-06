@@ -60,7 +60,11 @@ EXTERNAL_FLASH_ReadInstructionPage(instruction_offset, instruction_page_buffer, 
 EXTERNAL_FLASH_WriteResultPage(result_page_buffer, valid_length);
 ```
 
-These APIs are page scoped and use DMA internally.
+These APIs are page scoped and use DMA internally. They are synchronous from
+the Flash Manager's perspective, so page ownership remains simple: the lease is
+completed only after the call returns. While DMA is active, however, the Flash
+Manager task blocks on the QSPI completion semaphore rather than occupying the
+CPU, allowing other ready service tasks to run.
 
 ### Package upload APIs
 
