@@ -25,6 +25,7 @@
 #include "hw_adc.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -58,6 +59,9 @@
 
 static inline uint32_t EXEC_ANALOGUE_INPUT_Convert_ADC_To_Voltage( uint32_t adc_value );
 
+static bool EXEC_ANALOGUE_INPUT_Translate_Sample_Rate( ExecAnalogueInputSampleRate_T exec_rate,
+                                                       ADCSampleRates_T*             hw_rate );
+
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
@@ -67,6 +71,47 @@ static inline uint32_t EXEC_ANALOGUE_INPUT_Convert_ADC_To_Voltage( uint32_t adc_
 static inline uint32_t EXEC_ANALOGUE_INPUT_Convert_ADC_To_Voltage( uint32_t adc_value )
 {
     return adc_value;
+}
+
+static bool EXEC_ANALOGUE_INPUT_Translate_Sample_Rate( ExecAnalogueInputSampleRate_T exec_rate,
+                                                       ADCSampleRates_T*             hw_rate )
+{
+    if ( hw_rate == NULL )
+    {
+        return false;
+    }
+
+    switch ( exec_rate )
+    {
+        case EXEC_ANALOGUE_INPUT_SAMPLE_RATE_100K_HZ:
+            *hw_rate = ADC_SAMPLE_RATE_100K_HZ;
+            break;
+
+        case EXEC_ANALOGUE_INPUT_SAMPLE_RATE_50K_HZ:
+            *hw_rate = ADC_SAMPLE_RATE_50K_HZ;
+            break;
+
+        case EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ:
+            *hw_rate = ADC_SAMPLE_RATE_10K_HZ;
+            break;
+
+        case EXEC_ANALOGUE_INPUT_SAMPLE_RATE_5K_HZ:
+            *hw_rate = ADC_SAMPLE_RATE_5K_HZ;
+            break;
+
+        case EXEC_ANALOGUE_INPUT_SAMPLE_RATE_1K_HZ:
+            *hw_rate = ADC_SAMPLE_RATE_1K_HZ;
+            break;
+
+        case EXEC_ANALOGUE_INPUT_SAMPLE_RATE_500_HZ:
+            *hw_rate = ADC_SAMPLE_RATE_500_HZ;
+            break;
+
+        default:
+            return false;
+    }
+
+    return true;
 }
 
 /**-----------------------------------------------------------------------------
@@ -100,23 +145,35 @@ static inline uint32_t EXEC_ANALOGUE_INPUT_Convert_ADC_To_Voltage( uint32_t adc_
  *      The configuration is not currently supported, or the ADC measurement
  *      frequency could not be configured.
  */
-bool EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( AnalogueInputConfiguration_T configuration )
+bool EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( ExecAnalogueInputConfiguration_T configuration )
 {
-    bool status = false;
-    // TODO: Update this when can dynamically adjust the number of channels
+    ADCSampleRates_T hw_sample_rate = ADC_SAMPLE_RATE_1K_HZ;
+
+    /*
+     * Dynamic channel selection is not currently supported by the ADC scan
+     * and DMA configuration.
+     */
     if ( !configuration.ch_0_is_enabled || !configuration.ch_1_is_enabled )
     {
         return false;
     }
 
-    // Configuring measurement frequency
-    status = HW_ADC_Configure_ADC_Measurement_Frequency( configuration.adc_sample_rate );
-    if ( !status )
+    if ( !EXEC_ANALOGUE_INPUT_Translate_Sample_Rate( configuration.sample_rate, &hw_sample_rate ) )
     {
-        return status;
+        return false;
     }
 
-    return status;
+    return HW_ADC_Configure_ADC_Measurement_Frequency( hw_sample_rate );
+}
+
+bool EXEC_ANALOGUE_INPUT_Start( void )
+{
+    return HW_ADC_Start_DMA_Measurements();
+}
+
+bool EXEC_ANALOGUE_INPUT_Stop( void )
+{
+    return HW_ADC_Stop_DMA_Measurements();
 }
 
 /**
@@ -143,7 +200,8 @@ bool EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( AnalogueInputConfiguration_T
  *      Struct containing pointers to the locations where the processed channel
  *      voltage values should be stored.
  */
-inline void EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( AnalogueInputVoltages_T voltage_destination )
+inline void
+EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( ExecAnalogueInputVoltages_T voltage_destination )
 {
     ADCMeasurement_T results[SAMPLES_TAKEN];
     // Get the measurements from DMA buffer

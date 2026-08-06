@@ -34,7 +34,6 @@ constexpr uint32_t TEST_SAMPLES_TAKEN = 8U;
 
 using ::testing::_;
 using ::testing::DoAll;
-using ::testing::Eq;
 using ::testing::Return;
 using ::testing::SetArrayArgument;
 
@@ -46,8 +45,11 @@ using ::testing::SetArrayArgument;
 class MockHwAdc
 {
 public:
-    MOCK_METHOD( bool, ConfigureADCMeasurementFrequency,
-                 ( decltype( AnalogueInputConfiguration_T{}.adc_sample_rate ) sample_rate ), () );
+    MOCK_METHOD( bool, ConfigureADCMeasurementFrequency, ( ADCSampleRates_T sample_rate ), () );
+
+    MOCK_METHOD( bool, StartDmaMeasurements, () );
+
+    MOCK_METHOD( bool, StopDmaMeasurements, () );
 
     MOCK_METHOD( void, ReadDmaMeasurements,
                  ( ADCMeasurement_T * destination, uint32_t sample_count ), () );
@@ -57,10 +59,19 @@ static MockHwAdc* g_hw_adc_mock = nullptr;
 
 extern "C"
 {
-bool HW_ADC_Configure_ADC_Measurement_Frequency(
-    decltype( AnalogueInputConfiguration_T{}.adc_sample_rate ) sample_rate )
+bool HW_ADC_Configure_ADC_Measurement_Frequency( ADCSampleRates_T sample_rate )
 {
     return g_hw_adc_mock->ConfigureADCMeasurementFrequency( sample_rate );
+}
+
+bool HW_ADC_Start_DMA_Measurements( void )
+{
+    return g_hw_adc_mock->StartDmaMeasurements();
+}
+
+bool HW_ADC_Stop_DMA_Measurements( void )
+{
+    return g_hw_adc_mock->StopDmaMeasurements();
 }
 
 void HW_ADC_Read_DMA_Measurements( ADCMeasurement_T* destination, uint32_t sample_count )
@@ -102,9 +113,10 @@ protected:
 
 TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_ReturnsFalse_WhenChannel0IsDisabled )
 {
-    AnalogueInputConfiguration_T configuration = {};
-    configuration.ch_0_is_enabled              = false;
-    configuration.ch_1_is_enabled              = true;
+    ExecAnalogueInputConfiguration_T configuration = {};
+    configuration.sample_rate                      = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ;
+    configuration.ch_0_is_enabled                  = false;
+    configuration.ch_1_is_enabled                  = true;
 
     EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( _ ) ).Times( 0 );
 
@@ -115,9 +127,10 @@ TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_ReturnsFalse_WhenChannel0
 
 TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_ReturnsFalse_WhenChannel1IsDisabled )
 {
-    AnalogueInputConfiguration_T configuration = {};
-    configuration.ch_0_is_enabled              = true;
-    configuration.ch_1_is_enabled              = false;
+    ExecAnalogueInputConfiguration_T configuration = {};
+    configuration.sample_rate                      = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ;
+    configuration.ch_0_is_enabled                  = true;
+    configuration.ch_1_is_enabled                  = false;
 
     EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( _ ) ).Times( 0 );
 
@@ -128,12 +141,12 @@ TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_ReturnsFalse_WhenChannel1
 
 TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_ReturnsFalse_WhenHwAdcConfigurationFails )
 {
-    AnalogueInputConfiguration_T configuration = {};
-    configuration.ch_0_is_enabled              = true;
-    configuration.ch_1_is_enabled              = true;
+    ExecAnalogueInputConfiguration_T configuration = {};
+    configuration.sample_rate                      = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_50K_HZ;
+    configuration.ch_0_is_enabled                  = true;
+    configuration.ch_1_is_enabled                  = true;
 
-    EXPECT_CALL( mock_hw_adc,
-                 ConfigureADCMeasurementFrequency( Eq( configuration.adc_sample_rate ) ) )
+    EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( ADC_SAMPLE_RATE_50K_HZ ) )
         .WillOnce( Return( false ) );
 
     bool result = EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( configuration );
@@ -141,20 +154,75 @@ TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_ReturnsFalse_WhenHwAdcCon
     EXPECT_FALSE( result );
 }
 
-TEST_F( ExecAnalogueInputTest,
-        ConfigureAnalogueInputs_ReturnsTrue_WhenConfigurationIsValidAndHwAdcSucceeds )
+TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_TranslatesAllSupportedSampleRates )
 {
-    AnalogueInputConfiguration_T configuration = {};
-    configuration.ch_0_is_enabled              = true;
-    configuration.ch_1_is_enabled              = true;
+    struct SampleRateMapping_T
+    {
+        ExecAnalogueInputSampleRate_T exec_rate;
+        ADCSampleRates_T              hw_rate;
+    };
 
-    EXPECT_CALL( mock_hw_adc,
-                 ConfigureADCMeasurementFrequency( Eq( configuration.adc_sample_rate ) ) )
-        .WillOnce( Return( true ) );
+    const SampleRateMapping_T mappings[] = {
+        { EXEC_ANALOGUE_INPUT_SAMPLE_RATE_100K_HZ, ADC_SAMPLE_RATE_100K_HZ },
+        { EXEC_ANALOGUE_INPUT_SAMPLE_RATE_50K_HZ, ADC_SAMPLE_RATE_50K_HZ },
+        { EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ, ADC_SAMPLE_RATE_10K_HZ },
+        { EXEC_ANALOGUE_INPUT_SAMPLE_RATE_5K_HZ, ADC_SAMPLE_RATE_5K_HZ },
+        { EXEC_ANALOGUE_INPUT_SAMPLE_RATE_1K_HZ, ADC_SAMPLE_RATE_1K_HZ },
+        { EXEC_ANALOGUE_INPUT_SAMPLE_RATE_500_HZ, ADC_SAMPLE_RATE_500_HZ },
+    };
 
-    bool result = EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( configuration );
+    for ( const SampleRateMapping_T& mapping : mappings )
+    {
+        ExecAnalogueInputConfiguration_T configuration = {};
+        configuration.sample_rate                      = mapping.exec_rate;
+        configuration.ch_0_is_enabled                  = true;
+        configuration.ch_1_is_enabled                  = true;
 
-    EXPECT_TRUE( result );
+        EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( mapping.hw_rate ) )
+            .WillOnce( Return( true ) );
+
+        EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( configuration ) );
+    }
+}
+
+TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_RejectsInvalidExecutionSampleRate )
+{
+    ExecAnalogueInputConfiguration_T configuration = {};
+    configuration.sample_rate     = static_cast<ExecAnalogueInputSampleRate_T>( 999U );
+    configuration.ch_0_is_enabled = true;
+    configuration.ch_1_is_enabled = true;
+
+    EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( _ ) ).Times( 0 );
+
+    EXPECT_FALSE( EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( configuration ) );
+}
+
+TEST_F( ExecAnalogueInputTest, StartReturnsTrueWhenHardwareStartSucceeds )
+{
+    EXPECT_CALL( mock_hw_adc, StartDmaMeasurements() ).WillOnce( Return( true ) );
+
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Start() );
+}
+
+TEST_F( ExecAnalogueInputTest, StartReturnsFalseWhenHardwareStartFails )
+{
+    EXPECT_CALL( mock_hw_adc, StartDmaMeasurements() ).WillOnce( Return( false ) );
+
+    EXPECT_FALSE( EXEC_ANALOGUE_INPUT_Start() );
+}
+
+TEST_F( ExecAnalogueInputTest, StopReturnsTrueWhenHardwareStopSucceeds )
+{
+    EXPECT_CALL( mock_hw_adc, StopDmaMeasurements() ).WillOnce( Return( true ) );
+
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Stop() );
+}
+
+TEST_F( ExecAnalogueInputTest, StopReturnsFalseWhenHardwareStopFails )
+{
+    EXPECT_CALL( mock_hw_adc, StopDmaMeasurements() ).WillOnce( Return( false ) );
+
+    EXPECT_FALSE( EXEC_ANALOGUE_INPUT_Stop() );
 }
 
 TEST_F( ExecAnalogueInputTest, ReadAnalogueInputs_AveragesEightSamplesAndStoresResults )
@@ -162,14 +230,13 @@ TEST_F( ExecAnalogueInputTest, ReadAnalogueInputs_AveragesEightSamplesAndStoresR
     uint32_t channel_0_voltage = 0U;
     uint32_t channel_1_voltage = 0U;
 
-    AnalogueInputVoltages_T voltage_destination = {};
-    voltage_destination.channel_0_voltage       = &channel_0_voltage;
-    voltage_destination.channel_1_voltage       = &channel_1_voltage;
+    ExecAnalogueInputVoltages_T voltage_destination = {};
+    voltage_destination.channel_0_voltage           = &channel_0_voltage;
+    voltage_destination.channel_1_voltage           = &channel_1_voltage;
 
     ADCMeasurement_T measurements[TEST_SAMPLES_TAKEN] = {
-        { .ch_0 = 10U, .ch_1 = 100U }, { .ch_0 = 20U, .ch_1 = 110U }, { .ch_0 = 30U, .ch_1 = 120U },
-        { .ch_0 = 40U, .ch_1 = 130U }, { .ch_0 = 50U, .ch_1 = 140U }, { .ch_0 = 60U, .ch_1 = 150U },
-        { .ch_0 = 70U, .ch_1 = 160U }, { .ch_0 = 80U, .ch_1 = 170U } };
+        { 10U, 100U }, { 20U, 110U }, { 30U, 120U }, { 40U, 130U },
+        { 50U, 140U }, { 60U, 150U }, { 70U, 160U }, { 80U, 170U } };
 
     EXPECT_CALL( mock_hw_adc, ReadDmaMeasurements( _, TEST_SAMPLES_TAKEN ) )
         .WillOnce(
@@ -186,14 +253,13 @@ TEST_F( ExecAnalogueInputTest, ReadAnalogueInputs_StoresZeroes_WhenAllSamplesAre
     uint32_t channel_0_voltage = 123U;
     uint32_t channel_1_voltage = 456U;
 
-    AnalogueInputVoltages_T voltage_destination = {};
-    voltage_destination.channel_0_voltage       = &channel_0_voltage;
-    voltage_destination.channel_1_voltage       = &channel_1_voltage;
+    ExecAnalogueInputVoltages_T voltage_destination = {};
+    voltage_destination.channel_0_voltage           = &channel_0_voltage;
+    voltage_destination.channel_1_voltage           = &channel_1_voltage;
 
-    ADCMeasurement_T measurements[TEST_SAMPLES_TAKEN] = {
-        { .ch_0 = 0U, .ch_1 = 0U }, { .ch_0 = 0U, .ch_1 = 0U }, { .ch_0 = 0U, .ch_1 = 0U },
-        { .ch_0 = 0U, .ch_1 = 0U }, { .ch_0 = 0U, .ch_1 = 0U }, { .ch_0 = 0U, .ch_1 = 0U },
-        { .ch_0 = 0U, .ch_1 = 0U }, { .ch_0 = 0U, .ch_1 = 0U } };
+    ADCMeasurement_T measurements[TEST_SAMPLES_TAKEN] = { { 0U, 0U }, { 0U, 0U }, { 0U, 0U },
+                                                          { 0U, 0U }, { 0U, 0U }, { 0U, 0U },
+                                                          { 0U, 0U }, { 0U, 0U } };
 
     EXPECT_CALL( mock_hw_adc, ReadDmaMeasurements( _, TEST_SAMPLES_TAKEN ) )
         .WillOnce(
@@ -210,14 +276,13 @@ TEST_F( ExecAnalogueInputTest, ReadAnalogueInputs_UsesAllSamplesInAverage )
     uint32_t channel_0_voltage = 0U;
     uint32_t channel_1_voltage = 0U;
 
-    AnalogueInputVoltages_T voltage_destination = {};
-    voltage_destination.channel_0_voltage       = &channel_0_voltage;
-    voltage_destination.channel_1_voltage       = &channel_1_voltage;
+    ExecAnalogueInputVoltages_T voltage_destination = {};
+    voltage_destination.channel_0_voltage           = &channel_0_voltage;
+    voltage_destination.channel_1_voltage           = &channel_1_voltage;
 
-    ADCMeasurement_T measurements[TEST_SAMPLES_TAKEN] = {
-        { .ch_0 = 8U, .ch_1 = 16U }, { .ch_0 = 8U, .ch_1 = 16U }, { .ch_0 = 8U, .ch_1 = 16U },
-        { .ch_0 = 8U, .ch_1 = 16U }, { .ch_0 = 8U, .ch_1 = 16U }, { .ch_0 = 8U, .ch_1 = 16U },
-        { .ch_0 = 8U, .ch_1 = 16U }, { .ch_0 = 72U, .ch_1 = 80U } };
+    ADCMeasurement_T measurements[TEST_SAMPLES_TAKEN] = { { 8U, 16U }, { 8U, 16U }, { 8U, 16U },
+                                                          { 8U, 16U }, { 8U, 16U }, { 8U, 16U },
+                                                          { 8U, 16U }, { 72U, 80U } };
 
     EXPECT_CALL( mock_hw_adc, ReadDmaMeasurements( _, TEST_SAMPLES_TAKEN ) )
         .WillOnce(

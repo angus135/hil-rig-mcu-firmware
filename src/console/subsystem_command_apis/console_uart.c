@@ -514,13 +514,13 @@ static void CONSOLE_UART_Loopback_Configure( uint16_t argc, char* argv[] )
     }
 
     ExecUartConfig_T config = { 0 };
-    config.interface_mode = EXEC_UART_MODE_TTL_3V3;
-    config.rx_enabled     = true;
-    config.tx_enabled     = true;
-    config.baud_rate      = baud_rate;
-    config.word_length    = word_length;
-    config.parity         = parity;
-    config.stop_bits      = stop_bits;
+    config.interface_mode   = EXEC_UART_MODE_TTL_3V3;
+    config.rx_enabled       = true;
+    config.tx_enabled       = true;
+    config.baud_rate        = baud_rate;
+    config.word_length      = word_length;
+    config.parity           = parity;
+    config.stop_bits        = stop_bits;
 
     if ( !EXEC_UART_Apply_Configuration( EXEC_UART_CHANNEL_1, &config ) )
     {
@@ -612,8 +612,8 @@ static void CONSOLE_UART_Loopback_Start( uint16_t argc, char* argv[] )
 {
     ExecUartChannel_T sender_ch;
     ExecUartChannel_T receiver_ch;
-    char            tx_text[EXEC_UART_MAX_CHUNK_SIZE];
-    uint32_t        tx_length = 0U;
+    char              tx_text[EXEC_UART_MAX_CHUNK_SIZE];
+    uint32_t          tx_length = 0U;
 
     if ( argc < 6U )
     {
