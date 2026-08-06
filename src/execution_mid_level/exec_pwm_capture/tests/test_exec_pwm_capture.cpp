@@ -43,7 +43,7 @@ using ::testing::Return;
 class MockHwPwmCapture
 {
 public:
-    MOCK_METHOD( bool, Configure_Channel, ( HwPWMCaptureChannel_T, bool ) );
+    MOCK_METHOD( bool, Configure_Channel, ( HwPWMCaptureChannel_T, bool ));
     MOCK_METHOD( HwPWMCaptureResult_T, Peek_Result, ( HwPWMCaptureChannel_T ) );
     MOCK_METHOD( void, Consume_Result, ( HwPWMCaptureChannel_T ) );
     MOCK_METHOD( uint32_t, Get_Timer_Clock_Hz, ( HwPWMCaptureChannel_T ) );
@@ -53,11 +53,11 @@ class MockLogicExpander
 {
 public:
     MOCK_METHOD( LogicExpanderStatus_T, Load_Control_Bit,
-                 ( LogicExpanderIndex_T, LogicExpanderPort_T, uint8_t, bool ) );
+                 ( LogicExpanderIndex_T, LogicExpanderPort_T, uint8_t, bool ));
     MOCK_METHOD( LogicExpanderStatus_T, Send_Control_Bits, () );
 };
 
-static MockHwPwmCapture* g_mock_hw             = nullptr;
+static MockHwPwmCapture*  g_mock_hw             = nullptr;
 static MockLogicExpander* g_mock_logic_expander = nullptr;
 
 static void Reset_Exec_PWM_Capture_State( void )
@@ -111,7 +111,7 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void )
 class ExecPWMCaptureTest : public ::testing::Test
 {
 protected:
-    MockHwPwmCapture mock_hw;
+    MockHwPwmCapture  mock_hw;
     MockLogicExpander mock_logic_expander;
     uint32_t          period_ticks;
     uint32_t          high_ticks;
@@ -156,12 +156,10 @@ TEST_F( ExecPWMCaptureTest, StartChannelAppliesModeAndEnablesMappedHardwareChann
     config.mode                   = EXEC_PWM_CAPTURE_LV_5V;
     config.is_enabled             = true;
 
-    EXPECT_CALL( mock_logic_expander,
-                 Load_Control_Bit( LOGIC_EXPANDER_DEVICE_PWM_SPI, LOGIC_EXPANDER_PORT_A, 2U,
-                                   false ) );
-    EXPECT_CALL( mock_logic_expander,
-                 Load_Control_Bit( LOGIC_EXPANDER_DEVICE_PWM_SPI, LOGIC_EXPANDER_PORT_A, 3U,
-                                   true ) );
+    EXPECT_CALL( mock_logic_expander, Load_Control_Bit( LOGIC_EXPANDER_DEVICE_PWM_SPI,
+                                                        LOGIC_EXPANDER_PORT_A, 2U, false ) );
+    EXPECT_CALL( mock_logic_expander, Load_Control_Bit( LOGIC_EXPANDER_DEVICE_PWM_SPI,
+                                                        LOGIC_EXPANDER_PORT_A, 3U, true ) );
     EXPECT_CALL( mock_logic_expander, Send_Control_Bits() );
     EXPECT_CALL( mock_hw, Configure_Channel( HW_PWM_CAPTURE_CHANNEL_2, true ) )
         .WillOnce( Return( true ) );
