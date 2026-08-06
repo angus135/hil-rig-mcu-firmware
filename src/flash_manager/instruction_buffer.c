@@ -694,3 +694,137 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
 
     return INSTRUCTION_BUFFER_PEEK_AVAILABLE;
 }
+
+/**
+ * @brief Advances past the active instruction and releases exhausted pages.
+ *
+ * The common path advances within the current page. Page-state transitions are
+ * required only when the record reaches or crosses a page boundary.
+ */
+InstructionBufferConsumeStatus_T
+INSTRUCTION_BUFFER_ConsumeInstruction( const FlashManagerInstructionView_T* instruction )
+{
+    InstructionBufferViewReservation_T* active_view =
+        &instruction_buffer_context.active_instruction_view;
+
+    if ( ( instruction == NULL ) || !instruction_buffer_context.is_initialised
+         || !instruction_buffer_context.is_read_prepared || !active_view->is_active
+         || ( instruction != &active_view->view ) || ( instruction->view_id == 0U )
+         || ( instruction->view_id != active_view->view.view_id ) )
+    {
+        return INSTRUCTION_BUFFER_CONSUME_INVALID_VIEW;
+    }
+
+    uint8_t current_page_index = instruction_buffer_context.consumer_page_index;
+
+    if ( ( current_page_index >= INSTRUCTION_BUFFER_PAGE_COUNT )
+         || ( active_view->record_stream_offset_bytes
+              != instruction_buffer_context.consumer_stream_offset_bytes )
+         || ( active_view->record_length_bytes < sizeof( FlashManagerInstructionHeader_T ) )
+         || ( instruction_buffer_context.page_states[current_page_index]
+              != INSTRUCTION_BUFFER_PAGE_READY ) )
+    {
+        return INSTRUCTION_BUFFER_CONSUME_INTERNAL_ERROR;
+    }
+
+    uint32_t current_page_valid_bytes =
+        instruction_buffer_context.page_valid_bytes[current_page_index];
+
+    uint32_t current_page_offset_bytes = instruction_buffer_context.consumer_page_offset_bytes;
+
+    if ( ( current_page_offset_bytes >= current_page_valid_bytes )
+         || ( instruction_buffer_context.consumer_stream_offset_bytes
+              > instruction_buffer_context.instruction_length_bytes )
+         || ( instruction_buffer_context.page_stream_offsets_bytes[current_page_index]
+              > instruction_buffer_context.consumer_stream_offset_bytes )
+         || ( instruction_buffer_context.consumer_stream_offset_bytes
+                  - instruction_buffer_context.page_stream_offsets_bytes[current_page_index]
+              != current_page_offset_bytes )
+         || ( active_view->record_length_bytes
+              > ( instruction_buffer_context.instruction_length_bytes
+                  - instruction_buffer_context.consumer_stream_offset_bytes ) ) )
+    {
+        return INSTRUCTION_BUFFER_CONSUME_INTERNAL_ERROR;
+    }
+
+    uint32_t bytes_remaining_in_page = current_page_valid_bytes - current_page_offset_bytes;
+
+    /* Most instructions remain within their current page. */
+    if ( active_view->record_length_bytes < bytes_remaining_in_page )
+    {
+        instruction_buffer_context.consumer_stream_offset_bytes += active_view->record_length_bytes;
+        instruction_buffer_context.consumer_page_offset_bytes += active_view->record_length_bytes;
+
+        INSTRUCTION_BUFFER_ClearInstructionView();
+
+        return INSTRUCTION_BUFFER_CONSUME_OK;
+    }
+
+    uint32_t next_consumer_stream_offset_bytes =
+        instruction_buffer_context.consumer_stream_offset_bytes + active_view->record_length_bytes;
+
+    uint32_t successor_bytes_consumed = active_view->record_length_bytes - bytes_remaining_in_page;
+
+    uint8_t successor_page_index = INSTRUCTION_BUFFER_NextPageIndex( current_page_index );
+
+    /* A crossing record must be backed by the next sequential READY page. */
+    if ( successor_bytes_consumed > 0U )
+    {
+        if ( ( instruction_buffer_context.page_states[successor_page_index]
+               != INSTRUCTION_BUFFER_PAGE_READY )
+             || ( instruction_buffer_context.page_stream_offsets_bytes[successor_page_index]
+                  != ( instruction_buffer_context.consumer_stream_offset_bytes
+                       + bytes_remaining_in_page ) )
+             || ( successor_bytes_consumed
+                  > instruction_buffer_context.page_valid_bytes[successor_page_index] ) )
+        {
+            return INSTRUCTION_BUFFER_CONSUME_INTERNAL_ERROR;
+        }
+    }
+
+    /* The current page contains no bytes at or beyond the new consumer cursor. */
+    instruction_buffer_context.page_states[current_page_index]      = INSTRUCTION_BUFFER_PAGE_EMPTY;
+    instruction_buffer_context.page_valid_bytes[current_page_index] = 0U;
+    instruction_buffer_context.page_stream_offsets_bytes[current_page_index] = 0U;
+
+    instruction_buffer_context.consumer_stream_offset_bytes = next_consumer_stream_offset_bytes;
+
+    instruction_buffer_context.consumer_page_index        = successor_page_index;
+    instruction_buffer_context.consumer_page_offset_bytes = successor_bytes_consumed;
+
+    /* A final partial successor page may also be exhausted by this record. */
+    if ( ( successor_bytes_consumed > 0U )
+         && ( successor_bytes_consumed
+              == instruction_buffer_context.page_valid_bytes[successor_page_index] ) )
+    {
+        instruction_buffer_context.page_states[successor_page_index] =
+            INSTRUCTION_BUFFER_PAGE_EMPTY;
+        instruction_buffer_context.page_valid_bytes[successor_page_index]          = 0U;
+        instruction_buffer_context.page_stream_offsets_bytes[successor_page_index] = 0U;
+
+        instruction_buffer_context.consumer_page_index =
+            INSTRUCTION_BUFFER_NextPageIndex( successor_page_index );
+        instruction_buffer_context.consumer_page_offset_bytes = 0U;
+    }
+
+    INSTRUCTION_BUFFER_ClearInstructionView();
+
+    if ( instruction_buffer_context.next_nand_read_offset_bytes
+         < instruction_buffer_context.instruction_length_bytes )
+    {
+        return INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED;
+    }
+
+    return INSTRUCTION_BUFFER_CONSUME_OK;
+}
+
+/**
+ * @brief Reports whether the active instruction image was consumed exactly.
+ */
+bool INSTRUCTION_BUFFER_IsReadComplete( void )
+{
+    return instruction_buffer_context.is_initialised && instruction_buffer_context.is_read_prepared
+           && ( instruction_buffer_context.consumer_stream_offset_bytes
+                == instruction_buffer_context.instruction_length_bytes )
+           && !instruction_buffer_context.active_instruction_view.is_active;
+}

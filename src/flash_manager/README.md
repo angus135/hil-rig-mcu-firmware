@@ -1,9 +1,10 @@
 # Flash Manager Design Notes
 
 `result_buffer.c` implements packed result-record production and page draining.
-`flash_manager.c` now provides the ISR-facing result write API and the RTOS task
-path that prepares, drains, and finalises result sessions. Instruction
-buffering, result retrieval, and application startup remain to be integrated.
+`instruction_buffer.c` implements prefetched instruction views and page release.
+`flash_manager.c` connects both buffers to the execution ISR and performs NAND
+refill/drain work from its RTOS task. Result retrieval, instruction upload, and
+application startup remain to be integrated.
 
 The flash manager is the only normal runtime task that should call `external_flash`.
 
@@ -19,8 +20,11 @@ regions. Records may cross a page boundary, while NAND drain leases always
 expose one page-aligned region. A one-page scratch buffer preserves a contiguous
 driver payload pointer only when a record crosses the physical end of the ring.
 
-The future instruction buffer should use page-sized slots because instruction
-DMA reads do not require packed variable-length records.
+The instruction buffer uses three page-sized circular slots followed by one
+page-sized mirror of slot zero. NAND DMA fills only the three circular slots.
+The Flash Manager task updates the mirror whenever slot zero is filled, making a
+record that crosses the physical ring end contiguous without an ISR-time payload
+copy.
 
 Recommended initial sizing:
 
@@ -80,7 +84,8 @@ Execution must not start until `EXTERNAL_FLASH_FinishInstructionUpload()` succee
 
 ## Instruction Queue
 
-The instruction queue should use page sized slots.
+The instruction queue uses page-sized slots and serves packed variable-length
+records directly from those slots.
 
 Each refill should normally call:
 
@@ -101,25 +106,41 @@ Important constraints:
 - `length` must be no larger than the NAND page size.
 - The destination buffer must remain valid and writable until the function returns.
 
-Recommended instruction slot states:
+Instruction slot states:
 
 ```text
 EMPTY
-READ_ACTIVE
+FILLING_FROM_NAND
 READY
-CONSUMING
-REUSABLE
 ```
 
-Suggested refill policy:
+Refill policy:
 
 ```text
-If available instruction bytes <= 1.5 page:
-    refill one free instruction page slot
+Preparation notification:
+    fill sequential empty slots until the buffer is full or the image is loaded
+
+Execution consumes the last byte held by a page:
+    mark that page EMPTY
+    notify the Flash Manager task from the ISR
+
+Refill notification:
+    fill sequential empty slots until backpressure or end of image
 ```
 
-Only start a refill when a free page-sized slot exists. Do not issue DMA reads
-into a wrapped circular buffer region.
+Notification bits may coalesce, so the task processes every currently available
+slot on each wake. `xTaskNotifyFromISR()` is called only when a page is released,
+not for every instruction. The outer timer ISR defers `portYIELD_FROM_ISR()`
+until its complete execution sequence has finished.
+
+The Flash Manager task cannot refill RAM until that ISR returns. The three-page
+preload must therefore cover the maximum instruction bytes that one timer
+iteration can consume, and sustained NAND refill throughput must exceed
+sustained execution consumption. Event-driven notification removes polling
+latency but cannot compensate for insufficient buffer depth or NAND throughput.
+
+Only start a refill when the next sequential page slot is empty. Do not issue a
+DMA read into a slot still referenced by the execution manager.
 
 ---
 
@@ -199,7 +220,7 @@ EXTERNAL_FLASH_Init();
 ```
 
 Firmware startup makes this call after adopting the generated QSPI handle.
-`FLASH_MANAGER_Init()` must then initialise the manager mutex and result buffer
+`FLASH_MANAGER_Init()` must then initialise the manager mutex and both buffers
 before the Flash Manager task is allowed to run. The task creation remains
 commented out in `app_main.c` until that startup order is connected.
 
@@ -210,13 +231,11 @@ FLASH_MANAGER_RequestExecutionPreparation();
 ```
 
 The Flash Manager task calls `EXTERNAL_FLASH_StartSession()`, resets the result
-buffer, and changes to `FLASH_MANAGER_STATE_EXECUTING`. The Run State Manager
-must observe that state before starting the execution timer. Instruction queue
-priming remains future work and will use:
-
-```c
-EXTERNAL_FLASH_ReadInstructionPage(offset, page_buffer, length);
-```
+buffer, reads the committed instruction length, prepares the instruction buffer,
+and preloads every available instruction slot. It changes to
+`FLASH_MANAGER_STATE_EXECUTING` only after all preparation operations succeed.
+The Run State Manager must observe that state before starting the execution
+timer.
 
 During execution:
 
@@ -330,11 +349,15 @@ Important statuses to handle:
 ## Key Rules
 
 - The flash manager owns the instruction and result RAM buffers.
-- The execution ISR uses only the non-blocking Flash Manager result API.
+- The execution ISR uses only the non-blocking Flash Manager instruction and
+  result APIs.
 - The execution manager never calls `external_flash` or takes an RTOS mutex.
 - Use `EXTERNAL_FLASH_ReadInstructionPage()` for instruction queue refills.
 - Use `EXTERNAL_FLASH_WriteResultPage()` for result page writes.
 - Use page sized slots to avoid DMA wraparound.
+- Notify instruction refill only when consumption releases a page.
+- Defer any ISR-requested task yield until the complete timer execution sequence
+  has finished.
 - Only write full result pages during execution.
 - Write the final partial result page once after execution ends.
 - Do not call `hw_nand` or `hw_qspi` directly from the flash manager.

@@ -55,6 +55,9 @@ void FLASH_MANAGER_TEST_ConfigureInstructionFlashInfo( ExternalFlashStatus_T sta
                                                        uint32_t              page_size_bytes,
                                                        uint32_t instruction_capacity_bytes );
 
+/** Updates the committed instruction length returned by EXTERNAL_FLASH_GetInfo(). */
+void FLASH_MANAGER_TEST_SetInstructionLength( uint32_t instruction_length_bytes );
+
 // NOLINTEND
 
 #ifdef __cplusplus
