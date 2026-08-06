@@ -19,9 +19,9 @@
  *
  *      A record consists of FlashManagerInstructionHeader_T followed by its
  *      payload. Records may cross a NAND page boundary. Most records can be
- *      exposed directly from the contiguous page storage; a record crossing
- *      the physical end of the circular storage is assembled in a bounded
- *      scratch buffer so consumers still receive one contiguous payload.
+ *      exposed directly from the three circular page slots. A fourth region
+ *      mirrors slot zero immediately after slot two, making records that cross
+ *      the physical ring end contiguous without copying in the execution ISR.
  *
  *      The calling layer must serialise shared-state transitions between the
  *      Flash Manager task and execution ISR. This module deliberately owns no
@@ -53,6 +53,21 @@
 
 #define INSTRUCTION_BUFFER_MAX_CAPACITY_BYTES                                                      \
     ( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES * INSTRUCTION_BUFFER_PAGE_COUNT )
+
+/* Temporary policy: one instruction record may occupy at most one NAND page. */
+#define INSTRUCTION_BUFFER_MAX_RECORD_BYTES ( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES )
+
+#define INSTRUCTION_BUFFER_STORAGE_BYTES                                                           \
+    ( INSTRUCTION_BUFFER_MAX_CAPACITY_BYTES + INSTRUCTION_BUFFER_MAX_RECORD_BYTES )
+
+/* The serialized NAND layout depends on this fixed header width. */
+#if defined( __cplusplus )
+static_assert( sizeof( FlashManagerInstructionHeader_T ) == 8U,
+               "Unexpected instruction header layout" );
+#else
+_Static_assert( sizeof( FlashManagerInstructionHeader_T ) == 8U,
+                "Unexpected instruction header layout" );
+#endif
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -86,27 +101,19 @@ typedef struct
     uint32_t lease_id;
 } InstructionBufferPageFillReservation_T;
 
-/**
- * @brief Authoritative state for the instruction currently exposed to the
- *        Execution Manager.
- *
- * Only one instruction view may be active. The reservation keeps the record
- * storage immutable until the caller consumes it or the read session resets.
- */
+/** @brief Authoritative ownership of the instruction currently being viewed. */
 typedef struct
 {
+    /** Whether a view has been published and not yet consumed. */
     bool is_active;
 
-    /** Whether the exposed payload resides in the wrap scratch buffer. */
-    bool uses_wrap_scratch;
-
-    /** Logical stream offset of the record header. */
+    /** Logical stream offset of the viewed record header. */
     uint32_t record_stream_offset_bytes;
 
-    /** Combined serialized header and payload length. */
+    /** Authoritative combined serialized header and payload length. */
     uint32_t record_length_bytes;
 
-    /** Public view returned to the caller and used for consume validation. */
+    /** Complete logical header-and-payload view exposed to the consumer. */
     FlashManagerInstructionView_T view;
 } InstructionBufferViewReservation_T;
 
@@ -187,21 +194,14 @@ typedef struct
  */
 
 /**
- * @brief Page-partitioned instruction storage filled directly by NAND DMA.
+ * @brief Circular instruction page storage followed by a slot-zero mirror.
  *
- * Logical NAND pages are placed into these slots sequentially. Slots are reused
- * only after the Execution Manager has consumed every valid byte they contain.
+ * The first three runtime pages are filled sequentially from NAND and reused
+ * only after their bytes are consumed. The following maximum-record region
+ * mirrors the valid prefix of slot zero so a slot-two-to-slot-zero record has
+ * one physically contiguous address range.
  */
-static uint8_t instruction_buffer_storage[INSTRUCTION_BUFFER_MAX_CAPACITY_BYTES];
-
-/**
- * @brief Contiguous representation of a record crossing the physical end of
- *        the circular page-slot storage.
- *
- * A canonical instruction record is limited to one NAND page, so this buffer
- * can hold the complete header and payload.
- */
-static uint8_t instruction_buffer_wrap_scratch[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES];
+static uint8_t instruction_buffer_storage[INSTRUCTION_BUFFER_STORAGE_BYTES];
 
 /** Geometry, ownership, and cursor state for the instruction stream. */
 static InstructionBufferContext_T instruction_buffer_context;
@@ -228,21 +228,11 @@ static void INSTRUCTION_BUFFER_ClearPageFillReservation( void );
 
 /* Execution-facing view ownership. */
 
-/** Invalidates the active instruction view without advancing the stream. */
+/** Invalidates the current instruction view without advancing the stream. */
 static void INSTRUCTION_BUFFER_ClearInstructionView( void );
 
 /** Returns the next non-zero identifier for a published instruction view. */
 static uint32_t INSTRUCTION_BUFFER_AllocateInstructionViewId( void );
-
-/* Logical stream access across circular page slots. */
-
-/** Locates a buffered logical stream offset in a READY page. */
-static bool INSTRUCTION_BUFFER_FindReadyPage( uint32_t stream_offset_bytes, uint8_t* page_index,
-                                              uint32_t* page_offset_bytes );
-
-/** Copies a logical byte range from one or more READY page slots. */
-static bool INSTRUCTION_BUFFER_CopyBufferedBytes( uint32_t stream_offset_bytes,
-                                                  uint32_t length_bytes, uint8_t* destination );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -337,98 +327,6 @@ static uint32_t INSTRUCTION_BUFFER_AllocateInstructionViewId( void )
     return view_id;
 }
 
-/* Logical stream access across circular page slots. */
-
-static bool INSTRUCTION_BUFFER_FindReadyPage( uint32_t stream_offset_bytes, uint8_t* page_index,
-                                              uint32_t* page_offset_bytes )
-{
-    if ( ( page_index == NULL ) || ( page_offset_bytes == NULL ) )
-    {
-        return false;
-    }
-
-    for ( uint8_t index = 0U; index < INSTRUCTION_BUFFER_PAGE_COUNT; index++ )
-    {
-        if ( instruction_buffer_context.page_states[index] != INSTRUCTION_BUFFER_PAGE_READY )
-        {
-            continue;
-        }
-
-        uint32_t page_stream_offset = instruction_buffer_context.page_stream_offsets_bytes[index];
-
-        uint32_t page_valid_bytes = instruction_buffer_context.page_valid_bytes[index];
-
-        /*
-         * Subtraction after the lower-bound check avoids overflow from
-         * calculating page_stream_offset + page_valid_bytes.
-         */
-        if ( ( stream_offset_bytes >= page_stream_offset )
-             && ( ( stream_offset_bytes - page_stream_offset ) < page_valid_bytes ) )
-        {
-            *page_index        = index;
-            *page_offset_bytes = stream_offset_bytes - page_stream_offset;
-
-            return true;
-        }
-    }
-
-    return false;
-}
-
-static bool INSTRUCTION_BUFFER_CopyBufferedBytes( uint32_t stream_offset_bytes,
-                                                  uint32_t length_bytes, uint8_t* destination )
-{
-    /* An empty range requires no backing page and is always available. */
-    if ( length_bytes == 0U )
-    {
-        return true;
-    }
-
-    if ( destination == NULL )
-    {
-        return false;
-    }
-
-    uint32_t copied_bytes = 0U;
-
-    /* Resolve each successive range against READY slots in logical order. */
-    while ( copied_bytes < length_bytes )
-    {
-        uint8_t  page_index        = 0U;
-        uint32_t page_offset_bytes = 0U;
-
-        if ( !INSTRUCTION_BUFFER_FindReadyPage( stream_offset_bytes, &page_index,
-                                                &page_offset_bytes ) )
-        {
-            return false;
-        }
-
-        uint32_t available_bytes =
-            instruction_buffer_context.page_valid_bytes[page_index] - page_offset_bytes;
-
-        uint32_t remaining_bytes   = length_bytes - copied_bytes;
-        uint32_t copy_length_bytes = available_bytes;
-
-        if ( copy_length_bytes > remaining_bytes )
-        {
-            copy_length_bytes = remaining_bytes;
-        }
-
-        uint32_t storage_offset_bytes =
-            ( ( uint32_t )page_index * instruction_buffer_context.page_size_bytes )
-            + page_offset_bytes;
-
-        /* Copy only as far as this page or the requested range permits. */
-        memcpy( &destination[copied_bytes], &instruction_buffer_storage[storage_offset_bytes],
-                copy_length_bytes );
-
-        copied_bytes += copy_length_bytes;
-        stream_offset_bytes += copy_length_bytes;
-    }
-
-    return true;
-}
-
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
@@ -462,7 +360,7 @@ bool INSTRUCTION_BUFFER_Init( void )
     uint32_t buffer_capacity_bytes =
         external_flash_info.page_size_bytes * INSTRUCTION_BUFFER_PAGE_COUNT;
 
-    if ( buffer_capacity_bytes > sizeof( instruction_buffer_storage ) )
+    if ( buffer_capacity_bytes > INSTRUCTION_BUFFER_MAX_CAPACITY_BYTES )
     {
         return false;
     }
@@ -630,6 +528,21 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
             return false;
         }
 
+        /*
+         * Mirror slot zero immediately after the circular storage. This makes
+         * a record crossing from slot two into slot zero physically contiguous
+         * for the execution ISR. Keep the slot unpublished until the copy is
+         * complete so the ISR cannot observe a partially updated mirror.
+         */
+        if ( page_index == 0U )
+        {
+            uint32_t mirror_offset_bytes =
+                instruction_buffer_context.page_size_bytes * INSTRUCTION_BUFFER_PAGE_COUNT;
+
+            memcpy( &instruction_buffer_storage[mirror_offset_bytes],
+                    instruction_buffer_storage, read_length_bytes );
+        }
+
         instruction_buffer_context.page_valid_bytes[page_index] = read_length_bytes;
 
         instruction_buffer_context.page_stream_offsets_bytes[page_index] = instruction_offset_bytes;
@@ -661,19 +574,123 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
 /**
  * @brief Returns the current instruction view without advancing the stream.
  *
- * @note The record parsing and publication path is intentionally completed in
- *       a later implementation step. Until then, no instruction is exposed.
+ * The fixed header is copied into an aligned public view and the payload is
+ * exposed directly from storage. The slot-zero mirror keeps a record crossing
+ * the physical ring end contiguous, so this path performs no payload copy and
+ * no page search.
  */
 InstructionBufferPeekStatus_T
-INSTRUCTION_BUFFER_PeekInstruction( FlashManagerInstructionView_T* instruction )
+INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instruction )
 {
     if ( instruction == NULL )
     {
         return INSTRUCTION_BUFFER_PEEK_INVALID_ARGUMENT;
     }
 
-    /* Preserve the public contract while record parsing remains incomplete. */
-    *instruction = ( FlashManagerInstructionView_T ){ 0 };
+    *instruction = NULL;
 
-    return INSTRUCTION_BUFFER_PEEK_NOT_BUFFERED;
+    if ( !instruction_buffer_context.is_initialised
+         || !instruction_buffer_context.is_read_prepared )
+    {
+        return INSTRUCTION_BUFFER_PEEK_NOT_BUFFERED;
+    }
+
+    /*
+     * The reservation also owns the backing bytes until consume. Returning its
+     * address avoids copying the complete public view into ISR-owned storage.
+     */
+    if ( instruction_buffer_context.active_instruction_view.is_active )
+    {
+        *instruction = &instruction_buffer_context.active_instruction_view.view;
+
+        return INSTRUCTION_BUFFER_PEEK_AVAILABLE;
+    }
+
+    uint32_t record_stream_offset_bytes = instruction_buffer_context.consumer_stream_offset_bytes;
+
+    if ( record_stream_offset_bytes == instruction_buffer_context.instruction_length_bytes )
+    {
+        return INSTRUCTION_BUFFER_PEEK_END_OF_STREAM;
+    }
+
+    /*
+     * Upload preprocessing guarantees a packed [header][payload] stream. The
+     * producer offset is therefore sufficient to determine whether the next
+     * complete record has reached RAM; no page search is required here.
+     */
+    if ( ( record_stream_offset_bytes > instruction_buffer_context.instruction_length_bytes )
+         || ( instruction_buffer_context.next_nand_read_offset_bytes
+              < record_stream_offset_bytes ) )
+    {
+        return INSTRUCTION_BUFFER_PEEK_CORRUPT;
+    }
+
+    uint32_t buffered_unread_bytes = instruction_buffer_context.next_nand_read_offset_bytes
+                                     - record_stream_offset_bytes;
+
+    if ( buffered_unread_bytes < sizeof( FlashManagerInstructionHeader_T ) )
+    {
+        return INSTRUCTION_BUFFER_PEEK_NOT_BUFFERED;
+    }
+
+    uint8_t current_page_index = instruction_buffer_context.consumer_page_index;
+
+    if ( current_page_index >= INSTRUCTION_BUFFER_PAGE_COUNT )
+    {
+        return INSTRUCTION_BUFFER_PEEK_CORRUPT;
+    }
+
+    uint32_t record_storage_offset_bytes =
+        ( ( uint32_t )current_page_index * instruction_buffer_context.page_size_bytes )
+        + instruction_buffer_context.consumer_page_offset_bytes;
+
+    uint32_t runtime_storage_size_bytes =
+        instruction_buffer_context.page_size_bytes * INSTRUCTION_BUFFER_PAGE_COUNT;
+
+    if ( record_storage_offset_bytes >= runtime_storage_size_bytes )
+    {
+        return INSTRUCTION_BUFFER_PEEK_CORRUPT;
+    }
+
+    FlashManagerInstructionHeader_T header = { 0 };
+
+    /*
+     * Copy the fixed header into an aligned object for safe field access. The
+     * slot-zero mirror makes this a single bounded copy even at the ring end.
+     */
+    memcpy( &header, &instruction_buffer_storage[record_storage_offset_bytes], sizeof( header ) );
+
+    uint32_t record_length_bytes = sizeof( header ) + ( uint32_t )header.payload_length_bytes;
+
+    uint32_t remaining_image_bytes =
+        instruction_buffer_context.instruction_length_bytes - record_stream_offset_bytes;
+
+    /*
+     * These two bounds are the runtime fault barrier for a trusted canonical
+     * stream. Semantic instruction validation belongs to upload preprocessing
+     * and the Execution Manager.
+     */
+    if ( ( record_length_bytes > instruction_buffer_context.page_size_bytes )
+         || ( record_length_bytes > remaining_image_bytes ) )
+    {
+        return INSTRUCTION_BUFFER_PEEK_CORRUPT;
+    }
+
+    if ( buffered_unread_bytes < record_length_bytes )
+    {
+        return INSTRUCTION_BUFFER_PEEK_NOT_BUFFERED;
+    }
+
+    instruction_buffer_context.active_instruction_view = ( InstructionBufferViewReservation_T ){
+        .is_active                  = true,
+        .record_stream_offset_bytes = record_stream_offset_bytes,
+        .record_length_bytes        = record_length_bytes,
+        .view = { .header  = header,
+                  .payload = &instruction_buffer_storage[record_storage_offset_bytes
+                                                          + sizeof( header )],
+                  .view_id = INSTRUCTION_BUFFER_AllocateInstructionViewId() } };
+
+    *instruction = &instruction_buffer_context.active_instruction_view.view;
+
+    return INSTRUCTION_BUFFER_PEEK_AVAILABLE;
 }
