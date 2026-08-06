@@ -113,10 +113,10 @@ protected:
 
 TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_ReturnsFalse_WhenChannel0IsDisabled )
 {
-    ExecAnalogueInputConfiguration_T configuration = {};
-    configuration.sample_rate                      = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ;
-    configuration.ch_0_is_enabled                  = false;
-    configuration.ch_1_is_enabled                  = true;
+    ExecAnalogueInputConfig_T configuration = {};
+    configuration.sample_rate               = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ;
+    configuration.ch_0_is_enabled           = false;
+    configuration.ch_1_is_enabled           = true;
 
     EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( _ ) ).Times( 0 );
 
@@ -127,10 +127,10 @@ TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_ReturnsFalse_WhenChannel0
 
 TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_ReturnsFalse_WhenChannel1IsDisabled )
 {
-    ExecAnalogueInputConfiguration_T configuration = {};
-    configuration.sample_rate                      = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ;
-    configuration.ch_0_is_enabled                  = true;
-    configuration.ch_1_is_enabled                  = false;
+    ExecAnalogueInputConfig_T configuration = {};
+    configuration.sample_rate               = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ;
+    configuration.ch_0_is_enabled           = true;
+    configuration.ch_1_is_enabled           = false;
 
     EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( _ ) ).Times( 0 );
 
@@ -141,10 +141,10 @@ TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_ReturnsFalse_WhenChannel1
 
 TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_ReturnsFalse_WhenHwAdcConfigurationFails )
 {
-    ExecAnalogueInputConfiguration_T configuration = {};
-    configuration.sample_rate                      = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_50K_HZ;
-    configuration.ch_0_is_enabled                  = true;
-    configuration.ch_1_is_enabled                  = true;
+    ExecAnalogueInputConfig_T configuration = {};
+    configuration.sample_rate               = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_50K_HZ;
+    configuration.ch_0_is_enabled           = true;
+    configuration.ch_1_is_enabled           = true;
 
     EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( ADC_SAMPLE_RATE_50K_HZ ) )
         .WillOnce( Return( false ) );
@@ -173,10 +173,10 @@ TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_TranslatesAllSupportedSam
 
     for ( const SampleRateMapping_T& mapping : mappings )
     {
-        ExecAnalogueInputConfiguration_T configuration = {};
-        configuration.sample_rate                      = mapping.exec_rate;
-        configuration.ch_0_is_enabled                  = true;
-        configuration.ch_1_is_enabled                  = true;
+        ExecAnalogueInputConfig_T configuration = {};
+        configuration.sample_rate               = mapping.exec_rate;
+        configuration.ch_0_is_enabled           = true;
+        configuration.ch_1_is_enabled           = true;
 
         EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( mapping.hw_rate ) )
             .WillOnce( Return( true ) );
@@ -187,10 +187,10 @@ TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_TranslatesAllSupportedSam
 
 TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_RejectsInvalidExecutionSampleRate )
 {
-    ExecAnalogueInputConfiguration_T configuration = {};
-    configuration.sample_rate     = static_cast<ExecAnalogueInputSampleRate_T>( 999U );
-    configuration.ch_0_is_enabled = true;
-    configuration.ch_1_is_enabled = true;
+    ExecAnalogueInputConfig_T configuration = {};
+    configuration.sample_rate               = static_cast<ExecAnalogueInputSampleRate_T>( 999U );
+    configuration.ch_0_is_enabled           = true;
+    configuration.ch_1_is_enabled           = true;
 
     EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( _ ) ).Times( 0 );
 
