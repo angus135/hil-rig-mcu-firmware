@@ -29,7 +29,6 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-#include "hw_adc.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -44,21 +43,31 @@ extern "C"
  */
 
 // Configuration struct containing all the configuration information for the analogue inputs
-typedef struct AnalogueInputConfiguration_T
+typedef enum ExecAnalogueInputSampleRate_T
 {
-    ADCSampleRates_T adc_sample_rate;  // What rate will the ADC be sampling each channel at?
-    bool             ch_0_is_enabled;
-    bool             ch_1_is_enabled;
-} AnalogueInputConfiguration_T;
+    EXEC_ANALOGUE_INPUT_SAMPLE_RATE_100K_HZ = 0U,
+    EXEC_ANALOGUE_INPUT_SAMPLE_RATE_50K_HZ,
+    EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ,
+    EXEC_ANALOGUE_INPUT_SAMPLE_RATE_5K_HZ,
+    EXEC_ANALOGUE_INPUT_SAMPLE_RATE_1K_HZ,
+    EXEC_ANALOGUE_INPUT_SAMPLE_RATE_500_HZ,
+} ExecAnalogueInputSampleRate_T;
+
+typedef struct ExecAnalogueInputConfiguration_T
+{
+    ExecAnalogueInputSampleRate_T sample_rate;
+    bool                          ch_0_is_enabled;
+    bool                          ch_1_is_enabled;
+} ExecAnalogueInputConfiguration_T;
 
 // This struct contains pointers to where the Analogue Input voltages should be stored.
 // The Execution Manager should set the pointers in this struct to the places where the
 // data is to be stored
-typedef struct AnalogueInputVoltages_T
+typedef struct ExecAnalogueInputVoltages_T
 {
     uint32_t* channel_0_voltage;
     uint32_t* channel_1_voltage;
-} AnalogueInputVoltages_T;
+} ExecAnalogueInputVoltages_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -91,7 +100,12 @@ typedef struct AnalogueInputVoltages_T
  *      The configuration is not currently supported, or the ADC measurement
  *      frequency could not be configured.
  */
-bool EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( AnalogueInputConfiguration_T configuration );
+bool EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs(
+    ExecAnalogueInputConfiguration_T configuration );
+
+bool EXEC_ANALOGUE_INPUT_Start( void );
+
+bool EXEC_ANALOGUE_INPUT_Stop( void );
 
 /**
  * @brief Reads and processes the latest analogue input measurements.
@@ -117,7 +131,7 @@ bool EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( AnalogueInputConfiguration_T
  *      Struct containing pointers to the locations where the processed channel
  *      voltage values should be stored.
  */
-void EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( AnalogueInputVoltages_T voltage_destination );
+void EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( ExecAnalogueInputVoltages_T voltage_destination );
 
 #ifdef __cplusplus
 }

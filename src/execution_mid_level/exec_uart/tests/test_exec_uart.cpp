@@ -60,22 +60,22 @@ using ::testing::SaveArg;
 class MockHwUart
 {
 public:
-    MOCK_METHOD( bool, Rx_Is_Running, ( int ) );
-    MOCK_METHOD( bool, Rx_Stop, ( int ) );
+    MOCK_METHOD( bool, Rx_Is_Running, ( int ));
+    MOCK_METHOD( bool, Rx_Stop, ( int ));
     MOCK_METHOD( bool, Configure_Channel, ( int, const HwUartPeripheralConfig_T* ));
-    MOCK_METHOD( bool, Deconfigure_Channel, ( int ) );
-    MOCK_METHOD( bool, Rx_Start, ( int ) );
+    MOCK_METHOD( bool, Deconfigure_Channel, ( int ));
+    MOCK_METHOD( bool, Rx_Start, ( int ));
     MOCK_METHOD( bool, Tx_Load_Buffer, ( int, const uint8_t*, uint32_t ) );
-    MOCK_METHOD( bool, Tx_Trigger, ( int ) );
-    MOCK_METHOD( HwUartRxSpans_T, Rx_Peek, ( int ) );
+    MOCK_METHOD( bool, Tx_Trigger, ( int ));
+    MOCK_METHOD( HwUartRxSpans_T, Rx_Peek, ( int ));
     MOCK_METHOD( void, Rx_Consume, ( int, uint32_t ) );
-    MOCK_METHOD( bool, Is_Tx_Complete, ( int ) );
+    MOCK_METHOD( bool, Is_Tx_Complete, ( int ));
 };
 
 class MockLogicExpander
 {
 public:
-    MOCK_METHOD( LogicExpanderStatus_T, Load_Control_Bit, ( int, int, uint8_t, bool ) );
+    MOCK_METHOD( LogicExpanderStatus_T, Load_Control_Bit, ( int, int, uint8_t, bool ));
     MOCK_METHOD( LogicExpanderStatus_T, Send_Control_Bits, () );
 };
 
@@ -158,8 +158,8 @@ extern "C" bool HW_UART_Rx_Stop( HwUartChannel_T channel )
     return g_mock_hw->Rx_Stop( channel );
 }
 
-extern "C" bool HW_UART_Configure_Channel( HwUartChannel_T channel,
-                                            const HwUartPeripheralConfig_T* config )
+extern "C" bool HW_UART_Configure_Channel( HwUartChannel_T                 channel,
+                                           const HwUartPeripheralConfig_T* config )
 {
     return g_mock_hw->Configure_Channel( channel, config );
 }
@@ -169,9 +169,9 @@ extern "C" bool HW_UART_Deconfigure_Channel( HwUartChannel_T channel )
     return g_mock_hw->Deconfigure_Channel( channel );
 }
 
-extern "C" LogicExpanderStatus_T
-LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expander, LogicExpanderPort_T port,
-                                 uint8_t bit_index, bool value )
+extern "C" LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expander,
+                                                                  LogicExpanderPort_T  port,
+                                                                  uint8_t bit_index, bool value )
 {
     return g_mock_expander->Load_Control_Bit( expander, port, bit_index, value );
 }
@@ -240,7 +240,7 @@ protected:
 
     void SetUp( void ) override
     {
-        g_mock_hw = &mock_hw;
+        g_mock_hw       = &mock_hw;
         g_mock_expander = &mock_expander;
 
         ON_CALL( mock_hw, Rx_Is_Running( _ ) ).WillByDefault( Return( false ) );
@@ -265,7 +265,7 @@ protected:
 
     void TearDown( void ) override
     {
-        g_mock_hw = nullptr;
+        g_mock_hw       = nullptr;
         g_mock_expander = nullptr;
     }
 };
@@ -292,31 +292,27 @@ TEST_F( ExecUARTTest, PrivateValidChannelRejectsOutOfRangeChannel )
 TEST_F( ExecUARTTest, PrivateHardwareSelectionMapsChannel1Ttl3V3ToGpa4AndGpa5 )
 {
     InSequence sequence;
-    EXPECT_CALL( mock_expander,
-                 Load_Control_Bit( LOGIC_EXPANDER_DEVICE_UART_PWR, LOGIC_EXPANDER_PORT_A, 4U,
-                                   true ) );
-    EXPECT_CALL( mock_expander,
-                 Load_Control_Bit( LOGIC_EXPANDER_DEVICE_UART_PWR, LOGIC_EXPANDER_PORT_A, 5U,
-                                   false ) );
+    EXPECT_CALL( mock_expander, Load_Control_Bit( LOGIC_EXPANDER_DEVICE_UART_PWR,
+                                                  LOGIC_EXPANDER_PORT_A, 4U, true ) );
+    EXPECT_CALL( mock_expander, Load_Control_Bit( LOGIC_EXPANDER_DEVICE_UART_PWR,
+                                                  LOGIC_EXPANDER_PORT_A, 5U, false ) );
     EXPECT_CALL( mock_expander, Send_Control_Bits() );
 
-    EXPECT_TRUE( EXEC_UART_Apply_Static_Hardware_Selection( EXEC_UART_CHANNEL_1,
-                                                             EXEC_UART_MODE_TTL_3V3 ) );
+    EXPECT_TRUE(
+        EXEC_UART_Apply_Static_Hardware_Selection( EXEC_UART_CHANNEL_1, EXEC_UART_MODE_TTL_3V3 ) );
 }
 
 TEST_F( ExecUARTTest, PrivateHardwareSelectionMapsChannel2Rs232ToGpa6AndGpa7 )
 {
     InSequence sequence;
-    EXPECT_CALL( mock_expander,
-                 Load_Control_Bit( LOGIC_EXPANDER_DEVICE_UART_PWR, LOGIC_EXPANDER_PORT_A, 6U,
-                                   false ) );
-    EXPECT_CALL( mock_expander,
-                 Load_Control_Bit( LOGIC_EXPANDER_DEVICE_UART_PWR, LOGIC_EXPANDER_PORT_A, 7U,
-                                   true ) );
+    EXPECT_CALL( mock_expander, Load_Control_Bit( LOGIC_EXPANDER_DEVICE_UART_PWR,
+                                                  LOGIC_EXPANDER_PORT_A, 6U, false ) );
+    EXPECT_CALL( mock_expander, Load_Control_Bit( LOGIC_EXPANDER_DEVICE_UART_PWR,
+                                                  LOGIC_EXPANDER_PORT_A, 7U, true ) );
     EXPECT_CALL( mock_expander, Send_Control_Bits() );
 
-    EXPECT_TRUE( EXEC_UART_Apply_Static_Hardware_Selection( EXEC_UART_CHANNEL_2,
-                                                             EXEC_UART_MODE_RS232 ) );
+    EXPECT_TRUE(
+        EXEC_UART_Apply_Static_Hardware_Selection( EXEC_UART_CHANNEL_2, EXEC_UART_MODE_RS232 ) );
 }
 
 TEST_F( ExecUARTTest, ApplyConfigurationRejectsNullConfig )

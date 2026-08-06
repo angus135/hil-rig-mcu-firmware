@@ -646,8 +646,7 @@ bool HW_UART_Deconfigure_Channel( HwUartChannel_T channel )
 
     HwUartChannelState_T* state = &hw_uart_channel_states[channel];
 
-    if ( state->runtime.rx_running || state->runtime.tx_dma_active
-         || state->runtime.tx_count > 0U )
+    if ( state->runtime.rx_running || state->runtime.tx_dma_active || state->runtime.tx_count > 0U )
     {
         return false;
     }
