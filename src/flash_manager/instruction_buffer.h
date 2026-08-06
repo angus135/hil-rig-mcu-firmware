@@ -7,13 +7,22 @@
  *      Internal interface for the Flash Manager instruction retrieval buffer.
  *
  *  Notes:
- *      The Flash Manager task fills page slots from NAND. The Execution Manager
- *      consumes complete timestamped instructions through the public interface
- *      declared in flash_manager.h.
+ *      This interface separates the two sides of instruction retrieval:
+ *
+ *      - The Flash Manager task acquires empty page slots and fills them from
+ *        NAND.
+ *      - The Execution Manager inspects and consumes complete timestamped
+ *        instructions through the public interface declared in flash_manager.h.
  *
  *      This module owns the instruction RAM and its page-level ownership state.
- *      The Flash Manager must serialise state-changing calls; this module does
- *      not contain RTOS synchronisation primitives or access NAND directly.
+ *      The calling layer must serialise state-changing calls between the Flash
+ *      Manager task and execution ISR. This module does not contain RTOS
+ *      synchronisation primitives or access NAND directly.
+ *
+ *      Instruction records are packed in the NAND image as a fixed-size
+ *      FlashManagerInstructionHeader_T followed immediately by the indicated
+ *      payload bytes. Records may cross NAND page boundaries, but an individual
+ *      record must not exceed one NAND page.
  ******************************************************************************/
 
 #ifndef INSTRUCTION_BUFFER_H
@@ -67,6 +76,27 @@ typedef struct
 } InstructionBufferPageFillLease_T;
 
 /**
+ * @brief Result of inspecting the next instruction in the buffered stream.
+ */
+typedef enum
+{
+    /** A complete instruction is buffered and available. */
+    INSTRUCTION_BUFFER_PEEK_AVAILABLE = 0,
+
+    /** The next instruction is not completely buffered yet. */
+    INSTRUCTION_BUFFER_PEEK_NOT_BUFFERED,
+
+    /** Every byte in the configured instruction image has been consumed. */
+    INSTRUCTION_BUFFER_PEEK_END_OF_STREAM,
+
+    /** The next header or record length is invalid. */
+    INSTRUCTION_BUFFER_PEEK_CORRUPT,
+
+    /** The supplied output pointer was null. */
+    INSTRUCTION_BUFFER_PEEK_INVALID_ARGUMENT
+} InstructionBufferPeekStatus_T;
+
+/**
  * @brief Result of consuming the current instruction view.
  */
 typedef enum
@@ -88,6 +118,8 @@ typedef enum
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+/* Lifecycle and retrieval-session configuration. */
 
 /**
  * @brief Initialises the instruction buffer from active external-flash geometry.
@@ -124,6 +156,8 @@ bool INSTRUCTION_BUFFER_Init( void );
  *       instruction storage before resetting the session.
  */
 bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes );
+
+/* NAND-to-RAM page producer interface. */
 
 /**
  * @brief Acquires the next free page slot for a sequential NAND read.
@@ -168,6 +202,8 @@ bool INSTRUCTION_BUFFER_AcquireFillPage( InstructionBufferPageFillLease_T* lease
  */
 bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T* lease,
                                           bool nand_read_succeeded );
+
+/* Execution-facing instruction consumer interface. */
 
 /**
  * @brief Returns a read-only view of the next complete instruction.
