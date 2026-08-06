@@ -5,8 +5,8 @@
  *
  *  Description:
  *      Unit tests for Flash Manager initialisation, ISR-facing result record
- *      production, asynchronous lifecycle requests, NAND page draining,
- *      partial-page finalisation, and fault handling.
+ *      production, instruction preloading/refill, asynchronous lifecycle
+ *      requests, NAND page draining, partial-page finalisation, and faults.
  *
  *  Notes:
  *      Production code is included directly so private state and drain helpers
@@ -37,7 +37,10 @@ extern "C"
 static constexpr uint32_t TEST_PAGE_SIZE_BYTES = 32U;
 static constexpr uint16_t TEST_FULL_PAGE_PAYLOAD_BYTES =
     static_cast<uint16_t>( TEST_PAGE_SIZE_BYTES - sizeof( FlashManagerResultHeader_T ) );
-static constexpr uint16_t TEST_PARTIAL_PAYLOAD_BYTES = 4U;
+static constexpr uint16_t TEST_PARTIAL_PAYLOAD_BYTES         = 4U;
+static constexpr uint32_t TEST_INSTRUCTION_CAPACITY_BYTES    = TEST_PAGE_SIZE_BYTES * 8U;
+static constexpr uint32_t TEST_MAX_INSTRUCTION_READS         = 8U;
+static constexpr uint32_t TEST_INSTRUCTION_BUFFER_PAGE_COUNT = 3U;
 
 static TaskHandle_t const TEST_FLASH_MANAGER_TASK_HANDLE =
     reinterpret_cast<TaskHandle_t>( 0x1234U );
@@ -73,6 +76,12 @@ static uint32_t              write_result_page_length = 0U;
 
 static ExternalFlashStatus_T start_session_status = EXTERNAL_FLASH_STATUS_OK;
 static uint32_t              start_session_calls  = 0U;
+
+static ExternalFlashStatus_T read_instruction_page_status = EXTERNAL_FLASH_STATUS_OK;
+static uint32_t              read_instruction_page_calls  = 0U;
+static uint32_t              read_instruction_page_offsets[TEST_MAX_INSTRUCTION_READS] = {};
+static uint32_t              read_instruction_page_lengths[TEST_MAX_INSTRUCTION_READS] = {};
+static uint8_t               instruction_image[TEST_INSTRUCTION_CAPACITY_BYTES]        = {};
 
 extern "C" SemaphoreHandle_t xSemaphoreCreateMutexStatic( StaticSemaphore_t* mutex_buffer )
 {
@@ -165,6 +174,27 @@ extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void )
     return start_session_status;
 }
 
+extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructionPage( uint32_t offset, uint8_t* data,
+                                                                     uint32_t length )
+{
+    if ( read_instruction_page_calls < TEST_MAX_INSTRUCTION_READS )
+    {
+        read_instruction_page_offsets[read_instruction_page_calls] = offset;
+        read_instruction_page_lengths[read_instruction_page_calls] = length;
+    }
+
+    read_instruction_page_calls++;
+
+    if ( read_instruction_page_status != EXTERNAL_FLASH_STATUS_OK )
+    {
+        return read_instruction_page_status;
+    }
+
+    std::memcpy( data, &instruction_image[offset], length );
+
+    return EXTERNAL_FLASH_STATUS_OK;
+}
+
 extern "C"
 {
 #include "../flash_manager.c" /* Private module under test */  // NOLINT
@@ -190,8 +220,9 @@ protected:
 
         flash_manager_context.state = FLASH_MANAGER_STATE_UNINITIALISED;
 
-        FLASH_MANAGER_TEST_ConfigureExternalFlashInfo( EXTERNAL_FLASH_STATUS_OK,
-                                                       TEST_PAGE_SIZE_BYTES );
+        FLASH_MANAGER_TEST_ConfigureInstructionFlashInfo(
+            EXTERNAL_FLASH_STATUS_OK, TEST_PAGE_SIZE_BYTES, TEST_INSTRUCTION_CAPACITY_BYTES );
+        FLASH_MANAGER_TEST_SetInstructionLength( 0U );
 
         semaphore_create_result = reinterpret_cast<SemaphoreHandle_t>( 0x5678U );
         semaphore_take_result   = pdTRUE;
@@ -224,6 +255,12 @@ protected:
 
         start_session_status = EXTERNAL_FLASH_STATUS_OK;
         start_session_calls  = 0U;
+
+        read_instruction_page_status = EXTERNAL_FLASH_STATUS_OK;
+        read_instruction_page_calls  = 0U;
+        std::memset( read_instruction_page_offsets, 0, sizeof( read_instruction_page_offsets ) );
+        std::memset( read_instruction_page_lengths, 0, sizeof( read_instruction_page_lengths ) );
+        std::memset( instruction_image, 0, sizeof( instruction_image ) );
     }
 
     void Initialise( void )
@@ -256,6 +293,29 @@ protected:
         std::memset( lease.payload, 0xA5, TEST_FULL_PAGE_PAYLOAD_BYTES );
         ASSERT_EQ( RESULT_BUFFER_RECORD_COMMIT_PAGE_READY_TO_DRAIN,
                    RESULT_BUFFER_CommitRecord( &lease, 1U, 2U, 3U, TEST_FULL_PAGE_PAYLOAD_BYTES ) );
+    }
+
+    static void ConfigurePageAlignedInstructionImage( uint32_t page_count )
+    {
+        ASSERT_LE( page_count * TEST_PAGE_SIZE_BYTES, sizeof( instruction_image ) );
+
+        for ( uint32_t page_index = 0U; page_index < page_count; page_index++ )
+        {
+            FlashManagerInstructionHeader_T header = {
+                page_index,
+                static_cast<uint16_t>( TEST_PAGE_SIZE_BYTES
+                                       - sizeof( FlashManagerInstructionHeader_T ) ),
+                2U,
+                3U,
+            };
+
+            uint32_t page_offset_bytes = page_index * TEST_PAGE_SIZE_BYTES;
+            std::memcpy( &instruction_image[page_offset_bytes], &header, sizeof( header ) );
+            std::memset( &instruction_image[page_offset_bytes + sizeof( header )],
+                         static_cast<int>( page_index ), header.payload_length_bytes );
+        }
+
+        FLASH_MANAGER_TEST_SetInstructionLength( page_count * TEST_PAGE_SIZE_BYTES );
     }
 };
 
@@ -387,6 +447,132 @@ TEST_F( FlashManagerTest, PreparationHandlerReportsSessionStartFailure )
     EXPECT_EQ( FLASH_MANAGER_STATE_PREPARING_EXECUTION, flash_manager_context.state );
 
     FLASH_MANAGER_EnterFault();
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, PreparationPreloadsEveryAvailableInstructionPageBeforeExecuting )
+{
+    Initialise();
+    RegisterTask();
+    ConfigurePageAlignedInstructionImage( TEST_INSTRUCTION_BUFFER_PAGE_COUNT + 1U );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+
+    ASSERT_TRUE( FLASH_MANAGER_PrepareExecution() );
+
+    EXPECT_EQ( FLASH_MANAGER_STATE_EXECUTING, flash_manager_context.state );
+    ASSERT_EQ( TEST_INSTRUCTION_BUFFER_PAGE_COUNT, read_instruction_page_calls );
+
+    for ( uint32_t page_index = 0U; page_index < TEST_INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
+    {
+        EXPECT_EQ( page_index * TEST_PAGE_SIZE_BYTES, read_instruction_page_offsets[page_index] );
+        EXPECT_EQ( TEST_PAGE_SIZE_BYTES, read_instruction_page_lengths[page_index] );
+    }
+}
+
+TEST_F( FlashManagerTest, PreparationReportsInstructionNandReadFailure )
+{
+    Initialise();
+    RegisterTask();
+    ConfigurePageAlignedInstructionImage( 1U );
+    read_instruction_page_status = EXTERNAL_FLASH_STATUS_TIMEOUT;
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+
+    EXPECT_FALSE( FLASH_MANAGER_PrepareExecution() );
+    EXPECT_EQ( 1U, read_instruction_page_calls );
+    EXPECT_EQ( FLASH_MANAGER_STATE_PREPARING_EXECUTION, flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, ConsumingPageNotifiesTaskAndRefillWorkerLoadsReleasedSlot )
+{
+    Initialise();
+    RegisterTask();
+    ConfigurePageAlignedInstructionImage( TEST_INSTRUCTION_BUFFER_PAGE_COUNT + 1U );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+    ASSERT_TRUE( FLASH_MANAGER_PrepareExecution() );
+
+    notify_from_isr_writes_wake_value = true;
+    notify_from_isr_wake_value        = pdTRUE;
+    BaseType_t task_woken             = pdFALSE;
+
+    const FlashManagerInstructionView_T* view = nullptr;
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_AVAILABLE,
+               FLASH_MANAGER_PeekNextInstructionFromISR( &view ) );
+    ASSERT_TRUE( FLASH_MANAGER_ConsumeInstructionFromISR( view, &task_woken ) );
+
+    EXPECT_EQ( 1U, notify_from_isr_calls );
+    EXPECT_EQ( FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS, notify_from_isr_value );
+    EXPECT_EQ( TEST_FLASH_MANAGER_TASK_HANDLE, notify_from_isr_task_handle );
+    EXPECT_EQ( eSetBits, notify_from_isr_action );
+    EXPECT_EQ( &task_woken, notify_from_isr_wake_pointer );
+    EXPECT_EQ( pdTRUE, task_woken );
+    EXPECT_EQ( TEST_INSTRUCTION_BUFFER_PAGE_COUNT, read_instruction_page_calls );
+
+    ASSERT_TRUE( FLASH_MANAGER_FillInstructionPages() );
+    EXPECT_EQ( TEST_INSTRUCTION_BUFFER_PAGE_COUNT + 1U, read_instruction_page_calls );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES * TEST_INSTRUCTION_BUFFER_PAGE_COUNT,
+               read_instruction_page_offsets[TEST_INSTRUCTION_BUFFER_PAGE_COUNT] );
+}
+
+TEST_F( FlashManagerTest, ConsumingFinalLoadedPageDoesNotNotifyRefillTask )
+{
+    Initialise();
+    RegisterTask();
+    ConfigurePageAlignedInstructionImage( 1U );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+    ASSERT_TRUE( FLASH_MANAGER_PrepareExecution() );
+
+    const FlashManagerInstructionView_T* view = nullptr;
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_AVAILABLE,
+               FLASH_MANAGER_PeekNextInstructionFromISR( &view ) );
+    ASSERT_TRUE( FLASH_MANAGER_ConsumeInstructionFromISR( view, nullptr ) );
+
+    EXPECT_EQ( 0U, notify_from_isr_calls );
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_END_OF_STREAM,
+               FLASH_MANAGER_PeekNextInstructionFromISR( &view ) );
+}
+
+TEST_F( FlashManagerTest, RefillWorkerHandlesCoalescedPageReleaseNotifications )
+{
+    Initialise();
+    RegisterTask();
+    ConfigurePageAlignedInstructionImage( TEST_INSTRUCTION_BUFFER_PAGE_COUNT + 2U );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+    ASSERT_TRUE( FLASH_MANAGER_PrepareExecution() );
+
+    for ( uint32_t instruction_index = 0U; instruction_index < 2U; instruction_index++ )
+    {
+        const FlashManagerInstructionView_T* view = nullptr;
+        ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_AVAILABLE,
+                   FLASH_MANAGER_PeekNextInstructionFromISR( &view ) );
+        ASSERT_TRUE( FLASH_MANAGER_ConsumeInstructionFromISR( view, nullptr ) );
+    }
+
+    EXPECT_EQ( 2U, notify_from_isr_calls );
+
+    /* One task wake processes both slots even when the notification bits coalesce. */
+    ASSERT_TRUE( FLASH_MANAGER_FillInstructionPages() );
+    EXPECT_EQ( TEST_INSTRUCTION_BUFFER_PAGE_COUNT + 2U, read_instruction_page_calls );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES * TEST_INSTRUCTION_BUFFER_PAGE_COUNT,
+               read_instruction_page_offsets[TEST_INSTRUCTION_BUFFER_PAGE_COUNT] );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES * ( TEST_INSTRUCTION_BUFFER_PAGE_COUNT + 1U ),
+               read_instruction_page_offsets[TEST_INSTRUCTION_BUFFER_PAGE_COUNT + 1U] );
+}
+
+TEST_F( FlashManagerTest, RefillNotificationFailureFaultsAfterInstructionWasConsumed )
+{
+    Initialise();
+    RegisterTask();
+    ConfigurePageAlignedInstructionImage( TEST_INSTRUCTION_BUFFER_PAGE_COUNT + 1U );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+    ASSERT_TRUE( FLASH_MANAGER_PrepareExecution() );
+    notify_from_isr_result = pdFAIL;
+
+    const FlashManagerInstructionView_T* view = nullptr;
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_AVAILABLE,
+               FLASH_MANAGER_PeekNextInstructionFromISR( &view ) );
+
+    EXPECT_FALSE( FLASH_MANAGER_ConsumeInstructionFromISR( view, nullptr ) );
+    EXPECT_EQ( 1U, notify_from_isr_calls );
     EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
 }
 

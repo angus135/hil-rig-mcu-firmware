@@ -83,6 +83,11 @@ extern "C" void FLASH_MANAGER_TEST_ConfigureInstructionFlashInfo(
     external_flash_info.instruction_capacity_bytes = instruction_capacity_bytes;
 }
 
+extern "C" void FLASH_MANAGER_TEST_SetInstructionLength( uint32_t instruction_length_bytes )
+{
+    external_flash_info.instruction_length_bytes = instruction_length_bytes;
+}
+
 /* C11 static assertions are written using the corresponding C++ keyword. */
 #define _Static_assert( condition, message ) static_assert( condition, message )
 extern "C"
