@@ -29,6 +29,7 @@ target_link_libraries(exec_analogue_output
         rtos
         cubeide_hal
         hw_spi
+        logic_expander
 )
 
 # -----------------------------

@@ -807,8 +807,10 @@ static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] )
  * @brief Handles analogue output console commands.
  *
  * Usage:
- *   anlg_out config
- *     - Configures SPI and the DAC to use VDD as reference (no external VREF).
+ *   anlg_out config [vdd|external]
+ *   anlg_out start
+ *   anlg_out stop
+ *   anlg_out status
  *   anlg_out <channel> <voltage>
  *     - Write voltage (0-20V, clamped) to channel 0-5.
  *   anlg_out batch <channel> <voltage> [<channel> <voltage> ...]
@@ -816,7 +818,7 @@ static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] )
  */
 static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
 {
-    if ( argc < 2 || argv[1] == NULL )
+    if ( ( argc < 2U ) || ( argv[1] == NULL ) || ( strcmp( argv[1], "help" ) == 0 ) )
     {
         CONSOLE_Printf( "Usage:\r\n" );
         CONSOLE_Printf( "  anlg_out config\r\n" );
@@ -838,20 +840,61 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[1], "config" ) == 0 )
     {
-        /* For console testing we configure SPI then configure DAC to use VDD */
-        if ( !EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup() )
+        bool use_external_vref = false;
+
+        if ( argc >= 3U )
         {
-            CONSOLE_Printf( "Failed to configure SPI channel for DAC\r\n" );
+            if ( strcmp( argv[2], "external" ) == 0 )
+            {
+                use_external_vref = true;
+            }
+            else if ( strcmp( argv[2], "vdd" ) != 0 )
+            {
+                CONSOLE_Printf( "Usage: anlg_out config [vdd|external]\r\n" );
+                return;
+            }
+        }
+
+        if ( !EXEC_ANALOGUE_OUTPUT_Configure( use_external_vref ) )
+        {
+            CONSOLE_Printf( "Failed to configure analogue outputs\r\n" );
             return;
         }
 
-        if ( !EXEC_ANALOGUE_OUTPUT_Config( false ) )
+        CONSOLE_Printf( "Analogue outputs configured with %s reference; outputs stopped\r\n",
+                        use_external_vref ? "external" : "VDD" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "start" ) == 0 )
+    {
+        if ( !EXEC_ANALOGUE_OUTPUT_Start() )
         {
-            CONSOLE_Printf( "Failed to configure DAC registers\r\n" );
+            CONSOLE_Printf( "Failed to start analogue outputs\r\n" );
             return;
         }
 
-        CONSOLE_Printf( "DAC configured to use VDD as reference\r\n" );
+        CONSOLE_Printf( "Analogue outputs started\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "stop" ) == 0 )
+    {
+        if ( !EXEC_ANALOGUE_OUTPUT_Stop() )
+        {
+            CONSOLE_Printf( "Failed to stop analogue outputs\r\n" );
+            return;
+        }
+
+        CONSOLE_Printf( "Analogue outputs stopped\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "status" ) == 0 )
+    {
+        CONSOLE_Printf( "Analogue outputs: %s, %s\r\n",
+                        EXEC_ANALOGUE_OUTPUT_Is_Configured() ? "configured" : "unconfigured",
+                        EXEC_ANALOGUE_OUTPUT_Is_Started() ? "started" : "stopped" );
         return;
     }
 
@@ -930,7 +973,7 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
     }
 
     /* Otherwise expect: anlg_out <channel> <voltage> */
-    if ( argc < 3 )
+    if ( argc < 3U )
     {
         CONSOLE_Printf( "Usage: anlg_out <channel 0-5> <voltage 0-20V>\r\n" );
         return;
@@ -952,30 +995,30 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
 
     char* endptr2 = NULL;
     float voltage = strtof( argv[2], &endptr2 );
-    if ( endptr2 == argv[2] )
+    if ( ( endptr2 == argv[2] ) || ( *endptr2 != '\0' ) )
     {
         CONSOLE_Printf( "Invalid voltage\r\n" );
         return;
     }
 
-    /* Ensure module configured */
-    if ( !EXEC_ANALOG_OUTPUT_Is_Configured() )
+    if ( !EXEC_ANALOGUE_OUTPUT_Is_Configured() )
     {
         CONSOLE_Printf( "DAC module not configured. Run 'anlg_out config' first.\r\n" );
         return;
     }
 
-    CONSOLE_Printf( "TX buffer before: %s\r\n",
-                    HW_SPI_Tx_Is_Complete( SPI_CHANNEL_0 ) ? "empty" : "not empty" );
+    if ( !EXEC_ANALOGUE_OUTPUT_Is_Started() )
+    {
+        CONSOLE_Printf( "Analogue outputs not started. Run 'anlg_out start' first.\r\n" );
+        return;
+    }
 
-    if ( !EXEC_ANALOG_OUTPUT_Write_Voltage( ( uint8_t )channel, voltage ) )
+    if ( !EXEC_ANALOGUE_OUTPUT_Write_Voltage( ( uint8_t )channel, voltage ) )
     {
         CONSOLE_Printf( "Failed to write voltage to channel %ld\r\n", channel );
         return;
     }
 
-    CONSOLE_Printf( "TX buffer after: %s\r\n",
-                    HW_SPI_Tx_Is_Complete( SPI_CHANNEL_0 ) ? "empty" : "not empty" );
     CONSOLE_Printf( "Wrote (requested) %s V to channel %ld\r\n", argv[2], channel );
 }
 
