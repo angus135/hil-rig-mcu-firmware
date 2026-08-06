@@ -7,13 +7,25 @@
  *      Implementation of the Flash Manager instruction retrieval buffer.
  *
  *  Notes:
- *      The Flash Manager task reads sequential NAND pages directly into this
- *      module's page slots. The future execution-facing path will expose
- *      complete timestamped instructions from READY pages without accessing
- *      NAND in the execution ISR.
+ *      The buffer presents one canonical instruction stream using three
+ *      circular page slots:
  *
- *      State-changing calls must be serialised by the Flash Manager. This
- *      module does not own RTOS synchronisation or external-flash policy.
+ *      - The Flash Manager task reserves EMPTY slots, reads sequential NAND
+ *        pages directly into them, and publishes them as READY.
+ *      - The Execution Manager peeks at and consumes complete instruction
+ *        records from READY slots without accessing NAND.
+ *      - Consuming all bytes in a slot returns it to EMPTY so the Flash Manager
+ *        can refill it with the next NAND page.
+ *
+ *      A record consists of FlashManagerInstructionHeader_T followed by its
+ *      payload. Records may cross a NAND page boundary. Most records can be
+ *      exposed directly from the contiguous page storage; a record crossing
+ *      the physical end of the circular storage is assembled in a bounded
+ *      scratch buffer so consumers still receive one contiguous payload.
+ *
+ *      The calling layer must serialise shared-state transitions between the
+ *      Flash Manager task and execution ISR. This module deliberately owns no
+ *      RTOS primitives and makes no external-flash policy decisions.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -75,10 +87,36 @@ typedef struct
 } InstructionBufferPageFillReservation_T;
 
 /**
+ * @brief Authoritative state for the instruction currently exposed to the
+ *        Execution Manager.
+ *
+ * Only one instruction view may be active. The reservation keeps the record
+ * storage immutable until the caller consumes it or the read session resets.
+ */
+typedef struct
+{
+    bool is_active;
+
+    /** Whether the exposed payload resides in the wrap scratch buffer. */
+    bool uses_wrap_scratch;
+
+    /** Logical stream offset of the record header. */
+    uint32_t record_stream_offset_bytes;
+
+    /** Combined serialized header and payload length. */
+    uint32_t record_length_bytes;
+
+    /** Public view returned to the caller and used for consume validation. */
+    FlashManagerInstructionView_T view;
+} InstructionBufferViewReservation_T;
+
+/**
  * @brief Geometry, page ownership, and sequential retrieval cursors.
  */
 typedef struct
 {
+    /* Module lifecycle and external-flash geometry. */
+
     /** Geometry is configured by Init and retained across retrieval sessions. */
     bool is_initialised;
 
@@ -94,11 +132,18 @@ typedef struct
     /** Total logical length of the active canonical instruction image. */
     uint32_t instruction_length_bytes;
 
+    /* NAND producer position and lease identity. */
+
     /** Logical offset of the next instruction page that must be read from NAND. */
     uint32_t next_nand_read_offset_bytes;
 
     /** Slot that will receive the next sequential NAND page. */
     uint8_t next_fill_page_index;
+
+    /** Identifier to assign to the next page-fill reservation. */
+    uint32_t next_page_fill_lease_id;
+
+    /* Execution consumer position and view identity. */
 
     /** Logical stream offset of the next unconsumed instruction record. */
     uint32_t consumer_stream_offset_bytes;
@@ -109,8 +154,10 @@ typedef struct
     /** Offset of the next unconsumed instruction byte within its slot. */
     uint32_t consumer_page_offset_bytes;
 
-    /** Identifier to assign to the next page-fill reservation. */
-    uint32_t next_page_fill_lease_id;
+    /** Identifier assigned to the next published instruction view. */
+    uint32_t next_instruction_view_id;
+
+    /* Per-page metadata and active ownership reservations. */
 
     /** Current ownership state of each page slot. */
     InstructionBufferPageState_T page_states[INSTRUCTION_BUFFER_PAGE_COUNT];
@@ -123,6 +170,9 @@ typedef struct
 
     /** The one NAND page-fill reservation that may currently be outstanding. */
     InstructionBufferPageFillReservation_T active_page_fill_reservation;
+
+    /** The one instruction view that may currently be outstanding. */
+    InstructionBufferViewReservation_T active_instruction_view;
 
 } InstructionBufferContext_T;
 
@@ -144,12 +194,27 @@ typedef struct
  */
 static uint8_t instruction_buffer_storage[INSTRUCTION_BUFFER_MAX_CAPACITY_BYTES];
 
+/**
+ * @brief Contiguous representation of a record crossing the physical end of
+ *        the circular page-slot storage.
+ *
+ * A canonical instruction record is limited to one NAND page, so this buffer
+ * can hold the complete header and payload.
+ */
+static uint8_t instruction_buffer_wrap_scratch[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES];
+
+/** Geometry, ownership, and cursor state for the instruction stream. */
 static InstructionBufferContext_T instruction_buffer_context;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+/* Page indexing and NAND-fill ownership. */
+
+/** Returns the circular successor of a valid page-slot index. */
+static uint8_t INSTRUCTION_BUFFER_NextPageIndex( uint8_t page_index );
 
 /** Returns the RAM destination owned by the active page-fill reservation. */
 static uint8_t* INSTRUCTION_BUFFER_GetActivePageFillData( void );
@@ -161,13 +226,35 @@ INSTRUCTION_BUFFER_PageFillLeaseMatches( const InstructionBufferPageFillLease_T*
 /** Invalidates the active page-fill reservation without changing page data. */
 static void INSTRUCTION_BUFFER_ClearPageFillReservation( void );
 
-/** Returns the circular successor of a valid page-slot index. */
-static uint8_t INSTRUCTION_BUFFER_NextPageIndex( uint8_t page_index );
+/* Execution-facing view ownership. */
+
+/** Invalidates the active instruction view without advancing the stream. */
+static void INSTRUCTION_BUFFER_ClearInstructionView( void );
+
+/** Returns the next non-zero identifier for a published instruction view. */
+static uint32_t INSTRUCTION_BUFFER_AllocateInstructionViewId( void );
+
+/* Logical stream access across circular page slots. */
+
+/** Locates a buffered logical stream offset in a READY page. */
+static bool INSTRUCTION_BUFFER_FindReadyPage( uint32_t stream_offset_bytes, uint8_t* page_index,
+                                              uint32_t* page_offset_bytes );
+
+/** Copies a logical byte range from one or more READY page slots. */
+static bool INSTRUCTION_BUFFER_CopyBufferedBytes( uint32_t stream_offset_bytes,
+                                                  uint32_t length_bytes, uint8_t* destination );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/* Page indexing and NAND-fill ownership. */
+
+static uint8_t INSTRUCTION_BUFFER_NextPageIndex( uint8_t page_index )
+{
+    return ( uint8_t )( ( page_index + 1U ) % INSTRUCTION_BUFFER_PAGE_COUNT );
+}
 
 static uint8_t* INSTRUCTION_BUFFER_GetActivePageFillData( void )
 {
@@ -230,15 +317,124 @@ static void INSTRUCTION_BUFFER_ClearPageFillReservation( void )
         ( InstructionBufferPageFillReservation_T ){ 0 };
 }
 
-static uint8_t INSTRUCTION_BUFFER_NextPageIndex( uint8_t page_index )
+/* Execution-facing view ownership. */
+
+static void INSTRUCTION_BUFFER_ClearInstructionView( void )
 {
-    return ( uint8_t )( ( page_index + 1U ) % INSTRUCTION_BUFFER_PAGE_COUNT );
+    instruction_buffer_context.active_instruction_view =
+        ( InstructionBufferViewReservation_T ){ 0 };
+}
+
+static uint32_t INSTRUCTION_BUFFER_AllocateInstructionViewId( void )
+{
+    uint32_t view_id = instruction_buffer_context.next_instruction_view_id++;
+
+    if ( instruction_buffer_context.next_instruction_view_id == 0U )
+    {
+        instruction_buffer_context.next_instruction_view_id = 1U;
+    }
+
+    return view_id;
+}
+
+/* Logical stream access across circular page slots. */
+
+static bool INSTRUCTION_BUFFER_FindReadyPage( uint32_t stream_offset_bytes, uint8_t* page_index,
+                                              uint32_t* page_offset_bytes )
+{
+    if ( ( page_index == NULL ) || ( page_offset_bytes == NULL ) )
+    {
+        return false;
+    }
+
+    for ( uint8_t index = 0U; index < INSTRUCTION_BUFFER_PAGE_COUNT; index++ )
+    {
+        if ( instruction_buffer_context.page_states[index] != INSTRUCTION_BUFFER_PAGE_READY )
+        {
+            continue;
+        }
+
+        uint32_t page_stream_offset = instruction_buffer_context.page_stream_offsets_bytes[index];
+
+        uint32_t page_valid_bytes = instruction_buffer_context.page_valid_bytes[index];
+
+        /*
+         * Subtraction after the lower-bound check avoids overflow from
+         * calculating page_stream_offset + page_valid_bytes.
+         */
+        if ( ( stream_offset_bytes >= page_stream_offset )
+             && ( ( stream_offset_bytes - page_stream_offset ) < page_valid_bytes ) )
+        {
+            *page_index        = index;
+            *page_offset_bytes = stream_offset_bytes - page_stream_offset;
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool INSTRUCTION_BUFFER_CopyBufferedBytes( uint32_t stream_offset_bytes,
+                                                  uint32_t length_bytes, uint8_t* destination )
+{
+    /* An empty range requires no backing page and is always available. */
+    if ( length_bytes == 0U )
+    {
+        return true;
+    }
+
+    if ( destination == NULL )
+    {
+        return false;
+    }
+
+    uint32_t copied_bytes = 0U;
+
+    /* Resolve each successive range against READY slots in logical order. */
+    while ( copied_bytes < length_bytes )
+    {
+        uint8_t  page_index        = 0U;
+        uint32_t page_offset_bytes = 0U;
+
+        if ( !INSTRUCTION_BUFFER_FindReadyPage( stream_offset_bytes, &page_index,
+                                                &page_offset_bytes ) )
+        {
+            return false;
+        }
+
+        uint32_t available_bytes =
+            instruction_buffer_context.page_valid_bytes[page_index] - page_offset_bytes;
+
+        uint32_t remaining_bytes   = length_bytes - copied_bytes;
+        uint32_t copy_length_bytes = available_bytes;
+
+        if ( copy_length_bytes > remaining_bytes )
+        {
+            copy_length_bytes = remaining_bytes;
+        }
+
+        uint32_t storage_offset_bytes =
+            ( ( uint32_t )page_index * instruction_buffer_context.page_size_bytes )
+            + page_offset_bytes;
+
+        /* Copy only as far as this page or the requested range permits. */
+        memcpy( &destination[copied_bytes], &instruction_buffer_storage[storage_offset_bytes],
+                copy_length_bytes );
+
+        copied_bytes += copy_length_bytes;
+        stream_offset_bytes += copy_length_bytes;
+    }
+
+    return true;
 }
 
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/* Lifecycle and retrieval-session configuration. */
 
 /**
  * @brief Initialises runtime geometry and invalidates any previous read state.
@@ -276,8 +472,9 @@ bool INSTRUCTION_BUFFER_Init( void )
     instruction_buffer_context.instruction_partition_capacity_bytes =
         external_flash_info.instruction_capacity_bytes;
 
-    instruction_buffer_context.next_page_fill_lease_id = 1U;
-    instruction_buffer_context.is_initialised          = true;
+    instruction_buffer_context.next_page_fill_lease_id  = 1U;
+    instruction_buffer_context.next_instruction_view_id = 1U;
+    instruction_buffer_context.is_initialised           = true;
 
     return true;
 }
@@ -304,6 +501,7 @@ bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes )
     instruction_buffer_context.consumer_page_offset_bytes   = 0U;
 
     INSTRUCTION_BUFFER_ClearPageFillReservation();
+    INSTRUCTION_BUFFER_ClearInstructionView();
 
     for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
     {
@@ -323,10 +521,17 @@ bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes )
         instruction_buffer_context.next_page_fill_lease_id = 1U;
     }
 
+    if ( instruction_buffer_context.next_instruction_view_id == 0U )
+    {
+        instruction_buffer_context.next_instruction_view_id = 1U;
+    }
+
     instruction_buffer_context.is_read_prepared = true;
 
     return true;
 }
+
+/* NAND-to-RAM page producer interface. */
 
 /**
  * @brief Reserves the next sequential empty page slot for a NAND read.
@@ -449,4 +654,26 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
     INSTRUCTION_BUFFER_ClearPageFillReservation();
 
     return true;
+}
+
+/* Execution-facing instruction consumer interface. */
+
+/**
+ * @brief Returns the current instruction view without advancing the stream.
+ *
+ * @note The record parsing and publication path is intentionally completed in
+ *       a later implementation step. Until then, no instruction is exposed.
+ */
+InstructionBufferPeekStatus_T
+INSTRUCTION_BUFFER_PeekInstruction( FlashManagerInstructionView_T* instruction )
+{
+    if ( instruction == NULL )
+    {
+        return INSTRUCTION_BUFFER_PEEK_INVALID_ARGUMENT;
+    }
+
+    /* Preserve the public contract while record parsing remains incomplete. */
+    *instruction = ( FlashManagerInstructionView_T ){ 0 };
+
+    return INSTRUCTION_BUFFER_PEEK_NOT_BUFFERED;
 }
