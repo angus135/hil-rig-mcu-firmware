@@ -4,11 +4,11 @@
 
 `hw_uart` contains the low-level UART drivers for both console UART and DUT-facing UART channels.
 
-The DUT-facing UART driver owns the hardware configuration, interface selection, DMA setup, RX DMA circular buffers, and TX DMA source ring buffers. It provides efficient execution-path primitives for higher layers while keeping direct UART, DMA, and register ownership inside the hardware layer.
+The DUT-facing UART driver owns STM32 UART configuration, DMA setup, RX DMA circular buffers, and TX DMA source ring buffers. External electrical-interface selection is owned by `exec_uart`.
 
 This module is responsible for:
 
-- Configuring DUT-facing UART channels and electrical interface modes.
+- Configuring and deconfiguring DUT-facing STM32 UART peripherals.
 - Starting and stopping DMA-backed UART RX.
 - Providing zero-copy RX span views into the driver-owned RX circular buffer.
 - Tracking RX consumption through an internal read index.
@@ -86,6 +86,7 @@ Key functions:
 | Function | Purpose |
 |----------|---------|
 | `HW_UART_Configure_Channel()` | Configure a DUT UART channel |
+| `HW_UART_Deconfigure_Channel()` | Deconfigure a DUT UART channel |
 | `HW_UART_Rx_Start()` | Start DMA-backed RX |
 | `HW_UART_Rx_Stop()` | Stop DMA-backed RX |
 | `HW_UART_Rx_Is_Running()` | Query RX running state |
