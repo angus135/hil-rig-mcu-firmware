@@ -59,7 +59,8 @@ The main API functions are:
 - `EXTERNAL_FLASH_WriteResultPage` writes one logical result page.
 - `EXTERNAL_FLASH_ReadInstructionPage` reads one instruction page or partial instruction page using DMA internally.
 - `EXTERNAL_FLASH_ReadResults` reads committed result bytes for host transfer.
-- `EXTERNAL_FLASH_GetInfo` reports capacity, committed result length, and bad block count.
+- `EXTERNAL_FLASH_GetInfo` reports runtime page size, partition capacities,
+  committed instruction/result lengths, and bad block count.
 
 The preferred execution time write path is `EXTERNAL_FLASH_WriteResultPage`. This lets the flash manager pass page sized result buffers directly to `external_flash`, allowing DMA to read from the flash manager owned buffer without an extra copy.
 
