@@ -224,8 +224,8 @@ HW_QSPI_Status_T HW_QSPI_ReadBlocking( const HW_QSPI_Command_T* command, uint8_t
  *
  * @return HW_QSPI_STATUS_OK if the DMA transfer is started, otherwise an error status.
  *
- * @note The source buffer must remain valid until HW_QSPI_IsTransferComplete() reports true or the
- *       transfer is aborted.
+ * @note The source buffer must remain valid until HW_QSPI_WaitForTransfer()
+ *       returns or the transfer is aborted.
  */
 HW_QSPI_Status_T HW_QSPI_WriteDma( const HW_QSPI_Command_T* command, const uint8_t* data,
                                    uint32_t length );
@@ -239,11 +239,28 @@ HW_QSPI_Status_T HW_QSPI_WriteDma( const HW_QSPI_Command_T* command, const uint8
  *
  * @return HW_QSPI_STATUS_OK if the DMA transfer is started, otherwise an error status.
  *
- * @note The destination buffer must remain valid until HW_QSPI_IsTransferComplete() reports true or
- *       the transfer is aborted.
+ * @note The destination buffer must remain valid until
+ *       HW_QSPI_WaitForTransfer() returns or the transfer is aborted.
  */
 HW_QSPI_Status_T HW_QSPI_ReadDma( const HW_QSPI_Command_T* command, uint8_t* data,
                                   uint32_t length );
+
+/**
+ * @brief Blocks the calling task until the active QSPI DMA transfer finishes.
+ *
+ * @param timeout_ms Maximum time to wait in milliseconds.
+ *
+ * @return HW_QSPI_STATUS_OK on successful completion,
+ *         HW_QSPI_STATUS_ERROR after a transfer error,
+ *         HW_QSPI_STATUS_TIMEOUT after aborting an expired transfer, or another
+ *         validation/abort status.
+ *
+ * @note Completion and error callbacks give a dedicated binary semaphore from
+ *       ISR context. The calling task is blocked by FreeRTOS while waiting, so
+ *       other ready service tasks may execute.
+ * @note This function is task-context only.
+ */
+HW_QSPI_Status_T HW_QSPI_WaitForTransfer( uint32_t timeout_ms );
 
 /**
  * @brief Checks whether the most recent asynchronous QSPI transfer has completed.

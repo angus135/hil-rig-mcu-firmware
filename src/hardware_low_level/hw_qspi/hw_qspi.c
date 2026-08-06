@@ -19,6 +19,7 @@
  */
 
 #include "hw_qspi.h"
+#include "rtos_config.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -72,8 +73,18 @@ static QSPI_HandleTypeDef* qspi_handle = NULL;
 /** Timeout used when a command does not provide a per-command timeout override. */
 static uint32_t qspi_default_timeout_ms = 0U;
 
-/** Tracks asynchronous QSPI transfer progress for DMA completion polling. */
+/** Tracks asynchronous QSPI transfer progress for callback/task synchronisation. */
 static volatile HW_QSPI_InternalTransferState_T qspi_transfer_state = HW_QSPI_TRANSFER_IDLE;
+
+/** Static storage for the dedicated DMA-completion semaphore. */
+static StaticSemaphore_t qspi_transfer_semaphore_storage;
+
+/**
+ * Binary semaphore given by QSPI HAL callbacks when a DMA transfer finishes.
+ * A dedicated semaphore avoids sharing task-notification bits with the Flash
+ * Manager's execution/refill notifications.
+ */
+static SemaphoreHandle_t qspi_transfer_semaphore = NULL;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -94,6 +105,9 @@ static HW_QSPI_Status_T HW_QSPI_Build_Command( const HW_QSPI_Command_T* command,
 static HW_QSPI_Status_T HW_QSPI_Issue_Command_For_Data( const HW_QSPI_Command_T* command,
                                                         uint32_t                 length,
                                                         QSPI_CommandTypeDef*     qspi_command );
+static HW_QSPI_Status_T HW_QSPI_InitialiseTransferSemaphore( void );
+static void             HW_QSPI_PrepareDmaTransfer( void );
+static void HW_QSPI_SignalTransferFromIsr( HW_QSPI_InternalTransferState_T transfer_state );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -384,6 +398,53 @@ static HW_QSPI_Status_T HW_QSPI_Issue_Command_For_Data( const HW_QSPI_Command_T*
         HAL_QSPI_Command( qspi_handle, qspi_command, HW_QSPI_Get_Timeout( command ) ) );
 }
 
+/**
+ * @brief Creates the static binary semaphore used for DMA completion.
+ *
+ * @return HW_QSPI_STATUS_OK when the semaphore is ready, otherwise
+ *         HW_QSPI_STATUS_ERROR.
+ */
+static HW_QSPI_Status_T HW_QSPI_InitialiseTransferSemaphore( void )
+{
+    qspi_transfer_semaphore =
+        xSemaphoreCreateBinaryStatic( &qspi_transfer_semaphore_storage );
+
+    return ( qspi_transfer_semaphore != NULL ) ? HW_QSPI_STATUS_OK : HW_QSPI_STATUS_ERROR;
+}
+
+/**
+ * @brief Clears a stale completion token before starting a new DMA transfer.
+ */
+static void HW_QSPI_PrepareDmaTransfer( void )
+{
+    if ( qspi_transfer_semaphore != NULL )
+    {
+        ( void )xSemaphoreTake( qspi_transfer_semaphore, 0U );
+    }
+
+    qspi_transfer_state = HW_QSPI_TRANSFER_ACTIVE;
+}
+
+/**
+ * @brief Records DMA completion state and unblocks the waiting task.
+ *
+ * @param transfer_state Completed or error state reported by the HAL callback.
+ */
+static void HW_QSPI_SignalTransferFromIsr( HW_QSPI_InternalTransferState_T transfer_state )
+{
+    if ( ( qspi_transfer_state != HW_QSPI_TRANSFER_ACTIVE )
+         || ( qspi_transfer_semaphore == NULL ) )
+    {
+        return;
+    }
+
+    qspi_transfer_state = transfer_state;
+
+    BaseType_t higher_priority_task_woken = pdFALSE;
+    ( void )xSemaphoreGiveFromISR( qspi_transfer_semaphore, &higher_priority_task_woken );
+    portYIELD_FROM_ISR( higher_priority_task_woken );
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
@@ -406,6 +467,16 @@ HW_QSPI_Status_T HW_QSPI_Init( const HW_QSPI_Config_T* config )
     config->hal_handle->Init.DualFlash          = QSPI_DUALFLASH_DISABLE;
 
     HW_QSPI_Status_T status = HW_QSPI_Map_HAL_Status( HAL_QSPI_Init( config->hal_handle ) );
+    if ( status != HW_QSPI_STATUS_OK )
+    {
+        qspi_handle             = NULL;
+        qspi_default_timeout_ms = 0U;
+        qspi_transfer_state     = HW_QSPI_TRANSFER_ERROR;
+        qspi_transfer_semaphore = NULL;
+        return status;
+    }
+
+    status = HW_QSPI_InitialiseTransferSemaphore();
     if ( status != HW_QSPI_STATUS_OK )
     {
         qspi_handle             = NULL;
@@ -438,6 +509,15 @@ HW_QSPI_Status_T HW_QSPI_AdoptHandle( QSPI_HandleTypeDef* hal_handle, uint32_t d
 
         return ( hal_state == HAL_QSPI_STATE_RESET ) ? HW_QSPI_STATUS_NOT_INITIALISED
                                                      : HW_QSPI_STATUS_ERROR;
+    }
+
+    HW_QSPI_Status_T status = HW_QSPI_InitialiseTransferSemaphore();
+    if ( status != HW_QSPI_STATUS_OK )
+    {
+        qspi_handle             = NULL;
+        qspi_default_timeout_ms = 0U;
+        qspi_transfer_state     = HW_QSPI_TRANSFER_ERROR;
+        return status;
     }
 
     qspi_handle             = hal_handle;
@@ -579,7 +659,7 @@ HW_QSPI_Status_T HW_QSPI_WriteDma( const HW_QSPI_Command_T* command, const uint8
         return status;
     }
 
-    qspi_transfer_state = HW_QSPI_TRANSFER_ACTIVE;
+    HW_QSPI_PrepareDmaTransfer();
     status = HW_QSPI_Map_HAL_Status( HAL_QSPI_Transmit_DMA( qspi_handle, ( uint8_t* )data ) );
     if ( status != HW_QSPI_STATUS_OK )
     {
@@ -615,7 +695,7 @@ HW_QSPI_Status_T HW_QSPI_ReadDma( const HW_QSPI_Command_T* command, uint8_t* dat
         return status;
     }
 
-    qspi_transfer_state = HW_QSPI_TRANSFER_ACTIVE;
+    HW_QSPI_PrepareDmaTransfer();
     status              = HW_QSPI_Map_HAL_Status( HAL_QSPI_Receive_DMA( qspi_handle, data ) );
     if ( status != HW_QSPI_STATUS_OK )
     {
@@ -623,6 +703,62 @@ HW_QSPI_Status_T HW_QSPI_ReadDma( const HW_QSPI_Command_T* command, uint8_t* dat
     }
 
     return status;
+}
+
+HW_QSPI_Status_T HW_QSPI_WaitForTransfer( uint32_t timeout_ms )
+{
+    if ( ( qspi_handle == NULL ) || ( qspi_transfer_semaphore == NULL ) )
+    {
+        return HW_QSPI_STATUS_NOT_INITIALISED;
+    }
+
+    if ( timeout_ms == 0U )
+    {
+        return HW_QSPI_STATUS_INVALID_ARG;
+    }
+
+    if ( qspi_transfer_state == HW_QSPI_TRANSFER_IDLE )
+    {
+        return HW_QSPI_STATUS_ERROR;
+    }
+
+    TickType_t timeout_ticks = pdMS_TO_TICKS( timeout_ms );
+    if ( timeout_ticks == 0U )
+    {
+        timeout_ticks = 1U;
+    }
+
+    if ( xSemaphoreTake( qspi_transfer_semaphore, timeout_ticks ) == pdTRUE )
+    {
+        HW_QSPI_InternalTransferState_T completed_state = qspi_transfer_state;
+        if ( completed_state == HW_QSPI_TRANSFER_COMPLETE )
+        {
+            qspi_transfer_state = HW_QSPI_TRANSFER_IDLE;
+            return HW_QSPI_STATUS_OK;
+        }
+
+        return HW_QSPI_STATUS_ERROR;
+    }
+
+    /* A callback may have completed at the timeout boundary before the task
+     * resumed. Honour that completion rather than aborting a finished transfer. */
+    if ( qspi_transfer_state == HW_QSPI_TRANSFER_COMPLETE )
+    {
+        ( void )xSemaphoreTake( qspi_transfer_semaphore, 0U );
+        qspi_transfer_state = HW_QSPI_TRANSFER_IDLE;
+        return HW_QSPI_STATUS_OK;
+    }
+
+    if ( qspi_transfer_state == HW_QSPI_TRANSFER_ERROR )
+    {
+        ( void )xSemaphoreTake( qspi_transfer_semaphore, 0U );
+        return HW_QSPI_STATUS_ERROR;
+    }
+
+    HW_QSPI_Status_T abort_status = HW_QSPI_Abort();
+    ( void )xSemaphoreTake( qspi_transfer_semaphore, 0U );
+
+    return ( abort_status == HW_QSPI_STATUS_OK ) ? HW_QSPI_STATUS_TIMEOUT : abort_status;
 }
 
 bool HW_QSPI_IsTransferComplete( void )
@@ -663,7 +799,7 @@ void HAL_QSPI_TxCpltCallback( QSPI_HandleTypeDef* hqspi )
 {
     if ( hqspi == qspi_handle )
     {
-        qspi_transfer_state = HW_QSPI_TRANSFER_COMPLETE;
+        HW_QSPI_SignalTransferFromIsr( HW_QSPI_TRANSFER_COMPLETE );
     }
 }
 
@@ -671,7 +807,7 @@ void HAL_QSPI_RxCpltCallback( QSPI_HandleTypeDef* hqspi )
 {
     if ( hqspi == qspi_handle )
     {
-        qspi_transfer_state = HW_QSPI_TRANSFER_COMPLETE;
+        HW_QSPI_SignalTransferFromIsr( HW_QSPI_TRANSFER_COMPLETE );
     }
 }
 
@@ -679,7 +815,7 @@ void HAL_QSPI_ErrorCallback( QSPI_HandleTypeDef* hqspi )
 {
     if ( hqspi == qspi_handle )
     {
-        qspi_transfer_state = HW_QSPI_TRANSFER_ERROR;
+        HW_QSPI_SignalTransferFromIsr( HW_QSPI_TRANSFER_ERROR );
     }
 }
 
@@ -687,7 +823,7 @@ void HAL_QSPI_AbortCpltCallback( QSPI_HandleTypeDef* hqspi )
 {
     if ( hqspi == qspi_handle )
     {
-        qspi_transfer_state = HW_QSPI_TRANSFER_IDLE;
+        HW_QSPI_SignalTransferFromIsr( HW_QSPI_TRANSFER_IDLE );
     }
 }
 

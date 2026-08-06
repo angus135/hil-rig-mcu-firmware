@@ -11,15 +11,12 @@ With internal ECC enabled, the first 64 spare bytes remain user accessible.
 This module is responsible for:
 
 - NAND reset and identification
-- NAND feature register reads and writes
-- Ready/busy and status polling
-- Page read-to-cache operations
-- Cache read operations
-- Program-load and program-execute operations
+- Device feature configuration
+- Ready/busy, ECC, program-fail, and erase-fail status handling
+- Complete physical page read and program command sequences
 - Block erase operations
 - Factory bad-block marker reads
 - Bad-block marker programming for retired blocks
-- ECC status decode after page reads
 - NAND geometry reporting
 
 
@@ -46,6 +43,20 @@ Call `HW_NAND_Init()` before any API that communicates with the device.
 accessors and may be called before initialisation; ECC status is `UNKNOWN` until
 a checked page read records a result.
 
+The storage-facing operations are deliberately complete and synchronous:
+
+- `HW_NAND_ReadPageBlocking`
+- `HW_NAND_ReadPageDma`
+- `HW_NAND_ProgramPageBlocking`
+- `HW_NAND_ProgramPageDma`
+- `HW_NAND_BlockErase`
+- `HW_NAND_IsBlockBad`
+- `HW_NAND_MarkBlockBad`
+
+Raw feature access, cache access, program-load/program-execute phases, status
+waits, and DMA completion handling are private implementation details. This
+prevents callers from constructing incomplete or invalid NAND sequences.
+
 
 ---
 
@@ -55,41 +66,39 @@ a checked page read records a result.
 
 Higher level storage policy belongs in `external_flash`, not in this module.
 
-`hw_nand` should not know about result records, append-log allocation,
-pre-erase queues, logical page numbers, host transfer framing, or execution
-manager timing. It exposes physical NAND operations so `external_flash` can
-implement those policies above the hardware layer.
+`hw_nand` does not know about result records, append-log allocation, logical
+page numbers, host transfer framing, or execution-manager timing. It exposes
+complete physical NAND operations so `external_flash` can implement those
+policies above the hardware layer.
 
 
 ---
 
 ## Transfer Model
 
-Small command and feature-register operations are blocking because they move one
-or two bytes and are outside the hard real-time execution loop.
+Small command and feature-register operations use blocking QSPI because they
+move one or two bytes and are not throughput-sensitive.
 
 Ready waits use elapsed milliseconds from `HAL_GetTick()`. The timeout values in
 `hw_nand.c` are selected above the datasheet maximum reset, page-read, program,
 and block-erase times; they do not assume a fixed duration for each poll.
+Short reset, page-read, and program waits poll tightly because their device-busy
+periods are small and page throughput matters. Block erase is comparatively
+long, so its wait delays one RTOS tick between status reads and allows other
+ready tasks to execute.
 
-Bulk cache transfers expose DMA entry points:
+Bulk page transfers use QSPI DMA through `HW_NAND_ReadPageDma()` and
+`HW_NAND_ProgramPageDma()`. These calls are synchronous from the caller's
+perspective: they return only after the DMA data phase and NAND operation have
+completed or failed. No extra page copy is introduced; DMA still reads from or
+writes directly into the caller-owned buffer.
 
-- `HW_NAND_ReadCacheDma`
-- `HW_NAND_ReadPageDma`
-- `HW_NAND_ProgramLoadDma`
-
-The caller owns buffer lifetime until `HW_NAND_IsTransferComplete()` reports
-true or `HW_NAND_AbortTransfer()` aborts the QSPI operation. Page read, program
-execute, and block erase also have start-only entry points so the flash manager
-can issue a long NAND operation and decide how to wait from its own RTOS task
-context.
-
-Use the matching completion helper for each long operation:
-
-- `HW_NAND_WaitPageReadComplete` checks ECC status.
-- `HW_NAND_WaitProgramComplete` checks program-fail status.
-- `HW_NAND_WaitBlockEraseComplete` checks erase-fail status.
-- `HW_NAND_WaitReady` only waits for OIP to clear.
+`hw_qspi` signals DMA completion through a dedicated binary semaphore. The NAND
+call remains synchronous, but the calling task is blocked by FreeRTOS during
+the DMA phase rather than occupying the CPU. Other ready service tasks can run.
+`hw_qspi` also owns the DMA deadline and aborts an expired transfer.
+Consequently, the caller may reuse its buffer as soon as the page function
+returns and does not need access to QSPI transfer state.
 
 
 ---
@@ -105,3 +114,23 @@ The driver exposes physical bad-block primitives only:
 
 Skipping bad blocks, retiring failed blocks, maintaining a bad-block table, and
 mapping logical result storage onto physical blocks belong in `external_flash`.
+
+
+---
+
+## Hardware Validation Status
+
+The driver is currently unit tested against mocked QSPI transactions but has
+not yet been exercised on the physical GD5F1GM7UEYIGR device. Initial hardware
+bring-up must verify:
+
+- reset, ID, block-unlock, quad-enable, and ECC-enable sequencing;
+- page-read ECC decoding for clean, corrected, and uncorrectable data;
+- full-page DMA read and program operations;
+- DMA completion interrupts and timeout abort recovery;
+- erase/program failure-bit handling;
+- factory bad-block marker detection and runtime marker programming;
+- the configured reset, read, program, and erase deadlines.
+
+The public API intentionally keeps these device-specific details inside
+`hw_nand`, so bring-up fixes should not require changes to `external_flash`.

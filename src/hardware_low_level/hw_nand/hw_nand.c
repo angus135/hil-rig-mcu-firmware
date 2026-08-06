@@ -20,6 +20,7 @@
 #include "hw_nand.h"
 
 #include "hw_qspi.h"
+#include "rtos_config.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -110,11 +111,20 @@
 #define HW_NAND_PAGE_READ_TIMEOUT_MS ( 1U )
 #define HW_NAND_PROGRAM_TIMEOUT_MS ( 2U )
 #define HW_NAND_BLOCK_ERASE_TIMEOUT_MS ( 15U )
+#define HW_NAND_DMA_TIMEOUT_MS ( 100U )
+#define HW_NAND_BLOCK_ERASE_POLL_INTERVAL_MS ( 1U )
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+
+/** Manufacturer and device ID bytes returned by the NAND READ ID command. */
+typedef struct
+{
+    uint8_t manufacturer_id;
+    uint8_t device_id;
+} HW_NAND_Id_T;
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -175,6 +185,18 @@ static HW_NAND_Status_T HW_NAND_WriteDisable( void );
 /** Reads the C0h status feature register. */
 static HW_NAND_Status_T HW_NAND_ReadStatus( uint8_t* status );
 
+/** Issues the NAND reset command. */
+static HW_NAND_Status_T HW_NAND_Reset( void );
+
+/** Reads the two-byte manufacturer and device identifier. */
+static HW_NAND_Status_T HW_NAND_ReadId( HW_NAND_Id_T* id );
+
+/** Reads a raw NAND feature register. */
+static HW_NAND_Status_T HW_NAND_GetFeature( uint8_t feature_address, uint8_t* value );
+
+/** Writes a raw NAND feature register. */
+static HW_NAND_Status_T HW_NAND_SetFeature( uint8_t feature_address, uint8_t value );
+
 /** Decodes the ECC status bits from the C0h status feature register. */
 static HW_NAND_EccStatus_T HW_NAND_Decode_Ecc_Status( uint8_t status );
 
@@ -182,15 +204,50 @@ static HW_NAND_EccStatus_T HW_NAND_Decode_Ecc_Status( uint8_t status );
 static HW_NAND_Status_T HW_NAND_CheckReadyStatus( uint8_t status, bool check_program_fail,
                                                   bool check_erase_fail, bool check_ecc );
 
-/** Polls C0h until OIP clears and then applies the requested status checks. */
+/**
+ * Polls C0h until OIP clears and then applies the requested status checks.
+ * Long block-erase waits may delay between polls so other ready tasks can run;
+ * short reset/read/program waits remain tight to preserve page throughput.
+ */
 static HW_NAND_Status_T HW_NAND_WaitReadyWithChecks( uint32_t timeout_ms, bool check_program_fail,
-                                                     bool check_erase_fail, bool check_ecc );
+                                                     bool check_erase_fail, bool check_ecc,
+                                                     bool delay_between_polls );
 
 /** Applies startup feature configuration required before normal operation. */
 static HW_NAND_Status_T HW_NAND_ConfigureDevice( void );
 
 /** Reads and verifies the manufacturer and device ID bytes. */
 static HW_NAND_Status_T HW_NAND_VerifyDeviceId( void );
+
+/** Starts copying one physical page from the NAND array into its cache. */
+static HW_NAND_Status_T HW_NAND_StartPageReadToCache( uint32_t page );
+
+/** Copies one physical page into cache and waits for ECC-checked completion. */
+static HW_NAND_Status_T HW_NAND_ReadPageToCache( uint32_t page );
+
+/** Reads bytes from NAND cache using blocking QSPI. */
+static HW_NAND_Status_T HW_NAND_ReadCacheBlocking( uint16_t column, uint8_t* data,
+                                                   uint32_t length );
+
+/** Starts a DMA read from NAND cache into caller-owned memory. */
+static HW_NAND_Status_T HW_NAND_ReadCacheDma( uint16_t column, uint8_t* data, uint32_t length );
+
+/** Loads bytes into NAND cache using blocking QSPI. */
+static HW_NAND_Status_T HW_NAND_ProgramLoadBlocking( uint16_t column, const uint8_t* data,
+                                                     uint32_t length );
+
+/** Starts a DMA program-load from caller-owned memory into NAND cache. */
+static HW_NAND_Status_T HW_NAND_ProgramLoadDma( uint16_t column, const uint8_t* data,
+                                                uint32_t length );
+
+/** Starts program-execute for the page currently staged in NAND cache. */
+static HW_NAND_Status_T HW_NAND_StartProgramExecute( uint32_t page );
+
+/** Executes the staged NAND program operation and waits for completion. */
+static HW_NAND_Status_T HW_NAND_ProgramExecute( uint32_t page );
+
+/** Starts erasing one physical NAND block. */
+static HW_NAND_Status_T HW_NAND_StartBlockErase( uint32_t block );
 
 /** Returns the first page row address for a physical block. */
 static uint32_t HW_NAND_Block_First_Page( uint32_t block );
@@ -357,7 +414,8 @@ static HW_NAND_Status_T HW_NAND_CheckReadyStatus( uint8_t status, bool check_pro
 }
 
 static HW_NAND_Status_T HW_NAND_WaitReadyWithChecks( uint32_t timeout_ms, bool check_program_fail,
-                                                     bool check_erase_fail, bool check_ecc )
+                                                     bool check_erase_fail, bool check_ecc,
+                                                     bool delay_between_polls )
 {
     const uint32_t start_time_ms = HAL_GetTick();
 
@@ -375,6 +433,12 @@ static HW_NAND_Status_T HW_NAND_WaitReadyWithChecks( uint32_t timeout_ms, bool c
         {
             return HW_NAND_CheckReadyStatus( status_register, check_program_fail, check_erase_fail,
                                              check_ecc );
+        }
+
+        if ( delay_between_polls )
+        {
+            TickType_t delay_ticks = pdMS_TO_TICKS( HW_NAND_BLOCK_ERASE_POLL_INTERVAL_MS );
+            vTaskDelay( ( delay_ticks == 0U ) ? 1U : delay_ticks );
         }
     } while ( ( uint32_t )( HAL_GetTick() - start_time_ms ) < timeout_ms );
 
@@ -502,7 +566,7 @@ HW_NAND_Status_T HW_NAND_Init( void )
         return status;
     }
 
-    status = HW_NAND_WaitReadyWithChecks( HW_NAND_RESET_TIMEOUT_MS, false, false, false );
+    status = HW_NAND_WaitReadyWithChecks( HW_NAND_RESET_TIMEOUT_MS, false, false, false, false );
     if ( status != HW_NAND_STATUS_OK )
     {
         nand_initialised = false;
@@ -526,7 +590,7 @@ HW_NAND_Status_T HW_NAND_Init( void )
     return HW_NAND_STATUS_OK;
 }
 
-HW_NAND_Status_T HW_NAND_Reset( void )
+static HW_NAND_Status_T HW_NAND_Reset( void )
 {
     if ( !nand_initialised )
     {
@@ -538,7 +602,7 @@ HW_NAND_Status_T HW_NAND_Reset( void )
     return HW_NAND_Map_QSPI_Status( HW_QSPI_Command( &command ) );
 }
 
-HW_NAND_Status_T HW_NAND_ReadId( HW_NAND_Id_T* id )
+static HW_NAND_Status_T HW_NAND_ReadId( HW_NAND_Id_T* id )
 {
     if ( !nand_initialised )
     {
@@ -592,7 +656,7 @@ HW_NAND_Status_T HW_NAND_GetLastEccStatus( HW_NAND_EccStatus_T* ecc_status )
     return HW_NAND_STATUS_OK;
 }
 
-HW_NAND_Status_T HW_NAND_GetFeature( uint8_t feature_address, uint8_t* value )
+static HW_NAND_Status_T HW_NAND_GetFeature( uint8_t feature_address, uint8_t* value )
 {
     if ( !nand_initialised )
     {
@@ -610,7 +674,7 @@ HW_NAND_Status_T HW_NAND_GetFeature( uint8_t feature_address, uint8_t* value )
     return HW_NAND_Map_QSPI_Status( HW_QSPI_ReadBlocking( &command, value, 1U ) );
 }
 
-HW_NAND_Status_T HW_NAND_SetFeature( uint8_t feature_address, uint8_t value )
+static HW_NAND_Status_T HW_NAND_SetFeature( uint8_t feature_address, uint8_t value )
 {
     if ( !nand_initialised )
     {
@@ -636,47 +700,7 @@ HW_NAND_Status_T HW_NAND_SetFeature( uint8_t feature_address, uint8_t value )
     return status;
 }
 
-HW_NAND_Status_T HW_NAND_WaitReady( uint32_t timeout_ms )
-{
-    if ( !nand_initialised )
-    {
-        return HW_NAND_STATUS_NOT_INITIALISED;
-    }
-
-    return HW_NAND_WaitReadyWithChecks( timeout_ms, false, false, false );
-}
-
-HW_NAND_Status_T HW_NAND_WaitPageReadComplete( uint32_t timeout_ms )
-{
-    if ( !nand_initialised )
-    {
-        return HW_NAND_STATUS_NOT_INITIALISED;
-    }
-
-    return HW_NAND_WaitReadyWithChecks( timeout_ms, false, false, true );
-}
-
-HW_NAND_Status_T HW_NAND_WaitProgramComplete( uint32_t timeout_ms )
-{
-    if ( !nand_initialised )
-    {
-        return HW_NAND_STATUS_NOT_INITIALISED;
-    }
-
-    return HW_NAND_WaitReadyWithChecks( timeout_ms, true, false, false );
-}
-
-HW_NAND_Status_T HW_NAND_WaitBlockEraseComplete( uint32_t timeout_ms )
-{
-    if ( !nand_initialised )
-    {
-        return HW_NAND_STATUS_NOT_INITIALISED;
-    }
-
-    return HW_NAND_WaitReadyWithChecks( timeout_ms, false, true, false );
-}
-
-HW_NAND_Status_T HW_NAND_StartPageReadToCache( uint32_t page )
+static HW_NAND_Status_T HW_NAND_StartPageReadToCache( uint32_t page )
 {
     if ( !nand_initialised )
     {
@@ -697,7 +721,7 @@ HW_NAND_Status_T HW_NAND_StartPageReadToCache( uint32_t page )
     return HW_NAND_Map_QSPI_Status( HW_QSPI_Command( &command ) );
 }
 
-HW_NAND_Status_T HW_NAND_ReadPageToCache( uint32_t page )
+static HW_NAND_Status_T HW_NAND_ReadPageToCache( uint32_t page )
 {
     if ( !nand_initialised )
     {
@@ -710,10 +734,11 @@ HW_NAND_Status_T HW_NAND_ReadPageToCache( uint32_t page )
         return status;
     }
 
-    return HW_NAND_WaitPageReadComplete( HW_NAND_PAGE_READ_TIMEOUT_MS );
+    return HW_NAND_WaitReadyWithChecks( HW_NAND_PAGE_READ_TIMEOUT_MS, false, false, true, false );
 }
 
-HW_NAND_Status_T HW_NAND_ReadCacheBlocking( uint16_t column, uint8_t* data, uint32_t length )
+static HW_NAND_Status_T HW_NAND_ReadCacheBlocking( uint16_t column, uint8_t* data,
+                                                   uint32_t length )
 {
     if ( !nand_initialised )
     {
@@ -732,7 +757,7 @@ HW_NAND_Status_T HW_NAND_ReadCacheBlocking( uint16_t column, uint8_t* data, uint
     return HW_NAND_Map_QSPI_Status( HW_QSPI_ReadBlocking( &command, data, length ) );
 }
 
-HW_NAND_Status_T HW_NAND_ReadCacheDma( uint16_t column, uint8_t* data, uint32_t length )
+static HW_NAND_Status_T HW_NAND_ReadCacheDma( uint16_t column, uint8_t* data, uint32_t length )
 {
     if ( !nand_initialised )
     {
@@ -759,6 +784,12 @@ HW_NAND_Status_T HW_NAND_ReadPageBlocking( uint32_t page, uint16_t column, uint8
         return HW_NAND_STATUS_NOT_INITIALISED;
     }
 
+    if ( !HW_NAND_Is_Valid_Page( page ) || ( data == NULL )
+         || !HW_NAND_Is_Valid_Column_Range( column, length, HW_NAND_READABLE_PAGE_BYTES ) )
+    {
+        return HW_NAND_STATUS_INVALID_ARG;
+    }
+
     HW_NAND_Status_T status = HW_NAND_ReadPageToCache( page );
     if ( status != HW_NAND_STATUS_OK )
     {
@@ -776,17 +807,29 @@ HW_NAND_Status_T HW_NAND_ReadPageDma( uint32_t page, uint16_t column, uint8_t* d
         return HW_NAND_STATUS_NOT_INITIALISED;
     }
 
+    if ( !HW_NAND_Is_Valid_Page( page ) || ( data == NULL )
+         || !HW_NAND_Is_Valid_Column_Range( column, length, HW_NAND_READABLE_PAGE_BYTES ) )
+    {
+        return HW_NAND_STATUS_INVALID_ARG;
+    }
+
     HW_NAND_Status_T status = HW_NAND_ReadPageToCache( page );
     if ( status != HW_NAND_STATUS_OK )
     {
         return status;
     }
 
-    return HW_NAND_ReadCacheDma( column, data, length );
+    status = HW_NAND_ReadCacheDma( column, data, length );
+    if ( status != HW_NAND_STATUS_OK )
+    {
+        return status;
+    }
+
+    return HW_NAND_Map_QSPI_Status( HW_QSPI_WaitForTransfer( HW_NAND_DMA_TIMEOUT_MS ) );
 }
 
-HW_NAND_Status_T HW_NAND_ProgramLoadBlocking( uint16_t column, const uint8_t* data,
-                                              uint32_t length )
+static HW_NAND_Status_T HW_NAND_ProgramLoadBlocking( uint16_t column, const uint8_t* data,
+                                                     uint32_t length )
 {
     if ( !nand_initialised )
     {
@@ -805,7 +848,8 @@ HW_NAND_Status_T HW_NAND_ProgramLoadBlocking( uint16_t column, const uint8_t* da
     return HW_NAND_Map_QSPI_Status( HW_QSPI_WriteBlocking( &command, data, length ) );
 }
 
-HW_NAND_Status_T HW_NAND_ProgramLoadDma( uint16_t column, const uint8_t* data, uint32_t length )
+static HW_NAND_Status_T HW_NAND_ProgramLoadDma( uint16_t column, const uint8_t* data,
+                                                uint32_t length )
 {
     if ( !nand_initialised )
     {
@@ -824,7 +868,7 @@ HW_NAND_Status_T HW_NAND_ProgramLoadDma( uint16_t column, const uint8_t* data, u
     return HW_NAND_Map_QSPI_Status( HW_QSPI_WriteDma( &command, data, length ) );
 }
 
-HW_NAND_Status_T HW_NAND_StartProgramExecute( uint32_t page )
+static HW_NAND_Status_T HW_NAND_StartProgramExecute( uint32_t page )
 {
     if ( !nand_initialised )
     {
@@ -857,7 +901,7 @@ HW_NAND_Status_T HW_NAND_StartProgramExecute( uint32_t page )
     return HW_NAND_STATUS_OK;
 }
 
-HW_NAND_Status_T HW_NAND_ProgramExecute( uint32_t page )
+static HW_NAND_Status_T HW_NAND_ProgramExecute( uint32_t page )
 {
     HW_NAND_Status_T status = HW_NAND_StartProgramExecute( page );
     if ( status != HW_NAND_STATUS_OK )
@@ -865,7 +909,7 @@ HW_NAND_Status_T HW_NAND_ProgramExecute( uint32_t page )
         return status;
     }
 
-    return HW_NAND_WaitProgramComplete( HW_NAND_PROGRAM_TIMEOUT_MS );
+    return HW_NAND_WaitReadyWithChecks( HW_NAND_PROGRAM_TIMEOUT_MS, true, false, false, false );
 }
 
 HW_NAND_Status_T HW_NAND_ProgramPageBlocking( uint32_t page, uint16_t column, const uint8_t* data,
@@ -874,6 +918,13 @@ HW_NAND_Status_T HW_NAND_ProgramPageBlocking( uint32_t page, uint16_t column, co
     if ( !nand_initialised )
     {
         return HW_NAND_STATUS_NOT_INITIALISED;
+    }
+
+    if ( !HW_NAND_Is_Valid_Page( page ) || ( data == NULL )
+         || !HW_NAND_Is_Valid_Column_Range( column, length,
+                                            HW_NAND_PROGRAMMABLE_PAGE_BYTES ) )
+    {
+        return HW_NAND_STATUS_INVALID_ARG;
     }
 
     HW_NAND_Status_T status = HW_NAND_ProgramLoadBlocking( column, data, length );
@@ -885,7 +936,37 @@ HW_NAND_Status_T HW_NAND_ProgramPageBlocking( uint32_t page, uint16_t column, co
     return HW_NAND_ProgramExecute( page );
 }
 
-HW_NAND_Status_T HW_NAND_StartBlockErase( uint32_t block )
+HW_NAND_Status_T HW_NAND_ProgramPageDma( uint32_t page, uint16_t column, const uint8_t* data,
+                                         uint32_t length )
+{
+    if ( !nand_initialised )
+    {
+        return HW_NAND_STATUS_NOT_INITIALISED;
+    }
+
+    if ( !HW_NAND_Is_Valid_Page( page ) || ( data == NULL )
+         || !HW_NAND_Is_Valid_Column_Range( column, length,
+                                            HW_NAND_PROGRAMMABLE_PAGE_BYTES ) )
+    {
+        return HW_NAND_STATUS_INVALID_ARG;
+    }
+
+    HW_NAND_Status_T status = HW_NAND_ProgramLoadDma( column, data, length );
+    if ( status != HW_NAND_STATUS_OK )
+    {
+        return status;
+    }
+
+    status = HW_NAND_Map_QSPI_Status( HW_QSPI_WaitForTransfer( HW_NAND_DMA_TIMEOUT_MS ) );
+    if ( status != HW_NAND_STATUS_OK )
+    {
+        return status;
+    }
+
+    return HW_NAND_ProgramExecute( page );
+}
+
+static HW_NAND_Status_T HW_NAND_StartBlockErase( uint32_t block )
 {
     if ( !nand_initialised )
     {
@@ -926,7 +1007,7 @@ HW_NAND_Status_T HW_NAND_BlockErase( uint32_t block )
         return status;
     }
 
-    return HW_NAND_WaitBlockEraseComplete( HW_NAND_BLOCK_ERASE_TIMEOUT_MS );
+    return HW_NAND_WaitReadyWithChecks( HW_NAND_BLOCK_ERASE_TIMEOUT_MS, false, true, false, true );
 }
 HW_NAND_Status_T HW_NAND_IsBlockBad( uint32_t block, bool* is_bad )
 {
@@ -954,7 +1035,8 @@ HW_NAND_Status_T HW_NAND_IsBlockBad( uint32_t block, bool* is_bad )
         return status;
     }
 
-    status = HW_NAND_WaitReady( HW_NAND_PAGE_READ_TIMEOUT_MS );
+    status =
+        HW_NAND_WaitReadyWithChecks( HW_NAND_PAGE_READ_TIMEOUT_MS, false, false, false, false );
 
     if ( status != HW_NAND_STATUS_OK )
     {
@@ -995,19 +1077,4 @@ HW_NAND_Status_T HW_NAND_MarkBlockBad( uint32_t block )
     }
 
     return HW_NAND_ProgramExecute( HW_NAND_Block_First_Page( block ) );
-}
-
-bool HW_NAND_IsTransferComplete( void )
-{
-    return HW_QSPI_IsTransferComplete();
-}
-
-bool HW_NAND_IsBusy( void )
-{
-    return HW_QSPI_IsBusy();
-}
-
-HW_NAND_Status_T HW_NAND_AbortTransfer( void )
-{
-    return HW_NAND_Map_QSPI_Status( HW_QSPI_Abort() );
 }
