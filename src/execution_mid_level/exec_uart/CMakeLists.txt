@@ -26,6 +26,7 @@ target_include_directories(exec_uart
 target_link_libraries(exec_uart
     PUBLIC
         hw_uart
+        logic_expander
         global_config
         rtos
         cubeide_hal

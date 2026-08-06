@@ -112,7 +112,7 @@ static void CONSOLE_UART_Loopback_Start( uint16_t argc, char* argv[] );
 static void CONSOLE_UART_Loopback_Blast_Random( uint16_t argc, char* argv[] );
 
 static bool CONSOLE_UART_Parse_Baud_Rate( const char* text, uint32_t* baud_rate_out );
-static bool CONSOLE_UART_Parse_Channel( const char* text, HwUartChannel_T* channel_out );
+static bool CONSOLE_UART_Parse_Channel( const char* text, ExecUartChannel_T* channel_out );
 static bool CONSOLE_UART_Parse_U32( const char* text, const char* field_name, uint32_t min_value,
                                     uint32_t max_value, uint32_t* value_out );
 static bool CONSOLE_UART_Parse_Framing( const char* text, HwUartWordLength_T* word_length_out,
@@ -127,20 +127,20 @@ static bool CONSOLE_UART_Build_Tx_Text( uint16_t argc, char* argv[], uint16_t fi
                                         char* tx_text, uint32_t tx_text_size,
                                         uint32_t* tx_length_out );
 
-static void     CONSOLE_UART_Drain_Channel( HwUartChannel_T channel );
+static void     CONSOLE_UART_Drain_Channel( ExecUartChannel_T channel );
 static void     CONSOLE_UART_Clear_Rx_Data( void );
 static uint32_t CONSOLE_UART_Calc_Loopback_Delay_Ms( uint32_t length_bytes );
-static bool     CONSOLE_UART_Read_Until_Length( HwUartChannel_T receiver_ch, uint8_t* rx_buf,
+static bool     CONSOLE_UART_Read_Until_Length( ExecUartChannel_T receiver_ch, uint8_t* rx_buf,
                                                 uint32_t rx_buf_size, uint32_t expected_length,
                                                 uint32_t timeout_ms, uint32_t* bytes_read_out );
 
-static bool CONSOLE_UART_Read_And_Report_Loopback_Result( HwUartChannel_T receiver_ch,
+static bool CONSOLE_UART_Read_And_Report_Loopback_Result( ExecUartChannel_T receiver_ch,
                                                           const char* tx_text, uint32_t tx_length );
 
-static bool CONSOLE_UART_Transmit_Buffer_Chunked( HwUartChannel_T sender_ch, const uint8_t* data,
+static bool CONSOLE_UART_Transmit_Buffer_Chunked( ExecUartChannel_T sender_ch, const uint8_t* data,
                                                   uint32_t length, uint32_t chunk_size );
 
-static bool CONSOLE_UART_Read_And_Compare_Buffer( HwUartChannel_T receiver_ch,
+static bool CONSOLE_UART_Read_And_Compare_Buffer( ExecUartChannel_T receiver_ch,
                                                   const uint8_t* expected, uint32_t expected_length,
                                                   uint32_t iteration );
 
@@ -217,17 +217,17 @@ static bool CONSOLE_UART_Parse_Baud_Rate( const char* text, uint32_t* baud_rate_
                                    baud_rate_out );
 }
 
-static bool CONSOLE_UART_Parse_Channel( const char* text, HwUartChannel_T* channel_out )
+static bool CONSOLE_UART_Parse_Channel( const char* text, ExecUartChannel_T* channel_out )
 {
     if ( strcmp( text, "ch1" ) == 0 )
     {
-        *channel_out = HW_UART_CHANNEL_1;
+        *channel_out = EXEC_UART_CHANNEL_1;
         return true;
     }
 
     if ( strcmp( text, "ch2" ) == 0 )
     {
-        *channel_out = HW_UART_CHANNEL_2;
+        *channel_out = EXEC_UART_CHANNEL_2;
         return true;
     }
 
@@ -357,7 +357,7 @@ static bool CONSOLE_UART_Build_Tx_Text( uint16_t argc, char* argv[], uint16_t fi
     return true;
 }
 
-static void CONSOLE_UART_Drain_Channel( HwUartChannel_T channel )
+static void CONSOLE_UART_Drain_Channel( ExecUartChannel_T channel )
 {
     uint8_t  discard_buf[CONSOLE_UART_DISCARD_BUFFER_SIZE];
     uint32_t bytes_read = 0U;
@@ -378,8 +378,8 @@ static void CONSOLE_UART_Drain_Channel( HwUartChannel_T channel )
 
 static void CONSOLE_UART_Clear_Rx_Data( void )
 {
-    CONSOLE_UART_Drain_Channel( HW_UART_CHANNEL_1 );
-    CONSOLE_UART_Drain_Channel( HW_UART_CHANNEL_2 );
+    CONSOLE_UART_Drain_Channel( EXEC_UART_CHANNEL_1 );
+    CONSOLE_UART_Drain_Channel( EXEC_UART_CHANNEL_2 );
 }
 
 static uint32_t CONSOLE_UART_Calc_Loopback_Delay_Ms( uint32_t length_bytes )
@@ -414,7 +414,7 @@ static uint32_t CONSOLE_UART_Calc_Loopback_Delay_Ms( uint32_t length_bytes )
     return wire_time_ms + CONSOLE_UART_LOOPBACK_DELAY_MARGIN_MS;
 }
 
-static bool CONSOLE_UART_Read_Until_Length( HwUartChannel_T receiver_ch, uint8_t* rx_buf,
+static bool CONSOLE_UART_Read_Until_Length( ExecUartChannel_T receiver_ch, uint8_t* rx_buf,
                                             uint32_t rx_buf_size, uint32_t expected_length,
                                             uint32_t timeout_ms, uint32_t* bytes_read_out )
 {
@@ -444,7 +444,7 @@ static bool CONSOLE_UART_Read_Until_Length( HwUartChannel_T receiver_ch, uint8_t
     return true;
 }
 
-static bool CONSOLE_UART_Read_And_Report_Loopback_Result( HwUartChannel_T receiver_ch,
+static bool CONSOLE_UART_Read_And_Report_Loopback_Result( ExecUartChannel_T receiver_ch,
                                                           const char* tx_text, uint32_t tx_length )
 {
     uint8_t  rx_buf[EXEC_UART_MAX_CHUNK_SIZE];
@@ -513,8 +513,8 @@ static void CONSOLE_UART_Loopback_Configure( uint16_t argc, char* argv[] )
         }
     }
 
-    HwUartConfig_T config = { 0 };
-    config.interface_mode = HW_UART_MODE_TTL_3V3;
+    ExecUartConfig_T config = { 0 };
+    config.interface_mode = EXEC_UART_MODE_TTL_3V3;
     config.rx_enabled     = true;
     config.tx_enabled     = true;
     config.baud_rate      = baud_rate;
@@ -522,15 +522,15 @@ static void CONSOLE_UART_Loopback_Configure( uint16_t argc, char* argv[] )
     config.parity         = parity;
     config.stop_bits      = stop_bits;
 
-    if ( !EXEC_UART_Apply_Configuration( HW_UART_CHANNEL_1, &config ) )
+    if ( !EXEC_UART_Apply_Configuration( EXEC_UART_CHANNEL_1, &config ) )
     {
         CONSOLE_Printf( "Failed to configure ch1\r\n" );
         return;
     }
 
-    if ( !EXEC_UART_Apply_Configuration( HW_UART_CHANNEL_2, &config ) )
+    if ( !EXEC_UART_Apply_Configuration( EXEC_UART_CHANNEL_2, &config ) )
     {
-        ( void )EXEC_UART_Deconfigure( HW_UART_CHANNEL_1 );
+        ( void )EXEC_UART_Deconfigure( EXEC_UART_CHANNEL_1 );
         CONSOLE_Printf( "Failed to configure ch2\r\n" );
         return;
     }
@@ -558,8 +558,8 @@ static void CONSOLE_UART_Loopback_Deconfigure( uint16_t argc, char* argv[] )
         return;
     }
 
-    bool ch1_ok = EXEC_UART_Deconfigure( HW_UART_CHANNEL_1 );
-    bool ch2_ok = EXEC_UART_Deconfigure( HW_UART_CHANNEL_2 );
+    bool ch1_ok = EXEC_UART_Deconfigure( EXEC_UART_CHANNEL_1 );
+    bool ch2_ok = EXEC_UART_Deconfigure( EXEC_UART_CHANNEL_2 );
 
     s_uart_loopback_state.is_configured      = false;
     s_uart_loopback_state.baud_rate          = 0U;
@@ -610,8 +610,8 @@ static void CONSOLE_UART_Loopback_Status( uint16_t argc, char* argv[] )
 
 static void CONSOLE_UART_Loopback_Start( uint16_t argc, char* argv[] )
 {
-    HwUartChannel_T sender_ch;
-    HwUartChannel_T receiver_ch;
+    ExecUartChannel_T sender_ch;
+    ExecUartChannel_T receiver_ch;
     char            tx_text[EXEC_UART_MAX_CHUNK_SIZE];
     uint32_t        tx_length = 0U;
 
@@ -656,7 +656,7 @@ static void CONSOLE_UART_Loopback_Start( uint16_t argc, char* argv[] )
     ( void )CONSOLE_UART_Read_And_Report_Loopback_Result( receiver_ch, tx_text, tx_length );
 }
 
-static bool CONSOLE_UART_Transmit_Buffer_Chunked( HwUartChannel_T sender_ch, const uint8_t* data,
+static bool CONSOLE_UART_Transmit_Buffer_Chunked( ExecUartChannel_T sender_ch, const uint8_t* data,
                                                   uint32_t length, uint32_t chunk_size )
 {
     uint32_t offset = 0U;
@@ -683,7 +683,7 @@ static bool CONSOLE_UART_Transmit_Buffer_Chunked( HwUartChannel_T sender_ch, con
     return true;
 }
 
-static bool CONSOLE_UART_Read_And_Compare_Buffer( HwUartChannel_T receiver_ch,
+static bool CONSOLE_UART_Read_And_Compare_Buffer( ExecUartChannel_T receiver_ch,
                                                   const uint8_t* expected, uint32_t expected_length,
                                                   uint32_t iteration )
 {
@@ -726,8 +726,8 @@ static bool CONSOLE_UART_Read_And_Compare_Buffer( HwUartChannel_T receiver_ch,
 
 static void CONSOLE_UART_Loopback_Blast_Random( uint16_t argc, char* argv[] )
 {
-    HwUartChannel_T sender_ch;
-    HwUartChannel_T receiver_ch;
+    ExecUartChannel_T sender_ch;
+    ExecUartChannel_T receiver_ch;
 
     uint32_t length     = 0U;
     uint32_t seed       = 0U;
