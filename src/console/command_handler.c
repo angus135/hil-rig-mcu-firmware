@@ -744,6 +744,8 @@ static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] )
  *     - Configures SPI and the DAC to use VDD as reference (no external VREF).
  *   anlg_out <channel> <voltage>
  *     - Write voltage (0-20V, clamped) to channel 0-5.
+ *   anlg_out batch <channel> <voltage> [<channel> <voltage> ...]
+ *     - Atomically queue one to six prepared output updates in argument order.
  */
 static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
 {
@@ -752,6 +754,8 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "Usage:\r\n" );
         CONSOLE_Printf( "  anlg_out config\r\n" );
         CONSOLE_Printf( "  anlg_out <channel 0-5> <voltage 0-20V>\r\n" );
+        CONSOLE_Printf(
+            "  anlg_out batch <channel 0-5> <voltage 0-20V> [<channel> <voltage> ...]\r\n" );
         return;
     }
 
@@ -760,6 +764,8 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "Usage:\r\n" );
         CONSOLE_Printf( "  anlg_out config\r\n" );
         CONSOLE_Printf( "  anlg_out <channel 0-5> <voltage 0-20V>\r\n" );
+        CONSOLE_Printf(
+            "  anlg_out batch <channel 0-5> <voltage 0-20V> [<channel> <voltage> ...]\r\n" );
         return;
     }
 
@@ -779,6 +785,80 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
         }
 
         CONSOLE_Printf( "DAC configured to use VDD as reference\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "batch" ) == 0 )
+    {
+        AnalogueOutputPreparedBatch_T prepared_batch;
+        uint16_t                      pair_count;
+
+        if ( ( argc < 4U ) || ( ( argc - 2U ) % 2U != 0U ) )
+        {
+            CONSOLE_Printf( "Usage: anlg_out batch <channel 0-5> <voltage 0-20V> [<channel> "
+                            "<voltage> ...]\r\n" );
+            return;
+        }
+
+        pair_count = ( uint16_t )( ( argc - 2U ) / 2U );
+        if ( pair_count > EXEC_ANALOG_OUTPUT_BATCH_MAX_FRAMES )
+        {
+            CONSOLE_Printf( "Too many analogue outputs (maximum 6)\r\n" );
+            return;
+        }
+
+        if ( !EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) )
+        {
+            CONSOLE_Printf( "Failed to initialize analogue output batch\r\n" );
+            return;
+        }
+
+        for ( uint16_t pair_index = 0U; pair_index < pair_count; pair_index++ )
+        {
+            const uint16_t argument_index = ( uint16_t )( 2U + ( pair_index * 2U ) );
+            char*          channel_end    = NULL;
+            char*          voltage_end    = NULL;
+            long           channel        = strtol( argv[argument_index], &channel_end, 10 );
+            float          voltage        = strtof( argv[argument_index + 1U], &voltage_end );
+            AnalogueOutputPreparedFrame_T prepared_frame;
+
+            if ( ( channel_end == argv[argument_index] ) || ( *channel_end != '\0' )
+                 || ( channel < 0L ) || ( channel > 5L ) )
+            {
+                CONSOLE_Printf( "Invalid channel at batch position %u\r\n",
+                                ( unsigned int )( pair_index + 1U ) );
+                return;
+            }
+
+            if ( ( voltage_end == argv[argument_index + 1U] ) || ( *voltage_end != '\0' )
+                 || !EXEC_ANALOG_OUTPUT_Prepare_Frame( ( uint8_t )channel, voltage,
+                                                       &prepared_frame ) )
+            {
+                CONSOLE_Printf( "Invalid voltage at batch position %u\r\n",
+                                ( unsigned int )( pair_index + 1U ) );
+                return;
+            }
+
+            if ( !EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &prepared_frame ) )
+            {
+                CONSOLE_Printf( "Failed to prepare analogue output batch\r\n" );
+                return;
+            }
+        }
+
+        if ( !EXEC_ANALOG_OUTPUT_Is_Configured() )
+        {
+            CONSOLE_Printf( "DAC module not configured. Run 'anlg_out config' first.\r\n" );
+            return;
+        }
+
+        if ( !EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) )
+        {
+            CONSOLE_Printf( "Failed to submit analogue output batch\r\n" );
+            return;
+        }
+
+        CONSOLE_Printf( "Submitted %u analogue output updates\r\n", ( unsigned int )pair_count );
         return;
     }
 
