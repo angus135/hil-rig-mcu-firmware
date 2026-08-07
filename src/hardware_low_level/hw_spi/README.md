@@ -68,7 +68,8 @@ application-level transaction semantics, or decide whether a particular device c
 
 ## Public API model
 
-The public data path is intentionally mode-agnostic:
+The public API keeps the existing mode-agnostic single-buffer data path and adds one master-only
+atomic packet-loading operation:
 
 ```c
 bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configuration );
@@ -79,7 +80,11 @@ HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIChannel_T peripheral );
 void HW_SPI_Rx_Consume( SPIChannel_T peripheral, uint32_t bytes_to_consume );
 
 bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32_t size );
+bool HW_SPI_Load_Tx_Packets( SPIChannel_T peripheral, const uint8_t* data,
+                             uint32_t packet_size_bytes, uint32_t packet_count );
 void HW_SPI_Tx_Trigger( SPIChannel_T peripheral );
+bool HW_SPI_Tx_Is_Complete( SPIChannel_T peripheral );
+bool HW_SPI_Tx_Is_Faulted( SPIChannel_T peripheral );
 ```
 
 The same TX load and trigger calls are used for master and slave mode, but the internal behaviour is
@@ -239,6 +244,11 @@ drain automatically through the DMA-completion/final-drain chain.
 In master mode, every successful `HW_SPI_Load_Tx_Buffer()` call is treated as one logical packet.
 The packet bytes are copied into `tx_buffer`, and a descriptor is written into
 `tx_packet_descriptors`.
+
+`HW_SPI_Load_Tx_Packets()` provides the atomic fixed-size variant for contiguous source storage.
+It preflights byte space, descriptor space, alignment, and packet layout while the channel's TX DMA
+IRQ is disabled, then queues every packet or leaves the queue unchanged. It is rejected for slave
+channels.
 
 A master packet descriptor contains:
 
