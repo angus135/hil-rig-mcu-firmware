@@ -274,7 +274,7 @@ TEST_F( HWCANTest, TransmitFailsWhenMailboxBusy )
 
     uint8_t data[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
 
-    int result = HW_CAN_Transmit( &hcan1, data, 0x123, 8 );
+    int result = HW_CAN_Transmit1( data, 0x123, 8 );
 
     EXPECT_EQ( result, HW_CAN_RESULT_BUSY );
 }
@@ -289,7 +289,7 @@ TEST_F( HWCANTest, TransmitLoadsMailboxCorrectly )
 
     uint16_t id = 0x123;
 
-    int result = HW_CAN_Transmit( &hcan1, data, id, 8 );
+    int result = HW_CAN_Transmit1( data, id, 8 );
 
     EXPECT_EQ( result, 0 );
 
@@ -314,7 +314,7 @@ TEST_F( HWCANTest, TransmitSupportsClassicalCANPayloadLengths )
         memset( &mock_can1_regs.sTxMailBox[0], 0xFF, sizeof( mock_can1_regs.sTxMailBox[0] ) );
         mock_can1_regs.TSR = CAN_TSR_TME0;
 
-        ASSERT_EQ( HW_CAN_Transmit( &hcan1, data, 0x123, dlc ), 0 );
+        ASSERT_EQ( HW_CAN_Transmit1( data, 0x123, dlc ), 0 );
         EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDTR, dlc );
 
         uint32_t expected_low  = 0;
@@ -341,7 +341,7 @@ TEST_F( HWCANTest, TransmitRejectsDLCAboveEight )
     mock_can1_regs.TSR = CAN_TSR_TME0;
     uint8_t data[8]    = {};
 
-    EXPECT_EQ( HW_CAN_Transmit( &hcan1, data, 0x123, 9 ), 1 );
+    EXPECT_EQ( HW_CAN_Transmit1( data, 0x123, 9 ), 1 );
     EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TIR, 0U );
 }
 
@@ -353,7 +353,7 @@ TEST_F( HWCANTest, TransmitClearsReusedMailboxForShortPayload )
     mock_can1_regs.sTxMailBox[0].TDHR = 0xFFFFFFFF;
     uint8_t data[3]                   = { 0x00, 0x10, 0x80 };
 
-    ASSERT_EQ( HW_CAN_Transmit( &hcan1, data, 0x123, 3 ), 0 );
+    ASSERT_EQ( HW_CAN_Transmit1( data, 0x123, 3 ), 0 );
 
     EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDLR, 0x00801000 );
     EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDHR, 0x00000000 );
@@ -367,7 +367,7 @@ TEST_F( HWCANTest, TransmitClearsReusedMailboxForLongPayload )
     mock_can1_regs.sTxMailBox[0].TDHR = 0xFFFFFFFF;
     uint8_t data[6]                   = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x00 };
 
-    ASSERT_EQ( HW_CAN_Transmit( &hcan1, data, 0x123, 6 ), 0 );
+    ASSERT_EQ( HW_CAN_Transmit1( data, 0x123, 6 ), 0 );
 
     EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDLR, 0x03020100 );
     EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TDHR, 0x00000004 );
@@ -380,7 +380,7 @@ TEST_F( HWCANTest, TransmitRejectsIDAbove11Bits )
 
     uint8_t data[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
 
-    int result = HW_CAN_Transmit( &hcan1, data, 0x800, 8 );
+    int result = HW_CAN_Transmit1( data, 0x800, 8 );
 
     EXPECT_EQ( result, 1 );
 }
@@ -394,12 +394,26 @@ TEST_F( HWCANTest, TransmitAcceptsMaximum11BitID )
 
     uint16_t id = 0x7FF;
 
-    int result = HW_CAN_Transmit( &hcan1, data, id, 8 );
+    int result = HW_CAN_Transmit1( data, id, 8 );
 
     EXPECT_EQ( result, 0 );
 
     EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TIR,
                ( static_cast<uint32_t>( id ) << 21 ) | CAN_TI0R_TXRQ );
+}
+
+/** Verify identifiers whose shifted value crosses signed-int range are encoded exactly. */
+TEST_F( HWCANTest, TransmitEncodesHighStandardIdentifiersWithUnsignedShift )
+{
+    uint8_t        data[1] = { 0xAAU };
+    const uint16_t ids[]   = { 0x400U, 0x7FFU };
+    for ( uint16_t id : ids )
+    {
+        mock_can1_regs.TSR = CAN_TSR_TME0;
+        ASSERT_EQ( HW_CAN_Transmit1( data, id, 1U ), HW_CAN_RESULT_OK );
+        EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TIR,
+                   ( static_cast<uint32_t>( id ) << 21U ) | CAN_TI0R_TXRQ );
+    }
 }
 
 /** Verify that standard identifier zero is accepted. */
@@ -408,7 +422,7 @@ TEST_F( HWCANTest, TransmitAcceptsZeroID )
     mock_can1_regs.TSR = CAN_TSR_TME0;
     uint8_t data[1]    = { 0xAA };
 
-    ASSERT_EQ( HW_CAN_Transmit( &hcan1, data, 0x000, 1 ), 0 );
+    ASSERT_EQ( HW_CAN_Transmit1( data, 0x000, 1 ), 0 );
     EXPECT_EQ( mock_can1_regs.sTxMailBox[0].TIR, CAN_TI0R_TXRQ );
 }
 
@@ -534,7 +548,7 @@ TEST_F( HWCANTest, ReceiveRejectsNullDestinationWithoutReleasingFIFO )
     CAN_FIFOMailBox_TypeDef original_fifo = mock_can1_regs.sFIFOMailBox[0];
     uint32_t                original_rf0r = mock_can1_regs.RF0R;
 
-    EXPECT_NE( HW_CAN_Recieve1( NULL ), 0 );
+    EXPECT_NE( HW_CAN_Receive1( NULL ), 0 );
     EXPECT_EQ( mock_can1_regs.RF0R, original_rf0r );
     EXPECT_EQ( memcmp( &mock_can1_regs.sFIFOMailBox[0], &original_fifo, sizeof( original_fifo ) ),
                0 );
@@ -652,7 +666,7 @@ TEST_F( HWCANTest, TxIRQDisablesInterruptWhenBufferEmpty )
     // check it disabled the interrupt
     EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
 
-    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_FALSE( HW_CAN_Channel1_Sent() );
 }
 
 /** Verify that the channel 1 TX interrupt handler loads a buffered packet into the CAN TX mailbox
@@ -788,16 +802,16 @@ TEST_F( HWCANTest, TXVectorsAdvanceBothChannelsAndMultiPacketSequence )
                ( static_cast<uint32_t>( 0x102 ) << 21 ) | CAN_TI0R_TXRQ );
     EXPECT_EQ( mock_can2_regs.sTxMailBox[0].TIR,
                ( static_cast<uint32_t>( 0x202 ) << 21 ) | CAN_TI0R_TXRQ );
-    EXPECT_FALSE( HW_CAN_Channl1_sent() );
-    EXPECT_FALSE( HW_CAN_Channl2_sent() );
+    EXPECT_FALSE( HW_CAN_Channel1_Sent() );
+    EXPECT_FALSE( HW_CAN_Channel2_Sent() );
 
     mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
     mock_can2_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
     CAN1_TX_IRQHandler();
     CAN2_TX_IRQHandler();
 
-    EXPECT_TRUE( HW_CAN_Channl1_sent() );
-    EXPECT_TRUE( HW_CAN_Channl2_sent() );
+    EXPECT_TRUE( HW_CAN_Channel1_Sent() );
+    EXPECT_TRUE( HW_CAN_Channel2_Sent() );
 }
 
 /** Verify that clearing mailbox 0 completion leaves unrelated mailbox 1 status untouched. */
@@ -814,7 +828,7 @@ TEST_F( HWCANTest, TXVectorClearsOnlyCompletedMailboxStatus )
 
     EXPECT_EQ( mock_can1_regs.TSR & ( CAN_TSR_RQCP0 | CAN_TSR_TXOK0 ), 0U );
     EXPECT_EQ( mock_can1_regs.TSR & unrelated_status, unrelated_status );
-    EXPECT_TRUE( HW_CAN_Channl1_sent() );
+    EXPECT_TRUE( HW_CAN_Channel1_Sent() );
 }
 
 /** Verify that arbitration loss and transmit errors cannot complete a buffered batch. */
@@ -835,7 +849,7 @@ TEST_F( HWCANTest, TXVectorDoesNotCompleteBatchAfterHardwareError )
         CAN1_TX_IRQHandler();
 
         EXPECT_FALSE( can_tx_active1 );
-        EXPECT_FALSE( HW_CAN_Channl1_sent() );
+        EXPECT_FALSE( HW_CAN_Channel1_Sent() );
         EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_ERROR );
         EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
         EXPECT_EQ( mock_can1_regs.TSR & ( CAN_TSR_RQCP0 | error_flag ), 0U );
@@ -954,6 +968,29 @@ TEST_F( HWCANTest, TxBufferWriteFailsWhenFull )
 
     /* Next write should fail */
     EXPECT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), 1 );
+}
+
+/** Verify queue cancellation discards only queued channel 1 TX packets. */
+TEST_F( HWCANTest, TxBufferCancelDiscardsQueuedPacketsWithoutResettingOtherState )
+{
+    CAN_Packet_T packets[2] = {
+        { .id = 0x123U, .dlc = 1U, .data = { 1U } },
+        { .id = 0x456U, .dlc = 1U, .data = { 2U } },
+    };
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packets, 2U ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write2( packets, 1U ), HW_CAN_RESULT_OK );
+    can_rx_wp1            = 3U;
+    can_rx_dropped_count1 = 4U;
+    can_tx_status1        = HW_CAN_TX_STATUS_COMPLETE;
+
+    HW_CAN_Tx_Buffer_Cancel1();
+
+    EXPECT_EQ( can_tx_wp1, can_tx_rp1 );
+    EXPECT_NE( can_tx_wp2, can_tx_rp2 );
+    EXPECT_EQ( can_rx_wp1, 3U );
+    EXPECT_EQ( can_rx_dropped_count1, 4U );
+    EXPECT_EQ( can_tx_status1, HW_CAN_TX_STATUS_COMPLETE );
+    EXPECT_TRUE( nvic_irq_enabled[CAN1_TX_IRQn] );
 }
 
 /** Verify that the RX ring buffer rejects a write once its usable capacity is exhausted. */
@@ -1328,9 +1365,9 @@ TEST_F( HWCANTest, ChannelConfigurationResetsSoftwareState )
 /** Verify that both channel sent flags are cleared at the start of a test. */
 TEST_F( HWCANTest, SentFlagStartsFalse )
 {
-    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_FALSE( HW_CAN_Channel1_Sent() );
 
-    EXPECT_FALSE( HW_CAN_Channl2_sent() );
+    EXPECT_FALSE( HW_CAN_Channel2_Sent() );
     EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_IDLE );
     EXPECT_EQ( HW_CAN_Tx_Status2(), HW_CAN_TX_STATUS_IDLE );
 }
@@ -1349,7 +1386,7 @@ TEST_F( HWCANTest, SCEVectorChangesActiveBatchToErrorAndClearsFlags )
 
     EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_ERROR );
     EXPECT_FALSE( can_tx_active1 );
-    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_FALSE( HW_CAN_Channel1_Sent() );
     EXPECT_EQ( mock_can1_regs.MSR & CAN_MSR_ERRI, 0U );
     EXPECT_EQ( mock_can1_regs.ESR & CAN_ESR_LEC, 0U );
     EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
@@ -1364,7 +1401,7 @@ TEST_F( HWCANTest, SCEVectorRecordsBusOffAsError )
     CAN2_SCE_IRQHandler();
 
     EXPECT_EQ( HW_CAN_Tx_Status2(), HW_CAN_TX_STATUS_ERROR );
-    EXPECT_FALSE( HW_CAN_Channl2_sent() );
+    EXPECT_FALSE( HW_CAN_Channel2_Sent() );
     EXPECT_EQ( mock_can2_regs.MSR & CAN_MSR_ERRI, 0U );
 }
 
@@ -1390,7 +1427,7 @@ TEST_F( HWCANTest, RecoveryClearsFailedWorkAndAllowsSubsequentTransmission )
     ASSERT_EQ( HW_CAN_Recover1(), HW_CAN_RESULT_OK );
 
     EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_IDLE );
-    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_FALSE( HW_CAN_Channel1_Sent() );
     EXPECT_EQ( can_tx_wp1, 0U );
     EXPECT_EQ( can_tx_rp1, 0U );
     EXPECT_EQ( can_tx_pending_mailbox1, 0U );
@@ -1409,7 +1446,7 @@ TEST_F( HWCANTest, RecoveryClearsFailedWorkAndAllowsSubsequentTransmission )
     mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME;
     CAN1_TX_IRQHandler();
     EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_COMPLETE );
-    EXPECT_TRUE( HW_CAN_Channl1_sent() );
+    EXPECT_TRUE( HW_CAN_Channel1_Sent() );
 }
 
 /** Verify that a failed stop keeps the channel in error and reports recovery failure. */
@@ -1421,7 +1458,7 @@ TEST_F( HWCANTest, RecoveryFailureDoesNotReportIdleOrComplete )
 
     EXPECT_EQ( HW_CAN_Recover2(), HW_CAN_RESULT_ERROR );
     EXPECT_EQ( HW_CAN_Tx_Status2(), HW_CAN_TX_STATUS_ERROR );
-    EXPECT_FALSE( HW_CAN_Channl2_sent() );
+    EXPECT_FALSE( HW_CAN_Channel2_Sent() );
 }
 
 /** Verify that direct transmission cannot overwrite an active buffered batch. */
@@ -1475,16 +1512,16 @@ TEST_F( HWCANTest, BufferedTriggerClearsStaleDirectCompletionStatus )
 
     EXPECT_EQ( mock_can2_regs.TSR & ( CAN_TSR_RQCP0 | CAN_TSR_TXOK0 ), 0U );
     EXPECT_EQ( HW_CAN_Tx_Status2(), HW_CAN_TX_STATUS_ACTIVE );
-    EXPECT_FALSE( HW_CAN_Channl2_sent() );
+    EXPECT_FALSE( HW_CAN_Channel2_Sent() );
 
     CAN2_TX_IRQHandler();
     EXPECT_EQ( HW_CAN_Tx_Status2(), HW_CAN_TX_STATUS_ACTIVE );
-    EXPECT_FALSE( HW_CAN_Channl2_sent() );
+    EXPECT_FALSE( HW_CAN_Channel2_Sent() );
 
     mock_can2_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME;
     CAN2_TX_IRQHandler();
     EXPECT_EQ( HW_CAN_Tx_Status2(), HW_CAN_TX_STATUS_COMPLETE );
-    EXPECT_TRUE( HW_CAN_Channl2_sent() );
+    EXPECT_TRUE( HW_CAN_Channel2_Sent() );
 }
 
 /** Verify that one batch becomes active on trigger and complete only after hardware completion. */
@@ -1496,14 +1533,14 @@ TEST_F( HWCANTest, BatchTransitionsFromActiveToCompleted )
     ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_OK );
     ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
     EXPECT_TRUE( can_tx_active1 );
-    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_FALSE( HW_CAN_Channel1_Sent() );
     EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_ACTIVE );
 
     mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
     CAN1_TX_IRQHandler();
 
     EXPECT_FALSE( can_tx_active1 );
-    EXPECT_TRUE( HW_CAN_Channl1_sent() );
+    EXPECT_TRUE( HW_CAN_Channel1_Sent() );
     EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_COMPLETE );
     EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
 }
@@ -1518,13 +1555,13 @@ TEST_F( HWCANTest, StartingSecondBatchClearsCompletedState )
     ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
     mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
     CAN1_TX_IRQHandler();
-    ASSERT_TRUE( HW_CAN_Channl1_sent() );
+    ASSERT_TRUE( HW_CAN_Channel1_Sent() );
 
     ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_OK );
     ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
 
     EXPECT_TRUE( can_tx_active1 );
-    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_FALSE( HW_CAN_Channel1_Sent() );
 }
 
 /** Verify that retriggering an active batch returns busy without changing its queue state. */
@@ -1543,7 +1580,7 @@ TEST_F( HWCANTest, TriggerWhileActiveReturnsBusy )
     EXPECT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_BUSY );
     EXPECT_EQ( can_tx_rp1, read_position );
     EXPECT_TRUE( can_tx_active1 );
-    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_FALSE( HW_CAN_Channel1_Sent() );
 }
 
 /** Verify that loading a new batch while transmission is active returns busy. */
@@ -1566,7 +1603,7 @@ TEST_F( HWCANTest, EmptyTriggerReturnsEmpty )
 {
     EXPECT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_EMPTY );
     EXPECT_FALSE( can_tx_active1 );
-    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_FALSE( HW_CAN_Channel1_Sent() );
     EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
 }
 
@@ -1580,18 +1617,18 @@ TEST_F( HWCANTest, MailboxBusyDoesNotConsumeQueuedPacket )
     ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
     EXPECT_EQ( can_tx_rp1, 0 );
     EXPECT_TRUE( can_tx_active1 );
-    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_FALSE( HW_CAN_Channel1_Sent() );
 
     mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
     CAN1_TX_IRQHandler();
 
     EXPECT_EQ( can_tx_rp1, 1 );
     EXPECT_TRUE( can_tx_active1 );
-    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_FALSE( HW_CAN_Channel1_Sent() );
 
     mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
     CAN1_TX_IRQHandler();
-    EXPECT_TRUE( HW_CAN_Channl1_sent() );
+    EXPECT_TRUE( HW_CAN_Channel1_Sent() );
 }
 
 /** Verify that an unexpected invalid queued frame is retained and never reported complete. */
@@ -1605,7 +1642,7 @@ TEST_F( HWCANTest, InvalidQueuedFrameIsNotSilentlyDiscarded )
     EXPECT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_ERROR );
     EXPECT_EQ( can_tx_rp1, 0 );
     EXPECT_FALSE( can_tx_active1 );
-    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_FALSE( HW_CAN_Channel1_Sent() );
     EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
 }
 
@@ -1620,15 +1657,15 @@ TEST_F( HWCANTest, MultiFrameBatchCompletesOnlyAfterFinalHardwareEvent )
 
     ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packets, 2 ), HW_CAN_RESULT_OK );
     ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
-    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_FALSE( HW_CAN_Channel1_Sent() );
 
     mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
     CAN1_TX_IRQHandler();
     EXPECT_TRUE( can_tx_active1 );
-    EXPECT_FALSE( HW_CAN_Channl1_sent() );
+    EXPECT_FALSE( HW_CAN_Channel1_Sent() );
 
     mock_can1_regs.TSR = CAN_TSR_RQCP0 | CAN_TSR_TXOK0 | CAN_TSR_TME0;
     CAN1_TX_IRQHandler();
     EXPECT_FALSE( can_tx_active1 );
-    EXPECT_TRUE( HW_CAN_Channl1_sent() );
+    EXPECT_TRUE( HW_CAN_Channel1_Sent() );
 }

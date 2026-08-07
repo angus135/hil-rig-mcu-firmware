@@ -28,7 +28,6 @@
 #include "exec_analogue_output.h"
 #include "exec_uart.h"
 #include "hw_adc.h"
-#include "hw_can.h"
 #include "exec_digital_input.h"
 #include "hw_spi.h"
 #include "hw_usb.h"
