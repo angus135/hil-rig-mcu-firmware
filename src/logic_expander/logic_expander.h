@@ -127,7 +127,8 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void );
  * The background task calls this every 10 ms. It resumes queue submission and
  * observes physical completion without waiting or busy-spinning. Output writes
  * that fail after being accepted are automatically resubmitted on a later call
- * using the most recent explicitly submitted snapshot.
+ * using the most recent explicitly submitted snapshot. A transaction batch that
+ * does not complete within 100 ms is recovered and reported as an error.
  */
 LogicExpanderStatus_T LOGIC_EXPANDER_Process( void );
 

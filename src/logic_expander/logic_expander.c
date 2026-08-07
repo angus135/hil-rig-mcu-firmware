@@ -19,6 +19,7 @@
 #define LOGIC_EXPANDER_INTERNAL_FMPI2C1_OWN_ADDRESS_7BIT ( 0x33U )
 #define LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK ( 0x01U )
 #define LOGIC_EXPANDER_CONFIG_WRITE_COUNT ( 8U )
+#define LOGIC_EXPANDER_TRANSACTION_TIMEOUT_MS ( 100U )
 
 #define MCP23017_REG_IODIRA ( 0x00U )
 #define MCP23017_REG_IPOLA ( 0x02U )
@@ -114,12 +115,47 @@ static uint8_t              logic_expander_retry_bitmask   = 0U;
 static LogicExpanderConfigState_T logic_expander_config_state = LOGIC_EXPANDER_CONFIG_NOT_STARTED;
 static uint8_t                    logic_expander_config_index = 0U;
 static uint8_t                    logic_expander_config_write = 0U;
-static SemaphoreHandle_t          logic_expander_mutex        = NULL;
+static bool                       logic_expander_deadline_active        = false;
+static TickType_t                 logic_expander_transaction_start_tick = 0U;
+static SemaphoreHandle_t          logic_expander_mutex                  = NULL;
 static StaticSemaphore_t          logic_expander_mutex_storage;
 
 static LogicExpanderStatus_T LOGIC_EXPANDER_Process_Locked( void );
 static LogicExpanderStatus_T LOGIC_EXPANDER_Enqueue_Control_Bits( uint8_t* source_bitmask,
                                                                   bool     is_retry );
+
+static void LOGIC_EXPANDER_Arm_Transaction_Deadline( void )
+{
+    if ( !logic_expander_deadline_active )
+    {
+        logic_expander_transaction_start_tick = xTaskGetTickCount();
+        logic_expander_deadline_active        = true;
+    }
+}
+
+static void LOGIC_EXPANDER_Disarm_Transaction_Deadline( void )
+{
+    logic_expander_deadline_active = false;
+}
+
+static bool LOGIC_EXPANDER_Transaction_Deadline_Expired( void )
+{
+    if ( !logic_expander_deadline_active )
+    {
+        return false;
+    }
+
+    const TickType_t elapsed_ticks =
+        ( TickType_t )( xTaskGetTickCount() - logic_expander_transaction_start_tick );
+    return elapsed_ticks >= pdMS_TO_TICKS( LOGIC_EXPANDER_TRANSACTION_TIMEOUT_MS );
+}
+
+static void LOGIC_EXPANDER_Recover_Timed_Out_Channel( void )
+{
+    ( void )HW_I2C_Recover_Channel( HW_I2C_CHANNEL_FMPI2C1 );
+    ( void )HW_I2C_Get_And_Clear_Transfer_Result( HW_I2C_CHANNEL_FMPI2C1 );
+    LOGIC_EXPANDER_Disarm_Transaction_Deadline();
+}
 
 static bool LOGIC_EXPANDER_Lock( void )
 {
@@ -280,6 +316,7 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Queue_Config_Writes( void )
             return status;
         }
 
+        LOGIC_EXPANDER_Arm_Transaction_Deadline();
         logic_expander_config_write++;
         if ( logic_expander_config_write >= LOGIC_EXPANDER_CONFIG_WRITE_COUNT )
         {
@@ -330,9 +367,10 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config_Locked( void )
     logic_expander_dirty_bitmask   = 0U;
     logic_expander_pending_bitmask = 0U;
     logic_expander_retry_bitmask   = 0U;
-    logic_expander_config_index    = 0U;
-    logic_expander_config_write    = 0U;
-    logic_expander_config_state    = LOGIC_EXPANDER_CONFIG_QUEUING;
+    LOGIC_EXPANDER_Disarm_Transaction_Deadline();
+    logic_expander_config_index = 0U;
+    logic_expander_config_write = 0U;
+    logic_expander_config_state = LOGIC_EXPANDER_CONFIG_QUEUING;
     return LOGIC_EXPANDER_Process_Locked();
 }
 
@@ -354,6 +392,14 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Process_Locked( void )
         const LogicExpanderStatus_T queue_status = LOGIC_EXPANDER_Queue_Config_Writes();
         if ( queue_status != LOGIC_EXPANDER_STATUS_OK )
         {
+            if ( ( queue_status == LOGIC_EXPANDER_STATUS_BUSY )
+                 && LOGIC_EXPANDER_Transaction_Deadline_Expired() )
+            {
+                LOGIC_EXPANDER_Recover_Timed_Out_Channel();
+                logic_expander_config_state = LOGIC_EXPANDER_CONFIG_FAILED;
+                logic_expander_ready        = false;
+                return LOGIC_EXPANDER_STATUS_ERROR;
+            }
             return queue_status;
         }
     }
@@ -362,9 +408,17 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Process_Locked( void )
     {
         if ( !HW_I2C_Is_Transaction_Queue_Complete( HW_I2C_CHANNEL_FMPI2C1 ) )
         {
+            if ( LOGIC_EXPANDER_Transaction_Deadline_Expired() )
+            {
+                LOGIC_EXPANDER_Recover_Timed_Out_Channel();
+                logic_expander_config_state = LOGIC_EXPANDER_CONFIG_FAILED;
+                logic_expander_ready        = false;
+                return LOGIC_EXPANDER_STATUS_ERROR;
+            }
             return LOGIC_EXPANDER_STATUS_BUSY;
         }
 
+        LOGIC_EXPANDER_Disarm_Transaction_Deadline();
         const HWI2CStatus_T transfer_result =
             HW_I2C_Get_And_Clear_Transfer_Result( HW_I2C_CHANNEL_FMPI2C1 );
         if ( transfer_result != HW_I2C_STATUS_OK )
@@ -385,9 +439,18 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Process_Locked( void )
         {
             if ( !HW_I2C_Is_Transaction_Queue_Complete( HW_I2C_CHANNEL_FMPI2C1 ) )
             {
+                if ( LOGIC_EXPANDER_Transaction_Deadline_Expired() )
+                {
+                    const uint8_t timed_out_bitmask = logic_expander_pending_bitmask;
+                    LOGIC_EXPANDER_Recover_Timed_Out_Channel();
+                    logic_expander_retry_bitmask |= timed_out_bitmask;
+                    logic_expander_pending_bitmask = 0U;
+                    return LOGIC_EXPANDER_STATUS_ERROR;
+                }
                 return LOGIC_EXPANDER_STATUS_OK;
             }
 
+            LOGIC_EXPANDER_Disarm_Transaction_Deadline();
             const HWI2CStatus_T transfer_result =
                 HW_I2C_Get_And_Clear_Transfer_Result( HW_I2C_CHANNEL_FMPI2C1 );
             if ( transfer_result != HW_I2C_STATUS_OK )
@@ -465,6 +528,7 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Enqueue_Control_Bits( uint8_t* sourc
             return status;
         }
 
+        LOGIC_EXPANDER_Arm_Transaction_Deadline();
         if ( !is_retry )
         {
             logic_expander_submitted_state[idx] = logic_expander_state[idx];
