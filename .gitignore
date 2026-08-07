@@ -3,6 +3,9 @@ build/
 .codex/
 .cache/
 .agents/
+.idea/
+
+cmake-build*/
 
 # Ignore Unnecessary Cube IDE Generated files and directories
 .metadata/
