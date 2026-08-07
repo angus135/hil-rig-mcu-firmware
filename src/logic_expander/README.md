@@ -35,9 +35,12 @@ and queueing a fresh configuration sequence.
 The background task calls `LOGIC_EXPANDER_Process()` every 10 ms. It resumes
 partial queue submission, services deferred I2C progress, and observes physical
 queue completion. The module becomes ready only after the final STOP and an `OK`
-latched transfer result. A later asynchronous error leaves configuration not
-ready. There is no CPU busy-retry loop. Explicit console calls are harmless
-because they use the same mutex.
+latched transfer result. Configuration and control-write batches have a 100 ms
+deadline measured from the first accepted transaction. A stalled batch recovers
+FMPI2C1 instead of waiting indefinitely. A timed-out configuration remains not
+ready and can be restarted with `LOGIC_EXPANDER_Self_Config()`. There is no CPU
+busy-retry loop. Explicit console calls are harmless because they use the same
+mutex.
 
 ## Dirty shadow writes
 
@@ -58,8 +61,9 @@ move to retry state. A later background tick resubmits their retained snapshots;
 `BUSY` leaves the retry scheduled for another tick. A newer shadow change remains
 dirty and is not sent by this automatic path. If a newer value is explicitly
 accepted while an older write is pending, its snapshot supersedes the older one
-for any later retry. A successful send return therefore means all dirty writes
-were accepted, not that they have physically completed.
+for any later retry. A timed-out control-write batch follows the same retry path
+after channel recovery. A successful send return therefore means all dirty
+writes were accepted, not that they have physically completed.
 
 ## Typical flow
 
