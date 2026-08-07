@@ -717,6 +717,91 @@ TEST_F( HWSpiMasterTxTest, LoadTxPackets_QueuesElevenSeparateThreeByteDescriptor
         0 );
 }
 
+TEST_F( HWSpiMasterTxTest, LoadTxPackets_AppendsAfterActivePacketAndTransmitsInOrder )
+{
+    const std::array<uint8_t, 3U> active_packet  = { 0x10U, 0x11U, 0x12U };
+    const std::array<uint8_t, 9U> queued_packets = { 0x20U, 0x21U, 0x22U, 0x30U, 0x31U,
+                                                     0x32U, 0x40U, 0x41U, 0x42U };
+    SPIPeripheralState_T*         state          = HW_SPI_STATE( SPI_CHANNEL_0 );
+
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    ASSERT_TRUE(
+        HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, active_packet.data(), active_packet.size() ) );
+    testing::Mock::VerifyAndClearExpectations( &mock );
+
+    {
+        InSequence sequence;
+        EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+        ExpectChannel0DmaProgram( &state->tx_buffer[0], active_packet.size() );
+        EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    }
+    HW_SPI_Tx_Trigger( SPI_CHANNEL_0 );
+    testing::Mock::VerifyAndClearExpectations( &mock );
+
+    ASSERT_EQ( state->tx_transaction_state, HW_SPI_TX_TRANSACTION_DMA_ACTIVE );
+    ASSERT_EQ( state->tx_read_position, active_packet.size() );
+    ASSERT_EQ( state->tx_write_position, state->tx_read_position );
+    ASSERT_EQ( state->tx_num_bytes_in_transmission, active_packet.size() );
+
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    ASSERT_TRUE(
+        HW_SPI_Load_Tx_Packets( SPI_CHANNEL_0, queued_packets.data(), active_packet.size(), 3U ) );
+    testing::Mock::VerifyAndClearExpectations( &mock );
+
+    EXPECT_EQ( memcmp( state->tx_buffer, active_packet.data(), active_packet.size() ), 0 );
+    ASSERT_EQ( state->tx_num_packets_pending, 3U );
+    ASSERT_EQ( state->tx_num_bytes_pending, queued_packets.size() );
+    for ( uint32_t packet_index = 0U; packet_index < 3U; packet_index++ )
+    {
+        const SPITxPacketDescriptor_T& descriptor = state->tx_packet_descriptors[packet_index + 1U];
+        const uint32_t                 expected_start =
+            static_cast<uint32_t>( active_packet.size() * ( packet_index + 1U ) );
+
+        EXPECT_EQ( descriptor.start_index, expected_start );
+        EXPECT_EQ( descriptor.size_bytes, active_packet.size() );
+        EXPECT_EQ( memcmp( &state->tx_buffer[expected_start],
+                           &queued_packets[packet_index * active_packet.size()],
+                           active_packet.size() ),
+                   0 );
+    }
+
+    for ( uint32_t completed_packet = 0U; completed_packet < 4U; completed_packet++ )
+    {
+        InSequence sequence;
+        EXPECT_CALL( mock, DMAIsActiveFlagTE5( Eq( SPI_CHANNEL_0_TX_DMA ) ) )
+            .WillOnce( Return( 0U ) );
+        EXPECT_CALL( mock, DMAIsActiveFlagTC5( Eq( SPI_CHANNEL_0_TX_DMA ) ) )
+            .WillOnce( Return( 1U ) );
+        EXPECT_CALL( mock, DMAClearFlagTC5( Eq( SPI_CHANNEL_0_TX_DMA ) ) );
+        EXPECT_CALL( mock, SPIDisableDMAReqTX( Eq( SPI_CHANNEL_0_INSTANCE ) ) );
+        EXPECT_CALL( mock, SPIIsBusy( Eq( SPI_CHANNEL_0_INSTANCE ) ) ).WillOnce( Return( 0U ) );
+        if ( completed_packet < 3U )
+        {
+            const uint32_t next_start =
+                static_cast<uint32_t>( active_packet.size() * ( completed_packet + 1U ) );
+            ExpectChannel0DmaProgram( &state->tx_buffer[next_start], active_packet.size() );
+        }
+
+        SPI_CHANNEL_0_TX_DMA_IRQ();
+        testing::Mock::VerifyAndClearExpectations( &mock );
+    }
+
+    EXPECT_EQ( state->tx_transaction_state, HW_SPI_TX_TRANSACTION_IDLE );
+    EXPECT_EQ( state->tx_num_packets_pending, 0U );
+    EXPECT_EQ( state->tx_num_bytes_pending, 0U );
+    EXPECT_EQ( state->tx_num_bytes_in_transmission, 0U );
+
+    ASSERT_EQ( gpio_events.size(), 12U );
+    for ( uint32_t packet_index = 0U; packet_index < 4U; packet_index++ )
+    {
+        EXPECT_EQ( gpio_events[packet_index * 3U].kind, GPIOEventKind::RESET_LOW );
+        EXPECT_EQ( gpio_events[packet_index * 3U + 1U].kind, GPIOEventKind::DMA_ARM );
+        EXPECT_EQ( gpio_events[packet_index * 3U + 2U].kind, GPIOEventKind::SET_HIGH );
+    }
+}
+
 TEST_F( HWSpiMasterTxTest, LoadTxPackets_InsufficientByteCapacityLeavesQueueUnchanged )
 {
     const uint8_t         packets[6] = { 1U, 2U, 3U, 4U, 5U, 6U };

@@ -269,7 +269,7 @@ bool HW_SPI_TX_Load_Master_Packets( SPIPeripheralState_T* peripheral_state, cons
             {
                 contiguous_free = peripheral_state->tx_read_position - candidate_write_position;
             }
-            else if ( candidate_write_position > peripheral_state->tx_read_position
+            else if ( candidate_write_position >= peripheral_state->tx_read_position
                       || HW_SPI_TX_Get_Used_Space_Fast( peripheral_state ) + queued_bytes == 0U )
             {
                 contiguous_free = TX_BUFFER_SIZE_BYTES - candidate_write_position;
