@@ -24,6 +24,7 @@
 #define HW_SPI_INTERNAL
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
+#include <array>
 #include <vector>
 
 extern "C"
@@ -687,6 +688,98 @@ TEST_F( HWSpiMasterTxTest, LoadTxBuffer_MasterRejectsWhenDescriptorQueueIsFull )
     EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
 
     EXPECT_FALSE( HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, &one_byte, 1U ) );
+}
+
+TEST_F( HWSpiMasterTxTest, LoadTxPackets_QueuesElevenSeparateThreeByteDescriptorsInOrder )
+{
+    std::array<uint8_t, 33U> startup_bytes = {};
+    for ( size_t index = 0U; index < startup_bytes.size(); index++ )
+    {
+        startup_bytes[index] = static_cast<uint8_t>( index );
+    }
+
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_DAC_TX_DMA_IRQN ) );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_DAC_TX_DMA_IRQN ) );
+
+    ASSERT_TRUE( HW_SPI_Load_Tx_Packets( SPI_DAC, startup_bytes.data(), 3U, 11U ) );
+
+    EXPECT_EQ( HW_SPI_STATE( SPI_DAC )->tx_num_packets_pending, 11U );
+    EXPECT_EQ( HW_SPI_STATE( SPI_DAC )->tx_num_bytes_pending, startup_bytes.size() );
+    for ( uint32_t packet_index = 0U; packet_index < 11U; packet_index++ )
+    {
+        const SPITxPacketDescriptor_T& descriptor =
+            HW_SPI_STATE( SPI_DAC )->tx_packet_descriptors[packet_index];
+        EXPECT_EQ( descriptor.start_index, packet_index * 3U );
+        EXPECT_EQ( descriptor.size_bytes, 3U );
+    }
+    EXPECT_EQ(
+        memcmp( HW_SPI_STATE( SPI_DAC )->tx_buffer, startup_bytes.data(), startup_bytes.size() ),
+        0 );
+}
+
+TEST_F( HWSpiMasterTxTest, LoadTxPackets_InsufficientByteCapacityLeavesQueueUnchanged )
+{
+    const uint8_t         packets[6] = { 1U, 2U, 3U, 4U, 5U, 6U };
+    SPIPeripheralState_T* state      = HW_SPI_STATE( SPI_CHANNEL_0 );
+    state->tx_write_position         = TX_BUFFER_SIZE_BYTES - 4U;
+    state->tx_num_bytes_pending      = TX_BUFFER_SIZE_BYTES - 4U;
+    memset( state->tx_buffer, 0xA5, sizeof( state->tx_buffer ) );
+
+    const SPIPeripheralState_T before = *state;
+
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+
+    EXPECT_FALSE( HW_SPI_Load_Tx_Packets( SPI_CHANNEL_0, packets, 3U, 2U ) );
+    EXPECT_EQ( memcmp( state, &before, sizeof( before ) ), 0 );
+}
+
+TEST_F( HWSpiMasterTxTest, LoadTxPackets_InsufficientDescriptorCapacityLeavesQueueUnchanged )
+{
+    const uint8_t         packets[6] = { 1U, 2U, 3U, 4U, 5U, 6U };
+    SPIPeripheralState_T* state      = HW_SPI_STATE( SPI_CHANNEL_0 );
+    state->tx_num_packets_pending    = TX_PACKET_QUEUE_DEPTH - 1U;
+
+    const SPIPeripheralState_T before = *state;
+
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+
+    EXPECT_FALSE( HW_SPI_Load_Tx_Packets( SPI_CHANNEL_0, packets, 3U, 2U ) );
+    EXPECT_EQ( memcmp( state, &before, sizeof( before ) ), 0 );
+}
+
+TEST_F( HWSpiMasterTxTest, LoadTxPackets_RejectsZeroUnalignedInvalidAndSlaveRequests )
+{
+    const uint8_t packets[4] = { 1U, 2U, 3U, 4U };
+    InitialiseState( HW_SPI_STATE( SPI_CHANNEL_1 ), SPI_CHANNEL_1,
+                     MakeMasterConfig( SPI_SIZE_16_BIT ), SPI_CHANNEL_1_RX_DMA,
+                     SPI_CHANNEL_1_RX_DMA_STREAM, SPI_CHANNEL_1_TX_DMA, SPI_CHANNEL_1_TX_DMA_STREAM,
+                     SPI_CHANNEL_1_INSTANCE, SPI_CHANNEL_1_TX_DMA_IRQN, SPI_CHANNEL_1_TIMER );
+
+    EXPECT_FALSE( HW_SPI_Load_Tx_Packets( SPI_NUM_CHANNELS, packets, 2U, 1U ) );
+    EXPECT_FALSE( HW_SPI_Load_Tx_Packets( SPI_CHANNEL_0, nullptr, 1U, 1U ) );
+    EXPECT_FALSE( HW_SPI_Load_Tx_Packets( SPI_CHANNEL_0, packets, 0U, 1U ) );
+    EXPECT_FALSE( HW_SPI_Load_Tx_Packets( SPI_CHANNEL_0, packets, 1U, 0U ) );
+
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_1_TX_DMA_IRQN ) );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_1_TX_DMA_IRQN ) );
+    EXPECT_FALSE( HW_SPI_Load_Tx_Packets( SPI_CHANNEL_1, packets, 3U, 1U ) );
+
+    HW_SPI_STATE( SPI_CHANNEL_0 )->is_master = false;
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    EXPECT_FALSE( HW_SPI_Load_Tx_Packets( SPI_CHANNEL_0, packets, 2U, 2U ) );
+}
+
+TEST_F( HWSpiMasterTxTest, TxFaultQuery_DistinguishesBusyFromError )
+{
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
+    EXPECT_FALSE( HW_SPI_Tx_Is_Faulted( SPI_CHANNEL_0 ) );
+
+    HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state = HW_SPI_TX_TRANSACTION_ERROR;
+    EXPECT_TRUE( HW_SPI_Tx_Is_Faulted( SPI_CHANNEL_0 ) );
+    EXPECT_FALSE( HW_SPI_Tx_Is_Faulted( SPI_NUM_CHANNELS ) );
 }
 
 TEST_F( HWSpiMasterTxTest, TxTrigger_MasterStartsOnlyFirstQueuedPacketAndLeavesRestPending )

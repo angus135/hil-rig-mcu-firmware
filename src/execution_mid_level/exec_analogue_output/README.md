@@ -31,7 +31,7 @@ describe the intended call order and the responsibilities of each entry point.
 | Function | What it does |
 |----------|--------------|
 | `EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup()` | Configures and starts the SPI channel used by the DAC. Call this during system startup before attempting any DAC transfers. |
-| `EXEC_ANALOGUE_OUTPUT_Config(use_external_vref)` | Programs the DAC's startup registers, selects the reference source, enables channels 0-5, and puts channels 6-7 into open-circuit power-down mode. Marks the module as configured if the SPI transfer succeeds. |
+| `EXEC_ANALOGUE_OUTPUT_Config(use_external_vref)` | Queues the DAC's 11 startup commands atomically as separate three-byte, CS-framed SPI packets, triggers once, selects the reference source, enables channels 0-5, and puts channels 6-7 into open-circuit power-down mode. |
 | `EXEC_ANALOG_OUTPUT_Is_Configured()` | Returns whether `EXEC_ANALOGUE_OUTPUT_Config()` has completed successfully. Useful for guarding console commands or higher-level control logic. |
 | `EXEC_ANALOG_OUTPUT_Write_Voltage(channel, input_voltage_v)` | Validates the requested channel, clamps the input voltage to 0-20 V, scales it to the DAC's 12-bit range, and sends a write frame to the DAC. Returns false if the module is not configured, the channel is out of range, or the SPI transfer cannot be queued. |
 

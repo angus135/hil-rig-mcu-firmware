@@ -374,6 +374,25 @@ void HW_SPI_Rx_Consume( SPIChannel_T peripheral, uint32_t bytes_to_consume );
 bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32_t size );
 
 /**
+ * @brief Atomically queue fixed-size master packets from contiguous storage.
+ *
+ * Each packet is copied into the master TX queue with its own descriptor, so
+ * each is transmitted with a separate software-CS assertion. The complete
+ * request is preflighted while the channel TX DMA IRQ is disabled and is
+ * either queued in full or rejected without changing the queue.
+ *
+ * @param peripheral Master-mode SPI channel to update.
+ * @param data Contiguous source storage containing every packet in order.
+ * @param packet_size_bytes Size of each packet in bytes.
+ * @param packet_count Number of fixed-size packets to queue.
+ *
+ * @return true if every packet was queued; false for invalid, zero-sized,
+ *     frame-misaligned, non-master, or insufficient-capacity requests.
+ */
+bool HW_SPI_Load_Tx_Packets( SPIChannel_T peripheral, const uint8_t* data,
+                             uint32_t packet_size_bytes, uint32_t packet_count );
+
+/**
  * @brief Trigger transmission of queued TX data for a channel.
  *
  * Starts the transmit DMA for the selected SPI channel if queued TX data is
@@ -441,6 +460,16 @@ void HW_SPI_Tx_Trigger( SPIChannel_T peripheral );
  *     is still busy, or a master-mode final-drain transaction is still active.
  */
 bool HW_SPI_Tx_Is_Complete( SPIChannel_T peripheral );
+
+/**
+ * @brief Return whether a channel's master TX path is faulted.
+ *
+ * This read-only query distinguishes a terminal TX error from a transfer that
+ * is merely queued, DMA-active, or waiting for final drain.
+ *
+ * @return true only when a valid channel is in the TX error state.
+ */
+bool HW_SPI_Tx_Is_Faulted( SPIChannel_T peripheral );
 
 /**
  * @brief Complete slow-baud master final-drain handling from a timer ISR.

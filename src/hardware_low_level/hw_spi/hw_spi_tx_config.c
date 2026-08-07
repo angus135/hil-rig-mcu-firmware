@@ -831,6 +831,32 @@ bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32
     return accepted;
 }
 
+bool HW_SPI_Load_Tx_Packets( SPIChannel_T peripheral, const uint8_t* data,
+                             uint32_t packet_size_bytes, uint32_t packet_count )
+{
+    SPIPeripheralState_T* peripheral_state;
+    bool                  accepted = false;
+
+    if ( !HW_SPI_Is_Valid_Channel( peripheral ) || data == NULL || packet_size_bytes == 0U
+         || packet_count == 0U )
+    {
+        return false;
+    }
+
+    peripheral_state = HW_SPI_Get_State_Fast( peripheral );
+    NVIC_DisableIRQ( peripheral_state->tx_dma_irqn );
+
+    if ( peripheral_state->is_configured && peripheral_state->is_master
+         && peripheral_state->tx_transaction_state != HW_SPI_TX_TRANSACTION_ERROR )
+    {
+        accepted = HW_SPI_TX_Load_Master_Packets( peripheral_state, data, packet_size_bytes,
+                                                  packet_count );
+    }
+
+    NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
+    return accepted;
+}
+
 /**
  * @brief Kick the TX engine for a channel with queued data.
  *
@@ -954,4 +980,14 @@ bool HW_SPI_Tx_Is_Complete( SPIChannel_T peripheral )
     }
 
     return true;
+}
+
+bool HW_SPI_Tx_Is_Faulted( SPIChannel_T peripheral )
+{
+    if ( !HW_SPI_Is_Valid_Channel( peripheral ) )
+    {
+        return false;
+    }
+
+    return HW_SPI_Get_State_Fast( peripheral )->tx_transaction_state == HW_SPI_TX_TRANSACTION_ERROR;
 }

@@ -78,9 +78,9 @@ typedef struct AnalogueOutputPreparedBatch_T
 typedef enum AnalogueOutputState_T
 {
     EXEC_ANALOG_OUTPUT_STATE_UNCONFIGURED,  ///< DAC startup has not been submitted.
-    EXEC_ANALOG_OUTPUT_STATE_INITIALIZING,  ///< Complete startup packet is queued or active.
+    EXEC_ANALOG_OUTPUT_STATE_INITIALIZING,  ///< Startup frames are queued or active.
     EXEC_ANALOG_OUTPUT_STATE_READY,         ///< Startup transmission completed electrically.
-    EXEC_ANALOG_OUTPUT_STATE_FAULTED,       ///< SPI setup or startup submission failed.
+    EXEC_ANALOG_OUTPUT_STATE_FAULTED,       ///< SPI setup, submission, or transmission failed.
 } AnalogueOutputState_T;
 
 #if defined( __cplusplus )
@@ -117,12 +117,12 @@ _Static_assert( sizeof( AnalogueOutputPreparedBatch_T )
  *     If true, configure the DAC to use the external buffered VREF pin.
  *     If false, configure the DAC to use VDD as the reference.
  *
- * A true return confirms that the complete startup packet was accepted and
+ * A true return confirms that all eleven startup frames were accepted and
  * triggered, but electrical completion may still be pending. Call
  * EXEC_ANALOG_OUTPUT_Is_Configured() or EXEC_ANALOG_OUTPUT_Get_State() before
  * runtime submission.
  *
- * @return true if the complete startup packet was accepted and triggered.
+ * @return true if all startup frames were accepted and triggering did not fault.
  * @return false on SPI submission failure.
  */
 bool EXEC_ANALOGUE_OUTPUT_Config( bool use_external_vref );
@@ -168,10 +168,8 @@ bool EXEC_ANALOG_OUTPUT_Is_Configured( void );
  * @brief Return the current analogue-output startup readiness state.
  *
  * If startup is queued, this performs one nonblocking SPI completion sample
- * and promotes the module to READY when electrical transmission is complete.
- * The current SPI API reports busy and faulted transfers identically as "not
- * complete", so an initializing transfer cannot be classified as faulted
- * without future SPI status support.
+ * and promotes the module to READY when electrical transmission is complete,
+ * or transitions it to FAULTED when the SPI TX path reports an error.
  *
  * @return Current module state after the nonblocking readiness update.
  */
@@ -239,8 +237,9 @@ bool EXEC_ANALOG_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       prepa
 /**
  * @brief Submit one previously prepared per-tick batch on the execution path.
  *
- * The valid contiguous byte prefix is loaded into SPI as one operation and
- * triggered exactly once. An empty batch is a successful no-op. This function
+ * The valid contiguous byte prefix is atomically loaded as one three-byte SPI
+ * packet per prepared frame and triggered exactly once. An empty batch is a
+ * successful no-op. This function
  * performs no voltage conversion, channel validation, calibration, register
  * calculation, frame construction, per-frame submission, retry, or wait.
  *

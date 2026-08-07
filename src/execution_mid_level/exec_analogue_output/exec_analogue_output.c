@@ -211,9 +211,14 @@ EXEC_ANALOGUE_OUTPUT_Prepare_Startup_Packet( bool                           use_
 
 static void EXEC_ANALOGUE_OUTPUT_Update_Readiness( void )
 {
-    // TODO(DEV-80): Extend the SPI public status API so an initializing transfer that faulted can
-    // be distinguished from one that is still busy. HW_SPI_Tx_Is_Complete() conservatively reports
-    // false for both states, so this module must otherwise remain INITIALIZING.
+    if ( ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_INITIALIZING
+           || s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_READY )
+         && HW_SPI_Tx_Is_Faulted( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
+    {
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+        return;
+    }
+
     if ( ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_INITIALIZING )
          && HW_SPI_Tx_Is_Complete( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
     {
@@ -295,12 +300,12 @@ bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void )
  * - Power-down register (09h): Channels 0-5 enabled, channels 6-7 in open-circuit mode
  * - DAC output registers (00h-07h): All channels initialized to 0V
  *
- * A successful return means the complete startup packet was accepted and
- * triggered. Use EXEC_ANALOG_OUTPUT_Is_Configured() to determine when the
+ * A successful return means all startup frames were accepted and transmission
+ * was triggered. Use EXEC_ANALOG_OUTPUT_Is_Configured() to determine when the
  * startup transmission has completed and runtime writes are ready.
  *
- * @return true if the complete startup packet was accepted and triggered.
- * @return false if SPI rejected the startup packet.
+ * @return true if all startup frames were accepted and triggering did not fault.
+ * @return false if SPI rejected the startup frames or faulted while triggering.
  */
 bool EXEC_ANALOGUE_OUTPUT_Config( bool use_external_vref )
 {
@@ -309,8 +314,9 @@ bool EXEC_ANALOGUE_OUTPUT_Config( bool use_external_vref )
     s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_UNCONFIGURED;
     EXEC_ANALOGUE_OUTPUT_Prepare_Startup_Packet( use_external_vref, &startup_packet );
 
-    if ( !HW_SPI_Load_Tx_Buffer( ANALOGUE_OUTPUT_SPI_CHANNEL, startup_packet.bytes,
-                                 sizeof( startup_packet.bytes ) ) )
+    if ( !HW_SPI_Load_Tx_Packets( ANALOGUE_OUTPUT_SPI_CHANNEL, startup_packet.bytes,
+                                  EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES,
+                                  ANALOGUE_OUTPUT_STARTUP_FRAME_COUNT ) )
     {
         s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
         return false;
@@ -320,7 +326,7 @@ bool EXEC_ANALOGUE_OUTPUT_Config( bool use_external_vref )
     HW_SPI_Tx_Trigger( ANALOGUE_OUTPUT_SPI_CHANNEL );
     EXEC_ANALOGUE_OUTPUT_Update_Readiness();
 
-    return true;
+    return s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOG_OUTPUT_STATE_FAULTED;
 }
 
 bool EXEC_ANALOG_OUTPUT_Is_Configured( void )
@@ -429,13 +435,25 @@ bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( const AnalogueOutputPreparedBatch
         return true;
     }
 
-    if ( !HW_SPI_Load_Tx_Buffer( ANALOGUE_OUTPUT_SPI_CHANNEL, prepared_batch->bytes,
-                                 prepared_batch->byte_count ) )
+    if ( !HW_SPI_Load_Tx_Packets( ANALOGUE_OUTPUT_SPI_CHANNEL, prepared_batch->bytes,
+                                  EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES,
+                                  prepared_batch->byte_count
+                                      / EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES ) )
     {
+        if ( HW_SPI_Tx_Is_Faulted( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
+        {
+            s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+        }
         return false;
     }
 
     HW_SPI_Tx_Trigger( ANALOGUE_OUTPUT_SPI_CHANNEL );
+
+    if ( HW_SPI_Tx_Is_Faulted( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
+    {
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+        return false;
+    }
 
     // TODO(DEV-80): Confirm whether LAT0 and LAT1 are connected and use them if simultaneous
     // same-tick application is required. Batching preserves a future LAT implementation without
