@@ -1,17 +1,18 @@
 /******************************************************************************
- *  File:       result_buffer.h
+ *  File:       flash_manager.h
  *  Author:     Callum Rafferty
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Public interface for the Result Buffer module.
+ *      Placeholder public interface for the Flash Manager module.
  *
  *  Notes:
- *      None
+ *      The runtime flash-manager API has not been implemented yet. The intended
+ *      ownership and buffering model is documented in README.md.
  ******************************************************************************/
 
-#ifndef RESULT_BUFFER_H
-#define RESULT_BUFFER_H
+#ifndef FLASH_MANAGER_H
+#define FLASH_MANAGER_H
 
 #ifdef __cplusplus
 extern "C"
@@ -45,4 +46,4 @@ extern "C"
 }
 #endif
 
-#endif /* BUFFER_MANAGER_H */
+#endif /* FLASH_MANAGER_H */

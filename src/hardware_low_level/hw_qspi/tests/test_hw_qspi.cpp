@@ -1,16 +1,17 @@
 /******************************************************************************
- *  File:       test_<module>.cpp
- *  Author:     <your name>
- *  Created:    <DD-MMM-YYYY>
+ *  File:       test_hw_qspi.cpp
+ *  Author:     Callum Rafferty
+ *  Created:    5-May-2026
  *
  *  Description:
- *      Unit tests for the <module> module using GoogleTest and GoogleMock.
- *      This file validates the public API and behaviour defined in <module>.h.
+ *      Unit tests for the hw_qspi module using GoogleTest and GoogleMock.
+ *      This file validates command construction, HAL status mapping,
+ *      initialisation paths, blocking transfers, and RTOS-aware DMA completion.
  *
  *  Notes:
  *      - Production code is written in C; tests are written in C++.
  *      - C headers must be included inside an extern "C" block.
- *      - GoogleMock may be used to mock external dependencies.
+ *      - GoogleMock is used to mock the STM32 HAL dependency.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -23,23 +24,174 @@
 
 extern "C"
 {
-#include "hw_qspi.h"
+#include "hw_qspi_mocks.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include "hw_qspi.h"
 
-// Add any other C headers required by the module
+#include "hw_qspi.c" /* Module under test */  // NOLINT
 }
 
-// Add additional C++ includes here if required
 /**-----------------------------------------------------------------------------
  *  Test Constants / Macros
  *------------------------------------------------------------------------------
  */
 
+using ::testing::_;
+using ::testing::Eq;
+using ::testing::Invoke;
+using ::testing::NiceMock;
+using ::testing::Return;
+
+static constexpr uint32_t TEST_TRANSFER_DATA_LENGTH = 16U;
+static constexpr uint32_t TEST_ADOPTED_TIMEOUT_MS   = 75U;
+
 /**-----------------------------------------------------------------------------
  *  Test Doubles / Mocks
  *------------------------------------------------------------------------------
  */
+
+class MockHWQSPI
+{
+public:
+    MOCK_METHOD( HAL_StatusTypeDef, Init, ( QSPI_HandleTypeDef * hqspi ), () );
+    MOCK_METHOD( HAL_StatusTypeDef, Command,
+                 ( QSPI_HandleTypeDef * hqspi, QSPI_CommandTypeDef* cmd, uint32_t timeout ), () );
+    MOCK_METHOD( HAL_StatusTypeDef, Transmit,
+                 ( QSPI_HandleTypeDef * hqspi, uint8_t* p_data, uint32_t timeout ), () );
+    MOCK_METHOD( HAL_StatusTypeDef, Receive,
+                 ( QSPI_HandleTypeDef * hqspi, uint8_t* p_data, uint32_t timeout ), () );
+    MOCK_METHOD( HAL_StatusTypeDef, TransmitDma, ( QSPI_HandleTypeDef * hqspi, uint8_t* p_data ),
+                 () );
+    MOCK_METHOD( HAL_StatusTypeDef, ReceiveDma, ( QSPI_HandleTypeDef * hqspi, uint8_t* p_data ),
+                 () );
+    MOCK_METHOD( HAL_QSPI_StateTypeDef, GetState, ( const QSPI_HandleTypeDef* hqspi ), () );
+    MOCK_METHOD( HAL_StatusTypeDef, Abort, ( QSPI_HandleTypeDef * hqspi ), () );
+    MOCK_METHOD( SemaphoreHandle_t, CreateBinarySemaphore,
+                 ( StaticSemaphore_t * semaphore_storage ), () );
+    MOCK_METHOD( BaseType_t, TakeSemaphore,
+                 ( SemaphoreHandle_t semaphore, TickType_t ticks_to_wait ), () );
+    MOCK_METHOD( BaseType_t, GiveSemaphoreFromIsr,
+                 ( SemaphoreHandle_t semaphore, BaseType_t* higher_priority_task_woken ), () );
+};
+
+static MockHWQSPI* g_mock = nullptr;
+
+// NOLINTBEGIN
+extern "C" HAL_StatusTypeDef HAL_QSPI_Init( QSPI_HandleTypeDef* hqspi )
+{
+    if ( g_mock == nullptr )
+    {
+        return HAL_ERROR;
+    }
+
+    return g_mock->Init( hqspi );
+}
+
+extern "C" HAL_StatusTypeDef HAL_QSPI_Command( QSPI_HandleTypeDef* hqspi, QSPI_CommandTypeDef* cmd,
+                                               uint32_t timeout )
+{
+    if ( g_mock == nullptr )
+    {
+        return HAL_ERROR;
+    }
+
+    return g_mock->Command( hqspi, cmd, timeout );
+}
+
+extern "C" HAL_StatusTypeDef HAL_QSPI_Transmit( QSPI_HandleTypeDef* hqspi, uint8_t* p_data,
+                                                uint32_t timeout )
+{
+    if ( g_mock == nullptr )
+    {
+        return HAL_ERROR;
+    }
+
+    return g_mock->Transmit( hqspi, p_data, timeout );
+}
+
+extern "C" HAL_StatusTypeDef HAL_QSPI_Receive( QSPI_HandleTypeDef* hqspi, uint8_t* p_data,
+                                               uint32_t timeout )
+{
+    if ( g_mock == nullptr )
+    {
+        return HAL_ERROR;
+    }
+
+    return g_mock->Receive( hqspi, p_data, timeout );
+}
+
+extern "C" HAL_StatusTypeDef HAL_QSPI_Transmit_DMA( QSPI_HandleTypeDef* hqspi, uint8_t* p_data )
+{
+    if ( g_mock == nullptr )
+    {
+        return HAL_ERROR;
+    }
+
+    return g_mock->TransmitDma( hqspi, p_data );
+}
+
+extern "C" HAL_StatusTypeDef HAL_QSPI_Receive_DMA( QSPI_HandleTypeDef* hqspi, uint8_t* p_data )
+{
+    if ( g_mock == nullptr )
+    {
+        return HAL_ERROR;
+    }
+
+    return g_mock->ReceiveDma( hqspi, p_data );
+}
+
+extern "C" HAL_QSPI_StateTypeDef HAL_QSPI_GetState( const QSPI_HandleTypeDef* hqspi )
+{
+    if ( g_mock == nullptr )
+    {
+        return HAL_QSPI_STATE_ERROR;
+    }
+
+    return g_mock->GetState( hqspi );
+}
+
+extern "C" HAL_StatusTypeDef HAL_QSPI_Abort( QSPI_HandleTypeDef* hqspi )
+{
+    if ( g_mock == nullptr )
+    {
+        return HAL_ERROR;
+    }
+
+    return g_mock->Abort( hqspi );
+}
+
+extern "C" SemaphoreHandle_t xSemaphoreCreateBinaryStatic( StaticSemaphore_t* semaphore_storage )
+{
+    if ( g_mock == nullptr )
+    {
+        return nullptr;
+    }
+
+    return g_mock->CreateBinarySemaphore( semaphore_storage );
+}
+
+extern "C" BaseType_t xSemaphoreTake( SemaphoreHandle_t semaphore, TickType_t ticks_to_wait )
+{
+    if ( g_mock == nullptr )
+    {
+        return pdFALSE;
+    }
+
+    return g_mock->TakeSemaphore( semaphore, ticks_to_wait );
+}
+
+extern "C" BaseType_t xSemaphoreGiveFromISR( SemaphoreHandle_t semaphore,
+                                             BaseType_t*       higher_priority_task_woken )
+{
+    if ( g_mock == nullptr )
+    {
+        return pdFALSE;
+    }
+
+    return g_mock->GiveSemaphoreFromIsr( semaphore, higher_priority_task_woken );
+}
+// NOLINTEND
 
 /**-----------------------------------------------------------------------------
  *  Test Fixture
@@ -54,12 +206,71 @@ extern "C"
 class HWQSPITest : public ::testing::Test
 {
 protected:
+    NiceMock<MockHWQSPI> mock;
+
+    QSPI_HandleTypeDef qspi_hal_handle                          = {};
+    HW_QSPI_Config_T   qspi_config                              = {};
+    HW_QSPI_Command_T  qspi_command                             = {};
+    uint8_t            transfer_data[TEST_TRANSFER_DATA_LENGTH] = {};
+
     void SetUp( void ) override
     {
+        g_mock = &mock;
+
+        qspi_handle             = nullptr;
+        qspi_default_timeout_ms = 0U;
+        qspi_transfer_state     = HW_QSPI_TRANSFER_IDLE;
+        qspi_transfer_semaphore = nullptr;
+
+        qspi_hal_handle = {};
+        qspi_config     = {};
+        qspi_command    = {};
+
+        qspi_config.hal_handle            = &qspi_hal_handle;
+        qspi_config.clock_prescaler       = 17U;
+        qspi_config.fifo_threshold        = 4U;
+        qspi_config.sample_shifting       = 0U;
+        qspi_config.flash_size            = 26U;
+        qspi_config.chip_select_high_time = 4U;
+        qspi_config.clock_mode            = 0U;
+        qspi_config.default_timeout_ms    = 50U;
+
+        qspi_command.instruction           = 0x6BU;
+        qspi_command.instruction_lines     = HW_QSPI_LINES_1;
+        qspi_command.address               = 0x00123456U;
+        qspi_command.address_size          = HW_QSPI_ADDR_24_BITS;
+        qspi_command.address_lines         = HW_QSPI_LINES_1;
+        qspi_command.alternate_bytes       = 0xA5U;
+        qspi_command.alternate_bytes_size  = HW_QSPI_ALT_BYTES_8_BITS;
+        qspi_command.alternate_bytes_lines = HW_QSPI_LINES_4;
+        qspi_command.dummy_cycles          = 8U;
+        qspi_command.data_lines            = HW_QSPI_LINES_4;
+        qspi_command.timeout_ms            = 25U;
+
+        for ( uint32_t i = 0U; i < TEST_TRANSFER_DATA_LENGTH; i++ )
+        {
+            transfer_data[i] = static_cast<uint8_t>( i );
+        }
+
+        ON_CALL( mock, GetState( _ ) ).WillByDefault( Return( HAL_QSPI_STATE_READY ) );
+        ON_CALL( mock, CreateBinarySemaphore( _ ) )
+            .WillByDefault( Invoke( []( StaticSemaphore_t* storage ) {
+                return static_cast<SemaphoreHandle_t>( storage );
+            } ) );
+        ON_CALL( mock, TakeSemaphore( _, _ ) ).WillByDefault( Return( pdFALSE ) );
+        ON_CALL( mock, GiveSemaphoreFromIsr( _, _ ) ).WillByDefault( Return( pdTRUE ) );
     }
 
     void TearDown( void ) override
     {
+        g_mock = nullptr;
+    }
+
+    void InitDriver( void )
+    {
+        EXPECT_CALL( mock, Init( Eq( &qspi_hal_handle ) ) ).WillOnce( Return( HAL_OK ) );
+
+        EXPECT_EQ( HW_QSPI_STATUS_OK, HW_QSPI_Init( &qspi_config ) );
     }
 };
 
@@ -67,3 +278,407 @@ protected:
  *  Test Cases
  *------------------------------------------------------------------------------
  */
+
+TEST_F( HWQSPITest, InitRejectsNullConfig )
+{
+    EXPECT_CALL( mock, Init( _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG, HW_QSPI_Init( nullptr ) );
+}
+
+TEST_F( HWQSPITest, InitRejectsNullHalHandle )
+{
+    qspi_config.hal_handle = nullptr;
+
+    EXPECT_CALL( mock, Init( _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG, HW_QSPI_Init( &qspi_config ) );
+}
+
+TEST_F( HWQSPITest, InitAppliesConfigToHalHandle )
+{
+    EXPECT_CALL( mock, Init( Eq( &qspi_hal_handle ) ) ).WillOnce( Return( HAL_OK ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_OK, HW_QSPI_Init( &qspi_config ) );
+
+    EXPECT_EQ( qspi_hal_handle.Init.ClockPrescaler, qspi_config.clock_prescaler );
+    EXPECT_EQ( qspi_hal_handle.Init.FifoThreshold, qspi_config.fifo_threshold );
+    EXPECT_EQ( qspi_hal_handle.Init.SampleShifting, qspi_config.sample_shifting );
+    EXPECT_EQ( qspi_hal_handle.Init.FlashSize, qspi_config.flash_size );
+    EXPECT_EQ( qspi_hal_handle.Init.ChipSelectHighTime, qspi_config.chip_select_high_time );
+    EXPECT_EQ( qspi_hal_handle.Init.ClockMode, qspi_config.clock_mode );
+    EXPECT_EQ( qspi_hal_handle.Init.FlashID, QSPI_FLASH_ID_1 );
+    EXPECT_EQ( qspi_hal_handle.Init.DualFlash, QSPI_DUALFLASH_DISABLE );
+}
+
+TEST_F( HWQSPITest, InitFailsWhenTransferSemaphoreCannotBeCreated )
+{
+    EXPECT_CALL( mock, Init( Eq( &qspi_hal_handle ) ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, CreateBinarySemaphore( Eq( &qspi_transfer_semaphore_storage ) ) )
+        .WillOnce( Return( nullptr ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_ERROR, HW_QSPI_Init( &qspi_config ) );
+    EXPECT_EQ( qspi_handle, nullptr );
+    EXPECT_EQ( qspi_transfer_state, HW_QSPI_TRANSFER_ERROR );
+}
+
+TEST_F( HWQSPITest, AdoptHandleRejectsInvalidArguments )
+{
+    EXPECT_CALL( mock, GetState( _ ) ).Times( 0 );
+    EXPECT_CALL( mock, Init( _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_AdoptHandle( nullptr, TEST_ADOPTED_TIMEOUT_MS ) );
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG, HW_QSPI_AdoptHandle( &qspi_hal_handle, 0U ) );
+}
+
+TEST_F( HWQSPITest, AdoptHandleUsesReadyCubeMxHandleWithoutReinitialisingHal )
+{
+    EXPECT_CALL( mock, GetState( Eq( &qspi_hal_handle ) ) )
+        .WillOnce( Return( HAL_QSPI_STATE_READY ) );
+    EXPECT_CALL( mock, Init( _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_QSPI_STATUS_OK,
+               HW_QSPI_AdoptHandle( &qspi_hal_handle, TEST_ADOPTED_TIMEOUT_MS ) );
+    EXPECT_EQ( qspi_handle, &qspi_hal_handle );
+    EXPECT_EQ( qspi_default_timeout_ms, TEST_ADOPTED_TIMEOUT_MS );
+    EXPECT_EQ( qspi_transfer_state, HW_QSPI_TRANSFER_IDLE );
+}
+
+TEST_F( HWQSPITest, AdoptHandleRejectsBusyResetAndErrorStates )
+{
+    EXPECT_CALL( mock, GetState( Eq( &qspi_hal_handle ) ) )
+        .WillOnce( Return( HAL_QSPI_STATE_BUSY_INDIRECT_TX ) )
+        .WillOnce( Return( HAL_QSPI_STATE_RESET ) )
+        .WillOnce( Return( HAL_QSPI_STATE_ERROR ) );
+    EXPECT_CALL( mock, Init( _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_QSPI_STATUS_BUSY,
+               HW_QSPI_AdoptHandle( &qspi_hal_handle, TEST_ADOPTED_TIMEOUT_MS ) );
+    EXPECT_EQ( HW_QSPI_STATUS_NOT_INITIALISED,
+               HW_QSPI_AdoptHandle( &qspi_hal_handle, TEST_ADOPTED_TIMEOUT_MS ) );
+    EXPECT_EQ( HW_QSPI_STATUS_ERROR,
+               HW_QSPI_AdoptHandle( &qspi_hal_handle, TEST_ADOPTED_TIMEOUT_MS ) );
+    EXPECT_EQ( qspi_handle, nullptr );
+}
+
+TEST_F( HWQSPITest, CommandRejectsCallBeforeInit )
+{
+    EXPECT_CALL( mock, Command( _, _, _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_QSPI_STATUS_NOT_INITIALISED, HW_QSPI_Command( &qspi_command ) );
+}
+
+TEST_F( HWQSPITest, TransfersRejectInvalidArguments )
+{
+    InitDriver();
+
+    EXPECT_CALL( mock, Command( _, _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock, Transmit( _, _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock, Receive( _, _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock, TransmitDma( _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock, ReceiveDma( _, _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_WriteBlocking( nullptr, transfer_data, TEST_TRANSFER_DATA_LENGTH ) );
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_WriteBlocking( &qspi_command, nullptr, TEST_TRANSFER_DATA_LENGTH ) );
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_WriteBlocking( &qspi_command, transfer_data, 0U ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_ReadBlocking( nullptr, transfer_data, TEST_TRANSFER_DATA_LENGTH ) );
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_ReadBlocking( &qspi_command, nullptr, TEST_TRANSFER_DATA_LENGTH ) );
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_ReadBlocking( &qspi_command, transfer_data, 0U ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_WriteDma( nullptr, transfer_data, TEST_TRANSFER_DATA_LENGTH ) );
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_WriteDma( &qspi_command, nullptr, TEST_TRANSFER_DATA_LENGTH ) );
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG, HW_QSPI_WriteDma( &qspi_command, transfer_data, 0U ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_ReadDma( nullptr, transfer_data, TEST_TRANSFER_DATA_LENGTH ) );
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_ReadDma( &qspi_command, nullptr, TEST_TRANSFER_DATA_LENGTH ) );
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG, HW_QSPI_ReadDma( &qspi_command, transfer_data, 0U ) );
+}
+
+TEST_F( HWQSPITest, TransferReturnsBusyWhenHalIsBusy )
+{
+    InitDriver();
+
+    EXPECT_CALL( mock, GetState( Eq( &qspi_hal_handle ) ) )
+        .WillOnce( Return( HAL_QSPI_STATE_BUSY_INDIRECT_TX ) );
+    EXPECT_CALL( mock, Command( _, _, _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_QSPI_STATUS_BUSY,
+               HW_QSPI_ReadDma( &qspi_command, transfer_data, TEST_TRANSFER_DATA_LENGTH ) );
+}
+
+TEST_F( HWQSPITest, CommandMapsHalTimeoutStatus )
+{
+    InitDriver();
+
+    EXPECT_CALL( mock, Command( Eq( &qspi_hal_handle ), _, Eq( qspi_command.timeout_ms ) ) )
+        .WillOnce( Return( HAL_TIMEOUT ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_TIMEOUT, HW_QSPI_Command( &qspi_command ) );
+}
+
+TEST_F( HWQSPITest, CommandBuildsExpectedHalCommand )
+{
+    InitDriver();
+
+    EXPECT_CALL( mock, Command( Eq( &qspi_hal_handle ), _, Eq( qspi_command.timeout_ms ) ) )
+        .WillOnce( Invoke(
+            [this]( QSPI_HandleTypeDef* hqspi, QSPI_CommandTypeDef* cmd, uint32_t timeout ) {
+                ( void )hqspi;
+                ( void )timeout;
+
+                EXPECT_EQ( cmd->Instruction, qspi_command.instruction );
+                EXPECT_EQ( cmd->InstructionMode, QSPI_INSTRUCTION_1_LINE );
+                EXPECT_EQ( cmd->Address, qspi_command.address );
+                EXPECT_EQ( cmd->AddressMode, QSPI_ADDRESS_1_LINE );
+                EXPECT_EQ( cmd->AddressSize, QSPI_ADDRESS_24_BITS );
+                EXPECT_EQ( cmd->AlternateBytes, qspi_command.alternate_bytes );
+                EXPECT_EQ( cmd->AlternateByteMode, QSPI_ALTERNATE_BYTES_4_LINES );
+                EXPECT_EQ( cmd->AlternateBytesSize, QSPI_ALTERNATE_BYTES_8_BITS );
+                EXPECT_EQ( cmd->DummyCycles, qspi_command.dummy_cycles );
+                EXPECT_EQ( cmd->DataMode, QSPI_DATA_NONE );
+                EXPECT_EQ( cmd->NbData, 0U );
+                EXPECT_EQ( cmd->DdrMode, QSPI_DDR_MODE_DISABLE );
+                EXPECT_EQ( cmd->DdrHoldHalfCycle, QSPI_DDR_HHC_ANALOG_DELAY );
+                EXPECT_EQ( cmd->SIOOMode, QSPI_SIOO_INST_EVERY_CMD );
+                return HAL_OK;
+            } ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_OK, HW_QSPI_Command( &qspi_command ) );
+}
+
+TEST_F( HWQSPITest, WriteBlockingIssuesCommandThenTransmit )
+{
+    InitDriver();
+
+    constexpr uint32_t length = 8U;
+
+    EXPECT_CALL( mock, Command( Eq( &qspi_hal_handle ), _, Eq( qspi_command.timeout_ms ) ) )
+        .WillOnce( Invoke(
+            [length]( QSPI_HandleTypeDef* hqspi, QSPI_CommandTypeDef* cmd, uint32_t timeout ) {
+                ( void )hqspi;
+                ( void )timeout;
+
+                EXPECT_EQ( cmd->DataMode, QSPI_DATA_4_LINES );
+                EXPECT_EQ( cmd->NbData, length );
+                return HAL_OK;
+            } ) );
+
+    EXPECT_CALL( mock, Transmit( Eq( &qspi_hal_handle ), Eq( transfer_data ),
+                                 Eq( qspi_command.timeout_ms ) ) )
+        .WillOnce( Return( HAL_OK ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_OK, HW_QSPI_WriteBlocking( &qspi_command, transfer_data, length ) );
+    EXPECT_FALSE( HW_QSPI_IsTransferComplete() );
+}
+
+TEST_F( HWQSPITest, ReadBlockingIssuesCommandThenReceive )
+{
+    InitDriver();
+
+    constexpr uint32_t length = 8U;
+
+    EXPECT_CALL( mock, Command( Eq( &qspi_hal_handle ), _, Eq( qspi_command.timeout_ms ) ) )
+        .WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, Receive( Eq( &qspi_hal_handle ), Eq( transfer_data ),
+                                Eq( qspi_command.timeout_ms ) ) )
+        .WillOnce( Return( HAL_OK ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_OK, HW_QSPI_ReadBlocking( &qspi_command, transfer_data, length ) );
+}
+
+TEST_F( HWQSPITest, WriteDmaStartsTransferAndCompletesOnTxCallback )
+{
+    InitDriver();
+
+    constexpr uint32_t length = 8U;
+
+    EXPECT_CALL( mock, Command( Eq( &qspi_hal_handle ), _, Eq( qspi_command.timeout_ms ) ) )
+        .WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, TransmitDma( Eq( &qspi_hal_handle ), Eq( transfer_data ) ) )
+        .WillOnce( Return( HAL_OK ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_OK, HW_QSPI_WriteDma( &qspi_command, transfer_data, length ) );
+    EXPECT_TRUE( HW_QSPI_IsBusy() );
+    EXPECT_FALSE( HW_QSPI_IsTransferComplete() );
+
+    EXPECT_CALL( mock, GiveSemaphoreFromIsr( Eq( qspi_transfer_semaphore ), _ ) )
+        .WillOnce( Invoke( []( SemaphoreHandle_t, BaseType_t* higher_priority_task_woken ) {
+            EXPECT_NE( higher_priority_task_woken, nullptr );
+            *higher_priority_task_woken = pdTRUE;
+            return pdTRUE;
+        } ) );
+
+    HAL_QSPI_TxCpltCallback( &qspi_hal_handle );
+
+    EXPECT_TRUE( HW_QSPI_IsTransferComplete() );
+    EXPECT_FALSE( HW_QSPI_IsBusy() );
+}
+
+TEST_F( HWQSPITest, ReadDmaStartsTransferAndCompletesOnRxCallback )
+{
+    InitDriver();
+
+    constexpr uint32_t length = 8U;
+
+    EXPECT_CALL( mock, Command( Eq( &qspi_hal_handle ), _, Eq( qspi_command.timeout_ms ) ) )
+        .WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, ReceiveDma( Eq( &qspi_hal_handle ), Eq( transfer_data ) ) )
+        .WillOnce( Return( HAL_OK ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_OK, HW_QSPI_ReadDma( &qspi_command, transfer_data, length ) );
+    EXPECT_TRUE( HW_QSPI_IsBusy() );
+    EXPECT_FALSE( HW_QSPI_IsTransferComplete() );
+
+    HAL_QSPI_RxCpltCallback( &qspi_hal_handle );
+
+    EXPECT_TRUE( HW_QSPI_IsTransferComplete() );
+    EXPECT_FALSE( HW_QSPI_IsBusy() );
+}
+
+TEST_F( HWQSPITest, DmaErrorCallbackClearsBusyWithoutCompletingTransfer )
+{
+    InitDriver();
+
+    constexpr uint32_t length = 8U;
+
+    EXPECT_CALL( mock, Command( Eq( &qspi_hal_handle ), _, Eq( qspi_command.timeout_ms ) ) )
+        .WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, TransmitDma( Eq( &qspi_hal_handle ), Eq( transfer_data ) ) )
+        .WillOnce( Return( HAL_OK ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_OK, HW_QSPI_WriteDma( &qspi_command, transfer_data, length ) );
+
+    HAL_QSPI_ErrorCallback( &qspi_hal_handle );
+
+    EXPECT_FALSE( HW_QSPI_IsTransferComplete() );
+    EXPECT_FALSE( HW_QSPI_IsBusy() );
+}
+
+TEST_F( HWQSPITest, WaitForTransferBlocksOnDedicatedSemaphoreUntilCompletion )
+{
+    InitDriver();
+
+    constexpr uint32_t length     = 8U;
+    constexpr uint32_t timeout_ms = 100U;
+
+    EXPECT_CALL( mock, Command( Eq( &qspi_hal_handle ), _, Eq( qspi_command.timeout_ms ) ) )
+        .WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, TransmitDma( Eq( &qspi_hal_handle ), Eq( transfer_data ) ) )
+        .WillOnce( Return( HAL_OK ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_OK, HW_QSPI_WriteDma( &qspi_command, transfer_data, length ) );
+
+    HAL_QSPI_TxCpltCallback( &qspi_hal_handle );
+
+    EXPECT_CALL( mock, TakeSemaphore( Eq( qspi_transfer_semaphore ), Eq( timeout_ms ) ) )
+        .WillOnce( Return( pdTRUE ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_OK, HW_QSPI_WaitForTransfer( timeout_ms ) );
+    EXPECT_EQ( qspi_transfer_state, HW_QSPI_TRANSFER_IDLE );
+}
+
+TEST_F( HWQSPITest, WaitForTransferReturnsCallbackError )
+{
+    InitDriver();
+
+    constexpr uint32_t length     = 8U;
+    constexpr uint32_t timeout_ms = 100U;
+
+    EXPECT_CALL( mock, Command( Eq( &qspi_hal_handle ), _, Eq( qspi_command.timeout_ms ) ) )
+        .WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, ReceiveDma( Eq( &qspi_hal_handle ), Eq( transfer_data ) ) )
+        .WillOnce( Return( HAL_OK ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_OK, HW_QSPI_ReadDma( &qspi_command, transfer_data, length ) );
+
+    HAL_QSPI_ErrorCallback( &qspi_hal_handle );
+
+    EXPECT_CALL( mock, TakeSemaphore( Eq( qspi_transfer_semaphore ), Eq( timeout_ms ) ) )
+        .WillOnce( Return( pdTRUE ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_ERROR, HW_QSPI_WaitForTransfer( timeout_ms ) );
+}
+
+TEST_F( HWQSPITest, WaitForTransferAbortsExpiredDma )
+{
+    InitDriver();
+
+    constexpr uint32_t length     = 8U;
+    constexpr uint32_t timeout_ms = 100U;
+
+    EXPECT_CALL( mock, Command( Eq( &qspi_hal_handle ), _, Eq( qspi_command.timeout_ms ) ) )
+        .WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, ReceiveDma( Eq( &qspi_hal_handle ), Eq( transfer_data ) ) )
+        .WillOnce( Return( HAL_OK ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_OK, HW_QSPI_ReadDma( &qspi_command, transfer_data, length ) );
+
+    EXPECT_CALL( mock, TakeSemaphore( Eq( qspi_transfer_semaphore ), Eq( timeout_ms ) ) )
+        .WillOnce( Return( pdFALSE ) );
+    EXPECT_CALL( mock, Abort( Eq( &qspi_hal_handle ) ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, TakeSemaphore( Eq( qspi_transfer_semaphore ), Eq( 0U ) ) )
+        .WillOnce( Return( pdFALSE ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_TIMEOUT, HW_QSPI_WaitForTransfer( timeout_ms ) );
+    EXPECT_EQ( qspi_transfer_state, HW_QSPI_TRANSFER_IDLE );
+}
+
+TEST_F( HWQSPITest, WaitForTransferAcceptsCompletionAtTimeoutBoundary )
+{
+    InitDriver();
+
+    constexpr uint32_t timeout_ms = 100U;
+
+    qspi_transfer_state = HW_QSPI_TRANSFER_COMPLETE;
+
+    EXPECT_CALL( mock, TakeSemaphore( Eq( qspi_transfer_semaphore ), Eq( timeout_ms ) ) )
+        .WillOnce( Return( pdFALSE ) );
+    EXPECT_CALL( mock, TakeSemaphore( Eq( qspi_transfer_semaphore ), Eq( 0U ) ) )
+        .WillOnce( Return( pdFALSE ) );
+    EXPECT_CALL( mock, Abort( _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_QSPI_STATUS_OK, HW_QSPI_WaitForTransfer( timeout_ms ) );
+    EXPECT_EQ( qspi_transfer_state, HW_QSPI_TRANSFER_IDLE );
+}
+
+TEST_F( HWQSPITest, WaitForTransferRejectsMissingTransferAndZeroTimeout )
+{
+    EXPECT_EQ( HW_QSPI_STATUS_NOT_INITIALISED, HW_QSPI_WaitForTransfer( 100U ) );
+
+    InitDriver();
+
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG, HW_QSPI_WaitForTransfer( 0U ) );
+    EXPECT_EQ( HW_QSPI_STATUS_ERROR, HW_QSPI_WaitForTransfer( 100U ) );
+}
+
+TEST_F( HWQSPITest, IsBusyReportsHalBusyState )
+{
+    InitDriver();
+
+    EXPECT_CALL( mock, GetState( Eq( &qspi_hal_handle ) ) )
+        .WillOnce( Return( HAL_QSPI_STATE_BUSY_INDIRECT_RX ) );
+
+    EXPECT_TRUE( HW_QSPI_IsBusy() );
+}
+
+TEST_F( HWQSPITest, AbortCallsHalAbort )
+{
+    InitDriver();
+
+    EXPECT_CALL( mock, Abort( Eq( &qspi_hal_handle ) ) ).WillOnce( Return( HAL_OK ) );
+
+    EXPECT_EQ( HW_QSPI_STATUS_OK, HW_QSPI_Abort() );
+    EXPECT_FALSE( HW_QSPI_IsTransferComplete() );
+}

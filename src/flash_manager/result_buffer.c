@@ -1,20 +1,21 @@
 /******************************************************************************
- *  File:       instruction_buffer.c
+ *  File:       result_buffer.c
  *  Author:     Callum Rafferty
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Implementation for the Instruction Buffer module.
+ *      Implementation for the Result Buffer module.
  *
  *  Notes:
- *     None
+ *      This is currently a placeholder; no result-buffer implementation is
+ *      provided yet.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
  *  Includes
  *------------------------------------------------------------------------------
  */
-#include "instruction_buffer.h"
+#include "result_buffer.h"
 #include <stdint.h>
 #include <stdbool.h>
 

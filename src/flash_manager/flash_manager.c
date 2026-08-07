@@ -1,19 +1,21 @@
 /******************************************************************************
- *  File:       buffer_manager.c
+ *  File:       flash_manager.c
  *  Author:     Callum Rafferty
  *  Created:    25-Mar-2026
  *
  *  Description:
+ *      Placeholder implementation unit for the Flash Manager module.
  *
  *  Notes:
- *     None
+ *      The runtime manager and its public API have not been implemented yet.
+ *      See README.md for the intended ownership and buffering model.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
  *  Includes
  *------------------------------------------------------------------------------
  */
-#include "buffer_manager.h"
+#include "flash_manager.h"
 #include <stdint.h>
 #include <stdbool.h>
 

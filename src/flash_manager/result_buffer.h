@@ -1,17 +1,17 @@
 /******************************************************************************
- *  File:       instruction_buffer.h
+ *  File:       result_buffer.h
  *  Author:     Callum Rafferty
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Public interface for the Instruction Buffer module.
+ *      Public interface for the Result Buffer module.
  *
  *  Notes:
- *      None
+ *      This is currently a placeholder; no result-buffer API is exposed.
  ******************************************************************************/
 
-#ifndef INSTRUCTION_BUFFER_H
-#define INSTRUCTION_BUFFER_H
+#ifndef RESULT_BUFFER_H
+#define RESULT_BUFFER_H
 
 #ifdef __cplusplus
 extern "C"
@@ -45,4 +45,4 @@ extern "C"
 }
 #endif
 
-#endif /* BUFFER_MANAGER_H */
+#endif /* RESULT_BUFFER_H */

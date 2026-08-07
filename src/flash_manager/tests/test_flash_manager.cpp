@@ -1,11 +1,13 @@
 /******************************************************************************
- *  File:       test_buffer_manager.cpp
+ *  File:       test_flash_manager.cpp
  *  Author:     Callum Rafferty
  *  Created:    25-Mar-2026
  *
  *  Description:
+ *      Placeholder GoogleTest fixture for the Flash Manager module.
  *
  *  Notes:
+ *      Runtime flash-manager behavior and test cases have not been implemented.
  *
  ******************************************************************************/
 
@@ -19,7 +21,7 @@
 
 extern "C"
 {
-#include "buffer_manager.h" /* Module under test */
+#include "flash_manager.h" /* Module under test */
 #include <stdint.h>
 #include <stdbool.h>
 }
@@ -44,7 +46,7 @@ extern "C"
  *
  * Provides a consistent setup/teardown environment for all test cases.
  */
-class BufferManagerTest : public ::testing::Test
+class FlashManagerTest : public ::testing::Test
 {
 protected:
     void SetUp( void ) override
