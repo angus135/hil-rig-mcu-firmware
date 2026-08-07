@@ -33,6 +33,8 @@ target_link_libraries(flash_manager
         project_warnings
         cubeide_hal
         rtos
+    PRIVATE
+        external_flash
 )
 
 # -----------------------------
@@ -45,6 +47,8 @@ if(FLASH_MANAGER_ENABLE_TESTS AND BUILD_TESTING)
 
     add_executable(flash_manager_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_flash_manager.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_instruction_buffer.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_result_buffer.cpp
     )
 
     target_link_libraries(flash_manager_tests
@@ -60,6 +64,7 @@ if(FLASH_MANAGER_ENABLE_TESTS AND BUILD_TESTING)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests
+            ${CMAKE_CURRENT_SOURCE_DIR}/../external_flash
     )
 
     add_test(NAME flash_manager_tests COMMAND flash_manager_tests)
