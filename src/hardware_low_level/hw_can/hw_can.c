@@ -40,8 +40,8 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
 #define TOTAL_TQ ( uint32_t )15
 #define MBPS_SAMPLE_POINT ( uint32_t )800
 
-#define RECEIVE_BUFFER_WIDTH 20
-#define TRANSMIT_BUFFER_WIDTH 20
+#define RECEIVE_BUFFER_WIDTH ( HW_CAN_RX_QUEUE_CAPACITY + 1U )
+#define TRANSMIT_BUFFER_WIDTH ( HW_CAN_TX_QUEUE_CAPACITY + 1U )
 #define CAN_RX_FIFO_DEPTH 3U
 
 #define HW_CAN_CH1_TX_IRQ_HANDLER CAN1_TX_IRQHandler
@@ -165,6 +165,8 @@ static HW_CAN_Result_T HW_CAN_Recover( CAN_HandleTypeDef* hcan, IRQn_Type tx_irq
                                        volatile uint16_t* tx_rp, volatile bool* active,
                                        volatile bool* completed, volatile uint32_t* pending_mailbox,
                                        volatile HW_CAN_Tx_Status_T* status );
+static void            HW_CAN_Tx_Buffer_Cancel( IRQn_Type tx_irq, volatile uint16_t* w_p,
+                                                volatile uint16_t* r_p );
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -335,7 +337,7 @@ void HW_CAN_Buffer_consume( volatile uint16_t* pointer, uint16_t update, uint16_
     | Timestamp             | Reserved  | TGT    | DLC     |
     +-----------------------+-----------+--------+---------+
  *
- * Uses HAL to transmit message over CAN channel
+ * Writes the bxCAN mailbox registers directly.
  */
 static HW_CAN_Result_T HW_CAN_Transmit_To_Mailbox( CAN_HandleTypeDef* hcan, uint8_t* txData,
                                                    uint16_t id, uint8_t size,
@@ -371,7 +373,7 @@ static HW_CAN_Result_T HW_CAN_Transmit_To_Mailbox( CAN_HandleTypeDef* hcan, uint
     }
 
     // Standard ID is 11 bits and has to be shifted to the top 11 bits of the register
-    can->sTxMailBox[mailbox].TIR = ( id << 21 );
+    can->sTxMailBox[mailbox].TIR = ( ( uint32_t )id << 21U );
 
     // DLC = 8, (sending 8 bytes)
     can->sTxMailBox[mailbox].TDTR = size;
@@ -405,15 +407,10 @@ static HW_CAN_Result_T HW_CAN_Transmit_To_Mailbox( CAN_HandleTypeDef* hcan, uint
     return HW_CAN_RESULT_OK;
 }
 
-HW_CAN_Result_T HW_CAN_Transmit( CAN_HandleTypeDef* hcan, uint8_t* txData, uint16_t id,
-                                 uint8_t size )
-{
-    return HW_CAN_Transmit_To_Mailbox( hcan, txData, id, size, NULL );
-}
-
 /** Clear one bxCAN TX request-complete group without touching another mailbox. */
-static void HW_CAN_Clear_Tx_Request_Complete( CAN_TypeDef* can, uint32_t request_complete_flag,
-                                              uint32_t mailbox_status_flags )
+static inline void HW_CAN_Clear_Tx_Request_Complete( CAN_TypeDef* can,
+                                                     uint32_t     request_complete_flag,
+                                                     uint32_t     mailbox_status_flags )
 {
 #ifdef TEST_BUILD
     can->TSR &= ~( request_complete_flag | mailbox_status_flags );
@@ -435,7 +432,7 @@ static void HW_CAN_Clear_Tx_Request_Complete( CAN_TypeDef* can, uint32_t request
 }
 
 /** Release one bxCAN FIFO0 output entry using its write-one command bit. */
-static void HW_CAN_Release_Rx_FIFO0( CAN_TypeDef* can )
+static inline void HW_CAN_Release_Rx_FIFO0( CAN_TypeDef* can )
 {
 #ifdef TEST_BUILD
     uint32_t pending = can->RF0R & CAN_RF0R_FMP0;
@@ -450,7 +447,7 @@ static void HW_CAN_Release_Rx_FIFO0( CAN_TypeDef* can )
 }
 
 /** Clear selected bxCAN FIFO0 write-one-to-clear status flags. */
-static void HW_CAN_Clear_Rx_FIFO0_Flags( CAN_TypeDef* can, uint32_t flags )
+static inline void HW_CAN_Clear_Rx_FIFO0_Flags( CAN_TypeDef* can, uint32_t flags )
 {
 #ifdef TEST_BUILD
     can->RF0R &= ~flags;
@@ -460,12 +457,12 @@ static void HW_CAN_Clear_Rx_FIFO0_Flags( CAN_TypeDef* can, uint32_t flags )
 }
 
 /**
- * @brief recieves data and stores it in rxData (8 bytes) over the hcan CAN channel
+ * @brief Receives data from the selected bxCAN FIFO0 mailbox.
  *
  * @param hcan the pointer to the handle for the can peripheral
- * @param rxData pointer to 8 bytes of available storage
+ * @param rxPacket Destination for the received packet.
  *
- * Uses HAL to receive message over CAN channel
+ * Reads the bxCAN FIFO registers directly.
  */
 int HW_CAN_Receive( CAN_HandleTypeDef* hcan, CAN_Packet_T* rxPacket )
 {
@@ -986,7 +983,7 @@ HW_CAN_Result_T HW_CAN_Recover2( void )
  * The sent flag is set flase after trigger is called when CAN has emptied the buffer
  * and set true when the last message is sent and the buffer is ready for a new message
  */
-bool HW_CAN_Channl1_sent()
+bool HW_CAN_Channel1_Sent( void )
 {
     return can_tx_status1 == HW_CAN_TX_STATUS_COMPLETE;
 }
@@ -998,7 +995,7 @@ bool HW_CAN_Channl1_sent()
  * The sent flag is set flase after trigger is called when CAN has emptied the buffer
  * and set true when the last message is sent and the buffer is ready for a new message
  */
-bool HW_CAN_Channl2_sent()
+bool HW_CAN_Channel2_Sent( void )
 {
     return can_tx_status2 == HW_CAN_TX_STATUS_COMPLETE;
 }
@@ -1030,7 +1027,7 @@ uint32_t HW_CAN_Rx_Dropped_Count2( void )
  *
  * @param txData pointer to 8 bytes of data
  *
- * Uses HAL to transmit message over CAN channel 1
+ * Writes the bxCAN mailbox registers directly.
  */
 HW_CAN_Result_T HW_CAN_Transmit1( uint8_t* txData, uint16_t id, uint8_t dlc )
 {
@@ -1046,17 +1043,17 @@ HW_CAN_Result_T HW_CAN_Transmit1( uint8_t* txData, uint16_t id, uint8_t dlc )
     {
         return HW_CAN_RESULT_ERROR;
     }
-    return HW_CAN_Transmit( &hcan1, txData, id, dlc );
+    return HW_CAN_Transmit_To_Mailbox( &hcan1, txData, id, dlc, NULL );
 }
 
 /**
- * @brief recieves data and stores it in rxData (8 bytes) over the hcan CAN channel 1
+ * @brief Receives data from the channel 1 bxCAN FIFO0 mailbox.
  *
- * @param rxData pointer to 8 bytes of available storage
+ * @param rxPacket Destination for the received packet.
  *
- * Uses HAL to receive message over CAN channel 1
+ * Reads the bxCAN FIFO registers directly.
  */
-int HW_CAN_Recieve1( CAN_Packet_T* rxPacket )
+int HW_CAN_Receive1( CAN_Packet_T* rxPacket )
 {
     return HW_CAN_Receive( &hcan1, rxPacket );
 }
@@ -1066,7 +1063,7 @@ int HW_CAN_Recieve1( CAN_Packet_T* rxPacket )
  *
  * @param txData pointer to 8 bytes of data
  *
- * Uses HAL to transmit message over CAN channel 2
+ * Writes the bxCAN mailbox registers directly.
  */
 HW_CAN_Result_T HW_CAN_Transmit2( uint8_t* txData, uint16_t id, uint8_t dlc )
 {
@@ -1082,17 +1079,17 @@ HW_CAN_Result_T HW_CAN_Transmit2( uint8_t* txData, uint16_t id, uint8_t dlc )
     {
         return HW_CAN_RESULT_ERROR;
     }
-    return HW_CAN_Transmit( &hcan2, txData, id, dlc );
+    return HW_CAN_Transmit_To_Mailbox( &hcan2, txData, id, dlc, NULL );
 }
 
 /**
- * @brief recieves data and stores it in rxData (8 bytes) over the hcan CAN channel 2
+ * @brief Receives data from the channel 2 bxCAN FIFO0 mailbox.
  *
- * @param rxData pointer to 8 bytes of available storage
+ * @param rxPacket Destination for the received packet.
  *
- * Uses HAL to receive message over CAN channel 2
+ * Reads the bxCAN FIFO registers directly.
  */
-int HW_CAN_Recieve2( CAN_Packet_T* rxPacket )
+int HW_CAN_Receive2( CAN_Packet_T* rxPacket )
 {
     return HW_CAN_Receive( &hcan2, rxPacket );
 }
@@ -1104,7 +1101,7 @@ int HW_CAN_Recieve2( CAN_Packet_T* rxPacket )
 uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  * @param length the number of can packets to be written (seen as X above)
  *
- * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ * @return 0 if the write was successful, 1 otherwise. (partially successful = 1)
  */
 HW_CAN_Result_T HW_CAN_Tx_Buffer_Write1( CAN_Packet_T source[], uint16_t length )
 {
@@ -1131,6 +1128,11 @@ HW_CAN_Result_T HW_CAN_Tx_Buffer_Write1( CAN_Packet_T source[], uint16_t length 
                : HW_CAN_RESULT_ERROR;
 }
 
+void HW_CAN_Tx_Buffer_Cancel1( void )
+{
+    HW_CAN_Tx_Buffer_Cancel( CAN1_TX_IRQn, &can_tx_wp1, &can_tx_rp1 );
+}
+
 /**
  * @brief Writes a number of 8 byte packets (source) to the rx buffer
  *
@@ -1138,7 +1140,7 @@ HW_CAN_Result_T HW_CAN_Tx_Buffer_Write1( CAN_Packet_T source[], uint16_t length 
 uint8_t can_rx_buffer1[X][CAN_PACKET_SIZE];
  * @param length the number of can packets to be written (seen as X above)
  *
- * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ * @return 0 if the write was successful, 1 otherwise. (partially successful = 1)
  */
 uint16_t HW_CAN_Rx_Buffer_Write1( CAN_Packet_T source[], uint16_t length )
 {
@@ -1153,7 +1155,7 @@ uint16_t HW_CAN_Rx_Buffer_Write1( CAN_Packet_T source[], uint16_t length )
 uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  * @param length the number of can packets to be written (seen as X above)
  *
- * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ * @return 0 if the write was successful, 1 otherwise. (partially successful = 1)
  */
 HW_CAN_Result_T HW_CAN_Tx_Buffer_Write2( CAN_Packet_T source[], uint16_t length )
 {
@@ -1180,6 +1182,11 @@ HW_CAN_Result_T HW_CAN_Tx_Buffer_Write2( CAN_Packet_T source[], uint16_t length 
                : HW_CAN_RESULT_ERROR;
 }
 
+void HW_CAN_Tx_Buffer_Cancel2( void )
+{
+    HW_CAN_Tx_Buffer_Cancel( CAN2_TX_IRQn, &can_tx_wp2, &can_tx_rp2 );
+}
+
 /**
  * @brief Writes a number of 8 byte packets (source) to the rx buffer
  *
@@ -1187,7 +1194,7 @@ HW_CAN_Result_T HW_CAN_Tx_Buffer_Write2( CAN_Packet_T source[], uint16_t length 
 uint8_t can_rx_buffer1[X][CAN_PACKET_SIZE];
  * @param length the number of can packets to be written (seen as X above)
  *
- * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
+ * @return 0 if the write was successful, 1 otherwise. (partially successful = 1)
  */
 uint16_t HW_CAN_Rx_Buffer_Write2( CAN_Packet_T source[], uint16_t length )
 {
@@ -1748,6 +1755,21 @@ static HW_CAN_Result_T HW_CAN_Recover( CAN_HandleTypeDef* hcan, IRQn_Type tx_irq
     NVIC_EnableIRQ( tx_irq );
 
     return *status == HW_CAN_TX_STATUS_IDLE ? HW_CAN_RESULT_OK : HW_CAN_RESULT_ERROR;
+}
+
+/** Discard queued TX packets while preserving all other channel state. */
+static void HW_CAN_Tx_Buffer_Cancel( IRQn_Type tx_irq, volatile uint16_t* w_p,
+                                     volatile uint16_t* r_p )
+{
+    uint32_t tx_irq_was_enabled = NVIC_GetEnableIRQ( tx_irq );
+    NVIC_DisableIRQ( tx_irq );
+
+    *w_p = *r_p;
+
+    if ( tx_irq_was_enabled != 0U )
+    {
+        NVIC_EnableIRQ( tx_irq );
+    }
 }
 
 /**

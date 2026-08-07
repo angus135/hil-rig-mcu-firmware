@@ -37,7 +37,6 @@ target_link_libraries(console
     cubeide_hal
     rtos
     exec_uart
-    hw_can
     hw_uart
     hw_adc
     hw_spi
@@ -102,7 +101,6 @@ if(CONSOLE_ENABLE_TESTS AND BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/subsystem_command_apis
         ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_can
-        ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_can
     )
 
     add_test(NAME console_can_tests COMMAND console_can_tests)

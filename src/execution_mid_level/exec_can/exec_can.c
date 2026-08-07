@@ -4,10 +4,8 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      <Short description of the module's purpose and responsibilities>
- *
- *  Notes:
- *      <Any design notes, dependencies, or assumptions go here>
+ *      Execution-layer CAN validation, channel routing, type conversion, and
+ *      combined buffered transmission.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -15,181 +13,219 @@
  *------------------------------------------------------------------------------
  */
 
-#include <stdint.h>
-#include <stdbool.h>
-
 #include "exec_can.h"
+
 #include "hw_can.h"
 
-/**-----------------------------------------------------------------------------
- *  Defines / Macros
- *------------------------------------------------------------------------------
- */
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
 
-/**-----------------------------------------------------------------------------
- *  Typedefs / Enums / Structures
- *------------------------------------------------------------------------------
- */
-
-/**-----------------------------------------------------------------------------
- *  Public (global) and Extern Variables
- *------------------------------------------------------------------------------
- */
-
-/**-----------------------------------------------------------------------------
- *  Private (static) Variables
- *------------------------------------------------------------------------------
- */
-
-/**-----------------------------------------------------------------------------
- *  Private (static) Function Prototypes
- *------------------------------------------------------------------------------
- */
+_Static_assert( EXEC_CAN_MAX_PAYLOAD_SIZE == CAN_PACKET_SIZE,
+                "Execution and hardware CAN payload limits must match" );
+_Static_assert( EXEC_CAN_MAX_BATCH_SIZE <= HW_CAN_TX_QUEUE_CAPACITY,
+                "Execution CAN batches must fit the hardware TX queue" );
+_Static_assert( EXEC_CAN_MAX_BATCH_SIZE <= HW_CAN_RX_QUEUE_CAPACITY,
+                "Execution CAN receive storage must cover the hardware RX queue" );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
 
+static bool EXEC_CAN_Channel_Is_Valid( EXEC_CAN_Channel_T channel )
+{
+    return channel == EXEC_CAN_CHANNEL_1 || channel == EXEC_CAN_CHANNEL_2;
+}
+
+static EXEC_CAN_Result_T EXEC_CAN_Map_Result( HW_CAN_Result_T result )
+{
+    switch ( result )
+    {
+        case HW_CAN_RESULT_OK:
+            return EXEC_CAN_RESULT_OK;
+        case HW_CAN_RESULT_BUSY:
+            return EXEC_CAN_RESULT_BUSY;
+        case HW_CAN_RESULT_EMPTY:
+            return EXEC_CAN_RESULT_EMPTY;
+        case HW_CAN_RESULT_ERROR:
+        default:
+            return EXEC_CAN_RESULT_ERROR;
+    }
+}
+
+static EXEC_CAN_Result_T EXEC_CAN_Map_Configuration_Result( int result )
+{
+    switch ( result )
+    {
+        case 0:
+            return EXEC_CAN_RESULT_OK;
+        case 1:
+            return EXEC_CAN_RESULT_TIMING_ERROR;
+        case 2:
+            return EXEC_CAN_RESULT_FILTER_ERROR;
+        case 3:
+            return EXEC_CAN_RESULT_START_ERROR;
+        default:
+            return EXEC_CAN_RESULT_ERROR;
+    }
+}
+
+static EXEC_CAN_Tx_Status_T EXEC_CAN_Map_Tx_Status( HW_CAN_Tx_Status_T status )
+{
+    switch ( status )
+    {
+        case HW_CAN_TX_STATUS_IDLE:
+            return EXEC_CAN_TX_STATUS_IDLE;
+        case HW_CAN_TX_STATUS_ACTIVE:
+            return EXEC_CAN_TX_STATUS_ACTIVE;
+        case HW_CAN_TX_STATUS_COMPLETE:
+            return EXEC_CAN_TX_STATUS_COMPLETE;
+        case HW_CAN_TX_STATUS_ERROR:
+        default:
+            return EXEC_CAN_TX_STATUS_ERROR;
+    }
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
 
-/**
- * @brief If True then all channel 1 messages have been sent, since the last trigger
- *
- *
- * The sent flag is set flase after trigger is called when CAN has emptied the buffer
- * and set true when the last message is sent and the buffer is ready for a new message
- */
-bool EXEC_CAN_Channl1_sent()
+EXEC_CAN_Result_T EXEC_CAN_Configure( EXEC_CAN_Channel_T channel, uint32_t bitrate,
+                                      uint16_t filter_bank, uint16_t filter_id,
+                                      uint16_t filter_mask )
 {
-    return HW_CAN_Channl1_sent();
+    if ( !EXEC_CAN_Channel_Is_Valid( channel ) )
+    {
+        return EXEC_CAN_RESULT_INVALID_ARGUMENT;
+    }
+
+    int result = channel == EXEC_CAN_CHANNEL_1
+                     ? HW_CAN_Configure1( bitrate, filter_bank, filter_id, filter_mask )
+                     : HW_CAN_Configure2( bitrate, filter_bank, filter_id, filter_mask );
+    return EXEC_CAN_Map_Configuration_Result( result );
 }
 
-/**
- * @brief If True then all channel 2 messages have been sent, since the last trigger
- *
- *
- * The sent flag is set flase after trigger is called when CAN has emptied the buffer
- * and set true when the last message is sent and the buffer is ready for a new message
- */
-bool EXEC_CAN_Channl2_sent()
+EXEC_CAN_Result_T EXEC_CAN_Transmit( EXEC_CAN_Channel_T channel, const EXEC_CAN_Packet_T packets[],
+                                     uint16_t packet_count )
 {
-    return HW_CAN_Channl2_sent();
+    if ( !EXEC_CAN_Channel_Is_Valid( channel ) || packets == NULL || packet_count == 0U
+         || packet_count > EXEC_CAN_MAX_BATCH_SIZE )
+    {
+        return EXEC_CAN_RESULT_INVALID_ARGUMENT;
+    }
+
+    CAN_Packet_T hardware_packets[EXEC_CAN_MAX_BATCH_SIZE] = { 0 };
+    for ( uint16_t i = 0U; i < packet_count; i++ )
+    {
+        if ( packets[i].id > EXEC_CAN_STANDARD_ID_MAX
+             || packets[i].dlc > EXEC_CAN_MAX_PAYLOAD_SIZE )
+        {
+            return EXEC_CAN_RESULT_INVALID_ARGUMENT;
+        }
+
+        hardware_packets[i].id  = packets[i].id;
+        hardware_packets[i].dlc = packets[i].dlc;
+        memcpy( hardware_packets[i].data, packets[i].data, packets[i].dlc );
+    }
+
+    HW_CAN_Result_T result = channel == EXEC_CAN_CHANNEL_1
+                                 ? HW_CAN_Tx_Buffer_Write1( hardware_packets, packet_count )
+                                 : HW_CAN_Tx_Buffer_Write2( hardware_packets, packet_count );
+    if ( result != HW_CAN_RESULT_OK )
+    {
+        return EXEC_CAN_Map_Result( result );
+    }
+
+    result = channel == EXEC_CAN_CHANNEL_1 ? HW_CAN_Tx_Trigger1() : HW_CAN_Tx_Trigger2();
+    if ( result != HW_CAN_RESULT_OK )
+    {
+        if ( channel == EXEC_CAN_CHANNEL_1 )
+        {
+            HW_CAN_Tx_Buffer_Cancel1();
+        }
+        else
+        {
+            HW_CAN_Tx_Buffer_Cancel2();
+        }
+    }
+
+    return EXEC_CAN_Map_Result( result );
 }
 
-HW_CAN_Tx_Status_T EXEC_CAN_Tx_Status1( void )
+EXEC_CAN_Result_T EXEC_CAN_Receive( EXEC_CAN_Channel_T channel, EXEC_CAN_Packet_T destination[],
+                                    uint16_t capacity, uint16_t* packets_read )
 {
-    return HW_CAN_Tx_Status1();
+    if ( !EXEC_CAN_Channel_Is_Valid( channel ) || destination == NULL || packets_read == NULL )
+    {
+        return EXEC_CAN_RESULT_INVALID_ARGUMENT;
+    }
+
+    *packets_read = 0U;
+    if ( capacity == 0U )
+    {
+        return EXEC_CAN_RESULT_OK;
+    }
+
+    uint16_t hardware_capacity = capacity;
+    if ( hardware_capacity > EXEC_CAN_MAX_BATCH_SIZE )
+    {
+        hardware_capacity = EXEC_CAN_MAX_BATCH_SIZE;
+    }
+
+    CAN_Packet_T hardware_packets[EXEC_CAN_MAX_BATCH_SIZE] = { 0 };
+    uint16_t     count                                     = channel == EXEC_CAN_CHANNEL_1
+                                                                 ? HW_CAN_Rx_Buffer_Read1( hardware_packets, hardware_capacity )
+                                                                 : HW_CAN_Rx_Buffer_Read2( hardware_packets, hardware_capacity );
+
+    for ( uint16_t i = 0U; i < count; i++ )
+    {
+        if ( hardware_packets[i].id > EXEC_CAN_STANDARD_ID_MAX
+             || hardware_packets[i].dlc > EXEC_CAN_MAX_PAYLOAD_SIZE )
+        {
+            return EXEC_CAN_RESULT_ERROR;
+        }
+
+        destination[i].id  = hardware_packets[i].id;
+        destination[i].dlc = hardware_packets[i].dlc;
+        memset( destination[i].data, 0, sizeof( destination[i].data ) );
+        memcpy( destination[i].data, hardware_packets[i].data, hardware_packets[i].dlc );
+    }
+
+    *packets_read = count;
+    return EXEC_CAN_RESULT_OK;
 }
 
-HW_CAN_Tx_Status_T EXEC_CAN_Tx_Status2( void )
+EXEC_CAN_Tx_Status_T EXEC_CAN_Get_Tx_Status( EXEC_CAN_Channel_T channel )
 {
-    return HW_CAN_Tx_Status2();
+    if ( !EXEC_CAN_Channel_Is_Valid( channel ) )
+    {
+        return EXEC_CAN_TX_STATUS_INVALID_CHANNEL;
+    }
+
+    HW_CAN_Tx_Status_T status =
+        channel == EXEC_CAN_CHANNEL_1 ? HW_CAN_Tx_Status1() : HW_CAN_Tx_Status2();
+    return EXEC_CAN_Map_Tx_Status( status );
 }
 
-int EXEC_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
-                         uint16_t filter_mask )
+EXEC_CAN_Result_T EXEC_CAN_Recover( EXEC_CAN_Channel_T channel )
 {
-    return HW_CAN_Configure1( bitrate, filter_bank, filter_id, filter_mask );
+    if ( !EXEC_CAN_Channel_Is_Valid( channel ) )
+    {
+        return EXEC_CAN_RESULT_INVALID_ARGUMENT;
+    }
+
+    HW_CAN_Result_T result = channel == EXEC_CAN_CHANNEL_1 ? HW_CAN_Recover1() : HW_CAN_Recover2();
+    return EXEC_CAN_Map_Result( result );
 }
 
-int EXEC_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
-                         uint16_t filter_mask )
+uint32_t EXEC_CAN_Get_Rx_Dropped_Count( EXEC_CAN_Channel_T channel )
 {
-    return HW_CAN_Configure2( bitrate, filter_bank, filter_id, filter_mask );
-}
+    if ( !EXEC_CAN_Channel_Is_Valid( channel ) )
+    {
+        return 0U;
+    }
 
-HW_CAN_Result_T EXEC_CAN_Recover1( void )
-{
-    return HW_CAN_Recover1();
-}
-
-HW_CAN_Result_T EXEC_CAN_Recover2( void )
-{
-    return HW_CAN_Recover2();
-}
-
-/** Return channel 1's sticky software RX dropped-frame count. */
-uint32_t EXEC_CAN_Rx_Dropped_Count1( void )
-{
-    return HW_CAN_Rx_Dropped_Count1();
-}
-
-/** Return channel 2's sticky software RX dropped-frame count. */
-uint32_t EXEC_CAN_Rx_Dropped_Count2( void )
-{
-    return HW_CAN_Rx_Dropped_Count2();
-}
-
-/**
- * @brief Activates can channel 1 to immidiatley begin sending messages from the tx buffer
- *
- */
-HW_CAN_Result_T EXEC_CAN_Tx_Trigger1( void )
-{
-    return HW_CAN_Tx_Trigger1();
-}
-
-/**
- * @brief Activates can channel 2 to immidiatley begin sending messages from the tx buffer
- *
- */
-HW_CAN_Result_T EXEC_CAN_Tx_Trigger2( void )
-{
-    return HW_CAN_Tx_Trigger2();
-}
-
-/**
- * @brief Writes a number of 8 byte packets (source) to the tx buffer of channel 1
- *
- * @param source an array of arrays, type:
-uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
- * @param length the number of can packets to be written (seen as X above)
- *
- * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
- */
-HW_CAN_Result_T EXEC_CAN_Load_Tx1( CAN_Packet_T source[], uint16_t length )
-{
-    return HW_CAN_Tx_Buffer_Write1( source, length );
-}
-
-/**
- * @brief Writes a number of 8 byte packets (source) to the tx buffer of channel 2
- *
- * @param source an array of arrays, type:
-uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
- * @param length the number of can packets to be written (seen as X above)
- *
- * @return 0 if the write was succesful, 1 otherwise. (partially succesful = 1)
- */
-HW_CAN_Result_T EXEC_CAN_Load_Tx2( CAN_Packet_T source[], uint16_t length )
-{
-    return HW_CAN_Tx_Buffer_Write2( source, length );
-}
-
-/**
- * @brief Reads values from the rx channel 1 buffer one at a time and places them in dest
- *
- * @param dest pointer to array of 8 bytes sections of available storage
- *
- * @return the number of entries read from the rx buffer (can be 0)
- */
-uint16_t EXEC_CAN_Rx_Buffer_Read1( CAN_Packet_T dest[], uint16_t capacity )
-{
-    return HW_CAN_Rx_Buffer_Read1( dest, capacity );
-}
-
-/**
- * @brief Reads values from the rx channel 2 buffer and places them in dest
- *
- * @param dest pointer to array of 8 bytes sections of available storage
- *
- * @return the number of entries read from the rx buffer (can be 0)
- */
-uint16_t EXEC_CAN_Rx_Buffer_Read2( CAN_Packet_T dest[], uint16_t capacity )
-{
-    return HW_CAN_Rx_Buffer_Read2( dest, capacity );
+    return channel == EXEC_CAN_CHANNEL_1 ? HW_CAN_Rx_Dropped_Count1() : HW_CAN_Rx_Dropped_Count2();
 }

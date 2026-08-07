@@ -17,7 +17,6 @@
 
 #include "console.h"
 #include "exec_can.h"
-#include "hw_can.h"
 
 #include <errno.h>
 #include <stdbool.h>
@@ -31,7 +30,7 @@
  */
 
 #define CONSOLE_CAN_BITRATE ( 1000000U )
-#define CONSOLE_CAN_MAX_RX_PACKETS ( 20U )
+#define CONSOLE_CAN_MAX_RX_PACKETS ( EXEC_CAN_MAX_BATCH_SIZE )
 #define CONSOLE_CAN_MAX_TX_PACKETS ( 4U )
 
 /**-----------------------------------------------------------------------------
@@ -39,13 +38,14 @@
  *------------------------------------------------------------------------------
  */
 
-static void CONSOLE_CAN_Print_Usage( void );
-static bool CONSOLE_CAN_Parse_Channel( const char* text, uint8_t* channel );
-static bool CONSOLE_CAN_Parse_U16( const char* text, int base, uint16_t min_value,
-                                   uint16_t max_value, uint16_t* value );
-static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] );
-static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] );
-static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] );
+static void         CONSOLE_CAN_Print_Usage( void );
+static bool         CONSOLE_CAN_Parse_Channel( const char* text, EXEC_CAN_Channel_T* channel );
+static unsigned int CONSOLE_CAN_Channel_Number( EXEC_CAN_Channel_T channel );
+static bool         CONSOLE_CAN_Parse_U16( const char* text, int base, uint16_t min_value,
+                                           uint16_t max_value, uint16_t* value );
+static void         CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] );
+static void         CONSOLE_Command_Can_config( uint16_t argc, char* argv[] );
+static void         CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -62,7 +62,7 @@ static void CONSOLE_CAN_Print_Usage( void )
     CONSOLE_Printf( "    CAN IDs and masks accept decimal or 0x-prefixed hexadecimal\r\n" );
 }
 
-static bool CONSOLE_CAN_Parse_Channel( const char* text, uint8_t* channel )
+static bool CONSOLE_CAN_Parse_Channel( const char* text, EXEC_CAN_Channel_T* channel )
 {
     if ( text == NULL || channel == NULL )
     {
@@ -70,15 +70,20 @@ static bool CONSOLE_CAN_Parse_Channel( const char* text, uint8_t* channel )
     }
     if ( strcmp( text, "1" ) == 0 )
     {
-        *channel = 1U;
+        *channel = EXEC_CAN_CHANNEL_1;
         return true;
     }
     if ( strcmp( text, "2" ) == 0 )
     {
-        *channel = 2U;
+        *channel = EXEC_CAN_CHANNEL_2;
         return true;
     }
     return false;
+}
+
+static unsigned int CONSOLE_CAN_Channel_Number( EXEC_CAN_Channel_T channel )
+{
+    return channel == EXEC_CAN_CHANNEL_1 ? 1U : 2U;
 }
 
 static bool CONSOLE_CAN_Parse_U16( const char* text, int base, uint16_t min_value,
@@ -119,21 +124,21 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
         return;
     }
 
-    uint8_t channel = 0U;
+    EXEC_CAN_Channel_T channel;
     if ( !CONSOLE_CAN_Parse_Channel( argv[2], &channel ) )
     {
         CONSOLE_Printf( "Invalid CAN channel; expected 1 or 2\r\n" );
         return;
     }
 
-    CAN_Packet_T packets[CONSOLE_CAN_MAX_TX_PACKETS] = { 0 };
+    EXEC_CAN_Packet_T packets[CONSOLE_CAN_MAX_TX_PACKETS] = { 0 };
     for ( uint16_t i = 0U; i < packet_count; i++ )
     {
         uint16_t id_index      = ( uint16_t )( 3U + ( i * 2U ) );
         uint16_t payload_index = id_index + 1U;
         uint16_t id            = 0U;
 
-        if ( !CONSOLE_CAN_Parse_U16( argv[id_index], 0, 0U, CAN_STANDARD_ID_MAX, &id ) )
+        if ( !CONSOLE_CAN_Parse_U16( argv[id_index], 0, 0U, EXEC_CAN_STANDARD_ID_MAX, &id ) )
         {
             CONSOLE_Printf( "Invalid standard CAN ID\r\n" );
             return;
@@ -145,7 +150,7 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
         }
 
         size_t payload_length = strlen( argv[payload_index] );
-        if ( payload_length == 0U || payload_length > CAN_PACKET_SIZE )
+        if ( payload_length == 0U || payload_length > EXEC_CAN_MAX_PAYLOAD_SIZE )
         {
             CONSOLE_Printf( "CAN payload must contain 1 to 8 text bytes\r\n" );
             return;
@@ -156,22 +161,13 @@ static void CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] )
         memcpy( packets[i].data, argv[payload_index], payload_length );
     }
 
-    HW_CAN_Result_T result = channel == 1U ? EXEC_CAN_Load_Tx1( packets, packet_count )
-                                           : EXEC_CAN_Load_Tx2( packets, packet_count );
-    if ( result != HW_CAN_RESULT_OK )
-    {
-        CONSOLE_Printf( result == HW_CAN_RESULT_BUSY ? "CAN channel is busy\r\n"
-                                                     : "Unable to queue CAN batch\r\n" );
-        return;
-    }
-
-    result = channel == 1U ? EXEC_CAN_Tx_Trigger1() : EXEC_CAN_Tx_Trigger2();
-    if ( result == HW_CAN_RESULT_OK )
+    EXEC_CAN_Result_T result = EXEC_CAN_Transmit( channel, packets, packet_count );
+    if ( result == EXEC_CAN_RESULT_OK )
     {
         CONSOLE_Printf( "Started %u CAN frame(s) on channel %u\r\n", ( unsigned int )packet_count,
-                        ( unsigned int )channel );
+                        CONSOLE_CAN_Channel_Number( channel ) );
     }
-    else if ( result == HW_CAN_RESULT_BUSY )
+    else if ( result == EXEC_CAN_RESULT_BUSY )
     {
         CONSOLE_Printf( "CAN channel is busy\r\n" );
     }
@@ -195,23 +191,25 @@ static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] )
     uint16_t filter_mask = 0U;
     if ( !CONSOLE_CAN_Parse_U16( argv[2], 10, 0U, 13U, &can1_bank )
          || !CONSOLE_CAN_Parse_U16( argv[3], 10, 14U, 27U, &can2_bank )
-         || !CONSOLE_CAN_Parse_U16( argv[4], 0, 0U, CAN_STANDARD_ID_MAX, &filter_id )
-         || !CONSOLE_CAN_Parse_U16( argv[5], 0, 0U, CAN_STANDARD_ID_MAX, &filter_mask ) )
+         || !CONSOLE_CAN_Parse_U16( argv[4], 0, 0U, EXEC_CAN_STANDARD_ID_MAX, &filter_id )
+         || !CONSOLE_CAN_Parse_U16( argv[5], 0, 0U, EXEC_CAN_STANDARD_ID_MAX, &filter_mask ) )
     {
         CONSOLE_Printf( "Invalid CAN configuration values\r\n" );
         CONSOLE_CAN_Print_Usage();
         return;
     }
 
-    int result = EXEC_CAN_Configure1( CONSOLE_CAN_BITRATE, can1_bank, filter_id, filter_mask );
-    if ( result != 0 )
+    EXEC_CAN_Result_T result = EXEC_CAN_Configure( EXEC_CAN_CHANNEL_1, CONSOLE_CAN_BITRATE,
+                                                   can1_bank, filter_id, filter_mask );
+    if ( result != EXEC_CAN_RESULT_OK )
     {
         CONSOLE_Printf( "CAN1 configuration failed with error %d\r\n", result );
         return;
     }
 
-    result = EXEC_CAN_Configure2( CONSOLE_CAN_BITRATE, can2_bank, filter_id, filter_mask );
-    if ( result != 0 )
+    result = EXEC_CAN_Configure( EXEC_CAN_CHANNEL_2, CONSOLE_CAN_BITRATE, can2_bank, filter_id,
+                                 filter_mask );
+    if ( result != EXEC_CAN_RESULT_OK )
     {
         CONSOLE_Printf( "CAN2 configuration failed with error %d\r\n", result );
         return;
@@ -228,33 +226,42 @@ static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
         return;
     }
 
-    uint8_t channel = 0U;
+    EXEC_CAN_Channel_T channel;
     if ( !CONSOLE_CAN_Parse_Channel( argv[2], &channel ) )
     {
         CONSOLE_Printf( "Invalid CAN channel; expected 1 or 2\r\n" );
         return;
     }
 
-    CAN_Packet_T packets[CONSOLE_CAN_MAX_RX_PACKETS] = { 0 };
-    uint16_t read = channel == 1U ? EXEC_CAN_Rx_Buffer_Read1( packets, CONSOLE_CAN_MAX_RX_PACKETS )
-                                  : EXEC_CAN_Rx_Buffer_Read2( packets, CONSOLE_CAN_MAX_RX_PACKETS );
-    uint32_t dropped = channel == 1U ? EXEC_CAN_Rx_Dropped_Count1() : EXEC_CAN_Rx_Dropped_Count2();
+    EXEC_CAN_Packet_T packets[CONSOLE_CAN_MAX_RX_PACKETS] = { 0 };
+    uint16_t          read                                = 0U;
+    EXEC_CAN_Result_T result =
+        EXEC_CAN_Receive( channel, packets, CONSOLE_CAN_MAX_RX_PACKETS, &read );
+    if ( result != EXEC_CAN_RESULT_OK )
+    {
+        CONSOLE_Printf( "Unable to read CAN channel %u\r\n",
+                        CONSOLE_CAN_Channel_Number( channel ) );
+        return;
+    }
+
+    uint32_t dropped = EXEC_CAN_Get_Rx_Dropped_Count( channel );
 
     if ( dropped != 0U )
     {
         CONSOLE_Printf( "Warning: CAN channel %u dropped %lu received frame(s)\r\n",
-                        ( unsigned int )channel, ( unsigned long )dropped );
+                        CONSOLE_CAN_Channel_Number( channel ), ( unsigned long )dropped );
     }
     if ( read == 0U )
     {
-        CONSOLE_Printf( "Nothing in channel %u buffer\r\n", ( unsigned int )channel );
+        CONSOLE_Printf( "Nothing in channel %u buffer\r\n", CONSOLE_CAN_Channel_Number( channel ) );
         return;
     }
 
     for ( uint16_t i = 0U; i < read; i++ )
     {
-        uint8_t payload_length =
-            packets[i].dlc <= CAN_PACKET_SIZE ? packets[i].dlc : CAN_PACKET_SIZE;
+        uint8_t payload_length = packets[i].dlc <= EXEC_CAN_MAX_PAYLOAD_SIZE
+                                     ? packets[i].dlc
+                                     : EXEC_CAN_MAX_PAYLOAD_SIZE;
         CONSOLE_Printf( "Received id: 0x%03X, dlc: %u, data:", ( unsigned int )packets[i].id,
                         ( unsigned int )packets[i].dlc );
         for ( uint8_t j = 0U; j < payload_length; j++ )

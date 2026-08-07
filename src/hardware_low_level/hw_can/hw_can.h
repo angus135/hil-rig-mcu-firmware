@@ -37,6 +37,8 @@ extern "C"
 
 #define CAN_PACKET_SIZE ( 8U )
 #define CAN_STANDARD_ID_MAX ( 0x7FFU )
+#define HW_CAN_TX_QUEUE_CAPACITY ( 19U )
+#define HW_CAN_RX_QUEUE_CAPACITY ( 19U )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -116,7 +118,7 @@ void HW_CAN_Buffer_consume( volatile uint16_t* pointer, uint16_t update, uint16_
  *
  * @return true if the final buffered CAN message has been sent.
  */
-bool HW_CAN_Channl1_sent( void );
+bool HW_CAN_Channel1_Sent( void );
 
 /**
  * @brief Returns the sent flag for channel 2.
@@ -126,7 +128,7 @@ bool HW_CAN_Channl1_sent( void );
  *
  * @return true if the final buffered CAN message has been sent.
  */
-bool HW_CAN_Channl2_sent( void );
+bool HW_CAN_Channel2_Sent( void );
 
 /** @return Current buffered transmit status for channel 1. */
 HW_CAN_Tx_Status_T HW_CAN_Tx_Status1( void );
@@ -259,7 +261,7 @@ HW_CAN_Result_T HW_CAN_Recover2( void );
  *         non-zero if no packet is pending or rxPacket is null. A null
  *         destination does not release a FIFO entry.
  */
-int HW_CAN_Recieve1( CAN_Packet_T* rxPacket );
+int HW_CAN_Receive1( CAN_Packet_T* rxPacket );
 
 /**
  * @brief Transmits a CAN packet on channel 1.
@@ -283,7 +285,7 @@ HW_CAN_Result_T HW_CAN_Transmit1( uint8_t* txData, uint16_t id, uint8_t dlc );
  *         non-zero if no packet is pending or rxPacket is null. A null
  *         destination does not release a FIFO entry.
  */
-int HW_CAN_Recieve2( CAN_Packet_T* rxPacket );
+int HW_CAN_Receive2( CAN_Packet_T* rxPacket );
 
 /**
  * @brief Transmits a CAN packet on channel 2.
@@ -313,6 +315,9 @@ HW_CAN_Result_T HW_CAN_Transmit2( uint8_t* txData, uint16_t id, uint8_t dlc );
  *         HW_CAN_RESULT_ERROR if the batch is invalid or does not fit.
  */
 HW_CAN_Result_T HW_CAN_Tx_Buffer_Write1( CAN_Packet_T source[], uint16_t length );
+
+/** Discard all queued, not-yet-transmitted channel 1 packets. */
+void HW_CAN_Tx_Buffer_Cancel1( void );
 
 /**
  * @brief Writes CAN packets to the channel 1 receive buffer.
@@ -392,6 +397,9 @@ uint16_t HW_CAN_Rx_Buffer_Pop1( CAN_Packet_T* dest );
  *         1 if the buffer could not accept all packets.
  */
 HW_CAN_Result_T HW_CAN_Tx_Buffer_Write2( CAN_Packet_T source[], uint16_t length );
+
+/** Discard all queued, not-yet-transmitted channel 2 packets. */
+void HW_CAN_Tx_Buffer_Cancel2( void );
 
 /**
  * @brief Writes CAN packets to the channel 2 receive buffer.

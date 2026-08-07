@@ -2,7 +2,8 @@
  *  File:       test_console_can.cpp
  *
  *  Description:
- *      Focused tests for CAN diagnostic console parsing and API routing.
+ *      Focused tests for CAN diagnostic console parsing and execution-API
+ *      routing.
  ******************************************************************************/
 
 #include <gtest/gtest.h>
@@ -21,33 +22,25 @@ extern "C"
 #include <string>
 #include <vector>
 
-static std::string               console_output;
-static std::vector<CAN_Packet_T> loaded_packets1;
-static std::vector<CAN_Packet_T> loaded_packets2;
-static CAN_Packet_T              received_packets1[4];
-static CAN_Packet_T              received_packets2[4];
-static uint16_t                  received_count1;
-static uint16_t                  received_count2;
-static uint32_t                  dropped_count1;
-static uint32_t                  dropped_count2;
-static HW_CAN_Result_T           load_result1;
-static HW_CAN_Result_T           load_result2;
-static HW_CAN_Result_T           trigger_result1;
-static HW_CAN_Result_T           trigger_result2;
-static uint16_t                  trigger_count1;
-static uint16_t                  trigger_count2;
-static uint16_t                  configure_count1;
-static uint16_t                  configure_count2;
-static uint32_t                  configured_bitrate1;
-static uint32_t                  configured_bitrate2;
-static uint16_t                  configured_bank1;
-static uint16_t                  configured_bank2;
-static uint16_t                  configured_id1;
-static uint16_t                  configured_id2;
-static uint16_t                  configured_mask1;
-static uint16_t                  configured_mask2;
-static int                       configure_result1;
-static int                       configure_result2;
+static std::string                    console_output;
+static std::vector<EXEC_CAN_Packet_T> transmitted_packets[2];
+static EXEC_CAN_Result_T              transmit_results[2];
+static uint16_t                       transmit_counts[2];
+static EXEC_CAN_Packet_T              received_packets[2][4];
+static uint16_t                       received_counts[2];
+static EXEC_CAN_Result_T              receive_results[2];
+static uint32_t                       dropped_counts[2];
+static uint16_t                       configure_counts[2];
+static uint32_t                       configured_bitrates[2];
+static uint16_t                       configured_banks[2];
+static uint16_t                       configured_ids[2];
+static uint16_t                       configured_masks[2];
+static EXEC_CAN_Result_T              configure_results[2];
+
+static size_t ChannelIndex( EXEC_CAN_Channel_T channel )
+{
+    return channel == EXEC_CAN_CHANNEL_1 ? 0U : 1U;
+}
 
 extern "C" void CONSOLE_Printf( const char* format, ... )
 {
@@ -59,74 +52,43 @@ extern "C" void CONSOLE_Printf( const char* format, ... )
     console_output += output;
 }
 
-extern "C" HW_CAN_Result_T EXEC_CAN_Load_Tx1( CAN_Packet_T source[], uint16_t length )
+extern "C" EXEC_CAN_Result_T EXEC_CAN_Transmit( EXEC_CAN_Channel_T      channel,
+                                                const EXEC_CAN_Packet_T packets[],
+                                                uint16_t                packet_count )
 {
-    loaded_packets1.assign( source, source + length );
-    return load_result1;
+    size_t index = ChannelIndex( channel );
+    transmit_counts[index]++;
+    transmitted_packets[index].assign( packets, packets + packet_count );
+    return transmit_results[index];
 }
 
-extern "C" HW_CAN_Result_T EXEC_CAN_Load_Tx2( CAN_Packet_T source[], uint16_t length )
+extern "C" EXEC_CAN_Result_T EXEC_CAN_Receive( EXEC_CAN_Channel_T channel,
+                                               EXEC_CAN_Packet_T destination[], uint16_t capacity,
+                                               uint16_t* packets_read )
 {
-    loaded_packets2.assign( source, source + length );
-    return load_result2;
+    size_t   index  = ChannelIndex( channel );
+    uint16_t copied = std::min( received_counts[index], capacity );
+    std::copy_n( received_packets[index], copied, destination );
+    *packets_read = copied;
+    return receive_results[index];
 }
 
-extern "C" HW_CAN_Result_T EXEC_CAN_Tx_Trigger1( void )
+extern "C" uint32_t EXEC_CAN_Get_Rx_Dropped_Count( EXEC_CAN_Channel_T channel )
 {
-    trigger_count1++;
-    return trigger_result1;
+    return dropped_counts[ChannelIndex( channel )];
 }
 
-extern "C" HW_CAN_Result_T EXEC_CAN_Tx_Trigger2( void )
+extern "C" EXEC_CAN_Result_T EXEC_CAN_Configure( EXEC_CAN_Channel_T channel, uint32_t bitrate,
+                                                 uint16_t filter_bank, uint16_t filter_id,
+                                                 uint16_t filter_mask )
 {
-    trigger_count2++;
-    return trigger_result2;
-}
-
-extern "C" uint16_t EXEC_CAN_Rx_Buffer_Read1( CAN_Packet_T dest[], uint16_t capacity )
-{
-    uint16_t copied = std::min( received_count1, capacity );
-    std::copy_n( received_packets1, copied, dest );
-    return copied;
-}
-
-extern "C" uint16_t EXEC_CAN_Rx_Buffer_Read2( CAN_Packet_T dest[], uint16_t capacity )
-{
-    uint16_t copied = std::min( received_count2, capacity );
-    std::copy_n( received_packets2, copied, dest );
-    return copied;
-}
-
-extern "C" uint32_t EXEC_CAN_Rx_Dropped_Count1( void )
-{
-    return dropped_count1;
-}
-
-extern "C" uint32_t EXEC_CAN_Rx_Dropped_Count2( void )
-{
-    return dropped_count2;
-}
-
-extern "C" int EXEC_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
-                                    uint16_t filter_mask )
-{
-    configure_count1++;
-    configured_bitrate1 = bitrate;
-    configured_bank1    = filter_bank;
-    configured_id1      = filter_id;
-    configured_mask1    = filter_mask;
-    return configure_result1;
-}
-
-extern "C" int EXEC_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
-                                    uint16_t filter_mask )
-{
-    configure_count2++;
-    configured_bitrate2 = bitrate;
-    configured_bank2    = filter_bank;
-    configured_id2      = filter_id;
-    configured_mask2    = filter_mask;
-    return configure_result2;
+    size_t index = ChannelIndex( channel );
+    configure_counts[index]++;
+    configured_bitrates[index] = bitrate;
+    configured_banks[index]    = filter_bank;
+    configured_ids[index]      = filter_id;
+    configured_masks[index]    = filter_mask;
+    return configure_results[index];
 }
 
 class ConsoleCANTest : public ::testing::Test
@@ -135,32 +97,20 @@ protected:
     void SetUp() override
     {
         console_output.clear();
-        loaded_packets1.clear();
-        loaded_packets2.clear();
-        memset( received_packets1, 0, sizeof( received_packets1 ) );
-        memset( received_packets2, 0, sizeof( received_packets2 ) );
-        received_count1     = 0U;
-        received_count2     = 0U;
-        dropped_count1      = 0U;
-        dropped_count2      = 0U;
-        load_result1        = HW_CAN_RESULT_OK;
-        load_result2        = HW_CAN_RESULT_OK;
-        trigger_result1     = HW_CAN_RESULT_OK;
-        trigger_result2     = HW_CAN_RESULT_OK;
-        trigger_count1      = 0U;
-        trigger_count2      = 0U;
-        configure_count1    = 0U;
-        configure_count2    = 0U;
-        configured_bitrate1 = 0U;
-        configured_bitrate2 = 0U;
-        configured_bank1    = 0U;
-        configured_bank2    = 0U;
-        configured_id1      = 0U;
-        configured_id2      = 0U;
-        configured_mask1    = 0U;
-        configured_mask2    = 0U;
-        configure_result1   = 0;
-        configure_result2   = 0;
+        transmitted_packets[0].clear();
+        transmitted_packets[1].clear();
+        std::memset( received_packets, 0, sizeof( received_packets ) );
+        std::memset( transmit_counts, 0, sizeof( transmit_counts ) );
+        std::memset( received_counts, 0, sizeof( received_counts ) );
+        std::memset( dropped_counts, 0, sizeof( dropped_counts ) );
+        std::memset( configure_counts, 0, sizeof( configure_counts ) );
+        std::memset( configured_bitrates, 0, sizeof( configured_bitrates ) );
+        std::memset( configured_banks, 0, sizeof( configured_banks ) );
+        std::memset( configured_ids, 0, sizeof( configured_ids ) );
+        std::memset( configured_masks, 0, sizeof( configured_masks ) );
+        transmit_results[0] = transmit_results[1] = EXEC_CAN_RESULT_OK;
+        receive_results[0] = receive_results[1] = EXEC_CAN_RESULT_OK;
+        configure_results[0] = configure_results[1] = EXEC_CAN_RESULT_OK;
     }
 };
 
@@ -172,12 +122,12 @@ TEST_F( ConsoleCANTest, ShortConfigurationCommandPrintsUsageWithoutConfiguring )
 
     CONSOLE_CAN_Command_Handler( 2U, argv );
 
-    EXPECT_EQ( configure_count1, 0U );
-    EXPECT_EQ( configure_count2, 0U );
+    EXPECT_EQ( configure_counts[0], 0U );
+    EXPECT_EQ( configure_counts[1], 0U );
     EXPECT_NE( console_output.find( "can config" ), std::string::npos );
 }
 
-TEST_F( ConsoleCANTest, LongTransmitCommandIsRejectedBeforeLoading )
+TEST_F( ConsoleCANTest, LongTransmitCommandIsRejectedBeforeTransmitting )
 {
     char  can[]  = "can";
     char  tx[]   = "tx";
@@ -188,8 +138,7 @@ TEST_F( ConsoleCANTest, LongTransmitCommandIsRejectedBeforeLoading )
 
     CONSOLE_CAN_Command_Handler( 13U, argv );
 
-    EXPECT_TRUE( loaded_packets1.empty() );
-    EXPECT_EQ( trigger_count1, 0U );
+    EXPECT_EQ( transmit_counts[0], 0U );
     EXPECT_NE( console_output.find( "Too many CAN frames" ), std::string::npos );
 }
 
@@ -205,8 +154,8 @@ TEST_F( ConsoleCANTest, InvalidFilterBankCombinationIsRejectedBeforeConfiguratio
 
     CONSOLE_CAN_Command_Handler( 6U, argv );
 
-    EXPECT_EQ( configure_count1, 0U );
-    EXPECT_EQ( configure_count2, 0U );
+    EXPECT_EQ( configure_counts[0], 0U );
+    EXPECT_EQ( configure_counts[1], 0U );
     EXPECT_NE( console_output.find( "Invalid CAN configuration" ), std::string::npos );
 }
 
@@ -222,16 +171,16 @@ TEST_F( ConsoleCANTest, ValidDualChannelConfigurationUsesSeparateBanks )
 
     CONSOLE_CAN_Command_Handler( 6U, argv );
 
-    EXPECT_EQ( configure_count1, 1U );
-    EXPECT_EQ( configure_count2, 1U );
-    EXPECT_EQ( configured_bitrate1, 1000000U );
-    EXPECT_EQ( configured_bitrate2, 1000000U );
-    EXPECT_EQ( configured_bank1, 13U );
-    EXPECT_EQ( configured_bank2, 14U );
-    EXPECT_EQ( configured_id1, 0x123U );
-    EXPECT_EQ( configured_id2, 0x123U );
-    EXPECT_EQ( configured_mask1, 0x7FFU );
-    EXPECT_EQ( configured_mask2, 0x7FFU );
+    EXPECT_EQ( configure_counts[0], 1U );
+    EXPECT_EQ( configure_counts[1], 1U );
+    EXPECT_EQ( configured_bitrates[0], 1000000U );
+    EXPECT_EQ( configured_bitrates[1], 1000000U );
+    EXPECT_EQ( configured_banks[0], 13U );
+    EXPECT_EQ( configured_banks[1], 14U );
+    EXPECT_EQ( configured_ids[0], 0x123U );
+    EXPECT_EQ( configured_ids[1], 0x123U );
+    EXPECT_EQ( configured_masks[0], 0x7FFU );
+    EXPECT_EQ( configured_masks[1], 0x7FFU );
     EXPECT_NE( console_output.find( "CAN1 and CAN2 configured" ), std::string::npos );
 }
 
@@ -248,21 +197,20 @@ TEST_F( ConsoleCANTest, MultiFrameTransmitSetsDeterministicIDsAndDLCs )
 
     CONSOLE_CAN_Command_Handler( 7U, argv );
 
-    ASSERT_EQ( loaded_packets2.size(), 2U );
-    EXPECT_EQ( loaded_packets2[0].id, 0x123U );
-    EXPECT_EQ( loaded_packets2[0].dlc, 3U );
-    EXPECT_EQ( loaded_packets2[0].data[0], 'a' );
-    EXPECT_EQ( loaded_packets2[0].data[3], 0U );
-    EXPECT_EQ( loaded_packets2[1].id, 0x7FFU );
-    EXPECT_EQ( loaded_packets2[1].dlc, 1U );
-    EXPECT_EQ( loaded_packets2[1].data[0], 'Z' );
-    EXPECT_EQ( loaded_packets2[1].data[1], 0U );
-    EXPECT_EQ( trigger_count2, 1U );
-    EXPECT_NE( console_output.find( "Started 2 CAN frame(s)" ), std::string::npos );
-    EXPECT_EQ( console_output.find( "Transmitted" ), std::string::npos );
+    ASSERT_EQ( transmitted_packets[1].size(), 2U );
+    EXPECT_EQ( transmitted_packets[1][0].id, 0x123U );
+    EXPECT_EQ( transmitted_packets[1][0].dlc, 3U );
+    EXPECT_EQ( transmitted_packets[1][0].data[0], 'a' );
+    EXPECT_EQ( transmitted_packets[1][0].data[3], 0U );
+    EXPECT_EQ( transmitted_packets[1][1].id, 0x7FFU );
+    EXPECT_EQ( transmitted_packets[1][1].dlc, 1U );
+    EXPECT_EQ( transmitted_packets[1][1].data[0], 'Z' );
+    EXPECT_EQ( transmitted_packets[1][1].data[1], 0U );
+    EXPECT_EQ( transmit_counts[1], 1U );
+    EXPECT_NE( console_output.find( "Started 2 CAN frame(s) on channel 2" ), std::string::npos );
 }
 
-TEST_F( ConsoleCANTest, InvalidTransmitPairDoesNotPartiallyLoadBatch )
+TEST_F( ConsoleCANTest, InvalidTransmitPairDoesNotPartiallyTransmitBatch )
 {
     char  can[]      = "can";
     char  tx[]       = "tx";
@@ -275,23 +223,22 @@ TEST_F( ConsoleCANTest, InvalidTransmitPairDoesNotPartiallyLoadBatch )
 
     CONSOLE_CAN_Command_Handler( 7U, argv );
 
-    EXPECT_TRUE( loaded_packets1.empty() );
-    EXPECT_EQ( trigger_count1, 0U );
+    EXPECT_EQ( transmit_counts[0], 0U );
 }
 
 TEST_F( ConsoleCANTest, ReceivePrintsIDAndDLCBoundedHexPayload )
 {
-    received_packets1[0].id      = 0x7FFU;
-    received_packets1[0].dlc     = 3U;
-    received_packets1[0].data[0] = 0x00U;
-    received_packets1[0].data[1] = 0xFFU;
-    received_packets1[0].data[2] = 0x41U;
-    received_packets1[0].data[3] = 0x42U;
-    received_count1              = 1U;
-    char  can[]                  = "can";
-    char  rx[]                   = "rx";
-    char  channel[]              = "1";
-    char* argv[]                 = { can, rx, channel };
+    received_packets[0][0].id      = 0x7FFU;
+    received_packets[0][0].dlc     = 3U;
+    received_packets[0][0].data[0] = 0x00U;
+    received_packets[0][0].data[1] = 0xFFU;
+    received_packets[0][0].data[2] = 0x41U;
+    received_packets[0][0].data[3] = 0x42U;
+    received_counts[0]             = 1U;
+    char  can[]                    = "can";
+    char  rx[]                     = "rx";
+    char  channel[]                = "1";
+    char* argv[]                   = { can, rx, channel };
 
     CONSOLE_CAN_Command_Handler( 3U, argv );
 
