@@ -54,6 +54,9 @@
 #define USB_TEST_READ_TIMEOUT_MS 5000U
 #define USB_TEST_READ_BUFFER_SIZE_BYTES 256U
 
+/* Development console runs use a fixed count until protocol configuration exists. */
+#define EXECUTION_MANAGER_CONSOLE_DEFAULT_TICK_COUNT 1000U
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -101,6 +104,10 @@ static void CONSOLE_Command_USB_Test( uint16_t argc, char* argv[] );
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
+static ExecutionManagerConfig_T execution_manager_console_config = {
+    FREQUENCY_10KHZ,
+    EXECUTION_MANAGER_CONSOLE_DEFAULT_TICK_COUNT,
+};
 
 // clang-format off
 
@@ -627,19 +634,31 @@ static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "Usage:\r\n" );
         CONSOLE_Printf( "  execution_manager start\r\n" );
         CONSOLE_Printf( "  execution_manager stop\r\n" );
+        CONSOLE_Printf( "  execution_manager status\r\n" );
         CONSOLE_Printf( "  execution_manager frequency <desired frequency>\r\n" );
         CONSOLE_Printf( "    Note: Desired frequencies can only be 100Hz, 1kHz or 10kHz\r\n" );
+        CONSOLE_Printf( "    Runs started from the console execute 1000 ticks\r\n" );
         return;
     }
 
     if ( strcmp( argv[1], "start" ) == 0 )
     {
-        EXECUTION_MANAGER_Init();
-        EXECUTION_MANAGER_Start();
+        if ( !EXECUTION_MANAGER_Start( &execution_manager_console_config ) )
+        {
+            CONSOLE_Printf( "Execution Manager start rejected\r\n" );
+        }
     }
     else if ( strcmp( argv[1], "stop" ) == 0 )
     {
-        EXECUTION_MANAGER_Stop();
+        EXECUTION_MANAGER_Abort();
+    }
+    else if ( strcmp( argv[1], "status" ) == 0 )
+    {
+        ExecutionManagerStatus_T status;
+        EXECUTION_MANAGER_Get_Status( &status );
+        CONSOLE_Printf( "Execution Manager state: %u, failure: %u, ticks completed: %lu\r\n",
+                        ( unsigned int )status.state, ( unsigned int )status.failure,
+                        ( unsigned long )status.ticks_completed );
     }
     else if ( strcmp( argv[1], "frequency" ) == 0 )
     {
@@ -653,17 +672,17 @@ static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] )
 
         if ( ( strcmp( argv[2], "10k" ) == 0 ) || ( strcmp( argv[2], "10000" ) == 0 ) )
         {
-            EXECUTION_MANAGER_Set_Frequency_Mode( FREQUENCY_10KHZ );
+            execution_manager_console_config.frequency_mode = FREQUENCY_10KHZ;
             CONSOLE_Printf( "Scheduler Frequency is set to %sHz\r\n", argv[2] );
         }
         else if ( ( strcmp( argv[2], "1k" ) == 0 ) || ( strcmp( argv[2], "1000" ) == 0 ) )
         {
-            EXECUTION_MANAGER_Set_Frequency_Mode( FREQUENCY_1KHZ );
+            execution_manager_console_config.frequency_mode = FREQUENCY_1KHZ;
             CONSOLE_Printf( "Scheduler Frequency is set to %sHz\r\n", argv[2] );
         }
         else if ( strcmp( argv[2], "100" ) == 0 )
         {
-            EXECUTION_MANAGER_Set_Frequency_Mode( FREQUENCY_100HZ );
+            execution_manager_console_config.frequency_mode = FREQUENCY_100HZ;
             CONSOLE_Printf( "Scheduler Frequency is set to %sHz\r\n", argv[2] );
         }
         else
@@ -677,6 +696,7 @@ static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "Usage:\r\n" );
         CONSOLE_Printf( "  execution_manager start\r\n" );
         CONSOLE_Printf( "  execution_manager stop\r\n" );
+        CONSOLE_Printf( "  execution_manager status\r\n" );
         CONSOLE_Printf( "  execution_manager frequency <desired frequency>\r\n" );
         CONSOLE_Printf( "    Note: Desired frequencies can only be 100Hz, 1kHz or 10kHz\r\n" );
     }

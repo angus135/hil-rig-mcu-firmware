@@ -10,6 +10,7 @@ set(EXECUTION_MANAGER_SOURCES
 
 set(EXECUTION_MANAGER_HEADERS
     execution_manager.h
+    execution_manager_isr.h
 )
 
 add_library(execution_manager STATIC
@@ -30,7 +31,6 @@ target_link_libraries(execution_manager
         cubeide_hal
         rtos
         hw_timer
-        hw_gpio
 )
 
 # -----------------------------
