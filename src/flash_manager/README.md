@@ -3,7 +3,8 @@
 `result_buffer.c` implements packed result-record production and page draining.
 `instruction_buffer.c` implements prefetched instruction views and page release.
 `flash_manager.c` connects both buffers to the execution ISR and performs NAND
-refill/drain work from its RTOS task. Result retrieval, instruction upload, and
+refill/drain work from its RTOS task. The public instruction-upload lifecycle
+contract is defined; its task-side implementation, result retrieval, and
 application startup remain to be integrated.
 
 The flash manager is the only normal runtime task that should call `external_flash`.
@@ -83,6 +84,47 @@ EXTERNAL_FLASH_WriteInstructionPage(page_buffer, valid_length);
 ```
 
 Execution must not start until `EXTERNAL_FLASH_FinishInstructionUpload()` succeeds.
+
+### Flash Manager instruction-upload contract
+
+The Host Interface will use these non-blocking Flash Manager APIs rather than
+calling `external_flash` directly:
+
+```c
+FLASH_MANAGER_RequestInstructionUploadStart(expected_length_bytes);
+FLASH_MANAGER_SubmitInstructionUploadBytes(data, length);
+FLASH_MANAGER_RequestInstructionUploadFinish();
+```
+
+The intended lifecycle is:
+
+```text
+IDLE
+  -> PREPARING_INSTRUCTION_UPLOAD
+  -> INSTRUCTION_UPLOAD
+  -> FINALISING_INSTRUCTION_UPLOAD
+  -> IDLE
+```
+
+The start request prepares instruction storage asynchronously. The Host
+Interface must wait for `FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD` before sending
+canonical instruction bytes. Each accepted chunk is copied into Flash
+Manager-owned storage before submission returns, allowing the Host Interface to
+reuse its receive buffer immediately. Only one chunk may be pending, providing
+explicit backpressure while the Flash Manager task persists the preceding
+chunk.
+
+Finalisation is accepted only after the declared instruction length has been
+accepted and the upload mailbox is empty. The Flash Manager task then commits
+the final partial NAND page through `EXTERNAL_FLASH_FinishInstructionUpload()`.
+Successful completion returns the manager to `IDLE`; any asynchronous storage
+failure enters `FAULT`.
+
+The Host Interface application layer is responsible for translating and
+validating incoming package data into the canonical packed
+`[instruction header][payload]...` stream before submission. The Flash Manager
+preserves byte order and controls storage lifecycle; it does not interpret
+peripheral-specific instruction payloads.
 
 ---
 
