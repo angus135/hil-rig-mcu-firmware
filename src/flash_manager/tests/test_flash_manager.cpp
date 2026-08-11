@@ -77,6 +77,10 @@ static uint32_t              write_result_page_length = 0U;
 static ExternalFlashStatus_T start_session_status = EXTERNAL_FLASH_STATUS_OK;
 static uint32_t              start_session_calls  = 0U;
 
+static ExternalFlashStatus_T start_instruction_upload_status = EXTERNAL_FLASH_STATUS_OK;
+static uint32_t              start_instruction_upload_calls  = 0U;
+static uint32_t              start_instruction_upload_length = 0U;
+
 static ExternalFlashStatus_T read_instruction_page_status = EXTERNAL_FLASH_STATUS_OK;
 static uint32_t              read_instruction_page_calls  = 0U;
 static uint32_t              read_instruction_page_offsets[TEST_MAX_INSTRUCTION_READS] = {};
@@ -174,6 +178,14 @@ extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void )
     return start_session_status;
 }
 
+extern "C" ExternalFlashStatus_T
+EXTERNAL_FLASH_StartInstructionUpload( uint32_t expected_length )
+{
+    start_instruction_upload_calls++;
+    start_instruction_upload_length = expected_length;
+    return start_instruction_upload_status;
+}
+
 extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructionPage( uint32_t offset, uint8_t* data,
                                                                      uint32_t length )
 {
@@ -255,6 +267,10 @@ protected:
 
         start_session_status = EXTERNAL_FLASH_STATUS_OK;
         start_session_calls  = 0U;
+
+        start_instruction_upload_status = EXTERNAL_FLASH_STATUS_OK;
+        start_instruction_upload_calls  = 0U;
+        start_instruction_upload_length = 0U;
 
         read_instruction_page_status = EXTERNAL_FLASH_STATUS_OK;
         read_instruction_page_calls  = 0U;
@@ -365,6 +381,121 @@ TEST_F( FlashManagerTest, GetStateReportsCurrentStateAndRejectsNullDestination )
     EXPECT_TRUE( FLASH_MANAGER_GetState( &state ) );
     EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, state );
     EXPECT_FALSE( FLASH_MANAGER_GetState( nullptr ) );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadStartRejectsUnavailableManagerAndInvalidLength )
+{
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOT_INITIALISED,
+               FLASH_MANAGER_RequestInstructionUploadStart( TEST_PAGE_SIZE_BYTES ) );
+
+    Initialise();
+    RegisterTask();
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_ARGUMENT,
+               FLASH_MANAGER_RequestInstructionUploadStart( 0U ) );
+    EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, flash_manager_context.state );
+    EXPECT_EQ( 0U, notify_calls );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadStartRejectsInvalidStateAndMissingTask )
+{
+    Initialise();
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_TASK_NOT_READY,
+               FLASH_MANAGER_RequestInstructionUploadStart( TEST_PAGE_SIZE_BYTES ) );
+    EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, flash_manager_context.state );
+
+    RegisterTask();
+    flash_manager_context.state = FLASH_MANAGER_STATE_EXECUTING;
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE,
+               FLASH_MANAGER_RequestInstructionUploadStart( TEST_PAGE_SIZE_BYTES ) );
+    EXPECT_EQ( FLASH_MANAGER_STATE_EXECUTING, flash_manager_context.state );
+    EXPECT_EQ( 0U, notify_calls );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadStartRejectsLengthBeyondInstructionPartition )
+{
+    Initialise();
+    RegisterTask();
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_ARGUMENT,
+               FLASH_MANAGER_RequestInstructionUploadStart(
+                   TEST_INSTRUCTION_CAPACITY_BYTES + 1U ) );
+    EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, flash_manager_context.state );
+    EXPECT_EQ( 0U, notify_calls );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadStartPreparesBufferChangesStateAndNotifiesTask )
+{
+    constexpr uint32_t expected_length_bytes = TEST_PAGE_SIZE_BYTES + 5U;
+
+    Initialise();
+    RegisterTask();
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_RequestInstructionUploadStart( expected_length_bytes ) );
+    EXPECT_EQ( FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD,
+               flash_manager_context.state );
+    EXPECT_EQ( 1U, notify_calls );
+    EXPECT_EQ( TEST_FLASH_MANAGER_TASK_HANDLE, notify_task_handle );
+    EXPECT_EQ( FLASH_MANAGER_NOTIFY_PREPARE_INSTRUCTION_UPLOAD, notify_value );
+    EXPECT_EQ( eSetBits, notify_action );
+
+    uint32_t prepared_length_bytes = 0U;
+    ASSERT_TRUE( INSTRUCTION_BUFFER_GetUploadExpectedLength( &prepared_length_bytes ) );
+    EXPECT_EQ( expected_length_bytes, prepared_length_bytes );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadStartNotificationFailureEntersFault )
+{
+    Initialise();
+    RegisterTask();
+    notify_result = pdFAIL;
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOTIFY_FAILED,
+               FLASH_MANAGER_RequestInstructionUploadStart( TEST_PAGE_SIZE_BYTES ) );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+    EXPECT_EQ( 1U, notify_calls );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadPreparationStartsNandUploadAndEntersUploadState )
+{
+    constexpr uint32_t expected_length_bytes = TEST_PAGE_SIZE_BYTES * 2U + 3U;
+
+    Initialise();
+    RegisterTask();
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_RequestInstructionUploadStart( expected_length_bytes ) );
+
+    EXPECT_TRUE( FLASH_MANAGER_PrepareInstructionUpload() );
+    EXPECT_EQ( 1U, start_instruction_upload_calls );
+    EXPECT_EQ( expected_length_bytes, start_instruction_upload_length );
+    EXPECT_EQ( FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD, flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadPreparationRejectsStaleNotification )
+{
+    Initialise();
+
+    EXPECT_FALSE( FLASH_MANAGER_PrepareInstructionUpload() );
+    EXPECT_EQ( 0U, start_instruction_upload_calls );
+    EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadPreparationReportsNandPreparationFailure )
+{
+    Initialise();
+    RegisterTask();
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_RequestInstructionUploadStart( TEST_PAGE_SIZE_BYTES ) );
+    start_instruction_upload_status = EXTERNAL_FLASH_STATUS_ERASE_FAIL;
+
+    EXPECT_FALSE( FLASH_MANAGER_PrepareInstructionUpload() );
+    EXPECT_EQ( 1U, start_instruction_upload_calls );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES, start_instruction_upload_length );
+    EXPECT_EQ( FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD,
+               flash_manager_context.state );
 }
 
 TEST_F( FlashManagerTest, PreparationRequestRejectsUnavailableManagerAndTask )
