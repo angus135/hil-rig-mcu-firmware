@@ -959,7 +959,7 @@ TEST_F( FlashManagerTest, ConsumingPageNotifiesTaskAndRefillWorkerLoadsReleasedS
     const FlashManagerInstructionView_T* view = nullptr;
     ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_AVAILABLE,
                FLASH_MANAGER_PeekNextInstructionFromISR( &view ) );
-    ASSERT_TRUE( FLASH_MANAGER_ConsumeInstructionFromISR( view, &task_woken ) );
+    ASSERT_TRUE( FLASH_MANAGER_ConsumeInstructionFromISR( &task_woken ) );
 
     EXPECT_EQ( 1U, notify_from_isr_calls );
     EXPECT_EQ( FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS, notify_from_isr_value );
@@ -986,7 +986,13 @@ TEST_F( FlashManagerTest, InstructionExhaustionRemainsExecutingUntilExplicitFina
     const FlashManagerInstructionView_T* view = nullptr;
     ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_AVAILABLE,
                FLASH_MANAGER_PeekNextInstructionFromISR( &view ) );
-    ASSERT_TRUE( FLASH_MANAGER_ConsumeInstructionFromISR( view, nullptr ) );
+
+    const FlashManagerInstructionView_T* repeated_view = nullptr;
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_AVAILABLE,
+               FLASH_MANAGER_PeekNextInstructionFromISR( &repeated_view ) );
+    EXPECT_EQ( view, repeated_view );
+
+    ASSERT_TRUE( FLASH_MANAGER_ConsumeInstructionFromISR( nullptr ) );
 
     EXPECT_EQ( 0U, notify_from_isr_calls );
     EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_END_OF_STREAM,
@@ -1004,7 +1010,9 @@ TEST_F( FlashManagerTest, InstructionExhaustionRemainsExecutingUntilExplicitFina
     EXPECT_EQ( FLASH_MANAGER_STATE_FINALISING_RESULTS, flash_manager_context.state );
     ASSERT_TRUE( FLASH_MANAGER_FinaliseResults() );
     EXPECT_EQ( FLASH_MANAGER_STATE_RESULTS_READY, flash_manager_context.state );
-    EXPECT_FALSE( INSTRUCTION_BUFFER_IsReadComplete() );
+
+    /* Finalisation must release retrieval ownership of the shared instruction RAM. */
+    EXPECT_TRUE( INSTRUCTION_BUFFER_PrepareUpload( TEST_PAGE_SIZE_BYTES ) );
 }
 
 TEST_F( FlashManagerTest, ReachingUnloadedInstructionDataLatchesUnderrunFault )
@@ -1022,11 +1030,10 @@ TEST_F( FlashManagerTest, ReachingUnloadedInstructionDataLatchesUnderrunFault )
     const FlashManagerInstructionView_T* view = nullptr;
     ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_AVAILABLE,
                FLASH_MANAGER_PeekNextInstructionFromISR( &view ) );
-    ASSERT_TRUE( FLASH_MANAGER_ConsumeInstructionFromISR( view, nullptr ) );
+    ASSERT_TRUE( FLASH_MANAGER_ConsumeInstructionFromISR( nullptr ) );
 
     EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_NOT_BUFFERED,
                FLASH_MANAGER_PeekNextInstructionFromISR( &view ) );
-    EXPECT_EQ( nullptr, view );
     EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
 }
 
@@ -1068,7 +1075,7 @@ TEST_F( FlashManagerTest, RefillWorkerHandlesCoalescedPageReleaseNotifications )
         const FlashManagerInstructionView_T* view = nullptr;
         ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_AVAILABLE,
                    FLASH_MANAGER_PeekNextInstructionFromISR( &view ) );
-        ASSERT_TRUE( FLASH_MANAGER_ConsumeInstructionFromISR( view, nullptr ) );
+        ASSERT_TRUE( FLASH_MANAGER_ConsumeInstructionFromISR( nullptr ) );
     }
 
     EXPECT_EQ( 2U, notify_from_isr_calls );
@@ -1095,7 +1102,7 @@ TEST_F( FlashManagerTest, RefillNotificationFailureFaultsAfterInstructionWasCons
     ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_AVAILABLE,
                FLASH_MANAGER_PeekNextInstructionFromISR( &view ) );
 
-    EXPECT_FALSE( FLASH_MANAGER_ConsumeInstructionFromISR( view, nullptr ) );
+    EXPECT_FALSE( FLASH_MANAGER_ConsumeInstructionFromISR( nullptr ) );
     EXPECT_EQ( 1U, notify_from_isr_calls );
     EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
 }
@@ -1258,11 +1265,10 @@ TEST_F( FlashManagerTest, ExecutionSessionFlowsFromPreparationThroughPartialFina
 TEST_F( FlashManagerTest, ReserveClearsLeaseAndRejectsNonExecutingState )
 {
     Initialise();
-    FlashManagerResultWriteLease_T lease = {
-        .payload                = reinterpret_cast<uint8_t*>( 0x1U ),
-        .lease_id               = 42U,
-        .payload_capacity_bytes = 12U,
-    };
+    FlashManagerResultWriteLease_T lease = {};
+    lease.payload                       = reinterpret_cast<uint8_t*>( 0x1U );
+    lease.lease_id                      = 42U;
+    lease.payload_capacity_bytes        = 12U;
 
     EXPECT_FALSE( FLASH_MANAGER_ReserveResultRecordFromISR( 4U, &lease ) );
     EXPECT_EQ( nullptr, lease.payload );

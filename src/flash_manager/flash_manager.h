@@ -271,9 +271,6 @@ typedef struct
 
     /** Read-only payload belonging to the instruction described by header. */
     const uint8_t* payload;
-
-    /** Opaque identifier used to reject stale consumption attempts. */
-    uint32_t view_id;
 } FlashManagerInstructionView_T;
 
 /** @brief Availability and validation status for the next instruction view. */
@@ -294,14 +291,8 @@ typedef enum
      */
     FLASH_MANAGER_INSTRUCTION_END_OF_STREAM,
 
-    /** Instruction retrieval is unavailable in the current manager state. */
-    FLASH_MANAGER_INSTRUCTION_INVALID_STATE,
-
     /** The stored record is invalid and FLASH_MANAGER_STATE_FAULT was latched. */
-    FLASH_MANAGER_INSTRUCTION_CORRUPT,
-
-    /** The supplied output pointer was null. */
-    FLASH_MANAGER_INSTRUCTION_INVALID_ARGUMENT
+    FLASH_MANAGER_INSTRUCTION_CORRUPT
 } FlashManagerInstructionReadStatus_T;
 
 /** @brief Result of submitting an asynchronous instruction-upload operation. */
@@ -427,17 +418,18 @@ FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
 /**
  * @brief Returns a read-only view of the next buffered instruction.
  *
- * The consumer position is not advanced. Repeated calls return the same
- * instruction until it is consumed.
+ * The consumer position is not advanced. Repeated calls before consumption
+ * return the same cached view, allowing a future-timestamped instruction to be
+ * inspected again on a later execution tick without reparsing it.
  *
  * @param[out] instruction
- *      Destination for a pointer to the prepared instruction view. Set to null
- *      before returning any status other than
- *      FLASH_MANAGER_INSTRUCTION_AVAILABLE.
+ *      Destination for a pointer to the prepared instruction view. Its value is
+ *      changed only when FLASH_MANAGER_INSTRUCTION_AVAILABLE is returned.
  *
  * @return Current instruction-read status.
  *
- * @note Call only from the execution ISR while the manager is EXECUTING.
+ * @pre Call only from the execution ISR while the manager is EXECUTING.
+ * @pre instruction must be non-null.
  * @note This function never blocks, accesses NAND or uses a mutex.
  * @note END_OF_STREAM describes instruction storage only. Measurements and
  *       result logging may continue until another subsystem ends the test.
@@ -448,22 +440,21 @@ FLASH_MANAGER_PeekNextInstructionFromISR( const FlashManagerInstructionView_T** 
 /**
  * @brief Consumes the instruction returned by the current successful peek.
  *
- * @param[in] instruction
- *      Unmodified view returned by FLASH_MANAGER_PeekNextInstructionFromISR().
  * @param[in,out] higher_priority_task_woken
  *      Optional accumulated FreeRTOS ISR wake flag. May be NULL when the caller
  *      does not require notification of a newly ready task.
  *
- * @return true when the matching instruction was consumed; otherwise false.
+ * @return true when the current instruction was consumed; otherwise false.
  *
+ * @pre At least one successful peek must precede exactly one consume call.
+ * @pre Call only from the execution ISR while the manager is EXECUTING.
  * @note Consuming an instruction may release page storage and notify the Flash
  *       Manager task to preload another NAND page.
  * @note The view becomes stale after successful consumption.
  * @note The outer timer ISR may yield only after its entire execution sequence
  *       has finished.
  */
-bool FLASH_MANAGER_ConsumeInstructionFromISR( const FlashManagerInstructionView_T* instruction,
-                                              BaseType_t* higher_priority_task_woken );
+bool FLASH_MANAGER_ConsumeInstructionFromISR( BaseType_t* higher_priority_task_woken );
 
 /**
  * @brief Requests preparation of NAND storage for a canonical instruction image.
