@@ -25,8 +25,10 @@
  *      not exceed one NAND page.
  *
  *      Upload preprocessing is responsible for validating this canonical
- *      stream before it reaches NAND. Runtime detection of an invalid stored
- *      length is a session-ending fault rather than a recoverable parse error.
+ *      stream before it reaches NAND, including nondecreasing timestamps,
+ *      routing metadata, payload schemas, and the one-page record limit.
+ *      Runtime detection of an invalid stored length is a session-ending fault
+ *      rather than a recoverable parse error.
  *
  *      The implementation owns three circular NAND-page slots plus one
  *      page-sized mirror of slot zero. The mirror is populated in Flash Manager
@@ -264,6 +266,9 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
  * @note The returned payload is contiguous even if its stored record crosses a
  *       NAND page boundary or the physical end of the circular page storage.
  * @note Peek copies only the fixed-size header; it never copies the payload.
+ * @note Timestamp comparison is deliberately outside this buffer. The
+ *       Execution Manager retains a future record, consumes a record due on
+ *       the current tick, and treats a past record as an overrun fault.
  * @note The view remains valid until consumed, PrepareRead is called again, or
  *       EndRead closes the retrieval session.
  */
@@ -333,6 +338,8 @@ bool INSTRUCTION_BUFFER_GetUploadExpectedLength( uint32_t* expected_length_bytes
  * @note The complete chunk is copied or no state is changed. BUSY therefore
  *       permits the caller to retry the identical data and length.
  * @note A chunk may fill the tail of one page and continue into the next page.
+ * @note Chunk boundaries are transport boundaries only. They need not align
+ *       with instruction-record or NAND-page boundaries.
  * @note Full pages become immutable and ready for NAND immediately. The final
  *       partial page is published by INSTRUCTION_BUFFER_FinaliseUpload().
  * @note This function performs no NAND access and is not internally synchronised.

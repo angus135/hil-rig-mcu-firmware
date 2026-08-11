@@ -22,6 +22,8 @@
  *      exposed directly from the three circular page slots. A fourth region
  *      mirrors slot zero immediately after slot two, making records that cross
  *      the physical ring end contiguous without copying in the execution ISR.
+ *      Timestamp scheduling is intentionally owned by the Execution Manager;
+ *      this module only caches, exposes, and advances the ordered byte stream.
  *
  *      Upload reuses the same three page slots in the opposite direction: the
  *      Host Interface copies canonical stream chunks into RAM and the Flash
@@ -804,7 +806,7 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
 InstructionBufferPeekStatus_T
 INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instruction )
 {
-    /* Repeated execution ticks return the already prepared instruction cheaply. */
+    /* A future instruction is re-peeked on later ticks through this cached path. */
     if ( instruction_buffer_context.instruction_cache.record_length_bytes != 0U )
     {
         *instruction = &instruction_buffer_context.instruction_cache.view;

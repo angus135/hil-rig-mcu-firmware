@@ -7,9 +7,9 @@
  *      Public interface for timer-driven test execution.
  *
  *  Notes:
- *      The execution path runs in the execution timer ISR. Future integration
- *      must use the Flash Manager's FromISR result-record API and must not call
- *      NAND, take an RTOS mutex, or use task-context FreeRTOS functions.
+ *      The execution path runs in the execution timer ISR. Integration must
+ *      use the Flash Manager's FromISR instruction/result APIs and must not
+ *      call NAND, take an RTOS mutex, or use task-context FreeRTOS functions.
  ******************************************************************************/
 
 #ifndef EXECUTION_MANAGER_H
@@ -55,14 +55,30 @@ typedef enum FrequencyMode_T
  *
  * Before the timer starts, the Run State Manager must have requested Flash
  * Manager preparation and observed FLASH_MANAGER_STATE_EXECUTING.
+ * Instructions are supplied in nondecreasing timestamp order.
+ *
+ * At each execution tick, repeatedly peek the head instruction:
+ *
+ * - timestamp > current tick: stop this iteration without consuming it. A
+ *   later peek returns the same cached view without reparsing the header.
+ * - timestamp == current tick: dispatch by peripheral type and channel, then
+ *   consume exactly once and peek again.
+ * - timestamp < current tick: report an execution-overrun/infeasibility fault,
+ *   stop the session, and do not consume the late instruction.
+ *
+ * End of the stored instruction stream does not itself end the test. A future
+ * measurement may still be required; session completion is determined by the
+ * configured execution policy outside the Flash Manager.
  *
  * For each measurement produced inside EXECUTION_MANAGER_Process_From_ISR():
  *
  * 1. Reserve the maximum payload size required by the selected execution
  *    driver with FLASH_MANAGER_ReserveResultRecordFromISR().
  * 2. Pass lease.payload and lease.payload_capacity_bytes to the execution
- *    driver. The driver copies its result structure directly into that memory
- *    and returns the actual byte count.
+ *    driver. Peripheral DMA populates driver-owned storage asynchronously, but
+ *    the selected driver synchronously copies one stable result into the lease
+ *    during this ISR and returns the actual byte count. DMA must never target
+ *    the lease directly.
  * 3. Assign the execution timestamp and commit the record with
  *    FLASH_MANAGER_CommitResultRecordFromISR(). The header also identifies the
  *    peripheral type and channel.
@@ -79,9 +95,11 @@ typedef enum FrequencyMode_T
  * configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY.
  *
  * Reservation failure means the RAM result queue has no safe capacity. The
- * future execution policy must report this condition and stop or fault the run;
- * it must not silently discard a required result. Commit errors must likewise
- * be propagated to the Run State Manager.
+ * execution policy must report this condition and stop/fault the run; it must
+ * not silently discard a required result. Peek underrun/corruption, consume
+ * failure, commit errors, and timestamp overrun must likewise be propagated to
+ * the Run State Manager through an ISR-safe mechanism that remains to be
+ * implemented.
  */
 
 /**
@@ -109,7 +127,12 @@ void EXECUTION_MANAGER_Set_Frequency_Mode( FrequencyMode_T mode );
 /**
  * @brief Test Scheduler Initialization
  *
- * Initialises the test schedular based on the selected frequency mode.
+ * Initialises the test scheduler based on the selected frequency mode.
+ *
+ * @warning The current skeleton starts TIM4 immediately. Final lifecycle
+ *          integration must ensure this function is not called until the Flash
+ *          Manager reports FLASH_MANAGER_STATE_EXECUTING, or separate timer
+ *          configuration from timer start.
  */
 void EXECUTION_MANAGER_Init( void );
 
@@ -120,10 +143,11 @@ void EXECUTION_MANAGER_Init( void );
  * execution-manager processing required for the current scheduler tick.
  * This API is expected to remain ISR-safe and execute quickly.
  *
- * @note Future Flash Manager integration will either add a
- *       BaseType_t* higher_priority_task_woken parameter or return equivalent
- *       wake information to the outer timer IRQ handler. The outermost ISR
- *       performs the single portYIELD_FROM_ISR() call after processing.
+ * @note Flash Manager integration must accumulate one BaseType_t wake flag
+ *       across all instruction consumes and result commits, then make that
+ *       value available to the outer timer IRQ handler. The outermost ISR
+ *       performs one portYIELD_FROM_ISR() call after the complete tick.
+ * @note The overrun/fault reporting mechanism is not implemented yet.
  */
 void EXECUTION_MANAGER_Process_From_ISR( void );
 

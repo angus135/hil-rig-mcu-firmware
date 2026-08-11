@@ -8,7 +8,7 @@
  *
  *  Notes:
  *      The test sources provide RTOS and external-flash function shims. The
- *      Geometry controls below configure the EXTERNAL_FLASH_GetInfo() double
+ *      The geometry controls below configure the EXTERNAL_FLASH_GetInfo() double
  *      shared by the instruction-buffer, result-buffer, and Flash Manager
  *      tests in the flash_manager_tests target.
  ******************************************************************************/
