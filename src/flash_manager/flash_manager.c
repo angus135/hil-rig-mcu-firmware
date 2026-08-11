@@ -46,6 +46,8 @@
 /** Signals that consumed instruction storage is available for a NAND refill. */
 #define FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS ( 1UL << 3 )
 
+/** Requests preparation of a new instruction upload. */
+#define FLASH_MANAGER_NOTIFY_PREPARE_INSTRUCTION_UPLOAD ( 1UL << 4 )
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -114,6 +116,8 @@ static bool FLASH_MANAGER_PrepareExecution( void );
 
 static bool FLASH_MANAGER_FinaliseResults( void );
 
+static bool FLASH_MANAGER_PrepareInstructionUpload( void );
+
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
@@ -165,7 +169,7 @@ static bool FLASH_MANAGER_DrainResultPages( void )
 
     for ( ;; )
     {
-        bool drain_allowed;
+        bool drain_allowed = false;
         bool page_acquired = false;
 
         /*
@@ -192,7 +196,7 @@ static bool FLASH_MANAGER_DrainResultPages( void )
         ExternalFlashStatus_T nand_write_status =
             EXTERNAL_FLASH_WriteResultPage( drain_lease.page_data, drain_lease.valid_length_bytes );
 
-        bool drain_completion_succeeded;
+        bool drain_completion_succeeded = false;
 
         taskENTER_CRITICAL();
         drain_completion_succeeded = RESULT_BUFFER_CompleteDrain(
@@ -236,7 +240,7 @@ static bool FLASH_MANAGER_FillInstructionPages( void )
 
     for ( ;; )
     {
-        bool fill_allowed;
+        bool fill_allowed  = false;
         bool page_acquired = false;
 
         taskENTER_CRITICAL();
@@ -258,7 +262,7 @@ static bool FLASH_MANAGER_FillInstructionPages( void )
             fill_lease.instruction_offset_bytes, fill_lease.page_data,
             fill_lease.read_length_bytes );
 
-        bool fill_completion_succeeded;
+        bool fill_completion_succeeded = false;
 
         taskENTER_CRITICAL();
         fill_completion_succeeded = INSTRUCTION_BUFFER_CompleteFillPage(
@@ -466,6 +470,56 @@ static bool FLASH_MANAGER_FinaliseResults( void )
     return finalisation_state_is_valid;
 }
 
+static bool FLASH_MANAGER_PrepareInstructionUpload( void )
+{
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return false;
+    }
+
+    bool preparation_state_is_valid =
+        flash_manager_context.state == FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD;
+
+    uint32_t expected_length_bytes = 0U;
+
+    if ( preparation_state_is_valid )
+    {
+        preparation_state_is_valid =
+            INSTRUCTION_BUFFER_GetUploadExpectedLength( &expected_length_bytes );
+    }
+
+    FLASH_MANAGER_Unlock();
+
+    if ( !preparation_state_is_valid )
+    {
+        return false;
+    }
+
+    if ( EXTERNAL_FLASH_StartInstructionUpload( expected_length_bytes )
+         != EXTERNAL_FLASH_STATUS_OK )
+    {
+        return false;
+    }
+
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return false;
+    }
+
+    preparation_state_is_valid =
+        flash_manager_context.state == FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD;
+
+    if ( preparation_state_is_valid )
+    {
+        taskENTER_CRITICAL();
+        flash_manager_context.state = FLASH_MANAGER_STATE_IDLE;
+        taskEXIT_CRITICAL();
+    }
+
+    FLASH_MANAGER_Unlock();
+
+    return preparation_state_is_valid;
+}
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
@@ -512,6 +566,7 @@ void FLASH_MANAGER_Task( void* parameters )
             continue;
         }
 
+        /** Handle preparation of a new execution session. */
         if ( ( notification_bits & FLASH_MANAGER_NOTIFY_PREPARE_EXECUTION ) != 0U )
         {
             if ( !FLASH_MANAGER_PrepareExecution() )
@@ -520,6 +575,16 @@ void FLASH_MANAGER_Task( void* parameters )
             }
         }
 
+        /** Handle preparation of a new instruction upload. */
+        if ( ( notification_bits & FLASH_MANAGER_NOTIFY_PREPARE_INSTRUCTION_UPLOAD ) != 0U )
+        {
+            if ( !FLASH_MANAGER_PrepareInstructionUpload() )
+            {
+                FLASH_MANAGER_EnterFault();
+            }
+        }
+
+        /** Handle finalisation of result bytes. */
         if ( ( notification_bits & FLASH_MANAGER_NOTIFY_FINALISE_RESULTS ) != 0U )
         {
             /*
@@ -532,6 +597,7 @@ void FLASH_MANAGER_Task( void* parameters )
             }
         }
 
+        /** Handle draining of result bytes. */
         if ( ( notification_bits & FLASH_MANAGER_NOTIFY_DRAIN_RESULTS ) != 0U )
         {
             /*
@@ -544,6 +610,7 @@ void FLASH_MANAGER_Task( void* parameters )
             }
         }
 
+        /** Handle refilling of instruction pages. */
         if ( ( notification_bits & FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS ) != 0U )
         {
             if ( !FLASH_MANAGER_FillInstructionPages() )
@@ -707,6 +774,62 @@ FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void )
     }
 
     return FLASH_MANAGER_REQUEST_OK;
+}
+
+FlashManagerInstructionUploadRequestStatus_T
+FLASH_MANAGER_RequestInstructionUploadStart( uint32_t expected_length_bytes )
+{
+    /** Check if the Flash Manager is initialised. */
+    if ( flash_manager_context.access_mutex == NULL )
+    {
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOT_INITIALISED;
+    }
+    /** Check that the expected length is valid. */
+    if ( expected_length_bytes == 0U )
+    {
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_ARGUMENT;
+    }
+
+    /** Lock the flash manager */
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOT_INITIALISED;
+    }
+
+    /** Check if the Flash Manager is in the idle state to begin an upload. */
+    if ( flash_manager_context.state != FLASH_MANAGER_STATE_IDLE )
+    {
+        FLASH_MANAGER_Unlock();
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE;
+    }
+
+    TaskHandle_t notification_task_handle = flash_manager_context.task_handle;
+
+    if ( notification_task_handle == NULL )
+    {
+        FLASH_MANAGER_Unlock();
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_TASK_NOT_READY;
+    }
+
+    if ( !INSTRUCTION_BUFFER_PrepareUpload( expected_length_bytes ) )
+    {
+        FLASH_MANAGER_Unlock();
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_ARGUMENT;
+    }
+
+    flash_manager_context.state = FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD;
+
+    FLASH_MANAGER_Unlock();
+
+    if ( xTaskNotify( notification_task_handle, FLASH_MANAGER_NOTIFY_PREPARE_INSTRUCTION_UPLOAD,
+                      eSetBits )
+         != pdPASS )
+    {
+        FLASH_MANAGER_EnterFault();
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOTIFY_FAILED;
+    }
+
+    return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED;
 }
 
 /**
