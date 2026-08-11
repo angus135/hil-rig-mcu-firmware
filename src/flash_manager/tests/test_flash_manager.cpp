@@ -20,6 +20,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 
@@ -80,6 +81,14 @@ static uint32_t              start_session_calls  = 0U;
 static ExternalFlashStatus_T start_instruction_upload_status = EXTERNAL_FLASH_STATUS_OK;
 static uint32_t              start_instruction_upload_calls  = 0U;
 static uint32_t              start_instruction_upload_length = 0U;
+
+static ExternalFlashStatus_T write_instruction_page_status = EXTERNAL_FLASH_STATUS_OK;
+static uint32_t              write_instruction_page_calls  = 0U;
+static uint32_t write_instruction_page_lengths[TEST_MAX_INSTRUCTION_READS] = {};
+static uint8_t  write_instruction_page_data[TEST_MAX_INSTRUCTION_READS][TEST_PAGE_SIZE_BYTES] = {};
+
+static ExternalFlashStatus_T finish_instruction_upload_status = EXTERNAL_FLASH_STATUS_OK;
+static uint32_t              finish_instruction_upload_calls  = 0U;
 
 static ExternalFlashStatus_T read_instruction_page_status = EXTERNAL_FLASH_STATUS_OK;
 static uint32_t              read_instruction_page_calls  = 0U;
@@ -186,6 +195,30 @@ EXTERNAL_FLASH_StartInstructionUpload( uint32_t expected_length )
     return start_instruction_upload_status;
 }
 
+extern "C" ExternalFlashStatus_T
+EXTERNAL_FLASH_WriteInstructionPage( const uint8_t* data, uint32_t valid_length )
+{
+    if ( write_instruction_page_calls < TEST_MAX_INSTRUCTION_READS )
+    {
+        write_instruction_page_lengths[write_instruction_page_calls] = valid_length;
+
+        if ( ( data != nullptr ) && ( valid_length <= TEST_PAGE_SIZE_BYTES ) )
+        {
+            std::memcpy( write_instruction_page_data[write_instruction_page_calls], data,
+                         valid_length );
+        }
+    }
+
+    write_instruction_page_calls++;
+    return write_instruction_page_status;
+}
+
+extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_FinishInstructionUpload( void )
+{
+    finish_instruction_upload_calls++;
+    return finish_instruction_upload_status;
+}
+
 extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructionPage( uint32_t offset, uint8_t* data,
                                                                      uint32_t length )
 {
@@ -272,6 +305,15 @@ protected:
         start_instruction_upload_calls  = 0U;
         start_instruction_upload_length = 0U;
 
+        write_instruction_page_status = EXTERNAL_FLASH_STATUS_OK;
+        write_instruction_page_calls  = 0U;
+        std::memset( write_instruction_page_lengths, 0,
+                     sizeof( write_instruction_page_lengths ) );
+        std::memset( write_instruction_page_data, 0, sizeof( write_instruction_page_data ) );
+
+        finish_instruction_upload_status = EXTERNAL_FLASH_STATUS_OK;
+        finish_instruction_upload_calls  = 0U;
+
         read_instruction_page_status = EXTERNAL_FLASH_STATUS_OK;
         read_instruction_page_calls  = 0U;
         std::memset( read_instruction_page_offsets, 0, sizeof( read_instruction_page_offsets ) );
@@ -293,6 +335,20 @@ protected:
     void RegisterTask( void )
     {
         flash_manager_context.task_handle = TEST_FLASH_MANAGER_TASK_HANDLE;
+    }
+
+    void PrepareInstructionUpload( uint32_t expected_length_bytes )
+    {
+        Initialise();
+        RegisterTask();
+        ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+                   FLASH_MANAGER_RequestInstructionUploadStart( expected_length_bytes ) );
+        ASSERT_TRUE( FLASH_MANAGER_PrepareInstructionUpload() );
+
+        notify_calls       = 0U;
+        notify_task_handle = nullptr;
+        notify_value       = 0U;
+        notify_action      = eNoAction;
     }
 
     static FlashManagerResultWriteLease_T ReserveRecord( uint16_t payload_capacity_bytes )
@@ -332,6 +388,14 @@ protected:
         }
 
         FLASH_MANAGER_TEST_SetInstructionLength( page_count * TEST_PAGE_SIZE_BYTES );
+    }
+
+    static void FillBytes( uint8_t* data, uint32_t length, uint8_t seed )
+    {
+        for ( uint32_t index = 0U; index < length; index++ )
+        {
+            data[index] = static_cast<uint8_t>( seed + index );
+        }
     }
 };
 
@@ -496,6 +560,273 @@ TEST_F( FlashManagerTest, InstructionUploadPreparationReportsNandPreparationFail
     EXPECT_EQ( TEST_PAGE_SIZE_BYTES, start_instruction_upload_length );
     EXPECT_EQ( FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD,
                flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadSubmissionValidatesManagerStateAndArguments )
+{
+    std::array<uint8_t, 1U> data = { 0xA5U };
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOT_INITIALISED,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( data.data(), data.size() ) );
+
+    Initialise();
+    RegisterTask();
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_ARGUMENT,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( nullptr, data.size() ) );
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_ARGUMENT,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( data.data(), 0U ) );
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( data.data(), data.size() ) );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadSubmissionRejectsMissingTaskWithoutCopying )
+{
+    std::array<uint8_t, 1U> data = { 0xA5U };
+    PrepareInstructionUpload( data.size() );
+    flash_manager_context.task_handle = nullptr;
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_TASK_NOT_READY,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( data.data(), data.size() ) );
+    EXPECT_FALSE( INSTRUCTION_BUFFER_IsUploadInputComplete() );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadSubmissionRejectsChunkLargerThanOnePage )
+{
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES + 1U> data = {};
+    PrepareInstructionUpload( data.size() );
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_ARGUMENT,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( data.data(), data.size() ) );
+    EXPECT_FALSE( INSTRUCTION_BUFFER_IsUploadInputComplete() );
+    EXPECT_EQ( 0U, notify_calls );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadSubmissionCopiesPartialChunkWithoutNotification )
+{
+    std::array<uint8_t, TEST_PARTIAL_PAYLOAD_BYTES> data = {};
+    FillBytes( data.data(), data.size(), 0x10U );
+    PrepareInstructionUpload( data.size() + 1U );
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( data.data(), data.size() ) );
+    EXPECT_EQ( 0U, notify_calls );
+    EXPECT_EQ( 0U, write_instruction_page_calls );
+    EXPECT_FALSE( INSTRUCTION_BUFFER_IsUploadInputComplete() );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadSubmissionNotifiesTaskWhenPageBecomesReady )
+{
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES> page = {};
+    FillBytes( page.data(), page.size(), 0x20U );
+    PrepareInstructionUpload( page.size() );
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( page.data(), page.size() ) );
+    EXPECT_TRUE( INSTRUCTION_BUFFER_IsUploadInputComplete() );
+    EXPECT_EQ( 1U, notify_calls );
+    EXPECT_EQ( TEST_FLASH_MANAGER_TASK_HANDLE, notify_task_handle );
+    EXPECT_EQ( FLASH_MANAGER_NOTIFY_DRAIN_INSTRUCTION_UPLOAD, notify_value );
+    EXPECT_EQ( eSetBits, notify_action );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadSubmissionNotificationFailureEntersFault )
+{
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES> page = {};
+    PrepareInstructionUpload( page.size() );
+    notify_result = pdFAIL;
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOTIFY_FAILED,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( page.data(), page.size() ) );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+    EXPECT_TRUE( INSTRUCTION_BUFFER_IsUploadInputComplete() );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadSubmissionAppliesAtomicBackpressureAndRetry )
+{
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES> page = {};
+    PrepareInstructionUpload( page.size() * 4U );
+
+    for ( uint8_t page_index = 0U; page_index < 3U; page_index++ )
+    {
+        FillBytes( page.data(), page.size(), page_index );
+        ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+                   FLASH_MANAGER_SubmitInstructionUploadBytes( page.data(), page.size() ) );
+    }
+
+    FillBytes( page.data(), page.size(), 0x80U );
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( page.data(), page.size() ) );
+
+    ASSERT_TRUE( FLASH_MANAGER_DrainInstructionUploadPages() );
+    ASSERT_EQ( 3U, write_instruction_page_calls );
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( page.data(), page.size() ) );
+    EXPECT_TRUE( INSTRUCTION_BUFFER_IsUploadInputComplete() );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadDrainWritesReadyPagesInStreamOrder )
+{
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES> first_page  = {};
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES> second_page = {};
+    FillBytes( first_page.data(), first_page.size(), 0x11U );
+    FillBytes( second_page.data(), second_page.size(), 0x55U );
+    PrepareInstructionUpload( first_page.size() + second_page.size() );
+
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( first_page.data(), first_page.size() ) );
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( second_page.data(),
+                                                            second_page.size() ) );
+
+    ASSERT_TRUE( FLASH_MANAGER_DrainInstructionUploadPages() );
+    ASSERT_EQ( 2U, write_instruction_page_calls );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES, write_instruction_page_lengths[0] );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES, write_instruction_page_lengths[1] );
+    EXPECT_EQ( 0, std::memcmp( first_page.data(), write_instruction_page_data[0],
+                               first_page.size() ) );
+    EXPECT_EQ( 0, std::memcmp( second_page.data(), write_instruction_page_data[1],
+                               second_page.size() ) );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadDrainFailureRetainsPageAndReportsFailure )
+{
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES> page = {};
+    PrepareInstructionUpload( page.size() );
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( page.data(), page.size() ) );
+    write_instruction_page_status = EXTERNAL_FLASH_STATUS_PROGRAM_FAIL;
+
+    EXPECT_FALSE( FLASH_MANAGER_DrainInstructionUploadPages() );
+    EXPECT_EQ( 1U, write_instruction_page_calls );
+    EXPECT_FALSE( INSTRUCTION_BUFFER_IsUploadPersisted() );
+
+    write_instruction_page_status = EXTERNAL_FLASH_STATUS_OK;
+    EXPECT_TRUE( FLASH_MANAGER_DrainInstructionUploadPages() );
+    EXPECT_EQ( 2U, write_instruction_page_calls );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadFinishRejectsUnavailableIncompleteAndInvalidState )
+{
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOT_INITIALISED,
+               FLASH_MANAGER_RequestInstructionUploadFinish() );
+
+    PrepareInstructionUpload( TEST_PAGE_SIZE_BYTES );
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE,
+               FLASH_MANAGER_RequestInstructionUploadFinish() );
+
+    flash_manager_context.state = FLASH_MANAGER_STATE_EXECUTING;
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE,
+               FLASH_MANAGER_RequestInstructionUploadFinish() );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadFinishReturnsBusyDuringActiveNandWrite )
+{
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES> page = {};
+    PrepareInstructionUpload( page.size() );
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( page.data(), page.size() ) );
+
+    const uint8_t* drain_data  = nullptr;
+    uint32_t       drain_length = 0U;
+    ASSERT_TRUE( INSTRUCTION_BUFFER_AcquireUploadDrainPage( &drain_data, &drain_length ) );
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY,
+               FLASH_MANAGER_RequestInstructionUploadFinish() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD, flash_manager_context.state );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteUploadDrain( true ) );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadFinishRejectsMissingTaskWithoutFinalisingBuffer )
+{
+    std::array<uint8_t, TEST_PARTIAL_PAYLOAD_BYTES> data = {};
+    PrepareInstructionUpload( data.size() );
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( data.data(), data.size() ) );
+    flash_manager_context.task_handle = nullptr;
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_TASK_NOT_READY,
+               FLASH_MANAGER_RequestInstructionUploadFinish() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD, flash_manager_context.state );
+    EXPECT_FALSE( INSTRUCTION_BUFFER_IsUploadPersisted() );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadFinishPublishesPartialPageAndNotifiesTask )
+{
+    std::array<uint8_t, TEST_PARTIAL_PAYLOAD_BYTES> partial_page = {};
+    PrepareInstructionUpload( partial_page.size() );
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( partial_page.data(),
+                                                            partial_page.size() ) );
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_RequestInstructionUploadFinish() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD,
+               flash_manager_context.state );
+    EXPECT_EQ( 1U, notify_calls );
+    EXPECT_EQ( FLASH_MANAGER_NOTIFY_FINALISE_INSTRUCTION_UPLOAD, notify_value );
+    EXPECT_EQ( eSetBits, notify_action );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadFinalisationDrainsPartialPageClosesAndReleasesUpload )
+{
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES>       full_page    = {};
+    std::array<uint8_t, TEST_PARTIAL_PAYLOAD_BYTES> partial_page = {};
+    FillBytes( full_page.data(), full_page.size(), 0x22U );
+    FillBytes( partial_page.data(), partial_page.size(), 0xA0U );
+    PrepareInstructionUpload( full_page.size() + partial_page.size() );
+
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( full_page.data(), full_page.size() ) );
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( partial_page.data(),
+                                                            partial_page.size() ) );
+    ASSERT_TRUE( FLASH_MANAGER_DrainInstructionUploadPages() );
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_RequestInstructionUploadFinish() );
+
+    ASSERT_TRUE( FLASH_MANAGER_FinaliseInstructionUpload() );
+    ASSERT_EQ( 2U, write_instruction_page_calls );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES, write_instruction_page_lengths[0] );
+    EXPECT_EQ( partial_page.size(), write_instruction_page_lengths[1] );
+    EXPECT_EQ( 0, std::memcmp( partial_page.data(), write_instruction_page_data[1],
+                               partial_page.size() ) );
+    EXPECT_EQ( 1U, finish_instruction_upload_calls );
+    EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, flash_manager_context.state );
+    uint32_t released_length_bytes = 0U;
+    EXPECT_FALSE( INSTRUCTION_BUFFER_GetUploadExpectedLength( &released_length_bytes ) );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadFinalisationReportsExternalCloseFailure )
+{
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES> page = {};
+    PrepareInstructionUpload( page.size() );
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( page.data(), page.size() ) );
+    ASSERT_TRUE( FLASH_MANAGER_DrainInstructionUploadPages() );
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_RequestInstructionUploadFinish() );
+    finish_instruction_upload_status = EXTERNAL_FLASH_STATUS_ERROR;
+
+    EXPECT_FALSE( FLASH_MANAGER_FinaliseInstructionUpload() );
+    EXPECT_EQ( 1U, finish_instruction_upload_calls );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD,
+               flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadFinishNotificationFailureEntersFault )
+{
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES> page = {};
+    PrepareInstructionUpload( page.size() );
+    ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( page.data(), page.size() ) );
+    ASSERT_TRUE( FLASH_MANAGER_DrainInstructionUploadPages() );
+    notify_result = pdFAIL;
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOTIFY_FAILED,
+               FLASH_MANAGER_RequestInstructionUploadFinish() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
 }
 
 TEST_F( FlashManagerTest, PreparationRequestRejectsUnavailableManagerAndTask )

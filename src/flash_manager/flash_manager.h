@@ -12,10 +12,9 @@
  *      instructions through immutable views. NAND access remains restricted to
  *      the Flash Manager task and occurs only after the ISR returns.
  *
- *      Result logging/finalisation and instruction preload/refill are
- *      implemented. The public instruction-upload lifecycle contract is
- *      defined, but its task-side implementation and result transfer to the
- *      host remain future work.
+ *      Result logging/finalisation, instruction preload/refill, and streamed
+ *      instruction upload are implemented. Result transfer to the host remains
+ *      future work.
  ******************************************************************************/
 
 #ifndef FLASH_MANAGER_H
@@ -61,7 +60,7 @@ extern "C"
  */
 
 /*
- * Implemented execution lifecycle and planned instruction-upload lifecycle:
+ * Implemented execution and instruction-upload lifecycles:
  *
  * IDLE
  *   -> RequestInstructionUploadStart()
@@ -317,7 +316,7 @@ typedef enum
     /** A pointer, chunk length, or expected upload length was invalid. */
     FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_ARGUMENT,
 
-    /** A previously copied instruction chunk is still awaiting persistence. */
+    /** RAM cannot currently accept the complete operation; retry unchanged. */
     FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY,
 
     /** FLASH_MANAGER_Init() has not completed successfully. */
@@ -339,8 +338,8 @@ typedef enum
  * @brief Runs the Flash Manager RTOS task.
  *
  * The task processes lifecycle notifications and performs NAND operations.
- * It prepares and refills instruction storage, drains result storage, and
- * processes execution-session lifecycle requests.
+ * It prepares, fills, and drains instruction storage; drains result storage;
+ * and processes execution and upload lifecycle requests.
  *
  * @param parameters Optional FreeRTOS task parameter. Currently unused.
  *
@@ -351,10 +350,10 @@ typedef enum
 void FLASH_MANAGER_Task( void* parameters );
 
 /**
- * @brief Initialises Flash Manager synchronisation and implemented buffers.
+ * @brief Initialises Flash Manager synchronisation and both owned buffers.
  *
  * @retval true
- *      Task-context synchronisation and the result buffer were initialised.
+ *      Task-context synchronisation and both owned buffers were initialised.
  * @retval false
  *      The module was already initialised, mutex creation failed, or result
  *      buffer geometry was invalid.
@@ -497,9 +496,13 @@ FLASH_MANAGER_RequestInstructionUploadStart( uint32_t expected_length_bytes );
  * @note Accepted bytes are copied into Flash Manager-owned storage before this
  *       function returns, so the caller may immediately reuse its source
  *       buffer.
- * @note Only one copied chunk may await persistence. A submission made while
- *       the upload mailbox is occupied returns
- *       FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY.
+ * @note Each call is all-or-nothing and may contain at most one NAND page. If
+ *       the three-page upload ring cannot accept the complete chunk, this
+ *       function returns FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY and the
+ *       caller may retry the identical pointer contents and length.
+ * @note Completing a page asynchronously wakes the Flash Manager task. NAND
+ *       persistence proceeds concurrently with later host submissions into
+ *       other available ring pages.
  * @note The Host Interface application layer must supply the canonical packed
  *       [header][payload] instruction representation. The Flash Manager does
  *       not interpret peripheral-specific payloads.
@@ -515,7 +518,8 @@ FLASH_MANAGER_SubmitInstructionUploadBytes( const uint8_t* data, uint32_t length
  *
  * @note This request is accepted only in
  *       FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD after every expected byte has
- *       been accepted and no copied chunk remains pending.
+ *       been accepted. A currently active NAND page write returns BUSY so the
+ *       caller can retry this request unchanged.
  * @note Acceptance changes the state to
  *       FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD and notifies the
  *       Flash Manager task. Successful finalisation returns the manager to
