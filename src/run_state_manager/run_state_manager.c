@@ -11,7 +11,9 @@
  *      The current timer and frequency logic duplicates execution_manager and
  *      should be replaced by the asynchronous lifecycle described in
  *      run_state_manager.h. The future task coordinates managers; it does not
- *      execute peripheral operations from an ISR.
+ *      execute peripheral operations from an ISR. It must also receive
+ *      execution-overrun faults, stop the timer, and apply the configured
+ *      result-preservation policy.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -74,7 +76,8 @@ void RUN_STATE_MANAGER_Process_From_ISR( void )
     /*
      * TODO: Remove this ISR execution path when the Run State Manager becomes
      * an RTOS task. Timer-driven peripheral execution belongs to
-     * EXECUTION_MANAGER_Process_From_ISR().
+     * EXECUTION_MANAGER_Process_From_ISR(). The task-facing replacement must
+     * handle execution infeasibility and Flash Manager lifecycle completion.
      */
 }
 

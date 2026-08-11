@@ -10,6 +10,8 @@
  *      Result records are packed into a page-backed circular byte buffer. A
  *      record write lease gives the execution path contiguous payload storage
  *      while an independent drain lease protects a page-level NAND transfer.
+ *      Driver DMA remains outside this module; the execution ISR synchronously
+ *      copies a stable driver-owned measurement into the record lease.
  *      State-transition calls must be serialised by the Flash Manager. This
  *      module does not contain RTOS synchronisation or NAND-access policy.
  ******************************************************************************/
@@ -513,8 +515,9 @@ bool RESULT_BUFFER_ReserveRecord( uint16_t                        requested_payl
     *lease = ( FlashManagerResultWriteLease_T ){ 0 };
 
     /*
-     * The producer may hold only one lease at a time, which keeps reservation and commit
-     * ordering deterministic and removes the need for an allocation queue.
+     * The producer may hold only one lease at a time. This keeps reservation
+     * and commit ordering deterministic and removes the need for an allocation
+     * queue.
      */
     if ( !result_buffer_context.is_initialised || result_buffer_context.is_finalised
          || result_buffer_context.active_record_reservation.is_active

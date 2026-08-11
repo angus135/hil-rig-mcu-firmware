@@ -83,6 +83,19 @@ typedef enum FrequencyMode_T
  *    FLASH_MANAGER_STATE_FAULT. RESULTS_READY guarantees that every committed
  *    result byte, including a final partial NAND page, has been drained.
  *
+ * Execution-overrun/infeasibility handling:
+ *
+ * 1. The Execution Manager reports a head instruction whose timestamp is less
+ *    than the current tick through an ISR-safe fault handoff.
+ * 2. Stop the execution timer and wait for the active ISR to return. The late
+ *    instruction is not consumed.
+ * 3. Record the test outcome as infeasible. Future pre-execution feasibility
+ *    validation should reject this workload before the timer starts.
+ * 4. Decide whether committed diagnostic results should be preserved through
+ *    FLASH_MANAGER_RequestResultFinalisation(). The current Flash Manager has
+ *    no discard/abort-session API; normal finalisation reaches RESULTS_READY
+ *    without changing the global test outcome from infeasible.
+ *
  * Every FlashManagerRequestStatus_T value must be handled. In particular,
  * TASK_NOT_READY means startup integration is incomplete, INVALID_STATE means
  * the lifecycle sequence is wrong, and NOTIFY_FAILED leaves the Flash Manager
@@ -94,7 +107,9 @@ typedef enum FrequencyMode_T
  *
  * The future Run State Manager should call Execution Manager timer/frequency
  * APIs rather than duplicating timer constants or defining its own
- * FrequencyMode_T.
+ * FrequencyMode_T. The current temporary implementation still duplicates that
+ * behavior and starts TIM4 from its Init path; it must not be used as the final
+ * lifecycle coordinator without resolving that sequencing.
  */
 
 /**
@@ -122,7 +137,11 @@ void RUN_STATE_MANAGER_Set_Frequency_Mode( FrequencyMode_T mode );
 /**
  * @brief Test Scheduler Initialization
  *
- * Initialises the test schedular based on the selected frequency mode.
+ * Initialises the temporary test scheduler using the selected frequency mode.
+ *
+ * @warning The current placeholder starts TIM4 immediately. The final Run
+ *          State Manager must instead wait for FLASH_MANAGER_STATE_EXECUTING
+ *          before starting the Execution Manager.
  */
 void RUN_STATE_MANAGER_Init( void );
 
