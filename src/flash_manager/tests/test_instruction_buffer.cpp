@@ -211,8 +211,7 @@ TEST_F( InstructionBufferTest, PrepareReadAcceptsEmptyImageAndResetsAllCursors )
     EXPECT_EQ( 0U, instruction_buffer_context.consumer_stream_offset_bytes );
     EXPECT_EQ( 0U, instruction_buffer_context.consumer_page_index );
     EXPECT_EQ( 0U, instruction_buffer_context.consumer_page_offset_bytes );
-    EXPECT_EQ( instruction_buffer_storage,
-               instruction_buffer_context.consumer_record_pointer );
+    EXPECT_EQ( instruction_buffer_storage, instruction_buffer_context.consumer_record_pointer );
 
     for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
     {
@@ -561,8 +560,7 @@ TEST_F( InstructionBufferTest, EndReadClearsCurrentViewWithoutChangingGeometry )
     EXPECT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES, instruction_buffer_context.page_size_bytes );
     EXPECT_EQ( next_fill_lease_id, instruction_buffer_context.next_page_fill_lease_id );
     EXPECT_EQ( 0U, instruction_buffer_context.instruction_cache.record_length_bytes );
-    EXPECT_EQ( instruction_buffer_storage,
-               instruction_buffer_context.consumer_record_pointer );
+    EXPECT_EQ( instruction_buffer_storage, instruction_buffer_context.consumer_record_pointer );
 
     for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
     {
@@ -726,7 +724,7 @@ TEST_F( InstructionBufferTest, WriteUploadBytesRejectsInvalidStateAndArgumentsWi
 
 TEST_F( InstructionBufferTest, WriteUploadBytesRejectsDataBeyondDeclaredRemainingLength )
 {
-    std::array<uint8_t, 20U> first_chunk = {};
+    std::array<uint8_t, 20U> first_chunk         = {};
     std::array<uint8_t, 13U> oversized_remainder = {};
     PrepareUpload( TEST_INSTRUCTION_PAGE_SIZE_BYTES );
 
@@ -737,17 +735,17 @@ TEST_F( InstructionBufferTest, WriteUploadBytesRejectsDataBeyondDeclaredRemainin
 
     EXPECT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_ARGUMENT,
                INSTRUCTION_BUFFER_WriteUploadBytes( oversized_remainder.data(),
-                                                      oversized_remainder.size() ) );
+                                                    oversized_remainder.size() ) );
     EXPECT_EQ( first_chunk.size(), instruction_buffer_context.upload_accepted_length_bytes );
     EXPECT_EQ( first_chunk.size(), instruction_buffer_context.page_valid_bytes[0] );
-    EXPECT_EQ( 0, std::memcmp( page_before.data(), instruction_buffer_storage,
-                               page_before.size() ) );
+    EXPECT_EQ( 0,
+               std::memcmp( page_before.data(), instruction_buffer_storage, page_before.size() ) );
 }
 
 TEST_F( InstructionBufferTest, WriteUploadBytesCopiesPartialPageIntoManagerOwnedStorage )
 {
-    constexpr uint32_t chunk_length_bytes = 10U;
-    std::array<uint8_t, chunk_length_bytes> data = {};
+    constexpr uint32_t                      chunk_length_bytes = 10U;
+    std::array<uint8_t, chunk_length_bytes> data               = {};
     FillBytes( data.data(), data.size(), 0x20U );
 
     PrepareUpload( chunk_length_bytes + 1U );
@@ -764,10 +762,10 @@ TEST_F( InstructionBufferTest, WriteUploadBytesCopiesPartialPageIntoManagerOwned
 
 TEST_F( InstructionBufferTest, WriteUploadBytesCanCompleteOnePageAndContinueIntoTheNext )
 {
-    constexpr uint32_t first_chunk_length_bytes  = 20U;
-    constexpr uint32_t second_chunk_length_bytes = 20U;
-    std::array<uint8_t, first_chunk_length_bytes>  first_chunk  = {};
-    std::array<uint8_t, second_chunk_length_bytes> second_chunk = {};
+    constexpr uint32_t                             first_chunk_length_bytes  = 20U;
+    constexpr uint32_t                             second_chunk_length_bytes = 20U;
+    std::array<uint8_t, first_chunk_length_bytes>  first_chunk               = {};
+    std::array<uint8_t, second_chunk_length_bytes> second_chunk              = {};
     FillBytes( first_chunk.data(), first_chunk.size(), 0x10U );
     FillBytes( second_chunk.data(), second_chunk.size(), 0x50U );
 
@@ -777,27 +775,26 @@ TEST_F( InstructionBufferTest, WriteUploadBytesCanCompleteOnePageAndContinueInto
 
     EXPECT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_PAGE_READY,
                INSTRUCTION_BUFFER_WriteUploadBytes( second_chunk.data(), second_chunk.size() ) );
-    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND,
-               instruction_buffer_context.page_states[0] );
-    EXPECT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES,
-               instruction_buffer_context.page_valid_bytes[0] );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND, instruction_buffer_context.page_states[0] );
+    EXPECT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES, instruction_buffer_context.page_valid_bytes[0] );
     EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_FILLING_FROM_HOST,
                instruction_buffer_context.page_states[1] );
     EXPECT_EQ( 8U, instruction_buffer_context.page_valid_bytes[1] );
     EXPECT_EQ( 1U, instruction_buffer_context.upload_write_page_index );
-    EXPECT_EQ( 0, std::memcmp( first_chunk.data(), instruction_buffer_storage,
-                               first_chunk.size() ) );
-    EXPECT_EQ( 0, std::memcmp( second_chunk.data(),
-                               &instruction_buffer_storage[first_chunk.size()], 12U ) );
-    EXPECT_EQ( 0, std::memcmp( &second_chunk[12U],
-                               &instruction_buffer_storage[TEST_INSTRUCTION_PAGE_SIZE_BYTES], 8U ) );
+    EXPECT_EQ( 0,
+               std::memcmp( first_chunk.data(), instruction_buffer_storage, first_chunk.size() ) );
+    EXPECT_EQ( 0, std::memcmp( second_chunk.data(), &instruction_buffer_storage[first_chunk.size()],
+                               12U ) );
+    EXPECT_EQ( 0,
+               std::memcmp( &second_chunk[12U],
+                            &instruction_buffer_storage[TEST_INSTRUCTION_PAGE_SIZE_BYTES], 8U ) );
 }
 
 TEST_F( InstructionBufferTest, BusyCrossPageWriteCopiesNothingAndCanBeRetriedUnchanged )
 {
-    std::array<uint8_t, TEST_INSTRUCTION_PAGE_SIZE_BYTES> full_page = {};
-    std::array<uint8_t, 20U> partial_page = {};
-    std::array<uint8_t, 20U> blocked_chunk = {};
+    std::array<uint8_t, TEST_INSTRUCTION_PAGE_SIZE_BYTES> full_page     = {};
+    std::array<uint8_t, 20U>                              partial_page  = {};
+    std::array<uint8_t, 20U>                              blocked_chunk = {};
     FillBytes( full_page.data(), full_page.size(), 0x10U );
     FillBytes( partial_page.data(), partial_page.size(), 0x40U );
     FillBytes( blocked_chunk.data(), blocked_chunk.size(), 0x80U );
@@ -819,10 +816,9 @@ TEST_F( InstructionBufferTest, BusyCrossPageWriteCopiesNothingAndCanBeRetriedUnc
     EXPECT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_BUSY,
                INSTRUCTION_BUFFER_WriteUploadBytes( blocked_chunk.data(), blocked_chunk.size() ) );
     EXPECT_EQ( accepted_before, instruction_buffer_context.upload_accepted_length_bytes );
-    EXPECT_EQ( 0, std::memcmp(
-                      page_tail_before.data(),
-                      &instruction_buffer_storage[TEST_INSTRUCTION_PAGE_SIZE_BYTES * 2U],
-                      page_tail_before.size() ) );
+    EXPECT_EQ( 0, std::memcmp( page_tail_before.data(),
+                               &instruction_buffer_storage[TEST_INSTRUCTION_PAGE_SIZE_BYTES * 2U],
+                               page_tail_before.size() ) );
     EXPECT_EQ( 20U, instruction_buffer_context.page_valid_bytes[2] );
 
     const uint8_t* drain_data   = nullptr;
@@ -832,8 +828,7 @@ TEST_F( InstructionBufferTest, BusyCrossPageWriteCopiesNothingAndCanBeRetriedUnc
 
     EXPECT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_PAGE_READY,
                INSTRUCTION_BUFFER_WriteUploadBytes( blocked_chunk.data(), blocked_chunk.size() ) );
-    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND,
-               instruction_buffer_context.page_states[2] );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND, instruction_buffer_context.page_states[2] );
     EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_FILLING_FROM_HOST,
                instruction_buffer_context.page_states[0] );
     EXPECT_EQ( 8U, instruction_buffer_context.page_valid_bytes[0] );
@@ -849,16 +844,14 @@ TEST_F( InstructionBufferTest, AcquireUploadDrainPageClearsOutputsWhenNoPageIsRe
     const uint8_t* page_data          = instruction_buffer_storage;
     uint32_t       valid_length_bytes = 7U;
 
-    EXPECT_FALSE(
-        INSTRUCTION_BUFFER_AcquireUploadDrainPage( &page_data, &valid_length_bytes ) );
+    EXPECT_FALSE( INSTRUCTION_BUFFER_AcquireUploadDrainPage( &page_data, &valid_length_bytes ) );
     EXPECT_EQ( nullptr, page_data );
     EXPECT_EQ( 0U, valid_length_bytes );
 
     PrepareUpload( TEST_INSTRUCTION_PAGE_SIZE_BYTES );
     page_data          = instruction_buffer_storage;
     valid_length_bytes = 7U;
-    EXPECT_FALSE(
-        INSTRUCTION_BUFFER_AcquireUploadDrainPage( &page_data, &valid_length_bytes ) );
+    EXPECT_FALSE( INSTRUCTION_BUFFER_AcquireUploadDrainPage( &page_data, &valid_length_bytes ) );
     EXPECT_EQ( nullptr, page_data );
     EXPECT_EQ( 0U, valid_length_bytes );
     EXPECT_FALSE( INSTRUCTION_BUFFER_AcquireUploadDrainPage( nullptr, &valid_length_bytes ) );
@@ -882,18 +875,15 @@ TEST_F( InstructionBufferTest, FullRingCanAcquireOldestPageWhenProducerAndDrainI
 
     const uint8_t* page_data          = nullptr;
     uint32_t       valid_length_bytes = 0U;
-    ASSERT_TRUE(
-        INSTRUCTION_BUFFER_AcquireUploadDrainPage( &page_data, &valid_length_bytes ) );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_AcquireUploadDrainPage( &page_data, &valid_length_bytes ) );
 
     EXPECT_EQ( instruction_buffer_storage, page_data );
     EXPECT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES, valid_length_bytes );
-    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND,
-               instruction_buffer_context.page_states[0] );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND, instruction_buffer_context.page_states[0] );
 
     const uint8_t* second_page_data = instruction_buffer_storage;
     uint32_t       second_length    = 1U;
-    EXPECT_FALSE(
-        INSTRUCTION_BUFFER_AcquireUploadDrainPage( &second_page_data, &second_length ) );
+    EXPECT_FALSE( INSTRUCTION_BUFFER_AcquireUploadDrainPage( &second_page_data, &second_length ) );
     EXPECT_EQ( nullptr, second_page_data );
     EXPECT_EQ( 0U, second_length );
 }
@@ -909,8 +899,7 @@ TEST_F( InstructionBufferTest, SuccessfulUploadDrainReleasesPageAndAdvancesPersi
 
     const uint8_t* page_data          = nullptr;
     uint32_t       valid_length_bytes = 0U;
-    ASSERT_TRUE(
-        INSTRUCTION_BUFFER_AcquireUploadDrainPage( &page_data, &valid_length_bytes ) );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_AcquireUploadDrainPage( &page_data, &valid_length_bytes ) );
     ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteUploadDrain( true ) );
 
     EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY, instruction_buffer_context.page_states[0] );
@@ -931,19 +920,16 @@ TEST_F( InstructionBufferTest, FailedUploadDrainRestoresPageForIdenticalRetry )
 
     const uint8_t* first_page_data = nullptr;
     uint32_t       first_length    = 0U;
-    ASSERT_TRUE(
-        INSTRUCTION_BUFFER_AcquireUploadDrainPage( &first_page_data, &first_length ) );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_AcquireUploadDrainPage( &first_page_data, &first_length ) );
     ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteUploadDrain( false ) );
 
-    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND,
-               instruction_buffer_context.page_states[0] );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND, instruction_buffer_context.page_states[0] );
     EXPECT_EQ( 0U, instruction_buffer_context.upload_persisted_length_bytes );
     EXPECT_EQ( 0U, instruction_buffer_context.upload_drain_page_index );
 
     const uint8_t* retry_page_data = nullptr;
     uint32_t       retry_length    = 0U;
-    ASSERT_TRUE(
-        INSTRUCTION_BUFFER_AcquireUploadDrainPage( &retry_page_data, &retry_length ) );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_AcquireUploadDrainPage( &retry_page_data, &retry_length ) );
     EXPECT_EQ( first_page_data, retry_page_data );
     EXPECT_EQ( first_length, retry_length );
     EXPECT_EQ( 0, std::memcmp( page.data(), retry_page_data, retry_length ) );
@@ -959,13 +945,11 @@ TEST_F( InstructionBufferTest, CompleteUploadDrainRejectsMissingOrInconsistentOw
                INSTRUCTION_BUFFER_WriteUploadBytes( page.data(), page.size() ) );
     const uint8_t* page_data          = nullptr;
     uint32_t       valid_length_bytes = 0U;
-    ASSERT_TRUE(
-        INSTRUCTION_BUFFER_AcquireUploadDrainPage( &page_data, &valid_length_bytes ) );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_AcquireUploadDrainPage( &page_data, &valid_length_bytes ) );
 
     instruction_buffer_context.upload_accepted_length_bytes = 0U;
     EXPECT_FALSE( INSTRUCTION_BUFFER_CompleteUploadDrain( true ) );
-    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND,
-               instruction_buffer_context.page_states[0] );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND, instruction_buffer_context.page_states[0] );
 }
 
 /**-----------------------------------------------------------------------------
@@ -988,9 +972,9 @@ TEST_F( InstructionBufferTest, FinaliseUploadRejectsIncompleteInputWithoutPublis
 
 TEST_F( InstructionBufferTest, FinaliseUploadPublishesFinalPartialPageAndStopsProduction )
 {
-    constexpr uint32_t final_partial_length_bytes = 5U;
-    std::array<uint8_t, TEST_INSTRUCTION_PAGE_SIZE_BYTES> full_page = {};
-    std::array<uint8_t, final_partial_length_bytes> partial_page = {};
+    constexpr uint32_t                                    final_partial_length_bytes = 5U;
+    std::array<uint8_t, TEST_INSTRUCTION_PAGE_SIZE_BYTES> full_page                  = {};
+    std::array<uint8_t, final_partial_length_bytes>       partial_page               = {};
     PrepareUpload( full_page.size() + partial_page.size() );
     ASSERT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_PAGE_READY,
                INSTRUCTION_BUFFER_WriteUploadBytes( full_page.data(), full_page.size() ) );
@@ -1001,8 +985,7 @@ TEST_F( InstructionBufferTest, FinaliseUploadPublishesFinalPartialPageAndStopsPr
     ASSERT_TRUE( INSTRUCTION_BUFFER_FinaliseUpload() );
 
     EXPECT_TRUE( instruction_buffer_context.is_upload_finalised );
-    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND,
-               instruction_buffer_context.page_states[1] );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND, instruction_buffer_context.page_states[1] );
     EXPECT_EQ( final_partial_length_bytes, instruction_buffer_context.page_valid_bytes[1] );
     EXPECT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_STATE,
                INSTRUCTION_BUFFER_WriteUploadBytes( partial_page.data(), 1U ) );
@@ -1035,8 +1018,7 @@ TEST_F( InstructionBufferTest, FinaliseUploadRejectsPageOwnedByActiveNandWrite )
 
     const uint8_t* page_data          = nullptr;
     uint32_t       valid_length_bytes = 0U;
-    ASSERT_TRUE(
-        INSTRUCTION_BUFFER_AcquireUploadDrainPage( &page_data, &valid_length_bytes ) );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_AcquireUploadDrainPage( &page_data, &valid_length_bytes ) );
 
     EXPECT_FALSE( INSTRUCTION_BUFFER_FinaliseUpload() );
     EXPECT_FALSE( instruction_buffer_context.is_upload_finalised );
@@ -1047,9 +1029,9 @@ TEST_F( InstructionBufferTest, FinaliseUploadRejectsPageOwnedByActiveNandWrite )
 
 TEST_F( InstructionBufferTest, FullyPersistedUploadCanEndAndReleaseAllSharedState )
 {
-    constexpr uint32_t final_partial_length_bytes = 5U;
-    std::array<uint8_t, TEST_INSTRUCTION_PAGE_SIZE_BYTES> full_page = {};
-    std::array<uint8_t, final_partial_length_bytes> partial_page = {};
+    constexpr uint32_t                                    final_partial_length_bytes = 5U;
+    std::array<uint8_t, TEST_INSTRUCTION_PAGE_SIZE_BYTES> full_page                  = {};
+    std::array<uint8_t, final_partial_length_bytes>       partial_page               = {};
     PrepareUpload( full_page.size() + partial_page.size() );
     ASSERT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_PAGE_READY,
                INSTRUCTION_BUFFER_WriteUploadBytes( full_page.data(), full_page.size() ) );
@@ -1061,14 +1043,12 @@ TEST_F( InstructionBufferTest, FullyPersistedUploadCanEndAndReleaseAllSharedStat
 
     const uint8_t* page_data          = nullptr;
     uint32_t       valid_length_bytes = 0U;
-    ASSERT_TRUE(
-        INSTRUCTION_BUFFER_AcquireUploadDrainPage( &page_data, &valid_length_bytes ) );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_AcquireUploadDrainPage( &page_data, &valid_length_bytes ) );
     ASSERT_EQ( full_page.size(), valid_length_bytes );
     ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteUploadDrain( true ) );
     EXPECT_FALSE( INSTRUCTION_BUFFER_IsUploadPersisted() );
 
-    ASSERT_TRUE(
-        INSTRUCTION_BUFFER_AcquireUploadDrainPage( &page_data, &valid_length_bytes ) );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_AcquireUploadDrainPage( &page_data, &valid_length_bytes ) );
     ASSERT_EQ( partial_page.size(), valid_length_bytes );
     ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteUploadDrain( true ) );
     ASSERT_TRUE( INSTRUCTION_BUFFER_IsUploadPersisted() );
