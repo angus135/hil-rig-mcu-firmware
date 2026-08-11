@@ -5,9 +5,9 @@
  *
  *  Description:
  *      Coordinates Flash Manager lifecycle state, serves prefetched
- *      instructions and accepts packed result records from the execution timer
- *      ISR, and performs instruction refill/result drain operations from an
- *      RTOS task.
+ *      instructions, accepts packed result records from the execution timer
+ *      ISR, streams host instruction uploads, and performs all NAND refill and
+ *      drain operations from an RTOS task.
  *
  *  Notes:
  *      Execution-facing APIs are ISR-only and must never block. NAND access is
@@ -48,6 +48,12 @@
 
 /** Requests preparation of a new instruction upload. */
 #define FLASH_MANAGER_NOTIFY_PREPARE_INSTRUCTION_UPLOAD ( 1UL << 4 )
+
+/** Signals that at least one completed instruction-upload page is ready for NAND. */
+#define FLASH_MANAGER_NOTIFY_DRAIN_INSTRUCTION_UPLOAD ( 1UL << 5 )
+
+/** Requests persistence and closure of the final instruction-upload page. */
+#define FLASH_MANAGER_NOTIFY_FINALISE_INSTRUCTION_UPLOAD ( 1UL << 6 )
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -117,6 +123,10 @@ static bool FLASH_MANAGER_PrepareExecution( void );
 static bool FLASH_MANAGER_FinaliseResults( void );
 
 static bool FLASH_MANAGER_PrepareInstructionUpload( void );
+
+static bool FLASH_MANAGER_DrainInstructionUploadPages( void );
+
+static bool FLASH_MANAGER_FinaliseInstructionUpload( void );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -470,6 +480,14 @@ static bool FLASH_MANAGER_FinaliseResults( void )
     return finalisation_state_is_valid;
 }
 
+/**
+ * @brief Starts external-flash preparation for the declared instruction image.
+ *
+ * @return true after NAND preparation succeeds and the manager enters
+ *         INSTRUCTION_UPLOAD; otherwise false.
+ *
+ * @note Called only by the Flash Manager task after a start notification.
+ */
 static bool FLASH_MANAGER_PrepareInstructionUpload( void )
 {
     if ( !FLASH_MANAGER_Lock() )
@@ -519,6 +537,136 @@ static bool FLASH_MANAGER_PrepareInstructionUpload( void )
     FLASH_MANAGER_Unlock();
 
     return preparation_state_is_valid;
+}
+
+/**
+ * @brief Drains every completed instruction-upload page to external NAND.
+ *
+ * Page acquisition and completion are serialised with Host Interface writes,
+ * while the potentially long NAND operation runs without holding the Flash
+ * Manager mutex. A page marked WRITING_TO_NAND is immutable, so the producer
+ * may continue filling other available pages during that operation.
+ *
+ * @return true after all currently ready pages were drained; false after a
+ *         NAND write, ownership completion, or lifecycle validation failure.
+ */
+static bool FLASH_MANAGER_DrainInstructionUploadPages( void )
+{
+    for ( ;; )
+    {
+        if ( !FLASH_MANAGER_Lock() )
+        {
+            return false;
+        }
+
+        bool drain_allowed =
+            ( flash_manager_context.state == FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD )
+            || ( flash_manager_context.state
+                 == FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD );
+
+        const uint8_t* page_data          = NULL;
+        uint32_t       valid_length_bytes = 0U;
+        bool           page_acquired      = false;
+
+        if ( drain_allowed )
+        {
+            page_acquired = INSTRUCTION_BUFFER_AcquireUploadDrainPage(
+                &page_data, &valid_length_bytes );
+        }
+
+        FLASH_MANAGER_Unlock();
+
+        if ( !drain_allowed )
+        {
+            return false;
+        }
+
+        if ( !page_acquired )
+        {
+            return true;
+        }
+
+        ExternalFlashStatus_T nand_write_status =
+            EXTERNAL_FLASH_WriteInstructionPage( page_data, valid_length_bytes );
+
+        if ( !FLASH_MANAGER_Lock() )
+        {
+            return false;
+        }
+
+        bool drain_completion_succeeded = INSTRUCTION_BUFFER_CompleteUploadDrain(
+            nand_write_status == EXTERNAL_FLASH_STATUS_OK );
+
+        FLASH_MANAGER_Unlock();
+
+        if ( ( nand_write_status != EXTERNAL_FLASH_STATUS_OK )
+             || !drain_completion_succeeded )
+        {
+            return false;
+        }
+    }
+}
+
+/**
+ * @brief Persists the final upload pages and closes the external-flash image.
+ *
+ * @return true after every declared instruction byte is in NAND, external
+ *         flash commits the image, upload RAM is released, and the manager
+ *         returns to IDLE; otherwise false.
+ *
+ * @note The final partial page is published by the finish-request API before
+ *       this task-context helper runs.
+ */
+static bool FLASH_MANAGER_FinaliseInstructionUpload( void )
+{
+    if ( !FLASH_MANAGER_DrainInstructionUploadPages() )
+    {
+        return false;
+    }
+
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return false;
+    }
+
+    bool finalisation_state_is_valid =
+        flash_manager_context.state == FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD;
+    bool upload_is_persisted =
+        finalisation_state_is_valid && INSTRUCTION_BUFFER_IsUploadPersisted();
+
+    FLASH_MANAGER_Unlock();
+
+    if ( !upload_is_persisted )
+    {
+        return false;
+    }
+
+    if ( EXTERNAL_FLASH_FinishInstructionUpload() != EXTERNAL_FLASH_STATUS_OK )
+    {
+        return false;
+    }
+
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return false;
+    }
+
+    finalisation_state_is_valid =
+        flash_manager_context.state == FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD;
+
+    if ( finalisation_state_is_valid )
+    {
+        finalisation_state_is_valid = INSTRUCTION_BUFFER_EndUpload();
+    }
+
+    if ( finalisation_state_is_valid )
+    {
+        flash_manager_context.state = FLASH_MANAGER_STATE_IDLE;
+    }
+
+    FLASH_MANAGER_Unlock();
+
+    return finalisation_state_is_valid;
 }
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
@@ -579,6 +727,24 @@ void FLASH_MANAGER_Task( void* parameters )
         if ( ( notification_bits & FLASH_MANAGER_NOTIFY_PREPARE_INSTRUCTION_UPLOAD ) != 0U )
         {
             if ( !FLASH_MANAGER_PrepareInstructionUpload() )
+            {
+                FLASH_MANAGER_EnterFault();
+            }
+        }
+
+        /* Drain completed pages from an active instruction upload. */
+        if ( ( notification_bits & FLASH_MANAGER_NOTIFY_DRAIN_INSTRUCTION_UPLOAD ) != 0U )
+        {
+            if ( !FLASH_MANAGER_DrainInstructionUploadPages() )
+            {
+                FLASH_MANAGER_EnterFault();
+            }
+        }
+
+        /* Commit the final instruction page and close the upload. */
+        if ( ( notification_bits & FLASH_MANAGER_NOTIFY_FINALISE_INSTRUCTION_UPLOAD ) != 0U )
+        {
+            if ( !FLASH_MANAGER_FinaliseInstructionUpload() )
             {
                 FLASH_MANAGER_EnterFault();
             }
@@ -823,6 +989,139 @@ FLASH_MANAGER_RequestInstructionUploadStart( uint32_t expected_length_bytes )
 
     if ( xTaskNotify( notification_task_handle, FLASH_MANAGER_NOTIFY_PREPARE_INSTRUCTION_UPLOAD,
                       eSetBits )
+         != pdPASS )
+    {
+        FLASH_MANAGER_EnterFault();
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOTIFY_FAILED;
+    }
+
+    return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED;
+}
+
+/**
+ * @brief Copies one canonical instruction chunk into the upload ring.
+ */
+FlashManagerInstructionUploadRequestStatus_T
+FLASH_MANAGER_SubmitInstructionUploadBytes( const uint8_t* data, uint32_t length )
+{
+    if ( flash_manager_context.access_mutex == NULL )
+    {
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOT_INITIALISED;
+    }
+
+    if ( ( data == NULL ) || ( length == 0U ) )
+    {
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_ARGUMENT;
+    }
+
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOT_INITIALISED;
+    }
+
+    if ( flash_manager_context.state != FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD )
+    {
+        FLASH_MANAGER_Unlock();
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE;
+    }
+
+    TaskHandle_t notification_task_handle = flash_manager_context.task_handle;
+
+    if ( notification_task_handle == NULL )
+    {
+        FLASH_MANAGER_Unlock();
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_TASK_NOT_READY;
+    }
+
+    InstructionBufferUploadWriteStatus_T write_status =
+        INSTRUCTION_BUFFER_WriteUploadBytes( data, length );
+
+    FLASH_MANAGER_Unlock();
+
+    switch ( write_status )
+    {
+        case INSTRUCTION_BUFFER_UPLOAD_WRITE_ACCEPTED:
+            return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED;
+
+        case INSTRUCTION_BUFFER_UPLOAD_WRITE_BUSY:
+            return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY;
+
+        case INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_ARGUMENT:
+            return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_ARGUMENT;
+
+        case INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_STATE:
+            return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE;
+
+        case INSTRUCTION_BUFFER_UPLOAD_WRITE_PAGE_READY:
+            break;
+
+        default:
+            FLASH_MANAGER_EnterFault();
+            return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE;
+    }
+
+    if ( xTaskNotify( notification_task_handle, FLASH_MANAGER_NOTIFY_DRAIN_INSTRUCTION_UPLOAD,
+                      eSetBits )
+         != pdPASS )
+    {
+        FLASH_MANAGER_EnterFault();
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOTIFY_FAILED;
+    }
+
+    return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED;
+}
+
+/**
+ * @brief Stops host production and requests task-context upload completion.
+ */
+FlashManagerInstructionUploadRequestStatus_T FLASH_MANAGER_RequestInstructionUploadFinish( void )
+{
+    if ( flash_manager_context.access_mutex == NULL )
+    {
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOT_INITIALISED;
+    }
+
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOT_INITIALISED;
+    }
+
+    if ( flash_manager_context.state != FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD )
+    {
+        FLASH_MANAGER_Unlock();
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE;
+    }
+
+    TaskHandle_t notification_task_handle = flash_manager_context.task_handle;
+
+    if ( notification_task_handle == NULL )
+    {
+        FLASH_MANAGER_Unlock();
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_TASK_NOT_READY;
+    }
+
+    if ( !INSTRUCTION_BUFFER_IsUploadInputComplete() )
+    {
+        FLASH_MANAGER_Unlock();
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE;
+    }
+
+    /*
+     * This publishes a final partial page. It returns false while a NAND write
+     * owns the oldest page, allowing the Host Interface to retry unchanged.
+     */
+    if ( !INSTRUCTION_BUFFER_FinaliseUpload() )
+    {
+        FLASH_MANAGER_Unlock();
+        return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY;
+    }
+
+    flash_manager_context.state = FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD;
+
+    FLASH_MANAGER_Unlock();
+
+    if ( xTaskNotify( notification_task_handle,
+                      FLASH_MANAGER_NOTIFY_FINALISE_INSTRUCTION_UPLOAD, eSetBits )
          != pdPASS )
     {
         FLASH_MANAGER_EnterFault();
