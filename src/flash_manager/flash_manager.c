@@ -512,7 +512,7 @@ static bool FLASH_MANAGER_PrepareInstructionUpload( void )
     if ( preparation_state_is_valid )
     {
         taskENTER_CRITICAL();
-        flash_manager_context.state = FLASH_MANAGER_STATE_IDLE;
+        flash_manager_context.state = FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD;
         taskEXIT_CRITICAL();
     }
 
@@ -566,7 +566,7 @@ void FLASH_MANAGER_Task( void* parameters )
             continue;
         }
 
-        /** Handle preparation of a new execution session. */
+        /* Handle preparation of a new execution session. */
         if ( ( notification_bits & FLASH_MANAGER_NOTIFY_PREPARE_EXECUTION ) != 0U )
         {
             if ( !FLASH_MANAGER_PrepareExecution() )
@@ -575,7 +575,7 @@ void FLASH_MANAGER_Task( void* parameters )
             }
         }
 
-        /** Handle preparation of a new instruction upload. */
+        /* Handle preparation of a new instruction upload. */
         if ( ( notification_bits & FLASH_MANAGER_NOTIFY_PREPARE_INSTRUCTION_UPLOAD ) != 0U )
         {
             if ( !FLASH_MANAGER_PrepareInstructionUpload() )
@@ -584,7 +584,7 @@ void FLASH_MANAGER_Task( void* parameters )
             }
         }
 
-        /** Handle finalisation of result bytes. */
+        /* Handle finalisation of result bytes. */
         if ( ( notification_bits & FLASH_MANAGER_NOTIFY_FINALISE_RESULTS ) != 0U )
         {
             /*
@@ -597,7 +597,7 @@ void FLASH_MANAGER_Task( void* parameters )
             }
         }
 
-        /** Handle draining of result bytes. */
+        /* Handle draining of result bytes. */
         if ( ( notification_bits & FLASH_MANAGER_NOTIFY_DRAIN_RESULTS ) != 0U )
         {
             /*
@@ -610,7 +610,7 @@ void FLASH_MANAGER_Task( void* parameters )
             }
         }
 
-        /** Handle refilling of instruction pages. */
+        /* Handle refilling of instruction pages. */
         if ( ( notification_bits & FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS ) != 0U )
         {
             if ( !FLASH_MANAGER_FillInstructionPages() )
@@ -779,24 +779,24 @@ FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void )
 FlashManagerInstructionUploadRequestStatus_T
 FLASH_MANAGER_RequestInstructionUploadStart( uint32_t expected_length_bytes )
 {
-    /** Check if the Flash Manager is initialised. */
+    /* Check if the Flash Manager is initialised. */
     if ( flash_manager_context.access_mutex == NULL )
     {
         return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOT_INITIALISED;
     }
-    /** Check that the expected length is valid. */
+    /* Check that the expected length is valid. */
     if ( expected_length_bytes == 0U )
     {
         return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_ARGUMENT;
     }
 
-    /** Lock the flash manager */
+    /* Lock the flash manager */
     if ( !FLASH_MANAGER_Lock() )
     {
         return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOT_INITIALISED;
     }
 
-    /** Check if the Flash Manager is in the idle state to begin an upload. */
+    /* Check if the Flash Manager is in the idle state to begin an upload. */
     if ( flash_manager_context.state != FLASH_MANAGER_STATE_IDLE )
     {
         FLASH_MANAGER_Unlock();
