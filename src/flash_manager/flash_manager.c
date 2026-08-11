@@ -562,8 +562,7 @@ static bool FLASH_MANAGER_DrainInstructionUploadPages( void )
 
         bool drain_allowed =
             ( flash_manager_context.state == FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD )
-            || ( flash_manager_context.state
-                 == FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD );
+            || ( flash_manager_context.state == FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD );
 
         const uint8_t* page_data          = NULL;
         uint32_t       valid_length_bytes = 0U;
@@ -571,8 +570,8 @@ static bool FLASH_MANAGER_DrainInstructionUploadPages( void )
 
         if ( drain_allowed )
         {
-            page_acquired = INSTRUCTION_BUFFER_AcquireUploadDrainPage(
-                &page_data, &valid_length_bytes );
+            page_acquired =
+                INSTRUCTION_BUFFER_AcquireUploadDrainPage( &page_data, &valid_length_bytes );
         }
 
         FLASH_MANAGER_Unlock();
@@ -595,13 +594,12 @@ static bool FLASH_MANAGER_DrainInstructionUploadPages( void )
             return false;
         }
 
-        bool drain_completion_succeeded = INSTRUCTION_BUFFER_CompleteUploadDrain(
-            nand_write_status == EXTERNAL_FLASH_STATUS_OK );
+        bool drain_completion_succeeded =
+            INSTRUCTION_BUFFER_CompleteUploadDrain( nand_write_status == EXTERNAL_FLASH_STATUS_OK );
 
         FLASH_MANAGER_Unlock();
 
-        if ( ( nand_write_status != EXTERNAL_FLASH_STATUS_OK )
-             || !drain_completion_succeeded )
+        if ( ( nand_write_status != EXTERNAL_FLASH_STATUS_OK ) || !drain_completion_succeeded )
         {
             return false;
         }
@@ -1121,8 +1119,8 @@ FlashManagerInstructionUploadRequestStatus_T FLASH_MANAGER_RequestInstructionUpl
 
     FLASH_MANAGER_Unlock();
 
-    if ( xTaskNotify( notification_task_handle,
-                      FLASH_MANAGER_NOTIFY_FINALISE_INSTRUCTION_UPLOAD, eSetBits )
+    if ( xTaskNotify( notification_task_handle, FLASH_MANAGER_NOTIFY_FINALISE_INSTRUCTION_UPLOAD,
+                      eSetBits )
          != pdPASS )
     {
         FLASH_MANAGER_EnterFault();

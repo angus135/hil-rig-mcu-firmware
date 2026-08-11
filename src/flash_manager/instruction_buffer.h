@@ -344,8 +344,8 @@ bool INSTRUCTION_BUFFER_GetUploadExpectedLength( uint32_t* expected_length_bytes
  *       partial page is published by INSTRUCTION_BUFFER_FinaliseUpload().
  * @note This function performs no NAND access and is not internally synchronised.
  */
-InstructionBufferUploadWriteStatus_T
-INSTRUCTION_BUFFER_WriteUploadBytes( const uint8_t* data, uint32_t length );
+InstructionBufferUploadWriteStatus_T INSTRUCTION_BUFFER_WriteUploadBytes( const uint8_t* data,
+                                                                          uint32_t       length );
 
 /**
  * @brief Acquires the oldest completed upload page for a NAND write.
