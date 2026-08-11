@@ -200,7 +200,6 @@ TEST_F( InstructionBufferTest, PrepareReadAcceptsEmptyImageAndResetsAllCursors )
     instruction_buffer_context.consumer_page_offset_bytes   = 5U;
     instruction_buffer_context.page_states[1]               = INSTRUCTION_BUFFER_PAGE_READY;
     instruction_buffer_context.page_valid_bytes[1]          = 4U;
-    instruction_buffer_context.page_stream_offsets_bytes[1] = 32U;
 
     ASSERT_TRUE( INSTRUCTION_BUFFER_PrepareRead( 0U ) );
 
@@ -211,13 +210,14 @@ TEST_F( InstructionBufferTest, PrepareReadAcceptsEmptyImageAndResetsAllCursors )
     EXPECT_EQ( 0U, instruction_buffer_context.consumer_stream_offset_bytes );
     EXPECT_EQ( 0U, instruction_buffer_context.consumer_page_index );
     EXPECT_EQ( 0U, instruction_buffer_context.consumer_page_offset_bytes );
+    EXPECT_EQ( instruction_buffer_storage,
+               instruction_buffer_context.consumer_record_pointer );
 
     for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
     {
         EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY,
                    instruction_buffer_context.page_states[page_index] );
         EXPECT_EQ( 0U, instruction_buffer_context.page_valid_bytes[page_index] );
-        EXPECT_EQ( 0U, instruction_buffer_context.page_stream_offsets_bytes[page_index] );
     }
 
     InstructionBufferPageFillLease_T lease = {};
@@ -326,7 +326,6 @@ TEST_F( InstructionBufferTest, CompleteFillPagePublishesPageAndAdvancesReadPosit
     EXPECT_FALSE( instruction_buffer_context.active_page_fill_reservation.is_active );
     EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY, instruction_buffer_context.page_states[0] );
     EXPECT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES, instruction_buffer_context.page_valid_bytes[0] );
-    EXPECT_EQ( 0U, instruction_buffer_context.page_stream_offsets_bytes[0] );
     EXPECT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES,
                instruction_buffer_context.next_nand_read_offset_bytes );
     EXPECT_EQ( 1U, instruction_buffer_context.next_fill_page_index );
@@ -362,7 +361,6 @@ TEST_F( InstructionBufferTest, FailedFillReleasesSlotWithoutAdvancingAndCanRetry
 
     EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY, instruction_buffer_context.page_states[0] );
     EXPECT_EQ( 0U, instruction_buffer_context.page_valid_bytes[0] );
-    EXPECT_EQ( 0U, instruction_buffer_context.page_stream_offsets_bytes[0] );
     EXPECT_EQ( 0U, instruction_buffer_context.next_nand_read_offset_bytes );
     EXPECT_EQ( 0U, instruction_buffer_context.next_fill_page_index );
     EXPECT_FALSE( INSTRUCTION_BUFFER_CompleteFillPage( &failed_lease, false ) );
@@ -422,8 +420,6 @@ TEST_F( InstructionBufferTest, ThreeReadyPagesApplyBackpressureWithoutOverwritin
                    instruction_buffer_context.page_states[page_index] );
         EXPECT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES,
                    instruction_buffer_context.page_valid_bytes[page_index] );
-        EXPECT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES * page_index,
-                   instruction_buffer_context.page_stream_offsets_bytes[page_index] );
     }
 }
 
@@ -476,9 +472,24 @@ TEST_F( InstructionBufferTest, PeekAndConsumeAdvanceWithinPageWithoutRequestingR
     EXPECT_EQ( first_payload_length_bytes, first_view->header.payload_length_bytes );
     EXPECT_EQ( 0x10U, first_view->payload[0] );
 
-    EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction( first_view ) );
+    /* A later execution tick must reuse the prepared view without reparsing RAM. */
+    constexpr uint32_t modified_backing_timestamp = 999U;
+    std::memcpy( instruction_buffer_storage, &modified_backing_timestamp,
+                 sizeof( modified_backing_timestamp ) );
+
+    const FlashManagerInstructionView_T* repeated_view = nullptr;
+    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE,
+               INSTRUCTION_BUFFER_PeekInstruction( &repeated_view ) );
+    EXPECT_EQ( first_view, repeated_view );
+    EXPECT_EQ( 100U, repeated_view->header.timestamp );
+    EXPECT_EQ( 0U, instruction_buffer_context.consumer_stream_offset_bytes );
+
+    EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction() );
+    EXPECT_EQ( 0U, instruction_buffer_context.instruction_cache.record_length_bytes );
     EXPECT_EQ( second_record_offset, instruction_buffer_context.consumer_stream_offset_bytes );
     EXPECT_EQ( second_record_offset, instruction_buffer_context.consumer_page_offset_bytes );
+    EXPECT_EQ( &instruction_buffer_storage[second_record_offset],
+               instruction_buffer_context.consumer_record_pointer );
     EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY, instruction_buffer_context.page_states[0] );
 
     const FlashManagerInstructionView_T* second_view = nullptr;
@@ -486,7 +497,8 @@ TEST_F( InstructionBufferTest, PeekAndConsumeAdvanceWithinPageWithoutRequestingR
                INSTRUCTION_BUFFER_PeekInstruction( &second_view ) );
     ASSERT_NE( nullptr, second_view );
     EXPECT_EQ( 200U, second_view->header.timestamp );
-    EXPECT_FALSE( INSTRUCTION_BUFFER_IsReadComplete() );
+    EXPECT_LT( instruction_buffer_context.consumer_stream_offset_bytes,
+               instruction_buffer_context.instruction_length_bytes );
 }
 
 TEST_F( InstructionBufferTest, PeekWaitsUntilCompleteCrossPageRecordIsBuffered )
@@ -509,10 +521,9 @@ TEST_F( InstructionBufferTest, PeekWaitsUntilCompleteCrossPageRecordIsBuffered )
 
     const FlashManagerInstructionView_T* view = nullptr;
     ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
-    ASSERT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction( view ) );
+    ASSERT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction() );
 
     EXPECT_EQ( INSTRUCTION_BUFFER_PEEK_NOT_BUFFERED, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
-    EXPECT_EQ( nullptr, view );
 
     InstructionBufferPageFillLease_T final_lease = AcquirePage();
     std::memcpy( final_lease.page_data, &image[final_lease.instruction_offset_bytes],
@@ -527,31 +538,7 @@ TEST_F( InstructionBufferTest, PeekWaitsUntilCompleteCrossPageRecordIsBuffered )
                       payload_length_bytes ) );
 }
 
-TEST_F( InstructionBufferTest, ConsumeRejectsCopiedViewWithoutAdvancingActiveInstruction )
-{
-    constexpr uint16_t payload_length_bytes = 4U;
-    constexpr uint32_t record_length_bytes =
-        sizeof( FlashManagerInstructionHeader_T ) + payload_length_bytes;
-
-    Prepare( record_length_bytes );
-    InstructionBufferPageFillLease_T lease = AcquirePage();
-    StoreInstruction( lease.page_data, 100U, payload_length_bytes, 0x50U );
-    ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &lease, true ) );
-
-    const FlashManagerInstructionView_T* view = nullptr;
-    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
-    FlashManagerInstructionView_T copied_view = *view;
-
-    EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_INVALID_VIEW,
-               INSTRUCTION_BUFFER_ConsumeInstruction( &copied_view ) );
-    EXPECT_EQ( 0U, instruction_buffer_context.consumer_stream_offset_bytes );
-    EXPECT_TRUE( instruction_buffer_context.active_instruction_view.is_active );
-
-    EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction( view ) );
-    EXPECT_TRUE( INSTRUCTION_BUFFER_IsReadComplete() );
-}
-
-TEST_F( InstructionBufferTest, EndReadInvalidatesActiveViewWithoutChangingGeometry )
+TEST_F( InstructionBufferTest, EndReadClearsCurrentViewWithoutChangingGeometry )
 {
     constexpr uint16_t payload_length_bytes = 4U;
     constexpr uint32_t record_length_bytes =
@@ -565,7 +552,6 @@ TEST_F( InstructionBufferTest, EndReadInvalidatesActiveViewWithoutChangingGeomet
     const FlashManagerInstructionView_T* view = nullptr;
     ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
     uint32_t next_fill_lease_id = instruction_buffer_context.next_page_fill_lease_id;
-    uint32_t next_view_id       = instruction_buffer_context.next_instruction_view_id;
 
     INSTRUCTION_BUFFER_EndRead();
 
@@ -573,18 +559,15 @@ TEST_F( InstructionBufferTest, EndReadInvalidatesActiveViewWithoutChangingGeomet
     EXPECT_FALSE( instruction_buffer_context.is_read_prepared );
     EXPECT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES, instruction_buffer_context.page_size_bytes );
     EXPECT_EQ( next_fill_lease_id, instruction_buffer_context.next_page_fill_lease_id );
-    EXPECT_EQ( next_view_id, instruction_buffer_context.next_instruction_view_id );
-    EXPECT_FALSE( instruction_buffer_context.active_instruction_view.is_active );
-    EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_INVALID_VIEW,
-               INSTRUCTION_BUFFER_ConsumeInstruction( view ) );
-    EXPECT_FALSE( INSTRUCTION_BUFFER_IsReadComplete() );
+    EXPECT_EQ( 0U, instruction_buffer_context.instruction_cache.record_length_bytes );
+    EXPECT_EQ( instruction_buffer_storage,
+               instruction_buffer_context.consumer_record_pointer );
 
     for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
     {
         EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY,
                    instruction_buffer_context.page_states[page_index] );
         EXPECT_EQ( 0U, instruction_buffer_context.page_valid_bytes[page_index] );
-        EXPECT_EQ( 0U, instruction_buffer_context.page_stream_offsets_bytes[page_index] );
     }
 }
 
@@ -618,10 +601,12 @@ TEST_F( InstructionBufferTest, ConsumingExhaustedPageRequestsRefillWhenNandDataR
     ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
 
     EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED,
-               INSTRUCTION_BUFFER_ConsumeInstruction( view ) );
+               INSTRUCTION_BUFFER_ConsumeInstruction() );
     EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY, instruction_buffer_context.page_states[0] );
     EXPECT_EQ( 1U, instruction_buffer_context.consumer_page_index );
     EXPECT_EQ( 0U, instruction_buffer_context.consumer_page_offset_bytes );
+    EXPECT_EQ( &instruction_buffer_storage[TEST_INSTRUCTION_PAGE_SIZE_BYTES],
+               instruction_buffer_context.consumer_record_pointer );
 
     InstructionBufferPageFillLease_T refill_lease = AcquirePage();
     EXPECT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES * INSTRUCTION_BUFFER_PAGE_COUNT,
@@ -656,7 +641,7 @@ TEST_F( InstructionBufferTest, RingMirrorMakesCrossBoundaryInstructionPayloadCon
     const FlashManagerInstructionView_T* view = nullptr;
     ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
     ASSERT_EQ( INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED,
-               INSTRUCTION_BUFFER_ConsumeInstruction( view ) );
+               INSTRUCTION_BUFFER_ConsumeInstruction() );
 
     InstructionBufferPageFillLease_T refill_lease = AcquirePage();
     std::memcpy( refill_lease.page_data, &image[refill_lease.instruction_offset_bytes],
@@ -664,9 +649,9 @@ TEST_F( InstructionBufferTest, RingMirrorMakesCrossBoundaryInstructionPayloadCon
     ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &refill_lease, true ) );
 
     ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
-    ASSERT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction( view ) );
+    ASSERT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction() );
     ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
-    ASSERT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction( view ) );
+    ASSERT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction() );
 
     ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
     ASSERT_NE( nullptr, view );
@@ -674,11 +659,12 @@ TEST_F( InstructionBufferTest, RingMirrorMakesCrossBoundaryInstructionPayloadCon
     EXPECT_EQ( 4U, view->header.payload_length_bytes );
     EXPECT_EQ( 0, std::memcmp( view->payload, &image[image_length_bytes - 4U], 4U ) );
 
-    EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction( view ) );
+    EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction() );
     EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY, instruction_buffer_context.page_states[2] );
     EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY, instruction_buffer_context.page_states[0] );
     EXPECT_EQ( INSTRUCTION_BUFFER_PEEK_END_OF_STREAM, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
-    EXPECT_TRUE( INSTRUCTION_BUFFER_IsReadComplete() );
+    EXPECT_EQ( instruction_buffer_context.instruction_length_bytes,
+               instruction_buffer_context.consumer_stream_offset_bytes );
 }
 
 /**-----------------------------------------------------------------------------
