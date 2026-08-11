@@ -64,6 +64,13 @@
 #define INSTRUCTION_BUFFER_STORAGE_BYTES                                                           \
     ( INSTRUCTION_BUFFER_MAX_CAPACITY_BYTES + INSTRUCTION_BUFFER_MAX_RECORD_BYTES )
 
+/* Keep page-release bookkeeping out of the per-instruction common path. */
+#if defined( __GNUC__ ) || defined( __clang__ )
+#define INSTRUCTION_BUFFER_COLD_NOINLINE __attribute__( ( cold, noinline ) )
+#else
+#define INSTRUCTION_BUFFER_COLD_NOINLINE
+#endif
+
 /* The serialized NAND layout depends on this fixed header width. */
 #if defined( __cplusplus )
 static_assert( sizeof( FlashManagerInstructionHeader_T ) == 8U,
@@ -118,21 +125,15 @@ typedef struct
     uint32_t lease_id;
 } InstructionBufferPageFillReservation_T;
 
-/** @brief Authoritative ownership of the instruction currently being viewed. */
+/** @brief Prepared header, payload view, and length for the current instruction. */
 typedef struct
 {
-    /** Whether a view has been published and not yet consumed. */
-    bool is_active;
-
-    /** Logical stream offset of the viewed record header. */
-    uint32_t record_stream_offset_bytes;
-
     /** Authoritative combined serialized header and payload length. */
     uint32_t record_length_bytes;
 
     /** Complete logical header-and-payload view exposed to the consumer. */
     FlashManagerInstructionView_T view;
-} InstructionBufferViewReservation_T;
+} InstructionBufferInstructionCache_T;
 
 /* Instruction upload types. */
 
@@ -177,7 +178,7 @@ typedef struct
     /** Identifier to assign to the next page-fill reservation. */
     uint32_t next_page_fill_lease_id;
 
-    /* Instruction retrieval: execution consumer position and view identity. */
+    /* Instruction retrieval: execution consumer position. */
 
     /** Logical stream offset of the next unconsumed instruction record. */
     uint32_t consumer_stream_offset_bytes;
@@ -188,8 +189,8 @@ typedef struct
     /** Offset of the next unconsumed instruction byte within its slot. */
     uint32_t consumer_page_offset_bytes;
 
-    /** Identifier assigned to the next published instruction view. */
-    uint32_t next_instruction_view_id;
+    /** Direct address of the next unconsumed instruction header. */
+    uint8_t* consumer_record_pointer;
 
     /* Shared page metadata. */
 
@@ -199,16 +200,13 @@ typedef struct
     /** Valid logical instruction bytes held in each page slot. */
     uint32_t page_valid_bytes[INSTRUCTION_BUFFER_PAGE_COUNT];
 
-    /** Logical instruction-stream offset represented by byte zero of each slot. */
-    uint32_t page_stream_offsets_bytes[INSTRUCTION_BUFFER_PAGE_COUNT];
-
     /* Instruction retrieval ownership. */
 
     /** The one NAND page-fill reservation that may currently be outstanding. */
     InstructionBufferPageFillReservation_T active_page_fill_reservation;
 
-    /** The one instruction view that may currently be outstanding. */
-    InstructionBufferViewReservation_T active_instruction_view;
+    /** Prepared view and serialized length of the current instruction. */
+    InstructionBufferInstructionCache_T instruction_cache;
 
     /* Instruction upload lifecycle and ownership. */
 
@@ -267,10 +265,10 @@ static InstructionBufferContext_T instruction_buffer_context;
 /* Shared state management. */
 
 /** Returns the circular successor of a valid page-slot index. */
-static uint8_t INSTRUCTION_BUFFER_NextPageIndex( uint8_t page_index );
+static inline uint8_t INSTRUCTION_BUFFER_NextPageIndex( uint8_t page_index );
 
 /** Returns the start of a valid runtime page slot. */
-static uint8_t* INSTRUCTION_BUFFER_GetPageData( uint8_t page_index );
+static inline uint8_t* INSTRUCTION_BUFFER_GetPageData( uint8_t page_index );
 
 /** Releases all page slots and invalidates their stream metadata. */
 static void INSTRUCTION_BUFFER_ResetPages( void );
@@ -287,11 +285,13 @@ INSTRUCTION_BUFFER_PageFillLeaseMatches( const InstructionBufferPageFillLease_T*
 /** Invalidates the active page-fill reservation without changing page data. */
 static void INSTRUCTION_BUFFER_ClearPageFillReservation( void );
 
-/** Invalidates the current instruction view without advancing the stream. */
-static void INSTRUCTION_BUFFER_ClearInstructionView( void );
+/** Invalidates the prepared instruction cache without advancing the stream. */
+static inline void INSTRUCTION_BUFFER_ClearInstructionCache( void );
 
-/** Returns the next non-zero identifier for a published instruction view. */
-static uint32_t INSTRUCTION_BUFFER_AllocateInstructionViewId( void );
+/** Releases exhausted pages after the current record reaches a page boundary. */
+static INSTRUCTION_BUFFER_COLD_NOINLINE InstructionBufferConsumeStatus_T
+INSTRUCTION_BUFFER_ConsumeAcrossPageBoundary( uint32_t record_length_bytes,
+                                              uint32_t bytes_remaining_in_page );
 
 /* Instruction upload. */
 
@@ -316,12 +316,12 @@ static bool INSTRUCTION_BUFFER_CopyUploadBytes( const uint8_t* data, uint32_t le
 
 /* Shared state management. */
 
-static uint8_t INSTRUCTION_BUFFER_NextPageIndex( uint8_t page_index )
+static inline uint8_t INSTRUCTION_BUFFER_NextPageIndex( uint8_t page_index )
 {
     return ( uint8_t )( ( page_index + 1U ) % INSTRUCTION_BUFFER_PAGE_COUNT );
 }
 
-static uint8_t* INSTRUCTION_BUFFER_GetPageData( uint8_t page_index )
+static inline uint8_t* INSTRUCTION_BUFFER_GetPageData( uint8_t page_index )
 {
     uint32_t page_offset_bytes =
         ( uint32_t )page_index * instruction_buffer_context.page_size_bytes;
@@ -335,7 +335,6 @@ static void INSTRUCTION_BUFFER_ResetPages( void )
     {
         instruction_buffer_context.page_states[page_index] = INSTRUCTION_BUFFER_PAGE_EMPTY;
         instruction_buffer_context.page_valid_bytes[page_index] = 0U;
-        instruction_buffer_context.page_stream_offsets_bytes[page_index] = 0U;
     }
 }
 
@@ -398,22 +397,9 @@ static void INSTRUCTION_BUFFER_ClearPageFillReservation( void )
         ( InstructionBufferPageFillReservation_T ){ 0 };
 }
 
-static void INSTRUCTION_BUFFER_ClearInstructionView( void )
+static inline void INSTRUCTION_BUFFER_ClearInstructionCache( void )
 {
-    instruction_buffer_context.active_instruction_view =
-        ( InstructionBufferViewReservation_T ){ 0 };
-}
-
-static uint32_t INSTRUCTION_BUFFER_AllocateInstructionViewId( void )
-{
-    uint32_t view_id = instruction_buffer_context.next_instruction_view_id++;
-
-    if ( instruction_buffer_context.next_instruction_view_id == 0U )
-    {
-        instruction_buffer_context.next_instruction_view_id = 1U;
-    }
-
-    return view_id;
+    instruction_buffer_context.instruction_cache = ( InstructionBufferInstructionCache_T ){ 0 };
 }
 
 /* Instruction upload. */
@@ -444,8 +430,7 @@ static bool INSTRUCTION_BUFFER_AreUploadPagesEmpty( void )
     for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
     {
         if ( ( instruction_buffer_context.page_states[page_index] != INSTRUCTION_BUFFER_PAGE_EMPTY )
-             || ( instruction_buffer_context.page_valid_bytes[page_index] != 0U )
-             || ( instruction_buffer_context.page_stream_offsets_bytes[page_index] != 0U ) )
+             || ( instruction_buffer_context.page_valid_bytes[page_index] != 0U ) )
         {
             return false;
         }
@@ -600,9 +585,8 @@ bool INSTRUCTION_BUFFER_Init( void )
     instruction_buffer_context.instruction_partition_capacity_bytes =
         external_flash_info.instruction_capacity_bytes;
 
-    instruction_buffer_context.next_page_fill_lease_id  = 1U;
-    instruction_buffer_context.next_instruction_view_id = 1U;
-    instruction_buffer_context.is_initialised           = true;
+    instruction_buffer_context.next_page_fill_lease_id = 1U;
+    instruction_buffer_context.is_initialised          = true;
 
     return true;
 }
@@ -630,9 +614,10 @@ bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes )
     instruction_buffer_context.consumer_stream_offset_bytes = 0U;
     instruction_buffer_context.consumer_page_index          = 0U;
     instruction_buffer_context.consumer_page_offset_bytes   = 0U;
+    instruction_buffer_context.consumer_record_pointer      = instruction_buffer_storage;
 
     INSTRUCTION_BUFFER_ClearPageFillReservation();
-    INSTRUCTION_BUFFER_ClearInstructionView();
+    INSTRUCTION_BUFFER_ClearInstructionCache();
     INSTRUCTION_BUFFER_ResetPages();
 
     /*
@@ -642,11 +627,6 @@ bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes )
     if ( instruction_buffer_context.next_page_fill_lease_id == 0U )
     {
         instruction_buffer_context.next_page_fill_lease_id = 1U;
-    }
-
-    if ( instruction_buffer_context.next_instruction_view_id == 0U )
-    {
-        instruction_buffer_context.next_instruction_view_id = 1U;
     }
 
     instruction_buffer_context.is_read_prepared = true;
@@ -672,9 +652,10 @@ void INSTRUCTION_BUFFER_EndRead( void )
     instruction_buffer_context.consumer_stream_offset_bytes = 0U;
     instruction_buffer_context.consumer_page_index          = 0U;
     instruction_buffer_context.consumer_page_offset_bytes   = 0U;
+    instruction_buffer_context.consumer_record_pointer      = instruction_buffer_storage;
 
     INSTRUCTION_BUFFER_ClearPageFillReservation();
-    INSTRUCTION_BUFFER_ClearInstructionView();
+    INSTRUCTION_BUFFER_ClearInstructionCache();
     INSTRUCTION_BUFFER_ResetPages();
 }
 
@@ -792,8 +773,6 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
 
         instruction_buffer_context.page_valid_bytes[page_index] = read_length_bytes;
 
-        instruction_buffer_context.page_stream_offsets_bytes[page_index] = instruction_offset_bytes;
-
         instruction_buffer_context.page_states[page_index] = INSTRUCTION_BUFFER_PAGE_READY;
 
         instruction_buffer_context.next_nand_read_offset_bytes += read_length_bytes;
@@ -807,8 +786,6 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
         instruction_buffer_context.page_states[page_index] = INSTRUCTION_BUFFER_PAGE_EMPTY;
 
         instruction_buffer_context.page_valid_bytes[page_index] = 0U;
-
-        instruction_buffer_context.page_stream_offsets_bytes[page_index] = 0U;
     }
 
     INSTRUCTION_BUFFER_ClearPageFillReservation();
@@ -827,27 +804,10 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
 InstructionBufferPeekStatus_T
 INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instruction )
 {
-    if ( instruction == NULL )
+    /* Repeated execution ticks return the already prepared instruction cheaply. */
+    if ( instruction_buffer_context.instruction_cache.record_length_bytes != 0U )
     {
-        return INSTRUCTION_BUFFER_PEEK_INVALID_ARGUMENT;
-    }
-
-    *instruction = NULL;
-
-    if ( !instruction_buffer_context.is_initialised
-         || !instruction_buffer_context.is_read_prepared )
-    {
-        return INSTRUCTION_BUFFER_PEEK_NOT_BUFFERED;
-    }
-
-    /*
-     * The reservation also owns the backing bytes until consume. Returning its
-     * address avoids copying the complete public view into ISR-owned storage.
-     */
-    if ( instruction_buffer_context.active_instruction_view.is_active )
-    {
-        *instruction = &instruction_buffer_context.active_instruction_view.view;
-
+        *instruction = &instruction_buffer_context.instruction_cache.view;
         return INSTRUCTION_BUFFER_PEEK_AVAILABLE;
     }
 
@@ -858,18 +818,6 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
         return INSTRUCTION_BUFFER_PEEK_END_OF_STREAM;
     }
 
-    /*
-     * Upload preprocessing guarantees a packed [header][payload] stream. The
-     * producer offset is therefore sufficient to determine whether the next
-     * complete record has reached RAM; no page search is required here.
-     */
-    if ( ( record_stream_offset_bytes > instruction_buffer_context.instruction_length_bytes )
-         || ( instruction_buffer_context.next_nand_read_offset_bytes
-              < record_stream_offset_bytes ) )
-    {
-        return INSTRUCTION_BUFFER_PEEK_CORRUPT;
-    }
-
     uint32_t buffered_unread_bytes =
         instruction_buffer_context.next_nand_read_offset_bytes - record_stream_offset_bytes;
 
@@ -878,32 +826,13 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
         return INSTRUCTION_BUFFER_PEEK_NOT_BUFFERED;
     }
 
-    uint8_t current_page_index = instruction_buffer_context.consumer_page_index;
-
-    if ( current_page_index >= INSTRUCTION_BUFFER_PAGE_COUNT )
-    {
-        return INSTRUCTION_BUFFER_PEEK_CORRUPT;
-    }
-
-    uint32_t record_storage_offset_bytes =
-        ( ( uint32_t )current_page_index * instruction_buffer_context.page_size_bytes )
-        + instruction_buffer_context.consumer_page_offset_bytes;
-
-    uint32_t runtime_storage_size_bytes =
-        instruction_buffer_context.page_size_bytes * INSTRUCTION_BUFFER_PAGE_COUNT;
-
-    if ( record_storage_offset_bytes >= runtime_storage_size_bytes )
-    {
-        return INSTRUCTION_BUFFER_PEEK_CORRUPT;
-    }
-
     FlashManagerInstructionHeader_T header = { 0 };
 
     /*
      * Copy the fixed header into an aligned object for safe field access. The
      * slot-zero mirror makes this a single bounded copy even at the ring end.
      */
-    memcpy( &header, &instruction_buffer_storage[record_storage_offset_bytes], sizeof( header ) );
+    memcpy( &header, instruction_buffer_context.consumer_record_pointer, sizeof( header ) );
 
     uint32_t record_length_bytes = sizeof( header ) + ( uint32_t )header.payload_length_bytes;
 
@@ -926,16 +855,14 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
         return INSTRUCTION_BUFFER_PEEK_NOT_BUFFERED;
     }
 
-    instruction_buffer_context.active_instruction_view = ( InstructionBufferViewReservation_T ){
-        .is_active                  = true,
-        .record_stream_offset_bytes = record_stream_offset_bytes,
-        .record_length_bytes        = record_length_bytes,
-        .view                       = { .header = header,
-                                        .payload =
-                                            &instruction_buffer_storage[record_storage_offset_bytes + sizeof( header )],
-                                        .view_id = INSTRUCTION_BUFFER_AllocateInstructionViewId() } };
+    instruction_buffer_context.instruction_cache =
+        ( InstructionBufferInstructionCache_T ){
+            .record_length_bytes = record_length_bytes,
+            .view = { .header  = header,
+                      .payload = instruction_buffer_context.consumer_record_pointer
+                                 + sizeof( header ) } };
 
-    *instruction = &instruction_buffer_context.active_instruction_view.view;
+    *instruction = &instruction_buffer_context.instruction_cache.view;
 
     return INSTRUCTION_BUFFER_PEEK_AVAILABLE;
 }
@@ -947,131 +874,70 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
  * required only when the record reaches or crosses a page boundary.
  */
 InstructionBufferConsumeStatus_T
-INSTRUCTION_BUFFER_ConsumeInstruction( const FlashManagerInstructionView_T* instruction )
+INSTRUCTION_BUFFER_ConsumeInstruction( void )
 {
-    InstructionBufferViewReservation_T* active_view =
-        &instruction_buffer_context.active_instruction_view;
-
-    if ( ( instruction == NULL ) || !instruction_buffer_context.is_initialised
-         || !instruction_buffer_context.is_read_prepared || !active_view->is_active
-         || ( instruction != &active_view->view ) || ( instruction->view_id == 0U )
-         || ( instruction->view_id != active_view->view.view_id ) )
-    {
-        return INSTRUCTION_BUFFER_CONSUME_INVALID_VIEW;
-    }
-
     uint8_t current_page_index = instruction_buffer_context.consumer_page_index;
+    uint32_t record_length_bytes =
+        instruction_buffer_context.instruction_cache.record_length_bytes;
+    uint32_t bytes_remaining_in_page =
+        instruction_buffer_context.page_valid_bytes[current_page_index]
+        - instruction_buffer_context.consumer_page_offset_bytes;
 
-    if ( ( current_page_index >= INSTRUCTION_BUFFER_PAGE_COUNT )
-         || ( active_view->record_stream_offset_bytes
-              != instruction_buffer_context.consumer_stream_offset_bytes )
-         || ( active_view->record_length_bytes < sizeof( FlashManagerInstructionHeader_T ) )
-         || ( instruction_buffer_context.page_states[current_page_index]
-              != INSTRUCTION_BUFFER_PAGE_READY ) )
-    {
-        return INSTRUCTION_BUFFER_CONSUME_INTERNAL_ERROR;
-    }
-
-    uint32_t current_page_valid_bytes =
-        instruction_buffer_context.page_valid_bytes[current_page_index];
-
-    uint32_t current_page_offset_bytes = instruction_buffer_context.consumer_page_offset_bytes;
-
-    if ( ( current_page_offset_bytes >= current_page_valid_bytes )
-         || ( instruction_buffer_context.consumer_stream_offset_bytes
-              > instruction_buffer_context.instruction_length_bytes )
-         || ( instruction_buffer_context.page_stream_offsets_bytes[current_page_index]
-              > instruction_buffer_context.consumer_stream_offset_bytes )
-         || ( instruction_buffer_context.consumer_stream_offset_bytes
-                  - instruction_buffer_context.page_stream_offsets_bytes[current_page_index]
-              != current_page_offset_bytes )
-         || ( active_view->record_length_bytes
-              > ( instruction_buffer_context.instruction_length_bytes
-                  - instruction_buffer_context.consumer_stream_offset_bytes ) ) )
-    {
-        return INSTRUCTION_BUFFER_CONSUME_INTERNAL_ERROR;
-    }
-
-    uint32_t bytes_remaining_in_page = current_page_valid_bytes - current_page_offset_bytes;
+    instruction_buffer_context.consumer_stream_offset_bytes += record_length_bytes;
+    instruction_buffer_context.instruction_cache.record_length_bytes = 0U;
 
     /* Most instructions remain within their current page. */
-    if ( active_view->record_length_bytes < bytes_remaining_in_page )
+    if ( record_length_bytes < bytes_remaining_in_page )
     {
-        instruction_buffer_context.consumer_stream_offset_bytes += active_view->record_length_bytes;
-        instruction_buffer_context.consumer_page_offset_bytes += active_view->record_length_bytes;
-
-        INSTRUCTION_BUFFER_ClearInstructionView();
+        instruction_buffer_context.consumer_page_offset_bytes += record_length_bytes;
+        instruction_buffer_context.consumer_record_pointer += record_length_bytes;
 
         return INSTRUCTION_BUFFER_CONSUME_OK;
     }
 
-    uint32_t next_consumer_stream_offset_bytes =
-        instruction_buffer_context.consumer_stream_offset_bytes + active_view->record_length_bytes;
+    return INSTRUCTION_BUFFER_ConsumeAcrossPageBoundary( record_length_bytes,
+                                                         bytes_remaining_in_page );
+}
 
-    uint32_t successor_bytes_consumed = active_view->record_length_bytes - bytes_remaining_in_page;
-
+/**
+ * @brief Releases pages exhausted by a boundary-reaching instruction.
+ */
+static INSTRUCTION_BUFFER_COLD_NOINLINE InstructionBufferConsumeStatus_T
+INSTRUCTION_BUFFER_ConsumeAcrossPageBoundary( uint32_t record_length_bytes,
+                                              uint32_t bytes_remaining_in_page )
+{
+    uint8_t current_page_index = instruction_buffer_context.consumer_page_index;
     uint8_t successor_page_index = INSTRUCTION_BUFFER_NextPageIndex( current_page_index );
+    uint32_t successor_bytes_consumed = record_length_bytes - bytes_remaining_in_page;
 
-    /* A crossing record must be backed by the next sequential READY page. */
-    if ( successor_bytes_consumed > 0U )
-    {
-        if ( ( instruction_buffer_context.page_states[successor_page_index]
-               != INSTRUCTION_BUFFER_PAGE_READY )
-             || ( instruction_buffer_context.page_stream_offsets_bytes[successor_page_index]
-                  != ( instruction_buffer_context.consumer_stream_offset_bytes
-                       + bytes_remaining_in_page ) )
-             || ( successor_bytes_consumed
-                  > instruction_buffer_context.page_valid_bytes[successor_page_index] ) )
-        {
-            return INSTRUCTION_BUFFER_CONSUME_INTERNAL_ERROR;
-        }
-    }
-
-    /* The current page contains no bytes at or beyond the new consumer cursor. */
-    instruction_buffer_context.page_states[current_page_index]      = INSTRUCTION_BUFFER_PAGE_EMPTY;
+    instruction_buffer_context.page_states[current_page_index] = INSTRUCTION_BUFFER_PAGE_EMPTY;
     instruction_buffer_context.page_valid_bytes[current_page_index] = 0U;
-    instruction_buffer_context.page_stream_offsets_bytes[current_page_index] = 0U;
-
-    instruction_buffer_context.consumer_stream_offset_bytes = next_consumer_stream_offset_bytes;
 
     instruction_buffer_context.consumer_page_index        = successor_page_index;
     instruction_buffer_context.consumer_page_offset_bytes = successor_bytes_consumed;
+    instruction_buffer_context.consumer_record_pointer =
+        INSTRUCTION_BUFFER_GetPageData( successor_page_index ) + successor_bytes_consumed;
 
-    /* A final partial successor page may also be exhausted by this record. */
+    /* A crossing record may also exhaust a final partial successor page. */
     if ( ( successor_bytes_consumed > 0U )
          && ( successor_bytes_consumed
               == instruction_buffer_context.page_valid_bytes[successor_page_index] ) )
     {
         instruction_buffer_context.page_states[successor_page_index] =
             INSTRUCTION_BUFFER_PAGE_EMPTY;
-        instruction_buffer_context.page_valid_bytes[successor_page_index]          = 0U;
-        instruction_buffer_context.page_stream_offsets_bytes[successor_page_index] = 0U;
+        instruction_buffer_context.page_valid_bytes[successor_page_index] = 0U;
 
         instruction_buffer_context.consumer_page_index =
             INSTRUCTION_BUFFER_NextPageIndex( successor_page_index );
         instruction_buffer_context.consumer_page_offset_bytes = 0U;
+        instruction_buffer_context.consumer_record_pointer = INSTRUCTION_BUFFER_GetPageData(
+            instruction_buffer_context.consumer_page_index );
     }
 
-    INSTRUCTION_BUFFER_ClearInstructionView();
-
-    if ( instruction_buffer_context.next_nand_read_offset_bytes
-         < instruction_buffer_context.instruction_length_bytes )
-    {
-        return INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED;
-    }
-
-    return INSTRUCTION_BUFFER_CONSUME_OK;
-}
-
-/**
- * @brief Reports whether the active instruction image was consumed exactly.
- */
-bool INSTRUCTION_BUFFER_IsReadComplete( void )
-{
-    return instruction_buffer_context.is_initialised && instruction_buffer_context.is_read_prepared
-           && ( instruction_buffer_context.consumer_stream_offset_bytes
-                == instruction_buffer_context.instruction_length_bytes )
-           && !instruction_buffer_context.active_instruction_view.is_active;
+    return ( instruction_buffer_context.next_nand_read_offset_bytes
+             < instruction_buffer_context.instruction_length_bytes )
+               ? INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED
+               : INSTRUCTION_BUFFER_CONSUME_OK;
 }
 
 /* Instruction upload: host production, NAND drain, and lifecycle. */
@@ -1085,7 +951,6 @@ bool INSTRUCTION_BUFFER_PrepareUpload( uint32_t expected_length_bytes )
          || instruction_buffer_context.is_read_prepared
          || instruction_buffer_context.is_upload_prepared
          || instruction_buffer_context.active_page_fill_reservation.is_active
-         || instruction_buffer_context.active_instruction_view.is_active
          || ( expected_length_bytes == 0U )
          || ( expected_length_bytes
               > instruction_buffer_context.instruction_partition_capacity_bytes ) )
@@ -1103,6 +968,7 @@ bool INSTRUCTION_BUFFER_PrepareUpload( uint32_t expected_length_bytes )
     instruction_buffer_context.consumer_stream_offset_bytes = 0U;
     instruction_buffer_context.consumer_page_index          = 0U;
     instruction_buffer_context.consumer_page_offset_bytes   = 0U;
+    instruction_buffer_context.consumer_record_pointer      = instruction_buffer_storage;
 
     instruction_buffer_context.upload_expected_length_bytes  = expected_length_bytes;
     instruction_buffer_context.upload_accepted_length_bytes  = 0U;
@@ -1111,7 +977,7 @@ bool INSTRUCTION_BUFFER_PrepareUpload( uint32_t expected_length_bytes )
     instruction_buffer_context.upload_drain_page_index       = 0U;
 
     INSTRUCTION_BUFFER_ClearPageFillReservation();
-    INSTRUCTION_BUFFER_ClearInstructionView();
+    INSTRUCTION_BUFFER_ClearInstructionCache();
     INSTRUCTION_BUFFER_ResetPages();
 
     instruction_buffer_context.is_upload_prepared = true;
@@ -1252,7 +1118,6 @@ bool INSTRUCTION_BUFFER_CompleteUploadDrain( bool nand_write_succeeded )
         instruction_buffer_context.upload_persisted_length_bytes += valid_length_bytes;
         instruction_buffer_context.page_states[page_index] = INSTRUCTION_BUFFER_PAGE_EMPTY;
         instruction_buffer_context.page_valid_bytes[page_index] = 0U;
-        instruction_buffer_context.page_stream_offsets_bytes[page_index] = 0U;
         instruction_buffer_context.upload_drain_page_index =
             INSTRUCTION_BUFFER_NextPageIndex( page_index );
     }

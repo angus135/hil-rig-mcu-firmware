@@ -1240,18 +1240,6 @@ FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
 FlashManagerInstructionReadStatus_T
 FLASH_MANAGER_PeekNextInstructionFromISR( const FlashManagerInstructionView_T** instruction )
 {
-    if ( instruction == NULL )
-    {
-        return FLASH_MANAGER_INSTRUCTION_INVALID_ARGUMENT;
-    }
-
-    *instruction = NULL;
-
-    if ( flash_manager_context.state != FLASH_MANAGER_STATE_EXECUTING )
-    {
-        return FLASH_MANAGER_INSTRUCTION_INVALID_STATE;
-    }
-
     switch ( INSTRUCTION_BUFFER_PeekInstruction( instruction ) )
     {
         case INSTRUCTION_BUFFER_PEEK_AVAILABLE:
@@ -1269,25 +1257,18 @@ FLASH_MANAGER_PeekNextInstructionFromISR( const FlashManagerInstructionView_T** 
             FLASH_MANAGER_EnterFaultFromISR();
             return FLASH_MANAGER_INSTRUCTION_CORRUPT;
 
-        case INSTRUCTION_BUFFER_PEEK_INVALID_ARGUMENT:
         default:
-            return FLASH_MANAGER_INSTRUCTION_INVALID_ARGUMENT;
+            FLASH_MANAGER_EnterFaultFromISR();
+            return FLASH_MANAGER_INSTRUCTION_CORRUPT;
     }
 }
 
 /**
  * @brief Consumes one instruction and signals task-context refill when needed.
  */
-bool FLASH_MANAGER_ConsumeInstructionFromISR( const FlashManagerInstructionView_T* instruction,
-                                              BaseType_t* higher_priority_task_woken )
+bool FLASH_MANAGER_ConsumeInstructionFromISR( BaseType_t* higher_priority_task_woken )
 {
-    if ( flash_manager_context.state != FLASH_MANAGER_STATE_EXECUTING )
-    {
-        return false;
-    }
-
-    InstructionBufferConsumeStatus_T consume_status =
-        INSTRUCTION_BUFFER_ConsumeInstruction( instruction );
+    InstructionBufferConsumeStatus_T consume_status = INSTRUCTION_BUFFER_ConsumeInstruction();
 
     if ( consume_status == INSTRUCTION_BUFFER_CONSUME_OK )
     {
@@ -1312,11 +1293,6 @@ bool FLASH_MANAGER_ConsumeInstructionFromISR( const FlashManagerInstructionView_
         }
 
         return true;
-    }
-
-    if ( consume_status == INSTRUCTION_BUFFER_CONSUME_INTERNAL_ERROR )
-    {
-        FLASH_MANAGER_EnterFaultFromISR();
     }
 
     return false;
