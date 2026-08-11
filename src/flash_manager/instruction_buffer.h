@@ -101,10 +101,7 @@ typedef enum
     INSTRUCTION_BUFFER_PEEK_END_OF_STREAM,
 
     /** The next header or record length is invalid. */
-    INSTRUCTION_BUFFER_PEEK_CORRUPT,
-
-    /** The supplied output pointer was null. */
-    INSTRUCTION_BUFFER_PEEK_INVALID_ARGUMENT
+    INSTRUCTION_BUFFER_PEEK_CORRUPT
 } InstructionBufferPeekStatus_T;
 
 /**
@@ -116,13 +113,7 @@ typedef enum
     INSTRUCTION_BUFFER_CONSUME_OK = 0,
 
     /** Consuming the instruction released storage while unread NAND data remains. */
-    INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED,
-
-    /** The supplied view did not match the active instruction view. */
-    INSTRUCTION_BUFFER_CONSUME_INVALID_VIEW,
-
-    /** Internal stream or page accounting was inconsistent. */
-    INSTRUCTION_BUFFER_CONSUME_INTERNAL_ERROR
+    INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED
 } InstructionBufferConsumeStatus_T;
 
 /* Instruction upload types. */
@@ -196,7 +187,7 @@ bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes );
  *
  * Invalidates all page-fill leases and instruction views, releases every page
  * slot, and clears the active image cursors while preserving initialised NAND
- * geometry and monotonically changing lease/view identifiers.
+ * geometry and the monotonically changing page-fill lease identifier.
  *
  * @note The Flash Manager must stop the execution ISR before calling this from
  *       task context.
@@ -258,21 +249,23 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
  * its complete payload. Together these fields represent one logical stored
  * instruction.
  *
- * The consumer position is not advanced. Repeated calls return the same view
- * until INSTRUCTION_BUFFER_ConsumeInstruction() succeeds.
+ * The consumer position is not advanced. Repeated calls before consumption
+ * return the same cached view without copying or reparsing the header.
  *
  * @param[out] instruction
  *      Destination for a read-only pointer to the prepared instruction view.
- *      A non-null output is set to null before returning any status other than
- *      INSTRUCTION_BUFFER_PEEK_AVAILABLE.
+ *      Its value is changed only when INSTRUCTION_BUFFER_PEEK_AVAILABLE is
+ *      returned.
  *
  * @return Current buffered instruction status.
  *
  * @note This function performs no NAND access and uses no RTOS primitives.
+ * @pre A prepared read session is active and instruction is non-null.
  * @note The returned payload is contiguous even if its stored record crosses a
  *       NAND page boundary or the physical end of the circular page storage.
  * @note Peek copies only the fixed-size header; it never copies the payload.
- * @note The view remains valid until consumed or PrepareRead is called again.
+ * @note The view remains valid until consumed, PrepareRead is called again, or
+ *       EndRead closes the retrieval session.
  */
 InstructionBufferPeekStatus_T
 INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instruction );
@@ -280,31 +273,15 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
 /**
  * @brief Consumes the instruction returned by the active successful peek.
  *
- * Advances by the stored header and payload length, invalidates the active
- * view, and releases every page slot containing no unread instruction bytes.
- *
- * @param[in] instruction
- *      Unmodified view returned by INSTRUCTION_BUFFER_PeekInstruction().
+ * Advances by the stored header and payload length. If the instruction reaches
+ * a page boundary, the cold path also releases every exhausted page slot.
  *
  * @return Consumption status, including whether a refill is required.
  *
- * @note A successful consume makes the supplied view stale.
+ * @pre At least one successful peek must precede exactly one consume call.
  * @note This function performs no NAND access and uses no RTOS primitives.
  */
-InstructionBufferConsumeStatus_T
-INSTRUCTION_BUFFER_ConsumeInstruction( const FlashManagerInstructionView_T* instruction );
-
-/**
- * @brief Reports whether the configured instruction stream is fully consumed.
- *
- * @retval true
- *      PrepareRead succeeded, the consumer reached the exact image end, and no
- *      instruction view remains active.
- * @retval false
- *      No read session is prepared, instruction bytes remain, or a view is
- *      active.
- */
-bool INSTRUCTION_BUFFER_IsReadComplete( void );
+InstructionBufferConsumeStatus_T INSTRUCTION_BUFFER_ConsumeInstruction( void );
 
 /* Instruction upload: host production, NAND drain, and lifecycle. */
 
@@ -322,8 +299,8 @@ bool INSTRUCTION_BUFFER_IsReadComplete( void );
  *
  * @note This configures only Flash Manager-owned RAM state and does not access
  *       NAND or use RTOS primitives.
- * @note Preparation is refused while retrieval, another upload, a NAND fill,
- *       or an instruction view still owns the shared storage.
+ * @note Preparation is refused while retrieval, another upload, or a NAND fill
+ *       owns the shared storage.
  * @note The expected length describes the complete stream, not one host chunk.
  * @note The Flash Manager must ensure no NAND operation or execution consumer
  *       still owns instruction storage before calling this function.
@@ -433,7 +410,7 @@ bool INSTRUCTION_BUFFER_IsUploadPersisted( void );
  * @retval true  The fully persisted upload state was released.
  * @retval false Upload data or page ownership remained outstanding.
  *
- * @note Retrieval lease/view identifiers and external-flash geometry are preserved.
+ * @note The page-fill lease identifier and external-flash geometry are preserved.
  */
 bool INSTRUCTION_BUFFER_EndUpload( void );
 

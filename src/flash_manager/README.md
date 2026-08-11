@@ -290,6 +290,26 @@ execution_manager appends result bytes into flash manager result slots
 flash_manager writes full result pages using EXTERNAL_FLASH_WriteResultPage
 ```
 
+The instruction API uses a cached hot-path contract. The first peek copies the
+fixed eight-byte header into an aligned view while leaving the payload zero-copy
+in Flash Manager-owned RAM. If its timestamp belongs to a future execution
+tick, later peeks return the same prepared view through a short cached branch;
+they do not copy, reparse, or advance it. Consume advances a cached record
+pointer and two offsets exactly once. Page release and refill notification occur
+only on the less frequent boundary path.
+
+The instruction stream is trusted to have been canonicalised before it reaches
+NAND. The execution path retains only the length bounds needed to prevent a
+stored record from exceeding one NAND page or the declared instruction image.
+Lifecycle and call-order validation belongs outside the per-instruction path.
+
+The common peek and consume paths contain no private helper calls. Tiny shared
+addressing helpers are declared inline, while page-boundary bookkeeping is
+explicitly cold and out of line. The generated CubeIDE Release configuration
+currently uses `-Os` without an explicit LTO option, so cross-translation-unit
+inlining of the public Flash Manager wrapper should be evaluated from target
+Release assembly before changing the generated project settings.
+
 Instruction-stream exhaustion is independent of execution-session completion.
 After the final stored instruction is consumed, instruction peek returns
 `FLASH_MANAGER_INSTRUCTION_END_OF_STREAM` while the Flash Manager remains
@@ -410,6 +430,8 @@ Important statuses to handle:
 - The flash manager owns the instruction and result RAM buffers.
 - The execution ISR uses only the non-blocking Flash Manager instruction and
   result APIs.
+- Repeated peeks before consumption return the same cached instruction view;
+  consume each instruction exactly once when its timestamp becomes due.
 - The execution manager never calls `external_flash` or takes an RTOS mutex.
 - Use `EXTERNAL_FLASH_ReadInstructionPage()` for instruction queue refills.
 - Use `EXTERNAL_FLASH_WriteResultPage()` for result page writes.
