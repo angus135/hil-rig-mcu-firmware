@@ -127,21 +127,6 @@ typedef enum
 
 /* Instruction upload types. */
 
-/**
- * @brief Immutable ownership of one upload page during a NAND write.
- */
-typedef struct
-{
-    /** Flash Manager-owned page data to write. */
-    const uint8_t* page_data;
-
-    /** Number of valid upload bytes in the page. */
-    uint32_t valid_length_bytes;
-
-    /** Opaque identifier used to reject stale completions. */
-    uint32_t lease_id;
-} InstructionBufferUploadDrainLease_T;
-
 /** @brief Result of atomically submitting one host instruction chunk. */
 typedef enum
 {
@@ -180,7 +165,7 @@ typedef enum
  *
  * @note EXTERNAL_FLASH_Init() must complete successfully before this function.
  * @note Reinitialisation invalidates all retrieval views, page-fill leases,
- *       upload drain leases, and buffered bytes.
+ *       upload page ownership, and buffered bytes.
  */
 bool INSTRUCTION_BUFFER_Init( void );
 
@@ -381,32 +366,42 @@ INSTRUCTION_BUFFER_WriteUploadBytes( const uint8_t* data, uint32_t length );
 /**
  * @brief Acquires the oldest completed upload page for a NAND write.
  *
- * @param[out] lease Destination for immutable page ownership. Cleared before
- *        returning false.
+ * @param[out] page_data Destination for the immutable page pointer. Set to null
+ *        before returning false.
+ * @param[out] valid_length_bytes Destination for the number of logical bytes
+ *        in the page. Set to zero before returning false.
  *
  * @retval true  The oldest ready page changed to WRITING_TO_NAND.
- * @retval false No page was ready, another drain lease was active, the output
- *        was null, upload mode was unavailable, or accounting was inconsistent.
+ * @retval false No page was ready, a NAND write already owned the oldest page,
+ *        an output was null, upload mode was unavailable, or accounting was
+ *        inconsistent.
  *
- * @note The page remains occupied until CompleteUploadDrain processes the lease.
+ * @note The page remains occupied and immutable until CompleteUploadDrain is
+ *       called after the NAND write.
  * @note Only the oldest page is acquired, preserving NAND stream order.
+ * @note WRITING_TO_NAND together with the drain cursor is the complete ownership
+ *       record; no separate lease is required for the single Flash Manager
+ *       consumer.
+ * @note The caller may release its mutex during the NAND operation because host
+ *       writes cannot modify a WRITING_TO_NAND page.
  */
-bool INSTRUCTION_BUFFER_AcquireUploadDrainPage( InstructionBufferUploadDrainLease_T* lease );
+bool INSTRUCTION_BUFFER_AcquireUploadDrainPage( const uint8_t** page_data,
+                                                uint32_t*       valid_length_bytes );
 
 /**
- * @brief Completes the NAND write associated with an upload drain lease.
+ * @brief Completes the NAND write owning the oldest upload page.
  *
- * @param[in] lease Unmodified lease returned by AcquireUploadDrainPage.
  * @param[in] nand_write_succeeded Whether the external-flash write succeeded.
  *
- * @retval true  The matching lease was completed.
- * @retval false The lease was null, stale, modified, or inconsistent.
+ * @retval true  The active WRITING_TO_NAND page was completed.
+ * @retval false No upload page was being written or accounting was inconsistent.
  *
  * @note Success releases the page and advances persisted-byte accounting.
  *       Failure restores READY_FOR_NAND so the page can be reacquired.
+ * @note Only the Flash Manager task that performed acquisition may complete the
+ *       operation, and it must do so before attempting another acquisition.
  */
-bool INSTRUCTION_BUFFER_CompleteUploadDrain( const InstructionBufferUploadDrainLease_T* lease,
-                                             bool nand_write_succeeded );
+bool INSTRUCTION_BUFFER_CompleteUploadDrain( bool nand_write_succeeded );
 
 /**
  * @brief Ends host production and publishes the final partial page, if present.
@@ -427,8 +422,8 @@ bool INSTRUCTION_BUFFER_IsUploadInputComplete( void );
 /**
  * @brief Reports whether finalised upload data is completely persisted.
  *
- * This requires matching expected, accepted and persisted lengths, no active
- * drain lease, and every shared page slot to be empty.
+ * This requires matching expected, accepted and persisted lengths and every
+ * shared page slot to be empty, including no active NAND write.
  */
 bool INSTRUCTION_BUFFER_IsUploadPersisted( void );
 
@@ -438,7 +433,7 @@ bool INSTRUCTION_BUFFER_IsUploadPersisted( void );
  * @retval true  The fully persisted upload state was released.
  * @retval false Upload data or page ownership remained outstanding.
  *
- * @note Monotonic lease identifiers and external-flash geometry are preserved.
+ * @note Retrieval lease/view identifiers and external-flash geometry are preserved.
  */
 bool INSTRUCTION_BUFFER_EndUpload( void );
 
