@@ -4,20 +4,19 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Internal interface for the Flash Manager instruction retrieval buffer.
+ *      Internal interface for the Flash Manager instruction buffer.
  *
  *  Notes:
- *      This interface separates the two sides of instruction retrieval:
+ *      This interface separates two mutually exclusive data flows:
  *
- *      - The Flash Manager task acquires empty page slots and fills them from
- *        NAND.
- *      - The Execution Manager inspects and consumes complete timestamped
- *        instructions through the public interface declared in flash_manager.h.
+ *      - Retrieval fills empty pages from NAND and serves complete timestamped
+ *        instructions to the Execution Manager.
+ *      - Upload copies canonical Host Interface chunks into empty pages and
+ *        exposes completed pages to the Flash Manager task for NAND writes.
  *
  *      This module owns the instruction RAM and its page-level ownership state.
- *      The calling layer must serialise state-changing calls between the Flash
- *      Manager task and execution ISR. This module does not contain RTOS
- *      synchronisation primitives or access NAND directly.
+ *      The calling layer must serialise state-changing calls. This module does
+ *      not contain RTOS synchronisation primitives or access NAND directly.
  *
  *      Instruction records are packed in the NAND image as a fixed-size
  *      FlashManagerInstructionHeader_T followed immediately by the indicated
@@ -62,6 +61,8 @@ extern "C"
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+
+/* Instruction retrieval types. */
 
 /**
  * @brief Temporary ownership of a page slot being filled from NAND.
@@ -124,12 +125,48 @@ typedef enum
     INSTRUCTION_BUFFER_CONSUME_INTERNAL_ERROR
 } InstructionBufferConsumeStatus_T;
 
+/* Instruction upload types. */
+
+/**
+ * @brief Immutable ownership of one upload page during a NAND write.
+ */
+typedef struct
+{
+    /** Flash Manager-owned page data to write. */
+    const uint8_t* page_data;
+
+    /** Number of valid upload bytes in the page. */
+    uint32_t valid_length_bytes;
+
+    /** Opaque identifier used to reject stale completions. */
+    uint32_t lease_id;
+} InstructionBufferUploadDrainLease_T;
+
+/** @brief Result of atomically submitting one host instruction chunk. */
+typedef enum
+{
+    /** The complete chunk was copied and no new complete page was produced. */
+    INSTRUCTION_BUFFER_UPLOAD_WRITE_ACCEPTED = 0,
+
+    /** The complete chunk was copied and at least one page became drainable. */
+    INSTRUCTION_BUFFER_UPLOAD_WRITE_PAGE_READY,
+
+    /** Insufficient currently available RAM; no bytes were copied. */
+    INSTRUCTION_BUFFER_UPLOAD_WRITE_BUSY,
+
+    /** The buffer is not in upload mode. */
+    INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_STATE,
+
+    /** The supplied pointer or length was invalid. */
+    INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_ARGUMENT
+} InstructionBufferUploadWriteStatus_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
 
-/* Lifecycle and retrieval-session configuration. */
+/* Shared state management. */
 
 /**
  * @brief Initialises the instruction buffer from active external-flash geometry.
@@ -142,10 +179,12 @@ typedef enum
  *      represented by the statically allocated instruction storage.
  *
  * @note EXTERNAL_FLASH_Init() must complete successfully before this function.
- * @note Reinitialisation invalidates all existing page-fill leases and future
- *       instruction views.
+ * @note Reinitialisation invalidates all retrieval views, page-fill leases,
+ *       upload drain leases, and buffered bytes.
  */
 bool INSTRUCTION_BUFFER_Init( void );
+
+/* Instruction retrieval: lifecycle, NAND fill, and execution serving. */
 
 /**
  * @brief Resets the buffer for sequential retrieval of an instruction image.
@@ -156,8 +195,8 @@ bool INSTRUCTION_BUFFER_Init( void );
  * @retval true
  *      The retrieval session was reset and is ready for sequential page fills.
  * @retval false
- *      The buffer was not initialised or the supplied length exceeded the
- *      usable instruction partition capacity.
+ *      The buffer was not initialised, an upload owned the shared storage, or
+ *      the supplied length exceeded the instruction partition capacity.
  *
  * @note A zero length prepares an empty instruction stream.
  * @note This function invalidates all previous page-fill leases and instruction
@@ -176,10 +215,9 @@ bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes );
  *
  * @note The Flash Manager must stop the execution ISR before calling this from
  *       task context.
+ * @note This function does nothing while upload owns the shared page storage.
  */
 void INSTRUCTION_BUFFER_EndRead( void );
-
-/* NAND-to-RAM page producer interface. */
 
 /**
  * @brief Acquires the next free page slot for a sequential NAND read.
@@ -227,8 +265,6 @@ bool INSTRUCTION_BUFFER_AcquireFillPage( InstructionBufferPageFillLease_T* lease
  */
 bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T* lease,
                                           bool nand_read_succeeded );
-
-/* Execution-facing instruction consumer interface. */
 
 /**
  * @brief Returns a read-only view of the next complete instruction.
@@ -284,6 +320,127 @@ INSTRUCTION_BUFFER_ConsumeInstruction( const FlashManagerInstructionView_T* inst
  *      active.
  */
 bool INSTRUCTION_BUFFER_IsReadComplete( void );
+
+/* Instruction upload: host production, NAND drain, and lifecycle. */
+
+/**
+ * @brief Resets instruction RAM ownership for a new streamed upload.
+ *
+ * @param[in] expected_length_bytes
+ *      Total number of canonical instruction bytes expected during the upload.
+ *
+ * @retval true
+ *      Upload mode was prepared successfully.
+ * @retval false
+ *      The buffer was not initialised, shared storage was still owned, the
+ *      expected length was zero, or it exceeded the partition capacity.
+ *
+ * @note This configures only Flash Manager-owned RAM state and does not access
+ *       NAND or use RTOS primitives.
+ * @note Preparation is refused while retrieval, another upload, a NAND fill,
+ *       or an instruction view still owns the shared storage.
+ * @note The expected length describes the complete stream, not one host chunk.
+ * @note The Flash Manager must ensure no NAND operation or execution consumer
+ *       still owns instruction storage before calling this function.
+ */
+bool INSTRUCTION_BUFFER_PrepareUpload( uint32_t expected_length_bytes );
+
+/**
+ * @brief Returns the expected length of the prepared instruction upload.
+ *
+ * @param[out] expected_length_bytes
+ *      Destination for the complete expected stream length.
+ *
+ * @retval true
+ *      Upload mode is prepared and the expected length was returned.
+ * @retval false
+ *      The output pointer was null or no upload is currently prepared.
+ *
+ * @note This accessor performs no NAND access and uses no RTOS primitives.
+ */
+bool INSTRUCTION_BUFFER_GetUploadExpectedLength( uint32_t* expected_length_bytes );
+
+/**
+ * @brief Atomically appends one canonical host chunk to upload RAM.
+ *
+ * @param[in] data   Canonical instruction bytes in stream order.
+ * @param[in] length Number of bytes to append; at most one NAND page.
+ *
+ * @return Upload write status.
+ *
+ * @note The complete chunk is copied or no state is changed. BUSY therefore
+ *       permits the caller to retry the identical data and length.
+ * @note A chunk may fill the tail of one page and continue into the next page.
+ * @note Full pages become immutable and ready for NAND immediately. The final
+ *       partial page is published by INSTRUCTION_BUFFER_FinaliseUpload().
+ * @note This function performs no NAND access and is not internally synchronised.
+ */
+InstructionBufferUploadWriteStatus_T
+INSTRUCTION_BUFFER_WriteUploadBytes( const uint8_t* data, uint32_t length );
+
+/**
+ * @brief Acquires the oldest completed upload page for a NAND write.
+ *
+ * @param[out] lease Destination for immutable page ownership. Cleared before
+ *        returning false.
+ *
+ * @retval true  The oldest ready page changed to WRITING_TO_NAND.
+ * @retval false No page was ready, another drain lease was active, the output
+ *        was null, upload mode was unavailable, or accounting was inconsistent.
+ *
+ * @note The page remains occupied until CompleteUploadDrain processes the lease.
+ * @note Only the oldest page is acquired, preserving NAND stream order.
+ */
+bool INSTRUCTION_BUFFER_AcquireUploadDrainPage( InstructionBufferUploadDrainLease_T* lease );
+
+/**
+ * @brief Completes the NAND write associated with an upload drain lease.
+ *
+ * @param[in] lease Unmodified lease returned by AcquireUploadDrainPage.
+ * @param[in] nand_write_succeeded Whether the external-flash write succeeded.
+ *
+ * @retval true  The matching lease was completed.
+ * @retval false The lease was null, stale, modified, or inconsistent.
+ *
+ * @note Success releases the page and advances persisted-byte accounting.
+ *       Failure restores READY_FOR_NAND so the page can be reacquired.
+ */
+bool INSTRUCTION_BUFFER_CompleteUploadDrain( const InstructionBufferUploadDrainLease_T* lease,
+                                             bool nand_write_succeeded );
+
+/**
+ * @brief Ends host production and publishes the final partial page, if present.
+ *
+ * @retval true  Every expected byte was accepted and upload was finalised.
+ * @retval false Upload was unavailable, incomplete, already finalised, actively
+ *        draining, or internally inconsistent.
+ */
+bool INSTRUCTION_BUFFER_FinaliseUpload( void );
+
+/**
+ * @brief Reports whether every declared host byte has been accepted.
+ *
+ * @note This does not imply that the bytes have been persisted to NAND.
+ */
+bool INSTRUCTION_BUFFER_IsUploadInputComplete( void );
+
+/**
+ * @brief Reports whether finalised upload data is completely persisted.
+ *
+ * This requires matching expected, accepted and persisted lengths, no active
+ * drain lease, and every shared page slot to be empty.
+ */
+bool INSTRUCTION_BUFFER_IsUploadPersisted( void );
+
+/**
+ * @brief Releases upload state after external-flash finalisation succeeds.
+ *
+ * @retval true  The fully persisted upload state was released.
+ * @retval false Upload data or page ownership remained outstanding.
+ *
+ * @note Monotonic lease identifiers and external-flash geometry are preserved.
+ */
+bool INSTRUCTION_BUFFER_EndUpload( void );
 
 #ifdef __cplusplus
 }
