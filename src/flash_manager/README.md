@@ -4,8 +4,8 @@
 `instruction_buffer.c` implements prefetched instruction views and page release.
 `flash_manager.c` connects both buffers to the execution ISR and performs NAND
 refill/drain work from its RTOS task. The public instruction-upload lifecycle
-contract is defined; its task-side implementation, result retrieval, and
-application startup remain to be integrated.
+and task-side page drain are implemented; result retrieval and application
+startup remain to be integrated.
 
 The flash manager is the only normal runtime task that should call `external_flash`.
 
@@ -58,6 +58,7 @@ manager does not call them directly:
 
 ```c
 EXTERNAL_FLASH_ReadInstructionPage(instruction_offset, instruction_page_buffer, length);
+EXTERNAL_FLASH_WriteInstructionPage(instruction_page_buffer, valid_length);
 EXTERNAL_FLASH_WriteResultPage(result_page_buffer, valid_length);
 ```
 
@@ -67,20 +68,14 @@ completed only after the call returns. While DMA is active, however, the Flash
 Manager task blocks on the QSPI completion semaphore rather than occupying the
 CPU, allowing other ready service tasks to run.
 
-### Package upload APIs
+### External-flash instruction upload APIs
 
-The test package receive path should program instructions before execution using:
+The Flash Manager implements instruction upload using:
 
 ```c
 EXTERNAL_FLASH_StartInstructionUpload(instruction_length);
-EXTERNAL_FLASH_WriteInstructionBytes(chunk, length);
-EXTERNAL_FLASH_FinishInstructionUpload();
-```
-
-When the package receive path already has page sized instruction spans, it may use:
-
-```c
 EXTERNAL_FLASH_WriteInstructionPage(page_buffer, valid_length);
+EXTERNAL_FLASH_FinishInstructionUpload();
 ```
 
 Execution must not start until `EXTERNAL_FLASH_FinishInstructionUpload()` succeeds.
@@ -110,15 +105,18 @@ The start request prepares instruction storage asynchronously. The Host
 Interface must wait for `FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD` before sending
 canonical instruction bytes. Each accepted chunk is copied into Flash
 Manager-owned storage before submission returns, allowing the Host Interface to
-reuse its receive buffer immediately. Only one chunk may be pending, providing
-explicit backpressure while the Flash Manager task persists the preceding
-chunk.
+reuse its receive buffer immediately. Each submission is all-or-nothing and may
+contain at most one NAND page. The three-page ring allows host production and
+task-context NAND writes to overlap; `BUSY` asks the Host Interface to retry the
+identical chunk when insufficient ring capacity is currently available.
 
 Finalisation is accepted only after the declared instruction length has been
-accepted and the upload mailbox is empty. The Flash Manager task then commits
-the final partial NAND page through `EXTERNAL_FLASH_FinishInstructionUpload()`.
+accepted. The finish request publishes any final partial RAM page. The Flash
+Manager task drains all remaining pages through
+`EXTERNAL_FLASH_WriteInstructionPage()`, closes the image through
+`EXTERNAL_FLASH_FinishInstructionUpload()`, and releases the upload buffer.
 Successful completion returns the manager to `IDLE`; any asynchronous storage
-failure enters `FAULT`.
+or ownership failure enters `FAULT`.
 
 The Host Interface application layer is responsible for translating and
 validating incoming package data into the canonical packed
