@@ -4,8 +4,9 @@
  *  Created:    05-Aug-2026
  *
  *  Description:
- *      Unit tests for instruction-buffer geometry, instruction retrieval,
- *      streamed host upload, NAND page ownership, and lifecycle completion.
+ *      Unit tests for instruction-buffer geometry, cached instruction views,
+ *      consume/refill behavior, streamed host upload, NAND page ownership, and
+ *      lifecycle completion.
  *
  *  Notes:
  *      Production code is included directly so tests can verify private page

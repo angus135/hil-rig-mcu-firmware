@@ -5,8 +5,9 @@
  *
  *  Description:
  *      Unit tests for Flash Manager initialisation, ISR-facing result record
- *      production, instruction preloading/refill, asynchronous lifecycle
- *      requests, NAND page draining, partial-page finalisation, and faults.
+ *      production, cached instruction serving and refill, streamed instruction
+ *      upload, asynchronous lifecycle requests, NAND page draining,
+ *      partial-page finalisation, and faults.
  *
  *  Notes:
  *      Production code is included directly so private state and drain helpers

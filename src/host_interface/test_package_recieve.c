@@ -4,9 +4,14 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
+ *      Placeholder for host-package validation and canonical instruction
+ *      stream generation.
  *
  *  Notes:
- *     None
+ *      Flash Manager upload accepts an already validated byte stream and has no
+ *      upload-cancel API. This layer must therefore guarantee the declared
+ *      length and validity of all records before starting the bring-up upload,
+ *      or treat a later conversion failure as a session fault.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------

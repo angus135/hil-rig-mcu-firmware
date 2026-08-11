@@ -1,11 +1,33 @@
-# run_state_manager
+# Run State Manager
+
 ## Overview
 
-`run_state_manager` contains the code for the run_state_manager module, containing any run_state_manager functionality that does nto require a dedicated task.
+The Run State Manager will be the RTOS task that owns the global HIL-RIG
+lifecycle. It coordinates Flash Manager preparation/finalisation and starts or
+stops the Execution Manager timer; it does not execute peripheral instructions
+or access Flash Manager-owned buffers directly.
 
-This module is responsible for:
+The current implementation is a temporary timer controller and still duplicates
+Execution Manager frequency constants. It is not the final state machine.
 
-- TODO
+## Execution lifecycle
+
+Before a run, request Flash Manager execution preparation and wait for
+`FLASH_MANAGER_STATE_EXECUTING`. Only then may TIM4 start. At normal completion,
+stop TIM4, ensure the ISR has returned and all result leases are resolved, then
+request result finalisation and wait for `RESULTS_READY` or `FAULT`.
+
+Instructions are ordered by timestamp. If the Execution Manager observes an
+instruction timestamp less than the current tick, the workload has overrun its
+deadline and the test is infeasible. The late instruction is not consumed. The
+Run State Manager must receive this fault through a future ISR-safe handoff,
+stop execution, and record the infeasible outcome. Future feasibility analysis
+should reject such a workload before execution.
+
+The current Flash Manager exposes normal result finalisation but no session
+discard API. Preserving committed diagnostic results therefore uses the normal
+finalisation path and may end in `RESULTS_READY` while the global run outcome
+remains infeasible. A discard policy would require an explicit future API.
 
 
 ---
@@ -14,8 +36,9 @@ This module is responsible for:
 
 | File                      | Role |
 |---------------------------|------|
-| `run_state_manager.c`        | Public API implementation |
-| `run_state_manager.h`        | Public API header |
+| `run_state_manager.c` | Temporary timer-controller implementation |
+| `run_state_manager.h` | Public API and future lifecycle integration contract |
+| `configuration_application.c/.h` | Legacy configuration/timer placeholder |
 
 
 ---

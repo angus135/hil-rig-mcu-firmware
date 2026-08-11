@@ -38,6 +38,9 @@ target_link_libraries(host_interface
         hw_usb
 )
 
+# Add flash_manager as a private dependency when the documented instruction-
+# upload workflow is implemented in host_communications.c.
+
 # -----------------------------
 # Tests for this module (gtest/gmock)
 # -----------------------------

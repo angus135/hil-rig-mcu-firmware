@@ -14,7 +14,7 @@ manager. It must not call `external_flash`, `hw_nand`, or `hw_qspi` directly.
 
 ---
 
-## Recommended Buffer Model
+## Buffer Model
 
 The result buffer is a flat circular byte array backed by three page-sized
 regions. Records may cross a page boundary, while NAND drain leases always
@@ -27,12 +27,17 @@ The Flash Manager task updates the mirror whenever slot zero is filled, making a
 record that crosses the physical ring end contiguous without an ISR-time payload
 copy.
 
-Recommended initial sizing:
+Implemented sizing:
 
 ```c
-#define FLASH_MANAGER_RESULT_PAGE_COUNT       3U
-#define FLASH_MANAGER_INSTRUCTION_PAGE_COUNT  3U
+#define RESULT_BUFFER_PAGE_COUNT       3U
+#define INSTRUCTION_BUFFER_PAGE_COUNT  3U
 ```
+
+Both constants are private implementation policy. They may be increased after
+worst-case execution bursts and NAND latency are measured. Increasing RAM depth
+adds burst tolerance; it does not correct sustained instruction consumption or
+result production that exceeds NAND throughput.
 
 `RESULT_BUFFER_Init()` obtains the selected NAND page size from
 `EXTERNAL_FLASH_GetInfo()`. Static storage is sized using
@@ -82,7 +87,7 @@ Execution must not start until `EXTERNAL_FLASH_FinishInstructionUpload()` succee
 
 ### Flash Manager instruction-upload contract
 
-The Host Interface will use these non-blocking Flash Manager APIs rather than
+The Host Interface uses these non-blocking Flash Manager APIs rather than
 calling `external_flash` directly:
 
 ```c
@@ -123,6 +128,12 @@ validating incoming package data into the canonical packed
 `[instruction header][payload]...` stream before submission. The Flash Manager
 preserves byte order and controls storage lifecycle; it does not interpret
 peripheral-specific instruction payloads.
+
+Canonical validation must establish valid peripheral types, channels and
+payload schemas, a complete packed stream with no padding, records no larger
+than one NAND page, and nondecreasing instruction timestamps. Host transport
+chunks do not need to align with records or NAND pages; they are merely ordered
+pieces of the declared canonical byte stream.
 
 ---
 
@@ -208,6 +219,12 @@ ready task can therefore run after ISR return, never partway through execution.
 Each stored record contains `FlashManagerResultHeader_T` followed immediately
 by the actual payload bytes. Unused reservation capacity is not committed.
 
+Peripheral DMA populates driver-owned buffers asynchronously. When a result is
+required, the execution ISR reserves Flash Manager storage and the selected
+driver synchronously copies one stable measurement into `write_lease.payload`.
+That copy must finish before commit, and neither DMA nor the driver may retain
+or write through the lease after commit, cancellation, or ISR return.
+
 During execution, the flash-manager task acquires and writes only full pages:
 
 ```c
@@ -226,9 +243,10 @@ RESULT_BUFFER_Finalise();
 `external_flash` pads the final partial physical page with `0xFF` internally and
 commits only `valid_length` logical result bytes.
 
-After a partial page write succeeds, no further result pages should be appended in the same session.
+After a partial-page write succeeds, no further result pages may be appended in
+the same session.
 
-Recommended result slot states:
+Implemented result slot states:
 
 ```text
 EMPTY
@@ -297,6 +315,19 @@ tick, later peeks return the same prepared view through a short cached branch;
 they do not copy, reparse, or advance it. Consume advances a cached record
 pointer and two offsets exactly once. Page release and refill notification occur
 only on the less frequent boundary path.
+
+The Execution Manager processes the ordered stream from its head:
+
+```text
+instruction timestamp > current tick: retain the cached view and stop this tick
+instruction timestamp == current tick: execute, consume, and peek the next record
+instruction timestamp < current tick: declare an execution-overrun fault
+```
+
+A late instruction is not consumed. It means the configured work could not be
+completed within its real-time deadline and the test is infeasible. Bring-up
+detects this at runtime; future feasibility validation should reject such a
+test before execution begins.
 
 The instruction stream is trusted to have been canonicalised before it reaches
 NAND. The execution path retains only the length bounds needed to prevent a
@@ -404,12 +435,18 @@ If a result-page write or drain completion fails, the current implementation:
 - Enters `FLASH_MANAGER_STATE_FAULT`.
 - Ignores queued drain work while faulted.
 
-The remaining lifecycle integration must also:
+Lifecycle integration must also:
 
 - Stop normal execution flow.
 - Preserve the returned error code.
 - Report the fault to the system state manager.
 - Avoid continuing as if the instruction or result buffers are valid.
+
+An execution overrun (`instruction timestamp < current tick`) is detected by
+the Execution Manager rather than the Flash Manager. It ends the test as an
+infeasibility fault. The Run State Manager must stop the timer before deciding
+whether to preserve already committed results through normal finalisation. No
+discard/abort lifecycle is currently exposed by the Flash Manager.
 
 Important statuses to handle:
 
@@ -431,7 +468,10 @@ Important statuses to handle:
 - The execution ISR uses only the non-blocking Flash Manager instruction and
   result APIs.
 - Repeated peeks before consumption return the same cached instruction view;
-  consume each instruction exactly once when its timestamp becomes due.
+  consume each instruction exactly once when its timestamp equals the current
+  tick.
+- A future instruction ends processing for the current tick; a late instruction
+  is an execution-overrun fault and is not consumed.
 - The execution manager never calls `external_flash` or takes an RTOS mutex.
 - Use `EXTERNAL_FLASH_ReadInstructionPage()` for instruction queue refills.
 - Use `EXTERNAL_FLASH_WriteResultPage()` for result page writes.

@@ -4,10 +4,13 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Public interface for the Background module.
+ *      Legacy timer-configuration placeholder retained during Run State
+ *      Manager development.
  *
  *  Notes:
- *      None
+ *      Peripheral execution belongs to the Execution Manager ISR. The final
+ *      Run State Manager should use Execution Manager APIs rather than this
+ *      duplicate frequency/timer interface.
  ******************************************************************************/
 
 #ifndef CONFIGURATION_APPLICATION_H
@@ -72,7 +75,7 @@ void CONFIGURATION_APPLICATION_Set_Frequency_Mode( FrequencyMode_T mode );
 /**
  * @brief Test Scheduler Initialization
  *
- * Initialises the test schedular based on the selected frequency mode.
+ * Initialises the legacy test scheduler based on the selected frequency mode.
  */
 void CONFIGURATION_APPLICATION_Init( void );
 

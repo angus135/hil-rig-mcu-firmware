@@ -4,9 +4,12 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
+ *      Legacy timer-configuration placeholder pending consolidation into the
+ *      Execution Manager and Run State Manager lifecycle.
  *
  *  Notes:
- *     None
+ *      This module must not become a second execution path. It is retained
+ *      temporarily and should be removed when lifecycle integration is built.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -66,7 +69,10 @@ static FrequencyMode_T frequency_mode = FREQUENCY_10KHZ;
 void CONFIGURATION_APPLICATION_Process_From_ISR( void )
 {
     HW_GPIO_Toggle_Output( USER_LED_RED_0 );
-    // TODO: This is where all the I/O will actually run, this needs to be quick
+    /*
+     * TODO: Remove this placeholder. Peripheral I/O execution belongs in
+     * EXECUTION_MANAGER_Process_From_ISR(), not configuration application code.
+     */
 }
 
 void CONFIGURATION_APPLICATION_Start( void )

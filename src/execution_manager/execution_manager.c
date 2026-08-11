@@ -92,10 +92,16 @@ void EXECUTION_MANAGER_Process_From_ISR( void )
 {
     HW_GPIO_Toggle_Output( USER_LED_BLUE_4 );
     /*
-     * TODO: Execute the complete instruction sequence for this tick. Reserve
-     * Flash Manager result storage before invoking a result-producing driver,
-     * then commit or cancel every lease before returning. Accumulate any task
-     * wake request and yield only after all tick operations are complete.
+     * TODO: Peek the ordered instruction stream until the head timestamp is
+     * later than the current tick. Execute and consume every equal-timestamp
+     * instruction. A past timestamp is an execution-overrun/infeasibility
+     * fault and must end the session without consuming that instruction.
+     *
+     * Reserve Flash Manager result storage before invoking a result-producing
+     * driver. DMA owns only the driver's source buffer; the driver completes a
+     * synchronous copy into the result lease in this ISR. Commit or cancel
+     * every lease before returning. Accumulate any task wake request and yield
+     * only after all tick operations are complete.
      */
 }
 

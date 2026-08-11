@@ -311,8 +311,9 @@ static void FLASH_MANAGER_EnterFault( void )
  * @brief Latches an internal Flash Manager fault from interrupt context.
  *
  * This is a single aligned state write and does not call any blocking API. It
- * is used when a committed page cannot be signalled to the drain task. The
- * result record remains committed in RAM for later fault handling.
+ * is used for instruction underrun/corruption and when committed or released
+ * buffer work cannot be signalled to the Flash Manager task. A result record
+ * that was committed before notification failure remains committed in RAM.
  */
 static void FLASH_MANAGER_EnterFaultFromISR( void )
 {
@@ -1236,6 +1237,9 @@ FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
 
 /**
  * @brief Exposes the next buffered instruction to the execution ISR.
+ *
+ * Timestamp comparison remains the caller's responsibility. This function
+ * faults only storage availability or record integrity failures.
  */
 FlashManagerInstructionReadStatus_T
 FLASH_MANAGER_PeekNextInstructionFromISR( const FlashManagerInstructionView_T** instruction )
@@ -1265,6 +1269,10 @@ FLASH_MANAGER_PeekNextInstructionFromISR( const FlashManagerInstructionView_T** 
 
 /**
  * @brief Consumes one instruction and signals task-context refill when needed.
+ *
+ * The caller must consume only an instruction due on the current tick. A future
+ * instruction remains cached; a past instruction is an Execution Manager
+ * overrun fault and must not be consumed.
  */
 bool FLASH_MANAGER_ConsumeInstructionFromISR( BaseType_t* higher_priority_task_woken )
 {
