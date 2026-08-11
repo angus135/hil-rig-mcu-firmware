@@ -4,7 +4,7 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Implementation of the Flash Manager instruction retrieval buffer.
+ *      Implementation of the Flash Manager instruction buffer.
  *
  *  Notes:
  *      The buffer presents one canonical instruction stream using three
@@ -23,9 +23,13 @@
  *      mirrors slot zero immediately after slot two, making records that cross
  *      the physical ring end contiguous without copying in the execution ISR.
  *
- *      The calling layer must serialise shared-state transitions between the
- *      Flash Manager task and execution ISR. This module deliberately owns no
- *      RTOS primitives and makes no external-flash policy decisions.
+ *      Upload reuses the same three page slots in the opposite direction: the
+ *      Host Interface copies canonical stream chunks into RAM and the Flash
+ *      Manager task drains complete pages to NAND. Retrieval and upload are
+ *      mutually exclusive.
+ *
+ *      The calling layer serialises shared-state transitions. This module owns
+ *      no RTOS primitives and makes no external-flash policy decisions.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -74,17 +78,30 @@ _Static_assert( sizeof( FlashManagerInstructionHeader_T ) == 8U,
  *------------------------------------------------------------------------------
  */
 
+/* Shared state management types. */
+
 typedef enum
 {
-    /** Available as the destination of a NAND page read. */
+    /** Available to either instruction-buffer data flow. */
     INSTRUCTION_BUFFER_PAGE_EMPTY = 0,
 
     /** A NAND read currently owns and is filling this page. */
     INSTRUCTION_BUFFER_PAGE_FILLING_FROM_NAND,
 
-    /** Valid instruction bytes are immutable and available to the consumer. */
-    INSTRUCTION_BUFFER_PAGE_READY
+    /** Valid instruction bytes are available to the execution consumer. */
+    INSTRUCTION_BUFFER_PAGE_READY,
+
+    /** The Host Interface is appending upload bytes to this page. */
+    INSTRUCTION_BUFFER_PAGE_FILLING_FROM_HOST,
+
+    /** A complete upload page is waiting to be written to NAND. */
+    INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND,
+
+    /** The Flash Manager task is currently writing this page to NAND. */
+    INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND
 } InstructionBufferPageState_T;
+
+/* Instruction retrieval types. */
 
 /**
  * @brief Authoritative state for the one active NAND page-fill reservation.
@@ -117,18 +134,40 @@ typedef struct
     FlashManagerInstructionView_T view;
 } InstructionBufferViewReservation_T;
 
+/* Instruction upload types. */
+
+typedef struct
+{
+    /** Whether one upload page is currently owned by a NAND write. */
+    bool     is_active;
+
+    /** Index of the page owned by the NAND write. */
+    uint8_t  page_index;
+
+    /** Immutable number of logical bytes owned by the write. */
+    uint32_t valid_length_bytes;
+
+    /** Identifier used to reject stale or modified completion calls. */
+    uint32_t lease_id;
+} InstructionBufferUploadDrainReservation_T;
+
+/** @brief Result of checking whether an upload chunk fits without mutation. */
+typedef enum
+{
+    INSTRUCTION_BUFFER_UPLOAD_CAPACITY_AVAILABLE = 0,
+    INSTRUCTION_BUFFER_UPLOAD_CAPACITY_BUSY,
+    INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID
+} InstructionBufferUploadCapacityStatus_T;
+
 /**
- * @brief Geometry, page ownership, and sequential retrieval cursors.
+ * @brief Shared geometry, page ownership, and directional stream state.
  */
 typedef struct
 {
-    /* Module lifecycle and external-flash geometry. */
+    /* Shared state management. */
 
     /** Geometry is configured by Init and retained across retrieval sessions. */
     bool is_initialised;
-
-    /** Whether PrepareRead successfully configured an instruction image. */
-    bool is_read_prepared;
 
     /** Runtime NAND page size used for slot addressing and read lengths. */
     uint32_t page_size_bytes;
@@ -136,10 +175,13 @@ typedef struct
     /** Maximum logical instruction image length accepted by PrepareRead. */
     uint32_t instruction_partition_capacity_bytes;
 
+    /* Instruction retrieval: NAND producer position and lease identity. */
+
+    /** Whether PrepareRead successfully configured an instruction image. */
+    bool is_read_prepared;
+
     /** Total logical length of the active canonical instruction image. */
     uint32_t instruction_length_bytes;
-
-    /* NAND producer position and lease identity. */
 
     /** Logical offset of the next instruction page that must be read from NAND. */
     uint32_t next_nand_read_offset_bytes;
@@ -150,7 +192,7 @@ typedef struct
     /** Identifier to assign to the next page-fill reservation. */
     uint32_t next_page_fill_lease_id;
 
-    /* Execution consumer position and view identity. */
+    /* Instruction retrieval: execution consumer position and view identity. */
 
     /** Logical stream offset of the next unconsumed instruction record. */
     uint32_t consumer_stream_offset_bytes;
@@ -164,7 +206,7 @@ typedef struct
     /** Identifier assigned to the next published instruction view. */
     uint32_t next_instruction_view_id;
 
-    /* Per-page metadata and active ownership reservations. */
+    /* Shared page metadata. */
 
     /** Current ownership state of each page slot. */
     InstructionBufferPageState_T page_states[INSTRUCTION_BUFFER_PAGE_COUNT];
@@ -175,11 +217,42 @@ typedef struct
     /** Logical instruction-stream offset represented by byte zero of each slot. */
     uint32_t page_stream_offsets_bytes[INSTRUCTION_BUFFER_PAGE_COUNT];
 
+    /* Instruction retrieval ownership. */
+
     /** The one NAND page-fill reservation that may currently be outstanding. */
     InstructionBufferPageFillReservation_T active_page_fill_reservation;
 
     /** The one instruction view that may currently be outstanding. */
     InstructionBufferViewReservation_T active_instruction_view;
+
+    /* Instruction upload lifecycle and ownership. */
+
+    /** Whether RAM is currently configured for host-to-NAND upload. */
+    bool is_upload_prepared;
+
+    /** Whether host input ended and the final partial page was published. */
+    bool is_upload_finalised;
+
+    /** Total canonical byte count declared for the active upload. */
+    uint32_t upload_expected_length_bytes;
+
+    /** Total host bytes atomically accepted during the active upload. */
+    uint32_t upload_accepted_length_bytes;
+
+    /** Total accepted bytes successfully persisted to NAND. */
+    uint32_t upload_persisted_length_bytes;
+
+    /** Page into which the next host byte will be appended. */
+    uint8_t upload_write_page_index;
+
+    /** Oldest upload page waiting to be drained to NAND. */
+    uint8_t upload_drain_page_index;
+
+    /** Identifier assigned to the next upload drain lease. */
+    uint32_t next_upload_drain_lease_id;
+
+    /** The one upload page currently owned by a NAND write. */
+    InstructionBufferUploadDrainReservation_T active_upload_drain_reservation;
 
 } InstructionBufferContext_T;
 
@@ -193,17 +266,18 @@ typedef struct
  *------------------------------------------------------------------------------
  */
 
+/* Shared storage and state for the mutually exclusive data flows. */
+
 /**
  * @brief Circular instruction page storage followed by a slot-zero mirror.
  *
- * The first three runtime pages are filled sequentially from NAND and reused
- * only after their bytes are consumed. The following maximum-record region
- * mirrors the valid prefix of slot zero so a slot-two-to-slot-zero record has
- * one physically contiguous address range.
+ * The first three runtime pages are shared by retrieval and upload. The final
+ * maximum-record region is retrieval-only: it mirrors the valid prefix of slot
+ * zero so a slot-two-to-slot-zero record has one contiguous address range.
  */
 static uint8_t instruction_buffer_storage[INSTRUCTION_BUFFER_STORAGE_BYTES];
 
-/** Geometry, ownership, and cursor state for the instruction stream. */
+/** Shared geometry plus mutually exclusive retrieval and upload state. */
 static InstructionBufferContext_T instruction_buffer_context;
 
 /**-----------------------------------------------------------------------------
@@ -211,10 +285,18 @@ static InstructionBufferContext_T instruction_buffer_context;
  *------------------------------------------------------------------------------
  */
 
-/* Page indexing and NAND-fill ownership. */
+/* Shared state management. */
 
 /** Returns the circular successor of a valid page-slot index. */
 static uint8_t INSTRUCTION_BUFFER_NextPageIndex( uint8_t page_index );
+
+/** Returns the start of a valid runtime page slot. */
+static uint8_t* INSTRUCTION_BUFFER_GetPageData( uint8_t page_index );
+
+/** Releases all page slots and invalidates their stream metadata. */
+static void INSTRUCTION_BUFFER_ResetPages( void );
+
+/* Instruction retrieval. */
 
 /** Returns the RAM destination owned by the active page-fill reservation. */
 static uint8_t* INSTRUCTION_BUFFER_GetActivePageFillData( void );
@@ -226,34 +308,74 @@ INSTRUCTION_BUFFER_PageFillLeaseMatches( const InstructionBufferPageFillLease_T*
 /** Invalidates the active page-fill reservation without changing page data. */
 static void INSTRUCTION_BUFFER_ClearPageFillReservation( void );
 
-/* Execution-facing view ownership. */
-
 /** Invalidates the current instruction view without advancing the stream. */
 static void INSTRUCTION_BUFFER_ClearInstructionView( void );
 
 /** Returns the next non-zero identifier for a published instruction view. */
 static uint32_t INSTRUCTION_BUFFER_AllocateInstructionViewId( void );
 
+/* Instruction upload. */
+
+/** Returns the immutable page pointer owned by the active upload drain. */
+static const uint8_t* INSTRUCTION_BUFFER_GetActiveUploadDrainPageData( void );
+
+/** Validates the oldest upload page against its expected ownership state. */
+static bool INSTRUCTION_BUFFER_UploadDrainPageIsValid(
+    uint8_t page_index, InstructionBufferPageState_T expected_state );
+
+/** Validates a caller-provided drain lease against authoritative ownership. */
+static bool
+INSTRUCTION_BUFFER_UploadDrainLeaseMatches( const InstructionBufferUploadDrainLease_T* lease );
+
+/** Clears upload drain ownership without changing page state or data. */
+static void INSTRUCTION_BUFFER_ClearUploadDrainReservation( void );
+
+/** Returns true when every runtime page is empty. */
+static bool INSTRUCTION_BUFFER_AreUploadPagesEmpty( void );
+
+/** Checks whether a complete host chunk fits without changing buffer state. */
+static InstructionBufferUploadCapacityStatus_T
+INSTRUCTION_BUFFER_CheckUploadCapacity( uint32_t length );
+
+/** Copies a preflighted host chunk and reports whether a page became ready. */
+static bool INSTRUCTION_BUFFER_CopyUploadBytes( const uint8_t* data, uint32_t length );
+
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
 
-/* Page indexing and NAND-fill ownership. */
+/* Shared state management. */
 
 static uint8_t INSTRUCTION_BUFFER_NextPageIndex( uint8_t page_index )
 {
     return ( uint8_t )( ( page_index + 1U ) % INSTRUCTION_BUFFER_PAGE_COUNT );
 }
 
-static uint8_t* INSTRUCTION_BUFFER_GetActivePageFillData( void )
+static uint8_t* INSTRUCTION_BUFFER_GetPageData( uint8_t page_index )
 {
-    /* Page slots are contiguous even though their ownership cycles logically. */
     uint32_t page_offset_bytes =
-        ( uint32_t )instruction_buffer_context.active_page_fill_reservation.page_index
-        * instruction_buffer_context.page_size_bytes;
+        ( uint32_t )page_index * instruction_buffer_context.page_size_bytes;
 
     return &instruction_buffer_storage[page_offset_bytes];
+}
+
+static void INSTRUCTION_BUFFER_ResetPages( void )
+{
+    for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
+    {
+        instruction_buffer_context.page_states[page_index] = INSTRUCTION_BUFFER_PAGE_EMPTY;
+        instruction_buffer_context.page_valid_bytes[page_index] = 0U;
+        instruction_buffer_context.page_stream_offsets_bytes[page_index] = 0U;
+    }
+}
+
+/* Instruction retrieval. */
+
+static uint8_t* INSTRUCTION_BUFFER_GetActivePageFillData( void )
+{
+    return INSTRUCTION_BUFFER_GetPageData(
+        instruction_buffer_context.active_page_fill_reservation.page_index );
 }
 
 static bool INSTRUCTION_BUFFER_PageFillLeaseMatches( const InstructionBufferPageFillLease_T* lease )
@@ -307,8 +429,6 @@ static void INSTRUCTION_BUFFER_ClearPageFillReservation( void )
         ( InstructionBufferPageFillReservation_T ){ 0 };
 }
 
-/* Execution-facing view ownership. */
-
 static void INSTRUCTION_BUFFER_ClearInstructionView( void )
 {
     instruction_buffer_context.active_instruction_view =
@@ -327,15 +447,204 @@ static uint32_t INSTRUCTION_BUFFER_AllocateInstructionViewId( void )
     return view_id;
 }
 
+/* Instruction upload. */
+
+static const uint8_t* INSTRUCTION_BUFFER_GetActiveUploadDrainPageData( void )
+{
+    return INSTRUCTION_BUFFER_GetPageData(
+        instruction_buffer_context.active_upload_drain_reservation.page_index );
+}
+
+static bool INSTRUCTION_BUFFER_UploadDrainPageIsValid(
+    uint8_t page_index, InstructionBufferPageState_T expected_state )
+{
+    if ( ( page_index >= INSTRUCTION_BUFFER_PAGE_COUNT )
+         || ( page_index != instruction_buffer_context.upload_drain_page_index )
+         || ( instruction_buffer_context.page_states[page_index] != expected_state )
+         || ( instruction_buffer_context.upload_persisted_length_bytes
+              > instruction_buffer_context.upload_accepted_length_bytes ) )
+    {
+        return false;
+    }
+
+    uint32_t valid_length_bytes = instruction_buffer_context.page_valid_bytes[page_index];
+    uint32_t pending_length_bytes = instruction_buffer_context.upload_accepted_length_bytes
+                                    - instruction_buffer_context.upload_persisted_length_bytes;
+
+    return ( valid_length_bytes > 0U )
+           && ( valid_length_bytes <= instruction_buffer_context.page_size_bytes )
+           && ( valid_length_bytes <= pending_length_bytes )
+           && ( instruction_buffer_context.page_stream_offsets_bytes[page_index]
+                == instruction_buffer_context.upload_persisted_length_bytes );
+}
+
+static bool
+INSTRUCTION_BUFFER_UploadDrainLeaseMatches( const InstructionBufferUploadDrainLease_T* lease )
+{
+    if ( ( lease == NULL ) || !instruction_buffer_context.is_initialised
+         || !instruction_buffer_context.is_upload_prepared
+         || !instruction_buffer_context.active_upload_drain_reservation.is_active )
+    {
+        return false;
+    }
+
+    uint8_t page_index = instruction_buffer_context.active_upload_drain_reservation.page_index;
+
+    uint32_t reserved_length_bytes =
+        instruction_buffer_context.active_upload_drain_reservation.valid_length_bytes;
+
+    return INSTRUCTION_BUFFER_UploadDrainPageIsValid(
+               page_index, INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND )
+           && ( instruction_buffer_context.page_valid_bytes[page_index]
+                == reserved_length_bytes )
+           && ( lease->lease_id != 0U )
+           && ( lease->lease_id
+                == instruction_buffer_context.active_upload_drain_reservation.lease_id )
+           && ( lease->valid_length_bytes == reserved_length_bytes )
+           && ( lease->page_data == INSTRUCTION_BUFFER_GetActiveUploadDrainPageData() );
+}
+
+static void INSTRUCTION_BUFFER_ClearUploadDrainReservation( void )
+{
+    instruction_buffer_context.active_upload_drain_reservation =
+        ( InstructionBufferUploadDrainReservation_T ){ 0 };
+}
+
+static bool INSTRUCTION_BUFFER_AreUploadPagesEmpty( void )
+{
+    for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
+    {
+        if ( ( instruction_buffer_context.page_states[page_index] != INSTRUCTION_BUFFER_PAGE_EMPTY )
+             || ( instruction_buffer_context.page_valid_bytes[page_index] != 0U )
+             || ( instruction_buffer_context.page_stream_offsets_bytes[page_index] != 0U ) )
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static InstructionBufferUploadCapacityStatus_T
+INSTRUCTION_BUFFER_CheckUploadCapacity( uint32_t length )
+{
+    uint8_t page_index = instruction_buffer_context.upload_write_page_index;
+    InstructionBufferPageState_T page_state =
+        instruction_buffer_context.page_states[page_index];
+    uint32_t valid_length_bytes = instruction_buffer_context.page_valid_bytes[page_index];
+    uint32_t available_length_bytes;
+
+    if ( page_state == INSTRUCTION_BUFFER_PAGE_EMPTY )
+    {
+        if ( ( valid_length_bytes != 0U )
+             || ( instruction_buffer_context.page_stream_offsets_bytes[page_index] != 0U ) )
+        {
+            return INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
+        }
+
+        available_length_bytes = instruction_buffer_context.page_size_bytes;
+    }
+    else if ( page_state == INSTRUCTION_BUFFER_PAGE_FILLING_FROM_HOST )
+    {
+        if ( ( valid_length_bytes >= instruction_buffer_context.page_size_bytes )
+             || ( valid_length_bytes > instruction_buffer_context.upload_accepted_length_bytes )
+             || ( instruction_buffer_context.page_stream_offsets_bytes[page_index]
+                  != ( instruction_buffer_context.upload_accepted_length_bytes
+                       - valid_length_bytes ) ) )
+        {
+            return INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
+        }
+
+        available_length_bytes = instruction_buffer_context.page_size_bytes - valid_length_bytes;
+    }
+    else
+    {
+        return ( page_state == INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND
+                 || page_state == INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND )
+                   ? INSTRUCTION_BUFFER_UPLOAD_CAPACITY_BUSY
+                   : INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
+    }
+
+    if ( length <= available_length_bytes )
+    {
+        return INSTRUCTION_BUFFER_UPLOAD_CAPACITY_AVAILABLE;
+    }
+
+    /* A one-page host chunk can cross into at most one successor page. */
+    uint8_t successor_page_index = INSTRUCTION_BUFFER_NextPageIndex( page_index );
+    InstructionBufferPageState_T successor_state =
+        instruction_buffer_context.page_states[successor_page_index];
+
+    if ( successor_state != INSTRUCTION_BUFFER_PAGE_EMPTY )
+    {
+        return ( successor_state == INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND
+                 || successor_state == INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND )
+                   ? INSTRUCTION_BUFFER_UPLOAD_CAPACITY_BUSY
+                   : INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
+    }
+
+    return ( ( instruction_buffer_context.page_valid_bytes[successor_page_index] == 0U )
+             && ( instruction_buffer_context.page_stream_offsets_bytes[successor_page_index]
+                  == 0U ) )
+               ? INSTRUCTION_BUFFER_UPLOAD_CAPACITY_AVAILABLE
+               : INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
+}
+
+static bool INSTRUCTION_BUFFER_CopyUploadBytes( const uint8_t* data, uint32_t length )
+{
+    uint32_t source_offset_bytes = 0U;
+    bool     page_became_ready   = false;
+
+    while ( source_offset_bytes < length )
+    {
+        uint8_t page_index = instruction_buffer_context.upload_write_page_index;
+
+        if ( instruction_buffer_context.page_states[page_index] == INSTRUCTION_BUFFER_PAGE_EMPTY )
+        {
+            instruction_buffer_context.page_states[page_index] =
+                INSTRUCTION_BUFFER_PAGE_FILLING_FROM_HOST;
+            instruction_buffer_context.page_stream_offsets_bytes[page_index] =
+                instruction_buffer_context.upload_accepted_length_bytes + source_offset_bytes;
+        }
+
+        uint32_t page_valid_bytes = instruction_buffer_context.page_valid_bytes[page_index];
+        uint32_t bytes_remaining = length - source_offset_bytes;
+        uint32_t page_available =
+            instruction_buffer_context.page_size_bytes - page_valid_bytes;
+        uint32_t copy_length =
+            ( bytes_remaining < page_available ) ? bytes_remaining : page_available;
+
+        memcpy( &INSTRUCTION_BUFFER_GetPageData( page_index )[page_valid_bytes],
+                &data[source_offset_bytes], copy_length );
+
+        page_valid_bytes += copy_length;
+        source_offset_bytes += copy_length;
+        instruction_buffer_context.page_valid_bytes[page_index] = page_valid_bytes;
+
+        if ( page_valid_bytes == instruction_buffer_context.page_size_bytes )
+        {
+            instruction_buffer_context.page_states[page_index] =
+                INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND;
+            instruction_buffer_context.upload_write_page_index =
+                INSTRUCTION_BUFFER_NextPageIndex( page_index );
+            page_became_ready = true;
+        }
+    }
+
+    instruction_buffer_context.upload_accepted_length_bytes += length;
+
+    return page_became_ready;
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
 
-/* Lifecycle and retrieval-session configuration. */
+/* Shared state management. */
 
 /**
- * @brief Initialises runtime geometry and invalidates any previous read state.
+ * @brief Initialises runtime geometry and invalidates all previous buffer state.
  */
 bool INSTRUCTION_BUFFER_Init( void )
 {
@@ -370,12 +679,15 @@ bool INSTRUCTION_BUFFER_Init( void )
     instruction_buffer_context.instruction_partition_capacity_bytes =
         external_flash_info.instruction_capacity_bytes;
 
-    instruction_buffer_context.next_page_fill_lease_id  = 1U;
-    instruction_buffer_context.next_instruction_view_id = 1U;
-    instruction_buffer_context.is_initialised           = true;
+    instruction_buffer_context.next_page_fill_lease_id    = 1U;
+    instruction_buffer_context.next_instruction_view_id   = 1U;
+    instruction_buffer_context.next_upload_drain_lease_id = 1U;
+    instruction_buffer_context.is_initialised             = true;
 
     return true;
 }
+
+/* Instruction retrieval: lifecycle, NAND fill, and execution serving. */
 
 /**
  * @brief Resets page ownership and cursors for one instruction image.
@@ -383,6 +695,7 @@ bool INSTRUCTION_BUFFER_Init( void )
 bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes )
 {
     if ( !instruction_buffer_context.is_initialised
+         || instruction_buffer_context.is_upload_prepared
          || ( instruction_length_bytes
               > instruction_buffer_context.instruction_partition_capacity_bytes ) )
     {
@@ -400,15 +713,7 @@ bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes )
 
     INSTRUCTION_BUFFER_ClearPageFillReservation();
     INSTRUCTION_BUFFER_ClearInstructionView();
-
-    for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
-    {
-        instruction_buffer_context.page_states[page_index] = INSTRUCTION_BUFFER_PAGE_EMPTY;
-
-        instruction_buffer_context.page_valid_bytes[page_index] = 0U;
-
-        instruction_buffer_context.page_stream_offsets_bytes[page_index] = 0U;
-    }
+    INSTRUCTION_BUFFER_ResetPages();
 
     /*
      * Preserve the monotonically changing lease sequence across session resets
@@ -434,7 +739,8 @@ bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes )
  */
 void INSTRUCTION_BUFFER_EndRead( void )
 {
-    if ( !instruction_buffer_context.is_initialised )
+    if ( !instruction_buffer_context.is_initialised
+         || instruction_buffer_context.is_upload_prepared )
     {
         return;
     }
@@ -449,16 +755,8 @@ void INSTRUCTION_BUFFER_EndRead( void )
 
     INSTRUCTION_BUFFER_ClearPageFillReservation();
     INSTRUCTION_BUFFER_ClearInstructionView();
-
-    for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
-    {
-        instruction_buffer_context.page_states[page_index]      = INSTRUCTION_BUFFER_PAGE_EMPTY;
-        instruction_buffer_context.page_valid_bytes[page_index] = 0U;
-        instruction_buffer_context.page_stream_offsets_bytes[page_index] = 0U;
-    }
+    INSTRUCTION_BUFFER_ResetPages();
 }
-
-/* NAND-to-RAM page producer interface. */
 
 /**
  * @brief Reserves the next sequential empty page slot for a NAND read.
@@ -597,8 +895,6 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
 
     return true;
 }
-
-/* Execution-facing instruction consumer interface. */
 
 /**
  * @brief Returns the current instruction view without advancing the stream.
@@ -856,4 +1152,319 @@ bool INSTRUCTION_BUFFER_IsReadComplete( void )
            && ( instruction_buffer_context.consumer_stream_offset_bytes
                 == instruction_buffer_context.instruction_length_bytes )
            && !instruction_buffer_context.active_instruction_view.is_active;
+}
+
+/* Instruction upload: host production, NAND drain, and lifecycle. */
+
+/**
+ * @brief Prepares shared instruction RAM for a host-to-NAND upload.
+ */
+bool INSTRUCTION_BUFFER_PrepareUpload( uint32_t expected_length_bytes )
+{
+    if ( !instruction_buffer_context.is_initialised
+         || instruction_buffer_context.is_read_prepared
+         || instruction_buffer_context.is_upload_prepared
+         || instruction_buffer_context.active_page_fill_reservation.is_active
+         || instruction_buffer_context.active_instruction_view.is_active
+         || ( expected_length_bytes == 0U )
+         || ( expected_length_bytes
+              > instruction_buffer_context.instruction_partition_capacity_bytes ) )
+    {
+        return false;
+    }
+
+    /* Keep both data flows unavailable until every shared ownership field is reset. */
+    instruction_buffer_context.is_upload_prepared  = false;
+    instruction_buffer_context.is_upload_finalised = false;
+
+    instruction_buffer_context.instruction_length_bytes     = 0U;
+    instruction_buffer_context.next_nand_read_offset_bytes  = 0U;
+    instruction_buffer_context.next_fill_page_index         = 0U;
+    instruction_buffer_context.consumer_stream_offset_bytes = 0U;
+    instruction_buffer_context.consumer_page_index          = 0U;
+    instruction_buffer_context.consumer_page_offset_bytes   = 0U;
+
+    instruction_buffer_context.upload_expected_length_bytes  = expected_length_bytes;
+    instruction_buffer_context.upload_accepted_length_bytes  = 0U;
+    instruction_buffer_context.upload_persisted_length_bytes = 0U;
+    instruction_buffer_context.upload_write_page_index       = 0U;
+    instruction_buffer_context.upload_drain_page_index       = 0U;
+
+    INSTRUCTION_BUFFER_ClearPageFillReservation();
+    INSTRUCTION_BUFFER_ClearInstructionView();
+    INSTRUCTION_BUFFER_ClearUploadDrainReservation();
+    INSTRUCTION_BUFFER_ResetPages();
+
+    instruction_buffer_context.is_upload_prepared = true;
+
+    return true;
+}
+
+/**
+ * @brief Returns the declared total length of the prepared upload.
+ */
+bool INSTRUCTION_BUFFER_GetUploadExpectedLength( uint32_t* expected_length_bytes )
+{
+    if ( ( expected_length_bytes == NULL ) || !instruction_buffer_context.is_initialised
+         || !instruction_buffer_context.is_upload_prepared )
+    {
+        return false;
+    }
+
+    *expected_length_bytes = instruction_buffer_context.upload_expected_length_bytes;
+
+    return true;
+}
+
+/**
+ * @brief Atomically appends one complete host chunk to upload RAM.
+ */
+InstructionBufferUploadWriteStatus_T
+INSTRUCTION_BUFFER_WriteUploadBytes( const uint8_t* data, uint32_t length )
+{
+    if ( !instruction_buffer_context.is_initialised
+         || !instruction_buffer_context.is_upload_prepared
+         || instruction_buffer_context.is_upload_finalised )
+    {
+        return INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_STATE;
+    }
+
+    if ( ( data == NULL ) || ( length == 0U )
+         || ( length > instruction_buffer_context.page_size_bytes ) )
+    {
+        return INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_ARGUMENT;
+    }
+
+    if ( ( instruction_buffer_context.upload_write_page_index >= INSTRUCTION_BUFFER_PAGE_COUNT )
+         || ( instruction_buffer_context.upload_accepted_length_bytes
+              > instruction_buffer_context.upload_expected_length_bytes ) )
+    {
+        return INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_STATE;
+    }
+
+    uint32_t remaining_upload_bytes = instruction_buffer_context.upload_expected_length_bytes
+                                      - instruction_buffer_context.upload_accepted_length_bytes;
+
+    if ( length > remaining_upload_bytes )
+    {
+        return INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_ARGUMENT;
+    }
+
+    InstructionBufferUploadCapacityStatus_T capacity_status =
+        INSTRUCTION_BUFFER_CheckUploadCapacity( length );
+
+    if ( capacity_status == INSTRUCTION_BUFFER_UPLOAD_CAPACITY_BUSY )
+    {
+        return INSTRUCTION_BUFFER_UPLOAD_WRITE_BUSY;
+    }
+
+    if ( capacity_status != INSTRUCTION_BUFFER_UPLOAD_CAPACITY_AVAILABLE )
+    {
+        return INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_STATE;
+    }
+
+    return INSTRUCTION_BUFFER_CopyUploadBytes( data, length )
+               ? INSTRUCTION_BUFFER_UPLOAD_WRITE_PAGE_READY
+               : INSTRUCTION_BUFFER_UPLOAD_WRITE_ACCEPTED;
+}
+
+/**
+ * @brief Acquires the oldest completed upload page for a NAND write.
+ */
+bool INSTRUCTION_BUFFER_AcquireUploadDrainPage( InstructionBufferUploadDrainLease_T* lease )
+{
+    if ( lease == NULL )
+    {
+        return false;
+    }
+
+    /* A failed acquisition must never leave stale ownership in the caller. */
+    *lease = ( InstructionBufferUploadDrainLease_T ){ 0 };
+
+    if ( !instruction_buffer_context.is_initialised
+         || !instruction_buffer_context.is_upload_prepared
+         || instruction_buffer_context.active_upload_drain_reservation.is_active )
+    {
+        return false;
+    }
+
+    uint8_t page_index = instruction_buffer_context.upload_drain_page_index;
+
+    if ( !INSTRUCTION_BUFFER_UploadDrainPageIsValid(
+             page_index, INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND ) )
+    {
+        return false;
+    }
+
+    uint32_t valid_length_bytes = instruction_buffer_context.page_valid_bytes[page_index];
+
+    uint32_t lease_id = instruction_buffer_context.next_upload_drain_lease_id++;
+
+    if ( instruction_buffer_context.next_upload_drain_lease_id == 0U )
+    {
+        instruction_buffer_context.next_upload_drain_lease_id = 1U;
+    }
+
+    instruction_buffer_context.active_upload_drain_reservation =
+        ( InstructionBufferUploadDrainReservation_T ){
+            .is_active          = true,
+            .page_index         = page_index,
+            .valid_length_bytes = valid_length_bytes,
+            .lease_id           = lease_id };
+
+    instruction_buffer_context.page_states[page_index] =
+        INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND;
+
+    *lease = ( InstructionBufferUploadDrainLease_T ){
+        .page_data          = INSTRUCTION_BUFFER_GetActiveUploadDrainPageData(),
+        .valid_length_bytes = valid_length_bytes,
+        .lease_id           = lease_id };
+
+    return true;
+}
+
+/**
+ * @brief Completes the NAND write associated with an upload drain lease.
+ */
+bool INSTRUCTION_BUFFER_CompleteUploadDrain( const InstructionBufferUploadDrainLease_T* lease,
+                                             bool nand_write_succeeded )
+{
+    if ( !INSTRUCTION_BUFFER_UploadDrainLeaseMatches( lease ) )
+    {
+        return false;
+    }
+
+    uint8_t page_index = instruction_buffer_context.active_upload_drain_reservation.page_index;
+    uint32_t valid_length_bytes =
+        instruction_buffer_context.active_upload_drain_reservation.valid_length_bytes;
+
+    if ( nand_write_succeeded )
+    {
+        instruction_buffer_context.upload_persisted_length_bytes += valid_length_bytes;
+        instruction_buffer_context.page_states[page_index] = INSTRUCTION_BUFFER_PAGE_EMPTY;
+        instruction_buffer_context.page_valid_bytes[page_index] = 0U;
+        instruction_buffer_context.page_stream_offsets_bytes[page_index] = 0U;
+        instruction_buffer_context.upload_drain_page_index =
+            INSTRUCTION_BUFFER_NextPageIndex( page_index );
+    }
+    else
+    {
+        /* Retain the page and cursor so the identical NAND write can be retried. */
+        instruction_buffer_context.page_states[page_index] =
+            INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND;
+    }
+
+    INSTRUCTION_BUFFER_ClearUploadDrainReservation();
+
+    return true;
+}
+
+/**
+ * @brief Stops host production and publishes the final partial upload page.
+ */
+bool INSTRUCTION_BUFFER_FinaliseUpload( void )
+{
+    if ( !instruction_buffer_context.is_initialised
+         || !instruction_buffer_context.is_upload_prepared
+         || instruction_buffer_context.is_upload_finalised
+         || instruction_buffer_context.active_upload_drain_reservation.is_active
+         || ( instruction_buffer_context.upload_accepted_length_bytes
+              != instruction_buffer_context.upload_expected_length_bytes )
+         || ( instruction_buffer_context.page_size_bytes == 0U )
+         || ( instruction_buffer_context.upload_persisted_length_bytes
+              > instruction_buffer_context.upload_accepted_length_bytes ) )
+    {
+        return false;
+    }
+
+    uint32_t partial_length_bytes = instruction_buffer_context.upload_expected_length_bytes
+                                    % instruction_buffer_context.page_size_bytes;
+
+    if ( partial_length_bytes > 0U )
+    {
+        uint8_t page_index = instruction_buffer_context.upload_write_page_index;
+        uint32_t expected_stream_offset =
+            instruction_buffer_context.upload_expected_length_bytes - partial_length_bytes;
+
+        if ( ( page_index >= INSTRUCTION_BUFFER_PAGE_COUNT )
+             || ( instruction_buffer_context.page_states[page_index]
+                  != INSTRUCTION_BUFFER_PAGE_FILLING_FROM_HOST )
+             || ( instruction_buffer_context.page_valid_bytes[page_index]
+                  != partial_length_bytes )
+             || ( instruction_buffer_context.page_stream_offsets_bytes[page_index]
+                  != expected_stream_offset ) )
+        {
+            return false;
+        }
+
+        instruction_buffer_context.page_states[page_index] =
+            INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND;
+    }
+    else
+    {
+        /* A page-aligned stream must not leave an unpublished producer page. */
+        for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
+        {
+            if ( instruction_buffer_context.page_states[page_index]
+                 == INSTRUCTION_BUFFER_PAGE_FILLING_FROM_HOST )
+            {
+                return false;
+            }
+        }
+    }
+
+    instruction_buffer_context.is_upload_finalised = true;
+
+    return true;
+}
+
+/**
+ * @brief Reports whether every declared host byte has entered upload RAM.
+ */
+bool INSTRUCTION_BUFFER_IsUploadInputComplete( void )
+{
+    return instruction_buffer_context.is_initialised
+           && instruction_buffer_context.is_upload_prepared
+           && ( instruction_buffer_context.upload_accepted_length_bytes
+                == instruction_buffer_context.upload_expected_length_bytes );
+}
+
+/**
+ * @brief Reports whether finalised upload data has completely drained from RAM.
+ */
+bool INSTRUCTION_BUFFER_IsUploadPersisted( void )
+{
+    return instruction_buffer_context.is_initialised
+           && instruction_buffer_context.is_upload_prepared
+           && instruction_buffer_context.is_upload_finalised
+           && !instruction_buffer_context.active_upload_drain_reservation.is_active
+           && ( instruction_buffer_context.upload_accepted_length_bytes
+                == instruction_buffer_context.upload_expected_length_bytes )
+           && ( instruction_buffer_context.upload_persisted_length_bytes
+                == instruction_buffer_context.upload_expected_length_bytes )
+           && INSTRUCTION_BUFFER_AreUploadPagesEmpty();
+}
+
+/**
+ * @brief Releases upload state after external-flash finalisation succeeds.
+ */
+bool INSTRUCTION_BUFFER_EndUpload( void )
+{
+    if ( !INSTRUCTION_BUFFER_IsUploadPersisted() )
+    {
+        return false;
+    }
+
+    instruction_buffer_context.is_upload_prepared  = false;
+    instruction_buffer_context.is_upload_finalised = false;
+    instruction_buffer_context.upload_expected_length_bytes  = 0U;
+    instruction_buffer_context.upload_accepted_length_bytes  = 0U;
+    instruction_buffer_context.upload_persisted_length_bytes = 0U;
+    instruction_buffer_context.upload_write_page_index       = 0U;
+    instruction_buffer_context.upload_drain_page_index       = 0U;
+
+    INSTRUCTION_BUFFER_ClearUploadDrainReservation();
+    INSTRUCTION_BUFFER_ResetPages();
+
+    return true;
 }
