@@ -13,8 +13,9 @@
  *      the Flash Manager task and occurs only after the ISR returns.
  *
  *      Result logging/finalisation and instruction preload/refill are
- *      implemented. Result transfer to the host and instruction upload remain
- *      future work.
+ *      implemented. The public instruction-upload lifecycle contract is
+ *      defined, but its task-side implementation and result transfer to the
+ *      host remain future work.
  ******************************************************************************/
 
 #ifndef FLASH_MANAGER_H
@@ -60,7 +61,18 @@ extern "C"
  */
 
 /*
- * Implemented execution lifecycle:
+ * Implemented execution lifecycle and planned instruction-upload lifecycle:
+ *
+ * IDLE
+ *   -> RequestInstructionUploadStart()
+ * PREPARING_INSTRUCTION_UPLOAD
+ *   -> Flash Manager task prepares instruction storage
+ * INSTRUCTION_UPLOAD
+ *   -> Host Interface submits canonical instruction chunks
+ *   -> RequestInstructionUploadFinish()
+ * FINALISING_INSTRUCTION_UPLOAD
+ *   -> Flash Manager task commits the final partial page
+ *   -> IDLE
  *
  * IDLE
  *   -> RequestExecutionPreparation()
@@ -84,8 +96,14 @@ typedef enum
     /** No upload, execution, finalisation, or transfer is active. */
     FLASH_MANAGER_STATE_IDLE,
 
-    /** Reserved for writing a canonical instruction image to NAND. */
+    /** Instruction storage is being prepared by the Flash Manager task. */
+    FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD,
+
+    /** Canonical instruction chunks may be submitted by the Host Interface. */
     FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD,
+
+    /** The final partial instruction page is being committed and the upload closed. */
+    FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD,
 
     /** NAND and RAM buffers are being prepared for a new execution session. */
     FLASH_MANAGER_STATE_PREPARING_EXECUTION,
@@ -287,6 +305,31 @@ typedef enum
     FLASH_MANAGER_INSTRUCTION_INVALID_ARGUMENT
 } FlashManagerInstructionReadStatus_T;
 
+/** @brief Result of submitting an asynchronous instruction-upload operation. */
+typedef enum
+{
+    /** The operation was accepted for asynchronous processing. */
+    FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED = 0,
+
+    /** The operation is not permitted from the current lifecycle state. */
+    FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE,
+
+    /** A pointer, chunk length, or expected upload length was invalid. */
+    FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_ARGUMENT,
+
+    /** A previously copied instruction chunk is still awaiting persistence. */
+    FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY,
+
+    /** FLASH_MANAGER_Init() has not completed successfully. */
+    FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOT_INITIALISED,
+
+    /** The Flash Manager task has not registered its notification handle. */
+    FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_TASK_NOT_READY,
+
+    /** Task notification failed and the manager entered FAULT. */
+    FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOTIFY_FAILED
+} FlashManagerInstructionUploadRequestStatus_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -422,6 +465,65 @@ FLASH_MANAGER_PeekNextInstructionFromISR( const FlashManagerInstructionView_T** 
  */
 bool FLASH_MANAGER_ConsumeInstructionFromISR( const FlashManagerInstructionView_T* instruction,
                                               BaseType_t* higher_priority_task_woken );
+
+/**
+ * @brief Requests preparation of NAND storage for a canonical instruction image.
+ *
+ * @param[in] expected_length_bytes Total canonical instruction bytes that the
+ *        Host Interface will submit during this upload.
+ *
+ * @return Instruction-upload request status.
+ *
+ * @note This request is accepted only from FLASH_MANAGER_STATE_IDLE.
+ * @note Acceptance changes the state to
+ *       FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD and notifies the Flash
+ *       Manager task. The caller must wait for
+ *       FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD before submitting data.
+ * @note This function is task-context only and does not access NAND directly.
+ */
+FlashManagerInstructionUploadRequestStatus_T
+FLASH_MANAGER_RequestInstructionUploadStart( uint32_t expected_length_bytes );
+
+/**
+ * @brief Copies one canonical instruction-stream chunk for asynchronous persistence.
+ *
+ * @param[in] data   Canonical instruction bytes to append in stream order.
+ * @param[in] length Number of bytes supplied through data.
+ *
+ * @return Instruction-upload request status.
+ *
+ * @note This operation is accepted only in
+ *       FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD.
+ * @note Accepted bytes are copied into Flash Manager-owned storage before this
+ *       function returns, so the caller may immediately reuse its source
+ *       buffer.
+ * @note Only one copied chunk may await persistence. A submission made while
+ *       the upload mailbox is occupied returns
+ *       FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY.
+ * @note The Host Interface application layer must supply the canonical packed
+ *       [header][payload] instruction representation. The Flash Manager does
+ *       not interpret peripheral-specific payloads.
+ * @note This function is task-context only and does not access NAND directly.
+ */
+FlashManagerInstructionUploadRequestStatus_T
+FLASH_MANAGER_SubmitInstructionUploadBytes( const uint8_t* data, uint32_t length );
+
+/**
+ * @brief Requests completion of the active instruction upload.
+ *
+ * @return Instruction-upload request status.
+ *
+ * @note This request is accepted only in
+ *       FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD after every expected byte has
+ *       been accepted and no copied chunk remains pending.
+ * @note Acceptance changes the state to
+ *       FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD and notifies the
+ *       Flash Manager task. Successful finalisation returns the manager to
+ *       FLASH_MANAGER_STATE_IDLE; storage failure enters
+ *       FLASH_MANAGER_STATE_FAULT.
+ * @note This function is task-context only and does not access NAND directly.
+ */
+FlashManagerInstructionUploadRequestStatus_T FLASH_MANAGER_RequestInstructionUploadFinish( void );
 
 /**
  * @brief Requests asynchronous preparation of a new execution session.
