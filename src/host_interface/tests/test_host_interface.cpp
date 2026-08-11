@@ -1,9 +1,11 @@
 /******************************************************************************
- *  File:       test_execution_manager.cpp
+ *  File:       test_host_interface.cpp
  *  Author:     Angus Corr
  *  Created:    06-Dec-2025
  *
  *  Description:
+ *      Placeholder test target for Host Interface transport and future Flash
+ *      Manager instruction-upload integration.
  *
  *  Notes:
  *

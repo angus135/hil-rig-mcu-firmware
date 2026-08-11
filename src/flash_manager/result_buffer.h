@@ -8,10 +8,10 @@
  *
  *  Notes:
  *      The Execution Manager accesses this functionality through flash_manager.h.
- *      Result records are packed as a fixed header followed by committed payload
- *      bytes. The Flash Manager must serialise
- *      calls that change buffer state; record and drain leases may remain
- *      active concurrently because they own distinct byte ranges.
+ *      Result records are packed as a fixed header followed by committed
+ *      payload bytes. The Flash Manager must serialise calls that change
+ *      buffer state; record and drain leases may remain active concurrently
+ *      because they own distinct byte ranges.
  ******************************************************************************/
 
 #ifndef RESULT_BUFFER_H
@@ -154,6 +154,9 @@ void RESULT_BUFFER_Reset( void );
  *       result-buffer reset.
  * @note The driver must not retain the payload pointer after completing its
  *       measurement copy.
+ * @note DMA must target driver-owned storage, not the leased payload. The
+ *       execution ISR performs and completes the copy into this lease before
+ *       commit or cancellation.
  * @note This function is not internally synchronised with drain operations.
  */
 bool RESULT_BUFFER_ReserveRecord( uint16_t                        requested_payload_capacity_bytes,

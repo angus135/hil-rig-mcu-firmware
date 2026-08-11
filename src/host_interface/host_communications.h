@@ -4,10 +4,13 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Public interface for the Background module.
+ *      Public interface for the Host Communications RTOS task.
  *
  *  Notes:
- *      None
+ *      Instruction upload integration is task-context only. The Host Interface
+ *      translates and validates protocol data into the canonical Flash Manager
+ *      instruction stream, then uses the asynchronous upload lifecycle
+ *      documented in flash_manager.h. It never calls external_flash directly.
  ******************************************************************************/
 
 #ifndef HOST_COMMUNICATIONS_H
@@ -47,7 +50,8 @@ extern "C"
 /**
  * @brief Host Interface Task
  *
- * The FreeRTOS task that runs all the host interface related logic
+ * The FreeRTOS task that runs host transport, canonical instruction upload,
+ * and future result-transfer processing.
  */
 void HOST_INTERFACE_Task( void* task_parameters );
 

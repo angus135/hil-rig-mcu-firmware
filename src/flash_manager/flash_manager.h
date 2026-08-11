@@ -193,6 +193,11 @@ typedef struct
  * The execution path may write at most payload_capacity_bytes through payload,
  * then must commit or cancel the lease. The complete lease must be returned
  * unchanged so stale or modified ownership can be rejected.
+ *
+ * Peripheral DMA remains confined to driver-owned storage. A selected driver
+ * synchronously copies a stable measurement into payload from the execution
+ * ISR; neither the driver nor DMA may retain this pointer after commit,
+ * cancellation, or ISR return.
  */
 typedef struct
 {
@@ -346,8 +351,8 @@ void FLASH_MANAGER_Task( void* parameters );
  * @retval true
  *      Task-context synchronisation and both owned buffers were initialised.
  * @retval false
- *      The module was already initialised, mutex creation failed, or result
- *      buffer geometry was invalid.
+ *      The module was already initialised, mutex creation failed, or either
+ *      owned buffer rejected the external-flash geometry.
  *
  * @note EXTERNAL_FLASH_Init() must succeed before this function is called.
  * @note Call once during startup before the scheduler exposes Flash Manager
@@ -433,6 +438,9 @@ FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
  * @note This function never blocks, accesses NAND or uses a mutex.
  * @note END_OF_STREAM describes instruction storage only. Measurements and
  *       result logging may continue until another subsystem ends the test.
+ * @note Timestamp policy belongs to the Execution Manager: a future timestamp
+ *       retains this cached view, an equal timestamp is executed and consumed,
+ *       and a past timestamp is an execution-overrun fault and is not consumed.
  */
 FlashManagerInstructionReadStatus_T
 FLASH_MANAGER_PeekNextInstructionFromISR( const FlashManagerInstructionView_T** instruction );
@@ -495,8 +503,10 @@ FLASH_MANAGER_RequestInstructionUploadStart( uint32_t expected_length_bytes );
  *       persistence proceeds concurrently with later host submissions into
  *       other available ring pages.
  * @note The Host Interface application layer must supply the canonical packed
- *       [header][payload] instruction representation. The Flash Manager does
- *       not interpret peripheral-specific payloads.
+ *       [header][payload] instruction representation with nondecreasing
+ *       timestamps, valid routing metadata and payload schemas, and records no
+ *       larger than one NAND page. The Flash Manager preserves the byte stream
+ *       but does not perform semantic validation.
  * @note This function is task-context only and does not access NAND directly.
  */
 FlashManagerInstructionUploadRequestStatus_T

@@ -1,12 +1,15 @@
 /******************************************************************************
- *  File:       execution_manager.c
+ *  File:       host_communications.c
  *  Author:     Angus Corr
  *  Created:    20-Dec-2025
  *
  *  Description:
+ *      Runs host transport processing from task context.
  *
  *  Notes:
- *     None
+ *      Instruction upload must use the Flash Manager public lifecycle. The
+ *      current periodic task is only a transport skeleton; upload state,
+ *      retry/backpressure handling, and canonical conversion are not yet wired.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -65,7 +68,8 @@ TaskHandle_t* HostInterfaceTaskHandle = NULL;  // NOLINT(readability-identifier-
 /**
  * @brief Host Interface Task
  *
- * The FreeRTOS task that runs all the host interface related logic
+ * The FreeRTOS task that runs host transport and future Flash Manager upload
+ * and result-transfer workflows.
  */
 void HOST_INTERFACE_Task( void* task_parameters )
 {
@@ -79,7 +83,17 @@ void HOST_INTERFACE_Task( void* task_parameters )
     TickType_t initial_ticks = xTaskGetTickCount();
     while ( true )
     {
-        // TODO: Implement host interface
+        /*
+         * TODO: Add streamed instruction upload in task context:
+         * - validate and canonicalise ordered [header][payload] records;
+         * - request upload start and wait for INSTRUCTION_UPLOAD;
+         * - submit chunks atomically, retaining an unchanged chunk on BUSY;
+         * - request finish after every declared byte is accepted; and
+         * - wait for IDLE or FAULT before reporting completion to the host.
+         *
+         * The current one-second loop is a monitor placeholder, not the final
+         * upload retry cadence. Never call external_flash from this task.
+         */
 
         HW_USB_Monitor_Process();
 
