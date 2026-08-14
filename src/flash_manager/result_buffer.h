@@ -76,6 +76,51 @@ typedef struct
     uint32_t lease_id;
 } ResultBufferDrainLease_T;
 
+/** @brief Result of copying buffered NAND result bytes to the Host Interface. */
+typedef enum
+{
+    /** One or more bytes were copied without releasing a complete page. */
+    RESULT_BUFFER_READ_OK = 0,
+
+    /** Bytes were copied and at least one page became available for refill. */
+    RESULT_BUFFER_READ_PAGE_RELEASED,
+
+    /** Unread NAND data remains, but no result bytes are currently buffered. */
+    RESULT_BUFFER_READ_BUSY,
+
+    /** Every result byte prepared for retrieval has been consumed. */
+    RESULT_BUFFER_READ_END_OF_STREAM,
+
+    /** The destination, capacity, or bytes-read pointer was invalid. */
+    RESULT_BUFFER_READ_INVALID_ARGUMENT,
+
+    /** Result retrieval has not been prepared. */
+    RESULT_BUFFER_READ_INVALID_STATE
+
+} ResultBufferReadStatus_T;
+
+/**
+ * @brief Temporary ownership of one result page being filled from NAND.
+ *
+ * This lease is private to the Flash Manager. It prevents the Host Interface
+ * from consuming the page while the NAND read is in progress.
+ */
+typedef struct
+{
+    /** Writable start of the page slot being filled from NAND. */
+    uint8_t* page_data;
+
+    /** Logical byte offset of this page within the stored result stream. */
+    uint32_t result_offset_bytes;
+
+    /** Number of logical bytes to read into this page. */
+    uint32_t read_length_bytes;
+
+    /** Opaque identifier used to reject stale fill completions. */
+    uint32_t lease_id;
+
+} ResultBufferReadFillLease_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -330,6 +375,78 @@ bool RESULT_BUFFER_Finalise( void );
  *       serialise it with state-changing result-buffer calls.
  */
 bool RESULT_BUFFER_IsDrainComplete( void );
+
+/**
+ * @brief Resets the result buffer for retrieval of a stored result stream.
+ *
+ * @param[in] result_length_bytes
+ *      Total committed result bytes reported by external flash.
+ *
+ * @return true when retrieval state was prepared; otherwise false.
+ *
+ * @note Any result-logging state and outstanding leases are invalidated.
+ * @note The execution timer must be stopped and result finalisation complete.
+ */
+bool RESULT_BUFFER_PrepareRead( uint32_t result_length_bytes );
+
+/**
+ * @brief Acquires the next empty page for a sequential NAND result read.
+ *
+ * @param[out] lease
+ *      Destination for the fill lease. Cleared before failure is returned.
+ *
+ * @return true when a page was acquired; otherwise false.
+ *
+ * @note false normally indicates that every page is occupied or all stored
+ *       result bytes have already been scheduled for loading.
+ */
+bool RESULT_BUFFER_AcquireReadFillPage( ResultBufferReadFillLease_T* lease );
+
+/**
+ * @brief Completes an active NAND-to-RAM result-page fill.
+ *
+ * @param[in] lease
+ *      Lease returned by RESULT_BUFFER_AcquireReadFillPage().
+ * @param[in] nand_read_succeeded
+ *      true when NAND supplied the requested bytes; otherwise false.
+ *
+ * @return true when the lease matched and its transition was applied.
+ *
+ * @note Success publishes the page to the Host Interface. Failure returns the
+ *       page to the empty state but leaves the retrieval offset unchanged.
+ */
+bool RESULT_BUFFER_CompleteReadFillPage( const ResultBufferReadFillLease_T* lease,
+                                         bool                               nand_read_succeeded );
+
+/**
+ * @brief Copies currently buffered result bytes into caller-owned storage.
+ *
+ * @param[out] destination Host Interface-owned destination buffer.
+ * @param[in] destination_capacity_bytes Maximum bytes to copy.
+ * @param[out] bytes_read Number of bytes copied; cleared before failure.
+ *
+ * @return Current result-buffer read status.
+ *
+ * @note A successful call may copy across adjacent buffered page boundaries.
+ * @note END_OF_STREAM is returned only when all prepared bytes were consumed
+ *       before this call. The call that copies the final bytes returns OK or
+ *       PAGE_RELEASED.
+ */
+ResultBufferReadStatus_T RESULT_BUFFER_ReadBytes( uint8_t*  destination,
+                                                  uint32_t  destination_capacity_bytes,
+                                                  uint32_t* bytes_read );
+
+/**
+ * @brief Reports whether every prepared result byte has been consumed.
+ */
+bool RESULT_BUFFER_IsReadComplete( void );
+
+/**
+ * @brief Ends result retrieval and invalidates its page and cursor state.
+ *
+ * @return true when retrieval was active and complete; otherwise false.
+ */
+bool RESULT_BUFFER_EndRead( void );
 
 #ifdef __cplusplus
 }
