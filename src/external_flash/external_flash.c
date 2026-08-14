@@ -1179,6 +1179,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructionPage( uint32_t offset, uint8
                                                 offset, data, length );
 }
 
+/**
+ * @brief Reads one result-stream page using the NAND DMA read path internally.
+ */
 ExternalFlashStatus_T EXTERNAL_FLASH_ReadResultPage( uint32_t offset, uint8_t* data,
                                                      uint32_t length )
 {
