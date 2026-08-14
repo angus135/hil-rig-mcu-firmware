@@ -54,6 +54,8 @@
 
 /** Requests persistence and closure of the final instruction-upload page. */
 #define FLASH_MANAGER_NOTIFY_FINALISE_INSTRUCTION_UPLOAD ( 1UL << 6 )
+
+#define FLASH_MANAGER_NOTIFY_FILL_RESULTS ( 1UL << 7 )
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -127,6 +129,8 @@ static bool FLASH_MANAGER_PrepareInstructionUpload( void );
 static bool FLASH_MANAGER_DrainInstructionUploadPages( void );
 
 static bool FLASH_MANAGER_FinaliseInstructionUpload( void );
+
+static bool FLASH_Manager_FillResultPages( void );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -283,6 +287,87 @@ static bool FLASH_MANAGER_FillInstructionPages( void )
         {
             return false;
         }
+    }
+}
+
+/**
+ * @brief Fills every sequentially available result page from external NAND.
+ *
+ * Page ownership is acquired while holding the Flash Manager mutex. The
+ * DMA-backed NAND read runs outside the mutex, allowing the Host Interface to
+ * consume a different ready page concurrently. The acquired page remains
+ * inaccessible to the Host Interface until fill completion publishes it.
+ *
+ * @return true after all currently available result slots were filled; false
+ *         after a NAND read, fill completion, or synchronization failure.
+ */
+static bool FLASH_MANAGER_FillResultPages( void )
+{
+    ResultBufferReadFillLease_T fill_lease;
+
+    for ( ;; )
+    {
+        if ( !FLASH_MANAGER_Lock() )
+        {
+            return false;
+        }
+
+        bool fill_allowed = flash_manager_context.state == FLASH_MANAGER_STATE_TRANSFERRING_RESULTS;
+
+        bool page_acquired = false;
+
+        if ( fill_allowed )
+        {
+            page_acquired = RESULT_BUFFER_AcquireReadFillPage( &fill_lease );
+        }
+
+        FLASH_MANAGER_Unlock();
+
+        /*
+         * A stale notification after the transfer has ended requires no work
+         * and is not itself a fault.
+         */
+        if ( !fill_allowed )
+        {
+            return true;
+        }
+
+        /*
+         * Acquisition normally stops when all three slots are occupied or every
+         * stored result byte has already been scheduled.
+         */
+        if ( !page_acquired )
+        {
+            return true;
+        }
+
+        ExternalFlashStatus_T nand_read_status = EXTERNAL_FLASH_ReadResultPage(
+            fill_lease.result_offset_bytes, fill_lease.page_data, fill_lease.read_length_bytes );
+
+        if ( !FLASH_MANAGER_Lock() )
+        {
+            return false;
+        }
+
+        bool fill_completion_succeeded = RESULT_BUFFER_CompleteReadFillPage(
+            &fill_lease, nand_read_status == EXTERNAL_FLASH_STATUS_OK );
+
+        FLASH_MANAGER_Unlock();
+
+        if ( ( nand_read_status != EXTERNAL_FLASH_STATUS_OK ) || !fill_completion_succeeded )
+        {
+            /*
+             * A reported NAND failure releases the page for a potential future
+             * recovery policy. The current lifecycle treats the failure as
+             * fatal and enters FAULT.
+             */
+            return false;
+        }
+
+        /*
+         * Continue until RAM applies backpressure or the complete stored result
+         * stream has been loaded. Notification bits may coalesce.
+         */
     }
 }
 
@@ -779,6 +864,14 @@ void FLASH_MANAGER_Task( void* parameters )
         if ( ( notification_bits & FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS ) != 0U )
         {
             if ( !FLASH_MANAGER_FillInstructionPages() )
+            {
+                FLASH_MANAGER_EnterFault();
+            }
+        }
+
+        if ( notification_bits & FLASH_MANAGER_NOTIFY_FILL_RESULTS )
+        {
+            if ( !FLASH_Manager_FillResultPages() )
             {
                 FLASH_MANAGER_EnterFault();
             }
