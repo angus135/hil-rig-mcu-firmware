@@ -240,6 +240,15 @@ static bool RESULT_BUFFER_DrainLeaseMatches( const ResultBufferDrainLease_T* lea
 /** Invalidates the active drain reservation without changing page ownership. */
 static void RESULT_BUFFER_ClearDrainReservation( void );
 
+/** Returns the writable page pointer owned by the active NAND-read fill. */
+static uint8_t* RESULT_BUFFER_GetActiveReadFillPageData( void );
+
+/** Validates a NAND-read fill lease against the active reservation. */
+static bool RESULT_BUFFER_ReadFillLeaseMatches( const ResultBufferReadFillLease_T* lease );
+
+/** Invalidates the active NAND-read fill without changing page ownership. */
+static void RESULT_BUFFER_ClearReadFillReservation( void );
+
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
@@ -463,6 +472,89 @@ static bool RESULT_BUFFER_DrainLeaseMatches( const ResultBufferDrainLease_T* lea
 static void RESULT_BUFFER_ClearDrainReservation( void )
 {
     result_buffer_context.active_drain_reservation = ( ResultBufferDrainReservation_T ){ 0 };
+}
+
+static uint8_t* RESULT_BUFFER_GetActiveReadFillPageData( void )
+{
+    uint32_t page_offset_bytes =
+        ( uint32_t )result_buffer_context.active_read_fill_reservation.page_index
+        * result_buffer_context.page_size_bytes;
+
+    return &result_buffer_storage[page_offset_bytes];
+}
+
+static bool RESULT_BUFFER_ReadFillLeaseMatches( const ResultBufferReadFillLease_T* lease )
+{
+    if ( ( lease == NULL ) || !result_buffer_context.is_read_prepared
+         || !result_buffer_context.active_read_fill_reservation.is_active )
+    {
+        return false;
+    }
+
+    uint8_t page_index = result_buffer_context.active_read_fill_reservation.page_index;
+
+    if ( ( page_index >= RESULT_BUFFER_PAGE_COUNT )
+         || ( page_index != result_buffer_context.fill_page_index ) )
+    {
+        return false;
+    }
+
+    if ( result_buffer_context.page_states[page_index] != RESULT_BUFFER_PAGE_FILLING_FROM_NAND )
+    {
+        return false;
+    }
+
+    if ( result_buffer_context.page_valid_bytes[page_index] != 0U )
+    {
+        return false;
+    }
+
+    if ( lease->lease_id != result_buffer_context.active_read_fill_reservation.lease_id )
+    {
+        return false;
+    }
+
+    if ( lease->result_offset_bytes
+         != result_buffer_context.active_read_fill_reservation.result_offset_bytes )
+    {
+        return false;
+    }
+
+    if ( lease->read_length_bytes
+         != result_buffer_context.active_read_fill_reservation.read_length_bytes )
+    {
+        return false;
+    }
+
+    if ( ( lease->read_length_bytes == 0U )
+         || ( lease->read_length_bytes > result_buffer_context.page_size_bytes ) )
+    {
+        return false;
+    }
+
+    if ( lease->result_offset_bytes != result_buffer_context.next_nand_read_offset_bytes )
+    {
+        return false;
+    }
+
+    if ( ( lease->result_offset_bytes % result_buffer_context.page_size_bytes ) != 0U )
+    {
+        return false;
+    }
+
+    if ( ( lease->result_offset_bytes > result_buffer_context.read_total_length_bytes )
+         || ( lease->read_length_bytes
+              > ( result_buffer_context.read_total_length_bytes - lease->result_offset_bytes ) ) )
+    {
+        return false;
+    }
+
+    return lease->page_data == RESULT_BUFFER_GetActiveReadFillPageData();
+}
+
+static void RESULT_BUFFER_ClearReadFillReservation( void )
+{
+    result_buffer_context.active_read_fill_reservation = ( ResultBufferReadFillReservation_T ){ 0 };
 }
 
 /**-----------------------------------------------------------------------------
@@ -1024,6 +1116,33 @@ bool RESULT_BUFFER_IsDrainComplete( void )
             return false;
         }
     }
+
+    return true;
+}
+
+/**
+ * @brief Resets the fully drained result buffer for stored-result retrieval.
+ */
+bool RESULT_BUFFER_PrepareRead( uint32_t result_length_bytes )
+{
+    /*
+     * Retrieval may begin only after result production has stopped and every
+     * committed byte has reached NAND. This also guarantees that no record or
+     * drain lease remains active.
+     */
+    if ( !RESULT_BUFFER_IsDrainComplete() )
+    {
+        return false;
+    }
+
+    /*
+     * Reuse the existing result-page storage. Geometry is preserved while all
+     * logging cursors, ownership states, and lease identifiers are reset.
+     */
+    RESULT_BUFFER_Reset();
+
+    result_buffer_context.is_read_prepared        = true;
+    result_buffer_context.read_total_length_bytes = result_length_bytes;
 
     return true;
 }
