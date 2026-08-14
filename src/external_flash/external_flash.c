@@ -12,11 +12,11 @@
  *      instruction partition. Physical NAND command sequencing remains in
  *      hw_nand.
  *
- *      The intended runtime path, once the application managers are implemented, is:
- *      1. The host package-receive path receives a test package and programs
- *         instruction bytes through EXTERNAL_FLASH_StartInstructionUpload,
- *         EXTERNAL_FLASH_WriteInstructionBytes or EXTERNAL_FLASH_WriteInstructionPage,
- *         and EXTERNAL_FLASH_FinishInstructionUpload.
+ *      The intended runtime path is:
+ *      1. flash_manager receives canonical Host Interface instruction chunks
+ *         and programs them through EXTERNAL_FLASH_StartInstructionUpload,
+ *         EXTERNAL_FLASH_WriteInstructionPage, and
+ *         EXTERNAL_FLASH_FinishInstructionUpload.
  *      2. The flash manager calls EXTERNAL_FLASH_StartSession before execution.
  *         This prepares the writable result capacity so result writes never
  *         block on just in time erases during the execution run.
@@ -24,8 +24,9 @@
  *         EXTERNAL_FLASH_WriteResultPage.
  *      4. flash_manager refills page sized instruction buffers by calling
  *         EXTERNAL_FLASH_ReadInstructionPage with logical byte offsets.
- *      5. The result-transfer path calls EXTERNAL_FLASH_ReadResults to stream
- *         committed result bytes to the host interface.
+ *      5. flash_manager refills page-sized result buffers through
+ *         EXTERNAL_FLASH_ReadResultPage and copies their bytes to the Host
+ *         Interface.
  *
  *      Design boundaries:
  *      - execution_manager never calls this module directly.
@@ -686,8 +687,8 @@ EXTERNAL_FLASH_ReadPartitionPageDma( ExternalFlashAllocatorPartition_T partition
  *
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
- * @note Result transfer may request host-sized spans that cross NAND page
- *       boundaries, so this helper keeps that logic private to external_flash.
+ * @note This supports the arbitrary-range EXTERNAL_FLASH_ReadResults API.
+ *       Normal Flash Manager result retrieval instead uses page-scoped DMA.
  */
 static ExternalFlashStatus_T
 EXTERNAL_FLASH_ReadFromPartition( ExternalFlashAllocatorPartition_T partition,
@@ -1191,7 +1192,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_ReadResultPage( uint32_t offset, uint8_t* d
 }
 
 /**
- * @brief Reads committed result bytes for host result transfer.
+ * @brief Reads an arbitrary committed result byte range with blocking NAND I/O.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_ReadResults( uint32_t offset, uint8_t* data, uint32_t length )
 {

@@ -12,23 +12,20 @@
  *      fixed instruction partition, and reads stored result bytes back for host
  *      transfer.
  *
- *      Intended HIL-RIG ownership once the application managers are implemented:
- *      - The host package-receive path programs the instruction partition
- *        through the instruction upload API.
- *      - flash_manager will own the RAM instruction and result buffers used by
- *        execution_manager.
- *      - flash_manager will be the only task that calls external_flash during
- *        normal execution. It will refill page-sized instruction buffers with
- *        EXTERNAL_FLASH_ReadInstructionPage and drain page-sized result buffers
- *        with EXTERNAL_FLASH_WriteResultPage.
+ *      Intended HIL-RIG ownership:
+ *      - The Host Interface streams instruction uploads and result downloads
+ *        through flash_manager public APIs.
+ *      - flash_manager owns the RAM instruction and result buffers used by
+ *        execution_manager and the Host Interface.
+ *      - flash_manager is the only normal runtime task that calls external_flash.
+ *        It uses the page APIs for instruction upload/refill and result
+ *        drain/refill.
  *      - execution_manager consumes instruction bytes and produces result bytes
  *        through flash_manager owned buffers. It must not call external_flash.
- *      - A future result-transfer path will read committed result bytes with
- *        EXTERNAL_FLASH_ReadResults and pass them to the host interface.
  *
  *      Firmware startup adopts the CubeMX QSPI handle and calls
- *      EXTERNAL_FLASH_Init(). The upload, session, and transfer APIs still need
- *      to be connected to the placeholder application managers.
+ *      EXTERNAL_FLASH_Init(). Flash Manager storage flows are implemented; the
+ *      surrounding application-manager call sites still need integration.
  *
  *      Design decisions:
  *      - The instruction and result regions are fixed compile time partitions.
@@ -183,9 +180,8 @@ ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void );
  *
  * @note Existing instruction bytes are discarded. Instruction metadata is RAM
  *       only in this first version, so instructions are not recovered after reset.
- * @note The future host package-receive path should call this before streaming
- *       instruction bytes through EXTERNAL_FLASH_WriteInstructionBytes or
- *       EXTERNAL_FLASH_WriteInstructionPage.
+ * @note Flash Manager instruction-upload preparation calls this before draining
+ *       canonical Host Interface bytes through EXTERNAL_FLASH_WriteInstructionPage.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_StartInstructionUpload( uint32_t expected_length );
 
@@ -292,6 +288,8 @@ ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructionPage( uint32_t offset, uint8
  *
  * @note The function returns only after the DMA-backed NAND read has completed,
  *       so the caller may use or release data after return.
+ * @note Flash Manager result retrieval uses this page-scoped API so NAND DMA
+ *       writes directly into a manager-owned page slot.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_ReadResultPage( uint32_t offset, uint8_t* data,
                                                      uint32_t length );
@@ -305,8 +303,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_ReadResultPage( uint32_t offset, uint8_t* d
  *
  * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
- * @note The future result-transfer path should use this to stream committed
- *       result bytes to the host.
+ * @note This arbitrary-range blocking API is retained for direct storage
+ *       clients and diagnostics. Normal Host Interface result retrieval uses
+ *       Flash Manager, which prefetches with EXTERNAL_FLASH_ReadResultPage().
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_ReadResults( uint32_t offset, uint8_t* data, uint32_t length );
 
