@@ -64,7 +64,13 @@ typedef enum
     RESULT_BUFFER_PAGE_READY_TO_DRAIN,
 
     /** A drain lease owns the page; its bytes must remain immutable. */
-    RESULT_BUFFER_PAGE_DRAINING
+    RESULT_BUFFER_PAGE_DRAINING,
+
+    /** NAND DMA is currently filling this page for result retrieval. */
+    RESULT_BUFFER_PAGE_FILLING_FROM_NAND,
+
+    /** Valid result bytes are available for copying to the Host Interface. */
+    RESULT_BUFFER_PAGE_READY_FOR_HOST
 } ResultBufferPageState_T;
 
 /**
@@ -90,6 +96,17 @@ typedef struct
     uint32_t valid_length_bytes;
     uint32_t lease_id;
 } ResultBufferDrainReservation_T;
+
+/** @brief Authoritative state for the active NAND-to-RAM result-page fill. */
+typedef struct
+{
+    bool     is_active;
+    uint8_t  page_index;
+    uint32_t result_offset_bytes;
+    uint32_t read_length_bytes;
+    uint32_t lease_id;
+
+} ResultBufferReadFillReservation_T;
 
 typedef struct
 {
@@ -131,6 +148,33 @@ typedef struct
 
     /** The one RAM-to-NAND reservation that may remain outstanding. */
     ResultBufferDrainReservation_T active_drain_reservation;
+
+    /** Whether the buffer is currently configured for result retrieval. */
+    bool is_read_prepared;
+
+    /** Total committed result bytes to return to the Host Interface. */
+    uint32_t read_total_length_bytes;
+
+    /** Logical NAND offset of the next result page to load. */
+    uint32_t next_nand_read_offset_bytes;
+
+    /** Total result bytes already copied to the Host Interface. */
+    uint32_t host_consumed_bytes;
+
+    /** Offset already consumed within the current Host Interface page. */
+    uint32_t host_page_offset_bytes;
+
+    /** Page slot used by the next NAND fill. */
+    uint8_t fill_page_index;
+
+    /** Page slot currently being consumed by the Host Interface. */
+    uint8_t host_page_index;
+
+    /** Identifier assigned to the next NAND-to-RAM fill lease. */
+    uint32_t next_read_fill_lease_id;
+
+    /** The one active NAND-to-RAM result fill. */
+    ResultBufferReadFillReservation_T active_read_fill_reservation;
 } ResultBufferContext_T;
 
 /**-----------------------------------------------------------------------------
@@ -488,6 +532,17 @@ void RESULT_BUFFER_Reset( void )
     result_buffer_context.active_record_reservation = ( ResultBufferRecordReservation_T ){ 0 };
 
     result_buffer_context.active_drain_reservation = ( ResultBufferDrainReservation_T ){ 0 };
+
+    result_buffer_context.is_read_prepared            = false;
+    result_buffer_context.read_total_length_bytes     = 0U;
+    result_buffer_context.next_nand_read_offset_bytes = 0U;
+    result_buffer_context.host_consumed_bytes         = 0U;
+    result_buffer_context.host_page_offset_bytes      = 0U;
+    result_buffer_context.fill_page_index             = 0U;
+    result_buffer_context.host_page_index             = 0U;
+    result_buffer_context.next_read_fill_lease_id     = 1U;
+
+    result_buffer_context.active_read_fill_reservation = ( ResultBufferReadFillReservation_T ){ 0 };
 
     for ( uint32_t page_index = 0U; page_index < RESULT_BUFFER_PAGE_COUNT; page_index++ )
     {
