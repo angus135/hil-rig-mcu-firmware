@@ -212,26 +212,6 @@ typedef struct
 } FlashManagerResultWriteLease_T;
 
 /**
- * @brief Temporary host read access to Flash Manager-owned result storage.
- *
- * Reserved for the future NAND-to-host result retrieval path.
- */
-typedef struct
-{
-    /** Read-only result bytes owned by the Flash Manager. */
-    const uint8_t* result_data;
-
-    /** Number of valid result bytes available. */
-    uint32_t valid_length_bytes;
-
-    /** Logical byte offset of this data within the NAND result stream. */
-    uint32_t result_offset_bytes;
-
-    /** Opaque identifier used to reject stale releases. */
-    uint32_t lease_id;
-} FlashManagerResultReadLease_T;
-
-/**
  * @brief Fixed header stored before every canonical instruction payload.
  *
  * The package application layer creates this representation before upload.
@@ -324,6 +304,35 @@ typedef enum
     /** Task notification failed and the manager entered FAULT. */
     FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOTIFY_FAILED
 } FlashManagerInstructionUploadRequestStatus_T;
+
+/** @brief Result of a Host Interface result-transfer operation. */
+typedef enum
+{
+    /** The operation completed successfully. */
+    FLASH_MANAGER_RESULT_TRANSFER_OK = 0,
+
+    /** The operation is not permitted in the current lifecycle state. */
+    FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE,
+
+    /** A destination pointer or requested capacity was invalid. */
+    FLASH_MANAGER_RESULT_TRANSFER_INVALID_ARGUMENT,
+
+    /** No bytes are currently buffered; retry after the Flash Manager task runs. */
+    FLASH_MANAGER_RESULT_TRANSFER_BUSY,
+
+    /** Every stored result byte has been returned to the Host Interface. */
+    FLASH_MANAGER_RESULT_TRANSFER_END_OF_STREAM,
+
+    /** FLASH_MANAGER_Init() has not completed successfully. */
+    FLASH_MANAGER_RESULT_TRANSFER_NOT_INITIALISED,
+
+    /** The Flash Manager task has not registered its notification handle. */
+    FLASH_MANAGER_RESULT_TRANSFER_TASK_NOT_READY,
+
+    /** Task notification failed and the manager entered FAULT. */
+    FLASH_MANAGER_RESULT_TRANSFER_NOTIFY_FAILED
+
+} FlashManagerResultTransferStatus_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -575,6 +584,61 @@ FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void );
  *       mutex and must never be called from an ISR.
  */
 bool FLASH_MANAGER_GetState( FlashManagerState_T* state );
+
+/**
+ * @brief Starts asynchronous retrieval of the completed result stream.
+ *
+ * The request changes RESULTS_READY to TRANSFERRING_RESULTS and notifies the
+ * Flash Manager task to begin loading result pages from NAND.
+ *
+ * @return Result-transfer status.
+ *
+ * @note Call from Host Interface task context only.
+ * @note The caller may begin calling FLASH_MANAGER_ReadResultBytes() after this
+ *       request succeeds. BUSY is expected until the first NAND page is loaded.
+ */
+FlashManagerResultTransferStatus_T FLASH_MANAGER_RequestResultTransferStart( void );
+
+/**
+ * @brief Copies the next available stored result bytes into caller-owned memory.
+ *
+ * @param[out] destination
+ *      Host Interface-owned destination buffer.
+ * @param[in] destination_capacity_bytes
+ *      Maximum number of bytes that may be copied into destination.
+ * @param[out] bytes_read
+ *      Number of bytes copied. Cleared before any failure is returned.
+ *
+ * @retval FLASH_MANAGER_RESULT_TRANSFER_OK
+ *      One or more bytes were copied.
+ * @retval FLASH_MANAGER_RESULT_TRANSFER_BUSY
+ *      Unread results remain in NAND, but none are currently buffered.
+ * @retval FLASH_MANAGER_RESULT_TRANSFER_END_OF_STREAM
+ *      Every stored result byte has already been returned.
+ *
+ * @note Call from Host Interface task context only.
+ * @note The returned bytes form part of the raw packed
+ *       [result header][payload] stream. Calls and NAND pages are not aligned
+ *       with result-record boundaries.
+ * @note The bytes are copied before this function returns. The caller therefore
+ *       owns destination and may retain or transmit it asynchronously.
+ */
+FlashManagerResultTransferStatus_T
+FLASH_MANAGER_ReadResultBytes( uint8_t* destination, uint32_t destination_capacity_bytes,
+                               uint32_t* bytes_read );
+
+/**
+ * @brief Completes a fully consumed result transfer.
+ *
+ * @return Result-transfer status.
+ *
+ * @note This succeeds only after FLASH_MANAGER_ReadResultBytes() has reported
+ *       END_OF_STREAM.
+ * @note Successful completion changes TRANSFERRING_RESULTS to IDLE, allowing a
+ *       subsequent instruction upload or execution session.
+ * @note Call from Host Interface task context only.
+ */
+FlashManagerResultTransferStatus_T FLASH_MANAGER_FinishResultTransfer( void );
 
 #ifdef __cplusplus
 }
