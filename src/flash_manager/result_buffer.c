@@ -70,7 +70,8 @@ typedef enum
     RESULT_BUFFER_PAGE_FILLING_FROM_NAND,
 
     /** Valid result bytes are available for copying to the Host Interface. */
-    RESULT_BUFFER_PAGE_READY_FOR_HOST
+    RESULT_BUFFER_PAGE_READY_FOR_HOST,
+
 } ResultBufferPageState_T;
 
 /**
@@ -1143,6 +1144,353 @@ bool RESULT_BUFFER_PrepareRead( uint32_t result_length_bytes )
 
     result_buffer_context.is_read_prepared        = true;
     result_buffer_context.read_total_length_bytes = result_length_bytes;
+
+    return true;
+}
+
+/**
+ * @brief Acquires the next empty result page for a sequential NAND read.
+ */
+bool RESULT_BUFFER_AcquireReadFillPage( ResultBufferReadFillLease_T* lease )
+{
+    if ( lease == NULL )
+    {
+        return false;
+    }
+
+    /* Never expose stale lease contents after a failed acquisition. */
+    *lease = ( ResultBufferReadFillLease_T ){ 0 };
+
+    if ( !result_buffer_context.is_initialised || !result_buffer_context.is_read_prepared
+         || result_buffer_context.active_read_fill_reservation.is_active )
+    {
+        return false;
+    }
+
+    /*
+     * No acquisition is required for an empty stream or after every result byte
+     * has already been scheduled and loaded.
+     */
+    if ( result_buffer_context.next_nand_read_offset_bytes
+         >= result_buffer_context.read_total_length_bytes )
+    {
+        return false;
+    }
+
+    if ( ( result_buffer_context.page_size_bytes == 0U )
+         || ( result_buffer_context.next_nand_read_offset_bytes
+              % result_buffer_context.page_size_bytes )
+                != 0U )
+    {
+        return false;
+    }
+
+    uint8_t page_index = result_buffer_context.fill_page_index;
+
+    if ( page_index >= RESULT_BUFFER_PAGE_COUNT )
+    {
+        return false;
+    }
+
+    if ( ( result_buffer_context.page_states[page_index] != RESULT_BUFFER_PAGE_EMPTY )
+         || ( result_buffer_context.page_valid_bytes[page_index] != 0U ) )
+    {
+        return false;
+    }
+
+    uint32_t remaining_bytes = result_buffer_context.read_total_length_bytes
+                               - result_buffer_context.next_nand_read_offset_bytes;
+
+    uint32_t read_length_bytes = ( remaining_bytes < result_buffer_context.page_size_bytes )
+                                     ? remaining_bytes
+                                     : result_buffer_context.page_size_bytes;
+
+    uint32_t lease_id = result_buffer_context.next_read_fill_lease_id;
+
+    result_buffer_context.next_read_fill_lease_id++;
+
+    if ( result_buffer_context.next_read_fill_lease_id == 0U )
+    {
+        result_buffer_context.next_read_fill_lease_id = 1U;
+    }
+
+    result_buffer_context.active_read_fill_reservation = ( ResultBufferReadFillReservation_T ){
+        .is_active           = true,
+        .page_index          = page_index,
+        .result_offset_bytes = result_buffer_context.next_nand_read_offset_bytes,
+        .read_length_bytes   = read_length_bytes,
+        .lease_id            = lease_id,
+    };
+
+    result_buffer_context.page_states[page_index] = RESULT_BUFFER_PAGE_FILLING_FROM_NAND;
+
+    lease->page_data           = RESULT_BUFFER_GetActiveReadFillPageData();
+    lease->result_offset_bytes = result_buffer_context.next_nand_read_offset_bytes;
+    lease->read_length_bytes   = read_length_bytes;
+    lease->lease_id            = lease_id;
+
+    return true;
+}
+
+/**
+ * @brief Completes an active NAND-to-RAM result-page fill.
+ */
+bool RESULT_BUFFER_CompleteReadFillPage( const ResultBufferReadFillLease_T* lease,
+                                         bool                               nand_read_succeeded )
+{
+    if ( !RESULT_BUFFER_ReadFillLeaseMatches( lease ) )
+    {
+        return false;
+    }
+
+    uint8_t page_index = result_buffer_context.active_read_fill_reservation.page_index;
+
+    uint32_t read_length_bytes =
+        result_buffer_context.active_read_fill_reservation.read_length_bytes;
+
+    if ( nand_read_succeeded )
+    {
+        /*
+         * Publish the successfully loaded bytes to the Host Interface before
+         * advancing to the next sequential NAND offset and page slot.
+         */
+        result_buffer_context.page_valid_bytes[page_index] = read_length_bytes;
+
+        result_buffer_context.page_states[page_index] = RESULT_BUFFER_PAGE_READY_FOR_HOST;
+
+        result_buffer_context.next_nand_read_offset_bytes += read_length_bytes;
+
+        result_buffer_context.fill_page_index =
+            ( uint8_t )( ( page_index + 1U ) % RESULT_BUFFER_PAGE_COUNT );
+    }
+    else
+    {
+        /*
+         * The destination may contain partial or invalid DMA output. Make it
+         * inaccessible and leave the NAND offset and fill-page cursor unchanged
+         * so the same logical page can be retried.
+         */
+        result_buffer_context.page_valid_bytes[page_index] = 0U;
+
+        result_buffer_context.page_states[page_index] = RESULT_BUFFER_PAGE_EMPTY;
+    }
+
+    /*
+     * Both success and reported NAND failure consume this lease. A retry must
+     * obtain a new lease identifier.
+     */
+    RESULT_BUFFER_ClearReadFillReservation();
+
+    return true;
+}
+
+/**
+ * @brief Copies currently buffered result bytes into Host Interface storage.
+ */
+ResultBufferReadStatus_T RESULT_BUFFER_ReadBytes( uint8_t*  destination,
+                                                  uint32_t  destination_capacity_bytes,
+                                                  uint32_t* bytes_read )
+{
+    if ( bytes_read == NULL )
+    {
+        return RESULT_BUFFER_READ_INVALID_ARGUMENT;
+    }
+
+    *bytes_read = 0U;
+
+    if ( ( destination == NULL ) || ( destination_capacity_bytes == 0U ) )
+    {
+        return RESULT_BUFFER_READ_INVALID_ARGUMENT;
+    }
+
+    if ( !result_buffer_context.is_initialised || !result_buffer_context.is_read_prepared )
+    {
+        return RESULT_BUFFER_READ_INVALID_STATE;
+    }
+
+    if ( result_buffer_context.host_consumed_bytes > result_buffer_context.read_total_length_bytes )
+    {
+        return RESULT_BUFFER_READ_INVALID_STATE;
+    }
+
+    if ( result_buffer_context.host_consumed_bytes
+         == result_buffer_context.read_total_length_bytes )
+    {
+        return RESULT_BUFFER_READ_END_OF_STREAM;
+    }
+
+    bool page_released = false;
+
+    while ( ( *bytes_read < destination_capacity_bytes )
+            && ( result_buffer_context.host_consumed_bytes
+                 < result_buffer_context.read_total_length_bytes ) )
+    {
+        uint8_t page_index = result_buffer_context.host_page_index;
+
+        if ( page_index >= RESULT_BUFFER_PAGE_COUNT )
+        {
+            return ( *bytes_read > 0U ) ? ( page_released ? RESULT_BUFFER_READ_PAGE_RELEASED
+                                                          : RESULT_BUFFER_READ_OK )
+                                        : RESULT_BUFFER_READ_INVALID_STATE;
+        }
+
+        ResultBufferPageState_T page_state = result_buffer_context.page_states[page_index];
+
+        /*
+         * An empty or actively filling page means the NAND producer has not yet
+         * published the next sequential bytes.
+         */
+        if ( ( page_state == RESULT_BUFFER_PAGE_EMPTY )
+             || ( page_state == RESULT_BUFFER_PAGE_FILLING_FROM_NAND ) )
+        {
+            break;
+        }
+
+        if ( page_state != RESULT_BUFFER_PAGE_READY_FOR_HOST )
+        {
+            return ( *bytes_read > 0U ) ? ( page_released ? RESULT_BUFFER_READ_PAGE_RELEASED
+                                                          : RESULT_BUFFER_READ_OK )
+                                        : RESULT_BUFFER_READ_INVALID_STATE;
+        }
+
+        uint32_t page_valid_bytes = result_buffer_context.page_valid_bytes[page_index];
+
+        if ( ( page_valid_bytes == 0U )
+             || ( page_valid_bytes > result_buffer_context.page_size_bytes )
+             || ( result_buffer_context.host_page_offset_bytes >= page_valid_bytes ) )
+        {
+            return ( *bytes_read > 0U ) ? ( page_released ? RESULT_BUFFER_READ_PAGE_RELEASED
+                                                          : RESULT_BUFFER_READ_OK )
+                                        : RESULT_BUFFER_READ_INVALID_STATE;
+        }
+
+        uint32_t page_remaining_bytes =
+            page_valid_bytes - result_buffer_context.host_page_offset_bytes;
+
+        uint32_t stream_remaining_bytes = result_buffer_context.read_total_length_bytes
+                                          - result_buffer_context.host_consumed_bytes;
+
+        if ( page_remaining_bytes > stream_remaining_bytes )
+        {
+            return ( *bytes_read > 0U ) ? ( page_released ? RESULT_BUFFER_READ_PAGE_RELEASED
+                                                          : RESULT_BUFFER_READ_OK )
+                                        : RESULT_BUFFER_READ_INVALID_STATE;
+        }
+
+        uint32_t destination_remaining_bytes = destination_capacity_bytes - *bytes_read;
+
+        uint32_t copy_length_bytes = ( page_remaining_bytes < destination_remaining_bytes )
+                                         ? page_remaining_bytes
+                                         : destination_remaining_bytes;
+
+        uint32_t source_offset_bytes =
+            ( ( uint32_t )page_index * result_buffer_context.page_size_bytes )
+            + result_buffer_context.host_page_offset_bytes;
+
+        ( void )memcpy( &destination[*bytes_read], &result_buffer_storage[source_offset_bytes],
+                        copy_length_bytes );
+
+        *bytes_read += copy_length_bytes;
+
+        result_buffer_context.host_page_offset_bytes += copy_length_bytes;
+
+        result_buffer_context.host_consumed_bytes += copy_length_bytes;
+
+        if ( result_buffer_context.host_page_offset_bytes == page_valid_bytes )
+        {
+            /*
+             * The Host Interface now owns a copy of every valid byte from this
+             * page, so its RAM slot can immediately be reused for NAND prefetch.
+             */
+            result_buffer_context.page_valid_bytes[page_index] = 0U;
+
+            result_buffer_context.page_states[page_index] = RESULT_BUFFER_PAGE_EMPTY;
+
+            result_buffer_context.host_page_offset_bytes = 0U;
+
+            result_buffer_context.host_page_index =
+                ( uint8_t )( ( page_index + 1U ) % RESULT_BUFFER_PAGE_COUNT );
+
+            page_released = true;
+        }
+    }
+
+    if ( *bytes_read > 0U )
+    {
+        return page_released ? RESULT_BUFFER_READ_PAGE_RELEASED : RESULT_BUFFER_READ_OK;
+    }
+
+    /*
+     * No published page currently contains the next sequential bytes. The
+     * Flash Manager task is expected to fill it.
+     */
+    return RESULT_BUFFER_READ_BUSY;
+}
+
+/**
+ * @brief Reports whether every prepared result byte has been consumed.
+ */
+bool RESULT_BUFFER_IsReadComplete( void )
+{
+    if ( !result_buffer_context.is_initialised || !result_buffer_context.is_read_prepared )
+    {
+        return false;
+    }
+
+    if ( result_buffer_context.active_read_fill_reservation.is_active )
+    {
+        return false;
+    }
+
+    if ( ( result_buffer_context.host_consumed_bytes
+           != result_buffer_context.read_total_length_bytes )
+         || ( result_buffer_context.next_nand_read_offset_bytes
+              != result_buffer_context.read_total_length_bytes ) )
+    {
+        return false;
+    }
+
+    if ( result_buffer_context.host_page_offset_bytes != 0U )
+    {
+        return false;
+    }
+
+    /*
+     * Once every loaded page has been consumed, the producer and consumer page
+     * cursors must meet at the next reusable slot.
+     */
+    if ( result_buffer_context.fill_page_index != result_buffer_context.host_page_index )
+    {
+        return false;
+    }
+
+    for ( uint32_t page_index = 0U; page_index < RESULT_BUFFER_PAGE_COUNT; page_index++ )
+    {
+        if ( ( result_buffer_context.page_states[page_index] != RESULT_BUFFER_PAGE_EMPTY )
+             || ( result_buffer_context.page_valid_bytes[page_index] != 0U ) )
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * @brief Ends a fully consumed result retrieval session.
+ */
+bool RESULT_BUFFER_EndRead( void )
+{
+    if ( !RESULT_BUFFER_IsReadComplete() )
+    {
+        return false;
+    }
+
+    /*
+     * Invalidate retrieval cursors and ownership while retaining the configured
+     * NAND geometry for the next execution session.
+     */
+    RESULT_BUFFER_Reset();
 
     return true;
 }
