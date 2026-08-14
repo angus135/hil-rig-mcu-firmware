@@ -94,7 +94,7 @@ typedef enum
     /** The destination, capacity, or bytes-read pointer was invalid. */
     RESULT_BUFFER_READ_INVALID_ARGUMENT,
 
-    /** Result retrieval has not been prepared. */
+    /** Retrieval is not prepared or its page bookkeeping is inconsistent. */
     RESULT_BUFFER_READ_INVALID_STATE
 
 } ResultBufferReadStatus_T;
