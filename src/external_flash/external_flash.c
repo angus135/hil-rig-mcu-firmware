@@ -1180,6 +1180,14 @@ ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructionPage( uint32_t offset, uint8
                                                 offset, data, length );
 }
 
+ExternalFlashStatus_T EXTERNAL_FLASH_ReadResultPage( uint32_t offset, uint8_t* data,
+                                                     uint32_t length )
+{
+    return EXTERNAL_FLASH_ReadPartitionPageDma( EXTERNAL_FLASH_ALLOCATOR_PARTITION_RESULT,
+                                                external_flash_committed_result_length_bytes,
+                                                offset, data, length );
+}
+
 /**
  * @brief Reads committed result bytes for host result transfer.
  */

@@ -277,6 +277,26 @@ ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructionPage( uint32_t offset, uint8
                                                           uint32_t length );
 
 /**
+ * @brief Reads one page-aligned span from the committed result stream using DMA.
+ *
+ * @param[in] offset
+ *      Page-aligned logical byte offset within the committed result stream.
+ * @param[out] data
+ *      Destination buffer with capacity for length bytes.
+ * @param[in] length
+ *      Number of bytes to read. This must be non-zero and no larger than the
+ *      configured NAND page size. A shorter length is permitted for the final
+ *      partial result page.
+ *
+ * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
+ *
+ * @note The function returns only after the DMA-backed NAND read has completed,
+ *       so the caller may use or release data after return.
+ */
+ExternalFlashStatus_T EXTERNAL_FLASH_ReadResultPage( uint32_t offset, uint8_t* data,
+                                                     uint32_t length );
+
+/**
  * @brief Reads stored result bytes by logical byte offset from the current session.
  *
  * @param offset Logical result byte offset.

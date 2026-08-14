@@ -632,8 +632,9 @@ FLASH_MANAGER_ReadResultBytes( uint8_t* destination, uint32_t destination_capaci
  *
  * @return Result-transfer status.
  *
- * @note This succeeds only after FLASH_MANAGER_ReadResultBytes() has reported
- *       END_OF_STREAM.
+@note This succeeds only after every stored result byte has been returned.
+      FLASH_MANAGER_ReadResultBytes() reports END_OF_STREAM once this
+      condition has been reached.
  * @note Successful completion changes TRANSFERRING_RESULTS to IDLE, allowing a
  *       subsequent instruction upload or execution session.
  * @note Call from Host Interface task context only.
