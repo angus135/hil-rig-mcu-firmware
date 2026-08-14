@@ -15,8 +15,10 @@
  *        exposes completed pages to the Flash Manager task for NAND writes.
  *
  *      This module owns the instruction RAM and its page-level ownership state.
- *      The calling layer must serialise state-changing calls. This module does
- *      not contain RTOS synchronisation primitives or access NAND directly.
+ *      The calling layer must serialise lifecycle operations. This module does
+ *      not access NAND directly or use blocking RTOS primitives. Fill completion
+ *      owns one short task critical section that publishes prepared page metadata
+ *      atomically to the execution ISR.
  *
  *      Instruction records are packed in the NAND image as a fixed-size
  *      FlashManagerInstructionHeader_T followed immediately by the indicated
@@ -239,7 +241,9 @@ bool INSTRUCTION_BUFFER_AcquireFillPage( InstructionBufferPageFillLease_T* lease
  *       for fault handling or an explicit session reset.
  * @note Completing a successful slot-zero fill copies its valid bytes into the
  *       internal mirror before publishing the page. This bounded page copy is
- *       performed in Flash Manager task context, not the execution ISR.
+ *       performed with interrupts enabled in Flash Manager task context. Only
+ *       the subsequent metadata publication uses a critical section.
+ * @note Call from Flash Manager task context only.
  */
 bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T* lease,
                                           bool nand_read_succeeded );

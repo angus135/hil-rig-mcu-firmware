@@ -257,9 +257,10 @@ static bool FLASH_MANAGER_DrainResultPages( void )
  *
  * Buffer ownership transitions are protected against the execution ISR. The
  * synchronous NAND/DMA read runs outside the critical section with interrupts
- * enabled. The loop continues until the buffer applies backpressure or the
- * complete instruction image has been loaded because notification bits may
- * coalesce.
+ * enabled. Slot-zero mirror preparation is also preemptible; completion masks
+ * interrupts only while publishing page metadata. The loop continues until the
+ * buffer applies backpressure or the complete instruction image has been
+ * loaded because notification bits may coalesce.
  *
  * @return true after all currently available slots were filled; false after a
  *         NAND read or fill-lease completion failure.
@@ -292,12 +293,8 @@ static bool FLASH_MANAGER_FillInstructionPages( void )
             fill_lease.instruction_offset_bytes, fill_lease.page_data,
             fill_lease.read_length_bytes );
 
-        bool fill_completion_succeeded = false;
-
-        taskENTER_CRITICAL();
-        fill_completion_succeeded = INSTRUCTION_BUFFER_CompleteFillPage(
+        bool fill_completion_succeeded = INSTRUCTION_BUFFER_CompleteFillPage(
             &fill_lease, nand_read_status == EXTERNAL_FLASH_STATUS_OK );
-        taskEXIT_CRITICAL();
 
         if ( ( nand_read_status != EXTERNAL_FLASH_STATUS_OK ) || !fill_completion_succeeded )
         {
