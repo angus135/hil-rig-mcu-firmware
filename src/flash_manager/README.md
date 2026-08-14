@@ -1,25 +1,34 @@
 # Flash Manager Design Notes
 
-`result_buffer.c` implements packed result-record production and page draining.
-`instruction_buffer.c` implements prefetched instruction views and page release.
-`flash_manager.c` connects both buffers to the execution ISR and performs NAND
-refill/drain work from its RTOS task. The public instruction-upload lifecycle
-and task-side page drain are implemented; result retrieval and application
-startup remain to be integrated.
+`result_buffer.c` implements packed result-record production, page draining,
+and copied result retrieval. `instruction_buffer.c` implements prefetched
+instruction views, page release, and streamed instruction upload.
+`flash_manager.c` connects both buffers to the execution ISR and Host Interface,
+and performs every NAND refill/drain operation from its RTOS task. Application
+startup and the calling managers remain to be integrated.
 
 The flash manager is the only normal runtime task that should call `external_flash`.
 
 The execution manager should only interact with RAM buffers owned by the flash
 manager. It must not call `external_flash`, `hw_nand`, or `hw_qspi` directly.
 
+| Data flow | RAM producer | RAM consumer | Coordination |
+|---|---|---|---|
+| Instruction upload | Host Interface copies canonical bytes | Flash Manager task writes NAND pages | Manager mutex and task notifications |
+| Instruction retrieval | Flash Manager task reads NAND pages | Execution ISR views and consumes records | Critical sections and ISR notifications |
+| Result logging | Execution ISR writes and commits records | Flash Manager task writes NAND pages | Critical sections and ISR notifications |
+| Result retrieval | Flash Manager task reads NAND pages | Host Interface copies available bytes | Manager mutex and task notifications |
+
 ---
 
 ## Buffer Model
 
 The result buffer is a flat circular byte array backed by three page-sized
-regions. Records may cross a page boundary, while NAND drain leases always
-expose one page-aligned region. A one-page scratch buffer preserves a contiguous
-driver payload pointer only when a record crosses the physical end of the ring.
+regions. During execution, records may cross a page boundary while NAND drain
+leases expose one page-aligned region. A one-page scratch buffer preserves a
+contiguous driver payload pointer only when a record crosses the physical end
+of the ring. After result finalisation, the same three page regions are reset
+and reused as a sequential NAND-prefetch ring for copied Host Interface reads.
 
 The instruction buffer uses three page-sized circular slots followed by one
 page-sized mirror of slot zero. NAND DMA fills only the three circular slots.
@@ -65,6 +74,7 @@ manager does not call them directly:
 EXTERNAL_FLASH_ReadInstructionPage(instruction_offset, instruction_page_buffer, length);
 EXTERNAL_FLASH_WriteInstructionPage(instruction_page_buffer, valid_length);
 EXTERNAL_FLASH_WriteResultPage(result_page_buffer, valid_length);
+EXTERNAL_FLASH_ReadResultPage(result_offset, result_page_buffer, length);
 ```
 
 These APIs are page scoped and use DMA internally. They are synchronous from
@@ -194,6 +204,12 @@ iteration can consume, and sustained NAND refill throughput must exceed
 sustained execution consumption. Event-driven notification removes polling
 latency but cannot compensate for insufficient buffer depth or NAND throughput.
 
+Completing a slot-zero refill updates the private ring-end mirror before the
+slot is published. That bounded page copy runs in Flash Manager task context,
+not in the execution ISR. The current implementation protects completion with a
+critical section, so this once-per-ring-wrap copy contributes interrupt latency
+and must be included in target timing measurements.
+
 Only start a refill when the next sequential page slot is empty. Do not issue a
 DMA read into a slot still referenced by the execution manager.
 
@@ -270,6 +286,45 @@ cannot interrupt buffer metadata changes. NAND programming occurs outside the
 critical section with interrupts enabled. Payload filling is protected by the
 active record reservation, and a `DRAINING` page remains immutable until
 `RESULT_BUFFER_CompleteDrain()`.
+
+### Result retrieval
+
+After finalisation reaches `FLASH_MANAGER_STATE_RESULTS_READY`, the Host
+Interface starts copied result transfer through the public Flash Manager API:
+
+```c
+FLASH_MANAGER_RequestResultTransferStart();
+FLASH_MANAGER_ReadResultBytes(destination, capacity, &bytes_read);
+FLASH_MANAGER_FinishResultTransfer();
+```
+
+The start request changes the manager to `TRANSFERRING_RESULTS`, resets the
+fully drained result RAM for readback, and notifies the Flash Manager task to
+prefetch sequential pages with `EXTERNAL_FLASH_ReadResultPage()`. The Host
+Interface may receive `BUSY` until the first page is published. Each successful
+read copies as many currently contiguous buffered bytes as fit in the caller's
+destination; calls may cross page boundaries and do not need to align with
+result-record boundaries.
+
+Result retrieval reuses each slot through this ownership cycle:
+
+```text
+EMPTY -> FILLING_FROM_NAND -> READY_FOR_HOST -> EMPTY
+```
+
+When a copied page becomes empty, the Host call releases its slot and notifies
+the Flash Manager task. One coalesced notification is sufficient because the
+task fills every sequentially available slot. The NAND DMA destination remains
+owned by the active fill lease until the page API returns and completion
+publishes it. Host reads and task-side fills are serialised with the Flash
+Manager mutex, but NAND DMA runs outside that mutex.
+
+The call that copies the final bytes returns `OK`; a later read reports
+`END_OF_STREAM`. `FLASH_MANAGER_FinishResultTransfer()` may succeed as soon as
+all declared bytes have been copied and all fill/page ownership is clear. It
+then returns the manager to `IDLE`. The Host Interface owns every copied byte as
+soon as `FLASH_MANAGER_ReadResultBytes()` returns and may transmit it
+asynchronously.
 
 ---
 
@@ -378,14 +433,8 @@ instruction position remains after the execution ISR has stopped.
 If the final result length is exactly page aligned, there is no separate
 external-flash finalize call. Leave the session readable for result transfer;
 `external_flash` advances its result wear-rotation cursor when the next
-`EXTERNAL_FLASH_StartSession()` begins.
-
-The future result-transfer path should use:
-
-```c
-EXTERNAL_FLASH_GetInfo(&info);
-EXTERNAL_FLASH_ReadResults(offset, buffer, length);
-```
+`EXTERNAL_FLASH_StartSession()` begins. The Host Interface must use the public
+Flash Manager result-transfer APIs rather than call `external_flash` directly.
 
 ---
 
@@ -475,6 +524,9 @@ Important statuses to handle:
 - The execution manager never calls `external_flash` or takes an RTOS mutex.
 - Use `EXTERNAL_FLASH_ReadInstructionPage()` for instruction queue refills.
 - Use `EXTERNAL_FLASH_WriteResultPage()` for result page writes.
+- Use `EXTERNAL_FLASH_ReadResultPage()` for task-side result prefetch.
+- The Host Interface uses Flash Manager upload/download APIs and never calls
+  `external_flash` directly.
 - Use page sized slots to avoid DMA wraparound.
 - Notify instruction refill only when consumption releases a page.
 - Defer any ISR-requested task yield until the complete timer execution sequence

@@ -405,6 +405,47 @@ static inline void INSTRUCTION_BUFFER_ClearInstructionCache( void )
     instruction_buffer_context.instruction_cache = ( InstructionBufferInstructionCache_T ){ 0 };
 }
 
+/**
+ * @brief Releases pages exhausted by a boundary-reaching instruction.
+ */
+static INSTRUCTION_BUFFER_COLD_NOINLINE InstructionBufferConsumeStatus_T
+INSTRUCTION_BUFFER_ConsumeAcrossPageBoundary( uint32_t record_length_bytes,
+                                              uint32_t bytes_remaining_in_page )
+{
+    uint8_t  current_page_index       = instruction_buffer_context.consumer_page_index;
+    uint8_t  successor_page_index     = INSTRUCTION_BUFFER_NextPageIndex( current_page_index );
+    uint32_t successor_bytes_consumed = record_length_bytes - bytes_remaining_in_page;
+
+    instruction_buffer_context.page_states[current_page_index]      = INSTRUCTION_BUFFER_PAGE_EMPTY;
+    instruction_buffer_context.page_valid_bytes[current_page_index] = 0U;
+
+    instruction_buffer_context.consumer_page_index        = successor_page_index;
+    instruction_buffer_context.consumer_page_offset_bytes = successor_bytes_consumed;
+    instruction_buffer_context.consumer_record_pointer =
+        INSTRUCTION_BUFFER_GetPageData( successor_page_index ) + successor_bytes_consumed;
+
+    /* A crossing record may also exhaust a final partial successor page. */
+    if ( ( successor_bytes_consumed > 0U )
+         && ( successor_bytes_consumed
+              == instruction_buffer_context.page_valid_bytes[successor_page_index] ) )
+    {
+        instruction_buffer_context.page_states[successor_page_index] =
+            INSTRUCTION_BUFFER_PAGE_EMPTY;
+        instruction_buffer_context.page_valid_bytes[successor_page_index] = 0U;
+
+        instruction_buffer_context.consumer_page_index =
+            INSTRUCTION_BUFFER_NextPageIndex( successor_page_index );
+        instruction_buffer_context.consumer_page_offset_bytes = 0U;
+        instruction_buffer_context.consumer_record_pointer =
+            INSTRUCTION_BUFFER_GetPageData( instruction_buffer_context.consumer_page_index );
+    }
+
+    return ( instruction_buffer_context.next_nand_read_offset_bytes
+             < instruction_buffer_context.instruction_length_bytes )
+               ? INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED
+               : INSTRUCTION_BUFFER_CONSUME_OK;
+}
+
 /* Instruction upload. */
 
 static bool INSTRUCTION_BUFFER_UploadDrainPageIsValid( uint8_t                      page_index,
@@ -894,47 +935,6 @@ InstructionBufferConsumeStatus_T INSTRUCTION_BUFFER_ConsumeInstruction( void )
 
     return INSTRUCTION_BUFFER_ConsumeAcrossPageBoundary( record_length_bytes,
                                                          bytes_remaining_in_page );
-}
-
-/**
- * @brief Releases pages exhausted by a boundary-reaching instruction.
- */
-static INSTRUCTION_BUFFER_COLD_NOINLINE InstructionBufferConsumeStatus_T
-INSTRUCTION_BUFFER_ConsumeAcrossPageBoundary( uint32_t record_length_bytes,
-                                              uint32_t bytes_remaining_in_page )
-{
-    uint8_t  current_page_index       = instruction_buffer_context.consumer_page_index;
-    uint8_t  successor_page_index     = INSTRUCTION_BUFFER_NextPageIndex( current_page_index );
-    uint32_t successor_bytes_consumed = record_length_bytes - bytes_remaining_in_page;
-
-    instruction_buffer_context.page_states[current_page_index]      = INSTRUCTION_BUFFER_PAGE_EMPTY;
-    instruction_buffer_context.page_valid_bytes[current_page_index] = 0U;
-
-    instruction_buffer_context.consumer_page_index        = successor_page_index;
-    instruction_buffer_context.consumer_page_offset_bytes = successor_bytes_consumed;
-    instruction_buffer_context.consumer_record_pointer =
-        INSTRUCTION_BUFFER_GetPageData( successor_page_index ) + successor_bytes_consumed;
-
-    /* A crossing record may also exhaust a final partial successor page. */
-    if ( ( successor_bytes_consumed > 0U )
-         && ( successor_bytes_consumed
-              == instruction_buffer_context.page_valid_bytes[successor_page_index] ) )
-    {
-        instruction_buffer_context.page_states[successor_page_index] =
-            INSTRUCTION_BUFFER_PAGE_EMPTY;
-        instruction_buffer_context.page_valid_bytes[successor_page_index] = 0U;
-
-        instruction_buffer_context.consumer_page_index =
-            INSTRUCTION_BUFFER_NextPageIndex( successor_page_index );
-        instruction_buffer_context.consumer_page_offset_bytes = 0U;
-        instruction_buffer_context.consumer_record_pointer =
-            INSTRUCTION_BUFFER_GetPageData( instruction_buffer_context.consumer_page_index );
-    }
-
-    return ( instruction_buffer_context.next_nand_read_offset_bytes
-             < instruction_buffer_context.instruction_length_bytes )
-               ? INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED
-               : INSTRUCTION_BUFFER_CONSUME_OK;
 }
 
 /* Instruction upload: host production, NAND drain, and lifecycle. */

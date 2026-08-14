@@ -4,14 +4,16 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Internal interface for the Flash Manager result logging buffer.
+ *      Internal interface for Flash Manager result logging and retrieval.
  *
  *  Notes:
  *      The Execution Manager accesses this functionality through flash_manager.h.
  *      Result records are packed as a fixed header followed by committed
- *      payload bytes. The Flash Manager must serialise calls that change
- *      buffer state; record and drain leases may remain active concurrently
- *      because they own distinct byte ranges.
+ *      payload bytes. During execution, record and drain leases may coexist
+ *      because they own distinct byte ranges. After finalisation, the same
+ *      three page slots are reused for sequential NAND prefetch and copied
+ *      Host Interface retrieval. The Flash Manager serialises every task-side
+ *      transition and protects ISR-shared logging transitions separately.
  ******************************************************************************/
 
 #ifndef RESULT_BUFFER_H
@@ -41,6 +43,8 @@ extern "C"
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+
+/* Result logging: execution record production and NAND drain. */
 
 /** @brief Result of publishing one packed result record. */
 typedef enum
@@ -75,6 +79,8 @@ typedef struct
     /** Opaque identifier used to reject stale completions. */
     uint32_t lease_id;
 } ResultBufferDrainLease_T;
+
+/* Result retrieval: NAND page fill and Host Interface copy-out. */
 
 /** @brief Result of copying buffered NAND result bytes to the Host Interface. */
 typedef enum
@@ -126,6 +132,8 @@ typedef struct
  *------------------------------------------------------------------------------
  */
 
+/* Shared geometry and ownership reset. */
+
 /**
  * @brief Initialises the result buffer using the active NAND geometry.
  *
@@ -152,10 +160,14 @@ bool RESULT_BUFFER_Init( void );
  * they are inaccessible until overwritten and committed again.
  *
  * @note Initialised geometry is preserved across reset.
+ * @note Lease identifier sequences are also preserved so a lease from an
+ *       earlier session cannot match newly reused storage.
  * @note The Flash Manager must stop all users of leased pointers before
  *       reset; invalidating a lease cannot stop an outstanding memory access.
  */
 void RESULT_BUFFER_Reset( void );
+
+/* Result logging: execution record production. */
 
 /**
  * @brief Reserves contiguous writable storage for one result payload.
@@ -284,6 +296,8 @@ RESULT_BUFFER_CommitRecord( const FlashManagerResultWriteLease_T* lease, uint32_
                             uint8_t peripheral_type, uint8_t channel,
                             uint16_t actual_payload_length_bytes );
 
+/* Result logging: RAM-to-NAND page drain and finalisation. */
+
 /**
  * @brief Acquires the oldest committed page that is ready to write to NAND.
  *
@@ -376,6 +390,8 @@ bool RESULT_BUFFER_Finalise( void );
  */
 bool RESULT_BUFFER_IsDrainComplete( void );
 
+/* Result retrieval: NAND prefetch and Host Interface copy-out. */
+
 /**
  * @brief Resets the result buffer for retrieval of a stored result stream.
  *
@@ -386,7 +402,10 @@ bool RESULT_BUFFER_IsDrainComplete( void );
  *
  * @note Result logging must already be finalised and fully drained. On success,
  *       the completed logging state is replaced by result-retrieval state.
+ * @note A zero length prepares an empty stream whose first read reports
+ *       RESULT_BUFFER_READ_END_OF_STREAM without scheduling NAND access.
  * @note The execution timer must be stopped and result finalisation complete.
+ * @note This function does not access NAND or use RTOS primitives.
  */
 bool RESULT_BUFFER_PrepareRead( uint32_t result_length_bytes );
 
@@ -400,6 +419,8 @@ bool RESULT_BUFFER_PrepareRead( uint32_t result_length_bytes );
  *
  * @note false normally indicates that every page is occupied or all stored
  *       result bytes have already been scheduled for loading.
+ * @note The returned page remains exclusively owned by the fill lease until
+ *       RESULT_BUFFER_CompleteReadFillPage() processes it.
  */
 bool RESULT_BUFFER_AcquireReadFillPage( ResultBufferReadFillLease_T* lease );
 
@@ -415,6 +436,8 @@ bool RESULT_BUFFER_AcquireReadFillPage( ResultBufferReadFillLease_T* lease );
  *
  * @note Success publishes the page to the Host Interface. Failure returns the
  *       page to the empty state but leaves the retrieval offset unchanged.
+ * @note Any valid completion consumes the lease, including a reported NAND
+ *       failure. Invalid completion leaves ownership unchanged for fault reset.
  */
 bool RESULT_BUFFER_CompleteReadFillPage( const ResultBufferReadFillLease_T* lease,
                                          bool                               nand_read_succeeded );
@@ -429,6 +452,8 @@ bool RESULT_BUFFER_CompleteReadFillPage( const ResultBufferReadFillLease_T* leas
  * @return Current result-buffer read status.
  *
  * @note A successful call may copy across adjacent buffered page boundaries.
+ * @note Copied bytes belong to the caller immediately; released page slots may
+ *       be refilled as soon as this function returns.
  * @note END_OF_STREAM is returned only when all prepared bytes were consumed
  *       before this call. The call that copies the final bytes returns OK or
  *       PAGE_RELEASED.
@@ -439,6 +464,9 @@ ResultBufferReadStatus_T RESULT_BUFFER_ReadBytes( uint8_t*  destination,
 
 /**
  * @brief Reports whether every prepared result byte has been consumed.
+ *
+ * @return true only when all NAND bytes were loaded and copied, every page is
+ *         empty, and no fill lease remains active.
  */
 bool RESULT_BUFFER_IsReadComplete( void );
 
@@ -446,6 +474,10 @@ bool RESULT_BUFFER_IsReadComplete( void );
  * @brief Ends result retrieval and invalidates its page and cursor state.
  *
  * @return true when retrieval was active and complete; otherwise false.
+ *
+ * @note Initialised NAND geometry is retained for the next execution session.
+ * @note All retrieval functions are unsynchronised. The Flash Manager must
+ *       serialise Host Interface calls against task-side fill transitions.
  */
 bool RESULT_BUFFER_EndRead( void );
 

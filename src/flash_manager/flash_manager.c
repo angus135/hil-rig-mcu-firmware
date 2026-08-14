@@ -6,14 +6,16 @@
  *  Description:
  *      Coordinates Flash Manager lifecycle state, serves prefetched
  *      instructions, accepts packed result records from the execution timer
- *      ISR, streams host instruction uploads, and performs all NAND refill and
- *      drain operations from an RTOS task.
+ *      ISR, streams Host Interface instruction uploads and result downloads,
+ *      and performs all NAND refill and drain operations from an RTOS task.
  *
  *  Notes:
- *      Execution-facing APIs are ISR-only and must never block. NAND access is
- *      restricted to the Flash Manager task. Buffer metadata shared by those
- *      contexts is protected by short task critical sections; NAND operations
- *      are deliberately performed outside critical sections.
+ *      Execution-facing APIs are ISR-only and must never block. Host Interface
+ *      APIs copy between caller-owned and Flash Manager-owned RAM without
+ *      exposing persistent buffer pointers. NAND access is restricted to the
+ *      Flash Manager task. ISR-shared metadata uses short critical sections;
+ *      task-only data flows use the module mutex. NAND operations run outside
+ *      both forms of metadata protection.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -55,7 +57,9 @@
 /** Requests persistence and closure of the final instruction-upload page. */
 #define FLASH_MANAGER_NOTIFY_FINALISE_INSTRUCTION_UPLOAD ( 1UL << 6 )
 
+/** Signals that empty result-page storage is available for NAND prefetch. */
 #define FLASH_MANAGER_NOTIFY_FILL_RESULTS ( 1UL << 7 )
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -108,21 +112,31 @@ static StaticSemaphore_t flash_manager_mutex_storage;
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
+/* Task-context synchronisation and fault handling. */
+
 static bool FLASH_MANAGER_Lock( void );
 
 static void FLASH_MANAGER_Unlock( void );
-
-static bool FLASH_MANAGER_DrainResultPages( void );
-
-static bool FLASH_MANAGER_FillInstructionPages( void );
 
 static void FLASH_MANAGER_EnterFault( void );
 
 static void FLASH_MANAGER_EnterFaultFromISR( void );
 
+/* Task-side page I/O. */
+
+static bool FLASH_MANAGER_DrainResultPages( void );
+
+static bool FLASH_MANAGER_FillInstructionPages( void );
+
+static bool FLASH_MANAGER_FillResultPages( void );
+
+/* Execution and result-session lifecycle. */
+
 static bool FLASH_MANAGER_PrepareExecution( void );
 
 static bool FLASH_MANAGER_FinaliseResults( void );
+
+/* Instruction-upload lifecycle. */
 
 static bool FLASH_MANAGER_PrepareInstructionUpload( void );
 
@@ -130,12 +144,12 @@ static bool FLASH_MANAGER_DrainInstructionUploadPages( void );
 
 static bool FLASH_MANAGER_FinaliseInstructionUpload( void );
 
-static bool FLASH_Manager_FillResultPages( void );
-
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/* Task-context synchronisation. */
 
 /**
  * @brief Acquires exclusive access to task-context Flash Manager state.
@@ -166,6 +180,8 @@ static void FLASH_MANAGER_Unlock( void )
         ( void )xSemaphoreGive( flash_manager_context.access_mutex );
     }
 }
+
+/* Task-side page I/O. */
 
 /**
  * @brief Drains every currently ready result page to external NAND.
@@ -371,6 +387,8 @@ static bool FLASH_MANAGER_FillResultPages( void )
     }
 }
 
+/* Fault handling. */
+
 /**
  * @brief Places the Flash Manager into its fault state.
  *
@@ -404,6 +422,8 @@ static void FLASH_MANAGER_EnterFaultFromISR( void )
 {
     flash_manager_context.state = FLASH_MANAGER_STATE_FAULT;
 }
+
+/* Execution and result-session lifecycle. */
 
 /**
  * @brief Prepares NAND and both RAM streams for a new execution session.
@@ -565,6 +585,8 @@ static bool FLASH_MANAGER_FinaliseResults( void )
 
     return finalisation_state_is_valid;
 }
+
+/* Instruction-upload lifecycle. */
 
 /**
  * @brief Starts external-flash preparation for the declared instruction image.
@@ -752,10 +774,13 @@ static bool FLASH_MANAGER_FinaliseInstructionUpload( void )
 
     return finalisation_state_is_valid;
 }
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/* Task entry, module initialisation, and state inspection. */
 
 /**
  * @brief Runs asynchronous Flash Manager processing.
@@ -869,9 +894,10 @@ void FLASH_MANAGER_Task( void* parameters )
             }
         }
 
-        if ( notification_bits & FLASH_MANAGER_NOTIFY_FILL_RESULTS )
+        /* Refill released result slots during Host Interface result transfer. */
+        if ( ( notification_bits & FLASH_MANAGER_NOTIFY_FILL_RESULTS ) != 0U )
         {
-            if ( !FLASH_Manager_FillResultPages() )
+            if ( !FLASH_MANAGER_FillResultPages() )
             {
                 FLASH_MANAGER_EnterFault();
             }
@@ -940,6 +966,8 @@ bool FLASH_MANAGER_GetState( FlashManagerState_T* state )
 
     return true;
 }
+
+/* Run State Manager lifecycle requests. */
 
 /**
  * @brief Requests task-context preparation of a new execution session.
@@ -1034,27 +1062,29 @@ FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void )
     return FLASH_MANAGER_REQUEST_OK;
 }
 
+/* Host Interface instruction upload. */
+
+/**
+ * @brief Reserves instruction RAM and requests task-side NAND upload preparation.
+ */
 FlashManagerInstructionUploadRequestStatus_T
 FLASH_MANAGER_RequestInstructionUploadStart( uint32_t expected_length_bytes )
 {
-    /* Check if the Flash Manager is initialised. */
     if ( flash_manager_context.access_mutex == NULL )
     {
         return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOT_INITIALISED;
     }
-    /* Check that the expected length is valid. */
+
     if ( expected_length_bytes == 0U )
     {
         return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_ARGUMENT;
     }
 
-    /* Lock the flash manager */
     if ( !FLASH_MANAGER_Lock() )
     {
         return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOT_INITIALISED;
     }
 
-    /* Check if the Flash Manager is in the idle state to begin an upload. */
     if ( flash_manager_context.state != FLASH_MANAGER_STATE_IDLE )
     {
         FLASH_MANAGER_Unlock();
@@ -1222,6 +1252,8 @@ FlashManagerInstructionUploadRequestStatus_T FLASH_MANAGER_RequestInstructionUpl
 
     return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED;
 }
+
+/* Execution ISR instruction serving and result logging. */
 
 /**
  * @brief Reserves result payload storage from the execution ISR.
@@ -1395,4 +1427,222 @@ bool FLASH_MANAGER_ConsumeInstructionFromISR( BaseType_t* higher_priority_task_w
     }
 
     return false;
+}
+
+/* Host Interface result retrieval. */
+
+/**
+ * @brief Prepares stored-result retrieval and requests the initial NAND prefill.
+ */
+FlashManagerResultTransferStatus_T FLASH_MANAGER_RequestResultTransferStart( void )
+{
+    if ( flash_manager_context.access_mutex == NULL )
+    {
+        return FLASH_MANAGER_RESULT_TRANSFER_NOT_INITIALISED;
+    }
+
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return FLASH_MANAGER_RESULT_TRANSFER_NOT_INITIALISED;
+    }
+
+    if ( flash_manager_context.state != FLASH_MANAGER_STATE_RESULTS_READY )
+    {
+        FLASH_MANAGER_Unlock();
+
+        return FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE;
+    }
+
+    TaskHandle_t notification_task_handle = flash_manager_context.task_handle;
+
+    if ( notification_task_handle == NULL )
+    {
+        FLASH_MANAGER_Unlock();
+
+        return FLASH_MANAGER_RESULT_TRANSFER_TASK_NOT_READY;
+    }
+
+    ExternalFlashInfo_T external_flash_info = { 0 };
+
+    if ( EXTERNAL_FLASH_GetInfo( &external_flash_info ) != EXTERNAL_FLASH_STATUS_OK )
+    {
+        FLASH_MANAGER_Unlock();
+        FLASH_MANAGER_EnterFault();
+
+        return FLASH_MANAGER_RESULT_TRANSFER_INTERNAL_ERROR;
+    }
+
+    /*
+     * Result finalisation guarantees that logging is stopped and every result
+     * byte is committed to NAND. PrepareRead reuses the drained result pages for
+     * sequential NAND-to-host transfer.
+     */
+    if ( !RESULT_BUFFER_PrepareRead( external_flash_info.result_length_bytes ) )
+    {
+        FLASH_MANAGER_Unlock();
+        FLASH_MANAGER_EnterFault();
+
+        return FLASH_MANAGER_RESULT_TRANSFER_INTERNAL_ERROR;
+    }
+
+    flash_manager_context.state = FLASH_MANAGER_STATE_TRANSFERRING_RESULTS;
+
+    FLASH_MANAGER_Unlock();
+
+    /*
+     * The initial notification asks the Flash Manager task to preload as many
+     * sequential result pages as the three-page ring can accept.
+     */
+    if ( xTaskNotify( notification_task_handle, FLASH_MANAGER_NOTIFY_FILL_RESULTS, eSetBits )
+         != pdPASS )
+    {
+        FLASH_MANAGER_EnterFault();
+
+        return FLASH_MANAGER_RESULT_TRANSFER_NOTIFY_FAILED;
+    }
+
+    return FLASH_MANAGER_RESULT_TRANSFER_OK;
+}
+
+/**
+ * @brief Copies available stored-result bytes into Host Interface storage.
+ */
+FlashManagerResultTransferStatus_T
+FLASH_MANAGER_ReadResultBytes( uint8_t* destination, uint32_t destination_capacity_bytes,
+                               uint32_t* bytes_read )
+{
+    /*
+     * Clear the output whenever its pointer is usable, including failures that
+     * occur before the result-buffer API is called.
+     */
+    if ( bytes_read != NULL )
+    {
+        *bytes_read = 0U;
+    }
+
+    if ( flash_manager_context.access_mutex == NULL )
+    {
+        return FLASH_MANAGER_RESULT_TRANSFER_NOT_INITIALISED;
+    }
+
+    if ( ( destination == NULL ) || ( destination_capacity_bytes == 0U ) || ( bytes_read == NULL ) )
+    {
+        return FLASH_MANAGER_RESULT_TRANSFER_INVALID_ARGUMENT;
+    }
+
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return FLASH_MANAGER_RESULT_TRANSFER_NOT_INITIALISED;
+    }
+
+    if ( flash_manager_context.state != FLASH_MANAGER_STATE_TRANSFERRING_RESULTS )
+    {
+        FLASH_MANAGER_Unlock();
+
+        return FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE;
+    }
+
+    TaskHandle_t notification_task_handle = flash_manager_context.task_handle;
+
+    ResultBufferReadStatus_T read_status =
+        RESULT_BUFFER_ReadBytes( destination, destination_capacity_bytes, bytes_read );
+
+    FLASH_MANAGER_Unlock();
+
+    switch ( read_status )
+    {
+        case RESULT_BUFFER_READ_OK:
+            return FLASH_MANAGER_RESULT_TRANSFER_OK;
+
+        case RESULT_BUFFER_READ_BUSY:
+            return FLASH_MANAGER_RESULT_TRANSFER_BUSY;
+
+        case RESULT_BUFFER_READ_END_OF_STREAM:
+            return FLASH_MANAGER_RESULT_TRANSFER_END_OF_STREAM;
+
+        case RESULT_BUFFER_READ_INVALID_ARGUMENT:
+            return FLASH_MANAGER_RESULT_TRANSFER_INVALID_ARGUMENT;
+
+        case RESULT_BUFFER_READ_PAGE_RELEASED:
+            break;
+
+        case RESULT_BUFFER_READ_INVALID_STATE:
+        default:
+            FLASH_MANAGER_EnterFault();
+
+            return FLASH_MANAGER_RESULT_TRANSFER_INTERNAL_ERROR;
+    }
+
+    /*
+     * A completely consumed page is now empty. Wake the Flash Manager task so
+     * it can load the next sequential NAND page into the released slot.
+     */
+    if ( notification_task_handle == NULL )
+    {
+        FLASH_MANAGER_EnterFault();
+
+        return FLASH_MANAGER_RESULT_TRANSFER_INTERNAL_ERROR;
+    }
+
+    if ( xTaskNotify( notification_task_handle, FLASH_MANAGER_NOTIFY_FILL_RESULTS, eSetBits )
+         != pdPASS )
+    {
+        FLASH_MANAGER_EnterFault();
+
+        return FLASH_MANAGER_RESULT_TRANSFER_NOTIFY_FAILED;
+    }
+
+    return FLASH_MANAGER_RESULT_TRANSFER_OK;
+}
+
+/**
+ * @brief Ends a fully consumed result transfer and returns the manager to IDLE.
+ */
+FlashManagerResultTransferStatus_T FLASH_MANAGER_FinishResultTransfer( void )
+{
+    if ( flash_manager_context.access_mutex == NULL )
+    {
+        return FLASH_MANAGER_RESULT_TRANSFER_NOT_INITIALISED;
+    }
+
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return FLASH_MANAGER_RESULT_TRANSFER_NOT_INITIALISED;
+    }
+
+    if ( flash_manager_context.state != FLASH_MANAGER_STATE_TRANSFERRING_RESULTS )
+    {
+        FLASH_MANAGER_Unlock();
+
+        return FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE;
+    }
+
+    /*
+     * Finishing early would discard unread buffered or stored result bytes.
+     * Leave the transfer active so the Host Interface can continue reading.
+     */
+    if ( !RESULT_BUFFER_IsReadComplete() )
+    {
+        FLASH_MANAGER_Unlock();
+
+        return FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE;
+    }
+
+    /*
+     * IsReadComplete was checked while holding the same mutex, so EndRead should
+     * now succeed. Failure indicates inconsistent internal ownership state.
+     */
+    if ( !RESULT_BUFFER_EndRead() )
+    {
+        FLASH_MANAGER_Unlock();
+        FLASH_MANAGER_EnterFault();
+
+        return FLASH_MANAGER_RESULT_TRANSFER_INTERNAL_ERROR;
+    }
+
+    flash_manager_context.state = FLASH_MANAGER_STATE_IDLE;
+
+    FLASH_MANAGER_Unlock();
+
+    return FLASH_MANAGER_RESULT_TRANSFER_OK;
 }
