@@ -30,8 +30,10 @@
  *      Manager task drains complete pages to NAND. Retrieval and upload are
  *      mutually exclusive.
  *
- *      The calling layer serialises shared-state transitions. This module owns
- *      no RTOS primitives and makes no external-flash policy decisions.
+ *      The calling layer serialises lifecycle operations. This module makes no
+ *      external-flash policy decisions and never blocks; successful NAND-fill
+ *      completion uses one short task critical section to publish prepared page
+ *      metadata atomically to the execution ISR.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -811,7 +813,17 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
             memcpy( &instruction_buffer_storage[mirror_offset_bytes], instruction_buffer_storage,
                     read_length_bytes );
         }
+    }
 
+    /*
+     * The potentially page-sized mirror copy is complete. Mask interrupts only
+     * for the small metadata publication that makes the new bytes visible to
+     * the execution ISR.
+     */
+    taskENTER_CRITICAL();
+
+    if ( nand_read_succeeded )
+    {
         instruction_buffer_context.page_valid_bytes[page_index] = read_length_bytes;
 
         instruction_buffer_context.page_states[page_index] = INSTRUCTION_BUFFER_PAGE_READY;
@@ -830,6 +842,8 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
     }
 
     INSTRUCTION_BUFFER_ClearPageFillReservation();
+
+    taskEXIT_CRITICAL();
 
     return true;
 }

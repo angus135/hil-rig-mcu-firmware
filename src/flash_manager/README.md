@@ -205,10 +205,10 @@ sustained execution consumption. Event-driven notification removes polling
 latency but cannot compensate for insufficient buffer depth or NAND throughput.
 
 Completing a slot-zero refill updates the private ring-end mirror before the
-slot is published. That bounded page copy runs in Flash Manager task context,
-not in the execution ISR. The current implementation protects completion with a
-critical section, so this once-per-ring-wrap copy contributes interrupt latency
-and must be included in target timing measurements.
+slot is published. That bounded page copy runs with interrupts enabled in Flash
+Manager task context and can be preempted by the execution timer ISR. Only the
+following metadata publication uses a short critical section, so the page-sized
+copy cannot delay execution interrupt entry.
 
 Only start a refill when the next sequential page slot is empty. Do not issue a
 DMA read into a slot still referenced by the execution manager.
