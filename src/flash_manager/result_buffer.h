@@ -384,7 +384,8 @@ bool RESULT_BUFFER_IsDrainComplete( void );
  *
  * @return true when retrieval state was prepared; otherwise false.
  *
- * @note Any result-logging state and outstanding leases are invalidated.
+ * @note Result logging must already be finalised and fully drained. On success,
+ *       the completed logging state is replaced by result-retrieval state.
  * @note The execution timer must be stopped and result finalisation complete.
  */
 bool RESULT_BUFFER_PrepareRead( uint32_t result_length_bytes );
