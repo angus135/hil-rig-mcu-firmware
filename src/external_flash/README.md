@@ -2,14 +2,13 @@
 
 ## Overview
 
-`external_flash` contains the NAND-backed storage service intended for the flash
-manager, host package-receive path, and future result-transfer path.
+`external_flash` contains the NAND-backed storage service used by the Flash
+Manager for instruction upload/refill and result drain/refill.
 
 The storage service and its unit tests are implemented, and firmware startup
-adopts the generated QSPI handle before calling `EXTERNAL_FLASH_Init()`. The
-`flash_manager` and `host_interface/test_package_recieve` modules are still
-placeholders, and there is currently no `result_transfer_manager` module. The
-manager flows below describe the remaining application integration.
+adopts the generated QSPI handle before calling `EXTERNAL_FLASH_Init()`. Flash
+Manager storage flows are implemented; application startup, Run State Manager,
+Execution Manager, and Host Interface call sites remain to be integrated.
 
 This module is responsible for:
 
@@ -28,7 +27,8 @@ This module is responsible for:
 - Padding final partial result pages with `0xFF`.
 - Retiring blocks that fail program or erase operations.
 - Rotating the logical start block for repeated instruction uploads and result sessions.
-- Providing the flash facing API used by the flash manager and result transfer path.
+- Providing the flash-facing page API used only by the Flash Manager during
+  normal runtime operation.
 
 ---
 
@@ -58,7 +58,9 @@ The main API functions are:
 - `EXTERNAL_FLASH_StartSession` prepares the result partition for a new test run.
 - `EXTERNAL_FLASH_WriteResultPage` writes one logical result page.
 - `EXTERNAL_FLASH_ReadInstructionPage` reads one instruction page or partial instruction page using DMA internally.
-- `EXTERNAL_FLASH_ReadResults` reads committed result bytes for host transfer.
+- `EXTERNAL_FLASH_ReadResultPage` reads one result page or final partial page using DMA internally.
+- `EXTERNAL_FLASH_ReadResults` retains an arbitrary-range blocking read API for
+  direct storage clients and diagnostics.
 - `EXTERNAL_FLASH_GetInfo` reports runtime page size, partition capacities,
   committed instruction/result lengths, and bad block count.
 
@@ -66,9 +68,13 @@ The preferred execution time write path is `EXTERNAL_FLASH_WriteResultPage`. Thi
 
 The preferred execution time instruction refill path is `EXTERNAL_FLASH_ReadInstructionPage`. This lets the flash manager pass an instruction queue page buffer directly to `external_flash`, allowing DMA to write into the flash manager owned buffer without an extra copy.
 
-The preferred package upload path is `EXTERNAL_FLASH_WriteInstructionBytes`. Host transfer chunk sizes do not need to match the NAND page size; the driver stages partial pages and programs full pages internally.
+`EXTERNAL_FLASH_WriteInstructionBytes` remains available to direct storage
+clients that need arbitrary chunk staging. The Flash Manager runtime path uses
+`EXTERNAL_FLASH_WriteInstructionPage` after packing Host Interface chunks into
+its own page ring.
 
-`EXTERNAL_FLASH_WriteInstructionPage` is available when the future package-receive path already has page-sized instruction chunks. Full-page calls DMA directly from the caller-supplied buffer. A final partial page is padded internally with `0xFF`.
+`EXTERNAL_FLASH_WriteInstructionPage` DMA-programs full Flash Manager-owned
+pages directly. A final partial page is padded internally with `0xFF`.
 
 The driver does not expose physical NAND pages, physical blocks, QSPI commands, ECC fields, or bad block markers to application managers.
 
@@ -85,6 +91,8 @@ The intended ownership is:
 - `flash_manager` is the only normal runtime task that calls `external_flash`.
 - `flash_manager` refills page sized instruction buffers by calling `EXTERNAL_FLASH_ReadInstructionPage`.
 - `flash_manager` drains page sized result buffers by calling `EXTERNAL_FLASH_WriteResultPage`.
+- `flash_manager` drains instruction-upload pages with `EXTERNAL_FLASH_WriteInstructionPage`.
+- `flash_manager` refills result-transfer pages with `EXTERNAL_FLASH_ReadResultPage`.
 - `external_flash` owns storage policy, logical to physical mapping, bad block skipping, and result length tracking.
 - `hw_nand` owns physical NAND command sequencing.
 - `hw_qspi` owns generic STM32 QSPI transactions.
@@ -159,9 +167,12 @@ The result partition is append only during a session.
 
 One result write path is supported: page scoped writes with `EXTERNAL_FLASH_WriteResultPage`.
 
-Only bytes successfully committed to NAND are exposed through `EXTERNAL_FLASH_ReadResults`.
+Only bytes successfully committed to NAND are exposed through either result-read API.
 
-The active result session keeps its logical-to-physical rotation stable until the next result session starts. This allows a future result-transfer path to read committed bytes in logical order after execution, even though the physical NAND blocks may not start at the first block of the result partition.
+The active result session keeps its logical-to-physical rotation stable until
+the next result session starts. This allows Flash Manager result transfer to
+read committed bytes in logical order after execution, even though the physical
+NAND blocks may not start at the first block of the result partition.
 
 There is intentionally no public result flush or result byte write API. A final partial page write closes the append stream naturally because later page writes are rejected. If the result length ends exactly on a page boundary, the session stays readable and the wear rotation cursor is advanced when the next `EXTERNAL_FLASH_StartSession` begins.
 
@@ -230,31 +241,31 @@ The caller must keep the destination buffer valid and writable until the functio
 
 ## HIL RIG Upload, Execute, Return Flow
 
-The following target flows describe how the managers should use this driver once
-their placeholder modules are implemented.
+The following flows describe the implemented Flash Manager storage boundary and
+the application integration still required around it.
 
 ### 1. Test Package Upload
 
-The planned package-receive component is responsible for receiving the test package from the host interface.
-
-It stores instruction bytes into the instruction partition through `external_flash`.
-
-Storage APIs already provided by this branch:
+The Host Interface application layer receives and validates a test package,
+then submits a canonical instruction stream through the public Flash Manager
+upload API. Only the Flash Manager task calls these storage APIs:
 
 - `external_flash` provides `EXTERNAL_FLASH_StartInstructionUpload`.
-- `external_flash` provides `EXTERNAL_FLASH_WriteInstructionBytes` for natural host chunk sized writes.
-- `external_flash` provides `EXTERNAL_FLASH_WriteInstructionPage` for page sized package chunks.
+- `external_flash` provides `EXTERNAL_FLASH_WriteInstructionPage` for Flash
+  Manager-owned upload pages.
 - `external_flash` provides `EXTERNAL_FLASH_FinishInstructionUpload` to commit the final partial page and validate the expected length.
-- The package-receive component must not bypass `external_flash` and call `hw_nand` directly.
+- `EXTERNAL_FLASH_WriteInstructionBytes` remains available outside the normal
+  Flash Manager runtime path for arbitrary-range storage clients.
 
 Intended upload sequence:
 
-1. Host sends a test package to the package-receive component.
-2. The package-receive component validates or fragments the package into instruction byte spans.
-3. It calls `EXTERNAL_FLASH_StartInstructionUpload` with the expected instruction byte count.
-4. It appends the instruction bytes with `EXTERNAL_FLASH_WriteInstructionBytes`, or page spans with `EXTERNAL_FLASH_WriteInstructionPage`.
-5. It calls `EXTERNAL_FLASH_FinishInstructionUpload`.
-6. `flash_manager` later reads those same opaque bytes back into its instruction buffers using `EXTERNAL_FLASH_ReadInstructionPage`.
+1. The Host Interface validates and canonicalises the package.
+2. It starts and streams the declared byte count through Flash Manager APIs.
+3. The Flash Manager task calls `EXTERNAL_FLASH_StartInstructionUpload`.
+4. It drains full and final partial RAM pages with `EXTERNAL_FLASH_WriteInstructionPage`.
+5. It calls `EXTERNAL_FLASH_FinishInstructionUpload` and returns to `IDLE`.
+6. A later execution preparation reads those same opaque bytes through
+   `EXTERNAL_FLASH_ReadInstructionPage`.
 
 The instruction byte format is owned by the package and execution format, not by `external_flash`.
 
@@ -282,9 +293,12 @@ The execution manager remains a producer and consumer of RAM buffers only. It do
 After execution ends:
 
 1. The flash manager writes the final partial result page through `EXTERNAL_FLASH_WriteResultPage` if any result bytes remain.
-2. The result-transfer component queries committed length with `EXTERNAL_FLASH_GetInfo`.
-3. It repeatedly calls `EXTERNAL_FLASH_ReadResults` with byte offsets and host-transfer-sized buffers.
-4. The host interface sends those bytes to the host in order.
+2. The Host Interface starts transfer through the public Flash Manager API.
+3. The Flash Manager task queries committed length with `EXTERNAL_FLASH_GetInfo`.
+4. It prefetches sequential pages with `EXTERNAL_FLASH_ReadResultPage` into
+   Flash Manager-owned RAM.
+5. The Host Interface copies available bytes through the Flash Manager API and
+   sends them to the host in order.
 
 Only committed bytes are readable.
 
@@ -298,6 +312,8 @@ Only committed bytes are readable.
 - Presents empty, filling, ready, active, and reusable spans to producers and consumers.
 - Refills page sized instruction buffers by calling `EXTERNAL_FLASH_ReadInstructionPage`.
 - Drains page sized result buffers by calling `EXTERNAL_FLASH_WriteResultPage`.
+- Drains instruction-upload pages by calling `EXTERNAL_FLASH_WriteInstructionPage`.
+- Refills result-transfer pages by calling `EXTERNAL_FLASH_ReadResultPage`.
 - Calls `EXTERNAL_FLASH_StartSession` before execution starts.
 - Writes the final partial result page after execution ends.
 - Is the only normal runtime task responsible for talking to flash.
@@ -310,21 +326,13 @@ Only committed bytes are readable.
 - Does not call `external_flash`, `hw_nand`, or `hw_qspi`.
 - Does not wait for flash operations.
 
-### Package-receive component (planned)
+### Host Interface
 
 - Owns host package reception and validation.
-- Uses `external_flash` for instruction partition writes.
-- Calls `EXTERNAL_FLASH_StartInstructionUpload` before writing a new package image.
-- Writes package instruction bytes with `EXTERNAL_FLASH_WriteInstructionBytes` or page spans with `EXTERNAL_FLASH_WriteInstructionPage`.
-- Calls `EXTERNAL_FLASH_FinishInstructionUpload` before allowing execution to start.
-- Should not bypass `external_flash` and call `hw_nand` directly.
-
-### Result-transfer component (planned)
-
-- Owns result transfer state for host readback.
-- Uses `EXTERNAL_FLASH_GetInfo` to determine committed result length.
-- Uses `EXTERNAL_FLASH_ReadResults` to stream committed result bytes in order.
-- Does not parse NAND pages or inspect bad block state.
+- Submits validated canonical instruction chunks through Flash Manager upload APIs.
+- Copies stored result bytes through Flash Manager result-transfer APIs.
+- Does not call `external_flash`, `hw_nand`, or `hw_qspi` directly.
+- Does not parse NAND pages or inspect bad-block state.
 
 ---
 
@@ -397,21 +405,28 @@ For instruction page reads through `EXTERNAL_FLASH_ReadInstructionPage`, DMA wri
 
 The caller must not modify or reuse that instruction buffer until `EXTERNAL_FLASH_ReadInstructionPage` returns.
 
+For result page reads through `EXTERNAL_FLASH_ReadResultPage`, DMA writes
+directly into the caller-supplied result buffer. That buffer must remain valid
+and unavailable to its Host consumer until the function returns successfully.
+
 The current implementation is synchronous from the caller perspective. When `EXTERNAL_FLASH_WriteResultPage` returns `EXTERNAL_FLASH_STATUS_OK`, the DMA load and NAND program execute have completed successfully, and the logical result bytes have been counted as committed.
 
 When `EXTERNAL_FLASH_ReadInstructionPage` returns `EXTERNAL_FLASH_STATUS_OK`, the NAND page read and DMA transfer into the caller supplied buffer have completed successfully.
+
+The same completion and ownership rule applies to `EXTERNAL_FLASH_ReadResultPage`.
 
 ---
 
 ## Notes and Limitations
 
 - Hardware validation is still required.
-- Firmware startup calls `EXTERNAL_FLASH_Init()`, but no production manager yet
-  calls the upload/session/read/write APIs.
+- Firmware startup calls `EXTERNAL_FLASH_Init()`. Flash Manager call paths are
+  implemented but their production application call sites are not yet connected.
 - Instruction and result lengths are currently volatile RAM state only.
 - Wear erase counts and active block maps are currently volatile RAM state only.
 - Instruction recovery after reset is not implemented yet.
 - Result recovery after reset is not implemented yet.
 - `EXTERNAL_FLASH_WriteResultPage` is the preferred execution time result write API.
 - `EXTERNAL_FLASH_ReadInstructionPage` is the preferred execution time instruction refill API.
-- `EXTERNAL_FLASH_WriteInstructionBytes` is the preferred test package upload API.
+- `EXTERNAL_FLASH_WriteInstructionPage` is the Flash Manager instruction-upload drain API.
+- `EXTERNAL_FLASH_ReadResultPage` is the Flash Manager result-transfer refill API.

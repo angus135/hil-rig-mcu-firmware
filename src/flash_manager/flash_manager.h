@@ -12,9 +12,9 @@
  *      instructions through immutable views. NAND access remains restricted to
  *      the Flash Manager task and occurs only after the ISR returns.
  *
- *      Result logging/finalisation, instruction preload/refill, and streamed
- *      instruction upload are implemented. Result transfer to the host remains
- *      future work.
+ *      Result logging/finalisation, instruction preload/refill, streamed
+ *      instruction upload, and copied result retrieval are implemented. Host
+ *      task APIs never retain caller buffers after returning.
  ******************************************************************************/
 
 #ifndef FLASH_MANAGER_H
@@ -59,8 +59,10 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+/* Lifecycle control. */
+
 /*
- * Implemented execution and instruction-upload lifecycles:
+ * Implemented instruction-upload, execution, and result-transfer lifecycles:
  *
  * IDLE
  *   -> RequestInstructionUploadStart()
@@ -84,8 +86,11 @@ extern "C"
  * FINALISING_RESULTS
  *   -> Flash Manager task publishes and drains the final partial page
  * RESULTS_READY
- *   -> Future host-transfer request
+ *   -> RequestResultTransferStart()
  * TRANSFERRING_RESULTS
+ *   -> Host Interface calls ReadResultBytes() until END_OF_STREAM
+ *   -> FinishResultTransfer()
+ * IDLE
  */
 typedef enum
 {
@@ -119,7 +124,7 @@ typedef enum
     /** All result pages have been drained and the buffer is ready for host transfer. */
     FLASH_MANAGER_STATE_RESULTS_READY,
 
-    /** Reserved for reading stored results and transferring them to the host. */
+    /** Stored results are being prefetched and copied to the Host Interface. */
     FLASH_MANAGER_STATE_TRANSFERRING_RESULTS,
 
     /** An unrecoverable manager, buffer, or NAND operation has failed. */
@@ -145,6 +150,8 @@ typedef enum
     /** The task notification failed and the manager entered FAULT. */
     FLASH_MANAGER_REQUEST_NOTIFY_FAILED
 } FlashManagerRequestStatus_T;
+
+/* Execution result logging. */
 
 /** @brief Result of committing an ISR-produced result record. */
 typedef enum
@@ -210,6 +217,8 @@ typedef struct
     /** Maximum number of bytes that may be written through payload. */
     uint16_t payload_capacity_bytes;
 } FlashManagerResultWriteLease_T;
+
+/* Execution instruction serving. */
 
 /**
  * @brief Fixed header stored before every canonical instruction payload.
@@ -280,6 +289,8 @@ typedef enum
     FLASH_MANAGER_INSTRUCTION_CORRUPT
 } FlashManagerInstructionReadStatus_T;
 
+/* Host Interface instruction upload. */
+
 /** @brief Result of submitting an asynchronous instruction-upload operation. */
 typedef enum
 {
@@ -304,6 +315,8 @@ typedef enum
     /** Task notification failed and the manager entered FAULT. */
     FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOTIFY_FAILED
 } FlashManagerInstructionUploadRequestStatus_T;
+
+/* Host Interface result retrieval. */
 
 /** @brief Result of a Host Interface result-transfer operation. */
 typedef enum
@@ -330,7 +343,10 @@ typedef enum
     FLASH_MANAGER_RESULT_TRANSFER_TASK_NOT_READY,
 
     /** Task notification failed and the manager entered FAULT. */
-    FLASH_MANAGER_RESULT_TRANSFER_NOTIFY_FAILED
+    FLASH_MANAGER_RESULT_TRANSFER_NOTIFY_FAILED,
+
+    /** Result-buffer or external-flash state was inconsistent and FAULT was entered. */
+    FLASH_MANAGER_RESULT_TRANSFER_INTERNAL_ERROR
 
 } FlashManagerResultTransferStatus_T;
 
@@ -339,12 +355,14 @@ typedef enum
  *------------------------------------------------------------------------------
  */
 
+/* Task entry, module initialisation, and state inspection. */
+
 /**
  * @brief Runs the Flash Manager RTOS task.
  *
  * The task processes lifecycle notifications and performs NAND operations.
- * It prepares, fills, and drains instruction storage; drains result storage;
- * and processes execution and upload lifecycle requests.
+ * It prepares, fills, and drains instruction storage; drains and refills result
+ * storage; and processes execution, upload, and result-transfer requests.
  *
  * @param parameters Optional FreeRTOS task parameter. Currently unused.
  *
@@ -368,6 +386,21 @@ void FLASH_MANAGER_Task( void* parameters );
  *       APIs to other tasks.
  */
 bool FLASH_MANAGER_Init( void );
+
+/**
+ * @brief Reads the current Flash Manager lifecycle state.
+ *
+ * @param[out] state Destination for the current state.
+ *
+ * @return true when the state was read; false for a null destination or when
+ *         the manager synchronization object is unavailable.
+ *
+ * @note Call from task context only. This function may block on the manager
+ *       mutex and must never be called from an ISR.
+ */
+bool FLASH_MANAGER_GetState( FlashManagerState_T* state );
+
+/* Execution ISR instruction serving and result logging. */
 
 /**
  * @brief Reserves temporary payload storage for one result record.
@@ -473,6 +506,8 @@ FLASH_MANAGER_PeekNextInstructionFromISR( const FlashManagerInstructionView_T** 
  */
 bool FLASH_MANAGER_ConsumeInstructionFromISR( BaseType_t* higher_priority_task_woken );
 
+/* Host Interface instruction upload. */
+
 /**
  * @brief Requests preparation of NAND storage for a canonical instruction image.
  *
@@ -539,6 +574,8 @@ FLASH_MANAGER_SubmitInstructionUploadBytes( const uint8_t* data, uint32_t length
  */
 FlashManagerInstructionUploadRequestStatus_T FLASH_MANAGER_RequestInstructionUploadFinish( void );
 
+/* Run State Manager lifecycle requests. */
+
 /**
  * @brief Requests asynchronous preparation of a new execution session.
  *
@@ -572,18 +609,7 @@ FlashManagerRequestStatus_T FLASH_MANAGER_RequestExecutionPreparation( void );
  */
 FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void );
 
-/**
- * @brief Reads the current Flash Manager lifecycle state.
- *
- * @param[out] state Destination for the current state.
- *
- * @return true when the state was read; false for a null destination or when
- *         the manager synchronization object is unavailable.
- *
- * @note Call from task context only. This function may block on the manager
- *       mutex and must never be called from an ISR.
- */
-bool FLASH_MANAGER_GetState( FlashManagerState_T* state );
+/* Host Interface result retrieval. */
 
 /**
  * @brief Starts asynchronous retrieval of the completed result stream.
@@ -632,9 +658,9 @@ FLASH_MANAGER_ReadResultBytes( uint8_t* destination, uint32_t destination_capaci
  *
  * @return Result-transfer status.
  *
-@note This succeeds only after every stored result byte has been returned.
-      FLASH_MANAGER_ReadResultBytes() reports END_OF_STREAM once this
-      condition has been reached.
+ * @note This succeeds only after every stored result byte has been returned.
+ *       FLASH_MANAGER_ReadResultBytes() reports END_OF_STREAM once this
+ *       condition has been reached.
  * @note Successful completion changes TRANSFERRING_RESULTS to IDLE, allowing a
  *       subsequent instruction upload or execution session.
  * @note Call from Host Interface task context only.

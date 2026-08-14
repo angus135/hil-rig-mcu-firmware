@@ -4,12 +4,14 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Implementation of the Flash Manager result logging buffer.
+ *      Implementation of the Flash Manager result logging and retrieval buffer.
  *
  *  Notes:
  *      Result records are packed into a page-backed circular byte buffer. A
  *      record write lease gives the execution path contiguous payload storage
  *      while an independent drain lease protects a page-level NAND transfer.
+ *      After finalisation, the same page storage becomes a NAND-prefetch ring
+ *      from which the Host Interface receives copied result bytes.
  *      Driver DMA remains outside this module; the execution ISR synchronously
  *      copies a stable driver-owned measurement into the record lease.
  *      State-transition calls must be serialised by the Flash Manager. This
@@ -52,6 +54,8 @@ _Static_assert( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES <= UINT16_MAX,
  *------------------------------------------------------------------------------
  */
 
+/* Shared page ownership. */
+
 typedef enum
 {
     /** No committed bytes remain; the producer may reuse this page. */
@@ -73,6 +77,8 @@ typedef enum
     RESULT_BUFFER_PAGE_READY_FOR_HOST,
 
 } ResultBufferPageState_T;
+
+/* Result logging ownership. */
 
 /**
  * @brief Authoritative state for the one active result-record reservation.
@@ -98,9 +104,13 @@ typedef struct
     uint32_t lease_id;
 } ResultBufferDrainReservation_T;
 
+/* Result retrieval ownership. */
+
 /** @brief Authoritative state for the active NAND-to-RAM result-page fill. */
 typedef struct
 {
+    /* Shared geometry and result-logging state. */
+
     bool     is_active;
     uint8_t  page_index;
     uint32_t result_offset_bytes;
@@ -149,6 +159,8 @@ typedef struct
 
     /** The one RAM-to-NAND reservation that may remain outstanding. */
     ResultBufferDrainReservation_T active_drain_reservation;
+
+    /* Result-retrieval state. */
 
     /** Whether the buffer is currently configured for result retrieval. */
     bool is_read_prepared;
@@ -212,6 +224,8 @@ static ResultBufferContext_T result_buffer_context;
  *------------------------------------------------------------------------------
  */
 
+/* Result logging: execution record production. */
+
 /** Returns the writable payload pointer owned by the active record reservation. */
 static uint8_t* RESULT_BUFFER_GetActiveRecordPayload( void );
 
@@ -232,6 +246,8 @@ static bool RESULT_BUFFER_UpdatePagesForCommittedRecord( uint32_t record_offset_
 /** Advances a circular producer offset by a validated record length. */
 static uint32_t RESULT_BUFFER_AdvanceProducerOffset( uint32_t offset_bytes, uint32_t length_bytes );
 
+/* Result logging: RAM-to-NAND page drain. */
+
 /** Returns the immutable page pointer owned by the active drain reservation. */
 static const uint8_t* RESULT_BUFFER_GetActiveDrainPageData( void );
 
@@ -240,6 +256,8 @@ static bool RESULT_BUFFER_DrainLeaseMatches( const ResultBufferDrainLease_T* lea
 
 /** Invalidates the active drain reservation without changing page ownership. */
 static void RESULT_BUFFER_ClearDrainReservation( void );
+
+/* Result retrieval: NAND-to-RAM page fill. */
 
 /** Returns the writable page pointer owned by the active NAND-read fill. */
 static uint8_t* RESULT_BUFFER_GetActiveReadFillPageData( void );
@@ -254,6 +272,8 @@ static void RESULT_BUFFER_ClearReadFillReservation( void );
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/* Result logging: execution record production. */
 
 static uint8_t* RESULT_BUFFER_GetActiveRecordPayload( void )
 {
@@ -412,6 +432,8 @@ static bool RESULT_BUFFER_UpdatePagesForCommittedRecord( uint32_t record_offset_
     return page_ready_to_drain;
 }
 
+/* Result logging: RAM-to-NAND page drain. */
+
 static const uint8_t* RESULT_BUFFER_GetActiveDrainPageData( void )
 {
     uint32_t page_offset_bytes =
@@ -474,6 +496,8 @@ static void RESULT_BUFFER_ClearDrainReservation( void )
 {
     result_buffer_context.active_drain_reservation = ( ResultBufferDrainReservation_T ){ 0 };
 }
+
+/* Result retrieval: NAND-to-RAM page fill. */
 
 static uint8_t* RESULT_BUFFER_GetActiveReadFillPageData( void )
 {
@@ -563,6 +587,8 @@ static void RESULT_BUFFER_ClearReadFillReservation( void )
  *------------------------------------------------------------------------------
  */
 
+/* Shared geometry and ownership reset. */
+
 /**
  * @brief Initialises result-buffer geometry and resets session ownership.
  */
@@ -619,8 +645,17 @@ void RESULT_BUFFER_Reset( void )
     result_buffer_context.producer_offset      = 0U;
     result_buffer_context.pending_nand_bytes   = 0U;
     result_buffer_context.drain_page_index     = 0U;
-    result_buffer_context.next_record_lease_id = 1U;
-    result_buffer_context.next_drain_lease_id  = 1U;
+
+    /* Preserve lease sequences across reuse so earlier-session leases stay stale. */
+    if ( result_buffer_context.next_record_lease_id == 0U )
+    {
+        result_buffer_context.next_record_lease_id = 1U;
+    }
+
+    if ( result_buffer_context.next_drain_lease_id == 0U )
+    {
+        result_buffer_context.next_drain_lease_id = 1U;
+    }
 
     result_buffer_context.active_record_reservation = ( ResultBufferRecordReservation_T ){ 0 };
 
@@ -633,7 +668,10 @@ void RESULT_BUFFER_Reset( void )
     result_buffer_context.host_page_offset_bytes      = 0U;
     result_buffer_context.fill_page_index             = 0U;
     result_buffer_context.host_page_index             = 0U;
-    result_buffer_context.next_read_fill_lease_id     = 1U;
+    if ( result_buffer_context.next_read_fill_lease_id == 0U )
+    {
+        result_buffer_context.next_read_fill_lease_id = 1U;
+    }
 
     result_buffer_context.active_read_fill_reservation = ( ResultBufferReadFillReservation_T ){ 0 };
 
@@ -644,6 +682,8 @@ void RESULT_BUFFER_Reset( void )
         result_buffer_context.page_valid_bytes[page_index] = 0U;
     }
 }
+
+/* Result logging: execution record production. */
 
 /**
  * @brief Reserves contiguous writable storage for one result payload.
@@ -866,6 +906,8 @@ RESULT_BUFFER_CommitRecord( const FlashManagerResultWriteLease_T* lease, uint32_
     }
     return RESULT_BUFFER_RECORD_COMMIT_OK;
 }
+
+/* Result logging: RAM-to-NAND page drain and finalisation. */
 
 /**
  * @brief Acquires the oldest result page that is ready to drain to NAND.
@@ -1121,6 +1163,8 @@ bool RESULT_BUFFER_IsDrainComplete( void )
     return true;
 }
 
+/* Result retrieval: NAND prefetch and Host Interface copy-out. */
+
 /**
  * @brief Resets the fully drained result buffer for stored-result retrieval.
  */
@@ -1137,8 +1181,9 @@ bool RESULT_BUFFER_PrepareRead( uint32_t result_length_bytes )
     }
 
     /*
-     * Reuse the existing result-page storage. Geometry is preserved while all
-     * logging cursors, ownership states, and lease identifiers are reset.
+     * Reuse the existing result-page storage. Geometry and monotonically
+     * changing lease sequences are preserved while logging cursors, page
+     * ownership, and active reservations are reset.
      */
     RESULT_BUFFER_Reset();
 
@@ -1319,7 +1364,8 @@ ResultBufferReadStatus_T RESULT_BUFFER_ReadBytes( uint8_t*  destination,
         return RESULT_BUFFER_READ_END_OF_STREAM;
     }
 
-    bool page_released = false;
+    bool page_released          = false;
+    bool invalid_state_detected = false;
 
     while ( ( *bytes_read < destination_capacity_bytes )
             && ( result_buffer_context.host_consumed_bytes
@@ -1329,9 +1375,8 @@ ResultBufferReadStatus_T RESULT_BUFFER_ReadBytes( uint8_t*  destination,
 
         if ( page_index >= RESULT_BUFFER_PAGE_COUNT )
         {
-            return ( *bytes_read > 0U ) ? ( page_released ? RESULT_BUFFER_READ_PAGE_RELEASED
-                                                          : RESULT_BUFFER_READ_OK )
-                                        : RESULT_BUFFER_READ_INVALID_STATE;
+            invalid_state_detected = true;
+            break;
         }
 
         ResultBufferPageState_T page_state = result_buffer_context.page_states[page_index];
@@ -1340,17 +1385,25 @@ ResultBufferReadStatus_T RESULT_BUFFER_ReadBytes( uint8_t*  destination,
          * An empty or actively filling page means the NAND producer has not yet
          * published the next sequential bytes.
          */
-        if ( ( page_state == RESULT_BUFFER_PAGE_EMPTY )
-             || ( page_state == RESULT_BUFFER_PAGE_FILLING_FROM_NAND ) )
+        if ( page_state == RESULT_BUFFER_PAGE_EMPTY )
+        {
+            /* Already loaded bytes cannot disappear before reaching the consumer. */
+            invalid_state_detected =
+                !result_buffer_context.active_read_fill_reservation.is_active
+                && ( result_buffer_context.next_nand_read_offset_bytes
+                     > result_buffer_context.host_consumed_bytes );
+            break;
+        }
+
+        if ( page_state == RESULT_BUFFER_PAGE_FILLING_FROM_NAND )
         {
             break;
         }
 
         if ( page_state != RESULT_BUFFER_PAGE_READY_FOR_HOST )
         {
-            return ( *bytes_read > 0U ) ? ( page_released ? RESULT_BUFFER_READ_PAGE_RELEASED
-                                                          : RESULT_BUFFER_READ_OK )
-                                        : RESULT_BUFFER_READ_INVALID_STATE;
+            invalid_state_detected = true;
+            break;
         }
 
         uint32_t page_valid_bytes = result_buffer_context.page_valid_bytes[page_index];
@@ -1359,9 +1412,8 @@ ResultBufferReadStatus_T RESULT_BUFFER_ReadBytes( uint8_t*  destination,
              || ( page_valid_bytes > result_buffer_context.page_size_bytes )
              || ( result_buffer_context.host_page_offset_bytes >= page_valid_bytes ) )
         {
-            return ( *bytes_read > 0U ) ? ( page_released ? RESULT_BUFFER_READ_PAGE_RELEASED
-                                                          : RESULT_BUFFER_READ_OK )
-                                        : RESULT_BUFFER_READ_INVALID_STATE;
+            invalid_state_detected = true;
+            break;
         }
 
         uint32_t page_remaining_bytes =
@@ -1372,9 +1424,8 @@ ResultBufferReadStatus_T RESULT_BUFFER_ReadBytes( uint8_t*  destination,
 
         if ( page_remaining_bytes > stream_remaining_bytes )
         {
-            return ( *bytes_read > 0U ) ? ( page_released ? RESULT_BUFFER_READ_PAGE_RELEASED
-                                                          : RESULT_BUFFER_READ_OK )
-                                        : RESULT_BUFFER_READ_INVALID_STATE;
+            invalid_state_detected = true;
+            break;
         }
 
         uint32_t destination_remaining_bytes = destination_capacity_bytes - *bytes_read;
@@ -1418,6 +1469,11 @@ ResultBufferReadStatus_T RESULT_BUFFER_ReadBytes( uint8_t*  destination,
     if ( *bytes_read > 0U )
     {
         return page_released ? RESULT_BUFFER_READ_PAGE_RELEASED : RESULT_BUFFER_READ_OK;
+    }
+
+    if ( invalid_state_detected )
+    {
+        return RESULT_BUFFER_READ_INVALID_STATE;
     }
 
     /*
