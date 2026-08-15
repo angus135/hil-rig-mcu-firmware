@@ -179,7 +179,7 @@ void vTaskSuspend( TaskHandle_t xTaskToSuspend );
 /**
  * @brief stub implementing FreeRTOS xTaskGetTickCount
  */
-volatile TickType_t xTaskGetTickCount( void );
+TickType_t xTaskGetTickCount( void );
 
 /**
  * @brief stub implementing FreeRTOS xTaskNotifyWait

@@ -8,7 +8,7 @@
  *
  *  Notes:
  *      The test sources provide RTOS and external-flash function shims. The
- *      The geometry controls below configure the EXTERNAL_FLASH_GetInfo() double
+ *      geometry controls below configure the EXTERNAL_FLASH_GetInfo() double
  *      shared by the instruction-buffer, result-buffer, and Flash Manager
  *      tests in the flash_manager_tests target.
  ******************************************************************************/
@@ -57,6 +57,9 @@ void FLASH_MANAGER_TEST_ConfigureInstructionFlashInfo( ExternalFlashStatus_T sta
 
 /** Updates the committed instruction length returned by EXTERNAL_FLASH_GetInfo(). */
 void FLASH_MANAGER_TEST_SetInstructionLength( uint32_t instruction_length_bytes );
+
+/** Updates the committed result length returned by EXTERNAL_FLASH_GetInfo(). */
+void FLASH_MANAGER_TEST_SetResultLength( uint32_t result_length_bytes );
 
 // NOLINTEND
 

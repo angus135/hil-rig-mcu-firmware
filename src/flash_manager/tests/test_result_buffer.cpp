@@ -4,8 +4,8 @@
  *  Created:    05-Aug-2026
  *
  *  Description:
- *      Unit tests for result-buffer initialisation and the result logging
- *      record-production, NAND-drain, and finalisation flows.
+ *      Unit tests for result-buffer initialisation, result logging and NAND
+ *      drain, plus NAND-prefetched Host Interface result retrieval.
  *
  *  Notes:
  *      Production code is included directly so the tests can verify private
@@ -88,11 +88,30 @@ extern "C" void FLASH_MANAGER_TEST_SetInstructionLength( uint32_t instruction_le
     external_flash_info.instruction_length_bytes = instruction_length_bytes;
 }
 
+extern "C" void FLASH_MANAGER_TEST_SetResultLength( uint32_t result_length_bytes )
+{
+    external_flash_info.result_length_bytes = result_length_bytes;
+}
+
 /* C11 static assertions are written using the corresponding C++ keyword. */
 #define _Static_assert( condition, message ) static_assert( condition, message )
 extern "C"
 {
+#if defined( __GNUC__ )
+/*
+ * The production implementation is C11. It is included here as C++ solely to
+ * expose private module state, so suppress diagnostics for valid C aggregate
+ * syntax that would otherwise require C++20 in this test translation unit.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wc++20-extensions"
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
 #include "../result_buffer.c" /* Private module under test */  // NOLINT
+#if defined( __GNUC__ )
+#pragma GCC diagnostic pop
+#endif
 }
 #undef _Static_assert
 
@@ -119,6 +138,14 @@ protected:
     void Initialise( void )
     {
         ASSERT_TRUE( RESULT_BUFFER_Init() );
+    }
+
+    void PrepareRead( uint32_t result_length_bytes )
+    {
+        Initialise();
+        ASSERT_TRUE( RESULT_BUFFER_Finalise() );
+        ASSERT_TRUE( RESULT_BUFFER_IsDrainComplete() );
+        ASSERT_TRUE( RESULT_BUFFER_PrepareRead( result_length_bytes ) );
     }
 
     static FlashManagerResultHeader_T ReadHeader( uint32_t offset_bytes )
@@ -215,10 +242,15 @@ TEST_F( ResultBufferTest, ResetInvalidatesLeaseAndPreservesGeometry )
     EXPECT_EQ( 0U, result_buffer_context.producer_offset );
     EXPECT_EQ( 0U, result_buffer_context.pending_nand_bytes );
     EXPECT_EQ( 0U, result_buffer_context.drain_page_index );
-    EXPECT_EQ( 1U, result_buffer_context.next_record_lease_id );
-    EXPECT_EQ( 1U, result_buffer_context.next_drain_lease_id );
+    EXPECT_EQ( 3U, result_buffer_context.next_record_lease_id );
+    EXPECT_EQ( 2U, result_buffer_context.next_drain_lease_id );
+    EXPECT_EQ( 1U, result_buffer_context.next_read_fill_lease_id );
     EXPECT_FALSE( result_buffer_context.active_record_reservation.is_active );
     EXPECT_FALSE( result_buffer_context.active_drain_reservation.is_active );
+
+    FlashManagerResultWriteLease_T next_write_lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( 4U, &next_write_lease ) );
+    EXPECT_NE( write_lease.lease_id, next_write_lease.lease_id );
 }
 
 /**-----------------------------------------------------------------------------
@@ -724,4 +756,284 @@ TEST_F( ResultBufferTest, DrainCompleteRequiresFinalisationAndNoRemainingPageOwn
     ASSERT_TRUE( RESULT_BUFFER_AcquireDrainPage( &drain_lease ) );
     ASSERT_TRUE( RESULT_BUFFER_CompleteDrain( &drain_lease, true ) );
     EXPECT_TRUE( RESULT_BUFFER_IsDrainComplete() );
+}
+
+/**-----------------------------------------------------------------------------
+ *  Result Retrieval Preparation and NAND Fill Tests
+ *------------------------------------------------------------------------------
+ */
+
+TEST_F( ResultBufferTest, PrepareReadRequiresFinalisedAndFullyDrainedLoggingState )
+{
+    EXPECT_FALSE( RESULT_BUFFER_PrepareRead( TEST_PAGE_SIZE_BYTES ) );
+
+    Initialise();
+    EXPECT_FALSE( RESULT_BUFFER_PrepareRead( TEST_PAGE_SIZE_BYTES ) );
+
+    CommitFullPage();
+    ASSERT_TRUE( RESULT_BUFFER_Finalise() );
+    EXPECT_FALSE( RESULT_BUFFER_PrepareRead( TEST_PAGE_SIZE_BYTES ) );
+
+    ResultBufferDrainLease_T drain_lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_AcquireDrainPage( &drain_lease ) );
+    ASSERT_TRUE( RESULT_BUFFER_CompleteDrain( &drain_lease, true ) );
+
+    ASSERT_TRUE( RESULT_BUFFER_PrepareRead( TEST_PAGE_SIZE_BYTES ) );
+    EXPECT_TRUE( result_buffer_context.is_read_prepared );
+    EXPECT_FALSE( result_buffer_context.is_finalised );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES, result_buffer_context.read_total_length_bytes );
+    EXPECT_EQ( 0U, result_buffer_context.next_nand_read_offset_bytes );
+    EXPECT_EQ( 0U, result_buffer_context.host_consumed_bytes );
+}
+
+TEST_F( ResultBufferTest, EmptyReadStreamImmediatelyReachesEndAndCanClose )
+{
+    PrepareRead( 0U );
+
+    ResultBufferReadFillLease_T fill_lease = {};
+    EXPECT_FALSE( RESULT_BUFFER_AcquireReadFillPage( &fill_lease ) );
+
+    std::array<uint8_t, 4U> destination = {};
+    uint32_t                bytes_read  = 99U;
+
+    EXPECT_EQ( RESULT_BUFFER_READ_END_OF_STREAM,
+               RESULT_BUFFER_ReadBytes( destination.data(), destination.size(), &bytes_read ) );
+    EXPECT_EQ( 0U, bytes_read );
+    EXPECT_TRUE( RESULT_BUFFER_IsReadComplete() );
+    EXPECT_TRUE( RESULT_BUFFER_EndRead() );
+    EXPECT_FALSE( result_buffer_context.is_read_prepared );
+    EXPECT_FALSE( RESULT_BUFFER_EndRead() );
+}
+
+TEST_F( ResultBufferTest, AcquireReadFillPageValidatesStateAndClearsOutput )
+{
+    ResultBufferReadFillLease_T lease = {
+        result_buffer_storage,
+        1U,
+        2U,
+        3U,
+    };
+
+    EXPECT_FALSE( RESULT_BUFFER_AcquireReadFillPage( &lease ) );
+    EXPECT_EQ( nullptr, lease.page_data );
+    EXPECT_EQ( 0U, lease.result_offset_bytes );
+    EXPECT_EQ( 0U, lease.read_length_bytes );
+    EXPECT_EQ( 0U, lease.lease_id );
+    EXPECT_FALSE( RESULT_BUFFER_AcquireReadFillPage( nullptr ) );
+
+    PrepareRead( TEST_PAGE_SIZE_BYTES );
+    ASSERT_TRUE( RESULT_BUFFER_AcquireReadFillPage( &lease ) );
+    EXPECT_EQ( result_buffer_storage, lease.page_data );
+    EXPECT_EQ( 0U, lease.result_offset_bytes );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES, lease.read_length_bytes );
+    EXPECT_EQ( RESULT_BUFFER_PAGE_FILLING_FROM_NAND, result_buffer_context.page_states[0] );
+
+    ResultBufferReadFillLease_T second_lease = {};
+    EXPECT_FALSE( RESULT_BUFFER_AcquireReadFillPage( &second_lease ) );
+}
+
+TEST_F( ResultBufferTest, ReadFillUsesPartialLengthForFinalPage )
+{
+    constexpr uint32_t result_length_bytes = TEST_PAGE_SIZE_BYTES + 7U;
+    PrepareRead( result_length_bytes );
+
+    ResultBufferReadFillLease_T first_lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_AcquireReadFillPage( &first_lease ) );
+    ASSERT_TRUE( RESULT_BUFFER_CompleteReadFillPage( &first_lease, true ) );
+
+    ResultBufferReadFillLease_T final_lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_AcquireReadFillPage( &final_lease ) );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES, final_lease.result_offset_bytes );
+    EXPECT_EQ( 7U, final_lease.read_length_bytes );
+    ASSERT_TRUE( RESULT_BUFFER_CompleteReadFillPage( &final_lease, true ) );
+
+    ResultBufferReadFillLease_T unavailable_lease = {};
+    EXPECT_FALSE( RESULT_BUFFER_AcquireReadFillPage( &unavailable_lease ) );
+    EXPECT_EQ( result_length_bytes, result_buffer_context.next_nand_read_offset_bytes );
+}
+
+TEST_F( ResultBufferTest, CompleteReadFillRejectsModifiedLeaseAndPreservesOwnership )
+{
+    PrepareRead( TEST_PAGE_SIZE_BYTES );
+
+    ResultBufferReadFillLease_T lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_AcquireReadFillPage( &lease ) );
+
+    ResultBufferReadFillLease_T modified_lease = lease;
+    modified_lease.read_length_bytes--;
+
+    EXPECT_FALSE( RESULT_BUFFER_CompleteReadFillPage( nullptr, true ) );
+    EXPECT_FALSE( RESULT_BUFFER_CompleteReadFillPage( &modified_lease, true ) );
+    EXPECT_TRUE( result_buffer_context.active_read_fill_reservation.is_active );
+    EXPECT_EQ( RESULT_BUFFER_PAGE_FILLING_FROM_NAND, result_buffer_context.page_states[0] );
+    EXPECT_EQ( 0U, result_buffer_context.next_nand_read_offset_bytes );
+}
+
+TEST_F( ResultBufferTest, FailedReadFillReleasesSlotAndRetriesSameOffsetWithNewLease )
+{
+    PrepareRead( TEST_PAGE_SIZE_BYTES );
+
+    ResultBufferReadFillLease_T failed_lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_AcquireReadFillPage( &failed_lease ) );
+    std::memset( failed_lease.page_data, 0xA5, failed_lease.read_length_bytes );
+    ASSERT_TRUE( RESULT_BUFFER_CompleteReadFillPage( &failed_lease, false ) );
+
+    EXPECT_EQ( RESULT_BUFFER_PAGE_EMPTY, result_buffer_context.page_states[0] );
+    EXPECT_EQ( 0U, result_buffer_context.page_valid_bytes[0] );
+    EXPECT_EQ( 0U, result_buffer_context.next_nand_read_offset_bytes );
+    EXPECT_FALSE( result_buffer_context.active_read_fill_reservation.is_active );
+
+    ResultBufferReadFillLease_T retry_lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_AcquireReadFillPage( &retry_lease ) );
+    EXPECT_EQ( failed_lease.page_data, retry_lease.page_data );
+    EXPECT_EQ( failed_lease.result_offset_bytes, retry_lease.result_offset_bytes );
+    EXPECT_NE( failed_lease.lease_id, retry_lease.lease_id );
+    EXPECT_FALSE( RESULT_BUFFER_CompleteReadFillPage( &failed_lease, true ) );
+}
+
+TEST_F( ResultBufferTest, ThreeReadyReadPagesApplyBackpressureUntilHostReleasesOne )
+{
+    PrepareRead( TEST_PAGE_SIZE_BYTES * 4U );
+
+    for ( uint32_t page_index = 0U; page_index < RESULT_BUFFER_PAGE_COUNT; page_index++ )
+    {
+        ResultBufferReadFillLease_T lease = {};
+        ASSERT_TRUE( RESULT_BUFFER_AcquireReadFillPage( &lease ) );
+        std::memset( lease.page_data, static_cast<int>( page_index + 1U ),
+                     lease.read_length_bytes );
+        ASSERT_TRUE( RESULT_BUFFER_CompleteReadFillPage( &lease, true ) );
+    }
+
+    ResultBufferReadFillLease_T blocked_lease = {};
+    EXPECT_FALSE( RESULT_BUFFER_AcquireReadFillPage( &blocked_lease ) );
+
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES> destination = {};
+    uint32_t                                  bytes_read  = 0U;
+    ASSERT_EQ( RESULT_BUFFER_READ_PAGE_RELEASED,
+               RESULT_BUFFER_ReadBytes( destination.data(), destination.size(), &bytes_read ) );
+    EXPECT_EQ( destination.size(), bytes_read );
+
+    ResultBufferReadFillLease_T next_lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_AcquireReadFillPage( &next_lease ) );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES * 3U, next_lease.result_offset_bytes );
+    EXPECT_EQ( result_buffer_storage, next_lease.page_data );
+}
+
+/**-----------------------------------------------------------------------------
+ *  Host Interface Copy and Retrieval Completion Tests
+ *------------------------------------------------------------------------------
+ */
+
+TEST_F( ResultBufferTest, ReadBytesValidatesArgumentsAndReportsBusyUntilPageIsPublished )
+{
+    std::array<uint8_t, 8U> destination = {};
+    uint32_t                bytes_read  = 99U;
+
+    EXPECT_EQ( RESULT_BUFFER_READ_INVALID_ARGUMENT,
+               RESULT_BUFFER_ReadBytes( destination.data(), destination.size(), nullptr ) );
+    EXPECT_EQ( RESULT_BUFFER_READ_INVALID_STATE,
+               RESULT_BUFFER_ReadBytes( destination.data(), destination.size(), &bytes_read ) );
+    EXPECT_EQ( 0U, bytes_read );
+
+    PrepareRead( TEST_PAGE_SIZE_BYTES );
+    EXPECT_EQ( RESULT_BUFFER_READ_INVALID_ARGUMENT,
+               RESULT_BUFFER_ReadBytes( nullptr, destination.size(), &bytes_read ) );
+    EXPECT_EQ( RESULT_BUFFER_READ_INVALID_ARGUMENT,
+               RESULT_BUFFER_ReadBytes( destination.data(), 0U, &bytes_read ) );
+
+    ResultBufferReadFillLease_T lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_AcquireReadFillPage( &lease ) );
+    EXPECT_EQ( RESULT_BUFFER_READ_BUSY,
+               RESULT_BUFFER_ReadBytes( destination.data(), destination.size(), &bytes_read ) );
+    EXPECT_EQ( 0U, bytes_read );
+}
+
+TEST_F( ResultBufferTest, ReadBytesCopiesPartOfPageWithoutReleasingItsSlot )
+{
+    PrepareRead( TEST_PAGE_SIZE_BYTES );
+
+    ResultBufferReadFillLease_T lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_AcquireReadFillPage( &lease ) );
+    for ( uint32_t index = 0U; index < lease.read_length_bytes; index++ )
+    {
+        lease.page_data[index] = static_cast<uint8_t>( 0x20U + index );
+    }
+    ASSERT_TRUE( RESULT_BUFFER_CompleteReadFillPage( &lease, true ) );
+
+    std::array<uint8_t, 7U> destination = {};
+    uint32_t                bytes_read  = 0U;
+    ASSERT_EQ( RESULT_BUFFER_READ_OK,
+               RESULT_BUFFER_ReadBytes( destination.data(), destination.size(), &bytes_read ) );
+
+    EXPECT_EQ( destination.size(), bytes_read );
+    EXPECT_EQ( 7U, result_buffer_context.host_consumed_bytes );
+    EXPECT_EQ( 7U, result_buffer_context.host_page_offset_bytes );
+    EXPECT_EQ( RESULT_BUFFER_PAGE_READY_FOR_HOST, result_buffer_context.page_states[0] );
+    for ( uint32_t index = 0U; index < destination.size(); index++ )
+    {
+        EXPECT_EQ( static_cast<uint8_t>( 0x20U + index ), destination[index] );
+    }
+}
+
+TEST_F( ResultBufferTest, ReadBytesCrossesPagesReleasesSlotsAndPreservesStreamOrder )
+{
+    constexpr uint32_t result_length_bytes = TEST_PAGE_SIZE_BYTES * 2U + 5U;
+    PrepareRead( result_length_bytes );
+
+    std::array<uint8_t, result_length_bytes> expected_stream = {};
+    for ( uint32_t index = 0U; index < expected_stream.size(); index++ )
+    {
+        expected_stream[index] = static_cast<uint8_t>( index + 1U );
+    }
+
+    uint32_t loaded_bytes = 0U;
+    while ( loaded_bytes < result_length_bytes )
+    {
+        ResultBufferReadFillLease_T lease = {};
+        ASSERT_TRUE( RESULT_BUFFER_AcquireReadFillPage( &lease ) );
+        std::memcpy( lease.page_data, &expected_stream[loaded_bytes], lease.read_length_bytes );
+        loaded_bytes += lease.read_length_bytes;
+        ASSERT_TRUE( RESULT_BUFFER_CompleteReadFillPage( &lease, true ) );
+    }
+
+    std::array<uint8_t, 50U> first_destination = {};
+    uint32_t                 bytes_read        = 0U;
+    ASSERT_EQ( RESULT_BUFFER_READ_PAGE_RELEASED,
+               RESULT_BUFFER_ReadBytes( first_destination.data(), first_destination.size(),
+                                        &bytes_read ) );
+    ASSERT_EQ( first_destination.size(), bytes_read );
+    EXPECT_EQ( 0, std::memcmp( first_destination.data(), expected_stream.data(), bytes_read ) );
+    EXPECT_EQ( 18U, result_buffer_context.host_page_offset_bytes );
+
+    std::array<uint8_t, 32U> final_destination = {};
+    ASSERT_EQ( RESULT_BUFFER_READ_PAGE_RELEASED,
+               RESULT_BUFFER_ReadBytes( final_destination.data(), final_destination.size(),
+                                        &bytes_read ) );
+    ASSERT_EQ( result_length_bytes - first_destination.size(), bytes_read );
+    EXPECT_EQ( 0, std::memcmp( final_destination.data(), &expected_stream[first_destination.size()],
+                               bytes_read ) );
+
+    EXPECT_TRUE( RESULT_BUFFER_IsReadComplete() );
+    EXPECT_EQ( RESULT_BUFFER_READ_END_OF_STREAM,
+               RESULT_BUFFER_ReadBytes( final_destination.data(), final_destination.size(),
+                                        &bytes_read ) );
+    EXPECT_EQ( 0U, bytes_read );
+}
+
+TEST_F( ResultBufferTest, EndReadRejectsEarlyFinishAndPreservesFillLeaseSequenceAcrossReuse )
+{
+    PrepareRead( TEST_PAGE_SIZE_BYTES );
+
+    ResultBufferReadFillLease_T stale_lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_AcquireReadFillPage( &stale_lease ) );
+    EXPECT_FALSE( RESULT_BUFFER_EndRead() );
+
+    RESULT_BUFFER_Reset();
+    ASSERT_TRUE( RESULT_BUFFER_Finalise() );
+    ASSERT_TRUE( RESULT_BUFFER_PrepareRead( TEST_PAGE_SIZE_BYTES ) );
+
+    ResultBufferReadFillLease_T next_lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_AcquireReadFillPage( &next_lease ) );
+    EXPECT_NE( stale_lease.lease_id, next_lease.lease_id );
+    EXPECT_FALSE( RESULT_BUFFER_CompleteReadFillPage( &stale_lease, true ) );
 }
