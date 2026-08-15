@@ -45,6 +45,7 @@
 /* Includes for PWM Capture*/
 #include "subsystem_command_apis/console_pwm_capture.h"
 #include "subsystem_command_apis/console_can.h"
+#include "subsystem_command_apis/console_flash_manager.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -144,6 +145,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"anlg_out",            CONSOLE_Command_Analogue_Output,        "DAC configure/start/stop and write commands"},
     {"pwm_out",             CONSOLE_Command_PWM_Output,             "Configure, start, stop, and inspect PWM outputs"},
     {"usb_test",            CONSOLE_Command_USB_Test,               "Testing basic USB functionality"},
+    {"flash",               CONSOLE_FlashManager_Command,           "External Flash and Flash Manager hardware bring-up"},
 
 };
 
