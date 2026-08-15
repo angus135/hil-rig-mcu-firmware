@@ -6,7 +6,8 @@
  *  Description:
  *      Unit tests for instruction-buffer geometry, cached instruction views,
  *      consume/refill behavior, streamed host upload, NAND page ownership, and
- *      lifecycle completion.
+ *      lifecycle completion, including atomic publication after preemptible
+ *      ring-mirror preparation.
  *
  *  Notes:
  *      Production code is included directly so tests can verify private page
@@ -44,14 +45,60 @@ static constexpr uint32_t TEST_INSTRUCTION_PARTITION_CAPACITY_BYTES =
 static constexpr uint16_t TEST_FULL_INSTRUCTION_PAGE_PAYLOAD_BYTES = static_cast<uint16_t>(
     TEST_INSTRUCTION_PAGE_SIZE_BYTES - sizeof( FlashManagerInstructionHeader_T ) );
 
+static uint32_t test_critical_enter_calls           = 0U;
+static uint32_t test_critical_exit_calls            = 0U;
+static uint32_t test_critical_depth                 = 0U;
+static bool     test_mirror_ready_at_critical_entry = false;
+static void ( *test_critical_entry_hook )( void )   = nullptr;
+
+static void TEST_EnterCritical( void )
+{
+    test_critical_enter_calls++;
+    test_critical_depth++;
+
+    if ( test_critical_entry_hook != nullptr )
+    {
+        test_critical_entry_hook();
+    }
+}
+
+static void TEST_ExitCritical( void )
+{
+    test_critical_exit_calls++;
+
+    if ( test_critical_depth > 0U )
+    {
+        test_critical_depth--;
+    }
+}
+
 /**-----------------------------------------------------------------------------
  *  Module Under Test
  *------------------------------------------------------------------------------
  */
 
+#undef taskENTER_CRITICAL
+#undef taskEXIT_CRITICAL
+#define taskENTER_CRITICAL() TEST_EnterCritical()
+#define taskEXIT_CRITICAL() TEST_ExitCritical()
+
 extern "C"
 {
+#if defined( __GNUC__ )
+/*
+ * The production implementation is C11. It is included here as C++ solely to
+ * expose private module state, so suppress diagnostics for valid C aggregate
+ * syntax that would otherwise require C++20 in this test translation unit.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wc++20-extensions"
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
 #include "../instruction_buffer.c" /* Private module under test */  // NOLINT
+#if defined( __GNUC__ )
+#pragma GCC diagnostic pop
+#endif
 }
 
 /**-----------------------------------------------------------------------------
@@ -70,6 +117,12 @@ protected:
         FLASH_MANAGER_TEST_ConfigureInstructionFlashInfo(
             EXTERNAL_FLASH_STATUS_OK, TEST_INSTRUCTION_PAGE_SIZE_BYTES,
             TEST_INSTRUCTION_PARTITION_CAPACITY_BYTES );
+
+        test_critical_enter_calls           = 0U;
+        test_critical_exit_calls            = 0U;
+        test_critical_depth                 = 0U;
+        test_mirror_ready_at_critical_entry = false;
+        test_critical_entry_hook            = nullptr;
     }
 
     void Initialise( void )
@@ -438,6 +491,17 @@ TEST_F( InstructionBufferTest, CompletingSlotZeroCopiesItsValidBytesIntoMirror )
         lease.page_data[index] = static_cast<uint8_t>( 0x40U + index );
     }
 
+    test_critical_entry_hook = []() {
+        uint32_t mirror_offset_bytes =
+            TEST_INSTRUCTION_PAGE_SIZE_BYTES * INSTRUCTION_BUFFER_PAGE_COUNT;
+
+        test_mirror_ready_at_critical_entry =
+            std::memcmp( instruction_buffer_storage,
+                         &instruction_buffer_storage[mirror_offset_bytes],
+                         TEST_INSTRUCTION_PAGE_SIZE_BYTES )
+            == 0;
+    };
+
     ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &lease, true ) );
 
     uint32_t mirror_offset_bytes = TEST_INSTRUCTION_PAGE_SIZE_BYTES * INSTRUCTION_BUFFER_PAGE_COUNT;
@@ -445,6 +509,10 @@ TEST_F( InstructionBufferTest, CompletingSlotZeroCopiesItsValidBytesIntoMirror )
     EXPECT_EQ( 0, std::memcmp( instruction_buffer_storage,
                                &instruction_buffer_storage[mirror_offset_bytes],
                                TEST_INSTRUCTION_PAGE_SIZE_BYTES ) );
+    EXPECT_TRUE( test_mirror_ready_at_critical_entry );
+    EXPECT_EQ( 1U, test_critical_enter_calls );
+    EXPECT_EQ( 1U, test_critical_exit_calls );
+    EXPECT_EQ( 0U, test_critical_depth );
 }
 
 TEST_F( InstructionBufferTest, PeekAndConsumeAdvanceWithinPageWithoutRequestingRefill )

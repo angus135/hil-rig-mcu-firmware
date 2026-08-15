@@ -6,8 +6,8 @@
  *  Description:
  *      Unit tests for Flash Manager initialisation, ISR-facing result record
  *      production, cached instruction serving and refill, streamed instruction
- *      upload, asynchronous lifecycle requests, NAND page draining,
- *      partial-page finalisation, and faults.
+ *      upload, asynchronous lifecycle requests, NAND page draining/refilling,
+ *      partial-page finalisation, copied result retrieval, and faults.
  *
  *  Notes:
  *      Production code is included directly so private state and drain helpers
@@ -43,6 +43,8 @@ static constexpr uint16_t TEST_PARTIAL_PAYLOAD_BYTES         = 4U;
 static constexpr uint32_t TEST_INSTRUCTION_CAPACITY_BYTES    = TEST_PAGE_SIZE_BYTES * 8U;
 static constexpr uint32_t TEST_MAX_INSTRUCTION_READS         = 8U;
 static constexpr uint32_t TEST_INSTRUCTION_BUFFER_PAGE_COUNT = 3U;
+static constexpr uint32_t TEST_RESULT_CAPACITY_BYTES         = TEST_PAGE_SIZE_BYTES * 8U;
+static constexpr uint32_t TEST_MAX_RESULT_READS              = 8U;
 
 static TaskHandle_t const TEST_FLASH_MANAGER_TASK_HANDLE =
     reinterpret_cast<TaskHandle_t>( 0x1234U );
@@ -96,6 +98,12 @@ static uint32_t              read_instruction_page_calls  = 0U;
 static uint32_t              read_instruction_page_offsets[TEST_MAX_INSTRUCTION_READS] = {};
 static uint32_t              read_instruction_page_lengths[TEST_MAX_INSTRUCTION_READS] = {};
 static uint8_t               instruction_image[TEST_INSTRUCTION_CAPACITY_BYTES]        = {};
+
+static ExternalFlashStatus_T read_result_page_status = EXTERNAL_FLASH_STATUS_OK;
+static uint32_t              read_result_page_calls  = 0U;
+static uint32_t              read_result_page_offsets[TEST_MAX_RESULT_READS] = {};
+static uint32_t              read_result_page_lengths[TEST_MAX_RESULT_READS] = {};
+static uint8_t               result_image[TEST_RESULT_CAPACITY_BYTES]        = {};
 
 extern "C" SemaphoreHandle_t xSemaphoreCreateMutexStatic( StaticSemaphore_t* mutex_buffer )
 {
@@ -240,9 +248,44 @@ extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructionPage( uint32_t of
     return EXTERNAL_FLASH_STATUS_OK;
 }
 
+extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_ReadResultPage( uint32_t offset, uint8_t* data,
+                                                                uint32_t length )
+{
+    if ( read_result_page_calls < TEST_MAX_RESULT_READS )
+    {
+        read_result_page_offsets[read_result_page_calls] = offset;
+        read_result_page_lengths[read_result_page_calls] = length;
+    }
+
+    read_result_page_calls++;
+
+    if ( read_result_page_status != EXTERNAL_FLASH_STATUS_OK )
+    {
+        return read_result_page_status;
+    }
+
+    std::memcpy( data, &result_image[offset], length );
+
+    return EXTERNAL_FLASH_STATUS_OK;
+}
+
 extern "C"
 {
+#if defined( __GNUC__ )
+/*
+ * The production implementation is C11. It is included here as C++ solely to
+ * expose private module state, so suppress diagnostics for valid C aggregate
+ * syntax that would otherwise require C++20 in this test translation unit.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wc++20-extensions"
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
 #include "../flash_manager.c" /* Private module under test */  // NOLINT
+#if defined( __GNUC__ )
+#pragma GCC diagnostic pop
+#endif
 }
 
 /**-----------------------------------------------------------------------------
@@ -318,6 +361,12 @@ protected:
         std::memset( read_instruction_page_offsets, 0, sizeof( read_instruction_page_offsets ) );
         std::memset( read_instruction_page_lengths, 0, sizeof( read_instruction_page_lengths ) );
         std::memset( instruction_image, 0, sizeof( instruction_image ) );
+
+        read_result_page_status = EXTERNAL_FLASH_STATUS_OK;
+        read_result_page_calls  = 0U;
+        std::memset( read_result_page_offsets, 0, sizeof( read_result_page_offsets ) );
+        std::memset( read_result_page_lengths, 0, sizeof( read_result_page_lengths ) );
+        std::memset( result_image, 0, sizeof( result_image ) );
     }
 
     void Initialise( void )
@@ -348,6 +397,16 @@ protected:
         notify_task_handle = nullptr;
         notify_value       = 0U;
         notify_action      = eNoAction;
+    }
+
+    void PrepareCompletedResults( uint32_t result_length_bytes )
+    {
+        Initialise();
+        RegisterTask();
+        ASSERT_TRUE( RESULT_BUFFER_Finalise() );
+        ASSERT_TRUE( RESULT_BUFFER_IsDrainComplete() );
+        FLASH_MANAGER_TEST_SetResultLength( result_length_bytes );
+        flash_manager_context.state = FLASH_MANAGER_STATE_RESULTS_READY;
     }
 
     static FlashManagerResultWriteLease_T ReserveRecord( uint16_t payload_capacity_bytes )
@@ -1443,4 +1502,281 @@ TEST_F( FlashManagerTest, FailedNandWriteIsNotRetriedAfterEnteringFault )
     flash_manager_context.state = FLASH_MANAGER_STATE_EXECUTING;
     EXPECT_TRUE( FLASH_MANAGER_DrainResultPages() );
     EXPECT_EQ( 2U, write_result_page_calls );
+}
+
+/**-----------------------------------------------------------------------------
+ *  Host Interface Result Retrieval Tests
+ *------------------------------------------------------------------------------
+ */
+
+TEST_F( FlashManagerTest, ResultTransferStartRejectsUnavailableManagerStateAndTask )
+{
+    EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_NOT_INITIALISED,
+               FLASH_MANAGER_RequestResultTransferStart() );
+
+    Initialise();
+    EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE,
+               FLASH_MANAGER_RequestResultTransferStart() );
+
+    ASSERT_TRUE( RESULT_BUFFER_Finalise() );
+    flash_manager_context.state = FLASH_MANAGER_STATE_RESULTS_READY;
+    EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_TASK_NOT_READY,
+               FLASH_MANAGER_RequestResultTransferStart() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_RESULTS_READY, flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, ResultTransferStartPreparesReadStateAndNotifiesInitialPrefill )
+{
+    constexpr uint32_t result_length_bytes = TEST_PAGE_SIZE_BYTES * 2U + 5U;
+    PrepareCompletedResults( result_length_bytes );
+
+    ASSERT_EQ( FLASH_MANAGER_RESULT_TRANSFER_OK, FLASH_MANAGER_RequestResultTransferStart() );
+
+    EXPECT_EQ( FLASH_MANAGER_STATE_TRANSFERRING_RESULTS, flash_manager_context.state );
+    EXPECT_EQ( 1U, notify_calls );
+    EXPECT_EQ( TEST_FLASH_MANAGER_TASK_HANDLE, notify_task_handle );
+    EXPECT_EQ( FLASH_MANAGER_NOTIFY_FILL_RESULTS, notify_value );
+    EXPECT_EQ( eSetBits, notify_action );
+
+    std::array<uint8_t, 1U> destination = {};
+    uint32_t                bytes_read  = 1U;
+    EXPECT_EQ(
+        FLASH_MANAGER_RESULT_TRANSFER_BUSY,
+        FLASH_MANAGER_ReadResultBytes( destination.data(), destination.size(), &bytes_read ) );
+    EXPECT_EQ( 0U, bytes_read );
+}
+
+TEST_F( FlashManagerTest, ResultTransferStartExternalInfoFailureEntersFault )
+{
+    PrepareCompletedResults( TEST_PAGE_SIZE_BYTES );
+    FLASH_MANAGER_TEST_ConfigureExternalFlashInfo( EXTERNAL_FLASH_STATUS_ERROR,
+                                                   TEST_PAGE_SIZE_BYTES );
+
+    EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_INTERNAL_ERROR,
+               FLASH_MANAGER_RequestResultTransferStart() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+    EXPECT_EQ( 0U, notify_calls );
+}
+
+TEST_F( FlashManagerTest, ResultTransferStartFaultsWhenResultBufferIsNotFinalised )
+{
+    Initialise();
+    RegisterTask();
+    FLASH_MANAGER_TEST_SetResultLength( TEST_PAGE_SIZE_BYTES );
+    flash_manager_context.state = FLASH_MANAGER_STATE_RESULTS_READY;
+
+    EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_INTERNAL_ERROR,
+               FLASH_MANAGER_RequestResultTransferStart() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+    EXPECT_EQ( 0U, notify_calls );
+}
+
+TEST_F( FlashManagerTest, ResultTransferStartNotificationFailureEntersFault )
+{
+    PrepareCompletedResults( TEST_PAGE_SIZE_BYTES );
+    notify_result = pdFAIL;
+
+    EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_NOTIFY_FAILED,
+               FLASH_MANAGER_RequestResultTransferStart() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+    EXPECT_EQ( 1U, notify_calls );
+}
+
+TEST_F( FlashManagerTest, ResultReadValidatesArgumentsStateAndReportsBusyBeforePrefill )
+{
+    std::array<uint8_t, 8U> destination = {};
+    uint32_t                bytes_read  = 99U;
+
+    EXPECT_EQ(
+        FLASH_MANAGER_RESULT_TRANSFER_NOT_INITIALISED,
+        FLASH_MANAGER_ReadResultBytes( destination.data(), destination.size(), &bytes_read ) );
+    EXPECT_EQ( 0U, bytes_read );
+
+    PrepareCompletedResults( TEST_PAGE_SIZE_BYTES );
+    EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_INVALID_ARGUMENT,
+               FLASH_MANAGER_ReadResultBytes( nullptr, destination.size(), &bytes_read ) );
+    EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_INVALID_ARGUMENT,
+               FLASH_MANAGER_ReadResultBytes( destination.data(), 0U, &bytes_read ) );
+    EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_INVALID_ARGUMENT,
+               FLASH_MANAGER_ReadResultBytes( destination.data(), destination.size(), nullptr ) );
+    EXPECT_EQ(
+        FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE,
+        FLASH_MANAGER_ReadResultBytes( destination.data(), destination.size(), &bytes_read ) );
+
+    ASSERT_EQ( FLASH_MANAGER_RESULT_TRANSFER_OK, FLASH_MANAGER_RequestResultTransferStart() );
+    EXPECT_EQ(
+        FLASH_MANAGER_RESULT_TRANSFER_BUSY,
+        FLASH_MANAGER_ReadResultBytes( destination.data(), destination.size(), &bytes_read ) );
+    EXPECT_EQ( 0U, bytes_read );
+}
+
+TEST_F( FlashManagerTest, ResultFillWorkerPrefetchesAvailablePagesAndFinalPartialPageInOrder )
+{
+    constexpr uint32_t result_length_bytes = TEST_PAGE_SIZE_BYTES * 3U + 7U;
+    PrepareCompletedResults( result_length_bytes );
+    FillBytes( result_image, result_length_bytes, 0x20U );
+    ASSERT_EQ( FLASH_MANAGER_RESULT_TRANSFER_OK, FLASH_MANAGER_RequestResultTransferStart() );
+
+    ASSERT_TRUE( FLASH_MANAGER_FillResultPages() );
+    ASSERT_EQ( 3U, read_result_page_calls );
+
+    for ( uint32_t page_index = 0U; page_index < 3U; page_index++ )
+    {
+        EXPECT_EQ( page_index * TEST_PAGE_SIZE_BYTES, read_result_page_offsets[page_index] );
+        EXPECT_EQ( TEST_PAGE_SIZE_BYTES, read_result_page_lengths[page_index] );
+    }
+
+    /* All three RAM slots are occupied, so another fill applies backpressure. */
+    ASSERT_TRUE( FLASH_MANAGER_FillResultPages() );
+    EXPECT_EQ( 3U, read_result_page_calls );
+
+    notify_calls                                         = 0U;
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES> first_page = {};
+    uint32_t                                  bytes_read = 0U;
+    ASSERT_EQ( FLASH_MANAGER_RESULT_TRANSFER_OK,
+               FLASH_MANAGER_ReadResultBytes( first_page.data(), first_page.size(), &bytes_read ) );
+    ASSERT_EQ( first_page.size(), bytes_read );
+    EXPECT_EQ( 0, std::memcmp( first_page.data(), result_image, first_page.size() ) );
+    EXPECT_EQ( 1U, notify_calls );
+    EXPECT_EQ( FLASH_MANAGER_NOTIFY_FILL_RESULTS, notify_value );
+
+    ASSERT_TRUE( FLASH_MANAGER_FillResultPages() );
+    ASSERT_EQ( 4U, read_result_page_calls );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES * 3U, read_result_page_offsets[3] );
+    EXPECT_EQ( 7U, read_result_page_lengths[3] );
+}
+
+TEST_F( FlashManagerTest, StaleResultFillNotificationRequiresNoNandAccess )
+{
+    Initialise();
+
+    EXPECT_TRUE( FLASH_MANAGER_FillResultPages() );
+    EXPECT_EQ( 0U, read_result_page_calls );
+}
+
+TEST_F( FlashManagerTest, ResultTransferCopiesOrderedBytesRefillsAndFinishesInIdle )
+{
+    constexpr uint32_t result_length_bytes = TEST_PAGE_SIZE_BYTES * 3U + 7U;
+    PrepareCompletedResults( result_length_bytes );
+    FillBytes( result_image, result_length_bytes, 0x30U );
+    ASSERT_EQ( FLASH_MANAGER_RESULT_TRANSFER_OK, FLASH_MANAGER_RequestResultTransferStart() );
+    ASSERT_TRUE( FLASH_MANAGER_FillResultPages() );
+
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES> first_page = {};
+    uint32_t                                  bytes_read = 0U;
+    ASSERT_EQ( FLASH_MANAGER_RESULT_TRANSFER_OK,
+               FLASH_MANAGER_ReadResultBytes( first_page.data(), first_page.size(), &bytes_read ) );
+    ASSERT_EQ( first_page.size(), bytes_read );
+    ASSERT_TRUE( FLASH_MANAGER_FillResultPages() );
+
+    std::array<uint8_t, result_length_bytes - TEST_PAGE_SIZE_BYTES> remaining = {};
+    ASSERT_EQ( FLASH_MANAGER_RESULT_TRANSFER_OK,
+               FLASH_MANAGER_ReadResultBytes( remaining.data(), remaining.size(), &bytes_read ) );
+    ASSERT_EQ( remaining.size(), bytes_read );
+
+    EXPECT_EQ( 0, std::memcmp( first_page.data(), result_image, first_page.size() ) );
+    EXPECT_EQ(
+        0, std::memcmp( remaining.data(), &result_image[first_page.size()], remaining.size() ) );
+    EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_END_OF_STREAM,
+               FLASH_MANAGER_ReadResultBytes( first_page.data(), first_page.size(), &bytes_read ) );
+    EXPECT_EQ( 0U, bytes_read );
+
+    EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_OK, FLASH_MANAGER_FinishResultTransfer() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, EmptyResultTransferCanFinishWithoutNandRead )
+{
+    PrepareCompletedResults( 0U );
+    ASSERT_EQ( FLASH_MANAGER_RESULT_TRANSFER_OK, FLASH_MANAGER_RequestResultTransferStart() );
+
+    EXPECT_TRUE( FLASH_MANAGER_FillResultPages() );
+    EXPECT_EQ( 0U, read_result_page_calls );
+
+    std::array<uint8_t, 4U> destination = {};
+    uint32_t                bytes_read  = 99U;
+    EXPECT_EQ(
+        FLASH_MANAGER_RESULT_TRANSFER_END_OF_STREAM,
+        FLASH_MANAGER_ReadResultBytes( destination.data(), destination.size(), &bytes_read ) );
+    EXPECT_EQ( 0U, bytes_read );
+    EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_OK, FLASH_MANAGER_FinishResultTransfer() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, ReleasedResultPageFaultsWhenRefillTaskIsUnavailable )
+{
+    PrepareCompletedResults( TEST_PAGE_SIZE_BYTES );
+    FillBytes( result_image, TEST_PAGE_SIZE_BYTES, 0x50U );
+    ASSERT_EQ( FLASH_MANAGER_RESULT_TRANSFER_OK, FLASH_MANAGER_RequestResultTransferStart() );
+    ASSERT_TRUE( FLASH_MANAGER_FillResultPages() );
+    flash_manager_context.task_handle = nullptr;
+
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES> destination = {};
+    uint32_t                                  bytes_read  = 0U;
+    EXPECT_EQ(
+        FLASH_MANAGER_RESULT_TRANSFER_INTERNAL_ERROR,
+        FLASH_MANAGER_ReadResultBytes( destination.data(), destination.size(), &bytes_read ) );
+    EXPECT_EQ( destination.size(), bytes_read );
+    EXPECT_EQ( 0, std::memcmp( destination.data(), result_image, destination.size() ) );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, ReleasedResultPageReportsRefillNotificationFailure )
+{
+    PrepareCompletedResults( TEST_PAGE_SIZE_BYTES );
+    FillBytes( result_image, TEST_PAGE_SIZE_BYTES, 0x60U );
+    ASSERT_EQ( FLASH_MANAGER_RESULT_TRANSFER_OK, FLASH_MANAGER_RequestResultTransferStart() );
+    ASSERT_TRUE( FLASH_MANAGER_FillResultPages() );
+    notify_result = pdFAIL;
+
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES> destination = {};
+    uint32_t                                  bytes_read  = 0U;
+    EXPECT_EQ(
+        FLASH_MANAGER_RESULT_TRANSFER_NOTIFY_FAILED,
+        FLASH_MANAGER_ReadResultBytes( destination.data(), destination.size(), &bytes_read ) );
+    EXPECT_EQ( destination.size(), bytes_read );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, ResultFillFailureReleasesPageForRetryAtTheSameOffset )
+{
+    PrepareCompletedResults( TEST_PAGE_SIZE_BYTES );
+    ASSERT_EQ( FLASH_MANAGER_RESULT_TRANSFER_OK, FLASH_MANAGER_RequestResultTransferStart() );
+    read_result_page_status = EXTERNAL_FLASH_STATUS_ECC_ERROR;
+
+    EXPECT_FALSE( FLASH_MANAGER_FillResultPages() );
+    EXPECT_EQ( 1U, read_result_page_calls );
+
+    read_result_page_status = EXTERNAL_FLASH_STATUS_OK;
+    ASSERT_TRUE( FLASH_MANAGER_FillResultPages() );
+    ASSERT_EQ( 2U, read_result_page_calls );
+    EXPECT_EQ( 0U, read_result_page_offsets[1] );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES, read_result_page_lengths[1] );
+}
+
+TEST_F( FlashManagerTest, ResultTransferRejectsEarlyFinish )
+{
+    EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_NOT_INITIALISED,
+               FLASH_MANAGER_FinishResultTransfer() );
+
+    PrepareCompletedResults( TEST_PAGE_SIZE_BYTES );
+    EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE, FLASH_MANAGER_FinishResultTransfer() );
+    ASSERT_EQ( FLASH_MANAGER_RESULT_TRANSFER_OK, FLASH_MANAGER_RequestResultTransferStart() );
+
+    EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE, FLASH_MANAGER_FinishResultTransfer() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_TRANSFERRING_RESULTS, flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, ResultReadFaultsWhenManagerAndBufferStateAreInconsistent )
+{
+    Initialise();
+    RegisterTask();
+    flash_manager_context.state = FLASH_MANAGER_STATE_TRANSFERRING_RESULTS;
+
+    std::array<uint8_t, 4U> destination = {};
+    uint32_t                bytes_read  = 0U;
+    EXPECT_EQ(
+        FLASH_MANAGER_RESULT_TRANSFER_INTERNAL_ERROR,
+        FLASH_MANAGER_ReadResultBytes( destination.data(), destination.size(), &bytes_read ) );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
 }
