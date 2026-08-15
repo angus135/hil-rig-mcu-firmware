@@ -12,11 +12,13 @@ set(CONSOLE_SOURCES
     subsystem_command_apis/console_logic_expander.c
     subsystem_command_apis/console_I2C.c
     subsystem_command_apis/console_can.c
+    subsystem_command_apis/console_flash_manager.c
 )
 
 set(CONSOLE_HEADERS
     console.h
     subsystem_command_apis/console_can.h
+    subsystem_command_apis/console_flash_manager.h
 )
 
 add_library(console STATIC
@@ -53,6 +55,11 @@ target_link_libraries(console
     exec_pwm_gen
     hw_pwm_gen
     hw_usb
+    flash_manager
+    external_flash
+    hw_nand
+    hw_qspi
+    hw_timer
 )
 
 # -----------------------------

@@ -28,6 +28,7 @@
 #include <stdbool.h>
 #include "hw_timer.h"
 #include "hw_spi.h"
+#include <stddef.h>
 #include <stdint.h>
 
 /**-----------------------------------------------------------------------------
@@ -83,6 +84,12 @@
  *------------------------------------------------------------------------------
  */
 
+/*
+ * NULL preserves the production route to EXECUTION_MANAGER_Process_From_ISR().
+ * Hardware bring-up may replace it only while TIM4 is stopped.
+ */
+static HW_TIMER_ExecutionCallback_T volatile execution_timer_callback = NULL;
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -106,8 +113,16 @@ void EXECUTION_MANAGER_TIMER_IRQ_HANDLER( void )
     {
         LL_TIM_ClearFlag_UPDATE( EXECUTION_MANAGER_TIMER_INSTANCE );
 
-        // Running Process
-        EXECUTION_MANAGER_Process_From_ISR();
+        HW_TIMER_ExecutionCallback_T callback = execution_timer_callback;
+
+        if ( callback != NULL )
+        {
+            callback();
+        }
+        else
+        {
+            EXECUTION_MANAGER_Process_From_ISR();
+        }
     }
 #endif
 }
@@ -424,6 +439,11 @@ void HW_TIMER_Stop_Timer( Timer_T timer )
             break;
     }
 #endif
+}
+
+void HW_TIMER_Set_Execution_Callback( HW_TIMER_ExecutionCallback_T callback )
+{
+    execution_timer_callback = callback;
 }
 
 uint32_t HW_TIMER_Get_Clock_Hz( Timer_T timer )
