@@ -134,7 +134,7 @@ TaskHandle_t xTaskGetCurrentTaskHandle( void )
 /**
  * @brief stub implementing FreeRTOS xTaskGetTickCount
  */
-volatile TickType_t xTaskGetTickCount( void )
+TickType_t xTaskGetTickCount( void )
 {
     return current_tick++;
 }

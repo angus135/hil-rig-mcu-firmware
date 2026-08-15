@@ -641,10 +641,10 @@ void RESULT_BUFFER_Reset( void )
      * Reset session ownership and cursor state while preserving the NAND
      * geometry configured by RESULT_BUFFER_Init().
      */
-    result_buffer_context.is_finalised         = false;
-    result_buffer_context.producer_offset      = 0U;
-    result_buffer_context.pending_nand_bytes   = 0U;
-    result_buffer_context.drain_page_index     = 0U;
+    result_buffer_context.is_finalised       = false;
+    result_buffer_context.producer_offset    = 0U;
+    result_buffer_context.pending_nand_bytes = 0U;
+    result_buffer_context.drain_page_index   = 0U;
 
     /* Preserve lease sequences across reuse so earlier-session leases stay stale. */
     if ( result_buffer_context.next_record_lease_id == 0U )
@@ -1388,10 +1388,9 @@ ResultBufferReadStatus_T RESULT_BUFFER_ReadBytes( uint8_t*  destination,
         if ( page_state == RESULT_BUFFER_PAGE_EMPTY )
         {
             /* Already loaded bytes cannot disappear before reaching the consumer. */
-            invalid_state_detected =
-                !result_buffer_context.active_read_fill_reservation.is_active
-                && ( result_buffer_context.next_nand_read_offset_bytes
-                     > result_buffer_context.host_consumed_bytes );
+            invalid_state_detected = !result_buffer_context.active_read_fill_reservation.is_active
+                                     && ( result_buffer_context.next_nand_read_offset_bytes
+                                          > result_buffer_context.host_consumed_bytes );
             break;
         }
 
