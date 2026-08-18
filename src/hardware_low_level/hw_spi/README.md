@@ -95,6 +95,28 @@ different after configuration:
 - configuration precomputes hot-path state so runtime code does not repeatedly derive frame size,
   timer selection, or final-drain strategy
 
+### Lifecycle contract
+
+Each channel follows the same low-level lifecycle:
+
+```text
+Unconfigured --Configure--> Configured/stopped --Start--> Started
+                              ^                         |
+                              +----------Stop-----------+
+```
+
+- `Configure()` validates and applies peripheral, GPIO, DMA, and timer setup but leaves runtime
+  operation stopped.
+- `Start()` rejects unconfigured and already-started channels. RX-capable channels arm passive
+  circular RX DMA; TX-only channels enable SPI directly.
+- `Stop()` rejects unconfigured and already-stopped channels. It terminates DMA, releases master
+  CS, clears queued and active transport state, and retains the applied configuration for restart.
+- If `Stop()` fails, the channel remains marked started so the caller can retry.
+
+`Stop()` is deliberately terminating rather than graceful. A higher layer that must preserve
+queued transmission must first wait for `HW_SPI_Tx_Is_Complete()`. Device-level safe states and
+LogicExpander control remain execution-layer responsibilities.
+
 ---
 
 ## Configuration flow
@@ -126,6 +148,8 @@ Each logical SPI channel has one `SPIPeripheralState_T`. The most important fiel
 | State field | Meaning |
 |---|---|
 | `config` | Last public configuration applied to the channel |
+| `is_configured` | Whether a complete channel configuration has been applied |
+| `is_started` | Whether runtime SPI/RX-DMA operation is active |
 | `rx_buffer` | Circular DMA-backed receive buffer |
 | `rx_position` | Software read/consume index into `rx_buffer`, in bytes |
 | `tx_buffer` | Internal transmit storage used by both master and slave TX paths |

@@ -179,8 +179,6 @@ void SPI_CHANNEL_1_RX_DMA_IRQ( void )
  */
 bool HW_SPI_Start_Channel( SPIChannel_T peripheral )
 {
-    // Start only the RX side here. TX is deliberately separate and is started by
-    // HW_SPI_Load_Tx_Buffer() plus HW_SPI_Tx_Trigger().
     SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State( peripheral );
 
     if ( peripheral_state == NULL )
@@ -188,18 +186,26 @@ bool HW_SPI_Start_Channel( SPIChannel_T peripheral )
         return false;
     }
 
-    if ( peripheral_state->is_configured == false || peripheral_state->is_started
-         || peripheral_state->rx_dma == NULL )
+    if ( !peripheral_state->is_configured || peripheral_state->is_started )
     {
-        peripheral_state->is_started = true;
+        return false;
+    }
+
+    /*
+     * TX-only channels have no passive RX DMA path to arm.
+     */
+    if ( peripheral_state->rx_dma == NULL )
+    {
         LL_SPI_Enable( peripheral_state->spi_peripheral );
+        peripheral_state->is_started = true;
         return true;
     }
 
-    // Arm RX DMA directly instead of using HAL_SPI_Receive_DMA(). This keeps
-    // master-mode RX passive: no clocks are generated until the caller starts a
-    // TX transfer.
-    if ( HW_SPI_RX_Start_Passive_DMA( peripheral_state ) == false )
+    /*
+     * Arm passive RX DMA. In master mode this does not generate clocks;
+     * clocks are generated only by explicit TX activity.
+     */
+    if ( !HW_SPI_RX_Start_Passive_DMA( peripheral_state ) )
     {
         return false;
     }

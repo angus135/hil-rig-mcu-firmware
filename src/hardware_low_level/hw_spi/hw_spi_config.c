@@ -541,17 +541,21 @@ bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
     SPIPeripheralState_T* peripheral_state;
     HAL_StatusTypeDef     stop_status;
 
-    if ( HW_SPI_Is_Valid_Channel( peripheral ) == false )
+    if ( !HW_SPI_Is_Valid_Channel( peripheral ) )
     {
         return false;
     }
 
     peripheral_state = HW_SPI_Get_State_Fast( peripheral );
-    if ( peripheral_state->is_configured == false )
+
+    if ( !peripheral_state->is_configured || !peripheral_state->is_started )
     {
         return false;
     }
 
+    /*
+     * A pending final-drain callback must not operate on stopped state.
+     */
     if ( peripheral_state->is_master
          && peripheral_state->tx_transaction_state == HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN )
     {
@@ -560,7 +564,10 @@ bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
 
     stop_status = HAL_SPI_DMAStop( SPI_HAL_HANDLE_ARRAY[( uint32_t )peripheral] );
 
-    // CS safety is independent of whether HAL could fully stop the DMA path.
+    /*
+     * Release master CS even if HAL cannot completely stop the DMA path.
+     * This is the safest external electrical state.
+     */
     if ( peripheral_state->is_master )
     {
         HW_SPI_TX_Master_CS_Deassert( peripheral_state );
@@ -568,10 +575,20 @@ bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
 
     if ( stop_status != HAL_OK )
     {
+        /*
+         * Hardware state is uncertain. Keep is_started set so the caller can
+         * detect the failed transition and retry Stop().
+         */
         return false;
     }
 
+    /*
+     * Stop is a terminating operation. Any queued or active transport state is
+     * discarded. A graceful caller must wait for HW_SPI_Tx_Is_Complete()
+     * before calling Stop().
+     */
     HW_SPI_TX_Reset_State( peripheral_state );
     peripheral_state->is_started = false;
+
     return true;
 }
