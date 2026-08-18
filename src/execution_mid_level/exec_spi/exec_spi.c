@@ -99,7 +99,6 @@ typedef struct EXECSPIState_T
 
 static EXECSPIState_T spi_channel_0_state = { 0 };
 static EXECSPIState_T spi_channel_1_state = { 0 };
-static EXECSPIState_T spi_dac_state       = { 0 };
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -139,9 +138,6 @@ static inline EXECSPIState_T* EXEC_SPI_Get_State( SPIChannel_T peripheral )
 
         case SPI_CHANNEL_1:
             return &spi_channel_1_state;
-
-        case SPI_DAC:
-            return &spi_dac_state;
 
         default:
             // Configuration is not a hot-path operation, so keep this guard for
@@ -185,43 +181,148 @@ static inline EXECSPIState_T* EXEC_SPI_Get_State( SPIChannel_T peripheral )
  *     false if the channel state could not be resolved, the current state was
  *     invalid, or the low-level driver failed to configure the channel.
  */
-bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configuration )
+bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral, const ExecSPIConfig_T* config )
 {
     EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
+
+    if ( state == NULL || config == NULL )
+    {
+        return false;
+    }
+
+    if ( !config->is_enabled )
+    {
+        if ( state->state == EXEC_SPI_STATE_STARTED )
+        {
+            if ( !EXEC_SPI_Stop_Channel( peripheral ) )
+            {
+                return false;
+            }
+        }
+
+        /*
+         * TODO: Apply the external SPI interface safe state through
+         * LOGIC_EXPANDER_PWM_SPI once the channel-to-expander bit mapping and
+         * required safe values have been confirmed.
+         *
+         * HW SPI currently has no deconfigure operation, so the peripheral
+         * remains configured but stopped.
+         */
+        state->state = EXEC_SPI_STATE_DISABLED;
+        return true;
+    }
+
+    /*
+     * Reconfiguration while running is rejected. The caller must explicitly
+     * stop the channel first.
+     */
+    if ( state->state == EXEC_SPI_STATE_STARTED )
+    {
+        return false;
+    }
+
+    /*
+     * TODO: Apply the configured external SPI interface mode through
+     * LOGIC_EXPANDER_PWM_SPI before configuring the peripheral, once the board
+     * mapping has been confirmed.
+     */
+    if ( !HW_SPI_Configure_Channel( peripheral, config->hardware ) )
+    {
+        /*
+         * HW_SPI_Configure_Channel() preserves its previous configuration when
+         * reconfiguration fails, so preserve the exec state and stored config.
+         */
+        return false;
+    }
+
+    state->configuration = config->hardware;
+    state->state         = EXEC_SPI_STATE_CONFIGURED;
+
+    return true;
+}
+
+bool EXEC_SPI_Start_Channel( SPIChannel_T peripheral )
+{
+    EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
+
     if ( state == NULL )
     {
         return false;
     }
-    switch ( state->state )
-    {
-        case EXEC_SPI_STATE_UNCONFIGURED:
-            // Nothing is currently active, so the channel can be configured directly.
-            break;
-        case EXEC_SPI_STATE_ACTIVE:
-            // Reconfiguration is treated as stop-then-configure-then-start.
-            if ( !HW_SPI_Stop_Channel( peripheral ) )
-            {
-                return false;
-            }
-            break;
-        default:
-            return false;
-    }
 
-    if ( !HW_SPI_Configure_Channel( peripheral, configuration ) )
+    if ( state->state != EXEC_SPI_STATE_CONFIGURED )
     {
-        state->state = EXEC_SPI_STATE_UNCONFIGURED;
         return false;
     }
 
-    // Start arms the low-level runtime path, including passive RX DMA capture.
     if ( !HW_SPI_Start_Channel( peripheral ) )
     {
         return false;
     }
-    state->state         = EXEC_SPI_STATE_ACTIVE;
-    state->configuration = configuration;
+
+    state->state = EXEC_SPI_STATE_STARTED;
+
     return true;
+}
+
+bool EXEC_SPI_Stop_Channel( SPIChannel_T peripheral )
+{
+    EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
+
+    if ( state == NULL )
+    {
+        return false;
+    }
+
+    if ( state->state != EXEC_SPI_STATE_STARTED )
+    {
+        return false;
+    }
+
+    /*
+     * Preserve valid queued or active transmission data. The caller may retry
+     * Stop() after electrical completion.
+     *
+     * A faulted TX path cannot complete normally, so allow the terminating
+     * low-level stop to perform recovery in that case.
+     */
+    if ( !HW_SPI_Tx_Is_Complete( peripheral ) && !HW_SPI_Tx_Is_Faulted( peripheral ) )
+    {
+        return false;
+    }
+
+    if ( !HW_SPI_Stop_Channel( peripheral ) )
+    {
+        return false;
+    }
+
+    state->state = EXEC_SPI_STATE_CONFIGURED;
+
+    return true;
+}
+
+bool EXEC_SPI_Is_Configured( SPIChannel_T peripheral )
+{
+    EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
+
+    if ( state == NULL )
+    {
+        return false;
+    }
+
+    return state->state == EXEC_SPI_STATE_CONFIGURED || state->state == EXEC_SPI_STATE_STARTED;
+}
+
+bool EXEC_SPI_Is_Started( SPIChannel_T peripheral )
+{
+    EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
+
+    if ( state == NULL )
+    {
+        return false;
+    }
+
+    return state->state == EXEC_SPI_STATE_STARTED;
 }
 
 /**
