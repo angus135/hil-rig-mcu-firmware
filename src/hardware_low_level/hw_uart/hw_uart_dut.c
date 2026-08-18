@@ -9,7 +9,7 @@
  *      This module owns:
  *      - channel configuration and validation,
  *      - fixed hardware mapping for UART peripherals and DMA streams,
- *      - static hardware interface selection sequencing,
+ *      - configured, started, and stopped channel lifecycle sequencing,
  *      - DMA-backed circular RX buffering,
  *      - lightweight access to unread RX data through zero-copy spans,
  *      - DMA-source TX ring buffering,
@@ -177,6 +177,7 @@ typedef struct
                               // implemented.
 
     bool is_configured_and_initialised;
+    bool is_started;
     bool rx_running;
 
     volatile uint32_t tx_head;
@@ -277,6 +278,9 @@ static inline void HW_UART_Tx_Complete_Handler( HwUartChannel_T channel );
 static inline void HW_UART_Tx_Error_Handler( HwUartChannel_T channel );
 static inline void HW_UART_Rx_Error_Handler( HwUartChannel_T channel );
 
+static bool HW_UART_Start_Rx( HwUartChannel_T channel );
+static bool HW_UART_Stop_Rx( HwUartChannel_T channel );
+
 /**-----------------------------------------------------------------------------
  *  Interrupt Handler Prototypes
  *------------------------------------------------------------------------------
@@ -339,6 +343,60 @@ static bool HW_UART_Configuration_Is_Valid( const HwUartPeripheralConfig_T* conf
     }
 
     return ( config->baud_rate <= 2000000U );
+}
+
+static bool HW_UART_Start_Rx( HwUartChannel_T channel )
+{
+    HwUartChannelState_T*      state  = &hw_uart_channel_states[channel];
+    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[channel];
+    UART_HandleTypeDef*        huart  = hw_map->uart_handle;
+
+    /*
+     * This is a private helper. Channel, configuration, direction, and
+     * lifecycle validation are owned by HW_UART_Start_Channel().
+     */
+    state->runtime.rx_read_index = 0U;
+
+    for ( uint32_t i = 0U; i < HW_UART_RX_BUFFER_SIZE; i++ )
+    {
+        state->rx_buffer[i] = 0U;
+    }
+
+    if ( HAL_UART_Receive_DMA( huart, state->rx_buffer, HW_UART_RX_BUFFER_SIZE ) != HAL_OK )
+    {
+        return false;
+    }
+
+    if ( huart->hdmarx != NULL )
+    {
+        __HAL_DMA_DISABLE_IT( huart->hdmarx, DMA_IT_HT );
+        __HAL_DMA_DISABLE_IT( huart->hdmarx, DMA_IT_TC );
+    }
+
+    state->runtime.rx_running = true;
+
+    return true;
+}
+
+static bool HW_UART_Stop_Rx( HwUartChannel_T channel )
+{
+    HwUartChannelState_T*      state  = &hw_uart_channel_states[channel];
+    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[channel];
+    UART_HandleTypeDef*        huart  = hw_map->uart_handle;
+
+    /*
+     * This is a private helper. Channel and lifecycle validation are owned by
+     * HW_UART_Stop_Channel().
+     */
+    if ( HAL_UART_AbortReceive( huart ) != HAL_OK )
+    {
+        return false;
+    }
+
+    state->runtime.rx_running    = false;
+    state->runtime.rx_read_index = 0U;
+
+    return true;
 }
 
 /**
@@ -603,13 +661,12 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartPeripheralC
 
     HwUartChannelState_T* state = &hw_uart_channel_states[channel];
 
-    /* Refuse to reconfigure while RX DMA is active. */
-    if ( state->runtime.rx_running )
-    {
-        return false;
-    }
-    /* Refuse to reconfigure while TX DMA is active or queued data remains. */
-    if ( state->runtime.tx_dma_active || state->runtime.tx_count > 0U )
+    /*
+     * Configuration may only be changed while the channel is stopped and no
+     * transmit data remains queued or active.
+     */
+    if ( state->runtime.is_started || state->runtime.rx_running || state->runtime.tx_dma_active
+         || state->runtime.tx_count > 0U )
     {
         return false;
     }
@@ -620,6 +677,7 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartPeripheralC
 
     state->runtime.latched_faults = 0U;
     state->runtime.rx_read_index  = 0U;
+    state->runtime.is_started     = false;
     state->runtime.rx_running     = false;
 
     state->runtime.tx_head             = 0U;
@@ -646,7 +704,8 @@ bool HW_UART_Deconfigure_Channel( HwUartChannel_T channel )
 
     HwUartChannelState_T* state = &hw_uart_channel_states[channel];
 
-    if ( state->runtime.rx_running || state->runtime.tx_dma_active || state->runtime.tx_count > 0U )
+    if ( state->runtime.is_started || state->runtime.rx_running || state->runtime.tx_dma_active
+         || state->runtime.tx_count > 0U )
     {
         return false;
     }
@@ -662,80 +721,7 @@ bool HW_UART_Deconfigure_Channel( HwUartChannel_T channel )
     return true;
 }
 
-/* Starts DMA-backed UART reception for the specified channel. */
-bool HW_UART_Rx_Start( HwUartChannel_T channel )
-{
-    if ( channel >= HW_UART_CHANNEL_COUNT )
-    {
-        return false;
-    }
-
-    HwUartChannelState_T*      state  = &hw_uart_channel_states[channel];
-    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[channel];
-    UART_HandleTypeDef*        huart  = hw_map->uart_handle;
-
-    if ( !state->runtime.is_configured_and_initialised || !state->config.rx_enabled )
-    {
-        return false;
-    }
-
-    if ( state->runtime.rx_running )
-    {
-        return false;
-    }
-
-    /* Reset RX state and clear stale buffered data before enabling DMA reception. */
-    state->runtime.rx_read_index = 0U;
-
-    for ( uint32_t i = 0U; i < HW_UART_RX_BUFFER_SIZE; i++ )
-    {
-        state->rx_buffer[i] = 0U;
-    }
-
-    if ( HAL_UART_Receive_DMA( huart, state->rx_buffer, HW_UART_RX_BUFFER_SIZE ) != HAL_OK )
-    {
-        return false;
-    }
-
-    if ( huart->hdmarx != NULL )
-    {
-        __HAL_DMA_DISABLE_IT( huart->hdmarx, DMA_IT_HT );
-        __HAL_DMA_DISABLE_IT( huart->hdmarx, DMA_IT_TC );
-    }
-
-    state->runtime.rx_running = true;
-    return true;
-}
-
-/* Stops the RX DMA for a given channel */
-bool HW_UART_Rx_Stop( HwUartChannel_T channel )
-{
-    if ( channel >= HW_UART_CHANNEL_COUNT )
-    {
-        return false;
-    }
-
-    HwUartChannelState_T*      state  = &hw_uart_channel_states[channel];
-    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[channel];
-    UART_HandleTypeDef*        huart  = hw_map->uart_handle;
-
-    if ( !state->runtime.is_configured_and_initialised || !state->runtime.rx_running )
-    {
-        return false;
-    }
-
-    if ( HAL_UART_AbortReceive( huart ) != HAL_OK )
-    {
-        return false;
-    }
-
-    state->runtime.rx_running    = false;
-    state->runtime.rx_read_index = 0U;
-    return true;
-}
-
-/* Public Helper to check if Rx is running*/
-bool HW_UART_Rx_Is_Running( HwUartChannel_T channel )
+bool HW_UART_Start_Channel( HwUartChannel_T channel )
 {
     if ( channel >= HW_UART_CHANNEL_COUNT )
     {
@@ -744,12 +730,76 @@ bool HW_UART_Rx_Is_Running( HwUartChannel_T channel )
 
     HwUartChannelState_T* state = &hw_uart_channel_states[channel];
 
-    if ( !state->runtime.is_configured_and_initialised )
+    if ( !state->runtime.is_configured_and_initialised || state->runtime.is_started )
     {
         return false;
     }
 
-    return state->runtime.rx_running;
+    /*
+     * A stopped channel must not already have active RX or pending TX state.
+     * These checks also detect inconsistent internal lifecycle state.
+     */
+    if ( state->runtime.rx_running || state->runtime.tx_dma_active || state->runtime.tx_count > 0U )
+    {
+        return false;
+    }
+
+    if ( state->config.rx_enabled )
+    {
+        if ( !HW_UART_Start_Rx( channel ) )
+        {
+            return false;
+        }
+    }
+
+    /*
+     * TX-only channels require no immediate hardware action. The started state
+     * permits the execution path to queue and trigger transmissions later.
+     */
+    state->runtime.is_started = true;
+
+    return true;
+}
+
+bool HW_UART_Stop_Channel( HwUartChannel_T channel )
+{
+    if ( channel >= HW_UART_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    HwUartChannelState_T* state = &hw_uart_channel_states[channel];
+
+    if ( !state->runtime.is_configured_and_initialised || !state->runtime.is_started )
+    {
+        return false;
+    }
+
+    /*
+     * Stop must not silently discard queued or in-flight TX data. The complete
+     * check also confirms that the UART has shifted out the final stop bit.
+     */
+    if ( state->config.tx_enabled && !HW_UART_Is_Tx_Complete( channel ) )
+    {
+        return false;
+    }
+
+    if ( state->config.rx_enabled )
+    {
+        if ( !state->runtime.rx_running )
+        {
+            return false;
+        }
+
+        if ( !HW_UART_Stop_Rx( channel ) )
+        {
+            return false;
+        }
+    }
+
+    state->runtime.is_started = false;
+
+    return true;
 }
 
 /*
