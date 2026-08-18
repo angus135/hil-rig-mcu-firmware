@@ -44,6 +44,7 @@ target_link_libraries(console
     exec_analogue_input
     execution_manager
     exec_digital_input
+    exec_digital_output
     exec_can
     hw_gpio
     hw_i2c

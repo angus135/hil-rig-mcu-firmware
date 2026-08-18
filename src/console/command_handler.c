@@ -29,6 +29,7 @@
 #include "exec_analogue_input.h"
 #include "exec_uart.h"
 #include "exec_digital_input.h"
+#include "exec_digital_output.h"
 #include "hw_spi.h"
 #include "hw_usb.h"
 #include <stdint.h>
@@ -90,6 +91,9 @@ static void CONSOLE_Command_Set_Pin( uint16_t argc, char** argv );
 static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char** argv );
 static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] );
+static void CONSOLE_Command_Digital_Output( uint16_t argc, char* argv[] );
+static bool CONSOLE_Parse_Digital_Output_Channel( const char* token,
+                                                  ExecDigitalOutputChannelConfig_T* config );
 static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] );
@@ -116,6 +120,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"set_pins",            CONSOLE_Command_Set_Many_Pins,          "Set or reset many digital output"},
     {"analogue_inputs",     CONSOLE_Command_Analogue_Inputs,        "Configure, start, stop, and read analogue inputs"},
     {"digital_input",       CONSOLE_Command_DigitalInput,           "Print digital input states as 1s and 0s."},
+    {"digital_output",      CONSOLE_Command_Digital_Output,          "Configure, start, stop, and inspect digital outputs"},
     {"expander",            CONSOLE_Command_Expander,               "Command set allowing user to configure and control the logic expander"},
     {"i2c_loopback",        CONSOLE_Command_I2C_Loopback,           "Loopback testing for I2C master and slave channels."},
     {"spi_loop",            CONSOLE_Command_SPI_Loopback,           "Does a loopback test"},
@@ -133,6 +138,125 @@ const Command_T CONSOLE_COMMANDS[] = {
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+
+static bool CONSOLE_Parse_Digital_Output_Channel( const char* token,
+                                                  ExecDigitalOutputChannelConfig_T* config )
+{
+    if ( token == NULL || config == NULL )
+    {
+        return false;
+    }
+
+    if ( strcmp( token, "off" ) == 0 )
+    {
+        *config = ( ExecDigitalOutputChannelConfig_T ){
+            .is_enabled   = false,
+            .mode         = EXEC_DIGITAL_OUTPUT_MODE_3V3,
+            .initial_high = false,
+        };
+        return true;
+    }
+
+    const struct
+    {
+        const char*             name;
+        ExecDigitalOutputMode_T mode;
+    } modes[] = {
+        { "3v3", EXEC_DIGITAL_OUTPUT_MODE_3V3 },
+        { "5v", EXEC_DIGITAL_OUTPUT_MODE_5V },
+        { "12v", EXEC_DIGITAL_OUTPUT_MODE_12V },
+        { "24v", EXEC_DIGITAL_OUTPUT_MODE_24V },
+    };
+
+    for ( uint32_t mode = 0U; mode < ( sizeof( modes ) / sizeof( modes[0] ) ); mode++ )
+    {
+        const size_t name_length = strlen( modes[mode].name );
+
+        if ( strncmp( token, modes[mode].name, name_length ) == 0
+             && token[name_length] == ':'
+             && ( token[name_length + 1U] == '0' || token[name_length + 1U] == '1' )
+             && token[name_length + 2U] == '\0' )
+        {
+            config->is_enabled   = true;
+            config->mode         = modes[mode].mode;
+            config->initial_high = token[name_length + 1U] == '1';
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void CONSOLE_Command_Digital_Output( uint16_t argc, char* argv[] )
+{
+    if ( argc < 2U || argv[1] == NULL )
+    {
+        CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  digital_output configure <ch1> ... <ch10>\r\n" );
+        CONSOLE_Printf( "    channel: off | <3v3|5v|12v|24v>:<0|1>\r\n" );
+        CONSOLE_Printf( "  digital_output start\r\n" );
+        CONSOLE_Printf( "  digital_output stop\r\n" );
+        CONSOLE_Printf( "  digital_output disable\r\n" );
+        CONSOLE_Printf( "  digital_output status\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "start" ) == 0 && argc == 2U )
+    {
+        CONSOLE_Printf( "%s", EXEC_DIGITAL_OUTPUT_Start() ? "Digital outputs started\r\n"
+                                                           : "Failed to start digital outputs\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "stop" ) == 0 && argc == 2U )
+    {
+        CONSOLE_Printf( "%s", EXEC_DIGITAL_OUTPUT_Stop() ? "Digital outputs stopped\r\n"
+                                                          : "Failed to stop digital outputs\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "status" ) == 0 && argc == 2U )
+    {
+        CONSOLE_Printf( "Digital outputs: configured=%s, started=%s\r\n",
+                        EXEC_DIGITAL_OUTPUT_Is_Configured() ? "yes" : "no",
+                        EXEC_DIGITAL_OUTPUT_Is_Started() ? "yes" : "no" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "disable" ) == 0 && argc == 2U )
+    {
+        const ExecDigitalOutputConfig_T config = { 0 };
+        CONSOLE_Printf( "%s", EXEC_DIGITAL_OUTPUT_Configure( &config )
+                                  ? "Digital outputs configured disabled\r\n"
+                                  : "Failed to disable digital outputs\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "configure" ) != 0
+         || argc != ( uint16_t )( EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT + 2U ) )
+    {
+        CONSOLE_Printf( "Invalid digital_output command or argument count\r\n" );
+        return;
+    }
+
+    ExecDigitalOutputConfig_T config = { 0 };
+
+    for ( uint32_t channel = 0U; channel < ( uint32_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT;
+          channel++ )
+    {
+        if ( !CONSOLE_Parse_Digital_Output_Channel( argv[channel + 2U],
+                                                    &config.channels[channel] ) )
+        {
+            CONSOLE_Printf( "Invalid configuration for digital-output channel %lu\r\n",
+                            ( unsigned long )( channel + 1U ) );
+            return;
+        }
+    }
+
+    CONSOLE_Printf( "%s", EXEC_DIGITAL_OUTPUT_Configure( &config )
+                              ? "Digital outputs configured and ready to start\r\n"
+                              : "Failed to configure digital outputs\r\n" );
+}
 
 /**
  * @brief Set PWM outputs
