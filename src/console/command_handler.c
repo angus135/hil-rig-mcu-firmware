@@ -1234,8 +1234,8 @@ static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] )
             return;
         }
 
-        uint32_t channel_0_voltage = 0U;
-        uint32_t channel_1_voltage = 0U;
+        uint32_t                          channel_0_voltage   = 0U;
+        uint32_t                          channel_1_voltage   = 0U;
         const ExecAnalogueInputVoltages_T voltage_destination = {
             .channel_0_voltage = &channel_0_voltage,
             .channel_1_voltage = &channel_1_voltage,

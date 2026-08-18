@@ -657,8 +657,7 @@ void CONSOLE_SPI_Loopback_Stop( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[2], "all" ) == 0 )
     {
-        if ( !EXEC_SPI_Stop_Channel( SPI_CHANNEL_0 )
-             || !EXEC_SPI_Stop_Channel( SPI_CHANNEL_1 ) )
+        if ( !EXEC_SPI_Stop_Channel( SPI_CHANNEL_0 ) || !EXEC_SPI_Stop_Channel( SPI_CHANNEL_1 ) )
         {
             CONSOLE_Printf( "Failed to stop both SPI channels\r\n" );
             return;
