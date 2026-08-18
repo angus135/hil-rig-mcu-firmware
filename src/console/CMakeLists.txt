@@ -38,10 +38,10 @@ target_link_libraries(console
     rtos
     exec_uart
     hw_uart
-    hw_adc
     hw_spi
     exec_spi
     exec_analogue_output
+    exec_analogue_input
     execution_manager
     exec_digital_input
     exec_can
