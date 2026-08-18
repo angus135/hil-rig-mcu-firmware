@@ -23,6 +23,7 @@
 
 #include "exec_i2c.h"
 #include "hw_i2c.h"
+#include "logic_expander.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -38,6 +39,21 @@
  *------------------------------------------------------------------------------
  */
 
+typedef struct
+{
+    bool                   is_configured;
+    bool                   is_started;
+    EXECI2CChannelConfig_T configuration;
+} EXECI2CChannelState_T;
+
+typedef struct
+{
+    uint8_t voltage_select_bit;
+    uint8_t pullup_a0_bit;
+    uint8_t pullup_a1_bit;
+    uint8_t pullup_enable_bit;
+} ExecI2CControlMapping_T;
+
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
@@ -48,10 +64,33 @@
  *------------------------------------------------------------------------------
  */
 
+static EXECI2CChannelState_T exec_i2c_channel_state[EXEC_I2C_EXTERNAL_CHANNEL_COUNT] = { 0 };
+
+static const ExecI2CControlMapping_T EXEC_I2C_CONTROL_MAPPING[EXEC_I2C_EXTERNAL_CHANNEL_COUNT] = {
+    [EXEC_I2C_CHANNEL_1] =
+        {
+            .voltage_select_bit = 0U,
+            .pullup_a0_bit      = 1U,
+            .pullup_a1_bit      = 2U,
+            .pullup_enable_bit  = 3U,
+        },
+    [EXEC_I2C_CHANNEL_2] =
+        {
+            .voltage_select_bit = 4U,
+            .pullup_a0_bit      = 5U,
+            .pullup_a1_bit      = 6U,
+            .pullup_enable_bit  = 7U,
+        },
+};
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+static bool EXEC_I2C_Apply_Interface_Control( ExecI2CChannel_T channel, ExecI2CVoltage_T voltage,
+                                              ExecI2CPullup_T pullup, bool pullup_enabled );
+static bool EXEC_I2C_Apply_Safe_State( ExecI2CChannel_T channel );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -67,8 +106,9 @@ static inline EXECI2CStatus_T EXEC_I2C_From_HW_Status( HWI2CStatus_T status )
         case HW_I2C_STATUS_BUSY:
             return EXEC_I2C_STATUS_BUSY;
         case HW_I2C_STATUS_INVALID_PARAM:
-        case HW_I2C_STATUS_NOT_CONFIGURED:
             return EXEC_I2C_STATUS_INVALID_PARAM;
+        case HW_I2C_STATUS_NOT_CONFIGURED:
+            return EXEC_I2C_STATUS_NOT_CONFIGURED;
         case HW_I2C_STATUS_OVERFLOW:
             return EXEC_I2C_STATUS_OVERFLOW;
         case HW_I2C_STATUS_ERROR:
@@ -77,17 +117,36 @@ static inline EXECI2CStatus_T EXEC_I2C_From_HW_Status( HWI2CStatus_T status )
     }
 }
 
-static inline bool EXEC_I2C_Is_External_Channel( HWI2CChannel_T channel )
+static inline bool EXEC_I2C_Is_External_Channel( ExecI2CChannel_T channel )
 {
-    return ( channel == HW_I2C_CHANNEL_1 ) || ( channel == HW_I2C_CHANNEL_2 );
+    return ( channel == EXEC_I2C_CHANNEL_1 ) || ( channel == EXEC_I2C_CHANNEL_2 );
 }
 
-static EXECI2CStatus_T EXEC_I2C_Validate_Config( HWI2CChannel_T                channel,
+static EXECI2CChannelState_T* EXEC_I2C_Get_Channel_State( ExecI2CChannel_T channel )
+{
+    if ( !EXEC_I2C_Is_External_Channel( channel ) )
+    {
+        return NULL;
+    }
+
+    return &exec_i2c_channel_state[channel];
+}
+
+static EXECI2CStatus_T EXEC_I2C_Validate_Config( ExecI2CChannel_T              channel,
                                                  const EXECI2CChannelConfig_T* config )
 {
-    if ( config == NULL )
+    if ( !EXEC_I2C_Is_External_Channel( channel ) || config == NULL )
     {
         return EXEC_I2C_STATUS_INVALID_PARAM;
+    }
+
+    /*
+     * A disabled request intentionally permits an otherwise zero-initialized
+     * configuration. Its remaining fields are not applied.
+     */
+    if ( !config->is_enabled )
+    {
+        return EXEC_I2C_STATUS_OK;
     }
 
     /* I2C mode must be either master or slave */
@@ -102,37 +161,76 @@ static EXECI2CStatus_T EXEC_I2C_Validate_Config( HWI2CChannel_T                c
         return EXEC_I2C_STATUS_INVALID_PARAM;
     }
 
-    /* Transfer paths must be interrupt or DMA */
-    if ( ( config->tx_transfer_path != HW_I2C_TRANSFER_INTERRUPT )
-         && ( config->tx_transfer_path != HW_I2C_TRANSFER_DMA ) )
-    {
-        return EXEC_I2C_STATUS_INVALID_PARAM;
-    }
-
-    /* Receive path must be interrupt or DMA */
-    if ( ( config->rx_transfer_path != HW_I2C_TRANSFER_INTERRUPT )
-         && ( config->rx_transfer_path != HW_I2C_TRANSFER_DMA ) )
-    {
-        return EXEC_I2C_STATUS_INVALID_PARAM;
-    }
-
     /* Own address must be 7 bits max */
     if ( config->own_address_7bit > 0x7FU )
     {
         return EXEC_I2C_STATUS_INVALID_PARAM;
     }
 
-    /* I2C3 does not support DMA transfers */
-    if ( channel == HW_I2C_CHANNEL_1 )
+    if ( ( config->voltage >= EXEC_I2C_VOLTAGE_COUNT )
+         || ( config->pullup >= EXEC_I2C_PULLUP_COUNT ) )
     {
-        if ( ( config->tx_transfer_path == HW_I2C_TRANSFER_DMA )
-             || ( config->rx_transfer_path == HW_I2C_TRANSFER_DMA ) )
-        {
-            return EXEC_I2C_STATUS_INVALID_PARAM;
-        }
+        return EXEC_I2C_STATUS_INVALID_PARAM;
     }
 
     return EXEC_I2C_STATUS_OK;
+}
+
+static bool EXEC_I2C_Apply_Interface_Control( ExecI2CChannel_T channel, ExecI2CVoltage_T voltage,
+                                              ExecI2CPullup_T pullup, bool pullup_enabled )
+{
+    if ( !EXEC_I2C_Is_External_Channel( channel ) || ( voltage >= EXEC_I2C_VOLTAGE_COUNT )
+         || ( pullup >= EXEC_I2C_PULLUP_COUNT ) )
+    {
+        return false;
+    }
+
+    const ExecI2CControlMapping_T* mapping = &EXEC_I2C_CONTROL_MAPPING[channel];
+
+    const bool voltage_select = voltage == EXEC_I2C_VOLTAGE_5V;
+
+    /*
+     * Pull-up enum values intentionally encode the 2-bit decoder selection:
+     * 0 = 1 k, 1 = 2.2 k, 2 = 4.7 k, 3 = 10 k.
+     */
+    const bool pullup_a0 = ( ( uint8_t )pullup & 0x01U ) != 0U;
+    const bool pullup_a1 = ( ( uint8_t )pullup & 0x02U ) != 0U;
+
+    if ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_I2C_AO, LOGIC_EXPANDER_PORT_A,
+                                          mapping->voltage_select_bit, voltage_select )
+         != LOGIC_EXPANDER_STATUS_OK )
+    {
+        return false;
+    }
+
+    if ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_I2C_AO, LOGIC_EXPANDER_PORT_A,
+                                          mapping->pullup_a0_bit, pullup_a0 )
+         != LOGIC_EXPANDER_STATUS_OK )
+    {
+        return false;
+    }
+
+    if ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_I2C_AO, LOGIC_EXPANDER_PORT_A,
+                                          mapping->pullup_a1_bit, pullup_a1 )
+         != LOGIC_EXPANDER_STATUS_OK )
+    {
+        return false;
+    }
+
+    if ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_I2C_AO, LOGIC_EXPANDER_PORT_A,
+                                          mapping->pullup_enable_bit, pullup_enabled )
+         != LOGIC_EXPANDER_STATUS_OK )
+    {
+        return false;
+    }
+
+    return LOGIC_EXPANDER_Send_Control_Bits() == LOGIC_EXPANDER_STATUS_OK;
+}
+
+static bool EXEC_I2C_Apply_Safe_State( ExecI2CChannel_T channel )
+{
+    return EXEC_I2C_Apply_Interface_Control( channel, EXEC_I2C_VOLTAGE_3V3, EXEC_I2C_PULLUP_1K,
+                                             false );
 }
 
 /**-----------------------------------------------------------------------------
@@ -140,64 +238,206 @@ static EXECI2CStatus_T EXEC_I2C_Validate_Config( HWI2CChannel_T                c
  *------------------------------------------------------------------------------
  */
 
-/**
- * @brief Configure all I2C channels with validation.
- *
- * Validates configuration parameters for both external channels (I2C3 and I2C2)
- * and delegates configuration to hw_i2c.
- * Must be called before any transfers.
- *
- * @note Validity checks are minimal. Callers must ensure:
- *       - i2c1_config is non-NULL
- *       - i2c2_config is non-NULL
- *       Configuration validation occurs; invalid configs will be rejected.
- *
- * @param[in] i2c1_config                           Configuration for I2C3 channel
- * @param[in] i2c2_config                           Configuration for I2C2 channel
- *
- * @return EXEC_I2C_STATUS_OK on success
- * @return EXEC_I2C_STATUS_INVALID_PARAM if any parameter is invalid
- */
-EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_config,
-                                        const EXECI2CChannelConfig_T* i2c2_config )
+EXECI2CStatus_T EXEC_I2C_Configure_Channel( ExecI2CChannel_T              channel,
+                                            const EXECI2CChannelConfig_T* config )
 {
-    EXECI2CStatus_T status_1 = EXEC_I2C_Validate_Config( HW_I2C_CHANNEL_1, i2c1_config );
-    EXECI2CStatus_T status_2 = EXEC_I2C_Validate_Config( HW_I2C_CHANNEL_2, i2c2_config );
+    const EXECI2CStatus_T validation_status = EXEC_I2C_Validate_Config( channel, config );
 
-    if ( ( status_1 != EXEC_I2C_STATUS_OK ) || ( status_2 != EXEC_I2C_STATUS_OK ) )
+    if ( validation_status != EXEC_I2C_STATUS_OK )
+    {
+        return validation_status;
+    }
+
+    EXECI2CChannelState_T* state = EXEC_I2C_Get_Channel_State( channel );
+
+    if ( state == NULL )
     {
         return EXEC_I2C_STATUS_INVALID_PARAM;
     }
 
-    HWI2CChannelConfig_T hw_i2c1_config = {
-        .mode             = i2c1_config->mode,
-        .speed            = i2c1_config->speed,
-        .tx_transfer_path = i2c1_config->tx_transfer_path,
-        .rx_transfer_path = i2c1_config->rx_transfer_path,
-        .own_address_7bit = i2c1_config->own_address_7bit,
+    if ( !config->is_enabled )
+    {
+        if ( state->is_started )
+        {
+            const EXECI2CStatus_T stop_status = EXEC_I2C_Stop_Channel( channel );
+
+            if ( stop_status != EXEC_I2C_STATUS_OK )
+            {
+                return stop_status;
+            }
+        }
+        else if ( !EXEC_I2C_Apply_Safe_State( channel ) )
+        {
+            return EXEC_I2C_STATUS_ERROR;
+        }
+
+        memset( &state->configuration, 0, sizeof( state->configuration ) );
+        state->is_configured = false;
+        state->is_started    = false;
+
+        return EXEC_I2C_STATUS_OK;
+    }
+
+    if ( state->is_started )
+    {
+        return EXEC_I2C_STATUS_BUSY;
+    }
+
+    /*
+     * Apply static voltage and resistance selection while keeping the pull-up
+     * disconnected. Start() connects it after starting the HW peripheral.
+     */
+    if ( !EXEC_I2C_Apply_Interface_Control( channel, config->voltage, config->pullup, false ) )
+    {
+        return EXEC_I2C_STATUS_ERROR;
+    }
+
+    const HWI2CTransferPath_T transfer_path =
+        ( channel == EXEC_I2C_CHANNEL_2 ) ? HW_I2C_TRANSFER_DMA : HW_I2C_TRANSFER_INTERRUPT;
+
+    const HWI2CChannelConfig_T hw_config = {
+        .mode             = config->mode,
+        .speed            = config->speed,
+        .tx_transfer_path = transfer_path,
+        .rx_transfer_path = transfer_path,
+        .own_address_7bit = config->own_address_7bit,
     };
 
-    HWI2CChannelConfig_T hw_i2c2_config = {
-        .mode             = i2c2_config->mode,
-        .speed            = i2c2_config->speed,
-        .tx_transfer_path = i2c2_config->tx_transfer_path,
-        .rx_transfer_path = i2c2_config->rx_transfer_path,
-        .own_address_7bit = i2c2_config->own_address_7bit,
-    };
+    const HWI2CStatus_T hw_status =
+        HW_I2C_Configure_Channel( ( HWI2CChannel_T )channel, &hw_config );
 
-    HWI2CStatus_T hw_status = HW_I2C_Configure_Channel( HW_I2C_CHANNEL_1, &hw_i2c1_config );
     if ( hw_status != HW_I2C_STATUS_OK )
     {
+        ( void )EXEC_I2C_Apply_Safe_State( channel );
         return EXEC_I2C_From_HW_Status( hw_status );
     }
 
-    hw_status = HW_I2C_Configure_Channel( HW_I2C_CHANNEL_2, &hw_i2c2_config );
-    if ( hw_status != HW_I2C_STATUS_OK )
-    {
-        return EXEC_I2C_From_HW_Status( hw_status );
-    }
+    state->configuration = *config;
+    state->is_configured = true;
+    state->is_started    = false;
 
     return EXEC_I2C_STATUS_OK;
+}
+
+EXECI2CStatus_T EXEC_I2C_Start_Channel( ExecI2CChannel_T channel )
+{
+    EXECI2CChannelState_T* state = EXEC_I2C_Get_Channel_State( channel );
+
+    if ( state == NULL )
+    {
+        return EXEC_I2C_STATUS_INVALID_PARAM;
+    }
+
+    if ( !state->is_configured )
+    {
+        return EXEC_I2C_STATUS_NOT_CONFIGURED;
+    }
+
+    if ( state->is_started )
+    {
+        return EXEC_I2C_STATUS_BUSY;
+    }
+
+    const HWI2CStatus_T hw_status = HW_I2C_Start_Channel( ( HWI2CChannel_T )channel );
+
+    if ( hw_status != HW_I2C_STATUS_OK )
+    {
+        return EXEC_I2C_From_HW_Status( hw_status );
+    }
+
+    /*
+     * The MCU peripheral is running before the selected external pull-up is
+     * connected.
+     */
+    if ( !EXEC_I2C_Apply_Interface_Control( channel, state->configuration.voltage,
+                                            state->configuration.pullup, true ) )
+    {
+        const HWI2CStatus_T rollback_status = HW_I2C_Stop_Channel( ( HWI2CChannel_T )channel );
+
+        if ( rollback_status != HW_I2C_STATUS_OK )
+        {
+            /*
+             * The HW peripheral could not be returned to its stopped state.
+             * Preserve STARTED so Stop() can be retried.
+             */
+            state->is_started = true;
+        }
+
+        return EXEC_I2C_STATUS_ERROR;
+    }
+
+    state->is_started = true;
+
+    return EXEC_I2C_STATUS_OK;
+}
+
+EXECI2CStatus_T EXEC_I2C_Stop_Channel( ExecI2CChannel_T channel )
+{
+    EXECI2CChannelState_T* state = EXEC_I2C_Get_Channel_State( channel );
+
+    if ( state == NULL )
+    {
+        return EXEC_I2C_STATUS_INVALID_PARAM;
+    }
+
+    if ( !state->is_configured )
+    {
+        return EXEC_I2C_STATUS_NOT_CONFIGURED;
+    }
+
+    if ( !state->is_started )
+    {
+        return EXEC_I2C_STATUS_BUSY;
+    }
+
+    /*
+     * Disconnect the DUT-facing pull-ups and select the deterministic safe
+     * voltage/resistance state before stopping the MCU peripheral.
+     */
+    if ( !EXEC_I2C_Apply_Safe_State( channel ) )
+    {
+        return EXEC_I2C_STATUS_ERROR;
+    }
+
+    const HWI2CStatus_T hw_status = HW_I2C_Stop_Channel( ( HWI2CChannel_T )channel );
+
+    if ( hw_status != HW_I2C_STATUS_OK )
+    {
+        /*
+         * The external pull-ups are disconnected, but the HW peripheral is
+         * still running or its state is uncertain. Preserve STARTED so Stop()
+         * can be retried.
+         */
+        return EXEC_I2C_From_HW_Status( hw_status );
+    }
+
+    state->is_started = false;
+
+    return EXEC_I2C_STATUS_OK;
+}
+
+bool EXEC_I2C_Is_Channel_Configured( ExecI2CChannel_T channel )
+{
+    EXECI2CChannelState_T* state = EXEC_I2C_Get_Channel_State( channel );
+
+    if ( state == NULL )
+    {
+        return false;
+    }
+
+    return state->is_configured;
+}
+
+bool EXEC_I2C_Is_Channel_Started( ExecI2CChannel_T channel )
+{
+    EXECI2CChannelState_T* state = EXEC_I2C_Get_Channel_State( channel );
+
+    if ( state == NULL )
+    {
+        return false;
+    }
+
+    return state->is_started;
 }
 
 /**
@@ -209,7 +449,7 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
  * The external channel selector is validated here. The low-level enqueue validates
  * the address, payload, length, configured mode, and available queue capacity.
  *
- * @param[in] channel               I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
+ * @param[in] channel               External execution I2C channel
  * @param[in] device_address_7bit   7-bit slave address
  * @param[in] payload               Data to transmit
  * @param[in] payload_length        Number of bytes to transmit
@@ -217,7 +457,7 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
  * @return true if the complete request was accepted into the driver queue
  * @return false on failure
  */
-bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
+bool EXEC_I2C_Master_Transmit_External( ExecI2CChannel_T channel, uint16_t device_address_7bit,
                                         const uint8_t* payload, uint16_t payload_length )
 {
     if ( !EXEC_I2C_Is_External_Channel( channel ) )
@@ -225,7 +465,8 @@ bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_
         return false;
     }
 
-    return HW_I2C_Enqueue_Master_Transmit( channel, device_address_7bit, payload, payload_length )
+    return HW_I2C_Enqueue_Master_Transmit( ( HWI2CChannel_T )channel, device_address_7bit, payload,
+                                           payload_length )
            == HW_I2C_STATUS_OK;
 }
 
@@ -235,8 +476,8 @@ bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_
  * Prepares the channel to respond to a master read request with the provided data.
  *
  * @note Validity checks are minimal. Callers must ensure:
- *       - channel is a valid external I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
- *       - channel has been previously configured via EXEC_I2C_Configuration()
+ *       - channel is a valid external execution I2C channel
+ *       - channel has been configured via EXEC_I2C_Configure_Channel()
  *       - payload is non-NULL if payload_length > 0
  *       Invalid channel access will result in undefined behavior (no range checking).
  *
@@ -249,11 +490,11 @@ bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_
  * @return true if slave transmit was prepared
  * @return false on failure
  */
-bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* payload,
+bool EXEC_I2C_Slave_Transmit_External( ExecI2CChannel_T channel, const uint8_t* payload,
                                        uint16_t payload_length )
 {
-    return HW_I2C_Load_Stage_Buffer( channel, payload, payload_length )
-           && HW_I2C_Trigger_Slave_Transmit_External( channel );
+    return HW_I2C_Load_Stage_Buffer( ( HWI2CChannel_T )channel, payload, payload_length )
+           && HW_I2C_Trigger_Slave_Transmit_External( ( HWI2CChannel_T )channel );
 }
 
 /**
@@ -266,14 +507,14 @@ bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* pa
  * The external channel selector is validated here. The low-level enqueue validates
  * the address, expected length, configured mode, and available queue capacity.
  *
- * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
+ * @param[in] channel               External execution I2C channel
  * @param[in] device_address_7bit   7-bit slave address
  * @param[in] expected_length       Number of bytes expected from slave
  *
  * @return true if the complete receive request was accepted into the queue
  * @return false on failure
  */
-bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
+bool EXEC_I2C_Start_Master_Receive_External( ExecI2CChannel_T channel, uint16_t device_address_7bit,
                                              uint16_t expected_length )
 {
     if ( !EXEC_I2C_Is_External_Channel( channel ) )
@@ -281,7 +522,8 @@ bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t de
         return false;
     }
 
-    return HW_I2C_Enqueue_Master_Receive( channel, device_address_7bit, expected_length )
+    return HW_I2C_Enqueue_Master_Receive( ( HWI2CChannel_T )channel, device_address_7bit,
+                                          expected_length )
            == HW_I2C_STATUS_OK;
 }
 
@@ -292,8 +534,8 @@ bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t de
  * is buffered internally and can be retrieved with EXEC_I2C_Receive_Copy_And_Consume().
  *
  * @note Validity checks are minimal. Callers must ensure:
- *       - channel is a valid external I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
- *       - channel has been previously configured via EXEC_I2C_Configuration()
+ *       - channel is a valid external execution I2C channel
+ *       - channel has been configured via EXEC_I2C_Configure_Channel()
  *       Invalid channel access will result in undefined behavior (no range checking).
  *
  * Caller should call EXEC_I2C_Did_Last_Transfer_Overflow afterwards to check for overflow.
@@ -304,33 +546,34 @@ bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t de
  * @return true if receive was prepared
  * @return false on failure
  */
-bool EXEC_I2C_Start_Slave_Receive_External( HWI2CChannel_T channel, uint16_t expected_length )
+bool EXEC_I2C_Start_Slave_Receive_External( ExecI2CChannel_T channel, uint16_t expected_length )
 {
-    return HW_I2C_Trigger_Slave_Receive_External( channel, expected_length );
+    return HW_I2C_Trigger_Slave_Receive_External( ( HWI2CChannel_T )channel, expected_length );
 }
 
-void EXEC_I2C_Service_Transaction_Queue( HWI2CChannel_T channel )
+void EXEC_I2C_Service_Transaction_Queue( ExecI2CChannel_T channel )
 {
-    HW_I2C_Service_Transaction_Queue( channel );
+    HW_I2C_Service_Transaction_Queue( ( HWI2CChannel_T )channel );
 }
 
-bool EXEC_I2C_Is_Transaction_Queue_Complete( HWI2CChannel_T channel )
+bool EXEC_I2C_Is_Transaction_Queue_Complete( ExecI2CChannel_T channel )
 {
-    return HW_I2C_Is_Transaction_Queue_Complete( channel );
+    return HW_I2C_Is_Transaction_Queue_Complete( ( HWI2CChannel_T )channel );
 }
 
-EXECI2CStatus_T EXEC_I2C_Get_And_Clear_Transfer_Result( HWI2CChannel_T channel )
+EXECI2CStatus_T EXEC_I2C_Get_And_Clear_Transfer_Result( ExecI2CChannel_T channel )
 {
-    return EXEC_I2C_From_HW_Status( HW_I2C_Get_And_Clear_Transfer_Result( channel ) );
+    return EXEC_I2C_From_HW_Status(
+        HW_I2C_Get_And_Clear_Transfer_Result( ( HWI2CChannel_T )channel ) );
 }
 
-EXECI2CStatus_T EXEC_I2C_Recover_Channel( HWI2CChannel_T channel )
+EXECI2CStatus_T EXEC_I2C_Recover_Channel( ExecI2CChannel_T channel )
 {
-    return EXEC_I2C_From_HW_Status( HW_I2C_Recover_Channel( channel ) );
+    return EXEC_I2C_From_HW_Status( HW_I2C_Recover_Channel( ( HWI2CChannel_T )channel ) );
 }
 
 EXECI2CStatus_T EXEC_I2C_Receive_Message_Copy_And_Consume(
-    HWI2CChannel_T channel, uint8_t* result_storage, uint16_t result_storage_capacity,
+    ExecI2CChannel_T channel, uint8_t* result_storage, uint16_t result_storage_capacity,
     HWI2CRxMessageDescriptor_T* descriptor, uint16_t* bytes_copied, uint16_t* required_length )
 {
     if ( ( descriptor == NULL ) || ( bytes_copied == NULL ) || ( required_length == NULL ) )
@@ -343,11 +586,11 @@ EXECI2CStatus_T EXEC_I2C_Receive_Message_Copy_And_Consume(
     *bytes_copied             = 0U;
     *required_length          = 0U;
 
-    HW_I2C_Service_Transaction_Queue( channel );
+    HW_I2C_Service_Transaction_Queue( ( HWI2CChannel_T )channel );
 
     HWI2CRxMessagePeek_T message;
     memset( &message, 0, sizeof( message ) );
-    if ( !HW_I2C_Peek_Received_Message( channel, &message ) )
+    if ( !HW_I2C_Peek_Received_Message( ( HWI2CChannel_T )channel, &message ) )
     {
         return EXEC_I2C_STATUS_INVALID_PARAM;
     }
@@ -378,7 +621,7 @@ EXECI2CStatus_T EXEC_I2C_Receive_Message_Copy_And_Consume(
         memcpy( &result_storage[message.first.length], message.second.data, message.second.length );
     }
 
-    if ( !HW_I2C_Consume_Received_Message( channel ) )
+    if ( !HW_I2C_Consume_Received_Message( ( HWI2CChannel_T )channel ) )
     {
         return EXEC_I2C_STATUS_ERROR;
     }
@@ -394,8 +637,8 @@ EXECI2CStatus_T EXEC_I2C_Receive_Message_Copy_And_Consume(
  * then consumes (advances pointer past) the copied bytes.
  *
  * @note Validity checks are minimal. Callers must ensure:
- *       - channel is a valid external I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
- *       - channel has been previously configured via EXEC_I2C_Configuration()
+ *       - channel is a valid external execution I2C channel
+ *       - channel has been configured via EXEC_I2C_Configure_Channel()
  *       - result_storage is non-NULL
  *       - bytes_copied is non-NULL
  *       Invalid channel access will result in undefined behavior (no range checking).
@@ -408,7 +651,7 @@ EXECI2CStatus_T EXEC_I2C_Receive_Message_Copy_And_Consume(
  * @return true if operation succeeded
  * @return false on failure
  */
-bool EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel, uint8_t* result_storage,
+bool EXEC_I2C_Receive_Copy_And_Consume( ExecI2CChannel_T channel, uint8_t* result_storage,
                                         uint16_t result_storage_capacity, uint16_t* bytes_copied )
 {
     if ( bytes_copied == NULL )
@@ -437,8 +680,8 @@ bool EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel, uint8_t* result_
  * @return true if overflow was detected
  * @return false otherwise
  */
-bool EXEC_I2C_Did_Last_Transfer_Overflow( HWI2CChannel_T channel )
+bool EXEC_I2C_Did_Last_Transfer_Overflow( ExecI2CChannel_T channel )
 {
     // Delegate to hw_i2c
-    return HW_I2C_Get_Overflow_Status( channel );
+    return HW_I2C_Get_Overflow_Status( ( HWI2CChannel_T )channel );
 }

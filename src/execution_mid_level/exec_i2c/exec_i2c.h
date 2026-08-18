@@ -11,8 +11,10 @@
  *      complete receive messages without losing transaction boundaries.
  *
  *  Notes:
- *      - Manages I2C3, I2C2 (external) and FMPI2C1 (internal) channels
- *      - Does not directly manipulate hardware; all operations go through hw_i2c
+ *      - Manages only the two DUT-facing external I2C channels
+ *      - FMPI2C1 remains internal infrastructure owned by Logic Expander
+ *      - Owns board-level voltage and pull-up controls through Logic Expander
+ *      - Delegates peripheral operations to hw_i2c
  *      - Master requests are accepted asynchronously into the hw_i2c queue
  *      - Receive ring buffer size: 512 bytes (defined in hw_i2c)
  *      - Not thread-safe; assumes single-threaded execution or external synchronization
@@ -53,19 +55,44 @@ typedef enum EXECI2CStatus_T
     EXEC_I2C_STATUS_BUSY,
     EXEC_I2C_STATUS_ERROR,
     EXEC_I2C_STATUS_INVALID_PARAM,
+    EXEC_I2C_STATUS_NOT_CONFIGURED,
     EXEC_I2C_STATUS_OVERFLOW,
     EXEC_I2C_STATUS_BUFFER_TOO_SMALL,
     EXEC_I2C_STATUS_NO_DATA,
 } EXECI2CStatus_T;
 
+typedef enum
+{
+    EXEC_I2C_PULLUP_1K = 0,
+    EXEC_I2C_PULLUP_2K2,
+    EXEC_I2C_PULLUP_4K7,
+    EXEC_I2C_PULLUP_10K,
+    EXEC_I2C_PULLUP_COUNT,
+} ExecI2CPullup_T;
+
+typedef enum
+{
+    EXEC_I2C_VOLTAGE_3V3 = 0,
+    EXEC_I2C_VOLTAGE_5V,
+    EXEC_I2C_VOLTAGE_COUNT,
+} ExecI2CVoltage_T;
+
 typedef struct EXECI2CChannelConfig_T
 {
-    HWI2CMode_T         mode;
-    HWI2CSpeed_T        speed;
-    HWI2CTransferPath_T tx_transfer_path;
-    HWI2CTransferPath_T rx_transfer_path;
-    uint16_t            own_address_7bit;
+    bool             is_enabled;
+    HWI2CMode_T      mode;
+    HWI2CSpeed_T     speed;
+    uint16_t         own_address_7bit;
+    ExecI2CPullup_T  pullup;
+    ExecI2CVoltage_T voltage;
 } EXECI2CChannelConfig_T;
+
+typedef enum ExecI2CChannel_T
+{
+    EXEC_I2C_CHANNEL_1 = HW_I2C_CHANNEL_1,
+    EXEC_I2C_CHANNEL_2 = HW_I2C_CHANNEL_2,
+    EXEC_I2C_CHANNEL_COUNT,
+} ExecI2CChannel_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -73,25 +100,38 @@ typedef struct EXECI2CChannelConfig_T
  */
 
 /**
- * @brief Configure all I2C channels with validation.
+ * @brief Configure or disable one external I2C channel.
  *
- * Validates configuration parameters for both external channels (I2C3 and I2C2)
- * and delegates configuration to hw_i2c.
- * Must be called before any transfers.
+ * Enabled configuration applies the channel's safe external control state and
+ * configures the HW peripheral without starting it. Disabled configuration
+ * stops a running channel and applies its safe external state.
  *
- * @note Validity checks are minimal. Callers must ensure:
- *       - i2c1_config is non-NULL
- *       - i2c2_config is non-NULL
- *       Configuration validation occurs; invalid configs will be rejected.
- *
- * @param[in] i2c1_config                           Configuration for I2C3 channel
- * @param[in] i2c2_config                           Configuration for I2C2 channel
+ * @param[in] channel External I2C channel.
+ * @param[in] config  Execution-level channel configuration.
  *
  * @return EXEC_I2C_STATUS_OK on success
- * @return EXEC_I2C_STATUS_INVALID_PARAM if any parameter is invalid
+ * @return EXEC_I2C_STATUS_BUSY if the channel cannot be reconfigured
+ * @return EXEC_I2C_STATUS_INVALID_PARAM for an invalid channel or configuration
+ * @return EXEC_I2C_STATUS_ERROR if a HW or Logic Expander operation fails
  */
-EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_config,
-                                        const EXECI2CChannelConfig_T* i2c2_config );
+EXECI2CStatus_T EXEC_I2C_Configure_Channel( ExecI2CChannel_T              channel,
+                                            const EXECI2CChannelConfig_T* config );
+
+/** @brief Start one configured external I2C channel. */
+EXECI2CStatus_T EXEC_I2C_Start_Channel( ExecI2CChannel_T channel );
+
+/**
+ * @brief Stop one external I2C channel while retaining its configuration.
+ *
+ * Stop fails if the HW layer reports active or queued work.
+ */
+EXECI2CStatus_T EXEC_I2C_Stop_Channel( ExecI2CChannel_T channel );
+
+/** @brief Return true when an external channel is configured. */
+bool EXEC_I2C_Is_Channel_Configured( ExecI2CChannel_T channel );
+
+/** @brief Return true when an external channel is started. */
+bool EXEC_I2C_Is_Channel_Started( ExecI2CChannel_T channel );
 
 /**
  * @brief Master transmit on an external channel.
@@ -99,7 +139,7 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
  * Sends data to a slave device on the specified channel.
  * The complete payload is validated and copied into driver-owned queue storage.
  *
- * @param[in] channel               I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
+ * @param[in] channel               External execution I2C channel
  * @param[in] device_address_7bit   7-bit slave address
  * @param[in] payload               Data to transmit
  * @param[in] payload_length        Number of bytes to transmit
@@ -107,7 +147,7 @@ EXECI2CStatus_T EXEC_I2C_Configuration( const EXECI2CChannelConfig_T* i2c1_confi
  * @return true if the complete request was accepted into the driver queue
  * @return false on failure
  */
-bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
+bool EXEC_I2C_Master_Transmit_External( ExecI2CChannel_T channel, uint16_t device_address_7bit,
                                         const uint8_t* payload, uint16_t payload_length );
 
 /**
@@ -124,7 +164,7 @@ bool EXEC_I2C_Master_Transmit_External( HWI2CChannel_T channel, uint16_t device_
  * @return true if slave transmit was prepared
  * @return false on failure
  */
-bool EXEC_I2C_Slave_Transmit_External( HWI2CChannel_T channel, const uint8_t* payload,
+bool EXEC_I2C_Slave_Transmit_External( ExecI2CChannel_T channel, const uint8_t* payload,
                                        uint16_t payload_length );
 
 /**
@@ -136,14 +176,14 @@ EXEC_I2C_Receive_Copy_And_Consume().
  *
  * The complete receive request is validated and queued atomically.
  *
- * @param[in] channel               External I2C channel (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
+ * @param[in] channel               External execution I2C channel
  * @param[in] device_address_7bit   7-bit slave address
  * @param[in] expected_length       Number of bytes expected from slave
  *
  * @return true if the complete receive request was accepted into the queue
  * @return false on failure
  */
-bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t device_address_7bit,
+bool EXEC_I2C_Start_Master_Receive_External( ExecI2CChannel_T channel, uint16_t device_address_7bit,
                                              uint16_t expected_length );
 
 /**
@@ -160,12 +200,12 @@ bool EXEC_I2C_Start_Master_Receive_External( HWI2CChannel_T channel, uint16_t de
  * @return true if receive was prepared
  * @return false on failure
  */
-bool EXEC_I2C_Start_Slave_Receive_External( HWI2CChannel_T channel, uint16_t expected_length );
+bool EXEC_I2C_Start_Slave_Receive_External( ExecI2CChannel_T channel, uint16_t expected_length );
 
 /**
  * @brief Service deferred queue progress from normal execution context.
  */
-void EXEC_I2C_Service_Transaction_Queue( HWI2CChannel_T channel );
+void EXEC_I2C_Service_Transaction_Queue( ExecI2CChannel_T channel );
 
 /**
  * @brief Determine whether every accepted master transaction has physically completed.
@@ -173,12 +213,12 @@ void EXEC_I2C_Service_Transaction_Queue( HWI2CChannel_T channel );
  * This includes final STOP observation and an idle peripheral; it is distinct
  * from a successful enqueue return.
  */
-bool EXEC_I2C_Is_Transaction_Queue_Complete( HWI2CChannel_T channel );
+bool EXEC_I2C_Is_Transaction_Queue_Complete( ExecI2CChannel_T channel );
 
 /**
  * @brief Retrieve and clear the channel's latched asynchronous transfer result.
  */
-EXECI2CStatus_T EXEC_I2C_Get_And_Clear_Transfer_Result( HWI2CChannel_T channel );
+EXECI2CStatus_T EXEC_I2C_Get_And_Clear_Transfer_Result( ExecI2CChannel_T channel );
 
 /**
  * @brief Recover a channel after a caller-observed transfer timeout.
@@ -186,7 +226,7 @@ EXECI2CStatus_T EXEC_I2C_Get_And_Clear_Transfer_Result( HWI2CChannel_T channel )
  * Discards active, queued, and completed receive work for the channel and
  * reapplies its existing hardware configuration without waiting for bus idle.
  */
-EXECI2CStatus_T EXEC_I2C_Recover_Channel( HWI2CChannel_T channel );
+EXECI2CStatus_T EXEC_I2C_Recover_Channel( ExecI2CChannel_T channel );
 
 /**
  * @brief Copy and consume exactly one complete receive transaction.
@@ -202,7 +242,7 @@ EXECI2CStatus_T EXEC_I2C_Recover_Channel( HWI2CChannel_T channel );
  * @return EXEC_I2C_STATUS_INVALID_PARAM for invalid output pointers
  */
 EXECI2CStatus_T EXEC_I2C_Receive_Message_Copy_And_Consume(
-    HWI2CChannel_T channel, uint8_t* result_storage, uint16_t result_storage_capacity,
+    ExecI2CChannel_T channel, uint8_t* result_storage, uint16_t result_storage_capacity,
     HWI2CRxMessageDescriptor_T* descriptor, uint16_t* bytes_copied, uint16_t* required_length );
 
 /**
@@ -223,7 +263,7 @@ EXECI2CStatus_T EXEC_I2C_Receive_Message_Copy_And_Consume(
  * @return true if operation succeeded
  * @return false on failure
  */
-bool EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel, uint8_t* result_storage,
+bool EXEC_I2C_Receive_Copy_And_Consume( ExecI2CChannel_T channel, uint8_t* result_storage,
                                         uint16_t result_storage_capacity, uint16_t* bytes_copied );
 
 /**
@@ -238,7 +278,7 @@ bool EXEC_I2C_Receive_Copy_And_Consume( HWI2CChannel_T channel, uint8_t* result_
  * @return true if overflow was detected
  * @return false otherwise
  */
-bool EXEC_I2C_Did_Last_Transfer_Overflow( HWI2CChannel_T channel );
+bool EXEC_I2C_Did_Last_Transfer_Overflow( ExecI2CChannel_T channel );
 
 #ifdef __cplusplus
 }
