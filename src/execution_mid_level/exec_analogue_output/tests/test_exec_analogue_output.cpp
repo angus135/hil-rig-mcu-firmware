@@ -110,13 +110,13 @@ class MockLogicExpander
 {
 public:
     MOCK_METHOD( LogicExpanderStatus_T, LoadControlBit,
-                 ( LogicExpanderIndex_T, LogicExpanderPort_T, uint8_t, bool ) );
+                 ( LogicExpanderIndex_T, LogicExpanderPort_T, uint8_t, bool ));
     MOCK_METHOD( LogicExpanderStatus_T, SendControlBits, () );
 };
 
-static MockHWSPI*         g_mock_hw_spi          = nullptr;
+static MockHWSPI*         g_mock_hw_spi         = nullptr;
 static MockLogicExpander* g_mock_logic_expander = nullptr;
-static bool               g_spi_tx_faulted       = false;
+static bool               g_spi_tx_faulted      = false;
 
 extern "C"
 {
@@ -137,8 +137,8 @@ bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
 }
 
 LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expander,
-                                                        LogicExpanderPort_T port,
-                                                        uint8_t bit_index, bool value )
+                                                       LogicExpanderPort_T port, uint8_t bit_index,
+                                                       bool value )
 {
     return g_mock_logic_expander->LoadControlBit( expander, port, bit_index, value );
 }
@@ -207,14 +207,14 @@ static void ExpectPacketLoad( MockHWSPI&                             mock_hw_spi
 class ExecAnalogueOutputTest : public ::testing::Test
 {
 protected:
-    ::testing::StrictMock<MockHWSPI> mock_hw_spi;
+    ::testing::StrictMock<MockHWSPI>       mock_hw_spi;
     ::testing::NiceMock<MockLogicExpander> mock_logic_expander;
 
     void SetUp( void ) override
     {
-        g_mock_hw_spi    = &mock_hw_spi;
+        g_mock_hw_spi         = &mock_hw_spi;
         g_mock_logic_expander = &mock_logic_expander;
-        g_spi_tx_faulted = false;
+        g_spi_tx_faulted      = false;
 
         ON_CALL( mock_logic_expander, LoadControlBit )
             .WillByDefault( ::testing::Return( LOGIC_EXPANDER_STATUS_OK ) );
@@ -235,7 +235,7 @@ protected:
             EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Stop() );
         }
 
-        g_mock_hw_spi = nullptr;
+        g_mock_hw_spi         = nullptr;
         g_mock_logic_expander = nullptr;
     }
 

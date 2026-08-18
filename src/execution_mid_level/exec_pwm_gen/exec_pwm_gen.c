@@ -92,7 +92,7 @@ void EXEC_PWM_GEN_Set_PWM_HV( uint16_t arr, uint16_t ccr, uint16_t psc )
  * @param volt_lvl  The voltage level you want
  *
  */
-void Exec_PWM_GEN_Config( PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl )
+void Exec_PWM_GEN_Config( HwPwmGenChannel_T channel, HwPwmGenVoltageLevel_T volt_lvl )
 {
     HW_PWM_GEN_Config( channel, volt_lvl );
 }

@@ -6,7 +6,7 @@
 
 This module is responsible for:
 
-- configuring PWM output channels and associated voltage levels
+- configuring, starting, and stopping PWM timer output channels
 - computing timer register values required for PWM generation
 - updating timer PWM registers during execution with minimal overhead
 - abstracting direct timer register access from higher-level execution logic
@@ -25,10 +25,12 @@ software overhead inside execution-critical code paths.
 
 ## Design Summary
 
-`hw_pwm_gen` separates PWM handling into two stages:
+`hw_pwm_gen` separates PWM handling into lifecycle control and execution-time updates:
 
-1. **Configuration stage**
-   - used to configure PWM channels and output voltage selection
+1. **Lifecycle stage**
+   - configures PWM channels without starting their timer outputs
+   - starts and stops normal or complementary timer outputs
+   - retains channel configuration after Stop so the channel can be restarted
    - computes timer register values required for desired PWM frequency and duty cycle
    - intended for setup-time or pre-execution preparation
 
@@ -76,7 +78,6 @@ These functions:
 
 - directly write timer hardware registers
 - apply updated `ARR`, `PSC`, and `CCR` values
-- trigger timer register reload using an update event
 - minimise execution overhead by avoiding abstraction-heavy HAL calls during execution
 
 This approach allows PWM outputs to be updated quickly and deterministically during runtime.
@@ -89,15 +90,16 @@ the required timer and compare register selection.
 Higher-level modules do not need to directly interact with STM32 timer peripherals or register
 layouts.
 
-### Voltage level configuration
+### Channel lifecycle
 
-`hw_pwm_gen` includes support for PWM output voltage level selection during configuration.
+Each channel has a strict lifecycle:
 
-This is intended to integrate with external voltage selection or output-expander hardware used
-by the HIL-RIG PWM subsystem.
+1. Configure leaves the timer output stopped.
+2. Start enables the mapped normal or complementary PWM output.
+3. Stop disables the timer output while retaining configuration.
 
-The module itself does not implement voltage translation logic, but instead provides the control
-structure required for higher-level hardware integration.
+Invalid transitions and HAL failures return false without advancing lifecycle state. Board-level
+voltage selection is an execution-layer responsibility and is not performed by `hw_pwm_gen`.
 
 ---
 
@@ -108,7 +110,7 @@ structure required for higher-level hardware integration.
 - This module assumes timer peripherals and GPIO configuration are performed elsewhere
   (typically via STM32CubeMX-generated initialisation).
 - This module is responsible for PWM signal generation only and does not define application-level
-  output semantics.
+  output or voltage-selection semantics.
 - Duty cycle values are represented in permille form (`0-1000`) rather than percentages.
 - The execution-stage functions are designed to minimise latency and avoid blocking behaviour.
 - This module abstracts timer register manipulation but does not manage higher-level waveform

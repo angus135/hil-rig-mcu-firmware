@@ -293,10 +293,10 @@ TEST_F( ExecUARTTest, PrivateValidChannelRejectsOutOfRangeChannel )
 TEST_F( ExecUARTTest, PrivateHardwareSelectionMapsChannel1Ttl3V3ToGpa4AndGpa5 )
 {
     InSequence sequence;
-    EXPECT_CALL( mock_expander, Load_Control_Bit( LOGIC_EXPANDER_UART_PWR,
-                                                  LOGIC_EXPANDER_PORT_A, 4U, true ) );
-    EXPECT_CALL( mock_expander, Load_Control_Bit( LOGIC_EXPANDER_UART_PWR,
-                                                  LOGIC_EXPANDER_PORT_A, 5U, false ) );
+    EXPECT_CALL( mock_expander,
+                 Load_Control_Bit( LOGIC_EXPANDER_UART_PWR, LOGIC_EXPANDER_PORT_A, 4U, true ) );
+    EXPECT_CALL( mock_expander,
+                 Load_Control_Bit( LOGIC_EXPANDER_UART_PWR, LOGIC_EXPANDER_PORT_A, 5U, false ) );
     EXPECT_CALL( mock_expander, Send_Control_Bits() );
 
     EXPECT_TRUE(
@@ -306,10 +306,10 @@ TEST_F( ExecUARTTest, PrivateHardwareSelectionMapsChannel1Ttl3V3ToGpa4AndGpa5 )
 TEST_F( ExecUARTTest, PrivateHardwareSelectionMapsChannel2Rs232ToGpa6AndGpa7 )
 {
     InSequence sequence;
-    EXPECT_CALL( mock_expander, Load_Control_Bit( LOGIC_EXPANDER_UART_PWR,
-                                                  LOGIC_EXPANDER_PORT_A, 6U, false ) );
-    EXPECT_CALL( mock_expander, Load_Control_Bit( LOGIC_EXPANDER_UART_PWR,
-                                                  LOGIC_EXPANDER_PORT_A, 7U, true ) );
+    EXPECT_CALL( mock_expander,
+                 Load_Control_Bit( LOGIC_EXPANDER_UART_PWR, LOGIC_EXPANDER_PORT_A, 6U, false ) );
+    EXPECT_CALL( mock_expander,
+                 Load_Control_Bit( LOGIC_EXPANDER_UART_PWR, LOGIC_EXPANDER_PORT_A, 7U, true ) );
     EXPECT_CALL( mock_expander, Send_Control_Bits() );
 
     EXPECT_TRUE(
@@ -361,7 +361,6 @@ TEST_F( ExecUARTTest, ConfigureRxChannelLeavesReceptionStopped )
         InSequence seq;
         EXPECT_CALL( mock_hw, Configure_Channel( EXEC_UART_CHANNEL_1, _ ) );
     }
-
 
     ASSERT_TRUE( EXEC_UART_Configure_Channel( EXEC_UART_CHANNEL_1, &config ) );
 
@@ -423,9 +422,7 @@ TEST_F( ExecUARTTest, StartChannelReturnsFalseIfRxStartFails )
 
 TEST_F( ExecUARTTest, StartAndStopChannelRetainConfiguration )
 {
-    exec_uart_channel_states[EXEC_UART_CHANNEL_1] = {
-        EXEC_UART_STATE_CONFIGURED, true, true
-    };
+    exec_uart_channel_states[EXEC_UART_CHANNEL_1] = { EXEC_UART_STATE_CONFIGURED, true, true };
 
     EXPECT_CALL( mock_hw, Start_Channel( HW_UART_CHANNEL_1 ) );
     ASSERT_TRUE( EXEC_UART_Start_Channel( EXEC_UART_CHANNEL_1 ) );
@@ -440,9 +437,7 @@ TEST_F( ExecUARTTest, StartAndStopChannelRetainConfiguration )
 
 TEST_F( ExecUARTTest, StopChannelRejectsPendingTransmit )
 {
-    exec_uart_channel_states[EXEC_UART_CHANNEL_1] = {
-        EXEC_UART_STATE_STARTED, false, true
-    };
+    exec_uart_channel_states[EXEC_UART_CHANNEL_1] = { EXEC_UART_STATE_STARTED, false, true };
     EXPECT_CALL( mock_hw, Stop_Channel( HW_UART_CHANNEL_1 ) ).WillOnce( Return( false ) );
 
     EXPECT_FALSE( EXEC_UART_Stop_Channel( EXEC_UART_CHANNEL_1 ) );
@@ -459,8 +454,8 @@ TEST_F( ExecUARTTest, DisabledConfigurationRejectsInvalidChannel )
 TEST_F( ExecUARTTest, DisabledConfigurationDeconfiguresStoppedChannel )
 {
     exec_uart_channel_states[EXEC_UART_CHANNEL_1].lifecycle_state = EXEC_UART_STATE_CONFIGURED;
-    exec_uart_channel_states[EXEC_UART_CHANNEL_1].rx_enabled    = true;
-    exec_uart_channel_states[EXEC_UART_CHANNEL_1].tx_enabled    = true;
+    exec_uart_channel_states[EXEC_UART_CHANNEL_1].rx_enabled      = true;
+    exec_uart_channel_states[EXEC_UART_CHANNEL_1].tx_enabled      = true;
 
     EXPECT_CALL( mock_hw, Stop_Channel( _ ) ).Times( 0 );
     EXPECT_CALL( mock_hw, Deconfigure_Channel( HW_UART_CHANNEL_1 ) ).Times( 1 );
