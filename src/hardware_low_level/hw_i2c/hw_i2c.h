@@ -145,9 +145,9 @@ typedef struct HWI2CRxMessagePeek_T
 /**
  * @brief Configure an external I2C channel (I2C3 or I2C2).
  *
- * Initializes an I2C channel with the specified configuration including mode
- * (master/slave), speed (100 kHz / 400 kHz), and transfer path (interrupt/DMA).
- * Must be called before any transfers on the channel.
+ * Applies mode (master/slave), speed (100 kHz / 400 kHz), own address, and
+ * transfer-path configuration while leaving the peripheral stopped. Call
+ * HW_I2C_Start_Channel() before using the channel for transfers.
  *
  * @param[in] channel       I2C channel to configure (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
  * @param[in] config        Pointer to configuration structure. Must not be NULL.
@@ -159,10 +159,60 @@ HWI2CStatus_T HW_I2C_Configure_Channel( HWI2CChannel_T              channel,
                                         const HWI2CChannelConfig_T* config );
 
 /**
+ * @brief Start a configured external I2C channel.
+ *
+ * Enables the I2C peripheral using the configuration previously applied by
+ * HW_I2C_Configure_Channel().
+ *
+ * @param[in] channel External I2C channel to start.
+ *
+ * @return HW_I2C_STATUS_OK on success
+ * @return HW_I2C_STATUS_NOT_CONFIGURED if the channel has not been configured
+ * @return HW_I2C_STATUS_BUSY if the channel is already started
+ * @return HW_I2C_STATUS_INVALID_PARAM if the channel is not external
+ */
+HWI2CStatus_T HW_I2C_Start_Channel( HWI2CChannel_T channel );
+
+/**
+ * @brief Stop an external I2C channel.
+ *
+ * Disables the peripheral while retaining its configuration. The channel must
+ * not have an active or queued transaction.
+ *
+ * @param[in] channel External I2C channel to stop.
+ *
+ * @return HW_I2C_STATUS_OK on success
+ * @return HW_I2C_STATUS_NOT_CONFIGURED if the channel has not been configured
+ * @return HW_I2C_STATUS_BUSY if the channel is not started or has pending work
+ * @return HW_I2C_STATUS_INVALID_PARAM if the channel is not external
+ */
+HWI2CStatus_T HW_I2C_Stop_Channel( HWI2CChannel_T channel );
+
+/**
+ * @brief Check whether an external I2C channel is configured.
+ *
+ * @param[in] channel External I2C channel.
+ *
+ * @return true if the channel is valid and configured; otherwise false.
+ */
+bool HW_I2C_Is_Channel_Configured( HWI2CChannel_T channel );
+
+/**
+ * @brief Check whether an external I2C channel is started.
+ *
+ * @param[in] channel External I2C channel.
+ *
+ * @return true if the channel is valid and started; otherwise false.
+ */
+bool HW_I2C_Is_Channel_Started( HWI2CChannel_T channel );
+
+/**
  * @brief Configure the internal FMPI2C1 channel.
  *
- * Initializes the high-speed internal FMPI2C1 channel with a specified own address.
- * Channel operates in master mode with interrupt-based transfer path.
+ * Initializes and starts the high-speed internal FMPI2C1 channel with a
+ * specified own address. The channel operates in master mode with an
+ * interrupt-based transfer path and is not controlled by the external-channel
+ * start/stop API.
  *
  * @param[in] own_address_7bit  7-bit own address for the channel (0x00-0x7F)
  *

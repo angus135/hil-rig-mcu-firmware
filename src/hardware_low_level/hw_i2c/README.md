@@ -12,6 +12,26 @@ execution tick without sharing a mutable staging payload.
 - I2C2: external, interrupt or DMA transfers
 - FMPI2C1: internal, interrupt transfers with `AUTOEND`
 
+## Lifecycle
+
+The two external channels follow the configure, start, and stop lifecycle.
+`HW_I2C_Configure_Channel()` applies the mode, speed, address, and transfer-path
+configuration but leaves the peripheral disabled. `HW_I2C_Start_Channel()`
+enables the configured peripheral. Transfer-specific DMA requests and interrupt
+sources remain under the existing transaction machinery and are armed only when
+a transaction starts.
+
+`HW_I2C_Stop_Channel()` succeeds only when the channel has no active or queued
+transaction and the bus is idle. It disables the peripheral while retaining the
+channel configuration, completed receive messages, and staged slave transmit
+data. Both external channels expose the same lifecycle even though their
+supported interrupt and DMA paths differ.
+
+FMPI2C1 is internal infrastructure for the logic expanders. Its dedicated
+configuration function initializes and starts it immediately; the public
+external-channel start, stop, and state-query functions intentionally reject or
+exclude it.
+
 ## Master transaction queue
 
 Each channel has `HW_I2C_MASTER_TRANSACTION_QUEUE_DEPTH` (currently 8) fixed
@@ -63,7 +83,9 @@ It disables the channel I2C/DMA interrupts, stops DMA, requests STOP when a
 transfer is active, discards active and queued master work and completed RX
 messages, clears transient receive state, and reapplies the saved channel
 configuration. A generic transfer error is latched for the caller to consume.
-It does not wait for BUSY or perform physical stuck-bus clock recovery.
+Recovery preserves whether an external channel was started or stopped before
+the recovery request. It does not wait for BUSY or perform physical stuck-bus
+clock recovery.
 
 ## External master-receive tails
 

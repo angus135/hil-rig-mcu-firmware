@@ -1,7 +1,8 @@
 /******************************************************************************
  *  File:       test_hw_i2c.cpp
  *  Description:
- *      Focused unit tests for complete-message I2C queueing and RX publication.
+ *      White-box tests for I2C lifecycle, complete-message queueing, and RX
+ *      publication.
  ******************************************************************************/
 
 #include <gtest/gtest.h>
@@ -48,6 +49,7 @@ protected:
             .own_address_7bit = 0x31U,
         };
         ASSERT_EQ( HW_I2C_Configure_Channel( channel, &config ), HW_I2C_STATUS_OK );
+        ASSERT_EQ( HW_I2C_Start_Channel( channel ), HW_I2C_STATUS_OK );
     }
 
     static void StageAndPublish( HWI2CChannelState_T& state, HWI2CTransferKind_T kind,
@@ -77,6 +79,91 @@ TEST_F( HWI2CTest, ConfigureRejectsInvalidChannelAndAddress )
     EXPECT_EQ( HW_I2C_Configure_Channel( HW_I2C_CHANNEL_COUNT, &config ),
                HW_I2C_STATUS_INVALID_PARAM );
     EXPECT_EQ( HW_I2C_Configure_Internal_FMPI2C1( 0x80U ), HW_I2C_STATUS_INVALID_PARAM );
+}
+
+TEST_F( HWI2CTest, ConfigureLeavesExternalChannelConfiguredAndStopped )
+{
+    const HWI2CChannelConfig_T config = {
+        .mode             = HW_I2C_MODE_MASTER,
+        .speed            = HW_I2C_SPEED_100KHZ,
+        .tx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
+        .rx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
+        .own_address_7bit = 0x31U,
+    };
+
+    ASSERT_EQ( HW_I2C_Configure_Channel( HW_I2C_CHANNEL_1, &config ), HW_I2C_STATUS_OK );
+
+    EXPECT_TRUE( HW_I2C_Is_Channel_Configured( HW_I2C_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_I2C_Is_Channel_Started( HW_I2C_CHANNEL_1 ) );
+    EXPECT_EQ( I2C3->CR1 & I2C_CR1_PE, 0U );
+    EXPECT_EQ( I2C3->CR2 & ( I2C_CR2_DMAEN | I2C_CR2_LAST ), 0U );
+}
+
+TEST_F( HWI2CTest, StartEnablesConfiguredExternalChannel )
+{
+    const HWI2CChannelConfig_T config = {
+        .mode             = HW_I2C_MODE_MASTER,
+        .speed            = HW_I2C_SPEED_100KHZ,
+        .tx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
+        .rx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
+        .own_address_7bit = 0x31U,
+    };
+
+    ASSERT_EQ( HW_I2C_Configure_Channel( HW_I2C_CHANNEL_1, &config ), HW_I2C_STATUS_OK );
+
+    EXPECT_EQ( HW_I2C_Start_Channel( HW_I2C_CHANNEL_1 ), HW_I2C_STATUS_OK );
+    EXPECT_TRUE( HW_I2C_Is_Channel_Started( HW_I2C_CHANNEL_1 ) );
+    EXPECT_NE( I2C3->CR1 & I2C_CR1_PE, 0U );
+    EXPECT_EQ( HW_I2C_Start_Channel( HW_I2C_CHANNEL_1 ), HW_I2C_STATUS_BUSY );
+}
+
+TEST_F( HWI2CTest, StopDisablesIdleChannelAndRetainsConfiguration )
+{
+    ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
+
+    EXPECT_EQ( HW_I2C_Stop_Channel( HW_I2C_CHANNEL_1 ), HW_I2C_STATUS_OK );
+    EXPECT_TRUE( HW_I2C_Is_Channel_Configured( HW_I2C_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_I2C_Is_Channel_Started( HW_I2C_CHANNEL_1 ) );
+    EXPECT_EQ( I2C3->CR1 & I2C_CR1_PE, 0U );
+    EXPECT_EQ( HW_I2C_Stop_Channel( HW_I2C_CHANNEL_1 ), HW_I2C_STATUS_BUSY );
+
+    EXPECT_EQ( HW_I2C_Start_Channel( HW_I2C_CHANNEL_1 ), HW_I2C_STATUS_OK );
+    EXPECT_NE( I2C3->CR1 & I2C_CR1_PE, 0U );
+}
+
+TEST_F( HWI2CTest, LifecycleRejectsUnconfiguredAndNonExternalChannels )
+{
+    EXPECT_EQ( HW_I2C_Start_Channel( HW_I2C_CHANNEL_1 ), HW_I2C_STATUS_NOT_CONFIGURED );
+    EXPECT_EQ( HW_I2C_Stop_Channel( HW_I2C_CHANNEL_1 ), HW_I2C_STATUS_NOT_CONFIGURED );
+    EXPECT_EQ( HW_I2C_Start_Channel( HW_I2C_CHANNEL_FMPI2C1 ), HW_I2C_STATUS_INVALID_PARAM );
+    EXPECT_EQ( HW_I2C_Stop_Channel( HW_I2C_CHANNEL_FMPI2C1 ), HW_I2C_STATUS_INVALID_PARAM );
+    EXPECT_EQ( HW_I2C_Start_Channel( HW_I2C_CHANNEL_COUNT ), HW_I2C_STATUS_INVALID_PARAM );
+    EXPECT_EQ( HW_I2C_Stop_Channel( HW_I2C_CHANNEL_COUNT ), HW_I2C_STATUS_INVALID_PARAM );
+    EXPECT_FALSE( HW_I2C_Is_Channel_Configured( HW_I2C_CHANNEL_FMPI2C1 ) );
+    EXPECT_FALSE( HW_I2C_Is_Channel_Started( HW_I2C_CHANNEL_FMPI2C1 ) );
+}
+
+TEST_F( HWI2CTest, StopRejectsChannelWithActiveMasterTransaction )
+{
+    ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
+    const uint8_t payload = 0x5AU;
+
+    ASSERT_EQ( HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_1, 0x20U, &payload, 1U ),
+               HW_I2C_STATUS_OK );
+
+    EXPECT_EQ( HW_I2C_Stop_Channel( HW_I2C_CHANNEL_1 ), HW_I2C_STATUS_BUSY );
+    EXPECT_TRUE( HW_I2C_Is_Channel_Started( HW_I2C_CHANNEL_1 ) );
+    EXPECT_NE( I2C3->CR1 & I2C_CR1_PE, 0U );
+}
+
+TEST_F( HWI2CTest, InternalChannelIsRunningButExcludedFromExternalLifecycleQueries )
+{
+    ASSERT_EQ( HW_I2C_Configure_Internal_FMPI2C1( 0x33U ), HW_I2C_STATUS_OK );
+
+    EXPECT_TRUE( hw_i2c_channel_state[HW_I2C_CHANNEL_FMPI2C1].is_configured );
+    EXPECT_TRUE( hw_i2c_channel_state[HW_I2C_CHANNEL_FMPI2C1].is_started );
+    EXPECT_FALSE( HW_I2C_Is_Channel_Configured( HW_I2C_CHANNEL_FMPI2C1 ) );
+    EXPECT_FALSE( HW_I2C_Is_Channel_Started( HW_I2C_CHANNEL_FMPI2C1 ) );
 }
 
 TEST_F( HWI2CTest, EnqueuePreservesCompleteTransactionsInFifoOrderWhileActive )
@@ -384,6 +471,32 @@ TEST_F( HWI2CTest, RecoveryValidatesChannelAndConfiguration )
 {
     EXPECT_EQ( HW_I2C_Recover_Channel( HW_I2C_CHANNEL_COUNT ), HW_I2C_STATUS_INVALID_PARAM );
     EXPECT_EQ( HW_I2C_Recover_Channel( HW_I2C_CHANNEL_1 ), HW_I2C_STATUS_NOT_CONFIGURED );
+}
+
+TEST_F( HWI2CTest, RecoveryPreservesStoppedExternalLifecycleState )
+{
+    const HWI2CChannelConfig_T config = {
+        .mode             = HW_I2C_MODE_MASTER,
+        .speed            = HW_I2C_SPEED_100KHZ,
+        .tx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
+        .rx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
+        .own_address_7bit = 0x31U,
+    };
+    ASSERT_EQ( HW_I2C_Configure_Channel( HW_I2C_CHANNEL_1, &config ), HW_I2C_STATUS_OK );
+
+    EXPECT_EQ( HW_I2C_Recover_Channel( HW_I2C_CHANNEL_1 ), HW_I2C_STATUS_ERROR );
+    EXPECT_TRUE( HW_I2C_Is_Channel_Configured( HW_I2C_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_I2C_Is_Channel_Started( HW_I2C_CHANNEL_1 ) );
+    EXPECT_EQ( I2C3->CR1 & I2C_CR1_PE, 0U );
+}
+
+TEST_F( HWI2CTest, RecoveryPreservesStartedExternalLifecycleState )
+{
+    ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
+
+    EXPECT_EQ( HW_I2C_Recover_Channel( HW_I2C_CHANNEL_1 ), HW_I2C_STATUS_ERROR );
+    EXPECT_TRUE( HW_I2C_Is_Channel_Started( HW_I2C_CHANNEL_1 ) );
+    EXPECT_NE( I2C3->CR1 & I2C_CR1_PE, 0U );
 }
 
 TEST_F( HWI2CTest, BusErrorLatchesFailureAndFlushesMasterQueue )
