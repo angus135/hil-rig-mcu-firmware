@@ -29,6 +29,7 @@ target_link_libraries(exec_digital_input
         rtos
         cubeide_hal
         hw_gpio
+        logic_expander
 )
 
 # -----------------------------
