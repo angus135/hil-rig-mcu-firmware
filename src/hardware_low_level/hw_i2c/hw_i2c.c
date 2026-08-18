@@ -101,8 +101,9 @@ typedef struct HWI2CIrqState_T
 typedef struct HWI2CChannelState_T
 {
     /* Configuration state */
-    bool                 configured; /* True if channel has been configured */
-    HWI2CChannelConfig_T config;     /* Runtime configuration (mode, speed, transfer paths) */
+    bool                 is_configured; /* True if channel has been configured */
+    HWI2CChannelConfig_T config;        /* Runtime configuration (mode, speed, transfer paths) */
+    bool                 is_started;    /* True if channel has been started */
 
     /* Transfer control and state */
     volatile bool       transfer_in_progress;
@@ -1339,9 +1340,8 @@ static inline void HW_I2C_Service_DMA_Tx_IRQ( HWI2CChannel_T channel )
 /**
  * @brief Configure an external I2C channel (I2C3 or I2C2).
  *
- * Initializes an I2C channel with the specified configuration including mode
- * (master/slave), speed (100 kHz / 400 kHz), and transfer path (interrupt/DMA).
- * Must be called before any transfers on the channel.
+ * Applies mode, speed, address, and transfer-path configuration while leaving
+ * the peripheral stopped. HW_I2C_Start_Channel() must be called before use.
  *
  * @param[in] channel       I2C channel to configure (HW_I2C_CHANNEL_1 or HW_I2C_CHANNEL_2)
  * @param[in] config        Pointer to configuration structure. Must not be NULL.
@@ -1356,21 +1356,34 @@ HWI2CStatus_T HW_I2C_Configure_Channel( HWI2CChannel_T channel, const HWI2CChann
         return HW_I2C_STATUS_INVALID_PARAM;
     }
 
-    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
-    memset( state, 0, sizeof( *state ) );
-    state->config                    = *config;
-    state->configured                = true;
-    state->transfer_kind             = HW_I2C_TRANSFER_KIND_IDLE;
-    state->completion_condition_seen = true;
-    state->transfer_result           = HW_I2C_STATUS_OK;
-    I2C_TypeDef* i2c_instance        = HW_I2C_MAP[channel].instance;
+    HWI2CChannelState_T* state        = &hw_i2c_channel_state[channel];
+    I2C_TypeDef*         i2c_instance = HW_I2C_MAP[channel].instance;
+
     if ( i2c_instance == NULL )
     {
         return HW_I2C_STATUS_INVALID_PARAM;
     }
 
+    if ( state->is_started || state->transfer_in_progress || state->master_queue_active
+         || ( state->master_queue_count > 0U ) )
+    {
+        return HW_I2C_STATUS_BUSY;
+    }
+
+    memset( state, 0, sizeof( *state ) );
+
+    state->config                    = *config;
+    state->transfer_kind             = HW_I2C_TRANSFER_KIND_IDLE;
+    state->completion_condition_seen = true;
+    state->transfer_result           = HW_I2C_STATUS_OK;
+
     HW_I2C_Enable_Clock_For_Channel( channel );
     HW_I2C_Enable_Error_IRQ_For_Channel( channel );
+
+    /*
+     * This helper temporarily enables the peripheral after applying the timing
+     * and address registers. Configuration finishes by disabling it below.
+     */
     HW_I2C_Set_Speed_And_Address( i2c_instance, config->speed, config->own_address_7bit );
 
     if ( config->mode == HW_I2C_MODE_SLAVE )
@@ -1382,7 +1395,12 @@ HWI2CStatus_T HW_I2C_Configure_Channel( HWI2CChannel_T channel, const HWI2CChann
         LL_I2C_AcknowledgeNextData( i2c_instance, LL_I2C_NACK );
     }
 
+    HW_I2C_Disable_DMA_Request( i2c_instance );
     HW_I2C_Disable_All_Runtime_Irq_Bits( i2c_instance );
+    LL_I2C_Disable( i2c_instance );
+
+    state->is_configured = true;
+    state->is_started    = false;
 
     return HW_I2C_STATUS_OK;
 }
@@ -1390,8 +1408,8 @@ HWI2CStatus_T HW_I2C_Configure_Channel( HWI2CChannel_T channel, const HWI2CChann
 /**
  * @brief Configure the internal FMPI2C1 channel.
  *
- * Initializes the high-speed internal FMPI2C1 channel with a specified own address.
- * Channel operates in master mode with interrupt-based transfer path.
+ * Initializes and starts the internal FMPI2C1 channel. This infrastructure
+ * channel is not controlled by the external-channel lifecycle API.
  *
  * @param[in] own_address_7bit  7-bit own address for the channel (0x00-0x7F)
  *
@@ -1407,7 +1425,6 @@ HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
 
     HWI2CChannelState_T* state = &hw_i2c_channel_state[HW_I2C_CHANNEL_FMPI2C1];
     memset( state, 0, sizeof( *state ) );
-    state->configured                = true;
     state->transfer_kind             = HW_I2C_TRANSFER_KIND_IDLE;
     state->completion_condition_seen = true;
     state->transfer_result           = HW_I2C_STATUS_OK;
@@ -1432,6 +1449,8 @@ HWI2CStatus_T HW_I2C_Configure_Internal_FMPI2C1( uint16_t own_address_7bit )
     LL_FMPI2C_EnableIT_STOP( FMPI2C1 );
     LL_FMPI2C_EnableIT_ERR( FMPI2C1 );
 
+    state->is_configured = true;
+    state->is_started    = true;
     return HW_I2C_STATUS_OK;
 }
 
@@ -1447,7 +1466,7 @@ HWI2CStatus_T HW_I2C_Enqueue_Master_Transmit( HWI2CChannel_T channel, uint16_t d
     }
 
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
-    if ( !state->configured || ( state->config.mode != HW_I2C_MODE_MASTER ) )
+    if ( !state->is_configured || ( state->config.mode != HW_I2C_MODE_MASTER ) )
     {
         return HW_I2C_STATUS_NOT_CONFIGURED;
     }
@@ -1485,6 +1504,119 @@ HWI2CStatus_T HW_I2C_Enqueue_Master_Transmit( HWI2CChannel_T channel, uint16_t d
     return HW_I2C_STATUS_OK;
 }
 
+HWI2CStatus_T HW_I2C_Start_Channel( HWI2CChannel_T channel )
+{
+    if ( !HW_I2C_Is_External_Channel( channel ) )
+    {
+        return HW_I2C_STATUS_INVALID_PARAM;
+    }
+
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+
+    if ( !state->is_configured )
+    {
+        return HW_I2C_STATUS_NOT_CONFIGURED;
+    }
+
+    if ( state->is_started )
+    {
+        return HW_I2C_STATUS_BUSY;
+    }
+
+    I2C_TypeDef* i2c_instance = HW_I2C_MAP[channel].instance;
+
+    if ( i2c_instance == NULL )
+    {
+        return HW_I2C_STATUS_INVALID_PARAM;
+    }
+
+    /*
+     * Transfer-specific DMA requests and interrupt sources are enabled by the
+     * existing transfer paths when a transaction is started.
+     */
+    HW_I2C_Disable_DMA_Request( i2c_instance );
+    HW_I2C_Disable_All_Runtime_Irq_Bits( i2c_instance );
+
+    LL_I2C_Enable( i2c_instance );
+
+    state->is_started = true;
+
+    return HW_I2C_STATUS_OK;
+}
+
+HWI2CStatus_T HW_I2C_Stop_Channel( HWI2CChannel_T channel )
+{
+    if ( !HW_I2C_Is_External_Channel( channel ) )
+    {
+        return HW_I2C_STATUS_INVALID_PARAM;
+    }
+
+    HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
+
+    if ( !state->is_configured )
+    {
+        return HW_I2C_STATUS_NOT_CONFIGURED;
+    }
+
+    if ( !state->is_started )
+    {
+        return HW_I2C_STATUS_BUSY;
+    }
+
+    I2C_TypeDef* i2c_instance = HW_I2C_MAP[channel].instance;
+
+    if ( i2c_instance == NULL )
+    {
+        return HW_I2C_STATUS_INVALID_PARAM;
+    }
+
+    HWI2CIrqState_T irq_state = HW_I2C_Channel_Irqs_Disable( channel );
+
+    const bool has_pending_work = state->transfer_in_progress || state->master_queue_active
+                                  || ( state->master_queue_count > 0U )
+                                  || HW_I2C_Peripheral_Is_Busy( channel );
+
+    if ( has_pending_work )
+    {
+        HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+        return HW_I2C_STATUS_BUSY;
+    }
+
+    /*
+     * The channel is idle, so cleanup only normalizes the inactive transfer
+     * state and disables any remaining DMA requests or runtime interrupts.
+     * Completed receive messages and staged slave transmit data are retained.
+     */
+    HW_I2C_Cleanup_Active_Transfer( channel );
+    LL_I2C_Disable( i2c_instance );
+
+    state->is_started = false;
+
+    HW_I2C_Channel_Irqs_Restore( channel, irq_state );
+
+    return HW_I2C_STATUS_OK;
+}
+
+bool HW_I2C_Is_Channel_Configured( HWI2CChannel_T channel )
+{
+    if ( !HW_I2C_Is_External_Channel( channel ) )
+    {
+        return false;
+    }
+
+    return hw_i2c_channel_state[channel].is_configured;
+}
+
+bool HW_I2C_Is_Channel_Started( HWI2CChannel_T channel )
+{
+    if ( !HW_I2C_Is_External_Channel( channel ) )
+    {
+        return false;
+    }
+
+    return hw_i2c_channel_state[channel].is_started;
+}
+
 HWI2CStatus_T HW_I2C_Enqueue_Master_Receive( HWI2CChannel_T channel, uint16_t device_address_7bit,
                                              uint16_t expected_length )
 {
@@ -1496,7 +1628,7 @@ HWI2CStatus_T HW_I2C_Enqueue_Master_Receive( HWI2CChannel_T channel, uint16_t de
     }
 
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
-    if ( !state->configured || ( state->config.mode != HW_I2C_MODE_MASTER ) )
+    if ( !state->is_configured || ( state->config.mode != HW_I2C_MODE_MASTER ) )
     {
         return HW_I2C_STATUS_NOT_CONFIGURED;
     }
@@ -1595,7 +1727,7 @@ bool HW_I2C_Is_Transaction_Queue_Complete( HWI2CChannel_T channel )
     HW_I2C_Service_Transaction_Queue( channel );
     HWI2CIrqState_T      irq_state   = HW_I2C_Channel_Irqs_Disable( channel );
     HWI2CChannelState_T* state       = &hw_i2c_channel_state[channel];
-    const bool           is_complete = state->configured && ( state->master_queue_count == 0U )
+    const bool           is_complete = state->is_configured && ( state->master_queue_count == 0U )
                              && !state->master_queue_active && !state->transfer_in_progress
                              && !HW_I2C_Peripheral_Is_Busy( channel )
                              && state->completion_condition_seen;
@@ -1626,10 +1758,13 @@ HWI2CStatus_T HW_I2C_Recover_Channel( HWI2CChannel_T channel )
     }
 
     HWI2CChannelState_T* state = &hw_i2c_channel_state[channel];
-    if ( !state->configured )
+
+    if ( !state->is_configured )
     {
         return HW_I2C_STATUS_NOT_CONFIGURED;
     }
+
+    const bool was_started = state->is_started;
 
     HWI2CIrqState_T irq_state = HW_I2C_Channel_Irqs_Disable( channel );
 
@@ -1703,6 +1838,11 @@ HWI2CStatus_T HW_I2C_Recover_Channel( HWI2CChannel_T channel )
         if ( HW_I2C_MAP[channel].dma_tx != NULL )
         {
             HW_I2C_DMA_Stream_Clear_Flags( HW_I2C_MAP[channel].dma_tx );
+        }
+
+        if ( !was_started )
+        {
+            LL_I2C_Disable( i2c_instance );
         }
     }
 
@@ -1797,7 +1937,7 @@ bool HW_I2C_Trigger_Slave_Transmit_External( HWI2CChannel_T channel )
 
     HWI2CIrqState_T      irq_state = HW_I2C_Channel_Irqs_Disable( channel );
     HWI2CChannelState_T* state     = &hw_i2c_channel_state[channel];
-    if ( !state->configured || ( state->config.mode != HW_I2C_MODE_SLAVE )
+    if ( !state->is_configured || ( state->config.mode != HW_I2C_MODE_SLAVE )
          || state->transfer_in_progress || ( state->master_queue_count > 0U ) )
     {
         HW_I2C_Channel_Irqs_Restore( channel, irq_state );
@@ -1862,7 +2002,7 @@ bool HW_I2C_Trigger_Slave_Receive_External( HWI2CChannel_T channel, uint16_t exp
 
     HWI2CIrqState_T      irq_state = HW_I2C_Channel_Irqs_Disable( channel );
     HWI2CChannelState_T* state     = &hw_i2c_channel_state[channel];
-    if ( !state->configured || ( state->config.mode != HW_I2C_MODE_SLAVE )
+    if ( !state->is_configured || ( state->config.mode != HW_I2C_MODE_SLAVE )
          || state->transfer_in_progress || ( state->master_queue_count > 0U ) )
     {
         HW_I2C_Channel_Irqs_Restore( channel, irq_state );
