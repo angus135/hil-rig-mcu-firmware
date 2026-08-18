@@ -1,34 +1,40 @@
 # exec_digital_input
+
 ## Overview
 
-`exec_digital_input` provides execution-layer digital input configuration and sampling.
+`exec_digital_input` owns the aggregate lifecycle and voltage selection for ten digital inputs.
+Firmware channel names follow the one-based board silkscreen. The underlying array indexes remain
+zero-based.
 
-This module is responsible for:
+## Lifecycle
 
-- Applying per-channel digital input mode configuration for execution use.
-- Building/storing an enabled-channel mask from configuration.
-- Sampling all digital inputs via low-level GPIO and returning a masked result.
+1. `EXEC_DIGITAL_INPUT_Configure()` validates all ten modes, stages the two selector bits for every
+   channel, and builds a retained physical GPIOD sampling mask.
+2. `EXEC_DIGITAL_INPUT_Start()` activates the retained mask.
+3. `EXEC_DIGITAL_INPUT_Stop()` clears the active mask while retaining configuration.
+4. `EXEC_DIGITAL_INPUT_Sample_All()` performs one GPIO port read and one mask operation.
 
-How it works:
+Disabled channels use the safe 3.3 V selector state but are excluded from the sampling mask. A
+configuration failure after expander staging begins leaves the subsystem disabled and non-startable.
 
-- `EXEC_DigitalInput_Configure(...)` converts channel modes into an internal enabled-input pin mask.
-- `EXEC_DigitalInput_SampleAll(...)` reads the raw low-level input port state, applies the stored mask, and writes the masked word to the caller.
-- The internal mask is retained as module state so sampling can be called repeatedly after configuration.
-- In `TEST_BUILD`, pin definitions and seams are provided by test mocks.
+## Voltage Selection
 
+The DI selectors use `LOGIC_EXPANDER_DI_1` and `LOGIC_EXPANDER_DI_2`. The schematic truth table is
+written in `(S1, S0)` order:
 
----
+| Mode | S1 | S0 |
+|---|---:|---:|
+| Disabled / 3.3 V | 0 | 0 |
+| 5 V | 0 | 1 |
+| 12 V | 1 | 0 |
+| 24 V | 1 | 1 |
 
-## Files
+## Sample Representation
 
-| File                      | Role |
-|---------------------------|------|
-| `exec_digital_input.c`            | Execution-layer digital input implementation |
-| `exec_digital_input.h`            | Public execution-layer API and config types |
+Samples are currently `uint32_t` physical GPIOD masks. Digital-input data occupies bits 0, 1, 2,
+3, 8, 9, 10, 11, 14, and 15. The result is not packed into logical channel bits 0 through 9.
+The execution layer currently preserves the raw GPIO polarity and does not invert comparator
+signals.
 
-
----
-
-## Public API
-
-The public API is declared in `exec_digital_input.h`.
+TODO: Evaluate changing the public sample and downstream capture buffers to `uint16_t` to reduce
+buffer and transfer size. The HW GPIO port-read API should remain `uint32_t`.

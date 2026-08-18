@@ -4,14 +4,12 @@
  *  Created:    6-April-2026
  *
  *  Description:
- *      Public interface for execution-time digital input handling. This
- *      module exposes configuration and read functions used by the execution
- *      manager to obtain boolean digital input values during a test run.
+ *      Aggregate lifecycle and voltage-mode configuration for the ten
+ *      execution-time digital-input channels.
  *
  *  Notes:
- *      Intended for use by the execution subsystem rather than as a general-
- *      purpose digital input interface. Depends on hw_gpio for low-level GPIO
- *      control.
+ *      Silkscreen channels are numbered 1 to 10 while enum values remain
+ *      zero-based. Sampling intentionally performs no lifecycle checks.
  ******************************************************************************/
 
 #ifndef EXEC_DIGITAL_INPUT_H
@@ -26,8 +24,8 @@ extern "C"
  *  Includes
  *------------------------------------------------------------------------------
  */
-#include "hw_gpio.h"
 #include <stdbool.h>
+#include <stdint.h>
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -39,53 +37,69 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-typedef enum DigitalInputMode_T
+typedef enum
 {
-    DIGITAL_INPUT_MODE_DISABLED,
-    DIGITAL_INPUT_MODE_3V3,
-    DIGITAL_INPUT_MODE_5V,
-    DIGITAL_INPUT_MODE_12V,
-    DIGITAL_INPUT_MODE_24V
-} DigitalInputMode_T;
+    EXEC_DIGITAL_INPUT_CHANNEL_1 = 0,
+    EXEC_DIGITAL_INPUT_CHANNEL_2,
+    EXEC_DIGITAL_INPUT_CHANNEL_3,
+    EXEC_DIGITAL_INPUT_CHANNEL_4,
+    EXEC_DIGITAL_INPUT_CHANNEL_5,
+    EXEC_DIGITAL_INPUT_CHANNEL_6,
+    EXEC_DIGITAL_INPUT_CHANNEL_7,
+    EXEC_DIGITAL_INPUT_CHANNEL_8,
+    EXEC_DIGITAL_INPUT_CHANNEL_9,
+    EXEC_DIGITAL_INPUT_CHANNEL_10,
+    EXEC_DIGITAL_INPUT_CHANNEL_COUNT
+} ExecDigitalInputChannel_T;
 
-typedef struct DigitalInputChannelConfig_T
+typedef enum
 {
-    DigitalInputMode_T channel_0_mode;
-    DigitalInputMode_T channel_1_mode;
-    DigitalInputMode_T channel_2_mode;
-    DigitalInputMode_T channel_3_mode;
-    DigitalInputMode_T channel_4_mode;
-    DigitalInputMode_T channel_5_mode;
-    DigitalInputMode_T channel_6_mode;
-    DigitalInputMode_T channel_7_mode;
-    DigitalInputMode_T channel_8_mode;
-    DigitalInputMode_T channel_9_mode;
+    EXEC_DIGITAL_INPUT_MODE_DISABLED = 0,
+    EXEC_DIGITAL_INPUT_MODE_3V3,
+    EXEC_DIGITAL_INPUT_MODE_5V,
+    EXEC_DIGITAL_INPUT_MODE_12V,
+    EXEC_DIGITAL_INPUT_MODE_24V,
+    EXEC_DIGITAL_INPUT_MODE_COUNT
+} ExecDigitalInputMode_T;
 
-} DigitalInputChannelConfig_T;
+typedef struct
+{
+    ExecDigitalInputMode_T channels[EXEC_DIGITAL_INPUT_CHANNEL_COUNT];
+} ExecDigitalInputConfig_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
 
 /**
- * @brief Configures digital input channel modes for execution-time sampling.
- *
- * @param channel_config  Pointer to per-channel mode configuration.
- *
- * This function stores which digital input channels are enabled or disabled
- * based on the provided mode for each channel.
+ * @brief Configure all ten channel modes and leave sampling stopped.
+ * @return true when all selector states were staged and submitted.
  */
-void EXEC_DigitalInput_Configure( const DigitalInputChannelConfig_T* channel_config );
+bool EXEC_DIGITAL_INPUT_Configure( const ExecDigitalInputConfig_T* config );
+
+/** @brief Activate the configured physical input mask. */
+bool EXEC_DIGITAL_INPUT_Start( void );
+
+/** @brief Clear the active mask while retaining configuration. */
+bool EXEC_DIGITAL_INPUT_Stop( void );
+
+/** @brief Return true while configured or started. */
+bool EXEC_DIGITAL_INPUT_Is_Configured( void );
+
+/** @brief Return true only while sampling is started. */
+bool EXEC_DIGITAL_INPUT_Is_Started( void );
 
 /**
- * @brief Samples all configured digital inputs.
+ * @brief Sample the active physical GPIOD input mask.
  *
- * @param dest_addr  Pointer to destination for the masked input word.
+ * The returned uint32_t retains physical GPIOD bit positions and raw GPIO
+ * polarity. Only bits 0 to 15 are currently used.
  *
- * This function reads the digital input port state and writes back a masked
- * result containing only channels currently enabled by configuration.
+ * TODO: Consider changing the public sample and buffered storage type to
+ * uint16_t to reduce capture-buffer and transfer size.
  */
-void EXEC_DigitalInput_SampleAll( uint32_t* dest_addr );
+void EXEC_DIGITAL_INPUT_Sample_All( uint32_t* destination );
 
 #ifdef __cplusplus
 }
