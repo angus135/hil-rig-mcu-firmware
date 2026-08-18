@@ -17,7 +17,11 @@
 #include <stdint.h>
 
 #define LOGIC_EXPANDER_INTERNAL_FMPI2C1_OWN_ADDRESS_7BIT ( 0x33U )
+<<<<<<< HEAD
 #define LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK ( 0x7FU )
+=======
+#define LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK ( 0x01U )
+>>>>>>> 47eee5c (DEV-155 remove committed rebase conflict markers)
 #define LOGIC_EXPANDER_CONFIG_WRITE_COUNT ( 8U )
 #define LOGIC_EXPANDER_TRANSACTION_TIMEOUT_MS ( 100U )
 
