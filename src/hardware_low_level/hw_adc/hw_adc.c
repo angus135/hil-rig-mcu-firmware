@@ -92,11 +92,12 @@
  *------------------------------------------------------------------------------
  */
 
-typedef struct
+typedef enum
 {
-    bool is_configured;
-    bool is_started;
-} HWADCState_T;
+    EXEC_ANALOGUE_INPUT_STATE_DISABLED = 0,
+    EXEC_ANALOGUE_INPUT_STATE_CONFIGURED,
+    EXEC_ANALOGUE_INPUT_STATE_STARTED,
+} ExecAnalogueInputState_T;
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables

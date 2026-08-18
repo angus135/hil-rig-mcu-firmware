@@ -114,13 +114,14 @@ protected:
 TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_ReturnsFalse_WhenChannel0IsDisabled )
 {
     ExecAnalogueInputConfig_T configuration = {};
+    configuration.is_enabled                = true;
     configuration.sample_rate               = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ;
     configuration.ch_0_is_enabled           = false;
     configuration.ch_1_is_enabled           = true;
 
     EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( _ ) ).Times( 0 );
 
-    bool result = EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( configuration );
+    bool result = EXEC_ANALOGUE_INPUT_Configure( &configuration );
 
     EXPECT_FALSE( result );
 }
@@ -128,13 +129,14 @@ TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_ReturnsFalse_WhenChannel0
 TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_ReturnsFalse_WhenChannel1IsDisabled )
 {
     ExecAnalogueInputConfig_T configuration = {};
+    configuration.is_enabled                = true;
     configuration.sample_rate               = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ;
     configuration.ch_0_is_enabled           = true;
     configuration.ch_1_is_enabled           = false;
 
     EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( _ ) ).Times( 0 );
 
-    bool result = EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( configuration );
+    bool result = EXEC_ANALOGUE_INPUT_Configure( &configuration );
 
     EXPECT_FALSE( result );
 }
@@ -142,6 +144,7 @@ TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_ReturnsFalse_WhenChannel1
 TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_ReturnsFalse_WhenHwAdcConfigurationFails )
 {
     ExecAnalogueInputConfig_T configuration = {};
+    configuration.is_enabled                = true;
     configuration.sample_rate               = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_50K_HZ;
     configuration.ch_0_is_enabled           = true;
     configuration.ch_1_is_enabled           = true;
@@ -149,7 +152,7 @@ TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_ReturnsFalse_WhenHwAdcCon
     EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( ADC_SAMPLE_RATE_50K_HZ ) )
         .WillOnce( Return( false ) );
 
-    bool result = EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( configuration );
+    bool result = EXEC_ANALOGUE_INPUT_Configure( &configuration );
 
     EXPECT_FALSE( result );
 }
@@ -174,6 +177,7 @@ TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_TranslatesAllSupportedSam
     for ( const SampleRateMapping_T& mapping : mappings )
     {
         ExecAnalogueInputConfig_T configuration = {};
+        configuration.is_enabled                = true;
         configuration.sample_rate               = mapping.exec_rate;
         configuration.ch_0_is_enabled           = true;
         configuration.ch_1_is_enabled           = true;
@@ -181,48 +185,152 @@ TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_TranslatesAllSupportedSam
         EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( mapping.hw_rate ) )
             .WillOnce( Return( true ) );
 
-        EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( configuration ) );
+        EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Configure( &configuration ) );
     }
 }
 
 TEST_F( ExecAnalogueInputTest, ConfigureAnalogueInputs_RejectsInvalidExecutionSampleRate )
 {
     ExecAnalogueInputConfig_T configuration = {};
+    configuration.is_enabled                = true;
     configuration.sample_rate               = static_cast<ExecAnalogueInputSampleRate_T>( 999U );
     configuration.ch_0_is_enabled           = true;
     configuration.ch_1_is_enabled           = true;
 
     EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( _ ) ).Times( 0 );
 
-    EXPECT_FALSE( EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( configuration ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_INPUT_Configure( &configuration ) );
 }
 
-TEST_F( ExecAnalogueInputTest, StartReturnsTrueWhenHardwareStartSucceeds )
+TEST_F( ExecAnalogueInputTest, ConfigureDisabledEntersDisabledStateWithoutConfiguringHardware )
 {
-    EXPECT_CALL( mock_hw_adc, StartDmaMeasurements() ).WillOnce( Return( true ) );
+    const ExecAnalogueInputConfig_T configuration = {
+        .is_enabled = false,
+    };
 
-    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Start() );
+    EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( _ ) ).Times( 0 );
+
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Configure( &configuration ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_INPUT_Is_Configured() );
+    EXPECT_FALSE( EXEC_ANALOGUE_INPUT_Is_Started() );
 }
 
-TEST_F( ExecAnalogueInputTest, StartReturnsFalseWhenHardwareStartFails )
+TEST_F( ExecAnalogueInputTest, StartReturnsFalseWhileDisabled )
 {
-    EXPECT_CALL( mock_hw_adc, StartDmaMeasurements() ).WillOnce( Return( false ) );
+    const ExecAnalogueInputConfig_T configuration = {
+        .is_enabled = false,
+    };
+
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Configure( &configuration ) );
+    EXPECT_CALL( mock_hw_adc, StartDmaMeasurements() ).Times( 0 );
 
     EXPECT_FALSE( EXEC_ANALOGUE_INPUT_Start() );
 }
 
-TEST_F( ExecAnalogueInputTest, StopReturnsTrueWhenHardwareStopSucceeds )
+TEST_F( ExecAnalogueInputTest, StopReturnsFalseWhileNotStarted )
 {
-    EXPECT_CALL( mock_hw_adc, StopDmaMeasurements() ).WillOnce( Return( true ) );
+    const ExecAnalogueInputConfig_T configuration = {
+        .is_enabled      = true,
+        .sample_rate     = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ,
+        .ch_0_is_enabled = true,
+        .ch_1_is_enabled = true,
+    };
 
+    EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( ADC_SAMPLE_RATE_10K_HZ ) )
+        .WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Configure( &configuration ) );
+    EXPECT_CALL( mock_hw_adc, StopDmaMeasurements() ).Times( 0 );
+
+    EXPECT_FALSE( EXEC_ANALOGUE_INPUT_Stop() );
+}
+
+TEST_F( ExecAnalogueInputTest, StartTransitionsConfiguredModuleToStarted )
+{
+    const ExecAnalogueInputConfig_T configuration = {
+        .is_enabled      = true,
+        .sample_rate     = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ,
+        .ch_0_is_enabled = true,
+        .ch_1_is_enabled = true,
+    };
+
+    EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( ADC_SAMPLE_RATE_10K_HZ ) )
+        .WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Configure( &configuration ) );
+
+    EXPECT_CALL( mock_hw_adc, StartDmaMeasurements() ).WillOnce( Return( true ) );
+
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Start() );
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Is_Configured() );
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Is_Started() );
+
+    EXPECT_CALL( mock_hw_adc, StopDmaMeasurements() ).WillOnce( Return( true ) );
     EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Stop() );
 }
 
-TEST_F( ExecAnalogueInputTest, StopReturnsFalseWhenHardwareStopFails )
+TEST_F( ExecAnalogueInputTest, StartReturnsFalseWhenHardwareStartFails )
 {
+    const ExecAnalogueInputConfig_T configuration = {
+        .is_enabled      = true,
+        .sample_rate     = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ,
+        .ch_0_is_enabled = true,
+        .ch_1_is_enabled = true,
+    };
+
+    EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( ADC_SAMPLE_RATE_10K_HZ ) )
+        .WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Configure( &configuration ) );
+
+    EXPECT_CALL( mock_hw_adc, StartDmaMeasurements() ).WillOnce( Return( false ) );
+
+    EXPECT_FALSE( EXEC_ANALOGUE_INPUT_Start() );
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Is_Configured() );
+    EXPECT_FALSE( EXEC_ANALOGUE_INPUT_Is_Started() );
+}
+
+TEST_F( ExecAnalogueInputTest, StopTransitionsStartedModuleToConfigured )
+{
+    const ExecAnalogueInputConfig_T configuration = {
+        .is_enabled      = true,
+        .sample_rate     = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ,
+        .ch_0_is_enabled = true,
+        .ch_1_is_enabled = true,
+    };
+
+    EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( ADC_SAMPLE_RATE_10K_HZ ) )
+        .WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Configure( &configuration ) );
+    EXPECT_CALL( mock_hw_adc, StartDmaMeasurements() ).WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Start() );
+
+    EXPECT_CALL( mock_hw_adc, StopDmaMeasurements() ).WillOnce( Return( true ) );
+
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Stop() );
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Is_Configured() );
+    EXPECT_FALSE( EXEC_ANALOGUE_INPUT_Is_Started() );
+}
+
+TEST_F( ExecAnalogueInputTest, StopPreservesStartedStateWhenHardwareStopFails )
+{
+    const ExecAnalogueInputConfig_T configuration = {
+        .is_enabled      = true,
+        .sample_rate     = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ,
+        .ch_0_is_enabled = true,
+        .ch_1_is_enabled = true,
+    };
+
+    EXPECT_CALL( mock_hw_adc, ConfigureADCMeasurementFrequency( ADC_SAMPLE_RATE_10K_HZ ) )
+        .WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Configure( &configuration ) );
+    EXPECT_CALL( mock_hw_adc, StartDmaMeasurements() ).WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Start() );
+
     EXPECT_CALL( mock_hw_adc, StopDmaMeasurements() ).WillOnce( Return( false ) );
 
     EXPECT_FALSE( EXEC_ANALOGUE_INPUT_Stop() );
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Is_Started() );
+
+    EXPECT_CALL( mock_hw_adc, StopDmaMeasurements() ).WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_INPUT_Stop() );
 }
 
 TEST_F( ExecAnalogueInputTest, ReadAnalogueInputs_AveragesEightSamplesAndStoresResults )
