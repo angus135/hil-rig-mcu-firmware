@@ -44,6 +44,8 @@ class MockHwPwmCapture
 {
 public:
     MOCK_METHOD( bool, Configure_Channel, ( HwPWMCaptureChannel_T, bool ));
+    MOCK_METHOD( bool, Start_Channel, ( HwPWMCaptureChannel_T ));
+    MOCK_METHOD( bool, Stop_Channel, ( HwPWMCaptureChannel_T ));
     MOCK_METHOD( HwPWMCaptureResult_T, Peek_Result, ( HwPWMCaptureChannel_T ) );
     MOCK_METHOD( void, Consume_Result, ( HwPWMCaptureChannel_T ) );
     MOCK_METHOD( uint32_t, Get_Timer_Clock_Hz, ( HwPWMCaptureChannel_T ) );
@@ -64,7 +66,7 @@ static void Reset_Exec_PWM_Capture_State( void )
 {
     for ( uint32_t i = 0U; i < EXEC_PWM_CAPTURE_CHANNEL_COUNT; i++ )
     {
-        exec_pwm_capture_channel_started[i] = false;
+        exec_pwm_capture_channel_state[i] = EXEC_PWM_CAPTURE_STATE_DISABLED;
     }
 }
 
@@ -73,6 +75,16 @@ extern "C"
 bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T channel, bool is_enabled )
 {
     return g_mock_hw->Configure_Channel( channel, is_enabled );
+}
+
+bool HW_PWM_Capture_Start_Channel( HwPWMCaptureChannel_T channel )
+{
+    return g_mock_hw->Start_Channel( channel );
+}
+
+bool HW_PWM_Capture_Stop_Channel( HwPWMCaptureChannel_T channel )
+{
+    return g_mock_hw->Stop_Channel( channel );
 }
 
 HwPWMCaptureResult_T HW_PWM_Capture_Peek_Result( HwPWMCaptureChannel_T channel )
@@ -150,24 +162,24 @@ protected:
  *------------------------------------------------------------------------------
  */
 
-TEST_F( ExecPWMCaptureTest, StartChannelAppliesModeAndEnablesMappedHardwareChannel )
+TEST_F( ExecPWMCaptureTest, ConfigureEnabledAppliesModeAndConfiguresMappedHardwareChannel )
 {
     ExecPwmCaptureConfig_T config = {};
     config.mode                   = EXEC_PWM_CAPTURE_LV_5V;
     config.is_enabled             = true;
 
-    EXPECT_CALL( mock_logic_expander, Load_Control_Bit( LOGIC_EXPANDER_DEVICE_PWM_SPI,
+    EXPECT_CALL( mock_logic_expander, Load_Control_Bit( LOGIC_EXPANDER_PWM_SPI,
                                                         LOGIC_EXPANDER_PORT_A, 2U, false ) );
-    EXPECT_CALL( mock_logic_expander, Load_Control_Bit( LOGIC_EXPANDER_DEVICE_PWM_SPI,
+    EXPECT_CALL( mock_logic_expander, Load_Control_Bit( LOGIC_EXPANDER_PWM_SPI,
                                                         LOGIC_EXPANDER_PORT_A, 3U, true ) );
     EXPECT_CALL( mock_logic_expander, Send_Control_Bits() );
     EXPECT_CALL( mock_hw, Configure_Channel( HW_PWM_CAPTURE_CHANNEL_2, true ) )
         .WillOnce( Return( true ) );
 
-    EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_2, &config ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Configure_Channel( EXEC_PWM_CAPTURE_CHANNEL_2, &config ) );
 }
 
-TEST_F( ExecPWMCaptureTest, StartChannelReturnsFalseWhenHardwareConfigurationFails )
+TEST_F( ExecPWMCaptureTest, ConfigureReturnsFalseWhenHardwareConfigurationFails )
 {
     ExecPwmCaptureConfig_T config = {};
     config.mode                   = EXEC_PWM_CAPTURE_LV_3V3;
@@ -175,17 +187,17 @@ TEST_F( ExecPWMCaptureTest, StartChannelReturnsFalseWhenHardwareConfigurationFai
 
     EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).WillOnce( Return( false ) );
 
-    EXPECT_FALSE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
+    EXPECT_FALSE( EXEC_PWM_Capture_Configure_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
 }
 
-TEST_F( ExecPWMCaptureTest, StartChannelReturnsFalseForNullConfig )
+TEST_F( ExecPWMCaptureTest, ConfigureReturnsFalseForNullConfig )
 {
     EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).Times( 0 );
 
-    EXPECT_FALSE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, nullptr ) );
+    EXPECT_FALSE( EXEC_PWM_Capture_Configure_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, nullptr ) );
 }
 
-TEST_F( ExecPWMCaptureTest, StartChannelReturnsFalseForInvalidChannel )
+TEST_F( ExecPWMCaptureTest, ConfigureReturnsFalseForInvalidChannel )
 {
     ExecPwmCaptureConfig_T config = {};
     config.mode                   = EXEC_PWM_CAPTURE_LV_3V3;
@@ -194,74 +206,99 @@ TEST_F( ExecPWMCaptureTest, StartChannelReturnsFalseForInvalidChannel )
     EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).Times( 0 );
 
     EXPECT_FALSE(
-        EXEC_PWM_Capture_Start_Channel( static_cast<ExecPwmCaptureChannel_T>( 2U ), &config ) );
+        EXEC_PWM_Capture_Configure_Channel( static_cast<ExecPwmCaptureChannel_T>( 2U ), &config ) );
 }
 
-TEST_F( ExecPWMCaptureTest, StartChannelReturnsFalseWhenConfigIsDisabled )
+TEST_F( ExecPWMCaptureTest, ConfigureDisabledStopsHardwareAndAppliesSafeMode )
 {
     ExecPwmCaptureConfig_T config = {};
     config.mode                   = EXEC_PWM_CAPTURE_LV_3V3;
     config.is_enabled             = false;
 
-    EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw, Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, false ) )
+        .WillOnce( Return( true ) );
+    EXPECT_CALL( mock_logic_expander,
+                 Load_Control_Bit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_A, 0U, false ) );
+    EXPECT_CALL( mock_logic_expander,
+                 Load_Control_Bit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_A, 1U, false ) );
+    EXPECT_CALL( mock_logic_expander, Send_Control_Bits() );
 
-    EXPECT_FALSE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Configure_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
 }
 
-TEST_F( ExecPWMCaptureTest, StartChannelReturnsFalseWhenChannelAlreadyStarted )
+TEST_F( ExecPWMCaptureTest, StartChannelStartsConfiguredHardwareChannel )
 {
     ExecPwmCaptureConfig_T config = {};
     config.mode                   = EXEC_PWM_CAPTURE_LV_3V3;
     config.is_enabled             = true;
 
-    EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw, Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, true ) )
+        .WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Configure_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
 
-    EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
-    EXPECT_FALSE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
+    EXPECT_CALL( mock_hw, Start_Channel( HW_PWM_CAPTURE_CHANNEL_1 ) ).WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
 }
 
-TEST_F( ExecPWMCaptureTest, StopChannelAppliesDisabledConfiguration )
+TEST_F( ExecPWMCaptureTest, StartChannelReturnsFalseWhenChannelIsNotConfigured )
+{
+    EXPECT_CALL( mock_hw, Start_Channel( _ ) ).Times( 0 );
+    EXPECT_FALSE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
+}
+
+TEST_F( ExecPWMCaptureTest, StartChannelReturnsFalseWhenHardwareStartFails )
 {
     ExecPwmCaptureConfig_T config = {};
     config.mode                   = EXEC_PWM_CAPTURE_LV_5V;
     config.is_enabled             = true;
 
-    EXPECT_CALL( mock_hw, Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, true ) )
-        .WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw, Configure_Channel( _, true ) ).WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Configure_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
+    EXPECT_CALL( mock_hw, Start_Channel( _ ) ).WillOnce( Return( false ) );
+    EXPECT_FALSE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
+}
 
-    EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
+TEST_F( ExecPWMCaptureTest, StopChannelStopsStartedHardwareChannel )
+{
+    ExecPwmCaptureConfig_T config = {};
+    config.mode                   = EXEC_PWM_CAPTURE_LV_5V;
+    config.is_enabled             = true;
 
-    EXPECT_CALL( mock_hw, Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, false ) )
-        .WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw, Configure_Channel( _, true ) ).WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Configure_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
+    EXPECT_CALL( mock_hw, Start_Channel( _ ) ).WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
 
+    EXPECT_CALL( mock_hw, Stop_Channel( HW_PWM_CAPTURE_CHANNEL_1 ) ).WillOnce( Return( true ) );
     EXPECT_TRUE( EXEC_PWM_Capture_Stop_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
 }
 
 TEST_F( ExecPWMCaptureTest, StopChannelReturnsFalseForInvalidChannel )
 {
-    EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw, Stop_Channel( _ ) ).Times( 0 );
 
     EXPECT_FALSE( EXEC_PWM_Capture_Stop_Channel( static_cast<ExecPwmCaptureChannel_T>( 2U ) ) );
 }
 
 TEST_F( ExecPWMCaptureTest, StopChannelReturnsFalseWhenChannelNotStarted )
 {
-    EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw, Stop_Channel( _ ) ).Times( 0 );
 
     EXPECT_FALSE( EXEC_PWM_Capture_Stop_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
 }
 
-TEST_F( ExecPWMCaptureTest, StopChannelReturnsFalseWhenHardwareConfigurationFails )
+TEST_F( ExecPWMCaptureTest, StopChannelReturnsFalseWhenHardwareStopFails )
 {
     ExecPwmCaptureConfig_T config = {};
     config.mode                   = EXEC_PWM_CAPTURE_LV_3V3;
     config.is_enabled             = true;
 
-    EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).WillOnce( Return( true ) );
-
-    EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
-
-    EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).WillOnce( Return( false ) );
+    EXPECT_CALL( mock_hw, Configure_Channel( _, true ) ).WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Configure_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
+    EXPECT_CALL( mock_hw, Start_Channel( _ ) ).WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
+    EXPECT_CALL( mock_hw, Stop_Channel( _ ) ).WillOnce( Return( false ) );
 
     EXPECT_FALSE( EXEC_PWM_Capture_Stop_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
 }
@@ -272,11 +309,13 @@ TEST_F( ExecPWMCaptureTest, StopThenStartChannelSucceeds )
     config.mode                   = EXEC_PWM_CAPTURE_LV_3V3;
     config.is_enabled             = true;
 
-    EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).WillRepeatedly( Return( true ) );
-
-    EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
+    EXPECT_CALL( mock_hw, Configure_Channel( _, true ) ).WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Configure_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
+    EXPECT_CALL( mock_hw, Start_Channel( _ ) ).Times( 2 ).WillRepeatedly( Return( true ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
+    EXPECT_CALL( mock_hw, Stop_Channel( _ ) ).WillOnce( Return( true ) );
     EXPECT_TRUE( EXEC_PWM_Capture_Stop_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
-    EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
 }
 
 TEST_F( ExecPWMCaptureTest, ConsumeReturnsFalseWhenNoNewHardwareData )

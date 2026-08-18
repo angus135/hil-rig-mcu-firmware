@@ -119,7 +119,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"expander",            CONSOLE_Command_Expander,               "Command set allowing user to configure and control the logic expander"},
     {"i2c_loopback",        CONSOLE_Command_I2C_Loopback,           "Loopback testing for I2C master and slave channels."},
     {"spi_loop",            CONSOLE_Command_SPI_Loopback,           "Does a loopback test"},
-    {"pwm_capture",         CONSOLE_PWM_Capture_Command,            "Configure/read PWM capture. Usage: pwm_capture <start|stop|read> ..."},
+    {"pwm_capture",         CONSOLE_PWM_Capture_Command,            "Configure/read PWM capture. Usage: pwm_capture <config|start|stop|disable|read> ..."},
     {"can", CONSOLE_CAN_Command_Handler, "CAN diagnostics: tx, rx, and dual-channel config"},
     {"anlg_out",            CONSOLE_Command_Analogue_Output,        "DAC config and write commands"},
     {"pwm_out",             CONSOLE_Command_PWM_Output,             "Set PWM outputs"},
