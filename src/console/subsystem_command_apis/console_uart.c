@@ -645,8 +645,7 @@ static void CONSOLE_UART_Loopback_Start( uint16_t argc, char* argv[] )
 {
     ( void )argv;
 
-    if ( argc != 3U || !s_uart_loopback_state.is_configured
-         || s_uart_loopback_state.is_started )
+    if ( argc != 3U || !s_uart_loopback_state.is_configured || s_uart_loopback_state.is_started )
     {
         CONSOLE_UART_Loopback_Print_Usage();
         return;

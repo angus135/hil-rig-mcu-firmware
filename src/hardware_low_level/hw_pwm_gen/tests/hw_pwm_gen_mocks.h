@@ -107,6 +107,10 @@ HAL_StatusTypeDef HAL_TIM_PWM_Start( TIM_HandleTypeDef* htim, uint32_t channel )
 
 HAL_StatusTypeDef HAL_TIMEx_PWMN_Start( TIM_HandleTypeDef* htim, uint32_t channel );
 
+HAL_StatusTypeDef HAL_TIM_PWM_Stop( TIM_HandleTypeDef* htim, uint32_t channel );
+
+HAL_StatusTypeDef HAL_TIMEx_PWMN_Stop( TIM_HandleTypeDef* htim, uint32_t channel );
+
 /* LL Functions */
 
 void LL_TIM_OC_SetCompareCH1( TIM_TypeDef* TIMx, uint32_t CompareValue );

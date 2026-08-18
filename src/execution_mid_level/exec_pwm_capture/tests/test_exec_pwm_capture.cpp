@@ -44,8 +44,8 @@ class MockHwPwmCapture
 {
 public:
     MOCK_METHOD( bool, Configure_Channel, ( HwPWMCaptureChannel_T, bool ));
-    MOCK_METHOD( bool, Start_Channel, ( HwPWMCaptureChannel_T ));
-    MOCK_METHOD( bool, Stop_Channel, ( HwPWMCaptureChannel_T ));
+    MOCK_METHOD( bool, Start_Channel, ( HwPWMCaptureChannel_T ) );
+    MOCK_METHOD( bool, Stop_Channel, ( HwPWMCaptureChannel_T ) );
     MOCK_METHOD( HwPWMCaptureResult_T, Peek_Result, ( HwPWMCaptureChannel_T ) );
     MOCK_METHOD( void, Consume_Result, ( HwPWMCaptureChannel_T ) );
     MOCK_METHOD( uint32_t, Get_Timer_Clock_Hz, ( HwPWMCaptureChannel_T ) );
@@ -168,10 +168,10 @@ TEST_F( ExecPWMCaptureTest, ConfigureEnabledAppliesModeAndConfiguresMappedHardwa
     config.mode                   = EXEC_PWM_CAPTURE_LV_5V;
     config.is_enabled             = true;
 
-    EXPECT_CALL( mock_logic_expander, Load_Control_Bit( LOGIC_EXPANDER_PWM_SPI,
-                                                        LOGIC_EXPANDER_PORT_A, 2U, false ) );
-    EXPECT_CALL( mock_logic_expander, Load_Control_Bit( LOGIC_EXPANDER_PWM_SPI,
-                                                        LOGIC_EXPANDER_PORT_A, 3U, true ) );
+    EXPECT_CALL( mock_logic_expander,
+                 Load_Control_Bit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_A, 2U, false ) );
+    EXPECT_CALL( mock_logic_expander,
+                 Load_Control_Bit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_A, 3U, true ) );
     EXPECT_CALL( mock_logic_expander, Send_Control_Bits() );
     EXPECT_CALL( mock_hw, Configure_Channel( HW_PWM_CAPTURE_CHANNEL_2, true ) )
         .WillOnce( Return( true ) );

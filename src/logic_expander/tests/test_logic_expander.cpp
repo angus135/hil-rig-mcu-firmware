@@ -125,7 +125,7 @@ protected:
         g_mock_hw_i2c = &mock_hw_i2c;
         std::memset( logic_expander_state, 0, sizeof( logic_expander_state ) );
         std::memset( logic_expander_submitted_state, 0, sizeof( logic_expander_submitted_state ) );
-        logic_expander_ready                  = false;
+        logic_expander_ready = false;
         /* Behavioral tests use one active device even though bring-up defaults to none. */
         logic_expander_active_bitmask         = ( uint8_t )( 1U << LOGIC_EXPANDER_DI_1 );
         logic_expander_dirty_bitmask          = 0U;
@@ -337,24 +337,24 @@ TEST_F( LogicExpanderTest, InternalTransmitAndReceiveUseAtomicMasterQueueApis )
 
 TEST_F( LogicExpanderTest, LoadControlBitMarksDirtyOnlyWhenShadowChanges )
 {
-    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DI_1,
-                                                LOGIC_EXPANDER_PORT_A, 8U, true ),
-               LOGIC_EXPANDER_STATUS_INVALID_PARAM );
+    EXPECT_EQ(
+        LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DI_1, LOGIC_EXPANDER_PORT_A, 8U, true ),
+        LOGIC_EXPANDER_STATUS_INVALID_PARAM );
 
-    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DI_1,
-                                                LOGIC_EXPANDER_PORT_A, 3U, false ),
-               LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ(
+        LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DI_1, LOGIC_EXPANDER_PORT_A, 3U, false ),
+        LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( logic_expander_dirty_bitmask, 0U );
 
-    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DI_1,
-                                                LOGIC_EXPANDER_PORT_A, 3U, true ),
-               LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ(
+        LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DI_1, LOGIC_EXPANDER_PORT_A, 3U, true ),
+        LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( logic_expander_state[0].olat_a, 0x08U );
     EXPECT_EQ( logic_expander_dirty_bitmask, 0x01U );
 
-    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DI_1,
-                                                LOGIC_EXPANDER_PORT_A, 3U, true ),
-               LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ(
+        LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DI_1, LOGIC_EXPANDER_PORT_A, 3U, true ),
+        LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( logic_expander_dirty_bitmask, 0x01U );
 }
 

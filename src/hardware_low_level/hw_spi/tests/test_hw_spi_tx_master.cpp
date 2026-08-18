@@ -1419,8 +1419,7 @@ TEST_F( HWSpiMasterTxTest, StopFailureRetainsStartedStateForRetry )
     HW_SPI_STATE( SPI_CHANNEL_0 )->is_started  = true;
     HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted = true;
 
-    EXPECT_CALL( mock, SPIDMAStop( Eq( &SPI_CHANNEL_0_HANDLE ) ) )
-        .WillOnce( Return( HAL_ERROR ) );
+    EXPECT_CALL( mock, SPIDMAStop( Eq( &SPI_CHANNEL_0_HANDLE ) ) ).WillOnce( Return( HAL_ERROR ) );
 
     EXPECT_FALSE( HW_SPI_Stop_Channel( SPI_CHANNEL_0 ) );
     EXPECT_TRUE( HW_SPI_STATE( SPI_CHANNEL_0 )->is_started );
