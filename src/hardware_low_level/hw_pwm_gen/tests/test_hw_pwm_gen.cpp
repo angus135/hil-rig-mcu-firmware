@@ -324,7 +324,7 @@ TEST_F( HWPWMGenTest, StartChannelReturnsFalseBeforeConfiguration )
 {
     EXPECT_CALL( mock, TIMPWMNStart( _, _ ) ).Times( 0 );
 
-    EXPECT_FALSE( HW_PWM_GEN_Start_Channel( PWM_GEN_CHANNEL_HV ) );
+    EXPECT_FALSE( HW_PWM_GEN_Start_Channel( HW_PWM_GEN_CHANNEL_HV ) );
 }
 
 TEST_F( HWPWMGenTest, ConfigureChannelLeavesLVChannelStopped )
@@ -332,41 +332,41 @@ TEST_F( HWPWMGenTest, ConfigureChannelLeavesLVChannelStopped )
     EXPECT_CALL( mock, TIMPWMStart( _, _ ) ).Times( 0 );
     EXPECT_CALL( mock, TIMPWMNStart( _, _ ) ).Times( 0 );
 
-    EXPECT_TRUE( HW_PWM_GEN_Configure_Channel( PWM_GEN_CHANNEL_LV ) );
+    EXPECT_TRUE( HW_PWM_GEN_Configure_Channel( HW_PWM_GEN_CHANNEL_LV ) );
 }
 
 TEST_F( HWPWMGenTest, ConfigureChannelRejectsInvalidChannel )
 {
-    const auto invalid_channel = static_cast<HwPwmGenChannel_T>( PWM_GEN_CHANNEL_COUNT );
+    const auto invalid_channel = static_cast<HwPwmGenChannel_T>( HW_PWM_GEN_CHANNEL_COUNT );
 
     EXPECT_FALSE( HW_PWM_GEN_Configure_Channel( invalid_channel ) );
 }
 
 TEST_F( HWPWMGenTest, StartChannelStartsLVNormalOutput )
 {
-    ASSERT_TRUE( HW_PWM_GEN_Configure_Channel( PWM_GEN_CHANNEL_LV ) );
+    ASSERT_TRUE( HW_PWM_GEN_Configure_Channel( HW_PWM_GEN_CHANNEL_LV ) );
     EXPECT_CALL( mock, TIMPWMStart( &htim12, TIM_CHANNEL_2 ) ).WillOnce( Return( HAL_OK ) );
 
-    EXPECT_TRUE( HW_PWM_GEN_Start_Channel( PWM_GEN_CHANNEL_LV ) );
+    EXPECT_TRUE( HW_PWM_GEN_Start_Channel( HW_PWM_GEN_CHANNEL_LV ) );
 
     EXPECT_CALL( mock, TIMPWMStop( &htim12, TIM_CHANNEL_2 ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_TRUE( HW_PWM_GEN_Stop_Channel( PWM_GEN_CHANNEL_LV ) );
+    EXPECT_TRUE( HW_PWM_GEN_Stop_Channel( HW_PWM_GEN_CHANNEL_LV ) );
 }
 
 TEST_F( HWPWMGenTest, StartChannelStartsHVComplementaryOutput )
 {
-    ASSERT_TRUE( HW_PWM_GEN_Configure_Channel( PWM_GEN_CHANNEL_HV ) );
+    ASSERT_TRUE( HW_PWM_GEN_Configure_Channel( HW_PWM_GEN_CHANNEL_HV ) );
     EXPECT_CALL( mock, TIMPWMNStart( &htim8, TIM_CHANNEL_2 ) ).WillOnce( Return( HAL_OK ) );
 
-    EXPECT_TRUE( HW_PWM_GEN_Start_Channel( PWM_GEN_CHANNEL_HV ) );
+    EXPECT_TRUE( HW_PWM_GEN_Start_Channel( HW_PWM_GEN_CHANNEL_HV ) );
 
     EXPECT_CALL( mock, TIMPWMNStop( &htim8, TIM_CHANNEL_2 ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_TRUE( HW_PWM_GEN_Stop_Channel( PWM_GEN_CHANNEL_HV ) );
+    EXPECT_TRUE( HW_PWM_GEN_Stop_Channel( HW_PWM_GEN_CHANNEL_HV ) );
 }
 
 TEST_F( HWPWMGenTest, StartChannelRejectsInvalidChannel )
 {
-    const auto invalid_channel = static_cast<HwPwmGenChannel_T>( PWM_GEN_CHANNEL_COUNT );
+    const auto invalid_channel = static_cast<HwPwmGenChannel_T>( HW_PWM_GEN_CHANNEL_COUNT );
 
     EXPECT_CALL( mock, TIMPWMStart( _, _ ) ).Times( 0 );
     EXPECT_FALSE( HW_PWM_GEN_Start_Channel( invalid_channel ) );
@@ -374,62 +374,62 @@ TEST_F( HWPWMGenTest, StartChannelRejectsInvalidChannel )
 
 TEST_F( HWPWMGenTest, StartChannelPreservesStoppedStateWhenHALStartFails )
 {
-    ASSERT_TRUE( HW_PWM_GEN_Configure_Channel( PWM_GEN_CHANNEL_LV ) );
+    ASSERT_TRUE( HW_PWM_GEN_Configure_Channel( HW_PWM_GEN_CHANNEL_LV ) );
     EXPECT_CALL( mock, TIMPWMStart( &htim12, TIM_CHANNEL_2 ) ).WillOnce( Return( HAL_ERROR ) );
 
-    EXPECT_FALSE( HW_PWM_GEN_Start_Channel( PWM_GEN_CHANNEL_LV ) );
+    EXPECT_FALSE( HW_PWM_GEN_Start_Channel( HW_PWM_GEN_CHANNEL_LV ) );
 
     EXPECT_CALL( mock, TIMPWMStart( &htim12, TIM_CHANNEL_2 ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_TRUE( HW_PWM_GEN_Start_Channel( PWM_GEN_CHANNEL_LV ) );
+    EXPECT_TRUE( HW_PWM_GEN_Start_Channel( HW_PWM_GEN_CHANNEL_LV ) );
     EXPECT_CALL( mock, TIMPWMStop( &htim12, TIM_CHANNEL_2 ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_TRUE( HW_PWM_GEN_Stop_Channel( PWM_GEN_CHANNEL_LV ) );
+    EXPECT_TRUE( HW_PWM_GEN_Stop_Channel( HW_PWM_GEN_CHANNEL_LV ) );
 }
 
 TEST_F( HWPWMGenTest, ConfigureChannelReturnsFalseWhileStarted )
 {
-    ASSERT_TRUE( HW_PWM_GEN_Configure_Channel( PWM_GEN_CHANNEL_HV ) );
+    ASSERT_TRUE( HW_PWM_GEN_Configure_Channel( HW_PWM_GEN_CHANNEL_HV ) );
     EXPECT_CALL( mock, TIMPWMNStart( &htim8, TIM_CHANNEL_2 ) ).WillOnce( Return( HAL_OK ) );
-    ASSERT_TRUE( HW_PWM_GEN_Start_Channel( PWM_GEN_CHANNEL_HV ) );
+    ASSERT_TRUE( HW_PWM_GEN_Start_Channel( HW_PWM_GEN_CHANNEL_HV ) );
 
-    EXPECT_FALSE( HW_PWM_GEN_Configure_Channel( PWM_GEN_CHANNEL_HV ) );
+    EXPECT_FALSE( HW_PWM_GEN_Configure_Channel( HW_PWM_GEN_CHANNEL_HV ) );
 
     EXPECT_CALL( mock, TIMPWMNStop( &htim8, TIM_CHANNEL_2 ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_TRUE( HW_PWM_GEN_Stop_Channel( PWM_GEN_CHANNEL_HV ) );
+    EXPECT_TRUE( HW_PWM_GEN_Stop_Channel( HW_PWM_GEN_CHANNEL_HV ) );
 }
 
 TEST_F( HWPWMGenTest, StopChannelRetainsConfigurationForRestart )
 {
-    ASSERT_TRUE( HW_PWM_GEN_Configure_Channel( PWM_GEN_CHANNEL_LV ) );
+    ASSERT_TRUE( HW_PWM_GEN_Configure_Channel( HW_PWM_GEN_CHANNEL_LV ) );
     EXPECT_CALL( mock, TIMPWMStart( &htim12, TIM_CHANNEL_2 ) ).WillOnce( Return( HAL_OK ) );
-    ASSERT_TRUE( HW_PWM_GEN_Start_Channel( PWM_GEN_CHANNEL_LV ) );
+    ASSERT_TRUE( HW_PWM_GEN_Start_Channel( HW_PWM_GEN_CHANNEL_LV ) );
     EXPECT_CALL( mock, TIMPWMStop( &htim12, TIM_CHANNEL_2 ) ).WillOnce( Return( HAL_OK ) );
-    ASSERT_TRUE( HW_PWM_GEN_Stop_Channel( PWM_GEN_CHANNEL_LV ) );
+    ASSERT_TRUE( HW_PWM_GEN_Stop_Channel( HW_PWM_GEN_CHANNEL_LV ) );
 
     EXPECT_CALL( mock, TIMPWMStart( &htim12, TIM_CHANNEL_2 ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_TRUE( HW_PWM_GEN_Start_Channel( PWM_GEN_CHANNEL_LV ) );
+    EXPECT_TRUE( HW_PWM_GEN_Start_Channel( HW_PWM_GEN_CHANNEL_LV ) );
     EXPECT_CALL( mock, TIMPWMStop( &htim12, TIM_CHANNEL_2 ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_TRUE( HW_PWM_GEN_Stop_Channel( PWM_GEN_CHANNEL_LV ) );
+    EXPECT_TRUE( HW_PWM_GEN_Stop_Channel( HW_PWM_GEN_CHANNEL_LV ) );
 }
 
 TEST_F( HWPWMGenTest, StopChannelPreservesStartedStateWhenHALStopFails )
 {
-    ASSERT_TRUE( HW_PWM_GEN_Configure_Channel( PWM_GEN_CHANNEL_HV ) );
+    ASSERT_TRUE( HW_PWM_GEN_Configure_Channel( HW_PWM_GEN_CHANNEL_HV ) );
     EXPECT_CALL( mock, TIMPWMNStart( &htim8, TIM_CHANNEL_2 ) ).WillOnce( Return( HAL_OK ) );
-    ASSERT_TRUE( HW_PWM_GEN_Start_Channel( PWM_GEN_CHANNEL_HV ) );
+    ASSERT_TRUE( HW_PWM_GEN_Start_Channel( HW_PWM_GEN_CHANNEL_HV ) );
 
     EXPECT_CALL( mock, TIMPWMNStop( &htim8, TIM_CHANNEL_2 ) ).WillOnce( Return( HAL_ERROR ) );
-    EXPECT_FALSE( HW_PWM_GEN_Stop_Channel( PWM_GEN_CHANNEL_HV ) );
+    EXPECT_FALSE( HW_PWM_GEN_Stop_Channel( HW_PWM_GEN_CHANNEL_HV ) );
 
     EXPECT_CALL( mock, TIMPWMNStop( &htim8, TIM_CHANNEL_2 ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_TRUE( HW_PWM_GEN_Stop_Channel( PWM_GEN_CHANNEL_HV ) );
+    EXPECT_TRUE( HW_PWM_GEN_Stop_Channel( HW_PWM_GEN_CHANNEL_HV ) );
 }
 
 TEST_F( HWPWMGenTest, StopChannelReturnsFalseWhenNotStarted )
 {
-    ASSERT_TRUE( HW_PWM_GEN_Configure_Channel( PWM_GEN_CHANNEL_LV ) );
+    ASSERT_TRUE( HW_PWM_GEN_Configure_Channel( HW_PWM_GEN_CHANNEL_LV ) );
     EXPECT_CALL( mock, TIMPWMStop( _, _ ) ).Times( 0 );
 
-    EXPECT_FALSE( HW_PWM_GEN_Stop_Channel( PWM_GEN_CHANNEL_LV ) );
+    EXPECT_FALSE( HW_PWM_GEN_Stop_Channel( HW_PWM_GEN_CHANNEL_LV ) );
 }
 
 /*-----------------------------------------------------------------------------

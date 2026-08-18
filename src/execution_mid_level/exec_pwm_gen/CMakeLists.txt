@@ -29,6 +29,7 @@ target_link_libraries(exec_pwm_gen
         rtos
         cubeide_hal
         hw_pwm_gen
+        logic_expander
 )
 
 # -----------------------------
