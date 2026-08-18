@@ -126,8 +126,7 @@ protected:
         std::memset( logic_expander_state, 0, sizeof( logic_expander_state ) );
         std::memset( logic_expander_submitted_state, 0, sizeof( logic_expander_submitted_state ) );
         logic_expander_ready = false;
-        /* Behavioral tests use one active device even though bring-up defaults to none. */
-        logic_expander_active_bitmask         = ( uint8_t )( 1U << LOGIC_EXPANDER_DI_1 );
+        logic_expander_active_bitmask         = LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK;
         logic_expander_dirty_bitmask          = 0U;
         logic_expander_pending_bitmask        = 0U;
         logic_expander_retry_bitmask          = 0U;
@@ -174,18 +173,13 @@ TEST_F( LogicExpanderTest, FunctionalIndexValuesMatchAddressTableIndices )
     EXPECT_EQ( LOGIC_EXPANDER_I2C_ADDRESSES[LOGIC_EXPANDER_I2C_AO], 0x26U );
 }
 
-TEST_F( LogicExpanderTest, BringupDefaultsToNoActiveDevices )
-{
-    EXPECT_EQ( LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK, 0U );
-}
-
 TEST_F( LogicExpanderTest, DefaultConfigurationMarksSevenExpandersActive )
 {
     EXPECT_EQ( LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK, 0x7FU );
 
     for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
     {
-        EXPECT_EQ( LOGIC_EXPANDER_Index_Is_Active( ( LogicExpanderIndex_T )idx ), idx < 7U );
+        EXPECT_TRUE( LOGIC_EXPANDER_Index_Is_Active( ( LogicExpanderIndex_T )idx ) );
     }
 }
 
@@ -445,13 +439,14 @@ TEST_F( LogicExpanderTest, SendControlBitsEnqueuesOnlyDirtyExpanders )
 
 TEST_F( LogicExpanderTest, SendControlBitsCanAddressAllActiveExpanders )
 {
-    logic_expander_ready         = true;
-    logic_expander_dirty_bitmask = 0x7FU;
+    logic_expander_ready          = true;
+    logic_expander_active_bitmask = LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK;
+    logic_expander_dirty_bitmask  = LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK;
 
-    for ( uint8_t idx = 0U; idx < 7U; ++idx )
+    for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
     {
-        logic_expander_state[idx]                      = { 0xFFU, 0xFFU };
-        const uint16_t                address          = ( uint16_t )( 0x20U + idx );
+        logic_expander_state[idx] = { 0xFFU, 0xFFU };
+        const uint16_t address    = ( uint16_t )( 0x20U + idx );
         const std::array<uint8_t, 3U> expected_payload = { 0x14U, 0xFFU, 0xFFU };
 
         EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, address, _, 3U ) )
@@ -464,7 +459,7 @@ TEST_F( LogicExpanderTest, SendControlBitsCanAddressAllActiveExpanders )
 
     EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( logic_expander_dirty_bitmask, 0U );
-    EXPECT_EQ( logic_expander_pending_bitmask, 0x7FU );
+    EXPECT_EQ( logic_expander_pending_bitmask, LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK );
 }
 
 TEST_F( LogicExpanderTest, PartialQueueFullRetryDoesNotDuplicateAcceptedExpander )
