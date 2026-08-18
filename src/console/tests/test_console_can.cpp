@@ -84,11 +84,11 @@ extern "C" uint32_t EXEC_CAN_Get_Rx_Dropped_Count( EXEC_CAN_Channel_T channel )
 }
 
 extern "C" EXEC_CAN_Result_T EXEC_CAN_Configure_Channel( EXEC_CAN_Channel_T channel,
-                                                          EXEC_CAN_Config_T  configuration )
+                                                         EXEC_CAN_Config_T  configuration )
 {
     size_t index = ChannelIndex( channel );
     configure_counts[index]++;
-    configured_enabled[index] = configuration.is_enabled;
+    configured_enabled[index]  = configuration.is_enabled;
     configured_bitrates[index] = configuration.bitrate;
     configured_banks[index]    = configuration.filter_bank;
     configured_ids[index]      = configuration.filter_id;
@@ -168,13 +168,13 @@ TEST_F( ConsoleCANTest, LongTransmitCommandIsRejectedBeforeTransmitting )
 
 TEST_F( ConsoleCANTest, InvalidFilterBankCombinationIsRejectedBeforeConfiguration )
 {
-    char  can[]    = "can";
-    char  config[] = "config";
+    char  can[]     = "can";
+    char  config[]  = "config";
     char  channel[] = "2";
     char  bank[]    = "13";
-    char  id[]     = "0x123";
-    char  mask[]   = "0x7FF";
-    char* argv[]   = { can, config, channel, bank, id, mask };
+    char  id[]      = "0x123";
+    char  mask[]    = "0x7FF";
+    char* argv[]    = { can, config, channel, bank, id, mask };
 
     CONSOLE_CAN_Command_Handler( 6U, argv );
 
@@ -185,13 +185,13 @@ TEST_F( ConsoleCANTest, InvalidFilterBankCombinationIsRejectedBeforeConfiguratio
 
 TEST_F( ConsoleCANTest, ValidConfigurationRoutesSelectedChannel )
 {
-    char  can[]    = "can";
-    char  config[] = "config";
+    char  can[]     = "can";
+    char  config[]  = "config";
     char  channel[] = "2";
     char  bank[]    = "14";
-    char  id[]     = "0x123";
-    char  mask[]   = "0x7FF";
-    char* argv[]   = { can, config, channel, bank, id, mask };
+    char  id[]      = "0x123";
+    char  mask[]    = "0x7FF";
+    char* argv[]    = { can, config, channel, bank, id, mask };
 
     CONSOLE_CAN_Command_Handler( 6U, argv );
 
@@ -207,10 +207,10 @@ TEST_F( ConsoleCANTest, ValidConfigurationRoutesSelectedChannel )
 
 TEST_F( ConsoleCANTest, StartAndStopRouteSelectedChannel )
 {
-    char  can[]     = "can";
-    char  start[]   = "start";
-    char  stop[]    = "stop";
-    char  channel[] = "1";
+    char  can[]        = "can";
+    char  start[]      = "start";
+    char  stop[]       = "stop";
+    char  channel[]    = "1";
     char* start_argv[] = { can, start, channel };
     char* stop_argv[]  = { can, stop, channel };
 

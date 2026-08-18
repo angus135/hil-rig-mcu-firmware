@@ -27,10 +27,15 @@
  */
 #ifdef __cplusplus
 #define EXEC_CAN_STATIC_ASSERT( condition, message ) static_assert( condition, message )
-#define EXEC_CAN_ZERO_INITIALIZER {}
+#define EXEC_CAN_ZERO_INITIALIZER                                                                  \
+    {                                                                                              \
+    }
 #else
 #define EXEC_CAN_STATIC_ASSERT( condition, message ) _Static_assert( condition, message )
-#define EXEC_CAN_ZERO_INITIALIZER { 0 }
+#define EXEC_CAN_ZERO_INITIALIZER                                                                  \
+    {                                                                                              \
+        0                                                                                          \
+    }
 #endif
 
 EXEC_CAN_STATIC_ASSERT( EXEC_CAN_MAX_PAYLOAD_SIZE == CAN_PACKET_SIZE,
