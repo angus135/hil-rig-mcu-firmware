@@ -715,6 +715,41 @@ TEST_F( HWSPIRxTest, StartChannel_DacEnablesSpiWithoutRxDma )
 
     EXPECT_EQ( HW_SPI_STATE( SPI_DAC )->rx_dma, nullptr );
     EXPECT_TRUE( HW_SPI_Start_Channel( SPI_DAC ) );
+    EXPECT_TRUE( HW_SPI_STATE( SPI_DAC )->is_started );
+}
+
+TEST_F( HWSPIRxTest, StartChannel_RejectsUnconfiguredChannel )
+{
+    HW_SPI_STATE( SPI_DAC )->is_configured = false;
+
+    EXPECT_FALSE( HW_SPI_Start_Channel( SPI_DAC ) );
+    EXPECT_FALSE( HW_SPI_STATE( SPI_DAC )->is_started );
+}
+
+TEST_F( HWSPIRxTest, StartChannel_RejectsAlreadyStartedChannel )
+{
+    HW_SPI_STATE( SPI_DAC )->is_started = true;
+
+    EXPECT_FALSE( HW_SPI_Start_Channel( SPI_DAC ) );
+    EXPECT_TRUE( HW_SPI_STATE( SPI_DAC )->is_started );
+}
+
+TEST_F( HWSPIRxTest, StopThenStart_DacRetainsConfigurationAndRestartsChannel )
+{
+    InSequence sequence;
+
+    EXPECT_CALL( mock, SPIEnable( Eq( SPI_DAC_INSTANCE ) ) );
+    ASSERT_TRUE( HW_SPI_Start_Channel( SPI_DAC ) );
+
+    EXPECT_CALL( mock, SPIDMAStop( Eq( &SPI_DAC_HANDLE ) ) ).WillOnce( Return( HAL_OK ) );
+    ASSERT_TRUE( HW_SPI_Stop_Channel( SPI_DAC ) );
+
+    EXPECT_TRUE( HW_SPI_STATE( SPI_DAC )->is_configured );
+    EXPECT_FALSE( HW_SPI_STATE( SPI_DAC )->is_started );
+
+    EXPECT_CALL( mock, SPIEnable( Eq( SPI_DAC_INSTANCE ) ) );
+    EXPECT_TRUE( HW_SPI_Start_Channel( SPI_DAC ) );
+    EXPECT_TRUE( HW_SPI_STATE( SPI_DAC )->is_started );
 }
 
 /**

@@ -239,10 +239,15 @@ bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configurat
  * The RX DMA path is armed passively. In master mode this function must not
  * generate clocks; clocks are generated only by explicit TX activity.
  *
- * The channel should only be started after successful configuration.
+ * The channel should only be started after successful configuration. Starting
+ * an unconfigured or already-started channel is rejected.
  *
  * @param peripheral
  *     The SPI peripheral/channel to start.
+ *
+ * @return true if runtime operation was started successfully.
+ * @return false if the channel is invalid, unconfigured, already started, or
+ *     its passive RX DMA path could not be armed.
  */
 bool HW_SPI_Start_Channel( SPIChannel_T peripheral );
 
@@ -250,12 +255,13 @@ bool HW_SPI_Start_Channel( SPIChannel_T peripheral );
  * @brief Stop runtime operation of a configured SPI channel.
  *
  * Stops the active low-level runtime mechanisms used by the selected SPI
- * channel, such as DMA-based reception and any other ongoing SPI/DMA activity
- * managed by this driver.
+ * channel, including DMA-based reception and any ongoing SPI/DMA activity.
+ * Queued and active transport state is discarded on a successful stop.
  *
  * This function is intended to place the channel into a stopped state in which
  * its continuous RX path is no longer active and no further low-level activity
  * is expected until HW_SPI_Start_Channel() is called again.
+ * The applied configuration is retained so the channel can be restarted.
  *
  * This function does not clear higher-level protocol state, message assembly
  * state, or any interpretation of queued/transferred data. Those concerns are
@@ -263,6 +269,10 @@ bool HW_SPI_Start_Channel( SPIChannel_T peripheral );
  *
  * @param peripheral
  *     The SPI peripheral/channel to stop.
+ *
+ * @return true if runtime operation was stopped successfully.
+ * @return false if the channel is invalid, unconfigured, already stopped, or
+ *     the HAL DMA stop operation failed.
  */
 bool HW_SPI_Stop_Channel( SPIChannel_T peripheral );
 
