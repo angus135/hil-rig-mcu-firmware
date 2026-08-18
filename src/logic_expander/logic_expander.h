@@ -189,8 +189,8 @@ bool LOGIC_EXPANDER_Master_Transmit_Internal( uint16_t device_address_7bit, cons
  * @brief Initiate master receive on the internal FMPI2C1 channel.
  *
  * Requests data from a slave device on the internal FMPI2C1 channel.
- * Received data is buffered internally and can be retrieved with
- * EXEC_I2C_Receive_Copy_And_Consume().
+ * Received data remains owned by the internal HW I2C path. FMPI2C1 does not
+ * pass through the external execution-level I2C API.
  *
  * @param[in] device_address_7bit   7-bit slave address
  * @param[in] expected_length       Number of bytes expected from slave
