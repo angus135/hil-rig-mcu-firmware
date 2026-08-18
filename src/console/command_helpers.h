@@ -77,6 +77,10 @@ void CONSOLE_SPI_Loopback_Config( uint16_t argc, char* argv[] );
 
 void CONSOLE_SPI_Loopback_Apply( uint16_t argc, char* argv[] );
 
+void CONSOLE_SPI_Loopback_Stop( uint16_t argc, char* argv[] );
+
+void CONSOLE_SPI_Loopback_Disable( uint16_t argc, char* argv[] );
+
 void CONSOLE_SPI_Loopback_Load( uint16_t argc, char* argv[] );
 
 void CONSOLE_SPI_Loopback_Clear( void );
