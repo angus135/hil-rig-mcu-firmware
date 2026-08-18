@@ -917,7 +917,7 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
             }
         }
 
-        if ( !EXEC_ANALOG_OUTPUT_Is_Configured() )
+        if ( !EXEC_ANALOGUE_OUTPUT_Is_Configured() )
         {
             CONSOLE_Printf( "DAC module not configured. Run 'anlg_out config' first.\r\n" );
             return;
