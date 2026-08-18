@@ -97,6 +97,7 @@ typedef struct
 
     bool rx_enabled;
     bool tx_enabled;
+    bool is_enabled;
 } ExecUartConfig_T;
 
 /**-----------------------------------------------------------------------------
@@ -105,39 +106,21 @@ typedef struct
  */
 
 /**
- * @brief  Applies a UART channel configuration through the exec layer.
+ * @brief Configure or disable a UART channel without starting it.
  *
- * @param  channel UART channel to configure.
- * @param  config  Pointer to the UART configuration to apply.
- *
- * @return true if the configuration was successfully applied.
- * @return false if the channel is invalid, the configuration pointer is null,
- *         low-level configuration fails, RX stop fails during reconfiguration,
- *         or RX start fails when requested by the supplied configuration.
- *
- * @note   This function sequences configuration-related low-level operations.
- *
- * @note   If RX is currently running on the channel, it is stopped before the
- *         new configuration is applied.
- *
- * @note   If the supplied configuration enables RX, reception is started after
- *         successful low-level configuration.
+ * Set @p config->is_enabled false to stop, deconfigure, and apply the safe
+ * external-interface state.
  */
-bool EXEC_UART_Apply_Configuration( ExecUartChannel_T channel, const ExecUartConfig_T* config );
+bool EXEC_UART_Configure_Channel( ExecUartChannel_T channel, const ExecUartConfig_T* config );
+
+/** @brief Start a configured UART channel. */
+bool EXEC_UART_Start_Channel( ExecUartChannel_T channel );
 
 /**
- * @brief  Deconfigures a UART channel through the exec layer.
- *
- * @param  channel UART channel to deconfigure.
- *
- * @return true if the channel was successfully deconfigured.
- * @return false if the channel is invalid, RX stop fails, low-level
- *         deconfiguration fails, or the disabled interface mode cannot be sent.
- *
- * @note   This function stops active RX if required, deconfigures the STM32
- *         peripheral, and selects the disabled external interface mode.
+ * @brief Stop a started UART channel while retaining its configuration.
+ * @return false if the channel is invalid, not started, TX is incomplete, or RX stop fails.
  */
-bool EXEC_UART_Deconfigure( ExecUartChannel_T channel );
+bool EXEC_UART_Stop_Channel( ExecUartChannel_T channel );
 
 /**
  * @brief  Queues a UART TX payload and starts the low-level TX DMA pump if required.
