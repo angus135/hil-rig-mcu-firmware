@@ -2,17 +2,27 @@
 
 ## Overview
 
-`logic_expander` holds OLATA/OLATB shadow state for the MCP23017 devices on
+`logic_expander` holds OLATA/OLATB shadow state for seven MCP23017 devices on
 FMPI2C1. State and lookup tables are indexed by `LogicExpanderIndex_T`.
-`LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT` is the known role at index/address
-0/`0x20`; the remaining explicit indices are named unassigned until their
-hardware roles are established. All eight MCP23017 addresses from `0x20` to
-`0x27` are active by default so configuration and control writes can reach every
-expander.
+
+| Device | Address |
+|---|---:|
+| `LOGIC_EXPANDER_DI_1` | `0x20` |
+| `LOGIC_EXPANDER_DI_2` | `0x21` |
+| `LOGIC_EXPANDER_DO_1` | `0x22` |
+| `LOGIC_EXPANDER_DO_2` | `0x23` |
+| `LOGIC_EXPANDER_PWM_SPI` | `0x24` |
+| `LOGIC_EXPANDER_UART_PWR` | `0x25` |
+| `LOGIC_EXPANDER_I2C_AO` | `0x26` |
 
 Address and initial-state tables use designated initializers so the physical
 role-to-address mapping is visible in code. `LOGIC_EXPANDER_COUNT` is the final
 enum value and therefore also the state-array size.
+
+All devices are disabled in `LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK` during
+bring-up. Enable each device only after its safe OLATA/OLATB startup values have
+been confirmed. Individual drivers own their expander, port, and bit mappings;
+this module owns addressing, shadow state, and I2C submission.
 
 ## Task ownership and non-blocking configuration
 
