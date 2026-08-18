@@ -4,10 +4,13 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      <Short description of the module, what it exposes, and how it should be used>
+ *      Aggregate lifecycle and voltage configuration for the ten digital
+ *      output channels.
  *
  *  Notes:
- *      <Public assumptions, required initialisation order, dependencies, etc.>
+ *      Silkscreen channels are numbered 1 to 10. Their enum values remain
+ *      zero-based for safe array indexing. Runtime port writes intentionally
+ *      perform no lifecycle checks.
  ******************************************************************************/
 
 #ifndef EXEC_DIGITAL_OUTPUT_H
@@ -18,120 +21,102 @@ extern "C"
 {
 #endif
 
-/**-----------------------------------------------------------------------------
- *  Includes
- *------------------------------------------------------------------------------
- */
-
 #include "hw_gpio.h"
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
-/**-----------------------------------------------------------------------------
- *  Public Defines / Macros
- *------------------------------------------------------------------------------
- */
-
-/**-----------------------------------------------------------------------------
- *  Public Typedefs / Enums / Structures
- *------------------------------------------------------------------------------
- */
-
-typedef enum OutputMode_T
+typedef enum
 {
-    M3V3,
-    M5V,
-    M12V,
-    M24V,
-    MOFF
-} OutputMode_T;
+    EXEC_DIGITAL_OUTPUT_CHANNEL_1 = 0,
+    EXEC_DIGITAL_OUTPUT_CHANNEL_2,
+    EXEC_DIGITAL_OUTPUT_CHANNEL_3,
+    EXEC_DIGITAL_OUTPUT_CHANNEL_4,
+    EXEC_DIGITAL_OUTPUT_CHANNEL_5,
+    EXEC_DIGITAL_OUTPUT_CHANNEL_6,
+    EXEC_DIGITAL_OUTPUT_CHANNEL_7,
+    EXEC_DIGITAL_OUTPUT_CHANNEL_8,
+    EXEC_DIGITAL_OUTPUT_CHANNEL_9,
+    EXEC_DIGITAL_OUTPUT_CHANNEL_10,
+    EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT
+} ExecDigitalOutputChannel_T;
 
-/**-----------------------------------------------------------------------------
- *  Public Function Prototypes
- *------------------------------------------------------------------------------
- */
+typedef enum
+{
+    EXEC_DIGITAL_OUTPUT_MODE_3V3 = 0,
+    EXEC_DIGITAL_OUTPUT_MODE_5V,
+    EXEC_DIGITAL_OUTPUT_MODE_12V,
+    EXEC_DIGITAL_OUTPUT_MODE_24V,
+    EXEC_DIGITAL_OUTPUT_MODE_COUNT
+} ExecDigitalOutputMode_T;
 
-/**
- * @brief configure the gpio outputs.
- *
- * @param gpio_names   an array of GPIO pin names used in the design, all of which are on the same
-port
- * @param length       the nubmer of GPIOOutput_T in gpio_names
- * @param modes         the modes of operation corresponding to the pins
- *
- * This function configures all of the digital outputs, leveraging the output expander
- */
-bool EXEC_DIGITAL_Output_Configuration( GPIOOutput_T* gpio_names, uint16_t length,
-                                        OutputMode_T* modes );
+typedef struct
+{
+    bool                    is_enabled;
+    ExecDigitalOutputMode_T mode;
+    bool                    initial_high;
+} ExecDigitalOutputChannelConfig_T;
 
-/**
- * @brief combines many GPIO's (on the same port) into one pin mask.
- *
- * @param gpio_names   an array of GPIO pin names, all of which are on the same port
- * @param length       the nubmer of GPIOOutput_T in gpio_names
- *
- * @return returns the combined pin mask (uint32_t), if fault return 0xFFFF0000
- *
- * Combines the pinmasks of the gpio_names so that they can be written to the BSR in one step
- * (instead of individually), This is much more efficient and should be used with functions liek
-EXEC_DIGITAL_OUTPUT_Set_Output.
- * EXAMPLE: if we want to set both DIGITAL_OUT_CH_0 and DIGITAL_OUT_CH_1 we could write
-DigitalOutputPinmask_T p = HW_GPIO_Combine_Port_Pin_Masks({DIGITAL_OUT_CH_0, DIGITAL_OUT_CH_1 }, 2)
-if (p.pin_mask == 0xFFFF0000){
-    error
-} else {
-    EXEC_DIGITAL_OUTPUT_Set_Output(p)
-}
- * mocked using GoogleMock.
- */
-inline DigitalOutputPinmask_T EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names,
-                                                                          uint8_t       length );
+typedef struct
+{
+    ExecDigitalOutputChannelConfig_T channels[EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT];
+} ExecDigitalOutputConfig_T;
 
 /**
- * @brief Sets the state of all digital pins on the Digital GPIO Port (assigned in hw_gpio).
+ * @brief Configure all ten channels without starting the subsystem.
  *
- * @param PinMask   Carrys the information about which pins to set
-                    If a lower 16 bit is 1 this sets the associated digital output pin
-                    If any bit is 0 this indicates no change
-                    0th bit corresponds to digital output 0, 1st bit to output 1 etc
+ * Enabled channels retain their requested voltage and initial signal level.
+ * Disabled channels ignore their other fields and use the safe 3.3 V
+ * selection. All MCU output signals remain low after successful configuration.
+ * Reconfiguration is rejected while started.
  *
- *
- * This function wraps the HW_GPIO_Set_Output( ... ) function provided by the
- * LL layer. It can be used to set a single output pin or many output pins (on the same port).
- * EXAMPLE: EXEC_DIGITAL_OUTPUT_Set_Output( 0x0000_0020 ) sets LL_GPIO_PIN_5 of the Digital GPIO
-Port high
- * EXAMPLE: EXEC_DIGITAL_OUTPUT_Set_Output( 0x0000_0020 | 0x0000_0001 ) sets LL_GPIO_PIN_5 and
-LL_GPIO_PIN_1 of the Digital GPIO Port high
- * Setting multiple pins works because LL_GPIO_PIN_5 and LL_GPIO_PIN_1 are just uint32_t
- * in this case likely 0x0000_0020 0x0000_0001, so 0x0000_0021 is written to the BSR register
- * 0x0000_0021 = 0000_0000_0000_0000_0000_0000_0010_0001 setting pins 1 and 5 high
- * Note: This implementation assumes all digital outputs are on the same GPIO port.
- * By doing so, we can set all the outputs in a single hardware access.
+ * @param config Complete ten-channel configuration.
+ * @return true when configuration was accepted and applied.
  */
-inline void EXEC_DIGITAL_OUTPUT_Set_Output( uint32_t pin_mask );
+bool EXEC_DIGITAL_OUTPUT_Configure( const ExecDigitalOutputConfig_T* config );
 
 /**
- * @brief Resets the state of all digital pins on the Digital GPIO Port (assigned in hw_gpio).
- *
- * @param PinMask   Carrys the information about which pins to reset
-                    If a lower 16 bit is 1 this resets the associated digital output pin
-                    If any bit is 0 this indicates no change
-                    0th bit corresponds to digital output 0, 1st bit to output 1 etc
- *
- *
- * This function wraps the HW_GPIO_Reset_Output( ... ).
- * It can be used to reset a single output pin or many output pins (on the same port).
- * EXAMPLE: EXEC_DIGITAL_OUTPUT_Reset_Output( 0x0000_0020 ) resets LL_GPIO_PIN_5 of the Digital GPIO
-Port high
- * EXAMPLE: EXEC_DIGITAL_OUTPUT_Reset_Output( 0x0000_0020 | 0x0000_0001 ) resets LL_GPIO_PIN_5 and
-LL_GPIO_PIN_1 of the Digital GPIO Port high
- * Resetting multiple pins works because LL_GPIO_PIN_5 and LL_GPIO_PIN_1 are just uint32_t
- * in this case likely 0x0000_0020 0x0000_0001, so 0x0000_0021 is written to the BSR register
- * 0x0000_0021 = 0000_0000_0000_0000_0000_0000_0010_0001 resetting pins 1 and 5 high
- * Note: This implementation assumes all digital outputs are on the same GPIO port.
- * By doing so, we can reset all the outputs in a single hardware access.
+ * @brief Start the configured subsystem using the retained initial states.
+ * @return true when transitioning from configured to started.
  */
-inline void EXEC_DIGITAL_OUTPUT_Reset_Output( uint32_t pin_mask );
+bool EXEC_DIGITAL_OUTPUT_Start( void );
+
+/**
+ * @brief Drive all ten output signals low while retaining configuration.
+ * @return true when transitioning from started to configured.
+ */
+bool EXEC_DIGITAL_OUTPUT_Stop( void );
+
+/** @brief Return true when the subsystem is configured or started. */
+bool EXEC_DIGITAL_OUTPUT_Is_Configured( void );
+
+/** @brief Return true only while the subsystem is started. */
+bool EXEC_DIGITAL_OUTPUT_Is_Started( void );
+
+/**
+ * @brief Translate logical GPIO output identities on one port into a physical pin mask.
+ *
+ * Callers must pass a non-empty array whose pins share one physical GPIO port.
+ */
+DigitalOutputPinmask_T EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names,
+                                                                   uint8_t       length );
+
+/**
+ * @brief Directly set pins identified by a physical digital-output port mask.
+ *
+ * The mask must come from the HW GPIO mapping; its bit positions are physical
+ * GPIO pins, not zero-based digital-output channel numbers. This execution-time
+ * path intentionally performs no lifecycle checks.
+ */
+void EXEC_DIGITAL_OUTPUT_Set_Output( uint32_t pin_mask );
+
+/**
+ * @brief Directly reset pins identified by a physical digital-output port mask.
+ *
+ * The mask must come from the HW GPIO mapping; its bit positions are physical
+ * GPIO pins, not zero-based digital-output channel numbers. This execution-time
+ * path intentionally performs no lifecycle checks.
+ */
+void EXEC_DIGITAL_OUTPUT_Reset_Output( uint32_t pin_mask );
 
 #ifdef __cplusplus
 }

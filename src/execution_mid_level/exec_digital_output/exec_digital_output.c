@@ -4,10 +4,12 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      <Short description of the module's purpose and responsibilities>
+ *      Aggregate lifecycle, safe GPIO state, and Logic Expander voltage
+ *      selection for the ten digital-output channels.
  *
  *  Notes:
- *      <Any design notes, dependencies, or assumptions go here>
+ *      Direct runtime mask operations intentionally perform no lifecycle
+ *      checks. GPIO pin ownership and physical mapping remain in hw_gpio.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -19,6 +21,8 @@
 #include "hw_gpio.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include "logic_expander.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -29,6 +33,20 @@
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+typedef enum
+{
+    EXEC_DIGITAL_OUTPUT_STATE_DISABLED = 0,
+    EXEC_DIGITAL_OUTPUT_STATE_CONFIGURED,
+    EXEC_DIGITAL_OUTPUT_STATE_STARTED
+} ExecDigitalOutputLifecycleState_T;
+
+typedef struct
+{
+    LogicExpanderIndex_T expander;
+    LogicExpanderPort_T  port;
+    uint8_t              a0_bit;
+    uint8_t              a1_bit;
+} ExecDigitalOutputControlMapping_T;
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -39,81 +57,270 @@
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
+static ExecDigitalOutputLifecycleState_T exec_digital_output_state =
+    EXEC_DIGITAL_OUTPUT_STATE_DISABLED;
+
+static ExecDigitalOutputConfig_T exec_digital_output_configuration;
+
+static const ExecDigitalOutputControlMapping_T
+    exec_digital_output_control_mappings[EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT] = {
+        /* Channel 1: DO_A0_1 = GPA1, DO_A1_1 = GPA0 */
+        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 1U, 0U },
+
+        /* Channel 2: DO_A0_2 = GPA4, DO_A1_2 = GPA5 */
+        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 4U, 5U },
+
+        /* Channel 3: DO_A0_3 = GPB0, DO_A1_3 = GPB1 */
+        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_B, 0U, 1U },
+
+        /* Channel 4: DO_A0_4 = GPB7, DO_A1_4 = GPB6 */
+        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_B, 7U, 6U },
+
+        /* Channel 5: DO_A0_5 = GPB5, DO_A1_5 = GPB4 */
+        { LOGIC_EXPANDER_DO_2, LOGIC_EXPANDER_PORT_B, 5U, 4U },
+
+        /* Channel 6: DO_A0_6 = GPA6, DO_A1_6 = GPA7 */
+        { LOGIC_EXPANDER_DO_2, LOGIC_EXPANDER_PORT_A, 6U, 7U },
+
+        /* Channel 7: DO_A0_7 = GPA6, DO_A1_7 = GPA7 */
+        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 6U, 7U },
+
+        /* Channel 8: DO_A0_8 = GPB4, DO_A1_8 = GPB5 */
+        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_B, 4U, 5U },
+
+        /* Channel 9: DO_A0_9 = GPB2, DO_A1_9 = GPB3 */
+        { LOGIC_EXPANDER_DO_2, LOGIC_EXPANDER_PORT_B, 2U, 3U },
+
+        /* Channel 10: DO_A0_10 = GPB6, DO_A1_10 = GPB7 */
+        { LOGIC_EXPANDER_DO_2, LOGIC_EXPANDER_PORT_B, 6U, 7U },
+};
+
+static GPIOOutput_T exec_digital_output_gpio_channels[EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT] = {
+    DIGITAL_OUTPUT_0, DIGITAL_OUTPUT_1, DIGITAL_OUTPUT_2, DIGITAL_OUTPUT_3, DIGITAL_OUTPUT_4,
+    DIGITAL_OUTPUT_5, DIGITAL_OUTPUT_6, DIGITAL_OUTPUT_7, DIGITAL_OUTPUT_8, DIGITAL_OUTPUT_9,
+};
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
 
+static bool EXEC_DIGITAL_OUTPUT_Is_Valid_Mode( ExecDigitalOutputMode_T mode );
+
+static bool EXEC_DIGITAL_OUTPUT_Is_Valid_Configuration( const ExecDigitalOutputConfig_T* config );
+
+static bool EXEC_DIGITAL_OUTPUT_Stage_Voltage( ExecDigitalOutputChannel_T channel,
+                                               ExecDigitalOutputMode_T    mode );
+
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
 
+static bool EXEC_DIGITAL_OUTPUT_Is_Valid_Mode( ExecDigitalOutputMode_T mode )
+{
+    return ( uint32_t )mode < ( uint32_t )EXEC_DIGITAL_OUTPUT_MODE_COUNT;
+}
+
+static bool EXEC_DIGITAL_OUTPUT_Is_Valid_Configuration( const ExecDigitalOutputConfig_T* config )
+{
+    if ( config == NULL )
+    {
+        return false;
+    }
+
+    for ( uint32_t channel = 0U; channel < ( uint32_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT;
+          channel++ )
+    {
+        /*
+         * A disabled channel ignores its requested mode because Configure()
+         * will apply the channel's safe disabled selection.
+         */
+        if ( config->channels[channel].is_enabled
+             && !EXEC_DIGITAL_OUTPUT_Is_Valid_Mode( config->channels[channel].mode ) )
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool EXEC_DIGITAL_OUTPUT_Stage_Voltage( ExecDigitalOutputChannel_T channel,
+                                               ExecDigitalOutputMode_T    mode )
+{
+    if ( ( uint32_t )channel >= ( uint32_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT
+         || !EXEC_DIGITAL_OUTPUT_Is_Valid_Mode( mode ) )
+    {
+        return false;
+    }
+
+    bool a0_high;
+    bool a1_high;
+
+    switch ( mode )
+    {
+        case EXEC_DIGITAL_OUTPUT_MODE_3V3:
+            a0_high = false;
+            a1_high = false;
+            break;
+
+        case EXEC_DIGITAL_OUTPUT_MODE_5V:
+            a0_high = false;
+            a1_high = true;
+            break;
+
+        case EXEC_DIGITAL_OUTPUT_MODE_12V:
+            a0_high = true;
+            a1_high = false;
+            break;
+
+        case EXEC_DIGITAL_OUTPUT_MODE_24V:
+            a0_high = true;
+            a1_high = true;
+            break;
+
+        default:
+            return false;
+    }
+
+    const ExecDigitalOutputControlMapping_T* mapping =
+        &exec_digital_output_control_mappings[channel];
+
+    if ( LOGIC_EXPANDER_Load_Control_Bit( mapping->expander, mapping->port, mapping->a0_bit,
+                                          a0_high )
+         != LOGIC_EXPANDER_STATUS_OK )
+    {
+        return false;
+    }
+
+    if ( LOGIC_EXPANDER_Load_Control_Bit( mapping->expander, mapping->port, mapping->a1_bit,
+                                          a1_high )
+         != LOGIC_EXPANDER_STATUS_OK )
+    {
+        return false;
+    }
+
+    return true;
+}
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
 
-/**
- * @brief configure the gpio outputs.
- *
- * @param gpio_names   an array of GPIO pin names used in the design, all of which are on the same
-port
- * @param length       the nubmer of GPIOOutput_T in gpio_names
- * @param modes         the modes of operation corresponding to the pins
- *
- * This function configures all of the digital outputs, leveraging the output expander
- */
-bool EXEC_DIGITAL_Output_Configuration( GPIOOutput_T* gpio_names, uint16_t length,
-                                        OutputMode_T* modes )
+bool EXEC_DIGITAL_OUTPUT_Configure( const ExecDigitalOutputConfig_T* config )
 {
-    // Set the modes of all of the used output pins
-    if ( length != MAX_NUM_DIGITAL_OUTPUT_PINS )
+    if ( exec_digital_output_state == EXEC_DIGITAL_OUTPUT_STATE_STARTED )
     {
-        for ( int j = 0; j < MAX_NUM_DIGITAL_OUTPUT_PINS; j++ )
-        {
-            // Call output expander to switch off all GPIO output pins
-        }
         return false;
     }
-    for ( int i = 0; i < MAX_NUM_DIGITAL_OUTPUT_PINS; i++ )
+
+    if ( !EXEC_DIGITAL_OUTPUT_Is_Valid_Configuration( config ) )
     {
-        if ( modes[i] == M3V3 )
+        return false;
+    }
+
+    /*
+     * Hardware configuration begins here. Any subsequent failure must leave
+     * the subsystem non-startable.
+     */
+    exec_digital_output_state = EXEC_DIGITAL_OUTPUT_STATE_DISABLED;
+
+    HW_GPIO_Reset_Many_Pins( exec_digital_output_gpio_channels,
+                             ( uint16_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT );
+
+    for ( uint32_t channel = 0U; channel < ( uint32_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT;
+          channel++ )
+    {
+        const ExecDigitalOutputChannelConfig_T* channel_config = &config->channels[channel];
+
+        const ExecDigitalOutputMode_T selected_mode =
+            channel_config->is_enabled ? channel_config->mode : EXEC_DIGITAL_OUTPUT_MODE_3V3;
+
+        if ( !EXEC_DIGITAL_OUTPUT_Stage_Voltage( ( ExecDigitalOutputChannel_T )channel,
+                                                 selected_mode ) )
         {
-            return false;  // TO DO- remove this line
-            // Call output expander
-        }
-        else if ( modes[i] == M5V )
-        {
-            return false;  // TO DO- remove this line
-            // Call output expander
-        }
-        else if ( modes[i] == M12V )
-        {
-            return false;  // TO DO- remove this line
-            // Call output expander
-        }
-        else if ( modes[i] == M24V )
-        {
-            return false;  // TO DO- remove this line
-            // Call output expander
-        }
-        else if ( modes[i] == MOFF )
-        {
-            return false;  // TO DO- remove this line
-            // Call output expander
-        }
-        else
-        {
-            for ( int j = 0; j < MAX_NUM_DIGITAL_OUTPUT_PINS; j++ )
-            {
-                // Call output expander to switch off all GPIO output pins
-            }
             return false;
         }
     }
+
+    /*
+     * TODO: Remove this direct send when global configuration commits all
+     * staged Logic Expander changes.
+     */
+    if ( LOGIC_EXPANDER_Send_Control_Bits() != LOGIC_EXPANDER_STATUS_OK )
+    {
+        return false;
+    }
+
+    exec_digital_output_configuration = *config;
+    exec_digital_output_state         = EXEC_DIGITAL_OUTPUT_STATE_CONFIGURED;
+
     return true;
+}
+
+bool EXEC_DIGITAL_OUTPUT_Start( void )
+{
+    if ( exec_digital_output_state != EXEC_DIGITAL_OUTPUT_STATE_CONFIGURED )
+    {
+        return false;
+    }
+
+    GPIOOutput_T high_channels[EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT];
+    uint16_t     high_channel_count = 0U;
+
+    for ( uint32_t channel = 0U; channel < ( uint32_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT;
+          channel++ )
+    {
+        const ExecDigitalOutputChannelConfig_T* channel_config =
+            &exec_digital_output_configuration.channels[channel];
+
+        if ( channel_config->is_enabled && channel_config->initial_high )
+        {
+            high_channels[high_channel_count] = exec_digital_output_gpio_channels[channel];
+
+            high_channel_count++;
+        }
+    }
+
+    if ( high_channel_count > 0U )
+    {
+        HW_GPIO_Set_Many_Pins( high_channels, high_channel_count );
+    }
+
+    exec_digital_output_state = EXEC_DIGITAL_OUTPUT_STATE_STARTED;
+
+    return true;
+}
+
+bool EXEC_DIGITAL_OUTPUT_Stop( void )
+{
+    if ( exec_digital_output_state != EXEC_DIGITAL_OUTPUT_STATE_STARTED )
+    {
+        return false;
+    }
+
+    /*
+     * All digital-output signals are returned low in one batched GPIO
+     * operation. Unrelated GPIOG pins are not included and remain unchanged.
+     */
+    HW_GPIO_Reset_Many_Pins( exec_digital_output_gpio_channels,
+                             ( uint16_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT );
+
+    exec_digital_output_state = EXEC_DIGITAL_OUTPUT_STATE_CONFIGURED;
+
+    return true;
+}
+
+bool EXEC_DIGITAL_OUTPUT_Is_Configured( void )
+{
+    return exec_digital_output_state == EXEC_DIGITAL_OUTPUT_STATE_CONFIGURED
+           || exec_digital_output_state == EXEC_DIGITAL_OUTPUT_STATE_STARTED;
+}
+
+bool EXEC_DIGITAL_OUTPUT_Is_Started( void )
+{
+    return exec_digital_output_state == EXEC_DIGITAL_OUTPUT_STATE_STARTED;
 }
 
 /**
@@ -136,10 +343,9 @@ if (p.pin_mask == 0xFFFF0000){
 }
  * mocked using GoogleMock.
  */
-inline DigitalOutputPinmask_T EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names,
-                                                                          uint8_t       length )
+DigitalOutputPinmask_T EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names,
+                                                                   uint8_t       length )
 {
-    // TODO: What is this?
     return HW_GPIO_Combine_Port_Pin_Masks( gpio_names, length );
 }
 
@@ -164,7 +370,7 @@ LL_GPIO_PIN_1 of the Digital GPIO Port high
  * Note: This implementation assumes all digital outputs are on the same GPIO port.
  * By doing so, we can set all the outputs in a single hardware access.
  */
-inline void EXEC_DIGITAL_OUTPUT_Set_Output( uint32_t pin_mask )
+void EXEC_DIGITAL_OUTPUT_Set_Output( uint32_t pin_mask )
 {
     HW_GPIO_Set_Output( pin_mask );
 }
@@ -190,7 +396,7 @@ LL_GPIO_PIN_1 of the Digital GPIO Port high
  * Note: This implementation assumes all digital outputs are on the same GPIO port.
  * By doing so, we can reset all the outputs in a single hardware access.
  */
-inline void EXEC_DIGITAL_OUTPUT_Reset_Output( uint32_t pin_mask )
+void EXEC_DIGITAL_OUTPUT_Reset_Output( uint32_t pin_mask )
 {
     HW_GPIO_Reset_Output( pin_mask );
 }
