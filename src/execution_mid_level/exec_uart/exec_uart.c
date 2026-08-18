@@ -46,6 +46,13 @@
  *------------------------------------------------------------------------------
  */
 
+typedef enum
+{
+    EXEC_UART_STATE_DISABLED = 0U,
+    EXEC_UART_STATE_CONFIGURED,
+    EXEC_UART_STATE_STARTED
+} ExecUartLifecycleState_T;
+
 /**
  * @brief  Exec-level UART channel state.
  *
@@ -55,9 +62,9 @@
  */
 typedef struct
 {
-    bool is_configured;
-    bool rx_enabled;
-    bool tx_enabled;
+    ExecUartLifecycleState_T lifecycle_state;
+    bool                     rx_enabled;
+    bool                     tx_enabled;
 } ExecUartChannelState_T;
 
 typedef struct
@@ -84,12 +91,12 @@ static ExecUartChannelState_T exec_uart_channel_states[EXEC_UART_CHANNEL_COUNT];
 
 static const ExecUartHardwareMap_T exec_uart_hardware_map[EXEC_UART_CHANNEL_COUNT] = {
     [EXEC_UART_CHANNEL_1] = { .hw_channel   = HW_UART_CHANNEL_1,
-                              .expander     = LOGIC_EXPANDER_DEVICE_UART_PWR,
+                              .expander     = LOGIC_EXPANDER_UART_PWR,
                               .port         = LOGIC_EXPANDER_PORT_A,
                               .mode_0_bit_i = 4U,
                               .mode_1_bit_i = 5U },
     [EXEC_UART_CHANNEL_2] = { .hw_channel   = HW_UART_CHANNEL_2,
-                              .expander     = LOGIC_EXPANDER_DEVICE_UART_PWR,
+                              .expander     = LOGIC_EXPANDER_UART_PWR,
                               .port         = LOGIC_EXPANDER_PORT_A,
                               .mode_0_bit_i = 6U,
                               .mode_1_bit_i = 7U },
@@ -124,8 +131,17 @@ static inline bool EXEC_UART_Is_Valid_Channel( ExecUartChannel_T channel )
 
 static bool EXEC_UART_Configuration_Is_Valid( const ExecUartConfig_T* config )
 {
-    if ( config == NULL || ( !config->rx_enabled && !config->tx_enabled )
-         || config->baud_rate == 0U )
+    if ( config == NULL )
+    {
+        return false;
+    }
+
+    if ( !config->is_enabled )
+    {
+        return true;
+    }
+
+    if ( ( !config->rx_enabled && !config->tx_enabled ) || ( config->baud_rate == 0U ) )
     {
         return false;
     }
@@ -211,41 +227,90 @@ static bool EXEC_UART_Apply_Static_Hardware_Selection( ExecUartChannel_T       c
  *------------------------------------------------------------------------------
  */
 
-bool EXEC_UART_Apply_Configuration( ExecUartChannel_T channel, const ExecUartConfig_T* config )
+bool EXEC_UART_Configure_Channel( ExecUartChannel_T channel, const ExecUartConfig_T* config )
 {
-    if ( !EXEC_UART_Is_Valid_Channel( channel ) )
+    if ( !EXEC_UART_Is_Valid_Channel( channel ) || !EXEC_UART_Configuration_Is_Valid( config ) )
     {
         return false;
     }
 
-    if ( !EXEC_UART_Configuration_Is_Valid( config ) )
-    {
-        return false;
-    }
+    const ExecUartHardwareMap_T* hw_map = &exec_uart_hardware_map[channel];
+    ExecUartChannelState_T*      state  = &exec_uart_channel_states[channel];
 
-    const ExecUartHardwareMap_T* hw_map    = &exec_uart_hardware_map[channel];
-    ExecUartChannelState_T*      state     = &exec_uart_channel_states[channel];
-    HwUartPeripheralConfig_T     hw_config = { .baud_rate   = config->baud_rate,
-                                               .word_length = config->word_length,
-                                               .stop_bits   = config->stop_bits,
-                                               .parity      = config->parity,
-                                               .rx_enabled  = config->rx_enabled,
-                                               .tx_enabled  = config->tx_enabled };
-
-    /* Stop RX before reconfiguration to avoid modifying LL state while active */
-    if ( HW_UART_Rx_Is_Running( hw_map->hw_channel ) )
+    /*
+     * Disabled configuration stops channel activity, disables the peripheral,
+     * and applies the safe external-interface state.
+     */
+    if ( !config->is_enabled )
     {
-        if ( !HW_UART_Rx_Stop( hw_map->hw_channel ) )
+        if ( state->lifecycle_state == EXEC_UART_STATE_STARTED )
+        {
+            if ( !EXEC_UART_Stop_Channel( channel ) )
+            {
+                return false;
+            }
+        }
+
+        if ( state->lifecycle_state == EXEC_UART_STATE_CONFIGURED )
+        {
+            if ( !HW_UART_Deconfigure_Channel( hw_map->hw_channel ) )
+            {
+                return false;
+            }
+        }
+
+        if ( !EXEC_UART_Apply_Static_Hardware_Selection( channel, EXEC_UART_MODE_DISABLED ) )
         {
             return false;
         }
+
+        state->lifecycle_state = EXEC_UART_STATE_DISABLED;
+        state->rx_enabled      = false;
+        state->tx_enabled      = false;
+
+        return true;
     }
 
-    /* Disconnect the external interface while the STM32 peripheral is reconfigured. */
+    /*
+     * Active channels must be stopped before being reconfigured.
+     */
+    if ( state->lifecycle_state == EXEC_UART_STATE_STARTED )
+    {
+        return false;
+    }
+
+    /*
+     * Remove the previous peripheral configuration before applying a new one.
+     */
+    if ( state->lifecycle_state == EXEC_UART_STATE_CONFIGURED )
+    {
+        if ( !HW_UART_Deconfigure_Channel( hw_map->hw_channel ) )
+        {
+            return false;
+        }
+
+        state->lifecycle_state = EXEC_UART_STATE_DISABLED;
+        state->rx_enabled      = false;
+        state->tx_enabled      = false;
+    }
+
+    /*
+     * Disconnect the external interface while the UART peripheral is being
+     * configured.
+     */
     if ( !EXEC_UART_Apply_Static_Hardware_Selection( channel, EXEC_UART_MODE_DISABLED ) )
     {
         return false;
     }
+
+    const HwUartPeripheralConfig_T hw_config = {
+        .baud_rate   = config->baud_rate,
+        .word_length = config->word_length,
+        .stop_bits   = config->stop_bits,
+        .parity      = config->parity,
+        .rx_enabled  = config->rx_enabled,
+        .tx_enabled  = config->tx_enabled,
+    };
 
     if ( !HW_UART_Configure_Channel( hw_map->hw_channel, &hw_config ) )
     {
@@ -255,38 +320,76 @@ bool EXEC_UART_Apply_Configuration( ExecUartChannel_T channel, const ExecUartCon
     if ( !EXEC_UART_Apply_Static_Hardware_Selection( channel, config->interface_mode ) )
     {
         ( void )HW_UART_Deconfigure_Channel( hw_map->hw_channel );
+        ( void )EXEC_UART_Apply_Static_Hardware_Selection( channel, EXEC_UART_MODE_DISABLED );
         return false;
     }
 
-    /* Start Rx if enabled */
-    if ( config->rx_enabled )
-    {
-        if ( !HW_UART_Rx_Start( hw_map->hw_channel ) )
-        {
-            ( void )HW_UART_Deconfigure_Channel( hw_map->hw_channel );
-            ( void )EXEC_UART_Apply_Static_Hardware_Selection( channel, EXEC_UART_MODE_DISABLED );
-            return false;
-        }
-    }
-
-    /* Reset exec-level state after successful LL configuration */
-    state->is_configured = true;
-    state->rx_enabled    = config->rx_enabled;
-    state->tx_enabled    = config->tx_enabled;
+    state->lifecycle_state = EXEC_UART_STATE_CONFIGURED;
+    state->rx_enabled      = config->rx_enabled;
+    state->tx_enabled      = config->tx_enabled;
 
     return true;
 }
 
-bool EXEC_UART_Deconfigure( ExecUartChannel_T channel )
+bool EXEC_UART_Start_Channel( ExecUartChannel_T channel )
 {
     if ( !EXEC_UART_Is_Valid_Channel( channel ) )
     {
         return false;
     }
 
+    ExecUartChannelState_T* state = &exec_uart_channel_states[channel];
+
+    if ( state->lifecycle_state != EXEC_UART_STATE_CONFIGURED )
+    {
+        return false;
+    }
+
+    /*
+     * RX requires an explicit hardware start. TX has no persistent hardware
+     * start operation; entering STARTED permits subsequent transmit requests.
+     */
+    if ( state->rx_enabled )
+    {
+        const HwUartChannel_T hw_channel = exec_uart_hardware_map[channel].hw_channel;
+
+        if ( !HW_UART_Rx_Start( hw_channel ) )
+        {
+            return false;
+        }
+    }
+
+    state->lifecycle_state = EXEC_UART_STATE_STARTED;
+
+    return true;
+}
+
+bool EXEC_UART_Stop_Channel( ExecUartChannel_T channel )
+{
+    if ( !EXEC_UART_Is_Valid_Channel( channel ) )
+    {
+        return false;
+    }
+
+    ExecUartChannelState_T* state = &exec_uart_channel_states[channel];
+
+    if ( state->lifecycle_state != EXEC_UART_STATE_STARTED )
+    {
+        return false;
+    }
+
     const HwUartChannel_T hw_channel = exec_uart_hardware_map[channel].hw_channel;
 
-    if ( HW_UART_Rx_Is_Running( hw_channel ) )
+    /*
+     * Do not stop the channel while queued or in-flight TX data remains.
+     * This prevents Stop from silently truncating a transmission.
+     */
+    if ( state->tx_enabled && !HW_UART_Is_Tx_Complete( hw_channel ) )
+    {
+        return false;
+    }
+
+    if ( state->rx_enabled )
     {
         if ( !HW_UART_Rx_Stop( hw_channel ) )
         {
@@ -294,19 +397,7 @@ bool EXEC_UART_Deconfigure( ExecUartChannel_T channel )
         }
     }
 
-    if ( !EXEC_UART_Apply_Static_Hardware_Selection( channel, EXEC_UART_MODE_DISABLED ) )
-    {
-        return false;
-    }
-
-    if ( !HW_UART_Deconfigure_Channel( hw_channel ) )
-    {
-        return false;
-    }
-
-    exec_uart_channel_states[channel].is_configured = false;
-    exec_uart_channel_states[channel].rx_enabled    = false;
-    exec_uart_channel_states[channel].tx_enabled    = false;
+    state->lifecycle_state = EXEC_UART_STATE_CONFIGURED;
 
     return true;
 }
