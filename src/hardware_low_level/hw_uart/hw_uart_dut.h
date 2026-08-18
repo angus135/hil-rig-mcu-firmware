@@ -8,10 +8,11 @@
  *
  *      This module provides:
  *      1. Configuration of STM32 UART peripherals.
- *      2. DMA backed continuous RX operation.
- *      3. Efficient access to received data through zero copy RX span views.
- *      4. DMA source TX ring buffering.
- *      5. Normal mode DMA TX pumping over contiguous TX buffer spans.
+ *      2. Configured, started, and stopped channel lifecycle control.
+ *      3. DMA backed continuous RX operation.
+ *      4. Efficient access to received data through zero copy RX span views.
+ *      5. DMA source TX ring buffering.
+ *      6. Normal mode DMA TX pumping over contiguous TX buffer spans.
  *
  *      The low level driver owns the RX DMA circular buffer, the TX DMA source
  *      ring buffer, and all associated buffer management state.
@@ -47,18 +48,21 @@
  *
  *  Typical RX usage:
  *      1. Configure channel using HW_UART_Configure_Channel().
- *      2. Start RX using HW_UART_Rx_Start().
+ *      2. Start the channel using HW_UART_Start_Channel().
  *      3. Call HW_UART_Rx_Peek() to inspect unread data.
  *      4. Copy data if persistence is required.
  *      5. Call HW_UART_Rx_Consume() after processing to advance the read index.
+ *      6. Stop the channel using HW_UART_Stop_Channel().
  *
  *  Typical TX usage:
  *      1. Configure channel using HW_UART_Configure_Channel().
- *      2. Queue TX data using HW_UART_Tx_Load_Buffer().
- *      3. Call HW_UART_Tx_Trigger() to start the DMA pump if it is idle.
- *      4. Continue queueing additional TX data while buffer space remains.
- *      5. Treat a false return from HW_UART_Tx_Load_Buffer() as TX buffer capacity
+ *      2. Start the channel using HW_UART_Start_Channel().
+ *      3. Queue TX data using HW_UART_Tx_Load_Buffer().
+ *      4. Call HW_UART_Tx_Trigger() to start the DMA pump if it is idle.
+ *      5. Continue queueing additional TX data while buffer space remains.
+ *      6. Treat a false return from HW_UART_Tx_Load_Buffer() as TX buffer capacity
  *         exhaustion or scheduling failure.
+ *      7. Stop the channel using HW_UART_Stop_Channel() after TX is complete.
  ******************************************************************************/
 
 #ifndef HW_UART_DUT_H
@@ -148,7 +152,7 @@ typedef enum
  *         execution layer.
  *
  * @note   This structure does not initiate hardware activity by itself.
- *         HW_UART_Configure_Channel() must be called before starting RX or TX.
+ *         HW_UART_Configure_Channel() must be called before starting the channel.
  */
 typedef struct
 {
@@ -216,9 +220,28 @@ typedef struct
  *         and fault flags.
  *
  * @note   This function must be called successfully before invoking
- *         HW_UART_Rx_Start() or any TX-related operations.
+ *         HW_UART_Start_Channel().
  */
 bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartPeripheralConfig_T* config );
+
+/**
+ * @brief Start a configured DUT-facing UART channel.
+ *
+ * Starts RX DMA when reception is enabled. TX-only channels enter the started
+ * state without initiating a transfer; TX data is started by HW_UART_Tx_Trigger().
+ * Configuration is retained if starting RX fails.
+ */
+bool HW_UART_Start_Channel( HwUartChannel_T channel );
+
+/**
+ * @brief Stop a started UART channel while retaining its configuration.
+ *
+ * @return false if the channel is invalid, not started, TX is incomplete, or
+ *         RX cannot be stopped.
+ *
+ * A successful stop retains the channel configuration so it can be restarted.
+ */
+bool HW_UART_Stop_Channel( HwUartChannel_T channel );
 
 /**
  * @brief Deconfigures the STM32 UART peripheral for a DUT-facing channel.
@@ -230,37 +253,6 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartPeripheralC
  *         peripheral could not be deinitialised.
  */
 bool HW_UART_Deconfigure_Channel( HwUartChannel_T channel );
-
-/**
- * @brief  Starts UART reception for the specified channel using DMA into the
- *         LL driver owned circular RX buffer.
- *
- * @param  channel The UART channel to start reception on.
- *
- * @return true if RX was successfully started.
- * @return false if the channel is invalid, not configured, RX is disabled, or
- *         hardware initialisation fails.
- *
- * @note   This function applies the stored configuration to the underlying UART
- *         peripheral via HAL and initiates DMA-based reception into the internal
- *         circular buffer owned by the low-level driver.
- *
- * @note   The RX buffer and read index are reset prior to enabling reception to
- *         ensure a clean starting state.
- *
- * @note   This function does not expose or transfer ownership of received data.
- *         Data is made available to higher layers via HW_UART_Rx_Peek().
- *
- * @note   The DMA stream is expected to be configured in circular mode so that
- *         reception continues indefinitely without software intervention.
- *
- * @note   This function must only be called after successful configuration via
- *         HW_UART_Configure_Channel().
- *
- * @note   RX operation is considered active once this function returns true, and
- *         can be queried via the runtime state.
- */
-bool HW_UART_Rx_Start( HwUartChannel_T channel );
 
 /**
  * @brief  Exposes a transient zero copy view of the current unread RX data.
@@ -326,7 +318,7 @@ void HW_UART_Rx_Consume( HwUartChannel_T channel, uint32_t bytes_to_consume );
  *         The caller must provide a valid UART channel.
  *         data must point to at least length_bytes bytes.
  *         length_bytes must be greater than zero.
- *         The channel must already be configured for TX.
+ *         The channel must already be configured and started for TX.
  *         The execution layer is the sole producer for each UART channel.
  *
  * @note   The TX buffer is both the driver owned queue and the DMA source buffer.
@@ -357,7 +349,7 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
  *
  * @note   Contract:
  *         The caller must provide a valid UART channel.
- *         The channel must already be configured for TX.
+ *         The channel must already be configured and started for TX.
  *
  * @note   This function does not copy payload data. Payload data must first be
  *         queued into the low level driver owned TX DMA source ring buffer using
@@ -401,35 +393,6 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel );
  *         shifting the final byte.
  */
 bool HW_UART_Is_Tx_Complete( HwUartChannel_T channel );
-
-/**
- * @brief  Stops UART reception for the specified channel and halts DMA-based RX.
- *
- * @param  channel The UART channel to stop reception on.
- *
- * @return true if RX was successfully stopped.
- * @return false if the channel is invalid, not configured, RX is not running,
- *         or the underlying HAL stop operation fails.
- *
- * @note   This function is intended for non-hot-path lifecycle control.
- *
- * @note   The channel configuration remains valid after RX is stopped. Reception
- *         may be started again later with HW_UART_Rx_Start().
- */
-bool HW_UART_Rx_Stop( HwUartChannel_T channel );
-
-/**
- * @brief  Reports whether UART RX is currently active on the specified channel.
- *
- * @param  channel The UART channel to inspect.
- *
- * @return true if the channel is configured and RX is currently running.
- * @return false if the channel is invalid, not configured, or RX is not active.
- *
- * @note   This function is intended as a lightweight lifecycle query for
- *         higher-level sequencing logic.
- */
-bool HW_UART_Rx_Is_Running( HwUartChannel_T channel );
 
 #ifdef __cplusplus
 }
