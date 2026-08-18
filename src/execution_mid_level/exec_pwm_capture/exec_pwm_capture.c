@@ -82,18 +82,18 @@ typedef struct ExecPwmCaptureHardwareMap_T
 static const ExecPwmCaptureHardwareMap_T
     exec_pwm_capture_hardware_map[EXEC_PWM_CAPTURE_CHANNEL_COUNT] = {
         {
-            .expander     = LOGIC_EXPANDER_DEVICE_PWM_SPI,  // expander
-            .port         = LOGIC_EXPANDER_PORT_A,          // port
-            .mode_0_bit_i = 0U,                             // mode_0_bit
-            .mode_1_bit_i = 1U,                             // mode_1_bit
-            .hw_channel   = HW_PWM_CAPTURE_CHANNEL_1        // hardware channel
+            .expander     = LOGIC_EXPANDER_PWM_SPI,   // expander
+            .port         = LOGIC_EXPANDER_PORT_A,    // port
+            .mode_0_bit_i = 0U,                       // mode_0_bit
+            .mode_1_bit_i = 1U,                       // mode_1_bit
+            .hw_channel   = HW_PWM_CAPTURE_CHANNEL_1  // hardware channel
         },
         {
-            .expander     = LOGIC_EXPANDER_DEVICE_PWM_SPI,  // expander
-            .port         = LOGIC_EXPANDER_PORT_A,          // port
-            .mode_0_bit_i = 2U,                             // mode_0_bit
-            .mode_1_bit_i = 3U,                             // mode_1_bit
-            .hw_channel   = HW_PWM_CAPTURE_CHANNEL_2        // hardware channel
+            .expander     = LOGIC_EXPANDER_PWM_SPI,   // expander
+            .port         = LOGIC_EXPANDER_PORT_A,    // port
+            .mode_0_bit_i = 2U,                       // mode_0_bit
+            .mode_1_bit_i = 3U,                       // mode_1_bit
+            .hw_channel   = HW_PWM_CAPTURE_CHANNEL_2  // hardware channel
         },
 };
 
