@@ -298,7 +298,8 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "  expander config      - Initialize all active expanders\r\n" );
         CONSOLE_Printf( "  expander set <addr> <port> <value> - Set control bits (e.g. expander "
                         "set 0x20 A 0xFF)\r\n" );
-        CONSOLE_Printf( "  expander on         - Set every output on every expander to 1 and send\r\n" );
+        CONSOLE_Printf(
+            "  expander on         - Set every output on every expander to 1 and send\r\n" );
         CONSOLE_Printf( "  expander send       - Send all staged bits to hardware\r\n" );
         CONSOLE_Printf( "  expander reset      - Reset all bits to 0 and send\r\n" );
         return;
@@ -313,7 +314,8 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         }
         else if ( status == LOGIC_EXPANDER_STATUS_BUSY )
         {
-            CONSOLE_Printf( "Expander config: pending (waiting for background I2C processing)\r\n" );
+            CONSOLE_Printf(
+                "Expander config: pending (waiting for background I2C processing)\r\n" );
         }
         else
         {
@@ -333,8 +335,8 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
                 if ( status != LOGIC_EXPANDER_STATUS_OK )
                 {
                     CONSOLE_Printf( "Failed to stage expander 0x%02X port A bit %u (status=%d)\r\n",
-                                    ( unsigned int )( 0x20U + idx ),
-                                    ( unsigned int )bit_idx, ( int )status );
+                                    ( unsigned int )( 0x20U + idx ), ( unsigned int )bit_idx,
+                                    ( int )status );
                     return;
                 }
 
@@ -343,8 +345,8 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
                 if ( status != LOGIC_EXPANDER_STATUS_OK )
                 {
                     CONSOLE_Printf( "Failed to stage expander 0x%02X port B bit %u (status=%d)\r\n",
-                                    ( unsigned int )( 0x20U + idx ),
-                                    ( unsigned int )bit_idx, ( int )status );
+                                    ( unsigned int )( 0x20U + idx ), ( unsigned int )bit_idx,
+                                    ( int )status );
                     return;
                 }
             }
@@ -357,13 +359,13 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         }
         else if ( status == LOGIC_EXPANDER_STATUS_BUSY )
         {
-            CONSOLE_Printf(
-                "Expander on: partially queued; remaining outputs are staged. Run 'expander send' again.\r\n" );
+            CONSOLE_Printf( "Expander on: partially queued; remaining outputs are staged. Run "
+                            "'expander send' again.\r\n" );
         }
         else if ( status == LOGIC_EXPANDER_STATUS_NOT_READY )
         {
-            CONSOLE_Printf(
-                "Expander on failed: not ready. Run 'expander config' and allow configuration to complete.\r\n" );
+            CONSOLE_Printf( "Expander on failed: not ready. Run 'expander config' and allow "
+                            "configuration to complete.\r\n" );
         }
         else
         {
@@ -467,8 +469,8 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         }
         else if ( status == LOGIC_EXPANDER_STATUS_NOT_READY )
         {
-            CONSOLE_Printf(
-                "Expander send failed: not ready. Run 'expander config' and allow configuration to complete.\r\n" );
+            CONSOLE_Printf( "Expander send failed: not ready. Run 'expander config' and allow "
+                            "configuration to complete.\r\n" );
         }
         else
         {
@@ -497,8 +499,8 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
         }
         else if ( status == LOGIC_EXPANDER_STATUS_NOT_READY )
         {
-            CONSOLE_Printf(
-                "Expander reset failed: not ready. Run 'expander config' and allow configuration to complete.\r\n" );
+            CONSOLE_Printf( "Expander reset failed: not ready. Run 'expander config' and allow "
+                            "configuration to complete.\r\n" );
         }
         else
         {

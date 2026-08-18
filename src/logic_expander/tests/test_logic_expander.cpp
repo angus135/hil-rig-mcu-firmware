@@ -151,7 +151,8 @@ protected:
     {
         for ( uint16_t address = 0x20U; address <= 0x27U; ++address )
         {
-            EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, address, _, _ ) )
+            EXPECT_CALL( mock_hw_i2c,
+                         EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, address, _, _ ) )
                 .Times( 8 )
                 .WillRepeatedly( Return( HW_I2C_STATUS_OK ) );
         }
@@ -165,7 +166,6 @@ TEST_F( LogicExpanderTest, FunctionalIndexValuesMatchAddressTableIndices )
     EXPECT_EQ( LOGIC_EXPANDER_COUNT, 8 );
     EXPECT_EQ( LOGIC_EXPANDER_I2C_ADDRESSES[LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT], 0x20U );
 }
-
 
 TEST_F( LogicExpanderTest, DefaultConfigurationMarksAllExpandersActive )
 {
@@ -278,24 +278,19 @@ TEST_F( LogicExpanderTest, SelfConfigDeadlineRefreshesWhenQueueSubmissionMakesPr
         EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) )
             .WillOnce( Return( HW_I2C_STATUS_OK ) );
         EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
-        EXPECT_CALL( mock_hw_i2c,
-                     EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
+        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
             .WillOnce( Return( HW_I2C_STATUS_OK ) );
-        EXPECT_CALL( mock_hw_i2c,
-                     EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
+        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
             .WillOnce( Return( HW_I2C_STATUS_BUSY ) );
 
         EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
-        EXPECT_CALL( mock_hw_i2c,
-                     EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
+        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
             .WillOnce( Return( HW_I2C_STATUS_OK ) );
-        EXPECT_CALL( mock_hw_i2c,
-                     EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
+        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
             .WillOnce( Return( HW_I2C_STATUS_BUSY ) );
 
         EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
-        EXPECT_CALL( mock_hw_i2c,
-                     EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
+        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
             .WillOnce( Return( HW_I2C_STATUS_BUSY ) );
         EXPECT_CALL( mock_hw_i2c, RecoverChannel( HW_I2C_CHANNEL_FMPI2C1 ) )
             .WillOnce( Return( HW_I2C_STATUS_OK ) );
@@ -436,7 +431,6 @@ TEST_F( LogicExpanderTest, SendControlBitsEnqueuesOnlyDirtyExpanders )
     EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
 }
 
-
 TEST_F( LogicExpanderTest, SendControlBitsCanAddressAllExpanders )
 {
     logic_expander_ready         = true;
@@ -444,8 +438,8 @@ TEST_F( LogicExpanderTest, SendControlBitsCanAddressAllExpanders )
 
     for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
     {
-        logic_expander_state[idx] = { 0xFFU, 0xFFU };
-        const uint16_t address = ( uint16_t )( 0x20U + idx );
+        logic_expander_state[idx]                      = { 0xFFU, 0xFFU };
+        const uint16_t                address          = ( uint16_t )( 0x20U + idx );
         const std::array<uint8_t, 3U> expected_payload = { 0x14U, 0xFFU, 0xFFU };
 
         EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, address, _, 3U ) )
