@@ -76,29 +76,34 @@ typedef enum ADCSource_T
  */
 
 /**
- * @brief Starts the measurements of the DMA channels
+ * @brief Starts continuous DMA-based ADC measurements.
  *
- * This function calls the Timer peripheral and the ADC peripheral to start triggering the ADC
- * peripheral at a previously pecified frequency which will transfer the result over DMA.
+ * The ADC measurement frequency must be configured before this function is
+ * called. The function starts the circular ADC DMA transfer before starting
+ * the timer that triggers conversions.
+ *
+ * @return true if acquisition was started successfully; otherwise false.
  */
 bool HW_ADC_Start_DMA_Measurements( void );
 
 /**
- * @brief Stops the measurements of the DMA channels
+ * @brief Stops continuous DMA-based ADC measurements.
  *
- * @returns bool - true if successful, otherwise false
+ * The configured measurement frequency is retained so that acquisition can
+ * subsequently be restarted without reconfiguration.
  *
+ * @return true if acquisition was stopped successfully; otherwise false.
  */
 bool HW_ADC_Stop_DMA_Measurements( void );
 
 /**
- * @brief Starts the measurements of the DMA channels
+ * @brief Configures the ADC measurement frequency without starting acquisition.
  *
- * @param rate - the sample rate which the ADC measurement is being configured to sample at
+ * All continuously sampled channels use the same measurement frequency. The
+ * frequency cannot be changed while acquisition is running.
  *
- * @return bool - true if rate is supported, otherwise false
- *
- * Note: All channels will be sampled at this same rate.
+ * @param rate Requested ADC sample rate.
+ * @return true if the rate is supported and was configured; otherwise false.
  */
 bool HW_ADC_Configure_ADC_Measurement_Frequency( ADCSampleRates_T rate );
 

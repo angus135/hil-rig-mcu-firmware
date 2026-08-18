@@ -92,6 +92,12 @@
  *------------------------------------------------------------------------------
  */
 
+typedef struct
+{
+    bool is_configured;
+    bool is_started;
+} HWADCState_T;
+
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
@@ -103,6 +109,11 @@
  */
 // This variable cannot be made static as it is referenced in inline functions
 ADCMeasurement_T adc_dma_buf[ADC_DMA_LEN];
+
+static HWADCState_T hw_adc_state = {
+    .is_configured = false,
+    .is_started    = false,
+};
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -120,76 +131,94 @@ ADCMeasurement_T adc_dma_buf[ADC_DMA_LEN];
  */
 
 /**
- * @brief Starts the measurements of the DMA channels
+ * @brief Starts continuous DMA-based ADC measurements.
  *
- * @returns bool - true if successful, otherwise false
- *
- * This function calls the Timer peripheral and the ADC peripheral to start triggering the ADC
- * peripheral at a previously pecified frequency which will transfer the result over DMA.
+ * @return true if acquisition was started successfully; otherwise false.
  */
 bool HW_ADC_Start_DMA_Measurements( void )
 {
-    // TODO: add the ability to set the number of channels to 1 or more rather than default to 2.
-    NVIC_DisableIRQ( ADC_IRQn );
-    if ( HW_ADC_ADC_PERIPHERAL == NULL )
+    if ( !hw_adc_state.is_configured || hw_adc_state.is_started )
     {
         return false;
     }
+
+    /*
+     * ADC and DMA interrupts are not used by this polling-based circular
+     * acquisition path.
+     */
+    NVIC_DisableIRQ( ADC_IRQn );
+
     HAL_StatusTypeDef status = HAL_ADC_Start_DMA( HW_ADC_ADC_PERIPHERAL, ( uint32_t* )adc_dma_buf,
                                                   ADC_DMA_LEN * ADC_CHANNELS_PER_MEASUREMENT );
 
-    if ( status == HAL_OK )
-    {
-        /* Force DMA stream into polling-only operation.
-         * Circular mode still runs, but no DMA IRQs will be generated.
-         */
-        LL_DMA_DisableIT_HT( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM );
-        LL_DMA_DisableIT_TC( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM );
-        LL_DMA_DisableIT_TE( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM );
-
-        /* Optional but recommended if you truly do not want this stream to interrupt. */
-        NVIC_DisableIRQ( DMA2_Stream4_IRQn );
-
-        HW_TIMER_Start_Timer( ANALOGUE_INPUT_TIMER );
-        return true;
-    }
-
-    return false;
-}
-
-/**
- * @brief Stops the measurements of the DMA channels
- *
- * @returns bool - true if successful, otherwise false
- *
- */
-bool HW_ADC_Stop_DMA_Measurements( void )
-{
-    HW_TIMER_Stop_Timer( ANALOGUE_INPUT_TIMER );
-    HAL_StatusTypeDef status = HAL_ADC_Stop_DMA( HW_ADC_ADC_PERIPHERAL );
-    if ( status == HAL_OK )
-    {
-        return true;
-    }
-    else
+    if ( status != HAL_OK )
     {
         return false;
     }
+
+    LL_DMA_DisableIT_HT( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM );
+    LL_DMA_DisableIT_TC( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM );
+    LL_DMA_DisableIT_TE( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM );
+    NVIC_DisableIRQ( DMA2_Stream4_IRQn );
+
+    /*
+     * Start the trigger timer only after DMA is ready to receive ADC results.
+     */
+    HW_TIMER_Start_Timer( ANALOGUE_INPUT_TIMER );
+
+    hw_adc_state.is_started = true;
+
+    return true;
 }
 
 /**
- * @brief Starts the measurements of the DMA channels
+ * @brief Stops continuous DMA-based ADC measurements.
  *
- * @param rate - the sample rate which the ADC measurement is being configured to sample at
+ * @return true if acquisition was stopped successfully; otherwise false.
+ */
+bool HW_ADC_Stop_DMA_Measurements( void )
+{
+    if ( !hw_adc_state.is_configured || !hw_adc_state.is_started )
+    {
+        return false;
+    }
+
+    /*
+     * Prevent any new ADC triggers before stopping the active DMA transfer.
+     */
+    HW_TIMER_Stop_Timer( ANALOGUE_INPUT_TIMER );
+
+    if ( HAL_ADC_Stop_DMA( HW_ADC_ADC_PERIPHERAL ) != HAL_OK )
+    {
+        /*
+         * Keep the lifecycle marked as started because the ADC/DMA state is
+         * uncertain. The caller may retry Stop().
+         */
+        return false;
+    }
+
+    hw_adc_state.is_started = false;
+
+    return true;
+}
+
+/**
+ * @brief Configures the ADC measurement frequency without starting acquisition.
  *
- * @return bool - true if rate is supported, otherwise false
- *
- * Note: All channels will be sampled at this same rate.
+ * @param rate Requested ADC sample rate. All continuously sampled channels use
+ *             the same rate.
+ * @return true if the rate is supported and was configured; otherwise false.
  */
 bool HW_ADC_Configure_ADC_Measurement_Frequency( ADCSampleRates_T rate )
 {
+    if ( hw_adc_state.is_started )
+    {
+        return false;
+    }
+
     uint32_t psc = 0;
     uint32_t arr = 0;
+
     switch ( rate )
     {
         case ADC_SAMPLE_RATE_100K_HZ:
@@ -220,6 +249,10 @@ bool HW_ADC_Configure_ADC_Measurement_Frequency( ADCSampleRates_T rate )
             return false;
     }
     HW_TIMER_Configure_Timer( ANALOGUE_INPUT_TIMER, psc, arr );
+
+    hw_adc_state.is_configured = true;
+    hw_adc_state.is_started    = false;
+
     return true;
 }
 
