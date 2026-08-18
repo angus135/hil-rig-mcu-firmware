@@ -108,10 +108,11 @@ typedef struct
     volatile uint32_t* period_ccr;
     volatile uint32_t* high_ccr;
 
-    uint32_t period_capture_flag;  // SR flag bit corresponding to a new period capture event for
-                                   // this channel
-
+    uint32_t period_capture_flag;
     uint32_t timer_clock_hz;
+
+    bool is_configured;
+    bool is_started;
 } HwPWMCaptureChannelContext_T;
 
 /**-----------------------------------------------------------------------------
@@ -137,6 +138,8 @@ static HwPWMCaptureChannelContext_T hw_pwm_capture_channels[PWM_CAPTURE_CHANNEL_
         .period_ccr          = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_PERIOD_CCR,
         .high_ccr            = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_HIGH_CCR,
         .period_capture_flag = HW_PWM_CAPTURE_CH_1_PERIOD_FLAG,
+        .is_configured       = false,
+        .is_started          = false,
     },
     {
         .timer               = HW_PWM_CAPTURE_CH_2_INSTANCE,
@@ -144,6 +147,8 @@ static HwPWMCaptureChannelContext_T hw_pwm_capture_channels[PWM_CAPTURE_CHANNEL_
         .period_ccr          = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_PERIOD_CCR,
         .high_ccr            = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_HIGH_CCR,
         .period_capture_flag = HW_PWM_CAPTURE_CH_2_PERIOD_FLAG,
+        .is_configured       = false,
+        .is_started          = false,
     },
 };
 
@@ -164,31 +169,72 @@ static HwPWMCaptureChannelContext_T hw_pwm_capture_channels[PWM_CAPTURE_CHANNEL_
 
 bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T channel, bool is_enabled )
 {
-    HwPWMCaptureChannelContext_T* context;
-
     if ( channel >= PWM_CAPTURE_CHANNEL_COUNT )
     {
         return false;
     }
 
-    context = &hw_pwm_capture_channels[channel];
+    HwPWMCaptureChannelContext_T* context = &hw_pwm_capture_channels[channel];
 
-    // Stop the timer to ensure safe configuration of hardware and to prevent unintended captures
-    // during reconfiguration
+    /*
+     * Always stop before configuring or disabling the timer.
+     */
     HW_TIMER_Stop_Timer( context->timer_role );
+    context->is_started = false;
 
     if ( !is_enabled )
     {
         context->timer_clock_hz = 0U;
+        context->is_configured  = false;
         return true;
     }
 
     HW_TIMER_Configure_Timer( context->timer_role, HW_PWM_CAPTURE_TIMER_PSC,
                               HW_PWM_CAPTURE_TIMER_ARR );
 
-    HW_TIMER_Start_Timer( context->timer_role );
-
     context->timer_clock_hz = HW_TIMER_Get_Clock_Hz( context->timer_role );
+
+    context->is_configured = true;
+
+    return true;
+}
+
+bool HW_PWM_Capture_Start_Channel( HwPWMCaptureChannel_T channel )
+{
+    if ( channel >= PWM_CAPTURE_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    HwPWMCaptureChannelContext_T* context = &hw_pwm_capture_channels[channel];
+
+    if ( !context->is_configured || context->is_started )
+    {
+        return false;
+    }
+
+    HW_TIMER_Start_Timer( context->timer_role );
+    context->is_started = true;
+
+    return true;
+}
+
+bool HW_PWM_Capture_Stop_Channel( HwPWMCaptureChannel_T channel )
+{
+    if ( channel >= PWM_CAPTURE_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    HwPWMCaptureChannelContext_T* context = &hw_pwm_capture_channels[channel];
+
+    if ( !context->is_configured || !context->is_started )
+    {
+        return false;
+    }
+
+    HW_TIMER_Stop_Timer( context->timer_role );
+    context->is_started = false;
 
     return true;
 }
