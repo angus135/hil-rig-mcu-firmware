@@ -49,7 +49,6 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
-#define NUM_DIGITAL_INPUTS 10
 #define MAX_CONSOLE_SET_PINS 22
 
 #define USB_TEST_READ_TIMEOUT_MS 5000U
@@ -91,6 +90,7 @@ static void CONSOLE_Command_Set_Pin( uint16_t argc, char** argv );
 static void CONSOLE_Command_Set_Many_Pins( uint16_t argc, char** argv );
 static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] );
+static bool CONSOLE_Parse_Digital_Input_Mode( const char* token, ExecDigitalInputMode_T* mode );
 static void CONSOLE_Command_Digital_Output( uint16_t argc, char* argv[] );
 static bool CONSOLE_Parse_Digital_Output_Channel( const char* token,
                                                   ExecDigitalOutputChannelConfig_T* config );
@@ -119,7 +119,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"set_pin",             CONSOLE_Command_Set_Pin,                "Set or reset digital output, Usage: set_pin PIN_NAME <0|1>"},
     {"set_pins",            CONSOLE_Command_Set_Many_Pins,          "Set or reset many digital output"},
     {"analogue_inputs",     CONSOLE_Command_Analogue_Inputs,        "Configure, start, stop, and read analogue inputs"},
-    {"digital_input",       CONSOLE_Command_DigitalInput,           "Print digital input states as 1s and 0s."},
+    {"digital_input",       CONSOLE_Command_DigitalInput,           "Configure, start, stop, and read digital inputs"},
     {"digital_output",      CONSOLE_Command_Digital_Output,          "Configure, start, stop, and inspect digital outputs"},
     {"expander",            CONSOLE_Command_Expander,               "Command set allowing user to configure and control the logic expander"},
     {"i2c_loopback",        CONSOLE_Command_I2C_Loopback,           "Loopback testing for I2C master and slave channels."},
@@ -416,63 +416,121 @@ static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] )
     CONSOLE_Printf( "PWM channel configured and ready to start\r\n" );
 }
 
+static bool CONSOLE_Parse_Digital_Input_Mode( const char* token, ExecDigitalInputMode_T* mode )
+{
+    if ( token == NULL || mode == NULL )
+    {
+        return false;
+    }
+
+    const struct
+    {
+        const char*            name;
+        ExecDigitalInputMode_T mode;
+    } modes[] = {
+        { "off", EXEC_DIGITAL_INPUT_MODE_DISABLED },
+        { "3v3", EXEC_DIGITAL_INPUT_MODE_3V3 },
+        { "5v", EXEC_DIGITAL_INPUT_MODE_5V },
+        { "12v", EXEC_DIGITAL_INPUT_MODE_12V },
+        { "24v", EXEC_DIGITAL_INPUT_MODE_24V },
+    };
+
+    for ( uint32_t index = 0U; index < ( sizeof( modes ) / sizeof( modes[0] ) ); index++ )
+    {
+        if ( strcmp( token, modes[index].name ) == 0 )
+        {
+            *mode = modes[index].mode;
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
 {
-    uint32_t sampled_inputs = 0U;
-
-    DigitalInputChannelConfig_T config = { .channel_0_mode = DIGITAL_INPUT_MODE_3V3,
-                                           .channel_1_mode = DIGITAL_INPUT_MODE_3V3,
-                                           .channel_2_mode = DIGITAL_INPUT_MODE_3V3,
-                                           .channel_3_mode = DIGITAL_INPUT_MODE_3V3,
-                                           .channel_4_mode = DIGITAL_INPUT_MODE_3V3,
-                                           .channel_5_mode = DIGITAL_INPUT_MODE_3V3,
-                                           .channel_6_mode = DIGITAL_INPUT_MODE_3V3,
-                                           .channel_7_mode = DIGITAL_INPUT_MODE_3V3,
-                                           .channel_8_mode = DIGITAL_INPUT_MODE_3V3,
-                                           .channel_9_mode = DIGITAL_INPUT_MODE_3V3 };
-
-    if ( argc != 2 || argv[1] == NULL )
+    if ( argc < 2U || argv[1] == NULL )
     {
-        CONSOLE_Printf( "Usage: digital_input <channel 0-9|STATUS_5V> or digital_input all\r\n" );
+        CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  digital_input configure <ch1> ... <ch10>\r\n" );
+        CONSOLE_Printf( "    channel: off | 3v3 | 5v | 12v | 24v\r\n" );
+        CONSOLE_Printf( "  digital_input start\r\n" );
+        CONSOLE_Printf( "  digital_input stop\r\n" );
+        CONSOLE_Printf( "  digital_input disable\r\n" );
+        CONSOLE_Printf( "  digital_input status\r\n" );
+        CONSOLE_Printf( "  digital_input read\r\n" );
         return;
     }
 
-    EXEC_DigitalInput_Configure( &config );
-
-    if ( strcmp( argv[1], "all" ) == 0 )
+    if ( strcmp( argv[1], "start" ) == 0 && argc == 2U )
     {
-        EXEC_DigitalInput_SampleAll( &sampled_inputs );
-
-        uint32_t lower_bits_mask = ( uint32_t )( ( 1UL << NUM_DIGITAL_INPUTS ) - 1UL );
-        uint32_t lower_bits      = sampled_inputs & lower_bits_mask;
-
-        CONSOLE_Printf( "Digital Inputs: " );
-        for ( int8_t bit = ( int8_t )NUM_DIGITAL_INPUTS - 1; bit >= 0; --bit )
-        {
-            CONSOLE_Printf( "%d", ( lower_bits >> bit ) & 0x1U );
-        }
-        CONSOLE_Printf( "\r\n" );
+        CONSOLE_Printf( "%s", EXEC_DIGITAL_INPUT_Start() ? "Digital inputs started\r\n"
+                                                           : "Failed to start digital inputs\r\n" );
+        return;
     }
-    else
+
+    if ( strcmp( argv[1], "stop" ) == 0 && argc == 2U )
     {
-        GPIOInput_T named_input = DIGITAL_INPUT_CH_0;
-        if ( HW_GPIO_InputStringToEnum( argv[1], &named_input ) )
+        CONSOLE_Printf( "%s", EXEC_DIGITAL_INPUT_Stop() ? "Digital inputs stopped\r\n"
+                                                          : "Failed to stop digital inputs\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "status" ) == 0 && argc == 2U )
+    {
+        CONSOLE_Printf( "Digital inputs: configured=%s, started=%s\r\n",
+                        EXEC_DIGITAL_INPUT_Is_Configured() ? "yes" : "no",
+                        EXEC_DIGITAL_INPUT_Is_Started() ? "yes" : "no" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "read" ) == 0 && argc == 2U )
+    {
+        if ( !EXEC_DIGITAL_INPUT_Is_Started() )
         {
-            bool state = HW_GPIO_Read_Pin( named_input );
-            CONSOLE_Printf( "%s: %d\r\n", argv[1], state ? 1 : 0 );
+            CONSOLE_Printf( "Digital inputs must be started before reading\r\n" );
             return;
         }
 
-        int channel = atoi( argv[1] );
-        if ( channel < 0 || channel >= NUM_DIGITAL_INPUTS )
+        uint32_t sampled_inputs = 0U;
+        EXEC_DIGITAL_INPUT_Sample_All( &sampled_inputs );
+        CONSOLE_Printf( "Digital inputs GPIOD mask: 0x%04lX\r\n",
+                        ( unsigned long )sampled_inputs );
+        return;
+    }
+
+    if ( strcmp( argv[1], "disable" ) == 0 && argc == 2U )
+    {
+        const ExecDigitalInputConfig_T config = { 0 };
+        CONSOLE_Printf( "%s", EXEC_DIGITAL_INPUT_Configure( &config )
+                                  ? "Digital inputs configured disabled\r\n"
+                                  : "Failed to disable digital inputs\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "configure" ) != 0
+         || argc != ( uint16_t )( EXEC_DIGITAL_INPUT_CHANNEL_COUNT + 2U ) )
+    {
+        CONSOLE_Printf( "Invalid digital_input command or argument count\r\n" );
+        return;
+    }
+
+    ExecDigitalInputConfig_T config = { 0 };
+
+    for ( uint32_t channel = 0U; channel < ( uint32_t )EXEC_DIGITAL_INPUT_CHANNEL_COUNT;
+          channel++ )
+    {
+        if ( !CONSOLE_Parse_Digital_Input_Mode( argv[channel + 2U], &config.channels[channel] ) )
         {
-            CONSOLE_Printf( "Invalid channel. Must be 0-9 or STATUS_5V.\r\n" );
+            CONSOLE_Printf( "Invalid mode for digital-input channel %lu\r\n",
+                            ( unsigned long )( channel + 1U ) );
             return;
         }
-
-        bool state = HW_GPIO_Read_Pin( ( GPIOInput_T )channel );
-        CONSOLE_Printf( "Digital Input %d: %d\r\n", channel, state ? 1 : 0 );
     }
+
+    CONSOLE_Printf( "%s", EXEC_DIGITAL_INPUT_Configure( &config )
+                              ? "Digital inputs configured and ready to start\r\n"
+                              : "Failed to configure digital inputs\r\n" );
 }
 
 /**
