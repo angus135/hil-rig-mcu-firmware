@@ -45,17 +45,23 @@ extern "C"
  * Provides a user interface to configure and read PWM capture channels.
  *
  * Supported commands:
- * - pwm_capture start <ch1|ch2> <3v3|5v|12v|24v>
- *      Configures and enables PWM capture on the selected channel.
+ * - pwm_capture config <ch1|ch2> <3v3|5v|12v|24v>
+ *      Configures PWM capture without starting it.
+ *
+ * - pwm_capture start <ch1|ch2>
+ *      Starts a configured PWM capture channel.
  *
  * - pwm_capture stop <ch1|ch2>
- *      Disables PWM capture on the selected channel.
+ *      Stops capture while retaining channel configuration.
+ *
+ * - pwm_capture disable <ch1|ch2>
+ *      Disables the channel and applies its safe frontend state.
  *
  * - pwm_capture read <ch1|ch2>
  *      Attempts to read a new PWM capture result from the selected channel.
  *
  * Behaviour:
- * - Uses the execution layer API to configure and consume capture results.
+ * - Uses the execution layer API to configure, start, stop, disable, and consume.
  * - Outputs raw timer values (period_ticks and high_ticks).
  * - Does not perform unit conversion (frequency, duty cycle).
  *
