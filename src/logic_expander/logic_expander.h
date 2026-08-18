@@ -13,7 +13,7 @@
  *  Notes:
  *      - Communicates with MCP23017 devices via FMPI2C1 internal I2C channel
  *      - Default I2C addresses: 0x20-0x27 (configured via device jumpers)
- *      - Active devices are selected by the module's role-indexed bitmask
+ *      - All eight addresses 0x20-0x27 are active by default
  *      - All output bits default to 0x00 (OLAT A) or 0xFF (OLAT B)
  *      - Must call LOGIC_EXPANDER_Self_Config() before any other operations
  *      - Queue-full is reported immediately so callers can retry without spinning
@@ -110,8 +110,8 @@ bool LOGIC_EXPANDER_Init( void );
 /**
  * @brief Initialize and configure all active MCP23017 devices.
  *
- * Discovers active devices (based on LOGIC_EXPANDER_ACTIVE_BITMASK),
- * sends configuration registers (IODIR, IPOL, GPINTEN, etc.) to set all
+ * Configures all active devices (0x20-0x27 by default), sending configuration
+ * registers (IODIR, IPOL, GPINTEN, etc.) to set all
  * pins as outputs, and initializes OLAT registers.
  * Must be called before any other operations.
  *
