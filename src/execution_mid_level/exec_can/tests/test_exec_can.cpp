@@ -63,13 +63,13 @@ static HW_CAN_Result_T Configure( size_t channel, uint32_t bitrate, uint16_t ban
 }
 
 extern "C" HW_CAN_Result_T HW_CAN_Configure1( uint32_t bitrate, uint16_t bank, uint16_t id,
-                                               uint16_t mask )
+                                              uint16_t mask )
 {
     return Configure( 0U, bitrate, bank, id, mask );
 }
 
 extern "C" HW_CAN_Result_T HW_CAN_Configure2( uint32_t bitrate, uint16_t bank, uint16_t id,
-                                               uint16_t mask )
+                                              uint16_t mask )
 {
     return Configure( 1U, bitrate, bank, id, mask );
 }
@@ -261,8 +261,8 @@ protected:
 
 TEST_F( ExecCANTest, ConfigureRoutesBothChannelsAndMapsResults )
 {
-    configure_results[0] = HW_CAN_RESULT_OK;
-    configure_results[1] = HW_CAN_RESULT_FILTER_ERROR;
+    configure_results[0]       = HW_CAN_RESULT_OK;
+    configure_results[1]       = HW_CAN_RESULT_FILTER_ERROR;
     EXEC_CAN_Config_T channel1 = { true, 500000U, 13U, 0x123U, 0x7FFU };
     EXEC_CAN_Config_T channel2 = { true, 250000U, 14U, 0x456U, 0x700U };
 
@@ -286,28 +286,18 @@ TEST_F( ExecCANTest, ConfigureRoutesBothChannelsAndMapsResults )
 TEST_F( ExecCANTest, ConfigurationResultMappingCoversEveryHardwareCode )
 {
     const std::array<HW_CAN_Result_T, 8> hardware_results = {
-        HW_CAN_RESULT_OK,
-        HW_CAN_RESULT_ERROR,
-        HW_CAN_RESULT_BUSY,
-        HW_CAN_RESULT_EMPTY,
-        HW_CAN_RESULT_NOT_CONFIGURED,
-        HW_CAN_RESULT_NOT_STARTED,
-        HW_CAN_RESULT_TIMING_ERROR,
-        HW_CAN_RESULT_FILTER_ERROR,
+        HW_CAN_RESULT_OK,           HW_CAN_RESULT_ERROR,          HW_CAN_RESULT_BUSY,
+        HW_CAN_RESULT_EMPTY,        HW_CAN_RESULT_NOT_CONFIGURED, HW_CAN_RESULT_NOT_STARTED,
+        HW_CAN_RESULT_TIMING_ERROR, HW_CAN_RESULT_FILTER_ERROR,
     };
     const std::array<EXEC_CAN_Result_T, 8> execution_results = {
-        EXEC_CAN_RESULT_OK,
-        EXEC_CAN_RESULT_ERROR,
-        EXEC_CAN_RESULT_BUSY,
-        EXEC_CAN_RESULT_EMPTY,
-        EXEC_CAN_RESULT_NOT_CONFIGURED,
-        EXEC_CAN_RESULT_NOT_STARTED,
-        EXEC_CAN_RESULT_TIMING_ERROR,
-        EXEC_CAN_RESULT_FILTER_ERROR,
+        EXEC_CAN_RESULT_OK,           EXEC_CAN_RESULT_ERROR,          EXEC_CAN_RESULT_BUSY,
+        EXEC_CAN_RESULT_EMPTY,        EXEC_CAN_RESULT_NOT_CONFIGURED, EXEC_CAN_RESULT_NOT_STARTED,
+        EXEC_CAN_RESULT_TIMING_ERROR, EXEC_CAN_RESULT_FILTER_ERROR,
     };
     for ( size_t i = 0U; i < hardware_results.size(); i++ )
     {
-        configure_results[0] = hardware_results[i];
+        configure_results[0]            = hardware_results[i];
         EXEC_CAN_Config_T configuration = { true, 500000U, 0U, 0U, 0U };
         EXPECT_EQ( EXEC_CAN_Configure_Channel( EXEC_CAN_CHANNEL_1, configuration ),
                    execution_results[i] );
@@ -507,13 +497,13 @@ TEST_F( ExecCANTest, StatusRecoveryAndDroppedCountsRouteBothChannelsAndMapTypes 
     exec_can_state[0]      = { true, true };
     exec_can_state[1]      = { true, true };
     hardware_configured[0] = hardware_configured[1] = true;
-    hardware_started[0]    = hardware_started[1] = true;
-    hardware_status[0] = HW_CAN_TX_STATUS_ACTIVE;
-    hardware_status[1] = HW_CAN_TX_STATUS_COMPLETE;
-    recover_results[0] = HW_CAN_RESULT_BUSY;
-    recover_results[1] = HW_CAN_RESULT_EMPTY;
-    dropped_counts[0]  = 4U;
-    dropped_counts[1]  = 7U;
+    hardware_started[0] = hardware_started[1] = true;
+    hardware_status[0]                        = HW_CAN_TX_STATUS_ACTIVE;
+    hardware_status[1]                        = HW_CAN_TX_STATUS_COMPLETE;
+    recover_results[0]                        = HW_CAN_RESULT_BUSY;
+    recover_results[1]                        = HW_CAN_RESULT_EMPTY;
+    dropped_counts[0]                         = 4U;
+    dropped_counts[1]                         = 7U;
 
     EXPECT_EQ( EXEC_CAN_Get_Tx_Status( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_TX_STATUS_ACTIVE );
     EXPECT_EQ( EXEC_CAN_Get_Tx_Status( EXEC_CAN_CHANNEL_2 ), EXEC_CAN_TX_STATUS_COMPLETE );
@@ -560,7 +550,7 @@ TEST_F( ExecCANTest, HardwareResultAndStatusMappingCoversAllValues )
         exec_can_state[0]      = { true, true };
         hardware_configured[0] = true;
         hardware_started[0]    = true;
-        recover_results[0] = hardware_results[i];
+        recover_results[0]     = hardware_results[i];
         EXPECT_EQ( EXEC_CAN_Recover( EXEC_CAN_CHANNEL_1 ), execution_results[i] );
     }
 

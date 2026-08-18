@@ -125,7 +125,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"i2c_loopback",        CONSOLE_Command_I2C_Loopback,           "Loopback testing for I2C master and slave channels."},
     {"spi_loop",            CONSOLE_Command_SPI_Loopback,           "Does a loopback test"},
     {"pwm_capture",         CONSOLE_PWM_Capture_Command,            "Configure/read PWM capture. Usage: pwm_capture <config|start|stop|disable|read> ..."},
-    {"can", CONSOLE_CAN_Command_Handler, "CAN diagnostics: tx, rx, and dual-channel config"},
+    {"can",                  CONSOLE_CAN_Command_Handler,           "CAN configure/start/stop and tx/rx diagnostics"},
     {"anlg_out",            CONSOLE_Command_Analogue_Output,        "DAC configure/start/stop and write commands"},
     {"pwm_out",             CONSOLE_Command_PWM_Output,             "Configure, start, stop, and inspect PWM outputs"},
     {"usb_test",            CONSOLE_Command_USB_Test,               "Testing basic USB functionality"},
