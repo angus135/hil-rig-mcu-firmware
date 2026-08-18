@@ -4,7 +4,7 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Execution-layer interface for classical CAN configuration, buffered
+ *      Execution-layer interface for classical CAN lifecycle, buffered
  *      transmission, reception, status, and recovery.
  *
  *  Notes:
@@ -25,6 +25,7 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /**-----------------------------------------------------------------------------
@@ -50,6 +51,18 @@ typedef enum EXEC_CAN_Channel_T
     EXEC_CAN_CHANNEL_COUNT,
 } EXEC_CAN_Channel_T;
 
+/**
+ * @brief Execution-level configuration for one CAN channel.
+ */
+typedef struct EXEC_CAN_Config_T
+{
+    bool     is_enabled;
+    uint32_t bitrate;
+    uint16_t filter_bank;
+    uint16_t filter_id;
+    uint16_t filter_mask;
+} EXEC_CAN_Config_T;
+
 /** Result of an execution-layer CAN operation. */
 typedef enum EXEC_CAN_Result_T
 {
@@ -57,9 +70,10 @@ typedef enum EXEC_CAN_Result_T
     EXEC_CAN_RESULT_INVALID_ARGUMENT,
     EXEC_CAN_RESULT_BUSY,
     EXEC_CAN_RESULT_EMPTY,
+    EXEC_CAN_RESULT_NOT_CONFIGURED,
+    EXEC_CAN_RESULT_NOT_STARTED,
     EXEC_CAN_RESULT_TIMING_ERROR,
     EXEC_CAN_RESULT_FILTER_ERROR,
-    EXEC_CAN_RESULT_START_ERROR,
     EXEC_CAN_RESULT_ERROR,
 } EXEC_CAN_Result_T;
 
@@ -86,10 +100,32 @@ typedef struct EXEC_CAN_Packet_T
  *------------------------------------------------------------------------------
  */
 
-/** Configure one CAN channel using a standard-ID acceptance filter. */
-EXEC_CAN_Result_T EXEC_CAN_Configure( EXEC_CAN_Channel_T channel, uint32_t bitrate,
-                                      uint16_t filter_bank, uint16_t filter_id,
-                                      uint16_t filter_mask );
+/**
+ * @brief Configure or disable one CAN channel.
+ *
+ * An enabled configuration applies peripheral timing and filtering but leaves
+ * the channel stopped. Call EXEC_CAN_Start_Channel() to begin operation.
+ *
+ * A disabled configuration stops the channel when necessary and clears its
+ * execution-layer configured state.
+ *
+ * @note CAN transceiver-level safe-state control will be added when the board
+ *       control mapping is confirmed during hardware bring-up.
+ */
+EXEC_CAN_Result_T EXEC_CAN_Configure_Channel( EXEC_CAN_Channel_T channel,
+                                              EXEC_CAN_Config_T  configuration );
+
+/** Start a configured CAN channel. */
+EXEC_CAN_Result_T EXEC_CAN_Start_Channel( EXEC_CAN_Channel_T channel );
+
+/** Stop a started CAN channel while retaining its configuration. */
+EXEC_CAN_Result_T EXEC_CAN_Stop_Channel( EXEC_CAN_Channel_T channel );
+
+/** Return true when the selected channel is configured. */
+bool EXEC_CAN_Is_Channel_Configured( EXEC_CAN_Channel_T channel );
+
+/** Return true when the selected channel is configured and started. */
+bool EXEC_CAN_Is_Channel_Started( EXEC_CAN_Channel_T channel );
 
 /**
  * @brief Load and start one complete CAN transmit batch.
@@ -119,7 +155,13 @@ EXEC_CAN_Result_T EXEC_CAN_Receive( EXEC_CAN_Channel_T channel, EXEC_CAN_Packet_
 /** Return the current buffered transmit status for one CAN channel. */
 EXEC_CAN_Tx_Status_T EXEC_CAN_Get_Tx_Status( EXEC_CAN_Channel_T channel );
 
-/** Recover one CAN channel after a terminal transmit or bus error. */
+/**
+ * @brief Recover a configured, started CAN channel after a terminal error.
+ *
+ * Recovery may discard failed and queued transmit work. If hardware recovery
+ * fails, execution lifecycle state is synchronized with the resulting HW
+ * lifecycle state.
+ */
 EXEC_CAN_Result_T EXEC_CAN_Recover( EXEC_CAN_Channel_T channel );
 
 /** Return the sticky software RX dropped-frame count for one CAN channel. */
