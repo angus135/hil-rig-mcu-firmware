@@ -59,6 +59,12 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+typedef struct ExecSPIConfig_T
+{
+    bool          is_enabled;
+    HWSPIConfig_T hardware;
+} ExecSPIConfig_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -94,7 +100,15 @@ extern "C"
  *     false if the channel state could not be resolved, the current state was
  *     invalid, or the low-level driver failed to configure the channel.
  */
-bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configuration );
+bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral, const ExecSPIConfig_T* config );
+
+bool EXEC_SPI_Start_Channel( SPIChannel_T peripheral );
+
+bool EXEC_SPI_Stop_Channel( SPIChannel_T peripheral );
+
+bool EXEC_SPI_Is_Configured( SPIChannel_T peripheral );
+
+bool EXEC_SPI_Is_Started( SPIChannel_T peripheral );
 
 /**
  * @brief Queue one or more SPI packets for transmission and trigger the TX path.
