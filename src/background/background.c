@@ -83,7 +83,17 @@ static void BACKGROUND_Process_Status_LED( void )
 {
     if ( background_led_cycles_remaining == 0U )
     {
+    	HW_GPIO_Toggle_Output( USER_LED_BLUE_0 );
+    	HW_GPIO_Toggle_Output( USER_LED_BLUE_1 );
+    	HW_GPIO_Toggle_Output( USER_LED_BLUE_2 );
+    	HW_GPIO_Toggle_Output( USER_LED_BLUE_3 );
         HW_GPIO_Toggle_Output( USER_LED_BLUE_4 );
+
+        HW_GPIO_Toggle_Output( USER_LED_RED_0 );
+		HW_GPIO_Toggle_Output( USER_LED_RED_1 );
+		HW_GPIO_Toggle_Output( USER_LED_RED_2 );
+		HW_GPIO_Toggle_Output( USER_LED_RED_3 );
+		HW_GPIO_Toggle_Output( USER_LED_RED_4 );
         background_led_cycles_remaining = BACKGROUND_LED_PERIOD_CYCLES;
     }
 
