@@ -77,12 +77,13 @@ typedef struct AnalogueOutputPreparedBatch_T
 } AnalogueOutputPreparedBatch_T;
 
 /** @brief Analogue-output configuration and startup readiness state. */
-typedef enum AnalogueOutputState_T
+typedef enum
 {
-    EXEC_ANALOG_OUTPUT_STATE_UNCONFIGURED,  ///< DAC startup has not been submitted.
-    EXEC_ANALOG_OUTPUT_STATE_INITIALIZING,  ///< Startup frames are queued or active.
-    EXEC_ANALOG_OUTPUT_STATE_READY,         ///< Startup transmission completed electrically.
-    EXEC_ANALOG_OUTPUT_STATE_FAULTED,       ///< SPI setup, submission, or transmission failed.
+    EXEC_ANALOG_OUTPUT_STATE_DISABLED = 0U,
+    EXEC_ANALOG_OUTPUT_STATE_CONFIGURING,
+    EXEC_ANALOG_OUTPUT_STATE_CONFIGURED,
+    EXEC_ANALOG_OUTPUT_STATE_STARTED,
+    EXEC_ANALOG_OUTPUT_STATE_FAULTED
 } AnalogueOutputState_T;
 
 #if defined( __cplusplus )
@@ -107,17 +108,24 @@ _Static_assert( sizeof( AnalogueOutputPreparedBatch_T )
                 "A prepared analogue-output batch must use deterministic inline storage" );
 #endif
 
+typedef struct
+{
+    bool is_enabled;
+    bool use_external_vref;
+} ExecAnalogueOutputConfig_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
 
 /**
- * @brief Configure the DAC module and program initial DAC registers.
+ * @brief Configure or disable the DAC module.
  *
- * @param use_external_vref
- *     If true, configure the DAC to use the external buffered VREF pin.
- *     If false, configure the DAC to use VDD as the reference.
+ * @param config
+ *     Configuration parameters. When @c is_enabled is false, AO_EN is driven
+ *     to its safe disabled state. When true, SPI and the DAC are configured
+ *     while AO_EN remains disabled.
  *
  * A true return confirms that all eleven startup frames were accepted and
  * triggered, but electrical completion may still be pending. Call
@@ -129,7 +137,7 @@ _Static_assert( sizeof( AnalogueOutputPreparedBatch_T )
  * @return true if the startup frames were accepted and triggering did not fault.
  * @return false if the module is started or configuration submission fails.
  */
-bool EXEC_ANALOGUE_OUTPUT_Configure( bool use_external_vref );
+bool EXEC_ANALOGUE_OUTPUT_Configure( const ExecAnalogueOutputConfig_T* config );
 
 /**
  * @brief Enable the configured external analogue-output path.
@@ -142,17 +150,16 @@ bool EXEC_ANALOGUE_OUTPUT_Configure( bool use_external_vref );
 bool EXEC_ANALOGUE_OUTPUT_Start( void );
 
 /**
- * @brief Disable the external analogue-output path and preload 0 V outputs.
+ * @brief Stop the external analogue-output path while retaining configuration.
  *
- * AO_EN is disabled before zero-value DAC frames are queued for channels 0-5.
- * On success, the DAC and its SPI channel remain configured so the output path
- * can be started again without reconfiguration. Start waits for these frames
- * to finish before re-enabling AO_EN.
+ * Any pending DAC transfer must be complete. AO_EN is then disabled and the
+ * SPI channel is stopped. DAC register values are retained, so a subsequent
+ * start restores the previously programmed outputs. Reconfigure before start
+ * when a zero-valued restart is required.
  *
- * @return true if the AO_EN disable commit is accepted.
- * @return false if the module is not configured or started, the LogicExpander
- *         operation fails, or the safe DAC frames cannot be queued. A safe-frame
- *         failure leaves the module unconfigured and requiring reconfiguration.
+ * @return true if AO_EN is disabled and SPI is stopped.
+ * @return false if the module is not started, a transfer is incomplete, or a
+ *         LogicExpander or SPI stop operation fails.
  */
 bool EXEC_ANALOGUE_OUTPUT_Stop( void );
 
@@ -163,7 +170,7 @@ bool EXEC_ANALOGUE_OUTPUT_Stop( void );
  * sample. Useful for console commands and future execution callers that must
  * reject runtime writes until the DAC startup packet has completed.
  *
- * @return true only when the module state is READY.
+ * @return true only when the module is configured or started.
  */
 bool EXEC_ANALOGUE_OUTPUT_Is_Configured( void );
 
@@ -176,7 +183,7 @@ bool EXEC_ANALOGUE_OUTPUT_Is_Started( void );
  * @brief Return the current analogue-output startup readiness state.
  *
  * If startup is queued, this performs one nonblocking SPI completion sample
- * and promotes the module to READY when electrical transmission is complete,
+ * and promotes the module to CONFIGURED when electrical transmission is complete,
  * or transitions it to FAULTED when the SPI TX path reports an error.
  *
  * @return Current module state after the nonblocking readiness update.
@@ -260,7 +267,7 @@ bool EXEC_ANALOG_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       prepa
  *
  * @return true if an empty batch required no work or the complete payload was
  *     accepted and triggered.
- * @return false if the module is not configured, the batch is malformed, or
+ * @return false if the module is not started, the batch is malformed, or
  *     SPI rejected the complete payload.
  */
 bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch(

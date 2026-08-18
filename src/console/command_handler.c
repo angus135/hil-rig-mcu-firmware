@@ -121,7 +121,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"spi_loop",            CONSOLE_Command_SPI_Loopback,           "Does a loopback test"},
     {"pwm_capture",         CONSOLE_PWM_Capture_Command,            "Configure/read PWM capture. Usage: pwm_capture <config|start|stop|disable|read> ..."},
     {"can", CONSOLE_CAN_Command_Handler, "CAN diagnostics: tx, rx, and dual-channel config"},
-    {"anlg_out",            CONSOLE_Command_Analogue_Output,        "DAC config and write commands"},
+    {"anlg_out",            CONSOLE_Command_Analogue_Output,        "DAC configure/start/stop and write commands"},
     {"pwm_out",             CONSOLE_Command_PWM_Output,             "Set PWM outputs"},
     {"usb_test",            CONSOLE_Command_USB_Test,               "Testing basic USB functionality"},
 
@@ -747,6 +747,7 @@ static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] )
  *   anlg_out config [vdd|external]
  *   anlg_out start
  *   anlg_out stop
+ *   anlg_out disable
  *   anlg_out status
  *   anlg_out <channel> <voltage>
  *     - Write voltage (0-20V, clamped) to channel 0-5.
@@ -758,17 +759,11 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
     if ( ( argc < 2U ) || ( argv[1] == NULL ) || ( strcmp( argv[1], "help" ) == 0 ) )
     {
         CONSOLE_Printf( "Usage:\r\n" );
-        CONSOLE_Printf( "  anlg_out config\r\n" );
-        CONSOLE_Printf( "  anlg_out <channel 0-5> <voltage 0-20V>\r\n" );
-        CONSOLE_Printf(
-            "  anlg_out batch <channel 0-5> <voltage 0-20V> [<channel> <voltage> ...]\r\n" );
-        return;
-    }
-
-    if ( strcmp( argv[1], "help" ) == 0 )
-    {
-        CONSOLE_Printf( "Usage:\r\n" );
-        CONSOLE_Printf( "  anlg_out config\r\n" );
+        CONSOLE_Printf( "  anlg_out config [vdd|external]\r\n" );
+        CONSOLE_Printf( "  anlg_out start\r\n" );
+        CONSOLE_Printf( "  anlg_out stop\r\n" );
+        CONSOLE_Printf( "  anlg_out disable\r\n" );
+        CONSOLE_Printf( "  anlg_out status\r\n" );
         CONSOLE_Printf( "  anlg_out <channel 0-5> <voltage 0-20V>\r\n" );
         CONSOLE_Printf(
             "  anlg_out batch <channel 0-5> <voltage 0-20V> [<channel> <voltage> ...]\r\n" );
@@ -792,7 +787,12 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
             }
         }
 
-        if ( !EXEC_ANALOGUE_OUTPUT_Configure( use_external_vref ) )
+        const ExecAnalogueOutputConfig_T config = {
+            .is_enabled        = true,
+            .use_external_vref = use_external_vref,
+        };
+
+        if ( !EXEC_ANALOGUE_OUTPUT_Configure( &config ) )
         {
             CONSOLE_Printf( "Failed to configure analogue outputs\r\n" );
             return;
@@ -824,6 +824,22 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
         }
 
         CONSOLE_Printf( "Analogue outputs stopped\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "disable" ) == 0 )
+    {
+        const ExecAnalogueOutputConfig_T config = {
+            .is_enabled = false,
+        };
+
+        if ( !EXEC_ANALOGUE_OUTPUT_Configure( &config ) )
+        {
+            CONSOLE_Printf( "Failed to disable analogue outputs\r\n" );
+            return;
+        }
+
+        CONSOLE_Printf( "Analogue outputs disabled\r\n" );
         return;
     }
 
@@ -896,6 +912,12 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
         if ( !EXEC_ANALOG_OUTPUT_Is_Configured() )
         {
             CONSOLE_Printf( "DAC module not configured. Run 'anlg_out config' first.\r\n" );
+            return;
+        }
+
+        if ( !EXEC_ANALOGUE_OUTPUT_Is_Started() )
+        {
+            CONSOLE_Printf( "Analogue outputs not started. Run 'anlg_out start' first.\r\n" );
             return;
         }
 
