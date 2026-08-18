@@ -24,8 +24,10 @@
  *
  *      Usage:
  *      - Configure channels using HW_PWM_Capture_Configure_Channel()
+ *      - Start capture with HW_PWM_Capture_Start_Channel()
  *      - Use HW_PWM_Capture_Peek_Result() to inspect new data
  *      - Use HW_PWM_Capture_Consume_Result() to clear capture flags
+ *      - Stop capture with HW_PWM_Capture_Stop_Channel()
  *
  *      Assumptions:
  *      - Timer PWM input mode is configured via IOC
@@ -98,20 +100,46 @@ typedef struct
  */
 
 /**
- * @brief Configure a PWM capture channel.
+ * @brief Configure or disable a PWM capture channel.
  *
- * Starts or stops the timer capture path for a channel.
+ * When enabled, stops the timer, configures its period and prescaler, caches
+ * the timer clock, and leaves the channel stopped and ready to start.
  *
- * The timer is always stopped before reconfiguration. If enabled, it is then
- * configured and started. If disabled, it remains stopped.
+ * When disabled, stops the timer and clears the channel's configured state and
+ * cached timer clock.
  *
  * @param channel Logical PWM capture channel to configure.
- * @param is_enabled True to configure and start capture; false to stop capture.
+ * @param is_enabled True to configure the channel; false to disable it.
  *
- * @return true if the configuration was accepted and applied.
- * @return false if the channel is invalid.
+ * @return true if the requested state was applied.
+ * @return false if the channel is invalid or configuration fails.
  */
 bool HW_PWM_Capture_Configure_Channel( HwPWMCaptureChannel_T channel, bool is_enabled );
+
+/**
+ * @brief Start a configured PWM capture channel.
+ *
+ * Starts timer capture without repeating peripheral configuration.
+ *
+ * @param channel Logical PWM capture channel to start.
+ *
+ * @return true if capture was started.
+ * @return false if the channel is invalid, unconfigured, or already started.
+ */
+bool HW_PWM_Capture_Start_Channel( HwPWMCaptureChannel_T channel );
+
+/**
+ * @brief Stop a running PWM capture channel.
+ *
+ * Stops timer capture while retaining peripheral configuration and the cached
+ * timer clock so the channel can be restarted.
+ *
+ * @param channel Logical PWM capture channel to stop.
+ *
+ * @return true if capture was stopped.
+ * @return false if the channel is invalid, unconfigured, or not started.
+ */
+bool HW_PWM_Capture_Stop_Channel( HwPWMCaptureChannel_T channel );
 
 /**
  * @brief Peek the latest PWM capture result without consuming it.
