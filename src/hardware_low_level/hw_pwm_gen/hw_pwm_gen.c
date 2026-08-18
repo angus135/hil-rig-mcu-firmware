@@ -4,11 +4,11 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Low-level PWM generation lifecycle control, timer-value calculations,
- *      and direct execution-time timer register updates.
+ *      This file is responsible for the low level hardware interraction neccesary for controlling
+ *PWM generation
  *
  *  Notes:
- *      Board-level voltage selection is owned by the execution layer.
+ *      <Any design notes, dependencies, or assumptions go here>
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -69,13 +69,13 @@ typedef struct
  *------------------------------------------------------------------------------
  */
 
-static HWPwmGenChannelState_T hw_pwm_gen_channel_states[PWM_GEN_CHANNEL_COUNT] = {
-    [PWM_GEN_CHANNEL_LV] =
+static HWPwmGenChannelState_T hw_pwm_gen_channel_states[HW_PWM_GEN_CHANNEL_COUNT] = {
+    [HW_PWM_GEN_CHANNEL_LV] =
         {
             .is_configured = false,
             .is_started    = false,
         },
-    [PWM_GEN_CHANNEL_HV] =
+    [HW_PWM_GEN_CHANNEL_HV] =
         {
             .is_configured = false,
             .is_started    = false,
@@ -95,7 +95,7 @@ static bool HW_PWM_GEN_Is_Valid_Channel( HwPwmGenChannel_T channel );
 
 static bool HW_PWM_GEN_Is_Valid_Channel( HwPwmGenChannel_T channel )
 {
-    return ( uint32_t )channel < ( uint32_t )PWM_GEN_CHANNEL_COUNT;
+    return ( uint32_t )channel < ( uint32_t )HW_PWM_GEN_CHANNEL_COUNT;
 }
 
 /**-----------------------------------------------------------------------------
@@ -155,11 +155,11 @@ bool HW_PWM_GEN_Start_Channel( HwPwmGenChannel_T channel )
 
     switch ( channel )
     {
-        case PWM_GEN_CHANNEL_LV:
+        case HW_PWM_GEN_CHANNEL_LV:
             status = PWM1_START_OUTPUT( PWM1_TIMER_HANDLE, PWM1_HAL_CHANNEL );
             break;
 
-        case PWM_GEN_CHANNEL_HV:
+        case HW_PWM_GEN_CHANNEL_HV:
             status = PWM2_START_OUTPUT( PWM2_TIMER_HANDLE, PWM2_HAL_CHANNEL );
             break;
 
@@ -201,11 +201,11 @@ bool HW_PWM_GEN_Stop_Channel( HwPwmGenChannel_T channel )
 
     switch ( channel )
     {
-        case PWM_GEN_CHANNEL_LV:
+        case HW_PWM_GEN_CHANNEL_LV:
             status = PWM1_STOP_OUTPUT( PWM1_TIMER_HANDLE, PWM1_HAL_CHANNEL );
             break;
 
-        case PWM_GEN_CHANNEL_HV:
+        case HW_PWM_GEN_CHANNEL_HV:
             status = PWM2_STOP_OUTPUT( PWM2_TIMER_HANDLE, PWM2_HAL_CHANNEL );
             break;
 

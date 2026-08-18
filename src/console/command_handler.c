@@ -122,7 +122,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"pwm_capture",         CONSOLE_PWM_Capture_Command,            "Configure/read PWM capture. Usage: pwm_capture <config|start|stop|disable|read> ..."},
     {"can", CONSOLE_CAN_Command_Handler, "CAN diagnostics: tx, rx, and dual-channel config"},
     {"anlg_out",            CONSOLE_Command_Analogue_Output,        "DAC configure/start/stop and write commands"},
-    {"pwm_out",             CONSOLE_Command_PWM_Output,             "Set PWM outputs"},
+    {"pwm_out",             CONSOLE_Command_PWM_Output,             "Configure, start, stop, and inspect PWM outputs"},
     {"usb_test",            CONSOLE_Command_USB_Test,               "Testing basic USB functionality"},
 
 };
@@ -144,83 +144,152 @@ const Command_T CONSOLE_COMMANDS[] = {
  */
 static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] )
 {
-    if ( argc != 5 || argv[1] == NULL )
+    if ( argc < 2U || argv[1] == NULL )
     {
+        CONSOLE_Printf( "Usage:\r\n" );
         CONSOLE_Printf(
-            "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+            "  pwm_out configure <lv|hv> <3v3|5v|12v|24v> <frequency_hz> <duty_0-1000>\r\n" );
+        CONSOLE_Printf( "  pwm_out start <lv|hv>\r\n" );
+        CONSOLE_Printf( "  pwm_out stop <lv|hv>\r\n" );
+        CONSOLE_Printf( "  pwm_out disable <lv|hv>\r\n" );
+        CONSOLE_Printf( "  pwm_out status <lv|hv>\r\n" );
         return;
     }
-    uint32_t timer_hz = 9000000;
-    uint32_t freq_hz  = atoi( argv[3] );
-    if ( freq_hz > 1000000 || freq_hz < 0 )
+
+    if ( argc < 3U || argv[2] == NULL )
     {
-        CONSOLE_Printf(
-            "Unkown frequency, expected an integer between 0 and 1000000 but recieved %d \r\n",
-            freq_hz );
-        CONSOLE_Printf(
-            "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+        CONSOLE_Printf( "Missing PWM channel; expected lv or hv\r\n" );
         return;
     }
-    uint16_t duty = atoi( argv[4] );
-    if ( duty > 1000 || duty < 0 )
+
+    ExecPwmGenChannel_T channel;
+    if ( strcmp( argv[2], "lv" ) == 0 )
     {
-        CONSOLE_Printf( "Unkown duty, expected an integer between 0 and 1000 but recieved %d \r\n",
-                        duty );
-        CONSOLE_Printf(
-            "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
-        return;
+        channel = EXEC_PWM_GEN_CHANNEL_LV;
     }
-    uint16_t psc = HW_PWM_GEN_compute_psc( freq_hz, timer_hz );
-    uint16_t arr = HW_PWM_GEN_compute_arr( freq_hz, timer_hz, psc );
-    uint16_t ccr = HW_PWM_GEN_compute_ccr( duty, arr );
-    if ( strcmp( argv[1], "0" ) == 0 )
+    else if ( strcmp( argv[2], "hv" ) == 0 )
     {
-        if ( strcmp( argv[2], "0" ) == 0 )
-        {
-            Exec_PWM_GEN_Config( 0, 0 );
-            EXEC_PWM_GEN_Set_PWM_LV( arr, ccr, psc );
-        }
-        else if ( strcmp( argv[2], "1" ) == 0 )
-        {
-            Exec_PWM_GEN_Config( 0, 1 );
-            EXEC_PWM_GEN_Set_PWM_LV( arr, ccr, psc );
-        }
-        else
-        {
-            CONSOLE_Printf( "Unknown Voltage level expecting <0|1> but recieved %s \r\n", argv[2] );
-            CONSOLE_Printf(
-                "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
-            return;
-        }
-    }
-    else if ( strcmp( argv[1], "1" ) == 0 )
-    {
-        if ( strcmp( argv[2], "0" ) == 0 )
-        {
-            Exec_PWM_GEN_Config( 1, 0 );
-            EXEC_PWM_GEN_Set_PWM_HV( arr, ccr, psc );
-        }
-        else if ( strcmp( argv[2], "1" ) == 0 )
-        {
-            Exec_PWM_GEN_Config( 1, 1 );
-            EXEC_PWM_GEN_Set_PWM_HV( arr, ccr, psc );
-        }
-        else
-        {
-            CONSOLE_Printf( "Unknown Voltage level expecting <0|1> but recieved %s \r\n", argv[2] );
-            CONSOLE_Printf(
-                "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
-            return;
-        }
+        channel = EXEC_PWM_GEN_CHANNEL_HV;
     }
     else
     {
-        CONSOLE_Printf( "Unknown PWM channel expecting <0|1> but recieved %s \r\n", argv[1] );
-        CONSOLE_Printf(
-            "Usage: pwm_out channel:<0|1> V_level:<0|1> frequency:Hz duty:<0-1000>\r\n" );
+        CONSOLE_Printf( "Invalid PWM channel; expected lv or hv\r\n" );
         return;
     }
-    CONSOLE_Printf( "PWM Set\r\n" );
+
+    if ( strcmp( argv[1], "start" ) == 0 )
+    {
+        if ( EXEC_PWM_GEN_Start_Channel( channel ) )
+        {
+            CONSOLE_Printf( "PWM channel started\r\n" );
+        }
+        else
+        {
+            CONSOLE_Printf( "Failed to start PWM channel\r\n" );
+        }
+        return;
+    }
+
+    if ( strcmp( argv[1], "stop" ) == 0 )
+    {
+        if ( EXEC_PWM_GEN_Stop_Channel( channel ) )
+        {
+            CONSOLE_Printf( "PWM channel stopped\r\n" );
+        }
+        else
+        {
+            CONSOLE_Printf( "Failed to stop PWM channel\r\n" );
+        }
+        return;
+    }
+
+    if ( strcmp( argv[1], "disable" ) == 0 )
+    {
+        const ExecPwmGenConfig_T config = { .is_enabled = false };
+        if ( EXEC_PWM_GEN_Configure_Channel( channel, &config ) )
+        {
+            CONSOLE_Printf( "PWM channel disabled\r\n" );
+        }
+        else
+        {
+            CONSOLE_Printf( "Failed to disable PWM channel\r\n" );
+        }
+        return;
+    }
+
+    if ( strcmp( argv[1], "status" ) == 0 )
+    {
+        CONSOLE_Printf( "PWM %s: configured=%s, started=%s\r\n",
+                        channel == EXEC_PWM_GEN_CHANNEL_LV ? "lv" : "hv",
+                        EXEC_PWM_GEN_Is_Configured( channel ) ? "yes" : "no",
+                        EXEC_PWM_GEN_Is_Started( channel ) ? "yes" : "no" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "configure" ) != 0 || argc != 6U )
+    {
+        CONSOLE_Printf( "Invalid pwm_out command or argument count\r\n" );
+        return;
+    }
+
+    ExecPwmGenVoltageLevel_T voltage_level;
+    if ( strcmp( argv[3], "3v3" ) == 0 )
+    {
+        voltage_level = EXEC_PWM_GEN_VOLTAGE_3V3;
+    }
+    else if ( strcmp( argv[3], "5v" ) == 0 )
+    {
+        voltage_level = EXEC_PWM_GEN_VOLTAGE_5V;
+    }
+    else if ( strcmp( argv[3], "12v" ) == 0 )
+    {
+        voltage_level = EXEC_PWM_GEN_VOLTAGE_12V;
+    }
+    else if ( strcmp( argv[3], "24v" ) == 0 )
+    {
+        voltage_level = EXEC_PWM_GEN_VOLTAGE_24V;
+    }
+    else
+    {
+        CONSOLE_Printf( "Invalid PWM voltage\r\n" );
+        return;
+    }
+
+    char*          end_ptr      = NULL;
+    const uint32_t frequency_hz = ( uint32_t )strtoul( argv[4], &end_ptr, 10 );
+    if ( end_ptr == argv[4] || *end_ptr != '\0' || frequency_hz == 0U || frequency_hz > 1000000U )
+    {
+        CONSOLE_Printf( "Invalid PWM frequency\r\n" );
+        return;
+    }
+
+    end_ptr             = NULL;
+    const uint32_t duty = ( uint32_t )strtoul( argv[5], &end_ptr, 10 );
+    if ( end_ptr == argv[5] || *end_ptr != '\0' || duty > 1000U )
+    {
+        CONSOLE_Printf( "Invalid PWM duty\r\n" );
+        return;
+    }
+
+    const uint32_t timer_hz = 9000000U;
+    const uint16_t psc      = HW_PWM_GEN_compute_psc( frequency_hz, timer_hz );
+    const uint16_t arr      = HW_PWM_GEN_compute_arr( frequency_hz, timer_hz, psc );
+    const uint16_t ccr      = HW_PWM_GEN_compute_ccr( ( uint16_t )duty, arr );
+
+    const ExecPwmGenConfig_T config = {
+        .is_enabled    = true,
+        .voltage_level = voltage_level,
+        .initial_arr   = arr,
+        .initial_ccr   = ccr,
+        .initial_psc   = psc,
+    };
+    if ( !EXEC_PWM_GEN_Configure_Channel( channel, &config ) )
+    {
+        CONSOLE_Printf( "Failed to configure PWM channel\r\n" );
+        return;
+    }
+
+    CONSOLE_Printf( "PWM channel configured and ready to start\r\n" );
 }
 
 static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )

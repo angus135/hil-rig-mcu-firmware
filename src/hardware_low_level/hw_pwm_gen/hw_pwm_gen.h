@@ -42,15 +42,9 @@ extern "C"
 
 typedef enum
 {
-    PWM_GEN_VOLTAGE_LOW,
-    PWM_GEN_VOLTAGE_HIGH
-} HwPwmGenVoltageLevel_T;
-
-typedef enum
-{
-    PWM_GEN_CHANNEL_LV,
-    PWM_GEN_CHANNEL_HV,
-    PWM_GEN_CHANNEL_COUNT
+    HW_PWM_GEN_CHANNEL_LV,
+    HW_PWM_GEN_CHANNEL_HV,
+    HW_PWM_GEN_CHANNEL_COUNT
 } HwPwmGenChannel_T;
 
 /**-----------------------------------------------------------------------------

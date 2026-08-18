@@ -4,10 +4,12 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      <Short description of the module, what it exposes, and how it should be used>
+ *      Public execution-layer interface for independently configuring,
+ *      starting, stopping, and updating the LV and HV PWM outputs.
  *
  *  Notes:
- *      <Public assumptions, required initialisation order, dependencies, etc.>
+ *      Configure preloads the initial waveform state so a successful channel
+ *      is ready to Start. Direct update functions perform no lifecycle checks.
  ******************************************************************************/
 
 #ifndef EXEC_PWM_GEN_H
@@ -25,7 +27,6 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "hw_pwm_gen.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -36,6 +37,31 @@ extern "C"
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+
+typedef enum
+{
+    EXEC_PWM_GEN_CHANNEL_LV = 0,
+    EXEC_PWM_GEN_CHANNEL_HV,
+    EXEC_PWM_GEN_CHANNEL_COUNT
+} ExecPwmGenChannel_T;
+
+typedef enum
+{
+    EXEC_PWM_GEN_VOLTAGE_3V3 = 0,
+    EXEC_PWM_GEN_VOLTAGE_5V,
+    EXEC_PWM_GEN_VOLTAGE_12V,
+    EXEC_PWM_GEN_VOLTAGE_24V,
+    EXEC_PWM_GEN_VOLTAGE_COUNT
+} ExecPwmGenVoltageLevel_T;
+
+typedef struct
+{
+    bool                     is_enabled;
+    ExecPwmGenVoltageLevel_T voltage_level;
+    uint16_t                 initial_arr;
+    uint16_t                 initial_ccr;
+    uint16_t                 initial_psc;
+} ExecPwmGenConfig_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -67,14 +93,27 @@ void EXEC_PWM_GEN_Set_PWM_LV( uint16_t arr, uint16_t ccr, uint16_t psc );
 void EXEC_PWM_GEN_Set_PWM_HV( uint16_t arr, uint16_t ccr, uint16_t psc );
 
 /**
- * @brief Configures the pwm output.
+ * @brief Configures or disables one independent PWM generation channel.
  *
- * @param channel   The channel you want to configure
- * @param volt_lvl  The voltage level you want
- *
+ * Enabled configuration validates and preloads the initial ARR, CCR, and PSC,
+ * selects a channel-compatible voltage, and leaves the timer output stopped
+ * and ready to start. Disabled configuration stops an active channel and
+ * selects its lowest supported voltage.
  */
-void Exec_PWM_GEN_Config( HwPwmGenChannel_T channel, HwPwmGenVoltageLevel_T volt_lvl );
+bool EXEC_PWM_GEN_Configure_Channel( ExecPwmGenChannel_T       channel,
+                                     const ExecPwmGenConfig_T* config );
 
+/** @brief Starts a configured PWM generation channel. */
+bool EXEC_PWM_GEN_Start_Channel( ExecPwmGenChannel_T channel );
+
+/** @brief Stops a started channel while retaining its configuration. */
+bool EXEC_PWM_GEN_Stop_Channel( ExecPwmGenChannel_T channel );
+
+/** @brief Returns true when a channel is configured, including while started. */
+bool EXEC_PWM_GEN_Is_Configured( ExecPwmGenChannel_T channel );
+
+/** @brief Returns true only while the selected channel is started. */
+bool EXEC_PWM_GEN_Is_Started( ExecPwmGenChannel_T channel );
 #ifdef __cplusplus
 }
 #endif
