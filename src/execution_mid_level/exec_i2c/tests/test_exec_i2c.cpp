@@ -30,6 +30,7 @@
 extern "C"
 {
 #include "exec_i2c.h"
+#include "logic_expander.h"
 #include <stdint.h>
 #include <stdbool.h>
 }
@@ -49,6 +50,8 @@ class MockHWI2C
 public:
     MOCK_METHOD( HWI2CStatus_T, ConfigureChannel,
                  ( HWI2CChannel_T channel, const HWI2CChannelConfig_T* config ), () );
+    MOCK_METHOD( HWI2CStatus_T, StartChannel, ( HWI2CChannel_T channel ), () );
+    MOCK_METHOD( HWI2CStatus_T, StopChannel, ( HWI2CChannel_T channel ), () );
     MOCK_METHOD( HWI2CStatus_T, EnqueueMasterTransmit,
                  ( HWI2CChannel_T channel, uint16_t device_address_7bit, const uint8_t* payload,
                    uint16_t payload_length ),
@@ -69,6 +72,11 @@ public:
                  ( HWI2CChannel_T channel, HWI2CRxMessagePeek_T* message ), () );
     MOCK_METHOD( bool, ConsumeReceivedMessage, ( HWI2CChannel_T channel ), () );
     MOCK_METHOD( bool, GetOverflowStatus, ( HWI2CChannel_T channel ), () );
+    MOCK_METHOD( LogicExpanderStatus_T, LoadControlBit,
+                 ( LogicExpanderIndex_T expander, LogicExpanderPort_T port, uint8_t bit_index,
+                   bool value ),
+                 () );
+    MOCK_METHOD( LogicExpanderStatus_T, SendControlBits, (), () );
 };
 
 static MockHWI2C* g_mock_hw_i2c = nullptr;
@@ -78,6 +86,16 @@ extern "C"
 HWI2CStatus_T HW_I2C_Configure_Channel( HWI2CChannel_T channel, const HWI2CChannelConfig_T* config )
 {
     return g_mock_hw_i2c->ConfigureChannel( channel, config );
+}
+
+HWI2CStatus_T HW_I2C_Start_Channel( HWI2CChannel_T channel )
+{
+    return g_mock_hw_i2c->StartChannel( channel );
+}
+
+HWI2CStatus_T HW_I2C_Stop_Channel( HWI2CChannel_T channel )
+{
+    return g_mock_hw_i2c->StopChannel( channel );
 }
 
 HWI2CStatus_T HW_I2C_Enqueue_Master_Transmit( HWI2CChannel_T channel, uint16_t device_address_7bit,
@@ -142,6 +160,18 @@ bool HW_I2C_Get_Overflow_Status( HWI2CChannel_T channel )
 {
     return g_mock_hw_i2c->GetOverflowStatus( channel );
 }
+
+LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expander,
+                                                       LogicExpanderPort_T port, uint8_t bit_index,
+                                                       bool value )
+{
+    return g_mock_hw_i2c->LoadControlBit( expander, port, bit_index, value );
+}
+
+LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void )
+{
+    return g_mock_hw_i2c->SendControlBits();
+}
 }
 
 #include "../exec_i2c.c" /* Module under test */  // NOLINT
@@ -169,11 +199,35 @@ protected:
     void SetUp( void ) override
     {
         g_mock_hw_i2c = &mock_hw_i2c;
+        std::memset( exec_i2c_channel_state, 0, sizeof( exec_i2c_channel_state ) );
     }
 
     void TearDown( void ) override
     {
         g_mock_hw_i2c = nullptr;
+    }
+
+    void ExpectInterfaceControl( ExecI2CChannel_T channel, ExecI2CVoltage_T voltage,
+                                 ExecI2CPullup_T pullup, bool enabled )
+    {
+        const uint8_t first_bit = channel == EXEC_I2C_CHANNEL_1 ? 0U : 4U;
+        const bool    a0        = ( ( uint8_t )pullup & 0x01U ) != 0U;
+        const bool    a1        = ( ( uint8_t )pullup & 0x02U ) != 0U;
+
+        EXPECT_CALL( mock_hw_i2c, LoadControlBit( LOGIC_EXPANDER_I2C_AO, LOGIC_EXPANDER_PORT_A,
+                                                  first_bit, voltage == EXEC_I2C_VOLTAGE_5V ) )
+            .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
+        EXPECT_CALL( mock_hw_i2c, LoadControlBit( LOGIC_EXPANDER_I2C_AO, LOGIC_EXPANDER_PORT_A,
+                                                  ( uint8_t )( first_bit + 1U ), a0 ) )
+            .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
+        EXPECT_CALL( mock_hw_i2c, LoadControlBit( LOGIC_EXPANDER_I2C_AO, LOGIC_EXPANDER_PORT_A,
+                                                  ( uint8_t )( first_bit + 2U ), a1 ) )
+            .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
+        EXPECT_CALL( mock_hw_i2c, LoadControlBit( LOGIC_EXPANDER_I2C_AO, LOGIC_EXPANDER_PORT_A,
+                                                  ( uint8_t )( first_bit + 3U ), enabled ) )
+            .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
+        EXPECT_CALL( mock_hw_i2c, SendControlBits() )
+            .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     }
 };
 
@@ -182,81 +236,153 @@ protected:
  *------------------------------------------------------------------------------
  */
 
-TEST_F( ExecI2CTest, Configuration_RejectsInvalidExternalConfigWithoutLowLevelCalls )
+TEST_F( ExecI2CTest, ConfigureRejectsInvalidExternalConfigWithoutLowLevelCalls )
 {
     EXECI2CChannelConfig_T invalid_config = {
+        .is_enabled       = true,
         .mode             = HW_I2C_MODE_MASTER,
         .speed            = HW_I2C_SPEED_100KHZ,
-        .tx_transfer_path = HW_I2C_TRANSFER_DMA,
-        .rx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
         .own_address_7bit = 0x12U,
+        .pullup           = EXEC_I2C_PULLUP_COUNT,
+        .voltage          = EXEC_I2C_VOLTAGE_3V3,
     };
 
-    EXPECT_EQ( EXEC_I2C_Configuration( &invalid_config, &invalid_config ),
+    EXPECT_EQ( EXEC_I2C_Configure_Channel( EXEC_I2C_CHANNEL_1, &invalid_config ),
                EXEC_I2C_STATUS_INVALID_PARAM );
 }
 
-TEST_F( ExecI2CTest, Configuration_MapsAndForwardsExternalChannels )
+TEST_F( ExecI2CTest, ConfigureMapsChannel1ToInterruptAndLeavesItStopped )
 {
-    EXECI2CChannelConfig_T i2c1_config = {
+    const EXECI2CChannelConfig_T config = {
+        .is_enabled       = true,
         .mode             = HW_I2C_MODE_MASTER,
         .speed            = HW_I2C_SPEED_100KHZ,
-        .tx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
-        .rx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
         .own_address_7bit = 0x12U,
+        .pullup           = EXEC_I2C_PULLUP_10K,
+        .voltage          = EXEC_I2C_VOLTAGE_5V,
     };
-    EXECI2CChannelConfig_T i2c2_config = {
+
+    ExpectInterfaceControl( EXEC_I2C_CHANNEL_1, EXEC_I2C_VOLTAGE_5V, EXEC_I2C_PULLUP_10K, false );
+    EXPECT_CALL( mock_hw_i2c, ConfigureChannel( HW_I2C_CHANNEL_1, _ ) )
+        .WillOnce( [&]( HWI2CChannel_T, const HWI2CChannelConfig_T* hw_config ) {
+            EXPECT_EQ( hw_config->tx_transfer_path, HW_I2C_TRANSFER_INTERRUPT );
+            EXPECT_EQ( hw_config->rx_transfer_path, HW_I2C_TRANSFER_INTERRUPT );
+            return HW_I2C_STATUS_OK;
+        } );
+
+    EXPECT_EQ( EXEC_I2C_Configure_Channel( EXEC_I2C_CHANNEL_1, &config ), EXEC_I2C_STATUS_OK );
+    EXPECT_TRUE( EXEC_I2C_Is_Channel_Configured( EXEC_I2C_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_1 ) );
+}
+
+TEST_F( ExecI2CTest, ConfigureMapsChannel2ToDma )
+{
+    const EXECI2CChannelConfig_T config = {
+        .is_enabled       = true,
         .mode             = HW_I2C_MODE_SLAVE,
         .speed            = HW_I2C_SPEED_400KHZ,
-        .tx_transfer_path = HW_I2C_TRANSFER_DMA,
-        .rx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
         .own_address_7bit = 0x34U,
+        .pullup           = EXEC_I2C_PULLUP_4K7,
+        .voltage          = EXEC_I2C_VOLTAGE_3V3,
+    };
+
+    ExpectInterfaceControl( EXEC_I2C_CHANNEL_2, EXEC_I2C_VOLTAGE_3V3, EXEC_I2C_PULLUP_4K7, false );
+    EXPECT_CALL( mock_hw_i2c, ConfigureChannel( HW_I2C_CHANNEL_2, _ ) )
+        .WillOnce( [&]( HWI2CChannel_T, const HWI2CChannelConfig_T* hw_config ) {
+            EXPECT_EQ( hw_config->tx_transfer_path, HW_I2C_TRANSFER_DMA );
+            EXPECT_EQ( hw_config->rx_transfer_path, HW_I2C_TRANSFER_DMA );
+            return HW_I2C_STATUS_OK;
+        } );
+
+    EXPECT_EQ( EXEC_I2C_Configure_Channel( EXEC_I2C_CHANNEL_2, &config ), EXEC_I2C_STATUS_OK );
+}
+
+TEST_F( ExecI2CTest, StartAndStopApplyLifecycleInSafeOrder )
+{
+    EXECI2CChannelState_T& state = exec_i2c_channel_state[EXEC_I2C_CHANNEL_1];
+    state.is_configured          = true;
+    state.configuration          = {
+                 .is_enabled       = true,
+                 .mode             = HW_I2C_MODE_MASTER,
+                 .speed            = HW_I2C_SPEED_100KHZ,
+                 .own_address_7bit = 0x31U,
+                 .pullup           = EXEC_I2C_PULLUP_2K2,
+                 .voltage          = EXEC_I2C_VOLTAGE_5V,
     };
 
     {
         InSequence sequence;
-
-        EXPECT_CALL( mock_hw_i2c, ConfigureChannel( HW_I2C_CHANNEL_1, _ ) )
-            .WillOnce( [&]( HWI2CChannel_T channel, const HWI2CChannelConfig_T* config ) {
-                EXPECT_EQ( channel, HW_I2C_CHANNEL_1 );
-                EXPECT_EQ( config->mode, HW_I2C_MODE_MASTER );
-                EXPECT_EQ( config->speed, HW_I2C_SPEED_100KHZ );
-                EXPECT_EQ( config->tx_transfer_path, HW_I2C_TRANSFER_INTERRUPT );
-                EXPECT_EQ( config->rx_transfer_path, HW_I2C_TRANSFER_INTERRUPT );
-                EXPECT_EQ( config->own_address_7bit, 0x12U );
-                return HW_I2C_STATUS_OK;
-            } );
-
-        EXPECT_CALL( mock_hw_i2c, ConfigureChannel( HW_I2C_CHANNEL_2, _ ) )
-            .WillOnce( [&]( HWI2CChannel_T channel, const HWI2CChannelConfig_T* config ) {
-                EXPECT_EQ( channel, HW_I2C_CHANNEL_2 );
-                EXPECT_EQ( config->mode, HW_I2C_MODE_SLAVE );
-                EXPECT_EQ( config->speed, HW_I2C_SPEED_400KHZ );
-                EXPECT_EQ( config->tx_transfer_path, HW_I2C_TRANSFER_DMA );
-                EXPECT_EQ( config->rx_transfer_path, HW_I2C_TRANSFER_INTERRUPT );
-                EXPECT_EQ( config->own_address_7bit, 0x34U );
-                return HW_I2C_STATUS_OK;
-            } );
+        EXPECT_CALL( mock_hw_i2c, StartChannel( HW_I2C_CHANNEL_1 ) )
+            .WillOnce( Return( HW_I2C_STATUS_OK ) );
+        ExpectInterfaceControl( EXEC_I2C_CHANNEL_1, EXEC_I2C_VOLTAGE_5V, EXEC_I2C_PULLUP_2K2,
+                                true );
     }
+    EXPECT_EQ( EXEC_I2C_Start_Channel( EXEC_I2C_CHANNEL_1 ), EXEC_I2C_STATUS_OK );
+    EXPECT_TRUE( EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_1 ) );
 
-    EXPECT_EQ( EXEC_I2C_Configuration( &i2c1_config, &i2c2_config ), EXEC_I2C_STATUS_OK );
+    {
+        InSequence sequence;
+        ExpectInterfaceControl( EXEC_I2C_CHANNEL_1, EXEC_I2C_VOLTAGE_3V3, EXEC_I2C_PULLUP_1K,
+                                false );
+        EXPECT_CALL( mock_hw_i2c, StopChannel( HW_I2C_CHANNEL_1 ) )
+            .WillOnce( Return( HW_I2C_STATUS_OK ) );
+    }
+    EXPECT_EQ( EXEC_I2C_Stop_Channel( EXEC_I2C_CHANNEL_1 ), EXEC_I2C_STATUS_OK );
+    EXPECT_TRUE( EXEC_I2C_Is_Channel_Configured( EXEC_I2C_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_1 ) );
 }
 
-TEST_F( ExecI2CTest, Configuration_StopsWhenFirstLowLevelCallFails )
+TEST_F( ExecI2CTest, DisabledConfigurationAppliesSafeStateWithoutConfiguringHw )
 {
-    EXECI2CChannelConfig_T config = {
-        .mode             = HW_I2C_MODE_MASTER,
-        .speed            = HW_I2C_SPEED_100KHZ,
-        .tx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
-        .rx_transfer_path = HW_I2C_TRANSFER_INTERRUPT,
-        .own_address_7bit = 0x10U,
+    const EXECI2CChannelConfig_T config = { .is_enabled = false };
+
+    ExpectInterfaceControl( EXEC_I2C_CHANNEL_2, EXEC_I2C_VOLTAGE_3V3, EXEC_I2C_PULLUP_1K, false );
+
+    EXPECT_EQ( EXEC_I2C_Configure_Channel( EXEC_I2C_CHANNEL_2, &config ), EXEC_I2C_STATUS_OK );
+    EXPECT_FALSE( EXEC_I2C_Is_Channel_Configured( EXEC_I2C_CHANNEL_2 ) );
+    EXPECT_FALSE( EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_2 ) );
+}
+
+TEST_F( ExecI2CTest, StartRollsBackHwWhenPullupControlFails )
+{
+    EXECI2CChannelState_T& state = exec_i2c_channel_state[EXEC_I2C_CHANNEL_1];
+    state.is_configured          = true;
+    state.configuration          = {
+                 .is_enabled       = true,
+                 .mode             = HW_I2C_MODE_MASTER,
+                 .speed            = HW_I2C_SPEED_100KHZ,
+                 .own_address_7bit = 0x31U,
+                 .pullup           = EXEC_I2C_PULLUP_4K7,
+                 .voltage          = EXEC_I2C_VOLTAGE_3V3,
     };
 
-    EXPECT_CALL( mock_hw_i2c, ConfigureChannel( HW_I2C_CHANNEL_1, _ ) )
-        .WillOnce( Return( HW_I2C_STATUS_BUSY ) );
-    EXPECT_CALL( mock_hw_i2c, ConfigureChannel( HW_I2C_CHANNEL_2, _ ) ).Times( 0 );
+    {
+        InSequence sequence;
+        EXPECT_CALL( mock_hw_i2c, StartChannel( HW_I2C_CHANNEL_1 ) )
+            .WillOnce( Return( HW_I2C_STATUS_OK ) );
+        EXPECT_CALL( mock_hw_i2c,
+                     LoadControlBit( LOGIC_EXPANDER_I2C_AO, LOGIC_EXPANDER_PORT_A, 0U, false ) )
+            .WillOnce( Return( LOGIC_EXPANDER_STATUS_ERROR ) );
+        EXPECT_CALL( mock_hw_i2c, StopChannel( HW_I2C_CHANNEL_1 ) )
+            .WillOnce( Return( HW_I2C_STATUS_OK ) );
+    }
 
-    EXPECT_EQ( EXEC_I2C_Configuration( &config, &config ), EXEC_I2C_STATUS_BUSY );
+    EXPECT_EQ( EXEC_I2C_Start_Channel( EXEC_I2C_CHANNEL_1 ), EXEC_I2C_STATUS_ERROR );
+    EXPECT_FALSE( EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_1 ) );
+}
+
+TEST_F( ExecI2CTest, StopPreservesStartedStateWhenHwIsBusy )
+{
+    EXECI2CChannelState_T& state = exec_i2c_channel_state[EXEC_I2C_CHANNEL_1];
+    state.is_configured          = true;
+    state.is_started             = true;
+
+    ExpectInterfaceControl( EXEC_I2C_CHANNEL_1, EXEC_I2C_VOLTAGE_3V3, EXEC_I2C_PULLUP_1K, false );
+    EXPECT_CALL( mock_hw_i2c, StopChannel( HW_I2C_CHANNEL_1 ) )
+        .WillOnce( Return( HW_I2C_STATUS_BUSY ) );
+
+    EXPECT_EQ( EXEC_I2C_Stop_Channel( EXEC_I2C_CHANNEL_1 ), EXEC_I2C_STATUS_BUSY );
+    EXPECT_TRUE( EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_1 ) );
 }
 
 TEST_F( ExecI2CTest, MasterTransmitExternalSubmitsOneAtomicQueueRequest )
@@ -267,8 +393,8 @@ TEST_F( ExecI2CTest, MasterTransmitExternalSubmitsOneAtomicQueueRequest )
                  EnqueueMasterTransmit( HW_I2C_CHANNEL_2, 0x45U, payload, sizeof( payload ) ) )
         .WillOnce( Return( HW_I2C_STATUS_OK ) );
 
-    EXPECT_TRUE(
-        EXEC_I2C_Master_Transmit_External( HW_I2C_CHANNEL_2, 0x45U, payload, sizeof( payload ) ) );
+    EXPECT_TRUE( EXEC_I2C_Master_Transmit_External( EXEC_I2C_CHANNEL_2, 0x45U, payload,
+                                                    sizeof( payload ) ) );
 }
 
 TEST_F( ExecI2CTest, MasterTransmitExternalReturnsFalseWhenQueueRejectsRequest )
@@ -278,8 +404,8 @@ TEST_F( ExecI2CTest, MasterTransmitExternalReturnsFalseWhenQueueRejectsRequest )
                  EnqueueMasterTransmit( HW_I2C_CHANNEL_1, 0x11U, payload, sizeof( payload ) ) )
         .WillOnce( Return( HW_I2C_STATUS_BUSY ) );
 
-    EXPECT_FALSE(
-        EXEC_I2C_Master_Transmit_External( HW_I2C_CHANNEL_1, 0x11U, payload, sizeof( payload ) ) );
+    EXPECT_FALSE( EXEC_I2C_Master_Transmit_External( EXEC_I2C_CHANNEL_1, 0x11U, payload,
+                                                     sizeof( payload ) ) );
 }
 
 TEST_F( ExecI2CTest, MasterTransmitExternalRejectsNonExternalChannelWithoutLowLevelCall )
@@ -287,9 +413,7 @@ TEST_F( ExecI2CTest, MasterTransmitExternalRejectsNonExternalChannelWithoutLowLe
     const uint8_t payload = 0x12U;
     EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( _, _, _, _ ) ).Times( 0 );
 
-    EXPECT_FALSE( EXEC_I2C_Master_Transmit_External( HW_I2C_CHANNEL_FMPI2C1, 0x20U, &payload,
-                                                     sizeof( payload ) ) );
-    EXPECT_FALSE( EXEC_I2C_Master_Transmit_External( HW_I2C_CHANNEL_COUNT, 0x20U, &payload,
+    EXPECT_FALSE( EXEC_I2C_Master_Transmit_External( EXEC_I2C_CHANNEL_COUNT, 0x20U, &payload,
                                                      sizeof( payload ) ) );
 }
 
@@ -305,7 +429,8 @@ TEST_F( ExecI2CTest, SlaveTransmitExternal_ForwardsBothCalls )
             .WillOnce( Return( true ) );
     }
 
-    EXPECT_TRUE( EXEC_I2C_Slave_Transmit_External( HW_I2C_CHANNEL_2, payload, sizeof( payload ) ) );
+    EXPECT_TRUE(
+        EXEC_I2C_Slave_Transmit_External( EXEC_I2C_CHANNEL_2, payload, sizeof( payload ) ) );
 }
 
 TEST_F( ExecI2CTest, MasterReceiveExternal_ForwardsToLowLevel )
@@ -313,15 +438,14 @@ TEST_F( ExecI2CTest, MasterReceiveExternal_ForwardsToLowLevel )
     EXPECT_CALL( mock_hw_i2c, EnqueueMasterReceive( HW_I2C_CHANNEL_2, 0x55U, 9U ) )
         .WillOnce( Return( HW_I2C_STATUS_OK ) );
 
-    EXPECT_TRUE( EXEC_I2C_Start_Master_Receive_External( HW_I2C_CHANNEL_2, 0x55U, 9U ) );
+    EXPECT_TRUE( EXEC_I2C_Start_Master_Receive_External( EXEC_I2C_CHANNEL_2, 0x55U, 9U ) );
 }
 
 TEST_F( ExecI2CTest, MasterReceiveExternalRejectsNonExternalChannelWithoutLowLevelCall )
 {
     EXPECT_CALL( mock_hw_i2c, EnqueueMasterReceive( _, _, _ ) ).Times( 0 );
 
-    EXPECT_FALSE( EXEC_I2C_Start_Master_Receive_External( HW_I2C_CHANNEL_FMPI2C1, 0x20U, 1U ) );
-    EXPECT_FALSE( EXEC_I2C_Start_Master_Receive_External( HW_I2C_CHANNEL_COUNT, 0x20U, 1U ) );
+    EXPECT_FALSE( EXEC_I2C_Start_Master_Receive_External( EXEC_I2C_CHANNEL_COUNT, 0x20U, 1U ) );
 }
 
 TEST_F( ExecI2CTest, SlaveReceiveExternal_ForwardsToLowLevel )
@@ -329,21 +453,22 @@ TEST_F( ExecI2CTest, SlaveReceiveExternal_ForwardsToLowLevel )
     EXPECT_CALL( mock_hw_i2c, TriggerSlaveReceiveExternal( HW_I2C_CHANNEL_1, 6U ) )
         .WillOnce( Return( true ) );
 
-    EXPECT_TRUE( EXEC_I2C_Start_Slave_Receive_External( HW_I2C_CHANNEL_1, 6U ) );
+    EXPECT_TRUE( EXEC_I2C_Start_Slave_Receive_External( EXEC_I2C_CHANNEL_1, 6U ) );
 }
 
 TEST_F( ExecI2CTest, QueueProgressAndAsynchronousResultAreForwarded )
 {
     EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_2 ) );
-    EXEC_I2C_Service_Transaction_Queue( HW_I2C_CHANNEL_2 );
+    EXEC_I2C_Service_Transaction_Queue( EXEC_I2C_CHANNEL_2 );
 
     EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( HW_I2C_CHANNEL_2 ) )
         .WillOnce( Return( false ) );
-    EXPECT_FALSE( EXEC_I2C_Is_Transaction_Queue_Complete( HW_I2C_CHANNEL_2 ) );
+    EXPECT_FALSE( EXEC_I2C_Is_Transaction_Queue_Complete( EXEC_I2C_CHANNEL_2 ) );
 
     EXPECT_CALL( mock_hw_i2c, GetAndClearTransferResult( HW_I2C_CHANNEL_2 ) )
         .WillOnce( Return( HW_I2C_STATUS_ERROR ) );
-    EXPECT_EQ( EXEC_I2C_Get_And_Clear_Transfer_Result( HW_I2C_CHANNEL_2 ), EXEC_I2C_STATUS_ERROR );
+    EXPECT_EQ( EXEC_I2C_Get_And_Clear_Transfer_Result( EXEC_I2C_CHANNEL_2 ),
+               EXEC_I2C_STATUS_ERROR );
 }
 
 TEST_F( ExecI2CTest, RecoveryStatusIsForwarded )
@@ -351,7 +476,7 @@ TEST_F( ExecI2CTest, RecoveryStatusIsForwarded )
     EXPECT_CALL( mock_hw_i2c, RecoverChannel( HW_I2C_CHANNEL_2 ) )
         .WillOnce( Return( HW_I2C_STATUS_ERROR ) );
 
-    EXPECT_EQ( EXEC_I2C_Recover_Channel( HW_I2C_CHANNEL_2 ), EXEC_I2C_STATUS_ERROR );
+    EXPECT_EQ( EXEC_I2C_Recover_Channel( EXEC_I2C_CHANNEL_2 ), EXEC_I2C_STATUS_ERROR );
 }
 
 TEST_F( ExecI2CTest, ReceiveMessageCopiesOneCompleteMessageAndConsumesIt )
@@ -382,7 +507,7 @@ TEST_F( ExecI2CTest, ReceiveMessageCopiesOneCompleteMessageAndConsumesIt )
             .WillOnce( Return( true ) );
     }
 
-    EXPECT_EQ( EXEC_I2C_Receive_Message_Copy_And_Consume( HW_I2C_CHANNEL_1, destination,
+    EXPECT_EQ( EXEC_I2C_Receive_Message_Copy_And_Consume( EXEC_I2C_CHANNEL_1, destination,
                                                           sizeof( destination ), &descriptor,
                                                           &bytes_copied, &required_length ),
                EXEC_I2C_STATUS_OK );
@@ -422,7 +547,7 @@ TEST_F( ExecI2CTest, ReceiveMessageCopiesWrappedSpansInOrder )
             .WillOnce( Return( true ) );
     }
 
-    EXPECT_EQ( EXEC_I2C_Receive_Message_Copy_And_Consume( HW_I2C_CHANNEL_2, destination,
+    EXPECT_EQ( EXEC_I2C_Receive_Message_Copy_And_Consume( EXEC_I2C_CHANNEL_2, destination,
                                                           sizeof( destination ), &descriptor,
                                                           &bytes_copied, &required_length ),
                EXEC_I2C_STATUS_OK );
@@ -460,7 +585,7 @@ TEST_F( ExecI2CTest, InsufficientDestinationLeavesCompleteMessageUnconsumed )
     }
     EXPECT_CALL( mock_hw_i2c, ConsumeReceivedMessage( _ ) ).Times( 0 );
 
-    EXPECT_EQ( EXEC_I2C_Receive_Message_Copy_And_Consume( HW_I2C_CHANNEL_1, destination,
+    EXPECT_EQ( EXEC_I2C_Receive_Message_Copy_And_Consume( EXEC_I2C_CHANNEL_1, destination,
                                                           sizeof( destination ), &descriptor,
                                                           &bytes_copied, &required_length ),
                EXEC_I2C_STATUS_BUFFER_TOO_SMALL );
@@ -511,10 +636,10 @@ TEST_F( ExecI2CTest, TwoReceivedTransactionsRequireTwoCalls )
             .WillOnce( Return( true ) );
     }
 
-    EXPECT_TRUE( EXEC_I2C_Receive_Copy_And_Consume( HW_I2C_CHANNEL_1, destination,
+    EXPECT_TRUE( EXEC_I2C_Receive_Copy_And_Consume( EXEC_I2C_CHANNEL_1, destination,
                                                     sizeof( destination ), &bytes_copied ) );
     EXPECT_EQ( bytes_copied, 2U );
-    EXPECT_TRUE( EXEC_I2C_Receive_Copy_And_Consume( HW_I2C_CHANNEL_1, destination,
+    EXPECT_TRUE( EXEC_I2C_Receive_Copy_And_Consume( EXEC_I2C_CHANNEL_1, destination,
                                                     sizeof( destination ), &bytes_copied ) );
     EXPECT_EQ( bytes_copied, 1U );
     EXPECT_EQ( destination[0], 0x51U );
@@ -537,7 +662,7 @@ TEST_F( ExecI2CTest, LegacyReceivePollingReturnsSuccessWithZeroBytesWhenNoMessag
     }
     EXPECT_CALL( mock_hw_i2c, ConsumeReceivedMessage( _ ) ).Times( 0 );
 
-    EXPECT_TRUE( EXEC_I2C_Receive_Copy_And_Consume( HW_I2C_CHANNEL_1, destination,
+    EXPECT_TRUE( EXEC_I2C_Receive_Copy_And_Consume( EXEC_I2C_CHANNEL_1, destination,
                                                     sizeof( destination ), &bytes_copied ) );
     EXPECT_EQ( bytes_copied, 0U );
 }
