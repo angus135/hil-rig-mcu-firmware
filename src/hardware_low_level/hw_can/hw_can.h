@@ -75,7 +75,7 @@ typedef struct CAN_Packet_T
 } CAN_Packet_T;
 
 /**
- * @brief Result codes returned by buffered CAN load and trigger operations.
+ * @brief Result codes returned by CAN lifecycle, configuration, and transfer operations.
  */
 typedef enum HW_CAN_Result_T
 {
@@ -83,6 +83,10 @@ typedef enum HW_CAN_Result_T
     HW_CAN_RESULT_ERROR,
     HW_CAN_RESULT_BUSY,
     HW_CAN_RESULT_EMPTY,
+    HW_CAN_RESULT_NOT_CONFIGURED,
+    HW_CAN_RESULT_NOT_STARTED,
+    HW_CAN_RESULT_TIMING_ERROR,
+    HW_CAN_RESULT_FILTER_ERROR,
 } HW_CAN_Result_T;
 
 /**
@@ -173,11 +177,13 @@ CanProperties_T HW_CAN_Compute_Properties( uint32_t bitrate, uint32_t total_TQ,
  * @param filter_id    CAN standard identifier used by the filter.
  * @param filter_mask  CAN standard identifier filter mask.
  *
- * @return Error code:
- *      0: no error, configuration complete
- *      1: configuration timing error
- *      2: configuration filter error
- *      3: configuration start error
+ * Configuration does not start the peripheral. Call HW_CAN_Start1() after
+ * successful configuration.
+ *
+ * @return HW_CAN_RESULT_OK on success, HW_CAN_RESULT_BUSY if the channel is
+ *         already started, HW_CAN_RESULT_TIMING_ERROR when valid timing cannot
+ *         be applied, or HW_CAN_RESULT_FILTER_ERROR when filter configuration
+ *         fails.
  *
  * Provides configuration of:
  *      - CAN prescaler
@@ -187,10 +193,11 @@ CanProperties_T HW_CAN_Compute_Properties( uint32_t bitrate, uint32_t total_TQ,
  *      - Operating mode
  *      - Acceptance filter and mask
  *      - FIFO assignment
- *      - CAN interrupts
+ *
+ * Successful configuration leaves runtime CAN interrupts disabled.
  */
-int HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
-                       uint16_t filter_mask );
+HW_CAN_Result_T HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
+                                   uint16_t filter_mask );
 
 /**
  * @brief Configures CAN channel 2.
@@ -200,11 +207,13 @@ int HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_i
  * @param filter_id    CAN standard identifier used by the filter.
  * @param filter_mask  CAN standard identifier filter mask.
  *
- * @return Error code:
- *      0: no error, configuration complete
- *      1: configuration timing error
- *      2: configuration filter error
- *      3: configuration start error
+ * Configuration does not start the peripheral. Call HW_CAN_Start2() after
+ * successful configuration.
+ *
+ * @return HW_CAN_RESULT_OK on success, HW_CAN_RESULT_BUSY if the channel is
+ *         already started, HW_CAN_RESULT_TIMING_ERROR when valid timing cannot
+ *         be applied, or HW_CAN_RESULT_FILTER_ERROR when filter configuration
+ *         fails.
  *
  * Provides configuration of:
  *      - CAN prescaler
@@ -214,10 +223,41 @@ int HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_i
  *      - Operating mode
  *      - Acceptance filter and mask
  *      - FIFO assignment
- *      - CAN interrupts
+ *
+ * Successful configuration leaves runtime CAN interrupts disabled.
  */
-int HW_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
-                       uint16_t filter_mask );
+HW_CAN_Result_T HW_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
+                                   uint16_t filter_mask );
+
+/**
+ * @note The low-level CAN API currently exposes separate functions for each
+ *       channel. A future cleanup may replace these with channel-parameterized
+ *       configuration, lifecycle, and runtime functions.
+ */
+
+/** Start configured CAN channel 1 without resetting its software state. */
+HW_CAN_Result_T HW_CAN_Start1( void );
+
+/** Start configured CAN channel 2 without resetting its software state. */
+HW_CAN_Result_T HW_CAN_Start2( void );
+
+/** Stop idle CAN channel 1 while retaining configuration and software state. */
+HW_CAN_Result_T HW_CAN_Stop1( void );
+
+/** Stop idle CAN channel 2 while retaining configuration and software state. */
+HW_CAN_Result_T HW_CAN_Stop2( void );
+
+/** Return true when CAN channel 1 has been configured successfully. */
+bool HW_CAN_Is_Configured1( void );
+
+/** Return true when CAN channel 2 has been configured successfully. */
+bool HW_CAN_Is_Configured2( void );
+
+/** Return true when CAN channel 1 is configured and started. */
+bool HW_CAN_Is_Started1( void );
+
+/** Return true when CAN channel 2 is configured and started. */
+bool HW_CAN_Is_Started2( void );
 
 /**
  * @brief Clears all channel 1 software queue, transmission, and RX diagnostic state.
@@ -239,7 +279,9 @@ void HW_CAN_Reset2( void );
  * @brief Recovers channel 1 from a transmit or bus error in task context.
  *
  * Outstanding hardware requests and queued software packets are discarded.
- * Successful recovery leaves the channel idle and ready for a new batch.
+ * The channel must be configured and started. Successful recovery leaves the
+ * channel started, idle, and ready for a new batch. If restart fails after the
+ * peripheral has stopped, the channel remains configured but stopped.
  */
 HW_CAN_Result_T HW_CAN_Recover1( void );
 
@@ -247,7 +289,9 @@ HW_CAN_Result_T HW_CAN_Recover1( void );
  * @brief Recovers channel 2 from a transmit or bus error in task context.
  *
  * Outstanding hardware requests and queued software packets are discarded.
- * Successful recovery leaves the channel idle and ready for a new batch.
+ * The channel must be configured and started. Successful recovery leaves the
+ * channel started, idle, and ready for a new batch. If restart fails after the
+ * peripheral has stopped, the channel remains configured but stopped.
  */
 HW_CAN_Result_T HW_CAN_Recover2( void );
 

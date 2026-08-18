@@ -45,6 +45,8 @@ static bool         CONSOLE_CAN_Parse_U16( const char* text, int base, uint16_t 
                                            uint16_t max_value, uint16_t* value );
 static void         CONSOLE_Command_Can_tx( uint16_t argc, char* argv[] );
 static void         CONSOLE_Command_Can_config( uint16_t argc, char* argv[] );
+static void         CONSOLE_Command_Can_start( uint16_t argc, char* argv[] );
+static void         CONSOLE_Command_Can_stop( uint16_t argc, char* argv[] );
 static void         CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] );
 
 /**-----------------------------------------------------------------------------
@@ -57,7 +59,9 @@ static void CONSOLE_CAN_Print_Usage( void )
     CONSOLE_Printf( "Usage:\r\n" );
     CONSOLE_Printf( "  can tx <channel> <id> <payload> [<id> <payload> ...]\r\n" );
     CONSOLE_Printf( "  can rx <channel>\r\n" );
-    CONSOLE_Printf( "  can config <can1_bank> <can2_bank> <filter_id> <filter_mask>\r\n" );
+    CONSOLE_Printf( "  can config <channel> <filter_bank> <filter_id> <filter_mask>\r\n" );
+    CONSOLE_Printf( "  can start <channel>\r\n" );
+    CONSOLE_Printf( "  can stop <channel>\r\n" );
     CONSOLE_Printf( "    channel: 1 or 2; payload: 1 to 8 text bytes\r\n" );
     CONSOLE_Printf( "    CAN IDs and masks accept decimal or 0x-prefixed hexadecimal\r\n" );
 }
@@ -185,12 +189,19 @@ static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] )
         return;
     }
 
-    uint16_t can1_bank   = 0U;
-    uint16_t can2_bank   = 0U;
-    uint16_t filter_id   = 0U;
-    uint16_t filter_mask = 0U;
-    if ( !CONSOLE_CAN_Parse_U16( argv[2], 10, 0U, 13U, &can1_bank )
-         || !CONSOLE_CAN_Parse_U16( argv[3], 10, 14U, 27U, &can2_bank )
+    EXEC_CAN_Channel_T channel;
+    if ( !CONSOLE_CAN_Parse_Channel( argv[2], &channel ) )
+    {
+        CONSOLE_Printf( "Invalid CAN channel; expected 1 or 2\r\n" );
+        return;
+    }
+
+    uint16_t filter_bank  = 0U;
+    uint16_t filter_id    = 0U;
+    uint16_t filter_mask  = 0U;
+    uint16_t minimum_bank = channel == EXEC_CAN_CHANNEL_1 ? 0U : 14U;
+    uint16_t maximum_bank = channel == EXEC_CAN_CHANNEL_1 ? 13U : 27U;
+    if ( !CONSOLE_CAN_Parse_U16( argv[3], 10, minimum_bank, maximum_bank, &filter_bank )
          || !CONSOLE_CAN_Parse_U16( argv[4], 0, 0U, EXEC_CAN_STANDARD_ID_MAX, &filter_id )
          || !CONSOLE_CAN_Parse_U16( argv[5], 0, 0U, EXEC_CAN_STANDARD_ID_MAX, &filter_mask ) )
     {
@@ -199,23 +210,64 @@ static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] )
         return;
     }
 
-    EXEC_CAN_Result_T result = EXEC_CAN_Configure( EXEC_CAN_CHANNEL_1, CONSOLE_CAN_BITRATE,
-                                                   can1_bank, filter_id, filter_mask );
+    EXEC_CAN_Config_T configuration = {
+        .is_enabled  = true,
+        .bitrate     = CONSOLE_CAN_BITRATE,
+        .filter_bank = filter_bank,
+        .filter_id   = filter_id,
+        .filter_mask = filter_mask,
+    };
+    EXEC_CAN_Result_T result = EXEC_CAN_Configure_Channel( channel, configuration );
     if ( result != EXEC_CAN_RESULT_OK )
     {
-        CONSOLE_Printf( "CAN1 configuration failed with error %d\r\n", result );
+        CONSOLE_Printf( "CAN%u configuration failed with error %d\r\n",
+                        CONSOLE_CAN_Channel_Number( channel ), result );
         return;
     }
 
-    result = EXEC_CAN_Configure( EXEC_CAN_CHANNEL_2, CONSOLE_CAN_BITRATE, can2_bank, filter_id,
-                                 filter_mask );
-    if ( result != EXEC_CAN_RESULT_OK )
+    CONSOLE_Printf( "CAN%u configured\r\n", CONSOLE_CAN_Channel_Number( channel ) );
+}
+
+static void CONSOLE_Command_Can_start( uint16_t argc, char* argv[] )
+{
+    EXEC_CAN_Channel_T channel;
+    if ( argc != 3U || !CONSOLE_CAN_Parse_Channel( argv[2], &channel ) )
     {
-        CONSOLE_Printf( "CAN2 configuration failed with error %d\r\n", result );
+        CONSOLE_CAN_Print_Usage();
         return;
     }
 
-    CONSOLE_Printf( "CAN1 and CAN2 configured\r\n" );
+    EXEC_CAN_Result_T result = EXEC_CAN_Start_Channel( channel );
+    if ( result == EXEC_CAN_RESULT_OK )
+    {
+        CONSOLE_Printf( "CAN%u started\r\n", CONSOLE_CAN_Channel_Number( channel ) );
+    }
+    else
+    {
+        CONSOLE_Printf( "CAN%u start failed with error %d\r\n",
+                        CONSOLE_CAN_Channel_Number( channel ), result );
+    }
+}
+
+static void CONSOLE_Command_Can_stop( uint16_t argc, char* argv[] )
+{
+    EXEC_CAN_Channel_T channel;
+    if ( argc != 3U || !CONSOLE_CAN_Parse_Channel( argv[2], &channel ) )
+    {
+        CONSOLE_CAN_Print_Usage();
+        return;
+    }
+
+    EXEC_CAN_Result_T result = EXEC_CAN_Stop_Channel( channel );
+    if ( result == EXEC_CAN_RESULT_OK )
+    {
+        CONSOLE_Printf( "CAN%u stopped\r\n", CONSOLE_CAN_Channel_Number( channel ) );
+    }
+    else
+    {
+        CONSOLE_Printf( "CAN%u stop failed with error %d\r\n",
+                        CONSOLE_CAN_Channel_Number( channel ), result );
+    }
 }
 
 static void CONSOLE_Command_Can_rx( uint16_t argc, char* argv[] )
@@ -296,6 +348,14 @@ void CONSOLE_CAN_Command_Handler( uint16_t argc, char* argv[] )
     else if ( strcmp( argv[1], "config" ) == 0 )
     {
         CONSOLE_Command_Can_config( argc, argv );
+    }
+    else if ( strcmp( argv[1], "start" ) == 0 )
+    {
+        CONSOLE_Command_Can_start( argc, argv );
+    }
+    else if ( strcmp( argv[1], "stop" ) == 0 )
+    {
+        CONSOLE_Command_Can_stop( argc, argv );
     }
     else
     {
