@@ -162,11 +162,7 @@ TEST_F( ExecPwmGenTest, DisabledChannelsApplyTheirLowestVoltageSelections )
 TEST_F( ExecPwmGenTest, DisableIgnoresInitialWaveformAndAppliesSafeSelection )
 {
     const ExecPwmGenConfig_T disabled = {
-        false,
-        EXEC_PWM_GEN_VOLTAGE_5V,
-        0U,
-        2U,
-        0U,
+        false, EXEC_PWM_GEN_VOLTAGE_5V, 0U, 2U, 0U,
     };
 
     EXPECT_CALL( mock, ConfigureChannel( _ ) ).Times( 0 );
