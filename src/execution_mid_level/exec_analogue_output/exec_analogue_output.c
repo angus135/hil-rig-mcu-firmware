@@ -23,6 +23,7 @@
 
 #include "exec_analogue_output.h"
 #include "hw_spi.h"
+#include "logic_expander.h"
 
 #ifndef TEST_BUILD
 #include "stm32f4xx_ll_gpio.h"
@@ -55,6 +56,10 @@
 #define ANALOGUE_OUTPUT_GAIN_1X 0x0000U
 #define ANALOGUE_OUTPUT_PD_OPEN_CIRCUIT 0xF000U
 
+#define ANALOGUE_OUTPUT_ENABLE_EXPANDER LOGIC_EXPANDER_I2C_AO
+#define ANALOGUE_OUTPUT_ENABLE_PORT LOGIC_EXPANDER_PORT_B
+#define ANALOGUE_OUTPUT_ENABLE_BIT 0U
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -78,7 +83,7 @@ _Static_assert( sizeof( AnalogueOutputStartupPacket_T ) == 33U,
  *------------------------------------------------------------------------------
  */
 
-static AnalogueOutputState_T s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_UNCONFIGURED;
+static AnalogueOutputState_T s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_DISABLED;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -96,6 +101,9 @@ static void
                                                          AnalogueOutputStartupPacket_T* startup_packet );
 static void EXEC_ANALOGUE_OUTPUT_Update_Readiness( void );
 
+static bool EXEC_ANALOGUE_OUTPUT_Set_Output_Enable( bool is_enabled );
+
+static bool EXEC_ANALOGUE_OUTPUT_Configure_SPI( void );
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
@@ -211,19 +219,62 @@ EXEC_ANALOGUE_OUTPUT_Prepare_Startup_Packet( bool                           use_
 
 static void EXEC_ANALOGUE_OUTPUT_Update_Readiness( void )
 {
-    if ( ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_INITIALIZING
-           || s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_READY )
+    if ( ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_CONFIGURING
+           || s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_STARTED )
          && HW_SPI_Tx_Is_Faulted( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
     {
+        ( void )EXEC_ANALOGUE_OUTPUT_Set_Output_Enable( false );
+
         s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
         return;
     }
 
-    if ( ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_INITIALIZING )
+    if ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_CONFIGURING
          && HW_SPI_Tx_Is_Complete( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
     {
-        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_READY;
+        if ( !HW_SPI_Stop_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
+        {
+            s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+            return;
+        }
+
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_CONFIGURED;
     }
+}
+
+static bool EXEC_ANALOGUE_OUTPUT_Set_Output_Enable( bool is_enabled )
+{
+    if ( LOGIC_EXPANDER_Load_Control_Bit( ANALOGUE_OUTPUT_ENABLE_EXPANDER,
+                                          ANALOGUE_OUTPUT_ENABLE_PORT, ANALOGUE_OUTPUT_ENABLE_BIT,
+                                          is_enabled )
+         != LOGIC_EXPANDER_STATUS_OK )
+    {
+        return false;
+    }
+
+    /*
+     * Remove this direct send when logic-expander changes are committed by the
+     * global configuration operation.
+     */
+    return LOGIC_EXPANDER_Send_Control_Bits() == LOGIC_EXPANDER_STATUS_OK;
+}
+static bool EXEC_ANALOGUE_OUTPUT_Configure_SPI( void )
+{
+    const HWSPIConfig_T configuration = {
+        .spi_mode  = SPI_MASTER_MODE,
+        .data_size = SPI_SIZE_8_BIT,
+        .first_bit = SPI_FIRST_MSB,
+        /*
+         * TODO(DEV-80): Increase SPI_DAC to 45 Mbit/s and validate signal
+         * integrity on the final PCB.
+         */
+        .baud_rate = SPI_BAUD_703KBIT,
+        .cpol      = SPI_CPOL_LOW,
+        .cpha      = SPI_CPHA_1_EDGE,
+        .nss_pin   = GPIO_SPI4_NSS,
+    };
+
+    return HW_SPI_Configure_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL, configuration );
 }
 
 /**-----------------------------------------------------------------------------
@@ -232,67 +283,10 @@ static void EXEC_ANALOGUE_OUTPUT_Update_Readiness( void )
  */
 
 /**
- * @brief Configure and start the SPI hardware channel dedicated to DAC communication.
- *
- * Intended to only be used for console testing to set up the SPI channel independently
- *
- * Sets up the SPI peripheral with the configuration required by the
- * MCP48CVB28T-20E_ST octal DAC: 8-bit data size, MSB first,
- * CPOL low, CPHA 1 edge.
- *
- * This function must be called once during system initialization to prepare
- * SPI for use before any DAC operations are performed. In the real project,
- * this setup will be performed by the system/board initialization layer.
- *
- * This function is provided as a separate helper for console testing so that
- * test commands can independently set up the SPI channel without integrating
- * into the full system initialization sequence.
- *
- * The SPI channel is activated for immediate use. After this function returns
- * successfully, the channel is ready to transmit frames to the DAC.
- *
- * @return
- *     true if SPI configuration and startup completed successfully.
- *     false if hardware configuration or startup failed.
- */
-bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void )
-{
-    HWSPIConfig_T configuration = {
-        .spi_mode  = SPI_MASTER_MODE,
-        .data_size = SPI_SIZE_8_BIT,
-        .first_bit = SPI_FIRST_MSB,
-        // TODO(DEV-80): Increase SPI_DAC to 45 Mbit/s and validate signal integrity on the final
-        // PCB. The current bring-up wiring requires a conservative rate.
-        .baud_rate = SPI_BAUD_703KBIT,
-        .cpol      = SPI_CPOL_LOW,
-        .cpha      = SPI_CPHA_1_EDGE,
-        .nss_pin   = GPIO_SPI4_NSS,
-    };
-
-    s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_UNCONFIGURED;
-
-    if ( !HW_SPI_Configure_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL, configuration ) )
-    {
-        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
-        return false;
-    }
-
-    if ( !HW_SPI_Start_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
-    {
-        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
-        return false;
-    }
-
-    return true;
-}
-
-/**
  * @brief Initialize the DAC hardware registers and prepare all output channels.
  *
  * Configures the DAC's volatile control registers and sets all output channels
- * to zero voltage. This function assumes that the SPI4 hardware channel has
- * already been configured and started (via EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup()
- * or the system initialization layer).
+ * to zero voltage.
  *
  * Configuration includes:
  * - VREF control register (08h): External 5V VREF in buffered mode
@@ -307,31 +301,189 @@ bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void )
  * @return true if all startup frames were accepted and triggering did not fault.
  * @return false if SPI rejected the startup frames or faulted while triggering.
  */
-bool EXEC_ANALOGUE_OUTPUT_Config( bool use_external_vref )
+bool EXEC_ANALOGUE_OUTPUT_Configure( const ExecAnalogueOutputConfig_T* config )
 {
     AnalogueOutputStartupPacket_T startup_packet;
 
-    s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_UNCONFIGURED;
-    EXEC_ANALOGUE_OUTPUT_Prepare_Startup_Packet( use_external_vref, &startup_packet );
+    if ( config == NULL )
+    {
+        return false;
+    }
 
-    if ( !HW_SPI_Load_Tx_Packets( ANALOGUE_OUTPUT_SPI_CHANNEL, startup_packet.bytes,
-                                  EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES,
-                                  ANALOGUE_OUTPUT_STARTUP_FRAME_COUNT ) )
+    EXEC_ANALOGUE_OUTPUT_Update_Readiness();
+
+    if ( !config->is_enabled )
+    {
+        /*
+         * Configuration transmission must complete before SPI can be stopped.
+         */
+        if ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_CONFIGURING )
+        {
+            return false;
+        }
+
+        if ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_STARTED )
+        {
+            if ( !EXEC_ANALOGUE_OUTPUT_Stop() )
+            {
+                return false;
+            }
+        }
+
+        if ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_FAULTED )
+        {
+            ( void )EXEC_ANALOGUE_OUTPUT_Set_Output_Enable( false );
+            return false;
+        }
+
+        /*
+         * Reinforce the safe state. The SPI peripheral remains configured until
+         * the SPI layer gains a deconfigure/disabled operation.
+         */
+        if ( !EXEC_ANALOGUE_OUTPUT_Set_Output_Enable( false ) )
+        {
+            return false;
+        }
+
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_DISABLED;
+
+        return true;
+    }
+
+    if ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_CONFIGURING
+         || s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_STARTED )
+    {
+        return false;
+    }
+
+    /*
+     * Keep the external path safe while configuring SPI and the DAC.
+     */
+    if ( !EXEC_ANALOGUE_OUTPUT_Set_Output_Enable( false ) )
     {
         s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
         return false;
     }
 
-    s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_INITIALIZING;
+    if ( !EXEC_ANALOGUE_OUTPUT_Configure_SPI() )
+    {
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+        return false;
+    }
+
+    /*
+     * SPI starts temporarily so the DAC static configuration can be sent.
+     */
+    if ( !HW_SPI_Start_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
+    {
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+        return false;
+    }
+
+    EXEC_ANALOGUE_OUTPUT_Prepare_Startup_Packet( config->use_external_vref, &startup_packet );
+
+    if ( !HW_SPI_Load_Tx_Packets( ANALOGUE_OUTPUT_SPI_CHANNEL, startup_packet.bytes,
+                                  EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES,
+                                  ANALOGUE_OUTPUT_STARTUP_FRAME_COUNT ) )
+    {
+        ( void )HW_SPI_Stop_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL );
+
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+        return false;
+    }
+
+    s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_CONFIGURING;
+
     HW_SPI_Tx_Trigger( ANALOGUE_OUTPUT_SPI_CHANNEL );
     EXEC_ANALOGUE_OUTPUT_Update_Readiness();
 
     return s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOG_OUTPUT_STATE_FAULTED;
 }
 
-bool EXEC_ANALOG_OUTPUT_Is_Configured( void )
+bool EXEC_ANALOGUE_OUTPUT_Start( void )
 {
-    return EXEC_ANALOG_OUTPUT_Get_State() == EXEC_ANALOG_OUTPUT_STATE_READY;
+    EXEC_ANALOGUE_OUTPUT_Update_Readiness();
+
+    if ( s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOG_OUTPUT_STATE_CONFIGURED )
+    {
+        return false;
+    }
+
+    if ( !HW_SPI_Start_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
+    {
+        return false;
+    }
+
+    /*
+     * Connect the external output path only after SPI is successfully started.
+     */
+    if ( !EXEC_ANALOGUE_OUTPUT_Set_Output_Enable( true ) )
+    {
+        ( void )EXEC_ANALOGUE_OUTPUT_Set_Output_Enable( false );
+
+        if ( !HW_SPI_Stop_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
+        {
+            s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+        }
+
+        return false;
+    }
+
+    s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_STARTED;
+
+    return true;
+}
+
+bool EXEC_ANALOGUE_OUTPUT_Stop( void )
+{
+    EXEC_ANALOGUE_OUTPUT_Update_Readiness();
+
+    if ( s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOG_OUTPUT_STATE_STARTED )
+    {
+        return false;
+    }
+
+    /*
+     * Do not stop while a DAC update remains queued, active, or electrically
+     * incomplete. The caller may retry.
+     */
+    if ( !HW_SPI_Tx_Is_Complete( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
+    {
+        return false;
+    }
+
+    /*
+     * AO_EN is the stopped-state safety mechanism.
+     */
+    if ( !EXEC_ANALOGUE_OUTPUT_Set_Output_Enable( false ) )
+    {
+        return false;
+    }
+
+    if ( !HW_SPI_Stop_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
+    {
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+        return false;
+    }
+
+    s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_CONFIGURED;
+
+    return true;
+}
+
+bool EXEC_ANALOGUE_OUTPUT_Is_Configured( void )
+{
+    AnalogueOutputState_T state = EXEC_ANALOG_OUTPUT_Get_State();
+
+    return state == EXEC_ANALOG_OUTPUT_STATE_CONFIGURED
+           || state == EXEC_ANALOG_OUTPUT_STATE_STARTED;
+}
+
+bool EXEC_ANALOGUE_OUTPUT_Is_Started( void )
+{
+    EXEC_ANALOGUE_OUTPUT_Update_Readiness();
+
+    return s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_STARTED;
 }
 
 AnalogueOutputState_T EXEC_ANALOG_OUTPUT_Get_State( void )
@@ -414,7 +566,7 @@ bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( const AnalogueOutputPreparedBatch
 {
     EXEC_ANALOGUE_OUTPUT_Update_Readiness();
 
-    if ( s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOG_OUTPUT_STATE_READY )
+    if ( s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOG_OUTPUT_STATE_STARTED )
     {
         return false;
     }
@@ -479,7 +631,7 @@ bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( const AnalogueOutputPreparedBatch
  * fail with false return code because those channels are disabled (configured
  * in open-circuit mode).
  *
- * The module must be initialized via EXEC_ANALOGUE_OUTPUT_Config() before this
+ * The module must be configured and started before this
  * function is called. Writing to an uninitialized module returns false.
  *
  * @param channel
