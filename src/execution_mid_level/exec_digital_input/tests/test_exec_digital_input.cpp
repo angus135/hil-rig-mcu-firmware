@@ -114,9 +114,7 @@ TEST_F( ExecDigitalInputTest, ControlMappingMatchesBoardSchematic )
         { LOGIC_EXPANDER_DI_2, LOGIC_EXPANDER_PORT_A, 2U, 3U },
     };
 
-    for ( uint32_t channel = 0U;
-          channel < ( uint32_t )EXEC_DIGITAL_INPUT_CHANNEL_COUNT;
-          channel++ )
+    for ( uint32_t channel = 0U; channel < ( uint32_t )EXEC_DIGITAL_INPUT_CHANNEL_COUNT; channel++ )
     {
         EXPECT_EQ( exec_digital_input_control_mappings[channel].expander,
                    expected[channel].expander );
@@ -145,25 +143,23 @@ TEST_F( ExecDigitalInputTest, StageModeUsesSchematicS1S0TruthTable )
 
     for ( const ModeCase& test_case : cases )
     {
-        EXPECT_CALL( mock,
-                     LoadControlBit( LOGIC_EXPANDER_DI_1, LOGIC_EXPANDER_PORT_A, 6U,
-                                     test_case.s0 ) )
+        EXPECT_CALL(
+            mock, LoadControlBit( LOGIC_EXPANDER_DI_1, LOGIC_EXPANDER_PORT_A, 6U, test_case.s0 ) )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
-        EXPECT_CALL( mock,
-                     LoadControlBit( LOGIC_EXPANDER_DI_1, LOGIC_EXPANDER_PORT_A, 7U,
-                                     test_case.s1 ) )
+        EXPECT_CALL(
+            mock, LoadControlBit( LOGIC_EXPANDER_DI_1, LOGIC_EXPANDER_PORT_A, 7U, test_case.s1 ) )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
 
-        EXPECT_TRUE( EXEC_DIGITAL_INPUT_Stage_Mode( EXEC_DIGITAL_INPUT_CHANNEL_1,
-                                                    test_case.mode ) );
+        EXPECT_TRUE(
+            EXEC_DIGITAL_INPUT_Stage_Mode( EXEC_DIGITAL_INPUT_CHANNEL_1, test_case.mode ) );
     }
 }
 
 TEST_F( ExecDigitalInputTest, ConfigureRejectsInvalidRequestWithoutChangingExistingState )
 {
     ExecDigitalInputConfig_T config = {};
-    config.channels[0] = static_cast<ExecDigitalInputMode_T>( EXEC_DIGITAL_INPUT_MODE_COUNT );
-    exec_digital_input_state           = EXEC_DIGITAL_INPUT_STATE_CONFIGURED;
+    config.channels[0]       = static_cast<ExecDigitalInputMode_T>( EXEC_DIGITAL_INPUT_MODE_COUNT );
+    exec_digital_input_state = EXEC_DIGITAL_INPUT_STATE_CONFIGURED;
     exec_digital_input_configured_mask = 0x0100U;
 
     EXPECT_CALL( mock, LoadControlBit( _, _, _, _ ) ).Times( 0 );
@@ -175,12 +171,13 @@ TEST_F( ExecDigitalInputTest, ConfigureRejectsInvalidRequestWithoutChangingExist
 
 TEST_F( ExecDigitalInputTest, ConfigureStagesAllChannelsAndBuildsPhysicalGPIODMask )
 {
-    ExecDigitalInputConfig_T config = {};
+    ExecDigitalInputConfig_T config               = {};
     config.channels[EXEC_DIGITAL_INPUT_CHANNEL_1] = EXEC_DIGITAL_INPUT_MODE_3V3;
     config.channels[EXEC_DIGITAL_INPUT_CHANNEL_5] = EXEC_DIGITAL_INPUT_MODE_12V;
     config.channels[EXEC_DIGITAL_INPUT_CHANNEL_7] = EXEC_DIGITAL_INPUT_MODE_24V;
 
-    EXPECT_CALL( mock, LoadControlBit( _, _, _, _ ) ).Times( 20 )
+    EXPECT_CALL( mock, LoadControlBit( _, _, _, _ ) )
+        .Times( 20 )
         .WillRepeatedly( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock, SendControlBits() ).WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
 
@@ -208,7 +205,8 @@ TEST_F( ExecDigitalInputTest, SendFailureLeavesSubsystemDisabled )
 {
     const ExecDigitalInputConfig_T config = {};
 
-    EXPECT_CALL( mock, LoadControlBit( _, _, _, _ ) ).Times( 20 )
+    EXPECT_CALL( mock, LoadControlBit( _, _, _, _ ) )
+        .Times( 20 )
         .WillRepeatedly( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock, SendControlBits() ).WillOnce( Return( LOGIC_EXPANDER_STATUS_BUSY ) );
 
