@@ -26,8 +26,8 @@
 #include "hw_gpio.h"
 #include "hw_spi.h"
 #include "exec_analogue_output.h"
+#include "exec_analogue_input.h"
 #include "exec_uart.h"
-#include "hw_adc.h"
 #include "exec_digital_input.h"
 #include "hw_spi.h"
 #include "hw_usb.h"
@@ -114,7 +114,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"uart",                CONSOLE_UART_Command_Handler,           "Configuring Channels and Rx/Tx loopback testing for Uart"},
     {"set_pin",             CONSOLE_Command_Set_Pin,                "Set or reset digital output, Usage: set_pin PIN_NAME <0|1>"},
     {"set_pins",            CONSOLE_Command_Set_Many_Pins,          "Set or reset many digital output"},
-    {"analogue_inputs",     CONSOLE_Command_Analogue_Inputs,        "Allows for interaction with Analogue Inputs."},
+    {"analogue_inputs",     CONSOLE_Command_Analogue_Inputs,        "Configure, start, stop, and read analogue inputs"},
     {"digital_input",       CONSOLE_Command_DigitalInput,           "Print digital input states as 1s and 0s."},
     {"expander",            CONSOLE_Command_Expander,               "Command set allowing user to configure and control the logic expander"},
     {"i2c_loopback",        CONSOLE_Command_I2C_Loopback,           "Loopback testing for I2C master and slave channels."},
@@ -1111,95 +1111,152 @@ static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] )
     if ( argc < 2 || argv[1] == NULL )
     {
         CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  analogue_inputs configure <sample rate>\r\n" );
         CONSOLE_Printf( "  analogue_inputs start\r\n" );
         CONSOLE_Printf( "  analogue_inputs stop\r\n" );
+        CONSOLE_Printf( "  analogue_inputs disable\r\n" );
+        CONSOLE_Printf( "  analogue_inputs status\r\n" );
         CONSOLE_Printf( "  analogue_inputs read\r\n" );
-        CONSOLE_Printf( "  analogue_inputs frequency\r\n" );
         return;
     }
 
     if ( strcmp( argv[1], "start" ) == 0 )
     {
-        HW_ADC_Start_DMA_Measurements();
-        CONSOLE_Printf( "Analogue Inputs are now being read into DMA\r\n" );
+        if ( EXEC_ANALOGUE_INPUT_Start() )
+        {
+            CONSOLE_Printf( "Analogue inputs started\r\n" );
+        }
+        else
+        {
+            CONSOLE_Printf( "Failed to start analogue inputs\r\n" );
+        }
     }
     else if ( strcmp( argv[1], "stop" ) == 0 )
     {
-        HW_ADC_Stop_DMA_Measurements();
-        CONSOLE_Printf( "Analogue Inputs are no longer being read into DMA\r\n" );
+        if ( EXEC_ANALOGUE_INPUT_Stop() )
+        {
+            CONSOLE_Printf( "Analogue inputs stopped\r\n" );
+        }
+        else
+        {
+            CONSOLE_Printf( "Failed to stop analogue inputs\r\n" );
+        }
+    }
+    else if ( strcmp( argv[1], "disable" ) == 0 )
+    {
+        const ExecAnalogueInputConfig_T configuration = {
+            .is_enabled = false,
+        };
+
+        if ( EXEC_ANALOGUE_INPUT_Configure( &configuration ) )
+        {
+            CONSOLE_Printf( "Analogue inputs disabled\r\n" );
+        }
+        else
+        {
+            CONSOLE_Printf( "Failed to disable analogue inputs\r\n" );
+        }
+    }
+    else if ( strcmp( argv[1], "status" ) == 0 )
+    {
+        CONSOLE_Printf( "Analogue inputs: configured=%s, started=%s\r\n",
+                        EXEC_ANALOGUE_INPUT_Is_Configured() ? "yes" : "no",
+                        EXEC_ANALOGUE_INPUT_Is_Started() ? "yes" : "no" );
     }
     else if ( strcmp( argv[1], "read" ) == 0 )
     {
-        ADCMeasurement_T measurement;
-        HW_ADC_Read_DMA_Measurements( &measurement, 1 );
-        CONSOLE_Printf( "DMA Input 0: %u\r\n", measurement.ch_0 );
-        CONSOLE_Printf( "DMA Input 1: %u\r\n", measurement.ch_1 );
-        uint16_t value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_VIN );
-        CONSOLE_Printf( "Vin: %u\r\n", value );
-        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_5V_CURRENT );
-        CONSOLE_Printf( "OUT 5V Current: %u\r\n", value );
-        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_5V_VOLTAGE );
-        CONSOLE_Printf( "OUT 5V Voltage: %u\r\n", value );
-        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_12V_CURRENT );
-        CONSOLE_Printf( "OUT 12V Current: %u\r\n", value );
-        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_12V_VOLTAGE );
-        CONSOLE_Printf( "OUT 12V Voltage: %u\r\n", value );
-        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_24V_CURRENT );
-        CONSOLE_Printf( "OUT 24V Current: %u\r\n", value );
-        value = HW_ADC_Read_Polled_Measurement( ADC_SOURCE_OUT_24V_VOLTAGE );
-        CONSOLE_Printf( "OUT 24V Voltage: %u\r\n", value );
+        if ( !EXEC_ANALOGUE_INPUT_Is_Started() )
+        {
+            CONSOLE_Printf( "Analogue inputs are not started\r\n" );
+            return;
+        }
+
+        uint32_t channel_0_voltage = 0U;
+        uint32_t channel_1_voltage = 0U;
+        const ExecAnalogueInputVoltages_T voltage_destination = {
+            .channel_0_voltage = &channel_0_voltage,
+            .channel_1_voltage = &channel_1_voltage,
+        };
+
+        EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( voltage_destination );
+
+        CONSOLE_Printf( "Analogue input 0: %lu\r\n", ( unsigned long )channel_0_voltage );
+        CONSOLE_Printf( "Analogue input 1: %lu\r\n", ( unsigned long )channel_1_voltage );
     }
-    else if ( strcmp( argv[1], "frequency" ) == 0 )
+    else if ( strcmp( argv[1], "configure" ) == 0 )
     {
         if ( argc < 3 || argv[2] == NULL )
         {
             CONSOLE_Printf( "Usage:\r\n" );
-            CONSOLE_Printf( "  analogue_inputs frequency <desired frequency>\r\n" );
+            CONSOLE_Printf( "  analogue_inputs configure <sample rate>\r\n" );
             CONSOLE_Printf( "    Note: Desired frequencies can only be one of the following:\r\n" );
             CONSOLE_Printf(
                 "\t- 100kHz\r\n\t- 50kHz\r\n\t- 10kHz\r\n\t- 5kHz\r\n\t- 1kHz\r\n\t- 500Hz\r\n" );
+            return;
         }
-        else if ( strcmp( argv[2], "100kHz" ) == 0 || strcmp( argv[2], "100k" ) == 0 )
+
+        ExecAnalogueInputSampleRate_T sample_rate;
+
+        if ( strcmp( argv[2], "100kHz" ) == 0 || strcmp( argv[2], "100k" ) == 0 )
         {
-            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_100K_HZ );
+            sample_rate = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_100K_HZ;
         }
         else if ( strcmp( argv[2], "50kHz" ) == 0 || strcmp( argv[2], "50k" ) == 0 )
         {
-            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_50K_HZ );
+            sample_rate = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_50K_HZ;
         }
         else if ( strcmp( argv[2], "10kHz" ) == 0 || strcmp( argv[2], "10k" ) == 0 )
         {
-            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_10K_HZ );
+            sample_rate = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ;
         }
         else if ( strcmp( argv[2], "5kHz" ) == 0 || strcmp( argv[2], "5k" ) == 0 )
         {
-            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_5K_HZ );
+            sample_rate = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_5K_HZ;
         }
         else if ( strcmp( argv[2], "1kHz" ) == 0 || strcmp( argv[2], "1k" ) == 0 )
         {
-            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_1K_HZ );
+            sample_rate = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_1K_HZ;
         }
         else if ( strcmp( argv[2], "500Hz" ) == 0 || strcmp( argv[2], "500" ) == 0 )
         {
-            HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_500_HZ );
+            sample_rate = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_500_HZ;
         }
         else
         {
             CONSOLE_Printf( "Usage:\r\n" );
-            CONSOLE_Printf( "  analogue_inputs frequency <desired frequency>\r\n" );
+            CONSOLE_Printf( "  analogue_inputs configure <sample rate>\r\n" );
             CONSOLE_Printf( "    Note: Desired frequencies can only be one of the following:\r\n" );
             CONSOLE_Printf(
                 "\t- 100kHz\r\n\t- 50kHz\r\n\t- 10kHz\r\n\t- 5kHz\r\n\t- 1kHz\r\n\t- 500Hz\r\n" );
+            return;
+        }
+
+        const ExecAnalogueInputConfig_T configuration = {
+            .is_enabled      = true,
+            .sample_rate     = sample_rate,
+            .ch_0_is_enabled = true,
+            .ch_1_is_enabled = true,
+        };
+
+        if ( EXEC_ANALOGUE_INPUT_Configure( &configuration ) )
+        {
+            CONSOLE_Printf( "Analogue inputs configured\r\n" );
+        }
+        else
+        {
+            CONSOLE_Printf( "Failed to configure analogue inputs\r\n" );
         }
     }
     else
     {
         CONSOLE_Printf( "Invalid argument: %s\r\n", argv[1] );
         CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  analogue_inputs configure <sample rate>\r\n" );
         CONSOLE_Printf( "  analogue_inputs start\r\n" );
         CONSOLE_Printf( "  analogue_inputs stop\r\n" );
+        CONSOLE_Printf( "  analogue_inputs disable\r\n" );
+        CONSOLE_Printf( "  analogue_inputs status\r\n" );
         CONSOLE_Printf( "  analogue_inputs read\r\n" );
-        CONSOLE_Printf( "  analogue_inputs frequency\r\n" );
     }
 }
 

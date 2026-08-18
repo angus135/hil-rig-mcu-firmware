@@ -41,6 +41,12 @@
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+typedef enum
+{
+    EXEC_ANALOGUE_INPUT_STATE_DISABLED = 0,
+    EXEC_ANALOGUE_INPUT_STATE_CONFIGURED,
+    EXEC_ANALOGUE_INPUT_STATE_STARTED,
+} ExecAnalogueInputState_T;
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -52,8 +58,7 @@
  *------------------------------------------------------------------------------
  */
 
-static bool analogue_input_is_configured = false;
-static bool analogue_input_is_started    = false;
+static ExecAnalogueInputState_T analogue_input_state = EXEC_ANALOGUE_INPUT_STATE_DISABLED;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -155,14 +160,33 @@ bool EXEC_ANALOGUE_INPUT_Configure( const ExecAnalogueInputConfig_T* config )
         return false;
     }
 
-    if ( analogue_input_is_started )
+    if ( !config->is_enabled )
+    {
+        if ( analogue_input_state == EXEC_ANALOGUE_INPUT_STATE_STARTED )
+        {
+            if ( !EXEC_ANALOGUE_INPUT_Stop() )
+            {
+                return false;
+            }
+        }
+
+        /*
+         * hw_adc has no deconfigure operation. The previous sample-rate
+         * configuration is retained, but DMA acquisition remains stopped.
+         */
+        analogue_input_state = EXEC_ANALOGUE_INPUT_STATE_DISABLED;
+
+        return true;
+    }
+
+    if ( analogue_input_state == EXEC_ANALOGUE_INPUT_STATE_STARTED )
     {
         return false;
     }
 
     /*
-     * Dynamic channel selection is not currently supported by the ADC scan
-     * and DMA configuration.
+     * Dynamic channel selection is not supported by the fixed ADC scan and
+     * DMA configuration. Both channels must currently be enabled.
      */
     if ( !config->ch_0_is_enabled || !config->ch_1_is_enabled )
     {
@@ -178,24 +202,19 @@ bool EXEC_ANALOGUE_INPUT_Configure( const ExecAnalogueInputConfig_T* config )
 
     if ( !HW_ADC_Configure_ADC_Measurement_Frequency( hw_sample_rate ) )
     {
-        analogue_input_is_configured = false;
         return false;
     }
 
-    analogue_input_is_configured = true;
+    analogue_input_state = EXEC_ANALOGUE_INPUT_STATE_CONFIGURED;
+
     return true;
 }
 
 bool EXEC_ANALOGUE_INPUT_Start( void )
 {
-    if ( !analogue_input_is_configured )
+    if ( analogue_input_state != EXEC_ANALOGUE_INPUT_STATE_CONFIGURED )
     {
         return false;
-    }
-
-    if ( analogue_input_is_started )
-    {
-        return true;
     }
 
     if ( !HW_ADC_Start_DMA_Measurements() )
@@ -203,20 +222,16 @@ bool EXEC_ANALOGUE_INPUT_Start( void )
         return false;
     }
 
-    analogue_input_is_started = true;
+    analogue_input_state = EXEC_ANALOGUE_INPUT_STATE_STARTED;
+
     return true;
 }
 
 bool EXEC_ANALOGUE_INPUT_Stop( void )
 {
-    if ( !analogue_input_is_configured )
+    if ( analogue_input_state != EXEC_ANALOGUE_INPUT_STATE_STARTED )
     {
         return false;
-    }
-
-    if ( !analogue_input_is_started )
-    {
-        return true;
     }
 
     if ( !HW_ADC_Stop_DMA_Measurements() )
@@ -224,18 +239,20 @@ bool EXEC_ANALOGUE_INPUT_Stop( void )
         return false;
     }
 
-    analogue_input_is_started = false;
+    analogue_input_state = EXEC_ANALOGUE_INPUT_STATE_CONFIGURED;
+
     return true;
 }
 
 bool EXEC_ANALOGUE_INPUT_Is_Configured( void )
 {
-    return analogue_input_is_configured;
+    return analogue_input_state == EXEC_ANALOGUE_INPUT_STATE_CONFIGURED
+           || analogue_input_state == EXEC_ANALOGUE_INPUT_STATE_STARTED;
 }
 
 bool EXEC_ANALOGUE_INPUT_Is_Started( void )
 {
-    return analogue_input_is_started;
+    return analogue_input_state == EXEC_ANALOGUE_INPUT_STATE_STARTED;
 }
 
 /**

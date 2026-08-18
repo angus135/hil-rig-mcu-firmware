@@ -55,6 +55,7 @@ typedef enum ExecAnalogueInputSampleRate_T
 
 typedef struct ExecAnalogueInputConfig_T
 {
+    bool                          is_enabled;
     ExecAnalogueInputSampleRate_T sample_rate;
     bool                          ch_0_is_enabled;
     bool                          ch_1_is_enabled;
@@ -80,9 +81,9 @@ typedef struct ExecAnalogueInputVoltages_T
  * This function validates the requested analogue input configuration and applies
  * the ADC measurement sample rate required during execution.
  *
- * At present, both analogue input channels must be enabled. Dynamic channel
- * enable/disable support has not yet been implemented, so the function returns
- * false if either channel is disabled.
+ * A disabled configuration stops active acquisition and leaves the module in
+ * its disabled state. When enabled, both analogue input channels must currently
+ * be selected because dynamic ADC scan selection is not implemented.
  *
  * The ADC hardware setup itself is handled by the hw_adc module. This function
  * only requests the configured measurement frequency and reports whether that
@@ -90,7 +91,8 @@ typedef struct ExecAnalogueInputVoltages_T
  *
  * @param configuration
  *      Analogue input configuration used during execution. This currently
- *      includes the channel enable flags and requested ADC sample rate.
+ *      includes the subsystem enable, channel enable flags, and requested ADC
+ *      sample rate.
  *
  * @return true
  *      The configuration was accepted and the ADC measurement frequency was
@@ -102,11 +104,16 @@ typedef struct ExecAnalogueInputVoltages_T
  */
 bool EXEC_ANALOGUE_INPUT_Configure( const ExecAnalogueInputConfig_T* config );
 
+/** @brief Starts ADC DMA acquisition after successful configuration. */
 bool EXEC_ANALOGUE_INPUT_Start( void );
 
+/** @brief Stops ADC DMA acquisition while retaining its configuration. */
 bool EXEC_ANALOGUE_INPUT_Stop( void );
 
+/** @brief Returns true when the module is configured, including while started. */
 bool EXEC_ANALOGUE_INPUT_Is_Configured( void );
+
+/** @brief Returns true only while ADC DMA acquisition is started. */
 bool EXEC_ANALOGUE_INPUT_Is_Started( void );
 
 /**

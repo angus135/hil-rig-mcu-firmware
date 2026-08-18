@@ -7,6 +7,7 @@ This module is responsible for:
 
 - validating and applying execution-time analogue input configuration
 - coordinating with `hw_adc` to configure continuous ADC sampling for a test run
+- controlling the configured, started, stopped, and disabled lifecycle
 - retrieving recent analogue measurements from the ADC DMA path
 - processing those measurements into execution-ready analogue input values
 - writing analogue input results into storage owned by the execution manager
@@ -55,8 +56,20 @@ Before a test begins, this module accepts the analogue input configuration for t
 includes information such as the ADC sample rate and which analogue channels are expected to be
 used.
 
+An enabled configuration prepares the ADC sample frequency without starting acquisition. Both
+channels must currently be enabled because the low-level ADC scan is fixed. A disabled
+configuration stops active acquisition and enters the disabled state; there is no external enable
+or Logic Expander signal for the analogue-input path.
+
 It then passes the sampling-rate configuration down to `hw_adc`, which in turn relies on the
 underlying timer configuration needed for continuous ADC triggering.
+
+The lifecycle is:
+
+1. `EXEC_ANALOGUE_INPUT_Configure()` prepares an enabled, stopped configuration.
+2. `EXEC_ANALOGUE_INPUT_Start()` starts ADC DMA acquisition.
+3. `EXEC_ANALOGUE_INPUT_Stop()` stops acquisition while retaining configuration.
+4. Configuring with `is_enabled` set to false stops acquisition and disables the subsystem.
 
 ### Lightweight execution-time reading
 
@@ -80,6 +93,7 @@ the current timestamp’s analogue input results are stored.
 `exec_analogue_input` depends on `hw_adc` for access to ADC measurements. It uses `hw_adc` to:
 
 - configure the ADC measurement frequency for the run
+- start and stop continuous DMA acquisition
 - retrieve recent DMA-captured ADC measurements
 
 This lets `exec_analogue_input` avoid direct knowledge of ADC registers, DMA indexing, or timer
@@ -93,7 +107,7 @@ run.
 A typical flow is:
 
 1. configure analogue inputs before execution starts
-2. ensure the ADC DMA measurement path is running
+2. start the ADC DMA measurement path
 3. call this module during execution to obtain current analogue input values
 4. store those values in the test results for the relevant execution timestamp
 
