@@ -17,39 +17,9 @@
 #include <stdint.h>
 
 #define LOGIC_EXPANDER_INTERNAL_FMPI2C1_OWN_ADDRESS_7BIT ( 0x33U )
-<<<<<<< HEAD
 #define LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK ( 0x01U )
 #define LOGIC_EXPANDER_CONFIG_WRITE_COUNT ( 8U )
 #define LOGIC_EXPANDER_TRANSACTION_TIMEOUT_MS ( 100U )
-=======
-
-/**-----------------------------------------------------------------------------
- *  Defines / Macros
- *------------------------------------------------------------------------------
- */
-// Does this need to be changed to support multiple expanders?
-#define LOGIC_EXPANDER_ACTIVE_BITMASK                                                              \
-    ( ( 1U << LOGIC_EXPANDER_DEVICE_DI_1 ) | ( 1U << LOGIC_EXPANDER_DEVICE_PWM_SPI )               \
-      | ( 1U << LOGIC_EXPANDER_DEVICE_UART_PWR )                                                    \
-      | ( 1U << LOGIC_EXPANDER_DEVICE_I2C_AO ) )
-
-#define LOGIC_EXPANDER_I2C_ADDR_TABLE_INIT                                                         \
-    {                                                                                              \
-        0x20U, 0x21U, 0x22U, 0x23U, 0x24U, 0x25U, 0x26U, 0x27U                                     \
-    }
-
-#define LOGIC_EXPANDER_INIT_OLATA_TABLE_INIT                                                       \
-    {                                                                                              \
-        0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U                                     \
-    }
-// #define LOGIC_EXPANDER_INIT_OLATB_TABLE_INIT  { 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
-// 0x00U }
-
-#define LOGIC_EXPANDER_INIT_OLATB_TABLE_INIT                                                       \
-    {                                                                                              \
-        0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU                                     \
-    }
->>>>>>> 407adb6 (DEV-155 Analogue Outputs configuration API refactor)
 
 #define MCP23017_REG_IODIRA ( 0x00U )
 #define MCP23017_REG_IPOLA ( 0x02U )

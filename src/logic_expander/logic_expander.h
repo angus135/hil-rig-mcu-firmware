@@ -50,7 +50,6 @@ extern "C"
 
 typedef enum LogicExpanderIndex_T
 {
-<<<<<<< HEAD
     LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT = 0,
     LOGIC_EXPANDER_UNASSIGNED_1          = 1,
     LOGIC_EXPANDER_UNASSIGNED_2          = 2,
@@ -60,16 +59,6 @@ typedef enum LogicExpanderIndex_T
     LOGIC_EXPANDER_UNASSIGNED_6          = 6,
     LOGIC_EXPANDER_UNASSIGNED_7          = 7,
     LOGIC_EXPANDER_COUNT                 = 8,
-=======
-    LOGIC_EXPANDER_DEVICE_DI_1 = 0U,
-    LOGIC_EXPANDER_DEVICE_DI_2,
-    LOGIC_EXPANDER_DEVICE_DO_1,
-    LOGIC_EXPANDER_DEVICE_DO_2,
-    LOGIC_EXPANDER_DEVICE_PWM_SPI,
-    LOGIC_EXPANDER_DEVICE_UART_PWR,
-    LOGIC_EXPANDER_DEVICE_I2C_AO,
-    LOGIC_EXPANDER_DEVICE_NOT_PRESENT
->>>>>>> 71feb59 (DEV-155 PWM Capture Configuration Refactor)
 } LogicExpanderIndex_T;
 
 typedef enum LogicExpanderPort_T
