@@ -339,7 +339,7 @@ TEST_F( ExecAnalogueOutputTest, Configure_ExternalVrefLoadsStartupPacketsAndStop
     bool result = ConfigureEnabled( true );
 
     EXPECT_TRUE( result );
-    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Is_Configured() );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Is_Configured() );
     EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Started() );
 }
 
@@ -350,7 +350,7 @@ TEST_F( ExecAnalogueOutputTest, Configure_VddReferenceLoadsStartupPacketsAndStop
     bool result = ConfigureEnabled( false );
 
     EXPECT_TRUE( result );
-    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Is_Configured() );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Is_Configured() );
 }
 
 TEST_F( ExecAnalogueOutputTest, Configure_DisabledAppliesSafeOutputEnableState )
@@ -396,7 +396,7 @@ TEST_F( ExecAnalogueOutputTest, Configure_QueuedStartupTransitionsToConfiguredAn
 
     EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_DAC ) ).WillOnce( Return( true ) );
     EXPECT_CALL( mock_hw_spi, StopChannel( SPI_DAC ) ).WillOnce( Return( true ) );
-    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Is_Configured() );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Is_Configured() );
     EXPECT_EQ( EXEC_ANALOG_OUTPUT_Get_State(), EXEC_ANALOG_OUTPUT_STATE_CONFIGURED );
 }
 
@@ -802,9 +802,9 @@ TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_RejectsMalformedAndNullBatch
 
 TEST_F( ExecAnalogueOutputTest, WriteVoltage_NotConfigured_ReturnsFalseWithoutSPITraffic )
 {
-    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Is_Configured() );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Configured() );
 
-    bool result = EXEC_ANALOG_OUTPUT_Write_Voltage( 0U, 10.0F );
+    bool result = EXEC_ANALOGUE_OUTPUT_Write_Voltage( 0U, 10.0F );
 
     EXPECT_FALSE( result );
 }
@@ -815,7 +815,7 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_ClampsLowVoltageAndWritesZeroCode )
 
     ExpectSingleWriteFrame( { 0x00U, 0x00U, 0x00U } );
 
-    bool result = EXEC_ANALOG_OUTPUT_Write_Voltage( 0U, -3.5F );
+    bool result = EXEC_ANALOGUE_OUTPUT_Write_Voltage( 0U, -3.5F );
 
     EXPECT_TRUE( result );
 }
@@ -826,7 +826,7 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_ClampsHighVoltageAndWritesFullScale
 
     ExpectSingleWriteFrame( { 0x28U, 0x0FU, 0xFFU } );
 
-    bool result = EXEC_ANALOG_OUTPUT_Write_Voltage( 5U, 99.0F );
+    bool result = EXEC_ANALOGUE_OUTPUT_Write_Voltage( 5U, 99.0F );
 
     EXPECT_TRUE( result );
 }
@@ -837,7 +837,7 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_MidScaleVoltageRoundsToNearestCount
 
     ExpectSingleWriteFrame( { 0x10U, 0x08U, 0x00U } );
 
-    bool result = EXEC_ANALOG_OUTPUT_Write_Voltage( 2U, 10.0F );
+    bool result = EXEC_ANALOGUE_OUTPUT_Write_Voltage( 2U, 10.0F );
 
     EXPECT_TRUE( result );
 }
@@ -848,7 +848,7 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_ZeroVoltageWritesZeroCode )
 
     ExpectSingleWriteFrame( { 0x18U, 0x00U, 0x00U } );
 
-    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Write_Voltage( 3U, 0.0F ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Write_Voltage( 3U, 0.0F ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, WriteVoltage_MaximumVoltageWritesFullScaleCode )
@@ -857,7 +857,7 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_MaximumVoltageWritesFullScaleCode )
 
     ExpectSingleWriteFrame( { 0x20U, 0x0FU, 0xFFU } );
 
-    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Write_Voltage( 4U, 20.0F ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Write_Voltage( 4U, 20.0F ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, WriteVoltage_PreservesDataByteOrder )
@@ -867,7 +867,7 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_PreservesDataByteOrder )
     /* 12.34 V maps to count 2527 (0x09DF) in the existing implementation. */
     ExpectSingleWriteFrame( { 0x08U, 0x09U, 0xDFU } );
 
-    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Write_Voltage( 1U, 12.34F ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Write_Voltage( 1U, 12.34F ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, WriteVoltage_PreservesRepresentativeRoundingBoundaries )
@@ -880,14 +880,14 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_PreservesRepresentativeRoundingBoun
 
     /* These values fall immediately below and above the first half-count boundary. */
     ExpectSingleWriteFrame( { 0x00U, 0x00U, 0x00U } );
-    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Write_Voltage( 0U, 0.0024F ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Write_Voltage( 0U, 0.0024F ) );
 
     ExpectSingleWriteFrame( { 0x00U, 0x00U, 0x01U } );
-    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Write_Voltage( 0U, 0.0025F ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Write_Voltage( 0U, 0.0025F ) );
 
     /* 15 V maps to count 3071 (0x0BFF), preserving round-to-nearest behavior. */
     ExpectSingleWriteFrame( { 0x00U, 0x0BU, 0xFFU } );
-    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Write_Voltage( 0U, 15.0F ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Write_Voltage( 0U, 15.0F ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, WriteVoltage_PacksCommandByteForEverySupportedChannel )
@@ -910,7 +910,7 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_PacksCommandByteForEverySupportedCh
     for ( uint8_t channel = 0U; channel < EXPECTED_FRAMES.size(); channel++ )
     {
         ExpectSingleWriteFrame( EXPECTED_FRAMES[channel] );
-        EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Write_Voltage( channel, 0.0F ) );
+        EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Write_Voltage( channel, 0.0F ) );
     }
 }
 
@@ -926,7 +926,7 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_InvalidChannelsReturnFalseWithoutSP
 
     for ( uint8_t channel : INVALID_CHANNELS )
     {
-        EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Write_Voltage( channel, 12.0F ) );
+        EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Write_Voltage( channel, 12.0F ) );
     }
 }
 
@@ -942,7 +942,7 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_NonFiniteInputsReturnFalseWithoutSP
 
     for ( float input_voltage_v : NON_FINITE_VOLTAGES )
     {
-        EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Write_Voltage( 0U, input_voltage_v ) );
+        EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Write_Voltage( 0U, input_voltage_v ) );
     }
 }
 
@@ -954,5 +954,5 @@ TEST_F( ExecAnalogueOutputTest, WriteVoltage_LoadRejectionPropagatesWithoutTrigg
     ExpectPacketLoad( mock_hw_spi, EXPECTED_BYTES, false );
     EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 0 );
 
-    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Write_Voltage( 2U, 10.0F ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Write_Voltage( 2U, 10.0F ) );
 }

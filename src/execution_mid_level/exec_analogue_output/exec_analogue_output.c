@@ -295,7 +295,7 @@ static bool EXEC_ANALOGUE_OUTPUT_Configure_SPI( void )
  * - DAC output registers (00h-07h): All channels initialized to 0V
  *
  * A successful return means all startup frames were accepted and transmission
- * was triggered. Use EXEC_ANALOG_OUTPUT_Is_Configured() to determine when the
+ * was triggered. Use EXEC_ANALOGUE_OUTPUT_Is_Configured() to determine when the
  * startup transmission has completed and runtime writes are ready.
  *
  * @return true if all startup frames were accepted and triggering did not fault.
@@ -645,7 +645,7 @@ bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( const AnalogueOutputPreparedBatch
  *     false if the module is not initialized, the channel is invalid (>= 6),
  *     or SPI transmission failed.
  */
-bool EXEC_ANALOG_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v )
+bool EXEC_ANALOGUE_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v )
 {
     AnalogueOutputPreparedFrame_T prepared_frame;
     AnalogueOutputPreparedBatch_T prepared_batch;

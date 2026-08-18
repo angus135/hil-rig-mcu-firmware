@@ -129,7 +129,7 @@ typedef struct
  *
  * A true return confirms that all eleven startup frames were accepted and
  * triggered, but electrical completion may still be pending. Call
- * EXEC_ANALOG_OUTPUT_Is_Configured() or EXEC_ANALOG_OUTPUT_Get_State() before
+ * EXEC_ANALOGUE_OUTPUT_Is_Configured() or EXEC_ANALOG_OUTPUT_Get_State() before
  * starting the external output path or submitting runtime writes.
  *
  * Reconfiguration is rejected while the external output path is started.
