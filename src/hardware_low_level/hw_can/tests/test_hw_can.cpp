@@ -1266,8 +1266,7 @@ TEST_F( HWCANTest, ConfigureReturnsTimingErrorWhenInitFails )
     EXPECT_CALL( mock, CANInit( _ ) ).WillOnce( Return( HAL_ERROR ) );
     EXPECT_CALL( mock, CANConfigFilter( _, _ ) ).Times( 0 );
 
-    EXPECT_EQ( HW_CAN_Configure( &hcan1, 1000000, 0, 0x123, 0x7FF ),
-               HW_CAN_RESULT_TIMING_ERROR );
+    EXPECT_EQ( HW_CAN_Configure( &hcan1, 1000000, 0, 0x123, 0x7FF ), HW_CAN_RESULT_TIMING_ERROR );
 }
 
 /** Verify inexact timing is rejected before HAL or channel state is touched. */
@@ -1293,8 +1292,7 @@ TEST_F( HWCANTest, ConfigureReturnsFilterErrorWhenFilterConfigurationFails )
     EXPECT_CALL( mock, CANInit( _ ) ).WillOnce( Return( HAL_OK ) );
     EXPECT_CALL( mock, CANConfigFilter( _, _ ) ).WillOnce( Return( HAL_ERROR ) );
 
-    EXPECT_EQ( HW_CAN_Configure( &hcan1, 1000000, 0, 0x123, 0x7FF ),
-               HW_CAN_RESULT_FILTER_ERROR );
+    EXPECT_EQ( HW_CAN_Configure( &hcan1, 1000000, 0, 0x123, 0x7FF ), HW_CAN_RESULT_FILTER_ERROR );
 }
 
 /** Verify that HW_CAN_Configure() completes successfully when each HAL configuration step succeeds.
@@ -1388,7 +1386,7 @@ TEST_F( HWCANTest, StopRequiresStartedChannelAndRetainsConfiguration )
     hw_can_lifecycle1 = { true, false };
     EXPECT_EQ( HW_CAN_Stop1(), HW_CAN_RESULT_NOT_STARTED );
 
-    hw_can_lifecycle1 = { true, true };
+    hw_can_lifecycle1  = { true, true };
     mock_can1_regs.IER = HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK;
     EXPECT_CALL( mock, CANStop( &hcan1 ) ).WillOnce( Return( HAL_OK ) );
 
@@ -1405,7 +1403,7 @@ TEST_F( HWCANTest, StopRequiresStartedChannelAndRetainsConfiguration )
 
 TEST_F( HWCANTest, StopReturnsBusyWhileTransmissionIsActive )
 {
-    hw_can_lifecycle1 = { true, true };
+    hw_can_lifecycle1  = { true, true };
     mock_can1_regs.IER = CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK;
     can_tx_active1     = true;
     EXPECT_CALL( mock, CANStop( _ ) ).Times( 0 );
@@ -1421,7 +1419,7 @@ TEST_F( HWCANTest, StopReturnsBusyWhileTransmissionIsActive )
 
 TEST_F( HWCANTest, StopFailureRestoresStartedOperation )
 {
-    hw_can_lifecycle2 = { true, true };
+    hw_can_lifecycle2  = { true, true };
     mock_can2_regs.IER = HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK;
     EXPECT_CALL( mock, CANStop( &hcan2 ) ).WillOnce( Return( HAL_ERROR ) );
 
