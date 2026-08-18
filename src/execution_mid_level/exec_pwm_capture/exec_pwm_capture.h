@@ -142,8 +142,8 @@ typedef struct ExecPwmCaptureConfig_T
  */
 bool EXEC_PWM_Capture_Consume( ExecPwmCaptureChannel_T channel, ExecPwmCaptureResult_T* result );
 
-bool EXEC_PWM_Capture_Configure_Channel( ExecPwmCaptureChannel_T channel,
-                                         ExecPwmCaptureConfig_T* config );
+bool EXEC_PWM_Capture_Configure_Channel( ExecPwmCaptureChannel_T       channel,
+                                         const ExecPwmCaptureConfig_T* config );
 
 /**
  * @brief Start a PWM capture channel.

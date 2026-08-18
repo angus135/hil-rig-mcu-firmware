@@ -53,7 +53,7 @@
  */
 #define EXEC_PWM_CAPTURE_CHANNEL_COUNT 2U
 
-#define EXEC_PWM_CAPTURE_DEFAULT_MODE EXEC_PWM_CAPTURE_LV_3V3
+#define EXEC_PWM_CAPTURE_SAFE_MODE EXEC_PWM_CAPTURE_LV_3V3
 
 #define EXEC_PWM_CAPTURE_MODE_SETTLING_DELAY_MS ( 1U )
 
@@ -69,6 +69,13 @@ typedef struct ExecPwmCaptureHardwareMap_T
     uint8_t               mode_1_bit_i;
     HwPWMCaptureChannel_T hw_channel;
 } ExecPwmCaptureHardwareMap_T;
+
+typedef enum ExecPwmCaptureState_T
+{
+    EXEC_PWM_CAPTURE_STATE_DISABLED = 0,
+    EXEC_PWM_CAPTURE_STATE_CONFIGURED,
+    EXEC_PWM_CAPTURE_STATE_STARTED,
+} ExecPwmCaptureState_T;
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -97,7 +104,7 @@ static const ExecPwmCaptureHardwareMap_T
         },
 };
 
-static bool exec_pwm_capture_channel_started[EXEC_PWM_CAPTURE_CHANNEL_COUNT];
+static ExecPwmCaptureState_T exec_pwm_capture_channel_state[EXEC_PWM_CAPTURE_CHANNEL_COUNT];
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -178,7 +185,11 @@ static bool EXEC_PWM_Capture_Apply_Static_Hardware_Selection( ExecPwmCaptureMode
         return false;
     }
 
-    // Remove this and return true when global expander update is implemented
+    /*
+     * TODO: Remove this direct commit from static configuration when the global
+     * configuration manager submits all staged LogicExpander changes. Runtime
+     * safety transitions may still require an immediate commit.
+     */
     return LOGIC_EXPANDER_Send_Control_Bits() == LOGIC_EXPANDER_STATUS_OK;
 }
 
@@ -217,8 +228,8 @@ static inline bool EXEC_PWM_Capture_Result_Is_Valid( uint32_t period_ticks, uint
  *------------------------------------------------------------------------------
  */
 
-bool EXEC_PWM_Capture_Start_Channel( ExecPwmCaptureChannel_T       channel,
-                                     const ExecPwmCaptureConfig_T* config )
+bool EXEC_PWM_Capture_Configure_Channel( ExecPwmCaptureChannel_T       channel,
+                                         const ExecPwmCaptureConfig_T* config )
 {
     if ( config == NULL )
     {
@@ -230,63 +241,111 @@ bool EXEC_PWM_Capture_Start_Channel( ExecPwmCaptureChannel_T       channel,
         return false;
     }
 
-    if ( !config->is_enabled )
-    {
-        return false;
-    }
-
-    if ( exec_pwm_capture_channel_started[channel] )
+    if ( config->is_enabled
+         && ( exec_pwm_capture_channel_state[channel] == EXEC_PWM_CAPTURE_STATE_STARTED ) )
     {
         return false;
     }
 
     const ExecPwmCaptureHardwareMap_T* hardware = &exec_pwm_capture_hardware_map[channel];
 
+    if ( !config->is_enabled )
+    {
+        /*
+         * Disable timer capture before changing the analogue frontend to its
+         * safe state.
+         */
+        if ( !HW_PWM_Capture_Configure_Channel( hardware->hw_channel, false ) )
+        {
+            return false;
+        }
+
+        /*
+         * The hardware path is now stopped and disabled even if applying the
+         * frontend safe state subsequently fails.
+         */
+        exec_pwm_capture_channel_state[channel] = EXEC_PWM_CAPTURE_STATE_DISABLED;
+
+        if ( !EXEC_PWM_Capture_Apply_Static_Hardware_Selection( EXEC_PWM_CAPTURE_SAFE_MODE,
+                                                                channel ) )
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /*
+     * Apply the subsystem-level analogue frontend configuration before
+     * configuring the timer peripheral.
+     */
     if ( !EXEC_PWM_Capture_Apply_Static_Hardware_Selection( config->mode, channel ) )
     {
         return false;
     }
-
-    /* < Settling delay for the hardware to stabilize > */
-    vTaskDelay( pdMS_TO_TICKS( EXEC_PWM_CAPTURE_MODE_SETTLING_DELAY_MS ) );
 
     if ( !HW_PWM_Capture_Configure_Channel( hardware->hw_channel, true ) )
     {
         return false;
     }
 
-    exec_pwm_capture_channel_started[channel] = true;
+    exec_pwm_capture_channel_state[channel] = EXEC_PWM_CAPTURE_STATE_CONFIGURED;
+
+    return true;
+}
+
+bool EXEC_PWM_Capture_Start_Channel( ExecPwmCaptureChannel_T channel )
+{
+    if ( channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    if ( exec_pwm_capture_channel_state[channel] != EXEC_PWM_CAPTURE_STATE_CONFIGURED )
+    {
+        return false;
+    }
+
+    /*
+     * Temporary settling allowance. Replace this with the global
+     * configuration-completion guarantee when available.
+     */
+    vTaskDelay( pdMS_TO_TICKS( EXEC_PWM_CAPTURE_MODE_SETTLING_DELAY_MS ) );
+
+    if ( !HW_PWM_Capture_Start_Channel( exec_pwm_capture_hardware_map[channel].hw_channel ) )
+    {
+        return false;
+    }
+
+    exec_pwm_capture_channel_state[channel] = EXEC_PWM_CAPTURE_STATE_STARTED;
 
     return true;
 }
 
 bool EXEC_PWM_Capture_Stop_Channel( ExecPwmCaptureChannel_T channel )
 {
-    ExecPwmCaptureConfig_T config;
-
     if ( channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
     {
         return false;
     }
 
-    if ( !exec_pwm_capture_channel_started[channel] )
+    if ( exec_pwm_capture_channel_state[channel] != EXEC_PWM_CAPTURE_STATE_STARTED )
     {
         return false;
     }
 
-    config.mode       = EXEC_PWM_CAPTURE_DEFAULT_MODE;
-    config.is_enabled = false;
-
-    if ( !HW_PWM_Capture_Configure_Channel( exec_pwm_capture_hardware_map[channel].hw_channel,
-                                            config.is_enabled ) )
+    if ( !HW_PWM_Capture_Stop_Channel( exec_pwm_capture_hardware_map[channel].hw_channel ) )
     {
         return false;
     }
 
-    exec_pwm_capture_channel_started[channel] = false;
+    /*
+     * Stop retains the selected frontend mode and timer configuration so the
+     * channel can be restarted without subsystem reconfiguration.
+     */
+    exec_pwm_capture_channel_state[channel] = EXEC_PWM_CAPTURE_STATE_CONFIGURED;
 
-    return EXEC_PWM_Capture_Apply_Static_Hardware_Selection( EXEC_PWM_CAPTURE_DEFAULT_MODE,
-                                                             channel );
+    return true;
 }
 
 bool EXEC_PWM_Capture_Consume( ExecPwmCaptureChannel_T channel, ExecPwmCaptureResult_T* result )
