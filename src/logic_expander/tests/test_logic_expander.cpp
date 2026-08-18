@@ -126,7 +126,8 @@ protected:
         std::memset( logic_expander_state, 0, sizeof( logic_expander_state ) );
         std::memset( logic_expander_submitted_state, 0, sizeof( logic_expander_submitted_state ) );
         logic_expander_ready                  = false;
-        logic_expander_active_bitmask         = LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK;
+        /* Behavioral tests use one active device even though bring-up defaults to none. */
+        logic_expander_active_bitmask         = ( uint8_t )( 1U << LOGIC_EXPANDER_DI_1 );
         logic_expander_dirty_bitmask          = 0U;
         logic_expander_pending_bitmask        = 0U;
         logic_expander_retry_bitmask          = 0U;
@@ -161,10 +162,21 @@ protected:
 
 TEST_F( LogicExpanderTest, FunctionalIndexValuesMatchAddressTableIndices )
 {
-    EXPECT_EQ( LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT, 0 );
-    EXPECT_EQ( LOGIC_EXPANDER_UNASSIGNED_7, 7 );
-    EXPECT_EQ( LOGIC_EXPANDER_COUNT, 8 );
-    EXPECT_EQ( LOGIC_EXPANDER_I2C_ADDRESSES[LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT], 0x20U );
+    EXPECT_EQ( LOGIC_EXPANDER_DI_1, 0 );
+    EXPECT_EQ( LOGIC_EXPANDER_I2C_AO, 6 );
+    EXPECT_EQ( LOGIC_EXPANDER_COUNT, 7 );
+    EXPECT_EQ( LOGIC_EXPANDER_I2C_ADDRESSES[LOGIC_EXPANDER_DI_1], 0x20U );
+    EXPECT_EQ( LOGIC_EXPANDER_I2C_ADDRESSES[LOGIC_EXPANDER_DI_2], 0x21U );
+    EXPECT_EQ( LOGIC_EXPANDER_I2C_ADDRESSES[LOGIC_EXPANDER_DO_1], 0x22U );
+    EXPECT_EQ( LOGIC_EXPANDER_I2C_ADDRESSES[LOGIC_EXPANDER_DO_2], 0x23U );
+    EXPECT_EQ( LOGIC_EXPANDER_I2C_ADDRESSES[LOGIC_EXPANDER_PWM_SPI], 0x24U );
+    EXPECT_EQ( LOGIC_EXPANDER_I2C_ADDRESSES[LOGIC_EXPANDER_UART_PWR], 0x25U );
+    EXPECT_EQ( LOGIC_EXPANDER_I2C_ADDRESSES[LOGIC_EXPANDER_I2C_AO], 0x26U );
+}
+
+TEST_F( LogicExpanderTest, BringupDefaultsToNoActiveDevices )
+{
+    EXPECT_EQ( LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK, 0U );
 }
 
 TEST_F( LogicExpanderTest, DefaultConfigurationMarksSevenExpandersActive )
@@ -190,7 +202,7 @@ TEST_F( LogicExpanderTest, PublicStateAccessTakesAndReleasesMutex )
 {
     LogicExpanderStateSnapshot_T snapshot = {};
 
-    EXPECT_EQ( LOGIC_EXPANDER_Get_State_Snapshot( LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT, &snapshot ),
+    EXPECT_EQ( LOGIC_EXPANDER_Get_State_Snapshot( LOGIC_EXPANDER_DI_1, &snapshot ),
                LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( g_mutex_take_calls, 1U );
     EXPECT_EQ( g_mutex_give_calls, 1U );
@@ -209,8 +221,8 @@ TEST_F( LogicExpanderTest, SelfConfigWaitsForPhysicalCompletionBeforeReady )
 
     EXPECT_EQ( LOGIC_EXPANDER_Self_Config(), LOGIC_EXPANDER_STATUS_BUSY );
     EXPECT_FALSE( logic_expander_ready );
-    EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT].olat_a, 0x00U );
-    EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT].olat_b, 0xFFU );
+    EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DI_1].olat_a, 0x00U );
+    EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DI_1].olat_b, 0xFFU );
 
     EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_OK );
     EXPECT_TRUE( logic_expander_ready );
@@ -384,22 +396,22 @@ TEST_F( LogicExpanderTest, InternalTransmitAndReceiveUseAtomicMasterQueueApis )
 
 TEST_F( LogicExpanderTest, LoadControlBitMarksDirtyOnlyWhenShadowChanges )
 {
-    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT,
+    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DI_1,
                                                 LOGIC_EXPANDER_PORT_A, 8U, true ),
                LOGIC_EXPANDER_STATUS_INVALID_PARAM );
 
-    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT,
+    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DI_1,
                                                 LOGIC_EXPANDER_PORT_A, 3U, false ),
                LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( logic_expander_dirty_bitmask, 0U );
 
-    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT,
+    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DI_1,
                                                 LOGIC_EXPANDER_PORT_A, 3U, true ),
                LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( logic_expander_state[0].olat_a, 0x08U );
     EXPECT_EQ( logic_expander_dirty_bitmask, 0x01U );
 
-    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT,
+    EXPECT_EQ( LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DI_1,
                                                 LOGIC_EXPANDER_PORT_A, 3U, true ),
                LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( logic_expander_dirty_bitmask, 0x01U );
@@ -731,10 +743,10 @@ TEST_F( LogicExpanderTest, NewerExplicitSnapshotSupersedesEarlierPendingSnapshot
 
 TEST_F( LogicExpanderTest, GetStateSnapshotUsesRoleIndexedAddressAndShadowTables )
 {
-    logic_expander_state[LOGIC_EXPANDER_UNASSIGNED_2] = { 0x11U, 0x22U };
+    logic_expander_state[LOGIC_EXPANDER_DO_1] = { 0x11U, 0x22U };
     LogicExpanderStateSnapshot_T snapshot{};
 
-    EXPECT_EQ( LOGIC_EXPANDER_Get_State_Snapshot( LOGIC_EXPANDER_UNASSIGNED_2, &snapshot ),
+    EXPECT_EQ( LOGIC_EXPANDER_Get_State_Snapshot( LOGIC_EXPANDER_DO_1, &snapshot ),
                LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( snapshot.device_address_7bit, 0x22U );
     EXPECT_EQ( snapshot.olat_a, 0x11U );

@@ -5,15 +5,15 @@
  *
  *  Description:
  *      High-level logic expander interface for MCP23017 I2C GPIO expanders.
- *      Manages up to 8 MCP23017 devices on the internal FMPI2C1 channel.
+ *      Manages 7 MCP23017 devices on the internal FMPI2C1 channel.
  *      Provides bit-level control of the 16-bit output ports (OLAT A/B).
  *      Handles device initialization, configuration register setup, and
  *      batched bit updates through the internal I2C transaction queue.
  *
  *  Notes:
  *      - Communicates with MCP23017 devices via FMPI2C1 internal I2C channel
- *      - Default I2C addresses: 0x20-0x27 (configured via device jumpers)
- *      - All eight addresses 0x20-0x27 are active by default
+ *      - I2C addresses: 0x20-0x26 (configured via device jumpers)
+ *      - Active devices are selected by the module's role-indexed bitmask
  *      - All output bits default to 0x00 (OLAT A) or 0xFF (OLAT B)
  *      - Must call LOGIC_EXPANDER_Self_Config() before any other operations
  *      - Queue-full is reported immediately so callers can retry without spinning
@@ -50,15 +50,14 @@ extern "C"
 
 typedef enum LogicExpanderIndex_T
 {
-    LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT = 0,
-    LOGIC_EXPANDER_UNASSIGNED_1          = 1,
-    LOGIC_EXPANDER_UNASSIGNED_2          = 2,
-    LOGIC_EXPANDER_UNASSIGNED_3          = 3,
-    LOGIC_EXPANDER_UNASSIGNED_4          = 4,
-    LOGIC_EXPANDER_UNASSIGNED_5          = 5,
-    LOGIC_EXPANDER_UNASSIGNED_6          = 6,
-    LOGIC_EXPANDER_UNASSIGNED_7          = 7,
-    LOGIC_EXPANDER_COUNT                 = 8,
+    LOGIC_EXPANDER_DI_1     = 0,
+    LOGIC_EXPANDER_DI_2     = 1,
+    LOGIC_EXPANDER_DO_1     = 2,
+    LOGIC_EXPANDER_DO_2     = 3,
+    LOGIC_EXPANDER_PWM_SPI  = 4,
+    LOGIC_EXPANDER_UART_PWR = 5,
+    LOGIC_EXPANDER_I2C_AO   = 6,
+    LOGIC_EXPANDER_COUNT    = 7,
 } LogicExpanderIndex_T;
 
 typedef enum LogicExpanderPort_T
@@ -110,10 +109,11 @@ bool LOGIC_EXPANDER_Init( void );
 /**
  * @brief Initialize and configure all active MCP23017 devices.
  *
- * Configures all active devices (0x20-0x27 by default), sending configuration
- * registers (IODIR, IPOL, GPINTEN, etc.) to set all
+ * Discovers active devices selected by the module's internal active bitmask,
+ * sends configuration registers (IODIR, IPOL, GPINTEN, etc.) to set all
  * pins as outputs, and initializes OLAT registers.
- * Must be called before any other operations.
+ * Must be called before any other operations. All devices are disabled by
+ * default until their safe startup values are confirmed during bring-up.
  *
  * @return LOGIC_EXPANDER_STATUS_OK if all devices configured successfully
  * @return LOGIC_EXPANDER_STATUS_BUSY if I2C channel is busy
