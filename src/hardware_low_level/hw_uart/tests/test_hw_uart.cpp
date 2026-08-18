@@ -114,6 +114,16 @@ static HwUartPeripheralConfig_T TEST_HW_UART_Make_Tx_Only_Config()
     return config;
 }
 
+static HwUartPeripheralConfig_T TEST_HW_UART_Make_Rx_Only_Config()
+{
+    HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
+
+    config.rx_enabled = true;
+    config.tx_enabled = false;
+
+    return config;
+}
+
 static DMA_Stream_TypeDef* TEST_HW_UART_Get_Tx_Stream( DMA_TypeDef* dma, uint32_t stream )
 {
     if ( stream != LL_DMA_STREAM_6 )
@@ -689,7 +699,7 @@ TEST_F( UartTest, DutDeconfigureDeinitialisesPeripheralAndClearsConfigurationSta
     EXPECT_FALSE( hw_uart_channel_states[HW_UART_CHANNEL_1].config.tx_enabled );
 }
 
-TEST_F( UartTest, DutRxStartStartsDmaAndReportsRunning )
+TEST_F( UartTest, DutStartRxEnabledChannelStartsDma )
 {
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
@@ -698,12 +708,12 @@ TEST_F( UartTest, DutRxStartStartsDmaAndReportsRunning )
         .WillOnce( Return( HAL_OK ) );
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
-    ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
 
-    EXPECT_TRUE( HW_UART_Rx_Is_Running( HW_UART_CHANNEL_1 ) );
+    EXPECT_TRUE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.rx_running );
 }
 
-TEST_F( UartTest, DutRxStartRejectsWhenRxDisabled )
+TEST_F( UartTest, DutStartTxOnlyChannelDoesNotStartRxDma )
 {
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Only_Config();
 
@@ -711,22 +721,23 @@ TEST_F( UartTest, DutRxStartRejectsWhenRxDisabled )
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
-    EXPECT_FALSE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
+    EXPECT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.rx_running );
 }
 
-TEST_F( UartTest, DutRxStartRejectsSecondStart )
+TEST_F( UartTest, DutStartRejectsSecondStart )
 {
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
     EXPECT_CALL( mock_hal, ReceiveDMA( _, _, _ ) ).Times( 1 ).WillOnce( Return( HAL_OK ) );
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
-    ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
 
-    EXPECT_FALSE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
 }
 
-TEST_F( UartTest, DutRxStartReturnsFalseWhenHalReceiveDmaFails )
+TEST_F( UartTest, DutStartReturnsFalseWhenHalReceiveDmaFails )
 {
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
@@ -734,24 +745,27 @@ TEST_F( UartTest, DutRxStartReturnsFalseWhenHalReceiveDmaFails )
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
-    EXPECT_FALSE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
-    EXPECT_FALSE( HW_UART_Rx_Is_Running( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.is_started );
+    EXPECT_FALSE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.rx_running );
 }
 
-TEST_F( UartTest, DutRxStopStopsRunningRx )
+TEST_F( UartTest, DutStopStopsRxAndRetainsConfiguration )
 {
-    HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
+    HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Rx_Only_Config();
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
-    ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
 
     EXPECT_CALL( mock_hal, AbortReceive( &huart6 ) ).WillOnce( Return( HAL_OK ) );
 
-    EXPECT_TRUE( HW_UART_Rx_Stop( HW_UART_CHANNEL_1 ) );
-    EXPECT_FALSE( HW_UART_Rx_Is_Running( HW_UART_CHANNEL_1 ) );
+    EXPECT_TRUE( HW_UART_Stop_Channel( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.is_started );
+    EXPECT_FALSE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.rx_running );
+    EXPECT_TRUE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.is_configured_and_initialised );
 }
 
-TEST_F( UartTest, DutRxStopReturnsFalseWhenNotRunning )
+TEST_F( UartTest, DutStopReturnsFalseWhenNotStarted )
 {
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
@@ -759,19 +773,67 @@ TEST_F( UartTest, DutRxStopReturnsFalseWhenNotRunning )
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 
-    EXPECT_FALSE( HW_UART_Rx_Stop( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_UART_Stop_Channel( HW_UART_CHANNEL_1 ) );
 }
 
-TEST_F( UartTest, DutRxStopReturnsFalseWhenHalAbortReceiveFails )
+TEST_F( UartTest, DutStopReturnsFalseWhenHalAbortReceiveFails )
 {
-    HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
+    HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Rx_Only_Config();
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
-    ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
 
     EXPECT_CALL( mock_hal, AbortReceive( _ ) ).WillOnce( Return( HAL_ERROR ) );
 
-    EXPECT_FALSE( HW_UART_Rx_Stop( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_UART_Stop_Channel( HW_UART_CHANNEL_1 ) );
+    EXPECT_TRUE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.is_started );
+}
+
+TEST_F( UartTest, DutStopRejectsPendingTransmit )
+{
+    HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Only_Config();
+
+    ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
+    hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_count = 1U;
+
+    EXPECT_FALSE( HW_UART_Stop_Channel( HW_UART_CHANNEL_1 ) );
+    EXPECT_TRUE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.is_started );
+}
+
+TEST_F( UartTest, DutStoppedChannelCanRestartWithoutReconfiguration )
+{
+    HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Rx_Only_Config();
+
+    EXPECT_CALL( mock_hal, ReceiveDMA( _, _, _ ) ).Times( 2 ).WillRepeatedly( Return( HAL_OK ) );
+    EXPECT_CALL( mock_hal, AbortReceive( _ ) ).WillOnce( Return( HAL_OK ) );
+
+    ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
+    ASSERT_TRUE( HW_UART_Stop_Channel( HW_UART_CHANNEL_1 ) );
+    EXPECT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
+}
+
+TEST_F( UartTest, DutConfigureRejectsStartedTxOnlyChannel )
+{
+    HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Only_Config();
+
+    ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
+    EXPECT_CALL( mock_hal, Init( _ ) ).Times( 0 );
+
+    EXPECT_FALSE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+}
+
+TEST_F( UartTest, DutDeconfigureRejectsStartedChannel )
+{
+    HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Only_Config();
+
+    ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
+    EXPECT_CALL( mock_hal, DeInit( _ ) ).Times( 0 );
+
+    EXPECT_FALSE( HW_UART_Deconfigure_Channel( HW_UART_CHANNEL_1 ) );
 }
 
 TEST_F( UartTest, DutRxPeekReturnsZeroWhenNoUnreadBytes )
@@ -779,7 +841,7 @@ TEST_F( UartTest, DutRxPeekReturnsZeroWhenNoUnreadBytes )
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
-    ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
 
     DMA2_Stream2->NDTR = TEST_HW_UART_RX_BUFFER_SIZE;
 
@@ -795,7 +857,7 @@ TEST_F( UartTest, DutRxPeekReportsSingleContiguousSpan )
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
-    ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
 
     DMA2_Stream2->NDTR = TEST_HW_UART_RX_BUFFER_SIZE - 5U;
 
@@ -811,7 +873,7 @@ TEST_F( UartTest, DutRxPeekReportsWrappedSpan )
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
-    ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
 
     HW_UART_Rx_Consume( HW_UART_CHANNEL_1, TEST_HW_UART_RX_BUFFER_SIZE - 3U );
     DMA2_Stream2->NDTR = TEST_HW_UART_RX_BUFFER_SIZE - 2U;
@@ -828,7 +890,7 @@ TEST_F( UartTest, DutRxConsumeAdvancesReadIndex )
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
-    ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
 
     DMA2_Stream2->NDTR = TEST_HW_UART_RX_BUFFER_SIZE - 8U;
 
@@ -1584,14 +1646,14 @@ TEST_F( UartTest, DutRxDmaErrorDoesNotChangeRxRunningStateBeforeFaultPolicyExist
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
-    ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
-    ASSERT_TRUE( HW_UART_Rx_Is_Running( HW_UART_CHANNEL_1 ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
+    ASSERT_TRUE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.rx_running );
 
     fake_dma2.LISR |= DMA_LISR_TEIF2;
 
     DMA2_Stream2_IRQHandler();
 
-    EXPECT_TRUE( HW_UART_Rx_Is_Running( HW_UART_CHANNEL_1 ) );
+    EXPECT_TRUE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.rx_running );
     EXPECT_EQ( fake_dma2.LIFCR, HW_UART_CH1_DMA_RX_IFCR_MASK );
 }
 
@@ -1600,7 +1662,7 @@ TEST_F( UartTest, DutRxStartChannel1DisablesUnusedRxDmaHalfAndCompleteInterrupts
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
-    ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_1 ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
 
     ASSERT_NE( huart6.hdmarx, nullptr );
     EXPECT_NE( huart6.hdmarx->disabled_interrupt_mask & DMA_IT_HT, 0U );
@@ -1612,7 +1674,7 @@ TEST_F( UartTest, DutRxStartChannel2DisablesUnusedRxDmaHalfAndCompleteInterrupts
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_2, &config ) );
-    ASSERT_TRUE( HW_UART_Rx_Start( HW_UART_CHANNEL_2 ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_2 ) );
 
     ASSERT_NE( huart2.hdmarx, nullptr );
     EXPECT_NE( huart2.hdmarx->disabled_interrupt_mask & DMA_IT_HT, 0U );

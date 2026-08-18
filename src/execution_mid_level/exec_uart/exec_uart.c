@@ -345,18 +345,11 @@ bool EXEC_UART_Start_Channel( ExecUartChannel_T channel )
         return false;
     }
 
-    /*
-     * RX requires an explicit hardware start. TX has no persistent hardware
-     * start operation; entering STARTED permits subsequent transmit requests.
-     */
-    if ( state->rx_enabled )
-    {
-        const HwUartChannel_T hw_channel = exec_uart_hardware_map[channel].hw_channel;
+    const HwUartChannel_T hw_channel = exec_uart_hardware_map[channel].hw_channel;
 
-        if ( !HW_UART_Rx_Start( hw_channel ) )
-        {
-            return false;
-        }
+    if ( !HW_UART_Start_Channel( hw_channel ) )
+    {
+        return false;
     }
 
     state->lifecycle_state = EXEC_UART_STATE_STARTED;
@@ -380,21 +373,9 @@ bool EXEC_UART_Stop_Channel( ExecUartChannel_T channel )
 
     const HwUartChannel_T hw_channel = exec_uart_hardware_map[channel].hw_channel;
 
-    /*
-     * Do not stop the channel while queued or in-flight TX data remains.
-     * This prevents Stop from silently truncating a transmission.
-     */
-    if ( state->tx_enabled && !HW_UART_Is_Tx_Complete( hw_channel ) )
+    if ( !HW_UART_Stop_Channel( hw_channel ) )
     {
         return false;
-    }
-
-    if ( state->rx_enabled )
-    {
-        if ( !HW_UART_Rx_Stop( hw_channel ) )
-        {
-            return false;
-        }
     }
 
     state->lifecycle_state = EXEC_UART_STATE_CONFIGURED;
