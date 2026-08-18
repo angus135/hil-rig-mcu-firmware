@@ -717,6 +717,14 @@ static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] )
     {
         CONSOLE_SPI_Loopback_Apply( argc, argv );
     }
+    else if ( strcmp( argv[1], "stop" ) == 0 )
+    {
+        CONSOLE_SPI_Loopback_Stop( argc, argv );
+    }
+    else if ( strcmp( argv[1], "disable" ) == 0 )
+    {
+        CONSOLE_SPI_Loopback_Disable( argc, argv );
+    }
     else if ( strcmp( argv[1], "load" ) == 0 )
     {
         CONSOLE_SPI_Loopback_Load( argc, argv );

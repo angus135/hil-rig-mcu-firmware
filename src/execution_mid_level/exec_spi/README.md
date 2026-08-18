@@ -15,6 +15,33 @@ to `hw_spi`. The actual chip-select handling is still owned by the low-level dri
 `exec_spi` now loads each SPI packet separately so the low-level master TX path can frame each
 packet as its own DMA-backed software-chip-select transaction.
 
+`exec_spi` owns only general-purpose `SPI_CHANNEL_0` and `SPI_CHANNEL_1`.
+`SPI_DAC` is owned by `exec_analogue_output`.
+
+## Lifecycle
+
+```text
+Disabled --Configure(enabled)--> Configured/stopped --Start--> Started
+   ^                                      ^                    |
+   +-------Configure(disabled)------------+-------Stop---------+
+```
+
+- Configure selects master/slave through `LOGIC_EXPANDER_PWM_SPI`, keeps the
+  external enable low, and configures HW SPI without starting it.
+- Start starts HW SPI before asserting the external enable.
+- Stop waits for valid TX completion, disables the external interface, and
+  stops HW SPI while retaining configuration. A faulted TX path may be stopped
+  for recovery.
+- Disabled configuration applies `SPI_EN=0` and slave selection as the safe
+  state. HW configuration is retained because HW SPI has no deconfigure API.
+
+Logic Expander port B mapping:
+
+| Channel | `SPI_EN` | `SPI_EN_MASTER_NSLAVE` |
+|---|---:|---:|
+| `SPI_CHANNEL_0` / CH1 | B4 | B5 |
+| `SPI_CHANNEL_1` / CH2 | B6 | B7 |
+
 ---
 
 ## Files
@@ -56,13 +83,17 @@ bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral,
                                  HWSPIConfig_T configuration );
 ```
 
-Configures and starts an SPI channel for execution use.
-
-If the channel is already active, it is stopped before being reconfigured and started again. This is
-intended for setup or between test phases, not for the high-frequency execution hot path.
+Configures an enabled channel in the stopped state, or applies its disabled safe
+state. Reconfiguration while started is rejected.
 
 This function performs minimal state handling only. It does not validate whether the configuration is
 appropriate for a particular test or protocol.
+
+### `EXEC_SPI_Start_Channel()` / `EXEC_SPI_Stop_Channel()`
+
+`Start()` activates HW SPI and then enables the external interface. `Stop()`
+performs the reverse ordering and retains configuration for restart. Use
+`EXEC_SPI_Is_Configured()` and `EXEC_SPI_Is_Started()` to query lifecycle state.
 
 ---
 
@@ -190,17 +221,23 @@ safety guard, not a substitute for the validation subsystem.
 ## Example Usage
 
 ```c
-HWSPIConfig_T configuration =
+ExecSPIConfig_T configuration =
 {
-    .spi_mode  = SPI_MASTER_MODE,
-    .data_size = SPI_SIZE_8_BIT,
-    .first_bit = SPI_FIRST_MSB,
-    .baud_rate = SPI_BAUD_352KBIT,
-    .cpol      = SPI_CPOL_LOW,
-    .cpha      = SPI_CPHA_1_EDGE,
+    .is_enabled = true,
+    .hardware =
+    {
+        .spi_mode  = SPI_MASTER_MODE,
+        .data_size = SPI_SIZE_8_BIT,
+        .first_bit = SPI_FIRST_MSB,
+        .baud_rate = SPI_BAUD_352KBIT,
+        .cpol      = SPI_CPOL_LOW,
+        .cpha      = SPI_CPHA_1_EDGE,
+        .nss_pin   = GPIO_SPI1_NSS,
+    },
 };
 
-bool configured = EXEC_SPI_Configure_Channel( SPI_CHANNEL_0, configuration );
+bool configured = EXEC_SPI_Configure_Channel( SPI_CHANNEL_0, &configuration );
+bool started    = configured && EXEC_SPI_Start_Channel( SPI_CHANNEL_0 );
 ```
 
 ```c
@@ -249,9 +286,13 @@ expected low-level calls.
 
 Useful behaviours to test include:
 
-- configuring an unconfigured channel calls configure then start
-- reconfiguring an active channel calls stop before configure/start
-- failed low-level configuration does not start the channel
+- configuration applies the correct B4/B5 or B6/B7 control mapping
+- configuration leaves HW SPI stopped and rejects reconfiguration while started
+- start activates HW SPI before asserting the external enable
+- stop rejects incomplete valid TX, permits fault recovery, and disables the
+  external interface before stopping HW SPI
+- disabled configuration applies the safe external state
+- stop/start retains configuration and master/slave selection
 - transmit failure on any packet does not trigger TX
 - transmit success loads each packet separately and triggers TX once after all loads succeed
 - packet offsets passed to `HW_SPI_Load_Tx_Buffer()` match the supplied packet-size array
