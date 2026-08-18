@@ -92,7 +92,7 @@ static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] );
 static bool CONSOLE_Parse_Digital_Input_Mode( const char* token, ExecDigitalInputMode_T* mode );
 static void CONSOLE_Command_Digital_Output( uint16_t argc, char* argv[] );
-static bool CONSOLE_Parse_Digital_Output_Channel( const char* token,
+static bool CONSOLE_Parse_Digital_Output_Channel( const char*                       token,
                                                   ExecDigitalOutputChannelConfig_T* config );
 static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] );
@@ -139,7 +139,7 @@ const Command_T CONSOLE_COMMANDS[] = {
  *------------------------------------------------------------------------------
  */
 
-static bool CONSOLE_Parse_Digital_Output_Channel( const char* token,
+static bool CONSOLE_Parse_Digital_Output_Channel( const char*                       token,
                                                   ExecDigitalOutputChannelConfig_T* config )
 {
     if ( token == NULL || config == NULL )
@@ -172,8 +172,7 @@ static bool CONSOLE_Parse_Digital_Output_Channel( const char* token,
     {
         const size_t name_length = strlen( modes[mode].name );
 
-        if ( strncmp( token, modes[mode].name, name_length ) == 0
-             && token[name_length] == ':'
+        if ( strncmp( token, modes[mode].name, name_length ) == 0 && token[name_length] == ':'
              && ( token[name_length + 1U] == '0' || token[name_length + 1U] == '1' )
              && token[name_length + 2U] == '\0' )
         {
@@ -204,14 +203,14 @@ static void CONSOLE_Command_Digital_Output( uint16_t argc, char* argv[] )
     if ( strcmp( argv[1], "start" ) == 0 && argc == 2U )
     {
         CONSOLE_Printf( "%s", EXEC_DIGITAL_OUTPUT_Start() ? "Digital outputs started\r\n"
-                                                           : "Failed to start digital outputs\r\n" );
+                                                          : "Failed to start digital outputs\r\n" );
         return;
     }
 
     if ( strcmp( argv[1], "stop" ) == 0 && argc == 2U )
     {
         CONSOLE_Printf( "%s", EXEC_DIGITAL_OUTPUT_Stop() ? "Digital outputs stopped\r\n"
-                                                          : "Failed to stop digital outputs\r\n" );
+                                                         : "Failed to stop digital outputs\r\n" );
         return;
     }
 
@@ -428,10 +427,8 @@ static bool CONSOLE_Parse_Digital_Input_Mode( const char* token, ExecDigitalInpu
         const char*            name;
         ExecDigitalInputMode_T mode;
     } modes[] = {
-        { "off", EXEC_DIGITAL_INPUT_MODE_DISABLED },
-        { "3v3", EXEC_DIGITAL_INPUT_MODE_3V3 },
-        { "5v", EXEC_DIGITAL_INPUT_MODE_5V },
-        { "12v", EXEC_DIGITAL_INPUT_MODE_12V },
+        { "off", EXEC_DIGITAL_INPUT_MODE_DISABLED }, { "3v3", EXEC_DIGITAL_INPUT_MODE_3V3 },
+        { "5v", EXEC_DIGITAL_INPUT_MODE_5V },        { "12v", EXEC_DIGITAL_INPUT_MODE_12V },
         { "24v", EXEC_DIGITAL_INPUT_MODE_24V },
     };
 
@@ -465,14 +462,14 @@ static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
     if ( strcmp( argv[1], "start" ) == 0 && argc == 2U )
     {
         CONSOLE_Printf( "%s", EXEC_DIGITAL_INPUT_Start() ? "Digital inputs started\r\n"
-                                                           : "Failed to start digital inputs\r\n" );
+                                                         : "Failed to start digital inputs\r\n" );
         return;
     }
 
     if ( strcmp( argv[1], "stop" ) == 0 && argc == 2U )
     {
         CONSOLE_Printf( "%s", EXEC_DIGITAL_INPUT_Stop() ? "Digital inputs stopped\r\n"
-                                                          : "Failed to stop digital inputs\r\n" );
+                                                        : "Failed to stop digital inputs\r\n" );
         return;
     }
 
@@ -494,8 +491,7 @@ static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
 
         uint32_t sampled_inputs = 0U;
         EXEC_DIGITAL_INPUT_Sample_All( &sampled_inputs );
-        CONSOLE_Printf( "Digital inputs GPIOD mask: 0x%04lX\r\n",
-                        ( unsigned long )sampled_inputs );
+        CONSOLE_Printf( "Digital inputs GPIOD mask: 0x%04lX\r\n", ( unsigned long )sampled_inputs );
         return;
     }
 
@@ -517,8 +513,7 @@ static void CONSOLE_Command_DigitalInput( uint16_t argc, char* argv[] )
 
     ExecDigitalInputConfig_T config = { 0 };
 
-    for ( uint32_t channel = 0U; channel < ( uint32_t )EXEC_DIGITAL_INPUT_CHANNEL_COUNT;
-          channel++ )
+    for ( uint32_t channel = 0U; channel < ( uint32_t )EXEC_DIGITAL_INPUT_CHANNEL_COUNT; channel++ )
     {
         if ( !CONSOLE_Parse_Digital_Input_Mode( argv[channel + 2U], &config.channels[channel] ) )
         {

@@ -166,8 +166,7 @@ TEST_F( ExecDigitalOutputTest, ControlMappingMatchesBoardSchematic )
         { LOGIC_EXPANDER_DO_2, LOGIC_EXPANDER_PORT_B, 6U, 7U },
     };
 
-    for ( uint32_t channel = 0U;
-          channel < ( uint32_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT;
+    for ( uint32_t channel = 0U; channel < ( uint32_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT;
           channel++ )
     {
         EXPECT_EQ( exec_digital_output_control_mappings[channel].expander,
@@ -198,17 +197,15 @@ TEST_F( ExecDigitalOutputTest, StageVoltageUsesA0A1TruthTable )
 
     for ( const VoltageCase& test_case : cases )
     {
-        EXPECT_CALL( mock,
-                     LoadControlBit( LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 1U,
-                                     test_case.a0 ) )
+        EXPECT_CALL(
+            mock, LoadControlBit( LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 1U, test_case.a0 ) )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
-        EXPECT_CALL( mock,
-                     LoadControlBit( LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 0U,
-                                     test_case.a1 ) )
+        EXPECT_CALL(
+            mock, LoadControlBit( LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 0U, test_case.a1 ) )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
 
-        EXPECT_TRUE( EXEC_DIGITAL_OUTPUT_Stage_Voltage( EXEC_DIGITAL_OUTPUT_CHANNEL_1,
-                                                        test_case.mode ) );
+        EXPECT_TRUE(
+            EXEC_DIGITAL_OUTPUT_Stage_Voltage( EXEC_DIGITAL_OUTPUT_CHANNEL_1, test_case.mode ) );
     }
 }
 
@@ -216,7 +213,8 @@ TEST_F( ExecDigitalOutputTest, ConfigureRejectsInvalidEnabledModeWithoutHardware
 {
     ExecDigitalOutputConfig_T config = {};
     config.channels[0].is_enabled    = true;
-    config.channels[0].mode = static_cast<ExecDigitalOutputMode_T>( EXEC_DIGITAL_OUTPUT_MODE_COUNT );
+    config.channels[0].mode =
+        static_cast<ExecDigitalOutputMode_T>( EXEC_DIGITAL_OUTPUT_MODE_COUNT );
     exec_digital_output_state = EXEC_DIGITAL_OUTPUT_STATE_CONFIGURED;
 
     EXPECT_CALL( mock, ResetManyPins( _, _ ) ).Times( 0 );
@@ -239,10 +237,12 @@ TEST_F( ExecDigitalOutputTest, ConfigureRejectsNullAndReconfigurationWhileStarte
 TEST_F( ExecDigitalOutputTest, ConfigureAllDisabledApplies3V3AndBecomesConfigured )
 {
     ExecDigitalOutputConfig_T config = {};
-    config.channels[3].mode = static_cast<ExecDigitalOutputMode_T>( EXEC_DIGITAL_OUTPUT_MODE_COUNT );
+    config.channels[3].mode =
+        static_cast<ExecDigitalOutputMode_T>( EXEC_DIGITAL_OUTPUT_MODE_COUNT );
 
     ExpectResetOfAllChannels();
-    EXPECT_CALL( mock, LoadControlBit( _, _, _, false ) ).Times( 20 )
+    EXPECT_CALL( mock, LoadControlBit( _, _, _, false ) )
+        .Times( 20 )
         .WillRepeatedly( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock, SendControlBits() ).WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
 
@@ -254,20 +254,19 @@ TEST_F( ExecDigitalOutputTest, ConfigureAllDisabledApplies3V3AndBecomesConfigure
 TEST_F( ExecDigitalOutputTest, ConfigureRetainsCompleteSuccessfulConfiguration )
 {
     ExecDigitalOutputConfig_T config = {};
-    config.channels[0] = { true, EXEC_DIGITAL_OUTPUT_MODE_5V, true };
-    config.channels[9] = { true, EXEC_DIGITAL_OUTPUT_MODE_24V, false };
+    config.channels[0]               = { true, EXEC_DIGITAL_OUTPUT_MODE_5V, true };
+    config.channels[9]               = { true, EXEC_DIGITAL_OUTPUT_MODE_24V, false };
 
     ExpectResetOfAllChannels();
-    EXPECT_CALL( mock, LoadControlBit( _, _, _, _ ) ).Times( 20 )
+    EXPECT_CALL( mock, LoadControlBit( _, _, _, _ ) )
+        .Times( 20 )
         .WillRepeatedly( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock, SendControlBits() ).WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
 
     ASSERT_TRUE( EXEC_DIGITAL_OUTPUT_Configure( &config ) );
-    EXPECT_EQ( exec_digital_output_configuration.channels[0].mode,
-               EXEC_DIGITAL_OUTPUT_MODE_5V );
+    EXPECT_EQ( exec_digital_output_configuration.channels[0].mode, EXEC_DIGITAL_OUTPUT_MODE_5V );
     EXPECT_TRUE( exec_digital_output_configuration.channels[0].initial_high );
-    EXPECT_EQ( exec_digital_output_configuration.channels[9].mode,
-               EXEC_DIGITAL_OUTPUT_MODE_24V );
+    EXPECT_EQ( exec_digital_output_configuration.channels[9].mode, EXEC_DIGITAL_OUTPUT_MODE_24V );
 }
 
 TEST_F( ExecDigitalOutputTest, ConfigurationFailureLeavesSubsystemDisabled )
@@ -290,7 +289,8 @@ TEST_F( ExecDigitalOutputTest, SendFailureLeavesSubsystemDisabled )
     exec_digital_output_state              = EXEC_DIGITAL_OUTPUT_STATE_CONFIGURED;
 
     ExpectResetOfAllChannels();
-    EXPECT_CALL( mock, LoadControlBit( _, _, _, false ) ).Times( 20 )
+    EXPECT_CALL( mock, LoadControlBit( _, _, _, false ) )
+        .Times( 20 )
         .WillRepeatedly( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock, SendControlBits() ).WillOnce( Return( LOGIC_EXPANDER_STATUS_BUSY ) );
 
@@ -300,19 +300,11 @@ TEST_F( ExecDigitalOutputTest, SendFailureLeavesSubsystemDisabled )
 
 TEST_F( ExecDigitalOutputTest, StartSetsOnlyEnabledInitiallyHighChannelsInOneBatch )
 {
-    exec_digital_output_state = EXEC_DIGITAL_OUTPUT_STATE_CONFIGURED;
-    exec_digital_output_configuration.channels[0] = {
-        true, EXEC_DIGITAL_OUTPUT_MODE_3V3, true
-    };
-    exec_digital_output_configuration.channels[1] = {
-        true, EXEC_DIGITAL_OUTPUT_MODE_5V, false
-    };
-    exec_digital_output_configuration.channels[4] = {
-        true, EXEC_DIGITAL_OUTPUT_MODE_12V, true
-    };
-    exec_digital_output_configuration.channels[9] = {
-        false, EXEC_DIGITAL_OUTPUT_MODE_24V, true
-    };
+    exec_digital_output_state                     = EXEC_DIGITAL_OUTPUT_STATE_CONFIGURED;
+    exec_digital_output_configuration.channels[0] = { true, EXEC_DIGITAL_OUTPUT_MODE_3V3, true };
+    exec_digital_output_configuration.channels[1] = { true, EXEC_DIGITAL_OUTPUT_MODE_5V, false };
+    exec_digital_output_configuration.channels[4] = { true, EXEC_DIGITAL_OUTPUT_MODE_12V, true };
+    exec_digital_output_configuration.channels[9] = { false, EXEC_DIGITAL_OUTPUT_MODE_24V, true };
 
     EXPECT_CALL( mock, SetManyPins( _, 2U ) )
         .WillOnce( Invoke( []( GPIOOutput_T* pins, uint16_t length ) {
@@ -336,17 +328,14 @@ TEST_F( ExecDigitalOutputTest, StartWithNoInitiallyHighChannelsPerformsNoGPIOWri
 
 TEST_F( ExecDigitalOutputTest, StopResetsAllChannelsAndRetainsConfiguration )
 {
-    exec_digital_output_state = EXEC_DIGITAL_OUTPUT_STATE_STARTED;
-    exec_digital_output_configuration.channels[2] = {
-        true, EXEC_DIGITAL_OUTPUT_MODE_12V, true
-    };
+    exec_digital_output_state                     = EXEC_DIGITAL_OUTPUT_STATE_STARTED;
+    exec_digital_output_configuration.channels[2] = { true, EXEC_DIGITAL_OUTPUT_MODE_12V, true };
 
     ExpectResetOfAllChannels();
     EXPECT_TRUE( EXEC_DIGITAL_OUTPUT_Stop() );
     EXPECT_TRUE( EXEC_DIGITAL_OUTPUT_Is_Configured() );
     EXPECT_FALSE( EXEC_DIGITAL_OUTPUT_Is_Started() );
-    EXPECT_EQ( exec_digital_output_configuration.channels[2].mode,
-               EXEC_DIGITAL_OUTPUT_MODE_12V );
+    EXPECT_EQ( exec_digital_output_configuration.channels[2].mode, EXEC_DIGITAL_OUTPUT_MODE_12V );
 }
 
 TEST_F( ExecDigitalOutputTest, StopRejectsCallsUnlessStarted )
