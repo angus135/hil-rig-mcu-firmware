@@ -149,7 +149,7 @@ protected:
 
     void ExpectAllConfigurationWrites( void )
     {
-        for ( uint16_t address = 0x20U; address <= 0x27U; ++address )
+        for ( uint16_t address = 0x20U; address <= 0x26U; ++address )
         {
             EXPECT_CALL( mock_hw_i2c,
                          EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, address, _, _ ) )
@@ -167,13 +167,13 @@ TEST_F( LogicExpanderTest, FunctionalIndexValuesMatchAddressTableIndices )
     EXPECT_EQ( LOGIC_EXPANDER_I2C_ADDRESSES[LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT], 0x20U );
 }
 
-TEST_F( LogicExpanderTest, DefaultConfigurationMarksAllExpandersActive )
+TEST_F( LogicExpanderTest, DefaultConfigurationMarksSevenExpandersActive )
 {
-    EXPECT_EQ( LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK, 0xFFU );
+    EXPECT_EQ( LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK, 0x7FU );
 
     for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
     {
-        EXPECT_TRUE( LOGIC_EXPANDER_Index_Is_Active( ( LogicExpanderIndex_T )idx ) );
+        EXPECT_EQ( LOGIC_EXPANDER_Index_Is_Active( ( LogicExpanderIndex_T )idx ), idx < 7U );
     }
 }
 
@@ -431,12 +431,12 @@ TEST_F( LogicExpanderTest, SendControlBitsEnqueuesOnlyDirtyExpanders )
     EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
 }
 
-TEST_F( LogicExpanderTest, SendControlBitsCanAddressAllExpanders )
+TEST_F( LogicExpanderTest, SendControlBitsCanAddressAllActiveExpanders )
 {
     logic_expander_ready         = true;
-    logic_expander_dirty_bitmask = 0xFFU;
+    logic_expander_dirty_bitmask = 0x7FU;
 
-    for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
+    for ( uint8_t idx = 0U; idx < 7U; ++idx )
     {
         logic_expander_state[idx]                      = { 0xFFU, 0xFFU };
         const uint16_t                address          = ( uint16_t )( 0x20U + idx );
@@ -452,7 +452,7 @@ TEST_F( LogicExpanderTest, SendControlBitsCanAddressAllExpanders )
 
     EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
     EXPECT_EQ( logic_expander_dirty_bitmask, 0U );
-    EXPECT_EQ( logic_expander_pending_bitmask, 0xFFU );
+    EXPECT_EQ( logic_expander_pending_bitmask, 0x7FU );
 }
 
 TEST_F( LogicExpanderTest, PartialQueueFullRetryDoesNotDuplicateAcceptedExpander )
@@ -576,7 +576,7 @@ TEST_F( LogicExpanderTest, ReadyProcessRecoversTimedOutWritesAndSchedulesFreshRe
     EXPECT_EQ( logic_expander_transaction_start_tick, 200U );
 }
 
-TEST_F( LogicExpanderTest, LaterAcceptedWriteDoesNotExtendOldestPendingDeadline )
+TEST_F( LogicExpanderTest, LaterAcceptedWriteRefreshesPendingDeadline )
 {
     logic_expander_ready         = true;
     logic_expander_config_state  = LOGIC_EXPANDER_CONFIG_READY;
@@ -594,17 +594,22 @@ TEST_F( LogicExpanderTest, LaterAcceptedWriteDoesNotExtendOldestPendingDeadline 
     EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, 3U ) )
         .WillOnce( Return( HW_I2C_STATUS_OK ) );
     EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
-    EXPECT_EQ( logic_expander_transaction_start_tick, 10U );
+    EXPECT_EQ( logic_expander_transaction_start_tick, 90U );
 
-    EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+    EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) ).Times( 2 );
     EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( HW_I2C_CHANNEL_FMPI2C1 ) )
-        .WillOnce( Return( false ) );
+        .Times( 2 )
+        .WillRepeatedly( Return( false ) );
     EXPECT_CALL( mock_hw_i2c, RecoverChannel( HW_I2C_CHANNEL_FMPI2C1 ) )
         .WillOnce( Return( HW_I2C_STATUS_ERROR ) );
     EXPECT_CALL( mock_hw_i2c, GetAndClearTransferResult( HW_I2C_CHANNEL_FMPI2C1 ) )
         .WillOnce( Return( HW_I2C_STATUS_ERROR ) );
 
     g_current_tick = 110U;
+    EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ( logic_expander_retry_bitmask, 0U );
+
+    g_current_tick = 90U + pdMS_TO_TICKS( LOGIC_EXPANDER_TRANSACTION_TIMEOUT_MS );
     EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_ERROR );
     EXPECT_EQ( logic_expander_retry_bitmask, 0x01U );
 }
