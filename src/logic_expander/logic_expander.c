@@ -17,8 +17,7 @@
 #include <stdint.h>
 
 #define LOGIC_EXPANDER_INTERNAL_FMPI2C1_OWN_ADDRESS_7BIT ( 0x33U )
-#define LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK                                                      \
-    ( 0x00U ) /* All devices disabled until explicitly enabled during bringup */
+#define LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK ( 0x7FU )
 #define LOGIC_EXPANDER_CONFIG_WRITE_COUNT ( 8U )
 #define LOGIC_EXPANDER_TRANSACTION_TIMEOUT_MS ( 100U )
 
@@ -126,11 +125,15 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Enqueue_Control_Bits( uint8_t* sourc
 
 static void LOGIC_EXPANDER_Arm_Transaction_Deadline( void )
 {
-    if ( !logic_expander_deadline_active )
-    {
-        logic_expander_transaction_start_tick = xTaskGetTickCount();
-        logic_expander_deadline_active        = true;
-    }
+    /*
+     * Queue acceptance is observable forward progress. Refresh the deadline
+     * whenever another transaction is accepted so a large multi-expander
+     * batch is not timed out simply because it takes several queue-service
+     * cycles to submit. Once no further progress is possible, the unchanged
+     * timestamp still provides the normal stall timeout.
+     */
+    logic_expander_transaction_start_tick = xTaskGetTickCount();
+    logic_expander_deadline_active        = true;
 }
 
 static void LOGIC_EXPANDER_Disarm_Transaction_Deadline( void )

@@ -148,11 +148,15 @@ protected:
         g_mock_hw_i2c = nullptr;
     }
 
-    void ExpectEightConfigurationWrites( void )
+    void ExpectAllConfigurationWrites( void )
     {
-        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
-            .Times( 8 )
-            .WillRepeatedly( Return( HW_I2C_STATUS_OK ) );
+        for ( uint16_t address = 0x20U; address <= 0x26U; ++address )
+        {
+            EXPECT_CALL( mock_hw_i2c,
+                         EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, address, _, _ ) )
+                .Times( 8 )
+                .WillRepeatedly( Return( HW_I2C_STATUS_OK ) );
+        }
     }
 };
 
@@ -173,6 +177,16 @@ TEST_F( LogicExpanderTest, FunctionalIndexValuesMatchAddressTableIndices )
 TEST_F( LogicExpanderTest, BringupDefaultsToNoActiveDevices )
 {
     EXPECT_EQ( LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK, 0U );
+}
+
+TEST_F( LogicExpanderTest, DefaultConfigurationMarksSevenExpandersActive )
+{
+    EXPECT_EQ( LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK, 0x7FU );
+
+    for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
+    {
+        EXPECT_EQ( LOGIC_EXPANDER_Index_Is_Active( ( LogicExpanderIndex_T )idx ), idx < 7U );
+    }
 }
 
 TEST_F( LogicExpanderTest, InitCreatesMutexOnceBeforeTaskAccess )
@@ -198,7 +212,7 @@ TEST_F( LogicExpanderTest, SelfConfigWaitsForPhysicalCompletionBeforeReady )
 {
     EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) ).WillOnce( Return( HW_I2C_STATUS_OK ) );
     EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) ).Times( 2 );
-    ExpectEightConfigurationWrites();
+    ExpectAllConfigurationWrites();
     EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( HW_I2C_CHANNEL_FMPI2C1 ) )
         .WillOnce( Return( false ) )
         .WillOnce( Return( true ) );
@@ -226,7 +240,7 @@ TEST_F( LogicExpanderTest, SelfConfigPhysicalErrorNeverMarksReady )
 {
     EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) ).WillOnce( Return( HW_I2C_STATUS_OK ) );
     EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
-    ExpectEightConfigurationWrites();
+    ExpectAllConfigurationWrites();
     EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( HW_I2C_CHANNEL_FMPI2C1 ) )
         .WillOnce( Return( true ) );
     EXPECT_CALL( mock_hw_i2c, GetAndClearTransferResult( HW_I2C_CHANNEL_FMPI2C1 ) )
@@ -242,7 +256,7 @@ TEST_F( LogicExpanderTest, SelfConfigRecoversWhenCompletionDeadlineExpires )
 
     EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) ).WillOnce( Return( HW_I2C_STATUS_OK ) );
     EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) ).Times( 2 );
-    ExpectEightConfigurationWrites();
+    ExpectAllConfigurationWrites();
     EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( HW_I2C_CHANNEL_FMPI2C1 ) )
         .Times( 2 )
         .WillRepeatedly( Return( false ) );
@@ -265,6 +279,53 @@ TEST_F( LogicExpanderTest, SelfConfigRecoversWhenCompletionDeadlineExpires )
     EXPECT_EQ( logic_expander_config_state, LOGIC_EXPANDER_CONFIG_FAILED );
     EXPECT_FALSE( logic_expander_ready );
     EXPECT_FALSE( logic_expander_deadline_active );
+}
+
+TEST_F( LogicExpanderTest, SelfConfigDeadlineRefreshesWhenQueueSubmissionMakesProgress )
+{
+    g_current_tick = 10U;
+
+    {
+        InSequence sequence;
+        EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) )
+            .WillOnce( Return( HW_I2C_STATUS_OK ) );
+        EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
+            .WillOnce( Return( HW_I2C_STATUS_OK ) );
+        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
+            .WillOnce( Return( HW_I2C_STATUS_BUSY ) );
+
+        EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
+            .WillOnce( Return( HW_I2C_STATUS_OK ) );
+        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
+            .WillOnce( Return( HW_I2C_STATUS_BUSY ) );
+
+        EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
+            .WillOnce( Return( HW_I2C_STATUS_BUSY ) );
+        EXPECT_CALL( mock_hw_i2c, RecoverChannel( HW_I2C_CHANNEL_FMPI2C1 ) )
+            .WillOnce( Return( HW_I2C_STATUS_OK ) );
+        EXPECT_CALL( mock_hw_i2c, GetAndClearTransferResult( HW_I2C_CHANNEL_FMPI2C1 ) )
+            .WillOnce( Return( HW_I2C_STATUS_OK ) );
+    }
+
+    EXPECT_EQ( LOGIC_EXPANDER_Self_Config(), LOGIC_EXPANDER_STATUS_BUSY );
+    EXPECT_EQ( logic_expander_transaction_start_tick, 10U );
+
+    /* The original batch deadline has now elapsed, but accepting another
+     * configuration write proves that the queue is still making progress. */
+    g_current_tick = 10U + pdMS_TO_TICKS( LOGIC_EXPANDER_TRANSACTION_TIMEOUT_MS );
+    EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_BUSY );
+    EXPECT_EQ( logic_expander_transaction_start_tick, g_current_tick );
+    EXPECT_EQ( logic_expander_config_state, LOGIC_EXPANDER_CONFIG_QUEUING );
+
+    /* A genuine 100 ms period with no further accepted transaction still
+     * trips recovery. */
+    g_current_tick += pdMS_TO_TICKS( LOGIC_EXPANDER_TRANSACTION_TIMEOUT_MS );
+    EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_ERROR );
+    EXPECT_EQ( logic_expander_config_state, LOGIC_EXPANDER_CONFIG_FAILED );
+    EXPECT_FALSE( logic_expander_ready );
 }
 
 TEST_F( LogicExpanderTest, SelfConfigIsIdempotentAfterReady )
@@ -301,9 +362,7 @@ TEST_F( LogicExpanderTest, SelfConfigRetriesFailedConfigurationThroughRecovery )
         EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) )
             .WillOnce( Return( HW_I2C_STATUS_OK ) );
         EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
-        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
-            .Times( 8 )
-            .WillRepeatedly( Return( HW_I2C_STATUS_OK ) );
+        ExpectAllConfigurationWrites();
         EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( HW_I2C_CHANNEL_FMPI2C1 ) )
             .WillOnce( Return( false ) );
     }
@@ -382,6 +441,30 @@ TEST_F( LogicExpanderTest, SendControlBitsEnqueuesOnlyDirtyExpanders )
     EXPECT_EQ( logic_expander_submitted_state[0].olat_a, 0x5AU );
     EXPECT_EQ( logic_expander_submitted_state[0].olat_b, 0xA5U );
     EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
+}
+
+TEST_F( LogicExpanderTest, SendControlBitsCanAddressAllActiveExpanders )
+{
+    logic_expander_ready         = true;
+    logic_expander_dirty_bitmask = 0x7FU;
+
+    for ( uint8_t idx = 0U; idx < 7U; ++idx )
+    {
+        logic_expander_state[idx]                      = { 0xFFU, 0xFFU };
+        const uint16_t                address          = ( uint16_t )( 0x20U + idx );
+        const std::array<uint8_t, 3U> expected_payload = { 0x14U, 0xFFU, 0xFFU };
+
+        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, address, _, 3U ) )
+            .WillOnce( [expected_payload]( HWI2CChannel_T, uint16_t, const uint8_t* data,
+                                           uint16_t length ) {
+                EXPECT_EQ( std::memcmp( data, expected_payload.data(), length ), 0 );
+                return HW_I2C_STATUS_OK;
+            } );
+    }
+
+    EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ( logic_expander_dirty_bitmask, 0U );
+    EXPECT_EQ( logic_expander_pending_bitmask, 0x7FU );
 }
 
 TEST_F( LogicExpanderTest, PartialQueueFullRetryDoesNotDuplicateAcceptedExpander )
@@ -505,7 +588,7 @@ TEST_F( LogicExpanderTest, ReadyProcessRecoversTimedOutWritesAndSchedulesFreshRe
     EXPECT_EQ( logic_expander_transaction_start_tick, 200U );
 }
 
-TEST_F( LogicExpanderTest, LaterAcceptedWriteDoesNotExtendOldestPendingDeadline )
+TEST_F( LogicExpanderTest, LaterAcceptedWriteRefreshesPendingDeadline )
 {
     logic_expander_ready         = true;
     logic_expander_config_state  = LOGIC_EXPANDER_CONFIG_READY;
@@ -523,17 +606,22 @@ TEST_F( LogicExpanderTest, LaterAcceptedWriteDoesNotExtendOldestPendingDeadline 
     EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, 3U ) )
         .WillOnce( Return( HW_I2C_STATUS_OK ) );
     EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
-    EXPECT_EQ( logic_expander_transaction_start_tick, 10U );
+    EXPECT_EQ( logic_expander_transaction_start_tick, 90U );
 
-    EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+    EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) ).Times( 2 );
     EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( HW_I2C_CHANNEL_FMPI2C1 ) )
-        .WillOnce( Return( false ) );
+        .Times( 2 )
+        .WillRepeatedly( Return( false ) );
     EXPECT_CALL( mock_hw_i2c, RecoverChannel( HW_I2C_CHANNEL_FMPI2C1 ) )
         .WillOnce( Return( HW_I2C_STATUS_ERROR ) );
     EXPECT_CALL( mock_hw_i2c, GetAndClearTransferResult( HW_I2C_CHANNEL_FMPI2C1 ) )
         .WillOnce( Return( HW_I2C_STATUS_ERROR ) );
 
     g_current_tick = 110U;
+    EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ( logic_expander_retry_bitmask, 0U );
+
+    g_current_tick = 90U + pdMS_TO_TICKS( LOGIC_EXPANDER_TRANSACTION_TIMEOUT_MS );
     EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_ERROR );
     EXPECT_EQ( logic_expander_retry_bitmask, 0x01U );
 }
