@@ -91,7 +91,16 @@ TEST_F( BackgroundTest, ServicesExpanderEveryCycleAndPreservesOneHertzLedToggle 
     EXPECT_CALL( mock_dependencies, ProcessLogicExpander() )
         .Times( 101 )
         .WillRepeatedly( testing::Return( LOGIC_EXPANDER_STATUS_NOT_READY ) );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_BLUE_0 ) ).Times( 2 );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_BLUE_1 ) ).Times( 2 );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_BLUE_2 ) ).Times( 2 );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_BLUE_3 ) ).Times( 2 );
     EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_BLUE_4 ) ).Times( 2 );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_RED_0 ) ).Times( 2 );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_RED_1 ) ).Times( 2 );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_RED_2 ) ).Times( 2 );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_RED_3 ) ).Times( 2 );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_RED_4 ) ).Times( 2 );
 
     for ( uint16_t cycle = 0U; cycle < 101U; ++cycle )
     {
@@ -113,7 +122,16 @@ TEST_F( BackgroundTest, TaskInitialisesOnceBeforePeriodicProcessing )
     EXPECT_CALL( mock_dependencies, GetTickCount() ).WillOnce( testing::Return( 17U ) );
     EXPECT_CALL( mock_dependencies, ProcessLogicExpander() )
         .WillOnce( testing::Return( LOGIC_EXPANDER_STATUS_NOT_READY ) );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_BLUE_0 ) );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_BLUE_1 ) );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_BLUE_2 ) );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_BLUE_3 ) );
     EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_BLUE_4 ) );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_RED_0 ) );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_RED_1 ) );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_RED_2 ) );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_RED_3 ) );
+    EXPECT_CALL( mock_dependencies, ToggleOutput( USER_LED_RED_4 ) );
     EXPECT_CALL( mock_dependencies, DelayUntil( testing::_, BACKGROUND_TASK_PERIOD_MS ) )
         .WillOnce(
             testing::Invoke( []( TickType_t*, TickType_t ) { throw BackgroundTaskExit{}; } ) );
