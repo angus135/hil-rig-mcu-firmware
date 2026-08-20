@@ -149,6 +149,8 @@ protected:
 
     void ExpectAllConfigurationWrites( void )
     {
+        logic_expander_active_bitmask = LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK;
+
         for ( uint16_t address = 0x20U; address <= 0x26U; ++address )
         {
             EXPECT_CALL( mock_hw_i2c,
@@ -175,6 +177,8 @@ TEST_F( LogicExpanderTest, FunctionalIndexValuesMatchAddressTableIndices )
 
 TEST_F( LogicExpanderTest, DefaultConfigurationMarksSevenExpandersActive )
 {
+    logic_expander_active_bitmask = LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK;
+
     EXPECT_EQ( LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK, 0x7FU );
 
     for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
