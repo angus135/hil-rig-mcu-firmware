@@ -185,7 +185,7 @@ bool CONSOLE_Build_I2C_Message( uint16_t argc, char* argv[], char* out_message,
     uint16_t tx_len = 0U;
     memset( out_message, 0, out_message_size );
 
-    for ( uint16_t arg_idx = 4U; arg_idx < argc; ++arg_idx )
+    for ( uint16_t arg_idx = 3U; arg_idx < argc; ++arg_idx )
     {
         const uint16_t part_len = ( uint16_t )strlen( argv[arg_idx] );
         if ( tx_len + part_len + 1U >= out_message_size )
@@ -193,7 +193,7 @@ bool CONSOLE_Build_I2C_Message( uint16_t argc, char* argv[], char* out_message,
             return false;
         }
 
-        if ( arg_idx > 5U )
+        if ( arg_idx > 3U )
         {
             out_message[tx_len] = ' ';
             tx_len++;
