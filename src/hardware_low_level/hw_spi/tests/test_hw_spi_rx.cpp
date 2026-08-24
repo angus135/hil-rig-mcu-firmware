@@ -87,6 +87,7 @@ public:
     MOCK_METHOD( void, DMADisableITTC, ( DMA_TypeDef * dma, uint32_t stream ), () );
     MOCK_METHOD( void, DMADisableITTE, ( DMA_TypeDef * dma, uint32_t stream ), () );
     MOCK_METHOD( void, SPIDisableDMAReqTX, ( SPI_TypeDef * spi ), () );
+    MOCK_METHOD( void, SPIDisableDMAReqRX, ( SPI_TypeDef * spi ), () );
     MOCK_METHOD( void, SPIEnableDMAReqRX, ( SPI_TypeDef * spi ), () );
     MOCK_METHOD( void, SPIEnable, ( SPI_TypeDef * spi ), () );
     MOCK_METHOD( uint32_t, SPIIsBusy, ( const SPI_TypeDef* spi ), () );
@@ -253,6 +254,14 @@ extern "C" void LL_SPI_DisableDMAReq_TX( SPI_TypeDef* SPIx )
     if ( g_mock )
     {
         g_mock->SPIDisableDMAReqTX( SPIx );
+    }
+}
+
+extern "C" void LL_SPI_DisableDMAReq_RX( SPI_TypeDef* SPIx )
+{
+    if ( g_mock )
+    {
+        g_mock->SPIDisableDMAReqRX( SPIx );
     }
 }
 
@@ -741,7 +750,15 @@ TEST_F( HWSPIRxTest, StopThenStart_DacRetainsConfigurationAndRestartsChannel )
     EXPECT_CALL( mock, SPIEnable( Eq( SPI_DAC_INSTANCE ) ) );
     ASSERT_TRUE( HW_SPI_Start_Channel( SPI_DAC ) );
 
-    EXPECT_CALL( mock, SPIDMAStop( Eq( &SPI_DAC_HANDLE ) ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, NVICDisableIRQ( Eq( SPI_DAC_TX_DMA_IRQN ) ) );
+    EXPECT_CALL( mock, SPIDisableDMAReqTX( Eq( SPI_DAC_INSTANCE ) ) );
+    EXPECT_CALL( mock, SPIDisableDMAReqRX( Eq( SPI_DAC_INSTANCE ) ) );
+    EXPECT_CALL( mock,
+                 DMADisableStream( Eq( SPI_DAC_TX_DMA ), Eq( SPI_DAC_TX_DMA_STREAM ) ) );
+    EXPECT_CALL( mock,
+                 DMAIsEnabledStream( Eq( SPI_DAC_TX_DMA ), Eq( SPI_DAC_TX_DMA_STREAM ) ) )
+        .WillOnce( Return( 0U ) );
+    EXPECT_CALL( mock, NVICEnableIRQ( Eq( SPI_DAC_TX_DMA_IRQN ) ) );
     ASSERT_TRUE( HW_SPI_Stop_Channel( SPI_DAC ) );
 
     EXPECT_TRUE( HW_SPI_STATE( SPI_DAC )->is_configured );

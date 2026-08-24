@@ -130,6 +130,7 @@ public:
     MOCK_METHOD( void, DMADisableITTC, ( DMA_TypeDef * dma, uint32_t stream ), () );
     MOCK_METHOD( void, DMADisableITTE, ( DMA_TypeDef * dma, uint32_t stream ), () );
     MOCK_METHOD( void, SPIDisableDMAReqTX, ( SPI_TypeDef * spi ), () );
+    MOCK_METHOD( void, SPIDisableDMAReqRX, ( SPI_TypeDef * spi ), () );
     MOCK_METHOD( void, SPIEnableDMAReqRX, ( SPI_TypeDef * spi ), () );
     MOCK_METHOD( void, SPIEnable, ( SPI_TypeDef * spi ), () );
     MOCK_METHOD( uint32_t, SPIIsBusy, ( const SPI_TypeDef* spi ), () );
@@ -297,6 +298,14 @@ extern "C" void LL_SPI_DisableDMAReq_TX( SPI_TypeDef* SPIx )
     if ( g_mock )
     {
         g_mock->SPIDisableDMAReqTX( SPIx );
+    }
+}
+
+extern "C" void LL_SPI_DisableDMAReq_RX( SPI_TypeDef* SPIx )
+{
+    if ( g_mock )
+    {
+        g_mock->SPIDisableDMAReqRX( SPIx );
     }
 }
 

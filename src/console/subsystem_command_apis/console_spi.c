@@ -440,24 +440,14 @@ static uint32_t CONSOLE_SPI_Loopback_Copy_Rx( SPIChannel_T peripheral, uint8_t* 
     return copied_bytes;
 }
 
-static bool CONSOLE_SPI_Loopback_Apply_Channel( SPILoopChannel_T* channel )
+static bool CONSOLE_SPI_Loopback_Apply_Channel_Config( SPILoopChannel_T* channel )
 {
     const ExecSPIConfig_T config = {
         .is_enabled = true,
         .hardware   = channel->configuration,
     };
 
-    if ( !EXEC_SPI_Configure_Channel( channel->peripheral, &config ) )
-    {
-        return false;
-    }
-
-    if ( !EXEC_SPI_Start_Channel( channel->peripheral ) )
-    {
-        return false;
-    }
-
-    return true;
+    return EXEC_SPI_Configure_Channel( channel->peripheral, &config );
 }
 
 /**-----------------------------------------------------------------------------
@@ -478,8 +468,8 @@ void CONSOLE_SPI_Loopback_Print_Usage( void )
         "  spi_loop config <0|1> baud <45m|22m5|11m25|5m625|2m813|1m406|703k|352k>\r\n" );
     CONSOLE_Printf( "  spi_loop config <0|1> cpol <low|high>\r\n" );
     CONSOLE_Printf( "  spi_loop config <0|1> cpha <1edge|2edge>\r\n" );
-    CONSOLE_Printf( "  spi_loop apply <0|1>\r\n" );
-    CONSOLE_Printf( "  spi_loop apply all\r\n" );
+    CONSOLE_Printf( "  spi_loop apply_config <0|1|all>\r\n" );
+    CONSOLE_Printf( "  spi_loop start <0|1|all>\r\n" );
     CONSOLE_Printf( "  spi_loop stop <0|1|all>\r\n" );
     CONSOLE_Printf( "  spi_loop disable <0|1|all>\r\n" );
     CONSOLE_Printf( "\r\n" );
@@ -601,32 +591,32 @@ void CONSOLE_SPI_Loopback_Config( uint16_t argc, char* argv[] )
     }
 
     CONSOLE_Printf( "Updated SPI channel %s %s to %s\r\n", argv[2], argv[3], argv[4] );
-    CONSOLE_Printf( "Run 'spi_loop apply %s' to apply the configuration.\r\n", argv[2] );
+    CONSOLE_Printf( "Run 'spi_loop apply_config %s' to apply the configuration.\r\n", argv[2] );
 }
 
-void CONSOLE_SPI_Loopback_Apply( uint16_t argc, char* argv[] )
+void CONSOLE_SPI_Loopback_Apply_Config( uint16_t argc, char* argv[] )
 {
     if ( argc < 3 || argv[2] == NULL )
     {
-        CONSOLE_Printf( "Usage: spi_loop apply <0|1|all>\r\n" );
+        CONSOLE_Printf( "Usage: spi_loop apply_config <0|1|all>\r\n" );
         return;
     }
 
     if ( strcmp( argv[2], "all" ) == 0 )
     {
-        if ( !CONSOLE_SPI_Loopback_Apply_Channel( &spi_loop_state.channel_0 ) )
+        if ( !CONSOLE_SPI_Loopback_Apply_Channel_Config( &spi_loop_state.channel_0 ) )
         {
             CONSOLE_Printf( "Failed to apply SPI channel 0 configuration\r\n" );
             return;
         }
 
-        if ( !CONSOLE_SPI_Loopback_Apply_Channel( &spi_loop_state.channel_1 ) )
+        if ( !CONSOLE_SPI_Loopback_Apply_Channel_Config( &spi_loop_state.channel_1 ) )
         {
             CONSOLE_Printf( "Failed to apply SPI channel 1 configuration\r\n" );
             return;
         }
 
-        CONSOLE_Printf( "Applied SPI channel 0 and 1 configurations\r\n" );
+        CONSOLE_Printf( "Applied SPI channel 0 and 1 configurations; channels stopped\r\n" );
         return;
     }
 
@@ -638,13 +628,49 @@ void CONSOLE_SPI_Loopback_Apply( uint16_t argc, char* argv[] )
         return;
     }
 
-    if ( !CONSOLE_SPI_Loopback_Apply_Channel( channel ) )
+    if ( !CONSOLE_SPI_Loopback_Apply_Channel_Config( channel ) )
     {
         CONSOLE_Printf( "Failed to apply SPI channel %s configuration\r\n", argv[2] );
         return;
     }
 
-    CONSOLE_Printf( "Applied SPI channel %s configuration\r\n", argv[2] );
+    CONSOLE_Printf( "Applied SPI channel %s configuration; channel stopped\r\n", argv[2] );
+}
+
+void CONSOLE_SPI_Loopback_Start( uint16_t argc, char* argv[] )
+{
+    if ( argc < 3 || argv[2] == NULL )
+    {
+        CONSOLE_Printf( "Usage: spi_loop start <0|1|all>\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[2], "all" ) == 0 )
+    {
+        if ( !EXEC_SPI_Start_Channel( SPI_CHANNEL_0 ) )
+        {
+            CONSOLE_Printf( "Failed to start SPI channel 0\r\n" );
+            return;
+        }
+
+        if ( !EXEC_SPI_Start_Channel( SPI_CHANNEL_1 ) )
+        {
+            CONSOLE_Printf( "Failed to start SPI channel 1\r\n" );
+            return;
+        }
+
+        CONSOLE_Printf( "Started SPI channels 0 and 1\r\n" );
+        return;
+    }
+
+    SPILoopChannel_T* channel = CONSOLE_SPI_Loopback_Get_Channel( argv[2] );
+    if ( channel == NULL || !EXEC_SPI_Start_Channel( channel->peripheral ) )
+    {
+        CONSOLE_Printf( "Failed to start SPI channel %s\r\n", argv[2] );
+        return;
+    }
+
+    CONSOLE_Printf( "Started SPI channel %s\r\n", argv[2] );
 }
 
 void CONSOLE_SPI_Loopback_Stop( uint16_t argc, char* argv[] )
@@ -812,7 +838,7 @@ void CONSOLE_SPI_Loopback_Run( uint16_t argc, char* argv[] )
          || !EXEC_SPI_Is_Started( slave_channel->peripheral ) )
     {
         CONSOLE_Printf( "FAIL: both channels must be configured and started before running\r\n" );
-        CONSOLE_Printf( "Use: spi_loop apply all\r\n" );
+        CONSOLE_Printf( "Use: spi_loop apply_config all, then spi_loop start all\r\n" );
         return;
     }
 

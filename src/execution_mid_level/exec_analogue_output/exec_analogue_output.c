@@ -232,13 +232,12 @@ static void EXEC_ANALOGUE_OUTPUT_Update_Readiness( void )
     if ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_CONFIGURING
          && HW_SPI_Tx_Is_Complete( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
     {
-        /*
-         * TEMPORARY BRING-UP DIAGNOSTIC:
-         * Leave SPI4 running after the DAC startup packet completes. The old
-         * analogue-output path did not stop SPI here, and this isolates the
-         * new HW_SPI_Stop_Channel() call as the source of the configuration
-         * fault. Remove this bypass once the SPI stop behaviour is resolved.
-         */
+        if ( !HW_SPI_Stop_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
+        {
+            s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+            return;
+        }
+
         s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_CONFIGURED;
     }
 }

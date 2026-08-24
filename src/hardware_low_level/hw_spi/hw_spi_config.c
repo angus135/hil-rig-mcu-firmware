@@ -292,6 +292,31 @@ static bool HW_SPI_Config_Apply_GPIO( const HWSPIConfig_T* configuration )
 
     return HW_GPIO_Configure_Pin_As_Alternate_Function( configuration->nss_pin );
 }
+
+static bool HW_SPI_Config_Stop_DMA_Stream( DMA_TypeDef* dma, uint32_t stream )
+{
+    uint32_t timeout;
+
+    if ( dma == NULL )
+    {
+        return true;
+    }
+
+    LL_DMA_DisableStream( dma, stream );
+
+    timeout = HW_SPI_DMA_DISABLE_TIMEOUT_ITERATIONS;
+    while ( LL_DMA_IsEnabledStream( dma, stream ) != 0U )
+    {
+        if ( timeout == 0U )
+        {
+            return false;
+        }
+        timeout--;
+    }
+
+    return true;
+}
+
 static void HW_SPI_Config_Precompute_Hot_Fields( SPIPeripheralState_T* peripheral_state,
                                                  SPIChannel_T          peripheral,
                                                  HWSPIConfig_T         configuration )
@@ -539,7 +564,8 @@ bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configurat
 bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
 {
     SPIPeripheralState_T* peripheral_state;
-    HAL_StatusTypeDef     stop_status;
+    bool                  tx_stopped;
+    bool                  rx_stopped;
 
     if ( !HW_SPI_Is_Valid_Channel( peripheral ) )
     {
@@ -562,7 +588,22 @@ bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
         HW_TIMER_Stop_Timer( peripheral_state->tx_final_drain_timer );
     }
 
-    stop_status = HAL_SPI_DMAStop( SPI_HAL_HANDLE_ARRAY[( uint32_t )peripheral] );
+    /*
+     * Runtime DMA is programmed directly through LL, so HAL's DMA handles do
+     * not enter HAL_DMA_STATE_BUSY. Stop the same LL-owned resources directly
+     * instead of calling HAL_SPI_DMAStop(), which reports HAL_ERROR_NO_XFER for
+     * a successfully completed LL transfer.
+     */
+    NVIC_DisableIRQ( peripheral_state->tx_dma_irqn );
+    LL_SPI_DisableDMAReq_TX( peripheral_state->spi_peripheral );
+    LL_SPI_DisableDMAReq_RX( peripheral_state->spi_peripheral );
+
+    tx_stopped = HW_SPI_Config_Stop_DMA_Stream( peripheral_state->tx_dma,
+                                                peripheral_state->tx_dma_stream );
+    rx_stopped = HW_SPI_Config_Stop_DMA_Stream( peripheral_state->rx_dma,
+                                                peripheral_state->rx_dma_stream );
+
+    NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
 
     /*
      * Release master CS even if HAL cannot completely stop the DMA path.
@@ -573,11 +614,11 @@ bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
         HW_SPI_TX_Master_CS_Deassert( peripheral_state );
     }
 
-    if ( stop_status != HAL_OK )
+    if ( !tx_stopped || !rx_stopped )
     {
         /*
-         * Hardware state is uncertain. Keep is_started set so the caller can
-         * detect the failed transition and retry Stop().
+         * At least one DMA stream did not acknowledge disable within the
+         * bounded wait. Keep is_started set so Stop() can be retried.
          */
         return false;
     }
