@@ -272,7 +272,7 @@ bool HW_SPI_Start_Channel( SPIChannel_T peripheral );
  *
  * @return true if runtime operation was stopped successfully.
  * @return false if the channel is invalid, unconfigured, already stopped, or
- *     the HAL DMA stop operation failed.
+ *     an owned DMA stream did not stop within the bounded wait.
  */
 bool HW_SPI_Stop_Channel( SPIChannel_T peripheral );
 
