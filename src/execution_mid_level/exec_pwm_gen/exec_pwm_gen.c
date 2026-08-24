@@ -117,7 +117,8 @@ static bool EXEC_PWM_GEN_Is_Valid_Voltage( ExecPwmGenChannel_T      channel,
 
         case EXEC_PWM_GEN_CHANNEL_HV:
             return voltage_level == EXEC_PWM_GEN_VOLTAGE_12V
-                   || voltage_level == EXEC_PWM_GEN_VOLTAGE_24V;
+                    || voltage_level == EXEC_PWM_GEN_VOLTAGE_24V
+                    || voltage_level == EXEC_PWM_GEN_VOLTAGE_DISABLED;
 
         default:
             return false;
@@ -233,7 +234,7 @@ bool EXEC_PWM_GEN_Configure_Channel( ExecPwmGenChannel_T channel, const ExecPwmG
 
         const ExecPwmGenVoltageLevel_T safe_voltage = channel == EXEC_PWM_GEN_CHANNEL_LV
                                                           ? EXEC_PWM_GEN_VOLTAGE_3V3
-                                                          : EXEC_PWM_GEN_VOLTAGE_12V;
+                                                          : EXEC_PWM_GEN_VOLTAGE_DISABLED;
 
         if ( !EXEC_PWM_GEN_Apply_Voltage_Selection( channel, safe_voltage ) )
         {

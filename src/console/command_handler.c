@@ -394,7 +394,7 @@ static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] )
         return;
     }
 
-    const uint32_t timer_hz = 9000000U;
+    const uint32_t timer_hz = 90000000U;
     const uint16_t psc      = HW_PWM_GEN_compute_psc( frequency_hz, timer_hz );
     const uint16_t arr      = HW_PWM_GEN_compute_arr( frequency_hz, timer_hz, psc );
     const uint16_t ccr      = HW_PWM_GEN_compute_ccr( ( uint16_t )duty, arr );
