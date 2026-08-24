@@ -1045,9 +1045,13 @@ static void CONSOLE_Command_SPI_Loopback( uint16_t argc, char* argv[] )
     {
         CONSOLE_SPI_Loopback_Config( argc, argv );
     }
-    else if ( strcmp( argv[1], "apply" ) == 0 )
+    else if ( strcmp( argv[1], "apply_config" ) == 0 )
     {
-        CONSOLE_SPI_Loopback_Apply( argc, argv );
+        CONSOLE_SPI_Loopback_Apply_Config( argc, argv );
+    }
+    else if ( strcmp( argv[1], "start" ) == 0 )
+    {
+        CONSOLE_SPI_Loopback_Start( argc, argv );
     }
     else if ( strcmp( argv[1], "stop" ) == 0 )
     {
