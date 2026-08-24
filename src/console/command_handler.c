@@ -1185,9 +1185,15 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[1], "status" ) == 0 )
     {
-        CONSOLE_Printf( "Analogue outputs: %s, %s\r\n",
-                        EXEC_ANALOGUE_OUTPUT_Is_Configured() ? "configured" : "unconfigured",
-                        EXEC_ANALOGUE_OUTPUT_Is_Started() ? "started" : "stopped" );
+        const AnalogueOutputState_T state = EXEC_ANALOG_OUTPUT_Get_State();
+
+        CONSOLE_Printf( "Analogue outputs: state=%u, configured=%s, started=%s\r\n",
+                        ( unsigned int )state,
+                        ( state == EXEC_ANALOG_OUTPUT_STATE_CONFIGURED
+                          || state == EXEC_ANALOG_OUTPUT_STATE_STARTED )
+                            ? "yes"
+                            : "no",
+                        state == EXEC_ANALOG_OUTPUT_STATE_STARTED ? "yes" : "no" );
         return;
     }
 
