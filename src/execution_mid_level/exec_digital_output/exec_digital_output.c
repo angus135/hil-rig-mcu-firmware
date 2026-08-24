@@ -64,35 +64,35 @@ static ExecDigitalOutputConfig_T exec_digital_output_configuration;
 
 static const ExecDigitalOutputControlMapping_T
     exec_digital_output_control_mappings[EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT] = {
-        /* Channel 1: DO_A0_1 = GPA1, DO_A1_1 = GPA0 */
-        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 1U, 0U },
-
-        /* Channel 2: DO_A0_2 = GPA4, DO_A1_2 = GPA5 */
-        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 4U, 5U },
-
-        /* Channel 3: DO_A0_3 = GPB0, DO_A1_3 = GPB1 */
-        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_B, 0U, 1U },
-
-        /* Channel 4: DO_A0_4 = GPB7, DO_A1_4 = GPB6 */
-        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_B, 7U, 6U },
-
-        /* Channel 5: DO_A0_5 = GPB5, DO_A1_5 = GPB4 */
-        { LOGIC_EXPANDER_DO_2, LOGIC_EXPANDER_PORT_B, 5U, 4U },
-
-        /* Channel 6: DO_A0_6 = GPA6, DO_A1_6 = GPA7 */
+        /* Channel 1: physical connector pin 1; previously logical channel 6 */
         { LOGIC_EXPANDER_DO_2, LOGIC_EXPANDER_PORT_A, 6U, 7U },
 
-        /* Channel 7: DO_A0_7 = GPA6, DO_A1_7 = GPA7 */
+        /* Channel 2: physical connector pin 2; previously logical channel 1 */
+        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 1U, 0U },
+
+        /* Channel 3: physical connector pin 3; previously logical channel 7 */
         { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 6U, 7U },
 
-        /* Channel 8: DO_A0_8 = GPB4, DO_A1_8 = GPB5 */
+        /* Channel 4: physical connector pin 4; previously logical channel 2 */
+        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 4U, 5U },
+
+        /* Channel 5: physical connector pin 5; previously logical channel 8 */
         { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_B, 4U, 5U },
 
-        /* Channel 9: DO_A0_9 = GPB2, DO_A1_9 = GPB3 */
+        /* Channel 6: physical connector pin 6; previously logical channel 3 */
+        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_B, 0U, 1U },
+
+        /* Channel 7: physical connector pin 7; previously logical channel 9 */
         { LOGIC_EXPANDER_DO_2, LOGIC_EXPANDER_PORT_B, 2U, 3U },
 
-        /* Channel 10: DO_A0_10 = GPB6, DO_A1_10 = GPB7 */
+        /* Channel 8: physical connector pin 8; previously logical channel 4 */
+        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_B, 7U, 6U },
+
+        /* Channel 9: physical connector pin 9; previously logical channel 10 */
         { LOGIC_EXPANDER_DO_2, LOGIC_EXPANDER_PORT_B, 6U, 7U },
+
+        /* Channel 10: physical connector pin 10; previously logical channel 5 */
+        { LOGIC_EXPANDER_DO_2, LOGIC_EXPANDER_PORT_B, 5U, 4U },
 };
 
 static GPIOOutput_T exec_digital_output_gpio_channels[EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT] = {

@@ -154,16 +154,16 @@ protected:
 TEST_F( ExecDigitalOutputTest, ControlMappingMatchesBoardSchematic )
 {
     const ExecDigitalOutputControlMapping_T expected[EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT] = {
-        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 1U, 0U },
-        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 4U, 5U },
-        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_B, 0U, 1U },
-        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_B, 7U, 6U },
-        { LOGIC_EXPANDER_DO_2, LOGIC_EXPANDER_PORT_B, 5U, 4U },
         { LOGIC_EXPANDER_DO_2, LOGIC_EXPANDER_PORT_A, 6U, 7U },
+        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 1U, 0U },
         { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 6U, 7U },
+        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 4U, 5U },
         { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_B, 4U, 5U },
+        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_B, 0U, 1U },
         { LOGIC_EXPANDER_DO_2, LOGIC_EXPANDER_PORT_B, 2U, 3U },
+        { LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_B, 7U, 6U },
         { LOGIC_EXPANDER_DO_2, LOGIC_EXPANDER_PORT_B, 6U, 7U },
+        { LOGIC_EXPANDER_DO_2, LOGIC_EXPANDER_PORT_B, 5U, 4U },
     };
 
     for ( uint32_t channel = 0U; channel < ( uint32_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT;
@@ -198,10 +198,10 @@ TEST_F( ExecDigitalOutputTest, StageVoltageUsesA0A1TruthTable )
     for ( const VoltageCase& test_case : cases )
     {
         EXPECT_CALL(
-            mock, LoadControlBit( LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 1U, test_case.a0 ) )
+            mock, LoadControlBit( LOGIC_EXPANDER_DO_2, LOGIC_EXPANDER_PORT_A, 6U, test_case.a0 ) )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
         EXPECT_CALL(
-            mock, LoadControlBit( LOGIC_EXPANDER_DO_1, LOGIC_EXPANDER_PORT_A, 0U, test_case.a1 ) )
+            mock, LoadControlBit( LOGIC_EXPANDER_DO_2, LOGIC_EXPANDER_PORT_A, 7U, test_case.a1 ) )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
 
         EXPECT_TRUE(
