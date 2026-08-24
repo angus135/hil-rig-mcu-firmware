@@ -75,6 +75,7 @@ typedef struct
 {
     bool        is_configured;
     bool        is_started;
+    ExecUartInterfaceMode_T interface_mode;
     uint32_t    baud_rate;
     const char* framing_text;
     uint32_t    wire_bits_per_byte;
@@ -115,6 +116,9 @@ static void CONSOLE_UART_Loopback_Send( uint16_t argc, char* argv[] );
 static void CONSOLE_UART_Loopback_Blast_Random( uint16_t argc, char* argv[] );
 
 static bool CONSOLE_UART_Parse_Baud_Rate( const char* text, uint32_t* baud_rate_out );
+static bool CONSOLE_UART_Parse_Interface_Mode( const char* text,
+                                               ExecUartInterfaceMode_T* mode_out );
+static const char* CONSOLE_UART_Interface_Mode_To_String( ExecUartInterfaceMode_T mode );
 static bool CONSOLE_UART_Parse_Channel( const char* text, ExecUartChannel_T* channel_out );
 static bool CONSOLE_UART_Parse_U32( const char* text, const char* field_name, uint32_t min_value,
                                     uint32_t max_value, uint32_t* value_out );
@@ -179,7 +183,7 @@ static void CONSOLE_UART_Print_Usage( void )
 static void CONSOLE_UART_Loopback_Print_Usage( void )
 {
     CONSOLE_Printf( "Usage:\r\n" );
-    CONSOLE_Printf( "  uart loopback configure <baud> [framing]\r\n" );
+    CONSOLE_Printf( "  uart loopback configure <3v3|5v|rs232> <baud> [framing]\r\n" );
     CONSOLE_Printf( "  uart loopback start\r\n" );
     CONSOLE_Printf( "  uart loopback stop\r\n" );
     CONSOLE_Printf( "  uart loopback deconfigure\r\n" );
@@ -188,7 +192,8 @@ static void CONSOLE_UART_Loopback_Print_Usage( void )
     CONSOLE_Printf( "  uart loopback blast_random <sender_ch> <receiver_ch> <length> <seed> "
                     "[iterations] [chunk_size]\r\n" );
     CONSOLE_Printf( "    note: sender_ch and receiver_ch must be in {ch1,ch2}\r\n" );
-    CONSOLE_Printf( "    note: configure uses fixed mode TTL_3V3 with RX+TX enabled\r\n" );
+    CONSOLE_Printf( "    note: configure applies the selected mode to both channels\r\n" );
+    CONSOLE_Printf( "    note: RX+TX are enabled for both channels\r\n" );
     CONSOLE_Printf( "    note: default framing is 8N1\r\n" );
     CONSOLE_Printf( "    note: supported framing values are 8N1, 8E1, 8O1, 8N2, 9N1\r\n" );
     CONSOLE_Printf( "    note: blast_random uses deterministic pseudo-random data\r\n" );
@@ -222,6 +227,51 @@ static bool CONSOLE_UART_Parse_Baud_Rate( const char* text, uint32_t* baud_rate_
 {
     return CONSOLE_UART_Parse_U32( text, "baud rate", 1U, CONSOLE_UART_LOOPBACK_MAX_BAUD_RATE,
                                    baud_rate_out );
+}
+
+static bool CONSOLE_UART_Parse_Interface_Mode( const char* text,
+                                               ExecUartInterfaceMode_T* mode_out )
+{
+    if ( text == NULL || mode_out == NULL )
+    {
+        return false;
+    }
+
+    if ( strcmp( text, "3v3" ) == 0 || strcmp( text, "ttl3v3" ) == 0 )
+    {
+        *mode_out = EXEC_UART_MODE_TTL_3V3;
+        return true;
+    }
+
+    if ( strcmp( text, "5v" ) == 0 || strcmp( text, "ttl5v" ) == 0 )
+    {
+        *mode_out = EXEC_UART_MODE_TTL_5V0;
+        return true;
+    }
+
+    if ( strcmp( text, "rs232" ) == 0 )
+    {
+        *mode_out = EXEC_UART_MODE_RS232;
+        return true;
+    }
+
+    return false;
+}
+
+static const char* CONSOLE_UART_Interface_Mode_To_String( ExecUartInterfaceMode_T mode )
+{
+    switch ( mode )
+    {
+        case EXEC_UART_MODE_TTL_3V3:
+            return "TTL_3V3";
+        case EXEC_UART_MODE_TTL_5V0:
+            return "TTL_5V0";
+        case EXEC_UART_MODE_RS232:
+            return "RS232";
+        case EXEC_UART_MODE_DISABLED:
+        default:
+            return "disabled";
+    }
 }
 
 static bool CONSOLE_UART_Parse_Channel( const char* text, ExecUartChannel_T* channel_out )
@@ -490,7 +540,8 @@ static bool CONSOLE_UART_Read_And_Report_Loopback_Result( ExecUartChannel_T rece
 
 static void CONSOLE_UART_Loopback_Configure( uint16_t argc, char* argv[] )
 {
-    uint32_t baud_rate = 0U;
+    ExecUartInterfaceMode_T interface_mode = EXEC_UART_MODE_DISABLED;
+    uint32_t                baud_rate      = 0U;
 
     HwUartWordLength_T word_length        = HW_UART_WORD_LENGTH_8_BITS;
     HwUartParity_T     parity             = HW_UART_PARITY_NONE;
@@ -498,30 +549,44 @@ static void CONSOLE_UART_Loopback_Configure( uint16_t argc, char* argv[] )
     const char*        framing_text       = "8N1";
     uint32_t           wire_bits_per_byte = 10U;
 
-    if ( ( argc != 4U ) && ( argc != 5U ) )
+    if ( ( argc != 5U ) && ( argc != 6U ) )
     {
         CONSOLE_UART_Loopback_Print_Usage();
         return;
     }
 
-    if ( !CONSOLE_UART_Parse_Baud_Rate( argv[CONSOLE_UART_ARGV_PARAM_1], &baud_rate ) )
+    if ( !CONSOLE_UART_Parse_Interface_Mode( argv[CONSOLE_UART_ARGV_PARAM_1], &interface_mode ) )
+    {
+        CONSOLE_Printf( "Invalid UART interface mode: %s\r\n",
+                        argv[CONSOLE_UART_ARGV_PARAM_1] );
+        CONSOLE_Printf( "Supported modes: 3v3, 5v, rs232\r\n" );
+        return;
+    }
+
+    if ( !CONSOLE_UART_Parse_Baud_Rate( argv[CONSOLE_UART_ARGV_PARAM_2], &baud_rate ) )
     {
         return;
     }
 
-    if ( argc == 5U )
+    if ( interface_mode == EXEC_UART_MODE_RS232 && baud_rate > 1000000U )
     {
-        if ( !CONSOLE_UART_Parse_Framing( argv[CONSOLE_UART_ARGV_PARAM_2], &word_length, &parity,
+        CONSOLE_Printf( "RS232 baud rate must not exceed 1000000\r\n" );
+        return;
+    }
+
+    if ( argc == 6U )
+    {
+        if ( !CONSOLE_UART_Parse_Framing( argv[CONSOLE_UART_ARGV_PARAM_3], &word_length, &parity,
                                           &stop_bits, &framing_text, &wire_bits_per_byte ) )
         {
-            CONSOLE_Printf( "Invalid framing: %s\r\n", argv[CONSOLE_UART_ARGV_PARAM_2] );
+            CONSOLE_Printf( "Invalid framing: %s\r\n", argv[CONSOLE_UART_ARGV_PARAM_3] );
             CONSOLE_Printf( "Supported framing: 8N1, 8E1, 8O1, 8N2, 9N1\r\n" );
             return;
         }
     }
 
     ExecUartConfig_T config = { 0 };
-    config.interface_mode   = EXEC_UART_MODE_TTL_3V3;
+    config.interface_mode   = interface_mode;
     config.rx_enabled       = true;
     config.tx_enabled       = true;
     config.baud_rate        = baud_rate;
@@ -546,13 +611,14 @@ static void CONSOLE_UART_Loopback_Configure( uint16_t argc, char* argv[] )
 
     s_uart_loopback_state.is_configured      = true;
     s_uart_loopback_state.is_started         = false;
+    s_uart_loopback_state.interface_mode     = interface_mode;
     s_uart_loopback_state.baud_rate          = baud_rate;
     s_uart_loopback_state.framing_text       = framing_text;
     s_uart_loopback_state.wire_bits_per_byte = wire_bits_per_byte;
 
     CONSOLE_Printf( "uart loopback configured\r\n" );
     CONSOLE_Printf( "  channels: ch1 + ch2\r\n" );
-    CONSOLE_Printf( "  mode: TTL_3V3\r\n" );
+    CONSOLE_Printf( "  mode: %s\r\n", CONSOLE_UART_Interface_Mode_To_String( interface_mode ) );
     CONSOLE_Printf( "  baud: %lu\r\n", ( unsigned long )baud_rate );
     CONSOLE_Printf( "  framing: %s\r\n", framing_text );
     CONSOLE_Printf( "  rx/tx: enabled\r\n" );
@@ -597,6 +663,7 @@ static void CONSOLE_UART_Loopback_Deconfigure( uint16_t argc, char* argv[] )
     {
         s_uart_loopback_state.is_configured      = false;
         s_uart_loopback_state.is_started         = false;
+        s_uart_loopback_state.interface_mode     = EXEC_UART_MODE_DISABLED;
         s_uart_loopback_state.baud_rate          = 0U;
         s_uart_loopback_state.framing_text       = NULL;
         s_uart_loopback_state.wire_bits_per_byte = 0U;
@@ -635,7 +702,9 @@ static void CONSOLE_UART_Loopback_Status( uint16_t argc, char* argv[] )
     CONSOLE_Printf( "uart loopback: %s\r\n",
                     s_uart_loopback_state.is_started ? "started" : "configured" );
     CONSOLE_Printf( "  channels: ch1 + ch2\r\n" );
-    CONSOLE_Printf( "  mode: TTL_3V3\r\n" );
+    CONSOLE_Printf(
+        "  mode: %s\r\n",
+        CONSOLE_UART_Interface_Mode_To_String( s_uart_loopback_state.interface_mode ) );
     CONSOLE_Printf( "  baud: %lu\r\n", ( unsigned long )s_uart_loopback_state.baud_rate );
     CONSOLE_Printf( "  framing: %s\r\n", s_uart_loopback_state.framing_text );
     CONSOLE_Printf( "  rx/tx: enabled\r\n" );
