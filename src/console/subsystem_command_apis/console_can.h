@@ -39,7 +39,9 @@ extern "C"
  * Supported command namespace:
  *   can tx <channel> <id> <payload> [<id> <payload> ...]
  *   can rx <channel>
- *   can config <can1_bank> <can2_bank> <filter_id> <filter_mask>
+ *   can config <channel> <filter_bank> <filter_id> <filter_mask>
+ *   can start <channel>
+ *   can stop <channel>
  *
  * @param argc Number of parsed command arguments.
  * @param argv Parsed command argument array.

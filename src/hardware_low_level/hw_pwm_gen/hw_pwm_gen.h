@@ -4,10 +4,13 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      <Short description of the module, what it exposes, and how it should be used>
+ *      Low-level PWM generation interface. Provides strict per-channel
+ *      configure/start/stop lifecycle control, timer-value calculations, and
+ *      direct execution-time register updates.
  *
  *  Notes:
- *      <Public assumptions, required initialisation order, dependencies, etc.>
+ *      Timer and GPIO base initialisation is supplied by generated board code.
+ *      Board-level voltage selection belongs to the execution layer.
  ******************************************************************************/
 
 #ifndef HW_PWM_GEN_H
@@ -39,15 +42,10 @@ extern "C"
 
 typedef enum
 {
-    PWM_GEN_VOLTAGE_LOW,
-    PWM_GEN_VOLTAGE_HIGH
-} PwmGenVoltageLevel_T;
-
-typedef enum
-{
-    PWM_GEN_CHANNEL_LV,
-    PWM_GEN_CHANNEL_HV
-} PwmGenChannel_T;
+    HW_PWM_GEN_CHANNEL_LV,
+    HW_PWM_GEN_CHANNEL_HV,
+    HW_PWM_GEN_CHANNEL_COUNT
+} HwPwmGenChannel_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -55,13 +53,29 @@ typedef enum
  */
 
 /**
- * @brief Computes the pwm output.
+ * @brief Configures a PWM generation channel without starting its output.
  *
- * @param channel   The channel you want to configure <1|2|3|4>
- * @param volt_lvl  The voltage level you want (low or high <0|1>)
+ * @param channel PWM generation channel to configure.
  *
+ * @return true if the channel was configured successfully; otherwise false.
  */
-void HW_PWM_GEN_Config( PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl );
+bool HW_PWM_GEN_Configure_Channel( HwPwmGenChannel_T channel );
+
+/**
+ * @brief Starts a previously configured PWM generation channel.
+ *
+ * @param channel PWM generation channel to start.
+ * @return true if the channel was started successfully; otherwise false.
+ */
+bool HW_PWM_GEN_Start_Channel( HwPwmGenChannel_T channel );
+
+/**
+ * @brief Stops a started PWM channel while retaining its configuration.
+ *
+ * @param channel PWM generation channel to stop.
+ * @return true if the channel was stopped successfully; otherwise false.
+ */
+bool HW_PWM_GEN_Stop_Channel( HwPwmGenChannel_T channel );
 
 /**
  * @brief Computes the prescaler register (PSC).

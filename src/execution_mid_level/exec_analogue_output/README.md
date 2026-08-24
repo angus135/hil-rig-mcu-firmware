@@ -1,43 +1,50 @@
 # exec_analogue_output
+
 ## Overview
 
-`exec_analogue_output` provides the mid-level driver for the MCP48CVB28T-20E_ST DAC.
+`exec_analogue_output` owns execution-level control of the MCP48CVB28T DAC and
+the board-level `AO_EN` signal. It configures the dedicated DAC SPI channel,
+programs the DAC reference and channel registers, controls `AO_EN` through port
+B bit 0 of `LOGIC_EXPANDER_I2C_AO`, and prepares 0-20 V requests for SPI.
 
-This module is responsible for:
+Channels 0-5 are available for analogue outputs. Channels 6-7 are placed in
+open-circuit power-down mode during configuration.
 
-- Configuring the DAC over SPI using the low-level `hw_spi` driver.
-- Initializing channels 0-5 for active outputs.
-- Putting channels 6-7 into power-down open-circuit mode.
-- Scaling requested 0-20 V input values down to the DAC's 0-5 V output range.
+## Lifecycle
 
+```text
+Disabled --Configure(enabled)--> Configuring --> Configured --Start--> Started
+   ^                                              ^                    |
+   +-------------Configure(disabled)--------------+-------Stop---------+
+```
 
----
+- `Configure(enabled)` holds `AO_EN` low, configures and temporarily starts
+  SPI, then sends the DAC startup packet. The packet initializes every DAC data
+  register to 0 V. SPI is stopped when transmission completes.
+- `Start()` starts SPI and then asserts `AO_EN`.
+- `Stop()` waits for pending transmission to complete, deasserts `AO_EN`, and
+  stops SPI. It retains the DAC configuration and last programmed values.
+- `Configure(disabled)` applies the safe `AO_EN` state. Until the SPI layer has
+  a deconfigure operation, the SPI peripheral remains configured but stopped.
 
-## Files
-
-| File                      | Role |
-|---------------------------|------|
-| `exec_analogue_output.c`        | Public API implementation |
-| `exec_analogue_output.h`        | Public API header |
-
-
----
+Therefore, configure then start begins at 0 V. Stop then start restores the
+previous DAC values; reconfigure before restarting when 0 V is required.
+Runtime writes and prepared-batch submissions are accepted only while started.
 
 ## Public API
 
-The public API is declared in `exec_analogue_output.h`. The functions below
-describe the intended call order and the responsibilities of each entry point.
+| Function | Behaviour |
+|----------|-----------|
+| `EXEC_ANALOGUE_OUTPUT_Configure(config)` | Enables and configures the module, or applies its disabled safe state according to `config->is_enabled`. |
+| `EXEC_ANALOGUE_OUTPUT_Start()` | Starts SPI and enables the external analogue-output path. |
+| `EXEC_ANALOGUE_OUTPUT_Stop()` | Disables the external path and stops SPI while retaining DAC values and configuration. |
+| `EXEC_ANALOGUE_OUTPUT_Is_Configured()` | Reports whether configuration has completed. |
+| `EXEC_ANALOGUE_OUTPUT_Is_Started()` | Reports whether the output path is started. |
+| `EXEC_ANALOG_OUTPUT_Prepare_Frame()` | Validates, clamps, and converts one voltage request outside the execution hot path. |
+| `EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch()` | Submits a prepared batch while started. |
+| `EXEC_ANALOGUE_OUTPUT_Write_Voltage()` | Compatibility interface for manual and console writes while started. |
 
-| Function | What it does |
-|----------|--------------|
-| `EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup()` | Configures and starts the SPI channel used by the DAC. Call this during system startup before attempting any DAC transfers. |
-| `EXEC_ANALOGUE_OUTPUT_Config(use_external_vref)` | Queues the DAC's 11 startup commands atomically as separate three-byte, CS-framed SPI packets, triggers once, selects the reference source, enables channels 0-5, and puts channels 6-7 into open-circuit power-down mode. |
-| `EXEC_ANALOG_OUTPUT_Is_Configured()` | Returns whether `EXEC_ANALOGUE_OUTPUT_Config()` has completed successfully. Useful for guarding console commands or higher-level control logic. |
-| `EXEC_ANALOG_OUTPUT_Write_Voltage(channel, input_voltage_v)` | Validates the requested channel, clamps the input voltage to 0-20 V, scales it to the DAC's 12-bit range, and sends a write frame to the DAC. Returns false if the module is not configured, the channel is out of range, or the SPI transfer cannot be queued. |
-
-## Usage Notes
-
-- Call `EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup()` before `EXEC_ANALOGUE_OUTPUT_Config()`.
-- Only channels 0-5 are intended for active analogue outputs.
-- Channels 6-7 are deliberately disabled and should not be written to.
-- Voltage writes are clamped to the 0-20 V input range before scaling.
+A successful LogicExpander send means the I2C transaction was initiated; its
+electrical completion may still be asynchronous. The global LogicExpander
+active mask must include `LOGIC_EXPANDER_I2C_AO` during board bring-up for
+`AO_EN` changes to reach the physical device.

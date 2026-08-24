@@ -16,9 +16,9 @@
  *  Notes:
  *      - This layer does not directly access UART hardware registers or DMA
  *        peripherals.
- *      - Hardware control, DMA ownership, buffer ownership, and electrical
- *        interface selection remain the responsibility of the low-level
- *        hw_uart driver.
+ *      - UART peripheral and DMA ownership remain in the low-level driver.
+ *      - External electrical-interface selection is applied here through the
+ *        logic expander.
  *      - RX data returned through this interface is copied from low-level
  *        driver owned DMA buffers into caller-provided storage.
  *      - TX operations are sequenced through the low-level driver TX ring buffer
@@ -59,45 +59,68 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief  Identifies the available UART channels supported by the hardware.
+ *
+ * @note   Each channel corresponds to a distinct DUT-facing UART interface with
+ *         independent configuration and buffering.
+ */
+typedef enum
+{
+    EXEC_UART_CHANNEL_1 = 0U,
+    EXEC_UART_CHANNEL_2,
+    EXEC_UART_CHANNEL_COUNT
+} ExecUartChannel_T;
+
+/**
+ * @brief  Defines the physical interface mode and voltage behaviour of the UART channel.
+ *
+ * @note   This controls external hardware selection (e.g. TTL voltage level or RS232
+ *         line driver) and must be configured before enabling UART operation.
+ */
+typedef enum
+{
+    EXEC_UART_MODE_DISABLED = 0U,
+    EXEC_UART_MODE_TTL_3V3,
+    EXEC_UART_MODE_TTL_5V0,
+    EXEC_UART_MODE_RS232
+} ExecUartInterfaceMode_T;
+
+typedef struct
+{
+    ExecUartInterfaceMode_T interface_mode;
+
+    uint32_t           baud_rate;
+    HwUartWordLength_T word_length;
+    HwUartStopBits_T   stop_bits;
+    HwUartParity_T     parity;
+
+    bool rx_enabled;
+    bool tx_enabled;
+    bool is_enabled;
+} ExecUartConfig_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
 
 /**
- * @brief  Applies a UART channel configuration through the exec layer.
+ * @brief Configure or disable a UART channel without starting it.
  *
- * @param  channel UART channel to configure.
- * @param  config  Pointer to the UART configuration to apply.
- *
- * @return true if the configuration was successfully applied.
- * @return false if the channel is invalid, the configuration pointer is null,
- *         low-level configuration fails, RX stop fails during reconfiguration,
- *         or RX start fails when requested by the supplied configuration.
- *
- * @note   This function sequences configuration-related low-level operations.
- *
- * @note   If RX is currently running on the channel, it is stopped before the
- *         new configuration is applied.
- *
- * @note   If the supplied configuration enables RX, reception is started after
- *         successful low-level configuration.
+ * Set @p config->is_enabled false to stop, deconfigure, and apply the safe
+ * external-interface state.
  */
-bool EXEC_UART_Apply_Configuration( HwUartChannel_T channel, const HwUartConfig_T* config );
+bool EXEC_UART_Configure_Channel( ExecUartChannel_T channel, const ExecUartConfig_T* config );
+
+/** @brief Start a configured UART channel. */
+bool EXEC_UART_Start_Channel( ExecUartChannel_T channel );
 
 /**
- * @brief  Deconfigures a UART channel through the exec layer.
- *
- * @param  channel UART channel to deconfigure.
- *
- * @return true if the channel was successfully deconfigured.
- * @return false if the channel is invalid, RX stop fails, or the disabled
- *         configuration cannot be applied through the low-level driver.
- *
- * @note   This function stops active RX if required, then applies a canonical
- *         disabled UART configuration through the low-level driver.
+ * @brief Stop a started UART channel while retaining its configuration.
+ * @return false if the channel is invalid, not started, TX is incomplete, or RX stop fails.
  */
-bool EXEC_UART_Deconfigure( HwUartChannel_T channel );
+bool EXEC_UART_Stop_Channel( ExecUartChannel_T channel );
 
 /**
  * @brief  Queues a UART TX payload and starts the low-level TX DMA pump if required.
@@ -121,7 +144,7 @@ bool EXEC_UART_Deconfigure( HwUartChannel_T channel );
  * @note   New TX data may be queued while a previous TX DMA transfer is still active,
  *         provided sufficient free space remains in the low-level TX ring buffer.
  */
-bool EXEC_UART_Transmit( HwUartChannel_T channel, const uint8_t* data, uint32_t length_bytes );
+bool EXEC_UART_Transmit( ExecUartChannel_T channel, const uint8_t* data, uint32_t length_bytes );
 
 /**
  * @brief  Copies unread UART RX data into caller-provided storage.
@@ -145,7 +168,7 @@ bool EXEC_UART_Transmit( HwUartChannel_T channel, const uint8_t* data, uint32_t 
  * @note   If @p dest_size is 0, this function returns true and performs no
  *         copy or consume operation.
  */
-bool EXEC_UART_Read( HwUartChannel_T channel, uint8_t* dest, uint32_t dest_size,
+bool EXEC_UART_Read( ExecUartChannel_T channel, uint8_t* dest, uint32_t dest_size,
                      uint32_t* bytes_read );
 
 /**
@@ -159,7 +182,7 @@ bool EXEC_UART_Read( HwUartChannel_T channel, uint8_t* dest, uint32_t dest_size,
  * @return true if TX is fully complete.
  * @return false otherwise.
  */
-bool EXEC_UART_Is_Tx_Complete( HwUartChannel_T channel );
+bool EXEC_UART_Is_Tx_Complete( ExecUartChannel_T channel );
 
 #ifdef __cplusplus
 }

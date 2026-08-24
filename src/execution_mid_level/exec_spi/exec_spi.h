@@ -59,21 +59,24 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+typedef struct ExecSPIConfig_T
+{
+    bool          is_enabled;
+    HWSPIConfig_T hardware;
+} ExecSPIConfig_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
 
 /**
- * @brief Configure and start an execution SPI channel.
+ * @brief Configure or disable an execution SPI channel.
  *
- * Applies the requested low-level SPI configuration to the selected channel and
- * starts the low-level SPI runtime path.
- *
- * If the channel is already active, this function first stops the low-level SPI
- * channel before applying the new configuration. This allows the execution
- * layer to reconfigure a SPI channel between test phases without requiring the
- * caller to explicitly stop it first.
+ * Enabled configuration selects the external master/slave path through the
+ * Logic Expander while keeping SPI_EN low, then configures HW SPI. Starting is
+ * a separate operation. Disabled configuration stops a started channel and
+ * applies SPI_EN=0 with slave selection as the safe external state.
  *
  * This function is intended for setup/configuration time rather than the
  * 10 kHz execution hot path. It performs only minimal state handling and relies
@@ -86,15 +89,33 @@ extern "C"
  * @param peripheral
  *     The SPI peripheral/channel to configure.
  *
- * @param configuration
- *     The low-level SPI configuration to apply.
+ * @param config
+ *     Execution-level enable request and low-level SPI configuration.
  *
  * @return
- *     true if the low-level channel was configured and started successfully.
- *     false if the channel state could not be resolved, the current state was
- *     invalid, or the low-level driver failed to configure the channel.
+ *     true if configuration or the disabled safe state was applied.
+ *     false for an invalid channel/configuration, reconfiguration while
+ *     started, or a failed Logic Expander or HW SPI operation.
  */
-bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configuration );
+bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral, const ExecSPIConfig_T* config );
+
+/** @brief Start configured HW SPI, then enable its external interface. */
+bool EXEC_SPI_Start_Channel( SPIChannel_T peripheral );
+
+/**
+ * @brief Gracefully stop a started channel while retaining configuration.
+ *
+ * Valid queued transmission must be electrically complete before stop. A
+ * faulted TX path may be terminated for recovery. The external interface is
+ * disabled before HW SPI is stopped.
+ */
+bool EXEC_SPI_Stop_Channel( SPIChannel_T peripheral );
+
+/** @brief Return true when the channel is configured or started. */
+bool EXEC_SPI_Is_Configured( SPIChannel_T peripheral );
+
+/** @brief Return true only while the channel is started. */
+bool EXEC_SPI_Is_Started( SPIChannel_T peripheral );
 
 /**
  * @brief Queue one or more SPI packets for transmission and trigger the TX path.

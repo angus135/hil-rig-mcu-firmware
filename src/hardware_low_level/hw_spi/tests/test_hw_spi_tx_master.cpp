@@ -130,6 +130,7 @@ public:
     MOCK_METHOD( void, DMADisableITTC, ( DMA_TypeDef * dma, uint32_t stream ), () );
     MOCK_METHOD( void, DMADisableITTE, ( DMA_TypeDef * dma, uint32_t stream ), () );
     MOCK_METHOD( void, SPIDisableDMAReqTX, ( SPI_TypeDef * spi ), () );
+    MOCK_METHOD( void, SPIDisableDMAReqRX, ( SPI_TypeDef * spi ), () );
     MOCK_METHOD( void, SPIEnableDMAReqRX, ( SPI_TypeDef * spi ), () );
     MOCK_METHOD( void, SPIEnable, ( SPI_TypeDef * spi ), () );
     MOCK_METHOD( uint32_t, SPIIsBusy, ( const SPI_TypeDef* spi ), () );
@@ -297,6 +298,14 @@ extern "C" void LL_SPI_DisableDMAReq_TX( SPI_TypeDef* SPIx )
     if ( g_mock )
     {
         g_mock->SPIDisableDMAReqTX( SPIx );
+    }
+}
+
+extern "C" void LL_SPI_DisableDMAReq_RX( SPI_TypeDef* SPIx )
+{
+    if ( g_mock )
+    {
+        g_mock->SPIDisableDMAReqRX( SPIx );
     }
 }
 
@@ -1396,6 +1405,34 @@ TEST_F( HWSpiMasterTxTest, StopReleasesTheConfiguredMasterCs )
     EXPECT_EQ( gpio_events[0].pin, GPIO_SPI4_NSS );
     EXPECT_FALSE( HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted );
     EXPECT_FALSE( HW_SPI_STATE( SPI_CHANNEL_0 )->is_started );
+}
+
+TEST_F( HWSpiMasterTxTest, StopRejectsUnconfiguredChannel )
+{
+    HW_SPI_STATE( SPI_CHANNEL_0 )->is_configured = false;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->is_started    = false;
+
+    EXPECT_FALSE( HW_SPI_Stop_Channel( SPI_CHANNEL_0 ) );
+}
+
+TEST_F( HWSpiMasterTxTest, StopRejectsConfiguredButStoppedChannel )
+{
+    EXPECT_TRUE( HW_SPI_STATE( SPI_CHANNEL_0 )->is_configured );
+    EXPECT_FALSE( HW_SPI_STATE( SPI_CHANNEL_0 )->is_started );
+
+    EXPECT_FALSE( HW_SPI_Stop_Channel( SPI_CHANNEL_0 ) );
+}
+
+TEST_F( HWSpiMasterTxTest, StopFailureRetainsStartedStateForRetry )
+{
+    HW_SPI_STATE( SPI_CHANNEL_0 )->is_started  = true;
+    HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted = true;
+
+    EXPECT_CALL( mock, SPIDMAStop( Eq( &SPI_CHANNEL_0_HANDLE ) ) ).WillOnce( Return( HAL_ERROR ) );
+
+    EXPECT_FALSE( HW_SPI_Stop_Channel( SPI_CHANNEL_0 ) );
+    EXPECT_TRUE( HW_SPI_STATE( SPI_CHANNEL_0 )->is_started );
+    EXPECT_FALSE( HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted );
 }
 
 TEST_F( HWSpiMasterTxTest, TxErrorReleasesTheConfiguredMasterCs )

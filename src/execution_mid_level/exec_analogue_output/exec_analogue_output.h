@@ -4,10 +4,12 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      <Short description of the module, what it exposes, and how it should be used>
+ *      Execution-layer control for the external analogue-output DAC and its
+ *      board-level output-enable signal.
  *
  *  Notes:
- *      <Public assumptions, required initialisation order, dependencies, etc.>
+ *      Configure, start, and stop are separate lifecycle operations. Voltage
+ *      writes are accepted only while the module is configured and started.
  ******************************************************************************/
 
 #ifndef EXEC_ANALOGUE_OUTPUT_H
@@ -75,12 +77,13 @@ typedef struct AnalogueOutputPreparedBatch_T
 } AnalogueOutputPreparedBatch_T;
 
 /** @brief Analogue-output configuration and startup readiness state. */
-typedef enum AnalogueOutputState_T
+typedef enum
 {
-    EXEC_ANALOG_OUTPUT_STATE_UNCONFIGURED,  ///< DAC startup has not been submitted.
-    EXEC_ANALOG_OUTPUT_STATE_INITIALIZING,  ///< Startup frames are queued or active.
-    EXEC_ANALOG_OUTPUT_STATE_READY,         ///< Startup transmission completed electrically.
-    EXEC_ANALOG_OUTPUT_STATE_FAULTED,       ///< SPI setup, submission, or transmission failed.
+    EXEC_ANALOG_OUTPUT_STATE_DISABLED = 0U,
+    EXEC_ANALOG_OUTPUT_STATE_CONFIGURING,
+    EXEC_ANALOG_OUTPUT_STATE_CONFIGURED,
+    EXEC_ANALOG_OUTPUT_STATE_STARTED,
+    EXEC_ANALOG_OUTPUT_STATE_FAULTED
 } AnalogueOutputState_T;
 
 #if defined( __cplusplus )
@@ -105,53 +108,60 @@ _Static_assert( sizeof( AnalogueOutputPreparedBatch_T )
                 "A prepared analogue-output batch must use deterministic inline storage" );
 #endif
 
+typedef struct
+{
+    bool is_enabled;
+    bool use_external_vref;
+} ExecAnalogueOutputConfig_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
 
 /**
- * @brief Configure the DAC module and program initial DAC registers.
+ * @brief Configure or disable the DAC module.
  *
- * @param use_external_vref
- *     If true, configure the DAC to use the external buffered VREF pin.
- *     If false, configure the DAC to use VDD as the reference.
+ * @param config
+ *     Configuration parameters. When @c is_enabled is false, AO_EN is driven
+ *     to its safe disabled state. When true, SPI and the DAC are configured
+ *     while AO_EN remains disabled.
  *
  * A true return confirms that all eleven startup frames were accepted and
  * triggered, but electrical completion may still be pending. Call
- * EXEC_ANALOG_OUTPUT_Is_Configured() or EXEC_ANALOG_OUTPUT_Get_State() before
- * runtime submission.
+ * EXEC_ANALOGUE_OUTPUT_Is_Configured() or EXEC_ANALOG_OUTPUT_Get_State() before
+ * starting the external output path or submitting runtime writes.
  *
- * @return true if all startup frames were accepted and triggering did not fault.
- * @return false on SPI submission failure.
+ * Reconfiguration is rejected while the external output path is started.
+ *
+ * @return true if the startup frames were accepted and triggering did not fault.
+ * @return false if the module is started or configuration submission fails.
  */
-bool EXEC_ANALOGUE_OUTPUT_Config( bool use_external_vref );
+bool EXEC_ANALOGUE_OUTPUT_Configure( const ExecAnalogueOutputConfig_T* config );
 
 /**
- * @brief Configure and start the SPI hardware channel dedicated to DAC communication.
+ * @brief Enable the configured external analogue-output path.
  *
- * Intended to only be used for console testing to set up the SPI channel independently
- *
- * Sets up the SPI peripheral with the configuration required by the
- * MCP48CVB28T-20E_ST octal DAC: 8-bit data size, 703K baud rate, MSB first,
- * CPOL low, CPHA 1 edge.
- *
- * This function must be called once during system initialization to prepare
- * SPI for use before any DAC operations are performed. In the real project,
- * this setup will be performed by the system/board initialization layer.
- *
- * This function is provided as a separate helper for console testing so that
- * test commands can independently set up the SPI channel without integrating
- * into the full system initialization sequence.
- *
- * The SPI channel is activated for immediate use. After this function returns
- * successfully, the channel is ready to transmit frames to the DAC.
- *
- * @return
- *     true if SPI configuration and startup completed successfully.
- *     false if hardware configuration or startup failed.
+ * @return true if DAC configuration transmission is complete and the AO_EN
+ *         LogicExpander commit is accepted.
+ * @return false if the module is not configured, is already started, the DAC
+ *         transmission is incomplete, or the LogicExpander operation fails.
  */
-bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void );
+bool EXEC_ANALOGUE_OUTPUT_Start( void );
+
+/**
+ * @brief Stop the external analogue-output path while retaining configuration.
+ *
+ * Any pending DAC transfer must be complete. AO_EN is then disabled and the
+ * SPI channel is stopped. DAC register values are retained, so a subsequent
+ * start restores the previously programmed outputs. Reconfigure before start
+ * when a zero-valued restart is required.
+ *
+ * @return true if AO_EN is disabled and SPI is stopped.
+ * @return false if the module is not started, a transfer is incomplete, or a
+ *         LogicExpander or SPI stop operation fails.
+ */
+bool EXEC_ANALOGUE_OUTPUT_Stop( void );
 
 /**
  * @brief Return whether analogue-output startup has completed and is ready.
@@ -160,15 +170,20 @@ bool EXEC_ANALOGUE_OUTPUT_SPI_Channel_Setup( void );
  * sample. Useful for console commands and future execution callers that must
  * reject runtime writes until the DAC startup packet has completed.
  *
- * @return true only when the module state is READY.
+ * @return true only when the module is configured or started.
  */
-bool EXEC_ANALOG_OUTPUT_Is_Configured( void );
+bool EXEC_ANALOGUE_OUTPUT_Is_Configured( void );
+
+/**
+ * @brief Return whether the external analogue-output start command was accepted.
+ */
+bool EXEC_ANALOGUE_OUTPUT_Is_Started( void );
 
 /**
  * @brief Return the current analogue-output startup readiness state.
  *
  * If startup is queued, this performs one nonblocking SPI completion sample
- * and promotes the module to READY when electrical transmission is complete,
+ * and promotes the module to CONFIGURED when electrical transmission is complete,
  * or transitions it to FAULTED when the SPI TX path reports an error.
  *
  * @return Current module state after the nonblocking readiness update.
@@ -252,7 +267,7 @@ bool EXEC_ANALOG_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       prepa
  *
  * @return true if an empty batch required no work or the complete payload was
  *     accepted and triggered.
- * @return false if the module is not configured, the batch is malformed, or
+ * @return false if the module is not started, the batch is malformed, or
  *     SPI rejected the complete payload.
  */
 bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch(
@@ -276,11 +291,10 @@ bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch(
  * fail with false return code because those channels are disabled (configured
  * in open-circuit mode).
  *
- * The module must be initialized via EXEC_ANALOGUE_OUTPUT_Config() before this
- * function is called. Writing to an uninitialized module returns false.
- * This compatibility API is intended for console commands, manual testing,
- * and other non-hot-path use. The future execution manager should submit
- * prepared data directly.
+ * The module must be configured, electrically ready, and started before this
+ * function is called. This compatibility API is intended for console commands,
+ * manual testing, and other non-hot-path use. The future execution manager
+ * should submit prepared data directly..
  *
  * @param channel
  *     The DAC output channel number (0-5 for active channels, 6-7 disabled).
@@ -293,7 +307,7 @@ bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch(
  *     false if the module is not initialized, the channel is invalid (>= 6),
  *     or SPI transmission failed.
  */
-bool EXEC_ANALOG_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v );
+bool EXEC_ANALOGUE_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v );
 
 #ifdef __cplusplus
 }

@@ -29,6 +29,7 @@ extern "C"
 #include <stdint.h>
 #include <stdbool.h>
 #include "hw_i2c.h"
+#include "exec_i2c.h"
 #include "logic_expander.h"
 
 /**-----------------------------------------------------------------------------
@@ -49,8 +50,8 @@ typedef enum
 
 typedef struct
 {
-    HWI2CChannel_T master;
-    HWI2CChannel_T slave;
+    ExecI2CChannel_T master;
+    ExecI2CChannel_T slave;
 } CONSOLEI2CLoopbackChannels_T;
 
 /**-----------------------------------------------------------------------------
@@ -75,7 +76,13 @@ void CONSOLE_SPI_Loopback_Print_Usage( void );
 
 void CONSOLE_SPI_Loopback_Config( uint16_t argc, char* argv[] );
 
-void CONSOLE_SPI_Loopback_Apply( uint16_t argc, char* argv[] );
+void CONSOLE_SPI_Loopback_Apply_Config( uint16_t argc, char* argv[] );
+
+void CONSOLE_SPI_Loopback_Start( uint16_t argc, char* argv[] );
+
+void CONSOLE_SPI_Loopback_Stop( uint16_t argc, char* argv[] );
+
+void CONSOLE_SPI_Loopback_Disable( uint16_t argc, char* argv[] );
 
 void CONSOLE_SPI_Loopback_Load( uint16_t argc, char* argv[] );
 
@@ -93,8 +100,8 @@ bool CONSOLE_Parse_Expander_Port( const char* arg, LogicExpanderPort_T* port );
 /**
  * @brief Parses the master and slave I2C channel selection.
  */
-bool CONSOLE_Parse_I2C_Master_And_Slave( const char* arg, HWI2CChannel_T* master_channel,
-                                         HWI2CChannel_T* slave_channel );
+bool CONSOLE_Parse_I2C_Master_And_Slave( const char* arg, ExecI2CChannel_T* master_channel,
+                                         ExecI2CChannel_T* slave_channel );
 /**
  * @brief Parses the loopback direction selector.
  */
@@ -104,10 +111,6 @@ bool CONSOLE_Parse_I2C_Loopback_Direction( const char*                    arg,
  * @brief Parses the requested I2C bus speed.
  */
 bool CONSOLE_Parse_I2C_Speed( const char* arg, HWI2CSpeed_T* speed );
-/**
- * @brief Parses the I2C transfer path selection.
- */
-bool CONSOLE_Parse_I2C_Transfer_Path( const char* arg, HWI2CTransferPath_T* transfer_path );
 /**
  * @brief Builds the loopback payload from command arguments.
  */

@@ -220,6 +220,9 @@ protected:
         hadc2.Instance = 2U;
         hadc3.Instance = 3U;
 
+        hw_adc_state.is_configured = false;
+        hw_adc_state.is_started    = false;
+
         for ( uint32_t i = 0U; i < ADC_DMA_LEN; i++ )
         {
             adc_dma_buf[i].ch_0 = 0U;
@@ -240,6 +243,8 @@ protected:
 
 TEST_F( HWADCTest, StartDMAMeasurements_StartsADCWithExpectedBufferAndLength )
 {
+    hw_adc_state.is_configured = true;
+
     EXPECT_CALL( mock, DisableIRQ( Eq( ADC_IRQn ) ) );
 
     EXPECT_CALL( mock, StartDMA( Eq( HW_ADC_ADC_PERIPHERAL ),
@@ -259,13 +264,74 @@ TEST_F( HWADCTest, StartDMAMeasurements_StartsADCWithExpectedBufferAndLength )
     EXPECT_CALL( mock, DisableIRQ( Eq( DMA2_Stream4_IRQn ) ) );
 
     EXPECT_TRUE( HW_ADC_Start_DMA_Measurements() );
+    EXPECT_TRUE( hw_adc_state.is_started );
 }
 
 TEST_F( HWADCTest, StopDMAMeasurements_StopsADC )
 {
+    hw_adc_state.is_configured = true;
+    hw_adc_state.is_started    = true;
+
     EXPECT_CALL( mock, StopDMA( Eq( HW_ADC_ADC_PERIPHERAL ) ) ).WillOnce( Return( HAL_OK ) );
 
     EXPECT_TRUE( HW_ADC_Stop_DMA_Measurements() );
+    EXPECT_FALSE( hw_adc_state.is_started );
+}
+
+TEST_F( HWADCTest, ConfigureMeasurementFrequency_ConfiguresStoppedLifecycleState )
+{
+    EXPECT_TRUE( HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_50K_HZ ) );
+    EXPECT_TRUE( hw_adc_state.is_configured );
+    EXPECT_FALSE( hw_adc_state.is_started );
+}
+
+TEST_F( HWADCTest, ConfigureMeasurementFrequency_ReturnsFalseWhileStarted )
+{
+    hw_adc_state.is_configured = true;
+    hw_adc_state.is_started    = true;
+
+    EXPECT_FALSE( HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_50K_HZ ) );
+    EXPECT_TRUE( hw_adc_state.is_configured );
+    EXPECT_TRUE( hw_adc_state.is_started );
+}
+
+TEST_F( HWADCTest, StartDMAMeasurements_ReturnsFalseBeforeConfiguration )
+{
+    EXPECT_CALL( mock, StartDMA( _, _, _ ) ).Times( 0 );
+
+    EXPECT_FALSE( HW_ADC_Start_DMA_Measurements() );
+    EXPECT_FALSE( hw_adc_state.is_started );
+}
+
+TEST_F( HWADCTest, StartDMAMeasurements_ReturnsFalseWhenDMAStartFails )
+{
+    hw_adc_state.is_configured = true;
+
+    EXPECT_CALL( mock, DisableIRQ( Eq( ADC_IRQn ) ) );
+    EXPECT_CALL( mock, StartDMA( _, _, _ ) ).WillOnce( Return( HAL_ERROR ) );
+
+    EXPECT_FALSE( HW_ADC_Start_DMA_Measurements() );
+    EXPECT_FALSE( hw_adc_state.is_started );
+}
+
+TEST_F( HWADCTest, StopDMAMeasurements_ReturnsFalseWhenNotStarted )
+{
+    hw_adc_state.is_configured = true;
+
+    EXPECT_CALL( mock, StopDMA( _ ) ).Times( 0 );
+
+    EXPECT_FALSE( HW_ADC_Stop_DMA_Measurements() );
+}
+
+TEST_F( HWADCTest, StopDMAMeasurements_PreservesStartedStateWhenDMAStopFails )
+{
+    hw_adc_state.is_configured = true;
+    hw_adc_state.is_started    = true;
+
+    EXPECT_CALL( mock, StopDMA( Eq( HW_ADC_ADC_PERIPHERAL ) ) ).WillOnce( Return( HAL_ERROR ) );
+
+    EXPECT_FALSE( HW_ADC_Stop_DMA_Measurements() );
+    EXPECT_TRUE( hw_adc_state.is_started );
 }
 
 TEST_F( HWADCTest, ReadDMAMeasurements_ReadsMostRecentSamplesInReverseOrder )

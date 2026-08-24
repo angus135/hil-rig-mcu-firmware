@@ -39,18 +39,25 @@
 #define PWM1_HAL_CHANNEL TIM_CHANNEL_2
 #define PWM1_LL_SET_COMPARE LL_TIM_OC_SetCompareCH2
 #define PWM1_START_OUTPUT HAL_TIM_PWM_Start
+#define PWM1_STOP_OUTPUT HAL_TIM_PWM_Stop
 
 /* PWM2 / HV hardware mapping */
 #define PWM2_TIMER_HANDLE ( &htim8 )
 #define PWM2_HAL_CHANNEL TIM_CHANNEL_2
 #define PWM2_LL_SET_COMPARE LL_TIM_OC_SetCompareCH2
 #define PWM2_START_OUTPUT HAL_TIMEx_PWMN_Start
+#define PWM2_STOP_OUTPUT HAL_TIMEx_PWMN_Stop
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
- *------
-------------------------------------------------------------------------
+ *------------------------------------------------------------------------------
  */
+
+typedef struct
+{
+    bool is_configured;
+    bool is_started;
+} HWPwmGenChannelState_T;
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -58,14 +65,38 @@
  */
 
 /**-----------------------------------------------------------------------------
+ *  Private (static) Variables
+ *------------------------------------------------------------------------------
+ */
+
+static HWPwmGenChannelState_T hw_pwm_gen_channel_states[HW_PWM_GEN_CHANNEL_COUNT] = {
+    [HW_PWM_GEN_CHANNEL_LV] =
+        {
+            .is_configured = false,
+            .is_started    = false,
+        },
+    [HW_PWM_GEN_CHANNEL_HV] =
+        {
+            .is_configured = false,
+            .is_started    = false,
+        },
+};
+
+/**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
+static bool HW_PWM_GEN_Is_Valid_Channel( HwPwmGenChannel_T channel );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+
+static bool HW_PWM_GEN_Is_Valid_Channel( HwPwmGenChannel_T channel )
+{
+    return ( uint32_t )channel < ( uint32_t )HW_PWM_GEN_CHANNEL_COUNT;
+}
 
 /**-----------------------------------------------------------------------------
  *  Configure Stage Public Function Definitions
@@ -75,29 +106,121 @@
  */
 
 /**
- * @brief Configures the pwm output.
+ * @brief Configures a PWM generation channel without starting its output.
  *
- * @param channel   The channel you want to configure <1|2|3|4>
- * @param volt_lvl  The voltage level you want (low or high <0|1>)
- *
+ * @param channel PWM generation channel to configure.
+ * @return true if the channel was configured successfully; otherwise false.
  */
-void HW_PWM_GEN_Config( PwmGenChannel_T channel, PwmGenVoltageLevel_T volt_lvl )
+bool HW_PWM_GEN_Configure_Channel( HwPwmGenChannel_T channel )
 {
-    if ( volt_lvl != PWM_GEN_VOLTAGE_LOW && volt_lvl != PWM_GEN_VOLTAGE_HIGH )
+    if ( !HW_PWM_GEN_Is_Valid_Channel( channel ) )
     {
-        return;
+        return false;
     }
 
-    if ( channel == PWM_GEN_CHANNEL_LV )
+    HWPwmGenChannelState_T* state = &hw_pwm_gen_channel_states[channel];
+
+    if ( state->is_started )
     {
-        // Call to output expander to set voltage levels
-        ( void )PWM1_START_OUTPUT( PWM1_TIMER_HANDLE, PWM1_HAL_CHANNEL );
+        return false;
     }
-    else if ( channel == PWM_GEN_CHANNEL_HV )
+
+    /*
+     * Timer base, PWM mode, output polarity, and GPIO alternate-function
+     * configuration are currently provided by the generated board setup.
+     * Configuration therefore records that this channel is available while
+     * leaving its output stopped.
+     */
+    state->is_configured = true;
+    state->is_started    = false;
+
+    return true;
+}
+
+bool HW_PWM_GEN_Start_Channel( HwPwmGenChannel_T channel )
+{
+    if ( !HW_PWM_GEN_Is_Valid_Channel( channel ) )
     {
-        // Call to output expander to set voltage levels
-        ( void )PWM2_START_OUTPUT( PWM2_TIMER_HANDLE, PWM2_HAL_CHANNEL );
+        return false;
     }
+
+    HWPwmGenChannelState_T* state = &hw_pwm_gen_channel_states[channel];
+
+    if ( !state->is_configured || state->is_started )
+    {
+        return false;
+    }
+
+    HAL_StatusTypeDef status;
+
+    switch ( channel )
+    {
+        case HW_PWM_GEN_CHANNEL_LV:
+            status = PWM1_START_OUTPUT( PWM1_TIMER_HANDLE, PWM1_HAL_CHANNEL );
+            break;
+
+        case HW_PWM_GEN_CHANNEL_HV:
+            status = PWM2_START_OUTPUT( PWM2_TIMER_HANDLE, PWM2_HAL_CHANNEL );
+            break;
+
+        default:
+            return false;
+    }
+
+    if ( status != HAL_OK )
+    {
+        return false;
+    }
+
+    state->is_started = true;
+
+    return true;
+}
+
+/**
+ * @brief Stops a started PWM generation channel while retaining configuration.
+ *
+ * @param channel PWM generation channel to stop.
+ * @return true if the channel was stopped successfully; otherwise false.
+ */
+bool HW_PWM_GEN_Stop_Channel( HwPwmGenChannel_T channel )
+{
+    if ( !HW_PWM_GEN_Is_Valid_Channel( channel ) )
+    {
+        return false;
+    }
+
+    HWPwmGenChannelState_T* state = &hw_pwm_gen_channel_states[channel];
+
+    if ( !state->is_configured || !state->is_started )
+    {
+        return false;
+    }
+
+    HAL_StatusTypeDef status;
+
+    switch ( channel )
+    {
+        case HW_PWM_GEN_CHANNEL_LV:
+            status = PWM1_STOP_OUTPUT( PWM1_TIMER_HANDLE, PWM1_HAL_CHANNEL );
+            break;
+
+        case HW_PWM_GEN_CHANNEL_HV:
+            status = PWM2_STOP_OUTPUT( PWM2_TIMER_HANDLE, PWM2_HAL_CHANNEL );
+            break;
+
+        default:
+            return false;
+    }
+
+    if ( status != HAL_OK )
+    {
+        return false;
+    }
+
+    state->is_started = false;
+
+    return true;
 }
 
 /**

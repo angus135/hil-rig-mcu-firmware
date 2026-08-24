@@ -94,6 +94,8 @@ static void ResetCANBuffers()
     can_tx_pending_mailbox2 = 0;
     can_tx_status1          = HW_CAN_TX_STATUS_IDLE;
     can_tx_status2          = HW_CAN_TX_STATUS_IDLE;
+    hw_can_lifecycle1       = { false, false };
+    hw_can_lifecycle2       = { false, false };
 }
 
 /**-----------------------------------------------------------------------------
@@ -1258,16 +1260,13 @@ TEST_F( HWCANTest, CAN2FilterBank27IsAccepted )
  *------------------------------------------------------------------------------
  */
 
-/** Verify that HW_CAN_Configure() returns error code 1 when CAN initialization fails. */
-TEST_F( HWCANTest, ConfigureReturns1WhenInitFails )
+/** Verify that CAN initialization failure is reported as a timing error. */
+TEST_F( HWCANTest, ConfigureReturnsTimingErrorWhenInitFails )
 {
     EXPECT_CALL( mock, CANInit( _ ) ).WillOnce( Return( HAL_ERROR ) );
-
     EXPECT_CALL( mock, CANConfigFilter( _, _ ) ).Times( 0 );
 
-    int result = HW_CAN_Configure( &hcan1, 1000000, 0, 0x123, 0x7FF );
-
-    EXPECT_EQ( result, 1 );
+    EXPECT_EQ( HW_CAN_Configure( &hcan1, 1000000, 0, 0x123, 0x7FF ), HW_CAN_RESULT_TIMING_ERROR );
 }
 
 /** Verify inexact timing is rejected before HAL or channel state is touched. */
@@ -1279,56 +1278,40 @@ TEST_F( HWCANTest, ConfigureRejectsInexactTimingWithoutHardwareOrStateChanges )
     EXPECT_CALL( mock, CANConfigFilter( _, _ ) ).Times( 0 );
     EXPECT_CALL( mock, CANStart( _ ) ).Times( 0 );
 
-    EXPECT_EQ( HW_CAN_Configure( &hcan1, 800000U, 0U, 0x123U, 0x7FFU ), 1 );
+    EXPECT_EQ( HW_CAN_Configure( &hcan1, 800000U, 0U, 0x123U, 0x7FFU ),
+               HW_CAN_RESULT_TIMING_ERROR );
     EXPECT_EQ( mock_can1_regs.IER, 0xA5A5U );
     EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_COMPLETE );
     EXPECT_EQ( can_tx_wp1, 0U );
     EXPECT_EQ( can_tx_rp1, 0U );
 }
 
-/** Verify that HW_CAN_Configure() returns error code 2 when filter configuration fails. */
-TEST_F( HWCANTest, ConfigureReturns2WhenFilterFails )
+/** Verify that filter configuration failure has a distinct result. */
+TEST_F( HWCANTest, ConfigureReturnsFilterErrorWhenFilterConfigurationFails )
 {
     EXPECT_CALL( mock, CANInit( _ ) ).WillOnce( Return( HAL_OK ) );
-
     EXPECT_CALL( mock, CANConfigFilter( _, _ ) ).WillOnce( Return( HAL_ERROR ) );
 
-    int result = HW_CAN_Configure( &hcan1, 1000000, 0, 0x123, 0x7FF );
-
-    EXPECT_EQ( result, 2 );
-}
-
-/** Verify that HW_CAN_Configure() returns error code 3 when starting the CAN peripheral fails. */
-TEST_F( HWCANTest, ConfigureReturns3WhenStartFails )
-{
-    EXPECT_CALL( mock, CANInit( _ ) ).WillOnce( Return( HAL_OK ) );
-
-    EXPECT_CALL( mock, CANConfigFilter( _, _ ) ).WillOnce( Return( HAL_OK ) );
-
-    EXPECT_CALL( mock, CANStart( _ ) ).WillOnce( Return( HAL_ERROR ) );
-
-    int result = HW_CAN_Configure( &hcan1, 1000000, 0, 0x123, 0x7FF );
-
-    EXPECT_EQ( result, 3 );
+    EXPECT_EQ( HW_CAN_Configure( &hcan1, 1000000, 0, 0x123, 0x7FF ), HW_CAN_RESULT_FILTER_ERROR );
 }
 
 /** Verify that HW_CAN_Configure() completes successfully when each HAL configuration step succeeds.
  */
-TEST_F( HWCANTest, ConfigureSucceedsWithValidConfiguration )
+TEST_F( HWCANTest, ConfigureSucceedsAndLeavesChannelStopped )
 {
     EXPECT_CALL( mock, CANInit( _ ) ).WillOnce( Return( HAL_OK ) );
-
     EXPECT_CALL( mock, CANConfigFilter( _, _ ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, CANStart( _ ) ).Times( 0 );
 
-    EXPECT_CALL( mock, CANStart( _ ) ).WillOnce( Return( HAL_OK ) );
-
-    int result = HW_CAN_Configure( &hcan1, 1000000, 0, 0x123, 0x7FF );
-
-    EXPECT_EQ( result, 0 );
-    EXPECT_EQ( mock_can1_regs.IER & ( CAN_IER_FMPIE0 | CAN_IER_FFIE0 | CAN_IER_FOVIE0 ),
-               CAN_IER_FMPIE0 | CAN_IER_FFIE0 | CAN_IER_FOVIE0 );
-    EXPECT_EQ( mock_can1_regs.IER & HW_CAN_ERROR_INTERRUPT_MASK, HW_CAN_ERROR_INTERRUPT_MASK );
-    EXPECT_FALSE( mock_can1_regs.IER & CAN_IER_TMEIE );
+    EXPECT_EQ( HW_CAN_Configure1( 1000000, 0, 0x123, 0x7FF ), HW_CAN_RESULT_OK );
+    EXPECT_TRUE( HW_CAN_Is_Configured1() );
+    EXPECT_FALSE( HW_CAN_Is_Started1() );
+    EXPECT_EQ( mock_can1_regs.IER
+                   & ( CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK ),
+               0U );
+    EXPECT_FALSE( nvic_irq_enabled[CAN1_TX_IRQn] );
+    EXPECT_FALSE( nvic_irq_enabled[CAN1_RX0_IRQn] );
+    EXPECT_FALSE( nvic_irq_enabled[CAN1_SCE_IRQn] );
 }
 
 /** Verify that reconfiguring one channel starts with deterministic empty software state. */
@@ -1344,8 +1327,8 @@ TEST_F( HWCANTest, ChannelConfigurationResetsSoftwareState )
 
     EXPECT_CALL( mock, CANInit( &hcan1 ) ).WillOnce( Return( HAL_OK ) );
     EXPECT_CALL( mock, CANConfigFilter( &hcan1, _ ) ).WillOnce( Return( HAL_OK ) );
-    EXPECT_CALL( mock, CANStart( &hcan1 ) ).WillOnce( Return( HAL_OK ) );
-    ASSERT_EQ( HW_CAN_Configure1( 1000000, 0, 0x123, 0x7FF ), 0 );
+    EXPECT_CALL( mock, CANStart( _ ) ).Times( 0 );
+    ASSERT_EQ( HW_CAN_Configure1( 1000000, 0, 0x123, 0x7FF ), HW_CAN_RESULT_OK );
 
     EXPECT_EQ( can_tx_wp1, 0 );
     EXPECT_EQ( can_tx_rp1, 0 );
@@ -1355,6 +1338,98 @@ TEST_F( HWCANTest, ChannelConfigurationResetsSoftwareState )
     EXPECT_FALSE( can_sent_flag1 );
     EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_IDLE );
     EXPECT_EQ( HW_CAN_Rx_Dropped_Count1(), 0U );
+}
+
+TEST_F( HWCANTest, ConfigureReturnsBusyWhenChannelIsStarted )
+{
+    hw_can_lifecycle1 = { true, true };
+    EXPECT_CALL( mock, CANInit( _ ) ).Times( 0 );
+    EXPECT_CALL( mock, CANConfigFilter( _, _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_CAN_Configure1( 1000000, 0, 0x123, 0x7FF ), HW_CAN_RESULT_BUSY );
+    EXPECT_TRUE( HW_CAN_Is_Configured1() );
+    EXPECT_TRUE( HW_CAN_Is_Started1() );
+}
+
+TEST_F( HWCANTest, StartRequiresConfigurationAndStartsConfiguredChannel )
+{
+    EXPECT_EQ( HW_CAN_Start1(), HW_CAN_RESULT_NOT_CONFIGURED );
+
+    hw_can_lifecycle1 = { true, false };
+    EXPECT_CALL( mock, CANStart( &hcan1 ) ).WillOnce( Return( HAL_OK ) );
+
+    EXPECT_EQ( HW_CAN_Start1(), HW_CAN_RESULT_OK );
+    EXPECT_TRUE( HW_CAN_Is_Started1() );
+    EXPECT_EQ( mock_can1_regs.IER & HW_CAN_RX_INTERRUPT_MASK, HW_CAN_RX_INTERRUPT_MASK );
+    EXPECT_EQ( mock_can1_regs.IER & HW_CAN_ERROR_INTERRUPT_MASK, HW_CAN_ERROR_INTERRUPT_MASK );
+    EXPECT_EQ( mock_can1_regs.IER & CAN_IER_TMEIE, 0U );
+    EXPECT_TRUE( nvic_irq_enabled[CAN1_TX_IRQn] );
+    EXPECT_TRUE( nvic_irq_enabled[CAN1_RX0_IRQn] );
+    EXPECT_TRUE( nvic_irq_enabled[CAN1_SCE_IRQn] );
+    EXPECT_EQ( HW_CAN_Start1(), HW_CAN_RESULT_BUSY );
+}
+
+TEST_F( HWCANTest, StartFailureLeavesChannelConfiguredAndStopped )
+{
+    hw_can_lifecycle2 = { true, false };
+    EXPECT_CALL( mock, CANStart( &hcan2 ) ).WillOnce( Return( HAL_ERROR ) );
+
+    EXPECT_EQ( HW_CAN_Start2(), HW_CAN_RESULT_ERROR );
+    EXPECT_TRUE( HW_CAN_Is_Configured2() );
+    EXPECT_FALSE( HW_CAN_Is_Started2() );
+}
+
+TEST_F( HWCANTest, StopRequiresStartedChannelAndRetainsConfiguration )
+{
+    EXPECT_EQ( HW_CAN_Stop1(), HW_CAN_RESULT_NOT_CONFIGURED );
+
+    hw_can_lifecycle1 = { true, false };
+    EXPECT_EQ( HW_CAN_Stop1(), HW_CAN_RESULT_NOT_STARTED );
+
+    hw_can_lifecycle1  = { true, true };
+    mock_can1_regs.IER = HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK;
+    EXPECT_CALL( mock, CANStop( &hcan1 ) ).WillOnce( Return( HAL_OK ) );
+
+    EXPECT_EQ( HW_CAN_Stop1(), HW_CAN_RESULT_OK );
+    EXPECT_TRUE( HW_CAN_Is_Configured1() );
+    EXPECT_FALSE( HW_CAN_Is_Started1() );
+    EXPECT_EQ( mock_can1_regs.IER
+                   & ( CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK ),
+               0U );
+    EXPECT_FALSE( nvic_irq_enabled[CAN1_TX_IRQn] );
+    EXPECT_FALSE( nvic_irq_enabled[CAN1_RX0_IRQn] );
+    EXPECT_FALSE( nvic_irq_enabled[CAN1_SCE_IRQn] );
+}
+
+TEST_F( HWCANTest, StopReturnsBusyWhileTransmissionIsActive )
+{
+    hw_can_lifecycle1  = { true, true };
+    mock_can1_regs.IER = CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK;
+    can_tx_active1     = true;
+    EXPECT_CALL( mock, CANStop( _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_CAN_Stop1(), HW_CAN_RESULT_BUSY );
+    EXPECT_TRUE( HW_CAN_Is_Started1() );
+    EXPECT_NE( mock_can1_regs.IER & CAN_IER_TMEIE, 0U );
+
+    can_tx_active1 = false;
+    SET_BIT( mock_can1_regs.sTxMailBox[0].TIR, CAN_TI0R_TXRQ );
+    EXPECT_EQ( HW_CAN_Stop1(), HW_CAN_RESULT_BUSY );
+}
+
+TEST_F( HWCANTest, StopFailureRestoresStartedOperation )
+{
+    hw_can_lifecycle2  = { true, true };
+    mock_can2_regs.IER = HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK;
+    EXPECT_CALL( mock, CANStop( &hcan2 ) ).WillOnce( Return( HAL_ERROR ) );
+
+    EXPECT_EQ( HW_CAN_Stop2(), HW_CAN_RESULT_ERROR );
+    EXPECT_TRUE( HW_CAN_Is_Started2() );
+    EXPECT_EQ( mock_can2_regs.IER & HW_CAN_RX_INTERRUPT_MASK, HW_CAN_RX_INTERRUPT_MASK );
+    EXPECT_EQ( mock_can2_regs.IER & HW_CAN_ERROR_INTERRUPT_MASK, HW_CAN_ERROR_INTERRUPT_MASK );
+    EXPECT_TRUE( nvic_irq_enabled[CAN2_TX_IRQn] );
+    EXPECT_TRUE( nvic_irq_enabled[CAN2_RX0_IRQn] );
+    EXPECT_TRUE( nvic_irq_enabled[CAN2_SCE_IRQn] );
 }
 
 /**-----------------------------------------------------------------------------
@@ -1408,6 +1483,7 @@ TEST_F( HWCANTest, SCEVectorRecordsBusOffAsError )
 /** Verify that task-context recovery clears pending work and permits a later batch. */
 TEST_F( HWCANTest, RecoveryClearsFailedWorkAndAllowsSubsequentTransmission )
 {
+    hw_can_lifecycle1       = { true, true };
     mock_can1_regs.TSR      = CAN_TSR_TME0;
     CAN_Packet_T packets[2] = {
         { .id = 0x123, .dlc = 1, .data = { 0xAA } },
@@ -1452,13 +1528,38 @@ TEST_F( HWCANTest, RecoveryClearsFailedWorkAndAllowsSubsequentTransmission )
 /** Verify that a failed stop keeps the channel in error and reports recovery failure. */
 TEST_F( HWCANTest, RecoveryFailureDoesNotReportIdleOrComplete )
 {
-    can_tx_status2 = HW_CAN_TX_STATUS_ERROR;
+    hw_can_lifecycle2 = { true, true };
+    can_tx_status2    = HW_CAN_TX_STATUS_ERROR;
     EXPECT_CALL( mock, CANStop( &hcan2 ) ).WillOnce( Return( HAL_ERROR ) );
     EXPECT_CALL( mock, CANStart( &hcan2 ) ).Times( 0 );
 
     EXPECT_EQ( HW_CAN_Recover2(), HW_CAN_RESULT_ERROR );
     EXPECT_EQ( HW_CAN_Tx_Status2(), HW_CAN_TX_STATUS_ERROR );
     EXPECT_FALSE( HW_CAN_Channel2_Sent() );
+}
+
+TEST_F( HWCANTest, RecoveryRequiresConfiguredAndStartedChannel )
+{
+    EXPECT_EQ( HW_CAN_Recover1(), HW_CAN_RESULT_NOT_CONFIGURED );
+
+    hw_can_lifecycle1 = { true, false };
+    EXPECT_EQ( HW_CAN_Recover1(), HW_CAN_RESULT_NOT_STARTED );
+}
+
+TEST_F( HWCANTest, RecoveryRestartFailureLeavesChannelStopped )
+{
+    hw_can_lifecycle1 = { true, true };
+    can_tx_status1    = HW_CAN_TX_STATUS_ERROR;
+    EXPECT_CALL( mock, CANStop( &hcan1 ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, CANStart( &hcan1 ) ).WillOnce( Return( HAL_ERROR ) );
+
+    EXPECT_EQ( HW_CAN_Recover1(), HW_CAN_RESULT_ERROR );
+    EXPECT_TRUE( HW_CAN_Is_Configured1() );
+    EXPECT_FALSE( HW_CAN_Is_Started1() );
+    EXPECT_EQ( HW_CAN_Tx_Status1(), HW_CAN_TX_STATUS_ERROR );
+    EXPECT_EQ( mock_can1_regs.IER
+                   & ( CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK ),
+               0U );
 }
 
 /** Verify that direct transmission cannot overwrite an active buffered batch. */

@@ -2,15 +2,33 @@
 
 ## Overview
 
-`logic_expander` holds OLATA/OLATB shadow state for the MCP23017 devices on
+`logic_expander` holds OLATA/OLATB shadow state for seven MCP23017 devices on
 FMPI2C1. State and lookup tables are indexed by `LogicExpanderIndex_T`.
+
+| Device | Address |
+|---|---:|
+| `LOGIC_EXPANDER_DI_1` | `0x20` |
+| `LOGIC_EXPANDER_DI_2` | `0x21` |
+| `LOGIC_EXPANDER_DO_1` | `0x22` |
+| `LOGIC_EXPANDER_DO_2` | `0x23` |
+| `LOGIC_EXPANDER_PWM_SPI` | `0x24` |
+| `LOGIC_EXPANDER_UART_PWR` | `0x25` |
+| `LOGIC_EXPANDER_I2C_AO` | `0x26` |
+
 `LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT` is the known role at index/address
 0/`0x20`; the remaining explicit indices are named unassigned until their
-hardware roles are established.
+hardware roles are established. All eight MCP23017 addresses from `0x20` to
+`0x27` are active by default so configuration and control writes can reach every
+expander.
 
 Address and initial-state tables use designated initializers so the physical
 role-to-address mapping is visible in code. `LOGIC_EXPANDER_COUNT` is the final
 enum value and therefore also the state-array size.
+
+All devices are disabled in `LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK` during
+bring-up. Enable each device only after its safe OLATA/OLATB startup values have
+been confirmed. Individual drivers own their expander, port, and bit mappings;
+this module owns addressing, shadow state, and I2C submission.
 
 ## Task ownership and non-blocking configuration
 
@@ -35,9 +53,12 @@ and queueing a fresh configuration sequence.
 The background task calls `LOGIC_EXPANDER_Process()` every 10 ms. It resumes
 partial queue submission, services deferred I2C progress, and observes physical
 queue completion. The module becomes ready only after the final STOP and an `OK`
-latched transfer result. Configuration and control-write batches have a 100 ms
-deadline measured from the first accepted transaction. A stalled batch recovers
-FMPI2C1 instead of waiting indefinitely. A timed-out configuration remains not
+latched transfer result. Configuration and control-write batches have a 100 ms no-progress
+deadline. Every newly accepted transaction refreshes the deadline, so a large
+multi-device batch may span multiple queue-service cycles without being treated
+as stalled. If no further transaction can be accepted and the in-flight queue
+does not complete for 100 ms, FMPI2C1 is recovered instead of waiting
+indefinitely. A timed-out configuration remains not
 ready and can be restarted with `LOGIC_EXPANDER_Self_Config()`. There is no CPU
 busy-retry loop. Explicit console calls are harmless because they use the same
 mutex.

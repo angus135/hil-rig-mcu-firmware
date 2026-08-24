@@ -29,7 +29,6 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-#include "hw_adc.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -44,21 +43,32 @@ extern "C"
  */
 
 // Configuration struct containing all the configuration information for the analogue inputs
-typedef struct AnalogueInputConfiguration_T
+typedef enum ExecAnalogueInputSampleRate_T
 {
-    ADCSampleRates_T adc_sample_rate;  // What rate will the ADC be sampling each channel at?
-    bool             ch_0_is_enabled;
-    bool             ch_1_is_enabled;
-} AnalogueInputConfiguration_T;
+    EXEC_ANALOGUE_INPUT_SAMPLE_RATE_100K_HZ = 0U,
+    EXEC_ANALOGUE_INPUT_SAMPLE_RATE_50K_HZ,
+    EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ,
+    EXEC_ANALOGUE_INPUT_SAMPLE_RATE_5K_HZ,
+    EXEC_ANALOGUE_INPUT_SAMPLE_RATE_1K_HZ,
+    EXEC_ANALOGUE_INPUT_SAMPLE_RATE_500_HZ,
+} ExecAnalogueInputSampleRate_T;
+
+typedef struct ExecAnalogueInputConfig_T
+{
+    bool                          is_enabled;
+    ExecAnalogueInputSampleRate_T sample_rate;
+    bool                          ch_0_is_enabled;
+    bool                          ch_1_is_enabled;
+} ExecAnalogueInputConfig_T;
 
 // This struct contains pointers to where the Analogue Input voltages should be stored.
 // The Execution Manager should set the pointers in this struct to the places where the
 // data is to be stored
-typedef struct AnalogueInputVoltages_T
+typedef struct ExecAnalogueInputVoltages_T
 {
     uint32_t* channel_0_voltage;
     uint32_t* channel_1_voltage;
-} AnalogueInputVoltages_T;
+} ExecAnalogueInputVoltages_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -71,9 +81,9 @@ typedef struct AnalogueInputVoltages_T
  * This function validates the requested analogue input configuration and applies
  * the ADC measurement sample rate required during execution.
  *
- * At present, both analogue input channels must be enabled. Dynamic channel
- * enable/disable support has not yet been implemented, so the function returns
- * false if either channel is disabled.
+ * A disabled configuration stops active acquisition and leaves the module in
+ * its disabled state. When enabled, both analogue input channels must currently
+ * be selected because dynamic ADC scan selection is not implemented.
  *
  * The ADC hardware setup itself is handled by the hw_adc module. This function
  * only requests the configured measurement frequency and reports whether that
@@ -81,7 +91,8 @@ typedef struct AnalogueInputVoltages_T
  *
  * @param configuration
  *      Analogue input configuration used during execution. This currently
- *      includes the channel enable flags and requested ADC sample rate.
+ *      includes the subsystem enable, channel enable flags, and requested ADC
+ *      sample rate.
  *
  * @return true
  *      The configuration was accepted and the ADC measurement frequency was
@@ -91,7 +102,19 @@ typedef struct AnalogueInputVoltages_T
  *      The configuration is not currently supported, or the ADC measurement
  *      frequency could not be configured.
  */
-bool EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( AnalogueInputConfiguration_T configuration );
+bool EXEC_ANALOGUE_INPUT_Configure( const ExecAnalogueInputConfig_T* config );
+
+/** @brief Starts ADC DMA acquisition after successful configuration. */
+bool EXEC_ANALOGUE_INPUT_Start( void );
+
+/** @brief Stops ADC DMA acquisition while retaining its configuration. */
+bool EXEC_ANALOGUE_INPUT_Stop( void );
+
+/** @brief Returns true when the module is configured, including while started. */
+bool EXEC_ANALOGUE_INPUT_Is_Configured( void );
+
+/** @brief Returns true only while ADC DMA acquisition is started. */
+bool EXEC_ANALOGUE_INPUT_Is_Started( void );
 
 /**
  * @brief Reads and processes the latest analogue input measurements.
@@ -117,7 +140,7 @@ bool EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( AnalogueInputConfiguration_T
  *      Struct containing pointers to the locations where the processed channel
  *      voltage values should be stored.
  */
-void EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( AnalogueInputVoltages_T voltage_destination );
+void EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( ExecAnalogueInputVoltages_T voltage_destination );
 
 #ifdef __cplusplus
 }

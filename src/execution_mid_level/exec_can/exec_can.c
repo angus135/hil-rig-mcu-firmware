@@ -4,8 +4,8 @@
  *  Created:    25-Mar-2026
  *
  *  Description:
- *      Execution-layer CAN validation, channel routing, type conversion, and
- *      combined buffered transmission.
+ *      Execution-layer CAN lifecycle, validation, channel routing, type
+ *      conversion, and combined buffered transmission.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -21,12 +21,55 @@
 #include <stdint.h>
 #include <string.h>
 
-_Static_assert( EXEC_CAN_MAX_PAYLOAD_SIZE == CAN_PACKET_SIZE,
-                "Execution and hardware CAN payload limits must match" );
-_Static_assert( EXEC_CAN_MAX_BATCH_SIZE <= HW_CAN_TX_QUEUE_CAPACITY,
-                "Execution CAN batches must fit the hardware TX queue" );
-_Static_assert( EXEC_CAN_MAX_BATCH_SIZE <= HW_CAN_RX_QUEUE_CAPACITY,
-                "Execution CAN receive storage must cover the hardware RX queue" );
+/**-----------------------------------------------------------------------------
+ *  Defines / Macros / Asserts
+ *------------------------------------------------------------------------------
+ */
+#ifdef __cplusplus
+#define EXEC_CAN_STATIC_ASSERT( condition, message ) static_assert( condition, message )
+#define EXEC_CAN_ZERO_INITIALIZER                                                                  \
+    {                                                                                              \
+    }
+#else
+#define EXEC_CAN_STATIC_ASSERT( condition, message ) _Static_assert( condition, message )
+#define EXEC_CAN_ZERO_INITIALIZER                                                                  \
+    {                                                                                              \
+        0                                                                                          \
+    }
+#endif
+
+EXEC_CAN_STATIC_ASSERT( EXEC_CAN_MAX_PAYLOAD_SIZE == CAN_PACKET_SIZE,
+                        "Execution and hardware CAN payload limits must match" );
+EXEC_CAN_STATIC_ASSERT( EXEC_CAN_MAX_BATCH_SIZE <= HW_CAN_TX_QUEUE_CAPACITY,
+                        "Execution CAN batches must fit the hardware TX queue" );
+EXEC_CAN_STATIC_ASSERT( EXEC_CAN_MAX_BATCH_SIZE <= HW_CAN_RX_QUEUE_CAPACITY,
+                        "Execution CAN receive storage must cover the hardware RX queue" );
+
+/**-----------------------------------------------------------------------------
+ *  Typedefs / Enums / Structures
+ *------------------------------------------------------------------------------
+ */
+
+/**
+ * @brief Execution-layer lifecycle state for one CAN channel.
+ */
+typedef struct ExecCANChannelState_T
+{
+    bool is_configured;
+    bool is_started;
+} ExecCANChannelState_T;
+
+/**-----------------------------------------------------------------------------
+ *  Public (global) and Extern Variables
+ *------------------------------------------------------------------------------
+ */
+
+/**-----------------------------------------------------------------------------
+ *  Private (static) Variables
+ *------------------------------------------------------------------------------
+ */
+
+static ExecCANChannelState_T exec_can_state[EXEC_CAN_CHANNEL_COUNT] = EXEC_CAN_ZERO_INITIALIZER;
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -48,27 +91,69 @@ static EXEC_CAN_Result_T EXEC_CAN_Map_Result( HW_CAN_Result_T result )
             return EXEC_CAN_RESULT_BUSY;
         case HW_CAN_RESULT_EMPTY:
             return EXEC_CAN_RESULT_EMPTY;
+        case HW_CAN_RESULT_NOT_CONFIGURED:
+            return EXEC_CAN_RESULT_NOT_CONFIGURED;
+        case HW_CAN_RESULT_NOT_STARTED:
+            return EXEC_CAN_RESULT_NOT_STARTED;
+        case HW_CAN_RESULT_TIMING_ERROR:
+            return EXEC_CAN_RESULT_TIMING_ERROR;
+        case HW_CAN_RESULT_FILTER_ERROR:
+            return EXEC_CAN_RESULT_FILTER_ERROR;
         case HW_CAN_RESULT_ERROR:
         default:
             return EXEC_CAN_RESULT_ERROR;
     }
 }
 
-static EXEC_CAN_Result_T EXEC_CAN_Map_Configuration_Result( int result )
+static HW_CAN_Result_T EXEC_CAN_HW_Configure( EXEC_CAN_Channel_T channel,
+                                              EXEC_CAN_Config_T  configuration )
 {
-    switch ( result )
+    if ( channel == EXEC_CAN_CHANNEL_1 )
     {
-        case 0:
-            return EXEC_CAN_RESULT_OK;
-        case 1:
-            return EXEC_CAN_RESULT_TIMING_ERROR;
-        case 2:
-            return EXEC_CAN_RESULT_FILTER_ERROR;
-        case 3:
-            return EXEC_CAN_RESULT_START_ERROR;
-        default:
-            return EXEC_CAN_RESULT_ERROR;
+        return HW_CAN_Configure1( configuration.bitrate, configuration.filter_bank,
+                                  configuration.filter_id, configuration.filter_mask );
     }
+
+    return HW_CAN_Configure2( configuration.bitrate, configuration.filter_bank,
+                              configuration.filter_id, configuration.filter_mask );
+}
+
+static HW_CAN_Result_T EXEC_CAN_HW_Start( EXEC_CAN_Channel_T channel )
+{
+    if ( channel == EXEC_CAN_CHANNEL_1 )
+    {
+        return HW_CAN_Start1();
+    }
+    return HW_CAN_Start2();
+}
+
+static HW_CAN_Result_T EXEC_CAN_HW_Stop( EXEC_CAN_Channel_T channel )
+{
+    if ( channel == EXEC_CAN_CHANNEL_1 )
+    {
+        return HW_CAN_Stop1();
+    }
+    return HW_CAN_Stop2();
+}
+
+static bool EXEC_CAN_HW_Is_Configured( EXEC_CAN_Channel_T channel )
+{
+    if ( channel == EXEC_CAN_CHANNEL_1 )
+    {
+        return HW_CAN_Is_Configured1();
+    }
+
+    return HW_CAN_Is_Configured2();
+}
+
+static bool EXEC_CAN_HW_Is_Started( EXEC_CAN_Channel_T channel )
+{
+    if ( channel == EXEC_CAN_CHANNEL_1 )
+    {
+        return HW_CAN_Is_Started1();
+    }
+
+    return HW_CAN_Is_Started2();
 }
 
 static EXEC_CAN_Tx_Status_T EXEC_CAN_Map_Tx_Status( HW_CAN_Tx_Status_T status )
@@ -86,25 +171,142 @@ static EXEC_CAN_Tx_Status_T EXEC_CAN_Map_Tx_Status( HW_CAN_Tx_Status_T status )
             return EXEC_CAN_TX_STATUS_ERROR;
     }
 }
-
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
 
-EXEC_CAN_Result_T EXEC_CAN_Configure( EXEC_CAN_Channel_T channel, uint32_t bitrate,
-                                      uint16_t filter_bank, uint16_t filter_id,
-                                      uint16_t filter_mask )
+EXEC_CAN_Result_T EXEC_CAN_Configure_Channel( EXEC_CAN_Channel_T channel,
+                                              EXEC_CAN_Config_T  configuration )
 {
     if ( !EXEC_CAN_Channel_Is_Valid( channel ) )
     {
         return EXEC_CAN_RESULT_INVALID_ARGUMENT;
     }
 
-    int result = channel == EXEC_CAN_CHANNEL_1
-                     ? HW_CAN_Configure1( bitrate, filter_bank, filter_id, filter_mask )
-                     : HW_CAN_Configure2( bitrate, filter_bank, filter_id, filter_mask );
-    return EXEC_CAN_Map_Configuration_Result( result );
+    ExecCANChannelState_T* state = &exec_can_state[channel];
+
+    if ( !configuration.is_enabled )
+    {
+        if ( state->is_started )
+        {
+            HW_CAN_Result_T stop_result = EXEC_CAN_HW_Stop( channel );
+
+            if ( stop_result != HW_CAN_RESULT_OK )
+            {
+                return EXEC_CAN_Map_Result( stop_result );
+            }
+        }
+
+        /*
+         * TODO: Apply the CAN transceiver safe state here when its board-level
+         * control mapping is confirmed during hardware bring-up.
+         */
+
+        state->is_configured = false;
+        state->is_started    = false;
+
+        return EXEC_CAN_RESULT_OK;
+    }
+
+    if ( state->is_started )
+    {
+        return EXEC_CAN_RESULT_BUSY;
+    }
+
+    /*
+     * A failed HW configuration invalidates the previous stopped
+     * configuration, matching the HW CAN configuration contract.
+     */
+    state->is_configured = false;
+    state->is_started    = false;
+
+    HW_CAN_Result_T result = EXEC_CAN_HW_Configure( channel, configuration );
+
+    if ( result == HW_CAN_RESULT_OK )
+    {
+        state->is_configured = true;
+    }
+
+    return EXEC_CAN_Map_Result( result );
+}
+
+EXEC_CAN_Result_T EXEC_CAN_Start_Channel( EXEC_CAN_Channel_T channel )
+{
+    if ( !EXEC_CAN_Channel_Is_Valid( channel ) )
+    {
+        return EXEC_CAN_RESULT_INVALID_ARGUMENT;
+    }
+
+    ExecCANChannelState_T* state = &exec_can_state[channel];
+
+    if ( !state->is_configured )
+    {
+        return EXEC_CAN_RESULT_NOT_CONFIGURED;
+    }
+
+    if ( state->is_started )
+    {
+        return EXEC_CAN_RESULT_BUSY;
+    }
+
+    HW_CAN_Result_T result = EXEC_CAN_HW_Start( channel );
+
+    if ( result == HW_CAN_RESULT_OK )
+    {
+        state->is_started = true;
+    }
+
+    return EXEC_CAN_Map_Result( result );
+}
+
+EXEC_CAN_Result_T EXEC_CAN_Stop_Channel( EXEC_CAN_Channel_T channel )
+{
+    if ( !EXEC_CAN_Channel_Is_Valid( channel ) )
+    {
+        return EXEC_CAN_RESULT_INVALID_ARGUMENT;
+    }
+
+    ExecCANChannelState_T* state = &exec_can_state[channel];
+
+    if ( !state->is_configured )
+    {
+        return EXEC_CAN_RESULT_NOT_CONFIGURED;
+    }
+
+    if ( !state->is_started )
+    {
+        return EXEC_CAN_RESULT_NOT_STARTED;
+    }
+
+    HW_CAN_Result_T result = EXEC_CAN_HW_Stop( channel );
+
+    if ( result == HW_CAN_RESULT_OK )
+    {
+        state->is_started = false;
+    }
+
+    return EXEC_CAN_Map_Result( result );
+}
+
+bool EXEC_CAN_Is_Channel_Configured( EXEC_CAN_Channel_T channel )
+{
+    if ( !EXEC_CAN_Channel_Is_Valid( channel ) )
+    {
+        return false;
+    }
+
+    return exec_can_state[channel].is_configured;
+}
+
+bool EXEC_CAN_Is_Channel_Started( EXEC_CAN_Channel_T channel )
+{
+    if ( !EXEC_CAN_Channel_Is_Valid( channel ) )
+    {
+        return false;
+    }
+
+    return exec_can_state[channel].is_started;
 }
 
 EXEC_CAN_Result_T EXEC_CAN_Transmit( EXEC_CAN_Channel_T channel, const EXEC_CAN_Packet_T packets[],
@@ -116,7 +318,7 @@ EXEC_CAN_Result_T EXEC_CAN_Transmit( EXEC_CAN_Channel_T channel, const EXEC_CAN_
         return EXEC_CAN_RESULT_INVALID_ARGUMENT;
     }
 
-    CAN_Packet_T hardware_packets[EXEC_CAN_MAX_BATCH_SIZE] = { 0 };
+    CAN_Packet_T hardware_packets[EXEC_CAN_MAX_BATCH_SIZE] = EXEC_CAN_ZERO_INITIALIZER;
     for ( uint16_t i = 0U; i < packet_count; i++ )
     {
         if ( packets[i].id > EXEC_CAN_STANDARD_ID_MAX
@@ -174,7 +376,7 @@ EXEC_CAN_Result_T EXEC_CAN_Receive( EXEC_CAN_Channel_T channel, EXEC_CAN_Packet_
         hardware_capacity = EXEC_CAN_MAX_BATCH_SIZE;
     }
 
-    CAN_Packet_T hardware_packets[EXEC_CAN_MAX_BATCH_SIZE] = { 0 };
+    CAN_Packet_T hardware_packets[EXEC_CAN_MAX_BATCH_SIZE] = EXEC_CAN_ZERO_INITIALIZER;
     uint16_t     count                                     = channel == EXEC_CAN_CHANNEL_1
                                                                  ? HW_CAN_Rx_Buffer_Read1( hardware_packets, hardware_capacity )
                                                                  : HW_CAN_Rx_Buffer_Read2( hardware_packets, hardware_capacity );
@@ -216,7 +418,35 @@ EXEC_CAN_Result_T EXEC_CAN_Recover( EXEC_CAN_Channel_T channel )
         return EXEC_CAN_RESULT_INVALID_ARGUMENT;
     }
 
+    ExecCANChannelState_T* state = &exec_can_state[channel];
+
+    if ( !state->is_configured )
+    {
+        return EXEC_CAN_RESULT_NOT_CONFIGURED;
+    }
+
+    if ( !state->is_started )
+    {
+        return EXEC_CAN_RESULT_NOT_STARTED;
+    }
+
     HW_CAN_Result_T result = channel == EXEC_CAN_CHANNEL_1 ? HW_CAN_Recover1() : HW_CAN_Recover2();
+
+    if ( result == HW_CAN_RESULT_OK )
+    {
+        state->is_configured = true;
+        state->is_started    = true;
+    }
+    else
+    {
+        /*
+         * A failed recovery may leave the HW channel either started or
+         * stopped, depending on whether HAL Stop or HAL Start failed.
+         */
+        state->is_configured = EXEC_CAN_HW_Is_Configured( channel );
+        state->is_started    = EXEC_CAN_HW_Is_Started( channel );
+    }
+
     return EXEC_CAN_Map_Result( result );
 }
 

@@ -11,10 +11,11 @@ hardware buffers. Hardware access remains inside the low-level `hw_uart` driver.
 
 This module is responsible for:
 
-- Applying UART channel configurations through the hardware layer.
-- Stopping active RX before reconfiguration when required.
-- Starting RX after configuration when RX is enabled.
-- Applying a disabled configuration during deconfiguration.
+- Selecting the external UART electrical mode through the UART/PWR logic expander.
+- Translating execution configuration into STM32 UART peripheral configuration.
+- Starting configured UART channels and RX DMA when reception is enabled.
+- Stopping active channels while retaining their configuration.
+- Deconfiguring the STM32 peripheral and selecting the disabled external mode.
 - Queueing execution-layer TX payloads through the low-level TX ring buffer.
 - Triggering the low-level TX DMA pump after TX data is queued.
 - Copying unread RX data from low-level RX spans into caller-owned buffers.
@@ -48,7 +49,9 @@ reading received bytes, or checking whether TX is complete.
 - RX circular buffer ownership.
 - TX ring buffer ownership.
 - DMA interrupt handling.
-- Electrical interface selection.
+
+Electrical interface selection remains in `exec_uart` and uses the UART/PWR
+logic expander hardware map.
 
 This keeps execution-layer code independent from direct UART register and DMA
 management.
@@ -105,19 +108,25 @@ consuming data.
 
 ## Configuration Flow
 
-`EXEC_UART_Apply_Configuration()` sequences configuration through the low-level
-driver.
+`EXEC_UART_Configure_Channel()` sequences configuration through the low-level driver.
 
 Typical behaviour:
 
 1. Validate the channel and configuration pointer.
-2. Stop RX if it is already running.
-3. Apply the requested low-level UART configuration.
-4. Start RX if the supplied configuration enables RX.
-5. Store execution-layer lifecycle state.
+2. Select the disabled external-interface mode while configuring.
+3. Apply the translated low-level UART peripheral configuration.
+4. Apply the requested external electrical-interface mode.
+5. Enter the configured, stopped state.
 
-`EXEC_UART_Deconfigure()` stops active RX if required, then applies a canonical
-disabled UART configuration through the low-level driver.
+`EXEC_UART_Start_Channel()` starts RX DMA when reception is enabled and enters
+the started state. TX-only channels require no low-level start action.
+
+`EXEC_UART_Stop_Channel()` stops RX and returns to the configured state. Stop
+is rejected while TX data remains queued or in flight.
+
+Passing `is_enabled = false` to `EXEC_UART_Configure_Channel()` stops active
+operation, deconfigures the STM32 peripheral, and selects the disabled external
+interface mode.
 
 ---
 
@@ -127,8 +136,9 @@ The public API is declared in `exec_uart.h`.
 
 | Function | Purpose |
 |----------|---------|
-| `EXEC_UART_Apply_Configuration()` | Apply a UART channel configuration |
-| `EXEC_UART_Deconfigure()` | Disable/deconfigure a UART channel |
+| `EXEC_UART_Configure_Channel()` | Configure or disable a UART channel |
+| `EXEC_UART_Start_Channel()` | Start a configured UART channel |
+| `EXEC_UART_Stop_Channel()` | Stop a channel while retaining configuration |
 | `EXEC_UART_Transmit()` | Queue a TX payload and trigger TX DMA |
 | `EXEC_UART_Read()` | Copy unread RX data into caller storage |
 | `EXEC_UART_Is_Tx_Complete()` | Report whether TX is fully complete |

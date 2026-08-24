@@ -31,11 +31,16 @@ static uint16_t                       received_counts[2];
 static EXEC_CAN_Result_T              receive_results[2];
 static uint32_t                       dropped_counts[2];
 static uint16_t                       configure_counts[2];
+static bool                           configured_enabled[2];
 static uint32_t                       configured_bitrates[2];
 static uint16_t                       configured_banks[2];
 static uint16_t                       configured_ids[2];
 static uint16_t                       configured_masks[2];
 static EXEC_CAN_Result_T              configure_results[2];
+static uint16_t                       start_counts[2];
+static uint16_t                       stop_counts[2];
+static EXEC_CAN_Result_T              start_results[2];
+static EXEC_CAN_Result_T              stop_results[2];
 
 static size_t ChannelIndex( EXEC_CAN_Channel_T channel )
 {
@@ -78,17 +83,31 @@ extern "C" uint32_t EXEC_CAN_Get_Rx_Dropped_Count( EXEC_CAN_Channel_T channel )
     return dropped_counts[ChannelIndex( channel )];
 }
 
-extern "C" EXEC_CAN_Result_T EXEC_CAN_Configure( EXEC_CAN_Channel_T channel, uint32_t bitrate,
-                                                 uint16_t filter_bank, uint16_t filter_id,
-                                                 uint16_t filter_mask )
+extern "C" EXEC_CAN_Result_T EXEC_CAN_Configure_Channel( EXEC_CAN_Channel_T channel,
+                                                         EXEC_CAN_Config_T  configuration )
 {
     size_t index = ChannelIndex( channel );
     configure_counts[index]++;
-    configured_bitrates[index] = bitrate;
-    configured_banks[index]    = filter_bank;
-    configured_ids[index]      = filter_id;
-    configured_masks[index]    = filter_mask;
+    configured_enabled[index]  = configuration.is_enabled;
+    configured_bitrates[index] = configuration.bitrate;
+    configured_banks[index]    = configuration.filter_bank;
+    configured_ids[index]      = configuration.filter_id;
+    configured_masks[index]    = configuration.filter_mask;
     return configure_results[index];
+}
+
+extern "C" EXEC_CAN_Result_T EXEC_CAN_Start_Channel( EXEC_CAN_Channel_T channel )
+{
+    size_t index = ChannelIndex( channel );
+    start_counts[index]++;
+    return start_results[index];
+}
+
+extern "C" EXEC_CAN_Result_T EXEC_CAN_Stop_Channel( EXEC_CAN_Channel_T channel )
+{
+    size_t index = ChannelIndex( channel );
+    stop_counts[index]++;
+    return stop_results[index];
 }
 
 class ConsoleCANTest : public ::testing::Test
@@ -104,13 +123,18 @@ protected:
         std::memset( received_counts, 0, sizeof( received_counts ) );
         std::memset( dropped_counts, 0, sizeof( dropped_counts ) );
         std::memset( configure_counts, 0, sizeof( configure_counts ) );
+        std::memset( configured_enabled, 0, sizeof( configured_enabled ) );
         std::memset( configured_bitrates, 0, sizeof( configured_bitrates ) );
         std::memset( configured_banks, 0, sizeof( configured_banks ) );
         std::memset( configured_ids, 0, sizeof( configured_ids ) );
         std::memset( configured_masks, 0, sizeof( configured_masks ) );
+        std::memset( start_counts, 0, sizeof( start_counts ) );
+        std::memset( stop_counts, 0, sizeof( stop_counts ) );
         transmit_results[0] = transmit_results[1] = EXEC_CAN_RESULT_OK;
         receive_results[0] = receive_results[1] = EXEC_CAN_RESULT_OK;
         configure_results[0] = configure_results[1] = EXEC_CAN_RESULT_OK;
+        start_results[0] = start_results[1] = EXEC_CAN_RESULT_OK;
+        stop_results[0] = stop_results[1] = EXEC_CAN_RESULT_OK;
     }
 };
 
@@ -144,13 +168,13 @@ TEST_F( ConsoleCANTest, LongTransmitCommandIsRejectedBeforeTransmitting )
 
 TEST_F( ConsoleCANTest, InvalidFilterBankCombinationIsRejectedBeforeConfiguration )
 {
-    char  can[]    = "can";
-    char  config[] = "config";
-    char  bank1[]  = "0";
-    char  bank2[]  = "13";
-    char  id[]     = "0x123";
-    char  mask[]   = "0x7FF";
-    char* argv[]   = { can, config, bank1, bank2, id, mask };
+    char  can[]     = "can";
+    char  config[]  = "config";
+    char  channel[] = "2";
+    char  bank[]    = "13";
+    char  id[]      = "0x123";
+    char  mask[]    = "0x7FF";
+    char* argv[]    = { can, config, channel, bank, id, mask };
 
     CONSOLE_CAN_Command_Handler( 6U, argv );
 
@@ -159,29 +183,44 @@ TEST_F( ConsoleCANTest, InvalidFilterBankCombinationIsRejectedBeforeConfiguratio
     EXPECT_NE( console_output.find( "Invalid CAN configuration" ), std::string::npos );
 }
 
-TEST_F( ConsoleCANTest, ValidDualChannelConfigurationUsesSeparateBanks )
+TEST_F( ConsoleCANTest, ValidConfigurationRoutesSelectedChannel )
 {
-    char  can[]    = "can";
-    char  config[] = "config";
-    char  bank1[]  = "13";
-    char  bank2[]  = "14";
-    char  id[]     = "0x123";
-    char  mask[]   = "0x7FF";
-    char* argv[]   = { can, config, bank1, bank2, id, mask };
+    char  can[]     = "can";
+    char  config[]  = "config";
+    char  channel[] = "2";
+    char  bank[]    = "14";
+    char  id[]      = "0x123";
+    char  mask[]    = "0x7FF";
+    char* argv[]    = { can, config, channel, bank, id, mask };
 
     CONSOLE_CAN_Command_Handler( 6U, argv );
 
-    EXPECT_EQ( configure_counts[0], 1U );
+    EXPECT_EQ( configure_counts[0], 0U );
     EXPECT_EQ( configure_counts[1], 1U );
-    EXPECT_EQ( configured_bitrates[0], 1000000U );
+    EXPECT_TRUE( configured_enabled[1] );
     EXPECT_EQ( configured_bitrates[1], 1000000U );
-    EXPECT_EQ( configured_banks[0], 13U );
     EXPECT_EQ( configured_banks[1], 14U );
-    EXPECT_EQ( configured_ids[0], 0x123U );
     EXPECT_EQ( configured_ids[1], 0x123U );
-    EXPECT_EQ( configured_masks[0], 0x7FFU );
     EXPECT_EQ( configured_masks[1], 0x7FFU );
-    EXPECT_NE( console_output.find( "CAN1 and CAN2 configured" ), std::string::npos );
+    EXPECT_NE( console_output.find( "CAN2 configured" ), std::string::npos );
+}
+
+TEST_F( ConsoleCANTest, StartAndStopRouteSelectedChannel )
+{
+    char  can[]        = "can";
+    char  start[]      = "start";
+    char  stop[]       = "stop";
+    char  channel[]    = "1";
+    char* start_argv[] = { can, start, channel };
+    char* stop_argv[]  = { can, stop, channel };
+
+    CONSOLE_CAN_Command_Handler( 3U, start_argv );
+    CONSOLE_CAN_Command_Handler( 3U, stop_argv );
+
+    EXPECT_EQ( start_counts[0], 1U );
+    EXPECT_EQ( stop_counts[0], 1U );
+    EXPECT_NE( console_output.find( "CAN1 started" ), std::string::npos );
+    EXPECT_NE( console_output.find( "CAN1 stopped" ), std::string::npos );
 }
 
 TEST_F( ConsoleCANTest, MultiFrameTransmitSetsDeterministicIDsAndDLCs )

@@ -561,6 +561,7 @@ void LL_DMA_DisableIT_TE( DMA_TypeDef* DMAx, uint32_t Stream );
  * @retval None
  */
 void LL_SPI_DisableDMAReq_TX( SPI_TypeDef* SPIx );
+void LL_SPI_DisableDMAReq_RX( SPI_TypeDef* SPIx );
 
 /**
  * @brief Get Stream 3 transfer error flag.

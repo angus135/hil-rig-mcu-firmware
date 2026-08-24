@@ -25,6 +25,7 @@
 #include "hw_adc.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -40,6 +41,12 @@
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+typedef enum
+{
+    EXEC_ANALOGUE_INPUT_STATE_DISABLED = 0,
+    EXEC_ANALOGUE_INPUT_STATE_CONFIGURED,
+    EXEC_ANALOGUE_INPUT_STATE_STARTED,
+} ExecAnalogueInputState_T;
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -51,12 +58,17 @@
  *------------------------------------------------------------------------------
  */
 
+static ExecAnalogueInputState_T analogue_input_state = EXEC_ANALOGUE_INPUT_STATE_DISABLED;
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
 
 static inline uint32_t EXEC_ANALOGUE_INPUT_Convert_ADC_To_Voltage( uint32_t adc_value );
+
+static bool EXEC_ANALOGUE_INPUT_Translate_Sample_Rate( ExecAnalogueInputSampleRate_T exec_rate,
+                                                       ADCSampleRates_T*             hw_rate );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -67,6 +79,47 @@ static inline uint32_t EXEC_ANALOGUE_INPUT_Convert_ADC_To_Voltage( uint32_t adc_
 static inline uint32_t EXEC_ANALOGUE_INPUT_Convert_ADC_To_Voltage( uint32_t adc_value )
 {
     return adc_value;
+}
+
+static bool EXEC_ANALOGUE_INPUT_Translate_Sample_Rate( ExecAnalogueInputSampleRate_T exec_rate,
+                                                       ADCSampleRates_T*             hw_rate )
+{
+    if ( hw_rate == NULL )
+    {
+        return false;
+    }
+
+    switch ( exec_rate )
+    {
+        case EXEC_ANALOGUE_INPUT_SAMPLE_RATE_100K_HZ:
+            *hw_rate = ADC_SAMPLE_RATE_100K_HZ;
+            break;
+
+        case EXEC_ANALOGUE_INPUT_SAMPLE_RATE_50K_HZ:
+            *hw_rate = ADC_SAMPLE_RATE_50K_HZ;
+            break;
+
+        case EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ:
+            *hw_rate = ADC_SAMPLE_RATE_10K_HZ;
+            break;
+
+        case EXEC_ANALOGUE_INPUT_SAMPLE_RATE_5K_HZ:
+            *hw_rate = ADC_SAMPLE_RATE_5K_HZ;
+            break;
+
+        case EXEC_ANALOGUE_INPUT_SAMPLE_RATE_1K_HZ:
+            *hw_rate = ADC_SAMPLE_RATE_1K_HZ;
+            break;
+
+        case EXEC_ANALOGUE_INPUT_SAMPLE_RATE_500_HZ:
+            *hw_rate = ADC_SAMPLE_RATE_500_HZ;
+            break;
+
+        default:
+            return false;
+    }
+
+    return true;
 }
 
 /**-----------------------------------------------------------------------------
@@ -85,10 +138,10 @@ static inline uint32_t EXEC_ANALOGUE_INPUT_Convert_ADC_To_Voltage( uint32_t adc_
  * false if either channel is disabled.
  *
  * The ADC hardware setup itself is handled by the hw_adc module. This function
- * only requests the configured measurement frequency and reports whether that
- * configuration succeeded.
+ * translates the execution-layer sample rate and applies the corresponding ADC
+ * measurement frequency without starting DMA acquisition.
  *
- * @param configuration
+ * @param config
  *      Analogue input configuration used during execution. This currently
  *      includes the channel enable flags and requested ADC sample rate.
  *
@@ -100,23 +153,106 @@ static inline uint32_t EXEC_ANALOGUE_INPUT_Convert_ADC_To_Voltage( uint32_t adc_
  *      The configuration is not currently supported, or the ADC measurement
  *      frequency could not be configured.
  */
-bool EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( AnalogueInputConfiguration_T configuration )
+bool EXEC_ANALOGUE_INPUT_Configure( const ExecAnalogueInputConfig_T* config )
 {
-    bool status = false;
-    // TODO: Update this when can dynamically adjust the number of channels
-    if ( !configuration.ch_0_is_enabled || !configuration.ch_1_is_enabled )
+    if ( config == NULL )
     {
         return false;
     }
 
-    // Configuring measurement frequency
-    status = HW_ADC_Configure_ADC_Measurement_Frequency( configuration.adc_sample_rate );
-    if ( !status )
+    if ( !config->is_enabled )
     {
-        return status;
+        if ( analogue_input_state == EXEC_ANALOGUE_INPUT_STATE_STARTED )
+        {
+            if ( !EXEC_ANALOGUE_INPUT_Stop() )
+            {
+                return false;
+            }
+        }
+
+        /*
+         * hw_adc has no deconfigure operation. The previous sample-rate
+         * configuration is retained, but DMA acquisition remains stopped.
+         */
+        analogue_input_state = EXEC_ANALOGUE_INPUT_STATE_DISABLED;
+
+        return true;
     }
 
-    return status;
+    if ( analogue_input_state == EXEC_ANALOGUE_INPUT_STATE_STARTED )
+    {
+        return false;
+    }
+
+    /*
+     * Dynamic channel selection is not supported by the fixed ADC scan and
+     * DMA configuration. Both channels must currently be enabled.
+     */
+    if ( !config->ch_0_is_enabled || !config->ch_1_is_enabled )
+    {
+        return false;
+    }
+
+    ADCSampleRates_T hw_sample_rate;
+
+    if ( !EXEC_ANALOGUE_INPUT_Translate_Sample_Rate( config->sample_rate, &hw_sample_rate ) )
+    {
+        return false;
+    }
+
+    if ( !HW_ADC_Configure_ADC_Measurement_Frequency( hw_sample_rate ) )
+    {
+        return false;
+    }
+
+    analogue_input_state = EXEC_ANALOGUE_INPUT_STATE_CONFIGURED;
+
+    return true;
+}
+
+bool EXEC_ANALOGUE_INPUT_Start( void )
+{
+    if ( analogue_input_state != EXEC_ANALOGUE_INPUT_STATE_CONFIGURED )
+    {
+        return false;
+    }
+
+    if ( !HW_ADC_Start_DMA_Measurements() )
+    {
+        return false;
+    }
+
+    analogue_input_state = EXEC_ANALOGUE_INPUT_STATE_STARTED;
+
+    return true;
+}
+
+bool EXEC_ANALOGUE_INPUT_Stop( void )
+{
+    if ( analogue_input_state != EXEC_ANALOGUE_INPUT_STATE_STARTED )
+    {
+        return false;
+    }
+
+    if ( !HW_ADC_Stop_DMA_Measurements() )
+    {
+        return false;
+    }
+
+    analogue_input_state = EXEC_ANALOGUE_INPUT_STATE_CONFIGURED;
+
+    return true;
+}
+
+bool EXEC_ANALOGUE_INPUT_Is_Configured( void )
+{
+    return analogue_input_state == EXEC_ANALOGUE_INPUT_STATE_CONFIGURED
+           || analogue_input_state == EXEC_ANALOGUE_INPUT_STATE_STARTED;
+}
+
+bool EXEC_ANALOGUE_INPUT_Is_Started( void )
+{
+    return analogue_input_state == EXEC_ANALOGUE_INPUT_STATE_STARTED;
 }
 
 /**
@@ -143,7 +279,8 @@ bool EXEC_ANALOGUE_INPUT_Configure_Analogue_Inputs( AnalogueInputConfiguration_T
  *      Struct containing pointers to the locations where the processed channel
  *      voltage values should be stored.
  */
-inline void EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( AnalogueInputVoltages_T voltage_destination )
+inline void
+EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( ExecAnalogueInputVoltages_T voltage_destination )
 {
     ADCMeasurement_T results[SAMPLES_TAKEN];
     // Get the measurements from DMA buffer

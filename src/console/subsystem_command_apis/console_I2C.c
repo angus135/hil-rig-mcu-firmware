@@ -24,7 +24,6 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
-#include "hw_i2c.h"
 #include "exec_i2c.h"
 #include "command_helpers.h"
 
@@ -53,7 +52,7 @@
  *------------------------------------------------------------------------------
  */
 
-static bool CONSOLE_I2C_Update_Master_Completion( HWI2CChannel_T channel, bool* is_complete )
+static bool CONSOLE_I2C_Update_Master_Completion( ExecI2CChannel_T channel, bool* is_complete )
 {
     if ( *is_complete || !EXEC_I2C_Is_Transaction_Queue_Complete( channel ) )
     {
@@ -94,8 +93,8 @@ static bool CONSOLE_I2C_Fail_Loopback( CONSOLEI2CLoopbackChannels_T channels, co
 /**
  * @brief Parses the master and slave I2C channel selection.
  */
-bool CONSOLE_Parse_I2C_Master_And_Slave( const char* arg, HWI2CChannel_T* master_channel,
-                                         HWI2CChannel_T* slave_channel )
+bool CONSOLE_Parse_I2C_Master_And_Slave( const char* arg, ExecI2CChannel_T* master_channel,
+                                         ExecI2CChannel_T* slave_channel )
 {
     if ( ( arg == NULL ) || ( master_channel == NULL ) || ( slave_channel == NULL ) )
     {
@@ -104,15 +103,15 @@ bool CONSOLE_Parse_I2C_Master_And_Slave( const char* arg, HWI2CChannel_T* master
 
     if ( strcmp( arg, "1" ) == 0 )
     {
-        *master_channel = HW_I2C_CHANNEL_1;
-        *slave_channel  = HW_I2C_CHANNEL_2;
+        *master_channel = EXEC_I2C_CHANNEL_1;
+        *slave_channel  = EXEC_I2C_CHANNEL_2;
         return true;
     }
 
     if ( strcmp( arg, "2" ) == 0 )
     {
-        *master_channel = HW_I2C_CHANNEL_2;
-        *slave_channel  = HW_I2C_CHANNEL_1;
+        *master_channel = EXEC_I2C_CHANNEL_2;
+        *slave_channel  = EXEC_I2C_CHANNEL_1;
         return true;
     }
 
@@ -173,31 +172,6 @@ bool CONSOLE_Parse_I2C_Loopback_Direction( const char*                    arg,
 }
 
 /**
- * @brief Parses the I2C transfer path selection.
- */
-bool CONSOLE_Parse_I2C_Transfer_Path( const char* arg, HWI2CTransferPath_T* transfer_path )
-{
-    if ( ( arg == NULL ) || ( transfer_path == NULL ) )
-    {
-        return false;
-    }
-
-    if ( ( strcmp( arg, "interrupt" ) == 0 ) || ( strcmp( arg, "irq" ) == 0 ) )
-    {
-        *transfer_path = HW_I2C_TRANSFER_INTERRUPT;
-        return true;
-    }
-
-    if ( strcmp( arg, "dma" ) == 0 )
-    {
-        *transfer_path = HW_I2C_TRANSFER_DMA;
-        return true;
-    }
-
-    return false;
-}
-
-/**
  * @brief Builds the loopback payload from command arguments.
  */
 bool CONSOLE_Build_I2C_Message( uint16_t argc, char* argv[], char* out_message,
@@ -211,7 +185,7 @@ bool CONSOLE_Build_I2C_Message( uint16_t argc, char* argv[], char* out_message,
     uint16_t tx_len = 0U;
     memset( out_message, 0, out_message_size );
 
-    for ( uint16_t arg_idx = 5U; arg_idx < argc; ++arg_idx )
+    for ( uint16_t arg_idx = 3U; arg_idx < argc; ++arg_idx )
     {
         const uint16_t part_len = ( uint16_t )strlen( argv[arg_idx] );
         if ( tx_len + part_len + 1U >= out_message_size )
@@ -219,7 +193,7 @@ bool CONSOLE_Build_I2C_Message( uint16_t argc, char* argv[], char* out_message,
             return false;
         }
 
-        if ( arg_idx > 5U )
+        if ( arg_idx > 3U )
         {
             out_message[tx_len] = ' ';
             tx_len++;

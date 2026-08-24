@@ -61,6 +61,12 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
  *------------------------------------------------------------------------------
  */
 
+typedef struct
+{
+    bool is_configured;
+    bool is_started;
+} HWCANLifecycleState_T;
+
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
@@ -70,6 +76,16 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
+
+static HWCANLifecycleState_T hw_can_lifecycle1 = {
+    .is_configured = false,
+    .is_started    = false,
+};
+
+static HWCANLifecycleState_T hw_can_lifecycle2 = {
+    .is_configured = false,
+    .is_started    = false,
+};
 
 /**
  * At the moment these flags are set to true by the tx ISR when it has finished emptying the buffer
@@ -121,38 +137,46 @@ static volatile uint16_t can_tx_rp2 = 0;
  */
 
 // IRQ Re-Definitions
+void HW_CAN_CH1_ERROR_IRQ_HANDLER( void );
 void HW_CAN_CH1_TX_IRQ_HANDLER( void );
 void HW_CAN_CH1_RX_IRQ_HANDLER( void );
+
+void HW_CAN_CH2_ERROR_IRQ_HANDLER( void );
 void HW_CAN_CH2_TX_IRQ_HANDLER( void );
 void HW_CAN_CH2_RX_IRQ_HANDLER( void );
-void HW_CAN_CH1_ERROR_IRQ_HANDLER( void );
-void HW_CAN_CH2_ERROR_IRQ_HANDLER( void );
 
-static bool            HW_CAN_Packet_Is_Valid( const CAN_Packet_T* packet );
+static bool HW_CAN_Packet_Is_Valid( const CAN_Packet_T* packet );
+
 static HW_CAN_Result_T HW_CAN_Transmit_To_Mailbox( CAN_HandleTypeDef* hcan, uint8_t* txData,
                                                    uint16_t id, uint8_t size,
                                                    uint32_t* request_complete_flag );
+
 static HW_CAN_Result_T HW_CAN_Tx_Service( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[],
                                           volatile uint16_t* w_p, volatile uint16_t* r_p,
                                           uint16_t buffer_width, volatile bool* active,
                                           volatile bool*               completed,
                                           volatile uint32_t*           pending_mailbox,
                                           volatile HW_CAN_Tx_Status_T* status );
+
 static HW_CAN_Result_T HW_CAN_Tx_Trigger( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[],
                                           volatile uint16_t* w_p, volatile uint16_t* r_p,
                                           uint16_t buffer_width, volatile bool* active,
                                           volatile bool*               completed,
                                           volatile uint32_t*           pending_mailbox,
                                           volatile HW_CAN_Tx_Status_T* status );
+
 static void HW_CAN_Tx_IRQ( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[], volatile uint16_t* w_p,
                            volatile uint16_t* r_p, uint16_t buffer_width, volatile bool* active,
                            volatile bool* completed, volatile uint32_t* pending_mailbox,
                            volatile HW_CAN_Tx_Status_T* status );
+
 static void HW_CAN_Rx_IRQ( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[], volatile uint16_t* w_p,
                            volatile uint16_t* r_p, volatile uint32_t* dropped_count );
+
 static void HW_CAN_Error_IRQ( CAN_HandleTypeDef* hcan, volatile bool* active,
                               volatile bool* completed, volatile uint32_t* pending_mailbox,
                               volatile HW_CAN_Tx_Status_T* status );
+
 static void HW_CAN_Reset_Channel( CAN_TypeDef* can, IRQn_Type tx_irq, IRQn_Type rx_irq,
                                   IRQn_Type error_irq, volatile uint16_t* tx_wp,
                                   volatile uint16_t* tx_rp, volatile uint16_t* rx_wp,
@@ -160,13 +184,16 @@ static void HW_CAN_Reset_Channel( CAN_TypeDef* can, IRQn_Type tx_irq, IRQn_Type 
                                   volatile bool* completed, volatile uint32_t* dropped_count,
                                   volatile uint32_t*           pending_mailbox,
                                   volatile HW_CAN_Tx_Status_T* status );
+
 static HW_CAN_Result_T HW_CAN_Recover( CAN_HandleTypeDef* hcan, IRQn_Type tx_irq, IRQn_Type rx_irq,
                                        IRQn_Type error_irq, volatile uint16_t* tx_wp,
                                        volatile uint16_t* tx_rp, volatile bool* active,
                                        volatile bool* completed, volatile uint32_t* pending_mailbox,
-                                       volatile HW_CAN_Tx_Status_T* status );
-static void            HW_CAN_Tx_Buffer_Cancel( IRQn_Type tx_irq, volatile uint16_t* w_p,
-                                                volatile uint16_t* r_p );
+                                       volatile HW_CAN_Tx_Status_T* status,
+                                       HWCANLifecycleState_T*       lifecycle );
+
+static void HW_CAN_Tx_Buffer_Cancel( IRQn_Type tx_irq, volatile uint16_t* w_p,
+                                     volatile uint16_t* r_p );
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -760,11 +787,9 @@ HAL_StatusTypeDef HW_CAN_Apply_Filter_HAL( CAN_FilterTypeDef* filter, CAN_Handle
  * @param hcan the pointer to the handle for the can peripheral
  * @param bitrate the desired bitrate in bits per second, eg 1Mbps = 1000000
  *
- * @return An int representing error codes:
- *      0: no error, config complete
- *      1: config timing error, not complete
- *      2: config filter error, not complete
- *      3: config start error, not complete
+ * @return HW_CAN_RESULT_OK on success, HW_CAN_RESULT_TIMING_ERROR when timing
+ *         cannot be applied, or HW_CAN_RESULT_FILTER_ERROR when filter
+ *         configuration fails.
  *
  * Provides the configuration of the following:
  *      Prescaler
@@ -781,25 +806,128 @@ HAL_StatusTypeDef HW_CAN_Apply_Filter_HAL( CAN_FilterTypeDef* filter, CAN_Handle
  *          FIFO assignment for accepted frames
  *
  */
-int HW_CAN_Configure( CAN_HandleTypeDef* hcan, uint32_t bitrate, uint16_t filter_bank,
-                      uint16_t filter_id, uint16_t filter_mask )
+static HW_CAN_Result_T HW_CAN_Configure( CAN_HandleTypeDef* hcan, uint32_t bitrate,
+                                         uint16_t filter_bank, uint16_t filter_id,
+                                         uint16_t filter_mask )
 {
     CAN_FilterTypeDef filter    = { 0 };
     CanProperties_T   can_props = HW_CAN_Compute_Properties( bitrate, TOTAL_TQ, MBPS_SAMPLE_POINT );
+
     if ( HW_CAN_Apply_Timing_HAL( hcan, can_props ) != HAL_OK )
     {
-        return 1;
+        return HW_CAN_RESULT_TIMING_ERROR;
     }
+
     if ( HW_CAN_Apply_Filter_HAL( &filter, hcan, filter_bank, filter_id, filter_mask ) != HAL_OK )
     {
-        return 2;
+        return HW_CAN_RESULT_FILTER_ERROR;
     }
+
+    return HW_CAN_RESULT_OK;
+}
+
+static HW_CAN_Result_T HW_CAN_Start( CAN_HandleTypeDef* hcan, IRQn_Type tx_irq, IRQn_Type rx_irq,
+                                     IRQn_Type error_irq, HWCANLifecycleState_T* lifecycle )
+{
+    if ( hcan == NULL || lifecycle == NULL )
+    {
+        return HW_CAN_RESULT_ERROR;
+    }
+
+    if ( !lifecycle->is_configured )
+    {
+        return HW_CAN_RESULT_NOT_CONFIGURED;
+    }
+
+    if ( lifecycle->is_started )
+    {
+        return HW_CAN_RESULT_BUSY;
+    }
+
     if ( HAL_CAN_Start( hcan ) != HAL_OK )
     {
-        return 3;
+        return HW_CAN_RESULT_ERROR;
     }
+
+    /*
+     * TX mailbox-empty interrupts remain disabled until a buffered
+     * transmission is triggered.
+     */
+    CLEAR_BIT( hcan->Instance->IER, CAN_IER_TMEIE );
+
+    NVIC_EnableIRQ( tx_irq );
+    NVIC_EnableIRQ( rx_irq );
+    NVIC_EnableIRQ( error_irq );
+
     SET_BIT( hcan->Instance->IER, HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK );
-    return 0;
+
+    lifecycle->is_started = true;
+
+    return HW_CAN_RESULT_OK;
+}
+
+static HW_CAN_Result_T HW_CAN_Stop( CAN_HandleTypeDef* hcan, IRQn_Type tx_irq, IRQn_Type rx_irq,
+                                    IRQn_Type error_irq, volatile bool* tx_active,
+                                    HWCANLifecycleState_T* lifecycle )
+{
+    if ( hcan == NULL || tx_active == NULL || lifecycle == NULL )
+    {
+        return HW_CAN_RESULT_ERROR;
+    }
+
+    if ( !lifecycle->is_configured )
+    {
+        return HW_CAN_RESULT_NOT_CONFIGURED;
+    }
+
+    if ( !lifecycle->is_started )
+    {
+        return HW_CAN_RESULT_NOT_STARTED;
+    }
+
+    /*
+     * Mask interrupts before inspecting transmission state so an ISR cannot
+     * advance the buffered transmission while Stop is deciding whether the
+     * peripheral is idle.
+     */
+    uint32_t enabled_interrupts =
+        hcan->Instance->IER
+        & ( CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK );
+
+    NVIC_DisableIRQ( tx_irq );
+    NVIC_DisableIRQ( rx_irq );
+    NVIC_DisableIRQ( error_irq );
+
+    CLEAR_BIT( hcan->Instance->IER,
+               CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK );
+
+    bool mailbox_active = ( ( hcan->Instance->sTxMailBox[0].TIR & CAN_TI0R_TXRQ ) != 0U )
+                          || ( ( hcan->Instance->sTxMailBox[1].TIR & CAN_TI0R_TXRQ ) != 0U )
+                          || ( ( hcan->Instance->sTxMailBox[2].TIR & CAN_TI0R_TXRQ ) != 0U );
+
+    if ( *tx_active || mailbox_active )
+    {
+        SET_BIT( hcan->Instance->IER, enabled_interrupts );
+        NVIC_EnableIRQ( error_irq );
+        NVIC_EnableIRQ( rx_irq );
+        NVIC_EnableIRQ( tx_irq );
+
+        return HW_CAN_RESULT_BUSY;
+    }
+
+    if ( HAL_CAN_Stop( hcan ) != HAL_OK )
+    {
+        SET_BIT( hcan->Instance->IER, enabled_interrupts );
+        NVIC_EnableIRQ( error_irq );
+        NVIC_EnableIRQ( rx_irq );
+        NVIC_EnableIRQ( tx_irq );
+
+        return HW_CAN_RESULT_ERROR;
+    }
+
+    lifecycle->is_started = false;
+
+    return HW_CAN_RESULT_OK;
 }
 
 /**-----------------------------------------------------------------------------
@@ -864,11 +992,9 @@ CanProperties_T HW_CAN_Compute_Properties( uint32_t bitrate, uint32_t total_TQ,
  *
  * @param bitrate the desired bitrate in bits per second, eg 1Mbps = 1000000
  *
- * @return An int representing error codes:
- *      0: no error, config complete
- *      1: config timing error, not complete
- *      2: config filter error, not complete
- *      3: config start error, not complete
+ * @return HW_CAN_RESULT_OK on success, HW_CAN_RESULT_BUSY if the channel is
+ *         already started, or the configuration-specific error returned by
+ *         the shared configuration helper.
  *
  * Provides the configuration of the following:
  *      Prescaler
@@ -885,18 +1011,34 @@ CanProperties_T HW_CAN_Compute_Properties( uint32_t bitrate, uint32_t total_TQ,
  *          FIFO assignment for accepted frames
  *
  */
-int HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
-                       uint16_t filter_mask )
+HW_CAN_Result_T HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
+                                   uint16_t filter_mask )
 {
-    // __HAL_RCC_CAN1_FORCE_RESET();
-    // __HAL_RCC_CAN1_RELEASE_RESET();
-    __HAL_RCC_CAN1_CLK_ENABLE();
-    int result = HW_CAN_Configure( &hcan1, bitrate, filter_bank, filter_id, filter_mask );
-    if ( result == 0 )
+    if ( hw_can_lifecycle1.is_started )
     {
-        NVIC_EnableIRQ( CAN1_SCE_IRQn );
+        return HW_CAN_RESULT_BUSY;
     }
+
+    hw_can_lifecycle1.is_configured = false;
+    hw_can_lifecycle1.is_started    = false;
+
+    __HAL_RCC_CAN1_CLK_ENABLE();
+
+    HW_CAN_Result_T result =
+        HW_CAN_Configure( &hcan1, bitrate, filter_bank, filter_id, filter_mask );
+
+    CLEAR_BIT( CAN1->IER, CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK );
+    NVIC_DisableIRQ( CAN1_TX_IRQn );
+    NVIC_DisableIRQ( CAN1_RX0_IRQn );
+    NVIC_DisableIRQ( CAN1_SCE_IRQn );
+
     HW_CAN_Reset1();
+
+    if ( result == HW_CAN_RESULT_OK )
+    {
+        hw_can_lifecycle1.is_configured = true;
+    }
+
     return result;
 }
 
@@ -905,11 +1047,9 @@ int HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_i
  *
  * @param bitrate the desired bitrate in bits per second, eg 1Mbps = 1000000
  *
- * @return An int representing error codes:
- *      0: no error, config complete
- *      1: config timing error, not complete
- *      2: config filter error, not complete
- *      3: config start error, not complete
+ * @return HW_CAN_RESULT_OK on success, HW_CAN_RESULT_BUSY if the channel is
+ *         already started, or the configuration-specific error returned by
+ *         the shared configuration helper.
  *
  * Provides the configuration of the following:
  *      Prescaler
@@ -926,18 +1066,34 @@ int HW_CAN_Configure1( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_i
  *          FIFO assignment for accepted frames
  *
  */
-int HW_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
-                       uint16_t filter_mask )
+HW_CAN_Result_T HW_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint16_t filter_id,
+                                   uint16_t filter_mask )
 {
-    // __HAL_RCC_CAN2_FORCE_RESET();
-    // __HAL_RCC_CAN2_RELEASE_RESET();
-    __HAL_RCC_CAN2_CLK_ENABLE();
-    int result = HW_CAN_Configure( &hcan2, bitrate, filter_bank, filter_id, filter_mask );
-    if ( result == 0 )
+    if ( hw_can_lifecycle2.is_started )
     {
-        NVIC_EnableIRQ( CAN2_SCE_IRQn );
+        return HW_CAN_RESULT_BUSY;
     }
+
+    hw_can_lifecycle2.is_configured = false;
+    hw_can_lifecycle2.is_started    = false;
+
+    __HAL_RCC_CAN2_CLK_ENABLE();
+
+    HW_CAN_Result_T result =
+        HW_CAN_Configure( &hcan2, bitrate, filter_bank, filter_id, filter_mask );
+
+    CLEAR_BIT( CAN2->IER, CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK );
+    NVIC_DisableIRQ( CAN2_TX_IRQn );
+    NVIC_DisableIRQ( CAN2_RX0_IRQn );
+    NVIC_DisableIRQ( CAN2_SCE_IRQn );
+
     HW_CAN_Reset2();
+
+    if ( result == HW_CAN_RESULT_OK )
+    {
+        hw_can_lifecycle2.is_configured = true;
+    }
+
     return result;
 }
 
@@ -961,14 +1117,56 @@ HW_CAN_Result_T HW_CAN_Recover1( void )
 {
     return HW_CAN_Recover( &hcan1, CAN1_TX_IRQn, CAN1_RX0_IRQn, CAN1_SCE_IRQn, &can_tx_wp1,
                            &can_tx_rp1, &can_tx_active1, &can_sent_flag1, &can_tx_pending_mailbox1,
-                           &can_tx_status1 );
+                           &can_tx_status1, &hw_can_lifecycle1 );
 }
 
 HW_CAN_Result_T HW_CAN_Recover2( void )
 {
     return HW_CAN_Recover( &hcan2, CAN2_TX_IRQn, CAN2_RX0_IRQn, CAN2_SCE_IRQn, &can_tx_wp2,
                            &can_tx_rp2, &can_tx_active2, &can_sent_flag2, &can_tx_pending_mailbox2,
-                           &can_tx_status2 );
+                           &can_tx_status2, &hw_can_lifecycle2 );
+}
+
+HW_CAN_Result_T HW_CAN_Start1( void )
+{
+    return HW_CAN_Start( &hcan1, CAN1_TX_IRQn, CAN1_RX0_IRQn, CAN1_SCE_IRQn, &hw_can_lifecycle1 );
+}
+
+HW_CAN_Result_T HW_CAN_Start2( void )
+{
+    return HW_CAN_Start( &hcan2, CAN2_TX_IRQn, CAN2_RX0_IRQn, CAN2_SCE_IRQn, &hw_can_lifecycle2 );
+}
+
+HW_CAN_Result_T HW_CAN_Stop1( void )
+{
+    return HW_CAN_Stop( &hcan1, CAN1_TX_IRQn, CAN1_RX0_IRQn, CAN1_SCE_IRQn, &can_tx_active1,
+                        &hw_can_lifecycle1 );
+}
+
+HW_CAN_Result_T HW_CAN_Stop2( void )
+{
+    return HW_CAN_Stop( &hcan2, CAN2_TX_IRQn, CAN2_RX0_IRQn, CAN2_SCE_IRQn, &can_tx_active2,
+                        &hw_can_lifecycle2 );
+}
+
+bool HW_CAN_Is_Configured1( void )
+{
+    return hw_can_lifecycle1.is_configured;
+}
+
+bool HW_CAN_Is_Configured2( void )
+{
+    return hw_can_lifecycle2.is_configured;
+}
+
+bool HW_CAN_Is_Started1( void )
+{
+    return hw_can_lifecycle1.is_started;
+}
+
+bool HW_CAN_Is_Started2( void )
+{
+    return hw_can_lifecycle2.is_started;
 }
 
 /**-----------------------------------------------------------------------------
@@ -1719,42 +1917,78 @@ static HW_CAN_Result_T HW_CAN_Recover( CAN_HandleTypeDef* hcan, IRQn_Type tx_irq
                                        IRQn_Type error_irq, volatile uint16_t* tx_wp,
                                        volatile uint16_t* tx_rp, volatile bool* active,
                                        volatile bool* completed, volatile uint32_t* pending_mailbox,
-                                       volatile HW_CAN_Tx_Status_T* status )
+                                       volatile HW_CAN_Tx_Status_T* status,
+                                       HWCANLifecycleState_T*       lifecycle )
 {
+    if ( hcan == NULL || lifecycle == NULL )
+    {
+        return HW_CAN_RESULT_ERROR;
+    }
+
+    if ( !lifecycle->is_configured )
+    {
+        return HW_CAN_RESULT_NOT_CONFIGURED;
+    }
+
+    if ( !lifecycle->is_started )
+    {
+        return HW_CAN_RESULT_NOT_STARTED;
+    }
+
     CAN_TypeDef* can = hcan->Instance;
 
     NVIC_DisableIRQ( tx_irq );
     NVIC_DisableIRQ( rx_irq );
     NVIC_DisableIRQ( error_irq );
+
     CLEAR_BIT( can->IER, CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK );
 
     HW_CAN_Abort_Tx_Mailboxes( can );
+
     HAL_StatusTypeDef stop_result = HAL_CAN_Stop( hcan );
 
+    /*
+     * Recovery deliberately discards the failed transmission and any queued
+     * packets, matching the existing recovery contract.
+     */
     *tx_wp           = 0U;
     *tx_rp           = 0U;
     *active          = false;
     *completed       = false;
     *pending_mailbox = 0U;
+
     CLEAR_BIT( can->ESR, CAN_ESR_LEC );
     HW_CAN_Clear_Error_Interrupt( can );
 
-    HAL_StatusTypeDef start_result = stop_result == HAL_OK ? HAL_CAN_Start( hcan ) : HAL_ERROR;
-    if ( stop_result == HAL_OK && start_result == HAL_OK )
-    {
-        *status = HW_CAN_TX_STATUS_IDLE;
-    }
-    else
+    if ( stop_result != HAL_OK )
     {
         *status = HW_CAN_TX_STATUS_ERROR;
+
+        /*
+         * No successful lifecycle transition occurred. Restore operation so
+         * another recovery attempt remains possible.
+         */
+        SET_BIT( can->IER, HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK );
+        NVIC_EnableIRQ( error_irq );
+        NVIC_EnableIRQ( rx_irq );
+        NVIC_EnableIRQ( tx_irq );
+
+        return HW_CAN_RESULT_ERROR;
     }
 
-    SET_BIT( can->IER, HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK );
-    NVIC_EnableIRQ( error_irq );
-    NVIC_EnableIRQ( rx_irq );
-    NVIC_EnableIRQ( tx_irq );
+    lifecycle->is_started = false;
 
-    return *status == HW_CAN_TX_STATUS_IDLE ? HW_CAN_RESULT_OK : HW_CAN_RESULT_ERROR;
+    HW_CAN_Result_T start_result = HW_CAN_Start( hcan, tx_irq, rx_irq, error_irq, lifecycle );
+
+    if ( start_result != HW_CAN_RESULT_OK )
+    {
+        *status = HW_CAN_TX_STATUS_ERROR;
+        return start_result;
+    }
+
+    *status = HW_CAN_TX_STATUS_IDLE;
+
+    return HW_CAN_RESULT_OK;
 }
 
 /** Discard queued TX packets while preserving all other channel state. */

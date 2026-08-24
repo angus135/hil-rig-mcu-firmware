@@ -17,7 +17,7 @@
 #include <stdint.h>
 
 #define LOGIC_EXPANDER_INTERNAL_FMPI2C1_OWN_ADDRESS_7BIT ( 0x33U )
-#define LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK ( 0x01U )
+#define LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK ( 0x7FU )
 #define LOGIC_EXPANDER_CONFIG_WRITE_COUNT ( 8U )
 #define LOGIC_EXPANDER_TRANSACTION_TIMEOUT_MS ( 100U )
 
@@ -61,36 +61,35 @@ typedef struct LogicExpanderConfigWrite_T
 
 // clang-format off
 static const uint16_t LOGIC_EXPANDER_I2C_ADDRESSES[LOGIC_EXPANDER_COUNT] = {
-    [LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT] = 0x20U,
-    [LOGIC_EXPANDER_UNASSIGNED_1]          = 0x21U,
-    [LOGIC_EXPANDER_UNASSIGNED_2]          = 0x22U,
-    [LOGIC_EXPANDER_UNASSIGNED_3]          = 0x23U,
-    [LOGIC_EXPANDER_UNASSIGNED_4]          = 0x24U,
-    [LOGIC_EXPANDER_UNASSIGNED_5]          = 0x25U,
-    [LOGIC_EXPANDER_UNASSIGNED_6]          = 0x26U,
-    [LOGIC_EXPANDER_UNASSIGNED_7]          = 0x27U,
+    [LOGIC_EXPANDER_DI_1]          = 0x20U,
+    [LOGIC_EXPANDER_DI_2]          = 0x21U,
+    [LOGIC_EXPANDER_DO_1]          = 0x22U,
+    [LOGIC_EXPANDER_DO_2]          = 0x23U,
+    [LOGIC_EXPANDER_PWM_SPI]       = 0x24U,
+    [LOGIC_EXPANDER_UART_PWR]      = 0x25U,
+    [LOGIC_EXPANDER_I2C_AO]        = 0x26U,
 };
 
+
+/* Need to change these to define safe hardware defaults for initialisation*/
 static const uint8_t LOGIC_EXPANDER_INIT_OLAT_A[LOGIC_EXPANDER_COUNT] = {
-    [LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT] = 0x00U,
-    [LOGIC_EXPANDER_UNASSIGNED_1]          = 0x00U,
-    [LOGIC_EXPANDER_UNASSIGNED_2]          = 0x00U,
-    [LOGIC_EXPANDER_UNASSIGNED_3]          = 0x00U,
-    [LOGIC_EXPANDER_UNASSIGNED_4]          = 0x00U,
-    [LOGIC_EXPANDER_UNASSIGNED_5]          = 0x00U,
-    [LOGIC_EXPANDER_UNASSIGNED_6]          = 0x00U,
-    [LOGIC_EXPANDER_UNASSIGNED_7]          = 0x00U,
+    [LOGIC_EXPANDER_DI_1]          = 0x00U,
+    [LOGIC_EXPANDER_DI_2]          = 0x00U,
+    [LOGIC_EXPANDER_DO_1]          = 0x00U,
+    [LOGIC_EXPANDER_DO_2]          = 0x00U,
+    [LOGIC_EXPANDER_PWM_SPI]       = 0x00U,
+    [LOGIC_EXPANDER_UART_PWR]      = 0x00U,
+    [LOGIC_EXPANDER_I2C_AO]        = 0x00U,
 };
 
 static const uint8_t LOGIC_EXPANDER_INIT_OLAT_B[LOGIC_EXPANDER_COUNT] = {
-    [LOGIC_EXPANDER_DIGITAL_OUTPUT_SELECT] = 0xFFU,
-    [LOGIC_EXPANDER_UNASSIGNED_1]          = 0xFFU,
-    [LOGIC_EXPANDER_UNASSIGNED_2]          = 0xFFU,
-    [LOGIC_EXPANDER_UNASSIGNED_3]          = 0xFFU,
-    [LOGIC_EXPANDER_UNASSIGNED_4]          = 0xFFU,
-    [LOGIC_EXPANDER_UNASSIGNED_5]          = 0xFFU,
-    [LOGIC_EXPANDER_UNASSIGNED_6]          = 0xFFU,
-    [LOGIC_EXPANDER_UNASSIGNED_7]          = 0xFFU,
+    [LOGIC_EXPANDER_DI_1]          = 0xFFU,
+    [LOGIC_EXPANDER_DI_2]          = 0xFFU,
+    [LOGIC_EXPANDER_DO_1]          = 0xFFU,
+    [LOGIC_EXPANDER_DO_2]          = 0xFFU,
+    [LOGIC_EXPANDER_PWM_SPI]       = 0xFFU,
+    [LOGIC_EXPANDER_UART_PWR]      = 0xFFU,
+    [LOGIC_EXPANDER_I2C_AO]        = 0xFFU,
 };
 // clang-format on
 
@@ -126,11 +125,15 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Enqueue_Control_Bits( uint8_t* sourc
 
 static void LOGIC_EXPANDER_Arm_Transaction_Deadline( void )
 {
-    if ( !logic_expander_deadline_active )
-    {
-        logic_expander_transaction_start_tick = xTaskGetTickCount();
-        logic_expander_deadline_active        = true;
-    }
+    /*
+     * Queue acceptance is observable forward progress. Refresh the deadline
+     * whenever another transaction is accepted so a large multi-expander
+     * batch is not timed out simply because it takes several queue-service
+     * cycles to submit. Once no further progress is possible, the unchanged
+     * timestamp still provides the normal stall timeout.
+     */
+    logic_expander_transaction_start_tick = xTaskGetTickCount();
+    logic_expander_deadline_active        = true;
 }
 
 static void LOGIC_EXPANDER_Disarm_Transaction_Deadline( void )

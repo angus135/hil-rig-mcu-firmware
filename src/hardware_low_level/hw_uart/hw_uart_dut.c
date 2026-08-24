@@ -9,7 +9,7 @@
  *      This module owns:
  *      - channel configuration and validation,
  *      - fixed hardware mapping for UART peripherals and DMA streams,
- *      - static hardware interface selection sequencing,
+ *      - configured, started, and stopped channel lifecycle sequencing,
  *      - DMA-backed circular RX buffering,
  *      - lightweight access to unread RX data through zero-copy spans,
  *      - DMA-source TX ring buffering,
@@ -111,17 +111,6 @@
     ( DMA_HIFCR_CTCIF5 | DMA_HIFCR_CTEIF5 | DMA_HIFCR_CFEIF5 | DMA_HIFCR_CDMEIF5                   \
       | DMA_HIFCR_CHTIF5 )
 
-/* Placeholder interface selection line definitions. */
-#define HW_UART_CH1_MODE_SEL0_LINE GPIO_PIN_0
-#define HW_UART_CH1_MODE_SEL1_LINE GPIO_PIN_1
-#define HW_UART_CH1_VOLT_SEL0_LINE GPIO_PIN_2
-#define HW_UART_CH1_VOLT_SEL1_LINE GPIO_PIN_3
-
-#define HW_UART_CH2_MODE_SEL0_LINE GPIO_PIN_4
-#define HW_UART_CH2_MODE_SEL1_LINE GPIO_PIN_5
-#define HW_UART_CH2_VOLT_SEL0_LINE GPIO_PIN_6
-#define HW_UART_CH2_VOLT_SEL1_LINE GPIO_PIN_7
-
 /* RX buffer size must remain a power of 2 for mask-based circular indexing. */
 #define HW_UART_RX_BUFFER_SIZE 4096U
 
@@ -163,24 +152,6 @@ typedef enum
 */
 
 /**
- * @brief  Defines the hardware control lines used to select the external UART interface mode.
- *
- * @note   These lines represent board-level control signals such as MODE_SEL and
- *         VOLT_SEL. They are fixed per channel and are used during configuration
- *         to place the external interface hardware into the required electrical mode.
- *
- * @note   The actual GPIO control implementation is not yet integrated. This structure serves as a
- * placeholder defining the required control lines and sequencing for future implementation.
- */
-typedef struct
-{
-    uint16_t mode_sel0_line;  // GPIO pin number for MODE_SEL bit 0
-    uint16_t mode_sel1_line;  // GPIO pin number for MODE_SEL bit 1
-    uint16_t volt_sel0_line;  // GPIO pin number for VOLT_SEL bit 0
-    uint16_t volt_sel1_line;  // GPIO pin number for VOLT_SEL bit 1
-} HwUartSelectionLines_T;
-
-/**
  * @brief  Stores low-level runtime state associated with a UART channel.
  *
  * @note   This structure is owned entirely by the low-level driver and tracks
@@ -206,6 +177,7 @@ typedef struct
                               // implemented.
 
     bool is_configured_and_initialised;
+    bool is_started;
     bool rx_running;
 
     volatile uint32_t tx_head;
@@ -228,10 +200,10 @@ typedef struct
  */
 typedef struct
 {
-    HwUartConfig_T       config;
-    HwUartRuntimeState_T runtime;
-    uint8_t              rx_buffer[HW_UART_RX_BUFFER_SIZE];
-    uint8_t              tx_buffer[HW_UART_TX_BUFFER_SIZE];
+    HwUartPeripheralConfig_T config;
+    HwUartRuntimeState_T     runtime;
+    uint8_t                  rx_buffer[HW_UART_RX_BUFFER_SIZE];
+    uint8_t                  tx_buffer[HW_UART_TX_BUFFER_SIZE];
 } HwUartChannelState_T;
 
 /**
@@ -298,17 +270,6 @@ static const HwUartHardwareMap_T hw_uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
                             .rx_dma_ifcr_reg   = HW_UART_CH2_DMA_RX_IFCR_REG,
                             .rx_dma_ifcr_mask  = HW_UART_CH2_DMA_RX_IFCR_MASK } };
 
-/* Fixed board-level mapping from logical UART channels to interface selection lines */
-static const HwUartSelectionLines_T uart_selection_lines[HW_UART_CHANNEL_COUNT] = {
-    [HW_UART_CHANNEL_1] = { .mode_sel0_line = HW_UART_CH1_MODE_SEL0_LINE,
-                            .mode_sel1_line = HW_UART_CH1_MODE_SEL1_LINE,
-                            .volt_sel0_line = HW_UART_CH1_VOLT_SEL0_LINE,
-                            .volt_sel1_line = HW_UART_CH1_VOLT_SEL1_LINE },
-    [HW_UART_CHANNEL_2] = { .mode_sel0_line = HW_UART_CH2_MODE_SEL0_LINE,
-                            .mode_sel1_line = HW_UART_CH2_MODE_SEL1_LINE,
-                            .volt_sel0_line = HW_UART_CH2_VOLT_SEL0_LINE,
-                            .volt_sel1_line = HW_UART_CH2_VOLT_SEL1_LINE } };
-
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -316,6 +277,9 @@ static const HwUartSelectionLines_T uart_selection_lines[HW_UART_CHANNEL_COUNT] 
 static inline void HW_UART_Tx_Complete_Handler( HwUartChannel_T channel );
 static inline void HW_UART_Tx_Error_Handler( HwUartChannel_T channel );
 static inline void HW_UART_Rx_Error_Handler( HwUartChannel_T channel );
+
+static bool HW_UART_Start_Rx( HwUartChannel_T channel );
+static bool HW_UART_Stop_Rx( HwUartChannel_T channel );
 
 /**-----------------------------------------------------------------------------
  *  Interrupt Handler Prototypes
@@ -344,16 +308,11 @@ void HW_UART_CH2_RX_DMA_IRQ_HANDLER( void );
  * @note   Validation ensures that later startup code can assume the stored
  *         configuration is well-formed and can focus on applying it to hardware.
  */
-static bool HW_UART_Configuration_Is_Valid( const HwUartConfig_T* config )
+static bool HW_UART_Configuration_Is_Valid( const HwUartPeripheralConfig_T* config )
 {
     if ( config == NULL )
     {
         return false;
-    }
-
-    if ( config->interface_mode == HW_UART_MODE_DISABLED )
-    {
-        return ( !config->rx_enabled && !config->tx_enabled && config->baud_rate == 0U );
     }
 
     if ( !config->rx_enabled && !config->tx_enabled )
@@ -383,27 +342,61 @@ static bool HW_UART_Configuration_Is_Valid( const HwUartConfig_T* config )
         return false;
     }
 
-    bool valid_baud = false;
+    return ( config->baud_rate <= 2000000U );
+}
 
-    switch ( config->interface_mode )
+static bool HW_UART_Start_Rx( HwUartChannel_T channel )
+{
+    HwUartChannelState_T*      state  = &hw_uart_channel_states[channel];
+    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[channel];
+    UART_HandleTypeDef*        huart  = hw_map->uart_handle;
+
+    /*
+     * This is a private helper. Channel, configuration, direction, and
+     * lifecycle validation are owned by HW_UART_Start_Channel().
+     */
+    state->runtime.rx_read_index = 0U;
+
+    for ( uint32_t i = 0U; i < HW_UART_RX_BUFFER_SIZE; i++ )
     {
-        case HW_UART_MODE_TTL_3V3:
-        case HW_UART_MODE_TTL_5V0:
-            valid_baud = ( config->baud_rate <= 2000000U );
-            break;
-
-        case HW_UART_MODE_RS232:
-            valid_baud = ( config->baud_rate <= 1000000U );
-            break;
-
-        case HW_UART_MODE_DISABLED:
-            // Handled by earlier check, but included here for completeness
-            // Should never reach this point
-        default:
-            return false;
+        state->rx_buffer[i] = 0U;
     }
 
-    return valid_baud;
+    if ( HAL_UART_Receive_DMA( huart, state->rx_buffer, HW_UART_RX_BUFFER_SIZE ) != HAL_OK )
+    {
+        return false;
+    }
+
+    if ( huart->hdmarx != NULL )
+    {
+        __HAL_DMA_DISABLE_IT( huart->hdmarx, DMA_IT_HT );
+        __HAL_DMA_DISABLE_IT( huart->hdmarx, DMA_IT_TC );
+    }
+
+    state->runtime.rx_running = true;
+
+    return true;
+}
+
+static bool HW_UART_Stop_Rx( HwUartChannel_T channel )
+{
+    HwUartChannelState_T*      state  = &hw_uart_channel_states[channel];
+    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[channel];
+    UART_HandleTypeDef*        huart  = hw_map->uart_handle;
+
+    /*
+     * This is a private helper. Channel and lifecycle validation are owned by
+     * HW_UART_Stop_Channel().
+     */
+    if ( HAL_UART_AbortReceive( huart ) != HAL_OK )
+    {
+        return false;
+    }
+
+    state->runtime.rx_running    = false;
+    state->runtime.rx_read_index = 0U;
+
+    return true;
 }
 
 /**
@@ -473,101 +466,6 @@ static inline void HW_UART_Tx_Dma_Irq_Restore( HwUartChannel_T channel, uint32_t
     if ( was_enabled != 0U )
     {
         NVIC_EnableIRQ( hw_uart_hardware_map[channel].tx_dma_irq );
-    }
-}
-
-/**
- * @brief  Applies the static hardware selection configuration for the specified UART channel.
- *
- * @param channel The UART channel whose selection lines are to be configured.
- * @param interface_mode The desired interface mode (disabled, TTL 3.3V, TTL 5V, RS232).
- *
- * @return true if the selection sequence is valid for the given mode.
- * @return false if the mode is unsupported or invalid.
- *
- * @note   This function is responsible for configuring the external hardware selection lines
- *         (e.g. MODE_SEL[1:0], VOLT_SEL[1:0]) associated with the UART channel. These lines control
- *         the electrical interface presented to the DUT, including voltage levels and interface
- *         type.
- *
- * @note   The intended behaviour is to follow a safe sequencing strategy:
- *         - temporarily force the interface into a disabled state,
- *         - update voltage selection lines,
- *         - then enable the required interface mode.
- *
- * @note   This function belongs to the low-level driver because it applies
- *         deterministic hardware-facing configuration prior to enabling UART operation.
- *
- * @note   The actual GPIO or control-line implementation is not yet integrated. The current
- *         implementation serves as a placeholder defining the required sequencing and structure.
- *         Physical line driving will be added in a future revision.
- */
-static bool HW_UART_Apply_Static_Hardware_Selection( HwUartChannel_T       channel,
-                                                     HwUartInterfaceMode_T interface_mode )
-{
-
-    const HwUartSelectionLines_T* selection = &uart_selection_lines[channel];
-    ( void )selection;
-    switch ( interface_mode )
-    {
-        case HW_UART_MODE_DISABLED:
-            // 1: Set MODE_SEL[0:1] to [0, 0] to select the disabled mode
-            // uart_selection_lines[channel].mode_sel0_line = 0U;
-            // uart_selection_lines[channel].mode_sel1_line = 0U;
-            // 2: Set VOLT_SEL[0:1] to [0, 0] to set TTL_VCCB to 0V
-            // uart_selection_lines[channel].volt_sel0_line = 0U;
-            // uart_selection_lines[channel].volt_sel1_line = 0U;
-            return true;
-        case HW_UART_MODE_TTL_3V3:
-
-            // 1: Set MODE_SEL[0:1] to [0, 0] to temporarily select the disabled mode while changing
-            // voltage levels. This prevents potential damage to the hardware from voltage level
-            // changes while the UART is active.
-            // uart_selection_lines[channel].mode_sel0_line = 0U;
-            // uart_selection_lines[channel].mode_sel1_line = 0U;
-
-            // 2: Set VOLT_SEL[0:1] to [0, 1] to set TTL_VCCB to 3.3V
-            // uart_selection_lines[channel].volt_sel0_line = 0U;
-            // uart_selection_lines[channel].volt_sel1_line = 1U;
-
-            // 3: Set MODE_SEL[0:1] to [0, 1] to select the TTL mode with the new voltage levels
-            // uart_selection_lines[channel].mode_sel0_line = 0U;
-            // uart_selection_lines[channel].mode_sel1_line = 1U;
-
-            return true;
-        case HW_UART_MODE_TTL_5V0:
-            // 1: Set MODE_SEL[0:1] to [0, 0] to temporarily select the disabled mode while changing
-            // voltage levels. This prevents potential damage to the hardware from voltage level
-            // changes while the UART is active.
-            // uart_selection_lines[channel].mode_sel0_line = 0U;
-            // uart_selection_lines[channel].mode_sel1_line = 0U;
-
-            // 2: Set VOLT_SEL[0:1] to [1, 0] to set TTL_VCCB to 5V
-            // uart_selection_lines[channel].volt_sel0_line = 1U;
-            // uart_selection_lines[channel].volt_sel1_line = 0U;
-
-            // 3: Set MODE_SEL[0:1] to [0, 1] to select the TTL mode with the new voltage levels
-            // uart_selection_lines[channel].mode_sel0_line = 0U;
-            // uart_selection_lines[channel].mode_sel1_line = 1U;
-            return true;
-        case HW_UART_MODE_RS232:
-            // 1: Set MODE_SEL[0:1] to [0, 0] to temporarily select the disabled mode while changing
-            // voltage levels. This prevents potential damage to the hardware from voltage level
-            // changes while the UART is active.
-            // uart_selection_lines[channel].mode_sel0_line = 0U;
-            // uart_selection_lines[channel].mode_sel1_line = 0U;
-
-            // 2: Set VOLT_SEL[0:1] to [0, 0] to set TTL_VCCB to 0V, as the RS-232 line driver will
-            // generate the necessary voltage levels for the RS-232 interface
-            // uart_selection_lines[channel].volt_sel0_line = 0U;
-            // uart_selection_lines[channel].volt_sel1_line = 0U;
-
-            // 3: Set MODE_SEL[0:1] to [1, 0] to select the RS-232 mode
-            // uart_selection_lines[channel].mode_sel0_line = 1U;
-            // uart_selection_lines[channel].mode_sel1_line = 0U;
-            return true;
-        default:
-            return false;
     }
 }
 
@@ -749,7 +647,7 @@ static inline void HW_UART_Rx_Error_Handler( HwUartChannel_T channel )
  */
 
 /* Applies validated configuration and resets runtime state. */
-bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* config )
+bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartPeripheralConfig_T* config )
 {
     if ( channel >= HW_UART_CHANNEL_COUNT )
     {
@@ -763,18 +661,12 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* c
 
     HwUartChannelState_T* state = &hw_uart_channel_states[channel];
 
-    /* Refuse to reconfigure while RX DMA is active. */
-    if ( state->runtime.rx_running )
-    {
-        return false;
-    }
-    /* Refuse to reconfigure while TX DMA is active or queued data remains. */
-    if ( state->runtime.tx_dma_active || state->runtime.tx_count > 0U )
-    {
-        return false;
-    }
-
-    if ( !HW_UART_Apply_Static_Hardware_Selection( channel, config->interface_mode ) )
+    /*
+     * Configuration may only be changed while the channel is stopped and no
+     * transmit data remains queued or active.
+     */
+    if ( state->runtime.is_started || state->runtime.rx_running || state->runtime.tx_dma_active
+         || state->runtime.tx_count > 0U )
     {
         return false;
     }
@@ -785,6 +677,7 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* c
 
     state->runtime.latched_faults = 0U;
     state->runtime.rx_read_index  = 0U;
+    state->runtime.is_started     = false;
     state->runtime.rx_running     = false;
 
     state->runtime.tx_head             = 0U;
@@ -802,80 +695,7 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartConfig_T* c
     return true;
 }
 
-/* Starts DMA-backed UART reception for the specified channel. */
-bool HW_UART_Rx_Start( HwUartChannel_T channel )
-{
-    if ( channel >= HW_UART_CHANNEL_COUNT )
-    {
-        return false;
-    }
-
-    HwUartChannelState_T*      state  = &hw_uart_channel_states[channel];
-    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[channel];
-    UART_HandleTypeDef*        huart  = hw_map->uart_handle;
-
-    if ( !state->runtime.is_configured_and_initialised || !state->config.rx_enabled )
-    {
-        return false;
-    }
-
-    if ( state->runtime.rx_running )
-    {
-        return false;
-    }
-
-    /* Reset RX state and clear stale buffered data before enabling DMA reception. */
-    state->runtime.rx_read_index = 0U;
-
-    for ( uint32_t i = 0U; i < HW_UART_RX_BUFFER_SIZE; i++ )
-    {
-        state->rx_buffer[i] = 0U;
-    }
-
-    if ( HAL_UART_Receive_DMA( huart, state->rx_buffer, HW_UART_RX_BUFFER_SIZE ) != HAL_OK )
-    {
-        return false;
-    }
-
-    if ( huart->hdmarx != NULL )
-    {
-        __HAL_DMA_DISABLE_IT( huart->hdmarx, DMA_IT_HT );
-        __HAL_DMA_DISABLE_IT( huart->hdmarx, DMA_IT_TC );
-    }
-
-    state->runtime.rx_running = true;
-    return true;
-}
-
-/* Stops the RX DMA for a given channel */
-bool HW_UART_Rx_Stop( HwUartChannel_T channel )
-{
-    if ( channel >= HW_UART_CHANNEL_COUNT )
-    {
-        return false;
-    }
-
-    HwUartChannelState_T*      state  = &hw_uart_channel_states[channel];
-    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[channel];
-    UART_HandleTypeDef*        huart  = hw_map->uart_handle;
-
-    if ( !state->runtime.is_configured_and_initialised || !state->runtime.rx_running )
-    {
-        return false;
-    }
-
-    if ( HAL_UART_AbortReceive( huart ) != HAL_OK )
-    {
-        return false;
-    }
-
-    state->runtime.rx_running    = false;
-    state->runtime.rx_read_index = 0U;
-    return true;
-}
-
-/* Public Helper to check if Rx is running*/
-bool HW_UART_Rx_Is_Running( HwUartChannel_T channel )
+bool HW_UART_Deconfigure_Channel( HwUartChannel_T channel )
 {
     if ( channel >= HW_UART_CHANNEL_COUNT )
     {
@@ -884,12 +704,102 @@ bool HW_UART_Rx_Is_Running( HwUartChannel_T channel )
 
     HwUartChannelState_T* state = &hw_uart_channel_states[channel];
 
-    if ( !state->runtime.is_configured_and_initialised )
+    if ( state->runtime.is_started || state->runtime.rx_running || state->runtime.tx_dma_active
+         || state->runtime.tx_count > 0U )
     {
         return false;
     }
 
-    return state->runtime.rx_running;
+    if ( HAL_UART_DeInit( hw_uart_hardware_map[channel].uart_handle ) != HAL_OK )
+    {
+        return false;
+    }
+
+    state->config  = ( HwUartPeripheralConfig_T ){ 0 };
+    state->runtime = ( HwUartRuntimeState_T ){ 0 };
+
+    return true;
+}
+
+bool HW_UART_Start_Channel( HwUartChannel_T channel )
+{
+    if ( channel >= HW_UART_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    HwUartChannelState_T* state = &hw_uart_channel_states[channel];
+
+    if ( !state->runtime.is_configured_and_initialised || state->runtime.is_started )
+    {
+        return false;
+    }
+
+    /*
+     * A stopped channel must not already have active RX or pending TX state.
+     * These checks also detect inconsistent internal lifecycle state.
+     */
+    if ( state->runtime.rx_running || state->runtime.tx_dma_active || state->runtime.tx_count > 0U )
+    {
+        return false;
+    }
+
+    if ( state->config.rx_enabled )
+    {
+        if ( !HW_UART_Start_Rx( channel ) )
+        {
+            return false;
+        }
+    }
+
+    /*
+     * TX-only channels require no immediate hardware action. The started state
+     * permits the execution path to queue and trigger transmissions later.
+     */
+    state->runtime.is_started = true;
+
+    return true;
+}
+
+bool HW_UART_Stop_Channel( HwUartChannel_T channel )
+{
+    if ( channel >= HW_UART_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    HwUartChannelState_T* state = &hw_uart_channel_states[channel];
+
+    if ( !state->runtime.is_configured_and_initialised || !state->runtime.is_started )
+    {
+        return false;
+    }
+
+    /*
+     * Stop must not silently discard queued or in-flight TX data. The complete
+     * check also confirms that the UART has shifted out the final stop bit.
+     */
+    if ( state->config.tx_enabled && !HW_UART_Is_Tx_Complete( channel ) )
+    {
+        return false;
+    }
+
+    if ( state->config.rx_enabled )
+    {
+        if ( !state->runtime.rx_running )
+        {
+            return false;
+        }
+
+        if ( !HW_UART_Stop_Rx( channel ) )
+        {
+            return false;
+        }
+    }
+
+    state->runtime.is_started = false;
+
+    return true;
 }
 
 /*

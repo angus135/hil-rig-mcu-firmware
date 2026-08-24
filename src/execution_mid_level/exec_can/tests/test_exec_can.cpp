@@ -10,8 +10,7 @@
 
 extern "C"
 {
-#include "exec_can.h"
-#include "hw_can.h"
+#include "exec_can.c"  // NOLINT
 }
 
 #include <algorithm>
@@ -30,7 +29,13 @@ struct ConfigureCall
 
 static ConfigureCall             configure_calls[2];
 static uint16_t                  configure_call_count[2];
-static int                       configure_results[2];
+static HW_CAN_Result_T           configure_results[2];
+static HW_CAN_Result_T           start_results[2];
+static HW_CAN_Result_T           stop_results[2];
+static uint16_t                  start_call_count[2];
+static uint16_t                  stop_call_count[2];
+static bool                      hardware_configured[2];
+static bool                      hardware_started[2];
 static HW_CAN_Tx_Status_T        hardware_status[2];
 static uint16_t                  status_call_count[2];
 static HW_CAN_Result_T           recover_results[2];
@@ -49,21 +54,68 @@ static uint16_t                  last_receive_capacity[2];
 static const void*               last_hardware_tx_source;
 static const void*               last_hardware_rx_destination;
 
-static int Configure( size_t channel, uint32_t bitrate, uint16_t bank, uint16_t id, uint16_t mask )
+static HW_CAN_Result_T Configure( size_t channel, uint32_t bitrate, uint16_t bank, uint16_t id,
+                                  uint16_t mask )
 {
     configure_call_count[channel]++;
     configure_calls[channel] = { bitrate, bank, id, mask };
     return configure_results[channel];
 }
 
-extern "C" int HW_CAN_Configure1( uint32_t bitrate, uint16_t bank, uint16_t id, uint16_t mask )
+extern "C" HW_CAN_Result_T HW_CAN_Configure1( uint32_t bitrate, uint16_t bank, uint16_t id,
+                                              uint16_t mask )
 {
     return Configure( 0U, bitrate, bank, id, mask );
 }
 
-extern "C" int HW_CAN_Configure2( uint32_t bitrate, uint16_t bank, uint16_t id, uint16_t mask )
+extern "C" HW_CAN_Result_T HW_CAN_Configure2( uint32_t bitrate, uint16_t bank, uint16_t id,
+                                              uint16_t mask )
 {
     return Configure( 1U, bitrate, bank, id, mask );
+}
+
+extern "C" HW_CAN_Result_T HW_CAN_Start1( void )
+{
+    start_call_count[0]++;
+    return start_results[0];
+}
+
+extern "C" HW_CAN_Result_T HW_CAN_Start2( void )
+{
+    start_call_count[1]++;
+    return start_results[1];
+}
+
+extern "C" HW_CAN_Result_T HW_CAN_Stop1( void )
+{
+    stop_call_count[0]++;
+    return stop_results[0];
+}
+
+extern "C" HW_CAN_Result_T HW_CAN_Stop2( void )
+{
+    stop_call_count[1]++;
+    return stop_results[1];
+}
+
+extern "C" bool HW_CAN_Is_Configured1( void )
+{
+    return hardware_configured[0];
+}
+
+extern "C" bool HW_CAN_Is_Configured2( void )
+{
+    return hardware_configured[1];
+}
+
+extern "C" bool HW_CAN_Is_Started1( void )
+{
+    return hardware_started[0];
+}
+
+extern "C" bool HW_CAN_Is_Started2( void )
+{
+    return hardware_started[1];
 }
 
 extern "C" HW_CAN_Tx_Status_T HW_CAN_Tx_Status1( void )
@@ -178,6 +230,11 @@ protected:
         std::memset( configure_calls, 0, sizeof( configure_calls ) );
         std::memset( configure_call_count, 0, sizeof( configure_call_count ) );
         std::memset( configure_results, 0, sizeof( configure_results ) );
+        std::memset( start_call_count, 0, sizeof( start_call_count ) );
+        std::memset( stop_call_count, 0, sizeof( stop_call_count ) );
+        std::memset( hardware_configured, 0, sizeof( hardware_configured ) );
+        std::memset( hardware_started, 0, sizeof( hardware_started ) );
+        std::memset( exec_can_state, 0, sizeof( exec_can_state ) );
         std::memset( status_call_count, 0, sizeof( status_call_count ) );
         std::memset( recover_call_count, 0, sizeof( recover_call_count ) );
         std::memset( dropped_counts, 0, sizeof( dropped_counts ) );
@@ -188,6 +245,8 @@ protected:
         std::memset( receive_call_count, 0, sizeof( receive_call_count ) );
         std::memset( last_receive_capacity, 0, sizeof( last_receive_capacity ) );
         hardware_status[0] = hardware_status[1] = HW_CAN_TX_STATUS_IDLE;
+        start_results[0] = start_results[1] = HW_CAN_RESULT_OK;
+        stop_results[0] = stop_results[1] = HW_CAN_RESULT_OK;
         recover_results[0] = recover_results[1] = HW_CAN_RESULT_OK;
         load_results[0] = load_results[1] = HW_CAN_RESULT_OK;
         trigger_results[0] = trigger_results[1] = HW_CAN_RESULT_OK;
@@ -202,12 +261,13 @@ protected:
 
 TEST_F( ExecCANTest, ConfigureRoutesBothChannelsAndMapsResults )
 {
-    configure_results[0] = 0;
-    configure_results[1] = 2;
+    configure_results[0]       = HW_CAN_RESULT_OK;
+    configure_results[1]       = HW_CAN_RESULT_FILTER_ERROR;
+    EXEC_CAN_Config_T channel1 = { true, 500000U, 13U, 0x123U, 0x7FFU };
+    EXEC_CAN_Config_T channel2 = { true, 250000U, 14U, 0x456U, 0x700U };
 
-    EXPECT_EQ( EXEC_CAN_Configure( EXEC_CAN_CHANNEL_1, 500000U, 13U, 0x123U, 0x7FFU ),
-               EXEC_CAN_RESULT_OK );
-    EXPECT_EQ( EXEC_CAN_Configure( EXEC_CAN_CHANNEL_2, 250000U, 14U, 0x456U, 0x700U ),
+    EXPECT_EQ( EXEC_CAN_Configure_Channel( EXEC_CAN_CHANNEL_1, channel1 ), EXEC_CAN_RESULT_OK );
+    EXPECT_EQ( EXEC_CAN_Configure_Channel( EXEC_CAN_CHANNEL_2, channel2 ),
                EXEC_CAN_RESULT_FILTER_ERROR );
 
     EXPECT_EQ( configure_call_count[0], 1U );
@@ -218,19 +278,85 @@ TEST_F( ExecCANTest, ConfigureRoutesBothChannelsAndMapsResults )
     EXPECT_EQ( configure_calls[0].mask, 0x7FFU );
     EXPECT_EQ( configure_calls[1].bitrate, 250000U );
     EXPECT_EQ( configure_calls[1].bank, 14U );
+    EXPECT_TRUE( EXEC_CAN_Is_Channel_Configured( EXEC_CAN_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_CAN_Is_Channel_Started( EXEC_CAN_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_CAN_Is_Channel_Configured( EXEC_CAN_CHANNEL_2 ) );
 }
 
 TEST_F( ExecCANTest, ConfigurationResultMappingCoversEveryHardwareCode )
 {
-    const std::array<EXEC_CAN_Result_T, 5> expected = {
-        EXEC_CAN_RESULT_OK,          EXEC_CAN_RESULT_TIMING_ERROR, EXEC_CAN_RESULT_FILTER_ERROR,
-        EXEC_CAN_RESULT_START_ERROR, EXEC_CAN_RESULT_ERROR,
+    const std::array<HW_CAN_Result_T, 8> hardware_results = {
+        HW_CAN_RESULT_OK,           HW_CAN_RESULT_ERROR,          HW_CAN_RESULT_BUSY,
+        HW_CAN_RESULT_EMPTY,        HW_CAN_RESULT_NOT_CONFIGURED, HW_CAN_RESULT_NOT_STARTED,
+        HW_CAN_RESULT_TIMING_ERROR, HW_CAN_RESULT_FILTER_ERROR,
     };
-    for ( size_t i = 0U; i < expected.size(); i++ )
+    const std::array<EXEC_CAN_Result_T, 8> execution_results = {
+        EXEC_CAN_RESULT_OK,           EXEC_CAN_RESULT_ERROR,          EXEC_CAN_RESULT_BUSY,
+        EXEC_CAN_RESULT_EMPTY,        EXEC_CAN_RESULT_NOT_CONFIGURED, EXEC_CAN_RESULT_NOT_STARTED,
+        EXEC_CAN_RESULT_TIMING_ERROR, EXEC_CAN_RESULT_FILTER_ERROR,
+    };
+    for ( size_t i = 0U; i < hardware_results.size(); i++ )
     {
-        configure_results[0] = static_cast<int>( i );
-        EXPECT_EQ( EXEC_CAN_Configure( EXEC_CAN_CHANNEL_1, 500000U, 0U, 0U, 0U ), expected[i] );
+        configure_results[0]            = hardware_results[i];
+        EXEC_CAN_Config_T configuration = { true, 500000U, 0U, 0U, 0U };
+        EXPECT_EQ( EXEC_CAN_Configure_Channel( EXEC_CAN_CHANNEL_1, configuration ),
+                   execution_results[i] );
     }
+}
+
+TEST_F( ExecCANTest, DisabledConfigurationStopsStartedChannelAndClearsState )
+{
+    exec_can_state[EXEC_CAN_CHANNEL_1] = { true, true };
+    EXEC_CAN_Config_T configuration    = { false, 0U, 0U, 0U, 0U };
+
+    EXPECT_EQ( EXEC_CAN_Configure_Channel( EXEC_CAN_CHANNEL_1, configuration ),
+               EXEC_CAN_RESULT_OK );
+    EXPECT_EQ( stop_call_count[0], 1U );
+    EXPECT_FALSE( EXEC_CAN_Is_Channel_Configured( EXEC_CAN_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_CAN_Is_Channel_Started( EXEC_CAN_CHANNEL_1 ) );
+}
+
+TEST_F( ExecCANTest, DisabledConfigurationPreservesStateWhenStopFails )
+{
+    exec_can_state[EXEC_CAN_CHANNEL_2] = { true, true };
+    stop_results[1]                    = HW_CAN_RESULT_BUSY;
+    EXEC_CAN_Config_T configuration    = { false, 0U, 0U, 0U, 0U };
+
+    EXPECT_EQ( EXEC_CAN_Configure_Channel( EXEC_CAN_CHANNEL_2, configuration ),
+               EXEC_CAN_RESULT_BUSY );
+    EXPECT_TRUE( EXEC_CAN_Is_Channel_Configured( EXEC_CAN_CHANNEL_2 ) );
+    EXPECT_TRUE( EXEC_CAN_Is_Channel_Started( EXEC_CAN_CHANNEL_2 ) );
+}
+
+TEST_F( ExecCANTest, StartAndStopEnforceLifecycleAndUpdateStateOnlyOnSuccess )
+{
+    EXPECT_EQ( EXEC_CAN_Start_Channel( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_RESULT_NOT_CONFIGURED );
+    EXPECT_EQ( start_call_count[0], 0U );
+
+    exec_can_state[EXEC_CAN_CHANNEL_1] = { true, false };
+    EXPECT_EQ( EXEC_CAN_Start_Channel( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_RESULT_OK );
+    EXPECT_TRUE( EXEC_CAN_Is_Channel_Started( EXEC_CAN_CHANNEL_1 ) );
+    EXPECT_EQ( start_call_count[0], 1U );
+    EXPECT_EQ( EXEC_CAN_Start_Channel( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_RESULT_BUSY );
+
+    stop_results[0] = HW_CAN_RESULT_ERROR;
+    EXPECT_EQ( EXEC_CAN_Stop_Channel( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_RESULT_ERROR );
+    EXPECT_TRUE( EXEC_CAN_Is_Channel_Started( EXEC_CAN_CHANNEL_1 ) );
+
+    stop_results[0] = HW_CAN_RESULT_OK;
+    EXPECT_EQ( EXEC_CAN_Stop_Channel( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_RESULT_OK );
+    EXPECT_FALSE( EXEC_CAN_Is_Channel_Started( EXEC_CAN_CHANNEL_1 ) );
+    EXPECT_EQ( EXEC_CAN_Stop_Channel( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_RESULT_NOT_STARTED );
+}
+
+TEST_F( ExecCANTest, StartFailureLeavesConfiguredChannelStopped )
+{
+    exec_can_state[EXEC_CAN_CHANNEL_2] = { true, false };
+    start_results[1]                   = HW_CAN_RESULT_ERROR;
+
+    EXPECT_EQ( EXEC_CAN_Start_Channel( EXEC_CAN_CHANNEL_2 ), EXEC_CAN_RESULT_ERROR );
+    EXPECT_TRUE( EXEC_CAN_Is_Channel_Configured( EXEC_CAN_CHANNEL_2 ) );
+    EXPECT_FALSE( EXEC_CAN_Is_Channel_Started( EXEC_CAN_CHANNEL_2 ) );
 }
 
 TEST_F( ExecCANTest, CombinedTransmitRoutesBothChannelsAndConvertsPackets )
@@ -368,12 +494,16 @@ TEST_F( ExecCANTest, ReceiveValidatesPointersAndZeroCapacity )
 
 TEST_F( ExecCANTest, StatusRecoveryAndDroppedCountsRouteBothChannelsAndMapTypes )
 {
-    hardware_status[0] = HW_CAN_TX_STATUS_ACTIVE;
-    hardware_status[1] = HW_CAN_TX_STATUS_COMPLETE;
-    recover_results[0] = HW_CAN_RESULT_BUSY;
-    recover_results[1] = HW_CAN_RESULT_EMPTY;
-    dropped_counts[0]  = 4U;
-    dropped_counts[1]  = 7U;
+    exec_can_state[0]      = { true, true };
+    exec_can_state[1]      = { true, true };
+    hardware_configured[0] = hardware_configured[1] = true;
+    hardware_started[0] = hardware_started[1] = true;
+    hardware_status[0]                        = HW_CAN_TX_STATUS_ACTIVE;
+    hardware_status[1]                        = HW_CAN_TX_STATUS_COMPLETE;
+    recover_results[0]                        = HW_CAN_RESULT_BUSY;
+    recover_results[1]                        = HW_CAN_RESULT_EMPTY;
+    dropped_counts[0]                         = 4U;
+    dropped_counts[1]                         = 7U;
 
     EXPECT_EQ( EXEC_CAN_Get_Tx_Status( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_TX_STATUS_ACTIVE );
     EXPECT_EQ( EXEC_CAN_Get_Tx_Status( EXEC_CAN_CHANNEL_2 ), EXEC_CAN_TX_STATUS_COMPLETE );
@@ -387,6 +517,18 @@ TEST_F( ExecCANTest, StatusRecoveryAndDroppedCountsRouteBothChannelsAndMapTypes 
     EXPECT_EQ( recover_call_count[1], 1U );
     EXPECT_EQ( dropped_call_count[0], 1U );
     EXPECT_EQ( dropped_call_count[1], 1U );
+}
+
+TEST_F( ExecCANTest, RecoveryFailureSynchronizesExecutionLifecycleWithHardware )
+{
+    exec_can_state[EXEC_CAN_CHANNEL_1] = { true, true };
+    recover_results[0]                 = HW_CAN_RESULT_ERROR;
+    hardware_configured[0]             = true;
+    hardware_started[0]                = false;
+
+    EXPECT_EQ( EXEC_CAN_Recover( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_RESULT_ERROR );
+    EXPECT_TRUE( EXEC_CAN_Is_Channel_Configured( EXEC_CAN_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_CAN_Is_Channel_Started( EXEC_CAN_CHANNEL_1 ) );
 }
 
 TEST_F( ExecCANTest, HardwareResultAndStatusMappingCoversAllValues )
@@ -405,7 +547,10 @@ TEST_F( ExecCANTest, HardwareResultAndStatusMappingCoversAllValues )
     };
     for ( size_t i = 0U; i < hardware_results.size(); i++ )
     {
-        recover_results[0] = hardware_results[i];
+        exec_can_state[0]      = { true, true };
+        hardware_configured[0] = true;
+        hardware_started[0]    = true;
+        recover_results[0]     = hardware_results[i];
         EXPECT_EQ( EXEC_CAN_Recover( EXEC_CAN_CHANNEL_1 ), execution_results[i] );
     }
 
@@ -434,8 +579,13 @@ TEST_F( ExecCANTest, InvalidChannelNeverCallsHardware )
     EXEC_CAN_Packet_T        packet{};
     uint16_t                 read = 0U;
 
-    EXPECT_EQ( EXEC_CAN_Configure( invalid, 500000U, 0U, 0U, 0U ),
+    EXEC_CAN_Config_T configuration = { true, 500000U, 0U, 0U, 0U };
+    EXPECT_EQ( EXEC_CAN_Configure_Channel( invalid, configuration ),
                EXEC_CAN_RESULT_INVALID_ARGUMENT );
+    EXPECT_EQ( EXEC_CAN_Start_Channel( invalid ), EXEC_CAN_RESULT_INVALID_ARGUMENT );
+    EXPECT_EQ( EXEC_CAN_Stop_Channel( invalid ), EXEC_CAN_RESULT_INVALID_ARGUMENT );
+    EXPECT_FALSE( EXEC_CAN_Is_Channel_Configured( invalid ) );
+    EXPECT_FALSE( EXEC_CAN_Is_Channel_Started( invalid ) );
     EXPECT_EQ( EXEC_CAN_Transmit( invalid, &packet, 1U ), EXEC_CAN_RESULT_INVALID_ARGUMENT );
     EXPECT_EQ( EXEC_CAN_Receive( invalid, &packet, 1U, &read ), EXEC_CAN_RESULT_INVALID_ARGUMENT );
     EXPECT_EQ( EXEC_CAN_Get_Tx_Status( invalid ), EXEC_CAN_TX_STATUS_INVALID_CHANNEL );

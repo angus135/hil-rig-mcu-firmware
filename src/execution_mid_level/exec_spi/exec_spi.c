@@ -43,6 +43,7 @@
 #include <string.h>
 #include "exec_spi.h"
 #include "hw_spi.h"
+#include "logic_expander.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -65,8 +66,9 @@
  */
 typedef enum EXECSPIChannelState_T
 {
-    EXEC_SPI_STATE_UNCONFIGURED,
-    EXEC_SPI_STATE_ACTIVE,
+    EXEC_SPI_STATE_DISABLED = 0U,
+    EXEC_SPI_STATE_CONFIGURED,
+    EXEC_SPI_STATE_STARTED,
 } EXECSPIChannelState_T;
 
 /**
@@ -86,6 +88,14 @@ typedef struct EXECSPIState_T
     EXECSPIChannelState_T state;
 } EXECSPIState_T;
 
+typedef struct ExecSPIHardwareMap_T
+{
+    LogicExpanderIndex_T expander;
+    LogicExpanderPort_T  port;
+    uint8_t              enable_bit;
+    uint8_t              master_nslave_bit;
+} ExecSPIHardwareMap_T;
+
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
@@ -98,7 +108,23 @@ typedef struct EXECSPIState_T
 
 static EXECSPIState_T spi_channel_0_state = { 0 };
 static EXECSPIState_T spi_channel_1_state = { 0 };
-static EXECSPIState_T spi_dac_state       = { 0 };
+
+static const ExecSPIHardwareMap_T exec_spi_hardware_map[2U] = {
+    [SPI_CHANNEL_0] =
+        {
+            .expander          = LOGIC_EXPANDER_PWM_SPI,
+            .port              = LOGIC_EXPANDER_PORT_B,
+            .enable_bit        = 4U,
+            .master_nslave_bit = 5U,
+        },
+    [SPI_CHANNEL_1] =
+        {
+            .expander          = LOGIC_EXPANDER_PWM_SPI,
+            .port              = LOGIC_EXPANDER_PORT_B,
+            .enable_bit        = 6U,
+            .master_nslave_bit = 7U,
+        },
+};
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -124,6 +150,9 @@ static EXECSPIState_T spi_dac_state       = { 0 };
  */
 static inline EXECSPIState_T* EXEC_SPI_Get_State( SPIChannel_T peripheral );
 
+static bool EXEC_SPI_Apply_Interface_Control( SPIChannel_T peripheral, bool is_enabled,
+                                              SPIMode_T spi_mode );
+
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
@@ -139,14 +168,58 @@ static inline EXECSPIState_T* EXEC_SPI_Get_State( SPIChannel_T peripheral )
         case SPI_CHANNEL_1:
             return &spi_channel_1_state;
 
-        case SPI_DAC:
-            return &spi_dac_state;
-
         default:
             // Configuration is not a hot-path operation, so keep this guard for
             // invalid peripheral IDs rather than dereferencing an invalid state.
             return NULL;
     }
+}
+
+static bool EXEC_SPI_Apply_Interface_Control( SPIChannel_T peripheral, bool is_enabled,
+                                              SPIMode_T spi_mode )
+{
+    const ExecSPIHardwareMap_T* hardware;
+    bool                        master_nslave;
+
+    if ( peripheral != SPI_CHANNEL_0 && peripheral != SPI_CHANNEL_1 )
+    {
+        return false;
+    }
+
+    if ( spi_mode == SPI_MASTER_MODE )
+    {
+        master_nslave = true;
+    }
+    else if ( spi_mode == SPI_SLAVE_MODE )
+    {
+        master_nslave = false;
+    }
+    else
+    {
+        return false;
+    }
+
+    hardware = &exec_spi_hardware_map[( uint32_t )peripheral];
+
+    if ( LOGIC_EXPANDER_Load_Control_Bit( hardware->expander, hardware->port,
+                                          hardware->master_nslave_bit, master_nslave )
+         != LOGIC_EXPANDER_STATUS_OK )
+    {
+        return false;
+    }
+
+    if ( LOGIC_EXPANDER_Load_Control_Bit( hardware->expander, hardware->port, hardware->enable_bit,
+                                          is_enabled )
+         != LOGIC_EXPANDER_STATUS_OK )
+    {
+        return false;
+    }
+
+    /*
+     * Remove this direct send when Logic Expander changes are committed by the
+     * global configuration operation.
+     */
+    return LOGIC_EXPANDER_Send_Control_Bits() == LOGIC_EXPANDER_STATUS_OK;
 }
 
 /**-----------------------------------------------------------------------------
@@ -155,15 +228,11 @@ static inline EXECSPIState_T* EXEC_SPI_Get_State( SPIChannel_T peripheral )
  */
 
 /**
- * @brief Configure and start an execution SPI channel.
+ * @brief Configure or disable an execution SPI channel.
  *
- * Applies the requested low-level SPI configuration to the selected channel and
- * starts the low-level SPI runtime path.
- *
- * If the channel is already active, this function first stops the low-level SPI
- * channel before applying the new configuration. This allows the execution
- * layer to reconfigure a SPI channel between test phases without requiring the
- * caller to explicitly stop it first.
+ * Enabled configuration applies the external master/slave selection while
+ * keeping SPI_EN low, then configures HW SPI in its stopped state. Disabled
+ * configuration applies the safe external state and stops a started channel.
  *
  * This function is intended for setup/configuration time rather than the
  * 10 kHz execution hot path. It performs only minimal state handling and relies
@@ -176,51 +245,204 @@ static inline EXECSPIState_T* EXEC_SPI_Get_State( SPIChannel_T peripheral )
  * @param peripheral
  *     The SPI peripheral/channel to configure.
  *
- * @param configuration
- *     The low-level SPI configuration to apply.
+ * @param config
+ *     Execution enable request and low-level SPI configuration.
  *
  * @return
- *     true if the low-level channel was configured and started successfully.
- *     false if the channel state could not be resolved, the current state was
- *     invalid, or the low-level driver failed to configure the channel.
+ *     true if configuration or the safe disabled state was applied.
+ *     false if validation or a Logic Expander/HW SPI operation failed.
  */
-bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configuration )
+bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral, const ExecSPIConfig_T* config )
 {
     EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
+
+    if ( state == NULL || config == NULL )
+    {
+        return false;
+    }
+
+    if ( !config->is_enabled )
+    {
+        if ( state->state == EXEC_SPI_STATE_STARTED )
+        {
+            if ( !EXEC_SPI_Stop_Channel( peripheral ) )
+            {
+                return false;
+            }
+        }
+
+        /*
+         * Disabled safe state:
+         * - SPI_EN = 0
+         * - SPI_EN_MASTER_NSLAVE = 0 (slave)
+         */
+        if ( !EXEC_SPI_Apply_Interface_Control( peripheral, false, SPI_SLAVE_MODE ) )
+        {
+            return false;
+        }
+
+        /*
+         * HW SPI currently has no deconfigure operation. Its previous
+         * configuration is retained, but the external interface is disabled.
+         */
+        state->state = EXEC_SPI_STATE_DISABLED;
+
+        return true;
+    }
+
+    /*
+     * Reconfiguration while running is rejected. The caller must explicitly
+     * stop the channel first.
+     */
+    if ( state->state == EXEC_SPI_STATE_STARTED )
+    {
+        return false;
+    }
+
+    /*
+     * Select master/slave while keeping the external interface disabled.
+     * SPI_EN is asserted only by EXEC_SPI_Start_Channel().
+     */
+    if ( !EXEC_SPI_Apply_Interface_Control( peripheral, false, config->hardware.spi_mode ) )
+    {
+        return false;
+    }
+
+    if ( !HW_SPI_Configure_Channel( peripheral, config->hardware ) )
+    {
+        /*
+         * The external interface has already been placed in its disabled state.
+         * Do not continue reporting the previous configuration as available.
+         */
+        state->state = EXEC_SPI_STATE_DISABLED;
+        return false;
+    }
+
+    state->configuration = config->hardware;
+    state->state         = EXEC_SPI_STATE_CONFIGURED;
+
+    return true;
+}
+
+bool EXEC_SPI_Start_Channel( SPIChannel_T peripheral )
+{
+    EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
+
     if ( state == NULL )
     {
         return false;
     }
-    switch ( state->state )
-    {
-        case EXEC_SPI_STATE_UNCONFIGURED:
-            // Nothing is currently active, so the channel can be configured directly.
-            break;
-        case EXEC_SPI_STATE_ACTIVE:
-            // Reconfiguration is treated as stop-then-configure-then-start.
-            if ( !HW_SPI_Stop_Channel( peripheral ) )
-            {
-                return false;
-            }
-            break;
-        default:
-            return false;
-    }
 
-    if ( !HW_SPI_Configure_Channel( peripheral, configuration ) )
+    if ( state->state != EXEC_SPI_STATE_CONFIGURED )
     {
-        state->state = EXEC_SPI_STATE_UNCONFIGURED;
         return false;
     }
 
-    // Start arms the low-level runtime path, including passive RX DMA capture.
+    /*
+     * Start the MCU peripheral before connecting the external SPI interface.
+     */
     if ( !HW_SPI_Start_Channel( peripheral ) )
     {
         return false;
     }
-    state->state         = EXEC_SPI_STATE_ACTIVE;
-    state->configuration = configuration;
+
+    if ( !EXEC_SPI_Apply_Interface_Control( peripheral, true, state->configuration.spi_mode ) )
+    {
+        /*
+         * Best-effort rollback to the safe external state.
+         */
+        ( void )EXEC_SPI_Apply_Interface_Control( peripheral, false,
+                                                  state->configuration.spi_mode );
+
+        if ( !HW_SPI_Stop_Channel( peripheral ) )
+        {
+            /*
+             * The HW channel could not be stopped, so preserve STARTED to
+             * represent the uncertain active hardware state and allow Stop()
+             * to be retried.
+             */
+            state->state = EXEC_SPI_STATE_STARTED;
+        }
+
+        return false;
+    }
+
+    state->state = EXEC_SPI_STATE_STARTED;
+
     return true;
+}
+
+bool EXEC_SPI_Stop_Channel( SPIChannel_T peripheral )
+{
+    EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
+
+    if ( state == NULL )
+    {
+        return false;
+    }
+
+    if ( state->state != EXEC_SPI_STATE_STARTED )
+    {
+        return false;
+    }
+
+    /*
+     * Preserve valid queued or active transmission data. The caller may retry
+     * after electrical completion.
+     *
+     * A faulted TX path cannot complete normally, so permit the terminating HW
+     * stop to recover it.
+     */
+    if ( !HW_SPI_Tx_Is_Complete( peripheral ) && !HW_SPI_Tx_Is_Faulted( peripheral ) )
+    {
+        return false;
+    }
+
+    /*
+     * Disconnect the external interface before stopping the MCU peripheral.
+     * Preserve the configured master/slave selection for a later restart.
+     */
+    if ( !EXEC_SPI_Apply_Interface_Control( peripheral, false, state->configuration.spi_mode ) )
+    {
+        return false;
+    }
+
+    if ( !HW_SPI_Stop_Channel( peripheral ) )
+    {
+        /*
+         * The external interface is disabled, but the low-level hardware state
+         * is uncertain. Preserve STARTED so Stop() can be retried.
+         */
+        return false;
+    }
+
+    state->state = EXEC_SPI_STATE_CONFIGURED;
+
+    return true;
+}
+
+bool EXEC_SPI_Is_Configured( SPIChannel_T peripheral )
+{
+    EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
+
+    if ( state == NULL )
+    {
+        return false;
+    }
+
+    return state->state == EXEC_SPI_STATE_CONFIGURED || state->state == EXEC_SPI_STATE_STARTED;
+}
+
+bool EXEC_SPI_Is_Started( SPIChannel_T peripheral )
+{
+    EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
+
+    if ( state == NULL )
+    {
+        return false;
+    }
+
+    return state->state == EXEC_SPI_STATE_STARTED;
 }
 
 /**

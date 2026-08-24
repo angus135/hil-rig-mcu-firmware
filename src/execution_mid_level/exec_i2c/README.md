@@ -2,9 +2,29 @@
 
 ## Overview
 
-`exec_i2c` validates the two external-channel configurations and provides the
-execution-facing wrapper around `hw_i2c` queues and complete receive messages.
-It does not manipulate peripheral registers.
+`exec_i2c` owns the lifecycle and board-level configuration of the two
+DUT-facing I2C channels. It delegates peripheral work to `hw_i2c` and controls
+the external voltage and pull-up selection through `LOGIC_EXPANDER_I2C_AO`.
+FMPI2C1 is internal Logic Expander infrastructure and never passes through this
+module.
+
+## Lifecycle and board control
+
+Each external channel follows Configure, Start, and Stop independently.
+Configure selects 3.3 V or 5 V and one of 1 kOhm, 2.2 kOhm, 4.7 kOhm, or
+10 kOhm while keeping the pull-up disconnected. Start enables the HW peripheral
+before connecting the selected pull-up. Stop disconnects the pull-up, restores
+the deterministic 3.3 V/1 kOhm selection, and then stops HW while retaining the
+configuration.
+
+Channel 1 maps to I2C3 and always uses interrupt transfers. Channel 2 maps to
+I2C2 and always uses DMA for TX and RX. Transfer-path selection is deliberately
+not part of the execution API.
+
+The Logic Expander port-A mapping is:
+
+- Channel 1: V_SELECT=0, A0=1, A1=2, PULLUP_EN=3
+- Channel 2: V_SELECT=4, A0=5, A1=6, PULLUP_EN=7
 
 ## Accepted versus complete
 
@@ -56,7 +76,6 @@ most one complete message and fails without consuming when storage is too small.
 
 ## Configuration constraints
 
-- I2C3 is interrupt-only.
-- I2C2 supports interrupt and DMA paths.
 - Addresses are seven-bit.
-- Low-level per-message and FMPI2C1 length limits apply.
+- Channel 1 is interrupt-backed and channel 2 is DMA-backed.
+- Low-level per-message limits apply to the external channels.

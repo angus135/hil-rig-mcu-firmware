@@ -10,18 +10,20 @@ measurements to the execution manager.
 
 This module is responsible for:
 
+- Selecting the PWM capture analogue front-end mode through the LogicExpander.
+- Configuring or disabling PWM capture channels.
 - Starting PWM capture channels through the hardware layer.
 - Stopping PWM capture channels through the hardware layer.
-- Tracking execution-layer channel started state.
+- Tracking disabled, configured, and started channel state.
 - Detecting newly available hardware capture results.
 - Reading raw period and high-time timer values from hardware result pointers.
 - Consuming hardware capture flags after values are read.
 - Validating captured values for basic logical correctness.
+- Converting validated ticks to frequency and duty cycle.
 - Returning execution-owned result structures to callers.
 
 This module does not configure timer registers directly, own hardware capture
-registers, timestamp measurements, or convert raw ticks into frequency or duty
-cycle units.
+registers, or timestamp measurements.
 
 ---
 
@@ -42,7 +44,6 @@ PWM capture driver.
 
 The hardware layer owns:
 
-- Analogue front-end selection.
 - Timer configuration.
 - Timer start/stop control.
 - Capture register mapping.
@@ -50,6 +51,7 @@ The hardware layer owns:
 
 The execution layer owns:
 
+- Analogue front-end mode selection and its LogicExpander mapping.
 - Channel lifecycle state.
 - Start/stop sequencing policy.
 - Copying raw capture ticks into caller-owned storage.
@@ -60,29 +62,28 @@ code while still allowing deterministic low-overhead capture reads.
 
 ---
 
-## Start/Stop Flow
+## Configuration and Start/Stop Flow
 
-`EXEC_PWM_Capture_Start_Channel()` starts a capture channel by validating the
-request, rejecting duplicate starts, and delegating the enabled configuration to
-`HW_PWM_Capture_Configure_Channel()`.
+`EXEC_PWM_Capture_Configure_Channel()` applies the requested analogue front-end
+mode and configures the mapped hardware channel without starting capture. A
+disabled configuration disables the hardware channel and applies the safe
+3.3 V frontend mode. Direct LogicExpander submission is temporary until global
+configuration commits all staged subsystem changes.
 
-A start request fails if:
+`EXEC_PWM_Capture_Start_Channel()` starts only a channel in configured state.
+It does not repeat subsystem configuration.
 
-- the channel is invalid,
-- the configuration pointer is null,
-- `config->is_enabled` is false,
-- the channel is already started,
-- the hardware layer rejects the configuration.
+`EXEC_PWM_Capture_Stop_Channel()` stops a started channel while retaining its
+peripheral configuration and frontend mode, allowing a later restart. To fully
+disable a channel and apply its safe frontend state, call configure with
+`is_enabled` set to false.
 
-`EXEC_PWM_Capture_Stop_Channel()` stops a previously started channel by applying
-a disabled hardware configuration using the default safe mode
-`HW_PWM_CAPTURE_LV_3V3`.
-
-A stop request fails if:
+A lifecycle request fails if:
 
 - the channel is invalid,
-- the channel has not been started,
-- the hardware layer rejects the disabled configuration.
+- the request is not valid for the channel's current state,
+- the LogicExpander rejects a frontend update,
+- the hardware layer rejects configure, start, or stop.
 
 ---
 
@@ -114,8 +115,8 @@ A result is valid when:
 - `period_ticks > 0`
 - `high_ticks <= period_ticks`
 
-The execution layer intentionally does not calculate frequency or duty cycle.
-Higher layers can derive those values from the raw ticks when needed.
+Callers may retain the raw ticks or use `EXEC_PWM_Capture_Convert()` to derive
+frequency and duty cycle from the cached hardware timer clock.
 
 ---
 
@@ -125,10 +126,11 @@ The public API is declared in `exec_pwm_capture.h`.
 
 | Function | Purpose |
 |----------|---------|
+| `EXEC_PWM_Capture_Configure_Channel()` | Configure or disable a PWM capture channel |
 | `EXEC_PWM_Capture_Start_Channel()` | Start a PWM capture channel |
-| `EXEC_PWM_Capture_Stop_Channel()` | Stop a PWM capture channel |
+| `EXEC_PWM_Capture_Stop_Channel()` | Stop capture while retaining configuration |
 | `EXEC_PWM_Capture_Consume()` | Consume one new valid PWM capture result |
-| `EXEC_PWM_Capture_Test_Reset()` | Reset internal state in test builds only |
+| `EXEC_PWM_Capture_Convert()` | Convert raw ticks to frequency and duty cycle |
 
 ---
 
