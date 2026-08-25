@@ -39,8 +39,8 @@ Logic Expander port B mapping:
 
 | Channel | `SPI_EN` | `SPI_EN_MASTER_NSLAVE` |
 |---|---:|---:|
-| `SPI_CHANNEL_0` / CH1 | B4 | B5 |
-| `SPI_CHANNEL_1` / CH2 | B6 | B7 |
+| `SPI_CHANNEL_0` / board CH1 | B6 | B7 |
+| `SPI_CHANNEL_1` / board CH2 | B4 | B5 |
 
 ---
 

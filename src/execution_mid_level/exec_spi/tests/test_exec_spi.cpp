@@ -233,7 +233,7 @@ protected:
  *  Test Cases
  *------------------------------------------------------------------------------
  */
-TEST_F( ExecSPITest, ConfigureChannel_MasterKeepsChannelStoppedAndMapsChannel0ToB4B5 )
+TEST_F( ExecSPITest, ConfigureChannel_MasterKeepsChannelStoppedAndMapsChannel0ToB6B7 )
 {
     using ::testing::_;
     using ::testing::InSequence;
@@ -243,10 +243,10 @@ TEST_F( ExecSPITest, ConfigureChannel_MasterKeepsChannelStoppedAndMapsChannel0To
     InSequence            sequence;
 
     EXPECT_CALL( mock_logic_expander,
-                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 5U, true ) )
+                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 7U, true ) )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_logic_expander,
-                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 4U, false ) )
+                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 6U, false ) )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_logic_expander, SendControlBits() )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
@@ -258,7 +258,7 @@ TEST_F( ExecSPITest, ConfigureChannel_MasterKeepsChannelStoppedAndMapsChannel0To
     EXPECT_FALSE( EXEC_SPI_Is_Started( SPI_CHANNEL_0 ) );
 }
 
-TEST_F( ExecSPITest, ConfigureChannel_SlaveMapsChannel1ToB6B7 )
+TEST_F( ExecSPITest, ConfigureChannel_SlaveMapsChannel1ToB4B5 )
 {
     using ::testing::_;
     using ::testing::InSequence;
@@ -268,10 +268,10 @@ TEST_F( ExecSPITest, ConfigureChannel_SlaveMapsChannel1ToB6B7 )
     InSequence            sequence;
 
     EXPECT_CALL( mock_logic_expander,
-                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 7U, false ) )
+                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 5U, false ) )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_logic_expander,
-                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 6U, false ) )
+                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 4U, false ) )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_logic_expander, SendControlBits() )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
@@ -280,7 +280,7 @@ TEST_F( ExecSPITest, ConfigureChannel_SlaveMapsChannel1ToB6B7 )
     EXPECT_TRUE( EXEC_SPI_Configure_Channel( SPI_CHANNEL_1, &config ) );
 }
 
-TEST_F( ExecSPITest, ConfigureChannel_DisabledAppliesSafeB4B5StateWithoutHardwareConfigure )
+TEST_F( ExecSPITest, ConfigureChannel_DisabledAppliesSafeB6B7StateWithoutHardwareConfigure )
 {
     using ::testing::_;
     using ::testing::InSequence;
@@ -290,10 +290,10 @@ TEST_F( ExecSPITest, ConfigureChannel_DisabledAppliesSafeB4B5StateWithoutHardwar
     InSequence            sequence;
 
     EXPECT_CALL( mock_logic_expander,
-                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 5U, false ) )
+                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 7U, false ) )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_logic_expander,
-                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 4U, false ) )
+                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 6U, false ) )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_logic_expander, SendControlBits() )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
@@ -329,10 +329,10 @@ TEST_F( ExecSPITest, StartAndStopChannel_FollowHardwareAndExternalEnableOrdering
         InSequence sequence;
         EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_0 ) ).WillOnce( Return( true ) );
         EXPECT_CALL( mock_logic_expander,
-                     LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 5U, true ) )
+                     LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 7U, true ) )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
         EXPECT_CALL( mock_logic_expander,
-                     LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 4U, true ) )
+                     LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 6U, true ) )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
         EXPECT_CALL( mock_logic_expander, SendControlBits() )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
@@ -343,10 +343,10 @@ TEST_F( ExecSPITest, StartAndStopChannel_FollowHardwareAndExternalEnableOrdering
         InSequence sequence;
         EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_CHANNEL_0 ) ).WillOnce( Return( true ) );
         EXPECT_CALL( mock_logic_expander,
-                     LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 5U, true ) )
+                     LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 7U, true ) )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
         EXPECT_CALL( mock_logic_expander,
-                     LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 4U, false ) )
+                     LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 6U, false ) )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
         EXPECT_CALL( mock_logic_expander, SendControlBits() )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
