@@ -1396,7 +1396,20 @@ TEST_F( HWSpiMasterTxTest, StopReleasesTheConfiguredMasterCs )
     HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted          = true;
     HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
 
-    EXPECT_CALL( mock, SPIDMAStop( Eq( &SPI_CHANNEL_0_HANDLE ) ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    EXPECT_CALL( mock, SPIDisableDMAReqTX( Eq( SPI_CHANNEL_0_INSTANCE ) ) );
+    EXPECT_CALL( mock, SPIDisableDMAReqRX( Eq( SPI_CHANNEL_0_INSTANCE ) ) );
+    EXPECT_CALL(
+        mock, DMADisableStream( Eq( SPI_CHANNEL_0_TX_DMA ), Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) );
+    EXPECT_CALL(
+        mock, DMAIsEnabledStream( Eq( SPI_CHANNEL_0_TX_DMA ), Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) )
+        .WillOnce( Return( 0U ) );
+    EXPECT_CALL(
+        mock, DMADisableStream( Eq( SPI_CHANNEL_0_RX_DMA ), Eq( SPI_CHANNEL_0_RX_DMA_STREAM ) ) );
+    EXPECT_CALL(
+        mock, DMAIsEnabledStream( Eq( SPI_CHANNEL_0_RX_DMA ), Eq( SPI_CHANNEL_0_RX_DMA_STREAM ) ) )
+        .WillOnce( Return( 0U ) );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
 
     ASSERT_TRUE( HW_SPI_Stop_Channel( SPI_CHANNEL_0 ) );
 
@@ -1423,12 +1436,26 @@ TEST_F( HWSpiMasterTxTest, StopRejectsConfiguredButStoppedChannel )
     EXPECT_FALSE( HW_SPI_Stop_Channel( SPI_CHANNEL_0 ) );
 }
 
-TEST_F( HWSpiMasterTxTest, StopFailureRetainsStartedStateForRetry )
+TEST_F( HWSpiMasterTxTest, StopDmaTimeoutRetainsStartedStateForRetry )
 {
     HW_SPI_STATE( SPI_CHANNEL_0 )->is_started  = true;
     HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted = true;
 
-    EXPECT_CALL( mock, SPIDMAStop( Eq( &SPI_CHANNEL_0_HANDLE ) ) ).WillOnce( Return( HAL_ERROR ) );
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    EXPECT_CALL( mock, SPIDisableDMAReqTX( Eq( SPI_CHANNEL_0_INSTANCE ) ) );
+    EXPECT_CALL( mock, SPIDisableDMAReqRX( Eq( SPI_CHANNEL_0_INSTANCE ) ) );
+    EXPECT_CALL(
+        mock, DMADisableStream( Eq( SPI_CHANNEL_0_TX_DMA ), Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) );
+    EXPECT_CALL(
+        mock, DMAIsEnabledStream( Eq( SPI_CHANNEL_0_TX_DMA ), Eq( SPI_CHANNEL_0_TX_DMA_STREAM ) ) )
+        .Times( HW_SPI_DMA_DISABLE_TIMEOUT_ITERATIONS + 1U )
+        .WillRepeatedly( Return( 1U ) );
+    EXPECT_CALL(
+        mock, DMADisableStream( Eq( SPI_CHANNEL_0_RX_DMA ), Eq( SPI_CHANNEL_0_RX_DMA_STREAM ) ) );
+    EXPECT_CALL(
+        mock, DMAIsEnabledStream( Eq( SPI_CHANNEL_0_RX_DMA ), Eq( SPI_CHANNEL_0_RX_DMA_STREAM ) ) )
+        .WillOnce( Return( 0U ) );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
 
     EXPECT_FALSE( HW_SPI_Stop_Channel( SPI_CHANNEL_0 ) );
     EXPECT_TRUE( HW_SPI_STATE( SPI_CHANNEL_0 )->is_started );

@@ -14,7 +14,8 @@
  *      - Communicates with MCP23017 devices via FMPI2C1 internal I2C channel
  *      - I2C addresses: 0x20-0x26 (configured via device jumpers)
  *      - Active devices are selected by the module's role-indexed bitmask
- *      - All output bits default to 0x00 (OLAT A) or 0xFF (OLAT B)
+ *      - Per-device output defaults encode each peripheral's safe state;
+ *        unconnected bits default low
  *      - Must call LOGIC_EXPANDER_Self_Config() before any other operations
  *      - Queue-full is reported immediately so callers can retry without spinning
  *      - All APIs are thread-safe task-context APIs and must not be called from an ISR
@@ -111,7 +112,7 @@ bool LOGIC_EXPANDER_Init( void );
  *
  * Discovers active devices selected by the module's internal active bitmask,
  * sends configuration registers (IODIR, IPOL, GPINTEN, etc.) to set all
- * pins as outputs, and initializes OLAT registers.
+ * pins as outputs, and applies the safe default state to the OLAT registers.
  * Must be called before any other operations. All devices are disabled by
  * default until their safe startup values are confirmed during bring-up.
  *

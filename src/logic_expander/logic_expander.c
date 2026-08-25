@@ -71,8 +71,14 @@ static const uint16_t LOGIC_EXPANDER_I2C_ADDRESSES[LOGIC_EXPANDER_COUNT] = {
 };
 
 
-/* Need to change these to define safe hardware defaults for initialisation*/
-static const uint8_t LOGIC_EXPANDER_INIT_OLAT_A[LOGIC_EXPANDER_COUNT] = {
+/*
+ * Per-expander safe state applied as part of self-configuration. Each value is
+ * derived from the peripheral truth table: disabled where supported, otherwise
+ * the lowest-voltage selection, with power/enable outputs off. Unconnected bits
+ * remain zero. The current truth tables encode all of those states as zero, but
+ * a future active-low control or non-zero default belongs explicitly here.
+ */
+static const uint8_t LOGIC_EXPANDER_DEFAULT_OLAT_A[LOGIC_EXPANDER_COUNT] = {
     [LOGIC_EXPANDER_DI_1]          = 0x00U,
     [LOGIC_EXPANDER_DI_2]          = 0x00U,
     [LOGIC_EXPANDER_DO_1]          = 0x00U,
@@ -82,14 +88,14 @@ static const uint8_t LOGIC_EXPANDER_INIT_OLAT_A[LOGIC_EXPANDER_COUNT] = {
     [LOGIC_EXPANDER_I2C_AO]        = 0x00U,
 };
 
-static const uint8_t LOGIC_EXPANDER_INIT_OLAT_B[LOGIC_EXPANDER_COUNT] = {
-    [LOGIC_EXPANDER_DI_1]          = 0xFFU,
-    [LOGIC_EXPANDER_DI_2]          = 0xFFU,
-    [LOGIC_EXPANDER_DO_1]          = 0xFFU,
-    [LOGIC_EXPANDER_DO_2]          = 0xFFU,
-    [LOGIC_EXPANDER_PWM_SPI]       = 0xFFU,
-    [LOGIC_EXPANDER_UART_PWR]      = 0xFFU,
-    [LOGIC_EXPANDER_I2C_AO]        = 0xFFU,
+static const uint8_t LOGIC_EXPANDER_DEFAULT_OLAT_B[LOGIC_EXPANDER_COUNT] = {
+    [LOGIC_EXPANDER_DI_1]          = 0x00U,
+    [LOGIC_EXPANDER_DI_2]          = 0x00U,
+    [LOGIC_EXPANDER_DO_1]          = 0x00U,
+    [LOGIC_EXPANDER_DO_2]          = 0x00U,
+    [LOGIC_EXPANDER_PWM_SPI]       = 0x00U,
+    [LOGIC_EXPANDER_UART_PWR]      = 0x00U,
+    [LOGIC_EXPANDER_I2C_AO]        = 0x00U,
 };
 // clang-format on
 
@@ -362,8 +368,8 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config_Locked( void )
 
     for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
     {
-        logic_expander_state[idx].olat_a    = LOGIC_EXPANDER_INIT_OLAT_A[idx];
-        logic_expander_state[idx].olat_b    = LOGIC_EXPANDER_INIT_OLAT_B[idx];
+        logic_expander_state[idx].olat_a    = LOGIC_EXPANDER_DEFAULT_OLAT_A[idx];
+        logic_expander_state[idx].olat_b    = LOGIC_EXPANDER_DEFAULT_OLAT_B[idx];
         logic_expander_submitted_state[idx] = logic_expander_state[idx];
     }
 
