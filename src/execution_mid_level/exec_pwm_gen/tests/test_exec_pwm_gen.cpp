@@ -142,7 +142,7 @@ TEST_F( ExecPwmGenTest, ConfigureRejectsInitialCCRGreaterThanARRPlusOne )
     EXPECT_FALSE( EXEC_PWM_GEN_Configure_Channel( EXEC_PWM_GEN_CHANNEL_LV, &config ) );
 }
 
-TEST_F( ExecPwmGenTest, DisabledChannelsApplyTheirLowestVoltageSelections )
+TEST_F( ExecPwmGenTest, DisabledChannelsApplyTheirSafeSelections )
 {
     const ExecPwmGenConfig_T disabled = { false, EXEC_PWM_GEN_VOLTAGE_3V3, 0U, 0U, 0U };
 
@@ -151,7 +151,7 @@ TEST_F( ExecPwmGenTest, DisabledChannelsApplyTheirLowestVoltageSelections )
     EXPECT_CALL( mock, SendControlBits() ).WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_TRUE( EXEC_PWM_GEN_Configure_Channel( EXEC_PWM_GEN_CHANNEL_LV, &disabled ) );
 
-    EXPECT_CALL( mock, LoadControlBit( _, _, 4U, true ) )
+    EXPECT_CALL( mock, LoadControlBit( _, _, 4U, false ) )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock, LoadControlBit( _, _, 5U, false ) )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );

@@ -220,10 +220,39 @@ TEST_F( LogicExpanderTest, SelfConfigWaitsForPhysicalCompletionBeforeReady )
     EXPECT_EQ( LOGIC_EXPANDER_Self_Config(), LOGIC_EXPANDER_STATUS_BUSY );
     EXPECT_FALSE( logic_expander_ready );
     EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DI_1].olat_a, 0x00U );
-    EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DI_1].olat_b, 0xFFU );
+    EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DI_1].olat_b, 0x00U );
 
     EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_OK );
     EXPECT_TRUE( logic_expander_ready );
+}
+
+TEST_F( LogicExpanderTest, SelfConfigAppliesSafeDefaultOutputState )
+{
+    const std::array<uint8_t, 3U> expected_default = { MCP23017_REG_OLATA, 0x00U, 0x00U };
+
+    EXPECT_CALL( mock_hw_i2c, ConfigureInternal( 0x33U ) ).WillOnce( Return( HW_I2C_STATUS_OK ) );
+    EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+
+    {
+        InSequence sequence;
+        EXPECT_CALL( mock_hw_i2c,
+                     EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
+            .Times( 7 )
+            .WillRepeatedly( Return( HW_I2C_STATUS_OK ) );
+        EXPECT_CALL( mock_hw_i2c,
+                     EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, 3U ) )
+            .WillOnce( [&]( HWI2CChannel_T, uint16_t, const uint8_t* data, uint16_t length ) {
+                EXPECT_EQ( std::memcmp( data, expected_default.data(), length ), 0 );
+                return HW_I2C_STATUS_OK;
+            } );
+    }
+
+    EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( HW_I2C_CHANNEL_FMPI2C1 ) )
+        .WillOnce( Return( false ) );
+
+    EXPECT_EQ( LOGIC_EXPANDER_Self_Config(), LOGIC_EXPANDER_STATUS_BUSY );
+    EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DI_1].olat_a, 0x00U );
+    EXPECT_EQ( logic_expander_state[LOGIC_EXPANDER_DI_1].olat_b, 0x00U );
 }
 
 TEST_F( LogicExpanderTest, ProcessDoesNotServiceI2CUntilConfigurationStarts )

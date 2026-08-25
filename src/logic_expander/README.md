@@ -34,8 +34,13 @@ only while inspecting state or making non-blocking queue calls; no API waits for
 physical I2C completion.
 
 `LOGIC_EXPANDER_Self_Config()` configures FMPI2C1 and begins enqueueing the eight
-MCP23017 setup writes for each active device. It can return `BUSY` after writes
-were accepted because queue acceptance is not bus completion.
+MCP23017 setup writes for each active device. The final setup write applies the
+role-specific safe-default table to OLATA and OLATB: connected controls select
+their disabled state where available, otherwise their lowest-voltage state;
+power/enable outputs are off; and unconnected bits are low. These states all
+currently encode as zero, but the table may contain set bits where a peripheral
+truth table requires them. The call can return `BUSY` after writes were accepted
+because queue acceptance is not bus completion.
 
 Self-configuration is idempotent once the module is ready: repeated calls
 return `OK` without resetting FMPI2C1, replacing shadow state, clearing dirty
