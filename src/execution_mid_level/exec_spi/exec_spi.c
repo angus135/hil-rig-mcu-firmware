@@ -114,15 +114,15 @@ static const ExecSPIHardwareMap_T exec_spi_hardware_map[2U] = {
         {
             .expander          = LOGIC_EXPANDER_PWM_SPI,
             .port              = LOGIC_EXPANDER_PORT_B,
-            .enable_bit        = 4U,
-            .master_nslave_bit = 5U,
+            .enable_bit        = 6U,
+            .master_nslave_bit = 7U,
         },
     [SPI_CHANNEL_1] =
         {
             .expander          = LOGIC_EXPANDER_PWM_SPI,
             .port              = LOGIC_EXPANDER_PORT_B,
-            .enable_bit        = 6U,
-            .master_nslave_bit = 7U,
+            .enable_bit        = 4U,
+            .master_nslave_bit = 5U,
         },
 };
 

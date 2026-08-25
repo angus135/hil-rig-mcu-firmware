@@ -122,12 +122,12 @@ static SPILoopState_T spi_loop_state = {
 
 static SPILoopChannel_T* CONSOLE_SPI_Loopback_Get_Channel( const char* channel_str )
 {
-    if ( strcmp( channel_str, "0" ) == 0 )
+    if ( strcmp( channel_str, "1" ) == 0 )
     {
         return &spi_loop_state.channel_0;
     }
 
-    if ( strcmp( channel_str, "1" ) == 0 )
+    if ( strcmp( channel_str, "2" ) == 0 )
     {
         return &spi_loop_state.channel_1;
     }
@@ -461,17 +461,17 @@ void CONSOLE_SPI_Loopback_Print_Usage( void )
     CONSOLE_Printf( "\r\n" );
 
     CONSOLE_Printf( "Configuration:\r\n" );
-    CONSOLE_Printf( "  spi_loop config <0|1> mode <master|slave>\r\n" );
-    CONSOLE_Printf( "  spi_loop config <0|1> datasize <8|16>\r\n" );
-    CONSOLE_Printf( "  spi_loop config <0|1> firstbit <msb|lsb>\r\n" );
+    CONSOLE_Printf( "  spi_loop config <1|2> mode <master|slave>\r\n" );
+    CONSOLE_Printf( "  spi_loop config <1|2> datasize <8|16>\r\n" );
+    CONSOLE_Printf( "  spi_loop config <1|2> firstbit <msb|lsb>\r\n" );
     CONSOLE_Printf(
-        "  spi_loop config <0|1> baud <45m|22m5|11m25|5m625|2m813|1m406|703k|352k>\r\n" );
-    CONSOLE_Printf( "  spi_loop config <0|1> cpol <low|high>\r\n" );
-    CONSOLE_Printf( "  spi_loop config <0|1> cpha <1edge|2edge>\r\n" );
-    CONSOLE_Printf( "  spi_loop apply_config <0|1|all>\r\n" );
-    CONSOLE_Printf( "  spi_loop start <0|1|all>\r\n" );
-    CONSOLE_Printf( "  spi_loop stop <0|1|all>\r\n" );
-    CONSOLE_Printf( "  spi_loop disable <0|1|all>\r\n" );
+        "  spi_loop config <1|2> baud <45m|22m5|11m25|5m625|2m813|1m406|703k|352k>\r\n" );
+    CONSOLE_Printf( "  spi_loop config <1|2> cpol <low|high>\r\n" );
+    CONSOLE_Printf( "  spi_loop config <1|2> cpha <1edge|2edge>\r\n" );
+    CONSOLE_Printf( "  spi_loop apply_config <1|2|all>\r\n" );
+    CONSOLE_Printf( "  spi_loop start <1|2|all>\r\n" );
+    CONSOLE_Printf( "  spi_loop stop <1|2|all>\r\n" );
+    CONSOLE_Printf( "  spi_loop disable <1|2|all>\r\n" );
     CONSOLE_Printf( "\r\n" );
 
     CONSOLE_Printf( "Messages:\r\n" );
@@ -493,7 +493,7 @@ void CONSOLE_SPI_Loopback_Config( uint16_t argc, char* argv[] )
 {
     if ( argc < 5 || argv[2] == NULL || argv[3] == NULL || argv[4] == NULL )
     {
-        CONSOLE_Printf( "Usage: spi_loop config <0|1> <option> <value>\r\n" );
+        CONSOLE_Printf( "Usage: spi_loop config <1|2> <option> <value>\r\n" );
         return;
     }
 
@@ -598,7 +598,7 @@ void CONSOLE_SPI_Loopback_Apply_Config( uint16_t argc, char* argv[] )
 {
     if ( argc < 3 || argv[2] == NULL )
     {
-        CONSOLE_Printf( "Usage: spi_loop apply_config <0|1|all>\r\n" );
+        CONSOLE_Printf( "Usage: spi_loop apply_config <1|2|all>\r\n" );
         return;
     }
 
@@ -606,17 +606,17 @@ void CONSOLE_SPI_Loopback_Apply_Config( uint16_t argc, char* argv[] )
     {
         if ( !CONSOLE_SPI_Loopback_Apply_Channel_Config( &spi_loop_state.channel_0 ) )
         {
-            CONSOLE_Printf( "Failed to apply SPI channel 0 configuration\r\n" );
+            CONSOLE_Printf( "Failed to apply SPI channel 1 configuration\r\n" );
             return;
         }
 
         if ( !CONSOLE_SPI_Loopback_Apply_Channel_Config( &spi_loop_state.channel_1 ) )
         {
-            CONSOLE_Printf( "Failed to apply SPI channel 1 configuration\r\n" );
+            CONSOLE_Printf( "Failed to apply SPI channel 2 configuration\r\n" );
             return;
         }
 
-        CONSOLE_Printf( "Applied SPI channel 0 and 1 configurations; channels stopped\r\n" );
+        CONSOLE_Printf( "Applied SPI channel 1 and 2 configurations; channels stopped\r\n" );
         return;
     }
 
@@ -641,7 +641,7 @@ void CONSOLE_SPI_Loopback_Start( uint16_t argc, char* argv[] )
 {
     if ( argc < 3 || argv[2] == NULL )
     {
-        CONSOLE_Printf( "Usage: spi_loop start <0|1|all>\r\n" );
+        CONSOLE_Printf( "Usage: spi_loop start <1|2|all>\r\n" );
         return;
     }
 
@@ -649,17 +649,17 @@ void CONSOLE_SPI_Loopback_Start( uint16_t argc, char* argv[] )
     {
         if ( !EXEC_SPI_Start_Channel( SPI_CHANNEL_0 ) )
         {
-            CONSOLE_Printf( "Failed to start SPI channel 0\r\n" );
+            CONSOLE_Printf( "Failed to start SPI channel 1\r\n" );
             return;
         }
 
         if ( !EXEC_SPI_Start_Channel( SPI_CHANNEL_1 ) )
         {
-            CONSOLE_Printf( "Failed to start SPI channel 1\r\n" );
+            CONSOLE_Printf( "Failed to start SPI channel 2\r\n" );
             return;
         }
 
-        CONSOLE_Printf( "Started SPI channels 0 and 1\r\n" );
+        CONSOLE_Printf( "Started SPI channels 1 and 2\r\n" );
         return;
     }
 
@@ -677,7 +677,7 @@ void CONSOLE_SPI_Loopback_Stop( uint16_t argc, char* argv[] )
 {
     if ( argc < 3 || argv[2] == NULL )
     {
-        CONSOLE_Printf( "Usage: spi_loop stop <0|1|all>\r\n" );
+        CONSOLE_Printf( "Usage: spi_loop stop <1|2|all>\r\n" );
         return;
     }
 
@@ -709,7 +709,7 @@ void CONSOLE_SPI_Loopback_Disable( uint16_t argc, char* argv[] )
 
     if ( argc < 3 || argv[2] == NULL )
     {
-        CONSOLE_Printf( "Usage: spi_loop disable <0|1|all>\r\n" );
+        CONSOLE_Printf( "Usage: spi_loop disable <1|2|all>\r\n" );
         return;
     }
 
@@ -795,8 +795,8 @@ void CONSOLE_SPI_Loopback_Clear( void )
 
 void CONSOLE_SPI_Loopback_Status( void )
 {
-    CONSOLE_SPI_Loopback_Print_Channel_Status( "Channel 0", &spi_loop_state.channel_0 );
-    CONSOLE_SPI_Loopback_Print_Channel_Status( "Channel 1", &spi_loop_state.channel_1 );
+    CONSOLE_SPI_Loopback_Print_Channel_Status( "Channel 1", &spi_loop_state.channel_0 );
+    CONSOLE_SPI_Loopback_Print_Channel_Status( "Channel 2", &spi_loop_state.channel_1 );
 
     CONSOLE_Printf( "Messages:\r\n" );
     CONSOLE_Printf( "  master tx loaded: %s, %lu bytes\r\n",
