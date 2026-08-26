@@ -214,6 +214,57 @@ static void CONSOLE_Command_Digital_Output( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "  digital_output stop\r\n" );
         CONSOLE_Printf( "  digital_output disable\r\n" );
         CONSOLE_Printf( "  digital_output status\r\n" );
+        CONSOLE_Printf( "  digital_output write <0|1> <ch1> [chN...]\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "write" ) == 0 )
+    {
+        if ( argc < 4U || argc > ( uint16_t )( EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT + 3U )
+             || ( strcmp( argv[2], "0" ) != 0 && strcmp( argv[2], "1" ) != 0 ) )
+        {
+            CONSOLE_Printf( "Usage: digital_output write <0|1> <ch1> [chN...]\r\n" );
+            return;
+        }
+
+        GPIOOutput_T gpio_channels[EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT];
+        const uint8_t channel_count = ( uint8_t )( argc - 3U );
+
+        for ( uint8_t index = 0U; index < channel_count; index++ )
+        {
+            char*              end_ptr = NULL;
+            const unsigned long channel = strtoul( argv[index + 3U], &end_ptr, 10 );
+
+            if ( end_ptr == argv[index + 3U] || *end_ptr != '\0' || channel < 1U
+                 || channel > ( unsigned long )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT )
+            {
+                CONSOLE_Printf( "Invalid digital-output channel: %s\r\n",
+                                argv[index + 3U] );
+                return;
+            }
+
+            gpio_channels[index] = ( GPIOOutput_T )( DIGITAL_OUTPUT_0 + channel - 1U );
+        }
+
+        const DigitalOutputPinmask_T pin_mask =
+            EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( gpio_channels, channel_count );
+
+        if ( pin_mask == 0U )
+        {
+            CONSOLE_Printf( "Failed to calculate digital-output pin mask\r\n" );
+            return;
+        }
+
+        if ( argv[2][0] == '1' )
+        {
+            EXEC_DIGITAL_OUTPUT_Set_Output( pin_mask );
+        }
+        else
+        {
+            EXEC_DIGITAL_OUTPUT_Reset_Output( pin_mask );
+        }
+
+        CONSOLE_Printf( "Digital outputs written\r\n" );
         return;
     }
 

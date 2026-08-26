@@ -27,6 +27,7 @@ extern "C"
  */
 
 #ifndef TEST_BUILD
+#include "main.h"
 #include "stm32f4xx_ll_gpio.h"
 #include "stm32f446xx.h"
 #endif
@@ -244,9 +245,20 @@ if (p.pin_mask == 0xFFFF0000){
  */
 DigitalOutputPinmask_T HW_GPIO_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names, uint8_t length );
 
-inline void HW_GPIO_Set_Output( uint32_t pin_mask );
+#ifdef TEST_BUILD
+void HW_GPIO_Set_Output( uint32_t pin_mask );
+void HW_GPIO_Reset_Output( uint32_t pin_mask );
+#else
+static inline void HW_GPIO_Set_Output( uint32_t pin_mask )
+{
+    LL_GPIO_SetOutputPin( Digital_Output_0_GPIO_Port, pin_mask );
+}
 
-inline void HW_GPIO_Reset_Output( uint32_t pin_mask );
+static inline void HW_GPIO_Reset_Output( uint32_t pin_mask )
+{
+    LL_GPIO_ResetOutputPin( Digital_Output_0_GPIO_Port, pin_mask );
+}
+#endif
 /**
  * @brief Reads the state of all digital inputs using the underlying GPIO LL library.
  *
