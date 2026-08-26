@@ -598,10 +598,10 @@ bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
     LL_SPI_DisableDMAReq_TX( peripheral_state->spi_peripheral );
     LL_SPI_DisableDMAReq_RX( peripheral_state->spi_peripheral );
 
-    tx_stopped = HW_SPI_Config_Stop_DMA_Stream( peripheral_state->tx_dma,
-                                                peripheral_state->tx_dma_stream );
-    rx_stopped = HW_SPI_Config_Stop_DMA_Stream( peripheral_state->rx_dma,
-                                                peripheral_state->rx_dma_stream );
+    tx_stopped =
+        HW_SPI_Config_Stop_DMA_Stream( peripheral_state->tx_dma, peripheral_state->tx_dma_stream );
+    rx_stopped =
+        HW_SPI_Config_Stop_DMA_Stream( peripheral_state->rx_dma, peripheral_state->rx_dma_stream );
 
     NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
 
