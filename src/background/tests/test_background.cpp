@@ -49,7 +49,7 @@ void HW_GPIO_Toggle_Output( GPIOOutput_T output )
     g_mock_dependencies->ToggleOutput( output );
 }
 
-volatile TickType_t xTaskGetTickCount( void )
+TickType_t xTaskGetTickCount( void )
 {
     return g_mock_dependencies->GetTickCount();
 }
