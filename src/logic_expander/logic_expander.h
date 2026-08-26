@@ -110,11 +110,11 @@ bool LOGIC_EXPANDER_Init( void );
 /**
  * @brief Initialize and configure all active MCP23017 devices.
  *
- * Discovers active devices selected by the module's internal active bitmask,
+ * Configures devices selected by the module's role-indexed active bitmask,
  * sends configuration registers (IODIR, IPOL, GPINTEN, etc.) to set all
  * pins as outputs, and applies the safe default state to the OLAT registers.
- * Must be called before any other operations. All devices are disabled by
- * default until their safe startup values are confirmed during bring-up.
+ * Must be called before any other operations. All seven role-mapped devices
+ * are enabled by default; the module does not probe for devices at runtime.
  *
  * @return LOGIC_EXPANDER_STATUS_OK if all devices configured successfully
  * @return LOGIC_EXPANDER_STATUS_BUSY if I2C channel is busy

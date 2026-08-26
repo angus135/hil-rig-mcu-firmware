@@ -125,7 +125,7 @@ protected:
         g_mock_hw_i2c = &mock_hw_i2c;
         std::memset( logic_expander_state, 0, sizeof( logic_expander_state ) );
         std::memset( logic_expander_submitted_state, 0, sizeof( logic_expander_submitted_state ) );
-        logic_expander_ready = false;
+        logic_expander_ready                  = false;
         logic_expander_active_bitmask         = LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK;
         logic_expander_dirty_bitmask          = 0U;
         logic_expander_pending_bitmask        = 0U;
@@ -235,12 +235,10 @@ TEST_F( LogicExpanderTest, SelfConfigAppliesSafeDefaultOutputState )
 
     {
         InSequence sequence;
-        EXPECT_CALL( mock_hw_i2c,
-                     EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
+        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
             .Times( 7 )
             .WillRepeatedly( Return( HW_I2C_STATUS_OK ) );
-        EXPECT_CALL( mock_hw_i2c,
-                     EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, 3U ) )
+        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, 3U ) )
             .WillOnce( [&]( HWI2CChannel_T, uint16_t, const uint8_t* data, uint16_t length ) {
                 EXPECT_EQ( std::memcmp( data, expected_default.data(), length ), 0 );
                 return HW_I2C_STATUS_OK;
@@ -478,8 +476,8 @@ TEST_F( LogicExpanderTest, SendControlBitsCanAddressAllActiveExpanders )
 
     for ( uint8_t idx = 0U; idx < LOGIC_EXPANDER_COUNT; ++idx )
     {
-        logic_expander_state[idx] = { 0xFFU, 0xFFU };
-        const uint16_t address    = ( uint16_t )( 0x20U + idx );
+        logic_expander_state[idx]                      = { 0xFFU, 0xFFU };
+        const uint16_t                address          = ( uint16_t )( 0x20U + idx );
         const std::array<uint8_t, 3U> expected_payload = { 0x14U, 0xFFU, 0xFFU };
 
         EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, address, _, 3U ) )

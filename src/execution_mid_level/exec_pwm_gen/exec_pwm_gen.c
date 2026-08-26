@@ -117,8 +117,8 @@ static bool EXEC_PWM_GEN_Is_Valid_Voltage( ExecPwmGenChannel_T      channel,
 
         case EXEC_PWM_GEN_CHANNEL_HV:
             return voltage_level == EXEC_PWM_GEN_VOLTAGE_12V
-                    || voltage_level == EXEC_PWM_GEN_VOLTAGE_24V
-                    || voltage_level == EXEC_PWM_GEN_VOLTAGE_DISABLED;
+                   || voltage_level == EXEC_PWM_GEN_VOLTAGE_24V
+                   || voltage_level == EXEC_PWM_GEN_VOLTAGE_DISABLED;
 
         default:
             return false;

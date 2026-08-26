@@ -73,12 +73,12 @@
 
 typedef struct
 {
-    bool        is_configured;
-    bool        is_started;
+    bool                    is_configured;
+    bool                    is_started;
     ExecUartInterfaceMode_T interface_mode;
-    uint32_t    baud_rate;
-    const char* framing_text;
-    uint32_t    wire_bits_per_byte;
+    uint32_t                baud_rate;
+    const char*             framing_text;
+    uint32_t                wire_bits_per_byte;
 } ConsoleUartLoopbackState_T;
 
 typedef struct
@@ -115,11 +115,11 @@ static void CONSOLE_UART_Loopback_Stop( uint16_t argc, char* argv[] );
 static void CONSOLE_UART_Loopback_Send( uint16_t argc, char* argv[] );
 static void CONSOLE_UART_Loopback_Blast_Random( uint16_t argc, char* argv[] );
 
-static bool CONSOLE_UART_Parse_Baud_Rate( const char* text, uint32_t* baud_rate_out );
-static bool CONSOLE_UART_Parse_Interface_Mode( const char* text,
-                                               ExecUartInterfaceMode_T* mode_out );
+static bool        CONSOLE_UART_Parse_Baud_Rate( const char* text, uint32_t* baud_rate_out );
+static bool        CONSOLE_UART_Parse_Interface_Mode( const char*              text,
+                                                      ExecUartInterfaceMode_T* mode_out );
 static const char* CONSOLE_UART_Interface_Mode_To_String( ExecUartInterfaceMode_T mode );
-static bool CONSOLE_UART_Parse_Channel( const char* text, ExecUartChannel_T* channel_out );
+static bool        CONSOLE_UART_Parse_Channel( const char* text, ExecUartChannel_T* channel_out );
 static bool CONSOLE_UART_Parse_U32( const char* text, const char* field_name, uint32_t min_value,
                                     uint32_t max_value, uint32_t* value_out );
 static bool CONSOLE_UART_Parse_Framing( const char* text, HwUartWordLength_T* word_length_out,
@@ -229,8 +229,7 @@ static bool CONSOLE_UART_Parse_Baud_Rate( const char* text, uint32_t* baud_rate_
                                    baud_rate_out );
 }
 
-static bool CONSOLE_UART_Parse_Interface_Mode( const char* text,
-                                               ExecUartInterfaceMode_T* mode_out )
+static bool CONSOLE_UART_Parse_Interface_Mode( const char* text, ExecUartInterfaceMode_T* mode_out )
 {
     if ( text == NULL || mode_out == NULL )
     {
@@ -557,8 +556,7 @@ static void CONSOLE_UART_Loopback_Configure( uint16_t argc, char* argv[] )
 
     if ( !CONSOLE_UART_Parse_Interface_Mode( argv[CONSOLE_UART_ARGV_PARAM_1], &interface_mode ) )
     {
-        CONSOLE_Printf( "Invalid UART interface mode: %s\r\n",
-                        argv[CONSOLE_UART_ARGV_PARAM_1] );
+        CONSOLE_Printf( "Invalid UART interface mode: %s\r\n", argv[CONSOLE_UART_ARGV_PARAM_1] );
         CONSOLE_Printf( "Supported modes: 3v3, 5v, rs232\r\n" );
         return;
     }
@@ -702,9 +700,8 @@ static void CONSOLE_UART_Loopback_Status( uint16_t argc, char* argv[] )
     CONSOLE_Printf( "uart loopback: %s\r\n",
                     s_uart_loopback_state.is_started ? "started" : "configured" );
     CONSOLE_Printf( "  channels: ch1 + ch2\r\n" );
-    CONSOLE_Printf(
-        "  mode: %s\r\n",
-        CONSOLE_UART_Interface_Mode_To_String( s_uart_loopback_state.interface_mode ) );
+    CONSOLE_Printf( "  mode: %s\r\n",
+                    CONSOLE_UART_Interface_Mode_To_String( s_uart_loopback_state.interface_mode ) );
     CONSOLE_Printf( "  baud: %lu\r\n", ( unsigned long )s_uart_loopback_state.baud_rate );
     CONSOLE_Printf( "  framing: %s\r\n", s_uart_loopback_state.framing_text );
     CONSOLE_Printf( "  rx/tx: enabled\r\n" );

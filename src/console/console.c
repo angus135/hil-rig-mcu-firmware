@@ -36,7 +36,7 @@
 #define CONSOLE_TASK_PERIOD 5  // 200Hz
 
 #define CONSOLE_LINE_MAX 128U  // max characters in a command line (excluding NUL)
-#define CONSOLE_MAX_ARGS 16U  // max argv entries
+#define CONSOLE_MAX_ARGS 16U   // max argv entries
 
 #define CONSOLE_PRINTF_BUFFER_SIZE 128U
 #define CONSOLE_RX_BUFFER_SIZE 32U

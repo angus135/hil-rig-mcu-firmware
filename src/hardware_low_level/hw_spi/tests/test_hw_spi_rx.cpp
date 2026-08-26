@@ -753,10 +753,8 @@ TEST_F( HWSPIRxTest, StopThenStart_DacRetainsConfigurationAndRestartsChannel )
     EXPECT_CALL( mock, NVICDisableIRQ( Eq( SPI_DAC_TX_DMA_IRQN ) ) );
     EXPECT_CALL( mock, SPIDisableDMAReqTX( Eq( SPI_DAC_INSTANCE ) ) );
     EXPECT_CALL( mock, SPIDisableDMAReqRX( Eq( SPI_DAC_INSTANCE ) ) );
-    EXPECT_CALL( mock,
-                 DMADisableStream( Eq( SPI_DAC_TX_DMA ), Eq( SPI_DAC_TX_DMA_STREAM ) ) );
-    EXPECT_CALL( mock,
-                 DMAIsEnabledStream( Eq( SPI_DAC_TX_DMA ), Eq( SPI_DAC_TX_DMA_STREAM ) ) )
+    EXPECT_CALL( mock, DMADisableStream( Eq( SPI_DAC_TX_DMA ), Eq( SPI_DAC_TX_DMA_STREAM ) ) );
+    EXPECT_CALL( mock, DMAIsEnabledStream( Eq( SPI_DAC_TX_DMA ), Eq( SPI_DAC_TX_DMA_STREAM ) ) )
         .WillOnce( Return( 0U ) );
     EXPECT_CALL( mock, NVICEnableIRQ( Eq( SPI_DAC_TX_DMA_IRQN ) ) );
     ASSERT_TRUE( HW_SPI_Stop_Channel( SPI_DAC ) );

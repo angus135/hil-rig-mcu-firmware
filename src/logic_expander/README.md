@@ -19,10 +19,11 @@ Address and initial-state tables use designated initializers so the physical
 role-to-address mapping is visible in code. `LOGIC_EXPANDER_COUNT` is the final
 enum value and therefore also the state-array size.
 
-All devices are disabled in `LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK` during
-bring-up. Enable each device only after its safe OLATA/OLATB startup values have
-been confirmed. Individual drivers own their expander, port, and bit mappings;
-this module owns addressing, shadow state, and I2C submission.
+All seven role-mapped devices are enabled in
+`LOGIC_EXPANDER_DEFAULT_ACTIVE_BITMASK` (`0x7F`). The module does not probe for
+devices at runtime; the bitmask determines which role-indexed entries are
+configured. Individual drivers own their expander, port, and bit mappings; this
+module owns addressing, shadow state, and I2C submission.
 
 ## Task ownership and non-blocking configuration
 
