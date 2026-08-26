@@ -104,7 +104,7 @@ BaseType_t xSemaphoreGive( SemaphoreHandle_t semaphore )
     return pdTRUE;
 }
 
-volatile TickType_t xTaskGetTickCount( void )
+TickType_t xTaskGetTickCount( void )
 {
     return g_current_tick;
 }
