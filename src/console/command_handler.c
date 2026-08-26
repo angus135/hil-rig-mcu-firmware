@@ -227,18 +227,19 @@ static void CONSOLE_Command_Digital_Output( uint16_t argc, char* argv[] )
             return;
         }
 
-        GPIOOutput_T  gpio_channels[EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT];
+        GPIOOutput_T gpio_channels[EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT];
         const uint8_t channel_count = ( uint8_t )( argc - 3U );
 
         for ( uint8_t index = 0U; index < channel_count; index++ )
         {
-            char*               end_ptr = NULL;
+            char*              end_ptr = NULL;
             const unsigned long channel = strtoul( argv[index + 3U], &end_ptr, 10 );
 
             if ( end_ptr == argv[index + 3U] || *end_ptr != '\0' || channel < 1U
                  || channel > ( unsigned long )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT )
             {
-                CONSOLE_Printf( "Invalid digital-output channel: %s\r\n", argv[index + 3U] );
+                CONSOLE_Printf( "Invalid digital-output channel: %s\r\n",
+                                argv[index + 3U] );
                 return;
             }
 
