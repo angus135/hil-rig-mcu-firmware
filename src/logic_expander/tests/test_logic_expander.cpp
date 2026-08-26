@@ -235,14 +235,20 @@ TEST_F( LogicExpanderTest, SelfConfigAppliesSafeDefaultOutputState )
 
     {
         InSequence sequence;
-        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, _ ) )
-            .Times( 7 )
-            .WillRepeatedly( Return( HW_I2C_STATUS_OK ) );
-        EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, 3U ) )
-            .WillOnce( [&]( HWI2CChannel_T, uint16_t, const uint8_t* data, uint16_t length ) {
-                EXPECT_EQ( std::memcmp( data, expected_default.data(), length ), 0 );
-                return HW_I2C_STATUS_OK;
-            } );
+
+        for ( uint16_t address = 0x20U; address <= 0x26U; ++address )
+        {
+            EXPECT_CALL( mock_hw_i2c,
+                         EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, address, _, _ ) )
+                .Times( 7 )
+                .WillRepeatedly( Return( HW_I2C_STATUS_OK ) );
+            EXPECT_CALL( mock_hw_i2c,
+                         EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, address, _, 3U ) )
+                .WillOnce( [&]( HWI2CChannel_T, uint16_t, const uint8_t* data, uint16_t length ) {
+                    EXPECT_EQ( std::memcmp( data, expected_default.data(), length ), 0 );
+                    return HW_I2C_STATUS_OK;
+                } );
+        }
     }
 
     EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( HW_I2C_CHANNEL_FMPI2C1 ) )
