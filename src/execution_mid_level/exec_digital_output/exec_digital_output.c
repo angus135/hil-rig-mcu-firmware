@@ -226,8 +226,9 @@ bool EXEC_DIGITAL_OUTPUT_Configure( const ExecDigitalOutputConfig_T* config )
      */
     exec_digital_output_state = EXEC_DIGITAL_OUTPUT_STATE_DISABLED;
 
-    HW_GPIO_Reset_Many_Pins( exec_digital_output_gpio_channels,
-                             ( uint16_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT );
+    /* Digital Output hardware is active-low signal. Set MCU pins for local LOW*/
+    HW_GPIO_Set_Many_Pins( exec_digital_output_gpio_channels,
+                           ( uint16_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT );
 
     for ( uint32_t channel = 0U; channel < ( uint32_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT;
           channel++ )
@@ -285,7 +286,8 @@ bool EXEC_DIGITAL_OUTPUT_Start( void )
 
     if ( high_channel_count > 0U )
     {
-        HW_GPIO_Set_Many_Pins( high_channels, high_channel_count );
+        /* Digital Output hardware is active-low signal. Set MCU pins for local HIGH*/
+        HW_GPIO_Reset_Many_Pins( high_channels, high_channel_count );
     }
 
     exec_digital_output_state = EXEC_DIGITAL_OUTPUT_STATE_STARTED;
@@ -304,8 +306,9 @@ bool EXEC_DIGITAL_OUTPUT_Stop( void )
      * All digital-output signals are returned low in one batched GPIO
      * operation. Unrelated GPIOG pins are not included and remain unchanged.
      */
-    HW_GPIO_Reset_Many_Pins( exec_digital_output_gpio_channels,
-                             ( uint16_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT );
+    /* Digital Output hardware is active-low signal. Set MCU pins for local LOW*/
+    HW_GPIO_Set_Many_Pins( exec_digital_output_gpio_channels,
+                           ( uint16_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT );
 
     exec_digital_output_state = EXEC_DIGITAL_OUTPUT_STATE_CONFIGURED;
 
@@ -372,7 +375,8 @@ LL_GPIO_PIN_1 of the Digital GPIO Port high
  */
 void EXEC_DIGITAL_OUTPUT_Set_Output( uint32_t pin_mask )
 {
-    HW_GPIO_Set_Output( pin_mask );
+    /* Digital Output hardware is active-low signal. Reset MCU pins for local HIGH*/
+    HW_GPIO_Reset_Output( pin_mask );
 }
 
 /**
@@ -398,5 +402,6 @@ LL_GPIO_PIN_1 of the Digital GPIO Port high
  */
 void EXEC_DIGITAL_OUTPUT_Reset_Output( uint32_t pin_mask )
 {
-    HW_GPIO_Reset_Output( pin_mask );
+    /* Digital Output hardware is active-low signal. Set MCU pins for local Low*/
+    HW_GPIO_Set_Output( pin_mask );
 }

@@ -398,21 +398,13 @@ LL_GPIO_PIN_4 of port A high
  * Note: This implementation assumes all digital outputs are on the same GPIO port.
  * By doing so, we can set all the outputs in a single hardware access.
  */
-inline void HW_GPIO_Set_Output( uint32_t pin_mask )
-{
-    /* TODO: Fix C11 linkage for cross-file callers: use a normal external
-     * definition or move the body to a static inline header implementation.
-     * The current inline-only declarations/definition supply no external body.
-     */
 #ifdef TEST_BUILD
+void HW_GPIO_Set_Output( uint32_t pin_mask )
+{
     // For unit testing, do nothing
     ( void )pin_mask;
-#else
-    // LL_GPIO_XOutputPin functions write to the BSR port register,
-    // The lower 16 bits of the pin_mask bit 0 = pin0, bit 1 = pin1 etc
-    LL_GPIO_SetOutputPin( DIGITAL_OUTPUT_PORT, pin_mask );
-#endif
 }
+#endif
 
 /**
  * @brief Reads the state of all digital inputs using the underlying GPIO LL library.
@@ -452,21 +444,13 @@ LL_GPIO_PIN_4 of port A high
  * Note: This implementation assumes all digital outputs are on the same GPIO port.
  * By doing so, we can set all the outputs in a single hardware access.
  */
-inline void HW_GPIO_Reset_Output( uint32_t pin_mask )
-{
-    /* TODO: Fix C11 external linkage as for HW_GPIO_Set_Output(); this inline
-     * body is not available to callers in other translation units.
-     */
 #ifdef TEST_BUILD
+void HW_GPIO_Reset_Output( uint32_t pin_mask )
+{
     // For unit testing, do nothing
     ( void )pin_mask;
-    return;
-#else
-    // LL_GPIO_XOutputPin functions write to the BSR port register,
-    // The lower 16 bits of the pin_mask bit 0 = pin0, bit 1 = pin1 etc
-    LL_GPIO_ResetOutputPin( DIGITAL_OUTPUT_PORT, pin_mask );
-#endif
 }
+#endif
 
 /**
  * @brief Sets a GPIO pin
