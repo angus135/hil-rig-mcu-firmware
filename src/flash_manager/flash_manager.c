@@ -1059,6 +1059,41 @@ FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void )
     return FLASH_MANAGER_REQUEST_OK;
 }
 
+/**
+ * @brief Abandons finalised results while retaining uploaded instructions.
+ */
+FlashManagerRequestStatus_T FLASH_MANAGER_DiscardResults( void )
+{
+    if ( flash_manager_context.access_mutex == NULL )
+    {
+        return FLASH_MANAGER_REQUEST_NOT_INITIALISED;
+    }
+
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return FLASH_MANAGER_REQUEST_NOT_INITIALISED;
+    }
+
+    if ( flash_manager_context.state != FLASH_MANAGER_STATE_RESULTS_READY )
+    {
+        FLASH_MANAGER_Unlock();
+        return FLASH_MANAGER_REQUEST_INVALID_STATE;
+    }
+
+    RESULT_BUFFER_Reset();
+
+    if ( EXTERNAL_FLASH_StartSession() != EXTERNAL_FLASH_STATUS_OK )
+    {
+        flash_manager_context.state = FLASH_MANAGER_STATE_FAULT;
+        FLASH_MANAGER_Unlock();
+        return FLASH_MANAGER_REQUEST_INTERNAL_ERROR;
+    }
+
+    flash_manager_context.state = FLASH_MANAGER_STATE_IDLE;
+    FLASH_MANAGER_Unlock();
+    return FLASH_MANAGER_REQUEST_OK;
+}
+
 /* Host Interface instruction upload. */
 
 /**
