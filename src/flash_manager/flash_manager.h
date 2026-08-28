@@ -103,6 +103,9 @@ extern "C"
  *   -> Host Interface calls ReadResultBytes() until END_OF_STREAM
  *   -> FinishResultTransfer()
  * IDLE
+ *
+ * Alternatively, completed results may be explicitly discarded:
+ * RESULTS_READY -> DiscardResults() -> IDLE
  */
 typedef enum
 {
@@ -165,7 +168,10 @@ typedef enum
     FLASH_MANAGER_REQUEST_TASK_NOT_READY,
 
     /** The task notification failed and the manager entered FAULT. */
-    FLASH_MANAGER_REQUEST_NOTIFY_FAILED
+    FLASH_MANAGER_REQUEST_NOTIFY_FAILED,
+
+    /** A synchronous buffer or external-flash operation failed. */
+    FLASH_MANAGER_REQUEST_INTERNAL_ERROR
 } FlashManagerRequestStatus_T;
 
 /* Execution result logging. */
@@ -636,6 +642,21 @@ FlashManagerRequestStatus_T FLASH_MANAGER_RequestExecutionPreparation( void );
  *       remain active.
  */
 FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void );
+
+/**
+ * @brief Deliberately abandons a completed result stream.
+ *
+ * This resets result-buffer ownership, starts a fresh empty result-storage
+ * session, and changes RESULTS_READY to IDLE. Uploaded instructions are
+ * retained so the Run State Manager may repeat the configured test.
+ *
+ * @return Request completion status.
+ *
+ * @note Call from task context only while the manager is RESULTS_READY.
+ * @note This operation is destructive: the abandoned result stream is no
+ *       longer available through the result-transfer API.
+ */
+FlashManagerRequestStatus_T FLASH_MANAGER_DiscardResults( void );
 
 /* Host Interface result retrieval. */
 
