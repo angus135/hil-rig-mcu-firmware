@@ -83,16 +83,25 @@ static TaskHandle_t run_state_manager_task_handle = NULL;
  *------------------------------------------------------------------------------
  */
 static bool RUN_STATE_MANAGER_Notify( uint32_t notification );
-static bool RUN_STATE_MANAGER_StartExecution( void );
-static void RUN_STATE_MANAGER_StopExecution( void );
+
+static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state,
+                                                   RunState_T next_state );
+
+static bool RUN_STATE_MANAGER_EnterTestPackageReceive( void );
+static bool RUN_STATE_MANAGER_EnterConfiguration( void );
 static void RUN_STATE_MANAGER_BeginExecutionPreparation( void );
+static bool RUN_STATE_MANAGER_EnterExecution( void );
+static void RUN_STATE_MANAGER_StopExecution( void );
 static void RUN_STATE_MANAGER_BeginResultFinalisation( void );
+
 static void RUN_STATE_MANAGER_ProcessPendingOperation( void );
 static void RUN_STATE_MANAGER_ProcessNotifications( uint32_t notifications );
-static void RUN_STATE_MANAGER_TransitionTo( RunState_T next_state );
+
+static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state );
 static void RUN_STATE_MANAGER_Step( void );
-static void RUN_STATE_MANAGER_Start_Execution_Timer( void );
-static void RUN_STATE_MANAGER_Stop_Execution_Timer( void );
+
+static bool RUN_STATE_MANAGER_StartExecutionTimer( void );
+static void RUN_STATE_MANAGER_StopExecutionTimer( void );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -117,11 +126,99 @@ static bool RUN_STATE_MANAGER_Notify( uint32_t notification )
 }
 
 /**
- * @brief Starts the DUT-facing drivers followed by the execution timer.
+ * @brief Determines whether a lifecycle transition is currently supported.
  *
- * @returns true when execution is active, otherwise false.
+ * Fault is reachable from every state. Re-entering the current state is
+ * treated as an idempotent successful transition.
  */
-static bool RUN_STATE_MANAGER_StartExecution( void )
+static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state,
+                                                   RunState_T next_state )
+{
+    if ( current_state == next_state )
+    {
+        return true;
+    }
+
+    if ( next_state == RUN_STATE_FAULT )
+    {
+        return true;
+    }
+
+    switch ( current_state )
+    {
+        case RUN_STATE_IDLE:
+            return next_state == RUN_STATE_TEST_PACKAGE_RECEIVE;
+
+        case RUN_STATE_TEST_PACKAGE_RECEIVE:
+            return next_state == RUN_STATE_CONFIGURATION || next_state == RUN_STATE_IDLE;
+
+        case RUN_STATE_CONFIGURATION:
+            return next_state == RUN_STATE_ARMED || next_state == RUN_STATE_IDLE;
+
+        case RUN_STATE_ARMED:
+            return next_state == RUN_STATE_EXECUTION || next_state == RUN_STATE_CONFIGURATION
+                   || next_state == RUN_STATE_IDLE;
+
+        case RUN_STATE_EXECUTION:
+            return next_state == RUN_STATE_ARMED
+                   || next_state == RUN_STATE_RESULT_FINALISATION;
+
+        case RUN_STATE_RESULT_FINALISATION:
+            return next_state == RUN_STATE_RESULTS_READY;
+
+        case RUN_STATE_RESULTS_READY:
+            return next_state == RUN_STATE_RESULT_TRANSFER;
+
+        case RUN_STATE_RESULT_TRANSFER:
+            return next_state == RUN_STATE_IDLE;
+
+        case RUN_STATE_FAULT:
+            return next_state == RUN_STATE_IDLE;
+
+        default:
+            return false;
+    }
+}
+
+static bool RUN_STATE_MANAGER_EnterTestPackageReceive( void )
+{
+    /*
+     * Future responsibility:
+     * Tell Host Interface to accept a new test package.
+     *
+     * Until that interface exists, entering the state is sufficient.
+     */
+    return true;
+}
+
+/**
+ * @brief Applies the active test configuration before execution preparation.
+ *
+ * @return true when every configuration action succeeds; otherwise false.
+ *
+ * @note This function runs in Run State Manager task context.
+ * @note All configured DUT-facing drivers must remain stopped on return.
+ */
+static bool RUN_STATE_MANAGER_EnterConfiguration( void )
+{
+    if ( !DUT_DRIVER_LIFECYCLE_Configure() )
+    {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @brief Enters production execution.
+ *
+ * Starts all configured DUT-facing drivers before starting the execution
+ * clock. If timer startup fails, the driver lifecycle is rolled back.
+ *
+ * @return true when the DUT drivers and execution clock are active;
+ *         otherwise false.
+ */
+static bool RUN_STATE_MANAGER_EnterExecution( void )
 {
     if ( execution_active )
     {
@@ -133,18 +230,21 @@ static bool RUN_STATE_MANAGER_StartExecution( void )
         return false;
     }
 
-    RUN_STATE_MANAGER_Start_Execution_Timer();
-    execution_active = true;
+    if ( !RUN_STATE_MANAGER_StartExecutionTimer() )
+    {
+        DUT_DRIVER_LIFECYCLE_Stop();
+        return false;
+    }
 
+    execution_active = true;
     return true;
 }
-
 /**
  * @brief Stops the execution timer followed by all active DUT-facing drivers.
  */
 static void RUN_STATE_MANAGER_StopExecution( void )
 {
-    RUN_STATE_MANAGER_Stop_Execution_Timer();
+    RUN_STATE_MANAGER_StopExecutionTimer();
 
     if ( execution_active )
     {
@@ -181,6 +281,7 @@ static void RUN_STATE_MANAGER_BeginResultFinalisation( void )
     if ( status == FLASH_MANAGER_REQUEST_OK )
     {
         pending_operation = RUN_STATE_PENDING_RESULT_FINALISATION;
+        ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_RESULT_FINALISATION );
         return;
     }
 
@@ -229,7 +330,7 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
             if ( flash_state == FLASH_MANAGER_STATE_RESULTS_READY )
             {
                 pending_operation = RUN_STATE_PENDING_NONE;
-                RUN_STATE_MANAGER_TransitionTo( RUN_STATE_RESULT_TRANSFER );
+                RUN_STATE_MANAGER_TransitionTo( RUN_STATE_RESULTS_READY );
             }
             else if ( flash_state != FLASH_MANAGER_STATE_FINALISING_RESULTS )
             {
@@ -276,7 +377,10 @@ static void RUN_STATE_MANAGER_ProcessNotifications( uint32_t notifications )
     {
         if ( run_state != RUN_STATE_FAULT && pending_operation == RUN_STATE_PENDING_NONE )
         {
-            RUN_STATE_MANAGER_Start_Execution_Timer();
+            if ( !RUN_STATE_MANAGER_StartExecutionTimer() )
+            {
+                ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_FAULT );
+            }
         }
         return;
     }
@@ -293,11 +397,17 @@ static void RUN_STATE_MANAGER_ProcessNotifications( uint32_t notifications )
  *
  * @param next_state State to enter.
  */
-static void RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
+static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
 {
     if ( run_state == next_state )
     {
-        return;
+        return true;
+    }
+
+    if ( !RUN_STATE_MANAGER_IsTransitionAllowed( run_state, next_state ) )
+    {
+        ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_FAULT );
+        return false;
     }
 
     if ( next_state == RUN_STATE_FAULT )
@@ -315,35 +425,53 @@ static void RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
         case RUN_STATE_IDLE:
             DUT_DRIVER_LIFECYCLE_EnterIdle();
             break;
+
         case RUN_STATE_TEST_PACKAGE_RECEIVE:
-            /* TODO: Request test-package reception from the Host Interface. */
+            if ( !RUN_STATE_MANAGER_EnterTestPackageReceive() )
+            {
+                RUN_STATE_MANAGER_TransitionTo( RUN_STATE_FAULT );
+                return false;
+            }
             break;
+
         case RUN_STATE_CONFIGURATION:
-            if ( !DUT_DRIVER_LIFECYCLE_Configure() )
+            if ( !RUN_STATE_MANAGER_EnterConfiguration() )
             {
-                RUN_STATE_MANAGER_TransitionTo( RUN_STATE_FAULT );
-                return;
+                ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_FAULT );
+                return false;
             }
             break;
+
+        case RUN_STATE_ARMED:
+            break;
+
         case RUN_STATE_EXECUTION:
-            if ( !RUN_STATE_MANAGER_StartExecution() )
+            if ( !RUN_STATE_MANAGER_EnterExecution() )
             {
                 RUN_STATE_MANAGER_TransitionTo( RUN_STATE_FAULT );
-                return;
+                return false;
             }
             break;
-        case RUN_STATE_RESULT_TRANSFER:
-            /* TODO: Finalise and request transfer of the test results. */
+
+        case RUN_STATE_RESULT_FINALISATION:
+        case RUN_STATE_RESULTS_READY:
             break;
+
+        case RUN_STATE_RESULT_TRANSFER:
+            /* Future Host Interface result-transfer entry action. */
+            break;
+
         case RUN_STATE_FAULT:
             DUT_DRIVER_LIFECYCLE_EnterFault();
             break;
+
         default:
             RUN_STATE_MANAGER_TransitionTo( RUN_STATE_FAULT );
-            return;
+            return false;
     }
 
     run_state = next_state;
+    return true;
 }
 
 /**
@@ -360,10 +488,19 @@ static void RUN_STATE_MANAGER_Step( void )
             RUN_STATE_MANAGER_TransitionTo( RUN_STATE_CONFIGURATION );
             break;
         case RUN_STATE_CONFIGURATION:
+            RUN_STATE_MANAGER_TransitionTo( RUN_STATE_ARMED );
+            break;
+        case RUN_STATE_ARMED:
             RUN_STATE_MANAGER_BeginExecutionPreparation();
             break;
         case RUN_STATE_EXECUTION:
             RUN_STATE_MANAGER_BeginResultFinalisation();
+            break;
+        case RUN_STATE_RESULT_FINALISATION:
+            /* Wait for Flash Manager result finalisation to complete. */
+            break;
+        case RUN_STATE_RESULTS_READY:
+            RUN_STATE_MANAGER_TransitionTo( RUN_STATE_RESULT_TRANSFER );
             break;
         case RUN_STATE_RESULT_TRANSFER:
             RUN_STATE_MANAGER_TransitionTo( RUN_STATE_IDLE );
@@ -377,11 +514,11 @@ static void RUN_STATE_MANAGER_Step( void )
 /**
  * @brief Configures and starts the Run State Manager-owned execution timer.
  */
-static void RUN_STATE_MANAGER_Start_Execution_Timer( void )
+static bool RUN_STATE_MANAGER_StartExecutionTimer( void )
 {
     if ( execution_timer_running )
     {
-        return;
+        return true;
     }
 
     switch ( frequency_mode )
@@ -396,17 +533,19 @@ static void RUN_STATE_MANAGER_Start_Execution_Timer( void )
             HW_TIMER_Configure_Timer( EXECUTION_MANAGER_TIMER, PSC_10KHZ, ARR_10KHZ );
             break;
         default:
-            return;
+            return false;
     }
 
     HW_TIMER_Start_Timer( EXECUTION_MANAGER_TIMER );
     execution_timer_running = true;
+
+    return true;
 }
 
 /**
  * @brief Stops the Run State Manager-owned execution timer.
  */
-static void RUN_STATE_MANAGER_Stop_Execution_Timer( void )
+static void RUN_STATE_MANAGER_StopExecutionTimer( void )
 {
     HW_TIMER_Stop_Timer( EXECUTION_MANAGER_TIMER );
     execution_timer_running = false;
@@ -439,12 +578,12 @@ RunStateFrequencyMode_T RUN_STATE_MANAGER_Get_Execution_Frequency( void )
 
 void RUN_STATE_MANAGER_Init( void )
 {
-    RUN_STATE_MANAGER_Stop_Execution_Timer();
-    frequency_mode    = RUN_STATE_FREQUENCY_1KHZ;
-    pending_operation = RUN_STATE_PENDING_NONE;
-    execution_active  = false;
+    RUN_STATE_MANAGER_StopExecutionTimer();
+    frequency_mode          = RUN_STATE_FREQUENCY_1KHZ;
+    pending_operation       = RUN_STATE_PENDING_NONE;
+    execution_active        = false;
     execution_timer_running = false;
-    run_state         = RUN_STATE_IDLE;
+    run_state               = RUN_STATE_IDLE;
 }
 
 bool RUN_STATE_MANAGER_RequestStep( void )
@@ -491,8 +630,8 @@ void RUN_STATE_MANAGER_Task( void* task_parameters )
 
     while ( true )
     {
-        uint32_t notifications = 0U;
-        TickType_t wait_ticks  = portMAX_DELAY;
+        uint32_t   notifications = 0U;
+        TickType_t wait_ticks    = portMAX_DELAY;
 
         if ( pending_operation != RUN_STATE_PENDING_NONE )
         {
