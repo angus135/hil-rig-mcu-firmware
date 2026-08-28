@@ -167,6 +167,13 @@ typedef enum
  *    no discard/abort-session API; normal finalisation reaches RESULTS_READY
  *    without changing the global test outcome from infeasible.
  *
+ * Fault recovery:
+ *
+ * After stopping the execution clock and DUT drivers, fault entry requests
+ * FLASH_MANAGER_RequestAbortSession(). Flash cleanup is asynchronous. Reset is
+ * rejected until FLASH_MANAGER_STATE_IDLE confirms that runtime buffer
+ * ownership has been released safely.
+ *
  * Every FlashManagerRequestStatus_T value must be handled. In particular,
  * TASK_NOT_READY means startup integration is incomplete, INVALID_STATE means
  * the lifecycle sequence is wrong, and NOTIFY_FAILED leaves the Flash Manager

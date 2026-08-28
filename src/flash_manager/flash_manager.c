@@ -60,6 +60,9 @@
 /** Signals that empty result-page storage is available for NAND prefetch. */
 #define FLASH_MANAGER_NOTIFY_FILL_RESULTS ( 1UL << 7 )
 
+/** Requests task-owned cleanup of an interrupted execution/result session. */
+#define FLASH_MANAGER_NOTIFY_ABORT_SESSION ( 1UL << 8 )
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -135,6 +138,8 @@ static bool FLASH_MANAGER_FillResultPages( void );
 static bool FLASH_MANAGER_PrepareExecution( void );
 
 static bool FLASH_MANAGER_FinaliseResults( void );
+
+static bool FLASH_MANAGER_AbortSession( void );
 
 /* Instruction-upload lifecycle. */
 
@@ -583,6 +588,43 @@ static bool FLASH_MANAGER_FinaliseResults( void )
     return finalisation_state_is_valid;
 }
 
+/**
+ * @brief Invalidates interrupted runtime ownership and returns Flash to IDLE.
+ *
+ * Called only by the Flash Manager task after an abort notification. Any NAND
+ * operation already in progress has therefore returned before ownership is
+ * reset.
+ */
+static bool FLASH_MANAGER_AbortSession( void )
+{
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return false;
+    }
+
+    if ( flash_manager_context.state != FLASH_MANAGER_STATE_ABORTING )
+    {
+        FLASH_MANAGER_Unlock();
+        return false;
+    }
+
+    taskENTER_CRITICAL();
+    INSTRUCTION_BUFFER_EndRead();
+    RESULT_BUFFER_Reset();
+    taskEXIT_CRITICAL();
+
+    if ( EXTERNAL_FLASH_StartSession() != EXTERNAL_FLASH_STATUS_OK )
+    {
+        flash_manager_context.state = FLASH_MANAGER_STATE_FAULT;
+        FLASH_MANAGER_Unlock();
+        return false;
+    }
+
+    flash_manager_context.state = FLASH_MANAGER_STATE_IDLE;
+    FLASH_MANAGER_Unlock();
+    return true;
+}
+
 /* Instruction-upload lifecycle. */
 
 /**
@@ -820,6 +862,16 @@ void FLASH_MANAGER_Task( void* parameters )
             continue;
         }
 
+        /* Abort supersedes stale preparation, refill, drain, and finalisation work. */
+        if ( ( notification_bits & FLASH_MANAGER_NOTIFY_ABORT_SESSION ) != 0U )
+        {
+            if ( !FLASH_MANAGER_AbortSession() )
+            {
+                FLASH_MANAGER_EnterFault();
+            }
+            continue;
+        }
+
         /* Handle preparation of a new execution session. */
         if ( ( notification_bits & FLASH_MANAGER_NOTIFY_PREPARE_EXECUTION ) != 0U )
         {
@@ -1050,6 +1102,70 @@ FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void )
     FLASH_MANAGER_Unlock();
 
     if ( xTaskNotify( notification_task_handle, FLASH_MANAGER_NOTIFY_FINALISE_RESULTS, eSetBits )
+         != pdPASS )
+    {
+        FLASH_MANAGER_EnterFault();
+        return FLASH_MANAGER_REQUEST_NOTIFY_FAILED;
+    }
+
+    return FLASH_MANAGER_REQUEST_OK;
+}
+
+FlashManagerRequestStatus_T FLASH_MANAGER_RequestAbortSession( void )
+{
+    if ( flash_manager_context.access_mutex == NULL )
+    {
+        return FLASH_MANAGER_REQUEST_NOT_INITIALISED;
+    }
+
+    if ( !FLASH_MANAGER_Lock() )
+    {
+        return FLASH_MANAGER_REQUEST_NOT_INITIALISED;
+    }
+
+    if ( flash_manager_context.state == FLASH_MANAGER_STATE_IDLE )
+    {
+        FLASH_MANAGER_Unlock();
+        return FLASH_MANAGER_REQUEST_OK;
+    }
+
+    switch ( flash_manager_context.state )
+    {
+        case FLASH_MANAGER_STATE_PREPARING_EXECUTION:
+        case FLASH_MANAGER_STATE_EXECUTING:
+        case FLASH_MANAGER_STATE_FINALISING_RESULTS:
+        case FLASH_MANAGER_STATE_RESULTS_READY:
+        case FLASH_MANAGER_STATE_TRANSFERRING_RESULTS:
+        case FLASH_MANAGER_STATE_FAULT:
+            break;
+
+        case FLASH_MANAGER_STATE_UNINITIALISED:
+            FLASH_MANAGER_Unlock();
+            return FLASH_MANAGER_REQUEST_NOT_INITIALISED;
+
+        case FLASH_MANAGER_STATE_IDLE:
+        case FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD:
+        case FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD:
+        case FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD:
+        case FLASH_MANAGER_STATE_ABORTING:
+        default:
+            FLASH_MANAGER_Unlock();
+            return FLASH_MANAGER_REQUEST_INVALID_STATE;
+    }
+
+    const TaskHandle_t notification_task_handle = flash_manager_context.task_handle;
+    if ( notification_task_handle == NULL )
+    {
+        FLASH_MANAGER_Unlock();
+        return FLASH_MANAGER_REQUEST_TASK_NOT_READY;
+    }
+
+    taskENTER_CRITICAL();
+    flash_manager_context.state = FLASH_MANAGER_STATE_ABORTING;
+    taskEXIT_CRITICAL();
+    FLASH_MANAGER_Unlock();
+
+    if ( xTaskNotify( notification_task_handle, FLASH_MANAGER_NOTIFY_ABORT_SESSION, eSetBits )
          != pdPASS )
     {
         FLASH_MANAGER_EnterFault();
