@@ -109,6 +109,8 @@ static const char* CONSOLE_RunStateManager_FaultName( RunStateFaultReason_T reas
             return "configuration unavailable";
         case RUN_STATE_FAULT_DRIVER_CONFIGURATION:
             return "DUT driver configuration";
+        case RUN_STATE_FAULT_DRIVER_CONFIGURATION_TIMEOUT:
+            return "DUT driver configuration timeout";
         case RUN_STATE_FAULT_DRIVER_START:
             return "DUT driver start";
         case RUN_STATE_FAULT_DRIVER_STOP:

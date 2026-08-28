@@ -62,6 +62,14 @@ typedef struct
     uint32_t uart_started_mask;
 } DutDriverLifecycleStatus_T;
 
+/** Aggregate readiness of the most recently accepted driver configuration. */
+typedef enum
+{
+    DUT_DRIVER_CONFIGURATION_PENDING = 0,
+    DUT_DRIVER_CONFIGURATION_READY,
+    DUT_DRIVER_CONFIGURATION_FAILED
+} DutDriverConfigurationStatus_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -85,6 +93,16 @@ typedef struct
  * @returns true if every required driver was configured, otherwise false.
  */
 bool DUT_DRIVER_LIFECYCLE_Configure( const DutDriverConfiguration_T* configuration );
+
+/**
+ * @brief Polls completion of configuration work accepted by all DUT drivers.
+ *
+ * This function performs no waiting and must not reapply configuration.
+ *
+ * @return PENDING while an enabled driver is still configuring, READY when all
+ *         enabled drivers may be started, or FAILED after a driver fault.
+ */
+DutDriverConfigurationStatus_T DUT_DRIVER_LIFECYCLE_GetConfigurationStatus( void );
 
 /**
  * @brief Starts all configured DUT-facing drivers.

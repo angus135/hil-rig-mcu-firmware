@@ -327,6 +327,34 @@ bool DUT_DRIVER_LIFECYCLE_Configure( const DutDriverConfiguration_T* configurati
     return true;
 }
 
+DutDriverConfigurationStatus_T DUT_DRIVER_LIFECYCLE_GetConfigurationStatus( void )
+{
+    if ( !lifecycle_context.configuration_valid )
+    {
+        return DUT_DRIVER_CONFIGURATION_FAILED;
+    }
+
+    if ( lifecycle_context.enabled.analogue_output )
+    {
+        switch ( EXEC_ANALOG_OUTPUT_Get_State() )
+        {
+            case EXEC_ANALOG_OUTPUT_STATE_CONFIGURING:
+                return DUT_DRIVER_CONFIGURATION_PENDING;
+
+            case EXEC_ANALOG_OUTPUT_STATE_CONFIGURED:
+                break;
+
+            case EXEC_ANALOG_OUTPUT_STATE_FAULTED:
+            case EXEC_ANALOG_OUTPUT_STATE_DISABLED:
+            case EXEC_ANALOG_OUTPUT_STATE_STARTED:
+            default:
+                return DUT_DRIVER_CONFIGURATION_FAILED;
+        }
+    }
+
+    return DUT_DRIVER_CONFIGURATION_READY;
+}
+
 bool DUT_DRIVER_LIFECYCLE_Start( void )
 {
     if ( !lifecycle_context.configuration_valid || DUT_DRIVER_LIFECYCLE_AnyDriverStarted() )

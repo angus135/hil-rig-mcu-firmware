@@ -15,8 +15,10 @@ IDLE -> TEST_PACKAGE_RECEIVE -> CONFIGURATION -> ARMED -> EXECUTION
      -> RESULT_FINALISATION -> RESULTS_READY -> RESULT_TRANSFER -> IDLE
 ```
 
-Entering `CONFIGURATION` applies the committed configuration synchronously and
-automatically enters `ARMED` on success. Configuration failure enters `FAULT`.
+Entering `CONFIGURATION` applies the committed configuration once, then polls
+aggregate driver readiness without reapplying it. The manager automatically
+enters `ARMED` only after every enabled driver is ready. Driver failure or a
+bounded configuration timeout enters `FAULT`.
 Similarly, result finalisation remains pending until Flash Manager reports that
 the result stream is ready, then automatically enters `RESULTS_READY`.
 
@@ -61,7 +63,7 @@ asynchronous transition was pending, or failed during its entry action.
 | `fault` | Any state | Enter `FAULT` and retain the first cause |
 | `reset` | `FAULT` | Restore idle driver state and enter `IDLE` |
 
-`CONFIGURATION -> ARMED`, Flash preparation completion into `EXECUTION`, and
+Driver readiness completion from `CONFIGURATION` into `ARMED`, Flash preparation completion into `EXECUTION`, and
 Flash finalisation completion into `RESULTS_READY` are internal automatic
 transitions. Host-driven requests, future Execution Manager completion, result
 transfer completion, fault, and reset remain explicit events.
