@@ -188,8 +188,7 @@ static const char* CONSOLE_RunStateManager_RequestName( RunStateRequest_T reques
     }
 }
 
-static const char*
-CONSOLE_RunStateManager_RequestResultName( RunStateRequestResult_T result )
+static const char* CONSOLE_RunStateManager_RequestResultName( RunStateRequestResult_T result )
 {
     switch ( result )
     {
@@ -273,7 +272,7 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[1], "status" ) == 0 )
     {
-        RunStateManagerStatus_T     run_status    = { 0 };
+        RunStateManagerStatus_T    run_status    = { 0 };
         DutDriverLifecycleStatus_T driver_status = { 0 };
         RUN_STATE_MANAGER_GetStatus( &run_status );
         DUT_DRIVER_LIFECYCLE_GetStatus( &driver_status );
@@ -282,8 +281,7 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                         CONSOLE_RunStateManager_StateName( run_status.state ) );
         CONSOLE_Printf( "Transition pending: %s\r\n",
                         run_status.transition_pending ? "yes" : "no" );
-        CONSOLE_Printf( "Execution active: %s\r\n",
-                        run_status.execution_active ? "yes" : "no" );
+        CONSOLE_Printf( "Execution active: %s\r\n", run_status.execution_active ? "yes" : "no" );
         CONSOLE_Printf( "Execution timer: %s\r\n",
                         run_status.execution_timer_running ? "running" : "stopped" );
         CONSOLE_Printf( "Execution frequency: %s\r\n",
@@ -292,43 +290,38 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                         CONSOLE_RunStateManager_FaultName( run_status.fault_reason ) );
         CONSOLE_Printf( "Last request: %s\r\n",
                         CONSOLE_RunStateManager_RequestName( run_status.last_request ) );
-        CONSOLE_Printf( "Last request result: %s\r\n",
-                        CONSOLE_RunStateManager_RequestResultName(
-                            run_status.last_request_result ) );
-        CONSOLE_Printf(
-            "DUT lifecycle: configured=%s, AI=%u/%u, AO=%u/%u, DI=%u/%u, DO=%u/%u\r\n",
-            driver_status.configuration_valid ? "yes" : "no",
-            ( unsigned int )driver_status.analogue_input_started,
-            ( unsigned int )driver_status.analogue_input_enabled,
-            ( unsigned int )driver_status.analogue_output_started,
-            ( unsigned int )driver_status.analogue_output_enabled,
-            ( unsigned int )driver_status.digital_inputs_started,
-            ( unsigned int )driver_status.digital_inputs_enabled,
-            ( unsigned int )driver_status.digital_outputs_started,
-            ( unsigned int )driver_status.digital_outputs_enabled );
-        CONSOLE_Printf(
-            "DUT channel masks (started/enabled): CAN=%lX/%lX, PWM_IN=%lX/%lX, "
-            "PWM_OUT=%lX/%lX, SPI=%lX/%lX, UART=%lX/%lX\r\n",
-            ( unsigned long )driver_status.can_started_mask,
-            ( unsigned long )driver_status.can_enabled_mask,
-            ( unsigned long )driver_status.pwm_capture_started_mask,
-            ( unsigned long )driver_status.pwm_capture_enabled_mask,
-            ( unsigned long )driver_status.pwm_generation_started_mask,
-            ( unsigned long )driver_status.pwm_generation_enabled_mask,
-            ( unsigned long )driver_status.spi_started_mask,
-            ( unsigned long )driver_status.spi_enabled_mask,
-            ( unsigned long )driver_status.uart_started_mask,
-            ( unsigned long )driver_status.uart_enabled_mask );
+        CONSOLE_Printf( "Last request result: %s\r\n", CONSOLE_RunStateManager_RequestResultName(
+                                                           run_status.last_request_result ) );
+        CONSOLE_Printf( "DUT lifecycle: configured=%s, AI=%u/%u, AO=%u/%u, DI=%u/%u, DO=%u/%u\r\n",
+                        driver_status.configuration_valid ? "yes" : "no",
+                        ( unsigned int )driver_status.analogue_input_started,
+                        ( unsigned int )driver_status.analogue_input_enabled,
+                        ( unsigned int )driver_status.analogue_output_started,
+                        ( unsigned int )driver_status.analogue_output_enabled,
+                        ( unsigned int )driver_status.digital_inputs_started,
+                        ( unsigned int )driver_status.digital_inputs_enabled,
+                        ( unsigned int )driver_status.digital_outputs_started,
+                        ( unsigned int )driver_status.digital_outputs_enabled );
+        CONSOLE_Printf( "DUT channel masks (started/enabled): CAN=%lX/%lX, PWM_IN=%lX/%lX, "
+                        "PWM_OUT=%lX/%lX, SPI=%lX/%lX, UART=%lX/%lX\r\n",
+                        ( unsigned long )driver_status.can_started_mask,
+                        ( unsigned long )driver_status.can_enabled_mask,
+                        ( unsigned long )driver_status.pwm_capture_started_mask,
+                        ( unsigned long )driver_status.pwm_capture_enabled_mask,
+                        ( unsigned long )driver_status.pwm_generation_started_mask,
+                        ( unsigned long )driver_status.pwm_generation_enabled_mask,
+                        ( unsigned long )driver_status.spi_started_mask,
+                        ( unsigned long )driver_status.spi_enabled_mask,
+                        ( unsigned long )driver_status.uart_started_mask,
+                        ( unsigned long )driver_status.uart_enabled_mask );
     }
     else if ( strcmp( argv[1], "receive" ) == 0 )
     {
-        CONSOLE_RunStateManager_PrintRequestResult(
-            RUN_STATE_MANAGER_RequestPackageReceive() );
+        CONSOLE_RunStateManager_PrintRequestResult( RUN_STATE_MANAGER_RequestPackageReceive() );
     }
     else if ( strcmp( argv[1], "configure" ) == 0 )
     {
-        CONSOLE_RunStateManager_PrintRequestResult(
-            RUN_STATE_MANAGER_RequestConfiguration() );
+        CONSOLE_RunStateManager_PrintRequestResult( RUN_STATE_MANAGER_RequestConfiguration() );
     }
     else if ( strcmp( argv[1], "execute" ) == 0 )
     {
@@ -336,13 +329,11 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
     }
     else if ( strcmp( argv[1], "execution_complete" ) == 0 )
     {
-        CONSOLE_RunStateManager_PrintRequestResult(
-            RUN_STATE_MANAGER_RequestExecutionComplete() );
+        CONSOLE_RunStateManager_PrintRequestResult( RUN_STATE_MANAGER_RequestExecutionComplete() );
     }
     else if ( strcmp( argv[1], "transfer" ) == 0 )
     {
-        CONSOLE_RunStateManager_PrintRequestResult(
-            RUN_STATE_MANAGER_RequestResultTransfer() );
+        CONSOLE_RunStateManager_PrintRequestResult( RUN_STATE_MANAGER_RequestResultTransfer() );
     }
     else if ( strcmp( argv[1], "transfer_complete" ) == 0 )
     {
@@ -355,8 +346,7 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
     }
     else if ( strcmp( argv[1], "discard" ) == 0 )
     {
-        CONSOLE_RunStateManager_PrintRequestResult(
-            RUN_STATE_MANAGER_RequestDiscardResults() );
+        CONSOLE_RunStateManager_PrintRequestResult( RUN_STATE_MANAGER_RequestDiscardResults() );
     }
     else if ( strcmp( argv[1], "fault" ) == 0 )
     {

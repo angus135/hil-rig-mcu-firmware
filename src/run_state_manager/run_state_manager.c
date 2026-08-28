@@ -82,8 +82,8 @@ static volatile RunState_T run_state = RUN_STATE_IDLE;
 
 static RunStateFrequencyMode_T frequency_mode = RUN_STATE_FREQUENCY_1KHZ;
 
-static RunStatePendingOperation_T pending_operation = RUN_STATE_PENDING_NONE;
-static TickType_t pending_operation_started_at = 0U;
+static RunStatePendingOperation_T pending_operation            = RUN_STATE_PENDING_NONE;
+static TickType_t                 pending_operation_started_at = 0U;
 
 static bool execution_active = false;
 
@@ -91,10 +91,10 @@ static bool execution_timer_running = false;
 
 static TaskHandle_t run_state_manager_task_handle = NULL;
 
-static volatile RunStateFaultReason_T fault_reason = RUN_STATE_FAULT_NONE;
-static volatile RunStateFaultReason_T requested_fault_reason = RUN_STATE_FAULT_NONE;
-static volatile RunStateRequest_T last_request = RUN_STATE_REQUEST_NONE;
-static volatile RunStateRequestResult_T last_request_result = RUN_STATE_REQUEST_RESULT_NONE;
+static volatile RunStateFaultReason_T   fault_reason           = RUN_STATE_FAULT_NONE;
+static volatile RunStateFaultReason_T   requested_fault_reason = RUN_STATE_FAULT_NONE;
+static volatile RunStateRequest_T       last_request           = RUN_STATE_REQUEST_NONE;
+static volatile RunStateRequestResult_T last_request_result    = RUN_STATE_REQUEST_RESULT_NONE;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -165,8 +165,7 @@ static void RUN_STATE_MANAGER_ClearPendingOperation( void )
 
 static bool RUN_STATE_MANAGER_PendingOperationTimedOut( TickType_t timeout_ticks )
 {
-    const TickType_t elapsed =
-        ( TickType_t )( xTaskGetTickCount() - pending_operation_started_at );
+    const TickType_t elapsed = ( TickType_t )( xTaskGetTickCount() - pending_operation_started_at );
     return elapsed >= timeout_ticks;
 }
 
@@ -343,8 +342,7 @@ static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void )
 
     if ( status == FLASH_MANAGER_REQUEST_OK )
     {
-        RUN_STATE_MANAGER_StartPendingOperation(
-            RUN_STATE_PENDING_EXECUTION_PREPARATION );
+        RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_EXECUTION_PREPARATION );
         return true;
     }
 
@@ -367,8 +365,7 @@ static bool RUN_STATE_MANAGER_BeginResultFinalisation( void )
 
     if ( status == FLASH_MANAGER_REQUEST_OK )
     {
-        RUN_STATE_MANAGER_StartPendingOperation(
-            RUN_STATE_PENDING_RESULT_FINALISATION );
+        RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_RESULT_FINALISATION );
         ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_RESULT_FINALISATION );
         return true;
     }
@@ -447,8 +444,7 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
 
     if ( pending_operation == RUN_STATE_PENDING_CONFIGURATION )
     {
-        const DutDriverConfigurationStatus_T status =
-            DUT_DRIVER_LIFECYCLE_GetConfigurationStatus();
+        const DutDriverConfigurationStatus_T status = DUT_DRIVER_LIFECYCLE_GetConfigurationStatus();
 
         if ( status == DUT_DRIVER_CONFIGURATION_READY )
         {
@@ -497,11 +493,10 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
             {
                 RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION );
             }
-            else if ( RUN_STATE_MANAGER_PendingOperationTimedOut( pdMS_TO_TICKS(
-                          RUN_STATE_MANAGER_EXECUTION_PREPARATION_TIMEOUT_MS ) ) )
+            else if ( RUN_STATE_MANAGER_PendingOperationTimedOut(
+                          pdMS_TO_TICKS( RUN_STATE_MANAGER_EXECUTION_PREPARATION_TIMEOUT_MS ) ) )
             {
-                RUN_STATE_MANAGER_EnterFault(
-                    RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION_TIMEOUT );
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION_TIMEOUT );
             }
             break;
 
@@ -515,11 +510,10 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
             {
                 RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_RESULT_FINALISATION );
             }
-            else if ( RUN_STATE_MANAGER_PendingOperationTimedOut( pdMS_TO_TICKS(
-                          RUN_STATE_MANAGER_RESULT_FINALISATION_TIMEOUT_MS ) ) )
+            else if ( RUN_STATE_MANAGER_PendingOperationTimedOut(
+                          pdMS_TO_TICKS( RUN_STATE_MANAGER_RESULT_FINALISATION_TIMEOUT_MS ) ) )
             {
-                RUN_STATE_MANAGER_EnterFault(
-                    RUN_STATE_FAULT_FLASH_RESULT_FINALISATION_TIMEOUT );
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_RESULT_FINALISATION_TIMEOUT );
             }
             break;
 
@@ -535,8 +529,7 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
 {
     last_request = request;
 
-    if ( pending_operation != RUN_STATE_PENDING_NONE
-         && request != RUN_STATE_REQUEST_FAULT
+    if ( pending_operation != RUN_STATE_PENDING_NONE && request != RUN_STATE_REQUEST_FAULT
          && request != RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_STOP )
     {
         last_request_result = RUN_STATE_REQUEST_RESULT_REJECTED_PENDING;
@@ -560,8 +553,7 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
                 accepted = RUN_STATE_MANAGER_TransitionTo( RUN_STATE_CONFIGURATION );
                 if ( accepted )
                 {
-                    RUN_STATE_MANAGER_StartPendingOperation(
-                        RUN_STATE_PENDING_CONFIGURATION );
+                    RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_CONFIGURATION );
                 }
             }
             break;
@@ -593,8 +585,7 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
                 accepted = RUN_STATE_MANAGER_CompleteResultTransfer();
                 if ( !accepted && run_state != RUN_STATE_FAULT )
                 {
-                    last_request_result =
-                        RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE;
+                    last_request_result = RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE;
                     return;
                 }
             }
@@ -614,8 +605,7 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
             }
             break;
 
-        case RUN_STATE_REQUEST_FAULT:
-        {
+        case RUN_STATE_REQUEST_FAULT: {
             const RunStateFaultReason_T reason = requested_fault_reason;
             requested_fault_reason             = RUN_STATE_FAULT_NONE;
             RUN_STATE_MANAGER_EnterFault( reason );
@@ -628,8 +618,7 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
             {
                 if ( !RUN_STATE_MANAGER_FlashIsIdle() )
                 {
-                    last_request_result =
-                        RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE;
+                    last_request_result = RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE;
                     return;
                 }
 
@@ -916,16 +905,16 @@ RunStateFrequencyMode_T RUN_STATE_MANAGER_Get_Execution_Frequency( void )
 void RUN_STATE_MANAGER_Init( void )
 {
     RUN_STATE_MANAGER_StopExecutionTimer();
-    frequency_mode          = RUN_STATE_FREQUENCY_1KHZ;
-    pending_operation       = RUN_STATE_PENDING_NONE;
+    frequency_mode               = RUN_STATE_FREQUENCY_1KHZ;
+    pending_operation            = RUN_STATE_PENDING_NONE;
     pending_operation_started_at = 0U;
-    execution_active        = false;
-    execution_timer_running = false;
-    fault_reason            = RUN_STATE_FAULT_NONE;
-    requested_fault_reason  = RUN_STATE_FAULT_NONE;
-    last_request            = RUN_STATE_REQUEST_NONE;
-    last_request_result     = RUN_STATE_REQUEST_RESULT_NONE;
-    run_state               = RUN_STATE_IDLE;
+    execution_active             = false;
+    execution_timer_running      = false;
+    fault_reason                 = RUN_STATE_FAULT_NONE;
+    requested_fault_reason       = RUN_STATE_FAULT_NONE;
+    last_request                 = RUN_STATE_REQUEST_NONE;
+    last_request_result          = RUN_STATE_REQUEST_RESULT_NONE;
+    run_state                    = RUN_STATE_IDLE;
 }
 
 bool RUN_STATE_MANAGER_RequestPackageReceive( void )

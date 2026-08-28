@@ -16,32 +16,32 @@ extern "C"
 }
 
 static TaskHandle_t const TEST_RSM_TASK_HANDLE = reinterpret_cast<TaskHandle_t>( 0x1234U );
-static BaseType_t notify_result;
-static uint32_t notified_bits;
-static TickType_t current_tick;
-static bool logic_expander_ready;
-static bool active_configuration_available;
-static bool configuration_cleared;
-static bool driver_configure_result;
-static DutDriverConfigurationStatus_T driver_configuration_status;
-static bool driver_start_result;
-static bool driver_stop_result;
-static uint32_t driver_start_calls;
-static uint32_t driver_stop_calls;
-static uint32_t driver_idle_calls;
-static uint32_t driver_fault_calls;
-static FlashManagerState_T flash_state;
-static bool flash_get_state_result;
-static FlashManagerRequestStatus_T flash_prepare_result;
-static FlashManagerRequestStatus_T flash_finalise_result;
-static FlashManagerRequestStatus_T flash_discard_result;
-static FlashManagerRequestStatus_T flash_abort_result;
+static BaseType_t         notify_result;
+static uint32_t           notified_bits;
+static TickType_t         current_tick;
+static bool               logic_expander_ready;
+static bool               active_configuration_available;
+static bool               configuration_cleared;
+static bool               driver_configure_result;
+static DutDriverConfigurationStatus_T     driver_configuration_status;
+static bool                               driver_start_result;
+static bool                               driver_stop_result;
+static uint32_t                           driver_start_calls;
+static uint32_t                           driver_stop_calls;
+static uint32_t                           driver_idle_calls;
+static uint32_t                           driver_fault_calls;
+static FlashManagerState_T                flash_state;
+static bool                               flash_get_state_result;
+static FlashManagerRequestStatus_T        flash_prepare_result;
+static FlashManagerRequestStatus_T        flash_finalise_result;
+static FlashManagerRequestStatus_T        flash_discard_result;
+static FlashManagerRequestStatus_T        flash_abort_result;
 static FlashManagerResultTransferStatus_T flash_transfer_start_result;
 static FlashManagerResultTransferStatus_T flash_transfer_finish_result;
-static uint32_t flash_abort_calls;
-static uint32_t timer_configure_calls;
-static uint32_t timer_start_calls;
-static uint32_t timer_stop_calls;
+static uint32_t                           flash_abort_calls;
+static uint32_t                           timer_configure_calls;
+static uint32_t                           timer_start_calls;
+static uint32_t                           timer_stop_calls;
 
 extern "C"
 {
@@ -52,10 +52,22 @@ BaseType_t xTaskNotify( TaskHandle_t task, uint32_t value, eNotifyAction action 
     notified_bits |= value;
     return notify_result;
 }
-BaseType_t xTaskNotifyWait( uint32_t, uint32_t, uint32_t*, TickType_t ) { return pdFAIL; }
-TaskHandle_t xTaskGetCurrentTaskHandle( void ) { return TEST_RSM_TASK_HANDLE; }
-TickType_t xTaskGetTickCount( void ) { return current_tick; }
-bool LOGIC_EXPANDER_Is_Ready( void ) { return logic_expander_ready; }
+BaseType_t xTaskNotifyWait( uint32_t, uint32_t, uint32_t*, TickType_t )
+{
+    return pdFAIL;
+}
+TaskHandle_t xTaskGetCurrentTaskHandle( void )
+{
+    return TEST_RSM_TASK_HANDLE;
+}
+TickType_t xTaskGetTickCount( void )
+{
+    return current_tick;
+}
+bool LOGIC_EXPANDER_Is_Ready( void )
+{
+    return logic_expander_ready;
+}
 bool TEST_CONFIGURATION_GetActive( DutDriverConfiguration_T* configuration )
 {
     if ( active_configuration_available && configuration != nullptr )
@@ -67,7 +79,7 @@ bool TEST_CONFIGURATION_GetActive( DutDriverConfiguration_T* configuration )
 }
 void TEST_CONFIGURATION_Clear( void )
 {
-    configuration_cleared = true;
+    configuration_cleared          = true;
     active_configuration_available = false;
 }
 bool DUT_DRIVER_LIFECYCLE_Configure( const DutDriverConfiguration_T* configuration )
@@ -78,30 +90,69 @@ DutDriverConfigurationStatus_T DUT_DRIVER_LIFECYCLE_GetConfigurationStatus( void
 {
     return driver_configuration_status;
 }
-bool DUT_DRIVER_LIFECYCLE_Start( void ) { driver_start_calls++; return driver_start_result; }
-bool DUT_DRIVER_LIFECYCLE_Stop( void ) { driver_stop_calls++; return driver_stop_result; }
-void DUT_DRIVER_LIFECYCLE_EnterIdle( void ) { driver_idle_calls++; }
-void DUT_DRIVER_LIFECYCLE_EnterFault( void ) { driver_fault_calls++; }
+bool DUT_DRIVER_LIFECYCLE_Start( void )
+{
+    driver_start_calls++;
+    return driver_start_result;
+}
+bool DUT_DRIVER_LIFECYCLE_Stop( void )
+{
+    driver_stop_calls++;
+    return driver_stop_result;
+}
+void DUT_DRIVER_LIFECYCLE_EnterIdle( void )
+{
+    driver_idle_calls++;
+}
+void DUT_DRIVER_LIFECYCLE_EnterFault( void )
+{
+    driver_fault_calls++;
+}
 bool FLASH_MANAGER_GetState( FlashManagerState_T* state )
 {
-    if ( flash_get_state_result && state != nullptr ) { *state = flash_state; }
+    if ( flash_get_state_result && state != nullptr )
+    {
+        *state = flash_state;
+    }
     return flash_get_state_result;
 }
 FlashManagerRequestStatus_T FLASH_MANAGER_RequestExecutionPreparation( void )
-{ return flash_prepare_result; }
+{
+    return flash_prepare_result;
+}
 FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void )
-{ return flash_finalise_result; }
+{
+    return flash_finalise_result;
+}
 FlashManagerRequestStatus_T FLASH_MANAGER_DiscardResults( void )
-{ return flash_discard_result; }
+{
+    return flash_discard_result;
+}
 FlashManagerRequestStatus_T FLASH_MANAGER_RequestAbortSession( void )
-{ flash_abort_calls++; return flash_abort_result; }
+{
+    flash_abort_calls++;
+    return flash_abort_result;
+}
 FlashManagerResultTransferStatus_T FLASH_MANAGER_RequestResultTransferStart( void )
-{ return flash_transfer_start_result; }
+{
+    return flash_transfer_start_result;
+}
 FlashManagerResultTransferStatus_T FLASH_MANAGER_FinishResultTransfer( void )
-{ return flash_transfer_finish_result; }
-void HW_TIMER_Configure_Timer( Timer_T, uint32_t, uint32_t ) { timer_configure_calls++; }
-void HW_TIMER_Start_Timer( Timer_T ) { timer_start_calls++; }
-void HW_TIMER_Stop_Timer( Timer_T ) { timer_stop_calls++; }
+{
+    return flash_transfer_finish_result;
+}
+void HW_TIMER_Configure_Timer( Timer_T, uint32_t, uint32_t )
+{
+    timer_configure_calls++;
+}
+void HW_TIMER_Start_Timer( Timer_T )
+{
+    timer_start_calls++;
+}
+void HW_TIMER_Stop_Timer( Timer_T )
+{
+    timer_stop_calls++;
+}
 }
 
 extern "C"
@@ -129,32 +180,32 @@ protected:
     void SetUp( void ) override
     {
         notify_result                  = pdPASS;
-        notified_bits                 = 0U;
-        current_tick                  = 0U;
-        logic_expander_ready          = true;
+        notified_bits                  = 0U;
+        current_tick                   = 0U;
+        logic_expander_ready           = true;
         active_configuration_available = true;
-        configuration_cleared         = false;
-        driver_configure_result       = true;
-        driver_configuration_status = DUT_DRIVER_CONFIGURATION_READY;
-        driver_start_result = true;
-        driver_stop_result  = true;
-        driver_start_calls  = 0U;
-        driver_stop_calls   = 0U;
-        driver_idle_calls   = 0U;
-        driver_fault_calls  = 0U;
-        flash_state            = FLASH_MANAGER_STATE_IDLE;
-        flash_get_state_result = true;
-        flash_prepare_result = FLASH_MANAGER_REQUEST_OK;
-        flash_finalise_result = FLASH_MANAGER_REQUEST_OK;
-        flash_discard_result = FLASH_MANAGER_REQUEST_OK;
-        flash_abort_result = FLASH_MANAGER_REQUEST_OK;
-        flash_transfer_start_result = FLASH_MANAGER_RESULT_TRANSFER_OK;
-        flash_transfer_finish_result = FLASH_MANAGER_RESULT_TRANSFER_OK;
-        flash_abort_calls     = 0U;
-        timer_configure_calls = 0U;
-        timer_start_calls     = 0U;
-        timer_stop_calls      = 0U;
-        run_state_manager_task_handle = TEST_RSM_TASK_HANDLE;
+        configuration_cleared          = false;
+        driver_configure_result        = true;
+        driver_configuration_status    = DUT_DRIVER_CONFIGURATION_READY;
+        driver_start_result            = true;
+        driver_stop_result             = true;
+        driver_start_calls             = 0U;
+        driver_stop_calls              = 0U;
+        driver_idle_calls              = 0U;
+        driver_fault_calls             = 0U;
+        flash_state                    = FLASH_MANAGER_STATE_IDLE;
+        flash_get_state_result         = true;
+        flash_prepare_result           = FLASH_MANAGER_REQUEST_OK;
+        flash_finalise_result          = FLASH_MANAGER_REQUEST_OK;
+        flash_discard_result           = FLASH_MANAGER_REQUEST_OK;
+        flash_abort_result             = FLASH_MANAGER_REQUEST_OK;
+        flash_transfer_start_result    = FLASH_MANAGER_RESULT_TRANSFER_OK;
+        flash_transfer_finish_result   = FLASH_MANAGER_RESULT_TRANSFER_OK;
+        flash_abort_calls              = 0U;
+        timer_configure_calls          = 0U;
+        timer_start_calls              = 0U;
+        timer_stop_calls               = 0U;
+        run_state_manager_task_handle  = TEST_RSM_TASK_HANDLE;
         RUN_STATE_MANAGER_Init();
         timer_stop_calls = 0U;
     }
@@ -234,7 +285,8 @@ TEST_F( RunStateManagerTest, ConfigurationTimeoutEntersFault )
 
 TEST_F( RunStateManagerTest, ExecutionStartsOnlyAfterFlashIsExecuting )
 {
-    ConfigureToArmed(); Process( RUN_STATE_REQUEST_EXECUTION );
+    ConfigureToArmed();
+    Process( RUN_STATE_REQUEST_EXECUTION );
     EXPECT_EQ( RUN_STATE_ARMED, run_state );
     EXPECT_EQ( RUN_STATE_PENDING_EXECUTION_PREPARATION, pending_operation );
     EXPECT_EQ( 0U, driver_start_calls );
@@ -249,7 +301,8 @@ TEST_F( RunStateManagerTest, ExecutionStartsOnlyAfterFlashIsExecuting )
 
 TEST_F( RunStateManagerTest, ExecutionCompletionStopsDriversAndWaitsForResults )
 {
-    EnterExecution(); Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    EnterExecution();
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
     EXPECT_EQ( RUN_STATE_RESULT_FINALISATION, run_state );
     EXPECT_FALSE( execution_active );
     EXPECT_FALSE( execution_timer_running );
@@ -269,35 +322,46 @@ TEST_F( RunStateManagerTest, InvalidRequestIsRejectedWithoutFaulting )
 
 TEST_F( RunStateManagerTest, RepeatRetainsConfigurationAndReturnsToArmed )
 {
-    run_state = RUN_STATE_RESULTS_READY; Process( RUN_STATE_REQUEST_REPEAT );
-    EXPECT_EQ( RUN_STATE_ARMED, run_state ); EXPECT_FALSE( configuration_cleared );
+    run_state = RUN_STATE_RESULTS_READY;
+    Process( RUN_STATE_REQUEST_REPEAT );
+    EXPECT_EQ( RUN_STATE_ARMED, run_state );
+    EXPECT_FALSE( configuration_cleared );
 }
 
 TEST_F( RunStateManagerTest, DiscardClearsConfigurationAndReturnsToIdle )
 {
-    run_state = RUN_STATE_RESULTS_READY; Process( RUN_STATE_REQUEST_DISCARD_RESULTS );
-    EXPECT_EQ( RUN_STATE_IDLE, run_state ); EXPECT_TRUE( configuration_cleared );
+    run_state = RUN_STATE_RESULTS_READY;
+    Process( RUN_STATE_REQUEST_DISCARD_RESULTS );
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
+    EXPECT_TRUE( configuration_cleared );
     EXPECT_EQ( 1U, driver_idle_calls );
 }
 
 TEST_F( RunStateManagerTest, RuntimeFaultStopsExecutionAndRequestsFlashAbort )
 {
-    EnterExecution(); requested_fault_reason = RUN_STATE_FAULT_EXTERNAL_REQUEST;
+    EnterExecution();
+    requested_fault_reason = RUN_STATE_FAULT_EXTERNAL_REQUEST;
     Process( RUN_STATE_REQUEST_FAULT );
-    EXPECT_EQ( RUN_STATE_FAULT, run_state ); EXPECT_FALSE( execution_active );
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_FALSE( execution_active );
     EXPECT_FALSE( execution_timer_running );
     EXPECT_EQ( RUN_STATE_FAULT_EXTERNAL_REQUEST, fault_reason );
-    EXPECT_EQ( 1U, flash_abort_calls ); EXPECT_EQ( 1U, driver_fault_calls );
+    EXPECT_EQ( 1U, flash_abort_calls );
+    EXPECT_EQ( 1U, driver_fault_calls );
 }
 
 TEST_F( RunStateManagerTest, ResetWaitsForFlashIdle )
 {
-    run_state = RUN_STATE_FAULT; fault_reason = RUN_STATE_FAULT_EXTERNAL_REQUEST;
-    flash_state = FLASH_MANAGER_STATE_ABORTING; Process( RUN_STATE_REQUEST_RESET );
+    run_state    = RUN_STATE_FAULT;
+    fault_reason = RUN_STATE_FAULT_EXTERNAL_REQUEST;
+    flash_state  = FLASH_MANAGER_STATE_ABORTING;
+    Process( RUN_STATE_REQUEST_RESET );
     EXPECT_EQ( RUN_STATE_FAULT, run_state );
     EXPECT_EQ( RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE, last_request_result );
-    flash_state = FLASH_MANAGER_STATE_IDLE; Process( RUN_STATE_REQUEST_RESET );
-    EXPECT_EQ( RUN_STATE_IDLE, run_state ); EXPECT_EQ( RUN_STATE_FAULT_NONE, fault_reason );
+    flash_state = FLASH_MANAGER_STATE_IDLE;
+    Process( RUN_STATE_REQUEST_RESET );
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_NONE, fault_reason );
 }
 
 TEST_F( RunStateManagerTest, FirstFaultReasonWins )

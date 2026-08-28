@@ -36,10 +36,10 @@
 
 typedef struct
 {
-    bool analogue_input;
-    bool analogue_output;
-    bool digital_inputs;
-    bool digital_outputs;
+    bool     analogue_input;
+    bool     analogue_output;
+    bool     digital_inputs;
+    bool     digital_outputs;
     uint32_t can_channels;
     uint32_t pwm_capture_channels;
     uint32_t pwm_generation_channels;
@@ -66,14 +66,12 @@ static DutDriverLifecycleContext_T lifecycle_context;
  *------------------------------------------------------------------------------
  */
 
-static bool DUT_DRIVER_LIFECYCLE_AnyDigitalInputEnabled(
-    const ExecDigitalInputConfig_T* configuration );
-static bool DUT_DRIVER_LIFECYCLE_AnyDigitalOutputEnabled(
-    const ExecDigitalOutputConfig_T* configuration );
-static void DUT_DRIVER_LIFECYCLE_BuildEnablePlan(
-    const DutDriverConfiguration_T* configuration );
-static bool DUT_DRIVER_LIFECYCLE_ConfigureAll(
-    const DutDriverConfiguration_T* configuration );
+static bool
+DUT_DRIVER_LIFECYCLE_AnyDigitalInputEnabled( const ExecDigitalInputConfig_T* configuration );
+static bool
+DUT_DRIVER_LIFECYCLE_AnyDigitalOutputEnabled( const ExecDigitalOutputConfig_T* configuration );
+static void DUT_DRIVER_LIFECYCLE_BuildEnablePlan( const DutDriverConfiguration_T* configuration );
+static bool DUT_DRIVER_LIFECYCLE_ConfigureAll( const DutDriverConfiguration_T* configuration );
 static void DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration( void );
 static bool DUT_DRIVER_LIFECYCLE_AnyDriverStarted( void );
 
@@ -82,8 +80,8 @@ static bool DUT_DRIVER_LIFECYCLE_AnyDriverStarted( void );
  *------------------------------------------------------------------------------
  */
 
-static bool DUT_DRIVER_LIFECYCLE_AnyDigitalInputEnabled(
-    const ExecDigitalInputConfig_T* configuration )
+static bool
+DUT_DRIVER_LIFECYCLE_AnyDigitalInputEnabled( const ExecDigitalInputConfig_T* configuration )
 {
     for ( uint32_t channel = 0U; channel < EXEC_DIGITAL_INPUT_CHANNEL_COUNT; channel++ )
     {
@@ -96,8 +94,8 @@ static bool DUT_DRIVER_LIFECYCLE_AnyDigitalInputEnabled(
     return false;
 }
 
-static bool DUT_DRIVER_LIFECYCLE_AnyDigitalOutputEnabled(
-    const ExecDigitalOutputConfig_T* configuration )
+static bool
+DUT_DRIVER_LIFECYCLE_AnyDigitalOutputEnabled( const ExecDigitalOutputConfig_T* configuration )
 {
     for ( uint32_t channel = 0U; channel < EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT; channel++ )
     {
@@ -110,8 +108,7 @@ static bool DUT_DRIVER_LIFECYCLE_AnyDigitalOutputEnabled(
     return false;
 }
 
-static void DUT_DRIVER_LIFECYCLE_BuildEnablePlan(
-    const DutDriverConfiguration_T* configuration )
+static void DUT_DRIVER_LIFECYCLE_BuildEnablePlan( const DutDriverConfiguration_T* configuration )
 {
     DutDriverLifecycleSelection_T enabled = { 0 };
 
@@ -130,8 +127,7 @@ static void DUT_DRIVER_LIFECYCLE_BuildEnablePlan(
         }
     }
 
-    for ( uint32_t channel = 0U; channel < TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT;
-          channel++ )
+    for ( uint32_t channel = 0U; channel < TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT; channel++ )
     {
         if ( configuration->pwm_capture_channels[channel].is_enabled )
         {
@@ -166,8 +162,7 @@ static void DUT_DRIVER_LIFECYCLE_BuildEnablePlan(
     lifecycle_context.enabled = enabled;
 }
 
-static bool DUT_DRIVER_LIFECYCLE_ConfigureAll(
-    const DutDriverConfiguration_T* configuration )
+static bool DUT_DRIVER_LIFECYCLE_ConfigureAll( const DutDriverConfiguration_T* configuration )
 {
     if ( !EXEC_ANALOGUE_INPUT_Configure( &configuration->analogue_input )
          || !EXEC_ANALOGUE_OUTPUT_Configure( &configuration->analogue_output )
@@ -180,7 +175,7 @@ static bool DUT_DRIVER_LIFECYCLE_ConfigureAll(
     for ( uint32_t channel = 0U; channel < EXEC_CAN_CHANNEL_COUNT; channel++ )
     {
         if ( EXEC_CAN_Configure_Channel( ( EXEC_CAN_Channel_T )channel,
-                                        configuration->can_channels[channel] )
+                                         configuration->can_channels[channel] )
              != EXEC_CAN_RESULT_OK )
         {
             return false;
@@ -198,12 +193,10 @@ static bool DUT_DRIVER_LIFECYCLE_ConfigureAll(
         }
     }
 
-    for ( uint32_t channel = 0U; channel < TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT;
-          channel++ )
+    for ( uint32_t channel = 0U; channel < TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT; channel++ )
     {
-        if ( !EXEC_PWM_Capture_Configure_Channel(
-                 ( ExecPwmCaptureChannel_T )channel,
-                 &configuration->pwm_capture_channels[channel] ) )
+        if ( !EXEC_PWM_Capture_Configure_Channel( ( ExecPwmCaptureChannel_T )channel,
+                                                  &configuration->pwm_capture_channels[channel] ) )
         {
             return false;
         }
@@ -211,9 +204,8 @@ static bool DUT_DRIVER_LIFECYCLE_ConfigureAll(
 
     for ( uint32_t channel = 0U; channel < EXEC_PWM_GEN_CHANNEL_COUNT; channel++ )
     {
-        if ( !EXEC_PWM_GEN_Configure_Channel(
-                 ( ExecPwmGenChannel_T )channel,
-                 &configuration->pwm_generation_channels[channel] ) )
+        if ( !EXEC_PWM_GEN_Configure_Channel( ( ExecPwmGenChannel_T )channel,
+                                              &configuration->pwm_generation_channels[channel] ) )
         {
             return false;
         }
@@ -261,17 +253,16 @@ static void DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration( void )
         ( void )EXEC_I2C_Configure_Channel( ( ExecI2CChannel_T )channel, &disabled_i2c );
     }
 
-    for ( uint32_t channel = 0U; channel < TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT;
-          channel++ )
+    for ( uint32_t channel = 0U; channel < TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT; channel++ )
     {
-        ( void )EXEC_PWM_Capture_Configure_Channel(
-            ( ExecPwmCaptureChannel_T )channel, &disabled.pwm_capture_channels[channel] );
+        ( void )EXEC_PWM_Capture_Configure_Channel( ( ExecPwmCaptureChannel_T )channel,
+                                                    &disabled.pwm_capture_channels[channel] );
     }
 
     for ( uint32_t channel = 0U; channel < EXEC_PWM_GEN_CHANNEL_COUNT; channel++ )
     {
-        ( void )EXEC_PWM_GEN_Configure_Channel(
-            ( ExecPwmGenChannel_T )channel, &disabled.pwm_generation_channels[channel] );
+        ( void )EXEC_PWM_GEN_Configure_Channel( ( ExecPwmGenChannel_T )channel,
+                                                &disabled.pwm_generation_channels[channel] );
     }
 
     for ( uint32_t channel = 0U; channel < TEST_CONFIGURATION_SPI_CHANNEL_COUNT; channel++ )
@@ -383,8 +374,7 @@ bool DUT_DRIVER_LIFECYCLE_Start( void )
         started->digital_inputs = true;
     }
 
-    for ( uint32_t channel = 0U; channel < TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT;
-          channel++ )
+    for ( uint32_t channel = 0U; channel < TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT; channel++ )
     {
         const uint32_t channel_bit = DUT_DRIVER_LIFECYCLE_CHANNEL_BIT( channel );
         if ( ( enabled->pwm_capture_channels & channel_bit ) != 0U )
@@ -532,8 +522,7 @@ bool DUT_DRIVER_LIFECYCLE_Stop( void )
         }
     }
 
-    for ( uint32_t channel = TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT; channel > 0U;
-          channel-- )
+    for ( uint32_t channel = TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT; channel > 0U; channel-- )
     {
         const uint32_t index       = channel - 1U;
         const uint32_t channel_bit = DUT_DRIVER_LIFECYCLE_CHANNEL_BIT( index );
@@ -572,25 +561,25 @@ void DUT_DRIVER_LIFECYCLE_GetStatus( DutDriverLifecycleStatus_T* status )
     const DutDriverLifecycleSelection_T* started = &context.started;
 
     *status = ( DutDriverLifecycleStatus_T ){
-        .configuration_valid        = context.configuration_valid,
-        .analogue_input_enabled     = enabled->analogue_input,
-        .analogue_input_started     = started->analogue_input,
-        .analogue_output_enabled    = enabled->analogue_output,
-        .analogue_output_started    = started->analogue_output,
-        .digital_inputs_enabled     = enabled->digital_inputs,
-        .digital_inputs_started     = started->digital_inputs,
-        .digital_outputs_enabled    = enabled->digital_outputs,
-        .digital_outputs_started    = started->digital_outputs,
-        .can_enabled_mask           = enabled->can_channels,
-        .can_started_mask           = started->can_channels,
-        .pwm_capture_enabled_mask   = enabled->pwm_capture_channels,
-        .pwm_capture_started_mask   = started->pwm_capture_channels,
+        .configuration_valid         = context.configuration_valid,
+        .analogue_input_enabled      = enabled->analogue_input,
+        .analogue_input_started      = started->analogue_input,
+        .analogue_output_enabled     = enabled->analogue_output,
+        .analogue_output_started     = started->analogue_output,
+        .digital_inputs_enabled      = enabled->digital_inputs,
+        .digital_inputs_started      = started->digital_inputs,
+        .digital_outputs_enabled     = enabled->digital_outputs,
+        .digital_outputs_started     = started->digital_outputs,
+        .can_enabled_mask            = enabled->can_channels,
+        .can_started_mask            = started->can_channels,
+        .pwm_capture_enabled_mask    = enabled->pwm_capture_channels,
+        .pwm_capture_started_mask    = started->pwm_capture_channels,
         .pwm_generation_enabled_mask = enabled->pwm_generation_channels,
         .pwm_generation_started_mask = started->pwm_generation_channels,
-        .spi_enabled_mask           = enabled->spi_channels,
-        .spi_started_mask           = started->spi_channels,
-        .uart_enabled_mask          = enabled->uart_channels,
-        .uart_started_mask          = started->uart_channels,
+        .spi_enabled_mask            = enabled->spi_channels,
+        .spi_started_mask            = started->spi_channels,
+        .uart_enabled_mask           = enabled->uart_channels,
+        .uart_started_mask           = started->uart_channels,
     };
 }
 
