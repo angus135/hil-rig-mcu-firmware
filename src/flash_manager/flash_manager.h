@@ -142,6 +142,10 @@ typedef enum
     /** Stored results are being prefetched and copied to the Host Interface. */
     FLASH_MANAGER_STATE_TRANSFERRING_RESULTS,
 
+
+    /** The Flash Manager task is abandoning an interrupted execution session. */
+    FLASH_MANAGER_STATE_ABORTING,
+
     /**
      * An unrecoverable manager, buffer, or NAND operation has failed.
      * Partially persisted session data and buffer leases are not currently
@@ -642,6 +646,22 @@ FlashManagerRequestStatus_T FLASH_MANAGER_RequestExecutionPreparation( void );
  *       remain active.
  */
 FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void );
+
+/**
+ * @brief Requests safe abandonment of an active execution/result session.
+ *
+ * The request moves a runtime state to ABORTING and wakes the Flash Manager
+ * task. The task invalidates instruction-read and result-buffer ownership,
+ * abandons incomplete results, preserves the committed instruction image, and
+ * returns to IDLE. An IDLE manager treats the request as an idempotent success.
+ *
+ * @return Request acceptance status.
+ *
+ * @note The RSM must stop the execution timer and ensure the execution ISR has
+ *       returned before calling this function.
+ * @note This API does not abort Host Interface instruction uploads.
+ */
+FlashManagerRequestStatus_T FLASH_MANAGER_RequestAbortSession( void );
 
 /**
  * @brief Deliberately abandons a completed result stream.

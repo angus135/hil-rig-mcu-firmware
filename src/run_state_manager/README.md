@@ -38,6 +38,9 @@ run_state reset
 `execution_complete` is only an RSM integration seam and console stimulus at
 this stage. It does not add an Execution Manager dependency or implementation.
 Fault handling retains the first recorded cause until a successful reset.
+Fault entry also requests asynchronous Flash session abort after execution and
+DUT drivers have stopped. Reset remains rejected until Flash reports `IDLE`,
+preventing an RSM/Flash lifecycle mismatch.
 
 Every named event is validated by the Run State Manager task before it can
 initiate a transition. A delivered notification is therefore not itself proof
