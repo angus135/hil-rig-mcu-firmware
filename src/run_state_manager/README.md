@@ -130,7 +130,39 @@ Execution Manager work.
 External I2C configuration is temporarily forced disabled in the DUT lifecycle
 because of the known I2C hardware fault.
 
-For hardware bring-up, `run_state timer start` and `run_state timer stop`
+## Integration ownership
+
+The public request API is intentionally independent of the eventual transport
+or execution implementation. The future Host Interface owns submission of:
+
+- `RUN_STATE_MANAGER_RequestPackageReceive()` after a new package is accepted.
+- `RUN_STATE_MANAGER_RequestConfiguration()` after the active configuration is
+  validated and committed.
+- `RUN_STATE_MANAGER_RequestExecution()` for a host-originated execute command.
+- `RUN_STATE_MANAGER_RequestResultTransfer()` when host result retrieval begins.
+- `RUN_STATE_MANAGER_RequestResultTransferComplete()` only after every result
+  byte has been consumed and acknowledged.
+- `RUN_STATE_MANAGER_RequestRepeat()` or
+  `RUN_STATE_MANAGER_RequestDiscardResults()` according to host result policy.
+
+The future Execution Manager owns submission of:
+
+- `RUN_STATE_MANAGER_RequestExecutionComplete()` after normal instruction-stream
+  completion.
+- `RUN_STATE_MANAGER_RequestFault()` after an execution failure has been handed
+  into task context. A separate ISR-safe handoff may notify that task, but the
+  RSM request itself remains a task-context API.
+
+A physical or DUT-originated execution trigger may also submit
+`RUN_STATE_MANAGER_RequestExecution()` after system-level trigger arbitration.
+That arbitration does not belong inside the RSM.
+
+Status consumers should prefer `RUN_STATE_MANAGER_GetStatus()`, which captures
+all RSM-owned observable fields in one critical-section snapshot. Individual
+legacy getters remain available for simple single-field decisions.
+
+For hardware bring-up, `run_state diagnostic_timer start` and
+`run_state diagnostic_timer stop`
 request direct execution-timer control through the Run State Manager task.
 Timer start deliberately bypasses normal Flash preparation and DUT driver
 startup, so it must not be used as the production test-execution path.
