@@ -1,19 +1,27 @@
 # src/test_configuration/CMakeLists.txt
 
-add_library(test_configuration INTERFACE)
+set(TEST_CONFIGURATION_SOURCES
+    test_configuration.c
+)
 
-target_sources(test_configuration
-    INTERFACE
-        ${CMAKE_CURRENT_SOURCE_DIR}/test_configuration.h
+set(TEST_CONFIGURATION_HEADERS
+    test_configuration.h
+)
+
+add_library(test_configuration STATIC
+    ${TEST_CONFIGURATION_SOURCES}
+    ${TEST_CONFIGURATION_HEADERS}
 )
 
 target_include_directories(test_configuration
-    INTERFACE
+    PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 target_link_libraries(test_configuration
-    INTERFACE
+    PUBLIC
+        project_warnings
+        rtos
         exec_analogue_input
         exec_analogue_output
         exec_can

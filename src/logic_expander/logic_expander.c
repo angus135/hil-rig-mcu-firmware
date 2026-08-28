@@ -585,6 +585,18 @@ bool LOGIC_EXPANDER_Init( void )
     return logic_expander_mutex != NULL;
 }
 
+bool LOGIC_EXPANDER_Is_Ready( void )
+{
+    if ( !LOGIC_EXPANDER_Lock() )
+    {
+        return false;
+    }
+
+    const bool is_ready = logic_expander_ready;
+    LOGIC_EXPANDER_Unlock();
+    return is_ready;
+}
+
 LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config( void )
 {
     if ( !LOGIC_EXPANDER_Lock() )

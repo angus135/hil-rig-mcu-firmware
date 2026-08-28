@@ -21,7 +21,9 @@
 #include "app_main.h"
 #include "console.h"
 #include "host_communications.h"
+#include "logic_expander.h"
 #include "run_state_manager.h"
+#include "test_configuration.h"
 
 #ifndef TEST_BUILD
 #include "quadspi.h"
@@ -61,12 +63,30 @@ extern TaskHandle_t* HostInterfaceTaskHandle;  // NOLINT(readability-identifier-
  *------------------------------------------------------------------------------
  */
 
+static bool APP_MAIN_Initialise_Logic_Expander( void );
 static bool APP_MAIN_Initialise_Storage( void );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Initializes the Logic Expander and starts its asynchronous safe-state
+ *        configuration.
+ *
+ * @return true when self-configuration was started or completed.
+ */
+static bool APP_MAIN_Initialise_Logic_Expander( void )
+{
+    if ( !LOGIC_EXPANDER_Init() )
+    {
+        return false;
+    }
+
+    const LogicExpanderStatus_T status = LOGIC_EXPANDER_Self_Config();
+    return status == LOGIC_EXPANDER_STATUS_OK || status == LOGIC_EXPANDER_STATUS_BUSY;
+}
 
 static bool APP_MAIN_Initialise_Storage( void )
 {
@@ -100,6 +120,13 @@ static bool APP_MAIN_Initialise_Storage( void )
  */
 void APP_MAIN_Application( void )
 {
+
+    TEST_CONFIGURATION_Init();
+
+    if ( !APP_MAIN_Initialise_Logic_Expander() )
+    {
+        return;
+    }
 
     if ( !APP_MAIN_Initialise_Storage() )
     {

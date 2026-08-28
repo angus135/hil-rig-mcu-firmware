@@ -27,12 +27,14 @@ module owns addressing, shadow state, and I2C submission.
 
 ## Task ownership and non-blocking configuration
 
-The background task calls `LOGIC_EXPANDER_Init()` once before periodic
-processing begins. This creates a module-owned mutex that serializes all public
-task-context APIs used by background processing, configuration management, and
-console commands. These APIs must not be called from an ISR. The mutex is held
-only while inspecting state or making non-blocking queue calls; no API waits for
-physical I2C completion.
+Application startup calls `LOGIC_EXPANDER_Init()` and
+`LOGIC_EXPANDER_Self_Config()` before the scheduler starts. Initialization
+creates a module-owned mutex that serializes all public task-context APIs used
+by background processing, configuration management, and console commands.
+Self-configuration begins asynchronously; the background task completes it
+through periodic processing after the scheduler starts. These APIs must not be
+called from an ISR. The mutex is held only while inspecting state or making
+non-blocking queue calls; no API waits for physical I2C completion.
 
 `LOGIC_EXPANDER_Self_Config()` configures FMPI2C1 and begins enqueueing the eight
 MCP23017 setup writes for each active device. The final setup write applies the
@@ -90,7 +92,8 @@ writes were accepted, not that they have physically completed.
 
 1. Call `LOGIC_EXPANDER_Self_Config()`.
 2. Call `LOGIC_EXPANDER_Process()` on subsequent ticks until it returns `OK`.
-3. Load output changes with `LOGIC_EXPANDER_Load_Control_Bit()`.
-4. Call `LOGIC_EXPANDER_Send_Control_Bits()`; retry later if it returns `BUSY`.
-5. Continue calling `LOGIC_EXPANDER_Process()` so completion is observed and
+3. Confirm readiness with `LOGIC_EXPANDER_Is_Ready()`.
+4. Load output changes with `LOGIC_EXPANDER_Load_Control_Bit()`.
+5. Call `LOGIC_EXPANDER_Send_Control_Bits()`; retry later if it returns `BUSY`.
+6. Continue calling `LOGIC_EXPANDER_Process()` so completion is observed and
    transient asynchronous failures are retried.

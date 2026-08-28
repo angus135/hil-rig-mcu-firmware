@@ -35,7 +35,9 @@ target_link_libraries(app_main
         flash_manager
         external_flash
         hw_qspi
+        logic_expander
         run_state_manager
+        test_configuration
 )
 
 # -----------------------------

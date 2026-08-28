@@ -9,13 +9,9 @@ transaction queue progresses promptly.
 The existing blue LED heartbeat remains scheduled at 1 Hz using a separate
 cycle counter; shortening the task period does not change its visible behavior.
 
-At task startup, a one-time initialiser callback list runs before the task takes
-its periodic timing reference. It currently creates the Logic Expander's
-task-level mutex. Periodic processing does not begin unless every required
-initialiser succeeds; on failure, the background task suspends itself.
-
-After successful initialisation, each background cycle loops through a separate
-function-pointer array containing the logic-expander and status-LED processes.
-Additional one-time or periodic work can be added to the corresponding array
-without changing the task loop. The expander mutex allows configuration-manager
-and console calls to overlap this periodic servicing safely.
+Application startup initializes the Logic Expander and starts its asynchronous
+self-configuration before the scheduler runs. Each background cycle then loops
+through a function-pointer array containing the logic-expander and status-LED
+processes. Additional periodic work can be added to this array without changing
+the task loop. The expander mutex allows Run State Manager, driver, and console
+calls to overlap this periodic servicing safely.
