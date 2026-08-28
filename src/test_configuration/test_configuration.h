@@ -79,9 +79,8 @@ typedef struct DutDriverConfiguration_T
 
     EXECI2CChannelConfig_T i2c_channels[EXEC_I2C_CHANNEL_COUNT];
 
-    ExecPwmCaptureConfig_T
-        pwm_capture_channels[TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT];
-    ExecPwmGenConfig_T pwm_generation_channels[EXEC_PWM_GEN_CHANNEL_COUNT];
+    ExecPwmCaptureConfig_T pwm_capture_channels[TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT];
+    ExecPwmGenConfig_T     pwm_generation_channels[EXEC_PWM_GEN_CHANNEL_COUNT];
 
     ExecSPIConfig_T spi_channels[TEST_CONFIGURATION_SPI_CHANNEL_COUNT];
 
