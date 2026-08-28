@@ -43,6 +43,7 @@
 #define RUN_STATE_MANAGER_NOTIFY_DISCARD_RESULTS ( 1UL << 11U )
 
 #define RUN_STATE_MANAGER_PENDING_POLL_MS ( 10U )
+#define RUN_STATE_MANAGER_CONFIGURATION_TIMEOUT_MS ( 15000U )
 #define RUN_STATE_MANAGER_EXECUTION_PREPARATION_TIMEOUT_MS ( 15000U )
 #define RUN_STATE_MANAGER_RESULT_FINALISATION_TIMEOUT_MS ( 15000U )
 
@@ -63,6 +64,7 @@
 typedef enum
 {
     RUN_STATE_PENDING_NONE = 0,
+    RUN_STATE_PENDING_CONFIGURATION,
     RUN_STATE_PENDING_EXECUTION_PREPARATION,
     RUN_STATE_PENDING_RESULT_FINALISATION
 } RunStatePendingOperation_T;
@@ -443,6 +445,28 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
         return;
     }
 
+    if ( pending_operation == RUN_STATE_PENDING_CONFIGURATION )
+    {
+        const DutDriverConfigurationStatus_T status =
+            DUT_DRIVER_LIFECYCLE_GetConfigurationStatus();
+
+        if ( status == DUT_DRIVER_CONFIGURATION_READY )
+        {
+            RUN_STATE_MANAGER_ClearPendingOperation();
+            ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_ARMED );
+        }
+        else if ( status == DUT_DRIVER_CONFIGURATION_FAILED )
+        {
+            RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_CONFIGURATION );
+        }
+        else if ( RUN_STATE_MANAGER_PendingOperationTimedOut(
+                      pdMS_TO_TICKS( RUN_STATE_MANAGER_CONFIGURATION_TIMEOUT_MS ) ) )
+        {
+            RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_CONFIGURATION_TIMEOUT );
+        }
+        return;
+    }
+
     FlashManagerState_T flash_state = FLASH_MANAGER_STATE_UNINITIALISED;
 
     if ( !FLASH_MANAGER_GetState( &flash_state ) )
@@ -459,6 +483,10 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
 
     switch ( pending_operation )
     {
+        case RUN_STATE_PENDING_CONFIGURATION:
+            /* Handled before querying Flash Manager state. */
+            break;
+
         case RUN_STATE_PENDING_EXECUTION_PREPARATION:
             if ( flash_state == FLASH_MANAGER_STATE_EXECUTING )
             {
@@ -532,7 +560,8 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
                 accepted = RUN_STATE_MANAGER_TransitionTo( RUN_STATE_CONFIGURATION );
                 if ( accepted )
                 {
-                    accepted = RUN_STATE_MANAGER_TransitionTo( RUN_STATE_ARMED );
+                    RUN_STATE_MANAGER_StartPendingOperation(
+                        RUN_STATE_PENDING_CONFIGURATION );
                 }
             }
             break;
