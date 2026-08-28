@@ -10,6 +10,55 @@ not access `external_flash`, NAND, QSPI, or Flash Manager-owned RAM directly.
 The current task only monitors USB periodically. The instruction-upload flow
 below is an implementation contract for the next Host Interface work.
 
+The current console commands are temporary integration stimuli. The Host
+Interface does not yet populate `TEST_CONFIGURATION`, submit RSM lifecycle
+requests, or transmit stored results.
+
+## Run State Manager integration contract
+
+The Host Interface will own the host-originated side of one lifecycle:
+
+1. Accept a new package and submit
+   `RUN_STATE_MANAGER_RequestPackageReceive()`; wait for
+   `TEST_PACKAGE_RECEIVE` with no pending RSM transition.
+2. Receive and validate the complete package. Upload the canonical instruction
+   stream using the Flash Manager flow below.
+3. Translate the package's versioned wire representation into a fully populated
+   `DutDriverConfiguration_T`, validate every leaf driver configuration, and
+   call `TEST_CONFIGURATION_Commit()`.
+4. Submit `RUN_STATE_MANAGER_RequestConfiguration()` and wait for `ARMED`.
+5. Submit `RUN_STATE_MANAGER_RequestExecution()` only when host policy owns the
+   execution trigger. Physical or DUT trigger arbitration belongs in a
+   separate system-level component.
+6. After the RSM reports `RESULTS_READY`, choose exactly one current result
+   disposition:
+   - submit `RUN_STATE_MANAGER_RequestRepeat()` to discard these results and
+     return to `ARMED` with the same configuration and instructions;
+   - submit `RUN_STATE_MANAGER_RequestDiscardResults()` to discard these results,
+     clear the configuration, and return to `IDLE`; or
+   - submit `RUN_STATE_MANAGER_RequestResultTransfer()` and wait for
+     `RESULT_TRANSFER`.
+7. For transfer, read the complete result stream through
+   `FLASH_MANAGER_ReadResultBytes()`. Handle `BUSY` by retrying without losing
+   position and continue until `END_OF_STREAM`.
+8. After all bytes are acknowledged by the host protocol, submit
+   `RUN_STATE_MANAGER_RequestResultTransferComplete()`, which currently returns
+   the lifecycle directly to `IDLE`.
+
+The current state table does not support repeat after a completed transfer. If
+that host behaviour is required, add an explicit RSM policy transition rather
+than submitting `repeat` after the lifecycle has returned to `IDLE`.
+
+RSM request return values indicate notification delivery only. They do not mean
+the event was accepted or completed. Requests use coalescing notification bits,
+not a FIFO; the Host Interface must wait for the expected state and
+`transition_pending == false` between dependent requests. It should use the
+coherent `RUN_STATE_MANAGER_GetStatus()` snapshot and inspect
+`last_request_result` when a requested transition does not occur.
+
+The Host Interface must never write RSM state directly, call DUT driver
+lifecycle functions, control TIM4, or access external Flash directly.
+
 ## Canonical instruction stream
 
 Before starting an upload, the Host Interface must know the complete canonical
@@ -59,7 +108,7 @@ cadence appropriate to transport and NAND throughput.
 | File | Role |
 |---|---|
 | `host_communications.c/.h` | Host RTOS task and upload lifecycle coordination |
-| `test_package_recieve.c/.h` | Future package validation and canonical conversion |
+| `test_package_recieve.c/.h` | Future package validation, configuration translation, and canonical conversion |
 | `result_send.c/.h` | Future stored-result packaging and transmission |
 
 ## Public API
