@@ -116,6 +116,19 @@ typedef enum
     RUN_STATE_REQUEST_RESULT_FAILED
 } RunStateRequestResult_T;
 
+/** Coherent task-owned lifecycle status captured at one instant. */
+typedef struct
+{
+    RunState_T              state;
+    bool                    transition_pending;
+    bool                    execution_active;
+    bool                    execution_timer_running;
+    RunStateFrequencyMode_T execution_frequency;
+    RunStateFaultReason_T   fault_reason;
+    RunStateRequest_T       last_request;
+    RunStateRequestResult_T last_request_result;
+} RunStateManagerStatus_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -275,7 +288,7 @@ bool RUN_STATE_MANAGER_RequestReset( void );
  *
  * @returns true if the request was delivered to the task, otherwise false.
  */
-bool RUN_STATE_MANAGER_RequestExecutionTimerStart( void );
+bool RUN_STATE_MANAGER_RequestDiagnosticExecutionTimerStart( void );
 
 /**
  * @brief Requests diagnostic execution-timer stop through the manager task.
@@ -284,7 +297,14 @@ bool RUN_STATE_MANAGER_RequestExecutionTimerStart( void );
  *
  * @returns true if the request was delivered to the task, otherwise false.
  */
-bool RUN_STATE_MANAGER_RequestExecutionTimerStop( void );
+bool RUN_STATE_MANAGER_RequestDiagnosticExecutionTimerStop( void );
+
+/**
+ * @brief Copies a coherent snapshot of all externally observable RSM state.
+ *
+ * @param status Caller-owned destination. A null pointer is ignored.
+ */
+void RUN_STATE_MANAGER_GetStatus( RunStateManagerStatus_T* status );
 
 /**
  * @brief Gets the current lifecycle state.

@@ -219,7 +219,7 @@ static void CONSOLE_RunStateManager_PrintUsage( void )
     CONSOLE_Printf( "  run_state status\r\n" );
     CONSOLE_Printf( "  run_state <receive|configure|execute|execution_complete>\r\n" );
     CONSOLE_Printf( "  run_state <transfer|transfer_complete|repeat|discard|fault|reset>\r\n" );
-    CONSOLE_Printf( "  run_state timer <start|stop>\r\n" );
+    CONSOLE_Printf( "  run_state diagnostic_timer <start|stop>\r\n" );
 }
 
 /**
@@ -246,17 +246,17 @@ static void CONSOLE_RunStateManager_PrintRequestResult( bool accepted )
 
 void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
 {
-    if ( argc == 3U && strcmp( argv[1], "timer" ) == 0 )
+    if ( argc == 3U && strcmp( argv[1], "diagnostic_timer" ) == 0 )
     {
         if ( strcmp( argv[2], "start" ) == 0 )
         {
             CONSOLE_RunStateManager_PrintRequestResult(
-                RUN_STATE_MANAGER_RequestExecutionTimerStart() );
+                RUN_STATE_MANAGER_RequestDiagnosticExecutionTimerStart() );
         }
         else if ( strcmp( argv[2], "stop" ) == 0 )
         {
             CONSOLE_RunStateManager_PrintRequestResult(
-                RUN_STATE_MANAGER_RequestExecutionTimerStop() );
+                RUN_STATE_MANAGER_RequestDiagnosticExecutionTimerStop() );
         }
         else
         {
@@ -273,29 +273,28 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[1], "status" ) == 0 )
     {
+        RunStateManagerStatus_T     run_status    = { 0 };
         DutDriverLifecycleStatus_T driver_status = { 0 };
+        RUN_STATE_MANAGER_GetStatus( &run_status );
         DUT_DRIVER_LIFECYCLE_GetStatus( &driver_status );
 
         CONSOLE_Printf( "Run state: %s\r\n",
-                        CONSOLE_RunStateManager_StateName( RUN_STATE_MANAGER_GetState() ) );
+                        CONSOLE_RunStateManager_StateName( run_status.state ) );
         CONSOLE_Printf( "Transition pending: %s\r\n",
-                        RUN_STATE_MANAGER_IsTransitionPending() ? "yes" : "no" );
+                        run_status.transition_pending ? "yes" : "no" );
         CONSOLE_Printf( "Execution active: %s\r\n",
-                        RUN_STATE_MANAGER_IsExecutionActive() ? "yes" : "no" );
+                        run_status.execution_active ? "yes" : "no" );
         CONSOLE_Printf( "Execution timer: %s\r\n",
-                        RUN_STATE_MANAGER_IsExecutionTimerRunning() ? "running" : "stopped" );
+                        run_status.execution_timer_running ? "running" : "stopped" );
         CONSOLE_Printf( "Execution frequency: %s\r\n",
-                        CONSOLE_RunStateManager_FrequencyName(
-                            RUN_STATE_MANAGER_Get_Execution_Frequency() ) );
+                        CONSOLE_RunStateManager_FrequencyName( run_status.execution_frequency ) );
         CONSOLE_Printf( "Fault reason: %s\r\n",
-                        CONSOLE_RunStateManager_FaultName(
-                            RUN_STATE_MANAGER_GetFaultReason() ) );
+                        CONSOLE_RunStateManager_FaultName( run_status.fault_reason ) );
         CONSOLE_Printf( "Last request: %s\r\n",
-                        CONSOLE_RunStateManager_RequestName(
-                            RUN_STATE_MANAGER_GetLastRequest() ) );
+                        CONSOLE_RunStateManager_RequestName( run_status.last_request ) );
         CONSOLE_Printf( "Last request result: %s\r\n",
                         CONSOLE_RunStateManager_RequestResultName(
-                            RUN_STATE_MANAGER_GetLastRequestResult() ) );
+                            run_status.last_request_result ) );
         CONSOLE_Printf(
             "DUT lifecycle: configured=%s, AI=%u/%u, AO=%u/%u, DI=%u/%u, DO=%u/%u\r\n",
             driver_status.configuration_valid ? "yes" : "no",

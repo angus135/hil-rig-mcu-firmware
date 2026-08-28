@@ -1009,12 +1009,12 @@ bool RUN_STATE_MANAGER_RequestReset( void )
     return RUN_STATE_MANAGER_Notify( RUN_STATE_MANAGER_NOTIFY_RESET );
 }
 
-bool RUN_STATE_MANAGER_RequestExecutionTimerStart( void )
+bool RUN_STATE_MANAGER_RequestDiagnosticExecutionTimerStart( void )
 {
     return RUN_STATE_MANAGER_Notify( RUN_STATE_MANAGER_NOTIFY_TIMER_START );
 }
 
-bool RUN_STATE_MANAGER_RequestExecutionTimerStop( void )
+bool RUN_STATE_MANAGER_RequestDiagnosticExecutionTimerStop( void )
 {
     return RUN_STATE_MANAGER_Notify( RUN_STATE_MANAGER_NOTIFY_TIMER_STOP );
 }
@@ -1022,6 +1022,27 @@ bool RUN_STATE_MANAGER_RequestExecutionTimerStop( void )
 RunState_T RUN_STATE_MANAGER_GetState( void )
 {
     return run_state;
+}
+
+void RUN_STATE_MANAGER_GetStatus( RunStateManagerStatus_T* status )
+{
+    if ( status == NULL )
+    {
+        return;
+    }
+
+    taskENTER_CRITICAL();
+    *status = ( RunStateManagerStatus_T ){
+        .state                   = run_state,
+        .transition_pending      = pending_operation != RUN_STATE_PENDING_NONE,
+        .execution_active        = execution_active,
+        .execution_timer_running = execution_timer_running,
+        .execution_frequency     = frequency_mode,
+        .fault_reason            = fault_reason,
+        .last_request            = last_request,
+        .last_request_result     = last_request_result,
+    };
+    taskEXIT_CRITICAL();
 }
 
 bool RUN_STATE_MANAGER_IsTransitionPending( void )
