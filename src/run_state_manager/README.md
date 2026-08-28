@@ -7,7 +7,21 @@ lifecycle. It coordinates Flash Manager preparation/finalisation and starts or
 stops the Execution Manager timer; it does not execute peripheral instructions
 or access Flash Manager-owned buffers directly.
 
-Console commands currently provide manual progression through the lifecycle.
+Console commands currently provide manual progression through the lifecycle:
+
+```text
+IDLE -> TEST_PACKAGE_RECEIVE -> CONFIGURATION -> ARMED -> EXECUTION
+     -> RESULT_FINALISATION -> RESULTS_READY -> RESULT_TRANSFER -> IDLE
+```
+
+`ARMED` means test configuration has completed while the DUT drivers and
+execution timer remain stopped. An execute request begins Flash Manager
+execution preparation; only after Flash reports `EXECUTING` does the manager
+start the DUT drivers and execution timer and enter `EXECUTION`.
+`RESULTS_READY` means execution has stopped and Flash Manager has completely
+finalised a valid result stream. Result-transfer and rerun policy remain future
+Host Interface integration.
+
 The manager uses task notifications for requests and polls only while an
 asynchronous Flash Manager transition is pending.
 

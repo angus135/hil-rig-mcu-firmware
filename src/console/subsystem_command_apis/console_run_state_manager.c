@@ -71,8 +71,14 @@ static const char* CONSOLE_RunStateManager_StateName( RunState_T state )
             return "TEST_PACKAGE_RECEIVE";
         case RUN_STATE_CONFIGURATION:
             return "CONFIGURATION";
+        case RUN_STATE_ARMED:
+            return "ARMED";
         case RUN_STATE_EXECUTION:
             return "EXECUTION";
+        case RUN_STATE_RESULT_FINALISATION:
+            return "RESULT_FINALISATION";
+        case RUN_STATE_RESULTS_READY:
+            return "RESULTS_READY";
         case RUN_STATE_RESULT_TRANSFER:
             return "RESULT_TRANSFER";
         case RUN_STATE_FAULT:
