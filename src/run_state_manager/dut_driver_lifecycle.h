@@ -27,6 +27,7 @@ extern "C"
  */
 
 #include <stdbool.h>
+#include "test_configuration.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -38,6 +39,29 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+typedef struct
+{
+    bool     configuration_valid;
+    bool     analogue_input_enabled;
+    bool     analogue_input_started;
+    bool     analogue_output_enabled;
+    bool     analogue_output_started;
+    bool     digital_inputs_enabled;
+    bool     digital_inputs_started;
+    bool     digital_outputs_enabled;
+    bool     digital_outputs_started;
+    uint32_t can_enabled_mask;
+    uint32_t can_started_mask;
+    uint32_t pwm_capture_enabled_mask;
+    uint32_t pwm_capture_started_mask;
+    uint32_t pwm_generation_enabled_mask;
+    uint32_t pwm_generation_started_mask;
+    uint32_t spi_enabled_mask;
+    uint32_t spi_started_mask;
+    uint32_t uart_enabled_mask;
+    uint32_t uart_started_mask;
+} DutDriverLifecycleStatus_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -46,16 +70,28 @@ extern "C"
 /**
  * @brief Applies the active test configuration to all DUT-facing drivers.
  *
+ * @param configuration Complete validated DUT driver configuration. Every
+ *        channel is applied, including disabled channels, so stale state from
+ *        a previous test cannot remain active.
+ *
  * Implementations must leave drivers stopped. If configuration partially
  * succeeds, all affected drivers must be returned to a safe stopped condition
  * before failure is returned.
  *
+ * External I2C channels are temporarily forced to a disabled zero
+ * configuration because of the known I2C hardware fault. Requested I2C
+ * settings are retained in the active test configuration but are not applied.
+ *
  * @returns true if every required driver was configured, otherwise false.
  */
-bool DUT_DRIVER_LIFECYCLE_Configure( void );
+bool DUT_DRIVER_LIFECYCLE_Configure( const DutDriverConfiguration_T* configuration );
 
 /**
  * @brief Starts all configured DUT-facing drivers.
+ *
+ * Only channels enabled by the last successful configuration are started.
+ * The lifecycle records each successful start so partial-start rollback and
+ * normal stop affect only drivers that actually entered their started state.
  *
  * The Run State Manager starts the execution timer only after this succeeds.
  * If a driver fails to start, every driver already started by this call must be
@@ -68,10 +104,14 @@ bool DUT_DRIVER_LIFECYCLE_Start( void );
 /**
  * @brief Stops all DUT-facing drivers after execution has stopped.
  *
- * This operation must be idempotent and must attempt every required stop even
- * if an earlier driver reports a failure.
+ * This operation is idempotent and attempts every recorded started driver even
+ * if an earlier stop reports failure. Drivers are stopped in reverse startup
+ * order where practical.
  */
-void DUT_DRIVER_LIFECYCLE_Stop( void );
+bool DUT_DRIVER_LIFECYCLE_Stop( void );
+
+/** @brief Copies the configured enable plan and actual started bookkeeping. */
+void DUT_DRIVER_LIFECYCLE_GetStatus( DutDriverLifecycleStatus_T* status );
 
 /**
  * @brief Places DUT-facing drivers into their normal idle condition.
