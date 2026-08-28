@@ -7,20 +7,73 @@ lifecycle. It coordinates Flash Manager preparation/finalisation and starts or
 stops the Execution Manager timer; it does not execute peripheral instructions
 or access Flash Manager-owned buffers directly.
 
-Console commands currently provide manual progression through the lifecycle:
+Named console commands currently stand in for the future Host Interface and
+Execution Manager requests. Internal completion transitions occur automatically:
 
 ```text
 IDLE -> TEST_PACKAGE_RECEIVE -> CONFIGURATION -> ARMED -> EXECUTION
      -> RESULT_FINALISATION -> RESULTS_READY -> RESULT_TRANSFER -> IDLE
 ```
 
+Entering `CONFIGURATION` applies the committed configuration synchronously and
+automatically enters `ARMED` on success. Configuration failure enters `FAULT`.
+Similarly, result finalisation remains pending until Flash Manager reports that
+the result stream is ready, then automatically enters `RESULTS_READY`.
+
+The current bring-up commands are:
+
+```text
+run_state receive
+run_state configure
+run_state execute
+run_state execution_complete
+run_state transfer
+run_state transfer_complete
+run_state repeat
+run_state discard
+run_state fault
+run_state reset
+```
+
+`execution_complete` is only an RSM integration seam and console stimulus at
+this stage. It does not add an Execution Manager dependency or implementation.
+Fault handling retains the first recorded cause until a successful reset.
+
+Every named event is validated by the Run State Manager task before it can
+initiate a transition. A delivered notification is therefore not itself proof
+that the lifecycle event was valid. `run_state status` reports the last event
+evaluated as accepted, rejected for the current state, rejected while an
+asynchronous transition was pending, or failed during its entry action.
+
+| Console event | Required state | Result |
+|---|---|---|
+| `receive` | `IDLE` | Enter `TEST_PACKAGE_RECEIVE` |
+| `configure` | `TEST_PACKAGE_RECEIVE` | Enter `CONFIGURATION`, then automatically `ARMED` on success |
+| `execute` | `ARMED` | Start Flash preparation; automatically enter `EXECUTION` when ready |
+| `execution_complete` | `EXECUTION` | Stop execution and start Flash finalisation |
+| `transfer` | `RESULTS_READY` | Enter `RESULT_TRANSFER` |
+| `transfer_complete` | `RESULT_TRANSFER` | Enter `IDLE` |
+| `repeat` | `RESULTS_READY` | Discard results, retain configuration/instructions, and enter `ARMED` |
+| `discard` | `RESULTS_READY` | Discard results, clear configuration, and enter `IDLE` |
+| `fault` | Any state | Enter `FAULT` and retain the first cause |
+| `reset` | `FAULT` | Restore idle driver state and enter `IDLE` |
+
+`CONFIGURATION -> ARMED`, Flash preparation completion into `EXECUTION`, and
+Flash finalisation completion into `RESULTS_READY` are internal automatic
+transitions. Host-driven requests, future Execution Manager completion, result
+transfer completion, fault, and reset remain explicit events.
+
 `ARMED` means test configuration has completed while the DUT drivers and
 execution timer remain stopped. An execute request begins Flash Manager
 execution preparation; only after Flash reports `EXECUTING` does the manager
 start the DUT drivers and execution timer and enter `EXECUTION`.
 `RESULTS_READY` means execution has stopped and Flash Manager has completely
-finalised a valid result stream. Result-transfer and rerun policy remain future
-Host Interface integration.
+finalised a valid result stream. `repeat` deliberately abandons that stream,
+retains the active DUT configuration and uploaded instructions, and returns to
+`ARMED`. `discard` abandons the stream, clears the active configuration, places
+the DUT lifecycle into its idle state, and returns to `IDLE`. Both operations
+require Flash Manager to release the result session and return to `IDLE` before
+the RSM transition is committed.
 
 The manager uses task notifications for requests and polls only while an
 asynchronous Flash Manager transition is pending.
@@ -39,10 +92,9 @@ Run State Manager must receive this fault through a future ISR-safe handoff,
 stop execution, and record the infeasible outcome. Future feasibility analysis
 should reject such a workload before execution.
 
-The current Flash Manager exposes normal result finalisation but no session
-discard API. Preserving committed diagnostic results therefore uses the normal
-finalisation path and may end in `RESULTS_READY` while the global run outcome
-remains infeasible. A discard policy would require an explicit future API.
+Preserving committed diagnostic results uses the normal finalisation and
+transfer path. Abandoning them must use the explicit Flash Manager discard API;
+the RSM never resets result buffers or assigns Flash state directly.
 
 
 ---
@@ -59,6 +111,19 @@ The Run State Manager decides when a transition is legal and sequences any
 asynchronous prerequisites. The DUT Driver Lifecycle module performs only the
 synchronous driver operations requested by the manager; it does not own run
 state, the execution timer, Flash Manager transitions, or host transport.
+
+The `test_configuration` module owns the committed active DUT configuration.
+Application startup publishes a valid all-disabled configuration for inert
+bring-up. On entry to `CONFIGURATION`, the Run State Manager first requires the
+Logic Expander startup configuration to have physically completed, then copies
+the active configuration and passes it to the DUT Driver Lifecycle module. The
+lifecycle applies every channel, derives which channels should start, and
+records which channels actually started so stop and rollback remain
+deterministic. Execution tick reads and writes remain instruction-scheduled
+Execution Manager work.
+
+External I2C configuration is temporarily forced disabled in the DUT lifecycle
+because of the known I2C hardware fault.
 
 For hardware bring-up, `run_state timer start` and `run_state timer stop`
 request direct execution-timer control through the Run State Manager task.
