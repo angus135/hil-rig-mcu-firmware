@@ -33,7 +33,9 @@ target_link_libraries(run_state_manager
         rtos
         hw_timer
         hw_gpio
+        logic_expander
         flash_manager
+        test_configuration
 )
 
 # -----------------------------
