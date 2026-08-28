@@ -131,8 +131,7 @@ static bool RUN_STATE_MANAGER_Notify( uint32_t notification )
  * Fault is reachable from every state. Re-entering the current state is
  * treated as an idempotent successful transition.
  */
-static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state,
-                                                   RunState_T next_state )
+static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state, RunState_T next_state )
 {
     if ( current_state == next_state )
     {
@@ -160,14 +159,17 @@ static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state,
                    || next_state == RUN_STATE_IDLE;
 
         case RUN_STATE_EXECUTION:
-            return next_state == RUN_STATE_ARMED
-                   || next_state == RUN_STATE_RESULT_FINALISATION;
+            return next_state == RUN_STATE_ARMED || next_state == RUN_STATE_RESULT_FINALISATION;
 
         case RUN_STATE_RESULT_FINALISATION:
             return next_state == RUN_STATE_RESULTS_READY;
 
         case RUN_STATE_RESULTS_READY:
-            return next_state == RUN_STATE_RESULT_TRANSFER;
+            /*
+             * Wait for Host Interface to begin and complete result transfer.
+             * Manual stepping must not discard the RESULTS_READY invariant.
+             */
+            break;
 
         case RUN_STATE_RESULT_TRANSFER:
             return next_state == RUN_STATE_IDLE;
