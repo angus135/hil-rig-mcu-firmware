@@ -101,7 +101,7 @@ bool TEST_CONFIGURATION_IsActive( void )
 void TEST_CONFIGURATION_Clear( void )
 {
     if ( configuration_mutex == NULL
-        || xSemaphoreTake( configuration_mutex, portMAX_DELAY ) != pdTRUE )
+         || xSemaphoreTake( configuration_mutex, portMAX_DELAY ) != pdTRUE )
     {
         return;
     }

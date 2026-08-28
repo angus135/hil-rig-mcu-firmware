@@ -51,7 +51,6 @@ void vTaskDelayUntil( TickType_t* previous_wake_time, const TickType_t increment
 {
     g_mock_dependencies->DelayUntil( previous_wake_time, increment );
 }
-
 }
 
 class BackgroundTaskExit
