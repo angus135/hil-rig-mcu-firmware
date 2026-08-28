@@ -1,31 +1,28 @@
 /******************************************************************************
- *  File:       execution_manager.c
- *  Author:     Angus Corr
- *  Created:    20-Dec-2025
+ *  File:       dut_driver_lifecycle.c
+ *  Author:     Callum Rafferty
+ *  Created:    26-Aug-2026
  *
  *  Description:
- *      Executes one configured test-instruction tick from the execution timer
- *      interrupt context.
+ *      Coordinates DUT-facing driver lifecycle operations for a test run.
  *
  *  Notes:
- *      See execution_manager.h for the Flash Manager lease, commit, and ISR
- *      wake integration contract. This module must never access external flash
- *      or block from EXECUTION_MANAGER_Process_From_ISR().
+ *      Low-level module initialization remains in the application startup
+ *      sequence. This module applies test-specific configuration and operating
+ *      state changes after those modules are ready.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
  *  Includes
  *------------------------------------------------------------------------------
  */
-#include "execution_manager.h"
-#include "hw_gpio.h"
-#include <stdint.h>
-#include <stdbool.h>
+#include "dut_driver_lifecycle.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -56,19 +53,38 @@
  *------------------------------------------------------------------------------
  */
 
-void EXECUTION_MANAGER_Process_From_ISR( void )
+bool DUT_DRIVER_LIFECYCLE_Configure( void )
 {
-    HW_GPIO_Toggle_Output( USER_LED_BLUE_4 );
     /*
-     * TODO: Peek the ordered instruction stream until the head timestamp is
-     * later than the current tick. Execute and consume every equal-timestamp
-     * instruction. A past timestamp is an execution-overrun/infeasibility
-     * fault and must end the session without consuming that instruction.
-     *
-     * Reserve Flash Manager result storage before invoking a result-producing
-     * driver. DMA owns only the driver's source buffer; the driver completes a
-     * synchronous copy into the result lease in this ISR. Commit or cancel
-     * every lease before returning. Accumulate any task wake request and yield
-     * only after all tick operations are complete.
+     * TODO: Apply the active test package to the Logic Expander and enabled
+     * analogue, digital, communications, and PWM execution drivers.
      */
+    return true;
+}
+
+bool DUT_DRIVER_LIFECYCLE_Start( void )
+{
+    /*
+     * TODO: Start every configured DUT-facing driver. The Run State Manager
+     * starts the execution timer only after this function succeeds.
+     */
+    return true;
+}
+
+void DUT_DRIVER_LIFECYCLE_Stop( void )
+{
+    /*
+     * TODO: Stop every DUT-facing driver. The Run State Manager stops the
+     * execution timer before invoking this function.
+     */
+}
+
+void DUT_DRIVER_LIFECYCLE_EnterIdle( void )
+{
+    /* TODO: Apply normal idle output conditions while retaining DUT power. */
+}
+
+void DUT_DRIVER_LIFECYCLE_EnterFault( void )
+{
+    /* TODO: Apply high-impedance output conditions and disable DUT power. */
 }

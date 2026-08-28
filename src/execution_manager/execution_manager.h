@@ -37,12 +37,6 @@ extern "C"
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
-typedef enum FrequencyMode_T
-{
-    FREQUENCY_100HZ,
-    FREQUENCY_1KHZ,
-    FREQUENCY_10KHZ,
-} FrequencyMode_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -101,40 +95,6 @@ typedef enum FrequencyMode_T
  * the Run State Manager through an ISR-safe mechanism that remains to be
  * implemented.
  */
-
-/**
- * @brief Starts the Test Scheduler
- *
- */
-void EXECUTION_MANAGER_Start( void );
-
-/**
- * @brief Stops the Test Scheduler
- *
- */
-void EXECUTION_MANAGER_Stop( void );
-
-/**
- * @brief Sets the frequency mode of the test scheduler
- *
- * @param mode - the selected frequency mode
- *
- * Note: currently only supports 100Hz, 1kHz or 10kHz
- *
- */
-void EXECUTION_MANAGER_Set_Frequency_Mode( FrequencyMode_T mode );
-
-/**
- * @brief Test Scheduler Initialization
- *
- * Initialises the test scheduler based on the selected frequency mode.
- *
- * @warning The current skeleton starts TIM4 immediately. Final lifecycle
- *          integration must ensure this function is not called until the Flash
- *          Manager reports FLASH_MANAGER_STATE_EXECUTING, or separate timer
- *          configuration from timer start.
- */
-void EXECUTION_MANAGER_Init( void );
 
 /**
  * @brief Processes scheduler work from interrupt context.
