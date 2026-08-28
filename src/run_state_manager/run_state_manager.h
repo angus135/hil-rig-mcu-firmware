@@ -7,10 +7,9 @@
  *      Public interface for coordinating the HIL-RIG runtime lifecycle.
  *
  *  Notes:
- *      The current implementation still contains temporary timer-controller
- *      behavior. It is intended to become an RTOS task that owns system policy
- *      and coordinates the Execution Manager and Flash Manager through their
- *      public APIs.
+ *      The Run State Manager is an RTOS task that owns the system lifecycle
+ *      and execution clock. Console controls currently provide manual state
+ *      progression while subsystem-driven transitions are developed.
  ******************************************************************************/
 
 #ifndef RUN_STATE_MANAGER_H
@@ -34,16 +33,33 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+/** Run State Manager task stack allocation, in FreeRTOS stack words. */
+#define RUN_STATE_MANAGER_TASK_MEMORY ( 256U )
+
+/** Run State Manager task scheduling priority. */
+#define RUN_STATE_MANAGER_TASK_PRIORITY ( 3U )
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
-typedef enum FrequencyMode_T
+typedef enum
 {
-    FREQUENCY_100HZ,
-    FREQUENCY_1KHZ,
-    FREQUENCY_10KHZ,
-} FrequencyMode_T;
+    RUN_STATE_IDLE = 0,
+    RUN_STATE_TEST_PACKAGE_RECEIVE,
+    RUN_STATE_CONFIGURATION,
+    RUN_STATE_EXECUTION,
+    RUN_STATE_RESULT_TRANSFER,
+    RUN_STATE_FAULT
+} RunState_T;
+
+/** Supported execution-clock frequencies. */
+typedef enum
+{
+    RUN_STATE_FREQUENCY_100HZ = 0,
+    RUN_STATE_FREQUENCY_1KHZ,
+    RUN_STATE_FREQUENCY_10KHZ
+} RunStateFrequencyMode_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -71,11 +87,12 @@ typedef enum FrequencyMode_T
  * 2. Wait asynchronously until FLASH_MANAGER_GetState() reports
  *    FLASH_MANAGER_STATE_EXECUTING. Treat FLASH_MANAGER_STATE_FAULT as a failed
  *    run preparation.
- * 3. Only then call EXECUTION_MANAGER_Start() to enable the execution timer.
+ * 3. Only then may the Run State Manager start the execution clock. TIM4
+ *    continues to dispatch each tick to EXECUTION_MANAGER_Process_From_ISR().
  *
  * End-of-run handshake:
  *
- * 1. Call EXECUTION_MANAGER_Stop() first. The execution ISR must be completely
+ * 1. Stop the execution clock first. The execution ISR must be completely
  *    finished, with every result lease committed or cancelled, before
  *    finalisation is requested.
  * 2. Call FLASH_MANAGER_RequestResultFinalisation().
@@ -105,45 +122,98 @@ typedef enum FrequencyMode_T
  * transition and the eventual return to IDLE. Until that path exists, a
  * completed result session must not be overwritten by starting another run.
  *
- * The future Run State Manager should call Execution Manager timer/frequency
- * APIs rather than duplicating timer constants or defining its own
- * FrequencyMode_T. The current temporary implementation still duplicates that
- * behavior and starts TIM4 from its Init path; it must not be used as the final
- * lifecycle coordinator without resolving that sequencing.
+ * The Run State Manager owns execution-clock configuration, start, and stop.
+ * The Execution Manager owns the work performed for each generated tick.
  */
 
 /**
- * @brief Starts the Test Scheduler
- *
- */
-void RUN_STATE_MANAGER_Start( void );
-
-/**
- * @brief Stops the Test Scheduler
- *
- */
-void RUN_STATE_MANAGER_Stop( void );
-
-/**
- * @brief Sets the frequency mode of the test scheduler
+ * @brief Sets the execution-clock frequency mode.
  *
  * @param mode - the selected frequency mode
  *
- * Note: currently only supports 100Hz, 1kHz or 10kHz
- *
+ * An updated mode takes effect the next time the execution clock is started.
  */
-void RUN_STATE_MANAGER_Set_Frequency_Mode( FrequencyMode_T mode );
+void RUN_STATE_MANAGER_Set_Execution_Frequency( RunStateFrequencyMode_T mode );
 
 /**
- * @brief Test Scheduler Initialization
+ * @brief Gets the configured execution-clock frequency mode.
  *
- * Initialises the temporary test scheduler using the selected frequency mode.
+ * @returns The currently configured frequency mode.
+ */
+RunStateFrequencyMode_T RUN_STATE_MANAGER_Get_Execution_Frequency( void );
+
+/**
+ * @brief Initialises the Run State Manager.
  *
- * @warning The current placeholder starts TIM4 immediately. The final Run
- *          State Manager must instead wait for FLASH_MANAGER_STATE_EXECUTING
- *          before starting the Execution Manager.
+ * Initialises only resources owned by the Run State Manager. It sets the
+ * lifecycle to idle, selects the default execution-clock frequency, and
+ * ensures the execution clock is stopped. Peripheral and driver initialisation
+ * remains the responsibility of the application startup sequence.
  */
 void RUN_STATE_MANAGER_Init( void );
+
+/**
+ * @brief Requests one manual lifecycle step.
+ *
+ * @returns true if the request was delivered to the task, otherwise false.
+ */
+bool RUN_STATE_MANAGER_RequestStep( void );
+
+/**
+ * @brief Requests a transition to the fault state.
+ *
+ * @returns true if the request was delivered to the task, otherwise false.
+ */
+bool RUN_STATE_MANAGER_RequestFault( void );
+
+/**
+ * @brief Requests a reset from fault to idle.
+ *
+ * @returns true if the request was delivered to the task, otherwise false.
+ */
+bool RUN_STATE_MANAGER_RequestReset( void );
+
+/**
+ * @brief Requests diagnostic execution-timer start through the manager task.
+ *
+ * This bring-up API intentionally bypasses normal Flash preparation and DUT
+ * driver start sequencing. Production test execution must use lifecycle
+ * transitions instead.
+ *
+ * @returns true if the request was delivered to the task, otherwise false.
+ */
+bool RUN_STATE_MANAGER_RequestExecutionTimerStart( void );
+
+/**
+ * @brief Requests diagnostic execution-timer stop through the manager task.
+ *
+ * If normal execution is active, DUT-facing drivers are also stopped safely.
+ *
+ * @returns true if the request was delivered to the task, otherwise false.
+ */
+bool RUN_STATE_MANAGER_RequestExecutionTimerStop( void );
+
+/**
+ * @brief Gets the current lifecycle state.
+ *
+ * @returns The current lifecycle state.
+ */
+RunState_T RUN_STATE_MANAGER_GetState( void );
+
+/**
+ * @brief Reports whether an asynchronous lifecycle transition is in progress.
+ *
+ * @returns true while the manager is waiting for a subordinate manager,
+ *          otherwise false.
+ */
+bool RUN_STATE_MANAGER_IsTransitionPending( void );
+
+/**
+ * @brief Run State Manager FreeRTOS task entry point.
+ *
+ * @param task_parameters Unused task parameter reserved for future use.
+ */
+void RUN_STATE_MANAGER_Task( void* task_parameters );
 
 #ifdef __cplusplus
 }
