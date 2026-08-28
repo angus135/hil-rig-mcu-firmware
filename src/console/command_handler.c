@@ -46,6 +46,7 @@
 #include "subsystem_command_apis/console_can.h"
 #include "subsystem_command_apis/console_flash_manager.h"
 #include "subsystem_command_apis/console_run_state_manager.h"
+#include "subsystem_command_apis/console_test_configuration.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -145,6 +146,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"usb_test",            CONSOLE_Command_USB_Test,               "Testing basic USB functionality"},
     {"flash",               CONSOLE_FlashManager_Command,           "External Flash and Flash Manager hardware bring-up"},
     {"run_state",           CONSOLE_RunStateManager_Command,        "Manual lifecycle and execution-timer control"},
+    {"test_config",         CONSOLE_TestConfiguration_Command,      "Commit DUT lifecycle test configurations"},
 
 };
 
@@ -619,6 +621,7 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
     if ( argc < 2 )
     {
         CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  expander status      - Show initialization readiness\r\n" );
         CONSOLE_Printf( "  expander config      - Initialize all active expanders\r\n" );
         CONSOLE_Printf( "  expander set <addr> <port> <value> - Set control bits (e.g. expander "
                         "set 0x20 A 0xFF)\r\n" );
@@ -626,6 +629,13 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
             "  expander on         - Set every output on every expander to 1 and send\r\n" );
         CONSOLE_Printf( "  expander send       - Send all staged bits to hardware\r\n" );
         CONSOLE_Printf( "  expander reset      - Reset all bits to 0 and send\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "status" ) == 0 )
+    {
+        CONSOLE_Printf( "Logic Expander: %s\r\n",
+                        LOGIC_EXPANDER_Is_Ready() ? "READY" : "NOT READY" );
         return;
     }
 
