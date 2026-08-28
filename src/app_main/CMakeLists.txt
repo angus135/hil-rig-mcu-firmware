@@ -30,10 +30,10 @@ target_link_libraries(app_main
         cubeide_hal
         rtos
         console
-        execution_manager
         background
         host_interface
         flash_manager
+        run_state_manager
 )
 
 # -----------------------------

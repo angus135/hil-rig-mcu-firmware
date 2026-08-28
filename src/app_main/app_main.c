@@ -22,6 +22,7 @@
 #include "console.h"
 #include "flash_manager.h"
 #include "host_communications.h"
+#include "run_state_manager.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -66,6 +67,9 @@ extern TaskHandle_t* HostInterfaceTaskHandle;  // NOLINT(readability-identifier-
  */
 void APP_MAIN_Application( void )
 {
+    CREATE_TASK( RUN_STATE_MANAGER_Task, "Run State Manager Task", RUN_STATE_MANAGER_TASK_MEMORY,
+                 RUN_STATE_MANAGER_TASK_PRIORITY, NULL );
+
 #if GLOBAL_CONFIG__CONSOLE_ENABLED
     CREATE_TASK( CONSOLE_Task, "Console Task", CONSOLE_TASK_MEMORY, CONSOLE_TASK_PRIORITY,
                  ConsoleTaskHandle );

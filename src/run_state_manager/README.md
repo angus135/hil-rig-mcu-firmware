@@ -7,8 +7,9 @@ lifecycle. It coordinates Flash Manager preparation/finalisation and starts or
 stops the Execution Manager timer; it does not execute peripheral instructions
 or access Flash Manager-owned buffers directly.
 
-The current implementation is a temporary timer controller and still duplicates
-Execution Manager frequency constants. It is not the final state machine.
+Console commands currently provide manual progression through the lifecycle.
+The manager uses task notifications for requests and polls only while an
+asynchronous Flash Manager transition is pending.
 
 ## Execution lifecycle
 
@@ -36,9 +37,19 @@ remains infeasible. A discard policy would require an explicit future API.
 
 | File                      | Role |
 |---------------------------|------|
-| `run_state_manager.c` | Temporary timer-controller implementation |
-| `run_state_manager.h` | Public API and future lifecycle integration contract |
-| `configuration_application.c/.h` | Legacy configuration/timer placeholder |
+| `run_state_manager.c` | RTOS lifecycle policy, Flash sequencing, and execution-clock ownership |
+| `run_state_manager.h` | Public lifecycle request and status API |
+| `dut_driver_lifecycle.c/.h` | DUT-facing driver configure/start/stop/idle/fault composition |
+
+The Run State Manager decides when a transition is legal and sequences any
+asynchronous prerequisites. The DUT Driver Lifecycle module performs only the
+synchronous driver operations requested by the manager; it does not own run
+state, the execution timer, Flash Manager transitions, or host transport.
+
+For hardware bring-up, `run_state timer start` and `run_state timer stop`
+request direct execution-timer control through the Run State Manager task.
+Timer start deliberately bypasses normal Flash preparation and DUT driver
+startup, so it must not be used as the production test-execution path.
 
 
 ---

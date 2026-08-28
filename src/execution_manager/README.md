@@ -40,12 +40,12 @@ the complete execution sequence.
 
 ## Lifecycle constraints
 
+The Run State Manager exclusively owns TIM4 configuration, start, and stop.
 TIM4 may start only after the Run State Manager observes
-`FLASH_MANAGER_STATE_EXECUTING`. The current `EXECUTION_MANAGER_Init()` skeleton
-starts the timer immediately, so final integration must sequence it accordingly
-or separate configuration from start. Any underrun, corrupt instruction,
-result-buffer exhaustion, commit failure, consume failure, or timestamp overrun
-must stop execution and be reported to the Run State Manager.
+`FLASH_MANAGER_STATE_EXECUTING`. The Execution Manager owns only the work
+performed for each timer tick. Any underrun, corrupt instruction, result-buffer
+exhaustion, commit failure, consume failure, or timestamp overrun must be
+reported to the Run State Manager through an ISR-safe handoff.
 
 
 ---
@@ -54,7 +54,7 @@ must stop execution and be reported to the Run State Manager.
 
 | File                      | Role |
 |---------------------------|------|
-| `execution_manager.c` | Timer configuration and future ISR execution loop |
+| `execution_manager.c` | Timer ISR execution loop |
 | `execution_manager.h` | Public API and Flash Manager integration contract |
 
 

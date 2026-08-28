@@ -13,12 +13,14 @@ set(CONSOLE_SOURCES
     subsystem_command_apis/console_I2C.c
     subsystem_command_apis/console_can.c
     subsystem_command_apis/console_flash_manager.c
+    subsystem_command_apis/console_run_state_manager.c
 )
 
 set(CONSOLE_HEADERS
     console.h
     subsystem_command_apis/console_can.h
     subsystem_command_apis/console_flash_manager.h
+    subsystem_command_apis/console_run_state_manager.h
 )
 
 add_library(console STATIC
@@ -44,7 +46,6 @@ target_link_libraries(console
     exec_spi
     exec_analogue_output
     exec_analogue_input
-    execution_manager
     exec_digital_input
     exec_digital_output
     exec_can
@@ -61,6 +62,7 @@ target_link_libraries(console
     hw_nand
     hw_qspi
     hw_timer
+    run_state_manager
 )
 
 # -----------------------------

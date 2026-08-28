@@ -6,12 +6,12 @@
 
 set(RUN_STATE_MANAGER_SOURCES
     run_state_manager.c
-    configuration_application.c
+    dut_driver_lifecycle.c
 )
 
 set(RUN_STATE_MANAGER_HEADERS
     run_state_manager.h
-    configuration_application.h
+    dut_driver_lifecycle.h
 )
 
 add_library(run_state_manager STATIC
@@ -33,6 +33,7 @@ target_link_libraries(run_state_manager
         rtos
         hw_timer
         hw_gpio
+        flash_manager
 )
 
 # -----------------------------
