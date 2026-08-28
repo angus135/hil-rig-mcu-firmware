@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Run State Manager will be the RTOS task that owns the global HIL-RIG
+The Run State Manager is the RTOS task that owns the global HIL-RIG
 lifecycle. It coordinates Flash Manager preparation/finalisation and starts or
 stops the Execution Manager timer; it does not execute peripheral instructions
 or access Flash Manager-owned buffers directly.
@@ -83,6 +83,17 @@ the RSM transition is committed.
 The manager uses task notifications for requests and polls only while an
 asynchronous Flash Manager transition is pending.
 
+Request APIs report only whether their notification was delivered to the RSM
+task. They do not report that the request was valid or that its transition has
+completed. Notifications are coalescing event bits, not a FIFO command queue.
+When several different bits arrive together, the RSM evaluates them in its
+documented internal priority order and returns the remaining bits to itself;
+submitting dependent lifecycle requests back-to-back is therefore invalid.
+Callers must wait for the expected state with `transition_pending == false`
+before submitting the next dependent request. The final decision is available
+through `last_request` and `last_request_result` in
+`RUN_STATE_MANAGER_GetStatus()`.
+
 ## Execution lifecycle
 
 Before a run, request Flash Manager execution preparation and wait for
@@ -111,6 +122,7 @@ the RSM never resets result buffers or assigns Flash state directly.
 | `run_state_manager.c` | RTOS lifecycle policy, Flash sequencing, and execution-clock ownership |
 | `run_state_manager.h` | Public lifecycle request and status API |
 | `dut_driver_lifecycle.c/.h` | DUT-facing driver configure/start/stop/idle/fault composition |
+| `../test_configuration/` | Active validated DUT configuration storage |
 
 The Run State Manager decides when a transition is legal and sequences any
 asynchronous prerequisites. The DUT Driver Lifecycle module performs only the
@@ -130,28 +142,55 @@ Execution Manager work.
 External I2C configuration is temporarily forced disabled in the DUT lifecycle
 because of the known I2C hardware fault.
 
+The RSM does not construct or modify a test configuration. During current
+bring-up, `test_config ...` console commands construct and commit it. In the
+production path, the Host Interface will translate a validated, versioned test
+package and call `TEST_CONFIGURATION_Commit()` before requesting
+`CONFIGURATION`. The RSM snapshots that committed value once on configuration
+entry. A later commit must not mutate a configured or executing test.
+
 ## Integration ownership
 
 The public request API is intentionally independent of the eventual transport
-or execution implementation. The future Host Interface owns submission of:
+or execution implementation. The future Host Interface owns this sequence:
 
-- `RUN_STATE_MANAGER_RequestPackageReceive()` after a new package is accepted.
-- `RUN_STATE_MANAGER_RequestConfiguration()` after the active configuration is
-  validated and committed.
+- Submit `RUN_STATE_MANAGER_RequestPackageReceive()` when package reception is
+  accepted, then wait for `TEST_PACKAGE_RECEIVE`.
+- Receive and validate the complete package, upload its canonical instruction
+  stream through Flash Manager, translate its DUT configuration, and publish
+  that configuration using `TEST_CONFIGURATION_Commit()`.
+- Submit `RUN_STATE_MANAGER_RequestConfiguration()` only after both package
+  products are complete, then wait for `ARMED` with no pending transition.
 - `RUN_STATE_MANAGER_RequestExecution()` for a host-originated execute command.
-- `RUN_STATE_MANAGER_RequestResultTransfer()` when host result retrieval begins.
-- `RUN_STATE_MANAGER_RequestResultTransferComplete()` only after every result
-  byte has been consumed and acknowledged.
-- `RUN_STATE_MANAGER_RequestRepeat()` or
-  `RUN_STATE_MANAGER_RequestDiscardResults()` according to host result policy.
+- Submit `RUN_STATE_MANAGER_RequestResultTransfer()` from `RESULTS_READY`, wait
+  for `RESULT_TRANSFER`, and retrieve bytes using the Flash Manager result API.
+- Submit `RUN_STATE_MANAGER_RequestResultTransferComplete()` only after Flash
+  Manager reports end-of-stream and the host protocol has accepted all bytes.
+- Alternatively, from `RESULTS_READY`, submit
+  `RUN_STATE_MANAGER_RequestRepeat()` to abandon the current results and return
+  to `ARMED`, or `RUN_STATE_MANAGER_RequestDiscardResults()` to abandon them
+  and return to `IDLE`. These are alternatives to transfer in the current state
+  table and are not valid after transfer completion.
 
-The future Execution Manager owns submission of:
+Successful result-transfer completion currently returns directly to `IDLE`.
+If the host protocol later requires “transfer results, then rerun the same
+test,” that needs an explicit state-transition policy change; callers must not
+approximate it with a late repeat request.
 
-- `RUN_STATE_MANAGER_RequestExecutionComplete()` after normal instruction-stream
-  completion.
-- `RUN_STATE_MANAGER_RequestFault()` after an execution failure has been handed
-  into task context. A separate ISR-safe handoff may notify that task, but the
-  RSM request itself remains a task-context API.
+The future Execution Manager owns this execution-side integration:
+
+- Perform only bounded instruction dispatch and result production from TIM4
+  ISR context; the RSM continues to own TIM4 configuration, start, and stop.
+- Hand normal completion or failure from the ISR to Execution Manager task
+  context using an ISR-safe primitive.
+- Submit `RUN_STATE_MANAGER_RequestExecutionComplete()` from task context after
+  normal completion.
+- Submit `RUN_STATE_MANAGER_RequestFault(reason)` from task context after an
+  execution failure. The RSM request API itself is not ISR-safe.
+
+The Execution Manager must not directly change RSM state, start or stop TIM4,
+start or finalise Flash sessions, or start and stop DUT drivers. Those remain
+consequences of RSM transitions.
 
 A physical or DUT-originated execution trigger may also submit
 `RUN_STATE_MANAGER_RequestExecution()` after system-level trigger arbitration.
