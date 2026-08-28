@@ -30,6 +30,7 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+#include <stdbool.h>
 #include "exec_analogue_input.h"
 #include "exec_analogue_output.h"
 #include "exec_can.h"
@@ -91,6 +92,39 @@ typedef struct DutDriverConfiguration_T
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Initialises the active configuration to a valid all-disabled setup.
+ *
+ * The inert configuration supports lifecycle hardware bring-up before Host
+ * Interface package decoding is available.
+ */
+void TEST_CONFIGURATION_Init( void );
+
+/**
+ * @brief Publishes a completely validated DUT driver configuration.
+ *
+ * @param configuration Candidate configuration copied into module-owned storage.
+ * @return true when the candidate was committed; false for a null pointer.
+ *
+ * @note Call only from task context while package reception owns configuration
+ *       updates. A committed configuration is immutable for the active run.
+ */
+bool TEST_CONFIGURATION_Commit( const DutDriverConfiguration_T* configuration );
+
+/**
+ * @brief Copies the active configuration into caller-owned storage.
+ *
+ * @param configuration Destination for the complete active configuration.
+ * @return true when an active configuration was copied; otherwise false.
+ */
+bool TEST_CONFIGURATION_GetActive( DutDriverConfiguration_T* configuration );
+
+/** @brief Returns whether an active configuration is available. */
+bool TEST_CONFIGURATION_IsActive( void );
+
+/** @brief Invalidates and clears the active configuration. */
+void TEST_CONFIGURATION_Clear( void );
 
 #ifdef __cplusplus
 }
