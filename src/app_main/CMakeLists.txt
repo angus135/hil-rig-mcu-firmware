@@ -33,6 +33,8 @@ target_link_libraries(app_main
         background
         host_interface
         flash_manager
+        external_flash
+        hw_qspi
         run_state_manager
 )
 
