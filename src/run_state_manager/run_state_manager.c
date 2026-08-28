@@ -754,6 +754,7 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
     {
         RUN_STATE_MANAGER_ClearPendingOperation();
         ( void )RUN_STATE_MANAGER_StopExecution();
+        ( void )FLASH_MANAGER_RequestAbortSession();
     }
     else if ( next_state != RUN_STATE_EXECUTION )
     {
