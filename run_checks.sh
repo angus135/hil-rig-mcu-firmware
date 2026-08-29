@@ -13,7 +13,7 @@ fi
 MODE=$1
 
 # Adjust this to your repo root if needed
-cd /hil-rig-mcu-firmware || exit 1
+#cd /hil-rig-mcu-firmware || exit 1
 
 echo "Collecting source files in src/..."
 

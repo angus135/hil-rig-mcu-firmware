@@ -50,13 +50,19 @@
  */
 
 // Maximum number of bytes that can be queued for USB transmission.
-#define MAX_USB_TRANSMIT_BYTES 512U
+#define MAX_USB_TRANSMIT_BYTES HW_USB_TRANSMIT_CAPACITY_BYTES
 
 // Maximum number of bytes that can be queued from USB receive callbacks.
-#define MAX_USB_RECEIVE_STREAM_BYTES 1024U
+#define MAX_USB_RECEIVE_STREAM_BYTES HW_USB_RECEIVE_CAPACITY_BYTES
 
 // Unblock a waiting receive task as soon as at least one byte is available.
 #define USB_RECEIVE_STREAM_TRIGGER_LEVEL_BYTES 1U
+
+// Bound task-context stale-RX draining even if an ISR keeps receiving bytes.
+#define USB_PROTOCOL_DISCARD_CHUNK_BYTES 64U
+#define USB_PROTOCOL_DISCARD_MAX_READS                                                             \
+    ( ( MAX_USB_RECEIVE_STREAM_BYTES + USB_PROTOCOL_DISCARD_CHUNK_BYTES - 1U )                     \
+      / USB_PROTOCOL_DISCARD_CHUNK_BYTES )
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -105,6 +111,9 @@ typedef struct HWUSBState_T
 
     // Number of received bytes that could not be copied into receive_stream.
     uint32_t receive_stream_bytes_dropped;
+
+    // Maximum observed number of bytes held by the transmit ring.
+    uint32_t transmit_high_water_bytes;
 
 } HWUSBState_T;
 
@@ -201,6 +210,7 @@ bool HW_USB_Init( void )
     }
 
     usb_state.receive_stream_bytes_dropped = 0U;
+    usb_state.transmit_high_water_bytes    = 0U;
 
     // Initialising USB Device Driver
     MX_USB_DEVICE_Init();
@@ -283,6 +293,10 @@ bool HW_USB_Transmit( const uint8_t* data, uint16_t size_bytes )
         ( usb_state.transmit_waiting_end + size_bytes ) % MAX_USB_TRANSMIT_BYTES;
 
     usb_state.transmit_num_buffered += size_bytes;
+    if ( usb_state.transmit_num_buffered > usb_state.transmit_high_water_bytes )
+    {
+        usb_state.transmit_high_water_bytes = usb_state.transmit_num_buffered;
+    }
 
     // Attempt to start transmission immediately. If CDC is busy, the queued
     // data will remain buffered and will be retried by HW_USB_Monitor_Process().
@@ -446,6 +460,76 @@ uint32_t HW_USB_Get_Receive_Stream_Free_Bytes( void )
     }
 
     return ( uint32_t )xStreamBufferSpacesAvailable( usb_state.receive_stream );
+}
+
+bool HW_USB_Is_Connected( void )
+{
+    return hUsbDeviceFS.dev_state == USBD_STATE_CONFIGURED && hUsbDeviceFS.pClassData != NULL;
+}
+
+void HW_USB_Discard_Protocol_Buffers( void )
+{
+    uint8_t  discard_buffer[USB_PROTOCOL_DISCARD_CHUNK_BYTES];
+    uint32_t discard_reads = 0U;
+
+    if ( usb_state.transmit_mutex != NULL
+         && xSemaphoreTake( usb_state.transmit_mutex, portMAX_DELAY ) == pdTRUE )
+    {
+        if ( !HW_USB_Is_Connected() || HW_USB_Transmit_Is_Complete() )
+        {
+            usb_state.transmit_live_start          = 0U;
+            usb_state.transmit_live_end            = 0U;
+            usb_state.transmit_waiting_end         = 0U;
+            usb_state.transmit_num_in_transmission = 0U;
+            usb_state.transmit_num_buffered        = 0U;
+        }
+        else
+        {
+            usb_state.transmit_num_buffered = usb_state.transmit_num_in_transmission;
+            usb_state.transmit_waiting_end  = usb_state.transmit_live_end;
+            if ( usb_state.transmit_waiting_end >= MAX_USB_TRANSMIT_BYTES )
+            {
+                usb_state.transmit_waiting_end = 0U;
+            }
+        }
+
+        ( void )xSemaphoreGive( usb_state.transmit_mutex );
+    }
+
+    while ( usb_state.receive_stream != NULL && discard_reads < USB_PROTOCOL_DISCARD_MAX_READS )
+    {
+        size_t discarded = xStreamBufferReceive( usb_state.receive_stream, discard_buffer,
+                                                 sizeof( discard_buffer ), 0U );
+        discard_reads++;
+        if ( discarded == 0U )
+        {
+            break;
+        }
+    }
+}
+
+uint32_t HW_USB_Get_Transmit_Buffer_Used_Bytes( void )
+{
+    uint32_t used_bytes = 0U;
+
+    if ( usb_state.transmit_mutex == NULL )
+    {
+        return 0U;
+    }
+
+    if ( xSemaphoreTake( usb_state.transmit_mutex, portMAX_DELAY ) != pdTRUE )
+    {
+        return 0U;
+    }
+
+    used_bytes = usb_state.transmit_num_buffered;
+    ( void )xSemaphoreGive( usb_state.transmit_mutex );
+    return used_bytes;
+}
+
+uint32_t HW_USB_Get_Transmit_Buffer_High_Water_Bytes( void )
+{
+    return usb_state.transmit_high_water_bytes;
 }
 
 /**
