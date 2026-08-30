@@ -138,6 +138,7 @@
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_usb"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_watchdog"/>
 									<listOptionValue builtIn="false" value="../../src/host_interface"/>
+									<listOptionValue builtIn="false" value="../../src/host_interface/shared_protocol/include"/>
 									<listOptionValue builtIn="false" value="../../src/logic_expander"/>
 									<listOptionValue builtIn="false" value="../../src/power"/>
 									<listOptionValue builtIn="false" value="../../src/rtos"/>
@@ -180,7 +181,7 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="Src/stm32f4xx_it.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
+						<entry excluding="Src/stm32f4xx_it.c|Src/Application/host_interface/shared_protocol/tests|Src/Application/host_interface/shared_protocol/examples|Src/Application/host_interface/shared_protocol/bindings|Src/Application/host_interface/shared_protocol/python|Src/Application/host_interface/shared_protocol/scripts|Src/Application/host_interface/shared_protocol/src/application|Src/Application/host_interface/shared_protocol/src/transport/internal/extended" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="USB_DEVICE"/>
@@ -322,6 +323,7 @@
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_usb"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_watchdog"/>
 									<listOptionValue builtIn="false" value="../../src/host_interface"/>
+									<listOptionValue builtIn="false" value="../../src/host_interface/shared_protocol/include"/>
 									<listOptionValue builtIn="false" value="../../src/logic_expander"/>
 									<listOptionValue builtIn="false" value="../../src/power"/>
 									<listOptionValue builtIn="false" value="../../src/rtos"/>
@@ -357,7 +359,7 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="Src/stm32f4xx_it.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
+						<entry excluding="Src/stm32f4xx_it.c|Src/Application/host_interface/shared_protocol/tests|Src/Application/host_interface/shared_protocol/examples|Src/Application/host_interface/shared_protocol/bindings|Src/Application/host_interface/shared_protocol/python|Src/Application/host_interface/shared_protocol/scripts|Src/Application/host_interface/shared_protocol/src/application|Src/Application/host_interface/shared_protocol/src/transport/internal/extended" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="USB_DEVICE"/>
@@ -471,6 +473,7 @@
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_usb"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_watchdog"/>
 									<listOptionValue builtIn="false" value="../../src/host_interface"/>
+									<listOptionValue builtIn="false" value="../../src/host_interface/shared_protocol/include"/>
 									<listOptionValue builtIn="false" value="../../src/logic_expander"/>
 									<listOptionValue builtIn="false" value="../../src/power"/>
 									<listOptionValue builtIn="false" value="../../src/rtos"/>
@@ -503,7 +506,7 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="Src/stm32f4xx_it.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
+						<entry excluding="Src/stm32f4xx_it.c|Src/Application/host_interface/shared_protocol/tests|Src/Application/host_interface/shared_protocol/examples|Src/Application/host_interface/shared_protocol/bindings|Src/Application/host_interface/shared_protocol/python|Src/Application/host_interface/shared_protocol/scripts|Src/Application/host_interface/shared_protocol/src/application|Src/Application/host_interface/shared_protocol/src/transport/internal/extended" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="USB_DEVICE"/>
@@ -613,6 +616,7 @@
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_usb"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_watchdog"/>
 									<listOptionValue builtIn="false" value="../../src/host_interface"/>
+									<listOptionValue builtIn="false" value="../../src/host_interface/shared_protocol/include"/>
 									<listOptionValue builtIn="false" value="../../src/logic_expander"/>
 									<listOptionValue builtIn="false" value="../../src/power"/>
 									<listOptionValue builtIn="false" value="../../src/rtos"/>
@@ -645,7 +649,7 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="Src/stm32f4xx_it.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
+						<entry excluding="Src/stm32f4xx_it.c|Src/Application/host_interface/shared_protocol/tests|Src/Application/host_interface/shared_protocol/examples|Src/Application/host_interface/shared_protocol/bindings|Src/Application/host_interface/shared_protocol/python|Src/Application/host_interface/shared_protocol/scripts|Src/Application/host_interface/shared_protocol/src/application|Src/Application/host_interface/shared_protocol/src/transport/internal/extended" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="USB_DEVICE"/>

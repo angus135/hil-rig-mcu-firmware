@@ -48,6 +48,12 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+/** Complete-copy transmit ring capacity. */
+#define HW_USB_TRANSMIT_CAPACITY_BYTES 1024U
+
+/** USB receive stream-buffer capacity. */
+#define HW_USB_RECEIVE_CAPACITY_BYTES 1024U
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -155,6 +161,29 @@ uint32_t HW_USB_Get_Receive_Stream_Dropped_Bytes( void );
  * @return Number of bytes that can currently be written into the receive stream.
  */
 uint32_t HW_USB_Get_Receive_Stream_Free_Bytes( void );
+
+/**
+ * @brief Return whether the USB device is configured and CDC class data exists.
+ *
+ * This is a device/configuration signal. It does not prove that a desktop
+ * application currently has the virtual COM port open.
+ */
+bool HW_USB_Is_Connected( void );
+
+/**
+ * @brief Discard stale protocol bytes from the receive and transmit queues.
+ *
+ * Task-context only. An active CDC-owned transmit region is preserved while the
+ * configured link is still up; queued bytes after it are discarded. When the
+ * link is down, or no transfer is active, the complete transmit ring is reset.
+ */
+void HW_USB_Discard_Protocol_Buffers( void );
+
+/** @return Number of bytes currently owned by or queued for USB transmission. */
+uint32_t HW_USB_Get_Transmit_Buffer_Used_Bytes( void );
+
+/** @return Maximum observed transmit-ring occupancy since HW_USB_Init(). */
+uint32_t HW_USB_Get_Transmit_Buffer_High_Water_Bytes( void );
 
 /**
  * @brief Advance the USB CDC transmit state machine.

@@ -40,7 +40,7 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-static constexpr uint32_t EXPECTED_MAX_USB_TRANSMIT_BYTES          = 512U;
+static constexpr uint32_t EXPECTED_MAX_USB_TRANSMIT_BYTES          = 1024U;
 static constexpr uint32_t EXPECTED_MAX_USB_RECEIVE_STREAM_BYTES    = 1024U;
 static constexpr size_t   EXPECTED_USB_RECEIVE_TRIGGER_LEVEL_BYTES = 1U;
 
@@ -601,4 +601,66 @@ TEST_F( HWUSBTest, TransmitIsCompleteReflectsCDCTxState )
 
     cdc_handle.TxState = 0U;
     EXPECT_TRUE( HW_USB_Transmit_Is_Complete() );
+}
+
+TEST_F( HWUSBTest, IsConnectedRequiresConfiguredDeviceAndCDCClass )
+{
+    hUsbDeviceFS.dev_state = USBD_STATE_CONFIGURED;
+    EXPECT_TRUE( HW_USB_Is_Connected() );
+
+    hUsbDeviceFS.pClassData = nullptr;
+    EXPECT_FALSE( HW_USB_Is_Connected() );
+
+    hUsbDeviceFS.pClassData = &cdc_handle;
+    hUsbDeviceFS.dev_state  = 0U;
+    EXPECT_FALSE( HW_USB_Is_Connected() );
+}
+
+TEST_F( HWUSBTest, TransmitRingAcceptsCompleteMaximumTransportSizedBlock )
+{
+    std::array<uint8_t, 640U> data{};
+    cdc_handle.TxState = 1U;
+
+    EXPECT_CALL( mock, CDCTransmitFS( testing::_, static_cast<uint16_t>( data.size() ) ) )
+        .WillOnce( testing::Return( USBD_BUSY ) );
+
+    EXPECT_TRUE( HW_USB_Transmit( data.data(), static_cast<uint16_t>( data.size() ) ) );
+    EXPECT_EQ( data.size(), usb_state.transmit_num_buffered );
+    EXPECT_EQ( data.size(), HW_USB_Get_Transmit_Buffer_High_Water_Bytes() );
+}
+
+TEST_F( HWUSBTest, DiscardProtocolBuffersClearsDisconnectedTransmitAndReceiveState )
+{
+    usb_state.transmit_num_buffered        = 100U;
+    usb_state.transmit_num_in_transmission = 20U;
+    usb_state.transmit_live_start          = 10U;
+    usb_state.transmit_live_end            = 30U;
+    usb_state.transmit_waiting_end         = 110U;
+    usb_state.receive_stream               = fake_stream;
+    hUsbDeviceFS.dev_state                 = 0U;
+
+    EXPECT_CALL( mock, xStreamBufferReceive( fake_stream, testing::_, 64U, 0U ) )
+        .WillOnce( testing::Return( 4U ) )
+        .WillOnce( testing::Return( 0U ) );
+
+    HW_USB_Discard_Protocol_Buffers();
+
+    EXPECT_EQ( 0U, usb_state.transmit_num_buffered );
+    EXPECT_EQ( 0U, usb_state.transmit_num_in_transmission );
+    EXPECT_EQ( 0U, usb_state.transmit_live_start );
+    EXPECT_EQ( 0U, usb_state.transmit_live_end );
+    EXPECT_EQ( 0U, usb_state.transmit_waiting_end );
+}
+
+TEST_F( HWUSBTest, DiscardProtocolBuffersBoundsReceiveDrainWork )
+{
+    usb_state.receive_stream = fake_stream;
+    hUsbDeviceFS.dev_state   = 0U;
+
+    EXPECT_CALL( mock, xStreamBufferReceive( fake_stream, testing::_,
+                                             USB_PROTOCOL_DISCARD_CHUNK_BYTES, 0U ) )
+        .Times( USB_PROTOCOL_DISCARD_MAX_READS )
+        .WillRepeatedly( testing::Return( 1U ) );
+
+    HW_USB_Discard_Protocol_Buffers();
 }
