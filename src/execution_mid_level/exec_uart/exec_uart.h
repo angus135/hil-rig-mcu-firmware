@@ -110,6 +110,9 @@ typedef struct
  *
  * Set @p config->is_enabled false to stop, deconfigure, and apply the safe
  * external-interface state.
+ * Enabled configurations reject 9-bit word length without parity because the
+ * transport is byte-oriented. Nine-bit words with even/odd parity carry eight
+ * payload bits and remain supported. Framing fields are ignored when disabling.
  */
 bool EXEC_UART_Configure_Channel( ExecUartChannel_T channel, const ExecUartConfig_T* config );
 

@@ -123,14 +123,14 @@ typedef enum
 /**
  * @brief  Specifies the UART word length in bits.
  *
- * @note   Determines the number of data bits per frame and affects buffer
- *         interpretation at higher layers.
+ * @note   Word length includes parity when enabled, but excludes start/stop
+ *         bits. Nine-bit words require parity with the byte-oriented transport;
+ *         nine data bits without parity are rejected during configuration.
  */
 typedef enum
 {
-    HW_UART_WORD_LENGTH_8_BITS = 8,  // Standard 8 data bits per frame
-    HW_UART_WORD_LENGTH_9_BITS = 9   // Extended 9 data bits per frame, may be used for specific
-                                     // protocols or addressing schemes
+    HW_UART_WORD_LENGTH_8_BITS = 8,  // 8 payload bits without parity; 7 with parity
+    HW_UART_WORD_LENGTH_9_BITS = 9   // Supported only as 8 payload bits plus parity
 } HwUartWordLength_T;
 
 /**
@@ -157,7 +157,7 @@ typedef enum
 typedef struct
 {
     uint32_t           baud_rate;    // Communication speed in bits per second (bps)
-    HwUartWordLength_T word_length;  // Number of data bits per UART frame (e.g. 8 or 9)
+    HwUartWordLength_T word_length;  // Word bits including parity when enabled (8 or 9)
     HwUartStopBits_T   stop_bits;    // Number of stop bits per UART frame (e.g. 1 or 2)
     HwUartParity_T     parity;       // Parity configuration for error detection (none, even, odd)
 

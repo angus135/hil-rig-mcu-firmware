@@ -685,6 +685,71 @@ TEST_F( UartTest, DutConfigureReturnsFalseWhenHalInitFails )
     EXPECT_FALSE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 }
 
+TEST_F( UartTest, DutConfigureRejectsNineBitNoParityForEitherChannelAndDirection )
+{
+    EXPECT_CALL( mock_hal, Init( _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hal, DeInit( _ ) ).Times( 0 );
+
+    for ( auto channel : { HW_UART_CHANNEL_1, HW_UART_CHANNEL_2 } )
+    {
+        for ( unsigned int directions = 1U; directions <= 3U; ++directions )
+        {
+            auto config = TEST_HW_UART_Make_Tx_Rx_Config();
+            config.word_length = HW_UART_WORD_LENGTH_9_BITS;
+            config.rx_enabled = ( directions & 1U ) != 0U;
+            config.tx_enabled = ( directions & 2U ) != 0U;
+
+            EXPECT_FALSE( HW_UART_Configure_Channel( channel, &config ) );
+            EXPECT_FALSE( hw_uart_channel_states[channel].runtime.is_configured_and_initialised );
+        }
+    }
+}
+
+TEST_F( UartTest, DutRejectedNineBitNoParityPreservesExistingConfiguration )
+{
+    const auto original = TEST_HW_UART_Make_Tx_Rx_Config();
+    for ( auto channel : { HW_UART_CHANNEL_1, HW_UART_CHANNEL_2 } )
+    {
+        ASSERT_TRUE( HW_UART_Configure_Channel( channel, &original ) );
+    }
+    EXPECT_CALL( mock_hal, Init( _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hal, DeInit( _ ) ).Times( 0 );
+
+    auto invalid = original;
+    invalid.word_length = HW_UART_WORD_LENGTH_9_BITS;
+    invalid.baud_rate = 9600U;
+    for ( auto channel : { HW_UART_CHANNEL_1, HW_UART_CHANNEL_2 } )
+    {
+        EXPECT_FALSE( HW_UART_Configure_Channel( channel, &invalid ) );
+        const auto& state = hw_uart_channel_states[channel];
+        EXPECT_TRUE( state.runtime.is_configured_and_initialised );
+        EXPECT_FALSE( state.runtime.is_started );
+        EXPECT_EQ( state.config.word_length, original.word_length );
+        EXPECT_EQ( state.config.parity, original.parity );
+        EXPECT_EQ( state.config.baud_rate, original.baud_rate );
+    }
+}
+
+TEST_F( UartTest, DutConfigureAcceptsNineBitWordsWithEvenOrOddParity )
+{
+    for ( auto channel : { HW_UART_CHANNEL_1, HW_UART_CHANNEL_2 } )
+    {
+        auto* handle = channel == HW_UART_CHANNEL_1 ? &huart6 : &huart2;
+        for ( auto parity : { HW_UART_PARITY_EVEN, HW_UART_PARITY_ODD } )
+        {
+            auto config = TEST_HW_UART_Make_Tx_Rx_Config();
+            config.word_length = HW_UART_WORD_LENGTH_9_BITS;
+            config.parity = parity;
+            EXPECT_CALL( mock_hal, Init( handle ) ).WillOnce( Return( HAL_OK ) );
+
+            ASSERT_TRUE( HW_UART_Configure_Channel( channel, &config ) );
+            EXPECT_EQ( handle->Init.WordLength, UART_WORDLENGTH_9B );
+            EXPECT_EQ( handle->Init.Parity,
+                       parity == HW_UART_PARITY_EVEN ? UART_PARITY_EVEN : UART_PARITY_ODD );
+        }
+    }
+}
+
 TEST_F( UartTest, DutDeconfigureDeinitialisesPeripheralAndClearsConfigurationState )
 {
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();

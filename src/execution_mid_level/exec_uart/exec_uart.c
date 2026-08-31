@@ -146,6 +146,15 @@ static bool EXEC_UART_Configuration_Is_Valid( const ExecUartConfig_T* config )
         return false;
     }
 
+    /* Reject unsupported byte-transport framing before deconfiguring a channel
+     * or changing the external interface. HW also validates direct callers.
+     */
+    if ( config->word_length == HW_UART_WORD_LENGTH_9_BITS
+         && config->parity == HW_UART_PARITY_NONE )
+    {
+        return false;
+    }
+
     switch ( config->interface_mode )
     {
         case EXEC_UART_MODE_TTL_3V3:
