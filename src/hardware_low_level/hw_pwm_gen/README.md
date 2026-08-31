@@ -69,6 +69,17 @@ These include:
 These functions are intended for configuration-time use so execution-time updates can avoid
 runtime arithmetic overhead.
 
+Each helper returns `bool` and writes its register value through an output pointer only on
+success. Callers must check each result before applying a waveform; `0xFFFF` is no longer an
+error sentinel. Frequencies must be in 1..1,000,000 Hz and realizable for the supplied clock
+and prescaler. Period counts are rounded down, so the realized frequency may be higher than
+requested.
+
+Duty is specified in permille (0..1000); larger values are rejected, not clamped. At 100% duty,
+CCR must equal ARR + 1. The PSC helper leaves room for this value in the 16-bit CCR. Directly
+requesting 100% with ARR=65535 fails without changing the output value, because CCR=65536
+cannot be represented. Use the checked PSC, ARR, then CCR sequence to prepare full-duty output.
+
 ### Direct execution-time PWM updates
 
 For execution-critical PWM updates, the module exposes dedicated direct-update functions for

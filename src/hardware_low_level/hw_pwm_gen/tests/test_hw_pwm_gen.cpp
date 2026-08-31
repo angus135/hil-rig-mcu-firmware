@@ -161,117 +161,128 @@ protected:
  * Compute PSC Tests
  *---------------------------------------------------------------------------*/
 
-TEST_F( HWPWMGenTest, ComputePSCReturnsMaxForInvalidFrequency )
+TEST_F( HWPWMGenTest, ComputePSCRejectsInvalidInputsWithoutChangingOutput )
 {
-    uint16_t psc = HW_PWM_GEN_compute_psc( 10000000, 100000000 );
-
-    EXPECT_EQ( psc, 0xFFFF );
+    uint16_t psc = 1234U;
+    EXPECT_FALSE( HW_PWM_GEN_compute_psc( 0U, 1000000U, &psc ) );
+    EXPECT_FALSE( HW_PWM_GEN_compute_psc( 1U, 0U, &psc ) );
+    EXPECT_FALSE( HW_PWM_GEN_compute_psc( 1001U, 1000U, &psc ) );
+    EXPECT_FALSE( HW_PWM_GEN_compute_psc( 1000001U, 90000000U, &psc ) );
+    EXPECT_FALSE( HW_PWM_GEN_compute_psc( 1000U, 1000000U, nullptr ) );
+    EXPECT_EQ( psc, 1234U );
 }
 
-TEST_F( HWPWMGenTest, ComputePSCReturnsMaxForZeroFrequency )
+TEST_F( HWPWMGenTest, ComputePSCSelectsSmallestDividerWithRoomForFullDuty )
 {
-    uint16_t psc = HW_PWM_GEN_compute_psc( 0, 1000000 );
-
-    EXPECT_EQ( psc, 0xFFFF );
-}
-
-TEST_F( HWPWMGenTest, ComputePSCReturnsOneWhenARRFitsWithoutDivision )
-{
-    uint16_t psc = HW_PWM_GEN_compute_psc( 1000, 1000000 );
-
-    EXPECT_EQ( psc, 0 );
-}
-
-TEST_F( HWPWMGenTest, ComputePSCIncreasesDividerForLowFrequency )
-{
-    uint16_t psc = HW_PWM_GEN_compute_psc( 1, 1000000 );
-
-    EXPECT_GT( psc, 1 );
-}
-
-TEST_F( HWPWMGenTest, ComputePSCHandlesBoundaryCondition )
-{
-    uint16_t psc = HW_PWM_GEN_compute_psc( 16, 1000000 );
-
-    EXPECT_EQ( psc, 0 );
+    uint16_t psc = 0U;
+    ASSERT_TRUE( HW_PWM_GEN_compute_psc( 1000U, 1000000U, &psc ) );
+    EXPECT_EQ( psc, 0U );
+    ASSERT_TRUE( HW_PWM_GEN_compute_psc( 1U, 1000000U, &psc ) );
+    EXPECT_EQ( psc, 15U );
+    ASSERT_TRUE( HW_PWM_GEN_compute_psc( 16U, 1000000U, &psc ) );
+    EXPECT_EQ( psc, 0U );
+    ASSERT_TRUE( HW_PWM_GEN_compute_psc( 1U, 65535U, &psc ) );
+    EXPECT_EQ( psc, 0U );
+    ASSERT_TRUE( HW_PWM_GEN_compute_psc( 1U, 65536U, &psc ) );
+    EXPECT_EQ( psc, 1U );
+    ASSERT_TRUE( HW_PWM_GEN_compute_psc( 1U, UINT32_MAX, &psc ) );
+    EXPECT_EQ( psc, UINT16_MAX ); // A valid PSC, no longer an error sentinel.
 }
 
 /*-----------------------------------------------------------------------------
  * Compute ARR Tests
  *---------------------------------------------------------------------------*/
 
-TEST_F( HWPWMGenTest, ComputeARRReturnsExpectedValue )
+TEST_F( HWPWMGenTest, ComputeARRHandlesValidPeriodsAndRegisterBoundaries )
 {
-    uint16_t arr = HW_PWM_GEN_compute_arr( 1000, 1000000, 1 );
-
-    EXPECT_EQ( arr, 499 );
+    uint16_t arr = 1234U;
+    ASSERT_TRUE( HW_PWM_GEN_compute_arr( 1000U, 1000000U, 1U, &arr ) );
+    EXPECT_EQ( arr, 499U );
+    ASSERT_TRUE( HW_PWM_GEN_compute_arr( 100U, 1000000U, 9U, &arr ) );
+    EXPECT_EQ( arr, 999U );
+    ASSERT_TRUE( HW_PWM_GEN_compute_arr( 1000000U, 1000000U, 0U, &arr ) );
+    EXPECT_EQ( arr, 0U );
+    ASSERT_TRUE( HW_PWM_GEN_compute_arr( 1U, 65536U, 0U, &arr ) );
+    EXPECT_EQ( arr, UINT16_MAX );
+    ASSERT_TRUE( HW_PWM_GEN_compute_arr( 1U, UINT32_MAX, UINT16_MAX, &arr ) );
+    EXPECT_EQ( arr, 65534U );
 }
 
-TEST_F( HWPWMGenTest, ComputeARRHandlesLargePrescaler )
+TEST_F( HWPWMGenTest, ComputeARRRejectsInvalidOrUnrepresentablePeriods )
 {
-    uint16_t arr = HW_PWM_GEN_compute_arr( 100, 1000000, 9 );
-
-    EXPECT_EQ( arr, 999 );
+    uint16_t arr = 1234U;
+    EXPECT_FALSE( HW_PWM_GEN_compute_arr( 0U, 1000000U, 0U, &arr ) );
+    EXPECT_FALSE( HW_PWM_GEN_compute_arr( 1U, 0U, 0U, &arr ) );
+    EXPECT_FALSE( HW_PWM_GEN_compute_arr( 1000001U, 90000000U, 0U, &arr ) );
+    EXPECT_FALSE( HW_PWM_GEN_compute_arr( 1001U, 1000U, 0U, &arr ) );
+    EXPECT_FALSE( HW_PWM_GEN_compute_arr( 1000U, 1000U, 1U, &arr ) );
+    EXPECT_FALSE( HW_PWM_GEN_compute_arr( 1U, 65537U, 0U, &arr ) );
+    EXPECT_FALSE( HW_PWM_GEN_compute_arr( 1000U, 1000000U, 0U, nullptr ) );
+    EXPECT_EQ( arr, 1234U );
 }
 
-TEST_F( HWPWMGenTest, ComputeARRReturnsZeroForMaximumFrequency )
+TEST_F( HWPWMGenTest, ComputeARRRejectsOversizedDividerWithoutIntegerWrap )
 {
-    uint16_t arr = HW_PWM_GEN_compute_arr( 1000000, 1000000, 0 );
-
-    EXPECT_EQ( arr, 0 );
-}
-
-TEST_F( HWPWMGenTest, ComputeARRReturnsMaxForZeroFrequency )
-{
-    uint16_t arr = HW_PWM_GEN_compute_arr( 0, 1000000, 0 );
-
-    EXPECT_EQ( arr, 0xFFFF );
-}
-
-TEST_F( HWPWMGenTest, ComputeARRReturnsMaxWhenCombinedDividerWrapsToZero )
-{
-    uint16_t arr = HW_PWM_GEN_compute_arr( 65536, 1000000, 65535 );
-
-    EXPECT_EQ( arr, 0xFFFF );
+    uint16_t arr = 1234U;
+    // The first product used to wrap to zero; the second to a nonzero value.
+    EXPECT_FALSE( HW_PWM_GEN_compute_arr( 65536U, UINT32_MAX, UINT16_MAX, &arr ) );
+    EXPECT_FALSE( HW_PWM_GEN_compute_arr( 65537U, UINT32_MAX, UINT16_MAX, &arr ) );
+    EXPECT_EQ( arr, 1234U );
 }
 
 /*-----------------------------------------------------------------------------
  * Compute CCR Tests
  *---------------------------------------------------------------------------*/
 
-TEST_F( HWPWMGenTest, ComputeCCRReturnsZeroForZeroDuty )
+TEST_F( HWPWMGenTest, ComputeCCRHandlesZeroFractionalAndFullDuty )
 {
-    uint16_t ccr = HW_PWM_GEN_compute_ccr( 0, 999 );
-
-    EXPECT_EQ( ccr, 0 );
+    uint16_t ccr = 1234U;
+    ASSERT_TRUE( HW_PWM_GEN_compute_ccr( 0U, 999U, &ccr ) );
+    EXPECT_EQ( ccr, 0U );
+    ASSERT_TRUE( HW_PWM_GEN_compute_ccr( 250U, 999U, &ccr ) );
+    EXPECT_EQ( ccr, 250U );
+    ASSERT_TRUE( HW_PWM_GEN_compute_ccr( 500U, 999U, &ccr ) );
+    EXPECT_EQ( ccr, 500U );
+    ASSERT_TRUE( HW_PWM_GEN_compute_ccr( 1000U, 999U, &ccr ) );
+    EXPECT_EQ( ccr, 1000U );
 }
 
-TEST_F( HWPWMGenTest, ComputeCCRReturnsHalfDutyCorrectly )
+TEST_F( HWPWMGenTest, ComputeCCRRejectsInvalidDutyAndFullDutyOverflow )
 {
-    uint16_t ccr = HW_PWM_GEN_compute_ccr( 500, 999 );
-
-    EXPECT_EQ( ccr, 500 );
+    uint16_t ccr = 1234U;
+    EXPECT_FALSE( HW_PWM_GEN_compute_ccr( 1001U, 999U, &ccr ) );
+    EXPECT_FALSE( HW_PWM_GEN_compute_ccr( UINT16_MAX, 999U, &ccr ) );
+    EXPECT_FALSE( HW_PWM_GEN_compute_ccr( 1000U, UINT16_MAX, &ccr ) );
+    EXPECT_FALSE( HW_PWM_GEN_compute_ccr( 500U, 999U, nullptr ) );
+    EXPECT_EQ( ccr, 1234U );
 }
 
-TEST_F( HWPWMGenTest, ComputeCCRReturnsQuarterDutyCorrectly )
+TEST_F( HWPWMGenTest, ComputeCCRSupportsRepresentableBoundaryValues )
 {
-    uint16_t ccr = HW_PWM_GEN_compute_ccr( 250, 999 );
-
-    EXPECT_EQ( ccr, 250 );
+    uint16_t ccr = 0U;
+    ASSERT_TRUE( HW_PWM_GEN_compute_ccr( 1000U, 65534U, &ccr ) );
+    EXPECT_EQ( ccr, UINT16_MAX );
+    ASSERT_TRUE( HW_PWM_GEN_compute_ccr( 0U, UINT16_MAX, &ccr ) );
+    EXPECT_EQ( ccr, 0U );
+    ASSERT_TRUE( HW_PWM_GEN_compute_ccr( 999U, UINT16_MAX, &ccr ) );
+    EXPECT_EQ( ccr, 65470U );
+    ASSERT_TRUE( HW_PWM_GEN_compute_ccr( 1000U, 0U, &ccr ) );
+    EXPECT_EQ( ccr, 1U );
 }
 
-TEST_F( HWPWMGenTest, ComputeCCRReturnsFullScaleFor100PercentDuty )
+TEST_F( HWPWMGenTest, PreparedWaveformSupportsFullDutyAtPeriodBoundary )
 {
-    uint16_t ccr = HW_PWM_GEN_compute_ccr( 1000, 999 );
-
-    EXPECT_EQ( ccr, 1000 );
-}
-
-TEST_F( HWPWMGenTest, ComputeCCRClampsDutyAbove100Percent )
-{
-    uint16_t ccr = HW_PWM_GEN_compute_ccr( 1500, 999 );
-
-    EXPECT_EQ( ccr, 1000 );
+    uint16_t psc = 0U;
+    uint16_t arr = 0U;
+    uint16_t ccr = 0U;
+    for ( uint32_t clock : { 65535U, 65536U, 1000000U, UINT32_MAX } )
+    {
+        ASSERT_TRUE( HW_PWM_GEN_compute_psc( 1U, clock, &psc ) );
+        ASSERT_TRUE( HW_PWM_GEN_compute_arr( 1U, clock, psc, &arr ) );
+        ASSERT_TRUE( HW_PWM_GEN_compute_ccr( 1000U, arr, &ccr ) );
+        EXPECT_EQ( static_cast<uint32_t>( ccr ), static_cast<uint32_t>( arr ) + 1U );
+        EXPECT_NE( ccr, 0U );
+    }
 }
 
 /*-----------------------------------------------------------------------------
@@ -438,14 +449,16 @@ TEST_F( HWPWMGenTest, StopChannelReturnsFalseWhenNotStarted )
 
 TEST_F( HWPWMGenTest, ComputeCCRHandlesSmallARR )
 {
-    uint16_t ccr = HW_PWM_GEN_compute_ccr( 500, 1 );
+    uint16_t ccr = 0U;
+    ASSERT_TRUE( HW_PWM_GEN_compute_ccr( 500U, 1U, &ccr ) );
 
     EXPECT_EQ( ccr, 1 );
 }
 
 TEST_F( HWPWMGenTest, ComputeARRHandlesPrescalerZero )
 {
-    uint16_t arr = HW_PWM_GEN_compute_arr( 1000, 1000000, 0 );
+    uint16_t arr = 0U;
+    ASSERT_TRUE( HW_PWM_GEN_compute_arr( 1000U, 1000000U, 0U, &arr ) );
 
     EXPECT_EQ( arr, 999 );
 }
