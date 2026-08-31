@@ -119,9 +119,9 @@ static ExecPwmCaptureState_T exec_pwm_capture_channel_state[EXEC_PWM_CAPTURE_CHA
 /**
  * @brief Apply the static analogue front-end selection for a PWM capture mode.
  *
- * The selected mode controls the PWM_MODE[1:0] hardware selection bits, which
- * choose the active LV/HV input path and threshold. The actual GPIO or expander
- * writes are implemented here once the hardware control path is available.
+ * The selected mode controls PWM_MODE_0 and PWM_MODE_1 through the LogicExpander
+ * to choose the active LV/HV input path and threshold. The schematic truth table
+ * uses [MODE0, MODE1] order, not the conventional [MODE1, MODE0] bit-vector order.
  *
  * @param mode PWM capture hardware mode to apply.
  *
@@ -144,25 +144,25 @@ static bool EXEC_PWM_Capture_Apply_Static_Hardware_Selection( ExecPwmCaptureMode
     {
         case EXEC_PWM_CAPTURE_LV_3V3:
             // Configure hardware for 3.3V capture mode
-            // SET PWM_MODE[1:0] to [0, 0] to select the 3.3V capture mode
+            // Set [MODE0, MODE1] to [0, 0] to select the 3.3V capture mode
             mode_0 = false;
             mode_1 = false;
             break;
         case EXEC_PWM_CAPTURE_LV_5V:
             // Configure hardware for 5V capture mode
-            // SET PWM_MODE[1:0] to [0, 1] to select the 5V capture mode
+            // Set [MODE0, MODE1] to [0, 1] to select the 5V capture mode
             mode_0 = false;
             mode_1 = true;
             break;
         case EXEC_PWM_CAPTURE_HV_12V:
             // Configure hardware for 12V capture mode
-            // SET PWM_MODE[1:0] to [1, 0] to select the 12V capture mode
+            // Set [MODE0, MODE1] to [1, 0] to select the 12V capture mode
             mode_0 = true;
             mode_1 = false;
             break;
         case EXEC_PWM_CAPTURE_HV_24V:
             // Configure hardware for 24V capture mode
-            // SET PWM_MODE[1:0] to [1, 1] to select the 24V capture mode
+            // Set [MODE0, MODE1] to [1, 1] to select the 24V capture mode
             mode_0 = true;
             mode_1 = true;
             break;
