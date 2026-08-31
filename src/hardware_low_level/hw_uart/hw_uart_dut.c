@@ -342,6 +342,15 @@ static bool HW_UART_Configuration_Is_Valid( const HwUartPeripheralConfig_T* conf
         return false;
     }
 
+    /* Byte-oriented buffers/DMA cannot carry nine payload bits. With parity,
+     * the ninth frame bit is parity and the payload still fits in one byte.
+     */
+    if ( config->word_length == HW_UART_WORD_LENGTH_9_BITS
+         && config->parity == HW_UART_PARITY_NONE )
+    {
+        return false;
+    }
+
     return ( config->baud_rate <= 2000000U );
 }
 
