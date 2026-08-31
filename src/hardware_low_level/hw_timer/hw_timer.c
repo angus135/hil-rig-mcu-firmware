@@ -347,8 +347,8 @@ bool HW_TIMER_Start_Timer( Timer_T timer )
                                       | PWM_CAPTURE_TIMER_CH1_SECONDARY_FLAG );
 
             return HW_TIMER_Start_Capture_Pair( &PWM_CAPTURE_TIMER_CH1_HANDLE,
-                                               PWM_CAPTURE_TIMER_CH1_PRIMARY_CHANNEL,
-                                               PWM_CAPTURE_TIMER_CH1_SECONDARY_CHANNEL );
+                                                PWM_CAPTURE_TIMER_CH1_PRIMARY_CHANNEL,
+                                                PWM_CAPTURE_TIMER_CH1_SECONDARY_CHANNEL );
 
         case PWM_CAPTURE_TIMER_CH2:
             __HAL_TIM_SET_COUNTER( &PWM_CAPTURE_TIMER_CH2_HANDLE, 0U );
@@ -358,8 +358,8 @@ bool HW_TIMER_Start_Timer( Timer_T timer )
                                       | PWM_CAPTURE_TIMER_CH2_SECONDARY_FLAG );
 
             return HW_TIMER_Start_Capture_Pair( &PWM_CAPTURE_TIMER_CH2_HANDLE,
-                                               PWM_CAPTURE_TIMER_CH2_PRIMARY_CHANNEL,
-                                               PWM_CAPTURE_TIMER_CH2_SECONDARY_CHANNEL );
+                                                PWM_CAPTURE_TIMER_CH2_PRIMARY_CHANNEL,
+                                                PWM_CAPTURE_TIMER_CH2_SECONDARY_CHANNEL );
         default:
             return false;
     }

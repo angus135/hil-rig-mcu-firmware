@@ -89,8 +89,8 @@ protected:
     {
         g_mock_timer = &mock_timer;
         ON_CALL( mock_timer, Start_Timer( _ ) ).WillByDefault( testing::Return( true ) );
-        mock_tim2    = {};
-        mock_tim5    = {};
+        mock_tim2 = {};
+        mock_tim5 = {};
 
         EXPECT_CALL( mock_timer, Stop_Timer( PWM_CAPTURE_TIMER_CH1 ) );
         EXPECT_CALL( mock_timer, Stop_Timer( PWM_CAPTURE_TIMER_CH2 ) );
@@ -154,9 +154,8 @@ TEST_F( HWPWMCaptureTest, StartReturnsFalseWhenChannelIsNotConfigured )
 
 TEST_F( HWPWMCaptureTest, TimerStartFailureLeavesBothChannelsConfiguredAndRetryable )
 {
-    const HwPWMCaptureChannel_T channels[] = { HW_PWM_CAPTURE_CHANNEL_1,
-                                               HW_PWM_CAPTURE_CHANNEL_2 };
-    const Timer_T timers[] = { PWM_CAPTURE_TIMER_CH1, PWM_CAPTURE_TIMER_CH2 };
+    const HwPWMCaptureChannel_T channels[] = { HW_PWM_CAPTURE_CHANNEL_1, HW_PWM_CAPTURE_CHANNEL_2 };
+    const Timer_T               timers[]   = { PWM_CAPTURE_TIMER_CH1, PWM_CAPTURE_TIMER_CH2 };
     for ( unsigned int i = 0U; i < 2U; ++i )
     {
         EXPECT_CALL( mock_timer, Stop_Timer( timers[i] ) );

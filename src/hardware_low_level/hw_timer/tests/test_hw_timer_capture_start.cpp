@@ -5,8 +5,16 @@
 /* Minimal HAL seam: exercise the exact private helper used by both PWM timers
  * without the host hw_timer.c stub bypassing the HAL start calls.
  */
-struct TIM_HandleTypeDef {};
-enum HAL_StatusTypeDef { HAL_OK, HAL_ERROR, HAL_BUSY, HAL_TIMEOUT };
+struct TIM_HandleTypeDef
+{
+};
+enum HAL_StatusTypeDef
+{
+    HAL_OK,
+    HAL_ERROR,
+    HAL_BUSY,
+    HAL_TIMEOUT
+};
 static HAL_StatusTypeDef HAL_TIM_IC_Start( TIM_HandleTypeDef*, uint32_t );
 static HAL_StatusTypeDef HAL_TIM_IC_Stop( TIM_HandleTypeDef*, uint32_t );
 #include "hw_timer_capture_start.h"
@@ -34,18 +42,21 @@ class CaptureStartTest : public testing::TestWithParam<bool>
 {
 protected:
     testing::StrictMock<MockCaptureHal> hal;
-    TIM_HandleTypeDef handle;
-    uint32_t primary;
-    uint32_t secondary;
+    TIM_HandleTypeDef                   handle;
+    uint32_t                            primary;
+    uint32_t                            secondary;
 
     void SetUp() override
     {
         capture_hal = &hal;
         /* STM32 TIM_CHANNEL_1 = 0, TIM_CHANNEL_2 = 4; TIM5 reverses roles. */
-        primary = GetParam() ? 4U : 0U;
+        primary   = GetParam() ? 4U : 0U;
         secondary = GetParam() ? 0U : 4U;
     }
-    void TearDown() override { capture_hal = nullptr; }
+    void TearDown() override
+    {
+        capture_hal = nullptr;
+    }
 };
 
 TEST_P( CaptureStartTest, BothInputsStartSuccessfully )
