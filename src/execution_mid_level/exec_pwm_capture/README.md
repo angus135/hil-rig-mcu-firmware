@@ -64,6 +64,19 @@ code while still allowing deterministic low-overhead capture reads.
 
 ## Configuration and Start/Stop Flow
 
+The schematic's mode-selection table uses explicit `[MODE0, MODE1]` order:
+
+| Capture mode | MODE0 (`PWM_MODE_0`) | MODE1 (`PWM_MODE_1`) |
+|--------------|---------------------|---------------------|
+| 3.3 V | 0 | 0 |
+| 5 V | 0 | 1 |
+| 12 V | 1 | 0 |
+| 24 V | 1 | 1 |
+
+Do not interpret these pairs as `PWM_MODE[1:0]`: that notation reverses the
+signal order. The 5 V configuration drives MODE0 low and MODE1 high; the 12 V
+configuration drives MODE0 high and MODE1 low.
+
 `EXEC_PWM_Capture_Configure_Channel()` applies the requested analogue front-end
 mode and configures the mapped hardware channel without starting capture. A
 disabled configuration disables the hardware channel and applies the safe
