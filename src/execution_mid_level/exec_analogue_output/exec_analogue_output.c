@@ -564,6 +564,11 @@ bool EXEC_ANALOG_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       prepa
 
 bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( const AnalogueOutputPreparedBatch_T* prepared_batch )
 {
+    /*
+     * TODO: Before ISR integration, replace this readiness call with ISR-safe
+     * fault latching. Its fault path takes the LogicExpander mutex and must
+     * defer output-disable work to task context; this path is not ISR-safe yet.
+     */
     EXEC_ANALOGUE_OUTPUT_Update_Readiness();
 
     if ( s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOG_OUTPUT_STATE_STARTED )
@@ -576,6 +581,11 @@ bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( const AnalogueOutputPreparedBatch
         return false;
     }
 
+    /*
+     * TODO: Add preparation-time schedule admission using actual SPI speed,
+     * frame/CS overhead and tick rate. Six frames need about 205 us of wire time
+     * at 703 kbit/s, so this size limit does not guarantee a 100 us tick budget.
+     */
     if ( ( prepared_batch->byte_count > EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES )
          || ( ( prepared_batch->byte_count % EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES ) != 0U ) )
     {

@@ -378,8 +378,10 @@ bool EXEC_PWM_Capture_Consume( ExecPwmCaptureChannel_T channel, ExecPwmCaptureRe
     }
 
     /*
-     * Read CCR values before clearing the capture flag to avoid losing
-     * a new capture event that occurs between operations.
+     * TODO: Use a coherent, overcapture-aware snapshot (e.g. capture DMA or a
+     * verified register-read protocol). Live CCR reads can mix measurements;
+     * clearing the flag afterward can discard an intervening capture event.
+     * Reading before clearing alone does not prevent either race.
      */
     /*
      * Hardware contract:

@@ -808,6 +808,9 @@ void HW_SPI_Timer_Callback_From_ISR( SPIChannel_T peripheral )
  */
 bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32_t size )
 {
+    /* TODO: Save and restore the prior TX DMA IRQ enable state, rather than
+     * unconditionally enabling it and undoing a caller's fault/lifecycle mask.
+     */
     SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State_Fast( peripheral );
     bool                  accepted         = false;
 
@@ -834,6 +837,9 @@ bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32
 bool HW_SPI_Load_Tx_Packets( SPIChannel_T peripheral, const uint8_t* data,
                              uint32_t packet_size_bytes, uint32_t packet_count )
 {
+    /* TODO: Preserve the prior TX DMA IRQ enable state across batch loading,
+     * including rejected batches, as for HW_SPI_Load_Tx_Buffer().
+     */
     SPIPeripheralState_T* peripheral_state;
     bool                  accepted = false;
 
@@ -872,6 +878,9 @@ bool HW_SPI_Load_Tx_Packets( SPIChannel_T peripheral, const uint8_t* data,
  */
 void HW_SPI_Tx_Trigger( SPIChannel_T peripheral )
 {
+    /* TODO: Restore the prior TX DMA IRQ enable state on every exit, including
+     * active-transfer, empty-queue and fault paths; do not unconditionally enable.
+     */
     SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State_Fast( peripheral );
 
     // Protect against a race with the TX DMA IRQ handler. We only disable the

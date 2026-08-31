@@ -813,6 +813,10 @@ bool HW_UART_Stop_Channel( HwUartChannel_T channel )
  */
 HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
 {
+    /* TODO: Track DMA producer progress across wraps and latch/report overrun.
+     * A full unread lap currently looks empty. RX start disables HT/TC IRQs;
+     * revisit that policy and bound servicing latency when adding accounting.
+     */
     HwUartChannelState_T*      state      = &hw_uart_channel_states[channel];
     const HwUartHardwareMap_T* hw_map     = &hw_uart_hardware_map[channel];
     uint8_t*                   rx_buffer  = state->rx_buffer;

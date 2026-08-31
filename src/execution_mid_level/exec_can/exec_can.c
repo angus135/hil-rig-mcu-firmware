@@ -319,6 +319,10 @@ EXEC_CAN_Result_T EXEC_CAN_Transmit( EXEC_CAN_Channel_T channel, const EXEC_CAN_
     }
 
     CAN_Packet_T hardware_packets[EXEC_CAN_MAX_BATCH_SIZE] = EXEC_CAN_ZERO_INITIALIZER;
+    /* TODO: Avoid full-capacity initialization and redundant packet translation
+     * using a shared transport representation or prepared batch. Preserve
+     * validation/ownership; do not cast between distinct packet struct types.
+     */
     for ( uint16_t i = 0U; i < packet_count; i++ )
     {
         if ( packets[i].id > EXEC_CAN_STANDARD_ID_MAX
@@ -376,6 +380,10 @@ EXEC_CAN_Result_T EXEC_CAN_Receive( EXEC_CAN_Channel_T channel, EXEC_CAN_Packet_
         hardware_capacity = EXEC_CAN_MAX_BATCH_SIZE;
     }
 
+    /* TODO: Remove full-capacity temporary initialization and redundant RX
+     * copies while preserving validation and defined unused payload bytes.
+     * The conversion loop already processes only the received packet count.
+     */
     CAN_Packet_T hardware_packets[EXEC_CAN_MAX_BATCH_SIZE] = EXEC_CAN_ZERO_INITIALIZER;
     uint16_t     count                                     = channel == EXEC_CAN_CHANNEL_1
                                                                  ? HW_CAN_Rx_Buffer_Read1( hardware_packets, hardware_capacity )
