@@ -213,7 +213,10 @@ bool HW_PWM_Capture_Start_Channel( HwPWMCaptureChannel_T channel )
         return false;
     }
 
-    HW_TIMER_Start_Timer( context->timer_role );
+    if ( !HW_TIMER_Start_Timer( context->timer_role ) )
+    {
+        return false;
+    }
     context->is_started = true;
 
     return true;

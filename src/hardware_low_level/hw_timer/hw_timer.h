@@ -74,10 +74,12 @@ void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t arr );
 /**
  * @brief Starts the specified timer
  *
- * @param timer - the timer to configure
- *
+ * @param timer - the timer to start
+ * @return true on success; false for an invalid timer or a HAL start failure.
+ * PWM capture starts both inputs. If the second start fails, the first input
+ * is stopped before returning false. LL-only timer starts have no status result.
  */
-void HW_TIMER_Start_Timer( Timer_T timer );
+bool HW_TIMER_Start_Timer( Timer_T timer );
 
 /**
  * @brief Stops the specified timer
