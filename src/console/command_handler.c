@@ -75,6 +75,7 @@ typedef struct
 typedef struct
 {
     bool             is_configured;
+    /* True while either channel remains started; transfers require both. */
     bool             is_started;
     ExecI2CChannel_T master_channel;
     ExecI2CChannel_T slave_channel;
@@ -930,17 +931,29 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[1], "stop" ) == 0 && argc == 2U )
     {
-        if ( !s_i2c_loopback_state.is_started )
+        const bool ch1_started = EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_1 );
+        const bool ch2_started = EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_2 );
+        if ( !ch1_started && !ch2_started )
         {
+            s_i2c_loopback_state.is_started = false;
             CONSOLE_Printf( "I2C loopback is not started.\r\n" );
             return;
         }
-        const EXECI2CStatus_T status_1 = EXEC_I2C_Stop_Channel( EXEC_I2C_CHANNEL_1 );
-        const EXECI2CStatus_T status_2 = EXEC_I2C_Stop_Channel( EXEC_I2C_CHANNEL_2 );
+        /* A retry must not stop a channel that already stopped successfully. */
+        const EXECI2CStatus_T status_1 = ch1_started
+            ? EXEC_I2C_Stop_Channel( EXEC_I2C_CHANNEL_1 ) : EXEC_I2C_STATUS_OK;
+        const EXECI2CStatus_T status_2 = ch2_started
+            ? EXEC_I2C_Stop_Channel( EXEC_I2C_CHANNEL_2 ) : EXEC_I2C_STATUS_OK;
+        const bool ch1_still_started = EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_1 );
+        const bool ch2_still_started = EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_2 );
+        s_i2c_loopback_state.is_started = ch1_still_started || ch2_still_started;
         if ( status_1 != EXEC_I2C_STATUS_OK || status_2 != EXEC_I2C_STATUS_OK )
         {
-            CONSOLE_Printf( "I2C stop failed (ch1=%d, ch2=%d).\r\n", ( int )status_1,
-                            ( int )status_2 );
+            CONSOLE_Printf( "I2C stop incomplete (ch1=%d, ch2=%d); "
+                            "started: ch1=%s, ch2=%s. Retry stop.\r\n",
+                            ( int )status_1, ( int )status_2,
+                            ch1_still_started ? "yes" : "no",
+                            ch2_still_started ? "yes" : "no" );
             return;
         }
         s_i2c_loopback_state.is_started = false;
@@ -986,9 +999,16 @@ static void CONSOLE_Command_I2C_Loopback( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[1], "run" ) == 0 )
     {
-        if ( argc < 4U || !s_i2c_loopback_state.is_started )
+        if ( argc < 4U )
         {
             CONSOLE_Printf( "Usage: i2c_loopback run <dir:m2s|s2m> <message...>\r\n" );
+            return;
+        }
+        if ( !s_i2c_loopback_state.is_configured
+             || !EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_1 )
+             || !EXEC_I2C_Is_Channel_Started( EXEC_I2C_CHANNEL_2 ) )
+        {
+            CONSOLE_Printf( "I2C loopback run requires both channels started.\r\n" );
             return;
         }
         ConsoleI2CLoopbackDirection_T direction;
