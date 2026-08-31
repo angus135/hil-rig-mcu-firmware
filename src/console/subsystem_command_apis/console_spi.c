@@ -656,6 +656,13 @@ void CONSOLE_SPI_Loopback_Start( uint16_t argc, char* argv[] )
         if ( !EXEC_SPI_Start_Channel( SPI_CHANNEL_1 ) )
         {
             CONSOLE_Printf( "Failed to start SPI channel 2\r\n" );
+
+            if ( !EXEC_SPI_Stop_Channel( SPI_CHANNEL_0 ) )
+            {
+                CONSOLE_Printf(
+                    "Rollback failed: SPI channel 1 may still be active; retry stop\r\n" );
+            }
+
             return;
         }
 
