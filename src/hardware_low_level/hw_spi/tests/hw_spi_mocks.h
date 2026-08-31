@@ -740,6 +740,8 @@ uint32_t LL_SPI_IsActiveFlag_BSY( const SPI_TypeDef* SPIx );
  */
 void NVIC_DisableIRQ( IRQn_Type IRQn );
 
+uint32_t NVIC_GetEnableIRQ( IRQn_Type IRQn );
+
 /**
   \brief   Enable Interrupt
   \details Enables a device specific interrupt in the NVIC interrupt controller.

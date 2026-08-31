@@ -111,6 +111,7 @@ public:
                  () );
 
     MOCK_METHOD( void, NVICDisableIRQ, ( IRQn_Type irqn ), () );
+    MOCK_METHOD( uint32_t, NVICGetEnableIRQ, ( IRQn_Type irqn ), () );
     MOCK_METHOD( void, NVICEnableIRQ, ( IRQn_Type irqn ), () );
 
     MOCK_METHOD( void, TimerConfigure, ( Timer_T timer, uint32_t psc, uint32_t arr ), () );
@@ -370,6 +371,11 @@ extern "C" void NVIC_DisableIRQ( IRQn_Type IRQn )
     {
         g_mock->NVICDisableIRQ( IRQn );
     }
+}
+
+extern "C" uint32_t NVIC_GetEnableIRQ( IRQn_Type IRQn )
+{
+    return g_mock ? g_mock->NVICGetEnableIRQ( IRQn ) : 0U;
 }
 
 extern "C" void NVIC_EnableIRQ( IRQn_Type IRQn )

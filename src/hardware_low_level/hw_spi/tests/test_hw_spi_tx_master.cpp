@@ -154,6 +154,7 @@ public:
                  () );
 
     MOCK_METHOD( void, NVICDisableIRQ, ( IRQn_Type irqn ), () );
+    MOCK_METHOD( uint32_t, NVICGetEnableIRQ, ( IRQn_Type irqn ), () );
     MOCK_METHOD( void, NVICEnableIRQ, ( IRQn_Type irqn ), () );
 
     MOCK_METHOD( void, TimerConfigure, ( Timer_T timer, uint32_t psc, uint32_t arr ), () );
@@ -414,6 +415,11 @@ extern "C" void NVIC_DisableIRQ( IRQn_Type IRQn )
     {
         g_mock->NVICDisableIRQ( IRQn );
     }
+}
+
+extern "C" uint32_t NVIC_GetEnableIRQ( IRQn_Type IRQn )
+{
+    return g_mock ? g_mock->NVICGetEnableIRQ( IRQn ) : 0U;
 }
 
 extern "C" void NVIC_EnableIRQ( IRQn_Type IRQn )
@@ -1397,6 +1403,7 @@ TEST_F( HWSpiMasterTxTest, StopReleasesTheConfiguredMasterCs )
     HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted          = true;
     HW_SPI_STATE( SPI_CHANNEL_0 )->tx_transaction_state = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
 
+    EXPECT_CALL( mock, NVICGetEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) ).WillOnce( Return( 1U ) );
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
     EXPECT_CALL( mock, SPIDisableDMAReqTX( Eq( SPI_CHANNEL_0_INSTANCE ) ) );
     EXPECT_CALL( mock, SPIDisableDMAReqRX( Eq( SPI_CHANNEL_0_INSTANCE ) ) );
@@ -1442,6 +1449,7 @@ TEST_F( HWSpiMasterTxTest, StopDmaTimeoutRetainsStartedStateForRetry )
     HW_SPI_STATE( SPI_CHANNEL_0 )->is_started  = true;
     HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted = true;
 
+    EXPECT_CALL( mock, NVICGetEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) ).WillOnce( Return( 1U ) );
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
     EXPECT_CALL( mock, SPIDisableDMAReqTX( Eq( SPI_CHANNEL_0_INSTANCE ) ) );
     EXPECT_CALL( mock, SPIDisableDMAReqRX( Eq( SPI_CHANNEL_0_INSTANCE ) ) );
@@ -1461,6 +1469,68 @@ TEST_F( HWSpiMasterTxTest, StopDmaTimeoutRetainsStartedStateForRetry )
     EXPECT_FALSE( HW_SPI_Stop_Channel( SPI_CHANNEL_0 ) );
     EXPECT_TRUE( HW_SPI_STATE( SPI_CHANNEL_0 )->is_started );
     EXPECT_FALSE( HW_SPI_STATE( SPI_CHANNEL_0 )->cs_asserted );
+}
+
+TEST_F( HWSpiMasterTxTest, StopPreservesPriorIrqStateOnSuccessAndEitherDmaTimeout )
+{
+    for ( bool initially_enabled : { false, true } )
+    {
+        // 0: success, 1: TX timeout, 2: RX timeout.
+        for ( unsigned int failure = 0U; failure <= 2U; ++failure )
+        {
+            SCOPED_TRACE( testing::Message() << "IRQ enabled=" << initially_enabled
+                                            << ", failure=" << failure );
+            auto* state = HW_SPI_STATE( SPI_CHANNEL_0 );
+            state->is_started = true;
+            state->cs_asserted = true;
+            state->tx_transaction_state = HW_SPI_TX_TRANSACTION_DMA_ACTIVE;
+            state->tx_num_bytes_pending = 4U;
+            bool irq_enabled = initially_enabled;
+
+            InSequence sequence;
+            EXPECT_CALL( mock, NVICGetEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) )
+                .WillOnce( Return( initially_enabled ? 1U : 0U ) );
+            EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) )
+                .WillOnce( [&irq_enabled]( IRQn_Type ) { irq_enabled = false; } );
+            EXPECT_CALL( mock, SPIDisableDMAReqTX( SPI_CHANNEL_0_INSTANCE ) );
+            EXPECT_CALL( mock, SPIDisableDMAReqRX( SPI_CHANNEL_0_INSTANCE ) );
+            EXPECT_CALL( mock, DMADisableStream( SPI_CHANNEL_0_TX_DMA,
+                                               SPI_CHANNEL_0_TX_DMA_STREAM ) );
+            EXPECT_CALL( mock, DMAIsEnabledStream( SPI_CHANNEL_0_TX_DMA,
+                                                 SPI_CHANNEL_0_TX_DMA_STREAM ) )
+                .Times( failure == 1U ? HW_SPI_DMA_DISABLE_TIMEOUT_ITERATIONS + 1U : 1U )
+                .WillRepeatedly( Return( failure == 1U ? 1U : 0U ) );
+            EXPECT_CALL( mock, DMADisableStream( SPI_CHANNEL_0_RX_DMA,
+                                               SPI_CHANNEL_0_RX_DMA_STREAM ) );
+            EXPECT_CALL( mock, DMAIsEnabledStream( SPI_CHANNEL_0_RX_DMA,
+                                                 SPI_CHANNEL_0_RX_DMA_STREAM ) )
+                .Times( failure == 2U ? HW_SPI_DMA_DISABLE_TIMEOUT_ITERATIONS + 1U : 1U )
+                .WillRepeatedly( Return( failure == 2U ? 1U : 0U ) );
+
+            if ( initially_enabled )
+            {
+                EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) )
+                    .WillOnce( [&]( IRQn_Type ) {
+                        EXPECT_FALSE( irq_enabled );
+                        EXPECT_FALSE( state->cs_asserted );
+                        EXPECT_EQ( state->is_started, failure != 0U );
+                        EXPECT_EQ( state->tx_num_bytes_pending, failure == 0U ? 0U : 4U );
+                        irq_enabled = true;
+                    } );
+            }
+            else
+            {
+                EXPECT_CALL( mock, NVICEnableIRQ( _ ) ).Times( 0 );
+            }
+
+            EXPECT_EQ( HW_SPI_Stop_Channel( SPI_CHANNEL_0 ), failure == 0U );
+            EXPECT_EQ( irq_enabled, initially_enabled );
+            EXPECT_FALSE( state->cs_asserted );
+            EXPECT_EQ( state->is_started, failure != 0U );
+            EXPECT_EQ( state->tx_num_bytes_pending, failure == 0U ? 0U : 4U );
+            testing::Mock::VerifyAndClearExpectations( &mock );
+        }
+    }
 }
 
 TEST_F( HWSpiMasterTxTest, TxErrorReleasesTheConfiguredMasterCs )

@@ -557,6 +557,8 @@ bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configurat
  * This function does not clear higher-level protocol state, message assembly
  * state, or any interpretation of queued/transferred data. Those concerns are
  * owned by higher-level software.
+ * The prior TX DMA IRQ enable state is preserved on success and failure;
+ * restoration occurs only after the protected channel state is consistent.
  *
  * @param peripheral
  *     The SPI peripheral/channel to stop.
@@ -594,6 +596,7 @@ bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
      * instead of calling HAL_SPI_DMAStop(), which reports HAL_ERROR_NO_XFER for
      * a successfully completed LL transfer.
      */
+    const uint32_t tx_irq_was_enabled = NVIC_GetEnableIRQ( peripheral_state->tx_dma_irqn );
     NVIC_DisableIRQ( peripheral_state->tx_dma_irqn );
     LL_SPI_DisableDMAReq_TX( peripheral_state->spi_peripheral );
     LL_SPI_DisableDMAReq_RX( peripheral_state->spi_peripheral );
@@ -603,10 +606,8 @@ bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
     rx_stopped =
         HW_SPI_Config_Stop_DMA_Stream( peripheral_state->rx_dma, peripheral_state->rx_dma_stream );
 
-    NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
-
     /*
-     * Release master CS even if HAL cannot completely stop the DMA path.
+     * Release master CS even if a DMA stream cannot be completely stopped.
      * This is the safest external electrical state.
      */
     if ( peripheral_state->is_master )
@@ -614,22 +615,23 @@ bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
         HW_SPI_TX_Master_CS_Deassert( peripheral_state );
     }
 
-    if ( !tx_stopped || !rx_stopped )
+    if ( tx_stopped && rx_stopped )
     {
         /*
-         * At least one DMA stream did not acknowledge disable within the
-         * bounded wait. Keep is_started set so Stop() can be retried.
+         * Stop is a terminating operation. Any queued or active transport state
+         * is discarded. A graceful caller must wait for HW_SPI_Tx_Is_Complete()
+         * before calling Stop().
          */
-        return false;
+        HW_SPI_TX_Reset_State( peripheral_state );
+        peripheral_state->is_started = false;
     }
 
-    /*
-     * Stop is a terminating operation. Any queued or active transport state is
-     * discarded. A graceful caller must wait for HW_SPI_Tx_Is_Complete()
-     * before calling Stop().
-     */
-    HW_SPI_TX_Reset_State( peripheral_state );
-    peripheral_state->is_started = false;
+    /* On a DMA timeout, is_started remains set so Stop() can be retried. */
 
-    return true;
+    if ( tx_irq_was_enabled != 0U )
+    {
+        NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
+    }
+
+    return tx_stopped && rx_stopped;
 }
