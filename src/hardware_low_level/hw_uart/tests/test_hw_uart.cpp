@@ -694,10 +694,10 @@ TEST_F( UartTest, DutConfigureRejectsNineBitNoParityForEitherChannelAndDirection
     {
         for ( unsigned int directions = 1U; directions <= 3U; ++directions )
         {
-            auto config = TEST_HW_UART_Make_Tx_Rx_Config();
+            auto config        = TEST_HW_UART_Make_Tx_Rx_Config();
             config.word_length = HW_UART_WORD_LENGTH_9_BITS;
-            config.rx_enabled = ( directions & 1U ) != 0U;
-            config.tx_enabled = ( directions & 2U ) != 0U;
+            config.rx_enabled  = ( directions & 1U ) != 0U;
+            config.tx_enabled  = ( directions & 2U ) != 0U;
 
             EXPECT_FALSE( HW_UART_Configure_Channel( channel, &config ) );
             EXPECT_FALSE( hw_uart_channel_states[channel].runtime.is_configured_and_initialised );
@@ -715,9 +715,9 @@ TEST_F( UartTest, DutRejectedNineBitNoParityPreservesExistingConfiguration )
     EXPECT_CALL( mock_hal, Init( _ ) ).Times( 0 );
     EXPECT_CALL( mock_hal, DeInit( _ ) ).Times( 0 );
 
-    auto invalid = original;
+    auto invalid        = original;
     invalid.word_length = HW_UART_WORD_LENGTH_9_BITS;
-    invalid.baud_rate = 9600U;
+    invalid.baud_rate   = 9600U;
     for ( auto channel : { HW_UART_CHANNEL_1, HW_UART_CHANNEL_2 } )
     {
         EXPECT_FALSE( HW_UART_Configure_Channel( channel, &invalid ) );
@@ -737,9 +737,9 @@ TEST_F( UartTest, DutConfigureAcceptsNineBitWordsWithEvenOrOddParity )
         auto* handle = channel == HW_UART_CHANNEL_1 ? &huart6 : &huart2;
         for ( auto parity : { HW_UART_PARITY_EVEN, HW_UART_PARITY_ODD } )
         {
-            auto config = TEST_HW_UART_Make_Tx_Rx_Config();
+            auto config        = TEST_HW_UART_Make_Tx_Rx_Config();
             config.word_length = HW_UART_WORD_LENGTH_9_BITS;
-            config.parity = parity;
+            config.parity      = parity;
             EXPECT_CALL( mock_hal, Init( handle ) ).WillOnce( Return( HAL_OK ) );
 
             ASSERT_TRUE( HW_UART_Configure_Channel( channel, &config ) );

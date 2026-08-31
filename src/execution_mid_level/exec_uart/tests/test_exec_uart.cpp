@@ -345,18 +345,18 @@ TEST_F( ExecUARTTest, NineBitNoParityIsRejectedWithoutHardwareOrLifecycleChanges
     {
         for ( auto lifecycle : { EXEC_UART_STATE_DISABLED, EXEC_UART_STATE_CONFIGURED } )
         {
-            auto& state = exec_uart_channel_states[channel];
+            auto& state           = exec_uart_channel_states[channel];
             state.lifecycle_state = lifecycle;
-            state.rx_enabled = lifecycle == EXEC_UART_STATE_CONFIGURED;
-            state.tx_enabled = lifecycle == EXEC_UART_STATE_CONFIGURED;
-            const auto original = state;
+            state.rx_enabled      = lifecycle == EXEC_UART_STATE_CONFIGURED;
+            state.tx_enabled      = lifecycle == EXEC_UART_STATE_CONFIGURED;
+            const auto original   = state;
 
             for ( unsigned int directions = 1U; directions <= 3U; ++directions )
             {
-                auto config = TEST_EXEC_UART_Make_Tx_Rx_Config();
+                auto config        = TEST_EXEC_UART_Make_Tx_Rx_Config();
                 config.word_length = HW_UART_WORD_LENGTH_9_BITS;
-                config.rx_enabled = ( directions & 1U ) != 0U;
-                config.tx_enabled = ( directions & 2U ) != 0U;
+                config.rx_enabled  = ( directions & 1U ) != 0U;
+                config.tx_enabled  = ( directions & 2U ) != 0U;
                 EXPECT_FALSE( EXEC_UART_Configure_Channel( channel, &config ) );
                 EXPECT_EQ( state.lifecycle_state, original.lifecycle_state );
                 EXPECT_EQ( state.rx_enabled, original.rx_enabled );
@@ -372,12 +372,15 @@ TEST_F( ExecUARTTest, ConfigureAcceptsNineBitWordsWithEvenOrOddParity )
     {
         for ( auto parity : { HW_UART_PARITY_EVEN, HW_UART_PARITY_ODD } )
         {
-            auto config = TEST_EXEC_UART_Make_Tx_Rx_Config();
+            auto config        = TEST_EXEC_UART_Make_Tx_Rx_Config();
             config.word_length = HW_UART_WORD_LENGTH_9_BITS;
-            config.parity = parity;
-            EXPECT_CALL( mock_hw, Configure_Channel( channel, Pointee( AllOf(
-                Field( &HwUartPeripheralConfig_T::word_length, HW_UART_WORD_LENGTH_9_BITS ),
-                Field( &HwUartPeripheralConfig_T::parity, parity ) ) ) ) );
+            config.parity      = parity;
+            EXPECT_CALL( mock_hw,
+                         Configure_Channel(
+                             channel, Pointee( AllOf( Field( &HwUartPeripheralConfig_T::word_length,
+                                                             HW_UART_WORD_LENGTH_9_BITS ),
+                                                      Field( &HwUartPeripheralConfig_T::parity,
+                                                             parity ) ) ) ) );
 
             ASSERT_TRUE( EXEC_UART_Configure_Channel( channel, &config ) );
             EXPECT_EQ( exec_uart_channel_states[channel].lifecycle_state,
@@ -388,8 +391,8 @@ TEST_F( ExecUARTTest, ConfigureAcceptsNineBitWordsWithEvenOrOddParity )
 
 TEST_F( ExecUARTTest, DisabledConfigurationIgnoresNineBitNoParityFraming )
 {
-    auto config = TEST_EXEC_UART_Make_Tx_Rx_Config();
-    config.is_enabled = false;
+    auto config        = TEST_EXEC_UART_Make_Tx_Rx_Config();
+    config.is_enabled  = false;
     config.word_length = HW_UART_WORD_LENGTH_9_BITS;
     exec_uart_channel_states[EXEC_UART_CHANNEL_1].lifecycle_state = EXEC_UART_STATE_CONFIGURED;
     EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).Times( 0 );
