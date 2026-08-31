@@ -36,6 +36,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
 #include <stdio.h>
 #include "exec_pwm_capture.h"
 #include "exec_pwm_gen.h"
@@ -392,26 +393,37 @@ static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] )
         return;
     }
 
-    char*          end_ptr      = NULL;
-    const uint32_t frequency_hz = ( uint32_t )strtoul( argv[4], &end_ptr, 10 );
-    if ( end_ptr == argv[4] || *end_ptr != '\0' || frequency_hz == 0U || frequency_hz > 1000000U )
+    char* end_ptr = NULL;
+    errno = 0;
+    const unsigned long frequency_hz = strtoul( argv[4], &end_ptr, 10 );
+    if ( errno == ERANGE || end_ptr == argv[4] || *end_ptr != '\0'
+         || argv[4][0] == '-' || frequency_hz == 0UL || frequency_hz > 1000000UL )
     {
         CONSOLE_Printf( "Invalid PWM frequency\r\n" );
         return;
     }
 
-    end_ptr             = NULL;
-    const uint32_t duty = ( uint32_t )strtoul( argv[5], &end_ptr, 10 );
-    if ( end_ptr == argv[5] || *end_ptr != '\0' || duty > 1000U )
+    end_ptr = NULL;
+    errno = 0;
+    const unsigned long duty = strtoul( argv[5], &end_ptr, 10 );
+    if ( errno == ERANGE || end_ptr == argv[5] || *end_ptr != '\0'
+         || argv[5][0] == '-' || duty > 1000UL )
     {
         CONSOLE_Printf( "Invalid PWM duty\r\n" );
         return;
     }
 
     const uint32_t timer_hz = 90000000U;
-    const uint16_t psc      = HW_PWM_GEN_compute_psc( frequency_hz, timer_hz );
-    const uint16_t arr      = HW_PWM_GEN_compute_arr( frequency_hz, timer_hz, psc );
-    const uint16_t ccr      = HW_PWM_GEN_compute_ccr( ( uint16_t )duty, arr );
+    uint16_t psc;
+    uint16_t arr;
+    uint16_t ccr;
+    if ( !HW_PWM_GEN_compute_psc( ( uint32_t )frequency_hz, timer_hz, &psc )
+         || !HW_PWM_GEN_compute_arr( ( uint32_t )frequency_hz, timer_hz, psc, &arr )
+         || !HW_PWM_GEN_compute_ccr( ( uint16_t )duty, arr, &ccr ) )
+    {
+        CONSOLE_Printf( "PWM frequency/duty cannot be represented by the timer\r\n" );
+        return;
+    }
 
     const ExecPwmGenConfig_T config = {
         .is_enabled    = true,

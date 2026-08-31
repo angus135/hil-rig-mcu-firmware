@@ -78,49 +78,37 @@ bool HW_PWM_GEN_Start_Channel( HwPwmGenChannel_T channel );
 bool HW_PWM_GEN_Stop_Channel( HwPwmGenChannel_T channel );
 
 /**
- * @brief Computes the prescaler register (PSC).
+ * @brief Prepare PSC for a frequency in 1..1000000 Hz, not above timer_clk_hz.
  *
- * @param freq_hz   the desired frequency of the PWM signal
- * @param timer_clk_hz the frequency of the timer being used to drive the PWM
- *
- * @return a uint16_t which can be placed directly in the PSC,
- * This function computes the value of the prescaler (PSC)
- * which is needed to achieve the desired frequency
- * These functions should be use during configuration to prepare
- * the frequency and duty cycle instructions for quick running
+ * Chooses the smallest divider giving at most 65535 period counts, so the
+ * resulting ARR + 1 also fits the 16-bit CCR at 100% duty.
+ * @param psc Output register value.
+ * @return false for invalid inputs or NULL output; output is unchanged.
  */
-uint16_t HW_PWM_GEN_compute_psc( uint32_t freq_hz, uint32_t timer_clk_hz );
+bool HW_PWM_GEN_compute_psc( uint32_t freq_hz, uint32_t timer_clk_hz, uint16_t* psc );
 
 /**
- * @brief Computes the auto reloader register (ARR).
+ * @brief Prepare ARR using floor(timer_clk_hz / (freq_hz * (prescaler + 1))) - 1.
  *
- * @param freq_hz   the desired frequency of the PWM signal
- * @param timer_clk_hz the frequency of the timer being used to drive the PWM
- * @param prescaler the prescaler associated with the driving timer
- *
- * @return a uint16_t which can be placed directly in the ARR, (some advanced timers eg TIM1 use 32
-bits)
- * This function computes the value of the auto reloader register (ARR)
- * which is needed to achieve the desired frequency
- * These functions should be use during configuration to prepare
- * the frequency and duty cycle instructions for quick running
+ * Accepts frequencies in 1..1000000 Hz and periods of 1..65536 counts.
+ * Integer rounding may produce a frequency above the requested value.
+ * @param arr Output register value.
+ * @return false for invalid inputs, unrepresentable period or NULL output;
+ *         output is unchanged.
  */
-uint16_t HW_PWM_GEN_compute_arr( uint32_t freq_hz, uint32_t timer_clk_hz, uint16_t prescaler );
+bool HW_PWM_GEN_compute_arr( uint32_t freq_hz, uint32_t timer_clk_hz,
+                               uint16_t prescaler, uint16_t* arr );
 
 /**
- * @brief Computes the compare register (CCR) for a given duty cycle.
+ * @brief Prepare CCR for duty in permille (0..1000), rounding down.
  *
- * @param duty_pm   the desired duty cycle (0>=duty_pm<=1000)
- * @param arr the value of the auto reloader register ARR associated with this PWM signal
- *
- * @return a uint16_t which can be placed directly in the CCR, (some advanced timers eg TIM1 use 32
-bits)
- * This function computes the value of the compare register (CCR)
- * which is needed to achieve the desired duty cycle.
- * These functions should be use during configuration to prepare
- * the frequency and duty cycle instructions for quick running
+ * ARR=65535 with 100% duty requires CCR=65536 and is rejected by the 16-bit API.
+ * Use the PSC/ARR preparation sequence to leave room for a full-duty CCR.
+ * @param ccr Output register value.
+ * @return false for invalid duty, unrepresentable CCR or NULL output;
+ *         output is unchanged.
  */
-uint16_t HW_PWM_GEN_compute_ccr( uint16_t duty_pm, uint16_t arr );
+bool HW_PWM_GEN_compute_ccr( uint16_t duty_pm, uint16_t arr, uint16_t* ccr );
 
 /**
  * @brief Updates the PWM registers associated with channel 1.

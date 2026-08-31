@@ -60,7 +60,7 @@ typedef struct
     bool                     is_enabled;
     ExecPwmGenVoltageLevel_T voltage_level;
     uint16_t                 initial_arr;
-    uint16_t                 initial_ccr;
+    uint16_t                 initial_ccr;  // 100% duty requires ARR + 1 <= UINT16_MAX
     uint16_t                 initial_psc;
 } ExecPwmGenConfig_T;
 

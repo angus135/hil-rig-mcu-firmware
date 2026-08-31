@@ -25,6 +25,7 @@
 #endif
 
 #include "hw_pwm_gen.h"
+#include <stddef.h>
 #include <stdint.h>
 
 /**-----------------------------------------------------------------------------
@@ -32,7 +33,8 @@
  *------------------------------------------------------------------------------
  */
 
-#define MAX_ARR_COUNTS 65535  // the max value of our ARR register (atm uint16_t)
+/* Reserve a representable CCR = ARR + 1 for 100% duty in prepared waveforms. */
+#define MAX_ARR_COUNTS UINT16_MAX
 
 /* PWM1 / LV hardware mapping */
 #define PWM1_TIMER_HANDLE ( &htim12 )
@@ -222,91 +224,73 @@ bool HW_PWM_GEN_Stop_Channel( HwPwmGenChannel_T channel )
 
     return true;
 }
-
 /**
- * @brief Computes the prescaler register (PSC).
- *
- * @param freq_hz   the desired frequency of the PWM signal
- * @param timer_clk_hz the frequency of the timer being used to drive the PWM
- *
- * @return a uint16_t which can be placed directly in the PSC,
- * This function computes the value of the prescaler (PSC)
- * which is needed to achieve the desired frequency
- * These functions should be use during configuration to prepare
- * the frequency and duty cycle instructions for quick running
+ * @brief Prepare a prescaler with room for 100% duty in a 16-bit CCR.
+ * @return false for invalid frequency/clock or NULL output; output is unchanged.
  */
-uint16_t HW_PWM_GEN_compute_psc( uint32_t freq_hz, uint32_t timer_clk_hz )
+bool HW_PWM_GEN_compute_psc( uint32_t freq_hz, uint32_t timer_clk_hz, uint16_t* psc )
 {
-    if ( freq_hz > timer_clk_hz || freq_hz > 1000000 )
+    if ( psc == NULL || freq_hz == 0U || freq_hz > 1000000U || freq_hz > timer_clk_hz )
     {
-        return 0xFFFF;  // TO DO - replace with proper error communication
+        return false;
     }
-    if ( freq_hz == 0 )
-    {
-        return 0xFFFF;  // TO DO - replace with proper error communication
-    }
-    uint32_t temp = ( timer_clk_hz / freq_hz );
-    uint32_t divider;
-    // if temp is an exact multiple then we don't need rounding
-    if ( temp % MAX_ARR_COUNTS == 0 )
-    {
-        return ( uint16_t )( ( timer_clk_hz / freq_hz ) / MAX_ARR_COUNTS ) - 1;
-    }
-    // if temp is not exact multiple then we need rounding (+1)
-    divider = ( ( timer_clk_hz / freq_hz ) / MAX_ARR_COUNTS ) + 1;  // the prescaler plus 1
-    if ( divider == 0 )
-    {
-        return 0xFFFF;  // TO DO - replace with proper error communication
-    }
-    return ( uint16_t )( divider - 1 );
+
+    /* Choose the smallest divider whose truncated period is <= UINT16_MAX.
+     * ARR is period - 1, leaving CCR = period representable for 100% duty.
+     * With a uint32_t clock and nonzero frequency, divider is at most 65536.
+     */
+    const uint32_t period_counts = timer_clk_hz / freq_hz;
+    const uint32_t divider = period_counts / ( ( uint32_t )MAX_ARR_COUNTS + 1U ) + 1U;
+    *psc = ( uint16_t )( divider - 1U );
+    return true;
 }
 
 /**
- * @brief Computes the auto reloader register (ARR).
- *
- * @param freq_hz   the desired frequency of the PWM signal
- * @param timer_clk_hz the frequency of the timer being used to drive the PWM
- * @param prescaler the prescaler associated with the driving timer
- *
- * @return a uint16_t which can be placed directly in the ARR, (some advanced timers eg TIM1 use 32
-bits)
- * This function computes the value of the auto reloader register (ARR)
- * which is needed to achieve the desired frequency
- * These functions should be use during configuration to prepare
- * the frequency and duty cycle instructions for quick running
+ * @brief Prepare ARR from a frequency and prescaler, rounding period down.
+ * @return false if the period cannot fit or output is NULL; output is unchanged.
  */
-uint16_t HW_PWM_GEN_compute_arr( uint32_t freq_hz, uint32_t timer_clk_hz, uint16_t prescaler )
+bool HW_PWM_GEN_compute_arr( uint32_t freq_hz, uint32_t timer_clk_hz,
+                               uint16_t prescaler, uint16_t* arr )
 {
-    uint32_t divider = freq_hz * ( ( uint32_t )prescaler + 1U );
-
-    if ( divider == 0U )
+    if ( arr == NULL || freq_hz == 0U || freq_hz > 1000000U || timer_clk_hz == 0U )
     {
-        return 0xFFFF;
+        return false;
     }
 
-    return ( uint16_t )( ( timer_clk_hz / divider ) - 1U );
+    /* Widen before multiplying: frequency * (PSC + 1) can exceed uint32_t. */
+    const uint64_t divider = ( uint64_t )freq_hz * ( ( uint32_t )prescaler + 1U );
+    const uint64_t period_counts = timer_clk_hz / divider;
+    if ( period_counts == 0U || period_counts > ( ( uint32_t )UINT16_MAX + 1U ) )
+    {
+        return false;
+    }
+
+    *arr = ( uint16_t )( period_counts - 1U );
+    return true;
 }
 
 /**
- * @brief Computes the compare register (CCR) for a given duty cycle.
- *
- * @param duty_pm   the desired duty cycle (0>=duty_pm<=1000)
- * @param arr the value of the auto reloader register ARR associated with this PWM signal
- *
- * @return a uint16_t which can be placed directly in the CCR, (some advanced timers eg TIM1 use 32
-bits)
- * This function computes the value of the compare register (CCR)
- * which is needed to achieve the desired duty cycle.
- * These functions should be use during configuration to prepare
- * the frequency and duty cycle instructions for quick running
+ * @brief Prepare CCR for a duty cycle in permille (0..1000).
+ * @return false for invalid duty, unrepresentable CCR or NULL output.
+ *         Output is unchanged on failure.
  */
-uint16_t HW_PWM_GEN_compute_ccr( uint16_t duty_pm, uint16_t arr )
+bool HW_PWM_GEN_compute_ccr( uint16_t duty_pm, uint16_t arr, uint16_t* ccr )
 {
-    if ( duty_pm >= 1000 )
+    if ( ccr == NULL || duty_pm > 1000U )
     {
-        return ( uint16_t )( arr + 1 );
+        return false;
     }
-    return ( uint16_t )( ( ( arr + 1 ) * duty_pm ) / 1000 );
+
+    const uint32_t period_counts = ( uint32_t )arr + 1U;
+    const uint32_t compare = ( period_counts * duty_pm ) / 1000U;
+    if ( compare > UINT16_MAX )
+    {
+        /* ARR=65535 at 100% needs CCR=65536, outside the current 16-bit API. */
+        return false;
+    }
+
+    *ccr = ( uint16_t )compare;
+    return true;
 }
 
 /**-----------------------------------------------------------------------------
