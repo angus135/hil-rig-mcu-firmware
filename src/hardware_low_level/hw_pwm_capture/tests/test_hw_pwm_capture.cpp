@@ -43,7 +43,7 @@ class MockHwTimer
 public:
     MOCK_METHOD( void, Stop_Timer, ( Timer_T ) );
     MOCK_METHOD( void, Configure_Timer, ( Timer_T, uint32_t, uint32_t ) );
-    MOCK_METHOD( void, Start_Timer, ( Timer_T ) );
+    MOCK_METHOD( bool, Start_Timer, ( Timer_T ) );
     MOCK_METHOD( uint32_t, Get_Clock_Hz, ( Timer_T ) );
 };
 
@@ -64,9 +64,9 @@ void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t arr )
     g_mock_timer->Configure_Timer( timer, psc, arr );
 }
 
-void HW_TIMER_Start_Timer( Timer_T timer )
+bool HW_TIMER_Start_Timer( Timer_T timer )
 {
-    g_mock_timer->Start_Timer( timer );
+    return g_mock_timer->Start_Timer( timer );
 }
 
 uint32_t HW_TIMER_Get_Clock_Hz( Timer_T timer )
@@ -88,6 +88,7 @@ protected:
     void SetUp( void ) override
     {
         g_mock_timer = &mock_timer;
+        ON_CALL( mock_timer, Start_Timer( _ ) ).WillByDefault( testing::Return( true ) );
         mock_tim2    = {};
         mock_tim5    = {};
 
@@ -149,6 +150,30 @@ TEST_F( HWPWMCaptureTest, StartReturnsFalseWhenChannelIsNotConfigured )
     EXPECT_CALL( mock_timer, Start_Timer( _ ) ).Times( 0 );
 
     EXPECT_FALSE( HW_PWM_Capture_Start_Channel( HW_PWM_CAPTURE_CHANNEL_1 ) );
+}
+
+TEST_F( HWPWMCaptureTest, TimerStartFailureLeavesBothChannelsConfiguredAndRetryable )
+{
+    const HwPWMCaptureChannel_T channels[] = { HW_PWM_CAPTURE_CHANNEL_1,
+                                               HW_PWM_CAPTURE_CHANNEL_2 };
+    const Timer_T timers[] = { PWM_CAPTURE_TIMER_CH1, PWM_CAPTURE_TIMER_CH2 };
+    for ( unsigned int i = 0U; i < 2U; ++i )
+    {
+        EXPECT_CALL( mock_timer, Stop_Timer( timers[i] ) );
+        EXPECT_CALL( mock_timer, Configure_Timer( timers[i], _, _ ) );
+        EXPECT_CALL( mock_timer, Get_Clock_Hz( timers[i] ) )
+            .WillOnce( testing::Return( 1000000U ) );
+        ASSERT_TRUE( HW_PWM_Capture_Configure_Channel( channels[i], true ) );
+
+        EXPECT_CALL( mock_timer, Start_Timer( timers[i] ) )
+            .WillOnce( testing::Return( false ) )
+            .WillOnce( testing::Return( true ) );
+        EXPECT_FALSE( HW_PWM_Capture_Start_Channel( channels[i] ) );
+        EXPECT_FALSE( HW_PWM_Capture_Stop_Channel( channels[i] ) );
+        EXPECT_EQ( HW_PWM_Capture_Get_Timer_Clock_Hz( channels[i] ), 1000000U );
+        EXPECT_TRUE( HW_PWM_Capture_Start_Channel( channels[i] ) );
+        EXPECT_FALSE( HW_PWM_Capture_Start_Channel( channels[i] ) );
+    }
 }
 
 TEST_F( HWPWMCaptureTest, StartReturnsFalseWhenChannelIsAlreadyStarted )

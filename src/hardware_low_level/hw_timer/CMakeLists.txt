@@ -10,6 +10,7 @@ set(HW_TIMER_SOURCES
 
 set(HW_TIMER_HEADERS
     hw_timer.h
+    hw_timer_capture_start.h
 )
 
 add_library(hw_timer STATIC
@@ -34,6 +35,15 @@ target_link_libraries(hw_timer
 # -----------------------------
 # Tests for this module (gtest/gmock)
 # -----------------------------
+
+option(HW_TIMER_ENABLE_TESTS "Build tests for timer capture start sequencing" ON)
+
+if(HW_TIMER_ENABLE_TESTS AND BUILD_TESTING)
+    add_executable(hw_timer_capture_start_tests tests/test_hw_timer_capture_start.cpp)
+    target_include_directories(hw_timer_capture_start_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(hw_timer_capture_start_tests PRIVATE project_warnings gtest_main gmock)
+    add_test(NAME hw_timer_capture_start_tests COMMAND hw_timer_capture_start_tests)
+endif()
 
 # option(HW_TIMER_ENABLE_TESTS "Build tests for hw_timer module" ON)
 

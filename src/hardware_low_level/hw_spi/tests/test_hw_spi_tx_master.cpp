@@ -432,12 +432,13 @@ extern "C" void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t 
     }
 }
 
-extern "C" void HW_TIMER_Start_Timer( Timer_T timer )
+extern "C" bool HW_TIMER_Start_Timer( Timer_T timer )
 {
     if ( g_mock )
     {
         g_mock->TimerStart( timer );
     }
+    return true;
 }
 
 extern "C" void HW_TIMER_Stop_Timer( Timer_T timer )

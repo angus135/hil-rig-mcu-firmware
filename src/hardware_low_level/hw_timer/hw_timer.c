@@ -23,6 +23,7 @@
 #include "stm32f4xx_ll_system.h"
 #include "stm32f4xx_ll_rcc.h"
 #include "execution_manager.h"
+#include "hw_timer_capture_start.h"
 #endif
 
 #include <stdbool.h>
@@ -258,10 +259,23 @@ void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t arr )
 #endif
 }
 
-void HW_TIMER_Start_Timer( Timer_T timer )
+bool HW_TIMER_Start_Timer( Timer_T timer )
 {
 #ifdef TEST_BUILD
-    ( void )timer;
+    /* Host stub: hardware start sequencing is tested separately. */
+    switch ( timer )
+    {
+        case EXECUTION_MANAGER_TIMER:
+        case ANALOGUE_INPUT_TIMER:
+        case SPI_CHANNEL_0_TIMER:
+        case SPI_CHANNEL_1_TIMER:
+        case SPI_DAC_TIMER:
+        case PWM_CAPTURE_TIMER_CH1:
+        case PWM_CAPTURE_TIMER_CH2:
+            return true;
+        default:
+            return false;
+    }
 #else
     switch ( timer )
     {
@@ -324,8 +338,7 @@ void HW_TIMER_Start_Timer( Timer_T timer )
             LL_TIM_EnableCounter( SPI_DAC_TIMER_INSTANCE );
             break;
         case ANALOGUE_INPUT_TIMER:
-            HAL_TIM_Base_Start( &ANALOGUE_INPUT_TIMER_HANDLE );
-            break;
+            return HAL_TIM_Base_Start( &ANALOGUE_INPUT_TIMER_HANDLE ) == HAL_OK;
         case PWM_CAPTURE_TIMER_CH1:
             __HAL_TIM_SET_COUNTER( &PWM_CAPTURE_TIMER_CH1_HANDLE, 0U );
 
@@ -333,12 +346,9 @@ void HW_TIMER_Start_Timer( Timer_T timer )
                                   PWM_CAPTURE_TIMER_CH1_PRIMARY_FLAG
                                       | PWM_CAPTURE_TIMER_CH1_SECONDARY_FLAG );
 
-            HAL_TIM_IC_Start( &PWM_CAPTURE_TIMER_CH1_HANDLE,
-                              PWM_CAPTURE_TIMER_CH1_PRIMARY_CHANNEL );
-
-            HAL_TIM_IC_Start( &PWM_CAPTURE_TIMER_CH1_HANDLE,
-                              PWM_CAPTURE_TIMER_CH1_SECONDARY_CHANNEL );
-            break;
+            return HW_TIMER_Start_Capture_Pair( &PWM_CAPTURE_TIMER_CH1_HANDLE,
+                                               PWM_CAPTURE_TIMER_CH1_PRIMARY_CHANNEL,
+                                               PWM_CAPTURE_TIMER_CH1_SECONDARY_CHANNEL );
 
         case PWM_CAPTURE_TIMER_CH2:
             __HAL_TIM_SET_COUNTER( &PWM_CAPTURE_TIMER_CH2_HANDLE, 0U );
@@ -347,15 +357,13 @@ void HW_TIMER_Start_Timer( Timer_T timer )
                                   PWM_CAPTURE_TIMER_CH2_PRIMARY_FLAG
                                       | PWM_CAPTURE_TIMER_CH2_SECONDARY_FLAG );
 
-            HAL_TIM_IC_Start( &PWM_CAPTURE_TIMER_CH2_HANDLE,
-                              PWM_CAPTURE_TIMER_CH2_PRIMARY_CHANNEL );
-
-            HAL_TIM_IC_Start( &PWM_CAPTURE_TIMER_CH2_HANDLE,
-                              PWM_CAPTURE_TIMER_CH2_SECONDARY_CHANNEL );
-            break;
+            return HW_TIMER_Start_Capture_Pair( &PWM_CAPTURE_TIMER_CH2_HANDLE,
+                                               PWM_CAPTURE_TIMER_CH2_PRIMARY_CHANNEL,
+                                               PWM_CAPTURE_TIMER_CH2_SECONDARY_CHANNEL );
         default:
-            break;
+            return false;
     }
+    return true;
 #endif
 }
 

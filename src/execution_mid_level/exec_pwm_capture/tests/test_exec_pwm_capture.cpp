@@ -257,6 +257,9 @@ TEST_F( ExecPWMCaptureTest, StartChannelReturnsFalseWhenHardwareStartFails )
     EXPECT_TRUE( EXEC_PWM_Capture_Configure_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
     EXPECT_CALL( mock_hw, Start_Channel( _ ) ).WillOnce( Return( false ) );
     EXPECT_FALSE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
+    // A failed start retains configured state and permits a retry.
+    EXPECT_CALL( mock_hw, Start_Channel( HW_PWM_CAPTURE_CHANNEL_1 ) ).WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
 }
 
 TEST_F( ExecPWMCaptureTest, StopChannelStopsStartedHardwareChannel )

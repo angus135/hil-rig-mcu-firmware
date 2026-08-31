@@ -66,6 +66,12 @@ retains its configuration, so it can be started again without reconfiguration.
 Disabling a channel stops it and clears its configured state and cached timer
 clock.
 
+Start succeeds only when both timer capture inputs start successfully. A timer
+start failure returns `false` without marking the channel started or discarding
+its configuration. If the second input fails to start, the timer layer attempts
+to stop the first input before returning failure. Cleanup failure also returns
+`false`; software state alone cannot guarantee that hardware cleanup succeeded.
+
 `HW_PWM_Capture_Peek_Result()` does not copy captured data. It returns pointers
 to the timer capture registers so the execution path can read the latest raw
 timer values with minimal overhead.
