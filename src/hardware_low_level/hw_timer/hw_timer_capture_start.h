@@ -7,8 +7,8 @@
 /* Private helper. Include HAL timer declarations (or test doubles) first.
  * Both timer roles use this sequence, with their own primary/secondary mapping.
  */
-static inline bool HW_TIMER_Start_Capture_Pair( TIM_HandleTypeDef* handle,
-                                              uint32_t primary, uint32_t secondary )
+static inline bool HW_TIMER_Start_Capture_Pair( TIM_HandleTypeDef* handle, uint32_t primary,
+                                                uint32_t secondary )
 {
     if ( HAL_TIM_IC_Start( handle, primary ) != HAL_OK )
     {
