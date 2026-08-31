@@ -230,6 +230,10 @@ bool HW_SPI_Start_Channel( SPIChannel_T peripheral )
  */
 HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIChannel_T peripheral )
 {
+    /* TODO: Track DMA producer progress across wraps and latch/report overrun.
+     * NDTR modulo positions alone make a full unread lap look empty. Define
+     * the maximum servicing latency required to detect every wrap reliably.
+     */
     SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State_Fast( peripheral );
 
     uint8_t* rx_buffer  = peripheral_state->rx_buffer;

@@ -292,6 +292,11 @@ bool HW_ADC_Configure_ADC_Measurement_Frequency( ADCSampleRates_T rate )
  */
 inline void HW_ADC_Read_DMA_Measurements( ADCMeasurement_T* measurements, uint32_t number )
 {
+    /* TODO: Add nonblocking valid-history and coherent DMA snapshot reporting.
+     * This read assumes all requested samples are fresh and remain unchanged;
+     * pre-start/stale history and concurrent overwrites are not detected.
+     * Startup priming must be established separately by lifecycle handling.
+     */
     uint32_t remaining_dma_items = LL_DMA_GetDataLength( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM );
 
     uint32_t completed_dma_items =

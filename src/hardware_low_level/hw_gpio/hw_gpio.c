@@ -400,6 +400,10 @@ LL_GPIO_PIN_4 of port A high
  */
 inline void HW_GPIO_Set_Output( uint32_t pin_mask )
 {
+    /* TODO: Fix C11 linkage for cross-file callers: use a normal external
+     * definition or move the body to a static inline header implementation.
+     * The current inline-only declarations/definition supply no external body.
+     */
 #ifdef TEST_BUILD
     // For unit testing, do nothing
     ( void )pin_mask;
@@ -450,6 +454,9 @@ LL_GPIO_PIN_4 of port A high
  */
 inline void HW_GPIO_Reset_Output( uint32_t pin_mask )
 {
+    /* TODO: Fix C11 external linkage as for HW_GPIO_Set_Output(); this inline
+     * body is not available to callers in other translation units.
+     */
 #ifdef TEST_BUILD
     // For unit testing, do nothing
     ( void )pin_mask;

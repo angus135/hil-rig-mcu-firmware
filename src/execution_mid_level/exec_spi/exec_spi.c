@@ -508,6 +508,12 @@ bool EXEC_SPI_Is_Started( SPIChannel_T peripheral )
 bool EXEC_SPI_Transmit( SPIChannel_T peripheral, const uint8_t* data_src,
                         const uint32_t* packet_sizes_bytes, uint32_t num_packets )
 {
+    /*
+     * TODO: Submit variable-length packets atomically, preflighting descriptor,
+     * storage and alignment limits under one IRQ critical section. A later
+     * load failure currently leaves the accepted prefix queued (or transmitting);
+     * retrying the whole operation can duplicate it. Each load also masks IRQs.
+     */
     uint32_t data_offset_bytes = 0U;
 
     for ( uint32_t packet_index = 0U; packet_index < num_packets; packet_index++ )
