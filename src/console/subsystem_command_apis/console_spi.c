@@ -397,12 +397,19 @@ static void CONSOLE_SPI_Loopback_Print_Channel_Status( const char*             n
                     CONSOLE_SPI_Loopback_CPHA_To_String( channel->configuration.cpha ) );
 }
 
-static uint32_t CONSOLE_SPI_Loopback_Copy_Rx( ExecSPIChannel_T peripheral, uint8_t* data_dst,
-                                              uint32_t data_dst_size_bytes )
+static bool CONSOLE_SPI_Loopback_Copy_Rx( ExecSPIChannel_T peripheral, uint8_t* data_dst,
+                                          uint32_t data_dst_size_bytes,
+                                          uint32_t* copied_bytes_out )
 {
-    uint32_t copied_bytes = data_dst_size_bytes;
+    *copied_bytes_out = data_dst_size_bytes;
 
-    return EXEC_SPI_Receive( peripheral, data_dst, &copied_bytes ) ? copied_bytes : 0U;
+    if ( !EXEC_SPI_Receive( peripheral, data_dst, copied_bytes_out ) )
+    {
+        *copied_bytes_out = 0U;
+        return false;
+    }
+
+    return true;
 }
 
 static bool CONSOLE_SPI_Loopback_Apply_Channel_Config( SPILoopChannel_T* channel )
@@ -843,11 +850,20 @@ void CONSOLE_SPI_Loopback_Run( uint16_t argc, char* argv[] )
     spi_loop_state.slave_rx_size_bytes  = 0U;
 
     // Clear stale RX data from both sides so this run only reports the current exchange.
-    spi_loop_state.master_rx_size_bytes = CONSOLE_SPI_Loopback_Copy_Rx(
-        master_channel->peripheral, spi_loop_state.master_rx, sizeof( spi_loop_state.master_rx ) );
+    const bool master_rx_cleared = CONSOLE_SPI_Loopback_Copy_Rx(
+        master_channel->peripheral, spi_loop_state.master_rx, sizeof( spi_loop_state.master_rx ),
+        &spi_loop_state.master_rx_size_bytes );
 
-    spi_loop_state.slave_rx_size_bytes = CONSOLE_SPI_Loopback_Copy_Rx(
-        slave_channel->peripheral, spi_loop_state.slave_rx, sizeof( spi_loop_state.slave_rx ) );
+    const bool slave_rx_cleared = CONSOLE_SPI_Loopback_Copy_Rx(
+        slave_channel->peripheral, spi_loop_state.slave_rx, sizeof( spi_loop_state.slave_rx ),
+        &spi_loop_state.slave_rx_size_bytes );
+
+    if ( !master_rx_cleared || !slave_rx_cleared )
+    {
+        CONSOLE_Printf( "FAIL: stale SPI RX data exceeds the console buffer; stop and restart "
+                        "the channels to clear it\r\n" );
+        return;
+    }
 
     spi_loop_state.master_rx_size_bytes = 0U;
     spi_loop_state.slave_rx_size_bytes  = 0U;
@@ -887,11 +903,19 @@ void CONSOLE_SPI_Loopback_Run( uint16_t argc, char* argv[] )
 
     vTaskDelay( SPI_LOOP_TRANSFER_DELAY_MS );
 
-    spi_loop_state.master_rx_size_bytes = CONSOLE_SPI_Loopback_Copy_Rx(
-        master_channel->peripheral, spi_loop_state.master_rx, sizeof( spi_loop_state.master_rx ) );
+    const bool master_rx_copied = CONSOLE_SPI_Loopback_Copy_Rx(
+        master_channel->peripheral, spi_loop_state.master_rx, sizeof( spi_loop_state.master_rx ),
+        &spi_loop_state.master_rx_size_bytes );
 
-    spi_loop_state.slave_rx_size_bytes = CONSOLE_SPI_Loopback_Copy_Rx(
-        slave_channel->peripheral, spi_loop_state.slave_rx, sizeof( spi_loop_state.slave_rx ) );
+    const bool slave_rx_copied = CONSOLE_SPI_Loopback_Copy_Rx(
+        slave_channel->peripheral, spi_loop_state.slave_rx, sizeof( spi_loop_state.slave_rx ),
+        &spi_loop_state.slave_rx_size_bytes );
+
+    if ( !master_rx_copied || !slave_rx_copied )
+    {
+        CONSOLE_Printf( "FAIL: received SPI data exceeds the console buffer\r\n" );
+        return;
+    }
 
     bool slave_received_master_tx =
         ( spi_loop_state.slave_rx_size_bytes >= spi_loop_state.master_tx_size_bytes )
