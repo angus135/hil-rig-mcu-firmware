@@ -651,14 +651,27 @@ void CONSOLE_SPI_Loopback_Stop( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[2], "all" ) == 0 )
     {
-        if ( !EXEC_SPI_Stop_Channel( EXEC_SPI_CHANNEL_1 )
-             || !EXEC_SPI_Stop_Channel( EXEC_SPI_CHANNEL_2 ) )
+        const bool channel_1_stopped = !EXEC_SPI_Is_Started( EXEC_SPI_CHANNEL_1 )
+                                       || EXEC_SPI_Stop_Channel( EXEC_SPI_CHANNEL_1 );
+        const bool channel_2_stopped = !EXEC_SPI_Is_Started( EXEC_SPI_CHANNEL_2 )
+                                       || EXEC_SPI_Stop_Channel( EXEC_SPI_CHANNEL_2 );
+
+        if ( !channel_1_stopped )
         {
-            CONSOLE_Printf( "Failed to stop both SPI channels\r\n" );
+            CONSOLE_Printf( "Failed to stop SPI channel 1\r\n" );
+        }
+
+        if ( !channel_2_stopped )
+        {
+            CONSOLE_Printf( "Failed to stop SPI channel 2\r\n" );
+        }
+
+        if ( !channel_1_stopped || !channel_2_stopped )
+        {
             return;
         }
 
-        CONSOLE_Printf( "Stopped SPI channels 0 and 1\r\n" );
+        CONSOLE_Printf( "Stopped SPI channels 1 and 2\r\n" );
         return;
     }
 
