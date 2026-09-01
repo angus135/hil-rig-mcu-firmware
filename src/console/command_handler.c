@@ -393,30 +393,30 @@ static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] )
         return;
     }
 
-    char* end_ptr = NULL;
-    errno = 0;
+    char* end_ptr                    = NULL;
+    errno                            = 0;
     const unsigned long frequency_hz = strtoul( argv[4], &end_ptr, 10 );
-    if ( errno == ERANGE || end_ptr == argv[4] || *end_ptr != '\0'
-         || argv[4][0] == '-' || frequency_hz == 0UL || frequency_hz > 1000000UL )
+    if ( errno == ERANGE || end_ptr == argv[4] || *end_ptr != '\0' || argv[4][0] == '-'
+         || frequency_hz == 0UL || frequency_hz > 1000000UL )
     {
         CONSOLE_Printf( "Invalid PWM frequency\r\n" );
         return;
     }
 
-    end_ptr = NULL;
-    errno = 0;
+    end_ptr                  = NULL;
+    errno                    = 0;
     const unsigned long duty = strtoul( argv[5], &end_ptr, 10 );
-    if ( errno == ERANGE || end_ptr == argv[5] || *end_ptr != '\0'
-         || argv[5][0] == '-' || duty > 1000UL )
+    if ( errno == ERANGE || end_ptr == argv[5] || *end_ptr != '\0' || argv[5][0] == '-'
+         || duty > 1000UL )
     {
         CONSOLE_Printf( "Invalid PWM duty\r\n" );
         return;
     }
 
     const uint32_t timer_hz = 90000000U;
-    uint16_t psc;
-    uint16_t arr;
-    uint16_t ccr;
+    uint16_t       psc;
+    uint16_t       arr;
+    uint16_t       ccr;
     if ( !HW_PWM_GEN_compute_psc( ( uint32_t )frequency_hz, timer_hz, &psc )
          || !HW_PWM_GEN_compute_arr( ( uint32_t )frequency_hz, timer_hz, psc, &arr )
          || !HW_PWM_GEN_compute_ccr( ( uint16_t )duty, arr, &ccr ) )
@@ -1403,7 +1403,7 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
 
             if ( ( voltage_end == argv[argument_index + 1U] ) || ( *voltage_end != '\0' )
                  || !EXEC_ANALOGUE_OUTPUT_Prepare_Frame( ( uint8_t )channel, voltage,
-                                                       &prepared_frame ) )
+                                                         &prepared_frame ) )
             {
                 CONSOLE_Printf( "Invalid voltage at batch position %u\r\n",
                                 ( unsigned int )( pair_index + 1U ) );

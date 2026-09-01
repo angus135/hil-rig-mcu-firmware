@@ -186,7 +186,7 @@ TEST_F( HWPWMGenTest, ComputePSCSelectsSmallestDividerWithRoomForFullDuty )
     ASSERT_TRUE( HW_PWM_GEN_compute_psc( 1U, 65536U, &psc ) );
     EXPECT_EQ( psc, 1U );
     ASSERT_TRUE( HW_PWM_GEN_compute_psc( 1U, UINT32_MAX, &psc ) );
-    EXPECT_EQ( psc, UINT16_MAX ); // A valid PSC, no longer an error sentinel.
+    EXPECT_EQ( psc, UINT16_MAX );  // A valid PSC, no longer an error sentinel.
 }
 
 /*-----------------------------------------------------------------------------

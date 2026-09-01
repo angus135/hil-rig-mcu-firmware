@@ -240,8 +240,8 @@ bool HW_PWM_GEN_compute_psc( uint32_t freq_hz, uint32_t timer_clk_hz, uint16_t* 
      * With a uint32_t clock and nonzero frequency, divider is at most 65536.
      */
     const uint32_t period_counts = timer_clk_hz / freq_hz;
-    const uint32_t divider = period_counts / ( ( uint32_t )MAX_ARR_COUNTS + 1U ) + 1U;
-    *psc = ( uint16_t )( divider - 1U );
+    const uint32_t divider       = period_counts / ( ( uint32_t )MAX_ARR_COUNTS + 1U ) + 1U;
+    *psc                         = ( uint16_t )( divider - 1U );
     return true;
 }
 
@@ -249,8 +249,8 @@ bool HW_PWM_GEN_compute_psc( uint32_t freq_hz, uint32_t timer_clk_hz, uint16_t* 
  * @brief Prepare ARR from a frequency and prescaler, rounding period down.
  * @return false if the period cannot fit or output is NULL; output is unchanged.
  */
-bool HW_PWM_GEN_compute_arr( uint32_t freq_hz, uint32_t timer_clk_hz,
-                               uint16_t prescaler, uint16_t* arr )
+bool HW_PWM_GEN_compute_arr( uint32_t freq_hz, uint32_t timer_clk_hz, uint16_t prescaler,
+                             uint16_t* arr )
 {
     if ( arr == NULL || freq_hz == 0U || freq_hz > 1000000U || timer_clk_hz == 0U )
     {
@@ -258,7 +258,7 @@ bool HW_PWM_GEN_compute_arr( uint32_t freq_hz, uint32_t timer_clk_hz,
     }
 
     /* Widen before multiplying: frequency * (PSC + 1) can exceed uint32_t. */
-    const uint64_t divider = ( uint64_t )freq_hz * ( ( uint32_t )prescaler + 1U );
+    const uint64_t divider       = ( uint64_t )freq_hz * ( ( uint32_t )prescaler + 1U );
     const uint64_t period_counts = timer_clk_hz / divider;
     if ( period_counts == 0U || period_counts > ( ( uint32_t )UINT16_MAX + 1U ) )
     {
@@ -282,7 +282,7 @@ bool HW_PWM_GEN_compute_ccr( uint16_t duty_pm, uint16_t arr, uint16_t* ccr )
     }
 
     const uint32_t period_counts = ( uint32_t )arr + 1U;
-    const uint32_t compare = ( period_counts * duty_pm ) / 1000U;
+    const uint32_t compare       = ( period_counts * duty_pm ) / 1000U;
     if ( compare > UINT16_MAX )
     {
         /* ARR=65535 at 100% needs CCR=65536, outside the current 16-bit API. */

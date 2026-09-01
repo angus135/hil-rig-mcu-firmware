@@ -322,7 +322,8 @@ TEST_F( ExecSPITest, ConfigureChannel_RejectsNullAndInvalidChannels )
 
     EXPECT_FALSE( EXEC_SPI_Configure_Channel( EXEC_SPI_CHANNEL_1, nullptr ) );
     EXPECT_FALSE( EXEC_SPI_Configure_Channel( invalid_peripheral, &config ) );
-    EXPECT_FALSE( EXEC_SPI_Configure_Channel( static_cast<ExecSPIChannel_T>( EXEC_SPI_CHANNEL_COUNT ), &config ) );
+    EXPECT_FALSE( EXEC_SPI_Configure_Channel(
+        static_cast<ExecSPIChannel_T>( EXEC_SPI_CHANNEL_COUNT ), &config ) );
 }
 
 TEST_F( ExecSPITest, ConfigureChannel_RejectsInvalidExecutionConfigurationBeforeHardwareWrites )

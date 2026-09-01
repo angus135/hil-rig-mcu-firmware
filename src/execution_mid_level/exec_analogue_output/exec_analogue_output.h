@@ -40,7 +40,7 @@ extern "C"
 #define EXEC_ANALOGUE_OUTPUT_BATCH_MAX_FRAMES ( 6U )
 
 /** @brief Maximum contiguous DAC payload submitted for one execution tick. */
-#define EXEC_ANALOGUE_OUTPUT_BATCH_MAX_BYTES                                                         \
+#define EXEC_ANALOGUE_OUTPUT_BATCH_MAX_BYTES                                                       \
     ( EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES * EXEC_ANALOGUE_OUTPUT_BATCH_MAX_FRAMES )
 
 /**-----------------------------------------------------------------------------
@@ -217,7 +217,7 @@ AnalogueOutputState_T EXEC_ANALOGUE_OUTPUT_Get_State( void );
  *     the requested voltage is NaN or infinity.
  */
 bool EXEC_ANALOGUE_OUTPUT_Prepare_Frame( uint8_t channel, float input_voltage_v,
-                                       AnalogueOutputPreparedFrame_T* prepared_frame );
+                                         AnalogueOutputPreparedFrame_T* prepared_frame );
 
 /**
  * @brief Initialize an empty prepared batch during test preparation.
@@ -247,7 +247,7 @@ bool EXEC_ANALOGUE_OUTPUT_Batch_Init( AnalogueOutputPreparedBatch_T* prepared_ba
  *     frames are already present.
  */
 bool EXEC_ANALOGUE_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       prepared_batch,
-                                      const AnalogueOutputPreparedFrame_T* prepared_frame );
+                                        const AnalogueOutputPreparedFrame_T* prepared_frame );
 
 /**
  * @brief Submit one previously prepared per-tick batch on the execution path.

@@ -83,7 +83,7 @@ extern "C" uint32_t EXEC_CAN_Get_Rx_Dropped_Count( EXEC_CAN_Channel_T channel )
     return dropped_counts[ChannelIndex( channel )];
 }
 
-extern "C" EXEC_CAN_Result_T EXEC_CAN_Configure_Channel( EXEC_CAN_Channel_T channel,
+extern "C" EXEC_CAN_Result_T EXEC_CAN_Configure_Channel( EXEC_CAN_Channel_T       channel,
                                                          const EXEC_CAN_Config_T* configuration )
 {
     size_t index = ChannelIndex( channel );
