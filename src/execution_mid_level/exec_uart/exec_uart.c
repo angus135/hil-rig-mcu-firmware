@@ -180,8 +180,8 @@ static bool EXEC_UART_Configuration_Is_Valid( const ExecUartConfig_T* config )
  * @return false if the mode is unsupported or invalid.
  *
  * @note   UART_MODE[0:1] is driven through the UART/PWR logic expander using
- *         the board truth table: 00 disabled, 01 RS-232, 10 TTL 3.3 V,
- *         and 11 TTL 5 V.
+ *         the hardware mapping: 00 disabled, 01 TTL 3.3 V or RS-232, and
+ *         11 TTL 5 V.
  */
 static bool EXEC_UART_Apply_Static_Hardware_Selection( ExecUartChannel_T       channel,
                                                        ExecUartInterfaceMode_T interface_mode )
@@ -196,8 +196,8 @@ static bool EXEC_UART_Apply_Static_Hardware_Selection( ExecUartChannel_T       c
             mode_1 = false;
             break;
         case EXEC_UART_MODE_TTL_3V3:
-            mode_0 = true;
-            mode_1 = false;
+            mode_0 = false;
+            mode_1 = true;
             break;
         case EXEC_UART_MODE_TTL_5V0:
             mode_0 = true;
