@@ -34,14 +34,14 @@ extern "C"
  */
 
 /** @brief Number of bytes in one DAC write frame on the SPI wire. */
-#define EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES ( 3U )
+#define EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES ( 3U )
 
 /** @brief Maximum number of analogue-output changes in one execution tick. */
-#define EXEC_ANALOG_OUTPUT_BATCH_MAX_FRAMES ( 6U )
+#define EXEC_ANALOGUE_OUTPUT_BATCH_MAX_FRAMES ( 6U )
 
 /** @brief Maximum contiguous DAC payload submitted for one execution tick. */
-#define EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES                                                         \
-    ( EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES * EXEC_ANALOG_OUTPUT_BATCH_MAX_FRAMES )
+#define EXEC_ANALOGUE_OUTPUT_BATCH_MAX_BYTES                                                         \
+    ( EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES * EXEC_ANALOGUE_OUTPUT_BATCH_MAX_FRAMES )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -58,7 +58,7 @@ extern "C"
  */
 typedef struct AnalogueOutputPreparedFrame_T
 {
-    uint8_t bytes[EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES];
+    uint8_t bytes[EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES];
 } AnalogueOutputPreparedFrame_T;
 
 /**
@@ -72,39 +72,39 @@ typedef struct AnalogueOutputPreparedFrame_T
  */
 typedef struct AnalogueOutputPreparedBatch_T
 {
-    uint8_t bytes[EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES];
+    uint8_t bytes[EXEC_ANALOGUE_OUTPUT_BATCH_MAX_BYTES];
     uint8_t byte_count;
 } AnalogueOutputPreparedBatch_T;
 
 /** @brief Analogue-output configuration and startup readiness state. */
 typedef enum
 {
-    EXEC_ANALOG_OUTPUT_STATE_DISABLED = 0U,
-    EXEC_ANALOG_OUTPUT_STATE_CONFIGURING,
-    EXEC_ANALOG_OUTPUT_STATE_CONFIGURED,
-    EXEC_ANALOG_OUTPUT_STATE_STARTED,
-    EXEC_ANALOG_OUTPUT_STATE_FAULTED
+    EXEC_ANALOGUE_OUTPUT_STATE_DISABLED = 0U,
+    EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURING,
+    EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURED,
+    EXEC_ANALOGUE_OUTPUT_STATE_STARTED,
+    EXEC_ANALOGUE_OUTPUT_STATE_FAULTED
 } AnalogueOutputState_T;
 
 #if defined( __cplusplus )
-static_assert( sizeof( AnalogueOutputPreparedFrame_T ) == EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES,
+static_assert( sizeof( AnalogueOutputPreparedFrame_T ) == EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES,
                "A prepared analogue-output frame must contain exactly three wire bytes" );
 #else
-_Static_assert( sizeof( AnalogueOutputPreparedFrame_T ) == EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES,
+_Static_assert( sizeof( AnalogueOutputPreparedFrame_T ) == EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES,
                 "A prepared analogue-output frame must contain exactly three wire bytes" );
 #endif
 
 #if defined( __cplusplus )
-static_assert( EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES == 18U,
+static_assert( EXEC_ANALOGUE_OUTPUT_BATCH_MAX_BYTES == 18U,
                "Six prepared analogue-output frames must occupy exactly 18 wire bytes" );
 static_assert( sizeof( AnalogueOutputPreparedBatch_T )
-                   == ( EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES + 1U ),
+                   == ( EXEC_ANALOGUE_OUTPUT_BATCH_MAX_BYTES + 1U ),
                "A prepared analogue-output batch must use deterministic inline storage" );
 #else
-_Static_assert( EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES == 18U,
+_Static_assert( EXEC_ANALOGUE_OUTPUT_BATCH_MAX_BYTES == 18U,
                 "Six prepared analogue-output frames must occupy exactly 18 wire bytes" );
 _Static_assert( sizeof( AnalogueOutputPreparedBatch_T )
-                    == ( EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES + 1U ),
+                    == ( EXEC_ANALOGUE_OUTPUT_BATCH_MAX_BYTES + 1U ),
                 "A prepared analogue-output batch must use deterministic inline storage" );
 #endif
 
@@ -129,7 +129,7 @@ typedef struct
  *
  * A true return confirms that all eleven startup frames were accepted and
  * triggered, but electrical completion may still be pending. Call
- * EXEC_ANALOGUE_OUTPUT_Is_Configured() or EXEC_ANALOG_OUTPUT_Get_State() before
+ * EXEC_ANALOGUE_OUTPUT_Is_Configured() or EXEC_ANALOGUE_OUTPUT_Get_State() before
  * starting the external output path or submitting runtime writes.
  *
  * Reconfiguration is rejected while the external output path is started.
@@ -188,7 +188,7 @@ bool EXEC_ANALOGUE_OUTPUT_Is_Started( void );
  *
  * @return Current module state after the nonblocking readiness update.
  */
-AnalogueOutputState_T EXEC_ANALOG_OUTPUT_Get_State( void );
+AnalogueOutputState_T EXEC_ANALOGUE_OUTPUT_Get_State( void );
 
 /**
  * @brief Prepare one DAC frame outside the execution hot path.
@@ -216,7 +216,7 @@ AnalogueOutputState_T EXEC_ANALOG_OUTPUT_Get_State( void );
  * @return false if the destination is NULL, the channel is unsupported, or
  *     the requested voltage is NaN or infinity.
  */
-bool EXEC_ANALOG_OUTPUT_Prepare_Frame( uint8_t channel, float input_voltage_v,
+bool EXEC_ANALOGUE_OUTPUT_Prepare_Frame( uint8_t channel, float input_voltage_v,
                                        AnalogueOutputPreparedFrame_T* prepared_frame );
 
 /**
@@ -228,7 +228,7 @@ bool EXEC_ANALOG_OUTPUT_Prepare_Frame( uint8_t channel, float input_voltage_v,
  * @return true if the batch was initialized.
  * @return false if prepared_batch is NULL.
  */
-bool EXEC_ANALOG_OUTPUT_Batch_Init( AnalogueOutputPreparedBatch_T* prepared_batch );
+bool EXEC_ANALOGUE_OUTPUT_Batch_Init( AnalogueOutputPreparedBatch_T* prepared_batch );
 
 /**
  * @brief Append one prepared frame to a per-tick batch.
@@ -237,7 +237,7 @@ bool EXEC_ANALOG_OUTPUT_Batch_Init( AnalogueOutputPreparedBatch_T* prepared_batc
  * A failed append leaves the complete destination batch unchanged.
  *
  * @param[in,out] prepared_batch
- *     Batch previously initialized by EXEC_ANALOG_OUTPUT_Batch_Init().
+ *     Batch previously initialized by EXEC_ANALOGUE_OUTPUT_Batch_Init().
  *
  * @param[in] prepared_frame
  *     Exact three-byte wire frame to append.
@@ -246,7 +246,7 @@ bool EXEC_ANALOG_OUTPUT_Batch_Init( AnalogueOutputPreparedBatch_T* prepared_batc
  * @return false if either pointer is NULL, the batch is malformed, or six
  *     frames are already present.
  */
-bool EXEC_ANALOG_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       prepared_batch,
+bool EXEC_ANALOGUE_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       prepared_batch,
                                       const AnalogueOutputPreparedFrame_T* prepared_frame );
 
 /**
@@ -270,7 +270,7 @@ bool EXEC_ANALOG_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       prepa
  * @return false if the module is not started, the batch is malformed, or
  *     SPI rejected the complete payload.
  */
-bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch(
+bool EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch(
     const AnalogueOutputPreparedBatch_T* prepared_batch );
 
 /**
