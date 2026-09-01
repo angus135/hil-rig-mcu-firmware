@@ -294,9 +294,9 @@ TEST_F( ExecUARTTest, PrivateHardwareSelectionMapsChannel1Ttl3V3ToGpa4AndGpa5 )
 {
     InSequence sequence;
     EXPECT_CALL( mock_expander,
-                 Load_Control_Bit( LOGIC_EXPANDER_UART_PWR, LOGIC_EXPANDER_PORT_A, 4U, true ) );
+                 Load_Control_Bit( LOGIC_EXPANDER_UART_PWR, LOGIC_EXPANDER_PORT_A, 4U, false ) );
     EXPECT_CALL( mock_expander,
-                 Load_Control_Bit( LOGIC_EXPANDER_UART_PWR, LOGIC_EXPANDER_PORT_A, 5U, false ) );
+                 Load_Control_Bit( LOGIC_EXPANDER_UART_PWR, LOGIC_EXPANDER_PORT_A, 5U, true ) );
     EXPECT_CALL( mock_expander, Send_Control_Bits() );
 
     EXPECT_TRUE(
