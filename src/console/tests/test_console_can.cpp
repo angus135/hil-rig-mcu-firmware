@@ -84,15 +84,15 @@ extern "C" uint32_t EXEC_CAN_Get_Rx_Dropped_Count( EXEC_CAN_Channel_T channel )
 }
 
 extern "C" EXEC_CAN_Result_T EXEC_CAN_Configure_Channel( EXEC_CAN_Channel_T channel,
-                                                         EXEC_CAN_Config_T  configuration )
+                                                         const EXEC_CAN_Config_T* configuration )
 {
     size_t index = ChannelIndex( channel );
     configure_counts[index]++;
-    configured_enabled[index]  = configuration.is_enabled;
-    configured_bitrates[index] = configuration.bitrate;
-    configured_banks[index]    = configuration.filter_bank;
-    configured_ids[index]      = configuration.filter_id;
-    configured_masks[index]    = configuration.filter_mask;
+    configured_enabled[index]  = configuration->is_enabled;
+    configured_bitrates[index] = configuration->bitrate;
+    configured_banks[index]    = configuration->filter_bank;
+    configured_ids[index]      = configuration->filter_id;
+    configured_masks[index]    = configuration->filter_mask;
     return configure_results[index];
 }
 

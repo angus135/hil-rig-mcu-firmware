@@ -113,7 +113,7 @@ typedef struct EXEC_CAN_Packet_T
  *       control mapping is confirmed during hardware bring-up.
  */
 EXEC_CAN_Result_T EXEC_CAN_Configure_Channel( EXEC_CAN_Channel_T channel,
-                                              EXEC_CAN_Config_T  configuration );
+                                              const EXEC_CAN_Config_T* configuration );
 
 /** Start a configured CAN channel. */
 EXEC_CAN_Result_T EXEC_CAN_Start_Channel( EXEC_CAN_Channel_T channel );
@@ -122,10 +122,10 @@ EXEC_CAN_Result_T EXEC_CAN_Start_Channel( EXEC_CAN_Channel_T channel );
 EXEC_CAN_Result_T EXEC_CAN_Stop_Channel( EXEC_CAN_Channel_T channel );
 
 /** Return true when the selected channel is configured. */
-bool EXEC_CAN_Is_Channel_Configured( EXEC_CAN_Channel_T channel );
+bool EXEC_CAN_Is_Configured( EXEC_CAN_Channel_T channel );
 
 /** Return true when the selected channel is configured and started. */
-bool EXEC_CAN_Is_Channel_Started( EXEC_CAN_Channel_T channel );
+bool EXEC_CAN_Is_Started( EXEC_CAN_Channel_T channel );
 
 /**
  * @brief Load and start one complete CAN transmit batch.
