@@ -195,7 +195,7 @@ static void CONSOLE_UART_Loopback_Print_Usage( void )
     CONSOLE_Printf( "    note: configure applies the selected mode to both channels\r\n" );
     CONSOLE_Printf( "    note: RX+TX are enabled for both channels\r\n" );
     CONSOLE_Printf( "    note: default framing is 8N1\r\n" );
-    CONSOLE_Printf( "    note: supported framing values are 8N1, 8E1, 8O1, 8N2, 9N1\r\n" );
+    CONSOLE_Printf( "    note: supported framing values are 8N1, 8E1, 8O1, 8N2\r\n" );
     CONSOLE_Printf( "    note: blast_random uses deterministic pseudo-random data\r\n" );
     CONSOLE_Printf( "    note: chunk_size 0 sends the payload in one transmit call\r\n" );
 }
@@ -343,16 +343,6 @@ static bool CONSOLE_UART_Parse_Framing( const char* text, HwUartWordLength_T* wo
         return true;
     }
 
-    if ( strcmp( text, "9N1" ) == 0 )
-    {
-        *word_length_out        = HW_UART_WORD_LENGTH_9_BITS;
-        *parity_out             = HW_UART_PARITY_NONE;
-        *stop_bits_out          = HW_UART_STOP_BITS_1;
-        *framing_text_out       = "9N1";
-        *wire_bits_per_byte_out = 11U;
-        return true;
-    }
-
     return false;
 }
 
@@ -452,7 +442,7 @@ static uint32_t CONSOLE_UART_Calc_Loopback_Delay_Ms( uint32_t length_bytes )
      *
      * Examples:
      * 8N1 uses 10 wire bits per byte.
-     * 8E1, 8O1, 8N2, and 9N1 use 11 wire bits per byte.
+     * 8E1, 8O1, and 8N2 use 11 wire bits per byte.
      *
      * A margin is added to cover scheduler latency, DMA interrupt handling, and
      * RX polling delay.
@@ -578,7 +568,7 @@ static void CONSOLE_UART_Loopback_Configure( uint16_t argc, char* argv[] )
                                           &stop_bits, &framing_text, &wire_bits_per_byte ) )
         {
             CONSOLE_Printf( "Invalid framing: %s\r\n", argv[CONSOLE_UART_ARGV_PARAM_3] );
-            CONSOLE_Printf( "Supported framing: 8N1, 8E1, 8O1, 8N2, 9N1\r\n" );
+            CONSOLE_Printf( "Supported framing: 8N1, 8E1, 8O1, 8N2\r\n" );
             return;
         }
     }
