@@ -179,15 +179,21 @@ TEST_F( ExecPWMCaptureTest, ConfigureEnabledAppliesModeAndConfiguresMappedHardwa
     EXPECT_TRUE( EXEC_PWM_Capture_Configure_Channel( EXEC_PWM_CAPTURE_CHANNEL_2, &config ) );
 }
 
-TEST_F( ExecPWMCaptureTest, ConfigureReturnsFalseWhenHardwareConfigurationFails )
+TEST_F( ExecPWMCaptureTest, FailedStoppedChannelReconfigurationRevokesStartPermission )
 {
     ExecPwmCaptureConfig_T config = {};
     config.mode                   = EXEC_PWM_CAPTURE_LV_3V3;
     config.is_enabled             = true;
+    exec_pwm_capture_channel_state[EXEC_PWM_CAPTURE_CHANNEL_1] =
+        EXEC_PWM_CAPTURE_STATE_CONFIGURED;
 
     EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).WillOnce( Return( false ) );
 
     EXPECT_FALSE( EXEC_PWM_Capture_Configure_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
+    EXPECT_FALSE( EXEC_PWM_Capture_Is_Configured( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
+
+    EXPECT_CALL( mock_hw, Start_Channel( _ ) ).Times( 0 );
+    EXPECT_FALSE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
 }
 
 TEST_F( ExecPWMCaptureTest, ConfigureReturnsFalseForNullConfig )

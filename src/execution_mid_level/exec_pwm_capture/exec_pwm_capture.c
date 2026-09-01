@@ -242,6 +242,12 @@ bool EXEC_PWM_Capture_Configure_Channel( ExecPwmCaptureChannel_T       channel,
     }
 
     if ( config->is_enabled
+         && ( ( uint32_t )config->mode > ( uint32_t )EXEC_PWM_CAPTURE_HV_24V ) )
+    {
+        return false;
+    }
+
+    if ( config->is_enabled
          && ( exec_pwm_capture_channel_state[channel] == EXEC_PWM_CAPTURE_STATE_STARTED ) )
     {
         return false;
@@ -251,6 +257,12 @@ bool EXEC_PWM_Capture_Configure_Channel( ExecPwmCaptureChannel_T       channel,
 
     if ( !config->is_enabled )
     {
+        if ( exec_pwm_capture_channel_state[channel] != EXEC_PWM_CAPTURE_STATE_STARTED )
+        {
+            /* A failed disable must not leave a stopped channel startable. */
+            exec_pwm_capture_channel_state[channel] = EXEC_PWM_CAPTURE_STATE_DISABLED;
+        }
+
         /*
          * Disable timer capture before changing the analogue frontend to its
          * safe state.
@@ -274,6 +286,12 @@ bool EXEC_PWM_Capture_Configure_Channel( ExecPwmCaptureChannel_T       channel,
 
         return true;
     }
+
+    /*
+     * A valid reconfiguration may partially change the frontend or timer.
+     * Revoke the previous start permission until every step succeeds.
+     */
+    exec_pwm_capture_channel_state[channel] = EXEC_PWM_CAPTURE_STATE_DISABLED;
 
     /*
      * Apply the subsystem-level analogue frontend configuration before

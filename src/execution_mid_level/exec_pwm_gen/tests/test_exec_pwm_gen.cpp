@@ -202,6 +202,20 @@ TEST_F( ExecPwmGenTest, LifecycleFailuresPreserveState )
     EXPECT_TRUE( EXEC_PWM_GEN_Is_Started( EXEC_PWM_GEN_CHANNEL_HV ) );
 }
 
+TEST_F( ExecPwmGenTest, FailedStoppedChannelReconfigurationRevokesStartPermission )
+{
+    const ExecPwmGenConfig_T config = { true, EXEC_PWM_GEN_VOLTAGE_5V, 1000U, 250U, 4U };
+    exec_pwm_gen_channel_states[EXEC_PWM_GEN_CHANNEL_LV].state = EXEC_PWM_GEN_STATE_CONFIGURED;
+
+    EXPECT_CALL( mock, ConfigureChannel( HW_PWM_GEN_CHANNEL_LV ) ).WillOnce( Return( false ) );
+
+    EXPECT_FALSE( EXEC_PWM_GEN_Configure_Channel( EXEC_PWM_GEN_CHANNEL_LV, &config ) );
+    EXPECT_FALSE( EXEC_PWM_GEN_Is_Configured( EXEC_PWM_GEN_CHANNEL_LV ) );
+
+    EXPECT_CALL( mock, StartChannel( _ ) ).Times( 0 );
+    EXPECT_FALSE( EXEC_PWM_GEN_Start_Channel( EXEC_PWM_GEN_CHANNEL_LV ) );
+}
+
 TEST_F( ExecPwmGenTest, DirectUpdateWrappersRemainUnconditional )
 {
     EXPECT_CALL( mock, SetPwm1Direct( 1000U, 250U, 4U ) );

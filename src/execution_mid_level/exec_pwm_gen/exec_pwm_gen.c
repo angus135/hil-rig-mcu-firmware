@@ -236,6 +236,9 @@ bool EXEC_PWM_GEN_Configure_Channel( ExecPwmGenChannel_T channel, const ExecPwmG
                                                           ? EXEC_PWM_GEN_VOLTAGE_3V3
                                                           : EXEC_PWM_GEN_VOLTAGE_DISABLED;
 
+        /* A failed disable must not leave a stopped channel startable. */
+        state->state = EXEC_PWM_GEN_STATE_DISABLED;
+
         if ( !EXEC_PWM_GEN_Apply_Voltage_Selection( channel, safe_voltage ) )
         {
             return false;
@@ -255,6 +258,12 @@ bool EXEC_PWM_GEN_Configure_Channel( ExecPwmGenChannel_T channel, const ExecPwmG
     }
 
     const HwPwmGenChannel_T hardware_channel = exec_pwm_gen_hardware_channels[channel];
+
+    /*
+     * A valid reconfiguration may partially change the timer or voltage
+     * selection. Revoke the previous start permission until all steps succeed.
+     */
+    state->state = EXEC_PWM_GEN_STATE_DISABLED;
 
     if ( !HW_PWM_GEN_Configure_Channel( hardware_channel ) )
     {

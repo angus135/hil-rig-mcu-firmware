@@ -266,9 +266,17 @@ EXECI2CStatus_T EXEC_I2C_Configure_Channel( ExecI2CChannel_T              channe
                 return stop_status;
             }
         }
-        else if ( !EXEC_I2C_Apply_Safe_State( channel ) )
+        else
         {
-            return EXEC_I2C_STATUS_ERROR;
+            /* A failed disable must not leave a stopped channel startable. */
+            memset( &state->configuration, 0, sizeof( state->configuration ) );
+            state->is_configured = false;
+            state->is_started    = false;
+
+            if ( !EXEC_I2C_Apply_Safe_State( channel ) )
+            {
+                return EXEC_I2C_STATUS_ERROR;
+            }
         }
 
         memset( &state->configuration, 0, sizeof( state->configuration ) );
@@ -282,6 +290,14 @@ EXECI2CStatus_T EXEC_I2C_Configure_Channel( ExecI2CChannel_T              channe
     {
         return EXEC_I2C_STATUS_BUSY;
     }
+
+    /*
+     * A valid reconfiguration may partially change the external controls or
+     * peripheral. Revoke the previous start permission until all steps succeed.
+     */
+    memset( &state->configuration, 0, sizeof( state->configuration ) );
+    state->is_configured = false;
+    state->is_started    = false;
 
     /*
      * Apply static voltage and resistance selection while keeping the pull-up

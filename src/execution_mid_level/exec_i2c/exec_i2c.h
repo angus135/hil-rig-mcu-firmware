@@ -105,6 +105,8 @@ typedef enum ExecI2CChannel_T
  * Enabled configuration applies the channel's safe external control state and
  * configures the HW peripheral without starting it. Disabled configuration
  * stops a running channel and applies its safe external state.
+ * Once hardware application begins, a failure invalidates any previous stopped
+ * configuration; Configure must succeed again before Start is permitted.
  *
  * @param[in] channel External I2C channel.
  * @param[in] config  Execution-level channel configuration.

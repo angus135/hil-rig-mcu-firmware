@@ -150,6 +150,8 @@ bool EXEC_PWM_Capture_Consume( ExecPwmCaptureChannel_T channel, ExecPwmCaptureRe
  * configures the mapped hardware channel without starting capture. Disabled
  * configuration stops and disables the hardware channel, then applies the
  * safe frontend mode. The mode field is ignored when disabled.
+ * Once hardware application begins, a failure invalidates any previous stopped
+ * configuration; Configure must succeed again before Start is permitted.
  *
  * @param channel Logical PWM capture channel to configure.
  * @param config Requested mode and enabled state.
