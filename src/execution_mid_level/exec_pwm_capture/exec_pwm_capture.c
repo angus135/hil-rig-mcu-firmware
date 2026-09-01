@@ -116,6 +116,11 @@ static ExecPwmCaptureState_T exec_pwm_capture_channel_state[EXEC_PWM_CAPTURE_CHA
  *------------------------------------------------------------------------------
  */
 
+static inline bool EXEC_PWM_Capture_Is_Valid_Channel( ExecPwmCaptureChannel_T channel )
+{
+    return ( uint32_t )channel < ( uint32_t )EXEC_PWM_CAPTURE_CHANNEL_COUNT;
+}
+
 /**
  * @brief Apply the static analogue front-end selection for a PWM capture mode.
  *
@@ -135,7 +140,7 @@ static bool EXEC_PWM_Capture_Apply_Static_Hardware_Selection( ExecPwmCaptureMode
     bool mode_0;
     bool mode_1;
 
-    if ( channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
+    if ( !EXEC_PWM_Capture_Is_Valid_Channel( channel ) )
     {
         return false;
     }
@@ -236,7 +241,7 @@ bool EXEC_PWM_Capture_Configure_Channel( ExecPwmCaptureChannel_T       channel,
         return false;
     }
 
-    if ( channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
+    if ( !EXEC_PWM_Capture_Is_Valid_Channel( channel ) )
     {
         return false;
     }
@@ -314,7 +319,7 @@ bool EXEC_PWM_Capture_Configure_Channel( ExecPwmCaptureChannel_T       channel,
 
 bool EXEC_PWM_Capture_Start_Channel( ExecPwmCaptureChannel_T channel )
 {
-    if ( channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
+    if ( !EXEC_PWM_Capture_Is_Valid_Channel( channel ) )
     {
         return false;
     }
@@ -342,7 +347,7 @@ bool EXEC_PWM_Capture_Start_Channel( ExecPwmCaptureChannel_T channel )
 
 bool EXEC_PWM_Capture_Stop_Channel( ExecPwmCaptureChannel_T channel )
 {
-    if ( channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
+    if ( !EXEC_PWM_Capture_Is_Valid_Channel( channel ) )
     {
         return false;
     }
@@ -368,7 +373,7 @@ bool EXEC_PWM_Capture_Stop_Channel( ExecPwmCaptureChannel_T channel )
 
 bool EXEC_PWM_Capture_Is_Configured( ExecPwmCaptureChannel_T channel )
 {
-    if ( ( uint32_t )channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
+    if ( !EXEC_PWM_Capture_Is_Valid_Channel( channel ) )
     {
         return false;
     }
@@ -379,7 +384,7 @@ bool EXEC_PWM_Capture_Is_Configured( ExecPwmCaptureChannel_T channel )
 
 bool EXEC_PWM_Capture_Is_Started( ExecPwmCaptureChannel_T channel )
 {
-    if ( ( uint32_t )channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
+    if ( !EXEC_PWM_Capture_Is_Valid_Channel( channel ) )
     {
         return false;
     }
