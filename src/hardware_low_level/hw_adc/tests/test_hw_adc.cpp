@@ -77,6 +77,12 @@ public:
                  () );
 
     MOCK_METHOD( void, DisableIRQ, ( IRQn_Type irqn ), () );
+
+    MOCK_METHOD( void, ConfigureTimer, ( Timer_T timer, uint32_t psc, uint32_t arr ), () );
+
+    MOCK_METHOD( bool, StartTimer, ( Timer_T timer ), () );
+
+    MOCK_METHOD( void, StopTimer, ( Timer_T timer ), () );
 };
 
 static MockHWADC* g_mock = nullptr;
@@ -195,6 +201,32 @@ extern "C" void NVIC_DisableIRQ( IRQn_Type IRQn )
         g_mock->DisableIRQ( IRQn );
     }
 }
+
+extern "C" void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t arr )
+{
+    if ( g_mock )
+    {
+        g_mock->ConfigureTimer( timer, psc, arr );
+    }
+}
+
+extern "C" bool HW_TIMER_Start_Timer( Timer_T timer )
+{
+    if ( !g_mock )
+    {
+        return false;
+    }
+
+    return g_mock->StartTimer( timer );
+}
+
+extern "C" void HW_TIMER_Stop_Timer( Timer_T timer )
+{
+    if ( g_mock )
+    {
+        g_mock->StopTimer( timer );
+    }
+}
 // NOLINTEND
 
 /**-----------------------------------------------------------------------------
@@ -222,6 +254,8 @@ protected:
 
         hw_adc_state.is_configured = false;
         hw_adc_state.is_started    = false;
+
+        ON_CALL( mock, StartTimer( _ ) ).WillByDefault( Return( true ) );
 
         for ( uint32_t i = 0U; i < ADC_DMA_LEN; i++ )
         {
@@ -262,6 +296,7 @@ TEST_F( HWADCTest, StartDMAMeasurements_StartsADCWithExpectedBufferAndLength )
                                                          Eq( HW_ADC_DMA_STREAM ) ) );
 
     EXPECT_CALL( mock, DisableIRQ( Eq( DMA2_Stream4_IRQn ) ) );
+    EXPECT_CALL( mock, StartTimer( Eq( ANALOGUE_INPUT_TIMER ) ) ).WillOnce( Return( true ) );
 
     EXPECT_TRUE( HW_ADC_Start_DMA_Measurements() );
     EXPECT_TRUE( hw_adc_state.is_started );
@@ -272,6 +307,7 @@ TEST_F( HWADCTest, StopDMAMeasurements_StopsADC )
     hw_adc_state.is_configured = true;
     hw_adc_state.is_started    = true;
 
+    EXPECT_CALL( mock, StopTimer( Eq( ANALOGUE_INPUT_TIMER ) ) );
     EXPECT_CALL( mock, StopDMA( Eq( HW_ADC_ADC_PERIPHERAL ) ) ).WillOnce( Return( HAL_OK ) );
 
     EXPECT_TRUE( HW_ADC_Stop_DMA_Measurements() );
@@ -280,6 +316,9 @@ TEST_F( HWADCTest, StopDMAMeasurements_StopsADC )
 
 TEST_F( HWADCTest, ConfigureMeasurementFrequency_ConfiguresStoppedLifecycleState )
 {
+    EXPECT_CALL( mock, ConfigureTimer( ANALOGUE_INPUT_TIMER, ADC_SAMPLE_50K_PSC,
+                                       ADC_SAMPLE_50K_ARR ) );
+
     EXPECT_TRUE( HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_50K_HZ ) );
     EXPECT_TRUE( hw_adc_state.is_configured );
     EXPECT_FALSE( hw_adc_state.is_started );
@@ -314,6 +353,29 @@ TEST_F( HWADCTest, StartDMAMeasurements_ReturnsFalseWhenDMAStartFails )
     EXPECT_FALSE( hw_adc_state.is_started );
 }
 
+TEST_F( HWADCTest, StartDMAMeasurements_RollsBackDMAWhenTimerStartFails )
+{
+    hw_adc_state.is_configured = true;
+
+    EXPECT_CALL( mock, DisableIRQ( Eq( ADC_IRQn ) ) );
+    EXPECT_CALL( mock, StartDMA( Eq( HW_ADC_ADC_PERIPHERAL ),
+                                 Eq( reinterpret_cast<uint32_t*>( adc_dma_buf ) ),
+                                 Eq( ADC_DMA_LEN * ADC_CHANNELS_PER_MEASUREMENT ) ) )
+        .WillOnce( Return( HAL_OK ) );
+    EXPECT_CALL( mock,
+                 DisableDMATransferHalfInterrupt( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM ) );
+    EXPECT_CALL( mock,
+                 DisableDMATransferCompleteInterrupt( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM ) );
+    EXPECT_CALL( mock,
+                 DisableDMATransferErrorInterrupt( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM ) );
+    EXPECT_CALL( mock, DisableIRQ( Eq( DMA2_Stream4_IRQn ) ) );
+    EXPECT_CALL( mock, StartTimer( Eq( ANALOGUE_INPUT_TIMER ) ) ).WillOnce( Return( false ) );
+    EXPECT_CALL( mock, StopDMA( Eq( HW_ADC_ADC_PERIPHERAL ) ) ).WillOnce( Return( HAL_OK ) );
+
+    EXPECT_FALSE( HW_ADC_Start_DMA_Measurements() );
+    EXPECT_FALSE( hw_adc_state.is_started );
+}
+
 TEST_F( HWADCTest, StopDMAMeasurements_ReturnsFalseWhenNotStarted )
 {
     hw_adc_state.is_configured = true;
@@ -328,6 +390,7 @@ TEST_F( HWADCTest, StopDMAMeasurements_PreservesStartedStateWhenDMAStopFails )
     hw_adc_state.is_configured = true;
     hw_adc_state.is_started    = true;
 
+    EXPECT_CALL( mock, StopTimer( Eq( ANALOGUE_INPUT_TIMER ) ) );
     EXPECT_CALL( mock, StopDMA( Eq( HW_ADC_ADC_PERIPHERAL ) ) ).WillOnce( Return( HAL_ERROR ) );
 
     EXPECT_FALSE( HW_ADC_Stop_DMA_Measurements() );

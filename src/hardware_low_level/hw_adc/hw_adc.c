@@ -164,7 +164,15 @@ bool HW_ADC_Start_DMA_Measurements( void )
     /*
      * Start the trigger timer only after DMA is ready to receive ADC results.
      */
-    HW_TIMER_Start_Timer( ANALOGUE_INPUT_TIMER );
+    if ( !HW_TIMER_Start_Timer( ANALOGUE_INPUT_TIMER ) )
+    {
+        /*
+         * DMA was armed before the trigger timer so no conversion should be
+         * in progress. Disarm it before reporting the failed start.
+         */
+        ( void )HAL_ADC_Stop_DMA( HW_ADC_ADC_PERIPHERAL );
+        return false;
+    }
 
     hw_adc_state.is_started = true;
 
