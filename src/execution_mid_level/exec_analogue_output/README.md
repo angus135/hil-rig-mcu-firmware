@@ -40,8 +40,8 @@ Runtime writes and prepared-batch submissions are accepted only while started.
 | `EXEC_ANALOGUE_OUTPUT_Stop()` | Disables the external path and stops SPI while retaining DAC values and configuration. |
 | `EXEC_ANALOGUE_OUTPUT_Is_Configured()` | Reports whether configuration has completed. |
 | `EXEC_ANALOGUE_OUTPUT_Is_Started()` | Reports whether the output path is started. |
-| `EXEC_ANALOG_OUTPUT_Prepare_Frame()` | Validates, clamps, and converts one voltage request outside the execution hot path. |
-| `EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch()` | Submits a prepared batch while started. |
+| `EXEC_ANALOGUE_OUTPUT_Prepare_Frame()` | Validates, clamps, and converts one voltage request outside the execution hot path. |
+| `EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch()` | Submits a prepared batch while started. |
 | `EXEC_ANALOGUE_OUTPUT_Write_Voltage()` | Compatibility interface for manual and console writes while started. |
 
 A successful LogicExpander send means the I2C transaction was initiated; its

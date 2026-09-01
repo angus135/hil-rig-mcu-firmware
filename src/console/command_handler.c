@@ -1347,15 +1347,15 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[1], "status" ) == 0 )
     {
-        const AnalogueOutputState_T state = EXEC_ANALOG_OUTPUT_Get_State();
+        const AnalogueOutputState_T state = EXEC_ANALOGUE_OUTPUT_Get_State();
 
         CONSOLE_Printf( "Analogue outputs: state=%u, configured=%s, started=%s\r\n",
                         ( unsigned int )state,
-                        ( state == EXEC_ANALOG_OUTPUT_STATE_CONFIGURED
-                          || state == EXEC_ANALOG_OUTPUT_STATE_STARTED )
+                        ( state == EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURED
+                          || state == EXEC_ANALOGUE_OUTPUT_STATE_STARTED )
                             ? "yes"
                             : "no",
-                        state == EXEC_ANALOG_OUTPUT_STATE_STARTED ? "yes" : "no" );
+                        state == EXEC_ANALOGUE_OUTPUT_STATE_STARTED ? "yes" : "no" );
         return;
     }
 
@@ -1372,13 +1372,13 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
         }
 
         pair_count = ( uint16_t )( ( argc - 2U ) / 2U );
-        if ( pair_count > EXEC_ANALOG_OUTPUT_BATCH_MAX_FRAMES )
+        if ( pair_count > EXEC_ANALOGUE_OUTPUT_BATCH_MAX_FRAMES )
         {
             CONSOLE_Printf( "Too many analogue outputs (maximum 6)\r\n" );
             return;
         }
 
-        if ( !EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) )
+        if ( !EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) )
         {
             CONSOLE_Printf( "Failed to initialize analogue output batch\r\n" );
             return;
@@ -1402,7 +1402,7 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
             }
 
             if ( ( voltage_end == argv[argument_index + 1U] ) || ( *voltage_end != '\0' )
-                 || !EXEC_ANALOG_OUTPUT_Prepare_Frame( ( uint8_t )channel, voltage,
+                 || !EXEC_ANALOGUE_OUTPUT_Prepare_Frame( ( uint8_t )channel, voltage,
                                                        &prepared_frame ) )
             {
                 CONSOLE_Printf( "Invalid voltage at batch position %u\r\n",
@@ -1410,7 +1410,7 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
                 return;
             }
 
-            if ( !EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &prepared_frame ) )
+            if ( !EXEC_ANALOGUE_OUTPUT_Batch_Append( &prepared_batch, &prepared_frame ) )
             {
                 CONSOLE_Printf( "Failed to prepare analogue output batch\r\n" );
                 return;
@@ -1429,7 +1429,7 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
             return;
         }
 
-        if ( !EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) )
+        if ( !EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) )
         {
             CONSOLE_Printf( "Failed to submit analogue output batch\r\n" );
             return;

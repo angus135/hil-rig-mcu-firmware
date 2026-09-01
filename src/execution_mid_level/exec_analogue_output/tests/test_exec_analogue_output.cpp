@@ -179,16 +179,16 @@ static void ExpectPacketLoad( MockHWSPI&                             mock_hw_spi
     using ::testing::_;
     using ::testing::Invoke;
 
-    static_assert( SIZE_BYTES % EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES == 0U );
+    static_assert( SIZE_BYTES % EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES == 0U );
 
-    EXPECT_CALL( mock_hw_spi, LoadTxPackets( SPI_DAC, _, EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES,
-                                             SIZE_BYTES / EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES ) )
+    EXPECT_CALL( mock_hw_spi, LoadTxPackets( SPI_DAC, _, EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES,
+                                             SIZE_BYTES / EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES ) )
         .WillOnce( Invoke(
             [expected_payload, accepted]( SPIChannel_T peripheral, const uint8_t* data,
                                           uint32_t packet_size_bytes, uint32_t packet_count ) {
                 EXPECT_EQ( peripheral, SPI_DAC );
-                EXPECT_EQ( packet_size_bytes, EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES );
-                EXPECT_EQ( packet_count, SIZE_BYTES / EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES );
+                EXPECT_EQ( packet_size_bytes, EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES );
+                EXPECT_EQ( packet_count, SIZE_BYTES / EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES );
                 EXPECT_EQ( 0, memcmp( data, expected_payload.data(), expected_payload.size() ) );
                 return accepted;
             } ) );
@@ -365,7 +365,7 @@ TEST_F( ExecAnalogueOutputTest, Configure_DisabledAppliesSafeOutputEnableState )
 
     const ExecAnalogueOutputConfig_T config = { false, false };
     EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Configure( &config ) );
-    EXPECT_EQ( EXEC_ANALOG_OUTPUT_Get_State(), EXEC_ANALOG_OUTPUT_STATE_DISABLED );
+    EXPECT_EQ( EXEC_ANALOGUE_OUTPUT_Get_State(), EXEC_ANALOGUE_OUTPUT_STATE_DISABLED );
 }
 
 TEST_F( ExecAnalogueOutputTest, Configure_SPIConfigureFailureLeavesModuleFaulted )
@@ -379,7 +379,7 @@ TEST_F( ExecAnalogueOutputTest, Configure_SPIConfigureFailureLeavesModuleFaulted
     bool result = ConfigureEnabled( false );
 
     EXPECT_FALSE( result );
-    EXPECT_EQ( EXEC_ANALOG_OUTPUT_Get_State(), EXEC_ANALOG_OUTPUT_STATE_FAULTED );
+    EXPECT_EQ( EXEC_ANALOGUE_OUTPUT_Get_State(), EXEC_ANALOGUE_OUTPUT_STATE_FAULTED );
 }
 
 TEST_F( ExecAnalogueOutputTest, Configure_QueuedStartupTransitionsToConfiguredAndStopsSPI )
@@ -392,12 +392,12 @@ TEST_F( ExecAnalogueOutputTest, Configure_QueuedStartupTransitionsToConfiguredAn
     ASSERT_TRUE( ConfigureEnabled( false ) );
 
     EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_DAC ) ).WillOnce( Return( false ) );
-    EXPECT_EQ( EXEC_ANALOG_OUTPUT_Get_State(), EXEC_ANALOG_OUTPUT_STATE_CONFIGURING );
+    EXPECT_EQ( EXEC_ANALOGUE_OUTPUT_Get_State(), EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURING );
 
     EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_DAC ) ).WillOnce( Return( true ) );
     EXPECT_CALL( mock_hw_spi, StopChannel( SPI_DAC ) ).WillOnce( Return( true ) );
     EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Is_Configured() );
-    EXPECT_EQ( EXEC_ANALOG_OUTPUT_Get_State(), EXEC_ANALOG_OUTPUT_STATE_CONFIGURED );
+    EXPECT_EQ( EXEC_ANALOGUE_OUTPUT_Get_State(), EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURED );
 }
 
 TEST_F( ExecAnalogueOutputTest, StartAndStopFollowConfiguredLifecycle )
@@ -425,7 +425,7 @@ TEST_F( ExecAnalogueOutputTest, StartAndStopFollowConfiguredLifecycle )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_hw_spi, StopChannel( SPI_DAC ) ).WillOnce( Return( true ) );
     EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Stop() );
-    EXPECT_EQ( EXEC_ANALOG_OUTPUT_Get_State(), EXEC_ANALOG_OUTPUT_STATE_CONFIGURED );
+    EXPECT_EQ( EXEC_ANALOGUE_OUTPUT_Get_State(), EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURED );
     EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Started() );
 }
 
@@ -449,7 +449,7 @@ TEST_F( ExecAnalogueOutputTest, PrepareFrame_AllSupportedChannelsProduceGoldenCo
     {
         AnalogueOutputPreparedFrame_T prepared_frame = {};
 
-        ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( channel, 0.0F, &prepared_frame ) );
+        ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Prepare_Frame( channel, 0.0F, &prepared_frame ) );
         VerifyPreparedFrame( prepared_frame, EXPECTED_FRAMES[channel] );
     }
 }
@@ -462,7 +462,7 @@ TEST_F( ExecAnalogueOutputTest, PrepareFrame_RejectsDisabledAndInvalidChannels )
     {
         AnalogueOutputPreparedFrame_T prepared_frame = { { 0xAAU, 0x55U, 0xA5U } };
 
-        EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Prepare_Frame( channel, 10.0F, &prepared_frame ) );
+        EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Prepare_Frame( channel, 10.0F, &prepared_frame ) );
         VerifyPreparedFrame( prepared_frame, { 0xAAU, 0x55U, 0xA5U } );
     }
 }
@@ -471,13 +471,13 @@ TEST_F( ExecAnalogueOutputTest, PrepareFrame_ProducesGoldenZeroMidrangeAndMaximu
 {
     AnalogueOutputPreparedFrame_T prepared_frame = {};
 
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 0U, 0.0F, &prepared_frame ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Prepare_Frame( 0U, 0.0F, &prepared_frame ) );
     VerifyPreparedFrame( prepared_frame, { 0x00U, 0x00U, 0x00U } );
 
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 2U, 10.0F, &prepared_frame ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Prepare_Frame( 2U, 10.0F, &prepared_frame ) );
     VerifyPreparedFrame( prepared_frame, { 0x10U, 0x08U, 0x00U } );
 
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 5U, 20.0F, &prepared_frame ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Prepare_Frame( 5U, 20.0F, &prepared_frame ) );
     VerifyPreparedFrame( prepared_frame, { 0x28U, 0x0FU, 0xFFU } );
 }
 
@@ -485,10 +485,10 @@ TEST_F( ExecAnalogueOutputTest, PrepareFrame_PreservesFiniteClamping )
 {
     AnalogueOutputPreparedFrame_T prepared_frame = {};
 
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 1U, -3.5F, &prepared_frame ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Prepare_Frame( 1U, -3.5F, &prepared_frame ) );
     VerifyPreparedFrame( prepared_frame, { 0x08U, 0x00U, 0x00U } );
 
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 4U, 99.0F, &prepared_frame ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Prepare_Frame( 4U, 99.0F, &prepared_frame ) );
     VerifyPreparedFrame( prepared_frame, { 0x20U, 0x0FU, 0xFFU } );
 }
 
@@ -496,16 +496,16 @@ TEST_F( ExecAnalogueOutputTest, PrepareFrame_PreservesFractionalScalingAndRoundi
 {
     AnalogueOutputPreparedFrame_T prepared_frame = {};
 
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 1U, 12.34F, &prepared_frame ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Prepare_Frame( 1U, 12.34F, &prepared_frame ) );
     VerifyPreparedFrame( prepared_frame, { 0x08U, 0x09U, 0xDFU } );
 
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 0U, 0.0024F, &prepared_frame ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Prepare_Frame( 0U, 0.0024F, &prepared_frame ) );
     VerifyPreparedFrame( prepared_frame, { 0x00U, 0x00U, 0x00U } );
 
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 0U, 0.0025F, &prepared_frame ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Prepare_Frame( 0U, 0.0025F, &prepared_frame ) );
     VerifyPreparedFrame( prepared_frame, { 0x00U, 0x00U, 0x01U } );
 
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 0U, 15.0F, &prepared_frame ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Prepare_Frame( 0U, 15.0F, &prepared_frame ) );
     VerifyPreparedFrame( prepared_frame, { 0x00U, 0x0BU, 0xFFU } );
 }
 
@@ -521,19 +521,19 @@ TEST_F( ExecAnalogueOutputTest, PrepareFrame_RejectsNonFiniteVoltagesWithoutChan
     {
         AnalogueOutputPreparedFrame_T prepared_frame = { { 0xAAU, 0x55U, 0xA5U } };
 
-        EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 0U, input_voltage_v, &prepared_frame ) );
+        EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Prepare_Frame( 0U, input_voltage_v, &prepared_frame ) );
         VerifyPreparedFrame( prepared_frame, { 0xAAU, 0x55U, 0xA5U } );
     }
 }
 
 TEST_F( ExecAnalogueOutputTest, PrepareFrame_RejectsNullDestination )
 {
-    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Prepare_Frame( 0U, 10.0F, nullptr ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Prepare_Frame( 0U, 10.0F, nullptr ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, PreparedBatch_UsesFixedInlineEighteenBytePayload )
 {
-    EXPECT_EQ( EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES, 18U );
+    EXPECT_EQ( EXEC_ANALOGUE_OUTPUT_BATCH_MAX_BYTES, 18U );
     EXPECT_EQ( sizeof( AnalogueOutputPreparedBatch_T::bytes ), 18U );
     EXPECT_EQ( sizeof( AnalogueOutputPreparedBatch_T ), 19U );
     EXPECT_TRUE( std::is_trivially_copyable<AnalogueOutputPreparedBatch_T>::value );
@@ -545,7 +545,7 @@ TEST_F( ExecAnalogueOutputTest, BatchInit_CreatesEmptyClearedBatch )
     AnalogueOutputPreparedBatch_T prepared_batch;
     memset( &prepared_batch, 0xA5, sizeof( prepared_batch ) );
 
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) );
 
     EXPECT_EQ( prepared_batch.byte_count, 0U );
     for ( uint8_t byte : prepared_batch.bytes )
@@ -556,16 +556,16 @@ TEST_F( ExecAnalogueOutputTest, BatchInit_CreatesEmptyClearedBatch )
 
 TEST_F( ExecAnalogueOutputTest, BatchInit_RejectsNullDestination )
 {
-    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Batch_Init( nullptr ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Batch_Init( nullptr ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, BatchAppend_OneFrameProducesThreeContiguousBytes )
 {
     const AnalogueOutputPreparedFrame_T frame = { { 0x18U, 0x09U, 0xDFU } };
     AnalogueOutputPreparedBatch_T       prepared_batch;
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) );
 
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
 
     EXPECT_EQ( prepared_batch.byte_count, 3U );
     EXPECT_EQ( 0, memcmp( prepared_batch.bytes, frame.bytes, sizeof( frame ) ) );
@@ -582,13 +582,13 @@ TEST_F( ExecAnalogueOutputTest, BatchAppend_MultipleFramesPreserveExactOrderAndC
         0x10U, 0x01U, 0x23U, 0x00U, 0x04U, 0x56U, 0x28U, 0x07U, 0x89U,
     };
     AnalogueOutputPreparedBatch_T prepared_batch;
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) );
 
     for ( uint8_t index = 0U; index < FRAMES.size(); index++ )
     {
-        ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &FRAMES[index] ) );
+        ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Append( &prepared_batch, &FRAMES[index] ) );
         EXPECT_EQ( prepared_batch.byte_count,
-                   ( uint8_t )( ( index + 1U ) * EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES ) );
+                   ( uint8_t )( ( index + 1U ) * EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES ) );
     }
 
     EXPECT_EQ( 0, memcmp( prepared_batch.bytes, EXPECTED_BYTES.data(), EXPECTED_BYTES.size() ) );
@@ -610,20 +610,20 @@ TEST_F( ExecAnalogueOutputTest, BatchAppend_SixFramesAcceptedAndSeventhLeavesBat
         0x18U, 0x00U, 0x04U, 0x20U, 0x00U, 0x05U, 0x28U, 0x00U, 0x06U,
     };
     AnalogueOutputPreparedBatch_T prepared_batch;
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) );
 
-    for ( uint8_t index = 0U; index < EXEC_ANALOG_OUTPUT_BATCH_MAX_FRAMES; index++ )
+    for ( uint8_t index = 0U; index < EXEC_ANALOGUE_OUTPUT_BATCH_MAX_FRAMES; index++ )
     {
-        ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &FRAMES[index] ) );
+        ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Append( &prepared_batch, &FRAMES[index] ) );
         EXPECT_EQ( prepared_batch.byte_count,
-                   ( uint8_t )( ( index + 1U ) * EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES ) );
+                   ( uint8_t )( ( index + 1U ) * EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES ) );
     }
 
     EXPECT_EQ( prepared_batch.byte_count, 18U );
     EXPECT_EQ( 0, memcmp( prepared_batch.bytes, EXPECTED_BYTES.data(), EXPECTED_BYTES.size() ) );
 
     const AnalogueOutputPreparedBatch_T batch_before_rejection = prepared_batch;
-    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &FRAMES[6] ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Batch_Append( &prepared_batch, &FRAMES[6] ) );
     EXPECT_EQ( 0, memcmp( &prepared_batch, &batch_before_rejection, sizeof( prepared_batch ) ) );
 }
 
@@ -631,25 +631,25 @@ TEST_F( ExecAnalogueOutputTest, BatchAppend_RejectsNullAndMalformedInputsWithout
 {
     const AnalogueOutputPreparedFrame_T frame = { { 0x00U, 0x00U, 0x00U } };
     AnalogueOutputPreparedBatch_T       prepared_batch;
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) );
 
     const AnalogueOutputPreparedBatch_T empty_batch = prepared_batch;
-    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Batch_Append( nullptr, &frame ) );
-    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, nullptr ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Batch_Append( nullptr, &frame ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Batch_Append( &prepared_batch, nullptr ) );
     EXPECT_EQ( 0, memcmp( &prepared_batch, &empty_batch, sizeof( prepared_batch ) ) );
 
     prepared_batch.byte_count                           = 1U;
     const AnalogueOutputPreparedBatch_T malformed_batch = prepared_batch;
-    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
     EXPECT_EQ( 0, memcmp( &prepared_batch, &malformed_batch, sizeof( prepared_batch ) ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_NotConfiguredRejectsWithoutSPITraffic )
 {
     AnalogueOutputPreparedBatch_T prepared_batch;
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) );
 
-    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_ConfiguringRejectsWithoutLoadOrTrigger )
@@ -658,8 +658,8 @@ TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_ConfiguringRejectsWithoutLoa
 
     const AnalogueOutputPreparedFrame_T frame = { { 0x00U, 0x00U, 0x00U } };
     AnalogueOutputPreparedBatch_T       prepared_batch;
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
 
     ExpectSuccessfulSetup();
     ExpectStartupPacket( false, false );
@@ -670,8 +670,8 @@ TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_ConfiguringRejectsWithoutLoa
         .Times( 2 )
         .WillRepeatedly( Return( false ) );
 
-    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
-    EXPECT_EQ( EXEC_ANALOG_OUTPUT_Get_State(), EXEC_ANALOG_OUTPUT_STATE_CONFIGURING );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+    EXPECT_EQ( EXEC_ANALOGUE_OUTPUT_Get_State(), EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURING );
 
     EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_DAC ) ).WillOnce( Return( true ) );
     EXPECT_CALL( mock_hw_spi, StopChannel( SPI_DAC ) ).WillOnce( Return( true ) );
@@ -683,9 +683,9 @@ TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_EmptyBatchIsSuccessfulNoOp )
     ConfigureAndStart( false );
 
     AnalogueOutputPreparedBatch_T prepared_batch;
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) );
 
-    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_OneFrameLoadsOnceThenTriggersOnce )
@@ -695,8 +695,8 @@ TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_OneFrameLoadsOnceThenTrigger
     constexpr std::array<uint8_t, 3U>   EXPECTED_BYTES = { 0x18U, 0x09U, 0xDFU };
     const AnalogueOutputPreparedFrame_T frame          = { { 0x18U, 0x09U, 0xDFU } };
     AnalogueOutputPreparedBatch_T       prepared_batch;
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
 
     ConfigureAndStart( false );
 
@@ -704,7 +704,7 @@ TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_OneFrameLoadsOnceThenTrigger
     ExpectPacketLoad( mock_hw_spi, EXPECTED_BYTES );
     EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 1 );
 
-    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_SixFramesLoadSixPacketsInOrder )
@@ -724,10 +724,10 @@ TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_SixFramesLoadSixPacketsInOrd
         0x18U, 0x00U, 0x04U, 0x20U, 0x00U, 0x05U, 0x28U, 0x00U, 0x06U,
     };
     AnalogueOutputPreparedBatch_T prepared_batch;
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) );
     for ( const AnalogueOutputPreparedFrame_T& frame : FRAMES )
     {
-        ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
+        ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
     }
 
     ConfigureAndStart( false );
@@ -736,7 +736,7 @@ TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_SixFramesLoadSixPacketsInOrd
     ExpectPacketLoad( mock_hw_spi, EXPECTED_BYTES );
     EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 1 );
 
-    EXPECT_TRUE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_LoadRejectionReturnsFalseWithoutTrigger )
@@ -744,15 +744,15 @@ TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_LoadRejectionReturnsFalseWit
     constexpr std::array<uint8_t, 3U>   EXPECTED_BYTES = { 0x18U, 0x09U, 0xDFU };
     const AnalogueOutputPreparedFrame_T frame          = { { 0x18U, 0x09U, 0xDFU } };
     AnalogueOutputPreparedBatch_T       prepared_batch;
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
 
     ConfigureAndStart( false );
 
     ExpectPacketLoad( mock_hw_spi, EXPECTED_BYTES, false );
     EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 0 );
 
-    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
 }
 
 TEST_F( ExecAnalogueOutputTest,
@@ -763,8 +763,8 @@ TEST_F( ExecAnalogueOutputTest,
     constexpr std::array<uint8_t, 3U>   EXPECTED_BYTES = { 0x18U, 0x09U, 0xDFU };
     const AnalogueOutputPreparedFrame_T frame          = { { 0x18U, 0x09U, 0xDFU } };
     AnalogueOutputPreparedBatch_T       prepared_batch;
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
 
     ConfigureAndStart( false );
 
@@ -773,10 +773,10 @@ TEST_F( ExecAnalogueOutputTest,
         g_spi_tx_faulted = true;
     } ) );
 
-    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
-    EXPECT_EQ( EXEC_ANALOG_OUTPUT_Get_State(), EXEC_ANALOG_OUTPUT_STATE_FAULTED );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+    EXPECT_EQ( EXEC_ANALOGUE_OUTPUT_Get_State(), EXEC_ANALOGUE_OUTPUT_STATE_FAULTED );
 
-    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, AsyncSpiFaultTransitionsStartedModuleToFaulted )
@@ -785,7 +785,7 @@ TEST_F( ExecAnalogueOutputTest, AsyncSpiFaultTransitionsStartedModuleToFaulted )
 
     g_spi_tx_faulted = true;
 
-    EXPECT_EQ( EXEC_ANALOG_OUTPUT_Get_State(), EXEC_ANALOG_OUTPUT_STATE_FAULTED );
+    EXPECT_EQ( EXEC_ANALOGUE_OUTPUT_Get_State(), EXEC_ANALOGUE_OUTPUT_STATE_FAULTED );
 }
 
 TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_RejectsMalformedAndNullBatches )
@@ -793,11 +793,11 @@ TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_RejectsMalformedAndNullBatch
     ConfigureAndStart( false );
 
     AnalogueOutputPreparedBatch_T prepared_batch;
-    ASSERT_TRUE( EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) );
     prepared_batch.byte_count = 1U;
 
-    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
-    EXPECT_FALSE( EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( nullptr ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( nullptr ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, WriteVoltage_NotConfigured_ReturnsFalseWithoutSPITraffic )

@@ -43,7 +43,7 @@
 #define ANALOGUE_OUTPUT_STARTUP_FRAME_COUNT                                                        \
     ( ANALOGUE_OUTPUT_STARTUP_CONTROL_FRAME_COUNT + ANALOGUE_OUTPUT_DAC_CHANNEL_COUNT )
 #define ANALOGUE_OUTPUT_STARTUP_PACKET_SIZE_BYTES                                                  \
-    ( ANALOGUE_OUTPUT_STARTUP_FRAME_COUNT * EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES )
+    ( ANALOGUE_OUTPUT_STARTUP_FRAME_COUNT * EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES )
 #define ANALOGUE_OUTPUT_DAC_MAX_COUNT 4095U
 #define ANALOGUE_OUTPUT_INPUT_MAX_V 20.0F
 
@@ -83,7 +83,7 @@ _Static_assert( sizeof( AnalogueOutputStartupPacket_T ) == 33U,
  *------------------------------------------------------------------------------
  */
 
-static AnalogueOutputState_T s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_DISABLED;
+static AnalogueOutputState_T s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_DISABLED;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -212,33 +212,33 @@ EXEC_ANALOGUE_OUTPUT_Prepare_Startup_Packet( bool                           use_
         EXEC_ANALOGUE_OUTPUT_Prepare_Register_Frame( frames[index].register_address,
                                                      frames[index].data_word, &prepared_frame );
 
-        memcpy( &startup_packet->bytes[index * EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES],
+        memcpy( &startup_packet->bytes[index * EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES],
                 prepared_frame.bytes, sizeof( prepared_frame ) );
     }
 }
 
 static void EXEC_ANALOGUE_OUTPUT_Update_Readiness( void )
 {
-    if ( ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_CONFIGURING
-           || s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_STARTED )
+    if ( ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURING
+           || s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOGUE_OUTPUT_STATE_STARTED )
          && HW_SPI_Tx_Is_Faulted( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
     {
         ( void )EXEC_ANALOGUE_OUTPUT_Set_Output_Enable( false );
 
-        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
         return;
     }
 
-    if ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_CONFIGURING
+    if ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURING
          && HW_SPI_Tx_Is_Complete( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
     {
         if ( !HW_SPI_Stop_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
         {
-            s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+            s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
             return;
         }
 
-        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_CONFIGURED;
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURED;
     }
 }
 
@@ -317,12 +317,12 @@ bool EXEC_ANALOGUE_OUTPUT_Configure( const ExecAnalogueOutputConfig_T* config )
         /*
          * Configuration transmission must complete before SPI can be stopped.
          */
-        if ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_CONFIGURING )
+        if ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURING )
         {
             return false;
         }
 
-        if ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_STARTED )
+        if ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOGUE_OUTPUT_STATE_STARTED )
         {
             if ( !EXEC_ANALOGUE_OUTPUT_Stop() )
             {
@@ -330,7 +330,7 @@ bool EXEC_ANALOGUE_OUTPUT_Configure( const ExecAnalogueOutputConfig_T* config )
             }
         }
 
-        if ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_FAULTED )
+        if ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOGUE_OUTPUT_STATE_FAULTED )
         {
             ( void )EXEC_ANALOGUE_OUTPUT_Set_Output_Enable( false );
             return false;
@@ -345,13 +345,13 @@ bool EXEC_ANALOGUE_OUTPUT_Configure( const ExecAnalogueOutputConfig_T* config )
             return false;
         }
 
-        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_DISABLED;
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_DISABLED;
 
         return true;
     }
 
-    if ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_CONFIGURING
-         || s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_STARTED )
+    if ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURING
+         || s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOGUE_OUTPUT_STATE_STARTED )
     {
         return false;
     }
@@ -361,13 +361,13 @@ bool EXEC_ANALOGUE_OUTPUT_Configure( const ExecAnalogueOutputConfig_T* config )
      */
     if ( !EXEC_ANALOGUE_OUTPUT_Set_Output_Enable( false ) )
     {
-        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
         return false;
     }
 
     if ( !EXEC_ANALOGUE_OUTPUT_Configure_SPI() )
     {
-        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
         return false;
     }
 
@@ -376,35 +376,35 @@ bool EXEC_ANALOGUE_OUTPUT_Configure( const ExecAnalogueOutputConfig_T* config )
      */
     if ( !HW_SPI_Start_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
     {
-        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
         return false;
     }
 
     EXEC_ANALOGUE_OUTPUT_Prepare_Startup_Packet( config->use_external_vref, &startup_packet );
 
     if ( !HW_SPI_Load_Tx_Packets( ANALOGUE_OUTPUT_SPI_CHANNEL, startup_packet.bytes,
-                                  EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES,
+                                  EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES,
                                   ANALOGUE_OUTPUT_STARTUP_FRAME_COUNT ) )
     {
         ( void )HW_SPI_Stop_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL );
 
-        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
         return false;
     }
 
-    s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_CONFIGURING;
+    s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURING;
 
     HW_SPI_Tx_Trigger( ANALOGUE_OUTPUT_SPI_CHANNEL );
     EXEC_ANALOGUE_OUTPUT_Update_Readiness();
 
-    return s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+    return s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
 }
 
 bool EXEC_ANALOGUE_OUTPUT_Start( void )
 {
     EXEC_ANALOGUE_OUTPUT_Update_Readiness();
 
-    if ( s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOG_OUTPUT_STATE_CONFIGURED )
+    if ( s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURED )
     {
         return false;
     }
@@ -423,13 +423,13 @@ bool EXEC_ANALOGUE_OUTPUT_Start( void )
 
         if ( !HW_SPI_Stop_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
         {
-            s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+            s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
         }
 
         return false;
     }
 
-    s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_STARTED;
+    s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_STARTED;
 
     return true;
 }
@@ -438,7 +438,7 @@ bool EXEC_ANALOGUE_OUTPUT_Stop( void )
 {
     EXEC_ANALOGUE_OUTPUT_Update_Readiness();
 
-    if ( s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOG_OUTPUT_STATE_STARTED )
+    if ( s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOGUE_OUTPUT_STATE_STARTED )
     {
         return false;
     }
@@ -462,37 +462,37 @@ bool EXEC_ANALOGUE_OUTPUT_Stop( void )
 
     if ( !HW_SPI_Stop_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
     {
-        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
         return false;
     }
 
-    s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_CONFIGURED;
+    s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURED;
 
     return true;
 }
 
 bool EXEC_ANALOGUE_OUTPUT_Is_Configured( void )
 {
-    AnalogueOutputState_T state = EXEC_ANALOG_OUTPUT_Get_State();
+    AnalogueOutputState_T state = EXEC_ANALOGUE_OUTPUT_Get_State();
 
-    return state == EXEC_ANALOG_OUTPUT_STATE_CONFIGURED
-           || state == EXEC_ANALOG_OUTPUT_STATE_STARTED;
+    return state == EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURED
+           || state == EXEC_ANALOGUE_OUTPUT_STATE_STARTED;
 }
 
 bool EXEC_ANALOGUE_OUTPUT_Is_Started( void )
 {
     EXEC_ANALOGUE_OUTPUT_Update_Readiness();
 
-    return s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOG_OUTPUT_STATE_STARTED;
+    return s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOGUE_OUTPUT_STATE_STARTED;
 }
 
-AnalogueOutputState_T EXEC_ANALOG_OUTPUT_Get_State( void )
+AnalogueOutputState_T EXEC_ANALOGUE_OUTPUT_Get_State( void )
 {
     EXEC_ANALOGUE_OUTPUT_Update_Readiness();
     return s_EXEC_ANALOGUE_OUTPUT_State;
 }
 
-bool EXEC_ANALOG_OUTPUT_Prepare_Frame( uint8_t channel, float input_voltage_v,
+bool EXEC_ANALOGUE_OUTPUT_Prepare_Frame( uint8_t channel, float input_voltage_v,
                                        AnalogueOutputPreparedFrame_T* prepared_frame )
 {
     AnalogueOutputPreparedFrame_T temporary_frame;
@@ -522,7 +522,7 @@ bool EXEC_ANALOG_OUTPUT_Prepare_Frame( uint8_t channel, float input_voltage_v,
     return true;
 }
 
-bool EXEC_ANALOG_OUTPUT_Batch_Init( AnalogueOutputPreparedBatch_T* prepared_batch )
+bool EXEC_ANALOGUE_OUTPUT_Batch_Init( AnalogueOutputPreparedBatch_T* prepared_batch )
 {
     if ( prepared_batch == NULL )
     {
@@ -535,7 +535,7 @@ bool EXEC_ANALOG_OUTPUT_Batch_Init( AnalogueOutputPreparedBatch_T* prepared_batc
     return true;
 }
 
-bool EXEC_ANALOG_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       prepared_batch,
+bool EXEC_ANALOGUE_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       prepared_batch,
                                       const AnalogueOutputPreparedFrame_T* prepared_frame )
 {
     if ( ( prepared_batch == NULL ) || ( prepared_frame == NULL ) )
@@ -543,13 +543,13 @@ bool EXEC_ANALOG_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       prepa
         return false;
     }
 
-    if ( ( prepared_batch->byte_count % EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES ) != 0U )
+    if ( ( prepared_batch->byte_count % EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES ) != 0U )
     {
         return false;
     }
 
     if ( prepared_batch->byte_count
-         > ( EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES - EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES ) )
+         > ( EXEC_ANALOGUE_OUTPUT_BATCH_MAX_BYTES - EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES ) )
     {
         return false;
     }
@@ -557,12 +557,12 @@ bool EXEC_ANALOG_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       prepa
     memcpy( &prepared_batch->bytes[prepared_batch->byte_count], prepared_frame->bytes,
             sizeof( *prepared_frame ) );
     prepared_batch->byte_count =
-        ( uint8_t )( prepared_batch->byte_count + EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES );
+        ( uint8_t )( prepared_batch->byte_count + EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES );
 
     return true;
 }
 
-bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( const AnalogueOutputPreparedBatch_T* prepared_batch )
+bool EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( const AnalogueOutputPreparedBatch_T* prepared_batch )
 {
     /*
      * TODO: Before ISR integration, replace this readiness call with ISR-safe
@@ -571,7 +571,7 @@ bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( const AnalogueOutputPreparedBatch
      */
     EXEC_ANALOGUE_OUTPUT_Update_Readiness();
 
-    if ( s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOG_OUTPUT_STATE_STARTED )
+    if ( s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOGUE_OUTPUT_STATE_STARTED )
     {
         return false;
     }
@@ -586,8 +586,8 @@ bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( const AnalogueOutputPreparedBatch
      * frame/CS overhead and tick rate. Six frames need about 205 us of wire time
      * at 703 kbit/s, so this size limit does not guarantee a 100 us tick budget.
      */
-    if ( ( prepared_batch->byte_count > EXEC_ANALOG_OUTPUT_BATCH_MAX_BYTES )
-         || ( ( prepared_batch->byte_count % EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES ) != 0U ) )
+    if ( ( prepared_batch->byte_count > EXEC_ANALOGUE_OUTPUT_BATCH_MAX_BYTES )
+         || ( ( prepared_batch->byte_count % EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES ) != 0U ) )
     {
         return false;
     }
@@ -598,13 +598,13 @@ bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( const AnalogueOutputPreparedBatch
     }
 
     if ( !HW_SPI_Load_Tx_Packets( ANALOGUE_OUTPUT_SPI_CHANNEL, prepared_batch->bytes,
-                                  EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES,
+                                  EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES,
                                   prepared_batch->byte_count
-                                      / EXEC_ANALOG_OUTPUT_FRAME_SIZE_BYTES ) )
+                                      / EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES ) )
     {
         if ( HW_SPI_Tx_Is_Faulted( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
         {
-            s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+            s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
         }
         return false;
     }
@@ -613,7 +613,7 @@ bool EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( const AnalogueOutputPreparedBatch
 
     if ( HW_SPI_Tx_Is_Faulted( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
     {
-        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOG_OUTPUT_STATE_FAULTED;
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
         return false;
     }
 
@@ -660,20 +660,20 @@ bool EXEC_ANALOGUE_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v 
     AnalogueOutputPreparedFrame_T prepared_frame;
     AnalogueOutputPreparedBatch_T prepared_batch;
 
-    if ( !EXEC_ANALOG_OUTPUT_Prepare_Frame( channel, input_voltage_v, &prepared_frame ) )
+    if ( !EXEC_ANALOGUE_OUTPUT_Prepare_Frame( channel, input_voltage_v, &prepared_frame ) )
     {
         return false;
     }
 
-    if ( !EXEC_ANALOG_OUTPUT_Batch_Init( &prepared_batch ) )
+    if ( !EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) )
     {
         return false;
     }
 
-    if ( !EXEC_ANALOG_OUTPUT_Batch_Append( &prepared_batch, &prepared_frame ) )
+    if ( !EXEC_ANALOGUE_OUTPUT_Batch_Append( &prepared_batch, &prepared_frame ) )
     {
         return false;
     }
 
-    return EXEC_ANALOG_OUTPUT_Submit_Prepared_Batch( &prepared_batch );
+    return EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch );
 }
