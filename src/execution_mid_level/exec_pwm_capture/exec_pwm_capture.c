@@ -350,22 +350,23 @@ bool EXEC_PWM_Capture_Stop_Channel( ExecPwmCaptureChannel_T channel )
 
 bool EXEC_PWM_Capture_Is_Configured( ExecPwmCaptureChannel_T channel )
 {
-    if ( channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
+    if ( ( uint32_t )channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
     {
         return false;
     }
 
-    return exec_pwm_capture_channel_configured[channel];
+    return exec_pwm_capture_channel_state[channel] == EXEC_PWM_CAPTURE_STATE_CONFIGURED
+           || exec_pwm_capture_channel_state[channel] == EXEC_PWM_CAPTURE_STATE_STARTED;
 }
 
 bool EXEC_PWM_Capture_Is_Started( ExecPwmCaptureChannel_T channel )
 {
-    if ( channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
+    if ( ( uint32_t )channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
     {
         return false;
     }
 
-    return exec_pwm_capture_channel_started[channel];
+    return exec_pwm_capture_channel_state[channel] == EXEC_PWM_CAPTURE_STATE_STARTED;
 }
 
 bool EXEC_PWM_Capture_Consume( ExecPwmCaptureChannel_T channel, ExecPwmCaptureResult_T* result )
