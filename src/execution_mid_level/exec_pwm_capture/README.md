@@ -142,6 +142,8 @@ The public API is declared in `exec_pwm_capture.h`.
 | `EXEC_PWM_Capture_Configure_Channel()` | Configure or disable a PWM capture channel |
 | `EXEC_PWM_Capture_Start_Channel()` | Start a PWM capture channel |
 | `EXEC_PWM_Capture_Stop_Channel()` | Stop capture while retaining configuration |
+| `EXEC_PWM_Capture_Is_Configured()` | Report whether a channel is configured or started |
+| `EXEC_PWM_Capture_Is_Started()` | Report whether a channel is started |
 | `EXEC_PWM_Capture_Consume()` | Consume one new valid PWM capture result |
 | `EXEC_PWM_Capture_Convert()` | Convert raw ticks to frequency and duty cycle |
 
