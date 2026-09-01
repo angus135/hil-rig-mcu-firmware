@@ -407,13 +407,12 @@ void CONSOLE_TestConfiguration_Command( uint16_t argc, char* argv[] )
             *item              = ( ExecSPIConfig_T ){
                              .is_enabled = true,
                              .spi_mode   = master ? EXEC_SPI_MASTER_MODE : EXEC_SPI_SLAVE_MODE,
-                             .data_size  = strcmp( argv[4], "16" ) == 0 ? EXEC_SPI_SIZE_16_BIT
-                                                                        : EXEC_SPI_SIZE_8_BIT,
-                             .first_bit  = EXEC_SPI_FIRST_MSB,
-                             .baud_rate  = EXEC_SPI_BAUD_1M406BIT,
-                             .cpol       = mode >= 2U ? EXEC_SPI_CPOL_HIGH : EXEC_SPI_CPOL_LOW,
-                             .cpha       = ( mode & 1U ) != 0U ? EXEC_SPI_CPHA_2_EDGE
-                                                              : EXEC_SPI_CPHA_1_EDGE,
+                             .data_size =
+                    strcmp( argv[4], "16" ) == 0 ? EXEC_SPI_SIZE_16_BIT : EXEC_SPI_SIZE_8_BIT,
+                             .first_bit = EXEC_SPI_FIRST_MSB,
+                             .baud_rate = EXEC_SPI_BAUD_1M406BIT,
+                             .cpol      = mode >= 2U ? EXEC_SPI_CPOL_HIGH : EXEC_SPI_CPOL_LOW,
+                             .cpha      = ( mode & 1U ) != 0U ? EXEC_SPI_CPHA_2_EDGE : EXEC_SPI_CPHA_1_EDGE,
             };
         }
         else
