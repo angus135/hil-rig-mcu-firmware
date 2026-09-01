@@ -215,6 +215,27 @@ TEST_F( ExecPWMCaptureTest, ConfigureReturnsFalseForInvalidChannel )
         EXEC_PWM_Capture_Configure_Channel( static_cast<ExecPwmCaptureChannel_T>( 2U ), &config ) );
 }
 
+TEST_F( ExecPWMCaptureTest, LifecycleRejectsNegativeChannelWithoutHardwareAccess )
+{
+    const ExecPwmCaptureChannel_T negative_channel =
+        static_cast<ExecPwmCaptureChannel_T>( -1 );
+    ExecPwmCaptureConfig_T config = {};
+    config.mode                   = EXEC_PWM_CAPTURE_LV_3V3;
+    config.is_enabled             = true;
+
+    EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw, Start_Channel( _ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw, Stop_Channel( _ ) ).Times( 0 );
+    EXPECT_CALL( mock_logic_expander, Load_Control_Bit( _, _, _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock_logic_expander, Send_Control_Bits() ).Times( 0 );
+
+    EXPECT_FALSE( EXEC_PWM_Capture_Configure_Channel( negative_channel, &config ) );
+    EXPECT_FALSE( EXEC_PWM_Capture_Start_Channel( negative_channel ) );
+    EXPECT_FALSE( EXEC_PWM_Capture_Stop_Channel( negative_channel ) );
+    EXPECT_FALSE( EXEC_PWM_Capture_Is_Configured( negative_channel ) );
+    EXPECT_FALSE( EXEC_PWM_Capture_Is_Started( negative_channel ) );
+}
+
 TEST_F( ExecPWMCaptureTest, ConfigureDisabledStopsHardwareAndAppliesSafeMode )
 {
     ExecPwmCaptureConfig_T config = {};
