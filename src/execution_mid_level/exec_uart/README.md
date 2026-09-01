@@ -139,6 +139,8 @@ The public API is declared in `exec_uart.h`.
 | `EXEC_UART_Configure_Channel()` | Configure or disable a UART channel |
 | `EXEC_UART_Start_Channel()` | Start a configured UART channel |
 | `EXEC_UART_Stop_Channel()` | Stop a channel while retaining configuration |
+| `EXEC_UART_Is_Configured()` | Report whether a channel is configured or started |
+| `EXEC_UART_Is_Started()` | Report whether a channel is started |
 | `EXEC_UART_Transmit()` | Queue a TX payload and trigger TX DMA |
 | `EXEC_UART_Read()` | Copy unread RX data into caller storage |
 | `EXEC_UART_Is_Tx_Complete()` | Report whether TX is fully complete |

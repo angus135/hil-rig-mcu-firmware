@@ -203,7 +203,7 @@ bool EXEC_SPI_Is_Started( ExecSPIChannel_T channel );
  *
  * const uint32_t packet_sizes[] = { 2U, 3U, 1U };
  *
- * EXEC_SPI_Transmit( SPI_CHANNEL_0, data, packet_sizes, 3U );
+ * EXEC_SPI_Transmit( EXEC_SPI_CHANNEL_1, data, packet_sizes, 3U );
  * @endcode
  *
  * This function is intentionally a thin wrapper around the low-level

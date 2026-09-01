@@ -235,6 +235,37 @@ static bool EXEC_SPI_Build_HW_Configuration( ExecSPIChannel_T channel,
                                              const ExecSPIConfig_T* config,
                                              HWSPIConfig_T* hw_config )
 {
+    static const SPIMode_T hw_modes[EXEC_SPI_MODE_COUNT] = {
+        [EXEC_SPI_MASTER_MODE] = SPI_MASTER_MODE,
+        [EXEC_SPI_SLAVE_MODE]  = SPI_SLAVE_MODE,
+    };
+    static const SPIDataSize_T hw_data_sizes[EXEC_SPI_SIZE_COUNT] = {
+        [EXEC_SPI_SIZE_8_BIT]  = SPI_SIZE_8_BIT,
+        [EXEC_SPI_SIZE_16_BIT] = SPI_SIZE_16_BIT,
+    };
+    static const SPIFirstBit_T hw_first_bits[EXEC_SPI_FIRST_BIT_COUNT] = {
+        [EXEC_SPI_FIRST_MSB] = SPI_FIRST_MSB,
+        [EXEC_SPI_FIRST_LSB] = SPI_FIRST_LSB,
+    };
+    static const SPIBaudRate_T hw_baud_rates[EXEC_SPI_BAUD_COUNT] = {
+        [EXEC_SPI_BAUD_45MBIT]   = SPI_BAUD_45MBIT,
+        [EXEC_SPI_BAUD_22M5BIT]  = SPI_BAUD_22M5BIT,
+        [EXEC_SPI_BAUD_11M25BIT] = SPI_BAUD_11M25BIT,
+        [EXEC_SPI_BAUD_5M625BIT] = SPI_BAUD_5M625BIT,
+        [EXEC_SPI_BAUD_2M813BIT] = SPI_BAUD_2M813BIT,
+        [EXEC_SPI_BAUD_1M406BIT] = SPI_BAUD_1M406BIT,
+        [EXEC_SPI_BAUD_703KBIT]   = SPI_BAUD_703KBIT,
+        [EXEC_SPI_BAUD_352KBIT]   = SPI_BAUD_352KBIT,
+    };
+    static const SPICPOL_T hw_cpol[EXEC_SPI_CPOL_COUNT] = {
+        [EXEC_SPI_CPOL_LOW]  = SPI_CPOL_LOW,
+        [EXEC_SPI_CPOL_HIGH] = SPI_CPOL_HIGH,
+    };
+    static const SPICPHA_T hw_cpha[EXEC_SPI_CPHA_COUNT] = {
+        [EXEC_SPI_CPHA_1_EDGE] = SPI_CPHA_1_EDGE,
+        [EXEC_SPI_CPHA_2_EDGE] = SPI_CPHA_2_EDGE,
+    };
+
     if ( channel >= EXEC_SPI_CHANNEL_COUNT || config == NULL || hw_config == NULL
          || config->spi_mode >= EXEC_SPI_MODE_COUNT || config->data_size >= EXEC_SPI_SIZE_COUNT
          || config->first_bit >= EXEC_SPI_FIRST_BIT_COUNT
@@ -247,12 +278,12 @@ static bool EXEC_SPI_Build_HW_Configuration( ExecSPIChannel_T channel,
     const ExecSPIHardwareMap_T* hardware = &exec_spi_hardware_map[channel];
 
     *hw_config = ( HWSPIConfig_T ){
-        .spi_mode  = ( SPIMode_T )config->spi_mode,
-        .data_size = ( SPIDataSize_T )config->data_size,
-        .first_bit = ( SPIFirstBit_T )config->first_bit,
-        .baud_rate = ( SPIBaudRate_T )config->baud_rate,
-        .cpol      = ( SPICPOL_T )config->cpol,
-        .cpha      = ( SPICPHA_T )config->cpha,
+        .spi_mode  = hw_modes[config->spi_mode],
+        .data_size = hw_data_sizes[config->data_size],
+        .first_bit = hw_first_bits[config->first_bit],
+        .baud_rate = hw_baud_rates[config->baud_rate],
+        .cpol      = hw_cpol[config->cpol],
+        .cpha      = hw_cpha[config->cpha],
         .nss_pin   = hardware->nss_pin,
     };
 
