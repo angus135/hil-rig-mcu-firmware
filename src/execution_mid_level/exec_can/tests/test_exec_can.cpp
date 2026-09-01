@@ -266,8 +266,8 @@ TEST_F( ExecCANTest, ConfigureRoutesBothChannelsAndMapsResults )
     EXEC_CAN_Config_T channel1 = { true, 500000U, 13U, 0x123U, 0x7FFU };
     EXEC_CAN_Config_T channel2 = { true, 250000U, 14U, 0x456U, 0x700U };
 
-    EXPECT_EQ( EXEC_CAN_Configure_Channel( EXEC_CAN_CHANNEL_1, channel1 ), EXEC_CAN_RESULT_OK );
-    EXPECT_EQ( EXEC_CAN_Configure_Channel( EXEC_CAN_CHANNEL_2, channel2 ),
+    EXPECT_EQ( EXEC_CAN_Configure_Channel( EXEC_CAN_CHANNEL_1, &channel1 ), EXEC_CAN_RESULT_OK );
+    EXPECT_EQ( EXEC_CAN_Configure_Channel( EXEC_CAN_CHANNEL_2, &channel2 ),
                EXEC_CAN_RESULT_FILTER_ERROR );
 
     EXPECT_EQ( configure_call_count[0], 1U );
@@ -278,9 +278,9 @@ TEST_F( ExecCANTest, ConfigureRoutesBothChannelsAndMapsResults )
     EXPECT_EQ( configure_calls[0].mask, 0x7FFU );
     EXPECT_EQ( configure_calls[1].bitrate, 250000U );
     EXPECT_EQ( configure_calls[1].bank, 14U );
-    EXPECT_TRUE( EXEC_CAN_Is_Channel_Configured( EXEC_CAN_CHANNEL_1 ) );
-    EXPECT_FALSE( EXEC_CAN_Is_Channel_Started( EXEC_CAN_CHANNEL_1 ) );
-    EXPECT_FALSE( EXEC_CAN_Is_Channel_Configured( EXEC_CAN_CHANNEL_2 ) );
+    EXPECT_TRUE( EXEC_CAN_Is_Configured( EXEC_CAN_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_CAN_Is_Started( EXEC_CAN_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_CAN_Is_Configured( EXEC_CAN_CHANNEL_2 ) );
 }
 
 TEST_F( ExecCANTest, ConfigurationResultMappingCoversEveryHardwareCode )
@@ -299,7 +299,7 @@ TEST_F( ExecCANTest, ConfigurationResultMappingCoversEveryHardwareCode )
     {
         configure_results[0]            = hardware_results[i];
         EXEC_CAN_Config_T configuration = { true, 500000U, 0U, 0U, 0U };
-        EXPECT_EQ( EXEC_CAN_Configure_Channel( EXEC_CAN_CHANNEL_1, configuration ),
+        EXPECT_EQ( EXEC_CAN_Configure_Channel( EXEC_CAN_CHANNEL_1, &configuration ),
                    execution_results[i] );
     }
 }
@@ -309,11 +309,11 @@ TEST_F( ExecCANTest, DisabledConfigurationStopsStartedChannelAndClearsState )
     exec_can_state[EXEC_CAN_CHANNEL_1] = { true, true };
     EXEC_CAN_Config_T configuration    = { false, 0U, 0U, 0U, 0U };
 
-    EXPECT_EQ( EXEC_CAN_Configure_Channel( EXEC_CAN_CHANNEL_1, configuration ),
+    EXPECT_EQ( EXEC_CAN_Configure_Channel( EXEC_CAN_CHANNEL_1, &configuration ),
                EXEC_CAN_RESULT_OK );
     EXPECT_EQ( stop_call_count[0], 1U );
-    EXPECT_FALSE( EXEC_CAN_Is_Channel_Configured( EXEC_CAN_CHANNEL_1 ) );
-    EXPECT_FALSE( EXEC_CAN_Is_Channel_Started( EXEC_CAN_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_CAN_Is_Configured( EXEC_CAN_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_CAN_Is_Started( EXEC_CAN_CHANNEL_1 ) );
 }
 
 TEST_F( ExecCANTest, DisabledConfigurationPreservesStateWhenStopFails )
@@ -322,10 +322,10 @@ TEST_F( ExecCANTest, DisabledConfigurationPreservesStateWhenStopFails )
     stop_results[1]                    = HW_CAN_RESULT_BUSY;
     EXEC_CAN_Config_T configuration    = { false, 0U, 0U, 0U, 0U };
 
-    EXPECT_EQ( EXEC_CAN_Configure_Channel( EXEC_CAN_CHANNEL_2, configuration ),
+    EXPECT_EQ( EXEC_CAN_Configure_Channel( EXEC_CAN_CHANNEL_2, &configuration ),
                EXEC_CAN_RESULT_BUSY );
-    EXPECT_TRUE( EXEC_CAN_Is_Channel_Configured( EXEC_CAN_CHANNEL_2 ) );
-    EXPECT_TRUE( EXEC_CAN_Is_Channel_Started( EXEC_CAN_CHANNEL_2 ) );
+    EXPECT_TRUE( EXEC_CAN_Is_Configured( EXEC_CAN_CHANNEL_2 ) );
+    EXPECT_TRUE( EXEC_CAN_Is_Started( EXEC_CAN_CHANNEL_2 ) );
 }
 
 TEST_F( ExecCANTest, StartAndStopEnforceLifecycleAndUpdateStateOnlyOnSuccess )
@@ -335,17 +335,17 @@ TEST_F( ExecCANTest, StartAndStopEnforceLifecycleAndUpdateStateOnlyOnSuccess )
 
     exec_can_state[EXEC_CAN_CHANNEL_1] = { true, false };
     EXPECT_EQ( EXEC_CAN_Start_Channel( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_RESULT_OK );
-    EXPECT_TRUE( EXEC_CAN_Is_Channel_Started( EXEC_CAN_CHANNEL_1 ) );
+    EXPECT_TRUE( EXEC_CAN_Is_Started( EXEC_CAN_CHANNEL_1 ) );
     EXPECT_EQ( start_call_count[0], 1U );
     EXPECT_EQ( EXEC_CAN_Start_Channel( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_RESULT_BUSY );
 
     stop_results[0] = HW_CAN_RESULT_ERROR;
     EXPECT_EQ( EXEC_CAN_Stop_Channel( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_RESULT_ERROR );
-    EXPECT_TRUE( EXEC_CAN_Is_Channel_Started( EXEC_CAN_CHANNEL_1 ) );
+    EXPECT_TRUE( EXEC_CAN_Is_Started( EXEC_CAN_CHANNEL_1 ) );
 
     stop_results[0] = HW_CAN_RESULT_OK;
     EXPECT_EQ( EXEC_CAN_Stop_Channel( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_RESULT_OK );
-    EXPECT_FALSE( EXEC_CAN_Is_Channel_Started( EXEC_CAN_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_CAN_Is_Started( EXEC_CAN_CHANNEL_1 ) );
     EXPECT_EQ( EXEC_CAN_Stop_Channel( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_RESULT_NOT_STARTED );
 }
 
@@ -355,8 +355,8 @@ TEST_F( ExecCANTest, StartFailureLeavesConfiguredChannelStopped )
     start_results[1]                   = HW_CAN_RESULT_ERROR;
 
     EXPECT_EQ( EXEC_CAN_Start_Channel( EXEC_CAN_CHANNEL_2 ), EXEC_CAN_RESULT_ERROR );
-    EXPECT_TRUE( EXEC_CAN_Is_Channel_Configured( EXEC_CAN_CHANNEL_2 ) );
-    EXPECT_FALSE( EXEC_CAN_Is_Channel_Started( EXEC_CAN_CHANNEL_2 ) );
+    EXPECT_TRUE( EXEC_CAN_Is_Configured( EXEC_CAN_CHANNEL_2 ) );
+    EXPECT_FALSE( EXEC_CAN_Is_Started( EXEC_CAN_CHANNEL_2 ) );
 }
 
 TEST_F( ExecCANTest, CombinedTransmitRoutesBothChannelsAndConvertsPackets )
@@ -527,8 +527,8 @@ TEST_F( ExecCANTest, RecoveryFailureSynchronizesExecutionLifecycleWithHardware )
     hardware_started[0]                = false;
 
     EXPECT_EQ( EXEC_CAN_Recover( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_RESULT_ERROR );
-    EXPECT_TRUE( EXEC_CAN_Is_Channel_Configured( EXEC_CAN_CHANNEL_1 ) );
-    EXPECT_FALSE( EXEC_CAN_Is_Channel_Started( EXEC_CAN_CHANNEL_1 ) );
+    EXPECT_TRUE( EXEC_CAN_Is_Configured( EXEC_CAN_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_CAN_Is_Started( EXEC_CAN_CHANNEL_1 ) );
 }
 
 TEST_F( ExecCANTest, HardwareResultAndStatusMappingCoversAllValues )
@@ -580,12 +580,12 @@ TEST_F( ExecCANTest, InvalidChannelNeverCallsHardware )
     uint16_t                 read = 0U;
 
     EXEC_CAN_Config_T configuration = { true, 500000U, 0U, 0U, 0U };
-    EXPECT_EQ( EXEC_CAN_Configure_Channel( invalid, configuration ),
+    EXPECT_EQ( EXEC_CAN_Configure_Channel( invalid, &configuration ),
                EXEC_CAN_RESULT_INVALID_ARGUMENT );
     EXPECT_EQ( EXEC_CAN_Start_Channel( invalid ), EXEC_CAN_RESULT_INVALID_ARGUMENT );
     EXPECT_EQ( EXEC_CAN_Stop_Channel( invalid ), EXEC_CAN_RESULT_INVALID_ARGUMENT );
-    EXPECT_FALSE( EXEC_CAN_Is_Channel_Configured( invalid ) );
-    EXPECT_FALSE( EXEC_CAN_Is_Channel_Started( invalid ) );
+    EXPECT_FALSE( EXEC_CAN_Is_Configured( invalid ) );
+    EXPECT_FALSE( EXEC_CAN_Is_Started( invalid ) );
     EXPECT_EQ( EXEC_CAN_Transmit( invalid, &packet, 1U ), EXEC_CAN_RESULT_INVALID_ARGUMENT );
     EXPECT_EQ( EXEC_CAN_Receive( invalid, &packet, 1U, &read ), EXEC_CAN_RESULT_INVALID_ARGUMENT );
     EXPECT_EQ( EXEC_CAN_Get_Tx_Status( invalid ), EXEC_CAN_TX_STATUS_INVALID_CHANNEL );

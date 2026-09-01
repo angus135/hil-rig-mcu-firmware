@@ -25,7 +25,7 @@ necessary and clears its execution-layer configured state. CAN transceiver
 safe-state control remains a hardware-bring-up TODO until the board control
 mapping is confirmed.
 
-`EXEC_CAN_Is_Channel_Configured()` and `EXEC_CAN_Is_Channel_Started()` report
+`EXEC_CAN_Is_Configured()` and `EXEC_CAN_Is_Started()` report
 cached execution-layer lifecycle state. They do not access hardware during
 normal operation.
 

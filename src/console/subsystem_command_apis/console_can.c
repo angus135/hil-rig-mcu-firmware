@@ -217,7 +217,7 @@ static void CONSOLE_Command_Can_config( uint16_t argc, char* argv[] )
         .filter_id   = filter_id,
         .filter_mask = filter_mask,
     };
-    EXEC_CAN_Result_T result = EXEC_CAN_Configure_Channel( channel, configuration );
+    EXEC_CAN_Result_T result = EXEC_CAN_Configure_Channel( channel, &configuration );
     if ( result != EXEC_CAN_RESULT_OK )
     {
         CONSOLE_Printf( "CAN%u configuration failed with error %d\r\n",

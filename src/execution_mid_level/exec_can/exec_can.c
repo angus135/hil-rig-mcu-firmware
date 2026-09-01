@@ -177,16 +177,16 @@ static EXEC_CAN_Tx_Status_T EXEC_CAN_Map_Tx_Status( HW_CAN_Tx_Status_T status )
  */
 
 EXEC_CAN_Result_T EXEC_CAN_Configure_Channel( EXEC_CAN_Channel_T channel,
-                                              EXEC_CAN_Config_T  configuration )
+                                              const EXEC_CAN_Config_T* configuration )
 {
-    if ( !EXEC_CAN_Channel_Is_Valid( channel ) )
+    if ( !EXEC_CAN_Channel_Is_Valid( channel ) || configuration == NULL )
     {
         return EXEC_CAN_RESULT_INVALID_ARGUMENT;
     }
 
     ExecCANChannelState_T* state = &exec_can_state[channel];
 
-    if ( !configuration.is_enabled )
+    if ( !configuration->is_enabled )
     {
         if ( state->is_started )
         {
@@ -221,7 +221,7 @@ EXEC_CAN_Result_T EXEC_CAN_Configure_Channel( EXEC_CAN_Channel_T channel,
     state->is_configured = false;
     state->is_started    = false;
 
-    HW_CAN_Result_T result = EXEC_CAN_HW_Configure( channel, configuration );
+    HW_CAN_Result_T result = EXEC_CAN_HW_Configure( channel, *configuration );
 
     if ( result == HW_CAN_RESULT_OK )
     {
@@ -289,7 +289,7 @@ EXEC_CAN_Result_T EXEC_CAN_Stop_Channel( EXEC_CAN_Channel_T channel )
     return EXEC_CAN_Map_Result( result );
 }
 
-bool EXEC_CAN_Is_Channel_Configured( EXEC_CAN_Channel_T channel )
+bool EXEC_CAN_Is_Configured( EXEC_CAN_Channel_T channel )
 {
     if ( !EXEC_CAN_Channel_Is_Valid( channel ) )
     {
@@ -299,7 +299,7 @@ bool EXEC_CAN_Is_Channel_Configured( EXEC_CAN_Channel_T channel )
     return exec_can_state[channel].is_configured;
 }
 
-bool EXEC_CAN_Is_Channel_Started( EXEC_CAN_Channel_T channel )
+bool EXEC_CAN_Is_Started( EXEC_CAN_Channel_T channel )
 {
     if ( !EXEC_CAN_Channel_Is_Valid( channel ) )
     {
