@@ -30,7 +30,7 @@ static uint32_t                           driver_start_calls;
 static uint32_t                           driver_stop_calls;
 static uint32_t                           driver_idle_calls;
 static uint32_t                           driver_fault_calls;
-static FlashManagerState_T                flash_state;
+static FlashManagerState_T                flash_manager_state;
 static bool                               flash_get_state_result;
 static FlashManagerRequestStatus_T        flash_prepare_result;
 static FlashManagerRequestStatus_T        flash_finalise_result;
@@ -40,6 +40,7 @@ static FlashManagerResultTransferStatus_T flash_transfer_start_result;
 static FlashManagerResultTransferStatus_T flash_transfer_finish_result;
 static uint32_t                           flash_abort_calls;
 static uint32_t                           timer_configure_calls;
+static bool                               timer_start_result;
 static uint32_t                           timer_start_calls;
 static uint32_t                           timer_stop_calls;
 
@@ -112,7 +113,7 @@ bool FLASH_MANAGER_GetState( FlashManagerState_T* state )
 {
     if ( flash_get_state_result && state != nullptr )
     {
-        *state = flash_state;
+        *state = flash_manager_state;
     }
     return flash_get_state_result;
 }
@@ -145,10 +146,13 @@ void HW_TIMER_Configure_Timer( Timer_T, uint32_t, uint32_t )
 {
     timer_configure_calls++;
 }
-void HW_TIMER_Start_Timer( Timer_T )
+
+bool HW_TIMER_Start_Timer( Timer_T )
 {
     timer_start_calls++;
+    return timer_start_result;
 }
+
 void HW_TIMER_Stop_Timer( Timer_T )
 {
     timer_stop_calls++;
@@ -193,7 +197,7 @@ protected:
         driver_stop_calls              = 0U;
         driver_idle_calls              = 0U;
         driver_fault_calls             = 0U;
-        flash_state                    = FLASH_MANAGER_STATE_IDLE;
+        flash_manager_state            = FLASH_MANAGER_STATE_IDLE;
         flash_get_state_result         = true;
         flash_prepare_result           = FLASH_MANAGER_REQUEST_OK;
         flash_finalise_result          = FLASH_MANAGER_REQUEST_OK;
@@ -203,6 +207,7 @@ protected:
         flash_transfer_finish_result   = FLASH_MANAGER_RESULT_TRANSFER_OK;
         flash_abort_calls              = 0U;
         timer_configure_calls          = 0U;
+        timer_start_result             = true;
         timer_start_calls              = 0U;
         timer_stop_calls               = 0U;
         run_state_manager_task_handle  = TEST_RSM_TASK_HANDLE;
@@ -224,7 +229,7 @@ protected:
     {
         ConfigureToArmed();
         Process( RUN_STATE_REQUEST_EXECUTION );
-        flash_state = FLASH_MANAGER_STATE_EXECUTING;
+        flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
         RUN_STATE_MANAGER_ProcessPendingOperation();
         ASSERT_EQ( RUN_STATE_EXECUTION, run_state );
     }
@@ -290,7 +295,7 @@ TEST_F( RunStateManagerTest, ExecutionStartsOnlyAfterFlashIsExecuting )
     EXPECT_EQ( RUN_STATE_ARMED, run_state );
     EXPECT_EQ( RUN_STATE_PENDING_EXECUTION_PREPARATION, pending_operation );
     EXPECT_EQ( 0U, driver_start_calls );
-    flash_state = FLASH_MANAGER_STATE_EXECUTING;
+    flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
     RUN_STATE_MANAGER_ProcessPendingOperation();
     EXPECT_EQ( RUN_STATE_EXECUTION, run_state );
     EXPECT_TRUE( execution_active );
@@ -307,7 +312,7 @@ TEST_F( RunStateManagerTest, ExecutionCompletionStopsDriversAndWaitsForResults )
     EXPECT_FALSE( execution_active );
     EXPECT_FALSE( execution_timer_running );
     EXPECT_EQ( RUN_STATE_PENDING_RESULT_FINALISATION, pending_operation );
-    flash_state = FLASH_MANAGER_STATE_RESULTS_READY;
+    flash_manager_state = FLASH_MANAGER_STATE_RESULTS_READY;
     RUN_STATE_MANAGER_ProcessPendingOperation();
     EXPECT_EQ( RUN_STATE_RESULTS_READY, run_state );
 }
@@ -354,11 +359,11 @@ TEST_F( RunStateManagerTest, ResetWaitsForFlashIdle )
 {
     run_state    = RUN_STATE_FAULT;
     fault_reason = RUN_STATE_FAULT_EXTERNAL_REQUEST;
-    flash_state  = FLASH_MANAGER_STATE_ABORTING;
+    flash_manager_state = FLASH_MANAGER_STATE_ABORTING;
     Process( RUN_STATE_REQUEST_RESET );
     EXPECT_EQ( RUN_STATE_FAULT, run_state );
     EXPECT_EQ( RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE, last_request_result );
-    flash_state = FLASH_MANAGER_STATE_IDLE;
+    flash_manager_state = FLASH_MANAGER_STATE_IDLE;
     Process( RUN_STATE_REQUEST_RESET );
     EXPECT_EQ( RUN_STATE_IDLE, run_state );
     EXPECT_EQ( RUN_STATE_FAULT_NONE, fault_reason );
