@@ -90,8 +90,8 @@ typedef struct EXECSPIState_T
 
 typedef struct ExecSPIHardwareMap_T
 {
-    SPIChannel_T          hw_channel;
-    GPIOPin_T             nss_pin;
+    SPIChannel_T         hw_channel;
+    GPIOPin_T            nss_pin;
     LogicExpanderIndex_T expander;
     LogicExpanderPort_T  port;
     uint8_t              enable_bit;
@@ -158,9 +158,9 @@ static inline EXECSPIState_T* EXEC_SPI_Get_State( ExecSPIChannel_T peripheral );
 
 static bool EXEC_SPI_Apply_Interface_Control( ExecSPIChannel_T peripheral, bool is_enabled,
                                               ExecSPIMode_T spi_mode );
-static bool EXEC_SPI_Build_HW_Configuration( ExecSPIChannel_T channel,
+static bool EXEC_SPI_Build_HW_Configuration( ExecSPIChannel_T       channel,
                                              const ExecSPIConfig_T* config,
-                                             HWSPIConfig_T* hw_config );
+                                             HWSPIConfig_T*         hw_config );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -231,9 +231,9 @@ static bool EXEC_SPI_Apply_Interface_Control( ExecSPIChannel_T peripheral, bool 
     return LOGIC_EXPANDER_Send_Control_Bits() == LOGIC_EXPANDER_STATUS_OK;
 }
 
-static bool EXEC_SPI_Build_HW_Configuration( ExecSPIChannel_T channel,
+static bool EXEC_SPI_Build_HW_Configuration( ExecSPIChannel_T       channel,
                                              const ExecSPIConfig_T* config,
-                                             HWSPIConfig_T* hw_config )
+                                             HWSPIConfig_T*         hw_config )
 {
     static const SPIMode_T hw_modes[EXEC_SPI_MODE_COUNT] = {
         [EXEC_SPI_MASTER_MODE] = SPI_MASTER_MODE,
@@ -248,14 +248,10 @@ static bool EXEC_SPI_Build_HW_Configuration( ExecSPIChannel_T channel,
         [EXEC_SPI_FIRST_LSB] = SPI_FIRST_LSB,
     };
     static const SPIBaudRate_T hw_baud_rates[EXEC_SPI_BAUD_COUNT] = {
-        [EXEC_SPI_BAUD_45MBIT]   = SPI_BAUD_45MBIT,
-        [EXEC_SPI_BAUD_22M5BIT]  = SPI_BAUD_22M5BIT,
-        [EXEC_SPI_BAUD_11M25BIT] = SPI_BAUD_11M25BIT,
-        [EXEC_SPI_BAUD_5M625BIT] = SPI_BAUD_5M625BIT,
-        [EXEC_SPI_BAUD_2M813BIT] = SPI_BAUD_2M813BIT,
-        [EXEC_SPI_BAUD_1M406BIT] = SPI_BAUD_1M406BIT,
-        [EXEC_SPI_BAUD_703KBIT]   = SPI_BAUD_703KBIT,
-        [EXEC_SPI_BAUD_352KBIT]   = SPI_BAUD_352KBIT,
+        [EXEC_SPI_BAUD_45MBIT] = SPI_BAUD_45MBIT,     [EXEC_SPI_BAUD_22M5BIT] = SPI_BAUD_22M5BIT,
+        [EXEC_SPI_BAUD_11M25BIT] = SPI_BAUD_11M25BIT, [EXEC_SPI_BAUD_5M625BIT] = SPI_BAUD_5M625BIT,
+        [EXEC_SPI_BAUD_2M813BIT] = SPI_BAUD_2M813BIT, [EXEC_SPI_BAUD_1M406BIT] = SPI_BAUD_1M406BIT,
+        [EXEC_SPI_BAUD_703KBIT] = SPI_BAUD_703KBIT,   [EXEC_SPI_BAUD_352KBIT] = SPI_BAUD_352KBIT,
     };
     static const SPICPOL_T hw_cpol[EXEC_SPI_CPOL_COUNT] = {
         [EXEC_SPI_CPOL_LOW]  = SPI_CPOL_LOW,

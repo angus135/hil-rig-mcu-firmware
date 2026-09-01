@@ -38,8 +38,8 @@
 
 typedef struct SPILoopChannel_T
 {
-    ExecSPIChannel_T  peripheral;
-    ExecSPIConfig_T configuration;
+    ExecSPIChannel_T peripheral;
+    ExecSPIConfig_T  configuration;
 } SPILoopChannel_T;
 
 typedef struct SPILoopState_T
@@ -78,12 +78,12 @@ static SPILoopState_T spi_loop_state = {
             .configuration =
                 {
                     .is_enabled = true,
-                    .spi_mode  = EXEC_SPI_MASTER_MODE,
-                    .data_size = EXEC_SPI_SIZE_8_BIT,
-                    .first_bit = EXEC_SPI_FIRST_MSB,
-                    .baud_rate = EXEC_SPI_BAUD_352KBIT,
-                    .cpol      = EXEC_SPI_CPOL_LOW,
-                    .cpha      = EXEC_SPI_CPHA_1_EDGE,
+                    .spi_mode   = EXEC_SPI_MASTER_MODE,
+                    .data_size  = EXEC_SPI_SIZE_8_BIT,
+                    .first_bit  = EXEC_SPI_FIRST_MSB,
+                    .baud_rate  = EXEC_SPI_BAUD_352KBIT,
+                    .cpol       = EXEC_SPI_CPOL_LOW,
+                    .cpha       = EXEC_SPI_CPHA_1_EDGE,
                 },
         },
 
@@ -93,12 +93,12 @@ static SPILoopState_T spi_loop_state = {
             .configuration =
                 {
                     .is_enabled = true,
-                    .spi_mode  = EXEC_SPI_SLAVE_MODE,
-                    .data_size = EXEC_SPI_SIZE_8_BIT,
-                    .first_bit = EXEC_SPI_FIRST_MSB,
-                    .baud_rate = EXEC_SPI_BAUD_352KBIT,
-                    .cpol      = EXEC_SPI_CPOL_LOW,
-                    .cpha      = EXEC_SPI_CPHA_1_EDGE,
+                    .spi_mode   = EXEC_SPI_SLAVE_MODE,
+                    .data_size  = EXEC_SPI_SIZE_8_BIT,
+                    .first_bit  = EXEC_SPI_FIRST_MSB,
+                    .baud_rate  = EXEC_SPI_BAUD_352KBIT,
+                    .cpol       = EXEC_SPI_CPOL_LOW,
+                    .cpha       = EXEC_SPI_CPHA_1_EDGE,
                 },
         },
 
@@ -651,7 +651,8 @@ void CONSOLE_SPI_Loopback_Stop( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[2], "all" ) == 0 )
     {
-        if ( !EXEC_SPI_Stop_Channel( EXEC_SPI_CHANNEL_1 ) || !EXEC_SPI_Stop_Channel( EXEC_SPI_CHANNEL_2 ) )
+        if ( !EXEC_SPI_Stop_Channel( EXEC_SPI_CHANNEL_1 )
+             || !EXEC_SPI_Stop_Channel( EXEC_SPI_CHANNEL_2 ) )
         {
             CONSOLE_Printf( "Failed to stop both SPI channels\r\n" );
             return;
@@ -841,8 +842,8 @@ void CONSOLE_SPI_Loopback_Run( uint16_t argc, char* argv[] )
     // Load the slave TX buffer first. The slave must already have data ready
     // when the master starts generating SPI clocks.
     const uint32_t slave_packet_size = spi_loop_state.slave_tx_size_bytes;
-    if ( !EXEC_SPI_Transmit( slave_channel->peripheral, spi_loop_state.slave_tx,
-                             &slave_packet_size, 1U ) )
+    if ( !EXEC_SPI_Transmit( slave_channel->peripheral, spi_loop_state.slave_tx, &slave_packet_size,
+                             1U ) )
     {
         CONSOLE_Printf( "FAIL: could not load slave TX buffer\r\n" );
         return;

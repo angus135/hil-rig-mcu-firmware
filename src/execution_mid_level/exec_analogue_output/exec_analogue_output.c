@@ -493,7 +493,7 @@ AnalogueOutputState_T EXEC_ANALOGUE_OUTPUT_Get_State( void )
 }
 
 bool EXEC_ANALOGUE_OUTPUT_Prepare_Frame( uint8_t channel, float input_voltage_v,
-                                       AnalogueOutputPreparedFrame_T* prepared_frame )
+                                         AnalogueOutputPreparedFrame_T* prepared_frame )
 {
     AnalogueOutputPreparedFrame_T temporary_frame;
     uint16_t                      count;
@@ -536,7 +536,7 @@ bool EXEC_ANALOGUE_OUTPUT_Batch_Init( AnalogueOutputPreparedBatch_T* prepared_ba
 }
 
 bool EXEC_ANALOGUE_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       prepared_batch,
-                                      const AnalogueOutputPreparedFrame_T* prepared_frame )
+                                        const AnalogueOutputPreparedFrame_T* prepared_frame )
 {
     if ( ( prepared_batch == NULL ) || ( prepared_frame == NULL ) )
     {
@@ -562,7 +562,8 @@ bool EXEC_ANALOGUE_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       pre
     return true;
 }
 
-bool EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( const AnalogueOutputPreparedBatch_T* prepared_batch )
+bool EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch(
+    const AnalogueOutputPreparedBatch_T* prepared_batch )
 {
     /*
      * TODO: Before ISR integration, replace this readiness call with ISR-safe

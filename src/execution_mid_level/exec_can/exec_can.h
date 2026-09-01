@@ -112,7 +112,7 @@ typedef struct EXEC_CAN_Packet_T
  * @note CAN transceiver-level safe-state control will be added when the board
  *       control mapping is confirmed during hardware bring-up.
  */
-EXEC_CAN_Result_T EXEC_CAN_Configure_Channel( EXEC_CAN_Channel_T channel,
+EXEC_CAN_Result_T EXEC_CAN_Configure_Channel( EXEC_CAN_Channel_T       channel,
                                               const EXEC_CAN_Config_T* configuration );
 
 /** Start a configured CAN channel. */

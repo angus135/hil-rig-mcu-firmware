@@ -96,8 +96,8 @@ bool HW_PWM_GEN_compute_psc( uint32_t freq_hz, uint32_t timer_clk_hz, uint16_t* 
  * @return false for invalid inputs, unrepresentable period or NULL output;
  *         output is unchanged.
  */
-bool HW_PWM_GEN_compute_arr( uint32_t freq_hz, uint32_t timer_clk_hz,
-                               uint16_t prescaler, uint16_t* arr );
+bool HW_PWM_GEN_compute_arr( uint32_t freq_hz, uint32_t timer_clk_hz, uint16_t prescaler,
+                             uint16_t* arr );
 
 /**
  * @brief Prepare CCR for duty in permille (0..1000), rounding down.

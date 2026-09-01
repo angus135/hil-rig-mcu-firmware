@@ -176,7 +176,7 @@ static EXEC_CAN_Tx_Status_T EXEC_CAN_Map_Tx_Status( HW_CAN_Tx_Status_T status )
  *------------------------------------------------------------------------------
  */
 
-EXEC_CAN_Result_T EXEC_CAN_Configure_Channel( EXEC_CAN_Channel_T channel,
+EXEC_CAN_Result_T EXEC_CAN_Configure_Channel( EXEC_CAN_Channel_T       channel,
                                               const EXEC_CAN_Config_T* configuration )
 {
     if ( !EXEC_CAN_Channel_Is_Valid( channel ) || configuration == NULL )
