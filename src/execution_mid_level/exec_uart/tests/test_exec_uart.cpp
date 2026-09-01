@@ -496,15 +496,32 @@ TEST_F( ExecUARTTest, StartAndStopChannelRetainConfiguration )
 {
     exec_uart_channel_states[EXEC_UART_CHANNEL_1] = { EXEC_UART_STATE_CONFIGURED, true, true };
 
+    EXPECT_TRUE( EXEC_UART_Is_Configured( EXEC_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_UART_Is_Started( EXEC_UART_CHANNEL_1 ) );
+
     EXPECT_CALL( mock_hw, Start_Channel( HW_UART_CHANNEL_1 ) );
     ASSERT_TRUE( EXEC_UART_Start_Channel( EXEC_UART_CHANNEL_1 ) );
+    EXPECT_TRUE( EXEC_UART_Is_Configured( EXEC_UART_CHANNEL_1 ) );
+    EXPECT_TRUE( EXEC_UART_Is_Started( EXEC_UART_CHANNEL_1 ) );
     EXPECT_EQ( exec_uart_channel_states[EXEC_UART_CHANNEL_1].lifecycle_state,
                EXEC_UART_STATE_STARTED );
 
     EXPECT_CALL( mock_hw, Stop_Channel( HW_UART_CHANNEL_1 ) );
     ASSERT_TRUE( EXEC_UART_Stop_Channel( EXEC_UART_CHANNEL_1 ) );
+    EXPECT_TRUE( EXEC_UART_Is_Configured( EXEC_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_UART_Is_Started( EXEC_UART_CHANNEL_1 ) );
     EXPECT_EQ( exec_uart_channel_states[EXEC_UART_CHANNEL_1].lifecycle_state,
                EXEC_UART_STATE_CONFIGURED );
+}
+
+TEST_F( ExecUARTTest, LifecycleQueriesRejectInvalidAndDisabledChannels )
+{
+    const ExecUartChannel_T invalid = TEST_EXEC_UART_Invalid_Channel();
+
+    EXPECT_FALSE( EXEC_UART_Is_Configured( EXEC_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_UART_Is_Started( EXEC_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_UART_Is_Configured( invalid ) );
+    EXPECT_FALSE( EXEC_UART_Is_Started( invalid ) );
 }
 
 TEST_F( ExecUARTTest, StopChannelRejectsPendingTransmit )
