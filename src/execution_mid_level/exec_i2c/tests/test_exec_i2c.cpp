@@ -317,8 +317,7 @@ TEST_F( ExecI2CTest, FailedStoppedChannelReconfigurationRevokesStartPermission )
         .WillOnce( Return( HW_I2C_STATUS_ERROR ) );
     ExpectInterfaceControl( EXEC_I2C_CHANNEL_1, EXEC_I2C_VOLTAGE_3V3, EXEC_I2C_PULLUP_1K, false );
 
-    EXPECT_EQ( EXEC_I2C_Configure_Channel( EXEC_I2C_CHANNEL_1, &config ),
-               EXEC_I2C_STATUS_ERROR );
+    EXPECT_EQ( EXEC_I2C_Configure_Channel( EXEC_I2C_CHANNEL_1, &config ), EXEC_I2C_STATUS_ERROR );
     EXPECT_FALSE( EXEC_I2C_Is_Channel_Configured( EXEC_I2C_CHANNEL_1 ) );
 
     EXPECT_CALL( mock_hw_i2c, StartChannel( _ ) ).Times( 0 );

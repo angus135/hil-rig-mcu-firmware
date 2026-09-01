@@ -316,8 +316,8 @@ TEST_F( HWADCTest, StopDMAMeasurements_StopsADC )
 
 TEST_F( HWADCTest, ConfigureMeasurementFrequency_ConfiguresStoppedLifecycleState )
 {
-    EXPECT_CALL( mock, ConfigureTimer( ANALOGUE_INPUT_TIMER, ADC_SAMPLE_50K_PSC,
-                                       ADC_SAMPLE_50K_ARR ) );
+    EXPECT_CALL( mock,
+                 ConfigureTimer( ANALOGUE_INPUT_TIMER, ADC_SAMPLE_50K_PSC, ADC_SAMPLE_50K_ARR ) );
 
     EXPECT_TRUE( HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_50K_HZ ) );
     EXPECT_TRUE( hw_adc_state.is_configured );
@@ -362,12 +362,10 @@ TEST_F( HWADCTest, StartDMAMeasurements_RollsBackDMAWhenTimerStartFails )
                                  Eq( reinterpret_cast<uint32_t*>( adc_dma_buf ) ),
                                  Eq( ADC_DMA_LEN * ADC_CHANNELS_PER_MEASUREMENT ) ) )
         .WillOnce( Return( HAL_OK ) );
-    EXPECT_CALL( mock,
-                 DisableDMATransferHalfInterrupt( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM ) );
+    EXPECT_CALL( mock, DisableDMATransferHalfInterrupt( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM ) );
     EXPECT_CALL( mock,
                  DisableDMATransferCompleteInterrupt( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM ) );
-    EXPECT_CALL( mock,
-                 DisableDMATransferErrorInterrupt( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM ) );
+    EXPECT_CALL( mock, DisableDMATransferErrorInterrupt( HW_ADC_DMA_CHANNEL, HW_ADC_DMA_STREAM ) );
     EXPECT_CALL( mock, DisableIRQ( Eq( DMA2_Stream4_IRQn ) ) );
     EXPECT_CALL( mock, StartTimer( Eq( ANALOGUE_INPUT_TIMER ) ) ).WillOnce( Return( false ) );
     EXPECT_CALL( mock, StopDMA( Eq( HW_ADC_ADC_PERIPHERAL ) ) ).WillOnce( Return( HAL_OK ) );
