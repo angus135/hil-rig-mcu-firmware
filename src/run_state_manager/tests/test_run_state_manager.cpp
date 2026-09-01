@@ -357,8 +357,8 @@ TEST_F( RunStateManagerTest, RuntimeFaultStopsExecutionAndRequestsFlashAbort )
 
 TEST_F( RunStateManagerTest, ResetWaitsForFlashIdle )
 {
-    run_state    = RUN_STATE_FAULT;
-    fault_reason = RUN_STATE_FAULT_EXTERNAL_REQUEST;
+    run_state           = RUN_STATE_FAULT;
+    fault_reason        = RUN_STATE_FAULT_EXTERNAL_REQUEST;
     flash_manager_state = FLASH_MANAGER_STATE_ABORTING;
     Process( RUN_STATE_REQUEST_RESET );
     EXPECT_EQ( RUN_STATE_FAULT, run_state );
