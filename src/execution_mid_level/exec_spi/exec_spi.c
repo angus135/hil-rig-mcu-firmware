@@ -266,11 +266,13 @@ static bool EXEC_SPI_Build_HW_Configuration( ExecSPIChannel_T channel,
         [EXEC_SPI_CPHA_2_EDGE] = SPI_CPHA_2_EDGE,
     };
 
-    if ( channel >= EXEC_SPI_CHANNEL_COUNT || config == NULL || hw_config == NULL
-         || config->spi_mode >= EXEC_SPI_MODE_COUNT || config->data_size >= EXEC_SPI_SIZE_COUNT
-         || config->first_bit >= EXEC_SPI_FIRST_BIT_COUNT
-         || config->baud_rate >= EXEC_SPI_BAUD_COUNT || config->cpol >= EXEC_SPI_CPOL_COUNT
-         || config->cpha >= EXEC_SPI_CPHA_COUNT )
+    if ( ( uint32_t )channel >= EXEC_SPI_CHANNEL_COUNT || config == NULL || hw_config == NULL
+         || ( uint32_t )config->spi_mode >= EXEC_SPI_MODE_COUNT
+         || ( uint32_t )config->data_size >= EXEC_SPI_SIZE_COUNT
+         || ( uint32_t )config->first_bit >= EXEC_SPI_FIRST_BIT_COUNT
+         || ( uint32_t )config->baud_rate >= EXEC_SPI_BAUD_COUNT
+         || ( uint32_t )config->cpol >= EXEC_SPI_CPOL_COUNT
+         || ( uint32_t )config->cpha >= EXEC_SPI_CPHA_COUNT )
     {
         return false;
     }

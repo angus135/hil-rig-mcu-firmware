@@ -235,10 +235,10 @@ protected:
  *  Test Cases
  *------------------------------------------------------------------------------
  */
-TEST_F( ExecSPITest, ConfigureChannel_MasterKeepsChannelStoppedAndMapsChannel0ToB6B7 )
+TEST_F( ExecSPITest, ConfigureChannel_MasterKeepsChannelStoppedAndMapsChannel1ToB6B7 )
 {
-    using ::testing::_;
     using ::testing::InSequence;
+    using ::testing::Invoke;
     using ::testing::Return;
 
     const ExecSPIConfig_T config = MakeEnabledConfig( EXEC_SPI_MASTER_MODE );
@@ -252,7 +252,17 @@ TEST_F( ExecSPITest, ConfigureChannel_MasterKeepsChannelStoppedAndMapsChannel0To
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_logic_expander, SendControlBits() )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
-    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_0, _ ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_0, ::testing::_ ) )
+        .WillOnce( Invoke( []( SPIChannel_T, HWSPIConfig_T hardware ) {
+            EXPECT_EQ( hardware.spi_mode, SPI_MASTER_MODE );
+            EXPECT_EQ( hardware.data_size, SPI_SIZE_8_BIT );
+            EXPECT_EQ( hardware.first_bit, SPI_FIRST_MSB );
+            EXPECT_EQ( hardware.baud_rate, SPI_BAUD_352KBIT );
+            EXPECT_EQ( hardware.cpol, SPI_CPOL_LOW );
+            EXPECT_EQ( hardware.cpha, SPI_CPHA_1_EDGE );
+            EXPECT_EQ( hardware.nss_pin, GPIO_SPI1_NSS );
+            return true;
+        } ) );
     EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_0 ) ).Times( 0 );
 
     EXPECT_TRUE( EXEC_SPI_Configure_Channel( EXEC_SPI_CHANNEL_1, &config ) );
@@ -260,7 +270,7 @@ TEST_F( ExecSPITest, ConfigureChannel_MasterKeepsChannelStoppedAndMapsChannel0To
     EXPECT_FALSE( EXEC_SPI_Is_Started( EXEC_SPI_CHANNEL_1 ) );
 }
 
-TEST_F( ExecSPITest, ConfigureChannel_SlaveMapsChannel1ToB4B5 )
+TEST_F( ExecSPITest, ConfigureChannel_SlaveMapsChannel2ToB4B5 )
 {
     using ::testing::_;
     using ::testing::InSequence;
@@ -305,7 +315,7 @@ TEST_F( ExecSPITest, ConfigureChannel_DisabledAppliesSafeB6B7StateWithoutHardwar
     EXPECT_FALSE( EXEC_SPI_Is_Configured( EXEC_SPI_CHANNEL_1 ) );
 }
 
-TEST_F( ExecSPITest, ConfigureChannel_RejectsNullInvalidAndDacChannels )
+TEST_F( ExecSPITest, ConfigureChannel_RejectsNullAndInvalidChannels )
 {
     const ExecSPIConfig_T config             = MakeEnabledConfig();
     ExecSPIChannel_T      invalid_peripheral = static_cast<ExecSPIChannel_T>( 99 );
@@ -313,6 +323,21 @@ TEST_F( ExecSPITest, ConfigureChannel_RejectsNullInvalidAndDacChannels )
     EXPECT_FALSE( EXEC_SPI_Configure_Channel( EXEC_SPI_CHANNEL_1, nullptr ) );
     EXPECT_FALSE( EXEC_SPI_Configure_Channel( invalid_peripheral, &config ) );
     EXPECT_FALSE( EXEC_SPI_Configure_Channel( static_cast<ExecSPIChannel_T>( EXEC_SPI_CHANNEL_COUNT ), &config ) );
+}
+
+TEST_F( ExecSPITest, ConfigureChannel_RejectsInvalidExecutionConfigurationBeforeHardwareWrites )
+{
+    using ::testing::_;
+
+    ExecSPIConfig_T config = MakeEnabledConfig();
+    config.spi_mode        = static_cast<ExecSPIMode_T>( EXEC_SPI_MODE_COUNT );
+
+    EXPECT_CALL( mock_logic_expander, LoadControlBit( _, _, _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock_logic_expander, SendControlBits() ).Times( 0 );
+    EXPECT_CALL( mock_hw_spi, ConfigureChannel( _, _ ) ).Times( 0 );
+
+    EXPECT_FALSE( EXEC_SPI_Configure_Channel( EXEC_SPI_CHANNEL_1, &config ) );
+    EXPECT_FALSE( EXEC_SPI_Is_Configured( EXEC_SPI_CHANNEL_1 ) );
 }
 
 TEST_F( ExecSPITest, StartAndStopChannel_FollowHardwareAndExternalEnableOrdering )
