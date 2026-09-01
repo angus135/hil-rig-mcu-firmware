@@ -348,6 +348,26 @@ bool EXEC_PWM_Capture_Stop_Channel( ExecPwmCaptureChannel_T channel )
     return true;
 }
 
+bool EXEC_PWM_Capture_Is_Configured( ExecPwmCaptureChannel_T channel )
+{
+    if ( channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    return exec_pwm_capture_channel_configured[channel];
+}
+
+bool EXEC_PWM_Capture_Is_Started( ExecPwmCaptureChannel_T channel )
+{
+    if ( channel >= EXEC_PWM_CAPTURE_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    return exec_pwm_capture_channel_started[channel];
+}
+
 bool EXEC_PWM_Capture_Consume( ExecPwmCaptureChannel_T channel, ExecPwmCaptureResult_T* result )
 {
     HwPWMCaptureResult_T hw_result    = { 0 };
