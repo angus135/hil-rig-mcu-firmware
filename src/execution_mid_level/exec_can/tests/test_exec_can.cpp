@@ -283,6 +283,14 @@ TEST_F( ExecCANTest, ConfigureRoutesBothChannelsAndMapsResults )
     EXPECT_FALSE( EXEC_CAN_Is_Configured( EXEC_CAN_CHANNEL_2 ) );
 }
 
+TEST_F( ExecCANTest, ConfigureRejectsNullConfiguration )
+{
+    EXPECT_EQ( EXEC_CAN_Configure_Channel( EXEC_CAN_CHANNEL_1, nullptr ),
+               EXEC_CAN_RESULT_INVALID_ARGUMENT );
+    EXPECT_EQ( configure_call_count[0], 0U );
+    EXPECT_FALSE( EXEC_CAN_Is_Configured( EXEC_CAN_CHANNEL_1 ) );
+}
+
 TEST_F( ExecCANTest, ConfigurationResultMappingCoversEveryHardwareCode )
 {
     const std::array<HW_CAN_Result_T, 8> hardware_results = {
