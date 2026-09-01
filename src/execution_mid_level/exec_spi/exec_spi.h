@@ -47,7 +47,6 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "hw_spi.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -59,10 +58,70 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+typedef enum
+{
+    EXEC_SPI_CHANNEL_1 = 0U,
+    EXEC_SPI_CHANNEL_2,
+    EXEC_SPI_CHANNEL_COUNT
+} ExecSPIChannel_T;
+
+typedef enum
+{
+    EXEC_SPI_BAUD_45MBIT = 0U,
+    EXEC_SPI_BAUD_22M5BIT,
+    EXEC_SPI_BAUD_11M25BIT,
+    EXEC_SPI_BAUD_5M625BIT,
+    EXEC_SPI_BAUD_2M813BIT,
+    EXEC_SPI_BAUD_1M406BIT,
+    EXEC_SPI_BAUD_703KBIT,
+    EXEC_SPI_BAUD_352KBIT,
+    EXEC_SPI_BAUD_COUNT
+} ExecSPIBaudRate_T;
+
+typedef enum
+{
+    EXEC_SPI_CPOL_LOW = 0U,
+    EXEC_SPI_CPOL_HIGH,
+    EXEC_SPI_CPOL_COUNT
+} ExecSPICPOL_T;
+
+typedef enum
+{
+    EXEC_SPI_CPHA_1_EDGE = 0U,
+    EXEC_SPI_CPHA_2_EDGE,
+    EXEC_SPI_CPHA_COUNT
+} ExecSPICPHA_T;
+
+typedef enum
+{
+    EXEC_SPI_SIZE_8_BIT = 0U,
+    EXEC_SPI_SIZE_16_BIT,
+    EXEC_SPI_SIZE_COUNT
+} ExecSPIDataSize_T;
+
+typedef enum
+{
+    EXEC_SPI_FIRST_MSB = 0U,
+    EXEC_SPI_FIRST_LSB,
+    EXEC_SPI_FIRST_BIT_COUNT
+} ExecSPIFirstBit_T;
+
+typedef enum
+{
+    EXEC_SPI_MASTER_MODE = 0U,
+    EXEC_SPI_SLAVE_MODE,
+    EXEC_SPI_MODE_COUNT
+} ExecSPIMode_T;
+
 typedef struct ExecSPIConfig_T
 {
-    bool          is_enabled;
-    HWSPIConfig_T hardware;
+    bool              is_enabled;
+    ExecSPIMode_T     spi_mode;
+    ExecSPIDataSize_T data_size;
+    ExecSPIFirstBit_T first_bit;
+    ExecSPIBaudRate_T baud_rate;
+    ExecSPICPOL_T     cpol;
+    ExecSPICPHA_T     cpha;
 } ExecSPIConfig_T;
 
 /**-----------------------------------------------------------------------------
@@ -97,10 +156,10 @@ typedef struct ExecSPIConfig_T
  *     false for an invalid channel/configuration, reconfiguration while
  *     started, or a failed Logic Expander or HW SPI operation.
  */
-bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral, const ExecSPIConfig_T* config );
+bool EXEC_SPI_Configure_Channel( ExecSPIChannel_T channel, const ExecSPIConfig_T* config );
 
 /** @brief Start configured HW SPI, then enable its external interface. */
-bool EXEC_SPI_Start_Channel( SPIChannel_T peripheral );
+bool EXEC_SPI_Start_Channel( ExecSPIChannel_T channel );
 
 /**
  * @brief Gracefully stop a started channel while retaining configuration.
@@ -109,13 +168,13 @@ bool EXEC_SPI_Start_Channel( SPIChannel_T peripheral );
  * faulted TX path may be terminated for recovery. The external interface is
  * disabled before HW SPI is stopped.
  */
-bool EXEC_SPI_Stop_Channel( SPIChannel_T peripheral );
+bool EXEC_SPI_Stop_Channel( ExecSPIChannel_T channel );
 
 /** @brief Return true when the channel is configured or started. */
-bool EXEC_SPI_Is_Configured( SPIChannel_T peripheral );
+bool EXEC_SPI_Is_Configured( ExecSPIChannel_T channel );
 
 /** @brief Return true only while the channel is started. */
-bool EXEC_SPI_Is_Started( SPIChannel_T peripheral );
+bool EXEC_SPI_Is_Started( ExecSPIChannel_T channel );
 
 /**
  * @brief Queue one or more SPI packets for transmission and trigger the TX path.
@@ -177,7 +236,7 @@ bool EXEC_SPI_Is_Started( SPIChannel_T peripheral );
  *     transmission was triggered.
  *     false if any packet could not be accepted by the low-level TX queue.
  */
-bool EXEC_SPI_Transmit( SPIChannel_T peripheral, const uint8_t* data_src,
+bool EXEC_SPI_Transmit( ExecSPIChannel_T channel, const uint8_t* data_src,
                         const uint32_t* packet_sizes_bytes, uint32_t num_packets );
 
 /**
@@ -220,7 +279,7 @@ bool EXEC_SPI_Transmit( SPIChannel_T peripheral, const uint8_t* data_src,
  *     false if the unread RX byte count exceeds the provided destination
  *     capacity.
  */
-bool EXEC_SPI_Receive( SPIChannel_T peripheral, uint8_t* data_dst, uint32_t* size_bytes );
+bool EXEC_SPI_Receive( ExecSPIChannel_T channel, uint8_t* data_dst, uint32_t* size_bytes );
 
 /**
  * @brief Check whether the SPI transmit path has completed.
@@ -239,7 +298,7 @@ bool EXEC_SPI_Receive( SPIChannel_T peripheral, uint8_t* data_dst, uint32_t* siz
  *     true if the low-level TX path is empty and no transmission is in progress.
  *     false if bytes are still queued or currently being transmitted.
  */
-bool EXEC_SPI_Is_Transmission_Complete( SPIChannel_T peripheral );
+bool EXEC_SPI_Is_Transmission_Complete( ExecSPIChannel_T channel );
 
 #ifdef __cplusplus
 }
