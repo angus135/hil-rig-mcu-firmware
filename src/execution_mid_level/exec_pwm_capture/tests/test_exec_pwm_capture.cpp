@@ -235,9 +235,13 @@ TEST_F( ExecPWMCaptureTest, StartChannelStartsConfiguredHardwareChannel )
     EXPECT_CALL( mock_hw, Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, true ) )
         .WillOnce( Return( true ) );
     EXPECT_TRUE( EXEC_PWM_Capture_Configure_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Is_Configured( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_PWM_Capture_Is_Started( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
 
     EXPECT_CALL( mock_hw, Start_Channel( HW_PWM_CAPTURE_CHANNEL_1 ) ).WillOnce( Return( true ) );
     EXPECT_TRUE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Is_Configured( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Is_Started( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
     EXPECT_FALSE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
 }
 
@@ -275,6 +279,18 @@ TEST_F( ExecPWMCaptureTest, StopChannelStopsStartedHardwareChannel )
 
     EXPECT_CALL( mock_hw, Stop_Channel( HW_PWM_CAPTURE_CHANNEL_1 ) ).WillOnce( Return( true ) );
     EXPECT_TRUE( EXEC_PWM_Capture_Stop_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Is_Configured( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_PWM_Capture_Is_Started( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
+}
+
+TEST_F( ExecPWMCaptureTest, LifecycleQueriesRejectInvalidAndDisabledChannels )
+{
+    const ExecPwmCaptureChannel_T invalid = static_cast<ExecPwmCaptureChannel_T>( 2U );
+
+    EXPECT_FALSE( EXEC_PWM_Capture_Is_Configured( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_PWM_Capture_Is_Started( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_PWM_Capture_Is_Configured( invalid ) );
+    EXPECT_FALSE( EXEC_PWM_Capture_Is_Started( invalid ) );
 }
 
 TEST_F( ExecPWMCaptureTest, StopChannelReturnsFalseForInvalidChannel )

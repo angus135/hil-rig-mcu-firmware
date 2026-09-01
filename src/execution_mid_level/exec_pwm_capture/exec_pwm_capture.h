@@ -199,6 +199,12 @@ bool EXEC_PWM_Capture_Start_Channel( ExecPwmCaptureChannel_T channel );
  */
 bool EXEC_PWM_Capture_Stop_Channel( ExecPwmCaptureChannel_T channel );
 
+/** @brief Return true when the channel is configured or started. */
+bool EXEC_PWM_Capture_Is_Configured( ExecPwmCaptureChannel_T channel );
+
+/** @brief Return true only while the channel is started. */
+bool EXEC_PWM_Capture_Is_Started( ExecPwmCaptureChannel_T channel );
+
 /**
  * @brief Convert a validated PWM capture result to physical units.
  *
