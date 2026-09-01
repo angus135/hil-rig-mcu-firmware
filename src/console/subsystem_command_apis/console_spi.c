@@ -398,8 +398,7 @@ static void CONSOLE_SPI_Loopback_Print_Channel_Status( const char*             n
 }
 
 static bool CONSOLE_SPI_Loopback_Copy_Rx( ExecSPIChannel_T peripheral, uint8_t* data_dst,
-                                          uint32_t data_dst_size_bytes,
-                                          uint32_t* copied_bytes_out )
+                                          uint32_t data_dst_size_bytes, uint32_t* copied_bytes_out )
 {
     *copied_bytes_out = data_dst_size_bytes;
 

@@ -181,11 +181,10 @@ TEST_F( ExecPWMCaptureTest, ConfigureEnabledAppliesModeAndConfiguresMappedHardwa
 
 TEST_F( ExecPWMCaptureTest, FailedStoppedChannelReconfigurationRevokesStartPermission )
 {
-    ExecPwmCaptureConfig_T config = {};
-    config.mode                   = EXEC_PWM_CAPTURE_LV_3V3;
-    config.is_enabled             = true;
-    exec_pwm_capture_channel_state[EXEC_PWM_CAPTURE_CHANNEL_1] =
-        EXEC_PWM_CAPTURE_STATE_CONFIGURED;
+    ExecPwmCaptureConfig_T config                              = {};
+    config.mode                                                = EXEC_PWM_CAPTURE_LV_3V3;
+    config.is_enabled                                          = true;
+    exec_pwm_capture_channel_state[EXEC_PWM_CAPTURE_CHANNEL_1] = EXEC_PWM_CAPTURE_STATE_CONFIGURED;
 
     EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).WillOnce( Return( false ) );
 
@@ -217,11 +216,10 @@ TEST_F( ExecPWMCaptureTest, ConfigureReturnsFalseForInvalidChannel )
 
 TEST_F( ExecPWMCaptureTest, LifecycleRejectsNegativeChannelWithoutHardwareAccess )
 {
-    const ExecPwmCaptureChannel_T negative_channel =
-        static_cast<ExecPwmCaptureChannel_T>( -1 );
-    ExecPwmCaptureConfig_T config = {};
-    config.mode                   = EXEC_PWM_CAPTURE_LV_3V3;
-    config.is_enabled             = true;
+    const ExecPwmCaptureChannel_T negative_channel = static_cast<ExecPwmCaptureChannel_T>( -1 );
+    ExecPwmCaptureConfig_T        config           = {};
+    config.mode                                    = EXEC_PWM_CAPTURE_LV_3V3;
+    config.is_enabled                              = true;
 
     EXPECT_CALL( mock_hw, Configure_Channel( _, _ ) ).Times( 0 );
     EXPECT_CALL( mock_hw, Start_Channel( _ ) ).Times( 0 );

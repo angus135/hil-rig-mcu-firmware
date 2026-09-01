@@ -246,8 +246,7 @@ bool EXEC_PWM_Capture_Configure_Channel( ExecPwmCaptureChannel_T       channel,
         return false;
     }
 
-    if ( config->is_enabled
-         && ( ( uint32_t )config->mode > ( uint32_t )EXEC_PWM_CAPTURE_HV_24V ) )
+    if ( config->is_enabled && ( ( uint32_t )config->mode > ( uint32_t )EXEC_PWM_CAPTURE_HV_24V ) )
     {
         return false;
     }
