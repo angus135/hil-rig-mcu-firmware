@@ -84,12 +84,14 @@ typedef enum EXECSPIChannelState_T
  */
 typedef struct EXECSPIState_T
 {
-    HWSPIConfig_T         configuration;
+    ExecSPIConfig_T       configuration;
     EXECSPIChannelState_T state;
 } EXECSPIState_T;
 
 typedef struct ExecSPIHardwareMap_T
 {
+    SPIChannel_T          hw_channel;
+    GPIOPin_T             nss_pin;
     LogicExpanderIndex_T expander;
     LogicExpanderPort_T  port;
     uint8_t              enable_bit;
@@ -109,16 +111,20 @@ typedef struct ExecSPIHardwareMap_T
 static EXECSPIState_T spi_channel_0_state = { 0 };
 static EXECSPIState_T spi_channel_1_state = { 0 };
 
-static const ExecSPIHardwareMap_T exec_spi_hardware_map[2U] = {
-    [SPI_CHANNEL_0] =
+static const ExecSPIHardwareMap_T exec_spi_hardware_map[EXEC_SPI_CHANNEL_COUNT] = {
+    [EXEC_SPI_CHANNEL_1] =
         {
+            .hw_channel        = SPI_CHANNEL_0,
+            .nss_pin           = GPIO_SPI1_NSS,
             .expander          = LOGIC_EXPANDER_PWM_SPI,
             .port              = LOGIC_EXPANDER_PORT_B,
             .enable_bit        = 6U,
             .master_nslave_bit = 7U,
         },
-    [SPI_CHANNEL_1] =
+    [EXEC_SPI_CHANNEL_2] =
         {
+            .hw_channel        = SPI_CHANNEL_1,
+            .nss_pin           = GPIO_SPI2_NSS,
             .expander          = LOGIC_EXPANDER_PWM_SPI,
             .port              = LOGIC_EXPANDER_PORT_B,
             .enable_bit        = 4U,
@@ -148,24 +154,27 @@ static const ExecSPIHardwareMap_T exec_spi_hardware_map[2U] = {
  *     Pointer to the execution-level state structure for the requested channel.
  *     NULL if the peripheral identifier is not recognised.
  */
-static inline EXECSPIState_T* EXEC_SPI_Get_State( SPIChannel_T peripheral );
+static inline EXECSPIState_T* EXEC_SPI_Get_State( ExecSPIChannel_T peripheral );
 
-static bool EXEC_SPI_Apply_Interface_Control( SPIChannel_T peripheral, bool is_enabled,
-                                              SPIMode_T spi_mode );
+static bool EXEC_SPI_Apply_Interface_Control( ExecSPIChannel_T peripheral, bool is_enabled,
+                                              ExecSPIMode_T spi_mode );
+static bool EXEC_SPI_Build_HW_Configuration( ExecSPIChannel_T channel,
+                                             const ExecSPIConfig_T* config,
+                                             HWSPIConfig_T* hw_config );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
 
-static inline EXECSPIState_T* EXEC_SPI_Get_State( SPIChannel_T peripheral )
+static inline EXECSPIState_T* EXEC_SPI_Get_State( ExecSPIChannel_T peripheral )
 {
     switch ( peripheral )
     {
-        case SPI_CHANNEL_0:
+        case EXEC_SPI_CHANNEL_1:
             return &spi_channel_0_state;
 
-        case SPI_CHANNEL_1:
+        case EXEC_SPI_CHANNEL_2:
             return &spi_channel_1_state;
 
         default:
@@ -175,22 +184,22 @@ static inline EXECSPIState_T* EXEC_SPI_Get_State( SPIChannel_T peripheral )
     }
 }
 
-static bool EXEC_SPI_Apply_Interface_Control( SPIChannel_T peripheral, bool is_enabled,
-                                              SPIMode_T spi_mode )
+static bool EXEC_SPI_Apply_Interface_Control( ExecSPIChannel_T peripheral, bool is_enabled,
+                                              ExecSPIMode_T spi_mode )
 {
     const ExecSPIHardwareMap_T* hardware;
     bool                        master_nslave;
 
-    if ( peripheral != SPI_CHANNEL_0 && peripheral != SPI_CHANNEL_1 )
+    if ( peripheral != EXEC_SPI_CHANNEL_1 && peripheral != EXEC_SPI_CHANNEL_2 )
     {
         return false;
     }
 
-    if ( spi_mode == SPI_MASTER_MODE )
+    if ( spi_mode == EXEC_SPI_MASTER_MODE )
     {
         master_nslave = true;
     }
-    else if ( spi_mode == SPI_SLAVE_MODE )
+    else if ( spi_mode == EXEC_SPI_SLAVE_MODE )
     {
         master_nslave = false;
     }
@@ -220,6 +229,34 @@ static bool EXEC_SPI_Apply_Interface_Control( SPIChannel_T peripheral, bool is_e
      * global configuration operation.
      */
     return LOGIC_EXPANDER_Send_Control_Bits() == LOGIC_EXPANDER_STATUS_OK;
+}
+
+static bool EXEC_SPI_Build_HW_Configuration( ExecSPIChannel_T channel,
+                                             const ExecSPIConfig_T* config,
+                                             HWSPIConfig_T* hw_config )
+{
+    if ( channel >= EXEC_SPI_CHANNEL_COUNT || config == NULL || hw_config == NULL
+         || config->spi_mode >= EXEC_SPI_MODE_COUNT || config->data_size >= EXEC_SPI_SIZE_COUNT
+         || config->first_bit >= EXEC_SPI_FIRST_BIT_COUNT
+         || config->baud_rate >= EXEC_SPI_BAUD_COUNT || config->cpol >= EXEC_SPI_CPOL_COUNT
+         || config->cpha >= EXEC_SPI_CPHA_COUNT )
+    {
+        return false;
+    }
+
+    const ExecSPIHardwareMap_T* hardware = &exec_spi_hardware_map[channel];
+
+    *hw_config = ( HWSPIConfig_T ){
+        .spi_mode  = ( SPIMode_T )config->spi_mode,
+        .data_size = ( SPIDataSize_T )config->data_size,
+        .first_bit = ( SPIFirstBit_T )config->first_bit,
+        .baud_rate = ( SPIBaudRate_T )config->baud_rate,
+        .cpol      = ( SPICPOL_T )config->cpol,
+        .cpha      = ( SPICPHA_T )config->cpha,
+        .nss_pin   = hardware->nss_pin,
+    };
+
+    return true;
 }
 
 /**-----------------------------------------------------------------------------
@@ -252,7 +289,7 @@ static bool EXEC_SPI_Apply_Interface_Control( SPIChannel_T peripheral, bool is_e
  *     true if configuration or the safe disabled state was applied.
  *     false if validation or a Logic Expander/HW SPI operation failed.
  */
-bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral, const ExecSPIConfig_T* config )
+bool EXEC_SPI_Configure_Channel( ExecSPIChannel_T peripheral, const ExecSPIConfig_T* config )
 {
     EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
 
@@ -276,7 +313,7 @@ bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral, const ExecSPIConfig_T*
          * - SPI_EN = 0
          * - SPI_EN_MASTER_NSLAVE = 0 (slave)
          */
-        if ( !EXEC_SPI_Apply_Interface_Control( peripheral, false, SPI_SLAVE_MODE ) )
+        if ( !EXEC_SPI_Apply_Interface_Control( peripheral, false, EXEC_SPI_SLAVE_MODE ) )
         {
             return false;
         }
@@ -303,12 +340,18 @@ bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral, const ExecSPIConfig_T*
      * Select master/slave while keeping the external interface disabled.
      * SPI_EN is asserted only by EXEC_SPI_Start_Channel().
      */
-    if ( !EXEC_SPI_Apply_Interface_Control( peripheral, false, config->hardware.spi_mode ) )
+    HWSPIConfig_T hw_config;
+    if ( !EXEC_SPI_Build_HW_Configuration( peripheral, config, &hw_config ) )
     {
         return false;
     }
 
-    if ( !HW_SPI_Configure_Channel( peripheral, config->hardware ) )
+    if ( !EXEC_SPI_Apply_Interface_Control( peripheral, false, config->spi_mode ) )
+    {
+        return false;
+    }
+
+    if ( !HW_SPI_Configure_Channel( exec_spi_hardware_map[peripheral].hw_channel, hw_config ) )
     {
         /*
          * The external interface has already been placed in its disabled state.
@@ -318,13 +361,13 @@ bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral, const ExecSPIConfig_T*
         return false;
     }
 
-    state->configuration = config->hardware;
+    state->configuration = *config;
     state->state         = EXEC_SPI_STATE_CONFIGURED;
 
     return true;
 }
 
-bool EXEC_SPI_Start_Channel( SPIChannel_T peripheral )
+bool EXEC_SPI_Start_Channel( ExecSPIChannel_T peripheral )
 {
     EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
 
@@ -341,7 +384,9 @@ bool EXEC_SPI_Start_Channel( SPIChannel_T peripheral )
     /*
      * Start the MCU peripheral before connecting the external SPI interface.
      */
-    if ( !HW_SPI_Start_Channel( peripheral ) )
+    const SPIChannel_T hw_channel = exec_spi_hardware_map[peripheral].hw_channel;
+
+    if ( !HW_SPI_Start_Channel( hw_channel ) )
     {
         return false;
     }
@@ -354,7 +399,7 @@ bool EXEC_SPI_Start_Channel( SPIChannel_T peripheral )
         ( void )EXEC_SPI_Apply_Interface_Control( peripheral, false,
                                                   state->configuration.spi_mode );
 
-        if ( !HW_SPI_Stop_Channel( peripheral ) )
+        if ( !HW_SPI_Stop_Channel( hw_channel ) )
         {
             /*
              * The HW channel could not be stopped, so preserve STARTED to
@@ -372,7 +417,7 @@ bool EXEC_SPI_Start_Channel( SPIChannel_T peripheral )
     return true;
 }
 
-bool EXEC_SPI_Stop_Channel( SPIChannel_T peripheral )
+bool EXEC_SPI_Stop_Channel( ExecSPIChannel_T peripheral )
 {
     EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
 
@@ -393,7 +438,9 @@ bool EXEC_SPI_Stop_Channel( SPIChannel_T peripheral )
      * A faulted TX path cannot complete normally, so permit the terminating HW
      * stop to recover it.
      */
-    if ( !HW_SPI_Tx_Is_Complete( peripheral ) && !HW_SPI_Tx_Is_Faulted( peripheral ) )
+    const SPIChannel_T hw_channel = exec_spi_hardware_map[peripheral].hw_channel;
+
+    if ( !HW_SPI_Tx_Is_Complete( hw_channel ) && !HW_SPI_Tx_Is_Faulted( hw_channel ) )
     {
         return false;
     }
@@ -407,7 +454,7 @@ bool EXEC_SPI_Stop_Channel( SPIChannel_T peripheral )
         return false;
     }
 
-    if ( !HW_SPI_Stop_Channel( peripheral ) )
+    if ( !HW_SPI_Stop_Channel( hw_channel ) )
     {
         /*
          * The external interface is disabled, but the low-level hardware state
@@ -421,7 +468,7 @@ bool EXEC_SPI_Stop_Channel( SPIChannel_T peripheral )
     return true;
 }
 
-bool EXEC_SPI_Is_Configured( SPIChannel_T peripheral )
+bool EXEC_SPI_Is_Configured( ExecSPIChannel_T peripheral )
 {
     EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
 
@@ -433,7 +480,7 @@ bool EXEC_SPI_Is_Configured( SPIChannel_T peripheral )
     return state->state == EXEC_SPI_STATE_CONFIGURED || state->state == EXEC_SPI_STATE_STARTED;
 }
 
-bool EXEC_SPI_Is_Started( SPIChannel_T peripheral )
+bool EXEC_SPI_Is_Started( ExecSPIChannel_T peripheral )
 {
     EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
 
@@ -472,7 +519,7 @@ bool EXEC_SPI_Is_Started( SPIChannel_T peripheral )
  *
  * const uint32_t packet_sizes[] = { 2U, 3U, 1U };
  *
- * EXEC_SPI_Transmit( SPI_CHANNEL_0, data, packet_sizes, 3U );
+ * EXEC_SPI_Transmit( EXEC_SPI_CHANNEL_1, data, packet_sizes, 3U );
  * @endcode
  *
  * This function is intentionally a thin wrapper around the low-level
@@ -505,7 +552,7 @@ bool EXEC_SPI_Is_Started( SPIChannel_T peripheral )
  *     transmission was triggered.
  *     false if any packet could not be accepted by the low-level TX queue.
  */
-bool EXEC_SPI_Transmit( SPIChannel_T peripheral, const uint8_t* data_src,
+bool EXEC_SPI_Transmit( ExecSPIChannel_T peripheral, const uint8_t* data_src,
                         const uint32_t* packet_sizes_bytes, uint32_t num_packets )
 {
     /*
@@ -520,7 +567,8 @@ bool EXEC_SPI_Transmit( SPIChannel_T peripheral, const uint8_t* data_src,
     {
         const uint32_t packet_size_bytes = packet_sizes_bytes[packet_index];
 
-        if ( !HW_SPI_Load_Tx_Buffer( peripheral, &data_src[data_offset_bytes], packet_size_bytes ) )
+        if ( !HW_SPI_Load_Tx_Buffer( exec_spi_hardware_map[peripheral].hw_channel,
+                                     &data_src[data_offset_bytes], packet_size_bytes ) )
         {
             return false;
         }
@@ -534,7 +582,7 @@ bool EXEC_SPI_Transmit( SPIChannel_T peripheral, const uint8_t* data_src,
      * packet with software CS. Calling trigger once also avoids repeated
      * IRQ-disable/enable overhead in the 100 us execution tick.
      */
-    HW_SPI_Tx_Trigger( peripheral );
+    HW_SPI_Tx_Trigger( exec_spi_hardware_map[peripheral].hw_channel );
 
     return true;
 }
@@ -579,9 +627,10 @@ bool EXEC_SPI_Transmit( SPIChannel_T peripheral, const uint8_t* data_src,
  *     false if the unread RX byte count exceeds the provided destination
  *     capacity.
  */
-bool EXEC_SPI_Receive( SPIChannel_T peripheral, uint8_t* data_dst, uint32_t* size_bytes )
+bool EXEC_SPI_Receive( ExecSPIChannel_T peripheral, uint8_t* data_dst, uint32_t* size_bytes )
 {
-    HWSPIRxSpans_T data_spans = HW_SPI_Rx_Peek( peripheral );
+    const SPIChannel_T hw_channel = exec_spi_hardware_map[peripheral].hw_channel;
+    HWSPIRxSpans_T     data_spans = HW_SPI_Rx_Peek( hw_channel );
     if ( data_spans.total_length_bytes > *size_bytes )
     {
         // Do not partially copy or consume RX data if the caller's destination
@@ -598,7 +647,7 @@ bool EXEC_SPI_Receive( SPIChannel_T peripheral, uint8_t* data_dst, uint32_t* siz
 
     // Consume exactly the bytes copied so the low-level RX stream and caller's
     // copied data remain consistent.
-    HW_SPI_Rx_Consume( peripheral, data_spans.total_length_bytes );
+    HW_SPI_Rx_Consume( hw_channel, data_spans.total_length_bytes );
     return true;
 }
 
@@ -619,7 +668,7 @@ bool EXEC_SPI_Receive( SPIChannel_T peripheral, uint8_t* data_dst, uint32_t* siz
  *     true if the low-level TX path is empty and no transmission is in progress.
  *     false if bytes are still queued or currently being transmitted.
  */
-bool EXEC_SPI_Is_Transmission_Complete( SPIChannel_T peripheral )
+bool EXEC_SPI_Is_Transmission_Complete( ExecSPIChannel_T peripheral )
 {
-    return HW_SPI_Tx_Is_Complete( peripheral );
+    return HW_SPI_Tx_Is_Complete( exec_spi_hardware_map[peripheral].hw_channel );
 }

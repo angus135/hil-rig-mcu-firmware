@@ -38,8 +38,8 @@
 
 typedef struct SPILoopChannel_T
 {
-    SPIChannel_T  peripheral;
-    HWSPIConfig_T configuration;
+    ExecSPIChannel_T  peripheral;
+    ExecSPIConfig_T configuration;
 } SPILoopChannel_T;
 
 typedef struct SPILoopState_T
@@ -74,31 +74,31 @@ typedef struct SPILoopState_T
 static SPILoopState_T spi_loop_state = {
     .channel_0 =
         {
-            .peripheral = SPI_CHANNEL_0,
+            .peripheral = EXEC_SPI_CHANNEL_1,
             .configuration =
                 {
-                    .spi_mode  = SPI_MASTER_MODE,
-                    .data_size = SPI_SIZE_8_BIT,
-                    .first_bit = SPI_FIRST_MSB,
-                    .baud_rate = SPI_BAUD_352KBIT,
-                    .cpol      = SPI_CPOL_LOW,
-                    .cpha      = SPI_CPHA_1_EDGE,
-                    .nss_pin   = GPIO_SPI1_NSS,
+                    .is_enabled = true,
+                    .spi_mode  = EXEC_SPI_MASTER_MODE,
+                    .data_size = EXEC_SPI_SIZE_8_BIT,
+                    .first_bit = EXEC_SPI_FIRST_MSB,
+                    .baud_rate = EXEC_SPI_BAUD_352KBIT,
+                    .cpol      = EXEC_SPI_CPOL_LOW,
+                    .cpha      = EXEC_SPI_CPHA_1_EDGE,
                 },
         },
 
     .channel_1 =
         {
-            .peripheral = SPI_CHANNEL_1,
+            .peripheral = EXEC_SPI_CHANNEL_2,
             .configuration =
                 {
-                    .spi_mode  = SPI_SLAVE_MODE,
-                    .data_size = SPI_SIZE_8_BIT,
-                    .first_bit = SPI_FIRST_MSB,
-                    .baud_rate = SPI_BAUD_352KBIT,
-                    .cpol      = SPI_CPOL_LOW,
-                    .cpha      = SPI_CPHA_1_EDGE,
-                    .nss_pin   = GPIO_SPI2_NSS,
+                    .is_enabled = true,
+                    .spi_mode  = EXEC_SPI_SLAVE_MODE,
+                    .data_size = EXEC_SPI_SIZE_8_BIT,
+                    .first_bit = EXEC_SPI_FIRST_MSB,
+                    .baud_rate = EXEC_SPI_BAUD_352KBIT,
+                    .cpol      = EXEC_SPI_CPOL_LOW,
+                    .cpha      = EXEC_SPI_CPHA_1_EDGE,
                 },
         },
 
@@ -137,12 +137,12 @@ static SPILoopChannel_T* CONSOLE_SPI_Loopback_Get_Channel( const char* channel_s
 
 static SPILoopChannel_T* CONSOLE_SPI_Loopback_Get_Master_Channel( void )
 {
-    if ( spi_loop_state.channel_0.configuration.spi_mode == SPI_MASTER_MODE )
+    if ( spi_loop_state.channel_0.configuration.spi_mode == EXEC_SPI_MASTER_MODE )
     {
         return &spi_loop_state.channel_0;
     }
 
-    if ( spi_loop_state.channel_1.configuration.spi_mode == SPI_MASTER_MODE )
+    if ( spi_loop_state.channel_1.configuration.spi_mode == EXEC_SPI_MASTER_MODE )
     {
         return &spi_loop_state.channel_1;
     }
@@ -152,12 +152,12 @@ static SPILoopChannel_T* CONSOLE_SPI_Loopback_Get_Master_Channel( void )
 
 static SPILoopChannel_T* CONSOLE_SPI_Loopback_Get_Slave_Channel( void )
 {
-    if ( spi_loop_state.channel_0.configuration.spi_mode == SPI_SLAVE_MODE )
+    if ( spi_loop_state.channel_0.configuration.spi_mode == EXEC_SPI_SLAVE_MODE )
     {
         return &spi_loop_state.channel_0;
     }
 
-    if ( spi_loop_state.channel_1.configuration.spi_mode == SPI_SLAVE_MODE )
+    if ( spi_loop_state.channel_1.configuration.spi_mode == EXEC_SPI_SLAVE_MODE )
     {
         return &spi_loop_state.channel_1;
     }
@@ -165,195 +165,195 @@ static SPILoopChannel_T* CONSOLE_SPI_Loopback_Get_Slave_Channel( void )
     return NULL;
 }
 
-static bool CONSOLE_SPI_Loopback_Parse_Mode( const char* text, SPIMode_T* mode )
+static bool CONSOLE_SPI_Loopback_Parse_Mode( const char* text, ExecSPIMode_T* mode )
 {
     if ( strcmp( text, "master" ) == 0 )
     {
-        *mode = SPI_MASTER_MODE;
+        *mode = EXEC_SPI_MASTER_MODE;
         return true;
     }
 
     if ( strcmp( text, "slave" ) == 0 )
     {
-        *mode = SPI_SLAVE_MODE;
+        *mode = EXEC_SPI_SLAVE_MODE;
         return true;
     }
 
     return false;
 }
 
-static bool CONSOLE_SPI_Loopback_Parse_Data_Size( const char* text, SPIDataSize_T* data_size )
+static bool CONSOLE_SPI_Loopback_Parse_Data_Size( const char* text, ExecSPIDataSize_T* data_size )
 {
     if ( strcmp( text, "8" ) == 0 )
     {
-        *data_size = SPI_SIZE_8_BIT;
+        *data_size = EXEC_SPI_SIZE_8_BIT;
         return true;
     }
 
     if ( strcmp( text, "16" ) == 0 )
     {
-        *data_size = SPI_SIZE_16_BIT;
+        *data_size = EXEC_SPI_SIZE_16_BIT;
         return true;
     }
 
     return false;
 }
 
-static bool CONSOLE_SPI_Loopback_Parse_First_Bit( const char* text, SPIFirstBit_T* first_bit )
+static bool CONSOLE_SPI_Loopback_Parse_First_Bit( const char* text, ExecSPIFirstBit_T* first_bit )
 {
     if ( strcmp( text, "msb" ) == 0 )
     {
-        *first_bit = SPI_FIRST_MSB;
+        *first_bit = EXEC_SPI_FIRST_MSB;
         return true;
     }
 
     if ( strcmp( text, "lsb" ) == 0 )
     {
-        *first_bit = SPI_FIRST_LSB;
+        *first_bit = EXEC_SPI_FIRST_LSB;
         return true;
     }
 
     return false;
 }
 
-static bool CONSOLE_SPI_Loopback_Parse_Baud( const char* text, SPIBaudRate_T* baud_rate )
+static bool CONSOLE_SPI_Loopback_Parse_Baud( const char* text, ExecSPIBaudRate_T* baud_rate )
 {
     if ( strcmp( text, "45m" ) == 0 )
     {
-        *baud_rate = SPI_BAUD_45MBIT;
+        *baud_rate = EXEC_SPI_BAUD_45MBIT;
         return true;
     }
 
     if ( strcmp( text, "22m5" ) == 0 )
     {
-        *baud_rate = SPI_BAUD_22M5BIT;
+        *baud_rate = EXEC_SPI_BAUD_22M5BIT;
         return true;
     }
 
     if ( strcmp( text, "11m25" ) == 0 )
     {
-        *baud_rate = SPI_BAUD_11M25BIT;
+        *baud_rate = EXEC_SPI_BAUD_11M25BIT;
         return true;
     }
 
     if ( strcmp( text, "5m625" ) == 0 )
     {
-        *baud_rate = SPI_BAUD_5M625BIT;
+        *baud_rate = EXEC_SPI_BAUD_5M625BIT;
         return true;
     }
 
     if ( strcmp( text, "2m813" ) == 0 )
     {
-        *baud_rate = SPI_BAUD_2M813BIT;
+        *baud_rate = EXEC_SPI_BAUD_2M813BIT;
         return true;
     }
 
     if ( strcmp( text, "1m406" ) == 0 )
     {
-        *baud_rate = SPI_BAUD_1M406BIT;
+        *baud_rate = EXEC_SPI_BAUD_1M406BIT;
         return true;
     }
 
     if ( strcmp( text, "703k" ) == 0 )
     {
-        *baud_rate = SPI_BAUD_703KBIT;
+        *baud_rate = EXEC_SPI_BAUD_703KBIT;
         return true;
     }
 
     if ( strcmp( text, "352k" ) == 0 )
     {
-        *baud_rate = SPI_BAUD_352KBIT;
+        *baud_rate = EXEC_SPI_BAUD_352KBIT;
         return true;
     }
 
     return false;
 }
 
-static bool CONSOLE_SPI_Loopback_Parse_CPOL( const char* text, SPICPOL_T* cpol )
+static bool CONSOLE_SPI_Loopback_Parse_CPOL( const char* text, ExecSPICPOL_T* cpol )
 {
     if ( strcmp( text, "low" ) == 0 )
     {
-        *cpol = SPI_CPOL_LOW;
+        *cpol = EXEC_SPI_CPOL_LOW;
         return true;
     }
 
     if ( strcmp( text, "high" ) == 0 )
     {
-        *cpol = SPI_CPOL_HIGH;
+        *cpol = EXEC_SPI_CPOL_HIGH;
         return true;
     }
 
     return false;
 }
 
-static bool CONSOLE_SPI_Loopback_Parse_CPHA( const char* text, SPICPHA_T* cpha )
+static bool CONSOLE_SPI_Loopback_Parse_CPHA( const char* text, ExecSPICPHA_T* cpha )
 {
     if ( strcmp( text, "1edge" ) == 0 )
     {
-        *cpha = SPI_CPHA_1_EDGE;
+        *cpha = EXEC_SPI_CPHA_1_EDGE;
         return true;
     }
 
     if ( strcmp( text, "2edge" ) == 0 )
     {
-        *cpha = SPI_CPHA_2_EDGE;
+        *cpha = EXEC_SPI_CPHA_2_EDGE;
         return true;
     }
 
     return false;
 }
 
-static const char* CONSOLE_SPI_Loopback_Mode_To_String( SPIMode_T mode )
+static const char* CONSOLE_SPI_Loopback_Mode_To_String( ExecSPIMode_T mode )
 {
-    return ( mode == SPI_MASTER_MODE ) ? "master" : "slave";
+    return ( mode == EXEC_SPI_MASTER_MODE ) ? "master" : "slave";
 }
 
-static const char* CONSOLE_SPI_Loopback_Data_Size_To_String( SPIDataSize_T data_size )
+static const char* CONSOLE_SPI_Loopback_Data_Size_To_String( ExecSPIDataSize_T data_size )
 {
-    return ( data_size == SPI_SIZE_8_BIT ) ? "8" : "16";
+    return ( data_size == EXEC_SPI_SIZE_8_BIT ) ? "8" : "16";
 }
 
-static const char* CONSOLE_SPI_Loopback_First_Bit_To_String( SPIFirstBit_T first_bit )
+static const char* CONSOLE_SPI_Loopback_First_Bit_To_String( ExecSPIFirstBit_T first_bit )
 {
-    return ( first_bit == SPI_FIRST_MSB ) ? "msb" : "lsb";
+    return ( first_bit == EXEC_SPI_FIRST_MSB ) ? "msb" : "lsb";
 }
 
-static const char* CONSOLE_SPI_Loopback_CPOL_To_String( SPICPOL_T cpol )
+static const char* CONSOLE_SPI_Loopback_CPOL_To_String( ExecSPICPOL_T cpol )
 {
-    return ( cpol == SPI_CPOL_LOW ) ? "low" : "high";
+    return ( cpol == EXEC_SPI_CPOL_LOW ) ? "low" : "high";
 }
 
-static const char* CONSOLE_SPI_Loopback_CPHA_To_String( SPICPHA_T cpha )
+static const char* CONSOLE_SPI_Loopback_CPHA_To_String( ExecSPICPHA_T cpha )
 {
-    return ( cpha == SPI_CPHA_1_EDGE ) ? "1edge" : "2edge";
+    return ( cpha == EXEC_SPI_CPHA_1_EDGE ) ? "1edge" : "2edge";
 }
 
-static const char* CONSOLE_SPI_Loopback_Baud_To_String( SPIBaudRate_T baud_rate )
+static const char* CONSOLE_SPI_Loopback_Baud_To_String( ExecSPIBaudRate_T baud_rate )
 {
     switch ( baud_rate )
     {
-        case SPI_BAUD_45MBIT:
+        case EXEC_SPI_BAUD_45MBIT:
             return "45m";
 
-        case SPI_BAUD_22M5BIT:
+        case EXEC_SPI_BAUD_22M5BIT:
             return "22m5";
 
-        case SPI_BAUD_11M25BIT:
+        case EXEC_SPI_BAUD_11M25BIT:
             return "11m25";
 
-        case SPI_BAUD_5M625BIT:
+        case EXEC_SPI_BAUD_5M625BIT:
             return "5m625";
 
-        case SPI_BAUD_2M813BIT:
+        case EXEC_SPI_BAUD_2M813BIT:
             return "2m813";
 
-        case SPI_BAUD_1M406BIT:
+        case EXEC_SPI_BAUD_1M406BIT:
             return "1m406";
 
-        case SPI_BAUD_703KBIT:
+        case EXEC_SPI_BAUD_703KBIT:
             return "703k";
 
-        case SPI_BAUD_352KBIT:
+        case EXEC_SPI_BAUD_352KBIT:
             return "352k";
 
         default:
@@ -397,57 +397,18 @@ static void CONSOLE_SPI_Loopback_Print_Channel_Status( const char*             n
                     CONSOLE_SPI_Loopback_CPHA_To_String( channel->configuration.cpha ) );
 }
 
-static uint32_t CONSOLE_SPI_Loopback_Copy_Rx( SPIChannel_T peripheral, uint8_t* data_dst,
+static uint32_t CONSOLE_SPI_Loopback_Copy_Rx( ExecSPIChannel_T peripheral, uint8_t* data_dst,
                                               uint32_t data_dst_size_bytes )
 {
-    uint32_t copied_bytes = 0U;
+    uint32_t copied_bytes = data_dst_size_bytes;
 
-    HWSPIRxSpans_T message = HW_SPI_Rx_Peek( peripheral );
-
-    if ( message.total_length_bytes > data_dst_size_bytes )
-    {
-        // For the console command, truncate the displayed capture rather than
-        // overflowing the debug buffer.
-        message.total_length_bytes = data_dst_size_bytes;
-    }
-
-    if ( message.first_span.length_bytes > message.total_length_bytes )
-    {
-        message.first_span.length_bytes = message.total_length_bytes;
-    }
-
-    if ( message.first_span.length_bytes > 0U )
-    {
-        memcpy( data_dst, message.first_span.data, message.first_span.length_bytes );
-        copied_bytes += message.first_span.length_bytes;
-    }
-
-    if ( copied_bytes < message.total_length_bytes )
-    {
-        uint32_t second_copy_size = message.total_length_bytes - copied_bytes;
-
-        if ( second_copy_size > message.second_span.length_bytes )
-        {
-            second_copy_size = message.second_span.length_bytes;
-        }
-
-        memcpy( &data_dst[copied_bytes], message.second_span.data, second_copy_size );
-        copied_bytes += second_copy_size;
-    }
-
-    HW_SPI_Rx_Consume( peripheral, copied_bytes );
-
-    return copied_bytes;
+    return EXEC_SPI_Receive( peripheral, data_dst, &copied_bytes ) ? copied_bytes : 0U;
 }
 
 static bool CONSOLE_SPI_Loopback_Apply_Channel_Config( SPILoopChannel_T* channel )
 {
-    const ExecSPIConfig_T config = {
-        .is_enabled = true,
-        .hardware   = channel->configuration,
-    };
-
-    return EXEC_SPI_Configure_Channel( channel->peripheral, &config );
+    channel->configuration.is_enabled = true;
+    return EXEC_SPI_Configure_Channel( channel->peripheral, &channel->configuration );
 }
 
 /**-----------------------------------------------------------------------------
@@ -507,7 +468,7 @@ void CONSOLE_SPI_Loopback_Config( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[3], "mode" ) == 0 )
     {
-        SPIMode_T mode;
+        ExecSPIMode_T mode;
 
         if ( !CONSOLE_SPI_Loopback_Parse_Mode( argv[4], &mode ) )
         {
@@ -520,7 +481,7 @@ void CONSOLE_SPI_Loopback_Config( uint16_t argc, char* argv[] )
     }
     else if ( strcmp( argv[3], "datasize" ) == 0 )
     {
-        SPIDataSize_T data_size;
+        ExecSPIDataSize_T data_size;
 
         if ( !CONSOLE_SPI_Loopback_Parse_Data_Size( argv[4], &data_size ) )
         {
@@ -533,7 +494,7 @@ void CONSOLE_SPI_Loopback_Config( uint16_t argc, char* argv[] )
     }
     else if ( strcmp( argv[3], "firstbit" ) == 0 )
     {
-        SPIFirstBit_T first_bit;
+        ExecSPIFirstBit_T first_bit;
 
         if ( !CONSOLE_SPI_Loopback_Parse_First_Bit( argv[4], &first_bit ) )
         {
@@ -546,7 +507,7 @@ void CONSOLE_SPI_Loopback_Config( uint16_t argc, char* argv[] )
     }
     else if ( strcmp( argv[3], "baud" ) == 0 )
     {
-        SPIBaudRate_T baud_rate;
+        ExecSPIBaudRate_T baud_rate;
 
         if ( !CONSOLE_SPI_Loopback_Parse_Baud( argv[4], &baud_rate ) )
         {
@@ -559,7 +520,7 @@ void CONSOLE_SPI_Loopback_Config( uint16_t argc, char* argv[] )
     }
     else if ( strcmp( argv[3], "cpol" ) == 0 )
     {
-        SPICPOL_T cpol;
+        ExecSPICPOL_T cpol;
 
         if ( !CONSOLE_SPI_Loopback_Parse_CPOL( argv[4], &cpol ) )
         {
@@ -572,7 +533,7 @@ void CONSOLE_SPI_Loopback_Config( uint16_t argc, char* argv[] )
     }
     else if ( strcmp( argv[3], "cpha" ) == 0 )
     {
-        SPICPHA_T cpha;
+        ExecSPICPHA_T cpha;
 
         if ( !CONSOLE_SPI_Loopback_Parse_CPHA( argv[4], &cpha ) )
         {
@@ -647,17 +608,17 @@ void CONSOLE_SPI_Loopback_Start( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[2], "all" ) == 0 )
     {
-        if ( !EXEC_SPI_Start_Channel( SPI_CHANNEL_0 ) )
+        if ( !EXEC_SPI_Start_Channel( EXEC_SPI_CHANNEL_1 ) )
         {
             CONSOLE_Printf( "Failed to start SPI channel 1\r\n" );
             return;
         }
 
-        if ( !EXEC_SPI_Start_Channel( SPI_CHANNEL_1 ) )
+        if ( !EXEC_SPI_Start_Channel( EXEC_SPI_CHANNEL_2 ) )
         {
             CONSOLE_Printf( "Failed to start SPI channel 2\r\n" );
 
-            if ( !EXEC_SPI_Stop_Channel( SPI_CHANNEL_0 ) )
+            if ( !EXEC_SPI_Stop_Channel( EXEC_SPI_CHANNEL_1 ) )
             {
                 CONSOLE_Printf(
                     "Rollback failed: SPI channel 1 may still be active; retry stop\r\n" );
@@ -690,7 +651,7 @@ void CONSOLE_SPI_Loopback_Stop( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[2], "all" ) == 0 )
     {
-        if ( !EXEC_SPI_Stop_Channel( SPI_CHANNEL_0 ) || !EXEC_SPI_Stop_Channel( SPI_CHANNEL_1 ) )
+        if ( !EXEC_SPI_Stop_Channel( EXEC_SPI_CHANNEL_1 ) || !EXEC_SPI_Stop_Channel( EXEC_SPI_CHANNEL_2 ) )
         {
             CONSOLE_Printf( "Failed to stop both SPI channels\r\n" );
             return;
@@ -722,8 +683,8 @@ void CONSOLE_SPI_Loopback_Disable( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[2], "all" ) == 0 )
     {
-        if ( !EXEC_SPI_Configure_Channel( SPI_CHANNEL_0, &config )
-             || !EXEC_SPI_Configure_Channel( SPI_CHANNEL_1, &config ) )
+        if ( !EXEC_SPI_Configure_Channel( EXEC_SPI_CHANNEL_1, &config )
+             || !EXEC_SPI_Configure_Channel( EXEC_SPI_CHANNEL_2, &config ) )
         {
             CONSOLE_Printf( "Failed to disable both SPI channels\r\n" );
             return;
@@ -879,38 +840,36 @@ void CONSOLE_SPI_Loopback_Run( uint16_t argc, char* argv[] )
 
     // Load the slave TX buffer first. The slave must already have data ready
     // when the master starts generating SPI clocks.
-    if ( !HW_SPI_Load_Tx_Buffer( slave_channel->peripheral, spi_loop_state.slave_tx,
-                                 spi_loop_state.slave_tx_size_bytes ) )
+    const uint32_t slave_packet_size = spi_loop_state.slave_tx_size_bytes;
+    if ( !EXEC_SPI_Transmit( slave_channel->peripheral, spi_loop_state.slave_tx,
+                             &slave_packet_size, 1U ) )
     {
         CONSOLE_Printf( "FAIL: could not load slave TX buffer\r\n" );
         return;
     }
 
-    HW_SPI_Tx_Trigger( slave_channel->peripheral );
-
 #if CONSOLE_SPI_BANDWIDTH_TEST == 1
     for ( int i = 0; i < 20; i++ )
     {
-        if ( !HW_SPI_Load_Tx_Buffer( master_channel->peripheral, spi_loop_state.master_tx,
-                                     spi_loop_state.master_tx_size_bytes ) )
+        const uint32_t master_packet_size = spi_loop_state.master_tx_size_bytes;
+        if ( !EXEC_SPI_Transmit( master_channel->peripheral, spi_loop_state.master_tx,
+                                 &master_packet_size, 1U ) )
         {
             CONSOLE_Printf( "FAIL: could not load master TX buffer\r\n" );
             return;
         }
 
-        HW_SPI_Tx_Trigger( master_channel->peripheral );
         vTaskDelay( 1 );
     }
 #endif
 
-    if ( !HW_SPI_Load_Tx_Buffer( master_channel->peripheral, spi_loop_state.master_tx,
-                                 spi_loop_state.master_tx_size_bytes ) )
+    const uint32_t master_packet_size = spi_loop_state.master_tx_size_bytes;
+    if ( !EXEC_SPI_Transmit( master_channel->peripheral, spi_loop_state.master_tx,
+                             &master_packet_size, 1U ) )
     {
         CONSOLE_Printf( "FAIL: could not load master TX buffer\r\n" );
         return;
     }
-
-    HW_SPI_Tx_Trigger( master_channel->peripheral );
 
     vTaskDelay( SPI_LOOP_TRANSFER_DELAY_MS );
 
