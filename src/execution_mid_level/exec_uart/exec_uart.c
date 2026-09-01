@@ -392,6 +392,28 @@ bool EXEC_UART_Stop_Channel( ExecUartChannel_T channel )
     return true;
 }
 
+bool EXEC_UART_Is_Configured( ExecUartChannel_T channel )
+{
+    if ( !EXEC_UART_Is_Valid_Channel( channel ) )
+    {
+        return false;
+    }
+
+    const ExecUartLifecycleState_T state = exec_uart_channel_states[channel].lifecycle_state;
+
+    return state == EXEC_UART_STATE_CONFIGURED || state == EXEC_UART_STATE_STARTED;
+}
+
+bool EXEC_UART_Is_Started( ExecUartChannel_T channel )
+{
+    if ( !EXEC_UART_Is_Valid_Channel( channel ) )
+    {
+        return false;
+    }
+
+    return exec_uart_channel_states[channel].lifecycle_state == EXEC_UART_STATE_STARTED;
+}
+
 bool EXEC_UART_Transmit( ExecUartChannel_T channel, const uint8_t* data, uint32_t length_bytes )
 {
     const HwUartChannel_T hw_channel = exec_uart_hardware_map[channel].hw_channel;

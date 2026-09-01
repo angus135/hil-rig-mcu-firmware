@@ -125,6 +125,12 @@ bool EXEC_UART_Start_Channel( ExecUartChannel_T channel );
  */
 bool EXEC_UART_Stop_Channel( ExecUartChannel_T channel );
 
+/** @brief Return true when the channel is configured or started. */
+bool EXEC_UART_Is_Configured( ExecUartChannel_T channel );
+
+/** @brief Return true only while the channel is started. */
+bool EXEC_UART_Is_Started( ExecUartChannel_T channel );
+
 /**
  * @brief  Queues a UART TX payload and starts the low-level TX DMA pump if required.
  *
