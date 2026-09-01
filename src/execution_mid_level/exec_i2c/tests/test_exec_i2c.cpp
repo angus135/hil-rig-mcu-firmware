@@ -297,6 +297,34 @@ TEST_F( ExecI2CTest, ConfigureMapsChannel2ToDma )
     EXPECT_EQ( EXEC_I2C_Configure_Channel( EXEC_I2C_CHANNEL_2, &config ), EXEC_I2C_STATUS_OK );
 }
 
+TEST_F( ExecI2CTest, FailedStoppedChannelReconfigurationRevokesStartPermission )
+{
+    EXECI2CChannelState_T& state = exec_i2c_channel_state[EXEC_I2C_CHANNEL_1];
+    state.is_configured          = true;
+
+    const EXECI2CChannelConfig_T config = {
+        .is_enabled       = true,
+        .mode             = HW_I2C_MODE_MASTER,
+        .speed            = HW_I2C_SPEED_100KHZ,
+        .own_address_7bit = 0x12U,
+        .pullup           = EXEC_I2C_PULLUP_10K,
+        .voltage          = EXEC_I2C_VOLTAGE_5V,
+    };
+
+    InSequence sequence;
+    ExpectInterfaceControl( EXEC_I2C_CHANNEL_1, EXEC_I2C_VOLTAGE_5V, EXEC_I2C_PULLUP_10K, false );
+    EXPECT_CALL( mock_hw_i2c, ConfigureChannel( HW_I2C_CHANNEL_1, _ ) )
+        .WillOnce( Return( HW_I2C_STATUS_ERROR ) );
+    ExpectInterfaceControl( EXEC_I2C_CHANNEL_1, EXEC_I2C_VOLTAGE_3V3, EXEC_I2C_PULLUP_1K, false );
+
+    EXPECT_EQ( EXEC_I2C_Configure_Channel( EXEC_I2C_CHANNEL_1, &config ),
+               EXEC_I2C_STATUS_ERROR );
+    EXPECT_FALSE( EXEC_I2C_Is_Channel_Configured( EXEC_I2C_CHANNEL_1 ) );
+
+    EXPECT_CALL( mock_hw_i2c, StartChannel( _ ) ).Times( 0 );
+    EXPECT_EQ( EXEC_I2C_Start_Channel( EXEC_I2C_CHANNEL_1 ), EXEC_I2C_STATUS_NOT_CONFIGURED );
+}
+
 TEST_F( ExecI2CTest, StartAndStopApplyLifecycleInSafeOrder )
 {
     EXECI2CChannelState_T& state = exec_i2c_channel_state[EXEC_I2C_CHANNEL_1];

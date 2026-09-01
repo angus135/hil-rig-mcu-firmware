@@ -100,6 +100,8 @@ void EXEC_PWM_GEN_Set_PWM_HV( uint16_t arr, uint16_t ccr, uint16_t psc );
  * selects a channel-compatible voltage, and leaves the timer output stopped
  * and ready to start. Disabled configuration stops an active channel and
  * selects its lowest supported voltage.
+ * Once hardware application begins, a failure invalidates any previous stopped
+ * configuration; Configure must succeed again before Start is permitted.
  */
 bool EXEC_PWM_GEN_Configure_Channel( ExecPwmGenChannel_T       channel,
                                      const ExecPwmGenConfig_T* config );
