@@ -15,8 +15,8 @@ to `hw_spi`. The actual chip-select handling is still owned by the low-level dri
 `exec_spi` now loads each SPI packet separately so the low-level master TX path can frame each
 packet as its own DMA-backed software-chip-select transaction.
 
-`exec_spi` owns only general-purpose `SPI_CHANNEL_0` and `SPI_CHANNEL_1`.
-`SPI_DAC` is owned by `exec_analogue_output`.
+`exec_spi` exposes only `EXEC_SPI_CHANNEL_1` and `EXEC_SPI_CHANNEL_2`.
+The dedicated low-level DAC channel remains private to `exec_analogue_output`.
 
 ## Lifecycle
 
@@ -39,8 +39,8 @@ Logic Expander port B mapping:
 
 | Channel | `SPI_EN` | `SPI_EN_MASTER_NSLAVE` |
 |---|---:|---:|
-| `SPI_CHANNEL_0` / board CH1 | B6 | B7 |
-| `SPI_CHANNEL_1` / board CH2 | B4 | B5 |
+| `EXEC_SPI_CHANNEL_1` | B6 | B7 |
+| `EXEC_SPI_CHANNEL_2` | B4 | B5 |
 
 ---
 
@@ -79,8 +79,8 @@ details that matter to this module are:
 ### `EXEC_SPI_Configure_Channel()`
 
 ```c
-bool EXEC_SPI_Configure_Channel( SPIChannel_T peripheral,
-                                 HWSPIConfig_T configuration );
+bool EXEC_SPI_Configure_Channel( ExecSPIChannel_T channel,
+                                 const ExecSPIConfig_T* configuration );
 ```
 
 Configures an enabled channel in the stopped state, or applies its disabled safe
@@ -100,7 +100,7 @@ performs the reverse ordering and retains configuration for restart. Use
 ### `EXEC_SPI_Transmit()`
 
 ```c
-bool EXEC_SPI_Transmit( SPIChannel_T peripheral,
+bool EXEC_SPI_Transmit( ExecSPIChannel_T channel,
                         const uint8_t* data_src,
                         const uint32_t* packet_sizes_bytes,
                         uint32_t num_packets );
@@ -122,7 +122,7 @@ buffer alive after a successful call. If any low-level packet load fails, this f
 ### `EXEC_SPI_Receive()`
 
 ```c
-bool EXEC_SPI_Receive( SPIChannel_T peripheral,
+bool EXEC_SPI_Receive( ExecSPIChannel_T channel,
                        uint8_t* data_dst,
                        uint32_t* size_bytes );
 ```
@@ -142,7 +142,7 @@ receives the data as one contiguous buffer.
 ### `EXEC_SPI_Is_Transmission_Complete()`
 
 ```c
-bool EXEC_SPI_Is_Transmission_Complete( SPIChannel_T peripheral );
+bool EXEC_SPI_Is_Transmission_Complete( ExecSPIChannel_T channel );
 ```
 
 Returns whether the low-level TX path is empty.
@@ -224,20 +224,16 @@ safety guard, not a substitute for the validation subsystem.
 ExecSPIConfig_T configuration =
 {
     .is_enabled = true,
-    .hardware =
-    {
-        .spi_mode  = SPI_MASTER_MODE,
-        .data_size = SPI_SIZE_8_BIT,
-        .first_bit = SPI_FIRST_MSB,
-        .baud_rate = SPI_BAUD_352KBIT,
-        .cpol      = SPI_CPOL_LOW,
-        .cpha      = SPI_CPHA_1_EDGE,
-        .nss_pin   = GPIO_SPI1_NSS,
-    },
+    .spi_mode  = EXEC_SPI_MASTER_MODE,
+    .data_size = EXEC_SPI_SIZE_8_BIT,
+    .first_bit = EXEC_SPI_FIRST_MSB,
+    .baud_rate = EXEC_SPI_BAUD_352KBIT,
+    .cpol      = EXEC_SPI_CPOL_LOW,
+    .cpha      = EXEC_SPI_CPHA_1_EDGE,
 };
 
-bool configured = EXEC_SPI_Configure_Channel( SPI_CHANNEL_0, &configuration );
-bool started    = configured && EXEC_SPI_Start_Channel( SPI_CHANNEL_0 );
+bool configured = EXEC_SPI_Configure_Channel( EXEC_SPI_CHANNEL_1, &configuration );
+bool started    = configured && EXEC_SPI_Start_Channel( EXEC_SPI_CHANNEL_1 );
 ```
 
 ```c
@@ -255,7 +251,7 @@ const uint32_t tx_packet_sizes[] =
     1U
 };
 
-bool accepted = EXEC_SPI_Transmit( SPI_CHANNEL_0,
+bool accepted = EXEC_SPI_Transmit( EXEC_SPI_CHANNEL_1,
                                    tx_data,
                                    tx_packet_sizes,
                                    3U );
@@ -265,13 +261,13 @@ bool accepted = EXEC_SPI_Transmit( SPI_CHANNEL_0,
 uint8_t  rx_buffer[32];
 uint32_t rx_size_bytes = sizeof( rx_buffer );
 
-bool received = EXEC_SPI_Receive( SPI_CHANNEL_0,
+bool received = EXEC_SPI_Receive( EXEC_SPI_CHANNEL_1,
                                   rx_buffer,
                                   &rx_size_bytes );
 ```
 
 ```c
-if ( EXEC_SPI_Is_Transmission_Complete( SPI_CHANNEL_0 ) )
+if ( EXEC_SPI_Is_Transmission_Complete( EXEC_SPI_CHANNEL_1 ) )
 {
     // The low-level TX queue and active TX DMA transfer are both empty.
 }
