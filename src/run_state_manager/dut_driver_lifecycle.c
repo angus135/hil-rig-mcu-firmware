@@ -175,7 +175,7 @@ static bool DUT_DRIVER_LIFECYCLE_ConfigureAll( const DutDriverConfiguration_T* c
     for ( uint32_t channel = 0U; channel < EXEC_CAN_CHANNEL_COUNT; channel++ )
     {
         if ( EXEC_CAN_Configure_Channel( ( EXEC_CAN_Channel_T )channel,
-                                         configuration->can_channels[channel] )
+                                         &configuration->can_channels[channel] )
              != EXEC_CAN_RESULT_OK )
         {
             return false;
@@ -213,7 +213,7 @@ static bool DUT_DRIVER_LIFECYCLE_ConfigureAll( const DutDriverConfiguration_T* c
 
     for ( uint32_t channel = 0U; channel < TEST_CONFIGURATION_SPI_CHANNEL_COUNT; channel++ )
     {
-        if ( !EXEC_SPI_Configure_Channel( ( SPIChannel_T )channel,
+        if ( !EXEC_SPI_Configure_Channel( ( ExecSPIChannel_T )channel,
                                           &configuration->spi_channels[channel] ) )
         {
             return false;
@@ -245,7 +245,7 @@ static void DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration( void )
     for ( uint32_t channel = 0U; channel < EXEC_CAN_CHANNEL_COUNT; channel++ )
     {
         ( void )EXEC_CAN_Configure_Channel( ( EXEC_CAN_Channel_T )channel,
-                                            disabled.can_channels[channel] );
+                                            &disabled.can_channels[channel] );
     }
 
     for ( uint32_t channel = 0U; channel < EXEC_I2C_CHANNEL_COUNT; channel++ )
@@ -267,7 +267,7 @@ static void DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration( void )
 
     for ( uint32_t channel = 0U; channel < TEST_CONFIGURATION_SPI_CHANNEL_COUNT; channel++ )
     {
-        ( void )EXEC_SPI_Configure_Channel( ( SPIChannel_T )channel,
+        ( void )EXEC_SPI_Configure_Channel( ( ExecSPIChannel_T )channel,
                                             &disabled.spi_channels[channel] );
     }
 
@@ -327,17 +327,17 @@ DutDriverConfigurationStatus_T DUT_DRIVER_LIFECYCLE_GetConfigurationStatus( void
 
     if ( lifecycle_context.enabled.analogue_output )
     {
-        switch ( EXEC_ANALOG_OUTPUT_Get_State() )
+        switch ( EXEC_ANALOGUE_OUTPUT_Get_State() )
         {
-            case EXEC_ANALOG_OUTPUT_STATE_CONFIGURING:
+            case EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURING:
                 return DUT_DRIVER_CONFIGURATION_PENDING;
 
-            case EXEC_ANALOG_OUTPUT_STATE_CONFIGURED:
+            case EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURED:
                 break;
 
-            case EXEC_ANALOG_OUTPUT_STATE_FAULTED:
-            case EXEC_ANALOG_OUTPUT_STATE_DISABLED:
-            case EXEC_ANALOG_OUTPUT_STATE_STARTED:
+            case EXEC_ANALOGUE_OUTPUT_STATE_FAULTED:
+            case EXEC_ANALOGUE_OUTPUT_STATE_DISABLED:
+            case EXEC_ANALOGUE_OUTPUT_STATE_STARTED:
             default:
                 return DUT_DRIVER_CONFIGURATION_FAILED;
         }
@@ -405,7 +405,7 @@ bool DUT_DRIVER_LIFECYCLE_Start( void )
         const uint32_t channel_bit = DUT_DRIVER_LIFECYCLE_CHANNEL_BIT( channel );
         if ( ( enabled->spi_channels & channel_bit ) != 0U )
         {
-            if ( !EXEC_SPI_Start_Channel( ( SPIChannel_T )channel ) )
+            if ( !EXEC_SPI_Start_Channel( ( ExecSPIChannel_T )channel ) )
             {
                 goto start_failed;
             }
@@ -505,7 +505,7 @@ bool DUT_DRIVER_LIFECYCLE_Stop( void )
         const uint32_t index       = channel - 1U;
         const uint32_t channel_bit = DUT_DRIVER_LIFECYCLE_CHANNEL_BIT( index );
         if ( ( started->spi_channels & channel_bit ) != 0U
-             && EXEC_SPI_Stop_Channel( ( SPIChannel_T )index ) )
+             && EXEC_SPI_Stop_Channel( ( ExecSPIChannel_T )index ) )
         {
             started->spi_channels &= ~channel_bit;
         }
