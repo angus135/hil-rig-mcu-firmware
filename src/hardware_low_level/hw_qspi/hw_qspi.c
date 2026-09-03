@@ -92,10 +92,14 @@ static SemaphoreHandle_t qspi_transfer_semaphore = NULL;
  */
 static uint32_t         HW_QSPI_Get_Timeout( const HW_QSPI_Command_T* command );
 static HW_QSPI_Status_T HW_QSPI_Map_HAL_Status( HAL_StatusTypeDef status );
-static uint32_t         HW_QSPI_Get_Instruction_Mode( HW_QSPI_Lines_T lines );
-static uint32_t         HW_QSPI_Get_Address_Mode( HW_QSPI_Lines_T lines );
-static uint32_t         HW_QSPI_Get_Address_Size( HW_QSPI_AddressSize_T address_size );
-static uint32_t         HW_QSPI_Get_Alternate_Bytes_Mode( HW_QSPI_Lines_T lines );
+static bool             HW_QSPI_Is_Valid_Lines( HW_QSPI_Lines_T lines );
+static bool             HW_QSPI_Is_Valid_Address_Size( HW_QSPI_AddressSize_T size );
+static bool             HW_QSPI_Is_Valid_Alternate_Bytes_Size( HW_QSPI_AlternateBytesSize_T size );
+static bool     HW_QSPI_Command_Is_Valid( const HW_QSPI_Command_T* command, uint32_t length );
+static uint32_t HW_QSPI_Get_Instruction_Mode( HW_QSPI_Lines_T lines );
+static uint32_t HW_QSPI_Get_Address_Mode( HW_QSPI_Lines_T lines );
+static uint32_t HW_QSPI_Get_Address_Size( HW_QSPI_AddressSize_T address_size );
+static uint32_t HW_QSPI_Get_Alternate_Bytes_Mode( HW_QSPI_Lines_T lines );
 static uint32_t
 HW_QSPI_Get_Alternate_Bytes_Size( HW_QSPI_AlternateBytesSize_T alternate_bytes_size );
 static uint32_t         HW_QSPI_Get_Data_Mode( HW_QSPI_Lines_T lines );
@@ -152,6 +156,46 @@ static HW_QSPI_Status_T HW_QSPI_Map_HAL_Status( HAL_StatusTypeDef status )
         default:
             return HW_QSPI_STATUS_ERROR;
     }
+}
+
+static bool HW_QSPI_Is_Valid_Lines( HW_QSPI_Lines_T lines )
+{
+    return lines == HW_QSPI_LINES_NONE || lines == HW_QSPI_LINES_1 || lines == HW_QSPI_LINES_2
+           || lines == HW_QSPI_LINES_4;
+}
+
+static bool HW_QSPI_Is_Valid_Address_Size( HW_QSPI_AddressSize_T size )
+{
+    return size == HW_QSPI_ADDR_NONE || size == HW_QSPI_ADDR_8_BITS || size == HW_QSPI_ADDR_16_BITS
+           || size == HW_QSPI_ADDR_24_BITS || size == HW_QSPI_ADDR_32_BITS;
+}
+
+static bool HW_QSPI_Is_Valid_Alternate_Bytes_Size( HW_QSPI_AlternateBytesSize_T size )
+{
+    return size == HW_QSPI_ALT_BYTES_NONE || size == HW_QSPI_ALT_BYTES_8_BITS
+           || size == HW_QSPI_ALT_BYTES_16_BITS || size == HW_QSPI_ALT_BYTES_24_BITS
+           || size == HW_QSPI_ALT_BYTES_32_BITS;
+}
+
+static bool HW_QSPI_Command_Is_Valid( const HW_QSPI_Command_T* command, uint32_t length )
+{
+    if ( command == NULL || !HW_QSPI_Is_Valid_Lines( command->instruction_lines )
+         || !HW_QSPI_Is_Valid_Lines( command->address_lines )
+         || !HW_QSPI_Is_Valid_Lines( command->alternate_bytes_lines )
+         || !HW_QSPI_Is_Valid_Lines( command->data_lines )
+         || !HW_QSPI_Is_Valid_Address_Size( command->address_size )
+         || !HW_QSPI_Is_Valid_Alternate_Bytes_Size( command->alternate_bytes_size ) )
+    {
+        return false;
+    }
+
+    const bool has_address_lines   = command->address_lines != HW_QSPI_LINES_NONE;
+    const bool has_address_size    = command->address_size != HW_QSPI_ADDR_NONE;
+    const bool has_alternate_lines = command->alternate_bytes_lines != HW_QSPI_LINES_NONE;
+    const bool has_alternate_size  = command->alternate_bytes_size != HW_QSPI_ALT_BYTES_NONE;
+
+    return has_address_lines == has_address_size && has_alternate_lines == has_alternate_size
+           && ( length == 0U || command->data_lines != HW_QSPI_LINES_NONE );
 }
 
 /**
@@ -335,7 +379,7 @@ static bool HW_QSPI_Is_HAL_Busy_State( HAL_QSPI_StateTypeDef state )
 static HW_QSPI_Status_T HW_QSPI_Build_Command( const HW_QSPI_Command_T* command, uint32_t length,
                                                QSPI_CommandTypeDef* qspi_command )
 {
-    if ( ( command == NULL ) || ( qspi_command == NULL ) )
+    if ( qspi_command == NULL || !HW_QSPI_Command_Is_Valid( command, length ) )
     {
         return HW_QSPI_STATUS_INVALID_ARG;
     }
