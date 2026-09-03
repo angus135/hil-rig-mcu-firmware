@@ -232,11 +232,12 @@ void CONSOLE_TestConfiguration_Command( uint16_t argc, char* argv[] )
     }
 
     DutDriverConfiguration_T configuration = { 0 };
-    if ( !TEST_CONFIGURATION_GetActive( &configuration ) )
-    {
-        CONSOLE_Printf( "Configuration commit failed: no active configuration.\r\n" );
-        return;
-    }
+    /*
+     * Discard invalidates the previous test configuration. In that case, build
+     * the next package configuration from the all-disabled baseline rather
+     * than requiring a stale active configuration to exist.
+     */
+    ( void )TEST_CONFIGURATION_GetActive( &configuration );
 
     if ( argc == 2U && strcmp( argv[1], "inert" ) == 0 )
     {
