@@ -595,20 +595,6 @@ void DMA2_Stream7_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles QUADSPI global interrupt.
-  */
-void QUADSPI_IRQHandler(void)
-{
-  /* USER CODE BEGIN QUADSPI_IRQn 0 */
-
-  /* USER CODE END QUADSPI_IRQn 0 */
-  HAL_QSPI_IRQHandler(&hqspi);
-  /* USER CODE BEGIN QUADSPI_IRQn 1 */
-
-  /* USER CODE END QUADSPI_IRQn 1 */
-}
-
-/**
   * @brief This function handles I2C3 event interrupt.
   */
 void I2C3_EV_IRQHandler(void)
@@ -620,6 +606,20 @@ void I2C3_EV_IRQHandler(void)
   /* USER CODE BEGIN I2C3_EV_IRQn 1 */
 
   /* USER CODE END I2C3_EV_IRQn 1 */
+}
+
+/**
+  * @brief This function handles QUADSPI global interrupt.
+  */
+void QUADSPI_IRQHandler(void)
+{
+  /* USER CODE BEGIN QUADSPI_IRQn 0 */
+
+  /* USER CODE END QUADSPI_IRQn 0 */
+  HAL_QSPI_IRQHandler(&hqspi);
+  /* USER CODE BEGIN QUADSPI_IRQn 1 */
+
+  /* USER CODE END QUADSPI_IRQn 1 */
 }
 
 /**

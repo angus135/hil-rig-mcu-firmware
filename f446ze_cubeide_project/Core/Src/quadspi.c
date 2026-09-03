@@ -118,7 +118,7 @@ void HAL_QSPI_MspInit(QSPI_HandleTypeDef* qspiHandle)
     hdma_quadspi.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
     hdma_quadspi.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
     hdma_quadspi.Init.Mode = DMA_NORMAL;
-    hdma_quadspi.Init.Priority = DMA_PRIORITY_VERY_HIGH;
+    hdma_quadspi.Init.Priority = DMA_PRIORITY_LOW;
     hdma_quadspi.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
     if (HAL_DMA_Init(&hdma_quadspi) != HAL_OK)
     {
@@ -128,9 +128,8 @@ void HAL_QSPI_MspInit(QSPI_HandleTypeDef* qspiHandle)
     __HAL_LINKDMA(qspiHandle,hdma,hdma_quadspi);
 
     /* QUADSPI interrupt Init */
-    HAL_NVIC_SetPriority(QUADSPI_IRQn, 5, 0);
+    HAL_NVIC_SetPriority(QUADSPI_IRQn, 6, 0);
     HAL_NVIC_EnableIRQ(QUADSPI_IRQn);
-
   /* USER CODE BEGIN QUADSPI_MspInit 1 */
 
   /* USER CODE END QUADSPI_MspInit 1 */
