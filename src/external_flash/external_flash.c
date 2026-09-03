@@ -464,9 +464,9 @@ EXTERNAL_FLASH_RecoverMappedBlock( ExternalFlashAllocatorPartition_T partition,
                 return status;
             }
 
-            status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_ProgramPageDma(
-                destination_page, 0U, external_flash_recovery_page_buffer,
-                external_flash_geometry.page_size_bytes ) );
+            status = EXTERNAL_FLASH_MapNandStatus(
+                HW_NAND_ProgramPageDma( destination_page, 0U, external_flash_recovery_page_buffer,
+                                        external_flash_geometry.page_size_bytes ) );
             if ( status == EXTERNAL_FLASH_STATUS_PROGRAM_FAIL )
             {
                 status = EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( replacement_block );
