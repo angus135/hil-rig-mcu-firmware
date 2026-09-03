@@ -695,7 +695,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_ALLOCATOR_CommitMappedBlockReplacement(
     }
 
     ExternalFlashStatus_T status = EXTERNAL_FLASH_ALLOCATOR_RetirePhysicalBlock( failed_block );
-    if ( status != EXTERNAL_FLASH_STATUS_OK )
+    if ( status != EXTERNAL_FLASH_STATUS_OK && status != EXTERNAL_FLASH_STATUS_PROGRAM_FAIL )
     {
         return status;
     }

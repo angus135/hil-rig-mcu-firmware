@@ -335,9 +335,9 @@ Bad blocks are skipped when translating logical byte offsets to physical NAND pa
 
 If erase fails at runtime, the block is marked bad in RAM and
 `HW_NAND_MarkBlockBad` programs its persistent marker. Marker-program failures
-are returned to the caller rather than silently switching a logical map entry.
-The in-RAM bad-block state remains retired for the current boot even when the
-marker cannot be programmed.
+leave the block retired for the current boot. A definite NAND program failure
+does not prevent a fully recovered logical map from switching to its replacement;
+communication and timeout errors remain fatal because the device state is unknown.
 
 If a page program fails at runtime, the allocator prepares a replacement block,
 replays every preceding page from the failed logical block using DMA, switches the map
