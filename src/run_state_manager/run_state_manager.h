@@ -263,14 +263,26 @@ bool RUN_STATE_MANAGER_RequestDiscardResults( void );
 /**
  * @brief Requests a transition to the fault state from task context.
  *
- * The first non-NONE reason is retained until a successful reset to IDLE.
- * A future ISR integration requires a separate ISR-safe reporting API.
+ * The first non-NONE reason is retained until a successful reset to IDLE. The
+ * execution-abort latch is set before the manager task is notified, preventing
+ * a later TIM4 tick from dispatching execution work.
  *
  * @param reason Fault cause reported by the requesting subsystem.
  *
  * @returns true if the request was delivered to the task, otherwise false.
  */
 bool RUN_STATE_MANAGER_RequestFault( RunStateFaultReason_T reason );
+
+/**
+ * @brief Reports a run-ending fault from interrupt context without blocking.
+ *
+ * This latches execution abort before notifying the manager task. TIM4 is
+ * guarded immediately; task context subsequently stops the timer and drivers.
+ */
+bool RUN_STATE_MANAGER_RequestFaultFromISR( RunStateFaultReason_T reason );
+
+/** Returns true once a fault source has synchronously inhibited execution. */
+bool RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR( void );
 
 /**
  * @brief Requests a reset from fault to idle.

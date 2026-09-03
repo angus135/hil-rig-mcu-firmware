@@ -104,9 +104,15 @@ request result finalisation and wait for `RESULTS_READY` or `FAULT`.
 Instructions are ordered by timestamp. If the Execution Manager observes an
 instruction timestamp less than the current tick, the workload has overrun its
 deadline and the test is infeasible. The late instruction is not consumed. The
-Run State Manager must receive this fault through a future ISR-safe handoff,
-stop execution, and record the infeasible outcome. Future feasibility analysis
+Execution Manager reports the fault through the ISR-safe RSM handoff. This
+synchronously latches execution abort, so TIM4 skips later dispatches while the
+RSM task stops the timer and records the fault. Future feasibility analysis
 should reject such a workload before execution.
+
+Flash Manager registers its task-side and ISR-side fault handoff with the RSM
+at startup. Any Flash fault uses the same abort-first path. Notification latency
+may delay task-context timer, driver, and Flash cleanup, but cannot permit a
+subsequent TIM4 execution callback after the abort latch is set.
 
 Preserving committed diagnostic results uses the normal finalisation and
 transfer path. Abandoning them must use the explicit Flash Manager discard API;

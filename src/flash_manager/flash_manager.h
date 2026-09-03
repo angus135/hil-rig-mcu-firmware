@@ -142,7 +142,6 @@ typedef enum
     /** Stored results are being prefetched and copied to the Host Interface. */
     FLASH_MANAGER_STATE_TRANSFERRING_RESULTS,
 
-
     /** The Flash Manager task is abandoning an interrupted execution session. */
     FLASH_MANAGER_STATE_ABORTING,
 
@@ -385,6 +384,9 @@ typedef enum
 
 } FlashManagerResultTransferStatus_T;
 
+/** Receives notification when Flash Manager enters FAULT. */
+typedef void ( *FlashManagerFaultCallback_T )( bool from_isr );
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -421,6 +423,14 @@ void FLASH_MANAGER_Task( void* parameters );
  *       APIs to other tasks.
  */
 bool FLASH_MANAGER_Init( void );
+
+/**
+ * @brief Registers the system fault handoff used by task and ISR fault paths.
+ *
+ * @param callback Callback invoked after FAULT is latched, or NULL to remove it.
+ * @note When from_isr is true, the callback must use only ISR-safe APIs.
+ */
+void FLASH_MANAGER_SetFaultCallback( FlashManagerFaultCallback_T callback );
 
 /**
  * @brief Reads the current Flash Manager lifecycle state.

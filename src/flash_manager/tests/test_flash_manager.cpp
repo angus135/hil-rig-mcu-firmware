@@ -64,6 +64,15 @@ static TaskHandle_t  notify_task_handle = nullptr;
 static uint32_t      notify_value       = 0U;
 static eNotifyAction notify_action      = eNoAction;
 
+static uint32_t fault_callback_calls;
+static bool     fault_callback_from_isr;
+
+static void TestFaultCallback( bool from_isr )
+{
+    fault_callback_calls++;
+    fault_callback_from_isr = from_isr;
+}
+
 static BaseType_t    notify_from_isr_result            = pdPASS;
 static BaseType_t    notify_from_isr_wake_value        = pdFALSE;
 static bool          notify_from_isr_writes_wake_value = false;
@@ -305,6 +314,7 @@ protected:
     {
         std::memset( &flash_manager_context, 0, sizeof( flash_manager_context ) );
         std::memset( &flash_manager_mutex_storage, 0, sizeof( flash_manager_mutex_storage ) );
+        flash_manager_fault_callback = nullptr;
 
         flash_manager_context.state = FLASH_MANAGER_STATE_UNINITIALISED;
 
@@ -326,6 +336,9 @@ protected:
         notify_task_handle = nullptr;
         notify_value       = 0U;
         notify_action      = eNoAction;
+
+        fault_callback_calls    = 0U;
+        fault_callback_from_isr = false;
 
         notify_from_isr_result            = pdPASS;
         notify_from_isr_wake_value        = pdFALSE;
@@ -964,6 +977,30 @@ TEST_F( FlashManagerTest, PreparationHandlerReportsSessionStartFailure )
 
     FLASH_MANAGER_EnterFault();
     EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+}
+
+TEST_F( FlashManagerTest, TaskFaultUsesRegisteredSystemHandoff )
+{
+    Initialise();
+    FLASH_MANAGER_SetFaultCallback( TestFaultCallback );
+
+    FLASH_MANAGER_EnterFault();
+
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+    EXPECT_EQ( 1U, fault_callback_calls );
+    EXPECT_FALSE( fault_callback_from_isr );
+}
+
+TEST_F( FlashManagerTest, IsrFaultUsesRegisteredSystemHandoff )
+{
+    Initialise();
+    FLASH_MANAGER_SetFaultCallback( TestFaultCallback );
+
+    FLASH_MANAGER_EnterFaultFromISR();
+
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+    EXPECT_EQ( 1U, fault_callback_calls );
+    EXPECT_TRUE( fault_callback_from_isr );
 }
 
 TEST_F( FlashManagerTest, PreparationPreloadsEveryAvailableInstructionPageBeforeExecuting )

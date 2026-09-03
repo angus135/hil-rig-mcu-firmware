@@ -43,6 +43,8 @@ static uint32_t                           timer_configure_calls;
 static bool                               timer_start_result;
 static uint32_t                           timer_start_calls;
 static uint32_t                           timer_stop_calls;
+static HW_TIMER_ExecutionGuard_T          execution_guard;
+static FlashManagerFaultCallback_T        flash_fault_callback;
 
 extern "C"
 {
@@ -52,6 +54,12 @@ BaseType_t xTaskNotify( TaskHandle_t task, uint32_t value, eNotifyAction action 
     EXPECT_EQ( eSetBits, action );
     notified_bits |= value;
     return notify_result;
+}
+BaseType_t xTaskNotifyFromISR( TaskHandle_t task, uint32_t value, eNotifyAction action,
+                               BaseType_t* higher_priority_task_woken )
+{
+    ( void )higher_priority_task_woken;
+    return xTaskNotify( task, value, action );
 }
 BaseType_t xTaskNotifyWait( uint32_t, uint32_t, uint32_t*, TickType_t )
 {
@@ -142,6 +150,10 @@ FlashManagerResultTransferStatus_T FLASH_MANAGER_FinishResultTransfer( void )
 {
     return flash_transfer_finish_result;
 }
+void FLASH_MANAGER_SetFaultCallback( FlashManagerFaultCallback_T callback )
+{
+    flash_fault_callback = callback;
+}
 void HW_TIMER_Configure_Timer( Timer_T, uint32_t, uint32_t )
 {
     timer_configure_calls++;
@@ -156,6 +168,10 @@ bool HW_TIMER_Start_Timer( Timer_T )
 void HW_TIMER_Stop_Timer( Timer_T )
 {
     timer_stop_calls++;
+}
+void HW_TIMER_Set_Execution_Guard( HW_TIMER_ExecutionGuard_T guard )
+{
+    execution_guard = guard;
 }
 }
 
@@ -210,6 +226,8 @@ protected:
         timer_start_result             = true;
         timer_start_calls              = 0U;
         timer_stop_calls               = 0U;
+        execution_guard                = nullptr;
+        flash_fault_callback           = nullptr;
         run_state_manager_task_handle  = TEST_RSM_TASK_HANDLE;
         RUN_STATE_MANAGER_Init();
         timer_stop_calls = 0U;
@@ -345,6 +363,7 @@ TEST_F( RunStateManagerTest, DiscardClearsConfigurationAndReturnsToIdle )
 TEST_F( RunStateManagerTest, RuntimeFaultStopsExecutionAndRequestsFlashAbort )
 {
     EnterExecution();
+    EXPECT_FALSE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
     requested_fault_reason = RUN_STATE_FAULT_EXTERNAL_REQUEST;
     Process( RUN_STATE_REQUEST_FAULT );
     EXPECT_EQ( RUN_STATE_FAULT, run_state );
@@ -353,6 +372,25 @@ TEST_F( RunStateManagerTest, RuntimeFaultStopsExecutionAndRequestsFlashAbort )
     EXPECT_EQ( RUN_STATE_FAULT_EXTERNAL_REQUEST, fault_reason );
     EXPECT_EQ( 1U, flash_abort_calls );
     EXPECT_EQ( 1U, driver_fault_calls );
+    EXPECT_TRUE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
+}
+
+TEST_F( RunStateManagerTest, TaskFaultRequestInhibitsExecutionBeforeTaskProcessesNotification )
+{
+    EnterExecution();
+    EXPECT_TRUE( RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_FLASH_MANAGER ) );
+    EXPECT_TRUE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
+    EXPECT_EQ( RUN_STATE_MANAGER_NOTIFY_FAULT, notified_bits );
+    EXPECT_EQ( RUN_STATE_EXECUTION, run_state );
+}
+
+TEST_F( RunStateManagerTest, IsrFaultRequestInhibitsExecutionAndNotifiesTask )
+{
+    EnterExecution();
+    EXPECT_TRUE( RUN_STATE_MANAGER_RequestFaultFromISR( RUN_STATE_FAULT_FLASH_MANAGER ) );
+    EXPECT_TRUE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
+    EXPECT_EQ( RUN_STATE_MANAGER_NOTIFY_FAULT, notified_bits );
+    EXPECT_EQ( RUN_STATE_FAULT_FLASH_MANAGER, requested_fault_reason );
 }
 
 TEST_F( RunStateManagerTest, ResetWaitsForFlashIdle )
@@ -367,6 +405,7 @@ TEST_F( RunStateManagerTest, ResetWaitsForFlashIdle )
     Process( RUN_STATE_REQUEST_RESET );
     EXPECT_EQ( RUN_STATE_IDLE, run_state );
     EXPECT_EQ( RUN_STATE_FAULT_NONE, fault_reason );
+    EXPECT_FALSE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
 }
 
 TEST_F( RunStateManagerTest, FirstFaultReasonWins )
