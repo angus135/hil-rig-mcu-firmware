@@ -63,6 +63,9 @@
  *        execute_echo uses a real priority-5 TIM4 interrupt for this reason.
  *      - TIM4 is shared with the future Execution Manager. Do not run the
  *        production scheduler concurrently with execute_echo.
+ *      - TODO(Run State Manager): place this harness behind a diagnostic build
+ *        flag and require exclusive execution ownership before replacing the
+ *        TIM4 callback. The current console-only ownership rule is temporary.
  *      - NOT_BUFFERED means instruction refill missed its deadline; result
  *        reservation failure means result drain did not free capacity in time;
  *        a past timestamp means the execution schedule overran.

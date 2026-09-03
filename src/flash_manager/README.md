@@ -168,6 +168,24 @@ than one NAND page, and nondecreasing instruction timestamps. Host transport
 chunks do not need to align with records or NAND pages; they are merely ordered
 pieces of the declared canonical byte stream.
 
+### Persisted record format compatibility
+
+The current instruction and result streams are an internal development format,
+not yet a durable interchange format. Each record is packed without inter-record
+padding as `[native header][payload]`. On the current STM32F446 target the
+eight-byte header fields are stored using the MCU's little-endian native C
+structure representation. There is no format identifier or version in NAND,
+and compatibility across different firmware, compilers, targets, or payload
+schema revisions is not guaranteed.
+
+> **TODO:** Before stored streams become a supported host/flash interface,
+> define a versioned wire format with a magic value and format version, explicit
+> byte order and field offsets, fixed-width encoded fields independent of C
+> alignment, and versioned peripheral payload schemas. Encoding and decoding
+> must use explicit byte operations rather than native structure serialization.
+> Readers must reject unsupported versions; compatibility and migration policy
+> must state which older versions remain readable.
+
 ---
 
 ## Instruction Queue

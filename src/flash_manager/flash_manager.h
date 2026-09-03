@@ -194,7 +194,11 @@ typedef enum
  *
  * The current on-NAND format stores the MCU representation of this structure.
  * The result-buffer implementation asserts that its size is exactly eight
- * bytes. A future portable storage format must define byte order explicitly.
+ * bytes. This unversioned development format is not portable across targets or
+ * compilers.
+ *
+ * @todo Replace native serialization with the versioned, byte-order-explicit
+ *       persisted format specified as future work in the Flash Manager README.
  */
 typedef struct
 {
@@ -245,7 +249,11 @@ typedef struct
  * the next header immediately follows the preceding payload. Upload processing
  * must validate every record and reject malformed streams before NAND storage.
  * The current storage format uses the MCU structure representation; byte order
- * must be defined explicitly before instruction images become portable.
+ * and C alignment are therefore target-specific, and no format version is
+ * currently stored.
+ *
+ * @todo Replace native serialization with the versioned, byte-order-explicit
+ *       persisted format specified as future work in the Flash Manager README.
  */
 typedef struct
 {
