@@ -22,23 +22,16 @@ extern "C"
 class MockBackgroundDependencies
 {
 public:
-    MOCK_METHOD( bool, InitLogicExpander, () );
     MOCK_METHOD( LogicExpanderStatus_T, ProcessLogicExpander, () );
     MOCK_METHOD( void, ToggleOutput, ( GPIOOutput_T output ) );
     MOCK_METHOD( TickType_t, GetTickCount, () );
     MOCK_METHOD( void, DelayUntil, ( TickType_t * previous_wake_time, TickType_t increment ) );
-    MOCK_METHOD( void, SuspendTask, ( TaskHandle_t task_handle ) );
 };
 
 static MockBackgroundDependencies* g_mock_dependencies = nullptr;
 
 extern "C"
 {
-bool LOGIC_EXPANDER_Init( void )
-{
-    return g_mock_dependencies->InitLogicExpander();
-}
-
 LogicExpanderStatus_T LOGIC_EXPANDER_Process( void )
 {
     return g_mock_dependencies->ProcessLogicExpander();
@@ -57,11 +50,6 @@ TickType_t xTaskGetTickCount( void )
 void vTaskDelayUntil( TickType_t* previous_wake_time, const TickType_t increment )
 {
     g_mock_dependencies->DelayUntil( previous_wake_time, increment );
-}
-
-void vTaskSuspend( TaskHandle_t task_handle )
-{
-    g_mock_dependencies->SuspendTask( task_handle );
 }
 }
 
@@ -99,17 +87,9 @@ TEST_F( BackgroundTest, ServicesExpanderEveryCycle )
     }
 }
 
-TEST_F( BackgroundTest, InitialiserListInvokesLogicExpanderInit )
-{
-    EXPECT_CALL( mock_dependencies, InitLogicExpander() ).WillOnce( testing::Return( true ) );
-
-    EXPECT_TRUE( BACKGROUND_Run_Initialisers() );
-}
-
-TEST_F( BackgroundTest, TaskInitialisesOnceBeforePeriodicProcessing )
+TEST_F( BackgroundTest, TaskRunsPeriodicProcessing )
 {
     testing::InSequence sequence;
-    EXPECT_CALL( mock_dependencies, InitLogicExpander() ).WillOnce( testing::Return( true ) );
     EXPECT_CALL( mock_dependencies, GetTickCount() ).WillOnce( testing::Return( 17U ) );
     EXPECT_CALL( mock_dependencies, ProcessLogicExpander() )
         .WillOnce( testing::Return( LOGIC_EXPANDER_STATUS_NOT_READY ) );
@@ -117,16 +97,6 @@ TEST_F( BackgroundTest, TaskInitialisesOnceBeforePeriodicProcessing )
     EXPECT_CALL( mock_dependencies, DelayUntil( testing::_, BACKGROUND_TASK_PERIOD_MS ) )
         .WillOnce(
             testing::Invoke( []( TickType_t*, TickType_t ) { throw BackgroundTaskExit{}; } ) );
-
-    EXPECT_THROW( BACKGROUND_Task( nullptr ), BackgroundTaskExit );
-}
-
-TEST_F( BackgroundTest, TaskSuspendsWithoutPeriodicProcessingWhenInitialisationFails )
-{
-    testing::InSequence sequence;
-    EXPECT_CALL( mock_dependencies, InitLogicExpander() ).WillOnce( testing::Return( false ) );
-    EXPECT_CALL( mock_dependencies, SuspendTask( nullptr ) )
-        .WillOnce( testing::Invoke( []( TaskHandle_t ) { throw BackgroundTaskExit{}; } ) );
 
     EXPECT_THROW( BACKGROUND_Task( nullptr ), BackgroundTaskExit );
 }

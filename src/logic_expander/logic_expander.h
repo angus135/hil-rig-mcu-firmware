@@ -100,12 +100,20 @@ typedef enum LogicExpanderI2CStatus_T
 /**
  * @brief Create the mutex protecting shared expander state.
  *
- * Must be called before any other module API. The background task performs this
- * initialisation once at task startup.
+ * Must be called before any other module API. Application startup performs this
+ * initialisation before the scheduler starts.
  *
  * @return true when the mutex is available.
  */
 bool LOGIC_EXPANDER_Init( void );
+
+/**
+ * @brief Reports whether asynchronous self-configuration has completed.
+ *
+ * @return true only after every active expander has been configured and the
+ *         internal I2C transfer completed successfully.
+ */
+bool LOGIC_EXPANDER_Is_Ready( void );
 
 /**
  * @brief Initialize and configure all active MCP23017 devices.

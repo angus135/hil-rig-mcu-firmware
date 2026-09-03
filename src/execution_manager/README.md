@@ -11,6 +11,9 @@ The current source remains a skeleton. Instruction dispatch, tick tracking,
 Flash Manager wake propagation, and execution-fault reporting are not yet
 implemented.
 
+The current `run_state execution_complete` and `run_state fault` console
+commands are temporary stimuli for the integration seam described below.
+
 ## Instruction contract
 
 Instruction records are stored in nondecreasing timestamp order. For each tick:
@@ -40,12 +43,41 @@ the complete execution sequence.
 
 ## Lifecycle constraints
 
+The Run State Manager exclusively owns TIM4 configuration, start, and stop.
 TIM4 may start only after the Run State Manager observes
-`FLASH_MANAGER_STATE_EXECUTING`. The current `EXECUTION_MANAGER_Init()` skeleton
-starts the timer immediately, so final integration must sequence it accordingly
-or separate configuration from start. Any underrun, corrupt instruction,
-result-buffer exhaustion, commit failure, consume failure, or timestamp overrun
-must stop execution and be reported to the Run State Manager.
+`FLASH_MANAGER_STATE_EXECUTING`. The Execution Manager owns only the work
+performed for each timer tick. Any underrun, corrupt instruction, result-buffer
+exhaustion, commit failure, consume failure, or timestamp overrun must be
+reported to the Run State Manager through an ISR-safe handoff.
+
+## Run State Manager integration contract
+
+The Execution Manager implementation should separate its ISR hot path from its
+task-context lifecycle reporting:
+
+1. The RSM observes Flash Manager `EXECUTING`, starts configured DUT drivers,
+   starts TIM4, and only then publishes RSM `EXECUTION`.
+2. Each TIM4 interrupt invokes a minimal Execution Manager ISR entry point. Any
+   driver measurement/output call made from that entry point remains in ISR
+   context and must obey the same bounded, non-blocking restrictions.
+3. Normal completion or the first execution failure is latched locally and an
+   ISR-safe notification is sent to Execution Manager task context. No RSM
+   request function is called directly from the ISR.
+4. The Execution Manager task submits
+   `RUN_STATE_MANAGER_RequestExecutionComplete()` for normal completion or
+   `RUN_STATE_MANAGER_RequestFault(reason)` for failure.
+5. The RSM stops TIM4, stops the DUT lifecycle, and coordinates Flash result
+   finalisation or abort. The Execution Manager does not perform those actions.
+
+The Execution Manager may own execution-local state such as the current tick,
+instruction dispatch bookkeeping, completion detection, and the first local
+failure. It must not own global run state, Flash session state, DUT driver
+lifecycle state, or the execution-clock lifecycle.
+
+Because RSM requests are task notifications rather than FIFO messages, the
+Execution Manager must latch completion/fault exactly once and wait for the RSM
+to leave `EXECUTION`; it must not repeatedly submit the same event on every
+task iteration.
 
 
 ---
@@ -54,7 +86,7 @@ must stop execution and be reported to the Run State Manager.
 
 | File                      | Role |
 |---------------------------|------|
-| `execution_manager.c` | Timer configuration and future ISR execution loop |
+| `execution_manager.c` | Timer ISR execution loop |
 | `execution_manager.h` | Public API and Flash Manager integration contract |
 
 

@@ -23,7 +23,6 @@
 #include "logic_expander.h"
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -37,7 +36,6 @@
  *------------------------------------------------------------------------------
  */
 typedef void ( *BackgroundProcess_T )( void );
-typedef bool ( *BackgroundInitialiser_T )( void );
 
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
@@ -52,18 +50,12 @@ TaskHandle_t* BackgroundTaskHandle = NULL;  // NOLINT(readability-identifier-nam
  */
 static void BACKGROUND_Process_Logic_Expander( void );
 static void BACKGROUND_Process_Status_LED( void );
-static bool BACKGROUND_Run_Initialisers( void );
-static void BACKGROUND_Suspend_On_Initialisation_Failure( void );
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
 static uint16_t background_led_cycles_remaining = 0U;
-
-static const BackgroundInitialiser_T background_initialisers[] = {
-    LOGIC_EXPANDER_Init,
-};
 
 static const BackgroundProcess_T background_processes[] = {
     BACKGROUND_Process_Logic_Expander,
@@ -103,30 +95,6 @@ static void BACKGROUND_Process_Status_LED( void )
     background_led_cycles_remaining--;
 }
 
-static bool BACKGROUND_Run_Initialisers( void )
-{
-    for ( size_t initialiser_index = 0U;
-          initialiser_index
-          < ( sizeof( background_initialisers ) / sizeof( background_initialisers[0] ) );
-          initialiser_index++ )
-    {
-        if ( !background_initialisers[initialiser_index]() )
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-static void BACKGROUND_Suspend_On_Initialisation_Failure( void )
-{
-    while ( true )
-    {
-        vTaskSuspend( NULL );
-    }
-}
-
 static void BACKGROUND_Process( void )
 {
     for ( size_t process_index = 0U;
@@ -150,11 +118,6 @@ static void BACKGROUND_Process( void )
 void BACKGROUND_Task( void* task_parameters )
 {
     ( void )task_parameters;
-
-    if ( !BACKGROUND_Run_Initialisers() )
-    {
-        BACKGROUND_Suspend_On_Initialisation_Failure();
-    }
 
     TickType_t initial_ticks = xTaskGetTickCount();
     while ( true )

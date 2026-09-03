@@ -115,6 +115,17 @@ void HW_TIMER_Stop_Timer( Timer_T timer );
  */
 void HW_TIMER_Set_Execution_Callback( HW_TIMER_ExecutionCallback_T callback );
 
+/** Callback that returns whether TIM4 may dispatch execution work. */
+typedef bool ( *HW_TIMER_ExecutionGuard_T )( void );
+
+/**
+ * @brief Installs the system-level execution dispatch guard.
+ *
+ * The guard runs first in TIM4 interrupt context. When it returns false, the
+ * execution callback is skipped for that tick. Pass NULL to remove the guard.
+ */
+void HW_TIMER_Set_Execution_Guard( HW_TIMER_ExecutionGuard_T guard );
+
 /**
  * @brief Gets the clock frequency of the specified timer in Hz.
  *
