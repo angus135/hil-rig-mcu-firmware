@@ -89,6 +89,8 @@ static bool execution_active = false;
 
 static bool execution_timer_running = false;
 
+static volatile bool execution_abort_requested = false;
+
 static TaskHandle_t run_state_manager_task_handle = NULL;
 
 static volatile RunStateFaultReason_T   fault_reason           = RUN_STATE_FAULT_NONE;
@@ -101,6 +103,8 @@ static volatile RunStateRequestResult_T last_request_result    = RUN_STATE_REQUE
  *------------------------------------------------------------------------------
  */
 static bool RUN_STATE_MANAGER_Notify( uint32_t notification );
+static void RUN_STATE_MANAGER_HandleFlashFault( bool from_isr );
+static bool RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR( void );
 static void RUN_STATE_MANAGER_RecordFault( RunStateFaultReason_T reason );
 static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason );
 
@@ -151,6 +155,23 @@ static bool RUN_STATE_MANAGER_Notify( uint32_t notification )
     return xTaskNotify( run_state_manager_task_handle, notification, eSetBits ) == pdPASS;
 }
 
+static void RUN_STATE_MANAGER_HandleFlashFault( bool from_isr )
+{
+    if ( from_isr )
+    {
+        ( void )RUN_STATE_MANAGER_RequestFaultFromISR( RUN_STATE_FAULT_FLASH_MANAGER );
+    }
+    else
+    {
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_FLASH_MANAGER );
+    }
+}
+
+static bool RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR( void )
+{
+    return !execution_abort_requested;
+}
+
 static void RUN_STATE_MANAGER_StartPendingOperation( RunStatePendingOperation_T operation )
 {
     pending_operation            = operation;
@@ -179,6 +200,7 @@ static void RUN_STATE_MANAGER_RecordFault( RunStateFaultReason_T reason )
 
 static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason )
 {
+    execution_abort_requested = true;
     RUN_STATE_MANAGER_RecordFault( reason );
     ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_FAULT );
 }
@@ -296,6 +318,8 @@ static bool RUN_STATE_MANAGER_EnterExecution( void )
     {
         return true;
     }
+
+    execution_abort_requested = false;
 
     if ( !DUT_DRIVER_LIFECYCLE_Start() )
     {
@@ -625,7 +649,8 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
                 accepted = RUN_STATE_MANAGER_TransitionTo( RUN_STATE_IDLE );
                 if ( accepted )
                 {
-                    fault_reason = RUN_STATE_FAULT_NONE;
+                    fault_reason              = RUN_STATE_FAULT_NONE;
+                    execution_abort_requested = false;
                 }
             }
             break;
@@ -910,11 +935,14 @@ void RUN_STATE_MANAGER_Init( void )
     pending_operation_started_at = 0U;
     execution_active             = false;
     execution_timer_running      = false;
+    execution_abort_requested    = false;
     fault_reason                 = RUN_STATE_FAULT_NONE;
     requested_fault_reason       = RUN_STATE_FAULT_NONE;
     last_request                 = RUN_STATE_REQUEST_NONE;
     last_request_result          = RUN_STATE_REQUEST_RESULT_NONE;
     run_state                    = RUN_STATE_IDLE;
+
+    HW_TIMER_Set_Execution_Guard( RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR );
 }
 
 bool RUN_STATE_MANAGER_RequestPackageReceive( void )
@@ -964,6 +992,8 @@ bool RUN_STATE_MANAGER_RequestFault( RunStateFaultReason_T reason )
         return false;
     }
 
+    execution_abort_requested = true;
+
     bool stored_reason = false;
 
     taskENTER_CRITICAL();
@@ -991,6 +1021,35 @@ bool RUN_STATE_MANAGER_RequestFault( RunStateFaultReason_T reason )
     }
     taskEXIT_CRITICAL();
     return false;
+}
+
+bool RUN_STATE_MANAGER_RequestFaultFromISR( RunStateFaultReason_T reason )
+{
+    if ( reason == RUN_STATE_FAULT_NONE )
+    {
+        return false;
+    }
+
+    execution_abort_requested = true;
+
+    if ( requested_fault_reason == RUN_STATE_FAULT_NONE )
+    {
+        requested_fault_reason = reason;
+    }
+
+    if ( run_state_manager_task_handle == NULL )
+    {
+        return false;
+    }
+
+    return xTaskNotifyFromISR( run_state_manager_task_handle, RUN_STATE_MANAGER_NOTIFY_FAULT,
+                               eSetBits, NULL )
+           == pdPASS;
+}
+
+bool RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR( void )
+{
+    return execution_abort_requested;
 }
 
 bool RUN_STATE_MANAGER_RequestReset( void )
@@ -1070,6 +1129,7 @@ void RUN_STATE_MANAGER_Task( void* task_parameters )
 
     RUN_STATE_MANAGER_Init();
     run_state_manager_task_handle = xTaskGetCurrentTaskHandle();
+    FLASH_MANAGER_SetFaultCallback( RUN_STATE_MANAGER_HandleFlashFault );
 
     while ( true )
     {

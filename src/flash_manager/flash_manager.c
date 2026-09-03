@@ -109,6 +109,8 @@ static FlashManagerContext_T flash_manager_context = {
     .task_handle  = NULL,
 };
 
+static FlashManagerFaultCallback_T flash_manager_fault_callback = NULL;
+
 static StaticSemaphore_t flash_manager_mutex_storage;
 
 /**-----------------------------------------------------------------------------
@@ -483,6 +485,12 @@ static void FLASH_MANAGER_EnterFault( void )
     taskEXIT_CRITICAL();
 
     FLASH_MANAGER_Unlock();
+
+    FlashManagerFaultCallback_T callback = flash_manager_fault_callback;
+    if ( callback != NULL )
+    {
+        callback( false );
+    }
 }
 
 /**
@@ -496,6 +504,12 @@ static void FLASH_MANAGER_EnterFault( void )
 static void FLASH_MANAGER_EnterFaultFromISR( void )
 {
     flash_manager_context.state = FLASH_MANAGER_STATE_FAULT;
+
+    FlashManagerFaultCallback_T callback = flash_manager_fault_callback;
+    if ( callback != NULL )
+    {
+        callback( true );
+    }
 }
 
 /* Execution and result-session lifecycle. */
@@ -1049,6 +1063,13 @@ bool FLASH_MANAGER_Init( void )
     flash_manager_context.state = FLASH_MANAGER_STATE_IDLE;
 
     return true;
+}
+
+void FLASH_MANAGER_SetFaultCallback( FlashManagerFaultCallback_T callback )
+{
+    taskENTER_CRITICAL();
+    flash_manager_fault_callback = callback;
+    taskEXIT_CRITICAL();
 }
 
 /**
