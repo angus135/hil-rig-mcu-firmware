@@ -361,6 +361,9 @@ bool RESULT_BUFFER_AcquireDrainPage( ResultBufferDrainLease_T* lease );
 bool RESULT_BUFFER_CompleteDrain( const ResultBufferDrainLease_T* lease,
                                   bool                            nand_write_succeeded );
 
+/** Returns the free result-buffer capacity available to the producer. */
+uint32_t RESULT_BUFFER_GetFreeBytes( void );
+
 /**
  * @brief Stops result production and publishes the final partial NAND page.
  *

@@ -255,6 +255,9 @@ bool INSTRUCTION_BUFFER_AcquireFillPage( InstructionBufferPageFillLease_T* lease
 bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T* lease,
                                           bool nand_read_succeeded );
 
+/** Returns the number of unread instruction bytes currently buffered. */
+uint32_t INSTRUCTION_BUFFER_GetBufferedUnreadBytes( void );
+
 /**
  * @brief Returns a read-only view of the next complete instruction.
  *

@@ -848,6 +848,19 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
     return true;
 }
 
+uint32_t INSTRUCTION_BUFFER_GetBufferedUnreadBytes( void )
+{
+    if ( !instruction_buffer_context.is_read_prepared
+         || ( instruction_buffer_context.consumer_stream_offset_bytes
+              > instruction_buffer_context.next_nand_read_offset_bytes ) )
+    {
+        return 0U;
+    }
+
+    return instruction_buffer_context.next_nand_read_offset_bytes
+           - instruction_buffer_context.consumer_stream_offset_bytes;
+}
+
 /**
  * @brief Returns the current instruction view without advancing the stream.
  *
