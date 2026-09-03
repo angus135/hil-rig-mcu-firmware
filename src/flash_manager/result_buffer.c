@@ -1056,6 +1056,17 @@ bool RESULT_BUFFER_CompleteDrain( const ResultBufferDrainLease_T* lease, bool na
     return true;
 }
 
+uint32_t RESULT_BUFFER_GetFreeBytes( void )
+{
+    if ( !result_buffer_context.is_initialised
+         || ( result_buffer_context.pending_nand_bytes > result_buffer_context.capacity_bytes ) )
+    {
+        return 0U;
+    }
+
+    return result_buffer_context.capacity_bytes - result_buffer_context.pending_nand_bytes;
+}
+
 /**
  * @brief Stops result production and publishes the final partial NAND page.
  */

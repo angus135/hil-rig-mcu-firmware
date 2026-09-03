@@ -124,6 +124,19 @@ static void FLASH_MANAGER_EnterFaultFromISR( void );
 
 /* Task-side page I/O. */
 
+typedef enum
+{
+    FLASH_MANAGER_PAGE_NO_WORK = 0,
+    FLASH_MANAGER_PAGE_PROCESSED,
+    FLASH_MANAGER_PAGE_ERROR,
+} FlashManagerPageProcessStatus_T;
+
+static FlashManagerPageProcessStatus_T FLASH_MANAGER_DrainOneResultPage( void );
+
+static FlashManagerPageProcessStatus_T FLASH_MANAGER_FillOneInstructionPage( void );
+
+static bool FLASH_MANAGER_ProcessExecutionPageNotification( uint32_t notification_bits );
+
 static bool FLASH_MANAGER_DrainResultPages( void );
 
 static bool FLASH_MANAGER_FillInstructionPages( void );
@@ -184,123 +197,178 @@ static void FLASH_MANAGER_Unlock( void )
 /* Task-side page I/O. */
 
 /**
- * @brief Drains every currently ready result page to external NAND.
+ * @brief Drains one ready result page to external NAND.
  *
  * Buffer ownership transitions are protected against the execution ISR, but
- * the potentially long NAND write occurs with interrupts enabled. Draining
- * continues until no ready page remains because notification bits may coalesce.
+ * the potentially long NAND write occurs with interrupts enabled.
  *
- * @return true after all ready pages were drained; false after a NAND write or
- *         drain-lease completion failure.
+ * @return Page processing status.
  */
-static bool FLASH_MANAGER_DrainResultPages( void )
+static FlashManagerPageProcessStatus_T FLASH_MANAGER_DrainOneResultPage( void )
 {
     ResultBufferDrainLease_T drain_lease;
+    bool                     drain_allowed = false;
+    bool                     page_acquired = false;
 
+    taskENTER_CRITICAL();
+    drain_allowed = ( flash_manager_context.state == FLASH_MANAGER_STATE_EXECUTING )
+                    || ( flash_manager_context.state == FLASH_MANAGER_STATE_FINALISING_RESULTS );
+
+    if ( drain_allowed )
+    {
+        page_acquired = RESULT_BUFFER_AcquireDrainPage( &drain_lease );
+    }
+    taskEXIT_CRITICAL();
+
+    if ( !drain_allowed || !page_acquired )
+    {
+        return FLASH_MANAGER_PAGE_NO_WORK;
+    }
+
+    ExternalFlashStatus_T nand_write_status =
+        EXTERNAL_FLASH_WriteResultPage( drain_lease.page_data, drain_lease.valid_length_bytes );
+
+    bool drain_completion_succeeded = false;
+
+    taskENTER_CRITICAL();
+    drain_completion_succeeded =
+        RESULT_BUFFER_CompleteDrain( &drain_lease, nand_write_status == EXTERNAL_FLASH_STATUS_OK );
+    taskEXIT_CRITICAL();
+
+    if ( ( nand_write_status != EXTERNAL_FLASH_STATUS_OK ) || !drain_completion_succeeded )
+    {
+        return FLASH_MANAGER_PAGE_ERROR;
+    }
+
+    return FLASH_MANAGER_PAGE_PROCESSED;
+}
+
+static bool FLASH_MANAGER_DrainResultPages( void )
+{
     for ( ;; )
     {
-        bool drain_allowed = false;
-        bool page_acquired = false;
+        FlashManagerPageProcessStatus_T status = FLASH_MANAGER_DrainOneResultPage();
 
-        /*
-         * Check lifecycle permission and acquire page ownership atomically with
-         * respect to the execution ISR. This prevents a queued notification
-         * from acquiring a failed page after the manager enters FAULT.
-         */
-        taskENTER_CRITICAL();
-        drain_allowed =
-            ( flash_manager_context.state == FLASH_MANAGER_STATE_EXECUTING )
-            || ( flash_manager_context.state == FLASH_MANAGER_STATE_FINALISING_RESULTS );
-
-        if ( drain_allowed )
+        if ( status != FLASH_MANAGER_PAGE_PROCESSED )
         {
-            page_acquired = RESULT_BUFFER_AcquireDrainPage( &drain_lease );
+            return status == FLASH_MANAGER_PAGE_NO_WORK;
         }
-        taskEXIT_CRITICAL();
-
-        if ( !drain_allowed || !page_acquired )
-        {
-            return true;
-        }
-
-        ExternalFlashStatus_T nand_write_status =
-            EXTERNAL_FLASH_WriteResultPage( drain_lease.page_data, drain_lease.valid_length_bytes );
-
-        bool drain_completion_succeeded = false;
-
-        taskENTER_CRITICAL();
-        drain_completion_succeeded = RESULT_BUFFER_CompleteDrain(
-            &drain_lease, nand_write_status == EXTERNAL_FLASH_STATUS_OK );
-        taskEXIT_CRITICAL();
-
-        if ( ( nand_write_status != EXTERNAL_FLASH_STATUS_OK ) || !drain_completion_succeeded )
-        {
-            /*
-             * A failed NAND write returns a valid drain lease to
-             * READY_TO_DRAIN. A completion failure may leave it DRAINING. In
-             * either case, stop here and let the task enter FAULT rather than
-             * retrying without an explicit recovery decision.
-             */
-            return false;
-        }
-
-        /*
-         * Continue until no ready pages remain. Notification bits can coalesce,
-         * so processing only one page per notification could strand another
-         * ready page.
-         */
     }
 }
 
 /**
- * @brief Fills every sequential empty instruction page from external NAND.
+ * @brief Fills one sequential empty instruction page from external NAND.
  *
  * Buffer ownership transitions are protected against the execution ISR. The
  * synchronous NAND/DMA read runs outside the critical section with interrupts
  * enabled. Slot-zero mirror preparation is also preemptible; completion masks
- * interrupts only while publishing page metadata. The loop continues until the
- * buffer applies backpressure or the complete instruction image has been
- * loaded because notification bits may coalesce.
+ * interrupts only while publishing page metadata.
  *
- * @return true after all currently available slots were filled; false after a
- *         NAND read or fill-lease completion failure.
+ * @return Page processing status.
  */
-static bool FLASH_MANAGER_FillInstructionPages( void )
+static FlashManagerPageProcessStatus_T FLASH_MANAGER_FillOneInstructionPage( void )
 {
     InstructionBufferPageFillLease_T fill_lease;
+    bool                             fill_allowed  = false;
+    bool                             page_acquired = false;
 
+    taskENTER_CRITICAL();
+    fill_allowed = ( flash_manager_context.state == FLASH_MANAGER_STATE_PREPARING_EXECUTION )
+                   || ( flash_manager_context.state == FLASH_MANAGER_STATE_EXECUTING );
+
+    if ( fill_allowed )
+    {
+        page_acquired = INSTRUCTION_BUFFER_AcquireFillPage( &fill_lease );
+    }
+    taskEXIT_CRITICAL();
+
+    if ( !fill_allowed || !page_acquired )
+    {
+        return FLASH_MANAGER_PAGE_NO_WORK;
+    }
+
+    ExternalFlashStatus_T nand_read_status = EXTERNAL_FLASH_ReadInstructionPage(
+        fill_lease.instruction_offset_bytes, fill_lease.page_data, fill_lease.read_length_bytes );
+
+    bool fill_completion_succeeded = INSTRUCTION_BUFFER_CompleteFillPage(
+        &fill_lease, nand_read_status == EXTERNAL_FLASH_STATUS_OK );
+
+    if ( ( nand_read_status != EXTERNAL_FLASH_STATUS_OK ) || !fill_completion_succeeded )
+    {
+        return FLASH_MANAGER_PAGE_ERROR;
+    }
+
+    return FLASH_MANAGER_PAGE_PROCESSED;
+}
+
+static bool FLASH_MANAGER_FillInstructionPages( void )
+{
     for ( ;; )
     {
-        bool fill_allowed  = false;
-        bool page_acquired = false;
+        FlashManagerPageProcessStatus_T status = FLASH_MANAGER_FillOneInstructionPage();
 
-        taskENTER_CRITICAL();
-        fill_allowed = ( flash_manager_context.state == FLASH_MANAGER_STATE_PREPARING_EXECUTION )
-                       || ( flash_manager_context.state == FLASH_MANAGER_STATE_EXECUTING );
-
-        if ( fill_allowed )
+        if ( status != FLASH_MANAGER_PAGE_PROCESSED )
         {
-            page_acquired = INSTRUCTION_BUFFER_AcquireFillPage( &fill_lease );
-        }
-        taskEXIT_CRITICAL();
-
-        if ( !fill_allowed || !page_acquired )
-        {
-            return true;
-        }
-
-        ExternalFlashStatus_T nand_read_status = EXTERNAL_FLASH_ReadInstructionPage(
-            fill_lease.instruction_offset_bytes, fill_lease.page_data,
-            fill_lease.read_length_bytes );
-
-        bool fill_completion_succeeded = INSTRUCTION_BUFFER_CompleteFillPage(
-            &fill_lease, nand_read_status == EXTERNAL_FLASH_STATUS_OK );
-
-        if ( ( nand_read_status != EXTERNAL_FLASH_STATUS_OK ) || !fill_completion_succeeded )
-        {
-            return false;
+            return status == FLASH_MANAGER_PAGE_NO_WORK;
         }
     }
+}
+
+/**
+ * @brief Services at most one execution-time NAND page operation.
+ *
+ * When both paths need service, the buffer with the least remaining headroom
+ * is selected. Work is re-notified after a successful page so coalesced
+ * notifications cannot strand additional ready pages.
+ */
+static bool FLASH_MANAGER_ProcessExecutionPageNotification( uint32_t notification_bits )
+{
+    uint32_t execution_bits =
+        notification_bits
+        & ( FLASH_MANAGER_NOTIFY_DRAIN_RESULTS | FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS );
+
+    if ( execution_bits == 0U )
+    {
+        return true;
+    }
+
+    uint32_t selected_bit = execution_bits;
+
+    if ( execution_bits
+         == ( FLASH_MANAGER_NOTIFY_DRAIN_RESULTS | FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS ) )
+    {
+        uint32_t instruction_headroom;
+        uint32_t result_headroom;
+
+        taskENTER_CRITICAL();
+        instruction_headroom = INSTRUCTION_BUFFER_GetBufferedUnreadBytes();
+        result_headroom      = RESULT_BUFFER_GetFreeBytes();
+        taskEXIT_CRITICAL();
+
+        selected_bit = ( instruction_headroom <= result_headroom )
+                           ? FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS
+                           : FLASH_MANAGER_NOTIFY_DRAIN_RESULTS;
+    }
+
+    FlashManagerPageProcessStatus_T status = ( selected_bit == FLASH_MANAGER_NOTIFY_DRAIN_RESULTS )
+                                                 ? FLASH_MANAGER_DrainOneResultPage()
+                                                 : FLASH_MANAGER_FillOneInstructionPage();
+
+    if ( status == FLASH_MANAGER_PAGE_ERROR )
+    {
+        return false;
+    }
+
+    uint32_t renotify_bits = execution_bits & ~selected_bit;
+
+    if ( status == FLASH_MANAGER_PAGE_PROCESSED )
+    {
+        renotify_bits |= selected_bit;
+    }
+
+    return ( renotify_bits == 0U )
+           || ( xTaskNotify( flash_manager_context.task_handle, renotify_bits, eSetBits )
+                == pdPASS );
 }
 
 /**
@@ -869,26 +937,10 @@ void FLASH_MANAGER_Task( void* parameters )
             }
         }
 
-        /* Handle draining of result bytes. */
-        if ( ( notification_bits & FLASH_MANAGER_NOTIFY_DRAIN_RESULTS ) != 0U )
+        /* Arbitrate at most one execution-time NAND page operation per wake. */
+        if ( !FLASH_MANAGER_ProcessExecutionPageNotification( notification_bits ) )
         {
-            /*
-             * A notification may have been queued while a NAND operation was in
-             * progress. Do not retry a failed page after entering FAULT.
-             */
-            if ( !FLASH_MANAGER_DrainResultPages() )
-            {
-                FLASH_MANAGER_EnterFault();
-            }
-        }
-
-        /* Handle refilling of instruction pages. */
-        if ( ( notification_bits & FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS ) != 0U )
-        {
-            if ( !FLASH_MANAGER_FillInstructionPages() )
-            {
-                FLASH_MANAGER_EnterFault();
-            }
+            FLASH_MANAGER_EnterFault();
         }
 
         /* Refill released result slots during Host Interface result transfer. */
