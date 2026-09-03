@@ -15,6 +15,14 @@
  *      Result logging/finalisation, instruction preload/refill, streamed
  *      instruction upload, and copied result retrieval are implemented. Host
  *      task APIs never retain caller buffers after returning.
+ *
+ *      The fixed three-page instruction and result buffers provide transport
+ *      storage, not execution admission control. Before TIM4 starts, the
+ *      feasibility analyser must prove that each timestamp's instruction and
+ *      result burst fits in the available RAM and execution budget, and that
+ *      sustained consumption/production is supportable by measured NAND and
+ *      scheduler worst cases. Increasing buffer depth only increases burst
+ *      tolerance; it cannot make an unsustainable stream feasible.
  ******************************************************************************/
 
 #ifndef FLASH_MANAGER_H

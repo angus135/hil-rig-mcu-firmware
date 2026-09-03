@@ -61,6 +61,29 @@ Three slots is a practical starting point because it allows:
 
 Two slots can work, but gives less tolerance to flash latency.
 
+### Execution admission requirement
+
+The three-page rings are not an execution guarantee. Before the Run State
+Manager starts TIM4, the feasibility analyser must reject any test that cannot
+be supported under worst-case conditions. Validation must account for:
+
+- Total instruction bytes sharing one timestamp and the worst-case time to run
+  their drivers within one timer period.
+- Total result bytes that those instructions and periodic measurements can
+  produce at one timestamp.
+- Sustained instruction consumption and result production, not only a single
+  burst.
+- Measured NAND read/program/recovery throughput and worst-case interrupt and
+  Flash Manager task scheduling latency.
+
+In particular, a same-timestamp instruction burst can consume all three
+preloaded pages before the Flash Manager task is allowed to run, and a
+same-timestamp result burst can fill all three result pages before any page is
+drained. Both cases are infeasible and must be rejected before execution rather
+than relying on the runtime underrun/overflow fault. Increasing the page counts
+may provide measured scheduling margin, but it is not a substitute for these
+bounds and cannot correct a sustained rate above NAND throughput.
+
 ---
 
 ## APIs To Use

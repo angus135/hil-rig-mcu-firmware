@@ -14,6 +14,12 @@
  *      three page slots are reused for sequential NAND prefetch and copied
  *      Host Interface retrieval. The Flash Manager serialises every task-side
  *      transition and protects ISR-shared logging transitions separately.
+ *
+ *      The three pages are finite burst storage, not proof that a test is
+ *      feasible. Result production within one TIM4 invocation cannot be
+ *      drained until the ISR returns. Before execution, admission validation
+ *      must bound result bytes produced per timestamp and sustained production
+ *      against measured NAND program throughput and worst-case task latency.
  ******************************************************************************/
 
 #ifndef RESULT_BUFFER_H

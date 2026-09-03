@@ -36,6 +36,13 @@
  *      page-sized mirror of slot zero. The mirror is populated in Flash Manager
  *      task context and makes a record crossing the ring end contiguous to the
  *      execution ISR without an ISR-time payload copy.
+ *
+ *      Three slots do not guarantee that an uploaded stream is executable. A
+ *      single TIM4 invocation can consume several records with the same
+ *      timestamp, but the Flash Manager task cannot refill a released slot
+ *      until the ISR returns. Admission validation must therefore bound both
+ *      instruction bytes and worst-case driver time per timestamp, then compare
+ *      sustained consumption with measured NAND refill and scheduling latency.
  ******************************************************************************/
 
 #ifndef INSTRUCTION_BUFFER_H
