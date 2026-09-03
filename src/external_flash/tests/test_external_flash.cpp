@@ -670,8 +670,8 @@ TEST_F( ExternalFlashTest, ProgramFailureReplaysEarlierPagesBeforeSwitchingMappe
             }
             return HW_NAND_STATUS_OK;
         } ) );
-    EXPECT_CALL( mock, ProgramPageDma( Eq( replacement_page ), Eq( 0U ), _,
-                                       Eq( TEST_PAGE_SIZE_BYTES ) ) )
+    EXPECT_CALL( mock,
+                 ProgramPageDma( Eq( replacement_page ), Eq( 0U ), _, Eq( TEST_PAGE_SIZE_BYTES ) ) )
         .WillOnce( Invoke( []( uint32_t, uint16_t, const uint8_t* data, uint32_t length ) {
             EXPECT_EQ( external_flash_allocator_result_map[0], TEST_RESULT_BLOCK );
             for ( uint32_t i = 0U; i < length; i++ )
