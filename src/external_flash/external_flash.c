@@ -457,14 +457,14 @@ EXTERNAL_FLASH_RecoverMappedBlock( ExternalFlashAllocatorPartition_T partition,
                 ( replacement_block * external_flash_geometry.pages_per_block ) + page_in_block;
 
             status = EXTERNAL_FLASH_MapNandStatus(
-                HW_NAND_ReadPageBlocking( source_page, 0U, external_flash_recovery_page_buffer,
-                                          external_flash_geometry.page_size_bytes ) );
+                HW_NAND_ReadPageDma( source_page, 0U, external_flash_recovery_page_buffer,
+                                     external_flash_geometry.page_size_bytes ) );
             if ( status != EXTERNAL_FLASH_STATUS_OK )
             {
                 return status;
             }
 
-            status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_ProgramPageBlocking(
+            status = EXTERNAL_FLASH_MapNandStatus( HW_NAND_ProgramPageDma(
                 destination_page, 0U, external_flash_recovery_page_buffer,
                 external_flash_geometry.page_size_bytes ) );
             if ( status == EXTERNAL_FLASH_STATUS_PROGRAM_FAIL )
@@ -510,8 +510,9 @@ EXTERNAL_FLASH_RecoverMappedBlock( ExternalFlashAllocatorPartition_T partition,
  *
  * @note The NAND receives one full physical page from page_buffer, but committed
  *       length is advanced only by bytes_to_commit.
- * @note If program fails, preceding pages in the logical block are replayed into
- *       an erased replacement before the map is switched and this page is retried.
+ * @note If program fails, preceding pages in the logical block are replayed by
+ *       DMA into an erased replacement before the map is switched and this page
+ *       is retried.
  */
 static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramPartitionPageBuffer(
     ExternalFlashAllocatorPartition_T partition, const uint8_t* page_buffer,
