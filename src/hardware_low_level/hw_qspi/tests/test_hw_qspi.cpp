@@ -406,6 +406,48 @@ TEST_F( HWQSPITest, TransfersRejectInvalidArguments )
     EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG, HW_QSPI_ReadDma( &qspi_command, transfer_data, 0U ) );
 }
 
+TEST_F( HWQSPITest, DataTransferRejectsMissingDataLines )
+{
+    InitDriver();
+    qspi_command.data_lines = HW_QSPI_LINES_NONE;
+
+    EXPECT_CALL( mock, Command( _, _, _ ) ).Times( 0 );
+    EXPECT_CALL( mock, ReceiveDma( _, _ ) ).Times( 0 );
+
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_ReadDma( &qspi_command, transfer_data, TEST_TRANSFER_DATA_LENGTH ) );
+}
+
+TEST_F( HWQSPITest, CommandRejectsInvalidPhaseEnumsAndCombinations )
+{
+    InitDriver();
+    QSPI_CommandTypeDef hal_command = {};
+
+    qspi_command.instruction_lines = static_cast<HW_QSPI_Lines_T>( 4 );
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_Build_Command( &qspi_command, 0U, &hal_command ) );
+    qspi_command.instruction_lines = HW_QSPI_LINES_1;
+
+    qspi_command.address_size = static_cast<HW_QSPI_AddressSize_T>( 5 );
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_Build_Command( &qspi_command, 0U, &hal_command ) );
+    qspi_command.address_size = HW_QSPI_ADDR_24_BITS;
+
+    qspi_command.alternate_bytes_size = static_cast<HW_QSPI_AlternateBytesSize_T>( 5 );
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_Build_Command( &qspi_command, 0U, &hal_command ) );
+    qspi_command.alternate_bytes_size = HW_QSPI_ALT_BYTES_8_BITS;
+
+    qspi_command.address_lines = HW_QSPI_LINES_NONE;
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_Build_Command( &qspi_command, 0U, &hal_command ) );
+    qspi_command.address_lines = HW_QSPI_LINES_1;
+
+    qspi_command.alternate_bytes_size = HW_QSPI_ALT_BYTES_NONE;
+    EXPECT_EQ( HW_QSPI_STATUS_INVALID_ARG,
+               HW_QSPI_Build_Command( &qspi_command, 0U, &hal_command ) );
+}
+
 TEST_F( HWQSPITest, TransferReturnsBusyWhenHalIsBusy )
 {
     InitDriver();
