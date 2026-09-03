@@ -463,6 +463,9 @@ bool FLASH_MANAGER_CancelResultRecordFromISR( const FlashManagerResultWriteLease
  * @note Call only from the execution timer ISR while the manager is EXECUTING.
  * @note The function never performs NAND access or switches task context while
  *       the ISR is running. A requested yield occurs only after ISR return.
+ * @warning A record crossing the physical end of the result ring currently
+ *          incurs a payload-length-dependent wrap copy. Target timing tests
+ *          must cover this case until records are made page-contiguous.
  * @note If drain notification fails, the record remains committed in RAM and
  *       the Flash Manager enters FAULT.
  */

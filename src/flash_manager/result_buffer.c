@@ -843,6 +843,11 @@ RESULT_BUFFER_CommitRecord( const FlashManagerResultWriteLease_T* lease, uint32_
         /*
          * The driver wrote the payload after the reserved header area in scratch.
          * Complete the record by placing the header at the start of scratch.
+         *
+         * Timing debt: this function runs in the execution timer ISR, and the
+         * copies below scale with record length. A future result format should
+         * keep records contiguous by advancing to a new page when insufficient
+         * space remains, removing payload copies from this commit path.
          */
         memcpy( result_buffer_wrap_scratch, &header, sizeof( header ) );
 

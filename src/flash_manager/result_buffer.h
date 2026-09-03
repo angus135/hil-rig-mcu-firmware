@@ -188,6 +188,13 @@ void RESULT_BUFFER_Reset( void );
  * adds one extra copy during commit when the circular buffer wraps. Normal
  * reservations write directly into the result ring.
  *
+ * @warning Commit is called from the execution timer ISR, so this wrap copy
+ *          makes worst-case ISR time depend on result-record length. A future
+ *          redesign should keep every record contiguous by advancing to a new
+ *          page when the remaining page space is insufficient, eliminating
+ *          payload copying from the commit path. Until then, target timing
+ *          validation must include a maximum-size record at ring wrap.
+ *
  * Reservation does not advance the committed-data cursor or make any bytes
  * available for NAND writing. The lease must be committed or cancelled before
  * another reservation can succeed.
@@ -266,6 +273,11 @@ bool RESULT_BUFFER_CancelRecord( const FlashManagerResultWriteLease_T* lease );
  * ring location and only the header is copied. For a reservation that crossed
  * the physical end of the ring, the header and payload are copied from wrap
  * scratch into the end and beginning of the ring.
+ *
+ * @warning The wrap-scratch case copies the complete record in execution ISR
+ *          context. A future contiguous-record layout should replace this by
+ *          advancing to the next page when a record does not fit, leaving only
+ *          the fixed-size header copy in this path.
  *
  * @param[in] lease
  *      Lease returned by RESULT_BUFFER_ReserveRecord(). Its ID, pointer, and
