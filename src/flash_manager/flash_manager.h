@@ -56,11 +56,15 @@ extern "C"
 /**
  * @brief Flash Manager task scheduling priority.
  *
- * The execution timer ISR always preempts this task. This priority must still
- * allow instruction pages to refill before underrun and completed result pages
- * to drain before overflow. Validate it against NAND latency and other tasks.
+ * Keep this above non-critical application tasks so instruction refill and
+ * result drain work cannot be delayed by console, host-interface or background
+ * processing. Interrupt priority is configured independently by the NVIC; the
+ * execution timer and enabled peripheral ISRs can still preempt this task.
+ *
+ * @todo Review and document the priority of every application task once the
+ *       complete runtime task set is integrated.
  */
-#define FLASH_MANAGER_TASK_PRIORITY ( 3U )
+#define FLASH_MANAGER_TASK_PRIORITY ( 4U )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
