@@ -507,6 +507,13 @@ If a result-page write or drain completion fails, the current implementation:
 - Enters `FLASH_MANAGER_STATE_FAULT`.
 - Ignores queued drain work while faulted.
 
+> **TODO:** Define a Run State Manager-owned recovery policy for faulted
+> sessions. It must specify whether partially persisted instruction and result
+> data is preserved for diagnosis or discarded, how active RAM/NAND ownership
+> is reset, whether affected flash regions require erase, and the explicit
+> sequence required before another session may start. Until that policy exists,
+> `FAULT` is terminal for the active session.
+
 Lifecycle integration must also:
 
 - Stop normal execution flow.

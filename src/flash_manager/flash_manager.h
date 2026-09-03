@@ -139,7 +139,12 @@ typedef enum
     /** Stored results are being prefetched and copied to the Host Interface. */
     FLASH_MANAGER_STATE_TRANSFERRING_RESULTS,
 
-    /** An unrecoverable manager, buffer, or NAND operation has failed. */
+    /**
+     * An unrecoverable manager, buffer, or NAND operation has failed.
+     * Partially persisted session data and buffer leases are not currently
+     * recovered or discarded automatically; no transition back to IDLE is
+     * defined until the Run State Manager owns that recovery policy.
+     */
     FLASH_MANAGER_STATE_FAULT
 
 } FlashManagerState_T;

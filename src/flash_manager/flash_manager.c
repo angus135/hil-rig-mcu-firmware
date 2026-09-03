@@ -459,6 +459,11 @@ static bool FLASH_MANAGER_FillResultPages( void )
  *
  * Called from Flash Manager task context after an unrecoverable asynchronous
  * operation fails.
+ *
+ * @todo Define the fault-session recovery policy with the Run State Manager.
+ *       The policy must decide whether partially persisted instructions and
+ *       results are preserved or discarded, release/reset active buffer
+ *       ownership safely, and define the steps required to return to IDLE.
  */
 static void FLASH_MANAGER_EnterFault( void )
 {
