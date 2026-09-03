@@ -340,7 +340,7 @@ The in-RAM bad-block state remains retired for the current boot even when the
 marker cannot be programmed.
 
 If a page program fails at runtime, the allocator prepares a replacement block,
-replays every preceding page from the failed logical block, switches the map
+replays every preceding page from the failed logical block using DMA, switches the map
 only after that replay succeeds, retires the failed block, and retries the
 failed page. The same recovery path is used for instruction and result pages.
 
