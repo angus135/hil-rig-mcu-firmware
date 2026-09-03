@@ -617,7 +617,7 @@ TEST_F( ExternalFlashTest, ProgramFailureRetiresBlockAndRetriesNextGoodBlock )
                TEST_RESULT_BLOCK + EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 1U );
 }
 
-TEST_F( ExternalFlashTest, MarkerFailureLeavesFailedBlockMappedAndReturnsError )
+TEST_F( ExternalFlashTest, MarkerCommunicationFailureLeavesFailedBlockMappedAndReturnsError )
 {
     InitDriverAllGood();
     StartSessionAllGood();
@@ -636,6 +636,31 @@ TEST_F( ExternalFlashTest, MarkerFailureLeavesFailedBlockMappedAndReturnsError )
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_ERROR,
                EXTERNAL_FLASH_WriteResultPage( transfer_data, TEST_PAGE_SIZE_BYTES ) );
     EXPECT_EQ( external_flash_allocator_result_map[0], TEST_RESULT_BLOCK );
+}
+
+TEST_F( ExternalFlashTest, MarkerProgramFailureSwitchesToRecoveredBlock )
+{
+    InitDriverAllGood();
+    StartSessionAllGood();
+
+    const uint32_t replacement_block = TEST_RESULT_BLOCK + EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 1U;
+    const uint32_t replacement_page  = replacement_block * TEST_PAGES_PER_BLOCK;
+
+    InSequence sequence;
+    EXPECT_CALL( mock, ProgramPageDma( Eq( TEST_RESULT_PAGE ), Eq( 0U ), Eq( transfer_data ),
+                                       Eq( TEST_PAGE_SIZE_BYTES ) ) )
+        .WillOnce( Return( HW_NAND_STATUS_PROGRAM_FAIL ) );
+    EXPECT_CALL( mock, BlockErase( Eq( replacement_block ) ) )
+        .WillOnce( Return( HW_NAND_STATUS_OK ) );
+    EXPECT_CALL( mock, MarkBlockBad( Eq( TEST_RESULT_BLOCK ) ) )
+        .WillOnce( Return( HW_NAND_STATUS_PROGRAM_FAIL ) );
+    EXPECT_CALL( mock, ProgramPageDma( Eq( replacement_page ), Eq( 0U ), Eq( transfer_data ),
+                                       Eq( TEST_PAGE_SIZE_BYTES ) ) )
+        .WillOnce( Return( HW_NAND_STATUS_OK ) );
+
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
+               EXTERNAL_FLASH_WriteResultPage( transfer_data, TEST_PAGE_SIZE_BYTES ) );
+    EXPECT_EQ( external_flash_allocator_result_map[0], replacement_block );
 }
 
 TEST_F( ExternalFlashTest, ProgramFailureReplaysEarlierPagesBeforeSwitchingMappedBlock )
