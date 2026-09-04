@@ -1132,7 +1132,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteResultPage( const uint8_t* data, uint3
          || ( valid_length > ( external_flash_result_session_capacity_bytes
                                - external_flash_result_length_bytes ) ) )
     {
-        return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
+        return EXTERNAL_FLASH_STATUS_SESSION_CAPACITY_EXCEEDED;
     }
 
     uint32_t              page_start_offset = external_flash_result_length_bytes;

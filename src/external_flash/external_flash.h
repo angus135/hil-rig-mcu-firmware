@@ -107,7 +107,9 @@ typedef enum
     EXTERNAL_FLASH_STATUS_STORAGE_FULL,
     EXTERNAL_FLASH_STATUS_ECC_ERROR,
     EXTERNAL_FLASH_STATUS_PROGRAM_FAIL,
-    EXTERNAL_FLASH_STATUS_ERASE_FAIL
+    EXTERNAL_FLASH_STATUS_ERASE_FAIL,
+    /** A write would exceed the result capacity reserved for the active session. */
+    EXTERNAL_FLASH_STATUS_SESSION_CAPACITY_EXCEEDED
 } ExternalFlashStatus_T;
 
 typedef struct
