@@ -65,10 +65,11 @@
 #define INSTRUCTION_BUFFER_MAX_CAPACITY_BYTES                                                      \
     ( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES * INSTRUCTION_BUFFER_PAGE_COUNT )
 
-#define INSTRUCTION_BUFFER_MAX_RECORD_BYTES ( FLASH_MANAGER_MAX_INSTRUCTION_SIZE_BYTES )
+#define INSTRUCTION_BUFFER_MIRROR_CAPACITY_BYTES                                                   \
+    ( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES * INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT )
 
 #define INSTRUCTION_BUFFER_STORAGE_BYTES                                                           \
-    ( INSTRUCTION_BUFFER_MAX_CAPACITY_BYTES + INSTRUCTION_BUFFER_MAX_RECORD_BYTES )
+    ( INSTRUCTION_BUFFER_MAX_CAPACITY_BYTES + INSTRUCTION_BUFFER_MIRROR_CAPACITY_BYTES )
 
 /* Keep page-release bookkeeping out of the per-instruction common path. */
 #if defined( __GNUC__ ) || defined( __clang__ )
@@ -81,17 +82,15 @@
 #if defined( __cplusplus )
 static_assert( sizeof( ExecutionInstructionHeader_T ) == 8U,
                "Unexpected instruction header layout" );
-static_assert( FLASH_MANAGER_MAX_INSTRUCTION_SIZE_BYTES
-                   == ( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES
-                        * INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT ),
-               "Instruction storage and public size limit disagree" );
+static_assert( INSTRUCTION_BUFFER_MIRROR_CAPACITY_BYTES
+                   == EXECUTION_INSTRUCTION_MAX_SIZE_BYTES,
+               "Instruction mirror must match the maximum execution instruction" );
 #else
 _Static_assert( sizeof( ExecutionInstructionHeader_T ) == 8U,
                 "Unexpected instruction header layout" );
-_Static_assert( FLASH_MANAGER_MAX_INSTRUCTION_SIZE_BYTES
-                    == ( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES
-                         * INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT ),
-                "Instruction storage and public size limit disagree" );
+_Static_assert( INSTRUCTION_BUFFER_MIRROR_CAPACITY_BYTES
+                    == EXECUTION_INSTRUCTION_MAX_SIZE_BYTES,
+                "Instruction mirror must match the maximum execution instruction" );
 #endif
 
 /**-----------------------------------------------------------------------------

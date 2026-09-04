@@ -9,6 +9,7 @@ set(EXECUTION_MANAGER_SOURCES
 )
 
 set(EXECUTION_MANAGER_HEADERS
+    execution_instruction.h
     execution_manager.h
 )
 
