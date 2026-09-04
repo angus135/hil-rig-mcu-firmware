@@ -25,11 +25,11 @@
  *         partial page are programmed and read back in both logical
  *         partitions. This overwrites both partitions.
  *
- *      4. `flash upload_test [record_count] [seed]`
+ *      4. `flash upload_test [instruction_count] [seed]`
  *         Exercise Host Interface -> Flash Manager -> External Flash. The
  *         default deterministic instruction stream crosses the three-page RAM
- *         ring and finishes on a partial page. Record N contains timestamp
- *         N/4, type 0xFE, channel N%10, and eleven generated payload bytes.
+ *         ring and finishes on a partial page. Instruction N is assigned tick
+ *         N and contains one diagnostic operation with eleven opaque bytes.
  *
  *      5. `flash prepare`
  *         Start a result session and preload instructions. Do not continue
@@ -38,11 +38,12 @@
  *      6. `flash execute_echo [100|1000|10000]`
  *         Temporarily route TIM4 to the console's genuine ISR test callback;
  *         100 Hz is the safe first-bring-up default. For every due instruction,
- *         the ISR peeks, reserves result storage, copies the eleven-byte
- *         payload, commits matching timestamp/type/channel metadata, consumes,
- *         and repeats. A future instruction is left unconsumed for the next
- *         tick. The command waits while the Flash Manager task concurrently
- *         refills/drains pages, stops TIM4, and restores the production callback.
+ *         the ISR peeks, reserves result storage, copies the eleven operation
+ *         bytes, commits byte-compatible diagnostic metadata, and consumes the
+ *         complete instruction. A future instruction is left unconsumed for
+ *         the next tick. The command waits while the Flash Manager task
+ *         concurrently refills/drains pages, stops TIM4, and restores the
+ *         production callback.
  *
  *      7. `flash finalise`
  *         After execute_echo has returned, publish and drain the final partial
@@ -118,10 +119,8 @@
 #define CONSOLE_FLASH_RESULT_READ_BYTES ( 256U )
 
 #define CONSOLE_FLASH_TEST_PAYLOAD_BYTES ( 11U )
-#define CONSOLE_FLASH_TEST_PERIPHERAL_TYPE ( 0xFEU )
-#define CONSOLE_FLASH_TEST_CHANNEL_COUNT ( 10U )
+#define CONSOLE_FLASH_TEST_OPERATION_COUNT ( 1U )
 #define CONSOLE_FLASH_DEFAULT_SEED ( 0x31U )
-#define CONSOLE_FLASH_TEST_RECORDS_PER_TICK ( 4U )
 
 /* Exact TIM4 divisors for the current 90 MHz timer clock. */
 #define CONSOLE_FLASH_EXECUTION_100HZ_PSC ( 14U )
@@ -138,7 +137,7 @@
 #define CONSOLE_FLASH_FNV1A_OFFSET_BASIS ( UINT32_C( 2166136261 ) )
 #define CONSOLE_FLASH_FNV1A_PRIME ( UINT32_C( 16777619 ) )
 
-_Static_assert( sizeof( FlashManagerInstructionHeader_T ) == sizeof( FlashManagerResultHeader_T ),
+_Static_assert( sizeof( ExecutionInstructionHeader_T ) == sizeof( FlashManagerResultHeader_T ),
                 "Echo verification requires identical packed header sizes" );
 
 /**-----------------------------------------------------------------------------
@@ -272,7 +271,7 @@ static void CONSOLE_Flash_PrintUsage( void )
     CONSOLE_Printf( "  flash init\r\n" );
     CONSOLE_Printf( "  flash status\r\n" );
     CONSOLE_Printf( "  flash external_test [seed]\r\n" );
-    CONSOLE_Printf( "  flash upload_test [record_count] [seed]\r\n" );
+    CONSOLE_Printf( "  flash upload_test [instruction_count] [seed]\r\n" );
     CONSOLE_Printf( "  flash prepare\r\n" );
     CONSOLE_Printf( "  flash execute_echo [100|1000|10000]\r\n" );
     CONSOLE_Printf( "  flash finalise\r\n" );
@@ -487,9 +486,7 @@ static bool CONSOLE_Flash_GetExecutionTimerSettings( uint32_t frequency_hz, uint
 /** Calculates a bounded wait from the generated record schedule. */
 static uint32_t CONSOLE_Flash_GetExecutionTimeoutMs( uint32_t record_count, uint32_t frequency_hz )
 {
-    uint64_t required_ticks =
-        ( ( uint64_t )record_count + CONSOLE_FLASH_TEST_RECORDS_PER_TICK - 1U )
-        / CONSOLE_FLASH_TEST_RECORDS_PER_TICK;
+    uint64_t required_ticks = record_count;
     uint64_t expected_duration_ms =
         ( ( required_ticks * 1000U ) + frequency_hz - 1U ) / frequency_hz;
     uint64_t timeout_ms = ( expected_duration_ms * 2U ) + CONSOLE_FLASH_EXECUTION_TIMEOUT_MARGIN_MS;
@@ -546,9 +543,10 @@ static void CONSOLE_Flash_EndExecutionHarnessFromISR( ConsoleFlashExecutionTestS
  * This callback deliberately emulates only the storage behaviour required of
  * the future Execution Manager. It does not dispatch a peripheral driver. For
  * each diagnostic instruction due on the current tick it reserves result
- * payload storage, copies the instruction payload into that storage, commits
- * an identical result header, and consumes the instruction. The later Host
- * Interface readback therefore validates both packed streams byte-for-byte.
+ * payload storage, copies the opaque operation bytes into that storage, commits
+ * a byte-compatible diagnostic result header, and consumes the instruction.
+ * The later Host Interface readback therefore validates both packed streams
+ * byte-for-byte without interpreting an operation.
  */
 static void CONSOLE_Flash_ExecutionEchoFromISR( void )
 {
@@ -604,13 +602,12 @@ static void CONSOLE_Flash_ExecutionEchoFromISR( void )
         }
 
         uint32_t record_index       = console_flash_execution_test.instructions_consumed;
-        uint32_t expected_timestamp = record_index / CONSOLE_FLASH_TEST_RECORDS_PER_TICK;
-        uint8_t  expected_channel = ( uint8_t )( record_index % CONSOLE_FLASH_TEST_CHANNEL_COUNT );
+        uint32_t expected_timestamp = record_index;
 
         if ( ( instruction->header.timestamp != expected_timestamp )
-             || ( instruction->header.payload_length_bytes != CONSOLE_FLASH_TEST_PAYLOAD_BYTES )
-             || ( instruction->header.peripheral_type != CONSOLE_FLASH_TEST_PERIPHERAL_TYPE )
-             || ( instruction->header.channel != expected_channel ) )
+             || ( instruction->header.operations_length_bytes != CONSOLE_FLASH_TEST_PAYLOAD_BYTES )
+             || ( instruction->header.operation_count != CONSOLE_FLASH_TEST_OPERATION_COUNT )
+             || ( instruction->header.reserved != 0U ) )
         {
             CONSOLE_Flash_EndExecutionHarnessFromISR(
                 CONSOLE_FLASH_EXECUTION_TEST_FAILED,
@@ -644,8 +641,8 @@ static void CONSOLE_Flash_ExecutionEchoFromISR( void )
         }
 
         FlashManagerResultWriteLease_T lease;
-        if ( !FLASH_MANAGER_ReserveResultRecordFromISR( instruction->header.payload_length_bytes,
-                                                        &lease ) )
+        if ( !FLASH_MANAGER_ReserveResultRecordFromISR(
+                 instruction->header.operations_length_bytes, &lease ) )
         {
             CONSOLE_Flash_EndExecutionHarnessFromISR(
                 CONSOLE_FLASH_EXECUTION_TEST_FAILED,
@@ -653,11 +650,12 @@ static void CONSOLE_Flash_ExecutionEchoFromISR( void )
             break;
         }
 
-        memcpy( lease.payload, instruction->payload, instruction->header.payload_length_bytes );
+        memcpy( lease.payload, instruction->operations,
+                instruction->header.operations_length_bytes );
 
         FlashManagerResultCommitStatus_T commit_status = FLASH_MANAGER_CommitResultRecordFromISR(
-            &lease, instruction->header.timestamp, instruction->header.peripheral_type,
-            instruction->header.channel, instruction->header.payload_length_bytes,
+            &lease, instruction->header.timestamp, instruction->header.operation_count,
+            instruction->header.reserved, instruction->header.operations_length_bytes,
             &higher_priority_task_woken );
 
         console_flash_execution_test.last_commit_status = commit_status;
@@ -722,7 +720,7 @@ static bool CONSOLE_Flash_VerifyPattern( const uint8_t* data, uint32_t stream_of
 static void CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32_t stream_offset,
                                                 uint32_t length, uint8_t seed )
 {
-    const uint32_t header_length_bytes = ( uint32_t )sizeof( FlashManagerInstructionHeader_T );
+    const uint32_t header_length_bytes = ( uint32_t )sizeof( ExecutionInstructionHeader_T );
     const uint32_t record_length_bytes = header_length_bytes + CONSOLE_FLASH_TEST_PAYLOAD_BYTES;
 
     for ( uint32_t output_index = 0U; output_index < length; output_index++ )
@@ -731,11 +729,11 @@ static void CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32_t s
         uint32_t record_index    = absolute_offset / record_length_bytes;
         uint32_t record_offset   = absolute_offset % record_length_bytes;
 
-        FlashManagerInstructionHeader_T header = {
-            record_index / 4U,
-            CONSOLE_FLASH_TEST_PAYLOAD_BYTES,
-            CONSOLE_FLASH_TEST_PERIPHERAL_TYPE,
-            ( uint8_t )( record_index % CONSOLE_FLASH_TEST_CHANNEL_COUNT ),
+        ExecutionInstructionHeader_T header = {
+            .timestamp               = record_index,
+            .operations_length_bytes = CONSOLE_FLASH_TEST_PAYLOAD_BYTES,
+            .operation_count         = CONSOLE_FLASH_TEST_OPERATION_COUNT,
+            .reserved                = 0U,
         };
 
         if ( record_offset < header_length_bytes )
@@ -872,7 +870,7 @@ static void CONSOLE_Flash_StatusCommand( void )
 
     if ( console_flash_last_upload_records != 0U )
     {
-        CONSOLE_Printf( "Last upload test: records=%lu bytes=%lu seed=0x%02X\r\n",
+        CONSOLE_Printf( "Last upload test: instructions=%lu bytes=%lu seed=0x%02X\r\n",
                         ( unsigned long )console_flash_last_upload_records,
                         ( unsigned long )console_flash_last_upload_bytes,
                         ( unsigned int )console_flash_last_upload_seed );
@@ -1065,7 +1063,7 @@ static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] )
     }
 
     const uint32_t record_length_bytes =
-        ( uint32_t )sizeof( FlashManagerInstructionHeader_T ) + CONSOLE_FLASH_TEST_PAYLOAD_BYTES;
+        ( uint32_t )sizeof( ExecutionInstructionHeader_T ) + CONSOLE_FLASH_TEST_PAYLOAD_BYTES;
 
     if ( ( info.page_size_bytes < record_length_bytes )
          || ( info.page_size_bytes > sizeof( console_flash_write_buffer ) ) )
@@ -1091,7 +1089,7 @@ static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] )
     if ( ( argc > 4U ) || ( record_count == 0U ) || ( seed_value > UINT8_MAX )
          || ( record_count > ( UINT32_MAX / record_length_bytes ) ) )
     {
-        CONSOLE_Printf( "Usage: flash upload_test [record_count > 0] [seed 0..255]\r\n" );
+        CONSOLE_Printf( "Usage: flash upload_test [instruction_count > 0] [seed 0..255]\r\n" );
         return;
     }
 
@@ -1212,11 +1210,11 @@ static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] )
     console_flash_last_upload_bytes   = expected_length;
     console_flash_last_upload_seed    = ( uint8_t )seed_value;
 
-    CONSOLE_Printf( "Flash Manager upload PASS: records=%lu bytes=%lu seed=0x%02X.\r\n",
+    CONSOLE_Printf( "Flash Manager upload PASS: instructions=%lu bytes=%lu seed=0x%02X.\r\n",
                     ( unsigned long )record_count, ( unsigned long )expected_length,
                     ( unsigned int )seed_value );
     CONSOLE_Printf(
-        "ISR echo format: payload=11 bytes; commit instruction timestamp/type/channel.\r\n" );
+        "ISR echo format: one instruction per tick with 11 opaque operation bytes.\r\n" );
     CONSOLE_Printf( "Next: 'flash prepare', then 'flash execute_echo 100'.\r\n" );
 }
 
@@ -1308,7 +1306,7 @@ static void CONSOLE_Flash_ExecuteEchoCommand( uint16_t argc, char* argv[] )
     HW_TIMER_Set_Execution_Callback( CONSOLE_Flash_ExecutionEchoFromISR );
     console_flash_execution_test.state = CONSOLE_FLASH_EXECUTION_TEST_RUNNING;
 
-    CONSOLE_Printf( "Starting TIM4 execution echo: %lu Hz, records=%lu.\r\n",
+    CONSOLE_Printf( "Starting TIM4 execution echo: %lu Hz, instructions=%lu.\r\n",
                     ( unsigned long )frequency_hz,
                     ( unsigned long )console_flash_execution_test.expected_records );
 

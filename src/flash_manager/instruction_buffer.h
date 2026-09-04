@@ -20,26 +20,26 @@
  *      owns one short task critical section that publishes prepared page metadata
  *      atomically to the execution ISR.
  *
- *      Instruction records are packed in the NAND image as a fixed-size
- *      FlashManagerInstructionHeader_T followed immediately by the indicated
- *      payload bytes, with the next header immediately following that payload.
- *      Records may cross NAND page boundaries, but an individual record must
- *      not exceed one NAND page.
+ *      Instructions are packed in the NAND image as a fixed-size
+ *      ExecutionInstructionHeader_T followed immediately by the indicated
+ *      operation bytes. An instruction contains all output operations for one
+ *      output-bearing tick and may cross NAND page boundaries, but must not
+ *      exceed EXECUTION_INSTRUCTION_MAX_SIZE_BYTES.
  *
  *      Upload preprocessing is responsible for validating this canonical
- *      stream before it reaches NAND, including nondecreasing timestamps,
- *      routing metadata, payload schemas, and the one-page record limit.
+ *      stream before it reaches NAND, including strictly increasing timestamps,
+ *      operation metadata, payload layouts, alignment, and the instruction-size limit.
  *      Runtime detection of an invalid stored length is a session-ending fault
  *      rather than a recoverable parse error.
  *
- *      The implementation owns three circular NAND-page slots plus one
- *      page-sized mirror of slot zero. The mirror is populated in Flash Manager
- *      task context and makes a record crossing the ring end contiguous to the
- *      execution ISR without an ISR-time payload copy.
+ *      The implementation owns three circular NAND-page slots plus two mirror
+ *      pages for slots zero and one. The mirrors are populated in Flash Manager
+ *      task context and keep a maximum-size instruction crossing the ring end
+ *      contiguous without an ISR-time operation copy.
  *
  *      Three slots do not guarantee that an uploaded stream is executable. A
- *      single TIM4 invocation can consume several records with the same
- *      timestamp, but the Flash Manager task cannot refill a released slot
+ *      single TIM4 invocation can consume one instruction spanning several
+ *      pages, but the Flash Manager task cannot refill a released slot
  *      until the ISR returns. Admission validation must therefore bound both
  *      instruction bytes and worst-case driver time per timestamp, then compare
  *      sustained consumption with measured NAND refill and scheduling latency.
@@ -111,7 +111,7 @@ typedef enum
     /** Every byte in the configured instruction image has been consumed. */
     INSTRUCTION_BUFFER_PEEK_END_OF_STREAM,
 
-    /** The next header or record length is invalid. */
+    /** The next header or instruction length is invalid. */
     INSTRUCTION_BUFFER_PEEK_CORRUPT
 } InstructionBufferPeekStatus_T;
 
@@ -262,8 +262,8 @@ uint32_t INSTRUCTION_BUFFER_GetBufferedUnreadBytes( void );
  * @brief Returns a read-only view of the next complete instruction.
  *
  * The returned view contains the instruction's parsed header and a pointer to
- * its complete payload. Together these fields represent one logical stored
- * instruction.
+ * its complete operation sequence. Together these fields represent one logical
+ * stored instruction.
  *
  * The consumer position is not advanced. Repeated calls before consumption
  * return the same cached view without copying or reparsing the header.
@@ -277,12 +277,12 @@ uint32_t INSTRUCTION_BUFFER_GetBufferedUnreadBytes( void );
  *
  * @note This function performs no NAND access and uses no RTOS primitives.
  * @pre A prepared read session is active and instruction is non-null.
- * @note The returned payload is contiguous even if its stored record crosses a
+ * @note The returned operations are contiguous even if the instruction crosses a
  *       NAND page boundary or the physical end of the circular page storage.
- * @note Peek copies only the fixed-size header; it never copies the payload.
+ * @note Peek copies only the fixed-size header; it never copies the operations.
  * @note Timestamp comparison is deliberately outside this buffer. The
- *       Execution Manager retains a future record, consumes a record due on
- *       the current tick, and treats a past record as an overrun fault.
+ *       Execution Manager retains a future instruction, consumes an instruction
+ *       due on the current tick, and treats a past instruction as an overrun fault.
  * @note The view remains valid until consumed, PrepareRead is called again, or
  *       EndRead closes the retrieval session.
  */
@@ -292,7 +292,7 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
 /**
  * @brief Consumes the instruction returned by the active successful peek.
  *
- * Advances by the stored header and payload length. If the instruction reaches
+ * Advances by the stored header and operation length. If the instruction reaches
  * a page boundary, the cold path also releases every exhausted page slot.
  *
  * @return Consumption status, including whether a refill is required.
@@ -353,7 +353,7 @@ bool INSTRUCTION_BUFFER_GetUploadExpectedLength( uint32_t* expected_length_bytes
  *       permits the caller to retry the identical data and length.
  * @note A chunk may fill the tail of one page and continue into the next page.
  * @note Chunk boundaries are transport boundaries only. They need not align
- *       with instruction-record or NAND-page boundaries.
+ *       with instruction or NAND-page boundaries.
  * @note Full pages become immutable and ready for NAND immediately. The final
  *       partial page is published by INSTRUCTION_BUFFER_FinaliseUpload().
  * @note This function performs no NAND access and is not internally synchronised.
