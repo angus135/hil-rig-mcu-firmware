@@ -12,9 +12,9 @@
  *      has no public implementation yet.
  *
  *      Before upload begins, conversion must know the total canonical byte
- *      length and guarantee a complete packed [header][payload] stream with
- *      nondecreasing timestamps, valid peripheral/channel routing, valid
- *      payload schemas, and records no larger than one NAND page.
+ *      length and guarantee a complete packed instruction stream. Each
+ *      instruction contains one tick header followed by its complete operation
+ *      sequence and must not exceed EXECUTION_INSTRUCTION_MAX_SIZE_BYTES.
  ******************************************************************************/
 
 #ifndef TEST_PACKAGE_RECEIVE_H

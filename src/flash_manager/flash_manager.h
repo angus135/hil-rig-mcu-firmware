@@ -566,11 +566,12 @@ FLASH_MANAGER_RequestInstructionUploadStart( uint32_t expected_length_bytes );
  * @note Completing a page asynchronously wakes the Flash Manager task. NAND
  *       persistence proceeds concurrently with later host submissions into
  *       other available ring pages.
- * @note The Host Interface application layer must supply the canonical packed
- *       [header][payload] instruction representation with nondecreasing
- *       timestamps, valid routing metadata and payload schemas, and records no
- *       larger than one NAND page. The Flash Manager preserves the byte stream
- *       but does not perform semantic validation.
+ * @note The Host Interface application layer must supply canonical packed tick
+ *       instructions with strictly increasing timestamps, valid operation counts,
+ *       opcodes, channels, payload layouts and alignment, and complete
+ *       instructions no larger than EXECUTION_INSTRUCTION_MAX_SIZE_BYTES. The
+ *       Flash Manager preserves the byte stream but does not perform semantic
+ *       operation validation.
  * @note This function is task-context only and does not access NAND directly.
  */
 FlashManagerInstructionUploadRequestStatus_T
