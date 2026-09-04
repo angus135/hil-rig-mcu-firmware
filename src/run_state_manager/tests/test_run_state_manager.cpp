@@ -125,8 +125,10 @@ bool FLASH_MANAGER_GetState( FlashManagerState_T* state )
     }
     return flash_get_state_result;
 }
-FlashManagerRequestStatus_T FLASH_MANAGER_RequestExecutionPreparation( void )
+FlashManagerRequestStatus_T
+FLASH_MANAGER_RequestExecutionPreparation( uint32_t maximum_result_length_bytes )
 {
+    ( void )maximum_result_length_bytes;
     return flash_prepare_result;
 }
 FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void )

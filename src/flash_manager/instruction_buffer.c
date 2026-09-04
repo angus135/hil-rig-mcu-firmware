@@ -82,14 +82,12 @@
 #if defined( __cplusplus )
 static_assert( sizeof( ExecutionInstructionHeader_T ) == 8U,
                "Unexpected instruction header layout" );
-static_assert( INSTRUCTION_BUFFER_MIRROR_CAPACITY_BYTES
-                   == EXECUTION_INSTRUCTION_MAX_SIZE_BYTES,
+static_assert( INSTRUCTION_BUFFER_MIRROR_CAPACITY_BYTES == EXECUTION_INSTRUCTION_MAX_SIZE_BYTES,
                "Instruction mirror must match the maximum execution instruction" );
 #else
 _Static_assert( sizeof( ExecutionInstructionHeader_T ) == 8U,
                 "Unexpected instruction header layout" );
-_Static_assert( INSTRUCTION_BUFFER_MIRROR_CAPACITY_BYTES
-                    == EXECUTION_INSTRUCTION_MAX_SIZE_BYTES,
+_Static_assert( INSTRUCTION_BUFFER_MIRROR_CAPACITY_BYTES == EXECUTION_INSTRUCTION_MAX_SIZE_BYTES,
                 "Instruction mirror must match the maximum execution instruction" );
 #endif
 
@@ -424,7 +422,7 @@ static INSTRUCTION_BUFFER_COLD_NOINLINE InstructionBufferConsumeStatus_T
 INSTRUCTION_BUFFER_ConsumeAcrossPageBoundary( uint32_t record_length_bytes,
                                               uint32_t bytes_remaining_in_page )
 {
-    uint8_t  page_index      = instruction_buffer_context.consumer_page_index;
+    uint8_t  page_index       = instruction_buffer_context.consumer_page_index;
     uint32_t bytes_to_advance = record_length_bytes;
     uint32_t page_offset      = instruction_buffer_context.consumer_page_offset_bytes;
 
@@ -439,7 +437,7 @@ INSTRUCTION_BUFFER_ConsumeAcrossPageBoundary( uint32_t record_length_bytes,
         bytes_to_advance -= bytes_in_page;
         instruction_buffer_context.page_states[page_index]      = INSTRUCTION_BUFFER_PAGE_EMPTY;
         instruction_buffer_context.page_valid_bytes[page_index] = 0U;
-        page_index = INSTRUCTION_BUFFER_NextPageIndex( page_index );
+        page_index  = INSTRUCTION_BUFFER_NextPageIndex( page_index );
         page_offset = 0U;
 
         if ( bytes_to_advance == 0U )
@@ -818,9 +816,8 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
          */
         if ( page_index < INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT )
         {
-            uint32_t mirror_offset_bytes =
-                instruction_buffer_context.page_size_bytes
-                * ( INSTRUCTION_BUFFER_PAGE_COUNT + page_index );
+            uint32_t mirror_offset_bytes = instruction_buffer_context.page_size_bytes
+                                           * ( INSTRUCTION_BUFFER_PAGE_COUNT + page_index );
 
             memcpy( &instruction_buffer_storage[mirror_offset_bytes],
                     INSTRUCTION_BUFFER_GetPageData( page_index ), read_length_bytes );
@@ -914,8 +911,7 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
      */
     memcpy( &header, instruction_buffer_context.consumer_record_pointer, sizeof( header ) );
 
-    uint32_t record_length_bytes =
-        sizeof( header ) + ( uint32_t )header.operations_length_bytes;
+    uint32_t record_length_bytes = sizeof( header ) + ( uint32_t )header.operations_length_bytes;
 
     uint32_t remaining_image_bytes =
         instruction_buffer_context.instruction_length_bytes - record_stream_offset_bytes;

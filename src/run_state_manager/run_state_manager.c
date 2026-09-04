@@ -362,7 +362,7 @@ static bool RUN_STATE_MANAGER_StopExecution( void )
  */
 static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void )
 {
-    FlashManagerRequestStatus_T status = FLASH_MANAGER_RequestExecutionPreparation();
+    FlashManagerRequestStatus_T status = FLASH_MANAGER_RequestExecutionPreparation( 0U );
 
     if ( status == FLASH_MANAGER_REQUEST_OK )
     {

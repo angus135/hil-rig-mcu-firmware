@@ -91,6 +91,12 @@ typedef struct
      */
     TaskHandle_t task_handle;
 
+    /** Logical result bytes reserved for the execution being prepared. */
+    uint32_t maximum_result_length_bytes;
+
+    /** Complete result header and payload bytes committed by the execution ISR. */
+    uint32_t committed_result_length_bytes;
+
 } FlashManagerContext_T;
 
 /**-----------------------------------------------------------------------------
@@ -104,9 +110,11 @@ typedef struct
  */
 
 static FlashManagerContext_T flash_manager_context = {
-    .state        = FLASH_MANAGER_STATE_UNINITIALISED,
-    .access_mutex = NULL,
-    .task_handle  = NULL,
+    .state                         = FLASH_MANAGER_STATE_UNINITIALISED,
+    .access_mutex                  = NULL,
+    .task_handle                   = NULL,
+    .maximum_result_length_bytes   = 0U,
+    .committed_result_length_bytes = 0U,
 };
 
 static FlashManagerFaultCallback_T flash_manager_fault_callback = NULL;
@@ -541,7 +549,8 @@ static bool FLASH_MANAGER_PrepareExecution( void )
         return false;
     }
 
-    if ( EXTERNAL_FLASH_StartSession() != EXTERNAL_FLASH_STATUS_OK )
+    if ( EXTERNAL_FLASH_StartSession( flash_manager_context.maximum_result_length_bytes )
+         != EXTERNAL_FLASH_STATUS_OK )
     {
         return false;
     }
@@ -700,7 +709,7 @@ static bool FLASH_MANAGER_AbortSession( void )
     RESULT_BUFFER_Reset();
     taskEXIT_CRITICAL();
 
-    if ( EXTERNAL_FLASH_StartSession() != EXTERNAL_FLASH_STATUS_OK )
+    if ( EXTERNAL_FLASH_StartSession( 0U ) != EXTERNAL_FLASH_STATUS_OK )
     {
         flash_manager_context.state = FLASH_MANAGER_STATE_FAULT;
         FLASH_MANAGER_Unlock();
@@ -1099,7 +1108,8 @@ bool FLASH_MANAGER_GetState( FlashManagerState_T* state )
 /**
  * @brief Requests task-context preparation of a new execution session.
  */
-FlashManagerRequestStatus_T FLASH_MANAGER_RequestExecutionPreparation( void )
+FlashManagerRequestStatus_T
+FLASH_MANAGER_RequestExecutionPreparation( uint32_t maximum_result_length_bytes )
 {
     if ( flash_manager_context.access_mutex == NULL )
     {
@@ -1126,7 +1136,9 @@ FlashManagerRequestStatus_T FLASH_MANAGER_RequestExecutionPreparation( void )
     }
 
     taskENTER_CRITICAL();
-    flash_manager_context.state = FLASH_MANAGER_STATE_PREPARING_EXECUTION;
+    flash_manager_context.maximum_result_length_bytes   = maximum_result_length_bytes;
+    flash_manager_context.committed_result_length_bytes = 0U;
+    flash_manager_context.state                         = FLASH_MANAGER_STATE_PREPARING_EXECUTION;
     taskEXIT_CRITICAL();
 
     FLASH_MANAGER_Unlock();
@@ -1276,7 +1288,7 @@ FlashManagerRequestStatus_T FLASH_MANAGER_DiscardResults( void )
 
     RESULT_BUFFER_Reset();
 
-    if ( EXTERNAL_FLASH_StartSession() != EXTERNAL_FLASH_STATUS_OK )
+    if ( EXTERNAL_FLASH_StartSession( 0U ) != EXTERNAL_FLASH_STATUS_OK )
     {
         flash_manager_context.state = FLASH_MANAGER_STATE_FAULT;
         FLASH_MANAGER_Unlock();
@@ -1543,15 +1555,45 @@ FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
         return FLASH_MANAGER_RESULT_COMMIT_INVALID_STATE;
     }
 
+    if ( !RESULT_BUFFER_IsRecordLeaseValid( lease ) )
+    {
+        return FLASH_MANAGER_RESULT_COMMIT_INVALID_LEASE;
+    }
+
+    if ( actual_payload_length_bytes > lease->payload_capacity_bytes )
+    {
+        return FLASH_MANAGER_RESULT_COMMIT_OVERFLOW;
+    }
+
+    uint32_t record_length_bytes =
+        sizeof( FlashManagerResultHeader_T ) + actual_payload_length_bytes;
+
+    if ( ( flash_manager_context.committed_result_length_bytes
+           > flash_manager_context.maximum_result_length_bytes )
+         || ( record_length_bytes > ( flash_manager_context.maximum_result_length_bytes
+                                      - flash_manager_context.committed_result_length_bytes ) ) )
+    {
+        if ( !RESULT_BUFFER_CancelRecord( lease ) )
+        {
+            FLASH_MANAGER_EnterFaultFromISR();
+            return FLASH_MANAGER_RESULT_COMMIT_INTERNAL_ERROR;
+        }
+
+        FLASH_MANAGER_EnterFaultFromISR();
+        return FLASH_MANAGER_RESULT_COMMIT_SESSION_CAPACITY_EXCEEDED;
+    }
+
     ResultBufferRecordCommitStatus_T buffer_status = RESULT_BUFFER_CommitRecord(
         lease, timestamp, peripheral_type, channel, actual_payload_length_bytes );
 
     switch ( buffer_status )
     {
         case RESULT_BUFFER_RECORD_COMMIT_OK:
+            flash_manager_context.committed_result_length_bytes += record_length_bytes;
             return FLASH_MANAGER_RESULT_COMMIT_OK;
 
         case RESULT_BUFFER_RECORD_COMMIT_PAGE_READY_TO_DRAIN:
+            flash_manager_context.committed_result_length_bytes += record_length_bytes;
             /*
              * The page has already been committed in RAM. Notify the Flash
              * Manager task so it can drain the page after this ISR returns.
