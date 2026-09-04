@@ -21,6 +21,7 @@
 #include "background.h"
 #include "hw_gpio.h"
 #include "logic_expander.h"
+#include "run_state_manager.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -50,12 +51,17 @@ TaskHandle_t* BackgroundTaskHandle = NULL;  // NOLINT(readability-identifier-nam
  */
 static void BACKGROUND_Process_Logic_Expander( void );
 static void BACKGROUND_Process_Status_LED( void );
+static void BACKGROUND_Write_LED( GPIOOutput_T led, bool is_on );
+static void BACKGROUND_Write_State_LEDs( RunState_T state );
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
 static uint16_t background_led_cycles_remaining = 0U;
+static bool     background_state_leds_initialised = false;
+static RunState_T background_displayed_state      = RUN_STATE_IDLE;
+static bool       background_fault_active          = false;
 
 static const BackgroundProcess_T background_processes[] = {
     BACKGROUND_Process_Logic_Expander,
@@ -71,23 +77,75 @@ static void BACKGROUND_Process_Logic_Expander( void )
     ( void )LOGIC_EXPANDER_Process();
 }
 
+static void BACKGROUND_Write_LED( GPIOOutput_T led, bool is_on )
+{
+    if ( is_on )
+    {
+        HW_GPIO_Set_Single_Pin( led );
+    }
+    else
+    {
+        HW_GPIO_Reset_Single_Pin( led );
+    }
+}
+
+static void BACKGROUND_Write_State_LEDs( RunState_T state )
+{
+    uint8_t state_code = ( uint8_t )state + 1U;
+
+    for ( uint8_t bit = 0U; bit < 4U; bit++ )
+    {
+        BACKGROUND_Write_LED( ( GPIOOutput_T )( USER_LED_BLUE_5 - bit ),
+                              ( state_code & ( uint8_t )( 1U << bit ) ) != 0U );
+    }
+}
+
 static void BACKGROUND_Process_Status_LED( void )
 {
+    RunStateManagerStatus_T status = { 0 };
+    RUN_STATE_MANAGER_GetStatus( &status );
+
+    if ( !background_state_leds_initialised || ( status.state != background_displayed_state ) )
+    {
+        BACKGROUND_Write_State_LEDs( status.state );
+        background_displayed_state       = status.state;
+        background_state_leds_initialised = true;
+    }
+
+    if ( !status.execution_timer_running )
+    {
+        HW_GPIO_Reset_Single_Pin( USER_LED_BLUE_1 );
+    }
+
+    bool fault_active = status.state == RUN_STATE_FAULT;
+    if ( fault_active && !background_fault_active )
+    {
+        for ( GPIOOutput_T led = USER_LED_RED_0; led <= USER_LED_RED_5; led++ )
+        {
+            HW_GPIO_Set_Single_Pin( led );
+        }
+        background_led_cycles_remaining = BACKGROUND_LED_PERIOD_CYCLES;
+    }
+    else if ( !fault_active && background_fault_active )
+    {
+        for ( GPIOOutput_T led = USER_LED_RED_0; led <= USER_LED_RED_5; led++ )
+        {
+            HW_GPIO_Reset_Single_Pin( led );
+        }
+    }
+    background_fault_active = fault_active;
+
     if ( background_led_cycles_remaining == 0U )
     {
         HW_GPIO_Toggle_Output( USER_LED_BLUE_0 );
-        HW_GPIO_Toggle_Output( USER_LED_BLUE_1 );
-        HW_GPIO_Toggle_Output( USER_LED_BLUE_2 );
-        HW_GPIO_Toggle_Output( USER_LED_BLUE_3 );
-        HW_GPIO_Toggle_Output( USER_LED_BLUE_4 );
-        HW_GPIO_Toggle_Output( USER_LED_BLUE_5 );
 
-        HW_GPIO_Toggle_Output( USER_LED_RED_0 );
-        HW_GPIO_Toggle_Output( USER_LED_RED_1 );
-        HW_GPIO_Toggle_Output( USER_LED_RED_2 );
-        HW_GPIO_Toggle_Output( USER_LED_RED_3 );
-        HW_GPIO_Toggle_Output( USER_LED_RED_4 );
-        HW_GPIO_Toggle_Output( USER_LED_RED_5 );
+        if ( fault_active )
+        {
+            for ( GPIOOutput_T led = USER_LED_RED_0; led <= USER_LED_RED_5; led++ )
+            {
+                HW_GPIO_Toggle_Output( led );
+            }
+        }
 
         background_led_cycles_remaining = BACKGROUND_LED_PERIOD_CYCLES;
     }
