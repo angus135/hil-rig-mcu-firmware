@@ -17,8 +17,8 @@
  *      - Consuming all bytes in a slot returns it to EMPTY so the Flash Manager
  *        can refill it with the next NAND page.
  *
- *      A record consists of FlashManagerInstructionHeader_T followed by its
- *      payload. Records may cross a NAND page boundary. Most records can be
+ *      A record consists of ExecutionInstructionHeader_T followed by its
+ *      packed operations. Records may cross a NAND page boundary. Most records can be
  *      exposed directly from the three circular page slots. A fourth region
  *      mirrors slot zero immediately after slot two, making records that cross
  *      the physical ring end contiguous without copying in the execution ISR.
@@ -77,10 +77,10 @@
 
 /* The serialized NAND layout depends on this fixed header width. */
 #if defined( __cplusplus )
-static_assert( sizeof( FlashManagerInstructionHeader_T ) == 8U,
+static_assert( sizeof( ExecutionInstructionHeader_T ) == 8U,
                "Unexpected instruction header layout" );
 #else
-_Static_assert( sizeof( FlashManagerInstructionHeader_T ) == 8U,
+_Static_assert( sizeof( ExecutionInstructionHeader_T ) == 8U,
                 "Unexpected instruction header layout" );
 #endif
 
@@ -889,12 +889,12 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
     uint32_t buffered_unread_bytes =
         instruction_buffer_context.next_nand_read_offset_bytes - record_stream_offset_bytes;
 
-    if ( buffered_unread_bytes < sizeof( FlashManagerInstructionHeader_T ) )
+    if ( buffered_unread_bytes < sizeof( ExecutionInstructionHeader_T ) )
     {
         return INSTRUCTION_BUFFER_PEEK_NOT_BUFFERED;
     }
 
-    FlashManagerInstructionHeader_T header = { 0 };
+    ExecutionInstructionHeader_T header = { 0 };
 
     /*
      * Copy the fixed header into an aligned object for safe field access. The

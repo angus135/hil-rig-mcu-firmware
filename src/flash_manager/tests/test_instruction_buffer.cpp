@@ -43,7 +43,7 @@ static constexpr uint32_t TEST_INSTRUCTION_PAGE_SIZE_BYTES = 32U;
 static constexpr uint32_t TEST_INSTRUCTION_PARTITION_CAPACITY_BYTES =
     TEST_INSTRUCTION_PAGE_SIZE_BYTES * 8U;
 static constexpr uint16_t TEST_FULL_INSTRUCTION_PAGE_PAYLOAD_BYTES = static_cast<uint16_t>(
-    TEST_INSTRUCTION_PAGE_SIZE_BYTES - sizeof( FlashManagerInstructionHeader_T ) );
+    TEST_INSTRUCTION_PAGE_SIZE_BYTES - sizeof( ExecutionInstructionHeader_T ) );
 
 static uint32_t test_critical_enter_calls           = 0U;
 static uint32_t test_critical_exit_calls            = 0U;
@@ -152,7 +152,7 @@ protected:
     static uint32_t StoreInstruction( uint8_t* destination, uint32_t timestamp,
                                       uint16_t operations_length_bytes, uint8_t operations_seed )
     {
-        FlashManagerInstructionHeader_T header = {
+        ExecutionInstructionHeader_T header = {
             timestamp,
             operations_length_bytes,
             1U,
@@ -520,7 +520,7 @@ TEST_F( InstructionBufferTest, PeekAndConsumeAdvanceWithinPageWithoutRequestingR
 {
     constexpr uint16_t first_payload_length_bytes  = 4U;
     constexpr uint16_t second_payload_length_bytes = 3U;
-    constexpr uint32_t image_length_bytes          = sizeof( FlashManagerInstructionHeader_T ) * 2U
+    constexpr uint32_t image_length_bytes          = sizeof( ExecutionInstructionHeader_T ) * 2U
                                             + first_payload_length_bytes
                                             + second_payload_length_bytes;
 
@@ -573,9 +573,9 @@ TEST_F( InstructionBufferTest, PeekAndConsumeAdvanceWithinPageWithoutRequestingR
 TEST_F( InstructionBufferTest, PeekWaitsUntilCompleteCrossPageRecordIsBuffered )
 {
     constexpr uint16_t payload_length_bytes      = 20U;
-    constexpr uint32_t first_record_length_bytes = sizeof( FlashManagerInstructionHeader_T );
+    constexpr uint32_t first_record_length_bytes = sizeof( ExecutionInstructionHeader_T );
     constexpr uint32_t second_record_length_bytes =
-        sizeof( FlashManagerInstructionHeader_T ) + payload_length_bytes;
+        sizeof( ExecutionInstructionHeader_T ) + payload_length_bytes;
     constexpr uint32_t image_length_bytes = first_record_length_bytes + second_record_length_bytes;
 
     uint8_t image[image_length_bytes] = {};
@@ -603,7 +603,7 @@ TEST_F( InstructionBufferTest, PeekWaitsUntilCompleteCrossPageRecordIsBuffered )
     ASSERT_NE( nullptr, view );
     EXPECT_EQ( 0, std::memcmp(
                       view->operations,
-                      &image[first_record_length_bytes + sizeof( FlashManagerInstructionHeader_T )],
+                      &image[first_record_length_bytes + sizeof( ExecutionInstructionHeader_T )],
                       payload_length_bytes ) );
 }
 
@@ -611,7 +611,7 @@ TEST_F( InstructionBufferTest, EndReadClearsCurrentViewWithoutChangingGeometry )
 {
     constexpr uint16_t payload_length_bytes = 4U;
     constexpr uint32_t record_length_bytes =
-        sizeof( FlashManagerInstructionHeader_T ) + payload_length_bytes;
+        sizeof( ExecutionInstructionHeader_T ) + payload_length_bytes;
 
     Prepare( record_length_bytes );
     InstructionBufferPageFillLease_T lease = AcquirePage();
