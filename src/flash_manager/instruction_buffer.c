@@ -902,7 +902,8 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
      */
     memcpy( &header, instruction_buffer_context.consumer_record_pointer, sizeof( header ) );
 
-    uint32_t record_length_bytes = sizeof( header ) + ( uint32_t )header.payload_length_bytes;
+    uint32_t record_length_bytes =
+        sizeof( header ) + ( uint32_t )header.operations_length_bytes;
 
     uint32_t remaining_image_bytes =
         instruction_buffer_context.instruction_length_bytes - record_stream_offset_bytes;
@@ -926,7 +927,7 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
     instruction_buffer_context.instruction_cache = ( InstructionBufferInstructionCache_T ){
         .record_length_bytes = record_length_bytes,
         .view                = { .header = header,
-                                 .payload =
+                                 .operations =
                                      instruction_buffer_context.consumer_record_pointer + sizeof( header ) } };
 
     *instruction = &instruction_buffer_context.instruction_cache.view;

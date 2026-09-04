@@ -251,12 +251,13 @@ typedef struct
 /* Execution instruction serving. */
 
 /**
- * @brief Fixed header stored before every canonical instruction payload.
+ * @brief Fixed header stored before every canonical tick instruction.
  *
  * The package application layer creates this representation before upload.
- * Stored instructions form a packed [header][payload] stream without padding;
- * the next header immediately follows the preceding payload. Upload processing
- * must validate every record and reject malformed streams before NAND storage.
+ * One instruction contains all output operations scheduled for one execution
+ * tick. Stored instructions form a packed [header][operations] stream without
+ * padding between instructions. Upload processing must validate every complete
+ * instruction and its operations before NAND storage.
  * The current storage format uses the MCU structure representation; byte order
  * and C alignment are therefore target-specific, and no format version is
  * currently stored.
@@ -269,27 +270,27 @@ typedef struct
     /** Timestamp at which the instruction becomes due. */
     uint32_t timestamp;
 
-    /** Number of payload bytes following this header. */
-    uint16_t payload_length_bytes;
+    /** Total encoded operation bytes following this header, including padding. */
+    uint16_t operations_length_bytes;
 
-    /** Peripheral family targeted by the instruction. */
-    uint8_t peripheral_type;
+    /** Number of operations encoded after this header. */
+    uint8_t operation_count;
 
-    /** Peripheral instance or channel targeted by the instruction. */
-    uint8_t channel;
+    /** Reserved for future instruction flags; must be zero. */
+    uint8_t reserved;
 } FlashManagerInstructionHeader_T;
 
 /**
  * @brief Read-only view of the next buffered execution instruction.
  *
- * The header and payload together represent one complete logical instruction.
+ * The header and operation stream together represent one complete tick.
  * The fixed header is copied into this aligned view for safe field access; the
- * variable-length payload remains in Flash Manager-owned buffer storage and is
+ * variable-length operation stream remains in Flash Manager-owned storage and is
  * exposed without a copy. An internal mirror keeps records crossing the
  * physical end of circular storage contiguous.
  *
  * The view remains valid until consumed or the instruction buffer is reset.
- * The Execution Manager and peripheral driver must not retain payload after a
+ * The Execution Manager and peripheral drivers must not retain operation data after a
  * successful consume operation.
  */
 typedef struct
@@ -297,8 +298,8 @@ typedef struct
     /** Parsed copy of the stored instruction header. */
     FlashManagerInstructionHeader_T header;
 
-    /** Read-only payload belonging to the instruction described by header. */
-    const uint8_t* payload;
+    /** Read-only packed operations belonging to the instruction. */
+    const uint8_t* operations;
 } FlashManagerInstructionView_T;
 
 /** @brief Availability and validation status for the next instruction view. */
