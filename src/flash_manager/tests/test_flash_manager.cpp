@@ -1447,6 +1447,27 @@ TEST_F( FlashManagerTest, CommitMapsInvalidLeaseAndPayloadOverflow )
     EXPECT_EQ( 0U, notify_from_isr_calls );
 }
 
+TEST_F( FlashManagerTest, CommitBeyondSessionCapacityCancelsLeaseAndFaults )
+{
+    Initialise();
+    EnterExecutingState();
+    FLASH_MANAGER_SetFaultCallback( TestFaultCallback );
+    flash_manager_context.maximum_result_length_bytes =
+        sizeof( FlashManagerResultHeader_T ) + TEST_PARTIAL_PAYLOAD_BYTES - 1U;
+
+    FlashManagerResultWriteLease_T lease = ReserveRecord( TEST_PARTIAL_PAYLOAD_BYTES );
+
+    EXPECT_EQ( FLASH_MANAGER_RESULT_COMMIT_SESSION_CAPACITY_EXCEEDED,
+               FLASH_MANAGER_CommitResultRecordFromISR( &lease, 1U, 2U, 3U,
+                                                        TEST_PARTIAL_PAYLOAD_BYTES, nullptr ) );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
+    EXPECT_EQ( 1U, fault_callback_calls );
+    EXPECT_TRUE( fault_callback_from_isr );
+    EXPECT_EQ( 0U, flash_manager_context.committed_result_length_bytes );
+    EXPECT_FALSE( RESULT_BUFFER_IsRecordLeaseValid( &lease ) );
+    EXPECT_EQ( 0U, notify_from_isr_calls );
+}
+
 TEST_F( FlashManagerTest, FullPageCommitNotifiesDrainTaskAndPropagatesWakeFlag )
 {
     Initialise();
