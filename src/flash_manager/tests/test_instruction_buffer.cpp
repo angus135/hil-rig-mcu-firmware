@@ -163,8 +163,7 @@ protected:
 
         for ( uint16_t index = 0U; index < operations_length_bytes; index++ )
         {
-            destination[sizeof( header ) + index] =
-                static_cast<uint8_t>( operations_seed + index );
+            destination[sizeof( header ) + index] = static_cast<uint8_t>( operations_seed + index );
         }
 
         return static_cast<uint32_t>( sizeof( header ) ) + operations_length_bytes;
@@ -622,10 +621,10 @@ TEST_F( InstructionBufferTest, PeekWaitsUntilCompleteCrossPageRecordIsBuffered )
 
     ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
     ASSERT_NE( nullptr, view );
-    EXPECT_EQ( 0, std::memcmp(
-                      view->operations,
-                      &image[first_record_length_bytes + sizeof( ExecutionInstructionHeader_T )],
-                      payload_length_bytes ) );
+    EXPECT_EQ(
+        0, std::memcmp( view->operations,
+                        &image[first_record_length_bytes + sizeof( ExecutionInstructionHeader_T )],
+                        payload_length_bytes ) );
 }
 
 TEST_F( InstructionBufferTest, PeekAndConsumeSupportACompleteTwoPageInstruction )
@@ -821,10 +820,10 @@ TEST_F( InstructionBufferTest, TwoPageMirrorKeepsMaximumInstructionContiguousAtR
         TEST_INSTRUCTION_PAGE_SIZE_BYTES * 2U - sizeof( ExecutionInstructionHeader_T ) );
     constexpr uint32_t maximum_instruction_length_bytes =
         sizeof( ExecutionInstructionHeader_T ) + maximum_operations_length_bytes;
-    constexpr uint32_t image_length_bytes = leading_instruction_length_bytes * 5U
-                                            + maximum_instruction_length_bytes;
+    constexpr uint32_t image_length_bytes =
+        leading_instruction_length_bytes * 5U + maximum_instruction_length_bytes;
 
-    std::array<uint8_t, image_length_bytes> image = {};
+    std::array<uint8_t, image_length_bytes> image              = {};
     uint32_t                                image_offset_bytes = 0U;
 
     for ( uint32_t index = 0U; index < 5U; index++ )
@@ -835,8 +834,8 @@ TEST_F( InstructionBufferTest, TwoPageMirrorKeepsMaximumInstructionContiguousAtR
     }
 
     ASSERT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES * 2U + 16U, image_offset_bytes );
-    image_offset_bytes +=
-        StoreInstruction( &image[image_offset_bytes], 100U, maximum_operations_length_bytes, 0x80U );
+    image_offset_bytes += StoreInstruction( &image[image_offset_bytes], 100U,
+                                            maximum_operations_length_bytes, 0x80U );
     ASSERT_EQ( image_length_bytes, image_offset_bytes );
 
     Prepare( image_length_bytes );

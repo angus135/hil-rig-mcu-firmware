@@ -192,8 +192,11 @@ typedef enum
     /** The supplied lease is null, modified, inactive, or stale. */
     FLASH_MANAGER_RESULT_COMMIT_INVALID_LEASE,
 
-    /** The actual payload length exceeds the reserved capacity. */
+    /** The actual payload length exceeds the record lease capacity. */
     FLASH_MANAGER_RESULT_COMMIT_OVERFLOW,
+
+    /** The complete record would exceed this execution session's result reservation. */
+    FLASH_MANAGER_RESULT_COMMIT_SESSION_CAPACITY_EXCEEDED,
 
     /** The record could not be safely scheduled for persistence. */
     FLASH_MANAGER_RESULT_COMMIT_INTERNAL_ERROR
@@ -605,13 +608,18 @@ FlashManagerInstructionUploadRequestStatus_T FLASH_MANAGER_RequestInstructionUpl
  * result RAM, preloads every available instruction slot, and enters EXECUTING
  * only after preparation succeeds.
  *
+ * @param maximum_result_length_bytes Maximum logical bytes available to all
+ *        packed result headers and payloads produced by this execution.
+ *        Zero explicitly reserves no result storage.
+ *
  * @return Request acceptance status.
  *
  * @note Call from task context only.
  * @note The Run State Manager must wait until FLASH_MANAGER_GetState() reports
  *       EXECUTING before starting the execution timer.
  */
-FlashManagerRequestStatus_T FLASH_MANAGER_RequestExecutionPreparation( void );
+FlashManagerRequestStatus_T
+FLASH_MANAGER_RequestExecutionPreparation( uint32_t maximum_result_length_bytes );
 
 /**
  * @brief Requests asynchronous publication and draining of final results.
