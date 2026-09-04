@@ -2,14 +2,14 @@
  *  File:       execution_instruction.h
  *
  *  Description:
- *      Shared stored-format definitions used by the Host Interface, Flash
- *      Manager, and Execution Manager.
+ *      Public prepared-instruction format owned by the Execution Manager.
  *
  *  Notes:
- *      One instruction contains all output operations scheduled for one
- *      Execution Manager tick. The Flash Manager uses only the fixed header
- *      and treats the following operation bytes as opaque. Operation headers,
- *      opcodes, and payload layouts will be added as separate decisions.
+ *      The Host Interface produces this format for storage. The Flash Manager
+ *      transports it and treats the operation bytes as opaque. One instruction
+ *      contains all output operations scheduled for one Execution Manager tick.
+ *      Operation headers, opcodes, and payload layouts will be added as separate
+ *      design decisions.
  ******************************************************************************/
 
 #ifndef EXECUTION_INSTRUCTION_H
@@ -21,6 +21,9 @@ extern "C"
 #endif
 
 #include <stdint.h>
+
+/** Maximum encoded size of one complete instruction, including its header. */
+#define EXECUTION_INSTRUCTION_MAX_SIZE_BYTES ( 4096U )
 
 /**
  * @brief Fixed header stored before the operations for one execution tick.
