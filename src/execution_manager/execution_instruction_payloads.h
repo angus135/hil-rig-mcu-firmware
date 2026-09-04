@@ -140,7 +140,7 @@ typedef struct
  */
 
 /**
- * @brief Prefix followed by packet sizes and then contiguous packet data.
+ * @brief Fixed start of an SPI payload followed by sizes and packet data.
  *
  * Payload layout:
  *   [ExecutionSpiTransmitPayloadPrefix_T]
@@ -155,7 +155,10 @@ typedef struct
  *
  * A prefix is necessary here because packet_count tells the adapter where the
  * variable packet-size array ends and the packet data begins. Unlike CAN,
- * payload length alone cannot determine that boundary.
+ * payload length alone cannot determine that boundary. The sizes and data are
+ * part of the same payload record even though they cannot be members of this
+ * fixed-size C structure: both regions have variable length, and C permits at
+ * most one flexible array at the end of a structure.
  */
 typedef struct
 {
@@ -166,7 +169,8 @@ typedef struct
  * UART_TRANSMIT has no fixed payload structure. The complete payload is the
  * byte range passed to EXEC_UART_Transmit(). The common header supplies the
  * channel and payload length. Upload validation must limit the length to the
- * amount that the UART driver can accept in one call.
+ * amount that the UART driver can accept in one call. A structure containing
+ * only a variable byte array would not add any information to this format.
  */
 
 /**-----------------------------------------------------------------------------
