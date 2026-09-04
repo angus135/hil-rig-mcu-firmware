@@ -263,6 +263,13 @@ bool RESULT_BUFFER_ReserveRecord( uint16_t                        requested_payl
 bool RESULT_BUFFER_CancelRecord( const FlashManagerResultWriteLease_T* lease );
 
 /**
+ * @brief Checks whether a lease still matches the active record reservation.
+ *
+ * @note This does not change ownership or buffer state.
+ */
+bool RESULT_BUFFER_IsRecordLeaseValid( const FlashManagerResultWriteLease_T* lease );
+
+/**
  * @brief Commits the active result write lease into the packed result stream.
  *
  * Validates the lease and actual payload length, writes the fixed result

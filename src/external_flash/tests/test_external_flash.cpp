@@ -58,6 +58,8 @@ static constexpr uint32_t TEST_RESULT_PAGE      = TEST_RESULT_BLOCK * TEST_PAGES
 static constexpr uint32_t TEST_INSTRUCTION_PAGE = 0U;
 static constexpr uint32_t TEST_BLOCK_DATA_BYTES = TEST_PAGE_SIZE_BYTES * TEST_PAGES_PER_BLOCK;
 static constexpr uint32_t TEST_SMALL_LENGTH     = 16U;
+static constexpr uint32_t TEST_RESULT_CAPACITY_BYTES =
+    ( EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 1U ) * TEST_BLOCK_DATA_BYTES;
 
 /**-----------------------------------------------------------------------------
  *  Test Doubles / Mocks
@@ -260,10 +262,11 @@ protected:
         EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_Init() );
     }
 
-    void StartSessionAllGood( void )
+    void StartSessionAllGood( uint32_t maximum_result_length_bytes = TEST_RESULT_CAPACITY_BYTES )
     {
         EXPECT_CALL( mock, BlockErase( _ ) ).WillRepeatedly( Return( HW_NAND_STATUS_OK ) );
-        EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_StartSession() );
+        EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
+                   EXTERNAL_FLASH_StartSession( maximum_result_length_bytes ) );
     }
 
     void StartInstructionUploadAllGood( uint32_t expected_length )
@@ -321,7 +324,8 @@ TEST_F( ExternalFlashTest, PublicTransactionsRejectCallsBeforeInit )
 
     EXPECT_FALSE( EXTERNAL_FLASH_IsInitialised() );
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_NOT_INITIALISED, EXTERNAL_FLASH_GetInfo( &info ) );
-    EXPECT_EQ( EXTERNAL_FLASH_STATUS_NOT_INITIALISED, EXTERNAL_FLASH_StartSession() );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_NOT_INITIALISED,
+               EXTERNAL_FLASH_StartSession( TEST_RESULT_CAPACITY_BYTES ) );
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_NOT_INITIALISED,
                EXTERNAL_FLASH_StartInstructionUpload( TEST_SMALL_LENGTH ) );
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_NOT_INITIALISED,
@@ -372,7 +376,36 @@ TEST_F( ExternalFlashTest, StartSessionErasesOnlyGoodResultBlocks )
             return HW_NAND_STATUS_OK;
         } ) );
 
-    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_StartSession() );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
+               EXTERNAL_FLASH_StartSession(
+                   ( EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 2U ) * TEST_BLOCK_DATA_BYTES ) );
+}
+
+TEST_F( ExternalFlashTest, StartSessionRoundsReservationUpToOneEraseBlock )
+{
+    InitDriverAllGood();
+
+    EXPECT_CALL( mock, BlockErase( _ ) ).Times( 1U ).WillOnce( Return( HW_NAND_STATUS_OK ) );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_StartSession( 1U ) );
+    EXPECT_EQ( 1U, external_flash_result_session_capacity_bytes );
+}
+
+TEST_F( ExternalFlashTest, StartSessionWithZeroCapacityDoesNotEraseResultBlocks )
+{
+    InitDriverAllGood();
+
+    EXPECT_CALL( mock, BlockErase( _ ) ).Times( 0U );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_StartSession( 0U ) );
+    EXPECT_EQ( 0U, external_flash_result_session_capacity_bytes );
+}
+
+TEST_F( ExternalFlashTest, StartSessionRejectsReservationLargerThanResultPartition )
+{
+    InitDriverAllGood();
+
+    EXPECT_CALL( mock, BlockErase( _ ) ).Times( 0U );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_STORAGE_FULL,
+               EXTERNAL_FLASH_StartSession( TEST_RESULT_CAPACITY_BYTES + 1U ) );
 }
 
 TEST_F( ExternalFlashTest, StartInstructionUploadErasesOnlyGoodInstructionBlocks )
@@ -515,7 +548,8 @@ TEST_F( ExternalFlashTest, NextResultSessionAdvancesWearCursorAfterExactPageResu
 
     EXPECT_CALL( mock, BlockErase( _ ) ).WillRepeatedly( Return( HW_NAND_STATUS_OK ) );
 
-    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_StartSession() );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
+               EXTERNAL_FLASH_StartSession( TEST_RESULT_CAPACITY_BYTES ) );
     EXPECT_EQ( external_flash_allocator_result_next_offset, 1U );
 }
 

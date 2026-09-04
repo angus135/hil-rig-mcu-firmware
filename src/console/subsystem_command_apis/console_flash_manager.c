@@ -641,8 +641,8 @@ static void CONSOLE_Flash_ExecutionEchoFromISR( void )
         }
 
         FlashManagerResultWriteLease_T lease;
-        if ( !FLASH_MANAGER_ReserveResultRecordFromISR(
-                 instruction->header.operations_length_bytes, &lease ) )
+        if ( !FLASH_MANAGER_ReserveResultRecordFromISR( instruction->header.operations_length_bytes,
+                                                        &lease ) )
         {
             CONSOLE_Flash_EndExecutionHarnessFromISR(
                 CONSOLE_FLASH_EXECUTION_TEST_FAILED,
@@ -989,7 +989,7 @@ static void CONSOLE_Flash_ExternalTestCommand( uint16_t argc, char* argv[] )
     }
 
     uint8_t result_seed = ( uint8_t )( seed ^ 0xA5U );
-    status              = EXTERNAL_FLASH_StartSession();
+    status              = EXTERNAL_FLASH_StartSession( info.page_size_bytes + partial_length );
     if ( status != EXTERNAL_FLASH_STATUS_OK )
     {
         CONSOLE_Printf( "Result session start failed (status=%d).\r\n", ( int )status );
@@ -1221,7 +1221,8 @@ static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] )
 /** Requests execution preparation and waits for instruction prefill. */
 static void CONSOLE_Flash_PrepareCommand( void )
 {
-    FlashManagerRequestStatus_T status = FLASH_MANAGER_RequestExecutionPreparation();
+    FlashManagerRequestStatus_T status =
+        FLASH_MANAGER_RequestExecutionPreparation( console_flash_last_upload_bytes );
     if ( status != FLASH_MANAGER_REQUEST_OK )
     {
         CONSOLE_Printf( "Execution preparation rejected (status=%d).\r\n", ( int )status );

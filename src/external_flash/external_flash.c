@@ -841,11 +841,18 @@ ExternalFlashStatus_T EXTERNAL_FLASH_GetInfo( ExternalFlashInfo_T* info )
 /**
  * @brief Prepares result storage and starts a new volatile result session.
  */
-ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void )
+ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( uint32_t maximum_result_length_bytes )
 {
     if ( !external_flash_initialised )
     {
         return EXTERNAL_FLASH_STATUS_NOT_INITIALISED;
+    }
+
+    uint32_t result_capacity =
+        EXTERNAL_FLASH_GetPartitionCapacityBytes( EXTERNAL_FLASH_ALLOCATOR_PARTITION_RESULT );
+    if ( maximum_result_length_bytes > result_capacity )
+    {
+        return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
     }
 
     if ( external_flash_session_active && !external_flash_result_cursor_advanced
@@ -856,25 +863,21 @@ ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void )
                                                 EXTERNAL_FLASH_BlockDataSizeBytes() );
     }
 
-    uint32_t result_capacity =
-        EXTERNAL_FLASH_GetPartitionCapacityBytes( EXTERNAL_FLASH_ALLOCATOR_PARTITION_RESULT );
-    if ( result_capacity == 0U )
+    if ( maximum_result_length_bytes > 0U )
     {
-        return EXTERNAL_FLASH_STATUS_STORAGE_FULL;
-    }
-
-    ExternalFlashStatus_T status = EXTERNAL_FLASH_ALLOCATOR_PreparePartition(
-        EXTERNAL_FLASH_ALLOCATOR_PARTITION_RESULT, result_capacity,
-        EXTERNAL_FLASH_BlockDataSizeBytes() );
-    if ( status != EXTERNAL_FLASH_STATUS_OK )
-    {
-        return status;
+        ExternalFlashStatus_T status = EXTERNAL_FLASH_ALLOCATOR_PreparePartition(
+            EXTERNAL_FLASH_ALLOCATOR_PARTITION_RESULT, maximum_result_length_bytes,
+            EXTERNAL_FLASH_BlockDataSizeBytes() );
+        if ( status != EXTERNAL_FLASH_STATUS_OK )
+        {
+            return status;
+        }
     }
 
     external_flash_session_active                = true;
     external_flash_result_length_bytes           = 0U;
     external_flash_committed_result_length_bytes = 0U;
-    external_flash_result_session_capacity_bytes = result_capacity;
+    external_flash_result_session_capacity_bytes = maximum_result_length_bytes;
     external_flash_result_cursor_advanced        = false;
     EXTERNAL_FLASH_ClearResultPageBuffer();
 
