@@ -141,13 +141,7 @@ typedef struct
 /**
  * @brief Initialises the external flash storage service and scans bad blocks.
  *
- * @param maximum_result_length_bytes Maximum logical result bytes that may be
- *        written during this session. Zero starts a no-results session without
- *        erasing result blocks.
- *
- * @return EXTERNAL_FLASH_STATUS_OK on success,
- *         EXTERNAL_FLASH_STATUS_STORAGE_FULL if the requested reservation is
- *         larger than the usable result partition, otherwise an error status.
+ * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
  *
  * @note Call this once after hw_qspi has been initialised or has adopted the
  *       CubeMX QSPI handle, and before any NAND-backed storage access.
@@ -168,7 +162,13 @@ ExternalFlashStatus_T EXTERNAL_FLASH_GetInfo( ExternalFlashInfo_T* info );
 /**
  * @brief Prepares result storage and starts a new volatile result session.
  *
- * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
+ * @param maximum_result_length_bytes Maximum logical result bytes that may be
+ *        written during this session. Zero starts a no-results session without
+ *        erasing result blocks.
+ *
+ * @return EXTERNAL_FLASH_STATUS_OK on success,
+ *         EXTERNAL_FLASH_STATUS_STORAGE_FULL if the requested reservation is
+ *         larger than the usable result partition, otherwise an error status.
  *
  * @note Existing result bytes are discarded. Results are not recovered after reset.
  * @note The flash manager should call this after the host has uploaded the test
