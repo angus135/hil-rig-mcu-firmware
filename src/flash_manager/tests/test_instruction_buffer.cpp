@@ -150,23 +150,24 @@ protected:
     }
 
     static uint32_t StoreInstruction( uint8_t* destination, uint32_t timestamp,
-                                      uint16_t payload_length_bytes, uint8_t payload_seed )
+                                      uint16_t operations_length_bytes, uint8_t operations_seed )
     {
         FlashManagerInstructionHeader_T header = {
             timestamp,
-            payload_length_bytes,
-            2U,
-            3U,
+            operations_length_bytes,
+            1U,
+            0U,
         };
 
         std::memcpy( destination, &header, sizeof( header ) );
 
-        for ( uint16_t index = 0U; index < payload_length_bytes; index++ )
+        for ( uint16_t index = 0U; index < operations_length_bytes; index++ )
         {
-            destination[sizeof( header ) + index] = static_cast<uint8_t>( payload_seed + index );
+            destination[sizeof( header ) + index] =
+                static_cast<uint8_t>( operations_seed + index );
         }
 
-        return static_cast<uint32_t>( sizeof( header ) ) + payload_length_bytes;
+        return static_cast<uint32_t>( sizeof( header ) ) + operations_length_bytes;
     }
 
     static void FillBytes( uint8_t* destination, std::size_t length, uint8_t seed )
@@ -537,8 +538,8 @@ TEST_F( InstructionBufferTest, PeekAndConsumeAdvanceWithinPageWithoutRequestingR
                INSTRUCTION_BUFFER_PeekInstruction( &first_view ) );
     ASSERT_NE( nullptr, first_view );
     EXPECT_EQ( 100U, first_view->header.timestamp );
-    EXPECT_EQ( first_payload_length_bytes, first_view->header.payload_length_bytes );
-    EXPECT_EQ( 0x10U, first_view->payload[0] );
+    EXPECT_EQ( first_payload_length_bytes, first_view->header.operations_length_bytes );
+    EXPECT_EQ( 0x10U, first_view->operations[0] );
 
     /* A later execution tick must reuse the prepared view without reparsing RAM. */
     constexpr uint32_t modified_backing_timestamp = 999U;
@@ -601,7 +602,7 @@ TEST_F( InstructionBufferTest, PeekWaitsUntilCompleteCrossPageRecordIsBuffered )
     ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
     ASSERT_NE( nullptr, view );
     EXPECT_EQ( 0, std::memcmp(
-                      view->payload,
+                      view->operations,
                       &image[first_record_length_bytes + sizeof( FlashManagerInstructionHeader_T )],
                       payload_length_bytes ) );
 }
@@ -723,8 +724,8 @@ TEST_F( InstructionBufferTest, RingMirrorMakesCrossBoundaryInstructionPayloadCon
     ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
     ASSERT_NE( nullptr, view );
     EXPECT_EQ( 40U, view->header.timestamp );
-    EXPECT_EQ( 4U, view->header.payload_length_bytes );
-    EXPECT_EQ( 0, std::memcmp( view->payload, &image[image_length_bytes - 4U], 4U ) );
+    EXPECT_EQ( 4U, view->header.operations_length_bytes );
+    EXPECT_EQ( 0, std::memcmp( view->operations, &image[image_length_bytes - 4U], 4U ) );
 
     EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction() );
     EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY, instruction_buffer_context.page_states[2] );
