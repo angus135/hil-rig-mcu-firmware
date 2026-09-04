@@ -58,7 +58,7 @@
 
 void EXECUTION_MANAGER_Process_From_ISR( void )
 {
-    HW_GPIO_Toggle_Output( USER_LED_BLUE_4 );
+    HW_GPIO_Toggle_Output( USER_LED_BLUE_1 );
     /*
      * TODO: Peek the ordered instruction stream until the head timestamp is
      * later than the current tick. Execute and consume every equal-timestamp

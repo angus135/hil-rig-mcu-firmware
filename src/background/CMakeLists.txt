@@ -31,6 +31,7 @@ target_link_libraries(background
         rtos
         hw_gpio
         logic_expander
+        run_state_manager
 )
 
 # -----------------------------
