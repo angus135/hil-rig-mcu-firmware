@@ -85,7 +85,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
     {
         /*
          * TODO: Add streamed instruction upload in task context:
-         * - validate and canonicalise ordered [header][payload] records;
+         * - validate and canonicalise ordered tick instructions and operations;
          * - request upload start and wait for INSTRUCTION_UPLOAD;
          * - submit chunks atomically, retaining an unchanged chunk on BUSY;
          * - request finish after every declared byte is accepted; and

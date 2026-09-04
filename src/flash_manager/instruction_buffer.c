@@ -17,11 +17,11 @@
  *      - Consuming all bytes in a slot returns it to EMPTY so the Flash Manager
  *        can refill it with the next NAND page.
  *
- *      A record consists of ExecutionInstructionHeader_T followed by its
- *      packed operations. Records may cross a NAND page boundary. Most records can be
- *      exposed directly from the three circular page slots. A fourth region
- *      mirrors slot zero immediately after slot two, making records that cross
- *      the physical ring end contiguous without copying in the execution ISR.
+ *      An instruction consists of ExecutionInstructionHeader_T followed by its
+ *      packed operations. Instructions may cross NAND page boundaries. Most can
+ *      be exposed directly from the three circular page slots. Two trailing
+ *      regions mirror slots zero and one, keeping a maximum-size instruction
+ *      crossing the physical ring end contiguous without copying in the ISR.
  *      Timestamp scheduling is intentionally owned by the Execution Manager;
  *      this module only caches, exposes, and advances the ordered byte stream.
  *
@@ -876,10 +876,10 @@ uint32_t INSTRUCTION_BUFFER_GetBufferedUnreadBytes( void )
 /**
  * @brief Returns the current instruction view without advancing the stream.
  *
- * The fixed header is copied into an aligned public view and the payload is
- * exposed directly from storage. The slot-zero mirror keeps a record crossing
- * the physical ring end contiguous, so this path performs no payload copy and
- * no page search.
+ * The fixed header is copied into an aligned public view and the operations are
+ * exposed directly from storage. The two-page mirror keeps an instruction
+ * crossing the physical ring end contiguous, so this path performs no operation
+ * copy and no page search.
  */
 InstructionBufferPeekStatus_T
 INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instruction )
@@ -910,7 +910,7 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
 
     /*
      * Copy the fixed header into an aligned object for safe field access. The
-     * slot-zero mirror makes this a single bounded copy even at the ring end.
+     * two-page mirror makes this a single bounded copy even at the ring end.
      */
     memcpy( &header, instruction_buffer_context.consumer_record_pointer, sizeof( header ) );
 

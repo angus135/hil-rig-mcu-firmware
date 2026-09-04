@@ -49,14 +49,15 @@ extern "C"
  *
  * Before the timer starts, the Run State Manager must have requested Flash
  * Manager preparation and observed FLASH_MANAGER_STATE_EXECUTING.
- * Instructions are supplied in nondecreasing timestamp order.
+ * Instructions are supplied in strictly increasing timestamp order, with at
+ * most one instruction for each output-bearing tick.
  *
- * At each execution tick, repeatedly peek the head instruction:
+ * At each execution tick, peek the head instruction once:
  *
  * - timestamp > current tick: stop this iteration without consuming it. A
  *   later peek returns the same cached view without reparsing the header.
- * - timestamp == current tick: dispatch by peripheral type and channel, then
- *   consume exactly once and peek again.
+ * - timestamp == current tick: dispatch every packed operation in order, then
+ *   consume the complete instruction exactly once.
  * - timestamp < current tick: report an execution-overrun/infeasibility fault,
  *   stop the session, and do not consume the late instruction.
  *
