@@ -58,10 +58,10 @@ static void BACKGROUND_Write_State_LEDs( RunState_T state );
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
-static uint16_t background_led_cycles_remaining = 0U;
-static bool     background_state_leds_initialised = false;
-static RunState_T background_displayed_state      = RUN_STATE_IDLE;
-static bool       background_fault_active          = false;
+static uint16_t   background_led_cycles_remaining   = 0U;
+static bool       background_state_leds_initialised = false;
+static RunState_T background_displayed_state        = RUN_STATE_IDLE;
+static bool       background_fault_active           = false;
 
 static const BackgroundProcess_T background_processes[] = {
     BACKGROUND_Process_Logic_Expander,
@@ -108,7 +108,7 @@ static void BACKGROUND_Process_Status_LED( void )
     if ( !background_state_leds_initialised || ( status.state != background_displayed_state ) )
     {
         BACKGROUND_Write_State_LEDs( status.state );
-        background_displayed_state       = status.state;
+        background_displayed_state        = status.state;
         background_state_leds_initialised = true;
     }
 

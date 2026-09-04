@@ -83,11 +83,11 @@ protected:
 
     void SetUp( void ) override
     {
-        g_mock_dependencies             = &mock_dependencies;
-        background_led_cycles_remaining = 0U;
+        g_mock_dependencies               = &mock_dependencies;
+        background_led_cycles_remaining   = 0U;
         background_state_leds_initialised = false;
         background_displayed_state        = RUN_STATE_IDLE;
-        background_fault_active            = false;
+        background_fault_active           = false;
     }
 
     void TearDown( void ) override
@@ -106,9 +106,8 @@ TEST_F( BackgroundTest, ServicesExpanderEveryCycle )
     EXPECT_CALL( mock_dependencies, ResetOutput( testing::_ ) ).Times( testing::AnyNumber() );
     EXPECT_CALL( mock_dependencies, GetRunStateStatus( testing::_ ) )
         .Times( 101 )
-        .WillRepeatedly( testing::Invoke( []( RunStateManagerStatus_T* status ) {
-            *status = {};
-        } ) );
+        .WillRepeatedly(
+            testing::Invoke( []( RunStateManagerStatus_T* status ) { *status = {}; } ) );
 
     for ( uint16_t cycle = 0U; cycle < 101U; ++cycle )
     {
