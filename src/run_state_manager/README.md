@@ -101,7 +101,8 @@ Before a run, request Flash Manager execution preparation and wait for
 stop TIM4, ensure the ISR has returned and all result leases are resolved, then
 request result finalisation and wait for `RESULTS_READY` or `FAULT`.
 
-Instructions are ordered by timestamp. If the Execution Manager observes an
+There is at most one grouped instruction for each output-bearing tick, and
+instructions are ordered by timestamp. If the Execution Manager observes an
 instruction timestamp less than the current tick, the workload has overrun its
 deadline and the test is infeasible. The late instruction is not consumed. The
 Execution Manager reports the fault through the ISR-safe RSM handoff. This
