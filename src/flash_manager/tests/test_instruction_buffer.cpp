@@ -516,6 +516,27 @@ TEST_F( InstructionBufferTest, CompletingSlotZeroCopiesItsValidBytesIntoMirror )
     EXPECT_EQ( 0U, test_critical_depth );
 }
 
+TEST_F( InstructionBufferTest, CompletingSlotOneCopiesItsValidBytesIntoSecondMirrorPage )
+{
+    Prepare( TEST_INSTRUCTION_PAGE_SIZE_BYTES * 2U );
+
+    InstructionBufferPageFillLease_T first_lease = AcquirePage();
+    std::memset( first_lease.page_data, 0x11, first_lease.read_length_bytes );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &first_lease, true ) );
+
+    InstructionBufferPageFillLease_T second_lease = AcquirePage();
+    std::memset( second_lease.page_data, 0x22, second_lease.read_length_bytes );
+    ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &second_lease, true ) );
+
+    uint32_t slot_one_offset_bytes = TEST_INSTRUCTION_PAGE_SIZE_BYTES;
+    uint32_t mirror_one_offset_bytes =
+        TEST_INSTRUCTION_PAGE_SIZE_BYTES * ( INSTRUCTION_BUFFER_PAGE_COUNT + 1U );
+
+    EXPECT_EQ( 0, std::memcmp( &instruction_buffer_storage[slot_one_offset_bytes],
+                               &instruction_buffer_storage[mirror_one_offset_bytes],
+                               TEST_INSTRUCTION_PAGE_SIZE_BYTES ) );
+}
+
 TEST_F( InstructionBufferTest, PeekAndConsumeAdvanceWithinPageWithoutRequestingRefill )
 {
     constexpr uint16_t first_payload_length_bytes  = 4U;
@@ -605,6 +626,62 @@ TEST_F( InstructionBufferTest, PeekWaitsUntilCompleteCrossPageRecordIsBuffered )
                       view->operations,
                       &image[first_record_length_bytes + sizeof( ExecutionInstructionHeader_T )],
                       payload_length_bytes ) );
+}
+
+TEST_F( InstructionBufferTest, PeekAndConsumeSupportACompleteTwoPageInstruction )
+{
+    constexpr uint16_t operations_length_bytes = static_cast<uint16_t>(
+        TEST_INSTRUCTION_PAGE_SIZE_BYTES * 2U - sizeof( ExecutionInstructionHeader_T ) );
+    constexpr uint32_t instruction_length_bytes =
+        sizeof( ExecutionInstructionHeader_T ) + operations_length_bytes;
+
+    std::array<uint8_t, instruction_length_bytes> image = {};
+    ASSERT_EQ( instruction_length_bytes,
+               StoreInstruction( image.data(), 100U, operations_length_bytes, 0x30U ) );
+
+    Prepare( instruction_length_bytes );
+    for ( uint32_t page_index = 0U; page_index < 2U; page_index++ )
+    {
+        InstructionBufferPageFillLease_T lease = AcquirePage();
+        std::memcpy( lease.page_data, &image[lease.instruction_offset_bytes],
+                     lease.read_length_bytes );
+        ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &lease, true ) );
+    }
+
+    const FlashManagerInstructionView_T* view = nullptr;
+    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+    ASSERT_NE( nullptr, view );
+    EXPECT_EQ( operations_length_bytes, view->header.operations_length_bytes );
+    EXPECT_EQ( 0, std::memcmp( view->operations, &image[sizeof( ExecutionInstructionHeader_T )],
+                               operations_length_bytes ) );
+
+    EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction() );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY, instruction_buffer_context.page_states[0] );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY, instruction_buffer_context.page_states[1] );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PEEK_END_OF_STREAM, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+}
+
+TEST_F( InstructionBufferTest, PeekRejectsInstructionLargerThanTwoPages )
+{
+    constexpr uint16_t operations_length_bytes =
+        static_cast<uint16_t>( TEST_INSTRUCTION_PAGE_SIZE_BYTES * 2U );
+    constexpr uint32_t image_length_bytes =
+        sizeof( ExecutionInstructionHeader_T ) + operations_length_bytes;
+
+    std::array<uint8_t, image_length_bytes> image = {};
+    StoreInstruction( image.data(), 100U, operations_length_bytes, 0x50U );
+
+    Prepare( image_length_bytes );
+    for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
+    {
+        InstructionBufferPageFillLease_T lease = AcquirePage();
+        std::memcpy( lease.page_data, &image[lease.instruction_offset_bytes],
+                     lease.read_length_bytes );
+        ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &lease, true ) );
+    }
+
+    const FlashManagerInstructionView_T* view = nullptr;
+    EXPECT_EQ( INSTRUCTION_BUFFER_PEEK_CORRUPT, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
 }
 
 TEST_F( InstructionBufferTest, EndReadClearsCurrentViewWithoutChangingGeometry )
@@ -733,6 +810,75 @@ TEST_F( InstructionBufferTest, RingMirrorMakesCrossBoundaryInstructionPayloadCon
     EXPECT_EQ( INSTRUCTION_BUFFER_PEEK_END_OF_STREAM, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
     EXPECT_EQ( instruction_buffer_context.instruction_length_bytes,
                instruction_buffer_context.consumer_stream_offset_bytes );
+}
+
+TEST_F( InstructionBufferTest, TwoPageMirrorKeepsMaximumInstructionContiguousAtRingEnd )
+{
+    constexpr uint16_t leading_operations_length_bytes = 8U;
+    constexpr uint32_t leading_instruction_length_bytes =
+        sizeof( ExecutionInstructionHeader_T ) + leading_operations_length_bytes;
+    constexpr uint16_t maximum_operations_length_bytes = static_cast<uint16_t>(
+        TEST_INSTRUCTION_PAGE_SIZE_BYTES * 2U - sizeof( ExecutionInstructionHeader_T ) );
+    constexpr uint32_t maximum_instruction_length_bytes =
+        sizeof( ExecutionInstructionHeader_T ) + maximum_operations_length_bytes;
+    constexpr uint32_t image_length_bytes = leading_instruction_length_bytes * 5U
+                                            + maximum_instruction_length_bytes;
+
+    std::array<uint8_t, image_length_bytes> image = {};
+    uint32_t                                image_offset_bytes = 0U;
+
+    for ( uint32_t index = 0U; index < 5U; index++ )
+    {
+        image_offset_bytes +=
+            StoreInstruction( &image[image_offset_bytes], index, leading_operations_length_bytes,
+                              static_cast<uint8_t>( 0x10U + index ) );
+    }
+
+    ASSERT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES * 2U + 16U, image_offset_bytes );
+    image_offset_bytes +=
+        StoreInstruction( &image[image_offset_bytes], 100U, maximum_operations_length_bytes, 0x80U );
+    ASSERT_EQ( image_length_bytes, image_offset_bytes );
+
+    Prepare( image_length_bytes );
+    for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
+    {
+        InstructionBufferPageFillLease_T lease = AcquirePage();
+        std::memcpy( lease.page_data, &image[lease.instruction_offset_bytes],
+                     lease.read_length_bytes );
+        ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &lease, true ) );
+    }
+
+    const FlashManagerInstructionView_T* view = nullptr;
+    for ( uint32_t refill_cycle = 0U; refill_cycle < 2U; refill_cycle++ )
+    {
+        for ( uint32_t index = 0U; index < 2U; index++ )
+        {
+            ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE,
+                       INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+            ASSERT_EQ( index == 1U ? INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED
+                                   : INSTRUCTION_BUFFER_CONSUME_OK,
+                       INSTRUCTION_BUFFER_ConsumeInstruction() );
+        }
+
+        InstructionBufferPageFillLease_T lease = AcquirePage();
+        std::memcpy( lease.page_data, &image[lease.instruction_offset_bytes],
+                     lease.read_length_bytes );
+        ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &lease, true ) );
+    }
+
+    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+    ASSERT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction() );
+
+    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+    ASSERT_NE( nullptr, view );
+    EXPECT_EQ( 100U, view->header.timestamp );
+    EXPECT_EQ( maximum_operations_length_bytes, view->header.operations_length_bytes );
+    EXPECT_EQ( 0, std::memcmp( view->operations,
+                               &image[image_length_bytes - maximum_operations_length_bytes],
+                               maximum_operations_length_bytes ) );
+
+    EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction() );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PEEK_END_OF_STREAM, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
 }
 
 /**-----------------------------------------------------------------------------

@@ -59,11 +59,13 @@
  */
 #define INSTRUCTION_BUFFER_PAGE_COUNT ( 3U )
 
+/* Two mirrored pages keep a two-page instruction contiguous at the ring end. */
+#define INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT ( 2U )
+
 #define INSTRUCTION_BUFFER_MAX_CAPACITY_BYTES                                                      \
     ( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES * INSTRUCTION_BUFFER_PAGE_COUNT )
 
-/* Temporary policy: one instruction record may occupy at most one NAND page. */
-#define INSTRUCTION_BUFFER_MAX_RECORD_BYTES ( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES )
+#define INSTRUCTION_BUFFER_MAX_RECORD_BYTES ( FLASH_MANAGER_MAX_INSTRUCTION_SIZE_BYTES )
 
 #define INSTRUCTION_BUFFER_STORAGE_BYTES                                                           \
     ( INSTRUCTION_BUFFER_MAX_CAPACITY_BYTES + INSTRUCTION_BUFFER_MAX_RECORD_BYTES )
@@ -79,9 +81,17 @@
 #if defined( __cplusplus )
 static_assert( sizeof( ExecutionInstructionHeader_T ) == 8U,
                "Unexpected instruction header layout" );
+static_assert( FLASH_MANAGER_MAX_INSTRUCTION_SIZE_BYTES
+                   == ( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES
+                        * INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT ),
+               "Instruction storage and public size limit disagree" );
 #else
 _Static_assert( sizeof( ExecutionInstructionHeader_T ) == 8U,
                 "Unexpected instruction header layout" );
+_Static_assert( FLASH_MANAGER_MAX_INSTRUCTION_SIZE_BYTES
+                    == ( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES
+                         * INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT ),
+                "Instruction storage and public size limit disagree" );
 #endif
 
 /**-----------------------------------------------------------------------------
@@ -250,11 +260,12 @@ typedef struct
 /* Shared storage and state for the mutually exclusive data flows. */
 
 /**
- * @brief Circular instruction page storage followed by a slot-zero mirror.
+ * @brief Circular instruction page storage followed by two mirrored slots.
  *
  * The first three runtime pages are shared by retrieval and upload. The final
- * maximum-record region is retrieval-only: it mirrors the valid prefix of slot
- * zero so a slot-two-to-slot-zero record has one contiguous address range.
+ * maximum-record region is retrieval-only: it mirrors the valid prefixes of
+ * slots zero and one so an instruction beginning in slot two can remain
+ * contiguous for as much as two pages.
  */
 static uint8_t instruction_buffer_storage[INSTRUCTION_BUFFER_STORAGE_BYTES];
 
@@ -414,33 +425,34 @@ static INSTRUCTION_BUFFER_COLD_NOINLINE InstructionBufferConsumeStatus_T
 INSTRUCTION_BUFFER_ConsumeAcrossPageBoundary( uint32_t record_length_bytes,
                                               uint32_t bytes_remaining_in_page )
 {
-    uint8_t  current_page_index       = instruction_buffer_context.consumer_page_index;
-    uint8_t  successor_page_index     = INSTRUCTION_BUFFER_NextPageIndex( current_page_index );
-    uint32_t successor_bytes_consumed = record_length_bytes - bytes_remaining_in_page;
+    uint8_t  page_index      = instruction_buffer_context.consumer_page_index;
+    uint32_t bytes_to_advance = record_length_bytes;
+    uint32_t page_offset      = instruction_buffer_context.consumer_page_offset_bytes;
 
-    instruction_buffer_context.page_states[current_page_index]      = INSTRUCTION_BUFFER_PAGE_EMPTY;
-    instruction_buffer_context.page_valid_bytes[current_page_index] = 0U;
+    ( void )bytes_remaining_in_page;
 
-    instruction_buffer_context.consumer_page_index        = successor_page_index;
-    instruction_buffer_context.consumer_page_offset_bytes = successor_bytes_consumed;
-    instruction_buffer_context.consumer_record_pointer =
-        INSTRUCTION_BUFFER_GetPageData( successor_page_index ) + successor_bytes_consumed;
-
-    /* A crossing record may also exhaust a final partial successor page. */
-    if ( ( successor_bytes_consumed > 0U )
-         && ( successor_bytes_consumed
-              == instruction_buffer_context.page_valid_bytes[successor_page_index] ) )
+    while ( bytes_to_advance
+            >= ( instruction_buffer_context.page_valid_bytes[page_index] - page_offset ) )
     {
-        instruction_buffer_context.page_states[successor_page_index] =
-            INSTRUCTION_BUFFER_PAGE_EMPTY;
-        instruction_buffer_context.page_valid_bytes[successor_page_index] = 0U;
+        uint32_t bytes_in_page =
+            instruction_buffer_context.page_valid_bytes[page_index] - page_offset;
 
-        instruction_buffer_context.consumer_page_index =
-            INSTRUCTION_BUFFER_NextPageIndex( successor_page_index );
-        instruction_buffer_context.consumer_page_offset_bytes = 0U;
-        instruction_buffer_context.consumer_record_pointer =
-            INSTRUCTION_BUFFER_GetPageData( instruction_buffer_context.consumer_page_index );
+        bytes_to_advance -= bytes_in_page;
+        instruction_buffer_context.page_states[page_index]      = INSTRUCTION_BUFFER_PAGE_EMPTY;
+        instruction_buffer_context.page_valid_bytes[page_index] = 0U;
+        page_index = INSTRUCTION_BUFFER_NextPageIndex( page_index );
+        page_offset = 0U;
+
+        if ( bytes_to_advance == 0U )
+        {
+            break;
+        }
     }
+
+    instruction_buffer_context.consumer_page_index        = page_index;
+    instruction_buffer_context.consumer_page_offset_bytes = bytes_to_advance;
+    instruction_buffer_context.consumer_record_pointer =
+        INSTRUCTION_BUFFER_GetPageData( page_index ) + bytes_to_advance;
 
     return ( instruction_buffer_context.next_nand_read_offset_bytes
              < instruction_buffer_context.instruction_length_bytes )
@@ -800,18 +812,19 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
         }
 
         /*
-         * Mirror slot zero immediately after the circular storage. This makes
-         * a record crossing from slot two into slot zero physically contiguous
-         * for the execution ISR. Keep the slot unpublished until the copy is
-         * complete so the ISR cannot observe a partially updated mirror.
+         * Mirror slots zero and one immediately after the circular storage.
+         * Together they keep a two-page instruction beginning in slot two
+         * physically contiguous. Keep each slot unpublished until its mirror
+         * copy is complete.
          */
-        if ( page_index == 0U )
+        if ( page_index < INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT )
         {
             uint32_t mirror_offset_bytes =
-                instruction_buffer_context.page_size_bytes * INSTRUCTION_BUFFER_PAGE_COUNT;
+                instruction_buffer_context.page_size_bytes
+                * ( INSTRUCTION_BUFFER_PAGE_COUNT + page_index );
 
-            memcpy( &instruction_buffer_storage[mirror_offset_bytes], instruction_buffer_storage,
-                    read_length_bytes );
+            memcpy( &instruction_buffer_storage[mirror_offset_bytes],
+                    INSTRUCTION_BUFFER_GetPageData( page_index ), read_length_bytes );
         }
     }
 
@@ -913,7 +926,10 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
      * stream. Semantic instruction validation belongs to upload preprocessing
      * and the Execution Manager.
      */
-    if ( ( record_length_bytes > instruction_buffer_context.page_size_bytes )
+    uint32_t maximum_instruction_size_bytes =
+        instruction_buffer_context.page_size_bytes * INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT;
+
+    if ( ( record_length_bytes > maximum_instruction_size_bytes )
          || ( record_length_bytes > remaining_image_bytes ) )
     {
         return INSTRUCTION_BUFFER_PEEK_CORRUPT;

@@ -251,6 +251,9 @@ typedef struct
 
 /* Execution instruction serving. */
 
+/** Maximum complete tick-instruction size supported by the instruction buffer. */
+#define FLASH_MANAGER_MAX_INSTRUCTION_SIZE_BYTES ( 4096U )
+
 /**
  * @brief Read-only view of the next buffered execution instruction.
  *
