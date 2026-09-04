@@ -60,10 +60,11 @@ void EXECUTION_MANAGER_Process_From_ISR( void )
 {
     HW_GPIO_Toggle_Output( USER_LED_BLUE_1 );
     /*
-     * TODO: Peek the ordered instruction stream until the head timestamp is
-     * later than the current tick. Execute and consume every equal-timestamp
-     * instruction. A past timestamp is an execution-overrun/infeasibility
-     * fault and must end the session without consuming that instruction.
+     * TODO: Peek the next ordered instruction once. Retain it when its timestamp
+     * is later than the current tick, or execute all of its packed operations
+     * and consume it once when its timestamp matches the current tick. A past
+     * timestamp is an execution-overrun/infeasibility fault and must end the
+     * session without consuming that instruction.
      *
      * Reserve Flash Manager result storage before invoking a result-producing
      * driver. DMA owns only the driver's source buffer; the driver completes a
