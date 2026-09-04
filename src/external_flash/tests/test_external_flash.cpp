@@ -377,8 +377,8 @@ TEST_F( ExternalFlashTest, StartSessionErasesOnlyGoodResultBlocks )
         } ) );
 
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
-               EXTERNAL_FLASH_StartSession(
-                   ( EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 2U ) * TEST_BLOCK_DATA_BYTES ) );
+               EXTERNAL_FLASH_StartSession( ( EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 2U )
+                                            * TEST_BLOCK_DATA_BYTES ) );
 }
 
 TEST_F( ExternalFlashTest, StartSessionRoundsReservationUpToOneEraseBlock )
