@@ -39,7 +39,7 @@ extern "C"
  */
 
 #include "rtos_config.h"
-#include "execution_instruction/execution_instruction.h"
+#include "execution_manager/execution_instruction.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -250,9 +250,6 @@ typedef struct
 } FlashManagerResultWriteLease_T;
 
 /* Execution instruction serving. */
-
-/** Maximum complete tick-instruction size supported by the instruction buffer. */
-#define FLASH_MANAGER_MAX_INSTRUCTION_SIZE_BYTES ( 4096U )
 
 /**
  * @brief Read-only view of the next buffered execution instruction.
