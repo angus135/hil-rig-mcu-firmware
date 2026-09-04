@@ -117,7 +117,6 @@ TEST_F( BackgroundTest, ServicesExpanderEveryCycle )
 
 TEST_F( BackgroundTest, TaskRunsPeriodicProcessing )
 {
-    testing::InSequence sequence;
     EXPECT_CALL( mock_dependencies, GetTickCount() ).WillOnce( testing::Return( 17U ) );
     EXPECT_CALL( mock_dependencies, ProcessLogicExpander() )
         .WillOnce( testing::Return( LOGIC_EXPANDER_STATUS_NOT_READY ) );
