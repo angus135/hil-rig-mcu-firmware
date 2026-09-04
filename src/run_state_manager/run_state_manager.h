@@ -7,10 +7,9 @@
  *      Public interface for coordinating the HIL-RIG runtime lifecycle.
  *
  *  Notes:
- *      The current implementation still contains temporary timer-controller
- *      behavior. It is intended to become an RTOS task that owns system policy
- *      and coordinates the Execution Manager and Flash Manager through their
- *      public APIs.
+ *      The Run State Manager is an RTOS task that owns the system lifecycle
+ *      and execution clock. Named console events currently stand in for
+ *      future Host Interface and Execution Manager event sources.
  ******************************************************************************/
 
 #ifndef RUN_STATE_MANAGER_H
@@ -34,16 +33,101 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+/** Run State Manager task stack allocation, in FreeRTOS stack words. */
+#define RUN_STATE_MANAGER_TASK_MEMORY ( 256U )
+
+/** Run State Manager task scheduling priority. */
+#define RUN_STATE_MANAGER_TASK_PRIORITY ( 3U )
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
-typedef enum FrequencyMode_T
+typedef enum
 {
-    FREQUENCY_100HZ,
-    FREQUENCY_1KHZ,
-    FREQUENCY_10KHZ,
-} FrequencyMode_T;
+    RUN_STATE_IDLE = 0,
+    RUN_STATE_TEST_PACKAGE_RECEIVE,
+    RUN_STATE_CONFIGURATION,
+    RUN_STATE_ARMED,
+    RUN_STATE_EXECUTION,
+    RUN_STATE_RESULT_FINALISATION,
+    RUN_STATE_RESULTS_READY,
+    RUN_STATE_RESULT_TRANSFER,
+    RUN_STATE_FAULT
+} RunState_T;
+
+/** Supported execution-clock frequencies. */
+typedef enum
+{
+    RUN_STATE_FREQUENCY_100HZ = 0,
+    RUN_STATE_FREQUENCY_1KHZ,
+    RUN_STATE_FREQUENCY_10KHZ
+} RunStateFrequencyMode_T;
+
+/** First cause that forced the global lifecycle into FAULT. */
+typedef enum
+{
+    RUN_STATE_FAULT_NONE = 0,
+    RUN_STATE_FAULT_EXTERNAL_REQUEST,
+    RUN_STATE_FAULT_INVALID_TRANSITION,
+    RUN_STATE_FAULT_LOGIC_EXPANDER_NOT_READY,
+    RUN_STATE_FAULT_CONFIGURATION_UNAVAILABLE,
+    RUN_STATE_FAULT_DRIVER_CONFIGURATION,
+    RUN_STATE_FAULT_DRIVER_CONFIGURATION_TIMEOUT,
+    RUN_STATE_FAULT_DRIVER_START,
+    RUN_STATE_FAULT_DRIVER_STOP,
+    RUN_STATE_FAULT_EXECUTION_TIMER,
+    RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION,
+    RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION_TIMEOUT,
+    RUN_STATE_FAULT_FLASH_RESULT_FINALISATION,
+    RUN_STATE_FAULT_FLASH_RESULT_FINALISATION_TIMEOUT,
+    RUN_STATE_FAULT_FLASH_RESULT_TRANSFER,
+    RUN_STATE_FAULT_FLASH_RESULT_DISPOSITION,
+    RUN_STATE_FAULT_FLASH_MANAGER,
+    RUN_STATE_FAULT_INTERNAL
+} RunStateFaultReason_T;
+
+/** External event most recently evaluated by the Run State Manager task. */
+typedef enum
+{
+    RUN_STATE_REQUEST_NONE = 0,
+    RUN_STATE_REQUEST_PACKAGE_RECEIVE,
+    RUN_STATE_REQUEST_CONFIGURATION_READY,
+    RUN_STATE_REQUEST_EXECUTION,
+    RUN_STATE_REQUEST_EXECUTION_COMPLETE,
+    RUN_STATE_REQUEST_RESULT_TRANSFER,
+    RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE,
+    RUN_STATE_REQUEST_REPEAT,
+    RUN_STATE_REQUEST_DISCARD_RESULTS,
+    RUN_STATE_REQUEST_FAULT,
+    RUN_STATE_REQUEST_RESET,
+    RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_START,
+    RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_STOP
+} RunStateRequest_T;
+
+/** Result of validating and processing an external lifecycle event. */
+typedef enum
+{
+    RUN_STATE_REQUEST_RESULT_NONE = 0,
+    RUN_STATE_REQUEST_RESULT_ACCEPTED,
+    RUN_STATE_REQUEST_RESULT_REJECTED_STATE,
+    RUN_STATE_REQUEST_RESULT_REJECTED_PENDING,
+    RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE,
+    RUN_STATE_REQUEST_RESULT_FAILED
+} RunStateRequestResult_T;
+
+/** Coherent task-owned lifecycle status captured at one instant. */
+typedef struct
+{
+    RunState_T              state;
+    bool                    transition_pending;
+    bool                    execution_active;
+    bool                    execution_timer_running;
+    RunStateFrequencyMode_T execution_frequency;
+    RunStateFaultReason_T   fault_reason;
+    RunStateRequest_T       last_request;
+    RunStateRequestResult_T last_request_result;
+} RunStateManagerStatus_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -71,11 +155,12 @@ typedef enum FrequencyMode_T
  * 2. Wait asynchronously until FLASH_MANAGER_GetState() reports
  *    FLASH_MANAGER_STATE_EXECUTING. Treat FLASH_MANAGER_STATE_FAULT as a failed
  *    run preparation.
- * 3. Only then call EXECUTION_MANAGER_Start() to enable the execution timer.
+ * 3. Only then may the Run State Manager start the execution clock. TIM4
+ *    continues to dispatch each tick to EXECUTION_MANAGER_Process_From_ISR().
  *
  * End-of-run handshake:
  *
- * 1. Call EXECUTION_MANAGER_Stop() first. The execution ISR must be completely
+ * 1. Stop the execution clock first. The execution ISR must be completely
  *    finished, with every result lease committed or cancelled, before
  *    finalisation is requested.
  * 2. Call FLASH_MANAGER_RequestResultFinalisation().
@@ -96,54 +181,179 @@ typedef enum FrequencyMode_T
  *    no discard/abort-session API; normal finalisation reaches RESULTS_READY
  *    without changing the global test outcome from infeasible.
  *
+ * Fault recovery:
+ *
+ * After stopping the execution clock and DUT drivers, fault entry requests
+ * FLASH_MANAGER_RequestAbortSession(). Flash cleanup is asynchronous. Reset is
+ * rejected until FLASH_MANAGER_STATE_IDLE confirms that runtime buffer
+ * ownership has been released safely.
+ *
  * Every FlashManagerRequestStatus_T value must be handled. In particular,
  * TASK_NOT_READY means startup integration is incomplete, INVALID_STATE means
  * the lifecycle sequence is wrong, and NOTIFY_FAILED leaves the Flash Manager
  * in FAULT.
  *
- * Result retrieval will later own the RESULTS_READY -> TRANSFERRING_RESULTS
- * transition and the eventual return to IDLE. Until that path exists, a
- * completed result session must not be overwritten by starting another run.
+ * Completed results may be transferred normally, deliberately discarded to
+ * return to IDLE, or discarded for a repeat run that retains the active
+ * configuration and uploaded instructions before returning to ARMED.
  *
- * The future Run State Manager should call Execution Manager timer/frequency
- * APIs rather than duplicating timer constants or defining its own
- * FrequencyMode_T. The current temporary implementation still duplicates that
- * behavior and starts TIM4 from its Init path; it must not be used as the final
- * lifecycle coordinator without resolving that sequencing.
+ * The Run State Manager owns execution-clock configuration, start, and stop.
+ * The Execution Manager owns the work performed for each generated tick.
  */
 
 /**
- * @brief Starts the Test Scheduler
- *
- */
-void RUN_STATE_MANAGER_Start( void );
-
-/**
- * @brief Stops the Test Scheduler
- *
- */
-void RUN_STATE_MANAGER_Stop( void );
-
-/**
- * @brief Sets the frequency mode of the test scheduler
+ * @brief Sets the execution-clock frequency mode.
  *
  * @param mode - the selected frequency mode
  *
- * Note: currently only supports 100Hz, 1kHz or 10kHz
- *
+ * An updated mode takes effect the next time the execution clock is started.
  */
-void RUN_STATE_MANAGER_Set_Frequency_Mode( FrequencyMode_T mode );
+void RUN_STATE_MANAGER_Set_Execution_Frequency( RunStateFrequencyMode_T mode );
 
 /**
- * @brief Test Scheduler Initialization
+ * @brief Gets the configured execution-clock frequency mode.
  *
- * Initialises the temporary test scheduler using the selected frequency mode.
+ * @returns The currently configured frequency mode.
+ */
+RunStateFrequencyMode_T RUN_STATE_MANAGER_Get_Execution_Frequency( void );
+
+/**
+ * @brief Initialises the Run State Manager.
  *
- * @warning The current placeholder starts TIM4 immediately. The final Run
- *          State Manager must instead wait for FLASH_MANAGER_STATE_EXECUTING
- *          before starting the Execution Manager.
+ * Initialises only resources owned by the Run State Manager. It sets the
+ * lifecycle to idle, selects the default execution-clock frequency, and
+ * ensures the execution clock is stopped. Peripheral and driver initialisation
+ * remains the responsibility of the application startup sequence.
  */
 void RUN_STATE_MANAGER_Init( void );
+
+/**
+ * @brief Requests entry into test-package reception from IDLE.
+ *
+ * @returns true if the request was delivered to the task, otherwise false.
+ */
+bool RUN_STATE_MANAGER_RequestPackageReceive( void );
+
+/** Requests application of the committed configuration. */
+bool RUN_STATE_MANAGER_RequestConfiguration( void );
+
+/** Requests execution preparation from ARMED. */
+bool RUN_STATE_MANAGER_RequestExecution( void );
+
+/**
+ * @brief Reports normal execution completion in task context.
+ *
+ * This is the future Execution Manager integration seam. No Execution Manager
+ * dependency is introduced by this interface.
+ */
+bool RUN_STATE_MANAGER_RequestExecutionComplete( void );
+
+/** Requests entry into result transfer from RESULTS_READY. */
+bool RUN_STATE_MANAGER_RequestResultTransfer( void );
+
+/** Reports successful result-transfer completion in task context. */
+bool RUN_STATE_MANAGER_RequestResultTransferComplete( void );
+
+/** Discards completed results and returns to ARMED with configuration retained. */
+bool RUN_STATE_MANAGER_RequestRepeat( void );
+
+/** Discards completed results and returns to IDLE with configuration cleared. */
+bool RUN_STATE_MANAGER_RequestDiscardResults( void );
+
+/**
+ * @brief Requests a transition to the fault state from task context.
+ *
+ * The first non-NONE reason is retained until a successful reset to IDLE. The
+ * execution-abort latch is set before the manager task is notified, preventing
+ * a later TIM4 tick from dispatching execution work.
+ *
+ * @param reason Fault cause reported by the requesting subsystem.
+ *
+ * @returns true if the request was delivered to the task, otherwise false.
+ */
+bool RUN_STATE_MANAGER_RequestFault( RunStateFaultReason_T reason );
+
+/**
+ * @brief Reports a run-ending fault from interrupt context without blocking.
+ *
+ * This latches execution abort before notifying the manager task. TIM4 is
+ * guarded immediately; task context subsequently stops the timer and drivers.
+ */
+bool RUN_STATE_MANAGER_RequestFaultFromISR( RunStateFaultReason_T reason );
+
+/** Returns true once a fault source has synchronously inhibited execution. */
+bool RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR( void );
+
+/**
+ * @brief Requests a reset from fault to idle.
+ *
+ * @returns true if the request was delivered to the task, otherwise false.
+ */
+bool RUN_STATE_MANAGER_RequestReset( void );
+
+/**
+ * @brief Requests diagnostic execution-timer start through the manager task.
+ *
+ * This bring-up API intentionally bypasses normal Flash preparation and DUT
+ * driver start sequencing. Production test execution must use lifecycle
+ * transitions instead.
+ *
+ * @returns true if the request was delivered to the task, otherwise false.
+ */
+bool RUN_STATE_MANAGER_RequestDiagnosticExecutionTimerStart( void );
+
+/**
+ * @brief Requests diagnostic execution-timer stop through the manager task.
+ *
+ * If normal execution is active, DUT-facing drivers are also stopped safely.
+ *
+ * @returns true if the request was delivered to the task, otherwise false.
+ */
+bool RUN_STATE_MANAGER_RequestDiagnosticExecutionTimerStop( void );
+
+/**
+ * @brief Copies a coherent snapshot of all externally observable RSM state.
+ *
+ * @param status Caller-owned destination. A null pointer is ignored.
+ */
+void RUN_STATE_MANAGER_GetStatus( RunStateManagerStatus_T* status );
+
+/**
+ * @brief Gets the current lifecycle state.
+ *
+ * @returns The current lifecycle state.
+ */
+RunState_T RUN_STATE_MANAGER_GetState( void );
+
+/**
+ * @brief Reports whether an asynchronous lifecycle transition is in progress.
+ *
+ * @returns true while the manager is waiting for a subordinate manager,
+ *          otherwise false.
+ */
+bool RUN_STATE_MANAGER_IsTransitionPending( void );
+
+/** @brief Reports whether DUT driver execution has been started. */
+bool RUN_STATE_MANAGER_IsExecutionActive( void );
+
+/** @brief Reports whether the RSM-owned execution timer is running. */
+bool RUN_STATE_MANAGER_IsExecutionTimerRunning( void );
+
+/** @brief Gets the first fault cause recorded since initialization or reset. */
+RunStateFaultReason_T RUN_STATE_MANAGER_GetFaultReason( void );
+
+/** @brief Gets the external event most recently evaluated by the RSM task. */
+RunStateRequest_T RUN_STATE_MANAGER_GetLastRequest( void );
+
+/** @brief Gets the validation result for the most recently evaluated event. */
+RunStateRequestResult_T RUN_STATE_MANAGER_GetLastRequestResult( void );
+
+/**
+ * @brief Run State Manager FreeRTOS task entry point.
+ *
+ * @param task_parameters Unused task parameter reserved for future use.
+ */
+void RUN_STATE_MANAGER_Task( void* task_parameters );
 
 #ifdef __cplusplus
 }
