@@ -444,10 +444,10 @@ protected:
 
         for ( uint32_t page_index = 0U; page_index < page_count; page_index++ )
         {
-            FlashManagerInstructionHeader_T header = {
+            ExecutionInstructionHeader_T header = {
                 page_index,
                 static_cast<uint16_t>( TEST_PAGE_SIZE_BYTES
-                                       - sizeof( FlashManagerInstructionHeader_T ) ),
+                                       - sizeof( ExecutionInstructionHeader_T ) ),
                 1U,
                 0U,
             };
@@ -1137,7 +1137,7 @@ TEST_F( FlashManagerTest, CorruptStoredInstructionLatchesFault )
     InstructionBufferPageFillLease_T fill_lease = {};
     ASSERT_TRUE( INSTRUCTION_BUFFER_AcquireFillPage( &fill_lease ) );
 
-    FlashManagerInstructionHeader_T corrupt_header = {
+    ExecutionInstructionHeader_T corrupt_header = {
         100U,
         static_cast<uint16_t>( TEST_PAGE_SIZE_BYTES ),
         1U,
