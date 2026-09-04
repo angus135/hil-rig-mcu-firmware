@@ -552,6 +552,7 @@ Important statuses to handle:
 | Status | Meaning |
 |---|---|
 | `EXTERNAL_FLASH_STATUS_STORAGE_FULL` | Result or instruction partition capacity exhausted. |
+| `EXTERNAL_FLASH_STATUS_SESSION_CAPACITY_EXCEEDED` | A result write exceeded the capacity reserved for the active execution session; the physical result partition may still have free space. |
 | `EXTERNAL_FLASH_STATUS_TIMEOUT` | DMA or NAND operation did not complete. |
 | `EXTERNAL_FLASH_STATUS_ECC_ERROR` | Uncorrectable read issue. |
 | `EXTERNAL_FLASH_STATUS_PROGRAM_FAIL` | Program failure not recovered. |

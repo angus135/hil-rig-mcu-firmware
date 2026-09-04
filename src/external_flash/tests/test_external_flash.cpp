@@ -531,6 +531,17 @@ TEST_F( ExternalFlashTest, WriteResultPageRejectsInvalidArguments )
                EXTERNAL_FLASH_WriteResultPage( transfer_data, TEST_PAGE_SIZE_BYTES + 1U ) );
 }
 
+TEST_F( ExternalFlashTest, WriteResultPageReportsSessionCapacityExceeded )
+{
+    InitDriverAllGood();
+    StartSessionAllGood();
+    external_flash_result_session_capacity_bytes = TEST_PAGE_SIZE_BYTES - 1U;
+
+    EXPECT_CALL( mock, ProgramPageDma( _, _, _, _ ) ).Times( 0 );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_SESSION_CAPACITY_EXCEEDED,
+               EXTERNAL_FLASH_WriteResultPage( transfer_data, TEST_PAGE_SIZE_BYTES ) );
+}
+
 TEST_F( ExternalFlashTest, WriteResultPageFullPageUsesCallerBufferDirectly )
 {
     InitDriverAllGood();
