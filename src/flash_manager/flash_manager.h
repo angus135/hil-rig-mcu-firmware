@@ -39,6 +39,7 @@ extern "C"
  */
 
 #include "rtos_config.h"
+#include "execution_instruction/execution_instruction.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -251,36 +252,6 @@ typedef struct
 /* Execution instruction serving. */
 
 /**
- * @brief Fixed header stored before every canonical tick instruction.
- *
- * The package application layer creates this representation before upload.
- * One instruction contains all output operations scheduled for one execution
- * tick. Stored instructions form a packed [header][operations] stream without
- * padding between instructions. Upload processing must validate every complete
- * instruction and its operations before NAND storage.
- * The current storage format uses the MCU structure representation; byte order
- * and C alignment are therefore target-specific, and no format version is
- * currently stored.
- *
- * @todo Replace native serialization with the versioned, byte-order-explicit
- *       persisted format specified as future work in the Flash Manager README.
- */
-typedef struct
-{
-    /** Timestamp at which the instruction becomes due. */
-    uint32_t timestamp;
-
-    /** Total encoded operation bytes following this header, including padding. */
-    uint16_t operations_length_bytes;
-
-    /** Number of operations encoded after this header. */
-    uint8_t operation_count;
-
-    /** Reserved for future instruction flags; must be zero. */
-    uint8_t reserved;
-} FlashManagerInstructionHeader_T;
-
-/**
  * @brief Read-only view of the next buffered execution instruction.
  *
  * The header and operation stream together represent one complete tick.
@@ -296,7 +267,7 @@ typedef struct
 typedef struct
 {
     /** Parsed copy of the stored instruction header. */
-    FlashManagerInstructionHeader_T header;
+    ExecutionInstructionHeader_T header;
 
     /** Read-only packed operations belonging to the instruction. */
     const uint8_t* operations;
