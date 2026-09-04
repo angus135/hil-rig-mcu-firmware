@@ -161,7 +161,9 @@ Partial page instruction writes are only valid for the final page of the expecte
 
 ## Result Sessions
 
-`EXTERNAL_FLASH_StartSession` prepares the full writable result capacity and starts a new volatile result session.
+`EXTERNAL_FLASH_StartSession(maximum_result_length_bytes)` prepares only enough
+erase blocks for the requested logical result capacity and starts a new
+volatile result session. A zero-byte reservation performs no result erase.
 
 The result partition is append only during a session.
 
@@ -274,8 +276,9 @@ The instruction byte format is owned by the package and execution format, not by
 Before execution starts:
 
 1. System startup calls `EXTERNAL_FLASH_Init`.
-2. The flash manager calls `EXTERNAL_FLASH_StartSession`.
-3. `EXTERNAL_FLASH_StartSession` prepares the full writable result capacity and resets volatile result state.
+2. The flash manager calls `EXTERNAL_FLASH_StartSession(maximum_result_length_bytes)`.
+3. The session start prepares enough result blocks for the supplied limit and
+   resets volatile result state.
 4. The flash manager primes its instruction queue by calling `EXTERNAL_FLASH_ReadInstructionPage`.
 
 During execution:
@@ -362,7 +365,9 @@ This implementation uses a best-practice-lite wear policy.
 The instruction, result, and metadata partitions remain fixed. Within the instruction and result partitions, `external_flash` builds an active logical-to-physical block map using the lowest known erase counts:
 
 - `EXTERNAL_FLASH_StartInstructionUpload` erases and maps only the blocks needed for the expected instruction image, while leaving spare blocks available for program-failure replacement.
-- `EXTERNAL_FLASH_StartSession` currently prepares the full writable result capacity because the final result length is not known before execution.
+- The caller supplies a conservative maximum result length before execution.
+  External Flash rounds the physical erase amount up to whole NAND blocks but
+  retains the exact requested byte count as the logical session limit.
 - Active maps are prepared in erase-count passes, using the rotation cursor to break ties. This keeps full result-session preparation bounded and avoids repeatedly scanning the growing active map.
 - Program failures retire the failed block and replace it with an already-erased spare selected by the allocator.
 - Runtime erase counts are updated whenever `external_flash` successfully erases a block.

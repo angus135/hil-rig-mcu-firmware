@@ -386,10 +386,11 @@ commented out in `app_main.c` until that startup order is connected.
 Before each execution, the Run State Manager requests asynchronous preparation:
 
 ```c
-FLASH_MANAGER_RequestExecutionPreparation();
+FLASH_MANAGER_RequestExecutionPreparation(maximum_result_length_bytes);
 ```
 
-The Flash Manager task calls `EXTERNAL_FLASH_StartSession()`, resets the result
+The Flash Manager task calls
+`EXTERNAL_FLASH_StartSession(maximum_result_length_bytes)`, resets the result
 buffer, reads the committed instruction length, prepares the instruction buffer,
 and preloads every available instruction slot. It changes to
 `FLASH_MANAGER_STATE_EXECUTING` only after all preparation operations succeed.
@@ -476,7 +477,8 @@ instruction position remains after the execution ISR has stopped.
 If the final result length is exactly page aligned, there is no separate
 external-flash finalize call. Leave the session readable for result transfer;
 `external_flash` advances its result wear-rotation cursor when the next
-`EXTERNAL_FLASH_StartSession()` begins. The Host Interface must use the public
+`EXTERNAL_FLASH_StartSession(maximum_result_length_bytes)` begins. The Host
+Interface must use the public
 Flash Manager result-transfer APIs rather than call `external_flash` directly.
 
 ---
@@ -490,20 +492,22 @@ the `external_flash` boundaries so the storage layer can manage wear:
   `EXTERNAL_FLASH_WriteInstructionBytes`, or
   `EXTERNAL_FLASH_WriteInstructionPage`, followed by
   `EXTERNAL_FLASH_FinishInstructionUpload`.
-- Start each execution run with `EXTERNAL_FLASH_StartSession`.
+- Start each execution run with
+  `EXTERNAL_FLASH_StartSession(maximum_result_length_bytes)`.
 - Write result data only through `EXTERNAL_FLASH_WriteResultPage`.
 - Do not call `hw_nand` or `hw_qspi` directly.
 
 Current policy:
 
 - Instruction upload erases only the blocks required for the uploaded instruction image.
-- Result session preparation currently prepares the full writable result
-  capacity because the final result length is not known before execution.
+- The Host Interface or feasibility analyser calculates a conservative result
+  limit from the test configuration. Flash Manager enforces that logical limit,
+  while External Flash erases the required whole NAND blocks.
 - `external_flash` keeps a spare block outside each active map so a
   program-failed block can be retired and replaced.
 - Exact-page result sessions do not need a flush/finalize call; the next
-  `EXTERNAL_FLASH_StartSession()` advances the wear cursor for the previous
-  committed result length.
+  `EXTERNAL_FLASH_StartSession(maximum_result_length_bytes)` advances the wear
+  cursor for the previous committed result length.
 - Runtime erase counts are currently RAM only; a metadata partition is reserved
   for future persistent snapshots.
 

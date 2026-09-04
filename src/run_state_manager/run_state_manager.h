@@ -151,7 +151,9 @@ typedef struct
  *
  * Start-of-run handshake:
  *
- * 1. Call FLASH_MANAGER_RequestExecutionPreparation().
+ * 1. Call FLASH_MANAGER_RequestExecutionPreparation() with the result capacity
+ *    reserved for the test. The current integration passes zero until result
+ *    production and feasibility analysis are connected.
  * 2. Wait asynchronously until FLASH_MANAGER_GetState() reports
  *    FLASH_MANAGER_STATE_EXECUTING. Treat FLASH_MANAGER_STATE_FAULT as a failed
  *    run preparation.
