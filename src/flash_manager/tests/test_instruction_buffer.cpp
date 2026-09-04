@@ -661,10 +661,10 @@ TEST_F( InstructionBufferTest, PeekAndConsumeSupportACompleteTwoPageInstruction 
     EXPECT_EQ( INSTRUCTION_BUFFER_PEEK_END_OF_STREAM, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
 }
 
-TEST_F( InstructionBufferTest, PeekRejectsInstructionLargerThanTwoPages )
+TEST_F( InstructionBufferTest, PeekRejectsInstructionOneByteLargerThanMaximum )
 {
-    constexpr uint16_t operations_length_bytes =
-        static_cast<uint16_t>( TEST_INSTRUCTION_PAGE_SIZE_BYTES * 2U );
+    constexpr uint16_t operations_length_bytes = static_cast<uint16_t>(
+        TEST_INSTRUCTION_PAGE_SIZE_BYTES * 2U - sizeof( ExecutionInstructionHeader_T ) + 1U );
     constexpr uint32_t image_length_bytes =
         sizeof( ExecutionInstructionHeader_T ) + operations_length_bytes;
 

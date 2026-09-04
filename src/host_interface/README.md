@@ -64,13 +64,15 @@ lifecycle functions, control TIM4, or access external Flash directly.
 Before starting an upload, the Host Interface must know the complete canonical
 byte length and guarantee:
 
-- packed `[FlashManagerInstructionHeader_T][payload]...` records with no padding;
-- nondecreasing instruction timestamps;
-- valid peripheral types, channels, and payload schemas;
-- each complete record is no larger than one NAND page; and
+- packed `[ExecutionInstructionHeader_T][operations...]` instructions;
+- strictly increasing instruction timestamps;
+- exactly one instruction for each output-bearing tick;
+- valid operation headers, opcodes, channels, payload layouts, and alignment;
+- each complete instruction is no larger than
+  `EXECUTION_INSTRUCTION_MAX_SIZE_BYTES`; and
 - the submitted byte count exactly matches the declared upload length.
 
-Transport chunks may split records and may cross NAND-page boundaries. Each
+Transport chunks may split instructions or operations and may cross NAND-page boundaries. Each
 submission itself must be non-empty and no larger than one NAND page. Because
 the current Flash Manager has no upload-cancel API, bring-up should not start an
 upload until the Host Interface can guarantee that the complete valid stream
