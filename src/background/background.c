@@ -24,6 +24,7 @@
 #include "run_state_manager.h"
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -102,7 +103,8 @@ static void BACKGROUND_Write_State_LEDs( RunState_T state )
 
 static void BACKGROUND_Process_Status_LED( void )
 {
-    RunStateManagerStatus_T status = { 0 };
+    RunStateManagerStatus_T status;
+    ( void )memset( &status, 0, sizeof( status ) );
     RUN_STATE_MANAGER_GetStatus( &status );
 
     if ( !background_state_leds_initialised || ( status.state != background_displayed_state ) )
@@ -120,17 +122,17 @@ static void BACKGROUND_Process_Status_LED( void )
     bool fault_active = status.state == RUN_STATE_FAULT;
     if ( fault_active && !background_fault_active )
     {
-        for ( GPIOOutput_T led = USER_LED_RED_0; led <= USER_LED_RED_5; led++ )
+        for ( uint32_t led = ( uint32_t )USER_LED_RED_0; led <= ( uint32_t )USER_LED_RED_5; led++ )
         {
-            HW_GPIO_Set_Single_Pin( led );
+            HW_GPIO_Set_Single_Pin( ( GPIOOutput_T )led );
         }
         background_led_cycles_remaining = BACKGROUND_LED_PERIOD_CYCLES;
     }
     else if ( !fault_active && background_fault_active )
     {
-        for ( GPIOOutput_T led = USER_LED_RED_0; led <= USER_LED_RED_5; led++ )
+        for ( uint32_t led = ( uint32_t )USER_LED_RED_0; led <= ( uint32_t )USER_LED_RED_5; led++ )
         {
-            HW_GPIO_Reset_Single_Pin( led );
+            HW_GPIO_Reset_Single_Pin( ( GPIOOutput_T )led );
         }
     }
     background_fault_active = fault_active;
@@ -141,9 +143,10 @@ static void BACKGROUND_Process_Status_LED( void )
 
         if ( fault_active )
         {
-            for ( GPIOOutput_T led = USER_LED_RED_0; led <= USER_LED_RED_5; led++ )
+            for ( uint32_t led = ( uint32_t )USER_LED_RED_0; led <= ( uint32_t )USER_LED_RED_5;
+                  led++ )
             {
-                HW_GPIO_Toggle_Output( led );
+                HW_GPIO_Toggle_Output( ( GPIOOutput_T )led );
             }
         }
 
