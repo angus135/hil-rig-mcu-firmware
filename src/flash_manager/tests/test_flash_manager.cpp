@@ -448,14 +448,14 @@ protected:
                 page_index,
                 static_cast<uint16_t>( TEST_PAGE_SIZE_BYTES
                                        - sizeof( FlashManagerInstructionHeader_T ) ),
-                2U,
-                3U,
+                1U,
+                0U,
             };
 
             uint32_t page_offset_bytes = page_index * TEST_PAGE_SIZE_BYTES;
             std::memcpy( &instruction_image[page_offset_bytes], &header, sizeof( header ) );
             std::memset( &instruction_image[page_offset_bytes + sizeof( header )],
-                         static_cast<int>( page_index ), header.payload_length_bytes );
+                         static_cast<int>( page_index ), header.operations_length_bytes );
         }
 
         FLASH_MANAGER_TEST_SetInstructionLength( page_count * TEST_PAGE_SIZE_BYTES );
@@ -1140,8 +1140,8 @@ TEST_F( FlashManagerTest, CorruptStoredInstructionLatchesFault )
     FlashManagerInstructionHeader_T corrupt_header = {
         100U,
         static_cast<uint16_t>( TEST_PAGE_SIZE_BYTES ),
-        2U,
-        3U,
+        1U,
+        0U,
     };
     std::memcpy( fill_lease.page_data, &corrupt_header, sizeof( corrupt_header ) );
     ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &fill_lease, true ) );
