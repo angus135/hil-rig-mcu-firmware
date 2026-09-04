@@ -87,8 +87,9 @@ static uint32_t              write_result_page_calls  = 0U;
 static const uint8_t*        write_result_page_data   = nullptr;
 static uint32_t              write_result_page_length = 0U;
 
-static ExternalFlashStatus_T start_session_status = EXTERNAL_FLASH_STATUS_OK;
-static uint32_t              start_session_calls  = 0U;
+static ExternalFlashStatus_T start_session_status                = EXTERNAL_FLASH_STATUS_OK;
+static uint32_t              start_session_calls                 = 0U;
+static uint32_t              start_session_maximum_result_length = 0U;
 
 static ExternalFlashStatus_T start_instruction_upload_status = EXTERNAL_FLASH_STATUS_OK;
 static uint32_t              start_instruction_upload_calls  = 0U;
@@ -199,9 +200,10 @@ extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_WriteResultPage( const uint8_t* 
     return write_result_page_status;
 }
 
-extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void )
+extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( uint32_t maximum_result_length_bytes )
 {
     start_session_calls++;
+    start_session_maximum_result_length = maximum_result_length_bytes;
     return start_session_status;
 }
 
@@ -354,8 +356,9 @@ protected:
         write_result_page_data   = nullptr;
         write_result_page_length = 0U;
 
-        start_session_status = EXTERNAL_FLASH_STATUS_OK;
-        start_session_calls  = 0U;
+        start_session_status                = EXTERNAL_FLASH_STATUS_OK;
+        start_session_calls                 = 0U;
+        start_session_maximum_result_length = 0U;
 
         start_instruction_upload_status = EXTERNAL_FLASH_STATUS_OK;
         start_instruction_upload_calls  = 0U;
@@ -389,8 +392,10 @@ protected:
 
     void EnterExecutingState( void )
     {
-        flash_manager_context.state       = FLASH_MANAGER_STATE_EXECUTING;
-        flash_manager_context.task_handle = TEST_FLASH_MANAGER_TASK_HANDLE;
+        flash_manager_context.state                         = FLASH_MANAGER_STATE_EXECUTING;
+        flash_manager_context.task_handle                   = TEST_FLASH_MANAGER_TASK_HANDLE;
+        flash_manager_context.maximum_result_length_bytes   = TEST_RESULT_CAPACITY_BYTES;
+        flash_manager_context.committed_result_length_bytes = 0U;
     }
 
     void RegisterTask( void )
@@ -898,10 +903,12 @@ TEST_F( FlashManagerTest, InstructionUploadFinishNotificationFailureEntersFault 
 
 TEST_F( FlashManagerTest, PreparationRequestRejectsUnavailableManagerAndTask )
 {
-    EXPECT_EQ( FLASH_MANAGER_REQUEST_NOT_INITIALISED, FLASH_MANAGER_RequestExecutionPreparation() );
+    EXPECT_EQ( FLASH_MANAGER_REQUEST_NOT_INITIALISED,
+               FLASH_MANAGER_RequestExecutionPreparation( TEST_RESULT_CAPACITY_BYTES ) );
 
     Initialise();
-    EXPECT_EQ( FLASH_MANAGER_REQUEST_TASK_NOT_READY, FLASH_MANAGER_RequestExecutionPreparation() );
+    EXPECT_EQ( FLASH_MANAGER_REQUEST_TASK_NOT_READY,
+               FLASH_MANAGER_RequestExecutionPreparation( TEST_RESULT_CAPACITY_BYTES ) );
     EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, flash_manager_context.state );
     EXPECT_EQ( 0U, notify_calls );
 }
@@ -911,7 +918,8 @@ TEST_F( FlashManagerTest, PreparationRequestRejectsInvalidLifecycleState )
     Initialise();
     EnterExecutingState();
 
-    EXPECT_EQ( FLASH_MANAGER_REQUEST_INVALID_STATE, FLASH_MANAGER_RequestExecutionPreparation() );
+    EXPECT_EQ( FLASH_MANAGER_REQUEST_INVALID_STATE,
+               FLASH_MANAGER_RequestExecutionPreparation( TEST_RESULT_CAPACITY_BYTES ) );
     EXPECT_EQ( FLASH_MANAGER_STATE_EXECUTING, flash_manager_context.state );
     EXPECT_EQ( 0U, notify_calls );
 }
@@ -921,8 +929,10 @@ TEST_F( FlashManagerTest, PreparationRequestChangesStateAndNotifiesTask )
     Initialise();
     RegisterTask();
 
-    EXPECT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+    EXPECT_EQ( FLASH_MANAGER_REQUEST_OK,
+               FLASH_MANAGER_RequestExecutionPreparation( TEST_RESULT_CAPACITY_BYTES ) );
     EXPECT_EQ( FLASH_MANAGER_STATE_PREPARING_EXECUTION, flash_manager_context.state );
+    EXPECT_EQ( TEST_RESULT_CAPACITY_BYTES, flash_manager_context.maximum_result_length_bytes );
     EXPECT_EQ( 1U, notify_calls );
     EXPECT_EQ( TEST_FLASH_MANAGER_TASK_HANDLE, notify_task_handle );
     EXPECT_EQ( FLASH_MANAGER_NOTIFY_PREPARE_EXECUTION, notify_value );
@@ -935,7 +945,8 @@ TEST_F( FlashManagerTest, PreparationNotificationFailureEntersFault )
     RegisterTask();
     notify_result = pdFAIL;
 
-    EXPECT_EQ( FLASH_MANAGER_REQUEST_NOTIFY_FAILED, FLASH_MANAGER_RequestExecutionPreparation() );
+    EXPECT_EQ( FLASH_MANAGER_REQUEST_NOTIFY_FAILED,
+               FLASH_MANAGER_RequestExecutionPreparation( TEST_RESULT_CAPACITY_BYTES ) );
     EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
     EXPECT_EQ( 1U, notify_calls );
 }
@@ -945,10 +956,12 @@ TEST_F( FlashManagerTest, PreparationHandlerStartsSessionResetsBufferAndEntersEx
     Initialise();
     CreateReadyPage();
     RegisterTask();
-    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK,
+               FLASH_MANAGER_RequestExecutionPreparation( TEST_RESULT_CAPACITY_BYTES ) );
 
     EXPECT_TRUE( FLASH_MANAGER_PrepareExecution() );
     EXPECT_EQ( 1U, start_session_calls );
+    EXPECT_EQ( TEST_RESULT_CAPACITY_BYTES, start_session_maximum_result_length );
     EXPECT_EQ( FLASH_MANAGER_STATE_EXECUTING, flash_manager_context.state );
 
     ResultBufferDrainLease_T drain_lease = {};
@@ -968,7 +981,8 @@ TEST_F( FlashManagerTest, PreparationHandlerReportsSessionStartFailure )
 {
     Initialise();
     RegisterTask();
-    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK,
+               FLASH_MANAGER_RequestExecutionPreparation( TEST_RESULT_CAPACITY_BYTES ) );
     start_session_status = EXTERNAL_FLASH_STATUS_ERASE_FAIL;
 
     EXPECT_FALSE( FLASH_MANAGER_PrepareExecution() );
@@ -1008,7 +1022,8 @@ TEST_F( FlashManagerTest, PreparationPreloadsEveryAvailableInstructionPageBefore
     Initialise();
     RegisterTask();
     ConfigurePageAlignedInstructionImage( TEST_INSTRUCTION_BUFFER_PAGE_COUNT + 1U );
-    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK,
+               FLASH_MANAGER_RequestExecutionPreparation( TEST_RESULT_CAPACITY_BYTES ) );
 
     ASSERT_TRUE( FLASH_MANAGER_PrepareExecution() );
 
@@ -1028,7 +1043,8 @@ TEST_F( FlashManagerTest, PreparationReportsInstructionNandReadFailure )
     RegisterTask();
     ConfigurePageAlignedInstructionImage( 1U );
     read_instruction_page_status = EXTERNAL_FLASH_STATUS_TIMEOUT;
-    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK,
+               FLASH_MANAGER_RequestExecutionPreparation( TEST_RESULT_CAPACITY_BYTES ) );
 
     EXPECT_FALSE( FLASH_MANAGER_PrepareExecution() );
     EXPECT_EQ( 1U, read_instruction_page_calls );
@@ -1040,7 +1056,8 @@ TEST_F( FlashManagerTest, ConsumingPageNotifiesTaskAndRefillWorkerLoadsReleasedS
     Initialise();
     RegisterTask();
     ConfigurePageAlignedInstructionImage( TEST_INSTRUCTION_BUFFER_PAGE_COUNT + 1U );
-    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK,
+               FLASH_MANAGER_RequestExecutionPreparation( TEST_RESULT_CAPACITY_BYTES ) );
     ASSERT_TRUE( FLASH_MANAGER_PrepareExecution() );
 
     notify_from_isr_writes_wake_value = true;
@@ -1071,7 +1088,8 @@ TEST_F( FlashManagerTest, InstructionExhaustionRemainsExecutingUntilExplicitFina
     Initialise();
     RegisterTask();
     ConfigurePageAlignedInstructionImage( 1U );
-    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK,
+               FLASH_MANAGER_RequestExecutionPreparation( TEST_RESULT_CAPACITY_BYTES ) );
     ASSERT_TRUE( FLASH_MANAGER_PrepareExecution() );
 
     const FlashManagerInstructionView_T* view = nullptr;
@@ -1158,7 +1176,8 @@ TEST_F( FlashManagerTest, RefillWorkerHandlesCoalescedPageReleaseNotifications )
     Initialise();
     RegisterTask();
     ConfigurePageAlignedInstructionImage( TEST_INSTRUCTION_BUFFER_PAGE_COUNT + 2U );
-    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK,
+               FLASH_MANAGER_RequestExecutionPreparation( TEST_RESULT_CAPACITY_BYTES ) );
     ASSERT_TRUE( FLASH_MANAGER_PrepareExecution() );
 
     for ( uint32_t instruction_index = 0U; instruction_index < 2U; instruction_index++ )
@@ -1185,7 +1204,8 @@ TEST_F( FlashManagerTest, RefillNotificationFailureFaultsAfterInstructionWasCons
     Initialise();
     RegisterTask();
     ConfigurePageAlignedInstructionImage( TEST_INSTRUCTION_BUFFER_PAGE_COUNT + 1U );
-    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK,
+               FLASH_MANAGER_RequestExecutionPreparation( TEST_RESULT_CAPACITY_BYTES ) );
     ASSERT_TRUE( FLASH_MANAGER_PrepareExecution() );
     notify_from_isr_result = pdFAIL;
 
@@ -1332,7 +1352,8 @@ TEST_F( FlashManagerTest, ExecutionSessionFlowsFromPreparationThroughPartialFina
 {
     Initialise();
     RegisterTask();
-    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestExecutionPreparation() );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK,
+               FLASH_MANAGER_RequestExecutionPreparation( TEST_RESULT_CAPACITY_BYTES ) );
     ASSERT_TRUE( FLASH_MANAGER_PrepareExecution() );
 
     FlashManagerResultWriteLease_T lease = ReserveRecord( TEST_PARTIAL_PAYLOAD_BYTES );
