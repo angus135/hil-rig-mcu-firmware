@@ -1139,7 +1139,7 @@ TEST_F( FlashManagerTest, CorruptStoredInstructionLatchesFault )
 
     ExecutionInstructionHeader_T corrupt_header = {
         100U,
-        static_cast<uint16_t>( TEST_PAGE_SIZE_BYTES ),
+        static_cast<uint16_t>( TEST_PAGE_SIZE_BYTES * 2U ),
         1U,
         0U,
     };
