@@ -71,11 +71,15 @@ void HOST_INTERFACE_Task( void* task_parameters )
 {
     ( void )task_parameters;
 
+
+    
     // =======------- INITIALISE USB INTERFACE 
     if ( !HW_USB_Init() )
     {
         Error_Handler();
     }
+
+
 
     // =======------- INITIALISE  TRANSPORT LAYER   
     // Zero-initialize the Transport context object (HIL_Transport_Context_T)
@@ -97,6 +101,8 @@ void HOST_INTERFACE_Task( void* task_parameters )
     // Allocate/retain zeroed context and aligned workspace
 
     // Initialise the trasport layer with HIL_TRANSPORT_Init()
+
+
 
     // =======------- START USB INTERFACE 
     // initialise/start STM32 USB CDC
