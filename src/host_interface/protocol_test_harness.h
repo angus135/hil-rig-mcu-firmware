@@ -4,7 +4,7 @@
  *  Created:    30-Aug-2026
  *
  *  Description:
- *      Temporary opaque Application-message codec for Transport hardware tests.
+ *      Legacy HRTP ECHO/STATUS diagnostic codec for Transport hardware tests.
  ******************************************************************************/
 
 #ifndef PROTOCOL_TEST_HARNESS_H
@@ -25,8 +25,10 @@ extern "C"
 #define PROTOCOL_TEST_HARNESS_OPCODE_ECHO_RESPONSE 0x81U
 #define PROTOCOL_TEST_HARNESS_OPCODE_STATUS_RESPONSE 0x82U
 #define PROTOCOL_TEST_HARNESS_SUPPORTED_FLAGS 0U
-#define PROTOCOL_TEST_HARNESS_STATUS_SCHEMA_VERSION 1U
-#define PROTOCOL_TEST_HARNESS_STATUS_PAYLOAD_SIZE 48U
+#define PROTOCOL_TEST_HARNESS_STATUS_SCHEMA_VERSION 2U
+#define PROTOCOL_TEST_HARNESS_STATUS_FIELD_COUNT 32U
+#define PROTOCOL_TEST_HARNESS_STATUS_PAYLOAD_SIZE \
+    ( PROTOCOL_TEST_HARNESS_STATUS_FIELD_COUNT * sizeof( uint32_t ) )
 
 typedef enum
 {
@@ -51,9 +53,26 @@ typedef struct
     uint32_t application_requests_received;
     uint32_t responses_submitted;
     uint32_t usb_tx_busy_retries;
-    uint32_t invalid_harness_messages;
+    uint32_t invalid_hrtp_messages;
     uint32_t maximum_service_gap_ms;
     uint32_t transport_session_state;
+    uint32_t compatibility_profile_id;
+    uint32_t application_codec_initialized;
+    uint32_t application_initialization_status;
+    uint32_t non_hrtp_application_messages_received;
+    uint32_t application_decode_failures;
+    uint32_t application_semantic_rejections;
+    uint32_t application_encode_failures;
+    uint32_t configurations_accepted;
+    uint32_t instructions_accepted;
+    uint32_t results_encoded;
+    uint32_t application_harness_state;
+    uint32_t next_expected_tick;
+    uint32_t active_expected_tick_count;
+    uint32_t last_application_status;
+    uint32_t last_decoded_application_message_type;
+    uint32_t configuration_digest;
+    uint32_t instruction_digest;
 } PROTOCOL_TEST_HARNESS_Status_Data_T;
 
 /**

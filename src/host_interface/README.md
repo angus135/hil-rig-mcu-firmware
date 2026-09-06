@@ -2,11 +2,11 @@
 
 ## Purpose
 
-This directory contains the temporary firmware half of the DEV-138 Transport hardware-test harness on branch `test/DEV-138--protocol-test`. The branch exists to exercise the shared C Transport implementation over the STM32 USB CDC link before the production HIL-RIG Application layer is connected.
+This directory contains the temporary firmware half of the DEV-138 Transport/Application hardware-test harness on branch `test/DEV-138--protocol-test`. It exercises the shared C Transport implementation over STM32 USB CDC and the shared public Application codec for Test Configuration, fixed Test Instruction, and fixed Test Result messages.
 
-This branch is **not intended to merge into `main`**. Reusable USB or host-interface pieces may be extracted into later production PRs, but the `HRTP` test envelope and its ECHO/STATUS behavior are test-harness code only.
+This branch is **not intended to merge into `main`**. Reusable USB or host-interface pieces may be extracted into later production PRs, but the `HRTP` ECHO/STATUS diagnostics and `application_test_harness` result oracle are test-only behavior.
 
-The firmware does not define production IDC messages, test instructions, result messages, storage interactions, or execution-manager behavior.
+The harness does not configure or operate real HIL peripherals. It does not implement variable instruction/result data, execution/global control, System Information, Application Response, or Application Error workflows.
 
 ## Shared protocol dependency
 
@@ -16,11 +16,7 @@ The shared protocol repository is a Git submodule at:
 src/host_interface/shared_protocol
 ```
 
-Hardware-test compatibility is against protocol commit:
-
-```text
-a24fccc403007cbf6268ff7d0d21f50566a6b2de
-```
+The supplied ZIP contains the protocol working tree but not the parent repository's usable submodule Git metadata, so the exact protocol commit must be recorded from the parent firmware checkout before hardware evidence is captured. The public protocol version in this supplied snapshot is `0.1.0`.
 
 Clone with submodules:
 
@@ -49,8 +45,10 @@ Do not copy protocol files into this repository or edit the submodule for firmwa
 7. drains Transport events;
 8. holds Transport output pinned until `HW_USB_Transmit()` accepts the complete item;
 9. commits accepted Transport output exactly once;
-10. reads at most one Application message while the one-slot response buffer is available; and
-11. decodes the temporary `HRTP` envelope and submits ECHO or STATUS responses with Transport backpressure.
+10. reads at most one Transport Application payload while the one-slot response/result buffer is available;
+11. dispatches payloads whose first four bytes are exactly `HRTP` to the diagnostic ECHO/STATUS codec;
+12. dispatches every other payload directly to the shared `HIL_APPLICATION_*` codec through `application_test_harness`; and
+13. retains an encoded HRTP response or Test Result until Transport accepts it.
 
 No Transport API is called from an ISR, the USB receive callback, or the generated CDC code. The Transport library has no USB or FreeRTOS dependency; this integration owns the clock, USB operations, scheduling, link lifecycle, and all static caller buffers.
 
@@ -73,7 +71,7 @@ add_subdirectory(shared_protocol EXCLUDE_FROM_ALL)
 target_link_libraries(host_interface PRIVATE hil_rig_protocol::hil_rig_protocol)
 ```
 
-At the pinned protocol revision the base C target also attaches its separate Application sources unconditionally. This transport-only branch filters only `src/application/*` from that target after the submodule is added. The submodule itself is unchanged. Transport sources and `src/version.c` continue to come from the protocol target's own source selection.
+The protocol target is consumed without source filtering. Its Transport, Application, and version sources therefore come from the shared protocol target itself; the submodule remains unchanged.
 
 Normal host-test commands are:
 
@@ -94,9 +92,9 @@ The CubeIDE project links the repository `src` tree beneath `Core/Src/Applicatio
 - excludes `shared_protocol/examples`;
 - excludes `shared_protocol/bindings` and `shared_protocol/python`;
 - excludes `shared_protocol/scripts`;
-- excludes `shared_protocol/src/application`;
+- must **not** exclude `shared_protocol/src/application`, because the hardware-test harness now uses the real shared Application codec;
 - excludes `shared_protocol/src/transport/internal/extended`;
-- leaves `src/version.c` plus the common and MVP Transport C sources discoverable exactly once.
+- leaves `src/version.c`, `src/application/*`, and the common/MVP Transport C sources discoverable exactly once.
 
 No `.project` linked-resource change is required because the existing `Core/Src/Application -> ../src` link already exposes the new submodule.
 
@@ -128,7 +126,7 @@ The hardware-test configuration starts from `HIL_TRANSPORT_Default_Config()` and
 | Maximum retries | 5 |
 | Operating mode | `HIL_TRANSPORT_OPERATING_MODE_NORMAL` |
 
-At protocol commit `a24fccc403007cbf6268ff7d0d21f50566a6b2de`, `HIL_TRANSPORT_Required_Storage_Size()` reports 3289 bytes and the public workspace alignment is 16 bytes on the host build used during implementation. Firmware reserves an aligned 4096-byte workspace and refuses initialization if the runtime-required size exceeds it or the alignment check fails.
+With the Transport profile above in the supplied protocol snapshot, `HIL_TRANSPORT_Required_Storage_Size()` reports 3289 bytes and the public workspace alignment is 16 bytes on the host build used during implementation. Firmware reserves an aligned 4096-byte workspace and refuses initialization if the runtime-required size exceeds it or the alignment check fails.
 
 ## Buffering and service bounds
 
@@ -179,34 +177,56 @@ Supported opcodes:
 
 ECHO preserves the request ID and returns the request payload byte-for-byte with opcode `0x81`. The maximum payload is the configured 512-byte Application capacity minus the 16-byte envelope header, so the maximum ECHO payload is **496 bytes**.
 
-### STATUS schema version 1
+### STATUS schema version 2
 
-STATUS responses use opcode `0x82`, preserve the request ID, and contain a 48-byte payload of twelve little-endian `uint32_t` values:
+STATUS responses use opcode `0x82`, preserve the request ID, and contain a 128-byte payload of 32 little-endian `uint32_t` values. The complete HRTP response is therefore 144 bytes.
 
-| Payload offset | Field |
+| Index | Field |
 | ---: | --- |
-| 0 | status schema version (`1`) |
-| 4 | current link state |
-| 8 | link generation |
-| 12 | total Transport event count |
-| 16 | USB RX bytes read by the integration |
-| 20 | USB TX bytes accepted into USB-owned storage |
-| 24 | Application requests received |
-| 28 | responses submitted to Transport |
-| 32 | USB TX busy/full retries |
-| 36 | invalid harness-message count |
-| 40 | maximum service gap in ms |
-| 44 | public Transport session state |
+| 0 | status schema version (`2`) |
+| 1 | current link state |
+| 2 | link generation |
+| 3 | total Transport event count |
+| 4 | USB RX bytes |
+| 5 | USB TX bytes |
+| 6 | total Transport Application messages received |
+| 7 | responses/results submitted to Transport |
+| 8 | USB busy retries |
+| 9 | invalid HRTP messages |
+| 10 | maximum service gap in ms |
+| 11 | public Transport session state |
+| 12 | compatibility profile ID (`0x41505031`, `APP1`) |
+| 13 | protocol version major |
+| 14 | protocol version minor |
+| 15 | protocol version patch |
+| 16 | Application codec initialized |
+| 17 | Application initialization status |
+| 18 | non-HRTP Application messages received |
+| 19 | Application decode failures |
+| 20 | Application semantic rejections |
+| 21 | Application encode failures |
+| 22 | configurations accepted |
+| 23 | instructions accepted |
+| 24 | results encoded |
+| 25 | Application harness state |
+| 26 | next expected tick |
+| 27 | active expected tick count |
+| 28 | last Application status |
+| 29 | last successfully decoded Application message type |
+| 30 | current/last accepted configuration digest |
+| 31 | last accepted instruction digest |
 
-Invalid magic, envelope version, non-zero flags, opcode, or declared length is a harness error rather than a Transport error. Version 1 does not define an error response opcode: the message is rejected, `invalid_harness_messages` is incremented, and no response is submitted.
+The version fields are sourced from the public protocol version macros. In the supplied protocol snapshot they report `0.1.0`.
 
-No additional harness checksum is used. Transport integrity plus byte-for-byte ECHO comparison is the test oracle.
+A payload is treated as HRTP only when bytes 0 through 3 are exactly `HRTP`. Invalid HRTP version, flags, opcode, or declared length increments the invalid-HRTP diagnostic and produces no response. Any non-HRTP payload, including malformed input, is passed directly to the Application codec and is accounted for as an Application decode/semantic failure rather than an HRTP error.
+
+No additional harness checksum is used. Transport integrity plus the shared Application codec and deterministic test oracle provide the hardware-test checks.
 
 ## Backpressure behavior
 
-The harness has one fixed pending-response slot. A complete decoded response is built once. If `HIL_TRANSPORT_Submit_Application_Data()` returns a temporary not-ready/capacity status, the exact response bytes remain in that slot and are retried in later service iterations.
+The harness has one fixed pending-response/result slot. A complete HRTP response or encoded Test Result is built once. If `HIL_TRANSPORT_Submit_Application_Data()` returns `NOT_READY` or `CAPACITY_EXHAUSTED`, the exact bytes remain in that slot and are retried in later service iterations.
 
-While the response slot is occupied, the next Application message remains unread in Transport. It is not consumed and discarded. This matches the intended initial Python runner behavior of one request at a time and keeps the test handler replaceable by a production Application layer later.
+While the slot is occupied, the next Transport Application message remains unread. A Test Instruction advances `next_expected_tick` only after its Test Result has been encoded successfully into this caller-owned buffer.
 
 ## Debugger-visible diagnostics
 
@@ -221,7 +241,8 @@ While the response slot is occupied, the next Application message remains unread
 - pending RX length/high-water, bytes offered/consumed, partial and zero-progress receive counts, and receive status counts;
 - USB busy retries and maximum consecutive busy iterations;
 - output peek, acceptance, commit, and commit-failure counts;
-- Application request, response submission/retry/failure, and invalid-envelope counts;
+- total Transport Application request, response/result submission/retry/failure, and invalid-HRTP counts;
+- Application codec initialization, decode/semantic/encode counters, accepted configuration/instruction/result counts, workflow state, expected ticks, last status/type, and semantic digests through STATUS v2;
 - total and per-type Transport event counts, the most recent event, and an eight-entry recent-event ring; and
 - bounded-operation budget exhaustion count.
 

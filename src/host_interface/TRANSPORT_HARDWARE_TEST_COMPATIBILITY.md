@@ -1,4 +1,4 @@
-# DEV-138 Transport hardware-test compatibility manifest
+# DEV-138 Transport/Application hardware-test compatibility manifest
 
 This manifest describes the temporary firmware-side Transport hardware-test integration for PR #63.
 
@@ -11,7 +11,9 @@ The reviewed implementation baseline is immutable and recorded below. The exact 
 | Reviewed PR #63 implementation baseline | `c6c0af2af586108949c30fb4a12df54eb9dd2fda` |
 | Final firmware commit used for hardware testing | `TO BE RECORDED AFTER COMMITTING THIS CHANGE SET` |
 | Protocol submodule path | `src/host_interface/shared_protocol` |
-| Protocol compatibility commit | `a24fccc403007cbf6268ff7d0d21f50566a6b2de` |
+| Protocol compatibility commit | `TO BE RECORDED FROM THE PARENT REPOSITORY` |
+| Protocol version in supplied snapshot | `0.1.0` |
+| Application compatibility profile | `APP1` / `0x41505031` |
 | Board | NUCLEO-F446ZE |
 | MCU | STM32F446ZETx / STM32F446Z(C-E)Tx |
 | STM32CubeIDE version represented by checked-in build artifacts | 1.18.1 |
@@ -60,6 +62,8 @@ The runtime results of `HIL_TRANSPORT_Default_Config()`, `HIL_TRANSPORT_Required
 | Pending response | 512 bytes |
 | Transport output copy | 640 bytes |
 | Maximum ECHO payload | 496 bytes |
+| Application decode storage | 255 bytes, statically aligned |
+| STATUS v2 payload / complete response | 128 / 144 bytes |
 
 ## MCU validation record
 
@@ -73,6 +77,7 @@ The following values must be updated after running the hardware test on the actu
 | Clean Release MCU build | NOT YET RUN |
 | Observed `HOST_INTERFACE_Task` stack high-water | NOT YET MEASURED |
 | Empty/small/binary/maximum ECHO | NOT YET RUN |
-| STATUS query | NOT YET RUN |
+| STATUS v2 query | NOT YET RUN |
+| Representative Application configuration + 3 fixed instruction/result ticks | NOT YET RUN |
 | Reset/re-enumeration/re-session ECHO | NOT YET RUN |
 | Long soak result | NOT YET RUN |

@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include "application_test_fixtures.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -9,7 +11,10 @@
 
 extern "C"
 {
+#include "hil_rig_protocol/application/application.h"
 #include "hil_rig_protocol/transport/transport.h"
+#include "hil_rig_protocol/version.h"
+#include "application_test_harness.h"
 #include "host_transport.h"
 #include "hw_usb.h"
 #include "protocol_test_config.h"
@@ -223,6 +228,80 @@ std::vector<uint8_t> MakeEchoRequest()
              0x00U,
              0x22U };
 }
+
+std::vector<uint8_t> MakeStatusRequest( uint32_t request_id = 0xA1B2C3D4U )
+{
+    return { static_cast<uint8_t>( 'H' ), static_cast<uint8_t>( 'R' ),
+             static_cast<uint8_t>( 'T' ), static_cast<uint8_t>( 'P' ),
+             PROTOCOL_TEST_HARNESS_VERSION, PROTOCOL_TEST_HARNESS_OPCODE_STATUS_REQUEST,
+             0U, 0U,
+             static_cast<uint8_t>( request_id & 0xFFU ),
+             static_cast<uint8_t>( ( request_id >> 8U ) & 0xFFU ),
+             static_cast<uint8_t>( ( request_id >> 16U ) & 0xFFU ),
+             static_cast<uint8_t>( ( request_id >> 24U ) & 0xFFU ),
+             0U, 0U, 0U, 0U };
+}
+
+uint32_t ReadU32LE( const uint8_t* data )
+{
+    return static_cast<uint32_t>( data[0] ) | ( static_cast<uint32_t>( data[1] ) << 8U )
+           | ( static_cast<uint32_t>( data[2] ) << 16U )
+           | ( static_cast<uint32_t>( data[3] ) << 24U );
+}
+
+bool EstablishHostPeer( HostPeerHarness& peer )
+{
+    if ( !InitializeHostPeer( peer ) )
+    {
+        return false;
+    }
+    for ( uint32_t now_ms = 1U; now_ms < 40U; ++now_ms )
+    {
+        if ( !ServiceHostPeerAndFirmware( peer, now_ms ) )
+        {
+            return false;
+        }
+        if ( HostPeerAndFirmwareAreEstablished( peer ) )
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool WaitForHostPeerApplicationMessage( HostPeerHarness& peer, uint32_t first_ms, uint32_t last_ms )
+{
+    for ( uint32_t now_ms = first_ms; now_ms < last_ms; ++now_ms )
+    {
+        if ( !ServiceHostPeerAndFirmware( peer, now_ms ) )
+        {
+            return false;
+        }
+        HIL_Transport_Status_Snapshot_T status{};
+        if ( HIL_TRANSPORT_Get_Status( &peer.context, &status ) != HIL_TRANSPORT_STATUS_OK )
+        {
+            return false;
+        }
+        if ( status.application_message_pending != 0U )
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<uint8_t> ReadHostPeerApplicationMessage( HostPeerHarness& peer )
+{
+    std::array<uint8_t, HOST_TRANSPORT_MAX_APPLICATION_MESSAGE_SIZE> response{};
+    size_t response_size = 0U;
+    if ( HIL_TRANSPORT_Read_Application_Data( &peer.context, response.data(), response.size(),
+                                              &response_size ) != HIL_TRANSPORT_STATUS_OK )
+    {
+        return {};
+    }
+    return { response.begin(), response.begin() + static_cast<std::ptrdiff_t>( response_size ) };
+}
+
 }  // namespace
 
 extern "C" bool HW_USB_Transmit( const uint8_t* data, uint16_t size_bytes )
@@ -520,4 +599,277 @@ TEST_F( HostTransportTest, EndToEndHostPeerHandshakeAndEchoUsesFirmwareServicePa
     const auto* diagnostics = HOST_TRANSPORT_Get_Diagnostics();
     EXPECT_EQ( 1U, diagnostics->application_requests_received );
     EXPECT_EQ( 1U, diagnostics->responses_submitted );
+}
+
+TEST_F( HostTransportTest, RawApplicationConfigurationAndInstructionRoundTripThroughRealTransport )
+{
+    using namespace application_test_fixtures;
+
+    ASSERT_TRUE( HOST_TRANSPORT_Init() );
+    g_usb_connected = true;
+    HOST_TRANSPORT_Set_Link_State( true, 0U );
+
+    HostPeerHarness peer{};
+    ASSERT_TRUE( EstablishHostPeer( peer ) );
+
+    HIL_Application_Context_T codec{};
+    ASSERT_TRUE( InitCodec( codec ) );
+    const std::vector<uint8_t> configuration = Encode( codec, RepresentativeConfiguration() );
+    ASSERT_EQ( configuration.size(), 242U );
+    ASSERT_EQ( HIL_TRANSPORT_STATUS_OK,
+               HIL_TRANSPORT_Submit_Application_Data( &peer.context, configuration.data(),
+                                                      configuration.size() ) );
+
+    bool configuration_accepted = false;
+    for ( uint32_t now_ms = 40U; now_ms < 100U; ++now_ms )
+    {
+        ASSERT_TRUE( ServiceHostPeerAndFirmware( peer, now_ms ) );
+        if ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->configurations_accepted == 1U )
+        {
+            configuration_accepted = true;
+            break;
+        }
+    }
+    ASSERT_TRUE( configuration_accepted );
+    EXPECT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->configuration_digest, 0xDF35534CU );
+
+    const std::vector<uint8_t> instruction = Encode( codec, Instruction( 0U ) );
+    ASSERT_EQ( instruction.size(), 73U );
+    HIL_Transport_Status_T submit_status = HIL_TRANSPORT_STATUS_NOT_READY;
+    for ( uint32_t now_ms = 100U; now_ms < 140U; ++now_ms )
+    {
+        submit_status = HIL_TRANSPORT_Submit_Application_Data( &peer.context, instruction.data(),
+                                                               instruction.size() );
+        if ( submit_status == HIL_TRANSPORT_STATUS_OK )
+        {
+            break;
+        }
+        ASSERT_EQ( submit_status, HIL_TRANSPORT_STATUS_NOT_READY );
+        ASSERT_TRUE( ServiceHostPeerAndFirmware( peer, now_ms ) );
+    }
+    ASSERT_EQ( submit_status, HIL_TRANSPORT_STATUS_OK );
+    ASSERT_TRUE( WaitForHostPeerApplicationMessage( peer, 140U, 220U ) );
+
+    const std::vector<uint8_t> result_bytes = ReadHostPeerApplicationMessage( peer );
+    ASSERT_EQ( result_bytes.size(), 62U );
+
+    HIL_Application_Message_T result{};
+    size_t required_storage = 0U;
+    size_t used_storage = 0U;
+    ASSERT_EQ( HIL_APPLICATION_STATUS_OK,
+               HIL_APPLICATION_Decode_Storage_Size( &codec, result_bytes.data(), result_bytes.size(),
+                                                    &required_storage ) );
+    ASSERT_EQ( required_storage, 0U );
+    ASSERT_EQ( HIL_APPLICATION_STATUS_OK,
+               HIL_APPLICATION_Decode_Message( &codec, result_bytes.data(), result_bytes.size(),
+                                               &result, nullptr, 0U, &used_storage ) );
+    EXPECT_EQ( result.type, HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT );
+    EXPECT_EQ( result.body.test_result.tick_number, 0U );
+    EXPECT_EQ( result.body.test_result.condition, HIL_APPLICATION_RESULT_CONDITION_OK );
+    EXPECT_EQ( result.body.test_result.problem_detail, 0U );
+    EXPECT_EQ( result.body.test_result.analog_inputs[0].microvolts, 4813713U );
+    EXPECT_EQ( result.body.test_result.analog_inputs[1].microvolts, 8048525U );
+
+    const auto* host_diagnostics = HOST_TRANSPORT_Get_Diagnostics();
+    EXPECT_EQ( host_diagnostics->application_requests_received, 2U );
+    EXPECT_EQ( host_diagnostics->responses_submitted, 1U );
+    EXPECT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->instructions_accepted, 1U );
+    EXPECT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->results_encoded, 1U );
+}
+
+TEST_F( HostTransportTest, MalformedNonHrtpPayloadIsApplicationDecodeFailureOnly )
+{
+    ASSERT_TRUE( HOST_TRANSPORT_Init() );
+    g_usb_connected = true;
+    HOST_TRANSPORT_Set_Link_State( true, 0U );
+
+    HostPeerHarness peer{};
+    ASSERT_TRUE( EstablishHostPeer( peer ) );
+    const std::array<uint8_t, 7> malformed = { 0x01U, 0x02U, 0x03U, 0x04U,
+                                                0x05U, 0x06U, 0x07U };
+    ASSERT_EQ( HIL_TRANSPORT_STATUS_OK,
+               HIL_TRANSPORT_Submit_Application_Data( &peer.context, malformed.data(),
+                                                      malformed.size() ) );
+
+    for ( uint32_t now_ms = 40U; now_ms < 100U; ++now_ms )
+    {
+        ASSERT_TRUE( ServiceHostPeerAndFirmware( peer, now_ms ) );
+        if ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->decode_failures != 0U )
+        {
+            break;
+        }
+    }
+
+    EXPECT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->application_messages_received, 1U );
+    EXPECT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->decode_failures, 1U );
+    EXPECT_EQ( HOST_TRANSPORT_Get_Diagnostics()->invalid_harness_messages, 0U );
+    EXPECT_EQ( HOST_TRANSPORT_Get_Diagnostics()->application_requests_received, 1U );
+}
+
+TEST_F( HostTransportTest, StatusV2ReportsApplicationHarnessAndProtocolProfile )
+{
+    using namespace application_test_fixtures;
+
+    ASSERT_TRUE( HOST_TRANSPORT_Init() );
+    g_usb_connected = true;
+    HOST_TRANSPORT_Set_Link_State( true, 0U );
+    HostPeerHarness peer{};
+    ASSERT_TRUE( EstablishHostPeer( peer ) );
+
+    HIL_Application_Context_T codec{};
+    ASSERT_TRUE( InitCodec( codec ) );
+    const std::vector<uint8_t> configuration = Encode( codec, RepresentativeConfiguration() );
+    ASSERT_EQ( HIL_TRANSPORT_STATUS_OK,
+               HIL_TRANSPORT_Submit_Application_Data( &peer.context, configuration.data(),
+                                                      configuration.size() ) );
+    for ( uint32_t now_ms = 40U; now_ms < 100U; ++now_ms )
+    {
+        ASSERT_TRUE( ServiceHostPeerAndFirmware( peer, now_ms ) );
+        if ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->configurations_accepted == 1U ) break;
+    }
+    ASSERT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->configurations_accepted, 1U );
+
+    const std::vector<uint8_t> request = MakeStatusRequest();
+    HIL_Transport_Status_T submit_status = HIL_TRANSPORT_STATUS_NOT_READY;
+    for ( uint32_t now_ms = 100U; now_ms < 140U; ++now_ms )
+    {
+        submit_status = HIL_TRANSPORT_Submit_Application_Data( &peer.context, request.data(),
+                                                               request.size() );
+        if ( submit_status == HIL_TRANSPORT_STATUS_OK ) break;
+        ASSERT_EQ( submit_status, HIL_TRANSPORT_STATUS_NOT_READY );
+        ASSERT_TRUE( ServiceHostPeerAndFirmware( peer, now_ms ) );
+    }
+    ASSERT_EQ( submit_status, HIL_TRANSPORT_STATUS_OK );
+    ASSERT_TRUE( WaitForHostPeerApplicationMessage( peer, 140U, 220U ) );
+
+    const std::vector<uint8_t> response = ReadHostPeerApplicationMessage( peer );
+    ASSERT_EQ( response.size(), 144U );
+    ASSERT_EQ( response[5], PROTOCOL_TEST_HARNESS_OPCODE_STATUS_RESPONSE );
+    ASSERT_EQ( ReadU32LE( &response[12] ), 128U );
+    const uint8_t* payload = &response[PROTOCOL_TEST_HARNESS_HEADER_SIZE];
+    EXPECT_EQ( ReadU32LE( &payload[0U * 4U] ), 2U );
+    EXPECT_EQ( ReadU32LE( &payload[12U * 4U] ), APPLICATION_TEST_HARNESS_COMPATIBILITY_PROFILE_ID );
+    EXPECT_EQ( ReadU32LE( &payload[13U * 4U] ), HIL_RIG_PROTOCOL_VERSION_MAJOR );
+    EXPECT_EQ( ReadU32LE( &payload[14U * 4U] ), HIL_RIG_PROTOCOL_VERSION_MINOR );
+    EXPECT_EQ( ReadU32LE( &payload[15U * 4U] ), HIL_RIG_PROTOCOL_VERSION_PATCH );
+    EXPECT_EQ( ReadU32LE( &payload[16U * 4U] ), 1U );
+    EXPECT_EQ( ReadU32LE( &payload[17U * 4U] ), HIL_APPLICATION_STATUS_OK );
+    EXPECT_EQ( ReadU32LE( &payload[18U * 4U] ), 1U );
+    EXPECT_EQ( ReadU32LE( &payload[22U * 4U] ), 1U );
+    EXPECT_EQ( ReadU32LE( &payload[25U * 4U] ),
+               APPLICATION_TEST_HARNESS_STATE_ACCEPTING_INSTRUCTIONS );
+    EXPECT_EQ( ReadU32LE( &payload[26U * 4U] ), 0U );
+    EXPECT_EQ( ReadU32LE( &payload[27U * 4U] ), 3U );
+    EXPECT_EQ( ReadU32LE( &payload[28U * 4U] ), HIL_APPLICATION_STATUS_OK );
+    EXPECT_EQ( ReadU32LE( &payload[29U * 4U] ), HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION );
+    EXPECT_EQ( ReadU32LE( &payload[30U * 4U] ), 0xDF35534CU );
+}
+
+TEST_F( HostTransportTest, EncodedResultSurvivesBackpressureAndIsEventuallySubmitted )
+{
+    using namespace application_test_fixtures;
+
+    ASSERT_TRUE( HOST_TRANSPORT_Init() );
+    g_usb_connected = true;
+    HOST_TRANSPORT_Set_Link_State( true, 0U );
+
+    HIL_Application_Context_T codec{};
+    ASSERT_TRUE( InitCodec( codec ) );
+    const std::vector<uint8_t> configuration = Encode( codec, RepresentativeConfiguration() );
+    const std::vector<uint8_t> instruction = Encode( codec, Instruction( 0U ) );
+    std::array<uint8_t, 512> result{};
+    size_t result_size = 0U;
+    ASSERT_EQ( APPLICATION_TEST_HARNESS_Handle_Message( configuration.data(), configuration.size(),
+                                                       result.data(), result.size(), &result_size ),
+               HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( result_size, 0U );
+    ASSERT_EQ( APPLICATION_TEST_HARNESS_Handle_Message( instruction.data(), instruction.size(),
+                                                       result.data(), result.size(), &result_size ),
+               HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( result_size, 62U );
+    ASSERT_TRUE( HOST_TRANSPORT_Test_Seed_Pending_Response( result.data(),
+                                                           static_cast<uint32_t>( result_size ) ) );
+
+    HOST_TRANSPORT_Service( 1U );
+    EXPECT_TRUE( HOST_TRANSPORT_Test_Response_Is_Pending() );
+    EXPECT_GT( HOST_TRANSPORT_Get_Diagnostics()->response_submit_retries, 0U );
+
+    HostPeerHarness peer{};
+    ASSERT_TRUE( EstablishHostPeer( peer ) );
+    ASSERT_TRUE( WaitForHostPeerApplicationMessage( peer, 40U, 140U ) );
+    EXPECT_FALSE( HOST_TRANSPORT_Test_Response_Is_Pending() );
+    EXPECT_GE( HOST_TRANSPORT_Get_Diagnostics()->responses_submitted, 1U );
+    EXPECT_EQ( ReadHostPeerApplicationMessage( peer ).size(), 62U );
+}
+
+TEST_F( HostTransportTest, LinkDisconnectClearsOnlyActiveApplicationTransaction )
+{
+    using namespace application_test_fixtures;
+
+    ASSERT_TRUE( HOST_TRANSPORT_Init() );
+    HIL_Application_Context_T codec{};
+    ASSERT_TRUE( InitCodec( codec ) );
+    const auto configuration = Encode( codec, RepresentativeConfiguration() );
+    std::array<uint8_t, 512> response{};
+    size_t response_size = 0U;
+    ASSERT_EQ( APPLICATION_TEST_HARNESS_Handle_Message( configuration.data(), configuration.size(),
+                                                       response.data(), response.size(),
+                                                       &response_size ),
+               HIL_APPLICATION_STATUS_OK );
+    const uint32_t digest = APPLICATION_TEST_HARNESS_Get_Diagnostics()->configuration_digest;
+
+    g_usb_connected = true;
+    HOST_TRANSPORT_Set_Link_State( true, 0U );
+    g_usb_connected = false;
+    HOST_TRANSPORT_Set_Link_State( false, 1U );
+
+    const auto* diagnostics = APPLICATION_TEST_HARNESS_Get_Diagnostics();
+    EXPECT_EQ( diagnostics->codec_initialized, 1U );
+    EXPECT_EQ( diagnostics->state, APPLICATION_TEST_HARNESS_STATE_WAITING_FOR_CONFIGURATION );
+    EXPECT_EQ( diagnostics->next_expected_tick, 0U );
+    EXPECT_EQ( diagnostics->active_expected_tick_count, 0U );
+    EXPECT_EQ( diagnostics->configurations_accepted, 1U );
+    EXPECT_EQ( diagnostics->configuration_digest, digest );
+}
+
+TEST_F( HostTransportTest, TransportSessionResetEventClearsActiveApplicationTransaction )
+{
+    using namespace application_test_fixtures;
+
+    ASSERT_TRUE( HOST_TRANSPORT_Init() );
+    g_usb_connected = true;
+    HOST_TRANSPORT_Set_Link_State( true, 0U );
+    HostPeerHarness peer{};
+    ASSERT_TRUE( EstablishHostPeer( peer ) );
+
+    HIL_Application_Context_T codec{};
+    ASSERT_TRUE( InitCodec( codec ) );
+    const auto configuration = Encode( codec, RepresentativeConfiguration() );
+    std::array<uint8_t, 512> response{};
+    size_t response_size = 0U;
+    ASSERT_EQ( APPLICATION_TEST_HARNESS_Handle_Message( configuration.data(), configuration.size(),
+                                                       response.data(), response.size(),
+                                                       &response_size ),
+               HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->state,
+               APPLICATION_TEST_HARNESS_STATE_ACCEPTING_INSTRUCTIONS );
+
+    ASSERT_EQ( HIL_TRANSPORT_Reset( &peer.context ), HIL_TRANSPORT_STATUS_OK );
+    for ( uint32_t now_ms = 50U; now_ms < 80U; ++now_ms )
+    {
+        ASSERT_TRUE( ServiceHostPeerAndFirmware( peer, now_ms ) );
+        if ( HOST_TRANSPORT_Get_Diagnostics()
+                 ->transport_event_counts[HIL_TRANSPORT_EVENT_SESSION_RESET] != 0U )
+        {
+            break;
+        }
+    }
+
+    const auto* app = APPLICATION_TEST_HARNESS_Get_Diagnostics();
+    EXPECT_EQ( app->state, APPLICATION_TEST_HARNESS_STATE_WAITING_FOR_CONFIGURATION );
+    EXPECT_EQ( app->configurations_accepted, 1U );
+    EXPECT_EQ( app->active_expected_tick_count, 0U );
+    EXPECT_GT( HOST_TRANSPORT_Get_Diagnostics()
+                   ->transport_event_counts[HIL_TRANSPORT_EVENT_SESSION_RESET],
+               0U );
 }

@@ -4,12 +4,19 @@
  *  Created:    30-Aug-2026
  *
  *  Description:
- *      Temporary opaque Application-message codec for Transport hardware tests.
+ *      Legacy HRTP ECHO/STATUS diagnostic codec for Transport hardware tests.
  ******************************************************************************/
 
 #include "protocol_test_harness.h"
 
+#include "hil_rig_protocol/version.h"
+
 #include <string.h>
+
+_Static_assert( PROTOCOL_TEST_HARNESS_STATUS_FIELD_COUNT == 32U,
+                "HRTP STATUS v2 field count must remain fixed." );
+_Static_assert( PROTOCOL_TEST_HARNESS_STATUS_PAYLOAD_SIZE == 128U,
+                "HRTP STATUS v2 payload must contain 32 little-endian uint32_t fields." );
 
 static uint16_t PROTOCOL_TEST_HARNESS_Read_U16_LE( const uint8_t* data )
 {
@@ -54,18 +61,50 @@ static void
 PROTOCOL_TEST_HARNESS_Write_Status_Payload( uint8_t*                                   payload,
                                             const PROTOCOL_TEST_HARNESS_Status_Data_T* status_data )
 {
-    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[0], PROTOCOL_TEST_HARNESS_STATUS_SCHEMA_VERSION );
-    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[4], status_data->link_state );
-    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[8], status_data->link_generation );
-    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[12], status_data->transport_event_count );
-    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[16], status_data->usb_rx_bytes );
-    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[20], status_data->usb_tx_bytes );
-    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[24], status_data->application_requests_received );
-    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[28], status_data->responses_submitted );
-    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[32], status_data->usb_tx_busy_retries );
-    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[36], status_data->invalid_harness_messages );
-    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[40], status_data->maximum_service_gap_ms );
-    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[44], status_data->transport_session_state );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[0U * 4U],
+                                        PROTOCOL_TEST_HARNESS_STATUS_SCHEMA_VERSION );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[1U * 4U], status_data->link_state );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[2U * 4U], status_data->link_generation );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[3U * 4U], status_data->transport_event_count );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[4U * 4U], status_data->usb_rx_bytes );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[5U * 4U], status_data->usb_tx_bytes );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[6U * 4U],
+                                        status_data->application_requests_received );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[7U * 4U], status_data->responses_submitted );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[8U * 4U], status_data->usb_tx_busy_retries );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[9U * 4U], status_data->invalid_hrtp_messages );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[10U * 4U], status_data->maximum_service_gap_ms );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[11U * 4U], status_data->transport_session_state );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[12U * 4U], status_data->compatibility_profile_id );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[13U * 4U], HIL_RIG_PROTOCOL_VERSION_MAJOR );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[14U * 4U], HIL_RIG_PROTOCOL_VERSION_MINOR );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[15U * 4U], HIL_RIG_PROTOCOL_VERSION_PATCH );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[16U * 4U],
+                                        status_data->application_codec_initialized );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[17U * 4U],
+                                        status_data->application_initialization_status );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE(
+        &payload[18U * 4U], status_data->non_hrtp_application_messages_received );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[19U * 4U],
+                                        status_data->application_decode_failures );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[20U * 4U],
+                                        status_data->application_semantic_rejections );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[21U * 4U],
+                                        status_data->application_encode_failures );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[22U * 4U],
+                                        status_data->configurations_accepted );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[23U * 4U], status_data->instructions_accepted );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[24U * 4U], status_data->results_encoded );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[25U * 4U],
+                                        status_data->application_harness_state );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[26U * 4U], status_data->next_expected_tick );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[27U * 4U],
+                                        status_data->active_expected_tick_count );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[28U * 4U], status_data->last_application_status );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE(
+        &payload[29U * 4U], status_data->last_decoded_application_message_type );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[30U * 4U], status_data->configuration_digest );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[31U * 4U], status_data->instruction_digest );
 }
 
 PROTOCOL_TEST_HARNESS_Result_T PROTOCOL_TEST_HARNESS_Build_Response(

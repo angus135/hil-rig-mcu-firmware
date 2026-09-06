@@ -11,6 +11,7 @@
 
 #include "host_transport.h"
 
+#include "application_test_harness.h"
 #include "hil_rig_protocol/transport/transport.h"
 #include "hw_usb.h"
 #include "protocol_test_config.h"
@@ -29,6 +30,9 @@ _Static_assert( HOST_TRANSPORT_MAX_ENCODED_FRAME_SIZE <= UINT16_MAX,
                 "HW_USB_Transmit length is uint16_t." );
 _Static_assert( HOST_TRANSPORT_MAX_APPLICATION_MESSAGE_SIZE >= PROTOCOL_TEST_HARNESS_HEADER_SIZE,
                 "Harness header must fit one configured Application message." );
+_Static_assert( PROTOCOL_TEST_HARNESS_HEADER_SIZE + PROTOCOL_TEST_HARNESS_STATUS_PAYLOAD_SIZE
+                    <= HOST_TRANSPORT_MAX_APPLICATION_MESSAGE_SIZE,
+                "HRTP STATUS v2 must fit one configured Application message." );
 _Static_assert( HOST_TRANSPORT_STATUS_COUNT == 11U,
                 "Update status diagnostics for a changed public Transport status enum." );
 _Static_assert( HOST_TRANSPORT_EVENT_TYPE_COUNT == 8U,
@@ -160,6 +164,13 @@ static void HOST_TRANSPORT_Record_Event( const HIL_Transport_Event_T* event )
     {
         HOST_TRANSPORT_Increment(
             &g_host_transport_diagnostics.transport_event_counts[( uint32_t )event->type] );
+    }
+
+    if ( event->type == HIL_TRANSPORT_EVENT_SESSION_RESET )
+    {
+        s_host_transport.pending_response_length = 0U;
+        s_host_transport.response_pending        = false;
+        APPLICATION_TEST_HARNESS_Reset_Transaction();
     }
 
     g_host_transport_diagnostics.most_recent_event    = diagnostic;
@@ -423,13 +434,58 @@ static void HOST_TRANSPORT_Process( uint32_t now_ms, HOST_TRANSPORT_Service_Budg
     HOST_TRANSPORT_Record_Status( status );
 }
 
+static bool HOST_TRANSPORT_Is_HRTP_Message( const uint8_t* message, size_t message_size )
+{
+    return message_size >= 4U && message[0] == ( uint8_t )'H' && message[1] == ( uint8_t )'R'
+           && message[2] == ( uint8_t )'T' && message[3] == ( uint8_t )'P';
+}
+
+static void HOST_TRANSPORT_Populate_HRTP_Status( PROTOCOL_TEST_HARNESS_Status_Data_T* status_data )
+{
+    const APPLICATION_TEST_HARNESS_Diagnostics_T* application_diagnostics =
+        APPLICATION_TEST_HARNESS_Get_Diagnostics();
+
+    HOST_TRANSPORT_Update_Status_Snapshot();
+    status_data->link_state            = g_host_transport_diagnostics.link_state;
+    status_data->link_generation       = g_host_transport_diagnostics.link_generation;
+    status_data->transport_event_count = g_host_transport_diagnostics.transport_event_count;
+    status_data->usb_rx_bytes          = g_host_transport_diagnostics.usb_rx_bytes;
+    status_data->usb_tx_bytes          = g_host_transport_diagnostics.usb_tx_bytes;
+    status_data->application_requests_received =
+        g_host_transport_diagnostics.application_requests_received;
+    status_data->responses_submitted    = g_host_transport_diagnostics.responses_submitted;
+    status_data->usb_tx_busy_retries    = g_host_transport_diagnostics.usb_tx_busy_retries;
+    status_data->invalid_hrtp_messages  = g_host_transport_diagnostics.invalid_harness_messages;
+    status_data->maximum_service_gap_ms = g_host_transport_diagnostics.maximum_service_gap_ms;
+    status_data->transport_session_state = g_host_transport_diagnostics.transport_session_state;
+    status_data->compatibility_profile_id = APPLICATION_TEST_HARNESS_COMPATIBILITY_PROFILE_ID;
+    status_data->application_codec_initialized = application_diagnostics->codec_initialized;
+    status_data->application_initialization_status =
+        application_diagnostics->initialization_status;
+    status_data->non_hrtp_application_messages_received =
+        application_diagnostics->application_messages_received;
+    status_data->application_decode_failures = application_diagnostics->decode_failures;
+    status_data->application_semantic_rejections = application_diagnostics->semantic_rejections;
+    status_data->application_encode_failures = application_diagnostics->encode_failures;
+    status_data->configurations_accepted = application_diagnostics->configurations_accepted;
+    status_data->instructions_accepted   = application_diagnostics->instructions_accepted;
+    status_data->results_encoded         = application_diagnostics->results_encoded;
+    status_data->application_harness_state = application_diagnostics->state;
+    status_data->next_expected_tick        = application_diagnostics->next_expected_tick;
+    status_data->active_expected_tick_count =
+        application_diagnostics->active_expected_tick_count;
+    status_data->last_application_status = application_diagnostics->last_application_status;
+    status_data->last_decoded_application_message_type =
+        application_diagnostics->last_decoded_message_type;
+    status_data->configuration_digest = application_diagnostics->configuration_digest;
+    status_data->instruction_digest   = application_diagnostics->instruction_digest;
+}
+
 static bool HOST_TRANSPORT_Read_Application_Message( void )
 {
-    HIL_Transport_Status_T              status;
-    PROTOCOL_TEST_HARNESS_Result_T      harness_result;
-    PROTOCOL_TEST_HARNESS_Status_Data_T status_data   = { 0 };
-    size_t                              message_size  = 0U;
-    size_t                              response_size = 0U;
+    HIL_Transport_Status_T status;
+    size_t                 message_size  = 0U;
+    size_t                 response_size = 0U;
 
     if ( s_host_transport.response_pending )
     {
@@ -446,30 +502,39 @@ static bool HOST_TRANSPORT_Read_Application_Message( void )
     }
 
     HOST_TRANSPORT_Increment( &g_host_transport_diagnostics.application_requests_received );
-    HOST_TRANSPORT_Update_Status_Snapshot();
 
-    status_data.link_state            = g_host_transport_diagnostics.link_state;
-    status_data.link_generation       = g_host_transport_diagnostics.link_generation;
-    status_data.transport_event_count = g_host_transport_diagnostics.transport_event_count;
-    status_data.usb_rx_bytes          = g_host_transport_diagnostics.usb_rx_bytes;
-    status_data.usb_tx_bytes          = g_host_transport_diagnostics.usb_tx_bytes;
-    status_data.application_requests_received =
-        g_host_transport_diagnostics.application_requests_received;
-    status_data.responses_submitted      = g_host_transport_diagnostics.responses_submitted;
-    status_data.usb_tx_busy_retries      = g_host_transport_diagnostics.usb_tx_busy_retries;
-    status_data.invalid_harness_messages = g_host_transport_diagnostics.invalid_harness_messages;
-    status_data.maximum_service_gap_ms   = g_host_transport_diagnostics.maximum_service_gap_ms;
-    status_data.transport_session_state  = g_host_transport_diagnostics.transport_session_state;
-
-    harness_result = PROTOCOL_TEST_HARNESS_Build_Response(
-        s_host_transport.application_message, message_size,
-        s_host_transport.config.max_application_message_size, &status_data,
-        s_host_transport.pending_response, sizeof( s_host_transport.pending_response ),
-        &response_size );
-
-    if ( harness_result != PROTOCOL_TEST_HARNESS_RESULT_OK )
+    if ( HOST_TRANSPORT_Is_HRTP_Message( s_host_transport.application_message, message_size ) )
     {
-        HOST_TRANSPORT_Increment( &g_host_transport_diagnostics.invalid_harness_messages );
+        PROTOCOL_TEST_HARNESS_Result_T      harness_result;
+        PROTOCOL_TEST_HARNESS_Status_Data_T status_data = { 0 };
+
+        HOST_TRANSPORT_Populate_HRTP_Status( &status_data );
+        harness_result = PROTOCOL_TEST_HARNESS_Build_Response(
+            s_host_transport.application_message, message_size,
+            s_host_transport.config.max_application_message_size, &status_data,
+            s_host_transport.pending_response, sizeof( s_host_transport.pending_response ),
+            &response_size );
+
+        if ( harness_result != PROTOCOL_TEST_HARNESS_RESULT_OK )
+        {
+            HOST_TRANSPORT_Increment( &g_host_transport_diagnostics.invalid_harness_messages );
+            return true;
+        }
+    }
+    else
+    {
+        HIL_Application_Status_T application_status = APPLICATION_TEST_HARNESS_Handle_Message(
+            s_host_transport.application_message, message_size, s_host_transport.pending_response,
+            sizeof( s_host_transport.pending_response ), &response_size );
+
+        if ( application_status != HIL_APPLICATION_STATUS_OK )
+        {
+            return true;
+        }
+    }
+
+    if ( response_size == 0U )
+    {
         return true;
     }
 
@@ -602,6 +667,11 @@ static bool HOST_TRANSPORT_Init_Internal( size_t workspace_capacity )
         return false;
     }
 
+    if ( APPLICATION_TEST_HARNESS_Init() != HIL_APPLICATION_STATUS_OK )
+    {
+        return false;
+    }
+
     s_host_transport.initialized                           = true;
     g_host_transport_diagnostics.initialization_successful = 1U;
     HOST_TRANSPORT_Update_Status_Snapshot();
@@ -629,6 +699,10 @@ void HOST_TRANSPORT_Set_Link_State( bool connected, uint32_t now_ms )
     }
 
     HOST_TRANSPORT_Clear_Caller_State();
+    if ( !connected )
+    {
+        APPLICATION_TEST_HARNESS_Reset_Transaction();
+    }
     HW_USB_Discard_Protocol_Buffers();
 
     s_host_transport.link_connected = connected;
@@ -733,6 +807,7 @@ void HOST_TRANSPORT_Test_Reset( void )
 {
     memset( &s_host_transport, 0, sizeof( s_host_transport ) );
     memset( &g_host_transport_diagnostics, 0, sizeof( g_host_transport_diagnostics ) );
+    APPLICATION_TEST_HARNESS_Test_Reset();
 }
 
 bool HOST_TRANSPORT_Test_Init_With_Workspace_Capacity( uint32_t workspace_capacity )

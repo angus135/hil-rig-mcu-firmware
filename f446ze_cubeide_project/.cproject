@@ -181,7 +181,7 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="Src/stm32f4xx_it.c|Src/Application/host_interface/shared_protocol/tests|Src/Application/host_interface/shared_protocol/examples|Src/Application/host_interface/shared_protocol/bindings|Src/Application/host_interface/shared_protocol/python|Src/Application/host_interface/shared_protocol/scripts|Src/Application/host_interface/shared_protocol/src/application|Src/Application/host_interface/shared_protocol/src/transport/internal/extended" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
+						<entry excluding="Src/stm32f4xx_it.c|Src/Application/host_interface/shared_protocol/tests|Src/Application/host_interface/shared_protocol/examples|Src/Application/host_interface/shared_protocol/bindings|Src/Application/host_interface/shared_protocol/python|Src/Application/host_interface/shared_protocol/scripts|Src/Application/host_interface/shared_protocol/src/transport/internal/extended" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="USB_DEVICE"/>
@@ -359,7 +359,7 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="Src/stm32f4xx_it.c|Src/Application/host_interface/shared_protocol/tests|Src/Application/host_interface/shared_protocol/examples|Src/Application/host_interface/shared_protocol/bindings|Src/Application/host_interface/shared_protocol/python|Src/Application/host_interface/shared_protocol/scripts|Src/Application/host_interface/shared_protocol/src/application|Src/Application/host_interface/shared_protocol/src/transport/internal/extended" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
+						<entry excluding="Src/stm32f4xx_it.c|Src/Application/host_interface/shared_protocol/tests|Src/Application/host_interface/shared_protocol/examples|Src/Application/host_interface/shared_protocol/bindings|Src/Application/host_interface/shared_protocol/python|Src/Application/host_interface/shared_protocol/scripts|Src/Application/host_interface/shared_protocol/src/transport/internal/extended" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="USB_DEVICE"/>
@@ -506,7 +506,7 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="Src/stm32f4xx_it.c|Src/Application/host_interface/shared_protocol/tests|Src/Application/host_interface/shared_protocol/examples|Src/Application/host_interface/shared_protocol/bindings|Src/Application/host_interface/shared_protocol/python|Src/Application/host_interface/shared_protocol/scripts|Src/Application/host_interface/shared_protocol/src/application|Src/Application/host_interface/shared_protocol/src/transport/internal/extended" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
+						<entry excluding="Src/stm32f4xx_it.c|Src/Application/host_interface/shared_protocol/tests|Src/Application/host_interface/shared_protocol/examples|Src/Application/host_interface/shared_protocol/bindings|Src/Application/host_interface/shared_protocol/python|Src/Application/host_interface/shared_protocol/scripts|Src/Application/host_interface/shared_protocol/src/transport/internal/extended" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="USB_DEVICE"/>
@@ -649,7 +649,7 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="Src/stm32f4xx_it.c|Src/Application/host_interface/shared_protocol/tests|Src/Application/host_interface/shared_protocol/examples|Src/Application/host_interface/shared_protocol/bindings|Src/Application/host_interface/shared_protocol/python|Src/Application/host_interface/shared_protocol/scripts|Src/Application/host_interface/shared_protocol/src/application|Src/Application/host_interface/shared_protocol/src/transport/internal/extended" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
+						<entry excluding="Src/stm32f4xx_it.c|Src/Application/host_interface/shared_protocol/tests|Src/Application/host_interface/shared_protocol/examples|Src/Application/host_interface/shared_protocol/bindings|Src/Application/host_interface/shared_protocol/python|Src/Application/host_interface/shared_protocol/scripts|Src/Application/host_interface/shared_protocol/src/transport/internal/extended" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="USB_DEVICE"/>
