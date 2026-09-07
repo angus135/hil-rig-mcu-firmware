@@ -2,19 +2,19 @@
  *  File:       execution_operation_payloads.h
  *
  *  Description:
- *      Working sketch of the opcode and payload layouts for scheduled output
- *      operations. This header supplements the design document by showing
- *      how the current decisions could be represented in C. It is expected to
- *      change as the design is reviewed and is not yet a released binary
- *      interface. Within this draft, however, the byte layouts below are the
- *      authoritative packing rules for the MCU Host Interface.
+ *      Canonical opcode and payload layouts for scheduled output operations.
+ *      The common operation word and digital-output payload are the current
+ *      implementation contracts. The remaining peripheral payloads document
+ *      planned encodings and may change as their adapters are implemented.
  *
  *  Notes:
  *      One instruction represents all output work scheduled for one tick. It
  *      contains multiple operations. Each operation represents one logical
  *      peripheral update and may require more than one existing driver call.
- *      The layouts below describe the operation-specific payloads; the common
- *      operation header and alignment remain undecided.
+ *      The layouts below describe the operation-specific payloads. The common
+ *      operation header occupies one little-endian 32-bit word.
+ *      Every operation begins on a four-byte boundary, and trailing zero
+ *      padding extends each complete operation to a four-byte boundary.
  *
  *      The MCU Host Interface creates these payloads after validating the
  *      external test package against its paired driver configuration.
@@ -30,15 +30,12 @@
  *      - Exclude I2C until its known hardware fault is resolved and its
  *        execution path can be validated.
  *
- *      The structures illustrate fixed layouts; they are not permission to
- *      memcpy an external or compiler-native structure into flash. The Host
- *      Interface must emit the stated bytes and validate every stated rule.
- *
- *      Before typed payload fields or arrays are read directly, the final
- *      operation design must guarantee their alignment in every Flash Manager
- *      buffer location, including page and ring crossings. Adapters must
- *      translate these instruction-owned layouts into driver inputs without
- *      making the Host Interface depend on a driver header.
+ *      Type declarations describe field widths and encoded storage only; they
+ *      are not permission to serialize an external or compiler-native structure.
+ *      The Host Interface must emit the stated little-endian words and bytes and
+ *      validate every stated rule. Flash Manager word-backed storage preserves
+ *      four-byte alignment across pages and ring mirrors. Adapters read aligned
+ *      words directly and must not retain instruction-storage pointers.
  ******************************************************************************/
 
 #ifndef EXECUTION_OPERATION_PAYLOADS_H
@@ -49,7 +46,6 @@ extern "C"
 {
 #endif
 
-#include <stddef.h>
 #include <stdint.h>
 
 /**-----------------------------------------------------------------------------
@@ -57,7 +53,7 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-/** Proposed opcode storage type used by the common operation encoding. */
+/** Opcode storage type used by the common operation encoding. */
 typedef uint8_t ExecutionOperationOpcode_T;
 
 /** Every encoded operation begins on a four-byte boundary. */
@@ -65,6 +61,28 @@ typedef uint8_t ExecutionOperationOpcode_T;
 
 /** Fixed encoded size of the common operation header. */
 #define EXECUTION_OPERATION_HEADER_SIZE_BYTES ( 4U )
+
+/** Bit layout of the encoded little-endian operation-header word. */
+#define EXECUTION_OPERATION_OPCODE_SHIFT ( 0U )
+#define EXECUTION_OPERATION_CHANNEL_SHIFT ( 8U )
+#define EXECUTION_OPERATION_PAYLOAD_LENGTH_SHIFT ( 16U )
+
+#define EXECUTION_OPERATION_OPCODE_MASK UINT32_C( 0x000000FF )
+#define EXECUTION_OPERATION_CHANNEL_MASK UINT32_C( 0x0000FF00 )
+#define EXECUTION_OPERATION_PAYLOAD_LENGTH_MASK UINT32_C( 0xFFFF0000 )
+
+/** Decode fields from one aligned operation-header word. */
+#define EXECUTION_OPERATION_GET_OPCODE( header_word )                                              \
+    ( ( ExecutionOperationOpcode_T )( ( ( header_word ) & EXECUTION_OPERATION_OPCODE_MASK )       \
+                                      >> EXECUTION_OPERATION_OPCODE_SHIFT ) )
+
+#define EXECUTION_OPERATION_GET_CHANNEL( header_word )                                             \
+    ( ( uint8_t )( ( ( header_word ) & EXECUTION_OPERATION_CHANNEL_MASK )                         \
+                    >> EXECUTION_OPERATION_CHANNEL_SHIFT ) )
+
+#define EXECUTION_OPERATION_GET_PAYLOAD_LENGTH_BYTES( header_word )                                \
+    ( ( uint16_t )( ( ( header_word ) & EXECUTION_OPERATION_PAYLOAD_LENGTH_MASK )                 \
+                     >> EXECUTION_OPERATION_PAYLOAD_LENGTH_SHIFT ) )
 
 /**
  * @brief Calculate the complete encoded operation size, including padding.
@@ -77,12 +95,11 @@ typedef uint8_t ExecutionOperationOpcode_T;
       & ~( EXECUTION_OPERATION_ALIGNMENT_BYTES - 1U ) )
 
 /**
- * @brief Output operations currently supported by this draft.
+ * @brief Opcode values reserved by the current instruction format.
  *
- * Explicit values make the draft mapping independent of the compiler's enum
- * size. Values must not be reused after the format is released. I2C operations
- * are intentionally absent while I2C is disabled by the current hardware
- * policy; new opcodes can be appended after that path is validated.
+ * Explicit values make the mapping independent of the compiler's enum size.
+ * Values must not be reused. I2C operations are intentionally absent while I2C
+ * is disabled by current hardware policy; new opcodes are appended.
  */
 #define EXECUTION_OPERATION_OPCODE_DIGITAL_OUTPUT_UPDATE ( ( ExecutionOperationOpcode_T )0U )
 #define EXECUTION_OPERATION_OPCODE_ANALOGUE_OUTPUT_BATCH ( ( ExecutionOperationOpcode_T )1U )
@@ -102,7 +119,7 @@ typedef uint8_t ExecutionOperationOpcode_T;
  * enclosing instruction supplies the scheduled Execution Manager tick.
  */
 
-/** Proposed channel values stored outside the operation-specific payload. */
+/** Channel values stored outside the operation-specific payload. */
 #define EXECUTION_OPERATION_CHANNEL_UNUSED ( 0U )
 #define EXECUTION_OPERATION_PWM_CHANNEL_LV ( 0U )
 #define EXECUTION_OPERATION_PWM_CHANNEL_HV ( 1U )
@@ -131,12 +148,15 @@ typedef uint8_t ExecutionOperationOpcode_T;
 #define EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES ( 8U )
 #define EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES ( 6U )
 
-/** Fixed-payload byte offsets. */
-#define EXECUTION_DIGITAL_OUTPUT_HIGH_BITMASK_OFFSET_BYTES ( 0U )
-#define EXECUTION_DIGITAL_OUTPUT_LOW_BITMASK_OFFSET_BYTES ( 4U )
+/** PWM fixed-payload byte offsets. */
 #define EXECUTION_PWM_ARR_OFFSET_BYTES ( 0U )
 #define EXECUTION_PWM_CCR_OFFSET_BYTES ( 2U )
 #define EXECUTION_PWM_PSC_OFFSET_BYTES ( 4U )
+
+/** Word indices used for direct access to the digital-output payload. */
+#define EXECUTION_DIGITAL_OUTPUT_HIGH_BITMASK_WORD_INDEX ( 0U )
+#define EXECUTION_DIGITAL_OUTPUT_LOW_BITMASK_WORD_INDEX ( 1U )
+#define EXECUTION_DIGITAL_OUTPUT_PAYLOAD_WORD_COUNT ( 2U )
 
 /** Fields within each packed CAN packet. */
 #define EXECUTION_CAN_PACKET_ID_OFFSET_BYTES ( 0U )
@@ -144,7 +164,6 @@ typedef uint8_t ExecutionOperationOpcode_T;
 #define EXECUTION_CAN_PACKET_DATA_OFFSET_BYTES ( 3U )
 #define EXECUTION_CAN_PACKET_RESERVED_OFFSET_BYTES ( 11U )
 
-/** SPI variable-payload offsets and length calculation. */
 /** SPI variable-payload offsets and length calculation. */
 #define EXECUTION_SPI_PACKET_COUNT_OFFSET_BYTES ( 0U )
 #define EXECUTION_SPI_PACKET_SIZES_OFFSET_BYTES ( EXECUTION_SPI_PREFIX_SIZE_BYTES )
@@ -162,24 +181,19 @@ typedef uint8_t ExecutionOperationOpcode_T;
  */
 
 /**
- * @brief Common header preceding every operation-specific payload.
+ * @brief Encoded common header word preceding every operation-specific payload.
  *
  * Encoded layout:
  *   byte 0      = opcode
  *   byte 1      = channel
  *   bytes 2..3  = payload_length_bytes, little-endian
  *
- * payload_length_bytes excludes this header and trailing alignment padding.
- * The payload begins immediately after this header. Zero to three zero-valued
- * padding bytes follow the payload so the next operation begins on a four-byte
- * boundary.
+ * One aligned load produces a word with opcode in bits 0..7, channel in bits
+ * 8..15, and payload_length_bytes in bits 16..31. payload_length_bytes excludes
+ * this header and trailing alignment padding. The payload begins immediately
+ * after this word. Zero to three zero-valued padding bytes follow the payload.
  */
-typedef struct
-{
-    ExecutionOperationOpcode_T opcode;
-    uint8_t                    channel;
-    uint16_t                   payload_length_bytes;
-} ExecutionOperationHeader_T;
+typedef uint32_t ExecutionOperationHeaderWord_T;
 
 /**
  * @brief Complete digital-output update for one execution tick.
@@ -188,7 +202,7 @@ typedef struct
  * for the active-low hardware when applying them. channel must be
  * EXECUTION_OPERATION_CHANNEL_UNUSED.
  *
- * Host Manager packing:
+ * Host Interface packing:
  *   payload length = 8
  *   bytes 0..3     = high_bitmask, little-endian
  *   bytes 4..7     = low_bitmask, little-endian
@@ -198,15 +212,12 @@ typedef struct
  * must be a subset of the enabled digital-output mask for the paired session
  * configuration.
  *
- * The Host Manager combines all digital-output changes for one tick into at
+ * The Host Interface combines all digital-output changes for one tick into at
  * most one operation. It omits the operation when no digital output changes on
  * that tick.
  */
-typedef struct
-{
-    uint32_t high_bitmask;
-    uint32_t low_bitmask;
-} ExecutionDigitalOutputPayload_T;
+typedef uint32_t
+    ExecutionDigitalOutputPayloadWords_T[EXECUTION_DIGITAL_OUTPUT_PAYLOAD_WORD_COUNT];
 
 /**
  * @brief Exact three-byte wire representation of one analogue-output update.
@@ -276,13 +287,14 @@ typedef struct
 
 /*
  * A CAN_TRANSMIT payload is a non-empty ExecutionCanPacket_T array. The packet
- * count is payload_length_bytes divided by sizeof( ExecutionCanPacket_T ) and
- * must not exceed EXECUTION_CAN_MAX_PACKETS. The common header supplies the
- * channel, so a separate payload prefix is unnecessary.
+ * count is payload_length_bytes divided by sizeof( ExecutionCanPacket_T ). The
+ * common header supplies the channel, so a separate payload prefix is
+ * unnecessary. Driver-dependent limits are validated against the active
+ * configuration rather than defined as instruction-format constants.
  *
  * Host Interface packing:
  *   channel        = EXECUTION_OPERATION_CAN_CHANNEL_1 or CHANNEL_2
- *   packet_count   = number of requested packets, 1..EXECUTION_CAN_MAX_PACKETS
+ *   packet_count   = number of requested packets, greater than zero
  *   payload length = packet_count * EXECUTION_CAN_PACKET_SIZE_BYTES
  *   payload        = packet_count consecutive ExecutionCanPacket_T layouts
  *
@@ -302,8 +314,8 @@ typedef struct
  * The common header supplies channel. packet_count is passed as num_packets.
  * The data length is not stored separately because EXEC_SPI_Transmit() does
  * not take it; validation must prove that the packet sizes sum to the bytes
- * remaining in the payload. packet_sizes must begin at a uint32_t-aligned
- * address in the final design.
+ * remaining in the payload. packet_sizes begins at a uint32_t-aligned address
+ * because both the common header and SPI prefix occupy complete words.
  *
  * A prefix is necessary here because packet_count tells the adapter where the
  * variable packet-size array ends and the packet data begins. Unlike CAN,
@@ -349,28 +361,18 @@ typedef struct
  */
 
 /**-----------------------------------------------------------------------------
- *  Draft layout checks
+ *  Layout checks
  *------------------------------------------------------------------------------
  */
 
 #if defined( __cplusplus )
-static_assert( sizeof( ExecutionOperationHeader_T ) == EXECUTION_OPERATION_HEADER_SIZE_BYTES,
-               "Execution operation header layout changed" );
-static_assert( offsetof( ExecutionOperationHeader_T, opcode ) == 0U,
-               "Execution operation opcode offset changed" );
-static_assert( offsetof( ExecutionOperationHeader_T, channel ) == 1U,
-               "Execution operation channel offset changed" );
-static_assert( offsetof( ExecutionOperationHeader_T, payload_length_bytes ) == 2U,
-               "Execution operation payload length offset changed" );
-static_assert( sizeof( ExecutionDigitalOutputPayload_T )
+static_assert( sizeof( ExecutionOperationHeaderWord_T ) == EXECUTION_OPERATION_HEADER_SIZE_BYTES,
+               "Execution operation header must occupy one word" );
+static_assert( EXECUTION_OPERATION_ALIGNMENT_BYTES == sizeof( ExecutionOperationHeaderWord_T ),
+               "Operation alignment must match the header word" );
+static_assert( sizeof( ExecutionDigitalOutputPayloadWords_T )
                    == EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES,
-               "Digital output payload layout changed" );
-static_assert( offsetof( ExecutionDigitalOutputPayload_T, high_bitmask )
-                   == EXECUTION_DIGITAL_OUTPUT_HIGH_BITMASK_OFFSET_BYTES,
-               "Digital output high bitmask offset changed" );
-static_assert( offsetof( ExecutionDigitalOutputPayload_T, low_bitmask )
-                   == EXECUTION_DIGITAL_OUTPUT_LOW_BITMASK_OFFSET_BYTES,
-               "Digital output low bitmask offset changed" );
+               "Digital output payload must occupy two words" );
 static_assert( sizeof( ExecutionPwmUpdatePayload_T ) == EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES,
                "PWM payload layout changed" );
 static_assert( sizeof( ExecutionSpiTransmitPayloadPrefix_T ) == 4U,
@@ -381,23 +383,13 @@ static_assert( sizeof( ExecutionAnalogueOutputFrame_T )
 static_assert( sizeof( ExecutionCanPacket_T ) == EXECUTION_CAN_PACKET_SIZE_BYTES,
                "CAN instruction packet layout changed" );
 #else
-_Static_assert( sizeof( ExecutionOperationHeader_T ) == EXECUTION_OPERATION_HEADER_SIZE_BYTES,
-                "Execution operation header layout changed" );
-_Static_assert( offsetof( ExecutionOperationHeader_T, opcode ) == 0U,
-                "Execution operation opcode offset changed" );
-_Static_assert( offsetof( ExecutionOperationHeader_T, channel ) == 1U,
-                "Execution operation channel offset changed" );
-_Static_assert( offsetof( ExecutionOperationHeader_T, payload_length_bytes ) == 2U,
-                "Execution operation payload length offset changed" );
-_Static_assert( sizeof( ExecutionDigitalOutputPayload_T )
+_Static_assert( sizeof( ExecutionOperationHeaderWord_T ) == EXECUTION_OPERATION_HEADER_SIZE_BYTES,
+                "Execution operation header must occupy one word" );
+_Static_assert( EXECUTION_OPERATION_ALIGNMENT_BYTES == sizeof( ExecutionOperationHeaderWord_T ),
+                "Operation alignment must match the header word" );
+_Static_assert( sizeof( ExecutionDigitalOutputPayloadWords_T )
                     == EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES,
-                "Digital output payload layout changed" );
-_Static_assert( offsetof( ExecutionDigitalOutputPayload_T, high_bitmask )
-                    == EXECUTION_DIGITAL_OUTPUT_HIGH_BITMASK_OFFSET_BYTES,
-                "Digital output high bitmask offset changed" );
-_Static_assert( offsetof( ExecutionDigitalOutputPayload_T, low_bitmask )
-                    == EXECUTION_DIGITAL_OUTPUT_LOW_BITMASK_OFFSET_BYTES,
-                "Digital output low bitmask offset changed" );
+                "Digital output payload must occupy two words" );
 _Static_assert( sizeof( ExecutionPwmUpdatePayload_T ) == EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES,
                 "PWM payload layout changed" );
 _Static_assert( sizeof( ExecutionSpiTransmitPayloadPrefix_T ) == 4U,
