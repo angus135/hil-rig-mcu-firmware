@@ -24,7 +24,8 @@
  *      ExecutionInstructionHeader_T followed immediately by the indicated
  *      operation bytes. An instruction contains all output operations for one
  *      output-bearing tick and may cross NAND page boundaries, but must not
- *      exceed EXECUTION_INSTRUCTION_MAX_SIZE_BYTES.
+ *      exceed EXECUTION_INSTRUCTION_MAX_SIZE_BYTES. The header, operation
+ *      stream length, and complete instruction image use four-byte boundaries.
  *
  *      Upload preprocessing is responsible for validating this canonical
  *      stream before it reaches NAND, including strictly increasing timestamps,
@@ -183,7 +184,8 @@ bool INSTRUCTION_BUFFER_Init( void );
  *      The retrieval session was reset and is ready for sequential page fills.
  * @retval false
  *      The buffer was not initialised, an upload owned the shared storage, or
- *      the supplied length exceeded the instruction partition capacity.
+ *      the supplied length was not word aligned or exceeded the instruction
+ *      partition capacity.
  *
  * @note A zero length prepares an empty instruction stream.
  * @note This function invalidates all previous page-fill leases and instruction
@@ -279,7 +281,8 @@ uint32_t INSTRUCTION_BUFFER_GetBufferedUnreadBytes( void );
  * @pre A prepared read session is active and instruction is non-null.
  * @note The returned operations are contiguous even if the instruction crosses a
  *       NAND page boundary or the physical end of the circular page storage.
- * @note Peek copies only the fixed-size header; it never copies the operations.
+ * @note Peek reads the two aligned header words directly; it never copies the
+ *       operations.
  * @note Timestamp comparison is deliberately outside this buffer. The
  *       Execution Manager retains a future instruction, consumes an instruction
  *       due on the current tick, and treats a past instruction as an overrun fault.
@@ -314,7 +317,8 @@ InstructionBufferConsumeStatus_T INSTRUCTION_BUFFER_ConsumeInstruction( void );
  *      Upload mode was prepared successfully.
  * @retval false
  *      The buffer was not initialised, shared storage was still owned, the
- *      expected length was zero, or it exceeded the partition capacity.
+ *      expected length was zero or not word aligned, or it exceeded the
+ *      partition capacity.
  *
  * @note This configures only Flash Manager-owned RAM state and does not access
  *       NAND or use RTOS primitives.

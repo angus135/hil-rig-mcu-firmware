@@ -258,9 +258,9 @@ typedef struct
  * @brief Read-only view of the next buffered execution instruction.
  *
  * The header and operation stream together represent one complete tick.
- * The fixed header is copied into this aligned view for safe field access; the
- * variable-length operation stream remains in Flash Manager-owned storage and is
- * exposed without a copy. An internal mirror keeps records crossing the
+ * The fixed header is decoded from two aligned storage words into this view;
+ * the variable-length operation stream remains in Flash Manager-owned storage
+ * and is exposed without a copy. An internal mirror keeps records crossing the
  * physical end of circular storage contiguous.
  *
  * The view remains valid until consumed or the instruction buffer is reset.
@@ -269,7 +269,7 @@ typedef struct
  */
 typedef struct
 {
-    /** Parsed copy of the stored instruction header. */
+    /** Header fields decoded from the stored instruction words. */
     ExecutionInstructionHeader_T header;
 
     /** Read-only packed operations belonging to the instruction. */
@@ -535,7 +535,8 @@ bool FLASH_MANAGER_ConsumeInstructionFromISR( BaseType_t* higher_priority_task_w
  * @brief Requests preparation of NAND storage for a canonical instruction image.
  *
  * @param[in] expected_length_bytes Total canonical instruction bytes that the
- *        Host Interface will submit during this upload.
+ *        Host Interface will submit during this upload. It must be nonzero,
+ *        divisible by four, and within the instruction partition capacity.
  *
  * @return Instruction-upload request status.
  *
@@ -560,8 +561,9 @@ FLASH_MANAGER_RequestInstructionUploadStart( uint32_t expected_length_bytes );
  * @note This operation is accepted only in
  *       FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD.
  * @note Accepted bytes are copied into Flash Manager-owned storage before this
- *       function returns, so the caller may immediately reuse its source
- *       buffer.
+ *       function returns, so the caller may immediately reuse its source buffer.
+ * @note Individual chunks do not need word, instruction, or operation alignment;
+ *       only the complete declared image is word aligned.
  * @note Each call is all-or-nothing and may contain at most one NAND page. If
  *       the three-page upload ring cannot accept the complete chunk, this
  *       function returns FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY and the

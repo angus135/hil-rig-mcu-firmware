@@ -163,27 +163,28 @@ interpret operation headers, opcodes, or peripheral-specific payloads.
 
 Canonical validation must establish one instruction per output-bearing tick,
 strictly increasing timestamps, valid operation counts, opcodes, channels, payload
-layouts and alignment, and complete instructions no larger than
-`EXECUTION_INSTRUCTION_MAX_SIZE_BYTES`. Host transport chunks do not need to
-align with instructions, operations, or NAND pages; they are merely ordered
-pieces of the declared canonical byte stream.
+layouts and four-byte operation padding, and complete instructions no larger
+than `EXECUTION_INSTRUCTION_MAX_SIZE_BYTES`. Every operations length and the
+complete declared image length must be divisible by four. Host transport chunks
+do not need to align with instructions, operations, words, or NAND pages; they
+are merely ordered pieces of the declared canonical byte stream.
 
 ### Persisted record format compatibility
 
 The current instruction and result streams are an internal development format,
-not yet a durable interchange format. Instructions are packed as
-`[native instruction header][operations...]`; result records remain
-`[native result header][payload]`. On the current STM32F446 target the
-eight-byte header fields are stored using the MCU's little-endian native C
-structure representation. There is no format identifier or version in NAND,
-and compatibility across different firmware, compilers, targets, or payload
-schema revisions is not guaranteed.
+not yet a durable interchange format. Instructions are packed as an eight-byte
+little-endian header followed by operations. Header word zero contains the
+timestamp. Header word one contains operation length in bits 0-15, operation
+count in bits 16-23, and reserved bits in bits 24-31. Result records remain
+`[native result header][payload]`. There is no format identifier or version in
+NAND, and compatibility across different firmware, targets, or payload schema
+revisions is not guaranteed.
 
 > **TODO:** Before stored streams become a supported host/flash interface,
 > define a versioned wire format with a magic value and format version, explicit
 > byte order and field offsets, fixed-width encoded fields independent of C
-> alignment, and versioned peripheral payload schemas. Encoding and decoding
-> must use explicit byte operations rather than native structure serialization.
+> alignment, and versioned peripheral payload schemas. Result encoding and any
+> remaining instruction producers must stop using native structure serialization.
 > Readers must reject unsupported versions; compatibility and migration policy
 > must state which older versions remain readable.
 
@@ -406,13 +407,14 @@ execution_manager appends result bytes into flash manager result slots
 flash_manager writes full result pages using EXTERNAL_FLASH_WriteResultPage
 ```
 
-The instruction API uses a cached hot-path contract. The first peek copies the
-fixed eight-byte header into an aligned view while leaving the operations zero-copy
-in Flash Manager-owned RAM. If its timestamp belongs to a future execution
-tick, later peeks return the same prepared view through a short cached branch;
-they do not copy, reparse, or advance it. Consume advances a cached instruction
-pointer and two offsets exactly once. Page release and refill notification occur
-only on the less frequent boundary path.
+The instruction API uses a cached hot-path contract. Instruction RAM is backed
+by 32-bit words and exposed as bytes to task-context NAND and upload paths. The
+first peek reads and decodes the two aligned header words directly while leaving
+the operations zero-copy in Flash Manager-owned RAM. If its timestamp belongs
+to a future execution tick, later peeks return the same prepared view through a
+short cached branch; they do not reread, reparse, or advance it. Consume advances
+a cached instruction pointer and two offsets exactly once. Page release and
+refill notification occur only on the less frequent boundary path.
 
 The Execution Manager processes the ordered stream from its head:
 
@@ -428,10 +430,11 @@ detects this at runtime; future feasibility validation should reject such a
 test before execution begins.
 
 The instruction stream is trusted to have been canonicalised before it reaches
-NAND. The Flash Manager retains only the framing bounds needed to prevent a
-stored instruction from exceeding `EXECUTION_INSTRUCTION_MAX_SIZE_BYTES` or the
-declared instruction image. Opcode and payload validation belongs to the Host
-Interface and Execution Manager, outside the Flash Manager hot path.
+NAND. The Flash Manager defensively rejects unaligned page geometry, declared
+image lengths, and per-instruction operation lengths, as well as framing that
+exceeds `EXECUTION_INSTRUCTION_MAX_SIZE_BYTES` or the declared image. Opcode,
+channel, and payload validation belongs to the Host Interface and Execution
+Manager, outside the Flash Manager hot path.
 
 The common peek and consume paths contain no private helper calls. Tiny shared
 addressing helpers are declared inline, while page-boundary bookkeeping is

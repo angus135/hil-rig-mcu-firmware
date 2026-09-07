@@ -8,8 +8,8 @@
  *      The Host Interface produces this format for storage. The Flash Manager
  *      transports it and treats the operation bytes as opaque. One instruction
  *      contains all output operations scheduled for one Execution Manager tick.
- *      Operation headers, opcodes, and payload layouts will be added as separate
- *      design decisions.
+ *      The stored header is two little-endian 32-bit words and every operation
+ *      boundary and complete instruction image is four-byte aligned.
  ******************************************************************************/
 
 #ifndef EXECUTION_INSTRUCTION_H
@@ -29,7 +29,10 @@ extern "C"
  * @brief Fixed header stored before the operations for one execution tick.
  *
  * operations_length_bytes includes operation headers, operation payloads, and
- * alignment padding. It excludes this instruction header. The Host Interface
+ * four-byte alignment padding. It excludes this instruction header and must be
+ * divisible by four. In the stored little-endian header, timestamp occupies
+ * word zero; word one contains operations_length_bytes in bits 0-15,
+ * operation_count in bits 16-23, and reserved in bits 24-31. The Host Interface
  * must set reserved to zero.
  */
 typedef struct

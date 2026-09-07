@@ -43,6 +43,32 @@ signal level is outside the expected range.
 If the baseline is not safe and repeatable, do not proceed to peripheral
 testing.
 
+## Flash Manager instruction-path validation
+
+The following sequence is destructive to previously stored diagnostic
+instructions and results. Run it only when overwriting those partitions is
+acceptable:
+
+```text
+flash init
+flash upload_test
+flash prepare
+flash execute_echo 100
+```
+
+`flash upload_test` writes a deterministic framing-compatible stream containing
+one 20-byte instruction per tick: an eight-byte little-endian header followed by
+12 opaque, word-aligned diagnostic operation bytes. The opaque bytes test Flash
+Manager transport and ISR echo framing; they are not dispatched through
+Execution Manager operation adapters. Upload transport chunks may split headers,
+operations, and NAND pages. `flash prepare` must preload the instruction buffer
+successfully, and `flash execute_echo 100` must consume the stream without an
+alignment, corruption, or underrun fault before reporting its result summary.
+
+Use `flash status` between stages if a state transition does not complete. The
+separate `flash external_test` command exercises External Flash directly and
+does not validate the canonical Execution Manager instruction format.
+
 ## Per-peripheral validation
 
 Test only one peripheral, and preferably one channel, at a time. Use the normal
@@ -161,4 +187,3 @@ A peripheral is ready for broader system testing when:
 - Results are repeatable after a power cycle.
 - Any unavailable measurement or provisional safe-state assumption is recorded
   as an explicit follow-up item.
-
