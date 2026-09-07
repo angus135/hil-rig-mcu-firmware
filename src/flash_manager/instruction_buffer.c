@@ -76,10 +76,17 @@
 #define INSTRUCTION_BUFFER_STORAGE_WORD_COUNT                                                      \
     ( INSTRUCTION_BUFFER_STORAGE_BYTES / sizeof( uint32_t ) )
 
+#if defined( __cplusplus )
+static_assert( sizeof( uint32_t ) == 4U, "Instruction storage requires 32-bit words" );
+
+static_assert( ( INSTRUCTION_BUFFER_STORAGE_BYTES % sizeof( uint32_t ) ) == 0U,
+               "Instruction buffer size must contain a whole number of words" );
+#else
 _Static_assert( sizeof( uint32_t ) == 4U, "Instruction storage requires 32-bit words" );
 
 _Static_assert( ( INSTRUCTION_BUFFER_STORAGE_BYTES % sizeof( uint32_t ) ) == 0U,
                 "Instruction buffer size must contain a whole number of words" );
+#endif
 
 /* Keep page-release bookkeeping out of the per-instruction common path. */
 #if defined( __GNUC__ ) || defined( __clang__ )
@@ -891,8 +898,8 @@ uint32_t INSTRUCTION_BUFFER_GetBufferedUnreadBytes( void )
 /**
  * @brief Returns the current instruction view without advancing the stream.
  *
- * The fixed header is copied into an aligned public view and the operations are
- * exposed directly from storage. The two-page mirror keeps an instruction
+ * The two fixed header words are decoded into the public view and the operations
+ * are exposed directly from storage. The two-page mirror keeps an instruction
  * crossing the physical ring end contiguous, so this path performs no operation
  * copy and no page search.
  */

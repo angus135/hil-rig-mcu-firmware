@@ -118,7 +118,7 @@
 #define CONSOLE_FLASH_POLL_PERIOD_MS ( 10U )
 #define CONSOLE_FLASH_RESULT_READ_BYTES ( 256U )
 
-#define CONSOLE_FLASH_TEST_PAYLOAD_BYTES ( 11U )
+#define CONSOLE_FLASH_TEST_PAYLOAD_BYTES ( 12U )
 #define CONSOLE_FLASH_TEST_OPERATION_COUNT ( 1U )
 #define CONSOLE_FLASH_DEFAULT_SEED ( 0x31U )
 
@@ -716,12 +716,15 @@ static bool CONSOLE_Flash_VerifyPattern( const uint8_t* data, uint32_t stream_of
     return true;
 }
 
-/** Generates a slice of the deterministic packed diagnostic instruction stream. */
+/** Generates a slice of the deterministic framing-compatible diagnostic stream. */
 static void CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32_t stream_offset,
                                                 uint32_t length, uint8_t seed )
 {
     const uint32_t header_length_bytes = ( uint32_t )sizeof( ExecutionInstructionHeader_T );
     const uint32_t record_length_bytes = header_length_bytes + CONSOLE_FLASH_TEST_PAYLOAD_BYTES;
+    const uint32_t encoded_fields =
+        ( uint32_t )CONSOLE_FLASH_TEST_PAYLOAD_BYTES
+        | ( ( uint32_t )CONSOLE_FLASH_TEST_OPERATION_COUNT << 16U );
 
     for ( uint32_t output_index = 0U; output_index < length; output_index++ )
     {
@@ -729,16 +732,16 @@ static void CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32_t s
         uint32_t record_index    = absolute_offset / record_length_bytes;
         uint32_t record_offset   = absolute_offset % record_length_bytes;
 
-        ExecutionInstructionHeader_T header = {
-            .timestamp               = record_index,
-            .operations_length_bytes = CONSOLE_FLASH_TEST_PAYLOAD_BYTES,
-            .operation_count         = CONSOLE_FLASH_TEST_OPERATION_COUNT,
-            .reserved                = 0U,
-        };
-
-        if ( record_offset < header_length_bytes )
+        if ( record_offset < sizeof( uint32_t ) )
         {
-            destination[output_index] = ( ( const uint8_t* )&header )[record_offset];
+            destination[output_index] =
+                ( uint8_t )( record_index >> ( record_offset * 8U ) );
+        }
+        else if ( record_offset < header_length_bytes )
+        {
+            uint32_t field_byte_offset = record_offset - sizeof( uint32_t );
+            destination[output_index] =
+                ( uint8_t )( encoded_fields >> ( field_byte_offset * 8U ) );
         }
         else
         {
@@ -1047,7 +1050,7 @@ static void CONSOLE_Flash_ExternalTestCommand( uint16_t argc, char* argv[] )
                     ( unsigned long )expected_length, ( unsigned int )seed );
 }
 
-/** Uploads a deterministic canonical instruction stream through Flash Manager. */
+/** Uploads a deterministic framing-compatible instruction stream through Flash Manager. */
 static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] )
 {
     if ( !CONSOLE_Flash_RequireIdle() )
@@ -1214,7 +1217,7 @@ static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] )
                     ( unsigned long )record_count, ( unsigned long )expected_length,
                     ( unsigned int )seed_value );
     CONSOLE_Printf(
-        "ISR echo format: one instruction per tick with 11 opaque operation bytes.\r\n" );
+        "ISR echo format: one instruction per tick with 12 opaque operation bytes.\r\n" );
     CONSOLE_Printf( "Next: 'flash prepare', then 'flash execute_echo 100'.\r\n" );
 }
 

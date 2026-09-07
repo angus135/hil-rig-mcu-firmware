@@ -65,15 +65,23 @@ Before starting an upload, the Host Interface must know the complete canonical
 byte length and guarantee:
 
 - packed `[ExecutionInstructionHeader_T][operations...]` instructions;
+- an eight-byte instruction header encoded as two little-endian 32-bit words:
+  timestamp in word zero, then operation length in bits 0-15, operation count
+  in bits 16-23, and zeroed reserved bits in bits 24-31 of word one;
 - strictly increasing instruction timestamps;
 - exactly one instruction for each output-bearing tick;
-- valid operation headers, opcodes, channels, payload layouts, and alignment;
+- valid operation headers, opcodes, channels, payload layouts, and four-byte
+  padding between operation boundaries;
+- an `operations_length_bytes` value divisible by four for every instruction;
+- a complete declared instruction-image length divisible by four;
 - each complete instruction is no larger than
   `EXECUTION_INSTRUCTION_MAX_SIZE_BYTES`; and
 - the submitted byte count exactly matches the declared upload length.
 
-Transport chunks may split instructions or operations and may cross NAND-page boundaries. Each
-submission itself must be non-empty and no larger than one NAND page. Because
+Transport chunks may split instructions or operations, may have any byte length
+up to one NAND page, and may cross NAND-page boundaries. Chunk alignment does
+not affect the canonical image-alignment requirement. Each submission must be
+non-empty. Because
 the current Flash Manager has no upload-cancel API, bring-up should not start an
 upload until the Host Interface can guarantee that the complete valid stream
 will be supplied.
