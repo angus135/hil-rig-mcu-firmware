@@ -11,16 +11,17 @@
  *
  *  Notes:
  *      One instruction represents all output work scheduled for one tick. It
- *      contains multiple operations, and each operation represents one
- *      execution-driver API call. The layouts below describe the call-specific
- *      payloads; the common operation header and alignment remain undecided.
+ *      contains multiple operations. Each operation represents one logical
+ *      peripheral update and may require more than one existing driver call.
+ *      The layouts below describe the operation-specific payloads; the common
+ *      operation header and alignment remain undecided.
  *
  *      The MCU Host Interface creates these payloads after validating the
  *      external test package against its paired driver configuration.
  *
  *      Design choices represented here:
  *      - Store an opcode rather than a function pointer.
- *      - Store one operation per useful driver API call.
+ *      - Store one operation per logical peripheral update.
  *      - Keep the timestamp in the enclosing instruction header.
  *      - Keep opcode, channel, and payload length outside the call-specific
  *        payload rather than repeating them in each layout.
@@ -48,6 +49,7 @@ extern "C"
 {
 #endif
 
+#include <stddef.h>
 #include <stdint.h>
 
 /**-----------------------------------------------------------------------------
@@ -66,14 +68,13 @@ typedef uint8_t ExecutionOperationOpcode_T;
  * are intentionally absent while I2C is disabled by the current hardware
  * policy; new opcodes can be appended after that path is validated.
  */
-#define EXECUTION_OPERATION_OPCODE_DIGITAL_OUTPUT_SET ( ( ExecutionOperationOpcode_T ) 0U )
-#define EXECUTION_OPERATION_OPCODE_DIGITAL_OUTPUT_RESET ( ( ExecutionOperationOpcode_T ) 1U )
-#define EXECUTION_OPERATION_OPCODE_ANALOGUE_OUTPUT_BATCH ( ( ExecutionOperationOpcode_T ) 2U )
-#define EXECUTION_OPERATION_OPCODE_PWM_UPDATE ( ( ExecutionOperationOpcode_T ) 3U )
-#define EXECUTION_OPERATION_OPCODE_CAN_TRANSMIT ( ( ExecutionOperationOpcode_T ) 4U )
-#define EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT ( ( ExecutionOperationOpcode_T ) 5U )
-#define EXECUTION_OPERATION_OPCODE_UART_TRANSMIT ( ( ExecutionOperationOpcode_T ) 6U )
-#define EXECUTION_OPERATION_OPCODE_COUNT ( 7U )
+#define EXECUTION_OPERATION_OPCODE_DIGITAL_OUTPUT_UPDATE ( ( ExecutionOperationOpcode_T )0U )
+#define EXECUTION_OPERATION_OPCODE_ANALOGUE_OUTPUT_BATCH ( ( ExecutionOperationOpcode_T )1U )
+#define EXECUTION_OPERATION_OPCODE_PWM_UPDATE ( ( ExecutionOperationOpcode_T )2U )
+#define EXECUTION_OPERATION_OPCODE_CAN_TRANSMIT ( ( ExecutionOperationOpcode_T )3U )
+#define EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT ( ( ExecutionOperationOpcode_T )4U )
+#define EXECUTION_OPERATION_OPCODE_UART_TRANSMIT ( ( ExecutionOperationOpcode_T )5U )
+#define EXECUTION_OPERATION_OPCODE_COUNT ( 6U )
 
 /*
  * Multi-byte payload fields are stored least-significant byte first. The Host
@@ -99,7 +100,7 @@ typedef uint8_t ExecutionOperationOpcode_T;
 /** Analogue output instruction limits. */
 #define EXECUTION_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES ( 3U )
 #define EXECUTION_ANALOGUE_OUTPUT_MAX_FRAMES ( 6U )
-#define EXECUTION_ANALOGUE_OUTPUT_MAX_DATA_BYTES                                           \
+#define EXECUTION_ANALOGUE_OUTPUT_MAX_DATA_BYTES                                                   \
     ( EXECUTION_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES * EXECUTION_ANALOGUE_OUTPUT_MAX_FRAMES )
 
 /** CAN transmit instruction limits. */
@@ -108,12 +109,13 @@ typedef uint8_t ExecutionOperationOpcode_T;
 #define EXECUTION_CAN_PACKET_SIZE_BYTES ( 12U )
 
 /** Fixed payload lengths. */
-#define EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES ( 4U )
+#define EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES ( 8U )
 #define EXECUTION_ANALOGUE_OUTPUT_PAYLOAD_SIZE_BYTES ( 19U )
 #define EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES ( 6U )
 
 /** Fixed-payload byte offsets. */
-#define EXECUTION_DIGITAL_OUTPUT_PIN_MASK_OFFSET_BYTES ( 0U )
+#define EXECUTION_DIGITAL_OUTPUT_HIGH_BITMASK_OFFSET_BYTES ( 0U )
+#define EXECUTION_DIGITAL_OUTPUT_LOW_BITMASK_OFFSET_BYTES ( 4U )
 #define EXECUTION_ANALOGUE_OUTPUT_FRAMES_OFFSET_BYTES ( 0U )
 #define EXECUTION_ANALOGUE_OUTPUT_BYTE_COUNT_OFFSET_BYTES ( 18U )
 #define EXECUTION_PWM_ARR_OFFSET_BYTES ( 0U )
@@ -130,8 +132,8 @@ typedef uint8_t ExecutionOperationOpcode_T;
 #define EXECUTION_SPI_PACKET_COUNT_OFFSET_BYTES ( 0U )
 #define EXECUTION_SPI_PACKET_SIZES_OFFSET_BYTES ( 4U )
 #define EXECUTION_SPI_PACKET_SIZES_LENGTH_BYTES( packet_count ) ( 4U * ( packet_count ) )
-#define EXECUTION_SPI_DATA_OFFSET_BYTES( packet_count )                                      \
-    ( EXECUTION_SPI_PACKET_SIZES_OFFSET_BYTES                                                \
+#define EXECUTION_SPI_DATA_OFFSET_BYTES( packet_count )                                            \
+    ( EXECUTION_SPI_PACKET_SIZES_OFFSET_BYTES                                                      \
       + EXECUTION_SPI_PACKET_SIZES_LENGTH_BYTES( packet_count ) )
 
 /**-----------------------------------------------------------------------------
@@ -140,21 +142,30 @@ typedef uint8_t ExecutionOperationOpcode_T;
  */
 
 /**
- * Input to EXEC_DIGITAL_OUTPUT_Set_Output() or Reset_Output().
+ * @brief Complete digital-output update for one execution tick.
  *
- * Separate opcodes select the two functions. The prepared physical mask is the
- * complete API input, so channel must be EXECUTION_OPERATION_CHANNEL_UNUSED.
+ * The masks describe the requested logical output levels. The adapter accounts
+ * for the active-low hardware when applying them. channel must be
+ * EXECUTION_OPERATION_CHANNEL_UNUSED.
  *
- * Host Interface packing:
- *   payload length = 4
- *   bytes 0..3     = pin_mask, little-endian
+ * Host Manager packing:
+ *   payload length = 8
+ *   bytes 0..3     = high_bitmask, little-endian
+ *   bytes 4..7     = low_bitmask, little-endian
  *
- * The mask is the configured physical GPIO mask expected by the execution
- * driver, not an external-host channel number.
+ * The masks contain prepared physical GPIO bits, not external-host channel
+ * numbers. They must be disjoint, their union must be non-zero, and their union
+ * must be a subset of the enabled digital-output mask for the paired session
+ * configuration.
+ *
+ * The Host Manager combines all digital-output changes for one tick into at
+ * most one operation. It omits the operation when no digital output changes on
+ * that tick.
  */
 typedef struct
 {
-    uint32_t pin_mask;
+    uint32_t high_bitmask;
+    uint32_t low_bitmask;
 } ExecutionDigitalOutputPayload_T;
 
 /**
@@ -313,6 +324,12 @@ typedef struct
 static_assert( sizeof( ExecutionDigitalOutputPayload_T )
                    == EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES,
                "Digital output payload layout changed" );
+static_assert( offsetof( ExecutionDigitalOutputPayload_T, high_bitmask )
+                   == EXECUTION_DIGITAL_OUTPUT_HIGH_BITMASK_OFFSET_BYTES,
+               "Digital output high bitmask offset changed" );
+static_assert( offsetof( ExecutionDigitalOutputPayload_T, low_bitmask )
+                   == EXECUTION_DIGITAL_OUTPUT_LOW_BITMASK_OFFSET_BYTES,
+               "Digital output low bitmask offset changed" );
 static_assert( sizeof( ExecutionPwmUpdatePayload_T ) == EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES,
                "PWM payload layout changed" );
 static_assert( sizeof( ExecutionSpiTransmitPayloadPrefix_T ) == 4U,
@@ -326,6 +343,12 @@ static_assert( sizeof( ExecutionCanPacket_T ) == EXECUTION_CAN_PACKET_SIZE_BYTES
 _Static_assert( sizeof( ExecutionDigitalOutputPayload_T )
                     == EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES,
                 "Digital output payload layout changed" );
+_Static_assert( offsetof( ExecutionDigitalOutputPayload_T, high_bitmask )
+                    == EXECUTION_DIGITAL_OUTPUT_HIGH_BITMASK_OFFSET_BYTES,
+                "Digital output high bitmask offset changed" );
+_Static_assert( offsetof( ExecutionDigitalOutputPayload_T, low_bitmask )
+                    == EXECUTION_DIGITAL_OUTPUT_LOW_BITMASK_OFFSET_BYTES,
+                "Digital output low bitmask offset changed" );
 _Static_assert( sizeof( ExecutionPwmUpdatePayload_T ) == EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES,
                 "PWM payload layout changed" );
 _Static_assert( sizeof( ExecutionSpiTransmitPayloadPrefix_T ) == 4U,
