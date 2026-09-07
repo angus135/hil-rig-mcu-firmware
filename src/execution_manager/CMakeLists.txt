@@ -12,7 +12,7 @@ set(EXECUTION_MANAGER_HEADERS
     execution_instruction.h
     execution_manager.h
     execution_manager_isr.h
-    execution_instruction_payloads.h
+    execution_operation_payloads.h
 )
 
 add_library(execution_manager STATIC
