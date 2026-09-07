@@ -35,26 +35,10 @@ extern "C"
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
-// The different tick frequencies supported during execution
-typedef enum FrequencyMode_T
-{
-    FREQUENCY_100HZ,
-    FREQUENCY_1KHZ,
-    FREQUENCY_10KHZ,
-} FrequencyMode_T;
-
-// Configuration struct for configuring a particular test
-typedef struct
-{
-    FrequencyMode_T frequency_mode;  // The frequency the test will run at
-    uint32_t        tick_count;      // The number of ticks the test will take
-} ExecutionManagerConfig_T;
-
 // Different high level states of the execution manager
 typedef enum
 {
     EXECUTION_MANAGER_STATE_STOPPED,
-    EXECUTION_MANAGER_STATE_START_PENDING,
     EXECUTION_MANAGER_STATE_RUNNING,
     EXECUTION_MANAGER_STATE_COMPLETE,
     EXECUTION_MANAGER_STATE_FAILED,
@@ -88,12 +72,15 @@ typedef struct
  */
 
 /**
- * @brief Starts an execution run.
+ * @brief Initialises the Execution Manager for a run.
  *
- * @param config Execution frequency and number of ticks to run.
- * @return true when the configuration was accepted and the timer was started.
+ * Timer configuration and control remain the responsibility of the Run State
+ * Manager. The execution timer must be stopped when this function is called.
+ *
+ * @param tick_count Number of execution ticks in the run.
+ * @return true when the run was accepted; otherwise, false.
  */
-bool EXECUTION_MANAGER_Start( const ExecutionManagerConfig_T* config );
+bool EXECUTION_MANAGER_Start( uint32_t tick_count );
 
 /**
  * @brief Aborts the current execution run.
