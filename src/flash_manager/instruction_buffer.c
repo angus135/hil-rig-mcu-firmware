@@ -71,6 +71,16 @@
 #define INSTRUCTION_BUFFER_STORAGE_BYTES                                                           \
     ( INSTRUCTION_BUFFER_MAX_CAPACITY_BYTES + INSTRUCTION_BUFFER_MIRROR_CAPACITY_BYTES )
 
+#define INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES ( sizeof( uint32_t ) )
+
+#define INSTRUCTION_BUFFER_STORAGE_WORD_COUNT                                                      \
+    ( INSTRUCTION_BUFFER_STORAGE_BYTES / sizeof( uint32_t ) )
+
+_Static_assert( sizeof( uint32_t ) == 4U, "Instruction storage requires 32-bit words" );
+
+_Static_assert( ( INSTRUCTION_BUFFER_STORAGE_BYTES % sizeof( uint32_t ) ) == 0U,
+                "Instruction buffer size must contain a whole number of words" );
+
 /* Keep page-release bookkeeping out of the per-instruction common path. */
 #if defined( __GNUC__ ) || defined( __clang__ )
 #define INSTRUCTION_BUFFER_COLD_NOINLINE __attribute__( ( cold, noinline ) )
@@ -264,7 +274,7 @@ typedef struct
  * slots zero and one so an instruction beginning in slot two can remain
  * contiguous for as much as two pages.
  */
-static uint8_t instruction_buffer_storage[INSTRUCTION_BUFFER_STORAGE_BYTES];
+static uint32_t instruction_buffer_storage_words[INSTRUCTION_BUFFER_STORAGE_WORD_COUNT];
 
 /** Shared geometry plus mutually exclusive retrieval and upload state. */
 static InstructionBufferContext_T instruction_buffer_context;
@@ -327,6 +337,11 @@ static bool INSTRUCTION_BUFFER_CopyUploadBytes( const uint8_t* data, uint32_t le
  *------------------------------------------------------------------------------
  */
 
+static inline uint8_t* INSTRUCTION_BUFFER_GetStorageBytes( void )
+{
+    return ( uint8_t* )( void* )instruction_buffer_storage_words;
+}
+
 /* Shared state management. */
 
 static inline uint8_t INSTRUCTION_BUFFER_NextPageIndex( uint8_t page_index )
@@ -339,7 +354,7 @@ static inline uint8_t* INSTRUCTION_BUFFER_GetPageData( uint8_t page_index )
     uint32_t page_offset_bytes =
         ( uint32_t )page_index * instruction_buffer_context.page_size_bytes;
 
-    return &instruction_buffer_storage[page_offset_bytes];
+    return &INSTRUCTION_BUFFER_GetStorageBytes()[page_offset_bytes];
 }
 
 static void INSTRUCTION_BUFFER_ResetPages( void )
@@ -666,7 +681,8 @@ bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes )
     instruction_buffer_context.consumer_stream_offset_bytes = 0U;
     instruction_buffer_context.consumer_page_index          = 0U;
     instruction_buffer_context.consumer_page_offset_bytes   = 0U;
-    instruction_buffer_context.consumer_record_pointer      = instruction_buffer_storage;
+    instruction_buffer_context.consumer_record_pointer      = INSTRUCTION_BUFFER_GetStorageBytes();
+    ;
 
     INSTRUCTION_BUFFER_ClearPageFillReservation();
     INSTRUCTION_BUFFER_ClearInstructionCache();
@@ -704,7 +720,8 @@ void INSTRUCTION_BUFFER_EndRead( void )
     instruction_buffer_context.consumer_stream_offset_bytes = 0U;
     instruction_buffer_context.consumer_page_index          = 0U;
     instruction_buffer_context.consumer_page_offset_bytes   = 0U;
-    instruction_buffer_context.consumer_record_pointer      = instruction_buffer_storage;
+    instruction_buffer_context.consumer_record_pointer      = INSTRUCTION_BUFFER_GetStorageBytes();
+    ;
 
     INSTRUCTION_BUFFER_ClearPageFillReservation();
     INSTRUCTION_BUFFER_ClearInstructionCache();
@@ -819,7 +836,7 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
             uint32_t mirror_offset_bytes = instruction_buffer_context.page_size_bytes
                                            * ( INSTRUCTION_BUFFER_PAGE_COUNT + page_index );
 
-            memcpy( &instruction_buffer_storage[mirror_offset_bytes],
+            memcpy( &INSTRUCTION_BUFFER_GetStorageBytes()[mirror_offset_bytes],
                     INSTRUCTION_BUFFER_GetPageData( page_index ), read_length_bytes );
         }
     }
@@ -1003,7 +1020,7 @@ bool INSTRUCTION_BUFFER_PrepareUpload( uint32_t expected_length_bytes )
     instruction_buffer_context.consumer_stream_offset_bytes = 0U;
     instruction_buffer_context.consumer_page_index          = 0U;
     instruction_buffer_context.consumer_page_offset_bytes   = 0U;
-    instruction_buffer_context.consumer_record_pointer      = instruction_buffer_storage;
+    instruction_buffer_context.consumer_record_pointer      = INSTRUCTION_BUFFER_GetStorageBytes();
 
     instruction_buffer_context.upload_expected_length_bytes  = expected_length_bytes;
     instruction_buffer_context.upload_accepted_length_bytes  = 0U;
