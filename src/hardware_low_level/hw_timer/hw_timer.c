@@ -86,7 +86,7 @@
  */
 
 /*
- * NULL preserves the production route to EXECUTION_MANAGER_Process_From_ISR().
+ * NULL preserves the production route to EXECUTION_MANAGER_ProcessTickFromISR().
  * Hardware bring-up may replace it only while TIM4 is stopped.
  */
 static HW_TIMER_ExecutionCallback_T volatile execution_timer_callback = NULL;
@@ -130,7 +130,7 @@ void EXECUTION_MANAGER_TIMER_IRQ_HANDLER( void )
         }
         else
         {
-            EXECUTION_MANAGER_Process_From_ISR();
+            ( void )EXECUTION_MANAGER_ProcessTickFromISR();
         }
     }
 #endif

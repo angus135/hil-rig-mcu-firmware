@@ -1,13 +1,9 @@
 /******************************************************************************
  *  File:       execution_manager.h
- *  Author:     Angus Corr
- *  Created:    20-Dec-2025
  *
  *  Description:
- *      Task-context lifecycle interface for the Execution Manager module.
- *
- *  Notes:
- *      None
+ *      Task-context preparation and status interface for deterministic test
+ *      execution.
  ******************************************************************************/
 
 #ifndef EXECUTION_MANAGER_H
@@ -18,82 +14,61 @@ extern "C"
 {
 #endif
 
-/**-----------------------------------------------------------------------------
- *  Includes
- *------------------------------------------------------------------------------
- */
-
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
-/**-----------------------------------------------------------------------------
- *  Public Defines / Macros
- *------------------------------------------------------------------------------
- */
-
-/**-----------------------------------------------------------------------------
- *  Public Typedefs / Enums / Structures
- *------------------------------------------------------------------------------
- */
-// Different high level states of the execution manager
 typedef enum
 {
-    EXECUTION_MANAGER_STATE_STOPPED,
-    EXECUTION_MANAGER_STATE_RUNNING,
-    EXECUTION_MANAGER_STATE_COMPLETE,
-    EXECUTION_MANAGER_STATE_FAILED,
-    EXECUTION_MANAGER_STATE_ABORTED,
-} ExecutionManagerState_T;
-
-// Different execution manager failure modes to be reported back to host
-typedef enum
-{
-    EXECUTION_MANAGER_FAILURE_NONE,
+    EXECUTION_MANAGER_FAILURE_NONE = 0,
+    EXECUTION_MANAGER_FAILURE_NOT_PREPARED,
     EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNDERRUN,
-    EXECUTION_MANAGER_FAILURE_RESULT_BUFFER_FULL,
-    EXECUTION_MANAGER_FAILURE_OUTPUT_REJECTED,
-    EXECUTION_MANAGER_FAILURE_MEASUREMENT_INVALID,
-    EXECUTION_MANAGER_FAILURE_TICK_OVERRUN,
-    EXECUTION_MANAGER_FAILURE_INTERNAL,
+    EXECUTION_MANAGER_FAILURE_INSTRUCTION_CORRUPT,
+    EXECUTION_MANAGER_FAILURE_INSTRUCTION_LATE,
+    EXECUTION_MANAGER_FAILURE_OPERATION_REJECTED,
+    EXECUTION_MANAGER_FAILURE_INSTRUCTION_CONSUME
 } ExecutionManagerFailure_T;
 
-// Status structure containing all the present information about the operation of the execution
-// manager
-typedef struct
+typedef enum
 {
-    ExecutionManagerState_T   state;            // What state, eg: running, stopped etc.
-    ExecutionManagerFailure_T failure;          // If there is a failure what failure mode
-    uint32_t                  ticks_completed;  // Current number of ticks that have been completed.
-} ExecutionManagerStatus_T;
+    EXECUTION_MANAGER_TICK_CONTINUE = 0,
+    EXECUTION_MANAGER_TICK_COMPLETE,
+    EXECUTION_MANAGER_TICK_FAILED
+} ExecutionManagerTickResult_T;
 
-/**-----------------------------------------------------------------------------
- *  Public Function Prototypes
- *------------------------------------------------------------------------------
- */
+typedef void ( *ExecutionManagerTerminalCallback_T )( ExecutionManagerTickResult_T result,
+                                                       ExecutionManagerFailure_T failure );
 
 /**
- * @brief Initialises the Execution Manager for a run.
+ * @brief Prepares run-local state before the execution timer is started.
  *
- * Timer configuration and control remain the responsibility of the Run State
- * Manager. The execution timer must be stopped when this function is called.
+ * The Run State Manager owns execution-timer configuration and control. The
+ * timer must be stopped while this function executes, and Flash Manager must
+ * already be prepared for execution.
  *
- * @param tick_count Number of execution ticks in the run.
+ * Tick zero is the configured initial condition and is not processed by a
+ * timer interrupt. The first interrupt processes tick one. A run of N ticks
+ * therefore processes boundaries 1 through N and completes after boundary N.
+ * Output instruction timestamps must be in that range.
+ *
+ * @param tick_count Final boundary tick and number of timer periods in the run.
  * @return true when the run was accepted; otherwise, false.
  */
-bool EXECUTION_MANAGER_Start( uint32_t tick_count );
+bool EXECUTION_MANAGER_Prepare( uint32_t tick_count );
 
-/**
- * @brief Aborts the current execution run.
- *
- */
+/** Registers the lifecycle owner's terminal ISR notification callback. */
+void EXECUTION_MANAGER_SetTerminalCallback( ExecutionManagerTerminalCallback_T callback );
+
+/** Clears run-local state after the execution timer has been stopped. */
 void EXECUTION_MANAGER_Abort( void );
 
 /**
- * @brief Copies the current lifecycle status into caller-owned storage.
- *
- * @param status Destination for the status snapshot. NULL is ignored.
+ * Returns zero before the first interrupt, then the boundary currently or
+ * most recently processed.
  */
-void EXECUTION_MANAGER_Get_Status( ExecutionManagerStatus_T* status );
+uint32_t EXECUTION_MANAGER_GetCurrentTick( void );
+
+/** Returns the first failure latched during the current run. */
+ExecutionManagerFailure_T EXECUTION_MANAGER_GetFailure( void );
 
 #ifdef __cplusplus
 }

@@ -27,7 +27,8 @@ The current bring-up commands are:
 ```text
 run_state receive
 run_state configure
-run_state execute
+run_state frequency <100|1000|10000>
+run_state execute <tick_count> [maximum_result_bytes]
 run_state execution_complete
 run_state transfer
 run_state transfer_complete
@@ -37,8 +38,9 @@ run_state fault
 run_state reset
 ```
 
-`execution_complete` is only an RSM integration seam and console stimulus at
-this stage. It does not add an Execution Manager dependency or implementation.
+`execution_complete` remains available as a console integration stimulus. In
+normal execution, the Execution Manager terminal callback automatically
+inhibits further ISR dispatch and notifies this same RSM request path.
 Fault handling retains the first recorded cause until a successful reset.
 Fault entry also requests asynchronous Flash session abort after execution and
 DUT drivers have stopped. Reset remains rejected until Flash reports `IDLE`,
@@ -54,7 +56,7 @@ asynchronous transition was pending, or failed during its entry action.
 |---|---|---|
 | `receive` | `IDLE` | Enter `TEST_PACKAGE_RECEIVE` |
 | `configure` | `TEST_PACKAGE_RECEIVE` | Enter `CONFIGURATION`, then automatically `ARMED` on success |
-| `execute` | `ARMED` | Start Flash preparation; automatically enter `EXECUTION` when ready |
+| `execute <ticks> [result bytes]` | `ARMED` | Start Flash preparation; automatically enter `EXECUTION` when ready |
 | `execution_complete` | `EXECUTION` | Stop execution and start Flash finalisation |
 | `transfer` | `RESULTS_READY` | Enter `RESULT_TRANSFER` |
 | `transfer_complete` | `RESULT_TRANSFER` | Enter `IDLE` |
@@ -65,7 +67,7 @@ asynchronous transition was pending, or failed during its entry action.
 
 Driver readiness completion from `CONFIGURATION` into `ARMED`, Flash preparation completion into `EXECUTION`, and
 Flash finalisation completion into `RESULTS_READY` are internal automatic
-transitions. Host-driven requests, future Execution Manager completion, result
+transitions. Host-driven requests, Execution Manager completion, result
 transfer completion, fault, and reset remain explicit events.
 
 `ARMED` means test configuration has completed while the DUT drivers and
@@ -100,6 +102,11 @@ Before a run, request Flash Manager execution preparation and wait for
 `FLASH_MANAGER_STATE_EXECUTING`. Only then may TIM4 start. At normal completion,
 stop TIM4, ensure the ISR has returned and all result leases are resolved, then
 request result finalisation and wait for `RESULTS_READY` or `FAULT`.
+
+The validated `tick_count` is the number of execution-timer periods and the
+final boundary tick. Tick zero is the configured initial condition. The first
+TIM4 interrupt processes tick one, and a run of N ticks completes at boundary
+N. Valid output instruction timestamps are therefore 1 through N.
 
 There is at most one grouped instruction for each output-bearing tick, and
 instructions are ordered by timestamp. If the Execution Manager observes an
@@ -168,7 +175,8 @@ or execution implementation. The future Host Interface owns this sequence:
   that configuration using `TEST_CONFIGURATION_Commit()`.
 - Submit `RUN_STATE_MANAGER_RequestConfiguration()` only after both package
   products are complete, then wait for `ARMED` with no pending transition.
-- `RUN_STATE_MANAGER_RequestExecution()` for a host-originated execute command.
+- Call `RUN_STATE_MANAGER_RequestExecution()` with validated tick count and
+  maximum result bytes for a host-originated execute command.
 - Submit `RUN_STATE_MANAGER_RequestResultTransfer()` from `RESULTS_READY`, wait
   for `RESULT_TRANSFER`, and retrieve bytes using the Flash Manager result API.
 - Submit `RUN_STATE_MANAGER_RequestResultTransferComplete()` only after Flash
@@ -184,23 +192,28 @@ If the host protocol later requires “transfer results, then rerun the same
 test,” that needs an explicit state-transition policy change; callers must not
 approximate it with a late repeat request.
 
-The future Execution Manager owns this execution-side integration:
+The implemented Execution Manager integration:
 
-- Perform only bounded instruction dispatch and result production from TIM4
-  ISR context; the RSM continues to own TIM4 configuration, start, and stop.
-- Hand normal completion or failure from the ISR to Execution Manager task
-  context using an ISR-safe primitive.
-- Submit `RUN_STATE_MANAGER_RequestExecutionComplete()` from task context after
-  normal completion.
-- Submit `RUN_STATE_MANAGER_RequestFault(reason)` from task context after an
-  execution failure. The RSM request API itself is not ISR-safe.
+- Perform bounded instruction dispatch from TIM4 ISR context. Measurement and
+  result production will use that same ISR boundary path when implemented; the
+  RSM continues to own TIM4 configuration, start, and stop.
+- RSM prepares the Execution Manager after Flash reaches `EXECUTING` and before
+  DUT drivers or TIM4 start.
+- The Execution Manager returns normal completion or failure from
+  `EXECUTION_MANAGER_ProcessTickFromISR()` without controlling TIM4 and invokes
+  the RSM-registered terminal callback once.
+- The terminal callback synchronously inhibits later execution dispatch and
+  notifies the RSM task.
+- RSM task context then performs timer/driver shutdown and Flash finalisation or
+  abort through the existing transition paths.
 
 The Execution Manager must not directly change RSM state, start or stop TIM4,
 start or finalise Flash sessions, or start and stop DUT drivers. Those remain
 consequences of RSM transitions.
 
 A physical or DUT-originated execution trigger may also submit
-`RUN_STATE_MANAGER_RequestExecution()` after system-level trigger arbitration.
+`RUN_STATE_MANAGER_RequestExecution()` with the active session bounds after
+system-level trigger arbitration.
 That arbitration does not belong inside the RSM.
 
 Status consumers should prefer `RUN_STATE_MANAGER_GetStatus()`, which captures

@@ -1,226 +1,246 @@
-/******************************************************************************
- *  File:       test_execution_manager.cpp
- *  Author:     Angus Corr
- *  Created:    06-Dec-2025
- *
- *  Description:
- *      Unit tests for the Execution Manager lifecycle and ISR scaffold.
- *
- *  Notes:
- *
- ******************************************************************************/
-
-/**-----------------------------------------------------------------------------
- *  Includes
- *------------------------------------------------------------------------------
- */
-
 #include <gtest/gtest.h>
-#include <gmock/gmock.h>
 
 extern "C"
 {
 #include "execution_manager.h"
 #include "execution_manager_isr.h"
-#include "hw_timer.h"
-#include <stdint.h>
+#include "execution_operation_adapters.h"
+#include "flash_manager.h"
 }
 
-using ::testing::StrictMock;
+static FlashManagerInstructionReadStatus_T peek_status;
+static FlashManagerInstructionView_T       instruction;
+static ExecutionOperationAdapterResult_T   adapter_result;
+static bool                                consume_result;
+static uint32_t                            peek_calls;
+static uint32_t                            adapter_calls;
+static uint32_t                            consume_calls;
+static uint32_t                            terminal_callback_calls;
+static ExecutionManagerTickResult_T        terminal_callback_result;
+static ExecutionManagerFailure_T           terminal_callback_failure;
 
-/**-----------------------------------------------------------------------------
- *  Test Doubles / Mocks
- *------------------------------------------------------------------------------
- */
-
-class MockExecutionManagerTimer
+static void TestTerminalCallback( ExecutionManagerTickResult_T result,
+                                  ExecutionManagerFailure_T failure )
 {
-public:
-    MOCK_METHOD( void, Configure, ( Timer_T timer, uint32_t psc, uint32_t arr ) );
-    MOCK_METHOD( void, Start, ( Timer_T timer ) );
-    MOCK_METHOD( void, Stop, ( Timer_T timer ) );
-};
-
-static MockExecutionManagerTimer* g_mock_timer = nullptr;
-
-extern "C"
-{
-void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t arr )
-{
-    g_mock_timer->Configure( timer, psc, arr );
+    terminal_callback_calls++;
+    terminal_callback_result  = result;
+    terminal_callback_failure = failure;
 }
 
-void HW_TIMER_Start_Timer( Timer_T timer )
+extern "C" FlashManagerInstructionReadStatus_T
+FLASH_MANAGER_PeekNextInstructionFromISR( const FlashManagerInstructionView_T** view )
 {
-    g_mock_timer->Start( timer );
+    peek_calls++;
+    if ( peek_status == FLASH_MANAGER_INSTRUCTION_AVAILABLE )
+    {
+        *view = &instruction;
+    }
+    return peek_status;
 }
 
-void HW_TIMER_Stop_Timer( Timer_T timer )
+extern "C" bool FLASH_MANAGER_ConsumeInstructionFromISR( BaseType_t* task_woken )
 {
-    g_mock_timer->Stop( timer );
-}
+    ( void )task_woken;
+    consume_calls++;
+    return consume_result;
 }
 
-/**-----------------------------------------------------------------------------
- *  Test Fixture
- *------------------------------------------------------------------------------
- */
+extern "C" ExecutionOperationAdapterResult_T
+EXECUTION_OPERATION_ADAPTER_ApplyOperations( const uint8_t* operations, uint8_t operation_count )
+{
+    ( void )operations;
+    ( void )operation_count;
+    adapter_calls++;
+    return adapter_result;
+}
 
 class ExecutionManagerTest : public ::testing::Test
 {
 protected:
-    StrictMock<MockExecutionManagerTimer> mock_timer;
+    uint8_t operations[12] = {};
 
-    void SetUp( void ) override
+    void SetUp() override
     {
-        g_mock_timer = &mock_timer;
-    }
-
-    void TearDown( void ) override
-    {
-        g_mock_timer = nullptr;
+        EXECUTION_MANAGER_SetTerminalCallback( nullptr );
+        ( void )EXECUTION_MANAGER_Prepare( 1U );
+        EXECUTION_MANAGER_Abort();
+        peek_status               = FLASH_MANAGER_INSTRUCTION_END_OF_STREAM;
+        adapter_result            = EXECUTION_OPERATION_ADAPTER_ACCEPTED;
+        consume_result            = true;
+        peek_calls                = 0U;
+        adapter_calls             = 0U;
+        consume_calls             = 0U;
+        terminal_callback_calls   = 0U;
+        terminal_callback_result  = EXECUTION_MANAGER_TICK_CONTINUE;
+        terminal_callback_failure = EXECUTION_MANAGER_FAILURE_NONE;
+        instruction               = {};
+        instruction.operations    = operations;
     }
 };
 
-/**-----------------------------------------------------------------------------
- *  Test Cases
- *------------------------------------------------------------------------------
- */
-
-TEST_F( ExecutionManagerTest, StartRejectsNullConfiguration )
+TEST_F( ExecutionManagerTest, PrepareRejectsZeroTicks )
 {
-    EXPECT_FALSE( EXECUTION_MANAGER_Start( nullptr ) );
+    EXPECT_FALSE( EXECUTION_MANAGER_Prepare( 0U ) );
 }
 
-TEST_F( ExecutionManagerTest, StartRejectsZeroTicks )
+TEST_F( ExecutionManagerTest, TickWithoutPreparationFailsWithoutReadingFlash )
 {
-    const ExecutionManagerConfig_T config = { FREQUENCY_1KHZ, 0U };
-
-    EXPECT_FALSE( EXECUTION_MANAGER_Start( &config ) );
+    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_NOT_PREPARED );
+    EXPECT_EQ( peek_calls, 0U );
 }
 
-TEST_F( ExecutionManagerTest, StartRejectsInvalidFrequency )
+TEST_F( ExecutionManagerTest, EmptyInstructionStreamStillCompletesConfiguredTicks )
 {
-    const ExecutionManagerConfig_T config = { static_cast<FrequencyMode_T>( 3 ), 10U };
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 2U ) );
 
-    EXPECT_FALSE( EXECUTION_MANAGER_Start( &config ) );
+    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_CONTINUE );
+    EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 1U );
+    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_COMPLETE );
+    EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 2U );
+    EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_NONE );
+    EXPECT_EQ( peek_calls, 1U );
 }
 
-TEST_F( ExecutionManagerTest, IsrEntryPointIsSafeWhenExecutionIsStopped )
+TEST_F( ExecutionManagerTest, PrepareEstablishesTickZeroInitialCondition )
 {
-    ExecutionManagerStatus_T status = {};
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 2U ) );
 
-    EXECUTION_MANAGER_Process_From_ISR();
-    EXECUTION_MANAGER_Get_Status( &status );
-
-    EXPECT_EQ( status.state, EXECUTION_MANAGER_STATE_STOPPED );
-    EXPECT_EQ( status.failure, EXECUTION_MANAGER_FAILURE_NONE );
-    EXPECT_EQ( status.ticks_completed, 0U );
+    EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 0U );
+    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_CONTINUE );
+    EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 1U );
 }
 
-TEST_F( ExecutionManagerTest, StartConfiguresOneHundredHertzTimer )
+TEST_F( ExecutionManagerTest, FutureInstructionRemainsUnconsumed )
 {
-    const ExecutionManagerConfig_T config = { FREQUENCY_100HZ, 10U };
+    instruction.header.timestamp = 2U;
+    peek_status                  = FLASH_MANAGER_INSTRUCTION_AVAILABLE;
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 2U ) );
 
-    EXPECT_CALL( mock_timer, Configure( EXECUTION_MANAGER_TIMER, 14U, 59999U ) );
-    EXPECT_CALL( mock_timer, Start( EXECUTION_MANAGER_TIMER ) );
-
-    EXPECT_TRUE( EXECUTION_MANAGER_Start( &config ) );
+    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_CONTINUE );
+    EXPECT_EQ( adapter_calls, 0U );
+    EXPECT_EQ( consume_calls, 0U );
 }
 
-TEST_F( ExecutionManagerTest, StartConfiguresOneKilohertzTimer )
+TEST_F( ExecutionManagerTest, DueInstructionIsAppliedThenConsumed )
 {
-    const ExecutionManagerConfig_T config = { FREQUENCY_1KHZ, 10U };
+    instruction.header.timestamp       = 1U;
+    instruction.header.operation_count = 1U;
+    peek_status                        = FLASH_MANAGER_INSTRUCTION_AVAILABLE;
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
 
-    EXPECT_CALL( mock_timer, Configure( EXECUTION_MANAGER_TIMER, 1U, 44999U ) );
-    EXPECT_CALL( mock_timer, Start( EXECUTION_MANAGER_TIMER ) );
-
-    EXPECT_TRUE( EXECUTION_MANAGER_Start( &config ) );
+    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_COMPLETE );
+    EXPECT_EQ( adapter_calls, 1U );
+    EXPECT_EQ( consume_calls, 1U );
 }
 
-TEST_F( ExecutionManagerTest, StartConfiguresTenKilohertzTimer )
+TEST_F( ExecutionManagerTest, LateInstructionFailsAndIsNotConsumed )
 {
-    const ExecutionManagerConfig_T config = { FREQUENCY_10KHZ, 10U };
+    instruction.header.timestamp = 2U;
+    peek_status                  = FLASH_MANAGER_INSTRUCTION_AVAILABLE;
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 3U ) );
+    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_CONTINUE );
 
-    EXPECT_CALL( mock_timer, Configure( EXECUTION_MANAGER_TIMER, 0U, 8999U ) );
-    EXPECT_CALL( mock_timer, Start( EXECUTION_MANAGER_TIMER ) );
+    instruction.header.timestamp = 1U;
 
-    EXPECT_TRUE( EXECUTION_MANAGER_Start( &config ) );
+    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_INSTRUCTION_LATE );
+    EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 2U );
+    EXPECT_EQ( consume_calls, 0U );
 }
 
-TEST_F( ExecutionManagerTest, AbortStopsTimerAndUpdatesStatus )
+TEST_F( ExecutionManagerTest, TimestampZeroIsLateAtFirstExecutionBoundary )
 {
-    const ExecutionManagerConfig_T config = { FREQUENCY_1KHZ, 10U };
-    ExecutionManagerStatus_T       status = {};
+    instruction.header.timestamp = 0U;
+    peek_status                  = FLASH_MANAGER_INSTRUCTION_AVAILABLE;
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
 
-    EXPECT_CALL( mock_timer, Configure( EXECUTION_MANAGER_TIMER, 1U, 44999U ) );
-    EXPECT_CALL( mock_timer, Start( EXECUTION_MANAGER_TIMER ) );
-    ASSERT_TRUE( EXECUTION_MANAGER_Start( &config ) );
-
-    EXPECT_CALL( mock_timer, Stop( EXECUTION_MANAGER_TIMER ) );
-    EXECUTION_MANAGER_Abort();
-    EXECUTION_MANAGER_Get_Status( &status );
-
-    EXPECT_EQ( status.state, EXECUTION_MANAGER_STATE_ABORTED );
-    EXPECT_EQ( status.failure, EXECUTION_MANAGER_FAILURE_NONE );
-    EXPECT_EQ( status.ticks_completed, 0U );
+    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_INSTRUCTION_LATE );
+    EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 1U );
+    EXPECT_EQ( adapter_calls, 0U );
+    EXPECT_EQ( consume_calls, 0U );
 }
 
-TEST_F( ExecutionManagerTest, StatusIsCopiedIntoCallerOwnedStorage )
+TEST_F( ExecutionManagerTest, InstructionUnderrunFailsTick )
 {
-    const ExecutionManagerConfig_T config = { FREQUENCY_1KHZ, 10U };
-    ExecutionManagerStatus_T       status = {};
+    peek_status = FLASH_MANAGER_INSTRUCTION_NOT_BUFFERED;
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
 
-    EXPECT_CALL( mock_timer, Configure( EXECUTION_MANAGER_TIMER, 1U, 44999U ) );
-    EXPECT_CALL( mock_timer, Start( EXECUTION_MANAGER_TIMER ) );
-    ASSERT_TRUE( EXECUTION_MANAGER_Start( &config ) );
-
-    EXECUTION_MANAGER_Get_Status( &status );
-    EXPECT_EQ( status.state, EXECUTION_MANAGER_STATE_RUNNING );
-    EXPECT_EQ( status.failure, EXECUTION_MANAGER_FAILURE_NONE );
-    EXPECT_EQ( status.ticks_completed, 0U );
-
-    status.state           = EXECUTION_MANAGER_STATE_FAILED;
-    status.failure         = EXECUTION_MANAGER_FAILURE_INTERNAL;
-    status.ticks_completed = 99U;
-    EXECUTION_MANAGER_Get_Status( &status );
-
-    EXPECT_EQ( status.state, EXECUTION_MANAGER_STATE_RUNNING );
-    EXPECT_EQ( status.failure, EXECUTION_MANAGER_FAILURE_NONE );
-    EXPECT_EQ( status.ticks_completed, 0U );
+    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNDERRUN );
+    EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 1U );
 }
 
-TEST_F( ExecutionManagerTest, IsrRunsCurrentStubPathWithoutDriverCalls )
+TEST_F( ExecutionManagerTest, CorruptInstructionFailsTick )
 {
-    const ExecutionManagerConfig_T config = { FREQUENCY_1KHZ, 2U };
-    ExecutionManagerStatus_T       status = {};
+    peek_status = FLASH_MANAGER_INSTRUCTION_CORRUPT;
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
 
-    EXPECT_CALL( mock_timer, Configure( EXECUTION_MANAGER_TIMER, 1U, 44999U ) );
-    EXPECT_CALL( mock_timer, Start( EXECUTION_MANAGER_TIMER ) );
-    ASSERT_TRUE( EXECUTION_MANAGER_Start( &config ) );
-
-    EXECUTION_MANAGER_Process_From_ISR();
-    EXECUTION_MANAGER_Get_Status( &status );
-
-    EXPECT_EQ( status.state, EXECUTION_MANAGER_STATE_RUNNING );
-    EXPECT_EQ( status.failure, EXECUTION_MANAGER_FAILURE_NONE );
-    EXPECT_EQ( status.ticks_completed, 1U );
+    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_INSTRUCTION_CORRUPT );
+    EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 1U );
 }
 
-TEST_F( ExecutionManagerTest, IsrCompletesAfterConfiguredTickCount )
+TEST_F( ExecutionManagerTest, RejectedOperationLeavesInstructionUnconsumed )
 {
-    const ExecutionManagerConfig_T config = { FREQUENCY_1KHZ, 1U };
-    ExecutionManagerStatus_T       status = {};
+    instruction.header.timestamp = 1U;
+    peek_status                  = FLASH_MANAGER_INSTRUCTION_AVAILABLE;
+    adapter_result               = EXECUTION_OPERATION_ADAPTER_REJECTED;
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
 
-    EXPECT_CALL( mock_timer, Configure( EXECUTION_MANAGER_TIMER, 1U, 44999U ) );
-    EXPECT_CALL( mock_timer, Start( EXECUTION_MANAGER_TIMER ) );
-    ASSERT_TRUE( EXECUTION_MANAGER_Start( &config ) );
+    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_OPERATION_REJECTED );
+    EXPECT_EQ( consume_calls, 0U );
+}
 
-    EXPECT_CALL( mock_timer, Stop( EXECUTION_MANAGER_TIMER ) );
-    EXECUTION_MANAGER_Process_From_ISR();
-    EXECUTION_MANAGER_Get_Status( &status );
+TEST_F( ExecutionManagerTest, ConsumeFailureIsReported )
+{
+    instruction.header.timestamp = 1U;
+    peek_status                  = FLASH_MANAGER_INSTRUCTION_AVAILABLE;
+    consume_result               = false;
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
 
-    EXPECT_EQ( status.state, EXECUTION_MANAGER_STATE_COMPLETE );
-    EXPECT_EQ( status.failure, EXECUTION_MANAGER_FAILURE_NONE );
-    EXPECT_EQ( status.ticks_completed, 1U );
+    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_INSTRUCTION_CONSUME );
+}
+
+TEST_F( ExecutionManagerTest, CompletionRemainsLatchedIfAnotherInterruptArrives )
+{
+    EXECUTION_MANAGER_SetTerminalCallback( TestTerminalCallback );
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
+    ASSERT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_COMPLETE );
+    uint32_t reads_at_completion = peek_calls;
+
+    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_COMPLETE );
+    EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_NONE );
+    EXPECT_EQ( peek_calls, reads_at_completion );
+    EXPECT_EQ( terminal_callback_calls, 1U );
+    EXPECT_EQ( terminal_callback_result, EXECUTION_MANAGER_TICK_COMPLETE );
+    EXPECT_EQ( terminal_callback_failure, EXECUTION_MANAGER_FAILURE_NONE );
+}
+
+TEST_F( ExecutionManagerTest, FailureRemainsLatchedIfAnotherInterruptArrives )
+{
+    EXECUTION_MANAGER_SetTerminalCallback( TestTerminalCallback );
+    peek_status = FLASH_MANAGER_INSTRUCTION_NOT_BUFFERED;
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
+    ASSERT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    uint32_t reads_at_failure = peek_calls;
+
+    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 1U );
+    EXPECT_EQ( peek_calls, reads_at_failure );
+    EXPECT_EQ( terminal_callback_calls, 1U );
+    EXPECT_EQ( terminal_callback_result, EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( terminal_callback_failure, EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNDERRUN );
+}
+
+TEST_F( ExecutionManagerTest, PrepareClearsPreviousFailure )
+{
+    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
+
+    EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_NONE );
+    EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 0U );
 }

@@ -102,7 +102,7 @@ void HW_TIMER_Stop_Timer( Timer_T timer );
  * @brief Overrides or restores the execution-timer ISR callback.
  *
  * @param callback Callback to invoke from TIM4_IRQHandler, or NULL to restore
- *        EXECUTION_MANAGER_Process_From_ISR().
+ *        EXECUTION_MANAGER_ProcessTickFromISR().
  *
  * @warning The execution timer must be stopped before changing this callback.
  *          The caller owns that sequencing; this low-level API does not stop

@@ -9,6 +9,7 @@ extern "C"
 {
 #include "run_state_manager.h"
 #include "dut_driver_lifecycle.h"
+#include "execution_manager.h"
 #include "flash_manager.h"
 #include "hw_timer.h"
 #include "logic_expander.h"
@@ -45,6 +46,11 @@ static uint32_t                           timer_start_calls;
 static uint32_t                           timer_stop_calls;
 static HW_TIMER_ExecutionGuard_T          execution_guard;
 static FlashManagerFaultCallback_T        flash_fault_callback;
+static uint32_t                           flash_prepare_capacity;
+static bool                               execution_prepare_result;
+static uint32_t                           execution_prepare_tick_count;
+static uint32_t                           execution_abort_calls;
+static ExecutionManagerTerminalCallback_T execution_terminal_callback;
 
 extern "C"
 {
@@ -128,7 +134,7 @@ bool FLASH_MANAGER_GetState( FlashManagerState_T* state )
 FlashManagerRequestStatus_T
 FLASH_MANAGER_RequestExecutionPreparation( uint32_t maximum_result_length_bytes )
 {
-    ( void )maximum_result_length_bytes;
+    flash_prepare_capacity = maximum_result_length_bytes;
     return flash_prepare_result;
 }
 FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void )
@@ -174,6 +180,19 @@ void HW_TIMER_Stop_Timer( Timer_T )
 void HW_TIMER_Set_Execution_Guard( HW_TIMER_ExecutionGuard_T guard )
 {
     execution_guard = guard;
+}
+bool EXECUTION_MANAGER_Prepare( uint32_t tick_count )
+{
+    execution_prepare_tick_count = tick_count;
+    return execution_prepare_result;
+}
+void EXECUTION_MANAGER_Abort( void )
+{
+    execution_abort_calls++;
+}
+void EXECUTION_MANAGER_SetTerminalCallback( ExecutionManagerTerminalCallback_T callback )
+{
+    execution_terminal_callback = callback;
 }
 }
 
@@ -230,9 +249,15 @@ protected:
         timer_stop_calls               = 0U;
         execution_guard                = nullptr;
         flash_fault_callback           = nullptr;
+        flash_prepare_capacity         = 0U;
+        execution_prepare_result       = true;
+        execution_prepare_tick_count   = 0U;
+        execution_abort_calls          = 0U;
+        execution_terminal_callback    = nullptr;
         run_state_manager_task_handle  = TEST_RSM_TASK_HANDLE;
         RUN_STATE_MANAGER_Init();
         timer_stop_calls = 0U;
+        execution_abort_calls = 0U;
     }
     static void Process( RunStateRequest_T request )
     {
@@ -248,6 +273,7 @@ protected:
     static void EnterExecution( void )
     {
         ConfigureToArmed();
+        execution_request = ( RunStateExecutionRequest_T ){ 10U, 64U };
         Process( RUN_STATE_REQUEST_EXECUTION );
         flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
         RUN_STATE_MANAGER_ProcessPendingOperation();
@@ -311,6 +337,7 @@ TEST_F( RunStateManagerTest, ConfigurationTimeoutEntersFault )
 TEST_F( RunStateManagerTest, ExecutionStartsOnlyAfterFlashIsExecuting )
 {
     ConfigureToArmed();
+    execution_request = ( RunStateExecutionRequest_T ){ 25U, 128U };
     Process( RUN_STATE_REQUEST_EXECUTION );
     EXPECT_EQ( RUN_STATE_ARMED, run_state );
     EXPECT_EQ( RUN_STATE_PENDING_EXECUTION_PREPARATION, pending_operation );
@@ -322,6 +349,63 @@ TEST_F( RunStateManagerTest, ExecutionStartsOnlyAfterFlashIsExecuting )
     EXPECT_TRUE( execution_timer_running );
     EXPECT_EQ( 1U, driver_start_calls );
     EXPECT_EQ( 1U, timer_start_calls );
+    EXPECT_EQ( 25U, execution_prepare_tick_count );
+    EXPECT_EQ( 128U, flash_prepare_capacity );
+}
+
+TEST_F( RunStateManagerTest, ExecutionRequestCopiesValidatedSessionBounds )
+{
+    RunStateExecutionRequest_T request = { 33U, 4096U };
+
+    EXPECT_TRUE( RUN_STATE_MANAGER_RequestExecution( &request ) );
+    request.tick_count = 1U;
+    EXPECT_EQ( 33U, execution_request.tick_count );
+    EXPECT_EQ( 4096U, execution_request.maximum_result_length_bytes );
+    EXPECT_EQ( RUN_STATE_MANAGER_NOTIFY_EXECUTION, notified_bits );
+    EXPECT_FALSE( RUN_STATE_MANAGER_RequestExecution( nullptr ) );
+}
+
+TEST_F( RunStateManagerTest, ExecutionManagerPreparationFailurePreventsDriverAndTimerStart )
+{
+    ConfigureToArmed();
+    execution_request        = ( RunStateExecutionRequest_T ){ 10U, 0U };
+    execution_prepare_result = false;
+    Process( RUN_STATE_REQUEST_EXECUTION );
+    flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
+
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_EXECUTION_MANAGER, fault_reason );
+    EXPECT_EQ( 0U, driver_start_calls );
+    EXPECT_EQ( 0U, timer_start_calls );
+}
+
+TEST_F( RunStateManagerTest, ExecutionCompletionFromIsrInhibitsAndNotifiesOwner )
+{
+    EnterExecution();
+    ASSERT_NE( nullptr, execution_terminal_callback );
+    notified_bits = 0U;
+
+    execution_terminal_callback( EXECUTION_MANAGER_TICK_COMPLETE,
+                                 EXECUTION_MANAGER_FAILURE_NONE );
+
+    EXPECT_TRUE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
+    EXPECT_EQ( RUN_STATE_MANAGER_NOTIFY_EXECUTION_COMPLETE, notified_bits );
+}
+
+TEST_F( RunStateManagerTest, ExecutionFailureFromIsrInhibitsAndRequestsFault )
+{
+    EnterExecution();
+    ASSERT_NE( nullptr, execution_terminal_callback );
+    notified_bits = 0U;
+
+    execution_terminal_callback( EXECUTION_MANAGER_TICK_FAILED,
+                                 EXECUTION_MANAGER_FAILURE_INSTRUCTION_LATE );
+
+    EXPECT_TRUE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
+    EXPECT_EQ( RUN_STATE_MANAGER_NOTIFY_FAULT, notified_bits );
+    EXPECT_EQ( RUN_STATE_FAULT_EXECUTION_MANAGER, requested_fault_reason );
 }
 
 TEST_F( RunStateManagerTest, ExecutionCompletionStopsDriversAndWaitsForResults )

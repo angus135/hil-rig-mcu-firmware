@@ -18,6 +18,24 @@
  *      `flash finalise`
  *      `flash results verify`
  *
+ *  Digital-output execution-path validation uses:
+ *
+ *      `flash init`
+ *      `run_state receive`
+ *      `test_config inert`
+ *      `test_config digital_output <channel> <voltage> low`
+ *      `flash upload_do_test <channel 1..10> [delay_ticks] [high_ticks]`
+ *      `run_state configure`
+ *      `run_state frequency <100|1000|10000>`
+ *      `run_state execute <delay_ticks + high_ticks> 0`
+ *
+ *  upload_do_test maps the selected logical output through the production GPIO
+ *  mapping API, then stores two canonical Execution Manager instructions. The
+ *  first drives the resulting mask high after delay_ticks; the second drives
+ *  it low after high_ticks more ticks. The normal Run State Manager transition then
+ *  owns Flash preparation, driver start, TIM4, terminal handoff, driver stop,
+ *  and result finalisation.
+ *
  *  `execute_echo` is the execution-facing API test. It temporarily redirects
  *  the existing priority-5 TIM4 interrupt away from the production Execution
  *  Manager and into a diagnostic callback. The callback processes the

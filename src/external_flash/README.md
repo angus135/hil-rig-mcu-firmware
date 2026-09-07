@@ -425,8 +425,9 @@ The same completion and ownership rule applies to `EXTERNAL_FLASH_ReadResultPage
 ## Notes and Limitations
 
 - Hardware validation is still required.
-- Firmware startup calls `EXTERNAL_FLASH_Init()`. Flash Manager call paths are
-  implemented but their production application call sites are not yet connected.
+- Firmware startup calls `EXTERNAL_FLASH_Init()`. Flash Manager uses the
+  instruction upload/read and result write/read paths during production
+  execution-session lifecycle transitions.
 - Instruction and result lengths are currently volatile RAM state only.
 - Wear erase counts and active block maps are currently volatile RAM state only.
 - Instruction recovery after reset is not implemented yet.

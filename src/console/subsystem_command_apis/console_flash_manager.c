@@ -62,8 +62,8 @@
  *  Failure handling and limitations:
  *      - Never call a Flash Manager FromISR API directly from the console task.
  *        execute_echo uses a real priority-5 TIM4 interrupt for this reason.
- *      - TIM4 is shared with the future Execution Manager. Do not run the
- *        production scheduler concurrently with execute_echo.
+ *      - TIM4 is shared with the Execution Manager. Do not run the production
+ *        scheduler concurrently with either execution diagnostic.
  *      - TODO(Run State Manager): place this harness behind a diagnostic build
  *        flag and require exclusive execution ownership before replacing the
  *        TIM4 callback. The current console-only ownership rule is temporary.
@@ -92,6 +92,8 @@
 
 #include "console.h"
 #include "external_flash.h"
+#include "execution_operation_payloads.h"
+#include "exec_digital_output.h"
 #include "flash_manager.h"
 #include "hw_nand.h"
 #include "hw_qspi.h"
@@ -121,6 +123,11 @@
 #define CONSOLE_FLASH_TEST_PAYLOAD_BYTES ( 12U )
 #define CONSOLE_FLASH_TEST_OPERATION_COUNT ( 1U )
 #define CONSOLE_FLASH_DEFAULT_SEED ( 0x31U )
+#define CONSOLE_FLASH_DO_TEST_INSTRUCTION_COUNT ( 2U )
+#define CONSOLE_FLASH_DO_TEST_OPERATION_BYTES ( 12U )
+#define CONSOLE_FLASH_DO_TEST_INSTRUCTION_BYTES ( 20U )
+#define CONSOLE_FLASH_DO_TEST_DEFAULT_DELAY_TICKS ( 100U )
+#define CONSOLE_FLASH_DO_TEST_DEFAULT_HIGH_TICKS ( 300U )
 
 /* Exact TIM4 divisors for the current 90 MHz timer clock. */
 #define CONSOLE_FLASH_EXECUTION_100HZ_PSC ( 14U )
@@ -203,9 +210,10 @@ static bool         console_flash_manager_needs_task  = false;
 static uint8_t console_flash_write_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES];
 static uint8_t console_flash_read_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES];
 
-static uint32_t console_flash_last_upload_records = 0U;
-static uint32_t console_flash_last_upload_bytes   = 0U;
-static uint8_t  console_flash_last_upload_seed    = 0U;
+static uint32_t                              console_flash_last_upload_records = 0U;
+static uint32_t                              console_flash_last_upload_bytes   = 0U;
+static uint8_t                               console_flash_last_upload_seed    = 0U;
+static uint32_t                              console_flash_do_test_tick_count  = 0U;
 
 static ConsoleFlashExecutionTestContext_T console_flash_execution_test = {
     .state                        = CONSOLE_FLASH_EXECUTION_TEST_NOT_RUN,
@@ -241,19 +249,24 @@ static void     CONSOLE_Flash_StopExecutionHarness( void );
 static void     CONSOLE_Flash_EndExecutionHarnessFromISR( ConsoleFlashExecutionTestState_T state,
                                                           ConsoleFlashExecutionFailure_T   failure );
 static void     CONSOLE_Flash_ExecutionEchoFromISR( void );
-static void     CONSOLE_Flash_FillPattern( uint8_t* destination, uint32_t stream_offset,
-                                           uint32_t length, uint8_t seed );
-static bool     CONSOLE_Flash_VerifyPattern( const uint8_t* data, uint32_t stream_offset,
-                                             uint32_t length, uint8_t seed,
-                                             uint32_t* first_bad_offset );
-static void     CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32_t stream_offset,
-                                                    uint32_t length, uint8_t seed );
+static void     CONSOLE_Flash_WriteU32Le( uint8_t* destination, uint32_t value );
+static void CONSOLE_Flash_EncodeDigitalOutputInstruction( uint8_t* destination, uint32_t timestamp,
+                                                          uint32_t high_bitmask,
+                                                          uint32_t low_bitmask );
+static void CONSOLE_Flash_FillPattern( uint8_t* destination, uint32_t stream_offset,
+                                       uint32_t length, uint8_t seed );
+static bool CONSOLE_Flash_VerifyPattern( const uint8_t* data, uint32_t stream_offset,
+                                         uint32_t length, uint8_t seed,
+                                         uint32_t* first_bad_offset );
+static void CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32_t stream_offset,
+                                                uint32_t length, uint8_t seed );
 static uint32_t CONSOLE_Flash_Fnv1aUpdate( uint32_t hash, const uint8_t* data, uint32_t length );
 
 static void CONSOLE_Flash_InitCommand( void );
 static void CONSOLE_Flash_StatusCommand( void );
 static void CONSOLE_Flash_ExternalTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] );
+static void CONSOLE_Flash_UploadDigitalOutputTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_PrepareCommand( void );
 static void CONSOLE_Flash_ExecuteEchoCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_FinaliseCommand( void );
@@ -272,6 +285,8 @@ static void CONSOLE_Flash_PrintUsage( void )
     CONSOLE_Printf( "  flash status\r\n" );
     CONSOLE_Printf( "  flash external_test [seed]\r\n" );
     CONSOLE_Printf( "  flash upload_test [instruction_count] [seed]\r\n" );
+    CONSOLE_Printf(
+        "  flash upload_do_test <channel 1..10> [delay_ticks] [high_ticks]\r\n" );
     CONSOLE_Printf( "  flash prepare\r\n" );
     CONSOLE_Printf( "  flash execute_echo [100|1000|10000]\r\n" );
     CONSOLE_Printf( "  flash finalise\r\n" );
@@ -541,7 +556,7 @@ static void CONSOLE_Flash_EndExecutionHarnessFromISR( ConsoleFlashExecutionTestS
  * Exercises the complete execution-facing Flash Manager API from TIM4.
  *
  * This callback deliberately emulates only the storage behaviour required of
- * the future Execution Manager. It does not dispatch a peripheral driver. For
+ * the Execution Manager storage contract. It does not dispatch a peripheral driver. For
  * each diagnostic instruction due on the current tick it reserves result
  * payload storage, copies the opaque operation bytes into that storage, commits
  * a byte-compatible diagnostic result header, and consumes the instruction.
@@ -722,9 +737,8 @@ static void CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32_t s
 {
     const uint32_t header_length_bytes = ( uint32_t )sizeof( ExecutionInstructionHeader_T );
     const uint32_t record_length_bytes = header_length_bytes + CONSOLE_FLASH_TEST_PAYLOAD_BYTES;
-    const uint32_t encoded_fields =
-        ( uint32_t )CONSOLE_FLASH_TEST_PAYLOAD_BYTES
-        | ( ( uint32_t )CONSOLE_FLASH_TEST_OPERATION_COUNT << 16U );
+    const uint32_t encoded_fields      = ( uint32_t )CONSOLE_FLASH_TEST_PAYLOAD_BYTES
+                                    | ( ( uint32_t )CONSOLE_FLASH_TEST_OPERATION_COUNT << 16U );
 
     for ( uint32_t output_index = 0U; output_index < length; output_index++ )
     {
@@ -734,14 +748,12 @@ static void CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32_t s
 
         if ( record_offset < sizeof( uint32_t ) )
         {
-            destination[output_index] =
-                ( uint8_t )( record_index >> ( record_offset * 8U ) );
+            destination[output_index] = ( uint8_t )( record_index >> ( record_offset * 8U ) );
         }
         else if ( record_offset < header_length_bytes )
         {
             uint32_t field_byte_offset = record_offset - sizeof( uint32_t );
-            destination[output_index] =
-                ( uint8_t )( encoded_fields >> ( field_byte_offset * 8U ) );
+            destination[output_index] = ( uint8_t )( encoded_fields >> ( field_byte_offset * 8U ) );
         }
         else
         {
@@ -892,6 +904,7 @@ static void CONSOLE_Flash_StatusCommand( void )
 /** Programs and verifies full and partial pages in both logical partitions. */
 static void CONSOLE_Flash_ExternalTestCommand( uint16_t argc, char* argv[] )
 {
+    console_flash_do_test_tick_count = 0U;
     if ( !CONSOLE_Flash_RequireIdle() )
     {
         return;
@@ -1050,6 +1063,132 @@ static void CONSOLE_Flash_ExternalTestCommand( uint16_t argc, char* argv[] )
                     ( unsigned long )expected_length, ( unsigned int )seed );
 }
 
+static void CONSOLE_Flash_WriteU32Le( uint8_t* destination, uint32_t value )
+{
+    destination[0] = ( uint8_t )value;
+    destination[1] = ( uint8_t )( value >> 8U );
+    destination[2] = ( uint8_t )( value >> 16U );
+    destination[3] = ( uint8_t )( value >> 24U );
+}
+
+static void CONSOLE_Flash_EncodeDigitalOutputInstruction( uint8_t* destination, uint32_t timestamp,
+                                                          uint32_t high_bitmask,
+                                                          uint32_t low_bitmask )
+{
+    uint32_t instruction_word =
+        CONSOLE_FLASH_DO_TEST_OPERATION_BYTES | ( CONSOLE_FLASH_TEST_OPERATION_COUNT << 16U );
+    uint32_t operation_word = EXECUTION_OPERATION_OPCODE_DIGITAL_OUTPUT_UPDATE
+                              | ( EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES << 16U );
+
+    CONSOLE_Flash_WriteU32Le( &destination[0], timestamp );
+    CONSOLE_Flash_WriteU32Le( &destination[4], instruction_word );
+    CONSOLE_Flash_WriteU32Le( &destination[8], operation_word );
+    CONSOLE_Flash_WriteU32Le( &destination[12], high_bitmask );
+    CONSOLE_Flash_WriteU32Le( &destination[16], low_bitmask );
+}
+
+/** Uploads two canonical digital-output instructions through the public upload API. */
+static void CONSOLE_Flash_UploadDigitalOutputTestCommand( uint16_t argc, char* argv[] )
+{
+    uint32_t channel     = 0U;
+    uint32_t delay_ticks = CONSOLE_FLASH_DO_TEST_DEFAULT_DELAY_TICKS;
+    uint32_t high_ticks  = CONSOLE_FLASH_DO_TEST_DEFAULT_HIGH_TICKS;
+
+    if ( ( argc < 3U ) || ( argc > 5U ) || !CONSOLE_Flash_ParseU32( argv[2], &channel )
+         || ( ( argc >= 4U ) && !CONSOLE_Flash_ParseU32( argv[3], &delay_ticks ) )
+         || ( ( argc == 5U ) && !CONSOLE_Flash_ParseU32( argv[4], &high_ticks ) )
+         || ( channel < 1U ) || ( channel > EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT )
+         || ( delay_ticks == 0U ) || ( high_ticks == 0U )
+         || ( ( uint64_t )delay_ticks + high_ticks > UINT32_MAX ) )
+    {
+        CONSOLE_Printf( "Usage: flash upload_do_test <channel 1..10> "
+                        "[delay_ticks > 0] [high_ticks > 0]\r\n" );
+        return;
+    }
+
+    uint32_t low_tick = delay_ticks + high_ticks;
+
+    if ( !CONSOLE_Flash_RequireIdle() )
+    {
+        return;
+    }
+
+    console_flash_do_test_tick_count = 0U;
+
+    GPIOOutput_T           gpio_output = ( GPIOOutput_T )( DIGITAL_OUTPUT_0 + channel - 1U );
+    DigitalOutputPinmask_T pin_mask =
+        EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( &gpio_output, 1U );
+    if ( pin_mask == 0U )
+    {
+        CONSOLE_Printf( "Failed to map digital-output channel %lu to a physical pin.\r\n",
+                        ( unsigned long )channel );
+        return;
+    }
+
+    const uint32_t upload_bytes =
+        CONSOLE_FLASH_DO_TEST_INSTRUCTION_COUNT * CONSOLE_FLASH_DO_TEST_INSTRUCTION_BYTES;
+    FlashManagerInstructionUploadRequestStatus_T status =
+        FLASH_MANAGER_RequestInstructionUploadStart( upload_bytes );
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED
+         || !CONSOLE_Flash_WaitForState( FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD,
+                                         CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "Digital-output upload start failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    CONSOLE_Flash_EncodeDigitalOutputInstruction( &console_flash_write_buffer[0], delay_ticks,
+                                                   pin_mask, 0U );
+    CONSOLE_Flash_EncodeDigitalOutputInstruction(
+        &console_flash_write_buffer[CONSOLE_FLASH_DO_TEST_INSTRUCTION_BYTES], low_tick, 0U,
+        pin_mask );
+
+    status = FLASH_MANAGER_SubmitInstructionUploadBytes( console_flash_write_buffer, upload_bytes );
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
+    {
+        CONSOLE_Printf( "Digital-output instruction submission failed (status=%d).\r\n",
+                        ( int )status );
+        return;
+    }
+
+    TickType_t finish_started_at = xTaskGetTickCount();
+    do
+    {
+        status = FLASH_MANAGER_RequestInstructionUploadFinish();
+        if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
+        {
+            if ( CONSOLE_Flash_HasTimedOut( finish_started_at, CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            {
+                CONSOLE_Printf( "Digital-output upload finalisation timed out.\r\n" );
+                return;
+            }
+            vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+        }
+    } while ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY );
+
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED
+         || !CONSOLE_Flash_WaitForState( FLASH_MANAGER_STATE_IDLE,
+                                         CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "Digital-output upload finalisation failed (status=%d).\r\n",
+                        ( int )status );
+        return;
+    }
+
+    console_flash_last_upload_records = CONSOLE_FLASH_DO_TEST_INSTRUCTION_COUNT;
+    console_flash_last_upload_bytes   = upload_bytes;
+    console_flash_do_test_tick_count  = low_tick;
+    CONSOLE_Flash_ResetExecutionHarnessState();
+
+    CONSOLE_Printf( "Digital-output upload PASS: channel=%lu mask=0x%08lX high_tick=%lu "
+                    "low_tick=%lu run_ticks=%lu.\r\n",
+                    ( unsigned long )channel, ( unsigned long )pin_mask,
+                    ( unsigned long )delay_ticks, ( unsigned long )low_tick,
+                    ( unsigned long )console_flash_do_test_tick_count );
+    CONSOLE_Printf( "Next: configure the RSM, then 'run_state execute %lu 0'.\r\n",
+                    ( unsigned long )console_flash_do_test_tick_count );
+}
+
 /** Uploads a deterministic framing-compatible instruction stream through Flash Manager. */
 static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] )
 {
@@ -1057,6 +1196,8 @@ static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] )
     {
         return;
     }
+
+    console_flash_do_test_tick_count = 0U;
 
     ExternalFlashInfo_T info = { 0 };
     if ( EXTERNAL_FLASH_GetInfo( &info ) != EXTERNAL_FLASH_STATUS_OK )
@@ -1571,6 +1712,12 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
     if ( strcmp( argv[1], "upload_test" ) == 0 )
     {
         CONSOLE_Flash_UploadTestCommand( argc, argv );
+        return;
+    }
+
+    if ( strcmp( argv[1], "upload_do_test" ) == 0 )
+    {
+        CONSOLE_Flash_UploadDigitalOutputTestCommand( argc, argv );
         return;
     }
 

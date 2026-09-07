@@ -20,6 +20,8 @@
 #include "dut_driver_lifecycle.h"
 #include "run_state_manager.h"
 #include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 /**-----------------------------------------------------------------------------
@@ -53,6 +55,7 @@ static const char* CONSOLE_RunStateManager_RequestName( RunStateRequest_T reques
 static const char* CONSOLE_RunStateManager_RequestResultName( RunStateRequestResult_T result );
 static void        CONSOLE_RunStateManager_PrintUsage( void );
 static void        CONSOLE_RunStateManager_PrintRequestResult( bool accepted );
+static bool        CONSOLE_RunStateManager_ParseU32( const char* text, uint32_t* value );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -117,6 +120,8 @@ static const char* CONSOLE_RunStateManager_FaultName( RunStateFaultReason_T reas
             return "DUT driver stop";
         case RUN_STATE_FAULT_EXECUTION_TIMER:
             return "execution timer";
+        case RUN_STATE_FAULT_EXECUTION_MANAGER:
+            return "Execution Manager";
         case RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION:
             return "Flash execution preparation";
         case RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION_TIMEOUT:
@@ -216,9 +221,30 @@ static void CONSOLE_RunStateManager_PrintUsage( void )
 {
     CONSOLE_Printf( "Usage:\r\n" );
     CONSOLE_Printf( "  run_state status\r\n" );
-    CONSOLE_Printf( "  run_state <receive|configure|execute|execution_complete>\r\n" );
+    CONSOLE_Printf( "  run_state frequency <100|1000|10000>\r\n" );
+    CONSOLE_Printf( "  run_state execute <tick_count> [maximum_result_bytes]\r\n" );
+    CONSOLE_Printf( "  run_state <receive|configure|execution_complete>\r\n" );
     CONSOLE_Printf( "  run_state <transfer|transfer_complete|repeat|discard|fault|reset>\r\n" );
     CONSOLE_Printf( "  run_state diagnostic_timer <start|stop>\r\n" );
+}
+
+static bool CONSOLE_RunStateManager_ParseU32( const char* text, uint32_t* value )
+{
+    if ( ( text == NULL ) || ( value == NULL ) || ( text[0] == '\0' ) || ( text[0] == '-' ) )
+    {
+        return false;
+    }
+
+    char*         end    = NULL;
+    unsigned long parsed = strtoul( text, &end, 0 );
+
+    if ( ( end == text ) || ( *end != '\0' ) || ( parsed > UINT32_MAX ) )
+    {
+        return false;
+    }
+
+    *value = ( uint32_t )parsed;
+    return true;
 }
 
 /**
@@ -245,6 +271,57 @@ static void CONSOLE_RunStateManager_PrintRequestResult( bool accepted )
 
 void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
 {
+    if ( ( argc == 3U ) && ( strcmp( argv[1], "frequency" ) == 0 ) )
+    {
+        uint32_t frequency = 0U;
+        if ( !CONSOLE_RunStateManager_ParseU32( argv[2], &frequency )
+             || RUN_STATE_MANAGER_IsExecutionTimerRunning() )
+        {
+            CONSOLE_RunStateManager_PrintUsage();
+            return;
+        }
+
+        if ( frequency == 100U )
+        {
+            RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_100HZ );
+        }
+        else if ( frequency == 1000U )
+        {
+            RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_1KHZ );
+        }
+        else if ( frequency == 10000U )
+        {
+            RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_10KHZ );
+        }
+        else
+        {
+            CONSOLE_RunStateManager_PrintUsage();
+            return;
+        }
+
+        CONSOLE_Printf( "Execution frequency set to %lu Hz.\r\n",
+                        ( unsigned long )frequency );
+        return;
+    }
+
+    if ( ( argc >= 3U ) && ( argc <= 4U ) && ( strcmp( argv[1], "execute" ) == 0 ) )
+    {
+        RunStateExecutionRequest_T request = { 0U, 0U };
+        if ( !CONSOLE_RunStateManager_ParseU32( argv[2], &request.tick_count )
+             || ( request.tick_count == 0U )
+             || ( ( argc == 4U )
+                  && !CONSOLE_RunStateManager_ParseU32(
+                      argv[3], &request.maximum_result_length_bytes ) ) )
+        {
+            CONSOLE_RunStateManager_PrintUsage();
+            return;
+        }
+
+        CONSOLE_RunStateManager_PrintRequestResult(
+            RUN_STATE_MANAGER_RequestExecution( &request ) );
+        return;
+    }
+
     if ( argc == 3U && strcmp( argv[1], "diagnostic_timer" ) == 0 )
     {
         if ( strcmp( argv[2], "start" ) == 0 )
@@ -322,10 +399,6 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
     else if ( strcmp( argv[1], "configure" ) == 0 )
     {
         CONSOLE_RunStateManager_PrintRequestResult( RUN_STATE_MANAGER_RequestConfiguration() );
-    }
-    else if ( strcmp( argv[1], "execute" ) == 0 )
-    {
-        CONSOLE_RunStateManager_PrintRequestResult( RUN_STATE_MANAGER_RequestExecution() );
     }
     else if ( strcmp( argv[1], "execution_complete" ) == 0 )
     {

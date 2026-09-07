@@ -4,10 +4,8 @@
  *  Created:    07/09/2026
  *
  *  Description:
- *      Task-context lifecycle interface for the Execution Manager module.
- *
- *  Notes:
- *      None
+ *      Zero-copy dispatch interface from canonical operation storage to
+ *      execution-facing driver calls.
  ******************************************************************************/
 
 #ifndef EXECUTION_OPERATION_ADAPTERS_H
@@ -59,9 +57,9 @@ typedef enum
 /**
  * @brief Common signature used by the opcode-indexed adapter table.
  *
- * The main operation walker validates the encoded operation boundary before
- * calling an adapter. Each adapter performs only the small operation-specific
- * checks required to prevent unsafe driver access.
+ * The Host Interface validates the encoded operation stream before storage.
+ * The ISR walker and adapters rely on that session contract and perform no
+ * repeated format validation.
  *
  * payload points directly into Flash Manager instruction storage. It remains
  * valid only until the enclosing instruction is consumed. An adapter or driver

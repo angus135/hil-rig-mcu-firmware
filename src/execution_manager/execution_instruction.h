@@ -37,7 +37,7 @@ extern "C"
  */
 typedef struct
 {
-    /** Execution Manager tick on which every contained operation is due. */
+    /** One-based execution boundary on which every contained operation is due. */
     uint32_t timestamp;
 
     /** Total encoded operation bytes following this header. */

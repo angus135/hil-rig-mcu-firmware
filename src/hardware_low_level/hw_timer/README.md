@@ -1,11 +1,21 @@
 # hw_timer
 ## Overview
 
-`hw_timer` contains the application for handling TIMER
+`hw_timer` provides low-level timer configuration and interrupt dispatch.
 
 This module is responsible for:
 
-- TODO
+- Configure, start, and stop the timers selected by higher-level owners.
+- Dispatch TIM4 update interrupts to the registered diagnostic callback or,
+  when no override is installed, to `EXECUTION_MANAGER_ProcessTickFromISR()`.
+- Apply the Run State Manager execution guard before dispatching TIM4 work.
+
+Run State Manager owns the TIM4 execution-clock lifecycle. The default TIM4
+route invokes the Execution Manager tick engine. On a terminal tick, the
+Execution Manager invokes the RSM-registered ISR callback, which closes the
+execution guard immediately; RSM task context subsequently stops TIM4.
+Diagnostic console tests temporarily install a callback only while TIM4 is
+stopped and restore the default route afterward.
 
 
 ---

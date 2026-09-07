@@ -69,6 +69,55 @@ Use `flash status` between stages if a state transition does not complete. The
 separate `flash external_test` command exercises External Flash directly and
 does not validate the canonical Execution Manager instruction format.
 
+## Execution Manager digital-output path
+
+Choose a digital-output silkscreen channel from 1 through 10. The following
+example holds LOW for one second, HIGH for three seconds, then returns LOW at
+100 Hz on channel 1:
+
+```text
+flash init
+flash status
+run_state status
+run_state receive
+run_state status
+test_config inert
+test_config digital_output 1 3v3 low
+test_config status
+flash upload_do_test 1 100 300
+run_state configure
+run_state status
+run_state frequency 100
+run_state execute 400 0
+run_state status
+run_state discard
+run_state status
+```
+
+Replace `1` with the intended output channel. The command uses
+`EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks()` to resolve the channel to its
+physical GPIO mask before creating the instruction. Probe the downstream output
+rather than relying only on an indicator LED.
+
+`upload_do_test` uses the public Flash Manager upload API to store two canonical
+instructions. Tick zero is the configured LOW initial condition. Tick 100
+requests the mask high and tick 400 requests it low.
+The RSM execution request prepares Flash Manager and the Execution Manager,
+starts configured DUT drivers, and owns TIM4. The 400 ticks run through
+`EXECUTION_MANAGER_ProcessTickFromISR()`, the zero-copy operation walker, the
+digital-output adapter, and the production digital-output driver. Terminal ISR
+notification inhibits further dispatch; RSM task context then stops TIM4 and
+the drivers and finalises the empty result stream.
+
+Expected lifecycle outcome is `RESULTS_READY` with TIM4 and the DUT lifecycle
+stopped. Expected electrical behavior is LOW for one second, HIGH for three
+seconds, then LOW again. The execution path currently
+produces no measurement records, so `run_state discard` releases the empty
+result session and returns the system to IDLE.
+
+Repeat at 1 kHz with delay/high values 1000/3000, then at 10 kHz with
+10000/30000 to retain the same waveform while increasing ISR frequency.
+
 ## Per-peripheral validation
 
 Test only one peripheral, and preferably one channel, at a time. Use the normal

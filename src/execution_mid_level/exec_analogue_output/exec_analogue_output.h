@@ -293,8 +293,8 @@ bool EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch(
  *
  * The module must be configured, electrically ready, and started before this
  * function is called. This compatibility API is intended for console commands,
- * manual testing, and other non-hot-path use. The future execution manager
- * should submit prepared data directly..
+ * manual testing, and other non-hot-path use. The Execution Manager hot path
+ * must submit prepared batches directly.
  *
  * @param channel
  *     The DAC output channel number (0-5 for active channels, 6-7 disabled).

@@ -77,6 +77,7 @@ typedef enum
     RUN_STATE_FAULT_DRIVER_START,
     RUN_STATE_FAULT_DRIVER_STOP,
     RUN_STATE_FAULT_EXECUTION_TIMER,
+    RUN_STATE_FAULT_EXECUTION_MANAGER,
     RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION,
     RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION_TIMEOUT,
     RUN_STATE_FAULT_FLASH_RESULT_FINALISATION,
@@ -116,6 +117,14 @@ typedef enum
     RUN_STATE_REQUEST_RESULT_FAILED
 } RunStateRequestResult_T;
 
+/** Host-validated bounds required to begin one execution session. */
+typedef struct
+{
+    /** Number of timer periods and final one-based execution boundary. */
+    uint32_t tick_count;
+    uint32_t maximum_result_length_bytes;
+} RunStateExecutionRequest_T;
+
 /** Coherent task-owned lifecycle status captured at one instant. */
 typedef struct
 {
@@ -151,14 +160,14 @@ typedef struct
  *
  * Start-of-run handshake:
  *
- * 1. Call FLASH_MANAGER_RequestExecutionPreparation() with the result capacity
- *    reserved for the test. The current integration passes zero until result
- *    production and feasibility analysis are connected.
+ * 1. Call FLASH_MANAGER_RequestExecutionPreparation() with the validated result
+ *    capacity supplied in the execution request.
  * 2. Wait asynchronously until FLASH_MANAGER_GetState() reports
  *    FLASH_MANAGER_STATE_EXECUTING. Treat FLASH_MANAGER_STATE_FAULT as a failed
  *    run preparation.
- * 3. Only then may the Run State Manager start the execution clock. TIM4
- *    continues to dispatch each tick to EXECUTION_MANAGER_Process_From_ISR().
+ * 3. Prepare the Execution Manager with the validated tick count, start the
+ *    configured DUT drivers, and only then start the execution clock. TIM4
+ *    dispatches each tick to EXECUTION_MANAGER_ProcessTickFromISR().
  *
  * End-of-run handshake:
  *
@@ -178,10 +187,9 @@ typedef struct
  *    instruction is not consumed.
  * 3. Record the test outcome as infeasible. Future pre-execution feasibility
  *    validation should reject this workload before the timer starts.
- * 4. Decide whether committed diagnostic results should be preserved through
- *    FLASH_MANAGER_RequestResultFinalisation(). The current Flash Manager has
- *    no discard/abort-session API; normal finalisation reaches RESULTS_READY
- *    without changing the global test outcome from infeasible.
+ * 4. The current fault path requests asynchronous Flash session abort after
+ *    execution and DUT drivers have stopped. A normal run instead finalises
+ *    results and reaches RESULTS_READY.
  *
  * Fault recovery:
  *
@@ -239,14 +247,20 @@ bool RUN_STATE_MANAGER_RequestPackageReceive( void );
 /** Requests application of the committed configuration. */
 bool RUN_STATE_MANAGER_RequestConfiguration( void );
 
-/** Requests execution preparation from ARMED. */
-bool RUN_STATE_MANAGER_RequestExecution( void );
+/**
+ * @brief Requests execution preparation from ARMED using validated session bounds.
+ *
+ * The request is copied before the asynchronous notification is sent. After
+ * Flash Manager reaches EXECUTING, the RSM prepares the Execution Manager with
+ * tick_count before it starts DUT drivers and TIM4.
+ */
+bool RUN_STATE_MANAGER_RequestExecution( const RunStateExecutionRequest_T* request );
 
 /**
  * @brief Reports normal execution completion in task context.
  *
- * This is the future Execution Manager integration seam. No Execution Manager
- * dependency is introduced by this interface.
+ * This is the task-context completion seam used by the Execution Manager's
+ * terminal ISR callback and by the console integration stimulus.
  */
 bool RUN_STATE_MANAGER_RequestExecutionComplete( void );
 
