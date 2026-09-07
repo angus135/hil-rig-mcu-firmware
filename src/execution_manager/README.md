@@ -19,7 +19,27 @@ commands are temporary stimuli for the integration seam described below.
 Instructions are variable length and stored in strictly increasing timestamp
 order, with at most one instruction for each output-bearing tick. A fixed
 `ExecutionInstructionHeader_T` is followed by all packed operations for that
-tick, up to `EXECUTION_INSTRUCTION_MAX_SIZE_BYTES`. For each tick:
+tick, up to `EXECUTION_INSTRUCTION_MAX_SIZE_BYTES`. The instruction header,
+each padded operation, and the complete instruction image are four-byte
+aligned. The Host Interface owns this canonicalisation before upload.
+
+The eight-byte instruction header is encoded as two little-endian words:
+
+```text
+word 0: bits 0-31  timestamp
+word 1: bits 0-15  operations_length_bytes
+        bits 16-23 operation_count
+        bits 24-31 reserved (zero)
+```
+
+`operations_length_bytes` includes every operation header, payload, and padding
+byte, but excludes the instruction header. Flash Manager storage is word-backed,
+so its first peek reads these two words directly and leaves the operation stream
+zero-copy. The Execution Manager must walk only validated, four-byte-aligned
+operation boundaries; it must not copy complete payload structures merely to
+decode them.
+
+For each tick:
 
 1. Peek the next instruction through
    `FLASH_MANAGER_PeekNextInstructionFromISR()`.
