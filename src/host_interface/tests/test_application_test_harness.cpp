@@ -39,14 +39,15 @@ constexpr std::array<uint32_t, 3> kExpectedAnalogInput1 = {
 };
 constexpr uint32_t kExpectedAnalogInput0 = 4813713U;
 
-template <typename T, typename = void>
-struct HasTerminationMember : std::false_type
-{};
+template <typename T, typename = void> struct HasTerminationMember : std::false_type
+{
+};
 
 template <typename T>
 struct HasTerminationMember<T, std::void_t<decltype( std::declval<T>().termination )>>
     : std::true_type
-{};
+{
+};
 
 static_assert( !HasTerminationMember<HIL_Application_Can_Config_T>::value,
                "CAN termination must not be part of the Application configuration API." );
@@ -67,13 +68,14 @@ protected:
     }
 
     HIL_Application_Status_T Handle( const std::vector<uint8_t>& bytes,
-                                     std::vector<uint8_t>* response = nullptr,
-                                     size_t response_capacity = 512U )
+                                     std::vector<uint8_t>*       response          = nullptr,
+                                     size_t                      response_capacity = 512U )
     {
         response_buffer_.fill( 0xA5U );
-        size_t response_size = 999U;
-        const HIL_Application_Status_T status = APPLICATION_TEST_HARNESS_Handle_Message(
-            bytes.data(), bytes.size(), response_buffer_.data(), response_capacity, &response_size );
+        size_t                         response_size = 999U;
+        const HIL_Application_Status_T status        = APPLICATION_TEST_HARNESS_Handle_Message(
+            bytes.data(), bytes.size(), response_buffer_.data(), response_capacity,
+            &response_size );
         if ( response != nullptr )
         {
             response->assign( response_buffer_.begin(), response_buffer_.begin() + response_size );
@@ -83,12 +85,13 @@ protected:
 
     HIL_Application_Message_T DecodeMessage( const std::vector<uint8_t>& bytes )
     {
-        HIL_Application_Message_T decoded{};
+        HIL_Application_Message_T                                                    decoded{};
         alignas( HIL_APPLICATION_DECODE_STORAGE_ALIGNMENT ) std::array<uint8_t, 255> storage{};
-        size_t required = 0U;
-        size_t used     = 0U;
-        EXPECT_EQ( HIL_APPLICATION_Decode_Storage_Size( &codec_, bytes.data(), bytes.size(), &required ),
-                   HIL_APPLICATION_STATUS_OK );
+        size_t                                                                       required = 0U;
+        size_t                                                                       used     = 0U;
+        EXPECT_EQ(
+            HIL_APPLICATION_Decode_Storage_Size( &codec_, bytes.data(), bytes.size(), &required ),
+            HIL_APPLICATION_STATUS_OK );
         EXPECT_LE( required, storage.size() );
         EXPECT_EQ( HIL_APPLICATION_Decode_Message( &codec_, bytes.data(), bytes.size(), &decoded,
                                                    required == 0U ? nullptr : storage.data(),
@@ -99,7 +102,7 @@ protected:
     }
 
     HIL_Application_Context_T codec_{};
-    std::array<uint8_t, 512> response_buffer_{};
+    std::array<uint8_t, 512>  response_buffer_{};
 };
 
 TEST_F( ApplicationHarnessTest, InitializesRequiredProfileAndReportsInitializationFailure )
@@ -126,8 +129,8 @@ TEST_F( ApplicationHarnessTest, InitializesRequiredProfileAndReportsInitializati
 
 TEST_F( ApplicationHarnessTest, AcceptsRepresentativeConfigurationWithExactSizeAndDigest )
 {
-    const HIL_Application_Message_T config = RepresentativeConfiguration();
-    const std::vector<uint8_t> encoded = EncodeMessage( config );
+    const HIL_Application_Message_T config  = RepresentativeConfiguration();
+    const std::vector<uint8_t>      encoded = EncodeMessage( config );
     ASSERT_EQ( encoded.size(), 242U );
 
     std::vector<uint8_t> response;
@@ -144,7 +147,7 @@ TEST_F( ApplicationHarnessTest, AcceptsRepresentativeConfigurationWithExactSizeA
                HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION );
 
     const HIL_Application_Message_T decoded = DecodeMessage( encoded );
-    const auto& body = decoded.body.test_configuration;
+    const auto&                     body    = decoded.body.test_configuration;
     EXPECT_EQ( body.digital_in[0].voltage_level, HIL_APPLICATION_PERIPHERAL_CONFIG_3V3 );
     EXPECT_EQ( body.digital_out[9].voltage_level, HIL_APPLICATION_PERIPHERAL_CONFIG_24V );
     EXPECT_EQ( body.analog_in[0].enabled, 1U );
@@ -178,8 +181,8 @@ TEST_F( ApplicationHarnessTest, AcceptsMaximumExtensionUsingCorrectlyAlignedStat
     {
         extension[i] = static_cast<uint8_t>( ( i * 37U ) & 0xFFU );
     }
-    const HIL_Application_Message_T config =
-        RepresentativeConfiguration( extension.data(), static_cast<uint8_t>( extension.size() ), 1U );
+    const HIL_Application_Message_T config = RepresentativeConfiguration(
+        extension.data(), static_cast<uint8_t>( extension.size() ), 1U );
     const std::vector<uint8_t> encoded = EncodeMessage( config );
     ASSERT_EQ( encoded.size(), 481U );
     EXPECT_EQ( APPLICATION_TEST_HARNESS_Test_Decode_Storage_Address()
@@ -190,9 +193,88 @@ TEST_F( ApplicationHarnessTest, AcceptsMaximumExtensionUsingCorrectlyAlignedStat
                kMaximumExtensionDigest );
 }
 
+TEST_F( ApplicationHarnessTest, MaximumExtensionConfigurationProducesExactTickZeroResultOnce )
+{
+    std::array<uint8_t, 255> extension{};
+    for ( size_t i = 0U; i < extension.size(); ++i )
+    {
+        extension[i] = static_cast<uint8_t>( ( i * 37U ) & 0xFFU );
+    }
+    const auto config         = RepresentativeConfiguration( extension.data(),
+                                                             static_cast<uint8_t>( extension.size() ), 1U );
+    const auto encoded_config = EncodeMessage( config );
+    ASSERT_EQ( encoded_config.size(), 481U );
+    std::vector<uint8_t> response;
+    ASSERT_EQ( Handle( encoded_config, &response ), HIL_APPLICATION_STATUS_OK );
+    EXPECT_TRUE( response.empty() );
+
+    const auto* diagnostics = APPLICATION_TEST_HARNESS_Get_Diagnostics();
+    EXPECT_EQ( diagnostics->configuration_digest, kMaximumExtensionDigest );
+    EXPECT_EQ( diagnostics->configurations_accepted, 1U );
+    EXPECT_EQ( diagnostics->instructions_accepted, 0U );
+    EXPECT_EQ( diagnostics->results_encoded, 0U );
+    EXPECT_EQ( diagnostics->state, APPLICATION_TEST_HARNESS_STATE_ACCEPTING_INSTRUCTIONS );
+    EXPECT_EQ( diagnostics->next_expected_tick, 0U );
+    EXPECT_EQ( diagnostics->active_expected_tick_count, 1U );
+
+    const auto source      = Instruction( 0U );
+    const auto instruction = EncodeMessage( source );
+    ASSERT_EQ( instruction.size(), 73U );
+    ASSERT_EQ( Handle( instruction, &response ), HIL_APPLICATION_STATUS_OK );
+    EXPECT_EQ( diagnostics->instruction_digest, kInstructionDigests[0] );
+    ASSERT_EQ( response.size(), 62U );
+
+    const auto decoded = DecodeMessage( response );
+    ASSERT_EQ( decoded.type, HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT );
+    EXPECT_EQ(
+        std::memcmp( decoded.test_id.bytes, source.test_id.bytes, HIL_APPLICATION_TEST_ID_SIZE ),
+        0 );
+    const auto& result = decoded.body.test_result;
+    EXPECT_EQ( result.tick_number, 0U );
+    EXPECT_EQ( result.condition, HIL_APPLICATION_RESULT_CONDITION_OK );
+    EXPECT_EQ( result.problem_detail, 0U );
+    EXPECT_EQ( result.analog_inputs[0].microvolts, 17374899U );
+    EXPECT_EQ( result.analog_inputs[1].microvolts, kExpectedAnalogInput1[0] );
+    for ( size_t i = 0U; i < HIL_APPLICATION_DIGITAL_INPUT_CHANNEL_COUNT; ++i )
+    {
+        EXPECT_EQ( result.digital_inputs[i].high,
+                   source.body.test_instruction.digital_outputs[i].high );
+    }
+    for ( size_t i = 0U; i < HIL_APPLICATION_PWM_INPUT_CHANNEL_COUNT; ++i )
+    {
+        EXPECT_EQ( result.pwm_inputs[i].period_nanoseconds,
+                   source.body.test_instruction.pwm_outputs[i].period_nanoseconds );
+        EXPECT_EQ( result.pwm_inputs[i].duty_cycle_permyriad,
+                   source.body.test_instruction.pwm_outputs[i].duty_cycle_permyriad );
+    }
+
+    EXPECT_EQ( diagnostics->application_messages_received, 2U );
+    EXPECT_EQ( diagnostics->configurations_accepted, 1U );
+    EXPECT_EQ( diagnostics->instructions_accepted, 1U );
+    EXPECT_EQ( diagnostics->results_encoded, 1U );
+    EXPECT_EQ( diagnostics->next_expected_tick, 1U );
+    EXPECT_EQ( diagnostics->state, APPLICATION_TEST_HARNESS_STATE_COMPLETE );
+    EXPECT_EQ( diagnostics->semantic_rejections, 0U );
+    EXPECT_EQ( diagnostics->decode_failures, 0U );
+    EXPECT_EQ( diagnostics->encode_failures, 0U );
+
+    EXPECT_EQ( Handle( instruction, &response ), HIL_APPLICATION_STATUS_VALIDATION_FAILED );
+    EXPECT_TRUE( response.empty() );
+    EXPECT_EQ( diagnostics->application_messages_received, 3U );
+    EXPECT_EQ( diagnostics->semantic_rejections, 1U );
+    EXPECT_EQ( diagnostics->configurations_accepted, 1U );
+    EXPECT_EQ( diagnostics->instructions_accepted, 1U );
+    EXPECT_EQ( diagnostics->results_encoded, 1U );
+    EXPECT_EQ( diagnostics->next_expected_tick, 1U );
+    EXPECT_EQ( diagnostics->state, APPLICATION_TEST_HARNESS_STATE_COMPLETE );
+    EXPECT_EQ( diagnostics->configuration_digest, kMaximumExtensionDigest );
+    EXPECT_EQ( diagnostics->instruction_digest, kInstructionDigests[0] );
+}
+
 TEST_F( ApplicationHarnessTest, ThreeGoldenInstructionsProduceExactFixedResults )
 {
-    ASSERT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ) ), HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ) ),
+               HIL_APPLICATION_STATUS_OK );
 
     for ( uint32_t tick = 0U; tick < 3U; ++tick )
     {
@@ -204,9 +286,9 @@ TEST_F( ApplicationHarnessTest, ThreeGoldenInstructionsProduceExactFixedResults 
 
         const HIL_Application_Message_T decoded = DecodeMessage( response );
         ASSERT_EQ( decoded.type, HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT );
-        EXPECT_EQ( std::memcmp( decoded.test_id.bytes, MakeTestId().bytes,
-                                HIL_APPLICATION_TEST_ID_SIZE ),
-                   0 );
+        EXPECT_EQ(
+            std::memcmp( decoded.test_id.bytes, MakeTestId().bytes, HIL_APPLICATION_TEST_ID_SIZE ),
+            0 );
         const auto& result = decoded.body.test_result;
         EXPECT_EQ( result.tick_number, tick );
         EXPECT_EQ( result.condition, HIL_APPLICATION_RESULT_CONDITION_OK );
@@ -243,12 +325,14 @@ TEST_F( ApplicationHarnessTest, DisabledInputsProduceZeroOracleValues )
 {
     ASSERT_EQ( Handle( EncodeMessage( DisabledConfiguration() ) ), HIL_APPLICATION_STATUS_OK );
     HIL_Application_Message_T instruction = Instruction( 0U );
-    instruction.test_id = MakeTestId( 0x30U );
+    instruction.test_id                   = MakeTestId( 0x30U );
     std::vector<uint8_t> response;
     ASSERT_EQ( Handle( EncodeMessage( instruction ), &response ), HIL_APPLICATION_STATUS_OK );
     const auto decoded = DecodeMessage( response );
-    for ( const auto& input : decoded.body.test_result.digital_inputs ) EXPECT_EQ( input.high, 0U );
-    for ( const auto& input : decoded.body.test_result.analog_inputs ) EXPECT_EQ( input.microvolts, 0U );
+    for ( const auto& input : decoded.body.test_result.digital_inputs )
+        EXPECT_EQ( input.high, 0U );
+    for ( const auto& input : decoded.body.test_result.analog_inputs )
+        EXPECT_EQ( input.microvolts, 0U );
     for ( const auto& input : decoded.body.test_result.pwm_inputs )
     {
         EXPECT_EQ( input.period_nanoseconds, 0U );
@@ -258,7 +342,8 @@ TEST_F( ApplicationHarnessTest, DisabledInputsProduceZeroOracleValues )
 
 TEST_F( ApplicationHarnessTest, RejectsInstructionBeforeConfiguration )
 {
-    EXPECT_EQ( Handle( EncodeMessage( Instruction( 0U ) ) ), HIL_APPLICATION_STATUS_VALIDATION_FAILED );
+    EXPECT_EQ( Handle( EncodeMessage( Instruction( 0U ) ) ),
+               HIL_APPLICATION_STATUS_VALIDATION_FAILED );
     const auto* diagnostics = APPLICATION_TEST_HARNESS_Get_Diagnostics();
     EXPECT_EQ( diagnostics->state, APPLICATION_TEST_HARNESS_STATE_WAITING_FOR_CONFIGURATION );
     EXPECT_EQ( diagnostics->next_expected_tick, 0U );
@@ -267,10 +352,12 @@ TEST_F( ApplicationHarnessTest, RejectsInstructionBeforeConfiguration )
 
 TEST_F( ApplicationHarnessTest, RejectsWrongTestIdWithoutChangingTransaction )
 {
-    ASSERT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ) ), HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ) ),
+               HIL_APPLICATION_STATUS_OK );
     HIL_Application_Message_T instruction = Instruction( 0U );
-    instruction.test_id = MakeTestId( 0x70U );
-    EXPECT_EQ( Handle( EncodeMessage( instruction ) ), HIL_APPLICATION_STATUS_INCONSISTENT_TEST_ID );
+    instruction.test_id                   = MakeTestId( 0x70U );
+    EXPECT_EQ( Handle( EncodeMessage( instruction ) ),
+               HIL_APPLICATION_STATUS_INCONSISTENT_TEST_ID );
     const auto* diagnostics = APPLICATION_TEST_HARNESS_Get_Diagnostics();
     EXPECT_EQ( diagnostics->next_expected_tick, 0U );
     EXPECT_EQ( diagnostics->state, APPLICATION_TEST_HARNESS_STATE_ACCEPTING_INSTRUCTIONS );
@@ -279,26 +366,33 @@ TEST_F( ApplicationHarnessTest, RejectsWrongTestIdWithoutChangingTransaction )
 
 TEST_F( ApplicationHarnessTest, RejectsWrongDuplicateAndSkippedTicks )
 {
-    ASSERT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ) ), HIL_APPLICATION_STATUS_OK );
-    EXPECT_EQ( Handle( EncodeMessage( Instruction( 1U ) ) ), HIL_APPLICATION_STATUS_INCONSISTENT_TICK );
+    ASSERT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ) ),
+               HIL_APPLICATION_STATUS_OK );
+    EXPECT_EQ( Handle( EncodeMessage( Instruction( 1U ) ) ),
+               HIL_APPLICATION_STATUS_INCONSISTENT_TICK );
     EXPECT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->next_expected_tick, 0U );
 
     ASSERT_EQ( Handle( EncodeMessage( Instruction( 0U ) ) ), HIL_APPLICATION_STATUS_OK );
-    EXPECT_EQ( Handle( EncodeMessage( Instruction( 0U ) ) ), HIL_APPLICATION_STATUS_INCONSISTENT_TICK );
-    EXPECT_EQ( Handle( EncodeMessage( Instruction( 2U ) ) ), HIL_APPLICATION_STATUS_INCONSISTENT_TICK );
+    EXPECT_EQ( Handle( EncodeMessage( Instruction( 0U ) ) ),
+               HIL_APPLICATION_STATUS_INCONSISTENT_TICK );
+    EXPECT_EQ( Handle( EncodeMessage( Instruction( 2U ) ) ),
+               HIL_APPLICATION_STATUS_INCONSISTENT_TICK );
     EXPECT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->next_expected_tick, 1U );
 }
 
 TEST_F( ApplicationHarnessTest, RejectsConfigurationWhileActiveAndAcceptsNewOneAfterCompletion )
 {
-    ASSERT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ) ), HIL_APPLICATION_STATUS_OK );
-    EXPECT_EQ( Handle( EncodeMessage( DisabledConfiguration() ) ), HIL_APPLICATION_STATUS_VALIDATION_FAILED );
+    ASSERT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ) ),
+               HIL_APPLICATION_STATUS_OK );
+    EXPECT_EQ( Handle( EncodeMessage( DisabledConfiguration() ) ),
+               HIL_APPLICATION_STATUS_VALIDATION_FAILED );
     EXPECT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->active_expected_tick_count, 3U );
 
     ASSERT_EQ( Handle( EncodeMessage( Instruction( 0U ) ) ), HIL_APPLICATION_STATUS_OK );
     ASSERT_EQ( Handle( EncodeMessage( Instruction( 1U ) ) ), HIL_APPLICATION_STATUS_OK );
     ASSERT_EQ( Handle( EncodeMessage( Instruction( 2U ) ) ), HIL_APPLICATION_STATUS_OK );
-    ASSERT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->state, APPLICATION_TEST_HARNESS_STATE_COMPLETE );
+    ASSERT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->state,
+               APPLICATION_TEST_HARNESS_STATE_COMPLETE );
 
     EXPECT_EQ( Handle( EncodeMessage( DisabledConfiguration() ) ), HIL_APPLICATION_STATUS_OK );
     const auto* diagnostics = APPLICATION_TEST_HARNESS_Get_Diagnostics();
@@ -311,12 +405,12 @@ TEST_F( ApplicationHarnessTest, RejectsConfigurationWhileActiveAndAcceptsNewOneA
 TEST_F( ApplicationHarnessTest, RejectsDecodedUnsupportedInboundResult )
 {
     HIL_Application_Message_T result{};
-    result.type        = HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT;
-    result.subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-    result.has_test_id = 1U;
-    result.test_id     = MakeTestId();
+    result.type                         = HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT;
+    result.subtype                      = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    result.has_test_id                  = 1U;
+    result.test_id                      = MakeTestId();
     result.body.test_result.tick_number = 0U;
-    result.body.test_result.condition = HIL_APPLICATION_RESULT_CONDITION_OK;
+    result.body.test_result.condition   = HIL_APPLICATION_RESULT_CONDITION_OK;
     EXPECT_EQ( Handle( EncodeMessage( result ) ), HIL_APPLICATION_STATUS_UNSUPPORTED_MESSAGE );
     const auto* diagnostics = APPLICATION_TEST_HARNESS_Get_Diagnostics();
     EXPECT_EQ( diagnostics->last_decoded_message_type, HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT );
@@ -325,7 +419,8 @@ TEST_F( ApplicationHarnessTest, RejectsDecodedUnsupportedInboundResult )
 
 TEST_F( ApplicationHarnessTest, DecodeFailuresDoNotCorruptActiveTransaction )
 {
-    ASSERT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ) ), HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ) ),
+               HIL_APPLICATION_STATUS_OK );
     const uint32_t digest_before = APPLICATION_TEST_HARNESS_Get_Diagnostics()->configuration_digest;
 
     std::vector<uint8_t> truncated = EncodeMessage( Instruction( 0U ) );
@@ -353,7 +448,8 @@ TEST_F( ApplicationHarnessTest, DecodeFailuresDoNotCorruptActiveTransaction )
 
 TEST_F( ApplicationHarnessTest, ResultEncodeFailureDoesNotAdvanceTick )
 {
-    ASSERT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ) ), HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ) ),
+               HIL_APPLICATION_STATUS_OK );
     const std::vector<uint8_t> instruction = EncodeMessage( Instruction( 0U ) );
 
     std::vector<uint8_t> response;
@@ -373,7 +469,8 @@ TEST_F( ApplicationHarnessTest, ResultEncodeFailureDoesNotAdvanceTick )
 
 TEST_F( ApplicationHarnessTest, TransactionResetPreservesInitializationAndCumulativeDiagnostics )
 {
-    ASSERT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ) ), HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ) ),
+               HIL_APPLICATION_STATUS_OK );
     ASSERT_EQ( Handle( EncodeMessage( Instruction( 0U ) ) ), HIL_APPLICATION_STATUS_OK );
     const auto before = *APPLICATION_TEST_HARNESS_Get_Diagnostics();
 
