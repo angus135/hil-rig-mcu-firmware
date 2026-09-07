@@ -60,6 +60,22 @@ extern "C"
 /** Proposed opcode storage type used by the common operation encoding. */
 typedef uint8_t ExecutionOperationOpcode_T;
 
+/** Every encoded operation begins on a four-byte boundary. */
+#define EXECUTION_OPERATION_ALIGNMENT_BYTES ( 4U )
+
+/** Fixed encoded size of the common operation header. */
+#define EXECUTION_OPERATION_HEADER_SIZE_BYTES ( 4U )
+
+/**
+ * @brief Calculate the complete encoded operation size, including padding.
+ *
+ * payload_length_bytes excludes the common header and trailing padding.
+ */
+#define EXECUTION_OPERATION_ENCODED_SIZE_BYTES( payload_length_bytes )                             \
+    ( ( EXECUTION_OPERATION_HEADER_SIZE_BYTES + ( uint32_t )( payload_length_bytes )               \
+        + ( EXECUTION_OPERATION_ALIGNMENT_BYTES - 1U ) )                                           \
+      & ~( EXECUTION_OPERATION_ALIGNMENT_BYTES - 1U ) )
+
 /**
  * @brief Output operations currently supported by this draft.
  *
@@ -110,14 +126,11 @@ typedef uint8_t ExecutionOperationOpcode_T;
 
 /** Fixed payload lengths. */
 #define EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES ( 8U )
-#define EXECUTION_ANALOGUE_OUTPUT_PAYLOAD_SIZE_BYTES ( 19U )
 #define EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES ( 6U )
 
 /** Fixed-payload byte offsets. */
 #define EXECUTION_DIGITAL_OUTPUT_HIGH_BITMASK_OFFSET_BYTES ( 0U )
 #define EXECUTION_DIGITAL_OUTPUT_LOW_BITMASK_OFFSET_BYTES ( 4U )
-#define EXECUTION_ANALOGUE_OUTPUT_FRAMES_OFFSET_BYTES ( 0U )
-#define EXECUTION_ANALOGUE_OUTPUT_BYTE_COUNT_OFFSET_BYTES ( 18U )
 #define EXECUTION_PWM_ARR_OFFSET_BYTES ( 0U )
 #define EXECUTION_PWM_CCR_OFFSET_BYTES ( 2U )
 #define EXECUTION_PWM_PSC_OFFSET_BYTES ( 4U )
@@ -140,6 +153,26 @@ typedef uint8_t ExecutionOperationOpcode_T;
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Common header preceding every operation-specific payload.
+ *
+ * Encoded layout:
+ *   byte 0      = opcode
+ *   byte 1      = channel
+ *   bytes 2..3  = payload_length_bytes, little-endian
+ *
+ * payload_length_bytes excludes this header and trailing alignment padding.
+ * The payload begins immediately after this header. Zero to three zero-valued
+ * padding bytes follow the payload so the next operation begins on a four-byte
+ * boundary.
+ */
+typedef struct
+{
+    ExecutionOperationOpcode_T opcode;
+    uint8_t                    channel;
+    uint16_t                   payload_length_bytes;
+} ExecutionOperationHeader_T;
 
 /**
  * @brief Complete digital-output update for one execution tick.
@@ -169,36 +202,29 @@ typedef struct
 } ExecutionDigitalOutputPayload_T;
 
 /**
- * @brief Prepared analogue output batch for one driver call.
+ * @brief Exact three-byte wire representation of one analogue-output update.
  *
- * The MCU Host Interface creates the prepared three-byte frame data from the
- * requested output channel and voltage; the external host does not supply DAC
- * wire frames. byte_count is the valid prefix of bytes and must be a multiple
- * of EXECUTION_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES. The operation channel must be
- * EXECUTION_OPERATION_CHANNEL_UNUSED.
+ * An ANALOGUE_OUTPUT_BATCH payload is a non-empty sequence of these frames.
+ * The operation payload length determines the frame count, so no separate
+ * byte-count field is stored.
  *
- * Host Interface packing:
- *   payload length = 19
- *   bytes 0..17    = up to six consecutive three-byte prepared frames
- *   byte 18        = byte_count: 0, 3, 6, 9, 12, 15, or 18
+ * Host Interface packing for every frame:
+ *   byte 0 = ( analogue channel & 0x1f ) << 3; channel is 0..5
+ *   byte 1 = upper eight bits of the 12-bit DAC count
+ *   byte 2 = lower eight bits of the 12-bit DAC count
  *
- * For each requested output, in execution order:
- *   frame byte 0 = ( analogue channel & 0x1f ) << 3; channel is 0..5
- *   frame byte 1 = upper 8 bits of the 12-bit DAC count
- *   frame byte 2 = lower 8 bits of the 12-bit DAC count
+ * The Host Interface combines all analogue-output changes for one tick into at
+ * most one operation and preserves their required transmission order.
  *
- * The current conversion clamps voltage to 0..20 V and calculates:
- *   dac_count = round( voltage / 20 V * 4095 )
- *
- * Notice that the two count bytes are in DAC wire order (most-significant
- * first), not the little-endian order used for integer fields elsewhere.
- * bytes[byte_count..17] must be zero.
+ * Operation validation:
+ *   channel        = EXECUTION_OPERATION_CHANNEL_UNUSED
+ *   payload length = 3, 6, 9, 12, 15, or 18 bytes
+ *   frame count    = payload length / EXECUTION_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES
  */
 typedef struct
 {
-    uint8_t bytes[EXECUTION_ANALOGUE_OUTPUT_MAX_DATA_BYTES];
-    uint8_t byte_count;
-} ExecutionAnalogueOutputBatchPayload_T;
+    uint8_t bytes[EXECUTION_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES];
+} ExecutionAnalogueOutputFrame_T;
 
 /**
  * Inputs to the selected LV or HV PWM update call.
@@ -321,6 +347,14 @@ typedef struct
  */
 
 #if defined( __cplusplus )
+static_assert( sizeof( ExecutionOperationHeader_T ) == EXECUTION_OPERATION_HEADER_SIZE_BYTES,
+               "Execution operation header layout changed" );
+static_assert( offsetof( ExecutionOperationHeader_T, opcode ) == 0U,
+               "Execution operation opcode offset changed" );
+static_assert( offsetof( ExecutionOperationHeader_T, channel ) == 1U,
+               "Execution operation channel offset changed" );
+static_assert( offsetof( ExecutionOperationHeader_T, payload_length_bytes ) == 2U,
+               "Execution operation payload length offset changed" );
 static_assert( sizeof( ExecutionDigitalOutputPayload_T )
                    == EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES,
                "Digital output payload layout changed" );
@@ -334,12 +368,20 @@ static_assert( sizeof( ExecutionPwmUpdatePayload_T ) == EXECUTION_PWM_UPDATE_PAY
                "PWM payload layout changed" );
 static_assert( sizeof( ExecutionSpiTransmitPayloadPrefix_T ) == 4U,
                "SPI transmit prefix layout changed" );
-static_assert( sizeof( ExecutionAnalogueOutputBatchPayload_T )
-                   == EXECUTION_ANALOGUE_OUTPUT_PAYLOAD_SIZE_BYTES,
-               "Analogue output instruction payload layout changed" );
+static_assert( sizeof( ExecutionAnalogueOutputFrame_T )
+                   == EXECUTION_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES,
+               "Analogue output frame layout changed" );
 static_assert( sizeof( ExecutionCanPacket_T ) == EXECUTION_CAN_PACKET_SIZE_BYTES,
                "CAN instruction packet layout changed" );
 #else
+_Static_assert( sizeof( ExecutionOperationHeader_T ) == EXECUTION_OPERATION_HEADER_SIZE_BYTES,
+                "Execution operation header layout changed" );
+_Static_assert( offsetof( ExecutionOperationHeader_T, opcode ) == 0U,
+                "Execution operation opcode offset changed" );
+_Static_assert( offsetof( ExecutionOperationHeader_T, channel ) == 1U,
+                "Execution operation channel offset changed" );
+_Static_assert( offsetof( ExecutionOperationHeader_T, payload_length_bytes ) == 2U,
+                "Execution operation payload length offset changed" );
 _Static_assert( sizeof( ExecutionDigitalOutputPayload_T )
                     == EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES,
                 "Digital output payload layout changed" );
@@ -353,9 +395,9 @@ _Static_assert( sizeof( ExecutionPwmUpdatePayload_T ) == EXECUTION_PWM_UPDATE_PA
                 "PWM payload layout changed" );
 _Static_assert( sizeof( ExecutionSpiTransmitPayloadPrefix_T ) == 4U,
                 "SPI transmit prefix layout changed" );
-_Static_assert( sizeof( ExecutionAnalogueOutputBatchPayload_T )
-                    == EXECUTION_ANALOGUE_OUTPUT_PAYLOAD_SIZE_BYTES,
-                "Analogue output instruction payload layout changed" );
+_Static_assert( sizeof( ExecutionAnalogueOutputFrame_T )
+                    == EXECUTION_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES,
+                "Analogue output frame layout changed" );
 _Static_assert( sizeof( ExecutionCanPacket_T ) == EXECUTION_CAN_PACKET_SIZE_BYTES,
                 "CAN instruction packet layout changed" );
 #endif
