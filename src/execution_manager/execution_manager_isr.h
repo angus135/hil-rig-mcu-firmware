@@ -1,14 +1,8 @@
 /******************************************************************************
  *  File:       execution_manager_isr.h
- *  Author:     Angus Corr
- *  Created:    31-Jul-2026
  *
  *  Description:
- *      Narrow integration interface between the execution timer ISR and the
- *      Execution Manager.
- *
- *  Notes:
- *      This is not a task-context lifecycle API.
+ *      Narrow execution-tick interface called by the execution timer ISR.
  ******************************************************************************/
 
 #ifndef EXECUTION_MANAGER_ISR_H
@@ -19,15 +13,19 @@ extern "C"
 {
 #endif
 
-/**-----------------------------------------------------------------------------
- *  Public Function Prototypes
- *------------------------------------------------------------------------------
- */
+#include "execution_manager.h"
 
 /**
- * @brief Processes one execution tick from the execution timer ISR.
+ * @brief Processes one execution tick.
+ *
+ * Tick zero represents configured initial conditions. The first timer
+ * interrupt advances to and processes boundary tick one. Future measurement
+ * collection runs after that advance and before output dispatch, so every
+ * operation in one invocation shares one authoritative boundary timestamp.
+ * A terminal result is latched and returned to the timer-owning integration
+ * layer.
  */
-void EXECUTION_MANAGER_Process_From_ISR( void );
+ExecutionManagerTickResult_T EXECUTION_MANAGER_ProcessTickFromISR( void );
 
 #ifdef __cplusplus
 }

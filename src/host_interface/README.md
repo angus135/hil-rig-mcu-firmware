@@ -27,7 +27,8 @@ The Host Interface will own the host-originated side of one lifecycle:
    `DutDriverConfiguration_T`, validate every leaf driver configuration, and
    call `TEST_CONFIGURATION_Commit()`.
 4. Submit `RUN_STATE_MANAGER_RequestConfiguration()` and wait for `ARMED`.
-5. Submit `RUN_STATE_MANAGER_RequestExecution()` only when host policy owns the
+5. Submit `RUN_STATE_MANAGER_RequestExecution()` with the validated run tick
+   count and conservative maximum result length only when host policy owns the
    execution trigger. Physical or DUT trigger arbitration belongs in a
    separate system-level component.
 6. After the RSM reports `RESULTS_READY`, choose exactly one current result
@@ -69,6 +70,9 @@ byte length and guarantee:
   timestamp in word zero, then operation length in bits 0-15, operation count
   in bits 16-23, and zeroed reserved bits in bits 24-31 of word one;
 - strictly increasing instruction timestamps;
+- instruction timestamps in the range 1 through the validated run tick count;
+- no timestamp-zero instruction, because tick zero is the configured initial
+  condition rather than a timer-dispatched boundary;
 - exactly one instruction for each output-bearing tick;
 - valid operation headers, opcodes, channels, payload layouts, and four-byte
   padding between operation boundaries;
@@ -85,6 +89,20 @@ non-empty. Because
 the current Flash Manager has no upload-cancel API, bring-up should not start an
 upload until the Host Interface can guarantee that the complete valid stream
 will be supplied.
+
+## Result timestamp interpretation
+
+Every result timestamp identifies the execution-clock boundary at which its
+driver was polled. The first periodic result boundary is tick one; tick zero is
+reserved for configured initial conditions. At a boundary, measurements occur
+before output operations carrying the same timestamp.
+
+The peripheral type defines what was observed at that boundary. A digital-input
+result is an instantaneous sample. UART and SPI bytes, CAN frames, PWM captures,
+and completed I2C messages may have accumulated or completed before the poll.
+Their common timestamp records observation by the Execution Manager, not exact
+hardware arrival time. The Host Interface must not infer event-level timing
+that the producing driver did not capture.
 
 ## Instruction-upload flow
 

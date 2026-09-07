@@ -17,6 +17,7 @@
  */
 #include "run_state_manager.h"
 #include "dut_driver_lifecycle.h"
+#include "execution_manager.h"
 #include "flash_manager.h"
 #include "hw_timer.h"
 #include "logic_expander.h"
@@ -93,6 +94,7 @@ static bool execution_active        = false;
 static bool driver_cleanup_complete = true;
 
 static bool execution_timer_running = false;
+static RunStateExecutionRequest_T execution_request = { 0U, 0U };
 
 static volatile bool execution_abort_requested = false;
 
@@ -119,6 +121,8 @@ static uint32_t          last_transition_duration_ms  = 0U;
  */
 static bool RUN_STATE_MANAGER_Notify( uint32_t notification );
 static void RUN_STATE_MANAGER_HandleFlashFault( bool from_isr );
+static void RUN_STATE_MANAGER_HandleExecutionTerminalFromISR(
+    ExecutionManagerTickResult_T result, ExecutionManagerFailure_T failure );
 static bool RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR( void );
 static void RUN_STATE_MANAGER_RecordFault( RunStateFaultReason_T reason );
 static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason );
@@ -188,6 +192,27 @@ static void RUN_STATE_MANAGER_HandleFlashFault( bool from_isr )
     else
     {
         ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_FLASH_MANAGER );
+    }
+}
+
+static void RUN_STATE_MANAGER_HandleExecutionTerminalFromISR(
+    ExecutionManagerTickResult_T result, ExecutionManagerFailure_T failure )
+{
+    ( void )failure;
+    execution_abort_requested = true;
+
+    if ( result == EXECUTION_MANAGER_TICK_COMPLETE )
+    {
+        if ( run_state_manager_task_handle != NULL )
+        {
+            ( void )xTaskNotifyFromISR( run_state_manager_task_handle,
+                                       RUN_STATE_MANAGER_NOTIFY_EXECUTION_COMPLETE, eSetBits,
+                                       NULL );
+        }
+    }
+    else
+    {
+        ( void )RUN_STATE_MANAGER_RequestFaultFromISR( RUN_STATE_FAULT_EXECUTION_MANAGER );
     }
 }
 
@@ -433,8 +458,23 @@ static bool RUN_STATE_MANAGER_EnterExecution( void )
         return true;
     }
 
+    execution_abort_requested = false;
+
+    if ( !EXECUTION_MANAGER_Prepare( execution_request.tick_count ) )
+    {
+        RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_EXECUTION_MANAGER );
+        return false;
+    }
+
+    if ( !DUT_DRIVER_LIFECYCLE_Start() )
+    {
+        EXECUTION_MANAGER_Abort();
+        RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_DRIVER_START );
+        return false;
+    }
     if ( !RUN_STATE_MANAGER_StartExecutionTimer() )
     {
+        EXECUTION_MANAGER_Abort();
         ( void )DUT_DRIVER_LIFECYCLE_Stop();
         RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_EXECUTION_TIMER );
         return false;
@@ -481,6 +521,7 @@ static bool RUN_STATE_MANAGER_BeginDriverStart( void )
 static bool RUN_STATE_MANAGER_StopExecution( void )
 {
     RUN_STATE_MANAGER_StopExecutionTimer();
+    EXECUTION_MANAGER_Abort();
 
     execution_active = false;
     if ( !DUT_DRIVER_LIFECYCLE_Stop() )
@@ -517,7 +558,8 @@ static bool RUN_STATE_MANAGER_BeginDriverShutdown( bool force_abort, bool clear_
  */
 static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void )
 {
-    FlashManagerRequestStatus_T status = FLASH_MANAGER_RequestExecutionPreparation( 0U );
+    FlashManagerRequestStatus_T status = FLASH_MANAGER_RequestExecutionPreparation(
+        execution_request.maximum_result_length_bytes );
 
     if ( status == FLASH_MANAGER_REQUEST_OK )
     {
@@ -1205,6 +1247,7 @@ void RUN_STATE_MANAGER_Init( void )
     execution_active             = false;
     driver_cleanup_complete      = true;
     execution_timer_running      = false;
+    execution_request            = ( RunStateExecutionRequest_T ){ 0U, 0U };
     execution_abort_requested    = false;
     fault_reason                 = RUN_STATE_FAULT_NONE;
     requested_fault_reason       = RUN_STATE_FAULT_NONE;
@@ -1222,6 +1265,7 @@ void RUN_STATE_MANAGER_Init( void )
 
     HW_TIMER_Set_Execution_Guard( RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR );
     FLASH_MANAGER_SetFaultCallback( RUN_STATE_MANAGER_HandleFlashFault );
+    EXECUTION_MANAGER_SetTerminalCallback( RUN_STATE_MANAGER_HandleExecutionTerminalFromISR );
 }
 
 bool RUN_STATE_MANAGER_RequestPackageReceive( void )
@@ -1234,8 +1278,16 @@ bool RUN_STATE_MANAGER_RequestConfiguration( void )
     return RUN_STATE_MANAGER_Notify( RUN_STATE_MANAGER_NOTIFY_CONFIGURATION );
 }
 
-bool RUN_STATE_MANAGER_RequestExecution( void )
+bool RUN_STATE_MANAGER_RequestExecution( const RunStateExecutionRequest_T* request )
 {
+    if ( ( request == NULL ) || ( request->tick_count == 0U ) )
+    {
+        return false;
+    }
+
+    taskENTER_CRITICAL();
+    execution_request = *request;
+    taskEXIT_CRITICAL();
     return RUN_STATE_MANAGER_Notify( RUN_STATE_MANAGER_NOTIFY_EXECUTION );
 }
 
