@@ -1,121 +1,125 @@
 # Execution Manager
 
-## Overview
+## Responsibility
 
-The Execution Manager owns deterministic, timer-driven test execution. Its hot
-path runs in the TIM4 ISR and consumes prefetched instructions and produces
-timestamped results exclusively through the Flash Manager's ISR-safe RAM APIs.
-It never accesses NAND, waits on an RTOS object, or calls task-context APIs.
+The Execution Manager is the deterministic execution-clock boundary engine. It
+owns the current tick, configured run length, instruction dispatch, result
+production, and first execution failure. The Run State Manager owns TIM4, the
+DUT driver lifecycle, and Flash Manager session transitions.
 
-The current source remains a skeleton. Instruction dispatch, tick tracking,
-Flash Manager wake propagation, and execution-fault reporting are not yet
-implemented.
+`EXECUTION_MANAGER_Prepare(tick_count)` establishes tick zero while TIM4 is
+stopped. Tick zero is the configured initial condition at execution time zero;
+it is not processed by an interrupt. The first TIM4 interrupt processes tick
+one. A run of N ticks therefore processes boundaries 1 through N and completes
+at time `N / tick_rate_hz`.
 
-The current `run_state execution_complete` and `run_state fault` console
-commands are temporary stimuli for the integration seam described below.
+## Tick and I/O semantics
 
-## Instruction contract
-
-Instructions are variable length and stored in strictly increasing timestamp
-order, with at most one instruction for each output-bearing tick. A fixed
-`ExecutionInstructionHeader_T` is followed by all packed operations for that
-tick, up to `EXECUTION_INSTRUCTION_MAX_SIZE_BYTES`. The instruction header,
-each padded operation, and the complete instruction image are four-byte
-aligned. The Host Interface owns this canonicalisation before upload.
-
-The eight-byte instruction header is encoded as two little-endian words:
+One tick always means one execution-clock boundary. It is not shifted for
+different peripheral types:
 
 ```text
-word 0: bits 0-31  timestamp
-word 1: bits 0-15  operations_length_bytes
-        bits 16-23 operation_count
-        bits 24-31 reserved (zero)
+timestamp X = the driver operation was performed at boundary X
+boundary time = X / tick_rate_hz
 ```
 
-`operations_length_bytes` includes every operation header, payload, and padding
-byte, but excludes the instruction header. Flash Manager storage is word-backed,
-so its first peek reads these two words directly and leaves the operation stream
-zero-copy. The Execution Manager must walk only validated, four-byte-aligned
-operation boundaries; it must not copy complete payload structures merely to
-decode them.
+At each boundary the Execution Manager advances the authoritative tick once,
+collects measurements, and then applies or queues outputs. The tick remains
+unchanged for the rest of that ISR. A tick-X measurement therefore observes
+the system immediately before tick-X outputs are requested.
 
-For each tick:
+The common timestamp identifies the observation or request boundary. Driver
+behaviour determines the relationship between that boundary and physical data:
 
-1. Peek the next instruction through
-   `FLASH_MANAGER_PeekNextInstructionFromISR()`.
-2. If its timestamp is greater than the current tick, stop without consuming;
-   the next tick receives the cached view.
-3. If its timestamp equals the current tick, execute all contained operations
-   in order and consume the complete instruction once.
-4. If its timestamp is less than the current tick, report an execution-overrun
-   fault. The test is infeasible and the late instruction is not consumed.
+| Driver operation | Timestamp meaning |
+|---|---|
+| Digital-input read | Instantaneous GPIO sample at the boundary |
+| Analogue-input read | Boundary where the latest rolling DMA sample set was observed |
+| UART or SPI receive | Boundary where accumulated unread bytes were copied and consumed |
+| CAN receive | Boundary where queued completed frames were drained |
+| PWM capture | Boundary where the latest completed capture was consumed |
+| I2C receive | Boundary where a completed message was retrieved |
+| Digital-output update | Boundary where the GPIO register update was issued |
+| PWM update | Boundary where timer register writes were issued |
+| DAC, UART, SPI, CAN, or I2C output | Boundary where asynchronous work was accepted or triggered |
 
-`FLASH_MANAGER_INSTRUCTION_END_OF_STREAM` does not by itself end the test,
-because a later measurement may still be required.
+Asynchronous result timestamps do not claim exact arrival time, and
+asynchronous output timestamps do not claim exact wire or electrical completion
+time. Drivers would need separate hardware event timestamps to provide that
+information.
 
-## Result contract
+Measurement and result production are not implemented yet. When added, they
+belong after the tick advance and before the existing output path; no
+per-driver tick adjustment belongs in the ISR.
 
-Peripheral DMA fills driver-owned buffers asynchronously. During the execution
-ISR, the selected driver synchronously copies a stable measurement into a Flash
-Manager result lease. The lease is committed or cancelled before ISR return;
-DMA and drivers never retain its pointer.
+## ISR path
 
-One accumulated `BaseType_t` wake flag covers all consumes and commits in a
-tick. The outer timer handler performs the single `portYIELD_FROM_ISR()` after
-the complete execution sequence.
+`EXECUTION_MANAGER_ProcessTickFromISR()` currently performs:
 
-## Lifecycle constraints
+1. Return an already-latched terminal outcome without touching Flash Manager.
+2. Reject invocation unless a run has been prepared.
+3. Advance from the previous boundary to the current boundary exactly once.
+4. Peek the next prepared instruction from Flash Manager RAM.
+5. Leave a future instruction unconsumed.
+6. Treat a past instruction as a timing failure without consuming it.
+7. For an instruction due now, apply its operations in encoded order through
+   the opcode adapter table, then consume the instruction once.
+8. Complete after boundary `tick_count`; otherwise return `CONTINUE`.
 
-The Run State Manager exclusively owns TIM4 configuration, start, and stop.
-TIM4 may start only after the Run State Manager observes
-`FLASH_MANAGER_STATE_EXECUTING`. The Execution Manager owns only the work
-performed for each timer tick. Any underrun, corrupt instruction, result-buffer
-exhaustion, commit failure, consume failure, or timestamp overrun must be
-reported to the Run State Manager through an ISR-safe handoff.
+End of the instruction stream is not completion because output-free ticks and
+future measurement-only ticks continue until the configured run length.
 
-## Run State Manager integration contract
+The ISR does not copy complete instructions or digital-output payloads, access
+NAND, wait on an RTOS object, configure a peripheral, or control TIM4. Flash
+Manager exposes operations directly from aligned word storage. The operation
+walker relies on the Host Interface to validate the canonical stream before it
+is stored.
 
-The Execution Manager implementation should separate its ISR hot path from its
-task-context lifecycle reporting:
+## Instruction and operation contract
 
-1. The RSM observes Flash Manager `EXECUTING`, starts configured DUT drivers,
-   starts TIM4, and only then publishes RSM `EXECUTION`.
-2. Each TIM4 interrupt invokes a minimal Execution Manager ISR entry point. Any
-   driver measurement/output call made from that entry point remains in ISR
-   context and must obey the same bounded, non-blocking restrictions.
-3. Normal completion or the first execution failure is latched locally and an
-   ISR-safe notification is sent to Execution Manager task context. No RSM
-   request function is called directly from the ISR.
-4. The Execution Manager task submits
-   `RUN_STATE_MANAGER_RequestExecutionComplete()` for normal completion or
-   `RUN_STATE_MANAGER_RequestFault(reason)` for failure.
-5. The RSM stops TIM4, stops the DUT lifecycle, and coordinates Flash result
-   finalisation or abort. The Execution Manager does not perform those actions.
+One variable-length instruction contains all output operations for one
+boundary:
 
-The Execution Manager may own execution-local state such as the current tick,
-instruction dispatch bookkeeping, completion detection, and the first local
-failure. It must not own global run state, Flash session state, DUT driver
-lifecycle state, or the execution-clock lifecycle.
+```text
+[8-byte instruction header][operation 0]...[operation N]
+```
 
-Because RSM requests are task notifications rather than FIFO messages, the
-Execution Manager must latch completion/fault exactly once and wait for the RSM
-to leave `EXECUTION`; it must not repeatedly submit the same event on every
-task iteration.
+Valid instruction timestamps are 1 through the configured run tick count and
+are strictly increasing. Timestamp zero is reserved for initial conditions and
+must not be uploaded.
 
+The instruction header contains the timestamp, encoded operation length,
+operation count, and a zero reserved byte. Each operation starts with one
+aligned 32-bit header word, followed by its payload and zero to three padding
+bytes.
 
----
+Only `DIGITAL_OUTPUT_UPDATE` is currently dispatched. Its zero-copy payload is
+two aligned words containing prepared physical HIGH and LOW masks. The adapter
+uses the active-low-aware digital-output driver and retains no Flash Manager
+pointer.
 
-## Files
+The complete instruction is consumed only after every encoded operation is
+accepted. Earlier physical effects cannot be rolled back if a later operation
+rejects, so upload validation and feasibility admission must make runtime
+rejection exceptional and run-ending.
 
-| File                      | Role |
-|---------------------------|------|
-| `execution_manager.c` | Timer ISR execution loop |
-| `execution_manager.h` | Public API and Flash Manager integration contract |
-| `execution_instruction.h` | Prepared instruction format shared with its producers and storage |
+For asynchronous drivers, acceptance means the driver has copied or queued all
+required data. The ISR never waits for physical completion, and a driver must
+not retain a pointer into Flash Manager instruction storage.
 
+## Lifecycle integration
 
----
+The Run State Manager prepares Flash Manager, prepares the Execution Manager,
+starts configured DUT drivers, and finally starts TIM4. On completion or first
+failure, the Execution Manager invokes the registered terminal callback once.
+That callback immediately inhibits later dispatch and notifies the RSM task.
+Task context then stops TIM4 and drivers and requests Flash finalisation or
+abort.
 
-## Public API
+## Public interfaces
 
-The public API is declared in `execution_manager.h`.
+- `execution_manager.h`: task-context preparation, abort, tick, and failure API.
+- `execution_manager_isr.h`: narrow per-boundary ISR API.
+- `execution_instruction.h`: canonical per-tick instruction header.
+- `execution_operation_payloads.h`: canonical operation and payload layouts.
+- `execution_operation_adapters.h`: zero-copy operation dispatch.

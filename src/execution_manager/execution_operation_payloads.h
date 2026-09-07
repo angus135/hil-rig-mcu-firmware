@@ -73,16 +73,16 @@ typedef uint8_t ExecutionOperationOpcode_T;
 
 /** Decode fields from one aligned operation-header word. */
 #define EXECUTION_OPERATION_GET_OPCODE( header_word )                                              \
-    ( ( ExecutionOperationOpcode_T )( ( ( header_word ) & EXECUTION_OPERATION_OPCODE_MASK )       \
+    ( ( ExecutionOperationOpcode_T )( ( ( header_word ) & EXECUTION_OPERATION_OPCODE_MASK )        \
                                       >> EXECUTION_OPERATION_OPCODE_SHIFT ) )
 
 #define EXECUTION_OPERATION_GET_CHANNEL( header_word )                                             \
-    ( ( uint8_t )( ( ( header_word ) & EXECUTION_OPERATION_CHANNEL_MASK )                         \
-                    >> EXECUTION_OPERATION_CHANNEL_SHIFT ) )
+    ( ( uint8_t )( ( ( header_word ) & EXECUTION_OPERATION_CHANNEL_MASK )                          \
+                   >> EXECUTION_OPERATION_CHANNEL_SHIFT ) )
 
 #define EXECUTION_OPERATION_GET_PAYLOAD_LENGTH_BYTES( header_word )                                \
-    ( ( uint16_t )( ( ( header_word ) & EXECUTION_OPERATION_PAYLOAD_LENGTH_MASK )                 \
-                     >> EXECUTION_OPERATION_PAYLOAD_LENGTH_SHIFT ) )
+    ( ( uint16_t )( ( ( header_word ) & EXECUTION_OPERATION_PAYLOAD_LENGTH_MASK )                  \
+                    >> EXECUTION_OPERATION_PAYLOAD_LENGTH_SHIFT ) )
 
 /**
  * @brief Calculate the complete encoded operation size, including padding.
@@ -216,8 +216,7 @@ typedef uint32_t ExecutionOperationHeaderWord_T;
  * most one operation. It omits the operation when no digital output changes on
  * that tick.
  */
-typedef uint32_t
-    ExecutionDigitalOutputPayloadWords_T[EXECUTION_DIGITAL_OUTPUT_PAYLOAD_WORD_COUNT];
+typedef uint32_t ExecutionDigitalOutputPayloadWords_T[EXECUTION_DIGITAL_OUTPUT_PAYLOAD_WORD_COUNT];
 
 /**
  * @brief Exact three-byte wire representation of one analogue-output update.

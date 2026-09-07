@@ -1,243 +1,168 @@
 /******************************************************************************
  *  File:       execution_manager.c
- *  Author:     Angus Corr
- *  Created:    20-Dec-2025
  *
  *  Description:
- *      Lifecycle and ISR scaffold for deterministic per-tick execution.
- *
- *  Notes:
- *      Instruction execution and result capture are intentionally not yet
- *      implemented.
- *      All private functions are declared inline because each has only one
- *      caller, reducing the number of instructions required for each call.
+ *      Deterministic execution of prepared per-tick output instructions.
  ******************************************************************************/
 
-/**-----------------------------------------------------------------------------
- *  Includes
- *------------------------------------------------------------------------------
- */
 #include "execution_manager.h"
 #include "execution_manager_isr.h"
+#include "execution_operation_adapters.h"
+#include "flash_manager.h"
+
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 
-/**-----------------------------------------------------------------------------
- *  Private (static) Variables
- *------------------------------------------------------------------------------
- */
-static uint32_t                          execution_tick_count = 0U;
-static volatile ExecutionManagerStatus_T execution_status = {
-    EXECUTION_MANAGER_STATE_STOPPED,
-    EXECUTION_MANAGER_FAILURE_NONE,
-    0U,
-};
-static volatile uint32_t current_tick = 0U;
-
-/**-----------------------------------------------------------------------------
- *  Private (static) Function Prototypes
- *------------------------------------------------------------------------------
- */
-static inline bool EXECUTION_MANAGER_Capture_Completed_Interval_From_ISR( void );
-static inline bool EXECUTION_MANAGER_Finalise_Result_From_ISR( void );
-static inline bool EXECUTION_MANAGER_Advance_Tick_From_ISR( void );
-static inline bool EXECUTION_MANAGER_Fetch_Current_Tick_From_ISR( void );
-static inline bool EXECUTION_MANAGER_Apply_Current_Tick_From_ISR( void );
-static inline bool EXECUTION_MANAGER_Check_Execution_Status_From_ISR( void );
-static inline void EXECUTION_MANAGER_Fail_From_ISR( ExecutionManagerFailure_T failure );
-static inline void EXECUTION_MANAGER_Complete_From_ISR( void );
-
-/**-----------------------------------------------------------------------------
- *  Private Function Definitions
- *------------------------------------------------------------------------------
- */
-/**
- * @brief Captures inputs and completed asynchronous measurements for the interval.
- *
- * @return true if the interval data was captured successfully; otherwise, false.
- */
-static inline bool EXECUTION_MANAGER_Capture_Completed_Interval_From_ISR( void )
+typedef enum
 {
-    /* TODO: Capture inputs and drain completed asynchronous measurements. */
-    return true;
-}
+    EXECUTION_STATE_IDLE = 0,
+    EXECUTION_STATE_READY,
+    EXECUTION_STATE_COMPLETE,
+    EXECUTION_STATE_FAILED
+} ExecutionState_T;
 
-/**
- * @brief Builds and publishes the result for the completed execution tick.
- *
- * @return true if the result was finalised successfully; otherwise, false.
- */
-static inline bool EXECUTION_MANAGER_Finalise_Result_From_ISR( void )
+static uint32_t                           execution_tick_count = 0U;
+static volatile uint32_t                  current_tick         = 0U;
+static volatile ExecutionManagerFailure_T execution_failure    = EXECUTION_MANAGER_FAILURE_NONE;
+static volatile ExecutionState_T          execution_state      = EXECUTION_STATE_IDLE;
+static bool                               instruction_stream_exhausted = false;
+static ExecutionManagerTerminalCallback_T terminal_callback = NULL;
+
+static ExecutionManagerTickResult_T
+EXECUTION_MANAGER_FailFromISR( ExecutionManagerFailure_T failure )
 {
-    /* TODO: Construct and publish the completed tick result. */
-    return true;
-}
-
-/**
- * @brief Advances the current tick and completed-tick count.
- *
- * @return true if the tick counters were advanced successfully; otherwise, false.
- */
-static inline bool EXECUTION_MANAGER_Advance_Tick_From_ISR( void )
-{
-    current_tick++;
-    execution_status.ticks_completed++;
-    return true;
-}
-
-/**
- * @brief Retrieves the prepared instruction for the current execution tick.
- *
- * @return true if the instruction was retrieved successfully; otherwise, false.
- */
-static inline bool EXECUTION_MANAGER_Fetch_Current_Tick_From_ISR( void )
-{
-    /* TODO: Retrieve the prepared instruction for the authoritative tick. */
-    return true;
-}
-
-/**
- * @brief Applies the outputs and starts communications scheduled for the current tick.
- *
- * @return true if the instruction was applied successfully; otherwise, false.
- */
-static inline bool EXECUTION_MANAGER_Apply_Current_Tick_From_ISR( void )
-{
-    /* TODO: Apply fixed outputs and initiate scheduled communications. */
-    return true;
-}
-
-/**
- * @brief Checks for peripheral failures and execution tick overruns.
- *
- * @return true if execution remains healthy; otherwise, false.
- */
-static inline bool EXECUTION_MANAGER_Check_Execution_Status_From_ISR( void )
-{
-    /* TODO: Detect peripheral runtime failures and execution tick overruns. */
-    return true;
-}
-
-/**
- * @brief Records the supplied failure state.
- *
- * @param failure Failure that caused execution to stop.
- */
-static inline void EXECUTION_MANAGER_Fail_From_ISR( ExecutionManagerFailure_T failure )
-{
-    execution_status.failure = failure;
-    execution_status.state   = EXECUTION_MANAGER_STATE_FAILED;
-}
-
-/**
- * @brief Marks execution as complete.
- */
-static inline void EXECUTION_MANAGER_Complete_From_ISR( void )
-{
-    execution_status.state = EXECUTION_MANAGER_STATE_COMPLETE;
-}
-
-/**-----------------------------------------------------------------------------
- *  Public Function Definitions
- *------------------------------------------------------------------------------
- */
-
-void EXECUTION_MANAGER_Process_From_ISR( void )
-{
-    if ( execution_status.state != EXECUTION_MANAGER_STATE_RUNNING )
+    if ( execution_failure == EXECUTION_MANAGER_FAILURE_NONE )
     {
-        return;
+        execution_failure = failure;
     }
 
-    if ( !EXECUTION_MANAGER_Capture_Completed_Interval_From_ISR() )
+    execution_state = EXECUTION_STATE_FAILED;
+    if ( terminal_callback != NULL )
     {
-        EXECUTION_MANAGER_Fail_From_ISR( EXECUTION_MANAGER_FAILURE_MEASUREMENT_INVALID );
-        return;
+        terminal_callback( EXECUTION_MANAGER_TICK_FAILED, execution_failure );
     }
-
-    if ( !EXECUTION_MANAGER_Finalise_Result_From_ISR() )
-    {
-        EXECUTION_MANAGER_Fail_From_ISR( EXECUTION_MANAGER_FAILURE_RESULT_BUFFER_FULL );
-        return;
-    }
-
-    if ( !EXECUTION_MANAGER_Advance_Tick_From_ISR() )
-    {
-        EXECUTION_MANAGER_Fail_From_ISR( EXECUTION_MANAGER_FAILURE_INTERNAL );
-        return;
-    }
-
-    if ( !EXECUTION_MANAGER_Fetch_Current_Tick_From_ISR() )
-    {
-        EXECUTION_MANAGER_Fail_From_ISR( EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNDERRUN );
-        return;
-    }
-
-    if ( !EXECUTION_MANAGER_Apply_Current_Tick_From_ISR() )
-    {
-        EXECUTION_MANAGER_Fail_From_ISR( EXECUTION_MANAGER_FAILURE_OUTPUT_REJECTED );
-        return;
-    }
-
-    if ( !EXECUTION_MANAGER_Check_Execution_Status_From_ISR() )
-    {
-        EXECUTION_MANAGER_Fail_From_ISR( EXECUTION_MANAGER_FAILURE_TICK_OVERRUN );
-        return;
-    }
-
-    if ( execution_status.ticks_completed >= execution_tick_count )
-    {
-        EXECUTION_MANAGER_Complete_From_ISR();
-    }
+    return EXECUTION_MANAGER_TICK_FAILED;
 }
 
-bool EXECUTION_MANAGER_Start( uint32_t tick_count )
+void EXECUTION_MANAGER_SetTerminalCallback( ExecutionManagerTerminalCallback_T callback )
+{
+    terminal_callback = callback;
+}
+
+bool EXECUTION_MANAGER_Prepare( uint32_t tick_count )
 {
     if ( tick_count == 0U )
     {
         return false;
     }
 
-    execution_tick_count             = tick_count;
-    current_tick                     = 0U;
-    execution_status.failure         = EXECUTION_MANAGER_FAILURE_NONE;
-    execution_status.ticks_completed = 0U;
-    execution_status.state           = EXECUTION_MANAGER_STATE_RUNNING;
+    execution_tick_count         = tick_count;
+    current_tick                 = 0U;
+    execution_failure            = EXECUTION_MANAGER_FAILURE_NONE;
+    execution_state              = EXECUTION_STATE_READY;
+    instruction_stream_exhausted = false;
     return true;
 }
 
 void EXECUTION_MANAGER_Abort( void )
 {
-    /* TODO: Put configured peripherals into their safe state. */
-    execution_status.failure = EXECUTION_MANAGER_FAILURE_NONE;
-    execution_status.state   = EXECUTION_MANAGER_STATE_ABORTED;
+    execution_state = EXECUTION_STATE_IDLE;
 }
 
-void EXECUTION_MANAGER_Get_Status( ExecutionManagerStatus_T* status )
+uint32_t EXECUTION_MANAGER_GetCurrentTick( void )
 {
-    ExecutionManagerStatus_T first_snapshot;
-    ExecutionManagerStatus_T second_snapshot;
+    return current_tick;
+}
 
-    if ( status == NULL )
+ExecutionManagerFailure_T EXECUTION_MANAGER_GetFailure( void )
+{
+    return execution_failure;
+}
+
+ExecutionManagerTickResult_T EXECUTION_MANAGER_ProcessTickFromISR( void )
+{
+    const FlashManagerInstructionView_T* instruction = NULL;
+
+    if ( execution_state == EXECUTION_STATE_COMPLETE )
     {
-        return;
+        return EXECUTION_MANAGER_TICK_COMPLETE;
     }
 
-    // Here we're ensuring that the status is accurate by continuously taking snapshots until we get
-    // 2 that agree, ensuring that there hasn't been a change while reading the status
-    do
+    if ( execution_state == EXECUTION_STATE_FAILED )
     {
-        first_snapshot.state           = execution_status.state;
-        first_snapshot.failure         = execution_status.failure;
-        first_snapshot.ticks_completed = execution_status.ticks_completed;
+        return EXECUTION_MANAGER_TICK_FAILED;
+    }
 
-        second_snapshot.state           = execution_status.state;
-        second_snapshot.failure         = execution_status.failure;
-        second_snapshot.ticks_completed = execution_status.ticks_completed;
-    } while ( ( first_snapshot.state != second_snapshot.state )
-              || ( first_snapshot.failure != second_snapshot.failure )
-              || ( first_snapshot.ticks_completed != second_snapshot.ticks_completed ) );
+    if ( execution_state != EXECUTION_STATE_READY )
+    {
+        return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_NOT_PREPARED );
+    }
 
-    *status = second_snapshot;
+    /*
+     * Tick zero is the configured initial condition at the instant the
+     * execution timer starts. Each interrupt marks the next execution-clock
+     * boundary, so the first interrupt processes tick one.
+     *
+     * Future measurement collection belongs immediately after this increment
+     * and before output dispatch. Keeping the tick stable for the remainder of
+     * the ISR gives every driver call at one boundary the same timestamp.
+     */
+    current_tick++;
+
+    FlashManagerInstructionReadStatus_T read_status = FLASH_MANAGER_INSTRUCTION_END_OF_STREAM;
+    if ( !instruction_stream_exhausted )
+    {
+        read_status = FLASH_MANAGER_PeekNextInstructionFromISR( &instruction );
+    }
+
+    if ( read_status == FLASH_MANAGER_INSTRUCTION_AVAILABLE )
+    {
+        if ( instruction->header.timestamp < current_tick )
+        {
+            return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_INSTRUCTION_LATE );
+        }
+
+        if ( instruction->header.timestamp == current_tick )
+        {
+            if ( EXECUTION_OPERATION_ADAPTER_ApplyOperations( instruction->operations,
+                                                              instruction->header.operation_count )
+                 != EXECUTION_OPERATION_ADAPTER_ACCEPTED )
+            {
+                return EXECUTION_MANAGER_FailFromISR(
+                    EXECUTION_MANAGER_FAILURE_OPERATION_REJECTED );
+            }
+
+            if ( !FLASH_MANAGER_ConsumeInstructionFromISR( NULL ) )
+            {
+                return EXECUTION_MANAGER_FailFromISR(
+                    EXECUTION_MANAGER_FAILURE_INSTRUCTION_CONSUME );
+            }
+        }
+    }
+    else if ( read_status == FLASH_MANAGER_INSTRUCTION_NOT_BUFFERED )
+    {
+        return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNDERRUN );
+    }
+    else if ( read_status != FLASH_MANAGER_INSTRUCTION_END_OF_STREAM )
+    {
+        return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_INSTRUCTION_CORRUPT );
+    }
+    else
+    {
+        instruction_stream_exhausted = true;
+    }
+
+    if ( current_tick == execution_tick_count )
+    {
+        execution_state = EXECUTION_STATE_COMPLETE;
+        if ( terminal_callback != NULL )
+        {
+            terminal_callback( EXECUTION_MANAGER_TICK_COMPLETE,
+                               EXECUTION_MANAGER_FAILURE_NONE );
+        }
+        return EXECUTION_MANAGER_TICK_COMPLETE;
+    }
+
+    return EXECUTION_MANAGER_TICK_CONTINUE;
 }
