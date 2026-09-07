@@ -634,6 +634,8 @@ bool INSTRUCTION_BUFFER_Init( void )
 
     /* Runtime geometry must fit the compile-time backing-storage ceiling. */
     if ( ( external_flash_info.page_size_bytes == 0U )
+         || ( ( external_flash_info.page_size_bytes % INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES )
+              != 0U )
          || ( external_flash_info.page_size_bytes > EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES )
          || ( external_flash_info.instruction_capacity_bytes == 0U ) )
     {
@@ -667,6 +669,7 @@ bool INSTRUCTION_BUFFER_Init( void )
 bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes )
 {
     if ( !instruction_buffer_context.is_initialised || instruction_buffer_context.is_upload_prepared
+         || ( ( instruction_length_bytes % INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES ) != 0U )
          || ( instruction_length_bytes
               > instruction_buffer_context.instruction_partition_capacity_bytes ) )
     {
@@ -682,7 +685,6 @@ bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes )
     instruction_buffer_context.consumer_page_index          = 0U;
     instruction_buffer_context.consumer_page_offset_bytes   = 0U;
     instruction_buffer_context.consumer_record_pointer      = INSTRUCTION_BUFFER_GetStorageBytes();
-    ;
 
     INSTRUCTION_BUFFER_ClearPageFillReservation();
     INSTRUCTION_BUFFER_ClearInstructionCache();
@@ -721,7 +723,6 @@ void INSTRUCTION_BUFFER_EndRead( void )
     instruction_buffer_context.consumer_page_index          = 0U;
     instruction_buffer_context.consumer_page_offset_bytes   = 0U;
     instruction_buffer_context.consumer_record_pointer      = INSTRUCTION_BUFFER_GetStorageBytes();
-    ;
 
     INSTRUCTION_BUFFER_ClearPageFillReservation();
     INSTRUCTION_BUFFER_ClearInstructionCache();
@@ -920,13 +921,23 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
         return INSTRUCTION_BUFFER_PEEK_NOT_BUFFERED;
     }
 
-    ExecutionInstructionHeader_T header = { 0 };
+    const uint32_t* header_words =
+        ( const uint32_t* )( const void* )instruction_buffer_context.consumer_record_pointer;
 
-    /*
-     * Copy the fixed header into an aligned object for safe field access. The
-     * two-page mirror makes this a single bounded copy even at the ring end.
-     */
-    memcpy( &header, instruction_buffer_context.consumer_record_pointer, sizeof( header ) );
+    uint32_t encoded_fields = header_words[1];
+
+    ExecutionInstructionHeader_T header = {
+        .timestamp               = header_words[0],
+        .operations_length_bytes = ( uint16_t )( encoded_fields & UINT32_C( 0xFFFF ) ),
+        .operation_count = ( uint8_t )( ( encoded_fields >> 16U ) & UINT32_C( 0xFF ) ),
+        .reserved        = ( uint8_t )( ( encoded_fields >> 24U ) & UINT32_C( 0xFF ) ),
+    };
+
+    if ( ( ( uint32_t )header.operations_length_bytes % INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES )
+         != 0U )
+    {
+        return INSTRUCTION_BUFFER_PEEK_CORRUPT;
+    }
 
     uint32_t record_length_bytes = sizeof( header ) + ( uint32_t )header.operations_length_bytes;
 
@@ -1004,6 +1015,7 @@ bool INSTRUCTION_BUFFER_PrepareUpload( uint32_t expected_length_bytes )
          || instruction_buffer_context.is_upload_prepared
          || instruction_buffer_context.active_page_fill_reservation.is_active
          || ( expected_length_bytes == 0U )
+         || ( ( expected_length_bytes % INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES ) != 0U )
          || ( expected_length_bytes
               > instruction_buffer_context.instruction_partition_capacity_bytes ) )
     {
