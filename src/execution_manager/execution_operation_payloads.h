@@ -121,8 +121,11 @@ typedef uint8_t ExecutionOperationOpcode_T;
 
 /** CAN transmit instruction limits. */
 #define EXECUTION_CAN_MAX_DATA_BYTES ( 8U )
-#define EXECUTION_CAN_MAX_PACKETS ( 19U )
 #define EXECUTION_CAN_PACKET_SIZE_BYTES ( 12U )
+
+/** SPI transmit payload field widths. */
+#define EXECUTION_SPI_PREFIX_SIZE_BYTES ( 4U )
+#define EXECUTION_SPI_PACKET_SIZE_FIELD_BYTES ( 4U )
 
 /** Fixed payload lengths. */
 #define EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES ( 8U )
@@ -142,9 +145,13 @@ typedef uint8_t ExecutionOperationOpcode_T;
 #define EXECUTION_CAN_PACKET_RESERVED_OFFSET_BYTES ( 11U )
 
 /** SPI variable-payload offsets and length calculation. */
+/** SPI variable-payload offsets and length calculation. */
 #define EXECUTION_SPI_PACKET_COUNT_OFFSET_BYTES ( 0U )
-#define EXECUTION_SPI_PACKET_SIZES_OFFSET_BYTES ( 4U )
-#define EXECUTION_SPI_PACKET_SIZES_LENGTH_BYTES( packet_count ) ( 4U * ( packet_count ) )
+#define EXECUTION_SPI_PACKET_SIZES_OFFSET_BYTES ( EXECUTION_SPI_PREFIX_SIZE_BYTES )
+
+#define EXECUTION_SPI_PACKET_SIZES_LENGTH_BYTES( packet_count )                                    \
+    ( EXECUTION_SPI_PACKET_SIZE_FIELD_BYTES * ( uint32_t )( packet_count ) )
+
 #define EXECUTION_SPI_DATA_OFFSET_BYTES( packet_count )                                            \
     ( EXECUTION_SPI_PACKET_SIZES_OFFSET_BYTES                                                      \
       + EXECUTION_SPI_PACKET_SIZES_LENGTH_BYTES( packet_count ) )
