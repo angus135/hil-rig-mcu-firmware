@@ -95,6 +95,9 @@ _Static_assert( ( INSTRUCTION_BUFFER_STORAGE_BYTES % sizeof( uint32_t ) ) == 0U,
 #define INSTRUCTION_BUFFER_COLD_NOINLINE
 #endif
 
+/** Required alignment of instruction headers, operations, and payloads. */
+#define INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES ( 4U )
+
 /* The serialized NAND layout depends on this fixed header width. */
 #if defined( __cplusplus )
 static_assert( sizeof( ExecutionInstructionHeader_T ) == 8U,
@@ -644,6 +647,8 @@ bool INSTRUCTION_BUFFER_Init( void )
          || ( ( external_flash_info.page_size_bytes % INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES )
               != 0U )
          || ( external_flash_info.page_size_bytes > EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES )
+         || ( ( external_flash_info.page_size_bytes % INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES )
+              != 0U )
          || ( external_flash_info.instruction_capacity_bytes == 0U ) )
     {
         return false;
@@ -936,8 +941,8 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
     ExecutionInstructionHeader_T header = {
         .timestamp               = header_words[0],
         .operations_length_bytes = ( uint16_t )( encoded_fields & UINT32_C( 0xFFFF ) ),
-        .operation_count = ( uint8_t )( ( encoded_fields >> 16U ) & UINT32_C( 0xFF ) ),
-        .reserved        = ( uint8_t )( ( encoded_fields >> 24U ) & UINT32_C( 0xFF ) ),
+        .operation_count         = ( uint8_t )( ( encoded_fields >> 16U ) & UINT32_C( 0xFF ) ),
+        .reserved                = ( uint8_t )( ( encoded_fields >> 24U ) & UINT32_C( 0xFF ) ),
     };
 
     if ( ( ( uint32_t )header.operations_length_bytes % INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES )
