@@ -1,27 +1,29 @@
 /******************************************************************************
- *  File:       execution_instruction_payloads.h
+ *  File:       execution_operation_payloads.h
  *
  *  Description:
  *      Working sketch of the opcode and payload layouts for scheduled output
- *      instructions. This header supplements the design document by showing
+ *      operations. This header supplements the design document by showing
  *      how the current decisions could be represented in C. It is expected to
  *      change as the design is reviewed and is not yet a released binary
  *      interface. Within this draft, however, the byte layouts below are the
  *      authoritative packing rules for the MCU Host Interface.
  *
  *  Notes:
- *      One instruction represents one execution-driver API call. The common
- *      instruction header owns timestamp, opcode, channel, and payload length;
- *      the layouts below describe only the call-specific payload.
+ *      One instruction represents all output work scheduled for one tick. It
+ *      contains multiple operations, and each operation represents one
+ *      execution-driver API call. The layouts below describe the call-specific
+ *      payloads; the common operation header and alignment remain undecided.
  *
  *      The MCU Host Interface creates these payloads after validating the
  *      external test package against its paired driver configuration.
  *
  *      Design choices represented here:
  *      - Store an opcode rather than a function pointer.
- *      - Store one record per useful driver API call.
- *      - Keep timestamp, opcode, channel, and payload length in the common
- *        record header rather than repeating them in each payload.
+ *      - Store one operation per useful driver API call.
+ *      - Keep the timestamp in the enclosing instruction header.
+ *      - Keep opcode, channel, and payload length outside the call-specific
+ *        payload rather than repeating them in each layout.
  *      - Define every payload in this header so the Host Interface does not
  *        depend on execution-driver headers or native driver structures.
  *      - Exclude I2C until its known hardware fault is resolved and its
@@ -32,14 +34,14 @@
  *      Interface must emit the stated bytes and validate every stated rule.
  *
  *      Before typed payload fields or arrays are read directly, the final
- *      record design must guarantee their alignment in every Flash Manager
+ *      operation design must guarantee their alignment in every Flash Manager
  *      buffer location, including page and ring crossings. Adapters must
  *      translate these instruction-owned layouts into driver inputs without
  *      making the Host Interface depend on a driver header.
  ******************************************************************************/
 
-#ifndef EXECUTION_INSTRUCTION_PAYLOADS_H
-#define EXECUTION_INSTRUCTION_PAYLOADS_H
+#ifndef EXECUTION_OPERATION_PAYLOADS_H
+#define EXECUTION_OPERATION_PAYLOADS_H
 
 #ifdef __cplusplus
 extern "C"
@@ -53,8 +55,8 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-/** Opcode storage type used by the common instruction header. */
-typedef uint8_t ExecutionInstructionOpcode_T;
+/** Proposed opcode storage type used by the common operation encoding. */
+typedef uint8_t ExecutionOperationOpcode_T;
 
 /**
  * @brief Output operations currently supported by this draft.
@@ -64,39 +66,35 @@ typedef uint8_t ExecutionInstructionOpcode_T;
  * are intentionally absent while I2C is disabled by the current hardware
  * policy; new opcodes can be appended after that path is validated.
  */
-#define EXECUTION_INSTRUCTION_OPCODE_DIGITAL_OUTPUT_SET ( ( ExecutionInstructionOpcode_T ) 0U )
-#define EXECUTION_INSTRUCTION_OPCODE_DIGITAL_OUTPUT_RESET ( ( ExecutionInstructionOpcode_T ) 1U )
-#define EXECUTION_INSTRUCTION_OPCODE_ANALOGUE_OUTPUT_BATCH ( ( ExecutionInstructionOpcode_T ) 2U )
-#define EXECUTION_INSTRUCTION_OPCODE_PWM_UPDATE ( ( ExecutionInstructionOpcode_T ) 3U )
-#define EXECUTION_INSTRUCTION_OPCODE_CAN_TRANSMIT ( ( ExecutionInstructionOpcode_T ) 4U )
-#define EXECUTION_INSTRUCTION_OPCODE_SPI_TRANSMIT ( ( ExecutionInstructionOpcode_T ) 5U )
-#define EXECUTION_INSTRUCTION_OPCODE_UART_TRANSMIT ( ( ExecutionInstructionOpcode_T ) 6U )
-#define EXECUTION_INSTRUCTION_OPCODE_COUNT ( 7U )
+#define EXECUTION_OPERATION_OPCODE_DIGITAL_OUTPUT_SET ( ( ExecutionOperationOpcode_T ) 0U )
+#define EXECUTION_OPERATION_OPCODE_DIGITAL_OUTPUT_RESET ( ( ExecutionOperationOpcode_T ) 1U )
+#define EXECUTION_OPERATION_OPCODE_ANALOGUE_OUTPUT_BATCH ( ( ExecutionOperationOpcode_T ) 2U )
+#define EXECUTION_OPERATION_OPCODE_PWM_UPDATE ( ( ExecutionOperationOpcode_T ) 3U )
+#define EXECUTION_OPERATION_OPCODE_CAN_TRANSMIT ( ( ExecutionOperationOpcode_T ) 4U )
+#define EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT ( ( ExecutionOperationOpcode_T ) 5U )
+#define EXECUTION_OPERATION_OPCODE_UART_TRANSMIT ( ( ExecutionOperationOpcode_T ) 6U )
+#define EXECUTION_OPERATION_OPCODE_COUNT ( 7U )
 
 /*
  * Multi-byte payload fields are stored least-significant byte first. The Host
  * Interface must write that byte order explicitly rather than copying an
- * arbitrary external or compiler-native structure into the record.
+ * arbitrary external or compiler-native structure into an operation.
  *
- * For every instruction, the Host Interface must:
- *   1. write the scheduled Execution Manager tick to the common timestamp;
- *   2. select exactly one opcode below;
- *   3. write the opcode's channel value, or CHANNEL_UNUSED;
- *   4. pack the opcode-specific payload exactly as documented below; and
- *   5. set payload_length_bytes to those payload bytes only. The common header
- *      itself is not included in payload_length_bytes.
+ * For every operation, the Host Interface must select one opcode and channel,
+ * then pack its operation-specific payload exactly as documented below. The
+ * enclosing instruction supplies the scheduled Execution Manager tick.
  */
 
-/** Channel values stored in the common instruction header. */
-#define EXECUTION_INSTRUCTION_CHANNEL_UNUSED ( 0U )
-#define EXECUTION_INSTRUCTION_PWM_CHANNEL_LV ( 0U )
-#define EXECUTION_INSTRUCTION_PWM_CHANNEL_HV ( 1U )
-#define EXECUTION_INSTRUCTION_CAN_CHANNEL_1 ( 0U )
-#define EXECUTION_INSTRUCTION_CAN_CHANNEL_2 ( 1U )
-#define EXECUTION_INSTRUCTION_SPI_CHANNEL_1 ( 0U )
-#define EXECUTION_INSTRUCTION_SPI_CHANNEL_2 ( 1U )
-#define EXECUTION_INSTRUCTION_UART_CHANNEL_1 ( 0U )
-#define EXECUTION_INSTRUCTION_UART_CHANNEL_2 ( 1U )
+/** Proposed channel values stored outside the operation-specific payload. */
+#define EXECUTION_OPERATION_CHANNEL_UNUSED ( 0U )
+#define EXECUTION_OPERATION_PWM_CHANNEL_LV ( 0U )
+#define EXECUTION_OPERATION_PWM_CHANNEL_HV ( 1U )
+#define EXECUTION_OPERATION_CAN_CHANNEL_1 ( 0U )
+#define EXECUTION_OPERATION_CAN_CHANNEL_2 ( 1U )
+#define EXECUTION_OPERATION_SPI_CHANNEL_1 ( 0U )
+#define EXECUTION_OPERATION_SPI_CHANNEL_2 ( 1U )
+#define EXECUTION_OPERATION_UART_CHANNEL_1 ( 0U )
+#define EXECUTION_OPERATION_UART_CHANNEL_2 ( 1U )
 
 /** Analogue output instruction limits. */
 #define EXECUTION_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES ( 3U )
@@ -145,7 +143,7 @@ typedef uint8_t ExecutionInstructionOpcode_T;
  * Input to EXEC_DIGITAL_OUTPUT_Set_Output() or Reset_Output().
  *
  * Separate opcodes select the two functions. The prepared physical mask is the
- * complete API input, so channel must be EXECUTION_INSTRUCTION_CHANNEL_UNUSED.
+ * complete API input, so channel must be EXECUTION_OPERATION_CHANNEL_UNUSED.
  *
  * Host Interface packing:
  *   payload length = 4
@@ -165,8 +163,8 @@ typedef struct
  * The MCU Host Interface creates the prepared three-byte frame data from the
  * requested output channel and voltage; the external host does not supply DAC
  * wire frames. byte_count is the valid prefix of bytes and must be a multiple
- * of EXECUTION_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES. The common instruction
- * channel must be EXECUTION_INSTRUCTION_CHANNEL_UNUSED.
+ * of EXECUTION_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES. The operation channel must be
+ * EXECUTION_OPERATION_CHANNEL_UNUSED.
  *
  * Host Interface packing:
  *   payload length = 19
@@ -239,7 +237,7 @@ typedef struct
  * channel, so a separate payload prefix is unnecessary.
  *
  * Host Interface packing:
- *   channel        = EXECUTION_INSTRUCTION_CAN_CHANNEL_1 or CHANNEL_2
+ *   channel        = EXECUTION_OPERATION_CAN_CHANNEL_1 or CHANNEL_2
  *   packet_count   = number of requested packets, 1..EXECUTION_CAN_MAX_PACKETS
  *   payload length = packet_count * EXECUTION_CAN_PACKET_SIZE_BYTES
  *   payload        = packet_count consecutive ExecutionCanPacket_T layouts
@@ -266,12 +264,12 @@ typedef struct
  * A prefix is necessary here because packet_count tells the adapter where the
  * variable packet-size array ends and the packet data begins. Unlike CAN,
  * payload length alone cannot determine that boundary. The sizes and data are
- * part of the same payload record even though they cannot be members of this
+ * part of the same operation payload even though they cannot be members of this
  * fixed-size C structure: both regions have variable length, and C permits at
  * most one flexible array at the end of a structure.
  *
  * Host Interface packing:
- *   channel         = EXECUTION_INSTRUCTION_SPI_CHANNEL_1 or CHANNEL_2
+ *   channel         = EXECUTION_OPERATION_SPI_CHANNEL_1 or CHANNEL_2
  *   bytes 0..3      = packet_count, little-endian and greater than zero
  *   next 4*n bytes  = n packet sizes, each little-endian and greater than zero
  *   remaining bytes = packet data concatenated in packet order; exactly
@@ -281,7 +279,7 @@ typedef struct
  *
  * The packet sizes must account for every data byte exactly. Validation must
  * also enforce the configured SPI frame width, driver queue depth, TX buffer
- * capacity, and the Flash Manager maximum record length.
+ * capacity, and the Execution Manager maximum instruction length.
  */
 typedef struct
 {
@@ -296,7 +294,7 @@ typedef struct
  * only a variable byte array would not add any information to this format.
  *
  * Host Interface packing:
- *   channel        = EXECUTION_INSTRUCTION_UART_CHANNEL_1 or CHANNEL_2
+ *   channel        = EXECUTION_OPERATION_UART_CHANNEL_1 or CHANNEL_2
  *   payload length = number of transmit bytes; greater than zero and no more
  *                    than the validated single-call UART capacity
  *   payload        = transmit bytes in wire order
@@ -343,4 +341,4 @@ _Static_assert( sizeof( ExecutionCanPacket_T ) == EXECUTION_CAN_PACKET_SIZE_BYTE
 }
 #endif
 
-#endif /* EXECUTION_INSTRUCTION_PAYLOADS_H */
+#endif /* EXECUTION_OPERATION_PAYLOADS_H */
