@@ -6,6 +6,7 @@
 
 set(EXECUTION_MANAGER_SOURCES
     execution_manager.c
+    execution_operation_adapters.c
 )
 
 set(EXECUTION_MANAGER_HEADERS
@@ -34,6 +35,7 @@ target_link_libraries(execution_manager
         cubeide_hal
         rtos
         hw_timer
+        exec_digital_output
 )
 
 # -----------------------------
