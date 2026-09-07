@@ -24,7 +24,7 @@ extern "C"
  */
 
 #include <stdint.h>
-
+#include "execution_operation_payloads.h"
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
@@ -56,11 +56,6 @@ typedef enum
     EXECUTION_OPERATION_ADAPTER_REJECTED
 } ExecutionOperationAdapterResult_T;
 
-/**-----------------------------------------------------------------------------
- *  Public Function Prototypes
- *------------------------------------------------------------------------------
- */
-
 /**
  * @brief Common signature used by the opcode-indexed adapter table.
  *
@@ -79,6 +74,27 @@ typedef enum
  */
 typedef ExecutionOperationAdapterResult_T ( *ExecutionOperationAdapter_T )(
     uint8_t channel, const uint8_t* payload, uint16_t payload_length_bytes );
+
+/**-----------------------------------------------------------------------------
+ *  Public Function Prototypes
+ *------------------------------------------------------------------------------
+ */
+
+ExecutionOperationAdapterResult_T
+EXECUTION_OPERATION_ADAPTER_ApplyOperations( const uint8_t* operations, uint8_t operation_count );
+
+/**
+ * @brief Applies one prevalidated digital-output update directly from aligned storage.
+ *
+ * @pre channel is EXECUTION_OPERATION_CHANNEL_UNUSED.
+ * @pre payload points to an aligned, validated two-word digital-output payload.
+ * @pre payload_length_bytes is EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES.
+ *
+ * @return EXECUTION_OPERATION_ADAPTER_ACCEPTED.
+ */
+ExecutionOperationAdapterResult_T
+EXECUTION_OPERATION_ADAPTER_ApplyDigitalOutput( uint8_t channel, const uint8_t* payload,
+                                                uint16_t payload_length_bytes );
 
 #ifdef __cplusplus
 }

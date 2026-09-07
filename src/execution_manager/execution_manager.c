@@ -19,35 +19,15 @@
  */
 #include "execution_manager.h"
 #include "execution_manager_isr.h"
-#include "hw_timer.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 
 /**-----------------------------------------------------------------------------
- *  Defines / Macros
- *------------------------------------------------------------------------------
- */
-/*
- * Timer update frequency:
- *     update_hz = 90,000,000 / ((PSC + 1) * (ARR + 1))
- *
- * Values below produce exact 100 Hz, 1 kHz, and 10 kHz update rates.
- */
-#define PSC_100HZ 14u
-#define ARR_100HZ 59999u
-
-#define PSC_1KHZ 1u
-#define ARR_1KHZ 44999u
-
-#define PSC_10KHZ 0u
-#define ARR_10KHZ 8999u
-
-/**-----------------------------------------------------------------------------
  *  Private (static) Variables
  *------------------------------------------------------------------------------
  */
-static ExecutionManagerConfig_T          execution_config = { FREQUENCY_10KHZ, 0U };
+static uint32_t                          execution_tick_count = 0U;
 static volatile ExecutionManagerStatus_T execution_status = {
     EXECUTION_MANAGER_STATE_STOPPED,
     EXECUTION_MANAGER_FAILURE_NONE,
@@ -59,7 +39,6 @@ static volatile uint32_t current_tick = 0U;
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
-static inline bool EXECUTION_MANAGER_Is_Frequency_Supported( FrequencyMode_T frequency_mode );
 static inline bool EXECUTION_MANAGER_Capture_Completed_Interval_From_ISR( void );
 static inline bool EXECUTION_MANAGER_Finalise_Result_From_ISR( void );
 static inline bool EXECUTION_MANAGER_Advance_Tick_From_ISR( void );
@@ -73,18 +52,6 @@ static inline void EXECUTION_MANAGER_Complete_From_ISR( void );
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
-/**
- * @brief Checks whether the requested execution frequency is supported.
- *
- * @param frequency_mode Execution frequency to validate.
- * @return true if the frequency is supported; otherwise, false.
- */
-static inline bool EXECUTION_MANAGER_Is_Frequency_Supported( FrequencyMode_T frequency_mode )
-{
-    return ( frequency_mode == FREQUENCY_100HZ ) || ( frequency_mode == FREQUENCY_1KHZ )
-           || ( frequency_mode == FREQUENCY_10KHZ );
-}
-
 /**
  * @brief Captures inputs and completed asynchronous measurements for the interval.
  *
@@ -153,23 +120,21 @@ static inline bool EXECUTION_MANAGER_Check_Execution_Status_From_ISR( void )
 }
 
 /**
- * @brief Stops execution and records the supplied failure state.
+ * @brief Records the supplied failure state.
  *
  * @param failure Failure that caused execution to stop.
  */
 static inline void EXECUTION_MANAGER_Fail_From_ISR( ExecutionManagerFailure_T failure )
 {
-    HW_TIMER_Stop_Timer( EXECUTION_MANAGER_TIMER );
     execution_status.failure = failure;
     execution_status.state   = EXECUTION_MANAGER_STATE_FAILED;
 }
 
 /**
- * @brief Stops the execution timer and marks execution as complete.
+ * @brief Marks execution as complete.
  */
 static inline void EXECUTION_MANAGER_Complete_From_ISR( void )
 {
-    HW_TIMER_Stop_Timer( EXECUTION_MANAGER_TIMER );
     execution_status.state = EXECUTION_MANAGER_STATE_COMPLETE;
 }
 
@@ -221,49 +186,29 @@ void EXECUTION_MANAGER_Process_From_ISR( void )
         return;
     }
 
-    if ( execution_status.ticks_completed >= execution_config.tick_count )
+    if ( execution_status.ticks_completed >= execution_tick_count )
     {
         EXECUTION_MANAGER_Complete_From_ISR();
     }
 }
 
-bool EXECUTION_MANAGER_Start( const ExecutionManagerConfig_T* config )
+bool EXECUTION_MANAGER_Start( uint32_t tick_count )
 {
-    if ( ( config == NULL ) || ( config->tick_count == 0U )
-         || !EXECUTION_MANAGER_Is_Frequency_Supported( config->frequency_mode ) )
+    if ( tick_count == 0U )
     {
         return false;
     }
 
-    execution_status.state           = EXECUTION_MANAGER_STATE_START_PENDING;
-    execution_config                 = *config;
+    execution_tick_count             = tick_count;
     current_tick                     = 0U;
     execution_status.failure         = EXECUTION_MANAGER_FAILURE_NONE;
     execution_status.ticks_completed = 0U;
-
-    switch ( execution_config.frequency_mode )
-    {
-        case FREQUENCY_100HZ:
-            HW_TIMER_Configure_Timer( EXECUTION_MANAGER_TIMER, PSC_100HZ, ARR_100HZ );
-            break;
-        case FREQUENCY_1KHZ:
-            HW_TIMER_Configure_Timer( EXECUTION_MANAGER_TIMER, PSC_1KHZ, ARR_1KHZ );
-            break;
-        case FREQUENCY_10KHZ:
-            HW_TIMER_Configure_Timer( EXECUTION_MANAGER_TIMER, PSC_10KHZ, ARR_10KHZ );
-            break;
-        default:
-            return false;
-    }
-
-    execution_status.state = EXECUTION_MANAGER_STATE_RUNNING;
-    HW_TIMER_Start_Timer( EXECUTION_MANAGER_TIMER );
+    execution_status.state           = EXECUTION_MANAGER_STATE_RUNNING;
     return true;
 }
 
 void EXECUTION_MANAGER_Abort( void )
 {
-    HW_TIMER_Stop_Timer( EXECUTION_MANAGER_TIMER );
     /* TODO: Put configured peripherals into their safe state. */
     execution_status.failure = EXECUTION_MANAGER_FAILURE_NONE;
     execution_status.state   = EXECUTION_MANAGER_STATE_ABORTED;
