@@ -48,6 +48,20 @@ extern "C"
 #define UART_MODE_RX 0x01U
 #define UART_MODE_TX 0x02U
 #define UART_MODE_TX_RX ( UART_MODE_RX | UART_MODE_TX )
+#define UART_OVERSAMPLING_16 16U
+
+#define UART_DIV_SAMPLING16( PCLK, BAUD )                                                          \
+    ( ( uint32_t )( ( ( ( uint64_t )( PCLK ) ) * 25U ) / ( 4U * ( ( uint64_t )( BAUD ) ) ) ) )
+#define UART_DIVMANT_SAMPLING16( PCLK, BAUD ) ( UART_DIV_SAMPLING16( PCLK, BAUD ) / 100U )
+#define UART_DIVFRAQ_SAMPLING16( PCLK, BAUD )                                                      \
+    ( ( ( ( UART_DIV_SAMPLING16( PCLK, BAUD ) - ( UART_DIVMANT_SAMPLING16( PCLK, BAUD ) * 100U ) ) \
+          * 16U )                                                                                  \
+        + 50U )                                                                                    \
+      / 100U )
+#define UART_BRR_SAMPLING16( PCLK, BAUD )                                                          \
+    ( ( UART_DIVMANT_SAMPLING16( PCLK, BAUD ) << 4U )                                              \
+      + ( UART_DIVFRAQ_SAMPLING16( PCLK, BAUD ) & 0xF0U )                                          \
+      + ( UART_DIVFRAQ_SAMPLING16( PCLK, BAUD ) & 0x0FU ) )
 
 /* GPIO pin values used by the DUT UART static hardware selection placeholders. */
 #define GPIO_PIN_0 ( ( uint16_t )0x0001 )
@@ -169,6 +183,7 @@ typedef struct
     uint32_t StopBits;
     uint32_t Parity;
     uint32_t Mode;
+    uint32_t OverSampling;
 } UART_InitTypeDef;
 
 typedef struct
@@ -264,6 +279,8 @@ static UART_HandleTypeDef huart3 = { 0 };
 
 extern uint32_t mock_irq_disable_count;
 extern uint32_t mock_irq_enable_count;
+extern uint32_t mock_pclk1_frequency_hz;
+extern uint32_t mock_pclk2_frequency_hz;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -275,6 +292,8 @@ HAL_StatusTypeDef HAL_UART_Init( UART_HandleTypeDef* huart );
 HAL_StatusTypeDef HAL_UART_DeInit( UART_HandleTypeDef* huart );
 HAL_StatusTypeDef HAL_UART_Receive_DMA( UART_HandleTypeDef* huart, uint8_t* pData, uint16_t Size );
 HAL_StatusTypeDef HAL_UART_AbortReceive( UART_HandleTypeDef* huart );
+uint32_t          HAL_RCC_GetPCLK1Freq( void );
+uint32_t          HAL_RCC_GetPCLK2Freq( void );
 int               HAL_UART_Receive_IT( UART_HandleTypeDef* huart, uint8_t* data, uint16_t size );
 int  HAL_UART_Transmit( UART_HandleTypeDef* huart, uint8_t* data, uint16_t size, uint32_t timeout );
 void HAL_UART_IRQHandler( UART_HandleTypeDef* huart );
