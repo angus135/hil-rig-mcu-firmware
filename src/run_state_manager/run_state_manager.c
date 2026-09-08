@@ -922,7 +922,11 @@ static bool RUN_STATE_MANAGER_StartExecutionTimer( void )
             return false;
     }
 
-    HW_TIMER_Start_Timer( EXECUTION_MANAGER_TIMER );
+    if ( !HW_TIMER_Start_Timer( EXECUTION_MANAGER_TIMER ) )
+    {
+        return false;
+    }
+
     execution_timer_running = true;
 
     return true;
