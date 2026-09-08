@@ -1174,8 +1174,7 @@ static uint32_t CONSOLE_Flash_EncodeSpiInstruction( uint8_t* destination, uint32
 {
     const uint32_t payload_length_bytes =
         EXECUTION_SPI_DATA_OFFSET_BYTES( 1U ) + packet_length_bytes;
-    const uint32_t operation_bytes =
-        EXECUTION_OPERATION_ENCODED_SIZE_BYTES( payload_length_bytes );
+    const uint32_t operation_bytes = EXECUTION_OPERATION_ENCODED_SIZE_BYTES( payload_length_bytes );
     const uint32_t instruction_word =
         operation_bytes | ( CONSOLE_FLASH_TEST_OPERATION_COUNT << 16U );
     const uint32_t operation_word = EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT
@@ -1492,7 +1491,7 @@ static void CONSOLE_Flash_UploadSpiTestCommand( uint16_t argc, char* argv[] )
         return;
     }
 
-    const uint32_t upload_bytes = repeat_count * instruction_bytes;
+    const uint32_t upload_bytes  = repeat_count * instruction_bytes;
     console_flash_run_tick_count = 0U;
 
     FlashManagerInstructionUploadRequestStatus_T status =

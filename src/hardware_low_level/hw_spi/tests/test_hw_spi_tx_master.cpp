@@ -757,9 +757,9 @@ TEST_F( HWSpiMasterTxTest, LoadTxPacketBatch_QueuesVariablePacketsAtomicallyInOr
 
 TEST_F( HWSpiMasterTxTest, LoadTxPacketBatch_PreservesPerPacketChipSelectFraming )
 {
-    const uint8_t  data[]         = { 0x10U, 0x11U, 0x20U, 0x21U, 0x22U, 0x30U };
-    const uint32_t packet_sizes[] = { 2U, 3U, 1U };
-    SPIPeripheralState_T* state   = HW_SPI_STATE( SPI_CHANNEL_1 );
+    const uint8_t         data[]         = { 0x10U, 0x11U, 0x20U, 0x21U, 0x22U, 0x30U };
+    const uint32_t        packet_sizes[] = { 2U, 3U, 1U };
+    SPIPeripheralState_T* state          = HW_SPI_STATE( SPI_CHANNEL_1 );
 
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_1_TX_DMA_IRQN ) );
     EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_1_TX_DMA_IRQN ) );
