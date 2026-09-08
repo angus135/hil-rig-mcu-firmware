@@ -45,6 +45,16 @@
  *  ARR, CCR, and PSC. The Execution Manager only forwards those prepared
  *  values at the scheduled tick.
  *
+ *  UART execution-path validation uses:
+ *
+ *      `test_config uart <channel> <3v3|5v|rs232> <baud> tx`
+ *      `flash upload_uart_test <channel> <byte> <length> <first_tick> <run_ticks>`
+ *      `flash upload_uart_test <channel> <byte> <length> <first_tick> <run_ticks> <repeat_count> <interval_ticks>`
+ *
+ *  The upload command creates one or more variable-length raw UART operations. It is
+ *  bounded only by the canonical field and console staging-buffer capacities;
+ *  it does not perform UART schedule-feasibility analysis.
+ *
  *  `execute_echo` is the execution-facing API test. It temporarily redirects
  *  the existing priority-5 TIM4 interrupt away from the production Execution
  *  Manager and into a diagnostic callback. The callback processes the
