@@ -36,6 +36,13 @@ corresponding HW queue, and triggers that batch. `EXEC_CAN_Receive()` converts
 received HW packets into execution-layer packet storage. These runtime paths do
 not add lifecycle checks.
 
+The Execution Manager currently calls `EXEC_CAN_Transmit()` through its
+`CAN_TRANSMIT` adapter. The adapter passes the aligned instruction payload as a
+packet batch without additional validation; the existing transmit validation
+and driver-owned queue copy are intentionally retained for this first
+integration. Schedule-feasibility admission and ISR-specific tightening are
+follow-up work.
+
 Transmit status and receive-drop diagnostics are exposed through
 `EXEC_CAN_Get_Tx_Status()` and `EXEC_CAN_Get_Rx_Dropped_Count()`.
 

@@ -94,6 +94,7 @@
 #include "external_flash.h"
 #include "execution_operation_payloads.h"
 #include "exec_analogue_output.h"
+#include "exec_can.h"
 #include "exec_digital_output.h"
 #include "exec_spi.h"
 #include "exec_uart.h"
@@ -139,6 +140,10 @@
     ( EXECUTION_OPERATION_ENCODED_SIZE_BYTES( EXECUTION_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES ) )
 #define CONSOLE_FLASH_AO_TEST_INSTRUCTION_BYTES                                                    \
     ( sizeof( ExecutionInstructionHeader_T ) + CONSOLE_FLASH_AO_TEST_OPERATION_BYTES )
+#define CONSOLE_FLASH_CAN_TEST_OPERATION_BYTES                                                     \
+    ( EXECUTION_OPERATION_ENCODED_SIZE_BYTES( EXECUTION_CAN_PACKET_SIZE_BYTES ) )
+#define CONSOLE_FLASH_CAN_TEST_INSTRUCTION_BYTES                                                   \
+    ( sizeof( ExecutionInstructionHeader_T ) + CONSOLE_FLASH_CAN_TEST_OPERATION_BYTES )
 /* Current board clock tree: TIM12 is APB1 x2; TIM8 is APB2 x2. */
 #define CONSOLE_FLASH_PWM_LV_TIMER_CLOCK_HZ ( 90000000U )
 #define CONSOLE_FLASH_PWM_HV_TIMER_CLOCK_HZ ( 180000000U )
@@ -172,6 +177,10 @@ _Static_assert( CONSOLE_FLASH_AO_TEST_OPERATION_BYTES == 8U,
                 "Analogue-output test operation size must follow the canonical encoding" );
 _Static_assert( CONSOLE_FLASH_AO_TEST_INSTRUCTION_BYTES == 16U,
                 "Analogue-output test instruction size must follow the canonical encoding" );
+_Static_assert( CONSOLE_FLASH_CAN_TEST_OPERATION_BYTES == 16U,
+                "CAN test operation size must follow the canonical encoding" );
+_Static_assert( CONSOLE_FLASH_CAN_TEST_INSTRUCTION_BYTES == 24U,
+                "CAN test instruction size must follow the canonical encoding" );
 
 /**-----------------------------------------------------------------------------
  *  Private Typedefs / Enums / Structures
@@ -286,6 +295,9 @@ static void CONSOLE_Flash_EncodePwmInstruction( uint8_t* destination, uint32_t t
 static void
 CONSOLE_Flash_EncodeAnalogueOutputInstruction( uint8_t* destination, uint32_t timestamp,
                                                const AnalogueOutputPreparedFrame_T* frame );
+static uint32_t CONSOLE_Flash_EncodeCanInstruction( uint8_t* destination, uint32_t timestamp,
+                                                    uint8_t channel, uint16_t id, uint8_t value,
+                                                    uint8_t dlc );
 static uint32_t CONSOLE_Flash_EncodeUartInstruction( uint8_t* destination, uint32_t timestamp,
                                                      uint8_t channel, uint8_t value,
                                                      uint16_t payload_length_bytes );
@@ -308,6 +320,7 @@ static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadDigitalOutputTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadPwmTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadAnalogueOutputTestCommand( uint16_t argc, char* argv[] );
+static void CONSOLE_Flash_UploadCanTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadSpiTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadUartTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_PrepareCommand( void );
@@ -333,6 +346,8 @@ static void CONSOLE_Flash_PrintUsage( void )
                     "<duty_permille> <update_tick> <run_ticks>\r\n" );
     CONSOLE_Printf( "  flash upload_ao_test <channel 0..5> <voltage> "
                     "<update_tick> <run_ticks>\r\n" );
+    CONSOLE_Printf( "  flash upload_can_test <channel 1..2> <id 0..2047> <byte 0..255> "
+                    "<dlc 0..8> <first_tick> <run_ticks> [repeat_count interval_ticks]\r\n" );
     CONSOLE_Printf( "  flash upload_spi_test <channel 1..2> <byte> <length> "
                     "<first_tick> <run_ticks> [repeat_count interval_ticks]\r\n" );
     CONSOLE_Printf( "  flash upload_uart_test <channel 1..2> <byte> <length> "
@@ -1180,6 +1195,30 @@ CONSOLE_Flash_EncodeAnalogueOutputInstruction( uint8_t* destination, uint32_t ti
     ( void )memcpy( &destination[12], frame->bytes, EXECUTION_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES );
 }
 
+static uint32_t CONSOLE_Flash_EncodeCanInstruction( uint8_t* destination, uint32_t timestamp,
+                                                    uint8_t channel, uint16_t id, uint8_t value,
+                                                    uint8_t dlc )
+{
+    const uint32_t instruction_word =
+        CONSOLE_FLASH_CAN_TEST_OPERATION_BYTES | ( CONSOLE_FLASH_TEST_OPERATION_COUNT << 16U );
+    const uint32_t operation_word = EXECUTION_OPERATION_OPCODE_CAN_TRANSMIT
+                                    | ( ( uint32_t )channel << 8U )
+                                    | ( EXECUTION_CAN_PACKET_SIZE_BYTES << 16U );
+
+    CONSOLE_Flash_WriteU32Le( &destination[0], timestamp );
+    CONSOLE_Flash_WriteU32Le( &destination[4], instruction_word );
+    CONSOLE_Flash_WriteU32Le( &destination[8], operation_word );
+    ( void )memset( &destination[12], 0,
+                    CONSOLE_FLASH_CAN_TEST_OPERATION_BYTES
+                        - EXECUTION_OPERATION_HEADER_SIZE_BYTES );
+    CONSOLE_Flash_WriteU16Le( &destination[12], id );
+    destination[14] = dlc;
+    ( void )memset( &destination[15], value, dlc );
+
+    return ( uint32_t )sizeof( ExecutionInstructionHeader_T )
+           + CONSOLE_FLASH_CAN_TEST_OPERATION_BYTES;
+}
+
 static uint32_t CONSOLE_Flash_EncodeUartInstruction( uint8_t* destination, uint32_t timestamp,
                                                      uint8_t channel, uint8_t value,
                                                      uint16_t payload_length_bytes )
@@ -1536,6 +1575,162 @@ static void CONSOLE_Flash_UploadAnalogueOutputTestCommand( uint16_t argc, char* 
     CONSOLE_Printf( "Analogue-output upload PASS: channel=%lu voltage=%s "
                     "update_tick=%lu run_ticks=%lu.\r\n",
                     ( unsigned long )channel, argv[3], ( unsigned long )update_tick,
+                    ( unsigned long )run_ticks );
+    CONSOLE_Printf( "Next: finish configuring the RSM, then 'run_state execute %lu 0'.\r\n",
+                    ( unsigned long )console_flash_run_tick_count );
+}
+
+/** Uploads repeated single-frame CAN transfers through the production instruction path. */
+static void CONSOLE_Flash_UploadCanTestCommand( uint16_t argc, char* argv[] )
+{
+    uint32_t channel        = 0U;
+    uint32_t identifier     = 0U;
+    uint32_t value          = 0U;
+    uint32_t dlc            = 0U;
+    uint32_t first_tick     = 0U;
+    uint32_t run_ticks      = 0U;
+    uint32_t repeat_count   = 1U;
+    uint32_t interval_ticks = 0U;
+
+    if ( ( argc != 8U && argc != 10U ) || !CONSOLE_Flash_ParseU32( argv[2], &channel )
+         || !CONSOLE_Flash_ParseU32( argv[3], &identifier )
+         || !CONSOLE_Flash_ParseU32( argv[4], &value )
+         || !CONSOLE_Flash_ParseU32( argv[5], &dlc )
+         || !CONSOLE_Flash_ParseU32( argv[6], &first_tick )
+         || !CONSOLE_Flash_ParseU32( argv[7], &run_ticks )
+         || ( argc == 10U
+              && ( !CONSOLE_Flash_ParseU32( argv[8], &repeat_count )
+                   || !CONSOLE_Flash_ParseU32( argv[9], &interval_ticks ) ) )
+         || channel < 1U || channel > EXEC_CAN_CHANNEL_COUNT
+         || identifier > EXEC_CAN_STANDARD_ID_MAX || value > UINT8_MAX
+         || dlc > EXEC_CAN_MAX_PAYLOAD_SIZE || first_tick == 0U || repeat_count == 0U
+         || ( repeat_count > 1U && interval_ticks == 0U ) )
+    {
+        CONSOLE_Printf( "Usage: flash upload_can_test <channel 1..2> <id 0..2047> "
+                        "<byte 0..255> <dlc 0..8> <first_tick > 0> <run_ticks> "
+                        "[repeat_count interval_ticks]\r\n" );
+        return;
+    }
+
+    if ( repeat_count > 1U
+         && ( repeat_count - 1U ) > ( ( UINT32_MAX - first_tick ) / interval_ticks ) )
+    {
+        CONSOLE_Printf( "CAN repeat schedule exceeds the timestamp range.\r\n" );
+        return;
+    }
+
+    const uint32_t last_tick = first_tick + ( ( repeat_count - 1U ) * interval_ticks );
+    if ( run_ticks < last_tick )
+    {
+        CONSOLE_Printf( "Run ticks must include the final CAN transmit tick (%lu).\r\n",
+                        ( unsigned long )last_tick );
+        return;
+    }
+
+    if ( !CONSOLE_Flash_RequireIdle() )
+    {
+        return;
+    }
+
+    DutDriverConfiguration_T configuration = { 0 };
+    if ( !TEST_CONFIGURATION_GetActive( &configuration )
+         || !configuration.can_channels[channel - 1U].is_enabled )
+    {
+        CONSOLE_Printf( "CAN channel %lu is not enabled in the active test configuration.\r\n",
+                        ( unsigned long )channel );
+        return;
+    }
+
+    const uint32_t instruction_bytes = CONSOLE_FLASH_CAN_TEST_INSTRUCTION_BYTES;
+    if ( repeat_count > ( UINT32_MAX / instruction_bytes ) )
+    {
+        CONSOLE_Printf( "CAN repeat stream exceeds the upload length range.\r\n" );
+        return;
+    }
+
+    const uint32_t upload_bytes = repeat_count * instruction_bytes;
+    console_flash_run_tick_count = 0U;
+
+    FlashManagerInstructionUploadRequestStatus_T status =
+        FLASH_MANAGER_RequestInstructionUploadStart( upload_bytes );
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED
+         || !CONSOLE_Flash_WaitForState( FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD,
+                                         CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "CAN upload start failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    for ( uint32_t repeat_index = 0U; repeat_index < repeat_count; repeat_index++ )
+    {
+        const uint32_t transmit_tick = first_tick + ( repeat_index * interval_ticks );
+        ( void )CONSOLE_Flash_EncodeCanInstruction(
+            console_flash_write_buffer, transmit_tick, ( uint8_t )( channel - 1U ),
+            ( uint16_t )identifier, ( uint8_t )value, ( uint8_t )dlc );
+
+        TickType_t progress_started_at = xTaskGetTickCount();
+        for ( ;; )
+        {
+            status = FLASH_MANAGER_SubmitInstructionUploadBytes( console_flash_write_buffer,
+                                                                 instruction_bytes );
+            if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
+            {
+                break;
+            }
+
+            if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
+            {
+                CONSOLE_Printf( "CAN instruction %lu submission failed (status=%d).\r\n",
+                                ( unsigned long )( repeat_index + 1U ), ( int )status );
+                return;
+            }
+
+            if ( CONSOLE_Flash_HasTimedOut( progress_started_at,
+                                            CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            {
+                CONSOLE_Printf( "CAN upload timed out at instruction %lu.\r\n",
+                                ( unsigned long )( repeat_index + 1U ) );
+                return;
+            }
+
+            vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+        }
+    }
+
+    TickType_t finish_started_at = xTaskGetTickCount();
+    do
+    {
+        status = FLASH_MANAGER_RequestInstructionUploadFinish();
+        if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
+        {
+            if ( CONSOLE_Flash_HasTimedOut( finish_started_at,
+                                            CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            {
+                CONSOLE_Printf( "CAN upload finalisation timed out.\r\n" );
+                return;
+            }
+            vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+        }
+    } while ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY );
+
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED
+         || !CONSOLE_Flash_WaitForState( FLASH_MANAGER_STATE_IDLE,
+                                         CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "CAN upload finalisation failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    console_flash_last_upload_records = repeat_count;
+    console_flash_last_upload_bytes   = upload_bytes;
+    console_flash_run_tick_count      = run_ticks;
+    CONSOLE_Flash_ResetExecutionHarnessState();
+
+    CONSOLE_Printf( "CAN upload PASS: channel=%lu id=0x%03lX byte=0x%02lX dlc=%lu "
+                    "first_tick=%lu repeats=%lu interval_ticks=%lu run_ticks=%lu.\r\n",
+                    ( unsigned long )channel, ( unsigned long )identifier,
+                    ( unsigned long )value, ( unsigned long )dlc, ( unsigned long )first_tick,
+                    ( unsigned long )repeat_count, ( unsigned long )interval_ticks,
                     ( unsigned long )run_ticks );
     CONSOLE_Printf( "Next: finish configuring the RSM, then 'run_state execute %lu 0'.\r\n",
                     ( unsigned long )console_flash_run_tick_count );
@@ -2408,6 +2603,12 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
     if ( strcmp( argv[1], "upload_ao_test" ) == 0 )
     {
         CONSOLE_Flash_UploadAnalogueOutputTestCommand( argc, argv );
+        return;
+    }
+
+    if ( strcmp( argv[1], "upload_can_test" ) == 0 )
+    {
+        CONSOLE_Flash_UploadCanTestCommand( argc, argv );
         return;
     }
 
