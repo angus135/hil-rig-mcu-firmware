@@ -212,6 +212,10 @@ typedef struct
  * @note   This function performs validation of the provided configuration
  *         before applying any changes to the hardware.
  *
+ * @note   Baud-rate validation reads the selected USART's live peripheral
+ *         clock and rejects values whose oversampling-by-16 BRR divider cannot
+ *         be represented. No fixed minimum baud is imposed.
+ *
  * @note   The configuration is stored within the low-level driver and used
  *         later during start operations. This function does not enable RX or
  *         TX operation.
