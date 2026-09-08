@@ -22,6 +22,7 @@
 #include "exec_pwm_gen.h"
 #include "exec_spi.h"
 #include "exec_uart.h"
+#include "exec_analogue_output.h"
 
 #include <stdint.h>
 
@@ -44,6 +45,8 @@ static const ExecutionOperationAdapter_T
         [EXECUTION_OPERATION_OPCODE_PWM_UPDATE]    = EXECUTION_OPERATION_ADAPTER_ApplyPwmUpdate,
         [EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT]  = EXECUTION_OPERATION_ADAPTER_ApplySpiTransmit,
         [EXECUTION_OPERATION_OPCODE_UART_TRANSMIT] = EXECUTION_OPERATION_ADAPTER_ApplyUartTransmit,
+        [EXECUTION_OPERATION_OPCODE_ANALOGUE_OUTPUT_BATCH] =
+            EXECUTION_OPERATION_ADAPTER_ApplyAnalogueOutput,
 };
 
 /**-----------------------------------------------------------------------------
@@ -154,6 +157,17 @@ EXECUTION_OPERATION_ADAPTER_ApplyUartTransmit( uint8_t channel, const uint8_t* p
                                                uint16_t payload_length_bytes )
 {
     return EXEC_UART_Transmit( ( ExecUartChannel_T )channel, payload, payload_length_bytes )
+               ? EXECUTION_OPERATION_ADAPTER_ACCEPTED
+               : EXECUTION_OPERATION_ADAPTER_REJECTED;
+}
+
+ExecutionOperationAdapterResult_T
+EXECUTION_OPERATION_ADAPTER_ApplyAnalogueOutput( uint8_t channel, const uint8_t* payload,
+                                                 uint16_t payload_length_bytes )
+{
+    ( void )channel;
+
+    return EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( payload, payload_length_bytes )
                ? EXECUTION_OPERATION_ADAPTER_ACCEPTED
                : EXECUTION_OPERATION_ADAPTER_REJECTED;
 }

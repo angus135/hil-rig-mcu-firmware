@@ -39,6 +39,7 @@ target_link_libraries(execution_manager
         exec_pwm_gen
         exec_uart
         exec_spi
+        exec_analogue_output
 )
 
 # -----------------------------

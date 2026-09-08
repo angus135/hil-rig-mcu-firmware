@@ -153,6 +153,10 @@ ExecutionOperationAdapterResult_T
 EXECUTION_OPERATION_ADAPTER_ApplyUartTransmit( uint8_t channel, const uint8_t* payload,
                                                uint16_t payload_length_bytes );
 
+ExecutionOperationAdapterResult_T
+EXECUTION_OPERATION_ADAPTER_ApplyAnalogueOutput( uint8_t channel, const uint8_t* payload,
+                                                 uint16_t payload_length_bytes );
+
 #ifdef __cplusplus
 }
 #endif
