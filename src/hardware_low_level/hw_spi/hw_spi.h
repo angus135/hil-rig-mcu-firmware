@@ -403,6 +403,28 @@ bool HW_SPI_Load_Tx_Packets( SPIChannel_T peripheral, const uint8_t* data,
                              uint32_t packet_size_bytes, uint32_t packet_count );
 
 /**
+ * @brief Atomically queue a variable-size packet batch.
+ *
+ * Master mode preserves every supplied packet boundary as a separate
+ * software-CS-framed transfer. Slave mode queues the concatenated data as one
+ * byte stream because the external master owns transaction boundaries. The
+ * complete request is accepted or rejected without partial queue mutation.
+ * The caller must supply a valid channel, storage, packet count, packet sizes,
+ * and frame-aligned lengths. These instruction-shape invariants are not
+ * revalidated on the execution path.
+ *
+ * @param peripheral Master- or slave-mode SPI channel to update.
+ * @param data Contiguous source storage containing every packet in order.
+ * @param packet_sizes_bytes Size of each packet in bytes.
+ * @param packet_count Number of packet-size entries.
+ *
+ * @return true if the complete batch was queued; false if live queue capacity
+ *     or contiguous master-packet placement cannot accept it.
+ */
+bool HW_SPI_Load_Tx_Packet_Batch( SPIChannel_T peripheral, const uint8_t* data,
+                                  const uint32_t* packet_sizes_bytes, uint32_t packet_count );
+
+/**
  * @brief Trigger transmission of queued TX data for a channel.
  *
  * Starts the transmit DMA for the selected SPI channel if queued TX data is

@@ -325,6 +325,97 @@ bool HW_SPI_TX_Load_Master_Packets( SPIPeripheralState_T* peripheral_state, cons
 }
 
 /**
+ * @brief Atomically load variable-size packets into the master TX queue.
+ *
+ * The caller holds off the channel TX DMA IRQ and guarantees a valid packet
+ * description. Runtime descriptor, byte-capacity, and contiguous-layout checks
+ * complete before queue storage or bookkeeping is modified.
+ */
+bool HW_SPI_TX_Load_Master_Packet_Batch( SPIPeripheralState_T* peripheral_state,
+                                         const uint8_t* data, const uint32_t* packet_sizes_bytes,
+                                         uint32_t packet_count )
+{
+    uint16_t packet_starts[TX_PACKET_QUEUE_DEPTH];
+    uint32_t candidate_write_position = peripheral_state->tx_write_position;
+    uint32_t queued_bytes             = 0U;
+
+    if ( packet_count
+         > ( uint32_t )( TX_PACKET_QUEUE_DEPTH - peripheral_state->tx_num_packets_pending ) )
+    {
+        return false;
+    }
+
+    for ( uint32_t packet_index = 0U; packet_index < packet_count; packet_index++ )
+    {
+        const uint32_t packet_size_bytes = packet_sizes_bytes[packet_index];
+        uint32_t       contiguous_free   = 0U;
+
+        if ( HW_SPI_TX_Get_Used_Space_Fast( peripheral_state ) + queued_bytes
+             < TX_BUFFER_SIZE_BYTES )
+        {
+            if ( candidate_write_position < peripheral_state->tx_read_position )
+            {
+                contiguous_free = peripheral_state->tx_read_position - candidate_write_position;
+            }
+            else if ( candidate_write_position >= peripheral_state->tx_read_position
+                      || HW_SPI_TX_Get_Used_Space_Fast( peripheral_state ) + queued_bytes == 0U )
+            {
+                contiguous_free = TX_BUFFER_SIZE_BYTES - candidate_write_position;
+            }
+        }
+
+        if ( packet_size_bytes > contiguous_free )
+        {
+            if ( candidate_write_position < peripheral_state->tx_read_position )
+            {
+                return false;
+            }
+
+            candidate_write_position = 0U;
+            contiguous_free          = peripheral_state->tx_read_position;
+            if ( contiguous_free == 0U
+                 && HW_SPI_TX_Get_Used_Space_Fast( peripheral_state ) + queued_bytes == 0U )
+            {
+                contiguous_free = TX_BUFFER_SIZE_BYTES;
+            }
+
+            if ( packet_size_bytes > contiguous_free )
+            {
+                return false;
+            }
+        }
+
+        packet_starts[packet_index] = ( uint16_t )candidate_write_position;
+        candidate_write_position =
+            HW_SPI_Wrap_Tx_Buffer_Index( candidate_write_position + packet_size_bytes );
+        queued_bytes += packet_size_bytes;
+    }
+
+    uint32_t data_offset_bytes = 0U;
+    for ( uint32_t packet_index = 0U; packet_index < packet_count; packet_index++ )
+    {
+        const uint32_t           packet_size_bytes = packet_sizes_bytes[packet_index];
+        SPITxPacketDescriptor_T* descriptor =
+            &peripheral_state->tx_packet_descriptors[peripheral_state->tx_packet_write_position];
+
+        memcpy( &peripheral_state->tx_buffer[packet_starts[packet_index]], &data[data_offset_bytes],
+                packet_size_bytes );
+        descriptor->start_index = packet_starts[packet_index];
+        descriptor->size_bytes  = ( uint16_t )packet_size_bytes;
+        peripheral_state->tx_packet_write_position =
+            HW_SPI_Wrap_Tx_Packet_Index( peripheral_state->tx_packet_write_position + 1U );
+        data_offset_bytes += packet_size_bytes;
+    }
+
+    peripheral_state->tx_write_position = candidate_write_position;
+    peripheral_state->tx_num_packets_pending =
+        ( uint8_t )( peripheral_state->tx_num_packets_pending + packet_count );
+    peripheral_state->tx_num_bytes_pending += queued_bytes;
+
+    return true;
+}
+
+/**
  * @brief Start a master-mode TX DMA transfer for exactly one queued packet.
  *
  * @details
