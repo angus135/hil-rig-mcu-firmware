@@ -122,7 +122,10 @@ static uint32_t          last_transition_duration_ms  = 0U;
 static bool RUN_STATE_MANAGER_Notify( uint32_t notification );
 static void RUN_STATE_MANAGER_HandleFlashFault( bool from_isr );
 static void RUN_STATE_MANAGER_HandleExecutionTerminalFromISR( ExecutionManagerTickResult_T result,
-                                                              ExecutionManagerFailure_T failure );
+                                                               ExecutionManagerFailure_T failure,
+                                                               BaseType_t* higher_priority_task_woken );
+static bool RUN_STATE_MANAGER_RequestFaultFromISRInternal(
+    RunStateFaultReason_T reason, BaseType_t* higher_priority_task_woken );
 static bool RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR( void );
 static void RUN_STATE_MANAGER_RecordFault( RunStateFaultReason_T reason );
 static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason );
@@ -196,7 +199,8 @@ static void RUN_STATE_MANAGER_HandleFlashFault( bool from_isr )
 }
 
 static void RUN_STATE_MANAGER_HandleExecutionTerminalFromISR( ExecutionManagerTickResult_T result,
-                                                              ExecutionManagerFailure_T    failure )
+                                                               ExecutionManagerFailure_T    failure,
+                                                               BaseType_t* higher_priority_task_woken )
 {
     ( void )failure;
     execution_abort_requested = true;
@@ -207,12 +211,13 @@ static void RUN_STATE_MANAGER_HandleExecutionTerminalFromISR( ExecutionManagerTi
         {
             ( void )xTaskNotifyFromISR( run_state_manager_task_handle,
                                         RUN_STATE_MANAGER_NOTIFY_EXECUTION_COMPLETE, eSetBits,
-                                        NULL );
+                                        higher_priority_task_woken );
         }
     }
     else
     {
-        ( void )RUN_STATE_MANAGER_RequestFaultFromISR( RUN_STATE_FAULT_EXECUTION_MANAGER );
+        ( void )RUN_STATE_MANAGER_RequestFaultFromISRInternal(
+            RUN_STATE_FAULT_EXECUTION_MANAGER, higher_priority_task_woken );
     }
 }
 
@@ -1358,7 +1363,8 @@ bool RUN_STATE_MANAGER_RequestFault( RunStateFaultReason_T reason )
     return false;
 }
 
-bool RUN_STATE_MANAGER_RequestFaultFromISR( RunStateFaultReason_T reason )
+static bool RUN_STATE_MANAGER_RequestFaultFromISRInternal(
+    RunStateFaultReason_T reason, BaseType_t* higher_priority_task_woken )
 {
     if ( reason == RUN_STATE_FAULT_NONE )
     {
@@ -1378,8 +1384,13 @@ bool RUN_STATE_MANAGER_RequestFaultFromISR( RunStateFaultReason_T reason )
     }
 
     return xTaskNotifyFromISR( run_state_manager_task_handle, RUN_STATE_MANAGER_NOTIFY_FAULT,
-                               eSetBits, NULL )
+                               eSetBits, higher_priority_task_woken )
            == pdPASS;
+}
+
+bool RUN_STATE_MANAGER_RequestFaultFromISR( RunStateFaultReason_T reason )
+{
+    return RUN_STATE_MANAGER_RequestFaultFromISRInternal( reason, NULL );
 }
 
 bool RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR( void )

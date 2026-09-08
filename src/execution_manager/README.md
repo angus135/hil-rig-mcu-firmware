@@ -76,6 +76,12 @@ Manager exposes operations directly from aligned word storage. The operation
 walker relies on the Host Interface to validate the canonical stream before it
 is stored.
 
+Flash Manager instruction consumption and terminal lifecycle notification
+accumulate a FreeRTOS task-wake request supplied by the TIM4 handler. TIM4
+performs one `portYIELD_FROM_ISR()` only after the complete boundary service
+returns, allowing Flash Manager task work between ISR services without
+interrupting a measurement/output boundary.
+
 ## Instruction and operation contract
 
 One variable-length instruction contains all output operations for one

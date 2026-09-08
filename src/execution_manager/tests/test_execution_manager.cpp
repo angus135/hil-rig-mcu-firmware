@@ -18,13 +18,17 @@ static uint32_t                            consume_calls;
 static uint32_t                            terminal_callback_calls;
 static ExecutionManagerTickResult_T        terminal_callback_result;
 static ExecutionManagerFailure_T           terminal_callback_failure;
+static BaseType_t*                         terminal_callback_task_woken;
+static BaseType_t*                         consume_task_woken;
 
 static void TestTerminalCallback( ExecutionManagerTickResult_T result,
-                                  ExecutionManagerFailure_T    failure )
+                                  ExecutionManagerFailure_T    failure,
+                                  BaseType_t*                   higher_priority_task_woken )
 {
     terminal_callback_calls++;
     terminal_callback_result  = result;
     terminal_callback_failure = failure;
+    terminal_callback_task_woken = higher_priority_task_woken;
 }
 
 extern "C" FlashManagerInstructionReadStatus_T
@@ -40,7 +44,7 @@ FLASH_MANAGER_PeekNextInstructionFromISR( const FlashManagerInstructionView_T** 
 
 extern "C" bool FLASH_MANAGER_ConsumeInstructionFromISR( BaseType_t* task_woken )
 {
-    ( void )task_woken;
+    consume_task_woken = task_woken;
     consume_calls++;
     return consume_result;
 }
@@ -58,6 +62,12 @@ class ExecutionManagerTest : public ::testing::Test
 {
 protected:
     uint8_t operations[12] = {};
+    BaseType_t task_woken  = pdFALSE;
+
+    ExecutionManagerTickResult_T ProcessTick()
+    {
+        return EXECUTION_MANAGER_ProcessTickFromISR( &task_woken );
+    }
 
     void SetUp() override
     {
@@ -73,6 +83,8 @@ protected:
         terminal_callback_calls   = 0U;
         terminal_callback_result  = EXECUTION_MANAGER_TICK_CONTINUE;
         terminal_callback_failure = EXECUTION_MANAGER_FAILURE_NONE;
+        terminal_callback_task_woken = nullptr;
+        consume_task_woken           = nullptr;
         instruction               = {};
         instruction.operations    = operations;
     }
@@ -85,7 +97,7 @@ TEST_F( ExecutionManagerTest, PrepareRejectsZeroTicks )
 
 TEST_F( ExecutionManagerTest, TickWithoutPreparationFailsWithoutReadingFlash )
 {
-    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_FAILED );
     EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_NOT_PREPARED );
     EXPECT_EQ( peek_calls, 0U );
 }
@@ -94,9 +106,9 @@ TEST_F( ExecutionManagerTest, EmptyInstructionStreamStillCompletesConfiguredTick
 {
     ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 2U ) );
 
-    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_CONTINUE );
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_CONTINUE );
     EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 1U );
-    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_COMPLETE );
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_COMPLETE );
     EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 2U );
     EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_NONE );
     EXPECT_EQ( peek_calls, 1U );
@@ -107,7 +119,7 @@ TEST_F( ExecutionManagerTest, PrepareEstablishesTickZeroInitialCondition )
     ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 2U ) );
 
     EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 0U );
-    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_CONTINUE );
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_CONTINUE );
     EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 1U );
 }
 
@@ -117,7 +129,7 @@ TEST_F( ExecutionManagerTest, FutureInstructionRemainsUnconsumed )
     peek_status                  = FLASH_MANAGER_INSTRUCTION_AVAILABLE;
     ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 2U ) );
 
-    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_CONTINUE );
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_CONTINUE );
     EXPECT_EQ( adapter_calls, 0U );
     EXPECT_EQ( consume_calls, 0U );
 }
@@ -129,9 +141,10 @@ TEST_F( ExecutionManagerTest, DueInstructionIsAppliedThenConsumed )
     peek_status                        = FLASH_MANAGER_INSTRUCTION_AVAILABLE;
     ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
 
-    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_COMPLETE );
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_COMPLETE );
     EXPECT_EQ( adapter_calls, 1U );
     EXPECT_EQ( consume_calls, 1U );
+    EXPECT_EQ( consume_task_woken, &task_woken );
 }
 
 TEST_F( ExecutionManagerTest, LateInstructionFailsAndIsNotConsumed )
@@ -139,11 +152,11 @@ TEST_F( ExecutionManagerTest, LateInstructionFailsAndIsNotConsumed )
     instruction.header.timestamp = 2U;
     peek_status                  = FLASH_MANAGER_INSTRUCTION_AVAILABLE;
     ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 3U ) );
-    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_CONTINUE );
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_CONTINUE );
 
     instruction.header.timestamp = 1U;
 
-    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_FAILED );
     EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_INSTRUCTION_LATE );
     EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 2U );
     EXPECT_EQ( consume_calls, 0U );
@@ -155,7 +168,7 @@ TEST_F( ExecutionManagerTest, TimestampZeroIsLateAtFirstExecutionBoundary )
     peek_status                  = FLASH_MANAGER_INSTRUCTION_AVAILABLE;
     ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
 
-    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_FAILED );
     EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_INSTRUCTION_LATE );
     EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 1U );
     EXPECT_EQ( adapter_calls, 0U );
@@ -167,7 +180,7 @@ TEST_F( ExecutionManagerTest, InstructionUnderrunFailsTick )
     peek_status = FLASH_MANAGER_INSTRUCTION_NOT_BUFFERED;
     ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
 
-    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_FAILED );
     EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNDERRUN );
     EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 1U );
 }
@@ -177,7 +190,7 @@ TEST_F( ExecutionManagerTest, CorruptInstructionFailsTick )
     peek_status = FLASH_MANAGER_INSTRUCTION_CORRUPT;
     ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
 
-    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_FAILED );
     EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_INSTRUCTION_CORRUPT );
     EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 1U );
 }
@@ -189,7 +202,7 @@ TEST_F( ExecutionManagerTest, RejectedOperationLeavesInstructionUnconsumed )
     adapter_result               = EXECUTION_OPERATION_ADAPTER_REJECTED;
     ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
 
-    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_FAILED );
     EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_OPERATION_REJECTED );
     EXPECT_EQ( consume_calls, 0U );
 }
@@ -201,7 +214,7 @@ TEST_F( ExecutionManagerTest, ConsumeFailureIsReported )
     consume_result               = false;
     ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
 
-    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_FAILED );
     EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_INSTRUCTION_CONSUME );
 }
 
@@ -209,15 +222,16 @@ TEST_F( ExecutionManagerTest, CompletionRemainsLatchedIfAnotherInterruptArrives 
 {
     EXECUTION_MANAGER_SetTerminalCallback( TestTerminalCallback );
     ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
-    ASSERT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_COMPLETE );
+    ASSERT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_COMPLETE );
     uint32_t reads_at_completion = peek_calls;
 
-    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_COMPLETE );
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_COMPLETE );
     EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_NONE );
     EXPECT_EQ( peek_calls, reads_at_completion );
     EXPECT_EQ( terminal_callback_calls, 1U );
     EXPECT_EQ( terminal_callback_result, EXECUTION_MANAGER_TICK_COMPLETE );
     EXPECT_EQ( terminal_callback_failure, EXECUTION_MANAGER_FAILURE_NONE );
+    EXPECT_EQ( terminal_callback_task_woken, &task_woken );
 }
 
 TEST_F( ExecutionManagerTest, FailureRemainsLatchedIfAnotherInterruptArrives )
@@ -225,20 +239,21 @@ TEST_F( ExecutionManagerTest, FailureRemainsLatchedIfAnotherInterruptArrives )
     EXECUTION_MANAGER_SetTerminalCallback( TestTerminalCallback );
     peek_status = FLASH_MANAGER_INSTRUCTION_NOT_BUFFERED;
     ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
-    ASSERT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    ASSERT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_FAILED );
     uint32_t reads_at_failure = peek_calls;
 
-    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_FAILED );
     EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 1U );
     EXPECT_EQ( peek_calls, reads_at_failure );
     EXPECT_EQ( terminal_callback_calls, 1U );
     EXPECT_EQ( terminal_callback_result, EXECUTION_MANAGER_TICK_FAILED );
     EXPECT_EQ( terminal_callback_failure, EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNDERRUN );
+    EXPECT_EQ( terminal_callback_task_woken, &task_woken );
 }
 
 TEST_F( ExecutionManagerTest, PrepareClearsPreviousFailure )
 {
-    EXPECT_EQ( EXECUTION_MANAGER_ProcessTickFromISR(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_FAILED );
     ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
 
     EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_NONE );

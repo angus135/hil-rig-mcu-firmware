@@ -16,6 +16,7 @@ extern "C"
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "rtos_config.h"
 
 typedef enum
 {
@@ -36,7 +37,8 @@ typedef enum
 } ExecutionManagerTickResult_T;
 
 typedef void ( *ExecutionManagerTerminalCallback_T )( ExecutionManagerTickResult_T result,
-                                                      ExecutionManagerFailure_T    failure );
+                                                      ExecutionManagerFailure_T    failure,
+                                                      BaseType_t* higher_priority_task_woken );
 
 /**
  * @brief Prepares run-local state before the execution timer is started.
@@ -55,7 +57,14 @@ typedef void ( *ExecutionManagerTerminalCallback_T )( ExecutionManagerTickResult
  */
 bool EXECUTION_MANAGER_Prepare( uint32_t tick_count );
 
-/** Registers the lifecycle owner's terminal ISR notification callback. */
+/**
+ * @brief Registers the lifecycle owner's terminal ISR notification callback.
+ *
+ * The callback runs inside the execution timer ISR. It must use only ISR-safe
+ * operations and accumulate any requested task wake through
+ * higher_priority_task_woken. The outer timer ISR performs the single yield
+ * after all execution-boundary work has finished.
+ */
 void EXECUTION_MANAGER_SetTerminalCallback( ExecutionManagerTerminalCallback_T callback );
 
 /** Clears run-local state after the execution timer has been stopped. */
