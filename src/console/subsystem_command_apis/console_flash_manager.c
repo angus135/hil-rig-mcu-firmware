@@ -96,12 +96,14 @@
 #include "exec_digital_output.h"
 #include "flash_manager.h"
 #include "hw_nand.h"
+#include "hw_pwm_gen.h"
 #include "hw_qspi.h"
 #include "hw_timer.h"
 #ifndef TEST_BUILD
 #include "quadspi.h"
 #endif
 #include "rtos_config.h"
+#include "test_configuration.h"
 
 #include <errno.h>
 #include <stdbool.h>
@@ -128,6 +130,11 @@
 #define CONSOLE_FLASH_DO_TEST_INSTRUCTION_BYTES ( 20U )
 #define CONSOLE_FLASH_DO_TEST_DEFAULT_DELAY_TICKS ( 100U )
 #define CONSOLE_FLASH_DO_TEST_DEFAULT_HIGH_TICKS ( 300U )
+#define CONSOLE_FLASH_PWM_TEST_OPERATION_BYTES ( 12U )
+#define CONSOLE_FLASH_PWM_TEST_INSTRUCTION_BYTES ( 20U )
+/* Current board clock tree: TIM12 is APB1 x2; TIM8 is APB2 x2. */
+#define CONSOLE_FLASH_PWM_LV_TIMER_CLOCK_HZ ( 90000000U )
+#define CONSOLE_FLASH_PWM_HV_TIMER_CLOCK_HZ ( 180000000U )
 
 /* Exact TIM4 divisors for the current 90 MHz timer clock. */
 #define CONSOLE_FLASH_EXECUTION_100HZ_PSC ( 14U )
@@ -146,6 +153,14 @@
 
 _Static_assert( sizeof( ExecutionInstructionHeader_T ) == sizeof( FlashManagerResultHeader_T ),
                 "Echo verification requires identical packed header sizes" );
+_Static_assert( CONSOLE_FLASH_PWM_TEST_OPERATION_BYTES
+                    == EXECUTION_OPERATION_ENCODED_SIZE_BYTES(
+                        EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES ),
+                "PWM test operation size must follow the canonical encoding" );
+_Static_assert( CONSOLE_FLASH_PWM_TEST_INSTRUCTION_BYTES
+                    == sizeof( ExecutionInstructionHeader_T )
+                           + CONSOLE_FLASH_PWM_TEST_OPERATION_BYTES,
+                "PWM test instruction size must follow the canonical encoding" );
 
 /**-----------------------------------------------------------------------------
  *  Private Typedefs / Enums / Structures
@@ -210,10 +225,10 @@ static bool         console_flash_manager_needs_task  = false;
 static uint8_t console_flash_write_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES];
 static uint8_t console_flash_read_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES];
 
-static uint32_t                              console_flash_last_upload_records = 0U;
-static uint32_t                              console_flash_last_upload_bytes   = 0U;
-static uint8_t                               console_flash_last_upload_seed    = 0U;
-static uint32_t                              console_flash_do_test_tick_count  = 0U;
+static uint32_t console_flash_last_upload_records = 0U;
+static uint32_t console_flash_last_upload_bytes   = 0U;
+static uint8_t  console_flash_last_upload_seed    = 0U;
+static uint32_t console_flash_run_tick_count      = 0U;
 
 static ConsoleFlashExecutionTestContext_T console_flash_execution_test = {
     .state                        = CONSOLE_FLASH_EXECUTION_TEST_NOT_RUN,
@@ -249,10 +264,14 @@ static void     CONSOLE_Flash_StopExecutionHarness( void );
 static void     CONSOLE_Flash_EndExecutionHarnessFromISR( ConsoleFlashExecutionTestState_T state,
                                                           ConsoleFlashExecutionFailure_T   failure );
 static void     CONSOLE_Flash_ExecutionEchoFromISR( void );
+static void     CONSOLE_Flash_WriteU16Le( uint8_t* destination, uint16_t value );
 static void     CONSOLE_Flash_WriteU32Le( uint8_t* destination, uint32_t value );
 static void CONSOLE_Flash_EncodeDigitalOutputInstruction( uint8_t* destination, uint32_t timestamp,
                                                           uint32_t high_bitmask,
                                                           uint32_t low_bitmask );
+static void CONSOLE_Flash_EncodePwmInstruction( uint8_t* destination, uint32_t timestamp,
+                                                uint8_t                            channel,
+                                                const ExecutionPwmUpdatePayload_T* payload );
 static void CONSOLE_Flash_FillPattern( uint8_t* destination, uint32_t stream_offset,
                                        uint32_t length, uint8_t seed );
 static bool CONSOLE_Flash_VerifyPattern( const uint8_t* data, uint32_t stream_offset,
@@ -267,6 +286,7 @@ static void CONSOLE_Flash_StatusCommand( void );
 static void CONSOLE_Flash_ExternalTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadDigitalOutputTestCommand( uint16_t argc, char* argv[] );
+static void CONSOLE_Flash_UploadPwmTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_PrepareCommand( void );
 static void CONSOLE_Flash_ExecuteEchoCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_FinaliseCommand( void );
@@ -285,8 +305,9 @@ static void CONSOLE_Flash_PrintUsage( void )
     CONSOLE_Printf( "  flash status\r\n" );
     CONSOLE_Printf( "  flash external_test [seed]\r\n" );
     CONSOLE_Printf( "  flash upload_test [instruction_count] [seed]\r\n" );
-    CONSOLE_Printf(
-        "  flash upload_do_test <channel 1..10> [delay_ticks] [high_ticks]\r\n" );
+    CONSOLE_Printf( "  flash upload_do_test <channel 1..10> [delay_ticks] [high_ticks]\r\n" );
+    CONSOLE_Printf( "  flash upload_pwm_test <channel 1..2> <frequency_hz> "
+                    "<duty_permille> <update_tick> <run_ticks>\r\n" );
     CONSOLE_Printf( "  flash prepare\r\n" );
     CONSOLE_Printf( "  flash execute_echo [100|1000|10000]\r\n" );
     CONSOLE_Printf( "  flash finalise\r\n" );
@@ -904,7 +925,7 @@ static void CONSOLE_Flash_StatusCommand( void )
 /** Programs and verifies full and partial pages in both logical partitions. */
 static void CONSOLE_Flash_ExternalTestCommand( uint16_t argc, char* argv[] )
 {
-    console_flash_do_test_tick_count = 0U;
+    console_flash_run_tick_count = 0U;
     if ( !CONSOLE_Flash_RequireIdle() )
     {
         return;
@@ -1071,6 +1092,12 @@ static void CONSOLE_Flash_WriteU32Le( uint8_t* destination, uint32_t value )
     destination[3] = ( uint8_t )( value >> 24U );
 }
 
+static void CONSOLE_Flash_WriteU16Le( uint8_t* destination, uint16_t value )
+{
+    destination[0] = ( uint8_t )value;
+    destination[1] = ( uint8_t )( value >> 8U );
+}
+
 static void CONSOLE_Flash_EncodeDigitalOutputInstruction( uint8_t* destination, uint32_t timestamp,
                                                           uint32_t high_bitmask,
                                                           uint32_t low_bitmask )
@@ -1085,6 +1112,26 @@ static void CONSOLE_Flash_EncodeDigitalOutputInstruction( uint8_t* destination, 
     CONSOLE_Flash_WriteU32Le( &destination[8], operation_word );
     CONSOLE_Flash_WriteU32Le( &destination[12], high_bitmask );
     CONSOLE_Flash_WriteU32Le( &destination[16], low_bitmask );
+}
+
+static void CONSOLE_Flash_EncodePwmInstruction( uint8_t* destination, uint32_t timestamp,
+                                                uint8_t                            channel,
+                                                const ExecutionPwmUpdatePayload_T* payload )
+{
+    const uint32_t instruction_word =
+        CONSOLE_FLASH_PWM_TEST_OPERATION_BYTES | ( CONSOLE_FLASH_TEST_OPERATION_COUNT << 16U );
+    const uint32_t operation_word = EXECUTION_OPERATION_OPCODE_PWM_UPDATE
+                                    | ( ( uint32_t )channel << 8U )
+                                    | ( EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES << 16U );
+
+    CONSOLE_Flash_WriteU32Le( &destination[0], timestamp );
+    CONSOLE_Flash_WriteU32Le( &destination[4], instruction_word );
+    CONSOLE_Flash_WriteU32Le( &destination[8], operation_word );
+    CONSOLE_Flash_WriteU16Le( &destination[12], payload->arr );
+    CONSOLE_Flash_WriteU16Le( &destination[14], payload->ccr );
+    CONSOLE_Flash_WriteU16Le( &destination[16], payload->psc );
+    destination[18] = 0U;
+    destination[19] = 0U;
 }
 
 /** Uploads two canonical digital-output instructions through the public upload API. */
@@ -1113,7 +1160,7 @@ static void CONSOLE_Flash_UploadDigitalOutputTestCommand( uint16_t argc, char* a
         return;
     }
 
-    console_flash_do_test_tick_count = 0U;
+    console_flash_run_tick_count = 0U;
 
     GPIOOutput_T           gpio_output = ( GPIOOutput_T )( DIGITAL_OUTPUT_0 + channel - 1U );
     DigitalOutputPinmask_T pin_mask =
@@ -1138,7 +1185,7 @@ static void CONSOLE_Flash_UploadDigitalOutputTestCommand( uint16_t argc, char* a
     }
 
     CONSOLE_Flash_EncodeDigitalOutputInstruction( &console_flash_write_buffer[0], delay_ticks,
-                                                   pin_mask, 0U );
+                                                  pin_mask, 0U );
     CONSOLE_Flash_EncodeDigitalOutputInstruction(
         &console_flash_write_buffer[CONSOLE_FLASH_DO_TEST_INSTRUCTION_BYTES], low_tick, 0U,
         pin_mask );
@@ -1177,16 +1224,124 @@ static void CONSOLE_Flash_UploadDigitalOutputTestCommand( uint16_t argc, char* a
 
     console_flash_last_upload_records = CONSOLE_FLASH_DO_TEST_INSTRUCTION_COUNT;
     console_flash_last_upload_bytes   = upload_bytes;
-    console_flash_do_test_tick_count  = low_tick;
+    console_flash_run_tick_count      = low_tick;
     CONSOLE_Flash_ResetExecutionHarnessState();
 
     CONSOLE_Printf( "Digital-output upload PASS: channel=%lu mask=0x%08lX high_tick=%lu "
                     "low_tick=%lu run_ticks=%lu.\r\n",
                     ( unsigned long )channel, ( unsigned long )pin_mask,
                     ( unsigned long )delay_ticks, ( unsigned long )low_tick,
-                    ( unsigned long )console_flash_do_test_tick_count );
+                    ( unsigned long )console_flash_run_tick_count );
     CONSOLE_Printf( "Next: configure the RSM, then 'run_state execute %lu 0'.\r\n",
-                    ( unsigned long )console_flash_do_test_tick_count );
+                    ( unsigned long )console_flash_run_tick_count );
+}
+
+/** Uploads one driver-prepared PWM register update through the public upload API. */
+static void CONSOLE_Flash_UploadPwmTestCommand( uint16_t argc, char* argv[] )
+{
+    uint32_t channel       = 0U;
+    uint32_t frequency_hz  = 0U;
+    uint32_t duty_permille = 0U;
+    uint32_t update_tick   = 0U;
+    uint32_t run_ticks     = 0U;
+
+    if ( argc != 7U || !CONSOLE_Flash_ParseU32( argv[2], &channel )
+         || !CONSOLE_Flash_ParseU32( argv[3], &frequency_hz )
+         || !CONSOLE_Flash_ParseU32( argv[4], &duty_permille )
+         || !CONSOLE_Flash_ParseU32( argv[5], &update_tick )
+         || !CONSOLE_Flash_ParseU32( argv[6], &run_ticks ) || channel < 1U
+         || channel > EXEC_PWM_GEN_CHANNEL_COUNT || duty_permille > 1000U || update_tick == 0U
+         || run_ticks < update_tick )
+    {
+        CONSOLE_Printf(
+            "Usage: flash upload_pwm_test <channel 1..2> <frequency_hz> "
+            "<duty_permille 0..1000> <update_tick > 0> <run_ticks >= update_tick>\r\n" );
+        return;
+    }
+
+    if ( !CONSOLE_Flash_RequireIdle() )
+    {
+        return;
+    }
+
+    DutDriverConfiguration_T configuration = { 0 };
+    if ( !TEST_CONFIGURATION_GetActive( &configuration )
+         || !configuration.pwm_generation_channels[channel - 1U].is_enabled )
+    {
+        CONSOLE_Printf( "PWM channel %lu is not enabled in the active test configuration.\r\n",
+                        ( unsigned long )channel );
+        return;
+    }
+
+    const uint32_t timer_clock_hz =
+        channel == 1U ? CONSOLE_FLASH_PWM_LV_TIMER_CLOCK_HZ : CONSOLE_FLASH_PWM_HV_TIMER_CLOCK_HZ;
+    ExecutionPwmUpdatePayload_T payload = { 0 };
+    if ( !HW_PWM_GEN_compute_psc( frequency_hz, timer_clock_hz, &payload.psc )
+         || !HW_PWM_GEN_compute_arr( frequency_hz, timer_clock_hz, payload.psc, &payload.arr )
+         || !HW_PWM_GEN_compute_ccr( ( uint16_t )duty_permille, payload.arr, &payload.ccr ) )
+    {
+        CONSOLE_Printf( "PWM frequency/duty cannot be represented by channel %lu.\r\n",
+                        ( unsigned long )channel );
+        return;
+    }
+
+    console_flash_run_tick_count = 0U;
+    FlashManagerInstructionUploadRequestStatus_T status =
+        FLASH_MANAGER_RequestInstructionUploadStart( CONSOLE_FLASH_PWM_TEST_INSTRUCTION_BYTES );
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED
+         || !CONSOLE_Flash_WaitForState( FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD,
+                                         CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "PWM upload start failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    CONSOLE_Flash_EncodePwmInstruction( console_flash_write_buffer, update_tick,
+                                        ( uint8_t )( channel - 1U ), &payload );
+    status = FLASH_MANAGER_SubmitInstructionUploadBytes( console_flash_write_buffer,
+                                                         CONSOLE_FLASH_PWM_TEST_INSTRUCTION_BYTES );
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
+    {
+        CONSOLE_Printf( "PWM instruction submission failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    TickType_t finish_started_at = xTaskGetTickCount();
+    do
+    {
+        status = FLASH_MANAGER_RequestInstructionUploadFinish();
+        if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
+        {
+            if ( CONSOLE_Flash_HasTimedOut( finish_started_at, CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            {
+                CONSOLE_Printf( "PWM upload finalisation timed out.\r\n" );
+                return;
+            }
+            vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+        }
+    } while ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY );
+
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED
+         || !CONSOLE_Flash_WaitForState( FLASH_MANAGER_STATE_IDLE,
+                                         CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "PWM upload finalisation failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    console_flash_last_upload_records = 1U;
+    console_flash_last_upload_bytes   = CONSOLE_FLASH_PWM_TEST_INSTRUCTION_BYTES;
+    console_flash_run_tick_count      = run_ticks;
+    CONSOLE_Flash_ResetExecutionHarnessState();
+
+    CONSOLE_Printf( "PWM upload PASS: channel=%lu target=%lu Hz duty=%lu/1000 "
+                    "arr=%u ccr=%u psc=%u update_tick=%lu run_ticks=%lu.\r\n",
+                    ( unsigned long )channel, ( unsigned long )frequency_hz,
+                    ( unsigned long )duty_permille, ( unsigned int )payload.arr,
+                    ( unsigned int )payload.ccr, ( unsigned int )payload.psc,
+                    ( unsigned long )update_tick, ( unsigned long )run_ticks );
+    CONSOLE_Printf( "Next: finish configuring the RSM, then 'run_state execute %lu 0'.\r\n",
+                    ( unsigned long )console_flash_run_tick_count );
 }
 
 /** Uploads a deterministic framing-compatible instruction stream through Flash Manager. */
@@ -1197,7 +1352,7 @@ static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] )
         return;
     }
 
-    console_flash_do_test_tick_count = 0U;
+    console_flash_run_tick_count = 0U;
 
     ExternalFlashInfo_T info = { 0 };
     if ( EXTERNAL_FLASH_GetInfo( &info ) != EXTERNAL_FLASH_STATUS_OK )
@@ -1718,6 +1873,12 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
     if ( strcmp( argv[1], "upload_do_test" ) == 0 )
     {
         CONSOLE_Flash_UploadDigitalOutputTestCommand( argc, argv );
+        return;
+    }
+
+    if ( strcmp( argv[1], "upload_pwm_test" ) == 0 )
+    {
+        CONSOLE_Flash_UploadPwmTestCommand( argc, argv );
         return;
     }
 

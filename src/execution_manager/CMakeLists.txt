@@ -36,6 +36,7 @@ target_link_libraries(execution_manager
         rtos
         flash_manager
         exec_digital_output
+        exec_pwm_gen
 )
 
 # -----------------------------

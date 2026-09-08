@@ -20,7 +20,7 @@ static ExecutionManagerTickResult_T        terminal_callback_result;
 static ExecutionManagerFailure_T           terminal_callback_failure;
 
 static void TestTerminalCallback( ExecutionManagerTickResult_T result,
-                                  ExecutionManagerFailure_T failure )
+                                  ExecutionManagerFailure_T    failure )
 {
     terminal_callback_calls++;
     terminal_callback_result  = result;

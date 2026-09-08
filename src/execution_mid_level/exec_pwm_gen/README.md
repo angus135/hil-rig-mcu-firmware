@@ -48,4 +48,9 @@ removed when global configuration commits all staged subsystem changes.
 `EXEC_PWM_GEN_Set_PWM_LV()` and `EXEC_PWM_GEN_Set_PWM_HV()` directly forward precomputed timer
 values to the HW layer. They intentionally perform no lifecycle or parameter checks so the
 execution-time path remains lean. Callers must configure and start the relevant channel before
-execution.
+execution. Frequency, duty, ARR, CCR, and PSC validation/calculation belongs to test-package
+processing before the encoded instruction is uploaded.
+
+Execution updates preserve PWM phase: the direct path writes the timer's buffered CCR, ARR, and
+PSC values and does not force an update event or reset the counter. The new waveform takes effect
+at the next natural timer update event.

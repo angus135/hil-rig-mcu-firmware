@@ -85,7 +85,7 @@ EXECUTION_OPERATION_ADAPTER_ApplyOperations( const uint8_t* operations, uint8_t 
  * @brief Applies one prevalidated digital-output update directly from aligned storage.
  *
  * @pre channel is EXECUTION_OPERATION_CHANNEL_UNUSED.
- * @pre payload points to an aligned, validated two-word digital-output payload.
+ * @pre payload points to an aligned, validated digital-output payload.
  * @pre payload_length_bytes is EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES.
  *
  * @return EXECUTION_OPERATION_ADAPTER_ACCEPTED.
@@ -93,6 +93,25 @@ EXECUTION_OPERATION_ADAPTER_ApplyOperations( const uint8_t* operations, uint8_t 
 ExecutionOperationAdapterResult_T
 EXECUTION_OPERATION_ADAPTER_ApplyDigitalOutput( uint8_t channel, const uint8_t* payload,
                                                 uint16_t payload_length_bytes );
+
+/**
+ * @brief Applies one prevalidated PWM update directly from aligned storage.
+ *
+ * The update writes ARR, CCR, and PSC preload values for the selected timer.
+ * They become active together at the timer's next natural update event; this
+ * adapter does not reset PWM phase or force an update event.
+ *
+ * @pre channel is EXECUTION_OPERATION_PWM_CHANNEL_LV or
+ *      EXECUTION_OPERATION_PWM_CHANNEL_HV.
+ * @pre payload points to an aligned, validated ExecutionPwmUpdatePayload_T.
+ * @pre payload_length_bytes is EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES.
+ * @pre the selected PWM channel is configured and started.
+ *
+ * @return EXECUTION_OPERATION_ADAPTER_ACCEPTED.
+ */
+ExecutionOperationAdapterResult_T
+EXECUTION_OPERATION_ADAPTER_ApplyPwmUpdate( uint8_t channel, const uint8_t* payload,
+                                            uint16_t payload_length_bytes );
 
 #ifdef __cplusplus
 }

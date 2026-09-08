@@ -256,7 +256,7 @@ protected:
         execution_terminal_callback    = nullptr;
         run_state_manager_task_handle  = TEST_RSM_TASK_HANDLE;
         RUN_STATE_MANAGER_Init();
-        timer_stop_calls = 0U;
+        timer_stop_calls      = 0U;
         execution_abort_calls = 0U;
     }
     static void Process( RunStateRequest_T request )
@@ -387,8 +387,7 @@ TEST_F( RunStateManagerTest, ExecutionCompletionFromIsrInhibitsAndNotifiesOwner 
     ASSERT_NE( nullptr, execution_terminal_callback );
     notified_bits = 0U;
 
-    execution_terminal_callback( EXECUTION_MANAGER_TICK_COMPLETE,
-                                 EXECUTION_MANAGER_FAILURE_NONE );
+    execution_terminal_callback( EXECUTION_MANAGER_TICK_COMPLETE, EXECUTION_MANAGER_FAILURE_NONE );
 
     EXPECT_TRUE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
     EXPECT_EQ( RUN_STATE_MANAGER_NOTIFY_EXECUTION_COMPLETE, notified_bits );

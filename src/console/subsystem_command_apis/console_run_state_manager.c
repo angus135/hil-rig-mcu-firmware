@@ -299,8 +299,7 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
             return;
         }
 
-        CONSOLE_Printf( "Execution frequency set to %lu Hz.\r\n",
-                        ( unsigned long )frequency );
+        CONSOLE_Printf( "Execution frequency set to %lu Hz.\r\n", ( unsigned long )frequency );
         return;
     }
 
@@ -310,8 +309,8 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
         if ( !CONSOLE_RunStateManager_ParseU32( argv[2], &request.tick_count )
              || ( request.tick_count == 0U )
              || ( ( argc == 4U )
-                  && !CONSOLE_RunStateManager_ParseU32(
-                      argv[3], &request.maximum_result_length_bytes ) ) )
+                  && !CONSOLE_RunStateManager_ParseU32( argv[3],
+                                                        &request.maximum_result_length_bytes ) ) )
         {
             CONSOLE_RunStateManager_PrintUsage();
             return;

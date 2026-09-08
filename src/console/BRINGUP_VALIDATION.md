@@ -118,6 +118,55 @@ result session and returns the system to IDLE.
 Repeat at 1 kHz with delay/high values 1000/3000, then at 10 kHz with
 10000/30000 to retain the same waveform while increasing ISR frequency.
 
+## Execution Manager LV PWM-output path
+
+Perform this first PWM test on the LV channel only, with no DUT attached. Probe
+the channel-1 LV PWM output and use 3.3 V selection. From a fresh power-on, the
+following sequence starts at 1 Hz and 50% duty, then changes to 2 Hz and 75%
+duty for the second four-second interval:
+
+```text
+flash init
+flash status
+run_state status
+run_state receive
+test_config inert
+test_config pwm_generation 1 3v3 1 500
+test_config status
+flash upload_pwm_test 1 2 750 390 800
+run_state configure
+run_state status
+run_state frequency 100
+run_state execute 800 0
+run_state status
+run_state discard
+run_state status
+```
+
+The two console preparation commands accept physical frequency and duty. They
+call `HW_PWM_GEN_compute_psc()`, `HW_PWM_GEN_compute_arr()`, and
+`HW_PWM_GEN_compute_ccr()` outside execution, then place the resulting timer
+values in the initial configuration and canonical PWM instruction. The ISR
+does not calculate them.
+
+Tick 390 requests the update at 3.90 seconds. The timer's ARR, CCR, and PSC
+preloads become active together at the next natural 1 Hz update event, expected
+near 4.00 seconds. Scheduling the register write slightly before four seconds
+avoids forcing a timer update or resetting PWM phase. The run ends at tick 800,
+eight seconds after execution starts.
+
+On an oscilloscope, expect approximately four 1 Hz cycles with 0.5 seconds HIGH
+and 0.5 seconds LOW, followed by approximately eight 2 Hz cycles with 0.375
+seconds HIGH and 0.125 seconds LOW. A DC multimeter cannot verify frequency or
+duty precisely. It may average the 3.3 V waveform near 1.65 V initially and
+near 2.48 V after the update, or visibly fluctuate because these frequencies
+are slow relative to its sampling/filtering. Use the meter only as a coarse
+change indicator and use an oscilloscope or logic analyser for sign-off.
+
+The expected terminal state is `RESULTS_READY`, with TIM4 and the PWM channel
+stopped. `run_state discard` releases the empty result session and returns the
+RSM and Flash Manager to IDLE for another run.
+
 ## Per-peripheral validation
 
 Test only one peripheral, and preferably one channel, at a time. Use the normal

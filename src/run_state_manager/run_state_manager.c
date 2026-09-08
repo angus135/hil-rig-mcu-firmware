@@ -88,8 +88,8 @@ static TickType_t                 pending_operation_started_at = 0U;
 
 static bool execution_active = false;
 
-static bool execution_timer_running = false;
-static RunStateExecutionRequest_T execution_request = { 0U, 0U };
+static bool                       execution_timer_running = false;
+static RunStateExecutionRequest_T execution_request       = { 0U, 0U };
 
 static volatile bool execution_abort_requested = false;
 
@@ -106,8 +106,8 @@ static volatile RunStateRequestResult_T last_request_result    = RUN_STATE_REQUE
  */
 static bool RUN_STATE_MANAGER_Notify( uint32_t notification );
 static void RUN_STATE_MANAGER_HandleFlashFault( bool from_isr );
-static void RUN_STATE_MANAGER_HandleExecutionTerminalFromISR(
-    ExecutionManagerTickResult_T result, ExecutionManagerFailure_T failure );
+static void RUN_STATE_MANAGER_HandleExecutionTerminalFromISR( ExecutionManagerTickResult_T result,
+                                                              ExecutionManagerFailure_T failure );
 static bool RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR( void );
 static void RUN_STATE_MANAGER_RecordFault( RunStateFaultReason_T reason );
 static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason );
@@ -171,8 +171,8 @@ static void RUN_STATE_MANAGER_HandleFlashFault( bool from_isr )
     }
 }
 
-static void RUN_STATE_MANAGER_HandleExecutionTerminalFromISR(
-    ExecutionManagerTickResult_T result, ExecutionManagerFailure_T failure )
+static void RUN_STATE_MANAGER_HandleExecutionTerminalFromISR( ExecutionManagerTickResult_T result,
+                                                              ExecutionManagerFailure_T    failure )
 {
     ( void )failure;
     execution_abort_requested = true;
@@ -182,8 +182,8 @@ static void RUN_STATE_MANAGER_HandleExecutionTerminalFromISR(
         if ( run_state_manager_task_handle != NULL )
         {
             ( void )xTaskNotifyFromISR( run_state_manager_task_handle,
-                                       RUN_STATE_MANAGER_NOTIFY_EXECUTION_COMPLETE, eSetBits,
-                                       NULL );
+                                        RUN_STATE_MANAGER_NOTIFY_EXECUTION_COMPLETE, eSetBits,
+                                        NULL );
         }
     }
     else
@@ -396,8 +396,8 @@ static bool RUN_STATE_MANAGER_StopExecution( void )
  */
 static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void )
 {
-    FlashManagerRequestStatus_T status = FLASH_MANAGER_RequestExecutionPreparation(
-        execution_request.maximum_result_length_bytes );
+    FlashManagerRequestStatus_T status =
+        FLASH_MANAGER_RequestExecutionPreparation( execution_request.maximum_result_length_bytes );
 
     if ( status == FLASH_MANAGER_REQUEST_OK )
     {
