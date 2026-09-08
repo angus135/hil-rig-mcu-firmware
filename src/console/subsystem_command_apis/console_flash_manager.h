@@ -55,6 +55,17 @@
  *  payload. The Execution Manager forwards those bytes unchanged at the
  *  scheduled tick.
  *
+ *  CAN execution-path validation uses:
+ *
+ *      `test_config can <channel> <bitrate> [filter_bank filter_id filter_mask]`
+ *      `flash upload_can_test <channel 1..2> <id 0..2047> <byte 0..255> <dlc 0..8> <first_tick> <run_ticks>`
+ *      `flash upload_can_test <channel 1..2> <id 0..2047> <byte 0..255> <dlc 0..8> <first_tick> <run_ticks> <repeat_count> <interval_ticks>`
+ *
+ *  Each generated instruction contains one canonical 12-byte CAN packet. The
+ *  command fills the first `dlc` data bytes with the selected byte and stores
+ *  zero in the unused data and reserved bytes. The current CAN driver retains
+ *  its normal validation and queue copy when the instruction executes.
+ *
  *  UART execution-path validation uses:
  *
  *      `test_config uart <channel> <3v3|5v|rs232> <baud> tx`
