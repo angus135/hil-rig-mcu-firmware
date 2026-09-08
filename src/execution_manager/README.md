@@ -69,8 +69,9 @@ per-driver tick adjustment belongs in the ISR.
 End of the instruction stream is not completion because output-free ticks and
 future measurement-only ticks continue until the configured run length.
 
-The ISR does not copy complete instructions or digital-output payloads, access
-NAND, wait on an RTOS object, configure a peripheral, or control TIM4. Flash
+The ISR does not copy complete instructions or fixed output payloads, access
+NAND, wait on an RTOS object, calculate timer values, configure a peripheral,
+or control TIM4. Flash
 Manager exposes operations directly from aligned word storage. The operation
 walker relies on the Host Interface to validate the canonical stream before it
 is stored.
@@ -93,10 +94,18 @@ operation count, and a zero reserved byte. Each operation starts with one
 aligned 32-bit header word, followed by its payload and zero to three padding
 bytes.
 
-Only `DIGITAL_OUTPUT_UPDATE` is currently dispatched. Its zero-copy payload is
-two aligned words containing prepared physical HIGH and LOW masks. The adapter
-uses the active-low-aware digital-output driver and retains no Flash Manager
-pointer.
+`DIGITAL_OUTPUT_UPDATE` and `PWM_UPDATE` are currently dispatched. The digital
+output's zero-copy payload contains prepared physical HIGH and LOW masks. Its
+adapter uses the active-low-aware digital-output driver. The PWM payload holds
+the precomputed ARR, CCR, and PSC inputs produced during package processing;
+its adapter selects LV or HV and forwards those values directly. Neither
+adapter retains a Flash Manager pointer.
+
+PWM register writes request an update at the instruction boundary without
+resetting timer phase or forcing an update event. With ARR/CCR preload enabled
+and the prescaler buffered, the three values become active together at the
+timer's next natural update event. A PWM timestamp therefore identifies the
+register-write boundary, not an exact waveform-edge timestamp.
 
 The complete instruction is consumed only after every encoded operation is
 accepted. Earlier physical effects cannot be rolled back if a later operation

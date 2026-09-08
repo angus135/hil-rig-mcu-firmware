@@ -76,6 +76,9 @@ byte length and guarantee:
 - exactly one instruction for each output-bearing tick;
 - valid operation headers, opcodes, channels, payload layouts, and four-byte
   padding between operation boundaries;
+- PWM frequencies and duties representable by the selected timer, with ARR,
+  CCR, and PSC calculated through the PWM driver's preparation functions and
+  stored in the canonical PWM payload before upload;
 - an `operations_length_bytes` value divisible by four for every instruction;
 - a complete declared instruction-image length divisible by four;
 - each complete instruction is no larger than

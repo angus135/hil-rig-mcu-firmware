@@ -27,7 +27,7 @@ static volatile uint32_t                  current_tick         = 0U;
 static volatile ExecutionManagerFailure_T execution_failure    = EXECUTION_MANAGER_FAILURE_NONE;
 static volatile ExecutionState_T          execution_state      = EXECUTION_STATE_IDLE;
 static bool                               instruction_stream_exhausted = false;
-static ExecutionManagerTerminalCallback_T terminal_callback = NULL;
+static ExecutionManagerTerminalCallback_T terminal_callback            = NULL;
 
 static ExecutionManagerTickResult_T
 EXECUTION_MANAGER_FailFromISR( ExecutionManagerFailure_T failure )
@@ -111,6 +111,12 @@ ExecutionManagerTickResult_T EXECUTION_MANAGER_ProcessTickFromISR( void )
     current_tick++;
 
     FlashManagerInstructionReadStatus_T read_status = FLASH_MANAGER_INSTRUCTION_END_OF_STREAM;
+
+    /* Process measurements*/
+
+    /* Todo */
+
+    /* Process outputs */
     if ( !instruction_stream_exhausted )
     {
         read_status = FLASH_MANAGER_PeekNextInstructionFromISR( &instruction );
@@ -158,8 +164,7 @@ ExecutionManagerTickResult_T EXECUTION_MANAGER_ProcessTickFromISR( void )
         execution_state = EXECUTION_STATE_COMPLETE;
         if ( terminal_callback != NULL )
         {
-            terminal_callback( EXECUTION_MANAGER_TICK_COMPLETE,
-                               EXECUTION_MANAGER_FAILURE_NONE );
+            terminal_callback( EXECUTION_MANAGER_TICK_COMPLETE, EXECUTION_MANAGER_FAILURE_NONE );
         }
         return EXECUTION_MANAGER_TICK_COMPLETE;
     }

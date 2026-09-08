@@ -19,6 +19,7 @@
 #include "execution_operation_adapters.h"
 #include "execution_operation_payloads.h"
 #include "exec_digital_output.h"
+#include "exec_pwm_gen.h"
 
 #include <stdint.h>
 
@@ -27,7 +28,7 @@
  *------------------------------------------------------------------------------
  */
 
-#define EXECUTION_OPERATION_IMPLEMENTED_OPCODE_COUNT ( 1U )
+#define EXECUTION_OPERATION_DISPATCH_TABLE_SIZE ( EXECUTION_OPERATION_OPCODE_PWM_UPDATE + 1U )
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
@@ -35,9 +36,10 @@
  */
 
 static const ExecutionOperationAdapter_T
-    execution_operation_adapters[EXECUTION_OPERATION_IMPLEMENTED_OPCODE_COUNT] = {
+    execution_operation_adapters[EXECUTION_OPERATION_DISPATCH_TABLE_SIZE] = {
         [EXECUTION_OPERATION_OPCODE_DIGITAL_OUTPUT_UPDATE] =
             EXECUTION_OPERATION_ADAPTER_ApplyDigitalOutput,
+        [EXECUTION_OPERATION_OPCODE_PWM_UPDATE] = EXECUTION_OPERATION_ADAPTER_ApplyPwmUpdate,
 };
 
 /**-----------------------------------------------------------------------------
@@ -92,13 +94,33 @@ EXECUTION_OPERATION_ADAPTER_ApplyDigitalOutput( uint8_t channel, const uint8_t* 
     ( void )channel;
     ( void )payload_length_bytes;
 
-    const uint32_t* payload_words = ( const uint32_t* )( const void* )payload;
+    const ExecutionDigitalOutputPayload_T* digital_output =
+        ( const ExecutionDigitalOutputPayload_T* )( const void* )payload;
 
-    EXEC_DIGITAL_OUTPUT_Set_Output(
-        payload_words[EXECUTION_DIGITAL_OUTPUT_HIGH_BITMASK_WORD_INDEX] );
+    EXEC_DIGITAL_OUTPUT_Set_Output( digital_output->high_bitmask );
 
-    EXEC_DIGITAL_OUTPUT_Reset_Output(
-        payload_words[EXECUTION_DIGITAL_OUTPUT_LOW_BITMASK_WORD_INDEX] );
+    EXEC_DIGITAL_OUTPUT_Reset_Output( digital_output->low_bitmask );
+
+    return EXECUTION_OPERATION_ADAPTER_ACCEPTED;
+}
+
+ExecutionOperationAdapterResult_T
+EXECUTION_OPERATION_ADAPTER_ApplyPwmUpdate( uint8_t channel, const uint8_t* payload,
+                                            uint16_t payload_length_bytes )
+{
+    ( void )payload_length_bytes;
+
+    const ExecutionPwmUpdatePayload_T* pwm_update =
+        ( const ExecutionPwmUpdatePayload_T* )( const void* )payload;
+
+    if ( channel == EXECUTION_OPERATION_PWM_CHANNEL_LV )
+    {
+        EXEC_PWM_GEN_Set_PWM_LV( pwm_update->arr, pwm_update->ccr, pwm_update->psc );
+    }
+    else
+    {
+        EXEC_PWM_GEN_Set_PWM_HV( pwm_update->arr, pwm_update->ccr, pwm_update->psc );
+    }
 
     return EXECUTION_OPERATION_ADAPTER_ACCEPTED;
 }

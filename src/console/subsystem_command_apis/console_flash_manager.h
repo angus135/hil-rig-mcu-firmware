@@ -36,6 +36,15 @@
  *  owns Flash preparation, driver start, TIM4, terminal handoff, driver stop,
  *  and result finalisation.
  *
+ *  PWM execution-path validation uses the same lifecycle:
+ *
+ *      `test_config pwm_generation <channel> <voltage> <frequency_hz> <duty_permille>`
+ *      `flash upload_pwm_test <channel> <frequency_hz> <duty_permille> <update_tick> <run_ticks>`
+ *
+ *  Both commands use the PWM driver's calculation functions before storing
+ *  ARR, CCR, and PSC. The Execution Manager only forwards those prepared
+ *  values at the scheduled tick.
+ *
  *  `execute_echo` is the execution-facing API test. It temporarily redirects
  *  the existing priority-5 TIM4 interrupt away from the production Execution
  *  Manager and into a diagnostic callback. The callback processes the
