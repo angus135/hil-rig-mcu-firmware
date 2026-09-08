@@ -56,6 +56,18 @@
  *  bounded only by the canonical field and console staging-buffer capacities;
  *  it does not perform UART schedule-feasibility analysis.
  *
+ *  SPI execution-path validation provides the equivalent repeated-byte test:
+ *
+ *      `test_config spi <channel> <master|slave> <8|16> <mode0..mode3> default_cs`
+ *      `flash upload_spi_test <channel> <byte> <length> <first_tick> <run_ticks>`
+ *      `flash upload_spi_test <channel> <byte> <length> <first_tick> <run_ticks> <repeat_count>
+ *<interval_ticks>`
+ *
+ *  Each generated SPI operation contains one packet and uses the canonical
+ *  packet-count, packet-size-array, and data layout. The command checks the
+ *  active channel and frame alignment but intentionally defers schedule
+ *  feasibility analysis.
+ *
  *  `execute_echo` is the execution-facing API test. It temporarily redirects
  *  the existing priority-5 TIM4 interrupt away from the production Execution
  *  Manager and into a diagnostic callback. The callback processes the

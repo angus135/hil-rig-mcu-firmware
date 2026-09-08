@@ -38,6 +38,7 @@ target_link_libraries(execution_manager
         exec_digital_output
         exec_pwm_gen
         exec_uart
+        exec_spi
 )
 
 # -----------------------------

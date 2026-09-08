@@ -140,19 +140,6 @@ bool HW_SPI_RX_Start_Passive_DMA( SPIPeripheralState_T* peripheral_state )
  */
 
 /**
- * @brief RX DMA IRQ entry point for SPI channel 0.
- *
- * @details
- *     RX DMA is configured as a circular passive stream. No transfer-complete
- *     handling is currently required because the software read position is
- *     calculated from NDTR when HW_SPI_Rx_Peek() is called.
- */
-void SPI_CHANNEL_0_RX_DMA_IRQ( void )
-{
-    // Circular RX DMA does not require per-interrupt work in the current design.
-}
-
-/**
  * @brief RX DMA IRQ entry point for SPI channel 1.
  *
  * @details
@@ -161,6 +148,19 @@ void SPI_CHANNEL_0_RX_DMA_IRQ( void )
  *     calculated from NDTR when HW_SPI_Rx_Peek() is called.
  */
 void SPI_CHANNEL_1_RX_DMA_IRQ( void )
+{
+    // Circular RX DMA does not require per-interrupt work in the current design.
+}
+
+/**
+ * @brief RX DMA IRQ entry point for SPI channel 2.
+ *
+ * @details
+ *     RX DMA is configured as a circular passive stream. No transfer-complete
+ *     handling is currently required because the software read position is
+ *     calculated from NDTR when HW_SPI_Rx_Peek() is called.
+ */
+void SPI_CHANNEL_2_RX_DMA_IRQ( void )
 {
     // Circular RX DMA does not require per-interrupt work in the current design.
 }

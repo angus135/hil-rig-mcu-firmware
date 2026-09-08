@@ -94,12 +94,18 @@ operation count, and a zero reserved byte. Each operation starts with one
 aligned 32-bit header word, followed by its payload and zero to three padding
 bytes.
 
-`DIGITAL_OUTPUT_UPDATE`, `PWM_UPDATE`, and `UART_TRANSMIT` are currently
-dispatched. The digital output's zero-copy payload contains prepared physical
-HIGH and LOW masks. Its adapter uses the active-low-aware digital-output
-driver. The PWM payload holds the precomputed ARR, CCR, and PSC inputs produced
-during package processing; its adapter selects LV or HV and forwards those
-values directly.
+`DIGITAL_OUTPUT_UPDATE`, `PWM_UPDATE`, `SPI_TRANSMIT`, and `UART_TRANSMIT` are
+currently dispatched. The digital output's zero-copy payload contains prepared
+physical HIGH and LOW masks. Its adapter uses the active-low-aware
+digital-output driver. The PWM payload holds the precomputed ARR, CCR, and PSC
+inputs produced during package processing; its adapter selects LV or HV and
+forwards those values directly.
+
+The SPI adapter views the aligned payload as a packet-count prefix, a contiguous
+`uint32_t` packet-size array, and the concatenated packet data. It passes those
+views directly to `EXEC_SPI_Transmit()` without copying or revalidating the
+prevalidated operation. The SPI driver atomically copies the complete batch
+into its TX queue before Flash Manager storage can be reused.
 
 The UART adapter passes the raw payload pointer and length directly to
 `EXEC_UART_Transmit()`. The UART driver necessarily copies those bytes into its

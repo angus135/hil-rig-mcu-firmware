@@ -135,8 +135,8 @@ typedef enum SPIMode_T
  */
 typedef enum SPIChannel_T
 {
-    SPI_CHANNEL_0 = 0U,  ///< General-purpose logical SPI channel 0.
-    SPI_CHANNEL_1 = 1U,  ///< General-purpose logical SPI channel 1.
+    SPI_CHANNEL_1 = 0U,  ///< Board SPI channel 1, implemented by MCU SPI2.
+    SPI_CHANNEL_2 = 1U,  ///< Board SPI channel 2, implemented by MCU SPI1.
     SPI_DAC       = 2U,  ///< Dedicated DAC SPI channel.
 
     SPI_NUM_CHANNELS
