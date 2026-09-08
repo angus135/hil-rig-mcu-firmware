@@ -106,11 +106,12 @@ static volatile RunStateRequestResult_T last_request_result    = RUN_STATE_REQUE
  */
 static bool RUN_STATE_MANAGER_Notify( uint32_t notification );
 static void RUN_STATE_MANAGER_HandleFlashFault( bool from_isr );
-static void RUN_STATE_MANAGER_HandleExecutionTerminalFromISR( ExecutionManagerTickResult_T result,
-                                                               ExecutionManagerFailure_T failure,
-                                                               BaseType_t* higher_priority_task_woken );
-static bool RUN_STATE_MANAGER_RequestFaultFromISRInternal(
-    RunStateFaultReason_T reason, BaseType_t* higher_priority_task_woken );
+static void
+            RUN_STATE_MANAGER_HandleExecutionTerminalFromISR( ExecutionManagerTickResult_T result,
+                                                              ExecutionManagerFailure_T    failure,
+                                                              BaseType_t* higher_priority_task_woken );
+static bool RUN_STATE_MANAGER_RequestFaultFromISRInternal( RunStateFaultReason_T reason,
+                                                           BaseType_t* higher_priority_task_woken );
 static bool RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR( void );
 static void RUN_STATE_MANAGER_RecordFault( RunStateFaultReason_T reason );
 static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason );
@@ -174,9 +175,10 @@ static void RUN_STATE_MANAGER_HandleFlashFault( bool from_isr )
     }
 }
 
-static void RUN_STATE_MANAGER_HandleExecutionTerminalFromISR( ExecutionManagerTickResult_T result,
-                                                               ExecutionManagerFailure_T    failure,
-                                                               BaseType_t* higher_priority_task_woken )
+static void
+RUN_STATE_MANAGER_HandleExecutionTerminalFromISR( ExecutionManagerTickResult_T result,
+                                                  ExecutionManagerFailure_T    failure,
+                                                  BaseType_t* higher_priority_task_woken )
 {
     ( void )failure;
     execution_abort_requested = true;
@@ -192,8 +194,8 @@ static void RUN_STATE_MANAGER_HandleExecutionTerminalFromISR( ExecutionManagerTi
     }
     else
     {
-        ( void )RUN_STATE_MANAGER_RequestFaultFromISRInternal(
-            RUN_STATE_FAULT_EXECUTION_MANAGER, higher_priority_task_woken );
+        ( void )RUN_STATE_MANAGER_RequestFaultFromISRInternal( RUN_STATE_FAULT_EXECUTION_MANAGER,
+                                                               higher_priority_task_woken );
     }
 }
 
@@ -1077,8 +1079,8 @@ bool RUN_STATE_MANAGER_RequestFault( RunStateFaultReason_T reason )
     return false;
 }
 
-static bool RUN_STATE_MANAGER_RequestFaultFromISRInternal(
-    RunStateFaultReason_T reason, BaseType_t* higher_priority_task_woken )
+static bool RUN_STATE_MANAGER_RequestFaultFromISRInternal( RunStateFaultReason_T reason,
+                                                           BaseType_t* higher_priority_task_woken )
 {
     if ( reason == RUN_STATE_FAULT_NONE )
     {

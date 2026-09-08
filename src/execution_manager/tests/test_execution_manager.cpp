@@ -23,11 +23,11 @@ static BaseType_t*                         consume_task_woken;
 
 static void TestTerminalCallback( ExecutionManagerTickResult_T result,
                                   ExecutionManagerFailure_T    failure,
-                                  BaseType_t*                   higher_priority_task_woken )
+                                  BaseType_t*                  higher_priority_task_woken )
 {
     terminal_callback_calls++;
-    terminal_callback_result  = result;
-    terminal_callback_failure = failure;
+    terminal_callback_result     = result;
+    terminal_callback_failure    = failure;
     terminal_callback_task_woken = higher_priority_task_woken;
 }
 
@@ -61,8 +61,8 @@ EXECUTION_OPERATION_ADAPTER_ApplyOperations( const uint8_t* operations, uint8_t 
 class ExecutionManagerTest : public ::testing::Test
 {
 protected:
-    uint8_t operations[12] = {};
-    BaseType_t task_woken  = pdFALSE;
+    uint8_t    operations[12] = {};
+    BaseType_t task_woken     = pdFALSE;
 
     ExecutionManagerTickResult_T ProcessTick()
     {
@@ -74,19 +74,19 @@ protected:
         EXECUTION_MANAGER_SetTerminalCallback( nullptr );
         ( void )EXECUTION_MANAGER_Prepare( 1U );
         EXECUTION_MANAGER_Abort();
-        peek_status               = FLASH_MANAGER_INSTRUCTION_END_OF_STREAM;
-        adapter_result            = EXECUTION_OPERATION_ADAPTER_ACCEPTED;
-        consume_result            = true;
-        peek_calls                = 0U;
-        adapter_calls             = 0U;
-        consume_calls             = 0U;
-        terminal_callback_calls   = 0U;
-        terminal_callback_result  = EXECUTION_MANAGER_TICK_CONTINUE;
-        terminal_callback_failure = EXECUTION_MANAGER_FAILURE_NONE;
+        peek_status                  = FLASH_MANAGER_INSTRUCTION_END_OF_STREAM;
+        adapter_result               = EXECUTION_OPERATION_ADAPTER_ACCEPTED;
+        consume_result               = true;
+        peek_calls                   = 0U;
+        adapter_calls                = 0U;
+        consume_calls                = 0U;
+        terminal_callback_calls      = 0U;
+        terminal_callback_result     = EXECUTION_MANAGER_TICK_CONTINUE;
+        terminal_callback_failure    = EXECUTION_MANAGER_FAILURE_NONE;
         terminal_callback_task_woken = nullptr;
         consume_task_woken           = nullptr;
-        instruction               = {};
-        instruction.operations    = operations;
+        instruction                  = {};
+        instruction.operations       = operations;
     }
 };
 
