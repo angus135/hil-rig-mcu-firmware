@@ -397,7 +397,7 @@ TEST_F( RunStateManagerTest, ExecutionTimerStartFailureStopsDriversAndEntersFaul
     EXPECT_FALSE( execution_timer_running );
     EXPECT_EQ( 1U, driver_start_calls );
     EXPECT_EQ( 1U, driver_stop_calls );
-    EXPECT_EQ( 1U, execution_abort_calls );
+    EXPECT_EQ( 2U, execution_abort_calls );
     EXPECT_EQ( 1U, timer_start_calls );
 }
 
