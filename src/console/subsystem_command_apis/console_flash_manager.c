@@ -153,10 +153,10 @@
 
 _Static_assert( sizeof( ExecutionInstructionHeader_T ) == sizeof( FlashManagerResultHeader_T ),
                 "Echo verification requires identical packed header sizes" );
-_Static_assert( CONSOLE_FLASH_PWM_TEST_OPERATION_BYTES
-                    == EXECUTION_OPERATION_ENCODED_SIZE_BYTES(
-                        EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES ),
-                "PWM test operation size must follow the canonical encoding" );
+_Static_assert(
+    CONSOLE_FLASH_PWM_TEST_OPERATION_BYTES
+        == EXECUTION_OPERATION_ENCODED_SIZE_BYTES( EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES ),
+    "PWM test operation size must follow the canonical encoding" );
 _Static_assert( CONSOLE_FLASH_PWM_TEST_INSTRUCTION_BYTES
                     == sizeof( ExecutionInstructionHeader_T )
                            + CONSOLE_FLASH_PWM_TEST_OPERATION_BYTES,
