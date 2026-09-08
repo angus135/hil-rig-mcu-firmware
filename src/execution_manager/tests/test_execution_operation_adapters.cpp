@@ -10,6 +10,7 @@ extern "C"
 #include "exec_spi.h"
 #include "exec_uart.h"
 #include "exec_analogue_output.h"
+#include "exec_can.h"
 }
 
 static uint32_t                    set_masks[2];
@@ -35,6 +36,11 @@ static uint32_t                    analogue_output_calls;
 static const uint8_t*              last_analogue_output_payload;
 static uint32_t                    last_analogue_output_length;
 static bool                        analogue_output_accept;
+static uint32_t                    can_calls;
+static EXEC_CAN_Channel_T           last_can_channel;
+static const EXEC_CAN_Packet_T*     last_can_packets;
+static uint16_t                     last_can_packet_count;
+static EXEC_CAN_Result_T            can_result;
 
 struct alignas( 4 ) EncodedDigitalOutputOperation
 {
@@ -82,6 +88,14 @@ struct alignas( 4 ) EncodedAnalogueOutputOperation
 };
 
 static_assert( sizeof( EncodedAnalogueOutputOperation ) == 12U );
+
+struct alignas( 4 ) EncodedCanOperation
+{
+    ExecutionOperationHeaderWord_T header;
+    ExecutionCanPacket_T            packets[2];
+};
+
+static_assert( sizeof( EncodedCanOperation ) == 28U );
 
 extern "C" void EXEC_DIGITAL_OUTPUT_Set_Output( uint32_t pin_mask )
 {
@@ -138,6 +152,17 @@ extern "C" bool EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( const uint8_t* paylo
     return analogue_output_accept;
 }
 
+extern "C" EXEC_CAN_Result_T EXEC_CAN_Transmit( EXEC_CAN_Channel_T       channel,
+                                                 const EXEC_CAN_Packet_T* packets,
+                                                 uint16_t                  packet_count )
+{
+    can_calls             = can_calls + 1U;
+    last_can_channel      = channel;
+    last_can_packets      = packets;
+    last_can_packet_count = packet_count;
+    return can_result;
+}
+
 class ExecutionOperationAdaptersTest : public ::testing::Test
 {
 protected:
@@ -165,6 +190,11 @@ protected:
         last_analogue_output_payload = nullptr;
         last_analogue_output_length  = 0U;
         analogue_output_accept       = true;
+        can_calls                    = 0U;
+        last_can_channel             = EXEC_CAN_CHANNEL_1;
+        last_can_packets             = nullptr;
+        last_can_packet_count        = 0U;
+        can_result                   = EXEC_CAN_RESULT_OK;
     }
 };
 
@@ -414,4 +444,46 @@ TEST_F( ExecutionOperationAdaptersTest, AnalogueOutputRejectionPropagatesToOpera
     EXPECT_EQ( analogue_output_calls, 1U );
     EXPECT_EQ( last_analogue_output_payload, operation.payload );
     EXPECT_EQ( last_analogue_output_length, 3U );
+}
+
+TEST_F( ExecutionOperationAdaptersTest, CanTransmitPassesPacketBatchWithoutAdapterCopy )
+{
+    const EncodedCanOperation operation = {
+        EXECUTION_OPERATION_OPCODE_CAN_TRANSMIT
+            | ( EXECUTION_OPERATION_CAN_CHANNEL_2 << 8U )
+            | ( ( 2U * EXECUTION_CAN_PACKET_SIZE_BYTES ) << 16U ),
+        {
+            { 0x123U, 2U, { 0x10U, 0x20U, 0U, 0U, 0U, 0U, 0U, 0U }, 0U },
+            { 0x456U, 8U, { 1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U }, 0U },
+        },
+    };
+
+    EXPECT_EQ( EXECUTION_OPERATION_ADAPTER_ApplyOperations(
+                   reinterpret_cast<const uint8_t*>( &operation ), 1U ),
+               EXECUTION_OPERATION_ADAPTER_ACCEPTED );
+    EXPECT_EQ( can_calls, 1U );
+    EXPECT_EQ( last_can_channel, EXEC_CAN_CHANNEL_2 );
+    EXPECT_EQ( last_can_packet_count, 2U );
+    EXPECT_EQ( last_can_packets,
+               reinterpret_cast<const EXEC_CAN_Packet_T*>( operation.packets ) );
+}
+
+TEST_F( ExecutionOperationAdaptersTest, CanTransmitRejectionPropagatesToOperationWalker )
+{
+    const EncodedCanOperation operation = {
+        EXECUTION_OPERATION_OPCODE_CAN_TRANSMIT
+            | ( EXECUTION_OPERATION_CAN_CHANNEL_1 << 8U )
+            | ( EXECUTION_CAN_PACKET_SIZE_BYTES << 16U ),
+        {
+            { 0x321U, 1U, { 0xAAU, 0U, 0U, 0U, 0U, 0U, 0U, 0U }, 0U },
+            { 0U, 0U, { 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U }, 0U },
+        },
+    };
+    can_result = EXEC_CAN_RESULT_BUSY;
+
+    EXPECT_EQ( EXECUTION_OPERATION_ADAPTER_ApplyOperations(
+                   reinterpret_cast<const uint8_t*>( &operation ), 1U ),
+               EXECUTION_OPERATION_ADAPTER_REJECTED );
+    EXPECT_EQ( can_calls, 1U );
+    EXPECT_EQ( last_can_packet_count, 1U );
 }

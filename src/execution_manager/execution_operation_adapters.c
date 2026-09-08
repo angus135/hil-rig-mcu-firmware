@@ -23,15 +23,25 @@
 #include "exec_spi.h"
 #include "exec_uart.h"
 #include "exec_analogue_output.h"
+#include "exec_can.h"
 
+#include <stddef.h>
 #include <stdint.h>
 
+_Static_assert( sizeof( ExecutionCanPacket_T ) == sizeof( EXEC_CAN_Packet_T ),
+                "Execution CAN payload must match driver packet size" );
+_Static_assert( offsetof( ExecutionCanPacket_T, id ) == offsetof( EXEC_CAN_Packet_T, id ),
+                "Execution CAN identifier offset changed" );
+_Static_assert( offsetof( ExecutionCanPacket_T, dlc ) == offsetof( EXEC_CAN_Packet_T, dlc ),
+                "Execution CAN DLC offset changed" );
+_Static_assert( offsetof( ExecutionCanPacket_T, data ) == offsetof( EXEC_CAN_Packet_T, data ),
+                "Execution CAN data offset changed" );
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
 
-#define EXECUTION_OPERATION_DISPATCH_TABLE_SIZE ( EXECUTION_OPERATION_OPCODE_UART_TRANSMIT + 1U )
+#define EXECUTION_OPERATION_DISPATCH_TABLE_SIZE ( EXECUTION_OPERATION_OPCODE_COUNT )
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
@@ -47,6 +57,7 @@ static const ExecutionOperationAdapter_T
         [EXECUTION_OPERATION_OPCODE_UART_TRANSMIT] = EXECUTION_OPERATION_ADAPTER_ApplyUartTransmit,
         [EXECUTION_OPERATION_OPCODE_ANALOGUE_OUTPUT_BATCH] =
             EXECUTION_OPERATION_ADAPTER_ApplyAnalogueOutput,
+        [EXECUTION_OPERATION_OPCODE_CAN_TRANSMIT] = EXECUTION_OPERATION_ADAPTER_ApplyCanTransmit,
 };
 
 /**-----------------------------------------------------------------------------
@@ -170,4 +181,19 @@ EXECUTION_OPERATION_ADAPTER_ApplyAnalogueOutput( uint8_t channel, const uint8_t*
     return EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( payload, payload_length_bytes )
                ? EXECUTION_OPERATION_ADAPTER_ACCEPTED
                : EXECUTION_OPERATION_ADAPTER_REJECTED;
+}
+
+ExecutionOperationAdapterResult_T
+EXECUTION_OPERATION_ADAPTER_ApplyCanTransmit( uint8_t channel, const uint8_t* payload,
+                                              uint16_t payload_length_bytes )
+{
+    const uint16_t packet_count =
+        ( uint16_t )( payload_length_bytes / EXECUTION_CAN_PACKET_SIZE_BYTES );
+
+    const EXEC_CAN_Result_T result =
+        EXEC_CAN_Transmit( ( EXEC_CAN_Channel_T )channel,
+                           ( const EXEC_CAN_Packet_T* )( const void* )payload, packet_count );
+
+    return result == EXEC_CAN_RESULT_OK ? EXECUTION_OPERATION_ADAPTER_ACCEPTED
+                                        : EXECUTION_OPERATION_ADAPTER_REJECTED;
 }

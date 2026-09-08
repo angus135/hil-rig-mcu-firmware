@@ -200,6 +200,38 @@ is `RESULTS_READY`; use `run_state discard` to return to IDLE for another run.
 canonical operation. The ISR receives only the three-byte prepared DAC frame;
 it performs no voltage conversion or validation.
 
+## Execution Manager CAN-output path
+
+This sequence exercises one classical CAN data frame through canonical flash
+storage, the Execution Manager adapter, the existing CAN transmit validation,
+and the hardware transmit queue. Begin at 100 Hz with a conservative bitrate
+and connect a correctly terminated CAN receiver before enabling the channel:
+
+```text
+flash init
+run_state reset
+run_state receive
+test_config inert
+test_config can 1 500000 0 0 0
+flash upload_can_test 1 0x123 0xAA 8 100 300
+run_state configure
+run_state frequency 100
+run_state execute 300 0
+```
+
+At tick 100 (one second at 100 Hz), channel 1 transmits one standard frame
+with identifier `0x123`, eight `0xAA` data bytes, and DLC 8. The current CAN
+driver performs its normal packet validation and copies the frame into its
+transmit queue. A driver or queue rejection terminates the execution as a
+fault; no retry is performed in the ISR. The expected terminal state is
+`RESULTS_READY`; use `run_state discard` after inspection.
+
+The optional `repeat_count interval_ticks` arguments create additional
+single-frame instructions at strictly increasing ticks. Keep the interval
+large enough for the configured CAN bitrate and bus arbitration. This command
+does not yet perform CAN schedule-feasibility admission, so do not use it as a
+10 kHz validation sequence.
+
 ## Execution Manager UART-output path
 
 This is a coarse multimeter-visible test of the real UART instruction and DMA

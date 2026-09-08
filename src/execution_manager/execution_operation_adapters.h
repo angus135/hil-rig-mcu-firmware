@@ -167,6 +167,23 @@ ExecutionOperationAdapterResult_T
 EXECUTION_OPERATION_ADAPTER_ApplyAnalogueOutput( uint8_t channel, const uint8_t* payload,
                                                  uint16_t payload_length_bytes );
 
+/**
+ * @brief Transmits a prevalidated CAN packet batch.
+ *
+ * @pre channel is EXECUTION_OPERATION_CAN_CHANNEL_1 or
+ *      EXECUTION_OPERATION_CAN_CHANNEL_2.
+ * @pre payload points to aligned ExecutionCanPacket_T records whose layout
+ *      matches EXEC_CAN_Packet_T.
+ * @pre payload_length_bytes is a non-zero multiple of
+ *      EXECUTION_CAN_PACKET_SIZE_BYTES.
+ *
+ * The current CAN driver performs its existing validation and driver-owned
+ * copy. This adapter performs no additional runtime validation.
+ */
+ExecutionOperationAdapterResult_T
+EXECUTION_OPERATION_ADAPTER_ApplyCanTransmit( uint8_t channel, const uint8_t* payload,
+                                              uint16_t payload_length_bytes );
+
 #ifdef __cplusplus
 }
 #endif
