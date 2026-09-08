@@ -121,6 +121,10 @@
 /* TX DMA disable timeout iterations */
 #define HW_UART_TX_DMA_DISABLE_TIMEOUT_ITERATIONS 1000U
 
+/* Oversampling-by-16 requires a non-zero 12-bit mantissa and 4-bit fraction. */
+#define HW_UART_BRR_SAMPLING16_MIN ( 0x0010U )
+#define HW_UART_BRR_SAMPLING16_MAX ( 0xFFFFU )
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -219,6 +223,7 @@ typedef struct
     DMA_Stream_TypeDef* rx_dma_stream;
     DMA_Stream_TypeDef* tx_dma_stream;
     UART_HandleTypeDef* uart_handle;
+    uint32_t ( *get_peripheral_clock_hz )( void );
 
     DMA_TypeDef*       tx_dma_controller;
     uint32_t           tx_ll_stream;
@@ -246,29 +251,31 @@ static HwUartChannelState_T hw_uart_channel_states[HW_UART_CHANNEL_COUNT];
 /* Fixed board-level mapping from logical UART channels to MCU peripherals */
 static const HwUartHardwareMap_T hw_uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
 
-    [HW_UART_CHANNEL_1] = { .uart_instance     = HW_UART_CH1_USART,
-                            .rx_dma_stream     = HW_UART_CH1_DMA_RX_STREAM,
-                            .tx_dma_stream     = HW_UART_CH1_DMA_TX_STREAM,
-                            .uart_handle       = HW_UART_CH1_HANDLE,
-                            .tx_dma_controller = HW_UART_CH1_DMA_CONTROLLER,
-                            .tx_ll_stream      = HW_UART_CH1_DMA_TX_LL_STREAM,
-                            .tx_dma_irq        = HW_UART_CH1_TX_DMA_IRQ,
-                            .tx_dma_ifcr_reg   = HW_UART_CH1_DMA_TX_IFCR_REG,
-                            .tx_dma_ifcr_mask  = HW_UART_CH1_DMA_TX_IFCR_MASK,
-                            .rx_dma_ifcr_reg   = HW_UART_CH1_DMA_RX_IFCR_REG,
-                            .rx_dma_ifcr_mask  = HW_UART_CH1_DMA_RX_IFCR_MASK },
+    [HW_UART_CHANNEL_1] = { .uart_instance           = HW_UART_CH1_USART,
+                            .rx_dma_stream           = HW_UART_CH1_DMA_RX_STREAM,
+                            .tx_dma_stream           = HW_UART_CH1_DMA_TX_STREAM,
+                            .uart_handle             = HW_UART_CH1_HANDLE,
+                            .get_peripheral_clock_hz = HAL_RCC_GetPCLK2Freq,
+                            .tx_dma_controller       = HW_UART_CH1_DMA_CONTROLLER,
+                            .tx_ll_stream            = HW_UART_CH1_DMA_TX_LL_STREAM,
+                            .tx_dma_irq              = HW_UART_CH1_TX_DMA_IRQ,
+                            .tx_dma_ifcr_reg         = HW_UART_CH1_DMA_TX_IFCR_REG,
+                            .tx_dma_ifcr_mask        = HW_UART_CH1_DMA_TX_IFCR_MASK,
+                            .rx_dma_ifcr_reg         = HW_UART_CH1_DMA_RX_IFCR_REG,
+                            .rx_dma_ifcr_mask        = HW_UART_CH1_DMA_RX_IFCR_MASK },
 
-    [HW_UART_CHANNEL_2] = { .uart_instance     = HW_UART_CH2_USART,
-                            .rx_dma_stream     = HW_UART_CH2_DMA_RX_STREAM,
-                            .tx_dma_stream     = HW_UART_CH2_DMA_TX_STREAM,
-                            .uart_handle       = HW_UART_CH2_HANDLE,
-                            .tx_dma_controller = HW_UART_CH2_DMA_CONTROLLER,
-                            .tx_ll_stream      = HW_UART_CH2_DMA_TX_LL_STREAM,
-                            .tx_dma_irq        = HW_UART_CH2_TX_DMA_IRQ,
-                            .tx_dma_ifcr_reg   = HW_UART_CH2_DMA_TX_IFCR_REG,
-                            .tx_dma_ifcr_mask  = HW_UART_CH2_DMA_TX_IFCR_MASK,
-                            .rx_dma_ifcr_reg   = HW_UART_CH2_DMA_RX_IFCR_REG,
-                            .rx_dma_ifcr_mask  = HW_UART_CH2_DMA_RX_IFCR_MASK } };
+    [HW_UART_CHANNEL_2] = { .uart_instance           = HW_UART_CH2_USART,
+                            .rx_dma_stream           = HW_UART_CH2_DMA_RX_STREAM,
+                            .tx_dma_stream           = HW_UART_CH2_DMA_TX_STREAM,
+                            .uart_handle             = HW_UART_CH2_HANDLE,
+                            .get_peripheral_clock_hz = HAL_RCC_GetPCLK1Freq,
+                            .tx_dma_controller       = HW_UART_CH2_DMA_CONTROLLER,
+                            .tx_ll_stream            = HW_UART_CH2_DMA_TX_LL_STREAM,
+                            .tx_dma_irq              = HW_UART_CH2_TX_DMA_IRQ,
+                            .tx_dma_ifcr_reg         = HW_UART_CH2_DMA_TX_IFCR_REG,
+                            .tx_dma_ifcr_mask        = HW_UART_CH2_DMA_TX_IFCR_MASK,
+                            .rx_dma_ifcr_reg         = HW_UART_CH2_DMA_RX_IFCR_REG,
+                            .rx_dma_ifcr_mask        = HW_UART_CH2_DMA_RX_IFCR_MASK } };
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -280,6 +287,7 @@ static inline void HW_UART_Rx_Error_Handler( HwUartChannel_T channel );
 
 static bool HW_UART_Start_Rx( HwUartChannel_T channel );
 static bool HW_UART_Stop_Rx( HwUartChannel_T channel );
+static bool HW_UART_Baud_Rate_Is_Representable( HwUartChannel_T channel, uint32_t baud_rate );
 
 /**-----------------------------------------------------------------------------
  *  Interrupt Handler Prototypes
@@ -352,6 +360,21 @@ static bool HW_UART_Configuration_Is_Valid( const HwUartPeripheralConfig_T* conf
     }
 
     return ( config->baud_rate <= 2000000U );
+}
+
+/** Validates the baud divider against the selected peripheral's live bus clock. */
+static bool HW_UART_Baud_Rate_Is_Representable( HwUartChannel_T channel, uint32_t baud_rate )
+{
+    const uint32_t peripheral_clock_hz = hw_uart_hardware_map[channel].get_peripheral_clock_hz();
+
+    if ( peripheral_clock_hz == 0U )
+    {
+        return false;
+    }
+
+    const uint32_t brr = UART_BRR_SAMPLING16( peripheral_clock_hz, baud_rate );
+
+    return brr >= HW_UART_BRR_SAMPLING16_MIN && brr <= HW_UART_BRR_SAMPLING16_MAX;
 }
 
 static bool HW_UART_Start_Rx( HwUartChannel_T channel )
@@ -545,6 +568,7 @@ static bool HW_UART_Init_Channel( HwUartChannel_T channel )
 
     huart->Init.Mode = ( state->config.tx_enabled ? UART_MODE_TX : 0U )
                        | ( state->config.rx_enabled ? UART_MODE_RX : 0U );
+    huart->Init.OverSampling = UART_OVERSAMPLING_16;
 
     if ( HAL_UART_Init( huart ) != HAL_OK )
     {
@@ -663,7 +687,8 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartPeripheralC
         return false;
     }
 
-    if ( !HW_UART_Configuration_Is_Valid( config ) )
+    if ( !HW_UART_Configuration_Is_Valid( config )
+         || !HW_UART_Baud_Rate_Is_Representable( channel, config->baud_rate ) )
     {
         return false;
     }

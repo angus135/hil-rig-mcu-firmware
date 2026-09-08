@@ -40,9 +40,8 @@ static const ExecutionOperationAdapter_T
     execution_operation_adapters[EXECUTION_OPERATION_DISPATCH_TABLE_SIZE] = {
         [EXECUTION_OPERATION_OPCODE_DIGITAL_OUTPUT_UPDATE] =
             EXECUTION_OPERATION_ADAPTER_ApplyDigitalOutput,
-        [EXECUTION_OPERATION_OPCODE_PWM_UPDATE] = EXECUTION_OPERATION_ADAPTER_ApplyPwmUpdate,
-        [EXECUTION_OPERATION_OPCODE_UART_TRANSMIT] =
-            EXECUTION_OPERATION_ADAPTER_ApplyUartTransmit,
+        [EXECUTION_OPERATION_OPCODE_PWM_UPDATE]    = EXECUTION_OPERATION_ADAPTER_ApplyPwmUpdate,
+        [EXECUTION_OPERATION_OPCODE_UART_TRANSMIT] = EXECUTION_OPERATION_ADAPTER_ApplyUartTransmit,
 };
 
 /**-----------------------------------------------------------------------------
