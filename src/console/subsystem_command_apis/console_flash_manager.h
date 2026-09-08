@@ -49,7 +49,8 @@
  *
  *      `test_config uart <channel> <3v3|5v|rs232> <baud> tx`
  *      `flash upload_uart_test <channel> <byte> <length> <first_tick> <run_ticks>`
- *      `flash upload_uart_test <channel> <byte> <length> <first_tick> <run_ticks> <repeat_count> <interval_ticks>`
+ *      `flash upload_uart_test <channel> <byte> <length> <first_tick> <run_ticks> <repeat_count>
+ *<interval_ticks>`
  *
  *  The upload command creates one or more variable-length raw UART operations. It is
  *  bounded only by the canonical field and console staging-buffer capacities;

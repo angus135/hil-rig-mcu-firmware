@@ -276,13 +276,13 @@ static void CONSOLE_Flash_EncodePwmInstruction( uint8_t* destination, uint32_t t
 static uint32_t CONSOLE_Flash_EncodeUartInstruction( uint8_t* destination, uint32_t timestamp,
                                                      uint8_t channel, uint8_t value,
                                                      uint16_t payload_length_bytes );
-static void CONSOLE_Flash_FillPattern( uint8_t* destination, uint32_t stream_offset,
-                                       uint32_t length, uint8_t seed );
-static bool CONSOLE_Flash_VerifyPattern( const uint8_t* data, uint32_t stream_offset,
-                                         uint32_t length, uint8_t seed,
-                                         uint32_t* first_bad_offset );
-static void CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32_t stream_offset,
-                                                uint32_t length, uint8_t seed );
+static void     CONSOLE_Flash_FillPattern( uint8_t* destination, uint32_t stream_offset,
+                                           uint32_t length, uint8_t seed );
+static bool     CONSOLE_Flash_VerifyPattern( const uint8_t* data, uint32_t stream_offset,
+                                             uint32_t length, uint8_t seed,
+                                             uint32_t* first_bad_offset );
+static void     CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32_t stream_offset,
+                                                    uint32_t length, uint8_t seed );
 static uint32_t CONSOLE_Flash_Fnv1aUpdate( uint32_t hash, const uint8_t* data, uint32_t length );
 
 static void CONSOLE_Flash_InitCommand( void );
@@ -1145,8 +1145,7 @@ static uint32_t CONSOLE_Flash_EncodeUartInstruction( uint8_t* destination, uint3
                                                      uint8_t channel, uint8_t value,
                                                      uint16_t payload_length_bytes )
 {
-    const uint32_t operation_bytes =
-        EXECUTION_OPERATION_ENCODED_SIZE_BYTES( payload_length_bytes );
+    const uint32_t operation_bytes = EXECUTION_OPERATION_ENCODED_SIZE_BYTES( payload_length_bytes );
     const uint32_t instruction_word =
         operation_bytes | ( CONSOLE_FLASH_TEST_OPERATION_COUNT << 16U );
     const uint32_t operation_word = EXECUTION_OPERATION_OPCODE_UART_TRANSMIT
@@ -1156,8 +1155,7 @@ static uint32_t CONSOLE_Flash_EncodeUartInstruction( uint8_t* destination, uint3
     CONSOLE_Flash_WriteU32Le( &destination[0], timestamp );
     CONSOLE_Flash_WriteU32Le( &destination[4], instruction_word );
     CONSOLE_Flash_WriteU32Le( &destination[8], operation_word );
-    ( void )memset( &destination[12], 0,
-                    operation_bytes - EXECUTION_OPERATION_HEADER_SIZE_BYTES );
+    ( void )memset( &destination[12], 0, operation_bytes - EXECUTION_OPERATION_HEADER_SIZE_BYTES );
     ( void )memset( &destination[12], value, payload_length_bytes );
 
     return ( uint32_t )sizeof( ExecutionInstructionHeader_T ) + operation_bytes;
@@ -1389,10 +1387,10 @@ static void CONSOLE_Flash_UploadUartTestCommand( uint16_t argc, char* argv[] )
          || !CONSOLE_Flash_ParseU32( argv[4], &length )
          || !CONSOLE_Flash_ParseU32( argv[5], &first_tick )
          || !CONSOLE_Flash_ParseU32( argv[6], &run_ticks )
-         || ( argc == 9U && ( !CONSOLE_Flash_ParseU32( argv[7], &repeat_count )
-                              || !CONSOLE_Flash_ParseU32( argv[8], &interval_ticks ) ) )
-         || channel < 1U
-         || channel > EXEC_UART_CHANNEL_COUNT || value > UINT8_MAX || length == 0U
+         || ( argc == 9U
+              && ( !CONSOLE_Flash_ParseU32( argv[7], &repeat_count )
+                   || !CONSOLE_Flash_ParseU32( argv[8], &interval_ticks ) ) )
+         || channel < 1U || channel > EXEC_UART_CHANNEL_COUNT || value > UINT8_MAX || length == 0U
          || length > UINT16_MAX || first_tick == 0U || repeat_count == 0U
          || ( repeat_count > 1U && interval_ticks == 0U ) )
     {
@@ -1454,9 +1452,9 @@ static void CONSOLE_Flash_UploadUartTestCommand( uint16_t argc, char* argv[] )
     for ( uint32_t repeat_index = 0U; repeat_index < repeat_count; repeat_index++ )
     {
         const uint32_t transmit_tick = first_tick + ( repeat_index * interval_ticks );
-        ( void )CONSOLE_Flash_EncodeUartInstruction(
-            console_flash_write_buffer, transmit_tick, ( uint8_t )( channel - 1U ),
-            ( uint8_t )value, ( uint16_t )length );
+        ( void )CONSOLE_Flash_EncodeUartInstruction( console_flash_write_buffer, transmit_tick,
+                                                     ( uint8_t )( channel - 1U ), ( uint8_t )value,
+                                                     ( uint16_t )length );
 
         TickType_t progress_started_at = xTaskGetTickCount();
         for ( ;; )
@@ -1517,8 +1515,7 @@ static void CONSOLE_Flash_UploadUartTestCommand( uint16_t argc, char* argv[] )
 
     CONSOLE_Printf( "UART upload PASS: channel=%lu byte=0x%02lX length=%u "
                     "first_tick=%lu repeats=%lu interval_ticks=%lu run_ticks=%lu.\r\n",
-                    ( unsigned long )channel, ( unsigned long )value,
-                    ( unsigned int )length,
+                    ( unsigned long )channel, ( unsigned long )value, ( unsigned int )length,
                     ( unsigned long )first_tick, ( unsigned long )repeat_count,
                     ( unsigned long )interval_ticks, ( unsigned long )run_ticks );
     CONSOLE_Printf( "Next: finish configuring the RSM, then 'run_state execute %lu 0'.\r\n",

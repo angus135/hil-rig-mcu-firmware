@@ -18,11 +18,11 @@ static uint32_t                    pwm_lv_calls;
 static uint32_t                    pwm_hv_calls;
 static ExecutionPwmUpdatePayload_T last_pwm_lv;
 static ExecutionPwmUpdatePayload_T last_pwm_hv;
-static uint32_t                     uart_calls;
-static ExecUartChannel_T            last_uart_channel;
-static uint8_t                      last_uart_payload[8];
-static uint32_t                     last_uart_length;
-static bool                         uart_accept;
+static uint32_t                    uart_calls;
+static ExecUartChannel_T           last_uart_channel;
+static uint8_t                     last_uart_payload[8];
+static uint32_t                    last_uart_length;
+static bool                        uart_accept;
 
 struct alignas( 4 ) EncodedDigitalOutputOperation
 {
@@ -72,7 +72,7 @@ extern "C" void EXEC_PWM_GEN_Set_PWM_HV( uint16_t arr, uint16_t ccr, uint16_t ps
 }
 
 extern "C" bool EXEC_UART_Transmit( ExecUartChannel_T channel, const uint8_t* data,
-                                     uint32_t length_bytes )
+                                    uint32_t length_bytes )
 {
     uart_calls++;
     last_uart_channel = channel;
@@ -217,8 +217,8 @@ TEST_F( ExecutionOperationAdaptersTest, WalkerSkipsPwmAlignmentPaddingBeforeNext
 TEST_F( ExecutionOperationAdaptersTest, UartTransmitPassesRawPayloadAndLengthToDriver )
 {
     const EncodedUartOperation operation = {
-        EXECUTION_OPERATION_OPCODE_UART_TRANSMIT
-            | ( EXECUTION_OPERATION_UART_CHANNEL_2 << 8U ) | ( 5U << 16U ),
+        EXECUTION_OPERATION_OPCODE_UART_TRANSMIT | ( EXECUTION_OPERATION_UART_CHANNEL_2 << 8U )
+            | ( 5U << 16U ),
         { 0x11U, 0x22U, 0x33U, 0x44U, 0x55U },
         { 0U, 0U, 0U },
     };
@@ -235,8 +235,8 @@ TEST_F( ExecutionOperationAdaptersTest, UartTransmitPassesRawPayloadAndLengthToD
 TEST_F( ExecutionOperationAdaptersTest, UartDriverRejectionPropagatesToOperationWalker )
 {
     const EncodedUartOperation operation = {
-        EXECUTION_OPERATION_OPCODE_UART_TRANSMIT
-            | ( EXECUTION_OPERATION_UART_CHANNEL_1 << 8U ) | ( 5U << 16U ),
+        EXECUTION_OPERATION_OPCODE_UART_TRANSMIT | ( EXECUTION_OPERATION_UART_CHANNEL_1 << 8U )
+            | ( 5U << 16U ),
         { 1U, 2U, 3U, 4U, 5U },
         { 0U, 0U, 0U },
     };
