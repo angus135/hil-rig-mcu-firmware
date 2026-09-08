@@ -36,12 +36,13 @@ Disabled --Configure(enabled)--> Configured/stopped --Start--> Started
 - Disabled configuration applies `SPI_EN=0` and slave selection as the safe
   state. HW configuration is retained because HW SPI has no deconfigure API.
 
-Logic Expander port B mapping:
+Board-channel mapping. The board channel labels are crossed relative to the
+MCU SPI instance numbers:
 
-| Channel | `SPI_EN` | `SPI_EN_MASTER_NSLAVE` |
-|---|---:|---:|
-| `EXEC_SPI_CHANNEL_1` | B6 | B7 |
-| `EXEC_SPI_CHANNEL_2` | B4 | B5 |
+| Channel | HW SPI | NSS | `SPI_EN` | `SPI_EN_MASTER_NSLAVE` |
+|---|---|---|---:|---:|
+| `EXEC_SPI_CHANNEL_1` | SPI2 | PB12 | B4 | B5 |
+| `EXEC_SPI_CHANNEL_2` | SPI1 | PA4 | B6 | B7 |
 
 ---
 

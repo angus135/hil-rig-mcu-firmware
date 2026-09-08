@@ -114,6 +114,27 @@ EXECUTION_OPERATION_ADAPTER_ApplyPwmUpdate( uint8_t channel, const uint8_t* payl
                                             uint16_t payload_length_bytes );
 
 /**
+ * @brief Submits one prevalidated variable-size SPI packet batch.
+ *
+ * @pre channel is EXECUTION_OPERATION_SPI_CHANNEL_1 or
+ *      EXECUTION_OPERATION_SPI_CHANNEL_2.
+ * @pre payload points to an aligned SPI prefix followed by packet_count
+ *      uint32_t sizes and the corresponding contiguous packet data.
+ * @pre every packet size is valid for the configured SPI channel and all
+ *      sizes exactly account for the remaining unpadded payload bytes.
+ *
+ * The SPI driver copies the complete batch before returning, so it does not
+ * retain any pointer into Flash Manager instruction storage.
+ *
+ * @return EXECUTION_OPERATION_ADAPTER_ACCEPTED when the complete batch was
+ *         queued and TX was triggered; otherwise
+ *         EXECUTION_OPERATION_ADAPTER_REJECTED.
+ */
+ExecutionOperationAdapterResult_T
+EXECUTION_OPERATION_ADAPTER_ApplySpiTransmit( uint8_t channel, const uint8_t* payload,
+                                              uint16_t payload_length_bytes );
+
+/**
  * @brief Queues one prevalidated UART payload into driver-owned DMA storage.
  *
  * @pre channel is EXECUTION_OPERATION_UART_CHANNEL_1 or

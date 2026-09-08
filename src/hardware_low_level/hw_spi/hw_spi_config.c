@@ -39,50 +39,50 @@
 SPIPeripheralState_T channel_state_array[SPI_NUM_CHANNELS];
 
 static SPI_HandleTypeDef* const SPI_HAL_HANDLE_ARRAY[SPI_NUM_CHANNELS] = {
-    [SPI_CHANNEL_0] = &SPI_CHANNEL_0_HANDLE,
     [SPI_CHANNEL_1] = &SPI_CHANNEL_1_HANDLE,
+    [SPI_CHANNEL_2] = &SPI_CHANNEL_2_HANDLE,
     [SPI_DAC]       = &SPI_DAC_HANDLE,
 };
 
 static SPI_TypeDef* const SPI_INSTANCE_ARRAY[SPI_NUM_CHANNELS] = {
-    [SPI_CHANNEL_0] = SPI_CHANNEL_0_INSTANCE,
     [SPI_CHANNEL_1] = SPI_CHANNEL_1_INSTANCE,
+    [SPI_CHANNEL_2] = SPI_CHANNEL_2_INSTANCE,
     [SPI_DAC]       = SPI_DAC_INSTANCE,
 };
 
 static DMA_TypeDef* const SPI_RX_DMA_ARRAY[SPI_NUM_CHANNELS] = {
-    [SPI_CHANNEL_0] = SPI_CHANNEL_0_RX_DMA,
     [SPI_CHANNEL_1] = SPI_CHANNEL_1_RX_DMA,
+    [SPI_CHANNEL_2] = SPI_CHANNEL_2_RX_DMA,
     [SPI_DAC]       = NULL,
 };
 
 static const uint32_t SPI_RX_DMA_STREAM_ARRAY[SPI_NUM_CHANNELS] = {
-    [SPI_CHANNEL_0] = SPI_CHANNEL_0_RX_DMA_STREAM,
     [SPI_CHANNEL_1] = SPI_CHANNEL_1_RX_DMA_STREAM,
+    [SPI_CHANNEL_2] = SPI_CHANNEL_2_RX_DMA_STREAM,
     [SPI_DAC]       = 0U,
 };
 
 static DMA_TypeDef* const SPI_TX_DMA_ARRAY[SPI_NUM_CHANNELS] = {
-    [SPI_CHANNEL_0] = SPI_CHANNEL_0_TX_DMA,
     [SPI_CHANNEL_1] = SPI_CHANNEL_1_TX_DMA,
+    [SPI_CHANNEL_2] = SPI_CHANNEL_2_TX_DMA,
     [SPI_DAC]       = SPI_DAC_TX_DMA,
 };
 
 static const uint32_t SPI_TX_DMA_STREAM_ARRAY[SPI_NUM_CHANNELS] = {
-    [SPI_CHANNEL_0] = SPI_CHANNEL_0_TX_DMA_STREAM,
     [SPI_CHANNEL_1] = SPI_CHANNEL_1_TX_DMA_STREAM,
+    [SPI_CHANNEL_2] = SPI_CHANNEL_2_TX_DMA_STREAM,
     [SPI_DAC]       = SPI_DAC_TX_DMA_STREAM,
 };
 
 static const IRQn_Type SPI_TX_DMA_IRQN_ARRAY[SPI_NUM_CHANNELS] = {
-    [SPI_CHANNEL_0] = SPI_CHANNEL_0_TX_DMA_IRQN,
     [SPI_CHANNEL_1] = SPI_CHANNEL_1_TX_DMA_IRQN,
+    [SPI_CHANNEL_2] = SPI_CHANNEL_2_TX_DMA_IRQN,
     [SPI_DAC]       = SPI_DAC_TX_DMA_IRQN,
 };
 
 static const Timer_T SPI_FINAL__DRAIN_TIMER_ARRAY[SPI_NUM_CHANNELS] = {
-    [SPI_CHANNEL_0] = SPI_CHANNEL_0_TIMER,
     [SPI_CHANNEL_1] = SPI_CHANNEL_1_TIMER,
+    [SPI_CHANNEL_2] = SPI_CHANNEL_2_TIMER,
     [SPI_DAC]       = SPI_DAC_TIMER,
 };
 
@@ -147,10 +147,10 @@ static bool HW_SPI_Config_Is_Valid_NSS( SPIChannel_T         peripheral,
     // Hardware-NSS input is fixed by the MCU alternate-function routing.
     switch ( peripheral )
     {
-        case SPI_CHANNEL_0:
-            return configuration->nss_pin == GPIO_SPI1_NSS;
         case SPI_CHANNEL_1:
             return configuration->nss_pin == GPIO_SPI2_NSS;
+        case SPI_CHANNEL_2:
+            return configuration->nss_pin == GPIO_SPI1_NSS;
         case SPI_DAC:
             return configuration->nss_pin == GPIO_SPI4_NSS;
         case SPI_NUM_CHANNELS:
