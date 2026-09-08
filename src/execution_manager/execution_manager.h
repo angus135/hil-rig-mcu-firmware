@@ -67,7 +67,12 @@ bool EXECUTION_MANAGER_Prepare( uint32_t tick_count );
  */
 void EXECUTION_MANAGER_SetTerminalCallback( ExecutionManagerTerminalCallback_T callback );
 
-/** Clears run-local state after the execution timer has been stopped. */
+/**
+ * @brief Deactivates the current run after the execution timer has stopped.
+ *
+ * The last processed tick and first failure remain available for diagnostics.
+ * EXECUTION_MANAGER_Prepare() resets all run-local state before the next run.
+ */
 void EXECUTION_MANAGER_Abort( void );
 
 /**

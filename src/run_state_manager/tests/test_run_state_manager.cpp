@@ -489,8 +489,9 @@ TEST_F( RunStateManagerTest, ExecutionManagerPreparationFailurePreventsDriverAnd
 TEST_F( RunStateManagerTest, ExecutionTimerStartFailureStopsDriversAndEntersFault )
 {
     ConfigureToArmed();
-    execution_request  = ( RunStateExecutionRequest_T ){ 10U, 0U };
-    timer_start_result = false;
+    const uint32_t abort_calls_before_execution = execution_abort_calls;
+    execution_request                           = ( RunStateExecutionRequest_T ){ 10U, 0U };
+    timer_start_result                          = false;
     Process( RUN_STATE_REQUEST_EXECUTION );
     flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
 
@@ -502,7 +503,7 @@ TEST_F( RunStateManagerTest, ExecutionTimerStartFailureStopsDriversAndEntersFaul
     EXPECT_FALSE( execution_timer_running );
     EXPECT_EQ( 1U, driver_start_calls );
     EXPECT_EQ( 1U, driver_stop_calls );
-    EXPECT_EQ( 2U, execution_abort_calls );
+    EXPECT_EQ( abort_calls_before_execution + 2U, execution_abort_calls );
     EXPECT_EQ( 1U, timer_start_calls );
 }
 
