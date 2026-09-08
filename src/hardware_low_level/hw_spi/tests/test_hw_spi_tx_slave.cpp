@@ -597,6 +597,27 @@ TEST_F( HWSpiSlaveTxTest, LoadTxBuffer_SlaveWrapsStreamAcrossEndOfRing )
     EXPECT_EQ( HW_SPI_STATE( SPI_CHANNEL_0 )->tx_num_bytes_pending, 6U );
 }
 
+TEST_F( HWSpiSlaveTxTest, LoadTxPacketBatch_SlaveQueuesConcatenatedDataAsOneStream )
+{
+    InitialiseState( HW_SPI_STATE( SPI_CHANNEL_0 ), SPI_CHANNEL_0, MakeSlaveConfig(),
+                     SPI_CHANNEL_0_RX_DMA, SPI_CHANNEL_0_RX_DMA_STREAM, SPI_CHANNEL_0_TX_DMA,
+                     SPI_CHANNEL_0_TX_DMA_STREAM, SPI_CHANNEL_0_INSTANCE, SPI_CHANNEL_0_TX_DMA_IRQN,
+                     SPI_CHANNEL_0_TIMER );
+    const uint8_t         data[]         = { 0x10U, 0x11U, 0x20U, 0x21U, 0x22U, 0x30U };
+    const uint32_t        packet_sizes[] = { 2U, 3U, 1U };
+    SPIPeripheralState_T* state          = HW_SPI_STATE( SPI_CHANNEL_0 );
+
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+
+    ASSERT_TRUE( HW_SPI_Load_Tx_Packet_Batch( SPI_CHANNEL_0, data, packet_sizes, 3U ) );
+
+    EXPECT_EQ( state->tx_num_packets_pending, 0U );
+    EXPECT_EQ( state->tx_num_bytes_pending, sizeof( data ) );
+    EXPECT_EQ( state->tx_write_position, sizeof( data ) );
+    EXPECT_EQ( memcmp( state->tx_buffer, data, sizeof( data ) ), 0 );
+}
+
 TEST_F( HWSpiSlaveTxTest, LoadTxBuffer_SlaveRejectsFrameMisalignmentIn16BitMode )
 {
     InitialiseState( HW_SPI_STATE( SPI_CHANNEL_1 ), SPI_CHANNEL_1,

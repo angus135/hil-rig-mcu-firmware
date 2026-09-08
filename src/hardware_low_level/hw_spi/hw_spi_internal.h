@@ -404,6 +404,9 @@ bool HW_SPI_TX_Load_Master_Packet( SPIPeripheralState_T* peripheral_state, const
                                    uint32_t size );
 bool HW_SPI_TX_Load_Master_Packets( SPIPeripheralState_T* peripheral_state, const uint8_t* data,
                                     uint32_t packet_size_bytes, uint32_t packet_count );
+bool HW_SPI_TX_Load_Master_Packet_Batch( SPIPeripheralState_T* peripheral_state,
+                                         const uint8_t* data, const uint32_t* packet_sizes_bytes,
+                                         uint32_t packet_count );
 bool HW_SPI_TX_Start_Master_Packet_DMA( SPIPeripheralState_T* peripheral_state );
 /** @} */
 

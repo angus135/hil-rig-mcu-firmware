@@ -733,6 +733,45 @@ TEST_F( HWSpiMasterTxTest, LoadTxPackets_QueuesElevenSeparateThreeByteDescriptor
         0 );
 }
 
+TEST_F( HWSpiMasterTxTest, LoadTxPacketBatch_QueuesVariablePacketsAtomicallyInOrder )
+{
+    const uint8_t         data[]         = { 0x10U, 0x11U, 0x20U, 0x21U, 0x22U, 0x30U };
+    const uint32_t        packet_sizes[] = { 2U, 3U, 1U };
+    SPIPeripheralState_T* state          = HW_SPI_STATE( SPI_CHANNEL_0 );
+
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+
+    ASSERT_TRUE( HW_SPI_Load_Tx_Packet_Batch( SPI_CHANNEL_0, data, packet_sizes, 3U ) );
+
+    EXPECT_EQ( state->tx_num_packets_pending, 3U );
+    EXPECT_EQ( state->tx_num_bytes_pending, sizeof( data ) );
+    EXPECT_EQ( state->tx_packet_descriptors[0].start_index, 0U );
+    EXPECT_EQ( state->tx_packet_descriptors[0].size_bytes, 2U );
+    EXPECT_EQ( state->tx_packet_descriptors[1].start_index, 2U );
+    EXPECT_EQ( state->tx_packet_descriptors[1].size_bytes, 3U );
+    EXPECT_EQ( state->tx_packet_descriptors[2].start_index, 5U );
+    EXPECT_EQ( state->tx_packet_descriptors[2].size_bytes, 1U );
+    EXPECT_EQ( memcmp( state->tx_buffer, data, sizeof( data ) ), 0 );
+}
+
+TEST_F( HWSpiMasterTxTest, LoadTxPacketBatch_InsufficientCapacityLeavesQueueUnchanged )
+{
+    const uint8_t         data[]         = { 1U, 2U, 3U, 4U, 5U, 6U };
+    const uint32_t        packet_sizes[] = { 2U, 3U, 1U };
+    SPIPeripheralState_T* state          = HW_SPI_STATE( SPI_CHANNEL_0 );
+    state->tx_num_bytes_pending          = TX_BUFFER_SIZE_BYTES - 4U;
+    state->tx_write_position             = TX_BUFFER_SIZE_BYTES - 4U;
+
+    const SPIPeripheralState_T before = *state;
+
+    EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+    EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_0_TX_DMA_IRQN ) );
+
+    EXPECT_FALSE( HW_SPI_Load_Tx_Packet_Batch( SPI_CHANNEL_0, data, packet_sizes, 3U ) );
+    EXPECT_EQ( memcmp( state, &before, sizeof( before ) ), 0 );
+}
+
 TEST_F( HWSpiMasterTxTest, LoadTxPackets_AppendsAfterActivePacketAndTransmitsInOrder )
 {
     const std::array<uint8_t, 3U> active_packet  = { 0x10U, 0x11U, 0x12U };

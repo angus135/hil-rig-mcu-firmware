@@ -64,6 +64,11 @@ public:
     MOCK_METHOD( bool, LoadTxBuffer,
                  ( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ), () );
 
+    MOCK_METHOD( bool, LoadTxPacketBatch,
+                 ( SPIChannel_T peripheral, const uint8_t* data, const uint32_t* packet_sizes_bytes,
+                   uint32_t packet_count ),
+                 () );
+
     MOCK_METHOD( void, TxTrigger, ( SPIChannel_T peripheral ), () );
 
     MOCK_METHOD( HWSPIRxSpans_T, RxPeek, ( SPIChannel_T peripheral ), () );
@@ -106,6 +111,12 @@ bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
 bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32_t size )
 {
     return g_mock_hw_spi->LoadTxBuffer( peripheral, data, size );
+}
+
+bool HW_SPI_Load_Tx_Packet_Batch( SPIChannel_T peripheral, const uint8_t* data,
+                                  const uint32_t* packet_sizes_bytes, uint32_t packet_count )
+{
+    return g_mock_hw_spi->LoadTxPacketBatch( peripheral, data, packet_sizes_bytes, packet_count );
 }
 
 void HW_SPI_Tx_Trigger( SPIChannel_T peripheral )
@@ -458,10 +469,11 @@ TEST_F( ExecSPITest, Transmit_SinglePacket_LoadsPacketTriggersOnceAndReturnsTrue
     {
         InSequence sequence;
 
-        EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, tx_data, TEST_TX_SIZE_BYTES ) )
+        EXPECT_CALL( mock_hw_spi, LoadTxPacketBatch( SPI_CHANNEL_0, tx_data, packet_sizes, 1U ) )
             .WillOnce( Return( true ) );
 
         EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_CHANNEL_0 ) ).Times( 1 );
+        EXPECT_CALL( mock_hw_spi, TxIsFaulted( SPI_CHANNEL_0 ) ).WillOnce( Return( false ) );
     }
 
     bool result = EXEC_SPI_Transmit(
@@ -471,10 +483,9 @@ TEST_F( ExecSPITest, Transmit_SinglePacket_LoadsPacketTriggersOnceAndReturnsTrue
     EXPECT_TRUE( result );
 }
 
-TEST_F( ExecSPITest, Transmit_MultiplePackets_LoadsEachPacketThenTriggersOnce )
+TEST_F( ExecSPITest, Transmit_MultiplePackets_LoadsAtomicBatchThenTriggersOnce )
 {
     using ::testing::InSequence;
-    using ::testing::Invoke;
     using ::testing::Return;
 
     const uint8_t tx_data[] = {
@@ -487,34 +498,11 @@ TEST_F( ExecSPITest, Transmit_MultiplePackets_LoadsEachPacketThenTriggersOnce )
     {
         InSequence sequence;
 
-        EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, &tx_data[0], packet_sizes[0] ) )
-            .WillOnce(
-                Invoke( [&]( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ) {
-                    EXPECT_EQ( peripheral, SPI_CHANNEL_0 );
-                    EXPECT_EQ( size_bytes, 2U );
-                    EXPECT_EQ( 0, std::memcmp( data, &tx_data[0], 2U ) );
-                    return true;
-                } ) );
-
-        EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, &tx_data[2], packet_sizes[1] ) )
-            .WillOnce(
-                Invoke( [&]( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ) {
-                    EXPECT_EQ( peripheral, SPI_CHANNEL_0 );
-                    EXPECT_EQ( size_bytes, 3U );
-                    EXPECT_EQ( 0, std::memcmp( data, &tx_data[2], 3U ) );
-                    return true;
-                } ) );
-
-        EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, &tx_data[5], packet_sizes[2] ) )
-            .WillOnce(
-                Invoke( [&]( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ) {
-                    EXPECT_EQ( peripheral, SPI_CHANNEL_0 );
-                    EXPECT_EQ( size_bytes, 1U );
-                    EXPECT_EQ( 0, std::memcmp( data, &tx_data[5], 1U ) );
-                    return true;
-                } ) );
+        EXPECT_CALL( mock_hw_spi, LoadTxPacketBatch( SPI_CHANNEL_0, tx_data, packet_sizes, 3U ) )
+            .WillOnce( Return( true ) );
 
         EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_CHANNEL_0 ) ).Times( 1 );
+        EXPECT_CALL( mock_hw_spi, TxIsFaulted( SPI_CHANNEL_0 ) ).WillOnce( Return( false ) );
     }
 
     bool result = EXEC_SPI_Transmit(
@@ -524,7 +512,7 @@ TEST_F( ExecSPITest, Transmit_MultiplePackets_LoadsEachPacketThenTriggersOnce )
     EXPECT_TRUE( result );
 }
 
-TEST_F( ExecSPITest, Transmit_FirstPacketLoadFails_DoesNotTriggerTxAndReturnsFalse )
+TEST_F( ExecSPITest, Transmit_BatchLoadFails_DoesNotTriggerTxAndReturnsFalse )
 {
     using ::testing::InSequence;
     using ::testing::Return;
@@ -535,7 +523,7 @@ TEST_F( ExecSPITest, Transmit_FirstPacketLoadFails_DoesNotTriggerTxAndReturnsFal
     {
         InSequence sequence;
 
-        EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, tx_data, TEST_TX_SIZE_BYTES ) )
+        EXPECT_CALL( mock_hw_spi, LoadTxPacketBatch( SPI_CHANNEL_0, tx_data, packet_sizes, 1U ) )
             .WillOnce( Return( false ) );
     }
 
@@ -548,7 +536,7 @@ TEST_F( ExecSPITest, Transmit_FirstPacketLoadFails_DoesNotTriggerTxAndReturnsFal
     EXPECT_FALSE( result );
 }
 
-TEST_F( ExecSPITest, Transmit_LaterPacketLoadFails_DoesNotLoadRemainingPacketsOrTriggerTx )
+TEST_F( ExecSPITest, Transmit_TriggerFaultReturnsFalse )
 {
     using ::testing::InSequence;
     using ::testing::Return;
@@ -563,14 +551,11 @@ TEST_F( ExecSPITest, Transmit_LaterPacketLoadFails_DoesNotLoadRemainingPacketsOr
     {
         InSequence sequence;
 
-        EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, &tx_data[0], packet_sizes[0] ) )
+        EXPECT_CALL( mock_hw_spi, LoadTxPacketBatch( SPI_CHANNEL_0, tx_data, packet_sizes, 3U ) )
             .WillOnce( Return( true ) );
-
-        EXPECT_CALL( mock_hw_spi, LoadTxBuffer( SPI_CHANNEL_0, &tx_data[2], packet_sizes[1] ) )
-            .WillOnce( Return( false ) );
+        EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_CHANNEL_0 ) ).Times( 1 );
+        EXPECT_CALL( mock_hw_spi, TxIsFaulted( SPI_CHANNEL_0 ) ).WillOnce( Return( true ) );
     }
-
-    EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_CHANNEL_0 ) ).Times( 0 );
 
     bool result = EXEC_SPI_Transmit(
         EXEC_SPI_CHANNEL_1, tx_data, packet_sizes,

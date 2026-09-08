@@ -188,10 +188,10 @@ bool EXEC_SPI_Is_Started( ExecSPIChannel_T channel );
  * @p packet_sizes_bytes describes the size of one SPI packet inside
  * @p data_src.
  *
- * For master-mode SPI, each low-level HW_SPI_Load_Tx_Buffer() call becomes one
- * software-chip-select-framed SPI transaction. This function therefore calls
- * HW_SPI_Load_Tx_Buffer() once per packet, then calls HW_SPI_Tx_Trigger() only
- * once after all packet loads have completed.
+ * The complete variable-size packet batch is submitted atomically to the
+ * low-level driver. In master mode each supplied packet becomes one
+ * software-chip-select-framed transaction. TX is triggered once only after the
+ * complete batch has been accepted.
  *
  * Example:
  * @code
@@ -234,7 +234,7 @@ bool EXEC_SPI_Is_Started( ExecSPIChannel_T channel );
  * @return
  *     true if all packets were accepted by the low-level TX queue and
  *     transmission was triggered.
- *     false if any packet could not be accepted by the low-level TX queue.
+ *     false if the complete batch could not be accepted or triggering faulted.
  */
 bool EXEC_SPI_Transmit( ExecSPIChannel_T channel, const uint8_t* data_src,
                         const uint32_t* packet_sizes_bytes, uint32_t num_packets );
