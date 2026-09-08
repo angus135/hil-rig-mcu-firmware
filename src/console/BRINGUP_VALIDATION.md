@@ -167,6 +167,39 @@ The expected terminal state is `RESULTS_READY`, with TIM4 and the PWM channel
 stopped. `run_state discard` releases the empty result session and returns the
 RSM and Flash Manager to IDLE for another run.
 
+## Execution Manager analogue-output path
+
+This sequence exercises one prepared DAC frame through the host-side voltage
+conversion, Flash Manager instruction storage, Execution Manager adapter, and
+the production analogue-output SPI/DAC path. Select `internal` or `external`
+to match the fitted DAC reference and probe board-labelled analogue-output
+channel 1 (driver channel 0) with respect to board ground:
+
+```text
+flash init
+run_state reset
+run_state receive
+test_config inert
+test_config analogue_output internal
+flash upload_ao_test 0 10.0 100 300
+run_state configure
+run_state frequency 100
+run_state execute 300 0
+```
+
+The DAC is initialized to zero during configuration. At tick 100 (one second
+at 100 Hz), the instruction applies the prepared 10 V request to driver
+channel 0 (board-labelled channel 1);
+the output remains at that value until the run completes at tick 300. The
+measured voltage is approximately half of the selected DAC full-scale range,
+because the execution input range is 0-20 V. The exact voltage depends on the
+configured reference and analogue-output scaling. The expected terminal state
+is `RESULTS_READY`; use `run_state discard` to return to IDLE for another run.
+
+`upload_ao_test` calls `EXEC_ANALOGUE_OUTPUT_Prepare_Frame()` before storing the
+canonical operation. The ISR receives only the three-byte prepared DAC frame;
+it performs no voltage conversion or validation.
+
 ## Execution Manager UART-output path
 
 This is a coarse multimeter-visible test of the real UART instruction and DMA
