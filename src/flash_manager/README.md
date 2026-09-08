@@ -3,9 +3,12 @@
 `result_buffer.c` implements packed result-record production, page draining,
 and copied result retrieval. `instruction_buffer.c` implements prefetched
 instruction views, page release, and streamed instruction upload.
-`flash_manager.c` connects both buffers to the execution ISR and Host Interface,
-and performs every NAND refill/drain operation from its RTOS task. Application
-startup and the calling managers remain to be integrated.
+`flash_manager.c` connects both buffers to the execution ISR and exposes the
+task-context upload/result interfaces required by the Host Interface. It
+performs every NAND refill/drain operation from its RTOS task. Application
+startup, Run State Manager sequencing, and Execution Manager instruction
+consumption are integrated. Production Host Interface upload and result
+transfer remain to be implemented.
 
 The flash manager is the only normal runtime task that should call `external_flash`.
 
@@ -432,9 +435,10 @@ test before execution begins.
 The instruction stream is trusted to have been canonicalised before it reaches
 NAND. The Flash Manager defensively rejects unaligned page geometry, declared
 image lengths, and per-instruction operation lengths, as well as framing that
-exceeds `EXECUTION_INSTRUCTION_MAX_SIZE_BYTES` or the declared image. Opcode,
-channel, and payload validation belongs to the Host Interface and Execution
-Manager, outside the Flash Manager hot path.
+exceeds `EXECUTION_INSTRUCTION_MAX_SIZE_BYTES` or the declared image. Validation
+of opcodes, channels, operation counts, padding, and payloads belongs to Host
+Interface canonicalisation before upload, outside the Flash Manager and
+Execution Manager hot paths.
 
 The common peek and consume paths contain no private helper calls. Tiny shared
 addressing helpers are declared inline, while page-boundary bookkeeping is

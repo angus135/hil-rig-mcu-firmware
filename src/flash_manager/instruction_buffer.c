@@ -958,8 +958,8 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
 
     /*
      * These two bounds are the runtime fault barrier for a trusted canonical
-     * stream. Semantic instruction validation belongs to upload preprocessing
-     * and the Execution Manager.
+     * stream. Semantic instruction validation belongs to Host Interface
+     * canonicalisation before upload begins.
      */
     uint32_t maximum_instruction_size_bytes =
         instruction_buffer_context.page_size_bytes * INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT;

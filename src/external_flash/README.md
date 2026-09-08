@@ -7,8 +7,9 @@ Manager for instruction upload/refill and result drain/refill.
 
 The storage service and its unit tests are implemented, and firmware startup
 adopts the generated QSPI handle before calling `EXTERNAL_FLASH_Init()`. Flash
-Manager storage flows are implemented; application startup, Run State Manager,
-Execution Manager, and Host Interface call sites remain to be integrated.
+Manager storage flows, application startup, Run State Manager sequencing, and
+Execution Manager instruction consumption are integrated. Production Host
+Interface upload and result-transfer call sites remain to be implemented.
 
 This module is responsible for:
 
