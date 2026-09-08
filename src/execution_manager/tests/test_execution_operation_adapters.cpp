@@ -9,6 +9,7 @@ extern "C"
 #include "exec_pwm_gen.h"
 #include "exec_spi.h"
 #include "exec_uart.h"
+#include "exec_analogue_output.h"
 }
 
 static uint32_t                    set_masks[2];
@@ -30,6 +31,10 @@ static ExecUartChannel_T           last_uart_channel;
 static uint8_t                     last_uart_payload[8];
 static uint32_t                    last_uart_length;
 static bool                        uart_accept;
+static uint32_t                    analogue_output_calls;
+static const uint8_t*              last_analogue_output_payload;
+static uint32_t                    last_analogue_output_length;
+static bool                        analogue_output_accept;
 
 struct alignas( 4 ) EncodedDigitalOutputOperation
 {
@@ -68,6 +73,15 @@ struct alignas( 4 ) EncodedUartOperation
 };
 
 static_assert( sizeof( EncodedUartOperation ) == 12U );
+
+struct alignas( 4 ) EncodedAnalogueOutputOperation
+{
+    ExecutionOperationHeaderWord_T header;
+    uint8_t                        payload[6];
+    uint8_t                        padding[2];
+};
+
+static_assert( sizeof( EncodedAnalogueOutputOperation ) == 12U );
 
 extern "C" void EXEC_DIGITAL_OUTPUT_Set_Output( uint32_t pin_mask )
 {
@@ -115,6 +129,15 @@ extern "C" bool EXEC_UART_Transmit( ExecUartChannel_T channel, const uint8_t* da
     return uart_accept;
 }
 
+extern "C" bool EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( const uint8_t* payload,
+                                                            uint32_t       byte_count )
+{
+    analogue_output_calls++;
+    last_analogue_output_payload = payload;
+    last_analogue_output_length  = byte_count;
+    return analogue_output_accept;
+}
+
 class ExecutionOperationAdaptersTest : public ::testing::Test
 {
 protected:
@@ -136,8 +159,12 @@ protected:
         uart_calls                  = 0U;
         last_uart_channel           = EXEC_UART_CHANNEL_1;
         std::memset( last_uart_payload, 0, sizeof( last_uart_payload ) );
-        last_uart_length = 0U;
-        uart_accept      = true;
+        last_uart_length             = 0U;
+        uart_accept                  = true;
+        analogue_output_calls        = 0U;
+        last_analogue_output_payload = nullptr;
+        last_analogue_output_length  = 0U;
+        analogue_output_accept       = true;
     }
 };
 
@@ -352,4 +379,39 @@ TEST_F( ExecutionOperationAdaptersTest, UartDriverRejectionPropagatesToOperation
                    reinterpret_cast<const uint8_t*>( &operation ), 1U ),
                EXECUTION_OPERATION_ADAPTER_REJECTED );
     EXPECT_EQ( uart_calls, 1U );
+}
+
+TEST_F( ExecutionOperationAdaptersTest, AnalogueOutputPassesPreparedPayloadAndLengthWithoutCopy )
+{
+    const EncodedAnalogueOutputOperation operation = {
+        EXECUTION_OPERATION_OPCODE_ANALOGUE_OUTPUT_BATCH
+            | ( EXECUTION_OPERATION_CHANNEL_UNUSED << 8U ) | ( 6U << 16U ),
+        { 0x00U, 0x00U, 0x00U, 0x28U, 0x0FU, 0xFFU },
+        { 0U, 0U },
+    };
+
+    EXPECT_EQ( EXECUTION_OPERATION_ADAPTER_ApplyOperations(
+                   reinterpret_cast<const uint8_t*>( &operation ), 1U ),
+               EXECUTION_OPERATION_ADAPTER_ACCEPTED );
+    EXPECT_EQ( analogue_output_calls, 1U );
+    EXPECT_EQ( last_analogue_output_payload, operation.payload );
+    EXPECT_EQ( last_analogue_output_length, 6U );
+}
+
+TEST_F( ExecutionOperationAdaptersTest, AnalogueOutputRejectionPropagatesToOperationWalker )
+{
+    const EncodedAnalogueOutputOperation operation = {
+        EXECUTION_OPERATION_OPCODE_ANALOGUE_OUTPUT_BATCH
+            | ( EXECUTION_OPERATION_CHANNEL_UNUSED << 8U ) | ( 3U << 16U ),
+        { 0x18U, 0x09U, 0xDFU, 0x00U, 0x00U, 0x00U },
+        { 0U, 0U },
+    };
+    analogue_output_accept = false;
+
+    EXPECT_EQ( EXECUTION_OPERATION_ADAPTER_ApplyOperations(
+                   reinterpret_cast<const uint8_t*>( &operation ), 1U ),
+               EXECUTION_OPERATION_ADAPTER_REJECTED );
+    EXPECT_EQ( analogue_output_calls, 1U );
+    EXPECT_EQ( last_analogue_output_payload, operation.payload );
+    EXPECT_EQ( last_analogue_output_length, 3U );
 }

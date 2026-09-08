@@ -94,12 +94,18 @@ operation count, and a zero reserved byte. Each operation starts with one
 aligned 32-bit header word, followed by its payload and zero to three padding
 bytes.
 
-`DIGITAL_OUTPUT_UPDATE`, `PWM_UPDATE`, `SPI_TRANSMIT`, and `UART_TRANSMIT` are
-currently dispatched. The digital output's zero-copy payload contains prepared
-physical HIGH and LOW masks. Its adapter uses the active-low-aware
+`DIGITAL_OUTPUT_UPDATE`, `ANALOGUE_OUTPUT_BATCH`, `PWM_UPDATE`,
+`SPI_TRANSMIT`, and `UART_TRANSMIT` are currently dispatched. The digital
+output's zero-copy payload contains prepared physical HIGH and LOW masks. Its adapter uses the active-low-aware
 digital-output driver. The PWM payload holds the precomputed ARR, CCR, and PSC
 inputs produced during package processing; its adapter selects LV or HV and
 forwards those values directly.
+
+The analogue-output payload is a non-empty sequence of prepared three-byte DAC
+wire frames. Its adapter passes the payload pointer and encoded byte length
+directly to `EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch()`. The analogue-output
+driver copies the frames into SPI-DAC-owned DMA storage; the adapter performs no
+additional copy, voltage conversion, or lifecycle work.
 
 The SPI adapter views the aligned payload as a packet-count prefix, a contiguous
 `uint32_t` packet-size array, and the concatenated packet data. It passes those

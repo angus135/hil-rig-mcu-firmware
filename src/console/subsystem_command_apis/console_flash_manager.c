@@ -93,6 +93,7 @@
 #include "console.h"
 #include "external_flash.h"
 #include "execution_operation_payloads.h"
+#include "exec_analogue_output.h"
 #include "exec_digital_output.h"
 #include "exec_spi.h"
 #include "exec_uart.h"
@@ -134,6 +135,10 @@
 #define CONSOLE_FLASH_DO_TEST_DEFAULT_HIGH_TICKS ( 300U )
 #define CONSOLE_FLASH_PWM_TEST_OPERATION_BYTES ( 12U )
 #define CONSOLE_FLASH_PWM_TEST_INSTRUCTION_BYTES ( 20U )
+#define CONSOLE_FLASH_AO_TEST_OPERATION_BYTES                                                      \
+    ( EXECUTION_OPERATION_ENCODED_SIZE_BYTES( EXECUTION_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES ) )
+#define CONSOLE_FLASH_AO_TEST_INSTRUCTION_BYTES                                                    \
+    ( sizeof( ExecutionInstructionHeader_T ) + CONSOLE_FLASH_AO_TEST_OPERATION_BYTES )
 /* Current board clock tree: TIM12 is APB1 x2; TIM8 is APB2 x2. */
 #define CONSOLE_FLASH_PWM_LV_TIMER_CLOCK_HZ ( 90000000U )
 #define CONSOLE_FLASH_PWM_HV_TIMER_CLOCK_HZ ( 180000000U )
@@ -163,6 +168,10 @@ _Static_assert( CONSOLE_FLASH_PWM_TEST_INSTRUCTION_BYTES
                     == sizeof( ExecutionInstructionHeader_T )
                            + CONSOLE_FLASH_PWM_TEST_OPERATION_BYTES,
                 "PWM test instruction size must follow the canonical encoding" );
+_Static_assert( CONSOLE_FLASH_AO_TEST_OPERATION_BYTES == 8U,
+                "Analogue-output test operation size must follow the canonical encoding" );
+_Static_assert( CONSOLE_FLASH_AO_TEST_INSTRUCTION_BYTES == 16U,
+                "Analogue-output test instruction size must follow the canonical encoding" );
 
 /**-----------------------------------------------------------------------------
  *  Private Typedefs / Enums / Structures
@@ -274,6 +283,9 @@ static void CONSOLE_Flash_EncodeDigitalOutputInstruction( uint8_t* destination, 
 static void CONSOLE_Flash_EncodePwmInstruction( uint8_t* destination, uint32_t timestamp,
                                                 uint8_t                            channel,
                                                 const ExecutionPwmUpdatePayload_T* payload );
+static void
+CONSOLE_Flash_EncodeAnalogueOutputInstruction( uint8_t* destination, uint32_t timestamp,
+                                               const AnalogueOutputPreparedFrame_T* frame );
 static uint32_t CONSOLE_Flash_EncodeUartInstruction( uint8_t* destination, uint32_t timestamp,
                                                      uint8_t channel, uint8_t value,
                                                      uint16_t payload_length_bytes );
@@ -295,6 +307,7 @@ static void CONSOLE_Flash_ExternalTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadDigitalOutputTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadPwmTestCommand( uint16_t argc, char* argv[] );
+static void CONSOLE_Flash_UploadAnalogueOutputTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadSpiTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadUartTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_PrepareCommand( void );
@@ -318,6 +331,8 @@ static void CONSOLE_Flash_PrintUsage( void )
     CONSOLE_Printf( "  flash upload_do_test <channel 1..10> [delay_ticks] [high_ticks]\r\n" );
     CONSOLE_Printf( "  flash upload_pwm_test <channel 1..2> <frequency_hz> "
                     "<duty_permille> <update_tick> <run_ticks>\r\n" );
+    CONSOLE_Printf( "  flash upload_ao_test <channel 0..5> <voltage> "
+                    "<update_tick> <run_ticks>\r\n" );
     CONSOLE_Printf( "  flash upload_spi_test <channel 1..2> <byte> <length> "
                     "<first_tick> <run_ticks> [repeat_count interval_ticks]\r\n" );
     CONSOLE_Printf( "  flash upload_uart_test <channel 1..2> <byte> <length> "
@@ -1148,6 +1163,23 @@ static void CONSOLE_Flash_EncodePwmInstruction( uint8_t* destination, uint32_t t
     destination[19] = 0U;
 }
 
+static void
+CONSOLE_Flash_EncodeAnalogueOutputInstruction( uint8_t* destination, uint32_t timestamp,
+                                               const AnalogueOutputPreparedFrame_T* frame )
+{
+    const uint32_t instruction_word =
+        CONSOLE_FLASH_AO_TEST_OPERATION_BYTES | ( CONSOLE_FLASH_TEST_OPERATION_COUNT << 16U );
+    const uint32_t operation_word = EXECUTION_OPERATION_OPCODE_ANALOGUE_OUTPUT_BATCH
+                                    | ( EXECUTION_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES << 16U );
+
+    CONSOLE_Flash_WriteU32Le( &destination[0], timestamp );
+    CONSOLE_Flash_WriteU32Le( &destination[4], instruction_word );
+    CONSOLE_Flash_WriteU32Le( &destination[8], operation_word );
+    ( void )memset( &destination[12], 0,
+                    CONSOLE_FLASH_AO_TEST_OPERATION_BYTES - EXECUTION_OPERATION_HEADER_SIZE_BYTES );
+    ( void )memcpy( &destination[12], frame->bytes, EXECUTION_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES );
+}
+
 static uint32_t CONSOLE_Flash_EncodeUartInstruction( uint8_t* destination, uint32_t timestamp,
                                                      uint8_t channel, uint8_t value,
                                                      uint16_t payload_length_bytes )
@@ -1398,6 +1430,113 @@ static void CONSOLE_Flash_UploadPwmTestCommand( uint16_t argc, char* argv[] )
                     ( unsigned long )duty_permille, ( unsigned int )payload.arr,
                     ( unsigned int )payload.ccr, ( unsigned int )payload.psc,
                     ( unsigned long )update_tick, ( unsigned long )run_ticks );
+    CONSOLE_Printf( "Next: finish configuring the RSM, then 'run_state execute %lu 0'.\r\n",
+                    ( unsigned long )console_flash_run_tick_count );
+}
+
+/** Uploads one driver-prepared analogue-output frame through the production instruction path. */
+static void CONSOLE_Flash_UploadAnalogueOutputTestCommand( uint16_t argc, char* argv[] )
+{
+    uint32_t channel     = 0U;
+    uint32_t update_tick = 0U;
+    uint32_t run_ticks   = 0U;
+    char*    voltage_end = NULL;
+    float    voltage     = 0.0F;
+
+    if ( argc != 6U || !CONSOLE_Flash_ParseU32( argv[2], &channel )
+         || !CONSOLE_Flash_ParseU32( argv[4], &update_tick )
+         || !CONSOLE_Flash_ParseU32( argv[5], &run_ticks ) || update_tick == 0U
+         || run_ticks < update_tick )
+    {
+        CONSOLE_Printf( "Usage: flash upload_ao_test <channel 0..5> <voltage 0..20V> "
+                        "<update_tick > 0> <run_ticks >= update_tick>\r\n" );
+        return;
+    }
+
+    voltage = strtof( argv[3], &voltage_end );
+    if ( ( voltage_end == argv[3] ) || ( *voltage_end != '\0' ) )
+    {
+        CONSOLE_Printf( "Invalid analogue-output voltage.\r\n" );
+        return;
+    }
+
+    AnalogueOutputPreparedFrame_T frame = { { 0U, 0U, 0U } };
+    if ( !EXEC_ANALOGUE_OUTPUT_Prepare_Frame( ( uint8_t )channel, voltage, &frame ) )
+    {
+        CONSOLE_Printf( "Analogue-output channel or voltage is invalid.\r\n" );
+        return;
+    }
+
+    if ( !CONSOLE_Flash_RequireIdle() )
+    {
+        return;
+    }
+
+    DutDriverConfiguration_T configuration = { 0 };
+    if ( !TEST_CONFIGURATION_GetActive( &configuration )
+         || !configuration.analogue_output.is_enabled )
+    {
+        CONSOLE_Printf( "Analogue output is not enabled in the active test configuration.\r\n" );
+        return;
+    }
+
+    const uint32_t instruction_bytes = CONSOLE_FLASH_AO_TEST_INSTRUCTION_BYTES;
+    console_flash_run_tick_count     = 0U;
+
+    FlashManagerInstructionUploadRequestStatus_T status =
+        FLASH_MANAGER_RequestInstructionUploadStart( instruction_bytes );
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED
+         || !CONSOLE_Flash_WaitForState( FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD,
+                                         CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "Analogue-output upload start failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    CONSOLE_Flash_EncodeAnalogueOutputInstruction( console_flash_write_buffer, update_tick,
+                                                   &frame );
+    status =
+        FLASH_MANAGER_SubmitInstructionUploadBytes( console_flash_write_buffer, instruction_bytes );
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
+    {
+        CONSOLE_Printf( "Analogue-output instruction submission failed (status=%d).\r\n",
+                        ( int )status );
+        return;
+    }
+
+    TickType_t finish_started_at = xTaskGetTickCount();
+    do
+    {
+        status = FLASH_MANAGER_RequestInstructionUploadFinish();
+        if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
+        {
+            if ( CONSOLE_Flash_HasTimedOut( finish_started_at, CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            {
+                CONSOLE_Printf( "Analogue-output upload finalisation timed out.\r\n" );
+                return;
+            }
+            vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+        }
+    } while ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY );
+
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED
+         || !CONSOLE_Flash_WaitForState( FLASH_MANAGER_STATE_IDLE,
+                                         CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "Analogue-output upload finalisation failed (status=%d).\r\n",
+                        ( int )status );
+        return;
+    }
+
+    console_flash_last_upload_records = 1U;
+    console_flash_last_upload_bytes   = instruction_bytes;
+    console_flash_run_tick_count      = run_ticks;
+    CONSOLE_Flash_ResetExecutionHarnessState();
+
+    CONSOLE_Printf( "Analogue-output upload PASS: channel=%lu voltage=%s "
+                    "update_tick=%lu run_ticks=%lu.\r\n",
+                    ( unsigned long )channel, argv[3], ( unsigned long )update_tick,
+                    ( unsigned long )run_ticks );
     CONSOLE_Printf( "Next: finish configuring the RSM, then 'run_state execute %lu 0'.\r\n",
                     ( unsigned long )console_flash_run_tick_count );
 }
@@ -2263,6 +2402,12 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
     if ( strcmp( argv[1], "upload_pwm_test" ) == 0 )
     {
         CONSOLE_Flash_UploadPwmTestCommand( argc, argv );
+        return;
+    }
+
+    if ( strcmp( argv[1], "upload_ao_test" ) == 0 )
+    {
+        CONSOLE_Flash_UploadAnalogueOutputTestCommand( argc, argv );
         return;
     }
 
