@@ -45,6 +45,16 @@
  *  ARR, CCR, and PSC. The Execution Manager only forwards those prepared
  *  values at the scheduled tick.
  *
+ *  Analogue-output execution-path validation uses:
+ *
+ *      `test_config analogue_output <internal|external>`
+ *      `flash upload_ao_test <channel 0..5> <voltage> <update_tick> <run_ticks>`
+ *
+ *  The upload command prepares the DAC frame through
+ *  `EXEC_ANALOGUE_OUTPUT_Prepare_Frame()` and stores the exact three-byte wire
+ *  payload. The Execution Manager forwards those bytes unchanged at the
+ *  scheduled tick.
+ *
  *  UART execution-path validation uses:
  *
  *      `test_config uart <channel> <3v3|5v|rs232> <baud> tx`

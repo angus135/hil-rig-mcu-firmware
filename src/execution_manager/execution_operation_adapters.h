@@ -153,6 +153,16 @@ ExecutionOperationAdapterResult_T
 EXECUTION_OPERATION_ADAPTER_ApplyUartTransmit( uint8_t channel, const uint8_t* payload,
                                                uint16_t payload_length_bytes );
 
+/**
+ * @brief Queues prevalidated analogue-output DAC frames without copying in the adapter.
+ *
+ * @pre channel is EXECUTION_OPERATION_CHANNEL_UNUSED.
+ * @pre payload points to one or more contiguous three-byte prepared DAC frames.
+ * @pre payload_length_bytes is a non-zero multiple of three and has been
+ *      admitted against the active analogue-output configuration and schedule.
+ *
+ * The analogue-output driver copies the frames into SPI-DAC DMA-owned storage.
+ */
 ExecutionOperationAdapterResult_T
 EXECUTION_OPERATION_ADAPTER_ApplyAnalogueOutput( uint8_t channel, const uint8_t* payload,
                                                  uint16_t payload_length_bytes );
