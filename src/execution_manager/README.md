@@ -3,9 +3,10 @@
 ## Responsibility
 
 The Execution Manager is the deterministic execution-clock boundary engine. It
-owns the current tick, configured run length, instruction dispatch, result
-production, and first execution failure. The Run State Manager owns TIM4, the
-DUT driver lifecycle, and Flash Manager session transitions.
+owns the current tick, configured run length, instruction dispatch, first
+execution failure, and the placement of future result production within each
+boundary. The Run State Manager owns TIM4, the DUT driver lifecycle, and Flash
+Manager session transitions.
 
 `EXECUTION_MANAGER_Prepare(tick_count)` establishes tick zero while TIM4 is
 stopped. Tick zero is the configured initial condition at execution time zero;
@@ -157,6 +158,11 @@ failure, the Execution Manager invokes the registered terminal callback once.
 That callback immediately inhibits later dispatch and notifies the RSM task.
 Task context then stops TIM4 and drivers and requests Flash finalisation or
 abort.
+
+`EXECUTION_MANAGER_Abort()` deactivates execution only after TIM4 has stopped.
+It deliberately retains the last processed tick and first failure for post-run
+diagnostics. The next `EXECUTION_MANAGER_Prepare()` resets those values and all
+other run-local state.
 
 ## Public interfaces
 
