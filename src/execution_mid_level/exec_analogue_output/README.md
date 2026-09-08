@@ -29,7 +29,9 @@ Disabled --Configure(enabled)--> Configuring --> Configured --Start--> Started
 
 Therefore, configure then start begins at 0 V. Stop then start restores the
 previous DAC values; reconfigure before restarting when 0 V is required.
-Runtime writes and prepared-batch submissions are accepted only while started.
+Runtime writes and prepared-batch submissions are valid only while started.
+`Submit_Prepared_Batch()` trusts this lifecycle and payload contract so it can
+be called from the Execution Manager ISR without task-context readiness work.
 
 ## Public API
 
@@ -41,7 +43,7 @@ Runtime writes and prepared-batch submissions are accepted only while started.
 | `EXEC_ANALOGUE_OUTPUT_Is_Configured()` | Reports whether configuration has completed. |
 | `EXEC_ANALOGUE_OUTPUT_Is_Started()` | Reports whether the output path is started. |
 | `EXEC_ANALOGUE_OUTPUT_Prepare_Frame()` | Validates, clamps, and converts one voltage request outside the execution hot path. |
-| `EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch()` | Submits a prepared batch while started. |
+| `EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch()` | Trusted ISR-safe submission of prevalidated frame bytes. |
 | `EXEC_ANALOGUE_OUTPUT_Write_Voltage()` | Compatibility interface for manual and console writes while started. |
 
 A successful LogicExpander send means the I2C transaction was initiated; its

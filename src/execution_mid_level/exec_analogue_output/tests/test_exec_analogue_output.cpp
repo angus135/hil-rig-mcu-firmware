@@ -644,50 +644,6 @@ TEST_F( ExecAnalogueOutputTest, BatchAppend_RejectsNullAndMalformedInputsWithout
     EXPECT_EQ( 0, memcmp( &prepared_batch, &malformed_batch, sizeof( prepared_batch ) ) );
 }
 
-TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_NotConfiguredRejectsWithoutSPITraffic )
-{
-    AnalogueOutputPreparedBatch_T prepared_batch;
-    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) );
-
-    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
-}
-
-TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_ConfiguringRejectsWithoutLoadOrTrigger )
-{
-    using ::testing::Return;
-
-    const AnalogueOutputPreparedFrame_T frame = { { 0x00U, 0x00U, 0x00U } };
-    AnalogueOutputPreparedBatch_T       prepared_batch;
-    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) );
-    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Append( &prepared_batch, &frame ) );
-
-    ExpectSuccessfulSetup();
-    ExpectStartupPacket( false, false );
-    ASSERT_TRUE( ConfigureEnabled( false ) );
-    ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
-
-    EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_DAC ) )
-        .Times( 2 )
-        .WillRepeatedly( Return( false ) );
-
-    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
-    EXPECT_EQ( EXEC_ANALOGUE_OUTPUT_Get_State(), EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURING );
-
-    EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_DAC ) ).WillOnce( Return( true ) );
-    EXPECT_CALL( mock_hw_spi, StopChannel( SPI_DAC ) ).WillOnce( Return( true ) );
-    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Is_Configured() );
-}
-
-TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_EmptyBatchIsSuccessfulNoOp )
-{
-    ConfigureAndStart( false );
-
-    AnalogueOutputPreparedBatch_T prepared_batch;
-    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) );
-
-    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
-}
-
 TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_OneFrameLoadsOnceThenTriggersOnce )
 {
     using ::testing::InSequence;
@@ -704,7 +660,8 @@ TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_OneFrameLoadsOnceThenTrigger
     ExpectPacketLoad( mock_hw_spi, EXPECTED_BYTES );
     EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 1 );
 
-    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( prepared_batch.bytes,
+                                                             prepared_batch.byte_count ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_SixFramesLoadSixPacketsInOrder )
@@ -736,7 +693,8 @@ TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_SixFramesLoadSixPacketsInOrd
     ExpectPacketLoad( mock_hw_spi, EXPECTED_BYTES );
     EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 1 );
 
-    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( prepared_batch.bytes,
+                                                             prepared_batch.byte_count ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_LoadRejectionReturnsFalseWithoutTrigger )
@@ -752,11 +710,11 @@ TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_LoadRejectionReturnsFalseWit
     ExpectPacketLoad( mock_hw_spi, EXPECTED_BYTES, false );
     EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_DAC ) ).Times( 0 );
 
-    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( prepared_batch.bytes,
+                                                              prepared_batch.byte_count ) );
 }
 
-TEST_F( ExecAnalogueOutputTest,
-        SubmitPreparedBatch_SynchronousTriggerFaultsModuleAndRejectsLaterWrites )
+TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_SynchronousTriggerFaultReturnsFalse )
 {
     using ::testing::Invoke;
 
@@ -773,10 +731,9 @@ TEST_F( ExecAnalogueOutputTest,
         g_spi_tx_faulted = true;
     } ) );
 
-    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( prepared_batch.bytes,
+                                                              prepared_batch.byte_count ) );
     EXPECT_EQ( EXEC_ANALOGUE_OUTPUT_Get_State(), EXEC_ANALOGUE_OUTPUT_STATE_FAULTED );
-
-    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, AsyncSpiFaultTransitionsStartedModuleToFaulted )
@@ -786,18 +743,6 @@ TEST_F( ExecAnalogueOutputTest, AsyncSpiFaultTransitionsStartedModuleToFaulted )
     g_spi_tx_faulted = true;
 
     EXPECT_EQ( EXEC_ANALOGUE_OUTPUT_Get_State(), EXEC_ANALOGUE_OUTPUT_STATE_FAULTED );
-}
-
-TEST_F( ExecAnalogueOutputTest, SubmitPreparedBatch_RejectsMalformedAndNullBatches )
-{
-    ConfigureAndStart( false );
-
-    AnalogueOutputPreparedBatch_T prepared_batch;
-    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Batch_Init( &prepared_batch ) );
-    prepared_batch.byte_count = 1U;
-
-    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) );
-    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( nullptr ) );
 }
 
 TEST_F( ExecAnalogueOutputTest, WriteVoltage_NotConfigured_ReturnsFalseWithoutSPITraffic )

@@ -562,66 +562,18 @@ bool EXEC_ANALOGUE_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       pre
     return true;
 }
 
-bool EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch(
-    const AnalogueOutputPreparedBatch_T* prepared_batch )
+bool EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( const uint8_t* frame_bytes, uint32_t byte_count )
 {
-    /*
-     * TODO: Before ISR integration, replace this readiness call with ISR-safe
-     * fault latching. Its fault path takes the LogicExpander mutex and must
-     * defer output-disable work to task context; this path is not ISR-safe yet.
-     */
-    EXEC_ANALOGUE_OUTPUT_Update_Readiness();
-
-    if ( s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOGUE_OUTPUT_STATE_STARTED )
-    {
-        return false;
-    }
-
-    if ( prepared_batch == NULL )
-    {
-        return false;
-    }
-
-    /*
-     * TODO: Add preparation-time schedule admission using actual SPI speed,
-     * frame/CS overhead and tick rate. Six frames need about 205 us of wire time
-     * at 703 kbit/s, so this size limit does not guarantee a 100 us tick budget.
-     */
-    if ( ( prepared_batch->byte_count > EXEC_ANALOGUE_OUTPUT_BATCH_MAX_BYTES )
-         || ( ( prepared_batch->byte_count % EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES ) != 0U ) )
-    {
-        return false;
-    }
-
-    if ( prepared_batch->byte_count == 0U )
-    {
-        return true;
-    }
-
-    if ( !HW_SPI_Load_Tx_Packets( ANALOGUE_OUTPUT_SPI_CHANNEL, prepared_batch->bytes,
+    if ( !HW_SPI_Load_Tx_Packets( ANALOGUE_OUTPUT_SPI_CHANNEL, frame_bytes,
                                   EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES,
-                                  prepared_batch->byte_count
-                                      / EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES ) )
+                                  byte_count / EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES ) )
     {
-        if ( HW_SPI_Tx_Is_Faulted( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
-        {
-            s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
-        }
         return false;
     }
 
     HW_SPI_Tx_Trigger( ANALOGUE_OUTPUT_SPI_CHANNEL );
 
-    if ( HW_SPI_Tx_Is_Faulted( ANALOGUE_OUTPUT_SPI_CHANNEL ) )
-    {
-        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
-        return false;
-    }
-
-    // TODO(DEV-80): Confirm whether LAT0 and LAT1 are connected and use them if simultaneous
-    // same-tick application is required. Batching preserves a future LAT implementation without
-    // changing the stored prepared-frame format.
-    return true;
+    return !HW_SPI_Tx_Is_Faulted( ANALOGUE_OUTPUT_SPI_CHANNEL );
 }
 
 /**
@@ -661,6 +613,11 @@ bool EXEC_ANALOGUE_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v 
     AnalogueOutputPreparedFrame_T prepared_frame;
     AnalogueOutputPreparedBatch_T prepared_batch;
 
+    if ( !EXEC_ANALOGUE_OUTPUT_Is_Started() )
+    {
+        return false;
+    }
+
     if ( !EXEC_ANALOGUE_OUTPUT_Prepare_Frame( channel, input_voltage_v, &prepared_frame ) )
     {
         return false;
@@ -676,5 +633,6 @@ bool EXEC_ANALOGUE_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v 
         return false;
     }
 
-    return EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch );
+    return EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( prepared_batch.bytes,
+                                                       prepared_batch.byte_count );
 }
