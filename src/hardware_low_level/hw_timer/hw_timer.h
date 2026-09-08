@@ -25,6 +25,7 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "rtos_config.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -59,9 +60,11 @@ typedef enum Timer_T
  *
  * The callback runs directly inside TIM4_IRQHandler. It must obey the same
  * timing, interrupt-priority, and FreeRTOS FromISR restrictions as the
- * production Execution Manager callback.
+ * production Execution Manager callback. It accumulates any requested task
+ * wake through higher_priority_task_woken; TIM4 performs the single yield after
+ * the callback returns.
  */
-typedef void ( *HW_TIMER_ExecutionCallback_T )( void );
+typedef void ( *HW_TIMER_ExecutionCallback_T )( BaseType_t* higher_priority_task_woken );
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes

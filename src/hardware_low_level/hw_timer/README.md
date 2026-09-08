@@ -17,6 +17,11 @@ execution guard immediately; RSM task context subsequently stops TIM4.
 Diagnostic console tests temporarily install a callback only while TIM4 is
 stopped and restore the default route afterward.
 
+TIM4 accumulates any FreeRTOS task-wake request across the complete execution
+boundary and calls `portYIELD_FROM_ISR()` once after the selected callback has
+returned. Task context can therefore run only between complete execution ISR
+services, never partway through measurement or output processing.
+
 
 ---
 
