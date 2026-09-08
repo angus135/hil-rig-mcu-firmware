@@ -37,10 +37,10 @@ static const uint8_t*              last_analogue_output_payload;
 static uint32_t                    last_analogue_output_length;
 static bool                        analogue_output_accept;
 static uint32_t                    can_calls;
-static EXEC_CAN_Channel_T           last_can_channel;
-static const EXEC_CAN_Packet_T*     last_can_packets;
-static uint16_t                     last_can_packet_count;
-static EXEC_CAN_Result_T            can_result;
+static EXEC_CAN_Channel_T          last_can_channel;
+static const EXEC_CAN_Packet_T*    last_can_packets;
+static uint16_t                    last_can_packet_count;
+static EXEC_CAN_Result_T           can_result;
 
 struct alignas( 4 ) EncodedDigitalOutputOperation
 {
@@ -92,7 +92,7 @@ static_assert( sizeof( EncodedAnalogueOutputOperation ) == 12U );
 struct alignas( 4 ) EncodedCanOperation
 {
     ExecutionOperationHeaderWord_T header;
-    ExecutionCanPacket_T            packets[2];
+    ExecutionCanPacket_T           packets[2];
 };
 
 static_assert( sizeof( EncodedCanOperation ) == 28U );
@@ -153,8 +153,8 @@ extern "C" bool EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( const uint8_t* paylo
 }
 
 extern "C" EXEC_CAN_Result_T EXEC_CAN_Transmit( EXEC_CAN_Channel_T       channel,
-                                                 const EXEC_CAN_Packet_T* packets,
-                                                 uint16_t                  packet_count )
+                                                const EXEC_CAN_Packet_T* packets,
+                                                uint16_t                 packet_count )
 {
     can_calls             = can_calls + 1U;
     last_can_channel      = channel;
@@ -449,8 +449,7 @@ TEST_F( ExecutionOperationAdaptersTest, AnalogueOutputRejectionPropagatesToOpera
 TEST_F( ExecutionOperationAdaptersTest, CanTransmitPassesPacketBatchWithoutAdapterCopy )
 {
     const EncodedCanOperation operation = {
-        EXECUTION_OPERATION_OPCODE_CAN_TRANSMIT
-            | ( EXECUTION_OPERATION_CAN_CHANNEL_2 << 8U )
+        EXECUTION_OPERATION_OPCODE_CAN_TRANSMIT | ( EXECUTION_OPERATION_CAN_CHANNEL_2 << 8U )
             | ( ( 2U * EXECUTION_CAN_PACKET_SIZE_BYTES ) << 16U ),
         {
             { 0x123U, 2U, { 0x10U, 0x20U, 0U, 0U, 0U, 0U, 0U, 0U }, 0U },
@@ -464,15 +463,13 @@ TEST_F( ExecutionOperationAdaptersTest, CanTransmitPassesPacketBatchWithoutAdapt
     EXPECT_EQ( can_calls, 1U );
     EXPECT_EQ( last_can_channel, EXEC_CAN_CHANNEL_2 );
     EXPECT_EQ( last_can_packet_count, 2U );
-    EXPECT_EQ( last_can_packets,
-               reinterpret_cast<const EXEC_CAN_Packet_T*>( operation.packets ) );
+    EXPECT_EQ( last_can_packets, reinterpret_cast<const EXEC_CAN_Packet_T*>( operation.packets ) );
 }
 
 TEST_F( ExecutionOperationAdaptersTest, CanTransmitRejectionPropagatesToOperationWalker )
 {
     const EncodedCanOperation operation = {
-        EXECUTION_OPERATION_OPCODE_CAN_TRANSMIT
-            | ( EXECUTION_OPERATION_CAN_CHANNEL_1 << 8U )
+        EXECUTION_OPERATION_OPCODE_CAN_TRANSMIT | ( EXECUTION_OPERATION_CAN_CHANNEL_1 << 8U )
             | ( EXECUTION_CAN_PACKET_SIZE_BYTES << 16U ),
         {
             { 0x321U, 1U, { 0xAAU, 0U, 0U, 0U, 0U, 0U, 0U, 0U }, 0U },
