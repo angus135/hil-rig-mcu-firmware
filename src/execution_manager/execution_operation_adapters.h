@@ -113,6 +113,25 @@ ExecutionOperationAdapterResult_T
 EXECUTION_OPERATION_ADAPTER_ApplyPwmUpdate( uint8_t channel, const uint8_t* payload,
                                             uint16_t payload_length_bytes );
 
+/**
+ * @brief Queues one prevalidated UART payload into driver-owned DMA storage.
+ *
+ * @pre channel is EXECUTION_OPERATION_UART_CHANNEL_1 or
+ *      EXECUTION_OPERATION_UART_CHANNEL_2.
+ * @pre channel, payload, and payload_length_bytes satisfy the validated
+ *      session contract, and the selected UART channel is ready for TX.
+ *
+ * The UART driver copies the complete payload before returning, so it does not
+ * retain the Flash Manager storage pointer.
+ *
+ * @return EXECUTION_OPERATION_ADAPTER_ACCEPTED when the complete payload was
+ *         queued and the DMA pump was accepted; otherwise
+ *         EXECUTION_OPERATION_ADAPTER_REJECTED.
+ */
+ExecutionOperationAdapterResult_T
+EXECUTION_OPERATION_ADAPTER_ApplyUartTransmit( uint8_t channel, const uint8_t* payload,
+                                               uint16_t payload_length_bytes );
+
 #ifdef __cplusplus
 }
 #endif

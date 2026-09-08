@@ -94,12 +94,19 @@ operation count, and a zero reserved byte. Each operation starts with one
 aligned 32-bit header word, followed by its payload and zero to three padding
 bytes.
 
-`DIGITAL_OUTPUT_UPDATE` and `PWM_UPDATE` are currently dispatched. The digital
-output's zero-copy payload contains prepared physical HIGH and LOW masks. Its
-adapter uses the active-low-aware digital-output driver. The PWM payload holds
-the precomputed ARR, CCR, and PSC inputs produced during package processing;
-its adapter selects LV or HV and forwards those values directly. Neither
-adapter retains a Flash Manager pointer.
+`DIGITAL_OUTPUT_UPDATE`, `PWM_UPDATE`, and `UART_TRANSMIT` are currently
+dispatched. The digital output's zero-copy payload contains prepared physical
+HIGH and LOW masks. Its adapter uses the active-low-aware digital-output
+driver. The PWM payload holds the precomputed ARR, CCR, and PSC inputs produced
+during package processing; its adapter selects LV or HV and forwards those
+values directly.
+
+The UART adapter passes the raw payload pointer and length directly to
+`EXEC_UART_Transmit()`. The UART driver necessarily copies those bytes into its
+DMA-owned TX ring before returning, because Flash Manager storage becomes
+reusable after instruction consumption. The adapter performs no additional
+copy and retains no Flash Manager pointer. A driver refusal maps to operation
+rejection and terminates the run; schedule feasibility checks are deferred.
 
 PWM register writes request an update at the instruction boundary without
 resetting timer phase or forcing an update event. With ARR/CCR preload enabled

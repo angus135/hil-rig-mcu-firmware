@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <cstring>
 
 extern "C"
 {
@@ -6,6 +7,7 @@ extern "C"
 #include "execution_operation_payloads.h"
 #include "exec_digital_output.h"
 #include "exec_pwm_gen.h"
+#include "exec_uart.h"
 }
 
 static uint32_t                    set_masks[2];
@@ -16,6 +18,11 @@ static uint32_t                    pwm_lv_calls;
 static uint32_t                    pwm_hv_calls;
 static ExecutionPwmUpdatePayload_T last_pwm_lv;
 static ExecutionPwmUpdatePayload_T last_pwm_hv;
+static uint32_t                     uart_calls;
+static ExecUartChannel_T            last_uart_channel;
+static uint8_t                      last_uart_payload[8];
+static uint32_t                     last_uart_length;
+static bool                         uart_accept;
 
 struct alignas( 4 ) EncodedDigitalOutputOperation
 {
@@ -32,6 +39,15 @@ struct alignas( 4 ) EncodedPwmOperation
 
 static_assert( sizeof( EncodedDigitalOutputOperation ) == 12U );
 static_assert( sizeof( EncodedPwmOperation ) == 12U );
+
+struct alignas( 4 ) EncodedUartOperation
+{
+    ExecutionOperationHeaderWord_T header;
+    uint8_t                        payload[5];
+    uint8_t                        padding[3];
+};
+
+static_assert( sizeof( EncodedUartOperation ) == 12U );
 
 extern "C" void EXEC_DIGITAL_OUTPUT_Set_Output( uint32_t pin_mask )
 {
@@ -55,6 +71,19 @@ extern "C" void EXEC_PWM_GEN_Set_PWM_HV( uint16_t arr, uint16_t ccr, uint16_t ps
     last_pwm_hv = { arr, ccr, psc };
 }
 
+extern "C" bool EXEC_UART_Transmit( ExecUartChannel_T channel, const uint8_t* data,
+                                     uint32_t length_bytes )
+{
+    uart_calls++;
+    last_uart_channel = channel;
+    last_uart_length  = length_bytes;
+    if ( length_bytes <= sizeof( last_uart_payload ) )
+    {
+        std::memcpy( last_uart_payload, data, length_bytes );
+    }
+    return uart_accept;
+}
+
 class ExecutionOperationAdaptersTest : public ::testing::Test
 {
 protected:
@@ -67,6 +96,11 @@ protected:
         pwm_lv_calls = pwm_hv_calls = 0U;
         last_pwm_lv                 = { 0U, 0U, 0U };
         last_pwm_hv                 = { 0U, 0U, 0U };
+        uart_calls                  = 0U;
+        last_uart_channel           = EXEC_UART_CHANNEL_1;
+        std::memset( last_uart_payload, 0, sizeof( last_uart_payload ) );
+        last_uart_length = 0U;
+        uart_accept      = true;
     }
 };
 
@@ -178,4 +212,38 @@ TEST_F( ExecutionOperationAdaptersTest, WalkerSkipsPwmAlignmentPaddingBeforeNext
     EXPECT_EQ( pwm_lv_calls, 1U );
     EXPECT_EQ( set_masks[0], UINT32_C( 0x10 ) );
     EXPECT_EQ( reset_masks[0], UINT32_C( 0x20 ) );
+}
+
+TEST_F( ExecutionOperationAdaptersTest, UartTransmitPassesRawPayloadAndLengthToDriver )
+{
+    const EncodedUartOperation operation = {
+        EXECUTION_OPERATION_OPCODE_UART_TRANSMIT
+            | ( EXECUTION_OPERATION_UART_CHANNEL_2 << 8U ) | ( 5U << 16U ),
+        { 0x11U, 0x22U, 0x33U, 0x44U, 0x55U },
+        { 0U, 0U, 0U },
+    };
+
+    EXPECT_EQ( EXECUTION_OPERATION_ADAPTER_ApplyOperations(
+                   reinterpret_cast<const uint8_t*>( &operation ), 1U ),
+               EXECUTION_OPERATION_ADAPTER_ACCEPTED );
+    EXPECT_EQ( uart_calls, 1U );
+    EXPECT_EQ( last_uart_channel, EXEC_UART_CHANNEL_2 );
+    EXPECT_EQ( last_uart_length, 5U );
+    EXPECT_EQ( std::memcmp( last_uart_payload, operation.payload, 5U ), 0 );
+}
+
+TEST_F( ExecutionOperationAdaptersTest, UartDriverRejectionPropagatesToOperationWalker )
+{
+    const EncodedUartOperation operation = {
+        EXECUTION_OPERATION_OPCODE_UART_TRANSMIT
+            | ( EXECUTION_OPERATION_UART_CHANNEL_1 << 8U ) | ( 5U << 16U ),
+        { 1U, 2U, 3U, 4U, 5U },
+        { 0U, 0U, 0U },
+    };
+    uart_accept = false;
+
+    EXPECT_EQ( EXECUTION_OPERATION_ADAPTER_ApplyOperations(
+                   reinterpret_cast<const uint8_t*>( &operation ), 1U ),
+               EXECUTION_OPERATION_ADAPTER_REJECTED );
+    EXPECT_EQ( uart_calls, 1U );
 }
