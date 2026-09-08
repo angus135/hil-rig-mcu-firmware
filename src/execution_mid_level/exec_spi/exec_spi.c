@@ -114,21 +114,21 @@ static EXECSPIState_T spi_channel_1_state = { 0 };
 static const ExecSPIHardwareMap_T exec_spi_hardware_map[EXEC_SPI_CHANNEL_COUNT] = {
     [EXEC_SPI_CHANNEL_1] =
         {
-            .hw_channel        = SPI_CHANNEL_0,
-            .nss_pin           = GPIO_SPI1_NSS,
-            .expander          = LOGIC_EXPANDER_PWM_SPI,
-            .port              = LOGIC_EXPANDER_PORT_B,
-            .enable_bit        = 6U,
-            .master_nslave_bit = 7U,
-        },
-    [EXEC_SPI_CHANNEL_2] =
-        {
             .hw_channel        = SPI_CHANNEL_1,
             .nss_pin           = GPIO_SPI2_NSS,
             .expander          = LOGIC_EXPANDER_PWM_SPI,
             .port              = LOGIC_EXPANDER_PORT_B,
             .enable_bit        = 4U,
             .master_nslave_bit = 5U,
+        },
+    [EXEC_SPI_CHANNEL_2] =
+        {
+            .hw_channel        = SPI_CHANNEL_2,
+            .nss_pin           = GPIO_SPI1_NSS,
+            .expander          = LOGIC_EXPANDER_PWM_SPI,
+            .port              = LOGIC_EXPANDER_PORT_B,
+            .enable_bit        = 6U,
+            .master_nslave_bit = 7U,
         },
 };
 

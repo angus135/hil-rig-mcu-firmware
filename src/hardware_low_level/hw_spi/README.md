@@ -762,14 +762,14 @@ movement layer for the hardware.
 ### Master packet transmission
 
 ```c
-HW_SPI_Configure_Channel( SPI_CHANNEL_0, config );
-HW_SPI_Start_Channel( SPI_CHANNEL_0 );
+HW_SPI_Configure_Channel( SPI_CHANNEL_1, config );
+HW_SPI_Start_Channel( SPI_CHANNEL_1 );
 
-HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, command_a, command_a_size );
-HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, command_b, command_b_size );
-HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_0, command_c, command_c_size );
+HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_1, command_a, command_a_size );
+HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_1, command_b, command_b_size );
+HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_1, command_c, command_c_size );
 
-HW_SPI_Tx_Trigger( SPI_CHANNEL_0 );
+HW_SPI_Tx_Trigger( SPI_CHANNEL_1 );
 ```
 
 The trigger starts `command_a` if the channel is idle. The DMA/final-drain completion chain then
@@ -778,11 +778,11 @@ automatically sends `command_b` and `command_c`, each with its own CS pulse.
 ### Slave stream transmission
 
 ```c
-HW_SPI_Configure_Channel( SPI_CHANNEL_1, config );
-HW_SPI_Start_Channel( SPI_CHANNEL_1 );
+HW_SPI_Configure_Channel( SPI_CHANNEL_2, config );
+HW_SPI_Start_Channel( SPI_CHANNEL_2 );
 
-HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_1, tx_stream_data, tx_stream_size );
-HW_SPI_Tx_Trigger( SPI_CHANNEL_1 );
+HW_SPI_Load_Tx_Buffer( SPI_CHANNEL_2, tx_stream_data, tx_stream_size );
+HW_SPI_Tx_Trigger( SPI_CHANNEL_2 );
 ```
 
 The driver sends the next contiguous stream span when the external master clocks the bus. If queued
@@ -791,12 +791,12 @@ data wraps inside the TX ring, the DMA TC path re-arms the next span.
 ### RX processing
 
 ```c
-HWSPIRxSpans_T spans = HW_SPI_Rx_Peek( SPI_CHANNEL_0 );
+HWSPIRxSpans_T spans = HW_SPI_Rx_Peek( SPI_CHANNEL_1 );
 
 process( spans.first_span.data, spans.first_span.length_bytes );
 process( spans.second_span.data, spans.second_span.length_bytes );
 
-HW_SPI_Rx_Consume( SPI_CHANNEL_0, spans.total_length_bytes );
+HW_SPI_Rx_Consume( SPI_CHANNEL_1, spans.total_length_bytes );
 ```
 
 The caller decides how much unread RX data is meaningful and how much should be consumed.
@@ -807,7 +807,7 @@ The caller decides how much unread RX data is meaningful and how much should be 
 
 - The master CS assert/deassert hooks currently use a hardcoded development GPIO. Replace this with
   the separate GPIO driver once the final board-level CS mapping is available.
-- `SPI_CHANNEL_1` and `SPI_DAC` should be reviewed if they share physical SPI/DMA resources in the
+- `SPI_CHANNEL_2` and `SPI_DAC` should be reviewed if they share physical SPI/DMA resources in the
   final hardware configuration.
 - Final timer prescaler/ARR values assume the current expected clock tree. Recheck them once the
   Cube clock tree is locked.

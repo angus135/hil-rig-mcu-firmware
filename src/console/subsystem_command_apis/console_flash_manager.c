@@ -94,6 +94,7 @@
 #include "external_flash.h"
 #include "execution_operation_payloads.h"
 #include "exec_digital_output.h"
+#include "exec_spi.h"
 #include "exec_uart.h"
 #include "flash_manager.h"
 #include "hw_nand.h"
@@ -276,6 +277,9 @@ static void CONSOLE_Flash_EncodePwmInstruction( uint8_t* destination, uint32_t t
 static uint32_t CONSOLE_Flash_EncodeUartInstruction( uint8_t* destination, uint32_t timestamp,
                                                      uint8_t channel, uint8_t value,
                                                      uint16_t payload_length_bytes );
+static uint32_t CONSOLE_Flash_EncodeSpiInstruction( uint8_t* destination, uint32_t timestamp,
+                                                    uint8_t channel, uint8_t value,
+                                                    uint32_t packet_length_bytes );
 static void     CONSOLE_Flash_FillPattern( uint8_t* destination, uint32_t stream_offset,
                                            uint32_t length, uint8_t seed );
 static bool     CONSOLE_Flash_VerifyPattern( const uint8_t* data, uint32_t stream_offset,
@@ -291,6 +295,7 @@ static void CONSOLE_Flash_ExternalTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadDigitalOutputTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadPwmTestCommand( uint16_t argc, char* argv[] );
+static void CONSOLE_Flash_UploadSpiTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadUartTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_PrepareCommand( void );
 static void CONSOLE_Flash_ExecuteEchoCommand( uint16_t argc, char* argv[] );
@@ -313,6 +318,8 @@ static void CONSOLE_Flash_PrintUsage( void )
     CONSOLE_Printf( "  flash upload_do_test <channel 1..10> [delay_ticks] [high_ticks]\r\n" );
     CONSOLE_Printf( "  flash upload_pwm_test <channel 1..2> <frequency_hz> "
                     "<duty_permille> <update_tick> <run_ticks>\r\n" );
+    CONSOLE_Printf( "  flash upload_spi_test <channel 1..2> <byte> <length> "
+                    "<first_tick> <run_ticks> [repeat_count interval_ticks]\r\n" );
     CONSOLE_Printf( "  flash upload_uart_test <channel 1..2> <byte> <length> "
                     "<first_tick> <run_ticks> [repeat_count interval_ticks]\r\n" );
     CONSOLE_Printf( "  flash prepare\r\n" );
@@ -1161,6 +1168,31 @@ static uint32_t CONSOLE_Flash_EncodeUartInstruction( uint8_t* destination, uint3
     return ( uint32_t )sizeof( ExecutionInstructionHeader_T ) + operation_bytes;
 }
 
+static uint32_t CONSOLE_Flash_EncodeSpiInstruction( uint8_t* destination, uint32_t timestamp,
+                                                    uint8_t channel, uint8_t value,
+                                                    uint32_t packet_length_bytes )
+{
+    const uint32_t payload_length_bytes =
+        EXECUTION_SPI_DATA_OFFSET_BYTES( 1U ) + packet_length_bytes;
+    const uint32_t operation_bytes =
+        EXECUTION_OPERATION_ENCODED_SIZE_BYTES( payload_length_bytes );
+    const uint32_t instruction_word =
+        operation_bytes | ( CONSOLE_FLASH_TEST_OPERATION_COUNT << 16U );
+    const uint32_t operation_word = EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT
+                                    | ( ( uint32_t )channel << 8U )
+                                    | ( payload_length_bytes << 16U );
+
+    CONSOLE_Flash_WriteU32Le( &destination[0], timestamp );
+    CONSOLE_Flash_WriteU32Le( &destination[4], instruction_word );
+    CONSOLE_Flash_WriteU32Le( &destination[8], operation_word );
+    ( void )memset( &destination[12], 0, operation_bytes - EXECUTION_OPERATION_HEADER_SIZE_BYTES );
+    CONSOLE_Flash_WriteU32Le( &destination[12], 1U );
+    CONSOLE_Flash_WriteU32Le( &destination[16], packet_length_bytes );
+    ( void )memset( &destination[20], value, packet_length_bytes );
+
+    return ( uint32_t )sizeof( ExecutionInstructionHeader_T ) + operation_bytes;
+}
+
 /** Uploads two canonical digital-output instructions through the public upload API. */
 static void CONSOLE_Flash_UploadDigitalOutputTestCommand( uint16_t argc, char* argv[] )
 {
@@ -1367,6 +1399,181 @@ static void CONSOLE_Flash_UploadPwmTestCommand( uint16_t argc, char* argv[] )
                     ( unsigned long )duty_permille, ( unsigned int )payload.arr,
                     ( unsigned int )payload.ccr, ( unsigned int )payload.psc,
                     ( unsigned long )update_tick, ( unsigned long )run_ticks );
+    CONSOLE_Printf( "Next: finish configuring the RSM, then 'run_state execute %lu 0'.\r\n",
+                    ( unsigned long )console_flash_run_tick_count );
+}
+
+/** Uploads one or more single-packet SPI transfers through the production instruction path. */
+static void CONSOLE_Flash_UploadSpiTestCommand( uint16_t argc, char* argv[] )
+{
+    uint32_t channel        = 0U;
+    uint32_t value          = 0U;
+    uint32_t length         = 0U;
+    uint32_t first_tick     = 0U;
+    uint32_t run_ticks      = 0U;
+    uint32_t repeat_count   = 1U;
+    uint32_t interval_ticks = 0U;
+
+    if ( ( argc != 7U && argc != 9U ) || !CONSOLE_Flash_ParseU32( argv[2], &channel )
+         || !CONSOLE_Flash_ParseU32( argv[3], &value )
+         || !CONSOLE_Flash_ParseU32( argv[4], &length )
+         || !CONSOLE_Flash_ParseU32( argv[5], &first_tick )
+         || !CONSOLE_Flash_ParseU32( argv[6], &run_ticks )
+         || ( argc == 9U
+              && ( !CONSOLE_Flash_ParseU32( argv[7], &repeat_count )
+                   || !CONSOLE_Flash_ParseU32( argv[8], &interval_ticks ) ) )
+         || channel < 1U || channel > EXEC_SPI_CHANNEL_COUNT || value > UINT8_MAX || length == 0U
+         || first_tick == 0U || repeat_count == 0U
+         || ( repeat_count > 1U && interval_ticks == 0U ) )
+    {
+        CONSOLE_Printf( "Usage: flash upload_spi_test <channel 1..2> <byte 0..255> <length> "
+                        "<first_tick > 0> <run_ticks> [repeat_count interval_ticks]\r\n" );
+        return;
+    }
+
+    if ( repeat_count > 1U
+         && ( repeat_count - 1U ) > ( ( UINT32_MAX - first_tick ) / interval_ticks ) )
+    {
+        CONSOLE_Printf( "SPI repeat schedule exceeds the timestamp range.\r\n" );
+        return;
+    }
+
+    const uint32_t last_tick = first_tick + ( ( repeat_count - 1U ) * interval_ticks );
+    if ( run_ticks < last_tick )
+    {
+        CONSOLE_Printf( "Run ticks must include the final SPI transmit tick (%lu).\r\n",
+                        ( unsigned long )last_tick );
+        return;
+    }
+
+    if ( !CONSOLE_Flash_RequireIdle() )
+    {
+        return;
+    }
+
+    DutDriverConfiguration_T configuration = { 0 };
+    if ( !TEST_CONFIGURATION_GetActive( &configuration )
+         || !configuration.spi_channels[channel - 1U].is_enabled )
+    {
+        CONSOLE_Printf( "SPI channel %lu is not enabled in the active test configuration.\r\n",
+                        ( unsigned long )channel );
+        return;
+    }
+
+    if ( configuration.spi_channels[channel - 1U].data_size == EXEC_SPI_SIZE_16_BIT
+         && ( length % 2U ) != 0U )
+    {
+        CONSOLE_Printf( "SPI packet length must be even for a 16-bit channel.\r\n" );
+        return;
+    }
+
+    const uint64_t payload_length_bytes =
+        ( uint64_t )EXECUTION_SPI_DATA_OFFSET_BYTES( 1U ) + length;
+    if ( payload_length_bytes > UINT16_MAX )
+    {
+        CONSOLE_Printf( "SPI payload exceeds the canonical 16-bit length field.\r\n" );
+        return;
+    }
+
+    const uint32_t operation_bytes =
+        EXECUTION_OPERATION_ENCODED_SIZE_BYTES( ( uint32_t )payload_length_bytes );
+    const uint32_t instruction_bytes =
+        ( uint32_t )sizeof( ExecutionInstructionHeader_T ) + operation_bytes;
+    if ( instruction_bytes > sizeof( console_flash_write_buffer ) )
+    {
+        CONSOLE_Printf( "SPI instruction exceeds the %u-byte console staging buffer.\r\n",
+                        ( unsigned int )sizeof( console_flash_write_buffer ) );
+        return;
+    }
+
+    if ( repeat_count > ( UINT32_MAX / instruction_bytes ) )
+    {
+        CONSOLE_Printf( "SPI repeat stream exceeds the upload length range.\r\n" );
+        return;
+    }
+
+    const uint32_t upload_bytes = repeat_count * instruction_bytes;
+    console_flash_run_tick_count = 0U;
+
+    FlashManagerInstructionUploadRequestStatus_T status =
+        FLASH_MANAGER_RequestInstructionUploadStart( upload_bytes );
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED
+         || !CONSOLE_Flash_WaitForState( FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD,
+                                         CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "SPI upload start failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    for ( uint32_t repeat_index = 0U; repeat_index < repeat_count; repeat_index++ )
+    {
+        const uint32_t transmit_tick = first_tick + ( repeat_index * interval_ticks );
+        ( void )CONSOLE_Flash_EncodeSpiInstruction( console_flash_write_buffer, transmit_tick,
+                                                    ( uint8_t )( channel - 1U ), ( uint8_t )value,
+                                                    length );
+
+        TickType_t progress_started_at = xTaskGetTickCount();
+        for ( ;; )
+        {
+            status = FLASH_MANAGER_SubmitInstructionUploadBytes( console_flash_write_buffer,
+                                                                 instruction_bytes );
+            if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
+            {
+                break;
+            }
+
+            if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
+            {
+                CONSOLE_Printf( "SPI instruction %lu submission failed (status=%d).\r\n",
+                                ( unsigned long )( repeat_index + 1U ), ( int )status );
+                return;
+            }
+
+            if ( CONSOLE_Flash_HasTimedOut( progress_started_at,
+                                            CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            {
+                CONSOLE_Printf( "SPI upload timed out at instruction %lu.\r\n",
+                                ( unsigned long )( repeat_index + 1U ) );
+                return;
+            }
+
+            vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+        }
+    }
+
+    TickType_t finish_started_at = xTaskGetTickCount();
+    do
+    {
+        status = FLASH_MANAGER_RequestInstructionUploadFinish();
+        if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
+        {
+            if ( CONSOLE_Flash_HasTimedOut( finish_started_at, CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            {
+                CONSOLE_Printf( "SPI upload finalisation timed out.\r\n" );
+                return;
+            }
+            vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+        }
+    } while ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY );
+
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED
+         || !CONSOLE_Flash_WaitForState( FLASH_MANAGER_STATE_IDLE,
+                                         CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "SPI upload finalisation failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    console_flash_last_upload_records = repeat_count;
+    console_flash_last_upload_bytes   = upload_bytes;
+    console_flash_run_tick_count      = run_ticks;
+    CONSOLE_Flash_ResetExecutionHarnessState();
+
+    CONSOLE_Printf( "SPI upload PASS: channel=%lu byte=0x%02lX packet_length=%lu "
+                    "first_tick=%lu repeats=%lu interval_ticks=%lu run_ticks=%lu.\r\n",
+                    ( unsigned long )channel, ( unsigned long )value, ( unsigned long )length,
+                    ( unsigned long )first_tick, ( unsigned long )repeat_count,
+                    ( unsigned long )interval_ticks, ( unsigned long )run_ticks );
     CONSOLE_Printf( "Next: finish configuring the RSM, then 'run_state execute %lu 0'.\r\n",
                     ( unsigned long )console_flash_run_tick_count );
 }
@@ -2057,6 +2264,12 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
     if ( strcmp( argv[1], "upload_pwm_test" ) == 0 )
     {
         CONSOLE_Flash_UploadPwmTestCommand( argc, argv );
+        return;
+    }
+
+    if ( strcmp( argv[1], "upload_spi_test" ) == 0 )
+    {
+        CONSOLE_Flash_UploadSpiTestCommand( argc, argv );
         return;
     }
 

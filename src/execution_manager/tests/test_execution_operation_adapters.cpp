@@ -7,6 +7,7 @@ extern "C"
 #include "execution_operation_payloads.h"
 #include "exec_digital_output.h"
 #include "exec_pwm_gen.h"
+#include "exec_spi.h"
 #include "exec_uart.h"
 }
 
@@ -18,6 +19,12 @@ static uint32_t                    pwm_lv_calls;
 static uint32_t                    pwm_hv_calls;
 static ExecutionPwmUpdatePayload_T last_pwm_lv;
 static ExecutionPwmUpdatePayload_T last_pwm_hv;
+static uint32_t                    spi_calls;
+static ExecSPIChannel_T            last_spi_channel;
+static const uint8_t*              last_spi_data;
+static const uint32_t*             last_spi_packet_sizes;
+static uint32_t                    last_spi_packet_count;
+static bool                        spi_accept;
 static uint32_t                    uart_calls;
 static ExecUartChannel_T           last_uart_channel;
 static uint8_t                     last_uart_payload[8];
@@ -39,6 +46,19 @@ struct alignas( 4 ) EncodedPwmOperation
 
 static_assert( sizeof( EncodedDigitalOutputOperation ) == 12U );
 static_assert( sizeof( EncodedPwmOperation ) == 12U );
+
+struct alignas( 4 ) EncodedSpiOperation
+{
+    ExecutionOperationHeaderWord_T      header;
+    ExecutionSpiTransmitPayloadPrefix_T prefix;
+    uint32_t                            packet_sizes[2];
+    uint8_t                             data[5];
+    uint8_t                             padding[3];
+};
+
+static_assert( sizeof( EncodedSpiOperation ) == 24U );
+static constexpr uint16_t SPI_TEST_PAYLOAD_LENGTH_BYTES =
+    EXECUTION_SPI_DATA_OFFSET_BYTES( 2U ) + 5U;
 
 struct alignas( 4 ) EncodedUartOperation
 {
@@ -71,6 +91,17 @@ extern "C" void EXEC_PWM_GEN_Set_PWM_HV( uint16_t arr, uint16_t ccr, uint16_t ps
     last_pwm_hv = { arr, ccr, psc };
 }
 
+extern "C" bool EXEC_SPI_Transmit( ExecSPIChannel_T channel, const uint8_t* data_src,
+                                   const uint32_t* packet_sizes_bytes, uint32_t num_packets )
+{
+    spi_calls             = spi_calls + 1U;
+    last_spi_channel      = channel;
+    last_spi_data         = data_src;
+    last_spi_packet_sizes = packet_sizes_bytes;
+    last_spi_packet_count = num_packets;
+    return spi_accept;
+}
+
 extern "C" bool EXEC_UART_Transmit( ExecUartChannel_T channel, const uint8_t* data,
                                     uint32_t length_bytes )
 {
@@ -96,6 +127,12 @@ protected:
         pwm_lv_calls = pwm_hv_calls = 0U;
         last_pwm_lv                 = { 0U, 0U, 0U };
         last_pwm_hv                 = { 0U, 0U, 0U };
+        spi_calls                   = 0U;
+        last_spi_channel            = EXEC_SPI_CHANNEL_1;
+        last_spi_data               = nullptr;
+        last_spi_packet_sizes       = nullptr;
+        last_spi_packet_count       = 0U;
+        spi_accept                  = true;
         uart_calls                  = 0U;
         last_uart_channel           = EXEC_UART_CHANNEL_1;
         std::memset( last_uart_payload, 0, sizeof( last_uart_payload ) );
@@ -212,6 +249,75 @@ TEST_F( ExecutionOperationAdaptersTest, WalkerSkipsPwmAlignmentPaddingBeforeNext
     EXPECT_EQ( pwm_lv_calls, 1U );
     EXPECT_EQ( set_masks[0], UINT32_C( 0x10 ) );
     EXPECT_EQ( reset_masks[0], UINT32_C( 0x20 ) );
+}
+
+TEST_F( ExecutionOperationAdaptersTest, SpiTransmitPassesAlignedPayloadViewsWithoutCopy )
+{
+    const EncodedSpiOperation operation = {
+        EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT | ( EXECUTION_OPERATION_SPI_CHANNEL_2 << 8U )
+            | ( SPI_TEST_PAYLOAD_LENGTH_BYTES << 16U ),
+        { 2U },
+        { 2U, 3U },
+        { 0x10U, 0x11U, 0x20U, 0x21U, 0x22U },
+        { 0U, 0U, 0U },
+    };
+
+    EXPECT_EQ( EXECUTION_OPERATION_ADAPTER_ApplyOperations(
+                   reinterpret_cast<const uint8_t*>( &operation ), 1U ),
+               EXECUTION_OPERATION_ADAPTER_ACCEPTED );
+    EXPECT_EQ( spi_calls, 1U );
+    EXPECT_EQ( last_spi_channel, EXEC_SPI_CHANNEL_2 );
+    EXPECT_EQ( last_spi_packet_count, 2U );
+    EXPECT_EQ( last_spi_packet_sizes, operation.packet_sizes );
+    EXPECT_EQ( last_spi_data, operation.data );
+}
+
+TEST_F( ExecutionOperationAdaptersTest, SpiDriverRejectionPropagatesToOperationWalker )
+{
+    const EncodedSpiOperation operation = {
+        EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT | ( EXECUTION_OPERATION_SPI_CHANNEL_1 << 8U )
+            | ( SPI_TEST_PAYLOAD_LENGTH_BYTES << 16U ),
+        { 2U },
+        { 2U, 3U },
+        { 1U, 2U, 3U, 4U, 5U },
+        { 0U, 0U, 0U },
+    };
+    spi_accept = false;
+
+    EXPECT_EQ( EXECUTION_OPERATION_ADAPTER_ApplyOperations(
+                   reinterpret_cast<const uint8_t*>( &operation ), 1U ),
+               EXECUTION_OPERATION_ADAPTER_REJECTED );
+    EXPECT_EQ( spi_calls, 1U );
+}
+
+TEST_F( ExecutionOperationAdaptersTest, WalkerSkipsSpiAlignmentPaddingBeforeNextOperation )
+{
+    struct alignas( 4 )
+    {
+        EncodedSpiOperation           spi;
+        EncodedDigitalOutputOperation digital_output;
+    } operations = {
+        {
+            EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT | ( EXECUTION_OPERATION_SPI_CHANNEL_1 << 8U )
+                | ( SPI_TEST_PAYLOAD_LENGTH_BYTES << 16U ),
+            { 2U },
+            { 2U, 3U },
+            { 1U, 2U, 3U, 4U, 5U },
+            { 0U, 0U, 0U },
+        },
+        {
+            EXECUTION_OPERATION_OPCODE_DIGITAL_OUTPUT_UPDATE
+                | ( EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES << 16U ),
+            { UINT32_C( 0x40 ), UINT32_C( 0x80 ) },
+        },
+    };
+
+    EXPECT_EQ( EXECUTION_OPERATION_ADAPTER_ApplyOperations(
+                   reinterpret_cast<const uint8_t*>( &operations ), 2U ),
+               EXECUTION_OPERATION_ADAPTER_ACCEPTED );
+    EXPECT_EQ( spi_calls, 1U );
+    EXPECT_EQ( set_masks[0], UINT32_C( 0x40 ) );
+    EXPECT_EQ( reset_masks[0], UINT32_C( 0x80 ) );
 }
 
 TEST_F( ExecutionOperationAdaptersTest, UartTransmitPassesRawPayloadAndLengthToDriver )

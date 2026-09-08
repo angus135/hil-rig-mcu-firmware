@@ -4,9 +4,9 @@
  *  Description:
  *      Canonical opcode and payload layouts for scheduled output operations.
  *      The common operation word, digital-output payload, PWM-update payload,
- *      and raw UART-transmit payload are current implementation contracts. The
- *      remaining peripheral payloads document planned encodings and may change
- *      as their adapters are implemented.
+ *      SPI-transmit payload, and raw UART-transmit payload are current
+ *      implementation contracts. The remaining peripheral payloads document
+ *      planned encodings and may change as their adapters are implemented.
  *
  *  Notes:
  *      One instruction represents all output work scheduled for one tick. It

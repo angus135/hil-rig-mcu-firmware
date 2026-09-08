@@ -211,7 +211,7 @@ protected:
 
     static SPIChannel_T HWChannel( ExecSPIChannel_T channel )
     {
-        return channel == EXEC_SPI_CHANNEL_1 ? SPI_CHANNEL_0 : SPI_CHANNEL_1;
+        return channel == EXEC_SPI_CHANNEL_1 ? SPI_CHANNEL_1 : SPI_CHANNEL_2;
     }
 
     void ForceChannelDisabled( ExecSPIChannel_T peripheral )
@@ -246,7 +246,7 @@ protected:
  *  Test Cases
  *------------------------------------------------------------------------------
  */
-TEST_F( ExecSPITest, ConfigureChannel_MasterKeepsChannelStoppedAndMapsChannel1ToB6B7 )
+TEST_F( ExecSPITest, ConfigureChannel_MasterKeepsChannelStoppedAndMapsChannel1ToB4B5 )
 {
     using ::testing::InSequence;
     using ::testing::Invoke;
@@ -256,14 +256,14 @@ TEST_F( ExecSPITest, ConfigureChannel_MasterKeepsChannelStoppedAndMapsChannel1To
     InSequence            sequence;
 
     EXPECT_CALL( mock_logic_expander,
-                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 7U, true ) )
+                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 5U, true ) )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_logic_expander,
-                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 6U, false ) )
+                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 4U, false ) )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_logic_expander, SendControlBits() )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
-    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_0, ::testing::_ ) )
+    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_1, ::testing::_ ) )
         .WillOnce( Invoke( []( SPIChannel_T, HWSPIConfig_T hardware ) {
             EXPECT_EQ( hardware.spi_mode, SPI_MASTER_MODE );
             EXPECT_EQ( hardware.data_size, SPI_SIZE_8_BIT );
@@ -271,17 +271,17 @@ TEST_F( ExecSPITest, ConfigureChannel_MasterKeepsChannelStoppedAndMapsChannel1To
             EXPECT_EQ( hardware.baud_rate, SPI_BAUD_352KBIT );
             EXPECT_EQ( hardware.cpol, SPI_CPOL_LOW );
             EXPECT_EQ( hardware.cpha, SPI_CPHA_1_EDGE );
-            EXPECT_EQ( hardware.nss_pin, GPIO_SPI1_NSS );
+            EXPECT_EQ( hardware.nss_pin, GPIO_SPI2_NSS );
             return true;
         } ) );
-    EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_0 ) ).Times( 0 );
+    EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_1 ) ).Times( 0 );
 
     EXPECT_TRUE( EXEC_SPI_Configure_Channel( EXEC_SPI_CHANNEL_1, &config ) );
     EXPECT_TRUE( EXEC_SPI_Is_Configured( EXEC_SPI_CHANNEL_1 ) );
     EXPECT_FALSE( EXEC_SPI_Is_Started( EXEC_SPI_CHANNEL_1 ) );
 }
 
-TEST_F( ExecSPITest, ConfigureChannel_SlaveMapsChannel2ToB4B5 )
+TEST_F( ExecSPITest, ConfigureChannel_SlaveMapsChannel2ToB6B7 )
 {
     using ::testing::_;
     using ::testing::InSequence;
@@ -291,19 +291,19 @@ TEST_F( ExecSPITest, ConfigureChannel_SlaveMapsChannel2ToB4B5 )
     InSequence            sequence;
 
     EXPECT_CALL( mock_logic_expander,
-                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 5U, false ) )
+                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 7U, false ) )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_logic_expander,
-                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 4U, false ) )
+                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 6U, false ) )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_logic_expander, SendControlBits() )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
-    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_1, _ ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_2, _ ) ).WillOnce( Return( true ) );
 
     EXPECT_TRUE( EXEC_SPI_Configure_Channel( EXEC_SPI_CHANNEL_2, &config ) );
 }
 
-TEST_F( ExecSPITest, ConfigureChannel_DisabledAppliesSafeB6B7StateWithoutHardwareConfigure )
+TEST_F( ExecSPITest, ConfigureChannel_DisabledAppliesSafeB4B5StateWithoutHardwareConfigure )
 {
     using ::testing::_;
     using ::testing::InSequence;
@@ -313,10 +313,10 @@ TEST_F( ExecSPITest, ConfigureChannel_DisabledAppliesSafeB6B7StateWithoutHardwar
     InSequence            sequence;
 
     EXPECT_CALL( mock_logic_expander,
-                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 7U, false ) )
+                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 5U, false ) )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_logic_expander,
-                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 6U, false ) )
+                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 4U, false ) )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_logic_expander, SendControlBits() )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
@@ -360,18 +360,18 @@ TEST_F( ExecSPITest, StartAndStopChannel_FollowHardwareAndExternalEnableOrdering
 
     const ExecSPIConfig_T config = MakeEnabledConfig( EXEC_SPI_MASTER_MODE );
 
-    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_0, _ ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_1, _ ) ).WillOnce( Return( true ) );
     ASSERT_TRUE( EXEC_SPI_Configure_Channel( EXEC_SPI_CHANNEL_1, &config ) );
     ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
 
     {
         InSequence sequence;
-        EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_0 ) ).WillOnce( Return( true ) );
+        EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_1 ) ).WillOnce( Return( true ) );
         EXPECT_CALL( mock_logic_expander,
-                     LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 7U, true ) )
+                     LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 5U, true ) )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
         EXPECT_CALL( mock_logic_expander,
-                     LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 6U, true ) )
+                     LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 4U, true ) )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
         EXPECT_CALL( mock_logic_expander, SendControlBits() )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
@@ -380,16 +380,16 @@ TEST_F( ExecSPITest, StartAndStopChannel_FollowHardwareAndExternalEnableOrdering
 
     {
         InSequence sequence;
-        EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_CHANNEL_0 ) ).WillOnce( Return( true ) );
+        EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_CHANNEL_1 ) ).WillOnce( Return( true ) );
         EXPECT_CALL( mock_logic_expander,
-                     LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 7U, true ) )
+                     LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 5U, true ) )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
         EXPECT_CALL( mock_logic_expander,
-                     LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 6U, false ) )
+                     LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 4U, false ) )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
         EXPECT_CALL( mock_logic_expander, SendControlBits() )
             .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
-        EXPECT_CALL( mock_hw_spi, StopChannel( SPI_CHANNEL_0 ) ).WillOnce( Return( true ) );
+        EXPECT_CALL( mock_hw_spi, StopChannel( SPI_CHANNEL_1 ) ).WillOnce( Return( true ) );
     }
     EXPECT_TRUE( EXEC_SPI_Stop_Channel( EXEC_SPI_CHANNEL_1 ) );
     EXPECT_TRUE( EXEC_SPI_Is_Configured( EXEC_SPI_CHANNEL_1 ) );
@@ -402,15 +402,15 @@ TEST_F( ExecSPITest, StopChannel_RejectsIncompleteNonFaultedTransmission )
     using ::testing::Return;
 
     const ExecSPIConfig_T config = MakeEnabledConfig();
-    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_0, _ ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_1, _ ) ).WillOnce( Return( true ) );
     ASSERT_TRUE( EXEC_SPI_Configure_Channel( EXEC_SPI_CHANNEL_1, &config ) );
-    EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_0 ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_1 ) ).WillOnce( Return( true ) );
     ASSERT_TRUE( EXEC_SPI_Start_Channel( EXEC_SPI_CHANNEL_1 ) );
     ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
 
-    EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_CHANNEL_0 ) ).WillOnce( Return( false ) );
-    EXPECT_CALL( mock_hw_spi, TxIsFaulted( SPI_CHANNEL_0 ) ).WillOnce( Return( false ) );
-    EXPECT_CALL( mock_hw_spi, StopChannel( SPI_CHANNEL_0 ) ).Times( 0 );
+    EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_CHANNEL_1 ) ).WillOnce( Return( false ) );
+    EXPECT_CALL( mock_hw_spi, TxIsFaulted( SPI_CHANNEL_1 ) ).WillOnce( Return( false ) );
+    EXPECT_CALL( mock_hw_spi, StopChannel( SPI_CHANNEL_1 ) ).Times( 0 );
 
     EXPECT_FALSE( EXEC_SPI_Stop_Channel( EXEC_SPI_CHANNEL_1 ) );
     EXPECT_TRUE( EXEC_SPI_Is_Started( EXEC_SPI_CHANNEL_1 ) );
@@ -422,15 +422,15 @@ TEST_F( ExecSPITest, StartChannel_ExternalEnableFailureRollsHardwareBackToStoppe
     using ::testing::Return;
 
     const ExecSPIConfig_T config = MakeEnabledConfig();
-    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_0, _ ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_1, _ ) ).WillOnce( Return( true ) );
     ASSERT_TRUE( EXEC_SPI_Configure_Channel( EXEC_SPI_CHANNEL_1, &config ) );
     ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
 
-    EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_0 ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_1 ) ).WillOnce( Return( true ) );
     EXPECT_CALL( mock_logic_expander, SendControlBits() )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_BUSY ) )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
-    EXPECT_CALL( mock_hw_spi, StopChannel( SPI_CHANNEL_0 ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_spi, StopChannel( SPI_CHANNEL_1 ) ).WillOnce( Return( true ) );
 
     EXPECT_FALSE( EXEC_SPI_Start_Channel( EXEC_SPI_CHANNEL_1 ) );
     EXPECT_TRUE( EXEC_SPI_Is_Configured( EXEC_SPI_CHANNEL_1 ) );
@@ -443,15 +443,15 @@ TEST_F( ExecSPITest, StopChannel_FaultedTransmissionPermitsHardwareRecoveryStop 
     using ::testing::Return;
 
     const ExecSPIConfig_T config = MakeEnabledConfig();
-    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_0, _ ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_1, _ ) ).WillOnce( Return( true ) );
     ASSERT_TRUE( EXEC_SPI_Configure_Channel( EXEC_SPI_CHANNEL_1, &config ) );
-    EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_0 ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_1 ) ).WillOnce( Return( true ) );
     ASSERT_TRUE( EXEC_SPI_Start_Channel( EXEC_SPI_CHANNEL_1 ) );
     ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
 
-    EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_CHANNEL_0 ) ).WillOnce( Return( false ) );
-    EXPECT_CALL( mock_hw_spi, TxIsFaulted( SPI_CHANNEL_0 ) ).WillOnce( Return( true ) );
-    EXPECT_CALL( mock_hw_spi, StopChannel( SPI_CHANNEL_0 ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_CHANNEL_1 ) ).WillOnce( Return( false ) );
+    EXPECT_CALL( mock_hw_spi, TxIsFaulted( SPI_CHANNEL_1 ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_spi, StopChannel( SPI_CHANNEL_1 ) ).WillOnce( Return( true ) );
 
     EXPECT_TRUE( EXEC_SPI_Stop_Channel( EXEC_SPI_CHANNEL_1 ) );
     EXPECT_TRUE( EXEC_SPI_Is_Configured( EXEC_SPI_CHANNEL_1 ) );
@@ -469,11 +469,11 @@ TEST_F( ExecSPITest, Transmit_SinglePacket_LoadsPacketTriggersOnceAndReturnsTrue
     {
         InSequence sequence;
 
-        EXPECT_CALL( mock_hw_spi, LoadTxPacketBatch( SPI_CHANNEL_0, tx_data, packet_sizes, 1U ) )
+        EXPECT_CALL( mock_hw_spi, LoadTxPacketBatch( SPI_CHANNEL_1, tx_data, packet_sizes, 1U ) )
             .WillOnce( Return( true ) );
 
-        EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_CHANNEL_0 ) ).Times( 1 );
-        EXPECT_CALL( mock_hw_spi, TxIsFaulted( SPI_CHANNEL_0 ) ).WillOnce( Return( false ) );
+        EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_CHANNEL_1 ) ).Times( 1 );
+        EXPECT_CALL( mock_hw_spi, TxIsFaulted( SPI_CHANNEL_1 ) ).WillOnce( Return( false ) );
     }
 
     bool result = EXEC_SPI_Transmit(
@@ -498,11 +498,11 @@ TEST_F( ExecSPITest, Transmit_MultiplePackets_LoadsAtomicBatchThenTriggersOnce )
     {
         InSequence sequence;
 
-        EXPECT_CALL( mock_hw_spi, LoadTxPacketBatch( SPI_CHANNEL_0, tx_data, packet_sizes, 3U ) )
+        EXPECT_CALL( mock_hw_spi, LoadTxPacketBatch( SPI_CHANNEL_1, tx_data, packet_sizes, 3U ) )
             .WillOnce( Return( true ) );
 
-        EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_CHANNEL_0 ) ).Times( 1 );
-        EXPECT_CALL( mock_hw_spi, TxIsFaulted( SPI_CHANNEL_0 ) ).WillOnce( Return( false ) );
+        EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_CHANNEL_1 ) ).Times( 1 );
+        EXPECT_CALL( mock_hw_spi, TxIsFaulted( SPI_CHANNEL_1 ) ).WillOnce( Return( false ) );
     }
 
     bool result = EXEC_SPI_Transmit(
@@ -523,11 +523,11 @@ TEST_F( ExecSPITest, Transmit_BatchLoadFails_DoesNotTriggerTxAndReturnsFalse )
     {
         InSequence sequence;
 
-        EXPECT_CALL( mock_hw_spi, LoadTxPacketBatch( SPI_CHANNEL_0, tx_data, packet_sizes, 1U ) )
+        EXPECT_CALL( mock_hw_spi, LoadTxPacketBatch( SPI_CHANNEL_1, tx_data, packet_sizes, 1U ) )
             .WillOnce( Return( false ) );
     }
 
-    EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_CHANNEL_0 ) ).Times( 0 );
+    EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_CHANNEL_1 ) ).Times( 0 );
 
     bool result = EXEC_SPI_Transmit(
         EXEC_SPI_CHANNEL_1, tx_data, packet_sizes,
@@ -551,10 +551,10 @@ TEST_F( ExecSPITest, Transmit_TriggerFaultReturnsFalse )
     {
         InSequence sequence;
 
-        EXPECT_CALL( mock_hw_spi, LoadTxPacketBatch( SPI_CHANNEL_0, tx_data, packet_sizes, 3U ) )
+        EXPECT_CALL( mock_hw_spi, LoadTxPacketBatch( SPI_CHANNEL_1, tx_data, packet_sizes, 3U ) )
             .WillOnce( Return( true ) );
-        EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_CHANNEL_0 ) ).Times( 1 );
-        EXPECT_CALL( mock_hw_spi, TxIsFaulted( SPI_CHANNEL_0 ) ).WillOnce( Return( true ) );
+        EXPECT_CALL( mock_hw_spi, TxTrigger( SPI_CHANNEL_1 ) ).Times( 1 );
+        EXPECT_CALL( mock_hw_spi, TxIsFaulted( SPI_CHANNEL_1 ) ).WillOnce( Return( true ) );
     }
 
     bool result = EXEC_SPI_Transmit(
@@ -585,9 +585,9 @@ TEST_F( ExecSPITest, Receive_SingleSpanAvailable_CopiesDataUpdatesSizeAndConsume
     uint8_t  rx_buffer[TEST_RX_BUFFER_SIZE] = { 0 };
     uint32_t rx_buffer_size_bytes           = sizeof( rx_buffer );
 
-    EXPECT_CALL( mock_hw_spi, RxPeek( SPI_CHANNEL_1 ) ).WillOnce( ::testing::Return( spans ) );
+    EXPECT_CALL( mock_hw_spi, RxPeek( SPI_CHANNEL_2 ) ).WillOnce( ::testing::Return( spans ) );
 
-    EXPECT_CALL( mock_hw_spi, RxConsume( SPI_CHANNEL_1, sizeof( first_span_data ) ) ).Times( 1 );
+    EXPECT_CALL( mock_hw_spi, RxConsume( SPI_CHANNEL_2, sizeof( first_span_data ) ) ).Times( 1 );
 
     bool result = EXEC_SPI_Receive( EXEC_SPI_CHANNEL_2, rx_buffer, &rx_buffer_size_bytes );
 
@@ -620,9 +620,9 @@ TEST_F( ExecSPITest, Receive_TwoSpansAvailable_CopiesBothSpansInOrderAndConsumes
     uint8_t  rx_buffer[TEST_RX_BUFFER_SIZE] = { 0 };
     uint32_t rx_buffer_size_bytes           = sizeof( rx_buffer );
 
-    EXPECT_CALL( mock_hw_spi, RxPeek( SPI_CHANNEL_0 ) ).WillOnce( ::testing::Return( spans ) );
+    EXPECT_CALL( mock_hw_spi, RxPeek( SPI_CHANNEL_1 ) ).WillOnce( ::testing::Return( spans ) );
 
-    EXPECT_CALL( mock_hw_spi, RxConsume( SPI_CHANNEL_0, sizeof( expected_data ) ) ).Times( 1 );
+    EXPECT_CALL( mock_hw_spi, RxConsume( SPI_CHANNEL_1, sizeof( expected_data ) ) ).Times( 1 );
 
     bool result = EXEC_SPI_Receive( EXEC_SPI_CHANNEL_1, rx_buffer, &rx_buffer_size_bytes );
 
@@ -650,9 +650,9 @@ TEST_F( ExecSPITest, Receive_NoDataAvailable_UpdatesSizeToZeroAndConsumesZero )
     uint8_t  rx_buffer[TEST_RX_BUFFER_SIZE] = { 0xAAU };
     uint32_t rx_buffer_size_bytes           = sizeof( rx_buffer );
 
-    EXPECT_CALL( mock_hw_spi, RxPeek( SPI_CHANNEL_0 ) ).WillOnce( ::testing::Return( spans ) );
+    EXPECT_CALL( mock_hw_spi, RxPeek( SPI_CHANNEL_1 ) ).WillOnce( ::testing::Return( spans ) );
 
-    EXPECT_CALL( mock_hw_spi, RxConsume( SPI_CHANNEL_0, 0U ) ).Times( 1 );
+    EXPECT_CALL( mock_hw_spi, RxConsume( SPI_CHANNEL_1, 0U ) ).Times( 1 );
 
     bool result = EXEC_SPI_Receive( EXEC_SPI_CHANNEL_1, rx_buffer, &rx_buffer_size_bytes );
 
@@ -681,9 +681,9 @@ TEST_F( ExecSPITest, Receive_DestinationBufferTooSmall_ReturnsFalseAndDoesNotCon
     uint8_t  rx_buffer[TEST_SMALL_RX_BUFFER_SIZE] = { 0 };
     uint32_t rx_buffer_size_bytes                 = sizeof( rx_buffer );
 
-    EXPECT_CALL( mock_hw_spi, RxPeek( SPI_CHANNEL_1 ) ).WillOnce( ::testing::Return( spans ) );
+    EXPECT_CALL( mock_hw_spi, RxPeek( SPI_CHANNEL_2 ) ).WillOnce( ::testing::Return( spans ) );
 
-    EXPECT_CALL( mock_hw_spi, RxConsume( SPI_CHANNEL_1, ::testing::_ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw_spi, RxConsume( SPI_CHANNEL_2, ::testing::_ ) ).Times( 0 );
 
     bool result = EXEC_SPI_Receive( EXEC_SPI_CHANNEL_2, rx_buffer, &rx_buffer_size_bytes );
 
@@ -693,7 +693,7 @@ TEST_F( ExecSPITest, Receive_DestinationBufferTooSmall_ReturnsFalseAndDoesNotCon
 
 TEST_F( ExecSPITest, IsTransmissionComplete_LowLevelReturnsTrue_ReturnsTrue )
 {
-    EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_CHANNEL_0 ) ).WillOnce( ::testing::Return( true ) );
+    EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_CHANNEL_1 ) ).WillOnce( ::testing::Return( true ) );
 
     bool result = EXEC_SPI_Is_Transmission_Complete( EXEC_SPI_CHANNEL_1 );
 
@@ -702,7 +702,7 @@ TEST_F( ExecSPITest, IsTransmissionComplete_LowLevelReturnsTrue_ReturnsTrue )
 
 TEST_F( ExecSPITest, IsTransmissionComplete_LowLevelReturnsFalse_ReturnsFalse )
 {
-    EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_CHANNEL_1 ) )
+    EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_CHANNEL_2 ) )
         .WillOnce( ::testing::Return( false ) );
 
     bool result = EXEC_SPI_Is_Transmission_Complete( EXEC_SPI_CHANNEL_2 );

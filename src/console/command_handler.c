@@ -1420,7 +1420,8 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
             return;
         }
 
-        if ( !EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( &prepared_batch ) )
+        if ( !EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( prepared_batch.bytes,
+                                                          prepared_batch.byte_count ) )
         {
             CONSOLE_Printf( "Failed to submit analogue output batch\r\n" );
             return;

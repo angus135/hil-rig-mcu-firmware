@@ -48,27 +48,15 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-#define SPI_CHANNEL_0_HANDLE hspi1
 #define SPI_CHANNEL_1_HANDLE hspi2
+#define SPI_CHANNEL_2_HANDLE hspi1
 #define SPI_DAC_HANDLE hspi4
 
-#define SPI_CHANNEL_0_INSTANCE SPI1
 #define SPI_CHANNEL_1_INSTANCE SPI2
+#define SPI_CHANNEL_2_INSTANCE SPI1
 #define SPI_DAC_INSTANCE SPI4
 
 // DMA Definitions
-#define SPI_CHANNEL_0_RX_DMA DMA2
-#define SPI_CHANNEL_0_RX_DMA_STREAM LL_DMA_STREAM_0
-#define SPI_CHANNEL_0_RX_DMA_IRQ DMA2_Stream0_IRQHandler
-#define SPI_CHANNEL_0_RX_DMA_IRQN DMA2_Stream0_IRQn
-#define SPI_CHANNEL_0_TX_DMA DMA2
-#define SPI_CHANNEL_0_TX_DMA_STREAM LL_DMA_STREAM_5
-#define SPI_CHANNEL_0_TX_DMA_IRQ DMA2_Stream5_IRQHandler
-#define SPI_CHANNEL_0_TX_DMA_IRQN DMA2_Stream5_IRQn
-#define SPI_CHANNEL_0_TX_DMA_IS_ACTIVE_TC LL_DMA_IsActiveFlag_TC5
-#define SPI_CHANNEL_0_TX_DMA_IS_ACTIVE_TE LL_DMA_IsActiveFlag_TE5
-#define SPI_CHANNEL_0_TX_DMA_CLEAR_TC LL_DMA_ClearFlag_TC5
-#define SPI_CHANNEL_0_TX_DMA_CLEAR_TE LL_DMA_ClearFlag_TE5
 #define SPI_CHANNEL_1_RX_DMA DMA1
 #define SPI_CHANNEL_1_RX_DMA_STREAM LL_DMA_STREAM_3
 #define SPI_CHANNEL_1_RX_DMA_IRQ DMA1_Stream3_IRQHandler
@@ -81,6 +69,18 @@ extern "C"
 #define SPI_CHANNEL_1_TX_DMA_IS_ACTIVE_TE LL_DMA_IsActiveFlag_TE4
 #define SPI_CHANNEL_1_TX_DMA_CLEAR_TC LL_DMA_ClearFlag_TC4
 #define SPI_CHANNEL_1_TX_DMA_CLEAR_TE LL_DMA_ClearFlag_TE4
+#define SPI_CHANNEL_2_RX_DMA DMA2
+#define SPI_CHANNEL_2_RX_DMA_STREAM LL_DMA_STREAM_0
+#define SPI_CHANNEL_2_RX_DMA_IRQ DMA2_Stream0_IRQHandler
+#define SPI_CHANNEL_2_RX_DMA_IRQN DMA2_Stream0_IRQn
+#define SPI_CHANNEL_2_TX_DMA DMA2
+#define SPI_CHANNEL_2_TX_DMA_STREAM LL_DMA_STREAM_5
+#define SPI_CHANNEL_2_TX_DMA_IRQ DMA2_Stream5_IRQHandler
+#define SPI_CHANNEL_2_TX_DMA_IRQN DMA2_Stream5_IRQn
+#define SPI_CHANNEL_2_TX_DMA_IS_ACTIVE_TC LL_DMA_IsActiveFlag_TC5
+#define SPI_CHANNEL_2_TX_DMA_IS_ACTIVE_TE LL_DMA_IsActiveFlag_TE5
+#define SPI_CHANNEL_2_TX_DMA_CLEAR_TC LL_DMA_ClearFlag_TC5
+#define SPI_CHANNEL_2_TX_DMA_CLEAR_TE LL_DMA_ClearFlag_TE5
 #define SPI_DAC_TX_DMA DMA2
 #define SPI_DAC_TX_DMA_STREAM LL_DMA_STREAM_1
 #define SPI_DAC_TX_DMA_IRQ DMA2_Stream1_IRQHandler
@@ -305,14 +305,14 @@ HW_SPI_TX_Clear_DMA_Flags_For_State( const SPIPeripheralState_T* peripheral_stat
 {
     switch ( peripheral_state->logical_peripheral )
     {
-        case SPI_CHANNEL_0:
-            SPI_CHANNEL_0_TX_DMA_CLEAR_TC( SPI_CHANNEL_0_TX_DMA );
-            SPI_CHANNEL_0_TX_DMA_CLEAR_TE( SPI_CHANNEL_0_TX_DMA );
-            break;
-
         case SPI_CHANNEL_1:
             SPI_CHANNEL_1_TX_DMA_CLEAR_TC( SPI_CHANNEL_1_TX_DMA );
             SPI_CHANNEL_1_TX_DMA_CLEAR_TE( SPI_CHANNEL_1_TX_DMA );
+            break;
+
+        case SPI_CHANNEL_2:
+            SPI_CHANNEL_2_TX_DMA_CLEAR_TC( SPI_CHANNEL_2_TX_DMA );
+            SPI_CHANNEL_2_TX_DMA_CLEAR_TE( SPI_CHANNEL_2_TX_DMA );
             break;
 
         case SPI_DAC:
