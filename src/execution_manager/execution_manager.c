@@ -31,7 +31,7 @@ static ExecutionManagerTerminalCallback_T terminal_callback            = NULL;
 
 static ExecutionManagerTickResult_T
 EXECUTION_MANAGER_FailFromISR( ExecutionManagerFailure_T failure,
-                               BaseType_t* higher_priority_task_woken )
+                               BaseType_t*               higher_priority_task_woken )
 {
     if ( execution_failure == EXECUTION_MANAGER_FAILURE_NONE )
     {
@@ -140,14 +140,14 @@ EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken )
                                                               instruction->header.operation_count )
                  != EXECUTION_OPERATION_ADAPTER_ACCEPTED )
             {
-                return EXECUTION_MANAGER_FailFromISR(
-                    EXECUTION_MANAGER_FAILURE_OPERATION_REJECTED, higher_priority_task_woken );
+                return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_OPERATION_REJECTED,
+                                                      higher_priority_task_woken );
             }
 
             if ( !FLASH_MANAGER_ConsumeInstructionFromISR( higher_priority_task_woken ) )
             {
-                return EXECUTION_MANAGER_FailFromISR(
-                    EXECUTION_MANAGER_FAILURE_INSTRUCTION_CONSUME, higher_priority_task_woken );
+                return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_INSTRUCTION_CONSUME,
+                                                      higher_priority_task_woken );
             }
         }
     }

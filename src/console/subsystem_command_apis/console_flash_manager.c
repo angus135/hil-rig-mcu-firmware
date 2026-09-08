@@ -283,7 +283,7 @@ static void     CONSOLE_Flash_ResetExecutionHarnessState( void );
 static void     CONSOLE_Flash_StopExecutionHarness( void );
 static void     CONSOLE_Flash_EndExecutionHarnessFromISR( ConsoleFlashExecutionTestState_T state,
                                                           ConsoleFlashExecutionFailure_T   failure );
-static void CONSOLE_Flash_ExecutionEchoFromISR( BaseType_t* higher_priority_task_woken );
+static void     CONSOLE_Flash_ExecutionEchoFromISR( BaseType_t* higher_priority_task_woken );
 static void     CONSOLE_Flash_WriteU16Le( uint8_t* destination, uint16_t value );
 static void     CONSOLE_Flash_WriteU32Le( uint8_t* destination, uint32_t value );
 static void CONSOLE_Flash_EncodeDigitalOutputInstruction( uint8_t* destination, uint32_t timestamp,
@@ -758,7 +758,6 @@ static void CONSOLE_Flash_ExecutionEchoFromISR( BaseType_t* higher_priority_task
 
         console_flash_execution_test.instructions_consumed++;
     }
-
 }
 
 /** Generates a reproducible byte pattern for direct External Flash verification. */
