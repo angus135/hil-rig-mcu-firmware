@@ -510,7 +510,7 @@ TEST_F( RunStateManagerTest, ExecutionCompletionFromIsrInhibitsAndNotifiesOwner 
 {
     EnterExecution();
     ASSERT_NE( nullptr, execution_terminal_callback );
-    notified_bits = 0U;
+    notified_bits                         = 0U;
     BaseType_t higher_priority_task_woken = pdFALSE;
 
     execution_terminal_callback( EXECUTION_MANAGER_TICK_COMPLETE, EXECUTION_MANAGER_FAILURE_NONE,
@@ -525,7 +525,7 @@ TEST_F( RunStateManagerTest, ExecutionFailureFromIsrInhibitsAndRequestsFault )
 {
     EnterExecution();
     ASSERT_NE( nullptr, execution_terminal_callback );
-    notified_bits = 0U;
+    notified_bits                         = 0U;
     BaseType_t higher_priority_task_woken = pdFALSE;
 
     execution_terminal_callback( EXECUTION_MANAGER_TICK_FAILED,
