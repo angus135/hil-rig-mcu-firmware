@@ -8,18 +8,18 @@ extern "C"
 #include "exec_pwm_gen.h"
 }
 
-static uint32_t set_masks[2];
-static uint32_t reset_masks[2];
-static uint32_t set_calls;
-static uint32_t reset_calls;
-static uint32_t pwm_lv_calls;
-static uint32_t pwm_hv_calls;
+static uint32_t                    set_masks[2];
+static uint32_t                    reset_masks[2];
+static uint32_t                    set_calls;
+static uint32_t                    reset_calls;
+static uint32_t                    pwm_lv_calls;
+static uint32_t                    pwm_hv_calls;
 static ExecutionPwmUpdatePayload_T last_pwm_lv;
 static ExecutionPwmUpdatePayload_T last_pwm_hv;
 
 struct alignas( 4 ) EncodedDigitalOutputOperation
 {
-    ExecutionOperationHeaderWord_T header;
+    ExecutionOperationHeaderWord_T  header;
     ExecutionDigitalOutputPayload_T payload;
 };
 
@@ -65,8 +65,8 @@ protected:
         set_masks[0] = set_masks[1] = 0U;
         reset_masks[0] = reset_masks[1] = 0U;
         pwm_lv_calls = pwm_hv_calls = 0U;
-        last_pwm_lv = { 0U, 0U, 0U };
-        last_pwm_hv = { 0U, 0U, 0U };
+        last_pwm_lv                 = { 0U, 0U, 0U };
+        last_pwm_hv                 = { 0U, 0U, 0U };
     }
 };
 
@@ -126,15 +126,13 @@ TEST_F( ExecutionOperationAdaptersTest, PwmUpdateDispatchesPreparedValuesToSelec
 {
     const EncodedPwmOperation operations[] = {
         {
-            EXECUTION_OPERATION_OPCODE_PWM_UPDATE
-                | ( EXECUTION_OPERATION_PWM_CHANNEL_LV << 8U )
+            EXECUTION_OPERATION_OPCODE_PWM_UPDATE | ( EXECUTION_OPERATION_PWM_CHANNEL_LV << 8U )
                 | ( EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES << 16U ),
             { 1000U, 500U, 4U },
             { 0U, 0U },
         },
         {
-            EXECUTION_OPERATION_OPCODE_PWM_UPDATE
-                | ( EXECUTION_OPERATION_PWM_CHANNEL_HV << 8U )
+            EXECUTION_OPERATION_OPCODE_PWM_UPDATE | ( EXECUTION_OPERATION_PWM_CHANNEL_HV << 8U )
                 | ( EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES << 16U ),
             { 2000U, 1500U, 8U },
             { 0U, 0U },
@@ -162,8 +160,7 @@ TEST_F( ExecutionOperationAdaptersTest, WalkerSkipsPwmAlignmentPaddingBeforeNext
         EncodedDigitalOutputOperation digital_output;
     } operations = {
         {
-            EXECUTION_OPERATION_OPCODE_PWM_UPDATE
-                | ( EXECUTION_OPERATION_PWM_CHANNEL_LV << 8U )
+            EXECUTION_OPERATION_OPCODE_PWM_UPDATE | ( EXECUTION_OPERATION_PWM_CHANNEL_LV << 8U )
                 | ( EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES << 16U ),
             { 999U, 250U, 3U },
             { 0U, 0U },
