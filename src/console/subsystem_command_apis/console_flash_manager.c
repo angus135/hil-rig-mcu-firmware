@@ -1594,8 +1594,7 @@ static void CONSOLE_Flash_UploadCanTestCommand( uint16_t argc, char* argv[] )
 
     if ( ( argc != 8U && argc != 10U ) || !CONSOLE_Flash_ParseU32( argv[2], &channel )
          || !CONSOLE_Flash_ParseU32( argv[3], &identifier )
-         || !CONSOLE_Flash_ParseU32( argv[4], &value )
-         || !CONSOLE_Flash_ParseU32( argv[5], &dlc )
+         || !CONSOLE_Flash_ParseU32( argv[4], &value ) || !CONSOLE_Flash_ParseU32( argv[5], &dlc )
          || !CONSOLE_Flash_ParseU32( argv[6], &first_tick )
          || !CONSOLE_Flash_ParseU32( argv[7], &run_ticks )
          || ( argc == 10U
@@ -1648,7 +1647,7 @@ static void CONSOLE_Flash_UploadCanTestCommand( uint16_t argc, char* argv[] )
         return;
     }
 
-    const uint32_t upload_bytes = repeat_count * instruction_bytes;
+    const uint32_t upload_bytes  = repeat_count * instruction_bytes;
     console_flash_run_tick_count = 0U;
 
     FlashManagerInstructionUploadRequestStatus_T status =
@@ -1703,8 +1702,7 @@ static void CONSOLE_Flash_UploadCanTestCommand( uint16_t argc, char* argv[] )
         status = FLASH_MANAGER_RequestInstructionUploadFinish();
         if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
         {
-            if ( CONSOLE_Flash_HasTimedOut( finish_started_at,
-                                            CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            if ( CONSOLE_Flash_HasTimedOut( finish_started_at, CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
             {
                 CONSOLE_Printf( "CAN upload finalisation timed out.\r\n" );
                 return;
@@ -1728,8 +1726,8 @@ static void CONSOLE_Flash_UploadCanTestCommand( uint16_t argc, char* argv[] )
 
     CONSOLE_Printf( "CAN upload PASS: channel=%lu id=0x%03lX byte=0x%02lX dlc=%lu "
                     "first_tick=%lu repeats=%lu interval_ticks=%lu run_ticks=%lu.\r\n",
-                    ( unsigned long )channel, ( unsigned long )identifier,
-                    ( unsigned long )value, ( unsigned long )dlc, ( unsigned long )first_tick,
+                    ( unsigned long )channel, ( unsigned long )identifier, ( unsigned long )value,
+                    ( unsigned long )dlc, ( unsigned long )first_tick,
                     ( unsigned long )repeat_count, ( unsigned long )interval_ticks,
                     ( unsigned long )run_ticks );
     CONSOLE_Printf( "Next: finish configuring the RSM, then 'run_state execute %lu 0'.\r\n",
