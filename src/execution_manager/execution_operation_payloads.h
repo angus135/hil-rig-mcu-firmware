@@ -3,9 +3,10 @@
  *
  *  Description:
  *      Canonical opcode and payload layouts for scheduled output operations.
- *      The common operation word and digital-output payload are the current
- *      implementation contracts. The remaining peripheral payloads document
- *      planned encodings and may change as their adapters are implemented.
+ *      The common operation word, digital-output payload, and PWM-update
+ *      payload are current implementation contracts. The remaining peripheral
+ *      payloads document planned encodings and may change as their adapters are
+ *      implemented.
  *
  *  Notes:
  *      One instruction represents all output work scheduled for one tick. It
@@ -46,6 +47,7 @@ extern "C"
 {
 #endif
 
+#include <stddef.h>
 #include <stdint.h>
 
 /**-----------------------------------------------------------------------------
@@ -148,16 +150,6 @@ typedef uint8_t ExecutionOperationOpcode_T;
 #define EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES ( 8U )
 #define EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES ( 6U )
 
-/** PWM fixed-payload byte offsets. */
-#define EXECUTION_PWM_ARR_OFFSET_BYTES ( 0U )
-#define EXECUTION_PWM_CCR_OFFSET_BYTES ( 2U )
-#define EXECUTION_PWM_PSC_OFFSET_BYTES ( 4U )
-
-/** Word indices used for direct access to the digital-output payload. */
-#define EXECUTION_DIGITAL_OUTPUT_HIGH_BITMASK_WORD_INDEX ( 0U )
-#define EXECUTION_DIGITAL_OUTPUT_LOW_BITMASK_WORD_INDEX ( 1U )
-#define EXECUTION_DIGITAL_OUTPUT_PAYLOAD_WORD_COUNT ( 2U )
-
 /** Fields within each packed CAN packet. */
 #define EXECUTION_CAN_PACKET_ID_OFFSET_BYTES ( 0U )
 #define EXECUTION_CAN_PACKET_DLC_OFFSET_BYTES ( 2U )
@@ -216,7 +208,11 @@ typedef uint32_t ExecutionOperationHeaderWord_T;
  * most one operation. It omits the operation when no digital output changes on
  * that tick.
  */
-typedef uint32_t ExecutionDigitalOutputPayloadWords_T[EXECUTION_DIGITAL_OUTPUT_PAYLOAD_WORD_COUNT];
+typedef struct
+{
+    uint32_t high_bitmask;
+    uint32_t low_bitmask;
+} ExecutionDigitalOutputPayload_T;
 
 /**
  * @brief Exact three-byte wire representation of one analogue-output update.
@@ -369,11 +365,18 @@ static_assert( sizeof( ExecutionOperationHeaderWord_T ) == EXECUTION_OPERATION_H
                "Execution operation header must occupy one word" );
 static_assert( EXECUTION_OPERATION_ALIGNMENT_BYTES == sizeof( ExecutionOperationHeaderWord_T ),
                "Operation alignment must match the header word" );
-static_assert( sizeof( ExecutionDigitalOutputPayloadWords_T )
+static_assert( sizeof( ExecutionDigitalOutputPayload_T )
                    == EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES,
-               "Digital output payload must occupy two words" );
+               "Digital output payload layout changed" );
+static_assert( offsetof( ExecutionDigitalOutputPayload_T, high_bitmask ) == 0U,
+               "Digital output HIGH-mask offset changed" );
+static_assert( offsetof( ExecutionDigitalOutputPayload_T, low_bitmask ) == 4U,
+               "Digital output LOW-mask offset changed" );
 static_assert( sizeof( ExecutionPwmUpdatePayload_T ) == EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES,
                "PWM payload layout changed" );
+static_assert( offsetof( ExecutionPwmUpdatePayload_T, arr ) == 0U, "PWM ARR offset changed" );
+static_assert( offsetof( ExecutionPwmUpdatePayload_T, ccr ) == 2U, "PWM CCR offset changed" );
+static_assert( offsetof( ExecutionPwmUpdatePayload_T, psc ) == 4U, "PWM PSC offset changed" );
 static_assert( sizeof( ExecutionSpiTransmitPayloadPrefix_T ) == 4U,
                "SPI transmit prefix layout changed" );
 static_assert( sizeof( ExecutionAnalogueOutputFrame_T )
@@ -386,11 +389,18 @@ _Static_assert( sizeof( ExecutionOperationHeaderWord_T ) == EXECUTION_OPERATION_
                 "Execution operation header must occupy one word" );
 _Static_assert( EXECUTION_OPERATION_ALIGNMENT_BYTES == sizeof( ExecutionOperationHeaderWord_T ),
                 "Operation alignment must match the header word" );
-_Static_assert( sizeof( ExecutionDigitalOutputPayloadWords_T )
+_Static_assert( sizeof( ExecutionDigitalOutputPayload_T )
                     == EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES,
-                "Digital output payload must occupy two words" );
+                "Digital output payload layout changed" );
+_Static_assert( offsetof( ExecutionDigitalOutputPayload_T, high_bitmask ) == 0U,
+                "Digital output HIGH-mask offset changed" );
+_Static_assert( offsetof( ExecutionDigitalOutputPayload_T, low_bitmask ) == 4U,
+                "Digital output LOW-mask offset changed" );
 _Static_assert( sizeof( ExecutionPwmUpdatePayload_T ) == EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES,
                 "PWM payload layout changed" );
+_Static_assert( offsetof( ExecutionPwmUpdatePayload_T, arr ) == 0U, "PWM ARR offset changed" );
+_Static_assert( offsetof( ExecutionPwmUpdatePayload_T, ccr ) == 2U, "PWM CCR offset changed" );
+_Static_assert( offsetof( ExecutionPwmUpdatePayload_T, psc ) == 4U, "PWM PSC offset changed" );
 _Static_assert( sizeof( ExecutionSpiTransmitPayloadPrefix_T ) == 4U,
                 "SPI transmit prefix layout changed" );
 _Static_assert( sizeof( ExecutionAnalogueOutputFrame_T )

@@ -36,7 +36,7 @@ typedef enum
 } ExecutionManagerTickResult_T;
 
 typedef void ( *ExecutionManagerTerminalCallback_T )( ExecutionManagerTickResult_T result,
-                                                       ExecutionManagerFailure_T failure );
+                                                      ExecutionManagerFailure_T    failure );
 
 /**
  * @brief Prepares run-local state before the execution timer is started.
