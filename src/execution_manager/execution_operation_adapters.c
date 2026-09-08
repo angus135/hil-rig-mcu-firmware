@@ -20,6 +20,7 @@
 #include "execution_operation_payloads.h"
 #include "exec_digital_output.h"
 #include "exec_pwm_gen.h"
+#include "exec_uart.h"
 
 #include <stdint.h>
 
@@ -28,7 +29,7 @@
  *------------------------------------------------------------------------------
  */
 
-#define EXECUTION_OPERATION_DISPATCH_TABLE_SIZE ( EXECUTION_OPERATION_OPCODE_PWM_UPDATE + 1U )
+#define EXECUTION_OPERATION_DISPATCH_TABLE_SIZE ( EXECUTION_OPERATION_OPCODE_UART_TRANSMIT + 1U )
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
@@ -40,6 +41,8 @@ static const ExecutionOperationAdapter_T
         [EXECUTION_OPERATION_OPCODE_DIGITAL_OUTPUT_UPDATE] =
             EXECUTION_OPERATION_ADAPTER_ApplyDigitalOutput,
         [EXECUTION_OPERATION_OPCODE_PWM_UPDATE] = EXECUTION_OPERATION_ADAPTER_ApplyPwmUpdate,
+        [EXECUTION_OPERATION_OPCODE_UART_TRANSMIT] =
+            EXECUTION_OPERATION_ADAPTER_ApplyUartTransmit,
 };
 
 /**-----------------------------------------------------------------------------
@@ -123,4 +126,13 @@ EXECUTION_OPERATION_ADAPTER_ApplyPwmUpdate( uint8_t channel, const uint8_t* payl
     }
 
     return EXECUTION_OPERATION_ADAPTER_ACCEPTED;
+}
+
+ExecutionOperationAdapterResult_T
+EXECUTION_OPERATION_ADAPTER_ApplyUartTransmit( uint8_t channel, const uint8_t* payload,
+                                               uint16_t payload_length_bytes )
+{
+    return EXEC_UART_Transmit( ( ExecUartChannel_T )channel, payload, payload_length_bytes )
+               ? EXECUTION_OPERATION_ADAPTER_ACCEPTED
+               : EXECUTION_OPERATION_ADAPTER_REJECTED;
 }

@@ -167,6 +167,54 @@ The expected terminal state is `RESULTS_READY`, with TIM4 and the PWM channel
 stopped. `run_state discard` releases the empty result session and returns the
 RSM and Flash Manager to IDLE for another run.
 
+## Execution Manager UART-output path
+
+This is a coarse multimeter-visible test of the real UART instruction and DMA
+path. It does not verify individual UART bits. Probe the UART channel-1 TX pin
+with respect to board ground and configure its external interface for 3.3 V:
+
+```text
+flash init
+flash status
+run_state status
+run_state receive
+test_config inert
+test_config uart 1 3v3 1500 tx
+test_config status
+flash upload_uart_test 1 0 256 200 800 3 172
+run_state configure
+run_state status
+run_state frequency 100
+run_state execute 800 0
+run_state status
+run_state discard
+run_state status
+```
+
+Wait for `run_state status` to report `ARMED` before requesting execution. Tick
+200 queues the first 256-byte `0x00` payload at two seconds. Two more ordinary
+UART instructions follow at 172-tick intervals. At 1500 baud using the
+configured 8-N-1 framing, each burst lasts approximately
+`256 * 10 / 1500 = 1.71 seconds`. The 1.72-second start interval leaves roughly
+13 ms between bursts, which a multimeter should average out.
+
+UART idles HIGH, so the meter should initially indicate approximately 3.3 V.
+Every `0x00` frame contains one LOW start bit, eight LOW data bits, and one HIGH
+stop bit. During the sustained burst the ideal DC average is therefore about
+0.33 V. A real meter will respond slowly, but it should show a conspicuous
+drop for just over five seconds and then rise toward 3.3 V again. This confirms
+scheduled dispatch and sustained TX activity only; use a logic analyser or
+oscilloscope to verify baud rate, framing, byte values, and exact timing.
+
+`upload_uart_test` accepts a variable payload length and fills the complete raw
+UART payload with the selected byte. Its optional repeat count and interval
+create separate, strictly increasing instructions; they do not bypass the UART
+driver's normal queue. The command limits construction only to
+what fits safely in its canonical instruction staging buffer. It does not
+perform UART ring-capacity or schedule-feasibility analysis. If the driver
+cannot atomically accept the complete payload at runtime, the adapter reports
+operation rejection and the Execution Manager terminates the run.
+
 ## Per-peripheral validation
 
 Test only one peripheral, and preferably one channel, at a time. Use the normal
