@@ -30,7 +30,8 @@ static bool                               instruction_stream_exhausted = false;
 static ExecutionManagerTerminalCallback_T terminal_callback            = NULL;
 
 static ExecutionManagerTickResult_T
-EXECUTION_MANAGER_FailFromISR( ExecutionManagerFailure_T failure )
+EXECUTION_MANAGER_FailFromISR( ExecutionManagerFailure_T failure,
+                               BaseType_t* higher_priority_task_woken )
 {
     if ( execution_failure == EXECUTION_MANAGER_FAILURE_NONE )
     {
@@ -40,7 +41,8 @@ EXECUTION_MANAGER_FailFromISR( ExecutionManagerFailure_T failure )
     execution_state = EXECUTION_STATE_FAILED;
     if ( terminal_callback != NULL )
     {
-        terminal_callback( EXECUTION_MANAGER_TICK_FAILED, execution_failure );
+        terminal_callback( EXECUTION_MANAGER_TICK_FAILED, execution_failure,
+                           higher_priority_task_woken );
     }
     return EXECUTION_MANAGER_TICK_FAILED;
 }
@@ -80,7 +82,8 @@ ExecutionManagerFailure_T EXECUTION_MANAGER_GetFailure( void )
     return execution_failure;
 }
 
-ExecutionManagerTickResult_T EXECUTION_MANAGER_ProcessTickFromISR( void )
+ExecutionManagerTickResult_T
+EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken )
 {
     const FlashManagerInstructionView_T* instruction = NULL;
 
@@ -96,7 +99,8 @@ ExecutionManagerTickResult_T EXECUTION_MANAGER_ProcessTickFromISR( void )
 
     if ( execution_state != EXECUTION_STATE_READY )
     {
-        return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_NOT_PREPARED );
+        return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_NOT_PREPARED,
+                                              higher_priority_task_woken );
     }
 
     /*
@@ -126,7 +130,8 @@ ExecutionManagerTickResult_T EXECUTION_MANAGER_ProcessTickFromISR( void )
     {
         if ( instruction->header.timestamp < current_tick )
         {
-            return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_INSTRUCTION_LATE );
+            return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_INSTRUCTION_LATE,
+                                                  higher_priority_task_woken );
         }
 
         if ( instruction->header.timestamp == current_tick )
@@ -136,23 +141,25 @@ ExecutionManagerTickResult_T EXECUTION_MANAGER_ProcessTickFromISR( void )
                  != EXECUTION_OPERATION_ADAPTER_ACCEPTED )
             {
                 return EXECUTION_MANAGER_FailFromISR(
-                    EXECUTION_MANAGER_FAILURE_OPERATION_REJECTED );
+                    EXECUTION_MANAGER_FAILURE_OPERATION_REJECTED, higher_priority_task_woken );
             }
 
-            if ( !FLASH_MANAGER_ConsumeInstructionFromISR( NULL ) )
+            if ( !FLASH_MANAGER_ConsumeInstructionFromISR( higher_priority_task_woken ) )
             {
                 return EXECUTION_MANAGER_FailFromISR(
-                    EXECUTION_MANAGER_FAILURE_INSTRUCTION_CONSUME );
+                    EXECUTION_MANAGER_FAILURE_INSTRUCTION_CONSUME, higher_priority_task_woken );
             }
         }
     }
     else if ( read_status == FLASH_MANAGER_INSTRUCTION_NOT_BUFFERED )
     {
-        return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNDERRUN );
+        return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNDERRUN,
+                                              higher_priority_task_woken );
     }
     else if ( read_status != FLASH_MANAGER_INSTRUCTION_END_OF_STREAM )
     {
-        return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_INSTRUCTION_CORRUPT );
+        return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_INSTRUCTION_CORRUPT,
+                                              higher_priority_task_woken );
     }
     else
     {
@@ -164,7 +171,8 @@ ExecutionManagerTickResult_T EXECUTION_MANAGER_ProcessTickFromISR( void )
         execution_state = EXECUTION_STATE_COMPLETE;
         if ( terminal_callback != NULL )
         {
-            terminal_callback( EXECUTION_MANAGER_TICK_COMPLETE, EXECUTION_MANAGER_FAILURE_NONE );
+            terminal_callback( EXECUTION_MANAGER_TICK_COMPLETE, EXECUTION_MANAGER_FAILURE_NONE,
+                               higher_priority_task_woken );
         }
         return EXECUTION_MANAGER_TICK_COMPLETE;
     }

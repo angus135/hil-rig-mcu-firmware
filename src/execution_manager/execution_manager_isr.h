@@ -24,8 +24,13 @@ extern "C"
  * operation in one invocation shares one authoritative boundary timestamp.
  * A terminal result is latched and returned to the timer-owning integration
  * layer.
+ *
+ * @param[in,out] higher_priority_task_woken Accumulated FreeRTOS ISR wake flag.
+ *        The caller initializes it to pdFALSE and passes it to
+ *        portYIELD_FROM_ISR() only after this function returns.
  */
-ExecutionManagerTickResult_T EXECUTION_MANAGER_ProcessTickFromISR( void );
+ExecutionManagerTickResult_T
+EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken );
 
 #ifdef __cplusplus
 }

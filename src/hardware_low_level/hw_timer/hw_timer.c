@@ -22,7 +22,7 @@
 #include "stm32f4xx_ll_bus.h"
 #include "stm32f4xx_ll_system.h"
 #include "stm32f4xx_ll_rcc.h"
-#include "execution_manager.h"
+#include "execution_manager_isr.h"
 #include "hw_timer_capture_start.h"
 #endif
 
@@ -113,6 +113,8 @@ void EXECUTION_MANAGER_TIMER_IRQ_HANDLER( void )
 #else
     if ( LL_TIM_IsActiveFlag_UPDATE( EXECUTION_MANAGER_TIMER_INSTANCE ) )
     {
+        BaseType_t higher_priority_task_woken = pdFALSE;
+
         LL_TIM_ClearFlag_UPDATE( EXECUTION_MANAGER_TIMER_INSTANCE );
 
         HW_TIMER_ExecutionGuard_T guard = execution_timer_guard;
@@ -126,12 +128,14 @@ void EXECUTION_MANAGER_TIMER_IRQ_HANDLER( void )
 
         if ( callback != NULL )
         {
-            callback();
+            callback( &higher_priority_task_woken );
         }
         else
         {
-            ( void )EXECUTION_MANAGER_ProcessTickFromISR();
+            ( void )EXECUTION_MANAGER_ProcessTickFromISR( &higher_priority_task_woken );
         }
+
+        portYIELD_FROM_ISR( higher_priority_task_woken );
     }
 #endif
 }

@@ -64,7 +64,10 @@ BaseType_t xTaskNotify( TaskHandle_t task, uint32_t value, eNotifyAction action 
 BaseType_t xTaskNotifyFromISR( TaskHandle_t task, uint32_t value, eNotifyAction action,
                                BaseType_t* higher_priority_task_woken )
 {
-    ( void )higher_priority_task_woken;
+    if ( higher_priority_task_woken != nullptr )
+    {
+        *higher_priority_task_woken = pdTRUE;
+    }
     return xTaskNotify( task, value, action );
 }
 BaseType_t xTaskNotifyWait( uint32_t, uint32_t, uint32_t*, TickType_t )
@@ -406,11 +409,14 @@ TEST_F( RunStateManagerTest, ExecutionCompletionFromIsrInhibitsAndNotifiesOwner 
     EnterExecution();
     ASSERT_NE( nullptr, execution_terminal_callback );
     notified_bits = 0U;
+    BaseType_t higher_priority_task_woken = pdFALSE;
 
-    execution_terminal_callback( EXECUTION_MANAGER_TICK_COMPLETE, EXECUTION_MANAGER_FAILURE_NONE );
+    execution_terminal_callback( EXECUTION_MANAGER_TICK_COMPLETE, EXECUTION_MANAGER_FAILURE_NONE,
+                                 &higher_priority_task_woken );
 
     EXPECT_TRUE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
     EXPECT_EQ( RUN_STATE_MANAGER_NOTIFY_EXECUTION_COMPLETE, notified_bits );
+    EXPECT_EQ( pdTRUE, higher_priority_task_woken );
 }
 
 TEST_F( RunStateManagerTest, ExecutionFailureFromIsrInhibitsAndRequestsFault )
@@ -418,12 +424,15 @@ TEST_F( RunStateManagerTest, ExecutionFailureFromIsrInhibitsAndRequestsFault )
     EnterExecution();
     ASSERT_NE( nullptr, execution_terminal_callback );
     notified_bits = 0U;
+    BaseType_t higher_priority_task_woken = pdFALSE;
 
     execution_terminal_callback( EXECUTION_MANAGER_TICK_FAILED,
-                                 EXECUTION_MANAGER_FAILURE_INSTRUCTION_LATE );
+                                 EXECUTION_MANAGER_FAILURE_INSTRUCTION_LATE,
+                                 &higher_priority_task_woken );
 
     EXPECT_TRUE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
     EXPECT_EQ( RUN_STATE_MANAGER_NOTIFY_FAULT, notified_bits );
+    EXPECT_EQ( pdTRUE, higher_priority_task_woken );
     EXPECT_EQ( RUN_STATE_FAULT_EXECUTION_MANAGER, requested_fault_reason );
 }
 
