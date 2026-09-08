@@ -68,8 +68,8 @@ application-level transaction semantics, or decide whether a particular device c
 
 ## Public API model
 
-The public API keeps the existing mode-agnostic single-buffer data path and adds one master-only
-atomic packet-loading operation:
+The public API keeps the existing mode-agnostic single-buffer data path and provides atomic
+fixed-size and variable-size packet-loading operations:
 
 ```c
 bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configuration );
@@ -82,6 +82,9 @@ void HW_SPI_Rx_Consume( SPIChannel_T peripheral, uint32_t bytes_to_consume );
 bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32_t size );
 bool HW_SPI_Load_Tx_Packets( SPIChannel_T peripheral, const uint8_t* data,
                              uint32_t packet_size_bytes, uint32_t packet_count );
+bool HW_SPI_Load_Tx_Packet_Batch( SPIChannel_T peripheral, const uint8_t* data,
+                                  const uint32_t* packet_sizes_bytes,
+                                  uint32_t packet_count );
 void HW_SPI_Tx_Trigger( SPIChannel_T peripheral );
 bool HW_SPI_Tx_Is_Complete( SPIChannel_T peripheral );
 bool HW_SPI_Tx_Is_Faulted( SPIChannel_T peripheral );
@@ -273,6 +276,12 @@ The packet bytes are copied into `tx_buffer`, and a descriptor is written into
 It preflights byte space, descriptor space, alignment, and packet layout while the channel's TX DMA
 IRQ is disabled, then queues every packet or leaves the queue unchanged. It is rejected for slave
 channels.
+
+`HW_SPI_Load_Tx_Packet_Batch()` provides the equivalent all-or-nothing operation for variable-size
+packets. Its trusted caller supplies valid pointers, packet counts, sizes, and frame-aligned
+lengths; these instruction-shape invariants are not revalidated in the execution path. Master mode
+retains every supplied packet boundary. Slave mode queues the concatenated bytes as one stream
+because the external master owns physical transaction boundaries.
 
 A master packet descriptor contains:
 

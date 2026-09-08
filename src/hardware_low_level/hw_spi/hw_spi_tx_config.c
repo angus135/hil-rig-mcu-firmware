@@ -863,6 +863,37 @@ bool HW_SPI_Load_Tx_Packets( SPIChannel_T peripheral, const uint8_t* data,
     return accepted;
 }
 
+bool HW_SPI_Load_Tx_Packet_Batch( SPIChannel_T peripheral, const uint8_t* data,
+                                  const uint32_t* packet_sizes_bytes, uint32_t packet_count )
+{
+    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State_Fast( peripheral );
+    bool                  accepted;
+
+    /* The SPI driver owns the TX DMA IRQ enable state. Revisit the unconditional restore if IRQ
+     * ownership later expands beyond the driver. */
+    NVIC_DisableIRQ( peripheral_state->tx_dma_irqn );
+
+    if ( peripheral_state->is_master )
+    {
+        accepted = HW_SPI_TX_Load_Master_Packet_Batch( peripheral_state, data, packet_sizes_bytes,
+                                                       packet_count );
+    }
+    else
+    {
+        uint32_t total_size_bytes = 0U;
+
+        for ( uint32_t packet_index = 0U; packet_index < packet_count; packet_index++ )
+        {
+            total_size_bytes += packet_sizes_bytes[packet_index];
+        }
+
+        accepted = HW_SPI_TX_Load_Slave_Stream( peripheral_state, data, total_size_bytes );
+    }
+
+    NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
+    return accepted;
+}
+
 /**
  * @brief Kick the TX engine for a channel with queued data.
  *
