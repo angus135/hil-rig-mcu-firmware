@@ -2142,9 +2142,8 @@ static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* ar
     if ( argc > 4U || ( argc >= 3U && !CONSOLE_Flash_ParseU32( argv[2], &sample_count ) )
          || ( argc == 4U && !CONSOLE_Flash_ParseU32( argv[3], &interval_ticks ) )
          || sample_count == 0U || interval_ticks == 0U
-         || ( sample_count - 1U )
-                > ( ( UINT32_MAX - 1U - CONSOLE_FLASH_OUTPUT_STRESS_DRAIN_TICKS )
-                    / interval_ticks ) )
+         || ( sample_count - 1U ) > ( ( UINT32_MAX - 1U - CONSOLE_FLASH_OUTPUT_STRESS_DRAIN_TICKS )
+                                      / interval_ticks ) )
     {
         CONSOLE_Printf(
             "Usage: flash upload_output_stress [sample_count > 0] [interval_ticks > 0]\r\n" );
@@ -2305,8 +2304,7 @@ static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* ar
     console_flash_last_upload_records = sample_count;
     console_flash_last_upload_bytes   = upload_bytes;
     console_flash_run_tick_count =
-        1U + ( ( sample_count - 1U ) * interval_ticks )
-        + CONSOLE_FLASH_OUTPUT_STRESS_DRAIN_TICKS;
+        1U + ( ( sample_count - 1U ) * interval_ticks ) + CONSOLE_FLASH_OUTPUT_STRESS_DRAIN_TICKS;
     CONSOLE_Flash_ResetExecutionHarnessState();
     EXECUTION_MANAGER_RequestOperationTiming();
 
