@@ -117,8 +117,9 @@ EXECUTION_OPERATION_ADAPTER_ApplyOperations( const uint8_t* operations, uint8_t 
     return EXECUTION_OPERATION_ADAPTER_ACCEPTED;
 }
 
-ExecutionOperationAdapterResult_T EXECUTION_OPERATION_ADAPTER_ApplyOperationsProfiled(
-    const uint8_t* operations, uint8_t operation_count )
+ExecutionOperationAdapterResult_T
+EXECUTION_OPERATION_ADAPTER_ApplyOperationsProfiled( const uint8_t* operations,
+                                                     uint8_t        operation_count )
 {
 #ifdef TEST_BUILD
     return EXECUTION_OPERATION_ADAPTER_ApplyOperations( operations, operation_count );
@@ -129,13 +130,13 @@ ExecutionOperationAdapterResult_T EXECUTION_OPERATION_ADAPTER_ApplyOperationsPro
     {
         const ExecutionOperationHeaderWord_T header_word =
             *( const ExecutionOperationHeaderWord_T* )( const void* )operation;
-        const ExecutionOperationOpcode_T opcode = EXECUTION_OPERATION_GET_OPCODE( header_word );
-        const uint8_t channel = EXECUTION_OPERATION_GET_CHANNEL( header_word );
-        const uint16_t payload_length_bytes =
+        const ExecutionOperationOpcode_T opcode  = EXECUTION_OPERATION_GET_OPCODE( header_word );
+        const uint8_t                    channel = EXECUTION_OPERATION_GET_CHANNEL( header_word );
+        const uint16_t                   payload_length_bytes =
             EXECUTION_OPERATION_GET_PAYLOAD_LENGTH_BYTES( header_word );
 
-        const uint32_t start_cycles = DWT->CYCCNT;
-        const ExecutionOperationAdapterResult_T result = execution_operation_adapters[opcode](
+        const uint32_t                          start_cycles = DWT->CYCCNT;
+        const ExecutionOperationAdapterResult_T result       = execution_operation_adapters[opcode](
             channel, &operation[EXECUTION_OPERATION_HEADER_SIZE_BYTES], payload_length_bytes );
         const uint32_t elapsed_cycles = DWT->CYCCNT - start_cycles;
 
@@ -172,7 +173,7 @@ void EXECUTION_OPERATION_ADAPTER_ResetTiming( void )
     }
 }
 
-bool EXECUTION_OPERATION_ADAPTER_GetTiming( ExecutionOperationOpcode_T opcode,
+bool EXECUTION_OPERATION_ADAPTER_GetTiming( ExecutionOperationOpcode_T  opcode,
                                             ExecutionOperationTiming_T* timing )
 {
     if ( opcode >= EXECUTION_OPERATION_OPCODE_COUNT || timing == NULL )

@@ -441,18 +441,17 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
         for ( uint32_t opcode = 0U; opcode < EXECUTION_OPERATION_OPCODE_COUNT; opcode++ )
         {
             ExecutionOperationTiming_T operation_timing = { 0 };
-            if ( EXECUTION_OPERATION_ADAPTER_GetTiming(
-                     ( ExecutionOperationOpcode_T )opcode, &operation_timing )
+            if ( EXECUTION_OPERATION_ADAPTER_GetTiming( ( ExecutionOperationOpcode_T )opcode,
+                                                        &operation_timing )
                  && operation_timing.sample_count != 0U )
             {
                 const uint32_t average_cycles =
                     ( uint32_t )( operation_timing.total_cycles / operation_timing.sample_count );
-                CONSOLE_Printf( "Operation timing: %s samples=%lu avg=%lu cycles max=%lu cycles\r\n",
-                                CONSOLE_RunStateManager_OpcodeName(
-                                    ( ExecutionOperationOpcode_T )opcode ),
-                                ( unsigned long )operation_timing.sample_count,
-                                ( unsigned long )average_cycles,
-                                ( unsigned long )operation_timing.maximum_cycles );
+                CONSOLE_Printf(
+                    "Operation timing: %s samples=%lu avg=%lu cycles max=%lu cycles\r\n",
+                    CONSOLE_RunStateManager_OpcodeName( ( ExecutionOperationOpcode_T )opcode ),
+                    ( unsigned long )operation_timing.sample_count, ( unsigned long )average_cycles,
+                    ( unsigned long )operation_timing.maximum_cycles );
             }
         }
         const ExecutionManagerFailure_T execution_failure = EXECUTION_MANAGER_GetFailure();
@@ -471,12 +470,11 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                                 ( unsigned int )operation_failure.channel );
                 if ( operation_failure.opcode == EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT )
                 {
-                    CONSOLE_Printf(
-                        "SPI transmit detail: %s\r\n",
-                        EXEC_SPI_Was_Tx_Queue_Rejected(
-                            ( ExecSPIChannel_T )operation_failure.channel )
-                            ? "TX queue rejected batch"
-                            : "low-level TX fault observed after trigger" );
+                    CONSOLE_Printf( "SPI transmit detail: %s\r\n",
+                                    EXEC_SPI_Was_Tx_Queue_Rejected(
+                                        ( ExecSPIChannel_T )operation_failure.channel )
+                                        ? "TX queue rejected batch"
+                                        : "low-level TX fault observed after trigger" );
                 }
             }
         }

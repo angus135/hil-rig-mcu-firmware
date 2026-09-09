@@ -393,8 +393,8 @@ bool EXEC_SPI_Configure_Channel( ExecSPIChannel_T peripheral, const ExecSPIConfi
         return false;
     }
 
-    state->configuration = *config;
-    state->state         = EXEC_SPI_STATE_CONFIGURED;
+    state->configuration              = *config;
+    state->state                      = EXEC_SPI_STATE_CONFIGURED;
     spi_tx_queue_rejected[peripheral] = false;
 
     return true;
