@@ -59,8 +59,9 @@ EXECUTION_OPERATION_ADAPTER_ApplyOperations( const uint8_t* operations, uint8_t 
     return adapter_result;
 }
 
-extern "C" ExecutionOperationAdapterResult_T EXECUTION_OPERATION_ADAPTER_ApplyOperationsProfiled(
-    const uint8_t* operations, uint8_t operation_count )
+extern "C" ExecutionOperationAdapterResult_T
+EXECUTION_OPERATION_ADAPTER_ApplyOperationsProfiled( const uint8_t* operations,
+                                                     uint8_t        operation_count )
 {
     ( void )operations;
     ( void )operation_count;
@@ -120,8 +121,8 @@ TEST_F( ExecutionManagerTest, RequestedOperationTimingProfilesNextPreparedRunOnl
 {
     EXECUTION_MANAGER_RequestOperationTiming();
     ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
-    peek_status                       = FLASH_MANAGER_INSTRUCTION_AVAILABLE;
-    instruction.header.timestamp     = 1U;
+    peek_status                        = FLASH_MANAGER_INSTRUCTION_AVAILABLE;
+    instruction.header.timestamp       = 1U;
     instruction.header.operation_count = 1U;
 
     EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_COMPLETE );

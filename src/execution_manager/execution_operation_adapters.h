@@ -98,14 +98,15 @@ ExecutionOperationAdapterResult_T
 EXECUTION_OPERATION_ADAPTER_ApplyOperations( const uint8_t* operations, uint8_t operation_count );
 
 /** Profiling-only dispatcher. The normal dispatcher contains no timing instrumentation. */
-ExecutionOperationAdapterResult_T EXECUTION_OPERATION_ADAPTER_ApplyOperationsProfiled(
-    const uint8_t* operations, uint8_t operation_count );
+ExecutionOperationAdapterResult_T
+EXECUTION_OPERATION_ADAPTER_ApplyOperationsProfiled( const uint8_t* operations,
+                                                     uint8_t        operation_count );
 
 /** Clears all per-opcode timing accumulated by the profiling dispatcher. */
 void EXECUTION_OPERATION_ADAPTER_ResetTiming( void );
 
 /** Copies one opcode's timing snapshot. Returns false for an invalid opcode or NULL output. */
-bool EXECUTION_OPERATION_ADAPTER_GetTiming( ExecutionOperationOpcode_T opcode,
+bool EXECUTION_OPERATION_ADAPTER_GetTiming( ExecutionOperationOpcode_T  opcode,
                                             ExecutionOperationTiming_T* timing );
 
 /** Clears the retained adapter rejection diagnostic before a new run. */
