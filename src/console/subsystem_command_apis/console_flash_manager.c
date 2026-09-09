@@ -103,6 +103,7 @@
 #include "hw_pwm_gen.h"
 #include "hw_qspi.h"
 #include "hw_timer.h"
+#include "run_state_manager.h"
 #ifndef TEST_BUILD
 #include "quadspi.h"
 #endif
@@ -144,6 +145,13 @@
     ( EXECUTION_OPERATION_ENCODED_SIZE_BYTES( EXECUTION_CAN_PACKET_SIZE_BYTES ) )
 #define CONSOLE_FLASH_CAN_TEST_INSTRUCTION_BYTES                                                   \
     ( sizeof( ExecutionInstructionHeader_T ) + CONSOLE_FLASH_CAN_TEST_OPERATION_BYTES )
+#define CONSOLE_FLASH_OUTPUT_STRESS_DEFAULT_SAMPLES ( 100U )
+#define CONSOLE_FLASH_OUTPUT_STRESS_DEFAULT_INTERVAL_TICKS ( 1U )
+#define CONSOLE_FLASH_OUTPUT_STRESS_DRAIN_TICKS ( 10U )
+#define CONSOLE_FLASH_OUTPUT_STRESS_SPI_BYTES ( 128U )
+#define CONSOLE_FLASH_OUTPUT_STRESS_UART_BYTES ( 16U )
+#define CONSOLE_FLASH_OUTPUT_STRESS_OPERATION_COUNT ( 6U )
+#define CONSOLE_FLASH_OUTPUT_STRESS_UART_BAUD ( 2000000U )
 /* Current board clock tree: TIM12 is APB1 x2; TIM8 is APB2 x2. */
 #define CONSOLE_FLASH_PWM_LV_TIMER_CLOCK_HZ ( 90000000U )
 #define CONSOLE_FLASH_PWM_HV_TIMER_CLOCK_HZ ( 180000000U )
@@ -304,6 +312,9 @@ static uint32_t CONSOLE_Flash_EncodeUartInstruction( uint8_t* destination, uint3
 static uint32_t CONSOLE_Flash_EncodeSpiInstruction( uint8_t* destination, uint32_t timestamp,
                                                     uint8_t channel, uint8_t value,
                                                     uint32_t packet_length_bytes );
+static uint32_t CONSOLE_Flash_EncodeOutputStressInstruction(
+    uint8_t* destination, uint32_t timestamp, uint32_t high_bitmask, uint32_t low_bitmask,
+    const ExecutionPwmUpdatePayload_T pwm_payloads[EXEC_PWM_GEN_CHANNEL_COUNT] );
 static void     CONSOLE_Flash_FillPattern( uint8_t* destination, uint32_t stream_offset,
                                            uint32_t length, uint8_t seed );
 static bool     CONSOLE_Flash_VerifyPattern( const uint8_t* data, uint32_t stream_offset,
@@ -323,6 +334,7 @@ static void CONSOLE_Flash_UploadAnalogueOutputTestCommand( uint16_t argc, char* 
 static void CONSOLE_Flash_UploadCanTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadSpiTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadUartTestCommand( uint16_t argc, char* argv[] );
+static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_PrepareCommand( void );
 static void CONSOLE_Flash_ExecuteEchoCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_FinaliseCommand( void );
@@ -352,6 +364,7 @@ static void CONSOLE_Flash_PrintUsage( void )
                     "<first_tick> <run_ticks> [repeat_count interval_ticks]\r\n" );
     CONSOLE_Printf( "  flash upload_uart_test <channel 1..2> <byte> <length> "
                     "<first_tick> <run_ticks> [repeat_count interval_ticks]\r\n" );
+    CONSOLE_Printf( "  flash upload_output_stress [sample_count] [interval_ticks]\r\n" );
     CONSOLE_Printf( "  flash prepare\r\n" );
     CONSOLE_Printf( "  flash execute_echo [100|1000|10000]\r\n" );
     CONSOLE_Printf( "  flash finalise\r\n" );
@@ -1258,6 +1271,71 @@ static uint32_t CONSOLE_Flash_EncodeSpiInstruction( uint8_t* destination, uint32
     return ( uint32_t )sizeof( ExecutionInstructionHeader_T ) + operation_bytes;
 }
 
+/** Builds one instruction containing the approved output paths, excluding CAN and SPI 2. */
+static uint32_t CONSOLE_Flash_EncodeOutputStressInstruction(
+    uint8_t* destination, uint32_t timestamp, uint32_t high_bitmask, uint32_t low_bitmask,
+    const ExecutionPwmUpdatePayload_T pwm_payloads[EXEC_PWM_GEN_CHANNEL_COUNT] )
+{
+    uint32_t offset = ( uint32_t )sizeof( ExecutionInstructionHeader_T );
+
+    const uint32_t digital_operation_bytes =
+        EXECUTION_OPERATION_ENCODED_SIZE_BYTES( EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES );
+    CONSOLE_Flash_WriteU32Le( &destination[offset],
+                              EXECUTION_OPERATION_OPCODE_DIGITAL_OUTPUT_UPDATE
+                                  | ( EXECUTION_DIGITAL_OUTPUT_PAYLOAD_SIZE_BYTES << 16U ) );
+    CONSOLE_Flash_WriteU32Le( &destination[offset + 4U], high_bitmask );
+    CONSOLE_Flash_WriteU32Le( &destination[offset + 8U], low_bitmask );
+    offset += digital_operation_bytes;
+
+    for ( uint32_t channel = 0U; channel < EXEC_PWM_GEN_CHANNEL_COUNT; channel++ )
+    {
+        const uint32_t pwm_operation_bytes =
+            EXECUTION_OPERATION_ENCODED_SIZE_BYTES( EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES );
+        CONSOLE_Flash_WriteU32Le( &destination[offset],
+                                  EXECUTION_OPERATION_OPCODE_PWM_UPDATE | ( channel << 8U )
+                                      | ( EXECUTION_PWM_UPDATE_PAYLOAD_SIZE_BYTES << 16U ) );
+        CONSOLE_Flash_WriteU16Le( &destination[offset + 4U], pwm_payloads[channel].arr );
+        CONSOLE_Flash_WriteU16Le( &destination[offset + 6U], pwm_payloads[channel].ccr );
+        CONSOLE_Flash_WriteU16Le( &destination[offset + 8U], pwm_payloads[channel].psc );
+        destination[offset + 10U] = 0U;
+        destination[offset + 11U] = 0U;
+        offset += pwm_operation_bytes;
+    }
+
+    const uint32_t spi_payload_bytes =
+        EXECUTION_SPI_DATA_OFFSET_BYTES( 1U ) + CONSOLE_FLASH_OUTPUT_STRESS_SPI_BYTES;
+    const uint32_t spi_operation_bytes =
+        EXECUTION_OPERATION_ENCODED_SIZE_BYTES( spi_payload_bytes );
+    CONSOLE_Flash_WriteU32Le( &destination[offset],
+                              EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT
+                                  | ( EXECUTION_OPERATION_SPI_CHANNEL_2 << 8U )
+                                  | ( spi_payload_bytes << 16U ) );
+    CONSOLE_Flash_WriteU32Le( &destination[offset + 4U], 1U );
+    CONSOLE_Flash_WriteU32Le( &destination[offset + 8U], CONSOLE_FLASH_OUTPUT_STRESS_SPI_BYTES );
+    ( void )memset( &destination[offset + 12U], 0xA5, CONSOLE_FLASH_OUTPUT_STRESS_SPI_BYTES );
+    offset += spi_operation_bytes;
+
+    for ( uint32_t channel = 0U; channel < EXEC_UART_CHANNEL_COUNT; channel++ )
+    {
+        const uint32_t uart_operation_bytes =
+            EXECUTION_OPERATION_ENCODED_SIZE_BYTES( CONSOLE_FLASH_OUTPUT_STRESS_UART_BYTES );
+        CONSOLE_Flash_WriteU32Le( &destination[offset],
+                                  EXECUTION_OPERATION_OPCODE_UART_TRANSMIT | ( channel << 8U )
+                                      | ( CONSOLE_FLASH_OUTPUT_STRESS_UART_BYTES << 16U ) );
+        ( void )memset( &destination[offset + EXECUTION_OPERATION_HEADER_SIZE_BYTES],
+                        channel == EXEC_UART_CHANNEL_1 ? 0x55 : 0xAA,
+                        CONSOLE_FLASH_OUTPUT_STRESS_UART_BYTES );
+        offset += uart_operation_bytes;
+    }
+
+    const uint32_t operations_length = offset - ( uint32_t )sizeof( ExecutionInstructionHeader_T );
+    CONSOLE_Flash_WriteU32Le( &destination[0], timestamp );
+    CONSOLE_Flash_WriteU32Le( &destination[4],
+                              operations_length
+                                  | ( CONSOLE_FLASH_OUTPUT_STRESS_OPERATION_COUNT << 16U ) );
+    return offset;
+}
+
 /** Uploads two canonical digital-output instructions through the public upload API. */
 static void CONSOLE_Flash_UploadDigitalOutputTestCommand( uint16_t argc, char* argv[] )
 {
@@ -2055,6 +2133,194 @@ static void CONSOLE_Flash_UploadUartTestCommand( uint16_t argc, char* argv[] )
                     ( unsigned long )console_flash_run_tick_count );
 }
 
+/** Configures and uploads repeated peak-load output instructions for TIM4 profiling. */
+static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* argv[] )
+{
+    uint32_t sample_count   = CONSOLE_FLASH_OUTPUT_STRESS_DEFAULT_SAMPLES;
+    uint32_t interval_ticks = CONSOLE_FLASH_OUTPUT_STRESS_DEFAULT_INTERVAL_TICKS;
+
+    if ( argc > 4U || ( argc >= 3U && !CONSOLE_Flash_ParseU32( argv[2], &sample_count ) )
+         || ( argc == 4U && !CONSOLE_Flash_ParseU32( argv[3], &interval_ticks ) )
+         || sample_count == 0U || interval_ticks == 0U
+         || ( sample_count - 1U )
+                > ( ( UINT32_MAX - 1U - CONSOLE_FLASH_OUTPUT_STRESS_DRAIN_TICKS )
+                    / interval_ticks ) )
+    {
+        CONSOLE_Printf(
+            "Usage: flash upload_output_stress [sample_count > 0] [interval_ticks > 0]\r\n" );
+        return;
+    }
+
+    if ( !CONSOLE_Flash_RequireIdle() )
+    {
+        return;
+    }
+
+    RunStateManagerStatus_T run_status = { 0 };
+    RUN_STATE_MANAGER_GetStatus( &run_status );
+    if ( run_status.state != RUN_STATE_IDLE && run_status.state != RUN_STATE_TEST_PACKAGE_RECEIVE )
+    {
+        CONSOLE_Printf( "Output stress setup requires RSM IDLE or TEST_PACKAGE_RECEIVE.\r\n" );
+        return;
+    }
+
+    GPIOOutput_T   high_outputs[] = { DIGITAL_OUTPUT_0 };
+    const uint32_t high_bitmask   = EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks(
+        high_outputs, ( uint8_t )( sizeof( high_outputs ) / sizeof( high_outputs[0] ) ) );
+    const uint32_t low_bitmask = 0U;
+
+    ExecutionPwmUpdatePayload_T pwm_payloads[EXEC_PWM_GEN_CHANNEL_COUNT] = { 0 };
+    const uint32_t              pwm_clocks[EXEC_PWM_GEN_CHANNEL_COUNT]   = {
+        CONSOLE_FLASH_PWM_LV_TIMER_CLOCK_HZ,
+        CONSOLE_FLASH_PWM_HV_TIMER_CLOCK_HZ,
+    };
+    for ( uint32_t channel = 0U; channel < EXEC_PWM_GEN_CHANNEL_COUNT; channel++ )
+    {
+        if ( !HW_PWM_GEN_compute_psc( 1000U, pwm_clocks[channel], &pwm_payloads[channel].psc )
+             || !HW_PWM_GEN_compute_arr( 1000U, pwm_clocks[channel], pwm_payloads[channel].psc,
+                                         &pwm_payloads[channel].arr )
+             || !HW_PWM_GEN_compute_ccr( 500U, pwm_payloads[channel].arr,
+                                         &pwm_payloads[channel].ccr ) )
+        {
+            CONSOLE_Printf( "Output stress PWM preparation failed.\r\n" );
+            return;
+        }
+    }
+
+    DutDriverConfiguration_T configuration = { 0 };
+    configuration.digital_outputs.channels[EXEC_DIGITAL_OUTPUT_CHANNEL_1] =
+        ( ExecDigitalOutputChannelConfig_T ){
+            .is_enabled   = true,
+            .mode         = EXEC_DIGITAL_OUTPUT_MODE_3V3,
+            .initial_high = false,
+        };
+    for ( uint32_t channel = 0U; channel < EXEC_PWM_GEN_CHANNEL_COUNT; channel++ )
+    {
+        configuration.pwm_generation_channels[channel] = ( ExecPwmGenConfig_T ){
+            .is_enabled    = true,
+            .voltage_level = channel == EXEC_PWM_GEN_CHANNEL_LV ? EXEC_PWM_GEN_VOLTAGE_3V3
+                                                                : EXEC_PWM_GEN_VOLTAGE_12V,
+            .initial_arr   = pwm_payloads[channel].arr,
+            .initial_ccr   = pwm_payloads[channel].ccr,
+            .initial_psc   = pwm_payloads[channel].psc,
+        };
+    }
+    configuration.spi_channels[EXEC_SPI_CHANNEL_2] = ( ExecSPIConfig_T ){
+        .is_enabled = true,
+        .spi_mode   = EXEC_SPI_MASTER_MODE,
+        .data_size  = EXEC_SPI_SIZE_8_BIT,
+        .first_bit  = EXEC_SPI_FIRST_MSB,
+        .baud_rate  = EXEC_SPI_BAUD_45MBIT,
+        .cpol       = EXEC_SPI_CPOL_LOW,
+        .cpha       = EXEC_SPI_CPHA_1_EDGE,
+    };
+    for ( uint32_t channel = 0U; channel < EXEC_UART_CHANNEL_COUNT; channel++ )
+    {
+        configuration.uart_channels[channel] = ( ExecUartConfig_T ){
+            .interface_mode = EXEC_UART_MODE_TTL_3V3,
+            .baud_rate      = CONSOLE_FLASH_OUTPUT_STRESS_UART_BAUD,
+            .word_length    = HW_UART_WORD_LENGTH_8_BITS,
+            .stop_bits      = HW_UART_STOP_BITS_1,
+            .parity         = HW_UART_PARITY_NONE,
+            .rx_enabled     = false,
+            .tx_enabled     = true,
+            .is_enabled     = true,
+        };
+    }
+
+    if ( !TEST_CONFIGURATION_Commit( &configuration ) )
+    {
+        CONSOLE_Printf( "Output stress configuration commit failed.\r\n" );
+        return;
+    }
+
+    const uint32_t instruction_bytes = CONSOLE_Flash_EncodeOutputStressInstruction(
+        console_flash_write_buffer, 1U, high_bitmask, low_bitmask, pwm_payloads );
+    if ( instruction_bytes > sizeof( console_flash_write_buffer )
+         || sample_count > ( UINT32_MAX / instruction_bytes ) )
+    {
+        CONSOLE_Printf( "Output stress instruction stream exceeds the upload range.\r\n" );
+        return;
+    }
+
+    const uint32_t                               upload_bytes = sample_count * instruction_bytes;
+    FlashManagerInstructionUploadRequestStatus_T status =
+        FLASH_MANAGER_RequestInstructionUploadStart( upload_bytes );
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED
+         || !CONSOLE_Flash_WaitForState( FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD,
+                                         CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "Output stress upload start failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    for ( uint32_t sample = 0U; sample < sample_count; sample++ )
+    {
+        CONSOLE_Flash_WriteU32Le( console_flash_write_buffer, 1U + ( sample * interval_ticks ) );
+        TickType_t progress_started_at = xTaskGetTickCount();
+        for ( ;; )
+        {
+            status = FLASH_MANAGER_SubmitInstructionUploadBytes( console_flash_write_buffer,
+                                                                 instruction_bytes );
+            if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
+            {
+                break;
+            }
+            if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY
+                 || CONSOLE_Flash_HasTimedOut( progress_started_at,
+                                               CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            {
+                CONSOLE_Printf( "Output stress upload failed at sample %lu (status=%d).\r\n",
+                                ( unsigned long )( sample + 1U ), ( int )status );
+                return;
+            }
+            vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+        }
+    }
+
+    TickType_t finish_started_at = xTaskGetTickCount();
+    do
+    {
+        status = FLASH_MANAGER_RequestInstructionUploadFinish();
+        if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
+        {
+            if ( CONSOLE_Flash_HasTimedOut( finish_started_at, CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            {
+                CONSOLE_Printf( "Output stress upload finalisation timed out.\r\n" );
+                return;
+            }
+            vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+        }
+    } while ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY );
+
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED
+         || !CONSOLE_Flash_WaitForState( FLASH_MANAGER_STATE_IDLE,
+                                         CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "Output stress upload finalisation failed (status=%d).\r\n",
+                        ( int )status );
+        return;
+    }
+
+    console_flash_last_upload_records = sample_count;
+    console_flash_last_upload_bytes   = upload_bytes;
+    console_flash_run_tick_count =
+        1U + ( ( sample_count - 1U ) * interval_ticks )
+        + CONSOLE_FLASH_OUTPUT_STRESS_DRAIN_TICKS;
+    CONSOLE_Flash_ResetExecutionHarnessState();
+    EXECUTION_MANAGER_RequestOperationTiming();
+
+    CONSOLE_Printf(
+        "Output stress upload PASS: samples=%lu interval=%lu ticks instruction=%lu bytes "
+        "run_ticks=%lu.\r\n",
+        ( unsigned long )sample_count, ( unsigned long )interval_ticks,
+        ( unsigned long )instruction_bytes, ( unsigned long )console_flash_run_tick_count );
+    CONSOLE_Printf( "Paths: DO1, PWM LV/HV, UART1/2, SPI2.\r\n" );
+    CONSOLE_Printf( "Next: 'run_state receive', 'run_state configure', "
+                    "'run_state frequency 10000', then 'run_state execute %lu 0'.\r\n",
+                    ( unsigned long )console_flash_run_tick_count );
+}
+
 /** Uploads a deterministic framing-compatible instruction stream through Flash Manager. */
 static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] )
 {
@@ -2614,6 +2880,12 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
     if ( strcmp( argv[1], "upload_uart_test" ) == 0 )
     {
         CONSOLE_Flash_UploadUartTestCommand( argc, argv );
+        return;
+    }
+
+    if ( strcmp( argv[1], "upload_output_stress" ) == 0 )
+    {
+        CONSOLE_Flash_UploadOutputStressTestCommand( argc, argv );
         return;
     }
 

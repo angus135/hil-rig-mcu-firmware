@@ -91,6 +91,9 @@
  */
 static HW_TIMER_ExecutionCallback_T volatile execution_timer_callback = NULL;
 static HW_TIMER_ExecutionGuard_T volatile execution_timer_guard       = NULL;
+static volatile uint32_t execution_isr_sample_count                   = 0U;
+static volatile uint32_t execution_isr_latest_cycles                  = 0U;
+static volatile uint32_t execution_isr_maximum_cycles                 = 0U;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -107,13 +110,28 @@ static HW_TIMER_ExecutionGuard_T volatile execution_timer_guard       = NULL;
  *------------------------------------------------------------------------------
  */
 
+#ifndef TEST_BUILD
+static inline void HW_TIMER_Record_Execution_ISR_Cycles( uint32_t start_cycles )
+{
+    const uint32_t elapsed_cycles = DWT->CYCCNT - start_cycles;
+
+    execution_isr_latest_cycles = elapsed_cycles;
+    execution_isr_sample_count++;
+    if ( elapsed_cycles > execution_isr_maximum_cycles )
+    {
+        execution_isr_maximum_cycles = elapsed_cycles;
+    }
+}
+#endif
+
 void EXECUTION_MANAGER_TIMER_IRQ_HANDLER( void )
 {
 #ifdef TEST_BUILD
 #else
     if ( LL_TIM_IsActiveFlag_UPDATE( EXECUTION_MANAGER_TIMER_INSTANCE ) )
     {
-        BaseType_t higher_priority_task_woken = pdFALSE;
+        const uint32_t start_cycles               = DWT->CYCCNT;
+        BaseType_t     higher_priority_task_woken = pdFALSE;
 
         LL_TIM_ClearFlag_UPDATE( EXECUTION_MANAGER_TIMER_INSTANCE );
 
@@ -135,6 +153,7 @@ void EXECUTION_MANAGER_TIMER_IRQ_HANDLER( void )
             ( void )EXECUTION_MANAGER_ProcessTickFromISR( &higher_priority_task_woken );
         }
 
+        HW_TIMER_Record_Execution_ISR_Cycles( start_cycles );
         portYIELD_FROM_ISR( higher_priority_task_woken );
     }
 #endif
@@ -288,6 +307,13 @@ void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t arr )
 
 bool HW_TIMER_Start_Timer( Timer_T timer )
 {
+    if ( timer == EXECUTION_MANAGER_TIMER )
+    {
+        execution_isr_sample_count   = 0U;
+        execution_isr_latest_cycles  = 0U;
+        execution_isr_maximum_cycles = 0U;
+    }
+
 #ifdef TEST_BUILD
     /* Host stub: hardware start sequencing is tested separately. */
     switch ( timer )
@@ -307,6 +333,9 @@ bool HW_TIMER_Start_Timer( Timer_T timer )
     switch ( timer )
     {
         case EXECUTION_MANAGER_TIMER:
+            CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+            DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
             // Ensure counter is stopped while configuring
             LL_TIM_DisableCounter( EXECUTION_MANAGER_TIMER_INSTANCE );
 
@@ -458,6 +487,23 @@ void HW_TIMER_Stop_Timer( Timer_T timer )
         default:
             break;
     }
+#endif
+}
+
+void HW_TIMER_Get_Execution_Timing( HW_TIMER_ExecutionTiming_T* timing )
+{
+    if ( timing == NULL )
+    {
+        return;
+    }
+
+    timing->sample_count   = execution_isr_sample_count;
+    timing->latest_cycles  = execution_isr_latest_cycles;
+    timing->maximum_cycles = execution_isr_maximum_cycles;
+#ifdef TEST_BUILD
+    timing->core_clock_hz = 0U;
+#else
+    timing->core_clock_hz = SystemCoreClock;
 #endif
 }
 

@@ -195,6 +195,7 @@ protected:
         last_can_packets             = nullptr;
         last_can_packet_count        = 0U;
         can_result                   = EXEC_CAN_RESULT_OK;
+        EXECUTION_OPERATION_ADAPTER_ResetFailure();
     }
 };
 
@@ -409,6 +410,12 @@ TEST_F( ExecutionOperationAdaptersTest, UartDriverRejectionPropagatesToOperation
                    reinterpret_cast<const uint8_t*>( &operation ), 1U ),
                EXECUTION_OPERATION_ADAPTER_REJECTED );
     EXPECT_EQ( uart_calls, 1U );
+
+    ExecutionOperationAdapterFailure_T failure = {};
+    ASSERT_TRUE( EXECUTION_OPERATION_ADAPTER_GetFailure( &failure ) );
+    EXPECT_EQ( failure.operation_index, 0U );
+    EXPECT_EQ( failure.opcode, EXECUTION_OPERATION_OPCODE_UART_TRANSMIT );
+    EXPECT_EQ( failure.channel, EXECUTION_OPERATION_UART_CHANNEL_1 );
 }
 
 TEST_F( ExecutionOperationAdaptersTest, AnalogueOutputPassesPreparedPayloadAndLengthWithoutCopy )

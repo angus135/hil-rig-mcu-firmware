@@ -9,6 +9,8 @@ This module is responsible for:
 - Dispatch TIM4 update interrupts to the registered diagnostic callback or,
   when no override is installed, to `EXECUTION_MANAGER_ProcessTickFromISR()`.
 - Apply the Run State Manager execution guard before dispatching TIM4 work.
+- Record the latest and worst observed TIM4 service time using the Cortex-M DWT
+  cycle counter.
 
 Run State Manager owns the TIM4 execution-clock lifecycle. The default TIM4
 route invokes the Execution Manager tick engine. On a terminal tick, the
@@ -21,6 +23,13 @@ TIM4 accumulates any FreeRTOS task-wake request across the complete execution
 boundary and calls `portYIELD_FROM_ISR()` once after the selected callback has
 returned. Task context can therefore run only between complete execution ISR
 services, never partway through measurement or output processing.
+
+TIM4 timing statistics reset whenever the execution timer starts. Measurement
+begins once an update interrupt is recognised and ends before the optional
+FreeRTOS yield. The cycle delta is wrap-safe for an individual ISR invocation;
+higher-priority interrupt preemption is deliberately included because it also
+consumes the execution deadline. `run_state status` reports the sample count,
+latest service time, and maximum service time in cycles and microseconds.
 
 
 ---
