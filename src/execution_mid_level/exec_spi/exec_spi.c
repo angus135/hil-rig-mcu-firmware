@@ -111,6 +111,9 @@ typedef struct ExecSPIHardwareMap_T
 static EXECSPIState_T spi_channel_0_state = { 0 };
 static EXECSPIState_T spi_channel_1_state = { 0 };
 
+/* Written only on TX failure; retained across fault cleanup for task-context diagnostics. */
+static volatile bool spi_tx_queue_rejected[EXEC_SPI_CHANNEL_COUNT] = { false };
+
 static const ExecSPIHardwareMap_T exec_spi_hardware_map[EXEC_SPI_CHANNEL_COUNT] = {
     [EXEC_SPI_CHANNEL_1] =
         {
@@ -392,6 +395,7 @@ bool EXEC_SPI_Configure_Channel( ExecSPIChannel_T peripheral, const ExecSPIConfi
 
     state->configuration = *config;
     state->state         = EXEC_SPI_STATE_CONFIGURED;
+    spi_tx_queue_rejected[peripheral] = false;
 
     return true;
 }
@@ -588,6 +592,7 @@ bool EXEC_SPI_Transmit( ExecSPIChannel_T peripheral, const uint8_t* data_src,
 
     if ( !HW_SPI_Load_Tx_Packet_Batch( hw_channel, data_src, packet_sizes_bytes, num_packets ) )
     {
+        spi_tx_queue_rejected[peripheral] = true;
         return false;
     }
 
@@ -600,6 +605,16 @@ bool EXEC_SPI_Transmit( ExecSPIChannel_T peripheral, const uint8_t* data_src,
     HW_SPI_Tx_Trigger( hw_channel );
 
     return !HW_SPI_Tx_Is_Faulted( hw_channel );
+}
+
+bool EXEC_SPI_Was_Tx_Queue_Rejected( ExecSPIChannel_T peripheral )
+{
+    if ( peripheral >= EXEC_SPI_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    return spi_tx_queue_rejected[peripheral];
 }
 
 /**

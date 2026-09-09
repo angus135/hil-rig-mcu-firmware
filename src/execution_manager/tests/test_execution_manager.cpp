@@ -14,6 +14,7 @@ static ExecutionOperationAdapterResult_T   adapter_result;
 static bool                                consume_result;
 static uint32_t                            peek_calls;
 static uint32_t                            adapter_calls;
+static uint32_t                            profiled_adapter_calls;
 static uint32_t                            consume_calls;
 static uint32_t                            terminal_callback_calls;
 static ExecutionManagerTickResult_T        terminal_callback_result;
@@ -58,6 +59,30 @@ EXECUTION_OPERATION_ADAPTER_ApplyOperations( const uint8_t* operations, uint8_t 
     return adapter_result;
 }
 
+extern "C" ExecutionOperationAdapterResult_T EXECUTION_OPERATION_ADAPTER_ApplyOperationsProfiled(
+    const uint8_t* operations, uint8_t operation_count )
+{
+    ( void )operations;
+    ( void )operation_count;
+    profiled_adapter_calls++;
+    return adapter_result;
+}
+
+extern "C" void EXECUTION_OPERATION_ADAPTER_ResetFailure( void )
+{
+}
+
+extern "C" void EXECUTION_OPERATION_ADAPTER_ResetTiming( void )
+{
+}
+
+extern "C" bool
+EXECUTION_OPERATION_ADAPTER_GetFailure( ExecutionOperationAdapterFailure_T* failure )
+{
+    ( void )failure;
+    return false;
+}
+
 class ExecutionManagerTest : public ::testing::Test
 {
 protected:
@@ -79,6 +104,7 @@ protected:
         consume_result               = true;
         peek_calls                   = 0U;
         adapter_calls                = 0U;
+        profiled_adapter_calls       = 0U;
         consume_calls                = 0U;
         terminal_callback_calls      = 0U;
         terminal_callback_result     = EXECUTION_MANAGER_TICK_CONTINUE;
@@ -89,6 +115,25 @@ protected:
         instruction.operations       = operations;
     }
 };
+
+TEST_F( ExecutionManagerTest, RequestedOperationTimingProfilesNextPreparedRunOnly )
+{
+    EXECUTION_MANAGER_RequestOperationTiming();
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
+    peek_status                       = FLASH_MANAGER_INSTRUCTION_AVAILABLE;
+    instruction.header.timestamp     = 1U;
+    instruction.header.operation_count = 1U;
+
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_COMPLETE );
+    EXPECT_EQ( profiled_adapter_calls, 1U );
+    EXPECT_EQ( adapter_calls, 0U );
+
+    EXECUTION_MANAGER_Abort();
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_COMPLETE );
+    EXPECT_EQ( profiled_adapter_calls, 1U );
+    EXPECT_EQ( adapter_calls, 1U );
+}
 
 TEST_F( ExecutionManagerTest, PrepareRejectsZeroTicks )
 {

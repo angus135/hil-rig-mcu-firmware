@@ -57,6 +57,9 @@ typedef void ( *ExecutionManagerTerminalCallback_T )( ExecutionManagerTickResult
  */
 bool EXECUTION_MANAGER_Prepare( uint32_t tick_count );
 
+/** Arms per-opcode cycle profiling for the next prepared execution only. */
+void EXECUTION_MANAGER_RequestOperationTiming( void );
+
 /**
  * @brief Registers the lifecycle owner's terminal ISR notification callback.
  *

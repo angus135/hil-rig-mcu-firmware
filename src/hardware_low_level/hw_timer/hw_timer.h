@@ -66,6 +66,15 @@ typedef enum Timer_T
  */
 typedef void ( *HW_TIMER_ExecutionCallback_T )( BaseType_t* higher_priority_task_woken );
 
+/** Run-local TIM4 ISR execution-time statistics measured by the CPU cycle counter. */
+typedef struct
+{
+    uint32_t sample_count;
+    uint32_t latest_cycles;
+    uint32_t maximum_cycles;
+    uint32_t core_clock_hz;
+} HW_TIMER_ExecutionTiming_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -128,6 +137,18 @@ typedef bool ( *HW_TIMER_ExecutionGuard_T )( void );
  * execution callback is skipped for that tick. Pass NULL to remove the guard.
  */
 void HW_TIMER_Set_Execution_Guard( HW_TIMER_ExecutionGuard_T guard );
+
+/**
+ * @brief Gets a best-effort snapshot of the current run's TIM4 ISR timing.
+ *
+ * Statistics reset whenever the execution timer starts. The measured interval
+ * begins after TIM4's update flag is recognised and ends immediately before
+ * the optional FreeRTOS yield. Higher-priority interrupt preemption is included
+ * in the elapsed cycle count.
+ *
+ * @param timing Destination for the timing snapshot. NULL is ignored.
+ */
+void HW_TIMER_Get_Execution_Timing( HW_TIMER_ExecutionTiming_T* timing );
 
 /**
  * @brief Gets the clock frequency of the specified timer in Hz.

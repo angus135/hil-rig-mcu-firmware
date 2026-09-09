@@ -21,6 +21,7 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+#include <stdbool.h>
 #include <stdint.h>
 #include "execution_operation_payloads.h"
 /**-----------------------------------------------------------------------------
@@ -54,6 +55,14 @@ typedef enum
     EXECUTION_OPERATION_ADAPTER_REJECTED
 } ExecutionOperationAdapterResult_T;
 
+/** Identifies the first operation rejected by the adapter walker. */
+typedef struct
+{
+    uint8_t                    operation_index;
+    ExecutionOperationOpcode_T opcode;
+    uint8_t                    channel;
+} ExecutionOperationAdapterFailure_T;
+
 /**
  * @brief Common signature used by the opcode-indexed adapter table.
  *
@@ -73,6 +82,13 @@ typedef enum
 typedef ExecutionOperationAdapterResult_T ( *ExecutionOperationAdapter_T )(
     uint8_t channel, const uint8_t* payload, uint16_t payload_length_bytes );
 
+typedef struct
+{
+    uint32_t sample_count;
+    uint64_t total_cycles;
+    uint32_t maximum_cycles;
+} ExecutionOperationTiming_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -80,6 +96,23 @@ typedef ExecutionOperationAdapterResult_T ( *ExecutionOperationAdapter_T )(
 
 ExecutionOperationAdapterResult_T
 EXECUTION_OPERATION_ADAPTER_ApplyOperations( const uint8_t* operations, uint8_t operation_count );
+
+/** Profiling-only dispatcher. The normal dispatcher contains no timing instrumentation. */
+ExecutionOperationAdapterResult_T EXECUTION_OPERATION_ADAPTER_ApplyOperationsProfiled(
+    const uint8_t* operations, uint8_t operation_count );
+
+/** Clears all per-opcode timing accumulated by the profiling dispatcher. */
+void EXECUTION_OPERATION_ADAPTER_ResetTiming( void );
+
+/** Copies one opcode's timing snapshot. Returns false for an invalid opcode or NULL output. */
+bool EXECUTION_OPERATION_ADAPTER_GetTiming( ExecutionOperationOpcode_T opcode,
+                                            ExecutionOperationTiming_T* timing );
+
+/** Clears the retained adapter rejection diagnostic before a new run. */
+void EXECUTION_OPERATION_ADAPTER_ResetFailure( void );
+
+/** Returns true and copies the retained rejection diagnostic when one exists. */
+bool EXECUTION_OPERATION_ADAPTER_GetFailure( ExecutionOperationAdapterFailure_T* failure );
 
 /**
  * @brief Applies one prevalidated digital-output update directly from aligned storage.

@@ -240,6 +240,17 @@ protected:
         ForceChannelDisabled( EXEC_SPI_CHANNEL_1 );
         ForceChannelDisabled( EXEC_SPI_CHANNEL_2 );
     }
+
+    void ClearTxFailureByConfiguring( ExecSPIChannel_T peripheral )
+    {
+        using ::testing::_;
+        using ::testing::Return;
+
+        EXPECT_CALL( mock_hw_spi, ConfigureChannel( HWChannel( peripheral ), _ ) )
+            .WillOnce( Return( true ) );
+        const ExecSPIConfig_T config = MakeEnabledConfig();
+        ASSERT_TRUE( EXEC_SPI_Configure_Channel( peripheral, &config ) );
+    }
 };
 
 /**-----------------------------------------------------------------------------
@@ -466,6 +477,8 @@ TEST_F( ExecSPITest, Transmit_SinglePacket_LoadsPacketTriggersOnceAndReturnsTrue
     const uint8_t  tx_data[TEST_TX_SIZE_BYTES] = { 1U, 2U, 3U, 4U, 5U };
     const uint32_t packet_sizes[]              = { TEST_TX_SIZE_BYTES };
 
+    ClearTxFailureByConfiguring( EXEC_SPI_CHANNEL_1 );
+
     {
         InSequence sequence;
 
@@ -481,6 +494,7 @@ TEST_F( ExecSPITest, Transmit_SinglePacket_LoadsPacketTriggersOnceAndReturnsTrue
         static_cast<uint32_t>( sizeof( packet_sizes ) / sizeof( packet_sizes[0] ) ) );
 
     EXPECT_TRUE( result );
+    EXPECT_FALSE( EXEC_SPI_Was_Tx_Queue_Rejected( EXEC_SPI_CHANNEL_1 ) );
 }
 
 TEST_F( ExecSPITest, Transmit_MultiplePackets_LoadsAtomicBatchThenTriggersOnce )
@@ -534,6 +548,7 @@ TEST_F( ExecSPITest, Transmit_BatchLoadFails_DoesNotTriggerTxAndReturnsFalse )
         static_cast<uint32_t>( sizeof( packet_sizes ) / sizeof( packet_sizes[0] ) ) );
 
     EXPECT_FALSE( result );
+    EXPECT_TRUE( EXEC_SPI_Was_Tx_Queue_Rejected( EXEC_SPI_CHANNEL_1 ) );
 }
 
 TEST_F( ExecSPITest, Transmit_TriggerFaultReturnsFalse )
@@ -547,6 +562,8 @@ TEST_F( ExecSPITest, Transmit_TriggerFaultReturnsFalse )
         0xF0U                 // Packet 2
     };
     const uint32_t packet_sizes[] = { 2U, 3U, 1U };
+
+    ClearTxFailureByConfiguring( EXEC_SPI_CHANNEL_1 );
 
     {
         InSequence sequence;
@@ -562,6 +579,7 @@ TEST_F( ExecSPITest, Transmit_TriggerFaultReturnsFalse )
         static_cast<uint32_t>( sizeof( packet_sizes ) / sizeof( packet_sizes[0] ) ) );
 
     EXPECT_FALSE( result );
+    EXPECT_FALSE( EXEC_SPI_Was_Tx_Queue_Rejected( EXEC_SPI_CHANNEL_1 ) );
 }
 
 TEST_F( ExecSPITest, Receive_SingleSpanAvailable_CopiesDataUpdatesSizeAndConsumes )

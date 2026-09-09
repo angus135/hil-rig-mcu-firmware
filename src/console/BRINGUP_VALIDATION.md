@@ -232,6 +232,47 @@ large enough for the configured CAN bitrate and bus arbitration. This command
 does not yet perform CAN schedule-feasibility admission, so do not use it as a
 10 kHz validation sequence.
 
+## Execution Manager peak output-ISR timing
+
+`flash upload_output_stress [sample_count] [interval_ticks]` commits a predefined
+configuration and uploads repeated peak-load instructions. The command enables
+only digital output 1, both PWM outputs, both UART channels, and SPI channel 2.
+CAN, SPI channel 1, analogue output, and every measurement input remain
+disabled. Each scheduled instruction contains six operations on the same tick:
+one digital update, two PWM updates, one 128-byte SPI transmit, and one 16-byte
+transmit for each UART channel. The stress-only configuration runs SPI2 at the
+driver's 45 Mbit/s setting and both UART channels at 2 Mbit/s.
+
+The default interval is one tick and the profiling sequence runs at 10 kHz.
+The SPI and UART payloads are sized below their nominal per-tick wire capacity,
+allowing every execution ISR to exercise every configured output path without
+deliberately filling the DMA-backed transmit queues. Use the maximum rather than
+latest cycle count reported by `run_state status`.
+
+This upload also enables one-shot per-opcode cycle profiling for its next run.
+`run_state status` reports sample count, average cycles, and maximum cycles for
+each exercised opcode. These values include the profiler's two cycle-counter
+reads and accumulation. The overall ISR maximum from a profiled run likewise
+includes profiling overhead; use an unprofiled run for the final deadline figure.
+
+From an IDLE run state and IDLE Flash Manager:
+
+```text
+flash upload_output_stress
+run_state receive
+run_state configure
+run_state frequency 10000
+run_state execute 110 0
+run_state status
+```
+
+The default upload contains 100 sustained-load instructions at ticks 1 through 100,
+followed by ten drain ticks before execution ends at tick 110. After result
+finalisation completes, status should report 110 ISR samples and
+per-opcode timing for all exercised output paths. The measurement includes
+higher-priority interrupt preemption but excludes the optional FreeRTOS yield
+at the end of TIM4.
+
 ## Execution Manager UART-output path
 
 This is a coarse multimeter-visible test of the real UART instruction and DMA

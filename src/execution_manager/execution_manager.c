@@ -27,6 +27,8 @@ static volatile uint32_t                  current_tick         = 0U;
 static volatile ExecutionManagerFailure_T execution_failure    = EXECUTION_MANAGER_FAILURE_NONE;
 static volatile ExecutionState_T          execution_state      = EXECUTION_STATE_IDLE;
 static bool                               instruction_stream_exhausted = false;
+static bool                               operation_timing_requested    = false;
+static bool                               operation_timing_active       = false;
 static ExecutionManagerTerminalCallback_T terminal_callback            = NULL;
 
 static ExecutionManagerTickResult_T
@@ -64,7 +66,16 @@ bool EXECUTION_MANAGER_Prepare( uint32_t tick_count )
     execution_failure            = EXECUTION_MANAGER_FAILURE_NONE;
     execution_state              = EXECUTION_STATE_READY;
     instruction_stream_exhausted = false;
+    operation_timing_active       = operation_timing_requested;
+    operation_timing_requested    = false;
+    EXECUTION_OPERATION_ADAPTER_ResetFailure();
+    EXECUTION_OPERATION_ADAPTER_ResetTiming();
     return true;
+}
+
+void EXECUTION_MANAGER_RequestOperationTiming( void )
+{
+    operation_timing_requested = true;
 }
 
 void EXECUTION_MANAGER_Abort( void )
@@ -136,8 +147,13 @@ EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken )
 
         if ( instruction->header.timestamp == current_tick )
         {
-            if ( EXECUTION_OPERATION_ADAPTER_ApplyOperations( instruction->operations,
-                                                              instruction->header.operation_count )
+            const ExecutionOperationAdapterResult_T operation_result =
+                operation_timing_active
+                    ? EXECUTION_OPERATION_ADAPTER_ApplyOperationsProfiled(
+                          instruction->operations, instruction->header.operation_count )
+                    : EXECUTION_OPERATION_ADAPTER_ApplyOperations(
+                          instruction->operations, instruction->header.operation_count );
+            if ( operation_result
                  != EXECUTION_OPERATION_ADAPTER_ACCEPTED )
             {
                 return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_OPERATION_REJECTED,

@@ -90,6 +90,19 @@
  *  active channel and frame alignment but intentionally defers schedule
  *  feasibility analysis.
  *
+ *  Peak output-ISR timing uses:
+ *
+ *      `flash upload_output_stress [sample_count] [interval_ticks]`
+ *
+ *  This single command commits a predefined configuration and uploads repeated
+ *  peak-load instructions. Only previously exercised hardware paths are
+ *  enabled: digital output 1, both PWM channels, both UART channels, and SPI
+ *  channel 1. CAN, SPI channel 2, analogue output, and all measurement inputs
+ *  remain disabled. Each scheduled instruction submits a maximum chunk to
+ *  both UARTs and a representative 256-byte SPI packet; interval ticks allow
+ *  the queues to drain. Run the stream through the normal RSM execution path
+ *  and inspect `run_state status` for the maximum TIM4 cycle count.
+ *
  *  `execute_echo` is the execution-facing API test. It temporarily redirects
  *  the existing priority-5 TIM4 interrupt away from the production Execution
  *  Manager and into a diagnostic callback. The callback processes the

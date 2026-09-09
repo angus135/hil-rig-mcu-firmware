@@ -146,6 +146,11 @@ accepted. Earlier physical effects cannot be rolled back if a later operation
 rejects, so upload validation and feasibility admission must make runtime
 rejection exceptional and run-ending.
 
+On an exceptional adapter rejection, the walker latches the zero-based
+operation index, opcode, and channel. `run_state status` reports those fields
+together with the retained execution tick; successful dispatch performs no
+diagnostic writes.
+
 For asynchronous drivers, acceptance means the driver has copied or queued all
 required data. The ISR never waits for physical completion, and a driver must
 not retain a pointer into Flash Manager instruction storage.
