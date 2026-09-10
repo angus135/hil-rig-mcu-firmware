@@ -119,6 +119,12 @@ bool TEST_CONFIGURATION_Commit( const DutDriverConfiguration_T* configuration );
  */
 bool TEST_CONFIGURATION_GetActive( DutDriverConfiguration_T* configuration );
 
+/** Atomically claims the committed configuration for one run. */
+bool TEST_CONFIGURATION_AcquireForRun( DutDriverConfiguration_T* configuration );
+
+/** Releases a previously acquired run claim. */
+void TEST_CONFIGURATION_ReleaseRunOwnership( void );
+
 /** @brief Returns whether an active configuration is available. */
 bool TEST_CONFIGURATION_IsActive( void );
 

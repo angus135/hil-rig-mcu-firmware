@@ -287,7 +287,7 @@ bool DUT_DRIVER_LIFECYCLE_Configure( const DutDriverConfiguration_T* configurati
     }
 
     ( void )memset( &lifecycle_context, 0, sizeof( lifecycle_context ) );
-    lifecycle_context.configuration = *configuration;
+    lifecycle_context.configuration          = *configuration;
     lifecycle_context.configuration_batch_id = batch_id;
 
     if ( !DUT_DRIVER_LIFECYCLE_ConfigureAll( &lifecycle_context.configuration ) )
@@ -306,7 +306,7 @@ bool DUT_DRIVER_LIFECYCLE_Configure( const DutDriverConfiguration_T* configurati
     }
 
     DUT_DRIVER_LIFECYCLE_BuildEnablePlan( configuration );
-    lifecycle_context.configuration_valid    = true;
+    lifecycle_context.configuration_valid = true;
     return true;
 }
 
