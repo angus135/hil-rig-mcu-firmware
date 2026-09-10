@@ -66,7 +66,7 @@ static void Reset_Exec_PWM_Capture_State( void )
 {
     for ( uint32_t i = 0U; i < EXEC_PWM_CAPTURE_CHANNEL_COUNT; i++ )
     {
-        exec_pwm_capture_channel_state[i] = EXEC_PWM_CAPTURE_STATE_DISABLED;
+        exec_pwm_capture_channel_state[i]       = EXEC_PWM_CAPTURE_STATE_DISABLED;
         exec_pwm_capture_discard_next_result[i] = false;
     }
 }

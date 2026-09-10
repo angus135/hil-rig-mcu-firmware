@@ -16,7 +16,7 @@
 #include <stdint.h>
 
 typedef bool ( *ExecutionMeasurementAdapter_T )( uint8_t channel, uint32_t timestamp,
-                                                  BaseType_t* higher_priority_task_woken );
+                                                 BaseType_t* higher_priority_task_woken );
 
 #define EXECUTION_MEASUREMENT_ADAPTER_COUNT ( 6U )
 #define EXECUTION_MEASUREMENT_CHANNEL_UNUSED ( 0U )
@@ -29,8 +29,8 @@ typedef struct
 } ExecutionMeasurementDispatchEntry_T;
 
 static ExecutionMeasurementDispatchEntry_T
-    active_measurement_adapters[EXECUTION_MEASUREMENT_ADAPTER_COUNT] = { 0 };
-static uint8_t active_measurement_count = 0U;
+               active_measurement_adapters[EXECUTION_MEASUREMENT_ADAPTER_COUNT] = { 0 };
+static uint8_t active_measurement_count                                         = 0U;
 
 void EXECUTION_MEASUREMENT_ADAPTER_Prepare(
     const ExecutionMeasurementConfiguration_T* configuration )
@@ -84,8 +84,8 @@ void EXECUTION_MEASUREMENT_ADAPTER_Prepare(
     }
 }
 
-bool EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive(
-    uint8_t channel, uint32_t timestamp, BaseType_t* higher_priority_task_woken )
+bool EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive( uint8_t channel, uint32_t timestamp,
+                                                      BaseType_t* higher_priority_task_woken )
 {
     FlashManagerResultWriteLease_T lease = { 0 };
     if ( !FLASH_MANAGER_ReserveResultRecordFromISR( EXEC_UART_MAX_CHUNK_SIZE, &lease ) )
@@ -94,8 +94,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive(
     }
 
     uint32_t bytes_read = 0U;
-    if ( !EXEC_UART_Read( ( ExecUartChannel_T )channel, lease.payload,
-                          EXEC_UART_MAX_CHUNK_SIZE, &bytes_read ) )
+    if ( !EXEC_UART_Read( ( ExecUartChannel_T )channel, lease.payload, EXEC_UART_MAX_CHUNK_SIZE,
+                          &bytes_read ) )
     {
         ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
         return false;
@@ -119,8 +119,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive(
     return false;
 }
 
-bool EXECUTION_MEASUREMENT_ADAPTER_SampleAnalogueInput(
-    uint8_t channel, uint32_t timestamp, BaseType_t* higher_priority_task_woken )
+bool EXECUTION_MEASUREMENT_ADAPTER_SampleAnalogueInput( uint8_t channel, uint32_t timestamp,
+                                                        BaseType_t* higher_priority_task_woken )
 {
     ( void )channel;
     FlashManagerResultWriteLease_T lease = { 0 };
@@ -148,8 +148,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleAnalogueInput(
     return false;
 }
 
-bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements(
-    uint32_t timestamp, BaseType_t* higher_priority_task_woken )
+bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( uint32_t    timestamp,
+                                                      BaseType_t* higher_priority_task_woken )
 {
     for ( uint8_t index = 0U; index < active_measurement_count; index++ )
     {
@@ -163,8 +163,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements(
     return true;
 }
 
-bool EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput(
-    uint8_t channel, uint32_t timestamp, BaseType_t* higher_priority_task_woken )
+bool EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput( uint8_t channel, uint32_t timestamp,
+                                                       BaseType_t* higher_priority_task_woken )
 {
     ( void )channel;
     FlashManagerResultWriteLease_T lease = { 0 };
@@ -176,9 +176,9 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput(
 
     EXEC_DIGITAL_INPUT_Sample_All( ( uint32_t* )( void* )lease.payload );
 
-    if ( FLASH_MANAGER_CommitResultRecordFromISR(
-             &lease, timestamp, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
-             sizeof( uint32_t ), higher_priority_task_woken )
+    if ( FLASH_MANAGER_CommitResultRecordFromISR( &lease, timestamp,
+                                                  FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
+                                                  sizeof( uint32_t ), higher_priority_task_woken )
          == FLASH_MANAGER_RESULT_COMMIT_OK )
     {
         return true;
@@ -188,8 +188,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput(
     return false;
 }
 
-bool EXECUTION_MEASUREMENT_ADAPTER_SamplePwmCapture(
-    uint8_t channel, uint32_t timestamp, BaseType_t* higher_priority_task_woken )
+bool EXECUTION_MEASUREMENT_ADAPTER_SamplePwmCapture( uint8_t channel, uint32_t timestamp,
+                                                     BaseType_t* higher_priority_task_woken )
 {
     ExecPwmCaptureResult_T capture = { 0 };
     if ( !EXEC_PWM_Capture_Consume( ( ExecPwmCaptureChannel_T )channel, &capture ) )

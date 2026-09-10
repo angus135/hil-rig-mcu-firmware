@@ -57,13 +57,13 @@ option(EXECUTION_MANAGER_ENABLE_TESTS "Build tests for execution_manager module"
 if(EXECUTION_MANAGER_ENABLE_TESTS AND BUILD_TESTING)
 
     add_executable(execution_manager_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/execution_manager.c
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_execution_manager.cpp
     )
 
     target_link_libraries(execution_manager_tests
         PRIVATE
             project_warnings
-            execution_manager
             gtest
             gtest_main
             gmock
@@ -73,6 +73,9 @@ if(EXECUTION_MANAGER_ENABLE_TESTS AND BUILD_TESTING)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/src/rtos
+            ${CMAKE_SOURCE_DIR}/src/flash_manager
     )
 
     add_test(NAME execution_manager_tests COMMAND execution_manager_tests)

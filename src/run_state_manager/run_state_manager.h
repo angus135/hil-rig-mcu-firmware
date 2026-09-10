@@ -122,6 +122,10 @@ typedef struct
 {
     /** Number of timer periods and final one-based execution boundary. */
     uint32_t tick_count;
+    /**
+     * Deprecated compatibility field. The RSM ignores caller-supplied result
+     * budgets and derives the reservation from the committed configuration.
+     */
     uint32_t maximum_result_length_bytes;
 } RunStateExecutionRequest_T;
 
