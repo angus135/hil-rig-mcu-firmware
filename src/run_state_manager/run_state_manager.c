@@ -419,6 +419,14 @@ static bool RUN_STATE_MANAGER_EnterConfiguration( void )
  */
 static bool RUN_STATE_MANAGER_EnterExecution( void )
 {
+    if ( execution_abort_requested || requested_fault_reason != RUN_STATE_FAULT_NONE )
+    {
+        RUN_STATE_MANAGER_EnterFault( ( requested_fault_reason != RUN_STATE_FAULT_NONE )
+                                          ? requested_fault_reason
+                                          : RUN_STATE_FAULT_EXTERNAL_REQUEST );
+        return false;
+    }
+
     if ( execution_active )
     {
         return true;
@@ -438,12 +446,28 @@ static bool RUN_STATE_MANAGER_EnterExecution( void )
 /** Starts DUT drivers and waits separately for external-interface completion. */
 static bool RUN_STATE_MANAGER_BeginDriverStart( void )
 {
-    execution_abort_requested = false;
+    if ( execution_abort_requested || requested_fault_reason != RUN_STATE_FAULT_NONE )
+    {
+        RUN_STATE_MANAGER_EnterFault( ( requested_fault_reason != RUN_STATE_FAULT_NONE )
+                                          ? requested_fault_reason
+                                          : RUN_STATE_FAULT_EXTERNAL_REQUEST );
+        return false;
+    }
+
     driver_cleanup_complete   = false;
 
     if ( !DUT_DRIVER_LIFECYCLE_Start() )
     {
         RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_START );
+        return false;
+    }
+
+    /* A fault may arrive while the task-level driver start call is running. */
+    if ( execution_abort_requested || requested_fault_reason != RUN_STATE_FAULT_NONE )
+    {
+        RUN_STATE_MANAGER_EnterFault( ( requested_fault_reason != RUN_STATE_FAULT_NONE )
+                                          ? requested_fault_reason
+                                          : RUN_STATE_FAULT_EXTERNAL_REQUEST );
         return false;
     }
 
@@ -1076,6 +1100,11 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
  */
 static bool RUN_STATE_MANAGER_StartExecutionTimer( void )
 {
+    if ( execution_abort_requested || requested_fault_reason != RUN_STATE_FAULT_NONE )
+    {
+        return false;
+    }
+
     if ( execution_timer_running )
     {
         return true;
