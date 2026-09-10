@@ -121,6 +121,10 @@ DutDriverConfigurationStatus_T DUT_DRIVER_LIFECYCLE_GetConfigurationStatus( void
 {
     return driver_configuration_status;
 }
+void DUT_DRIVER_LIFECYCLE_GetStatus( DutDriverLifecycleStatus_T* status )
+{
+    *status = {};
+}
 bool DUT_DRIVER_LIFECYCLE_Start( void )
 {
     driver_start_calls++;
@@ -217,6 +221,11 @@ bool EXECUTION_MANAGER_Prepare( uint32_t tick_count )
 {
     execution_prepare_tick_count = tick_count;
     return execution_prepare_result;
+}
+void EXECUTION_MANAGER_ConfigureMeasurements(
+    const ExecutionMeasurementConfiguration_T* configuration )
+{
+    ( void )configuration;
 }
 void EXECUTION_MANAGER_Abort( void )
 {

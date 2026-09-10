@@ -50,7 +50,7 @@ instructions and results. Run it only when overwriting those partitions is
 acceptable:
 
 ```text
-flash init
+flash status
 flash upload_test
 flash prepare
 flash execute_echo 100
@@ -76,7 +76,6 @@ example holds LOW for one second, HIGH for three seconds, then returns LOW at
 100 Hz on channel 1:
 
 ```text
-flash init
 flash status
 run_state status
 run_state receive
@@ -126,7 +125,6 @@ following sequence starts at 1 Hz and 50% duty, then changes to 2 Hz and 75%
 duty for the second four-second interval:
 
 ```text
-flash init
 flash status
 run_state status
 run_state receive
@@ -176,7 +174,6 @@ to match the fitted DAC reference and probe board-labelled analogue-output
 channel 1 (driver channel 0) with respect to board ground:
 
 ```text
-flash init
 run_state reset
 run_state receive
 test_config inert
@@ -208,7 +205,6 @@ and the hardware transmit queue. Begin at 100 Hz with a conservative bitrate
 and connect a correctly terminated CAN receiver before enabling the channel:
 
 ```text
-flash init
 run_state reset
 run_state receive
 test_config inert
@@ -280,7 +276,6 @@ path. It does not verify individual UART bits. Probe the UART channel-1 TX pin
 with respect to board ground and configure its external interface for 3.3 V:
 
 ```text
-flash init
 flash status
 run_state status
 run_state receive

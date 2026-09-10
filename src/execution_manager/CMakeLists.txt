@@ -6,6 +6,7 @@
 
 set(EXECUTION_MANAGER_SOURCES
     execution_manager.c
+    execution_measurement_adapters.c
     execution_operation_adapters.c
 )
 
@@ -13,6 +14,7 @@ set(EXECUTION_MANAGER_HEADERS
     execution_instruction.h
     execution_manager.h
     execution_manager_isr.h
+    execution_measurement_adapters.h
     execution_operation_payloads.h
     execution_operation_adapters.h
 )
@@ -41,6 +43,7 @@ target_link_libraries(execution_manager
         exec_spi
         exec_analogue_output
         exec_can
+        exec_digital_input
 )
 
 # -----------------------------

@@ -493,6 +493,14 @@ static bool RUN_STATE_MANAGER_BeginDriverStart( void )
 
     driver_cleanup_complete = false;
 
+    DutDriverLifecycleStatus_T driver_status = { 0 };
+    DUT_DRIVER_LIFECYCLE_GetStatus( &driver_status );
+
+    const ExecutionMeasurementConfiguration_T measurement_configuration = {
+        .digital_input_enabled = driver_status.digital_inputs_enabled,
+    };
+    EXECUTION_MANAGER_ConfigureMeasurements( &measurement_configuration );
+
     if ( !EXECUTION_MANAGER_Prepare( execution_request.tick_count ) )
     {
         RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_EXECUTION_MANAGER );

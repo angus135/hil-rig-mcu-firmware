@@ -11,31 +11,26 @@
  *
  *  Complete hardware test sequence (destructive):
  *
- *      1. `flash init`
- *         Initialise Flash Manager and start its task. Normal firmware startup
- *         has already adopted hqspi and initialised External Flash; the command
- *         retains a hardware-only fallback for isolated bring-up builds.
- *
- *      2. `flash status`
+ *      1. `flash status`
  *         Require IDLE and inspect NAND page size, partition lengths/capacity,
  *         bad-block count, ECC state, QSPI busy state and echo-harness state.
  *
- *      3. `flash external_test [seed]`
+ *      2. `flash external_test [seed]`
  *         Exercise QSPI -> NAND -> External Flash directly. One full and one
  *         partial page are programmed and read back in both logical
  *         partitions. This overwrites both partitions.
  *
- *      4. `flash upload_test [instruction_count] [seed]`
+ *      3. `flash upload_test [instruction_count] [seed]`
  *         Exercise Host Interface -> Flash Manager -> External Flash. The
  *         default deterministic instruction stream crosses the three-page RAM
  *         ring and finishes on a partial page. Instruction N is assigned tick
  *         N and contains one diagnostic operation with eleven opaque bytes.
  *
- *      5. `flash prepare`
+ *      4. `flash prepare`
  *         Start a result session and preload instructions. Do not continue
  *         until the command reports FLASH_MANAGER_STATE_EXECUTING.
  *
- *      6. `flash execute_echo [100|1000|10000]`
+ *      5. `flash execute_echo [100|1000|10000]`
  *         Temporarily route TIM4 to the console's genuine ISR test callback;
  *         100 Hz is the safe first-bring-up default. For every due instruction,
  *         the ISR peeks, reserves result storage, copies the eleven operation
@@ -45,17 +40,17 @@
  *         concurrently refills/drains pages, stops TIM4, and restores the
  *         production callback.
  *
- *      7. `flash finalise`
+ *      6. `flash finalise`
  *         After execute_echo has returned, publish and drain the final partial
  *         result page and wait for RESULTS_READY.
  *
- *      8. `flash results verify`
+ *      7. `flash results verify`
  *         Exercise Flash Manager -> Host Interface retrieval and compare the
  *         entire packed result stream byte-for-byte with the diagnostic
  *         instruction stream. The command prints length and FNV-1a checksum,
  *         consumes the transfer, and returns Flash Manager to IDLE.
  *
- *      9. Repeat step 4 onward at 1 kHz and 10 kHz, then with larger record
+ *      8. Repeat step 3 onward at 1 kHz and 10 kHz, then with larger record
  *         counts. This distinguishes functional correctness from whether NAND
  *         refill/drain throughput can sustain the intended execution rate.
  *
@@ -104,9 +99,6 @@
 #include "hw_qspi.h"
 #include "hw_timer.h"
 #include "run_state_manager.h"
-#ifndef TEST_BUILD
-#include "quadspi.h"
-#endif
 #include "rtos_config.h"
 #include "test_configuration.h"
 
@@ -121,11 +113,12 @@
  *------------------------------------------------------------------------------
  */
 
-#define CONSOLE_FLASH_QSPI_TIMEOUT_MS ( 1000U )
 #define CONSOLE_FLASH_STATE_TIMEOUT_MS ( 30000U )
 #define CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ( 30000U )
 #define CONSOLE_FLASH_POLL_PERIOD_MS ( 10U )
 #define CONSOLE_FLASH_RESULT_READ_BYTES ( 256U )
+#define CONSOLE_FLASH_DIGITAL_INPUT_RESULT_BYTES                                                \
+    ( sizeof( FlashManagerResultHeader_T ) + sizeof( uint32_t ) )
 
 #define CONSOLE_FLASH_TEST_PAYLOAD_BYTES ( 12U )
 #define CONSOLE_FLASH_TEST_OPERATION_COUNT ( 1U )
@@ -247,9 +240,6 @@ typedef struct
  *------------------------------------------------------------------------------
  */
 
-static TaskHandle_t console_flash_manager_task_handle = NULL;
-static bool         console_flash_manager_needs_task  = false;
-
 static uint8_t console_flash_write_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES];
 static uint8_t console_flash_read_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES];
 
@@ -257,6 +247,18 @@ static uint32_t console_flash_last_upload_records = 0U;
 static uint32_t console_flash_last_upload_bytes   = 0U;
 static uint8_t  console_flash_last_upload_seed    = 0U;
 static uint32_t console_flash_run_tick_count      = 0U;
+
+typedef struct
+{
+    bool     valid;
+    uint32_t first_tick;
+    uint32_t interval_ticks;
+    uint32_t repeat_words;
+    uint32_t pattern_word;
+    uint32_t run_ticks;
+} ConsoleFlashDigitalPattern_T;
+
+static ConsoleFlashDigitalPattern_T console_flash_digital_pattern = { 0 };
 
 static ConsoleFlashExecutionTestContext_T console_flash_execution_test = {
     .state                        = CONSOLE_FLASH_EXECUTION_TEST_NOT_RUN,
@@ -280,6 +282,7 @@ static void        CONSOLE_Flash_PrintUsage( void );
 static const char* CONSOLE_Flash_StateName( FlashManagerState_T state );
 static bool        CONSOLE_Flash_ParseU32( const char* text, uint32_t* value );
 static bool CONSOLE_Flash_WaitForState( FlashManagerState_T expected_state, uint32_t timeout_ms );
+static bool CONSOLE_Flash_WaitForRunState( RunState_T expected_state, uint32_t timeout_ms );
 static bool CONSOLE_Flash_HasTimedOut( TickType_t start_tick, uint32_t timeout_ms );
 static bool CONSOLE_Flash_RequireIdle( void );
 static const char* CONSOLE_Flash_ExecutionTestStateName( ConsoleFlashExecutionTestState_T state );
@@ -324,11 +327,11 @@ static void     CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32
                                                     uint32_t length, uint8_t seed );
 static uint32_t CONSOLE_Flash_Fnv1aUpdate( uint32_t hash, const uint8_t* data, uint32_t length );
 
-static void CONSOLE_Flash_InitCommand( void );
 static void CONSOLE_Flash_StatusCommand( void );
 static void CONSOLE_Flash_ExternalTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadDigitalOutputTestCommand( uint16_t argc, char* argv[] );
+static void CONSOLE_Flash_UploadDigitalPatternCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadPwmTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadAnalogueOutputTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadCanTestCommand( uint16_t argc, char* argv[] );
@@ -339,6 +342,7 @@ static void CONSOLE_Flash_PrepareCommand( void );
 static void CONSOLE_Flash_ExecuteEchoCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_FinaliseCommand( void );
 static void CONSOLE_Flash_ResultsCommand( bool verify_echo_stream );
+static void CONSOLE_Flash_VerifyDigitalLoopbackResultsCommand( uint16_t argc, char* argv[] );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -349,11 +353,12 @@ static void CONSOLE_Flash_ResultsCommand( bool verify_echo_stream );
 static void CONSOLE_Flash_PrintUsage( void )
 {
     CONSOLE_Printf( "Flash hardware bring-up (destructive):\r\n" );
-    CONSOLE_Printf( "  flash init\r\n" );
     CONSOLE_Printf( "  flash status\r\n" );
     CONSOLE_Printf( "  flash external_test [seed]\r\n" );
     CONSOLE_Printf( "  flash upload_test [instruction_count] [seed]\r\n" );
     CONSOLE_Printf( "  flash upload_do_test <channel 1..10> [delay_ticks] [high_ticks]\r\n" );
+    CONSOLE_Printf( "  flash upload_do_pattern <channel> <first_tick> <interval_ticks> "
+                    "<repeat_words> <hex_word> <run_ticks>\r\n" );
     CONSOLE_Printf( "  flash upload_pwm_test <channel 1..2> <frequency_hz> "
                     "<duty_permille> <update_tick> <run_ticks>\r\n" );
     CONSOLE_Printf( "  flash upload_ao_test <channel 0..5> <voltage> "
@@ -369,6 +374,8 @@ static void CONSOLE_Flash_PrintUsage( void )
     CONSOLE_Printf( "  flash execute_echo [100|1000|10000]\r\n" );
     CONSOLE_Printf( "  flash finalise\r\n" );
     CONSOLE_Printf( "  flash results [verify]\r\n" );
+    CONSOLE_Printf( "  flash results verify_do_di <delay_ticks> <high_ticks>\r\n" );
+    CONSOLE_Printf( "  flash results verify_do_pattern\r\n" );
     CONSOLE_Printf( "Use 'flash status' after every phase. Reset after FAULT.\r\n" );
 }
 
@@ -475,6 +482,28 @@ static bool CONSOLE_Flash_WaitForState( FlashManagerState_T expected_state, uint
     }
 }
 
+/** Waits in console task context for an RSM-owned lifecycle transition. */
+static bool CONSOLE_Flash_WaitForRunState( RunState_T expected_state, uint32_t timeout_ms )
+{
+    const TickType_t started_at = xTaskGetTickCount();
+
+    for ( ;; )
+    {
+        RunStateManagerStatus_T status = { 0 };
+        RUN_STATE_MANAGER_GetStatus( &status );
+        if ( status.state == expected_state )
+        {
+            return true;
+        }
+        if ( status.state == RUN_STATE_FAULT
+             || CONSOLE_Flash_HasTimedOut( started_at, timeout_ms ) )
+        {
+            return false;
+        }
+        vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+    }
+}
+
 /** Requires an initialised and idle Flash Manager before destructive direct tests. */
 static bool CONSOLE_Flash_RequireIdle( void )
 {
@@ -482,7 +511,7 @@ static bool CONSOLE_Flash_RequireIdle( void )
 
     if ( !FLASH_MANAGER_GetState( &state ) )
     {
-        CONSOLE_Printf( "Flash Manager is not initialised. Run 'flash init'.\r\n" );
+        CONSOLE_Printf( "Flash Manager startup initialisation failed.\r\n" );
         return false;
     }
 
@@ -847,77 +876,6 @@ static uint32_t CONSOLE_Flash_Fnv1aUpdate( uint32_t hash, const uint8_t* data, u
     }
 
     return hash;
-}
-
-/** Initialises the complete storage stack and starts the Flash Manager task. */
-static void CONSOLE_Flash_InitCommand( void )
-{
-    if ( !EXTERNAL_FLASH_IsInitialised() )
-    {
-#ifdef TEST_BUILD
-        /*
-         * Host builds use the QSPI mock types and do not contain CubeMX's
-         * global hqspi handle. Hardware startup normally initialises this
-         * layer before the console becomes available.
-         */
-        CONSOLE_Printf( "External Flash is not initialised. "
-                        "Initialise the hardware storage stack at startup.\r\n" );
-        return;
-#else
-        HW_QSPI_Status_T qspi_status = HW_QSPI_AdoptHandle( &hqspi, CONSOLE_FLASH_QSPI_TIMEOUT_MS );
-        if ( qspi_status != HW_QSPI_STATUS_OK )
-        {
-            CONSOLE_Printf( "QSPI adopt failed (status=%d).\r\n", ( int )qspi_status );
-            return;
-        }
-
-        ExternalFlashStatus_T flash_status = EXTERNAL_FLASH_Init();
-        if ( flash_status != EXTERNAL_FLASH_STATUS_OK )
-        {
-            CONSOLE_Printf( "External Flash init failed (status=%d).\r\n", ( int )flash_status );
-            return;
-        }
-#endif
-    }
-
-    FlashManagerState_T state                  = FLASH_MANAGER_STATE_UNINITIALISED;
-    bool                manager_is_initialised = FLASH_MANAGER_GetState( &state );
-
-    if ( !manager_is_initialised )
-    {
-        if ( !FLASH_MANAGER_Init() )
-        {
-            CONSOLE_Printf( "Flash Manager init failed.\r\n" );
-            return;
-        }
-
-        console_flash_manager_needs_task = true;
-    }
-
-    if ( console_flash_manager_needs_task )
-    {
-        if ( CREATE_TASK( FLASH_MANAGER_Task, "Flash Manager Task", FLASH_MANAGER_TASK_MEMORY,
-                          FLASH_MANAGER_TASK_PRIORITY, &console_flash_manager_task_handle )
-             != pdPASS )
-        {
-            CONSOLE_Printf( "Flash Manager task creation failed. Retry 'flash init'.\r\n" );
-            return;
-        }
-
-        console_flash_manager_needs_task = false;
-        vTaskDelay( 1U );
-    }
-
-    ExternalFlashInfo_T info = { 0 };
-    if ( EXTERNAL_FLASH_GetInfo( &info ) != EXTERNAL_FLASH_STATUS_OK )
-    {
-        CONSOLE_Printf( "Flash stack initialised but GetInfo failed.\r\n" );
-        return;
-    }
-
-    CONSOLE_Printf( "Flash stack ready: page=%lu, bad_blocks=%lu.\r\n",
-                    ( unsigned long )info.page_size_bytes, ( unsigned long )info.bad_block_count );
-    CONSOLE_Printf( "Run 'flash status', then 'flash external_test'.\r\n" );
 }
 
 /** Prints Flash Manager lifecycle and External Flash/NAND diagnostic state. */
@@ -1436,6 +1394,175 @@ static void CONSOLE_Flash_UploadDigitalOutputTestCommand( uint16_t argc, char* a
                     ( unsigned long )console_flash_run_tick_count );
     CONSOLE_Printf( "Next: configure the RSM, then 'run_state execute %lu 0'.\r\n",
                     ( unsigned long )console_flash_run_tick_count );
+}
+
+/** Uploads a repeated 32-bit, least-significant-bit-first digital-output pattern. */
+static void CONSOLE_Flash_UploadDigitalPatternCommand( uint16_t argc, char* argv[] )
+{
+    uint32_t channel        = 0U;
+    uint32_t first_tick     = 0U;
+    uint32_t interval_ticks = 0U;
+    uint32_t repeat_words   = 0U;
+    uint32_t pattern_word   = 0U;
+    uint32_t run_ticks      = 0U;
+
+    if ( argc != 8U || !CONSOLE_Flash_ParseU32( argv[2], &channel )
+         || !CONSOLE_Flash_ParseU32( argv[3], &first_tick )
+         || !CONSOLE_Flash_ParseU32( argv[4], &interval_ticks )
+         || !CONSOLE_Flash_ParseU32( argv[5], &repeat_words )
+         || !CONSOLE_Flash_ParseU32( argv[6], &pattern_word )
+         || !CONSOLE_Flash_ParseU32( argv[7], &run_ticks ) || channel < 1U
+         || channel > EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT || first_tick == 0U
+         || interval_ticks == 0U || repeat_words == 0U
+         || repeat_words > ( UINT32_MAX / 32U ) )
+    {
+        CONSOLE_Printf( "Usage: flash upload_do_pattern <channel 1..10> <first_tick> "
+                        "<interval_ticks> <repeat_words> <hex_word> <run_ticks>\r\n" );
+        return;
+    }
+
+    const uint32_t pattern_bits = repeat_words * 32U;
+    if ( ( pattern_bits > 1U
+           && ( pattern_bits - 1U ) > ( ( UINT32_MAX - first_tick ) / interval_ticks ) )
+         || first_tick + ( ( pattern_bits - 1U ) * interval_ticks ) > UINT32_MAX - interval_ticks )
+    {
+        CONSOLE_Printf( "Digital pattern timestamp range overflow.\r\n" );
+        return;
+    }
+
+    const uint32_t final_low_tick = first_tick + ( pattern_bits * interval_ticks );
+    if ( run_ticks <= final_low_tick || pattern_bits == UINT32_MAX
+         || pattern_bits + 1U > ( UINT32_MAX / CONSOLE_FLASH_DO_TEST_INSTRUCTION_BYTES ) )
+    {
+        CONSOLE_Printf( "run_ticks must extend beyond the pattern's final LOW update.\r\n" );
+        return;
+    }
+
+    if ( !CONSOLE_Flash_RequireIdle() )
+    {
+        return;
+    }
+
+    GPIOOutput_T           gpio_output = ( GPIOOutput_T )( DIGITAL_OUTPUT_0 + channel - 1U );
+    DigitalOutputPinmask_T pin_mask =
+        EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( &gpio_output, 1U );
+    if ( pin_mask == 0U )
+    {
+        CONSOLE_Printf( "Failed to map digital-output channel %lu.\r\n",
+                        ( unsigned long )channel );
+        return;
+    }
+
+    const uint32_t instruction_count = pattern_bits + 1U;
+    const uint32_t upload_bytes = instruction_count * CONSOLE_FLASH_DO_TEST_INSTRUCTION_BYTES;
+    FlashManagerInstructionUploadRequestStatus_T status =
+        FLASH_MANAGER_RequestInstructionUploadStart( upload_bytes );
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED
+         || !CONSOLE_Flash_WaitForState( FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD,
+                                         CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "Digital pattern upload start failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    for ( uint32_t bit = 0U; bit < pattern_bits; bit++ )
+    {
+        const bool high = ( pattern_word & ( UINT32_C( 1 ) << ( bit % 32U ) ) ) != 0U;
+        CONSOLE_Flash_EncodeDigitalOutputInstruction(
+            console_flash_write_buffer, first_tick + ( bit * interval_ticks ),
+            high ? pin_mask : 0U, high ? 0U : pin_mask );
+
+        TickType_t progress_started_at = xTaskGetTickCount();
+        do
+        {
+            status = FLASH_MANAGER_SubmitInstructionUploadBytes(
+                console_flash_write_buffer, CONSOLE_FLASH_DO_TEST_INSTRUCTION_BYTES );
+            if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
+            {
+                if ( CONSOLE_Flash_HasTimedOut( progress_started_at,
+                                                CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+                {
+                    CONSOLE_Printf( "Digital pattern upload timed out at bit %lu.\r\n",
+                                    ( unsigned long )bit );
+                    return;
+                }
+                vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+            }
+        } while ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY );
+
+        if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
+        {
+            CONSOLE_Printf( "Digital pattern upload failed at bit %lu (status=%d).\r\n",
+                            ( unsigned long )bit, ( int )status );
+            return;
+        }
+    }
+
+    CONSOLE_Flash_EncodeDigitalOutputInstruction( console_flash_write_buffer, final_low_tick, 0U,
+                                                  pin_mask );
+    TickType_t final_submit_started_at = xTaskGetTickCount();
+    do
+    {
+        status = FLASH_MANAGER_SubmitInstructionUploadBytes(
+            console_flash_write_buffer, CONSOLE_FLASH_DO_TEST_INSTRUCTION_BYTES );
+        if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
+        {
+            if ( CONSOLE_Flash_HasTimedOut( final_submit_started_at,
+                                            CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            {
+                CONSOLE_Printf( "Digital pattern final LOW submission timed out.\r\n" );
+                return;
+            }
+            vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+        }
+    } while ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY );
+
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
+    {
+        CONSOLE_Printf( "Digital pattern final LOW submission failed (status=%d).\r\n",
+                        ( int )status );
+        return;
+    }
+
+    TickType_t finish_started_at = xTaskGetTickCount();
+    do
+    {
+        status = FLASH_MANAGER_RequestInstructionUploadFinish();
+        if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
+        {
+            if ( CONSOLE_Flash_HasTimedOut( finish_started_at, CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            {
+                CONSOLE_Printf( "Digital pattern upload finalisation timed out.\r\n" );
+                return;
+            }
+            vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+        }
+    } while ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY );
+
+    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED
+         || !CONSOLE_Flash_WaitForState( FLASH_MANAGER_STATE_IDLE,
+                                         CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "Digital pattern upload finalisation failed (status=%d).\r\n",
+                        ( int )status );
+        return;
+    }
+
+    console_flash_digital_pattern = ( ConsoleFlashDigitalPattern_T ){
+        .valid          = true,
+        .first_tick     = first_tick,
+        .interval_ticks = interval_ticks,
+        .repeat_words   = repeat_words,
+        .pattern_word   = pattern_word,
+        .run_ticks      = run_ticks,
+    };
+    console_flash_run_tick_count = run_ticks;
+
+    CONSOLE_Printf( "Digital pattern upload PASS: channel=%lu bits=%lu first_tick=%lu "
+                    "interval=%lu final_low_tick=%lu run_ticks=%lu.\r\n",
+                    ( unsigned long )channel, ( unsigned long )pattern_bits,
+                    ( unsigned long )first_tick, ( unsigned long )interval_ticks,
+                    ( unsigned long )final_low_tick, ( unsigned long )run_ticks );
 }
 
 /** Uploads one driver-prepared PWM register update through the public upload API. */
@@ -2681,12 +2808,15 @@ static void CONSOLE_Flash_ResultsCommand( bool verify_echo_stream )
         return;
     }
 
-    FlashManagerResultTransferStatus_T status = FLASH_MANAGER_RequestResultTransferStart();
-    if ( status != FLASH_MANAGER_RESULT_TRANSFER_OK )
+    if ( !RUN_STATE_MANAGER_RequestResultTransfer()
+         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_RESULT_TRANSFER,
+                                            CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
     {
-        CONSOLE_Printf( "Result transfer start rejected (status=%d).\r\n", ( int )status );
+        CONSOLE_Printf( "RSM result transfer start failed.\r\n" );
         return;
     }
+
+    FlashManagerResultTransferStatus_T status = FLASH_MANAGER_RESULT_TRANSFER_OK;
 
     uint32_t   total_bytes              = 0U;
     uint32_t   hash                     = CONSOLE_FLASH_FNV1A_OFFSET_BASIS;
@@ -2764,10 +2894,10 @@ static void CONSOLE_Flash_ResultsCommand( bool verify_echo_stream )
         return;
     }
 
-    status = FLASH_MANAGER_FinishResultTransfer();
-    if ( status != FLASH_MANAGER_RESULT_TRANSFER_OK )
+    if ( !RUN_STATE_MANAGER_RequestResultTransferComplete()
+         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_IDLE, CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
     {
-        CONSOLE_Printf( "Result transfer finish failed (status=%d).\r\n", ( int )status );
+        CONSOLE_Printf( "RSM result transfer completion failed.\r\n" );
         return;
     }
 
@@ -2798,6 +2928,186 @@ static void CONSOLE_Flash_ResultsCommand( bool verify_echo_stream )
     CONSOLE_Printf( "Flash Manager returned to IDLE.\r\n" );
 }
 
+/** Retrieves and verifies the DO1-to-DI10 production execution result stream. */
+static void CONSOLE_Flash_VerifyDigitalLoopbackResultsCommand( uint16_t argc, char* argv[] )
+{
+    uint32_t delay_ticks = 0U;
+    uint32_t high_ticks  = 0U;
+    const bool pattern_mode = argc == 3U && strcmp( argv[2], "verify_do_pattern" ) == 0;
+
+    if ( ( pattern_mode && !console_flash_digital_pattern.valid )
+         || ( !pattern_mode
+              && ( argc != 5U || !CONSOLE_Flash_ParseU32( argv[3], &delay_ticks )
+                   || !CONSOLE_Flash_ParseU32( argv[4], &high_ticks ) || delay_ticks == 0U
+                   || high_ticks == 0U
+                   || ( ( uint64_t )delay_ticks + high_ticks + 1U > UINT32_MAX ) ) ) )
+    {
+        CONSOLE_Printf( "Usage: flash results verify_do_di <delay_ticks> <high_ticks> | "
+                        "verify_do_pattern\r\n" );
+        return;
+    }
+
+    const uint32_t expected_records =
+        pattern_mode ? console_flash_digital_pattern.run_ticks : delay_ticks + high_ticks + 1U;
+    if ( !RUN_STATE_MANAGER_RequestResultTransfer()
+         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_RESULT_TRANSFER,
+                                            CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "RSM result transfer start failed.\r\n" );
+        return;
+    }
+
+
+    FlashManagerResultTransferStatus_T status = FLASH_MANAGER_RESULT_TRANSFER_OK;
+
+    uint8_t    record[CONSOLE_FLASH_DIGITAL_INPUT_RESULT_BYTES] = { 0 };
+    uint32_t   record_fill                                      = 0U;
+    uint32_t   record_count                                     = 0U;
+    uint32_t   first_failure_tick                               = 0U;
+    uint32_t   first_failure_sample                             = 0U;
+    bool       verification_passed                              = true;
+    TickType_t last_progress_at                                 = xTaskGetTickCount();
+
+    for ( ;; )
+    {
+        uint32_t bytes_read = 0U;
+        status              = FLASH_MANAGER_ReadResultBytes( console_flash_read_buffer,
+                                                             CONSOLE_FLASH_RESULT_READ_BYTES,
+                                                             &bytes_read );
+
+        if ( status == FLASH_MANAGER_RESULT_TRANSFER_OK )
+        {
+            uint32_t source_offset = 0U;
+            while ( source_offset < bytes_read )
+            {
+                const uint32_t remaining_record =
+                    CONSOLE_FLASH_DIGITAL_INPUT_RESULT_BYTES - record_fill;
+                const uint32_t remaining_source = bytes_read - source_offset;
+                const uint32_t copy_length =
+                    remaining_source < remaining_record ? remaining_source : remaining_record;
+
+                ( void )memcpy( &record[record_fill], &console_flash_read_buffer[source_offset],
+                                copy_length );
+                record_fill += copy_length;
+                source_offset += copy_length;
+
+                if ( record_fill == CONSOLE_FLASH_DIGITAL_INPUT_RESULT_BYTES )
+                {
+                    FlashManagerResultHeader_T header = { 0 };
+                    uint32_t                   sample = 0U;
+                    ( void )memcpy( &header, record, sizeof( header ) );
+                    ( void )memcpy( &sample, &record[sizeof( header )], sizeof( sample ) );
+
+                    record_count++;
+                    bool expected_high = false;
+                    if ( pattern_mode
+                         && header.timestamp > console_flash_digital_pattern.first_tick )
+                    {
+                        const uint32_t pattern_bits =
+                            console_flash_digital_pattern.repeat_words * 32U;
+                        const uint32_t final_low_tick =
+                            console_flash_digital_pattern.first_tick
+                            + ( pattern_bits * console_flash_digital_pattern.interval_ticks );
+                        if ( header.timestamp <= final_low_tick )
+                        {
+                            uint32_t applied_bit =
+                                ( header.timestamp - 1U
+                                  - console_flash_digital_pattern.first_tick )
+                                / console_flash_digital_pattern.interval_ticks;
+                            if ( applied_bit >= pattern_bits )
+                            {
+                                applied_bit = pattern_bits - 1U;
+                            }
+                            expected_high =
+                                ( console_flash_digital_pattern.pattern_word
+                                  & ( UINT32_C( 1 ) << ( applied_bit % 32U ) ) )
+                                != 0U;
+                        }
+                    }
+                    else if ( !pattern_mode )
+                    {
+                        expected_high = header.timestamp > delay_ticks
+                                        && header.timestamp <= ( delay_ticks + high_ticks );
+                    }
+                    const bool valid_record =
+                        header.timestamp == record_count
+                        && header.peripheral_type
+                               == FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT
+                        && header.channel == 0U
+                        && header.payload_length_bytes == sizeof( uint32_t )
+                        && ( ( sample != 0U ) == expected_high );
+
+                    if ( !valid_record && verification_passed )
+                    {
+                        verification_passed = false;
+                        first_failure_tick  = header.timestamp;
+                        first_failure_sample = sample;
+                    }
+                    record_fill = 0U;
+                }
+            }
+
+            last_progress_at = xTaskGetTickCount();
+            continue;
+        }
+
+        if ( status == FLASH_MANAGER_RESULT_TRANSFER_BUSY )
+        {
+            if ( CONSOLE_Flash_HasTimedOut( last_progress_at, CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            {
+                CONSOLE_Printf( "Digital loopback result retrieval timed out.\r\n" );
+                return;
+            }
+            vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+            continue;
+        }
+
+        if ( status == FLASH_MANAGER_RESULT_TRANSFER_END_OF_STREAM )
+        {
+            break;
+        }
+
+        CONSOLE_Printf( "Digital loopback result retrieval failed (status=%d).\r\n",
+                        ( int )status );
+        return;
+    }
+
+    if ( !RUN_STATE_MANAGER_RequestResultTransferComplete()
+         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_IDLE, CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "RSM result transfer completion failed.\r\n" );
+        return;
+    }
+
+    if ( record_fill != 0U || record_count != expected_records )
+    {
+        verification_passed = false;
+    }
+
+    if ( verification_passed && pattern_mode )
+    {
+        CONSOLE_Printf( "DO-pattern-to-DI10 flash verification PASS: records=%lu.\r\n",
+                        ( unsigned long )record_count );
+    }
+    else if ( verification_passed )
+    {
+        CONSOLE_Printf( "DO1-to-DI10 loopback PASS: records=%lu, LOW ticks=1..%lu, "
+                        "HIGH ticks=%lu..%lu, final LOW tick=%lu.\r\n",
+                        ( unsigned long )record_count, ( unsigned long )delay_ticks,
+                        ( unsigned long )( delay_ticks + 1U ),
+                        ( unsigned long )( delay_ticks + high_ticks ),
+                        ( unsigned long )expected_records );
+    }
+    else
+    {
+        CONSOLE_Printf( "DO1-to-DI10 loopback FAIL: records=%lu/%lu first_bad_tick=%lu "
+                        "sample=0x%08lX partial_bytes=%lu.\r\n",
+                        ( unsigned long )record_count, ( unsigned long )expected_records,
+                        ( unsigned long )first_failure_tick,
+                        ( unsigned long )first_failure_sample, ( unsigned long )record_fill );
+    }
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
@@ -2808,17 +3118,6 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
     if ( ( argc < 2U ) || ( strcmp( argv[1], "help" ) == 0 ) )
     {
         CONSOLE_Flash_PrintUsage();
-        return;
-    }
-
-    if ( strcmp( argv[1], "init" ) == 0 )
-    {
-        if ( argc != 2U )
-        {
-            CONSOLE_Flash_PrintUsage();
-            return;
-        }
-        CONSOLE_Flash_InitCommand();
         return;
     }
 
@@ -2848,6 +3147,12 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
     if ( strcmp( argv[1], "upload_do_test" ) == 0 )
     {
         CONSOLE_Flash_UploadDigitalOutputTestCommand( argc, argv );
+        return;
+    }
+
+    if ( strcmp( argv[1], "upload_do_pattern" ) == 0 )
+    {
+        CONSOLE_Flash_UploadDigitalPatternCommand( argc, argv );
         return;
     }
 
@@ -2907,13 +3212,26 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[1], "results" ) == 0 )
     {
+        if ( argc == 5U && strcmp( argv[2], "verify_do_di" ) == 0 )
+        {
+            CONSOLE_Flash_VerifyDigitalLoopbackResultsCommand( argc, argv );
+            return;
+        }
+
+        if ( argc == 3U && strcmp( argv[2], "verify_do_pattern" ) == 0 )
+        {
+            CONSOLE_Flash_VerifyDigitalLoopbackResultsCommand( argc, argv );
+            return;
+        }
+
         if ( ( argc == 2U ) || ( ( argc == 3U ) && ( strcmp( argv[2], "verify" ) == 0 ) ) )
         {
             CONSOLE_Flash_ResultsCommand( argc == 3U );
             return;
         }
 
-        CONSOLE_Printf( "Usage: flash results [verify]\r\n" );
+        CONSOLE_Printf( "Usage: flash results [verify] | "
+                        "verify_do_di <delay_ticks> <high_ticks> | verify_do_pattern\r\n" );
         return;
     }
 

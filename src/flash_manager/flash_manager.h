@@ -228,6 +228,9 @@ typedef struct
     uint8_t channel;
 } FlashManagerResultHeader_T;
 
+/** Stable peripheral identifiers stored in result record headers. */
+#define FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT ( 1U )
+
 /**
  * @brief Temporary driver write access to Flash Manager-owned result storage.
  *
