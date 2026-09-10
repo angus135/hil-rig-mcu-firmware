@@ -472,7 +472,7 @@ static bool RUN_STATE_MANAGER_EnterExecution( void )
     {
         EXECUTION_MANAGER_Abort();
         ( void )DUT_DRIVER_LIFECYCLE_Stop();
-        RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_EXECUTION_TIMER );
+        RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_EXECUTION_TIMER );
         return false;
     }
 
@@ -495,7 +495,7 @@ static bool RUN_STATE_MANAGER_BeginDriverStart( void )
 
     if ( !EXECUTION_MANAGER_Prepare( execution_request.tick_count ) )
     {
-        RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_EXECUTION_MANAGER );
+        RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_EXECUTION_MANAGER );
         return false;
     }
 

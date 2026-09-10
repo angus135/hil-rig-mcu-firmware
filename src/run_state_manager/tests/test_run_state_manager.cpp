@@ -518,6 +518,7 @@ TEST_F( RunStateManagerTest, ExecutionTimerStartFailureStopsDriversAndEntersFaul
     flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
 
     RUN_STATE_MANAGER_ProcessPendingOperation();
+    RUN_STATE_MANAGER_ProcessPendingOperation();
 
     EXPECT_EQ( RUN_STATE_FAULT, run_state );
     EXPECT_EQ( RUN_STATE_FAULT_EXECUTION_TIMER, fault_reason );
@@ -525,7 +526,7 @@ TEST_F( RunStateManagerTest, ExecutionTimerStartFailureStopsDriversAndEntersFaul
     EXPECT_FALSE( execution_timer_running );
     EXPECT_EQ( 1U, driver_start_calls );
     EXPECT_EQ( 1U, driver_stop_calls );
-    EXPECT_EQ( abort_calls_before_execution + 2U, execution_abort_calls );
+    EXPECT_EQ( abort_calls_before_execution + 1U, execution_abort_calls );
     EXPECT_EQ( 1U, timer_start_calls );
 }
 
