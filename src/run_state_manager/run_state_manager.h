@@ -118,7 +118,13 @@ typedef enum
     RUN_STATE_REQUEST_RESULT_FAILED
 } RunStateRequestResult_T;
 
-/** Coherent task-owned lifecycle status captured at one instant. */
+/**
+ * Coherent task-owned lifecycle status captured at one instant.
+ *
+ * Request timing covers the complete asynchronous operation from acceptance
+ * until its externally meaningful terminal state is published. Durations are
+ * diagnostic wall-clock values derived from the RTOS tick counter.
+ */
 typedef struct
 {
     RunState_T              state;
@@ -129,6 +135,12 @@ typedef struct
     RunStateFaultReason_T   fault_reason;
     RunStateRequest_T       last_request;
     RunStateRequestResult_T last_request_result;
+    bool                    request_timing_active;
+    RunStateRequest_T       timed_request;
+    uint32_t                timed_request_elapsed_ms;
+    bool                    last_transition_timing_valid;
+    RunStateRequest_T       last_completed_request;
+    uint32_t                last_transition_duration_ms;
 } RunStateManagerStatus_T;
 
 /**-----------------------------------------------------------------------------

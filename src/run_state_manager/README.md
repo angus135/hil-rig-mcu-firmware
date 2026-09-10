@@ -112,6 +112,17 @@ before submitting the next dependent request. The final decision is available
 through `last_request` and `last_request_result` in
 `RUN_STATE_MANAGER_GetStatus()`.
 
+The same status snapshot provides transition timing diagnostics. While an
+accepted lifecycle request is still progressing, `request_timing_active`,
+`timed_request`, and `timed_request_elapsed_ms` report its total elapsed time.
+After the terminal state is published, `last_completed_request` and
+`last_transition_duration_ms` retain the most recent completed measurement.
+The timing spans all asynchronous prerequisites. For example, `execute` covers
+Flash preparation, driver startup, Logic Expander batch completion, and entry
+to `EXECUTION`; `execution_complete` covers graceful driver shutdown and Flash
+result finalisation through `RESULTS_READY`. These values are observational and
+do not alter transition scheduling or timeout policy.
+
 ## Execution lifecycle
 
 Before a run, request Flash Manager execution preparation and wait for

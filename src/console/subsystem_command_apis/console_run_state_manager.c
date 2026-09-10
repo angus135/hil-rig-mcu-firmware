@@ -296,6 +296,27 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                         CONSOLE_RunStateManager_RequestName( run_status.last_request ) );
         CONSOLE_Printf( "Last request result: %s\r\n", CONSOLE_RunStateManager_RequestResultName(
                                                            run_status.last_request_result ) );
+        if ( run_status.request_timing_active )
+        {
+            CONSOLE_Printf( "Pending request timing: %s, %lu ms elapsed\r\n",
+                            CONSOLE_RunStateManager_RequestName( run_status.timed_request ),
+                            ( unsigned long )run_status.timed_request_elapsed_ms );
+        }
+        else
+        {
+            CONSOLE_Printf( "Pending request timing: none\r\n" );
+        }
+        if ( run_status.last_transition_timing_valid )
+        {
+            CONSOLE_Printf(
+                "Last completed transition: %s, %lu ms\r\n",
+                CONSOLE_RunStateManager_RequestName( run_status.last_completed_request ),
+                ( unsigned long )run_status.last_transition_duration_ms );
+        }
+        else
+        {
+            CONSOLE_Printf( "Last completed transition: none\r\n" );
+        }
         CONSOLE_Printf( "DUT lifecycle: configured=%s, AI=%u/%u, AO=%u/%u, DI=%u/%u, DO=%u/%u\r\n",
                         driver_status.configuration_valid ? "yes" : "no",
                         ( unsigned int )driver_status.analogue_input_started,
