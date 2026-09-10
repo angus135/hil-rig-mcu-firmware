@@ -7,6 +7,7 @@
 
 #include "execution_manager.h"
 #include "execution_manager_isr.h"
+#include "execution_measurement_adapters.h"
 #include "execution_operation_adapters.h"
 #include "flash_manager.h"
 
@@ -52,6 +53,12 @@ EXECUTION_MANAGER_FailFromISR( ExecutionManagerFailure_T failure,
 void EXECUTION_MANAGER_SetTerminalCallback( ExecutionManagerTerminalCallback_T callback )
 {
     terminal_callback = callback;
+}
+
+void EXECUTION_MANAGER_ConfigureMeasurements(
+    const ExecutionMeasurementConfiguration_T* configuration )
+{
+    EXECUTION_MEASUREMENT_ADAPTER_Prepare( configuration );
 }
 
 bool EXECUTION_MANAGER_Prepare( uint32_t tick_count )
@@ -127,9 +134,13 @@ EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken )
 
     FlashManagerInstructionReadStatus_T read_status = FLASH_MANAGER_INSTRUCTION_END_OF_STREAM;
 
-    /* Process measurements*/
-
-    /* Todo */
+    /* Measurements are captured before outputs at this boundary. */
+    if ( !EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( current_tick,
+                                                           higher_priority_task_woken ) )
+    {
+        return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_MEASUREMENT_REJECTED,
+                                              higher_priority_task_woken );
+    }
 
     /* Process outputs */
     if ( !instruction_stream_exhausted )
