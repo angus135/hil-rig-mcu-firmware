@@ -118,11 +118,11 @@
 #define CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ( 30000U )
 #define CONSOLE_FLASH_POLL_PERIOD_MS ( 10U )
 #define CONSOLE_FLASH_RESULT_READ_BYTES ( 256U )
-#define CONSOLE_FLASH_DIGITAL_INPUT_RESULT_BYTES                                                \
+#define CONSOLE_FLASH_DIGITAL_INPUT_RESULT_BYTES                                                   \
     ( sizeof( FlashManagerResultHeader_T ) + sizeof( uint32_t ) )
-#define CONSOLE_FLASH_ANALOGUE_INPUT_RESULT_BYTES                                               \
+#define CONSOLE_FLASH_ANALOGUE_INPUT_RESULT_BYTES                                                  \
     ( sizeof( FlashManagerResultHeader_T ) + ( 2U * sizeof( uint32_t ) ) )
-#define CONSOLE_FLASH_PWM_CAPTURE_RESULT_BYTES                                                  \
+#define CONSOLE_FLASH_PWM_CAPTURE_RESULT_BYTES                                                     \
     ( sizeof( FlashManagerResultHeader_T ) + ( 2U * sizeof( uint32_t ) ) )
 
 #define CONSOLE_FLASH_TEST_PAYLOAD_BYTES ( 12U )
@@ -1446,9 +1446,8 @@ static void CONSOLE_Flash_UploadDigitalPatternCommand( uint16_t argc, char* argv
          || !CONSOLE_Flash_ParseU32( argv[5], &repeat_words )
          || !CONSOLE_Flash_ParseU32( argv[6], &pattern_word )
          || !CONSOLE_Flash_ParseU32( argv[7], &run_ticks ) || channel < 1U
-         || channel > EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT || first_tick == 0U
-         || interval_ticks == 0U || repeat_words == 0U
-         || repeat_words > ( UINT32_MAX / 32U ) )
+         || channel > EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT || first_tick == 0U || interval_ticks == 0U
+         || repeat_words == 0U || repeat_words > ( UINT32_MAX / 32U ) )
     {
         CONSOLE_Printf( "Usage: flash upload_do_pattern <channel 1..10> <first_tick> "
                         "<interval_ticks> <repeat_words> <hex_word> <run_ticks>\r\n" );
@@ -1482,13 +1481,12 @@ static void CONSOLE_Flash_UploadDigitalPatternCommand( uint16_t argc, char* argv
         EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( &gpio_output, 1U );
     if ( pin_mask == 0U )
     {
-        CONSOLE_Printf( "Failed to map digital-output channel %lu.\r\n",
-                        ( unsigned long )channel );
+        CONSOLE_Printf( "Failed to map digital-output channel %lu.\r\n", ( unsigned long )channel );
         return;
     }
 
     const uint32_t instruction_count = pattern_bits + 1U;
-    const uint32_t upload_bytes = instruction_count * CONSOLE_FLASH_DO_TEST_INSTRUCTION_BYTES;
+    const uint32_t upload_bytes      = instruction_count * CONSOLE_FLASH_DO_TEST_INSTRUCTION_BYTES;
     FlashManagerInstructionUploadRequestStatus_T status =
         FLASH_MANAGER_RequestInstructionUploadStart( upload_bytes );
     if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED
@@ -1502,9 +1500,9 @@ static void CONSOLE_Flash_UploadDigitalPatternCommand( uint16_t argc, char* argv
     for ( uint32_t bit = 0U; bit < pattern_bits; bit++ )
     {
         const bool high = ( pattern_word & ( UINT32_C( 1 ) << ( bit % 32U ) ) ) != 0U;
-        CONSOLE_Flash_EncodeDigitalOutputInstruction(
-            console_flash_write_buffer, first_tick + ( bit * interval_ticks ),
-            high ? pin_mask : 0U, high ? 0U : pin_mask );
+        CONSOLE_Flash_EncodeDigitalOutputInstruction( console_flash_write_buffer,
+                                                      first_tick + ( bit * interval_ticks ),
+                                                      high ? pin_mask : 0U, high ? 0U : pin_mask );
 
         TickType_t progress_started_at = xTaskGetTickCount();
         do
@@ -2980,8 +2978,8 @@ static void CONSOLE_Flash_ResultsCommand( bool verify_echo_stream )
 /** Retrieves and verifies the DO1-to-DI10 production execution result stream. */
 static void CONSOLE_Flash_VerifyDigitalLoopbackResultsCommand( uint16_t argc, char* argv[] )
 {
-    uint32_t delay_ticks = 0U;
-    uint32_t high_ticks  = 0U;
+    uint32_t   delay_ticks  = 0U;
+    uint32_t   high_ticks   = 0U;
     const bool pattern_mode = argc == 3U && strcmp( argv[2], "verify_do_pattern" ) == 0;
 
     if ( ( pattern_mode && !console_flash_digital_pattern.valid )
@@ -3006,7 +3004,6 @@ static void CONSOLE_Flash_VerifyDigitalLoopbackResultsCommand( uint16_t argc, ch
         return;
     }
 
-
     FlashManagerResultTransferStatus_T status = FLASH_MANAGER_RESULT_TRANSFER_OK;
 
     uint8_t    record[CONSOLE_FLASH_DIGITAL_INPUT_RESULT_BYTES] = { 0 };
@@ -3021,8 +3018,7 @@ static void CONSOLE_Flash_VerifyDigitalLoopbackResultsCommand( uint16_t argc, ch
     {
         uint32_t bytes_read = 0U;
         status              = FLASH_MANAGER_ReadResultBytes( console_flash_read_buffer,
-                                                             CONSOLE_FLASH_RESULT_READ_BYTES,
-                                                             &bytes_read );
+                                                             CONSOLE_FLASH_RESULT_READ_BYTES, &bytes_read );
 
         if ( status == FLASH_MANAGER_RESULT_TRANSFER_OK )
         {
@@ -3060,17 +3056,15 @@ static void CONSOLE_Flash_VerifyDigitalLoopbackResultsCommand( uint16_t argc, ch
                         if ( header.timestamp <= final_low_tick )
                         {
                             uint32_t applied_bit =
-                                ( header.timestamp - 1U
-                                  - console_flash_digital_pattern.first_tick )
+                                ( header.timestamp - 1U - console_flash_digital_pattern.first_tick )
                                 / console_flash_digital_pattern.interval_ticks;
                             if ( applied_bit >= pattern_bits )
                             {
                                 applied_bit = pattern_bits - 1U;
                             }
-                            expected_high =
-                                ( console_flash_digital_pattern.pattern_word
-                                  & ( UINT32_C( 1 ) << ( applied_bit % 32U ) ) )
-                                != 0U;
+                            expected_high = ( console_flash_digital_pattern.pattern_word
+                                              & ( UINT32_C( 1 ) << ( applied_bit % 32U ) ) )
+                                            != 0U;
                         }
                     }
                     else if ( !pattern_mode )
@@ -3080,16 +3074,14 @@ static void CONSOLE_Flash_VerifyDigitalLoopbackResultsCommand( uint16_t argc, ch
                     }
                     const bool valid_record =
                         header.timestamp == record_count
-                        && header.peripheral_type
-                               == FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT
-                        && header.channel == 0U
-                        && header.payload_length_bytes == sizeof( uint32_t )
+                        && header.peripheral_type == FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT
+                        && header.channel == 0U && header.payload_length_bytes == sizeof( uint32_t )
                         && ( ( sample != 0U ) == expected_high );
 
                     if ( !valid_record && verification_passed )
                     {
-                        verification_passed = false;
-                        first_failure_tick  = header.timestamp;
+                        verification_passed  = false;
+                        first_failure_tick   = header.timestamp;
                         first_failure_sample = sample;
                     }
                     record_fill = 0U;
@@ -3152,8 +3144,8 @@ static void CONSOLE_Flash_VerifyDigitalLoopbackResultsCommand( uint16_t argc, ch
         CONSOLE_Printf( "DO1-to-DI10 loopback FAIL: records=%lu/%lu first_bad_tick=%lu "
                         "sample=0x%08lX partial_bytes=%lu.\r\n",
                         ( unsigned long )record_count, ( unsigned long )expected_records,
-                        ( unsigned long )first_failure_tick,
-                        ( unsigned long )first_failure_sample, ( unsigned long )record_fill );
+                        ( unsigned long )first_failure_tick, ( unsigned long )first_failure_sample,
+                        ( unsigned long )record_fill );
     }
 }
 
@@ -3177,20 +3169,19 @@ static void CONSOLE_Flash_VerifyAnalogueLoopbackResultsCommand( uint16_t argc, c
     }
 
     FlashManagerResultTransferStatus_T status = FLASH_MANAGER_RESULT_TRANSFER_OK;
-    uint8_t    record[CONSOLE_FLASH_ANALOGUE_INPUT_RESULT_BYTES] = { 0 };
-    uint32_t   record_fill                                       = 0U;
-    uint32_t   record_count                                      = 0U;
-    uint32_t   sample_before_update[2]                            = { 0U, 0U };
-    uint32_t   final_sample[2]                                   = { 0U, 0U };
-    bool       records_valid                                     = true;
-    TickType_t last_progress_at                                  = xTaskGetTickCount();
+    uint8_t                            record[CONSOLE_FLASH_ANALOGUE_INPUT_RESULT_BYTES] = { 0 };
+    uint32_t                           record_fill                                       = 0U;
+    uint32_t                           record_count                                      = 0U;
+    uint32_t                           sample_before_update[2] = { 0U, 0U };
+    uint32_t                           final_sample[2]         = { 0U, 0U };
+    bool                               records_valid           = true;
+    TickType_t                         last_progress_at        = xTaskGetTickCount();
 
     for ( ;; )
     {
         uint32_t bytes_read = 0U;
         status              = FLASH_MANAGER_ReadResultBytes( console_flash_read_buffer,
-                                                             CONSOLE_FLASH_RESULT_READ_BYTES,
-                                                             &bytes_read );
+                                                             CONSOLE_FLASH_RESULT_READ_BYTES, &bytes_read );
         if ( status == FLASH_MANAGER_RESULT_TRANSFER_OK )
         {
             uint32_t source_offset = 0U;
@@ -3208,15 +3199,14 @@ static void CONSOLE_Flash_VerifyAnalogueLoopbackResultsCommand( uint16_t argc, c
 
                 if ( record_fill == CONSOLE_FLASH_ANALOGUE_INPUT_RESULT_BYTES )
                 {
-                    FlashManagerResultHeader_T header = { 0 };
+                    FlashManagerResultHeader_T header     = { 0 };
                     uint32_t                   samples[2] = { 0U, 0U };
                     ( void )memcpy( &header, record, sizeof( header ) );
                     ( void )memcpy( samples, &record[sizeof( header )], sizeof( samples ) );
                     record_count++;
 
                     if ( header.timestamp != record_count
-                         || header.peripheral_type
-                                != FLASH_MANAGER_RESULT_PERIPHERAL_ANALOGUE_INPUT
+                         || header.peripheral_type != FLASH_MANAGER_RESULT_PERIPHERAL_ANALOGUE_INPUT
                          || header.channel != 0U
                          || header.payload_length_bytes != sizeof( samples ) )
                     {
@@ -3306,32 +3296,31 @@ static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char*
     }
 
     FlashManagerResultTransferStatus_T status = FLASH_MANAGER_RESULT_TRANSFER_OK;
-    uint8_t header_bytes[sizeof( FlashManagerResultHeader_T )] = { 0 };
-    uint32_t header_fill = 0U;
-    uint32_t payload_remaining = 0U;
-    uint32_t received_bytes = 0U;
-    uint32_t record_count = 0U;
-    uint32_t mismatch_offset = 0U;
-    uint8_t expected = ( uint8_t )value;
-    const uint32_t expected_bytes =
+    uint8_t                            header_bytes[sizeof( FlashManagerResultHeader_T )] = { 0 };
+    uint32_t                           header_fill                                        = 0U;
+    uint32_t                           payload_remaining                                  = 0U;
+    uint32_t                           received_bytes                                     = 0U;
+    uint32_t                           record_count                                       = 0U;
+    uint32_t                           mismatch_offset                                    = 0U;
+    uint8_t                            expected = ( uint8_t )value;
+    const uint32_t                     expected_bytes =
         ( console_flash_last_upload_records != 0U
-              && length <= ( UINT32_MAX / console_flash_last_upload_records ) )
-            ? length * console_flash_last_upload_records
-            : length;
-    bool valid = true;
-    bool mismatch_recorded = false;
-    TickType_t last_progress_at = xTaskGetTickCount();
+          && length <= ( UINT32_MAX / console_flash_last_upload_records ) )
+                                ? length * console_flash_last_upload_records
+                                : length;
+    bool       valid             = true;
+    bool       mismatch_recorded = false;
+    TickType_t last_progress_at  = xTaskGetTickCount();
 
     for ( ;; )
     {
         uint32_t bytes_read = 0U;
-        status = FLASH_MANAGER_ReadResultBytes( console_flash_read_buffer,
-                                                CONSOLE_FLASH_RESULT_READ_BYTES,
-                                                &bytes_read );
+        status              = FLASH_MANAGER_ReadResultBytes( console_flash_read_buffer,
+                                                             CONSOLE_FLASH_RESULT_READ_BYTES, &bytes_read );
         if ( status == FLASH_MANAGER_RESULT_TRANSFER_OK )
         {
             last_progress_at = xTaskGetTickCount();
-            uint32_t offset = 0U;
+            uint32_t offset  = 0U;
             while ( offset < bytes_read )
             {
                 if ( header_fill < sizeof( header_bytes ) )
@@ -3340,16 +3329,15 @@ static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char*
                         ( bytes_read - offset < sizeof( header_bytes ) - header_fill )
                             ? bytes_read - offset
                             : sizeof( header_bytes ) - header_fill;
-                    ( void )memcpy( &header_bytes[header_fill],
-                                    &console_flash_read_buffer[offset], copy );
+                    ( void )memcpy( &header_bytes[header_fill], &console_flash_read_buffer[offset],
+                                    copy );
                     header_fill += copy;
                     offset += copy;
                     if ( header_fill == sizeof( header_bytes ) )
                     {
                         FlashManagerResultHeader_T header = { 0 };
                         ( void )memcpy( &header, header_bytes, sizeof( header ) );
-                        if ( header.peripheral_type
-                                 != FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE
+                        if ( header.peripheral_type != FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE
                              || header.channel != ( uint8_t )( channel - 1U )
                              || header.payload_length_bytes == 0U )
                         {
@@ -3361,16 +3349,16 @@ static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char*
                     continue;
                 }
 
-                const uint32_t copy =
-                    ( bytes_read - offset < payload_remaining ) ? bytes_read - offset
-                                                                  : payload_remaining;
+                const uint32_t copy = ( bytes_read - offset < payload_remaining )
+                                          ? bytes_read - offset
+                                          : payload_remaining;
                 for ( uint32_t index = 0U; index < copy; index++ )
                 {
                     const uint8_t actual = console_flash_read_buffer[offset + index];
                     if ( actual != expected && !mismatch_recorded )
                     {
                         mismatch_recorded = true;
-                        mismatch_offset = received_bytes + index;
+                        mismatch_offset   = received_bytes + index;
                     }
                 }
                 received_bytes += copy;
@@ -3386,8 +3374,7 @@ static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char*
 
         if ( status == FLASH_MANAGER_RESULT_TRANSFER_BUSY )
         {
-            if ( CONSOLE_Flash_HasTimedOut( last_progress_at,
-                                            CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            if ( CONSOLE_Flash_HasTimedOut( last_progress_at, CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
             {
                 CONSOLE_Printf( "UART result retrieval timeout after %lu bytes.\r\n",
                                 ( unsigned long )received_bytes );
@@ -3405,11 +3392,10 @@ static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char*
         return;
     }
 
-    const bool passed = valid && !mismatch_recorded && payload_remaining == 0U
-                        && received_bytes == expected_bytes;
+    const bool passed =
+        valid && !mismatch_recorded && payload_remaining == 0U && received_bytes == expected_bytes;
     if ( !RUN_STATE_MANAGER_RequestResultTransferComplete()
-         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_ARMED,
-                                            CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_ARMED, CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
     {
         CONSOLE_Printf( "RSM result transfer completion failed.\r\n" );
         return;
@@ -3434,7 +3420,8 @@ static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char*
     }
 }
 
-/** Retrieves sparse PWM capture records and checks the final capture against the uploaded target. */
+/** Retrieves sparse PWM capture records and checks the final capture against the uploaded target.
+ */
 static void CONSOLE_Flash_VerifyPwmLoopbackResultsCommand( uint16_t argc, char* argv[] )
 {
     uint32_t input_channel = 0U;
@@ -3457,26 +3444,25 @@ static void CONSOLE_Flash_VerifyPwmLoopbackResultsCommand( uint16_t argc, char* 
     const ExecPwmCaptureChannel_T capture_channel =
         ( ExecPwmCaptureChannel_T )( input_channel - 1U );
     FlashManagerResultTransferStatus_T status = FLASH_MANAGER_RESULT_TRANSFER_OK;
-    uint8_t    record[CONSOLE_FLASH_PWM_CAPTURE_RESULT_BYTES] = { 0 };
-    uint32_t   record_fill                                     = 0U;
-    uint32_t   record_count                                    = 0U;
-    uint32_t   previous_timestamp                              = 0U;
-    uint32_t   first_timestamp                                 = 0U;
-    uint32_t   final_timestamp                                 = 0U;
-    ExecPwmCaptureResult_T first_raw_capture                   = { 0 };
-    ExecPwmCaptureResult_T final_raw_capture                   = { 0 };
-    ExecPwmCapturePhysical_T first_measurement                 = { 0 };
-    ExecPwmCapturePhysical_T final_measurement                 = { 0 };
-    bool       records_valid                                   = true;
-    bool       conversion_valid                                = true;
-    TickType_t last_progress_at                                = xTaskGetTickCount();
+    uint8_t                            record[CONSOLE_FLASH_PWM_CAPTURE_RESULT_BYTES] = { 0 };
+    uint32_t                           record_fill                                    = 0U;
+    uint32_t                           record_count                                   = 0U;
+    uint32_t                           previous_timestamp                             = 0U;
+    uint32_t                           first_timestamp                                = 0U;
+    uint32_t                           final_timestamp                                = 0U;
+    ExecPwmCaptureResult_T             first_raw_capture                              = { 0 };
+    ExecPwmCaptureResult_T             final_raw_capture                              = { 0 };
+    ExecPwmCapturePhysical_T           first_measurement                              = { 0 };
+    ExecPwmCapturePhysical_T           final_measurement                              = { 0 };
+    bool                               records_valid                                  = true;
+    bool                               conversion_valid                               = true;
+    TickType_t                         last_progress_at = xTaskGetTickCount();
 
     for ( ;; )
     {
         uint32_t bytes_read = 0U;
         status              = FLASH_MANAGER_ReadResultBytes( console_flash_read_buffer,
-                                                             CONSOLE_FLASH_RESULT_READ_BYTES,
-                                                             &bytes_read );
+                                                             CONSOLE_FLASH_RESULT_READ_BYTES, &bytes_read );
         if ( status == FLASH_MANAGER_RESULT_TRANSFER_OK )
         {
             uint32_t source_offset = 0U;
@@ -3522,13 +3508,13 @@ static void CONSOLE_Flash_VerifyPwmLoopbackResultsCommand( uint16_t argc, char* 
                     {
                         if ( record_count == 1U )
                         {
-                            first_timestamp     = header.timestamp;
-                            first_raw_capture   = raw_capture;
-                            first_measurement   = physical;
+                            first_timestamp   = header.timestamp;
+                            first_raw_capture = raw_capture;
+                            first_measurement = physical;
                         }
-                        final_timestamp     = header.timestamp;
-                        final_raw_capture   = raw_capture;
-                        final_measurement   = physical;
+                        final_timestamp   = header.timestamp;
+                        final_raw_capture = raw_capture;
+                        final_measurement = physical;
                     }
 
                     previous_timestamp = header.timestamp;
@@ -3558,13 +3544,13 @@ static void CONSOLE_Flash_VerifyPwmLoopbackResultsCommand( uint16_t argc, char* 
         return;
     }
 
-    const bool stream_passed = records_valid && conversion_valid && record_fill == 0U
-                               && record_count > 0U;
+    const bool stream_passed =
+        records_valid && conversion_valid && record_fill == 0U && record_count > 0U;
     const uint32_t expected_duty_bp = console_flash_pwm_loopback.duty_permille * 10U;
-    const uint32_t duty_error_bp = final_measurement.duty_cycle_bp > expected_duty_bp
-                                       ? final_measurement.duty_cycle_bp - expected_duty_bp
-                                       : expected_duty_bp - final_measurement.duty_cycle_bp;
-    const bool target_passed =
+    const uint32_t duty_error_bp    = final_measurement.duty_cycle_bp > expected_duty_bp
+                                          ? final_measurement.duty_cycle_bp - expected_duty_bp
+                                          : expected_duty_bp - final_measurement.duty_cycle_bp;
+    const bool     target_passed =
         stream_passed && final_timestamp > console_flash_pwm_loopback.update_tick
         && final_measurement.frequency_hz == console_flash_pwm_loopback.frequency_hz
         && duty_error_bp <= 100U;

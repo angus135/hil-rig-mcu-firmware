@@ -464,7 +464,7 @@ TEST_F( RunStateManagerTest, ExecutionStartsOnlyAfterFlashAndDriverStartupComple
     EXPECT_EQ( 1U, driver_start_calls );
     EXPECT_EQ( 1U, timer_start_calls );
     EXPECT_EQ( 25U, execution_prepare_tick_count );
-    EXPECT_EQ( 128U, flash_prepare_capacity );
+    EXPECT_EQ( 0U, flash_prepare_capacity );
 }
 
 TEST_F( RunStateManagerTest, ExecutionRequestCopiesValidatedSessionBounds )
@@ -655,7 +655,7 @@ TEST_F( RunStateManagerTest, InvalidRequestIsRejectedWithoutFaulting )
 
 TEST_F( RunStateManagerTest, RepeatRetainsConfigurationAndReturnsToArmed )
 {
-    run_state = RUN_STATE_RESULTS_READY;
+    run_state                 = RUN_STATE_RESULTS_READY;
     execution_abort_requested = true;
     Process( RUN_STATE_REQUEST_REPEAT );
     EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
@@ -670,7 +670,7 @@ TEST_F( RunStateManagerTest, RepeatRetainsConfigurationAndReturnsToArmed )
 
 TEST_F( RunStateManagerTest, CompletedResultTransferRetainsConfigurationAndReturnsToArmed )
 {
-    run_state                  = RUN_STATE_RESULT_TRANSFER;
+    run_state                 = RUN_STATE_RESULT_TRANSFER;
     run_configuration_owned   = true;
     execution_abort_requested = true;
 
@@ -703,7 +703,7 @@ TEST_F( RunStateManagerTest, DiscardClearsConfigurationAndReturnsToIdle )
 
 TEST_F( RunStateManagerTest, DiscardFromArmedClearsRetainedTestAndReturnsToIdle )
 {
-    run_state                  = RUN_STATE_ARMED;
+    run_state                 = RUN_STATE_ARMED;
     run_configuration_owned   = true;
     execution_abort_requested = false;
 

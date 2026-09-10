@@ -30,7 +30,7 @@ The current bring-up commands are:
 run_state receive
 run_state configure
 run_state frequency <100|1000|10000>
-run_state execute <tick_count> [maximum_result_bytes]
+run_state execute <tick_count>
 run_state execution_complete
 run_state transfer
 run_state transfer_complete
@@ -215,8 +215,10 @@ or execution implementation. The future Host Interface owns this sequence:
   that configuration using `TEST_CONFIGURATION_Commit()`.
 - Submit `RUN_STATE_MANAGER_RequestConfiguration()` only after both package
   products are complete, then wait for `ARMED` with no pending transition.
-- Call `RUN_STATE_MANAGER_RequestExecution()` with validated tick count and
-  maximum result bytes for a host-originated execute command.
+- Call `RUN_STATE_MANAGER_RequestExecution()` with the validated requested tick
+  count for a host-originated execute command. The RSM calculates the
+  peripheral drain tail and conservative result reservation from the committed
+  configuration; callers do not provide either value.
 - Submit `RUN_STATE_MANAGER_RequestResultTransfer()` from `RESULTS_READY`, wait
   for `RESULT_TRANSFER`, and retrieve bytes using the Flash Manager result API.
 - Submit `RUN_STATE_MANAGER_RequestResultTransferComplete()` only after Flash

@@ -8,6 +8,21 @@ extern "C"
 #include "flash_manager.h"
 }
 
+extern "C" bool
+EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( uint32_t    timestamp,
+                                                 BaseType_t* higher_priority_task_woken )
+{
+    ( void )timestamp;
+    ( void )higher_priority_task_woken;
+    return true;
+}
+
+extern "C" void
+EXECUTION_MEASUREMENT_ADAPTER_Prepare( const ExecutionMeasurementConfiguration_T* configuration )
+{
+    ( void )configuration;
+}
+
 static FlashManagerInstructionReadStatus_T peek_status;
 static FlashManagerInstructionView_T       instruction;
 static ExecutionOperationAdapterResult_T   adapter_result;

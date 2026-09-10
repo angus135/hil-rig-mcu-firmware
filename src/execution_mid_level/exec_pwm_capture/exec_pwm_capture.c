@@ -103,7 +103,7 @@ static const ExecPwmCaptureHardwareMap_T
 };
 
 static ExecPwmCaptureState_T exec_pwm_capture_channel_state[EXEC_PWM_CAPTURE_CHANNEL_COUNT];
-static bool exec_pwm_capture_discard_next_result[EXEC_PWM_CAPTURE_CHANNEL_COUNT];
+static bool                  exec_pwm_capture_discard_next_result[EXEC_PWM_CAPTURE_CHANNEL_COUNT];
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -338,7 +338,7 @@ bool EXEC_PWM_Capture_Start_Channel( ExecPwmCaptureChannel_T channel )
         return false;
     }
 
-    exec_pwm_capture_channel_state[channel] = EXEC_PWM_CAPTURE_STATE_STARTED;
+    exec_pwm_capture_channel_state[channel]       = EXEC_PWM_CAPTURE_STATE_STARTED;
     exec_pwm_capture_discard_next_result[channel] = true;
 
     return true;

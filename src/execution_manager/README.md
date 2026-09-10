@@ -67,6 +67,14 @@ channel in the result header. A newly captured invalid period terminates the
 run as a measurement rejection. The current live-CCR snapshot remains subject
 to the PWM capture driver's documented coherence and overcapture limitation.
 
+UART receive uses the same bounded-record contract as the other measurement
+adapters. The adapter reserves a record with capacity
+`EXEC_UART_MAX_CHUNK_SIZE` before polling the driver, then commits only the
+number of bytes actually read; an empty poll cancels the lease and produces no
+record. The RSM's task-context result reservation is conservative for the
+configured baud and effective run horizon, so a partial final frame is included
+without exposing a result-budget parameter to callers.
+
 ## ISR path
 
 `EXECUTION_MANAGER_ProcessTickFromISR()` currently performs:

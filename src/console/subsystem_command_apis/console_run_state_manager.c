@@ -327,7 +327,7 @@ static void CONSOLE_RunStateManager_WaitForState( bool accepted, RunState_T expe
     }
 
     CONSOLE_RunStateManager_PrintRequestResult( true );
-    const TickType_t start = xTaskGetTickCount();
+    const TickType_t start   = xTaskGetTickCount();
     const TickType_t timeout = pdMS_TO_TICKS( 120000U );
     for ( ;; )
     {
@@ -339,8 +339,7 @@ static void CONSOLE_RunStateManager_WaitForState( bool accepted, RunState_T expe
                             CONSOLE_RunStateManager_StateName( expected ) );
             return;
         }
-        if ( status.state == RUN_STATE_FAULT
-             || ( xTaskGetTickCount() - start ) >= timeout )
+        if ( status.state == RUN_STATE_FAULT || ( xTaskGetTickCount() - start ) >= timeout )
         {
             CONSOLE_Printf( "Run state transition did not reach %s (current=%s).\r\n",
                             CONSOLE_RunStateManager_StateName( expected ),
@@ -394,8 +393,7 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
     {
         RunStateExecutionRequest_T request = { 0U, 0U };
         if ( !CONSOLE_RunStateManager_ParseU32( argv[2], &request.tick_count )
-             || ( request.tick_count == 0U )
-             )
+             || ( request.tick_count == 0U ) )
         {
             CONSOLE_RunStateManager_PrintUsage();
             return;

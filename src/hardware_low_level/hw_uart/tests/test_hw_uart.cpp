@@ -694,20 +694,20 @@ TEST_F( UartTest, DutConfigureRejectsInvalidBaudRate )
     EXPECT_FALSE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 }
 
-TEST_F( UartTest, DutConfigureRejectsBaudWhoseDividerExceedsChannel1Brr )
+TEST_F( UartTest, DutConfigureRejectsBaudBelowPracticalMinimum )
 {
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
-    config.baud_rate                = 1373U;
+    config.baud_rate                = HW_UART_MIN_BAUD_RATE - 1U;
 
     EXPECT_CALL( mock_hal, Init( _ ) ).Times( 0 );
 
     EXPECT_FALSE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
 }
 
-TEST_F( UartTest, DutConfigureAcceptsBaudWhoseDividerFitsChannel1Brr )
+TEST_F( UartTest, DutConfigureAcceptsPracticalMinimumWhenDividerFitsChannel1Brr )
 {
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
-    config.baud_rate                = 1374U;
+    config.baud_rate                = HW_UART_MIN_BAUD_RATE;
 
     EXPECT_CALL( mock_hal, Init( &huart6 ) ).WillOnce( Return( HAL_OK ) );
 
@@ -717,7 +717,8 @@ TEST_F( UartTest, DutConfigureAcceptsBaudWhoseDividerFitsChannel1Brr )
 TEST_F( UartTest, DutConfigureUsesSelectedChannelsLivePeripheralClockForBaudValidation )
 {
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
-    config.baud_rate                = 687U;
+    config.baud_rate                = HW_UART_MIN_BAUD_RATE;
+    mock_pclk2_frequency_hz         = 180000000U;
 
     EXPECT_CALL( mock_hal, Init( _ ) ).Times( 0 );
     EXPECT_FALSE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
