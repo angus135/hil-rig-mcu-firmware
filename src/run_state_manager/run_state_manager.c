@@ -350,7 +350,8 @@ static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state, Run
             return next_state == RUN_STATE_RESULTS_READY;
 
         case RUN_STATE_RESULTS_READY:
-            return next_state == RUN_STATE_RESULT_TRANSFER || next_state == RUN_STATE_ARMED
+            return next_state == RUN_STATE_RESULT_TRANSFER || next_state == RUN_STATE_CONFIGURATION
+                   || next_state == RUN_STATE_ARMED
                    || next_state == RUN_STATE_IDLE;
 
         case RUN_STATE_RESULT_TRANSFER:
@@ -586,6 +587,17 @@ static bool RUN_STATE_MANAGER_DiscardCompletedResults( RunState_T next_state )
         TEST_CONFIGURATION_Clear();
         return RUN_STATE_MANAGER_BeginDriverShutdown( false, true,
                                                       RUN_STATE_PENDING_IDLE_SHUTDOWN );
+    }
+
+    if ( next_state == RUN_STATE_ARMED )
+    {
+        /* Replay the committed configuration so outputs return to test-start values. */
+        if ( !RUN_STATE_MANAGER_TransitionTo( RUN_STATE_CONFIGURATION ) )
+        {
+            return false;
+        }
+        RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_CONFIGURATION );
+        return true;
     }
 
     return RUN_STATE_MANAGER_TransitionTo( next_state );
