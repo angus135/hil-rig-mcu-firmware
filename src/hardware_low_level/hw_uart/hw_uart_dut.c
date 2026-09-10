@@ -328,7 +328,8 @@ static bool HW_UART_Configuration_Is_Valid( const HwUartPeripheralConfig_T* conf
         return false;
     }
 
-    if ( config->baud_rate == 0U )
+    /* TODO: investigate the HAL initialisation failure observed at 1200 baud. */
+    if ( config->baud_rate < HW_UART_MIN_BAUD_RATE )
     {
         return false;
     }

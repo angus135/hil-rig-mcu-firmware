@@ -1711,7 +1711,7 @@ static void CONSOLE_Flash_UploadPwmTestCommand( uint16_t argc, char* argv[] )
                     ( unsigned int )payload.ccr, ( unsigned int )payload.psc,
                     ( unsigned long )update_tick, ( unsigned long )run_ticks );
     CONSOLE_Printf( "Next: finish configuring the RSM, then "
-                    "'run_state execute %lu <maximum_result_bytes>'.\r\n",
+                    "'run_state execute %lu'.\r\n",
                     ( unsigned long )console_flash_run_tick_count );
 }
 
@@ -2305,7 +2305,7 @@ static void CONSOLE_Flash_UploadUartTestCommand( uint16_t argc, char* argv[] )
                     ( unsigned long )channel, ( unsigned long )value, ( unsigned int )length,
                     ( unsigned long )first_tick, ( unsigned long )repeat_count,
                     ( unsigned long )interval_ticks, ( unsigned long )run_ticks );
-    CONSOLE_Printf( "Next: finish configuring the RSM, then run 'run_state execute %lu <result_bytes>'.\r\n",
+    CONSOLE_Printf( "Next: finish configuring the RSM, then run 'run_state execute %lu'.\r\n",
                     ( unsigned long )console_flash_run_tick_count );
 }
 

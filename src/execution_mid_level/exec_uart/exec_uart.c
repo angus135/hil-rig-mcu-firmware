@@ -141,7 +141,8 @@ static bool EXEC_UART_Configuration_Is_Valid( const ExecUartConfig_T* config )
         return true;
     }
 
-    if ( ( !config->rx_enabled && !config->tx_enabled ) || ( config->baud_rate == 0U ) )
+    if ( ( !config->rx_enabled && !config->tx_enabled )
+         || ( config->baud_rate < HW_UART_MIN_BAUD_RATE ) )
     {
         return false;
     }
