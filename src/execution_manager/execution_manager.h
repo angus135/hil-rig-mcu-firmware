@@ -16,6 +16,7 @@ extern "C"
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "execution_measurement_adapters.h"
 #include "rtos_config.h"
 
 typedef enum
@@ -26,7 +27,8 @@ typedef enum
     EXECUTION_MANAGER_FAILURE_INSTRUCTION_CORRUPT,
     EXECUTION_MANAGER_FAILURE_INSTRUCTION_LATE,
     EXECUTION_MANAGER_FAILURE_OPERATION_REJECTED,
-    EXECUTION_MANAGER_FAILURE_INSTRUCTION_CONSUME
+    EXECUTION_MANAGER_FAILURE_INSTRUCTION_CONSUME,
+    EXECUTION_MANAGER_FAILURE_MEASUREMENT_REJECTED
 } ExecutionManagerFailure_T;
 
 typedef enum
@@ -56,6 +58,10 @@ typedef void ( *ExecutionManagerTerminalCallback_T )( ExecutionManagerTickResult
  * @return true when the run was accepted; otherwise, false.
  */
 bool EXECUTION_MANAGER_Prepare( uint32_t tick_count );
+
+/** Builds the active per-tick measurement list from validated session configuration. */
+void EXECUTION_MANAGER_ConfigureMeasurements(
+    const ExecutionMeasurementConfiguration_T* configuration );
 
 /** Arms per-opcode cycle profiling for the next prepared execution only. */
 void EXECUTION_MANAGER_RequestOperationTiming( void );

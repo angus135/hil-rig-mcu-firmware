@@ -9,7 +9,6 @@
  *
  *  Destructive hardware bring-up sequence:
  *
- *      `flash init`
  *      `flash status`
  *      `flash external_test [seed]`
  *      `flash upload_test [record_count] [seed]`
@@ -20,7 +19,7 @@
  *
  *  Digital-output execution-path validation uses:
  *
- *      `flash init`
+ *      `flash status`
  *      `run_state receive`
  *      `test_config inert`
  *      `test_config digital_output <channel> <voltage> low`
