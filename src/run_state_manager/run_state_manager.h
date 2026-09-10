@@ -133,7 +133,7 @@ typedef struct
  * Request timing covers the complete asynchronous operation from acceptance
  * until its externally meaningful terminal state is published. Durations are
  * diagnostic wall-clock values derived from the RTOS tick counter.
-*/
+ */
 typedef struct
 {
     RunState_T              state;
