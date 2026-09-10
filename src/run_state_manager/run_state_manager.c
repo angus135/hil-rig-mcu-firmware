@@ -465,25 +465,11 @@ static bool RUN_STATE_MANAGER_EnterExecution( void )
         return true;
     }
 
-    execution_abort_requested = false;
-
-    if ( !EXECUTION_MANAGER_Prepare( execution_request.tick_count ) )
-    {
-        RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_EXECUTION_MANAGER );
-        return false;
-    }
-
-    if ( !DUT_DRIVER_LIFECYCLE_Start() )
-    {
-        EXECUTION_MANAGER_Abort();
-        RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_DRIVER_START );
-        return false;
-    }
     if ( !RUN_STATE_MANAGER_StartExecutionTimer() )
     {
         EXECUTION_MANAGER_Abort();
         ( void )DUT_DRIVER_LIFECYCLE_Stop();
-        RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_EXECUTION_TIMER );
+        RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_EXECUTION_TIMER );
         return false;
     }
 
@@ -504,8 +490,15 @@ static bool RUN_STATE_MANAGER_BeginDriverStart( void )
 
     driver_cleanup_complete = false;
 
+    if ( !EXECUTION_MANAGER_Prepare( execution_request.tick_count ) )
+    {
+        RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_EXECUTION_MANAGER );
+        return false;
+    }
+
     if ( !DUT_DRIVER_LIFECYCLE_Start() )
     {
+        EXECUTION_MANAGER_Abort();
         RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_START );
         return false;
     }
