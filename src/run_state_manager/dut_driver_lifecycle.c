@@ -51,6 +51,8 @@ typedef struct
 typedef struct
 {
     bool                          configuration_valid;
+    bool                          configuration_pending;
+    DutDriverConfiguration_T      configuration;
     bool                          start_accepted;
     LogicExpanderControlBatchId_T configuration_batch_id;
     LogicExpanderControlBatchId_T start_batch_id;
@@ -285,23 +287,25 @@ bool DUT_DRIVER_LIFECYCLE_Configure( const DutDriverConfiguration_T* configurati
     }
 
     ( void )memset( &lifecycle_context, 0, sizeof( lifecycle_context ) );
+    lifecycle_context.configuration = *configuration;
+    lifecycle_context.configuration_batch_id = batch_id;
 
-    if ( !DUT_DRIVER_LIFECYCLE_ConfigureAll( configuration ) )
+    if ( !DUT_DRIVER_LIFECYCLE_ConfigureAll( &lifecycle_context.configuration ) )
     {
-        ( void )DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration();
-        LOGIC_EXPANDER_Cancel_Control_Batch( batch_id );
-        return false;
+        /* A full expander queue is backpressure, not configuration failure. */
+        lifecycle_context.configuration_pending = true;
+        lifecycle_context.configuration_valid   = true;
+        DUT_DRIVER_LIFECYCLE_BuildEnablePlan( configuration );
+        return true;
     }
 
     if ( LOGIC_EXPANDER_End_Control_Batch( batch_id ) != LOGIC_EXPANDER_STATUS_OK )
     {
-        ( void )DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration();
         LOGIC_EXPANDER_Cancel_Control_Batch( batch_id );
         return false;
     }
 
     DUT_DRIVER_LIFECYCLE_BuildEnablePlan( configuration );
-    lifecycle_context.configuration_batch_id = batch_id;
     lifecycle_context.configuration_valid    = true;
     return true;
 }
@@ -311,6 +315,21 @@ DutDriverConfigurationStatus_T DUT_DRIVER_LIFECYCLE_GetConfigurationStatus( void
     if ( !lifecycle_context.configuration_valid )
     {
         return DUT_DRIVER_CONFIGURATION_FAILED;
+    }
+
+    if ( lifecycle_context.configuration_pending )
+    {
+        if ( !DUT_DRIVER_LIFECYCLE_ConfigureAll( &lifecycle_context.configuration ) )
+        {
+            return DUT_DRIVER_CONFIGURATION_PENDING;
+        }
+
+        if ( LOGIC_EXPANDER_End_Control_Batch( lifecycle_context.configuration_batch_id )
+             != LOGIC_EXPANDER_STATUS_OK )
+        {
+            return DUT_DRIVER_CONFIGURATION_PENDING;
+        }
+        lifecycle_context.configuration_pending = false;
     }
 
     const LogicExpanderControlBatchStatus_T batch_status =

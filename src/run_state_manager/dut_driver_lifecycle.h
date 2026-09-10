@@ -97,24 +97,25 @@ typedef enum
  *        channel is applied, including disabled channels, so stale state from
  *        a previous test cannot remain active.
  *
- * Implementations must leave drivers stopped. If configuration partially
- * succeeds, all affected drivers must be returned to a safe stopped condition
- * before failure is returned.
+ * Implementations leave drivers stopped. Queue backpressure may leave the
+ * configuration open and is completed by GetConfigurationStatus(); a
+ * persistent error is reported there as FAILED.
  *
  * External I2C channels are temporarily forced to a disabled zero
  * configuration because of the known I2C hardware fault. Requested I2C
  * settings are retained in the active test configuration but are not applied.
  *
- * @returns true if every driver accepted its configuration and the external
- *          interface batch was sealed, otherwise false. Physical completion
- *          is reported by DUT_DRIVER_LIFECYCLE_GetConfigurationStatus().
+ * @returns true if configuration was accepted, including when the expander
+ *          queue applies backpressure. Physical completion or failure is
+ *          reported by DUT_DRIVER_LIFECYCLE_GetConfigurationStatus().
  */
 bool DUT_DRIVER_LIFECYCLE_Configure( const DutDriverConfiguration_T* configuration );
 
 /**
  * @brief Polls completion of configuration work accepted by all DUT drivers.
  *
- * This function performs no waiting and must not reapply configuration.
+ * This function performs no waiting. It may retry an idempotent configuration
+ * pass when the Logic Expander queue previously reported backpressure.
  *
  * @return PENDING while an enabled driver is still configuring, READY when all
  *         enabled drivers may be started, or FAILED after a driver fault.
