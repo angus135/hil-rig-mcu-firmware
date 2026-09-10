@@ -215,9 +215,8 @@ typedef struct
  * the lifecycle sequence is wrong, and NOTIFY_FAILED leaves the Flash Manager
  * in FAULT.
  *
- * Completed results may be transferred normally, deliberately discarded to
- * return to IDLE, or discarded for a repeat run that retains the active
- * configuration and uploaded instructions before returning to ARMED.
+ * Completed results may be transferred normally and then rearmed, discarded
+ * for a repeat run, or discarded with the retained test to return to IDLE.
  *
  * The Run State Manager owns execution-clock configuration, start, and stop.
  * The Execution Manager owns the work performed for each generated tick.
@@ -279,13 +278,13 @@ bool RUN_STATE_MANAGER_RequestExecutionComplete( void );
 /** Requests entry into result transfer from RESULTS_READY. */
 bool RUN_STATE_MANAGER_RequestResultTransfer( void );
 
-/** Reports successful result-transfer completion in task context. */
+/** Finishes result transfer, reapplies the retained configuration, and returns to ARMED. */
 bool RUN_STATE_MANAGER_RequestResultTransferComplete( void );
 
 /** Discards completed results and returns to ARMED with configuration retained. */
 bool RUN_STATE_MANAGER_RequestRepeat( void );
 
-/** Discards completed results and returns to IDLE with configuration cleared. */
+/** Discards results, or an ARMED retained test, and returns to IDLE with configuration cleared. */
 bool RUN_STATE_MANAGER_RequestDiscardResults( void );
 
 /**

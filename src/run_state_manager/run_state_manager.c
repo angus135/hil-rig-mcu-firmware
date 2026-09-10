@@ -26,6 +26,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define RUN_STATE_UART_DRAIN_TAIL_TICKS ( 20U )
+#define RUN_STATE_SPI_DRAIN_TAIL_TICKS ( 4U )
+#define RUN_STATE_CAN_DRAIN_TAIL_TICKS ( 4U )
+#define RUN_STATE_PWM_CAPTURE_TAIL_TICKS ( 2U )
+
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
@@ -282,6 +287,8 @@ static bool RUN_STATE_MANAGER_GetRequestTargetState( RunStateRequest_T request,
             *target_state = RUN_STATE_RESULT_TRANSFER;
             return true;
         case RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE:
+            *target_state = RUN_STATE_ARMED;
+            return true;
         case RUN_STATE_REQUEST_DISCARD_RESULTS:
         case RUN_STATE_REQUEST_RESET:
             *target_state = RUN_STATE_IDLE;
@@ -385,7 +392,7 @@ static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state, Run
                    || next_state == RUN_STATE_ARMED || next_state == RUN_STATE_IDLE;
 
         case RUN_STATE_RESULT_TRANSFER:
-            return next_state == RUN_STATE_RESULTS_READY || next_state == RUN_STATE_IDLE;
+            return next_state == RUN_STATE_RESULTS_READY || next_state == RUN_STATE_CONFIGURATION;
 
         case RUN_STATE_FAULT:
             return next_state == RUN_STATE_IDLE;
@@ -493,14 +500,53 @@ static bool RUN_STATE_MANAGER_BeginDriverStart( void )
     DutDriverLifecycleStatus_T driver_status = { 0 };
     DUT_DRIVER_LIFECYCLE_GetStatus( &driver_status );
 
+    /*
+     * The host tick count names the final instruction boundary.  Keep the
+     * timer alive for a conservative, task-context-selected drain tail so
+     * asynchronous peripherals can complete and their measurements can be
+     * collected without requiring callers to hand-tune the final tick.
+     */
+    uint32_t execution_tail_ticks = 0U;
+    if ( driver_status.uart_enabled_mask != 0U )
+    {
+        execution_tail_ticks = RUN_STATE_UART_DRAIN_TAIL_TICKS;
+    }
+    if ( driver_status.spi_enabled_mask != 0U )
+    {
+        execution_tail_ticks = execution_tail_ticks < RUN_STATE_SPI_DRAIN_TAIL_TICKS
+                                    ? RUN_STATE_SPI_DRAIN_TAIL_TICKS
+                                    : execution_tail_ticks;
+    }
+    if ( driver_status.can_enabled_mask != 0U )
+    {
+        execution_tail_ticks = execution_tail_ticks < RUN_STATE_CAN_DRAIN_TAIL_TICKS
+                                    ? RUN_STATE_CAN_DRAIN_TAIL_TICKS
+                                    : execution_tail_ticks;
+    }
+    if ( driver_status.pwm_capture_enabled_mask != 0U )
+    {
+        execution_tail_ticks = execution_tail_ticks < RUN_STATE_PWM_CAPTURE_TAIL_TICKS
+                                    ? RUN_STATE_PWM_CAPTURE_TAIL_TICKS
+                                    : execution_tail_ticks;
+    }
+
+    uint32_t effective_tick_count = execution_request.tick_count;
+    if ( execution_tail_ticks > ( UINT32_MAX - effective_tick_count ) )
+    {
+        RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_EXECUTION_MANAGER );
+        return false;
+    }
+    effective_tick_count += execution_tail_ticks;
+
     const ExecutionMeasurementConfiguration_T measurement_configuration = {
         .analogue_input_enabled = driver_status.analogue_input_enabled,
         .digital_input_enabled = driver_status.digital_inputs_enabled,
         .pwm_capture_enabled_mask = driver_status.pwm_capture_enabled_mask,
+        .uart_receive_enabled_mask = driver_status.uart_receive_enabled_mask,
     };
     EXECUTION_MANAGER_ConfigureMeasurements( &measurement_configuration );
 
-    if ( !EXECUTION_MANAGER_Prepare( execution_request.tick_count ) )
+    if ( !EXECUTION_MANAGER_Prepare( effective_tick_count ) )
     {
         RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_EXECUTION_MANAGER );
         return false;
@@ -766,6 +812,7 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
             }
             else if ( operation == RUN_STATE_PENDING_IDLE_SHUTDOWN )
             {
+                execution_abort_requested = false;
                 ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_IDLE );
             }
         }
@@ -950,6 +997,10 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
                     last_request_result = RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE;
                     return;
                 }
+            }
+            else if ( run_state == RUN_STATE_ARMED && RUN_STATE_MANAGER_FlashIsIdle() )
+            {
+                accepted = RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle();
             }
             break;
 

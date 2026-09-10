@@ -10,6 +10,7 @@
 #include "exec_digital_input.h"
 #include "exec_analogue_input.h"
 #include "exec_pwm_capture.h"
+#include "exec_uart.h"
 #include "flash_manager.h"
 
 #include <stdint.h>
@@ -17,7 +18,7 @@
 typedef bool ( *ExecutionMeasurementAdapter_T )( uint8_t channel, uint32_t timestamp,
                                                   BaseType_t* higher_priority_task_woken );
 
-#define EXECUTION_MEASUREMENT_ADAPTER_COUNT ( 4U )
+#define EXECUTION_MEASUREMENT_ADAPTER_COUNT ( 6U )
 #define EXECUTION_MEASUREMENT_CHANNEL_UNUSED ( 0U )
 #define EXECUTION_MEASUREMENT_CHANNEL_BIT( channel ) ( UINT32_C( 1 ) << ( channel ) )
 
@@ -67,6 +68,55 @@ void EXECUTION_MEASUREMENT_ADAPTER_Prepare(
                 };
         }
     }
+
+    for ( uint8_t channel = 0U; channel < EXEC_UART_CHANNEL_COUNT; channel++ )
+    {
+        if ( ( configuration->uart_receive_enabled_mask
+               & EXECUTION_MEASUREMENT_CHANNEL_BIT( channel ) )
+             != 0U )
+        {
+            active_measurement_adapters[active_measurement_count++] =
+                ( ExecutionMeasurementDispatchEntry_T ){
+                    .adapter = EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive,
+                    .channel = channel,
+                };
+        }
+    }
+}
+
+bool EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive(
+    uint8_t channel, uint32_t timestamp, BaseType_t* higher_priority_task_woken )
+{
+    FlashManagerResultWriteLease_T lease = { 0 };
+    if ( !FLASH_MANAGER_ReserveResultRecordFromISR( EXEC_UART_MAX_CHUNK_SIZE, &lease ) )
+    {
+        return false;
+    }
+
+    uint32_t bytes_read = 0U;
+    if ( !EXEC_UART_Read( ( ExecUartChannel_T )channel, lease.payload,
+                          EXEC_UART_MAX_CHUNK_SIZE, &bytes_read ) )
+    {
+        ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+        return false;
+    }
+
+    if ( bytes_read == 0U )
+    {
+        ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+        return true;
+    }
+
+    if ( FLASH_MANAGER_CommitResultRecordFromISR(
+             &lease, timestamp, FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE, channel,
+             ( uint16_t )bytes_read, higher_priority_task_woken )
+         == FLASH_MANAGER_RESULT_COMMIT_OK )
+    {
+        return true;
+    }
+
+    ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+    return false;
 }
 
 bool EXECUTION_MEASUREMENT_ADAPTER_SampleAnalogueInput(

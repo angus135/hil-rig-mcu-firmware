@@ -365,6 +365,7 @@ static void CONSOLE_Flash_UploadAnalogueOutputTestCommand( uint16_t argc, char* 
 static void CONSOLE_Flash_UploadCanTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadSpiTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadUartTestCommand( uint16_t argc, char* argv[] );
+static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_PrepareCommand( void );
 static void CONSOLE_Flash_ExecuteEchoCommand( uint16_t argc, char* argv[] );
@@ -408,6 +409,7 @@ static void CONSOLE_Flash_PrintUsage( void )
     CONSOLE_Printf( "  flash results verify_do_pattern\r\n" );
     CONSOLE_Printf( "  flash results verify_ao_ai <input_channel 0..1>\r\n" );
     CONSOLE_Printf( "  flash results verify_pwm_capture <input_channel 1..2>\r\n" );
+    CONSOLE_Printf( "  flash results verify_uart_loopback <channel 1..2> <byte> <length>\r\n" );
     CONSOLE_Printf( "Use 'flash status' after every phase. Reset after FAULT.\r\n" );
 }
 
@@ -1708,7 +1710,8 @@ static void CONSOLE_Flash_UploadPwmTestCommand( uint16_t argc, char* argv[] )
                     ( unsigned long )duty_permille, ( unsigned int )payload.arr,
                     ( unsigned int )payload.ccr, ( unsigned int )payload.psc,
                     ( unsigned long )update_tick, ( unsigned long )run_ticks );
-    CONSOLE_Printf( "Next: finish configuring the RSM, then 'run_state execute %lu 0'.\r\n",
+    CONSOLE_Printf( "Next: finish configuring the RSM, then "
+                    "'run_state execute %lu <maximum_result_bytes>'.\r\n",
                     ( unsigned long )console_flash_run_tick_count );
 }
 
@@ -2302,7 +2305,7 @@ static void CONSOLE_Flash_UploadUartTestCommand( uint16_t argc, char* argv[] )
                     ( unsigned long )channel, ( unsigned long )value, ( unsigned int )length,
                     ( unsigned long )first_tick, ( unsigned long )repeat_count,
                     ( unsigned long )interval_ticks, ( unsigned long )run_ticks );
-    CONSOLE_Printf( "Next: finish configuring the RSM, then 'run_state execute %lu 0'.\r\n",
+    CONSOLE_Printf( "Next: finish configuring the RSM, then run 'run_state execute %lu <result_bytes>'.\r\n",
                     ( unsigned long )console_flash_run_tick_count );
 }
 
@@ -2941,7 +2944,7 @@ static void CONSOLE_Flash_ResultsCommand( bool verify_echo_stream )
     }
 
     if ( !RUN_STATE_MANAGER_RequestResultTransferComplete()
-         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_IDLE, CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_ARMED, CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
     {
         CONSOLE_Printf( "RSM result transfer completion failed.\r\n" );
         return;
@@ -2964,14 +2967,14 @@ static void CONSOLE_Flash_ResultsCommand( bool verify_echo_stream )
                             ( unsigned long )console_flash_last_upload_bytes,
                             ( unsigned long )total_bytes );
         }
-        CONSOLE_Printf( "Result transfer was consumed and Flash Manager returned to IDLE.\r\n" );
+        CONSOLE_Printf( "Result transfer was consumed and the same test was rearmed.\r\n" );
         return;
     }
 
     CONSOLE_Printf( "Result retrieval PASS: bytes=%lu fnv1a=0x%08lX busy_retries=%lu.\r\n",
                     ( unsigned long )total_bytes, ( unsigned long )hash,
                     ( unsigned long )busy_retries );
-    CONSOLE_Printf( "Flash Manager returned to IDLE.\r\n" );
+    CONSOLE_Printf( "Flash Manager returned to IDLE and the same test was rearmed.\r\n" );
 }
 
 /** Retrieves and verifies the DO1-to-DI10 production execution result stream. */
@@ -3119,7 +3122,7 @@ static void CONSOLE_Flash_VerifyDigitalLoopbackResultsCommand( uint16_t argc, ch
     }
 
     if ( !RUN_STATE_MANAGER_RequestResultTransferComplete()
-         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_IDLE, CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_ARMED, CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
     {
         CONSOLE_Printf( "RSM result transfer completion failed.\r\n" );
         return;
@@ -3254,7 +3257,7 @@ static void CONSOLE_Flash_VerifyAnalogueLoopbackResultsCommand( uint16_t argc, c
     }
 
     if ( !RUN_STATE_MANAGER_RequestResultTransferComplete()
-         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_IDLE, CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_ARMED, CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
     {
         CONSOLE_Printf( "RSM result transfer completion failed.\r\n" );
         return;
@@ -3276,6 +3279,159 @@ static void CONSOLE_Flash_VerifyAnalogueLoopbackResultsCommand( uint16_t argc, c
     CONSOLE_Printf( "AI final sample: ch0=%lu, ch1=%lu raw ADC counts.\r\n",
                     ( unsigned long )final_sample[0], ( unsigned long )final_sample[1] );
     CONSOLE_Printf( "Voltage comparison: NOT PERFORMED; AI calibration is unavailable.\r\n" );
+}
+
+/** Retrieves UART receive records and verifies a same-channel repeated-byte loopback. */
+static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char* argv[] )
+{
+    uint32_t channel = 0U;
+    uint32_t value   = 0U;
+    uint32_t length  = 0U;
+    if ( argc != 6U || !CONSOLE_Flash_ParseU32( argv[3], &channel )
+         || !CONSOLE_Flash_ParseU32( argv[4], &value )
+         || !CONSOLE_Flash_ParseU32( argv[5], &length ) || channel < 1U
+         || channel > EXEC_UART_CHANNEL_COUNT || value > UINT8_MAX || length == 0U )
+    {
+        CONSOLE_Printf( "Usage: flash results verify_uart_loopback <channel 1..2> "
+                        "<byte 0..255> <length>\r\n" );
+        return;
+    }
+
+    if ( !RUN_STATE_MANAGER_RequestResultTransfer()
+         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_RESULT_TRANSFER,
+                                            CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "RSM result transfer start failed.\r\n" );
+        return;
+    }
+
+    FlashManagerResultTransferStatus_T status = FLASH_MANAGER_RESULT_TRANSFER_OK;
+    uint8_t header_bytes[sizeof( FlashManagerResultHeader_T )] = { 0 };
+    uint32_t header_fill = 0U;
+    uint32_t payload_remaining = 0U;
+    uint32_t received_bytes = 0U;
+    uint32_t record_count = 0U;
+    uint32_t mismatch_offset = 0U;
+    uint8_t expected = ( uint8_t )value;
+    const uint32_t expected_bytes =
+        ( console_flash_last_upload_records != 0U
+              && length <= ( UINT32_MAX / console_flash_last_upload_records ) )
+            ? length * console_flash_last_upload_records
+            : length;
+    bool valid = true;
+    bool mismatch_recorded = false;
+    TickType_t last_progress_at = xTaskGetTickCount();
+
+    for ( ;; )
+    {
+        uint32_t bytes_read = 0U;
+        status = FLASH_MANAGER_ReadResultBytes( console_flash_read_buffer,
+                                                CONSOLE_FLASH_RESULT_READ_BYTES,
+                                                &bytes_read );
+        if ( status == FLASH_MANAGER_RESULT_TRANSFER_OK )
+        {
+            last_progress_at = xTaskGetTickCount();
+            uint32_t offset = 0U;
+            while ( offset < bytes_read )
+            {
+                if ( header_fill < sizeof( header_bytes ) )
+                {
+                    const uint32_t copy =
+                        ( bytes_read - offset < sizeof( header_bytes ) - header_fill )
+                            ? bytes_read - offset
+                            : sizeof( header_bytes ) - header_fill;
+                    ( void )memcpy( &header_bytes[header_fill],
+                                    &console_flash_read_buffer[offset], copy );
+                    header_fill += copy;
+                    offset += copy;
+                    if ( header_fill == sizeof( header_bytes ) )
+                    {
+                        FlashManagerResultHeader_T header = { 0 };
+                        ( void )memcpy( &header, header_bytes, sizeof( header ) );
+                        if ( header.peripheral_type
+                                 != FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE
+                             || header.channel != ( uint8_t )( channel - 1U )
+                             || header.payload_length_bytes == 0U )
+                        {
+                            valid = false;
+                        }
+                        payload_remaining = header.payload_length_bytes;
+                        record_count++;
+                    }
+                    continue;
+                }
+
+                const uint32_t copy =
+                    ( bytes_read - offset < payload_remaining ) ? bytes_read - offset
+                                                                  : payload_remaining;
+                for ( uint32_t index = 0U; index < copy; index++ )
+                {
+                    const uint8_t actual = console_flash_read_buffer[offset + index];
+                    if ( actual != expected && !mismatch_recorded )
+                    {
+                        mismatch_recorded = true;
+                        mismatch_offset = received_bytes + index;
+                    }
+                }
+                received_bytes += copy;
+                payload_remaining -= copy;
+                offset += copy;
+                if ( payload_remaining == 0U )
+                {
+                    header_fill = 0U;
+                }
+            }
+            continue;
+        }
+
+        if ( status == FLASH_MANAGER_RESULT_TRANSFER_BUSY )
+        {
+            if ( CONSOLE_Flash_HasTimedOut( last_progress_at,
+                                            CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            {
+                CONSOLE_Printf( "UART result retrieval timeout after %lu bytes.\r\n",
+                                ( unsigned long )received_bytes );
+                return;
+            }
+            vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+            continue;
+        }
+        if ( status == FLASH_MANAGER_RESULT_TRANSFER_END_OF_STREAM )
+        {
+            break;
+        }
+        CONSOLE_Printf( "UART result retrieval failed after %lu bytes (status=%d).\r\n",
+                        ( unsigned long )received_bytes, ( int )status );
+        return;
+    }
+
+    const bool passed = valid && !mismatch_recorded && payload_remaining == 0U
+                        && received_bytes == expected_bytes;
+    if ( !RUN_STATE_MANAGER_RequestResultTransferComplete()
+         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_ARMED,
+                                            CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "RSM result transfer completion failed.\r\n" );
+        return;
+    }
+
+    if ( passed )
+    {
+        CONSOLE_Printf( "UART loopback PASS: channel=%lu records=%lu bytes=%lu byte=0x%02lX.\r\n",
+                        ( unsigned long )channel, ( unsigned long )record_count,
+                        ( unsigned long )received_bytes, ( unsigned long )value );
+    }
+    else
+    {
+        CONSOLE_Printf( "UART loopback FAIL: records=%lu bytes=%lu expected_bytes=%lu",
+                        ( unsigned long )record_count, ( unsigned long )received_bytes,
+                        ( unsigned long )expected_bytes );
+        if ( mismatch_recorded )
+        {
+            CONSOLE_Printf( " first_mismatch=%lu", ( unsigned long )mismatch_offset );
+        }
+        CONSOLE_Printf( ".\r\n" );
+    }
 }
 
 /** Retrieves sparse PWM capture records and checks the final capture against the uploaded target. */
@@ -3307,6 +3463,8 @@ static void CONSOLE_Flash_VerifyPwmLoopbackResultsCommand( uint16_t argc, char* 
     uint32_t   previous_timestamp                              = 0U;
     uint32_t   first_timestamp                                 = 0U;
     uint32_t   final_timestamp                                 = 0U;
+    ExecPwmCaptureResult_T first_raw_capture                   = { 0 };
+    ExecPwmCaptureResult_T final_raw_capture                   = { 0 };
     ExecPwmCapturePhysical_T first_measurement                 = { 0 };
     ExecPwmCapturePhysical_T final_measurement                 = { 0 };
     bool       records_valid                                   = true;
@@ -3364,11 +3522,13 @@ static void CONSOLE_Flash_VerifyPwmLoopbackResultsCommand( uint16_t argc, char* 
                     {
                         if ( record_count == 1U )
                         {
-                            first_timestamp   = header.timestamp;
-                            first_measurement = physical;
+                            first_timestamp     = header.timestamp;
+                            first_raw_capture   = raw_capture;
+                            first_measurement   = physical;
                         }
-                        final_timestamp   = header.timestamp;
-                        final_measurement = physical;
+                        final_timestamp     = header.timestamp;
+                        final_raw_capture   = raw_capture;
+                        final_measurement   = physical;
                     }
 
                     previous_timestamp = header.timestamp;
@@ -3410,7 +3570,7 @@ static void CONSOLE_Flash_VerifyPwmLoopbackResultsCommand( uint16_t argc, char* 
         && duty_error_bp <= 100U;
 
     if ( !RUN_STATE_MANAGER_RequestResultTransferComplete()
-         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_IDLE, CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_ARMED, CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
     {
         CONSOLE_Printf( "RSM result transfer completion failed.\r\n" );
         return;
@@ -3420,13 +3580,19 @@ static void CONSOLE_Flash_VerifyPwmLoopbackResultsCommand( uint16_t argc, char* 
                     stream_passed ? "PASS" : "FAIL", ( unsigned long )record_count );
     if ( conversion_valid && record_count > 0U )
     {
-        CONSOLE_Printf( "First capture: tick=%lu frequency=%lu Hz duty=%lu.%02lu%%.\r\n",
+        CONSOLE_Printf( "First capture: tick=%lu period=%lu high=%lu ticks, "
+                        "frequency=%lu Hz duty=%lu.%02lu%%.\r\n",
                         ( unsigned long )first_timestamp,
+                        ( unsigned long )first_raw_capture.period_ticks,
+                        ( unsigned long )first_raw_capture.high_ticks,
                         ( unsigned long )first_measurement.frequency_hz,
                         ( unsigned long )( first_measurement.duty_cycle_bp / 100U ),
                         ( unsigned long )( first_measurement.duty_cycle_bp % 100U ) );
-        CONSOLE_Printf( "Final capture: tick=%lu frequency=%lu Hz duty=%lu.%02lu%%.\r\n",
+        CONSOLE_Printf( "Final capture: tick=%lu period=%lu high=%lu ticks, "
+                        "frequency=%lu Hz duty=%lu.%02lu%%.\r\n",
                         ( unsigned long )final_timestamp,
+                        ( unsigned long )final_raw_capture.period_ticks,
+                        ( unsigned long )final_raw_capture.high_ticks,
                         ( unsigned long )final_measurement.frequency_hz,
                         ( unsigned long )( final_measurement.duty_cycle_bp / 100U ),
                         ( unsigned long )( final_measurement.duty_cycle_bp % 100U ) );
@@ -3567,6 +3733,12 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
             return;
         }
 
+        if ( argc == 6U && strcmp( argv[2], "verify_uart_loopback" ) == 0 )
+        {
+            CONSOLE_Flash_VerifyUartLoopbackResultsCommand( argc, argv );
+            return;
+        }
+
         if ( ( argc == 2U ) || ( ( argc == 3U ) && ( strcmp( argv[2], "verify" ) == 0 ) ) )
         {
             CONSOLE_Flash_ResultsCommand( argc == 3U );
@@ -3576,7 +3748,8 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "Usage: flash results [verify] | "
                         "verify_do_di <delay_ticks> <high_ticks> | verify_do_pattern | "
                         "verify_ao_ai <input_channel> | "
-                        "verify_pwm_capture <input_channel>\r\n" );
+                        "verify_pwm_capture <input_channel> | "
+                        "verify_uart_loopback <channel> <byte> <length>\r\n" );
         return;
     }
 

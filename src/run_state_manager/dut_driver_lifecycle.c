@@ -46,6 +46,7 @@ typedef struct
     uint32_t pwm_generation_channels;
     uint32_t spi_channels;
     uint32_t uart_channels;
+    uint32_t uart_receive_channels;
 } DutDriverLifecycleSelection_T;
 
 typedef struct
@@ -169,6 +170,10 @@ static void DUT_DRIVER_LIFECYCLE_BuildEnablePlan( const DutDriverConfiguration_T
         if ( configuration->uart_channels[channel].is_enabled )
         {
             enabled.uart_channels |= DUT_DRIVER_LIFECYCLE_CHANNEL_BIT( channel );
+            if ( configuration->uart_channels[channel].rx_enabled )
+            {
+                enabled.uart_receive_channels |= DUT_DRIVER_LIFECYCLE_CHANNEL_BIT( channel );
+            }
         }
     }
 
@@ -848,6 +853,7 @@ void DUT_DRIVER_LIFECYCLE_GetStatus( DutDriverLifecycleStatus_T* status )
         .spi_started_mask            = started->spi_channels,
         .uart_enabled_mask           = enabled->uart_channels,
         .uart_started_mask           = started->uart_channels,
+        .uart_receive_enabled_mask   = enabled->uart_receive_channels,
     };
 }
 

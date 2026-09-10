@@ -121,9 +121,9 @@ typedef struct ExecPwmCaptureConfig_T
  * @brief Consume one newly captured PWM measurement.
  *
  * Peeks the hardware capture result for the selected channel. If a new
- * measurement is available, copies the period and high-time tick values into
- * result, consumes the hardware capture flag, validates the measurement, and
- * marks result as valid.
+ * measurement is available, consumes its flag, takes a bounded coherent
+ * period/high-time snapshot, validates it, and marks result as valid. The
+ * first capture after each channel start is consumed without publication.
  *
  * If no new measurement is available, or if the captured values are invalid,
  * result->is_valid is set to false and false is returned.

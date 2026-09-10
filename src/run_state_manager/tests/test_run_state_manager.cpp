@@ -656,6 +656,7 @@ TEST_F( RunStateManagerTest, InvalidRequestIsRejectedWithoutFaulting )
 TEST_F( RunStateManagerTest, RepeatRetainsConfigurationAndReturnsToArmed )
 {
     run_state = RUN_STATE_RESULTS_READY;
+    execution_abort_requested = true;
     Process( RUN_STATE_REQUEST_REPEAT );
     EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
     EXPECT_EQ( RUN_STATE_PENDING_CONFIGURATION, pending_operation );
@@ -664,6 +665,27 @@ TEST_F( RunStateManagerTest, RepeatRetainsConfigurationAndReturnsToArmed )
     EXPECT_EQ( RUN_STATE_ARMED, run_state );
     EXPECT_EQ( RUN_STATE_PENDING_NONE, pending_operation );
     EXPECT_FALSE( configuration_cleared );
+    EXPECT_FALSE( execution_abort_requested );
+}
+
+TEST_F( RunStateManagerTest, CompletedResultTransferRetainsConfigurationAndReturnsToArmed )
+{
+    run_state                  = RUN_STATE_RESULT_TRANSFER;
+    run_configuration_owned   = true;
+    execution_abort_requested = true;
+
+    Process( RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE );
+
+    EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_CONFIGURATION, pending_operation );
+    EXPECT_FALSE( configuration_cleared );
+    EXPECT_TRUE( run_configuration_owned );
+    EXPECT_FALSE( execution_abort_requested );
+    EXPECT_EQ( 0U, driver_shutdown_begin_calls );
+
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_ARMED, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_NONE, pending_operation );
 }
 
 TEST_F( RunStateManagerTest, DiscardClearsConfigurationAndReturnsToIdle )
@@ -677,6 +699,25 @@ TEST_F( RunStateManagerTest, DiscardClearsConfigurationAndReturnsToIdle )
     EXPECT_TRUE( configuration_cleared );
     EXPECT_TRUE( configuration_ownership_released );
     EXPECT_TRUE( driver_shutdown_clear_configuration );
+}
+
+TEST_F( RunStateManagerTest, DiscardFromArmedClearsRetainedTestAndReturnsToIdle )
+{
+    run_state                  = RUN_STATE_ARMED;
+    run_configuration_owned   = true;
+    execution_abort_requested = false;
+
+    Process( RUN_STATE_REQUEST_DISCARD_RESULTS );
+
+    EXPECT_EQ( RUN_STATE_ARMED, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_IDLE_SHUTDOWN, pending_operation );
+    EXPECT_TRUE( configuration_cleared );
+    EXPECT_FALSE( run_configuration_owned );
+    EXPECT_TRUE( driver_shutdown_clear_configuration );
+
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
+    EXPECT_FALSE( execution_abort_requested );
 }
 
 TEST_F( RunStateManagerTest, RuntimeFaultStopsExecutionAndRequestsFlashAbort )

@@ -43,12 +43,10 @@ The Host Interface will own the host-originated side of one lifecycle:
    `FLASH_MANAGER_ReadResultBytes()`. Handle `BUSY` by retrying without losing
    position and continue until `END_OF_STREAM`.
 8. After all bytes are acknowledged by the host protocol, submit
-   `RUN_STATE_MANAGER_RequestResultTransferComplete()`, which currently returns
-   the lifecycle directly to `IDLE`.
-
-The current state table does not support repeat after a completed transfer. If
-that host behaviour is required, add an explicit RSM policy transition rather
-than submitting `repeat` after the lifecycle has returned to `IDLE`.
+   `RUN_STATE_MANAGER_RequestResultTransferComplete()`. The RSM reapplies the
+   retained configuration and returns to `ARMED`. The host may then execute the
+   same test again, or submit `RUN_STATE_MANAGER_RequestDiscardResults()` to
+   clear the retained test and return to `IDLE`.
 
 RSM request return values indicate notification delivery only. They do not mean
 the event was accepted or completed. Requests use coalescing notification bits,

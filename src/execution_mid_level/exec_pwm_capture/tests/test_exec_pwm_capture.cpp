@@ -67,6 +67,7 @@ static void Reset_Exec_PWM_Capture_State( void )
     for ( uint32_t i = 0U; i < EXEC_PWM_CAPTURE_CHANNEL_COUNT; i++ )
     {
         exec_pwm_capture_channel_state[i] = EXEC_PWM_CAPTURE_STATE_DISABLED;
+        exec_pwm_capture_discard_next_result[i] = false;
     }
 }
 
@@ -388,6 +389,37 @@ TEST_F( ExecPWMCaptureTest, ConsumeCopiesValidCaptureResult )
     EXPECT_TRUE( result.is_valid );
     EXPECT_EQ( result.period_ticks, 1800U );
     EXPECT_EQ( result.high_ticks, 900U );
+}
+
+TEST_F( ExecPWMCaptureTest, FirstCaptureAfterStartIsConsumedWithoutBeingPublished )
+{
+    ExecPwmCaptureConfig_T config = {};
+    config.mode                   = EXEC_PWM_CAPTURE_LV_3V3;
+    config.is_enabled             = true;
+    ExecPwmCaptureResult_T result = {};
+    period_ticks                  = 90U;
+    high_ticks                    = 45U;
+
+    EXPECT_CALL( mock_hw, Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, true ) )
+        .WillOnce( Return( true ) );
+    ASSERT_TRUE( EXEC_PWM_Capture_Configure_Channel( EXEC_PWM_CAPTURE_CHANNEL_1, &config ) );
+    EXPECT_CALL( mock_hw, Start_Channel( HW_PWM_CAPTURE_CHANNEL_1 ) ).WillOnce( Return( true ) );
+    ASSERT_TRUE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
+
+    EXPECT_CALL( mock_hw, Peek_Result( HW_PWM_CAPTURE_CHANNEL_1 ) )
+        .Times( 2 )
+        .WillRepeatedly( Return( MakeHwResult( &period_ticks, &high_ticks ) ) );
+    EXPECT_CALL( mock_hw, Consume_Result( HW_PWM_CAPTURE_CHANNEL_1 ) ).Times( 2 );
+
+    EXPECT_FALSE( EXEC_PWM_Capture_Consume( EXEC_PWM_CAPTURE_CHANNEL_1, &result ) );
+    EXPECT_FALSE( result.has_new_data );
+    EXPECT_FALSE( result.is_valid );
+
+    EXPECT_TRUE( EXEC_PWM_Capture_Consume( EXEC_PWM_CAPTURE_CHANNEL_1, &result ) );
+    EXPECT_TRUE( result.has_new_data );
+    EXPECT_TRUE( result.is_valid );
+    EXPECT_EQ( result.period_ticks, 90U );
+    EXPECT_EQ( result.high_ticks, 45U );
 }
 
 TEST_F( ExecPWMCaptureTest, ConsumeReturnsFalseWhenPeriodIsZero )

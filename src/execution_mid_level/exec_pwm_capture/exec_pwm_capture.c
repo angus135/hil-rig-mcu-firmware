@@ -32,7 +32,7 @@
  *      Assumptions:
  *      - Channels are configured and enabled prior to use
  *      - Caller provides a valid result pointer
- *      - Hardware layer guarantees coherent capture semantics
+ *      - Hardware layer exposes stable capture registers and flag semantics
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -103,6 +103,7 @@ static const ExecPwmCaptureHardwareMap_T
 };
 
 static ExecPwmCaptureState_T exec_pwm_capture_channel_state[EXEC_PWM_CAPTURE_CHANNEL_COUNT];
+static bool exec_pwm_capture_discard_next_result[EXEC_PWM_CAPTURE_CHANNEL_COUNT];
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -338,6 +339,7 @@ bool EXEC_PWM_Capture_Start_Channel( ExecPwmCaptureChannel_T channel )
     }
 
     exec_pwm_capture_channel_state[channel] = EXEC_PWM_CAPTURE_STATE_STARTED;
+    exec_pwm_capture_discard_next_result[channel] = true;
 
     return true;
 }
@@ -391,9 +393,10 @@ bool EXEC_PWM_Capture_Is_Started( ExecPwmCaptureChannel_T channel )
 
 bool EXEC_PWM_Capture_Consume( ExecPwmCaptureChannel_T channel, ExecPwmCaptureResult_T* result )
 {
-    HwPWMCaptureResult_T hw_result    = { 0 };
-    uint32_t             period_ticks = 0U;
-    uint32_t             high_ticks   = 0U;
+    HwPWMCaptureResult_T hw_result           = { 0 };
+    uint32_t             period_ticks_before = 0U;
+    uint32_t             period_ticks_after  = 0U;
+    uint32_t             high_ticks          = 0U;
 
     /*
      * Contract:
@@ -418,21 +421,34 @@ bool EXEC_PWM_Capture_Consume( ExecPwmCaptureChannel_T channel, ExecPwmCaptureRe
         return false;
     }
 
-    /*
-     * TODO: Use a coherent, overcapture-aware snapshot (e.g. capture DMA or a
-     * verified register-read protocol). Live CCR reads can mix measurements;
-     * clearing the flag afterward can discard an intervening capture event.
-     * Reading before clearing alone does not prevent either race.
-     */
-    /*
-     * Hardware contract:
-     * If has_new_data is true, period_ticks and high_ticks point to valid
-     * capture registers.
-     */
-    period_ticks = *( hw_result.period_ticks );
-    high_ticks   = *( hw_result.high_ticks );
-
+    /* Clear the result being consumed before reading the live capture registers. */
     HW_PWM_Capture_Consume_Result( exec_pwm_capture_hardware_map[channel].hw_channel );
+
+    /*
+     * The first edge pair after a timer start can describe the partial interval
+     * between timer startup and input synchronisation rather than a complete
+     * PWM period. Consume it without publishing a measurement. Every restart
+     * establishes the same one-capture synchronisation boundary.
+     */
+    if ( exec_pwm_capture_discard_next_result[channel] )
+    {
+        exec_pwm_capture_discard_next_result[channel] = false;
+        return false;
+    }
+
+    /*
+     * Take a bounded coherent snapshot. If the period register changes while
+     * the pair is read, a newer capture remains flagged for the next execution
+     * tick and this mixed pair is not published.
+     */
+    period_ticks_before = *( hw_result.period_ticks );
+    high_ticks          = *( hw_result.high_ticks );
+    period_ticks_after  = *( hw_result.period_ticks );
+    if ( period_ticks_before != period_ticks_after )
+    {
+        return false;
+    }
+
     /*
      * A new capture event has been consumed at this point. Mark has_new_data true
      * before validation so callers can distinguish "no new data" from
@@ -440,12 +456,12 @@ bool EXEC_PWM_Capture_Consume( ExecPwmCaptureChannel_T channel, ExecPwmCaptureRe
      */
     result->has_new_data = true;
 
-    if ( !EXEC_PWM_Capture_Result_Is_Valid( period_ticks, high_ticks ) )
+    if ( !EXEC_PWM_Capture_Result_Is_Valid( period_ticks_after, high_ticks ) )
     {
         return false;
     }
 
-    result->period_ticks = period_ticks;
+    result->period_ticks = period_ticks_after;
     result->high_ticks   = high_ticks;
     result->is_valid     = true;
 
