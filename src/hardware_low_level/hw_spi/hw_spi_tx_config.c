@@ -50,8 +50,8 @@
  * Mocked timer prescalers for now.
  *
  * Assumption:
- *   - SPI channel 0 uses TIM11 on APB2 timer clock = 180 MHz
  *   - SPI channel 1 uses TIM6  on APB1 timer clock = 90 MHz
+ *   - SPI channel 2 uses TIM11 on APB2 timer clock = 180 MHz
  *   - SPI DAC       uses TIM7  on APB1 timer clock = 90 MHz
  *
  * Target timer tick:
@@ -61,8 +61,8 @@
  *
  * Update these once the final Cube clock tree is locked.
  */
-#define SPI_CHANNEL_0_FINAL_DRAIN_TIMER_PSC 179U
 #define SPI_CHANNEL_1_FINAL_DRAIN_TIMER_PSC 89U
+#define SPI_CHANNEL_2_FINAL_DRAIN_TIMER_PSC 179U
 #define SPI_DAC_FINAL_DRAIN_TIMER_PSC 89U
 
 /*
@@ -127,8 +127,8 @@
  */
 
 static const uint32_t SPI_FINAL_DRAIN_TIMER_PSC_ARRAY[SPI_NUM_CHANNELS] = {
-    [SPI_CHANNEL_0] = SPI_CHANNEL_0_FINAL_DRAIN_TIMER_PSC,
     [SPI_CHANNEL_1] = SPI_CHANNEL_1_FINAL_DRAIN_TIMER_PSC,
+    [SPI_CHANNEL_2] = SPI_CHANNEL_2_FINAL_DRAIN_TIMER_PSC,
     [SPI_DAC]       = SPI_DAC_FINAL_DRAIN_TIMER_PSC,
 };
 
@@ -650,33 +650,6 @@ void HW_SPI_TX_Configure_Timer( SPIPeripheralState_T* peripheral_state )
     }
 }
 
-void SPI_CHANNEL_0_TX_DMA_IRQ( void )
-{
-    SPIPeripheralState_T* peripheral_state = &( channel_state_array[SPI_CHANNEL_0] );
-    // Handle transfer error first. If TE and TC are both latched, error
-    // handling wins and normal completion processing is skipped.
-    if ( SPI_CHANNEL_0_TX_DMA_IS_ACTIVE_TE( SPI_CHANNEL_0_TX_DMA ) != 0U )
-    {
-        SPI_CHANNEL_0_TX_DMA_CLEAR_TE( SPI_CHANNEL_0_TX_DMA );
-        HW_SPI_TX_Error_Handler( SPI_CHANNEL_0 );
-        return;
-    }
-
-    if ( SPI_CHANNEL_0_TX_DMA_IS_ACTIVE_TC( SPI_CHANNEL_0_TX_DMA ) != 0U )
-    {
-        SPI_CHANNEL_0_TX_DMA_CLEAR_TC( SPI_CHANNEL_0_TX_DMA );
-        if ( peripheral_state->is_master != false )
-        {
-            HW_SPI_TX_Handle_Master_DMA_TC( SPI_CHANNEL_0, peripheral_state );
-        }
-        else
-        {
-            HW_SPI_TX_Handle_Slave_DMA_TC( SPI_CHANNEL_0, peripheral_state );
-        }
-        return;
-    }
-}
-
 void SPI_CHANNEL_1_TX_DMA_IRQ( void )
 {
     SPIPeripheralState_T* peripheral_state = &( channel_state_array[SPI_CHANNEL_1] );
@@ -699,6 +672,33 @@ void SPI_CHANNEL_1_TX_DMA_IRQ( void )
         else
         {
             HW_SPI_TX_Handle_Slave_DMA_TC( SPI_CHANNEL_1, peripheral_state );
+        }
+        return;
+    }
+}
+
+void SPI_CHANNEL_2_TX_DMA_IRQ( void )
+{
+    SPIPeripheralState_T* peripheral_state = &( channel_state_array[SPI_CHANNEL_2] );
+    // Handle transfer error first. If TE and TC are both latched, error
+    // handling wins and normal completion processing is skipped.
+    if ( SPI_CHANNEL_2_TX_DMA_IS_ACTIVE_TE( SPI_CHANNEL_2_TX_DMA ) != 0U )
+    {
+        SPI_CHANNEL_2_TX_DMA_CLEAR_TE( SPI_CHANNEL_2_TX_DMA );
+        HW_SPI_TX_Error_Handler( SPI_CHANNEL_2 );
+        return;
+    }
+
+    if ( SPI_CHANNEL_2_TX_DMA_IS_ACTIVE_TC( SPI_CHANNEL_2_TX_DMA ) != 0U )
+    {
+        SPI_CHANNEL_2_TX_DMA_CLEAR_TC( SPI_CHANNEL_2_TX_DMA );
+        if ( peripheral_state->is_master != false )
+        {
+            HW_SPI_TX_Handle_Master_DMA_TC( SPI_CHANNEL_2, peripheral_state );
+        }
+        else
+        {
+            HW_SPI_TX_Handle_Slave_DMA_TC( SPI_CHANNEL_2, peripheral_state );
         }
         return;
     }
@@ -857,6 +857,37 @@ bool HW_SPI_Load_Tx_Packets( SPIChannel_T peripheral, const uint8_t* data,
     {
         accepted = HW_SPI_TX_Load_Master_Packets( peripheral_state, data, packet_size_bytes,
                                                   packet_count );
+    }
+
+    NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
+    return accepted;
+}
+
+bool HW_SPI_Load_Tx_Packet_Batch( SPIChannel_T peripheral, const uint8_t* data,
+                                  const uint32_t* packet_sizes_bytes, uint32_t packet_count )
+{
+    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State_Fast( peripheral );
+    bool                  accepted;
+
+    /* The SPI driver owns the TX DMA IRQ enable state. Revisit the unconditional restore if IRQ
+     * ownership later expands beyond the driver. */
+    NVIC_DisableIRQ( peripheral_state->tx_dma_irqn );
+
+    if ( peripheral_state->is_master )
+    {
+        accepted = HW_SPI_TX_Load_Master_Packet_Batch( peripheral_state, data, packet_sizes_bytes,
+                                                       packet_count );
+    }
+    else
+    {
+        uint32_t total_size_bytes = 0U;
+
+        for ( uint32_t packet_index = 0U; packet_index < packet_count; packet_index++ )
+        {
+            total_size_bytes += packet_sizes_bytes[packet_index];
+        }
+
+        accepted = HW_SPI_TX_Load_Slave_Stream( peripheral_state, data, total_size_bytes );
     }
 
     NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );

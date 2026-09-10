@@ -111,17 +111,11 @@ typedef struct ExecSPIHardwareMap_T
 static EXECSPIState_T spi_channel_0_state = { 0 };
 static EXECSPIState_T spi_channel_1_state = { 0 };
 
+/* Written only on TX failure; retained across fault cleanup for task-context diagnostics. */
+static volatile bool spi_tx_queue_rejected[EXEC_SPI_CHANNEL_COUNT] = { false };
+
 static const ExecSPIHardwareMap_T exec_spi_hardware_map[EXEC_SPI_CHANNEL_COUNT] = {
     [EXEC_SPI_CHANNEL_1] =
-        {
-            .hw_channel        = SPI_CHANNEL_0,
-            .nss_pin           = GPIO_SPI1_NSS,
-            .expander          = LOGIC_EXPANDER_PWM_SPI,
-            .port              = LOGIC_EXPANDER_PORT_B,
-            .enable_bit        = 6U,
-            .master_nslave_bit = 7U,
-        },
-    [EXEC_SPI_CHANNEL_2] =
         {
             .hw_channel        = SPI_CHANNEL_1,
             .nss_pin           = GPIO_SPI2_NSS,
@@ -129,6 +123,15 @@ static const ExecSPIHardwareMap_T exec_spi_hardware_map[EXEC_SPI_CHANNEL_COUNT] 
             .port              = LOGIC_EXPANDER_PORT_B,
             .enable_bit        = 4U,
             .master_nslave_bit = 5U,
+        },
+    [EXEC_SPI_CHANNEL_2] =
+        {
+            .hw_channel        = SPI_CHANNEL_2,
+            .nss_pin           = GPIO_SPI1_NSS,
+            .expander          = LOGIC_EXPANDER_PWM_SPI,
+            .port              = LOGIC_EXPANDER_PORT_B,
+            .enable_bit        = 6U,
+            .master_nslave_bit = 7U,
         },
 };
 
@@ -390,8 +393,9 @@ bool EXEC_SPI_Configure_Channel( ExecSPIChannel_T peripheral, const ExecSPIConfi
         return false;
     }
 
-    state->configuration = *config;
-    state->state         = EXEC_SPI_STATE_CONFIGURED;
+    state->configuration              = *config;
+    state->state                      = EXEC_SPI_STATE_CONFIGURED;
+    spi_tx_queue_rejected[peripheral] = false;
 
     return true;
 }
@@ -558,10 +562,10 @@ bool EXEC_SPI_Is_Started( ExecSPIChannel_T peripheral )
  * @p packet_sizes_bytes describes the size of one SPI packet inside
  * @p data_src.
  *
- * For master-mode SPI, each low-level HW_SPI_Load_Tx_Buffer() call becomes one
- * software-chip-select-framed SPI transaction. This function therefore calls
- * HW_SPI_Load_Tx_Buffer() once per packet, then calls HW_SPI_Tx_Trigger() only
- * once after all packet loads have completed.
+ * The complete variable-size packet batch is submitted atomically to the
+ * low-level driver. In master mode each supplied packet becomes one
+ * software-chip-select-framed transaction. TX is triggered once only after the
+ * complete batch has been accepted.
  *
  * Example:
  * @code
@@ -604,30 +608,17 @@ bool EXEC_SPI_Is_Started( ExecSPIChannel_T peripheral )
  * @return
  *     true if all packets were accepted by the low-level TX queue and
  *     transmission was triggered.
- *     false if any packet could not be accepted by the low-level TX queue.
+ *     false if the complete batch could not be accepted or triggering faulted.
  */
 bool EXEC_SPI_Transmit( ExecSPIChannel_T peripheral, const uint8_t* data_src,
                         const uint32_t* packet_sizes_bytes, uint32_t num_packets )
 {
-    /*
-     * TODO: Submit variable-length packets atomically, preflighting descriptor,
-     * storage and alignment limits under one IRQ critical section. A later
-     * load failure currently leaves the accepted prefix queued (or transmitting);
-     * retrying the whole operation can duplicate it. Each load also masks IRQs.
-     */
-    uint32_t data_offset_bytes = 0U;
+    const SPIChannel_T hw_channel = exec_spi_hardware_map[peripheral].hw_channel;
 
-    for ( uint32_t packet_index = 0U; packet_index < num_packets; packet_index++ )
+    if ( !HW_SPI_Load_Tx_Packet_Batch( hw_channel, data_src, packet_sizes_bytes, num_packets ) )
     {
-        const uint32_t packet_size_bytes = packet_sizes_bytes[packet_index];
-
-        if ( !HW_SPI_Load_Tx_Buffer( exec_spi_hardware_map[peripheral].hw_channel,
-                                     &data_src[data_offset_bytes], packet_size_bytes ) )
-        {
-            return false;
-        }
-
-        data_offset_bytes += packet_size_bytes;
+        spi_tx_queue_rejected[peripheral] = true;
+        return false;
     }
 
     /*
@@ -636,9 +627,19 @@ bool EXEC_SPI_Transmit( ExecSPIChannel_T peripheral, const uint8_t* data_src,
      * packet with software CS. Calling trigger once also avoids repeated
      * IRQ-disable/enable overhead in the 100 us execution tick.
      */
-    HW_SPI_Tx_Trigger( exec_spi_hardware_map[peripheral].hw_channel );
+    HW_SPI_Tx_Trigger( hw_channel );
 
-    return true;
+    return !HW_SPI_Tx_Is_Faulted( hw_channel );
+}
+
+bool EXEC_SPI_Was_Tx_Queue_Rejected( ExecSPIChannel_T peripheral )
+{
+    if ( peripheral >= EXEC_SPI_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    return spi_tx_queue_rejected[peripheral];
 }
 
 /**

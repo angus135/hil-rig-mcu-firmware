@@ -11,6 +11,7 @@ if [ $# -eq 0 ]; then
 fi
 
 MODE=$1
+CLANG_FORMAT_BIN=${CLANG_FORMAT_BIN:-clang-format}
 
 # Adjust this to your repo root if needed
 cd /hil-rig-mcu-firmware || exit 1
@@ -39,7 +40,7 @@ case "$MODE" in
     echo "Running clang-format on:"
     for file in $FILES; do
       echo "  $file"
-      clang-format -i "$file"
+      "$CLANG_FORMAT_BIN" -i "$file"
     done
     ;;
 

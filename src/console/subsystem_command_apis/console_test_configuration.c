@@ -6,12 +6,17 @@
 
 #include "console_test_configuration.h"
 #include "console.h"
+#include "hw_pwm_gen.h"
 #include "run_state_manager.h"
 #include "test_configuration.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Current board clock tree: TIM12 is APB1 x2; TIM8 is APB2 x2. */
+#define CONSOLE_PWM_LV_TIMER_CLOCK_HZ ( 90000000U )
+#define CONSOLE_PWM_HV_TIMER_CLOCK_HZ ( 180000000U )
 
 static void CONSOLE_TestConfiguration_PrintUsage( void )
 {
@@ -23,8 +28,9 @@ static void CONSOLE_TestConfiguration_PrintUsage( void )
     CONSOLE_Printf( "  test_config pwm_capture <1-2> <off|3v3|5v|12v|24v>\r\n" );
     CONSOLE_Printf( "  test_config analogue_output <off|internal|external>\r\n" );
     CONSOLE_Printf( "  test_config digital_output <1-10> <off|3v3|5v|12v|24v> <low|high>\r\n" );
-    CONSOLE_Printf(
-        "  test_config pwm_generation <1-2> <off|3v3|5v|12v|24v> <arr> <ccr> <psc>\r\n" );
+    CONSOLE_Printf( "  test_config pwm_generation <1-2> off\r\n" );
+    CONSOLE_Printf( "  test_config pwm_generation <1-2> <3v3|5v|12v|24v> "
+                    "<frequency_hz> <duty_permille>\r\n" );
     CONSOLE_Printf(
         "  test_config can <1-2> <off|bitrate> [filter_bank filter_id filter_mask]\r\n" );
     CONSOLE_Printf( "  test_config spi <1-2> off\r\n" );
@@ -327,27 +333,54 @@ void CONSOLE_TestConfiguration_Command( uint16_t argc, char* argv[] )
                                               : EXEC_DIGITAL_OUTPUT_MODE_3V3;
         item->initial_high = strcmp( argv[4], "high" ) == 0;
     }
-    else if ( argc == 7U && strcmp( argv[1], "pwm_generation" ) == 0 )
+    else if ( argc == 4U && strcmp( argv[1], "pwm_generation" ) == 0
+              && strcmp( argv[3], "off" ) == 0 )
     {
-        uint32_t                 channel = 0U, arr = 0U, ccr = 0U, psc = 0U;
-        ExecPwmGenVoltageLevel_T voltage;
+        uint32_t channel = 0U;
         if ( !CONSOLE_TestConfiguration_ParseU32( argv[2], &channel ) || channel < 1U
-             || channel > EXEC_PWM_GEN_CHANNEL_COUNT
-             || !CONSOLE_TestConfiguration_ParseVoltage( argv[3], &voltage )
-             || !CONSOLE_TestConfiguration_ParseU32( argv[4], &arr ) || arr > UINT16_MAX
-             || !CONSOLE_TestConfiguration_ParseU32( argv[5], &ccr ) || ccr > UINT16_MAX
-             || !CONSOLE_TestConfiguration_ParseU32( argv[6], &psc ) || psc > UINT16_MAX
-             || ccr > ( arr + 1U ) )
+             || channel > EXEC_PWM_GEN_CHANNEL_COUNT )
         {
             CONSOLE_TestConfiguration_PrintUsage();
             return;
         }
+        configuration.pwm_generation_channels[channel - 1U] = ( ExecPwmGenConfig_T ){ 0 };
+    }
+    else if ( argc == 6U && strcmp( argv[1], "pwm_generation" ) == 0 )
+    {
+        uint32_t                 channel = 0U, frequency_hz = 0U, duty_permille = 0U;
+        ExecPwmGenVoltageLevel_T voltage;
+        if ( !CONSOLE_TestConfiguration_ParseU32( argv[2], &channel ) || channel < 1U
+             || channel > EXEC_PWM_GEN_CHANNEL_COUNT
+             || !CONSOLE_TestConfiguration_ParseVoltage( argv[3], &voltage )
+             || voltage == EXEC_PWM_GEN_VOLTAGE_DISABLED
+             || !CONSOLE_TestConfiguration_ParseU32( argv[4], &frequency_hz )
+             || !CONSOLE_TestConfiguration_ParseU32( argv[5], &duty_permille )
+             || duty_permille > 1000U )
+        {
+            CONSOLE_TestConfiguration_PrintUsage();
+            return;
+        }
+
+        const uint32_t timer_clock_hz =
+            channel == 1U ? CONSOLE_PWM_LV_TIMER_CLOCK_HZ : CONSOLE_PWM_HV_TIMER_CLOCK_HZ;
+        uint16_t psc = 0U;
+        uint16_t arr = 0U;
+        uint16_t ccr = 0U;
+        if ( !HW_PWM_GEN_compute_psc( frequency_hz, timer_clock_hz, &psc )
+             || !HW_PWM_GEN_compute_arr( frequency_hz, timer_clock_hz, psc, &arr )
+             || !HW_PWM_GEN_compute_ccr( ( uint16_t )duty_permille, arr, &ccr ) )
+        {
+            CONSOLE_Printf( "PWM frequency/duty cannot be represented by channel %lu.\r\n",
+                            ( unsigned long )channel );
+            return;
+        }
+
         configuration.pwm_generation_channels[channel - 1U] =
-            ( ExecPwmGenConfig_T ){ .is_enabled    = voltage != EXEC_PWM_GEN_VOLTAGE_DISABLED,
+            ( ExecPwmGenConfig_T ){ .is_enabled    = true,
                                     .voltage_level = voltage,
-                                    .initial_arr   = ( uint16_t )arr,
-                                    .initial_ccr   = ( uint16_t )ccr,
-                                    .initial_psc   = ( uint16_t )psc };
+                                    .initial_arr   = arr,
+                                    .initial_ccr   = ccr,
+                                    .initial_psc   = psc };
     }
     else if ( ( argc == 4U || argc == 7U ) && strcmp( argv[1], "can" ) == 0 )
     {

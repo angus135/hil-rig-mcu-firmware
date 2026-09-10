@@ -1,15 +1,9 @@
 /******************************************************************************
  *  File:       execution_manager.h
- *  Author:     Angus Corr
- *  Created:    20-Dec-2025
  *
  *  Description:
- *      Public interface for timer-driven test execution.
- *
- *  Notes:
- *      The execution path runs in the execution timer ISR. Integration must
- *      use the Flash Manager's FromISR instruction/result APIs and must not
- *      call NAND, take an RTOS mutex, or use task-context FreeRTOS functions.
+ *      Task-context preparation and status interface for deterministic test
+ *      execution.
  ******************************************************************************/
 
 #ifndef EXECUTION_MANAGER_H
@@ -20,96 +14,84 @@ extern "C"
 {
 #endif
 
-/**-----------------------------------------------------------------------------
- *  Includes
- *------------------------------------------------------------------------------
- */
-
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include "execution_measurement_adapters.h"
+#include "rtos_config.h"
 
-/**-----------------------------------------------------------------------------
- *  Public Defines / Macros
- *------------------------------------------------------------------------------
- */
+typedef enum
+{
+    EXECUTION_MANAGER_FAILURE_NONE = 0,
+    EXECUTION_MANAGER_FAILURE_NOT_PREPARED,
+    EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNDERRUN,
+    EXECUTION_MANAGER_FAILURE_INSTRUCTION_CORRUPT,
+    EXECUTION_MANAGER_FAILURE_INSTRUCTION_LATE,
+    EXECUTION_MANAGER_FAILURE_OPERATION_REJECTED,
+    EXECUTION_MANAGER_FAILURE_INSTRUCTION_CONSUME,
+    EXECUTION_MANAGER_FAILURE_MEASUREMENT_REJECTED
+} ExecutionManagerFailure_T;
 
-/**-----------------------------------------------------------------------------
- *  Public Typedefs / Enums / Structures
- *------------------------------------------------------------------------------
- */
+typedef enum
+{
+    EXECUTION_MANAGER_TICK_CONTINUE = 0,
+    EXECUTION_MANAGER_TICK_COMPLETE,
+    EXECUTION_MANAGER_TICK_FAILED
+} ExecutionManagerTickResult_T;
 
-/**-----------------------------------------------------------------------------
- *  Public Function Prototypes
- *------------------------------------------------------------------------------
- */
-
-/*
- * Flash Manager integration reference
- * -----------------------------------
- *
- * Before the timer starts, the Run State Manager must have requested Flash
- * Manager preparation and observed FLASH_MANAGER_STATE_EXECUTING.
- * Instructions are supplied in nondecreasing timestamp order.
- *
- * At each execution tick, repeatedly peek the head instruction:
- *
- * - timestamp > current tick: stop this iteration without consuming it. A
- *   later peek returns the same cached view without reparsing the header.
- * - timestamp == current tick: dispatch by peripheral type and channel, then
- *   consume exactly once and peek again.
- * - timestamp < current tick: report an execution-overrun/infeasibility fault,
- *   stop the session, and do not consume the late instruction.
- *
- * End of the stored instruction stream does not itself end the test. A future
- * measurement may still be required; session completion is determined by the
- * configured execution policy outside the Flash Manager.
- *
- * For each measurement produced inside EXECUTION_MANAGER_Process_From_ISR():
- *
- * 1. Reserve the maximum payload size required by the selected execution
- *    driver with FLASH_MANAGER_ReserveResultRecordFromISR().
- * 2. Pass lease.payload and lease.payload_capacity_bytes to the execution
- *    driver. Peripheral DMA populates driver-owned storage asynchronously, but
- *    the selected driver synchronously copies one stable result into the lease
- *    during this ISR and returns the actual byte count. DMA must never target
- *    the lease directly.
- * 3. Assign the execution timestamp and commit the record with
- *    FLASH_MANAGER_CommitResultRecordFromISR(). The header also identifies the
- *    peripheral type and channel.
- * 4. Cancel the lease with FLASH_MANAGER_CancelResultRecordFromISR() whenever
- *    the measurement cannot be committed. A lease must not survive the ISR.
- *
- * Accumulate one BaseType_t higher_priority_task_woken value across the entire
- * execution sequence. Initialise it to pdFALSE before the first commit and
- * call portYIELD_FROM_ISR() only after every operation for the tick has
- * completed. A requested yield cannot run the Flash Manager task until the ISR
- * returns, so the execution sequence remains uninterrupted by RTOS tasks.
- * The execution timer IRQ priority must remain eligible to call FreeRTOS
- * FromISR APIs. TIM4 is currently configured at priority 5, matching
- * configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY.
- *
- * Reservation failure means the RAM result queue has no safe capacity. The
- * execution policy must report this condition and stop/fault the run; it must
- * not silently discard a required result. Peek underrun/corruption, consume
- * failure, commit errors, and timestamp overrun must likewise be propagated to
- * the Run State Manager through an ISR-safe mechanism that remains to be
- * implemented.
- */
+typedef void ( *ExecutionManagerTerminalCallback_T )( ExecutionManagerTickResult_T result,
+                                                      ExecutionManagerFailure_T    failure,
+                                                      BaseType_t* higher_priority_task_woken );
 
 /**
- * @brief Processes scheduler work from interrupt context.
+ * @brief Prepares run-local state before the execution timer is started.
  *
- * Intended to be called directly from an ISR to perform the minimal
- * execution-manager processing required for the current scheduler tick.
- * This API is expected to remain ISR-safe and execute quickly.
+ * The Run State Manager owns execution-timer configuration and control. The
+ * timer must be stopped while this function executes, and Flash Manager must
+ * already be prepared for execution.
  *
- * @note Flash Manager integration must accumulate one BaseType_t wake flag
- *       across all instruction consumes and result commits, then make that
- *       value available to the outer timer IRQ handler. The outermost ISR
- *       performs one portYIELD_FROM_ISR() call after the complete tick.
- * @note The overrun/fault reporting mechanism is not implemented yet.
+ * Tick zero is the configured initial condition and is not processed by a
+ * timer interrupt. The first interrupt processes tick one. A run of N ticks
+ * therefore processes boundaries 1 through N and completes after boundary N.
+ * Output instruction timestamps must be in that range.
+ *
+ * @param tick_count Final boundary tick and number of timer periods in the run.
+ * @return true when the run was accepted; otherwise, false.
  */
-void EXECUTION_MANAGER_Process_From_ISR( void );
+bool EXECUTION_MANAGER_Prepare( uint32_t tick_count );
+
+/** Builds the active per-tick measurement list from validated session configuration. */
+void EXECUTION_MANAGER_ConfigureMeasurements(
+    const ExecutionMeasurementConfiguration_T* configuration );
+
+/** Arms per-opcode cycle profiling for the next prepared execution only. */
+void EXECUTION_MANAGER_RequestOperationTiming( void );
+
+/**
+ * @brief Registers the lifecycle owner's terminal ISR notification callback.
+ *
+ * The callback runs inside the execution timer ISR. It must use only ISR-safe
+ * operations and accumulate any requested task wake through
+ * higher_priority_task_woken. The outer timer ISR performs the single yield
+ * after all execution-boundary work has finished.
+ */
+void EXECUTION_MANAGER_SetTerminalCallback( ExecutionManagerTerminalCallback_T callback );
+
+/**
+ * @brief Deactivates the current run after the execution timer has stopped.
+ *
+ * The last processed tick and first failure remain available for diagnostics.
+ * EXECUTION_MANAGER_Prepare() resets all run-local state before the next run.
+ */
+void EXECUTION_MANAGER_Abort( void );
+
+/**
+ * Returns zero before the first interrupt, then the boundary currently or
+ * most recently processed.
+ */
+uint32_t EXECUTION_MANAGER_GetCurrentTick( void );
+
+/** Returns the first failure latched during the current run. */
+ExecutionManagerFailure_T EXECUTION_MANAGER_GetFailure( void );
 
 #ifdef __cplusplus
 }

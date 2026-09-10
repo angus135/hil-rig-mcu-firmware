@@ -25,6 +25,7 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "rtos_config.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -46,8 +47,8 @@ typedef enum Timer_T
 {
     EXECUTION_MANAGER_TIMER,
     ANALOGUE_INPUT_TIMER,
-    SPI_CHANNEL_0_TIMER,
     SPI_CHANNEL_1_TIMER,
+    SPI_CHANNEL_2_TIMER,
     SPI_DAC_TIMER,
     PWM_CAPTURE_TIMER_CH1,
     PWM_CAPTURE_TIMER_CH2,
@@ -59,9 +60,20 @@ typedef enum Timer_T
  *
  * The callback runs directly inside TIM4_IRQHandler. It must obey the same
  * timing, interrupt-priority, and FreeRTOS FromISR restrictions as the
- * production Execution Manager callback.
+ * production Execution Manager callback. It accumulates any requested task
+ * wake through higher_priority_task_woken; TIM4 performs the single yield after
+ * the callback returns.
  */
-typedef void ( *HW_TIMER_ExecutionCallback_T )( void );
+typedef void ( *HW_TIMER_ExecutionCallback_T )( BaseType_t* higher_priority_task_woken );
+
+/** Run-local TIM4 ISR execution-time statistics measured by the CPU cycle counter. */
+typedef struct
+{
+    uint32_t sample_count;
+    uint32_t latest_cycles;
+    uint32_t maximum_cycles;
+    uint32_t core_clock_hz;
+} HW_TIMER_ExecutionTiming_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -102,7 +114,7 @@ void HW_TIMER_Stop_Timer( Timer_T timer );
  * @brief Overrides or restores the execution-timer ISR callback.
  *
  * @param callback Callback to invoke from TIM4_IRQHandler, or NULL to restore
- *        EXECUTION_MANAGER_Process_From_ISR().
+ *        EXECUTION_MANAGER_ProcessTickFromISR().
  *
  * @warning The execution timer must be stopped before changing this callback.
  *          The caller owns that sequencing; this low-level API does not stop
@@ -125,6 +137,18 @@ typedef bool ( *HW_TIMER_ExecutionGuard_T )( void );
  * execution callback is skipped for that tick. Pass NULL to remove the guard.
  */
 void HW_TIMER_Set_Execution_Guard( HW_TIMER_ExecutionGuard_T guard );
+
+/**
+ * @brief Gets a best-effort snapshot of the current run's TIM4 ISR timing.
+ *
+ * Statistics reset whenever the execution timer starts. The measured interval
+ * begins after TIM4's update flag is recognised and ends immediately before
+ * the optional FreeRTOS yield. Higher-priority interrupt preemption is included
+ * in the elapsed cycle count.
+ *
+ * @param timing Destination for the timing snapshot. NULL is ignored.
+ */
+void HW_TIMER_Get_Execution_Timing( HW_TIMER_ExecutionTiming_T* timing );
 
 /**
  * @brief Gets the clock frequency of the specified timer in Hz.

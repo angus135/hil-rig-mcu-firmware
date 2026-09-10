@@ -27,7 +27,8 @@ The Host Interface will own the host-originated side of one lifecycle:
    `DutDriverConfiguration_T`, validate every leaf driver configuration, and
    call `TEST_CONFIGURATION_Commit()`.
 4. Submit `RUN_STATE_MANAGER_RequestConfiguration()` and wait for `ARMED`.
-5. Submit `RUN_STATE_MANAGER_RequestExecution()` only when host policy owns the
+5. Submit `RUN_STATE_MANAGER_RequestExecution()` with the validated run tick
+   count and conservative maximum result length only when host policy owns the
    execution trigger. Physical or DUT trigger arbitration belongs in a
    separate system-level component.
 6. After the RSM reports `RESULTS_READY`, choose exactly one current result
@@ -64,17 +65,47 @@ lifecycle functions, control TIM4, or access external Flash directly.
 Before starting an upload, the Host Interface must know the complete canonical
 byte length and guarantee:
 
-- packed `[FlashManagerInstructionHeader_T][payload]...` records with no padding;
-- nondecreasing instruction timestamps;
-- valid peripheral types, channels, and payload schemas;
-- each complete record is no larger than one NAND page; and
+- packed `[ExecutionInstructionHeader_T][operations...]` instructions;
+- an eight-byte instruction header encoded as two little-endian 32-bit words:
+  timestamp in word zero, then operation length in bits 0-15, operation count
+  in bits 16-23, and zeroed reserved bits in bits 24-31 of word one;
+- strictly increasing instruction timestamps;
+- instruction timestamps in the range 1 through the validated run tick count;
+- no timestamp-zero instruction, because tick zero is the configured initial
+  condition rather than a timer-dispatched boundary;
+- exactly one instruction for each output-bearing tick;
+- valid operation headers, opcodes, channels, payload layouts, and four-byte
+  padding between operation boundaries;
+- PWM frequencies and duties representable by the selected timer, with ARR,
+  CCR, and PSC calculated through the PWM driver's preparation functions and
+  stored in the canonical PWM payload before upload;
+- an `operations_length_bytes` value divisible by four for every instruction;
+- a complete declared instruction-image length divisible by four;
+- each complete instruction is no larger than
+  `EXECUTION_INSTRUCTION_MAX_SIZE_BYTES`; and
 - the submitted byte count exactly matches the declared upload length.
 
-Transport chunks may split records and may cross NAND-page boundaries. Each
-submission itself must be non-empty and no larger than one NAND page. Because
+Transport chunks may split instructions or operations, may have any byte length
+up to one NAND page, and may cross NAND-page boundaries. Chunk alignment does
+not affect the canonical image-alignment requirement. Each submission must be
+non-empty. Because
 the current Flash Manager has no upload-cancel API, bring-up should not start an
 upload until the Host Interface can guarantee that the complete valid stream
 will be supplied.
+
+## Result timestamp interpretation
+
+Every result timestamp identifies the execution-clock boundary at which its
+driver was polled. The first periodic result boundary is tick one; tick zero is
+reserved for configured initial conditions. At a boundary, measurements occur
+before output operations carrying the same timestamp.
+
+The peripheral type defines what was observed at that boundary. A digital-input
+result is an instantaneous sample. UART and SPI bytes, CAN frames, PWM captures,
+and completed I2C messages may have accumulated or completed before the poll.
+Their common timestamp records observation by the Execution Manager, not exact
+hardware arrival time. The Host Interface must not infer event-level timing
+that the producing driver did not capture.
 
 ## Instruction-upload flow
 

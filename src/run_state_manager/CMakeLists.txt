@@ -35,6 +35,7 @@ target_link_libraries(run_state_manager
         hw_gpio
         logic_expander
         flash_manager
+        execution_manager
         test_configuration
 )
 

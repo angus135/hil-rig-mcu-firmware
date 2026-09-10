@@ -67,6 +67,12 @@ TX-only channels still enter the started state, but no TX transfer begins until
 data is queued and the TX DMA pump is triggered. Stop is rejected while TX data
 is queued, DMA is active, or the UART is still shifting the final frame.
 
+Baud-rate validation is channel-specific and occurs during configuration. The
+driver reads the selected USART's live APB clock and calculates the same
+oversampling-by-16 BRR value used by the STM32 HAL. Configuration is rejected if
+that divider cannot be represented by the peripheral. No fixed minimum baud is
+imposed, so valid limits automatically follow clock-tree changes.
+
 ---
 
 ## Typical DUT RX Flow

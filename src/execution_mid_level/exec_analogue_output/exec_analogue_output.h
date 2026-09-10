@@ -67,8 +67,9 @@ typedef struct AnalogueOutputPreparedFrame_T
  * Preparation-time code appends zero through six prepared frames in schedule
  * order. The valid prefix of @c bytes is described by @c byte_count and
  * can be submitted directly without allocation, sorting, or concatenation.
- * The fixed representation is suitable for inclusion in future flash-backed
- * execution data.
+ * This is a preparation-time convenience container. Only its valid byte prefix
+ * is stored in an execution operation; byte_count is represented by the common
+ * operation payload length and is not serialized into flash.
  */
 typedef struct AnalogueOutputPreparedBatch_T
 {
@@ -261,28 +262,35 @@ bool EXEC_ANALOGUE_OUTPUT_Batch_Append( AnalogueOutputPreparedBatch_T*       pre
                                         const AnalogueOutputPreparedFrame_T* prepared_frame );
 
 /**
- * @brief Submit one previously prepared per-tick batch on the execution path.
+ * @brief Submit prevalidated DAC frame bytes from the execution hot path.
  *
- * The valid contiguous byte prefix is atomically loaded as one three-byte SPI
- * packet per prepared frame and triggered exactly once. An empty batch is a
- * successful no-op. This function
- * performs no voltage conversion, channel validation, calibration, register
- * calculation, frame construction, per-frame submission, retry, or wait.
+ * The caller guarantees that @p frame_bytes points to @p byte_count bytes
+ * containing a non-empty sequence of complete three-byte frames produced by
+ * EXEC_ANALOGUE_OUTPUT_Prepare_Frame(). The analogue-output path must already
+ * be configured and started.
  *
- * A false return means the scheduled physical output update did not occur.
- * The future execution-manager caller must treat it as an execution fault and
- * must not continue silently.
+ * This function intentionally performs no pointer, length, frame, or lifecycle
+ * validation. It does not call readiness or LogicExpander functions and is safe
+ * to call from the Execution Manager ISR. The low-level SPI driver copies the
+ * frame bytes into driver-owned DMA storage before returning.
  *
- * @param[in] prepared_batch
- *     Batch created during configuration or test preparation.
+ * Preparation-time admission must also ensure that the configured SPI rate can
+ * drain the scheduled frame stream without exhausting the TX queue. Frames are
+ * transmitted as separate chip-select-framed DAC writes; this interface does
+ * not make multiple channel updates electrically simultaneous.
  *
- * @return true if an empty batch required no work or the complete payload was
- *     accepted and triggered.
- * @return false if the module is not started, the batch is malformed, or
- *     SPI rejected the complete payload.
+ * @param[in] frame_bytes
+ *     Contiguous prepared DAC frame bytes.
+ *
+ * @param[in] byte_count
+ *     Number of valid bytes in @p frame_bytes. The caller guarantees that this
+ *     is a non-zero multiple of EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES and does
+ *     not exceed EXEC_ANALOGUE_OUTPUT_BATCH_MAX_BYTES.
+ *
+ * @return true if the complete batch was accepted and triggering did not fault.
+ * @return false if the SPI TX path rejected or faulted the submission.
  */
-bool EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch(
-    const AnalogueOutputPreparedBatch_T* prepared_batch );
+bool EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( const uint8_t* frame_bytes, uint32_t byte_count );
 
 /**
  * @brief Write a voltage to a single DAC output channel.
@@ -304,8 +312,8 @@ bool EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch(
  *
  * The module must be configured, electrically ready, and started before this
  * function is called. This compatibility API is intended for console commands,
- * manual testing, and other non-hot-path use. The future execution manager
- * should submit prepared data directly..
+ * manual testing, and other non-hot-path use. The Execution Manager hot path
+ * must submit prepared batches directly.
  *
  * @param channel
  *     The DAC output channel number (0-5 for active channels, 6-7 disabled).

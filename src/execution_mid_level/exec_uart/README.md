@@ -87,6 +87,12 @@ HW_UART_TX_BUFFER_SIZE
 Larger logical UART outputs must be split by higher layers before calling
 `EXEC_UART_Transmit()`.
 
+The Execution Manager's `UART_TRANSMIT` adapter forwards the canonical raw
+payload and length directly to this API. No adapter-side temporary buffer is
+used. If the complete payload cannot fit, this API returns false and the
+Execution Manager terminates the run as an operation rejection. Preparation-
+time schedule feasibility analysis is not implemented yet.
+
 ---
 
 ## RX Behaviour

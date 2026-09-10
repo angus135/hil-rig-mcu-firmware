@@ -39,6 +39,7 @@ extern "C"
  */
 
 #include "rtos_config.h"
+#include "execution_manager/execution_instruction.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -191,8 +192,11 @@ typedef enum
     /** The supplied lease is null, modified, inactive, or stale. */
     FLASH_MANAGER_RESULT_COMMIT_INVALID_LEASE,
 
-    /** The actual payload length exceeds the reserved capacity. */
+    /** The actual payload length exceeds the record lease capacity. */
     FLASH_MANAGER_RESULT_COMMIT_OVERFLOW,
+
+    /** The complete record would exceed this execution session's result reservation. */
+    FLASH_MANAGER_RESULT_COMMIT_SESSION_CAPACITY_EXCEEDED,
 
     /** The record could not be safely scheduled for persistence. */
     FLASH_MANAGER_RESULT_COMMIT_INTERNAL_ERROR
@@ -224,6 +228,9 @@ typedef struct
     uint8_t channel;
 } FlashManagerResultHeader_T;
 
+/** Stable peripheral identifiers stored in result record headers. */
+#define FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT ( 1U )
+
 /**
  * @brief Temporary driver write access to Flash Manager-owned result storage.
  *
@@ -251,54 +258,25 @@ typedef struct
 /* Execution instruction serving. */
 
 /**
- * @brief Fixed header stored before every canonical instruction payload.
- *
- * The package application layer creates this representation before upload.
- * Stored instructions form a packed [header][payload] stream without padding;
- * the next header immediately follows the preceding payload. Upload processing
- * must validate every record and reject malformed streams before NAND storage.
- * The current storage format uses the MCU structure representation; byte order
- * and C alignment are therefore target-specific, and no format version is
- * currently stored.
- *
- * @todo Replace native serialization with the versioned, byte-order-explicit
- *       persisted format specified as future work in the Flash Manager README.
- */
-typedef struct
-{
-    /** Timestamp at which the instruction becomes due. */
-    uint32_t timestamp;
-
-    /** Number of payload bytes following this header. */
-    uint16_t payload_length_bytes;
-
-    /** Peripheral family targeted by the instruction. */
-    uint8_t peripheral_type;
-
-    /** Peripheral instance or channel targeted by the instruction. */
-    uint8_t channel;
-} FlashManagerInstructionHeader_T;
-
-/**
  * @brief Read-only view of the next buffered execution instruction.
  *
- * The header and payload together represent one complete logical instruction.
- * The fixed header is copied into this aligned view for safe field access; the
- * variable-length payload remains in Flash Manager-owned buffer storage and is
- * exposed without a copy. An internal mirror keeps records crossing the
+ * The header and operation stream together represent one complete tick.
+ * The fixed header is decoded from two aligned storage words into this view;
+ * the variable-length operation stream remains in Flash Manager-owned storage
+ * and is exposed without a copy. An internal mirror keeps records crossing the
  * physical end of circular storage contiguous.
  *
  * The view remains valid until consumed or the instruction buffer is reset.
- * The Execution Manager and peripheral driver must not retain payload after a
+ * The Execution Manager and peripheral drivers must not retain operation data after a
  * successful consume operation.
  */
 typedef struct
 {
-    /** Parsed copy of the stored instruction header. */
-    FlashManagerInstructionHeader_T header;
+    /** Header fields decoded from the stored instruction words. */
+    ExecutionInstructionHeader_T header;
 
-    /** Read-only payload belonging to the instruction described by header. */
-    const uint8_t* payload;
+    /** Read-only packed operations belonging to the instruction. */
+    const uint8_t* operations;
 } FlashManagerInstructionView_T;
 
 /** @brief Availability and validation status for the next instruction view. */
@@ -560,7 +538,8 @@ bool FLASH_MANAGER_ConsumeInstructionFromISR( BaseType_t* higher_priority_task_w
  * @brief Requests preparation of NAND storage for a canonical instruction image.
  *
  * @param[in] expected_length_bytes Total canonical instruction bytes that the
- *        Host Interface will submit during this upload.
+ *        Host Interface will submit during this upload. It must be nonzero,
+ *        divisible by four, and within the instruction partition capacity.
  *
  * @return Instruction-upload request status.
  *
@@ -585,8 +564,9 @@ FLASH_MANAGER_RequestInstructionUploadStart( uint32_t expected_length_bytes );
  * @note This operation is accepted only in
  *       FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD.
  * @note Accepted bytes are copied into Flash Manager-owned storage before this
- *       function returns, so the caller may immediately reuse its source
- *       buffer.
+ *       function returns, so the caller may immediately reuse its source buffer.
+ * @note Individual chunks do not need word, instruction, or operation alignment;
+ *       only the complete declared image is word aligned.
  * @note Each call is all-or-nothing and may contain at most one NAND page. If
  *       the three-page upload ring cannot accept the complete chunk, this
  *       function returns FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY and the
@@ -594,11 +574,12 @@ FLASH_MANAGER_RequestInstructionUploadStart( uint32_t expected_length_bytes );
  * @note Completing a page asynchronously wakes the Flash Manager task. NAND
  *       persistence proceeds concurrently with later host submissions into
  *       other available ring pages.
- * @note The Host Interface application layer must supply the canonical packed
- *       [header][payload] instruction representation with nondecreasing
- *       timestamps, valid routing metadata and payload schemas, and records no
- *       larger than one NAND page. The Flash Manager preserves the byte stream
- *       but does not perform semantic validation.
+ * @note The Host Interface application layer must supply canonical packed tick
+ *       instructions with strictly increasing timestamps, valid operation counts,
+ *       opcodes, channels, payload layouts and alignment, and complete
+ *       instructions no larger than EXECUTION_INSTRUCTION_MAX_SIZE_BYTES. The
+ *       Flash Manager preserves the byte stream but does not perform semantic
+ *       operation validation.
  * @note This function is task-context only and does not access NAND directly.
  */
 FlashManagerInstructionUploadRequestStatus_T
@@ -632,13 +613,18 @@ FlashManagerInstructionUploadRequestStatus_T FLASH_MANAGER_RequestInstructionUpl
  * result RAM, preloads every available instruction slot, and enters EXECUTING
  * only after preparation succeeds.
  *
+ * @param maximum_result_length_bytes Maximum logical bytes available to all
+ *        packed result headers and payloads produced by this execution.
+ *        Zero explicitly reserves no result storage.
+ *
  * @return Request acceptance status.
  *
  * @note Call from task context only.
  * @note The Run State Manager must wait until FLASH_MANAGER_GetState() reports
  *       EXECUTING before starting the execution timer.
  */
-FlashManagerRequestStatus_T FLASH_MANAGER_RequestExecutionPreparation( void );
+FlashManagerRequestStatus_T
+FLASH_MANAGER_RequestExecutionPreparation( uint32_t maximum_result_length_bytes );
 
 /**
  * @brief Requests asynchronous publication and draining of final results.

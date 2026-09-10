@@ -197,10 +197,10 @@ bool EXEC_SPI_Is_Started( ExecSPIChannel_T channel );
  * @p packet_sizes_bytes describes the size of one SPI packet inside
  * @p data_src.
  *
- * For master-mode SPI, each low-level HW_SPI_Load_Tx_Buffer() call becomes one
- * software-chip-select-framed SPI transaction. This function therefore calls
- * HW_SPI_Load_Tx_Buffer() once per packet, then calls HW_SPI_Tx_Trigger() only
- * once after all packet loads have completed.
+ * The complete variable-size packet batch is submitted atomically to the
+ * low-level driver. In master mode each supplied packet becomes one
+ * software-chip-select-framed transaction. TX is triggered once only after the
+ * complete batch has been accepted.
  *
  * Example:
  * @code
@@ -243,10 +243,22 @@ bool EXEC_SPI_Is_Started( ExecSPIChannel_T channel );
  * @return
  *     true if all packets were accepted by the low-level TX queue and
  *     transmission was triggered.
- *     false if any packet could not be accepted by the low-level TX queue.
+ *     false if the complete batch could not be accepted or triggering faulted.
  */
 bool EXEC_SPI_Transmit( ExecSPIChannel_T channel, const uint8_t* data_src,
                         const uint32_t* packet_sizes_bytes, uint32_t num_packets );
+
+/**
+ * @brief Report whether the current run's first SPI TX rejection was a queue rejection.
+ *
+ * This diagnostic is latched only when the low-level TX queue rejects a batch.
+ * It is cleared by the next successful enabled configuration of the channel and
+ * intentionally survives stop/disable cleanup so it can be inspected after an
+ * execution fault. Call this only when EXEC_SPI_Transmit() has returned false;
+ * a clear latch then identifies the other failure path, a low-level TX fault
+ * observed after triggering.
+ */
+bool EXEC_SPI_Was_Tx_Queue_Rejected( ExecSPIChannel_T channel );
 
 /**
  * @brief Copy all currently unread RX bytes from a SPI channel.

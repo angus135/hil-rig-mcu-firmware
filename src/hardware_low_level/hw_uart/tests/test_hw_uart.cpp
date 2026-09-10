@@ -81,9 +81,11 @@ DMA_TypeDef fake_dma1 = { 0U, 0U, 0U, 0U };
 DMA_TypeDef fake_dma2 = { 0U, 0U, 0U, 0U };
 }
 
-uint32_t mock_nvic_enabled[2]   = { 1U, 1U };
-uint32_t mock_irq_disable_count = 0U;
-uint32_t mock_irq_enable_count  = 0U;
+uint32_t mock_nvic_enabled[2]    = { 1U, 1U };
+uint32_t mock_irq_disable_count  = 0U;
+uint32_t mock_irq_enable_count   = 0U;
+uint32_t mock_pclk1_frequency_hz = 45000000U;
+uint32_t mock_pclk2_frequency_hz = 90000000U;
 
 /**-----------------------------------------------------------------------------
  *  Private Helper Functions
@@ -202,6 +204,16 @@ extern "C" HAL_StatusTypeDef HAL_UART_Init( UART_HandleTypeDef* huart )
 extern "C" HAL_StatusTypeDef HAL_UART_DeInit( UART_HandleTypeDef* huart )
 {
     return g_mock_hal->DeInit( huart );
+}
+
+extern "C" uint32_t HAL_RCC_GetPCLK1Freq( void )
+{
+    return mock_pclk1_frequency_hz;
+}
+
+extern "C" uint32_t HAL_RCC_GetPCLK2Freq( void )
+{
+    return mock_pclk2_frequency_hz;
 }
 
 extern "C" HAL_StatusTypeDef HAL_UART_Receive_DMA( UART_HandleTypeDef* huart, uint8_t* pData,
@@ -534,32 +546,35 @@ protected:
         TEST_HW_UART_Reset_Dma_Handle( &hdma_usart2_rx, DMA1_Stream5 );
         TEST_HW_UART_Reset_Dma_Handle( &hdma_usart3_rx, nullptr );
 
-        huart6.Instance        = USART6;
-        huart6.Init.BaudRate   = 0U;
-        huart6.Init.WordLength = 0U;
-        huart6.Init.StopBits   = 0U;
-        huart6.Init.Parity     = 0U;
-        huart6.Init.Mode       = 0U;
-        huart6.hdmarx          = &hdma_usart6_rx;
-        huart6.hdmatx          = nullptr;
+        huart6.Instance          = USART6;
+        huart6.Init.BaudRate     = 0U;
+        huart6.Init.WordLength   = 0U;
+        huart6.Init.StopBits     = 0U;
+        huart6.Init.Parity       = 0U;
+        huart6.Init.Mode         = 0U;
+        huart6.Init.OverSampling = 0U;
+        huart6.hdmarx            = &hdma_usart6_rx;
+        huart6.hdmatx            = nullptr;
 
-        huart2.Instance        = USART2;
-        huart2.Init.BaudRate   = 0U;
-        huart2.Init.WordLength = 0U;
-        huart2.Init.StopBits   = 0U;
-        huart2.Init.Parity     = 0U;
-        huart2.Init.Mode       = 0U;
-        huart2.hdmarx          = &hdma_usart2_rx;
-        huart2.hdmatx          = nullptr;
+        huart2.Instance          = USART2;
+        huart2.Init.BaudRate     = 0U;
+        huart2.Init.WordLength   = 0U;
+        huart2.Init.StopBits     = 0U;
+        huart2.Init.Parity       = 0U;
+        huart2.Init.Mode         = 0U;
+        huart2.Init.OverSampling = 0U;
+        huart2.hdmarx            = &hdma_usart2_rx;
+        huart2.hdmatx            = nullptr;
 
-        huart3.Instance        = USART3;
-        huart3.Init.BaudRate   = 0U;
-        huart3.Init.WordLength = 0U;
-        huart3.Init.StopBits   = 0U;
-        huart3.Init.Parity     = 0U;
-        huart3.Init.Mode       = 0U;
-        huart3.hdmarx          = &hdma_usart3_rx;
-        huart3.hdmatx          = nullptr;
+        huart3.Instance          = USART3;
+        huart3.Init.BaudRate     = 0U;
+        huart3.Init.WordLength   = 0U;
+        huart3.Init.StopBits     = 0U;
+        huart3.Init.Parity       = 0U;
+        huart3.Init.Mode         = 0U;
+        huart3.Init.OverSampling = 0U;
+        huart3.hdmarx            = &hdma_usart3_rx;
+        huart3.hdmatx            = nullptr;
 
         TEST_HW_UART_Reset_Usart( USART6 );
         TEST_HW_UART_Reset_Usart( USART2 );
@@ -574,6 +589,8 @@ protected:
         mock_nvic_enabled[DMA2_Stream6_IRQn] = 1U;
         mock_irq_disable_count               = 0U;
         mock_irq_enable_count                = 0U;
+        mock_pclk1_frequency_hz              = 45000000U;
+        mock_pclk2_frequency_hz              = 90000000U;
 
         memset( hw_uart_channel_states, 0, sizeof( hw_uart_channel_states ) );
         memset( &uart_console_state, 0, sizeof( uart_console_state ) );
@@ -641,6 +658,7 @@ TEST_F( UartTest, DutConfigureChannel1AppliesUartSettings )
     EXPECT_EQ( huart6.Init.StopBits, UART_STOPBITS_1 );
     EXPECT_EQ( huart6.Init.Parity, UART_PARITY_NONE );
     EXPECT_EQ( huart6.Init.Mode, UART_MODE_TX_RX );
+    EXPECT_EQ( huart6.Init.OverSampling, UART_OVERSAMPLING_16 );
 }
 
 TEST_F( UartTest, DutConfigureChannel2AppliesUartSettings )
@@ -670,6 +688,62 @@ TEST_F( UartTest, DutConfigureRejectsInvalidBaudRate )
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
     config.baud_rate = 0U;
+
+    EXPECT_CALL( mock_hal, Init( _ ) ).Times( 0 );
+
+    EXPECT_FALSE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+}
+
+TEST_F( UartTest, DutConfigureRejectsBaudWhoseDividerExceedsChannel1Brr )
+{
+    HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
+    config.baud_rate                = 1373U;
+
+    EXPECT_CALL( mock_hal, Init( _ ) ).Times( 0 );
+
+    EXPECT_FALSE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+}
+
+TEST_F( UartTest, DutConfigureAcceptsBaudWhoseDividerFitsChannel1Brr )
+{
+    HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
+    config.baud_rate                = 1374U;
+
+    EXPECT_CALL( mock_hal, Init( &huart6 ) ).WillOnce( Return( HAL_OK ) );
+
+    EXPECT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+}
+
+TEST_F( UartTest, DutConfigureUsesSelectedChannelsLivePeripheralClockForBaudValidation )
+{
+    HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
+    config.baud_rate                = 687U;
+
+    EXPECT_CALL( mock_hal, Init( _ ) ).Times( 0 );
+    EXPECT_FALSE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+
+    EXPECT_CALL( mock_hal, Init( &huart2 ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_2, &config ) );
+
+    mock_pclk2_frequency_hz = 45000000U;
+    EXPECT_CALL( mock_hal, Init( &huart6 ) ).WillOnce( Return( HAL_OK ) );
+    EXPECT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+}
+
+TEST_F( UartTest, DutConfigureRejectsBaudWhenPeripheralClockIsUnavailable )
+{
+    HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
+    mock_pclk2_frequency_hz         = 0U;
+
+    EXPECT_CALL( mock_hal, Init( _ ) ).Times( 0 );
+
+    EXPECT_FALSE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+}
+
+TEST_F( UartTest, DutConfigureRejectsBaudWhoseDividerIsBelowSampling16Minimum )
+{
+    HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
+    mock_pclk2_frequency_hz         = 1000000U;
 
     EXPECT_CALL( mock_hal, Init( _ ) ).Times( 0 );
 

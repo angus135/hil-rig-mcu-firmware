@@ -6,10 +6,17 @@
 
 set(EXECUTION_MANAGER_SOURCES
     execution_manager.c
+    execution_measurement_adapters.c
+    execution_operation_adapters.c
 )
 
 set(EXECUTION_MANAGER_HEADERS
+    execution_instruction.h
     execution_manager.h
+    execution_manager_isr.h
+    execution_measurement_adapters.h
+    execution_operation_payloads.h
+    execution_operation_adapters.h
 )
 
 add_library(execution_manager STATIC
@@ -29,7 +36,14 @@ target_link_libraries(execution_manager
         project_warnings
         cubeide_hal
         rtos
-        hw_gpio
+        flash_manager
+        exec_digital_output
+        exec_pwm_gen
+        exec_uart
+        exec_spi
+        exec_analogue_output
+        exec_can
+        exec_digital_input
 )
 
 # -----------------------------
@@ -60,5 +74,24 @@ if(EXECUTION_MANAGER_ENABLE_TESTS AND BUILD_TESTING)
     )
 
     add_test(NAME execution_manager_tests COMMAND execution_manager_tests)
+
+    add_executable(execution_operation_adapters_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_execution_operation_adapters.cpp
+    )
+
+    target_link_libraries(execution_operation_adapters_tests
+        PRIVATE
+            project_warnings
+            execution_manager
+            gtest
+            gtest_main
+    )
+
+    target_include_directories(execution_operation_adapters_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
+    add_test(NAME execution_operation_adapters_tests COMMAND execution_operation_adapters_tests)
 
 endif()

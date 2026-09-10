@@ -9,7 +9,6 @@
  *
  *  Destructive hardware bring-up sequence:
  *
- *      `flash init`
  *      `flash status`
  *      `flash external_test [seed]`
  *      `flash upload_test [record_count] [seed]`
@@ -17,6 +16,91 @@
  *      `flash execute_echo [100|1000|10000]`
  *      `flash finalise`
  *      `flash results verify`
+ *
+ *  Digital-output execution-path validation uses:
+ *
+ *      `flash status`
+ *      `run_state receive`
+ *      `test_config inert`
+ *      `test_config digital_output <channel> <voltage> low`
+ *      `flash upload_do_test <channel 1..10> [delay_ticks] [high_ticks]`
+ *      `run_state configure`
+ *      `run_state frequency <100|1000|10000>`
+ *      `run_state execute <delay_ticks + high_ticks> 0`
+ *
+ *  upload_do_test maps the selected logical output through the production GPIO
+ *  mapping API, then stores two canonical Execution Manager instructions. The
+ *  first drives the resulting mask high after delay_ticks; the second drives
+ *  it low after high_ticks more ticks. The normal Run State Manager transition then
+ *  owns Flash preparation, driver start, TIM4, terminal handoff, driver stop,
+ *  and result finalisation.
+ *
+ *  PWM execution-path validation uses the same lifecycle:
+ *
+ *      `test_config pwm_generation <channel> <voltage> <frequency_hz> <duty_permille>`
+ *      `flash upload_pwm_test <channel> <frequency_hz> <duty_permille> <update_tick> <run_ticks>`
+ *
+ *  Both commands use the PWM driver's calculation functions before storing
+ *  ARR, CCR, and PSC. The Execution Manager only forwards those prepared
+ *  values at the scheduled tick.
+ *
+ *  Analogue-output execution-path validation uses:
+ *
+ *      `test_config analogue_output <internal|external>`
+ *      `flash upload_ao_test <channel 0..5> <voltage> <update_tick> <run_ticks>`
+ *
+ *  The upload command prepares the DAC frame through
+ *  `EXEC_ANALOGUE_OUTPUT_Prepare_Frame()` and stores the exact three-byte wire
+ *  payload. The Execution Manager forwards those bytes unchanged at the
+ *  scheduled tick.
+ *
+ *  CAN execution-path validation uses:
+ *
+ *      `test_config can <channel> <bitrate> [filter_bank filter_id filter_mask]`
+ *      `flash upload_can_test <channel 1..2> <id 0..2047> <byte 0..255> <dlc 0..8> <first_tick>
+ *<run_ticks>` `flash upload_can_test <channel 1..2> <id 0..2047> <byte 0..255> <dlc 0..8>
+ *<first_tick> <run_ticks> <repeat_count> <interval_ticks>`
+ *
+ *  Each generated instruction contains one canonical 12-byte CAN packet. The
+ *  command fills the first `dlc` data bytes with the selected byte and stores
+ *  zero in the unused data and reserved bytes. The current CAN driver retains
+ *  its normal validation and queue copy when the instruction executes.
+ *
+ *  UART execution-path validation uses:
+ *
+ *      `test_config uart <channel> <3v3|5v|rs232> <baud> tx`
+ *      `flash upload_uart_test <channel> <byte> <length> <first_tick> <run_ticks>`
+ *      `flash upload_uart_test <channel> <byte> <length> <first_tick> <run_ticks> <repeat_count>
+ *<interval_ticks>`
+ *
+ *  The upload command creates one or more variable-length raw UART operations. It is
+ *  bounded only by the canonical field and console staging-buffer capacities;
+ *  it does not perform UART schedule-feasibility analysis.
+ *
+ *  SPI execution-path validation provides the equivalent repeated-byte test:
+ *
+ *      `test_config spi <channel> <master|slave> <8|16> <mode0..mode3> default_cs`
+ *      `flash upload_spi_test <channel> <byte> <length> <first_tick> <run_ticks>`
+ *      `flash upload_spi_test <channel> <byte> <length> <first_tick> <run_ticks> <repeat_count>
+ *<interval_ticks>`
+ *
+ *  Each generated SPI operation contains one packet and uses the canonical
+ *  packet-count, packet-size-array, and data layout. The command checks the
+ *  active channel and frame alignment but intentionally defers schedule
+ *  feasibility analysis.
+ *
+ *  Peak output-ISR timing uses:
+ *
+ *      `flash upload_output_stress [sample_count] [interval_ticks]`
+ *
+ *  This single command commits a predefined configuration and uploads repeated
+ *  peak-load instructions. Only previously exercised hardware paths are
+ *  enabled: digital output 1, both PWM channels, both UART channels, and SPI
+ *  channel 1. CAN, SPI channel 2, analogue output, and all measurement inputs
+ *  remain disabled. Each scheduled instruction submits a maximum chunk to
+ *  both UARTs and a representative 256-byte SPI packet; interval ticks allow
+ *  the queues to drain. Run the stream through the normal RSM execution path
+ *  and inspect `run_state status` for the maximum TIM4 cycle count.
  *
  *  `execute_echo` is the execution-facing API test. It temporarily redirects
  *  the existing priority-5 TIM4 interrupt away from the production Execution

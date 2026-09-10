@@ -18,8 +18,14 @@
 #include "console_run_state_manager.h"
 #include "console.h"
 #include "dut_driver_lifecycle.h"
+#include "execution_manager.h"
+#include "execution_operation_adapters.h"
+#include "exec_spi.h"
+#include "hw_timer.h"
 #include "run_state_manager.h"
 #include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 /**-----------------------------------------------------------------------------
@@ -49,10 +55,14 @@
 static const char* CONSOLE_RunStateManager_StateName( RunState_T state );
 static const char* CONSOLE_RunStateManager_FrequencyName( RunStateFrequencyMode_T frequency );
 static const char* CONSOLE_RunStateManager_FaultName( RunStateFaultReason_T reason );
+static const char*
+CONSOLE_RunStateManager_ExecutionFailureName( ExecutionManagerFailure_T failure );
+static const char* CONSOLE_RunStateManager_OpcodeName( ExecutionOperationOpcode_T opcode );
 static const char* CONSOLE_RunStateManager_RequestName( RunStateRequest_T request );
 static const char* CONSOLE_RunStateManager_RequestResultName( RunStateRequestResult_T result );
 static void        CONSOLE_RunStateManager_PrintUsage( void );
 static void        CONSOLE_RunStateManager_PrintRequestResult( bool accepted );
+static bool        CONSOLE_RunStateManager_ParseU32( const char* text, uint32_t* value );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -121,6 +131,8 @@ static const char* CONSOLE_RunStateManager_FaultName( RunStateFaultReason_T reas
             return "DUT driver stop timeout";
         case RUN_STATE_FAULT_EXECUTION_TIMER:
             return "execution timer";
+        case RUN_STATE_FAULT_EXECUTION_MANAGER:
+            return "Execution Manager";
         case RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION:
             return "Flash execution preparation";
         case RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION_TIMEOUT:
@@ -139,6 +151,50 @@ static const char* CONSOLE_RunStateManager_FaultName( RunStateFaultReason_T reas
             return "internal RSM error";
         default:
             return "unknown";
+    }
+}
+
+static const char* CONSOLE_RunStateManager_ExecutionFailureName( ExecutionManagerFailure_T failure )
+{
+    switch ( failure )
+    {
+        case EXECUTION_MANAGER_FAILURE_NONE:
+            return "none";
+        case EXECUTION_MANAGER_FAILURE_NOT_PREPARED:
+            return "not prepared";
+        case EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNDERRUN:
+            return "instruction underrun";
+        case EXECUTION_MANAGER_FAILURE_INSTRUCTION_CORRUPT:
+            return "instruction corrupt";
+        case EXECUTION_MANAGER_FAILURE_INSTRUCTION_LATE:
+            return "instruction late";
+        case EXECUTION_MANAGER_FAILURE_OPERATION_REJECTED:
+            return "operation rejected";
+        case EXECUTION_MANAGER_FAILURE_INSTRUCTION_CONSUME:
+            return "instruction consume";
+        default:
+            return "unknown";
+    }
+}
+
+static const char* CONSOLE_RunStateManager_OpcodeName( ExecutionOperationOpcode_T opcode )
+{
+    switch ( opcode )
+    {
+        case EXECUTION_OPERATION_OPCODE_DIGITAL_OUTPUT_UPDATE:
+            return "DIGITAL_OUTPUT_UPDATE";
+        case EXECUTION_OPERATION_OPCODE_ANALOGUE_OUTPUT_BATCH:
+            return "ANALOGUE_OUTPUT_BATCH";
+        case EXECUTION_OPERATION_OPCODE_PWM_UPDATE:
+            return "PWM_UPDATE";
+        case EXECUTION_OPERATION_OPCODE_CAN_TRANSMIT:
+            return "CAN_TRANSMIT";
+        case EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT:
+            return "SPI_TRANSMIT";
+        case EXECUTION_OPERATION_OPCODE_UART_TRANSMIT:
+            return "UART_TRANSMIT";
+        default:
+            return "UNKNOWN";
     }
 }
 
@@ -220,9 +276,30 @@ static void CONSOLE_RunStateManager_PrintUsage( void )
 {
     CONSOLE_Printf( "Usage:\r\n" );
     CONSOLE_Printf( "  run_state status\r\n" );
-    CONSOLE_Printf( "  run_state <receive|configure|execute|execution_complete>\r\n" );
+    CONSOLE_Printf( "  run_state frequency <100|1000|10000>\r\n" );
+    CONSOLE_Printf( "  run_state execute <tick_count> [maximum_result_bytes]\r\n" );
+    CONSOLE_Printf( "  run_state <receive|configure|execution_complete>\r\n" );
     CONSOLE_Printf( "  run_state <transfer|transfer_complete|repeat|discard|fault|reset>\r\n" );
     CONSOLE_Printf( "  run_state diagnostic_timer <start|stop>\r\n" );
+}
+
+static bool CONSOLE_RunStateManager_ParseU32( const char* text, uint32_t* value )
+{
+    if ( ( text == NULL ) || ( value == NULL ) || ( text[0] == '\0' ) || ( text[0] == '-' ) )
+    {
+        return false;
+    }
+
+    char*         end    = NULL;
+    unsigned long parsed = strtoul( text, &end, 0 );
+
+    if ( ( end == text ) || ( *end != '\0' ) || ( parsed > UINT32_MAX ) )
+    {
+        return false;
+    }
+
+    *value = ( uint32_t )parsed;
+    return true;
 }
 
 /**
@@ -249,6 +326,56 @@ static void CONSOLE_RunStateManager_PrintRequestResult( bool accepted )
 
 void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
 {
+    if ( ( argc == 3U ) && ( strcmp( argv[1], "frequency" ) == 0 ) )
+    {
+        uint32_t frequency = 0U;
+        if ( !CONSOLE_RunStateManager_ParseU32( argv[2], &frequency )
+             || RUN_STATE_MANAGER_IsExecutionTimerRunning() )
+        {
+            CONSOLE_RunStateManager_PrintUsage();
+            return;
+        }
+
+        if ( frequency == 100U )
+        {
+            RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_100HZ );
+        }
+        else if ( frequency == 1000U )
+        {
+            RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_1KHZ );
+        }
+        else if ( frequency == 10000U )
+        {
+            RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_10KHZ );
+        }
+        else
+        {
+            CONSOLE_RunStateManager_PrintUsage();
+            return;
+        }
+
+        CONSOLE_Printf( "Execution frequency set to %lu Hz.\r\n", ( unsigned long )frequency );
+        return;
+    }
+
+    if ( ( argc >= 3U ) && ( argc <= 4U ) && ( strcmp( argv[1], "execute" ) == 0 ) )
+    {
+        RunStateExecutionRequest_T request = { 0U, 0U };
+        if ( !CONSOLE_RunStateManager_ParseU32( argv[2], &request.tick_count )
+             || ( request.tick_count == 0U )
+             || ( ( argc == 4U )
+                  && !CONSOLE_RunStateManager_ParseU32( argv[3],
+                                                        &request.maximum_result_length_bytes ) ) )
+        {
+            CONSOLE_RunStateManager_PrintUsage();
+            return;
+        }
+
+        CONSOLE_RunStateManager_PrintRequestResult(
+            RUN_STATE_MANAGER_RequestExecution( &request ) );
+        return;
+    }
+
     if ( argc == 3U && strcmp( argv[1], "diagnostic_timer" ) == 0 )
     {
         if ( strcmp( argv[2], "start" ) == 0 )
@@ -276,10 +403,13 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
 
     if ( strcmp( argv[1], "status" ) == 0 )
     {
-        RunStateManagerStatus_T    run_status    = { 0 };
-        DutDriverLifecycleStatus_T driver_status = { 0 };
+        RunStateManagerStatus_T            run_status        = { 0 };
+        DutDriverLifecycleStatus_T         driver_status     = { 0 };
+        HW_TIMER_ExecutionTiming_T         execution_timing  = { 0 };
+        ExecutionOperationAdapterFailure_T operation_failure = { 0 };
         RUN_STATE_MANAGER_GetStatus( &run_status );
         DUT_DRIVER_LIFECYCLE_GetStatus( &driver_status );
+        HW_TIMER_Get_Execution_Timing( &execution_timing );
 
         CONSOLE_Printf( "Run state: %s\r\n",
                         CONSOLE_RunStateManager_StateName( run_status.state ) );
@@ -290,6 +420,68 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                         run_status.execution_timer_running ? "running" : "stopped" );
         CONSOLE_Printf( "Execution frequency: %s\r\n",
                         CONSOLE_RunStateManager_FrequencyName( run_status.execution_frequency ) );
+        if ( ( execution_timing.sample_count != 0U ) && ( execution_timing.core_clock_hz != 0U ) )
+        {
+            const uint64_t latest_ns =
+                ( ( uint64_t )execution_timing.latest_cycles * 1000000000ULL )
+                / execution_timing.core_clock_hz;
+            const uint64_t maximum_ns =
+                ( ( uint64_t )execution_timing.maximum_cycles * 1000000000ULL )
+                / execution_timing.core_clock_hz;
+            CONSOLE_Printf( "Execution ISR: samples=%lu, latest=%lu cycles (%lu.%03lu us), "
+                            "max=%lu cycles (%lu.%03lu us)\r\n",
+                            ( unsigned long )execution_timing.sample_count,
+                            ( unsigned long )execution_timing.latest_cycles,
+                            ( unsigned long )( latest_ns / 1000ULL ),
+                            ( unsigned long )( latest_ns % 1000ULL ),
+                            ( unsigned long )execution_timing.maximum_cycles,
+                            ( unsigned long )( maximum_ns / 1000ULL ),
+                            ( unsigned long )( maximum_ns % 1000ULL ) );
+        }
+        else
+        {
+            CONSOLE_Printf( "Execution ISR: no samples\r\n" );
+        }
+        for ( uint32_t opcode = 0U; opcode < EXECUTION_OPERATION_OPCODE_COUNT; opcode++ )
+        {
+            ExecutionOperationTiming_T operation_timing = { 0 };
+            if ( EXECUTION_OPERATION_ADAPTER_GetTiming( ( ExecutionOperationOpcode_T )opcode,
+                                                        &operation_timing )
+                 && operation_timing.sample_count != 0U )
+            {
+                const uint32_t average_cycles =
+                    ( uint32_t )( operation_timing.total_cycles / operation_timing.sample_count );
+                CONSOLE_Printf(
+                    "Operation timing: %s samples=%lu avg=%lu cycles max=%lu cycles\r\n",
+                    CONSOLE_RunStateManager_OpcodeName( ( ExecutionOperationOpcode_T )opcode ),
+                    ( unsigned long )operation_timing.sample_count, ( unsigned long )average_cycles,
+                    ( unsigned long )operation_timing.maximum_cycles );
+            }
+        }
+        const ExecutionManagerFailure_T execution_failure = EXECUTION_MANAGER_GetFailure();
+        if ( execution_failure != EXECUTION_MANAGER_FAILURE_NONE )
+        {
+            CONSOLE_Printf( "Execution detail: failure=%s tick=%lu\r\n",
+                            CONSOLE_RunStateManager_ExecutionFailureName( execution_failure ),
+                            ( unsigned long )EXECUTION_MANAGER_GetCurrentTick() );
+            if ( execution_failure == EXECUTION_MANAGER_FAILURE_OPERATION_REJECTED
+                 && EXECUTION_OPERATION_ADAPTER_GetFailure( &operation_failure ) )
+            {
+                CONSOLE_Printf( "Rejected operation: index=%u opcode=%s(%u) channel=%u\r\n",
+                                ( unsigned int )operation_failure.operation_index,
+                                CONSOLE_RunStateManager_OpcodeName( operation_failure.opcode ),
+                                ( unsigned int )operation_failure.opcode,
+                                ( unsigned int )operation_failure.channel );
+                if ( operation_failure.opcode == EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT )
+                {
+                    CONSOLE_Printf( "SPI transmit detail: %s\r\n",
+                                    EXEC_SPI_Was_Tx_Queue_Rejected(
+                                        ( ExecSPIChannel_T )operation_failure.channel )
+                                        ? "TX queue rejected batch"
+                                        : "low-level TX fault observed after trigger" );
+                }
+            }
+        }
         CONSOLE_Printf( "Fault reason: %s\r\n",
                         CONSOLE_RunStateManager_FaultName( run_status.fault_reason ) );
         CONSOLE_Printf( "Last request: %s\r\n",
@@ -347,10 +539,6 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
     else if ( strcmp( argv[1], "configure" ) == 0 )
     {
         CONSOLE_RunStateManager_PrintRequestResult( RUN_STATE_MANAGER_RequestConfiguration() );
-    }
-    else if ( strcmp( argv[1], "execute" ) == 0 )
-    {
-        CONSOLE_RunStateManager_PrintRequestResult( RUN_STATE_MANAGER_RequestExecution() );
     }
     else if ( strcmp( argv[1], "execution_complete" ) == 0 )
     {

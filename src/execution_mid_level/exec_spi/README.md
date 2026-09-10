@@ -12,8 +12,9 @@ validation, scheduling, and device/protocol layers above it.
 
 For transmission, this module does carry packet boundary information from the execution layer down
 to `hw_spi`. The actual chip-select handling is still owned by the low-level driver, but
-`exec_spi` now loads each SPI packet separately so the low-level master TX path can frame each
-packet as its own DMA-backed software-chip-select transaction.
+`exec_spi` submits the complete variable-size packet batch atomically. The low-level master TX path
+retains each boundary and frames every packet as its own DMA-backed software-chip-select
+transaction.
 
 `exec_spi` exposes only `EXEC_SPI_CHANNEL_1` and `EXEC_SPI_CHANNEL_2`.
 The dedicated low-level DAC channel remains private to `exec_analogue_output`.
@@ -35,12 +36,13 @@ Disabled --Configure(enabled)--> Configured/stopped --Start--> Started
 - Disabled configuration applies `SPI_EN=0` and slave selection as the safe
   state. HW configuration is retained because HW SPI has no deconfigure API.
 
-Logic Expander port B mapping:
+Board-channel mapping. The board channel labels are crossed relative to the
+MCU SPI instance numbers:
 
-| Channel | `SPI_EN` | `SPI_EN_MASTER_NSLAVE` |
-|---|---:|---:|
-| `EXEC_SPI_CHANNEL_1` | B6 | B7 |
-| `EXEC_SPI_CHANNEL_2` | B4 | B5 |
+| Channel | HW SPI | NSS | `SPI_EN` | `SPI_EN_MASTER_NSLAVE` |
+|---|---|---|---:|---:|
+| `EXEC_SPI_CHANNEL_1` | SPI2 | PB12 | B4 | B5 |
+| `EXEC_SPI_CHANNEL_2` | SPI1 | PA4 | B6 | B7 |
 
 ---
 
@@ -65,8 +67,8 @@ details that matter to this module are:
 - Unread RX data may be exposed as one or two spans because the RX buffer can wrap.
 - TX data is copied into the low-level driver's internal TX queue before transmission.
 - In master mode, every low-level TX load is one software-chip-select-framed SPI packet.
-- `exec_spi` receives one contiguous data buffer plus an array of packet sizes, then calls the
-  low-level load function once per packet.
+- `exec_spi` submits one contiguous data buffer and its packet-size array to the low-level driver as
+  one atomic batch.
 - TX transmission begins only when the TX path is explicitly triggered.
 - `exec_spi` triggers TX once after all packets for the call have been queued.
 - TX is complete only when there are no queued bytes and no bytes currently owned by DMA.
@@ -170,23 +172,20 @@ bytes it did not receive.
 
 ## Transmit Behaviour
 
-The transmit path is a thin wrapper around the low-level TX queue, but it now preserves packet
-boundaries:
-
-1. `EXEC_SPI_Transmit()` starts with `data_offset_bytes = 0`.
-2. For each entry in `packet_sizes_bytes`, it calls `HW_SPI_Load_Tx_Buffer()` using
-   `&data_src[data_offset_bytes]` and the current packet size.
-3. After each successful load, it advances `data_offset_bytes` by that packet size.
-4. If any packet load fails, the function returns `false` immediately and does not trigger TX.
-5. If all packet loads succeed, it calls `HW_SPI_Tx_Trigger()` once.
+The transmit path submits the complete variable-size batch through
+`HW_SPI_Load_Tx_Packet_Batch()`. The low-level driver preflights byte capacity,
+descriptor capacity, and master packet placement before modifying the queue. Packet
+shape and frame alignment are guaranteed by the validated-instruction caller contract.
+The driver therefore queues every packet or none. After acceptance,
+`EXEC_SPI_Transmit()` triggers TX once and reports a trigger-time driver fault.
 
 The trigger-once behaviour is important for the 100 us execution tick. The execution layer may queue
 several SPI packets at the start of a tick. Repeatedly triggering after each packet would add
 unnecessary low-level IRQ masking and trigger checks. The low-level master TX path is responsible for
 draining the queued packets after it has been kicked once.
 
-In master mode, each call to `HW_SPI_Load_Tx_Buffer()` becomes one low-level master packet. The
-low-level SPI driver then sends those packets one by one, asserting software CS for the packet,
+In master mode, each supplied packet becomes one low-level master packet. The
+low-level SPI driver sends those packets one by one, asserting software CS for the packet,
 starting DMA, waiting for final drain, deasserting CS, and then starting the next queued packet if
 one is pending.
 
@@ -289,9 +288,9 @@ Useful behaviours to test include:
   external interface before stopping HW SPI
 - disabled configuration applies the safe external state
 - stop/start retains configuration and master/slave selection
-- transmit failure on any packet does not trigger TX
-- transmit success loads each packet separately and triggers TX once after all loads succeed
-- packet offsets passed to `HW_SPI_Load_Tx_Buffer()` match the supplied packet-size array
+- transmit batch rejection leaves the low-level queue unchanged and does not trigger TX
+- transmit success submits one atomic packet batch and triggers TX once
+- the complete data and packet-size arrays are passed unchanged to the low-level batch API
 - receive copies one or two RX spans correctly
 - receive fails without consuming data if the destination buffer is too small
 - TX completion returns the low-level TX-empty state

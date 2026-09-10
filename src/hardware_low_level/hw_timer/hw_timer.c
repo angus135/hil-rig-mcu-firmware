@@ -22,7 +22,7 @@
 #include "stm32f4xx_ll_bus.h"
 #include "stm32f4xx_ll_system.h"
 #include "stm32f4xx_ll_rcc.h"
-#include "execution_manager.h"
+#include "execution_manager_isr.h"
 #include "hw_timer_capture_start.h"
 #endif
 
@@ -44,15 +44,15 @@
 
 #define ANALOGUE_INPUT_TIMER_HANDLE htim3
 
-/* SPI Channel 0 Timer Defines*/
-#define SPI_CHANNEL_0_TIMER_INSTANCE TIM11
-#define SPI_CHANNEL_0_TIMER_IRQ_HANDLER TIM1_TRG_COM_TIM11_IRQHandler
-#define SPI_CHANNEL_0_TIMER_HANDLE htim11
-
 /* SPI Channel 1 Timer Defines*/
 #define SPI_CHANNEL_1_TIMER_INSTANCE TIM6
 #define SPI_CHANNEL_1_TIMER_IRQ_HANDLER TIM6_DAC_IRQHandler
 #define SPI_CHANNEL_1_TIMER_HANDLE htim6
+
+/* SPI Channel 2 Timer Defines*/
+#define SPI_CHANNEL_2_TIMER_INSTANCE TIM11
+#define SPI_CHANNEL_2_TIMER_IRQ_HANDLER TIM1_TRG_COM_TIM11_IRQHandler
+#define SPI_CHANNEL_2_TIMER_HANDLE htim11
 
 /* SPI DAC Timer Defines*/
 #define SPI_DAC_TIMER_INSTANCE TIM7
@@ -86,11 +86,14 @@
  */
 
 /*
- * NULL preserves the production route to EXECUTION_MANAGER_Process_From_ISR().
+ * NULL preserves the production route to EXECUTION_MANAGER_ProcessTickFromISR().
  * Hardware bring-up may replace it only while TIM4 is stopped.
  */
 static HW_TIMER_ExecutionCallback_T volatile execution_timer_callback = NULL;
 static HW_TIMER_ExecutionGuard_T volatile execution_timer_guard       = NULL;
+static volatile uint32_t execution_isr_sample_count                   = 0U;
+static volatile uint32_t execution_isr_latest_cycles                  = 0U;
+static volatile uint32_t execution_isr_maximum_cycles                 = 0U;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -107,12 +110,29 @@ static HW_TIMER_ExecutionGuard_T volatile execution_timer_guard       = NULL;
  *------------------------------------------------------------------------------
  */
 
+#ifndef TEST_BUILD
+static inline void HW_TIMER_Record_Execution_ISR_Cycles( uint32_t start_cycles )
+{
+    const uint32_t elapsed_cycles = DWT->CYCCNT - start_cycles;
+
+    execution_isr_latest_cycles = elapsed_cycles;
+    execution_isr_sample_count++;
+    if ( elapsed_cycles > execution_isr_maximum_cycles )
+    {
+        execution_isr_maximum_cycles = elapsed_cycles;
+    }
+}
+#endif
+
 void EXECUTION_MANAGER_TIMER_IRQ_HANDLER( void )
 {
 #ifdef TEST_BUILD
 #else
     if ( LL_TIM_IsActiveFlag_UPDATE( EXECUTION_MANAGER_TIMER_INSTANCE ) )
     {
+        const uint32_t start_cycles               = DWT->CYCCNT;
+        BaseType_t     higher_priority_task_woken = pdFALSE;
+
         LL_TIM_ClearFlag_UPDATE( EXECUTION_MANAGER_TIMER_INSTANCE );
 
         HW_TIMER_ExecutionGuard_T guard = execution_timer_guard;
@@ -126,28 +146,15 @@ void EXECUTION_MANAGER_TIMER_IRQ_HANDLER( void )
 
         if ( callback != NULL )
         {
-            callback();
+            callback( &higher_priority_task_woken );
         }
         else
         {
-            EXECUTION_MANAGER_Process_From_ISR();
+            ( void )EXECUTION_MANAGER_ProcessTickFromISR( &higher_priority_task_woken );
         }
-    }
-#endif
-}
 
-void SPI_CHANNEL_0_TIMER_IRQ_HANDLER( void )
-{
-#ifdef TEST_BUILD
-#else
-    if ( LL_TIM_IsActiveFlag_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE )
-         && LL_TIM_IsEnabledIT_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE ) )
-    {
-        LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE );
-        LL_TIM_DisableIT_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE );
-
-        // Running Process
-        HW_SPI_Timer_Callback_From_ISR( SPI_CHANNEL_0 );
+        HW_TIMER_Record_Execution_ISR_Cycles( start_cycles );
+        portYIELD_FROM_ISR( higher_priority_task_woken );
     }
 #endif
 }
@@ -164,6 +171,22 @@ void SPI_CHANNEL_1_TIMER_IRQ_HANDLER( void )
 
         // Running Process
         HW_SPI_Timer_Callback_From_ISR( SPI_CHANNEL_1 );
+    }
+#endif
+}
+
+void SPI_CHANNEL_2_TIMER_IRQ_HANDLER( void )
+{
+#ifdef TEST_BUILD
+#else
+    if ( LL_TIM_IsActiveFlag_UPDATE( SPI_CHANNEL_2_TIMER_INSTANCE )
+         && LL_TIM_IsEnabledIT_UPDATE( SPI_CHANNEL_2_TIMER_INSTANCE ) )
+    {
+        LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_2_TIMER_INSTANCE );
+        LL_TIM_DisableIT_UPDATE( SPI_CHANNEL_2_TIMER_INSTANCE );
+
+        // Running Process
+        HW_SPI_Timer_Callback_From_ISR( SPI_CHANNEL_2 );
     }
 #endif
 }
@@ -214,19 +237,6 @@ void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t arr )
                 Error_Handler();
             }
             break;
-        case SPI_CHANNEL_0_TIMER:
-            HW_TIMER_Stop_Timer( SPI_CHANNEL_0_TIMER );
-            SPI_CHANNEL_0_TIMER_HANDLE.Init.Prescaler = psc;
-            SPI_CHANNEL_0_TIMER_HANDLE.Init.Period    = arr;
-            if ( HAL_TIM_Base_Init( &SPI_CHANNEL_0_TIMER_HANDLE ) != HAL_OK )
-            {
-                Error_Handler();
-            }
-            // Reset counter to ensure consistent timing
-            __HAL_TIM_SET_COUNTER( &SPI_CHANNEL_0_TIMER_HANDLE, 0u );
-            // Clear any pending update flag to prevent immediate IRQs
-            LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE );
-            break;
         case SPI_CHANNEL_1_TIMER:
             HW_TIMER_Stop_Timer( SPI_CHANNEL_1_TIMER );
             SPI_CHANNEL_1_TIMER_HANDLE.Init.Prescaler = psc;
@@ -239,6 +249,19 @@ void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t arr )
             __HAL_TIM_SET_COUNTER( &SPI_CHANNEL_1_TIMER_HANDLE, 0u );
             // Clear any pending update flag to prevent immediate IRQs
             LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_1_TIMER_INSTANCE );
+            break;
+        case SPI_CHANNEL_2_TIMER:
+            HW_TIMER_Stop_Timer( SPI_CHANNEL_2_TIMER );
+            SPI_CHANNEL_2_TIMER_HANDLE.Init.Prescaler = psc;
+            SPI_CHANNEL_2_TIMER_HANDLE.Init.Period    = arr;
+            if ( HAL_TIM_Base_Init( &SPI_CHANNEL_2_TIMER_HANDLE ) != HAL_OK )
+            {
+                Error_Handler();
+            }
+            // Reset counter to ensure consistent timing
+            __HAL_TIM_SET_COUNTER( &SPI_CHANNEL_2_TIMER_HANDLE, 0u );
+            // Clear any pending update flag to prevent immediate IRQs
+            LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_2_TIMER_INSTANCE );
             break;
         case SPI_DAC_TIMER:
             HW_TIMER_Stop_Timer( SPI_DAC_TIMER );
@@ -284,14 +307,21 @@ void HW_TIMER_Configure_Timer( Timer_T timer, uint32_t psc, uint32_t arr )
 
 bool HW_TIMER_Start_Timer( Timer_T timer )
 {
+    if ( timer == EXECUTION_MANAGER_TIMER )
+    {
+        execution_isr_sample_count   = 0U;
+        execution_isr_latest_cycles  = 0U;
+        execution_isr_maximum_cycles = 0U;
+    }
+
 #ifdef TEST_BUILD
     /* Host stub: hardware start sequencing is tested separately. */
     switch ( timer )
     {
         case EXECUTION_MANAGER_TIMER:
         case ANALOGUE_INPUT_TIMER:
-        case SPI_CHANNEL_0_TIMER:
         case SPI_CHANNEL_1_TIMER:
+        case SPI_CHANNEL_2_TIMER:
         case SPI_DAC_TIMER:
         case PWM_CAPTURE_TIMER_CH1:
         case PWM_CAPTURE_TIMER_CH2:
@@ -303,6 +333,9 @@ bool HW_TIMER_Start_Timer( Timer_T timer )
     switch ( timer )
     {
         case EXECUTION_MANAGER_TIMER:
+            CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+            DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
             // Ensure counter is stopped while configuring
             LL_TIM_DisableCounter( EXECUTION_MANAGER_TIMER_INSTANCE );
 
@@ -314,21 +347,6 @@ bool HW_TIMER_Start_Timer( Timer_T timer )
 
             // Enable counter
             LL_TIM_EnableCounter( EXECUTION_MANAGER_TIMER_INSTANCE );
-            break;
-        case SPI_CHANNEL_0_TIMER:
-            // Ensure counter is stopped while configuring
-            LL_TIM_DisableCounter( SPI_CHANNEL_0_TIMER_INSTANCE );
-
-            LL_TIM_SetCounter( SPI_CHANNEL_0_TIMER_INSTANCE, 0U );
-
-            // Clear any pending update flag
-            LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE );
-
-            // Enable update interrupt
-            LL_TIM_EnableIT_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE );
-
-            // Enable counter
-            LL_TIM_EnableCounter( SPI_CHANNEL_0_TIMER_INSTANCE );
             break;
         case SPI_CHANNEL_1_TIMER:
             // Ensure counter is stopped while configuring
@@ -344,6 +362,21 @@ bool HW_TIMER_Start_Timer( Timer_T timer )
 
             // Enable counter
             LL_TIM_EnableCounter( SPI_CHANNEL_1_TIMER_INSTANCE );
+            break;
+        case SPI_CHANNEL_2_TIMER:
+            // Ensure counter is stopped while configuring
+            LL_TIM_DisableCounter( SPI_CHANNEL_2_TIMER_INSTANCE );
+
+            LL_TIM_SetCounter( SPI_CHANNEL_2_TIMER_INSTANCE, 0U );
+
+            // Clear any pending update flag
+            LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_2_TIMER_INSTANCE );
+
+            // Enable update interrupt
+            LL_TIM_EnableIT_UPDATE( SPI_CHANNEL_2_TIMER_INSTANCE );
+
+            // Enable counter
+            LL_TIM_EnableCounter( SPI_CHANNEL_2_TIMER_INSTANCE );
             break;
         case SPI_DAC_TIMER:
             // Ensure counter is stopped while configuring
@@ -411,16 +444,16 @@ void HW_TIMER_Stop_Timer( Timer_T timer )
         case ANALOGUE_INPUT_TIMER:
             HAL_TIM_Base_Stop( &ANALOGUE_INPUT_TIMER_HANDLE );
             break;
-        case SPI_CHANNEL_0_TIMER:
-            LL_TIM_DisableIT_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE );
-            LL_TIM_DisableCounter( SPI_CHANNEL_0_TIMER_INSTANCE );
-            LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_0_TIMER_INSTANCE );
-            break;
-
         case SPI_CHANNEL_1_TIMER:
             LL_TIM_DisableIT_UPDATE( SPI_CHANNEL_1_TIMER_INSTANCE );
             LL_TIM_DisableCounter( SPI_CHANNEL_1_TIMER_INSTANCE );
             LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_1_TIMER_INSTANCE );
+            break;
+
+        case SPI_CHANNEL_2_TIMER:
+            LL_TIM_DisableIT_UPDATE( SPI_CHANNEL_2_TIMER_INSTANCE );
+            LL_TIM_DisableCounter( SPI_CHANNEL_2_TIMER_INSTANCE );
+            LL_TIM_ClearFlag_UPDATE( SPI_CHANNEL_2_TIMER_INSTANCE );
             break;
 
         case SPI_DAC_TIMER:
@@ -454,6 +487,23 @@ void HW_TIMER_Stop_Timer( Timer_T timer )
         default:
             break;
     }
+#endif
+}
+
+void HW_TIMER_Get_Execution_Timing( HW_TIMER_ExecutionTiming_T* timing )
+{
+    if ( timing == NULL )
+    {
+        return;
+    }
+
+    timing->sample_count   = execution_isr_sample_count;
+    timing->latest_cycles  = execution_isr_latest_cycles;
+    timing->maximum_cycles = execution_isr_maximum_cycles;
+#ifdef TEST_BUILD
+    timing->core_clock_hz = 0U;
+#else
+    timing->core_clock_hz = SystemCoreClock;
 #endif
 }
 
