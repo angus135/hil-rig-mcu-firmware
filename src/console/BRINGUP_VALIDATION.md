@@ -162,8 +162,67 @@ are slow relative to its sampling/filtering. Use the meter only as a coarse
 change indicator and use an oscilloscope or logic analyser for sign-off.
 
 The expected terminal state is `RESULTS_READY`, with TIM4 and the PWM channel
-stopped. `run_state discard` releases the empty result session and returns the
-RSM and Flash Manager to IDLE for another run.
+stopped. When PWM capture is disabled, `run_state discard` releases the empty
+result session and returns the RSM and Flash Manager to IDLE for another run.
+
+## Execution Manager PWM capture path
+
+PWM capture results are sparse: one result is stored only when a newly completed
+period is available. Each record contains the raw period and high-time timer
+counts; its header timestamp identifies the execution tick that consumed it.
+
+For a slow functional loopback, wire LV PWM output 1 to PWM capture input 1 and
+run the preceding 1 Hz to 2 Hz output test with capture enabled. Reserve the
+worst-case result capacity and retrieve the records through the RSM-owned Flash
+Manager transfer:
+
+```text
+flash status
+run_state reset
+run_state receive
+test_config inert
+test_config pwm_generation 1 3v3 1 500
+test_config pwm_capture 1 3v3
+flash upload_pwm_test 1 2 750 390 800
+run_state configure
+run_state frequency 100
+run_state execute 800 12800
+run_state status
+flash results verify_pwm_capture 1
+run_state status
+```
+
+The verifier validates the sparse record headers and timestamps, converts the
+first and final raw captures through `EXEC_PWM_Capture_Convert()`, and compares
+the final capture with the uploaded 2 Hz, 75% target. Successful retrieval
+finishes the result transfer and returns the RSM to `IDLE`.
+
+For a 10 kHz execution stress run, retain the same physical loopback and use a
+1 MHz, 50% waveform. One megahertz is both the current PWM generator API ceiling
+and the intended PWM capture design point; this test verifies that target on the
+assembled hardware:
+
+```text
+flash status
+run_state reset
+run_state receive
+test_config inert
+test_config pwm_generation 1 3v3 1000000 500
+test_config pwm_capture 1 3v3
+flash upload_pwm_test 1 1000000 500 1 10000
+run_state configure
+run_state frequency 10000
+run_state execute 10000 160000
+run_state status
+flash results verify_pwm_capture 1
+run_state status
+```
+
+At 1 MHz approximately 100 periods occur between 10 kHz execution ticks. The
+current capture path intentionally reports the latest completed measurement,
+not every PWM edge or period. Expect at most one PWM capture record per tick.
+This test may also expose the outstanding coherent-snapshot limitation if the
+period and high-time capture registers change between their two reads.
 
 ## Execution Manager analogue-output path
 
