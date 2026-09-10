@@ -92,6 +92,13 @@ bool TEST_CONFIGURATION_GetActive( DutDriverConfiguration_T* configuration )
     }
     return false;
 }
+bool TEST_CONFIGURATION_AcquireForRun( DutDriverConfiguration_T* configuration )
+{
+    return TEST_CONFIGURATION_GetActive( configuration );
+}
+void TEST_CONFIGURATION_ReleaseRunOwnership( void )
+{
+}
 void TEST_CONFIGURATION_Clear( void )
 {
     configuration_cleared          = true;

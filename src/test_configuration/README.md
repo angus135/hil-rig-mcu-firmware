@@ -20,6 +20,10 @@ console commands replace that active value for hardware diagnostics.
 
 `TEST_CONFIGURATION_Commit()` copies a complete candidate into module-owned
 storage. `TEST_CONFIGURATION_GetActive()` returns a caller-owned snapshot.
+`TEST_CONFIGURATION_AcquireForRun()` atomically claims and copies the committed
+image for the Run State Manager; commits remain rejected by the integration
+layer while that claim is held. `TEST_CONFIGURATION_ReleaseRunOwnership()`
+releases the claim after discard or reset.
 `TEST_CONFIGURATION_Clear()` invalidates and zeroes the stored value when the
 RSM discards a completed test. The mutex makes these task-context copies atomic;
 it does not provide lifecycle policy or validate individual driver settings.

@@ -104,6 +104,8 @@ static volatile RunStateFaultReason_T   fault_reason           = RUN_STATE_FAULT
 static volatile RunStateFaultReason_T   requested_fault_reason = RUN_STATE_FAULT_NONE;
 static volatile RunStateRequest_T       last_request           = RUN_STATE_REQUEST_NONE;
 static volatile RunStateRequestResult_T last_request_result    = RUN_STATE_REQUEST_RESULT_NONE;
+static DutDriverConfiguration_T         run_configuration;
+static bool                             run_configuration_owned = false;
 
 static bool              request_timing_active        = false;
 static RunStateRequest_T timed_request                = RUN_STATE_REQUEST_NONE;
@@ -351,8 +353,7 @@ static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state, Run
 
         case RUN_STATE_RESULTS_READY:
             return next_state == RUN_STATE_RESULT_TRANSFER || next_state == RUN_STATE_CONFIGURATION
-                   || next_state == RUN_STATE_ARMED
-                   || next_state == RUN_STATE_IDLE;
+                   || next_state == RUN_STATE_ARMED || next_state == RUN_STATE_IDLE;
 
         case RUN_STATE_RESULT_TRANSFER:
             return next_state == RUN_STATE_RESULTS_READY || next_state == RUN_STATE_IDLE;
@@ -394,11 +395,13 @@ static bool RUN_STATE_MANAGER_EnterConfiguration( void )
         return false;
     }
 
-    if ( !TEST_CONFIGURATION_GetActive( &configuration ) )
+    if ( !run_configuration_owned && !TEST_CONFIGURATION_AcquireForRun( &run_configuration ) )
     {
         RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_CONFIGURATION_UNAVAILABLE );
         return false;
     }
+    run_configuration_owned = true;
+    configuration           = run_configuration;
 
     if ( !DUT_DRIVER_LIFECYCLE_Configure( &configuration ) )
     {
@@ -455,7 +458,7 @@ static bool RUN_STATE_MANAGER_BeginDriverStart( void )
         return false;
     }
 
-    driver_cleanup_complete   = false;
+    driver_cleanup_complete = false;
 
     if ( !DUT_DRIVER_LIFECYCLE_Start() )
     {
@@ -585,6 +588,8 @@ static bool RUN_STATE_MANAGER_DiscardCompletedResults( RunState_T next_state )
     if ( next_state == RUN_STATE_IDLE )
     {
         TEST_CONFIGURATION_Clear();
+        TEST_CONFIGURATION_ReleaseRunOwnership();
+        run_configuration_owned = false;
         return RUN_STATE_MANAGER_BeginDriverShutdown( false, true,
                                                       RUN_STATE_PENDING_IDLE_SHUTDOWN );
     }
@@ -891,6 +896,8 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
                 {
                     fault_reason              = RUN_STATE_FAULT_NONE;
                     execution_abort_requested = false;
+                    TEST_CONFIGURATION_ReleaseRunOwnership();
+                    run_configuration_owned = false;
                 }
             }
             break;
