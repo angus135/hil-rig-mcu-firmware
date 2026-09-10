@@ -293,7 +293,60 @@ TEST_F( RunStateManagerTest, InitialStatusSnapshotIsCoherentAndSafe )
     EXPECT_EQ( RUN_STATE_FAULT_NONE, status.fault_reason );
     EXPECT_EQ( RUN_STATE_REQUEST_NONE, status.last_request );
     EXPECT_EQ( RUN_STATE_REQUEST_RESULT_NONE, status.last_request_result );
+    EXPECT_FALSE( status.request_timing_active );
+    EXPECT_EQ( RUN_STATE_REQUEST_NONE, status.timed_request );
+    EXPECT_EQ( 0U, status.timed_request_elapsed_ms );
+    EXPECT_FALSE( status.last_transition_timing_valid );
+    EXPECT_EQ( RUN_STATE_REQUEST_NONE, status.last_completed_request );
+    EXPECT_EQ( 0U, status.last_transition_duration_ms );
     RUN_STATE_MANAGER_GetStatus( nullptr );
+}
+
+TEST_F( RunStateManagerTest, ReportsTotalConfigurationTransitionTime )
+{
+    current_tick                = 100U;
+    driver_configuration_status = DUT_DRIVER_CONFIGURATION_PENDING;
+    Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+    Process( RUN_STATE_REQUEST_CONFIGURATION_READY );
+
+    current_tick                   = 137U;
+    RunStateManagerStatus_T status = {};
+    RUN_STATE_MANAGER_GetStatus( &status );
+    EXPECT_TRUE( status.request_timing_active );
+    EXPECT_EQ( RUN_STATE_REQUEST_CONFIGURATION_READY, status.timed_request );
+    EXPECT_EQ( 37U, status.timed_request_elapsed_ms );
+
+    driver_configuration_status = DUT_DRIVER_CONFIGURATION_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    RUN_STATE_MANAGER_GetStatus( &status );
+    EXPECT_FALSE( status.request_timing_active );
+    EXPECT_TRUE( status.last_transition_timing_valid );
+    EXPECT_EQ( RUN_STATE_REQUEST_CONFIGURATION_READY, status.last_completed_request );
+    EXPECT_EQ( 37U, status.last_transition_duration_ms );
+}
+
+TEST_F( RunStateManagerTest, ExecutionTimingSpansFlashPreparationAndDriverStartup )
+{
+    ConfigureToArmed();
+    current_tick        = 200U;
+    flash_manager_state = FLASH_MANAGER_STATE_PREPARING_EXECUTION;
+    Process( RUN_STATE_REQUEST_EXECUTION );
+
+    current_tick        = 225U;
+    flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_PENDING_DRIVER_START, pending_operation );
+
+    current_tick        = 241U;
+    driver_start_status = DUT_DRIVER_START_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    RunStateManagerStatus_T status = {};
+    RUN_STATE_MANAGER_GetStatus( &status );
+    EXPECT_EQ( RUN_STATE_EXECUTION, status.state );
+    EXPECT_FALSE( status.request_timing_active );
+    EXPECT_EQ( RUN_STATE_REQUEST_EXECUTION, status.last_completed_request );
+    EXPECT_EQ( 41U, status.last_transition_duration_ms );
 }
 
 TEST_F( RunStateManagerTest, ConfigurationWaitsForReadinessBeforeArming )

@@ -105,6 +105,14 @@ static volatile RunStateFaultReason_T   requested_fault_reason = RUN_STATE_FAULT
 static volatile RunStateRequest_T       last_request           = RUN_STATE_REQUEST_NONE;
 static volatile RunStateRequestResult_T last_request_result    = RUN_STATE_REQUEST_RESULT_NONE;
 
+static bool              request_timing_active        = false;
+static RunStateRequest_T timed_request                = RUN_STATE_REQUEST_NONE;
+static RunState_T        timed_request_target_state   = RUN_STATE_IDLE;
+static TickType_t        timed_request_started_at     = 0U;
+static bool              last_transition_timing_valid = false;
+static RunStateRequest_T last_completed_request       = RUN_STATE_REQUEST_NONE;
+static uint32_t          last_transition_duration_ms  = 0U;
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -136,12 +144,17 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void );
 static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request );
 static void RUN_STATE_MANAGER_ProcessNotifications( uint32_t notifications );
 
-static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state );
-static bool RUN_STATE_MANAGER_StartExecutionTimer( void );
-static void RUN_STATE_MANAGER_StopExecutionTimer( void );
-static void RUN_STATE_MANAGER_StartPendingOperation( RunStatePendingOperation_T operation );
-static void RUN_STATE_MANAGER_ClearPendingOperation( void );
-static bool RUN_STATE_MANAGER_PendingOperationTimedOut( TickType_t timeout_ticks );
+static bool     RUN_STATE_MANAGER_TransitionTo( RunState_T next_state );
+static bool     RUN_STATE_MANAGER_StartExecutionTimer( void );
+static void     RUN_STATE_MANAGER_StopExecutionTimer( void );
+static void     RUN_STATE_MANAGER_StartPendingOperation( RunStatePendingOperation_T operation );
+static void     RUN_STATE_MANAGER_ClearPendingOperation( void );
+static bool     RUN_STATE_MANAGER_PendingOperationTimedOut( TickType_t timeout_ticks );
+static bool     RUN_STATE_MANAGER_GetRequestTargetState( RunStateRequest_T request,
+                                                         RunState_T*       target_state );
+static void     RUN_STATE_MANAGER_StartRequestTiming( RunStateRequest_T request );
+static void     RUN_STATE_MANAGER_CompleteRequestTimingIfReady( void );
+static uint32_t RUN_STATE_MANAGER_TicksToMilliseconds( TickType_t ticks );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -200,6 +213,87 @@ static bool RUN_STATE_MANAGER_PendingOperationTimedOut( TickType_t timeout_ticks
     return elapsed >= timeout_ticks;
 }
 
+static uint32_t RUN_STATE_MANAGER_TicksToMilliseconds( TickType_t ticks )
+{
+#ifdef TEST_BUILD
+    return ( uint32_t )ticks;
+#else
+    return ( uint32_t )( ( ( uint64_t )ticks * 1000ULL ) / ( uint64_t )configTICK_RATE_HZ );
+#endif
+}
+
+/** Returns the externally meaningful terminal state for a named request. */
+static bool RUN_STATE_MANAGER_GetRequestTargetState( RunStateRequest_T request,
+                                                     RunState_T*       target_state )
+{
+    if ( target_state == NULL )
+    {
+        return false;
+    }
+
+    switch ( request )
+    {
+        case RUN_STATE_REQUEST_PACKAGE_RECEIVE:
+            *target_state = RUN_STATE_TEST_PACKAGE_RECEIVE;
+            return true;
+        case RUN_STATE_REQUEST_CONFIGURATION_READY:
+            *target_state = RUN_STATE_ARMED;
+            return true;
+        case RUN_STATE_REQUEST_EXECUTION:
+            *target_state = RUN_STATE_EXECUTION;
+            return true;
+        case RUN_STATE_REQUEST_EXECUTION_COMPLETE:
+            *target_state = RUN_STATE_RESULTS_READY;
+            return true;
+        case RUN_STATE_REQUEST_RESULT_TRANSFER:
+            *target_state = RUN_STATE_RESULT_TRANSFER;
+            return true;
+        case RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE:
+        case RUN_STATE_REQUEST_DISCARD_RESULTS:
+        case RUN_STATE_REQUEST_RESET:
+            *target_state = RUN_STATE_IDLE;
+            return true;
+        case RUN_STATE_REQUEST_REPEAT:
+            *target_state = RUN_STATE_ARMED;
+            return true;
+        case RUN_STATE_REQUEST_NONE:
+        case RUN_STATE_REQUEST_FAULT:
+        case RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_START:
+        case RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_STOP:
+        default:
+            return false;
+    }
+}
+
+static void RUN_STATE_MANAGER_CompleteRequestTimingIfReady( void )
+{
+    if ( !request_timing_active || run_state != timed_request_target_state )
+    {
+        return;
+    }
+
+    const TickType_t elapsed     = ( TickType_t )( xTaskGetTickCount() - timed_request_started_at );
+    last_completed_request       = timed_request;
+    last_transition_duration_ms  = RUN_STATE_MANAGER_TicksToMilliseconds( elapsed );
+    last_transition_timing_valid = true;
+    request_timing_active        = false;
+}
+
+static void RUN_STATE_MANAGER_StartRequestTiming( RunStateRequest_T request )
+{
+    RunState_T target_state = RUN_STATE_IDLE;
+    if ( !RUN_STATE_MANAGER_GetRequestTargetState( request, &target_state ) )
+    {
+        return;
+    }
+
+    request_timing_active      = true;
+    timed_request              = request;
+    timed_request_target_state = target_state;
+    timed_request_started_at   = xTaskGetTickCount();
+    RUN_STATE_MANAGER_CompleteRequestTimingIfReady();
+}
+
 static void RUN_STATE_MANAGER_RecordFault( RunStateFaultReason_T reason )
 {
     if ( fault_reason == RUN_STATE_FAULT_NONE && reason != RUN_STATE_FAULT_NONE )
@@ -210,6 +304,7 @@ static void RUN_STATE_MANAGER_RecordFault( RunStateFaultReason_T reason )
 
 static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason )
 {
+    request_timing_active     = false;
     execution_abort_requested = true;
     RUN_STATE_MANAGER_RecordFault( reason );
     ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_FAULT );
@@ -787,6 +882,7 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
     if ( accepted )
     {
         last_request_result = RUN_STATE_REQUEST_RESULT_ACCEPTED;
+        RUN_STATE_MANAGER_StartRequestTiming( request );
     }
     else if ( run_state == RUN_STATE_FAULT )
     {
@@ -971,6 +1067,7 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
     }
 
     run_state = next_state;
+    RUN_STATE_MANAGER_CompleteRequestTimingIfReady();
     return true;
 }
 
@@ -1053,6 +1150,13 @@ void RUN_STATE_MANAGER_Init( void )
     requested_fault_reason       = RUN_STATE_FAULT_NONE;
     last_request                 = RUN_STATE_REQUEST_NONE;
     last_request_result          = RUN_STATE_REQUEST_RESULT_NONE;
+    request_timing_active        = false;
+    timed_request                = RUN_STATE_REQUEST_NONE;
+    timed_request_target_state   = RUN_STATE_IDLE;
+    timed_request_started_at     = 0U;
+    last_transition_timing_valid = false;
+    last_completed_request       = RUN_STATE_REQUEST_NONE;
+    last_transition_duration_ms  = 0U;
     run_state                    = RUN_STATE_IDLE;
 
     HW_TIMER_Set_Execution_Guard( RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR );
@@ -1193,15 +1297,24 @@ void RUN_STATE_MANAGER_GetStatus( RunStateManagerStatus_T* status )
     }
 
     taskENTER_CRITICAL();
+    const TickType_t timing_elapsed =
+        request_timing_active ? ( TickType_t )( xTaskGetTickCount() - timed_request_started_at )
+                              : 0U;
     *status = ( RunStateManagerStatus_T ){
-        .state                   = run_state,
-        .transition_pending      = pending_operation != RUN_STATE_PENDING_NONE,
-        .execution_active        = execution_active,
-        .execution_timer_running = execution_timer_running,
-        .execution_frequency     = frequency_mode,
-        .fault_reason            = fault_reason,
-        .last_request            = last_request,
-        .last_request_result     = last_request_result,
+        .state                    = run_state,
+        .transition_pending       = pending_operation != RUN_STATE_PENDING_NONE,
+        .execution_active         = execution_active,
+        .execution_timer_running  = execution_timer_running,
+        .execution_frequency      = frequency_mode,
+        .fault_reason             = fault_reason,
+        .last_request             = last_request,
+        .last_request_result      = last_request_result,
+        .request_timing_active    = request_timing_active,
+        .timed_request            = request_timing_active ? timed_request : RUN_STATE_REQUEST_NONE,
+        .timed_request_elapsed_ms = RUN_STATE_MANAGER_TicksToMilliseconds( timing_elapsed ),
+        .last_transition_timing_valid = last_transition_timing_valid,
+        .last_completed_request       = last_completed_request,
+        .last_transition_duration_ms  = last_transition_duration_ms,
     };
     taskEXIT_CRITICAL();
 }
