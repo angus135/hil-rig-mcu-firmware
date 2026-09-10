@@ -462,10 +462,10 @@ TEST_F( ExecSPITest, AbortChannelTerminatesWithoutWaitingForTransmissionCompleti
 
     EXPECT_CALL( mock_hw_spi, TxIsComplete( _ ) ).Times( 0 );
     EXPECT_CALL( mock_logic_expander,
-                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 7U, true ) )
+                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 5U, true ) )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_logic_expander,
-                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 6U, false ) )
+                 LoadControlBit( LOGIC_EXPANDER_PWM_SPI, LOGIC_EXPANDER_PORT_B, 4U, false ) )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_logic_expander, SendControlBits() )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
