@@ -12,7 +12,8 @@ Execution Manager requests. Internal completion transitions occur automatically:
 
 ```text
 IDLE -> TEST_PACKAGE_RECEIVE -> CONFIGURATION -> ARMED -> EXECUTION
-     -> RESULT_FINALISATION -> RESULTS_READY -> RESULT_TRANSFER -> IDLE
+     -> RESULT_FINALISATION -> RESULTS_READY -> RESULT_TRANSFER
+     -> CONFIGURATION -> ARMED
 ```
 
 Entering `CONFIGURATION` applies the committed configuration once, then polls
@@ -60,9 +61,9 @@ asynchronous transition was pending, or failed during its entry action.
 | `execute <ticks> [result bytes]` | `ARMED` | Start Flash preparation and DUT startup; enter `EXECUTION` only after both complete |
 | `execution_complete` | `EXECUTION` | Stop execution and start Flash finalisation |
 | `transfer` | `RESULTS_READY` | Enter `RESULT_TRANSFER` |
-| `transfer_complete` | `RESULT_TRANSFER` | Enter `IDLE` |
+| `transfer_complete` | `RESULT_TRANSFER` | Retain the test, reapply its configuration, and enter `ARMED` |
 | `repeat` | `RESULTS_READY` | Discard results, retain configuration/instructions, and enter `ARMED` |
-| `discard` | `RESULTS_READY` | Discard results, clear configuration, and enter `IDLE` |
+| `discard` | `RESULTS_READY` or `ARMED` | Discard available results if necessary, clear the retained test, and enter `IDLE` |
 | `fault` | Any state | Enter `FAULT` and retain the first cause |
 | `reset` | `FAULT` | Restore idle driver state and enter `IDLE` |
 
@@ -95,11 +96,12 @@ until DUT cleanup is acknowledged and Flash Manager is `IDLE`.
 finalised a valid result stream. `repeat` deliberately abandons that stream,
 retains the active DUT configuration and uploaded instructions, reapplies the
 complete configuration, waits for asynchronous frontend writes to complete,
-and then returns to `ARMED`. This restores driver-owned initial output
-conditions such as PWM timer values and DAC codes. `discard` abandons the stream, clears the active configuration, places
-the DUT lifecycle into its idle state, and returns to `IDLE`. Both operations
-require Flash Manager to release the result session and return to `IDLE` before
-the RSM transition is committed.
+and then returns to `ARMED`. Successful result transfer follows the same
+reconfiguration path after Flash releases the consumed result stream. Both
+paths restore driver-owned initial output conditions such as PWM timer values
+and DAC codes. `discard` from either `RESULTS_READY` or `ARMED` clears the
+active configuration, places the DUT lifecycle into its idle state, and
+returns to `IDLE`.
 
 The manager uses task notifications for requests and polls only while an
 asynchronous configuration, driver-start, driver-shutdown, or Flash Manager operation is
@@ -222,13 +224,9 @@ or execution implementation. The future Host Interface owns this sequence:
 - Alternatively, from `RESULTS_READY`, submit
   `RUN_STATE_MANAGER_RequestRepeat()` to abandon the current results and return
   to `ARMED`, or `RUN_STATE_MANAGER_RequestDiscardResults()` to abandon them
-  and return to `IDLE`. These are alternatives to transfer in the current state
-  table and are not valid after transfer completion.
-
-Successful result-transfer completion currently returns directly to `IDLE`.
-If the host protocol later requires “transfer results, then rerun the same
-test,” that needs an explicit state-transition policy change; callers must not
-approximate it with a late repeat request.
+  and return to `IDLE`. After completed transfer returns to `ARMED`, submit
+  `RUN_STATE_MANAGER_RequestExecution()` to rerun the retained test or
+  `RUN_STATE_MANAGER_RequestDiscardResults()` to clear it and return to `IDLE`.
 
 The implemented Execution Manager integration:
 

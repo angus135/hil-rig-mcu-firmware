@@ -195,7 +195,9 @@ run_state status
 The verifier validates the sparse record headers and timestamps, converts the
 first and final raw captures through `EXEC_PWM_Capture_Convert()`, and compares
 the final capture with the uploaded 2 Hz, 75% target. Successful retrieval
-finishes the result transfer and returns the RSM to `IDLE`.
+finishes the result transfer, reapplies the retained configuration, and returns
+the RSM to `ARMED`. Use `run_state discard` to clear the test and return to
+`IDLE`.
 
 For a 10 kHz execution stress run, retain the same physical loopback and use a
 1 MHz, 50% waveform. One megahertz is both the current PWM generator API ceiling
@@ -221,6 +223,8 @@ run_state status
 At 1 MHz approximately 100 periods occur between 10 kHz execution ticks. The
 current capture path intentionally reports the latest completed measurement,
 not every PWM edge or period. Expect at most one PWM capture record per tick.
+The first completed capture after each start is discarded as a potentially
+partial startup interval.
 This test may also expose the outstanding coherent-snapshot limitation if the
 period and high-time capture registers change between their two reads.
 

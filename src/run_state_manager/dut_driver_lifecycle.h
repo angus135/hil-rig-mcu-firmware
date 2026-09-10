@@ -60,6 +60,7 @@ typedef struct
     uint32_t spi_started_mask;
     uint32_t uart_enabled_mask;
     uint32_t uart_started_mask;
+    uint32_t uart_receive_enabled_mask;
 } DutDriverLifecycleStatus_T;
 
 /** Aggregate readiness of the most recently accepted driver configuration. */

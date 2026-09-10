@@ -17,7 +17,8 @@ This module is responsible for:
 - Tracking disabled, configured, and started channel state.
 - Detecting newly available hardware capture results.
 - Reading raw period and high-time timer values from hardware result pointers.
-- Consuming hardware capture flags after values are read.
+- Consuming hardware capture flags without losing a later capture.
+- Discarding the first partial capture after each channel start.
 - Validating captured values for basic logical correctness.
 - Converting validated ticks to frequency and duty cycle.
 - Returning execution-owned result structures to callers.
@@ -56,6 +57,17 @@ The execution layer owns:
 - Start/stop sequencing policy.
 - Copying raw capture ticks into caller-owned storage.
 - Minimal result validation.
+
+After each channel start, the first completed capture is consumed without
+being published. It can represent the partial interval between timer startup
+and input-edge synchronisation; subsequent results represent complete PWM
+periods.
+
+For subsequent captures, the consumed flag is cleared before reading the live
+registers, followed by a bounded period/high/period snapshot. A pair is
+published only when both period reads agree. If a capture arrives during the
+snapshot and changes the period register, its flag remains available for the
+next execution tick; no retry loop is performed in interrupt context.
 
 This separation keeps hardware register access out of execution-manager-facing
 code while still allowing deterministic low-overhead capture reads.
@@ -108,13 +120,15 @@ Typical behaviour:
 
 1. Peek the hardware result with `HW_PWM_Capture_Peek_Result()`.
 2. If no new data is available, mark the output result invalid and return false.
-3. Read raw `period_ticks` and `high_ticks` from the hardware result pointers.
-4. Consume the hardware capture flag with `HW_PWM_Capture_Consume_Result()`.
-5. Validate the copied raw values.
-6. Populate `ExecPwmCaptureResult_T` and return true if the measurement is valid.
+3. Clear the capture flag for the result being consumed.
+4. Discard the first result after channel start as an incomplete startup interval.
+5. Read `period_ticks`, `high_ticks`, and `period_ticks` again.
+6. Defer publication when the two period reads differ.
+7. Validate the stable raw values.
+8. Populate `ExecPwmCaptureResult_T` and return true.
 
-The hardware result is consumed after the raw CCR values are read. This avoids
-clearing the capture flag before the execution layer has copied the measurement.
+Clearing the consumed flag before the bounded snapshot ensures that a capture
+arriving during or after the reads remains flagged for a later execution tick.
 
 ---
 
@@ -156,12 +170,14 @@ measurement.
 
 | Field | Meaning |
 |-------|---------|
+| `has_new_data` | True when a new capture was consumed and then accepted or rejected by value validation |
 | `is_valid` | True when the result contains a new valid measurement |
 | `period_ticks` | Raw captured PWM period in timer ticks |
 | `high_ticks` | Raw captured PWM high time in timer ticks |
 
-If no new capture is available, or if the raw capture values are invalid,
-`EXEC_PWM_Capture_Consume()` returns false and sets `is_valid` to false.
+If no publishable capture is available, `EXEC_PWM_Capture_Consume()` returns
+false with both flags false. If a stable new pair fails value validation, it
+returns false with `has_new_data` true and `is_valid` false.
 
 ---
 
