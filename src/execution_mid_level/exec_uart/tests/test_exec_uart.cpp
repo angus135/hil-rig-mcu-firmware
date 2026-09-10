@@ -64,6 +64,7 @@ public:
     MOCK_METHOD( bool, Deconfigure_Channel, ( int ));
     MOCK_METHOD( bool, Start_Channel, ( int ));
     MOCK_METHOD( bool, Stop_Channel, ( int ));
+    MOCK_METHOD( bool, Abort_Channel, ( int ));
     MOCK_METHOD( bool, Tx_Load_Buffer, ( int, const uint8_t*, uint32_t ) );
     MOCK_METHOD( bool, Tx_Trigger, ( int ));
     MOCK_METHOD( HwUartRxSpans_T, Rx_Peek, ( int ));
@@ -188,6 +189,11 @@ extern "C" bool HW_UART_Stop_Channel( HwUartChannel_T channel )
     return g_mock_hw->Stop_Channel( channel );
 }
 
+extern "C" bool HW_UART_Abort_Channel( HwUartChannel_T channel )
+{
+    return g_mock_hw->Abort_Channel( channel );
+}
+
 extern "C" bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data,
                                         uint32_t length_bytes )
 {
@@ -249,6 +255,7 @@ protected:
         ON_CALL( mock_hw, Deconfigure_Channel( _ ) ).WillByDefault( Return( true ) );
         ON_CALL( mock_hw, Start_Channel( _ ) ).WillByDefault( Return( true ) );
         ON_CALL( mock_hw, Stop_Channel( _ ) ).WillByDefault( Return( true ) );
+        ON_CALL( mock_hw, Abort_Channel( _ ) ).WillByDefault( Return( true ) );
         ON_CALL( mock_hw, Tx_Load_Buffer( _, _, _ ) ).WillByDefault( Return( true ) );
         ON_CALL( mock_hw, Tx_Trigger( _ ) ).WillByDefault( Return( true ) );
         ON_CALL( mock_hw, Rx_Peek( _ ) )
@@ -530,6 +537,18 @@ TEST_F( ExecUARTTest, StopChannelRejectsPendingTransmit )
     EXPECT_CALL( mock_hw, Stop_Channel( HW_UART_CHANNEL_1 ) ).WillOnce( Return( false ) );
 
     EXPECT_FALSE( EXEC_UART_Stop_Channel( EXEC_UART_CHANNEL_1 ) );
+}
+
+TEST_F( ExecUARTTest, AbortChannelTerminatesPendingTransmitAndRetainsConfiguration )
+{
+    ExecUartConfig_T config = TEST_EXEC_UART_Make_Tx_Only_Config();
+    ASSERT_TRUE( EXEC_UART_Configure_Channel( EXEC_UART_CHANNEL_1, &config ) );
+    ASSERT_TRUE( EXEC_UART_Start_Channel( EXEC_UART_CHANNEL_1 ) );
+
+    EXPECT_CALL( mock_hw, Abort_Channel( HW_UART_CHANNEL_1 ) ).WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_UART_Abort_Channel( EXEC_UART_CHANNEL_1 ) );
+    EXPECT_TRUE( EXEC_UART_Is_Configured( EXEC_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_UART_Is_Started( EXEC_UART_CHANNEL_1 ) );
 }
 
 TEST_F( ExecUARTTest, DisabledConfigurationRejectsInvalidChannel )

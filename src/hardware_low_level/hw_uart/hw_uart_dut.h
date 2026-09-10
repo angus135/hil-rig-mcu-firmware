@@ -243,6 +243,9 @@ bool HW_UART_Start_Channel( HwUartChannel_T channel );
  */
 bool HW_UART_Stop_Channel( HwUartChannel_T channel );
 
+/** Terminate RX/TX activity and discard queued TX data. */
+bool HW_UART_Abort_Channel( HwUartChannel_T channel );
+
 /**
  * @brief Deconfigures the STM32 UART peripheral for a DUT-facing channel.
  *

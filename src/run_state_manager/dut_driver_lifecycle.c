@@ -84,7 +84,7 @@ static void DUT_DRIVER_LIFECYCLE_BuildEnablePlan( const DutDriverConfiguration_T
 static bool DUT_DRIVER_LIFECYCLE_ConfigureAll( const DutDriverConfiguration_T* configuration );
 static bool DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration( void );
 static bool DUT_DRIVER_LIFECYCLE_AnyDriverStarted( void );
-static bool DUT_DRIVER_LIFECYCLE_StopAttempt( bool force_abort );
+static bool DUT_DRIVER_LIFECYCLE_StopAttempt( bool force_abort, bool* busy );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -507,14 +507,31 @@ DutDriverStartStatus_T DUT_DRIVER_LIFECYCLE_GetStartStatus( void )
     }
 }
 
-static bool DUT_DRIVER_LIFECYCLE_StopAttempt( bool force_abort )
+static bool DUT_DRIVER_LIFECYCLE_StopAttempt( bool force_abort, bool* busy )
 {
     DutDriverLifecycleSelection_T* started = &lifecycle_context.started;
+    bool                           failed  = false;
+    *busy                                  = false;
 
-    if ( started->analogue_output
-         && ( force_abort ? EXEC_ANALOGUE_OUTPUT_Abort() : EXEC_ANALOGUE_OUTPUT_Stop() ) )
+    if ( started->analogue_output )
     {
-        started->analogue_output = false;
+        if ( !force_abort
+             && EXEC_ANALOGUE_OUTPUT_Get_State() == EXEC_ANALOGUE_OUTPUT_STATE_FAULTED )
+        {
+            failed = true;
+        }
+        else if ( !force_abort && !EXEC_ANALOGUE_OUTPUT_Is_Transmission_Complete() )
+        {
+            *busy = true;
+        }
+        else if ( force_abort ? EXEC_ANALOGUE_OUTPUT_Abort() : EXEC_ANALOGUE_OUTPUT_Stop() )
+        {
+            started->analogue_output = false;
+        }
+        else
+        {
+            failed = true;
+        }
     }
 
     for ( uint32_t channel = EXEC_PWM_GEN_CHANNEL_COUNT; channel > 0U; channel-- )
@@ -526,21 +543,41 @@ static bool DUT_DRIVER_LIFECYCLE_StopAttempt( bool force_abort )
         {
             started->pwm_generation_channels &= ~channel_bit;
         }
+        else if ( ( started->pwm_generation_channels & channel_bit ) != 0U )
+        {
+            failed = true;
+        }
     }
 
     if ( started->digital_outputs && EXEC_DIGITAL_OUTPUT_Stop() )
     {
         started->digital_outputs = false;
     }
+    else if ( started->digital_outputs )
+    {
+        failed = true;
+    }
 
     for ( uint32_t channel = EXEC_UART_CHANNEL_COUNT; channel > 0U; channel-- )
     {
         const uint32_t index       = channel - 1U;
         const uint32_t channel_bit = DUT_DRIVER_LIFECYCLE_CHANNEL_BIT( index );
-        if ( ( started->uart_channels & channel_bit ) != 0U
-             && EXEC_UART_Stop_Channel( ( ExecUartChannel_T )index ) )
+        if ( ( started->uart_channels & channel_bit ) == 0U )
+        {
+            continue;
+        }
+        if ( !force_abort && !EXEC_UART_Is_Tx_Complete( ( ExecUartChannel_T )index ) )
+        {
+            *busy = true;
+        }
+        else if ( force_abort ? EXEC_UART_Abort_Channel( ( ExecUartChannel_T )index )
+                              : EXEC_UART_Stop_Channel( ( ExecUartChannel_T )index ) )
         {
             started->uart_channels &= ~channel_bit;
+        }
+        else
+        {
+            failed = true;
         }
     }
 
@@ -548,11 +585,26 @@ static bool DUT_DRIVER_LIFECYCLE_StopAttempt( bool force_abort )
     {
         const uint32_t index       = channel - 1U;
         const uint32_t channel_bit = DUT_DRIVER_LIFECYCLE_CHANNEL_BIT( index );
-        if ( ( started->spi_channels & channel_bit ) != 0U
-             && ( force_abort ? EXEC_SPI_Abort_Channel( ( ExecSPIChannel_T )index )
-                              : EXEC_SPI_Stop_Channel( ( ExecSPIChannel_T )index ) ) )
+        if ( ( started->spi_channels & channel_bit ) == 0U )
+        {
+            continue;
+        }
+        if ( !force_abort && EXEC_SPI_Is_Transmission_Faulted( ( ExecSPIChannel_T )index ) )
+        {
+            failed = true;
+        }
+        else if ( !force_abort && !EXEC_SPI_Is_Transmission_Complete( ( ExecSPIChannel_T )index ) )
+        {
+            *busy = true;
+        }
+        else if ( force_abort ? EXEC_SPI_Abort_Channel( ( ExecSPIChannel_T )index )
+                              : EXEC_SPI_Stop_Channel( ( ExecSPIChannel_T )index ) )
         {
             started->spi_channels &= ~channel_bit;
+        }
+        else
+        {
+            failed = true;
         }
     }
 
@@ -560,10 +612,31 @@ static bool DUT_DRIVER_LIFECYCLE_StopAttempt( bool force_abort )
     {
         const uint32_t index       = channel - 1U;
         const uint32_t channel_bit = DUT_DRIVER_LIFECYCLE_CHANNEL_BIT( index );
-        if ( ( started->can_channels & channel_bit ) != 0U
-             && EXEC_CAN_Stop_Channel( ( EXEC_CAN_Channel_T )index ) == EXEC_CAN_RESULT_OK )
+        if ( ( started->can_channels & channel_bit ) == 0U )
+        {
+            continue;
+        }
+        const EXEC_CAN_Tx_Status_T tx_status =
+            EXEC_CAN_Get_Tx_Status( ( EXEC_CAN_Channel_T )index );
+        if ( !force_abort && tx_status == EXEC_CAN_TX_STATUS_ACTIVE )
+        {
+            *busy = true;
+        }
+        else if ( !force_abort
+                  && ( tx_status == EXEC_CAN_TX_STATUS_ERROR
+                       || tx_status == EXEC_CAN_TX_STATUS_INVALID_CHANNEL ) )
+        {
+            failed = true;
+        }
+        else if ( ( force_abort ? EXEC_CAN_Abort_Channel( ( EXEC_CAN_Channel_T )index )
+                                : EXEC_CAN_Stop_Channel( ( EXEC_CAN_Channel_T )index ) )
+                  == EXEC_CAN_RESULT_OK )
         {
             started->can_channels &= ~channel_bit;
+        }
+        else
+        {
+            failed = true;
         }
     }
 
@@ -576,25 +649,39 @@ static bool DUT_DRIVER_LIFECYCLE_StopAttempt( bool force_abort )
         {
             started->pwm_capture_channels &= ~channel_bit;
         }
+        else if ( ( started->pwm_capture_channels & channel_bit ) != 0U )
+        {
+            failed = true;
+        }
     }
 
     if ( started->digital_inputs && EXEC_DIGITAL_INPUT_Stop() )
     {
         started->digital_inputs = false;
     }
+    else if ( started->digital_inputs )
+    {
+        failed = true;
+    }
 
     if ( started->analogue_input && EXEC_ANALOGUE_INPUT_Stop() )
     {
         started->analogue_input = false;
     }
+    else if ( started->analogue_input )
+    {
+        failed = true;
+    }
 
     lifecycle_context.start_accepted = false;
-    return !DUT_DRIVER_LIFECYCLE_AnyDriverStarted();
+    return !failed;
 }
 
 bool DUT_DRIVER_LIFECYCLE_Stop( void )
 {
-    return DUT_DRIVER_LIFECYCLE_StopAttempt( false );
+    bool busy = false;
+    return DUT_DRIVER_LIFECYCLE_StopAttempt( false, &busy ) && !busy
+           && !DUT_DRIVER_LIFECYCLE_AnyDriverStarted();
 }
 
 bool DUT_DRIVER_LIFECYCLE_BeginShutdown( bool force_abort, bool clear_configuration )
@@ -607,17 +694,17 @@ bool DUT_DRIVER_LIFECYCLE_BeginShutdown( bool force_abort, bool clear_configurat
     }
 
     LogicExpanderControlBatchId_T batch_id = 0U;
-    if ( !LOGIC_EXPANDER_Begin_Control_Batch( &batch_id ) )
+    if ( LOGIC_EXPANDER_Begin_Control_Batch( &batch_id ) != LOGIC_EXPANDER_STATUS_OK )
     {
         return false;
     }
 
-    lifecycle_context.shutdown_active       = true;
-    lifecycle_context.shutdown_forced       = force_abort;
+    lifecycle_context.shutdown_active              = true;
+    lifecycle_context.shutdown_forced              = force_abort;
     lifecycle_context.shutdown_clear_configuration = clear_configuration;
-    lifecycle_context.shutdown_batch_sealed = false;
-    lifecycle_context.shutdown_disabled_applied = false;
-    lifecycle_context.shutdown_batch_id     = batch_id;
+    lifecycle_context.shutdown_batch_sealed        = false;
+    lifecycle_context.shutdown_disabled_applied    = false;
+    lifecycle_context.shutdown_batch_id            = batch_id;
     return true;
 }
 
@@ -630,7 +717,12 @@ DutDriverShutdownStatus_T DUT_DRIVER_LIFECYCLE_GetShutdownStatus( void )
 
     if ( !lifecycle_context.shutdown_batch_sealed )
     {
-        if ( !DUT_DRIVER_LIFECYCLE_StopAttempt( lifecycle_context.shutdown_forced ) )
+        bool busy = false;
+        if ( !DUT_DRIVER_LIFECYCLE_StopAttempt( lifecycle_context.shutdown_forced, &busy ) )
+        {
+            return DUT_DRIVER_SHUTDOWN_FAILED;
+        }
+        if ( busy || DUT_DRIVER_LIFECYCLE_AnyDriverStarted() )
         {
             return DUT_DRIVER_SHUTDOWN_PENDING;
         }
@@ -645,7 +737,8 @@ DutDriverShutdownStatus_T DUT_DRIVER_LIFECYCLE_GetShutdownStatus( void )
             lifecycle_context.shutdown_disabled_applied = true;
         }
 
-        if ( !LOGIC_EXPANDER_End_Control_Batch( lifecycle_context.shutdown_batch_id ) )
+        if ( LOGIC_EXPANDER_End_Control_Batch( lifecycle_context.shutdown_batch_id )
+             != LOGIC_EXPANDER_STATUS_OK )
         {
             return DUT_DRIVER_SHUTDOWN_FAILED;
         }
@@ -656,7 +749,7 @@ DutDriverShutdownStatus_T DUT_DRIVER_LIFECYCLE_GetShutdownStatus( void )
         LOGIC_EXPANDER_Get_Control_Batch_Status( lifecycle_context.shutdown_batch_id );
     if ( status == LOGIC_EXPANDER_CONTROL_BATCH_COMPLETE )
     {
-        const bool clear_configuration = lifecycle_context.shutdown_clear_configuration;
+        const bool clear_configuration    = lifecycle_context.shutdown_clear_configuration;
         lifecycle_context.shutdown_active = false;
         if ( clear_configuration )
         {

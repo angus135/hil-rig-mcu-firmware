@@ -289,6 +289,31 @@ EXEC_CAN_Result_T EXEC_CAN_Stop_Channel( EXEC_CAN_Channel_T channel )
     return EXEC_CAN_Map_Result( result );
 }
 
+EXEC_CAN_Result_T EXEC_CAN_Abort_Channel( EXEC_CAN_Channel_T channel )
+{
+    if ( !EXEC_CAN_Channel_Is_Valid( channel ) )
+    {
+        return EXEC_CAN_RESULT_INVALID_ARGUMENT;
+    }
+
+    ExecCANChannelState_T* state = &exec_can_state[channel];
+    if ( !state->is_configured )
+    {
+        return EXEC_CAN_RESULT_NOT_CONFIGURED;
+    }
+    if ( !state->is_started )
+    {
+        return EXEC_CAN_RESULT_NOT_STARTED;
+    }
+
+    if ( EXEC_CAN_Recover( channel ) != EXEC_CAN_RESULT_OK )
+    {
+        return EXEC_CAN_RESULT_ERROR;
+    }
+
+    return EXEC_CAN_Stop_Channel( channel );
+}
+
 bool EXEC_CAN_Is_Configured( EXEC_CAN_Channel_T channel )
 {
     if ( !EXEC_CAN_Channel_Is_Valid( channel ) )

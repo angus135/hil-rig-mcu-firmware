@@ -391,7 +391,7 @@ TEST_F( ExecAnalogueOutputTest, Configure_QueuedStartupTransitionsToConfiguredAn
 
     ASSERT_TRUE( ConfigureEnabled( false ) );
 
-    EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_DAC ) ).WillOnce( Return( false ) );
+    EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_DAC ) ).WillOnce( ::testing::Return( false ) );
     EXPECT_EQ( EXEC_ANALOGUE_OUTPUT_Get_State(), EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURING );
 
     EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_DAC ) ).WillOnce( Return( true ) );
@@ -427,6 +427,38 @@ TEST_F( ExecAnalogueOutputTest, StartAndStopFollowConfiguredLifecycle )
     EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Stop() );
     EXPECT_EQ( EXEC_ANALOGUE_OUTPUT_Get_State(), EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURED );
     EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Started() );
+}
+
+TEST_F( ExecAnalogueOutputTest, AbortStopsWithoutWaitingForDacTransmission )
+{
+    using ::testing::Return;
+
+    ExpectSuccessfulConfig( false );
+    ASSERT_TRUE( ConfigureEnabled( false ) );
+    ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
+
+    ExpectSuccessfulStart();
+    EXPECT_CALL( mock_logic_expander,
+                 LoadControlBit( LOGIC_EXPANDER_I2C_AO, LOGIC_EXPANDER_PORT_B, 0U, true ) )
+        .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
+    EXPECT_CALL( mock_logic_expander, SendControlBits() )
+        .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
+    ASSERT_TRUE( EXEC_ANALOGUE_OUTPUT_Start() );
+
+    EXPECT_CALL( mock_logic_expander,
+                 LoadControlBit( LOGIC_EXPANDER_I2C_AO, LOGIC_EXPANDER_PORT_B, 0U, false ) )
+        .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
+    EXPECT_CALL( mock_logic_expander, SendControlBits() )
+        .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
+    EXPECT_CALL( mock_hw_spi, StopChannel( SPI_DAC ) ).WillOnce( Return( true ) );
+    EXPECT_TRUE( EXEC_ANALOGUE_OUTPUT_Abort() );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Started() );
+}
+
+TEST_F( ExecAnalogueOutputTest, TransmissionCompletionDelegatesToSpiDriver )
+{
+    EXPECT_CALL( mock_hw_spi, TxIsComplete( SPI_DAC ) ).WillOnce( ::testing::Return( false ) );
+    EXPECT_FALSE( EXEC_ANALOGUE_OUTPUT_Is_Transmission_Complete() );
 }
 
 TEST_F( ExecAnalogueOutputTest, PreparedFrame_ContainsExactlyThreeWireBytes )

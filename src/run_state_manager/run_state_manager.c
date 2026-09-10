@@ -70,6 +70,7 @@ typedef enum
     RUN_STATE_PENDING_EXECUTION_PREPARATION,
     RUN_STATE_PENDING_DRIVER_START,
     RUN_STATE_PENDING_DRIVER_SHUTDOWN,
+    RUN_STATE_PENDING_IDLE_SHUTDOWN,
     RUN_STATE_PENDING_FAULT_SHUTDOWN,
     RUN_STATE_PENDING_RESULT_FINALISATION
 } RunStatePendingOperation_T;
@@ -90,7 +91,7 @@ static RunStateFrequencyMode_T frequency_mode = RUN_STATE_FREQUENCY_1KHZ;
 static RunStatePendingOperation_T pending_operation            = RUN_STATE_PENDING_NONE;
 static TickType_t                 pending_operation_started_at = 0U;
 
-static bool execution_active = false;
+static bool execution_active        = false;
 static bool driver_cleanup_complete = true;
 
 static bool execution_timer_running = false;
@@ -376,7 +377,7 @@ static bool RUN_STATE_MANAGER_BeginDriverShutdown( bool force_abort, bool clear_
 {
     execution_abort_requested = true;
     RUN_STATE_MANAGER_StopExecutionTimer();
-    execution_active = false;
+    execution_active        = false;
     driver_cleanup_complete = false;
 
     if ( !DUT_DRIVER_LIFECYCLE_BeginShutdown( force_abort, clear_configuration ) )
@@ -410,8 +411,7 @@ static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void )
  */
 static bool RUN_STATE_MANAGER_BeginResultFinalisation( void )
 {
-    if ( !RUN_STATE_MANAGER_BeginDriverShutdown( false, false,
-                                                 RUN_STATE_PENDING_DRIVER_SHUTDOWN ) )
+    if ( !RUN_STATE_MANAGER_BeginDriverShutdown( false, false, RUN_STATE_PENDING_DRIVER_SHUTDOWN ) )
     {
         RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_STOP );
         return false;
@@ -447,7 +447,7 @@ static bool RUN_STATE_MANAGER_CompleteResultTransfer( void )
         return false;
     }
 
-    return RUN_STATE_MANAGER_TransitionTo( RUN_STATE_IDLE );
+    return RUN_STATE_MANAGER_BeginDriverShutdown( false, true, RUN_STATE_PENDING_IDLE_SHUTDOWN );
 }
 
 /**
@@ -465,6 +465,8 @@ static bool RUN_STATE_MANAGER_DiscardCompletedResults( RunState_T next_state )
     if ( next_state == RUN_STATE_IDLE )
     {
         TEST_CONFIGURATION_Clear();
+        return RUN_STATE_MANAGER_BeginDriverShutdown( false, true,
+                                                      RUN_STATE_PENDING_IDLE_SHUTDOWN );
     }
 
     return RUN_STATE_MANAGER_TransitionTo( next_state );
@@ -530,10 +532,11 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
     }
 
     if ( pending_operation == RUN_STATE_PENDING_DRIVER_SHUTDOWN
+         || pending_operation == RUN_STATE_PENDING_IDLE_SHUTDOWN
          || pending_operation == RUN_STATE_PENDING_FAULT_SHUTDOWN )
     {
         const RunStatePendingOperation_T operation = pending_operation;
-        const DutDriverShutdownStatus_T status = DUT_DRIVER_LIFECYCLE_GetShutdownStatus();
+        const DutDriverShutdownStatus_T  status    = DUT_DRIVER_LIFECYCLE_GetShutdownStatus();
 
         if ( status == DUT_DRIVER_SHUTDOWN_COMPLETE )
         {
@@ -550,18 +553,29 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
                 RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_RESULT_FINALISATION );
                 ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_RESULT_FINALISATION );
             }
+            else if ( operation == RUN_STATE_PENDING_IDLE_SHUTDOWN )
+            {
+                ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_IDLE );
+            }
         }
         else if ( status == DUT_DRIVER_SHUTDOWN_FAILED )
         {
-            RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_STOP );
+            if ( operation == RUN_STATE_PENDING_FAULT_SHUTDOWN )
+            {
+                ( void )DUT_DRIVER_LIFECYCLE_BeginShutdown( true, true );
+            }
+            else
+            {
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_STOP );
+            }
         }
         else if ( RUN_STATE_MANAGER_PendingOperationTimedOut(
                       pdMS_TO_TICKS( RUN_STATE_MANAGER_DRIVER_SHUTDOWN_TIMEOUT_MS ) ) )
         {
-            if ( operation == RUN_STATE_PENDING_DRIVER_SHUTDOWN )
+            if ( operation != RUN_STATE_PENDING_FAULT_SHUTDOWN )
             {
-                RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_DRIVER_STOP );
-                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_STOP );
+                RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_DRIVER_STOP_TIMEOUT );
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_STOP_TIMEOUT );
             }
             else
             {
@@ -614,6 +628,7 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
             break;
 
         case RUN_STATE_PENDING_DRIVER_SHUTDOWN:
+        case RUN_STATE_PENDING_IDLE_SHUTDOWN:
         case RUN_STATE_PENDING_FAULT_SHUTDOWN:
             /* Handled before querying Flash Manager state. */
             break;
@@ -890,8 +905,12 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
     if ( next_state == RUN_STATE_FAULT )
     {
         RUN_STATE_MANAGER_ClearPendingOperation();
-        ( void )RUN_STATE_MANAGER_BeginDriverShutdown( true, true,
-                                                       RUN_STATE_PENDING_FAULT_SHUTDOWN );
+        if ( !RUN_STATE_MANAGER_BeginDriverShutdown( true, true,
+                                                     RUN_STATE_PENDING_FAULT_SHUTDOWN ) )
+        {
+            driver_cleanup_complete = false;
+            RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_FAULT_SHUTDOWN );
+        }
         ( void )FLASH_MANAGER_RequestAbortSession();
     }
     else if ( next_state != RUN_STATE_EXECUTION )
@@ -906,7 +925,6 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
     switch ( next_state )
     {
         case RUN_STATE_IDLE:
-            DUT_DRIVER_LIFECYCLE_EnterIdle();
             break;
 
         case RUN_STATE_TEST_PACKAGE_RECEIVE:
@@ -1028,6 +1046,7 @@ void RUN_STATE_MANAGER_Init( void )
     pending_operation            = RUN_STATE_PENDING_NONE;
     pending_operation_started_at = 0U;
     execution_active             = false;
+    driver_cleanup_complete      = true;
     execution_timer_running      = false;
     execution_abort_requested    = false;
     fault_reason                 = RUN_STATE_FAULT_NONE;

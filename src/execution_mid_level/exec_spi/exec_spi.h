@@ -309,6 +309,9 @@ bool EXEC_SPI_Receive( ExecSPIChannel_T channel, uint8_t* data_dst, uint32_t* si
  */
 bool EXEC_SPI_Is_Transmission_Complete( ExecSPIChannel_T channel );
 
+/** Return true when the low-level TX path has latched a terminal fault. */
+bool EXEC_SPI_Is_Transmission_Faulted( ExecSPIChannel_T channel );
+
 #ifdef __cplusplus
 }
 #endif

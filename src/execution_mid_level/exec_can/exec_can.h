@@ -121,6 +121,9 @@ EXEC_CAN_Result_T EXEC_CAN_Start_Channel( EXEC_CAN_Channel_T channel );
 /** Stop a started CAN channel while retaining its configuration. */
 EXEC_CAN_Result_T EXEC_CAN_Stop_Channel( EXEC_CAN_Channel_T channel );
 
+/** Cancel pending TX work and stop a started channel for fault recovery. */
+EXEC_CAN_Result_T EXEC_CAN_Abort_Channel( EXEC_CAN_Channel_T channel );
+
 /** Return true when the selected channel is configured. */
 bool EXEC_CAN_Is_Configured( EXEC_CAN_Channel_T channel );
 

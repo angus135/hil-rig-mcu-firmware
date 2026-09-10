@@ -41,9 +41,9 @@ run_state reset
 `execution_complete` is only an RSM integration seam and console stimulus at
 this stage. It does not add an Execution Manager dependency or implementation.
 Fault handling retains the first recorded cause until a successful reset.
-Fault entry also requests asynchronous Flash session abort after execution and
-DUT drivers have stopped. Reset remains rejected until Flash reports `IDLE`,
-preventing an RSM/Flash lifecycle mismatch.
+Fault entry immediately inhibits execution, requests forced DUT-driver cleanup,
+and requests asynchronous Flash session abort. Reset remains rejected until
+both driver cleanup is acknowledged and Flash reports `IDLE`.
 
 Every named event is validated by the Run State Manager task before it can
 initiate a transition. A delivered notification is therefore not itself proof
@@ -79,6 +79,16 @@ DUT drivers but remains `ARMED` with a pending transition while external-path
 enable writes complete. TIM4 starts and `EXECUTION` is published only after the
 startup batch succeeds. Startup failure or timeout enters `FAULT` without
 starting TIM4.
+
+Execution completion stops TIM4 first, then waits in an acknowledged
+DUT-driver shutdown phase. The RSM remains in `EXECUTION` while graceful SPI,
+DAC, UART, and CAN transmissions drain, and does not ask Flash Manager to finalise results
+until every driver has stopped and the Logic Expander disable batch has
+completed. A shutdown timeout enters `FAULT` and upgrades cleanup to forced
+abort so an undrainable transaction, such as an SPI slave transfer with no
+master clocks, cannot leave hardware started indefinitely. Reset is rejected
+until DUT cleanup is acknowledged and Flash Manager is `IDLE`.
+
 `RESULTS_READY` means execution has stopped and Flash Manager has completely
 finalised a valid result stream. `repeat` deliberately abandons that stream,
 retains the active DUT configuration and uploaded instructions, and returns to
@@ -88,7 +98,7 @@ require Flash Manager to release the result session and return to `IDLE` before
 the RSM transition is committed.
 
 The manager uses task notifications for requests and polls only while an
-asynchronous configuration, driver-start, or Flash Manager operation is
+asynchronous configuration, driver-start, driver-shutdown, or Flash Manager operation is
 pending.
 
 Request APIs report only whether their notification was delivered to the RSM

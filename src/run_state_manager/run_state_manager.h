@@ -77,6 +77,7 @@ typedef enum
     RUN_STATE_FAULT_DRIVER_START,
     RUN_STATE_FAULT_DRIVER_START_TIMEOUT,
     RUN_STATE_FAULT_DRIVER_STOP,
+    RUN_STATE_FAULT_DRIVER_STOP_TIMEOUT,
     RUN_STATE_FAULT_EXECUTION_TIMER,
     RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION,
     RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION_TIMEOUT,
@@ -178,16 +179,15 @@ typedef struct
  * 3. Record the test outcome as infeasible. Future pre-execution feasibility
  *    validation should reject this workload before the timer starts.
  * 4. Decide whether committed diagnostic results should be preserved through
- *    FLASH_MANAGER_RequestResultFinalisation(). The current Flash Manager has
- *    no discard/abort-session API; normal finalisation reaches RESULTS_READY
- *    without changing the global test outcome from infeasible.
+ *    FLASH_MANAGER_RequestResultFinalisation() or abandoned through
+ *    FLASH_MANAGER_RequestAbortSession().
  *
  * Fault recovery:
  *
- * After stopping the execution clock and DUT drivers, fault entry requests
- * FLASH_MANAGER_RequestAbortSession(). Flash cleanup is asynchronous. Reset is
- * rejected until FLASH_MANAGER_STATE_IDLE confirms that runtime buffer
- * ownership has been released safely.
+ * Fault entry stops the execution clock, requests forced DUT-driver cleanup,
+ * and requests FLASH_MANAGER_RequestAbortSession(). Both operations are
+ * asynchronous. Reset is rejected until driver cleanup is acknowledged and
+ * FLASH_MANAGER_STATE_IDLE confirms that runtime buffer ownership is released.
  *
  * Every FlashManagerRequestStatus_T value must be handled. In particular,
  * TASK_NOT_READY means startup integration is incomplete, INVALID_STATE means
@@ -287,6 +287,9 @@ bool RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR( void );
 
 /**
  * @brief Requests a reset from fault to idle.
+ *
+ * Reset is accepted only after DUT-driver cleanup is acknowledged and Flash
+ * Manager has returned to IDLE.
  *
  * @returns true if the request was delivered to the task, otherwise false.
  */

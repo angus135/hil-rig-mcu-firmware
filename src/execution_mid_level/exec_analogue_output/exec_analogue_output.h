@@ -187,6 +187,9 @@ bool EXEC_ANALOGUE_OUTPUT_Is_Configured( void );
  */
 bool EXEC_ANALOGUE_OUTPUT_Is_Started( void );
 
+/** Return true when all accepted DAC SPI data has left the peripheral. */
+bool EXEC_ANALOGUE_OUTPUT_Is_Transmission_Complete( void );
+
 /**
  * @brief Return the current analogue-output startup readiness state.
  *

@@ -155,10 +155,22 @@ DutDriverStartStatus_T DUT_DRIVER_LIFECYCLE_GetStartStatus( void );
  */
 bool DUT_DRIVER_LIFECYCLE_Stop( void );
 
-/** Begin an acknowledged shutdown; forced mode may discard active transfers. */
+/**
+ * @brief Begin an acknowledged shutdown operation.
+ *
+ * @param force_abort Permit drivers to discard active transfers that cannot
+ *        drain normally.
+ * @param clear_configuration Apply disabled configurations before completion.
+ */
 bool DUT_DRIVER_LIFECYCLE_BeginShutdown( bool force_abort, bool clear_configuration );
 
-/** Progress and report driver stop plus external-interface disable completion. */
+/**
+ * @brief Progress driver shutdown and external-interface disable completion.
+ *
+ * Graceful shutdown reports PENDING while AO/SPI/UART/CAN transmission is
+ * active. A stop failure or asynchronous Logic Expander error reports FAILED.
+ * Forced shutdown calls each transmitting driver's explicit abort API.
+ */
 DutDriverShutdownStatus_T DUT_DRIVER_LIFECYCLE_GetShutdownStatus( void );
 
 /** @brief Copies the configured enable plan and actual started bookkeeping. */
