@@ -18,6 +18,7 @@
  */
 
 #include "dut_driver_lifecycle.h"
+#include "logic_expander.h"
 #include "rtos_config.h"
 #include <stdint.h>
 #include <string.h>
@@ -50,6 +51,15 @@ typedef struct
 typedef struct
 {
     bool                          configuration_valid;
+    bool                          start_accepted;
+    LogicExpanderControlBatchId_T configuration_batch_id;
+    LogicExpanderControlBatchId_T start_batch_id;
+    LogicExpanderControlBatchId_T shutdown_batch_id;
+    bool                          shutdown_active;
+    bool                          shutdown_forced;
+    bool                          shutdown_clear_configuration;
+    bool                          shutdown_batch_sealed;
+    bool                          shutdown_disabled_applied;
     DutDriverLifecycleSelection_T enabled;
     DutDriverLifecycleSelection_T started;
 } DutDriverLifecycleContext_T;
@@ -72,8 +82,9 @@ static bool
 DUT_DRIVER_LIFECYCLE_AnyDigitalOutputEnabled( const ExecDigitalOutputConfig_T* configuration );
 static void DUT_DRIVER_LIFECYCLE_BuildEnablePlan( const DutDriverConfiguration_T* configuration );
 static bool DUT_DRIVER_LIFECYCLE_ConfigureAll( const DutDriverConfiguration_T* configuration );
-static void DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration( void );
+static bool DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration( void );
 static bool DUT_DRIVER_LIFECYCLE_AnyDriverStarted( void );
+static bool DUT_DRIVER_LIFECYCLE_StopAttempt( bool force_abort );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -232,50 +243,10 @@ static bool DUT_DRIVER_LIFECYCLE_ConfigureAll( const DutDriverConfiguration_T* c
     return true;
 }
 
-static void DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration( void )
+static bool DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration( void )
 {
-    const DutDriverConfiguration_T disabled     = { 0 };
-    const EXECI2CChannelConfig_T   disabled_i2c = { 0 };
-
-    ( void )EXEC_ANALOGUE_INPUT_Configure( &disabled.analogue_input );
-    ( void )EXEC_ANALOGUE_OUTPUT_Configure( &disabled.analogue_output );
-    ( void )EXEC_DIGITAL_INPUT_Configure( &disabled.digital_inputs );
-    ( void )EXEC_DIGITAL_OUTPUT_Configure( &disabled.digital_outputs );
-
-    for ( uint32_t channel = 0U; channel < EXEC_CAN_CHANNEL_COUNT; channel++ )
-    {
-        ( void )EXEC_CAN_Configure_Channel( ( EXEC_CAN_Channel_T )channel,
-                                            &disabled.can_channels[channel] );
-    }
-
-    for ( uint32_t channel = 0U; channel < EXEC_I2C_CHANNEL_COUNT; channel++ )
-    {
-        ( void )EXEC_I2C_Configure_Channel( ( ExecI2CChannel_T )channel, &disabled_i2c );
-    }
-
-    for ( uint32_t channel = 0U; channel < TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT; channel++ )
-    {
-        ( void )EXEC_PWM_Capture_Configure_Channel( ( ExecPwmCaptureChannel_T )channel,
-                                                    &disabled.pwm_capture_channels[channel] );
-    }
-
-    for ( uint32_t channel = 0U; channel < EXEC_PWM_GEN_CHANNEL_COUNT; channel++ )
-    {
-        ( void )EXEC_PWM_GEN_Configure_Channel( ( ExecPwmGenChannel_T )channel,
-                                                &disabled.pwm_generation_channels[channel] );
-    }
-
-    for ( uint32_t channel = 0U; channel < TEST_CONFIGURATION_SPI_CHANNEL_COUNT; channel++ )
-    {
-        ( void )EXEC_SPI_Configure_Channel( ( ExecSPIChannel_T )channel,
-                                            &disabled.spi_channels[channel] );
-    }
-
-    for ( uint32_t channel = 0U; channel < EXEC_UART_CHANNEL_COUNT; channel++ )
-    {
-        ( void )EXEC_UART_Configure_Channel( ( ExecUartChannel_T )channel,
-                                             &disabled.uart_channels[channel] );
-    }
+    const DutDriverConfiguration_T disabled = { 0 };
+    return DUT_DRIVER_LIFECYCLE_ConfigureAll( &disabled );
 }
 
 static bool DUT_DRIVER_LIFECYCLE_AnyDriverStarted( void )
@@ -295,13 +266,21 @@ static bool DUT_DRIVER_LIFECYCLE_AnyDriverStarted( void )
 
 bool DUT_DRIVER_LIFECYCLE_Configure( const DutDriverConfiguration_T* configuration )
 {
+    LogicExpanderControlBatchId_T batch_id = 0U;
+
     if ( configuration == NULL )
+    {
+        return false;
+    }
+
+    if ( LOGIC_EXPANDER_Begin_Control_Batch( &batch_id ) != LOGIC_EXPANDER_STATUS_OK )
     {
         return false;
     }
 
     if ( !DUT_DRIVER_LIFECYCLE_Stop() )
     {
+        LOGIC_EXPANDER_Cancel_Control_Batch( batch_id );
         return false;
     }
 
@@ -309,12 +288,21 @@ bool DUT_DRIVER_LIFECYCLE_Configure( const DutDriverConfiguration_T* configurati
 
     if ( !DUT_DRIVER_LIFECYCLE_ConfigureAll( configuration ) )
     {
-        DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration();
+        ( void )DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration();
+        LOGIC_EXPANDER_Cancel_Control_Batch( batch_id );
+        return false;
+    }
+
+    if ( LOGIC_EXPANDER_End_Control_Batch( batch_id ) != LOGIC_EXPANDER_STATUS_OK )
+    {
+        ( void )DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration();
+        LOGIC_EXPANDER_Cancel_Control_Batch( batch_id );
         return false;
     }
 
     DUT_DRIVER_LIFECYCLE_BuildEnablePlan( configuration );
-    lifecycle_context.configuration_valid = true;
+    lifecycle_context.configuration_batch_id = batch_id;
+    lifecycle_context.configuration_valid    = true;
     return true;
 }
 
@@ -323,6 +311,23 @@ DutDriverConfigurationStatus_T DUT_DRIVER_LIFECYCLE_GetConfigurationStatus( void
     if ( !lifecycle_context.configuration_valid )
     {
         return DUT_DRIVER_CONFIGURATION_FAILED;
+    }
+
+    const LogicExpanderControlBatchStatus_T batch_status =
+        LOGIC_EXPANDER_Get_Control_Batch_Status( lifecycle_context.configuration_batch_id );
+    switch ( batch_status )
+    {
+        case LOGIC_EXPANDER_CONTROL_BATCH_COMPLETE:
+            break;
+
+        case LOGIC_EXPANDER_CONTROL_BATCH_OPEN:
+        case LOGIC_EXPANDER_CONTROL_BATCH_PENDING:
+            return DUT_DRIVER_CONFIGURATION_PENDING;
+
+        case LOGIC_EXPANDER_CONTROL_BATCH_FAILED:
+        case LOGIC_EXPANDER_CONTROL_BATCH_UNKNOWN:
+        default:
+            return DUT_DRIVER_CONFIGURATION_FAILED;
     }
 
     if ( lifecycle_context.enabled.analogue_output )
@@ -348,7 +353,14 @@ DutDriverConfigurationStatus_T DUT_DRIVER_LIFECYCLE_GetConfigurationStatus( void
 
 bool DUT_DRIVER_LIFECYCLE_Start( void )
 {
+    LogicExpanderControlBatchId_T batch_id = 0U;
+
     if ( !lifecycle_context.configuration_valid || DUT_DRIVER_LIFECYCLE_AnyDriverStarted() )
+    {
+        return false;
+    }
+
+    if ( LOGIC_EXPANDER_Begin_Control_Batch( &batch_id ) != LOGIC_EXPANDER_STATUS_OK )
     {
         return false;
     }
@@ -457,18 +469,50 @@ bool DUT_DRIVER_LIFECYCLE_Start( void )
         started->analogue_output = true;
     }
 
+    if ( LOGIC_EXPANDER_End_Control_Batch( batch_id ) != LOGIC_EXPANDER_STATUS_OK )
+    {
+        goto start_failed;
+    }
+
+    lifecycle_context.start_batch_id = batch_id;
+    lifecycle_context.start_accepted = true;
     return true;
 
 start_failed:
     ( void )DUT_DRIVER_LIFECYCLE_Stop();
+    LOGIC_EXPANDER_Cancel_Control_Batch( batch_id );
     return false;
 }
 
-bool DUT_DRIVER_LIFECYCLE_Stop( void )
+DutDriverStartStatus_T DUT_DRIVER_LIFECYCLE_GetStartStatus( void )
+{
+    if ( !lifecycle_context.start_accepted )
+    {
+        return DUT_DRIVER_START_FAILED;
+    }
+
+    switch ( LOGIC_EXPANDER_Get_Control_Batch_Status( lifecycle_context.start_batch_id ) )
+    {
+        case LOGIC_EXPANDER_CONTROL_BATCH_COMPLETE:
+            return DUT_DRIVER_START_READY;
+
+        case LOGIC_EXPANDER_CONTROL_BATCH_FAILED:
+        case LOGIC_EXPANDER_CONTROL_BATCH_UNKNOWN:
+            return DUT_DRIVER_START_FAILED;
+
+        case LOGIC_EXPANDER_CONTROL_BATCH_OPEN:
+        case LOGIC_EXPANDER_CONTROL_BATCH_PENDING:
+        default:
+            return DUT_DRIVER_START_PENDING;
+    }
+}
+
+static bool DUT_DRIVER_LIFECYCLE_StopAttempt( bool force_abort )
 {
     DutDriverLifecycleSelection_T* started = &lifecycle_context.started;
 
-    if ( started->analogue_output && EXEC_ANALOGUE_OUTPUT_Stop() )
+    if ( started->analogue_output
+         && ( force_abort ? EXEC_ANALOGUE_OUTPUT_Abort() : EXEC_ANALOGUE_OUTPUT_Stop() ) )
     {
         started->analogue_output = false;
     }
@@ -505,7 +549,8 @@ bool DUT_DRIVER_LIFECYCLE_Stop( void )
         const uint32_t index       = channel - 1U;
         const uint32_t channel_bit = DUT_DRIVER_LIFECYCLE_CHANNEL_BIT( index );
         if ( ( started->spi_channels & channel_bit ) != 0U
-             && EXEC_SPI_Stop_Channel( ( ExecSPIChannel_T )index ) )
+             && ( force_abort ? EXEC_SPI_Abort_Channel( ( ExecSPIChannel_T )index )
+                              : EXEC_SPI_Stop_Channel( ( ExecSPIChannel_T )index ) ) )
         {
             started->spi_channels &= ~channel_bit;
         }
@@ -543,7 +588,88 @@ bool DUT_DRIVER_LIFECYCLE_Stop( void )
         started->analogue_input = false;
     }
 
+    lifecycle_context.start_accepted = false;
     return !DUT_DRIVER_LIFECYCLE_AnyDriverStarted();
+}
+
+bool DUT_DRIVER_LIFECYCLE_Stop( void )
+{
+    return DUT_DRIVER_LIFECYCLE_StopAttempt( false );
+}
+
+bool DUT_DRIVER_LIFECYCLE_BeginShutdown( bool force_abort, bool clear_configuration )
+{
+    if ( lifecycle_context.shutdown_active )
+    {
+        lifecycle_context.shutdown_forced |= force_abort;
+        lifecycle_context.shutdown_clear_configuration |= clear_configuration;
+        return true;
+    }
+
+    LogicExpanderControlBatchId_T batch_id = 0U;
+    if ( !LOGIC_EXPANDER_Begin_Control_Batch( &batch_id ) )
+    {
+        return false;
+    }
+
+    lifecycle_context.shutdown_active       = true;
+    lifecycle_context.shutdown_forced       = force_abort;
+    lifecycle_context.shutdown_clear_configuration = clear_configuration;
+    lifecycle_context.shutdown_batch_sealed = false;
+    lifecycle_context.shutdown_disabled_applied = false;
+    lifecycle_context.shutdown_batch_id     = batch_id;
+    return true;
+}
+
+DutDriverShutdownStatus_T DUT_DRIVER_LIFECYCLE_GetShutdownStatus( void )
+{
+    if ( !lifecycle_context.shutdown_active )
+    {
+        return DUT_DRIVER_SHUTDOWN_FAILED;
+    }
+
+    if ( !lifecycle_context.shutdown_batch_sealed )
+    {
+        if ( !DUT_DRIVER_LIFECYCLE_StopAttempt( lifecycle_context.shutdown_forced ) )
+        {
+            return DUT_DRIVER_SHUTDOWN_PENDING;
+        }
+
+        if ( lifecycle_context.shutdown_clear_configuration
+             && !lifecycle_context.shutdown_disabled_applied )
+        {
+            if ( !DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration() )
+            {
+                return DUT_DRIVER_SHUTDOWN_FAILED;
+            }
+            lifecycle_context.shutdown_disabled_applied = true;
+        }
+
+        if ( !LOGIC_EXPANDER_End_Control_Batch( lifecycle_context.shutdown_batch_id ) )
+        {
+            return DUT_DRIVER_SHUTDOWN_FAILED;
+        }
+        lifecycle_context.shutdown_batch_sealed = true;
+    }
+
+    const LogicExpanderControlBatchStatus_T status =
+        LOGIC_EXPANDER_Get_Control_Batch_Status( lifecycle_context.shutdown_batch_id );
+    if ( status == LOGIC_EXPANDER_CONTROL_BATCH_COMPLETE )
+    {
+        const bool clear_configuration = lifecycle_context.shutdown_clear_configuration;
+        lifecycle_context.shutdown_active = false;
+        if ( clear_configuration )
+        {
+            ( void )memset( &lifecycle_context, 0, sizeof( lifecycle_context ) );
+        }
+        return DUT_DRIVER_SHUTDOWN_COMPLETE;
+    }
+    if ( status == LOGIC_EXPANDER_CONTROL_BATCH_FAILED
+         || status == LOGIC_EXPANDER_CONTROL_BATCH_UNKNOWN )
+    {
+        return DUT_DRIVER_SHUTDOWN_FAILED;
+    }
+    return DUT_DRIVER_SHUTDOWN_PENDING;
 }
 
 void DUT_DRIVER_LIFECYCLE_GetStatus( DutDriverLifecycleStatus_T* status )

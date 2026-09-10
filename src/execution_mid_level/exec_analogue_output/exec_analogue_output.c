@@ -471,6 +471,23 @@ bool EXEC_ANALOGUE_OUTPUT_Stop( void )
     return true;
 }
 
+bool EXEC_ANALOGUE_OUTPUT_Abort( void )
+{
+    EXEC_ANALOGUE_OUTPUT_Update_Readiness();
+
+    if ( s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOGUE_OUTPUT_STATE_STARTED )
+    {
+        return false;
+    }
+
+    const bool output_disabled = EXEC_ANALOGUE_OUTPUT_Set_Output_Enable( false );
+    const bool hardware_stopped = HW_SPI_Stop_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL );
+
+    s_EXEC_ANALOGUE_OUTPUT_State = hardware_stopped ? EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURED
+                                                    : EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
+    return output_disabled && hardware_stopped;
+}
+
 bool EXEC_ANALOGUE_OUTPUT_Is_Configured( void )
 {
     AnalogueOutputState_T state = EXEC_ANALOGUE_OUTPUT_Get_State();

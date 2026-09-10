@@ -70,6 +70,21 @@ typedef enum
     DUT_DRIVER_CONFIGURATION_FAILED
 } DutDriverConfigurationStatus_T;
 
+/** Aggregate completion of asynchronous external-interface startup writes. */
+typedef enum
+{
+    DUT_DRIVER_START_PENDING = 0,
+    DUT_DRIVER_START_READY,
+    DUT_DRIVER_START_FAILED
+} DutDriverStartStatus_T;
+
+typedef enum
+{
+    DUT_DRIVER_SHUTDOWN_PENDING = 0,
+    DUT_DRIVER_SHUTDOWN_COMPLETE,
+    DUT_DRIVER_SHUTDOWN_FAILED
+} DutDriverShutdownStatus_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -90,7 +105,9 @@ typedef enum
  * configuration because of the known I2C hardware fault. Requested I2C
  * settings are retained in the active test configuration but are not applied.
  *
- * @returns true if every required driver was configured, otherwise false.
+ * @returns true if every driver accepted its configuration and the external
+ *          interface batch was sealed, otherwise false. Physical completion
+ *          is reported by DUT_DRIVER_LIFECYCLE_GetConfigurationStatus().
  */
 bool DUT_DRIVER_LIFECYCLE_Configure( const DutDriverConfiguration_T* configuration );
 
@@ -115,9 +132,19 @@ DutDriverConfigurationStatus_T DUT_DRIVER_LIFECYCLE_GetConfigurationStatus( void
  * If a driver fails to start, every driver already started by this call must be
  * stopped before failure is returned.
  *
- * @returns true if every required driver was started, otherwise false.
+ * @returns true if every driver accepted startup and the external-interface
+ *          batch was sealed, otherwise false. Physical completion is reported
+ *          by DUT_DRIVER_LIFECYCLE_GetStartStatus().
  */
 bool DUT_DRIVER_LIFECYCLE_Start( void );
+
+/**
+ * @brief Polls physical completion of the external-interface startup batch.
+ *
+ * @return PENDING while writes remain in flight, READY after successful I2C
+ *         completion, or FAILED after an asynchronous transfer error.
+ */
+DutDriverStartStatus_T DUT_DRIVER_LIFECYCLE_GetStartStatus( void );
 
 /**
  * @brief Stops all DUT-facing drivers after execution has stopped.
@@ -127,6 +154,12 @@ bool DUT_DRIVER_LIFECYCLE_Start( void );
  * order where practical.
  */
 bool DUT_DRIVER_LIFECYCLE_Stop( void );
+
+/** Begin an acknowledged shutdown; forced mode may discard active transfers. */
+bool DUT_DRIVER_LIFECYCLE_BeginShutdown( bool force_abort, bool clear_configuration );
+
+/** Progress and report driver stop plus external-interface disable completion. */
+DutDriverShutdownStatus_T DUT_DRIVER_LIFECYCLE_GetShutdownStatus( void );
 
 /** @brief Copies the configured enable plan and actual started bookkeeping. */
 void DUT_DRIVER_LIFECYCLE_GetStatus( DutDriverLifecycleStatus_T* status );

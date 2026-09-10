@@ -17,8 +17,9 @@ IDLE -> TEST_PACKAGE_RECEIVE -> CONFIGURATION -> ARMED -> EXECUTION
 
 Entering `CONFIGURATION` applies the committed configuration once, then polls
 aggregate driver readiness without reapplying it. The manager automatically
-enters `ARMED` only after every enabled driver is ready. Driver failure or a
-bounded configuration timeout enters `FAULT`.
+enters `ARMED` only after every enabled driver is ready and the identified
+Logic Expander configuration batch has physically completed. Driver, expander,
+or bounded configuration-timeout failure enters `FAULT`.
 Similarly, result finalisation remains pending until Flash Manager reports that
 the result stream is ready, then automatically enters `RESULTS_READY`.
 
@@ -54,7 +55,7 @@ asynchronous transition was pending, or failed during its entry action.
 |---|---|---|
 | `receive` | `IDLE` | Enter `TEST_PACKAGE_RECEIVE` |
 | `configure` | `TEST_PACKAGE_RECEIVE` | Enter `CONFIGURATION`, then automatically `ARMED` on success |
-| `execute` | `ARMED` | Start Flash preparation; automatically enter `EXECUTION` when ready |
+| `execute` | `ARMED` | Start Flash preparation and DUT startup; enter `EXECUTION` only after both complete |
 | `execution_complete` | `EXECUTION` | Stop execution and start Flash finalisation |
 | `transfer` | `RESULTS_READY` | Enter `RESULT_TRANSFER` |
 | `transfer_complete` | `RESULT_TRANSFER` | Enter `IDLE` |
@@ -63,15 +64,21 @@ asynchronous transition was pending, or failed during its entry action.
 | `fault` | Any state | Enter `FAULT` and retain the first cause |
 | `reset` | `FAULT` | Restore idle driver state and enter `IDLE` |
 
-Driver readiness completion from `CONFIGURATION` into `ARMED`, Flash preparation completion into `EXECUTION`, and
-Flash finalisation completion into `RESULTS_READY` are internal automatic
-transitions. Host-driven requests, future Execution Manager completion, result
-transfer completion, fault, and reset remain explicit events.
+Driver and external-interface readiness complete `CONFIGURATION` into `ARMED`.
+Flash preparation is followed by a distinct asynchronous DUT-startup phase;
+only successful physical completion of its Logic Expander batch permits TIM4
+to start and the RSM to enter `EXECUTION`. Flash finalisation completion into
+`RESULTS_READY` is also automatic. Host-driven requests, future Execution
+Manager completion, result transfer completion, fault, and reset remain
+explicit events.
 
 `ARMED` means test configuration has completed while the DUT drivers and
 execution timer remain stopped. An execute request begins Flash Manager
-execution preparation; only after Flash reports `EXECUTING` does the manager
-start the DUT drivers and execution timer and enter `EXECUTION`.
+execution preparation. After Flash reports `EXECUTING`, the manager starts the
+DUT drivers but remains `ARMED` with a pending transition while external-path
+enable writes complete. TIM4 starts and `EXECUTION` is published only after the
+startup batch succeeds. Startup failure or timeout enters `FAULT` without
+starting TIM4.
 `RESULTS_READY` means execution has stopped and Flash Manager has completely
 finalised a valid result stream. `repeat` deliberately abandons that stream,
 retains the active DUT configuration and uploaded instructions, and returns to
@@ -81,7 +88,8 @@ require Flash Manager to release the result session and return to `IDLE` before
 the RSM transition is committed.
 
 The manager uses task notifications for requests and polls only while an
-asynchronous Flash Manager transition is pending.
+asynchronous configuration, driver-start, or Flash Manager operation is
+pending.
 
 Request APIs report only whether their notification was delivered to the RSM
 task. They do not report that the request was valid or that its transition has

@@ -36,6 +36,11 @@ through periodic processing after the scheduler starts. These APIs must not be
 called from an ISR. The mutex is held only while inspecting state or making
 non-blocking queue calls; no API waits for physical I2C completion.
 
+`LOGIC_EXPANDER_Is_Ready()` has one deliberately narrow meaning: initial
+MCP23017 register self-configuration completed successfully. It does not mean
+that later OLAT control writes are idle, successful, or physically visible.
+Lifecycle callers must track those writes with the control-batch API.
+
 `LOGIC_EXPANDER_Self_Config()` configures FMPI2C1 and begins enqueueing the eight
 MCP23017 setup writes for each active device. The final setup write applies the
 role-specific safe-default table to OLATA and OLATB: connected controls select
@@ -88,12 +93,32 @@ for any later retry. A timed-out control-write batch follows the same retry path
 after channel recovery. A successful send return therefore means all dirty
 writes were accepted, not that they have physically completed.
 
+## Tracked control batches
+
+The DUT Driver Lifecycle brackets configuration and startup writes with
+`LOGIC_EXPANDER_Begin_Control_Batch()` and
+`LOGIC_EXPANDER_End_Control_Batch()`. Begin returns an opaque non-zero identity.
+Only that identity can query or cancel the batch, preventing an old lifecycle
+operation from mistaking a later batch for its own completion.
+
+After End, the batch remains `PENDING` until background processing observes the
+final successful I2C completion. It becomes `FAILED` if an accepted transaction
+later fails or times out, and `COMPLETE` only when dirty, pending, and retry
+work belonging to the sealed operation has drained. `Is_Ready()` may remain
+true throughout this process because subsystem initialization and control-batch
+completion are separate contracts.
+
+Only one batch can be open or pending. Beginning another operation returns
+`BUSY` until prior queued work drains. Cancelling releases the identity but does
+not cancel transactions already owned by the I2C queue.
+
 ## Typical flow
 
 1. Call `LOGIC_EXPANDER_Self_Config()`.
 2. Call `LOGIC_EXPANDER_Process()` on subsequent ticks until it returns `OK`.
-3. Confirm readiness with `LOGIC_EXPANDER_Is_Ready()`.
-4. Load output changes with `LOGIC_EXPANDER_Load_Control_Bit()`.
-5. Call `LOGIC_EXPANDER_Send_Control_Bits()`; retry later if it returns `BUSY`.
-6. Continue calling `LOGIC_EXPANDER_Process()` so completion is observed and
-   transient asynchronous failures are retried.
+3. Confirm initial readiness with `LOGIC_EXPANDER_Is_Ready()`.
+4. Begin a tracked control batch.
+5. Load output changes and call `LOGIC_EXPANDER_Send_Control_Bits()`.
+6. Seal the batch after all writes have been submitted.
+7. Continue calling `LOGIC_EXPANDER_Process()` and poll the matching batch
+   identity until it reports `COMPLETE` or `FAILED`.
