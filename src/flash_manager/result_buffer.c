@@ -806,6 +806,11 @@ bool RESULT_BUFFER_CancelRecord( const FlashManagerResultWriteLease_T* lease )
     return true;
 }
 
+bool RESULT_BUFFER_IsRecordLeaseValid( const FlashManagerResultWriteLease_T* lease )
+{
+    return RESULT_BUFFER_RecordLeaseMatches( lease );
+}
+
 /**
  * @brief Commits the active lease into the packed result stream.
  */

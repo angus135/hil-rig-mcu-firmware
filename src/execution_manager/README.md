@@ -16,14 +16,37 @@ commands are temporary stimuli for the integration seam described below.
 
 ## Instruction contract
 
-Instruction records are stored in nondecreasing timestamp order. For each tick:
+Instructions are variable length and stored in strictly increasing timestamp
+order, with at most one instruction for each output-bearing tick. A fixed
+`ExecutionInstructionHeader_T` is followed by all packed operations for that
+tick, up to `EXECUTION_INSTRUCTION_MAX_SIZE_BYTES`. The instruction header,
+each padded operation, and the complete instruction image are four-byte
+aligned. The Host Interface owns this canonicalisation before upload.
+
+The eight-byte instruction header is encoded as two little-endian words:
+
+```text
+word 0: bits 0-31  timestamp
+word 1: bits 0-15  operations_length_bytes
+        bits 16-23 operation_count
+        bits 24-31 reserved (zero)
+```
+
+`operations_length_bytes` includes every operation header, payload, and padding
+byte, but excludes the instruction header. Flash Manager storage is word-backed,
+so its first peek reads these two words directly and leaves the operation stream
+zero-copy. The Execution Manager must walk only validated, four-byte-aligned
+operation boundaries; it must not copy complete payload structures merely to
+decode them.
+
+For each tick:
 
 1. Peek the next instruction through
    `FLASH_MANAGER_PeekNextInstructionFromISR()`.
 2. If its timestamp is greater than the current tick, stop without consuming;
    the next tick receives the cached view.
-3. If its timestamp equals the current tick, execute it, consume it once, and
-   continue with the next instruction.
+3. If its timestamp equals the current tick, execute all contained operations
+   in order and consume the complete instruction once.
 4. If its timestamp is less than the current tick, report an execution-overrun
    fault. The test is infeasible and the late instruction is not consumed.
 
@@ -88,6 +111,7 @@ task iteration.
 |---------------------------|------|
 | `execution_manager.c` | Timer ISR execution loop |
 | `execution_manager.h` | Public API and Flash Manager integration contract |
+| `execution_instruction.h` | Prepared instruction format shared with its producers and storage |
 
 
 ---

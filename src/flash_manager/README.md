@@ -21,7 +21,7 @@ manager. It must not call `external_flash`, `hw_nand`, or `hw_qspi` directly.
 | Data flow | RAM producer | RAM consumer | Coordination |
 |---|---|---|---|
 | Instruction upload | Host Interface copies canonical bytes | Flash Manager task writes NAND pages | Manager mutex and task notifications |
-| Instruction retrieval | Flash Manager task reads NAND pages | Execution ISR views and consumes records | Critical sections and ISR notifications |
+| Instruction retrieval | Flash Manager task reads NAND pages | Execution ISR views and consumes tick instructions | Critical sections and ISR notifications |
 | Result logging | Execution ISR writes and commits records | Flash Manager task writes NAND pages | Critical sections and ISR notifications |
 | Result retrieval | Flash Manager task reads NAND pages | Host Interface copies available bytes | Manager mutex and task notifications |
 
@@ -36,11 +36,11 @@ contiguous driver payload pointer only when a record crosses the physical end
 of the ring. After result finalisation, the same three page regions are reset
 and reused as a sequential NAND-prefetch ring for copied Host Interface reads.
 
-The instruction buffer uses three page-sized circular slots followed by one
-page-sized mirror of slot zero. NAND DMA fills only the three circular slots.
-The Flash Manager task updates the mirror whenever slot zero is filled, making a
-record that crosses the physical ring end contiguous without an ISR-time payload
-copy.
+The instruction buffer uses three page-sized circular slots followed by two
+page-sized mirrors of slots zero and one. NAND DMA fills only the three circular
+slots. The Flash Manager task updates each mirror when its source slot is filled,
+keeping an instruction of up to `EXECUTION_INSTRUCTION_MAX_SIZE_BYTES`
+contiguous across the physical ring end without an ISR-time operation copy.
 
 Implemented sizing:
 
@@ -73,8 +73,8 @@ The three-page rings are not an execution guarantee. Before the Run State
 Manager starts TIM4, the feasibility analyser must reject any test that cannot
 be supported under worst-case conditions. Validation must account for:
 
-- Total instruction bytes sharing one timestamp and the worst-case time to run
-  their drivers within one timer period.
+- The complete instruction size and worst-case time to run all of its operations
+  within one timer period.
 - Total result bytes that those instructions and periodic measurements can
   produce at one timestamp.
 - Sustained instruction consumption and result production, not only a single
@@ -82,13 +82,12 @@ be supported under worst-case conditions. Validation must account for:
 - Measured NAND read/program/recovery throughput and worst-case interrupt and
   Flash Manager task scheduling latency.
 
-In particular, a same-timestamp instruction burst can consume all three
-preloaded pages before the Flash Manager task is allowed to run, and a
-same-timestamp result burst can fill all three result pages before any page is
-drained. Both cases are infeasible and must be rejected before execution rather
-than relying on the runtime underrun/overflow fault. Increasing the page counts
-may provide measured scheduling margin, but it is not a substitute for these
-bounds and cannot correct a sustained rate above NAND throughput.
+In particular, one maximum-size tick instruction can release multiple preloaded
+pages before the Flash Manager task is allowed to run, and its operations can
+produce enough results to fill all three result pages before any page is drained.
+Both cases must be covered by admission analysis rather than relying on runtime
+underrun or overflow faults. Increasing the page counts may provide measured
+scheduling margin, but cannot correct a sustained rate above NAND throughput.
 
 ---
 
@@ -164,31 +163,34 @@ or ownership failure enters `FAULT`.
 
 The Host Interface application layer is responsible for translating and
 validating incoming package data into the canonical packed
-`[instruction header][payload]...` stream before submission. The Flash Manager
-preserves byte order and controls storage lifecycle; it does not interpret
-peripheral-specific instruction payloads.
+`[instruction header][operations...]` stream before submission. The Flash
+Manager preserves byte order and controls storage lifecycle; it does not
+interpret operation headers, opcodes, or peripheral-specific payloads.
 
-Canonical validation must establish valid peripheral types, channels and
-payload schemas, a complete packed stream with no padding, records no larger
-than one NAND page, and nondecreasing instruction timestamps. Host transport
-chunks do not need to align with records or NAND pages; they are merely ordered
-pieces of the declared canonical byte stream.
+Canonical validation must establish one instruction per output-bearing tick,
+strictly increasing timestamps, valid operation counts, opcodes, channels, payload
+layouts and four-byte operation padding, and complete instructions no larger
+than `EXECUTION_INSTRUCTION_MAX_SIZE_BYTES`. Every operations length and the
+complete declared image length must be divisible by four. Host transport chunks
+do not need to align with instructions, operations, words, or NAND pages; they
+are merely ordered pieces of the declared canonical byte stream.
 
 ### Persisted record format compatibility
 
 The current instruction and result streams are an internal development format,
-not yet a durable interchange format. Each record is packed without inter-record
-padding as `[native header][payload]`. On the current STM32F446 target the
-eight-byte header fields are stored using the MCU's little-endian native C
-structure representation. There is no format identifier or version in NAND,
-and compatibility across different firmware, compilers, targets, or payload
-schema revisions is not guaranteed.
+not yet a durable interchange format. Instructions are packed as an eight-byte
+little-endian header followed by operations. Header word zero contains the
+timestamp. Header word one contains operation length in bits 0-15, operation
+count in bits 16-23, and reserved bits in bits 24-31. Result records remain
+`[native result header][payload]`. There is no format identifier or version in
+NAND, and compatibility across different firmware, targets, or payload schema
+revisions is not guaranteed.
 
 > **TODO:** Before stored streams become a supported host/flash interface,
 > define a versioned wire format with a magic value and format version, explicit
 > byte order and field offsets, fixed-width encoded fields independent of C
-> alignment, and versioned peripheral payload schemas. Encoding and decoding
-> must use explicit byte operations rather than native structure serialization.
+> alignment, and versioned peripheral payload schemas. Result encoding and any
+> remaining instruction producers must stop using native structure serialization.
 > Readers must reject unsupported versions; compatibility and migration policy
 > must state which older versions remain readable.
 
@@ -197,7 +199,7 @@ schema revisions is not guaranteed.
 ## Instruction Queue
 
 The instruction queue uses page-sized slots and serves packed variable-length
-records directly from those slots.
+tick instructions directly from those slots.
 
 Each refill should normally call:
 
@@ -251,11 +253,11 @@ iteration can consume, and sustained NAND refill throughput must exceed
 sustained execution consumption. Event-driven notification removes polling
 latency but cannot compensate for insufficient buffer depth or NAND throughput.
 
-Completing a slot-zero refill updates the private ring-end mirror before the
-slot is published. That bounded page copy runs with interrupts enabled in Flash
-Manager task context and can be preempted by the execution timer ISR. Only the
-following metadata publication uses a short critical section, so the page-sized
-copy cannot delay execution interrupt entry.
+Completing a refill of slot zero or one updates its private ring-end mirror
+before the slot is published. Each bounded page copy runs with interrupts enabled
+in Flash Manager task context and can be preempted by the execution timer ISR.
+Only the following metadata publication uses a short critical section, so the
+page-sized copy cannot delay execution interrupt entry.
 
 Only start a refill when the next sequential page slot is empty. Do not issue a
 DMA read into a slot still referenced by the execution manager.
@@ -391,10 +393,11 @@ commented out in `app_main.c` until that startup order is connected.
 Before each execution, the Run State Manager requests asynchronous preparation:
 
 ```c
-FLASH_MANAGER_RequestExecutionPreparation();
+FLASH_MANAGER_RequestExecutionPreparation(maximum_result_length_bytes);
 ```
 
-The Flash Manager task calls `EXTERNAL_FLASH_StartSession()`, resets the result
+The Flash Manager task calls
+`EXTERNAL_FLASH_StartSession(maximum_result_length_bytes)`, resets the result
 buffer, reads the committed instruction length, prepares the instruction buffer,
 and preloads every available instruction slot. It changes to
 `FLASH_MANAGER_STATE_EXECUTING` only after all preparation operations succeed.
@@ -410,19 +413,20 @@ execution_manager appends result bytes into flash manager result slots
 flash_manager writes full result pages using EXTERNAL_FLASH_WriteResultPage
 ```
 
-The instruction API uses a cached hot-path contract. The first peek copies the
-fixed eight-byte header into an aligned view while leaving the payload zero-copy
-in Flash Manager-owned RAM. If its timestamp belongs to a future execution
-tick, later peeks return the same prepared view through a short cached branch;
-they do not copy, reparse, or advance it. Consume advances a cached record
-pointer and two offsets exactly once. Page release and refill notification occur
-only on the less frequent boundary path.
+The instruction API uses a cached hot-path contract. Instruction RAM is backed
+by 32-bit words and exposed as bytes to task-context NAND and upload paths. The
+first peek reads and decodes the two aligned header words directly while leaving
+the operations zero-copy in Flash Manager-owned RAM. If its timestamp belongs
+to a future execution tick, later peeks return the same prepared view through a
+short cached branch; they do not reread, reparse, or advance it. Consume advances
+a cached instruction pointer and two offsets exactly once. Page release and
+refill notification occur only on the less frequent boundary path.
 
 The Execution Manager processes the ordered stream from its head:
 
 ```text
 instruction timestamp > current tick: retain the cached view and stop this tick
-instruction timestamp == current tick: execute, consume, and peek the next record
+instruction timestamp == current tick: execute every operation, then consume once
 instruction timestamp < current tick: declare an execution-overrun fault
 ```
 
@@ -432,9 +436,11 @@ detects this at runtime; future feasibility validation should reject such a
 test before execution begins.
 
 The instruction stream is trusted to have been canonicalised before it reaches
-NAND. The execution path retains only the length bounds needed to prevent a
-stored record from exceeding one NAND page or the declared instruction image.
-Lifecycle and call-order validation belongs outside the per-instruction path.
+NAND. The Flash Manager defensively rejects unaligned page geometry, declared
+image lengths, and per-instruction operation lengths, as well as framing that
+exceeds `EXECUTION_INSTRUCTION_MAX_SIZE_BYTES` or the declared image. Opcode,
+channel, and payload validation belongs to the Host Interface and Execution
+Manager, outside the Flash Manager hot path.
 
 The common peek and consume paths contain no private helper calls. Tiny shared
 addressing helpers are declared inline, while page-boundary bookkeeping is
@@ -450,9 +456,9 @@ After the final stored instruction is consumed, instruction peek returns
 instruction or another future mechanism is interpreted outside the Flash
 Manager and eventually asks the Run State Manager to stop the test.
 
-If execution reaches a record whose bytes have not been loaded,
+If execution reaches an instruction whose bytes have not been loaded,
 `FLASH_MANAGER_INSTRUCTION_NOT_BUFFERED` represents a real-time underrun and the
-Flash Manager latches `FAULT`. A corrupt stored record and a NAND refill failure
+Flash Manager latches `FAULT`. A corrupt stored instruction and a NAND refill failure
 also latch `FAULT`.
 
 After execution, the Run State Manager stops the execution timer, ensures the
@@ -480,7 +486,8 @@ instruction position remains after the execution ISR has stopped.
 If the final result length is exactly page aligned, there is no separate
 external-flash finalize call. Leave the session readable for result transfer;
 `external_flash` advances its result wear-rotation cursor when the next
-`EXTERNAL_FLASH_StartSession()` begins. The Host Interface must use the public
+`EXTERNAL_FLASH_StartSession(maximum_result_length_bytes)` begins. The Host
+Interface must use the public
 Flash Manager result-transfer APIs rather than call `external_flash` directly.
 
 ---
@@ -494,20 +501,22 @@ the `external_flash` boundaries so the storage layer can manage wear:
   `EXTERNAL_FLASH_WriteInstructionBytes`, or
   `EXTERNAL_FLASH_WriteInstructionPage`, followed by
   `EXTERNAL_FLASH_FinishInstructionUpload`.
-- Start each execution run with `EXTERNAL_FLASH_StartSession`.
+- Start each execution run with
+  `EXTERNAL_FLASH_StartSession(maximum_result_length_bytes)`.
 - Write result data only through `EXTERNAL_FLASH_WriteResultPage`.
 - Do not call `hw_nand` or `hw_qspi` directly.
 
 Current policy:
 
 - Instruction upload erases only the blocks required for the uploaded instruction image.
-- Result session preparation currently prepares the full writable result
-  capacity because the final result length is not known before execution.
+- The Host Interface or feasibility analyser calculates a conservative result
+  limit from the test configuration. Flash Manager enforces that logical limit,
+  while External Flash erases the required whole NAND blocks.
 - `external_flash` keeps a spare block outside each active map so a
   program-failed block can be retired and replaced.
 - Exact-page result sessions do not need a flush/finalize call; the next
-  `EXTERNAL_FLASH_StartSession()` advances the wear cursor for the previous
-  committed result length.
+  `EXTERNAL_FLASH_StartSession(maximum_result_length_bytes)` advances the wear
+  cursor for the previous committed result length.
 - Runtime erase counts are currently RAM only; a metadata partition is reserved
   for future persistent snapshots.
 
@@ -556,6 +565,7 @@ Important statuses to handle:
 | Status | Meaning |
 |---|---|
 | `EXTERNAL_FLASH_STATUS_STORAGE_FULL` | Result or instruction partition capacity exhausted. |
+| `EXTERNAL_FLASH_STATUS_SESSION_CAPACITY_EXCEEDED` | A result write exceeded the capacity reserved for the active execution session; the physical result partition may still have free space. |
 | `EXTERNAL_FLASH_STATUS_TIMEOUT` | DMA or NAND operation did not complete. |
 | `EXTERNAL_FLASH_STATUS_ECC_ERROR` | Uncorrectable read issue. |
 | `EXTERNAL_FLASH_STATUS_PROGRAM_FAIL` | Program failure not recovered. |

@@ -17,11 +17,11 @@
  *      - Consuming all bytes in a slot returns it to EMPTY so the Flash Manager
  *        can refill it with the next NAND page.
  *
- *      A record consists of FlashManagerInstructionHeader_T followed by its
- *      payload. Records may cross a NAND page boundary. Most records can be
- *      exposed directly from the three circular page slots. A fourth region
- *      mirrors slot zero immediately after slot two, making records that cross
- *      the physical ring end contiguous without copying in the execution ISR.
+ *      An instruction consists of ExecutionInstructionHeader_T followed by its
+ *      packed operations. Instructions may cross NAND page boundaries. Most can
+ *      be exposed directly from the three circular page slots. Two trailing
+ *      regions mirror slots zero and one, keeping a maximum-size instruction
+ *      crossing the physical ring end contiguous without copying in the ISR.
  *      Timestamp scheduling is intentionally owned by the Execution Manager;
  *      this module only caches, exposes, and advances the ordered byte stream.
  *
@@ -59,14 +59,34 @@
  */
 #define INSTRUCTION_BUFFER_PAGE_COUNT ( 3U )
 
+/* Two mirrored pages keep a two-page instruction contiguous at the ring end. */
+#define INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT ( 2U )
+
 #define INSTRUCTION_BUFFER_MAX_CAPACITY_BYTES                                                      \
     ( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES * INSTRUCTION_BUFFER_PAGE_COUNT )
 
-/* Temporary policy: one instruction record may occupy at most one NAND page. */
-#define INSTRUCTION_BUFFER_MAX_RECORD_BYTES ( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES )
+#define INSTRUCTION_BUFFER_MIRROR_CAPACITY_BYTES                                                   \
+    ( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES * INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT )
 
 #define INSTRUCTION_BUFFER_STORAGE_BYTES                                                           \
-    ( INSTRUCTION_BUFFER_MAX_CAPACITY_BYTES + INSTRUCTION_BUFFER_MAX_RECORD_BYTES )
+    ( INSTRUCTION_BUFFER_MAX_CAPACITY_BYTES + INSTRUCTION_BUFFER_MIRROR_CAPACITY_BYTES )
+
+#define INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES ( sizeof( uint32_t ) )
+
+#define INSTRUCTION_BUFFER_STORAGE_WORD_COUNT                                                      \
+    ( INSTRUCTION_BUFFER_STORAGE_BYTES / sizeof( uint32_t ) )
+
+#if defined( __cplusplus )
+static_assert( sizeof( uint32_t ) == 4U, "Instruction storage requires 32-bit words" );
+
+static_assert( ( INSTRUCTION_BUFFER_STORAGE_BYTES % sizeof( uint32_t ) ) == 0U,
+               "Instruction buffer size must contain a whole number of words" );
+#else
+_Static_assert( sizeof( uint32_t ) == 4U, "Instruction storage requires 32-bit words" );
+
+_Static_assert( ( INSTRUCTION_BUFFER_STORAGE_BYTES % sizeof( uint32_t ) ) == 0U,
+                "Instruction buffer size must contain a whole number of words" );
+#endif
 
 /* Keep page-release bookkeeping out of the per-instruction common path. */
 #if defined( __GNUC__ ) || defined( __clang__ )
@@ -77,11 +97,15 @@
 
 /* The serialized NAND layout depends on this fixed header width. */
 #if defined( __cplusplus )
-static_assert( sizeof( FlashManagerInstructionHeader_T ) == 8U,
+static_assert( sizeof( ExecutionInstructionHeader_T ) == 8U,
                "Unexpected instruction header layout" );
+static_assert( INSTRUCTION_BUFFER_MIRROR_CAPACITY_BYTES == EXECUTION_INSTRUCTION_MAX_SIZE_BYTES,
+               "Instruction mirror must match the maximum execution instruction" );
 #else
-_Static_assert( sizeof( FlashManagerInstructionHeader_T ) == 8U,
+_Static_assert( sizeof( ExecutionInstructionHeader_T ) == 8U,
                 "Unexpected instruction header layout" );
+_Static_assert( INSTRUCTION_BUFFER_MIRROR_CAPACITY_BYTES == EXECUTION_INSTRUCTION_MAX_SIZE_BYTES,
+                "Instruction mirror must match the maximum execution instruction" );
 #endif
 
 /**-----------------------------------------------------------------------------
@@ -250,13 +274,14 @@ typedef struct
 /* Shared storage and state for the mutually exclusive data flows. */
 
 /**
- * @brief Circular instruction page storage followed by a slot-zero mirror.
+ * @brief Circular instruction page storage followed by two mirrored slots.
  *
  * The first three runtime pages are shared by retrieval and upload. The final
- * maximum-record region is retrieval-only: it mirrors the valid prefix of slot
- * zero so a slot-two-to-slot-zero record has one contiguous address range.
+ * maximum-record region is retrieval-only: it mirrors the valid prefixes of
+ * slots zero and one so an instruction beginning in slot two can remain
+ * contiguous for as much as two pages.
  */
-static uint8_t instruction_buffer_storage[INSTRUCTION_BUFFER_STORAGE_BYTES];
+static uint32_t instruction_buffer_storage_words[INSTRUCTION_BUFFER_STORAGE_WORD_COUNT];
 
 /** Shared geometry plus mutually exclusive retrieval and upload state. */
 static InstructionBufferContext_T instruction_buffer_context;
@@ -319,6 +344,11 @@ static bool INSTRUCTION_BUFFER_CopyUploadBytes( const uint8_t* data, uint32_t le
  *------------------------------------------------------------------------------
  */
 
+static inline uint8_t* INSTRUCTION_BUFFER_GetStorageBytes( void )
+{
+    return ( uint8_t* )( void* )instruction_buffer_storage_words;
+}
+
 /* Shared state management. */
 
 static inline uint8_t INSTRUCTION_BUFFER_NextPageIndex( uint8_t page_index )
@@ -331,7 +361,7 @@ static inline uint8_t* INSTRUCTION_BUFFER_GetPageData( uint8_t page_index )
     uint32_t page_offset_bytes =
         ( uint32_t )page_index * instruction_buffer_context.page_size_bytes;
 
-    return &instruction_buffer_storage[page_offset_bytes];
+    return &INSTRUCTION_BUFFER_GetStorageBytes()[page_offset_bytes];
 }
 
 static void INSTRUCTION_BUFFER_ResetPages( void )
@@ -414,33 +444,34 @@ static INSTRUCTION_BUFFER_COLD_NOINLINE InstructionBufferConsumeStatus_T
 INSTRUCTION_BUFFER_ConsumeAcrossPageBoundary( uint32_t record_length_bytes,
                                               uint32_t bytes_remaining_in_page )
 {
-    uint8_t  current_page_index       = instruction_buffer_context.consumer_page_index;
-    uint8_t  successor_page_index     = INSTRUCTION_BUFFER_NextPageIndex( current_page_index );
-    uint32_t successor_bytes_consumed = record_length_bytes - bytes_remaining_in_page;
+    uint8_t  page_index       = instruction_buffer_context.consumer_page_index;
+    uint32_t bytes_to_advance = record_length_bytes;
+    uint32_t page_offset      = instruction_buffer_context.consumer_page_offset_bytes;
 
-    instruction_buffer_context.page_states[current_page_index]      = INSTRUCTION_BUFFER_PAGE_EMPTY;
-    instruction_buffer_context.page_valid_bytes[current_page_index] = 0U;
+    ( void )bytes_remaining_in_page;
 
-    instruction_buffer_context.consumer_page_index        = successor_page_index;
-    instruction_buffer_context.consumer_page_offset_bytes = successor_bytes_consumed;
-    instruction_buffer_context.consumer_record_pointer =
-        INSTRUCTION_BUFFER_GetPageData( successor_page_index ) + successor_bytes_consumed;
-
-    /* A crossing record may also exhaust a final partial successor page. */
-    if ( ( successor_bytes_consumed > 0U )
-         && ( successor_bytes_consumed
-              == instruction_buffer_context.page_valid_bytes[successor_page_index] ) )
+    while ( bytes_to_advance
+            >= ( instruction_buffer_context.page_valid_bytes[page_index] - page_offset ) )
     {
-        instruction_buffer_context.page_states[successor_page_index] =
-            INSTRUCTION_BUFFER_PAGE_EMPTY;
-        instruction_buffer_context.page_valid_bytes[successor_page_index] = 0U;
+        uint32_t bytes_in_page =
+            instruction_buffer_context.page_valid_bytes[page_index] - page_offset;
 
-        instruction_buffer_context.consumer_page_index =
-            INSTRUCTION_BUFFER_NextPageIndex( successor_page_index );
-        instruction_buffer_context.consumer_page_offset_bytes = 0U;
-        instruction_buffer_context.consumer_record_pointer =
-            INSTRUCTION_BUFFER_GetPageData( instruction_buffer_context.consumer_page_index );
+        bytes_to_advance -= bytes_in_page;
+        instruction_buffer_context.page_states[page_index]      = INSTRUCTION_BUFFER_PAGE_EMPTY;
+        instruction_buffer_context.page_valid_bytes[page_index] = 0U;
+        page_index  = INSTRUCTION_BUFFER_NextPageIndex( page_index );
+        page_offset = 0U;
+
+        if ( bytes_to_advance == 0U )
+        {
+            break;
+        }
     }
+
+    instruction_buffer_context.consumer_page_index        = page_index;
+    instruction_buffer_context.consumer_page_offset_bytes = bytes_to_advance;
+    instruction_buffer_context.consumer_record_pointer =
+        INSTRUCTION_BUFFER_GetPageData( page_index ) + bytes_to_advance;
 
     return ( instruction_buffer_context.next_nand_read_offset_bytes
              < instruction_buffer_context.instruction_length_bytes )
@@ -610,6 +641,8 @@ bool INSTRUCTION_BUFFER_Init( void )
 
     /* Runtime geometry must fit the compile-time backing-storage ceiling. */
     if ( ( external_flash_info.page_size_bytes == 0U )
+         || ( ( external_flash_info.page_size_bytes % INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES )
+              != 0U )
          || ( external_flash_info.page_size_bytes > EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES )
          || ( external_flash_info.instruction_capacity_bytes == 0U ) )
     {
@@ -643,6 +676,7 @@ bool INSTRUCTION_BUFFER_Init( void )
 bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes )
 {
     if ( !instruction_buffer_context.is_initialised || instruction_buffer_context.is_upload_prepared
+         || ( ( instruction_length_bytes % INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES ) != 0U )
          || ( instruction_length_bytes
               > instruction_buffer_context.instruction_partition_capacity_bytes ) )
     {
@@ -657,7 +691,7 @@ bool INSTRUCTION_BUFFER_PrepareRead( uint32_t instruction_length_bytes )
     instruction_buffer_context.consumer_stream_offset_bytes = 0U;
     instruction_buffer_context.consumer_page_index          = 0U;
     instruction_buffer_context.consumer_page_offset_bytes   = 0U;
-    instruction_buffer_context.consumer_record_pointer      = instruction_buffer_storage;
+    instruction_buffer_context.consumer_record_pointer      = INSTRUCTION_BUFFER_GetStorageBytes();
 
     INSTRUCTION_BUFFER_ClearPageFillReservation();
     INSTRUCTION_BUFFER_ClearInstructionCache();
@@ -695,7 +729,7 @@ void INSTRUCTION_BUFFER_EndRead( void )
     instruction_buffer_context.consumer_stream_offset_bytes = 0U;
     instruction_buffer_context.consumer_page_index          = 0U;
     instruction_buffer_context.consumer_page_offset_bytes   = 0U;
-    instruction_buffer_context.consumer_record_pointer      = instruction_buffer_storage;
+    instruction_buffer_context.consumer_record_pointer      = INSTRUCTION_BUFFER_GetStorageBytes();
 
     INSTRUCTION_BUFFER_ClearPageFillReservation();
     INSTRUCTION_BUFFER_ClearInstructionCache();
@@ -800,18 +834,18 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
         }
 
         /*
-         * Mirror slot zero immediately after the circular storage. This makes
-         * a record crossing from slot two into slot zero physically contiguous
-         * for the execution ISR. Keep the slot unpublished until the copy is
-         * complete so the ISR cannot observe a partially updated mirror.
+         * Mirror slots zero and one immediately after the circular storage.
+         * Together they keep a two-page instruction beginning in slot two
+         * physically contiguous. Keep each slot unpublished until its mirror
+         * copy is complete.
          */
-        if ( page_index == 0U )
+        if ( page_index < INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT )
         {
-            uint32_t mirror_offset_bytes =
-                instruction_buffer_context.page_size_bytes * INSTRUCTION_BUFFER_PAGE_COUNT;
+            uint32_t mirror_offset_bytes = instruction_buffer_context.page_size_bytes
+                                           * ( INSTRUCTION_BUFFER_PAGE_COUNT + page_index );
 
-            memcpy( &instruction_buffer_storage[mirror_offset_bytes], instruction_buffer_storage,
-                    read_length_bytes );
+            memcpy( &INSTRUCTION_BUFFER_GetStorageBytes()[mirror_offset_bytes],
+                    INSTRUCTION_BUFFER_GetPageData( page_index ), read_length_bytes );
         }
     }
 
@@ -864,10 +898,10 @@ uint32_t INSTRUCTION_BUFFER_GetBufferedUnreadBytes( void )
 /**
  * @brief Returns the current instruction view without advancing the stream.
  *
- * The fixed header is copied into an aligned public view and the payload is
- * exposed directly from storage. The slot-zero mirror keeps a record crossing
- * the physical ring end contiguous, so this path performs no payload copy and
- * no page search.
+ * The two fixed header words are decoded into the public view and the operations
+ * are exposed directly from storage. The two-page mirror keeps an instruction
+ * crossing the physical ring end contiguous, so this path performs no operation
+ * copy and no page search.
  */
 InstructionBufferPeekStatus_T
 INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instruction )
@@ -889,20 +923,30 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
     uint32_t buffered_unread_bytes =
         instruction_buffer_context.next_nand_read_offset_bytes - record_stream_offset_bytes;
 
-    if ( buffered_unread_bytes < sizeof( FlashManagerInstructionHeader_T ) )
+    if ( buffered_unread_bytes < sizeof( ExecutionInstructionHeader_T ) )
     {
         return INSTRUCTION_BUFFER_PEEK_NOT_BUFFERED;
     }
 
-    FlashManagerInstructionHeader_T header = { 0 };
+    const uint32_t* header_words =
+        ( const uint32_t* )( const void* )instruction_buffer_context.consumer_record_pointer;
 
-    /*
-     * Copy the fixed header into an aligned object for safe field access. The
-     * slot-zero mirror makes this a single bounded copy even at the ring end.
-     */
-    memcpy( &header, instruction_buffer_context.consumer_record_pointer, sizeof( header ) );
+    uint32_t encoded_fields = header_words[1];
 
-    uint32_t record_length_bytes = sizeof( header ) + ( uint32_t )header.payload_length_bytes;
+    ExecutionInstructionHeader_T header = {
+        .timestamp               = header_words[0],
+        .operations_length_bytes = ( uint16_t )( encoded_fields & UINT32_C( 0xFFFF ) ),
+        .operation_count         = ( uint8_t )( ( encoded_fields >> 16U ) & UINT32_C( 0xFF ) ),
+        .reserved                = ( uint8_t )( ( encoded_fields >> 24U ) & UINT32_C( 0xFF ) ),
+    };
+
+    if ( ( ( uint32_t )header.operations_length_bytes % INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES )
+         != 0U )
+    {
+        return INSTRUCTION_BUFFER_PEEK_CORRUPT;
+    }
+
+    uint32_t record_length_bytes = sizeof( header ) + ( uint32_t )header.operations_length_bytes;
 
     uint32_t remaining_image_bytes =
         instruction_buffer_context.instruction_length_bytes - record_stream_offset_bytes;
@@ -912,7 +956,10 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
      * stream. Semantic instruction validation belongs to upload preprocessing
      * and the Execution Manager.
      */
-    if ( ( record_length_bytes > instruction_buffer_context.page_size_bytes )
+    uint32_t maximum_instruction_size_bytes =
+        instruction_buffer_context.page_size_bytes * INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT;
+
+    if ( ( record_length_bytes > maximum_instruction_size_bytes )
          || ( record_length_bytes > remaining_image_bytes ) )
     {
         return INSTRUCTION_BUFFER_PEEK_CORRUPT;
@@ -926,7 +973,7 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
     instruction_buffer_context.instruction_cache = ( InstructionBufferInstructionCache_T ){
         .record_length_bytes = record_length_bytes,
         .view                = { .header = header,
-                                 .payload =
+                                 .operations =
                                      instruction_buffer_context.consumer_record_pointer + sizeof( header ) } };
 
     *instruction = &instruction_buffer_context.instruction_cache.view;
@@ -975,6 +1022,7 @@ bool INSTRUCTION_BUFFER_PrepareUpload( uint32_t expected_length_bytes )
          || instruction_buffer_context.is_upload_prepared
          || instruction_buffer_context.active_page_fill_reservation.is_active
          || ( expected_length_bytes == 0U )
+         || ( ( expected_length_bytes % INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES ) != 0U )
          || ( expected_length_bytes
               > instruction_buffer_context.instruction_partition_capacity_bytes ) )
     {
@@ -991,7 +1039,7 @@ bool INSTRUCTION_BUFFER_PrepareUpload( uint32_t expected_length_bytes )
     instruction_buffer_context.consumer_stream_offset_bytes = 0U;
     instruction_buffer_context.consumer_page_index          = 0U;
     instruction_buffer_context.consumer_page_offset_bytes   = 0U;
-    instruction_buffer_context.consumer_record_pointer      = instruction_buffer_storage;
+    instruction_buffer_context.consumer_record_pointer      = INSTRUCTION_BUFFER_GetStorageBytes();
 
     instruction_buffer_context.upload_expected_length_bytes  = expected_length_bytes;
     instruction_buffer_context.upload_accepted_length_bytes  = 0U;

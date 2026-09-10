@@ -107,7 +107,9 @@ typedef enum
     EXTERNAL_FLASH_STATUS_STORAGE_FULL,
     EXTERNAL_FLASH_STATUS_ECC_ERROR,
     EXTERNAL_FLASH_STATUS_PROGRAM_FAIL,
-    EXTERNAL_FLASH_STATUS_ERASE_FAIL
+    EXTERNAL_FLASH_STATUS_ERASE_FAIL,
+    /** A write would exceed the result capacity reserved for the active session. */
+    EXTERNAL_FLASH_STATUS_SESSION_CAPACITY_EXCEEDED
 } ExternalFlashStatus_T;
 
 typedef struct
@@ -160,7 +162,13 @@ ExternalFlashStatus_T EXTERNAL_FLASH_GetInfo( ExternalFlashInfo_T* info );
 /**
  * @brief Prepares result storage and starts a new volatile result session.
  *
- * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
+ * @param maximum_result_length_bytes Maximum logical result bytes that may be
+ *        written during this session. Zero starts a no-results session without
+ *        erasing result blocks.
+ *
+ * @return EXTERNAL_FLASH_STATUS_OK on success,
+ *         EXTERNAL_FLASH_STATUS_STORAGE_FULL if the requested reservation is
+ *         larger than the usable result partition, otherwise an error status.
  *
  * @note Existing result bytes are discarded. Results are not recovered after reset.
  * @note The flash manager should call this after the host has uploaded the test
@@ -169,7 +177,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_GetInfo( ExternalFlashInfo_T* info );
  *       call advances the internal wear-rotation cursor before preparing the
  *       next session.
  */
-ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( void );
+ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( uint32_t maximum_result_length_bytes );
 
 /**
  * @brief Prepares instruction storage and starts a new instruction upload.
