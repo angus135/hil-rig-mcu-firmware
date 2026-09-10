@@ -24,6 +24,7 @@ static bool               active_configuration_available;
 static bool               configuration_cleared;
 static bool               driver_configure_result;
 static DutDriverConfigurationStatus_T     driver_configuration_status;
+static DutDriverStartStatus_T             driver_start_status;
 static bool                               driver_start_result;
 static bool                               driver_stop_result;
 static uint32_t                           driver_start_calls;
@@ -103,6 +104,10 @@ bool DUT_DRIVER_LIFECYCLE_Start( void )
 {
     driver_start_calls++;
     return driver_start_result;
+}
+DutDriverStartStatus_T DUT_DRIVER_LIFECYCLE_GetStartStatus( void )
+{
+    return driver_start_status;
 }
 bool DUT_DRIVER_LIFECYCLE_Stop( void )
 {
@@ -207,6 +212,7 @@ protected:
         configuration_cleared          = false;
         driver_configure_result        = true;
         driver_configuration_status    = DUT_DRIVER_CONFIGURATION_READY;
+        driver_start_status            = DUT_DRIVER_START_READY;
         driver_start_result            = true;
         driver_stop_result             = true;
         driver_start_calls             = 0U;
@@ -248,6 +254,7 @@ protected:
         ConfigureToArmed();
         Process( RUN_STATE_REQUEST_EXECUTION );
         flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
+        RUN_STATE_MANAGER_ProcessPendingOperation();
         RUN_STATE_MANAGER_ProcessPendingOperation();
         ASSERT_EQ( RUN_STATE_EXECUTION, run_state );
     }
@@ -306,7 +313,7 @@ TEST_F( RunStateManagerTest, ConfigurationTimeoutEntersFault )
     EXPECT_EQ( RUN_STATE_FAULT_DRIVER_CONFIGURATION_TIMEOUT, fault_reason );
 }
 
-TEST_F( RunStateManagerTest, ExecutionStartsOnlyAfterFlashIsExecuting )
+TEST_F( RunStateManagerTest, ExecutionStartsOnlyAfterFlashAndDriverStartupComplete )
 {
     ConfigureToArmed();
     Process( RUN_STATE_REQUEST_EXECUTION );
@@ -315,11 +322,64 @@ TEST_F( RunStateManagerTest, ExecutionStartsOnlyAfterFlashIsExecuting )
     EXPECT_EQ( 0U, driver_start_calls );
     flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
     RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_ARMED, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_DRIVER_START, pending_operation );
+    EXPECT_FALSE( execution_timer_running );
+    EXPECT_EQ( 1U, driver_start_calls );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
     EXPECT_EQ( RUN_STATE_EXECUTION, run_state );
     EXPECT_TRUE( execution_active );
     EXPECT_TRUE( execution_timer_running );
     EXPECT_EQ( 1U, driver_start_calls );
     EXPECT_EQ( 1U, timer_start_calls );
+}
+
+TEST_F( RunStateManagerTest, DriverStartupWaitsForExternalInterfaceCompletion )
+{
+    ConfigureToArmed();
+    driver_start_status = DUT_DRIVER_START_PENDING;
+    Process( RUN_STATE_REQUEST_EXECUTION );
+    flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_ARMED, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_DRIVER_START, pending_operation );
+    EXPECT_FALSE( execution_timer_running );
+
+    driver_start_status = DUT_DRIVER_START_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_EXECUTION, run_state );
+    EXPECT_TRUE( execution_timer_running );
+}
+
+TEST_F( RunStateManagerTest, DriverStartupFailureEntersFaultBeforeTimerStarts )
+{
+    ConfigureToArmed();
+    driver_start_status = DUT_DRIVER_START_FAILED;
+    Process( RUN_STATE_REQUEST_EXECUTION );
+    flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_DRIVER_START, fault_reason );
+    EXPECT_EQ( 0U, timer_start_calls );
+}
+
+TEST_F( RunStateManagerTest, DriverStartupTimeoutEntersFaultBeforeTimerStarts )
+{
+    ConfigureToArmed();
+    driver_start_status = DUT_DRIVER_START_PENDING;
+    Process( RUN_STATE_REQUEST_EXECUTION );
+    flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    current_tick += RUN_STATE_MANAGER_DRIVER_START_TIMEOUT_MS;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_DRIVER_START_TIMEOUT, fault_reason );
+    EXPECT_EQ( 0U, timer_start_calls );
 }
 
 TEST_F( RunStateManagerTest, ExecutionCompletionStopsDriversAndWaitsForResults )
