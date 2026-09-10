@@ -494,6 +494,7 @@ static bool RUN_STATE_MANAGER_BeginDriverStart( void )
     DUT_DRIVER_LIFECYCLE_GetStatus( &driver_status );
 
     const ExecutionMeasurementConfiguration_T measurement_configuration = {
+        .analogue_input_enabled = driver_status.analogue_input_enabled,
         .digital_input_enabled = driver_status.digital_inputs_enabled,
     };
     EXECUTION_MANAGER_ConfigureMeasurements( &measurement_configuration );

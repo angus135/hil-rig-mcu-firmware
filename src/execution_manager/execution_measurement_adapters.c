@@ -8,6 +8,7 @@
 #include "execution_measurement_adapters.h"
 
 #include "exec_digital_input.h"
+#include "exec_analogue_input.h"
 #include "flash_manager.h"
 
 #include <stdint.h>
@@ -15,7 +16,7 @@
 typedef bool ( *ExecutionMeasurementAdapter_T )( uint32_t timestamp,
                                                   BaseType_t* higher_priority_task_woken );
 
-#define EXECUTION_MEASUREMENT_ADAPTER_COUNT ( 1U )
+#define EXECUTION_MEASUREMENT_ADAPTER_COUNT ( 2U )
 
 static ExecutionMeasurementAdapter_T
     active_measurement_adapters[EXECUTION_MEASUREMENT_ADAPTER_COUNT] = { 0 };
@@ -26,11 +27,45 @@ void EXECUTION_MEASUREMENT_ADAPTER_Prepare(
 {
     active_measurement_count = 0U;
 
+    if ( configuration->analogue_input_enabled )
+    {
+        active_measurement_adapters[active_measurement_count++] =
+            EXECUTION_MEASUREMENT_ADAPTER_SampleAnalogueInput;
+    }
+
     if ( configuration->digital_input_enabled )
     {
         active_measurement_adapters[active_measurement_count++] =
             EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput;
     }
+}
+
+bool EXECUTION_MEASUREMENT_ADAPTER_SampleAnalogueInput(
+    uint32_t timestamp, BaseType_t* higher_priority_task_woken )
+{
+    FlashManagerResultWriteLease_T lease = { 0 };
+
+    if ( !FLASH_MANAGER_ReserveResultRecordFromISR( 2U * sizeof( uint32_t ), &lease ) )
+    {
+        return false;
+    }
+
+    const ExecAnalogueInputVoltages_T voltages = {
+        .channel_0_voltage = ( uint32_t* )( void* )lease.payload,
+        .channel_1_voltage = ( uint32_t* )( void* )( lease.payload + sizeof( uint32_t ) ),
+    };
+    EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( voltages );
+
+    if ( FLASH_MANAGER_CommitResultRecordFromISR(
+             &lease, timestamp, FLASH_MANAGER_RESULT_PERIPHERAL_ANALOGUE_INPUT, 0U,
+             2U * sizeof( uint32_t ), higher_priority_task_woken )
+         == FLASH_MANAGER_RESULT_COMMIT_OK )
+    {
+        return true;
+    }
+
+    ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+    return false;
 }
 
 bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements(

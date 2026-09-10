@@ -19,6 +19,7 @@ extern "C"
 
 typedef struct
 {
+    bool analogue_input_enabled;
     bool digital_input_enabled;
 } ExecutionMeasurementConfiguration_T;
 
@@ -39,6 +40,16 @@ bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements(
  */
 bool EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput( uint32_t       timestamp,
                                                        BaseType_t* higher_priority_task_woken );
+
+/**
+ * @brief Reads both analogue-input voltages and commits one result record.
+ *
+ * Payload bytes 0..3 contain channel 0 and bytes 4..7 contain channel 1. The
+ * caller contract guarantees that ADC DMA acquisition is configured and
+ * started. No lifecycle or destination validation is performed here.
+ */
+bool EXECUTION_MEASUREMENT_ADAPTER_SampleAnalogueInput(
+    uint32_t timestamp, BaseType_t* higher_priority_task_woken );
 
 #ifdef __cplusplus
 }
