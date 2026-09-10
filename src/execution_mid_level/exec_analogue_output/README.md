@@ -50,3 +50,7 @@ A successful LogicExpander send means the I2C transaction was initiated; its
 electrical completion may still be asynchronous. The global LogicExpander
 active mask must include `LOGIC_EXPANDER_I2C_AO` during board bring-up for
 `AO_EN` changes to reach the physical device.
+
+Normal completion calls `EXEC_ANALOGUE_OUTPUT_Stop()` only after the DAC SPI
+path has drained. `EXEC_ANALOGUE_OUTPUT_Abort()` deliberately discards an
+incomplete DAC transfer and is reserved for RSM fault/timeout cleanup.

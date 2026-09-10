@@ -75,7 +75,9 @@ typedef enum
     RUN_STATE_FAULT_DRIVER_CONFIGURATION,
     RUN_STATE_FAULT_DRIVER_CONFIGURATION_TIMEOUT,
     RUN_STATE_FAULT_DRIVER_START,
+    RUN_STATE_FAULT_DRIVER_START_TIMEOUT,
     RUN_STATE_FAULT_DRIVER_STOP,
+    RUN_STATE_FAULT_DRIVER_STOP_TIMEOUT,
     RUN_STATE_FAULT_EXECUTION_TIMER,
     RUN_STATE_FAULT_EXECUTION_MANAGER,
     RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION,
@@ -125,7 +127,13 @@ typedef struct
     uint32_t maximum_result_length_bytes;
 } RunStateExecutionRequest_T;
 
-/** Coherent task-owned lifecycle status captured at one instant. */
+/**
+ * Coherent task-owned lifecycle status captured at one instant.
+ *
+ * Request timing covers the complete asynchronous operation from acceptance
+ * until its externally meaningful terminal state is published. Durations are
+ * diagnostic wall-clock values derived from the RTOS tick counter.
+*/
 typedef struct
 {
     RunState_T              state;
@@ -136,6 +144,12 @@ typedef struct
     RunStateFaultReason_T   fault_reason;
     RunStateRequest_T       last_request;
     RunStateRequestResult_T last_request_result;
+    bool                    request_timing_active;
+    RunStateRequest_T       timed_request;
+    uint32_t                timed_request_elapsed_ms;
+    bool                    last_transition_timing_valid;
+    RunStateRequest_T       last_completed_request;
+    uint32_t                last_transition_duration_ms;
 } RunStateManagerStatus_T;
 
 /**-----------------------------------------------------------------------------
@@ -190,13 +204,15 @@ typedef struct
  * 4. The current fault path requests asynchronous Flash session abort after
  *    execution and DUT drivers have stopped. A normal run instead finalises
  *    results and reaches RESULTS_READY.
+ *    Committed diagnostic results may instead be abandoned through
+ *    FLASH_MANAGER_RequestAbortSession().
  *
  * Fault recovery:
  *
- * After stopping the execution clock and DUT drivers, fault entry requests
- * FLASH_MANAGER_RequestAbortSession(). Flash cleanup is asynchronous. Reset is
- * rejected until FLASH_MANAGER_STATE_IDLE confirms that runtime buffer
- * ownership has been released safely.
+ * Fault entry stops the execution clock, requests forced DUT-driver cleanup,
+ * and requests FLASH_MANAGER_RequestAbortSession(). Both operations are
+ * asynchronous. Reset is rejected until driver cleanup is acknowledged and
+ * FLASH_MANAGER_STATE_IDLE confirms that runtime buffer ownership is released.
  *
  * Every FlashManagerRequestStatus_T value must be handled. In particular,
  * TASK_NOT_READY means startup integration is incomplete, INVALID_STATE means
@@ -302,6 +318,9 @@ bool RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR( void );
 
 /**
  * @brief Requests a reset from fault to idle.
+ *
+ * Reset is accepted only after DUT-driver cleanup is acknowledged and Flash
+ * Manager has returned to IDLE.
  *
  * @returns true if the request was delivered to the task, otherwise false.
  */

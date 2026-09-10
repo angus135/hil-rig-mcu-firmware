@@ -165,6 +165,14 @@ bool EXEC_ANALOGUE_OUTPUT_Start( void );
 bool EXEC_ANALOGUE_OUTPUT_Stop( void );
 
 /**
+ * @brief Terminate analogue-output activity without waiting for DAC TX drain.
+ *
+ * This safety path discards an incomplete transfer, requests AO_EN disable,
+ * and stops the underlying SPI channel. Use only for timeout/fault cleanup.
+ */
+bool EXEC_ANALOGUE_OUTPUT_Abort( void );
+
+/**
  * @brief Return whether analogue-output startup has completed and is ready.
  *
  * If startup is still queued, this performs one nonblocking SPI completion
@@ -179,6 +187,9 @@ bool EXEC_ANALOGUE_OUTPUT_Is_Configured( void );
  * @brief Return whether the external analogue-output start command was accepted.
  */
 bool EXEC_ANALOGUE_OUTPUT_Is_Started( void );
+
+/** Return true when all accepted DAC SPI data has left the peripheral. */
+bool EXEC_ANALOGUE_OUTPUT_Is_Transmission_Complete( void );
 
 /**
  * @brief Return the current analogue-output startup readiness state.

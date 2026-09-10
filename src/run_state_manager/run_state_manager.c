@@ -46,7 +46,9 @@
 #define RUN_STATE_MANAGER_PENDING_POLL_MS ( 10U )
 #define RUN_STATE_MANAGER_CONFIGURATION_TIMEOUT_MS ( 15000U )
 #define RUN_STATE_MANAGER_EXECUTION_PREPARATION_TIMEOUT_MS ( 15000U )
+#define RUN_STATE_MANAGER_DRIVER_START_TIMEOUT_MS ( 15000U )
 #define RUN_STATE_MANAGER_RESULT_FINALISATION_TIMEOUT_MS ( 15000U )
+#define RUN_STATE_MANAGER_DRIVER_SHUTDOWN_TIMEOUT_MS ( 15000U )
 
 #define PSC_100HZ 14U
 #define ARR_100HZ 59999U
@@ -67,6 +69,10 @@ typedef enum
     RUN_STATE_PENDING_NONE = 0,
     RUN_STATE_PENDING_CONFIGURATION,
     RUN_STATE_PENDING_EXECUTION_PREPARATION,
+    RUN_STATE_PENDING_DRIVER_START,
+    RUN_STATE_PENDING_DRIVER_SHUTDOWN,
+    RUN_STATE_PENDING_IDLE_SHUTDOWN,
+    RUN_STATE_PENDING_FAULT_SHUTDOWN,
     RUN_STATE_PENDING_RESULT_FINALISATION
 } RunStatePendingOperation_T;
 
@@ -86,7 +92,8 @@ static RunStateFrequencyMode_T frequency_mode = RUN_STATE_FREQUENCY_1KHZ;
 static RunStatePendingOperation_T pending_operation            = RUN_STATE_PENDING_NONE;
 static TickType_t                 pending_operation_started_at = 0U;
 
-static bool execution_active = false;
+static bool execution_active        = false;
+static bool driver_cleanup_complete = true;
 
 static bool                       execution_timer_running = false;
 static RunStateExecutionRequest_T execution_request       = { 0U, 0U };
@@ -99,6 +106,16 @@ static volatile RunStateFaultReason_T   fault_reason           = RUN_STATE_FAULT
 static volatile RunStateFaultReason_T   requested_fault_reason = RUN_STATE_FAULT_NONE;
 static volatile RunStateRequest_T       last_request           = RUN_STATE_REQUEST_NONE;
 static volatile RunStateRequestResult_T last_request_result    = RUN_STATE_REQUEST_RESULT_NONE;
+static DutDriverConfiguration_T         run_configuration;
+static bool                             run_configuration_owned = false;
+
+static bool              request_timing_active        = false;
+static RunStateRequest_T timed_request                = RUN_STATE_REQUEST_NONE;
+static RunState_T        timed_request_target_state   = RUN_STATE_IDLE;
+static TickType_t        timed_request_started_at     = 0U;
+static bool              last_transition_timing_valid = false;
+static RunStateRequest_T last_completed_request       = RUN_STATE_REQUEST_NONE;
+static uint32_t          last_transition_duration_ms  = 0U;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -122,8 +139,11 @@ static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state,
 static bool RUN_STATE_MANAGER_EnterTestPackageReceive( void );
 static bool RUN_STATE_MANAGER_EnterConfiguration( void );
 static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void );
+static bool RUN_STATE_MANAGER_BeginDriverStart( void );
 static bool RUN_STATE_MANAGER_EnterExecution( void );
 static bool RUN_STATE_MANAGER_StopExecution( void );
+static bool RUN_STATE_MANAGER_BeginDriverShutdown( bool force_abort, bool clear_configuration,
+                                                   RunStatePendingOperation_T operation );
 static bool RUN_STATE_MANAGER_BeginResultFinalisation( void );
 static bool RUN_STATE_MANAGER_BeginResultTransfer( void );
 static bool RUN_STATE_MANAGER_CompleteResultTransfer( void );
@@ -134,12 +154,17 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void );
 static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request );
 static void RUN_STATE_MANAGER_ProcessNotifications( uint32_t notifications );
 
-static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state );
-static bool RUN_STATE_MANAGER_StartExecutionTimer( void );
-static void RUN_STATE_MANAGER_StopExecutionTimer( void );
-static void RUN_STATE_MANAGER_StartPendingOperation( RunStatePendingOperation_T operation );
-static void RUN_STATE_MANAGER_ClearPendingOperation( void );
-static bool RUN_STATE_MANAGER_PendingOperationTimedOut( TickType_t timeout_ticks );
+static bool     RUN_STATE_MANAGER_TransitionTo( RunState_T next_state );
+static bool     RUN_STATE_MANAGER_StartExecutionTimer( void );
+static void     RUN_STATE_MANAGER_StopExecutionTimer( void );
+static void     RUN_STATE_MANAGER_StartPendingOperation( RunStatePendingOperation_T operation );
+static void     RUN_STATE_MANAGER_ClearPendingOperation( void );
+static bool     RUN_STATE_MANAGER_PendingOperationTimedOut( TickType_t timeout_ticks );
+static bool     RUN_STATE_MANAGER_GetRequestTargetState( RunStateRequest_T request,
+                                                         RunState_T*       target_state );
+static void     RUN_STATE_MANAGER_StartRequestTiming( RunStateRequest_T request );
+static void     RUN_STATE_MANAGER_CompleteRequestTimingIfReady( void );
+static uint32_t RUN_STATE_MANAGER_TicksToMilliseconds( TickType_t ticks );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -222,6 +247,87 @@ static bool RUN_STATE_MANAGER_PendingOperationTimedOut( TickType_t timeout_ticks
     return elapsed >= timeout_ticks;
 }
 
+static uint32_t RUN_STATE_MANAGER_TicksToMilliseconds( TickType_t ticks )
+{
+#ifdef TEST_BUILD
+    return ( uint32_t )ticks;
+#else
+    return ( uint32_t )( ( ( uint64_t )ticks * 1000ULL ) / ( uint64_t )configTICK_RATE_HZ );
+#endif
+}
+
+/** Returns the externally meaningful terminal state for a named request. */
+static bool RUN_STATE_MANAGER_GetRequestTargetState( RunStateRequest_T request,
+                                                     RunState_T*       target_state )
+{
+    if ( target_state == NULL )
+    {
+        return false;
+    }
+
+    switch ( request )
+    {
+        case RUN_STATE_REQUEST_PACKAGE_RECEIVE:
+            *target_state = RUN_STATE_TEST_PACKAGE_RECEIVE;
+            return true;
+        case RUN_STATE_REQUEST_CONFIGURATION_READY:
+            *target_state = RUN_STATE_ARMED;
+            return true;
+        case RUN_STATE_REQUEST_EXECUTION:
+            *target_state = RUN_STATE_EXECUTION;
+            return true;
+        case RUN_STATE_REQUEST_EXECUTION_COMPLETE:
+            *target_state = RUN_STATE_RESULTS_READY;
+            return true;
+        case RUN_STATE_REQUEST_RESULT_TRANSFER:
+            *target_state = RUN_STATE_RESULT_TRANSFER;
+            return true;
+        case RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE:
+        case RUN_STATE_REQUEST_DISCARD_RESULTS:
+        case RUN_STATE_REQUEST_RESET:
+            *target_state = RUN_STATE_IDLE;
+            return true;
+        case RUN_STATE_REQUEST_REPEAT:
+            *target_state = RUN_STATE_ARMED;
+            return true;
+        case RUN_STATE_REQUEST_NONE:
+        case RUN_STATE_REQUEST_FAULT:
+        case RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_START:
+        case RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_STOP:
+        default:
+            return false;
+    }
+}
+
+static void RUN_STATE_MANAGER_CompleteRequestTimingIfReady( void )
+{
+    if ( !request_timing_active || run_state != timed_request_target_state )
+    {
+        return;
+    }
+
+    const TickType_t elapsed     = ( TickType_t )( xTaskGetTickCount() - timed_request_started_at );
+    last_completed_request       = timed_request;
+    last_transition_duration_ms  = RUN_STATE_MANAGER_TicksToMilliseconds( elapsed );
+    last_transition_timing_valid = true;
+    request_timing_active        = false;
+}
+
+static void RUN_STATE_MANAGER_StartRequestTiming( RunStateRequest_T request )
+{
+    RunState_T target_state = RUN_STATE_IDLE;
+    if ( !RUN_STATE_MANAGER_GetRequestTargetState( request, &target_state ) )
+    {
+        return;
+    }
+
+    request_timing_active      = true;
+    timed_request              = request;
+    timed_request_target_state = target_state;
+    timed_request_started_at   = xTaskGetTickCount();
+    RUN_STATE_MANAGER_CompleteRequestTimingIfReady();
+}
+
 static void RUN_STATE_MANAGER_RecordFault( RunStateFaultReason_T reason )
 {
     if ( fault_reason == RUN_STATE_FAULT_NONE && reason != RUN_STATE_FAULT_NONE )
@@ -232,6 +338,7 @@ static void RUN_STATE_MANAGER_RecordFault( RunStateFaultReason_T reason )
 
 static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason )
 {
+    request_timing_active     = false;
     execution_abort_requested = true;
     RUN_STATE_MANAGER_RecordFault( reason );
     ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_FAULT );
@@ -277,8 +384,8 @@ static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state, Run
             return next_state == RUN_STATE_RESULTS_READY;
 
         case RUN_STATE_RESULTS_READY:
-            return next_state == RUN_STATE_RESULT_TRANSFER || next_state == RUN_STATE_ARMED
-                   || next_state == RUN_STATE_IDLE;
+            return next_state == RUN_STATE_RESULT_TRANSFER || next_state == RUN_STATE_CONFIGURATION
+                   || next_state == RUN_STATE_ARMED || next_state == RUN_STATE_IDLE;
 
         case RUN_STATE_RESULT_TRANSFER:
             return next_state == RUN_STATE_RESULTS_READY || next_state == RUN_STATE_IDLE;
@@ -320,11 +427,13 @@ static bool RUN_STATE_MANAGER_EnterConfiguration( void )
         return false;
     }
 
-    if ( !TEST_CONFIGURATION_GetActive( &configuration ) )
+    if ( !run_configuration_owned && !TEST_CONFIGURATION_AcquireForRun( &run_configuration ) )
     {
         RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_CONFIGURATION_UNAVAILABLE );
         return false;
     }
+    run_configuration_owned = true;
+    configuration           = run_configuration;
 
     if ( !DUT_DRIVER_LIFECYCLE_Configure( &configuration ) )
     {
@@ -338,32 +447,25 @@ static bool RUN_STATE_MANAGER_EnterConfiguration( void )
 /**
  * @brief Enters production execution.
  *
- * Starts all configured DUT-facing drivers before starting the execution
- * clock. If timer startup fails, the driver lifecycle is rolled back.
+ * Starts the execution clock only after asynchronous driver startup has been
+ * confirmed by the pending-operation state machine.
  *
  * @return true when the DUT drivers and execution clock are active;
  *         otherwise false.
  */
 static bool RUN_STATE_MANAGER_EnterExecution( void )
 {
+    if ( execution_abort_requested || requested_fault_reason != RUN_STATE_FAULT_NONE )
+    {
+        RUN_STATE_MANAGER_EnterFault( ( requested_fault_reason != RUN_STATE_FAULT_NONE )
+                                          ? requested_fault_reason
+                                          : RUN_STATE_FAULT_EXTERNAL_REQUEST );
+        return false;
+    }
+
     if ( execution_active )
     {
         return true;
-    }
-
-    execution_abort_requested = false;
-
-    if ( !EXECUTION_MANAGER_Prepare( execution_request.tick_count ) )
-    {
-        RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_EXECUTION_MANAGER );
-        return false;
-    }
-
-    if ( !DUT_DRIVER_LIFECYCLE_Start() )
-    {
-        EXECUTION_MANAGER_Abort();
-        RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_DRIVER_START );
-        return false;
     }
 
     if ( !RUN_STATE_MANAGER_StartExecutionTimer() )
@@ -377,6 +479,45 @@ static bool RUN_STATE_MANAGER_EnterExecution( void )
     execution_active = true;
     return true;
 }
+
+/** Starts DUT drivers and waits separately for external-interface completion. */
+static bool RUN_STATE_MANAGER_BeginDriverStart( void )
+{
+    if ( execution_abort_requested || requested_fault_reason != RUN_STATE_FAULT_NONE )
+    {
+        RUN_STATE_MANAGER_EnterFault( ( requested_fault_reason != RUN_STATE_FAULT_NONE )
+                                          ? requested_fault_reason
+                                          : RUN_STATE_FAULT_EXTERNAL_REQUEST );
+        return false;
+    }
+
+    driver_cleanup_complete = false;
+
+    if ( !EXECUTION_MANAGER_Prepare( execution_request.tick_count ) )
+    {
+        RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_EXECUTION_MANAGER );
+        return false;
+    }
+
+    if ( !DUT_DRIVER_LIFECYCLE_Start() )
+    {
+        EXECUTION_MANAGER_Abort();
+        RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_START );
+        return false;
+    }
+
+    /* A fault may arrive while the task-level driver start call is running. */
+    if ( execution_abort_requested || requested_fault_reason != RUN_STATE_FAULT_NONE )
+    {
+        RUN_STATE_MANAGER_EnterFault( ( requested_fault_reason != RUN_STATE_FAULT_NONE )
+                                          ? requested_fault_reason
+                                          : RUN_STATE_FAULT_EXTERNAL_REQUEST );
+        return false;
+    }
+
+    RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_DRIVER_START );
+    return true;
+}
 /**
  * @brief Stops the execution timer followed by all active DUT-facing drivers.
  */
@@ -385,16 +526,30 @@ static bool RUN_STATE_MANAGER_StopExecution( void )
     RUN_STATE_MANAGER_StopExecutionTimer();
     EXECUTION_MANAGER_Abort();
 
-    if ( execution_active )
+    execution_active = false;
+    if ( !DUT_DRIVER_LIFECYCLE_Stop() )
     {
-        execution_active = false;
-        if ( !DUT_DRIVER_LIFECYCLE_Stop() )
-        {
-            RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_DRIVER_STOP );
-            return false;
-        }
+        RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_DRIVER_STOP );
+        return false;
     }
 
+    return true;
+}
+
+static bool RUN_STATE_MANAGER_BeginDriverShutdown( bool force_abort, bool clear_configuration,
+                                                   RunStatePendingOperation_T operation )
+{
+    execution_abort_requested = true;
+    RUN_STATE_MANAGER_StopExecutionTimer();
+    execution_active        = false;
+    driver_cleanup_complete = false;
+
+    if ( !DUT_DRIVER_LIFECYCLE_BeginShutdown( force_abort, clear_configuration ) )
+    {
+        return false;
+    }
+
+    RUN_STATE_MANAGER_StartPendingOperation( operation );
     return true;
 }
 
@@ -421,23 +576,12 @@ static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void )
  */
 static bool RUN_STATE_MANAGER_BeginResultFinalisation( void )
 {
-    if ( !RUN_STATE_MANAGER_StopExecution() )
+    if ( !RUN_STATE_MANAGER_BeginDriverShutdown( false, false, RUN_STATE_PENDING_DRIVER_SHUTDOWN ) )
     {
         RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_STOP );
         return false;
     }
-
-    FlashManagerRequestStatus_T status = FLASH_MANAGER_RequestResultFinalisation();
-
-    if ( status == FLASH_MANAGER_REQUEST_OK )
-    {
-        RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_RESULT_FINALISATION );
-        ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_RESULT_FINALISATION );
-        return true;
-    }
-
-    RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_RESULT_FINALISATION );
-    return false;
+    return true;
 }
 
 /** Starts Flash Manager result retrieval before entering RESULT_TRANSFER. */
@@ -468,7 +612,7 @@ static bool RUN_STATE_MANAGER_CompleteResultTransfer( void )
         return false;
     }
 
-    return RUN_STATE_MANAGER_TransitionTo( RUN_STATE_IDLE );
+    return RUN_STATE_MANAGER_BeginDriverShutdown( false, true, RUN_STATE_PENDING_IDLE_SHUTDOWN );
 }
 
 /**
@@ -486,6 +630,21 @@ static bool RUN_STATE_MANAGER_DiscardCompletedResults( RunState_T next_state )
     if ( next_state == RUN_STATE_IDLE )
     {
         TEST_CONFIGURATION_Clear();
+        TEST_CONFIGURATION_ReleaseRunOwnership();
+        run_configuration_owned = false;
+        return RUN_STATE_MANAGER_BeginDriverShutdown( false, true,
+                                                      RUN_STATE_PENDING_IDLE_SHUTDOWN );
+    }
+
+    if ( next_state == RUN_STATE_ARMED )
+    {
+        /* Replay the committed configuration so outputs return to test-start values. */
+        if ( !RUN_STATE_MANAGER_TransitionTo( RUN_STATE_CONFIGURATION ) )
+        {
+            return false;
+        }
+        RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_CONFIGURATION );
+        return true;
     }
 
     return RUN_STATE_MANAGER_TransitionTo( next_state );
@@ -529,6 +688,82 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
         return;
     }
 
+    if ( pending_operation == RUN_STATE_PENDING_DRIVER_START )
+    {
+        const DutDriverStartStatus_T status = DUT_DRIVER_LIFECYCLE_GetStartStatus();
+
+        if ( status == DUT_DRIVER_START_READY )
+        {
+            RUN_STATE_MANAGER_ClearPendingOperation();
+            ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_EXECUTION );
+        }
+        else if ( status == DUT_DRIVER_START_FAILED )
+        {
+            RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_START );
+        }
+        else if ( RUN_STATE_MANAGER_PendingOperationTimedOut(
+                      pdMS_TO_TICKS( RUN_STATE_MANAGER_DRIVER_START_TIMEOUT_MS ) ) )
+        {
+            RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_START_TIMEOUT );
+        }
+        return;
+    }
+
+    if ( pending_operation == RUN_STATE_PENDING_DRIVER_SHUTDOWN
+         || pending_operation == RUN_STATE_PENDING_IDLE_SHUTDOWN
+         || pending_operation == RUN_STATE_PENDING_FAULT_SHUTDOWN )
+    {
+        const RunStatePendingOperation_T operation = pending_operation;
+        const DutDriverShutdownStatus_T  status    = DUT_DRIVER_LIFECYCLE_GetShutdownStatus();
+
+        if ( status == DUT_DRIVER_SHUTDOWN_COMPLETE )
+        {
+            driver_cleanup_complete = true;
+            RUN_STATE_MANAGER_ClearPendingOperation();
+
+            if ( operation == RUN_STATE_PENDING_DRIVER_SHUTDOWN )
+            {
+                if ( FLASH_MANAGER_RequestResultFinalisation() != FLASH_MANAGER_REQUEST_OK )
+                {
+                    RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_RESULT_FINALISATION );
+                    return;
+                }
+                RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_RESULT_FINALISATION );
+                ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_RESULT_FINALISATION );
+            }
+            else if ( operation == RUN_STATE_PENDING_IDLE_SHUTDOWN )
+            {
+                ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_IDLE );
+            }
+        }
+        else if ( status == DUT_DRIVER_SHUTDOWN_FAILED )
+        {
+            if ( operation == RUN_STATE_PENDING_FAULT_SHUTDOWN )
+            {
+                ( void )DUT_DRIVER_LIFECYCLE_BeginShutdown( true, true );
+            }
+            else
+            {
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_STOP );
+            }
+        }
+        else if ( RUN_STATE_MANAGER_PendingOperationTimedOut(
+                      pdMS_TO_TICKS( RUN_STATE_MANAGER_DRIVER_SHUTDOWN_TIMEOUT_MS ) ) )
+        {
+            if ( operation != RUN_STATE_PENDING_FAULT_SHUTDOWN )
+            {
+                RUN_STATE_MANAGER_RecordFault( RUN_STATE_FAULT_DRIVER_STOP_TIMEOUT );
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_STOP_TIMEOUT );
+            }
+            else
+            {
+                ( void )DUT_DRIVER_LIFECYCLE_BeginShutdown( true, true );
+                pending_operation_started_at = xTaskGetTickCount();
+            }
+        }
+        return;
+    }
+
     FlashManagerState_T flash_state = FLASH_MANAGER_STATE_UNINITIALISED;
 
     if ( !FLASH_MANAGER_GetState( &flash_state ) )
@@ -553,7 +788,7 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
             if ( flash_state == FLASH_MANAGER_STATE_EXECUTING )
             {
                 RUN_STATE_MANAGER_ClearPendingOperation();
-                ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_EXECUTION );
+                ( void )RUN_STATE_MANAGER_BeginDriverStart();
             }
             else if ( flash_state != FLASH_MANAGER_STATE_PREPARING_EXECUTION )
             {
@@ -564,6 +799,16 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
             {
                 RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION_TIMEOUT );
             }
+            break;
+
+        case RUN_STATE_PENDING_DRIVER_START:
+            /* Handled before querying Flash Manager state. */
+            break;
+
+        case RUN_STATE_PENDING_DRIVER_SHUTDOWN:
+        case RUN_STATE_PENDING_IDLE_SHUTDOWN:
+        case RUN_STATE_PENDING_FAULT_SHUTDOWN:
+            /* Handled before querying Flash Manager state. */
             break;
 
         case RUN_STATE_PENDING_RESULT_FINALISATION:
@@ -682,7 +927,7 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
         case RUN_STATE_REQUEST_RESET:
             if ( run_state == RUN_STATE_FAULT )
             {
-                if ( !RUN_STATE_MANAGER_FlashIsIdle() )
+                if ( !driver_cleanup_complete || !RUN_STATE_MANAGER_FlashIsIdle() )
                 {
                     last_request_result = RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE;
                     return;
@@ -693,6 +938,8 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
                 {
                     fault_reason              = RUN_STATE_FAULT_NONE;
                     execution_abort_requested = false;
+                    TEST_CONFIGURATION_ReleaseRunOwnership();
+                    run_configuration_owned = false;
                 }
             }
             break;
@@ -720,6 +967,7 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
     if ( accepted )
     {
         last_request_result = RUN_STATE_REQUEST_RESULT_ACCEPTED;
+        RUN_STATE_MANAGER_StartRequestTiming( request );
     }
     else if ( run_state == RUN_STATE_FAULT )
     {
@@ -838,12 +1086,17 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
     if ( next_state == RUN_STATE_FAULT )
     {
         RUN_STATE_MANAGER_ClearPendingOperation();
-        ( void )RUN_STATE_MANAGER_StopExecution();
+        if ( !RUN_STATE_MANAGER_BeginDriverShutdown( true, true,
+                                                     RUN_STATE_PENDING_FAULT_SHUTDOWN ) )
+        {
+            driver_cleanup_complete = false;
+            RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_FAULT_SHUTDOWN );
+        }
         ( void )FLASH_MANAGER_RequestAbortSession();
     }
     else if ( next_state != RUN_STATE_EXECUTION )
     {
-        if ( !RUN_STATE_MANAGER_StopExecution() )
+        if ( execution_active && !RUN_STATE_MANAGER_StopExecution() )
         {
             RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_STOP );
             return false;
@@ -853,7 +1106,6 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
     switch ( next_state )
     {
         case RUN_STATE_IDLE:
-            DUT_DRIVER_LIFECYCLE_EnterIdle();
             break;
 
         case RUN_STATE_TEST_PACKAGE_RECEIVE:
@@ -892,7 +1144,6 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
             break;
 
         case RUN_STATE_FAULT:
-            DUT_DRIVER_LIFECYCLE_EnterFault();
             break;
 
         default:
@@ -901,6 +1152,7 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
     }
 
     run_state = next_state;
+    RUN_STATE_MANAGER_CompleteRequestTimingIfReady();
     return true;
 }
 
@@ -909,6 +1161,11 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
  */
 static bool RUN_STATE_MANAGER_StartExecutionTimer( void )
 {
+    if ( execution_abort_requested || requested_fault_reason != RUN_STATE_FAULT_NONE )
+    {
+        return false;
+    }
+
     if ( execution_timer_running )
     {
         return true;
@@ -980,6 +1237,7 @@ void RUN_STATE_MANAGER_Init( void )
     pending_operation            = RUN_STATE_PENDING_NONE;
     pending_operation_started_at = 0U;
     execution_active             = false;
+    driver_cleanup_complete      = true;
     execution_timer_running      = false;
     execution_request            = ( RunStateExecutionRequest_T ){ 0U, 0U };
     execution_abort_requested    = false;
@@ -987,6 +1245,13 @@ void RUN_STATE_MANAGER_Init( void )
     requested_fault_reason       = RUN_STATE_FAULT_NONE;
     last_request                 = RUN_STATE_REQUEST_NONE;
     last_request_result          = RUN_STATE_REQUEST_RESULT_NONE;
+    request_timing_active        = false;
+    timed_request                = RUN_STATE_REQUEST_NONE;
+    timed_request_target_state   = RUN_STATE_IDLE;
+    timed_request_started_at     = 0U;
+    last_transition_timing_valid = false;
+    last_completed_request       = RUN_STATE_REQUEST_NONE;
+    last_transition_duration_ms  = 0U;
     run_state                    = RUN_STATE_IDLE;
 
     HW_TIMER_Set_Execution_Guard( RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR );
@@ -1142,15 +1407,24 @@ void RUN_STATE_MANAGER_GetStatus( RunStateManagerStatus_T* status )
     }
 
     taskENTER_CRITICAL();
+    const TickType_t timing_elapsed =
+        request_timing_active ? ( TickType_t )( xTaskGetTickCount() - timed_request_started_at )
+                              : 0U;
     *status = ( RunStateManagerStatus_T ){
-        .state                   = run_state,
-        .transition_pending      = pending_operation != RUN_STATE_PENDING_NONE,
-        .execution_active        = execution_active,
-        .execution_timer_running = execution_timer_running,
-        .execution_frequency     = frequency_mode,
-        .fault_reason            = fault_reason,
-        .last_request            = last_request,
-        .last_request_result     = last_request_result,
+        .state                    = run_state,
+        .transition_pending       = pending_operation != RUN_STATE_PENDING_NONE,
+        .execution_active         = execution_active,
+        .execution_timer_running  = execution_timer_running,
+        .execution_frequency      = frequency_mode,
+        .fault_reason             = fault_reason,
+        .last_request             = last_request,
+        .last_request_result      = last_request_result,
+        .request_timing_active    = request_timing_active,
+        .timed_request            = request_timing_active ? timed_request : RUN_STATE_REQUEST_NONE,
+        .timed_request_elapsed_ms = RUN_STATE_MANAGER_TicksToMilliseconds( timing_elapsed ),
+        .last_transition_timing_valid = last_transition_timing_valid,
+        .last_completed_request       = last_completed_request,
+        .last_transition_duration_ms  = last_transition_duration_ms,
     };
     taskEXIT_CRITICAL();
 }

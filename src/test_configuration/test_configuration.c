@@ -28,6 +28,7 @@
 
 static DutDriverConfiguration_T active_configuration;
 static bool                     active_configuration_valid = false;
+static bool                     run_ownership_held         = false;
 static SemaphoreHandle_t        configuration_mutex        = NULL;
 static StaticSemaphore_t        configuration_mutex_storage;
 
@@ -51,6 +52,7 @@ void TEST_CONFIGURATION_Init( void )
     ( void )xSemaphoreTake( configuration_mutex, portMAX_DELAY );
     ( void )memset( &active_configuration, 0, sizeof( active_configuration ) );
     active_configuration_valid = true;
+    run_ownership_held         = false;
     ( void )xSemaphoreGive( configuration_mutex );
 }
 
@@ -59,6 +61,12 @@ bool TEST_CONFIGURATION_Commit( const DutDriverConfiguration_T* configuration )
     if ( configuration == NULL || configuration_mutex == NULL
          || xSemaphoreTake( configuration_mutex, portMAX_DELAY ) != pdTRUE )
     {
+        return false;
+    }
+
+    if ( run_ownership_held )
+    {
+        ( void )xSemaphoreGive( configuration_mutex );
         return false;
     }
 
@@ -85,6 +93,35 @@ bool TEST_CONFIGURATION_GetActive( DutDriverConfiguration_T* configuration )
     return is_valid;
 }
 
+bool TEST_CONFIGURATION_AcquireForRun( DutDriverConfiguration_T* configuration )
+{
+    if ( configuration == NULL || configuration_mutex == NULL
+         || xSemaphoreTake( configuration_mutex, portMAX_DELAY ) != pdTRUE )
+    {
+        return false;
+    }
+
+    const bool acquired = active_configuration_valid && !run_ownership_held;
+    if ( acquired )
+    {
+        *configuration     = active_configuration;
+        run_ownership_held = true;
+    }
+    ( void )xSemaphoreGive( configuration_mutex );
+    return acquired;
+}
+
+void TEST_CONFIGURATION_ReleaseRunOwnership( void )
+{
+    if ( configuration_mutex == NULL
+         || xSemaphoreTake( configuration_mutex, portMAX_DELAY ) != pdTRUE )
+    {
+        return;
+    }
+    run_ownership_held = false;
+    ( void )xSemaphoreGive( configuration_mutex );
+}
+
 bool TEST_CONFIGURATION_IsActive( void )
 {
     if ( configuration_mutex == NULL
@@ -108,5 +145,6 @@ void TEST_CONFIGURATION_Clear( void )
 
     ( void )memset( &active_configuration, 0, sizeof( active_configuration ) );
     active_configuration_valid = false;
+    run_ownership_held         = false;
     ( void )xSemaphoreGive( configuration_mutex );
 }

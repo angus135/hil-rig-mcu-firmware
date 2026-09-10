@@ -25,8 +25,14 @@ static bool               active_configuration_available;
 static bool               configuration_cleared;
 static bool               driver_configure_result;
 static DutDriverConfigurationStatus_T     driver_configuration_status;
+static DutDriverStartStatus_T             driver_start_status;
 static bool                               driver_start_result;
 static bool                               driver_stop_result;
+static bool                               driver_shutdown_begin_result;
+static DutDriverShutdownStatus_T          driver_shutdown_status;
+static uint32_t                           driver_shutdown_begin_calls;
+static bool                               driver_shutdown_force;
+static bool                               driver_shutdown_clear_configuration;
 static uint32_t                           driver_start_calls;
 static uint32_t                           driver_stop_calls;
 static uint32_t                           driver_idle_calls;
@@ -95,6 +101,13 @@ bool TEST_CONFIGURATION_GetActive( DutDriverConfiguration_T* configuration )
     }
     return false;
 }
+bool TEST_CONFIGURATION_AcquireForRun( DutDriverConfiguration_T* configuration )
+{
+    return TEST_CONFIGURATION_GetActive( configuration );
+}
+void TEST_CONFIGURATION_ReleaseRunOwnership( void )
+{
+}
 void TEST_CONFIGURATION_Clear( void )
 {
     configuration_cleared          = true;
@@ -113,10 +126,25 @@ bool DUT_DRIVER_LIFECYCLE_Start( void )
     driver_start_calls++;
     return driver_start_result;
 }
+DutDriverStartStatus_T DUT_DRIVER_LIFECYCLE_GetStartStatus( void )
+{
+    return driver_start_status;
+}
 bool DUT_DRIVER_LIFECYCLE_Stop( void )
 {
     driver_stop_calls++;
     return driver_stop_result;
+}
+bool DUT_DRIVER_LIFECYCLE_BeginShutdown( bool force_abort, bool clear_configuration )
+{
+    driver_shutdown_begin_calls++;
+    driver_shutdown_force               = force_abort;
+    driver_shutdown_clear_configuration = clear_configuration;
+    return driver_shutdown_begin_result;
+}
+DutDriverShutdownStatus_T DUT_DRIVER_LIFECYCLE_GetShutdownStatus( void )
+{
+    return driver_shutdown_status;
 }
 void DUT_DRIVER_LIFECYCLE_EnterIdle( void )
 {
@@ -138,6 +166,7 @@ FlashManagerRequestStatus_T
 FLASH_MANAGER_RequestExecutionPreparation( uint32_t maximum_result_length_bytes )
 {
     flash_prepare_capacity = maximum_result_length_bytes;
+    ( void )maximum_result_length_bytes;
     return flash_prepare_result;
 }
 FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void )
@@ -258,6 +287,42 @@ protected:
         execution_abort_calls          = 0U;
         execution_terminal_callback    = nullptr;
         run_state_manager_task_handle  = TEST_RSM_TASK_HANDLE;
+        notify_result                       = pdPASS;
+        notified_bits                       = 0U;
+        current_tick                        = 0U;
+        logic_expander_ready                = true;
+        active_configuration_available      = true;
+        configuration_cleared               = false;
+        driver_configure_result             = true;
+        driver_configuration_status         = DUT_DRIVER_CONFIGURATION_READY;
+        driver_start_status                 = DUT_DRIVER_START_READY;
+        driver_start_result                 = true;
+        driver_stop_result                  = true;
+        driver_shutdown_begin_result        = true;
+        driver_shutdown_status              = DUT_DRIVER_SHUTDOWN_COMPLETE;
+        driver_shutdown_begin_calls         = 0U;
+        driver_shutdown_force               = false;
+        driver_shutdown_clear_configuration = false;
+        driver_start_calls                  = 0U;
+        driver_stop_calls                   = 0U;
+        driver_idle_calls                   = 0U;
+        driver_fault_calls                  = 0U;
+        flash_manager_state                 = FLASH_MANAGER_STATE_IDLE;
+        flash_get_state_result              = true;
+        flash_prepare_result                = FLASH_MANAGER_REQUEST_OK;
+        flash_finalise_result               = FLASH_MANAGER_REQUEST_OK;
+        flash_discard_result                = FLASH_MANAGER_REQUEST_OK;
+        flash_abort_result                  = FLASH_MANAGER_REQUEST_OK;
+        flash_transfer_start_result         = FLASH_MANAGER_RESULT_TRANSFER_OK;
+        flash_transfer_finish_result        = FLASH_MANAGER_RESULT_TRANSFER_OK;
+        flash_abort_calls                   = 0U;
+        timer_configure_calls               = 0U;
+        timer_start_result                  = true;
+        timer_start_calls                   = 0U;
+        timer_stop_calls                    = 0U;
+        execution_guard                     = nullptr;
+        flash_fault_callback                = nullptr;
+        run_state_manager_task_handle       = TEST_RSM_TASK_HANDLE;
         RUN_STATE_MANAGER_Init();
         timer_stop_calls      = 0U;
         execution_abort_calls = 0U;
@@ -280,6 +345,7 @@ protected:
         Process( RUN_STATE_REQUEST_EXECUTION );
         flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
         RUN_STATE_MANAGER_ProcessPendingOperation();
+        RUN_STATE_MANAGER_ProcessPendingOperation();
         ASSERT_EQ( RUN_STATE_EXECUTION, run_state );
     }
 };
@@ -296,7 +362,60 @@ TEST_F( RunStateManagerTest, InitialStatusSnapshotIsCoherentAndSafe )
     EXPECT_EQ( RUN_STATE_FAULT_NONE, status.fault_reason );
     EXPECT_EQ( RUN_STATE_REQUEST_NONE, status.last_request );
     EXPECT_EQ( RUN_STATE_REQUEST_RESULT_NONE, status.last_request_result );
+    EXPECT_FALSE( status.request_timing_active );
+    EXPECT_EQ( RUN_STATE_REQUEST_NONE, status.timed_request );
+    EXPECT_EQ( 0U, status.timed_request_elapsed_ms );
+    EXPECT_FALSE( status.last_transition_timing_valid );
+    EXPECT_EQ( RUN_STATE_REQUEST_NONE, status.last_completed_request );
+    EXPECT_EQ( 0U, status.last_transition_duration_ms );
     RUN_STATE_MANAGER_GetStatus( nullptr );
+}
+
+TEST_F( RunStateManagerTest, ReportsTotalConfigurationTransitionTime )
+{
+    current_tick                = 100U;
+    driver_configuration_status = DUT_DRIVER_CONFIGURATION_PENDING;
+    Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+    Process( RUN_STATE_REQUEST_CONFIGURATION_READY );
+
+    current_tick                   = 137U;
+    RunStateManagerStatus_T status = {};
+    RUN_STATE_MANAGER_GetStatus( &status );
+    EXPECT_TRUE( status.request_timing_active );
+    EXPECT_EQ( RUN_STATE_REQUEST_CONFIGURATION_READY, status.timed_request );
+    EXPECT_EQ( 37U, status.timed_request_elapsed_ms );
+
+    driver_configuration_status = DUT_DRIVER_CONFIGURATION_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    RUN_STATE_MANAGER_GetStatus( &status );
+    EXPECT_FALSE( status.request_timing_active );
+    EXPECT_TRUE( status.last_transition_timing_valid );
+    EXPECT_EQ( RUN_STATE_REQUEST_CONFIGURATION_READY, status.last_completed_request );
+    EXPECT_EQ( 37U, status.last_transition_duration_ms );
+}
+
+TEST_F( RunStateManagerTest, ExecutionTimingSpansFlashPreparationAndDriverStartup )
+{
+    ConfigureToArmed();
+    current_tick        = 200U;
+    flash_manager_state = FLASH_MANAGER_STATE_PREPARING_EXECUTION;
+    Process( RUN_STATE_REQUEST_EXECUTION );
+
+    current_tick        = 225U;
+    flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_PENDING_DRIVER_START, pending_operation );
+
+    current_tick        = 241U;
+    driver_start_status = DUT_DRIVER_START_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    RunStateManagerStatus_T status = {};
+    RUN_STATE_MANAGER_GetStatus( &status );
+    EXPECT_EQ( RUN_STATE_EXECUTION, status.state );
+    EXPECT_FALSE( status.request_timing_active );
+    EXPECT_EQ( RUN_STATE_REQUEST_EXECUTION, status.last_completed_request );
+    EXPECT_EQ( 41U, status.last_transition_duration_ms );
 }
 
 TEST_F( RunStateManagerTest, ConfigurationWaitsForReadinessBeforeArming )
@@ -322,7 +441,7 @@ TEST_F( RunStateManagerTest, ConfigurationFailureEntersFault )
     RUN_STATE_MANAGER_ProcessPendingOperation();
     EXPECT_EQ( RUN_STATE_FAULT, run_state );
     EXPECT_EQ( RUN_STATE_FAULT_DRIVER_CONFIGURATION, fault_reason );
-    EXPECT_EQ( 1U, driver_fault_calls );
+    EXPECT_EQ( 1U, driver_shutdown_begin_calls );
     EXPECT_EQ( 1U, flash_abort_calls );
 }
 
@@ -337,7 +456,7 @@ TEST_F( RunStateManagerTest, ConfigurationTimeoutEntersFault )
     EXPECT_EQ( RUN_STATE_FAULT_DRIVER_CONFIGURATION_TIMEOUT, fault_reason );
 }
 
-TEST_F( RunStateManagerTest, ExecutionStartsOnlyAfterFlashIsExecuting )
+TEST_F( RunStateManagerTest, ExecutionStartsOnlyAfterFlashAndDriverStartupComplete )
 {
     ConfigureToArmed();
     execution_request = ( RunStateExecutionRequest_T ){ 25U, 128U };
@@ -346,6 +465,11 @@ TEST_F( RunStateManagerTest, ExecutionStartsOnlyAfterFlashIsExecuting )
     EXPECT_EQ( RUN_STATE_PENDING_EXECUTION_PREPARATION, pending_operation );
     EXPECT_EQ( 0U, driver_start_calls );
     flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_ARMED, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_DRIVER_START, pending_operation );
+    EXPECT_FALSE( execution_timer_running );
+    EXPECT_EQ( 1U, driver_start_calls );
     RUN_STATE_MANAGER_ProcessPendingOperation();
     EXPECT_EQ( RUN_STATE_EXECUTION, run_state );
     EXPECT_TRUE( execution_active );
@@ -437,17 +561,100 @@ TEST_F( RunStateManagerTest, ExecutionFailureFromIsrInhibitsAndRequestsFault )
     EXPECT_EQ( RUN_STATE_FAULT_EXECUTION_MANAGER, requested_fault_reason );
 }
 
+TEST_F( RunStateManagerTest, DriverStartupWaitsForExternalInterfaceCompletion )
+{
+    ConfigureToArmed();
+    driver_start_status = DUT_DRIVER_START_PENDING;
+    Process( RUN_STATE_REQUEST_EXECUTION );
+    flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_ARMED, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_DRIVER_START, pending_operation );
+    EXPECT_FALSE( execution_timer_running );
+
+    driver_start_status = DUT_DRIVER_START_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_EXECUTION, run_state );
+    EXPECT_TRUE( execution_timer_running );
+}
+
+TEST_F( RunStateManagerTest, DriverStartupFailureEntersFaultBeforeTimerStarts )
+{
+    ConfigureToArmed();
+    driver_start_status = DUT_DRIVER_START_FAILED;
+    Process( RUN_STATE_REQUEST_EXECUTION );
+    flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_DRIVER_START, fault_reason );
+    EXPECT_EQ( 0U, timer_start_calls );
+}
+
+TEST_F( RunStateManagerTest, DriverStartupTimeoutEntersFaultBeforeTimerStarts )
+{
+    ConfigureToArmed();
+    driver_start_status = DUT_DRIVER_START_PENDING;
+    Process( RUN_STATE_REQUEST_EXECUTION );
+    flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    current_tick += RUN_STATE_MANAGER_DRIVER_START_TIMEOUT_MS;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_DRIVER_START_TIMEOUT, fault_reason );
+    EXPECT_EQ( 0U, timer_start_calls );
+}
+
 TEST_F( RunStateManagerTest, ExecutionCompletionStopsDriversAndWaitsForResults )
 {
     EnterExecution();
     Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
-    EXPECT_EQ( RUN_STATE_RESULT_FINALISATION, run_state );
+    EXPECT_EQ( RUN_STATE_EXECUTION, run_state );
     EXPECT_FALSE( execution_active );
     EXPECT_FALSE( execution_timer_running );
+    EXPECT_EQ( RUN_STATE_PENDING_DRIVER_SHUTDOWN, pending_operation );
+    EXPECT_FALSE( driver_shutdown_force );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_RESULT_FINALISATION, run_state );
     EXPECT_EQ( RUN_STATE_PENDING_RESULT_FINALISATION, pending_operation );
     flash_manager_state = FLASH_MANAGER_STATE_RESULTS_READY;
     RUN_STATE_MANAGER_ProcessPendingOperation();
     EXPECT_EQ( RUN_STATE_RESULTS_READY, run_state );
+}
+
+TEST_F( RunStateManagerTest, ExecutionCompletionDoesNotFinaliseWhileDriverShutdownIsBusy )
+{
+    EnterExecution();
+    driver_shutdown_status = DUT_DRIVER_SHUTDOWN_PENDING;
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    EXPECT_EQ( RUN_STATE_EXECUTION, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_DRIVER_SHUTDOWN, pending_operation );
+    EXPECT_FALSE( execution_timer_running );
+
+    driver_shutdown_status = DUT_DRIVER_SHUTDOWN_COMPLETE;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_RESULT_FINALISATION, run_state );
+}
+
+TEST_F( RunStateManagerTest, DriverShutdownTimeoutEntersFaultAndForcesAbort )
+{
+    EnterExecution();
+    driver_shutdown_status = DUT_DRIVER_SHUTDOWN_PENDING;
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    current_tick += RUN_STATE_MANAGER_DRIVER_SHUTDOWN_TIMEOUT_MS;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_DRIVER_STOP_TIMEOUT, fault_reason );
+    EXPECT_EQ( RUN_STATE_PENDING_FAULT_SHUTDOWN, pending_operation );
+    EXPECT_TRUE( driver_shutdown_force );
+    EXPECT_TRUE( driver_shutdown_clear_configuration );
 }
 
 TEST_F( RunStateManagerTest, InvalidRequestIsRejectedWithoutFaulting )
@@ -462,7 +669,12 @@ TEST_F( RunStateManagerTest, RepeatRetainsConfigurationAndReturnsToArmed )
 {
     run_state = RUN_STATE_RESULTS_READY;
     Process( RUN_STATE_REQUEST_REPEAT );
+    EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_CONFIGURATION, pending_operation );
+
+    RUN_STATE_MANAGER_ProcessPendingOperation();
     EXPECT_EQ( RUN_STATE_ARMED, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_NONE, pending_operation );
     EXPECT_FALSE( configuration_cleared );
 }
 
@@ -470,9 +682,12 @@ TEST_F( RunStateManagerTest, DiscardClearsConfigurationAndReturnsToIdle )
 {
     run_state = RUN_STATE_RESULTS_READY;
     Process( RUN_STATE_REQUEST_DISCARD_RESULTS );
+    EXPECT_EQ( RUN_STATE_RESULTS_READY, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_IDLE_SHUTDOWN, pending_operation );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
     EXPECT_EQ( RUN_STATE_IDLE, run_state );
     EXPECT_TRUE( configuration_cleared );
-    EXPECT_EQ( 1U, driver_idle_calls );
+    EXPECT_TRUE( driver_shutdown_clear_configuration );
 }
 
 TEST_F( RunStateManagerTest, RuntimeFaultStopsExecutionAndRequestsFlashAbort )
@@ -486,7 +701,9 @@ TEST_F( RunStateManagerTest, RuntimeFaultStopsExecutionAndRequestsFlashAbort )
     EXPECT_FALSE( execution_timer_running );
     EXPECT_EQ( RUN_STATE_FAULT_EXTERNAL_REQUEST, fault_reason );
     EXPECT_EQ( 1U, flash_abort_calls );
-    EXPECT_EQ( 1U, driver_fault_calls );
+    EXPECT_EQ( 1U, driver_shutdown_begin_calls );
+    EXPECT_TRUE( driver_shutdown_force );
+    EXPECT_TRUE( driver_shutdown_clear_configuration );
     EXPECT_TRUE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
 }
 
@@ -521,6 +738,22 @@ TEST_F( RunStateManagerTest, ResetWaitsForFlashIdle )
     EXPECT_EQ( RUN_STATE_IDLE, run_state );
     EXPECT_EQ( RUN_STATE_FAULT_NONE, fault_reason );
     EXPECT_FALSE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
+}
+
+TEST_F( RunStateManagerTest, ResetWaitsForAcknowledgedDriverCleanup )
+{
+    run_state               = RUN_STATE_FAULT;
+    fault_reason            = RUN_STATE_FAULT_EXTERNAL_REQUEST;
+    flash_manager_state     = FLASH_MANAGER_STATE_IDLE;
+    driver_cleanup_complete = false;
+
+    Process( RUN_STATE_REQUEST_RESET );
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE, last_request_result );
+
+    driver_cleanup_complete = true;
+    Process( RUN_STATE_REQUEST_RESET );
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
 }
 
 TEST_F( RunStateManagerTest, FirstFaultReasonWins )

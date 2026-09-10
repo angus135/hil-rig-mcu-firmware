@@ -164,3 +164,7 @@ TX is considered complete only when the low-level UART driver reports that:
 - The UART has shifted out the final stop bit.
 
 This is stronger than checking only whether DMA has consumed the source buffer.
+
+`EXEC_UART_Stop_Channel()` remains graceful and preserves accepted TX data.
+`EXEC_UART_Abort_Channel()` is the fault/timeout path; it discards queued or
+active TX data before stopping the channel.

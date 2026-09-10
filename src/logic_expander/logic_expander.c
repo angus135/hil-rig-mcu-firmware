@@ -117,6 +117,10 @@ static uint8_t              logic_expander_active_bitmask  = LOGIC_EXPANDER_DEFA
 static uint8_t              logic_expander_dirty_bitmask   = 0U;
 static uint8_t              logic_expander_pending_bitmask = 0U;
 static uint8_t              logic_expander_retry_bitmask   = 0U;
+static LogicExpanderControlBatchStatus_T logic_expander_control_batch_status =
+    LOGIC_EXPANDER_CONTROL_BATCH_UNKNOWN;
+static LogicExpanderControlBatchId_T logic_expander_control_batch_id      = 0U;
+static LogicExpanderControlBatchId_T logic_expander_next_control_batch_id = 0U;
 static LogicExpanderConfigState_T logic_expander_config_state = LOGIC_EXPANDER_CONFIG_NOT_STARTED;
 static uint8_t                    logic_expander_config_index = 0U;
 static uint8_t                    logic_expander_config_write = 0U;
@@ -128,6 +132,25 @@ static StaticSemaphore_t          logic_expander_mutex_storage;
 static LogicExpanderStatus_T LOGIC_EXPANDER_Process_Locked( void );
 static LogicExpanderStatus_T LOGIC_EXPANDER_Enqueue_Control_Bits( uint8_t* source_bitmask,
                                                                   bool     is_retry );
+
+static void LOGIC_EXPANDER_Fail_Control_Batch( void )
+{
+    if ( logic_expander_control_batch_status == LOGIC_EXPANDER_CONTROL_BATCH_OPEN
+         || logic_expander_control_batch_status == LOGIC_EXPANDER_CONTROL_BATCH_PENDING )
+    {
+        logic_expander_control_batch_status = LOGIC_EXPANDER_CONTROL_BATCH_FAILED;
+    }
+}
+
+static void LOGIC_EXPANDER_Complete_Control_Batch_If_Drained( void )
+{
+    if ( logic_expander_control_batch_status == LOGIC_EXPANDER_CONTROL_BATCH_PENDING
+         && logic_expander_dirty_bitmask == 0U && logic_expander_pending_bitmask == 0U
+         && logic_expander_retry_bitmask == 0U )
+    {
+        logic_expander_control_batch_status = LOGIC_EXPANDER_CONTROL_BATCH_COMPLETE;
+    }
+}
 
 static void LOGIC_EXPANDER_Arm_Transaction_Deadline( void )
 {
@@ -373,9 +396,11 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Self_Config_Locked( void )
         logic_expander_submitted_state[idx] = logic_expander_state[idx];
     }
 
-    logic_expander_dirty_bitmask   = 0U;
-    logic_expander_pending_bitmask = 0U;
-    logic_expander_retry_bitmask   = 0U;
+    logic_expander_dirty_bitmask        = 0U;
+    logic_expander_pending_bitmask      = 0U;
+    logic_expander_retry_bitmask        = 0U;
+    logic_expander_control_batch_status = LOGIC_EXPANDER_CONTROL_BATCH_UNKNOWN;
+    logic_expander_control_batch_id     = 0U;
     LOGIC_EXPANDER_Disarm_Transaction_Deadline();
     logic_expander_config_index = 0U;
     logic_expander_config_write = 0U;
@@ -454,6 +479,7 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Process_Locked( void )
                     LOGIC_EXPANDER_Recover_Timed_Out_Channel();
                     logic_expander_retry_bitmask |= timed_out_bitmask;
                     logic_expander_pending_bitmask = 0U;
+                    LOGIC_EXPANDER_Fail_Control_Batch();
                     return LOGIC_EXPANDER_STATUS_ERROR;
                 }
                 return LOGIC_EXPANDER_STATUS_OK;
@@ -466,6 +492,7 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Process_Locked( void )
             {
                 logic_expander_retry_bitmask |= logic_expander_pending_bitmask;
                 logic_expander_pending_bitmask = 0U;
+                LOGIC_EXPANDER_Fail_Control_Batch();
                 return LOGIC_EXPANDER_From_HW_Status( transfer_result );
             }
 
@@ -476,6 +503,7 @@ static LogicExpanderStatus_T LOGIC_EXPANDER_Process_Locked( void )
         {
             return LOGIC_EXPANDER_Enqueue_Control_Bits( &logic_expander_retry_bitmask, true );
         }
+        LOGIC_EXPANDER_Complete_Control_Batch_If_Drained();
         return LOGIC_EXPANDER_STATUS_OK;
     }
 
@@ -646,6 +674,103 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void )
     const LogicExpanderStatus_T status = LOGIC_EXPANDER_Send_Control_Bits_Locked();
     LOGIC_EXPANDER_Unlock();
     return status;
+}
+
+LogicExpanderStatus_T LOGIC_EXPANDER_Begin_Control_Batch( LogicExpanderControlBatchId_T* batch_id )
+{
+    if ( !LOGIC_EXPANDER_Lock() )
+    {
+        return LOGIC_EXPANDER_STATUS_ERROR;
+    }
+
+    LogicExpanderStatus_T status = LOGIC_EXPANDER_STATUS_OK;
+    if ( batch_id != NULL )
+    {
+        *batch_id = 0U;
+    }
+    if ( batch_id == NULL )
+    {
+        status = LOGIC_EXPANDER_STATUS_INVALID_PARAM;
+    }
+    else if ( !logic_expander_ready )
+    {
+        status = LOGIC_EXPANDER_STATUS_NOT_READY;
+    }
+    else if ( logic_expander_control_batch_status == LOGIC_EXPANDER_CONTROL_BATCH_OPEN
+              || logic_expander_control_batch_status == LOGIC_EXPANDER_CONTROL_BATCH_PENDING
+              || logic_expander_dirty_bitmask != 0U || logic_expander_pending_bitmask != 0U
+              || logic_expander_retry_bitmask != 0U )
+    {
+        status = LOGIC_EXPANDER_STATUS_BUSY;
+    }
+    else
+    {
+        logic_expander_next_control_batch_id++;
+        if ( logic_expander_next_control_batch_id == 0U )
+        {
+            logic_expander_next_control_batch_id++;
+        }
+        logic_expander_control_batch_id     = logic_expander_next_control_batch_id;
+        logic_expander_control_batch_status = LOGIC_EXPANDER_CONTROL_BATCH_OPEN;
+        *batch_id                           = logic_expander_control_batch_id;
+    }
+
+    LOGIC_EXPANDER_Unlock();
+    return status;
+}
+
+LogicExpanderStatus_T LOGIC_EXPANDER_End_Control_Batch( LogicExpanderControlBatchId_T batch_id )
+{
+    if ( !LOGIC_EXPANDER_Lock() )
+    {
+        return LOGIC_EXPANDER_STATUS_ERROR;
+    }
+
+    LogicExpanderStatus_T status = LOGIC_EXPANDER_STATUS_OK;
+    if ( batch_id == 0U || batch_id != logic_expander_control_batch_id
+         || logic_expander_control_batch_status != LOGIC_EXPANDER_CONTROL_BATCH_OPEN )
+    {
+        status = LOGIC_EXPANDER_STATUS_INVALID_PARAM;
+    }
+    else
+    {
+        logic_expander_control_batch_status = LOGIC_EXPANDER_CONTROL_BATCH_PENDING;
+        LOGIC_EXPANDER_Complete_Control_Batch_If_Drained();
+    }
+
+    LOGIC_EXPANDER_Unlock();
+    return status;
+}
+
+LogicExpanderControlBatchStatus_T
+LOGIC_EXPANDER_Get_Control_Batch_Status( LogicExpanderControlBatchId_T batch_id )
+{
+    if ( !LOGIC_EXPANDER_Lock() )
+    {
+        return LOGIC_EXPANDER_CONTROL_BATCH_FAILED;
+    }
+
+    const LogicExpanderControlBatchStatus_T status =
+        ( batch_id != 0U && batch_id == logic_expander_control_batch_id )
+            ? logic_expander_control_batch_status
+            : LOGIC_EXPANDER_CONTROL_BATCH_UNKNOWN;
+    LOGIC_EXPANDER_Unlock();
+    return status;
+}
+
+void LOGIC_EXPANDER_Cancel_Control_Batch( LogicExpanderControlBatchId_T batch_id )
+{
+    if ( !LOGIC_EXPANDER_Lock() )
+    {
+        return;
+    }
+
+    if ( batch_id != 0U && batch_id == logic_expander_control_batch_id )
+    {
+        logic_expander_control_batch_status = LOGIC_EXPANDER_CONTROL_BATCH_UNKNOWN;
+        logic_expander_control_batch_id     = 0U;
+    }
+    LOGIC_EXPANDER_Unlock();
 }
 
 LogicExpanderStatus_T

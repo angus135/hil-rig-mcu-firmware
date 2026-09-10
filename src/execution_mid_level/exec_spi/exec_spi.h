@@ -170,6 +170,15 @@ bool EXEC_SPI_Start_Channel( ExecSPIChannel_T channel );
  */
 bool EXEC_SPI_Stop_Channel( ExecSPIChannel_T channel );
 
+/**
+ * @brief Terminate a started channel without waiting for TX completion.
+ *
+ * This safety path discards queued or active transmission data, disables the
+ * external interface, and stops the hardware channel. It is intended for
+ * lifecycle timeout and fault recovery, not normal test completion.
+ */
+bool EXEC_SPI_Abort_Channel( ExecSPIChannel_T channel );
+
 /** @brief Return true when the channel is configured or started. */
 bool EXEC_SPI_Is_Configured( ExecSPIChannel_T channel );
 
@@ -311,6 +320,9 @@ bool EXEC_SPI_Receive( ExecSPIChannel_T channel, uint8_t* data_dst, uint32_t* si
  *     false if bytes are still queued or currently being transmitted.
  */
 bool EXEC_SPI_Is_Transmission_Complete( ExecSPIChannel_T channel );
+
+/** Return true when the low-level TX path has latched a terminal fault. */
+bool EXEC_SPI_Is_Transmission_Faulted( ExecSPIChannel_T channel );
 
 #ifdef __cplusplus
 }

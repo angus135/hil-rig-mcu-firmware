@@ -17,8 +17,9 @@ IDLE -> TEST_PACKAGE_RECEIVE -> CONFIGURATION -> ARMED -> EXECUTION
 
 Entering `CONFIGURATION` applies the committed configuration once, then polls
 aggregate driver readiness without reapplying it. The manager automatically
-enters `ARMED` only after every enabled driver is ready. Driver failure or a
-bounded configuration timeout enters `FAULT`.
+enters `ARMED` only after every enabled driver is ready and the identified
+Logic Expander configuration batch has physically completed. Driver, expander,
+or bounded configuration-timeout failure enters `FAULT`.
 Similarly, result finalisation remains pending until Flash Manager reports that
 the result stream is ready, then automatically enters `RESULTS_READY`.
 
@@ -42,9 +43,9 @@ run_state reset
 normal execution, the Execution Manager terminal callback automatically
 inhibits further ISR dispatch and notifies this same RSM request path.
 Fault handling retains the first recorded cause until a successful reset.
-Fault entry also requests asynchronous Flash session abort after execution and
-DUT drivers have stopped. Reset remains rejected until Flash reports `IDLE`,
-preventing an RSM/Flash lifecycle mismatch.
+Fault entry immediately inhibits execution, requests forced DUT-driver cleanup,
+and requests asynchronous Flash session abort. Reset remains rejected until
+both driver cleanup is acknowledged and Flash reports `IDLE`.
 
 Every named event is validated by the Run State Manager task before it can
 initiate a transition. A delivered notification is therefore not itself proof
@@ -72,18 +73,41 @@ transfer completion, fault, and reset remain explicit events.
 
 `ARMED` means test configuration has completed while the DUT drivers and
 execution timer remain stopped. An execute request begins Flash Manager
-execution preparation; only after Flash reports `EXECUTING` does the manager
-start the DUT drivers and execution timer and enter `EXECUTION`.
+execution preparation. After Flash reports `EXECUTING`, the manager starts the
+DUT drivers but remains `ARMED` with a pending transition while external-path
+enable writes complete. TIM4 starts and `EXECUTION` is published only after the
+startup batch succeeds. Startup failure or timeout enters `FAULT` without
+starting TIM4.
+
+Execution completion stops TIM4 first, then waits in an acknowledged
+DUT-driver shutdown phase. The RSM remains in `EXECUTION` while graceful SPI,
+DAC, UART, and CAN transmissions drain, and does not ask Flash Manager to finalise results
+until every driver has stopped and the Logic Expander disable batch has
+completed. A shutdown timeout enters `FAULT` and upgrades cleanup to forced
+abort so an undrainable transaction, such as an SPI slave transfer with no
+master clocks, cannot leave hardware started indefinitely. Reset is rejected
+until DUT cleanup is acknowledged and Flash Manager is `IDLE`.
+
 `RESULTS_READY` means execution has stopped and Flash Manager has completely
 finalised a valid result stream. `repeat` deliberately abandons that stream,
-retains the active DUT configuration and uploaded instructions, and returns to
-`ARMED`. `discard` abandons the stream, clears the active configuration, places
+retains the active DUT configuration and uploaded instructions, reapplies the
+complete configuration, waits for asynchronous frontend writes to complete,
+and then returns to `ARMED`. This restores driver-owned initial output
+conditions such as PWM timer values and DAC codes. `discard` abandons the stream, clears the active configuration, places
 the DUT lifecycle into its idle state, and returns to `IDLE`. Both operations
 require Flash Manager to release the result session and return to `IDLE` before
 the RSM transition is committed.
 
 The manager uses task notifications for requests and polls only while an
-asynchronous Flash Manager transition is pending.
+asynchronous configuration, driver-start, driver-shutdown, or Flash Manager operation is
+pending. Configuration is resumable: if the Logic Expander/I2C queue is full,
+the lifecycle retains the copied configuration, leaves the RSM in
+`CONFIGURATION`, and retries after the background service drains queued writes.
+The current boolean driver configuration APIs do not distinguish queue
+backpressure from a genuine configuration error, so both are conservatively
+treated as pending. The RSM configuration timeout bounds this retry window;
+future driver status APIs should report `READY`, `PENDING`, and `FAILED` so
+genuine errors can fault immediately.
 
 Request APIs report only whether their notification was delivered to the RSM
 task. They do not report that the request was valid or that its transition has
@@ -96,6 +120,17 @@ before submitting the next dependent request. The final decision is available
 through `last_request` and `last_request_result` in
 `RUN_STATE_MANAGER_GetStatus()`.
 
+The same status snapshot provides transition timing diagnostics. While an
+accepted lifecycle request is still progressing, `request_timing_active`,
+`timed_request`, and `timed_request_elapsed_ms` report its total elapsed time.
+After the terminal state is published, `last_completed_request` and
+`last_transition_duration_ms` retain the most recent completed measurement.
+The timing spans all asynchronous prerequisites. For example, `execute` covers
+Flash preparation, driver startup, Logic Expander batch completion, and entry
+to `EXECUTION`; `execution_complete` covers graceful driver shutdown and Flash
+result finalisation through `RESULTS_READY`. These values are observational and
+do not alter transition scheduling or timeout policy.
+
 ## Execution lifecycle
 
 Before a run, request Flash Manager execution preparation and wait for
@@ -107,7 +142,6 @@ The validated `tick_count` is the number of execution-timer periods and the
 final boundary tick. Tick zero is the configured initial condition. The first
 TIM4 interrupt processes tick one, and a run of N ticks completes at boundary
 N. Valid output instruction timestamps are therefore 1 through N.
-
 There is at most one grouped instruction for each output-bearing tick, and
 instructions are ordered by timestamp. If the Execution Manager observes an
 instruction timestamp less than the current tick, the workload has overrun its

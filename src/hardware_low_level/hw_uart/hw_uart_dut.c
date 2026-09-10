@@ -836,6 +836,52 @@ bool HW_UART_Stop_Channel( HwUartChannel_T channel )
     return true;
 }
 
+bool HW_UART_Abort_Channel( HwUartChannel_T channel )
+{
+    if ( channel >= HW_UART_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    HwUartChannelState_T*      state  = &hw_uart_channel_states[channel];
+    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[channel];
+
+    if ( !state->runtime.is_configured_and_initialised || !state->runtime.is_started )
+    {
+        return false;
+    }
+
+    NVIC_DisableIRQ( hw_map->tx_dma_irq );
+    LL_USART_DisableDMAReq_TX( hw_map->uart_instance );
+    LL_DMA_DisableStream( hw_map->tx_dma_controller, hw_map->tx_ll_stream );
+
+    uint32_t timeout = HW_UART_TX_DMA_DISABLE_TIMEOUT_ITERATIONS;
+    while ( LL_DMA_IsEnabledStream( hw_map->tx_dma_controller, hw_map->tx_ll_stream ) )
+    {
+        if ( timeout == 0U )
+        {
+            return false;
+        }
+        timeout--;
+    }
+
+    *( hw_map->tx_dma_ifcr_reg )       = hw_map->tx_dma_ifcr_mask;
+    state->runtime.tx_head             = 0U;
+    state->runtime.tx_tail             = 0U;
+    state->runtime.tx_count            = 0U;
+    state->runtime.tx_dma_length_bytes = 0U;
+    state->runtime.tx_dma_active       = false;
+
+    if ( state->runtime.rx_running && !HW_UART_Stop_Rx( channel ) )
+    {
+        return false;
+    }
+
+    state->runtime.is_started = false;
+    NVIC_EnableIRQ( hw_map->tx_dma_irq );
+    return true;
+}
+
 /*
  * Returns spans into the RX DMA circular buffer containing unread data.
  *

@@ -70,6 +70,21 @@ typedef enum
     DUT_DRIVER_CONFIGURATION_FAILED
 } DutDriverConfigurationStatus_T;
 
+/** Aggregate completion of asynchronous external-interface startup writes. */
+typedef enum
+{
+    DUT_DRIVER_START_PENDING = 0,
+    DUT_DRIVER_START_READY,
+    DUT_DRIVER_START_FAILED
+} DutDriverStartStatus_T;
+
+typedef enum
+{
+    DUT_DRIVER_SHUTDOWN_PENDING = 0,
+    DUT_DRIVER_SHUTDOWN_COMPLETE,
+    DUT_DRIVER_SHUTDOWN_FAILED
+} DutDriverShutdownStatus_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -82,22 +97,30 @@ typedef enum
  *        channel is applied, including disabled channels, so stale state from
  *        a previous test cannot remain active.
  *
- * Implementations must leave drivers stopped. If configuration partially
- * succeeds, all affected drivers must be returned to a safe stopped condition
- * before failure is returned.
+ * Implementations leave drivers stopped. Queue backpressure may leave the
+ * configuration open and is completed by GetConfigurationStatus(); a
+ * persistent error is reported there as FAILED.
  *
  * External I2C channels are temporarily forced to a disabled zero
  * configuration because of the known I2C hardware fault. Requested I2C
  * settings are retained in the active test configuration but are not applied.
  *
- * @returns true if every required driver was configured, otherwise false.
+ * @returns true if configuration was accepted, including when the expander
+ *          queue applies backpressure. Physical completion or failure is
+ *          reported by DUT_DRIVER_LIFECYCLE_GetConfigurationStatus().
+ *
+ * @note Until driver configuration APIs expose a tri-state result, a failed
+ *       pass is conservatively retried as pending. A persistent hardware or
+ *       validation failure is therefore reported when the RSM configuration
+ *       timeout expires, rather than immediately.
  */
 bool DUT_DRIVER_LIFECYCLE_Configure( const DutDriverConfiguration_T* configuration );
 
 /**
  * @brief Polls completion of configuration work accepted by all DUT drivers.
  *
- * This function performs no waiting and must not reapply configuration.
+ * This function performs no waiting. It may retry an idempotent configuration
+ * pass when the Logic Expander queue previously reported backpressure.
  *
  * @return PENDING while an enabled driver is still configuring, READY when all
  *         enabled drivers may be started, or FAILED after a driver fault.
@@ -115,9 +138,19 @@ DutDriverConfigurationStatus_T DUT_DRIVER_LIFECYCLE_GetConfigurationStatus( void
  * If a driver fails to start, every driver already started by this call must be
  * stopped before failure is returned.
  *
- * @returns true if every required driver was started, otherwise false.
+ * @returns true if every driver accepted startup and the external-interface
+ *          batch was sealed, otherwise false. Physical completion is reported
+ *          by DUT_DRIVER_LIFECYCLE_GetStartStatus().
  */
 bool DUT_DRIVER_LIFECYCLE_Start( void );
+
+/**
+ * @brief Polls physical completion of the external-interface startup batch.
+ *
+ * @return PENDING while writes remain in flight, READY after successful I2C
+ *         completion, or FAILED after an asynchronous transfer error.
+ */
+DutDriverStartStatus_T DUT_DRIVER_LIFECYCLE_GetStartStatus( void );
 
 /**
  * @brief Stops all DUT-facing drivers after execution has stopped.
@@ -127,6 +160,24 @@ bool DUT_DRIVER_LIFECYCLE_Start( void );
  * order where practical.
  */
 bool DUT_DRIVER_LIFECYCLE_Stop( void );
+
+/**
+ * @brief Begin an acknowledged shutdown operation.
+ *
+ * @param force_abort Permit drivers to discard active transfers that cannot
+ *        drain normally.
+ * @param clear_configuration Apply disabled configurations before completion.
+ */
+bool DUT_DRIVER_LIFECYCLE_BeginShutdown( bool force_abort, bool clear_configuration );
+
+/**
+ * @brief Progress driver shutdown and external-interface disable completion.
+ *
+ * Graceful shutdown reports PENDING while AO/SPI/UART/CAN transmission is
+ * active. A stop failure or asynchronous Logic Expander error reports FAILED.
+ * Forced shutdown calls each transmitting driver's explicit abort API.
+ */
+DutDriverShutdownStatus_T DUT_DRIVER_LIFECYCLE_GetShutdownStatus( void );
 
 /** @brief Copies the configured enable plan and actual started bookkeeping. */
 void DUT_DRIVER_LIFECYCLE_GetStatus( DutDriverLifecycleStatus_T* status );
