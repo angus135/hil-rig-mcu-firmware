@@ -91,8 +91,10 @@ until DUT cleanup is acknowledged and Flash Manager is `IDLE`.
 
 `RESULTS_READY` means execution has stopped and Flash Manager has completely
 finalised a valid result stream. `repeat` deliberately abandons that stream,
-retains the active DUT configuration and uploaded instructions, and returns to
-`ARMED`. `discard` abandons the stream, clears the active configuration, places
+retains the active DUT configuration and uploaded instructions, reapplies the
+complete configuration, waits for asynchronous frontend writes to complete,
+and then returns to `ARMED`. This restores driver-owned initial output
+conditions such as PWM timer values and DAC codes. `discard` abandons the stream, clears the active configuration, places
 the DUT lifecycle into its idle state, and returns to `IDLE`. Both operations
 require Flash Manager to release the result session and return to `IDLE` before
 the RSM transition is committed.
