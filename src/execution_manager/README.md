@@ -59,6 +59,14 @@ result lease and commits with the current tick. Disabled measurement families
 are absent from the ISR list; no per-driver tick adjustment or readiness check
 belongs in the ISR.
 
+Each enabled PWM-capture channel contributes one prepared adapter entry. The
+adapter polls the driver's consume API before reserving result storage. No new
+completed period is a normal condition and produces no record. A valid capture
+commits period ticks and high-time ticks as two words with the logical capture
+channel in the result header. A newly captured invalid period terminates the
+run as a measurement rejection. The current live-CCR snapshot remains subject
+to the PWM capture driver's documented coherence and overcapture limitation.
+
 ## ISR path
 
 `EXECUTION_MANAGER_ProcessTickFromISR()` currently performs:

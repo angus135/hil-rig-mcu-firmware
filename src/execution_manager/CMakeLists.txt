@@ -45,6 +45,7 @@ target_link_libraries(execution_manager
         exec_can
         exec_digital_input
         exec_analogue_input
+        exec_pwm_capture
 )
 
 # -----------------------------

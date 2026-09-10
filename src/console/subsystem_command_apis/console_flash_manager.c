@@ -91,6 +91,7 @@
 #include "exec_analogue_output.h"
 #include "exec_can.h"
 #include "exec_digital_output.h"
+#include "exec_pwm_capture.h"
 #include "exec_spi.h"
 #include "exec_uart.h"
 #include "flash_manager.h"
@@ -120,6 +121,8 @@
 #define CONSOLE_FLASH_DIGITAL_INPUT_RESULT_BYTES                                                \
     ( sizeof( FlashManagerResultHeader_T ) + sizeof( uint32_t ) )
 #define CONSOLE_FLASH_ANALOGUE_INPUT_RESULT_BYTES                                               \
+    ( sizeof( FlashManagerResultHeader_T ) + ( 2U * sizeof( uint32_t ) ) )
+#define CONSOLE_FLASH_PWM_CAPTURE_RESULT_BYTES                                                  \
     ( sizeof( FlashManagerResultHeader_T ) + ( 2U * sizeof( uint32_t ) ) )
 
 #define CONSOLE_FLASH_TEST_PAYLOAD_BYTES ( 12U )
@@ -273,6 +276,18 @@ typedef struct
 
 static ConsoleFlashAnalogueLoopback_T console_flash_analogue_loopback = { 0 };
 
+typedef struct
+{
+    bool     valid;
+    uint32_t output_channel;
+    uint32_t frequency_hz;
+    uint32_t duty_permille;
+    uint32_t update_tick;
+    uint32_t run_ticks;
+} ConsoleFlashPwmLoopback_T;
+
+static ConsoleFlashPwmLoopback_T console_flash_pwm_loopback = { 0 };
+
 static ConsoleFlashExecutionTestContext_T console_flash_execution_test = {
     .state                        = CONSOLE_FLASH_EXECUTION_TEST_NOT_RUN,
     .failure                      = CONSOLE_FLASH_EXECUTION_FAILURE_NONE,
@@ -357,6 +372,7 @@ static void CONSOLE_Flash_FinaliseCommand( void );
 static void CONSOLE_Flash_ResultsCommand( bool verify_echo_stream );
 static void CONSOLE_Flash_VerifyDigitalLoopbackResultsCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_VerifyAnalogueLoopbackResultsCommand( uint16_t argc, char* argv[] );
+static void CONSOLE_Flash_VerifyPwmLoopbackResultsCommand( uint16_t argc, char* argv[] );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -390,7 +406,8 @@ static void CONSOLE_Flash_PrintUsage( void )
     CONSOLE_Printf( "  flash results [verify]\r\n" );
     CONSOLE_Printf( "  flash results verify_do_di <delay_ticks> <high_ticks>\r\n" );
     CONSOLE_Printf( "  flash results verify_do_pattern\r\n" );
-    CONSOLE_Printf( "  flash results verify_ao_ai <input_channel 0..1> [tolerance_mV]\r\n" );
+    CONSOLE_Printf( "  flash results verify_ao_ai <input_channel 0..1>\r\n" );
+    CONSOLE_Printf( "  flash results verify_pwm_capture <input_channel 1..2>\r\n" );
     CONSOLE_Printf( "Use 'flash status' after every phase. Reset after FAULT.\r\n" );
 }
 
@@ -1676,6 +1693,14 @@ static void CONSOLE_Flash_UploadPwmTestCommand( uint16_t argc, char* argv[] )
     console_flash_last_upload_records = 1U;
     console_flash_last_upload_bytes   = CONSOLE_FLASH_PWM_TEST_INSTRUCTION_BYTES;
     console_flash_run_tick_count      = run_ticks;
+    console_flash_pwm_loopback        = ( ConsoleFlashPwmLoopback_T ){
+               .valid          = true,
+               .output_channel = channel,
+               .frequency_hz   = frequency_hz,
+               .duty_permille  = duty_permille,
+               .update_tick    = update_tick,
+               .run_ticks      = run_ticks,
+    };
     CONSOLE_Flash_ResetExecutionHarnessState();
     CONSOLE_Printf( "PWM upload PASS: channel=%lu target=%lu Hz duty=%lu/1000 "
                     "arr=%u ccr=%u psc=%u update_tick=%lu run_ticks=%lu.\r\n",
@@ -3133,13 +3158,10 @@ static void CONSOLE_Flash_VerifyDigitalLoopbackResultsCommand( uint16_t argc, ch
 static void CONSOLE_Flash_VerifyAnalogueLoopbackResultsCommand( uint16_t argc, char* argv[] )
 {
     uint32_t input_channel = 0U;
-    uint32_t tolerance_mv  = 100U;
-    if ( !console_flash_analogue_loopback.valid || argc < 4U || argc > 5U
-         || !CONSOLE_Flash_ParseU32( argv[3], &input_channel ) || input_channel > 1U
-         || ( argc == 5U && !CONSOLE_Flash_ParseU32( argv[4], &tolerance_mv ) ) )
+    if ( !console_flash_analogue_loopback.valid || argc != 4U
+         || !CONSOLE_Flash_ParseU32( argv[3], &input_channel ) || input_channel > 1U )
     {
-        CONSOLE_Printf( "Usage: flash results verify_ao_ai <input_channel 0..1> "
-                        "[tolerance_mV]\r\n" );
+        CONSOLE_Printf( "Usage: flash results verify_ao_ai <input_channel 0..1>\r\n" );
         return;
     }
 
@@ -3238,24 +3260,183 @@ static void CONSOLE_Flash_VerifyAnalogueLoopbackResultsCommand( uint16_t argc, c
         return;
     }
 
-    const uint32_t selected_sample = final_sample[input_channel];
-    const uint32_t expected_mv     = console_flash_analogue_loopback.expected_millivolts;
-    const uint32_t error_mv =
-        selected_sample > expected_mv ? selected_sample - expected_mv : expected_mv - selected_sample;
     const bool passed = records_valid && record_fill == 0U
-                        && record_count == console_flash_analogue_loopback.run_ticks
-                        && error_mv <= tolerance_mv;
+                        && record_count == console_flash_analogue_loopback.run_ticks;
 
-    CONSOLE_Printf( "AO%lu-to-AI%lu flash verification %s: records=%lu/%lu target=%lu mV "
-                    "before=[%lu,%lu] final=[%lu,%lu] error=%lu tolerance=%lu.\r\n",
+    CONSOLE_Printf( "Analogue result stream validation %s: records=%lu/%lu.\r\n",
+                    passed ? "PASS" : "FAIL", ( unsigned long )record_count,
+                    ( unsigned long )console_flash_analogue_loopback.run_ticks );
+    CONSOLE_Printf( "Loopback route: AO%lu to AI%lu; requested AO target=%lu mV.\r\n",
                     ( unsigned long )console_flash_analogue_loopback.output_channel,
-                    ( unsigned long )input_channel, passed ? "PASS" : "FAIL",
-                    ( unsigned long )record_count,
-                    ( unsigned long )console_flash_analogue_loopback.run_ticks,
-                    ( unsigned long )expected_mv, ( unsigned long )sample_before_update[0],
-                    ( unsigned long )sample_before_update[1], ( unsigned long )final_sample[0],
-                    ( unsigned long )final_sample[1], ( unsigned long )error_mv,
-                    ( unsigned long )tolerance_mv );
+                    ( unsigned long )input_channel,
+                    ( unsigned long )console_flash_analogue_loopback.expected_millivolts );
+    CONSOLE_Printf( "AI before output update: ch0=%lu, ch1=%lu raw ADC counts.\r\n",
+                    ( unsigned long )sample_before_update[0],
+                    ( unsigned long )sample_before_update[1] );
+    CONSOLE_Printf( "AI final sample: ch0=%lu, ch1=%lu raw ADC counts.\r\n",
+                    ( unsigned long )final_sample[0], ( unsigned long )final_sample[1] );
+    CONSOLE_Printf( "Voltage comparison: NOT PERFORMED; AI calibration is unavailable.\r\n" );
+}
+
+/** Retrieves sparse PWM capture records and checks the final capture against the uploaded target. */
+static void CONSOLE_Flash_VerifyPwmLoopbackResultsCommand( uint16_t argc, char* argv[] )
+{
+    uint32_t input_channel = 0U;
+    if ( !console_flash_pwm_loopback.valid || argc != 4U
+         || !CONSOLE_Flash_ParseU32( argv[3], &input_channel ) || input_channel < 1U
+         || input_channel > EXEC_PWM_CAPTURE_CHANNEL_COUNT )
+    {
+        CONSOLE_Printf( "Usage: flash results verify_pwm_capture <input_channel 1..2>\r\n" );
+        return;
+    }
+
+    if ( !RUN_STATE_MANAGER_RequestResultTransfer()
+         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_RESULT_TRANSFER,
+                                            CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "RSM result transfer start failed.\r\n" );
+        return;
+    }
+
+    const ExecPwmCaptureChannel_T capture_channel =
+        ( ExecPwmCaptureChannel_T )( input_channel - 1U );
+    FlashManagerResultTransferStatus_T status = FLASH_MANAGER_RESULT_TRANSFER_OK;
+    uint8_t    record[CONSOLE_FLASH_PWM_CAPTURE_RESULT_BYTES] = { 0 };
+    uint32_t   record_fill                                     = 0U;
+    uint32_t   record_count                                    = 0U;
+    uint32_t   previous_timestamp                              = 0U;
+    uint32_t   first_timestamp                                 = 0U;
+    uint32_t   final_timestamp                                 = 0U;
+    ExecPwmCapturePhysical_T first_measurement                 = { 0 };
+    ExecPwmCapturePhysical_T final_measurement                 = { 0 };
+    bool       records_valid                                   = true;
+    bool       conversion_valid                                = true;
+    TickType_t last_progress_at                                = xTaskGetTickCount();
+
+    for ( ;; )
+    {
+        uint32_t bytes_read = 0U;
+        status              = FLASH_MANAGER_ReadResultBytes( console_flash_read_buffer,
+                                                             CONSOLE_FLASH_RESULT_READ_BYTES,
+                                                             &bytes_read );
+        if ( status == FLASH_MANAGER_RESULT_TRANSFER_OK )
+        {
+            uint32_t source_offset = 0U;
+            while ( source_offset < bytes_read )
+            {
+                const uint32_t record_remaining =
+                    CONSOLE_FLASH_PWM_CAPTURE_RESULT_BYTES - record_fill;
+                const uint32_t source_remaining = bytes_read - source_offset;
+                const uint32_t copy_length =
+                    source_remaining < record_remaining ? source_remaining : record_remaining;
+                ( void )memcpy( &record[record_fill], &console_flash_read_buffer[source_offset],
+                                copy_length );
+                record_fill += copy_length;
+                source_offset += copy_length;
+
+                if ( record_fill == CONSOLE_FLASH_PWM_CAPTURE_RESULT_BYTES )
+                {
+                    FlashManagerResultHeader_T header      = { 0 };
+                    ExecPwmCaptureResult_T     raw_capture = {
+                            .has_new_data = true,
+                            .is_valid     = true,
+                    };
+                    ( void )memcpy( &header, record, sizeof( header ) );
+                    ( void )memcpy( &raw_capture.period_ticks, &record[sizeof( header )],
+                                    2U * sizeof( uint32_t ) );
+                    record_count++;
+
+                    if ( header.peripheral_type != FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE
+                         || header.channel != capture_channel
+                         || header.payload_length_bytes != 2U * sizeof( uint32_t )
+                         || header.timestamp <= previous_timestamp
+                         || header.timestamp > console_flash_pwm_loopback.run_ticks )
+                    {
+                        records_valid = false;
+                    }
+
+                    ExecPwmCapturePhysical_T physical = { 0 };
+                    if ( !EXEC_PWM_Capture_Convert( capture_channel, &raw_capture, &physical ) )
+                    {
+                        conversion_valid = false;
+                    }
+                    else
+                    {
+                        if ( record_count == 1U )
+                        {
+                            first_timestamp   = header.timestamp;
+                            first_measurement = physical;
+                        }
+                        final_timestamp   = header.timestamp;
+                        final_measurement = physical;
+                    }
+
+                    previous_timestamp = header.timestamp;
+                    record_fill        = 0U;
+                }
+            }
+            last_progress_at = xTaskGetTickCount();
+            continue;
+        }
+
+        if ( status == FLASH_MANAGER_RESULT_TRANSFER_BUSY )
+        {
+            if ( CONSOLE_Flash_HasTimedOut( last_progress_at, CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            {
+                CONSOLE_Printf( "PWM capture result retrieval timed out.\r\n" );
+                return;
+            }
+            vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+            continue;
+        }
+        if ( status == FLASH_MANAGER_RESULT_TRANSFER_END_OF_STREAM )
+        {
+            break;
+        }
+
+        CONSOLE_Printf( "PWM capture result retrieval failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    const bool stream_passed = records_valid && conversion_valid && record_fill == 0U
+                               && record_count > 0U;
+    const uint32_t expected_duty_bp = console_flash_pwm_loopback.duty_permille * 10U;
+    const uint32_t duty_error_bp = final_measurement.duty_cycle_bp > expected_duty_bp
+                                       ? final_measurement.duty_cycle_bp - expected_duty_bp
+                                       : expected_duty_bp - final_measurement.duty_cycle_bp;
+    const bool target_passed =
+        stream_passed && final_timestamp > console_flash_pwm_loopback.update_tick
+        && final_measurement.frequency_hz == console_flash_pwm_loopback.frequency_hz
+        && duty_error_bp <= 100U;
+
+    if ( !RUN_STATE_MANAGER_RequestResultTransferComplete()
+         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_IDLE, CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "RSM result transfer completion failed.\r\n" );
+        return;
+    }
+
+    CONSOLE_Printf( "PWM capture result stream validation %s: records=%lu.\r\n",
+                    stream_passed ? "PASS" : "FAIL", ( unsigned long )record_count );
+    if ( conversion_valid && record_count > 0U )
+    {
+        CONSOLE_Printf( "First capture: tick=%lu frequency=%lu Hz duty=%lu.%02lu%%.\r\n",
+                        ( unsigned long )first_timestamp,
+                        ( unsigned long )first_measurement.frequency_hz,
+                        ( unsigned long )( first_measurement.duty_cycle_bp / 100U ),
+                        ( unsigned long )( first_measurement.duty_cycle_bp % 100U ) );
+        CONSOLE_Printf( "Final capture: tick=%lu frequency=%lu Hz duty=%lu.%02lu%%.\r\n",
+                        ( unsigned long )final_timestamp,
+                        ( unsigned long )final_measurement.frequency_hz,
+                        ( unsigned long )( final_measurement.duty_cycle_bp / 100U ),
+                        ( unsigned long )( final_measurement.duty_cycle_bp % 100U ) );
+    }
+    CONSOLE_Printf( "PWM%lu-to-capture%lu target comparison %s: expected=%lu Hz, %lu.%01lu%%.\r\n",
+                    ( unsigned long )console_flash_pwm_loopback.output_channel,
+                    ( unsigned long )input_channel, target_passed ? "PASS" : "FAIL",
+                    ( unsigned long )console_flash_pwm_loopback.frequency_hz,
+                    ( unsigned long )( console_flash_pwm_loopback.duty_permille / 10U ),
+                    ( unsigned long )( console_flash_pwm_loopback.duty_permille % 10U ) );
 }
 
 /**-----------------------------------------------------------------------------
@@ -3374,9 +3555,15 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
             return;
         }
 
-        if ( argc >= 4U && argc <= 5U && strcmp( argv[2], "verify_ao_ai" ) == 0 )
+        if ( argc == 4U && strcmp( argv[2], "verify_ao_ai" ) == 0 )
         {
             CONSOLE_Flash_VerifyAnalogueLoopbackResultsCommand( argc, argv );
+            return;
+        }
+
+        if ( argc == 4U && strcmp( argv[2], "verify_pwm_capture" ) == 0 )
+        {
+            CONSOLE_Flash_VerifyPwmLoopbackResultsCommand( argc, argv );
             return;
         }
 
@@ -3388,7 +3575,8 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
 
         CONSOLE_Printf( "Usage: flash results [verify] | "
                         "verify_do_di <delay_ticks> <high_ticks> | verify_do_pattern | "
-                        "verify_ao_ai <input_channel> [tolerance_mV]\r\n" );
+                        "verify_ao_ai <input_channel> | "
+                        "verify_pwm_capture <input_channel>\r\n" );
         return;
     }
 

@@ -496,6 +496,7 @@ static bool RUN_STATE_MANAGER_BeginDriverStart( void )
     const ExecutionMeasurementConfiguration_T measurement_configuration = {
         .analogue_input_enabled = driver_status.analogue_input_enabled,
         .digital_input_enabled = driver_status.digital_inputs_enabled,
+        .pwm_capture_enabled_mask = driver_status.pwm_capture_enabled_mask,
     };
     EXECUTION_MANAGER_ConfigureMeasurements( &measurement_configuration );
 

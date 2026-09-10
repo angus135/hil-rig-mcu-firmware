@@ -9,16 +9,25 @@
 
 #include "exec_digital_input.h"
 #include "exec_analogue_input.h"
+#include "exec_pwm_capture.h"
 #include "flash_manager.h"
 
 #include <stdint.h>
 
-typedef bool ( *ExecutionMeasurementAdapter_T )( uint32_t timestamp,
+typedef bool ( *ExecutionMeasurementAdapter_T )( uint8_t channel, uint32_t timestamp,
                                                   BaseType_t* higher_priority_task_woken );
 
-#define EXECUTION_MEASUREMENT_ADAPTER_COUNT ( 2U )
+#define EXECUTION_MEASUREMENT_ADAPTER_COUNT ( 4U )
+#define EXECUTION_MEASUREMENT_CHANNEL_UNUSED ( 0U )
+#define EXECUTION_MEASUREMENT_CHANNEL_BIT( channel ) ( UINT32_C( 1 ) << ( channel ) )
 
-static ExecutionMeasurementAdapter_T
+typedef struct
+{
+    ExecutionMeasurementAdapter_T adapter;
+    uint8_t                       channel;
+} ExecutionMeasurementDispatchEntry_T;
+
+static ExecutionMeasurementDispatchEntry_T
     active_measurement_adapters[EXECUTION_MEASUREMENT_ADAPTER_COUNT] = { 0 };
 static uint8_t active_measurement_count = 0U;
 
@@ -30,19 +39,40 @@ void EXECUTION_MEASUREMENT_ADAPTER_Prepare(
     if ( configuration->analogue_input_enabled )
     {
         active_measurement_adapters[active_measurement_count++] =
-            EXECUTION_MEASUREMENT_ADAPTER_SampleAnalogueInput;
+            ( ExecutionMeasurementDispatchEntry_T ){
+                .adapter = EXECUTION_MEASUREMENT_ADAPTER_SampleAnalogueInput,
+                .channel = EXECUTION_MEASUREMENT_CHANNEL_UNUSED,
+            };
     }
 
     if ( configuration->digital_input_enabled )
     {
         active_measurement_adapters[active_measurement_count++] =
-            EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput;
+            ( ExecutionMeasurementDispatchEntry_T ){
+                .adapter = EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput,
+                .channel = EXECUTION_MEASUREMENT_CHANNEL_UNUSED,
+            };
+    }
+
+    for ( uint8_t channel = 0U; channel < EXEC_PWM_CAPTURE_CHANNEL_COUNT; channel++ )
+    {
+        if ( ( configuration->pwm_capture_enabled_mask
+               & EXECUTION_MEASUREMENT_CHANNEL_BIT( channel ) )
+             != 0U )
+        {
+            active_measurement_adapters[active_measurement_count++] =
+                ( ExecutionMeasurementDispatchEntry_T ){
+                    .adapter = EXECUTION_MEASUREMENT_ADAPTER_SamplePwmCapture,
+                    .channel = channel,
+                };
+        }
     }
 }
 
 bool EXECUTION_MEASUREMENT_ADAPTER_SampleAnalogueInput(
-    uint32_t timestamp, BaseType_t* higher_priority_task_woken )
+    uint8_t channel, uint32_t timestamp, BaseType_t* higher_priority_task_woken )
 {
+    ( void )channel;
     FlashManagerResultWriteLease_T lease = { 0 };
 
     if ( !FLASH_MANAGER_ReserveResultRecordFromISR( 2U * sizeof( uint32_t ), &lease ) )
@@ -73,7 +103,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements(
 {
     for ( uint8_t index = 0U; index < active_measurement_count; index++ )
     {
-        if ( !active_measurement_adapters[index]( timestamp, higher_priority_task_woken ) )
+        const ExecutionMeasurementDispatchEntry_T* entry = &active_measurement_adapters[index];
+        if ( !entry->adapter( entry->channel, timestamp, higher_priority_task_woken ) )
         {
             return false;
         }
@@ -83,8 +114,9 @@ bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements(
 }
 
 bool EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput(
-    uint32_t timestamp, BaseType_t* higher_priority_task_woken )
+    uint8_t channel, uint32_t timestamp, BaseType_t* higher_priority_task_woken )
 {
+    ( void )channel;
     FlashManagerResultWriteLease_T lease = { 0 };
 
     if ( !FLASH_MANAGER_ReserveResultRecordFromISR( sizeof( uint32_t ), &lease ) )
@@ -97,6 +129,37 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput(
     if ( FLASH_MANAGER_CommitResultRecordFromISR(
              &lease, timestamp, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
              sizeof( uint32_t ), higher_priority_task_woken )
+         == FLASH_MANAGER_RESULT_COMMIT_OK )
+    {
+        return true;
+    }
+
+    ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+    return false;
+}
+
+bool EXECUTION_MEASUREMENT_ADAPTER_SamplePwmCapture(
+    uint8_t channel, uint32_t timestamp, BaseType_t* higher_priority_task_woken )
+{
+    ExecPwmCaptureResult_T capture = { 0 };
+    if ( !EXEC_PWM_Capture_Consume( ( ExecPwmCaptureChannel_T )channel, &capture ) )
+    {
+        return !capture.has_new_data;
+    }
+
+    FlashManagerResultWriteLease_T lease = { 0 };
+    if ( !FLASH_MANAGER_ReserveResultRecordFromISR( 2U * sizeof( uint32_t ), &lease ) )
+    {
+        return false;
+    }
+
+    uint32_t* payload = ( uint32_t* )( void* )lease.payload;
+    payload[0]        = capture.period_ticks;
+    payload[1]        = capture.high_ticks;
+
+    if ( FLASH_MANAGER_CommitResultRecordFromISR(
+             &lease, timestamp, FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE, channel,
+             2U * sizeof( uint32_t ), higher_priority_task_woken )
          == FLASH_MANAGER_RESULT_COMMIT_OK )
     {
         return true;

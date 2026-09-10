@@ -104,6 +104,7 @@ typedef enum
 {
     EXEC_PWM_CAPTURE_CHANNEL_1 = 0U,
     EXEC_PWM_CAPTURE_CHANNEL_2,
+    EXEC_PWM_CAPTURE_CHANNEL_COUNT,
 } ExecPwmCaptureChannel_T;
 
 typedef struct ExecPwmCaptureConfig_T

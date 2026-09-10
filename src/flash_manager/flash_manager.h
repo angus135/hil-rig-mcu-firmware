@@ -231,6 +231,7 @@ typedef struct
 /** Stable peripheral identifiers stored in result record headers. */
 #define FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT ( 1U )
 #define FLASH_MANAGER_RESULT_PERIPHERAL_ANALOGUE_INPUT ( 2U )
+#define FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE ( 3U )
 
 /**
  * @brief Temporary driver write access to Flash Manager-owned result storage.

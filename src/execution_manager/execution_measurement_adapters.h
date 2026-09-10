@@ -21,6 +21,7 @@ typedef struct
 {
     bool analogue_input_enabled;
     bool digital_input_enabled;
+    uint32_t pwm_capture_enabled_mask;
 } ExecutionMeasurementConfiguration_T;
 
 /** Builds the ISR measurement dispatch list from validated task-context configuration. */
@@ -38,8 +39,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements(
  * and started and that Flash Manager is accepting ISR result records. No
  * lifecycle or payload validation is performed here.
  */
-bool EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput( uint32_t       timestamp,
-                                                       BaseType_t* higher_priority_task_woken );
+bool EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput(
+    uint8_t channel, uint32_t timestamp, BaseType_t* higher_priority_task_woken );
 
 /**
  * @brief Reads both analogue-input voltages and commits one result record.
@@ -49,7 +50,17 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput( uint32_t       timestamp,
  * started. No lifecycle or destination validation is performed here.
  */
 bool EXECUTION_MEASUREMENT_ADAPTER_SampleAnalogueInput(
-    uint32_t timestamp, BaseType_t* higher_priority_task_woken );
+    uint8_t channel, uint32_t timestamp, BaseType_t* higher_priority_task_woken );
+
+/**
+ * @brief Consumes and commits one newly completed PWM capture when available.
+ *
+ * No record is committed when the selected channel has no new completed
+ * period. A newly consumed invalid capture rejects the measurement boundary.
+ * The payload contains period_ticks followed by high_ticks.
+ */
+bool EXECUTION_MEASUREMENT_ADAPTER_SamplePwmCapture(
+    uint8_t channel, uint32_t timestamp, BaseType_t* higher_priority_task_woken );
 
 #ifdef __cplusplus
 }

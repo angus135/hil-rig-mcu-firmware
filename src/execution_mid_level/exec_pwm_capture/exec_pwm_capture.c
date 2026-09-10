@@ -51,8 +51,6 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
-#define EXEC_PWM_CAPTURE_CHANNEL_COUNT 2U
-
 #define EXEC_PWM_CAPTURE_SAFE_MODE EXEC_PWM_CAPTURE_LV_3V3
 
 #define EXEC_PWM_CAPTURE_MODE_SETTLING_DELAY_MS ( 1U )
