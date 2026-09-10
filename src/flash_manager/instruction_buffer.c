@@ -936,8 +936,8 @@ INSTRUCTION_BUFFER_PeekInstruction( const FlashManagerInstructionView_T** instru
     ExecutionInstructionHeader_T header = {
         .timestamp               = header_words[0],
         .operations_length_bytes = ( uint16_t )( encoded_fields & UINT32_C( 0xFFFF ) ),
-        .operation_count = ( uint8_t )( ( encoded_fields >> 16U ) & UINT32_C( 0xFF ) ),
-        .reserved        = ( uint8_t )( ( encoded_fields >> 24U ) & UINT32_C( 0xFF ) ),
+        .operation_count         = ( uint8_t )( ( encoded_fields >> 16U ) & UINT32_C( 0xFF ) ),
+        .reserved                = ( uint8_t )( ( encoded_fields >> 24U ) & UINT32_C( 0xFF ) ),
     };
 
     if ( ( ( uint32_t )header.operations_length_bytes % INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES )

@@ -455,13 +455,12 @@ protected:
                 static_cast<uint32_t>( operations_length_bytes ) | ( UINT32_C( 1 ) << 16U );
 
             uint32_t page_offset_bytes = page_index * TEST_PAGE_SIZE_BYTES;
-            std::memcpy( &instruction_image[page_offset_bytes], &page_index,
-                         sizeof( page_index ) );
+            std::memcpy( &instruction_image[page_offset_bytes], &page_index, sizeof( page_index ) );
             std::memcpy( &instruction_image[page_offset_bytes + sizeof( page_index )],
                          &encoded_fields, sizeof( encoded_fields ) );
-            std::memset( &instruction_image[page_offset_bytes
-                                            + sizeof( ExecutionInstructionHeader_T )],
-                         static_cast<int>( page_index ), operations_length_bytes );
+            std::memset(
+                &instruction_image[page_offset_bytes + sizeof( ExecutionInstructionHeader_T )],
+                static_cast<int>( page_index ), operations_length_bytes );
         }
 
         FLASH_MANAGER_TEST_SetInstructionLength( page_count * TEST_PAGE_SIZE_BYTES );
