@@ -150,9 +150,9 @@ EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken )
             const ExecutionOperationAdapterResult_T operation_result =
                 operation_timing_active
                     ? EXECUTION_OPERATION_ADAPTER_ApplyOperationsProfiled(
-                        instruction->operations, instruction->header.operation_count )
+                          instruction->operations, instruction->header.operation_count )
                     : EXECUTION_OPERATION_ADAPTER_ApplyOperations(
-                        instruction->operations, instruction->header.operation_count );
+                          instruction->operations, instruction->header.operation_count );
             if ( operation_result != EXECUTION_OPERATION_ADAPTER_ACCEPTED )
             {
                 return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_OPERATION_REJECTED,
