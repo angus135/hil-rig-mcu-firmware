@@ -501,15 +501,18 @@ bool EXEC_SPI_Abort_Channel( ExecSPIChannel_T peripheral )
 {
     EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
 
-    if ( state == NULL || state->state != EXEC_SPI_STATE_STARTED )
+    if ( state == NULL
+         || ( state->state != EXEC_SPI_STATE_STARTED
+              && state->state != EXEC_SPI_STATE_CONFIGURED ) )
     {
         return false;
     }
 
     const SPIChannel_T hw_channel = exec_spi_hardware_map[peripheral].hw_channel;
-    const bool interface_disabled =
+    const bool         interface_disabled =
         EXEC_SPI_Apply_Interface_Control( peripheral, false, state->configuration.spi_mode );
-    const bool hardware_stopped = HW_SPI_Stop_Channel( hw_channel );
+    const bool hardware_stopped =
+        state->state == EXEC_SPI_STATE_CONFIGURED ? true : HW_SPI_Stop_Channel( hw_channel );
 
     if ( hardware_stopped )
     {
@@ -722,4 +725,9 @@ bool EXEC_SPI_Receive( ExecSPIChannel_T peripheral, uint8_t* data_dst, uint32_t*
 bool EXEC_SPI_Is_Transmission_Complete( ExecSPIChannel_T peripheral )
 {
     return HW_SPI_Tx_Is_Complete( exec_spi_hardware_map[peripheral].hw_channel );
+}
+
+bool EXEC_SPI_Is_Transmission_Faulted( ExecSPIChannel_T peripheral )
+{
+    return HW_SPI_Tx_Is_Faulted( exec_spi_hardware_map[peripheral].hw_channel );
 }

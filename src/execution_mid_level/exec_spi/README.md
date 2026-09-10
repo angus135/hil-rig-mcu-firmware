@@ -303,3 +303,7 @@ Useful behaviours to test include:
 `exec_spi` is a small execution-facing wrapper around the low-level SPI transport driver. It lets the
 execution manager configure SPI channels, transmit packetised byte sequences, receive bytes, and
 check TX completion without depending directly on the lower-level DMA-backed SPI implementation.
+
+`EXEC_SPI_Stop_Channel()` remains graceful and refuses an incomplete,
+non-faulted transmission. `EXEC_SPI_Abort_Channel()` is reserved for lifecycle
+fault/timeout cleanup and terminates the transfer without waiting for drain.

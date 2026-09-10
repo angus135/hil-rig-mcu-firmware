@@ -866,6 +866,27 @@ TEST_F( UartTest, DutStopRejectsPendingTransmit )
     EXPECT_TRUE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.is_started );
 }
 
+TEST_F( UartTest, DutAbortDiscardsPendingTransmitAndStopsChannel )
+{
+    HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Only_Config();
+
+    ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
+    hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_head             = 4U;
+    hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_tail             = 1U;
+    hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_count            = 3U;
+    hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_dma_length_bytes = 3U;
+    hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_dma_active       = true;
+
+    EXPECT_TRUE( HW_UART_Abort_Channel( HW_UART_CHANNEL_1 ) );
+    const HwUartRuntimeState_T& runtime = hw_uart_channel_states[HW_UART_CHANNEL_1].runtime;
+    EXPECT_FALSE( runtime.is_started );
+    EXPECT_FALSE( runtime.tx_dma_active );
+    EXPECT_EQ( runtime.tx_count, 0U );
+    EXPECT_EQ( runtime.tx_head, 0U );
+    EXPECT_EQ( runtime.tx_tail, 0U );
+}
+
 TEST_F( UartTest, DutStoppedChannelCanRestartWithoutReconfiguration )
 {
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Rx_Only_Config();

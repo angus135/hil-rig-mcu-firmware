@@ -117,6 +117,8 @@ static const char* CONSOLE_RunStateManager_FaultName( RunStateFaultReason_T reas
             return "DUT driver start timeout";
         case RUN_STATE_FAULT_DRIVER_STOP:
             return "DUT driver stop";
+        case RUN_STATE_FAULT_DRIVER_STOP_TIMEOUT:
+            return "DUT driver stop timeout";
         case RUN_STATE_FAULT_EXECUTION_TIMER:
             return "execution timer";
         case RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION:
