@@ -119,6 +119,8 @@
 #define CONSOLE_FLASH_RESULT_READ_BYTES ( 256U )
 #define CONSOLE_FLASH_DIGITAL_INPUT_RESULT_BYTES                                                \
     ( sizeof( FlashManagerResultHeader_T ) + sizeof( uint32_t ) )
+#define CONSOLE_FLASH_ANALOGUE_INPUT_RESULT_BYTES                                               \
+    ( sizeof( FlashManagerResultHeader_T ) + ( 2U * sizeof( uint32_t ) ) )
 
 #define CONSOLE_FLASH_TEST_PAYLOAD_BYTES ( 12U )
 #define CONSOLE_FLASH_TEST_OPERATION_COUNT ( 1U )
@@ -260,6 +262,17 @@ typedef struct
 
 static ConsoleFlashDigitalPattern_T console_flash_digital_pattern = { 0 };
 
+typedef struct
+{
+    bool     valid;
+    uint32_t output_channel;
+    uint32_t expected_millivolts;
+    uint32_t update_tick;
+    uint32_t run_ticks;
+} ConsoleFlashAnalogueLoopback_T;
+
+static ConsoleFlashAnalogueLoopback_T console_flash_analogue_loopback = { 0 };
+
 static ConsoleFlashExecutionTestContext_T console_flash_execution_test = {
     .state                        = CONSOLE_FLASH_EXECUTION_TEST_NOT_RUN,
     .failure                      = CONSOLE_FLASH_EXECUTION_FAILURE_NONE,
@@ -343,6 +356,7 @@ static void CONSOLE_Flash_ExecuteEchoCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_FinaliseCommand( void );
 static void CONSOLE_Flash_ResultsCommand( bool verify_echo_stream );
 static void CONSOLE_Flash_VerifyDigitalLoopbackResultsCommand( uint16_t argc, char* argv[] );
+static void CONSOLE_Flash_VerifyAnalogueLoopbackResultsCommand( uint16_t argc, char* argv[] );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -376,6 +390,7 @@ static void CONSOLE_Flash_PrintUsage( void )
     CONSOLE_Printf( "  flash results [verify]\r\n" );
     CONSOLE_Printf( "  flash results verify_do_di <delay_ticks> <high_ticks>\r\n" );
     CONSOLE_Printf( "  flash results verify_do_pattern\r\n" );
+    CONSOLE_Printf( "  flash results verify_ao_ai <input_channel 0..1> [tolerance_mV]\r\n" );
     CONSOLE_Printf( "Use 'flash status' after every phase. Reset after FAULT.\r\n" );
 }
 
@@ -1662,7 +1677,6 @@ static void CONSOLE_Flash_UploadPwmTestCommand( uint16_t argc, char* argv[] )
     console_flash_last_upload_bytes   = CONSOLE_FLASH_PWM_TEST_INSTRUCTION_BYTES;
     console_flash_run_tick_count      = run_ticks;
     CONSOLE_Flash_ResetExecutionHarnessState();
-
     CONSOLE_Printf( "PWM upload PASS: channel=%lu target=%lu Hz duty=%lu/1000 "
                     "arr=%u ccr=%u psc=%u update_tick=%lu run_ticks=%lu.\r\n",
                     ( unsigned long )channel, ( unsigned long )frequency_hz,
@@ -1771,6 +1785,13 @@ static void CONSOLE_Flash_UploadAnalogueOutputTestCommand( uint16_t argc, char* 
     console_flash_last_upload_bytes   = instruction_bytes;
     console_flash_run_tick_count      = run_ticks;
     CONSOLE_Flash_ResetExecutionHarnessState();
+    console_flash_analogue_loopback = ( ConsoleFlashAnalogueLoopback_T ){
+        .valid               = true,
+        .output_channel      = channel,
+        .expected_millivolts = ( uint32_t )( ( voltage * 1000.0F ) + 0.5F ),
+        .update_tick         = update_tick,
+        .run_ticks           = run_ticks,
+    };
 
     CONSOLE_Printf( "Analogue-output upload PASS: channel=%lu voltage=%s "
                     "update_tick=%lu run_ticks=%lu.\r\n",
@@ -3108,6 +3129,135 @@ static void CONSOLE_Flash_VerifyDigitalLoopbackResultsCommand( uint16_t argc, ch
     }
 }
 
+/** Retrieves AI records from flash and compares one channel with the uploaded AO target. */
+static void CONSOLE_Flash_VerifyAnalogueLoopbackResultsCommand( uint16_t argc, char* argv[] )
+{
+    uint32_t input_channel = 0U;
+    uint32_t tolerance_mv  = 100U;
+    if ( !console_flash_analogue_loopback.valid || argc < 4U || argc > 5U
+         || !CONSOLE_Flash_ParseU32( argv[3], &input_channel ) || input_channel > 1U
+         || ( argc == 5U && !CONSOLE_Flash_ParseU32( argv[4], &tolerance_mv ) ) )
+    {
+        CONSOLE_Printf( "Usage: flash results verify_ao_ai <input_channel 0..1> "
+                        "[tolerance_mV]\r\n" );
+        return;
+    }
+
+    if ( !RUN_STATE_MANAGER_RequestResultTransfer()
+         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_RESULT_TRANSFER,
+                                            CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "RSM result transfer start failed.\r\n" );
+        return;
+    }
+
+    FlashManagerResultTransferStatus_T status = FLASH_MANAGER_RESULT_TRANSFER_OK;
+    uint8_t    record[CONSOLE_FLASH_ANALOGUE_INPUT_RESULT_BYTES] = { 0 };
+    uint32_t   record_fill                                       = 0U;
+    uint32_t   record_count                                      = 0U;
+    uint32_t   sample_before_update[2]                            = { 0U, 0U };
+    uint32_t   final_sample[2]                                   = { 0U, 0U };
+    bool       records_valid                                     = true;
+    TickType_t last_progress_at                                  = xTaskGetTickCount();
+
+    for ( ;; )
+    {
+        uint32_t bytes_read = 0U;
+        status              = FLASH_MANAGER_ReadResultBytes( console_flash_read_buffer,
+                                                             CONSOLE_FLASH_RESULT_READ_BYTES,
+                                                             &bytes_read );
+        if ( status == FLASH_MANAGER_RESULT_TRANSFER_OK )
+        {
+            uint32_t source_offset = 0U;
+            while ( source_offset < bytes_read )
+            {
+                const uint32_t record_remaining =
+                    CONSOLE_FLASH_ANALOGUE_INPUT_RESULT_BYTES - record_fill;
+                const uint32_t source_remaining = bytes_read - source_offset;
+                const uint32_t copy_length =
+                    source_remaining < record_remaining ? source_remaining : record_remaining;
+                ( void )memcpy( &record[record_fill], &console_flash_read_buffer[source_offset],
+                                copy_length );
+                record_fill += copy_length;
+                source_offset += copy_length;
+
+                if ( record_fill == CONSOLE_FLASH_ANALOGUE_INPUT_RESULT_BYTES )
+                {
+                    FlashManagerResultHeader_T header = { 0 };
+                    uint32_t                   samples[2] = { 0U, 0U };
+                    ( void )memcpy( &header, record, sizeof( header ) );
+                    ( void )memcpy( samples, &record[sizeof( header )], sizeof( samples ) );
+                    record_count++;
+
+                    if ( header.timestamp != record_count
+                         || header.peripheral_type
+                                != FLASH_MANAGER_RESULT_PERIPHERAL_ANALOGUE_INPUT
+                         || header.channel != 0U
+                         || header.payload_length_bytes != sizeof( samples ) )
+                    {
+                        records_valid = false;
+                    }
+                    if ( header.timestamp == console_flash_analogue_loopback.update_tick )
+                    {
+                        sample_before_update[0] = samples[0];
+                        sample_before_update[1] = samples[1];
+                    }
+                    final_sample[0] = samples[0];
+                    final_sample[1] = samples[1];
+                    record_fill     = 0U;
+                }
+            }
+            last_progress_at = xTaskGetTickCount();
+            continue;
+        }
+
+        if ( status == FLASH_MANAGER_RESULT_TRANSFER_BUSY )
+        {
+            if ( CONSOLE_Flash_HasTimedOut( last_progress_at, CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            {
+                CONSOLE_Printf( "Analogue loopback result retrieval timed out.\r\n" );
+                return;
+            }
+            vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+            continue;
+        }
+        if ( status == FLASH_MANAGER_RESULT_TRANSFER_END_OF_STREAM )
+        {
+            break;
+        }
+
+        CONSOLE_Printf( "Analogue loopback result retrieval failed (status=%d).\r\n",
+                        ( int )status );
+        return;
+    }
+
+    if ( !RUN_STATE_MANAGER_RequestResultTransferComplete()
+         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_IDLE, CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "RSM result transfer completion failed.\r\n" );
+        return;
+    }
+
+    const uint32_t selected_sample = final_sample[input_channel];
+    const uint32_t expected_mv     = console_flash_analogue_loopback.expected_millivolts;
+    const uint32_t error_mv =
+        selected_sample > expected_mv ? selected_sample - expected_mv : expected_mv - selected_sample;
+    const bool passed = records_valid && record_fill == 0U
+                        && record_count == console_flash_analogue_loopback.run_ticks
+                        && error_mv <= tolerance_mv;
+
+    CONSOLE_Printf( "AO%lu-to-AI%lu flash verification %s: records=%lu/%lu target=%lu mV "
+                    "before=[%lu,%lu] final=[%lu,%lu] error=%lu tolerance=%lu.\r\n",
+                    ( unsigned long )console_flash_analogue_loopback.output_channel,
+                    ( unsigned long )input_channel, passed ? "PASS" : "FAIL",
+                    ( unsigned long )record_count,
+                    ( unsigned long )console_flash_analogue_loopback.run_ticks,
+                    ( unsigned long )expected_mv, ( unsigned long )sample_before_update[0],
+                    ( unsigned long )sample_before_update[1], ( unsigned long )final_sample[0],
+                    ( unsigned long )final_sample[1], ( unsigned long )error_mv,
+                    ( unsigned long )tolerance_mv );
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
@@ -3224,6 +3374,12 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
             return;
         }
 
+        if ( argc >= 4U && argc <= 5U && strcmp( argv[2], "verify_ao_ai" ) == 0 )
+        {
+            CONSOLE_Flash_VerifyAnalogueLoopbackResultsCommand( argc, argv );
+            return;
+        }
+
         if ( ( argc == 2U ) || ( ( argc == 3U ) && ( strcmp( argv[2], "verify" ) == 0 ) ) )
         {
             CONSOLE_Flash_ResultsCommand( argc == 3U );
@@ -3231,7 +3387,8 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
         }
 
         CONSOLE_Printf( "Usage: flash results [verify] | "
-                        "verify_do_di <delay_ticks> <high_ticks> | verify_do_pattern\r\n" );
+                        "verify_do_di <delay_ticks> <high_ticks> | verify_do_pattern | "
+                        "verify_ao_ai <input_channel> [tolerance_mV]\r\n" );
         return;
     }
 

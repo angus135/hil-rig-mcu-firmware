@@ -49,14 +49,15 @@ asynchronous output timestamps do not claim exact wire or electrical completion
 time. Drivers would need separate hardware event timestamps to provide that
 information.
 
-Digital-input measurement and result production are implemented. When the
-digital-input driver is enabled by the committed configuration, the Run State
-Manager includes its adapter in a compact measurement list before driver
-startup. Each boundary iterates that prepared list and samples the active GPIO mask
-after the tick advance and before output dispatch. The sample is written
-directly into a Flash Manager result lease and committed with the current
-tick as its timestamp. No result is produced when digital-input sampling is
-not started; no per-driver tick adjustment belongs in the ISR.
+Digital and analogue-input result production are implemented. The Run State
+Manager builds a compact measurement list from the committed driver enable
+plan before driver startup. Each boundary iterates that prepared list after
+the tick advance and before output dispatch. Digital input stores one masked
+GPIO word. Analogue input stores the two processed channel values from the
+latest ADC DMA sample set. Each adapter writes directly into a Flash Manager
+result lease and commits with the current tick. Disabled measurement families
+are absent from the ISR list; no per-driver tick adjustment or readiness check
+belongs in the ISR.
 
 ## ISR path
 

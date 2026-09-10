@@ -44,6 +44,7 @@ target_link_libraries(execution_manager
         exec_analogue_output
         exec_can
         exec_digital_input
+        exec_analogue_input
 )
 
 # -----------------------------
