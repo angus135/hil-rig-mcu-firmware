@@ -305,6 +305,8 @@ static const char* CONSOLE_Flash_StateName( FlashManagerState_T state )
             return "RESULTS_READY";
         case FLASH_MANAGER_STATE_TRANSFERRING_RESULTS:
             return "TRANSFERRING_RESULTS";
+        case FLASH_MANAGER_STATE_ABORTING:
+            return "ABORTING";
         case FLASH_MANAGER_STATE_FAULT:
             return "FAULT";
         default:

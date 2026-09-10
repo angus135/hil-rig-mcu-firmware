@@ -53,3 +53,10 @@ exec CAN synchronizes its cached lifecycle state with HW CAN.
 | `exec_can.c` | Lifecycle, routing, conversion, and result mapping |
 | `exec_can.h` | Public execution-layer types and API |
 | `tests/test_exec_can.cpp` | White-box unit tests |
+
+## Shutdown semantics
+
+`EXEC_CAN_Stop_Channel()` is graceful and may report busy while a buffered
+batch or hardware mailbox is active. `EXEC_CAN_Abort_Channel()` is reserved for
+fault/timeout cleanup and deliberately cancels queued and mailbox TX work
+before stopping the channel.

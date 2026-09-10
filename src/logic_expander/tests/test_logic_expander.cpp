@@ -130,6 +130,9 @@ protected:
         logic_expander_dirty_bitmask          = 0U;
         logic_expander_pending_bitmask        = 0U;
         logic_expander_retry_bitmask          = 0U;
+        logic_expander_control_batch_status   = LOGIC_EXPANDER_CONTROL_BATCH_UNKNOWN;
+        logic_expander_control_batch_id       = 0U;
+        logic_expander_next_control_batch_id  = 0U;
         logic_expander_config_state           = LOGIC_EXPANDER_CONFIG_NOT_STARTED;
         logic_expander_config_index           = 0U;
         logic_expander_config_write           = 0U;
@@ -451,6 +454,83 @@ TEST_F( LogicExpanderTest, LoadControlBitMarksDirtyOnlyWhenShadowChanges )
 TEST_F( LogicExpanderTest, SendControlBitsReturnsNotReadyBeforePhysicalConfiguration )
 {
     EXPECT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_NOT_READY );
+}
+
+TEST_F( LogicExpanderTest, IsReadyDoesNotImplyLaterControlBatchCompletion )
+{
+    logic_expander_ready                   = true;
+    logic_expander_config_state            = LOGIC_EXPANDER_CONFIG_READY;
+    LogicExpanderControlBatchId_T batch_id = 0U;
+
+    ASSERT_EQ( LOGIC_EXPANDER_Begin_Control_Batch( &batch_id ), LOGIC_EXPANDER_STATUS_OK );
+    ASSERT_NE( batch_id, 0U );
+    EXPECT_TRUE( LOGIC_EXPANDER_Is_Ready() );
+    EXPECT_EQ( LOGIC_EXPANDER_Get_Control_Batch_Status( batch_id ),
+               LOGIC_EXPANDER_CONTROL_BATCH_OPEN );
+}
+
+TEST_F( LogicExpanderTest, ControlBatchCompletesOnlyAfterPhysicalTransferSuccess )
+{
+    logic_expander_ready                   = true;
+    logic_expander_config_state            = LOGIC_EXPANDER_CONFIG_READY;
+    LogicExpanderControlBatchId_T batch_id = 0U;
+
+    ASSERT_EQ( LOGIC_EXPANDER_Begin_Control_Batch( &batch_id ), LOGIC_EXPANDER_STATUS_OK );
+    ASSERT_EQ(
+        LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DI_1, LOGIC_EXPANDER_PORT_A, 0U, true ),
+        LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, 3U ) )
+        .WillOnce( Return( HW_I2C_STATUS_OK ) );
+    ASSERT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
+    ASSERT_EQ( LOGIC_EXPANDER_End_Control_Batch( batch_id ), LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ( LOGIC_EXPANDER_Get_Control_Batch_Status( batch_id ),
+               LOGIC_EXPANDER_CONTROL_BATCH_PENDING );
+
+    EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+    EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( HW_I2C_CHANNEL_FMPI2C1 ) )
+        .WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_i2c, GetAndClearTransferResult( HW_I2C_CHANNEL_FMPI2C1 ) )
+        .WillOnce( Return( HW_I2C_STATUS_OK ) );
+    EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ( LOGIC_EXPANDER_Get_Control_Batch_Status( batch_id ),
+               LOGIC_EXPANDER_CONTROL_BATCH_COMPLETE );
+}
+
+TEST_F( LogicExpanderTest, ControlBatchLatchesAsynchronousTransferFailure )
+{
+    logic_expander_ready                   = true;
+    logic_expander_config_state            = LOGIC_EXPANDER_CONFIG_READY;
+    LogicExpanderControlBatchId_T batch_id = 0U;
+
+    ASSERT_EQ( LOGIC_EXPANDER_Begin_Control_Batch( &batch_id ), LOGIC_EXPANDER_STATUS_OK );
+    ASSERT_EQ(
+        LOGIC_EXPANDER_Load_Control_Bit( LOGIC_EXPANDER_DI_1, LOGIC_EXPANDER_PORT_A, 0U, true ),
+        LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_CALL( mock_hw_i2c, EnqueueMasterTransmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, _, 3U ) )
+        .WillOnce( Return( HW_I2C_STATUS_OK ) );
+    ASSERT_EQ( LOGIC_EXPANDER_Send_Control_Bits(), LOGIC_EXPANDER_STATUS_OK );
+    ASSERT_EQ( LOGIC_EXPANDER_End_Control_Batch( batch_id ), LOGIC_EXPANDER_STATUS_OK );
+
+    EXPECT_CALL( mock_hw_i2c, ServiceTransactionQueue( HW_I2C_CHANNEL_FMPI2C1 ) );
+    EXPECT_CALL( mock_hw_i2c, IsTransactionQueueComplete( HW_I2C_CHANNEL_FMPI2C1 ) )
+        .WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_i2c, GetAndClearTransferResult( HW_I2C_CHANNEL_FMPI2C1 ) )
+        .WillOnce( Return( HW_I2C_STATUS_ERROR ) );
+    EXPECT_EQ( LOGIC_EXPANDER_Process(), LOGIC_EXPANDER_STATUS_ERROR );
+    EXPECT_EQ( LOGIC_EXPANDER_Get_Control_Batch_Status( batch_id ),
+               LOGIC_EXPANDER_CONTROL_BATCH_FAILED );
+}
+
+TEST_F( LogicExpanderTest, ControlBatchIdentityRejectsStaleObservers )
+{
+    logic_expander_ready                   = true;
+    logic_expander_config_state            = LOGIC_EXPANDER_CONFIG_READY;
+    LogicExpanderControlBatchId_T batch_id = 0U;
+
+    ASSERT_EQ( LOGIC_EXPANDER_Begin_Control_Batch( &batch_id ), LOGIC_EXPANDER_STATUS_OK );
+    ASSERT_EQ( LOGIC_EXPANDER_End_Control_Batch( batch_id ), LOGIC_EXPANDER_STATUS_OK );
+    EXPECT_EQ( LOGIC_EXPANDER_Get_Control_Batch_Status( batch_id + 1U ),
+               LOGIC_EXPANDER_CONTROL_BATCH_UNKNOWN );
 }
 
 TEST_F( LogicExpanderTest, SendControlBitsEnqueuesOnlyDirtyExpanders )

@@ -92,6 +92,19 @@ typedef enum LogicExpanderI2CStatus_T
     LOGIC_EXPANDER_I2C_STATUS_OVERFLOW,
 } LogicExpanderI2CStatus_T;
 
+/** Completion state for one explicitly tracked group of control writes. */
+typedef enum LogicExpanderControlBatchStatus_T
+{
+    LOGIC_EXPANDER_CONTROL_BATCH_UNKNOWN = 0,
+    LOGIC_EXPANDER_CONTROL_BATCH_OPEN,
+    LOGIC_EXPANDER_CONTROL_BATCH_PENDING,
+    LOGIC_EXPANDER_CONTROL_BATCH_COMPLETE,
+    LOGIC_EXPANDER_CONTROL_BATCH_FAILED,
+} LogicExpanderControlBatchStatus_T;
+
+/** Opaque identity of one tracked group of control writes. Zero is invalid. */
+typedef uint32_t LogicExpanderControlBatchId_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -100,12 +113,24 @@ typedef enum LogicExpanderI2CStatus_T
 /**
  * @brief Create the mutex protecting shared expander state.
  *
- * Must be called before any other module API. The background task performs this
- * initialisation once at task startup.
+ * Must be called before any other module API. Application startup performs this
+ * initialisation before the scheduler starts.
  *
  * @return true when the mutex is available.
  */
 bool LOGIC_EXPANDER_Init( void );
+
+/**
+ * @brief Reports whether asynchronous self-configuration has completed.
+ *
+ * @return true only after initial MCP23017 register self-configuration has
+ *         completed successfully.
+ *
+ * @note This says nothing about later control writes submitted by peripheral
+ *       configuration or startup. Use the control-batch API to establish
+ *       physical completion of a specific group of OLAT writes.
+ */
+bool LOGIC_EXPANDER_Is_Ready( void );
 
 /**
  * @brief Initialize and configure all active MCP23017 devices.
@@ -169,6 +194,29 @@ LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expa
  * @return LOGIC_EXPANDER_STATUS_ERROR on communication error
  */
 LogicExpanderStatus_T LOGIC_EXPANDER_Send_Control_Bits( void );
+
+/**
+ * @brief Begins tracking physical completion of a group of control writes.
+ *
+ * Only one batch may be active. All earlier output work must have completed.
+ * Calls to Load/Send between Begin and End belong to this batch.
+ */
+LogicExpanderStatus_T LOGIC_EXPANDER_Begin_Control_Batch( LogicExpanderControlBatchId_T* batch_id );
+
+/** @brief Seals the current batch after all of its writes have been submitted. */
+LogicExpanderStatus_T LOGIC_EXPANDER_End_Control_Batch( LogicExpanderControlBatchId_T batch_id );
+
+/** @brief Returns the current tracked control-batch completion state. */
+LogicExpanderControlBatchStatus_T
+LOGIC_EXPANDER_Get_Control_Batch_Status( LogicExpanderControlBatchId_T batch_id );
+
+/**
+ * @brief Stops tracking the current batch without cancelling queued I2C work.
+ *
+ * Intended for lifecycle rollback after the caller has already rejected the
+ * operation. A new batch remains BUSY until outstanding writes have drained.
+ */
+void LOGIC_EXPANDER_Cancel_Control_Batch( LogicExpanderControlBatchId_T batch_id );
 
 /**
  * @brief Master transmit on the internal FMPI2C1 channel.

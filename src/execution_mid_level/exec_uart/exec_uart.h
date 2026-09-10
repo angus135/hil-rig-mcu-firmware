@@ -125,6 +125,9 @@ bool EXEC_UART_Start_Channel( ExecUartChannel_T channel );
  */
 bool EXEC_UART_Stop_Channel( ExecUartChannel_T channel );
 
+/** Cancel pending TX data and stop a channel for timeout/fault cleanup. */
+bool EXEC_UART_Abort_Channel( ExecUartChannel_T channel );
+
 /** @brief Return true when the channel is configured or started. */
 bool EXEC_UART_Is_Configured( ExecUartChannel_T channel );
 

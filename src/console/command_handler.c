@@ -22,7 +22,6 @@
 #include "exec_i2c.h"
 #include "logic_expander.h"
 #include "command_helpers.h"
-#include "execution_manager.h"
 #include "hw_gpio.h"
 #include "hw_spi.h"
 #include "exec_analogue_output.h"
@@ -46,6 +45,8 @@
 #include "subsystem_command_apis/console_pwm_capture.h"
 #include "subsystem_command_apis/console_can.h"
 #include "subsystem_command_apis/console_flash_manager.h"
+#include "subsystem_command_apis/console_run_state_manager.h"
+#include "subsystem_command_apis/console_test_configuration.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -97,7 +98,6 @@ typedef struct
  */
 static void CONSOLE_Command_Help( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Echo( uint16_t argc, char* argv[] );
-static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_LED( uint16_t argc, char* argv[] );
 static void CONSOLE_Command_Set_Pin( uint16_t argc, char** argv );
@@ -128,7 +128,6 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"?",                   CONSOLE_Command_Help,                   "Show available commands."},
     {"help",                CONSOLE_Command_Help,                   "Show available commands."},
     {"echo",                CONSOLE_Command_Echo,                   "Echoes the provided arguments."},
-    {"execution_manager",   CONSOLE_Command_Test_Scheduler,         "Starts the test scheduler."},
     {"clear",               CONSOLE_Command_Clear,                  "Clears the console."},
     {"led",                 CONSOLE_Command_LED,                    "Toggle an LED. Usage: led toggle <USER_LED_RED_0..USER_LED_RED_5|USER_LED_BLUE_0..USER_LED_BLUE_5>"},
     {"uart",                CONSOLE_UART_Command_Handler,           "Configuring Channels and Rx/Tx loopback testing for Uart"},
@@ -146,6 +145,8 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"pwm_out",             CONSOLE_Command_PWM_Output,             "Configure, start, stop, and inspect PWM outputs"},
     {"usb_test",            CONSOLE_Command_USB_Test,               "Testing basic USB functionality"},
     {"flash",               CONSOLE_FlashManager_Command,           "External Flash and Flash Manager hardware bring-up"},
+    {"run_state",           CONSOLE_RunStateManager_Command,        "Manual lifecycle and execution-timer control"},
+    {"test_config",         CONSOLE_TestConfiguration_Command,      "Commit DUT lifecycle test configurations"},
 
 };
 
@@ -619,6 +620,7 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
     if ( argc < 2 )
     {
         CONSOLE_Printf( "Usage:\r\n" );
+        CONSOLE_Printf( "  expander status      - Show initialization readiness\r\n" );
         CONSOLE_Printf( "  expander config      - Initialize all active expanders\r\n" );
         CONSOLE_Printf( "  expander set <addr> <port> <value> - Set control bits (e.g. expander "
                         "set 0x20 A 0xFF)\r\n" );
@@ -626,6 +628,13 @@ static void CONSOLE_Command_Expander( uint16_t argc, char* argv[] )
             "  expander on         - Set every output on every expander to 1 and send\r\n" );
         CONSOLE_Printf( "  expander send       - Send all staged bits to hardware\r\n" );
         CONSOLE_Printf( "  expander reset      - Reset all bits to 0 and send\r\n" );
+        return;
+    }
+
+    if ( strcmp( argv[1], "status" ) == 0 )
+    {
+        CONSOLE_Printf( "Logic Expander: %s\r\n",
+                        LOGIC_EXPANDER_Is_Ready() ? "READY" : "NOT READY" );
         return;
     }
 
@@ -1152,76 +1161,6 @@ static void CONSOLE_Command_Echo( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "%s%s", argv[i], ( i < ( argc - 1U ) ) ? " " : "" );
     }
     CONSOLE_Printf( "\r\n" );
-}
-
-/**
- * @brief Starts the test scheduler
- *
- * @param argc - The number of arguments
- * @param argv - pointer to each argument string
- *
- * @returns void
- */
-static void CONSOLE_Command_Test_Scheduler( uint16_t argc, char* argv[] )
-{
-    if ( argc < 2 || argv[1] == NULL )
-    {
-        CONSOLE_Printf( "Usage:\r\n" );
-        CONSOLE_Printf( "  execution_manager start\r\n" );
-        CONSOLE_Printf( "  execution_manager stop\r\n" );
-        CONSOLE_Printf( "  execution_manager frequency <desired frequency>\r\n" );
-        CONSOLE_Printf( "    Note: Desired frequencies can only be 100Hz, 1kHz or 10kHz\r\n" );
-        return;
-    }
-
-    if ( strcmp( argv[1], "start" ) == 0 )
-    {
-        EXECUTION_MANAGER_Init();
-        EXECUTION_MANAGER_Start();
-    }
-    else if ( strcmp( argv[1], "stop" ) == 0 )
-    {
-        EXECUTION_MANAGER_Stop();
-    }
-    else if ( strcmp( argv[1], "frequency" ) == 0 )
-    {
-        if ( argc < 3 || argv[2] == NULL )
-        {
-            CONSOLE_Printf( "Usage:\r\n" );
-            CONSOLE_Printf( "  execution_manager frequency <desired frequency>\r\n" );
-            CONSOLE_Printf( "    Note: Desired frequencies can only be 100Hz, 1kHz or 10kHz\r\n" );
-            return;
-        }
-
-        if ( ( strcmp( argv[2], "10k" ) == 0 ) || ( strcmp( argv[2], "10000" ) == 0 ) )
-        {
-            EXECUTION_MANAGER_Set_Frequency_Mode( FREQUENCY_10KHZ );
-            CONSOLE_Printf( "Scheduler Frequency is set to %sHz\r\n", argv[2] );
-        }
-        else if ( ( strcmp( argv[2], "1k" ) == 0 ) || ( strcmp( argv[2], "1000" ) == 0 ) )
-        {
-            EXECUTION_MANAGER_Set_Frequency_Mode( FREQUENCY_1KHZ );
-            CONSOLE_Printf( "Scheduler Frequency is set to %sHz\r\n", argv[2] );
-        }
-        else if ( strcmp( argv[2], "100" ) == 0 )
-        {
-            EXECUTION_MANAGER_Set_Frequency_Mode( FREQUENCY_100HZ );
-            CONSOLE_Printf( "Scheduler Frequency is set to %sHz\r\n", argv[2] );
-        }
-        else
-        {
-            CONSOLE_Printf( "Invalid: Desired frequencies can only be 100Hz, 1kHz or 10kHz\r\n" );
-        }
-    }
-    else
-    {
-        CONSOLE_Printf( "Invalid argument: %s\r\n", argv[1] );
-        CONSOLE_Printf( "Usage:\r\n" );
-        CONSOLE_Printf( "  execution_manager start\r\n" );
-        CONSOLE_Printf( "  execution_manager stop\r\n" );
-        CONSOLE_Printf( "  execution_manager frequency <desired frequency>\r\n" );
-        CONSOLE_Printf( "    Note: Desired frequencies can only be 100Hz, 1kHz or 10kHz\r\n" );
-    }
 }
 
 static void CONSOLE_Command_Clear( uint16_t argc, char* argv[] )

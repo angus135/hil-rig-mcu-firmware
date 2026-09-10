@@ -29,7 +29,6 @@ target_link_libraries(execution_manager
         project_warnings
         cubeide_hal
         rtos
-        hw_timer
         hw_gpio
 )
 

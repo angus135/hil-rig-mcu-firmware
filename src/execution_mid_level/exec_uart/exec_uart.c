@@ -392,6 +392,28 @@ bool EXEC_UART_Stop_Channel( ExecUartChannel_T channel )
     return true;
 }
 
+bool EXEC_UART_Abort_Channel( ExecUartChannel_T channel )
+{
+    if ( !EXEC_UART_Is_Valid_Channel( channel ) )
+    {
+        return false;
+    }
+
+    ExecUartChannelState_T* state = &exec_uart_channel_states[channel];
+    if ( state->lifecycle_state != EXEC_UART_STATE_STARTED )
+    {
+        return false;
+    }
+
+    if ( !HW_UART_Abort_Channel( exec_uart_hardware_map[channel].hw_channel ) )
+    {
+        return false;
+    }
+
+    state->lifecycle_state = EXEC_UART_STATE_CONFIGURED;
+    return true;
+}
+
 bool EXEC_UART_Is_Configured( ExecUartChannel_T channel )
 {
     if ( !EXEC_UART_Is_Valid_Channel( channel ) )

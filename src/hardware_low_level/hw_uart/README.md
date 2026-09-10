@@ -111,6 +111,11 @@ Key functions:
 | `HW_UART_Tx_Load_Buffer()` | Queue a TX payload into the TX ring buffer |
 | `HW_UART_Tx_Trigger()` | Start or continue the TX DMA pump |
 | `HW_UART_Is_Tx_Complete()` | Report full TX completion |
+| `HW_UART_Abort_Channel()` | Discard pending TX and terminate a started DUT channel |
+
+`HW_UART_Stop_Channel()` is graceful and refuses to discard queued or active
+TX data. `HW_UART_Abort_Channel()` is the explicit safety path used after a
+lifecycle timeout or fault.
 
 The console UART API is declared in `hw_uart_console.h`.
 

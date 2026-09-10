@@ -367,6 +367,19 @@ TEST_F( ExecCANTest, StartFailureLeavesConfiguredChannelStopped )
     EXPECT_FALSE( EXEC_CAN_Is_Started( EXEC_CAN_CHANNEL_2 ) );
 }
 
+TEST_F( ExecCANTest, AbortCancelsPendingTransmissionThenStopsChannel )
+{
+    exec_can_state[EXEC_CAN_CHANNEL_1] = { true, true };
+    recover_results[0]                 = HW_CAN_RESULT_OK;
+    stop_results[0]                    = HW_CAN_RESULT_OK;
+
+    EXPECT_EQ( EXEC_CAN_Abort_Channel( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_RESULT_OK );
+    EXPECT_EQ( recover_call_count[0], 1U );
+    EXPECT_EQ( stop_call_count[0], 1U );
+    EXPECT_TRUE( EXEC_CAN_Is_Configured( EXEC_CAN_CHANNEL_1 ) );
+    EXPECT_FALSE( EXEC_CAN_Is_Started( EXEC_CAN_CHANNEL_1 ) );
+}
+
 TEST_F( ExecCANTest, CombinedTransmitRoutesBothChannelsAndConvertsPackets )
 {
     EXEC_CAN_Packet_T packets[2] = {

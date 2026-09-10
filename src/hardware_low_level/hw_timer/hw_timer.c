@@ -90,6 +90,7 @@
  * Hardware bring-up may replace it only while TIM4 is stopped.
  */
 static HW_TIMER_ExecutionCallback_T volatile execution_timer_callback = NULL;
+static HW_TIMER_ExecutionGuard_T volatile execution_timer_guard       = NULL;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -113,6 +114,13 @@ void EXECUTION_MANAGER_TIMER_IRQ_HANDLER( void )
     if ( LL_TIM_IsActiveFlag_UPDATE( EXECUTION_MANAGER_TIMER_INSTANCE ) )
     {
         LL_TIM_ClearFlag_UPDATE( EXECUTION_MANAGER_TIMER_INSTANCE );
+
+        HW_TIMER_ExecutionGuard_T guard = execution_timer_guard;
+
+        if ( guard != NULL && !guard() )
+        {
+            return;
+        }
 
         HW_TIMER_ExecutionCallback_T callback = execution_timer_callback;
 
@@ -452,6 +460,11 @@ void HW_TIMER_Stop_Timer( Timer_T timer )
 void HW_TIMER_Set_Execution_Callback( HW_TIMER_ExecutionCallback_T callback )
 {
     execution_timer_callback = callback;
+}
+
+void HW_TIMER_Set_Execution_Guard( HW_TIMER_ExecutionGuard_T guard )
+{
+    execution_timer_guard = guard;
 }
 
 uint32_t HW_TIMER_Get_Clock_Hz( Timer_T timer )

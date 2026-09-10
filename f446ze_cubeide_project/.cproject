@@ -79,6 +79,7 @@
 									<listOptionValue builtIn="false" value="../../src/logic_expander"/>
 									<listOptionValue builtIn="false" value="../../src/power"/>
 									<listOptionValue builtIn="false" value="../../src/run_state_manager"/>
+									<listOptionValue builtIn="false" value="../../src/test_configuration"/>
 									<listOptionValue builtIn="false" value="../../src/system_monitoring"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_gpio"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_timer"/>
@@ -142,6 +143,7 @@
 									<listOptionValue builtIn="false" value="../../src/power"/>
 									<listOptionValue builtIn="false" value="../../src/rtos"/>
 									<listOptionValue builtIn="false" value="../../src/run_state_manager"/>
+									<listOptionValue builtIn="false" value="../../src/test_configuration"/>
 									<listOptionValue builtIn="false" value="../../src/system_monitoring"/>
 									<listOptionValue builtIn="false" value="../USB_DEVICE/App"/>
 									<listOptionValue builtIn="false" value="../USB_DEVICE/Target"/>
@@ -265,6 +267,7 @@
 									<listOptionValue builtIn="false" value="../../src/logic_expander"/>
 									<listOptionValue builtIn="false" value="../../src/power"/>
 									<listOptionValue builtIn="false" value="../../src/run_state_manager"/>
+									<listOptionValue builtIn="false" value="../../src/test_configuration"/>
 									<listOptionValue builtIn="false" value="../../src/system_monitoring"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_gpio"/>
 									<listOptionValue builtIn="false" value="../../src/hardware_low_level/hw_timer"/>
@@ -329,6 +332,7 @@
 									<listOptionValue builtIn="false" value="../../src/power"/>
 									<listOptionValue builtIn="false" value="../../src/rtos"/>
 									<listOptionValue builtIn="false" value="../../src/run_state_manager"/>
+									<listOptionValue builtIn="false" value="../../src/test_configuration"/>
 									<listOptionValue builtIn="false" value="../../src/system_monitoring"/>
 									<listOptionValue builtIn="false" value="../USB_DEVICE/App"/>
 									<listOptionValue builtIn="false" value="../USB_DEVICE/Target"/>

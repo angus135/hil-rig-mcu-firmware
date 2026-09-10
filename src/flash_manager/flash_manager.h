@@ -103,6 +103,9 @@ extern "C"
  *   -> Host Interface calls ReadResultBytes() until END_OF_STREAM
  *   -> FinishResultTransfer()
  * IDLE
+ *
+ * Alternatively, completed results may be explicitly discarded:
+ * RESULTS_READY -> DiscardResults() -> IDLE
  */
 typedef enum
 {
@@ -139,6 +142,9 @@ typedef enum
     /** Stored results are being prefetched and copied to the Host Interface. */
     FLASH_MANAGER_STATE_TRANSFERRING_RESULTS,
 
+    /** The Flash Manager task is abandoning an interrupted execution session. */
+    FLASH_MANAGER_STATE_ABORTING,
+
     /**
      * An unrecoverable manager, buffer, or NAND operation has failed.
      * Partially persisted session data and buffer leases are not currently
@@ -165,7 +171,10 @@ typedef enum
     FLASH_MANAGER_REQUEST_TASK_NOT_READY,
 
     /** The task notification failed and the manager entered FAULT. */
-    FLASH_MANAGER_REQUEST_NOTIFY_FAILED
+    FLASH_MANAGER_REQUEST_NOTIFY_FAILED,
+
+    /** A synchronous buffer or external-flash operation failed. */
+    FLASH_MANAGER_REQUEST_INTERNAL_ERROR
 } FlashManagerRequestStatus_T;
 
 /* Execution result logging. */
@@ -375,6 +384,9 @@ typedef enum
 
 } FlashManagerResultTransferStatus_T;
 
+/** Receives notification when Flash Manager enters FAULT. */
+typedef void ( *FlashManagerFaultCallback_T )( bool from_isr );
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -411,6 +423,14 @@ void FLASH_MANAGER_Task( void* parameters );
  *       APIs to other tasks.
  */
 bool FLASH_MANAGER_Init( void );
+
+/**
+ * @brief Registers the system fault handoff used by task and ISR fault paths.
+ *
+ * @param callback Callback invoked after FAULT is latched, or NULL to remove it.
+ * @note When from_isr is true, the callback must use only ISR-safe APIs.
+ */
+void FLASH_MANAGER_SetFaultCallback( FlashManagerFaultCallback_T callback );
 
 /**
  * @brief Reads the current Flash Manager lifecycle state.
@@ -636,6 +656,37 @@ FlashManagerRequestStatus_T FLASH_MANAGER_RequestExecutionPreparation( void );
  *       remain active.
  */
 FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void );
+
+/**
+ * @brief Requests safe abandonment of an active execution/result session.
+ *
+ * The request moves a runtime state to ABORTING and wakes the Flash Manager
+ * task. The task invalidates instruction-read and result-buffer ownership,
+ * abandons incomplete results, preserves the committed instruction image, and
+ * returns to IDLE. An IDLE manager treats the request as an idempotent success.
+ *
+ * @return Request acceptance status.
+ *
+ * @note The RSM must stop the execution timer and ensure the execution ISR has
+ *       returned before calling this function.
+ * @note This API does not abort Host Interface instruction uploads.
+ */
+FlashManagerRequestStatus_T FLASH_MANAGER_RequestAbortSession( void );
+
+/**
+ * @brief Deliberately abandons a completed result stream.
+ *
+ * This resets result-buffer ownership, starts a fresh empty result-storage
+ * session, and changes RESULTS_READY to IDLE. Uploaded instructions are
+ * retained so the Run State Manager may repeat the configured test.
+ *
+ * @return Request completion status.
+ *
+ * @note Call from task context only while the manager is RESULTS_READY.
+ * @note This operation is destructive: the abandoned result stream is no
+ *       longer available through the result-transfer API.
+ */
+FlashManagerRequestStatus_T FLASH_MANAGER_DiscardResults( void );
 
 /* Host Interface result retrieval. */
 
