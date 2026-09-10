@@ -523,7 +523,12 @@ TEST_F( RunStateManagerTest, RepeatRetainsConfigurationAndReturnsToArmed )
 {
     run_state = RUN_STATE_RESULTS_READY;
     Process( RUN_STATE_REQUEST_REPEAT );
+    EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_CONFIGURATION, pending_operation );
+
+    RUN_STATE_MANAGER_ProcessPendingOperation();
     EXPECT_EQ( RUN_STATE_ARMED, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_NONE, pending_operation );
     EXPECT_FALSE( configuration_cleared );
 }
 
