@@ -23,6 +23,7 @@
 #include "exec_spi.h"
 #include "hw_timer.h"
 #include "run_state_manager.h"
+#include "rtos_config.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -63,6 +64,7 @@ static const char* CONSOLE_RunStateManager_RequestResultName( RunStateRequestRes
 static void        CONSOLE_RunStateManager_PrintUsage( void );
 static void        CONSOLE_RunStateManager_PrintRequestResult( bool accepted );
 static bool        CONSOLE_RunStateManager_ParseU32( const char* text, uint32_t* value );
+static void        CONSOLE_RunStateManager_WaitForState( bool accepted, RunState_T expected );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -275,7 +277,7 @@ static void CONSOLE_RunStateManager_PrintUsage( void )
     CONSOLE_Printf( "Usage:\r\n" );
     CONSOLE_Printf( "  run_state status\r\n" );
     CONSOLE_Printf( "  run_state frequency <100|1000|10000>\r\n" );
-    CONSOLE_Printf( "  run_state execute <tick_count> [maximum_result_bytes]\r\n" );
+    CONSOLE_Printf( "  run_state execute <tick_count>\r\n" );
     CONSOLE_Printf( "  run_state <receive|configure|execution_complete>\r\n" );
     CONSOLE_Printf( "  run_state <transfer|transfer_complete|repeat|discard|fault|reset>\r\n" );
 }
@@ -313,6 +315,39 @@ static void CONSOLE_RunStateManager_PrintRequestResult( bool accepted )
     else
     {
         CONSOLE_Printf( "Run state request rejected: task is not ready.\r\n" );
+    }
+}
+
+static void CONSOLE_RunStateManager_WaitForState( bool accepted, RunState_T expected )
+{
+    if ( !accepted )
+    {
+        CONSOLE_RunStateManager_PrintRequestResult( false );
+        return;
+    }
+
+    CONSOLE_RunStateManager_PrintRequestResult( true );
+    const TickType_t start = xTaskGetTickCount();
+    const TickType_t timeout = pdMS_TO_TICKS( 120000U );
+    for ( ;; )
+    {
+        RunStateManagerStatus_T status = { 0 };
+        RUN_STATE_MANAGER_GetStatus( &status );
+        if ( status.state == expected )
+        {
+            CONSOLE_Printf( "Run state transition complete: %s.\r\n",
+                            CONSOLE_RunStateManager_StateName( expected ) );
+            return;
+        }
+        if ( status.state == RUN_STATE_FAULT
+             || ( xTaskGetTickCount() - start ) >= timeout )
+        {
+            CONSOLE_Printf( "Run state transition did not reach %s (current=%s).\r\n",
+                            CONSOLE_RunStateManager_StateName( expected ),
+                            CONSOLE_RunStateManager_StateName( status.state ) );
+            return;
+        }
+        vTaskDelay( pdMS_TO_TICKS( 10U ) );
     }
 }
 
@@ -355,21 +390,19 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
         return;
     }
 
-    if ( ( argc >= 3U ) && ( argc <= 4U ) && ( strcmp( argv[1], "execute" ) == 0 ) )
+    if ( ( argc == 3U ) && ( strcmp( argv[1], "execute" ) == 0 ) )
     {
         RunStateExecutionRequest_T request = { 0U, 0U };
         if ( !CONSOLE_RunStateManager_ParseU32( argv[2], &request.tick_count )
              || ( request.tick_count == 0U )
-             || ( ( argc == 4U )
-                  && !CONSOLE_RunStateManager_ParseU32( argv[3],
-                                                        &request.maximum_result_length_bytes ) ) )
+             )
         {
             CONSOLE_RunStateManager_PrintUsage();
             return;
         }
 
-        CONSOLE_RunStateManager_PrintRequestResult(
-            RUN_STATE_MANAGER_RequestExecution( &request ) );
+        CONSOLE_RunStateManager_WaitForState( RUN_STATE_MANAGER_RequestExecution( &request ),
+                                              RUN_STATE_RESULTS_READY );
         return;
     }
     if ( argc != 2U )
@@ -511,11 +544,13 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
     }
     else if ( strcmp( argv[1], "receive" ) == 0 )
     {
-        CONSOLE_RunStateManager_PrintRequestResult( RUN_STATE_MANAGER_RequestPackageReceive() );
+        CONSOLE_RunStateManager_WaitForState( RUN_STATE_MANAGER_RequestPackageReceive(),
+                                              RUN_STATE_TEST_PACKAGE_RECEIVE );
     }
     else if ( strcmp( argv[1], "configure" ) == 0 )
     {
-        CONSOLE_RunStateManager_PrintRequestResult( RUN_STATE_MANAGER_RequestConfiguration() );
+        CONSOLE_RunStateManager_WaitForState( RUN_STATE_MANAGER_RequestConfiguration(),
+                                              RUN_STATE_ARMED );
     }
     else if ( strcmp( argv[1], "execution_complete" ) == 0 )
     {
@@ -536,7 +571,8 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
     }
     else if ( strcmp( argv[1], "discard" ) == 0 )
     {
-        CONSOLE_RunStateManager_PrintRequestResult( RUN_STATE_MANAGER_RequestDiscardResults() );
+        CONSOLE_RunStateManager_WaitForState( RUN_STATE_MANAGER_RequestDiscardResults(),
+                                              RUN_STATE_IDLE );
     }
     else if ( strcmp( argv[1], "fault" ) == 0 )
     {
@@ -545,7 +581,7 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
     }
     else if ( strcmp( argv[1], "reset" ) == 0 )
     {
-        CONSOLE_RunStateManager_PrintRequestResult( RUN_STATE_MANAGER_RequestReset() );
+        CONSOLE_RunStateManager_WaitForState( RUN_STATE_MANAGER_RequestReset(), RUN_STATE_IDLE );
     }
     else
     {

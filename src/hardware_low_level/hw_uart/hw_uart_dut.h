@@ -88,6 +88,9 @@ extern "C"
 
 #define HW_UART_TX_BUFFER_SIZE 256U
 
+/** Lowest baud supported by the HIL-RIG UART driver contract. */
+#define HW_UART_MIN_BAUD_RATE 2400U
+
 /* Number of UART channels supported by the hardware */
 #define HW_UART_CHANNEL_COUNT 2U
 
@@ -214,7 +217,8 @@ typedef struct
  *
  * @note   Baud-rate validation reads the selected USART's live peripheral
  *         clock and rejects values whose oversampling-by-16 BRR divider cannot
- *         be represented. No fixed minimum baud is imposed.
+ *         be represented. A 2400-baud practical floor is currently imposed;
+ *         TODO: investigate why 1200 baud fails during HAL initialisation.
  *
  * @note   The configuration is stored within the low-level driver and used
  *         later during start operations. This function does not enable RX or

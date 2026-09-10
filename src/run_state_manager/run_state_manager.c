@@ -17,6 +17,8 @@
  */
 #include "run_state_manager.h"
 #include "dut_driver_lifecycle.h"
+#include "exec_can.h"
+#include "exec_spi.h"
 #include "execution_manager.h"
 #include "flash_manager.h"
 #include "hw_timer.h"
@@ -26,10 +28,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define RUN_STATE_UART_DRAIN_TAIL_TICKS ( 20U )
-#define RUN_STATE_SPI_DRAIN_TAIL_TICKS ( 4U )
-#define RUN_STATE_CAN_DRAIN_TAIL_TICKS ( 4U )
-#define RUN_STATE_PWM_CAPTURE_TAIL_TICKS ( 2U )
+#define RUN_STATE_TAIL_MARGIN_NUMERATOR ( 120U )
+#define RUN_STATE_TAIL_MARGIN_DENOMINATOR ( 100U )
+#define RUN_STATE_UART_FRAME_BITS ( 10U )
+#define RUN_STATE_SPI_MAX_TRANSFER_BYTES ( 256U )
+#define RUN_STATE_CAN_FRAME_BITS ( 128U )
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -485,6 +488,91 @@ static bool RUN_STATE_MANAGER_EnterExecution( void )
 }
 
 /** Starts DUT drivers and waits separately for external-interface completion. */
+static uint32_t RUN_STATE_MANAGER_GetFrequencyHz( void )
+{
+    return frequency_mode == RUN_STATE_FREQUENCY_100HZ
+               ? 100U
+               : frequency_mode == RUN_STATE_FREQUENCY_10KHZ ? 10000U : 1000U;
+}
+
+static uint32_t RUN_STATE_MANAGER_CalculateDrainTailTicks( void )
+{
+    uint64_t required_ticks = 0U;
+    const uint32_t frequency_hz = RUN_STATE_MANAGER_GetFrequencyHz();
+
+    for ( uint32_t channel = 0U; channel < EXEC_UART_CHANNEL_COUNT; channel++ )
+    {
+        const ExecUartConfig_T* uart = &run_configuration.uart_channels[channel];
+        if ( !uart->is_enabled || !uart->tx_enabled || uart->baud_rate == 0U )
+        {
+            continue;
+        }
+
+        const uint64_t numerator = ( uint64_t )EXEC_UART_MAX_CHUNK_SIZE
+                                   * RUN_STATE_UART_FRAME_BITS * frequency_hz
+                                   * RUN_STATE_TAIL_MARGIN_NUMERATOR;
+        const uint64_t denominator = ( uint64_t )uart->baud_rate
+                                     * RUN_STATE_TAIL_MARGIN_DENOMINATOR;
+        const uint64_t ticks = ( numerator + denominator - 1U ) / denominator;
+        if ( ticks > required_ticks )
+        {
+            required_ticks = ticks;
+        }
+    }
+
+    for ( uint32_t channel = 0U; channel < EXEC_SPI_CHANNEL_COUNT; channel++ )
+    {
+        const ExecSPIConfig_T* spi = &run_configuration.spi_channels[channel];
+        if ( !spi->is_enabled )
+        {
+            continue;
+        }
+
+        static const uint32_t spi_baud_hz[EXEC_SPI_BAUD_COUNT] = {
+            [EXEC_SPI_BAUD_45MBIT] = 45000000U,
+            [EXEC_SPI_BAUD_22M5BIT] = 22500000U,
+            [EXEC_SPI_BAUD_11M25BIT] = 11250000U,
+            [EXEC_SPI_BAUD_5M625BIT] = 5625000U,
+            [EXEC_SPI_BAUD_2M813BIT] = 2813000U,
+            [EXEC_SPI_BAUD_1M406BIT] = 1406000U,
+            [EXEC_SPI_BAUD_703KBIT] = 703000U,
+            [EXEC_SPI_BAUD_352KBIT] = 352000U,
+        };
+        const uint32_t baud_hz = spi_baud_hz[spi->baud_rate];
+        const uint64_t numerator = ( uint64_t )RUN_STATE_SPI_MAX_TRANSFER_BYTES * 8U
+                                   * frequency_hz * RUN_STATE_TAIL_MARGIN_NUMERATOR;
+        const uint64_t denominator = ( uint64_t )baud_hz
+                                     * RUN_STATE_TAIL_MARGIN_DENOMINATOR;
+        const uint64_t ticks = ( numerator + denominator - 1U ) / denominator;
+        if ( ticks > required_ticks )
+        {
+            required_ticks = ticks;
+        }
+    }
+
+    for ( uint32_t channel = 0U; channel < EXEC_CAN_CHANNEL_COUNT; channel++ )
+    {
+        const EXEC_CAN_Config_T* can = &run_configuration.can_channels[channel];
+        if ( !can->is_enabled || can->bitrate == 0U )
+        {
+            continue;
+        }
+
+        const uint64_t numerator = ( uint64_t )EXEC_CAN_MAX_BATCH_SIZE
+                                   * RUN_STATE_CAN_FRAME_BITS * frequency_hz
+                                   * RUN_STATE_TAIL_MARGIN_NUMERATOR;
+        const uint64_t denominator = ( uint64_t )can->bitrate
+                                     * RUN_STATE_TAIL_MARGIN_DENOMINATOR;
+        const uint64_t ticks = ( numerator + denominator - 1U ) / denominator;
+        if ( ticks > required_ticks )
+        {
+            required_ticks = ticks;
+        }
+    }
+
+    return required_ticks > UINT32_MAX ? UINT32_MAX : ( uint32_t )required_ticks;
+}
+
 static bool RUN_STATE_MANAGER_BeginDriverStart( void )
 {
     if ( execution_abort_requested || requested_fault_reason != RUN_STATE_FAULT_NONE )
@@ -506,29 +594,7 @@ static bool RUN_STATE_MANAGER_BeginDriverStart( void )
      * asynchronous peripherals can complete and their measurements can be
      * collected without requiring callers to hand-tune the final tick.
      */
-    uint32_t execution_tail_ticks = 0U;
-    if ( driver_status.uart_enabled_mask != 0U )
-    {
-        execution_tail_ticks = RUN_STATE_UART_DRAIN_TAIL_TICKS;
-    }
-    if ( driver_status.spi_enabled_mask != 0U )
-    {
-        execution_tail_ticks = execution_tail_ticks < RUN_STATE_SPI_DRAIN_TAIL_TICKS
-                                    ? RUN_STATE_SPI_DRAIN_TAIL_TICKS
-                                    : execution_tail_ticks;
-    }
-    if ( driver_status.can_enabled_mask != 0U )
-    {
-        execution_tail_ticks = execution_tail_ticks < RUN_STATE_CAN_DRAIN_TAIL_TICKS
-                                    ? RUN_STATE_CAN_DRAIN_TAIL_TICKS
-                                    : execution_tail_ticks;
-    }
-    if ( driver_status.pwm_capture_enabled_mask != 0U )
-    {
-        execution_tail_ticks = execution_tail_ticks < RUN_STATE_PWM_CAPTURE_TAIL_TICKS
-                                    ? RUN_STATE_PWM_CAPTURE_TAIL_TICKS
-                                    : execution_tail_ticks;
-    }
+    const uint32_t execution_tail_ticks = RUN_STATE_MANAGER_CalculateDrainTailTicks();
 
     uint32_t effective_tick_count = execution_request.tick_count;
     if ( execution_tail_ticks > ( UINT32_MAX - effective_tick_count ) )
@@ -614,8 +680,85 @@ static bool RUN_STATE_MANAGER_BeginDriverShutdown( bool force_abort, bool clear_
  */
 static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void )
 {
+    const uint32_t result_header_bytes = sizeof( FlashManagerResultHeader_T );
+    const uint32_t tail_ticks = RUN_STATE_MANAGER_CalculateDrainTailTicks();
+    DutDriverLifecycleStatus_T driver_status = { 0 };
+    DUT_DRIVER_LIFECYCLE_GetStatus( &driver_status );
+
+    if ( execution_request.tick_count > ( UINT32_MAX - tail_ticks ) )
+    {
+        RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION );
+        return false;
+    }
+
+    const uint32_t effective_ticks = execution_request.tick_count + tail_ticks;
+    uint32_t       result_budget   = 0U;
+    const uint32_t frequency_hz    = frequency_mode == RUN_STATE_FREQUENCY_100HZ
+                                         ? 100U
+                                         : frequency_mode == RUN_STATE_FREQUENCY_10KHZ ? 10000U
+                                                                                       : 1000U;
+    const uint64_t duration_ms = ( ( uint64_t )effective_ticks * 1000U ) / frequency_hz;
+
+#define RUN_STATE_ADD_RESULT_BYTES( bytes )                                      \
+    do                                                                            \
+    {                                                                             \
+        if ( ( bytes ) > ( UINT32_MAX - result_budget ) )                         \
+        {                                                                         \
+            RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION ); \
+            return false;                                                         \
+        }                                                                         \
+        result_budget += ( uint32_t )( bytes );                                   \
+    } while ( 0 )
+
+    if ( driver_status.analogue_input_enabled )
+    {
+        RUN_STATE_ADD_RESULT_BYTES( ( uint64_t )effective_ticks
+                                     * ( result_header_bytes + 2U * sizeof( uint32_t ) ) );
+    }
+    if ( driver_status.digital_inputs_enabled )
+    {
+        RUN_STATE_ADD_RESULT_BYTES( ( uint64_t )effective_ticks
+                                     * ( result_header_bytes + sizeof( uint32_t ) ) );
+    }
+    for ( uint32_t channel = 0U; channel < EXEC_PWM_CAPTURE_CHANNEL_COUNT; channel++ )
+    {
+        if ( ( driver_status.pwm_capture_enabled_mask & ( 1UL << channel ) ) != 0U )
+        {
+            RUN_STATE_ADD_RESULT_BYTES( ( uint64_t )effective_ticks
+                                         * ( result_header_bytes + 2U * sizeof( uint32_t ) ) );
+        }
+    }
+    for ( uint32_t channel = 0U; channel < EXEC_UART_CHANNEL_COUNT; channel++ )
+    {
+        const ExecUartConfig_T* uart = &run_configuration.uart_channels[channel];
+        if ( uart->is_enabled && uart->rx_enabled )
+        {
+            const uint64_t wire_bytes = ( ( uint64_t )uart->baud_rate * duration_ms ) / 10000U;
+            RUN_STATE_ADD_RESULT_BYTES( wire_bytes + ( ( uint64_t )effective_ticks
+                                                        * result_header_bytes ) );
+        }
+    }
+    for ( uint32_t channel = 0U; channel < EXEC_SPI_CHANNEL_COUNT; channel++ )
+    {
+        if ( ( driver_status.spi_enabled_mask & ( 1UL << channel ) ) != 0U )
+        {
+            RUN_STATE_ADD_RESULT_BYTES( ( uint64_t )effective_ticks
+                                         * ( result_header_bytes + 256U ) );
+        }
+    }
+    for ( uint32_t channel = 0U; channel < EXEC_CAN_CHANNEL_COUNT; channel++ )
+    {
+        if ( ( driver_status.can_enabled_mask & ( 1UL << channel ) ) != 0U )
+        {
+            RUN_STATE_ADD_RESULT_BYTES( ( uint64_t )effective_ticks
+                                         * ( result_header_bytes + EXEC_CAN_MAX_PAYLOAD_SIZE ) );
+        }
+    }
+
+#undef RUN_STATE_ADD_RESULT_BYTES
+
     FlashManagerRequestStatus_T status =
-        FLASH_MANAGER_RequestExecutionPreparation( execution_request.maximum_result_length_bytes );
+        FLASH_MANAGER_RequestExecutionPreparation( result_budget );
 
     if ( status == FLASH_MANAGER_REQUEST_OK )
     {
