@@ -454,9 +454,9 @@ TEST_F( ExecSPITest, AbortChannelTerminatesWithoutWaitingForTransmissionCompleti
     using ::testing::Return;
 
     const ExecSPIConfig_T config = MakeEnabledConfig();
-    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_0, _ ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_spi, ConfigureChannel( SPI_CHANNEL_1, _ ) ).WillOnce( Return( true ) );
     ASSERT_TRUE( EXEC_SPI_Configure_Channel( EXEC_SPI_CHANNEL_1, &config ) );
-    EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_0 ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_spi, StartChannel( SPI_CHANNEL_1 ) ).WillOnce( Return( true ) );
     ASSERT_TRUE( EXEC_SPI_Start_Channel( EXEC_SPI_CHANNEL_1 ) );
     ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
 
@@ -469,7 +469,7 @@ TEST_F( ExecSPITest, AbortChannelTerminatesWithoutWaitingForTransmissionCompleti
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_logic_expander, SendControlBits() )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
-    EXPECT_CALL( mock_hw_spi, StopChannel( SPI_CHANNEL_0 ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_spi, StopChannel( SPI_CHANNEL_1 ) ).WillOnce( Return( true ) );
 
     EXPECT_TRUE( EXEC_SPI_Abort_Channel( EXEC_SPI_CHANNEL_1 ) );
     EXPECT_FALSE( EXEC_SPI_Is_Started( EXEC_SPI_CHANNEL_1 ) );
@@ -757,6 +757,6 @@ TEST_F( ExecSPITest, IsTransmissionComplete_LowLevelReturnsFalse_ReturnsFalse )
 
 TEST_F( ExecSPITest, IsTransmissionFaultedDelegatesToLowLevelDriver )
 {
-    EXPECT_CALL( mock_hw_spi, TxIsFaulted( SPI_CHANNEL_0 ) ).WillOnce( ::testing::Return( true ) );
+    EXPECT_CALL( mock_hw_spi, TxIsFaulted( SPI_CHANNEL_1 ) ).WillOnce( ::testing::Return( true ) );
     EXPECT_TRUE( EXEC_SPI_Is_Transmission_Faulted( EXEC_SPI_CHANNEL_1 ) );
 }
