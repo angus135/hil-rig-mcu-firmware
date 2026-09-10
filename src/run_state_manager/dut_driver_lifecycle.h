@@ -108,6 +108,11 @@ typedef enum
  * @returns true if configuration was accepted, including when the expander
  *          queue applies backpressure. Physical completion or failure is
  *          reported by DUT_DRIVER_LIFECYCLE_GetConfigurationStatus().
+ *
+ * @note Until driver configuration APIs expose a tri-state result, a failed
+ *       pass is conservatively retried as pending. A persistent hardware or
+ *       validation failure is therefore reported when the RSM configuration
+ *       timeout expires, rather than immediately.
  */
 bool DUT_DRIVER_LIFECYCLE_Configure( const DutDriverConfiguration_T* configuration );
 

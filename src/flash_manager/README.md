@@ -1,5 +1,11 @@
 # Flash Manager Design Notes
 
+Abort requests are cancellation, not faults. If an abort arrives while a
+task-context NAND preparation or result-finalisation operation is in flight,
+the operation may return after the state has changed to `ABORTING`. The Flash
+Manager preserves that state and services the pending abort notification,
+allowing the session to return to `IDLE` for RSM reset recovery.
+
 `result_buffer.c` implements packed result-record production, page draining,
 and copied result retrieval. `instruction_buffer.c` implements prefetched
 instruction views, page release, and streamed instruction upload.

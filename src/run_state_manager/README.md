@@ -104,8 +104,11 @@ asynchronous configuration, driver-start, driver-shutdown, or Flash Manager oper
 pending. Configuration is resumable: if the Logic Expander/I2C queue is full,
 the lifecycle retains the copied configuration, leaves the RSM in
 `CONFIGURATION`, and retries after the background service drains queued writes.
-The RSM configuration timeout bounds both queue backpressure and persistent
-driver errors.
+The current boolean driver configuration APIs do not distinguish queue
+backpressure from a genuine configuration error, so both are conservatively
+treated as pending. The RSM configuration timeout bounds this retry window;
+future driver status APIs should report `READY`, `PENDING`, and `FAILED` so
+genuine errors can fault immediately.
 
 Request APIs report only whether their notification was delivered to the RSM
 task. They do not report that the request was valid or that its transition has

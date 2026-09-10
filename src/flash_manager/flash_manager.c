@@ -154,6 +154,8 @@ static bool FLASH_MANAGER_PrepareExecution( void );
 
 static bool FLASH_MANAGER_FinaliseResults( void );
 
+static bool FLASH_MANAGER_IsAborting( void );
+
 static bool FLASH_MANAGER_AbortSession( void );
 
 /* Instruction-upload lifecycle. */
@@ -675,6 +677,12 @@ static bool FLASH_MANAGER_FinaliseResults( void )
     return finalisation_state_is_valid;
 }
 
+static bool FLASH_MANAGER_IsAborting( void )
+{
+    FlashManagerState_T state = FLASH_MANAGER_STATE_UNINITIALISED;
+    return FLASH_MANAGER_GetState( &state ) && state == FLASH_MANAGER_STATE_ABORTING;
+}
+
 /**
  * @brief Invalidates interrupted runtime ownership and returns Flash to IDLE.
  *
@@ -962,7 +970,7 @@ void FLASH_MANAGER_Task( void* parameters )
         /* Handle preparation of a new execution session. */
         if ( ( notification_bits & FLASH_MANAGER_NOTIFY_PREPARE_EXECUTION ) != 0U )
         {
-            if ( !FLASH_MANAGER_PrepareExecution() )
+            if ( !FLASH_MANAGER_PrepareExecution() && !FLASH_MANAGER_IsAborting() )
             {
                 FLASH_MANAGER_EnterFault();
             }
@@ -1002,7 +1010,7 @@ void FLASH_MANAGER_Task( void* parameters )
              * Finalisation must publish the final partial page before result
              * draining is considered complete.
              */
-            if ( !FLASH_MANAGER_FinaliseResults() )
+            if ( !FLASH_MANAGER_FinaliseResults() && !FLASH_MANAGER_IsAborting() )
             {
                 FLASH_MANAGER_EnterFault();
             }
