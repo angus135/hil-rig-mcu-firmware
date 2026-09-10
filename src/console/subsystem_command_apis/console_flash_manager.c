@@ -722,9 +722,8 @@ static void CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32_t s
 {
     const uint32_t header_length_bytes = ( uint32_t )sizeof( ExecutionInstructionHeader_T );
     const uint32_t record_length_bytes = header_length_bytes + CONSOLE_FLASH_TEST_PAYLOAD_BYTES;
-    const uint32_t encoded_fields =
-        ( uint32_t )CONSOLE_FLASH_TEST_PAYLOAD_BYTES
-        | ( ( uint32_t )CONSOLE_FLASH_TEST_OPERATION_COUNT << 16U );
+    const uint32_t encoded_fields      = ( uint32_t )CONSOLE_FLASH_TEST_PAYLOAD_BYTES
+                                    | ( ( uint32_t )CONSOLE_FLASH_TEST_OPERATION_COUNT << 16U );
 
     for ( uint32_t output_index = 0U; output_index < length; output_index++ )
     {
@@ -734,14 +733,12 @@ static void CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32_t s
 
         if ( record_offset < sizeof( uint32_t ) )
         {
-            destination[output_index] =
-                ( uint8_t )( record_index >> ( record_offset * 8U ) );
+            destination[output_index] = ( uint8_t )( record_index >> ( record_offset * 8U ) );
         }
         else if ( record_offset < header_length_bytes )
         {
             uint32_t field_byte_offset = record_offset - sizeof( uint32_t );
-            destination[output_index] =
-                ( uint8_t )( encoded_fields >> ( field_byte_offset * 8U ) );
+            destination[output_index] = ( uint8_t )( encoded_fields >> ( field_byte_offset * 8U ) );
         }
         else
         {
