@@ -32,6 +32,7 @@ target_link_libraries(host_interface
         global_config
         project_warnings
         cubeide_hal
+        hil_rig_protocol::hil_rig_protocol
         rtos
         hw_timer
         hw_gpio
