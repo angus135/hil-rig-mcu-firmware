@@ -53,6 +53,12 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+typedef enum
+{
+    HW_USB_LINK_STATE_DISCONNECTED = 0U,
+    HW_USB_LINK_STATE_CONNECTED,
+} HW_USB_Link_State_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -69,6 +75,16 @@ extern "C"
  * @return false if either synchronization object could not be created.
  */
 bool HW_USB_Init( void );
+
+/**
+ * @brief Get the USB device link state.
+ *
+ * The link is connected only after the USB device has entered its configured
+ * state. All other USB device states are reported as disconnected.
+ *
+ * @return Current USB device link state.
+ */
+HW_USB_Link_State_T HW_USB_Get_Link_State( void );
 
 /**
  * @brief Queue data for transmission over USB CDC.
