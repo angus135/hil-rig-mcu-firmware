@@ -50,7 +50,7 @@
  */
 
 // Maximum number of bytes that can be queued for USB transmission.
-#define MAX_USB_TRANSMIT_BYTES 512U
+#define MAX_USB_TRANSMIT_BYTES 1024U
 
 // Maximum number of bytes that can be queued from USB receive callbacks.
 #define MAX_USB_RECEIVE_STREAM_BYTES 1024U
@@ -206,6 +206,12 @@ bool HW_USB_Init( void )
     MX_USB_DEVICE_Init();
 
     return true;
+}
+
+HW_USB_Link_State_T HW_USB_Get_Link_State( void )
+{
+    return ( hUsbDeviceFS.dev_state == USBD_STATE_CONFIGURED ) ? HW_USB_LINK_STATE_CONNECTED
+                                                               : HW_USB_LINK_STATE_DISCONNECTED;
 }
 
 /**

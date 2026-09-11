@@ -40,7 +40,7 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-static constexpr uint32_t EXPECTED_MAX_USB_TRANSMIT_BYTES          = 512U;
+static constexpr uint32_t EXPECTED_MAX_USB_TRANSMIT_BYTES          = 1024U;
 static constexpr uint32_t EXPECTED_MAX_USB_RECEIVE_STREAM_BYTES    = 1024U;
 static constexpr size_t   EXPECTED_USB_RECEIVE_TRIGGER_LEVEL_BYTES = 1U;
 
