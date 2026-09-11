@@ -58,7 +58,7 @@ cadence appropriate to transport and NAND throughput.
 
 | File | Role |
 |---|---|
-| `host_communications.c/.h` | Host RTOS task and upload lifecycle coordination |
+| `host_interface.c/.h` | Host RTOS task and upload lifecycle coordination |
 | `test_package_recieve.c/.h` | Future package validation and canonical conversion |
 | `result_send.c/.h` | Future stored-result packaging and transmission |
 
