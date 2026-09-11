@@ -21,7 +21,7 @@
 
 extern "C"
 {
-#include "host_communications.h" /* Module under test */
+#include "host_interface.h" /* Module under test */
 #include <stdint.h>
 #include <stdbool.h>
 }

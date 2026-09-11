@@ -20,7 +20,7 @@
 #include "rtos_config.h"
 #include "app_main.h"
 #include "console.h"
-#include "host_communications.h"
+#include "host_interface.h"
 #include "logic_expander.h"
 #include "run_state_manager.h"
 #include "test_configuration.h"

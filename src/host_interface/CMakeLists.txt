@@ -5,13 +5,13 @@
 # -----------------------------
 
 set(HOST_INTERFACE_SOURCES
-    host_communications.c
+    host_interface.c
     result_send.c
     test_package_recieve.c
 )
 
 set(HOST_INTERFACE_HEADERS
-    host_communications.h
+    host_interface.h
     result_send.h
     test_package_recieve.h
 )
@@ -39,7 +39,7 @@ target_link_libraries(host_interface
 )
 
 # Add flash_manager as a private dependency when the documented instruction-
-# upload workflow is implemented in host_communications.c.
+# upload workflow is implemented in host_interface.c.
 
 # -----------------------------
 # Tests for this module (gtest/gmock)

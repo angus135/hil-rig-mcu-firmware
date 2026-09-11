@@ -1,25 +1,23 @@
 /******************************************************************************
- *  File:       host_communications.h
- *  Author:     Callum Rafferty
- *  Created:    25-Mar-2026
+ *  File:       host_interface_mocks.h
+ *  Author:     Angus Corr
+ *  Created:    27-Jul-2026
  *
  *  Description:
- *      Public interface for the Host Communications RTOS task.
+ *      Mock definitions of HAL types and functions for unit testing the host interface module.
  *
  *  Notes:
- *      Instruction upload integration is task-context only. The Host Interface
- *      translates and validates protocol data into the canonical Flash Manager
- *      instruction stream, then uses the asynchronous upload lifecycle
- *      documented in flash_manager.h. It never calls external_flash directly.
+ *
  ******************************************************************************/
 
-#ifndef HOST_COMMUNICATIONS_H
-#define HOST_COMMUNICATIONS_H
+#ifndef HOST_INTERFACE_MOCKS_H
+#define HOST_INTERFACE_MOCKS_H
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
+// NOLINTBEGIN
 
 /**-----------------------------------------------------------------------------
  *  Includes
@@ -27,15 +25,11 @@ extern "C"
  */
 
 #include <stdint.h>
-#include <stdbool.h>
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
  */
-
-#define HOST_INTERFACE_TASK_MEMORY 256
-#define HOST_INTERFACE_TASK_PRIORITY 3
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -48,15 +42,15 @@ extern "C"
  */
 
 /**
- * @brief Host Interface Task
- *
- * The FreeRTOS task that runs host transport, canonical instruction upload,
- * and future result-transfer processing.
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
  */
-void HOST_INTERFACE_Task( void* task_parameters );
+void Error_Handler( void );
+
+// NOLINTEND
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* HOST_COMMUNICATIONS_H */
+#endif /* HOST_INTERFACE_MOCKS_H */
