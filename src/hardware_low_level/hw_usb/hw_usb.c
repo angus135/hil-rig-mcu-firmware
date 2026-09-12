@@ -50,7 +50,7 @@
  */
 
 // Maximum number of bytes that can be queued for USB transmission.
-#define MAX_USB_TRANSMIT_BYTES 512U
+#define MAX_USB_TRANSMIT_BYTES 1024U
 
 // Maximum number of bytes that can be queued from USB receive callbacks.
 #define MAX_USB_RECEIVE_STREAM_BYTES 1024U
@@ -92,6 +92,10 @@ typedef struct HWUSBState_T
 
     // Number of bytes currently passed to CDC_Transmit_FS() and not yet complete.
     uint32_t transmit_num_in_transmission;
+
+    // Prevents Monitor_Process from starting more transfers while an abandoned
+    // CDC-owned span is being released by the USB device driver.
+    bool transmit_discard_pending;
 
     // Total number of bytes stored in transmit_buffer.
     // This includes the active CDC transmission and any queued waiting data.
@@ -139,6 +143,8 @@ static StaticSemaphore_t s_USB_Transmit_Mutex_Storage;
  * @return false if CDC is not initialised or a transmit is still active.
  */
 static inline bool HW_USB_Transmit_Is_Complete( void );
+static bool        HW_USB_CDC_Owns_Transmit_Buffer( void );
+static void        HW_USB_Reset_Transmit_State_Locked( void );
 static void        HW_USB_Monitor_Process_Locked( void );
 static uint32_t    HW_USB_Receive_Internal( uint8_t* destination, uint32_t max_size_bytes,
                                             TickType_t timeout_ticks );
@@ -150,21 +156,43 @@ static uint32_t    HW_USB_Receive_Internal( uint8_t* destination, uint32_t max_s
 
 static inline bool HW_USB_Transmit_Is_Complete( void )
 {
-    USBD_CDC_HandleTypeDef* hcdc = ( USBD_CDC_HandleTypeDef* )hUsbDeviceFS.pClassData;
+    USBD_CDC_HandleTypeDef* hcdc     = NULL;
+    bool                    complete = false;
+
+    taskENTER_CRITICAL();
+    hcdc = ( USBD_CDC_HandleTypeDef* )hUsbDeviceFS.pClassData;
 
     // pClassData is NULL before the USB CDC class has been initialised.
-    if ( hcdc == NULL )
-    {
-        return false;
-    }
+    complete = ( hcdc != NULL ) && ( hcdc->TxState == 0U );
+    taskEXIT_CRITICAL();
 
-    // ST's CDC driver sets TxState while an IN endpoint transfer is active.
-    if ( hcdc->TxState != 0 )
-    {
-        return false;
-    }
+    return complete;
+}
 
-    return true;
+static bool HW_USB_CDC_Owns_Transmit_Buffer( void )
+{
+    USBD_CDC_HandleTypeDef* hcdc = NULL;
+    bool                    owns_buffer;
+
+    taskENTER_CRITICAL();
+    hcdc        = ( USBD_CDC_HandleTypeDef* )hUsbDeviceFS.pClassData;
+    owns_buffer = ( hcdc != NULL ) && ( hcdc->TxState != 0U );
+    taskEXIT_CRITICAL();
+
+    return owns_buffer;
+}
+
+static void HW_USB_Reset_Transmit_State_Locked( void )
+{
+    // Do not clear transmit_buffer. A disconnect can arrive while the CDC
+    // driver still owns the active region, and stale bytes need only become
+    // unreachable rather than overwritten.
+    usb_state.transmit_live_start          = 0U;
+    usb_state.transmit_live_end            = 0U;
+    usb_state.transmit_waiting_end         = 0U;
+    usb_state.transmit_num_in_transmission = 0U;
+    usb_state.transmit_num_buffered        = 0U;
+    usb_state.transmit_discard_pending     = false;
 }
 
 /**-----------------------------------------------------------------------------
@@ -208,6 +236,37 @@ bool HW_USB_Init( void )
     return true;
 }
 
+HW_USB_Link_State_T HW_USB_Get_Link_State( void )
+{
+    return ( HW_USB_Get_Connection_State() == HW_USB_CONNECTION_STATE_DISCONNECTED )
+               ? HW_USB_LINK_STATE_DISCONNECTED
+               : HW_USB_LINK_STATE_CONNECTED;
+}
+
+HW_USB_Connection_State_T HW_USB_Get_Connection_State( void )
+{
+    uint8_t device_state;
+    uint8_t previous_device_state;
+
+    taskENTER_CRITICAL();
+    device_state          = hUsbDeviceFS.dev_state;
+    previous_device_state = hUsbDeviceFS.dev_old_state;
+    taskEXIT_CRITICAL();
+
+    if ( device_state == USBD_STATE_CONFIGURED )
+    {
+        return HW_USB_CONNECTION_STATE_ACTIVE;
+    }
+
+    if ( ( device_state == USBD_STATE_SUSPENDED )
+         && ( previous_device_state == USBD_STATE_CONFIGURED ) )
+    {
+        return HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED;
+    }
+
+    return HW_USB_CONNECTION_STATE_DISCONNECTED;
+}
+
 /**
  * @brief Queue data for transmission over USB CDC.
  *
@@ -220,7 +279,8 @@ bool HW_USB_Init( void )
  * @param size_bytes Number of bytes to queue for transmission.
  *
  * @return true if the data was successfully queued or size_bytes was zero.
- * @return false if data was NULL or there was not enough free transmit space.
+ * @return false if data was NULL, the configured device is suspended, or there
+ *         was not enough free transmit space.
  */
 bool HW_USB_Transmit( const uint8_t* data, uint16_t size_bytes )
 {
@@ -249,12 +309,24 @@ bool HW_USB_Transmit( const uint8_t* data, uint16_t size_bytes )
         return false;
     }
 
+    if ( HW_USB_Get_Connection_State() == HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED )
+    {
+        xSemaphoreGive( usb_state.transmit_mutex );
+        return false;
+    }
+
     // Only accept the transmit request if the complete message can be queued.
     free_bytes = MAX_USB_TRANSMIT_BYTES - usb_state.transmit_num_buffered;
 
     if ( size_bytes > free_bytes )
     {
         ( void )xSemaphoreGive( usb_state.transmit_mutex );
+        return false;
+    }
+
+    if ( usb_state.transmit_discard_pending )
+    {
+        xSemaphoreGive( usb_state.transmit_mutex );
         return false;
     }
 
@@ -288,9 +360,41 @@ bool HW_USB_Transmit( const uint8_t* data, uint16_t size_bytes )
     // data will remain buffered and will be retried by HW_USB_Monitor_Process().
     HW_USB_Monitor_Process_Locked();
 
-    ( void )xSemaphoreGive( usb_state.transmit_mutex );
+    xSemaphoreGive( usb_state.transmit_mutex );
 
     return true;
+}
+
+/**
+ * @brief Discard all USB transmit data retained for an abandoned link.
+ *
+ * Queued bytes are prevented from starting immediately. If CDC still owns an
+ * active ring-buffer span, its storage and indices remain intact until the CDC
+ * class reports that ownership has ended or has been deinitialised. This
+ * function must be called from task context.
+ */
+void HW_USB_Discard_Transmit_Data( void )
+{
+    if ( usb_state.transmit_mutex == NULL )
+    {
+        return;
+    }
+
+    if ( xSemaphoreTake( usb_state.transmit_mutex, portMAX_DELAY ) != pdTRUE )
+    {
+        return;
+    }
+
+    if ( HW_USB_CDC_Owns_Transmit_Buffer() )
+    {
+        usb_state.transmit_discard_pending = true;
+    }
+    else
+    {
+        HW_USB_Reset_Transmit_State_Locked();
+    }
+
+    xSemaphoreGive( usb_state.transmit_mutex );
 }
 
 /**
@@ -466,6 +570,25 @@ static void HW_USB_Monitor_Process_Locked( void )
     uint16_t bytes_to_transmit          = 0;
     uint8_t* transmit_data              = NULL;
 
+    if ( HW_USB_Get_Connection_State() == HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED )
+    {
+        return;
+    }
+
+    if ( usb_state.transmit_discard_pending )
+    {
+        if ( HW_USB_CDC_Owns_Transmit_Buffer() )
+        {
+            return;
+        }
+
+        // This is an abort, not a successful completion. In particular, a
+        // newly initialised CDC class starts with TxState clear and must not
+        // cause an interrupted transfer to be accounted as delivered.
+        HW_USB_Reset_Transmit_State_Locked();
+        return;
+    }
+
     // If CDC currently owns part of the ring buffer, it must finish before the
     // live start index can be advanced or the next transfer can begin.
     if ( usb_state.transmit_num_in_transmission > 0U )
@@ -544,5 +667,5 @@ void HW_USB_Monitor_Process( void )
 
     HW_USB_Monitor_Process_Locked();
 
-    ( void )xSemaphoreGive( usb_state.transmit_mutex );
+    xSemaphoreGive( usb_state.transmit_mutex );
 }

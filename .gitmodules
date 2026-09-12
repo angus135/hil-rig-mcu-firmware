@@ -1,0 +1,3 @@
+[submodule "src/host_interface/shared_protocol"]
+	path = src/host_interface/shared_protocol
+	url = https://github.com/angus135/hil-rig-protocol

@@ -21,7 +21,7 @@
 #include "app_main.h"
 #include "console.h"
 #include "flash_manager.h"
-#include "host_communications.h"
+#include "host_interface.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
