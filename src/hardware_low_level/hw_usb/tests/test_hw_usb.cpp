@@ -602,3 +602,92 @@ TEST_F( HWUSBTest, TransmitIsCompleteReflectsCDCTxState )
     cdc_handle.TxState = 0U;
     EXPECT_TRUE( HW_USB_Transmit_Is_Complete() );
 }
+
+TEST_F( HWUSBTest, SuspendKeepsAnActiveCDCTransferInTheCurrentTransportSession )
+{
+    uint8_t active_frame[] = { 0x11U, 0x22U, 0x33U, 0x44U };
+
+    EXPECT_CALL( mock, CDCTransmitFS( testing::_, sizeof( active_frame ) ) )
+        .WillOnce( testing::Return( USBD_OK ) );
+    EXPECT_TRUE( HW_USB_Transmit( active_frame, sizeof( active_frame ) ) );
+
+    cdc_handle.TxState         = 1U;
+    hUsbDeviceFS.dev_state     = USBD_STATE_SUSPENDED;
+    hUsbDeviceFS.dev_old_state = USBD_STATE_CONFIGURED;
+    hUsbDeviceFS.pClassData    = &cdc_handle;
+
+    EXPECT_EQ( HW_USB_LINK_STATE_CONNECTED, HW_USB_Get_Link_State() );
+    HW_USB_Monitor_Process();
+
+    EXPECT_FALSE( usb_state.transmit_discard_pending );
+    EXPECT_EQ( sizeof( active_frame ), usb_state.transmit_num_in_transmission );
+    EXPECT_EQ( sizeof( active_frame ), usb_state.transmit_num_buffered );
+    EXPECT_EQ( &cdc_handle, hUsbDeviceFS.pClassData );
+    EXPECT_EQ( 1U, cdc_handle.TxState );
+
+    hUsbDeviceFS.dev_state = USBD_STATE_CONFIGURED;
+    EXPECT_EQ( HW_USB_LINK_STATE_CONNECTED, HW_USB_Get_Link_State() );
+}
+
+TEST_F( HWUSBTest, DiscardDefersRingReuseUntilCDCReleasesAnActiveTransfer )
+{
+    usb_state.transmit_live_start          = 12U;
+    usb_state.transmit_live_end            = 16U;
+    usb_state.transmit_waiting_end         = 22U;
+    usb_state.transmit_num_in_transmission = 4U;
+    usb_state.transmit_num_buffered        = 10U;
+    cdc_handle.TxState                     = 1U;
+
+    HW_USB_Discard_Transmit_Data();
+
+    EXPECT_TRUE( usb_state.transmit_discard_pending );
+    EXPECT_EQ( 4U, usb_state.transmit_num_in_transmission );
+    EXPECT_EQ( 10U, usb_state.transmit_num_buffered );
+
+    HW_USB_Monitor_Process();
+
+    EXPECT_TRUE( usb_state.transmit_discard_pending );
+    EXPECT_EQ( 4U, usb_state.transmit_num_in_transmission );
+    EXPECT_EQ( 10U, usb_state.transmit_num_buffered );
+
+    hUsbDeviceFS.pClassData = nullptr;
+    HW_USB_Monitor_Process();
+
+    EXPECT_FALSE( usb_state.transmit_discard_pending );
+    EXPECT_EQ( 0U, usb_state.transmit_num_in_transmission );
+    EXPECT_EQ( 0U, usb_state.transmit_num_buffered );
+    EXPECT_EQ( 0U, usb_state.transmit_live_start );
+    EXPECT_EQ( 0U, usb_state.transmit_waiting_end );
+}
+
+TEST_F( HWUSBTest, DiscardDoesNotSendAnInterruptedFrameSuffixAfterReconnect )
+{
+    uint8_t old_frame[]  = { 0x11U, 0x22U, 0x33U, 0x44U };
+    uint8_t old_suffix[] = { 0x55U, 0x66U };
+    uint8_t new_frame[]  = { 0xA1U, 0xB2U };
+
+    EXPECT_CALL( mock, CDCTransmitFS( testing::_, sizeof( old_frame ) ) )
+        .WillOnce( testing::Return( USBD_OK ) );
+    EXPECT_TRUE( HW_USB_Transmit( old_frame, sizeof( old_frame ) ) );
+
+    cdc_handle.TxState = 1U;
+    EXPECT_TRUE( HW_USB_Transmit( old_suffix, sizeof( old_suffix ) ) );
+    ASSERT_EQ( sizeof( old_frame ) + sizeof( old_suffix ), usb_state.transmit_num_buffered );
+    ASSERT_EQ( sizeof( old_frame ), usb_state.transmit_num_in_transmission );
+
+    HW_USB_Discard_Transmit_Data();
+    hUsbDeviceFS.pClassData = nullptr;
+    HW_USB_Monitor_Process();
+
+    hUsbDeviceFS.pClassData = &cdc_handle;
+    cdc_handle.TxState      = 0U;
+    EXPECT_CALL( mock, CDCTransmitFS( testing::_, sizeof( new_frame ) ) )
+        .WillOnce( testing::Invoke( [&]( uint8_t* buffer, uint16_t length ) -> uint8_t {
+            EXPECT_EQ( 0, std::memcmp( buffer, new_frame, length ) );
+            return USBD_OK;
+        } ) );
+
+    EXPECT_TRUE( HW_USB_Transmit( new_frame, sizeof( new_frame ) ) );
+    EXPECT_EQ( sizeof( new_frame ), usb_state.transmit_num_buffered );
+    EXPECT_EQ( sizeof( new_frame ), usb_state.transmit_num_in_transmission );
+}
