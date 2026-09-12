@@ -79,8 +79,9 @@ bool HW_USB_Init( void );
 /**
  * @brief Get the USB device link state.
  *
- * The link is connected only after the USB device has entered its configured
- * state. All other USB device states are reported as disconnected.
+ * The link remains connected while the USB device is suspended because the CDC
+ * class and its active endpoint transfer are preserved for resume. All other
+ * USB device states are reported as disconnected.
  *
  * @return Current USB device link state.
  */
@@ -101,6 +102,15 @@ HW_USB_Link_State_T HW_USB_Get_Link_State( void );
  * @return false if data was NULL or there was not enough free transmit space.
  */
 bool HW_USB_Transmit( const uint8_t* data, uint16_t size_bytes );
+
+/**
+ * @brief Discard transmit data retained for a disconnected USB link.
+ *
+ * Queued data is discarded immediately. If CDC still owns an active transmit
+ * buffer, the wrapper defers invalidating the corresponding ring storage until
+ * the driver has released it. This function must be called from task context.
+ */
+void HW_USB_Discard_Transmit_Data( void );
 
 /**
  * @brief Copy newly received USB CDC data into the receive stream buffer.

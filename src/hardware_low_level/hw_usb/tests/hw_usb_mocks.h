@@ -32,6 +32,7 @@ extern "C"
  */
 #define CDC_DATA_HS_MAX_PACKET_SIZE 512U /* Endpoint IN & OUT Packet size */
 #define USBD_STATE_CONFIGURED 3U
+#define USBD_STATE_SUSPENDED 4U
 /**
  * Init USB device Library, add supported class and start the library
  * @retval None

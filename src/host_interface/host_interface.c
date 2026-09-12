@@ -39,6 +39,8 @@
     ( HIL_APPLICATION_ABSOLUTE_MAX_VARIABLE_DATA_SIZE )
 #define HOST_INTERFACE_TRANSPORT_WORKSPACE_CAPACITY ( 4096U )
 #define HOST_INTERFACE_TRANSPORT_OUTPUT_CAPACITY ( HIL_TRANSPORT_DEFAULT_MAX_ENCODED_FRAME_SIZE )
+#define HOST_INTERFACE_TRANSPORT_RETRANSMIT_TIMEOUT_MS ( 100U )
+#define HOST_INTERFACE_TRANSPORT_MAX_RETRIES ( 5U )
 
 #ifndef TEST_BUILD
 #include "main.h"
@@ -67,9 +69,10 @@ typedef struct
     size_t                    used_send_byte_span_size;
     uint8_t                   receive_byte_span[HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY];
     size_t                    used_receive_byte_span_size;
-    uint8_t                   receive_data[HOST_INTERFACE_APPLICATION_DECODE_CAPACITY];
-    size_t                    used_receive_data_size;
-    HIL_Application_Status_T  status;
+    _Alignas( HIL_APPLICATION_DECODE_STORAGE_ALIGNMENT ) uint8_t
+        receive_data[HOST_INTERFACE_APPLICATION_DECODE_CAPACITY];
+    size_t                   used_receive_data_size;
+    HIL_Application_Status_T status;
 } HOST_INTERFACE_Application_State_T;
 
 typedef struct
@@ -115,11 +118,56 @@ static void HOST_INTERFACE_Protocol_Process( HOST_INTERFACE_Protocol_State_T* pr
                                              HIL_Application_Message_T* incoming_message,
                                              bool* incoming_message_available );
 static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* protocol_state );
+static void
+HOST_INTERFACE_Protocol_Update_Link_State( HOST_INTERFACE_Protocol_State_T* protocol_state,
+                                           HIL_Transport_Link_State_T       observed_link_state,
+                                           uint32_t                         now );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+
+static void
+HOST_INTERFACE_Protocol_Update_Link_State( HOST_INTERFACE_Protocol_State_T* const protocol_state,
+                                           const HIL_Transport_Link_State_T observed_link_state,
+                                           const uint32_t                   now )
+{
+    if ( ( protocol_state->link_state_observed == true )
+         && ( protocol_state->observed_link_state == observed_link_state ) )
+    {
+        return;
+    }
+
+    if ( observed_link_state == HIL_TRANSPORT_LINK_STATE_DISCONNECTED )
+    {
+        // Do not offer bytes retained from an abandoned physical link to a new session.
+        protocol_state->usb.receive_count  = 0U;
+        protocol_state->usb.receive_offset = 0U;
+        HW_USB_Discard_Transmit_Data();
+
+        while ( HW_USB_Get_Receive_Stream_Used_Bytes() > 0U )
+        {
+            if ( HW_USB_Receive( protocol_state->usb.receive_buffer,
+                                 sizeof( protocol_state->usb.receive_buffer ) )
+                 == 0U )
+            {
+                break;
+            }
+        }
+    }
+
+    protocol_state->transport.status = HIL_TRANSPORT_Notify_Link_State(
+        &protocol_state->transport.context, observed_link_state, now );
+    protocol_state->observed_link_state = observed_link_state;
+    protocol_state->link_state_observed = true;
+
+    if ( protocol_state->transport.status == HIL_TRANSPORT_STATUS_INTERNAL_ERROR
+         || protocol_state->transport.status == HIL_TRANSPORT_STATUS_INVALID_ARGUMENT )
+    {
+        HOST_INTERFACE_Error_Handler();
+    }
+}
 
 static void HOST_INTERFACE_Protocol_Process(
     HOST_INTERFACE_Protocol_State_T* const protocol_state,
@@ -137,43 +185,12 @@ static void HOST_INTERFACE_Protocol_Process(
     protocol_state->application.used_receive_data_size = 0U;
 
     // =======------- SERVICE USB AND LINK STATE
-    HW_USB_Monitor_Process();
-
     observed_link_state = ( HW_USB_Get_Link_State() == HW_USB_LINK_STATE_CONNECTED )
                               ? HIL_TRANSPORT_LINK_STATE_CONNECTED
                               : HIL_TRANSPORT_LINK_STATE_DISCONNECTED;
 
-    if ( ( protocol_state->link_state_observed == false )
-         || ( protocol_state->observed_link_state != observed_link_state ) )
-    {
-        protocol_state->transport.status = HIL_TRANSPORT_Notify_Link_State(
-            &protocol_state->transport.context, observed_link_state, now );
-        protocol_state->observed_link_state = observed_link_state;
-        protocol_state->link_state_observed = true;
-
-        if ( protocol_state->transport.status == HIL_TRANSPORT_STATUS_INTERNAL_ERROR
-             || protocol_state->transport.status == HIL_TRANSPORT_STATUS_INVALID_ARGUMENT )
-        {
-            HOST_INTERFACE_Error_Handler();
-        }
-
-        if ( observed_link_state == HIL_TRANSPORT_LINK_STATE_DISCONNECTED )
-        {
-            // Do not offer bytes retained from an abandoned physical link to a new session.
-            protocol_state->usb.receive_count  = 0U;
-            protocol_state->usb.receive_offset = 0U;
-
-            while ( HW_USB_Get_Receive_Stream_Used_Bytes() > 0U )
-            {
-                if ( HW_USB_Receive( protocol_state->usb.receive_buffer,
-                                     sizeof( protocol_state->usb.receive_buffer ) )
-                     == 0U )
-                {
-                    break;
-                }
-            }
-        }
-    }
+    HOST_INTERFACE_Protocol_Update_Link_State( protocol_state, observed_link_state, now );
+    HW_USB_Monitor_Process();
 
     // =======------- DRAIN TRANSPORT EVENTS
     while ( true )
@@ -354,6 +371,13 @@ static void HOST_INTERFACE_Protocol_Process(
             break;
         }
 
+        if ( HW_USB_Get_Link_State() != HW_USB_LINK_STATE_CONNECTED )
+        {
+            HOST_INTERFACE_Protocol_Update_Link_State( protocol_state,
+                                                       HIL_TRANSPORT_LINK_STATE_DISCONNECTED, now );
+            break;
+        }
+
         protocol_state->transport.status =
             HIL_TRANSPORT_Commit_Output( &protocol_state->transport.context, now );
         if ( protocol_state->transport.status != HIL_TRANSPORT_STATUS_OK )
@@ -390,7 +414,10 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
 
     // =======------- INITIALISE TRANSPORT LAYER
     HIL_TRANSPORT_Default_Config( &protocol_state->transport.config );
-    protocol_state->transport.role = HIL_TRANSPORT_ROLE_RIG;
+    protocol_state->transport.config.retransmit_timeout_ms =
+        HOST_INTERFACE_TRANSPORT_RETRANSMIT_TIMEOUT_MS;
+    protocol_state->transport.config.max_retries = HOST_INTERFACE_TRANSPORT_MAX_RETRIES;
+    protocol_state->transport.role               = HIL_TRANSPORT_ROLE_RIG;
 
     protocol_state->transport.status = HIL_TRANSPORT_Required_Storage_Size(
         &protocol_state->transport.config, &protocol_state->transport.required_workspace_size );
