@@ -79,4 +79,26 @@ void HOST_INTERFACE_Test_Access_Process_Once( void )
                                      &incoming_message, &incoming_message_available );
 }
 
+/**
+ * @brief Read the public Transport status for the processing-test instance.
+ *
+ * @param[out] status Receives the public Transport status snapshot.
+ * @return Status returned by HIL_TRANSPORT_Get_Status().
+ */
+HIL_Transport_Status_T
+HOST_INTERFACE_Test_Access_Get_Transport_Status( HIL_Transport_Status_Snapshot_T* const status )
+{
+    return HIL_TRANSPORT_Get_Status( &s_protocol_state.transport.context, status );
+}
+
+/**
+ * @brief Read the effective Transport time for the processing-test instance.
+ *
+ * @return Effective Transport time in milliseconds.
+ */
+uint32_t HOST_INTERFACE_Test_Access_Get_Transport_Time( void )
+{
+    return s_protocol_state.transport_clock.effective_time_ms;
+}
+
 #endif

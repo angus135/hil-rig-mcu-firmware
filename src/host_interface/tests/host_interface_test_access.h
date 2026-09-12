@@ -41,5 +41,21 @@ void HOST_INTERFACE_Test_Access_Reset_Protocol( void );
  */
 void HOST_INTERFACE_Test_Access_Process_Once( void );
 
+/**
+ * @brief Read the public Transport status for the processing-test instance.
+ *
+ * @param[out] status Receives the public Transport status snapshot.
+ * @return Status returned by HIL_TRANSPORT_Get_Status().
+ */
+HIL_Transport_Status_T
+HOST_INTERFACE_Test_Access_Get_Transport_Status( HIL_Transport_Status_Snapshot_T* status );
+
+/**
+ * @brief Read the effective Transport time for the processing-test instance.
+ *
+ * @return Effective Transport time in milliseconds.
+ */
+uint32_t HOST_INTERFACE_Test_Access_Get_Transport_Time( void );
+
 #endif
 #endif /* HOST_INTERFACE_TEST_ACCESS_H */

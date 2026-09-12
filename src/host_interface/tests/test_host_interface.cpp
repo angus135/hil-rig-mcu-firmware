@@ -26,10 +26,14 @@ namespace {
 constexpr uint32_t kExpectedRetransmitTimeoutMs = 100U;
 constexpr uint8_t  kExpectedMaxRetries          = 5U;
 
-HW_USB_Link_State_T               link_state             = HW_USB_LINK_STATE_DISCONNECTED;
+HW_USB_Connection_State_T         connection_state       = HW_USB_CONNECTION_STATE_DISCONNECTED;
 uint32_t                          discard_transmit_calls = 0U;
 uint32_t                          usb_transmit_calls     = 0U;
+uint32_t                          usb_monitor_calls      = 0U;
 bool                              disconnect_after_usb_output_accept = false;
+bool                              suspend_after_usb_output_accept    = false;
+size_t                            usb_transmit_capacity              = 1024U;
+size_t                            usb_transmit_buffered              = 0U;
 std::vector<std::vector<uint8_t>> accepted_usb_output;
 std::vector<uint8_t>              usb_receive_bytes;
 size_t                            usb_receive_offset = 0U;
@@ -44,17 +48,35 @@ extern "C" bool HW_USB_Init( void )
 
 extern "C" HW_USB_Link_State_T HW_USB_Get_Link_State( void )
 {
-    return link_state;
+    return ( connection_state == HW_USB_CONNECTION_STATE_DISCONNECTED )
+               ? HW_USB_LINK_STATE_DISCONNECTED
+               : HW_USB_LINK_STATE_CONNECTED;
+}
+
+extern "C" HW_USB_Connection_State_T HW_USB_Get_Connection_State( void )
+{
+    return connection_state;
 }
 
 extern "C" bool HW_USB_Transmit( const uint8_t* const data, const uint16_t size_bytes )
 {
     ++usb_transmit_calls;
+
+    if ( size_bytes > ( usb_transmit_capacity - usb_transmit_buffered ) )
+    {
+        return false;
+    }
+
     accepted_usb_output.emplace_back( data, data + size_bytes );
+    usb_transmit_buffered += size_bytes;
 
     if ( disconnect_after_usb_output_accept )
     {
-        link_state = HW_USB_LINK_STATE_DISCONNECTED;
+        connection_state = HW_USB_CONNECTION_STATE_DISCONNECTED;
+    }
+    else if ( suspend_after_usb_output_accept )
+    {
+        connection_state = HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED;
     }
 
     return true;
@@ -64,6 +86,7 @@ extern "C" void HW_USB_Discard_Transmit_Data( void )
 {
     ++discard_transmit_calls;
     accepted_usb_output.clear();
+    usb_transmit_buffered = 0U;
 }
 
 extern "C" void HW_USB_Receive_From_ISR( uint8_t*, uint32_t* )
@@ -105,6 +128,7 @@ extern "C" uint32_t HW_USB_Get_Receive_Stream_Free_Bytes( void )
 
 extern "C" void HW_USB_Monitor_Process( void )
 {
+    ++usb_monitor_calls;
 }
 
 extern "C" TickType_t xTaskGetTickCount( void )
@@ -121,14 +145,41 @@ class HostInterfaceTest : public ::testing::Test
 protected:
     void SetUp() override
     {
-        link_state                         = HW_USB_LINK_STATE_DISCONNECTED;
+        connection_state                   = HW_USB_CONNECTION_STATE_DISCONNECTED;
         discard_transmit_calls             = 0U;
         usb_transmit_calls                 = 0U;
+        usb_monitor_calls                  = 0U;
         disconnect_after_usb_output_accept = false;
+        suspend_after_usb_output_accept    = false;
+        usb_transmit_capacity              = 1024U;
+        usb_transmit_buffered              = 0U;
         accepted_usb_output.clear();
         usb_receive_bytes.clear();
         usb_receive_offset = 0U;
         test_ticks         = 0U;
+    }
+
+    void StartHandshakeWithPendingRigResponse( hil_rig_protocol::test::TransportTestEndpoint& host )
+    {
+        ASSERT_EQ(
+            HIL_TRANSPORT_STATUS_OK,
+            host.InitializeConnected(
+                hil_rig_protocol::test::TransportTestEndpointConfig::Host(
+                    UINT64_C( 0x1234 ), 10U, kExpectedRetransmitTimeoutMs, kExpectedMaxRetries ),
+                test_ticks ) );
+        ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, host.Process( test_ticks ) );
+
+        const auto request = host.PeekOutput();
+        ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, request.status );
+        ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, host.CommitOutput( test_ticks ) );
+
+        usb_receive_bytes  = request.bytes;
+        usb_receive_offset = 0U;
+        connection_state   = HW_USB_CONNECTION_STATE_ACTIVE;
+        HOST_INTERFACE_Test_Access_Reset_Protocol();
+        HOST_INTERFACE_Test_Access_Process_Once();
+
+        ASSERT_EQ( 1U, accepted_usb_output.size() );
     }
 };
 
@@ -171,7 +222,7 @@ TEST_F( HostInterfaceTest, LinkDropDuringOutputAcceptanceDiscardsOutputBeforeRec
     ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, host.CommitOutput( test_ticks ) );
 
     usb_receive_bytes                  = host_output.bytes;
-    link_state                         = HW_USB_LINK_STATE_CONNECTED;
+    connection_state                   = HW_USB_CONNECTION_STATE_ACTIVE;
     disconnect_after_usb_output_accept = true;
     HOST_INTERFACE_Test_Access_Reset_Protocol();
 
@@ -182,12 +233,190 @@ TEST_F( HostInterfaceTest, LinkDropDuringOutputAcceptanceDiscardsOutputBeforeRec
     EXPECT_TRUE( accepted_usb_output.empty() );
 
     const uint32_t output_count_before_reconnect = usb_transmit_calls;
-    link_state                                   = HW_USB_LINK_STATE_CONNECTED;
+    connection_state                             = HW_USB_CONNECTION_STATE_ACTIVE;
     disconnect_after_usb_output_accept           = false;
     HOST_INTERFACE_Test_Access_Process_Once();
 
     EXPECT_EQ( output_count_before_reconnect, usb_transmit_calls );
     EXPECT_TRUE( accepted_usb_output.empty() );
+}
+
+TEST_F( HostInterfaceTest, ConfiguredSuspensionFreezesPendingHandshakeRetryDeadline )
+{
+    hil_rig_protocol::test::TransportTestEndpoint host{};
+    HIL_Transport_Status_Snapshot_T               suspended_status = {};
+
+    StartHandshakeWithPendingRigResponse( host );
+
+    test_ticks = 40U;
+    HOST_INTERFACE_Test_Access_Process_Once();
+    ASSERT_EQ( 40U, HOST_INTERFACE_Test_Access_Get_Transport_Time() );
+
+    const size_t   output_count_before_suspend   = accepted_usb_output.size();
+    const uint32_t transmit_calls_before_suspend = usb_transmit_calls;
+    const uint32_t monitor_calls_before_suspend  = usb_monitor_calls;
+    connection_state                             = HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED;
+
+    for ( test_ticks = 1040U; test_ticks <= 5040U; test_ticks += 1000U )
+    {
+        HOST_INTERFACE_Test_Access_Process_Once();
+    }
+
+    EXPECT_EQ( 40U, HOST_INTERFACE_Test_Access_Get_Transport_Time() );
+    EXPECT_EQ( output_count_before_suspend, accepted_usb_output.size() );
+    EXPECT_EQ( transmit_calls_before_suspend, usb_transmit_calls );
+    EXPECT_EQ( monitor_calls_before_suspend, usb_monitor_calls );
+    EXPECT_EQ( 0U, discard_transmit_calls );
+    ASSERT_EQ( HIL_TRANSPORT_STATUS_OK,
+               HOST_INTERFACE_Test_Access_Get_Transport_Status( &suspended_status ) );
+    EXPECT_EQ( HIL_TRANSPORT_SESSION_STATE_CONNECTING, suspended_status.session_state );
+    EXPECT_EQ( 1U, suspended_status.reliable_delivery_pending );
+    EXPECT_EQ( HIL_TRANSPORT_FAILURE_NONE, suspended_status.last_failure );
+
+    connection_state = HW_USB_CONNECTION_STATE_ACTIVE;
+    test_ticks       = 6040U;
+    HOST_INTERFACE_Test_Access_Process_Once();
+    EXPECT_EQ( 40U, HOST_INTERFACE_Test_Access_Get_Transport_Time() );
+    EXPECT_EQ( output_count_before_suspend, accepted_usb_output.size() );
+
+    test_ticks = 6099U;
+    HOST_INTERFACE_Test_Access_Process_Once();
+    EXPECT_EQ( 99U, HOST_INTERFACE_Test_Access_Get_Transport_Time() );
+    EXPECT_EQ( output_count_before_suspend, accepted_usb_output.size() );
+
+    test_ticks = 6100U;
+    HOST_INTERFACE_Test_Access_Process_Once();
+    EXPECT_EQ( 100U, HOST_INTERFACE_Test_Access_Get_Transport_Time() );
+    ASSERT_EQ( output_count_before_suspend + 1U, accepted_usb_output.size() );
+
+    ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, host.ReceiveBytes( accepted_usb_output.back() ).status );
+    ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, host.Process( 100U ) );
+    const auto acknowledgement = host.PeekOutput();
+    ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, acknowledgement.status );
+    ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, host.CommitOutput( 100U ) );
+
+    usb_receive_bytes  = acknowledgement.bytes;
+    usb_receive_offset = 0U;
+    test_ticks         = 6101U;
+    HOST_INTERFACE_Test_Access_Process_Once();
+
+    HIL_Transport_Status_Snapshot_T resumed_status = {};
+    ASSERT_EQ( HIL_TRANSPORT_STATUS_OK,
+               HOST_INTERFACE_Test_Access_Get_Transport_Status( &resumed_status ) );
+    EXPECT_EQ( HIL_TRANSPORT_SESSION_STATE_ESTABLISHED, resumed_status.session_state );
+    EXPECT_EQ( 0U, resumed_status.reliable_delivery_pending );
+    EXPECT_EQ( HIL_TRANSPORT_FAILURE_NONE, resumed_status.last_failure );
+}
+
+TEST_F( HostInterfaceTest, SuspensionDuringUSBOutputAcceptanceDefersTransportCommit )
+{
+    hil_rig_protocol::test::TransportTestEndpoint host{};
+
+    StartHandshakeWithPendingRigResponse( host );
+    suspend_after_usb_output_accept = true;
+    test_ticks                      = kExpectedRetransmitTimeoutMs;
+    HOST_INTERFACE_Test_Access_Process_Once();
+
+    ASSERT_EQ( HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED, connection_state );
+    ASSERT_EQ( 2U, accepted_usb_output.size() );
+
+    const uint32_t transmit_calls_while_suspended = usb_transmit_calls;
+    test_ticks                                    = 5000U;
+    HOST_INTERFACE_Test_Access_Process_Once();
+    EXPECT_EQ( transmit_calls_while_suspended, usb_transmit_calls );
+
+    suspend_after_usb_output_accept = false;
+    connection_state                = HW_USB_CONNECTION_STATE_ACTIVE;
+    HOST_INTERFACE_Test_Access_Process_Once();
+    EXPECT_EQ( transmit_calls_while_suspended, usb_transmit_calls );
+
+    test_ticks = 5099U;
+    HOST_INTERFACE_Test_Access_Process_Once();
+    EXPECT_EQ( transmit_calls_while_suspended, usb_transmit_calls );
+
+    test_ticks = 5100U;
+    HOST_INTERFACE_Test_Access_Process_Once();
+    EXPECT_EQ( transmit_calls_while_suspended + 1U, usb_transmit_calls );
+}
+
+TEST_F( HostInterfaceTest, TransportClockHandlesTickWrapDuringConfiguredSuspension )
+{
+    connection_state = HW_USB_CONNECTION_STATE_ACTIVE;
+    test_ticks       = UINT32_MAX - 20U;
+    HOST_INTERFACE_Test_Access_Reset_Protocol();
+
+    test_ticks = UINT32_MAX - 10U;
+    HOST_INTERFACE_Test_Access_Process_Once();
+    ASSERT_EQ( 10U, HOST_INTERFACE_Test_Access_Get_Transport_Time() );
+
+    connection_state = HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED;
+    test_ticks       = UINT32_MAX - 5U;
+    HOST_INTERFACE_Test_Access_Process_Once();
+    test_ticks = 5000U;
+    HOST_INTERFACE_Test_Access_Process_Once();
+    EXPECT_EQ( 10U, HOST_INTERFACE_Test_Access_Get_Transport_Time() );
+
+    connection_state = HW_USB_CONNECTION_STATE_ACTIVE;
+    HOST_INTERFACE_Test_Access_Process_Once();
+    EXPECT_EQ( 10U, HOST_INTERFACE_Test_Access_Get_Transport_Time() );
+
+    test_ticks = 5010U;
+    HOST_INTERFACE_Test_Access_Process_Once();
+    EXPECT_EQ( 20U, HOST_INTERFACE_Test_Access_Get_Transport_Time() );
+}
+
+TEST_F( HostInterfaceTest, GenuineDisconnectDuringSuspensionAbandonsTheSession )
+{
+    hil_rig_protocol::test::TransportTestEndpoint host{};
+
+    StartHandshakeWithPendingRigResponse( host );
+    connection_state = HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED;
+    test_ticks       = 1000U;
+    HOST_INTERFACE_Test_Access_Process_Once();
+
+    connection_state = HW_USB_CONNECTION_STATE_DISCONNECTED;
+    test_ticks       = 2000U;
+    HOST_INTERFACE_Test_Access_Process_Once();
+
+    HIL_Transport_Status_Snapshot_T disconnected_status = {};
+    ASSERT_EQ( HIL_TRANSPORT_STATUS_OK,
+               HOST_INTERFACE_Test_Access_Get_Transport_Status( &disconnected_status ) );
+    EXPECT_EQ( 1U, discard_transmit_calls );
+    EXPECT_TRUE( accepted_usb_output.empty() );
+    EXPECT_EQ( HIL_TRANSPORT_LINK_STATE_DISCONNECTED, disconnected_status.link_state );
+    EXPECT_EQ( 0U, disconnected_status.reliable_delivery_pending );
+
+    connection_state = HW_USB_CONNECTION_STATE_ACTIVE;
+    test_ticks       = 2001U;
+    HOST_INTERFACE_Test_Access_Process_Once();
+    EXPECT_TRUE( accepted_usb_output.empty() );
+}
+
+TEST_F( HostInterfaceTest, MissingHandshakeAcknowledgementExhaustsRetriesWithoutSuspension )
+{
+    hil_rig_protocol::test::TransportTestEndpoint host{};
+
+    StartHandshakeWithPendingRigResponse( host );
+
+    for ( uint32_t retry_deadline = kExpectedRetransmitTimeoutMs;
+          retry_deadline <= ( kExpectedRetransmitTimeoutMs * kExpectedMaxRetries );
+          retry_deadline += kExpectedRetransmitTimeoutMs )
+    {
+        test_ticks = retry_deadline;
+        HOST_INTERFACE_Test_Access_Process_Once();
+    }
+
+    ASSERT_EQ( 1U + kExpectedMaxRetries, accepted_usb_output.size() );
+
+    test_ticks = kExpectedRetransmitTimeoutMs * ( kExpectedMaxRetries + 1U );
+    HOST_INTERFACE_Test_Access_Process_Once();
+
+    HIL_Transport_Status_Snapshot_T failed_status = {};
+    ASSERT_EQ( HIL_TRANSPORT_STATUS_OK,
+               HOST_INTERFACE_Test_Access_Get_Transport_Status( &failed_status ) );
+    EXPECT_EQ( HIL_TRANSPORT_SESSION_STATE_RECOVERING, failed_status.session_state );
+    EXPECT_EQ( HIL_TRANSPORT_FAILURE_DELIVERY, failed_status.last_failure );
+    EXPECT_EQ( 0U, failed_status.reliable_delivery_pending );
 }
 
 TEST_F( HostInterfaceTest, MissingAcknowledgementRetransmitsThenRecoversAfterRetryExhaustion )
