@@ -238,14 +238,33 @@ bool HW_USB_Init( void )
 
 HW_USB_Link_State_T HW_USB_Get_Link_State( void )
 {
-    // USB suspend retains the configured CDC class and any active IN endpoint
-    // transfer. Keep the Transport session alive so a resumed transfer cannot
-    // be mistaken for bytes from an abandoned session.
-    return ( ( hUsbDeviceFS.dev_state == USBD_STATE_CONFIGURED )
-             || ( ( hUsbDeviceFS.dev_state == USBD_STATE_SUSPENDED )
-                  && ( hUsbDeviceFS.dev_old_state == USBD_STATE_CONFIGURED ) ) )
-               ? HW_USB_LINK_STATE_CONNECTED
-               : HW_USB_LINK_STATE_DISCONNECTED;
+    return ( HW_USB_Get_Connection_State() == HW_USB_CONNECTION_STATE_DISCONNECTED )
+               ? HW_USB_LINK_STATE_DISCONNECTED
+               : HW_USB_LINK_STATE_CONNECTED;
+}
+
+HW_USB_Connection_State_T HW_USB_Get_Connection_State( void )
+{
+    uint8_t device_state;
+    uint8_t previous_device_state;
+
+    taskENTER_CRITICAL();
+    device_state          = hUsbDeviceFS.dev_state;
+    previous_device_state = hUsbDeviceFS.dev_old_state;
+    taskEXIT_CRITICAL();
+
+    if ( device_state == USBD_STATE_CONFIGURED )
+    {
+        return HW_USB_CONNECTION_STATE_ACTIVE;
+    }
+
+    if ( ( device_state == USBD_STATE_SUSPENDED )
+         && ( previous_device_state == USBD_STATE_CONFIGURED ) )
+    {
+        return HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED;
+    }
+
+    return HW_USB_CONNECTION_STATE_DISCONNECTED;
 }
 
 /**
@@ -260,7 +279,8 @@ HW_USB_Link_State_T HW_USB_Get_Link_State( void )
  * @param size_bytes Number of bytes to queue for transmission.
  *
  * @return true if the data was successfully queued or size_bytes was zero.
- * @return false if data was NULL or there was not enough free transmit space.
+ * @return false if data was NULL, the configured device is suspended, or there
+ *         was not enough free transmit space.
  */
 bool HW_USB_Transmit( const uint8_t* data, uint16_t size_bytes )
 {
@@ -286,6 +306,12 @@ bool HW_USB_Transmit( const uint8_t* data, uint16_t size_bytes )
 
     if ( xSemaphoreTake( usb_state.transmit_mutex, portMAX_DELAY ) != pdTRUE )
     {
+        return false;
+    }
+
+    if ( HW_USB_Get_Connection_State() == HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED )
+    {
+        xSemaphoreGive( usb_state.transmit_mutex );
         return false;
     }
 
@@ -543,6 +569,11 @@ static void HW_USB_Monitor_Process_Locked( void )
     uint32_t contiguous_bytes_available = 0;
     uint16_t bytes_to_transmit          = 0;
     uint8_t* transmit_data              = NULL;
+
+    if ( HW_USB_Get_Connection_State() == HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED )
+    {
+        return;
+    }
 
     if ( usb_state.transmit_discard_pending )
     {
