@@ -616,6 +616,7 @@ TEST_F( HWUSBTest, SuspendKeepsAnActiveCDCTransferInTheCurrentTransportSession )
     hUsbDeviceFS.dev_old_state = USBD_STATE_CONFIGURED;
     hUsbDeviceFS.pClassData    = &cdc_handle;
 
+    EXPECT_EQ( HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED, HW_USB_Get_Connection_State() );
     EXPECT_EQ( HW_USB_LINK_STATE_CONNECTED, HW_USB_Get_Link_State() );
     HW_USB_Monitor_Process();
 
@@ -625,8 +626,22 @@ TEST_F( HWUSBTest, SuspendKeepsAnActiveCDCTransferInTheCurrentTransportSession )
     EXPECT_EQ( &cdc_handle, hUsbDeviceFS.pClassData );
     EXPECT_EQ( 1U, cdc_handle.TxState );
 
+    const uint8_t queued_suffix[] = { 0x55U, 0x66U };
+    EXPECT_FALSE( HW_USB_Transmit( queued_suffix, sizeof( queued_suffix ) ) );
+    EXPECT_EQ( sizeof( active_frame ), usb_state.transmit_num_buffered );
+
     hUsbDeviceFS.dev_state = USBD_STATE_CONFIGURED;
+    EXPECT_EQ( HW_USB_CONNECTION_STATE_ACTIVE, HW_USB_Get_Connection_State() );
     EXPECT_EQ( HW_USB_LINK_STATE_CONNECTED, HW_USB_Get_Link_State() );
+}
+
+TEST_F( HWUSBTest, SuspensionBeforeConfigurationRemainsDisconnected )
+{
+    hUsbDeviceFS.dev_state     = USBD_STATE_SUSPENDED;
+    hUsbDeviceFS.dev_old_state = 0U;
+
+    EXPECT_EQ( HW_USB_CONNECTION_STATE_DISCONNECTED, HW_USB_Get_Connection_State() );
+    EXPECT_EQ( HW_USB_LINK_STATE_DISCONNECTED, HW_USB_Get_Link_State() );
 }
 
 TEST_F( HWUSBTest, DiscardDefersRingReuseUntilCDCReleasesAnActiveTransfer )

@@ -88,13 +88,22 @@ typedef struct
     size_t                 used_output_buffer_size;
     HIL_Transport_Status_T status;
     HIL_Transport_Event_T  event;
+    bool                   output_acceptance_pending_commit;
 } HOST_INTERFACE_Transport_State_T;
+
+typedef struct
+{
+    TickType_t last_ticks;
+    uint32_t   effective_time_ms;
+    bool       configured_suspension_observed;
+} HOST_INTERFACE_Transport_Clock_T;
 
 typedef struct
 {
     HOST_INTERFACE_USB_State_T         usb;
     HOST_INTERFACE_Application_State_T application;
     HOST_INTERFACE_Transport_State_T   transport;
+    HOST_INTERFACE_Transport_Clock_T   transport_clock;
     TickType_t                         initial_ticks;
     HIL_Transport_Link_State_T         observed_link_state;
     bool                               link_state_observed;
@@ -122,11 +131,39 @@ static void
 HOST_INTERFACE_Protocol_Update_Link_State( HOST_INTERFACE_Protocol_State_T* protocol_state,
                                            HIL_Transport_Link_State_T       observed_link_state,
                                            uint32_t                         now );
+static uint32_t
+HOST_INTERFACE_Transport_Clock_Update( HOST_INTERFACE_Transport_Clock_T* transport_clock,
+                                       TickType_t current_ticks, bool configured_suspended );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+
+static uint32_t
+HOST_INTERFACE_Transport_Clock_Update( HOST_INTERFACE_Transport_Clock_T* const transport_clock,
+                                       const TickType_t                        current_ticks,
+                                       const bool configured_suspended )
+{
+    const TickType_t elapsed_ticks = current_ticks - transport_clock->last_ticks;
+
+    transport_clock->last_ticks = current_ticks;
+
+    if ( configured_suspended )
+    {
+        transport_clock->configured_suspension_observed = true;
+        return transport_clock->effective_time_ms;
+    }
+
+    if ( transport_clock->configured_suspension_observed )
+    {
+        transport_clock->configured_suspension_observed = false;
+        return transport_clock->effective_time_ms;
+    }
+
+    transport_clock->effective_time_ms += elapsed_ticks;
+    return transport_clock->effective_time_ms;
+}
 
 static void
 HOST_INTERFACE_Protocol_Update_Link_State( HOST_INTERFACE_Protocol_State_T* const protocol_state,
@@ -142,8 +179,9 @@ HOST_INTERFACE_Protocol_Update_Link_State( HOST_INTERFACE_Protocol_State_T* cons
     if ( observed_link_state == HIL_TRANSPORT_LINK_STATE_DISCONNECTED )
     {
         // Do not offer bytes retained from an abandoned physical link to a new session.
-        protocol_state->usb.receive_count  = 0U;
-        protocol_state->usb.receive_offset = 0U;
+        protocol_state->usb.receive_count                          = 0U;
+        protocol_state->usb.receive_offset                         = 0U;
+        protocol_state->transport.output_acceptance_pending_commit = false;
         HW_USB_Discard_Transmit_Data();
 
         while ( HW_USB_Get_Receive_Stream_Used_Bytes() > 0U )
@@ -174,22 +212,43 @@ static void HOST_INTERFACE_Protocol_Process(
     const HIL_Application_Message_T* const outgoing_message, bool* const outgoing_message_accepted,
     HIL_Application_Message_T* const incoming_message, bool* const incoming_message_available )
 {
-    const uint32_t             now = ( uint32_t )xTaskGetTickCount();
+    const HW_USB_Connection_State_T usb_connection_state = HW_USB_Get_Connection_State();
+    const bool                      configured_suspended =
+        usb_connection_state == HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED;
+    const uint32_t now = HOST_INTERFACE_Transport_Clock_Update(
+        &protocol_state->transport_clock, xTaskGetTickCount(), configured_suspended );
     HIL_Transport_Link_State_T observed_link_state;
 
     *outgoing_message_accepted  = false;
     *incoming_message_available = false;
     *incoming_message           = ( HIL_Application_Message_T ){ 0 };
 
-    // The Application decoder uses state-owned storage for any variable spans.
-    protocol_state->application.used_receive_data_size = 0U;
-
     // =======------- SERVICE USB AND LINK STATE
-    observed_link_state = ( HW_USB_Get_Link_State() == HW_USB_LINK_STATE_CONNECTED )
+    observed_link_state = ( usb_connection_state != HW_USB_CONNECTION_STATE_DISCONNECTED )
                               ? HIL_TRANSPORT_LINK_STATE_CONNECTED
                               : HIL_TRANSPORT_LINK_STATE_DISCONNECTED;
 
     HOST_INTERFACE_Protocol_Update_Link_State( protocol_state, observed_link_state, now );
+
+    if ( configured_suspended )
+    {
+        return;
+    }
+
+    // The Application decoder uses state-owned storage for any variable spans.
+    protocol_state->application.used_receive_data_size = 0U;
+
+    if ( protocol_state->transport.output_acceptance_pending_commit )
+    {
+        protocol_state->transport.status =
+            HIL_TRANSPORT_Commit_Output( &protocol_state->transport.context, now );
+        if ( protocol_state->transport.status != HIL_TRANSPORT_STATUS_OK )
+        {
+            HOST_INTERFACE_Error_Handler();
+        }
+        protocol_state->transport.output_acceptance_pending_commit = false;
+    }
+
     HW_USB_Monitor_Process();
 
     // =======------- DRAIN TRANSPORT EVENTS
@@ -349,6 +408,18 @@ static void HOST_INTERFACE_Protocol_Process(
     // =======------- TRANSMIT TRANSPORT OUTPUT
     while ( true )
     {
+        HW_USB_Connection_State_T current_connection_state = HW_USB_Get_Connection_State();
+
+        if ( current_connection_state != HW_USB_CONNECTION_STATE_ACTIVE )
+        {
+            if ( current_connection_state == HW_USB_CONNECTION_STATE_DISCONNECTED )
+            {
+                HOST_INTERFACE_Protocol_Update_Link_State(
+                    protocol_state, HIL_TRANSPORT_LINK_STATE_DISCONNECTED, now );
+            }
+            break;
+        }
+
         protocol_state->transport.used_output_buffer_size = 0U;
         protocol_state->transport.status                  = HIL_TRANSPORT_Peek_Output(
             &protocol_state->transport.context, protocol_state->transport.output_buffer,
@@ -371,10 +442,17 @@ static void HOST_INTERFACE_Protocol_Process(
             break;
         }
 
-        if ( HW_USB_Get_Link_State() != HW_USB_LINK_STATE_CONNECTED )
+        current_connection_state = HW_USB_Get_Connection_State();
+        if ( current_connection_state == HW_USB_CONNECTION_STATE_DISCONNECTED )
         {
             HOST_INTERFACE_Protocol_Update_Link_State( protocol_state,
                                                        HIL_TRANSPORT_LINK_STATE_DISCONNECTED, now );
+            break;
+        }
+
+        if ( current_connection_state == HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED )
+        {
+            protocol_state->transport.output_acceptance_pending_commit = true;
             break;
         }
 
@@ -441,7 +519,8 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
         HOST_INTERFACE_Error_Handler();
     }
 
-    protocol_state->initial_ticks = xTaskGetTickCount();
+    protocol_state->initial_ticks              = xTaskGetTickCount();
+    protocol_state->transport_clock.last_ticks = protocol_state->initial_ticks;
 }
 
 /**-----------------------------------------------------------------------------

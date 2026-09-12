@@ -59,6 +59,13 @@ typedef enum
     HW_USB_LINK_STATE_CONNECTED,
 } HW_USB_Link_State_T;
 
+typedef enum
+{
+    HW_USB_CONNECTION_STATE_DISCONNECTED = 0U,
+    HW_USB_CONNECTION_STATE_ACTIVE,
+    HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED,
+} HW_USB_Connection_State_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -88,6 +95,17 @@ bool HW_USB_Init( void );
 HW_USB_Link_State_T HW_USB_Get_Link_State( void );
 
 /**
+ * @brief Get the USB device connection lifecycle state.
+ *
+ * A suspended device is reported separately only when it was configured before
+ * suspension. The device-state fields are sampled in one interrupt-safe
+ * critical section.
+ *
+ * @return Current USB device connection lifecycle state.
+ */
+HW_USB_Connection_State_T HW_USB_Get_Connection_State( void );
+
+/**
  * @brief Queue data for transmission over USB CDC.
  *
  * The supplied data is copied into the module-owned transmit ring buffer. This
@@ -99,7 +117,8 @@ HW_USB_Link_State_T HW_USB_Get_Link_State( void );
  * @param size_bytes Number of bytes to queue for transmission.
  *
  * @return true if the data was successfully queued or size_bytes was zero.
- * @return false if data was NULL or there was not enough free transmit space.
+ * @return false if data was NULL, the configured device is suspended, or there
+ *         was not enough free transmit space.
  */
 bool HW_USB_Transmit( const uint8_t* data, uint16_t size_bytes );
 
