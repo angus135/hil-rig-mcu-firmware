@@ -89,10 +89,8 @@ HOST_Interface_Status_T HOST_INTERFACE_Default_Error(HIL_Application_Message_T* 
 /**
  * @brief Process an info request from the host device
  *
- * @details This structural check is shared by Decode_Storage_Size() and the
- * fixed body decoders so malformed undersized or oversized payloads cannot be
- * classified differently by the two public decode paths. Test Instruction and
- * Test Result widths come from the shared private 50-byte and 39-byte constants.
+ * @details If the rig receives a info request from the host device this is how it will respond.
+ *          Most errors will be handled by returning an error message to the host device
  *
  * @param[in] recent_received_message         the info request message
  * @param[out] response_message               if required the message to respond with
@@ -100,7 +98,7 @@ HOST_Interface_Status_T HOST_INTERFACE_Default_Error(HIL_Application_Message_T* 
  * @param[out] data                           the optional additional date for variable length byte
 spans
  * @param[out] data_size                      the size available to write to at data
- * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully  
+ * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully
  */
 HOST_Interface_Status_T HOST_INTERFACE_process_Info_Request(
     const HIL_Application_Message_T* recent_received_message,
@@ -163,6 +161,20 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Info_Request(
     }
 }
 
+/**
+ * @brief Process an info response from the host device
+ *
+ * @details If the rig receives a info response from the host device this is how it will respond.
+ *          Most errors will be handled by returning an error message to the host device
+ *
+ * @param[in] recent_received_message         the info request message
+ * @param[out] response_message               if required the message to respond with
+ * @param[out] response_required              whether or not a response is required
+ * @param[out] data                           the optional additional date for variable length byte
+spans
+ * @param[out] data_size                      the size available to write to at data
+ * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully
+ */
 HOST_Interface_Status_T HOST_INTERFACE_process_Info_Response( const HIL_Application_Message_T* recent_received_message,
                                            HIL_Application_Message_T*       response_message,
                                            bool* response_required, uint8_t* data,
@@ -222,21 +234,52 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Info_Response( const HIL_Applicat
     }
 }
 
-bool HOST_INTERFACE_process_Test_Configuration(
+/**
+ * @brief Process an test config message from the host device
+ *
+ * @details If the rig receives a test config from the host device this will attempt
+ *          to transition the run state manager into a new state and pass on the config message.
+ *          Most errors will be handled by returning an error message to the host device
+ *
+ * @param[in] recent_received_message         the info request message
+ * @param[out] response_message               if required the message to respond with
+ * @param[out] response_required              whether or not a response is required
+ * @param[out] data                           the optional additional date for variable length byte
+spans
+ * @param[out] data_size                      the size available to write to at data
+ * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully
+ */
+HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     const HIL_Application_Message_T* recent_received_message,
     HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data,
     size_t data_size )
 {
+    ( void )data;
+    ( void )data_size;
+    /** CALL CALLUMS FUNCTION TO PASS CONFIGURAITON MESSAGE
+     *
+     *
+     *
+     *
+     */
+    
     // Signal run state manager to move to package recieving state
     if ( RUN_STATE_MANAGER_RequestPackageReceive() == false )
     {
         // report error to host device
+        HOST_INTERFACE_Default_Error( response_message );
+        *response_required = true;
+        return HOST_INTERFACE_STATUS_OK;
     }
+
+    *response_required = false;
+    return HOST_INTERFACE_STATUS_OK;
+
 }
 
-bool HOST_INTERFACE_process_Test_Instructions(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
+HOST_Interface_Status_T HOST_INTERFACE_process_Test_Instructions(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
 
-bool HOST_INTERFACE_process_Variable_Instruction_Data(
+HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Instruction_Data(
     const HIL_Application_Message_T* recent_received_message,
     HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size )
 {
@@ -246,16 +289,16 @@ bool HOST_INTERFACE_process_Variable_Instruction_Data(
     ( void )data;
     (void) data_size;
     *response_required = false;
-    return false;
+    return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
 }
 
-bool HOST_INTERFACE_process_Execution_Control(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
+HOST_Interface_Status_T HOST_INTERFACE_process_Execution_Control(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
 
-bool HOST_INTERFACE_process_Global_Control(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
+HOST_Interface_Status_T HOST_INTERFACE_process_Global_Control(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
 
-bool HOST_INTERFACE_process_Test_Result(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
+HOST_Interface_Status_T HOST_INTERFACE_process_Test_Result(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
 
-bool HOST_INTERFACE_process_Variable_Result_Data(
+HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Result_Data(
     const HIL_Application_Message_T* recent_received_message,
     HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size )
 {
@@ -265,21 +308,21 @@ bool HOST_INTERFACE_process_Variable_Result_Data(
     ( void )data;
     (void) data_size;
     *response_required = false;
-    return false;
+    return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
 }
 
-bool HOST_INTERFACE_process_Response( const HIL_Application_Message_T* recent_received_message,
+HOST_Interface_Status_T HOST_INTERFACE_process_Response( const HIL_Application_Message_T* recent_received_message,
                                       HIL_Application_Message_T*  response_message,
                                       bool*                       response_required, uint8_t* data, size_t data_size );
 
-bool HOST_INTERFACE_process_Error(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
+HOST_Interface_Status_T HOST_INTERFACE_process_Error(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
 
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
 
-bool HOST_INTERFACE_process_message(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size)
+HOST_Interface_Status_T HOST_INTERFACE_process_message(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size)
 {
     if ( recent_received_message == NULL || response_message == NULL || response_required == NULL || data== NULL )
     {
