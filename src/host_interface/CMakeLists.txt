@@ -8,14 +8,14 @@ set(HOST_INTERFACE_SOURCES
     host_interface.c
     result_send.c
     test_package_recieve.c
-    host_interface_state.c
+    host_process_message.c
 )
 
 set(HOST_INTERFACE_HEADERS
     host_interface.h
     result_send.h
     test_package_recieve.h
-    host_interface_state.h
+    host_process_message.h
 )
 
 add_library(host_interface STATIC
@@ -39,6 +39,7 @@ target_link_libraries(host_interface
         hw_timer
         hw_gpio
         hw_usb
+        run_state_manager
 )
 
 # Add flash_manager as a private dependency when the documented instruction-
