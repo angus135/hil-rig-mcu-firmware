@@ -126,15 +126,12 @@ buffer alive after a successful call. If any low-level packet load fails, this f
 ```c
 bool EXEC_SPI_Receive( ExecSPIChannel_T channel,
                        uint8_t* data_dst,
-                       uint32_t* size_bytes );
+                       uint32_t capacity_bytes,
+                       uint32_t* bytes_read );
 ```
 
-Copies all currently unread RX bytes into caller-owned storage and consumes those bytes from the
-low-level RX buffer.
-
-`*size_bytes` is used as the destination buffer capacity on entry. On success, it is updated to the
-number of bytes copied. If the unread RX data is larger than the supplied buffer, the function
-returns `false`, copies nothing, and consumes nothing.
+Copies and consumes at most `capacity_bytes` of currently unread RX data. `*bytes_read` reports the
+number copied. Any unread remainder stays buffered for a later call.
 
 The low-level RX buffer may wrap, so this function may copy from two spans internally. The caller
 receives the data as one contiguous buffer.
@@ -157,16 +154,18 @@ transaction or protocol exchange is complete.
 
 ## Receive Behaviour
 
-The receive path wraps the low-level peek/consume model:
+The receive path wraps the low-level peek/consume model. Execution code may call
+`EXEC_SPI_GetPendingReceiveBytes()` first so result storage can be reserved for the current unread
+byte count rather than the maximum RX chunk:
 
 1. `EXEC_SPI_Receive()` calls `HW_SPI_Rx_Peek()`.
 2. The unread RX data is returned as one or two spans.
-3. If the caller's buffer is large enough, the spans are copied into `data_dst`.
-4. `*size_bytes` is updated to the copied byte count.
+3. Up to the caller's capacity is copied into `data_dst`.
+4. `*bytes_read` is updated to the copied byte count.
 5. `HW_SPI_Rx_Consume()` is called with the same byte count.
 
-If the destination buffer is too small, no data is consumed. This prevents the caller from losing RX
-bytes it did not receive.
+Bytes arriving after a pending-count snapshot, or bytes beyond the supplied capacity, remain for the
+next receive call.
 
 ---
 
@@ -212,8 +211,8 @@ The caller is responsible for ensuring that:
 - the requested operation is valid for the current execution interval
 - message framing and protocol semantics are handled elsewhere
 
-`EXEC_SPI_Receive()` still checks the destination capacity before copying. This is a lightweight
-safety guard, not a substitute for the validation subsystem.
+`EXEC_SPI_Receive()` bounds copying to the supplied destination capacity. This is part of the buffer
+ownership contract, not a substitute for configuration and schedule validation.
 
 ---
 
@@ -258,11 +257,12 @@ bool accepted = EXEC_SPI_Transmit( EXEC_SPI_CHANNEL_1,
 
 ```c
 uint8_t  rx_buffer[32];
-uint32_t rx_size_bytes = sizeof( rx_buffer );
+uint32_t bytes_read = 0U;
 
 bool received = EXEC_SPI_Receive( EXEC_SPI_CHANNEL_1,
                                   rx_buffer,
-                                  &rx_size_bytes );
+                                  sizeof( rx_buffer ),
+                                  &bytes_read );
 ```
 
 ```c

@@ -233,6 +233,7 @@ typedef struct
 #define FLASH_MANAGER_RESULT_PERIPHERAL_ANALOGUE_INPUT ( 2U )
 #define FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE ( 3U )
 #define FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE ( 4U )
+#define FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE ( 5U )
 
 /**
  * @brief Temporary driver write access to Flash Manager-owned result storage.
@@ -368,6 +369,27 @@ typedef enum
 /** Receives notification when Flash Manager enters FAULT. */
 typedef void ( *FlashManagerFaultCallback_T )( bool from_isr );
 
+/** Execution-time result-drain diagnostics; observational only. */
+typedef struct
+{
+    uint32_t result_pages_drained;
+    uint64_t result_page_drain_total_cycles;
+    uint32_t result_page_drain_latest_cycles;
+    uint32_t result_page_drain_max_cycles;
+    uint32_t result_reserve_failures;
+    uint16_t last_failed_reserve_payload_bytes;
+    uint32_t free_bytes_at_last_reserve_failure;
+    uint32_t current_pending_result_bytes;
+    uint32_t peak_pending_result_bytes;
+    uint32_t result_commit_failures;
+    FlashManagerResultCommitStatus_T last_commit_failure;
+    uint32_t instruction_pages_refilled;
+    uint64_t instruction_page_refill_total_cycles;
+    uint32_t instruction_page_refill_latest_cycles;
+    uint32_t instruction_page_refill_max_cycles;
+    uint32_t refill_drain_contentions;
+} FlashManagerExecutionDiagnostics_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -425,6 +447,9 @@ void FLASH_MANAGER_SetFaultCallback( FlashManagerFaultCallback_T callback );
  *       mutex and must never be called from an ISR.
  */
 bool FLASH_MANAGER_GetState( FlashManagerState_T* state );
+
+/** Copies execution-time Flash service diagnostics into task-owned storage. */
+bool FLASH_MANAGER_GetExecutionDiagnostics( FlashManagerExecutionDiagnostics_T* diagnostics );
 
 /* Execution ISR instruction serving and result logging. */
 

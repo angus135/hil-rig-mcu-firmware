@@ -10,6 +10,7 @@
 #include "exec_digital_input.h"
 #include "exec_analogue_input.h"
 #include "exec_pwm_capture.h"
+#include "exec_spi.h"
 #include "exec_uart.h"
 #include "flash_manager.h"
 
@@ -18,7 +19,8 @@
 typedef bool ( *ExecutionMeasurementAdapter_T )( uint8_t channel, uint32_t timestamp,
                                                  BaseType_t* higher_priority_task_woken );
 
-#define EXECUTION_MEASUREMENT_ADAPTER_COUNT ( 6U )
+#define EXECUTION_MEASUREMENT_ADAPTER_COUNT                                                   \
+    ( 2U + EXEC_PWM_CAPTURE_CHANNEL_COUNT + EXEC_UART_CHANNEL_COUNT + EXEC_SPI_CHANNEL_COUNT )
 #define EXECUTION_MEASUREMENT_CHANNEL_UNUSED ( 0U )
 #define EXECUTION_MEASUREMENT_CHANNEL_BIT( channel ) ( UINT32_C( 1 ) << ( channel ) )
 
@@ -82,6 +84,70 @@ void EXECUTION_MEASUREMENT_ADAPTER_Prepare(
                 };
         }
     }
+
+    for ( uint8_t channel = 0U; channel < EXEC_SPI_CHANNEL_COUNT; channel++ )
+    {
+        if ( ( configuration->spi_receive_enabled_mask
+               & EXECUTION_MEASUREMENT_CHANNEL_BIT( channel ) )
+             != 0U )
+        {
+            active_measurement_adapters[active_measurement_count++] =
+                ( ExecutionMeasurementDispatchEntry_T ){
+                    .adapter = EXECUTION_MEASUREMENT_ADAPTER_SampleSpiReceive,
+                    .channel = channel,
+                };
+        }
+    }
+}
+
+_Static_assert( EXEC_SPI_MAX_RX_CHUNK_SIZE <= UINT16_MAX,
+                "SPI RX chunks must fit the Flash result length contract" );
+_Static_assert( EXEC_UART_MAX_CHUNK_SIZE <= UINT16_MAX,
+                "UART RX chunks must fit the Flash result length contract" );
+
+bool EXECUTION_MEASUREMENT_ADAPTER_SampleSpiReceive( uint8_t channel, uint32_t timestamp,
+                                                     BaseType_t* higher_priority_task_woken )
+{
+    const uint32_t pending_bytes =
+        EXEC_SPI_GetPendingReceiveBytes( ( ExecSPIChannel_T )channel );
+    if ( pending_bytes == 0U )
+    {
+        return true;
+    }
+
+    const uint16_t reservation_bytes =
+        ( uint16_t )( pending_bytes < EXEC_SPI_MAX_RX_CHUNK_SIZE ? pending_bytes
+                                                                 : EXEC_SPI_MAX_RX_CHUNK_SIZE );
+    FlashManagerResultWriteLease_T lease = { 0 };
+    if ( !FLASH_MANAGER_ReserveResultRecordFromISR( reservation_bytes, &lease ) )
+    {
+        return false;
+    }
+
+    uint32_t bytes_read = 0U;
+    if ( !EXEC_SPI_Receive( ( ExecSPIChannel_T )channel, lease.payload, reservation_bytes,
+                            &bytes_read ) )
+    {
+        ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+        return false;
+    }
+
+    if ( bytes_read == 0U )
+    {
+        ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+        return true;
+    }
+
+    if ( FLASH_MANAGER_CommitResultRecordFromISR(
+             &lease, timestamp, FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE, channel,
+             ( uint16_t )bytes_read, higher_priority_task_woken )
+         == FLASH_MANAGER_RESULT_COMMIT_OK )
+    {
+        return true;
+    }
+
+    ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+    return false;
 }
 
 bool EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive( uint8_t channel, uint32_t timestamp,

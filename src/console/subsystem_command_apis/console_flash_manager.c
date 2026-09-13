@@ -102,6 +102,7 @@
 #include "run_state_manager.h"
 #include "rtos_config.h"
 #include "test_configuration.h"
+#include "stm32f4xx.h"
 
 #include <errno.h>
 #include <stdbool.h>
@@ -128,6 +129,7 @@
 #define CONSOLE_FLASH_TEST_PAYLOAD_BYTES ( 12U )
 #define CONSOLE_FLASH_TEST_OPERATION_COUNT ( 1U )
 #define CONSOLE_FLASH_DEFAULT_SEED ( 0x31U )
+#define CONSOLE_FLASH_THROUGHPUT_DEFAULT_PAGES ( 1000U )
 #define CONSOLE_FLASH_DO_TEST_INSTRUCTION_COUNT ( 2U )
 #define CONSOLE_FLASH_DO_TEST_OPERATION_BYTES ( 12U )
 #define CONSOLE_FLASH_DO_TEST_INSTRUCTION_BYTES ( 20U )
@@ -239,6 +241,13 @@ typedef struct
     volatile FlashManagerInstructionReadStatus_T last_instruction_status;
     volatile FlashManagerResultCommitStatus_T    last_commit_status;
 } ConsoleFlashExecutionTestContext_T;
+
+typedef struct
+{
+    uint64_t total_cycles;
+    uint32_t minimum_cycles;
+    uint32_t maximum_cycles;
+} ConsoleFlashPageTiming_T;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
@@ -354,9 +363,15 @@ static bool     CONSOLE_Flash_VerifyPattern( const uint8_t* data, uint32_t strea
 static void     CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32_t stream_offset,
                                                     uint32_t length, uint8_t seed );
 static uint32_t CONSOLE_Flash_Fnv1aUpdate( uint32_t hash, const uint8_t* data, uint32_t length );
+static void CONSOLE_Flash_RecordPageTiming( ConsoleFlashPageTiming_T* timing,
+                                            uint32_t                  elapsed_cycles );
+static void CONSOLE_Flash_PrintPageTiming( const char* label, uint32_t operation_count,
+                                           uint32_t bytes_per_operation,
+                                           const ConsoleFlashPageTiming_T* timing );
 
 static void CONSOLE_Flash_StatusCommand( void );
 static void CONSOLE_Flash_ExternalTestCommand( uint16_t argc, char* argv[] );
+static void CONSOLE_Flash_ThroughputTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadDigitalOutputTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadDigitalPatternCommand( uint16_t argc, char* argv[] );
@@ -366,6 +381,7 @@ static void CONSOLE_Flash_UploadCanTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadSpiTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadUartTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char* argv[] );
+static void CONSOLE_Flash_VerifySpiLoopbackResultsCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_PrepareCommand( void );
 static void CONSOLE_Flash_ExecuteEchoCommand( uint16_t argc, char* argv[] );
@@ -386,6 +402,7 @@ static void CONSOLE_Flash_PrintUsage( void )
     CONSOLE_Printf( "Flash hardware bring-up (destructive):\r\n" );
     CONSOLE_Printf( "  flash status\r\n" );
     CONSOLE_Printf( "  flash external_test [seed]\r\n" );
+    CONSOLE_Printf( "  flash throughput_test [page_count]\r\n" );
     CONSOLE_Printf( "  flash upload_test [instruction_count] [seed]\r\n" );
     CONSOLE_Printf( "  flash upload_do_test <channel 1..10> [delay_ticks] [high_ticks]\r\n" );
     CONSOLE_Printf( "  flash upload_do_pattern <channel> <first_tick> <interval_ticks> "
@@ -410,6 +427,7 @@ static void CONSOLE_Flash_PrintUsage( void )
     CONSOLE_Printf( "  flash results verify_ao_ai <input_channel 0..1>\r\n" );
     CONSOLE_Printf( "  flash results verify_pwm_capture <input_channel 1..2>\r\n" );
     CONSOLE_Printf( "  flash results verify_uart_loopback <channel 1..2> <byte> <length>\r\n" );
+    CONSOLE_Printf( "  flash results verify_spi_loopback <channel 1..2> <byte> <length>\r\n" );
     CONSOLE_Printf( "Use 'flash status' after every phase. Reset after FAULT.\r\n" );
 }
 
@@ -912,6 +930,41 @@ static uint32_t CONSOLE_Flash_Fnv1aUpdate( uint32_t hash, const uint8_t* data, u
     return hash;
 }
 
+static void CONSOLE_Flash_RecordPageTiming( ConsoleFlashPageTiming_T* timing,
+                                            uint32_t                  elapsed_cycles )
+{
+    timing->total_cycles += elapsed_cycles;
+    if ( elapsed_cycles < timing->minimum_cycles )
+    {
+        timing->minimum_cycles = elapsed_cycles;
+    }
+    if ( elapsed_cycles > timing->maximum_cycles )
+    {
+        timing->maximum_cycles = elapsed_cycles;
+    }
+}
+
+static void CONSOLE_Flash_PrintPageTiming( const char* label, uint32_t operation_count,
+                                           uint32_t bytes_per_operation,
+                                           const ConsoleFlashPageTiming_T* timing )
+{
+    const uint32_t average_cycles =
+        operation_count == 0U ? 0U : ( uint32_t )( timing->total_cycles / operation_count );
+    const uint64_t total_bytes = ( uint64_t )operation_count * bytes_per_operation;
+    const uint32_t bytes_per_second =
+        timing->total_cycles == 0U
+            ? 0U
+            : ( uint32_t )( ( total_bytes * SystemCoreClock ) / timing->total_cycles );
+
+    CONSOLE_Printf( "%s: operations=%lu avg=%lu min=%lu max=%lu cycles, "
+                    "%lu.%03lu MB/s\r\n",
+                    label, ( unsigned long )operation_count, ( unsigned long )average_cycles,
+                    ( unsigned long )timing->minimum_cycles,
+                    ( unsigned long )timing->maximum_cycles,
+                    ( unsigned long )( bytes_per_second / 1000000U ),
+                    ( unsigned long )( ( bytes_per_second % 1000000U ) / 1000U ) );
+}
+
 /** Prints Flash Manager lifecycle and External Flash/NAND diagnostic state. */
 static void CONSOLE_Flash_StatusCommand( void )
 {
@@ -947,6 +1000,43 @@ static void CONSOLE_Flash_StatusCommand( void )
     HW_NAND_Status_T    nand_status = HW_NAND_GetLastEccStatus( &ecc_status );
     CONSOLE_Printf( "NAND ECC: status=%d value=%d, QSPI busy=%u\r\n", ( int )nand_status,
                     ( int )ecc_status, HW_QSPI_IsBusy() ? 1U : 0U );
+
+    FlashManagerExecutionDiagnostics_T diagnostics = { 0 };
+    if ( FLASH_MANAGER_GetExecutionDiagnostics( &diagnostics ) )
+    {
+        const uint32_t average_drain_cycles =
+            diagnostics.result_pages_drained == 0U
+                ? 0U
+                : ( uint32_t )( diagnostics.result_page_drain_total_cycles
+                                / diagnostics.result_pages_drained );
+        const uint32_t average_refill_cycles =
+            diagnostics.instruction_pages_refilled == 0U
+                ? 0U
+                : ( uint32_t )( diagnostics.instruction_page_refill_total_cycles
+                                / diagnostics.instruction_pages_refilled );
+        CONSOLE_Printf( "Execution drain: pages=%lu latest=%lu avg=%lu max=%lu cycles, "
+                        "pending=%lu peak=%lu bytes\r\n",
+                        ( unsigned long )diagnostics.result_pages_drained,
+                        ( unsigned long )diagnostics.result_page_drain_latest_cycles,
+                        ( unsigned long )average_drain_cycles,
+                        ( unsigned long )diagnostics.result_page_drain_max_cycles,
+                        ( unsigned long )diagnostics.current_pending_result_bytes,
+                        ( unsigned long )diagnostics.peak_pending_result_bytes );
+        CONSOLE_Printf( "Execution buffer: reserve_failures=%lu last_request=%u last_free=%lu, "
+                        "commit_failures=%lu last_commit=%d\r\n",
+                        ( unsigned long )diagnostics.result_reserve_failures,
+                        ( unsigned int )diagnostics.last_failed_reserve_payload_bytes,
+                        ( unsigned long )diagnostics.free_bytes_at_last_reserve_failure,
+                        ( unsigned long )diagnostics.result_commit_failures,
+                        ( int )diagnostics.last_commit_failure );
+        CONSOLE_Printf( "Execution refill: pages=%lu latest=%lu avg=%lu max=%lu cycles\r\n",
+                        ( unsigned long )diagnostics.instruction_pages_refilled,
+                        ( unsigned long )diagnostics.instruction_page_refill_latest_cycles,
+                        ( unsigned long )average_refill_cycles,
+                        ( unsigned long )diagnostics.instruction_page_refill_max_cycles );
+        CONSOLE_Printf( "Execution arbitration: contentions=%lu\r\n",
+                        ( unsigned long )diagnostics.refill_drain_contentions );
+    }
 
     if ( console_flash_last_upload_records != 0U )
     {
@@ -1126,6 +1216,205 @@ static void CONSOLE_Flash_ExternalTestCommand( uint16_t argc, char* argv[] )
 
     CONSOLE_Printf( "External Flash test PASS: %lu bytes per partition, seed=0x%02X.\r\n",
                     ( unsigned long )expected_length, ( unsigned int )seed );
+}
+
+/** Benchmarks full-page NAND service through the production External Flash APIs. */
+static void CONSOLE_Flash_ThroughputTestCommand( uint16_t argc, char* argv[] )
+{
+    if ( !CONSOLE_Flash_RequireIdle() )
+    {
+        return;
+    }
+
+    uint32_t page_count = CONSOLE_FLASH_THROUGHPUT_DEFAULT_PAGES;
+    if ( ( argc == 3U ) && !CONSOLE_Flash_ParseU32( argv[2], &page_count ) )
+    {
+        CONSOLE_Printf( "Invalid page count.\r\n" );
+        return;
+    }
+    if ( ( argc > 3U ) || ( page_count == 0U ) )
+    {
+        CONSOLE_Printf( "Usage: flash throughput_test [page_count > 0]\r\n" );
+        return;
+    }
+
+    ExternalFlashInfo_T   info   = { 0 };
+    ExternalFlashStatus_T status = EXTERNAL_FLASH_GetInfo( &info );
+    if ( status != EXTERNAL_FLASH_STATUS_OK )
+    {
+        CONSOLE_Printf( "External Flash GetInfo failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    if ( ( info.page_size_bytes == 0U )
+         || ( info.page_size_bytes > sizeof( console_flash_write_buffer ) ) )
+    {
+        CONSOLE_Printf( "Unsupported NAND page size: %lu.\r\n",
+                        ( unsigned long )info.page_size_bytes );
+        return;
+    }
+
+    const uint32_t maximum_pages =
+        ( info.instruction_capacity_bytes < info.result_capacity_bytes
+              ? info.instruction_capacity_bytes
+              : info.result_capacity_bytes )
+        / info.page_size_bytes;
+    if ( page_count > maximum_pages )
+    {
+        CONSOLE_Printf( "Page count exceeds benchmark capacity (maximum=%lu).\r\n",
+                        ( unsigned long )maximum_pages );
+        return;
+    }
+
+    const uint32_t total_bytes = page_count * info.page_size_bytes;
+    const uint8_t  instruction_seed = CONSOLE_FLASH_DEFAULT_SEED;
+    const uint8_t  result_seed      = ( uint8_t )( instruction_seed ^ 0xA5U );
+    uint32_t       first_bad_offset = 0U;
+    ConsoleFlashPageTiming_T program_timing = {
+        .total_cycles = 0U, .minimum_cycles = UINT32_MAX, .maximum_cycles = 0U };
+    ConsoleFlashPageTiming_T read_timing = {
+        .total_cycles = 0U, .minimum_cycles = UINT32_MAX, .maximum_cycles = 0U };
+    ConsoleFlashPageTiming_T alternating_read_timing = {
+        .total_cycles = 0U, .minimum_cycles = UINT32_MAX, .maximum_cycles = 0U };
+    ConsoleFlashPageTiming_T alternating_program_timing = {
+        .total_cycles = 0U, .minimum_cycles = UINT32_MAX, .maximum_cycles = 0U };
+    ConsoleFlashPageTiming_T alternating_pair_timing = {
+        .total_cycles = 0U, .minimum_cycles = UINT32_MAX, .maximum_cycles = 0U };
+
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CYCCNT = 0U;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
+    CONSOLE_Printf( "NAND throughput test starting: pages=%lu page_size=%lu bytes. "
+                    "Existing instruction and result data will be overwritten.\r\n",
+                    ( unsigned long )page_count, ( unsigned long )info.page_size_bytes );
+
+    status = EXTERNAL_FLASH_StartInstructionUpload( total_bytes );
+    if ( status != EXTERNAL_FLASH_STATUS_OK )
+    {
+        CONSOLE_Printf( "Throughput instruction setup failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    console_flash_last_upload_records = 0U;
+    console_flash_last_upload_bytes   = 0U;
+    console_flash_run_tick_count      = 0U;
+    CONSOLE_Flash_ResetExecutionHarnessState();
+
+    for ( uint32_t page = 0U; page < page_count; page++ )
+    {
+        const uint32_t offset = page * info.page_size_bytes;
+        CONSOLE_Flash_FillPattern( console_flash_write_buffer, offset, info.page_size_bytes,
+                                   instruction_seed );
+        const uint32_t start_cycles = DWT->CYCCNT;
+        status =
+            EXTERNAL_FLASH_WriteInstructionPage( console_flash_write_buffer, info.page_size_bytes );
+        CONSOLE_Flash_RecordPageTiming( &program_timing, DWT->CYCCNT - start_cycles );
+        if ( status != EXTERNAL_FLASH_STATUS_OK )
+        {
+            CONSOLE_Printf( "Instruction program failed at page=%lu status=%d.\r\n",
+                            ( unsigned long )page, ( int )status );
+            return;
+        }
+    }
+
+    status = EXTERNAL_FLASH_FinishInstructionUpload();
+    if ( status != EXTERNAL_FLASH_STATUS_OK )
+    {
+        CONSOLE_Printf( "Instruction upload finish failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    for ( uint32_t page = 0U; page < page_count; page++ )
+    {
+        const uint32_t offset       = page * info.page_size_bytes;
+        const uint32_t start_cycles = DWT->CYCCNT;
+        status = EXTERNAL_FLASH_ReadInstructionPage( offset, console_flash_read_buffer,
+                                                     info.page_size_bytes );
+        CONSOLE_Flash_RecordPageTiming( &read_timing, DWT->CYCCNT - start_cycles );
+        if ( ( status != EXTERNAL_FLASH_STATUS_OK )
+             || !CONSOLE_Flash_VerifyPattern( console_flash_read_buffer, offset,
+                                              info.page_size_bytes, instruction_seed,
+                                              &first_bad_offset ) )
+        {
+            CONSOLE_Printf( "Instruction read/verify failed at page=%lu status=%d offset=%lu.\r\n",
+                            ( unsigned long )page, ( int )status,
+                            ( unsigned long )first_bad_offset );
+            return;
+        }
+    }
+
+    status = EXTERNAL_FLASH_StartSession( total_bytes );
+    if ( status != EXTERNAL_FLASH_STATUS_OK )
+    {
+        CONSOLE_Printf( "Throughput result setup failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    for ( uint32_t page = 0U; page < page_count; page++ )
+    {
+        const uint32_t offset = page * info.page_size_bytes;
+        uint32_t       start_cycles = DWT->CYCCNT;
+        status = EXTERNAL_FLASH_ReadInstructionPage( offset, console_flash_read_buffer,
+                                                     info.page_size_bytes );
+        const uint32_t read_cycles = DWT->CYCCNT - start_cycles;
+        CONSOLE_Flash_RecordPageTiming( &alternating_read_timing, read_cycles );
+        if ( ( status != EXTERNAL_FLASH_STATUS_OK )
+             || !CONSOLE_Flash_VerifyPattern( console_flash_read_buffer, offset,
+                                              info.page_size_bytes, instruction_seed,
+                                              &first_bad_offset ) )
+        {
+            CONSOLE_Printf( "Alternating read failed at page=%lu status=%d offset=%lu.\r\n",
+                            ( unsigned long )page, ( int )status,
+                            ( unsigned long )first_bad_offset );
+            return;
+        }
+
+        CONSOLE_Flash_FillPattern( console_flash_write_buffer, offset, info.page_size_bytes,
+                                   result_seed );
+        start_cycles = DWT->CYCCNT;
+        status = EXTERNAL_FLASH_WriteResultPage( console_flash_write_buffer,
+                                                 info.page_size_bytes );
+        const uint32_t program_cycles = DWT->CYCCNT - start_cycles;
+        CONSOLE_Flash_RecordPageTiming( &alternating_program_timing, program_cycles );
+        CONSOLE_Flash_RecordPageTiming( &alternating_pair_timing,
+                                        read_cycles + program_cycles );
+        if ( status != EXTERNAL_FLASH_STATUS_OK )
+        {
+            CONSOLE_Printf( "Alternating program failed at page=%lu status=%d.\r\n",
+                            ( unsigned long )page, ( int )status );
+            return;
+        }
+    }
+
+    for ( uint32_t page = 0U; page < page_count; page++ )
+    {
+        const uint32_t offset = page * info.page_size_bytes;
+        status = EXTERNAL_FLASH_ReadResultPage( offset, console_flash_read_buffer,
+                                                info.page_size_bytes );
+        if ( ( status != EXTERNAL_FLASH_STATUS_OK )
+             || !CONSOLE_Flash_VerifyPattern( console_flash_read_buffer, offset,
+                                              info.page_size_bytes, result_seed,
+                                              &first_bad_offset ) )
+        {
+            CONSOLE_Printf( "Result verify failed at page=%lu status=%d offset=%lu.\r\n",
+                            ( unsigned long )page, ( int )status,
+                            ( unsigned long )first_bad_offset );
+            return;
+        }
+    }
+
+    CONSOLE_Flash_PrintPageTiming( "Program only", page_count, info.page_size_bytes,
+                                   &program_timing );
+    CONSOLE_Flash_PrintPageTiming( "Read only", page_count, info.page_size_bytes, &read_timing );
+    CONSOLE_Flash_PrintPageTiming( "Alternating read", page_count, info.page_size_bytes,
+                                   &alternating_read_timing );
+    CONSOLE_Flash_PrintPageTiming( "Alternating program", page_count, info.page_size_bytes,
+                                   &alternating_program_timing );
+    CONSOLE_Flash_PrintPageTiming( "Alternating pair", page_count,
+                                   2U * info.page_size_bytes, &alternating_pair_timing );
+    CONSOLE_Printf( "NAND throughput test PASS: %lu pages verified in each partition.\r\n",
+                    ( unsigned long )page_count );
 }
 
 static void CONSOLE_Flash_WriteU32Le( uint8_t* destination, uint32_t value )
@@ -1823,7 +2112,7 @@ static void CONSOLE_Flash_UploadAnalogueOutputTestCommand( uint16_t argc, char* 
                     "update_tick=%lu run_ticks=%lu.\r\n",
                     ( unsigned long )channel, argv[3], ( unsigned long )update_tick,
                     ( unsigned long )run_ticks );
-    CONSOLE_Printf( "Next: finish configuring the RSM, then 'run_state execute %lu 0'.\r\n",
+    CONSOLE_Printf( "Next: finish configuring the RSM, then 'run_state execute %lu'.\r\n",
                     ( unsigned long )console_flash_run_tick_count );
 }
 
@@ -2152,7 +2441,7 @@ static void CONSOLE_Flash_UploadSpiTestCommand( uint16_t argc, char* argv[] )
                     ( unsigned long )channel, ( unsigned long )value, ( unsigned long )length,
                     ( unsigned long )first_tick, ( unsigned long )repeat_count,
                     ( unsigned long )interval_ticks, ( unsigned long )run_ticks );
-    CONSOLE_Printf( "Next: finish configuring the RSM, then 'run_state execute %lu 0'.\r\n",
+    CONSOLE_Printf( "Next: finish configuring the RSM, then 'run_state execute %lu'.\r\n",
                     ( unsigned long )console_flash_run_tick_count );
 }
 
@@ -3271,8 +3560,10 @@ static void CONSOLE_Flash_VerifyAnalogueLoopbackResultsCommand( uint16_t argc, c
     CONSOLE_Printf( "Voltage comparison: NOT PERFORMED; AI calibration is unavailable.\r\n" );
 }
 
-/** Retrieves UART receive records and verifies a same-channel repeated-byte loopback. */
-static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char* argv[] )
+/** Retrieves sparse byte-stream records and verifies a repeated-byte loopback. */
+static void CONSOLE_Flash_VerifyByteStreamLoopbackResults(
+    uint16_t argc, char* argv[], uint8_t expected_peripheral_type, uint32_t channel_count,
+    const char* peripheral_name )
 {
     uint32_t channel = 0U;
     uint32_t value   = 0U;
@@ -3280,10 +3571,11 @@ static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char*
     if ( argc != 6U || !CONSOLE_Flash_ParseU32( argv[3], &channel )
          || !CONSOLE_Flash_ParseU32( argv[4], &value )
          || !CONSOLE_Flash_ParseU32( argv[5], &length ) || channel < 1U
-         || channel > EXEC_UART_CHANNEL_COUNT || value > UINT8_MAX || length == 0U )
+         || channel > channel_count || value > UINT8_MAX || length == 0U )
     {
-        CONSOLE_Printf( "Usage: flash results verify_uart_loopback <channel 1..2> "
-                        "<byte 0..255> <length>\r\n" );
+        CONSOLE_Printf( "Usage: flash results verify_<uart|spi>_loopback <channel 1..%lu> "
+                        "<byte 0..255> <length>\r\n",
+                        ( unsigned long )channel_count );
         return;
     }
 
@@ -3302,6 +3594,7 @@ static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char*
     uint32_t                           received_bytes                                     = 0U;
     uint32_t                           record_count                                       = 0U;
     uint32_t                           mismatch_offset                                    = 0U;
+    uint8_t                            mismatch_actual                                    = 0U;
     uint8_t                            expected = ( uint8_t )value;
     const uint32_t                     expected_bytes =
         ( console_flash_last_upload_records != 0U
@@ -3337,7 +3630,7 @@ static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char*
                     {
                         FlashManagerResultHeader_T header = { 0 };
                         ( void )memcpy( &header, header_bytes, sizeof( header ) );
-                        if ( header.peripheral_type != FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE
+                        if ( header.peripheral_type != expected_peripheral_type
                              || header.channel != ( uint8_t )( channel - 1U )
                              || header.payload_length_bytes == 0U )
                         {
@@ -3359,6 +3652,7 @@ static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char*
                     {
                         mismatch_recorded = true;
                         mismatch_offset   = received_bytes + index;
+                        mismatch_actual   = actual;
                     }
                 }
                 received_bytes += copy;
@@ -3376,8 +3670,8 @@ static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char*
         {
             if ( CONSOLE_Flash_HasTimedOut( last_progress_at, CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
             {
-                CONSOLE_Printf( "UART result retrieval timeout after %lu bytes.\r\n",
-                                ( unsigned long )received_bytes );
+                CONSOLE_Printf( "%s result retrieval timeout after %lu bytes.\r\n",
+                                peripheral_name, ( unsigned long )received_bytes );
                 return;
             }
             vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
@@ -3387,8 +3681,8 @@ static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char*
         {
             break;
         }
-        CONSOLE_Printf( "UART result retrieval failed after %lu bytes (status=%d).\r\n",
-                        ( unsigned long )received_bytes, ( int )status );
+        CONSOLE_Printf( "%s result retrieval failed after %lu bytes (status=%d).\r\n",
+                        peripheral_name, ( unsigned long )received_bytes, ( int )status );
         return;
     }
 
@@ -3403,21 +3697,35 @@ static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char*
 
     if ( passed )
     {
-        CONSOLE_Printf( "UART loopback PASS: channel=%lu records=%lu bytes=%lu byte=0x%02lX.\r\n",
-                        ( unsigned long )channel, ( unsigned long )record_count,
-                        ( unsigned long )received_bytes, ( unsigned long )value );
+        CONSOLE_Printf( "%s loopback PASS: channel=%lu records=%lu bytes=%lu byte=0x%02lX.\r\n",
+                        peripheral_name, ( unsigned long )channel,
+                        ( unsigned long )record_count, ( unsigned long )received_bytes,
+                        ( unsigned long )value );
     }
     else
     {
-        CONSOLE_Printf( "UART loopback FAIL: records=%lu bytes=%lu expected_bytes=%lu",
-                        ( unsigned long )record_count, ( unsigned long )received_bytes,
-                        ( unsigned long )expected_bytes );
+        CONSOLE_Printf( "%s loopback FAIL: records=%lu bytes=%lu expected_bytes=%lu",
+                        peripheral_name, ( unsigned long )record_count,
+                        ( unsigned long )received_bytes, ( unsigned long )expected_bytes );
         if ( mismatch_recorded )
         {
-            CONSOLE_Printf( " first_mismatch=%lu", ( unsigned long )mismatch_offset );
+            CONSOLE_Printf( " first_mismatch=%lu actual=0x%02X",
+                            ( unsigned long )mismatch_offset, ( unsigned int )mismatch_actual );
         }
         CONSOLE_Printf( ".\r\n" );
     }
+}
+
+static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char* argv[] )
+{
+    CONSOLE_Flash_VerifyByteStreamLoopbackResults(
+        argc, argv, FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE, EXEC_UART_CHANNEL_COUNT, "UART" );
+}
+
+static void CONSOLE_Flash_VerifySpiLoopbackResultsCommand( uint16_t argc, char* argv[] )
+{
+    CONSOLE_Flash_VerifyByteStreamLoopbackResults(
+        argc, argv, FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE, EXEC_SPI_CHANNEL_COUNT, "SPI" );
 }
 
 /** Retrieves sparse PWM capture records and checks the final capture against the uploaded target.
@@ -3621,6 +3929,12 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
         return;
     }
 
+    if ( strcmp( argv[1], "throughput_test" ) == 0 )
+    {
+        CONSOLE_Flash_ThroughputTestCommand( argc, argv );
+        return;
+    }
+
     if ( strcmp( argv[1], "upload_test" ) == 0 )
     {
         CONSOLE_Flash_UploadTestCommand( argc, argv );
@@ -3725,6 +4039,12 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
             return;
         }
 
+        if ( argc == 6U && strcmp( argv[2], "verify_spi_loopback" ) == 0 )
+        {
+            CONSOLE_Flash_VerifySpiLoopbackResultsCommand( argc, argv );
+            return;
+        }
+
         if ( ( argc == 2U ) || ( ( argc == 3U ) && ( strcmp( argv[2], "verify" ) == 0 ) ) )
         {
             CONSOLE_Flash_ResultsCommand( argc == 3U );
@@ -3735,7 +4055,8 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
                         "verify_do_di <delay_ticks> <high_ticks> | verify_do_pattern | "
                         "verify_ao_ai <input_channel> | "
                         "verify_pwm_capture <input_channel> | "
-                        "verify_uart_loopback <channel> <byte> <length>\r\n" );
+                        "verify_uart_loopback <channel> <byte> <length> | "
+                        "verify_spi_loopback <channel> <byte> <length>\r\n" );
         return;
     }
 

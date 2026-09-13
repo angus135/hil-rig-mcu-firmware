@@ -35,7 +35,8 @@ static void CONSOLE_TestConfiguration_PrintUsage( void )
         "  test_config can <1-2> <off|bitrate> [filter_bank filter_id filter_mask]\r\n" );
     CONSOLE_Printf( "  test_config spi <1-2> off\r\n" );
     CONSOLE_Printf(
-        "  test_config spi <1-2> <master|slave> <8|16> <mode0|mode1|mode2|mode3> default_cs\r\n" );
+        "  test_config spi <1-2> <master|slave> <8|16> <mode0|mode1|mode2|mode3> default_cs "
+        "[45000000|22500000|11250000|5625000|2813000|1406000|703000|352000]\r\n" );
     CONSOLE_Printf( "  test_config uart <1-2> <off|3v3|5v|rs232> [baud] [rx|tx|both]\r\n" );
     CONSOLE_Printf( "  I2C is intentionally forced disabled during hardware bring-up.\r\n" );
 }
@@ -411,7 +412,7 @@ void CONSOLE_TestConfiguration_Command( uint16_t argc, char* argv[] )
                                            ( uint16_t )mask };
         }
     }
-    else if ( ( argc == 4U || argc == 7U ) && strcmp( argv[1], "spi" ) == 0 )
+    else if ( ( argc == 4U || argc == 7U || argc == 8U ) && strcmp( argv[1], "spi" ) == 0 )
     {
         uint32_t channel = 0U;
         if ( !CONSOLE_TestConfiguration_ParseU32( argv[2], &channel ) || channel < 1U
@@ -425,7 +426,7 @@ void CONSOLE_TestConfiguration_Command( uint16_t argc, char* argv[] )
         {
             *item = ( ExecSPIConfig_T ){ 0 };
         }
-        else if ( argc == 7U )
+        else if ( argc == 7U || argc == 8U )
         {
             const bool master = strcmp( argv[3], "master" ) == 0;
             const bool slave  = strcmp( argv[3], "slave" ) == 0;
@@ -437,6 +438,33 @@ void CONSOLE_TestConfiguration_Command( uint16_t argc, char* argv[] )
                 CONSOLE_TestConfiguration_PrintUsage();
                 return;
             }
+
+            ExecSPIBaudRate_T baud_rate = EXEC_SPI_BAUD_1M406BIT;
+            if ( argc == 8U )
+            {
+                uint32_t baud_hz = 0U;
+                if ( !CONSOLE_TestConfiguration_ParseU32( argv[7], &baud_hz ) )
+                {
+                    CONSOLE_TestConfiguration_PrintUsage();
+                    return;
+                }
+
+                switch ( baud_hz )
+                {
+                    case 45000000U: baud_rate = EXEC_SPI_BAUD_45MBIT; break;
+                    case 22500000U: baud_rate = EXEC_SPI_BAUD_22M5BIT; break;
+                    case 11250000U: baud_rate = EXEC_SPI_BAUD_11M25BIT; break;
+                    case 5625000U: baud_rate = EXEC_SPI_BAUD_5M625BIT; break;
+                    case 2813000U: baud_rate = EXEC_SPI_BAUD_2M813BIT; break;
+                    case 1406000U: baud_rate = EXEC_SPI_BAUD_1M406BIT; break;
+                    case 703000U: baud_rate = EXEC_SPI_BAUD_703KBIT; break;
+                    case 352000U: baud_rate = EXEC_SPI_BAUD_352KBIT; break;
+                    default:
+                        CONSOLE_TestConfiguration_PrintUsage();
+                        return;
+                }
+            }
+
             const uint8_t mode = ( uint8_t )( argv[5][4] - '0' );
             *item              = ( ExecSPIConfig_T ){
                              .is_enabled = true,
@@ -444,7 +472,7 @@ void CONSOLE_TestConfiguration_Command( uint16_t argc, char* argv[] )
                              .data_size =
                     strcmp( argv[4], "16" ) == 0 ? EXEC_SPI_SIZE_16_BIT : EXEC_SPI_SIZE_8_BIT,
                              .first_bit = EXEC_SPI_FIRST_MSB,
-                             .baud_rate = EXEC_SPI_BAUD_1M406BIT,
+                             .baud_rate = baud_rate,
                              .cpol      = mode >= 2U ? EXEC_SPI_CPOL_HIGH : EXEC_SPI_CPOL_LOW,
                              .cpha      = ( mode & 1U ) != 0U ? EXEC_SPI_CPHA_2_EDGE : EXEC_SPI_CPHA_1_EDGE,
             };

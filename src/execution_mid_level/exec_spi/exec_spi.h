@@ -48,10 +48,15 @@ extern "C"
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "hw_spi.h"
+
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
  */
+
+/** Maximum unread SPI RX bytes drained by one execution measurement call. */
+#define EXEC_SPI_MAX_RX_CHUNK_SIZE HW_SPI_RX_BUFFER_SIZE_BYTES
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -261,7 +266,17 @@ bool EXEC_SPI_Transmit( ExecSPIChannel_T channel, const uint8_t* data_src,
 bool EXEC_SPI_Was_Tx_Queue_Rejected( ExecSPIChannel_T channel );
 
 /**
- * @brief Copy all currently unread RX bytes from a SPI channel.
+ * @brief Return the number of unread bytes currently visible in the SPI RX stream.
+ *
+ * This is a constant-time execution-path query over the low-level DMA-backed
+ * receive ring. The caller must provide a valid, started channel. Bytes may
+ * arrive after this snapshot; a following bounded receive consumes no more
+ * than the capacity supplied to it and leaves later bytes pending.
+ */
+uint32_t EXEC_SPI_GetPendingReceiveBytes( ExecSPIChannel_T channel );
+
+/**
+ * @brief Copy a bounded chunk of currently unread RX bytes from a SPI channel.
  *
  * Copies the unread RX byte stream currently exposed by the low-level SPI
  * driver into caller-owned storage, then consumes the copied bytes from the
@@ -273,12 +288,9 @@ bool EXEC_SPI_Was_Tx_Queue_Rejected( ExecSPIChannel_T channel );
  * HW_SPI_Rx_Consume() so that the low-level driver advances its software
  * consume position.
  *
- * The value pointed to by @p size_bytes is used as the destination buffer
- * capacity on entry. If the unread RX byte count is larger than this capacity,
- * no bytes are copied, no RX bytes are consumed, and false is returned.
- *
- * On success, @p size_bytes is updated to the number of bytes copied into
- * @p data_dst.
+ * At most @p capacity_bytes are copied and consumed. Any additional unread
+ * bytes remain in the low-level RX stream for a later call. On success,
+ * @p bytes_read is updated to the number of bytes copied into @p data_dst.
  *
  * This function does not define message boundaries or validate protocol-level
  * framing. It simply copies the raw unread RX bytes that are currently available
@@ -290,17 +302,15 @@ bool EXEC_SPI_Was_Tx_Queue_Rejected( ExecSPIChannel_T channel );
  * @param data_dst
  *     Pointer to caller-owned storage where unread RX bytes will be copied.
  *
- * @param size_bytes
- *     On entry, the capacity of @p data_dst in bytes.
- *     On success, updated to the number of bytes copied.
+ * @param capacity_bytes Capacity of @p data_dst in bytes.
+ * @param bytes_read Updated with the number of bytes copied and consumed.
  *
  * @return
- *     true if all currently unread RX bytes fit in @p data_dst and were copied
- *     and consumed successfully.
- *     false if the unread RX byte count exceeds the provided destination
- *     capacity.
+ *     true after the bounded receive operation completes. Driver faults are
+ *     reported as false when fault reporting is added to the RX path.
  */
-bool EXEC_SPI_Receive( ExecSPIChannel_T channel, uint8_t* data_dst, uint32_t* size_bytes );
+bool EXEC_SPI_Receive( ExecSPIChannel_T channel, uint8_t* data_dst, uint32_t capacity_bytes,
+                       uint32_t* bytes_read );
 
 /**
  * @brief Check whether the SPI transmit path has completed.

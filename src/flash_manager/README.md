@@ -302,6 +302,31 @@ EXTERNAL_FLASH_WriteResultPage(drain_lease.page_data,
 RESULT_BUFFER_CompleteDrain(&drain_lease, nand_write_succeeded);
 ```
 
+`flash status` exposes execution-time drain diagnostics for throughput testing.
+The page count and latest/average/maximum cycle counts cover the complete
+`EXTERNAL_FLASH_WriteResultPage()` call, including DMA transfer completion and
+the NAND program/busy interval. Pending and peak bytes describe committed RAM
+result data not yet released by a completed NAND drain. Reserve failures capture
+the requested payload capacity and free bytes at the failure; commit failures
+identify failures after a lease was obtained. Instruction refill count and
+latest/average/maximum refill cycles cover each complete execution-time
+`EXTERNAL_FLASH_ReadInstructionPage()` service. Refill/drain contention shows
+how often result writes compete with instruction page service. These counters
+are observational and reset when a new execution preparation request is
+accepted.
+
+The drain counters measure service latency; they do not make NAND programming
+asynchronous. The Flash Manager still owns one page lease until the complete
+page program succeeds or fails.
+
+The destructive console command `flash throughput_test [page_count]` measures
+full-page program-only, read-only, and alternating instruction-read/result-write
+throughput through the production External Flash DMA APIs. Setup/erase and
+post-test result verification are excluded from the reported page timings. The
+alternating pair result is the closest standalone approximation of concurrent
+execution refill and drain demand. The command replaces the current instruction
+and result data; the default is 1000 pages.
+
 After execution ends, finalisation publishes at most one partial page:
 
 ```c

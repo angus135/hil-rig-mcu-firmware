@@ -315,6 +315,8 @@ protected:
     void SetUp( void ) override
     {
         std::memset( &flash_manager_context, 0, sizeof( flash_manager_context ) );
+        std::memset( &flash_manager_execution_diagnostics, 0,
+                     sizeof( flash_manager_execution_diagnostics ) );
         std::memset( &flash_manager_mutex_storage, 0, sizeof( flash_manager_mutex_storage ) );
         flash_manager_fault_callback = nullptr;
 
@@ -1390,6 +1392,31 @@ TEST_F( FlashManagerTest, ReserveClearsLeaseAndRejectsNonExecutingState )
     EXPECT_EQ( 0U, lease.payload_capacity_bytes );
 }
 
+TEST_F( FlashManagerTest, ExecutionDiagnosticsRejectNullDestination )
+{
+    EXPECT_FALSE( FLASH_MANAGER_GetExecutionDiagnostics( nullptr ) );
+}
+
+TEST_F( FlashManagerTest, ExecutionPreparationClearsPreviousDiagnostics )
+{
+    Initialise();
+    RegisterTask();
+    flash_manager_execution_diagnostics.result_pages_drained       = 3U;
+    flash_manager_execution_diagnostics.result_reserve_failures    = 2U;
+    flash_manager_execution_diagnostics.result_commit_failures     = 1U;
+    flash_manager_execution_diagnostics.instruction_pages_refilled = 4U;
+
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK,
+               FLASH_MANAGER_RequestExecutionPreparation( TEST_RESULT_CAPACITY_BYTES ) );
+
+    FlashManagerExecutionDiagnostics_T diagnostics = {};
+    ASSERT_TRUE( FLASH_MANAGER_GetExecutionDiagnostics( &diagnostics ) );
+    EXPECT_EQ( 0U, diagnostics.result_pages_drained );
+    EXPECT_EQ( 0U, diagnostics.result_reserve_failures );
+    EXPECT_EQ( 0U, diagnostics.result_commit_failures );
+    EXPECT_EQ( 0U, diagnostics.instruction_pages_refilled );
+}
+
 TEST_F( FlashManagerTest, ReserveAndCancelForwardToResultBufferWhileExecuting )
 {
     Initialise();
@@ -1411,6 +1438,9 @@ TEST_F( FlashManagerTest, CommitRejectsNonExecutingStateWithoutNotification )
     EXPECT_EQ( FLASH_MANAGER_RESULT_COMMIT_INVALID_STATE,
                FLASH_MANAGER_CommitResultRecordFromISR( &lease, 1U, 2U, 3U, 0U, &task_woken ) );
     EXPECT_EQ( 0U, notify_from_isr_calls );
+    EXPECT_EQ( 1U, flash_manager_execution_diagnostics.result_commit_failures );
+    EXPECT_EQ( FLASH_MANAGER_RESULT_COMMIT_INVALID_STATE,
+               flash_manager_execution_diagnostics.last_commit_failure );
 }
 
 TEST_F( FlashManagerTest, PartialRecordCommitDoesNotNotifyDrainTask )
@@ -1447,6 +1477,9 @@ TEST_F( FlashManagerTest, CommitMapsInvalidLeaseAndPayloadOverflow )
     /* An overflow leaves the reservation active so it can still be cancelled. */
     EXPECT_TRUE( FLASH_MANAGER_CancelResultRecordFromISR( &valid_lease ) );
     EXPECT_EQ( 0U, notify_from_isr_calls );
+    EXPECT_EQ( 2U, flash_manager_execution_diagnostics.result_commit_failures );
+    EXPECT_EQ( FLASH_MANAGER_RESULT_COMMIT_OVERFLOW,
+               flash_manager_execution_diagnostics.last_commit_failure );
 }
 
 TEST_F( FlashManagerTest, CommitBeyondSessionCapacityCancelsLeaseAndFaults )

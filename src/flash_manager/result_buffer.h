@@ -383,6 +383,9 @@ bool RESULT_BUFFER_CompleteDrain( const ResultBufferDrainLease_T* lease,
 /** Returns the free result-buffer capacity available to the producer. */
 uint32_t RESULT_BUFFER_GetFreeBytes( void );
 
+/** Returns committed result bytes not yet released by a completed NAND drain. */
+uint32_t RESULT_BUFFER_GetPendingBytes( void );
+
 /**
  * @brief Stops result production and publishes the final partial NAND page.
  *
