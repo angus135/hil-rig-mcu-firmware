@@ -362,57 +362,60 @@ static bool FLASH_MANAGER_FillInstructionPages( void )
 }
 
 /**
- * @brief Services at most one execution-time NAND page operation.
+ * @brief Services all currently available execution-time NAND page operations.
  *
  * When both paths need service, the buffer with the least remaining headroom
- * is selected. Work is re-notified after a successful page so coalesced
- * notifications cannot strand additional ready pages.
+ * is selected. After each page, both paths are reconsidered because the ISR
+ * may have produced more work while NAND I/O was in progress. The task stops
+ * when neither path has immediate work, avoiding a scheduler round trip
+ * between consecutive page operations.
  */
 static bool FLASH_MANAGER_ProcessExecutionPageNotification( uint32_t notification_bits )
 {
-    uint32_t execution_bits =
+    uint32_t pending_bits =
         notification_bits
         & ( FLASH_MANAGER_NOTIFY_DRAIN_RESULTS | FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS );
 
-    if ( execution_bits == 0U )
+    while ( pending_bits != 0U )
     {
-        return true;
-    }
+        uint32_t selected_bit = pending_bits;
 
-    uint32_t selected_bit = execution_bits;
+        if ( pending_bits
+             == ( FLASH_MANAGER_NOTIFY_DRAIN_RESULTS
+                  | FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS ) )
+        {
+            flash_manager_execution_diagnostics.refill_drain_contentions++;
+            uint32_t instruction_headroom;
+            uint32_t result_headroom;
 
-    if ( execution_bits
-         == ( FLASH_MANAGER_NOTIFY_DRAIN_RESULTS | FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS ) )
-    {
-        flash_manager_execution_diagnostics.refill_drain_contentions++;
-        uint32_t instruction_headroom;
-        uint32_t result_headroom;
+            taskENTER_CRITICAL();
+            instruction_headroom = INSTRUCTION_BUFFER_GetBufferedUnreadBytes();
+            result_headroom      = RESULT_BUFFER_GetFreeBytes();
+            taskEXIT_CRITICAL();
 
-        taskENTER_CRITICAL();
-        instruction_headroom = INSTRUCTION_BUFFER_GetBufferedUnreadBytes();
-        result_headroom      = RESULT_BUFFER_GetFreeBytes();
-        taskEXIT_CRITICAL();
+            selected_bit = ( instruction_headroom <= result_headroom )
+                               ? FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS
+                               : FLASH_MANAGER_NOTIFY_DRAIN_RESULTS;
+        }
 
-        selected_bit = ( instruction_headroom <= result_headroom )
-                           ? FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS
-                           : FLASH_MANAGER_NOTIFY_DRAIN_RESULTS;
-    }
+        const uint32_t service_start_cycles = FLASH_MANAGER_ReadCycleCounter();
+        FlashManagerPageProcessStatus_T status =
+            ( selected_bit == FLASH_MANAGER_NOTIFY_DRAIN_RESULTS )
+                ? FLASH_MANAGER_DrainOneResultPage()
+                : FLASH_MANAGER_FillOneInstructionPage();
+        const uint32_t service_cycles = FLASH_MANAGER_ReadCycleCounter() - service_start_cycles;
 
-    const uint32_t service_start_cycles = FLASH_MANAGER_ReadCycleCounter();
-    FlashManagerPageProcessStatus_T status = ( selected_bit == FLASH_MANAGER_NOTIFY_DRAIN_RESULTS )
-                                                 ? FLASH_MANAGER_DrainOneResultPage()
-                                                 : FLASH_MANAGER_FillOneInstructionPage();
-    const uint32_t service_cycles = FLASH_MANAGER_ReadCycleCounter() - service_start_cycles;
+        if ( status == FLASH_MANAGER_PAGE_ERROR )
+        {
+            return false;
+        }
 
-    if ( status == FLASH_MANAGER_PAGE_ERROR )
-    {
-        return false;
-    }
+        if ( status == FLASH_MANAGER_PAGE_NO_WORK )
+        {
+            pending_bits &= ~selected_bit;
+            continue;
+        }
 
-    uint32_t renotify_bits = execution_bits & ~selected_bit;
-
-    if ( status == FLASH_MANAGER_PAGE_PROCESSED )
-    {
         if ( selected_bit == FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS )
         {
             flash_manager_execution_diagnostics.instruction_pages_refilled++;
@@ -427,12 +430,18 @@ static bool FLASH_MANAGER_ProcessExecutionPageNotification( uint32_t notificatio
                     service_cycles;
             }
         }
-        renotify_bits |= selected_bit;
+
+        /*
+         * A page operation is long enough for the execution ISR to release an
+         * instruction slot or publish a result page. Reconsider both paths
+         * from current buffer state instead of relying on the notification
+         * snapshot captured before this service loop started.
+         */
+        pending_bits =
+            FLASH_MANAGER_NOTIFY_DRAIN_RESULTS | FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS;
     }
 
-    return ( renotify_bits == 0U )
-           || ( xTaskNotify( flash_manager_context.task_handle, renotify_bits, eSetBits )
-                == pdPASS );
+    return true;
 }
 
 /**
@@ -1073,7 +1082,7 @@ void FLASH_MANAGER_Task( void* parameters )
             }
         }
 
-        /* Arbitrate at most one execution-time NAND page operation per wake. */
+        /* Service all execution-time NAND work currently available to this wake. */
         if ( !FLASH_MANAGER_ProcessExecutionPageNotification( notification_bits ) )
         {
             FLASH_MANAGER_EnterFault();
