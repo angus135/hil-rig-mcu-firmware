@@ -461,7 +461,7 @@ TEST_F( InstructionBufferTest, CompleteFillPageRejectsCorruptLengthWithoutPublis
                instruction_buffer_context.page_states[0] );
 }
 
-TEST_F( InstructionBufferTest, ThreeReadyPagesApplyBackpressureWithoutOverwritingData )
+TEST_F( InstructionBufferTest, FullReadyRingAppliesBackpressureWithoutOverwritingData )
 {
     Prepare( TEST_INSTRUCTION_PAGE_SIZE_BYTES * INSTRUCTION_BUFFER_PAGE_COUNT + 4U );
 

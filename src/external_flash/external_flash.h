@@ -179,6 +179,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_GetInfo( ExternalFlashInfo_T* info );
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( uint32_t maximum_result_length_bytes );
 
+/** Resets low-level NAND phase timing before an execution session starts. */
+void EXTERNAL_FLASH_ResetPerformanceDiagnostics( void );
+
 /**
  * @brief Prepares instruction storage and starts a new instruction upload.
  *

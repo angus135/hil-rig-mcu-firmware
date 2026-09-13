@@ -387,6 +387,14 @@ typedef struct
     uint64_t instruction_page_refill_total_cycles;
     uint32_t instruction_page_refill_latest_cycles;
     uint32_t instruction_page_refill_max_cycles;
+    uint32_t instruction_page_publish_samples;
+    uint64_t instruction_page_publish_total_cycles;
+    uint32_t instruction_page_publish_latest_cycles;
+    uint32_t instruction_page_publish_max_cycles;
+    uint32_t nand_service_gap_samples;
+    uint64_t nand_service_gap_total_cycles;
+    uint32_t nand_service_gap_latest_cycles;
+    uint32_t nand_service_gap_max_cycles;
     uint32_t refill_drain_contentions;
 } FlashManagerExecutionDiagnostics_T;
 

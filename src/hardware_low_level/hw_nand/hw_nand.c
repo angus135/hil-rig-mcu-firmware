@@ -142,6 +142,8 @@ static bool nand_initialised = false;
 /** Caches the ECC result decoded after the most recent checked page read. */
 static HW_NAND_EccStatus_T nand_last_ecc_status = HW_NAND_ECC_STATUS_UNKNOWN;
 
+static HW_NAND_PerformanceDiagnostics_T nand_performance_diagnostics = { 0 };
+
 /** Compile time geometry for the selected GD5F1GM7UEYIGR SPI NAND device. */
 static const HW_NAND_Geometry_T NAND_GEOMETRY = {
     HW_NAND_PAGE_SIZE_BYTES,
@@ -149,6 +151,26 @@ static const HW_NAND_Geometry_T NAND_GEOMETRY = {
     HW_NAND_PAGES_PER_BLOCK,
     HW_NAND_BLOCK_COUNT,
 };
+
+static uint32_t HW_NAND_ReadCycleCounter( void )
+{
+#ifndef TEST_BUILD
+    return DWT->CYCCNT;
+#else
+    return 0U;
+#endif
+}
+
+static void HW_NAND_RecordPhaseTiming( HW_NAND_PhaseTiming_T* timing, uint32_t elapsed_cycles )
+{
+    timing->samples++;
+    timing->total_cycles += elapsed_cycles;
+    timing->latest_cycles = elapsed_cycles;
+    if ( elapsed_cycles > timing->maximum_cycles )
+    {
+        timing->maximum_cycles = elapsed_cycles;
+    }
+}
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -656,6 +678,22 @@ HW_NAND_Status_T HW_NAND_GetLastEccStatus( HW_NAND_EccStatus_T* ecc_status )
     return HW_NAND_STATUS_OK;
 }
 
+void HW_NAND_ResetPerformanceDiagnostics( void )
+{
+    nand_performance_diagnostics = ( HW_NAND_PerformanceDiagnostics_T ){ 0 };
+}
+
+bool HW_NAND_GetPerformanceDiagnostics( HW_NAND_PerformanceDiagnostics_T* diagnostics )
+{
+    if ( diagnostics == NULL )
+    {
+        return false;
+    }
+
+    *diagnostics = nand_performance_diagnostics;
+    return true;
+}
+
 static HW_NAND_Status_T HW_NAND_GetFeature( uint8_t feature_address, uint8_t* value )
 {
     if ( !nand_initialised )
@@ -812,19 +850,28 @@ HW_NAND_Status_T HW_NAND_ReadPageDma( uint32_t page, uint16_t column, uint8_t* d
         return HW_NAND_STATUS_INVALID_ARG;
     }
 
-    HW_NAND_Status_T status = HW_NAND_ReadPageToCache( page );
+    uint32_t         phase_start_cycles = HW_NAND_ReadCycleCounter();
+    HW_NAND_Status_T status             = HW_NAND_ReadPageToCache( page );
+    HW_NAND_RecordPhaseTiming( &nand_performance_diagnostics.read_array_to_cache,
+                               HW_NAND_ReadCycleCounter() - phase_start_cycles );
     if ( status != HW_NAND_STATUS_OK )
     {
         return status;
     }
 
-    status = HW_NAND_ReadCacheDma( column, data, length );
+    phase_start_cycles = HW_NAND_ReadCycleCounter();
+    status             = HW_NAND_ReadCacheDma( column, data, length );
     if ( status != HW_NAND_STATUS_OK )
     {
+        HW_NAND_RecordPhaseTiming( &nand_performance_diagnostics.read_cache_dma,
+                                   HW_NAND_ReadCycleCounter() - phase_start_cycles );
         return status;
     }
 
-    return HW_NAND_Map_QSPI_Status( HW_QSPI_WaitForTransfer( HW_NAND_DMA_TIMEOUT_MS ) );
+    status = HW_NAND_Map_QSPI_Status( HW_QSPI_WaitForTransfer( HW_NAND_DMA_TIMEOUT_MS ) );
+    HW_NAND_RecordPhaseTiming( &nand_performance_diagnostics.read_cache_dma,
+                               HW_NAND_ReadCycleCounter() - phase_start_cycles );
+    return status;
 }
 
 static HW_NAND_Status_T HW_NAND_ProgramLoadBlocking( uint16_t column, const uint8_t* data,
@@ -948,19 +995,28 @@ HW_NAND_Status_T HW_NAND_ProgramPageDma( uint32_t page, uint16_t column, const u
         return HW_NAND_STATUS_INVALID_ARG;
     }
 
-    HW_NAND_Status_T status = HW_NAND_ProgramLoadDma( column, data, length );
+    uint32_t         phase_start_cycles = HW_NAND_ReadCycleCounter();
+    HW_NAND_Status_T status             = HW_NAND_ProgramLoadDma( column, data, length );
     if ( status != HW_NAND_STATUS_OK )
     {
+        HW_NAND_RecordPhaseTiming( &nand_performance_diagnostics.program_load_dma,
+                                   HW_NAND_ReadCycleCounter() - phase_start_cycles );
         return status;
     }
 
     status = HW_NAND_Map_QSPI_Status( HW_QSPI_WaitForTransfer( HW_NAND_DMA_TIMEOUT_MS ) );
+    HW_NAND_RecordPhaseTiming( &nand_performance_diagnostics.program_load_dma,
+                               HW_NAND_ReadCycleCounter() - phase_start_cycles );
     if ( status != HW_NAND_STATUS_OK )
     {
         return status;
     }
 
-    return HW_NAND_ProgramExecute( page );
+    phase_start_cycles = HW_NAND_ReadCycleCounter();
+    status             = HW_NAND_ProgramExecute( page );
+    HW_NAND_RecordPhaseTiming( &nand_performance_diagnostics.program_execute,
+                               HW_NAND_ReadCycleCounter() - phase_start_cycles );
+    return status;
 }
 
 static HW_NAND_Status_T HW_NAND_StartBlockErase( uint32_t block )

@@ -368,6 +368,8 @@ static bool     CONSOLE_Flash_VerifyPattern( const uint8_t* data, uint32_t strea
 static void     CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32_t stream_offset,
                                                     uint32_t length, uint8_t seed );
 static uint32_t CONSOLE_Flash_Fnv1aUpdate( uint32_t hash, const uint8_t* data, uint32_t length );
+static void CONSOLE_Flash_PrintNandPhaseTiming( const char* label,
+                                                const HW_NAND_PhaseTiming_T* timing );
 #ifndef TEST_BUILD
 static void CONSOLE_Flash_RecordPageTiming( ConsoleFlashPageTiming_T* timing,
                                              uint32_t                  elapsed_cycles );
@@ -941,6 +943,17 @@ static uint32_t CONSOLE_Flash_Fnv1aUpdate( uint32_t hash, const uint8_t* data, u
     return hash;
 }
 
+static void CONSOLE_Flash_PrintNandPhaseTiming( const char* label,
+                                                const HW_NAND_PhaseTiming_T* timing )
+{
+    const uint32_t average_cycles =
+        timing->samples == 0U ? 0U : ( uint32_t )( timing->total_cycles / timing->samples );
+
+    CONSOLE_Printf( "NAND phase %s: samples=%lu latest=%lu avg=%lu max=%lu cycles\r\n", label,
+                    ( unsigned long )timing->samples, ( unsigned long )timing->latest_cycles,
+                    ( unsigned long )average_cycles, ( unsigned long )timing->maximum_cycles );
+}
+
 #ifndef TEST_BUILD
 static void CONSOLE_Flash_RecordPageTiming( ConsoleFlashPageTiming_T* timing,
                                              uint32_t                  elapsed_cycles )
@@ -1014,6 +1027,17 @@ static void CONSOLE_Flash_StatusCommand( void )
     CONSOLE_Printf( "NAND ECC: status=%d value=%d, QSPI busy=%u\r\n", ( int )nand_status,
                     ( int )ecc_status, HW_QSPI_IsBusy() ? 1U : 0U );
 
+    HW_NAND_PerformanceDiagnostics_T nand_diagnostics = { 0 };
+    if ( HW_NAND_GetPerformanceDiagnostics( &nand_diagnostics ) )
+    {
+        CONSOLE_Flash_PrintNandPhaseTiming( "read-array", &nand_diagnostics.read_array_to_cache );
+        CONSOLE_Flash_PrintNandPhaseTiming( "read-DMA", &nand_diagnostics.read_cache_dma );
+        CONSOLE_Flash_PrintNandPhaseTiming( "program-load-DMA",
+                                            &nand_diagnostics.program_load_dma );
+        CONSOLE_Flash_PrintNandPhaseTiming( "program-execute",
+                                            &nand_diagnostics.program_execute );
+    }
+
     FlashManagerExecutionDiagnostics_T diagnostics = { 0 };
     if ( FLASH_MANAGER_GetExecutionDiagnostics( &diagnostics ) )
     {
@@ -1047,6 +1071,26 @@ static void CONSOLE_Flash_StatusCommand( void )
                         ( unsigned long )diagnostics.instruction_page_refill_latest_cycles,
                         ( unsigned long )average_refill_cycles,
                         ( unsigned long )diagnostics.instruction_page_refill_max_cycles );
+        const uint32_t average_publish_cycles =
+            diagnostics.instruction_page_publish_samples == 0U
+                ? 0U
+                : ( uint32_t )( diagnostics.instruction_page_publish_total_cycles
+                                / diagnostics.instruction_page_publish_samples );
+        const uint32_t average_service_gap_cycles =
+            diagnostics.nand_service_gap_samples == 0U
+                ? 0U
+                : ( uint32_t )( diagnostics.nand_service_gap_total_cycles
+                                / diagnostics.nand_service_gap_samples );
+        CONSOLE_Printf( "Instruction publish: samples=%lu latest=%lu avg=%lu max=%lu cycles\r\n",
+                        ( unsigned long )diagnostics.instruction_page_publish_samples,
+                        ( unsigned long )diagnostics.instruction_page_publish_latest_cycles,
+                        ( unsigned long )average_publish_cycles,
+                        ( unsigned long )diagnostics.instruction_page_publish_max_cycles );
+        CONSOLE_Printf( "NAND service gap: samples=%lu latest=%lu avg=%lu max=%lu cycles\r\n",
+                        ( unsigned long )diagnostics.nand_service_gap_samples,
+                        ( unsigned long )diagnostics.nand_service_gap_latest_cycles,
+                        ( unsigned long )average_service_gap_cycles,
+                        ( unsigned long )diagnostics.nand_service_gap_max_cycles );
         CONSOLE_Printf( "Execution arbitration: contentions=%lu\r\n",
                         ( unsigned long )diagnostics.refill_drain_contentions );
     }

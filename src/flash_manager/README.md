@@ -39,8 +39,8 @@ contiguous driver payload pointer only when a record crosses the physical end
 of the ring. After result finalisation, the same three page regions are reset
 and reused as a sequential NAND-prefetch ring for copied Host Interface reads.
 
-The instruction buffer uses three page-sized circular slots followed by two
-page-sized mirrors of slots zero and one. NAND DMA fills only the three circular
+The instruction buffer uses six page-sized circular slots followed by two
+page-sized mirrors of slots zero and one. NAND DMA fills only the six circular
 slots. The Flash Manager task updates each mirror when its source slot is filled,
 keeping an instruction of up to `EXECUTION_INSTRUCTION_MAX_SIZE_BYTES`
 contiguous across the physical ring end without an ISR-time operation copy.

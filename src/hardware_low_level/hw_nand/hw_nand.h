@@ -82,6 +82,22 @@ typedef struct
     uint32_t block_count;
 } HW_NAND_Geometry_T;
 
+typedef struct
+{
+    uint32_t samples;
+    uint64_t total_cycles;
+    uint32_t latest_cycles;
+    uint32_t maximum_cycles;
+} HW_NAND_PhaseTiming_T;
+
+typedef struct
+{
+    HW_NAND_PhaseTiming_T read_array_to_cache;
+    HW_NAND_PhaseTiming_T read_cache_dma;
+    HW_NAND_PhaseTiming_T program_load_dma;
+    HW_NAND_PhaseTiming_T program_execute;
+} HW_NAND_PerformanceDiagnostics_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -120,6 +136,10 @@ HW_NAND_Status_T HW_NAND_GetGeometry( HW_NAND_Geometry_T* geometry );
  *       HW_NAND_ECC_STATUS_UNKNOWN until a checked page read records a result.
  */
 HW_NAND_Status_T HW_NAND_GetLastEccStatus( HW_NAND_EccStatus_T* ecc_status );
+
+void HW_NAND_ResetPerformanceDiagnostics( void );
+
+bool HW_NAND_GetPerformanceDiagnostics( HW_NAND_PerformanceDiagnostics_T* diagnostics );
 
 /**
  * @brief Reads bytes from a physical NAND page using blocking QSPI.

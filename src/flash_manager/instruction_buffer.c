@@ -7,7 +7,7 @@
  *      Implementation of the Flash Manager instruction buffer.
  *
  *  Notes:
- *      The buffer presents one canonical instruction stream using three
+ *      The buffer presents one canonical instruction stream using six
  *      circular page slots:
  *
  *      - The Flash Manager task reserves EMPTY slots, reads sequential NAND
@@ -19,13 +19,13 @@
  *
  *      An instruction consists of ExecutionInstructionHeader_T followed by its
  *      packed operations. Instructions may cross NAND page boundaries. Most can
- *      be exposed directly from the three circular page slots. Two trailing
+ *      be exposed directly from the six circular page slots. Two trailing
  *      regions mirror slots zero and one, keeping a maximum-size instruction
  *      crossing the physical ring end contiguous without copying in the ISR.
  *      Timestamp scheduling is intentionally owned by the Execution Manager;
  *      this module only caches, exposes, and advances the ordered byte stream.
  *
- *      Upload reuses the same three page slots in the opposite direction: the
+ *      Upload reuses the same six page slots in the opposite direction: the
  *      Host Interface copies canonical stream chunks into RAM and the Flash
  *      Manager task drains complete pages to NAND. Retrieval and upload are
  *      mutually exclusive.
@@ -53,11 +53,10 @@
  */
 
 /*
- * Three slots allow instruction consumption, ready-data buffering, and a NAND
- * page fill to overlap without sharing ownership of a slot. The extra slot also
- * provides tolerance for NAND and scheduler latency.
+ * Six slots provide instruction-consumption headroom while allowing ready-data
+ * buffering and a NAND page fill to overlap without sharing slot ownership.
  */
-#define INSTRUCTION_BUFFER_PAGE_COUNT ( 3U )
+#define INSTRUCTION_BUFFER_PAGE_COUNT ( 6U )
 
 /* Two mirrored pages keep a two-page instruction contiguous at the ring end. */
 #define INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT ( 2U )
@@ -279,9 +278,9 @@ typedef struct
 /**
  * @brief Circular instruction page storage followed by two mirrored slots.
  *
- * The first three runtime pages are shared by retrieval and upload. The final
+ * The first six runtime pages are shared by retrieval and upload. The final
  * maximum-record region is retrieval-only: it mirrors the valid prefixes of
- * slots zero and one so an instruction beginning in slot two can remain
+ * slots zero and one so an instruction beginning in the final slot can remain
  * contiguous for as much as two pages.
  */
 static uint32_t instruction_buffer_storage_words[INSTRUCTION_BUFFER_STORAGE_WORD_COUNT];

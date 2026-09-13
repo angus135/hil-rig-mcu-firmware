@@ -337,8 +337,19 @@ static FlashManagerPageProcessStatus_T FLASH_MANAGER_FillOneInstructionPage( voi
     ExternalFlashStatus_T nand_read_status = EXTERNAL_FLASH_ReadInstructionPage(
         fill_lease.instruction_offset_bytes, fill_lease.page_data, fill_lease.read_length_bytes );
 
+    const uint32_t publish_start_cycles = FLASH_MANAGER_ReadCycleCounter();
     bool fill_completion_succeeded = INSTRUCTION_BUFFER_CompleteFillPage(
         &fill_lease, nand_read_status == EXTERNAL_FLASH_STATUS_OK );
+    const uint32_t publish_cycles = FLASH_MANAGER_ReadCycleCounter() - publish_start_cycles;
+
+    flash_manager_execution_diagnostics.instruction_page_publish_samples++;
+    flash_manager_execution_diagnostics.instruction_page_publish_total_cycles += publish_cycles;
+    flash_manager_execution_diagnostics.instruction_page_publish_latest_cycles = publish_cycles;
+    if ( publish_cycles
+         > flash_manager_execution_diagnostics.instruction_page_publish_max_cycles )
+    {
+        flash_manager_execution_diagnostics.instruction_page_publish_max_cycles = publish_cycles;
+    }
 
     if ( ( nand_read_status != EXTERNAL_FLASH_STATUS_OK ) || !fill_completion_succeeded )
     {
@@ -375,6 +386,8 @@ static bool FLASH_MANAGER_ProcessExecutionPageNotification( uint32_t notificatio
     uint32_t pending_bits =
         notification_bits
         & ( FLASH_MANAGER_NOTIFY_DRAIN_RESULTS | FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS );
+    bool     previous_service_completed = false;
+    uint32_t previous_service_end_cycles = 0U;
 
     while ( pending_bits != 0U )
     {
@@ -399,6 +412,7 @@ static bool FLASH_MANAGER_ProcessExecutionPageNotification( uint32_t notificatio
         }
 
         const uint32_t service_start_cycles = FLASH_MANAGER_ReadCycleCounter();
+        const uint32_t service_gap_cycles = service_start_cycles - previous_service_end_cycles;
         FlashManagerPageProcessStatus_T status =
             ( selected_bit == FLASH_MANAGER_NOTIFY_DRAIN_RESULTS )
                 ? FLASH_MANAGER_DrainOneResultPage()
@@ -414,6 +428,18 @@ static bool FLASH_MANAGER_ProcessExecutionPageNotification( uint32_t notificatio
         {
             pending_bits &= ~selected_bit;
             continue;
+        }
+
+        if ( previous_service_completed )
+        {
+            flash_manager_execution_diagnostics.nand_service_gap_samples++;
+            flash_manager_execution_diagnostics.nand_service_gap_total_cycles += service_gap_cycles;
+            flash_manager_execution_diagnostics.nand_service_gap_latest_cycles = service_gap_cycles;
+            if ( service_gap_cycles
+                 > flash_manager_execution_diagnostics.nand_service_gap_max_cycles )
+            {
+                flash_manager_execution_diagnostics.nand_service_gap_max_cycles = service_gap_cycles;
+            }
         }
 
         if ( selected_bit == FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS )
@@ -439,6 +465,8 @@ static bool FLASH_MANAGER_ProcessExecutionPageNotification( uint32_t notificatio
          */
         pending_bits =
             FLASH_MANAGER_NOTIFY_DRAIN_RESULTS | FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS;
+        previous_service_completed = true;
+        previous_service_end_cycles = FLASH_MANAGER_ReadCycleCounter();
     }
 
     return true;
@@ -606,6 +634,8 @@ static bool FLASH_MANAGER_PrepareExecution( void )
     {
         return false;
     }
+
+    EXTERNAL_FLASH_ResetPerformanceDiagnostics();
 
     if ( EXTERNAL_FLASH_StartSession( flash_manager_context.maximum_result_length_bytes )
          != EXTERNAL_FLASH_STATUS_OK )

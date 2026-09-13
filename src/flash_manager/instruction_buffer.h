@@ -33,12 +33,12 @@
  *      Runtime detection of an invalid stored length is a session-ending fault
  *      rather than a recoverable parse error.
  *
- *      The implementation owns three circular NAND-page slots plus two mirror
+ *      The implementation owns six circular NAND-page slots plus two mirror
  *      pages for slots zero and one. The mirrors are populated in Flash Manager
  *      task context and keep a maximum-size instruction crossing the ring end
  *      contiguous without an ISR-time operation copy.
  *
- *      Three slots do not guarantee that an uploaded stream is executable. A
+ *      Six slots do not guarantee that an uploaded stream is executable. A
  *      single TIM4 invocation can consume one instruction spanning several
  *      pages, but the Flash Manager task cannot refill a released slot
  *      until the ISR returns. Admission validation must therefore bound both
