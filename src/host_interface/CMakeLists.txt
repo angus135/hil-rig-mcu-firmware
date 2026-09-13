@@ -8,12 +8,14 @@ set(HOST_INTERFACE_SOURCES
     host_interface.c
     result_send.c
     test_package_recieve.c
+    host_interface_state.c
 )
 
 set(HOST_INTERFACE_HEADERS
     host_interface.h
     result_send.h
     test_package_recieve.h
+    host_interface_state.h
 )
 
 add_library(host_interface STATIC
