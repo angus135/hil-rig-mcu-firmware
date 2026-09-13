@@ -18,12 +18,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "host_process_message.h"
 #include "hil_rig_protocol/application/application.h"
 #include "hil_rig_protocol/application/application_message.h"
 #include "hil_rig_protocol/transport/transport.h"
 #include "hil_rig_protocol/version.h"
 #include "host_interface.h"
-#include "rtos_config.h"
+#include "run_state_manager.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -56,15 +57,42 @@
  *------------------------------------------------------------------------------
  */
 
-bool HOST_INTERFACE_process_Info_Request(
+/**
+ * @brief Process an info request from the host device
+ *
+ * @details This structural check is shared by Decode_Storage_Size() and the
+ * fixed body decoders so malformed undersized or oversized payloads cannot be
+ * classified differently by the two public decode paths. Test Instruction and
+ * Test Result widths come from the shared private 50-byte and 39-byte constants.
+ *
+ * @param[in] recent_received_message         the info request message
+ * @param[out] response_message               if required the message to respond with
+ * @param[out] response_required              whether or not a response is required
+ * @param[out] data                           the optional additional date for variable length byte
+spans
+ * @param[out] data_size                      the size available to write to at data
+ * @return HOST_INTERFACE_STATUS_OK if the message is process succesfully  
+ */
+HOST_Interface_Status_T HOST_INTERFACE_process_Info_Request(
     const HIL_Application_Message_T* recent_received_message,
     HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size )
 {
     switch ( recent_received_message->body.system_info_request.query )
     {
         case HIL_APPLICATION_SYSTEM_INFO_QUERY_INVALID:
-            *response_required = false;
-            return false;
+            // Set the type and subtype
+            response_message->type = HIL_APPLICATION_MESSAGE_TYPE_ERROR;
+            response_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+            // Set Error body TODO update error catagory
+            response_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INVALID;
+            response_message->body.error.recoverable = 1U;
+            response_message->body.error.has_tick_number = 0U;
+            response_message->body.error.tick_number     = 0U;
+            response_message->body.error.detail     = 0U;
+            response_message->body.error.diagnostic_data.size = 0U;
+            response_message->body.error.diagnostic_data.data     = NULL;
+            *response_required = true;
+            return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_SYSTEM_INFO_QUERY_BASIC:
             // Set the type and subtype
             response_message->type = HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_RESPONSE;
@@ -87,7 +115,7 @@ bool HOST_INTERFACE_process_Info_Request(
             if ( data_size < firmware_git_hash_size )
             {
                 *response_required = false;
-                return false;
+                return HOST_INTERFACE_STATUS_BUFFER_TOO_SMALL;
             }
             response_message->body.system_info_response.firmware_git_hash.size =
                 firmware_git_hash_size;
@@ -101,13 +129,35 @@ bool HOST_INTERFACE_process_Info_Request(
                     response_message->body.system_info_response.diagnostic_data.data = NULL;
             }
             *response_required = true;
-            return true;
+            return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_SYSTEM_INFO_QUERY_RESERVED:
-            *response_required = false;
-            return false;
+            // Set the type and subtype
+            response_message->type = HIL_APPLICATION_MESSAGE_TYPE_ERROR;
+            response_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+            // Set Error body TODO update error catagory
+            response_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INVALID;
+            response_message->body.error.recoverable = 1U;
+            response_message->body.error.has_tick_number = 0U;
+            response_message->body.error.tick_number     = 0U;
+            response_message->body.error.detail     = 0U;
+            response_message->body.error.diagnostic_data.size = 0U;
+            response_message->body.error.diagnostic_data.data     = NULL;
+            *response_required = true;
+            return HOST_INTERFACE_STATUS_OK;
         default:
-            *response_required = false;
-            return false;
+            // Set the type and subtype
+            response_message->type = HIL_APPLICATION_MESSAGE_TYPE_ERROR;
+            response_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+            // Set Error body TODO update error catagory
+            response_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INVALID;
+            response_message->body.error.recoverable = 1U;
+            response_message->body.error.has_tick_number = 0U;
+            response_message->body.error.tick_number     = 0U;
+            response_message->body.error.detail     = 0U;
+            response_message->body.error.diagnostic_data.size = 0U;
+            response_message->body.error.diagnostic_data.data     = NULL;
+            *response_required = true;
+            return HOST_INTERFACE_STATUS_OK;
     }
 }
 
@@ -162,7 +212,17 @@ bool HOST_INTERFACE_process_Info_Response( const HIL_Application_Message_T* rece
     }
 }
 
-bool HOST_INTERFACE_process_Test_Configuration(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
+bool HOST_INTERFACE_process_Test_Configuration(
+    const HIL_Application_Message_T* recent_received_message,
+    HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data,
+    size_t data_size )
+{
+    // Signal run state manager to move to package recieving state
+    if ( RUN_STATE_MANAGER_RequestPackageReceive() == false )
+    {
+        // report error to host device
+    }
+}
 
 bool HOST_INTERFACE_process_Test_Instructions(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
 
