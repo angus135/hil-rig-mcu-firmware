@@ -42,7 +42,7 @@ static constexpr uint16_t TEST_FULL_PAGE_PAYLOAD_BYTES =
 static constexpr uint16_t TEST_PARTIAL_PAYLOAD_BYTES         = 4U;
 static constexpr uint32_t TEST_INSTRUCTION_CAPACITY_BYTES    = TEST_PAGE_SIZE_BYTES * 8U;
 static constexpr uint32_t TEST_MAX_INSTRUCTION_READS         = 8U;
-static constexpr uint32_t TEST_INSTRUCTION_BUFFER_PAGE_COUNT = 3U;
+static constexpr uint32_t TEST_INSTRUCTION_BUFFER_PAGE_COUNT = 6U;
 static constexpr uint32_t TEST_RESULT_BUFFER_PAGE_COUNT      = 6U;
 static constexpr uint32_t TEST_RESULT_CAPACITY_BYTES         = TEST_PAGE_SIZE_BYTES * 8U;
 static constexpr uint32_t TEST_MAX_RESULT_READS              = 8U;
@@ -206,6 +206,10 @@ extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( uint32_t maximum_r
     start_session_calls++;
     start_session_maximum_result_length = maximum_result_length_bytes;
     return start_session_status;
+}
+
+extern "C" void EXTERNAL_FLASH_ResetPerformanceDiagnostics( void )
+{
 }
 
 extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_StartInstructionUpload( uint32_t expected_length )

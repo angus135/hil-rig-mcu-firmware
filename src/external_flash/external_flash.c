@@ -880,8 +880,12 @@ ExternalFlashStatus_T EXTERNAL_FLASH_StartSession( uint32_t maximum_result_lengt
     external_flash_result_session_capacity_bytes = maximum_result_length_bytes;
     external_flash_result_cursor_advanced        = false;
     EXTERNAL_FLASH_ClearResultPageBuffer();
-
     return EXTERNAL_FLASH_STATUS_OK;
+}
+
+void EXTERNAL_FLASH_ResetPerformanceDiagnostics( void )
+{
+    HW_NAND_ResetPerformanceDiagnostics();
 }
 
 /**
