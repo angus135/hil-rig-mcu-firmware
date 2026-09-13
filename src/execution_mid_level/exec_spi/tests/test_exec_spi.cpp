@@ -609,6 +609,19 @@ TEST_F( ExecSPITest, Transmit_TriggerFaultReturnsFalse )
     EXPECT_FALSE( EXEC_SPI_Was_Tx_Queue_Rejected( EXEC_SPI_CHANNEL_1 ) );
 }
 
+TEST_F( ExecSPITest, PendingReceiveBytes_ReturnsLowLevelUnreadCountForMappedChannel )
+{
+    HWSPIRxSpans_T spans = {
+        .first_span         = { .data = nullptr, .length_bytes = 19U },
+        .second_span        = { .data = nullptr, .length_bytes = 7U },
+        .total_length_bytes = 26U,
+    };
+
+    EXPECT_CALL( mock_hw_spi, RxPeek( SPI_CHANNEL_2 ) ).WillOnce( ::testing::Return( spans ) );
+
+    EXPECT_EQ( 26U, EXEC_SPI_GetPendingReceiveBytes( EXEC_SPI_CHANNEL_2 ) );
+}
+
 TEST_F( ExecSPITest, Receive_SingleSpanAvailable_CopiesDataUpdatesSizeAndConsumes )
 {
     const uint8_t first_span_data[] = { 'H', 'e', 'l', 'l', 'o' };
@@ -634,7 +647,8 @@ TEST_F( ExecSPITest, Receive_SingleSpanAvailable_CopiesDataUpdatesSizeAndConsume
 
     EXPECT_CALL( mock_hw_spi, RxConsume( SPI_CHANNEL_2, sizeof( first_span_data ) ) ).Times( 1 );
 
-    bool result = EXEC_SPI_Receive( EXEC_SPI_CHANNEL_2, rx_buffer, &rx_buffer_size_bytes );
+    bool result = EXEC_SPI_Receive( EXEC_SPI_CHANNEL_2, rx_buffer, sizeof( rx_buffer ),
+                                    &rx_buffer_size_bytes );
 
     EXPECT_TRUE( result );
     EXPECT_EQ( sizeof( first_span_data ), rx_buffer_size_bytes );
@@ -669,10 +683,34 @@ TEST_F( ExecSPITest, Receive_TwoSpansAvailable_CopiesBothSpansInOrderAndConsumes
 
     EXPECT_CALL( mock_hw_spi, RxConsume( SPI_CHANNEL_1, sizeof( expected_data ) ) ).Times( 1 );
 
-    bool result = EXEC_SPI_Receive( EXEC_SPI_CHANNEL_1, rx_buffer, &rx_buffer_size_bytes );
+    bool result = EXEC_SPI_Receive( EXEC_SPI_CHANNEL_1, rx_buffer, sizeof( rx_buffer ),
+                                    &rx_buffer_size_bytes );
 
     EXPECT_TRUE( result );
     EXPECT_EQ( sizeof( expected_data ), rx_buffer_size_bytes );
+    EXPECT_EQ( 0, std::memcmp( rx_buffer, expected_data, sizeof( expected_data ) ) );
+}
+
+TEST_F( ExecSPITest, Receive_CapacityEndingInSecondSpanConsumesOnlyCopiedBytes )
+{
+    const uint8_t first_span_data[]  = { 'A', 'B', 'C' };
+    const uint8_t second_span_data[] = { 'D', 'E', 'F', 'G' };
+    const uint8_t expected_data[]    = { 'A', 'B', 'C', 'D' };
+    const HWSPIRxSpans_T spans = {
+        .first_span = { .data = first_span_data, .length_bytes = sizeof( first_span_data ) },
+        .second_span = { .data = second_span_data, .length_bytes = sizeof( second_span_data ) },
+        .total_length_bytes = sizeof( first_span_data ) + sizeof( second_span_data ),
+    };
+
+    uint8_t  rx_buffer[sizeof( expected_data )] = { 0 };
+    uint32_t bytes_read                         = 0U;
+
+    EXPECT_CALL( mock_hw_spi, RxPeek( SPI_CHANNEL_1 ) ).WillOnce( ::testing::Return( spans ) );
+    EXPECT_CALL( mock_hw_spi, RxConsume( SPI_CHANNEL_1, sizeof( expected_data ) ) ).Times( 1 );
+
+    EXPECT_TRUE( EXEC_SPI_Receive( EXEC_SPI_CHANNEL_1, rx_buffer, sizeof( rx_buffer ),
+                                   &bytes_read ) );
+    EXPECT_EQ( sizeof( expected_data ), bytes_read );
     EXPECT_EQ( 0, std::memcmp( rx_buffer, expected_data, sizeof( expected_data ) ) );
 }
 
@@ -699,13 +737,14 @@ TEST_F( ExecSPITest, Receive_NoDataAvailable_UpdatesSizeToZeroAndConsumesZero )
 
     EXPECT_CALL( mock_hw_spi, RxConsume( SPI_CHANNEL_1, 0U ) ).Times( 1 );
 
-    bool result = EXEC_SPI_Receive( EXEC_SPI_CHANNEL_1, rx_buffer, &rx_buffer_size_bytes );
+    bool result = EXEC_SPI_Receive( EXEC_SPI_CHANNEL_1, rx_buffer, sizeof( rx_buffer ),
+                                    &rx_buffer_size_bytes );
 
     EXPECT_TRUE( result );
     EXPECT_EQ( 0U, rx_buffer_size_bytes );
 }
 
-TEST_F( ExecSPITest, Receive_DestinationBufferTooSmall_ReturnsFalseAndDoesNotConsume )
+TEST_F( ExecSPITest, Receive_DestinationCapacityBoundsCopyAndLeavesRemainderBuffered )
 {
     const uint8_t first_span_data[] = { 'H', 'e', 'l', 'l', 'o' };
 
@@ -728,12 +767,14 @@ TEST_F( ExecSPITest, Receive_DestinationBufferTooSmall_ReturnsFalseAndDoesNotCon
 
     EXPECT_CALL( mock_hw_spi, RxPeek( SPI_CHANNEL_2 ) ).WillOnce( ::testing::Return( spans ) );
 
-    EXPECT_CALL( mock_hw_spi, RxConsume( SPI_CHANNEL_2, ::testing::_ ) ).Times( 0 );
+    EXPECT_CALL( mock_hw_spi, RxConsume( SPI_CHANNEL_2, TEST_SMALL_RX_BUFFER_SIZE ) ).Times( 1 );
 
-    bool result = EXEC_SPI_Receive( EXEC_SPI_CHANNEL_2, rx_buffer, &rx_buffer_size_bytes );
+    bool result = EXEC_SPI_Receive( EXEC_SPI_CHANNEL_2, rx_buffer, sizeof( rx_buffer ),
+                                    &rx_buffer_size_bytes );
 
-    EXPECT_FALSE( result );
+    EXPECT_TRUE( result );
     EXPECT_EQ( TEST_SMALL_RX_BUFFER_SIZE, rx_buffer_size_bytes );
+    EXPECT_EQ( 0, std::memcmp( rx_buffer, first_span_data, TEST_SMALL_RX_BUFFER_SIZE ) );
 }
 
 TEST_F( ExecSPITest, IsTransmissionComplete_LowLevelReturnsTrue_ReturnsTrue )

@@ -28,6 +28,10 @@
 #include "result_buffer.h"
 #include "rtos_config.h"
 
+#ifndef TEST_BUILD
+#include "stm32f4xx.h"
+#endif
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -119,7 +123,23 @@ static FlashManagerContext_T flash_manager_context = {
 
 static FlashManagerFaultCallback_T flash_manager_fault_callback = NULL;
 
+#ifdef __cplusplus
+/* flash_manager.c is included as C++ by its private-state unit-test harness. */
+static FlashManagerExecutionDiagnostics_T flash_manager_execution_diagnostics = { 0 };
+#else
+static volatile FlashManagerExecutionDiagnostics_T flash_manager_execution_diagnostics = { 0 };
+#endif
+
 static StaticSemaphore_t flash_manager_mutex_storage;
+
+static uint32_t FLASH_MANAGER_ReadCycleCounter( void )
+{
+#ifdef TEST_BUILD
+    return 0U;
+#else
+    return DWT->CYCCNT;
+#endif
+}
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -242,8 +262,10 @@ static FlashManagerPageProcessStatus_T FLASH_MANAGER_DrainOneResultPage( void )
         return FLASH_MANAGER_PAGE_NO_WORK;
     }
 
+    const uint32_t drain_start_cycles = FLASH_MANAGER_ReadCycleCounter();
     ExternalFlashStatus_T nand_write_status =
         EXTERNAL_FLASH_WriteResultPage( drain_lease.page_data, drain_lease.valid_length_bytes );
+    const uint32_t drain_cycles = FLASH_MANAGER_ReadCycleCounter() - drain_start_cycles;
 
     bool drain_completion_succeeded = false;
 
@@ -255,6 +277,14 @@ static FlashManagerPageProcessStatus_T FLASH_MANAGER_DrainOneResultPage( void )
     if ( ( nand_write_status != EXTERNAL_FLASH_STATUS_OK ) || !drain_completion_succeeded )
     {
         return FLASH_MANAGER_PAGE_ERROR;
+    }
+
+    flash_manager_execution_diagnostics.result_pages_drained++;
+    flash_manager_execution_diagnostics.result_page_drain_latest_cycles = drain_cycles;
+    flash_manager_execution_diagnostics.result_page_drain_total_cycles += drain_cycles;
+    if ( drain_cycles > flash_manager_execution_diagnostics.result_page_drain_max_cycles )
+    {
+        flash_manager_execution_diagnostics.result_page_drain_max_cycles = drain_cycles;
     }
 
     return FLASH_MANAGER_PAGE_PROCESSED;
@@ -354,6 +384,7 @@ static bool FLASH_MANAGER_ProcessExecutionPageNotification( uint32_t notificatio
     if ( execution_bits
          == ( FLASH_MANAGER_NOTIFY_DRAIN_RESULTS | FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS ) )
     {
+        flash_manager_execution_diagnostics.refill_drain_contentions++;
         uint32_t instruction_headroom;
         uint32_t result_headroom;
 
@@ -367,9 +398,11 @@ static bool FLASH_MANAGER_ProcessExecutionPageNotification( uint32_t notificatio
                            : FLASH_MANAGER_NOTIFY_DRAIN_RESULTS;
     }
 
+    const uint32_t service_start_cycles = FLASH_MANAGER_ReadCycleCounter();
     FlashManagerPageProcessStatus_T status = ( selected_bit == FLASH_MANAGER_NOTIFY_DRAIN_RESULTS )
                                                  ? FLASH_MANAGER_DrainOneResultPage()
                                                  : FLASH_MANAGER_FillOneInstructionPage();
+    const uint32_t service_cycles = FLASH_MANAGER_ReadCycleCounter() - service_start_cycles;
 
     if ( status == FLASH_MANAGER_PAGE_ERROR )
     {
@@ -380,6 +413,20 @@ static bool FLASH_MANAGER_ProcessExecutionPageNotification( uint32_t notificatio
 
     if ( status == FLASH_MANAGER_PAGE_PROCESSED )
     {
+        if ( selected_bit == FLASH_MANAGER_NOTIFY_REFILL_INSTRUCTIONS )
+        {
+            flash_manager_execution_diagnostics.instruction_pages_refilled++;
+            flash_manager_execution_diagnostics.instruction_page_refill_latest_cycles =
+                service_cycles;
+            flash_manager_execution_diagnostics.instruction_page_refill_total_cycles +=
+                service_cycles;
+            if ( service_cycles
+                 > flash_manager_execution_diagnostics.instruction_page_refill_max_cycles )
+            {
+                flash_manager_execution_diagnostics.instruction_page_refill_max_cycles =
+                    service_cycles;
+            }
+        }
         renotify_bits |= selected_bit;
     }
 
@@ -1112,6 +1159,20 @@ bool FLASH_MANAGER_GetState( FlashManagerState_T* state )
     return true;
 }
 
+bool FLASH_MANAGER_GetExecutionDiagnostics( FlashManagerExecutionDiagnostics_T* diagnostics )
+{
+    if ( diagnostics == NULL )
+    {
+        return false;
+    }
+
+    taskENTER_CRITICAL();
+    *diagnostics = flash_manager_execution_diagnostics;
+    diagnostics->current_pending_result_bytes = RESULT_BUFFER_GetPendingBytes();
+    taskEXIT_CRITICAL();
+    return true;
+}
+
 /* Run State Manager lifecycle requests. */
 
 /**
@@ -1145,6 +1206,7 @@ FLASH_MANAGER_RequestExecutionPreparation( uint32_t maximum_result_length_bytes 
     }
 
     taskENTER_CRITICAL();
+    flash_manager_execution_diagnostics = ( FlashManagerExecutionDiagnostics_T ){ 0 };
     flash_manager_context.maximum_result_length_bytes   = maximum_result_length_bytes;
     flash_manager_context.committed_result_length_bytes = 0U;
     flash_manager_context.state                         = FLASH_MANAGER_STATE_PREPARING_EXECUTION;
@@ -1531,7 +1593,21 @@ bool FLASH_MANAGER_ReserveResultRecordFromISR( uint16_t payload_capacity_bytes,
         return false;
     }
 
-    return RESULT_BUFFER_ReserveRecord( payload_capacity_bytes, lease );
+    const bool reserved = RESULT_BUFFER_ReserveRecord( payload_capacity_bytes, lease );
+    if ( !reserved )
+    {
+        flash_manager_execution_diagnostics.result_reserve_failures++;
+        flash_manager_execution_diagnostics.last_failed_reserve_payload_bytes =
+            payload_capacity_bytes;
+        flash_manager_execution_diagnostics.free_bytes_at_last_reserve_failure =
+            RESULT_BUFFER_GetFreeBytes();
+        const uint32_t pending_bytes = RESULT_BUFFER_GetPendingBytes();
+        if ( pending_bytes > flash_manager_execution_diagnostics.peak_pending_result_bytes )
+        {
+            flash_manager_execution_diagnostics.peak_pending_result_bytes = pending_bytes;
+        }
+    }
+    return reserved;
 }
 
 /**
@@ -1561,16 +1637,25 @@ FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
 {
     if ( flash_manager_context.state != FLASH_MANAGER_STATE_EXECUTING )
     {
+        flash_manager_execution_diagnostics.result_commit_failures++;
+        flash_manager_execution_diagnostics.last_commit_failure =
+            FLASH_MANAGER_RESULT_COMMIT_INVALID_STATE;
         return FLASH_MANAGER_RESULT_COMMIT_INVALID_STATE;
     }
 
     if ( !RESULT_BUFFER_IsRecordLeaseValid( lease ) )
     {
+        flash_manager_execution_diagnostics.result_commit_failures++;
+        flash_manager_execution_diagnostics.last_commit_failure =
+            FLASH_MANAGER_RESULT_COMMIT_INVALID_LEASE;
         return FLASH_MANAGER_RESULT_COMMIT_INVALID_LEASE;
     }
 
     if ( actual_payload_length_bytes > lease->payload_capacity_bytes )
     {
+        flash_manager_execution_diagnostics.result_commit_failures++;
+        flash_manager_execution_diagnostics.last_commit_failure =
+            FLASH_MANAGER_RESULT_COMMIT_OVERFLOW;
         return FLASH_MANAGER_RESULT_COMMIT_OVERFLOW;
     }
 
@@ -1584,16 +1669,28 @@ FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
     {
         if ( !RESULT_BUFFER_CancelRecord( lease ) )
         {
+            flash_manager_execution_diagnostics.result_commit_failures++;
+            flash_manager_execution_diagnostics.last_commit_failure =
+                FLASH_MANAGER_RESULT_COMMIT_INTERNAL_ERROR;
             FLASH_MANAGER_EnterFaultFromISR();
             return FLASH_MANAGER_RESULT_COMMIT_INTERNAL_ERROR;
         }
 
         FLASH_MANAGER_EnterFaultFromISR();
+        flash_manager_execution_diagnostics.result_commit_failures++;
+        flash_manager_execution_diagnostics.last_commit_failure =
+            FLASH_MANAGER_RESULT_COMMIT_SESSION_CAPACITY_EXCEEDED;
         return FLASH_MANAGER_RESULT_COMMIT_SESSION_CAPACITY_EXCEEDED;
     }
 
     ResultBufferRecordCommitStatus_T buffer_status = RESULT_BUFFER_CommitRecord(
         lease, timestamp, peripheral_type, channel, actual_payload_length_bytes );
+
+    const uint32_t pending_bytes = RESULT_BUFFER_GetPendingBytes();
+    if ( pending_bytes > flash_manager_execution_diagnostics.peak_pending_result_bytes )
+    {
+        flash_manager_execution_diagnostics.peak_pending_result_bytes = pending_bytes;
+    }
 
     switch ( buffer_status )
     {
@@ -1609,6 +1706,9 @@ FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
              */
             if ( flash_manager_context.task_handle == NULL )
             {
+                flash_manager_execution_diagnostics.result_commit_failures++;
+                flash_manager_execution_diagnostics.last_commit_failure =
+                    FLASH_MANAGER_RESULT_COMMIT_INTERNAL_ERROR;
                 FLASH_MANAGER_EnterFaultFromISR();
                 return FLASH_MANAGER_RESULT_COMMIT_INTERNAL_ERROR;
             }
@@ -1618,6 +1718,9 @@ FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
                                      higher_priority_task_woken )
                  != pdPASS )
             {
+                flash_manager_execution_diagnostics.result_commit_failures++;
+                flash_manager_execution_diagnostics.last_commit_failure =
+                    FLASH_MANAGER_RESULT_COMMIT_INTERNAL_ERROR;
                 FLASH_MANAGER_EnterFaultFromISR();
                 return FLASH_MANAGER_RESULT_COMMIT_INTERNAL_ERROR;
             }
@@ -1625,12 +1728,21 @@ FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
             return FLASH_MANAGER_RESULT_COMMIT_OK;
 
         case RESULT_BUFFER_RECORD_COMMIT_INVALID_LEASE:
+            flash_manager_execution_diagnostics.result_commit_failures++;
+            flash_manager_execution_diagnostics.last_commit_failure =
+                FLASH_MANAGER_RESULT_COMMIT_INVALID_LEASE;
             return FLASH_MANAGER_RESULT_COMMIT_INVALID_LEASE;
 
         case RESULT_BUFFER_RECORD_COMMIT_OVERFLOW:
+            flash_manager_execution_diagnostics.result_commit_failures++;
+            flash_manager_execution_diagnostics.last_commit_failure =
+                FLASH_MANAGER_RESULT_COMMIT_OVERFLOW;
             return FLASH_MANAGER_RESULT_COMMIT_OVERFLOW;
 
         default:
+            flash_manager_execution_diagnostics.result_commit_failures++;
+            flash_manager_execution_diagnostics.last_commit_failure =
+                FLASH_MANAGER_RESULT_COMMIT_INTERNAL_ERROR;
             return FLASH_MANAGER_RESULT_COMMIT_INTERNAL_ERROR;
     }
 }

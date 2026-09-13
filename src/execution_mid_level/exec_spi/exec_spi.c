@@ -642,8 +642,14 @@ bool EXEC_SPI_Was_Tx_Queue_Rejected( ExecSPIChannel_T peripheral )
     return spi_tx_queue_rejected[peripheral];
 }
 
+uint32_t EXEC_SPI_GetPendingReceiveBytes( ExecSPIChannel_T peripheral )
+{
+    const SPIChannel_T hw_channel = exec_spi_hardware_map[peripheral].hw_channel;
+    return HW_SPI_Rx_Peek( hw_channel ).total_length_bytes;
+}
+
 /**
- * @brief Copy all currently unread RX bytes from a SPI channel.
+ * @brief Copy a bounded chunk of unread RX bytes from a SPI channel.
  *
  * Copies the unread RX byte stream currently exposed by the low-level SPI
  * driver into caller-owned storage, then consumes the copied bytes from the
@@ -651,16 +657,11 @@ bool EXEC_SPI_Was_Tx_Queue_Rejected( ExecSPIChannel_T peripheral )
  *
  * The low-level RX buffer may wrap around the end of its circular DMA storage,
  * so this function copies from up to two spans returned by HW_SPI_Rx_Peek().
- * After both spans have been copied, the same total byte count is passed to
- * HW_SPI_Rx_Consume() so that the low-level driver advances its software
- * consume position.
+ * The copied byte count is passed to HW_SPI_Rx_Consume() so that any unread
+ * remainder stays buffered for a later measurement tick.
  *
- * The value pointed to by @p size_bytes is used as the destination buffer
- * capacity on entry. If the unread RX byte count is larger than this capacity,
- * no bytes are copied, no RX bytes are consumed, and false is returned.
- *
- * On success, @p size_bytes is updated to the number of bytes copied into
- * @p data_dst.
+ * At most @p capacity_bytes are copied. On success, @p bytes_read is updated
+ * to the number of bytes copied into @p data_dst.
  *
  * This function does not define message boundaries or validate protocol-level
  * framing. It simply copies the raw unread RX bytes that are currently available
@@ -672,37 +673,36 @@ bool EXEC_SPI_Was_Tx_Queue_Rejected( ExecSPIChannel_T peripheral )
  * @param data_dst
  *     Pointer to caller-owned storage where unread RX bytes will be copied.
  *
- * @param size_bytes
- *     On entry, the capacity of @p data_dst in bytes.
- *     On success, updated to the number of bytes copied.
+ * @param capacity_bytes Capacity of @p data_dst in bytes.
+ * @param bytes_read Updated with the number of bytes copied and consumed.
  *
  * @return
- *     true if all currently unread RX bytes fit in @p data_dst and were copied
- *     and consumed successfully.
- *     false if the unread RX byte count exceeds the provided destination
- *     capacity.
+ *     true after the bounded receive operation completes.
  */
-bool EXEC_SPI_Receive( ExecSPIChannel_T peripheral, uint8_t* data_dst, uint32_t* size_bytes )
+bool EXEC_SPI_Receive( ExecSPIChannel_T peripheral, uint8_t* data_dst, uint32_t capacity_bytes,
+                       uint32_t* bytes_read )
 {
     const SPIChannel_T hw_channel = exec_spi_hardware_map[peripheral].hw_channel;
     HWSPIRxSpans_T     data_spans = HW_SPI_Rx_Peek( hw_channel );
-    if ( data_spans.total_length_bytes > *size_bytes )
+    const uint32_t copy_length = data_spans.total_length_bytes < capacity_bytes
+                                     ? data_spans.total_length_bytes
+                                     : capacity_bytes;
+    const uint32_t first_length = data_spans.first_span.length_bytes < copy_length
+                                      ? data_spans.first_span.length_bytes
+                                      : copy_length;
+    const uint32_t second_length = copy_length - first_length;
+
+    if ( first_length > 0U )
     {
-        // Do not partially copy or consume RX data if the caller's destination
-        // buffer cannot hold the full unread RX stream.
-        return false;
+        memcpy( data_dst, data_spans.first_span.data, first_length );
+    }
+    if ( second_length > 0U )
+    {
+        memcpy( data_dst + first_length, data_spans.second_span.data, second_length );
     }
 
-    memcpy( data_dst, data_spans.first_span.data, data_spans.first_span.length_bytes );
-
-    memcpy( data_dst + data_spans.first_span.length_bytes, data_spans.second_span.data,
-            data_spans.second_span.length_bytes );
-
-    *size_bytes = data_spans.total_length_bytes;
-
-    // Consume exactly the bytes copied so the low-level RX stream and caller's
-    // copied data remain consistent.
-    HW_SPI_Rx_Consume( hw_channel, data_spans.total_length_bytes );
+    *bytes_read = copy_length;
+    HW_SPI_Rx_Consume( hw_channel, copy_length );
     return true;
 }
 

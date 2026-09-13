@@ -495,6 +495,18 @@ static uint32_t RUN_STATE_MANAGER_GetFrequencyHz( void )
                                                          : 1000U;
 }
 
+static uint32_t RUN_STATE_MANAGER_GetSpiBaudHz( ExecSPIBaudRate_T baud_rate )
+{
+    static const uint32_t spi_baud_hz[EXEC_SPI_BAUD_COUNT] = {
+        [EXEC_SPI_BAUD_45MBIT] = 45000000U,   [EXEC_SPI_BAUD_22M5BIT] = 22500000U,
+        [EXEC_SPI_BAUD_11M25BIT] = 11250000U, [EXEC_SPI_BAUD_5M625BIT] = 5625000U,
+        [EXEC_SPI_BAUD_2M813BIT] = 2813000U,  [EXEC_SPI_BAUD_1M406BIT] = 1406000U,
+        [EXEC_SPI_BAUD_703KBIT] = 703000U,    [EXEC_SPI_BAUD_352KBIT] = 352000U,
+    };
+
+    return spi_baud_hz[baud_rate];
+}
+
 static uint32_t RUN_STATE_MANAGER_CalculateDrainTailTicks( void )
 {
     uint64_t       required_ticks = 0U;
@@ -527,13 +539,7 @@ static uint32_t RUN_STATE_MANAGER_CalculateDrainTailTicks( void )
             continue;
         }
 
-        static const uint32_t spi_baud_hz[EXEC_SPI_BAUD_COUNT] = {
-            [EXEC_SPI_BAUD_45MBIT] = 45000000U,   [EXEC_SPI_BAUD_22M5BIT] = 22500000U,
-            [EXEC_SPI_BAUD_11M25BIT] = 11250000U, [EXEC_SPI_BAUD_5M625BIT] = 5625000U,
-            [EXEC_SPI_BAUD_2M813BIT] = 2813000U,  [EXEC_SPI_BAUD_1M406BIT] = 1406000U,
-            [EXEC_SPI_BAUD_703KBIT] = 703000U,    [EXEC_SPI_BAUD_352KBIT] = 352000U,
-        };
-        const uint32_t baud_hz   = spi_baud_hz[spi->baud_rate];
+        const uint32_t baud_hz   = RUN_STATE_MANAGER_GetSpiBaudHz( spi->baud_rate );
         const uint64_t numerator = ( uint64_t )RUN_STATE_SPI_MAX_TRANSFER_BYTES * 8U * frequency_hz
                                    * RUN_STATE_TAIL_MARGIN_NUMERATOR;
         const uint64_t denominator = ( uint64_t )baud_hz * RUN_STATE_TAIL_MARGIN_DENOMINATOR;
@@ -601,6 +607,7 @@ static bool RUN_STATE_MANAGER_BeginDriverStart( void )
         .digital_input_enabled     = driver_status.digital_inputs_enabled,
         .pwm_capture_enabled_mask  = driver_status.pwm_capture_enabled_mask,
         .uart_receive_enabled_mask = driver_status.uart_receive_enabled_mask,
+        .spi_receive_enabled_mask  = driver_status.spi_enabled_mask,
     };
     EXECUTION_MANAGER_ConfigureMeasurements( &measurement_configuration );
 
@@ -735,10 +742,16 @@ static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void )
     }
     for ( uint32_t channel = 0U; channel < EXEC_SPI_CHANNEL_COUNT; channel++ )
     {
+        const ExecSPIConfig_T* spi = &run_configuration.spi_channels[channel];
         if ( ( driver_status.spi_enabled_mask & ( 1UL << channel ) ) != 0U )
         {
-            RUN_STATE_ADD_RESULT_BYTES( ( uint64_t )effective_ticks
-                                        * ( result_header_bytes + 256U ) );
+            const uint64_t wire_numerator =
+                ( uint64_t )RUN_STATE_MANAGER_GetSpiBaudHz( spi->baud_rate ) * effective_ticks;
+            const uint64_t wire_denominator = ( uint64_t )frequency_hz * 8U;
+            const uint64_t wire_bytes =
+                ( wire_numerator + wire_denominator - 1U ) / wire_denominator;
+            RUN_STATE_ADD_RESULT_BYTES( wire_bytes + ( ( uint64_t )effective_ticks
+                                                        * result_header_bytes ) );
         }
     }
     for ( uint32_t channel = 0U; channel < EXEC_CAN_CHANNEL_COUNT; channel++ )

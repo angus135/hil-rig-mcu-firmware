@@ -23,6 +23,7 @@ typedef struct
     bool     digital_input_enabled;
     uint32_t pwm_capture_enabled_mask;
     uint32_t uart_receive_enabled_mask;
+    uint32_t spi_receive_enabled_mask;
 } ExecutionMeasurementConfiguration_T;
 
 /** Builds the ISR measurement dispatch list from validated task-context configuration. */
@@ -66,6 +67,10 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SamplePwmCapture( uint8_t channel, uint32_t t
 /** Reads and commits unread UART RX bytes; no record is committed when empty. */
 bool EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive( uint8_t channel, uint32_t timestamp,
                                                       BaseType_t* higher_priority_task_woken );
+
+/** Reads and commits unread SPI RX bytes; no record is committed when empty. */
+bool EXECUTION_MEASUREMENT_ADAPTER_SampleSpiReceive( uint8_t channel, uint32_t timestamp,
+                                                     BaseType_t* higher_priority_task_woken );
 
 #ifdef __cplusplus
 }

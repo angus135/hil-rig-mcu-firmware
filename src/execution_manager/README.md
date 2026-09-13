@@ -75,6 +75,13 @@ record. The RSM's task-context result reservation is conservative for the
 configured baud and effective run horizon, so a partial final frame is included
 without exposing a result-budget parameter to callers.
 
+SPI receive follows the same sparse raw-byte-stream contract. Each enabled SPI
+channel contributes one prepared measurement entry. The adapter first snapshots
+the unread DMA byte count and emits no record when that count is zero. Otherwise
+it reserves only the pending byte count, capped at `EXEC_SPI_MAX_RX_CHUNK_SIZE`,
+then drains directly into the lease and commits the reported byte count. Bytes
+arriving after the snapshot remain in the SPI driver for the next boundary.
+
 ## ISR path
 
 `EXECUTION_MANAGER_ProcessTickFromISR()` currently performs:

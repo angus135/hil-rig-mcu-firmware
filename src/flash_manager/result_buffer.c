@@ -1077,6 +1077,11 @@ uint32_t RESULT_BUFFER_GetFreeBytes( void )
     return result_buffer_context.capacity_bytes - result_buffer_context.pending_nand_bytes;
 }
 
+uint32_t RESULT_BUFFER_GetPendingBytes( void )
+{
+    return result_buffer_context.is_initialised ? result_buffer_context.pending_nand_bytes : 0U;
+}
+
 /**
  * @brief Stops result production and publishes the final partial NAND page.
  */
