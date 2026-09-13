@@ -43,6 +43,7 @@ static constexpr uint16_t TEST_PARTIAL_PAYLOAD_BYTES         = 4U;
 static constexpr uint32_t TEST_INSTRUCTION_CAPACITY_BYTES    = TEST_PAGE_SIZE_BYTES * 8U;
 static constexpr uint32_t TEST_MAX_INSTRUCTION_READS         = 8U;
 static constexpr uint32_t TEST_INSTRUCTION_BUFFER_PAGE_COUNT = 3U;
+static constexpr uint32_t TEST_RESULT_BUFFER_PAGE_COUNT      = 6U;
 static constexpr uint32_t TEST_RESULT_CAPACITY_BYTES         = TEST_PAGE_SIZE_BYTES * 8U;
 static constexpr uint32_t TEST_MAX_RESULT_READS              = 8U;
 
@@ -1726,23 +1727,24 @@ TEST_F( FlashManagerTest, ResultReadValidatesArgumentsStateAndReportsBusyBeforeP
 
 TEST_F( FlashManagerTest, ResultFillWorkerPrefetchesAvailablePagesAndFinalPartialPageInOrder )
 {
-    constexpr uint32_t result_length_bytes = TEST_PAGE_SIZE_BYTES * 3U + 7U;
+    constexpr uint32_t result_length_bytes =
+        TEST_PAGE_SIZE_BYTES * TEST_RESULT_BUFFER_PAGE_COUNT + 7U;
     PrepareCompletedResults( result_length_bytes );
     FillBytes( result_image, result_length_bytes, 0x20U );
     ASSERT_EQ( FLASH_MANAGER_RESULT_TRANSFER_OK, FLASH_MANAGER_RequestResultTransferStart() );
 
     ASSERT_TRUE( FLASH_MANAGER_FillResultPages() );
-    ASSERT_EQ( 3U, read_result_page_calls );
+    ASSERT_EQ( TEST_RESULT_BUFFER_PAGE_COUNT, read_result_page_calls );
 
-    for ( uint32_t page_index = 0U; page_index < 3U; page_index++ )
+    for ( uint32_t page_index = 0U; page_index < TEST_RESULT_BUFFER_PAGE_COUNT; page_index++ )
     {
         EXPECT_EQ( page_index * TEST_PAGE_SIZE_BYTES, read_result_page_offsets[page_index] );
         EXPECT_EQ( TEST_PAGE_SIZE_BYTES, read_result_page_lengths[page_index] );
     }
 
-    /* All three RAM slots are occupied, so another fill applies backpressure. */
+    /* Every RAM slot is occupied, so another fill applies backpressure. */
     ASSERT_TRUE( FLASH_MANAGER_FillResultPages() );
-    EXPECT_EQ( 3U, read_result_page_calls );
+    EXPECT_EQ( TEST_RESULT_BUFFER_PAGE_COUNT, read_result_page_calls );
 
     notify_calls                                         = 0U;
     std::array<uint8_t, TEST_PAGE_SIZE_BYTES> first_page = {};
@@ -1755,9 +1757,10 @@ TEST_F( FlashManagerTest, ResultFillWorkerPrefetchesAvailablePagesAndFinalPartia
     EXPECT_EQ( FLASH_MANAGER_NOTIFY_FILL_RESULTS, notify_value );
 
     ASSERT_TRUE( FLASH_MANAGER_FillResultPages() );
-    ASSERT_EQ( 4U, read_result_page_calls );
-    EXPECT_EQ( TEST_PAGE_SIZE_BYTES * 3U, read_result_page_offsets[3] );
-    EXPECT_EQ( 7U, read_result_page_lengths[3] );
+    ASSERT_EQ( TEST_RESULT_BUFFER_PAGE_COUNT + 1U, read_result_page_calls );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES * TEST_RESULT_BUFFER_PAGE_COUNT,
+               read_result_page_offsets[TEST_RESULT_BUFFER_PAGE_COUNT] );
+    EXPECT_EQ( 7U, read_result_page_lengths[TEST_RESULT_BUFFER_PAGE_COUNT] );
 }
 
 TEST_F( FlashManagerTest, StaleResultFillNotificationRequiresNoNandAccess )

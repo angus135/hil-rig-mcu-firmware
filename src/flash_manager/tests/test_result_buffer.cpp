@@ -35,11 +35,6 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-static constexpr uint32_t TEST_PAGE_SIZE_BYTES = 32U;
-static constexpr uint32_t TEST_CAPACITY_BYTES  = TEST_PAGE_SIZE_BYTES * 3U;
-static constexpr uint16_t TEST_MAX_PAYLOAD_BYTES =
-    static_cast<uint16_t>( TEST_PAGE_SIZE_BYTES - sizeof( FlashManagerResultHeader_T ) );
-
 /**-----------------------------------------------------------------------------
  *  Test Doubles / Mocks
  *------------------------------------------------------------------------------
@@ -114,6 +109,12 @@ extern "C"
 #endif
 }
 #undef _Static_assert
+
+static constexpr uint32_t TEST_PAGE_SIZE_BYTES = 32U;
+static constexpr uint32_t TEST_CAPACITY_BYTES =
+    TEST_PAGE_SIZE_BYTES * RESULT_BUFFER_PAGE_COUNT;
+static constexpr uint16_t TEST_MAX_PAYLOAD_BYTES =
+    static_cast<uint16_t>( TEST_PAGE_SIZE_BYTES - sizeof( FlashManagerResultHeader_T ) );
 
 /**-----------------------------------------------------------------------------
  *  Test Fixture
@@ -424,8 +425,9 @@ TEST_F( ResultBufferTest, CommitRecordCopiesScratchRecordAcrossPhysicalRingWrap 
     Initialise();
     result_buffer_context.producer_offset     = TEST_CAPACITY_BYTES - 4U;
     result_buffer_context.pending_nand_bytes  = TEST_PAGE_SIZE_BYTES - 4U;
-    result_buffer_context.page_states[2]      = RESULT_BUFFER_PAGE_FILLING;
-    result_buffer_context.page_valid_bytes[2] = TEST_PAGE_SIZE_BYTES - 4U;
+    constexpr uint32_t final_page_index = RESULT_BUFFER_PAGE_COUNT - 1U;
+    result_buffer_context.page_states[final_page_index] = RESULT_BUFFER_PAGE_FILLING;
+    result_buffer_context.page_valid_bytes[final_page_index] = TEST_PAGE_SIZE_BYTES - 4U;
 
     FlashManagerResultWriteLease_T lease = {};
     ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( 8U, &lease ) );
@@ -451,9 +453,11 @@ TEST_F( ResultBufferTest, CommitRecordCopiesScratchRecordAcrossPhysicalRingWrap 
     EXPECT_EQ( 0, std::memcmp( &record[sizeof( header )], payload.data(), payload.size() ) );
     EXPECT_EQ( 12U, result_buffer_context.producer_offset );
     EXPECT_EQ( 44U, result_buffer_context.pending_nand_bytes );
-    EXPECT_EQ( RESULT_BUFFER_PAGE_READY_TO_DRAIN, result_buffer_context.page_states[2] );
+    EXPECT_EQ( RESULT_BUFFER_PAGE_READY_TO_DRAIN,
+               result_buffer_context.page_states[final_page_index] );
     EXPECT_EQ( RESULT_BUFFER_PAGE_FILLING, result_buffer_context.page_states[0] );
-    EXPECT_EQ( TEST_PAGE_SIZE_BYTES, result_buffer_context.page_valid_bytes[2] );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES,
+               result_buffer_context.page_valid_bytes[final_page_index] );
     EXPECT_EQ( 12U, result_buffer_context.page_valid_bytes[0] );
 }
 
@@ -462,8 +466,9 @@ TEST_F( ResultBufferTest, ShortScratchRecordCommitDoesNotCopyPastPhysicalEnd )
     Initialise();
     result_buffer_context.producer_offset     = TEST_CAPACITY_BYTES - 12U;
     result_buffer_context.pending_nand_bytes  = 20U;
-    result_buffer_context.page_states[2]      = RESULT_BUFFER_PAGE_FILLING;
-    result_buffer_context.page_valid_bytes[2] = 20U;
+    constexpr uint32_t final_page_index = RESULT_BUFFER_PAGE_COUNT - 1U;
+    result_buffer_context.page_states[final_page_index] = RESULT_BUFFER_PAGE_FILLING;
+    result_buffer_context.page_valid_bytes[final_page_index] = 20U;
     result_buffer_storage[0]                  = 0xCCU;
 
     FlashManagerResultWriteLease_T lease = {};
@@ -476,7 +481,7 @@ TEST_F( ResultBufferTest, ShortScratchRecordCommitDoesNotCopyPastPhysicalEnd )
                RESULT_BUFFER_CommitRecord( &lease, 1U, 2U, 3U, 2U ) );
     EXPECT_EQ( TEST_CAPACITY_BYTES - 2U, result_buffer_context.producer_offset );
     EXPECT_EQ( 30U, result_buffer_context.pending_nand_bytes );
-    EXPECT_EQ( 30U, result_buffer_context.page_valid_bytes[2] );
+    EXPECT_EQ( 30U, result_buffer_context.page_valid_bytes[final_page_index] );
     EXPECT_EQ( 0U, result_buffer_context.page_valid_bytes[0] );
     EXPECT_EQ( 0xCCU, result_buffer_storage[0] );
 }
@@ -485,7 +490,7 @@ TEST_F( ResultBufferTest, ReserveRecordFailsWhenCommittedDataOccupiesEntireRing 
 {
     Initialise();
 
-    for ( uint32_t page = 0U; page < 3U; page++ )
+    for ( uint32_t page = 0U; page < RESULT_BUFFER_PAGE_COUNT; page++ )
     {
         FlashManagerResultWriteLease_T lease = {};
         ASSERT_TRUE( RESULT_BUFFER_ReserveRecord( TEST_MAX_PAYLOAD_BYTES, &lease ) );
@@ -640,9 +645,10 @@ TEST_F( ResultBufferTest, SuccessfulDrainReleasesPageAndAdvancesInOrder )
 TEST_F( ResultBufferTest, SuccessfulDrainMakesWrappedProducerPageReusable )
 {
     Initialise();
-    CommitFullPage( 1U );
-    CommitFullPage( 2U );
-    CommitFullPage( 3U );
+    for ( uint32_t page = 0U; page < RESULT_BUFFER_PAGE_COUNT; page++ )
+    {
+        CommitFullPage( page + 1U );
+    }
 
     EXPECT_EQ( 0U, result_buffer_context.producer_offset );
     EXPECT_EQ( TEST_CAPACITY_BYTES, result_buffer_context.pending_nand_bytes );
@@ -891,9 +897,9 @@ TEST_F( ResultBufferTest, FailedReadFillReleasesSlotAndRetriesSameOffsetWithNewL
     EXPECT_FALSE( RESULT_BUFFER_CompleteReadFillPage( &failed_lease, true ) );
 }
 
-TEST_F( ResultBufferTest, ThreeReadyReadPagesApplyBackpressureUntilHostReleasesOne )
+TEST_F( ResultBufferTest, FullReadRingAppliesBackpressureUntilHostReleasesOne )
 {
-    PrepareRead( TEST_PAGE_SIZE_BYTES * 4U );
+    PrepareRead( TEST_PAGE_SIZE_BYTES * ( RESULT_BUFFER_PAGE_COUNT + 1U ) );
 
     for ( uint32_t page_index = 0U; page_index < RESULT_BUFFER_PAGE_COUNT; page_index++ )
     {
@@ -915,7 +921,8 @@ TEST_F( ResultBufferTest, ThreeReadyReadPagesApplyBackpressureUntilHostReleasesO
 
     ResultBufferReadFillLease_T next_lease = {};
     ASSERT_TRUE( RESULT_BUFFER_AcquireReadFillPage( &next_lease ) );
-    EXPECT_EQ( TEST_PAGE_SIZE_BYTES * 3U, next_lease.result_offset_bytes );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES * RESULT_BUFFER_PAGE_COUNT,
+               next_lease.result_offset_bytes );
     EXPECT_EQ( result_buffer_storage, next_lease.page_data );
 }
 
