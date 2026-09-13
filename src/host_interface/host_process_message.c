@@ -52,6 +52,35 @@
  *------------------------------------------------------------------------------
  */
 
+/**
+ * @brief Construct a generic error message
+ *
+ * @details is given a pointer to a message and fills it with default error values
+ *
+ * @param[in] recent_received_message         the info request message
+ * @param[out] response_message               if required the message to respond with
+ * @param[out] response_required              whether or not a response is required
+ * @param[out] data                           the optional additional date for variable length byte
+spans
+ * @param[out] data_size                      the size available to write to at data
+ * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully  
+ */
+HOST_Interface_Status_T HOST_INTERFACE_Default_Error(HIL_Application_Message_T* message)
+{
+    // Set the type and subtype
+    message->type = HIL_APPLICATION_MESSAGE_TYPE_ERROR;
+    message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    // Set Error body TODO update error catagory
+    message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INVALID;
+    message->body.error.recoverable = 1U;
+    message->body.error.has_tick_number = 0U;
+    message->body.error.tick_number     = 0U;
+    message->body.error.detail     = 0U;
+    message->body.error.diagnostic_data.size = 0U;
+    message->body.error.diagnostic_data.data     = NULL;
+    return HOST_INTERFACE_STATUS_OK;
+}
+
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
@@ -71,7 +100,7 @@
  * @param[out] data                           the optional additional date for variable length byte
 spans
  * @param[out] data_size                      the size available to write to at data
- * @return HOST_INTERFACE_STATUS_OK if the message is process succesfully  
+ * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully  
  */
 HOST_Interface_Status_T HOST_INTERFACE_process_Info_Request(
     const HIL_Application_Message_T* recent_received_message,
@@ -80,17 +109,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Info_Request(
     switch ( recent_received_message->body.system_info_request.query )
     {
         case HIL_APPLICATION_SYSTEM_INFO_QUERY_INVALID:
-            // Set the type and subtype
-            response_message->type = HIL_APPLICATION_MESSAGE_TYPE_ERROR;
-            response_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-            // Set Error body TODO update error catagory
-            response_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INVALID;
-            response_message->body.error.recoverable = 1U;
-            response_message->body.error.has_tick_number = 0U;
-            response_message->body.error.tick_number     = 0U;
-            response_message->body.error.detail     = 0U;
-            response_message->body.error.diagnostic_data.size = 0U;
-            response_message->body.error.diagnostic_data.data     = NULL;
+            // Construct the error message
+            HOST_INTERFACE_Default_Error(response_message);
             *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_SYSTEM_INFO_QUERY_BASIC:
@@ -131,37 +151,19 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Info_Request(
             *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_SYSTEM_INFO_QUERY_RESERVED:
-            // Set the type and subtype
-            response_message->type = HIL_APPLICATION_MESSAGE_TYPE_ERROR;
-            response_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-            // Set Error body TODO update error catagory
-            response_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INVALID;
-            response_message->body.error.recoverable = 1U;
-            response_message->body.error.has_tick_number = 0U;
-            response_message->body.error.tick_number     = 0U;
-            response_message->body.error.detail     = 0U;
-            response_message->body.error.diagnostic_data.size = 0U;
-            response_message->body.error.diagnostic_data.data     = NULL;
+            // Construct the error message
+            HOST_INTERFACE_Default_Error(response_message);
             *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
         default:
-            // Set the type and subtype
-            response_message->type = HIL_APPLICATION_MESSAGE_TYPE_ERROR;
-            response_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-            // Set Error body TODO update error catagory
-            response_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INVALID;
-            response_message->body.error.recoverable = 1U;
-            response_message->body.error.has_tick_number = 0U;
-            response_message->body.error.tick_number     = 0U;
-            response_message->body.error.detail     = 0U;
-            response_message->body.error.diagnostic_data.size = 0U;
-            response_message->body.error.diagnostic_data.data     = NULL;
+            // Construct the error message
+            HOST_INTERFACE_Default_Error(response_message);
             *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
     }
 }
 
-bool HOST_INTERFACE_process_Info_Response( const HIL_Application_Message_T* recent_received_message,
+HOST_Interface_Status_T HOST_INTERFACE_process_Info_Response( const HIL_Application_Message_T* recent_received_message,
                                            HIL_Application_Message_T*       response_message,
                                            bool* response_required, uint8_t* data,
                                            size_t data_size )
@@ -172,27 +174,29 @@ bool HOST_INTERFACE_process_Info_Response( const HIL_Application_Message_T* rece
     switch ( recent_received_message->subtype )
     {
         case HIL_APPLICATION_MESSAGE_SUBTYPE_NONE:
-            *response_required = false;
-            return false;
+            // Construct the error message
+            HOST_INTERFACE_Default_Error(response_message);
+            *response_required = true;
+            return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_MESSAGE_SUBTYPE_BASIC:
             // Check protocol version
             if ( recent_received_message->body.system_info_response.application_protocol_major
-                 != HIL_RIG_PROTOCOL_VERSION_MAJOR )
+                 == HIL_RIG_PROTOCOL_VERSION_MAJOR )
             {
                 *response_required = false;
-                return false;
+                return HOST_INTERFACE_STATUS_OK;
             }
             if ( recent_received_message->body.system_info_response.application_protocol_minor
-                 != HIL_RIG_PROTOCOL_VERSION_MINOR )
+                 == HIL_RIG_PROTOCOL_VERSION_MINOR )
             {
                 *response_required = false;
-                return false;
+                return HOST_INTERFACE_STATUS_OK;
             }
             if ( recent_received_message->body.system_info_response.application_protocol_patch
-                 != HIL_RIG_PROTOCOL_VERSION_PATCH )
+                 == HIL_RIG_PROTOCOL_VERSION_PATCH )
             {
                 *response_required = false;
-                return false;
+                return HOST_INTERFACE_STATUS_OK;
             }
             // Check firmware version TODO
             // Check firmware git hash TODO
@@ -201,14 +205,20 @@ bool HOST_INTERFACE_process_Info_Response( const HIL_Application_Message_T* rece
             // {
             //     default:
             // }
-            *response_required = false;
-            return true;
+            // Construct the error message
+            HOST_INTERFACE_Default_Error(response_message);
+            *response_required = true;
+            return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_MESSAGE_SUBTYPE_RESERVED:
-            *response_required = false;
-            return false;
+            // Construct the error message
+            HOST_INTERFACE_Default_Error(response_message);
+            *response_required = true;
+            return HOST_INTERFACE_STATUS_OK;
         default:
-            *response_required = false;
-            return false;
+            // Construct the error message
+            HOST_INTERFACE_Default_Error(response_message);
+            *response_required = true;
+            return HOST_INTERFACE_STATUS_OK;
     }
 }
 
