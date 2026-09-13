@@ -39,7 +39,7 @@
  * write to overlap without sharing ownership. The extra slot provides
  * tolerance for NAND and scheduler latency.
  */
-#define RESULT_BUFFER_PAGE_COUNT ( 3U )
+#define RESULT_BUFFER_PAGE_COUNT ( 6U )
 
 #define RESULT_BUFFER_MAX_CAPACITY_BYTES                                                           \
     ( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES * RESULT_BUFFER_PAGE_COUNT )
