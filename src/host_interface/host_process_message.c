@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 #include "hil_rig_protocol/application/application.h"
+#include "hil_rig_protocol/application/application_message.h"
 #include "hil_rig_protocol/transport/transport.h"
 #include "hil_rig_protocol/version.h"
 #include "host_interface.h"
@@ -67,7 +68,7 @@ bool HOST_INTERFACE_process_Info_Request(
         case HIL_APPLICATION_SYSTEM_INFO_QUERY_BASIC:
             // Set the type and subtype
             response_message->type = HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_RESPONSE;
-            response_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+            response_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_BASIC;
             // Set protocol version
             response_message->body.system_info_response.application_protocol_major =
                 HIL_RIG_PROTOCOL_VERSION_MAJOR;
@@ -110,7 +111,56 @@ bool HOST_INTERFACE_process_Info_Request(
     }
 }
 
-bool HOST_INTERFACE_process_Info_Response(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
+bool HOST_INTERFACE_process_Info_Response( const HIL_Application_Message_T* recent_received_message,
+                                           HIL_Application_Message_T*       response_message,
+                                           bool* response_required, uint8_t* data,
+                                           size_t data_size )
+{
+    ( void )response_message;
+    ( void )data;
+    (void) data_size;
+    switch ( recent_received_message->subtype )
+    {
+        case HIL_APPLICATION_MESSAGE_SUBTYPE_NONE:
+            *response_required = false;
+            return false;
+        case HIL_APPLICATION_MESSAGE_SUBTYPE_BASIC:
+            // Check protocol version
+            if ( recent_received_message->body.system_info_response.application_protocol_major
+                 != HIL_RIG_PROTOCOL_VERSION_MAJOR )
+            {
+                *response_required = false;
+                return false;
+            }
+            if ( recent_received_message->body.system_info_response.application_protocol_minor
+                 != HIL_RIG_PROTOCOL_VERSION_MINOR )
+            {
+                *response_required = false;
+                return false;
+            }
+            if ( recent_received_message->body.system_info_response.application_protocol_patch
+                 != HIL_RIG_PROTOCOL_VERSION_PATCH )
+            {
+                *response_required = false;
+                return false;
+            }
+            // Check firmware version TODO
+            // Check firmware git hash TODO
+            // Check Diagnostic data (depends on the sub-type) TODO
+            // switch ( recent_received_message->subtype )
+            // {
+            //     default:
+            // }
+            *response_required = false;
+            return true;
+        case HIL_APPLICATION_MESSAGE_SUBTYPE_RESERVED:
+            *response_required = false;
+            return false;
+        default:
+            *response_required = false;
+            return false;
+    }
+}
 
 bool HOST_INTERFACE_process_Test_Configuration(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
 
@@ -121,6 +171,10 @@ bool HOST_INTERFACE_process_Variable_Instruction_Data(
     HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size )
 {
     // NOT IMPLEMENTED
+    ( void )recent_received_message;
+    ( void )response_message;
+    ( void )data;
+    (void) data_size;
     *response_required = false;
     return false;
 }
@@ -136,6 +190,10 @@ bool HOST_INTERFACE_process_Variable_Result_Data(
     HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size )
 {
     // NOT IMPLEMENTED
+    ( void )recent_received_message;
+    ( void )response_message;
+    ( void )data;
+    (void) data_size;
     *response_required = false;
     return false;
 }
