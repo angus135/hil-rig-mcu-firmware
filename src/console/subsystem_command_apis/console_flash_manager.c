@@ -87,6 +87,7 @@
 
 #include "console.h"
 #include "external_flash.h"
+#include "execution_manager.h"
 #include "execution_operation_payloads.h"
 #include "exec_analogue_output.h"
 #include "exec_can.h"
@@ -102,7 +103,9 @@
 #include "run_state_manager.h"
 #include "rtos_config.h"
 #include "test_configuration.h"
+#ifndef TEST_BUILD
 #include "stm32f4xx.h"
+#endif
 
 #include <errno.h>
 #include <stdbool.h>
@@ -242,12 +245,14 @@ typedef struct
     volatile FlashManagerResultCommitStatus_T    last_commit_status;
 } ConsoleFlashExecutionTestContext_T;
 
+#ifndef TEST_BUILD
 typedef struct
 {
     uint64_t total_cycles;
     uint32_t minimum_cycles;
     uint32_t maximum_cycles;
 } ConsoleFlashPageTiming_T;
+#endif
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Variables
@@ -363,15 +368,19 @@ static bool     CONSOLE_Flash_VerifyPattern( const uint8_t* data, uint32_t strea
 static void     CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32_t stream_offset,
                                                     uint32_t length, uint8_t seed );
 static uint32_t CONSOLE_Flash_Fnv1aUpdate( uint32_t hash, const uint8_t* data, uint32_t length );
+#ifndef TEST_BUILD
 static void CONSOLE_Flash_RecordPageTiming( ConsoleFlashPageTiming_T* timing,
-                                            uint32_t                  elapsed_cycles );
+                                             uint32_t                  elapsed_cycles );
 static void CONSOLE_Flash_PrintPageTiming( const char* label, uint32_t operation_count,
-                                           uint32_t bytes_per_operation,
-                                           const ConsoleFlashPageTiming_T* timing );
+                                            uint32_t bytes_per_operation,
+                                            const ConsoleFlashPageTiming_T* timing );
+#endif
 
 static void CONSOLE_Flash_StatusCommand( void );
 static void CONSOLE_Flash_ExternalTestCommand( uint16_t argc, char* argv[] );
+#ifndef TEST_BUILD
 static void CONSOLE_Flash_ThroughputTestCommand( uint16_t argc, char* argv[] );
+#endif
 static void CONSOLE_Flash_UploadTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadDigitalOutputTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadDigitalPatternCommand( uint16_t argc, char* argv[] );
@@ -402,7 +411,9 @@ static void CONSOLE_Flash_PrintUsage( void )
     CONSOLE_Printf( "Flash hardware bring-up (destructive):\r\n" );
     CONSOLE_Printf( "  flash status\r\n" );
     CONSOLE_Printf( "  flash external_test [seed]\r\n" );
+#ifndef TEST_BUILD
     CONSOLE_Printf( "  flash throughput_test [page_count]\r\n" );
+#endif
     CONSOLE_Printf( "  flash upload_test [instruction_count] [seed]\r\n" );
     CONSOLE_Printf( "  flash upload_do_test <channel 1..10> [delay_ticks] [high_ticks]\r\n" );
     CONSOLE_Printf( "  flash upload_do_pattern <channel> <first_tick> <interval_ticks> "
@@ -930,8 +941,9 @@ static uint32_t CONSOLE_Flash_Fnv1aUpdate( uint32_t hash, const uint8_t* data, u
     return hash;
 }
 
+#ifndef TEST_BUILD
 static void CONSOLE_Flash_RecordPageTiming( ConsoleFlashPageTiming_T* timing,
-                                            uint32_t                  elapsed_cycles )
+                                             uint32_t                  elapsed_cycles )
 {
     timing->total_cycles += elapsed_cycles;
     if ( elapsed_cycles < timing->minimum_cycles )
@@ -964,6 +976,7 @@ static void CONSOLE_Flash_PrintPageTiming( const char* label, uint32_t operation
                     ( unsigned long )( bytes_per_second / 1000000U ),
                     ( unsigned long )( ( bytes_per_second % 1000000U ) / 1000U ) );
 }
+#endif
 
 /** Prints Flash Manager lifecycle and External Flash/NAND diagnostic state. */
 static void CONSOLE_Flash_StatusCommand( void )
@@ -1219,6 +1232,7 @@ static void CONSOLE_Flash_ExternalTestCommand( uint16_t argc, char* argv[] )
 }
 
 /** Benchmarks full-page NAND service through the production External Flash APIs. */
+#ifndef TEST_BUILD
 static void CONSOLE_Flash_ThroughputTestCommand( uint16_t argc, char* argv[] )
 {
     if ( !CONSOLE_Flash_RequireIdle() )
@@ -1416,6 +1430,7 @@ static void CONSOLE_Flash_ThroughputTestCommand( uint16_t argc, char* argv[] )
     CONSOLE_Printf( "NAND throughput test PASS: %lu pages verified in each partition.\r\n",
                     ( unsigned long )page_count );
 }
+#endif
 
 static void CONSOLE_Flash_WriteU32Le( uint8_t* destination, uint32_t value )
 {
@@ -3929,11 +3944,13 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
         return;
     }
 
+#ifndef TEST_BUILD
     if ( strcmp( argv[1], "throughput_test" ) == 0 )
     {
         CONSOLE_Flash_ThroughputTestCommand( argc, argv );
         return;
     }
+#endif
 
     if ( strcmp( argv[1], "upload_test" ) == 0 )
     {
