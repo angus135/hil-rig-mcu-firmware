@@ -240,6 +240,13 @@ void EXECUTION_MANAGER_SetTerminalCallback( ExecutionManagerTerminalCallback_T c
 {
     execution_terminal_callback = callback;
 }
+void HW_CAN_GetDiagnostic( HW_CAN_Diagnostic_T* diag )
+{
+    if ( diag != nullptr )
+    {
+        std::memset( diag, 0, sizeof( *diag ) );
+    }
+}
 }
 
 extern "C"
