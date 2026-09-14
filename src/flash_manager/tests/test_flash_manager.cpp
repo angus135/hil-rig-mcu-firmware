@@ -1847,4 +1847,3 @@ TEST_F( FlashManagerTest, AbortSessionSupportsInstructionUploadSessionStates )
     ASSERT_EQ( FLASH_MANAGER_REQUEST_OK,
                FLASH_MANAGER_RequestInstructionUploadStart( TEST_PAGE_SIZE_BYTES ) );
 }
-

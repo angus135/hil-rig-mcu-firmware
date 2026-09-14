@@ -784,7 +784,7 @@ TEST_F( RunStateManagerTest, FlashSessionAbortedDuringPackageReceiveFault )
     Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
     EXPECT_EQ( RUN_STATE_TEST_PACKAGE_RECEIVE, run_state );
 
-    flash_manager_state = FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD;
+    flash_manager_state    = FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD;
     requested_fault_reason = RUN_STATE_FAULT_EXTERNAL_REQUEST;
     Process( RUN_STATE_REQUEST_FAULT );
 
@@ -808,7 +808,7 @@ TEST_F( RunStateManagerTest, FlashSessionAbortedDuringPreparingInstructionUpload
     Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
     EXPECT_EQ( RUN_STATE_TEST_PACKAGE_RECEIVE, run_state );
 
-    flash_manager_state = FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD;
+    flash_manager_state    = FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD;
     requested_fault_reason = RUN_STATE_FAULT_EXTERNAL_REQUEST;
     Process( RUN_STATE_REQUEST_FAULT );
 
@@ -822,7 +822,7 @@ TEST_F( RunStateManagerTest, FlashSessionAbortedDuringExecutionPreparation )
     Process( RUN_STATE_REQUEST_EXECUTION );
     EXPECT_EQ( RUN_STATE_PENDING_EXECUTION_PREPARATION, pending_operation );
 
-    flash_manager_state = FLASH_MANAGER_STATE_PREPARING_EXECUTION;
+    flash_manager_state    = FLASH_MANAGER_STATE_PREPARING_EXECUTION;
     requested_fault_reason = RUN_STATE_FAULT_EXTERNAL_REQUEST;
     Process( RUN_STATE_REQUEST_FAULT );
 
@@ -837,7 +837,7 @@ TEST_F( RunStateManagerTest, FlashSessionAbortedDuringResultFinalisation )
     Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
     EXPECT_EQ( RUN_STATE_PENDING_DRIVER_SHUTDOWN, pending_operation );
 
-    flash_manager_state = FLASH_MANAGER_STATE_FINALISING_RESULTS;
+    flash_manager_state    = FLASH_MANAGER_STATE_FINALISING_RESULTS;
     requested_fault_reason = RUN_STATE_FAULT_EXTERNAL_REQUEST;
     Process( RUN_STATE_REQUEST_FAULT );
 
@@ -906,5 +906,3 @@ TEST_F( RunStateManagerTest, ConfigurationOwnershipHeldAcrossExecutionAndRelease
     EXPECT_TRUE( configuration_cleared );
     EXPECT_TRUE( configuration_ownership_released );
 }
-
-
