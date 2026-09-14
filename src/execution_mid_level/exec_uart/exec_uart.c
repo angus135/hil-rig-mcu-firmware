@@ -535,6 +535,11 @@ bool EXEC_UART_Read( ExecUartChannel_T channel, uint8_t* dest, uint32_t dest_siz
     return true;
 }
 
+uint32_t EXEC_UART_GetPendingReceiveBytes( ExecUartChannel_T channel )
+{
+    return HW_UART_Rx_Peek( exec_uart_hardware_map[channel].hw_channel ).total_length_bytes;
+}
+
 bool EXEC_UART_Is_Tx_Complete( ExecUartChannel_T channel )
 {
     return HW_UART_Is_Tx_Complete( exec_uart_hardware_map[channel].hw_channel );

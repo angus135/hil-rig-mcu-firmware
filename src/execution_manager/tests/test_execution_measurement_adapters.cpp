@@ -26,11 +26,13 @@ static uint32_t                         committed_timestamp  = 0U;
 static uint32_t                         cancel_count         = 0U;
 static EXEC_CAN_Result_T                can_result           = EXEC_CAN_RESULT_OK;
 static uint16_t                         can_packets_read     = 0U;
+static uint16_t                         can_pending_packets  = 0U;
 static EXEC_CAN_Channel_T               can_channel          = EXEC_CAN_CHANNEL_1;
 static bool                             spi_receive_result   = true;
 static uint32_t                         spi_pending_bytes    = 0U;
 static uint32_t                         spi_bytes_read       = 0U;
 static bool                             uart_read_result     = true;
+static uint32_t                         uart_pending_bytes   = 0U;
 static uint32_t                         uart_bytes_read      = 0U;
 static uint32_t                         digital_input_sample = 0U;
 static ExecPwmCaptureResult_T           pwm_capture_result   = {};
@@ -90,6 +92,11 @@ extern "C" EXEC_CAN_Result_T EXEC_CAN_Receive( EXEC_CAN_Channel_T channel,
     }
     return can_result;
 }
+extern "C" uint16_t EXEC_CAN_GetPendingReceivePackets( EXEC_CAN_Channel_T channel )
+{
+    can_channel = channel;
+    return can_pending_packets;
+}
 
 extern "C" bool EXEC_SPI_Receive( ExecSPIChannel_T, uint8_t* destination, uint32_t capacity,
                                   uint32_t* bytes_read )
@@ -108,6 +115,10 @@ extern "C" bool EXEC_UART_Read( ExecUartChannel_T, uint8_t* destination, uint32_
     *bytes_read = uart_bytes_read;
     ( void )memset( destination, 0x55, uart_bytes_read < capacity ? uart_bytes_read : capacity );
     return uart_read_result;
+}
+extern "C" uint32_t EXEC_UART_GetPendingReceiveBytes( ExecUartChannel_T )
+{
+    return uart_pending_bytes;
 }
 extern "C" void EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( ExecAnalogueInputVoltages_T voltages )
 {
@@ -141,11 +152,13 @@ protected:
         cancel_count         = 0U;
         can_result           = EXEC_CAN_RESULT_OK;
         can_packets_read     = 0U;
+        can_pending_packets  = 0U;
         can_channel          = EXEC_CAN_CHANNEL_1;
         spi_receive_result   = true;
         spi_pending_bytes    = 0U;
         spi_bytes_read       = 0U;
         uart_read_result     = true;
+        uart_pending_bytes   = 0U;
         uart_bytes_read      = 0U;
         digital_input_sample = 0U;
         pwm_capture_result   = {};
@@ -229,22 +242,25 @@ TEST_F( ExecutionMeasurementAdaptersTest, ValidPwmCaptureCommitsPeriodAndHighTim
     EXPECT_EQ( values[1], 250U );
 }
 
-TEST_F( ExecutionMeasurementAdaptersTest, EmptyUartPollCancelsUnusedLease )
+TEST_F( ExecutionMeasurementAdaptersTest, EmptyUartPollDoesNotReserveARecord )
 {
+    reserve_result = false;
     EXPECT_TRUE( EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive( 0U, 5U, &task_woken ) );
-    EXPECT_EQ( reserved_bytes, EXEC_UART_MAX_CHUNK_SIZE );
+    EXPECT_EQ( reserved_bytes, 0U );
     EXPECT_EQ( committed_bytes, 0U );
-    EXPECT_EQ( cancel_count, 1U );
+    EXPECT_EQ( cancel_count, 0U );
 }
 
 TEST_F( ExecutionMeasurementAdaptersTest, UartCommitsOnlyBytesReportedByDriver )
 {
+    uart_pending_bytes = 13U;
     uart_bytes_read = 13U;
 
     ASSERT_TRUE( EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive( 1U, 6U, &task_woken ) );
     EXPECT_EQ( committed_peripheral, FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE );
     EXPECT_EQ( committed_channel, 1U );
     EXPECT_EQ( committed_bytes, 13U );
+    EXPECT_EQ( reserved_bytes, 13U );
 }
 
 TEST_F( ExecutionMeasurementAdaptersTest, EmptySpiSnapshotDoesNotReserveARecord )
@@ -268,22 +284,25 @@ TEST_F( ExecutionMeasurementAdaptersTest, SpiReservationIsBoundedAndCommitsBytes
 
 TEST_F( ExecutionMeasurementAdaptersTest, EmptyCanQueueDoesNotCommit )
 {
+    reserve_result = false;
     EXPECT_TRUE(
         EXECUTION_MEASUREMENT_ADAPTER_SampleCanReceive( EXEC_CAN_CHANNEL_2, 7U, &task_woken ) );
     EXPECT_EQ( can_channel, EXEC_CAN_CHANNEL_2 );
-    EXPECT_EQ( reserved_bytes, EXEC_CAN_MAX_BATCH_SIZE * sizeof( EXEC_CAN_Packet_T ) );
+    EXPECT_EQ( reserved_bytes, 0U );
     EXPECT_EQ( committed_bytes, 0U );
-    EXPECT_EQ( cancel_count, 1U );
+    EXPECT_EQ( cancel_count, 0U );
 }
 
 TEST_F( ExecutionMeasurementAdaptersTest, CommitsOnlyReceivedCanPackets )
 {
+    can_pending_packets = 2U;
     can_packets_read = 2U;
     EXPECT_TRUE(
         EXECUTION_MEASUREMENT_ADAPTER_SampleCanReceive( EXEC_CAN_CHANNEL_1, 11U, &task_woken ) );
     EXPECT_EQ( committed_peripheral, FLASH_MANAGER_RESULT_PERIPHERAL_CAN_RECEIVE );
     EXPECT_EQ( committed_channel, EXEC_CAN_CHANNEL_1 );
     EXPECT_EQ( committed_bytes, 2U * sizeof( EXEC_CAN_Packet_T ) );
+    EXPECT_EQ( reserved_bytes, 2U * sizeof( EXEC_CAN_Packet_T ) );
     EXPECT_EQ( cancel_count, 0U );
     const auto* packets = reinterpret_cast<const EXEC_CAN_Packet_T*>( result_storage.data() );
     EXPECT_EQ( packets[0].id, 0x100U );
@@ -292,6 +311,7 @@ TEST_F( ExecutionMeasurementAdaptersTest, CommitsOnlyReceivedCanPackets )
 
 TEST_F( ExecutionMeasurementAdaptersTest, ReceiveFailureCancelsReservation )
 {
+    can_pending_packets = 1U;
     can_result = EXEC_CAN_RESULT_ERROR;
     EXPECT_FALSE(
         EXECUTION_MEASUREMENT_ADAPTER_SampleCanReceive( EXEC_CAN_CHANNEL_1, 1U, &task_woken ) );
@@ -301,6 +321,7 @@ TEST_F( ExecutionMeasurementAdaptersTest, ReceiveFailureCancelsReservation )
 
 TEST_F( ExecutionMeasurementAdaptersTest, CommitFailureCancelsReservation )
 {
+    can_pending_packets = 1U;
     can_packets_read = 1U;
     commit_result    = FLASH_MANAGER_RESULT_COMMIT_INTERNAL_ERROR;
     EXPECT_FALSE(

@@ -444,6 +444,12 @@ EXEC_CAN_Result_T EXEC_CAN_Receive( EXEC_CAN_Channel_T channel, EXEC_CAN_Packet_
     return EXEC_CAN_RESULT_OK;
 }
 
+uint16_t EXEC_CAN_GetPendingReceivePackets( EXEC_CAN_Channel_T channel )
+{
+    return channel == EXEC_CAN_CHANNEL_1 ? HW_CAN_Rx_Pending_Count1()
+                                         : HW_CAN_Rx_Pending_Count2();
+}
+
 EXEC_CAN_Tx_Status_T EXEC_CAN_Get_Tx_Status( EXEC_CAN_Channel_T channel )
 {
     if ( !EXEC_CAN_Channel_Is_Valid( channel ) )

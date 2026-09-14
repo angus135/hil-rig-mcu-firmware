@@ -164,6 +164,16 @@ extern "C" uint32_t HW_CAN_Rx_Dropped_Count2( void )
     return dropped_counts[1];
 }
 
+extern "C" uint16_t HW_CAN_Rx_Pending_Count1( void )
+{
+    return static_cast<uint16_t>( hardware_rx_queue[0].size() );
+}
+
+extern "C" uint16_t HW_CAN_Rx_Pending_Count2( void )
+{
+    return static_cast<uint16_t>( hardware_rx_queue[1].size() );
+}
+
 static HW_CAN_Result_T Load( size_t channel, CAN_Packet_T source[], uint16_t count )
 {
     load_call_count[channel]++;
@@ -489,6 +499,15 @@ TEST_F( ExecCANTest, ReceiveCopiesOnlyUpToCapacityAndConsumesPacketsExactlyOnce 
 
     EXPECT_EQ( EXEC_CAN_Receive( EXEC_CAN_CHANNEL_1, destination, 3U, &read ), EXEC_CAN_RESULT_OK );
     EXPECT_EQ( read, 0U );
+}
+
+TEST_F( ExecCANTest, PendingReceivePacketsRoutesToSelectedChannel )
+{
+    hardware_rx_queue[0].resize( 3U );
+    hardware_rx_queue[1].resize( 7U );
+
+    EXPECT_EQ( EXEC_CAN_GetPendingReceivePackets( EXEC_CAN_CHANNEL_1 ), 3U );
+    EXPECT_EQ( EXEC_CAN_GetPendingReceivePackets( EXEC_CAN_CHANNEL_2 ), 7U );
 }
 
 TEST_F( ExecCANTest, ReceiveRoutesChannelTwoAndBoundsHardwareTemporaryStorage )
