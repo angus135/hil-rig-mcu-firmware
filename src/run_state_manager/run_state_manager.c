@@ -34,7 +34,6 @@
 #define RUN_STATE_TAIL_MARGIN_NUMERATOR ( 120U )
 #define RUN_STATE_TAIL_MARGIN_DENOMINATOR ( 100U )
 #define RUN_STATE_UART_FRAME_BITS ( 10U )
-#define RUN_STATE_SPI_MAX_TRANSFER_BYTES ( 256U )
 #define RUN_STATE_CAN_FRAME_BITS ( 128U )
 #define RUN_STATE_DAC_SPI_BAUD_HZ ( 703125U )
 
@@ -574,7 +573,7 @@ static uint32_t RUN_STATE_MANAGER_CalculateDrainTailTicks( RunStateFrequencyMode
         }
 
         const uint32_t baud_hz   = RUN_STATE_MANAGER_GetSpiBaudHz( spi->baud_rate );
-        const uint64_t numerator = ( uint64_t )RUN_STATE_SPI_MAX_TRANSFER_BYTES * 8U * frequency_hz
+        const uint64_t numerator = ( uint64_t )EXEC_SPI_MAX_RX_CHUNK_SIZE * 8U * frequency_hz
                                    * RUN_STATE_TAIL_MARGIN_NUMERATOR;
         const uint64_t denominator = ( uint64_t )baud_hz * RUN_STATE_TAIL_MARGIN_DENOMINATOR;
         const uint64_t ticks       = ( numerator + denominator - 1U ) / denominator;
@@ -803,7 +802,7 @@ static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void )
             const uint64_t wire_bytes =
                 ( wire_numerator + wire_denominator - 1U ) / wire_denominator;
             const uint64_t max_channel_bytes =
-                ( uint64_t )effective_ticks * RUN_STATE_SPI_MAX_TRANSFER_BYTES;
+                ( uint64_t )effective_ticks * EXEC_SPI_MAX_RX_CHUNK_SIZE;
             RUN_STATE_ADD_RESULT_BYTES(
                 ( wire_bytes < max_channel_bytes ? wire_bytes : max_channel_bytes )
                 + ( ( uint64_t )effective_ticks * result_header_bytes ) );
