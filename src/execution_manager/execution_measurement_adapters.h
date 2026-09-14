@@ -80,10 +80,10 @@ bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( uint32_t    timestamp,
 bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurementsProfiled(
     uint32_t timestamp, BaseType_t* higher_priority_task_woken );
 
-/** Clears all per-measurement timing accumulated by the profiling dispatcher. */
+/** Clears profiling timing while the execution timer is stopped. */
 void EXECUTION_MEASUREMENT_ADAPTER_ResetTiming( void );
 
-/** Copies one measurement type's timing snapshot. */
+/** Copies an atomic task-context snapshot for one measurement type. */
 bool EXECUTION_MEASUREMENT_ADAPTER_GetTiming( ExecutionMeasurementType_T    type,
                                               ExecutionMeasurementTiming_T* timing );
 

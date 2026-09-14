@@ -102,10 +102,10 @@ ExecutionOperationAdapterResult_T
 EXECUTION_OPERATION_ADAPTER_ApplyOperationsProfiled( const uint8_t* operations,
                                                      uint8_t        operation_count );
 
-/** Clears all per-opcode timing accumulated by the profiling dispatcher. */
+/** Clears profiling timing while the execution timer is stopped. */
 void EXECUTION_OPERATION_ADAPTER_ResetTiming( void );
 
-/** Copies one opcode's timing snapshot. Returns false for an invalid opcode or NULL output. */
+/** Copies an atomic task-context snapshot. Returns false for invalid input. */
 bool EXECUTION_OPERATION_ADAPTER_GetTiming( ExecutionOperationOpcode_T  opcode,
                                             ExecutionOperationTiming_T* timing );
 
