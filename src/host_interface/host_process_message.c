@@ -262,8 +262,12 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
      *
      *
      */
-    
+
     // Signal run state manager to move to package recieving state
+    RunStateManagerStatus_T run_state = {0};
+    RUN_STATE_MANAGER_GetStatus( &run_state );
+    size_t counter = 0;
+    size_t counter_limit = 100;
     if ( RUN_STATE_MANAGER_RequestPackageReceive() == false )
     {
         // report error to host device
@@ -271,7 +275,19 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
         *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
-
+    while ( run_state.state != RUN_STATE_TEST_PACKAGE_RECEIVE )
+    {
+        // wait
+        RUN_STATE_MANAGER_GetStatus( &run_state );
+        counter += 1;
+        if ( counter >= counter_limit )
+        {
+            HOST_INTERFACE_Default_Error( response_message );
+            response_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_TIMEOUT;
+            *response_required = true;
+            return HOST_INTERFACE_STATUS_OK;
+        }
+    }
     *response_required = false;
     return HOST_INTERFACE_STATUS_OK;
 
