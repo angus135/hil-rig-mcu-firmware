@@ -628,15 +628,6 @@ TEST_F( RunStateManagerTest, FirstFaultReasonWins )
     EXPECT_EQ( RUN_STATE_FAULT_DRIVER_START, fault_reason );
 }
 
-TEST_F( RunStateManagerTest, DiagnosticTimerRequestsUseExplicitNotificationBits )
-{
-    EXPECT_TRUE( RUN_STATE_MANAGER_RequestDiagnosticExecutionTimerStart() );
-    EXPECT_NE( 0U, notified_bits & RUN_STATE_MANAGER_NOTIFY_TIMER_START );
-    notified_bits = 0U;
-    EXPECT_TRUE( RUN_STATE_MANAGER_RequestDiagnosticExecutionTimerStop() );
-    EXPECT_NE( 0U, notified_bits & RUN_STATE_MANAGER_NOTIFY_TIMER_STOP );
-}
-
 TEST_F( RunStateManagerTest, RepeatAllowsSubsequentExecutionWithoutFault )
 {
     EnterExecution();

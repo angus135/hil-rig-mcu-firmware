@@ -37,10 +37,8 @@
 #define RUN_STATE_MANAGER_NOTIFY_RESULT_TRANSFER_COMPLETE ( 1UL << 5U )
 #define RUN_STATE_MANAGER_NOTIFY_FAULT ( 1UL << 6U )
 #define RUN_STATE_MANAGER_NOTIFY_RESET ( 1UL << 7U )
-#define RUN_STATE_MANAGER_NOTIFY_TIMER_START ( 1UL << 8U )
-#define RUN_STATE_MANAGER_NOTIFY_TIMER_STOP ( 1UL << 9U )
-#define RUN_STATE_MANAGER_NOTIFY_REPEAT ( 1UL << 10U )
-#define RUN_STATE_MANAGER_NOTIFY_DISCARD_RESULTS ( 1UL << 11U )
+#define RUN_STATE_MANAGER_NOTIFY_REPEAT ( 1UL << 8U )
+#define RUN_STATE_MANAGER_NOTIFY_DISCARD_RESULTS ( 1UL << 9U )
 
 #define RUN_STATE_MANAGER_PENDING_POLL_MS ( 10U )
 #define RUN_STATE_MANAGER_CONFIGURATION_TIMEOUT_MS ( 15000U )
@@ -261,8 +259,6 @@ static bool RUN_STATE_MANAGER_GetRequestTargetState( RunStateRequest_T request,
             return true;
         case RUN_STATE_REQUEST_NONE:
         case RUN_STATE_REQUEST_FAULT:
-        case RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_START:
-        case RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_STOP:
         default:
             return false;
     }
@@ -825,8 +821,7 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
 {
     last_request = request;
 
-    if ( pending_operation != RUN_STATE_PENDING_NONE && request != RUN_STATE_REQUEST_FAULT
-         && request != RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_STOP )
+    if ( pending_operation != RUN_STATE_PENDING_NONE && request != RUN_STATE_REQUEST_FAULT )
     {
         last_request_result = RUN_STATE_REQUEST_RESULT_REJECTED_PENDING;
         return;
@@ -934,21 +929,6 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
             }
             break;
 
-        case RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_START:
-            if ( run_state != RUN_STATE_FAULT )
-            {
-                accepted = RUN_STATE_MANAGER_StartExecutionTimer();
-                if ( !accepted )
-                {
-                    RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_EXECUTION_TIMER );
-                }
-            }
-            break;
-
-        case RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_STOP:
-            accepted = RUN_STATE_MANAGER_StopExecution();
-            break;
-
         case RUN_STATE_REQUEST_NONE:
         default:
             break;
@@ -990,11 +970,6 @@ static void RUN_STATE_MANAGER_ProcessNotifications( uint32_t notifications )
         selected_bit = RUN_STATE_MANAGER_NOTIFY_RESET;
         request      = RUN_STATE_REQUEST_RESET;
     }
-    else if ( ( notifications & RUN_STATE_MANAGER_NOTIFY_TIMER_STOP ) != 0U )
-    {
-        selected_bit = RUN_STATE_MANAGER_NOTIFY_TIMER_STOP;
-        request      = RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_STOP;
-    }
     else if ( ( notifications & RUN_STATE_MANAGER_NOTIFY_PACKAGE_RECEIVE ) != 0U )
     {
         selected_bit = RUN_STATE_MANAGER_NOTIFY_PACKAGE_RECEIVE;
@@ -1024,11 +999,6 @@ static void RUN_STATE_MANAGER_ProcessNotifications( uint32_t notifications )
     {
         selected_bit = RUN_STATE_MANAGER_NOTIFY_RESULT_TRANSFER_COMPLETE;
         request      = RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE;
-    }
-    else if ( ( notifications & RUN_STATE_MANAGER_NOTIFY_TIMER_START ) != 0U )
-    {
-        selected_bit = RUN_STATE_MANAGER_NOTIFY_TIMER_START;
-        request      = RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_START;
     }
     else if ( ( notifications & RUN_STATE_MANAGER_NOTIFY_REPEAT ) != 0U )
     {
@@ -1364,16 +1334,6 @@ bool RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR( void )
 bool RUN_STATE_MANAGER_RequestReset( void )
 {
     return RUN_STATE_MANAGER_Notify( RUN_STATE_MANAGER_NOTIFY_RESET );
-}
-
-bool RUN_STATE_MANAGER_RequestDiagnosticExecutionTimerStart( void )
-{
-    return RUN_STATE_MANAGER_Notify( RUN_STATE_MANAGER_NOTIFY_TIMER_START );
-}
-
-bool RUN_STATE_MANAGER_RequestDiagnosticExecutionTimerStop( void )
-{
-    return RUN_STATE_MANAGER_Notify( RUN_STATE_MANAGER_NOTIFY_TIMER_STOP );
 }
 
 RunState_T RUN_STATE_MANAGER_GetState( void )

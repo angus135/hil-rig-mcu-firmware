@@ -244,13 +244,6 @@ Status consumers should prefer `RUN_STATE_MANAGER_GetStatus()`, which captures
 all RSM-owned observable fields in one critical-section snapshot. Individual
 legacy getters remain available for simple single-field decisions.
 
-For hardware bring-up, `run_state diagnostic_timer start` and
-`run_state diagnostic_timer stop`
-request direct execution-timer control through the Run State Manager task.
-Timer start deliberately bypasses normal Flash preparation and DUT driver
-startup, so it must not be used as the production test-execution path.
-
-
 ---
 
 ## Public API
