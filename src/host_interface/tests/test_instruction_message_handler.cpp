@@ -67,7 +67,7 @@ public:
 
     /* Digital Output Driver Mock */
     MOCK_METHOD( DigitalOutputPinmask_T, EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks,
-                 ( GPIOOutput_T* pins, uint8_t count ) );
+                 ( GPIOOutput_T * pins, uint8_t count ) );
 
     /* Analogue Output Driver Mock */
     MOCK_METHOD( bool, EXEC_ANALOGUE_OUTPUT_Prepare_Frame,
@@ -77,8 +77,7 @@ public:
     MOCK_METHOD( bool, HW_PWM_GEN_compute_psc,
                  ( uint32_t frequency_hz, uint32_t timer_clock_hz, uint16_t* psc ) );
     MOCK_METHOD( bool, HW_PWM_GEN_compute_arr,
-                 ( uint32_t frequency_hz, uint32_t timer_clock_hz, uint16_t psc,
-                   uint16_t* arr ) );
+                 ( uint32_t frequency_hz, uint32_t timer_clock_hz, uint16_t psc, uint16_t* arr ) );
     MOCK_METHOD( bool, HW_PWM_GEN_compute_ccr,
                  ( uint16_t duty_permille, uint16_t arr, uint16_t* ccr ) );
 };
@@ -100,8 +99,8 @@ FLASH_MANAGER_SubmitInstructionUploadBytes( const uint8_t* data, uint32_t length
     return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED;
 }
 
-extern "C" DigitalOutputPinmask_T
-EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( GPIOOutput_T* pins, uint8_t count )
+extern "C" DigitalOutputPinmask_T EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( GPIOOutput_T* pins,
+                                                                              uint8_t       count )
 {
     if ( g_mock_deps != nullptr )
     {
@@ -115,9 +114,8 @@ EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( GPIOOutput_T* pins, uint8_t count )
     return mask;
 }
 
-extern "C" bool EXEC_ANALOGUE_OUTPUT_Prepare_Frame( uint8_t                        channel,
-                                                   float                          voltage,
-                                                   AnalogueOutputPreparedFrame_T* frame )
+extern "C" bool EXEC_ANALOGUE_OUTPUT_Prepare_Frame( uint8_t channel, float voltage,
+                                                    AnalogueOutputPreparedFrame_T* frame )
 {
     if ( g_mock_deps != nullptr )
     {
@@ -277,10 +275,10 @@ TEST_F( InstructionMessageHandlerTest, AppendOperationEnforces4ByteAlignmentAndP
     writer.operation_count = 0U;
 
     /* 3-byte payload: Header (4 bytes) + Payload (3 bytes) + Padding (1 byte) = 8 bytes total */
-    const uint8_t payload[3] = { 0x11, 0x22, 0x33 };
-    const HOST_Interface_Status_T status =
-        HOST_INSTRUCTION_HANDLER_AppendOperation( &writer, EXECUTION_OPERATION_OPCODE_ANALOGUE_OUTPUT_BATCH,
-                                                  EXECUTION_OPERATION_CHANNEL_UNUSED, payload, sizeof( payload ) );
+    const uint8_t                 payload[3] = { 0x11, 0x22, 0x33 };
+    const HOST_Interface_Status_T status     = HOST_INSTRUCTION_HANDLER_AppendOperation(
+        &writer, EXECUTION_OPERATION_OPCODE_ANALOGUE_OUTPUT_BATCH,
+        EXECUTION_OPERATION_CHANNEL_UNUSED, payload, sizeof( payload ) );
 
     EXPECT_EQ( status, HOST_INTERFACE_STATUS_OK );
     EXPECT_EQ( writer.offset, 8U );
@@ -291,7 +289,8 @@ TEST_F( InstructionMessageHandlerTest, AppendOperationEnforces4ByteAlignmentAndP
         *reinterpret_cast<const ExecutionOperationHeaderWord_T*>( buffer );
     EXPECT_EQ( header_word & EXECUTION_OPERATION_OPCODE_MASK,
                static_cast<uint32_t>( EXECUTION_OPERATION_OPCODE_ANALOGUE_OUTPUT_BATCH ) );
-    EXPECT_EQ( ( header_word & EXECUTION_OPERATION_CHANNEL_MASK ) >> EXECUTION_OPERATION_CHANNEL_SHIFT,
+    EXPECT_EQ( ( header_word & EXECUTION_OPERATION_CHANNEL_MASK )
+                   >> EXECUTION_OPERATION_CHANNEL_SHIFT,
                EXECUTION_OPERATION_CHANNEL_UNUSED );
     EXPECT_EQ( ( header_word & EXECUTION_OPERATION_PAYLOAD_LENGTH_MASK )
                    >> EXECUTION_OPERATION_PAYLOAD_LENGTH_SHIFT,
@@ -317,9 +316,9 @@ TEST_F( InstructionMessageHandlerTest, AppendOperationReturnsBufferTooSmallWhenC
 
     const uint8_t payload[4] = { 1, 2, 3, 4 };
     /* Required = 4 (header) + 4 (payload) = 8 bytes > 6 bytes capacity */
-    const HOST_Interface_Status_T status =
-        HOST_INSTRUCTION_HANDLER_AppendOperation( &writer, EXECUTION_OPERATION_OPCODE_DIGITAL_OUTPUT_UPDATE,
-                                                  EXECUTION_OPERATION_CHANNEL_UNUSED, payload, sizeof( payload ) );
+    const HOST_Interface_Status_T status = HOST_INSTRUCTION_HANDLER_AppendOperation(
+        &writer, EXECUTION_OPERATION_OPCODE_DIGITAL_OUTPUT_UPDATE,
+        EXECUTION_OPERATION_CHANNEL_UNUSED, payload, sizeof( payload ) );
 
     EXPECT_EQ( status, HOST_INTERFACE_STATUS_BUFFER_TOO_SMALL );
 }
@@ -372,19 +371,22 @@ TEST_F( InstructionMessageHandlerTest, NonConsecutiveIncreasingTicksAreAccepted 
     /* First tick: 1 */
     instruction.tick_number             = 1U;
     instruction.digital_outputs[0].high = 1U;
-    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ), HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_OK );
     EXPECT_EQ( last_instruction_timestamp, 1U );
 
     /* Non-consecutive increasing tick: 5 */
     instruction.tick_number             = 5U;
     instruction.digital_outputs[1].high = 1U;
-    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ), HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_OK );
     EXPECT_EQ( last_instruction_timestamp, 5U );
 
     /* Non-consecutive increasing tick: 100 */
     instruction.tick_number             = 100U;
     instruction.digital_outputs[2].high = 1U;
-    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ), HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_OK );
     EXPECT_EQ( last_instruction_timestamp, 100U );
 }
 
@@ -395,7 +397,8 @@ TEST_F( InstructionMessageHandlerTest, DuplicateTickNumberIsRejected )
     /* Tick 5 */
     instruction.tick_number             = 5U;
     instruction.digital_outputs[0].high = 1U;
-    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ), HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_OK );
 
     /* Duplicate tick 5 */
     instruction.digital_outputs[1].high = 1U;
@@ -410,7 +413,8 @@ TEST_F( InstructionMessageHandlerTest, DecreasingOutOfOrderTickIsRejected )
     /* Tick 10 */
     instruction.tick_number             = 10U;
     instruction.digital_outputs[0].high = 1U;
-    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ), HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_OK );
 
     /* Out-of-order earlier tick 8 */
     instruction.tick_number             = 8U;
@@ -426,7 +430,8 @@ TEST_F( InstructionMessageHandlerTest, ResetAllowsNewTickSequenceFromLowerTick )
     /* First run: tick 50 */
     instruction.tick_number             = 50U;
     instruction.digital_outputs[0].high = 1U;
-    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ), HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_OK );
 
     /* Reset handler */
     HOST_INSTRUCTION_HANDLER_Reset();
@@ -434,7 +439,8 @@ TEST_F( InstructionMessageHandlerTest, ResetAllowsNewTickSequenceFromLowerTick )
     /* Second run can start from lower tick, e.g., tick 2 */
     instruction.tick_number             = 2U;
     instruction.digital_outputs[0].high = 1U;
-    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ), HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_OK );
     EXPECT_EQ( last_instruction_timestamp, 2U );
 }
 
@@ -490,7 +496,7 @@ TEST_F( InstructionMessageHandlerTest, InitialNonZeroInstructionUploadsCanonical
         reinterpret_cast<const ExecutionInstructionHeader_T*>( uploaded_data.data() );
 
     EXPECT_EQ( header->timestamp, 1U );
-    EXPECT_EQ( header->operation_count, 3U );  /* Digital + Analogue + PWM */
+    EXPECT_EQ( header->operation_count, 3U ); /* Digital + Analogue + PWM */
     EXPECT_EQ( header->operations_length_bytes,
                uploaded_data.size() - sizeof( ExecutionInstructionHeader_T ) );
 }
@@ -504,12 +510,14 @@ TEST_F( InstructionMessageHandlerTest, SubsequentIdenticalInstructionSkipsFlashU
 
     /* Tick 1: Uploads changes */
     EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) ).Times( 1 );
-    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ), HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_OK );
 
     /* Tick 2: Exactly same state */
     instruction.tick_number = 2U;
     EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) ).Times( 0 );
-    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ), HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_OK );
     EXPECT_EQ( last_instruction_timestamp, 2U );
 }
 
@@ -521,14 +529,16 @@ TEST_F( InstructionMessageHandlerTest, SinglePeripheralChangeEmitsOnlyThatOperat
     instruction.analog_outputs[0].microvolts       = 1000000U;
 
     /* Tick 1 establishes state */
-    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ), HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_OK );
 
     /* Tick 2: Only change analogue channel 1 */
     instruction.tick_number                  = 2U;
     instruction.analog_outputs[1].microvolts = 3000000U;
 
     EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) ).Times( 1 );
-    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ), HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_OK );
 
     /* Header should state 1 operation */
     const ExecutionInstructionHeader_T* header =
@@ -565,14 +575,13 @@ TEST_F( InstructionMessageHandlerTest, AnalogueFramePreparationFailureReturnsVal
 
 TEST_F( InstructionMessageHandlerTest, PwmComputationFailureReturnsValidationFailed )
 {
-    HIL_Application_Test_Instruction_T instruction = {};
-    instruction.tick_number                        = 1U;
+    HIL_Application_Test_Instruction_T instruction  = {};
+    instruction.tick_number                         = 1U;
     instruction.pwm_outputs[0].period_nanoseconds   = 1000U;
     instruction.pwm_outputs[0].duty_cycle_permyriad = 5000U;
 
     /* Simulate PWM PSC computation failure */
-    EXPECT_CALL( *g_mock_deps, HW_PWM_GEN_compute_psc( _, _, _ ) )
-        .WillOnce( Return( false ) );
+    EXPECT_CALL( *g_mock_deps, HW_PWM_GEN_compute_psc( _, _, _ ) ).WillOnce( Return( false ) );
 
     EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
                HOST_INTERFACE_STATUS_VALIDATION_FAILED );
