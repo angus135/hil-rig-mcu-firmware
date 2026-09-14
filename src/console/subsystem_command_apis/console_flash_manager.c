@@ -160,7 +160,8 @@
 #define CONSOLE_FLASH_OUTPUT_STRESS_PWM_FREQ_HZ ( 1000000U )
 #define CONSOLE_FLASH_OUTPUT_STRESS_PWM_DUTY_PERMILLE ( 500U )
 #define CONSOLE_FLASH_OUTPUT_STRESS_UART_BAUD ( 2000000U )
-#define CONSOLE_FLASH_OUTPUT_STRESS_LOGICAL_DI_MASK ( ( 1UL << EXEC_DIGITAL_INPUT_CHANNEL_COUNT ) - 1UL )
+#define CONSOLE_FLASH_OUTPUT_STRESS_LOGICAL_DI_MASK                                                \
+    ( ( 1UL << EXEC_DIGITAL_INPUT_CHANNEL_COUNT ) - 1UL )
 /* Current board clock tree: TIM12 is APB1 x2; TIM8 is APB2 x2. */
 #define CONSOLE_FLASH_PWM_LV_TIMER_CLOCK_HZ ( 90000000U )
 #define CONSOLE_FLASH_PWM_HV_TIMER_CLOCK_HZ ( 180000000U )
@@ -1691,9 +1692,9 @@ static uint32_t CONSOLE_Flash_EncodeOutputStressInstruction(
             EXECUTION_SPI_DATA_OFFSET_BYTES( 1U ) + spi_packet_bytes[channel];
         const uint32_t spi_operation_bytes =
             EXECUTION_OPERATION_ENCODED_SIZE_BYTES( spi_payload_bytes );
-        CONSOLE_Flash_WriteU32Le( &destination[offset],
-                                  EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT | ( channel << 8U )
-                                      | ( spi_payload_bytes << 16U ) );
+        CONSOLE_Flash_WriteU32Le( &destination[offset], EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT
+                                                            | ( channel << 8U )
+                                                            | ( spi_payload_bytes << 16U ) );
         CONSOLE_Flash_WriteU32Le( &destination[offset + 4U], 1U );
         CONSOLE_Flash_WriteU32Le( &destination[offset + 8U], spi_packet_bytes[channel] );
         ( void )memset( &destination[offset + 12U], spi_patterns[channel],
@@ -2736,8 +2737,8 @@ static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* ar
     for ( uint32_t channel = 0U; channel < EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT; channel++ )
     {
         high_outputs[channel] = ( GPIOOutput_T )( DIGITAL_OUTPUT_0 + channel );
-        output_pin_masks[channel] = EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks(
-            &high_outputs[channel], 1U );
+        output_pin_masks[channel] =
+            EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( &high_outputs[channel], 1U );
         if ( output_pin_masks[channel] == 0U )
         {
             CONSOLE_Printf( "Output stress DO%lu mapping failed.\r\n",
@@ -2940,9 +2941,9 @@ static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* ar
         return;
     }
 
-    console_flash_last_upload_records = sample_count;
-    console_flash_last_upload_bytes   = upload_bytes;
-    console_flash_stress_sample_count = sample_count;
+    console_flash_last_upload_records   = sample_count;
+    console_flash_last_upload_bytes     = upload_bytes;
+    console_flash_stress_sample_count   = sample_count;
     console_flash_stress_interval_ticks = interval_ticks;
     console_flash_run_tick_count =
         1U + ( ( sample_count - 1U ) * interval_ticks ) + CONSOLE_FLASH_OUTPUT_STRESS_DRAIN_TICKS;
@@ -4082,14 +4083,14 @@ static void CONSOLE_Flash_VerifyStressResultsCommand( uint16_t argc, char* argv[
     uint32_t total_result_bytes = 0U;
 
     /* DI tracking */
-    uint32_t di_record_count           = 0U;
-    uint32_t last_di_sample            = 0U;
-    uint32_t di_mismatch_count         = 0U;
+    uint32_t di_record_count                                         = 0U;
+    uint32_t last_di_sample                                          = 0U;
+    uint32_t di_mismatch_count                                       = 0U;
     uint32_t di_channel_mismatches[EXEC_DIGITAL_INPUT_CHANNEL_COUNT] = { 0U };
-    uint32_t di_first_mismatch_tick    = 0U;
-    uint8_t  di_first_mismatch_channel = 0U;
-    bool     di_first_expected_high   = false;
-    bool     di_first_actual_high     = false;
+    uint32_t di_first_mismatch_tick                                  = 0U;
+    uint8_t  di_first_mismatch_channel                               = 0U;
+    bool     di_first_expected_high                                  = false;
+    bool     di_first_actual_high                                    = false;
 
     /* AI tracking */
     uint32_t ai_record_count = 0U;
@@ -4113,13 +4114,13 @@ static void CONSOLE_Flash_VerifyStressResultsCommand( uint16_t argc, char* argv[
     uint8_t  uart_bad_actual   = 0U;
 
     /* SPI tracking */
-    uint32_t spi1_bytes                                      = 0U;
-    uint32_t spi2_bytes                                      = 0U;
-    bool     spi_channel_mismatch[EXEC_SPI_CHANNEL_COUNT]    = { false };
-    bool     spi_mismatch                                    = false;
-    uint8_t  spi_bad_channel                                 = 0U;
-    uint8_t  spi_bad_expected                                = 0U;
-    uint8_t  spi_bad_actual                                  = 0U;
+    uint32_t spi1_bytes                                   = 0U;
+    uint32_t spi2_bytes                                   = 0U;
+    bool     spi_channel_mismatch[EXEC_SPI_CHANNEL_COUNT] = { false };
+    bool     spi_mismatch                                 = false;
+    uint8_t  spi_bad_channel                              = 0U;
+    uint8_t  spi_bad_expected                             = 0U;
+    uint8_t  spi_bad_actual                               = 0U;
 
     /* Unexpected peripheral records */
     uint32_t unexpected_records = 0U;
@@ -4310,11 +4311,11 @@ static void CONSOLE_Flash_VerifyStressResultsCommand( uint16_t argc, char* argv[
                                     CONSOLE_Flash_StressLogicalPattern( sample_index );
                             }
 
-                            const uint32_t expected_sample = CONSOLE_Flash_StressDigitalInputMask(
-                                expected_logical_pattern );
+                            const uint32_t expected_sample =
+                                CONSOLE_Flash_StressDigitalInputMask( expected_logical_pattern );
                             const uint32_t mismatch_bits = last_di_sample ^ expected_sample;
-                            for ( uint32_t channel = 0U;
-                                  channel < EXEC_DIGITAL_INPUT_CHANNEL_COUNT; channel++ )
+                            for ( uint32_t channel = 0U; channel < EXEC_DIGITAL_INPUT_CHANNEL_COUNT;
+                                  channel++ )
                             {
                                 const uint32_t pin_mask =
                                     1UL << console_flash_stress_di_pin_positions[channel];
@@ -4328,8 +4329,7 @@ static void CONSOLE_Flash_VerifyStressResultsCommand( uint16_t argc, char* argv[
                                         di_first_mismatch_channel = ( uint8_t )( channel + 1U );
                                         di_first_expected_high =
                                             ( expected_sample & pin_mask ) != 0U;
-                                        di_first_actual_high =
-                                            ( last_di_sample & pin_mask ) != 0U;
+                                        di_first_actual_high = ( last_di_sample & pin_mask ) != 0U;
                                     }
                                 }
                             }
@@ -4415,10 +4415,9 @@ static void CONSOLE_Flash_VerifyStressResultsCommand( uint16_t argc, char* argv[
     const bool framing_ok = ( header_fill == 0U ) && ( payload_remaining == 0U );
     const bool passed     = framing_ok && structure_valid && ( di_mismatch_count == 0U )
                         && !uart_mismatch && !spi_mismatch && ( di_record_count > 0U )
-                        && ( ai_record_count > 0U )
-                        && ( uart1_bytes > 0U ) && ( uart2_bytes > 0U ) && ( spi1_bytes > 0U )
-                        && ( spi2_bytes > 0U )
-                        && ( pwm_lv_records > 0U ) && ( pwm_hv_records > 0U );
+                        && ( ai_record_count > 0U ) && ( uart1_bytes > 0U ) && ( uart2_bytes > 0U )
+                        && ( spi1_bytes > 0U ) && ( spi2_bytes > 0U ) && ( pwm_lv_records > 0U )
+                        && ( pwm_hv_records > 0U );
 
     CONSOLE_Printf( "================ STRESS TEST VERIFICATION ================\r\n" );
     CONSOLE_Printf( "Overall Result: %s\r\n", passed ? "PASS" : "FAIL" );
@@ -4431,12 +4430,11 @@ static void CONSOLE_Flash_VerifyStressResultsCommand( uint16_t argc, char* argv[
                     ( unsigned long )last_di_sample );
     for ( uint32_t channel = 0U; channel < EXEC_DIGITAL_INPUT_CHANNEL_COUNT; channel++ )
     {
-        CONSOLE_Printf( "  DO%lu -> DI%lu: %s (mismatches=%lu/%lu)\r\n",
-                        ( unsigned long )( channel + 1U ), ( unsigned long )( channel + 1U ),
-                        ( di_record_count > 0U && di_channel_mismatches[channel] == 0U ) ? "PASS"
-                                                                                       : "FAIL",
-                        ( unsigned long )di_channel_mismatches[channel],
-                        ( unsigned long )di_record_count );
+        CONSOLE_Printf(
+            "  DO%lu -> DI%lu: %s (mismatches=%lu/%lu)\r\n", ( unsigned long )( channel + 1U ),
+            ( unsigned long )( channel + 1U ),
+            ( di_record_count > 0U && di_channel_mismatches[channel] == 0U ) ? "PASS" : "FAIL",
+            ( unsigned long )di_channel_mismatches[channel], ( unsigned long )di_record_count );
     }
     if ( di_first_mismatch_tick != 0U )
     {

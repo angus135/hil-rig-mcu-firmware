@@ -92,7 +92,7 @@ extern "C" EXEC_CAN_Result_T EXEC_CAN_Receive( EXEC_CAN_Channel_T channel,
 }
 
 extern "C" bool EXEC_SPI_Receive( ExecSPIChannel_T, uint8_t* destination, uint32_t capacity,
-                                   uint32_t* bytes_read )
+                                  uint32_t* bytes_read )
 {
     *bytes_read = spi_bytes_read;
     ( void )memset( destination, 0xA5, spi_bytes_read < capacity ? spi_bytes_read : capacity );
@@ -103,7 +103,7 @@ extern "C" uint32_t EXEC_SPI_GetPendingReceiveBytes( ExecSPIChannel_T )
     return spi_pending_bytes;
 }
 extern "C" bool EXEC_UART_Read( ExecUartChannel_T, uint8_t* destination, uint32_t capacity,
-                                 uint32_t* bytes_read )
+                                uint32_t* bytes_read )
 {
     *bytes_read = uart_bytes_read;
     ( void )memset( destination, 0x55, uart_bytes_read < capacity ? uart_bytes_read : capacity );
@@ -157,12 +157,12 @@ protected:
 TEST_F( ExecutionMeasurementAdaptersTest, PrepareBuildsOnlyEnabledMeasurementsInFixedOrder )
 {
     ExecutionMeasurementConfiguration_T configuration = {};
-    configuration.analogue_input_enabled               = true;
-    configuration.digital_input_enabled                = true;
-    configuration.pwm_capture_enabled_mask             = 1U << 1U;
-    configuration.uart_receive_enabled_mask            = 1U << 0U;
-    configuration.spi_receive_enabled_mask             = 1U << 1U;
-    configuration.can_receive_enabled_mask             = 1U << 0U;
+    configuration.analogue_input_enabled              = true;
+    configuration.digital_input_enabled               = true;
+    configuration.pwm_capture_enabled_mask            = 1U << 1U;
+    configuration.uart_receive_enabled_mask           = 1U << 0U;
+    configuration.spi_receive_enabled_mask            = 1U << 1U;
+    configuration.can_receive_enabled_mask            = 1U << 0U;
 
     EXECUTION_MEASUREMENT_ADAPTER_Prepare( &configuration );
 

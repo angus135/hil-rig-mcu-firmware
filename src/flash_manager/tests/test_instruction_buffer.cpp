@@ -795,14 +795,14 @@ TEST_F( InstructionBufferTest, RingMirrorMakesCrossBoundaryInstructionPayloadCon
     constexpr uint32_t leading_instruction_count = INSTRUCTION_BUFFER_PAGE_COUNT - 1U;
     constexpr uint32_t image_length_bytes =
         TEST_INSTRUCTION_PAGE_SIZE_BYTES * INSTRUCTION_BUFFER_PAGE_COUNT + 8U;
-    uint8_t            image[image_length_bytes] = {};
-    uint32_t           image_offset_bytes        = 0U;
+    uint8_t  image[image_length_bytes] = {};
+    uint32_t image_offset_bytes        = 0U;
 
     for ( uint32_t index = 0U; index < leading_instruction_count; index++ )
     {
-        image_offset_bytes += StoreInstruction(
-            &image[image_offset_bytes], 10U + index, TEST_FULL_INSTRUCTION_PAGE_PAYLOAD_BYTES,
-            static_cast<uint8_t>( 0x10U + index ) );
+        image_offset_bytes += StoreInstruction( &image[image_offset_bytes], 10U + index,
+                                                TEST_FULL_INSTRUCTION_PAGE_PAYLOAD_BYTES,
+                                                static_cast<uint8_t>( 0x10U + index ) );
     }
     image_offset_bytes += StoreInstruction( &image[image_offset_bytes], 30U, 20U, 0x30U );
     image_offset_bytes += StoreInstruction( &image[image_offset_bytes], 40U, 4U, 0x40U );
@@ -821,8 +821,7 @@ TEST_F( InstructionBufferTest, RingMirrorMakesCrossBoundaryInstructionPayloadCon
     const FlashManagerInstructionView_T* view = nullptr;
     for ( uint32_t index = 0U; index < leading_instruction_count; index++ )
     {
-        ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE,
-                   INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+        ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
         const InstructionBufferConsumeStatus_T consume_status =
             INSTRUCTION_BUFFER_ConsumeInstruction();
         ASSERT_EQ( index == 0U ? INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED
@@ -903,8 +902,7 @@ TEST_F( InstructionBufferTest, TwoPageMirrorKeepsMaximumInstructionContiguousAtR
     const FlashManagerInstructionView_T* view = nullptr;
     for ( uint32_t index = 0U; index < leading_instruction_count; index++ )
     {
-        ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE,
-                   INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+        ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
         const InstructionBufferConsumeStatus_T consume_status =
             INSTRUCTION_BUFFER_ConsumeInstruction();
         ASSERT_TRUE( consume_status == INSTRUCTION_BUFFER_CONSUME_OK
@@ -1084,11 +1082,11 @@ TEST_F( InstructionBufferTest, BusyCrossPageWriteCopiesNothingAndCanBeRetriedUnc
     EXPECT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_BUSY,
                INSTRUCTION_BUFFER_WriteUploadBytes( blocked_chunk.data(), blocked_chunk.size() ) );
     EXPECT_EQ( accepted_before, instruction_buffer_context.upload_accepted_length_bytes );
-    EXPECT_EQ( 0,
-               std::memcmp( page_tail_before.data(),
-                            &test_instruction_buffer_storage[TEST_INSTRUCTION_PAGE_SIZE_BYTES
-                                                             * ( INSTRUCTION_BUFFER_PAGE_COUNT - 1U )],
-                            page_tail_before.size() ) );
+    EXPECT_EQ(
+        0, std::memcmp( page_tail_before.data(),
+                        &test_instruction_buffer_storage[TEST_INSTRUCTION_PAGE_SIZE_BYTES
+                                                         * ( INSTRUCTION_BUFFER_PAGE_COUNT - 1U )],
+                        page_tail_before.size() ) );
     EXPECT_EQ( 20U,
                instruction_buffer_context.page_valid_bytes[INSTRUCTION_BUFFER_PAGE_COUNT - 1U] );
 

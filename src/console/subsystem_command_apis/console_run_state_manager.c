@@ -205,8 +205,7 @@ static const char* CONSOLE_RunStateManager_OpcodeName( ExecutionOperationOpcode_
     }
 }
 
-static const char*
-CONSOLE_RunStateManager_MeasurementName( ExecutionMeasurementType_T measurement )
+static const char* CONSOLE_RunStateManager_MeasurementName( ExecutionMeasurementType_T measurement )
 {
     switch ( measurement )
     {
@@ -491,12 +490,11 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                     ( unsigned long )operation_timing.maximum_cycles );
             }
         }
-        for ( uint32_t measurement = 0U; measurement < EXECUTION_MEASUREMENT_COUNT;
-              measurement++ )
+        for ( uint32_t measurement = 0U; measurement < EXECUTION_MEASUREMENT_COUNT; measurement++ )
         {
             ExecutionMeasurementTiming_T measurement_timing = { 0 };
-            if ( EXECUTION_MEASUREMENT_ADAPTER_GetTiming(
-                     ( ExecutionMeasurementType_T )measurement, &measurement_timing )
+            if ( EXECUTION_MEASUREMENT_ADAPTER_GetTiming( ( ExecutionMeasurementType_T )measurement,
+                                                          &measurement_timing )
                  && measurement_timing.sample_count != 0U )
             {
                 const uint32_t average_cycles = ( uint32_t )( measurement_timing.total_cycles

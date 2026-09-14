@@ -27,12 +27,12 @@ EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( uint32_t    timestamp,
     return measurement_result;
 }
 
-extern "C" bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurementsProfiled(
-    uint32_t timestamp, BaseType_t* higher_priority_task_woken )
+extern "C" bool
+EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurementsProfiled( uint32_t    timestamp,
+                                                         BaseType_t* higher_priority_task_woken )
 {
     profiled_measurement_calls++;
-    return EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( timestamp,
-                                                            higher_priority_task_woken );
+    return EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( timestamp, higher_priority_task_woken );
 }
 
 extern "C" void EXECUTION_MEASUREMENT_ADAPTER_ResetTiming( void )

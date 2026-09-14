@@ -350,16 +350,15 @@ bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurementsProfiled(
     uint32_t timestamp, BaseType_t* higher_priority_task_woken )
 {
 #ifdef TEST_BUILD
-    return EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( timestamp,
-                                                            higher_priority_task_woken );
+    return EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( timestamp, higher_priority_task_woken );
 #else
     for ( uint8_t index = 0U; index < active_measurement_count; index++ )
     {
         const ExecutionMeasurementDispatchEntry_T* entry = &active_measurement_adapters[index];
-        const uint32_t start_cycles = DWT->CYCCNT;
-        const bool accepted = entry->adapter( entry->channel, timestamp,
-                                              higher_priority_task_woken );
-        const uint32_t elapsed_cycles = DWT->CYCCNT - start_cycles;
+        const uint32_t                             start_cycles = DWT->CYCCNT;
+        const bool                                 accepted =
+            entry->adapter( entry->channel, timestamp, higher_priority_task_woken );
+        const uint32_t                         elapsed_cycles = DWT->CYCCNT - start_cycles;
         volatile ExecutionMeasurementTiming_T* timing = &execution_measurement_timing[entry->type];
 
         timing->sample_count++;
