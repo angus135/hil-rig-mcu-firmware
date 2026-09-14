@@ -475,22 +475,22 @@ bool EXEC_ANALOGUE_OUTPUT_Stop( void )
 
 bool EXEC_ANALOGUE_OUTPUT_Abort( void )
 {
-    EXEC_ANALOGUE_OUTPUT_Update_Readiness();
-
-    if ( s_EXEC_ANALOGUE_OUTPUT_State != EXEC_ANALOGUE_OUTPUT_STATE_STARTED )
+    if ( s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOGUE_OUTPUT_STATE_DISABLED )
     {
-        return false;
+        return true;
     }
 
-    const bool output_disabled = EXEC_ANALOGUE_OUTPUT_Set_Output_Enable( false );
-    const bool hardware_stopped =
-        s_EXEC_ANALOGUE_OUTPUT_State == EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURED
-            ? true
-            : HW_SPI_Stop_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL );
+    const bool output_disabled  = EXEC_ANALOGUE_OUTPUT_Set_Output_Enable( false );
+    const bool hardware_stopped = HW_SPI_Stop_Channel( ANALOGUE_OUTPUT_SPI_CHANNEL );
 
-    s_EXEC_ANALOGUE_OUTPUT_State = hardware_stopped ? EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURED
-                                                    : EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
-    return output_disabled && hardware_stopped;
+    if ( output_disabled && hardware_stopped )
+    {
+        s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURED;
+        return true;
+    }
+
+    s_EXEC_ANALOGUE_OUTPUT_State = EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
+    return false;
 }
 
 bool EXEC_ANALOGUE_OUTPUT_Is_Configured( void )
