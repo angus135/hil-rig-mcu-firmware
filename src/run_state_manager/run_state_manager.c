@@ -769,7 +769,9 @@ static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void )
         if ( ( driver_status.can_enabled_mask & ( 1UL << channel ) ) != 0U )
         {
             RUN_STATE_ADD_RESULT_BYTES( ( uint64_t )effective_ticks
-                                        * ( result_header_bytes + EXEC_CAN_MAX_PAYLOAD_SIZE ) );
+                                        * ( result_header_bytes
+                                            + ( EXEC_CAN_MAX_BATCH_SIZE
+                                                * sizeof( EXEC_CAN_Packet_T ) ) ) );
         }
     }
 
