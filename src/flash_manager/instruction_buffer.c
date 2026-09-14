@@ -1276,4 +1276,3 @@ void INSTRUCTION_BUFFER_AbortUpload( void )
 
     INSTRUCTION_BUFFER_ResetPages();
 }
-
