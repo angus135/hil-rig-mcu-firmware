@@ -130,6 +130,16 @@ typedef struct
     uint32_t maximum_result_length_bytes;
 } RunStateExecutionRequest_T;
 
+/** Immediate admission result for an asynchronous execution request. */
+typedef enum
+{
+    RUN_STATE_EXECUTION_REQUEST_ACCEPTED = 0,
+    RUN_STATE_EXECUTION_REQUEST_INVALID_ARGUMENT,
+    RUN_STATE_EXECUTION_REQUEST_INVALID_STATE,
+    RUN_STATE_EXECUTION_REQUEST_BUSY,
+    RUN_STATE_EXECUTION_REQUEST_NOTIFY_FAILED
+} RunStateExecutionRequestResult_T;
+
 /**
  * Coherent task-owned lifecycle status captured at one instant.
  *
@@ -179,8 +189,8 @@ typedef struct
  *
  * Start-of-run handshake:
  *
- * 1. Call FLASH_MANAGER_RequestExecutionPreparation() with the validated result
- *    capacity supplied in the execution request.
+ * 1. Derive a conservative result capacity from the retained configuration and
+ *    prepared-run frequency, then call FLASH_MANAGER_RequestExecutionPreparation().
  * 2. Wait asynchronously until FLASH_MANAGER_GetState() reports
  *    FLASH_MANAGER_STATE_EXECUTING. Treat FLASH_MANAGER_STATE_FAULT as a failed
  *    run preparation.
@@ -234,9 +244,13 @@ typedef struct
  *
  * @param mode - the selected frequency mode
  *
- * An updated mode takes effect the next time the execution clock is started.
+ * An updated mode is accepted only while IDLE or ARMED with no pending
+ * transition or execution request. The selected mode is captured immutably
+ * when an execution request is accepted.
+ *
+ * @return true when the mode was accepted; otherwise false.
  */
-void RUN_STATE_MANAGER_Set_Execution_Frequency( RunStateFrequencyMode_T mode );
+bool RUN_STATE_MANAGER_Set_Execution_Frequency( RunStateFrequencyMode_T mode );
 
 /**
  * @brief Gets the configured execution-clock frequency mode.
@@ -268,11 +282,17 @@ bool RUN_STATE_MANAGER_RequestConfiguration( void );
 /**
  * @brief Requests execution preparation from ARMED using validated session bounds.
  *
- * The request is copied before the asynchronous notification is sent. After
- * Flash Manager reaches EXECUTING, the RSM prepares the Execution Manager with
- * tick_count before it starts DUT drivers and TIM4.
+ * The tick count and currently selected execution frequency are captured as
+ * one immutable prepared-run snapshot before the asynchronous notification is
+ * sent. A request is rejected while another request or lifecycle transition
+ * owns the slot. After Flash Manager reaches EXECUTING, the RSM prepares the
+ * Execution Manager before it starts DUT drivers and TIM4.
+ *
+ * @return Immediate admission status. Acceptance means the immutable request
+ *         snapshot was reserved and its task notification was delivered.
  */
-bool RUN_STATE_MANAGER_RequestExecution( const RunStateExecutionRequest_T* request );
+RunStateExecutionRequestResult_T
+RUN_STATE_MANAGER_RequestExecution( const RunStateExecutionRequest_T* request );
 
 /**
  * @brief Reports normal execution completion in task context.

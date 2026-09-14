@@ -193,13 +193,29 @@ EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken )
         return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_INSTRUCTION_CORRUPT,
                                               higher_priority_task_woken );
     }
-    else
-    {
-        instruction_stream_exhausted = true;
-    }
-
     if ( current_tick == execution_tick_count )
     {
+        if ( !instruction_stream_exhausted )
+        {
+            read_status = FLASH_MANAGER_PeekNextInstructionFromISR( &instruction );
+            if ( read_status == FLASH_MANAGER_INSTRUCTION_AVAILABLE )
+            {
+                return EXECUTION_MANAGER_FailFromISR(
+                    EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNCONSUMED, higher_priority_task_woken );
+            }
+            if ( read_status == FLASH_MANAGER_INSTRUCTION_NOT_BUFFERED )
+            {
+                return EXECUTION_MANAGER_FailFromISR(
+                    EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNDERRUN, higher_priority_task_woken );
+            }
+            if ( read_status != FLASH_MANAGER_INSTRUCTION_END_OF_STREAM )
+            {
+                return EXECUTION_MANAGER_FailFromISR(
+                    EXECUTION_MANAGER_FAILURE_INSTRUCTION_CORRUPT, higher_priority_task_woken );
+            }
+            instruction_stream_exhausted = true;
+        }
+
         execution_state = EXECUTION_STATE_COMPLETE;
         if ( terminal_callback != NULL )
         {

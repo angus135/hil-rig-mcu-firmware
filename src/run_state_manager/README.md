@@ -208,6 +208,12 @@ or execution implementation. The future Host Interface owns this sequence:
   count for a host-originated execute command. The RSM calculates the
   peripheral drain tail and conservative result reservation from the committed
   configuration; callers do not provide either value.
+- Select the execution frequency while the RSM is `IDLE` or `ARMED` with no
+  transition pending. Acceptance of an execution request atomically reserves
+  the single request slot and captures its tick count together with that
+  frequency. Further execution requests and frequency changes are rejected
+  until task ownership supersedes the queued request, preventing notification
+  coalescing from replacing its parameters.
 - Submit `RUN_STATE_MANAGER_RequestResultTransfer()` from `RESULTS_READY`, wait
   for `RESULT_TRANSFER`, and retrieve bytes using the Flash Manager result API.
 - Submit `RUN_STATE_MANAGER_RequestResultTransferComplete()` only after Flash
