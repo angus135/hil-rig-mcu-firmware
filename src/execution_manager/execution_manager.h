@@ -64,7 +64,10 @@ bool EXECUTION_MANAGER_Prepare( uint32_t tick_count );
 void EXECUTION_MANAGER_ConfigureMeasurements(
     const ExecutionMeasurementConfiguration_T* configuration );
 
-/** Arms per-opcode cycle profiling for the next prepared execution only. */
+/**
+ * Arms diagnostic cycle profiling for the next prepared execution only.
+ * Profiling data supports analysis but does not replace the timer deadline guard.
+ */
 void EXECUTION_MANAGER_RequestOperationTiming( void );
 
 /**

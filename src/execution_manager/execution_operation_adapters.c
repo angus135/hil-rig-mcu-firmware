@@ -24,6 +24,7 @@
 #include "exec_uart.h"
 #include "exec_analogue_output.h"
 #include "exec_can.h"
+#include "rtos_config.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -181,9 +182,11 @@ bool EXECUTION_OPERATION_ADAPTER_GetTiming( ExecutionOperationOpcode_T  opcode,
         return false;
     }
 
+    taskENTER_CRITICAL();
     timing->sample_count   = execution_operation_timing[opcode].sample_count;
     timing->total_cycles   = execution_operation_timing[opcode].total_cycles;
     timing->maximum_cycles = execution_operation_timing[opcode].maximum_cycles;
+    taskEXIT_CRITICAL();
     return true;
 }
 

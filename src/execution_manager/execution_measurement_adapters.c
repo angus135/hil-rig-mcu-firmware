@@ -21,6 +21,7 @@
 #include "exec_spi.h"
 #include "exec_uart.h"
 #include "flash_manager.h"
+#include "rtos_config.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -416,9 +417,11 @@ bool EXECUTION_MEASUREMENT_ADAPTER_GetTiming( ExecutionMeasurementType_T    type
         return false;
     }
 
+    taskENTER_CRITICAL();
     timing->sample_count   = execution_measurement_timing[type].sample_count;
     timing->total_cycles   = execution_measurement_timing[type].total_cycles;
     timing->maximum_cycles = execution_measurement_timing[type].maximum_cycles;
+    taskEXIT_CRITICAL();
     return true;
 }
 
