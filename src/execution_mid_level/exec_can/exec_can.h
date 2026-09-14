@@ -158,6 +158,14 @@ EXEC_CAN_Result_T EXEC_CAN_Transmit( EXEC_CAN_Channel_T channel, const EXEC_CAN_
 EXEC_CAN_Result_T EXEC_CAN_Receive( EXEC_CAN_Channel_T channel, EXEC_CAN_Packet_T destination[],
                                     uint16_t capacity, uint16_t* packets_read );
 
+/**
+ * @brief Return a bounded receive queue snapshot for a valid channel.
+ *
+ * The RX ISR may append packets after this snapshot. A following bounded
+ * receive consumes no more than its supplied capacity.
+ */
+uint16_t EXEC_CAN_GetPendingReceivePackets( EXEC_CAN_Channel_T channel );
+
 /** Return the current buffered transmit status for one CAN channel. */
 EXEC_CAN_Tx_Status_T EXEC_CAN_Get_Tx_Status( EXEC_CAN_Channel_T channel );
 

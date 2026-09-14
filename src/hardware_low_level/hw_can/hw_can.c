@@ -1517,6 +1517,12 @@ uint16_t HW_CAN_Rx_Buffer_Read1( CAN_Packet_T dest[], uint16_t capacity )
     return count;
 }
 
+uint16_t HW_CAN_Rx_Pending_Count1( void )
+{
+    return ( uint16_t )( ( can_rx_wp1 - can_rx_rp1 + RECEIVE_BUFFER_WIDTH )
+                         % RECEIVE_BUFFER_WIDTH );
+}
+
 /**
  * @brief Moves the channe 1 read pointer x times
  *
@@ -1541,6 +1547,12 @@ uint16_t HW_CAN_Rx_Buffer_Read2( CAN_Packet_T dest[], uint16_t capacity )
                                          RECEIVE_BUFFER_WIDTH, dest, capacity );
     HW_CAN_Rx_Buffer_consume2( count );
     return count;
+}
+
+uint16_t HW_CAN_Rx_Pending_Count2( void )
+{
+    return ( uint16_t )( ( can_rx_wp2 - can_rx_rp2 + RECEIVE_BUFFER_WIDTH )
+                         % RECEIVE_BUFFER_WIDTH );
 }
 
 /**

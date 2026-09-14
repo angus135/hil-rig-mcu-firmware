@@ -432,6 +432,9 @@ uint16_t HW_CAN_Rx_Buffer_Write1( CAN_Packet_T source[], uint16_t length );
  */
 uint16_t HW_CAN_Rx_Buffer_Read1( CAN_Packet_T dest[], uint16_t capacity );
 
+/** Return the number of packets currently queued for channel 1 receive. */
+uint16_t HW_CAN_Rx_Pending_Count1( void );
+
 /**
  * @brief Reads CAN packets from the channel 1 transmit buffer.
  *
@@ -512,6 +515,9 @@ uint16_t HW_CAN_Rx_Buffer_Write2( CAN_Packet_T source[], uint16_t length );
  *         capacity, returns zero without changing the buffer.
  */
 uint16_t HW_CAN_Rx_Buffer_Read2( CAN_Packet_T dest[], uint16_t capacity );
+
+/** Return the number of packets currently queued for channel 2 receive. */
+uint16_t HW_CAN_Rx_Pending_Count2( void );
 
 /**
  * @brief Reads CAN packets from the channel 2 transmit buffer.

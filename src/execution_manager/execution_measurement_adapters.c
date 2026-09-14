@@ -185,8 +185,18 @@ void EXECUTION_MEASUREMENT_ADAPTER_Prepare(
 bool EXECUTION_MEASUREMENT_ADAPTER_SampleCanReceive( uint8_t channel, uint32_t timestamp,
                                                      BaseType_t* higher_priority_task_woken )
 {
+    const uint16_t pending_packets =
+        EXEC_CAN_GetPendingReceivePackets( ( EXEC_CAN_Channel_T )channel );
+    if ( pending_packets == 0U )
+    {
+        return true;
+    }
+
+    const uint16_t packet_capacity = pending_packets < EXEC_CAN_MAX_BATCH_SIZE
+                                         ? pending_packets
+                                         : EXEC_CAN_MAX_BATCH_SIZE;
     const uint16_t reservation_bytes =
-        ( uint16_t )( EXEC_CAN_MAX_BATCH_SIZE * sizeof( EXEC_CAN_Packet_T ) );
+        ( uint16_t )( packet_capacity * sizeof( EXEC_CAN_Packet_T ) );
     FlashManagerResultWriteLease_T lease = { 0 };
     if ( !FLASH_MANAGER_ReserveResultRecordFromISR( reservation_bytes, &lease ) )
     {
@@ -196,7 +206,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleCanReceive( uint8_t channel, uint32_t t
     uint16_t                packets_read = 0U;
     const EXEC_CAN_Result_T result       = EXEC_CAN_Receive( ( EXEC_CAN_Channel_T )channel,
                                                              ( EXEC_CAN_Packet_T* )( void* )lease.payload,
-                                                             EXEC_CAN_MAX_BATCH_SIZE, &packets_read );
+                                                             packet_capacity, &packets_read );
     if ( result != EXEC_CAN_RESULT_OK )
     {
         ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
@@ -270,14 +280,24 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleSpiReceive( uint8_t channel, uint32_t t
 bool EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive( uint8_t channel, uint32_t timestamp,
                                                       BaseType_t* higher_priority_task_woken )
 {
+    const uint32_t pending_bytes =
+        EXEC_UART_GetPendingReceiveBytes( ( ExecUartChannel_T )channel );
+    if ( pending_bytes == 0U )
+    {
+        return true;
+    }
+
+    const uint16_t reservation_bytes =
+        ( uint16_t )( pending_bytes < EXEC_UART_MAX_CHUNK_SIZE ? pending_bytes
+                                                               : EXEC_UART_MAX_CHUNK_SIZE );
     FlashManagerResultWriteLease_T lease = { 0 };
-    if ( !FLASH_MANAGER_ReserveResultRecordFromISR( EXEC_UART_MAX_CHUNK_SIZE, &lease ) )
+    if ( !FLASH_MANAGER_ReserveResultRecordFromISR( reservation_bytes, &lease ) )
     {
         return false;
     }
 
     uint32_t bytes_read = 0U;
-    if ( !EXEC_UART_Read( ( ExecUartChannel_T )channel, lease.payload, EXEC_UART_MAX_CHUNK_SIZE,
+    if ( !EXEC_UART_Read( ( ExecUartChannel_T )channel, lease.payload, reservation_bytes,
                           &bytes_read ) )
     {
         ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );

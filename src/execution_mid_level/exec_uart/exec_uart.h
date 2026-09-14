@@ -187,6 +187,14 @@ bool EXEC_UART_Read( ExecUartChannel_T channel, uint8_t* dest, uint32_t dest_siz
                      uint32_t* bytes_read );
 
 /**
+ * @brief Return a bounded snapshot of unread RX bytes for a valid started channel.
+ *
+ * RX DMA may append bytes after this snapshot. A following bounded read consumes
+ * no more than its supplied capacity and leaves later bytes pending.
+ */
+uint32_t EXEC_UART_GetPendingReceiveBytes( ExecUartChannel_T channel );
+
+/**
  * @brief Reports whether UART TX is fully complete.
  *
  * TX is complete when the low-level TX queue is empty, no TX DMA transfer is

@@ -1024,9 +1024,11 @@ TEST_F( HWCANTest, RxBufferBoundedReadsPreserveRemainingPacketsAcrossWraparound 
         packets[i].data[0] = ( uint8_t )i;
     }
     ASSERT_EQ( HW_CAN_Rx_Buffer_Write1( packets, 15 ), 0 );
+    EXPECT_EQ( HW_CAN_Rx_Pending_Count1(), 15U );
 
     CAN_Packet_T first_read[10] = {};
     ASSERT_EQ( HW_CAN_Rx_Buffer_Read1( first_read, 10 ), 10 );
+    EXPECT_EQ( HW_CAN_Rx_Pending_Count1(), 5U );
     for ( uint16_t i = 0; i < 10U; i++ )
     {
         EXPECT_EQ( first_read[i].id, 0x100U + i );
@@ -1040,6 +1042,7 @@ TEST_F( HWCANTest, RxBufferBoundedReadsPreserveRemainingPacketsAcrossWraparound 
         wrapped[i].data[0] = ( uint8_t )( 15U + i );
     }
     ASSERT_EQ( HW_CAN_Rx_Buffer_Write1( wrapped, 10 ), 0 );
+    EXPECT_EQ( HW_CAN_Rx_Pending_Count1(), 15U );
 
     CAN_Packet_T second_read[7] = {};
     ASSERT_EQ( HW_CAN_Rx_Buffer_Read1( second_read, 7 ), 7 );
@@ -1054,6 +1057,7 @@ TEST_F( HWCANTest, RxBufferBoundedReadsPreserveRemainingPacketsAcrossWraparound 
     {
         EXPECT_EQ( remaining[i].id, 0x111U + i );
     }
+    EXPECT_EQ( HW_CAN_Rx_Pending_Count1(), 0U );
     EXPECT_EQ( can_rx_rp1, can_rx_wp1 );
 }
 

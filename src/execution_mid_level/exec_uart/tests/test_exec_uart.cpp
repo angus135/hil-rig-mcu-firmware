@@ -692,6 +692,15 @@ TEST_F( ExecUARTTest, ReadReturnsZeroWhenNoDataAvailable )
     EXPECT_EQ( bytes_read, 0U );
 }
 
+TEST_F( ExecUARTTest, PendingReceiveBytesReturnsLowLevelSnapshotLength )
+{
+    EXPECT_CALL( mock_hw, Rx_Peek( EXEC_UART_CHANNEL_2 ) )
+        .WillOnce( Return( TEST_EXEC_UART_Make_Spans( s_first_span_data, 7U,
+                                                       s_second_span_data, 5U ) ) );
+
+    EXPECT_EQ( EXEC_UART_GetPendingReceiveBytes( EXEC_UART_CHANNEL_2 ), 12U );
+}
+
 TEST_F( ExecUARTTest, ReadCopiesSingleSpanAndConsumesCopiedBytes )
 {
     s_first_span_data[0] = 10U;
