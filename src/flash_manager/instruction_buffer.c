@@ -1258,3 +1258,22 @@ bool INSTRUCTION_BUFFER_EndUpload( void )
 
     return true;
 }
+
+void INSTRUCTION_BUFFER_AbortUpload( void )
+{
+    if ( !instruction_buffer_context.is_initialised )
+    {
+        return;
+    }
+
+    instruction_buffer_context.is_upload_prepared            = false;
+    instruction_buffer_context.is_upload_finalised           = false;
+    instruction_buffer_context.upload_expected_length_bytes  = 0U;
+    instruction_buffer_context.upload_accepted_length_bytes  = 0U;
+    instruction_buffer_context.upload_persisted_length_bytes = 0U;
+    instruction_buffer_context.upload_write_page_index       = 0U;
+    instruction_buffer_context.upload_drain_page_index       = 0U;
+
+    INSTRUCTION_BUFFER_ResetPages();
+}
+
