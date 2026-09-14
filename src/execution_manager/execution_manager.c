@@ -215,8 +215,8 @@ EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken )
             }
             if ( read_status != FLASH_MANAGER_INSTRUCTION_END_OF_STREAM )
             {
-                return EXECUTION_MANAGER_FailFromISR(
-                    EXECUTION_MANAGER_FAILURE_INSTRUCTION_CORRUPT, higher_priority_task_woken );
+                return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_INSTRUCTION_CORRUPT,
+                                                      higher_priority_task_woken );
             }
             instruction_stream_exhausted = true;
         }

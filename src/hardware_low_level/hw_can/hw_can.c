@@ -1181,13 +1181,12 @@ void HW_CAN_Reset2( void )
                           &can_rx_dropped_count2, &can_tx_pending_mailbox2, &can_tx_status2 );
 }
 
-static bool HW_CAN_Establish_Rx_Epoch( CAN_TypeDef* can, IRQn_Type rx_irq,
-                                       volatile uint16_t* rx_wp, volatile uint16_t* rx_rp,
-                                       volatile uint32_t* dropped_count,
+static bool HW_CAN_Establish_Rx_Epoch( CAN_TypeDef* can, IRQn_Type rx_irq, volatile uint16_t* rx_wp,
+                                       volatile uint16_t* rx_rp, volatile uint32_t* dropped_count,
                                        const HWCANLifecycleState_T* lifecycle )
 {
-    if ( can == NULL || rx_wp == NULL || rx_rp == NULL || dropped_count == NULL
-         || lifecycle == NULL || !lifecycle->is_started )
+    if ( can == NULL || rx_wp == NULL || rx_rp == NULL || dropped_count == NULL || lifecycle == NULL
+         || !lifecycle->is_started )
     {
         return false;
     }

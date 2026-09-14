@@ -463,8 +463,8 @@ TEST_F( RunStateManagerTest, ConfigurationTimeoutEntersFault )
 TEST_F( RunStateManagerTest, ExecutionStartsOnlyAfterFlashAndDriverStartupComplete )
 {
     ConfigureToArmed();
-    prepared_execution = ( RunStatePreparedExecution_T ){
-        .tick_count = 25U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
+    prepared_execution =
+        ( RunStatePreparedExecution_T ){ .tick_count = 25U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
     Process( RUN_STATE_REQUEST_EXECUTION );
     EXPECT_EQ( RUN_STATE_ARMED, run_state );
     EXPECT_EQ( RUN_STATE_PENDING_EXECUTION_PREPARATION, pending_operation );
@@ -489,8 +489,8 @@ TEST_F( RunStateManagerTest, ExecutionStartsOnlyAfterFlashAndDriverStartupComple
 TEST_F( RunStateManagerTest, AcquisitionEpochFailurePreventsTimerStart )
 {
     ConfigureToArmed();
-    prepared_execution = ( RunStatePreparedExecution_T ){
-        .tick_count = 10U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
+    prepared_execution =
+        ( RunStatePreparedExecution_T ){ .tick_count = 10U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
     driver_epoch_result = false;
     Process( RUN_STATE_REQUEST_EXECUTION );
     flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
@@ -581,8 +581,8 @@ TEST_F( RunStateManagerTest, ExecutionRequestIsRejectedOutsideArmedState )
 TEST_F( RunStateManagerTest, ExecutionManagerPreparationFailurePreventsDriverAndTimerStart )
 {
     ConfigureToArmed();
-    prepared_execution = ( RunStatePreparedExecution_T ){
-        .tick_count = 10U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
+    prepared_execution =
+        ( RunStatePreparedExecution_T ){ .tick_count = 10U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
     execution_prepare_result = false;
     Process( RUN_STATE_REQUEST_EXECUTION );
     flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
@@ -599,9 +599,9 @@ TEST_F( RunStateManagerTest, ExecutionTimerStartFailureStopsDriversAndEntersFaul
 {
     ConfigureToArmed();
     const uint32_t abort_calls_before_execution = execution_abort_calls;
-    prepared_execution = ( RunStatePreparedExecution_T ){
-        .tick_count = 10U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
-    timer_start_result                          = false;
+    prepared_execution =
+        ( RunStatePreparedExecution_T ){ .tick_count = 10U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
+    timer_start_result = false;
     Process( RUN_STATE_REQUEST_EXECUTION );
     flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
 
