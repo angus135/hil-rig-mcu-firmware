@@ -312,10 +312,10 @@ data throughput, DMA bus arbitration, and result logging at **10 kHz** (100 µs 
   UART1 transmits 16 bytes of `0x55` per tick; UART2 transmits 16 bytes of `0xAA` per tick.
 * **SPI**: SPI Channel 2 (hardware SPI1 master, 45 Mbit/s) with both TX and RX DMA (loopback).
   Transmits 256 bytes of `0xA5` per tick.
-* **Excluded**:
-  * Analogue Output (DAC) temporarily excluded pending driver debugging.
-  * CAN 1 & 2 remain explicitly disabled (driver pending debugging).
-  * SPI Channel 1 remains explicitly disabled (driver pending fixes).
+* **Excluded / Deferred Subsystems**:
+  * **Analogue Output (DAC)**: Driver, voltage preparation, and adapters are implemented; full hardware loopback verification is deferred to lab testing with the physical 24 V rail powered.
+  * **CAN 1 & 2**: Firmware driver, 45 MHz APB1 timing, and non-intrusive runtime register diagnostics (`TSR`, `ESR`, `MSR`, `IER`, `TEC`, `REC`, `LEC`) are fully implemented and verified up to the peripheral boundary. Closed-loop loopback verification is deferred pending hardware team investigation of the analog/bus switch between MCU pins (`PB8/PB9`, `PB5/PB6`) and the `SN65HVD230DR` transceivers (test points `TP112A`, `TP113A`).
+  * **SPI Channel 1**: Excluded from stress test (SPI Channel 2 running at 45 Mbit/s is the active verified master).
 
 ### Hardware loopback wiring
 

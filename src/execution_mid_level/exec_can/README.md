@@ -44,7 +44,15 @@ integration. Schedule-feasibility admission and ISR-specific tightening are
 follow-up work.
 
 Transmit status and receive-drop diagnostics are exposed through
-`EXEC_CAN_Get_Tx_Status()` and `EXEC_CAN_Get_Rx_Dropped_Count()`.
+`EXEC_CAN_Get_Tx_Status()` and `EXEC_CAN_Get_Rx_Dropped_Count()`. Low-level bxCAN
+register snapshots (`TSR`, `ESR`, `MSR`, `IER`, `TEC`, `REC`, `LEC`) are
+accessible via `HW_CAN_GetDiagnostic()` and reported by `run_state status`.
+
+## Bringup Status
+
+The execution adapter, packet queuing, and controller drivers are fully
+functional. Hardware-level loopback is deferred pending verification of the
+transceiver analog/bus switch and test points (`TP112A`, `TP113A`).
 
 ## Recovery
 
