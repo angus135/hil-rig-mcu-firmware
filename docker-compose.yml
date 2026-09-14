@@ -24,7 +24,6 @@ services:
     # Example CI-style command: configure, build, run tests
     command: >
       bash -lc "
-        cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug &&
-        cmake --build build &&
-        ctest --test-dir build
-      "
+        cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Debug &&
+        cmake --build build --parallel &&
+        ctest --test-dir build --parallel $(nproc) --output-on-failure
