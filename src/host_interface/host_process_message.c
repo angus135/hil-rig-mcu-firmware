@@ -46,7 +46,6 @@
  *------------------------------------------------------------------------------
  */
 
-
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -63,21 +62,21 @@
  * @param[out] data                           the optional additional date for variable length byte
 spans
  * @param[out] data_size                      the size available to write to at data
- * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully  
+ * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully
  */
-HOST_Interface_Status_T HOST_INTERFACE_Default_Error(HIL_Application_Message_T* message)
+HOST_Interface_Status_T HOST_INTERFACE_Default_Error( HIL_Application_Message_T* message )
 {
     // Set the type and subtype
-    message->type = HIL_APPLICATION_MESSAGE_TYPE_ERROR;
+    message->type    = HIL_APPLICATION_MESSAGE_TYPE_ERROR;
     message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
     // Set Error body TODO update error catagory
-    message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INVALID;
-    message->body.error.recoverable = 1U;
-    message->body.error.has_tick_number = 0U;
-    message->body.error.tick_number     = 0U;
-    message->body.error.detail     = 0U;
+    message->body.error.category             = HIL_APPLICATION_ERROR_CATEGORY_INVALID;
+    message->body.error.recoverable          = 1U;
+    message->body.error.has_tick_number      = 0U;
+    message->body.error.tick_number          = 0U;
+    message->body.error.detail               = 0U;
     message->body.error.diagnostic_data.size = 0U;
-    message->body.error.diagnostic_data.data     = NULL;
+    message->body.error.diagnostic_data.data = NULL;
     return HOST_INTERFACE_STATUS_OK;
 }
 
@@ -100,20 +99,21 @@ spans
  * @param[out] data_size                      the size available to write to at data
  * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully
  */
-HOST_Interface_Status_T HOST_INTERFACE_process_Info_Request(
-    const HIL_Application_Message_T* recent_received_message,
-    HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size )
+HOST_Interface_Status_T
+HOST_INTERFACE_process_Info_Request( const HIL_Application_Message_T* recent_received_message,
+                                     HIL_Application_Message_T*       response_message,
+                                     bool* response_required, uint8_t* data, size_t data_size )
 {
     switch ( recent_received_message->body.system_info_request.query )
     {
         case HIL_APPLICATION_SYSTEM_INFO_QUERY_INVALID:
             // Construct the error message
-            HOST_INTERFACE_Default_Error(response_message);
+            HOST_INTERFACE_Default_Error( response_message );
             *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_SYSTEM_INFO_QUERY_BASIC:
             // Set the type and subtype
-            response_message->type = HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_RESPONSE;
+            response_message->type    = HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_RESPONSE;
             response_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_BASIC;
             // Set protocol version
             response_message->body.system_info_response.application_protocol_major =
@@ -123,10 +123,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Info_Request(
             response_message->body.system_info_response.application_protocol_patch =
                 HIL_RIG_PROTOCOL_VERSION_PATCH;
             // Set firmware version TODO
-            response_message->body.system_info_response.firmware_version_major =
-                0U;
-            response_message->body.system_info_response.firmware_version_minor =
-                0U;
+            response_message->body.system_info_response.firmware_version_major = 0U;
+            response_message->body.system_info_response.firmware_version_minor = 0U;
             response_message->body.system_info_response.firmware_version_patch = 0U;
             // firmware git hash TODO
             uint8_t firmware_git_hash_size = 1U;
@@ -137,7 +135,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Info_Request(
             }
             response_message->body.system_info_response.firmware_git_hash.size =
                 firmware_git_hash_size;
-            data[0] = 0U;
+            data[0]                                                            = 0U;
             response_message->body.system_info_response.firmware_git_hash.data = data;
             // Diagnostic data depends on the sub-type
             switch ( recent_received_message->subtype )
@@ -150,12 +148,12 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Info_Request(
             return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_SYSTEM_INFO_QUERY_RESERVED:
             // Construct the error message
-            HOST_INTERFACE_Default_Error(response_message);
+            HOST_INTERFACE_Default_Error( response_message );
             *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
         default:
             // Construct the error message
-            HOST_INTERFACE_Default_Error(response_message);
+            HOST_INTERFACE_Default_Error( response_message );
             *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
     }
@@ -175,19 +173,19 @@ spans
  * @param[out] data_size                      the size available to write to at data
  * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully
  */
-HOST_Interface_Status_T HOST_INTERFACE_process_Info_Response( const HIL_Application_Message_T* recent_received_message,
-                                           HIL_Application_Message_T*       response_message,
-                                           bool* response_required, uint8_t* data,
-                                           size_t data_size )
+HOST_Interface_Status_T
+HOST_INTERFACE_process_Info_Response( const HIL_Application_Message_T* recent_received_message,
+                                      HIL_Application_Message_T*       response_message,
+                                      bool* response_required, uint8_t* data, size_t data_size )
 {
     ( void )response_message;
     ( void )data;
-    (void) data_size;
+    ( void )data_size;
     switch ( recent_received_message->subtype )
     {
         case HIL_APPLICATION_MESSAGE_SUBTYPE_NONE:
             // Construct the error message
-            HOST_INTERFACE_Default_Error(response_message);
+            HOST_INTERFACE_Default_Error( response_message );
             *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_MESSAGE_SUBTYPE_BASIC:
@@ -218,17 +216,17 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Info_Response( const HIL_Applicat
             //     default:
             // }
             // Construct the error message
-            HOST_INTERFACE_Default_Error(response_message);
+            HOST_INTERFACE_Default_Error( response_message );
             *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_MESSAGE_SUBTYPE_RESERVED:
             // Construct the error message
-            HOST_INTERFACE_Default_Error(response_message);
+            HOST_INTERFACE_Default_Error( response_message );
             *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
         default:
             // Construct the error message
-            HOST_INTERFACE_Default_Error(response_message);
+            HOST_INTERFACE_Default_Error( response_message );
             *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
     }
@@ -249,10 +247,11 @@ spans
  * @param[out] data_size                      the size available to write to at data
  * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully
  */
-HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
-    const HIL_Application_Message_T* recent_received_message,
-    HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data,
-    size_t data_size )
+HOST_Interface_Status_T
+HOST_INTERFACE_process_Test_Configuration( const HIL_Application_Message_T* recent_received_message,
+                                           HIL_Application_Message_T*       response_message,
+                                           bool* response_required, uint8_t* data,
+                                           size_t data_size )
 {
     ( void )data;
     ( void )data_size;
@@ -265,9 +264,9 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
      */
 
     // Signal run state manager to move to package recieving state
-    RunStateManagerStatus_T run_state = {0};
+    RunStateManagerStatus_T run_state = { 0 };
     RUN_STATE_MANAGER_GetStatus( &run_state );
-    size_t counter = 0;
+    size_t counter       = 0;
     size_t counter_limit = 100;
     if ( RUN_STATE_MANAGER_RequestPackageReceive() == false )
     {
@@ -285,45 +284,60 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
         {
             HOST_INTERFACE_Default_Error( response_message );
             response_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_TIMEOUT;
-            *response_required = true;
+            *response_required                    = true;
             return HOST_INTERFACE_STATUS_OK;
         }
     }
     *response_required = false;
     return HOST_INTERFACE_STATUS_OK;
-
 }
 
-HOST_Interface_Status_T HOST_INTERFACE_process_Test_Instructions(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
+HOST_Interface_Status_T
+HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* recent_received_message,
+                                          HIL_Application_Message_T*       response_message,
+                                          bool* response_required, uint8_t* data,
+                                          size_t data_size );
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Instruction_Data(
     const HIL_Application_Message_T* recent_received_message,
-    HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size )
+    HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data,
+    size_t data_size )
 {
     // NOT IMPLEMENTED
     ( void )recent_received_message;
     ( void )response_message;
     ( void )data;
-    (void) data_size;
+    ( void )data_size;
     *response_required = false;
     return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
 }
 
-HOST_Interface_Status_T HOST_INTERFACE_process_Execution_Control(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
+HOST_Interface_Status_T
+HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* recent_received_message,
+                                          HIL_Application_Message_T*       response_message,
+                                          bool* response_required, uint8_t* data,
+                                          size_t data_size );
 
-HOST_Interface_Status_T HOST_INTERFACE_process_Global_Control(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
+HOST_Interface_Status_T
+HOST_INTERFACE_process_Global_Control( const HIL_Application_Message_T* recent_received_message,
+                                       HIL_Application_Message_T*       response_message,
+                                       bool* response_required, uint8_t* data, size_t data_size );
 
-HOST_Interface_Status_T HOST_INTERFACE_process_Test_Result(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
+HOST_Interface_Status_T
+HOST_INTERFACE_process_Test_Result( const HIL_Application_Message_T* recent_received_message,
+                                    HIL_Application_Message_T*       response_message,
+                                    bool* response_required, uint8_t* data, size_t data_size );
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Result_Data(
     const HIL_Application_Message_T* recent_received_message,
-    HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size )
+    HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data,
+    size_t data_size )
 {
     // NOT IMPLEMENTED
     ( void )recent_received_message;
     ( void )response_message;
     ( void )data;
-    (void) data_size;
+    ( void )data_size;
     *response_required = false;
     return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
 }
@@ -335,7 +349,7 @@ HOST_INTERFACE_process_Response( const HIL_Application_Message_T* recent_receive
 {
     ( void )recent_received_message;
     ( void )data;
-    (void) data_size;
+    ( void )data_size;
     // Host device should never be sending a response
     // report error to host device
     HOST_INTERFACE_Default_Error( response_message );
@@ -348,8 +362,8 @@ HOST_INTERFACE_process_Error( const HIL_Application_Message_T* recent_received_m
                               HIL_Application_Message_T* response_message, bool* response_required,
                               uint8_t* data, size_t data_size )
 {
-    ( void ) data;
-    (void) data_size;
+    ( void )data;
+    ( void )data_size;
     RunStateFaultReason_T fault = RUN_STATE_FAULT_EXTERNAL_REQUEST;
     switch ( recent_received_message->body.error.category )
     {
@@ -357,7 +371,7 @@ HOST_INTERFACE_process_Error( const HIL_Application_Message_T* recent_received_m
             if ( RUN_STATE_MANAGER_RequestFault( fault ) == false )
             {
                 // Construct the error message
-                HOST_INTERFACE_Default_Error(response_message);
+                HOST_INTERFACE_Default_Error( response_message );
                 *response_required = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
@@ -367,7 +381,7 @@ HOST_INTERFACE_process_Error( const HIL_Application_Message_T* recent_received_m
             if ( RUN_STATE_MANAGER_RequestFault( fault ) == false )
             {
                 // Construct the error message
-                HOST_INTERFACE_Default_Error(response_message);
+                HOST_INTERFACE_Default_Error( response_message );
                 *response_required = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
@@ -381,9 +395,13 @@ HOST_INTERFACE_process_Error( const HIL_Application_Message_T* recent_received_m
  *------------------------------------------------------------------------------
  */
 
-HOST_Interface_Status_T HOST_INTERFACE_process_message(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size)
+HOST_Interface_Status_T
+HOST_INTERFACE_process_message( const HIL_Application_Message_T* recent_received_message,
+                                HIL_Application_Message_T*       response_message,
+                                bool* response_required, uint8_t* data, size_t data_size )
 {
-    if ( recent_received_message == NULL || response_message == NULL || response_required == NULL || data== NULL )
+    if ( recent_received_message == NULL || response_message == NULL || response_required == NULL
+         || data == NULL )
     {
         return false;
     }
@@ -392,27 +410,38 @@ HOST_Interface_Status_T HOST_INTERFACE_process_message(const HIL_Application_Mes
     switch ( recent_received_message->type )
     {
         case HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_REQUEST:
-            return HOST_INTERFACE_process_Info_Request(recent_received_message, response_message, response_required, data, data_size);
+            return HOST_INTERFACE_process_Info_Request( recent_received_message, response_message,
+                                                        response_required, data, data_size );
         case HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_RESPONSE:
-            return HOST_INTERFACE_process_Info_Response(recent_received_message, response_message, response_required, data, data_size);
+            return HOST_INTERFACE_process_Info_Response( recent_received_message, response_message,
+                                                         response_required, data, data_size );
         case HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION:
-            return HOST_INTERFACE_process_Test_Configuration(recent_received_message, response_message, response_required, data, data_size);
+            return HOST_INTERFACE_process_Test_Configuration(
+                recent_received_message, response_message, response_required, data, data_size );
         case HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION:
-            return HOST_INTERFACE_process_Test_Instructions(recent_received_message, response_message, response_required, data, data_size);
+            return HOST_INTERFACE_process_Test_Instructions(
+                recent_received_message, response_message, response_required, data, data_size );
         case HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_INSTRUCTION_DATA:
-            return HOST_INTERFACE_process_Variable_Instruction_Data(recent_received_message, response_message, response_required, data, data_size);
+            return HOST_INTERFACE_process_Variable_Instruction_Data(
+                recent_received_message, response_message, response_required, data, data_size );
         case HIL_APPLICATION_MESSAGE_TYPE_EXECUTION_CONTROL:
-            return HOST_INTERFACE_process_Execution_Control(recent_received_message, response_message, response_required, data, data_size);
+            return HOST_INTERFACE_process_Execution_Control(
+                recent_received_message, response_message, response_required, data, data_size );
         case HIL_APPLICATION_MESSAGE_TYPE_GLOBAL_CONTROL:
-            return HOST_INTERFACE_process_Global_Control(recent_received_message, response_message, response_required, data, data_size);
+            return HOST_INTERFACE_process_Global_Control( recent_received_message, response_message,
+                                                          response_required, data, data_size );
         case HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT:
-            return HOST_INTERFACE_process_Test_Result(recent_received_message, response_message, response_required, data, data_size);
+            return HOST_INTERFACE_process_Test_Result( recent_received_message, response_message,
+                                                       response_required, data, data_size );
         case HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_RESULT_DATA:
-            return HOST_INTERFACE_process_Variable_Result_Data(recent_received_message, response_message, response_required, data, data_size);
+            return HOST_INTERFACE_process_Variable_Result_Data(
+                recent_received_message, response_message, response_required, data, data_size );
         case HIL_APPLICATION_MESSAGE_TYPE_RESPONSE:
-            return HOST_INTERFACE_process_Response(recent_received_message, response_message, response_required, data, data_size);
+            return HOST_INTERFACE_process_Response( recent_received_message, response_message,
+                                                    response_required, data, data_size );
         case HIL_APPLICATION_MESSAGE_TYPE_ERROR:
-            return HOST_INTERFACE_process_Error(recent_received_message, response_message, response_required, data, data_size);
+            return HOST_INTERFACE_process_Error( recent_received_message, response_message,
+                                                 response_required, data, data_size );
         case HIL_APPLICATION_MESSAGE_TYPE_INVALID:
             return false;
         case HIL_APPLICATION_MESSAGE_TYPE_RESERVED:
