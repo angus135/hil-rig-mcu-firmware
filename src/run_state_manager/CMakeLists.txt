@@ -67,4 +67,38 @@ if(RUN_STATE_MANAGER_ENABLE_TESTS AND BUILD_TESTING)
 
     add_test(NAME run_state_manager_tests COMMAND run_state_manager_tests)
 
+    add_executable(dut_driver_lifecycle_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_dut_driver_lifecycle.cpp
+    )
+
+    target_link_libraries(dut_driver_lifecycle_tests
+        PRIVATE
+            project_warnings
+            run_state_manager
+            gtest
+            gtest_main
+            gmock
+    )
+
+    target_include_directories(dut_driver_lifecycle_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/src/test_configuration
+            ${CMAKE_SOURCE_DIR}/src/logic_expander
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_analogue_input
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_analogue_output
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_can
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_digital_input
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_digital_output
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_i2c
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_pwm_capture
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_pwm_gen
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_spi
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_uart
+            ${CMAKE_SOURCE_DIR}/src/power
+    )
+
+    add_test(NAME dut_driver_lifecycle_tests COMMAND dut_driver_lifecycle_tests)
+
 endif()
