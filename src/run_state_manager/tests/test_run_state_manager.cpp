@@ -42,9 +42,11 @@ static bool                               flash_get_state_result;
 static FlashManagerRequestStatus_T        flash_prepare_result;
 static FlashManagerRequestStatus_T        flash_finalise_result;
 static FlashManagerRequestStatus_T        flash_discard_result;
+static uint32_t                           flash_discard_calls;
 static FlashManagerRequestStatus_T        flash_abort_result;
 static FlashManagerResultTransferStatus_T flash_transfer_start_result;
 static FlashManagerResultTransferStatus_T flash_transfer_finish_result;
+static uint32_t                           flash_transfer_finish_calls;
 static uint32_t                           flash_abort_calls;
 static uint32_t                           timer_configure_calls;
 static bool                               timer_start_result;
@@ -165,6 +167,7 @@ FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void )
 }
 FlashManagerRequestStatus_T FLASH_MANAGER_DiscardResults( void )
 {
+    flash_discard_calls++;
     return flash_discard_result;
 }
 FlashManagerRequestStatus_T FLASH_MANAGER_RequestAbortSession( void )
@@ -178,6 +181,7 @@ FlashManagerResultTransferStatus_T FLASH_MANAGER_RequestResultTransferStart( voi
 }
 FlashManagerResultTransferStatus_T FLASH_MANAGER_FinishResultTransfer( void )
 {
+    flash_transfer_finish_calls++;
     return flash_transfer_finish_result;
 }
 void FLASH_MANAGER_SetFaultCallback( FlashManagerFaultCallback_T callback )
@@ -255,9 +259,11 @@ protected:
         flash_prepare_result                = FLASH_MANAGER_REQUEST_OK;
         flash_finalise_result               = FLASH_MANAGER_REQUEST_OK;
         flash_discard_result                = FLASH_MANAGER_REQUEST_OK;
+        flash_discard_calls                 = 0U;
         flash_abort_result                  = FLASH_MANAGER_REQUEST_OK;
         flash_transfer_start_result         = FLASH_MANAGER_RESULT_TRANSFER_OK;
         flash_transfer_finish_result        = FLASH_MANAGER_RESULT_TRANSFER_OK;
+        flash_transfer_finish_calls         = 0U;
         flash_abort_calls                   = 0U;
         timer_configure_calls               = 0U;
         timer_start_result                  = true;
@@ -707,6 +713,69 @@ TEST_F( RunStateManagerTest, ResultTransferCompletionClearsConfigurationAndRetur
     EXPECT_TRUE( configuration_cleared );
     EXPECT_TRUE( configuration_ownership_released );
     EXPECT_TRUE( driver_shutdown_clear_configuration );
+}
+
+TEST_F( RunStateManagerTest, DiscardResultsFailurePreservesResultsReadyAndAllowsRetry )
+{
+    EnterExecution();
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    flash_manager_state = FLASH_MANAGER_STATE_RESULTS_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_RESULTS_READY, run_state );
+
+    /* Fail driver shutdown initiation */
+    driver_shutdown_begin_result = false;
+    Process( RUN_STATE_REQUEST_DISCARD_RESULTS );
+
+    EXPECT_EQ( RUN_STATE_RESULTS_READY, run_state );
+    EXPECT_EQ( RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE, last_request_result );
+    EXPECT_EQ( 0U, flash_discard_calls );
+    EXPECT_FALSE( configuration_cleared );
+    EXPECT_TRUE( run_configuration_owned );
+
+    /* Allow shutdown and retry */
+    driver_shutdown_begin_result = true;
+    Process( RUN_STATE_REQUEST_DISCARD_RESULTS );
+    EXPECT_EQ( 1U, flash_discard_calls );
+    EXPECT_EQ( RUN_STATE_PENDING_IDLE_SHUTDOWN, pending_operation );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
+    EXPECT_TRUE( configuration_cleared );
+    EXPECT_TRUE( configuration_ownership_released );
+}
+
+TEST_F( RunStateManagerTest, ResultTransferCompletionFailurePreservesTransferStateAndAllowsRetry )
+{
+    EnterExecution();
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    flash_manager_state = FLASH_MANAGER_STATE_RESULTS_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_RESULTS_READY, run_state );
+
+    Process( RUN_STATE_REQUEST_RESULT_TRANSFER );
+    EXPECT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
+
+    /* Fail driver shutdown initiation */
+    driver_shutdown_begin_result = false;
+    Process( RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE );
+
+    EXPECT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
+    EXPECT_EQ( RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE, last_request_result );
+    EXPECT_EQ( 0U, flash_transfer_finish_calls );
+    EXPECT_FALSE( configuration_cleared );
+    EXPECT_TRUE( run_configuration_owned );
+
+    /* Allow shutdown and retry */
+    driver_shutdown_begin_result = true;
+    Process( RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE );
+    EXPECT_EQ( 1U, flash_transfer_finish_calls );
+    EXPECT_EQ( RUN_STATE_PENDING_IDLE_SHUTDOWN, pending_operation );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
+    EXPECT_TRUE( configuration_cleared );
+    EXPECT_TRUE( configuration_ownership_released );
 }
 
 
