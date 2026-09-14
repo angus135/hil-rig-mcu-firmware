@@ -27,6 +27,7 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "hw_can.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -152,6 +153,8 @@ typedef struct
     bool                    last_transition_timing_valid;
     RunStateRequest_T       last_completed_request;
     uint32_t                last_transition_duration_ms;
+    /** CAN driver diagnostic snapshot — populated by RUN_STATE_MANAGER_GetStatus(). */
+    HW_CAN_Diagnostic_T     can_diag;
 } RunStateManagerStatus_T;
 
 /**-----------------------------------------------------------------------------

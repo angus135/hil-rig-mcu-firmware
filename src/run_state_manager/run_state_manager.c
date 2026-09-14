@@ -28,6 +28,7 @@
 #include "test_configuration.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include "hw_can.h"
 
 #define RUN_STATE_TAIL_MARGIN_NUMERATOR ( 120U )
 #define RUN_STATE_TAIL_MARGIN_DENOMINATOR ( 100U )
@@ -1651,6 +1652,8 @@ void RUN_STATE_MANAGER_GetStatus( RunStateManagerStatus_T* status )
         .last_transition_duration_ms  = last_transition_duration_ms,
     };
     taskEXIT_CRITICAL();
+
+    HW_CAN_GetDiagnostic( &status->can_diag );
 }
 
 bool RUN_STATE_MANAGER_IsTransitionPending( void )
