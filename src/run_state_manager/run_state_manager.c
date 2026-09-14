@@ -397,7 +397,7 @@ static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state, Run
                    || next_state == RUN_STATE_ARMED || next_state == RUN_STATE_IDLE;
 
         case RUN_STATE_RESULT_TRANSFER:
-            return next_state == RUN_STATE_RESULTS_READY || next_state == RUN_STATE_CONFIGURATION;
+            return next_state == RUN_STATE_CONFIGURATION;
 
         case RUN_STATE_FAULT:
             return next_state == RUN_STATE_IDLE;
@@ -826,14 +826,9 @@ static bool RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle( void )
     return true;
 }
 
-/** Finishes a fully consumed Flash result stream before returning to IDLE. */
+/** Finishes a fully consumed Flash result stream and returns to ARMED via CONFIGURATION. */
 static bool RUN_STATE_MANAGER_CompleteResultTransfer( void )
 {
-    if ( !RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle() )
-    {
-        return false;
-    }
-
     const FlashManagerResultTransferStatus_T status = FLASH_MANAGER_FinishResultTransfer();
 
     if ( status != FLASH_MANAGER_RESULT_TRANSFER_OK )
@@ -842,6 +837,12 @@ static bool RUN_STATE_MANAGER_CompleteResultTransfer( void )
         return false;
     }
 
+    if ( !RUN_STATE_MANAGER_TransitionTo( RUN_STATE_CONFIGURATION ) )
+    {
+        return false;
+    }
+
+    RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_CONFIGURATION );
     return true;
 }
 

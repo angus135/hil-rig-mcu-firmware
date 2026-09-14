@@ -675,26 +675,6 @@ TEST_F( RunStateManagerTest, RepeatRetainsConfigurationAndReturnsToArmed )
     EXPECT_FALSE( execution_abort_requested );
 }
 
-TEST_F( RunStateManagerTest, CompletedResultTransferRetainsConfigurationAndReturnsToArmed )
-{
-    run_state                 = RUN_STATE_RESULT_TRANSFER;
-    run_configuration_owned   = true;
-    execution_abort_requested = true;
-
-    Process( RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE );
-
-    EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
-    EXPECT_EQ( RUN_STATE_PENDING_CONFIGURATION, pending_operation );
-    EXPECT_FALSE( configuration_cleared );
-    EXPECT_TRUE( run_configuration_owned );
-    EXPECT_FALSE( execution_abort_requested );
-    EXPECT_EQ( 0U, driver_shutdown_begin_calls );
-
-    RUN_STATE_MANAGER_ProcessPendingOperation();
-    EXPECT_EQ( RUN_STATE_ARMED, run_state );
-    EXPECT_EQ( RUN_STATE_PENDING_NONE, pending_operation );
-}
-
 TEST_F( RunStateManagerTest, DiscardClearsConfigurationAndReturnsToIdle )
 {
     run_state = RUN_STATE_RESULTS_READY;
@@ -859,7 +839,7 @@ TEST_F( RunStateManagerTest, ExecutionGuardAllowsDispatchOnlyWhenActiveAndNoAbor
     EXPECT_FALSE( execution_guard() );
 }
 
-TEST_F( RunStateManagerTest, ResultTransferCompletionClearsConfigurationAndReturnsToIdle )
+TEST_F( RunStateManagerTest, ResultTransferCompletionRetainsConfigurationAndRearms )
 {
     EnterExecution();
     Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
@@ -872,12 +852,17 @@ TEST_F( RunStateManagerTest, ResultTransferCompletionClearsConfigurationAndRetur
     EXPECT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
 
     Process( RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE );
-    EXPECT_EQ( RUN_STATE_PENDING_IDLE_SHUTDOWN, pending_operation );
+    EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_CONFIGURATION, pending_operation );
+    EXPECT_EQ( 1U, flash_transfer_finish_calls );
+    EXPECT_TRUE( run_configuration_owned );
+    EXPECT_FALSE( configuration_cleared );
+
     RUN_STATE_MANAGER_ProcessPendingOperation();
-    EXPECT_EQ( RUN_STATE_IDLE, run_state );
-    EXPECT_TRUE( configuration_cleared );
-    EXPECT_TRUE( configuration_ownership_released );
-    EXPECT_TRUE( driver_shutdown_clear_configuration );
+    EXPECT_EQ( RUN_STATE_ARMED, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_NONE, pending_operation );
+    EXPECT_TRUE( run_configuration_owned );
+    EXPECT_FALSE( configuration_cleared );
 }
 
 TEST_F( RunStateManagerTest, DiscardResultsFailurePreservesResultsReadyAndAllowsRetry )
@@ -910,7 +895,7 @@ TEST_F( RunStateManagerTest, DiscardResultsFailurePreservesResultsReadyAndAllows
     EXPECT_TRUE( configuration_ownership_released );
 }
 
-TEST_F( RunStateManagerTest, ResultTransferCompletionFailurePreservesTransferStateAndAllowsRetry )
+TEST_F( RunStateManagerTest, ResultTransferFinishFailureTransitionsToFault )
 {
     EnterExecution();
     Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
@@ -922,25 +907,13 @@ TEST_F( RunStateManagerTest, ResultTransferCompletionFailurePreservesTransferSta
     Process( RUN_STATE_REQUEST_RESULT_TRANSFER );
     EXPECT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
 
-    /* Fail driver shutdown initiation */
-    driver_shutdown_begin_result = false;
+    flash_transfer_finish_result = FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE;
     Process( RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE );
 
-    EXPECT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
-    EXPECT_EQ( RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE, last_request_result );
-    EXPECT_EQ( 0U, flash_transfer_finish_calls );
-    EXPECT_FALSE( configuration_cleared );
-    EXPECT_TRUE( run_configuration_owned );
-
-    /* Allow shutdown and retry */
-    driver_shutdown_begin_result = true;
-    Process( RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE );
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_FLASH_RESULT_TRANSFER, fault_reason );
+    EXPECT_EQ( RUN_STATE_REQUEST_RESULT_FAILED, last_request_result );
     EXPECT_EQ( 1U, flash_transfer_finish_calls );
-    EXPECT_EQ( RUN_STATE_PENDING_IDLE_SHUTDOWN, pending_operation );
-    RUN_STATE_MANAGER_ProcessPendingOperation();
-    EXPECT_EQ( RUN_STATE_IDLE, run_state );
-    EXPECT_TRUE( configuration_cleared );
-    EXPECT_TRUE( configuration_ownership_released );
 }
 
 TEST_F( RunStateManagerTest, FlashSessionAbortedDuringPackageReceiveFault )
