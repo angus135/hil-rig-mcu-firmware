@@ -720,7 +720,7 @@ void HW_CAN_GetDiagnostic( HW_CAN_Diagnostic_T* diag )
         diag->IER1        = hcan1.Instance->IER;
         diag->TEC1        = ( uint8_t )( ( hcan1.Instance->ESR >> 16U ) & 0xFFU );
         diag->REC1        = ( uint8_t )( ( hcan1.Instance->ESR >> 24U ) & 0xFFU );
-        diag->error_code1 = ( uint8_t )( ( hcan1.Instance->ESR >>  4U ) & 0x07U );
+        diag->error_code1 = ( uint8_t )( ( hcan1.Instance->ESR >> 4U ) & 0x07U );
     }
     else
     {
@@ -742,7 +742,7 @@ void HW_CAN_GetDiagnostic( HW_CAN_Diagnostic_T* diag )
         diag->IER2        = hcan2.Instance->IER;
         diag->TEC2        = ( uint8_t )( ( hcan2.Instance->ESR >> 16U ) & 0xFFU );
         diag->REC2        = ( uint8_t )( ( hcan2.Instance->ESR >> 24U ) & 0xFFU );
-        diag->error_code2 = ( uint8_t )( ( hcan2.Instance->ESR >>  4U ) & 0x07U );
+        diag->error_code2 = ( uint8_t )( ( hcan2.Instance->ESR >> 4U ) & 0x07U );
     }
     else
     {

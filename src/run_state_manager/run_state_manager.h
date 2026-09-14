@@ -154,7 +154,7 @@ typedef struct
     RunStateRequest_T       last_completed_request;
     uint32_t                last_transition_duration_ms;
     /** CAN driver diagnostic snapshot — populated by RUN_STATE_MANAGER_GetStatus(). */
-    HW_CAN_Diagnostic_T     can_diag;
+    HW_CAN_Diagnostic_T can_diag;
 } RunStateManagerStatus_T;
 
 /**-----------------------------------------------------------------------------
