@@ -9,6 +9,7 @@ set(HOST_INTERFACE_SOURCES
     result_send.c
     test_package_recieve.c
     host_process_message.c
+    instruction_message_handler.c
 )
 
 set(HOST_INTERFACE_HEADERS
@@ -16,6 +17,7 @@ set(HOST_INTERFACE_HEADERS
     result_send.h
     test_package_recieve.h
     host_process_message.h
+    instruction_message_handler.h
 )
 
 add_library(host_interface STATIC
