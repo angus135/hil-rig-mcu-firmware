@@ -694,39 +694,107 @@ HAL_StatusTypeDef HW_CAN_Apply_Timing_HAL( CAN_HandleTypeDef* hcan, CanPropertie
     return HAL_CAN_Init( hcan );
 }
 
+void HW_CAN_GetDiagnostic( HW_CAN_Diagnostic_T* diag )
+{
+    if ( diag == NULL )
+    {
+        return;
+    }
+
+    /* Snapshot driver state — no writes, no HAL calls, ISR-safe reads only. */
+    diag->can_tx_active1          = can_tx_active1;
+    diag->can_tx_active2          = can_tx_active2;
+    diag->can_tx_wp1              = can_tx_wp1;
+    diag->can_tx_rp1              = can_tx_rp1;
+    diag->can_tx_wp2              = can_tx_wp2;
+    diag->can_tx_rp2              = can_tx_rp2;
+    diag->can_tx_pending_mailbox1 = can_tx_pending_mailbox1;
+    diag->can_tx_pending_mailbox2 = can_tx_pending_mailbox2;
+
+    /* CAN1 peripheral registers. */
+    if ( hcan1.Instance != NULL )
+    {
+        diag->TSR1        = hcan1.Instance->TSR;
+        diag->ESR1        = hcan1.Instance->ESR;
+        diag->MSR1        = hcan1.Instance->MSR;
+        diag->IER1        = hcan1.Instance->IER;
+        diag->TEC1        = ( uint8_t )( ( hcan1.Instance->ESR >> 16U ) & 0xFFU );
+        diag->REC1        = ( uint8_t )( ( hcan1.Instance->ESR >> 24U ) & 0xFFU );
+        diag->error_code1 = ( uint8_t )( ( hcan1.Instance->ESR >>  4U ) & 0x07U );
+    }
+    else
+    {
+        diag->TSR1        = 0U;
+        diag->ESR1        = 0U;
+        diag->MSR1        = 0U;
+        diag->IER1        = 0U;
+        diag->TEC1        = 0U;
+        diag->REC1        = 0U;
+        diag->error_code1 = 0U;
+    }
+
+    /* CAN2 peripheral registers. */
+    if ( hcan2.Instance != NULL )
+    {
+        diag->TSR2        = hcan2.Instance->TSR;
+        diag->ESR2        = hcan2.Instance->ESR;
+        diag->MSR2        = hcan2.Instance->MSR;
+        diag->IER2        = hcan2.Instance->IER;
+        diag->TEC2        = ( uint8_t )( ( hcan2.Instance->ESR >> 16U ) & 0xFFU );
+        diag->REC2        = ( uint8_t )( ( hcan2.Instance->ESR >> 24U ) & 0xFFU );
+        diag->error_code2 = ( uint8_t )( ( hcan2.Instance->ESR >>  4U ) & 0x07U );
+    }
+    else
+    {
+        diag->TSR2        = 0U;
+        diag->ESR2        = 0U;
+        diag->MSR2        = 0U;
+        diag->IER2        = 0U;
+        diag->TEC2        = 0U;
+        diag->REC2        = 0U;
+        diag->error_code2 = 0U;
+    }
+
+    /* RX queue occupancy (16-bit wrapping subtraction). */
+    diag->rx_queued1  = ( uint16_t )( can_rx_wp1 - can_rx_rp1 );
+    diag->rx_dropped1 = ( uint16_t )can_rx_dropped_count1;
+    diag->rx_queued2  = ( uint16_t )( can_rx_wp2 - can_rx_rp2 );
+    diag->rx_dropped2 = ( uint16_t )can_rx_dropped_count2;
+}
+
 /**
  * @brief Applies the filter to the can peripherals
  *
  * @param filter The filter struct associated with hcan (that we are writing to)
  * @param hcan the pointer to the handle for the can peripheral
  *
- * This function applies the desired can filter properties using the HAL library
-    Can filtering works as follows:
-    The ID of each incoming frame is compared in hardware to the filter banks via:
-    (received_ID & mask) == (filter_id & mask)
-
-    Incoming CAN Frame
-            │
-            ▼
-    Check Bank 0
-            │
-            ├── Match?
-            │
-            ▼
-    Check Bank 1
-            │
-            ├── Match?
-            │
-            ▼
-    Check Bank 2
-            │
-            ...
-            |
-    Check Bank 27
-            │
-            ├── Match?
-            |
-        discard
+ * Applies the desired can filter properties using the HAL library.
+ * Can filtering works as follows:
+ * The ID of each incoming frame is compared in hardware to the filter banks via:
+ * (received_ID & mask) == (filter_id & mask)
+ *
+ *     Incoming CAN Frame
+ *             │
+ *             ▼
+ *     Check Bank 0
+ *             │
+ *             ├── Match?
+ *             │
+ *             ▼
+ *     Check Bank 1
+ *             │
+ *             ├── Match?
+ *             │
+ *             ▼
+ *     Check Bank 2
+ *             │
+ *             ...
+ *             |
+ *     Check Bank 27
+ *             │
+ *             ├── Match?
+ *             |
+ *         discard
  *
  */
 HAL_StatusTypeDef HW_CAN_Apply_Filter_HAL( CAN_FilterTypeDef* filter, CAN_HandleTypeDef* hcan,

@@ -100,6 +100,45 @@ typedef enum HW_CAN_Tx_Status_T
     HW_CAN_TX_STATUS_ERROR,
 } HW_CAN_Tx_Status_T;
 
+/**
+ * @brief Snapshot of CAN driver state and CAN1 peripheral registers.
+ *
+ * Populated by HW_CAN_GetDiagnostic(). All fields are read-only copies taken
+ * at a single instant; no hardware state is modified.
+ *
+ * error_code reflects ESR[6:4] (LEC field): last error code per ISO 11898.
+ * TEC and REC are the transmit / receive error counters from ESR[23:16] and ESR[31:24].
+ */
+typedef struct
+{
+    bool     can_tx_active1;
+    bool     can_tx_active2;
+    uint16_t can_tx_wp1;
+    uint16_t can_tx_rp1;
+    uint16_t can_tx_wp2;
+    uint16_t can_tx_rp2;
+    uint32_t can_tx_pending_mailbox1;
+    uint32_t can_tx_pending_mailbox2;
+    uint32_t TSR1;
+    uint32_t ESR1;
+    uint32_t MSR1;
+    uint32_t IER1;
+    uint8_t  TEC1;
+    uint8_t  REC1;
+    uint8_t  error_code1;
+    uint32_t TSR2;
+    uint32_t ESR2;
+    uint32_t MSR2;
+    uint32_t IER2;
+    uint8_t  TEC2;
+    uint8_t  REC2;
+    uint8_t  error_code2;
+    uint16_t rx_queued1;
+    uint16_t rx_dropped1;
+    uint16_t rx_queued2;
+    uint16_t rx_dropped2;
+} HW_CAN_Diagnostic_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -538,6 +577,16 @@ HW_CAN_Result_T HW_CAN_Tx_Trigger1( void );
  * completion result.
  */
 HW_CAN_Result_T HW_CAN_Tx_Trigger2( void );
+
+/**
+ * @brief Reads a snapshot of CAN driver state and CAN1 peripheral registers.
+ *
+ * Fills all fields of @p diag from the current driver state. Performs no
+ * writes to hardware or driver state — safe to call from any non-ISR context.
+ *
+ * @param diag  Output struct to populate. Must not be NULL.
+ */
+void HW_CAN_GetDiagnostic( HW_CAN_Diagnostic_T* diag );
 
 #ifdef __cplusplus
 }
