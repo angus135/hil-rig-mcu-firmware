@@ -561,21 +561,26 @@ static bool RUN_STATE_MANAGER_BeginResultTransfer( void )
 /** Clears the retained test and asynchronously returns the DUT lifecycle to IDLE. */
 static bool RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle( void )
 {
+    if ( !RUN_STATE_MANAGER_BeginDriverShutdown( false, true, RUN_STATE_PENDING_IDLE_SHUTDOWN ) )
+    {
+        return false;
+    }
+
     TEST_CONFIGURATION_Clear();
     TEST_CONFIGURATION_ReleaseRunOwnership();
     run_configuration_owned = false;
-    return RUN_STATE_MANAGER_BeginDriverShutdown( false, true, RUN_STATE_PENDING_IDLE_SHUTDOWN );
+    return true;
 }
 
 /** Finishes a fully consumed Flash result stream before returning to IDLE. */
 static bool RUN_STATE_MANAGER_CompleteResultTransfer( void )
 {
-    const FlashManagerResultTransferStatus_T status = FLASH_MANAGER_FinishResultTransfer();
-
-    if ( status == FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE )
+    if ( !RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle() )
     {
         return false;
     }
+
+    const FlashManagerResultTransferStatus_T status = FLASH_MANAGER_FinishResultTransfer();
 
     if ( status != FLASH_MANAGER_RESULT_TRANSFER_OK )
     {
@@ -583,7 +588,7 @@ static bool RUN_STATE_MANAGER_CompleteResultTransfer( void )
         return false;
     }
 
-    return RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle();
+    return true;
 }
 
 /**
@@ -591,16 +596,21 @@ static bool RUN_STATE_MANAGER_CompleteResultTransfer( void )
  */
 static bool RUN_STATE_MANAGER_DiscardCompletedResults( RunState_T next_state )
 {
-    const FlashManagerRequestStatus_T status = FLASH_MANAGER_DiscardResults();
-    if ( status != FLASH_MANAGER_REQUEST_OK )
-    {
-        RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_RESULT_DISPOSITION );
-        return false;
-    }
-
     if ( next_state == RUN_STATE_IDLE )
     {
-        return RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle();
+        if ( !RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle() )
+        {
+            return false;
+        }
+
+        const FlashManagerRequestStatus_T status = FLASH_MANAGER_DiscardResults();
+        if ( status != FLASH_MANAGER_REQUEST_OK )
+        {
+            RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_RESULT_DISPOSITION );
+            return false;
+        }
+
+        return true;
     }
 
     if ( next_state == RUN_STATE_ARMED )
@@ -610,6 +620,14 @@ static bool RUN_STATE_MANAGER_DiscardCompletedResults( RunState_T next_state )
         {
             return false;
         }
+
+        const FlashManagerRequestStatus_T status = FLASH_MANAGER_DiscardResults();
+        if ( status != FLASH_MANAGER_REQUEST_OK )
+        {
+            RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_RESULT_DISPOSITION );
+            return false;
+        }
+
         RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_CONFIGURATION );
         return true;
     }
@@ -880,6 +898,11 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
             if ( run_state == RUN_STATE_RESULTS_READY )
             {
                 accepted = RUN_STATE_MANAGER_DiscardCompletedResults( RUN_STATE_IDLE );
+                if ( !accepted && run_state != RUN_STATE_FAULT )
+                {
+                    last_request_result = RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE;
+                    return;
+                }
             }
             break;
 
