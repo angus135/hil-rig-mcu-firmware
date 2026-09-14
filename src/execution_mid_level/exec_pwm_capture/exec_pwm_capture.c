@@ -451,9 +451,8 @@ bool EXEC_PWM_Capture_Consume( ExecPwmCaptureChannel_T channel, ExecPwmCaptureRe
      */
     result->has_new_data = true;
 
-    /* Reject overrun captures or invalid physical measurements */
-    if ( snapshot.is_overrun
-         || !EXEC_PWM_Capture_Result_Is_Valid( snapshot.period_ticks, snapshot.high_ticks ) )
+    /* Reject invalid physical measurements */
+    if ( !EXEC_PWM_Capture_Result_Is_Valid( snapshot.period_ticks, snapshot.high_ticks ) )
     {
         return false;
     }

@@ -470,7 +470,7 @@ TEST_F( ExecPWMCaptureTest, ConsumeReturnsFalseWhenHighExceedsPeriod )
     EXPECT_FALSE( result.is_valid );
 }
 
-TEST_F( ExecPWMCaptureTest, ConsumeRejectsOverrunCapture )
+TEST_F( ExecPWMCaptureTest, ConsumeAcceptsOverrunCapture )
 {
     ExecPwmCaptureResult_T result = {};
 
@@ -478,9 +478,11 @@ TEST_F( ExecPWMCaptureTest, ConsumeRejectsOverrunCapture )
         .WillOnce( testing::DoAll( testing::SetArgPointee<1>( MakeHwSnapshot( 1000U, 500U, true ) ),
                                    Return( true ) ) );
 
-    EXPECT_FALSE( EXEC_PWM_Capture_Consume( EXEC_PWM_CAPTURE_CHANNEL_1, &result ) );
+    EXPECT_TRUE( EXEC_PWM_Capture_Consume( EXEC_PWM_CAPTURE_CHANNEL_1, &result ) );
     EXPECT_TRUE( result.has_new_data );
-    EXPECT_FALSE( result.is_valid );
+    EXPECT_TRUE( result.is_valid );
+    EXPECT_EQ( result.period_ticks, 1000U );
+    EXPECT_EQ( result.high_ticks, 500U );
 }
 
 TEST_F( ExecPWMCaptureTest, ConsumeAcceptsZeroPercentDuty )
