@@ -32,11 +32,11 @@ manager. It must not call `external_flash`, `hw_nand`, or `hw_qspi` directly.
 
 ## Buffer Model
 
-The result buffer is a flat circular byte array backed by three page-sized
+The result buffer is a flat circular byte array backed by six page-sized
 regions. During execution, records may cross a page boundary while NAND drain
 leases expose one page-aligned region. A one-page scratch buffer preserves a
 contiguous driver payload pointer only when a record crosses the physical end
-of the ring. After result finalisation, the same three page regions are reset
+of the ring. After result finalisation, the same six page regions are reset
 and reused as a sequential NAND-prefetch ring for copied Host Interface reads.
 
 The instruction buffer uses six page-sized circular slots followed by two
@@ -48,8 +48,8 @@ contiguous across the physical ring end without an ISR-time operation copy.
 Implemented sizing:
 
 ```c
-#define RESULT_BUFFER_PAGE_COUNT       3U
-#define INSTRUCTION_BUFFER_PAGE_COUNT  3U
+#define RESULT_BUFFER_PAGE_COUNT       6U
+#define INSTRUCTION_BUFFER_PAGE_COUNT  6U
 ```
 
 Both constants are private implementation policy. They may be increased after
@@ -62,17 +62,16 @@ result production that exceeds NAND throughput.
 `EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES`, while all active page calculations use the
 reported runtime geometry.
 
-Three slots is a practical starting point because it allows:
+Six slots provide measured scheduling and NAND-latency tolerance while allowing:
 
 - One page being consumed or filled by `execution_manager`.
 - One page ready.
-- One page active with `external_flash`, or available as timing slack.
-
-Two slots can work, but gives less tolerance to flash latency.
+- One page active with `external_flash`.
+- Multiple additional pages of timing slack during bursts.
 
 ### Execution admission requirement
 
-The three-page rings are not an execution guarantee. Before the Run State
+The six-page rings are not an execution guarantee. Before the Run State
 Manager starts TIM4, the feasibility analyser must reject any test that cannot
 be supported under worst-case conditions. Validation must account for:
 
@@ -152,7 +151,7 @@ Interface must wait for `FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD` before sending
 canonical instruction bytes. Each accepted chunk is copied into Flash
 Manager-owned storage before submission returns, allowing the Host Interface to
 reuse its receive buffer immediately. Each submission is all-or-nothing and may
-contain at most one NAND page. The three-page ring allows host production and
+contain at most one NAND page. The six-page ring allows host production and
 task-context NAND writes to overlap; `BUSY` asks the Host Interface to retry the
 identical chunk when insufficient ring capacity is currently available.
 
@@ -250,7 +249,7 @@ slot on each wake. `xTaskNotifyFromISR()` is called only when a page is released
 not for every instruction. The outer timer ISR defers `portYIELD_FROM_ISR()`
 until its complete execution sequence has finished.
 
-The Flash Manager task cannot refill RAM until that ISR returns. The three-page
+The Flash Manager task cannot refill RAM until that ISR returns. The six-page
 preload must therefore cover the maximum instruction bytes that one timer
 iteration can consume, and sustained NAND refill throughput must exceed
 sustained execution consumption. Event-driven notification removes polling
@@ -415,8 +414,9 @@ EXTERNAL_FLASH_Init();
 
 Firmware startup makes this call after adopting the generated QSPI handle.
 `FLASH_MANAGER_Init()` must then initialise the manager mutex and both buffers
-before the Flash Manager task is allowed to run. The task creation remains
-commented out in `app_main.c` until that startup order is connected.
+before the Flash Manager task is allowed to run. `app_main.c` performs that
+initialisation and creates the Flash Manager task before the scheduler starts;
+console commands therefore do not initialise the Flash stack per session.
 
 Before each execution, the Run State Manager requests asynchronous preparation:
 

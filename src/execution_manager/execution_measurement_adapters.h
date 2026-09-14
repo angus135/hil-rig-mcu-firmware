@@ -98,11 +98,12 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput( uint8_t channel, uint32_t
                                                        BaseType_t* higher_priority_task_woken );
 
 /**
- * @brief Reads both analogue-input voltages and commits one result record.
+ * @brief Reads and commits both raw analogue-input channel values.
  *
  * Payload bytes 0..3 contain channel 0 and bytes 4..7 contain channel 1. The
- * caller contract guarantees that ADC DMA acquisition is configured and
- * started. No lifecycle or destination validation is performed here.
+ * values are currently uncalibrated ADC-domain counts. The caller contract
+ * guarantees that ADC DMA acquisition is configured and started. No lifecycle
+ * or destination validation is performed here.
  */
 bool EXECUTION_MEASUREMENT_ADAPTER_SampleAnalogueInput( uint8_t channel, uint32_t timestamp,
                                                         BaseType_t* higher_priority_task_woken );
@@ -125,7 +126,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive( uint8_t channel, uint32_t 
 bool EXECUTION_MEASUREMENT_ADAPTER_SampleSpiReceive( uint8_t channel, uint32_t timestamp,
                                                      BaseType_t* higher_priority_task_woken );
 
-/** Reads and commits queued CAN frames; no record is committed when empty. */
+/** Reads and commits one bounded batch of queued CAN frames; no record is committed when empty. */
 bool EXECUTION_MEASUREMENT_ADAPTER_SampleCanReceive( uint8_t channel, uint32_t timestamp,
                                                      BaseType_t* higher_priority_task_woken );
 

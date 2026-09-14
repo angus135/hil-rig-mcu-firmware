@@ -8,18 +8,29 @@ extern "C"
 #include "flash_manager.h"
 }
 
+static bool     measurement_result;
+static uint32_t measurement_calls;
+static uint32_t profiled_measurement_calls;
+static uint32_t measurement_timestamp;
+static uint32_t measurement_order;
+static uint32_t operation_order;
+static uint32_t call_order;
+
 extern "C" bool
 EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( uint32_t    timestamp,
                                                  BaseType_t* higher_priority_task_woken )
 {
-    ( void )timestamp;
     ( void )higher_priority_task_woken;
-    return true;
+    measurement_calls++;
+    measurement_timestamp = timestamp;
+    measurement_order     = ++call_order;
+    return measurement_result;
 }
 
 extern "C" bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurementsProfiled(
     uint32_t timestamp, BaseType_t* higher_priority_task_woken )
 {
+    profiled_measurement_calls++;
     return EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( timestamp,
                                                             higher_priority_task_woken );
 }
@@ -82,6 +93,7 @@ EXECUTION_OPERATION_ADAPTER_ApplyOperations( const uint8_t* operations, uint8_t 
     ( void )operations;
     ( void )operation_count;
     adapter_calls++;
+    operation_order = ++call_order;
     return adapter_result;
 }
 
@@ -92,6 +104,7 @@ EXECUTION_OPERATION_ADAPTER_ApplyOperationsProfiled( const uint8_t* operations,
     ( void )operations;
     ( void )operation_count;
     profiled_adapter_calls++;
+    operation_order = ++call_order;
     return adapter_result;
 }
 
@@ -138,6 +151,13 @@ protected:
         terminal_callback_failure    = EXECUTION_MANAGER_FAILURE_NONE;
         terminal_callback_task_woken = nullptr;
         consume_task_woken           = nullptr;
+        measurement_result           = true;
+        measurement_calls            = 0U;
+        profiled_measurement_calls   = 0U;
+        measurement_timestamp        = 0U;
+        measurement_order            = 0U;
+        operation_order              = 0U;
+        call_order                   = 0U;
         instruction                  = {};
         instruction.operations       = operations;
     }
@@ -217,6 +237,24 @@ TEST_F( ExecutionManagerTest, DueInstructionIsAppliedThenConsumed )
     EXPECT_EQ( adapter_calls, 1U );
     EXPECT_EQ( consume_calls, 1U );
     EXPECT_EQ( consume_task_woken, &task_woken );
+    EXPECT_EQ( measurement_timestamp, 1U );
+    EXPECT_LT( measurement_order, operation_order );
+}
+
+TEST_F( ExecutionManagerTest, RejectedMeasurementFailsBeforeReadingOrApplyingInstruction )
+{
+    instruction.header.timestamp       = 1U;
+    instruction.header.operation_count = 1U;
+    peek_status                        = FLASH_MANAGER_INSTRUCTION_AVAILABLE;
+    measurement_result                 = false;
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
+
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_MEASUREMENT_REJECTED );
+    EXPECT_EQ( measurement_calls, 1U );
+    EXPECT_EQ( peek_calls, 0U );
+    EXPECT_EQ( adapter_calls, 0U );
+    EXPECT_EQ( consume_calls, 0U );
 }
 
 TEST_F( ExecutionManagerTest, LateInstructionFailsAndIsNotConsumed )

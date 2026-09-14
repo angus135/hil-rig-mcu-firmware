@@ -49,15 +49,18 @@ asynchronous output timestamps do not claim exact wire or electrical completion
 time. Drivers would need separate hardware event timestamps to provide that
 information.
 
-Digital and analogue-input result production are implemented. The Run State
-Manager builds a compact measurement list from the committed driver enable
-plan before driver startup. Each boundary iterates that prepared list after
-the tick advance and before output dispatch. Digital input stores one masked
-GPIO word. Analogue input stores the two processed channel values from the
-latest ADC DMA sample set. Each adapter writes directly into a Flash Manager
-result lease and commits with the current tick. Disabled measurement families
-are absent from the ISR list; no per-driver tick adjustment or readiness check
-belongs in the ISR.
+The Run State Manager builds a compact measurement list from the committed
+driver enable plan before driver startup. Analogue input, digital input, each
+enabled PWM-capture channel, each enabled UART receiver, each enabled SPI
+receiver, and each enabled CAN receiver contribute entries. Each boundary
+iterates that prepared list after the tick advance and before output dispatch.
+Each adapter writes directly into a Flash Manager result lease and commits with
+the current tick. Disabled measurement families are absent from the ISR list;
+no per-driver tick adjustment or lifecycle readiness check belongs in the ISR.
+
+Digital input stores one masked GPIO word. Analogue input stores the two raw
+channel values from the latest ADC DMA sample set; calibration and engineering-
+unit conversion are not yet part of that result contract.
 
 Each enabled PWM-capture channel contributes one prepared adapter entry. The
 adapter polls the driver's consume API before reserving result storage. No new
@@ -82,6 +85,11 @@ it reserves only the pending byte count, capped at `EXEC_SPI_MAX_RX_CHUNK_SIZE`,
 then drains directly into the lease and commits the reported byte count. Bytes
 arriving after the snapshot remain in the SPI driver for the next boundary.
 
+CAN receive is also sparse. Its adapter reserves capacity for one bounded
+driver batch, drains completed classical-CAN packets directly into the lease,
+and commits only the number of complete packets returned by the driver. An
+empty queue cancels the unused lease and is not an error.
+
 ## ISR path
 
 `EXECUTION_MANAGER_ProcessTickFromISR()` currently performs:
@@ -89,12 +97,13 @@ arriving after the snapshot remain in the SPI driver for the next boundary.
 1. Return an already-latched terminal outcome without touching Flash Manager.
 2. Reject invocation unless a run has been prepared.
 3. Advance from the previous boundary to the current boundary exactly once.
-4. Peek the next prepared instruction from Flash Manager RAM.
-5. Leave a future instruction unconsumed.
-6. Treat a past instruction as a timing failure without consuming it.
-7. For an instruction due now, apply its operations in encoded order through
+4. Collect the prepared measurement list using the current boundary timestamp.
+5. Peek the next prepared instruction from Flash Manager RAM.
+6. Leave a future instruction unconsumed.
+7. Treat a past instruction as a timing failure without consuming it.
+8. For an instruction due now, apply its operations in encoded order through
    the opcode adapter table, then consume the instruction once.
-8. Complete after boundary `tick_count`; otherwise return `CONTINUE`.
+9. Complete after boundary `tick_count`; otherwise return `CONTINUE`.
 
 End of the instruction stream is not completion because output-free ticks and
 future measurement-only ticks continue until the configured run length.
@@ -205,3 +214,5 @@ other run-local state.
 - `execution_instruction.h`: canonical per-tick instruction header.
 - `execution_operation_payloads.h`: canonical operation and payload layouts.
 - `execution_operation_adapters.h`: zero-copy operation dispatch.
+- `execution_measurement_adapters.h`: prepared measurement dispatch and result
+  lease adapters.

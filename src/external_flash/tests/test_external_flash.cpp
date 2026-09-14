@@ -82,6 +82,7 @@ public:
                  ( uint32_t page, uint16_t column, uint8_t* data, uint32_t length ), () );
     MOCK_METHOD( HW_NAND_Status_T, ProgramPageBlocking,
                  ( uint32_t page, uint16_t column, const uint8_t* data, uint32_t length ), () );
+    MOCK_METHOD( void, ResetPerformanceDiagnostics, (), () );
 };
 
 static MockExternalFlashNand* g_mock = nullptr;
@@ -179,6 +180,14 @@ extern "C" HW_NAND_Status_T HW_NAND_ProgramPageBlocking( uint32_t page, uint16_t
     }
 
     return g_mock->ProgramPageBlocking( page, column, data, length );
+}
+
+extern "C" void HW_NAND_ResetPerformanceDiagnostics( void )
+{
+    if ( g_mock != nullptr )
+    {
+        g_mock->ResetPerformanceDiagnostics();
+    }
 }
 // NOLINTEND
 

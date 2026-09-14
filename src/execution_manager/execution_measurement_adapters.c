@@ -39,12 +39,21 @@
 #define EXECUTION_MEASUREMENT_CHANNEL_UNUSED ( 0U )
 #define EXECUTION_MEASUREMENT_CHANNEL_BIT( channel ) ( UINT32_C( 1 ) << ( channel ) )
 
+#if defined( __cplusplus )
+static_assert( EXEC_SPI_MAX_RX_CHUNK_SIZE <= UINT16_MAX,
+               "SPI RX chunks must fit the Flash result length contract" );
+static_assert( EXEC_UART_MAX_CHUNK_SIZE <= UINT16_MAX,
+               "UART RX chunks must fit the Flash result length contract" );
+static_assert( ( EXEC_CAN_MAX_BATCH_SIZE * sizeof( EXEC_CAN_Packet_T ) ) <= UINT16_MAX,
+               "CAN RX batches must fit the Flash result length contract" );
+#else
 _Static_assert( EXEC_SPI_MAX_RX_CHUNK_SIZE <= UINT16_MAX,
                 "SPI RX chunks must fit the Flash result length contract" );
 _Static_assert( EXEC_UART_MAX_CHUNK_SIZE <= UINT16_MAX,
                 "UART RX chunks must fit the Flash result length contract" );
 _Static_assert( ( EXEC_CAN_MAX_BATCH_SIZE * sizeof( EXEC_CAN_Packet_T ) ) <= UINT16_MAX,
                 "CAN RX batches must fit the Flash result length contract" );
+#endif
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
