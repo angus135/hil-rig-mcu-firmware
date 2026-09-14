@@ -159,7 +159,74 @@ static bool HW_SPI_Config_Is_Valid_NSS( SPIChannel_T         peripheral,
     }
 }
 
-static bool HW_SPI_Config_Build_HAL_Init( const HWSPIConfig_T* configuration,
+static bool HW_SPI_Config_Set_Baud_Rate( SPIChannel_T peripheral, SPIBaudRate_T baud_rate,
+                                         SPI_InitTypeDef* requested_init )
+{
+    if ( peripheral == SPI_CHANNEL_1 )
+    {
+        switch ( baud_rate )
+        {
+            case SPI_BAUD_45MBIT:
+                return false;
+            case SPI_BAUD_22M5BIT:
+                requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+                return true;
+            case SPI_BAUD_11M25BIT:
+                requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+                return true;
+            case SPI_BAUD_5M625BIT:
+                requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
+                return true;
+            case SPI_BAUD_2M813BIT:
+                requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+                return true;
+            case SPI_BAUD_1M406BIT:
+                requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
+                return true;
+            case SPI_BAUD_703KBIT:
+                requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64;
+                return true;
+            case SPI_BAUD_352KBIT:
+                requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_128;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    switch ( baud_rate )
+    {
+        case SPI_BAUD_45MBIT:
+            requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+            return true;
+        case SPI_BAUD_22M5BIT:
+            requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+            return true;
+        case SPI_BAUD_11M25BIT:
+            requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
+            return true;
+        case SPI_BAUD_5M625BIT:
+            requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+            return true;
+        case SPI_BAUD_2M813BIT:
+            requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
+            return true;
+        case SPI_BAUD_1M406BIT:
+            requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64;
+            return true;
+        case SPI_BAUD_703KBIT:
+            requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_128;
+            return true;
+        case SPI_BAUD_352KBIT:
+            requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_256;
+            return true;
+        default:
+            return false;
+    }
+}
+
+static bool HW_SPI_Config_Build_HAL_Init( SPIChannel_T peripheral,
+                                          const HWSPIConfig_T* configuration,
                                           SPI_InitTypeDef*     requested_init )
 {
     if ( configuration == NULL || requested_init == NULL )
@@ -221,34 +288,10 @@ static bool HW_SPI_Config_Build_HAL_Init( const HWSPIConfig_T* configuration,
             return false;
     }
 
-    switch ( configuration->baud_rate )
+    if ( HW_SPI_Config_Set_Baud_Rate( peripheral, configuration->baud_rate, requested_init )
+         == false )
     {
-        case SPI_BAUD_45MBIT:
-            requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
-            break;
-        case SPI_BAUD_22M5BIT:
-            requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
-            break;
-        case SPI_BAUD_11M25BIT:
-            requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
-            break;
-        case SPI_BAUD_5M625BIT:
-            requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
-            break;
-        case SPI_BAUD_2M813BIT:
-            requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
-            break;
-        case SPI_BAUD_1M406BIT:
-            requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64;
-            break;
-        case SPI_BAUD_703KBIT:
-            requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_128;
-            break;
-        case SPI_BAUD_352KBIT:
-            requested_init->BaudRatePrescaler = SPI_BAUDRATEPRESCALER_256;
-            break;
-        default:
-            return false;
+        return false;
     }
 
     switch ( configuration->first_bit )
@@ -473,7 +516,7 @@ bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configurat
     // Validate the complete request without touching the HAL handle, GPIO
     // ownership, or stored channel state.
     if ( HW_SPI_Config_Is_Valid_NSS( peripheral, &configuration ) == false
-         || HW_SPI_Config_Build_HAL_Init( &configuration, &requested_init ) == false
+         || HW_SPI_Config_Build_HAL_Init( peripheral, &configuration, &requested_init ) == false
          || HW_SPI_Config_Channel_Is_Stopped( peripheral_state ) == false )
     {
         return false;

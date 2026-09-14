@@ -74,7 +74,9 @@ extern "C"
  * @details
  *     The values are intentionally enumerated rather than arbitrary so the
  *     low-level driver can map directly to known STM32 prescalers and final
- *     drain timing values.
+ *     drain timing values. Board channel 1 uses SPI2 on the 45 MHz APB1 clock
+ *     and supports up to 22.5 Mbit/s. Board channel 2 uses SPI1 on the 90 MHz
+ *     APB2 clock and supports up to 45 Mbit/s.
  */
 typedef enum SPIBaudRate_T
 {

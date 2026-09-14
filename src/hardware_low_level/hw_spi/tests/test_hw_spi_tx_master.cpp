@@ -649,6 +649,40 @@ protected:
         EXPECT_CALL(
             mock, DMAEnableITTE( Eq( SPI_CHANNEL_1_TX_DMA ), Eq( SPI_CHANNEL_1_TX_DMA_STREAM ) ) );
     }
+
+    void ExpectChannel2ConfigurationHardware()
+    {
+        constexpr uint32_t spi_data_register_address = 0x12345678U;
+
+        EXPECT_CALL( mock, SPIInit( Eq( &SPI_CHANNEL_2_HANDLE ) ) ).WillOnce( Return( HAL_OK ) );
+
+        EXPECT_CALL( mock, DMASetMemorySize( Eq( SPI_CHANNEL_2_RX_DMA ),
+                                             Eq( SPI_CHANNEL_2_RX_DMA_STREAM ),
+                                             Eq( LL_DMA_MDATAALIGN_BYTE ) ) );
+        EXPECT_CALL( mock, DMASetPeriphSize( Eq( SPI_CHANNEL_2_RX_DMA ),
+                                             Eq( SPI_CHANNEL_2_RX_DMA_STREAM ),
+                                             Eq( LL_DMA_PDATAALIGN_BYTE ) ) );
+        EXPECT_CALL( mock, SPIDMAGetRegAddr( Eq( SPI_CHANNEL_2_INSTANCE ) ) )
+            .Times( 2 )
+            .WillRepeatedly( Return( spi_data_register_address ) );
+        EXPECT_CALL( mock, DMASetPeriphAddress( Eq( SPI_CHANNEL_2_RX_DMA ),
+                                                Eq( SPI_CHANNEL_2_RX_DMA_STREAM ),
+                                                Eq( spi_data_register_address ) ) );
+
+        EXPECT_CALL( mock, DMASetMemorySize( Eq( SPI_CHANNEL_2_TX_DMA ),
+                                             Eq( SPI_CHANNEL_2_TX_DMA_STREAM ),
+                                             Eq( LL_DMA_MDATAALIGN_BYTE ) ) );
+        EXPECT_CALL( mock, DMASetPeriphSize( Eq( SPI_CHANNEL_2_TX_DMA ),
+                                             Eq( SPI_CHANNEL_2_TX_DMA_STREAM ),
+                                             Eq( LL_DMA_PDATAALIGN_BYTE ) ) );
+        EXPECT_CALL( mock, DMASetPeriphAddress( Eq( SPI_CHANNEL_2_TX_DMA ),
+                                                Eq( SPI_CHANNEL_2_TX_DMA_STREAM ),
+                                                Eq( spi_data_register_address ) ) );
+        EXPECT_CALL(
+            mock, DMAEnableITTC( Eq( SPI_CHANNEL_2_TX_DMA ), Eq( SPI_CHANNEL_2_TX_DMA_STREAM ) ) );
+        EXPECT_CALL(
+            mock, DMAEnableITTE( Eq( SPI_CHANNEL_2_TX_DMA ), Eq( SPI_CHANNEL_2_TX_DMA_STREAM ) ) );
+    }
 };
 
 /**-----------------------------------------------------------------------------
@@ -1348,7 +1382,7 @@ TEST_F( HWSpiMasterTxTest, MasterChannelsDriveOnlyTheirConfiguredCsPins )
 
 TEST_F( HWSpiMasterTxTest, MasterConfigurationPreloadsSelectedCsHighAndStoresIt )
 {
-    HWSPIConfig_T config = MakeMasterConfig();
+    HWSPIConfig_T config = MakeMasterConfig( SPI_SIZE_8_BIT, SPI_BAUD_22M5BIT );
     config.nss_pin       = GPIO_SPI2_NSS;
     memset( HW_SPI_STATE( SPI_CHANNEL_1 ), 0, sizeof( *HW_SPI_STATE( SPI_CHANNEL_1 ) ) );
 
@@ -1366,9 +1400,40 @@ TEST_F( HWSpiMasterTxTest, MasterConfigurationPreloadsSelectedCsHighAndStoresIt 
     EXPECT_FALSE( HW_SPI_STATE( SPI_CHANNEL_1 )->is_started );
 }
 
+TEST_F( HWSpiMasterTxTest, Channel1RejectsBaudAboveApb1HardwareLimit )
+{
+    const HWSPIConfig_T config = MakeMasterConfig( SPI_SIZE_8_BIT, SPI_BAUD_45MBIT );
+
+    EXPECT_FALSE( HW_SPI_Configure_Channel( SPI_CHANNEL_1, config ) );
+}
+
+TEST_F( HWSpiMasterTxTest, Channel1UsesApb1PrescalerForRequestedBaud )
+{
+    HWSPIConfig_T config = MakeMasterConfig( SPI_SIZE_8_BIT, SPI_BAUD_22M5BIT );
+    config.nss_pin       = GPIO_SPI2_NSS;
+    memset( HW_SPI_STATE( SPI_CHANNEL_1 ), 0, sizeof( *HW_SPI_STATE( SPI_CHANNEL_1 ) ) );
+
+    ExpectChannel1ConfigurationHardware();
+
+    ASSERT_TRUE( HW_SPI_Configure_Channel( SPI_CHANNEL_1, config ) );
+    EXPECT_EQ( SPI_CHANNEL_1_HANDLE.Init.BaudRatePrescaler, SPI_BAUDRATEPRESCALER_2 );
+}
+
+TEST_F( HWSpiMasterTxTest, Channel2UsesApb2PrescalerForRequestedBaud )
+{
+    HWSPIConfig_T config = MakeMasterConfig( SPI_SIZE_8_BIT, SPI_BAUD_45MBIT );
+    config.nss_pin       = GPIO_SPI1_NSS;
+    memset( HW_SPI_STATE( SPI_CHANNEL_2 ), 0, sizeof( *HW_SPI_STATE( SPI_CHANNEL_2 ) ) );
+
+    ExpectChannel2ConfigurationHardware();
+
+    ASSERT_TRUE( HW_SPI_Configure_Channel( SPI_CHANNEL_2, config ) );
+    EXPECT_EQ( SPI_CHANNEL_2_HANDLE.Init.BaudRatePrescaler, SPI_BAUDRATEPRESCALER_2 );
+}
+
 TEST_F( HWSpiMasterTxTest, MasterToSlaveReconfigurationReleasesCsThenRestoresHardwareNss )
 {
-    HWSPIConfig_T config = MakeSlaveConfig();
+    HWSPIConfig_T config = MakeSlaveConfig( SPI_SIZE_8_BIT, SPI_BAUD_22M5BIT );
     config.nss_pin       = GPIO_SPI2_NSS;
 
     ExpectChannel1ConfigurationHardware();
@@ -1390,7 +1455,7 @@ TEST_F( HWSpiMasterTxTest, SlaveToMasterReconfigurationCreatesInactiveHighCsWith
                      SPI_CHANNEL_1_RX_DMA, SPI_CHANNEL_1_RX_DMA_STREAM, SPI_CHANNEL_1_TX_DMA,
                      SPI_CHANNEL_1_TX_DMA_STREAM, SPI_CHANNEL_1_INSTANCE, SPI_CHANNEL_1_TX_DMA_IRQN,
                      SPI_CHANNEL_1_TIMER );
-    HWSPIConfig_T config = MakeMasterConfig();
+    HWSPIConfig_T config = MakeMasterConfig( SPI_SIZE_8_BIT, SPI_BAUD_22M5BIT );
     config.nss_pin       = GPIO_SPI2_NSS;
 
     gpio_events.clear();
