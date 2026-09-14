@@ -100,13 +100,13 @@ if(EXECUTION_MANAGER_ENABLE_TESTS AND BUILD_TESTING)
     add_test(NAME execution_operation_adapters_tests COMMAND execution_operation_adapters_tests)
 
     add_executable(execution_measurement_adapters_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/execution_measurement_adapters.c
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_execution_measurement_adapters.cpp
     )
 
     target_link_libraries(execution_measurement_adapters_tests
         PRIVATE
             project_warnings
+            cubeide_hal
             gtest
             gtest_main
     )
@@ -117,6 +117,16 @@ if(EXECUTION_MANAGER_ENABLE_TESTS AND BUILD_TESTING)
             ${CMAKE_SOURCE_DIR}/src
             ${CMAKE_SOURCE_DIR}/src/rtos
             ${CMAKE_SOURCE_DIR}/src/flash_manager
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_analogue_input
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_can
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_digital_input
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_pwm_capture
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_spi
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_uart
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_gpio
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_pwm_capture
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_spi
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_uart
     )
 
     add_test(NAME execution_measurement_adapters_tests COMMAND execution_measurement_adapters_tests)

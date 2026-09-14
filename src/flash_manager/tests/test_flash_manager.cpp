@@ -728,9 +728,9 @@ TEST_F( FlashManagerTest, InstructionUploadSubmissionNotificationFailureEntersFa
 TEST_F( FlashManagerTest, InstructionUploadSubmissionAppliesAtomicBackpressureAndRetry )
 {
     std::array<uint8_t, TEST_PAGE_SIZE_BYTES> page = {};
-    PrepareInstructionUpload( page.size() * 4U );
+    PrepareInstructionUpload( page.size() * ( TEST_INSTRUCTION_BUFFER_PAGE_COUNT + 1U ) );
 
-    for ( uint8_t page_index = 0U; page_index < 3U; page_index++ )
+    for ( uint8_t page_index = 0U; page_index < TEST_INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
     {
         FillBytes( page.data(), page.size(), page_index );
         ASSERT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
@@ -742,7 +742,7 @@ TEST_F( FlashManagerTest, InstructionUploadSubmissionAppliesAtomicBackpressureAn
                FLASH_MANAGER_SubmitInstructionUploadBytes( page.data(), page.size() ) );
 
     ASSERT_TRUE( FLASH_MANAGER_DrainInstructionUploadPages() );
-    ASSERT_EQ( 3U, write_instruction_page_calls );
+    ASSERT_EQ( TEST_INSTRUCTION_BUFFER_PAGE_COUNT, write_instruction_page_calls );
 
     EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
                FLASH_MANAGER_SubmitInstructionUploadBytes( page.data(), page.size() ) );

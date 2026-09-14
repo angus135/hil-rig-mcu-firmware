@@ -44,6 +44,12 @@ MCU SPI instance numbers:
 | `EXEC_SPI_CHANNEL_1` | SPI2 | PB12 | B4 | B5 |
 | `EXEC_SPI_CHANNEL_2` | SPI1 | PA4 | B6 | B7 |
 
+The board channels have asymmetric maximum master rates because they use
+different STM32 peripheral buses. Channel 1 is clocked from 45 MHz APB1 and
+supports up to 22.5 Mbit/s; channel 2 is clocked from 90 MHz APB2 and supports
+up to 45 Mbit/s. Low-level configuration rejects 45 Mbit/s on channel 1 rather
+than silently selecting a slower physical clock.
+
 ---
 
 ## Files

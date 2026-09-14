@@ -468,6 +468,12 @@ Current intended split:
     -> final-drain timer
 ```
 
+The named baud selections are mapped using the clock of the selected board
+channel. Board SPI channel 1 is MCU SPI2 on the 45 MHz APB1 clock and supports a
+maximum of 22.5 Mbit/s. Board SPI channel 2 is MCU SPI1 on the 90 MHz APB2 clock
+and supports 45 Mbit/s. A 45 Mbit/s request for channel 1 is rejected during
+configuration rather than silently running at half the requested rate.
+
 The timer path is configured so each assigned timer runs at approximately 1 MHz, giving a nominal
 1 us tick. The ARR values are chosen to cover approximately one final SPI frame plus a guard margin.
 
@@ -805,8 +811,6 @@ The caller decides how much unread RX data is meaningful and how much should be 
 
 ## Current limitations and TODOs
 
-- The master CS assert/deassert hooks currently use a hardcoded development GPIO. Replace this with
-  the separate GPIO driver once the final board-level CS mapping is available.
 - `SPI_CHANNEL_2` and `SPI_DAC` should be reviewed if they share physical SPI/DMA resources in the
   final hardware configuration.
 - Final timer prescaler/ARR values assume the current expected clock tree. Recheck them once the

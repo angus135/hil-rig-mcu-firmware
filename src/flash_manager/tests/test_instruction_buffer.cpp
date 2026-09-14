@@ -684,7 +684,10 @@ TEST_F( InstructionBufferTest, PeekRejectsInstructionOneWordLargerThanMaximum )
     StoreInstruction( image.data(), 100U, operations_length_bytes, 0x50U );
 
     Prepare( image_length_bytes );
-    for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT; page_index++ )
+    constexpr uint32_t image_page_count =
+        ( image_length_bytes + TEST_INSTRUCTION_PAGE_SIZE_BYTES - 1U )
+        / TEST_INSTRUCTION_PAGE_SIZE_BYTES;
+    for ( uint32_t page_index = 0U; page_index < image_page_count; page_index++ )
     {
         InstructionBufferPageFillLease_T lease = AcquirePage();
         std::memcpy( lease.page_data, &image[lease.instruction_offset_bytes],
@@ -789,14 +792,18 @@ TEST_F( InstructionBufferTest, ConsumingExhaustedPageRequestsRefillWhenNandDataR
 
 TEST_F( InstructionBufferTest, RingMirrorMakesCrossBoundaryInstructionPayloadContiguous )
 {
-    constexpr uint32_t image_length_bytes        = TEST_INSTRUCTION_PAGE_SIZE_BYTES * 3U + 8U;
+    constexpr uint32_t leading_instruction_count = INSTRUCTION_BUFFER_PAGE_COUNT - 1U;
+    constexpr uint32_t image_length_bytes =
+        TEST_INSTRUCTION_PAGE_SIZE_BYTES * INSTRUCTION_BUFFER_PAGE_COUNT + 8U;
     uint8_t            image[image_length_bytes] = {};
     uint32_t           image_offset_bytes        = 0U;
 
-    image_offset_bytes += StoreInstruction( &image[image_offset_bytes], 10U,
-                                            TEST_FULL_INSTRUCTION_PAGE_PAYLOAD_BYTES, 0x10U );
-    image_offset_bytes += StoreInstruction( &image[image_offset_bytes], 20U,
-                                            TEST_FULL_INSTRUCTION_PAGE_PAYLOAD_BYTES, 0x20U );
+    for ( uint32_t index = 0U; index < leading_instruction_count; index++ )
+    {
+        image_offset_bytes += StoreInstruction(
+            &image[image_offset_bytes], 10U + index, TEST_FULL_INSTRUCTION_PAGE_PAYLOAD_BYTES,
+            static_cast<uint8_t>( 0x10U + index ) );
+    }
     image_offset_bytes += StoreInstruction( &image[image_offset_bytes], 30U, 20U, 0x30U );
     image_offset_bytes += StoreInstruction( &image[image_offset_bytes], 40U, 4U, 0x40U );
     ASSERT_EQ( image_length_bytes, image_offset_bytes );
@@ -812,18 +819,27 @@ TEST_F( InstructionBufferTest, RingMirrorMakesCrossBoundaryInstructionPayloadCon
     }
 
     const FlashManagerInstructionView_T* view = nullptr;
-    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
-    ASSERT_EQ( INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED,
-               INSTRUCTION_BUFFER_ConsumeInstruction() );
+    for ( uint32_t index = 0U; index < leading_instruction_count; index++ )
+    {
+        ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE,
+                   INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+        const InstructionBufferConsumeStatus_T consume_status =
+            INSTRUCTION_BUFFER_ConsumeInstruction();
+        ASSERT_EQ( index == 0U ? INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED
+                               : INSTRUCTION_BUFFER_CONSUME_OK,
+                   consume_status );
 
-    InstructionBufferPageFillLease_T refill_lease = AcquirePage();
-    std::memcpy( refill_lease.page_data, &image[refill_lease.instruction_offset_bytes],
-                 refill_lease.read_length_bytes );
-    ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &refill_lease, true ) );
+        if ( consume_status == INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED )
+        {
+            InstructionBufferPageFillLease_T refill_lease = AcquirePage();
+            std::memcpy( refill_lease.page_data, &image[refill_lease.instruction_offset_bytes],
+                         refill_lease.read_length_bytes );
+            ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &refill_lease, true ) );
+        }
+    }
 
     ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
-    ASSERT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction() );
-    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+    ASSERT_EQ( 30U, view->header.timestamp );
     ASSERT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction() );
 
     ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
@@ -833,7 +849,8 @@ TEST_F( InstructionBufferTest, RingMirrorMakesCrossBoundaryInstructionPayloadCon
     EXPECT_EQ( 0, std::memcmp( view->operations, &image[image_length_bytes - 4U], 4U ) );
 
     EXPECT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction() );
-    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY, instruction_buffer_context.page_states[2] );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY,
+               instruction_buffer_context.page_states[INSTRUCTION_BUFFER_PAGE_COUNT - 1U] );
     EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY, instruction_buffer_context.page_states[0] );
     EXPECT_EQ( INSTRUCTION_BUFFER_PEEK_END_OF_STREAM, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
     EXPECT_EQ( instruction_buffer_context.instruction_length_bytes,
@@ -849,20 +866,27 @@ TEST_F( InstructionBufferTest, TwoPageMirrorKeepsMaximumInstructionContiguousAtR
         TEST_INSTRUCTION_PAGE_SIZE_BYTES * 2U - sizeof( ExecutionInstructionHeader_T ) );
     constexpr uint32_t maximum_instruction_length_bytes =
         sizeof( ExecutionInstructionHeader_T ) + maximum_operations_length_bytes;
+    constexpr uint32_t leading_instruction_count =
+        ( ( INSTRUCTION_BUFFER_PAGE_COUNT - 1U ) * TEST_INSTRUCTION_PAGE_SIZE_BYTES
+          + ( TEST_INSTRUCTION_PAGE_SIZE_BYTES / 2U ) )
+        / leading_instruction_length_bytes;
     constexpr uint32_t image_length_bytes =
-        leading_instruction_length_bytes * 5U + maximum_instruction_length_bytes;
+        leading_instruction_length_bytes * leading_instruction_count
+        + maximum_instruction_length_bytes;
 
     std::array<uint8_t, image_length_bytes> image              = {};
     uint32_t                                image_offset_bytes = 0U;
 
-    for ( uint32_t index = 0U; index < 5U; index++ )
+    for ( uint32_t index = 0U; index < leading_instruction_count; index++ )
     {
         image_offset_bytes +=
             StoreInstruction( &image[image_offset_bytes], index, leading_operations_length_bytes,
                               static_cast<uint8_t>( 0x10U + index ) );
     }
 
-    ASSERT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES * 2U + 16U, image_offset_bytes );
+    ASSERT_EQ( TEST_INSTRUCTION_PAGE_SIZE_BYTES * ( INSTRUCTION_BUFFER_PAGE_COUNT - 1U )
+                   + TEST_INSTRUCTION_PAGE_SIZE_BYTES / 2U,
+               image_offset_bytes );
     image_offset_bytes += StoreInstruction( &image[image_offset_bytes], 100U,
                                             maximum_operations_length_bytes, 0x80U );
     ASSERT_EQ( image_length_bytes, image_offset_bytes );
@@ -877,25 +901,23 @@ TEST_F( InstructionBufferTest, TwoPageMirrorKeepsMaximumInstructionContiguousAtR
     }
 
     const FlashManagerInstructionView_T* view = nullptr;
-    for ( uint32_t refill_cycle = 0U; refill_cycle < 2U; refill_cycle++ )
+    for ( uint32_t index = 0U; index < leading_instruction_count; index++ )
     {
-        for ( uint32_t index = 0U; index < 2U; index++ )
+        ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE,
+                   INSTRUCTION_BUFFER_PeekInstruction( &view ) );
+        const InstructionBufferConsumeStatus_T consume_status =
+            INSTRUCTION_BUFFER_ConsumeInstruction();
+        ASSERT_TRUE( consume_status == INSTRUCTION_BUFFER_CONSUME_OK
+                     || consume_status == INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED );
+
+        if ( consume_status == INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED )
         {
-            ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE,
-                       INSTRUCTION_BUFFER_PeekInstruction( &view ) );
-            ASSERT_EQ( index == 1U ? INSTRUCTION_BUFFER_CONSUME_REFILL_REQUIRED
-                                   : INSTRUCTION_BUFFER_CONSUME_OK,
-                       INSTRUCTION_BUFFER_ConsumeInstruction() );
+            InstructionBufferPageFillLease_T lease = AcquirePage();
+            std::memcpy( lease.page_data, &image[lease.instruction_offset_bytes],
+                         lease.read_length_bytes );
+            ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &lease, true ) );
         }
-
-        InstructionBufferPageFillLease_T lease = AcquirePage();
-        std::memcpy( lease.page_data, &image[lease.instruction_offset_bytes],
-                     lease.read_length_bytes );
-        ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteFillPage( &lease, true ) );
     }
-
-    ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
-    ASSERT_EQ( INSTRUCTION_BUFFER_CONSUME_OK, INSTRUCTION_BUFFER_ConsumeInstruction() );
 
     ASSERT_EQ( INSTRUCTION_BUFFER_PEEK_AVAILABLE, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
     ASSERT_NE( nullptr, view );
@@ -1043,17 +1065,19 @@ TEST_F( InstructionBufferTest, BusyCrossPageWriteCopiesNothingAndCanBeRetriedUnc
     FillBytes( partial_page.data(), partial_page.size(), 0x40U );
     FillBytes( blocked_chunk.data(), blocked_chunk.size(), 0x80U );
 
-    PrepareUpload( TEST_INSTRUCTION_PAGE_SIZE_BYTES * 4U );
-    ASSERT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_PAGE_READY,
-               INSTRUCTION_BUFFER_WriteUploadBytes( full_page.data(), full_page.size() ) );
-    ASSERT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_PAGE_READY,
-               INSTRUCTION_BUFFER_WriteUploadBytes( full_page.data(), full_page.size() ) );
+    PrepareUpload( TEST_INSTRUCTION_PAGE_SIZE_BYTES * ( INSTRUCTION_BUFFER_PAGE_COUNT + 1U ) );
+    for ( uint32_t page_index = 0U; page_index < INSTRUCTION_BUFFER_PAGE_COUNT - 1U; page_index++ )
+    {
+        ASSERT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_PAGE_READY,
+                   INSTRUCTION_BUFFER_WriteUploadBytes( full_page.data(), full_page.size() ) );
+    }
     ASSERT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_ACCEPTED,
                INSTRUCTION_BUFFER_WriteUploadBytes( partial_page.data(), partial_page.size() ) );
 
     std::array<uint8_t, 20U> page_tail_before = {};
     std::memcpy( page_tail_before.data(),
-                 &test_instruction_buffer_storage[TEST_INSTRUCTION_PAGE_SIZE_BYTES * 2U],
+                 &test_instruction_buffer_storage[TEST_INSTRUCTION_PAGE_SIZE_BYTES
+                                                  * ( INSTRUCTION_BUFFER_PAGE_COUNT - 1U )],
                  page_tail_before.size() );
     uint32_t accepted_before = instruction_buffer_context.upload_accepted_length_bytes;
 
@@ -1062,9 +1086,11 @@ TEST_F( InstructionBufferTest, BusyCrossPageWriteCopiesNothingAndCanBeRetriedUnc
     EXPECT_EQ( accepted_before, instruction_buffer_context.upload_accepted_length_bytes );
     EXPECT_EQ( 0,
                std::memcmp( page_tail_before.data(),
-                            &test_instruction_buffer_storage[TEST_INSTRUCTION_PAGE_SIZE_BYTES * 2U],
+                            &test_instruction_buffer_storage[TEST_INSTRUCTION_PAGE_SIZE_BYTES
+                                                             * ( INSTRUCTION_BUFFER_PAGE_COUNT - 1U )],
                             page_tail_before.size() ) );
-    EXPECT_EQ( 20U, instruction_buffer_context.page_valid_bytes[2] );
+    EXPECT_EQ( 20U,
+               instruction_buffer_context.page_valid_bytes[INSTRUCTION_BUFFER_PAGE_COUNT - 1U] );
 
     const uint8_t* drain_data   = nullptr;
     uint32_t       drain_length = 0U;
@@ -1073,7 +1099,8 @@ TEST_F( InstructionBufferTest, BusyCrossPageWriteCopiesNothingAndCanBeRetriedUnc
 
     EXPECT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_PAGE_READY,
                INSTRUCTION_BUFFER_WriteUploadBytes( blocked_chunk.data(), blocked_chunk.size() ) );
-    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND, instruction_buffer_context.page_states[2] );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND,
+               instruction_buffer_context.page_states[INSTRUCTION_BUFFER_PAGE_COUNT - 1U] );
     EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_FILLING_FROM_HOST,
                instruction_buffer_context.page_states[0] );
     EXPECT_EQ( 8U, instruction_buffer_context.page_valid_bytes[0] );
