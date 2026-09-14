@@ -483,6 +483,11 @@ bool EXEC_UART_Read( ExecUartChannel_T channel, uint8_t* dest, uint32_t dest_siz
 
     const HwUartChannel_T hw_channel = exec_uart_hardware_map[channel].hw_channel;
 
+    if ( HW_UART_Is_Rx_Faulted( hw_channel ) )
+    {
+        return false;
+    }
+
     spans = HW_UART_Rx_Peek( hw_channel );
 
     if ( spans.total_length_bytes == 0U )
@@ -537,7 +542,12 @@ bool EXEC_UART_Read( ExecUartChannel_T channel, uint8_t* dest, uint32_t dest_siz
 
 uint32_t EXEC_UART_GetPendingReceiveBytes( ExecUartChannel_T channel )
 {
-    return HW_UART_Rx_Peek( exec_uart_hardware_map[channel].hw_channel ).total_length_bytes;
+    const HwUartChannel_T hw_channel = exec_uart_hardware_map[channel].hw_channel;
+    if ( HW_UART_Is_Rx_Faulted( hw_channel ) )
+    {
+        return 0U;
+    }
+    return HW_UART_Rx_Peek( hw_channel ).total_length_bytes;
 }
 
 bool EXEC_UART_Is_Tx_Complete( ExecUartChannel_T channel )
@@ -557,4 +567,14 @@ ExecUartTxStatus_T EXEC_UART_Get_Tx_Status( ExecUartChannel_T channel )
 
     return status == HW_UART_TX_STATUS_COMPLETE ? EXEC_UART_TX_STATUS_COMPLETE
                                                 : EXEC_UART_TX_STATUS_BUSY;
+}
+
+bool EXEC_UART_Is_Rx_Faulted( ExecUartChannel_T channel )
+{
+    if ( !EXEC_UART_Is_Valid_Channel( channel ) )
+    {
+        return false;
+    }
+
+    return HW_UART_Is_Rx_Faulted( exec_uart_hardware_map[channel].hw_channel );
 }

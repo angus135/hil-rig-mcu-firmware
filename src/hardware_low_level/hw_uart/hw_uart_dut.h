@@ -424,6 +424,17 @@ HwUartTxStatus_T HW_UART_Get_Tx_Status( HwUartChannel_T channel );
  */
 bool HW_UART_Is_Tx_Complete( HwUartChannel_T channel );
 
+/**
+ * @brief Reports whether an RX DMA fault is currently latched on a DUT UART channel.
+ *
+ * An RX fault remains latched until a new epoch is established, or the channel is
+ * explicitly aborted or reconfigured.
+ *
+ * @param channel UART channel to inspect.
+ * @return true if an RX DMA fault is latched; false otherwise.
+ */
+bool HW_UART_Is_Rx_Faulted( HwUartChannel_T channel );
+
 #ifdef __cplusplus
 }
 #endif

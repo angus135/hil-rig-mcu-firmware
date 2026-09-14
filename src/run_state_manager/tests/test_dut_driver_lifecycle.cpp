@@ -113,6 +113,7 @@ static bool     s_uart_start_result;
 static bool     s_uart_stop_result;
 static bool     s_uart_abort_result;
 static ExecUartTxStatus_T s_uart_tx_status;
+static bool     s_uart_rx_faulted;
 static uint32_t s_uart_start_calls[EXEC_UART_CHANNEL_COUNT];
 static uint32_t s_uart_stop_calls[EXEC_UART_CHANNEL_COUNT];
 static uint32_t s_uart_abort_calls[EXEC_UART_CHANNEL_COUNT];
@@ -426,6 +427,11 @@ ExecUartTxStatus_T EXEC_UART_Get_Tx_Status( ExecUartChannel_T channel )
     ( void )channel;
     return s_uart_tx_status;
 }
+bool EXEC_UART_Is_Rx_Faulted( ExecUartChannel_T channel )
+{
+    ( void )channel;
+    return s_uart_rx_faulted;
+}
 bool EXEC_UART_Establish_Rx_Epoch( ExecUartChannel_T channel )
 {
     if ( channel < EXEC_UART_CHANNEL_COUNT )
@@ -539,6 +545,7 @@ protected:
         s_uart_stop_result      = true;
         s_uart_abort_result     = true;
         s_uart_tx_status        = EXEC_UART_TX_STATUS_COMPLETE;
+        s_uart_rx_faulted       = false;
         s_uart_epoch_result     = true;
         std::memset( s_uart_start_calls, 0, sizeof( s_uart_start_calls ) );
         std::memset( s_uart_stop_calls, 0, sizeof( s_uart_stop_calls ) );
@@ -826,6 +833,19 @@ TEST_F( DutDriverLifecycleTest, GracefulShutdownFailsOnLatchedUartTxFault )
     ASSERT_TRUE( DUT_DRIVER_LIFECYCLE_Start() );
 
     s_uart_tx_status = EXEC_UART_TX_STATUS_FAULTED;
+
+    EXPECT_TRUE( DUT_DRIVER_LIFECYCLE_BeginShutdown( false, false ) );
+    EXPECT_EQ( DUT_DRIVER_SHUTDOWN_FAILED, DUT_DRIVER_LIFECYCLE_GetShutdownStatus() );
+    EXPECT_EQ( 0U, s_uart_stop_calls[1] );
+}
+
+TEST_F( DutDriverLifecycleTest, GracefulShutdownFailsOnLatchedUartRxFault )
+{
+    DutDriverConfiguration_T config = CreateSampleConfiguration();
+    ASSERT_TRUE( DUT_DRIVER_LIFECYCLE_Configure( &config ) );
+    ASSERT_TRUE( DUT_DRIVER_LIFECYCLE_Start() );
+
+    s_uart_rx_faulted = true;
 
     EXPECT_TRUE( DUT_DRIVER_LIFECYCLE_BeginShutdown( false, false ) );
     EXPECT_EQ( DUT_DRIVER_SHUTDOWN_FAILED, DUT_DRIVER_LIFECYCLE_GetShutdownStatus() );

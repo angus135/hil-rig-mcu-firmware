@@ -125,7 +125,8 @@
 #define HW_UART_BRR_SAMPLING16_MIN ( 0x0010U )
 #define HW_UART_BRR_SAMPLING16_MAX ( 0xFFFFU )
 
-#define HW_UART_FAULT_TX_DMA ( 1UL << 0U )
+#define HW_UART_FAULT_TX_DMA ( ( uint32_t )1U << 0U )
+#define HW_UART_FAULT_RX_DMA ( ( uint32_t )1U << 1U )
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -658,18 +659,14 @@ static inline void HW_UART_Tx_Error_Handler( HwUartChannel_T channel )
 /**
  * @brief Handles an RX DMA error for the specified UART channel.
  *
- * @note This function intentionally performs no recovery while the UART fault
- *       model is not yet implemented. It exists as the future insertion point
- *       for fault latching and error policy.
+ * @note Latches HW_UART_FAULT_RX_DMA and clears rx_running to mark active
+ *       reception stopped and untrustworthy.
  */
 static inline void HW_UART_Rx_Error_Handler( HwUartChannel_T channel )
 {
     HwUartRuntimeState_T* runtime = &hw_uart_channel_states[channel].runtime;
-    ( void )runtime;
-
-    /* Future fault implementation:
-     * runtime->latched_faults |= HW_UART_FAULT_DMA_ERROR;
-     */
+    runtime->latched_faults |= HW_UART_FAULT_RX_DMA;
+    runtime->rx_running = false;
 }
 
 /**-----------------------------------------------------------------------------
@@ -807,6 +804,8 @@ bool HW_UART_Establish_Rx_Epoch( HwUartChannel_T channel )
         return false;
     }
 
+    state->runtime.latched_faults &= ( uint32_t )~HW_UART_FAULT_RX_DMA;
+
     const uint32_t remaining = hw_map->rx_dma_stream->NDTR;
     state->runtime.rx_read_index =
         ( HW_UART_RX_BUFFER_SIZE - remaining ) & ( HW_UART_RX_BUFFER_SIZE - 1U );
@@ -874,12 +873,9 @@ bool HW_UART_Abort_Channel( HwUartChannel_T channel )
     LL_DMA_DisableStream( hw_map->tx_dma_controller, hw_map->tx_ll_stream );
 
     uint32_t timeout = HW_UART_TX_DMA_DISABLE_TIMEOUT_ITERATIONS;
-    while ( LL_DMA_IsEnabledStream( hw_map->tx_dma_controller, hw_map->tx_ll_stream ) )
+    while ( LL_DMA_IsEnabledStream( hw_map->tx_dma_controller, hw_map->tx_ll_stream ) != 0U
+            && timeout > 0U )
     {
-        if ( timeout == 0U )
-        {
-            return false;
-        }
         timeout--;
     }
 
@@ -889,7 +885,8 @@ bool HW_UART_Abort_Channel( HwUartChannel_T channel )
     state->runtime.tx_count            = 0U;
     state->runtime.tx_dma_length_bytes = 0U;
     state->runtime.tx_dma_active       = false;
-    state->runtime.latched_faults &= ~HW_UART_FAULT_TX_DMA;
+    state->runtime.latched_faults &=
+        ( uint32_t )~( HW_UART_FAULT_TX_DMA | HW_UART_FAULT_RX_DMA );
 
     if ( state->runtime.rx_running && !HW_UART_Stop_Rx( channel ) )
     {
@@ -920,6 +917,13 @@ HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
     const HwUartHardwareMap_T* hw_map     = &hw_uart_hardware_map[channel];
     uint8_t*                   rx_buffer  = state->rx_buffer;
     uint32_t                   read_index = state->runtime.rx_read_index;
+
+    if ( ( state->runtime.latched_faults & HW_UART_FAULT_RX_DMA ) != 0U )
+    {
+        return ( HwUartRxSpans_T ){ .first_span  = { .data = &rx_buffer[0], .length_bytes = 0U },
+                                    .second_span = { .data = &rx_buffer[0], .length_bytes = 0U },
+                                    .total_length_bytes = 0U };
+    }
 
     /* Derive the current DMA write index from NDTR. */
     uint32_t dma_remaining   = hw_map->rx_dma_stream->NDTR;
@@ -1172,6 +1176,16 @@ HwUartTxStatus_T HW_UART_Get_Tx_Status( HwUartChannel_T channel )
 bool HW_UART_Is_Tx_Complete( HwUartChannel_T channel )
 {
     return HW_UART_Get_Tx_Status( channel ) == HW_UART_TX_STATUS_COMPLETE;
+}
+
+bool HW_UART_Is_Rx_Faulted( HwUartChannel_T channel )
+{
+    if ( channel >= HW_UART_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    return ( hw_uart_channel_states[channel].runtime.latched_faults & HW_UART_FAULT_RX_DMA ) != 0U;
 }
 
 /**
