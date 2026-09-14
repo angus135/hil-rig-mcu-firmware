@@ -256,6 +256,8 @@ uint32_t NVIC_GetEnableIRQ( IRQn_Type irq );
 
 void NVIC_DisableIRQ( IRQn_Type irq );
 
+void NVIC_ClearPendingIRQ( IRQn_Type irq );
+
 void NVIC_EnableIRQ( IRQn_Type irq );
 
 // NOLINTEND

@@ -146,6 +146,15 @@ DutDriverConfigurationStatus_T DUT_DRIVER_LIFECYCLE_GetConfigurationStatus( void
 bool DUT_DRIVER_LIFECYCLE_Start( void );
 
 /**
+ * @brief Establishes the acquisition epoch immediately before TIM4 starts.
+ *
+ * Discards communication pre-roll, clears pending PWM captures, and restarts
+ * and primes analogue acquisition. This is a task-context lifecycle operation,
+ * not part of the execution ISR.
+ */
+bool DUT_DRIVER_LIFECYCLE_EstablishExecutionEpoch( void );
+
+/**
  * @brief Polls physical completion of the external-interface startup batch.
  *
  * @return PENDING while writes remain in flight, READY after successful I2C

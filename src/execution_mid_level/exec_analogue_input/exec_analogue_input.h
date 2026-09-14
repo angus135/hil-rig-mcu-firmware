@@ -107,6 +107,9 @@ bool EXEC_ANALOGUE_INPUT_Configure( const ExecAnalogueInputConfig_T* config );
 /** @brief Starts ADC DMA acquisition after successful configuration. */
 bool EXEC_ANALOGUE_INPUT_Start( void );
 
+/** Restart ADC DMA so its averaging history begins at the execution epoch. */
+bool EXEC_ANALOGUE_INPUT_Establish_Epoch( void );
+
 /** @brief Stops ADC DMA acquisition while retaining its configuration. */
 bool EXEC_ANALOGUE_INPUT_Stop( void );
 

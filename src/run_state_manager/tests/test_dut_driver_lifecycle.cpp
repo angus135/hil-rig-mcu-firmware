@@ -42,8 +42,10 @@ static LogicExpanderControlBatchId_T     s_last_cancelled_batch_id;
 static bool     s_ai_configure_result;
 static bool     s_ai_start_result;
 static bool     s_ai_stop_result;
+static bool     s_ai_epoch_result;
 static uint32_t s_ai_start_calls;
 static uint32_t s_ai_stop_calls;
+static uint32_t s_ai_epoch_calls;
 
 static bool                  s_ao_configure_result;
 static AnalogueOutputState_T s_ao_state;
@@ -75,6 +77,8 @@ static EXEC_CAN_Tx_Status_T s_can_tx_status;
 static uint32_t             s_can_start_calls[EXEC_CAN_CHANNEL_COUNT];
 static uint32_t             s_can_stop_calls[EXEC_CAN_CHANNEL_COUNT];
 static uint32_t             s_can_abort_calls[EXEC_CAN_CHANNEL_COUNT];
+static EXEC_CAN_Result_T    s_can_epoch_result;
+static uint32_t             s_can_epoch_calls[EXEC_CAN_CHANNEL_COUNT];
 
 static EXECI2CStatus_T s_i2c_configure_result;
 
@@ -83,6 +87,8 @@ static bool     s_pwm_cap_start_result;
 static bool     s_pwm_cap_stop_result;
 static uint32_t s_pwm_cap_start_calls[TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT];
 static uint32_t s_pwm_cap_stop_calls[TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT];
+static bool     s_pwm_cap_epoch_result;
+static uint32_t s_pwm_cap_epoch_calls[TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT];
 
 static bool     s_pwm_gen_configure_result;
 static bool     s_pwm_gen_start_result;
@@ -99,6 +105,8 @@ static bool     s_spi_tx_faulted;
 static uint32_t s_spi_start_calls[TEST_CONFIGURATION_SPI_CHANNEL_COUNT];
 static uint32_t s_spi_stop_calls[TEST_CONFIGURATION_SPI_CHANNEL_COUNT];
 static uint32_t s_spi_abort_calls[TEST_CONFIGURATION_SPI_CHANNEL_COUNT];
+static bool     s_spi_epoch_result;
+static uint32_t s_spi_epoch_calls[TEST_CONFIGURATION_SPI_CHANNEL_COUNT];
 
 static bool     s_uart_configure_result;
 static bool     s_uart_start_result;
@@ -108,6 +116,8 @@ static bool     s_uart_tx_complete;
 static uint32_t s_uart_start_calls[EXEC_UART_CHANNEL_COUNT];
 static uint32_t s_uart_stop_calls[EXEC_UART_CHANNEL_COUNT];
 static uint32_t s_uart_abort_calls[EXEC_UART_CHANNEL_COUNT];
+static bool     s_uart_epoch_result;
+static uint32_t s_uart_epoch_calls[EXEC_UART_CHANNEL_COUNT];
 
 extern "C"
 {
@@ -156,6 +166,11 @@ bool EXEC_ANALOGUE_INPUT_Stop( void )
 {
     s_ai_stop_calls++;
     return s_ai_stop_result;
+}
+bool EXEC_ANALOGUE_INPUT_Establish_Epoch( void )
+{
+    s_ai_epoch_calls++;
+    return s_ai_epoch_result;
 }
 
 bool EXEC_ANALOGUE_OUTPUT_Configure( const ExecAnalogueOutputConfig_T* configuration )
@@ -255,6 +270,14 @@ EXEC_CAN_Tx_Status_T EXEC_CAN_Get_Tx_Status( EXEC_CAN_Channel_T channel )
     ( void )channel;
     return s_can_tx_status;
 }
+EXEC_CAN_Result_T EXEC_CAN_Establish_Rx_Epoch( EXEC_CAN_Channel_T channel )
+{
+    if ( channel < EXEC_CAN_CHANNEL_COUNT )
+    {
+        s_can_epoch_calls[channel]++;
+    }
+    return s_can_epoch_result;
+}
 
 EXECI2CStatus_T EXEC_I2C_Configure_Channel( ExecI2CChannel_T              channel,
                                             const EXECI2CChannelConfig_T* config )
@@ -286,6 +309,14 @@ bool EXEC_PWM_Capture_Stop_Channel( ExecPwmCaptureChannel_T channel )
         s_pwm_cap_stop_calls[channel]++;
     }
     return s_pwm_cap_stop_result;
+}
+bool EXEC_PWM_Capture_Establish_Epoch( ExecPwmCaptureChannel_T channel )
+{
+    if ( channel < TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT )
+    {
+        s_pwm_cap_epoch_calls[channel]++;
+    }
+    return s_pwm_cap_epoch_result;
 }
 
 bool EXEC_PWM_GEN_Configure_Channel( ExecPwmGenChannel_T channel, const ExecPwmGenConfig_T* config )
@@ -351,6 +382,14 @@ bool EXEC_SPI_Is_Transmission_Faulted( ExecSPIChannel_T channel )
     ( void )channel;
     return s_spi_tx_faulted;
 }
+bool EXEC_SPI_Establish_Rx_Epoch( ExecSPIChannel_T channel )
+{
+    if ( channel < TEST_CONFIGURATION_SPI_CHANNEL_COUNT )
+    {
+        s_spi_epoch_calls[channel]++;
+    }
+    return s_spi_epoch_result;
+}
 
 bool EXEC_UART_Configure_Channel( ExecUartChannel_T channel, const ExecUartConfig_T* config )
 {
@@ -387,6 +426,14 @@ bool EXEC_UART_Is_Tx_Complete( ExecUartChannel_T channel )
     ( void )channel;
     return s_uart_tx_complete;
 }
+bool EXEC_UART_Establish_Rx_Epoch( ExecUartChannel_T channel )
+{
+    if ( channel < EXEC_UART_CHANNEL_COUNT )
+    {
+        s_uart_epoch_calls[channel]++;
+    }
+    return s_uart_epoch_result;
+}
 
 #if defined( __GNUC__ )
 #pragma GCC diagnostic push
@@ -421,8 +468,10 @@ protected:
         s_ai_configure_result = true;
         s_ai_start_result     = true;
         s_ai_stop_result      = true;
+        s_ai_epoch_result     = true;
         s_ai_start_calls      = 0U;
         s_ai_stop_calls       = 0U;
+        s_ai_epoch_calls      = 0U;
 
         s_ao_configure_result = true;
         s_ao_state            = EXEC_ANALOGUE_OUTPUT_STATE_CONFIGURED;
@@ -451,17 +500,21 @@ protected:
         s_can_stop_result      = EXEC_CAN_RESULT_OK;
         s_can_abort_result     = EXEC_CAN_RESULT_OK;
         s_can_tx_status        = EXEC_CAN_TX_STATUS_COMPLETE;
+        s_can_epoch_result     = EXEC_CAN_RESULT_OK;
         std::memset( s_can_start_calls, 0, sizeof( s_can_start_calls ) );
         std::memset( s_can_stop_calls, 0, sizeof( s_can_stop_calls ) );
         std::memset( s_can_abort_calls, 0, sizeof( s_can_abort_calls ) );
+        std::memset( s_can_epoch_calls, 0, sizeof( s_can_epoch_calls ) );
 
         s_i2c_configure_result = EXEC_I2C_STATUS_OK;
 
         s_pwm_cap_configure_result = true;
         s_pwm_cap_start_result     = true;
         s_pwm_cap_stop_result      = true;
+        s_pwm_cap_epoch_result     = true;
         std::memset( s_pwm_cap_start_calls, 0, sizeof( s_pwm_cap_start_calls ) );
         std::memset( s_pwm_cap_stop_calls, 0, sizeof( s_pwm_cap_stop_calls ) );
+        std::memset( s_pwm_cap_epoch_calls, 0, sizeof( s_pwm_cap_epoch_calls ) );
 
         s_pwm_gen_configure_result = true;
         s_pwm_gen_start_result     = true;
@@ -475,18 +528,22 @@ protected:
         s_spi_abort_result     = true;
         s_spi_tx_complete      = true;
         s_spi_tx_faulted       = false;
+        s_spi_epoch_result     = true;
         std::memset( s_spi_start_calls, 0, sizeof( s_spi_start_calls ) );
         std::memset( s_spi_stop_calls, 0, sizeof( s_spi_stop_calls ) );
         std::memset( s_spi_abort_calls, 0, sizeof( s_spi_abort_calls ) );
+        std::memset( s_spi_epoch_calls, 0, sizeof( s_spi_epoch_calls ) );
 
         s_uart_configure_result = true;
         s_uart_start_result     = true;
         s_uart_stop_result      = true;
         s_uart_abort_result     = true;
         s_uart_tx_complete      = true;
+        s_uart_epoch_result     = true;
         std::memset( s_uart_start_calls, 0, sizeof( s_uart_start_calls ) );
         std::memset( s_uart_stop_calls, 0, sizeof( s_uart_stop_calls ) );
         std::memset( s_uart_abort_calls, 0, sizeof( s_uart_abort_calls ) );
+        std::memset( s_uart_epoch_calls, 0, sizeof( s_uart_epoch_calls ) );
 
         std::memset( &lifecycle_context, 0, sizeof( lifecycle_context ) );
     }
@@ -504,6 +561,7 @@ protected:
         config.pwm_generation_channels[1].is_enabled  = true;
         config.spi_channels[0].is_enabled             = true;
         config.uart_channels[1].is_enabled            = true;
+        config.uart_channels[1].rx_enabled            = true;
         return config;
     }
 };
@@ -642,6 +700,35 @@ TEST_F( DutDriverLifecycleTest, StartFailsIfAlreadyStarted )
     ASSERT_TRUE( DUT_DRIVER_LIFECYCLE_Start() );
 
     EXPECT_FALSE( DUT_DRIVER_LIFECYCLE_Start() );
+}
+
+TEST_F( DutDriverLifecycleTest, ExecutionEpochBaselinesOnlyStartedMeasurementDrivers )
+{
+    DutDriverConfiguration_T config = CreateSampleConfiguration();
+    ASSERT_TRUE( DUT_DRIVER_LIFECYCLE_Configure( &config ) );
+    ASSERT_TRUE( DUT_DRIVER_LIFECYCLE_Start() );
+
+    EXPECT_TRUE( DUT_DRIVER_LIFECYCLE_EstablishExecutionEpoch() );
+    EXPECT_EQ( 1U, s_ai_epoch_calls );
+    EXPECT_EQ( 1U, s_pwm_cap_epoch_calls[0] );
+    EXPECT_EQ( 1U, s_can_epoch_calls[0] );
+    EXPECT_EQ( 1U, s_can_epoch_calls[1] );
+    EXPECT_EQ( 1U, s_spi_epoch_calls[0] );
+    EXPECT_EQ( 0U, s_spi_epoch_calls[1] );
+    EXPECT_EQ( 0U, s_uart_epoch_calls[0] );
+    EXPECT_EQ( 1U, s_uart_epoch_calls[1] );
+}
+
+TEST_F( DutDriverLifecycleTest, ExecutionEpochFailureIsReported )
+{
+    DutDriverConfiguration_T config = CreateSampleConfiguration();
+    ASSERT_TRUE( DUT_DRIVER_LIFECYCLE_Configure( &config ) );
+    ASSERT_TRUE( DUT_DRIVER_LIFECYCLE_Start() );
+    s_spi_epoch_result = false;
+
+    EXPECT_FALSE( DUT_DRIVER_LIFECYCLE_EstablishExecutionEpoch() );
+    EXPECT_EQ( 1U, s_spi_epoch_calls[0] );
+    EXPECT_EQ( 0U, s_uart_epoch_calls[1] );
 }
 
 TEST_F( DutDriverLifecycleTest, StartFailureRollsBackStartedDriversAndCancelsBatch )

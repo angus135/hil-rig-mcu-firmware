@@ -67,6 +67,7 @@ public:
     MOCK_METHOD( bool, Abort_Channel, ( int ));
     MOCK_METHOD( bool, Tx_Load_Buffer, ( int, const uint8_t*, uint32_t ) );
     MOCK_METHOD( bool, Tx_Trigger, ( int ));
+    MOCK_METHOD( bool, Establish_Rx_Epoch, ( int ));
     MOCK_METHOD( HwUartRxSpans_T, Rx_Peek, ( int ));
     MOCK_METHOD( void, Rx_Consume, ( int, uint32_t ) );
     MOCK_METHOD( bool, Is_Tx_Complete, ( int ));
@@ -203,6 +204,11 @@ extern "C" bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* 
 extern "C" bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
 {
     return g_mock_hw->Tx_Trigger( channel );
+}
+
+extern "C" bool HW_UART_Establish_Rx_Epoch( HwUartChannel_T channel )
+{
+    return g_mock_hw->Establish_Rx_Epoch( channel );
 }
 
 extern "C" HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )

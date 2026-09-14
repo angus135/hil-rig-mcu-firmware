@@ -344,6 +344,19 @@ bool EXEC_PWM_Capture_Start_Channel( ExecPwmCaptureChannel_T channel )
     return true;
 }
 
+bool EXEC_PWM_Capture_Establish_Epoch( ExecPwmCaptureChannel_T channel )
+{
+    if ( !EXEC_PWM_Capture_Is_Valid_Channel( channel )
+         || exec_pwm_capture_channel_state[channel] != EXEC_PWM_CAPTURE_STATE_STARTED )
+    {
+        return false;
+    }
+
+    HW_PWM_Capture_Consume_Result( exec_pwm_capture_hardware_map[channel].hw_channel );
+    exec_pwm_capture_discard_next_result[channel] = true;
+    return true;
+}
+
 bool EXEC_PWM_Capture_Stop_Channel( ExecPwmCaptureChannel_T channel )
 {
     if ( !EXEC_PWM_Capture_Is_Valid_Channel( channel ) )

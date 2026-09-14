@@ -118,6 +118,9 @@ EXEC_CAN_Result_T EXEC_CAN_Configure_Channel( EXEC_CAN_Channel_T       channel,
 /** Start a configured CAN channel. */
 EXEC_CAN_Result_T EXEC_CAN_Start_Channel( EXEC_CAN_Channel_T channel );
 
+/** Discard pre-execution RX frames and establish the channel's tick-zero baseline. */
+EXEC_CAN_Result_T EXEC_CAN_Establish_Rx_Epoch( EXEC_CAN_Channel_T channel );
+
 /** Stop a started CAN channel while retaining its configuration. */
 EXEC_CAN_Result_T EXEC_CAN_Stop_Channel( EXEC_CAN_Channel_T channel );
 

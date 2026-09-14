@@ -166,6 +166,9 @@ bool EXEC_SPI_Configure_Channel( ExecSPIChannel_T channel, const ExecSPIConfig_T
 /** @brief Start configured HW SPI, then enable its external interface. */
 bool EXEC_SPI_Start_Channel( ExecSPIChannel_T channel );
 
+/** Discard pre-execution RX bytes and establish the channel's tick-zero baseline. */
+bool EXEC_SPI_Establish_Rx_Epoch( ExecSPIChannel_T channel );
+
 /**
  * @brief Gracefully stop a started channel while retaining configuration.
  *

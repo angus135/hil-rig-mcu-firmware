@@ -241,6 +241,9 @@ bool HW_UART_Configure_Channel( HwUartChannel_T channel, const HwUartPeripheralC
  */
 bool HW_UART_Start_Channel( HwUartChannel_T channel );
 
+/** Discard bytes received before the execution epoch without stopping RX DMA. */
+bool HW_UART_Establish_Rx_Epoch( HwUartChannel_T channel );
+
 /**
  * @brief Stop a started UART channel while retaining its configuration.
  *

@@ -178,6 +178,9 @@ bool EXEC_PWM_Capture_Configure_Channel( ExecPwmCaptureChannel_T       channel,
  */
 bool EXEC_PWM_Capture_Start_Channel( ExecPwmCaptureChannel_T channel );
 
+/** Clear pre-execution capture state and rearm complete-period synchronisation. */
+bool EXEC_PWM_Capture_Establish_Epoch( ExecPwmCaptureChannel_T channel );
+
 /**
  * @brief Stop PWM capture on the specified channel.
  *

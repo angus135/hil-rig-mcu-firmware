@@ -227,6 +227,22 @@ bool EXEC_ANALOGUE_INPUT_Start( void )
     return true;
 }
 
+bool EXEC_ANALOGUE_INPUT_Establish_Epoch( void )
+{
+    if ( analogue_input_state != EXEC_ANALOGUE_INPUT_STATE_STARTED )
+    {
+        return false;
+    }
+
+    if ( !HW_ADC_Stop_DMA_Measurements() )
+    {
+        return false;
+    }
+
+    analogue_input_state = EXEC_ANALOGUE_INPUT_STATE_CONFIGURED;
+    return EXEC_ANALOGUE_INPUT_Start();
+}
+
 bool EXEC_ANALOGUE_INPUT_Stop( void )
 {
     if ( analogue_input_state != EXEC_ANALOGUE_INPUT_STATE_STARTED )

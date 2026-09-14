@@ -28,6 +28,8 @@ static bool               driver_configure_result;
 static DutDriverConfigurationStatus_T     driver_configuration_status;
 static DutDriverStartStatus_T             driver_start_status;
 static bool                               driver_start_result;
+static bool                               driver_epoch_result;
+static uint32_t                           driver_epoch_calls;
 static bool                               driver_stop_result;
 static bool                               driver_shutdown_begin_result;
 static DutDriverShutdownStatus_T          driver_shutdown_status;
@@ -133,6 +135,11 @@ bool DUT_DRIVER_LIFECYCLE_Start( void )
 {
     driver_start_calls++;
     return driver_start_result;
+}
+bool DUT_DRIVER_LIFECYCLE_EstablishExecutionEpoch( void )
+{
+    driver_epoch_calls++;
+    return driver_epoch_result;
 }
 DutDriverStartStatus_T DUT_DRIVER_LIFECYCLE_GetStartStatus( void )
 {
@@ -284,6 +291,8 @@ protected:
         driver_configuration_status         = DUT_DRIVER_CONFIGURATION_READY;
         driver_start_status                 = DUT_DRIVER_START_READY;
         driver_start_result                 = true;
+        driver_epoch_result                 = true;
+        driver_epoch_calls                  = 0U;
         driver_stop_result                  = true;
         driver_shutdown_begin_result        = true;
         driver_shutdown_status              = DUT_DRIVER_SHUTDOWN_COMPLETE;
@@ -471,9 +480,29 @@ TEST_F( RunStateManagerTest, ExecutionStartsOnlyAfterFlashAndDriverStartupComple
     EXPECT_TRUE( execution_active );
     EXPECT_TRUE( execution_timer_running );
     EXPECT_EQ( 1U, driver_start_calls );
+    EXPECT_EQ( 1U, driver_epoch_calls );
     EXPECT_EQ( 1U, timer_start_calls );
     EXPECT_EQ( 25U, execution_prepare_tick_count );
     EXPECT_EQ( 0U, flash_prepare_capacity );
+}
+
+TEST_F( RunStateManagerTest, AcquisitionEpochFailurePreventsTimerStart )
+{
+    ConfigureToArmed();
+    prepared_execution = ( RunStatePreparedExecution_T ){
+        .tick_count = 10U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
+    driver_epoch_result = false;
+    Process( RUN_STATE_REQUEST_EXECUTION );
+    flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
+
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_ACQUISITION_EPOCH, fault_reason );
+    EXPECT_EQ( 1U, driver_epoch_calls );
+    EXPECT_EQ( 0U, timer_start_calls );
+    EXPECT_FALSE( execution_active );
 }
 
 TEST_F( RunStateManagerTest, ExecutionRequestCopiesValidatedSessionBounds )
