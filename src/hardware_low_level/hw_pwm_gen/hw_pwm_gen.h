@@ -111,26 +111,30 @@ bool HW_PWM_GEN_compute_arr( uint32_t freq_hz, uint32_t timer_clk_hz, uint16_t p
 bool HW_PWM_GEN_compute_ccr( uint16_t duty_pm, uint16_t arr, uint16_t* ccr );
 
 /**
- * @brief Updates the PWM registers associated with channel 1.
+ * @brief Updates the PWM preload registers associated with channel 1.
  *
- * @param arr   the value of the auto reloader register (ARR) associated with this PWM signal
- * @param ccr the value of the compare register (CCR) associated with this PWM signal
+ * @param arr Auto-reload register (ARR) preload value.
+ * @param ccr Compare register (CCR) preload value.
+ * @param psc Prescaler register (PSC) preload value.
  *
- * This function sets the values of the PWM channel 1 registers
- * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
- * This function is designed to be very fast and should be implemented in the execution phase
+ * @details
+ * Writes ARR, CCR, and PSC preload registers directly in the execution hot path.
+ * Shadow registers transfer synchronously at the timer's next natural update
+ * event (UEV) to prevent waveform truncation, runt pulses, and glitches.
  */
 void HW_PWM_GEN_Set_PWM1_Direct( uint16_t arr, uint16_t ccr, uint16_t psc );
 
 /**
- * @brief Updates the PWM registers associated with channel 2.
+ * @brief Updates the PWM preload registers associated with channel 2.
  *
- * @param arr   the value of the auto reloader register (ARR) associated with this PWM signal
- * @param ccr the value of the compare register (CCR) associated with this PWM signal
+ * @param arr Auto-reload register (ARR) preload value.
+ * @param ccr Compare register (CCR) preload value.
+ * @param psc Prescaler register (PSC) preload value.
  *
- * This function sets the values of the PWM channel 2 registers
- * To calculate the required values functions like HW_PWM_GEN_compute_arr should be used
- * This function is designed to be very fast and should be implemented in the execution phase
+ * @details
+ * Writes ARR, CCR, and PSC preload registers directly in the execution hot path.
+ * Shadow registers transfer synchronously at the timer's next natural update
+ * event (UEV) to prevent waveform truncation, runt pulses, and glitches.
  */
 void HW_PWM_GEN_Set_PWM2_Direct( uint16_t arr, uint16_t ccr, uint16_t psc );
 

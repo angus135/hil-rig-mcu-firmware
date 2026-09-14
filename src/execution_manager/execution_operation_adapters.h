@@ -131,9 +131,17 @@ EXECUTION_OPERATION_ADAPTER_ApplyDigitalOutput( uint8_t channel, const uint8_t* 
 /**
  * @brief Applies one prevalidated PWM update directly from aligned storage.
  *
- * The update writes ARR, CCR, and PSC preload values for the selected timer.
- * They become active together at the timer's next natural update event; this
- * adapter does not reset PWM phase or force an update event.
+ * @details
+ * PWM Phase Policy:
+ * The update writes ARR, CCR, and PSC preload registers for the selected timer.
+ * These shadow values become active synchronously at the timer's next natural
+ * update event (UEV / counter overflow).
+ *
+ * This design intentionally avoids forcing an immediate update event (TIM_EGR_UG)
+ * or resetting the counter (CNT=0) across the TIM4 execution boundary, ensuring
+ * that ongoing pulses are not truncated into runt pulses or signal glitches.
+ * A 0% duty or disabled state during execution is represented deterministically
+ * by setting CCR = 0 (constant inactive level) without stopping the timer clock.
  *
  * @pre channel is EXECUTION_OPERATION_PWM_CHANNEL_LV or
  *      EXECUTION_OPERATION_PWM_CHANNEL_HV.
