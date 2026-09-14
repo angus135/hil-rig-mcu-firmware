@@ -72,22 +72,18 @@ typedef enum
 } HwPWMCaptureChannel_T;
 
 /**
- * @brief Zero-copy PWM capture result.
+ * @brief Atomic PWM capture snapshot.
  *
- * Provides direct pointers to the timer capture registers containing the
- * most recent period and high-time measurements.
- *
- * These pointers reference hardware registers (CCR) and must be dereferenced
- * by the caller to obtain the latest captured values.
- *
- * No validation or copying is performed to preserve deterministic execution.
+ * Provides the captured period and high-time values along with freshness and
+ * overcapture indicators.
  */
 typedef struct
 {
-    bool               has_new_data;
-    volatile uint32_t* period_ticks;
-    volatile uint32_t* high_ticks;
-} HwPWMCaptureResult_T;
+    bool     has_new_data;
+    bool     is_overrun;
+    uint32_t period_ticks;
+    uint32_t high_ticks;
+} HwPWMCaptureSnapshot_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -142,41 +138,23 @@ bool HW_PWM_Capture_Start_Channel( HwPWMCaptureChannel_T channel );
 bool HW_PWM_Capture_Stop_Channel( HwPWMCaptureChannel_T channel );
 
 /**
- * @brief Peek the latest PWM capture result without consuming it.
+ * @brief Reads an atomic snapshot of the latest PWM capture.
  *
- * Checks the period capture flag for the selected channel. If a new complete
- * PWM measurement is available, returns direct pointers to the period and
- * high-time capture registers.
- *
- * If no new measurement is available, returns a zero-initialised result with
- * has_new_data set to false and pointer fields set to NULL.
- *
- * @note A new result is only available once per completed PWM period. For slow
- * signals, this function may return has_new_data = false for multiple execution
- * ticks between capture events. This is expected behaviour.
+ * Checks the period capture flag. If a new complete PWM measurement is available,
+ * copies the captured period and high-time registers, checks for timer
+ * overcapture (CCxOF), clears the hardware capture and overcapture flags, and
+ * returns true.
  *
  * @param channel Logical PWM capture channel to inspect.
+ * @param snapshot Pointer to snapshot struct to populate.
  *
- * @return Zero-copy capture result descriptor.
- *
- * Contract:
- * The caller must ensure channel is valid and configured.
- */
-HwPWMCaptureResult_T HW_PWM_Capture_Peek_Result( HwPWMCaptureChannel_T channel );
-
-/**
- * @brief Consume the current PWM capture result.
- *
- * Clears the period capture flag for the selected channel. This marks the
- * current hardware capture result as consumed by the execution layer.
- *
- * @param channel Logical PWM capture channel to consume.
+ * @return true if a new capture was read; false if no new data or invalid channel.
  *
  * Contract:
- * This must only be called after a successful peek where has_new_data is true.
- * Calling this without a corresponding peek may result in lost capture events.
+ * The caller must ensure channel is valid and started.
  */
-void HW_PWM_Capture_Consume_Result( HwPWMCaptureChannel_T channel );
+bool HW_PWM_Capture_Read_Snapshot( HwPWMCaptureChannel_T channel,
+                                   HwPWMCaptureSnapshot_T* snapshot );
 
 /**
  * @brief Return the timer input clock frequency for a PWM capture channel.

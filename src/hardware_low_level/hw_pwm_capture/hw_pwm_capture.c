@@ -65,6 +65,7 @@
 #define HW_PWM_CAPTURE_CH_1_PERIOD_CCR CCR1
 #define HW_PWM_CAPTURE_CH_1_HIGH_CCR CCR2
 #define HW_PWM_CAPTURE_CH_1_PERIOD_FLAG TIM_SR_CC1IF
+#define HW_PWM_CAPTURE_CH_1_OVERCAPTURE_FLAG TIM_SR_CC1OF
 
 /*
  * PWM capture channel 2 timer mapping.
@@ -78,6 +79,7 @@
 #define HW_PWM_CAPTURE_CH_2_PERIOD_CCR CCR2
 #define HW_PWM_CAPTURE_CH_2_HIGH_CCR CCR1
 #define HW_PWM_CAPTURE_CH_2_PERIOD_FLAG TIM_SR_CC2IF
+#define HW_PWM_CAPTURE_CH_2_OVERCAPTURE_FLAG TIM_SR_CC2OF
 
 /*
  * PWM capture timers run at full timer resolution.
@@ -109,6 +111,7 @@ typedef struct
     volatile uint32_t* high_ccr;
 
     uint32_t period_capture_flag;
+    uint32_t period_overcapture_flag;
     uint32_t timer_clock_hz;
 
     bool is_configured;
@@ -133,22 +136,24 @@ typedef struct
  */
 static HwPWMCaptureChannelContext_T hw_pwm_capture_channels[PWM_CAPTURE_CHANNEL_COUNT] = {
     {
-        .timer               = HW_PWM_CAPTURE_CH_1_INSTANCE,
-        .timer_role          = PWM_CAPTURE_TIMER_CH1,
-        .period_ccr          = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_PERIOD_CCR,
-        .high_ccr            = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_HIGH_CCR,
-        .period_capture_flag = HW_PWM_CAPTURE_CH_1_PERIOD_FLAG,
-        .is_configured       = false,
-        .is_started          = false,
+        .timer                    = HW_PWM_CAPTURE_CH_1_INSTANCE,
+        .timer_role               = PWM_CAPTURE_TIMER_CH1,
+        .period_ccr               = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_PERIOD_CCR,
+        .high_ccr                 = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_HIGH_CCR,
+        .period_capture_flag      = HW_PWM_CAPTURE_CH_1_PERIOD_FLAG,
+        .period_overcapture_flag  = HW_PWM_CAPTURE_CH_1_OVERCAPTURE_FLAG,
+        .is_configured            = false,
+        .is_started               = false,
     },
     {
-        .timer               = HW_PWM_CAPTURE_CH_2_INSTANCE,
-        .timer_role          = PWM_CAPTURE_TIMER_CH2,
-        .period_ccr          = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_PERIOD_CCR,
-        .high_ccr            = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_HIGH_CCR,
-        .period_capture_flag = HW_PWM_CAPTURE_CH_2_PERIOD_FLAG,
-        .is_configured       = false,
-        .is_started          = false,
+        .timer                    = HW_PWM_CAPTURE_CH_2_INSTANCE,
+        .timer_role               = PWM_CAPTURE_TIMER_CH2,
+        .period_ccr               = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_PERIOD_CCR,
+        .high_ccr                 = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_HIGH_CCR,
+        .period_capture_flag      = HW_PWM_CAPTURE_CH_2_PERIOD_FLAG,
+        .period_overcapture_flag  = HW_PWM_CAPTURE_CH_2_OVERCAPTURE_FLAG,
+        .is_configured            = false,
+        .is_started               = false,
     },
 };
 
@@ -242,47 +247,53 @@ bool HW_PWM_Capture_Stop_Channel( HwPWMCaptureChannel_T channel )
     return true;
 }
 
-HwPWMCaptureResult_T HW_PWM_Capture_Peek_Result( HwPWMCaptureChannel_T channel )
+bool HW_PWM_Capture_Read_Snapshot( HwPWMCaptureChannel_T  channel,
+                                   HwPWMCaptureSnapshot_T* snapshot )
 {
-    HwPWMCaptureChannelContext_T* context = &hw_pwm_capture_channels[channel];
-    HwPWMCaptureResult_T          result  = { 0 };
-
-    /*
-     * The period capture flag indicates a new complete PWM measurement.
-     * Direct SR access is used to keep the implementation table-driven, since
-     * the period flag (CC1 or CC2) depends on the IOC configuration.
-     */
-    if ( ( context->timer->SR & context->period_capture_flag ) == 0U )
+    if ( channel >= PWM_CAPTURE_CHANNEL_COUNT || snapshot == NULL )
     {
-        return result;
+        return false;
     }
 
-    result.has_new_data = true;
-    result.period_ticks = context->period_ccr;
-    result.high_ticks   = context->high_ccr;
-
-    return result;
-}
-
-void HW_PWM_Capture_Consume_Result( HwPWMCaptureChannel_T channel )
-{
     HwPWMCaptureChannelContext_T* context = &hw_pwm_capture_channels[channel];
 
-    /*
-     * The period capture flag indicates a new complete PWM measurement.
-     * Direct SR access is used to keep the implementation table-driven, since
-     * the period flag (CC1 or CC2) depends on the IOC configuration.
-     *
-     * TIM status flags are cleared by writing 0 to the target flag bit.
-     * Avoid read-modify-write here because hardware may set another flag between
-     * the read and write, which could cause an event to be lost.
-     */
+    snapshot->has_new_data = false;
+    snapshot->is_overrun   = false;
+    snapshot->period_ticks = 0U;
+    snapshot->high_ticks   = 0U;
+
+    if ( !context->is_started )
+    {
+        return false;
+    }
+
+    const uint32_t sr = context->timer->SR;
+    if ( ( sr & context->period_capture_flag ) == 0U )
+    {
+        return false;
+    }
+
+    if ( ( sr & context->period_overcapture_flag ) != 0U )
+    {
+        snapshot->is_overrun = true;
+    }
 
     /*
-     * Clear only the period capture flag.
-     * Writing 0 clears the target flag, writing 1 preserves all others.
+     * Read the period and high-time capture registers atomically into snapshot
+     * values.
      */
-    context->timer->SR = ~( context->period_capture_flag );
+    snapshot->period_ticks = *( context->period_ccr );
+    snapshot->high_ticks   = *( context->high_ccr );
+    snapshot->has_new_data = true;
+
+    /*
+     * Clear both the period capture and overcapture flags AFTER reading the
+     * registers. Writing 0 clears the target flags, writing 1 preserves all
+     * other status bits.
+     */
+    context->timer->SR = ~( context->period_capture_flag | context->period_overcapture_flag );
+
+    return true;
 }
 
 uint32_t HW_PWM_Capture_Get_Timer_Clock_Hz( HwPWMCaptureChannel_T channel )
