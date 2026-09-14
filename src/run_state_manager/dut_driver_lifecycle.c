@@ -781,7 +781,7 @@ DutDriverShutdownStatus_T DUT_DRIVER_LIFECYCLE_GetShutdownStatus( void )
         {
             if ( !DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration() )
             {
-                return DUT_DRIVER_SHUTDOWN_FAILED;
+                return DUT_DRIVER_SHUTDOWN_PENDING;
             }
             lifecycle_context.shutdown_disabled_applied = true;
         }
@@ -789,7 +789,7 @@ DutDriverShutdownStatus_T DUT_DRIVER_LIFECYCLE_GetShutdownStatus( void )
         if ( LOGIC_EXPANDER_End_Control_Batch( lifecycle_context.shutdown_batch_id )
              != LOGIC_EXPANDER_STATUS_OK )
         {
-            return DUT_DRIVER_SHUTDOWN_FAILED;
+            return DUT_DRIVER_SHUTDOWN_PENDING;
         }
         lifecycle_context.shutdown_batch_sealed = true;
     }
