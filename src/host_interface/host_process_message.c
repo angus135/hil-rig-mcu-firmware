@@ -256,6 +256,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
 {
     ( void )data;
     ( void )data_size;
+    return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
     /** CALL CALLUMS FUNCTION TO PASS CONFIGURAITON MESSAGE
      *
      *
@@ -331,7 +332,36 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Response( const HIL_Application_M
                                       HIL_Application_Message_T*  response_message,
                                       bool*                       response_required, uint8_t* data, size_t data_size );
 
-HOST_Interface_Status_T HOST_INTERFACE_process_Error(const HIL_Application_Message_T* recent_received_message, HIL_Application_Message_T* response_message, bool* response_required, uint8_t* data, size_t data_size);
+HOST_Interface_Status_T
+HOST_INTERFACE_process_Error( const HIL_Application_Message_T* recent_received_message,
+                              HIL_Application_Message_T* response_message, bool* response_required,
+                              uint8_t* data, size_t data_size )
+{
+    RunStateFaultReason_T fault = RUN_STATE_FAULT_EXTERNAL_REQUEST;
+    switch ( recent_received_message->body.error.category )
+    {
+        case HIL_APPLICATION_ERROR_CATEGORY_INVALID:
+            if ( RUN_STATE_MANAGER_RequestFault( fault ) == false )
+            {
+                // Construct the error message
+                HOST_INTERFACE_Default_Error(response_message);
+                *response_required = true;
+                return HOST_INTERFACE_STATUS_OK;
+            }
+            *response_required = false;
+            return HOST_INTERFACE_STATUS_OK;
+        default:
+            if ( RUN_STATE_MANAGER_RequestFault( fault ) == false )
+            {
+                // Construct the error message
+                HOST_INTERFACE_Default_Error(response_message);
+                *response_required = true;
+                return HOST_INTERFACE_STATUS_OK;
+            }
+            *response_required = false;
+            return HOST_INTERFACE_STATUS_OK;
+    }
+}
 
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
