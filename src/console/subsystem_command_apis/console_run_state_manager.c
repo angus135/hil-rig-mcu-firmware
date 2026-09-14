@@ -571,20 +571,18 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "CAN TX pending mailbox: ch1=0x%08lX ch2=0x%08lX\r\n",
                         ( unsigned long )run_status.can_diag.can_tx_pending_mailbox1,
                         ( unsigned long )run_status.can_diag.can_tx_pending_mailbox2 );
-        CONSOLE_Printf( "CAN1 regs: TSR=0x%08lX ESR=0x%08lX MSR=0x%08lX IER=0x%08lX\r\n",
-                        ( unsigned long )run_status.can_diag.TSR1,
-                        ( unsigned long )run_status.can_diag.ESR1,
-                        ( unsigned long )run_status.can_diag.MSR1,
-                        ( unsigned long )run_status.can_diag.IER1 );
+        CONSOLE_Printf(
+            "CAN1 regs: TSR=0x%08lX ESR=0x%08lX MSR=0x%08lX IER=0x%08lX\r\n",
+            ( unsigned long )run_status.can_diag.TSR1, ( unsigned long )run_status.can_diag.ESR1,
+            ( unsigned long )run_status.can_diag.MSR1, ( unsigned long )run_status.can_diag.IER1 );
         CONSOLE_Printf( "CAN1 error: TEC=%u REC=%u LEC=%u\r\n",
                         ( unsigned int )run_status.can_diag.TEC1,
                         ( unsigned int )run_status.can_diag.REC1,
                         ( unsigned int )run_status.can_diag.error_code1 );
-        CONSOLE_Printf( "CAN2 regs: TSR=0x%08lX ESR=0x%08lX MSR=0x%08lX IER=0x%08lX\r\n",
-                        ( unsigned long )run_status.can_diag.TSR2,
-                        ( unsigned long )run_status.can_diag.ESR2,
-                        ( unsigned long )run_status.can_diag.MSR2,
-                        ( unsigned long )run_status.can_diag.IER2 );
+        CONSOLE_Printf(
+            "CAN2 regs: TSR=0x%08lX ESR=0x%08lX MSR=0x%08lX IER=0x%08lX\r\n",
+            ( unsigned long )run_status.can_diag.TSR2, ( unsigned long )run_status.can_diag.ESR2,
+            ( unsigned long )run_status.can_diag.MSR2, ( unsigned long )run_status.can_diag.IER2 );
         CONSOLE_Printf( "CAN2 error: TEC=%u REC=%u LEC=%u\r\n",
                         ( unsigned int )run_status.can_diag.TEC2,
                         ( unsigned int )run_status.can_diag.REC2,
