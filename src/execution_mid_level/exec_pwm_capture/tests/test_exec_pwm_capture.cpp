@@ -43,10 +43,10 @@ using ::testing::Return;
 class MockHwPwmCapture
 {
 public:
-    MOCK_METHOD( bool, Configure_Channel, ( HwPWMCaptureChannel_T, bool ) );
+    MOCK_METHOD( bool, Configure_Channel, ( HwPWMCaptureChannel_T, bool ));
     MOCK_METHOD( bool, Start_Channel, ( HwPWMCaptureChannel_T ) );
     MOCK_METHOD( bool, Stop_Channel, ( HwPWMCaptureChannel_T ) );
-    MOCK_METHOD( bool, Read_Snapshot, ( HwPWMCaptureChannel_T, HwPWMCaptureSnapshot_T* ) );
+    MOCK_METHOD( bool, Read_Snapshot, ( HwPWMCaptureChannel_T, HwPWMCaptureSnapshot_T* ));
     MOCK_METHOD( uint32_t, Get_Timer_Clock_Hz, ( HwPWMCaptureChannel_T ) );
 };
 
@@ -54,7 +54,7 @@ class MockLogicExpander
 {
 public:
     MOCK_METHOD( LogicExpanderStatus_T, Load_Control_Bit,
-                 ( LogicExpanderIndex_T, LogicExpanderPort_T, uint8_t, bool ) );
+                 ( LogicExpanderIndex_T, LogicExpanderPort_T, uint8_t, bool ));
     MOCK_METHOD( LogicExpanderStatus_T, Send_Control_Bits, () );
 };
 
@@ -138,8 +138,7 @@ protected:
         g_mock_logic_expander = nullptr;
     }
 
-    HwPWMCaptureSnapshot_T MakeHwSnapshot( uint32_t period, uint32_t high,
-                                           bool is_overrun = false )
+    HwPWMCaptureSnapshot_T MakeHwSnapshot( uint32_t period, uint32_t high, bool is_overrun = false )
     {
         HwPWMCaptureSnapshot_T snapshot = {};
         snapshot.has_new_data           = true;
@@ -372,16 +371,14 @@ TEST_F( ExecPWMCaptureTest, EstablishEpochDrainsPendingCaptureAndSetsDiscardFlag
     EXPECT_CALL( mock_hw, Start_Channel( _ ) ).WillOnce( Return( true ) );
     ASSERT_TRUE( EXEC_PWM_Capture_Start_Channel( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
 
-    EXPECT_CALL( mock_hw, Read_Snapshot( HW_PWM_CAPTURE_CHANNEL_1, _ ) )
-        .WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw, Read_Snapshot( HW_PWM_CAPTURE_CHANNEL_1, _ ) ).WillOnce( Return( true ) );
     EXPECT_TRUE( EXEC_PWM_Capture_Establish_Epoch( EXEC_PWM_CAPTURE_CHANNEL_1 ) );
 
     /* First capture after epoch must be discarded */
     EXPECT_CALL( mock_hw, Read_Snapshot( HW_PWM_CAPTURE_CHANNEL_1, _ ) )
         .Times( 2 )
-        .WillRepeatedly( testing::DoAll(
-            testing::SetArgPointee<1>( MakeHwSnapshot( 100U, 50U ) ),
-            Return( true ) ) );
+        .WillRepeatedly( testing::DoAll( testing::SetArgPointee<1>( MakeHwSnapshot( 100U, 50U ) ),
+                                         Return( true ) ) );
 
     EXPECT_FALSE( EXEC_PWM_Capture_Consume( EXEC_PWM_CAPTURE_CHANNEL_1, &result ) );
     EXPECT_FALSE( result.has_new_data );
@@ -408,9 +405,8 @@ TEST_F( ExecPWMCaptureTest, ConsumeCopiesValidCaptureResult )
     ExecPwmCaptureResult_T result = {};
 
     EXPECT_CALL( mock_hw, Read_Snapshot( HW_PWM_CAPTURE_CHANNEL_1, _ ) )
-        .WillOnce( testing::DoAll(
-            testing::SetArgPointee<1>( MakeHwSnapshot( 1800U, 900U ) ),
-            Return( true ) ) );
+        .WillOnce( testing::DoAll( testing::SetArgPointee<1>( MakeHwSnapshot( 1800U, 900U ) ),
+                                   Return( true ) ) );
 
     EXPECT_TRUE( EXEC_PWM_Capture_Consume( EXEC_PWM_CAPTURE_CHANNEL_1, &result ) );
     EXPECT_TRUE( result.has_new_data );
@@ -434,9 +430,8 @@ TEST_F( ExecPWMCaptureTest, FirstCaptureAfterStartIsConsumedWithoutBeingPublishe
 
     EXPECT_CALL( mock_hw, Read_Snapshot( HW_PWM_CAPTURE_CHANNEL_1, _ ) )
         .Times( 2 )
-        .WillRepeatedly( testing::DoAll(
-            testing::SetArgPointee<1>( MakeHwSnapshot( 90U, 45U ) ),
-            Return( true ) ) );
+        .WillRepeatedly( testing::DoAll( testing::SetArgPointee<1>( MakeHwSnapshot( 90U, 45U ) ),
+                                         Return( true ) ) );
 
     EXPECT_FALSE( EXEC_PWM_Capture_Consume( EXEC_PWM_CAPTURE_CHANNEL_1, &result ) );
     EXPECT_FALSE( result.has_new_data );
@@ -454,9 +449,8 @@ TEST_F( ExecPWMCaptureTest, ConsumeReturnsFalseWhenPeriodIsZero )
     ExecPwmCaptureResult_T result = {};
 
     EXPECT_CALL( mock_hw, Read_Snapshot( _, _ ) )
-        .WillOnce( testing::DoAll(
-            testing::SetArgPointee<1>( MakeHwSnapshot( 0U, 0U ) ),
-            Return( true ) ) );
+        .WillOnce( testing::DoAll( testing::SetArgPointee<1>( MakeHwSnapshot( 0U, 0U ) ),
+                                   Return( true ) ) );
 
     EXPECT_FALSE( EXEC_PWM_Capture_Consume( EXEC_PWM_CAPTURE_CHANNEL_1, &result ) );
     EXPECT_TRUE( result.has_new_data );
@@ -468,9 +462,8 @@ TEST_F( ExecPWMCaptureTest, ConsumeReturnsFalseWhenHighExceedsPeriod )
     ExecPwmCaptureResult_T result = {};
 
     EXPECT_CALL( mock_hw, Read_Snapshot( _, _ ) )
-        .WillOnce( testing::DoAll(
-            testing::SetArgPointee<1>( MakeHwSnapshot( 1000U, 1200U ) ),
-            Return( true ) ) );
+        .WillOnce( testing::DoAll( testing::SetArgPointee<1>( MakeHwSnapshot( 1000U, 1200U ) ),
+                                   Return( true ) ) );
 
     EXPECT_FALSE( EXEC_PWM_Capture_Consume( EXEC_PWM_CAPTURE_CHANNEL_1, &result ) );
     EXPECT_TRUE( result.has_new_data );
@@ -482,9 +475,8 @@ TEST_F( ExecPWMCaptureTest, ConsumeRejectsOverrunCapture )
     ExecPwmCaptureResult_T result = {};
 
     EXPECT_CALL( mock_hw, Read_Snapshot( _, _ ) )
-        .WillOnce( testing::DoAll(
-            testing::SetArgPointee<1>( MakeHwSnapshot( 1000U, 500U, true ) ),
-            Return( true ) ) );
+        .WillOnce( testing::DoAll( testing::SetArgPointee<1>( MakeHwSnapshot( 1000U, 500U, true ) ),
+                                   Return( true ) ) );
 
     EXPECT_FALSE( EXEC_PWM_Capture_Consume( EXEC_PWM_CAPTURE_CHANNEL_1, &result ) );
     EXPECT_TRUE( result.has_new_data );
@@ -496,9 +488,8 @@ TEST_F( ExecPWMCaptureTest, ConsumeAcceptsZeroPercentDuty )
     ExecPwmCaptureResult_T result = {};
 
     EXPECT_CALL( mock_hw, Read_Snapshot( _, _ ) )
-        .WillOnce( testing::DoAll(
-            testing::SetArgPointee<1>( MakeHwSnapshot( 1000U, 0U ) ),
-            Return( true ) ) );
+        .WillOnce( testing::DoAll( testing::SetArgPointee<1>( MakeHwSnapshot( 1000U, 0U ) ),
+                                   Return( true ) ) );
 
     EXPECT_TRUE( EXEC_PWM_Capture_Consume( EXEC_PWM_CAPTURE_CHANNEL_1, &result ) );
     EXPECT_TRUE( result.has_new_data );
@@ -512,9 +503,8 @@ TEST_F( ExecPWMCaptureTest, ConsumeAcceptsHundredPercentDuty )
     ExecPwmCaptureResult_T result = {};
 
     EXPECT_CALL( mock_hw, Read_Snapshot( _, _ ) )
-        .WillOnce( testing::DoAll(
-            testing::SetArgPointee<1>( MakeHwSnapshot( 1000U, 1000U ) ),
-            Return( true ) ) );
+        .WillOnce( testing::DoAll( testing::SetArgPointee<1>( MakeHwSnapshot( 1000U, 1000U ) ),
+                                   Return( true ) ) );
 
     EXPECT_TRUE( EXEC_PWM_Capture_Consume( EXEC_PWM_CAPTURE_CHANNEL_1, &result ) );
     EXPECT_TRUE( result.has_new_data );

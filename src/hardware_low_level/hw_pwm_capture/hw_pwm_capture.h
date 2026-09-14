@@ -153,7 +153,7 @@ bool HW_PWM_Capture_Stop_Channel( HwPWMCaptureChannel_T channel );
  * Contract:
  * The caller must ensure channel is valid and started.
  */
-bool HW_PWM_Capture_Read_Snapshot( HwPWMCaptureChannel_T channel,
+bool HW_PWM_Capture_Read_Snapshot( HwPWMCaptureChannel_T   channel,
                                    HwPWMCaptureSnapshot_T* snapshot );
 
 /**

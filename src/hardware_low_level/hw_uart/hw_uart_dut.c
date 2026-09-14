@@ -179,7 +179,7 @@ typedef enum
  */
 typedef struct
 {
-    uint32_t rx_read_index;
+    uint32_t          rx_read_index;
     volatile uint32_t latched_faults;
 
     bool is_configured_and_initialised;
@@ -885,8 +885,7 @@ bool HW_UART_Abort_Channel( HwUartChannel_T channel )
     state->runtime.tx_count            = 0U;
     state->runtime.tx_dma_length_bytes = 0U;
     state->runtime.tx_dma_active       = false;
-    state->runtime.latched_faults &=
-        ( uint32_t )~( HW_UART_FAULT_TX_DMA | HW_UART_FAULT_RX_DMA );
+    state->runtime.latched_faults &= ( uint32_t ) ~( HW_UART_FAULT_TX_DMA | HW_UART_FAULT_RX_DMA );
 
     if ( state->runtime.rx_running && !HW_UART_Stop_Rx( channel ) )
     {

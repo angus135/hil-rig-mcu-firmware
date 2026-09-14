@@ -670,8 +670,7 @@ static bool DUT_DRIVER_LIFECYCLE_StopAttempt( bool force_abort, bool* busy )
         {
             continue;
         }
-        const ExecUartTxStatus_T tx_status =
-            EXEC_UART_Get_Tx_Status( ( ExecUartChannel_T )index );
+        const ExecUartTxStatus_T tx_status = EXEC_UART_Get_Tx_Status( ( ExecUartChannel_T )index );
         if ( !force_abort
              && ( tx_status == EXEC_UART_TX_STATUS_FAULTED
                   || EXEC_UART_Is_Rx_Faulted( ( ExecUartChannel_T )index ) ) )

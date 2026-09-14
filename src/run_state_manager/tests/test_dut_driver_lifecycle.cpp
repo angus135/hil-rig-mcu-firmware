@@ -108,17 +108,17 @@ static uint32_t s_spi_abort_calls[TEST_CONFIGURATION_SPI_CHANNEL_COUNT];
 static bool     s_spi_epoch_result;
 static uint32_t s_spi_epoch_calls[TEST_CONFIGURATION_SPI_CHANNEL_COUNT];
 
-static bool     s_uart_configure_result;
-static bool     s_uart_start_result;
-static bool     s_uart_stop_result;
-static bool     s_uart_abort_result;
+static bool               s_uart_configure_result;
+static bool               s_uart_start_result;
+static bool               s_uart_stop_result;
+static bool               s_uart_abort_result;
 static ExecUartTxStatus_T s_uart_tx_status;
-static bool     s_uart_rx_faulted;
-static uint32_t s_uart_start_calls[EXEC_UART_CHANNEL_COUNT];
-static uint32_t s_uart_stop_calls[EXEC_UART_CHANNEL_COUNT];
-static uint32_t s_uart_abort_calls[EXEC_UART_CHANNEL_COUNT];
-static bool     s_uart_epoch_result;
-static uint32_t s_uart_epoch_calls[EXEC_UART_CHANNEL_COUNT];
+static bool               s_uart_rx_faulted;
+static uint32_t           s_uart_start_calls[EXEC_UART_CHANNEL_COUNT];
+static uint32_t           s_uart_stop_calls[EXEC_UART_CHANNEL_COUNT];
+static uint32_t           s_uart_abort_calls[EXEC_UART_CHANNEL_COUNT];
+static bool               s_uart_epoch_result;
+static uint32_t           s_uart_epoch_calls[EXEC_UART_CHANNEL_COUNT];
 
 extern "C"
 {
@@ -863,10 +863,10 @@ TEST_F( DutDriverLifecycleTest, ForcedAbortEscalationInvokesAbortApis )
     ASSERT_TRUE( DUT_DRIVER_LIFECYCLE_Start() );
 
     /* Analogue output faulted at runtime, communications transmitting */
-    s_ao_state         = EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
-    s_can_tx_status    = EXEC_CAN_TX_STATUS_ACTIVE;
-    s_spi_tx_complete  = false;
-    s_uart_tx_status   = EXEC_UART_TX_STATUS_BUSY;
+    s_ao_state        = EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
+    s_can_tx_status   = EXEC_CAN_TX_STATUS_ACTIVE;
+    s_spi_tx_complete = false;
+    s_uart_tx_status  = EXEC_UART_TX_STATUS_BUSY;
 
     /* Graceful shutdown fails on faulted AO and busy communications */
     EXPECT_TRUE( DUT_DRIVER_LIFECYCLE_BeginShutdown( false, false ) );
