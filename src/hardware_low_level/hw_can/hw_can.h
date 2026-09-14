@@ -101,7 +101,7 @@ typedef enum HW_CAN_Tx_Status_T
 } HW_CAN_Tx_Status_T;
 
 /**
- * @brief Snapshot of CAN driver state and CAN1 peripheral registers.
+ * @brief Snapshot of CAN driver state and CAN1 / CAN2 peripheral registers.
  *
  * Populated by HW_CAN_GetDiagnostic(). All fields are read-only copies taken
  * at a single instant; no hardware state is modified.
@@ -579,7 +579,7 @@ HW_CAN_Result_T HW_CAN_Tx_Trigger1( void );
 HW_CAN_Result_T HW_CAN_Tx_Trigger2( void );
 
 /**
- * @brief Reads a snapshot of CAN driver state and CAN1 peripheral registers.
+ * @brief Reads a snapshot of CAN driver state and CAN1 / CAN2 peripheral registers.
  *
  * Fills all fields of @p diag from the current driver state. Performs no
  * writes to hardware or driver state — safe to call from any non-ISR context.
