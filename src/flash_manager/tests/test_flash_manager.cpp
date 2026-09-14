@@ -1836,8 +1836,8 @@ TEST_F( FlashManagerTest, AbortSessionSupportsInstructionUploadSessionStates )
     ASSERT_TRUE( FLASH_MANAGER_PrepareInstructionUpload() );
     EXPECT_EQ( FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD, flash_manager_context.state );
     std::array<uint8_t, 32U> data = {};
-    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_WRITE_ACCEPTED,
-               FLASH_MANAGER_WriteInstructionBytes( data.data(), data.size() ) );
+    EXPECT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_PAGE_READY,
+               INSTRUCTION_BUFFER_WriteUploadBytes( data.data(), data.size() ) );
 
     EXPECT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestAbortSession() );
     EXPECT_EQ( FLASH_MANAGER_STATE_ABORTING, flash_manager_context.state );

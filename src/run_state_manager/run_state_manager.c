@@ -1248,8 +1248,10 @@ void RUN_STATE_MANAGER_Init( void )
     last_completed_request       = RUN_STATE_REQUEST_NONE;
     last_transition_duration_ms  = 0U;
     run_state                    = RUN_STATE_IDLE;
+    run_configuration_owned      = false;
 
     HW_TIMER_Set_Execution_Guard( RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR );
+    FLASH_MANAGER_SetFaultCallback( RUN_STATE_MANAGER_HandleFlashFault );
 }
 
 bool RUN_STATE_MANAGER_RequestPackageReceive( void )
