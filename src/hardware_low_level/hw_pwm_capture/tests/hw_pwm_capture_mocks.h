@@ -36,6 +36,8 @@ extern "C"
 #define TIM5 ( &mock_tim5 )
 #define TIM_SR_CC1IF ( 1u << 1 )
 #define TIM_SR_CC2IF ( 1u << 2 )
+#define TIM_SR_CC1OF ( 1u << 9 )
+#define TIM_SR_CC2OF ( 1u << 10 )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures

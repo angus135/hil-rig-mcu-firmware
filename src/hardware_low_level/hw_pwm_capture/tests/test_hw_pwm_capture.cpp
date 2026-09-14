@@ -246,126 +246,144 @@ TEST_F( HWPWMCaptureTest, StartAndStopReturnFalseForInvalidChannel )
     EXPECT_FALSE( HW_PWM_Capture_Stop_Channel( invalid_channel ) );
 }
 
-TEST_F( HWPWMCaptureTest, PeekChannel1ReturnsNoDataWhenNoNewCaptureFlag )
+TEST_F( HWPWMCaptureTest, ReadSnapshotReturnsFalseWhenChannelNotStarted )
 {
+    mock_tim2.SR = TIM_SR_CC1IF;
+    HwPWMCaptureSnapshot_T snapshot = {};
+
+    EXPECT_FALSE( HW_PWM_Capture_Read_Snapshot( HW_PWM_CAPTURE_CHANNEL_1, &snapshot ) );
+    EXPECT_FALSE( snapshot.has_new_data );
+}
+
+TEST_F( HWPWMCaptureTest, ReadSnapshotReturnsFalseForNullPointerOrInvalidChannel )
+{
+    EXPECT_FALSE( HW_PWM_Capture_Read_Snapshot( HW_PWM_CAPTURE_CHANNEL_1, nullptr ) );
+    HwPWMCaptureSnapshot_T snapshot = {};
+    EXPECT_FALSE(
+        HW_PWM_Capture_Read_Snapshot( static_cast<HwPWMCaptureChannel_T>( 2U ), &snapshot ) );
+}
+
+TEST_F( HWPWMCaptureTest, ReadSnapshotChannel1ReturnsNoDataWhenNoNewCaptureFlag )
+{
+    EXPECT_CALL( mock_timer, Configure_Timer( PWM_CAPTURE_TIMER_CH1, _, _ ) );
+    EXPECT_CALL( mock_timer, Get_Clock_Hz( PWM_CAPTURE_TIMER_CH1 ) )
+        .WillOnce( testing::Return( 1000000U ) );
+    ASSERT_TRUE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, true ) );
+    EXPECT_CALL( mock_timer, Start_Timer( PWM_CAPTURE_TIMER_CH1 ) );
+    ASSERT_TRUE( HW_PWM_Capture_Start_Channel( HW_PWM_CAPTURE_CHANNEL_1 ) );
+
     mock_tim2.SR = 0U;
 
-    HwPWMCaptureResult_T result = HW_PWM_Capture_Peek_Result( HW_PWM_CAPTURE_CHANNEL_1 );
-
-    EXPECT_FALSE( result.has_new_data );
-    EXPECT_EQ( result.period_ticks, nullptr );
-    EXPECT_EQ( result.high_ticks, nullptr );
+    HwPWMCaptureSnapshot_T snapshot = {};
+    EXPECT_FALSE( HW_PWM_Capture_Read_Snapshot( HW_PWM_CAPTURE_CHANNEL_1, &snapshot ) );
+    EXPECT_FALSE( snapshot.has_new_data );
+    EXPECT_FALSE( snapshot.is_overrun );
+    EXPECT_EQ( snapshot.period_ticks, 0U );
+    EXPECT_EQ( snapshot.high_ticks, 0U );
 }
 
-TEST_F( HWPWMCaptureTest, PeekChannel2ReturnsNoDataWhenNoNewCaptureFlag )
+TEST_F( HWPWMCaptureTest, ReadSnapshotChannel2ReturnsNoDataWhenNoNewCaptureFlag )
 {
+    EXPECT_CALL( mock_timer, Configure_Timer( PWM_CAPTURE_TIMER_CH2, _, _ ) );
+    EXPECT_CALL( mock_timer, Get_Clock_Hz( PWM_CAPTURE_TIMER_CH2 ) )
+        .WillOnce( testing::Return( 1000000U ) );
+    ASSERT_TRUE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_2, true ) );
+    EXPECT_CALL( mock_timer, Start_Timer( PWM_CAPTURE_TIMER_CH2 ) );
+    ASSERT_TRUE( HW_PWM_Capture_Start_Channel( HW_PWM_CAPTURE_CHANNEL_2 ) );
+
     mock_tim5.SR = 0U;
 
-    HwPWMCaptureResult_T result = HW_PWM_Capture_Peek_Result( HW_PWM_CAPTURE_CHANNEL_2 );
-
-    EXPECT_FALSE( result.has_new_data );
-    EXPECT_EQ( result.period_ticks, nullptr );
-    EXPECT_EQ( result.high_ticks, nullptr );
+    HwPWMCaptureSnapshot_T snapshot = {};
+    EXPECT_FALSE( HW_PWM_Capture_Read_Snapshot( HW_PWM_CAPTURE_CHANNEL_2, &snapshot ) );
+    EXPECT_FALSE( snapshot.has_new_data );
+    EXPECT_FALSE( snapshot.is_overrun );
+    EXPECT_EQ( snapshot.period_ticks, 0U );
+    EXPECT_EQ( snapshot.high_ticks, 0U );
 }
 
-TEST_F( HWPWMCaptureTest, PeekChannel1ReturnsMappedRegisterPointersWhenNewCaptureFlag )
+TEST_F( HWPWMCaptureTest, ReadSnapshotChannel1ReturnsValuesAndClearsFlag )
 {
+    EXPECT_CALL( mock_timer, Configure_Timer( PWM_CAPTURE_TIMER_CH1, _, _ ) );
+    EXPECT_CALL( mock_timer, Get_Clock_Hz( PWM_CAPTURE_TIMER_CH1 ) )
+        .WillOnce( testing::Return( 1000000U ) );
+    ASSERT_TRUE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, true ) );
+    EXPECT_CALL( mock_timer, Start_Timer( PWM_CAPTURE_TIMER_CH1 ) );
+    ASSERT_TRUE( HW_PWM_Capture_Start_Channel( HW_PWM_CAPTURE_CHANNEL_1 ) );
+
     mock_tim2.SR   = TIM_SR_CC1IF;
     mock_tim2.CCR1 = 1800U;
     mock_tim2.CCR2 = 900U;
 
-    HwPWMCaptureResult_T result = HW_PWM_Capture_Peek_Result( HW_PWM_CAPTURE_CHANNEL_1 );
+    HwPWMCaptureSnapshot_T snapshot = {};
+    ASSERT_TRUE( HW_PWM_Capture_Read_Snapshot( HW_PWM_CAPTURE_CHANNEL_1, &snapshot ) );
 
-    ASSERT_TRUE( result.has_new_data );
-    ASSERT_NE( result.period_ticks, nullptr );
-    ASSERT_NE( result.high_ticks, nullptr );
-
-    EXPECT_EQ( result.period_ticks, &mock_tim2.CCR1 );
-    EXPECT_EQ( result.high_ticks, &mock_tim2.CCR2 );
-    EXPECT_EQ( *( result.period_ticks ), 1800U );
-    EXPECT_EQ( *( result.high_ticks ), 900U );
+    EXPECT_TRUE( snapshot.has_new_data );
+    EXPECT_FALSE( snapshot.is_overrun );
+    EXPECT_EQ( snapshot.period_ticks, 1800U );
+    EXPECT_EQ( snapshot.high_ticks, 900U );
+    EXPECT_EQ( mock_tim2.SR & TIM_SR_CC1IF, 0U );
 }
 
-TEST_F( HWPWMCaptureTest, PeekChannel2ReturnsMappedRegisterPointersWhenNewCaptureFlag )
+TEST_F( HWPWMCaptureTest, ReadSnapshotChannel2ReturnsValuesAndClearsFlag )
 {
+    EXPECT_CALL( mock_timer, Configure_Timer( PWM_CAPTURE_TIMER_CH2, _, _ ) );
+    EXPECT_CALL( mock_timer, Get_Clock_Hz( PWM_CAPTURE_TIMER_CH2 ) )
+        .WillOnce( testing::Return( 1000000U ) );
+    ASSERT_TRUE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_2, true ) );
+    EXPECT_CALL( mock_timer, Start_Timer( PWM_CAPTURE_TIMER_CH2 ) );
+    ASSERT_TRUE( HW_PWM_Capture_Start_Channel( HW_PWM_CAPTURE_CHANNEL_2 ) );
+
     mock_tim5.SR   = TIM_SR_CC2IF;
     mock_tim5.CCR2 = 3600U;
     mock_tim5.CCR1 = 1200U;
 
-    HwPWMCaptureResult_T result = HW_PWM_Capture_Peek_Result( HW_PWM_CAPTURE_CHANNEL_2 );
+    HwPWMCaptureSnapshot_T snapshot = {};
+    ASSERT_TRUE( HW_PWM_Capture_Read_Snapshot( HW_PWM_CAPTURE_CHANNEL_2, &snapshot ) );
 
-    ASSERT_TRUE( result.has_new_data );
-    ASSERT_NE( result.period_ticks, nullptr );
-    ASSERT_NE( result.high_ticks, nullptr );
-
-    EXPECT_EQ( result.period_ticks, &mock_tim5.CCR2 );
-    EXPECT_EQ( result.high_ticks, &mock_tim5.CCR1 );
-    EXPECT_EQ( *( result.period_ticks ), 3600U );
-    EXPECT_EQ( *( result.high_ticks ), 1200U );
-}
-
-TEST_F( HWPWMCaptureTest, PeekDoesNotClearFlag )
-{
-    mock_tim2.SR = TIM_SR_CC1IF;
-
-    auto result1 = HW_PWM_Capture_Peek_Result( HW_PWM_CAPTURE_CHANNEL_1 );
-    auto result2 = HW_PWM_Capture_Peek_Result( HW_PWM_CAPTURE_CHANNEL_1 );
-
-    EXPECT_TRUE( result1.has_new_data );
-    EXPECT_TRUE( result2.has_new_data );
-    EXPECT_EQ( mock_tim2.SR & TIM_SR_CC1IF, TIM_SR_CC1IF );
-}
-
-TEST_F( HWPWMCaptureTest, ConsumeChannel1AfterSuccessfulPeekClearsPeriodFlag )
-{
-    mock_tim2.SR = TIM_SR_CC1IF;
-
-    HwPWMCaptureResult_T result = HW_PWM_Capture_Peek_Result( HW_PWM_CAPTURE_CHANNEL_1 );
-
-    ASSERT_TRUE( result.has_new_data );
-
-    HW_PWM_Capture_Consume_Result( HW_PWM_CAPTURE_CHANNEL_1 );
-
-    EXPECT_EQ( mock_tim2.SR & TIM_SR_CC1IF, 0U );
-}
-
-TEST_F( HWPWMCaptureTest, ConsumeChannel2AfterSuccessfulPeekClearsPeriodFlag )
-{
-    mock_tim5.SR = TIM_SR_CC2IF;
-
-    HwPWMCaptureResult_T result = HW_PWM_Capture_Peek_Result( HW_PWM_CAPTURE_CHANNEL_2 );
-
-    ASSERT_TRUE( result.has_new_data );
-
-    HW_PWM_Capture_Consume_Result( HW_PWM_CAPTURE_CHANNEL_2 );
-
+    EXPECT_TRUE( snapshot.has_new_data );
+    EXPECT_FALSE( snapshot.is_overrun );
+    EXPECT_EQ( snapshot.period_ticks, 3600U );
+    EXPECT_EQ( snapshot.high_ticks, 1200U );
     EXPECT_EQ( mock_tim5.SR & TIM_SR_CC2IF, 0U );
 }
 
-TEST_F( HWPWMCaptureTest, ConsumeChannel1PreservesOtherStatusFlags )
+TEST_F( HWPWMCaptureTest, ReadSnapshotDetectsOverrunAndClearsOverrunFlag )
 {
+    EXPECT_CALL( mock_timer, Configure_Timer( PWM_CAPTURE_TIMER_CH1, _, _ ) );
+    EXPECT_CALL( mock_timer, Get_Clock_Hz( PWM_CAPTURE_TIMER_CH1 ) )
+        .WillOnce( testing::Return( 1000000U ) );
+    ASSERT_TRUE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, true ) );
+    EXPECT_CALL( mock_timer, Start_Timer( PWM_CAPTURE_TIMER_CH1 ) );
+    ASSERT_TRUE( HW_PWM_Capture_Start_Channel( HW_PWM_CAPTURE_CHANNEL_1 ) );
+
+    mock_tim2.SR   = TIM_SR_CC1IF | TIM_SR_CC1OF;
+    mock_tim2.CCR1 = 2000U;
+    mock_tim2.CCR2 = 500U;
+
+    HwPWMCaptureSnapshot_T snapshot = {};
+    ASSERT_TRUE( HW_PWM_Capture_Read_Snapshot( HW_PWM_CAPTURE_CHANNEL_1, &snapshot ) );
+
+    EXPECT_TRUE( snapshot.has_new_data );
+    EXPECT_TRUE( snapshot.is_overrun );
+    EXPECT_EQ( snapshot.period_ticks, 2000U );
+    EXPECT_EQ( snapshot.high_ticks, 500U );
+    EXPECT_EQ( mock_tim2.SR & ( TIM_SR_CC1IF | TIM_SR_CC1OF ), 0U );
+}
+
+TEST_F( HWPWMCaptureTest, ReadSnapshotPreservesOtherStatusFlags )
+{
+    EXPECT_CALL( mock_timer, Configure_Timer( PWM_CAPTURE_TIMER_CH1, _, _ ) );
+    EXPECT_CALL( mock_timer, Get_Clock_Hz( PWM_CAPTURE_TIMER_CH1 ) )
+        .WillOnce( testing::Return( 1000000U ) );
+    ASSERT_TRUE( HW_PWM_Capture_Configure_Channel( HW_PWM_CAPTURE_CHANNEL_1, true ) );
+    EXPECT_CALL( mock_timer, Start_Timer( PWM_CAPTURE_TIMER_CH1 ) );
+    ASSERT_TRUE( HW_PWM_Capture_Start_Channel( HW_PWM_CAPTURE_CHANNEL_1 ) );
+
     mock_tim2.SR = TIM_SR_CC1IF | TIM_SR_CC2IF;
 
-    HwPWMCaptureResult_T result = HW_PWM_Capture_Peek_Result( HW_PWM_CAPTURE_CHANNEL_1 );
-
-    ASSERT_TRUE( result.has_new_data );
-
-    HW_PWM_Capture_Consume_Result( HW_PWM_CAPTURE_CHANNEL_1 );
+    HwPWMCaptureSnapshot_T snapshot = {};
+    ASSERT_TRUE( HW_PWM_Capture_Read_Snapshot( HW_PWM_CAPTURE_CHANNEL_1, &snapshot ) );
 
     EXPECT_EQ( mock_tim2.SR & TIM_SR_CC1IF, 0U );
     EXPECT_NE( mock_tim2.SR & TIM_SR_CC2IF, 0U );
-}
-
-TEST_F( HWPWMCaptureTest, ConsumeChannel2PreservesOtherStatusFlags )
-{
-    mock_tim5.SR = TIM_SR_CC1IF | TIM_SR_CC2IF;
-
-    HwPWMCaptureResult_T result = HW_PWM_Capture_Peek_Result( HW_PWM_CAPTURE_CHANNEL_2 );
-
-    ASSERT_TRUE( result.has_new_data );
-
-    HW_PWM_Capture_Consume_Result( HW_PWM_CAPTURE_CHANNEL_2 );
-
-    EXPECT_EQ( mock_tim5.SR & TIM_SR_CC2IF, 0U );
-    EXPECT_NE( mock_tim5.SR & TIM_SR_CC1IF, 0U );
 }
