@@ -29,7 +29,7 @@
  *         Exercise Host Interface -> Flash Manager -> External Flash. The
  *         default deterministic instruction stream crosses the three-page RAM
  *         ring and finishes on a partial page. Instruction N is assigned tick
- *         N and contains one diagnostic operation with eleven opaque bytes.
+ *         N and contains one diagnostic operation with twelve opaque bytes.
  *
  *      5. `flash prepare`
  *         Start a result session and preload instructions. Do not continue
@@ -38,7 +38,7 @@
  *      6. `flash execute_echo [100|1000|10000]`
  *         Temporarily route TIM4 to the console's genuine ISR test callback;
  *         100 Hz is the safe first-bring-up default. For every due instruction,
- *         the ISR peeks, reserves result storage, copies the eleven operation
+ *         the ISR peeks, reserves result storage, copies the twelve operation
  *         bytes, commits byte-compatible diagnostic metadata, and consumes the
  *         complete instruction. A future instruction is left unconsumed for
  *         the next tick. The command waits while the Flash Manager task
