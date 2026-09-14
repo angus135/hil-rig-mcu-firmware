@@ -46,7 +46,7 @@ static uint32_t                           s_ai_start_calls;
 static uint32_t                           s_ai_stop_calls;
 
 static bool                               s_ao_configure_result;
-static ExecAnalogueOutputState_T          s_ao_state;
+static AnalogueOutputState_T              s_ao_state;
 static bool                               s_ao_start_result;
 static bool                               s_ao_stop_result;
 static bool                               s_ao_abort_result;
@@ -62,17 +62,21 @@ static uint32_t                           s_di_start_calls;
 static uint32_t                           s_di_stop_calls;
 
 static bool                               s_do_configure_result;
+static bool                               s_do_start_result;
+static bool                               s_do_stop_result;
+static uint32_t                           s_do_start_calls;
+static uint32_t                           s_do_stop_calls;
 
 static EXEC_CAN_Result_T                  s_can_configure_result;
 static EXEC_CAN_Result_T                  s_can_start_result;
 static EXEC_CAN_Result_T                  s_can_stop_result;
 static EXEC_CAN_Result_T                  s_can_abort_result;
-static EXEC_CAN_TxStatus_T                s_can_tx_status;
+static EXEC_CAN_Tx_Status_T               s_can_tx_status;
 static uint32_t                           s_can_start_calls[EXEC_CAN_CHANNEL_COUNT];
 static uint32_t                           s_can_stop_calls[EXEC_CAN_CHANNEL_COUNT];
 static uint32_t                           s_can_abort_calls[EXEC_CAN_CHANNEL_COUNT];
 
-static ExecI2CStatus_T                    s_i2c_configure_result;
+static EXECI2CStatus_T                    s_i2c_configure_result;
 
 static bool                               s_pwm_cap_configure_result;
 static bool                               s_pwm_cap_start_result;
@@ -91,6 +95,7 @@ static bool                               s_spi_start_result;
 static bool                               s_spi_stop_result;
 static bool                               s_spi_abort_result;
 static bool                               s_spi_tx_complete;
+static bool                               s_spi_tx_faulted;
 static uint32_t                           s_spi_start_calls[TEST_CONFIGURATION_SPI_CHANNEL_COUNT];
 static uint32_t                           s_spi_stop_calls[TEST_CONFIGURATION_SPI_CHANNEL_COUNT];
 static uint32_t                           s_spi_abort_calls[TEST_CONFIGURATION_SPI_CHANNEL_COUNT];
@@ -157,7 +162,7 @@ bool EXEC_ANALOGUE_OUTPUT_Configure( const ExecAnalogueOutputConfig_T* configura
     ( void )configuration;
     return s_ao_configure_result;
 }
-ExecAnalogueOutputState_T EXEC_ANALOGUE_OUTPUT_Get_State( void )
+AnalogueOutputState_T EXEC_ANALOGUE_OUTPUT_Get_State( void )
 {
     return s_ao_state;
 }
@@ -196,16 +201,25 @@ bool EXEC_DIGITAL_INPUT_Stop( void )
     s_di_stop_calls++;
     return s_di_stop_result;
 }
-bool EXEC_DIGITAL_OUTPUT_Configure_Channel( ExecDigitalOutputChannel_T channel,
-                                            const ExecDigitalOutputChannelConfig_T* config )
+
+bool EXEC_DIGITAL_OUTPUT_Configure( const ExecDigitalOutputConfig_T* config )
 {
-    ( void )channel;
     ( void )config;
     return s_do_configure_result;
 }
+bool EXEC_DIGITAL_OUTPUT_Start( void )
+{
+    s_do_start_calls++;
+    return s_do_start_result;
+}
+bool EXEC_DIGITAL_OUTPUT_Stop( void )
+{
+    s_do_stop_calls++;
+    return s_do_stop_result;
+}
 
-EXEC_CAN_Result_T EXEC_CAN_Configure_Channel( EXEC_CAN_Channel_T channel,
-                                              const EXEC_CAN_ChannelConfig_T* config )
+EXEC_CAN_Result_T EXEC_CAN_Configure_Channel( EXEC_CAN_Channel_T       channel,
+                                              const EXEC_CAN_Config_T* config )
 {
     ( void )channel;
     ( void )config;
@@ -235,13 +249,13 @@ EXEC_CAN_Result_T EXEC_CAN_Abort_Channel( EXEC_CAN_Channel_T channel )
     }
     return s_can_abort_result;
 }
-EXEC_CAN_TxStatus_T EXEC_CAN_Get_Tx_Status( EXEC_CAN_Channel_T channel )
+EXEC_CAN_Tx_Status_T EXEC_CAN_Get_Tx_Status( EXEC_CAN_Channel_T channel )
 {
     ( void )channel;
     return s_can_tx_status;
 }
 
-ExecI2CStatus_T EXEC_I2C_Configure_Channel( ExecI2CChannel_T channel,
+EXECI2CStatus_T EXEC_I2C_Configure_Channel( ExecI2CChannel_T              channel,
                                             const EXECI2CChannelConfig_T* config )
 {
     ( void )channel;
@@ -249,8 +263,8 @@ ExecI2CStatus_T EXEC_I2C_Configure_Channel( ExecI2CChannel_T channel,
     return s_i2c_configure_result;
 }
 
-bool EXEC_PWM_Capture_Configure_Channel( ExecPwmCaptureChannel_T channel,
-                                         const ExecPwmCaptureChannelConfig_T* config )
+bool EXEC_PWM_Capture_Configure_Channel( ExecPwmCaptureChannel_T       channel,
+                                         const ExecPwmCaptureConfig_T* config )
 {
     ( void )channel;
     ( void )config;
@@ -273,8 +287,8 @@ bool EXEC_PWM_Capture_Stop_Channel( ExecPwmCaptureChannel_T channel )
     return s_pwm_cap_stop_result;
 }
 
-bool EXEC_PWM_GEN_Configure_Channel( ExecPwmGenChannel_T channel,
-                                     const ExecPwmGenChannelConfig_T* config )
+bool EXEC_PWM_GEN_Configure_Channel( ExecPwmGenChannel_T       channel,
+                                     const ExecPwmGenConfig_T* config )
 {
     ( void )channel;
     ( void )config;
@@ -297,8 +311,7 @@ bool EXEC_PWM_GEN_Stop_Channel( ExecPwmGenChannel_T channel )
     return s_pwm_gen_stop_result;
 }
 
-bool EXEC_SPI_Configure_Channel( ExecSPIChannel_T channel,
-                                 const ExecSPIChannelConfig_T* config )
+bool EXEC_SPI_Configure_Channel( ExecSPIChannel_T channel, const ExecSPIConfig_T* config )
 {
     ( void )channel;
     ( void )config;
@@ -333,9 +346,13 @@ bool EXEC_SPI_Is_Transmission_Complete( ExecSPIChannel_T channel )
     ( void )channel;
     return s_spi_tx_complete;
 }
+bool EXEC_SPI_Is_Transmission_Faulted( ExecSPIChannel_T channel )
+{
+    ( void )channel;
+    return s_spi_tx_faulted;
+}
 
-bool EXEC_UART_Configure_Channel( ExecUartChannel_T channel,
-                                  const ExecUartChannelConfig_T* config )
+bool EXEC_UART_Configure_Channel( ExecUartChannel_T channel, const ExecUartConfig_T* config )
 {
     ( void )channel;
     ( void )config;
@@ -365,7 +382,7 @@ bool EXEC_UART_Abort_Channel( ExecUartChannel_T channel )
     }
     return s_uart_abort_result;
 }
-bool EXEC_UART_Is_Transmission_Complete( ExecUartChannel_T channel )
+bool EXEC_UART_Is_Tx_Complete( ExecUartChannel_T channel )
 {
     ( void )channel;
     return s_uart_tx_complete;
@@ -392,13 +409,13 @@ class DutDriverLifecycleTest : public ::testing::Test
 protected:
     void SetUp( void ) override
     {
-        s_expander_begin_status  = LOGIC_EXPANDER_STATUS_OK;
-        s_expander_end_status    = LOGIC_EXPANDER_STATUS_OK;
-        s_expander_batch_status  = LOGIC_EXPANDER_CONTROL_BATCH_COMPLETE;
-        s_expander_begin_calls   = 0U;
-        s_expander_end_calls     = 0U;
-        s_expander_cancel_calls  = 0U;
-        s_expander_next_batch_id = 1U;
+        s_expander_begin_status   = LOGIC_EXPANDER_STATUS_OK;
+        s_expander_end_status     = LOGIC_EXPANDER_STATUS_OK;
+        s_expander_batch_status   = LOGIC_EXPANDER_CONTROL_BATCH_COMPLETE;
+        s_expander_begin_calls    = 0U;
+        s_expander_end_calls      = 0U;
+        s_expander_cancel_calls   = 0U;
+        s_expander_next_batch_id  = 1U;
         s_last_cancelled_batch_id = 0U;
 
         s_ai_configure_result = true;
@@ -424,6 +441,10 @@ protected:
         s_di_stop_calls       = 0U;
 
         s_do_configure_result = true;
+        s_do_start_result     = true;
+        s_do_stop_result      = true;
+        s_do_start_calls      = 0U;
+        s_do_stop_calls       = 0U;
 
         s_can_configure_result = EXEC_CAN_RESULT_OK;
         s_can_start_result     = EXEC_CAN_RESULT_OK;
@@ -453,6 +474,7 @@ protected:
         s_spi_stop_result      = true;
         s_spi_abort_result     = true;
         s_spi_tx_complete      = true;
+        s_spi_tx_faulted       = false;
         std::memset( s_spi_start_calls, 0, sizeof( s_spi_start_calls ) );
         std::memset( s_spi_stop_calls, 0, sizeof( s_spi_stop_calls ) );
         std::memset( s_spi_abort_calls, 0, sizeof( s_spi_abort_calls ) );
@@ -474,10 +496,10 @@ protected:
         DutDriverConfiguration_T config = {};
         config.analogue_input.is_enabled = true;
         config.analogue_output.is_enabled = true;
-        config.digital_inputs.channels[0] = EXEC_DIGITAL_INPUT_MODE_INTERRUPT_RISING;
+        config.digital_inputs.channels[0] = EXEC_DIGITAL_INPUT_MODE_3V3;
         config.digital_outputs.channels[0].is_enabled = true;
         config.can_channels[0].is_enabled = true;
-        config.can_channels[2].is_enabled = true;
+        config.can_channels[1].is_enabled = true;
         config.pwm_capture_channels[0].is_enabled = true;
         config.pwm_generation_channels[1].is_enabled = true;
         config.spi_channels[0].is_enabled = true;
@@ -518,7 +540,7 @@ TEST_F( DutDriverLifecycleTest, ConfigureAppliesAllDriversAndBuildsEnablePlan )
     EXPECT_TRUE( status.analogue_output_enabled );
     EXPECT_TRUE( status.digital_inputs_enabled );
     EXPECT_TRUE( status.digital_outputs_enabled );
-    EXPECT_EQ( ( 1U << 0 ) | ( 1U << 2 ), status.can_enabled_mask );
+    EXPECT_EQ( ( 1U << 0 ) | ( 1U << 1 ), status.can_enabled_mask );
     EXPECT_EQ( ( 1U << 0 ), status.pwm_capture_enabled_mask );
     EXPECT_EQ( ( 1U << 1 ), status.pwm_generation_enabled_mask );
     EXPECT_EQ( ( 1U << 0 ), status.spi_enabled_mask );
@@ -592,8 +614,7 @@ TEST_F( DutDriverLifecycleTest, StartInvokesOnlyEnabledDriversAndSealsBatch )
     EXPECT_EQ( 1U, s_ao_start_calls );
     EXPECT_EQ( 1U, s_di_start_calls );
     EXPECT_EQ( 1U, s_can_start_calls[0] );
-    EXPECT_EQ( 0U, s_can_start_calls[1] );
-    EXPECT_EQ( 1U, s_can_start_calls[2] );
+    EXPECT_EQ( 1U, s_can_start_calls[1] );
     EXPECT_EQ( 1U, s_pwm_cap_start_calls[0] );
     EXPECT_EQ( 0U, s_pwm_gen_start_calls[0] );
     EXPECT_EQ( 1U, s_pwm_gen_start_calls[1] );
@@ -637,7 +658,7 @@ TEST_F( DutDriverLifecycleTest, StartFailureRollsBackStartedDriversAndCancelsBat
     EXPECT_EQ( 1U, s_ai_stop_calls );
     EXPECT_EQ( 1U, s_di_stop_calls );
     EXPECT_EQ( 1U, s_can_stop_calls[0] );
-    EXPECT_EQ( 1U, s_can_stop_calls[2] );
+    EXPECT_EQ( 1U, s_can_stop_calls[1] );
     EXPECT_EQ( 1U, s_pwm_cap_stop_calls[0] );
     EXPECT_EQ( 1U, s_expander_cancel_calls );
 }
@@ -676,15 +697,18 @@ TEST_F( DutDriverLifecycleTest, SafeStateBackpressureDuringShutdownReportsPendin
     EXPECT_TRUE( DUT_DRIVER_LIFECYCLE_BeginShutdown( false, true ) );
 
     /* Simulate backpressure when applying disabled configuration */
-    s_can_configure_result = EXEC_CAN_RESULT_QUEUE_FULL;
+    s_can_configure_result = EXEC_CAN_RESULT_ERROR;
     EXPECT_EQ( DUT_DRIVER_SHUTDOWN_PENDING, DUT_DRIVER_LIFECYCLE_GetShutdownStatus() );
     EXPECT_FALSE( lifecycle_context.shutdown_disabled_applied );
 
     /* Backpressure clears */
     s_can_configure_result = EXEC_CAN_RESULT_OK;
+    s_expander_batch_status = LOGIC_EXPANDER_CONTROL_BATCH_PENDING;
+    EXPECT_EQ( DUT_DRIVER_SHUTDOWN_PENDING, DUT_DRIVER_LIFECYCLE_GetShutdownStatus() );
+    EXPECT_TRUE( lifecycle_context.shutdown_disabled_applied );
+
     s_expander_batch_status = LOGIC_EXPANDER_CONTROL_BATCH_COMPLETE;
     EXPECT_EQ( DUT_DRIVER_SHUTDOWN_COMPLETE, DUT_DRIVER_LIFECYCLE_GetShutdownStatus() );
-    EXPECT_TRUE( lifecycle_context.shutdown_disabled_applied );
     EXPECT_FALSE( lifecycle_context.configuration_valid );
 }
 
@@ -718,10 +742,13 @@ TEST_F( DutDriverLifecycleTest, ForcedAbortEscalationInvokesAbortApis )
     ASSERT_TRUE( DUT_DRIVER_LIFECYCLE_Configure( &config ) );
     ASSERT_TRUE( DUT_DRIVER_LIFECYCLE_Start() );
 
-    /* Analogue output faulted at runtime */
+    /* Analogue output faulted at runtime, communications transmitting */
     s_ao_state = EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
+    s_can_tx_status = EXEC_CAN_TX_STATUS_ACTIVE;
+    s_spi_tx_complete = false;
+    s_uart_tx_complete = false;
 
-    /* Graceful shutdown fails on faulted AO */
+    /* Graceful shutdown fails on faulted AO and busy communications */
     EXPECT_TRUE( DUT_DRIVER_LIFECYCLE_BeginShutdown( false, false ) );
     EXPECT_EQ( DUT_DRIVER_SHUTDOWN_FAILED, DUT_DRIVER_LIFECYCLE_GetShutdownStatus() );
 
@@ -731,7 +758,7 @@ TEST_F( DutDriverLifecycleTest, ForcedAbortEscalationInvokesAbortApis )
     EXPECT_EQ( DUT_DRIVER_SHUTDOWN_COMPLETE, DUT_DRIVER_LIFECYCLE_GetShutdownStatus() );
     EXPECT_EQ( 1U, s_ao_abort_calls );
     EXPECT_EQ( 1U, s_can_abort_calls[0] );
-    EXPECT_EQ( 1U, s_can_abort_calls[2] );
+    EXPECT_EQ( 1U, s_can_abort_calls[1] );
     EXPECT_EQ( 1U, s_spi_abort_calls[0] );
     EXPECT_EQ( 1U, s_uart_abort_calls[1] );
 }

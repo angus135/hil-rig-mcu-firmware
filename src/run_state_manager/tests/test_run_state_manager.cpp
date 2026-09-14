@@ -676,6 +676,7 @@ TEST_F( RunStateManagerTest, DiscardResultsAllowsSubsequentPackageReceiveAndExec
     EXPECT_EQ( RUN_STATE_IDLE, run_state );
     EXPECT_FALSE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
 
+    active_configuration_available = true;
     EnterExecution();
     EXPECT_EQ( RUN_STATE_EXECUTION, run_state );
     EXPECT_EQ( RUN_STATE_FAULT_NONE, fault_reason );
@@ -789,6 +790,8 @@ TEST_F( RunStateManagerTest, FlashSessionAbortedDuringPackageReceiveFault )
 
     EXPECT_EQ( RUN_STATE_FAULT, run_state );
     EXPECT_EQ( 1U, flash_abort_calls );
+
+    RUN_STATE_MANAGER_ProcessPendingOperation();
 
     flash_manager_state = FLASH_MANAGER_STATE_ABORTING;
     Process( RUN_STATE_REQUEST_RESET );
