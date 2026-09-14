@@ -130,8 +130,8 @@ static HostInstructionStateTracker_T tracked_peripheral_state = { 0 };
  *
  * @return HOST_INTERFACE_STATUS_OK if valid, or corresponding error status.
  */
-static HOST_Interface_Status_T
-HOST_INSTRUCTION_HANDLER_ValidateInstruction( const HIL_Application_Test_Instruction_T* instruction );
+static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_ValidateInstruction(
+    const HIL_Application_Test_Instruction_T* instruction );
 
 /**
  * @brief Appends one operation to the instruction buffer, maintaining 4-byte alignment.
@@ -139,14 +139,16 @@ HOST_INSTRUCTION_HANDLER_ValidateInstruction( const HIL_Application_Test_Instruc
  * @param[in,out] writer              Cursor context tracking buffer position and operation count.
  * @param[in]     opcode              Execution operation opcode.
  * @param[in]     channel             Peripheral channel identifier or UNUSED sentinel.
- * @param[in]     payload             Pointer to operation payload data (may be NULL if payload_size_bytes is 0).
+ * @param[in]     payload             Pointer to operation payload data (may be NULL if
+ * payload_size_bytes is 0).
  * @param[in]     payload_size_bytes  Exact byte size of the payload (excluding header and padding).
  *
  * @return HOST_INTERFACE_STATUS_OK on success, or HOST_INTERFACE_STATUS_BUFFER_TOO_SMALL.
  */
-static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_AppendOperation(
-    HostInstructionWriter_T* writer, ExecutionOperationOpcode_T opcode, uint8_t channel,
-    const void* payload, uint16_t payload_size_bytes );
+static HOST_Interface_Status_T
+HOST_INSTRUCTION_HANDLER_AppendOperation( HostInstructionWriter_T*   writer,
+                                          ExecutionOperationOpcode_T opcode, uint8_t channel,
+                                          const void* payload, uint16_t payload_size_bytes );
 
 /**
  * @brief Detects digital output transitions and encodes a digital output operation.
@@ -178,8 +180,9 @@ static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_EncodeAnalogueOutputs(
  *
  * @return HOST_INTERFACE_STATUS_OK on success, or HOST_INTERFACE_STATUS_VALIDATION_FAILED.
  */
-static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_EncodePwmOutputs(
-    const HIL_Application_Test_Instruction_T* instruction, HostInstructionWriter_T* writer );
+static HOST_Interface_Status_T
+HOST_INSTRUCTION_HANDLER_EncodePwmOutputs( const HIL_Application_Test_Instruction_T* instruction,
+                                           HostInstructionWriter_T*                  writer );
 
 /**
  * @brief Placeholder stub for future UART transmit instruction encoding.
@@ -220,13 +223,15 @@ static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_EncodeCanTransmitStub(
  * @param[in]  instruction           Pointer to incoming application test instruction.
  * @param[out] destination           Destination buffer for packed canonical bytes.
  * @param[in]  destination_capacity  Maximum capacity of destination buffer.
- * @param[out] bytes_written         Total canonical instruction bytes written (0 for output-free tick).
+ * @param[out] bytes_written         Total canonical instruction bytes written (0 for output-free
+ * tick).
  *
  * @return HOST_INTERFACE_STATUS_OK on success, or error status on failure.
  */
-static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_ConvertInstruction(
-    const HIL_Application_Test_Instruction_T* instruction, uint8_t* destination,
-    size_t destination_capacity, size_t* bytes_written );
+static HOST_Interface_Status_T
+HOST_INSTRUCTION_HANDLER_ConvertInstruction( const HIL_Application_Test_Instruction_T* instruction,
+                                             uint8_t* destination, size_t destination_capacity,
+                                             size_t* bytes_written );
 
 /**
  * @brief Submits a canonical instruction byte stream chunk to the Flash Manager.
@@ -236,8 +241,8 @@ static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_ConvertInstruction(
  *
  * @return HOST_INTERFACE_STATUS_OK on success, or corresponding error status.
  */
-static HOST_Interface_Status_T
-HOST_INSTRUCTION_HANDLER_UploadToFlash( const uint8_t* data, size_t length );
+static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_UploadToFlash( const uint8_t* data,
+                                                                       size_t         length );
 
 /**
  * @brief Validates an incoming application instruction message.
@@ -245,8 +250,8 @@ HOST_INSTRUCTION_HANDLER_UploadToFlash( const uint8_t* data, size_t length );
  * Enforces that instructions arrive in strictly increasing tick order (monotonic,
  * but non-consecutive ticks are permitted).
  */
-static HOST_Interface_Status_T
-HOST_INSTRUCTION_HANDLER_ValidateInstruction( const HIL_Application_Test_Instruction_T* const instruction )
+static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_ValidateInstruction(
+    const HIL_Application_Test_Instruction_T* const instruction )
 {
     if ( instruction == NULL )
     {
@@ -355,8 +360,7 @@ static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_EncodeDigitalOutputs(
         ( high_count > 0U ) ? EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( high_pins, high_count )
                             : 0U;
     const uint32_t low_mask =
-        ( low_count > 0U ) ? EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( low_pins, low_count )
-                           : 0U;
+        ( low_count > 0U ) ? EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( low_pins, low_count ) : 0U;
 
     ExecutionDigitalOutputPayload_T payload;
     payload.high_bitmask = high_mask;
@@ -391,7 +395,7 @@ static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_EncodeAnalogueOutputs(
 
         if ( !tracked_peripheral_state.initialized || ( new_voltage_uv != prev_voltage_uv ) )
         {
-            const float voltage_v = ( float)new_voltage_uv / HOST_INSTRUCTION_MICROVOLTS_PER_VOLT;
+            const float voltage_v = ( float )new_voltage_uv / HOST_INSTRUCTION_MICROVOLTS_PER_VOLT;
             AnalogueOutputPreparedFrame_T frame;
             ( void )memset( &frame, 0, sizeof( frame ) );
 
@@ -425,8 +429,8 @@ static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_EncodeAnalogueOutputs(
  * @brief Detects PWM parameter changes and encodes LV/HV PWM update operations.
  *
  * Compares period and duty against the tracked baseline for LV (index 0) and HV (index 1).
- * When changes are detected on an active channel (period_nanoseconds > 0), computes PSC, ARR, and CCR
- * register values via HW_PWM_GEN_compute_*() and appends an
+ * When changes are detected on an active channel (period_nanoseconds > 0), computes PSC, ARR, and
+ * CCR register values via HW_PWM_GEN_compute_*() and appends an
  * EXECUTION_OPERATION_OPCODE_PWM_UPDATE operation. If unchanged, the operation is omitted.
  */
 static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_EncodePwmOutputs(
@@ -435,10 +439,8 @@ static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_EncodePwmOutputs(
 {
     for ( uint8_t channel = 0U; channel < HIL_APPLICATION_PWM_OUTPUT_CHANNEL_COUNT; channel++ )
     {
-        const uint32_t period_ns =
-            instruction->pwm_outputs[channel].period_nanoseconds;
-        const uint16_t duty_permyriad =
-            instruction->pwm_outputs[channel].duty_cycle_permyriad;
+        const uint32_t period_ns      = instruction->pwm_outputs[channel].period_nanoseconds;
+        const uint16_t duty_permyriad = instruction->pwm_outputs[channel].duty_cycle_permyriad;
 
         const uint32_t prev_period_ns =
             tracked_peripheral_state.pwm_outputs[channel].period_nanoseconds;
@@ -615,8 +617,8 @@ static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_ConvertInstruction(
 /**
  * @brief Submits a canonical instruction byte stream chunk to the Flash Manager.
  */
-static HOST_Interface_Status_T
-HOST_INSTRUCTION_HANDLER_UploadToFlash( const uint8_t* const data, const size_t length )
+static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_UploadToFlash( const uint8_t* const data,
+                                                                       const size_t         length )
 {
     const FlashManagerInstructionUploadRequestStatus_T upload_status =
         FLASH_MANAGER_SubmitInstructionUploadBytes( data, ( uint32_t )length );
@@ -649,8 +651,8 @@ HOST_INSTRUCTION_HANDLER_UploadToFlash( const uint8_t* const data, const size_t 
  */
 void HOST_INSTRUCTION_HANDLER_Reset( void )
 {
-    last_instruction_timestamp   = 0U;
-    has_received_instruction     = false;
+    last_instruction_timestamp = 0U;
+    has_received_instruction   = false;
     ( void )memset( &tracked_peripheral_state, 0, sizeof( tracked_peripheral_state ) );
     tracked_peripheral_state.initialized = true;
 }
@@ -658,8 +660,8 @@ void HOST_INSTRUCTION_HANDLER_Reset( void )
 /**
  * @brief Handles an incoming application layer instruction message.
  */
-HOST_Interface_Status_T
-HOST_INSTRUCTION_HANDLER_HandleInstruction( const HIL_Application_Test_Instruction_T* const instruction )
+HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_HandleInstruction(
+    const HIL_Application_Test_Instruction_T* const instruction )
 {
     const HOST_Interface_Status_T validation_status =
         HOST_INSTRUCTION_HANDLER_ValidateInstruction( instruction );
