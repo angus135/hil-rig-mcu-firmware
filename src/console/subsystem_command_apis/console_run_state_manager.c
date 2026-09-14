@@ -352,7 +352,7 @@ static void CONSOLE_RunStateManager_WaitForState( bool accepted, RunState_T expe
 
     CONSOLE_RunStateManager_PrintRequestResult( true );
     const TickType_t start   = xTaskGetTickCount();
-    const TickType_t timeout = pdMS_TO_TICKS( 120000U );
+    const TickType_t timeout = pdMS_TO_TICKS( 30000U );
     for ( ;; )
     {
         RunStateManagerStatus_T status = { 0 };
@@ -363,7 +363,16 @@ static void CONSOLE_RunStateManager_WaitForState( bool accepted, RunState_T expe
                             CONSOLE_RunStateManager_StateName( expected ) );
             return;
         }
-        if ( status.state == RUN_STATE_FAULT || ( xTaskGetTickCount() - start ) >= timeout )
+        if ( ( !status.transition_pending )
+             && ( status.last_request_result != RUN_STATE_REQUEST_RESULT_ACCEPTED )
+             && ( status.last_request_result != RUN_STATE_REQUEST_RESULT_NONE ) )
+        {
+            CONSOLE_Printf( "Run state request rejected: %s (current=%s).\r\n",
+                            CONSOLE_RunStateManager_RequestResultName( status.last_request_result ),
+                            CONSOLE_RunStateManager_StateName( status.state ) );
+            return;
+        }
+        if ( status.state == RUN_STATE_FAULT || ( ( TickType_t )( xTaskGetTickCount() - start ) ) >= timeout )
         {
             CONSOLE_Printf( "Run state transition did not reach %s (current=%s).\r\n",
                             CONSOLE_RunStateManager_StateName( expected ),
