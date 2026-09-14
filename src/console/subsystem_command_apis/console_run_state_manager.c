@@ -183,10 +183,6 @@ static const char* CONSOLE_RunStateManager_RequestName( RunStateRequest_T reques
             return "fault";
         case RUN_STATE_REQUEST_RESET:
             return "reset";
-        case RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_START:
-            return "timer start";
-        case RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_STOP:
-            return "timer stop";
         default:
             return "unknown";
     }
@@ -222,7 +218,6 @@ static void CONSOLE_RunStateManager_PrintUsage( void )
     CONSOLE_Printf( "  run_state status\r\n" );
     CONSOLE_Printf( "  run_state <receive|configure|execute|execution_complete>\r\n" );
     CONSOLE_Printf( "  run_state <transfer|transfer_complete|repeat|discard|fault|reset>\r\n" );
-    CONSOLE_Printf( "  run_state diagnostic_timer <start|stop>\r\n" );
 }
 
 /**
@@ -249,25 +244,6 @@ static void CONSOLE_RunStateManager_PrintRequestResult( bool accepted )
 
 void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
 {
-    if ( argc == 3U && strcmp( argv[1], "diagnostic_timer" ) == 0 )
-    {
-        if ( strcmp( argv[2], "start" ) == 0 )
-        {
-            CONSOLE_RunStateManager_PrintRequestResult(
-                RUN_STATE_MANAGER_RequestDiagnosticExecutionTimerStart() );
-        }
-        else if ( strcmp( argv[2], "stop" ) == 0 )
-        {
-            CONSOLE_RunStateManager_PrintRequestResult(
-                RUN_STATE_MANAGER_RequestDiagnosticExecutionTimerStop() );
-        }
-        else
-        {
-            CONSOLE_RunStateManager_PrintUsage();
-        }
-        return;
-    }
-
     if ( argc != 2U )
     {
         CONSOLE_RunStateManager_PrintUsage();

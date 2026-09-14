@@ -102,9 +102,7 @@ typedef enum
     RUN_STATE_REQUEST_REPEAT,
     RUN_STATE_REQUEST_DISCARD_RESULTS,
     RUN_STATE_REQUEST_FAULT,
-    RUN_STATE_REQUEST_RESET,
-    RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_START,
-    RUN_STATE_REQUEST_DIAGNOSTIC_TIMER_STOP
+    RUN_STATE_REQUEST_RESET
 } RunStateRequest_T;
 
 /** Result of validating and processing an external lifecycle event. */
@@ -306,26 +304,6 @@ bool RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR( void );
  * @returns true if the request was delivered to the task, otherwise false.
  */
 bool RUN_STATE_MANAGER_RequestReset( void );
-
-/**
- * @brief Requests diagnostic execution-timer start through the manager task.
- *
- * This bring-up API intentionally bypasses normal Flash preparation and DUT
- * driver start sequencing. Production test execution must use lifecycle
- * transitions instead.
- *
- * @returns true if the request was delivered to the task, otherwise false.
- */
-bool RUN_STATE_MANAGER_RequestDiagnosticExecutionTimerStart( void );
-
-/**
- * @brief Requests diagnostic execution-timer stop through the manager task.
- *
- * If normal execution is active, DUT-facing drivers are also stopped safely.
- *
- * @returns true if the request was delivered to the task, otherwise false.
- */
-bool RUN_STATE_MANAGER_RequestDiagnosticExecutionTimerStop( void );
 
 /**
  * @brief Copies a coherent snapshot of all externally observable RSM state.
