@@ -1817,3 +1817,34 @@ TEST_F( FlashManagerTest, ResultReadFaultsWhenManagerAndBufferStateAreInconsiste
         FLASH_MANAGER_ReadResultBytes( destination.data(), destination.size(), &bytes_read ) );
     EXPECT_EQ( FLASH_MANAGER_STATE_FAULT, flash_manager_context.state );
 }
+
+TEST_F( FlashManagerTest, AbortSessionSupportsInstructionUploadSessionStates )
+{
+    Initialise();
+    RegisterTask();
+
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK,
+               FLASH_MANAGER_RequestInstructionUploadStart( TEST_PAGE_SIZE_BYTES ) );
+    EXPECT_EQ( FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD, flash_manager_context.state );
+    EXPECT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestAbortSession() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_ABORTING, flash_manager_context.state );
+    EXPECT_TRUE( FLASH_MANAGER_AbortSession() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, flash_manager_context.state );
+
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK,
+               FLASH_MANAGER_RequestInstructionUploadStart( TEST_PAGE_SIZE_BYTES ) );
+    ASSERT_TRUE( FLASH_MANAGER_PrepareInstructionUpload() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD, flash_manager_context.state );
+    std::array<uint8_t, 32U> data = {};
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_WRITE_ACCEPTED,
+               FLASH_MANAGER_WriteInstructionBytes( data.data(), data.size() ) );
+
+    EXPECT_EQ( FLASH_MANAGER_REQUEST_OK, FLASH_MANAGER_RequestAbortSession() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_ABORTING, flash_manager_context.state );
+    EXPECT_TRUE( FLASH_MANAGER_AbortSession() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, flash_manager_context.state );
+
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK,
+               FLASH_MANAGER_RequestInstructionUploadStart( TEST_PAGE_SIZE_BYTES ) );
+}
+

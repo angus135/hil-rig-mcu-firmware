@@ -705,6 +705,7 @@ static bool FLASH_MANAGER_AbortSession( void )
 
     taskENTER_CRITICAL();
     INSTRUCTION_BUFFER_EndRead();
+    INSTRUCTION_BUFFER_AbortUpload();
     RESULT_BUFFER_Reset();
     taskEXIT_CRITICAL();
 
@@ -979,7 +980,7 @@ void FLASH_MANAGER_Task( void* parameters )
         /* Handle preparation of a new instruction upload. */
         if ( ( notification_bits & FLASH_MANAGER_NOTIFY_PREPARE_INSTRUCTION_UPLOAD ) != 0U )
         {
-            if ( !FLASH_MANAGER_PrepareInstructionUpload() )
+            if ( !FLASH_MANAGER_PrepareInstructionUpload() && !FLASH_MANAGER_IsAborting() )
             {
                 FLASH_MANAGER_EnterFault();
             }
@@ -988,7 +989,7 @@ void FLASH_MANAGER_Task( void* parameters )
         /* Drain completed pages from an active instruction upload. */
         if ( ( notification_bits & FLASH_MANAGER_NOTIFY_DRAIN_INSTRUCTION_UPLOAD ) != 0U )
         {
-            if ( !FLASH_MANAGER_DrainInstructionUploadPages() )
+            if ( !FLASH_MANAGER_DrainInstructionUploadPages() && !FLASH_MANAGER_IsAborting() )
             {
                 FLASH_MANAGER_EnterFault();
             }
@@ -997,7 +998,7 @@ void FLASH_MANAGER_Task( void* parameters )
         /* Commit the final instruction page and close the upload. */
         if ( ( notification_bits & FLASH_MANAGER_NOTIFY_FINALISE_INSTRUCTION_UPLOAD ) != 0U )
         {
-            if ( !FLASH_MANAGER_FinaliseInstructionUpload() )
+            if ( !FLASH_MANAGER_FinaliseInstructionUpload() && !FLASH_MANAGER_IsAborting() )
             {
                 FLASH_MANAGER_EnterFault();
             }
@@ -1217,6 +1218,9 @@ FlashManagerRequestStatus_T FLASH_MANAGER_RequestAbortSession( void )
 
     switch ( flash_manager_context.state )
     {
+        case FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD:
+        case FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD:
+        case FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD:
         case FLASH_MANAGER_STATE_PREPARING_EXECUTION:
         case FLASH_MANAGER_STATE_EXECUTING:
         case FLASH_MANAGER_STATE_FINALISING_RESULTS:
@@ -1230,9 +1234,6 @@ FlashManagerRequestStatus_T FLASH_MANAGER_RequestAbortSession( void )
             return FLASH_MANAGER_REQUEST_NOT_INITIALISED;
 
         case FLASH_MANAGER_STATE_IDLE:
-        case FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD:
-        case FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD:
-        case FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD:
         case FLASH_MANAGER_STATE_ABORTING:
         default:
             FLASH_MANAGER_Unlock();

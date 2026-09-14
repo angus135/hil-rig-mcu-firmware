@@ -435,6 +435,11 @@ bool INSTRUCTION_BUFFER_IsUploadPersisted( void );
  */
 bool INSTRUCTION_BUFFER_EndUpload( void );
 
+/**
+ * @brief Releases upload state and page ownership unconditionally upon abort.
+ */
+void INSTRUCTION_BUFFER_AbortUpload( void );
+
 #ifdef __cplusplus
 }
 #endif
