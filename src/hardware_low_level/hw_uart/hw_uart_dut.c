@@ -125,6 +125,8 @@
 #define HW_UART_BRR_SAMPLING16_MIN ( 0x0010U )
 #define HW_UART_BRR_SAMPLING16_MAX ( 0xFFFFU )
 
+#define HW_UART_FAULT_TX_DMA ( 1UL << 0U )
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -177,8 +179,7 @@ typedef enum
 typedef struct
 {
     uint32_t rx_read_index;
-    uint32_t latched_faults;  // Bitmask implementation left for a later date when faults are
-                              // implemented.
+    volatile uint32_t latched_faults;
 
     bool is_configured_and_initialised;
     bool is_started;
@@ -639,7 +640,6 @@ static inline void HW_UART_Tx_Complete_Handler( HwUartChannel_T channel )
  *         expected to treat this as a fault condition and abort execution for
  *         deterministic behaviour requirements.
  *
- * @note   Fault latching should be added when the UART fault bitmask is implemented.
  */
 static inline void HW_UART_Tx_Error_Handler( HwUartChannel_T channel )
 {
@@ -652,10 +652,7 @@ static inline void HW_UART_Tx_Error_Handler( HwUartChannel_T channel )
     runtime->tx_count            = 0U;
     runtime->tx_dma_length_bytes = 0U;
     runtime->tx_dma_active       = false;
-
-    /* Future fault implementation:
-     * runtime->latched_faults |= HW_UART_FAULT_DMA_ERROR;
-     */
+    runtime->latched_faults |= HW_UART_FAULT_TX_DMA;
 }
 
 /**
@@ -892,6 +889,7 @@ bool HW_UART_Abort_Channel( HwUartChannel_T channel )
     state->runtime.tx_count            = 0U;
     state->runtime.tx_dma_length_bytes = 0U;
     state->runtime.tx_dma_active       = false;
+    state->runtime.latched_faults &= ~HW_UART_FAULT_TX_DMA;
 
     if ( state->runtime.rx_running && !HW_UART_Stop_Rx( channel ) )
     {
@@ -1009,7 +1007,8 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
 
     uint32_t free_space = HW_UART_TX_BUFFER_SIZE - state->runtime.tx_count;
 
-    if ( length_bytes > free_space )
+    if ( ( state->runtime.latched_faults & HW_UART_FAULT_TX_DMA ) != 0U
+         || length_bytes > free_space )
     {
         HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
         return false;
@@ -1038,6 +1037,12 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
     new_head = ( start_head + length_bytes ) % HW_UART_TX_BUFFER_SIZE;
 
     tx_irq_was_enabled = HW_UART_Tx_Dma_Irq_Disable( channel );
+
+    if ( ( state->runtime.latched_faults & HW_UART_FAULT_TX_DMA ) != 0U )
+    {
+        HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
+        return false;
+    }
 
     state->runtime.tx_head = new_head;
     state->runtime.tx_count += length_bytes;
@@ -1074,6 +1079,12 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
     /* Enter critical section */
     uint32_t tx_irq_was_enabled = HW_UART_Tx_Dma_Irq_Disable( channel );
 
+    if ( ( state->runtime.latched_faults & HW_UART_FAULT_TX_DMA ) != 0U )
+    {
+        HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
+        return false;
+    }
+
     if ( state->runtime.tx_dma_active )
     {
         HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
@@ -1105,6 +1116,7 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
     {
         if ( timeout == 0U )
         {
+            state->runtime.latched_faults |= HW_UART_FAULT_TX_DMA;
             HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
             return false;
         }
@@ -1140,16 +1152,26 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel )
     return true;
 }
 
-bool HW_UART_Is_Tx_Complete( HwUartChannel_T channel )
+HwUartTxStatus_T HW_UART_Get_Tx_Status( HwUartChannel_T channel )
 {
     HwUartRuntimeState_T* runtime = &hw_uart_channel_states[channel].runtime;
     USART_TypeDef*        uart    = hw_uart_hardware_map[channel].uart_instance;
+
+    if ( ( runtime->latched_faults & HW_UART_FAULT_TX_DMA ) != 0U )
+    {
+        return HW_UART_TX_STATUS_FAULTED;
+    }
 
     const bool dma_idle = ( runtime->tx_count == 0U ) && ( runtime->tx_dma_active == false );
 
     const bool wire_idle = ( LL_USART_IsActiveFlag_TC( uart ) != 0U );
 
-    return dma_idle && wire_idle;
+    return dma_idle && wire_idle ? HW_UART_TX_STATUS_COMPLETE : HW_UART_TX_STATUS_BUSY;
+}
+
+bool HW_UART_Is_Tx_Complete( HwUartChannel_T channel )
+{
+    return HW_UART_Get_Tx_Status( channel ) == HW_UART_TX_STATUS_COMPLETE;
 }
 
 /**

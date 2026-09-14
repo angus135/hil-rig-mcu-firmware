@@ -374,3 +374,34 @@ TEST_F( ExecutionManagerTest, PrepareClearsPreviousFailure )
     EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_NONE );
     EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 0U );
 }
+
+TEST_F( ExecutionManagerTest, UnconsumedFutureInstructionFailsAtCompletion )
+{
+    instruction.header.timestamp = 2U;
+    peek_status                  = FLASH_MANAGER_INSTRUCTION_AVAILABLE;
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
+
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_EQ( EXECUTION_MANAGER_GetFailure(),
+               EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNCONSUMED );
+    EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 1U );
+    EXPECT_EQ( adapter_calls, 0U );
+    EXPECT_EQ( consume_calls, 0U );
+}
+
+TEST_F( ExecutionManagerTest, ExhaustedStreamAtFinalTickCompletesNormally )
+{
+    instruction.header.timestamp       = 1U;
+    instruction.header.operation_count = 1U;
+    peek_status                        = FLASH_MANAGER_INSTRUCTION_AVAILABLE;
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 2U ) );
+
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_CONTINUE );
+    EXPECT_EQ( adapter_calls, 1U );
+    EXPECT_EQ( consume_calls, 1U );
+
+    peek_status = FLASH_MANAGER_INSTRUCTION_END_OF_STREAM;
+
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_COMPLETE );
+    EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_NONE );
+}

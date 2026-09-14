@@ -1163,6 +1163,7 @@ TEST_F( UartTest, DutTxTriggerStartsDmaForChannel1 )
     uint8_t                  payload[3] = { 0x11U, 0x22U, 0x33U };
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
     ASSERT_TRUE( HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
 
     ASSERT_TRUE( HW_UART_Tx_Trigger( HW_UART_CHANNEL_1 ) );
@@ -1353,12 +1354,13 @@ TEST_F( UartTest, DutTxCompleteRestartsPumpWhenQueuedDataRemains )
                    .tx_buffer[sizeof( first_payload )] );
 }
 
-TEST_F( UartTest, DutTxErrorInterruptClearsTxDriverState )
+TEST_F( UartTest, DutTxErrorInterruptLatchesFaultAfterClearingTxDriverState )
 {
     HwUartPeripheralConfig_T config     = TEST_HW_UART_Make_Tx_Only_Config();
     uint8_t                  payload[3] = { 0x11U, 0x22U, 0x33U };
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
+    ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
     ASSERT_TRUE( HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
     ASSERT_TRUE( HW_UART_Tx_Trigger( HW_UART_CHANNEL_1 ) );
 
@@ -1368,14 +1370,21 @@ TEST_F( UartTest, DutTxErrorInterruptClearsTxDriverState )
     DMA2_Stream6_IRQHandler();
 
     EXPECT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
+    EXPECT_EQ( HW_UART_Get_Tx_Status( HW_UART_CHANNEL_1 ), HW_UART_TX_STATUS_FAULTED );
 
     SET_BIT( USART6->SR, USART_SR_TC );
-    EXPECT_TRUE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_UART_Is_Tx_Complete( HW_UART_CHANNEL_1 ) );
+    EXPECT_EQ( HW_UART_Get_Tx_Status( HW_UART_CHANNEL_1 ), HW_UART_TX_STATUS_FAULTED );
+    EXPECT_FALSE( HW_UART_Tx_Load_Buffer( HW_UART_CHANNEL_1, payload, sizeof( payload ) ) );
+    EXPECT_FALSE( HW_UART_Tx_Trigger( HW_UART_CHANNEL_1 ) );
     EXPECT_EQ( USART6->CR3 & USART_CR3_DMAT, 0U );
     EXPECT_EQ( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_head, 0U );
     EXPECT_EQ( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_tail, 0U );
     EXPECT_EQ( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_count, 0U );
     EXPECT_FALSE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.tx_dma_active );
+
+    ASSERT_TRUE( HW_UART_Abort_Channel( HW_UART_CHANNEL_1 ) );
+    EXPECT_EQ( HW_UART_Get_Tx_Status( HW_UART_CHANNEL_1 ), HW_UART_TX_STATUS_COMPLETE );
 }
 
 TEST_F( UartTest, DutTxWrapLoadCopiesPayloadAcrossRingBoundary )

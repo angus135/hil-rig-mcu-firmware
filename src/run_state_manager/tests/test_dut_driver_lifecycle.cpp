@@ -112,7 +112,7 @@ static bool     s_uart_configure_result;
 static bool     s_uart_start_result;
 static bool     s_uart_stop_result;
 static bool     s_uart_abort_result;
-static bool     s_uart_tx_complete;
+static ExecUartTxStatus_T s_uart_tx_status;
 static uint32_t s_uart_start_calls[EXEC_UART_CHANNEL_COUNT];
 static uint32_t s_uart_stop_calls[EXEC_UART_CHANNEL_COUNT];
 static uint32_t s_uart_abort_calls[EXEC_UART_CHANNEL_COUNT];
@@ -421,10 +421,10 @@ bool EXEC_UART_Abort_Channel( ExecUartChannel_T channel )
     }
     return s_uart_abort_result;
 }
-bool EXEC_UART_Is_Tx_Complete( ExecUartChannel_T channel )
+ExecUartTxStatus_T EXEC_UART_Get_Tx_Status( ExecUartChannel_T channel )
 {
     ( void )channel;
-    return s_uart_tx_complete;
+    return s_uart_tx_status;
 }
 bool EXEC_UART_Establish_Rx_Epoch( ExecUartChannel_T channel )
 {
@@ -538,7 +538,7 @@ protected:
         s_uart_start_result     = true;
         s_uart_stop_result      = true;
         s_uart_abort_result     = true;
-        s_uart_tx_complete      = true;
+        s_uart_tx_status        = EXEC_UART_TX_STATUS_COMPLETE;
         s_uart_epoch_result     = true;
         std::memset( s_uart_start_calls, 0, sizeof( s_uart_start_calls ) );
         std::memset( s_uart_stop_calls, 0, sizeof( s_uart_stop_calls ) );
@@ -819,6 +819,19 @@ TEST_F( DutDriverLifecycleTest, ExpanderEndBatchBusyDuringShutdownReportsPending
     EXPECT_TRUE( lifecycle_context.shutdown_batch_sealed );
 }
 
+TEST_F( DutDriverLifecycleTest, GracefulShutdownFailsOnLatchedUartTxFault )
+{
+    DutDriverConfiguration_T config = CreateSampleConfiguration();
+    ASSERT_TRUE( DUT_DRIVER_LIFECYCLE_Configure( &config ) );
+    ASSERT_TRUE( DUT_DRIVER_LIFECYCLE_Start() );
+
+    s_uart_tx_status = EXEC_UART_TX_STATUS_FAULTED;
+
+    EXPECT_TRUE( DUT_DRIVER_LIFECYCLE_BeginShutdown( false, false ) );
+    EXPECT_EQ( DUT_DRIVER_SHUTDOWN_FAILED, DUT_DRIVER_LIFECYCLE_GetShutdownStatus() );
+    EXPECT_EQ( 0U, s_uart_stop_calls[1] );
+}
+
 /* -------------------------------------------------------------------------- */
 /* Forced Abort & Fault Handling Tests                                        */
 /* -------------------------------------------------------------------------- */
@@ -833,7 +846,7 @@ TEST_F( DutDriverLifecycleTest, ForcedAbortEscalationInvokesAbortApis )
     s_ao_state         = EXEC_ANALOGUE_OUTPUT_STATE_FAULTED;
     s_can_tx_status    = EXEC_CAN_TX_STATUS_ACTIVE;
     s_spi_tx_complete  = false;
-    s_uart_tx_complete = false;
+    s_uart_tx_status   = EXEC_UART_TX_STATUS_BUSY;
 
     /* Graceful shutdown fails on faulted AO and busy communications */
     EXPECT_TRUE( DUT_DRIVER_LIFECYCLE_BeginShutdown( false, false ) );

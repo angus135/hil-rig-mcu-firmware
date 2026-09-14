@@ -72,6 +72,14 @@ typedef enum
     EXEC_UART_CHANNEL_COUNT
 } ExecUartChannel_T;
 
+/** @brief TX state exposed to execution and lifecycle coordination. */
+typedef enum
+{
+    EXEC_UART_TX_STATUS_COMPLETE = 0U,
+    EXEC_UART_TX_STATUS_BUSY,
+    EXEC_UART_TX_STATUS_FAULTED
+} ExecUartTxStatus_T;
+
 /**
  * @brief  Defines the physical interface mode and voltage behaviour of the UART channel.
  *
@@ -194,6 +202,9 @@ bool EXEC_UART_Read( ExecUartChannel_T channel, uint8_t* dest, uint32_t dest_siz
  */
 uint32_t EXEC_UART_GetPendingReceiveBytes( ExecUartChannel_T channel );
 
+/** @brief Return complete, busy, or terminally faulted TX state. */
+ExecUartTxStatus_T EXEC_UART_Get_Tx_Status( ExecUartChannel_T channel );
+
 /**
  * @brief Reports whether UART TX is fully complete.
  *
@@ -203,7 +214,8 @@ uint32_t EXEC_UART_GetPendingReceiveBytes( ExecUartChannel_T channel );
  * @param channel UART channel to inspect.
  *
  * @return true if TX is fully complete.
- * @return false otherwise.
+ * @return false while TX is busy or terminally faulted. Use
+ *         EXEC_UART_Get_Tx_Status() when the distinction is required.
  */
 bool EXEC_UART_Is_Tx_Complete( ExecUartChannel_T channel );
 
