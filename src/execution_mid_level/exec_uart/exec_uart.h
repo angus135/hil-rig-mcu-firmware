@@ -219,6 +219,14 @@ ExecUartTxStatus_T EXEC_UART_Get_Tx_Status( ExecUartChannel_T channel );
  */
 bool EXEC_UART_Is_Tx_Complete( ExecUartChannel_T channel );
 
+/**
+ * @brief Reports whether an RX fault is currently latched on a UART channel.
+ *
+ * @param channel UART channel to inspect.
+ * @return true if an RX DMA fault is latched; false otherwise.
+ */
+bool EXEC_UART_Is_Rx_Faulted( ExecUartChannel_T channel );
+
 #ifdef __cplusplus
 }
 #endif

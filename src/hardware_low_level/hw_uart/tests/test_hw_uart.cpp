@@ -1811,20 +1811,28 @@ TEST_F( UartTest, DutRxDmaChannel2UnexpectedTransferCompleteClearsRxStreamFlags 
     EXPECT_EQ( fake_dma1.HIFCR, HW_UART_CH2_DMA_RX_IFCR_MASK );
 }
 
-TEST_F( UartTest, DutRxDmaErrorDoesNotChangeRxRunningStateBeforeFaultPolicyExists )
+TEST_F( UartTest, DutRxDmaErrorLatchesFaultAndClearsRxRunning )
 {
     HwUartPeripheralConfig_T config = TEST_HW_UART_Make_Tx_Rx_Config();
 
     ASSERT_TRUE( HW_UART_Configure_Channel( HW_UART_CHANNEL_1, &config ) );
     ASSERT_TRUE( HW_UART_Start_Channel( HW_UART_CHANNEL_1 ) );
     ASSERT_TRUE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.rx_running );
+    EXPECT_FALSE( HW_UART_Is_Rx_Faulted( HW_UART_CHANNEL_1 ) );
 
     fake_dma2.LISR |= DMA_LISR_TEIF2;
 
     DMA2_Stream2_IRQHandler();
 
-    EXPECT_TRUE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.rx_running );
+    EXPECT_FALSE( hw_uart_channel_states[HW_UART_CHANNEL_1].runtime.rx_running );
+    EXPECT_TRUE( HW_UART_Is_Rx_Faulted( HW_UART_CHANNEL_1 ) );
     EXPECT_EQ( fake_dma2.LIFCR, HW_UART_CH1_DMA_RX_IFCR_MASK );
+
+    HwUartRxSpans_T spans = HW_UART_Rx_Peek( HW_UART_CHANNEL_1 );
+    EXPECT_EQ( spans.total_length_bytes, 0U );
+
+    ASSERT_TRUE( HW_UART_Abort_Channel( HW_UART_CHANNEL_1 ) );
+    EXPECT_FALSE( HW_UART_Is_Rx_Faulted( HW_UART_CHANNEL_1 ) );
 }
 
 TEST_F( UartTest, DutRxStartChannel1DisablesUnusedRxDmaHalfAndCompleteInterrupts )
