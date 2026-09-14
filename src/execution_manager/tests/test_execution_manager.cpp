@@ -84,6 +84,10 @@ extern "C" bool FLASH_MANAGER_ConsumeInstructionFromISR( BaseType_t* task_woken 
 {
     consume_task_woken = task_woken;
     consume_calls++;
+    if ( consume_result )
+    {
+        peek_status = FLASH_MANAGER_INSTRUCTION_END_OF_STREAM;
+    }
     return consume_result;
 }
 
@@ -177,6 +181,7 @@ TEST_F( ExecutionManagerTest, RequestedOperationTimingProfilesNextPreparedRunOnl
 
     EXECUTION_MANAGER_Abort();
     ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
+    peek_status = FLASH_MANAGER_INSTRUCTION_AVAILABLE;
     EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_COMPLETE );
     EXPECT_EQ( profiled_adapter_calls, 1U );
     EXPECT_EQ( adapter_calls, 1U );

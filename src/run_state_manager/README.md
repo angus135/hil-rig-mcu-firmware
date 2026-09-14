@@ -80,8 +80,13 @@ execution timer remain stopped. An execute request begins Flash Manager
 execution preparation. After Flash reports `EXECUTING`, the manager starts the
 DUT drivers but remains `ARMED` with a pending transition while external-path
 enable writes complete. TIM4 starts and `EXECUTION` is published only after the
-startup batch succeeds. Startup failure or timeout enters `FAULT` without
-starting TIM4.
+startup batch succeeds. Immediately before starting TIM4, the lifecycle
+establishes the acquisition epoch: UART, SPI, and CAN discard queued receive
+data; PWM capture clears any pending sample and rearms its first-sample discard;
+and analogue input DMA is restarted and primed with a complete averaging
+window. Thus tick-one results cannot contain data accumulated during the
+asynchronous startup interval. Epoch failure, startup failure, or startup
+timeout enters `FAULT` without starting TIM4.
 
 Execution completion stops TIM4 first, then waits in an acknowledged
 DUT-driver shutdown phase. The RSM remains in `EXECUTION` while graceful SPI,

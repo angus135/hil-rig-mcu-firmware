@@ -314,6 +314,12 @@ void HW_CAN_Reset1( void );
  */
 void HW_CAN_Reset2( void );
 
+/** Discard channel 1 receive data and counters accumulated before tick zero. */
+bool HW_CAN_Establish_Rx_Epoch1( void );
+
+/** Discard channel 2 receive data and counters accumulated before tick zero. */
+bool HW_CAN_Establish_Rx_Epoch2( void );
+
 /**
  * @brief Recovers channel 1 from a transmit or bus error in task context.
  *

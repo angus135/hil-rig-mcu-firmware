@@ -367,6 +367,18 @@ bool EXEC_UART_Start_Channel( ExecUartChannel_T channel )
     return true;
 }
 
+bool EXEC_UART_Establish_Rx_Epoch( ExecUartChannel_T channel )
+{
+    if ( !EXEC_UART_Is_Valid_Channel( channel ) )
+    {
+        return false;
+    }
+
+    const ExecUartChannelState_T* state = &exec_uart_channel_states[channel];
+    return state->lifecycle_state == EXEC_UART_STATE_STARTED && state->rx_enabled
+           && HW_UART_Establish_Rx_Epoch( exec_uart_hardware_map[channel].hw_channel );
+}
+
 bool EXEC_UART_Stop_Channel( ExecUartChannel_T channel )
 {
     if ( !EXEC_UART_Is_Valid_Channel( channel ) )

@@ -118,6 +118,16 @@ extern "C" bool HW_CAN_Is_Started2( void )
     return hardware_started[1];
 }
 
+extern "C" bool HW_CAN_Establish_Rx_Epoch1( void )
+{
+    return true;
+}
+
+extern "C" bool HW_CAN_Establish_Rx_Epoch2( void )
+{
+    return true;
+}
+
 extern "C" HW_CAN_Tx_Status_T HW_CAN_Tx_Status1( void )
 {
     status_call_count[0]++;

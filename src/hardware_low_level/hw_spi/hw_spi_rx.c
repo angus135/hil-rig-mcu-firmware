@@ -214,6 +214,21 @@ bool HW_SPI_Start_Channel( SPIChannel_T peripheral )
     return true;
 }
 
+bool HW_SPI_Establish_Rx_Epoch( SPIChannel_T peripheral )
+{
+    SPIPeripheralState_T* state = HW_SPI_Get_State( peripheral );
+    if ( state == NULL || !state->is_started || state->rx_dma == NULL )
+    {
+        return false;
+    }
+
+    const uint32_t remaining_elements =
+        LL_DMA_GetDataLength( state->rx_dma, state->rx_dma_stream );
+    const uint32_t remaining_bytes = HW_SPI_DMA_Elements_To_Bytes_Fast( state, remaining_elements );
+    state->rx_position = HW_SPI_Wrap_Rx_Buffer_Index( RX_BUFFER_SIZE_BYTES - remaining_bytes );
+    return true;
+}
+
 /**
  * @brief Return unread RX data as one or two spans into the DMA buffer.
  *

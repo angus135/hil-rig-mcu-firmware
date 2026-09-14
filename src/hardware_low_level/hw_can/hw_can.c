@@ -1181,6 +1181,41 @@ void HW_CAN_Reset2( void )
                           &can_rx_dropped_count2, &can_tx_pending_mailbox2, &can_tx_status2 );
 }
 
+static bool HW_CAN_Establish_Rx_Epoch( CAN_TypeDef* can, IRQn_Type rx_irq,
+                                       volatile uint16_t* rx_wp, volatile uint16_t* rx_rp,
+                                       volatile uint32_t* dropped_count,
+                                       const HWCANLifecycleState_T* lifecycle )
+{
+    if ( can == NULL || rx_wp == NULL || rx_rp == NULL || dropped_count == NULL
+         || lifecycle == NULL || !lifecycle->is_started )
+    {
+        return false;
+    }
+
+    NVIC_DisableIRQ( rx_irq );
+    while ( ( can->RF0R & CAN_RF0R_FMP0 ) != 0U )
+    {
+        HW_CAN_Release_Rx_FIFO0( can );
+    }
+    *rx_rp         = *rx_wp;
+    *dropped_count = 0U;
+    NVIC_ClearPendingIRQ( rx_irq );
+    NVIC_EnableIRQ( rx_irq );
+    return true;
+}
+
+bool HW_CAN_Establish_Rx_Epoch1( void )
+{
+    return HW_CAN_Establish_Rx_Epoch( CAN1, CAN1_RX0_IRQn, &can_rx_wp1, &can_rx_rp1,
+                                      &can_rx_dropped_count1, &hw_can_lifecycle1 );
+}
+
+bool HW_CAN_Establish_Rx_Epoch2( void )
+{
+    return HW_CAN_Establish_Rx_Epoch( CAN2, CAN2_RX0_IRQn, &can_rx_wp2, &can_rx_rp2,
+                                      &can_rx_dropped_count2, &hw_can_lifecycle2 );
+}
+
 HW_CAN_Result_T HW_CAN_Recover1( void )
 {
     return HW_CAN_Recover( &hcan1, CAN1_TX_IRQn, CAN1_RX0_IRQn, CAN1_SCE_IRQn, &can_tx_wp1,

@@ -71,6 +71,8 @@ public:
 
     MOCK_METHOD( void, TxTrigger, ( SPIChannel_T peripheral ), () );
 
+    MOCK_METHOD( bool, EstablishRxEpoch, ( SPIChannel_T peripheral ), () );
+
     MOCK_METHOD( HWSPIRxSpans_T, RxPeek, ( SPIChannel_T peripheral ), () );
 
     MOCK_METHOD( void, RxConsume, ( SPIChannel_T peripheral, uint32_t bytes_to_consume ), () );
@@ -122,6 +124,11 @@ bool HW_SPI_Load_Tx_Packet_Batch( SPIChannel_T peripheral, const uint8_t* data,
 void HW_SPI_Tx_Trigger( SPIChannel_T peripheral )
 {
     g_mock_hw_spi->TxTrigger( peripheral );
+}
+
+bool HW_SPI_Establish_Rx_Epoch( SPIChannel_T peripheral )
+{
+    return g_mock_hw_spi->EstablishRxEpoch( peripheral );
 }
 
 HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIChannel_T peripheral )

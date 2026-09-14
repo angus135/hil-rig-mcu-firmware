@@ -315,6 +315,9 @@ bool HW_SPI_Stop_Channel( SPIChannel_T peripheral );
  */
 HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIChannel_T peripheral );
 
+/** Discard bytes received before the execution epoch without stopping RX DMA. */
+bool HW_SPI_Establish_Rx_Epoch( SPIChannel_T peripheral );
+
 /**
  * @brief Mark previously received RX bytes as consumed.
  *

@@ -260,6 +260,18 @@ EXEC_CAN_Result_T EXEC_CAN_Start_Channel( EXEC_CAN_Channel_T channel )
     return EXEC_CAN_Map_Result( result );
 }
 
+EXEC_CAN_Result_T EXEC_CAN_Establish_Rx_Epoch( EXEC_CAN_Channel_T channel )
+{
+    if ( !EXEC_CAN_Channel_Is_Valid( channel ) || !exec_can_state[channel].is_started )
+    {
+        return EXEC_CAN_RESULT_NOT_STARTED;
+    }
+
+    const bool accepted = channel == EXEC_CAN_CHANNEL_1 ? HW_CAN_Establish_Rx_Epoch1()
+                                                        : HW_CAN_Establish_Rx_Epoch2();
+    return accepted ? EXEC_CAN_RESULT_OK : EXEC_CAN_RESULT_ERROR;
+}
+
 EXEC_CAN_Result_T EXEC_CAN_Stop_Channel( EXEC_CAN_Channel_T channel )
 {
     if ( !EXEC_CAN_Channel_Is_Valid( channel ) )

@@ -450,6 +450,13 @@ bool EXEC_SPI_Start_Channel( ExecSPIChannel_T peripheral )
     return true;
 }
 
+bool EXEC_SPI_Establish_Rx_Epoch( ExecSPIChannel_T peripheral )
+{
+    EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );
+    return state != NULL && state->state == EXEC_SPI_STATE_STARTED
+           && HW_SPI_Establish_Rx_Epoch( exec_spi_hardware_map[peripheral].hw_channel );
+}
+
 bool EXEC_SPI_Stop_Channel( ExecSPIChannel_T peripheral )
 {
     EXECSPIState_T* state = EXEC_SPI_Get_State( peripheral );

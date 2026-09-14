@@ -156,6 +156,11 @@ extern "C" void NVIC_DisableIRQ( IRQn_Type irq )
     nvic_irq_enabled[irq] = false;
 }
 
+extern "C" void NVIC_ClearPendingIRQ( IRQn_Type irq )
+{
+    ( void )irq;
+}
+
 extern "C" void NVIC_EnableIRQ( IRQn_Type irq )
 {
     nvic_irq_enabled[irq] = true;

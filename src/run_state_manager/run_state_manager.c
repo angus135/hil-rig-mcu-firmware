@@ -490,6 +490,22 @@ static bool RUN_STATE_MANAGER_EnterExecution( void )
         return true;
     }
 
+    if ( !DUT_DRIVER_LIFECYCLE_EstablishExecutionEpoch() )
+    {
+        EXECUTION_MANAGER_Abort();
+        RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_ACQUISITION_EPOCH );
+        return false;
+    }
+
+    if ( execution_abort_requested || requested_fault_reason != RUN_STATE_FAULT_NONE )
+    {
+        EXECUTION_MANAGER_Abort();
+        RUN_STATE_MANAGER_EnterFault( ( requested_fault_reason != RUN_STATE_FAULT_NONE )
+                                          ? requested_fault_reason
+                                          : RUN_STATE_FAULT_EXTERNAL_REQUEST );
+        return false;
+    }
+
     if ( !RUN_STATE_MANAGER_StartExecutionTimer() )
     {
         EXECUTION_MANAGER_Abort();

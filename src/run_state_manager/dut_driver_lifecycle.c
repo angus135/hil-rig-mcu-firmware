@@ -29,6 +29,7 @@
  */
 
 #define DUT_DRIVER_LIFECYCLE_CHANNEL_BIT( channel ) ( 1UL << ( channel ) )
+#define DUT_DRIVER_LIFECYCLE_ADC_AVERAGE_SAMPLES ( 8U )
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -476,6 +477,10 @@ bool DUT_DRIVER_LIFECYCLE_Start( void )
                 goto start_failed;
             }
             started->uart_channels |= channel_bit;
+            if ( ( enabled->uart_receive_channels & channel_bit ) != 0U )
+            {
+                started->uart_receive_channels |= channel_bit;
+            }
         }
     }
 
@@ -523,6 +528,65 @@ start_failed:
     ( void )DUT_DRIVER_LIFECYCLE_Stop();
     LOGIC_EXPANDER_Cancel_Control_Batch( batch_id );
     return false;
+}
+
+bool DUT_DRIVER_LIFECYCLE_EstablishExecutionEpoch( void )
+{
+    const DutDriverLifecycleSelection_T* started = &lifecycle_context.started;
+
+    if ( started->analogue_input )
+    {
+        if ( !EXEC_ANALOGUE_INPUT_Establish_Epoch() )
+        {
+            return false;
+        }
+
+        static const uint32_t sample_rate_hz[] = { 100000U, 50000U, 10000U,
+                                                   5000U,   1000U,  500U };
+        const uint32_t rate = sample_rate_hz[lifecycle_context.configuration.analogue_input.sample_rate];
+        const uint32_t prime_ms =
+            ( DUT_DRIVER_LIFECYCLE_ADC_AVERAGE_SAMPLES * 1000U + rate - 1U ) / rate;
+        vTaskDelay( pdMS_TO_TICKS( prime_ms ) );
+    }
+
+    for ( uint32_t channel = 0U; channel < TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT; channel++ )
+    {
+        if ( ( started->pwm_capture_channels & DUT_DRIVER_LIFECYCLE_CHANNEL_BIT( channel ) ) != 0U
+             && !EXEC_PWM_Capture_Establish_Epoch( ( ExecPwmCaptureChannel_T )channel ) )
+        {
+            return false;
+        }
+    }
+
+    for ( uint32_t channel = 0U; channel < EXEC_CAN_CHANNEL_COUNT; channel++ )
+    {
+        if ( ( started->can_channels & DUT_DRIVER_LIFECYCLE_CHANNEL_BIT( channel ) ) != 0U
+             && EXEC_CAN_Establish_Rx_Epoch( ( EXEC_CAN_Channel_T )channel )
+                    != EXEC_CAN_RESULT_OK )
+        {
+            return false;
+        }
+    }
+
+    for ( uint32_t channel = 0U; channel < TEST_CONFIGURATION_SPI_CHANNEL_COUNT; channel++ )
+    {
+        if ( ( started->spi_channels & DUT_DRIVER_LIFECYCLE_CHANNEL_BIT( channel ) ) != 0U
+             && !EXEC_SPI_Establish_Rx_Epoch( ( ExecSPIChannel_T )channel ) )
+        {
+            return false;
+        }
+    }
+
+    for ( uint32_t channel = 0U; channel < EXEC_UART_CHANNEL_COUNT; channel++ )
+    {
+        if ( ( started->uart_receive_channels & DUT_DRIVER_LIFECYCLE_CHANNEL_BIT( channel ) ) != 0U
+             && !EXEC_UART_Establish_Rx_Epoch( ( ExecUartChannel_T )channel ) )
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 DutDriverStartStatus_T DUT_DRIVER_LIFECYCLE_GetStartStatus( void )
@@ -615,6 +679,7 @@ static bool DUT_DRIVER_LIFECYCLE_StopAttempt( bool force_abort, bool* busy )
                               : EXEC_UART_Stop_Channel( ( ExecUartChannel_T )index ) )
         {
             started->uart_channels &= ~channel_bit;
+            started->uart_receive_channels &= ~channel_bit;
         }
         else
         {

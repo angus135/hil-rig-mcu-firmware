@@ -796,6 +796,26 @@ bool HW_UART_Start_Channel( HwUartChannel_T channel )
     return true;
 }
 
+bool HW_UART_Establish_Rx_Epoch( HwUartChannel_T channel )
+{
+    if ( channel >= HW_UART_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    HwUartChannelState_T*      state  = &hw_uart_channel_states[channel];
+    const HwUartHardwareMap_T* hw_map = &hw_uart_hardware_map[channel];
+    if ( !state->runtime.is_started || !state->config.rx_enabled || !state->runtime.rx_running )
+    {
+        return false;
+    }
+
+    const uint32_t remaining = hw_map->rx_dma_stream->NDTR;
+    state->runtime.rx_read_index =
+        ( HW_UART_RX_BUFFER_SIZE - remaining ) & ( HW_UART_RX_BUFFER_SIZE - 1U );
+    return true;
+}
+
 bool HW_UART_Stop_Channel( HwUartChannel_T channel )
 {
     if ( channel >= HW_UART_CHANNEL_COUNT )

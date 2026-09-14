@@ -119,6 +119,9 @@ bool EXEC_UART_Configure_Channel( ExecUartChannel_T channel, const ExecUartConfi
 /** @brief Start a configured UART channel. */
 bool EXEC_UART_Start_Channel( ExecUartChannel_T channel );
 
+/** Discard pre-execution RX bytes and establish the channel's tick-zero baseline. */
+bool EXEC_UART_Establish_Rx_Epoch( ExecUartChannel_T channel );
+
 /**
  * @brief Stop a started UART channel while retaining its configuration.
  * @return false if the channel is invalid, not started, TX is incomplete, or RX stop fails.
