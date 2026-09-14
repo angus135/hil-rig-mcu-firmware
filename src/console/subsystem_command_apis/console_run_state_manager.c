@@ -401,21 +401,28 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
             return;
         }
 
+        RunStateFrequencyMode_T mode;
         if ( frequency == 100U )
         {
-            RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_100HZ );
+            mode = RUN_STATE_FREQUENCY_100HZ;
         }
         else if ( frequency == 1000U )
         {
-            RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_1KHZ );
+            mode = RUN_STATE_FREQUENCY_1KHZ;
         }
         else if ( frequency == 10000U )
         {
-            RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_10KHZ );
+            mode = RUN_STATE_FREQUENCY_10KHZ;
         }
         else
         {
             CONSOLE_RunStateManager_PrintUsage();
+            return;
+        }
+
+        if ( !RUN_STATE_MANAGER_Set_Execution_Frequency( mode ) )
+        {
+            CONSOLE_Printf( "Execution frequency change rejected in the current run state.\r\n" );
             return;
         }
 
@@ -433,7 +440,9 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
             return;
         }
 
-        CONSOLE_RunStateManager_WaitForState( RUN_STATE_MANAGER_RequestExecution( &request ),
+        const RunStateExecutionRequestResult_T result =
+            RUN_STATE_MANAGER_RequestExecution( &request );
+        CONSOLE_RunStateManager_WaitForState( result == RUN_STATE_EXECUTION_REQUEST_ACCEPTED,
                                               RUN_STATE_RESULTS_READY );
         return;
     }

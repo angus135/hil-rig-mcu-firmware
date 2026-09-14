@@ -86,6 +86,12 @@ typedef enum
     RUN_STATE_PENDING_RESULT_FINALISATION
 } RunStatePendingOperation_T;
 
+typedef struct
+{
+    uint32_t                tick_count;
+    RunStateFrequencyMode_T frequency;
+} RunStatePreparedExecution_T;
+
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
@@ -105,8 +111,10 @@ static TickType_t                 pending_operation_started_at = 0U;
 static bool execution_active        = false;
 static bool driver_cleanup_complete = true;
 
-static bool                       execution_timer_running = false;
-static RunStateExecutionRequest_T execution_request       = { 0U, 0U };
+static bool                       execution_timer_running   = false;
+static bool                       execution_request_pending = false;
+static RunStatePreparedExecution_T prepared_execution       = {
+          .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
 
 static volatile bool execution_abort_requested = false;
 
@@ -351,6 +359,9 @@ static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason )
 {
     request_timing_active     = false;
     execution_abort_requested = true;
+    taskENTER_CRITICAL();
+    execution_request_pending = false;
+    taskEXIT_CRITICAL();
     RUN_STATE_MANAGER_RecordFault( reason );
     ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_FAULT );
 }
@@ -487,16 +498,19 @@ static bool RUN_STATE_MANAGER_EnterExecution( void )
         return false;
     }
 
-    execution_active = true;
+    taskENTER_CRITICAL();
+    execution_active         = true;
+    execution_request_pending = false;
+    taskEXIT_CRITICAL();
     return true;
 }
 
 /** Starts DUT drivers and waits separately for external-interface completion. */
-static uint32_t RUN_STATE_MANAGER_GetFrequencyHz( void )
+static uint32_t RUN_STATE_MANAGER_GetFrequencyHz( RunStateFrequencyMode_T frequency )
 {
-    return frequency_mode == RUN_STATE_FREQUENCY_100HZ   ? 100U
-           : frequency_mode == RUN_STATE_FREQUENCY_10KHZ ? 10000U
-                                                         : 1000U;
+    return frequency == RUN_STATE_FREQUENCY_100HZ   ? 100U
+           : frequency == RUN_STATE_FREQUENCY_10KHZ ? 10000U
+                                                    : 1000U;
 }
 
 static uint32_t RUN_STATE_MANAGER_GetSpiBaudHz( ExecSPIBaudRate_T baud_rate )
@@ -511,10 +525,11 @@ static uint32_t RUN_STATE_MANAGER_GetSpiBaudHz( ExecSPIBaudRate_T baud_rate )
     return spi_baud_hz[baud_rate];
 }
 
-static uint32_t RUN_STATE_MANAGER_CalculateDrainTailTicks( void )
+static uint32_t
+RUN_STATE_MANAGER_CalculateDrainTailTicks( RunStateFrequencyMode_T frequency )
 {
     uint64_t       required_ticks = 0U;
-    const uint32_t frequency_hz   = RUN_STATE_MANAGER_GetFrequencyHz();
+    const uint32_t frequency_hz   = RUN_STATE_MANAGER_GetFrequencyHz( frequency );
 
     for ( uint32_t channel = 0U; channel < EXEC_UART_CHANNEL_COUNT; channel++ )
     {
@@ -609,9 +624,10 @@ static bool RUN_STATE_MANAGER_BeginDriverStart( void )
      * asynchronous peripherals can complete and their measurements can be
      * collected without requiring callers to hand-tune the final tick.
      */
-    const uint32_t execution_tail_ticks = RUN_STATE_MANAGER_CalculateDrainTailTicks();
+    const uint32_t execution_tail_ticks =
+        RUN_STATE_MANAGER_CalculateDrainTailTicks( prepared_execution.frequency );
 
-    uint32_t effective_tick_count = execution_request.tick_count;
+    uint32_t effective_tick_count = prepared_execution.tick_count;
     if ( execution_tail_ticks > ( UINT32_MAX - effective_tick_count ) )
     {
         RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_EXECUTION_MANAGER );
@@ -698,21 +714,20 @@ static bool RUN_STATE_MANAGER_BeginDriverShutdown( bool force_abort, bool clear_
 static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void )
 {
     const uint32_t             result_header_bytes = sizeof( FlashManagerResultHeader_T );
-    const uint32_t             tail_ticks          = RUN_STATE_MANAGER_CalculateDrainTailTicks();
+    const uint32_t             tail_ticks =
+        RUN_STATE_MANAGER_CalculateDrainTailTicks( prepared_execution.frequency );
     DutDriverLifecycleStatus_T driver_status       = { 0 };
     DUT_DRIVER_LIFECYCLE_GetStatus( &driver_status );
 
-    if ( execution_request.tick_count > ( UINT32_MAX - tail_ticks ) )
+    if ( prepared_execution.tick_count > ( UINT32_MAX - tail_ticks ) )
     {
         RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION );
         return false;
     }
 
-    const uint32_t effective_ticks = execution_request.tick_count + tail_ticks;
+    const uint32_t effective_ticks = prepared_execution.tick_count + tail_ticks;
     uint32_t       result_budget   = 0U;
-    const uint32_t frequency_hz    = frequency_mode == RUN_STATE_FREQUENCY_100HZ   ? 100U
-                                     : frequency_mode == RUN_STATE_FREQUENCY_10KHZ ? 10000U
-                                                                                   : 1000U;
+    const uint32_t frequency_hz = RUN_STATE_MANAGER_GetFrequencyHz( prepared_execution.frequency );
 
 #define RUN_STATE_ADD_RESULT_BYTES( bytes )                                                        \
     do                                                                                             \
@@ -1131,6 +1146,12 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
             {
                 accepted = RUN_STATE_MANAGER_BeginExecutionPreparation();
             }
+            if ( !accepted )
+            {
+                taskENTER_CRITICAL();
+                execution_request_pending = false;
+                taskEXIT_CRITICAL();
+            }
             break;
 
         case RUN_STATE_REQUEST_EXECUTION_COMPLETE:
@@ -1422,7 +1443,7 @@ static bool RUN_STATE_MANAGER_StartExecutionTimer( void )
         return true;
     }
 
-    switch ( frequency_mode )
+    switch ( prepared_execution.frequency )
     {
         case RUN_STATE_FREQUENCY_100HZ:
             HW_TIMER_Configure_Timer( EXECUTION_MANAGER_TIMER, PSC_100HZ, ARR_100HZ );
@@ -1461,19 +1482,28 @@ static void RUN_STATE_MANAGER_StopExecutionTimer( void )
  *------------------------------------------------------------------------------
  */
 
-void RUN_STATE_MANAGER_Set_Execution_Frequency( RunStateFrequencyMode_T mode )
+bool RUN_STATE_MANAGER_Set_Execution_Frequency( RunStateFrequencyMode_T mode )
 {
     switch ( mode )
     {
-        // Defensive, only accept valid frequency modes.
         case RUN_STATE_FREQUENCY_100HZ:
         case RUN_STATE_FREQUENCY_1KHZ:
         case RUN_STATE_FREQUENCY_10KHZ:
-            frequency_mode = mode;
             break;
         default:
-            break;
+            return false;
     }
+
+    taskENTER_CRITICAL();
+    const bool accepted = ( run_state == RUN_STATE_IDLE || run_state == RUN_STATE_ARMED )
+                          && pending_operation == RUN_STATE_PENDING_NONE && !execution_active
+                          && !execution_request_pending;
+    if ( accepted )
+    {
+        frequency_mode = mode;
+    }
+    taskEXIT_CRITICAL();
+    return accepted;
 }
 
 RunStateFrequencyMode_T RUN_STATE_MANAGER_Get_Execution_Frequency( void )
@@ -1490,7 +1520,9 @@ void RUN_STATE_MANAGER_Init( void )
     execution_active             = false;
     driver_cleanup_complete      = true;
     execution_timer_running      = false;
-    execution_request            = ( RunStateExecutionRequest_T ){ 0U, 0U };
+    execution_request_pending    = false;
+    prepared_execution           = ( RunStatePreparedExecution_T ){
+                  .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
     execution_abort_requested    = false;
     fault_reason                 = RUN_STATE_FAULT_NONE;
     requested_fault_reason       = RUN_STATE_FAULT_NONE;
@@ -1521,17 +1553,49 @@ bool RUN_STATE_MANAGER_RequestConfiguration( void )
     return RUN_STATE_MANAGER_Notify( RUN_STATE_MANAGER_NOTIFY_CONFIGURATION );
 }
 
-bool RUN_STATE_MANAGER_RequestExecution( const RunStateExecutionRequest_T* request )
+RunStateExecutionRequestResult_T
+RUN_STATE_MANAGER_RequestExecution( const RunStateExecutionRequest_T* request )
 {
     if ( ( request == NULL ) || ( request->tick_count == 0U ) )
     {
-        return false;
+        return RUN_STATE_EXECUTION_REQUEST_INVALID_ARGUMENT;
     }
 
     taskENTER_CRITICAL();
-    execution_request = *request;
+    RunStateExecutionRequestResult_T result = RUN_STATE_EXECUTION_REQUEST_ACCEPTED;
+    if ( run_state != RUN_STATE_ARMED )
+    {
+        result = RUN_STATE_EXECUTION_REQUEST_INVALID_STATE;
+    }
+    else if ( pending_operation != RUN_STATE_PENDING_NONE || execution_active
+              || execution_request_pending )
+    {
+        result = RUN_STATE_EXECUTION_REQUEST_BUSY;
+    }
+    else
+    {
+        prepared_execution = ( RunStatePreparedExecution_T ){
+            .tick_count = request->tick_count,
+            .frequency  = frequency_mode,
+        };
+        execution_request_pending = true;
+    }
     taskEXIT_CRITICAL();
-    return RUN_STATE_MANAGER_Notify( RUN_STATE_MANAGER_NOTIFY_EXECUTION );
+
+    if ( result != RUN_STATE_EXECUTION_REQUEST_ACCEPTED )
+    {
+        return result;
+    }
+
+    if ( RUN_STATE_MANAGER_Notify( RUN_STATE_MANAGER_NOTIFY_EXECUTION ) )
+    {
+        return RUN_STATE_EXECUTION_REQUEST_ACCEPTED;
+    }
+
+    taskENTER_CRITICAL();
+    execution_request_pending = false;
+    taskEXIT_CRITICAL();
+    return RUN_STATE_EXECUTION_REQUEST_NOTIFY_FAILED;
 }
 
 bool RUN_STATE_MANAGER_RequestExecutionComplete( void )

@@ -335,7 +335,8 @@ protected:
     static void EnterExecution( void )
     {
         ConfigureToArmed();
-        execution_request = ( RunStateExecutionRequest_T ){ 10U, 64U };
+        prepared_execution = ( RunStatePreparedExecution_T ){
+            .tick_count = 10U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
         Process( RUN_STATE_REQUEST_EXECUTION );
         flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
         RUN_STATE_MANAGER_ProcessPendingOperation();
@@ -453,7 +454,8 @@ TEST_F( RunStateManagerTest, ConfigurationTimeoutEntersFault )
 TEST_F( RunStateManagerTest, ExecutionStartsOnlyAfterFlashAndDriverStartupComplete )
 {
     ConfigureToArmed();
-    execution_request = ( RunStateExecutionRequest_T ){ 25U, 128U };
+    prepared_execution = ( RunStatePreparedExecution_T ){
+        .tick_count = 25U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
     Process( RUN_STATE_REQUEST_EXECUTION );
     EXPECT_EQ( RUN_STATE_ARMED, run_state );
     EXPECT_EQ( RUN_STATE_PENDING_EXECUTION_PREPARATION, pending_operation );
@@ -478,18 +480,80 @@ TEST_F( RunStateManagerTest, ExecutionRequestCopiesValidatedSessionBounds )
 {
     RunStateExecutionRequest_T request = { 33U, 4096U };
 
-    EXPECT_TRUE( RUN_STATE_MANAGER_RequestExecution( &request ) );
+    ConfigureToArmed();
+    frequency_mode = RUN_STATE_FREQUENCY_10KHZ;
+    EXPECT_EQ( RUN_STATE_EXECUTION_REQUEST_ACCEPTED,
+               RUN_STATE_MANAGER_RequestExecution( &request ) );
     request.tick_count = 1U;
-    EXPECT_EQ( 33U, execution_request.tick_count );
-    EXPECT_EQ( 4096U, execution_request.maximum_result_length_bytes );
+    EXPECT_EQ( 33U, prepared_execution.tick_count );
+    EXPECT_EQ( RUN_STATE_FREQUENCY_10KHZ, prepared_execution.frequency );
+    EXPECT_TRUE( execution_request_pending );
     EXPECT_EQ( RUN_STATE_MANAGER_NOTIFY_EXECUTION, notified_bits );
-    EXPECT_FALSE( RUN_STATE_MANAGER_RequestExecution( nullptr ) );
+    EXPECT_EQ( RUN_STATE_EXECUTION_REQUEST_BUSY, RUN_STATE_MANAGER_RequestExecution( &request ) );
+    EXPECT_EQ( RUN_STATE_EXECUTION_REQUEST_INVALID_ARGUMENT,
+               RUN_STATE_MANAGER_RequestExecution( nullptr ) );
+}
+
+TEST_F( RunStateManagerTest, FrequencyChangeIsRejectedWhileExecutionRequestIsPending )
+{
+    ConfigureToArmed();
+    RunStateExecutionRequest_T request = { 33U, 0U };
+
+    EXPECT_TRUE( RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_10KHZ ) );
+    EXPECT_EQ( RUN_STATE_EXECUTION_REQUEST_ACCEPTED,
+               RUN_STATE_MANAGER_RequestExecution( &request ) );
+    EXPECT_FALSE( RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_100HZ ) );
+    EXPECT_EQ( RUN_STATE_FREQUENCY_10KHZ, frequency_mode );
+    EXPECT_EQ( RUN_STATE_FREQUENCY_10KHZ, prepared_execution.frequency );
+}
+
+TEST_F( RunStateManagerTest, ExecutionRequestOwnershipIsHeldUntilExecutionBecomesActive )
+{
+    ConfigureToArmed();
+    RunStateExecutionRequest_T request = { 25U, 0U };
+
+    ASSERT_EQ( RUN_STATE_EXECUTION_REQUEST_ACCEPTED,
+               RUN_STATE_MANAGER_RequestExecution( &request ) );
+    Process( RUN_STATE_REQUEST_EXECUTION );
+    EXPECT_TRUE( execution_request_pending );
+    EXPECT_EQ( RUN_STATE_PENDING_EXECUTION_PREPARATION, pending_operation );
+
+    flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_TRUE( execution_request_pending );
+    EXPECT_EQ( RUN_STATE_PENDING_DRIVER_START, pending_operation );
+
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_TRUE( execution_active );
+    EXPECT_FALSE( execution_request_pending );
+}
+
+TEST_F( RunStateManagerTest, FailedExecutionNotificationReleasesRequestOwnership )
+{
+    ConfigureToArmed();
+    RunStateExecutionRequest_T request = { 33U, 0U };
+    notify_result                      = pdFAIL;
+
+    EXPECT_EQ( RUN_STATE_EXECUTION_REQUEST_NOTIFY_FAILED,
+               RUN_STATE_MANAGER_RequestExecution( &request ) );
+    EXPECT_FALSE( execution_request_pending );
+}
+
+TEST_F( RunStateManagerTest, ExecutionRequestIsRejectedOutsideArmedState )
+{
+    RunStateExecutionRequest_T request = { 33U, 0U };
+
+    EXPECT_EQ( RUN_STATE_EXECUTION_REQUEST_INVALID_STATE,
+               RUN_STATE_MANAGER_RequestExecution( &request ) );
+    EXPECT_FALSE( execution_request_pending );
+    EXPECT_EQ( 0U, notified_bits );
 }
 
 TEST_F( RunStateManagerTest, ExecutionManagerPreparationFailurePreventsDriverAndTimerStart )
 {
     ConfigureToArmed();
-    execution_request        = ( RunStateExecutionRequest_T ){ 10U, 0U };
+    prepared_execution = ( RunStatePreparedExecution_T ){
+        .tick_count = 10U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
     execution_prepare_result = false;
     Process( RUN_STATE_REQUEST_EXECUTION );
     flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
@@ -506,7 +570,8 @@ TEST_F( RunStateManagerTest, ExecutionTimerStartFailureStopsDriversAndEntersFaul
 {
     ConfigureToArmed();
     const uint32_t abort_calls_before_execution = execution_abort_calls;
-    execution_request                           = ( RunStateExecutionRequest_T ){ 10U, 0U };
+    prepared_execution = ( RunStatePreparedExecution_T ){
+        .tick_count = 10U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
     timer_start_result                          = false;
     Process( RUN_STATE_REQUEST_EXECUTION );
     flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
