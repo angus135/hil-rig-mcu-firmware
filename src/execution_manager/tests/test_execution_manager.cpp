@@ -382,8 +382,7 @@ TEST_F( ExecutionManagerTest, UnconsumedFutureInstructionFailsAtCompletion )
     ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 1U ) );
 
     EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_FAILED );
-    EXPECT_EQ( EXECUTION_MANAGER_GetFailure(),
-               EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNCONSUMED );
+    EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNCONSUMED );
     EXPECT_EQ( EXECUTION_MANAGER_GetCurrentTick(), 1U );
     EXPECT_EQ( adapter_calls, 0U );
     EXPECT_EQ( consume_calls, 0U );

@@ -136,24 +136,24 @@ typedef struct
  */
 static HwPWMCaptureChannelContext_T hw_pwm_capture_channels[PWM_CAPTURE_CHANNEL_COUNT] = {
     {
-        .timer                    = HW_PWM_CAPTURE_CH_1_INSTANCE,
-        .timer_role               = PWM_CAPTURE_TIMER_CH1,
-        .period_ccr               = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_PERIOD_CCR,
-        .high_ccr                 = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_HIGH_CCR,
-        .period_capture_flag      = HW_PWM_CAPTURE_CH_1_PERIOD_FLAG,
-        .period_overcapture_flag  = HW_PWM_CAPTURE_CH_1_OVERCAPTURE_FLAG,
-        .is_configured            = false,
-        .is_started               = false,
+        .timer                   = HW_PWM_CAPTURE_CH_1_INSTANCE,
+        .timer_role              = PWM_CAPTURE_TIMER_CH1,
+        .period_ccr              = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_PERIOD_CCR,
+        .high_ccr                = &HW_PWM_CAPTURE_CH_1_INSTANCE->HW_PWM_CAPTURE_CH_1_HIGH_CCR,
+        .period_capture_flag     = HW_PWM_CAPTURE_CH_1_PERIOD_FLAG,
+        .period_overcapture_flag = HW_PWM_CAPTURE_CH_1_OVERCAPTURE_FLAG,
+        .is_configured           = false,
+        .is_started              = false,
     },
     {
-        .timer                    = HW_PWM_CAPTURE_CH_2_INSTANCE,
-        .timer_role               = PWM_CAPTURE_TIMER_CH2,
-        .period_ccr               = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_PERIOD_CCR,
-        .high_ccr                 = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_HIGH_CCR,
-        .period_capture_flag      = HW_PWM_CAPTURE_CH_2_PERIOD_FLAG,
-        .period_overcapture_flag  = HW_PWM_CAPTURE_CH_2_OVERCAPTURE_FLAG,
-        .is_configured            = false,
-        .is_started               = false,
+        .timer                   = HW_PWM_CAPTURE_CH_2_INSTANCE,
+        .timer_role              = PWM_CAPTURE_TIMER_CH2,
+        .period_ccr              = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_PERIOD_CCR,
+        .high_ccr                = &HW_PWM_CAPTURE_CH_2_INSTANCE->HW_PWM_CAPTURE_CH_2_HIGH_CCR,
+        .period_capture_flag     = HW_PWM_CAPTURE_CH_2_PERIOD_FLAG,
+        .period_overcapture_flag = HW_PWM_CAPTURE_CH_2_OVERCAPTURE_FLAG,
+        .is_configured           = false,
+        .is_started              = false,
     },
 };
 
@@ -247,8 +247,7 @@ bool HW_PWM_Capture_Stop_Channel( HwPWMCaptureChannel_T channel )
     return true;
 }
 
-bool HW_PWM_Capture_Read_Snapshot( HwPWMCaptureChannel_T  channel,
-                                   HwPWMCaptureSnapshot_T* snapshot )
+bool HW_PWM_Capture_Read_Snapshot( HwPWMCaptureChannel_T channel, HwPWMCaptureSnapshot_T* snapshot )
 {
     if ( channel >= PWM_CAPTURE_CHANNEL_COUNT || snapshot == NULL )
     {

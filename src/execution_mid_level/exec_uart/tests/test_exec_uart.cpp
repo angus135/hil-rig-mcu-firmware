@@ -68,10 +68,10 @@ public:
     MOCK_METHOD( bool, Tx_Load_Buffer, ( int, const uint8_t*, uint32_t ) );
     MOCK_METHOD( bool, Tx_Trigger, ( int ));
     MOCK_METHOD( bool, Establish_Rx_Epoch, ( int ));
-    MOCK_METHOD( HwUartRxSpans_T, Rx_Peek, ( int ) );
+    MOCK_METHOD( HwUartRxSpans_T, Rx_Peek, ( int ));
     MOCK_METHOD( void, Rx_Consume, ( int, uint32_t ) );
-    MOCK_METHOD( HwUartTxStatus_T, Get_Tx_Status, ( int ) );
-    MOCK_METHOD( bool, Is_Rx_Faulted, ( int ) );
+    MOCK_METHOD( HwUartTxStatus_T, Get_Tx_Status, ( int ));
+    MOCK_METHOD( bool, Is_Rx_Faulted, ( int ));
 };
 
 class MockLogicExpander
@@ -703,8 +703,8 @@ TEST_F( ExecUARTTest, ReadReturnsZeroWhenNoDataAvailable )
 TEST_F( ExecUARTTest, PendingReceiveBytesReturnsLowLevelSnapshotLength )
 {
     EXPECT_CALL( mock_hw, Rx_Peek( EXEC_UART_CHANNEL_2 ) )
-        .WillOnce( Return( TEST_EXEC_UART_Make_Spans( s_first_span_data, 7U,
-                                                       s_second_span_data, 5U ) ) );
+        .WillOnce(
+            Return( TEST_EXEC_UART_Make_Spans( s_first_span_data, 7U, s_second_span_data, 5U ) ) );
 
     EXPECT_EQ( EXEC_UART_GetPendingReceiveBytes( EXEC_UART_CHANNEL_2 ), 12U );
 }
@@ -826,24 +826,21 @@ TEST_F( ExecUARTTest, ReadReturnsFalseWhenLowLevelRxIsFaulted )
     uint8_t  dest[16]   = { 0 };
     uint32_t bytes_read = 0U;
 
-    EXPECT_CALL( mock_hw, Is_Rx_Faulted( HW_UART_CHANNEL_1 ) )
-        .WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw, Is_Rx_Faulted( HW_UART_CHANNEL_1 ) ).WillOnce( Return( true ) );
 
     EXPECT_FALSE( EXEC_UART_Read( EXEC_UART_CHANNEL_1, dest, sizeof( dest ), &bytes_read ) );
 }
 
 TEST_F( ExecUARTTest, GetPendingReceiveBytesReturnsZeroWhenLowLevelRxIsFaulted )
 {
-    EXPECT_CALL( mock_hw, Is_Rx_Faulted( HW_UART_CHANNEL_1 ) )
-        .WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw, Is_Rx_Faulted( HW_UART_CHANNEL_1 ) ).WillOnce( Return( true ) );
 
     EXPECT_EQ( 0U, EXEC_UART_GetPendingReceiveBytes( EXEC_UART_CHANNEL_1 ) );
 }
 
 TEST_F( ExecUARTTest, IsRxFaultedDelegatesToLowLevelDriver )
 {
-    EXPECT_CALL( mock_hw, Is_Rx_Faulted( HW_UART_CHANNEL_2 ) )
-        .WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw, Is_Rx_Faulted( HW_UART_CHANNEL_2 ) ).WillOnce( Return( true ) );
 
     EXPECT_TRUE( EXEC_UART_Is_Rx_Faulted( EXEC_UART_CHANNEL_2 ) );
 }

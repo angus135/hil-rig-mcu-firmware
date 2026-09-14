@@ -193,9 +193,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleCanReceive( uint8_t channel, uint32_t t
         return true;
     }
 
-    const uint16_t packet_capacity = pending_packets < EXEC_CAN_MAX_BATCH_SIZE
-                                         ? pending_packets
-                                         : EXEC_CAN_MAX_BATCH_SIZE;
+    const uint16_t packet_capacity =
+        pending_packets < EXEC_CAN_MAX_BATCH_SIZE ? pending_packets : EXEC_CAN_MAX_BATCH_SIZE;
     const uint16_t reservation_bytes =
         ( uint16_t )( packet_capacity * sizeof( EXEC_CAN_Packet_T ) );
     FlashManagerResultWriteLease_T lease = { 0 };
@@ -281,8 +280,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleSpiReceive( uint8_t channel, uint32_t t
 bool EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive( uint8_t channel, uint32_t timestamp,
                                                       BaseType_t* higher_priority_task_woken )
 {
-    const uint32_t pending_bytes =
-        EXEC_UART_GetPendingReceiveBytes( ( ExecUartChannel_T )channel );
+    const uint32_t pending_bytes = EXEC_UART_GetPendingReceiveBytes( ( ExecUartChannel_T )channel );
     if ( pending_bytes == 0U )
     {
         return true;

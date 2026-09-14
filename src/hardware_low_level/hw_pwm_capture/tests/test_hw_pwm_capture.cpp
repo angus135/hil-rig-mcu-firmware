@@ -248,7 +248,7 @@ TEST_F( HWPWMCaptureTest, StartAndStopReturnFalseForInvalidChannel )
 
 TEST_F( HWPWMCaptureTest, ReadSnapshotReturnsFalseWhenChannelNotStarted )
 {
-    mock_tim2.SR = TIM_SR_CC1IF;
+    mock_tim2.SR                    = TIM_SR_CC1IF;
     HwPWMCaptureSnapshot_T snapshot = {};
 
     EXPECT_FALSE( HW_PWM_Capture_Read_Snapshot( HW_PWM_CAPTURE_CHANNEL_1, &snapshot ) );

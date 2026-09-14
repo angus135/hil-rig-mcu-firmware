@@ -254,7 +254,7 @@ TEST_F( ExecutionMeasurementAdaptersTest, EmptyUartPollDoesNotReserveARecord )
 TEST_F( ExecutionMeasurementAdaptersTest, UartCommitsOnlyBytesReportedByDriver )
 {
     uart_pending_bytes = 13U;
-    uart_bytes_read = 13U;
+    uart_bytes_read    = 13U;
 
     ASSERT_TRUE( EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive( 1U, 6U, &task_woken ) );
     EXPECT_EQ( committed_peripheral, FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE );
@@ -296,7 +296,7 @@ TEST_F( ExecutionMeasurementAdaptersTest, EmptyCanQueueDoesNotCommit )
 TEST_F( ExecutionMeasurementAdaptersTest, CommitsOnlyReceivedCanPackets )
 {
     can_pending_packets = 2U;
-    can_packets_read = 2U;
+    can_packets_read    = 2U;
     EXPECT_TRUE(
         EXECUTION_MEASUREMENT_ADAPTER_SampleCanReceive( EXEC_CAN_CHANNEL_1, 11U, &task_woken ) );
     EXPECT_EQ( committed_peripheral, FLASH_MANAGER_RESULT_PERIPHERAL_CAN_RECEIVE );
@@ -312,7 +312,7 @@ TEST_F( ExecutionMeasurementAdaptersTest, CommitsOnlyReceivedCanPackets )
 TEST_F( ExecutionMeasurementAdaptersTest, ReceiveFailureCancelsReservation )
 {
     can_pending_packets = 1U;
-    can_result = EXEC_CAN_RESULT_ERROR;
+    can_result          = EXEC_CAN_RESULT_ERROR;
     EXPECT_FALSE(
         EXECUTION_MEASUREMENT_ADAPTER_SampleCanReceive( EXEC_CAN_CHANNEL_1, 1U, &task_woken ) );
     EXPECT_EQ( committed_bytes, 0U );
@@ -322,8 +322,8 @@ TEST_F( ExecutionMeasurementAdaptersTest, ReceiveFailureCancelsReservation )
 TEST_F( ExecutionMeasurementAdaptersTest, CommitFailureCancelsReservation )
 {
     can_pending_packets = 1U;
-    can_packets_read = 1U;
-    commit_result    = FLASH_MANAGER_RESULT_COMMIT_INTERNAL_ERROR;
+    can_packets_read    = 1U;
+    commit_result       = FLASH_MANAGER_RESULT_COMMIT_INTERNAL_ERROR;
     EXPECT_FALSE(
         EXECUTION_MEASUREMENT_ADAPTER_SampleCanReceive( EXEC_CAN_CHANNEL_1, 1U, &task_woken ) );
     EXPECT_EQ( committed_bytes, sizeof( EXEC_CAN_Packet_T ) );
