@@ -778,4 +778,130 @@ TEST_F( RunStateManagerTest, ResultTransferCompletionFailurePreservesTransferSta
     EXPECT_TRUE( configuration_ownership_released );
 }
 
+TEST_F( RunStateManagerTest, FlashSessionAbortedDuringPackageReceiveFault )
+{
+    Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+    EXPECT_EQ( RUN_STATE_TEST_PACKAGE_RECEIVE, run_state );
+
+    flash_manager_state = FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD;
+    requested_fault_reason = RUN_STATE_FAULT_EXTERNAL_REQUEST;
+    Process( RUN_STATE_REQUEST_FAULT );
+
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( 1U, flash_abort_calls );
+
+    flash_manager_state = FLASH_MANAGER_STATE_ABORTING;
+    Process( RUN_STATE_REQUEST_RESET );
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE, last_request_result );
+
+    flash_manager_state = FLASH_MANAGER_STATE_IDLE;
+    Process( RUN_STATE_REQUEST_RESET );
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
+}
+
+TEST_F( RunStateManagerTest, FlashSessionAbortedDuringPreparingInstructionUpload )
+{
+    Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+    EXPECT_EQ( RUN_STATE_TEST_PACKAGE_RECEIVE, run_state );
+
+    flash_manager_state = FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD;
+    requested_fault_reason = RUN_STATE_FAULT_EXTERNAL_REQUEST;
+    Process( RUN_STATE_REQUEST_FAULT );
+
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( 1U, flash_abort_calls );
+}
+
+TEST_F( RunStateManagerTest, FlashSessionAbortedDuringExecutionPreparation )
+{
+    ConfigureToArmed();
+    Process( RUN_STATE_REQUEST_EXECUTION );
+    EXPECT_EQ( RUN_STATE_PENDING_EXECUTION_PREPARATION, pending_operation );
+
+    flash_manager_state = FLASH_MANAGER_STATE_PREPARING_EXECUTION;
+    requested_fault_reason = RUN_STATE_FAULT_EXTERNAL_REQUEST;
+    Process( RUN_STATE_REQUEST_FAULT );
+
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( 1U, flash_abort_calls );
+    EXPECT_EQ( RUN_STATE_PENDING_FAULT_SHUTDOWN, pending_operation );
+}
+
+TEST_F( RunStateManagerTest, FlashSessionAbortedDuringResultFinalisation )
+{
+    EnterExecution();
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    EXPECT_EQ( RUN_STATE_PENDING_DRIVER_SHUTDOWN, pending_operation );
+
+    flash_manager_state = FLASH_MANAGER_STATE_FINALISING_RESULTS;
+    requested_fault_reason = RUN_STATE_FAULT_EXTERNAL_REQUEST;
+    Process( RUN_STATE_REQUEST_FAULT );
+
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( 1U, flash_abort_calls );
+}
+
+TEST_F( RunStateManagerTest, FlashFaultCallbackNotifiesAndTransitionsToFault )
+{
+    ASSERT_NE( nullptr, flash_fault_callback );
+    notified_bits = 0U;
+
+    flash_fault_callback( false );
+    EXPECT_NE( 0U, notified_bits & RUN_STATE_MANAGER_NOTIFY_FAULT );
+    EXPECT_EQ( RUN_STATE_FAULT_FLASH_MANAGER, requested_fault_reason );
+
+    Process( RUN_STATE_REQUEST_FAULT );
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_FLASH_MANAGER, fault_reason );
+}
+
+TEST_F( RunStateManagerTest, RepeatRequestRejectedFromResultTransferState )
+{
+    EnterExecution();
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    flash_manager_state = FLASH_MANAGER_STATE_RESULTS_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_RESULTS_READY, run_state );
+
+    Process( RUN_STATE_REQUEST_RESULT_TRANSFER );
+    EXPECT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
+
+    Process( RUN_STATE_REQUEST_REPEAT );
+    EXPECT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
+    EXPECT_EQ( RUN_STATE_REQUEST_RESULT_REJECTED_STATE, last_request_result );
+}
+
+TEST_F( RunStateManagerTest, ConfigurationOwnershipHeldAcrossExecutionAndReleasedOnDiscard )
+{
+    EXPECT_FALSE( run_configuration_owned );
+    EXPECT_FALSE( configuration_ownership_released );
+
+    ConfigureToArmed();
+    EXPECT_TRUE( run_configuration_owned );
+    EXPECT_FALSE( configuration_ownership_released );
+
+    Process( RUN_STATE_REQUEST_EXECUTION );
+    flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_EXECUTION, run_state );
+    EXPECT_TRUE( run_configuration_owned );
+
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    flash_manager_state = FLASH_MANAGER_STATE_RESULTS_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_RESULTS_READY, run_state );
+    EXPECT_TRUE( run_configuration_owned );
+
+    Process( RUN_STATE_REQUEST_DISCARD_RESULTS );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
+    EXPECT_FALSE( run_configuration_owned );
+    EXPECT_TRUE( configuration_cleared );
+    EXPECT_TRUE( configuration_ownership_released );
+}
+
 
