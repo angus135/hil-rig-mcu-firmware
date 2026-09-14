@@ -245,10 +245,14 @@ static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_UploadToFlash( const uin
                                                                        size_t         length );
 
 /**
- * @brief Validates an incoming application instruction message.
+ * @brief Validates an incoming application instruction message against protocol invariants.
  *
- * Enforces that instructions arrive in strictly increasing tick order (monotonic,
- * but non-consecutive ticks are permitted).
+ * Enforces:
+ *   - Non-null instruction argument.
+ *   - Strictly increasing tick order across the upload sequence (monotonic, non-consecutive allowed).
+ *   - Digital output state values are strictly 0 or 1.
+ *   - PWM duty cycle is in the valid 0..10000 permyriad range (0..100%).
+ *   - PWM duty cycle is zero when period is zero (disabled output invariant).
  */
 static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_ValidateInstruction(
     const HIL_Application_Test_Instruction_T* const instruction )
@@ -261,6 +265,30 @@ static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_ValidateInstruction(
     if ( has_received_instruction && ( instruction->tick_number <= last_instruction_timestamp ) )
     {
         return HOST_INTERFACE_STATUS_INCONSISTENT_TICK;
+    }
+
+    for ( uint8_t i = 0U; i < HIL_APPLICATION_DIGITAL_OUTPUT_CHANNEL_COUNT; i++ )
+    {
+        if ( instruction->digital_outputs[i].high > 1U )
+        {
+            return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+        }
+    }
+
+    for ( uint8_t channel = 0U; channel < HIL_APPLICATION_PWM_OUTPUT_CHANNEL_COUNT; channel++ )
+    {
+        const uint32_t period_ns      = instruction->pwm_outputs[channel].period_nanoseconds;
+        const uint16_t duty_permyriad = instruction->pwm_outputs[channel].duty_cycle_permyriad;
+
+        if ( duty_permyriad > 10000U )
+        {
+            return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+        }
+
+        if ( ( period_ns == 0U ) && ( duty_permyriad != 0U ) )
+        {
+            return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+        }
     }
 
     return HOST_INTERFACE_STATUS_OK;

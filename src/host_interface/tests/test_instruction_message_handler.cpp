@@ -444,6 +444,38 @@ TEST_F( InstructionMessageHandlerTest, ResetAllowsNewTickSequenceFromLowerTick )
     EXPECT_EQ( last_instruction_timestamp, 2U );
 }
 
+TEST_F( InstructionMessageHandlerTest, DigitalOutputValueAboveOneIsRejected )
+{
+    HIL_Application_Test_Instruction_T instruction = {};
+    instruction.tick_number                        = 1U;
+    instruction.digital_outputs[3].high            = 2U;  /* Invalid state > 1 */
+
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_VALIDATION_FAILED );
+}
+
+TEST_F( InstructionMessageHandlerTest, PwmDutyAboveTenThousandIsRejected )
+{
+    HIL_Application_Test_Instruction_T instruction = {};
+    instruction.tick_number                        = 1U;
+    instruction.pwm_outputs[0].period_nanoseconds   = 1000000U;
+    instruction.pwm_outputs[0].duty_cycle_permyriad = 10001U;  /* Invalid duty > 10000 */
+
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_VALIDATION_FAILED );
+}
+
+TEST_F( InstructionMessageHandlerTest, PwmDutyNonZeroWithZeroPeriodIsRejected )
+{
+    HIL_Application_Test_Instruction_T instruction = {};
+    instruction.tick_number                        = 1U;
+    instruction.pwm_outputs[0].period_nanoseconds   = 0U;     /* Disabled output */
+    instruction.pwm_outputs[0].duty_cycle_permyriad = 5000U;  /* Non-zero duty invalid when disabled */
+
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_VALIDATION_FAILED );
+}
+
 /**-----------------------------------------------------------------------------
  *  Public API Tests: Delta Tracking & Upload Logic
  *------------------------------------------------------------------------------
