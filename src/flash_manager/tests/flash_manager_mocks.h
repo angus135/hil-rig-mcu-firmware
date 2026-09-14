@@ -61,6 +61,9 @@ void FLASH_MANAGER_TEST_SetInstructionLength( uint32_t instruction_length_bytes 
 /** Updates the committed result length returned by EXTERNAL_FLASH_GetInfo(). */
 void FLASH_MANAGER_TEST_SetResultLength( uint32_t result_length_bytes );
 
+/** Updates the result capacity returned by EXTERNAL_FLASH_GetInfo(). */
+void FLASH_MANAGER_TEST_SetResultCapacity( uint32_t result_capacity_bytes );
+
 // NOLINTEND
 
 #ifdef __cplusplus

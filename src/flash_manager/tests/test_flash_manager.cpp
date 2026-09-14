@@ -1931,3 +1931,12 @@ TEST_F( FlashManagerTest, AbortSessionSupportsInstructionUploadSessionStates )
     ASSERT_EQ( FLASH_MANAGER_REQUEST_OK,
                FLASH_MANAGER_RequestInstructionUploadStart( TEST_PAGE_SIZE_BYTES ) );
 }
+
+TEST_F( FlashManagerTest, GetResultCapacityBytesValidatesParametersAndReturnsPartitionCapacity )
+{
+    EXPECT_FALSE( FLASH_MANAGER_GetResultCapacityBytes( nullptr ) );
+
+    uint32_t capacity_bytes = 0U;
+    ASSERT_TRUE( FLASH_MANAGER_GetResultCapacityBytes( &capacity_bytes ) );
+    EXPECT_EQ( TEST_RESULT_CAPACITY_BYTES, capacity_bytes );
+}
