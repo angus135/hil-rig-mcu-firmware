@@ -138,6 +138,7 @@ static bool RUN_STATE_MANAGER_BeginDriverShutdown( bool force_abort, bool clear_
                                                    RunStatePendingOperation_T operation );
 static bool RUN_STATE_MANAGER_BeginResultFinalisation( void );
 static bool RUN_STATE_MANAGER_BeginResultTransfer( void );
+static bool RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle( void );
 static bool RUN_STATE_MANAGER_CompleteResultTransfer( void );
 static bool RUN_STATE_MANAGER_DiscardCompletedResults( RunState_T next_state );
 static bool RUN_STATE_MANAGER_FlashIsIdle( void );
@@ -557,6 +558,15 @@ static bool RUN_STATE_MANAGER_BeginResultTransfer( void )
     return RUN_STATE_MANAGER_TransitionTo( RUN_STATE_RESULT_TRANSFER );
 }
 
+/** Clears the retained test and asynchronously returns the DUT lifecycle to IDLE. */
+static bool RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle( void )
+{
+    TEST_CONFIGURATION_Clear();
+    TEST_CONFIGURATION_ReleaseRunOwnership();
+    run_configuration_owned = false;
+    return RUN_STATE_MANAGER_BeginDriverShutdown( false, true, RUN_STATE_PENDING_IDLE_SHUTDOWN );
+}
+
 /** Finishes a fully consumed Flash result stream before returning to IDLE. */
 static bool RUN_STATE_MANAGER_CompleteResultTransfer( void )
 {
@@ -573,7 +583,7 @@ static bool RUN_STATE_MANAGER_CompleteResultTransfer( void )
         return false;
     }
 
-    return RUN_STATE_MANAGER_BeginDriverShutdown( false, true, RUN_STATE_PENDING_IDLE_SHUTDOWN );
+    return RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle();
 }
 
 /**
@@ -590,11 +600,7 @@ static bool RUN_STATE_MANAGER_DiscardCompletedResults( RunState_T next_state )
 
     if ( next_state == RUN_STATE_IDLE )
     {
-        TEST_CONFIGURATION_Clear();
-        TEST_CONFIGURATION_ReleaseRunOwnership();
-        run_configuration_owned = false;
-        return RUN_STATE_MANAGER_BeginDriverShutdown( false, true,
-                                                      RUN_STATE_PENDING_IDLE_SHUTDOWN );
+        return RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle();
     }
 
     if ( next_state == RUN_STATE_ARMED )
