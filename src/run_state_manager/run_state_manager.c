@@ -194,7 +194,7 @@ static void RUN_STATE_MANAGER_HandleFlashFault( bool from_isr )
 
 static bool RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR( void )
 {
-    return !execution_abort_requested;
+    return execution_active && !execution_abort_requested;
 }
 
 static void RUN_STATE_MANAGER_StartPendingOperation( RunStatePendingOperation_T operation )
@@ -498,7 +498,10 @@ static bool RUN_STATE_MANAGER_StopExecution( void )
 static bool RUN_STATE_MANAGER_BeginDriverShutdown( bool force_abort, bool clear_configuration,
                                                    RunStatePendingOperation_T operation )
 {
-    execution_abort_requested = true;
+    if ( force_abort )
+    {
+        execution_abort_requested = true;
+    }
     RUN_STATE_MANAGER_StopExecutionTimer();
     execution_active        = false;
     driver_cleanup_complete = false;
@@ -1064,6 +1067,11 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
     switch ( next_state )
     {
         case RUN_STATE_IDLE:
+            if ( ( fault_reason == RUN_STATE_FAULT_NONE )
+                 && ( requested_fault_reason == RUN_STATE_FAULT_NONE ) )
+            {
+                execution_abort_requested = false;
+            }
             break;
 
         case RUN_STATE_TEST_PACKAGE_RECEIVE:
@@ -1075,6 +1083,11 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
             break;
 
         case RUN_STATE_CONFIGURATION:
+            if ( ( fault_reason == RUN_STATE_FAULT_NONE )
+                 && ( requested_fault_reason == RUN_STATE_FAULT_NONE ) )
+            {
+                execution_abort_requested = false;
+            }
             if ( !RUN_STATE_MANAGER_EnterConfiguration() )
             {
                 RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_CONFIGURATION );
