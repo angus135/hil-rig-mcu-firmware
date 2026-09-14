@@ -66,8 +66,8 @@ public:
                  ( const uint8_t* data, uint32_t length ) );
 
     /* Digital Output Driver Mock */
-    MOCK_METHOD( uint32_t, EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks,
-                 ( const GPIOOutput_T* pins, uint8_t count ) );
+    MOCK_METHOD( DigitalOutputPinmask_T, EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks,
+                 ( GPIOOutput_T* pins, uint8_t count ) );
 
     /* Analogue Output Driver Mock */
     MOCK_METHOD( bool, EXEC_ANALOGUE_OUTPUT_Prepare_Frame,
@@ -78,9 +78,9 @@ public:
                  ( uint32_t frequency_hz, uint32_t timer_clock_hz, uint16_t* psc ) );
     MOCK_METHOD( bool, HW_PWM_GEN_compute_arr,
                  ( uint32_t frequency_hz, uint32_t timer_clock_hz, uint16_t psc,
-                   uint32_t* arr ) );
+                   uint16_t* arr ) );
     MOCK_METHOD( bool, HW_PWM_GEN_compute_ccr,
-                 ( uint16_t duty_permille, uint32_t arr, uint32_t* ccr ) );
+                 ( uint16_t duty_permille, uint16_t arr, uint16_t* ccr ) );
 };
 
 static MockInstructionHandlerDependencies* g_mock_deps = nullptr;
@@ -100,8 +100,8 @@ FLASH_MANAGER_SubmitInstructionUploadBytes( const uint8_t* data, uint32_t length
     return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED;
 }
 
-extern "C" uint32_t
-EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( const GPIOOutput_T* pins, uint8_t count )
+extern "C" DigitalOutputPinmask_T
+EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( GPIOOutput_T* pins, uint8_t count )
 {
     if ( g_mock_deps != nullptr )
     {
@@ -149,7 +149,7 @@ extern "C" bool HW_PWM_GEN_compute_psc( uint32_t frequency_hz, uint32_t timer_cl
 }
 
 extern "C" bool HW_PWM_GEN_compute_arr( uint32_t frequency_hz, uint32_t timer_clock_hz,
-                                        uint16_t psc, uint32_t* arr )
+                                        uint16_t psc, uint16_t* arr )
 {
     if ( g_mock_deps != nullptr )
     {
@@ -165,7 +165,7 @@ extern "C" bool HW_PWM_GEN_compute_arr( uint32_t frequency_hz, uint32_t timer_cl
     return true;
 }
 
-extern "C" bool HW_PWM_GEN_compute_ccr( uint16_t duty_permille, uint32_t arr, uint32_t* ccr )
+extern "C" bool HW_PWM_GEN_compute_ccr( uint16_t duty_permille, uint16_t arr, uint16_t* ccr )
 {
     if ( g_mock_deps != nullptr )
     {
@@ -203,7 +203,7 @@ protected:
             } );
 
         ON_CALL( *g_mock_deps, EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks( _, _ ) )
-            .WillByDefault( []( const GPIOOutput_T* pins, uint8_t count ) {
+            .WillByDefault( []( GPIOOutput_T* pins, uint8_t count ) {
                 uint32_t mask = 0U;
                 for ( uint8_t i = 0U; i < count; i++ )
                 {
@@ -233,7 +233,7 @@ protected:
             } );
 
         ON_CALL( *g_mock_deps, HW_PWM_GEN_compute_arr( _, _, _, _ ) )
-            .WillByDefault( []( uint32_t, uint32_t, uint16_t, uint32_t* arr ) {
+            .WillByDefault( []( uint32_t, uint32_t, uint16_t, uint16_t* arr ) {
                 if ( arr != nullptr )
                 {
                     *arr = 999U;
@@ -242,7 +242,7 @@ protected:
             } );
 
         ON_CALL( *g_mock_deps, HW_PWM_GEN_compute_ccr( _, _, _ ) )
-            .WillByDefault( []( uint16_t, uint32_t, uint32_t* ccr ) {
+            .WillByDefault( []( uint16_t, uint16_t, uint16_t* ccr ) {
                 if ( ccr != nullptr )
                 {
                     *ccr = 500U;
@@ -270,12 +270,11 @@ TEST_F( InstructionMessageHandlerTest, AppendOperationEnforces4ByteAlignmentAndP
     uint8_t buffer[64];
     ( void )memset( buffer, 0xEE, sizeof( buffer ) );
 
-    HostInstructionWriter_T writer = {
-        .buffer          = buffer,
-        .capacity        = sizeof( buffer ),
-        .offset          = 0U,
-        .operation_count = 0U,
-    };
+    HostInstructionWriter_T writer;
+    writer.buffer          = buffer;
+    writer.capacity        = sizeof( buffer );
+    writer.offset          = 0U;
+    writer.operation_count = 0U;
 
     /* 3-byte payload: Header (4 bytes) + Payload (3 bytes) + Padding (1 byte) = 8 bytes total */
     const uint8_t payload[3] = { 0x11, 0x22, 0x33 };
@@ -310,12 +309,11 @@ TEST_F( InstructionMessageHandlerTest, AppendOperationReturnsBufferTooSmallWhenC
 {
     uint8_t buffer[6];
 
-    HostInstructionWriter_T writer = {
-        .buffer          = buffer,
-        .capacity        = sizeof( buffer ),
-        .offset          = 0U,
-        .operation_count = 0U,
-    };
+    HostInstructionWriter_T writer;
+    writer.buffer          = buffer;
+    writer.capacity        = sizeof( buffer );
+    writer.offset          = 0U;
+    writer.operation_count = 0U;
 
     const uint8_t payload[4] = { 1, 2, 3, 4 };
     /* Required = 4 (header) + 4 (payload) = 8 bytes > 6 bytes capacity */
