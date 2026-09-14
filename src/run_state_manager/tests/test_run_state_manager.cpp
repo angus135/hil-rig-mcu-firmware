@@ -22,6 +22,7 @@ static TickType_t         current_tick;
 static bool               logic_expander_ready;
 static bool               active_configuration_available;
 static bool               configuration_cleared;
+static bool               configuration_ownership_released;
 static bool               driver_configure_result;
 static DutDriverConfigurationStatus_T     driver_configuration_status;
 static DutDriverStartStatus_T             driver_start_status;
@@ -98,6 +99,7 @@ bool TEST_CONFIGURATION_AcquireForRun( DutDriverConfiguration_T* configuration )
 }
 void TEST_CONFIGURATION_ReleaseRunOwnership( void )
 {
+    configuration_ownership_released = true;
 }
 void TEST_CONFIGURATION_Clear( void )
 {
@@ -233,6 +235,7 @@ protected:
         logic_expander_ready                = true;
         active_configuration_available      = true;
         configuration_cleared               = false;
+        configuration_ownership_released    = false;
         driver_configure_result             = true;
         driver_configuration_status         = DUT_DRIVER_CONFIGURATION_READY;
         driver_start_status                 = DUT_DRIVER_START_READY;
@@ -541,6 +544,7 @@ TEST_F( RunStateManagerTest, DiscardClearsConfigurationAndReturnsToIdle )
     RUN_STATE_MANAGER_ProcessPendingOperation();
     EXPECT_EQ( RUN_STATE_IDLE, run_state );
     EXPECT_TRUE( configuration_cleared );
+    EXPECT_TRUE( configuration_ownership_released );
     EXPECT_TRUE( driver_shutdown_clear_configuration );
 }
 
@@ -683,4 +687,26 @@ TEST_F( RunStateManagerTest, ExecutionGuardAllowsDispatchOnlyWhenActiveAndNoAbor
     EXPECT_TRUE( RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_FLASH_MANAGER ) );
     EXPECT_FALSE( execution_guard() );
 }
+
+TEST_F( RunStateManagerTest, ResultTransferCompletionClearsConfigurationAndReturnsToIdle )
+{
+    EnterExecution();
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    flash_manager_state = FLASH_MANAGER_STATE_RESULTS_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_RESULTS_READY, run_state );
+
+    Process( RUN_STATE_REQUEST_RESULT_TRANSFER );
+    EXPECT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
+
+    Process( RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE );
+    EXPECT_EQ( RUN_STATE_PENDING_IDLE_SHUTDOWN, pending_operation );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
+    EXPECT_TRUE( configuration_cleared );
+    EXPECT_TRUE( configuration_ownership_released );
+    EXPECT_TRUE( driver_shutdown_clear_configuration );
+}
+
 
