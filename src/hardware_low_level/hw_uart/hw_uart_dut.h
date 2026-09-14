@@ -111,6 +111,14 @@ typedef enum
     HW_UART_CHANNEL_2 = 1,  // Second DUT facing UART channel
 } HwUartChannel_T;
 
+/** @brief Terminal and in-progress states of a DUT UART TX path. */
+typedef enum
+{
+    HW_UART_TX_STATUS_COMPLETE = 0U,
+    HW_UART_TX_STATUS_BUSY,
+    HW_UART_TX_STATUS_FAULTED
+} HwUartTxStatus_T;
+
 /**
  * @brief  Specifies the UART parity configuration.
  *
@@ -390,6 +398,14 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
 bool HW_UART_Tx_Trigger( HwUartChannel_T channel );
 
 /**
+ * @brief Return the current TX state, including a latched DMA failure.
+ *
+ * A fault remains latched until the channel is explicitly aborted or
+ * reconfigured. An error-cleared queue is therefore never reported complete.
+ */
+HwUartTxStatus_T HW_UART_Get_Tx_Status( HwUartChannel_T channel );
+
+/**
  * @brief Reports whether TX is fully complete for a DUT UART channel.
  *
  * TX is complete only when:
@@ -403,8 +419,8 @@ bool HW_UART_Tx_Trigger( HwUartChannel_T channel );
  * @param channel UART channel to inspect.
  *
  * @return true if the TX path is fully complete.
- * @return false if bytes remain queued, DMA is active, or the UART is still
- *         shifting the final byte.
+ * @return false if bytes remain queued, DMA is active, the UART is still
+ *         shifting the final byte, or a terminal TX fault is latched.
  */
 bool HW_UART_Is_Tx_Complete( HwUartChannel_T channel );
 

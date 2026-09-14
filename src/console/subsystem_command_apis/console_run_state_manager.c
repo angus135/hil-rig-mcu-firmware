@@ -181,6 +181,8 @@ static const char* CONSOLE_RunStateManager_ExecutionFailureName( ExecutionManage
             return "instruction consume";
         case EXECUTION_MANAGER_FAILURE_MEASUREMENT_REJECTED:
             return "measurement rejected";
+        case EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNCONSUMED:
+            return "instruction unconsumed";
         default:
             return "unknown";
     }

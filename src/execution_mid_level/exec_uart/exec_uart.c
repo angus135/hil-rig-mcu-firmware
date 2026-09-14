@@ -542,5 +542,19 @@ uint32_t EXEC_UART_GetPendingReceiveBytes( ExecUartChannel_T channel )
 
 bool EXEC_UART_Is_Tx_Complete( ExecUartChannel_T channel )
 {
-    return HW_UART_Is_Tx_Complete( exec_uart_hardware_map[channel].hw_channel );
+    return EXEC_UART_Get_Tx_Status( channel ) == EXEC_UART_TX_STATUS_COMPLETE;
+}
+
+ExecUartTxStatus_T EXEC_UART_Get_Tx_Status( ExecUartChannel_T channel )
+{
+    const HwUartTxStatus_T status =
+        HW_UART_Get_Tx_Status( exec_uart_hardware_map[channel].hw_channel );
+
+    if ( status == HW_UART_TX_STATUS_FAULTED )
+    {
+        return EXEC_UART_TX_STATUS_FAULTED;
+    }
+
+    return status == HW_UART_TX_STATUS_COMPLETE ? EXEC_UART_TX_STATUS_COMPLETE
+                                                : EXEC_UART_TX_STATUS_BUSY;
 }

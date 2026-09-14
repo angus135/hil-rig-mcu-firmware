@@ -70,7 +70,7 @@ public:
     MOCK_METHOD( bool, Establish_Rx_Epoch, ( int ));
     MOCK_METHOD( HwUartRxSpans_T, Rx_Peek, ( int ));
     MOCK_METHOD( void, Rx_Consume, ( int, uint32_t ) );
-    MOCK_METHOD( bool, Is_Tx_Complete, ( int ));
+    MOCK_METHOD( HwUartTxStatus_T, Get_Tx_Status, ( int ));
 };
 
 class MockLogicExpander
@@ -221,9 +221,9 @@ extern "C" void HW_UART_Rx_Consume( HwUartChannel_T channel, uint32_t bytes_to_c
     g_mock_hw->Rx_Consume( channel, bytes_to_consume );
 }
 
-extern "C" bool HW_UART_Is_Tx_Complete( HwUartChannel_T channel )
+extern "C" HwUartTxStatus_T HW_UART_Get_Tx_Status( HwUartChannel_T channel )
 {
-    return g_mock_hw->Is_Tx_Complete( channel );
+    return g_mock_hw->Get_Tx_Status( channel );
 }
 
 // NOLINTEND
@@ -266,7 +266,8 @@ protected:
         ON_CALL( mock_hw, Tx_Trigger( _ ) ).WillByDefault( Return( true ) );
         ON_CALL( mock_hw, Rx_Peek( _ ) )
             .WillByDefault( Return( TEST_EXEC_UART_Make_Spans( nullptr, 0U, nullptr, 0U ) ) );
-        ON_CALL( mock_hw, Is_Tx_Complete( _ ) ).WillByDefault( Return( true ) );
+        ON_CALL( mock_hw, Get_Tx_Status( _ ) )
+            .WillByDefault( Return( HW_UART_TX_STATUS_COMPLETE ) );
         ON_CALL( mock_expander, Load_Control_Bit( _, _, _, _ ) )
             .WillByDefault( Return( LOGIC_EXPANDER_STATUS_OK ) );
         ON_CALL( mock_expander, Send_Control_Bits() )
@@ -791,14 +792,24 @@ TEST_F( ExecUARTTest, ReadCopiesPartialWrappedSecondSpanWhenDestinationIsLimited
 
 TEST_F( ExecUARTTest, IsTxCompleteDelegatesToLowLevelDriver )
 {
-    EXPECT_CALL( mock_hw, Is_Tx_Complete( EXEC_UART_CHANNEL_2 ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw, Get_Tx_Status( EXEC_UART_CHANNEL_2 ) )
+        .WillOnce( Return( HW_UART_TX_STATUS_COMPLETE ) );
 
     EXPECT_TRUE( EXEC_UART_Is_Tx_Complete( EXEC_UART_CHANNEL_2 ) );
 }
 
 TEST_F( ExecUARTTest, IsTxCompleteReturnsFalseWhenLowLevelDriverReportsIncomplete )
 {
-    EXPECT_CALL( mock_hw, Is_Tx_Complete( EXEC_UART_CHANNEL_1 ) ).WillOnce( Return( false ) );
+    EXPECT_CALL( mock_hw, Get_Tx_Status( EXEC_UART_CHANNEL_1 ) )
+        .WillOnce( Return( HW_UART_TX_STATUS_BUSY ) );
 
     EXPECT_FALSE( EXEC_UART_Is_Tx_Complete( EXEC_UART_CHANNEL_1 ) );
+}
+
+TEST_F( ExecUARTTest, TxStatusPreservesLowLevelFault )
+{
+    EXPECT_CALL( mock_hw, Get_Tx_Status( EXEC_UART_CHANNEL_1 ) )
+        .WillOnce( Return( HW_UART_TX_STATUS_FAULTED ) );
+
+    EXPECT_EQ( EXEC_UART_Get_Tx_Status( EXEC_UART_CHANNEL_1 ), EXEC_UART_TX_STATUS_FAULTED );
 }
