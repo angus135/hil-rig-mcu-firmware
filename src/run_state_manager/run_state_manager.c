@@ -733,11 +733,9 @@ static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void )
         if ( uart->is_enabled && uart->rx_enabled )
         {
             /* Round up so a partial final UART frame is not under-reserved. */
-            const uint64_t wire_numerator = ( uint64_t )uart->baud_rate * effective_ticks;
-            const uint64_t wire_denominator =
-                ( uint64_t )frequency_hz * RUN_STATE_UART_FRAME_BITS;
-            uint64_t wire_bytes =
-                ( wire_numerator + wire_denominator - 1U ) / wire_denominator;
+            const uint64_t wire_numerator   = ( uint64_t )uart->baud_rate * effective_ticks;
+            const uint64_t wire_denominator = ( uint64_t )frequency_hz * RUN_STATE_UART_FRAME_BITS;
+            uint64_t wire_bytes = ( wire_numerator + wire_denominator - 1U ) / wire_denominator;
             const uint64_t max_channel_bytes =
                 ( uint64_t )effective_ticks * EXEC_UART_MAX_CHUNK_SIZE;
             if ( wire_bytes > max_channel_bytes )
@@ -760,9 +758,9 @@ static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void )
                 ( wire_numerator + wire_denominator - 1U ) / wire_denominator;
             const uint64_t max_channel_bytes =
                 ( uint64_t )effective_ticks * RUN_STATE_SPI_MAX_TRANSFER_BYTES;
-            RUN_STATE_ADD_RESULT_BYTES( ( wire_bytes < max_channel_bytes ? wire_bytes
-                                                                          : max_channel_bytes )
-                                        + ( ( uint64_t )effective_ticks * result_header_bytes ) );
+            RUN_STATE_ADD_RESULT_BYTES(
+                ( wire_bytes < max_channel_bytes ? wire_bytes : max_channel_bytes )
+                + ( ( uint64_t )effective_ticks * result_header_bytes ) );
         }
     }
     for ( uint32_t channel = 0U; channel < EXEC_CAN_CHANNEL_COUNT; channel++ )

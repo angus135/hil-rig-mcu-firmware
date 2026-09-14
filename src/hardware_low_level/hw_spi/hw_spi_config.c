@@ -225,7 +225,7 @@ static bool HW_SPI_Config_Set_Baud_Rate( SPIChannel_T peripheral, SPIBaudRate_T 
     }
 }
 
-static bool HW_SPI_Config_Build_HAL_Init( SPIChannel_T peripheral,
+static bool HW_SPI_Config_Build_HAL_Init( SPIChannel_T         peripheral,
                                           const HWSPIConfig_T* configuration,
                                           SPI_InitTypeDef*     requested_init )
 {

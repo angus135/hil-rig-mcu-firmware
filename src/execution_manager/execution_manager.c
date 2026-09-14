@@ -138,8 +138,8 @@ EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken )
     /* Measurements are captured before outputs at this boundary. */
     const bool measurements_accepted =
         operation_timing_active
-            ? EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurementsProfiled(
-                  current_tick, higher_priority_task_woken )
+            ? EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurementsProfiled( current_tick,
+                                                                       higher_priority_task_woken )
             : EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( current_tick,
                                                                higher_priority_task_woken );
     if ( !measurements_accepted )
