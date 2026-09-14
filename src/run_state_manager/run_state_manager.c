@@ -17,6 +17,7 @@
  */
 #include "run_state_manager.h"
 #include "dut_driver_lifecycle.h"
+#include "exec_analogue_output.h"
 #include "exec_can.h"
 #include "exec_spi.h"
 #include "exec_uart.h"
@@ -35,6 +36,7 @@
 #define RUN_STATE_UART_FRAME_BITS ( 10U )
 #define RUN_STATE_SPI_MAX_TRANSFER_BYTES ( 256U )
 #define RUN_STATE_CAN_FRAME_BITS ( 128U )
+#define RUN_STATE_DAC_SPI_BAUD_HZ ( 703125U )
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -564,6 +566,19 @@ static uint32_t RUN_STATE_MANAGER_CalculateDrainTailTicks( void )
                                    * frequency_hz * RUN_STATE_TAIL_MARGIN_NUMERATOR;
         const uint64_t denominator = ( uint64_t )can->bitrate * RUN_STATE_TAIL_MARGIN_DENOMINATOR;
         const uint64_t ticks       = ( numerator + denominator - 1U ) / denominator;
+        if ( ticks > required_ticks )
+        {
+            required_ticks = ticks;
+        }
+    }
+
+    if ( run_configuration.analogue_output.is_enabled )
+    {
+        const uint64_t numerator = ( uint64_t )EXEC_ANALOGUE_OUTPUT_BATCH_MAX_BYTES * 8U
+                                   * frequency_hz * RUN_STATE_TAIL_MARGIN_NUMERATOR;
+        const uint64_t denominator =
+            ( uint64_t )RUN_STATE_DAC_SPI_BAUD_HZ * RUN_STATE_TAIL_MARGIN_DENOMINATOR;
+        const uint64_t ticks = ( numerator + denominator - 1U ) / denominator;
         if ( ticks > required_ticks )
         {
             required_ticks = ticks;

@@ -265,8 +265,10 @@ static bool EXEC_ANALOGUE_OUTPUT_Configure_SPI( void )
         .data_size = SPI_SIZE_8_BIT,
         .first_bit = SPI_FIRST_MSB,
         /*
-         * TODO(DEV-80): Increase SPI_DAC to 45 Mbit/s and validate signal
-         * integrity on the final PCB.
+         * TODO(DEV-80): Increase SPI_DAC to SPI_BAUD_11M25BIT (11.25 Mbit/s) and
+         * validate signal integrity on the PCB. Note: MCP48CVB28 hardware maximum
+         * FSCK is 20 MHz, so 11.25 Mbit/s (APB2/8) is the highest spec-compliant
+         * prescaler rate (45 Mbit/s and 22.5 Mbit/s exceed the DAC IC rating).
          */
         .baud_rate = SPI_BAUD_703KBIT,
         .cpol      = SPI_CPOL_LOW,
