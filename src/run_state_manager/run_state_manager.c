@@ -727,101 +727,16 @@ static bool RUN_STATE_MANAGER_BeginDriverShutdown( bool force_abort, bool clear_
  */
 static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void )
 {
-    const uint32_t result_header_bytes = sizeof( FlashManagerResultHeader_T );
-    const uint32_t tail_ticks =
-        RUN_STATE_MANAGER_CalculateDrainTailTicks( prepared_execution.frequency );
-    DutDriverLifecycleStatus_T driver_status = { 0 };
-    DUT_DRIVER_LIFECYCLE_GetStatus( &driver_status );
-
-    if ( prepared_execution.tick_count > ( UINT32_MAX - tail_ticks ) )
+    uint32_t result_capacity_bytes = 0U;
+    if ( !FLASH_MANAGER_GetResultCapacityBytes( &result_capacity_bytes )
+         || ( result_capacity_bytes == 0U ) )
     {
         RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION );
         return false;
     }
 
-    const uint32_t effective_ticks = prepared_execution.tick_count + tail_ticks;
-    uint32_t       result_budget   = 0U;
-    const uint32_t frequency_hz = RUN_STATE_MANAGER_GetFrequencyHz( prepared_execution.frequency );
-
-#define RUN_STATE_ADD_RESULT_BYTES( bytes )                                                        \
-    do                                                                                             \
-    {                                                                                              \
-        if ( ( bytes ) > ( UINT32_MAX - result_budget ) )                                          \
-        {                                                                                          \
-            RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION );           \
-            return false;                                                                          \
-        }                                                                                          \
-        result_budget += ( uint32_t )( bytes );                                                    \
-    } while ( 0 )
-
-    if ( driver_status.analogue_input_enabled )
-    {
-        RUN_STATE_ADD_RESULT_BYTES( ( uint64_t )effective_ticks
-                                    * ( result_header_bytes + 2U * sizeof( uint32_t ) ) );
-    }
-    if ( driver_status.digital_inputs_enabled )
-    {
-        RUN_STATE_ADD_RESULT_BYTES( ( uint64_t )effective_ticks
-                                    * ( result_header_bytes + sizeof( uint32_t ) ) );
-    }
-    for ( uint32_t channel = 0U; channel < EXEC_PWM_CAPTURE_CHANNEL_COUNT; channel++ )
-    {
-        if ( ( driver_status.pwm_capture_enabled_mask & ( 1UL << channel ) ) != 0U )
-        {
-            RUN_STATE_ADD_RESULT_BYTES( ( uint64_t )effective_ticks
-                                        * ( result_header_bytes + 2U * sizeof( uint32_t ) ) );
-        }
-    }
-    for ( uint32_t channel = 0U; channel < EXEC_UART_CHANNEL_COUNT; channel++ )
-    {
-        const ExecUartConfig_T* uart = &run_configuration.uart_channels[channel];
-        if ( uart->is_enabled && uart->rx_enabled )
-        {
-            /* Round up so a partial final UART frame is not under-reserved. */
-            const uint64_t wire_numerator   = ( uint64_t )uart->baud_rate * effective_ticks;
-            const uint64_t wire_denominator = ( uint64_t )frequency_hz * RUN_STATE_UART_FRAME_BITS;
-            uint64_t wire_bytes = ( wire_numerator + wire_denominator - 1U ) / wire_denominator;
-            const uint64_t max_channel_bytes =
-                ( uint64_t )effective_ticks * EXEC_UART_MAX_CHUNK_SIZE;
-            if ( wire_bytes > max_channel_bytes )
-            {
-                wire_bytes = max_channel_bytes;
-            }
-            RUN_STATE_ADD_RESULT_BYTES( wire_bytes
-                                        + ( ( uint64_t )effective_ticks * result_header_bytes ) );
-        }
-    }
-    for ( uint32_t channel = 0U; channel < EXEC_SPI_CHANNEL_COUNT; channel++ )
-    {
-        const ExecSPIConfig_T* spi = &run_configuration.spi_channels[channel];
-        if ( ( driver_status.spi_enabled_mask & ( 1UL << channel ) ) != 0U )
-        {
-            const uint64_t wire_numerator =
-                ( uint64_t )RUN_STATE_MANAGER_GetSpiBaudHz( spi->baud_rate ) * effective_ticks;
-            const uint64_t wire_denominator = ( uint64_t )frequency_hz * 8U;
-            const uint64_t wire_bytes =
-                ( wire_numerator + wire_denominator - 1U ) / wire_denominator;
-            const uint64_t max_channel_bytes =
-                ( uint64_t )effective_ticks * EXEC_SPI_MAX_RX_CHUNK_SIZE;
-            RUN_STATE_ADD_RESULT_BYTES(
-                ( wire_bytes < max_channel_bytes ? wire_bytes : max_channel_bytes )
-                + ( ( uint64_t )effective_ticks * result_header_bytes ) );
-        }
-    }
-    for ( uint32_t channel = 0U; channel < EXEC_CAN_CHANNEL_COUNT; channel++ )
-    {
-        if ( ( driver_status.can_enabled_mask & ( 1UL << channel ) ) != 0U )
-        {
-            RUN_STATE_ADD_RESULT_BYTES(
-                ( uint64_t )effective_ticks
-                * ( result_header_bytes
-                    + ( EXEC_CAN_MAX_BATCH_SIZE * sizeof( EXEC_CAN_Packet_T ) ) ) );
-        }
-    }
-
-#undef RUN_STATE_ADD_RESULT_BYTES
-
-    FlashManagerRequestStatus_T status = FLASH_MANAGER_RequestExecutionPreparation( result_budget );
+    FlashManagerRequestStatus_T status =
+        FLASH_MANAGER_RequestExecutionPreparation( result_capacity_bytes );
 
     if ( status == FLASH_MANAGER_REQUEST_OK )
     {
@@ -960,7 +875,10 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
         if ( status == DUT_DRIVER_CONFIGURATION_READY )
         {
             RUN_STATE_MANAGER_ClearPendingOperation();
-            ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_ARMED );
+            if ( !RUN_STATE_MANAGER_BeginExecutionPreparation() )
+            {
+                return;
+            }
         }
         else if ( status == DUT_DRIVER_CONFIGURATION_FAILED )
         {
@@ -1075,7 +993,7 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
             if ( flash_state == FLASH_MANAGER_STATE_EXECUTING )
             {
                 RUN_STATE_MANAGER_ClearPendingOperation();
-                ( void )RUN_STATE_MANAGER_BeginDriverStart();
+                ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_ARMED );
             }
             else if ( flash_state != FLASH_MANAGER_STATE_PREPARING_EXECUTION )
             {
@@ -1158,7 +1076,7 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
         case RUN_STATE_REQUEST_EXECUTION:
             if ( run_state == RUN_STATE_ARMED )
             {
-                accepted = RUN_STATE_MANAGER_BeginExecutionPreparation();
+                accepted = RUN_STATE_MANAGER_BeginDriverStart();
             }
             if ( !accepted )
             {
@@ -1211,8 +1129,9 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
                     return;
                 }
             }
-            else if ( run_state == RUN_STATE_ARMED && RUN_STATE_MANAGER_FlashIsIdle() )
+            else if ( run_state == RUN_STATE_ARMED )
             {
+                ( void )FLASH_MANAGER_RequestAbortSession();
                 accepted = RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle();
             }
             break;

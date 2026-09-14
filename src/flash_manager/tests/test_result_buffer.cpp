@@ -65,10 +65,11 @@ extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_GetInfo( ExternalFlashInfo_T* in
 extern "C" void FLASH_MANAGER_TEST_ConfigureExternalFlashInfo( ExternalFlashStatus_T status,
                                                                uint32_t page_size_bytes )
 {
-    external_flash_get_info_status      = status;
-    external_flash_info                 = {};
-    external_flash_info.page_size_bytes = page_size_bytes;
-    external_flash_get_info_calls       = 0U;
+    external_flash_get_info_status            = status;
+    external_flash_info                       = {};
+    external_flash_info.page_size_bytes       = page_size_bytes;
+    external_flash_info.result_capacity_bytes = page_size_bytes * 8U;
+    external_flash_get_info_calls             = 0U;
 }
 
 extern "C" void FLASH_MANAGER_TEST_ConfigureInstructionFlashInfo(
@@ -86,6 +87,11 @@ extern "C" void FLASH_MANAGER_TEST_SetInstructionLength( uint32_t instruction_le
 extern "C" void FLASH_MANAGER_TEST_SetResultLength( uint32_t result_length_bytes )
 {
     external_flash_info.result_length_bytes = result_length_bytes;
+}
+
+extern "C" void FLASH_MANAGER_TEST_SetResultCapacity( uint32_t result_capacity_bytes )
+{
+    external_flash_info.result_capacity_bytes = result_capacity_bytes;
 }
 
 /* C11 static assertions are written using the corresponding C++ keyword. */

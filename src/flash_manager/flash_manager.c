@@ -1211,6 +1211,23 @@ bool FLASH_MANAGER_GetExecutionDiagnostics( FlashManagerExecutionDiagnostics_T* 
     return true;
 }
 
+bool FLASH_MANAGER_GetResultCapacityBytes( uint32_t* capacity_bytes )
+{
+    if ( capacity_bytes == NULL )
+    {
+        return false;
+    }
+
+    ExternalFlashInfo_T info = { 0 };
+    if ( EXTERNAL_FLASH_GetInfo( &info ) != EXTERNAL_FLASH_STATUS_OK )
+    {
+        return false;
+    }
+
+    *capacity_bytes = info.result_capacity_bytes;
+    return true;
+}
+
 /* Run State Manager lifecycle requests. */
 
 /**
