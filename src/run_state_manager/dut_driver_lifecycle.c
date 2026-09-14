@@ -314,6 +314,11 @@ DutDriverConfigurationStatus_T DUT_DRIVER_LIFECYCLE_GetConfigurationStatus( void
 {
     if ( !lifecycle_context.configuration_valid )
     {
+        if ( lifecycle_context.configuration_batch_id != 0U )
+        {
+            LOGIC_EXPANDER_Cancel_Control_Batch( lifecycle_context.configuration_batch_id );
+            lifecycle_context.configuration_batch_id = 0U;
+        }
         return DUT_DRIVER_CONFIGURATION_FAILED;
     }
 
@@ -346,6 +351,12 @@ DutDriverConfigurationStatus_T DUT_DRIVER_LIFECYCLE_GetConfigurationStatus( void
         case LOGIC_EXPANDER_CONTROL_BATCH_FAILED:
         case LOGIC_EXPANDER_CONTROL_BATCH_UNKNOWN:
         default:
+            if ( lifecycle_context.configuration_batch_id != 0U )
+            {
+                LOGIC_EXPANDER_Cancel_Control_Batch( lifecycle_context.configuration_batch_id );
+                lifecycle_context.configuration_batch_id = 0U;
+            }
+            lifecycle_context.configuration_valid = false;
             return DUT_DRIVER_CONFIGURATION_FAILED;
     }
 
@@ -363,6 +374,12 @@ DutDriverConfigurationStatus_T DUT_DRIVER_LIFECYCLE_GetConfigurationStatus( void
             case EXEC_ANALOGUE_OUTPUT_STATE_DISABLED:
             case EXEC_ANALOGUE_OUTPUT_STATE_STARTED:
             default:
+                if ( lifecycle_context.configuration_batch_id != 0U )
+                {
+                    LOGIC_EXPANDER_Cancel_Control_Batch( lifecycle_context.configuration_batch_id );
+                    lifecycle_context.configuration_batch_id = 0U;
+                }
+                lifecycle_context.configuration_valid = false;
                 return DUT_DRIVER_CONFIGURATION_FAILED;
         }
     }
@@ -712,6 +729,19 @@ bool DUT_DRIVER_LIFECYCLE_BeginShutdown( bool force_abort, bool clear_configurat
         return true;
     }
 
+    if ( lifecycle_context.configuration_batch_id != 0U )
+    {
+        LOGIC_EXPANDER_Cancel_Control_Batch( lifecycle_context.configuration_batch_id );
+        lifecycle_context.configuration_batch_id = 0U;
+    }
+    lifecycle_context.configuration_pending = false;
+
+    if ( ( lifecycle_context.start_batch_id != 0U ) && !lifecycle_context.start_accepted )
+    {
+        LOGIC_EXPANDER_Cancel_Control_Batch( lifecycle_context.start_batch_id );
+        lifecycle_context.start_batch_id = 0U;
+    }
+
     LogicExpanderControlBatchId_T batch_id = 0U;
     if ( LOGIC_EXPANDER_Begin_Control_Batch( &batch_id ) != LOGIC_EXPANDER_STATUS_OK )
     {
@@ -823,6 +853,21 @@ void DUT_DRIVER_LIFECYCLE_GetStatus( DutDriverLifecycleStatus_T* status )
 
 void DUT_DRIVER_LIFECYCLE_EnterIdle( void )
 {
+    if ( lifecycle_context.configuration_batch_id != 0U )
+    {
+        LOGIC_EXPANDER_Cancel_Control_Batch( lifecycle_context.configuration_batch_id );
+        lifecycle_context.configuration_batch_id = 0U;
+    }
+    if ( lifecycle_context.start_batch_id != 0U )
+    {
+        LOGIC_EXPANDER_Cancel_Control_Batch( lifecycle_context.start_batch_id );
+        lifecycle_context.start_batch_id = 0U;
+    }
+    if ( lifecycle_context.shutdown_batch_id != 0U )
+    {
+        LOGIC_EXPANDER_Cancel_Control_Batch( lifecycle_context.shutdown_batch_id );
+        lifecycle_context.shutdown_batch_id = 0U;
+    }
     const bool stopped = DUT_DRIVER_LIFECYCLE_Stop();
     DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration();
     if ( stopped )
@@ -833,6 +878,21 @@ void DUT_DRIVER_LIFECYCLE_EnterIdle( void )
 
 void DUT_DRIVER_LIFECYCLE_EnterFault( void )
 {
+    if ( lifecycle_context.configuration_batch_id != 0U )
+    {
+        LOGIC_EXPANDER_Cancel_Control_Batch( lifecycle_context.configuration_batch_id );
+        lifecycle_context.configuration_batch_id = 0U;
+    }
+    if ( lifecycle_context.start_batch_id != 0U )
+    {
+        LOGIC_EXPANDER_Cancel_Control_Batch( lifecycle_context.start_batch_id );
+        lifecycle_context.start_batch_id = 0U;
+    }
+    if ( lifecycle_context.shutdown_batch_id != 0U )
+    {
+        LOGIC_EXPANDER_Cancel_Control_Batch( lifecycle_context.shutdown_batch_id );
+        lifecycle_context.shutdown_batch_id = 0U;
+    }
     const bool stopped = DUT_DRIVER_LIFECYCLE_Stop();
     DUT_DRIVER_LIFECYCLE_ApplyDisabledConfiguration();
     if ( stopped )
