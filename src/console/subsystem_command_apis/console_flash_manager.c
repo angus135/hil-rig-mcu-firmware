@@ -153,9 +153,10 @@
 #define CONSOLE_FLASH_OUTPUT_STRESS_DEFAULT_SAMPLES ( 1000U )
 #define CONSOLE_FLASH_OUTPUT_STRESS_DEFAULT_INTERVAL_TICKS ( 1U )
 #define CONSOLE_FLASH_OUTPUT_STRESS_DRAIN_TICKS ( 10U )
-#define CONSOLE_FLASH_OUTPUT_STRESS_SPI_BYTES ( 256U )
+#define CONSOLE_FLASH_OUTPUT_STRESS_SPI1_BYTES ( 128U )
+#define CONSOLE_FLASH_OUTPUT_STRESS_SPI2_BYTES ( 256U )
 #define CONSOLE_FLASH_OUTPUT_STRESS_UART_BYTES ( 16U )
-#define CONSOLE_FLASH_OUTPUT_STRESS_OPERATION_COUNT ( 6U )
+#define CONSOLE_FLASH_OUTPUT_STRESS_OPERATION_COUNT ( 7U )
 #define CONSOLE_FLASH_OUTPUT_STRESS_PWM_FREQ_HZ ( 1000000U )
 #define CONSOLE_FLASH_OUTPUT_STRESS_PWM_DUTY_PERMILLE ( 500U )
 #define CONSOLE_FLASH_OUTPUT_STRESS_UART_BAUD ( 2000000U )
@@ -1645,7 +1646,7 @@ static uint32_t CONSOLE_Flash_EncodeSpiInstruction( uint8_t* destination, uint32
     return ( uint32_t )sizeof( ExecutionInstructionHeader_T ) + operation_bytes;
 }
 
-/** Builds one instruction containing the approved output paths, excluding CAN and SPI 1. */
+/** Builds one instruction containing the approved output paths, excluding CAN. */
 static uint32_t CONSOLE_Flash_EncodeOutputStressInstruction(
     uint8_t* destination, uint32_t timestamp, uint32_t high_bitmask, uint32_t low_bitmask,
     const ExecutionPwmUpdatePayload_T pwm_payloads[EXEC_PWM_GEN_CHANNEL_COUNT] )
@@ -1676,18 +1677,29 @@ static uint32_t CONSOLE_Flash_EncodeOutputStressInstruction(
         offset += pwm_operation_bytes;
     }
 
-    const uint32_t spi_payload_bytes =
-        EXECUTION_SPI_DATA_OFFSET_BYTES( 1U ) + CONSOLE_FLASH_OUTPUT_STRESS_SPI_BYTES;
-    const uint32_t spi_operation_bytes =
-        EXECUTION_OPERATION_ENCODED_SIZE_BYTES( spi_payload_bytes );
-    CONSOLE_Flash_WriteU32Le( &destination[offset],
-                              EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT
-                                  | ( EXECUTION_OPERATION_SPI_CHANNEL_2 << 8U )
-                                  | ( spi_payload_bytes << 16U ) );
-    CONSOLE_Flash_WriteU32Le( &destination[offset + 4U], 1U );
-    CONSOLE_Flash_WriteU32Le( &destination[offset + 8U], CONSOLE_FLASH_OUTPUT_STRESS_SPI_BYTES );
-    ( void )memset( &destination[offset + 12U], 0xA5, CONSOLE_FLASH_OUTPUT_STRESS_SPI_BYTES );
-    offset += spi_operation_bytes;
+    static const uint32_t spi_packet_bytes[EXEC_SPI_CHANNEL_COUNT] = {
+        [EXEC_SPI_CHANNEL_1] = CONSOLE_FLASH_OUTPUT_STRESS_SPI1_BYTES,
+        [EXEC_SPI_CHANNEL_2] = CONSOLE_FLASH_OUTPUT_STRESS_SPI2_BYTES,
+    };
+    static const uint8_t spi_patterns[EXEC_SPI_CHANNEL_COUNT] = {
+        [EXEC_SPI_CHANNEL_1] = 0x5AU,
+        [EXEC_SPI_CHANNEL_2] = 0xA5U,
+    };
+    for ( uint32_t channel = 0U; channel < EXEC_SPI_CHANNEL_COUNT; channel++ )
+    {
+        const uint32_t spi_payload_bytes =
+            EXECUTION_SPI_DATA_OFFSET_BYTES( 1U ) + spi_packet_bytes[channel];
+        const uint32_t spi_operation_bytes =
+            EXECUTION_OPERATION_ENCODED_SIZE_BYTES( spi_payload_bytes );
+        CONSOLE_Flash_WriteU32Le( &destination[offset],
+                                  EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT | ( channel << 8U )
+                                      | ( spi_payload_bytes << 16U ) );
+        CONSOLE_Flash_WriteU32Le( &destination[offset + 4U], 1U );
+        CONSOLE_Flash_WriteU32Le( &destination[offset + 8U], spi_packet_bytes[channel] );
+        ( void )memset( &destination[offset + 12U], spi_patterns[channel],
+                        spi_packet_bytes[channel] );
+        offset += spi_operation_bytes;
+    }
 
     for ( uint32_t channel = 0U; channel < EXEC_UART_CHANNEL_COUNT; channel++ )
     {
@@ -2799,7 +2811,13 @@ static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* ar
         .mode       = EXEC_PWM_CAPTURE_HV_12V,
     };
     configuration.spi_channels[EXEC_SPI_CHANNEL_1] = ( ExecSPIConfig_T ){
-        .is_enabled = false,
+        .is_enabled = true,
+        .spi_mode   = EXEC_SPI_MASTER_MODE,
+        .data_size  = EXEC_SPI_SIZE_8_BIT,
+        .first_bit  = EXEC_SPI_FIRST_MSB,
+        .baud_rate  = EXEC_SPI_BAUD_22M5BIT,
+        .cpol       = EXEC_SPI_CPOL_LOW,
+        .cpha       = EXEC_SPI_CPHA_1_EDGE,
     };
     configuration.spi_channels[EXEC_SPI_CHANNEL_2] = ( ExecSPIConfig_T ){
         .is_enabled = true,
@@ -2942,8 +2960,9 @@ static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* ar
     CONSOLE_Printf( "              PWM Gen HV (1MHz 50%%) -> PWM Cap HV (12V)\r\n" );
     CONSOLE_Printf( "              UART1 (2Mbps TX+RX loopback, 16B/tick 0x55)\r\n" );
     CONSOLE_Printf( "              UART2 (2Mbps TX+RX loopback, 16B/tick 0xAA)\r\n" );
+    CONSOLE_Printf( "              SPI1 (22.5Mbps TX+RX loopback, 128B/tick 0x5A)\r\n" );
     CONSOLE_Printf( "              SPI2 (45Mbps TX+RX loopback, 256B/tick 0xA5)\r\n" );
-    CONSOLE_Printf( "Excluded:     AO, CAN 1/2, SPI CH1 (pending driver fixes).\r\n" );
+    CONSOLE_Printf( "Excluded:     AO, CAN 1/2.\r\n" );
     CONSOLE_Printf( "Next: 'run_state receive', 'run_state configure', "
                     "'run_state frequency 100', then 'run_state execute %lu'.\r\n",
                     ( unsigned long )console_flash_run_tick_count );
@@ -4094,9 +4113,13 @@ static void CONSOLE_Flash_VerifyStressResultsCommand( uint16_t argc, char* argv[
     uint8_t  uart_bad_actual   = 0U;
 
     /* SPI tracking */
-    uint32_t spi2_bytes     = 0U;
-    bool     spi_mismatch   = false;
-    uint8_t  spi_bad_actual = 0U;
+    uint32_t spi1_bytes                                      = 0U;
+    uint32_t spi2_bytes                                      = 0U;
+    bool     spi_channel_mismatch[EXEC_SPI_CHANNEL_COUNT]    = { false };
+    bool     spi_mismatch                                    = false;
+    uint8_t  spi_bad_channel                                 = 0U;
+    uint8_t  spi_bad_expected                                = 0U;
+    uint8_t  spi_bad_actual                                  = 0U;
 
     /* Unexpected peripheral records */
     uint32_t unexpected_records = 0U;
@@ -4219,9 +4242,16 @@ static void CONSOLE_Flash_VerifyStressResultsCommand( uint16_t argc, char* argv[
                     }
 
                     case FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE: {
-                        if ( header.channel == ( uint8_t )EXEC_SPI_CHANNEL_2 )
+                        uint8_t expected = 0U;
+                        if ( header.channel == ( uint8_t )EXEC_SPI_CHANNEL_1 )
+                        {
+                            spi1_bytes += copy;
+                            expected = 0x5AU;
+                        }
+                        else if ( header.channel == ( uint8_t )EXEC_SPI_CHANNEL_2 )
                         {
                             spi2_bytes += copy;
+                            expected = 0xA5U;
                         }
                         else
                         {
@@ -4231,10 +4261,17 @@ static void CONSOLE_Flash_VerifyStressResultsCommand( uint16_t argc, char* argv[
                         for ( uint32_t i = 0U; i < copy; i++ )
                         {
                             const uint8_t byte = console_flash_read_buffer[offset + i];
-                            if ( ( byte != 0xA5U ) && !spi_mismatch )
+                            if ( ( byte != expected ) && !spi_mismatch )
                             {
-                                spi_mismatch   = true;
-                                spi_bad_actual = byte;
+                                spi_mismatch     = true;
+                                spi_bad_channel  = header.channel + 1U;
+                                spi_bad_expected = expected;
+                                spi_bad_actual   = byte;
+                            }
+                            if ( byte != expected
+                                 && header.channel < ( uint8_t )EXEC_SPI_CHANNEL_COUNT )
+                            {
+                                spi_channel_mismatch[header.channel] = true;
                             }
                         }
                         break;
@@ -4379,7 +4416,8 @@ static void CONSOLE_Flash_VerifyStressResultsCommand( uint16_t argc, char* argv[
     const bool passed     = framing_ok && structure_valid && ( di_mismatch_count == 0U )
                         && !uart_mismatch && !spi_mismatch && ( di_record_count > 0U )
                         && ( ai_record_count > 0U )
-                        && ( uart1_bytes > 0U ) && ( uart2_bytes > 0U ) && ( spi2_bytes > 0U )
+                        && ( uart1_bytes > 0U ) && ( uart2_bytes > 0U ) && ( spi1_bytes > 0U )
+                        && ( spi2_bytes > 0U )
                         && ( pwm_lv_records > 0U ) && ( pwm_hv_records > 0U );
 
     CONSOLE_Printf( "================ STRESS TEST VERIFICATION ================\r\n" );
@@ -4423,8 +4461,13 @@ static void CONSOLE_Flash_VerifyStressResultsCommand( uint16_t argc, char* argv[
     CONSOLE_Printf( "UART2 (2Mbit/s):  %s (%lu bytes received, pattern=0xAA)\r\n",
                     ( uart2_bytes > 0U && !uart_mismatch ) ? "PASS" : "FAIL",
                     ( unsigned long )uart2_bytes );
+    CONSOLE_Printf( "SPI1 (22.5Mbit/s): %s (%lu bytes received, pattern=0x5A)\r\n",
+                    ( spi1_bytes > 0U && !spi_channel_mismatch[EXEC_SPI_CHANNEL_1] ) ? "PASS"
+                                                                                     : "FAIL",
+                    ( unsigned long )spi1_bytes );
     CONSOLE_Printf( "SPI2 (45Mbit/s):  %s (%lu bytes received, pattern=0xA5)\r\n",
-                    ( spi2_bytes > 0U && !spi_mismatch ) ? "PASS" : "FAIL",
+                    ( spi2_bytes > 0U && !spi_channel_mismatch[EXEC_SPI_CHANNEL_2] ) ? "PASS"
+                                                                                     : "FAIL",
                     ( unsigned long )spi2_bytes );
     if ( uart_mismatch )
     {
@@ -4433,8 +4476,8 @@ static void CONSOLE_Flash_VerifyStressResultsCommand( uint16_t argc, char* argv[
     }
     if ( spi_mismatch )
     {
-        CONSOLE_Printf( "SPI data mismatch on SPI2: expected 0xA5, got 0x%02X\r\n",
-                        spi_bad_actual );
+        CONSOLE_Printf( "SPI data mismatch on SPI%u: expected 0x%02X, got 0x%02X\r\n",
+                        spi_bad_channel, spi_bad_expected, spi_bad_actual );
     }
     if ( unexpected_records > 0U )
     {
