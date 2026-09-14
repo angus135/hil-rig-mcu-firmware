@@ -682,15 +682,15 @@ uint32_t EXEC_SPI_GetPendingReceiveBytes( ExecSPIChannel_T peripheral )
 bool EXEC_SPI_Receive( ExecSPIChannel_T peripheral, uint8_t* data_dst, uint32_t capacity_bytes,
                        uint32_t* bytes_read )
 {
-    const SPIChannel_T hw_channel = exec_spi_hardware_map[peripheral].hw_channel;
-    HWSPIRxSpans_T     data_spans = HW_SPI_Rx_Peek( hw_channel );
-    const uint32_t copy_length = data_spans.total_length_bytes < capacity_bytes
-                                     ? data_spans.total_length_bytes
-                                     : capacity_bytes;
-    const uint32_t first_length = data_spans.first_span.length_bytes < copy_length
-                                      ? data_spans.first_span.length_bytes
-                                      : copy_length;
-    const uint32_t second_length = copy_length - first_length;
+    const SPIChannel_T hw_channel    = exec_spi_hardware_map[peripheral].hw_channel;
+    HWSPIRxSpans_T     data_spans    = HW_SPI_Rx_Peek( hw_channel );
+    const uint32_t     copy_length   = data_spans.total_length_bytes < capacity_bytes
+                                           ? data_spans.total_length_bytes
+                                           : capacity_bytes;
+    const uint32_t     first_length  = data_spans.first_span.length_bytes < copy_length
+                                           ? data_spans.first_span.length_bytes
+                                           : copy_length;
+    const uint32_t     second_length = copy_length - first_length;
 
     if ( first_length > 0U )
     {

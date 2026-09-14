@@ -291,28 +291,41 @@ large enough for the configured CAN bitrate and bus arbitration. This command
 does not yet perform CAN schedule-feasibility admission, so do not use it as a
 10 kHz validation sequence.
 
-## Execution Manager peak output-ISR timing
+## Execution Manager 10 kHz full peripheral loopback stress test
 
-`flash upload_output_stress [sample_count] [interval_ticks]` commits a predefined
-configuration and uploads repeated peak-load instructions. The command enables
-only digital output 1, both PWM outputs, both UART channels, and SPI channel 2.
-CAN, SPI channel 1, analogue output, and every measurement input remain
-disabled. Each scheduled instruction contains six operations on the same tick:
-one digital update, two PWM updates, one 128-byte SPI transmit, and one 16-byte
-transmit for each UART channel. The stress-only configuration runs SPI2 at the
-driver's 45 Mbit/s setting and both UART channels at 2 Mbit/s.
+`flash upload_output_stress [sample_count] [interval_ticks]` commits a complete
+stress test configuration and uploads repeated peak-load multi-peripheral
+instructions. The test validates real-time Execution Manager ISR execution deadlines,
+data throughput, DMA bus arbitration, and result logging at **10 kHz** (100 µs tick).
 
-The default interval is one tick and the profiling sequence runs at 10 kHz.
-The SPI and UART payloads are sized below their nominal per-tick wire capacity,
-allowing every execution ISR to exercise every configured output path without
-deliberately filling the DMA-backed transmit queues. Use the maximum rather than
-latest cycle count reported by `run_state status`.
+### Active and excluded peripherals
 
-This upload also enables one-shot per-opcode cycle profiling for its next run.
-`run_state status` reports sample count, average cycles, and maximum cycles for
-each exercised opcode. These values include the profiler's two cycle-counter
-reads and accumulation. The overall ISR maximum from a profiled run likewise
-includes profiling overhead; use an unprofiled run for the final deadline figure.
+* **Digital I/O**: All 10 Digital Outputs (3.3 V) loopbacked to 10 Digital Inputs (3.3 V).
+  Each instruction applies a changing 10-bit logical pattern. DI samples all 10 pins every tick
+  and verification compares every logical DI channel with the same-index DO state from the
+  preceding measure-before-output boundary.
+* **Analogue Input**: ADC1/ADC2 DMA dual-channel continuous sampling at 10 kHz.
+* **PWM**:
+  * PWM Gen LV (TIM12, 3.3 V) at 1 MHz, 50% duty loopbacked to PWM Capture LV (3.3 V).
+  * PWM Gen HV (TIM8, 12 V) at 1 MHz, 50% duty loopbacked to PWM Capture HV (12 V).
+* **UART**: Both UART1 and UART2 running at 2 Mbit/s with both TX and RX enabled (loopback).
+  UART1 transmits 16 bytes of `0x55` per tick; UART2 transmits 16 bytes of `0xAA` per tick.
+* **SPI**: SPI Channel 2 (hardware SPI1 master, 45 Mbit/s) with both TX and RX DMA (loopback).
+  Transmits 256 bytes of `0xA5` per tick.
+* **Excluded**:
+  * Analogue Output (DAC) temporarily excluded pending driver debugging.
+  * CAN 1 & 2 remain explicitly disabled (driver pending debugging).
+  * SPI Channel 1 remains explicitly disabled (driver pending fixes).
+
+### Hardware loopback wiring
+
+Wire the physical connectors before running the test:
+1. **Digital**: Connect Digital Output pins 1–10 to Digital Input pins 1–10.
+2. **PWM**: Connect PWM Gen LV to PWM Capture LV; connect PWM Gen HV to PWM Capture HV.
+3. **UART**: Connect UART1 TX to UART1 RX; connect UART2 TX to UART2 RX.
+4. **SPI**: Connect SPI2 MOSI (PA7) to SPI2 MISO (PA6).
+
+### Execution sequence
 
 From an IDLE run state and IDLE Flash Manager:
 
@@ -320,17 +333,34 @@ From an IDLE run state and IDLE Flash Manager:
 flash upload_output_stress
 run_state receive
 run_state configure
-run_state frequency 10000
-run_state execute 110 0
+run_state frequency 100
+run_state execute 1010
 run_state status
+execution status
+flash results verify_stress
 ```
 
-The default upload contains 100 sustained-load instructions at ticks 1 through 100,
-followed by ten drain ticks before execution ends at tick 110. After result
-finalisation completes, status should report 110 ISR samples and
-per-opcode timing for all exercised output paths. The measurement includes
-higher-priority interrupt preemption but excludes the optional FreeRTOS yield
-at the end of TIM4.
+### Verification and diagnostics
+
+1. `run_state status`:
+   Reports overall test state, run ticks, and confirmed completion.
+2. `execution status`:
+   Reports TIM4 execution tick ISR timing metrics: sample count, minimum, average, and
+   peak ISR cycle count against the 10 kHz deadline (18,000 cycles at 180 MHz), plus
+   per-opcode cycle timing breakdown.
+3. `flash results verify_stress`:
+   Streams all recorded execution results from External NAND Flash through Flash Manager,
+   decodes every peripheral result packet, and validates:
+   * Record framing and sequence integrity across all stream buffers.
+   * Same-index DO1-to-DI1 through DO10-to-DI10 values for every recorded tick, with an
+     independent PASS/FAIL and mismatch count for each channel pair.
+   * AI dual-channel ADC DMA record collection. Values are reported as raw counts and remain
+     explicitly unverified until a known analogue stimulus is provided.
+   * PWM Capture LV and HV frequency/period/high measurements at 1 MHz.
+   * UART1 16-byte `0x55` pattern verification.
+   * UART2 16-byte `0xAA` pattern verification.
+   * SPI2 256-byte `0xA5` pattern verification.
+   * Absence of unexpected or corrupt peripheral packets.
 
 ## Execution Manager UART-output path
 

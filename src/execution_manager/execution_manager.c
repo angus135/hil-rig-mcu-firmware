@@ -77,6 +77,7 @@ bool EXECUTION_MANAGER_Prepare( uint32_t tick_count )
     operation_timing_requested   = false;
     EXECUTION_OPERATION_ADAPTER_ResetFailure();
     EXECUTION_OPERATION_ADAPTER_ResetTiming();
+    EXECUTION_MEASUREMENT_ADAPTER_ResetTiming();
     return true;
 }
 
@@ -135,8 +136,13 @@ EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken )
     FlashManagerInstructionReadStatus_T read_status = FLASH_MANAGER_INSTRUCTION_END_OF_STREAM;
 
     /* Measurements are captured before outputs at this boundary. */
-    if ( !EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( current_tick,
-                                                           higher_priority_task_woken ) )
+    const bool measurements_accepted =
+        operation_timing_active
+            ? EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurementsProfiled(
+                  current_tick, higher_priority_task_woken )
+            : EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( current_tick,
+                                                               higher_priority_task_woken );
+    if ( !measurements_accepted )
     {
         return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_MEASUREMENT_REJECTED,
                                               higher_priority_task_woken );

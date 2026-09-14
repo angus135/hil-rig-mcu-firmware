@@ -89,18 +89,18 @@
  *  active channel and frame alignment but intentionally defers schedule
  *  feasibility analysis.
  *
- *  Peak output-ISR timing uses:
+ *  Full peripheral 10 kHz ISR stress testing uses:
  *
  *      `flash upload_output_stress [sample_count] [interval_ticks]`
  *
- *  This single command commits a predefined configuration and uploads repeated
- *  peak-load instructions. Only previously exercised hardware paths are
- *  enabled: digital output 1, both PWM channels, both UART channels, and SPI
- *  channel 1. CAN, SPI channel 2, analogue output, and all measurement inputs
- *  remain disabled. Each scheduled instruction submits a maximum chunk to
- *  both UARTs and a representative 256-byte SPI packet; interval ticks allow
- *  the queues to drain. Run the stream through the normal RSM execution path
- *  and inspect `run_state status` for the maximum TIM4 cycle count.
+ *  This single command commits a comprehensive loopback configuration and uploads repeated
+ *  peak-load instructions. It enables all 10 digital outputs (3.3V) and 10 digital inputs (3.3V),
+ *  analogue output (DAC) and analogue input (ADC 10 kHz), both PWM generators (LV 3.3V, HV 12V at
+ *  1 MHz) and both PWM capture channels, both UART channels (2 Mbit/s TX and RX enabled), and SPI
+ *  channel 2 (45 Mbit/s master TX and RX). CAN (both TX and RX) and SPI channel 1 remain
+ *  excluded. Run the stream through the normal RSM execution path, inspect `run_state status` for
+ *  the maximum TIM4 cycle count, and use `flash results verify_stress` to verify loopback data
+ *  integrity and throughput.
  *
  *  `execute_echo` is the execution-facing API test. It temporarily redirects
  *  the existing priority-5 TIM4 interrupt away from the production Execution

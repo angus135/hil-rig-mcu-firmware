@@ -17,6 +17,17 @@ EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( uint32_t    timestamp,
     return true;
 }
 
+extern "C" bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurementsProfiled(
+    uint32_t timestamp, BaseType_t* higher_priority_task_woken )
+{
+    return EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( timestamp,
+                                                            higher_priority_task_woken );
+}
+
+extern "C" void EXECUTION_MEASUREMENT_ADAPTER_ResetTiming( void )
+{
+}
+
 extern "C" void
 EXECUTION_MEASUREMENT_ADAPTER_Prepare( const ExecutionMeasurementConfiguration_T* configuration )
 {

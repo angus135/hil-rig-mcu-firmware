@@ -693,13 +693,13 @@ TEST_F( ExecSPITest, Receive_TwoSpansAvailable_CopiesBothSpansInOrderAndConsumes
 
 TEST_F( ExecSPITest, Receive_CapacityEndingInSecondSpanConsumesOnlyCopiedBytes )
 {
-    const uint8_t first_span_data[]  = { 'A', 'B', 'C' };
-    const uint8_t second_span_data[] = { 'D', 'E', 'F', 'G' };
-    const uint8_t expected_data[]    = { 'A', 'B', 'C', 'D' };
-    const HWSPIRxSpans_T spans = {
-        .first_span = { .data = first_span_data, .length_bytes = sizeof( first_span_data ) },
-        .second_span = { .data = second_span_data, .length_bytes = sizeof( second_span_data ) },
-        .total_length_bytes = sizeof( first_span_data ) + sizeof( second_span_data ),
+    const uint8_t        first_span_data[]  = { 'A', 'B', 'C' };
+    const uint8_t        second_span_data[] = { 'D', 'E', 'F', 'G' };
+    const uint8_t        expected_data[]    = { 'A', 'B', 'C', 'D' };
+    const HWSPIRxSpans_T spans              = {
+                     .first_span  = { .data = first_span_data, .length_bytes = sizeof( first_span_data ) },
+                     .second_span = { .data = second_span_data, .length_bytes = sizeof( second_span_data ) },
+                     .total_length_bytes = sizeof( first_span_data ) + sizeof( second_span_data ),
     };
 
     uint8_t  rx_buffer[sizeof( expected_data )] = { 0 };
@@ -708,8 +708,8 @@ TEST_F( ExecSPITest, Receive_CapacityEndingInSecondSpanConsumesOnlyCopiedBytes )
     EXPECT_CALL( mock_hw_spi, RxPeek( SPI_CHANNEL_1 ) ).WillOnce( ::testing::Return( spans ) );
     EXPECT_CALL( mock_hw_spi, RxConsume( SPI_CHANNEL_1, sizeof( expected_data ) ) ).Times( 1 );
 
-    EXPECT_TRUE( EXEC_SPI_Receive( EXEC_SPI_CHANNEL_1, rx_buffer, sizeof( rx_buffer ),
-                                   &bytes_read ) );
+    EXPECT_TRUE(
+        EXEC_SPI_Receive( EXEC_SPI_CHANNEL_1, rx_buffer, sizeof( rx_buffer ), &bytes_read ) );
     EXPECT_EQ( sizeof( expected_data ), bytes_read );
     EXPECT_EQ( 0, std::memcmp( rx_buffer, expected_data, sizeof( expected_data ) ) );
 }

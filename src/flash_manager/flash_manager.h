@@ -234,6 +234,7 @@ typedef struct
 #define FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE ( 3U )
 #define FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE ( 4U )
 #define FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE ( 5U )
+#define FLASH_MANAGER_RESULT_PERIPHERAL_CAN_RECEIVE ( 6U )
 
 /**
  * @brief Temporary driver write access to Flash Manager-owned result storage.
@@ -372,30 +373,30 @@ typedef void ( *FlashManagerFaultCallback_T )( bool from_isr );
 /** Execution-time result-drain diagnostics; observational only. */
 typedef struct
 {
-    uint32_t result_pages_drained;
-    uint64_t result_page_drain_total_cycles;
-    uint32_t result_page_drain_latest_cycles;
-    uint32_t result_page_drain_max_cycles;
-    uint32_t result_reserve_failures;
-    uint16_t last_failed_reserve_payload_bytes;
-    uint32_t free_bytes_at_last_reserve_failure;
-    uint32_t current_pending_result_bytes;
-    uint32_t peak_pending_result_bytes;
-    uint32_t result_commit_failures;
+    uint32_t                         result_pages_drained;
+    uint64_t                         result_page_drain_total_cycles;
+    uint32_t                         result_page_drain_latest_cycles;
+    uint32_t                         result_page_drain_max_cycles;
+    uint32_t                         result_reserve_failures;
+    uint16_t                         last_failed_reserve_payload_bytes;
+    uint32_t                         free_bytes_at_last_reserve_failure;
+    uint32_t                         current_pending_result_bytes;
+    uint32_t                         peak_pending_result_bytes;
+    uint32_t                         result_commit_failures;
     FlashManagerResultCommitStatus_T last_commit_failure;
-    uint32_t instruction_pages_refilled;
-    uint64_t instruction_page_refill_total_cycles;
-    uint32_t instruction_page_refill_latest_cycles;
-    uint32_t instruction_page_refill_max_cycles;
-    uint32_t instruction_page_publish_samples;
-    uint64_t instruction_page_publish_total_cycles;
-    uint32_t instruction_page_publish_latest_cycles;
-    uint32_t instruction_page_publish_max_cycles;
-    uint32_t nand_service_gap_samples;
-    uint64_t nand_service_gap_total_cycles;
-    uint32_t nand_service_gap_latest_cycles;
-    uint32_t nand_service_gap_max_cycles;
-    uint32_t refill_drain_contentions;
+    uint32_t                         instruction_pages_refilled;
+    uint64_t                         instruction_page_refill_total_cycles;
+    uint32_t                         instruction_page_refill_latest_cycles;
+    uint32_t                         instruction_page_refill_max_cycles;
+    uint32_t                         instruction_page_publish_samples;
+    uint64_t                         instruction_page_publish_total_cycles;
+    uint32_t                         instruction_page_publish_latest_cycles;
+    uint32_t                         instruction_page_publish_max_cycles;
+    uint32_t                         nand_service_gap_samples;
+    uint64_t                         nand_service_gap_total_cycles;
+    uint32_t                         nand_service_gap_latest_cycles;
+    uint32_t                         nand_service_gap_max_cycles;
+    uint32_t                         refill_drain_contentions;
 } FlashManagerExecutionDiagnostics_T;
 
 /**-----------------------------------------------------------------------------
