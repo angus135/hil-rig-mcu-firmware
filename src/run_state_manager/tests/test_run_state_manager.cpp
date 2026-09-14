@@ -626,3 +626,61 @@ TEST_F( RunStateManagerTest, DiagnosticTimerRequestsUseExplicitNotificationBits 
     EXPECT_TRUE( RUN_STATE_MANAGER_RequestDiagnosticExecutionTimerStop() );
     EXPECT_NE( 0U, notified_bits & RUN_STATE_MANAGER_NOTIFY_TIMER_STOP );
 }
+
+TEST_F( RunStateManagerTest, RepeatAllowsSubsequentExecutionWithoutFault )
+{
+    EnterExecution();
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    flash_manager_state = FLASH_MANAGER_STATE_RESULTS_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_RESULTS_READY, run_state );
+    EXPECT_FALSE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
+
+    Process( RUN_STATE_REQUEST_REPEAT );
+    EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
+    EXPECT_FALSE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_ARMED, run_state );
+
+    Process( RUN_STATE_REQUEST_EXECUTION );
+    flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_EXECUTION, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_NONE, fault_reason );
+    EXPECT_FALSE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
+}
+
+TEST_F( RunStateManagerTest, DiscardResultsAllowsSubsequentPackageReceiveAndExecution )
+{
+    EnterExecution();
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    flash_manager_state = FLASH_MANAGER_STATE_RESULTS_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_RESULTS_READY, run_state );
+
+    Process( RUN_STATE_REQUEST_DISCARD_RESULTS );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
+    EXPECT_FALSE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
+
+    EnterExecution();
+    EXPECT_EQ( RUN_STATE_EXECUTION, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_NONE, fault_reason );
+    EXPECT_FALSE( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() );
+}
+
+TEST_F( RunStateManagerTest, ExecutionGuardAllowsDispatchOnlyWhenActiveAndNoAbort )
+{
+    ASSERT_NE( nullptr, execution_guard );
+    EXPECT_FALSE( execution_guard() );
+
+    EnterExecution();
+    EXPECT_TRUE( execution_guard() );
+
+    EXPECT_TRUE( RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_FLASH_MANAGER ) );
+    EXPECT_FALSE( execution_guard() );
+}
+
