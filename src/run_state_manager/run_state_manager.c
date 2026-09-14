@@ -111,10 +111,10 @@ static TickType_t                 pending_operation_started_at = 0U;
 static bool execution_active        = false;
 static bool driver_cleanup_complete = true;
 
-static bool                       execution_timer_running   = false;
-static bool                       execution_request_pending = false;
-static RunStatePreparedExecution_T prepared_execution       = {
-          .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
+static bool                        execution_timer_running   = false;
+static bool                        execution_request_pending = false;
+static RunStatePreparedExecution_T prepared_execution        = { .tick_count = 0U,
+                                                                 .frequency  = RUN_STATE_FREQUENCY_1KHZ };
 
 static volatile bool execution_abort_requested = false;
 
@@ -515,7 +515,7 @@ static bool RUN_STATE_MANAGER_EnterExecution( void )
     }
 
     taskENTER_CRITICAL();
-    execution_active         = true;
+    execution_active          = true;
     execution_request_pending = false;
     taskEXIT_CRITICAL();
     return true;
@@ -541,8 +541,7 @@ static uint32_t RUN_STATE_MANAGER_GetSpiBaudHz( ExecSPIBaudRate_T baud_rate )
     return spi_baud_hz[baud_rate];
 }
 
-static uint32_t
-RUN_STATE_MANAGER_CalculateDrainTailTicks( RunStateFrequencyMode_T frequency )
+static uint32_t RUN_STATE_MANAGER_CalculateDrainTailTicks( RunStateFrequencyMode_T frequency )
 {
     uint64_t       required_ticks = 0U;
     const uint32_t frequency_hz   = RUN_STATE_MANAGER_GetFrequencyHz( frequency );
@@ -729,10 +728,10 @@ static bool RUN_STATE_MANAGER_BeginDriverShutdown( bool force_abort, bool clear_
  */
 static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void )
 {
-    const uint32_t             result_header_bytes = sizeof( FlashManagerResultHeader_T );
-    const uint32_t             tail_ticks =
+    const uint32_t result_header_bytes = sizeof( FlashManagerResultHeader_T );
+    const uint32_t tail_ticks =
         RUN_STATE_MANAGER_CalculateDrainTailTicks( prepared_execution.frequency );
-    DutDriverLifecycleStatus_T driver_status       = { 0 };
+    DutDriverLifecycleStatus_T driver_status = { 0 };
     DUT_DRIVER_LIFECYCLE_GetStatus( &driver_status );
 
     if ( prepared_execution.tick_count > ( UINT32_MAX - tail_ticks ) )
@@ -814,10 +813,10 @@ static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void )
     {
         if ( ( driver_status.can_enabled_mask & ( 1UL << channel ) ) != 0U )
         {
-            RUN_STATE_ADD_RESULT_BYTES( ( uint64_t )effective_ticks
-                                        * ( result_header_bytes
-                                            + ( EXEC_CAN_MAX_BATCH_SIZE
-                                                * sizeof( EXEC_CAN_Packet_T ) ) ) );
+            RUN_STATE_ADD_RESULT_BYTES(
+                ( uint64_t )effective_ticks
+                * ( result_header_bytes
+                    + ( EXEC_CAN_MAX_BATCH_SIZE * sizeof( EXEC_CAN_Packet_T ) ) ) );
         }
     }
 
@@ -1537,8 +1536,8 @@ void RUN_STATE_MANAGER_Init( void )
     driver_cleanup_complete      = true;
     execution_timer_running      = false;
     execution_request_pending    = false;
-    prepared_execution           = ( RunStatePreparedExecution_T ){
-                  .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
+    prepared_execution =
+        ( RunStatePreparedExecution_T ){ .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
     execution_abort_requested    = false;
     fault_reason                 = RUN_STATE_FAULT_NONE;
     requested_fault_reason       = RUN_STATE_FAULT_NONE;
