@@ -451,14 +451,30 @@ void CONSOLE_TestConfiguration_Command( uint16_t argc, char* argv[] )
 
                 switch ( baud_hz )
                 {
-                    case 45000000U: baud_rate = EXEC_SPI_BAUD_45MBIT; break;
-                    case 22500000U: baud_rate = EXEC_SPI_BAUD_22M5BIT; break;
-                    case 11250000U: baud_rate = EXEC_SPI_BAUD_11M25BIT; break;
-                    case 5625000U: baud_rate = EXEC_SPI_BAUD_5M625BIT; break;
-                    case 2813000U: baud_rate = EXEC_SPI_BAUD_2M813BIT; break;
-                    case 1406000U: baud_rate = EXEC_SPI_BAUD_1M406BIT; break;
-                    case 703000U: baud_rate = EXEC_SPI_BAUD_703KBIT; break;
-                    case 352000U: baud_rate = EXEC_SPI_BAUD_352KBIT; break;
+                    case 45000000U:
+                        baud_rate = EXEC_SPI_BAUD_45MBIT;
+                        break;
+                    case 22500000U:
+                        baud_rate = EXEC_SPI_BAUD_22M5BIT;
+                        break;
+                    case 11250000U:
+                        baud_rate = EXEC_SPI_BAUD_11M25BIT;
+                        break;
+                    case 5625000U:
+                        baud_rate = EXEC_SPI_BAUD_5M625BIT;
+                        break;
+                    case 2813000U:
+                        baud_rate = EXEC_SPI_BAUD_2M813BIT;
+                        break;
+                    case 1406000U:
+                        baud_rate = EXEC_SPI_BAUD_1M406BIT;
+                        break;
+                    case 703000U:
+                        baud_rate = EXEC_SPI_BAUD_703KBIT;
+                        break;
+                    case 352000U:
+                        baud_rate = EXEC_SPI_BAUD_352KBIT;
+                        break;
                     default:
                         CONSOLE_TestConfiguration_PrintUsage();
                         return;

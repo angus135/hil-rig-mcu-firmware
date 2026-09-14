@@ -19,6 +19,7 @@
 #include "console.h"
 #include "dut_driver_lifecycle.h"
 #include "execution_manager.h"
+#include "execution_measurement_adapters.h"
 #include "execution_operation_adapters.h"
 #include "exec_spi.h"
 #include "hw_timer.h"
@@ -59,6 +60,8 @@ static const char* CONSOLE_RunStateManager_FaultName( RunStateFaultReason_T reas
 static const char*
 CONSOLE_RunStateManager_ExecutionFailureName( ExecutionManagerFailure_T failure );
 static const char* CONSOLE_RunStateManager_OpcodeName( ExecutionOperationOpcode_T opcode );
+static const char*
+CONSOLE_RunStateManager_MeasurementName( ExecutionMeasurementType_T measurement );
 static const char* CONSOLE_RunStateManager_RequestName( RunStateRequest_T request );
 static const char* CONSOLE_RunStateManager_RequestResultName( RunStateRequestResult_T result );
 static void        CONSOLE_RunStateManager_PrintUsage( void );
@@ -197,6 +200,28 @@ static const char* CONSOLE_RunStateManager_OpcodeName( ExecutionOperationOpcode_
             return "SPI_TRANSMIT";
         case EXECUTION_OPERATION_OPCODE_UART_TRANSMIT:
             return "UART_TRANSMIT";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+static const char*
+CONSOLE_RunStateManager_MeasurementName( ExecutionMeasurementType_T measurement )
+{
+    switch ( measurement )
+    {
+        case EXECUTION_MEASUREMENT_ANALOGUE_INPUT:
+            return "ANALOGUE_INPUT";
+        case EXECUTION_MEASUREMENT_DIGITAL_INPUT:
+            return "DIGITAL_INPUT";
+        case EXECUTION_MEASUREMENT_PWM_CAPTURE:
+            return "PWM_CAPTURE";
+        case EXECUTION_MEASUREMENT_UART_RECEIVE:
+            return "UART_RECEIVE";
+        case EXECUTION_MEASUREMENT_SPI_RECEIVE:
+            return "SPI_RECEIVE";
+        case EXECUTION_MEASUREMENT_CAN_RECEIVE:
+            return "CAN_RECEIVE";
         default:
             return "UNKNOWN";
     }
@@ -460,10 +485,29 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                 const uint32_t average_cycles =
                     ( uint32_t )( operation_timing.total_cycles / operation_timing.sample_count );
                 CONSOLE_Printf(
-                    "Operation timing: %s samples=%lu avg=%lu cycles max=%lu cycles\r\n",
+                    "Output timing: %s samples=%lu avg=%lu cycles max=%lu cycles\r\n",
                     CONSOLE_RunStateManager_OpcodeName( ( ExecutionOperationOpcode_T )opcode ),
                     ( unsigned long )operation_timing.sample_count, ( unsigned long )average_cycles,
                     ( unsigned long )operation_timing.maximum_cycles );
+            }
+        }
+        for ( uint32_t measurement = 0U; measurement < EXECUTION_MEASUREMENT_COUNT;
+              measurement++ )
+        {
+            ExecutionMeasurementTiming_T measurement_timing = { 0 };
+            if ( EXECUTION_MEASUREMENT_ADAPTER_GetTiming(
+                     ( ExecutionMeasurementType_T )measurement, &measurement_timing )
+                 && measurement_timing.sample_count != 0U )
+            {
+                const uint32_t average_cycles = ( uint32_t )( measurement_timing.total_cycles
+                                                              / measurement_timing.sample_count );
+                CONSOLE_Printf(
+                    "Measurement timing: %s samples=%lu avg=%lu cycles max=%lu cycles\r\n",
+                    CONSOLE_RunStateManager_MeasurementName(
+                        ( ExecutionMeasurementType_T )measurement ),
+                    ( unsigned long )measurement_timing.sample_count,
+                    ( unsigned long )average_cycles,
+                    ( unsigned long )measurement_timing.maximum_cycles );
             }
         }
         const ExecutionManagerFailure_T execution_failure = EXECUTION_MANAGER_GetFailure();
@@ -496,27 +540,6 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                         CONSOLE_RunStateManager_RequestName( run_status.last_request ) );
         CONSOLE_Printf( "Last request result: %s\r\n", CONSOLE_RunStateManager_RequestResultName(
                                                            run_status.last_request_result ) );
-        if ( run_status.request_timing_active )
-        {
-            CONSOLE_Printf( "Pending request timing: %s, %lu ms elapsed\r\n",
-                            CONSOLE_RunStateManager_RequestName( run_status.timed_request ),
-                            ( unsigned long )run_status.timed_request_elapsed_ms );
-        }
-        else
-        {
-            CONSOLE_Printf( "Pending request timing: none\r\n" );
-        }
-        if ( run_status.last_transition_timing_valid )
-        {
-            CONSOLE_Printf(
-                "Last completed transition: %s, %lu ms\r\n",
-                CONSOLE_RunStateManager_RequestName( run_status.last_completed_request ),
-                ( unsigned long )run_status.last_transition_duration_ms );
-        }
-        else
-        {
-            CONSOLE_Printf( "Last completed transition: none\r\n" );
-        }
         CONSOLE_Printf( "DUT lifecycle: configured=%s, AI=%u/%u, AO=%u/%u, DI=%u/%u, DO=%u/%u\r\n",
                         driver_status.configuration_valid ? "yes" : "no",
                         ( unsigned int )driver_status.analogue_input_started,

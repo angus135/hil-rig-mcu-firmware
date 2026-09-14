@@ -89,8 +89,10 @@
 #include "external_flash.h"
 #include "execution_manager.h"
 #include "execution_operation_payloads.h"
+#include "exec_analogue_input.h"
 #include "exec_analogue_output.h"
 #include "exec_can.h"
+#include "exec_digital_input.h"
 #include "exec_digital_output.h"
 #include "exec_pwm_capture.h"
 #include "exec_spi.h"
@@ -148,13 +150,16 @@
     ( EXECUTION_OPERATION_ENCODED_SIZE_BYTES( EXECUTION_CAN_PACKET_SIZE_BYTES ) )
 #define CONSOLE_FLASH_CAN_TEST_INSTRUCTION_BYTES                                                   \
     ( sizeof( ExecutionInstructionHeader_T ) + CONSOLE_FLASH_CAN_TEST_OPERATION_BYTES )
-#define CONSOLE_FLASH_OUTPUT_STRESS_DEFAULT_SAMPLES ( 100U )
+#define CONSOLE_FLASH_OUTPUT_STRESS_DEFAULT_SAMPLES ( 1000U )
 #define CONSOLE_FLASH_OUTPUT_STRESS_DEFAULT_INTERVAL_TICKS ( 1U )
 #define CONSOLE_FLASH_OUTPUT_STRESS_DRAIN_TICKS ( 10U )
-#define CONSOLE_FLASH_OUTPUT_STRESS_SPI_BYTES ( 128U )
+#define CONSOLE_FLASH_OUTPUT_STRESS_SPI_BYTES ( 256U )
 #define CONSOLE_FLASH_OUTPUT_STRESS_UART_BYTES ( 16U )
 #define CONSOLE_FLASH_OUTPUT_STRESS_OPERATION_COUNT ( 6U )
+#define CONSOLE_FLASH_OUTPUT_STRESS_PWM_FREQ_HZ ( 1000000U )
+#define CONSOLE_FLASH_OUTPUT_STRESS_PWM_DUTY_PERMILLE ( 500U )
 #define CONSOLE_FLASH_OUTPUT_STRESS_UART_BAUD ( 2000000U )
+#define CONSOLE_FLASH_OUTPUT_STRESS_LOGICAL_DI_MASK ( ( 1UL << EXEC_DIGITAL_INPUT_CHANNEL_COUNT ) - 1UL )
 /* Current board clock tree: TIM12 is APB1 x2; TIM8 is APB2 x2. */
 #define CONSOLE_FLASH_PWM_LV_TIMER_CLOCK_HZ ( 90000000U )
 #define CONSOLE_FLASH_PWM_HV_TIMER_CLOCK_HZ ( 180000000U )
@@ -262,10 +267,17 @@ typedef struct
 static uint8_t console_flash_write_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES];
 static uint8_t console_flash_read_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES];
 
-static uint32_t console_flash_last_upload_records = 0U;
-static uint32_t console_flash_last_upload_bytes   = 0U;
-static uint8_t  console_flash_last_upload_seed    = 0U;
-static uint32_t console_flash_run_tick_count      = 0U;
+static uint32_t console_flash_last_upload_records   = 0U;
+static uint32_t console_flash_last_upload_bytes     = 0U;
+static uint8_t  console_flash_last_upload_seed      = 0U;
+static uint32_t console_flash_run_tick_count        = 0U;
+static uint32_t console_flash_stress_sample_count   = 0U;
+static uint32_t console_flash_stress_interval_ticks = 0U;
+
+/** Physical GPIOD bit positions for logical DI channels 1 through 10. */
+static const uint8_t console_flash_stress_di_pin_positions[EXEC_DIGITAL_INPUT_CHANNEL_COUNT] = {
+    8U, 9U, 10U, 11U, 14U, 15U, 0U, 1U, 2U, 3U,
+};
 
 typedef struct
 {
@@ -368,14 +380,16 @@ static bool     CONSOLE_Flash_VerifyPattern( const uint8_t* data, uint32_t strea
 static void     CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32_t stream_offset,
                                                     uint32_t length, uint8_t seed );
 static uint32_t CONSOLE_Flash_Fnv1aUpdate( uint32_t hash, const uint8_t* data, uint32_t length );
-static void CONSOLE_Flash_PrintNandPhaseTiming( const char* label,
-                                                const HW_NAND_PhaseTiming_T* timing );
+static uint32_t CONSOLE_Flash_StressLogicalPattern( uint32_t sample_index );
+static uint32_t CONSOLE_Flash_StressDigitalInputMask( uint32_t logical_pattern );
+static void     CONSOLE_Flash_PrintNandPhaseTiming( const char*                  label,
+                                                    const HW_NAND_PhaseTiming_T* timing );
 #ifndef TEST_BUILD
 static void CONSOLE_Flash_RecordPageTiming( ConsoleFlashPageTiming_T* timing,
-                                             uint32_t                  elapsed_cycles );
+                                            uint32_t                  elapsed_cycles );
 static void CONSOLE_Flash_PrintPageTiming( const char* label, uint32_t operation_count,
-                                            uint32_t bytes_per_operation,
-                                            const ConsoleFlashPageTiming_T* timing );
+                                           uint32_t                        bytes_per_operation,
+                                           const ConsoleFlashPageTiming_T* timing );
 #endif
 
 static void CONSOLE_Flash_StatusCommand( void );
@@ -393,6 +407,7 @@ static void CONSOLE_Flash_UploadSpiTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadUartTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_VerifyUartLoopbackResultsCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_VerifySpiLoopbackResultsCommand( uint16_t argc, char* argv[] );
+static void CONSOLE_Flash_VerifyCanLoopbackResultsCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_PrepareCommand( void );
 static void CONSOLE_Flash_ExecuteEchoCommand( uint16_t argc, char* argv[] );
@@ -401,6 +416,7 @@ static void CONSOLE_Flash_ResultsCommand( bool verify_echo_stream );
 static void CONSOLE_Flash_VerifyDigitalLoopbackResultsCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_VerifyAnalogueLoopbackResultsCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_VerifyPwmLoopbackResultsCommand( uint16_t argc, char* argv[] );
+static void CONSOLE_Flash_VerifyStressResultsCommand( uint16_t argc, char* argv[] );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -435,12 +451,14 @@ static void CONSOLE_Flash_PrintUsage( void )
     CONSOLE_Printf( "  flash execute_echo [100|1000|10000]\r\n" );
     CONSOLE_Printf( "  flash finalise\r\n" );
     CONSOLE_Printf( "  flash results [verify]\r\n" );
+    CONSOLE_Printf( "  flash results verify_stress\r\n" );
     CONSOLE_Printf( "  flash results verify_do_di <delay_ticks> <high_ticks>\r\n" );
     CONSOLE_Printf( "  flash results verify_do_pattern\r\n" );
     CONSOLE_Printf( "  flash results verify_ao_ai <input_channel 0..1>\r\n" );
     CONSOLE_Printf( "  flash results verify_pwm_capture <input_channel 1..2>\r\n" );
     CONSOLE_Printf( "  flash results verify_uart_loopback <channel 1..2> <byte> <length>\r\n" );
     CONSOLE_Printf( "  flash results verify_spi_loopback <channel 1..2> <byte> <length>\r\n" );
+    CONSOLE_Printf( "  flash results verify_can_loopback <channel 1..2> <id> <byte> <dlc>\r\n" );
     CONSOLE_Printf( "Use 'flash status' after every phase. Reset after FAULT.\r\n" );
 }
 
@@ -943,7 +961,27 @@ static uint32_t CONSOLE_Flash_Fnv1aUpdate( uint32_t hash, const uint8_t* data, u
     return hash;
 }
 
-static void CONSOLE_Flash_PrintNandPhaseTiming( const char* label,
+/** Returns the channel-distinguishing logical DO pattern for one stress instruction. */
+static uint32_t CONSOLE_Flash_StressLogicalPattern( uint32_t sample_index )
+{
+    return ( sample_index + 1U ) & CONSOLE_FLASH_OUTPUT_STRESS_LOGICAL_DI_MASK;
+}
+
+/** Translates logical DI channel bits into the raw GPIOD representation stored in results. */
+static uint32_t CONSOLE_Flash_StressDigitalInputMask( uint32_t logical_pattern )
+{
+    uint32_t physical_mask = 0U;
+    for ( uint32_t channel = 0U; channel < EXEC_DIGITAL_INPUT_CHANNEL_COUNT; channel++ )
+    {
+        if ( ( logical_pattern & ( 1UL << channel ) ) != 0U )
+        {
+            physical_mask |= 1UL << console_flash_stress_di_pin_positions[channel];
+        }
+    }
+    return physical_mask;
+}
+
+static void CONSOLE_Flash_PrintNandPhaseTiming( const char*                  label,
                                                 const HW_NAND_PhaseTiming_T* timing )
 {
     const uint32_t average_cycles =
@@ -956,7 +994,7 @@ static void CONSOLE_Flash_PrintNandPhaseTiming( const char* label,
 
 #ifndef TEST_BUILD
 static void CONSOLE_Flash_RecordPageTiming( ConsoleFlashPageTiming_T* timing,
-                                             uint32_t                  elapsed_cycles )
+                                            uint32_t                  elapsed_cycles )
 {
     timing->total_cycles += elapsed_cycles;
     if ( elapsed_cycles < timing->minimum_cycles )
@@ -970,7 +1008,7 @@ static void CONSOLE_Flash_RecordPageTiming( ConsoleFlashPageTiming_T* timing,
 }
 
 static void CONSOLE_Flash_PrintPageTiming( const char* label, uint32_t operation_count,
-                                           uint32_t bytes_per_operation,
+                                           uint32_t                        bytes_per_operation,
                                            const ConsoleFlashPageTiming_T* timing )
 {
     const uint32_t average_cycles =
@@ -1034,8 +1072,7 @@ static void CONSOLE_Flash_StatusCommand( void )
         CONSOLE_Flash_PrintNandPhaseTiming( "read-DMA", &nand_diagnostics.read_cache_dma );
         CONSOLE_Flash_PrintNandPhaseTiming( "program-load-DMA",
                                             &nand_diagnostics.program_load_dma );
-        CONSOLE_Flash_PrintNandPhaseTiming( "program-execute",
-                                            &nand_diagnostics.program_execute );
+        CONSOLE_Flash_PrintNandPhaseTiming( "program-execute", &nand_diagnostics.program_execute );
     }
 
     FlashManagerExecutionDiagnostics_T diagnostics = { 0 };
@@ -1312,11 +1349,10 @@ static void CONSOLE_Flash_ThroughputTestCommand( uint16_t argc, char* argv[] )
         return;
     }
 
-    const uint32_t maximum_pages =
-        ( info.instruction_capacity_bytes < info.result_capacity_bytes
-              ? info.instruction_capacity_bytes
-              : info.result_capacity_bytes )
-        / info.page_size_bytes;
+    const uint32_t maximum_pages = ( info.instruction_capacity_bytes < info.result_capacity_bytes
+                                         ? info.instruction_capacity_bytes
+                                         : info.result_capacity_bytes )
+                                   / info.page_size_bytes;
     if ( page_count > maximum_pages )
     {
         CONSOLE_Printf( "Page count exceeds benchmark capacity (maximum=%lu).\r\n",
@@ -1324,12 +1360,12 @@ static void CONSOLE_Flash_ThroughputTestCommand( uint16_t argc, char* argv[] )
         return;
     }
 
-    const uint32_t total_bytes = page_count * info.page_size_bytes;
-    const uint8_t  instruction_seed = CONSOLE_FLASH_DEFAULT_SEED;
-    const uint8_t  result_seed      = ( uint8_t )( instruction_seed ^ 0xA5U );
-    uint32_t       first_bad_offset = 0U;
-    ConsoleFlashPageTiming_T program_timing = {
-        .total_cycles = 0U, .minimum_cycles = UINT32_MAX, .maximum_cycles = 0U };
+    const uint32_t           total_bytes      = page_count * info.page_size_bytes;
+    const uint8_t            instruction_seed = CONSOLE_FLASH_DEFAULT_SEED;
+    const uint8_t            result_seed      = ( uint8_t )( instruction_seed ^ 0xA5U );
+    uint32_t                 first_bad_offset = 0U;
+    ConsoleFlashPageTiming_T program_timing   = {
+          .total_cycles = 0U, .minimum_cycles = UINT32_MAX, .maximum_cycles = 0U };
     ConsoleFlashPageTiming_T read_timing = {
         .total_cycles = 0U, .minimum_cycles = UINT32_MAX, .maximum_cycles = 0U };
     ConsoleFlashPageTiming_T alternating_read_timing = {
@@ -1411,7 +1447,7 @@ static void CONSOLE_Flash_ThroughputTestCommand( uint16_t argc, char* argv[] )
 
     for ( uint32_t page = 0U; page < page_count; page++ )
     {
-        const uint32_t offset = page * info.page_size_bytes;
+        const uint32_t offset       = page * info.page_size_bytes;
         uint32_t       start_cycles = DWT->CYCCNT;
         status = EXTERNAL_FLASH_ReadInstructionPage( offset, console_flash_read_buffer,
                                                      info.page_size_bytes );
@@ -1431,12 +1467,10 @@ static void CONSOLE_Flash_ThroughputTestCommand( uint16_t argc, char* argv[] )
         CONSOLE_Flash_FillPattern( console_flash_write_buffer, offset, info.page_size_bytes,
                                    result_seed );
         start_cycles = DWT->CYCCNT;
-        status = EXTERNAL_FLASH_WriteResultPage( console_flash_write_buffer,
-                                                 info.page_size_bytes );
+        status = EXTERNAL_FLASH_WriteResultPage( console_flash_write_buffer, info.page_size_bytes );
         const uint32_t program_cycles = DWT->CYCCNT - start_cycles;
         CONSOLE_Flash_RecordPageTiming( &alternating_program_timing, program_cycles );
-        CONSOLE_Flash_RecordPageTiming( &alternating_pair_timing,
-                                        read_cycles + program_cycles );
+        CONSOLE_Flash_RecordPageTiming( &alternating_pair_timing, read_cycles + program_cycles );
         if ( status != EXTERNAL_FLASH_STATUS_OK )
         {
             CONSOLE_Printf( "Alternating program failed at page=%lu status=%d.\r\n",
@@ -1448,8 +1482,8 @@ static void CONSOLE_Flash_ThroughputTestCommand( uint16_t argc, char* argv[] )
     for ( uint32_t page = 0U; page < page_count; page++ )
     {
         const uint32_t offset = page * info.page_size_bytes;
-        status = EXTERNAL_FLASH_ReadResultPage( offset, console_flash_read_buffer,
-                                                info.page_size_bytes );
+        status                = EXTERNAL_FLASH_ReadResultPage( offset, console_flash_read_buffer,
+                                                               info.page_size_bytes );
         if ( ( status != EXTERNAL_FLASH_STATUS_OK )
              || !CONSOLE_Flash_VerifyPattern( console_flash_read_buffer, offset,
                                               info.page_size_bytes, result_seed,
@@ -1469,8 +1503,8 @@ static void CONSOLE_Flash_ThroughputTestCommand( uint16_t argc, char* argv[] )
                                    &alternating_read_timing );
     CONSOLE_Flash_PrintPageTiming( "Alternating program", page_count, info.page_size_bytes,
                                    &alternating_program_timing );
-    CONSOLE_Flash_PrintPageTiming( "Alternating pair", page_count,
-                                   2U * info.page_size_bytes, &alternating_pair_timing );
+    CONSOLE_Flash_PrintPageTiming( "Alternating pair", page_count, 2U * info.page_size_bytes,
+                                   &alternating_pair_timing );
     CONSOLE_Printf( "NAND throughput test PASS: %lu pages verified in each partition.\r\n",
                     ( unsigned long )page_count );
 }
@@ -1611,7 +1645,7 @@ static uint32_t CONSOLE_Flash_EncodeSpiInstruction( uint8_t* destination, uint32
     return ( uint32_t )sizeof( ExecutionInstructionHeader_T ) + operation_bytes;
 }
 
-/** Builds one instruction containing the approved output paths, excluding CAN and SPI 2. */
+/** Builds one instruction containing the approved output paths, excluding CAN and SPI 1. */
 static uint32_t CONSOLE_Flash_EncodeOutputStressInstruction(
     uint8_t* destination, uint32_t timestamp, uint32_t high_bitmask, uint32_t low_bitmask,
     const ExecutionPwmUpdatePayload_T pwm_payloads[EXEC_PWM_GEN_CHANNEL_COUNT] )
@@ -2685,10 +2719,22 @@ static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* ar
         return;
     }
 
-    GPIOOutput_T   high_outputs[] = { DIGITAL_OUTPUT_0 };
-    const uint32_t high_bitmask   = EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks(
-        high_outputs, ( uint8_t )( sizeof( high_outputs ) / sizeof( high_outputs[0] ) ) );
-    const uint32_t low_bitmask = 0U;
+    GPIOOutput_T high_outputs[EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT];
+    uint32_t     output_pin_masks[EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT];
+    for ( uint32_t channel = 0U; channel < EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT; channel++ )
+    {
+        high_outputs[channel] = ( GPIOOutput_T )( DIGITAL_OUTPUT_0 + channel );
+        output_pin_masks[channel] = EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks(
+            &high_outputs[channel], 1U );
+        if ( output_pin_masks[channel] == 0U )
+        {
+            CONSOLE_Printf( "Output stress DO%lu mapping failed.\r\n",
+                            ( unsigned long )( channel + 1U ) );
+            return;
+        }
+    }
+    const uint32_t all_output_mask = EXEC_DIGITAL_OUTPUT_Combine_Port_Pin_Masks(
+        high_outputs, ( uint8_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT );
 
     ExecutionPwmUpdatePayload_T pwm_payloads[EXEC_PWM_GEN_CHANNEL_COUNT] = { 0 };
     const uint32_t              pwm_clocks[EXEC_PWM_GEN_CHANNEL_COUNT]   = {
@@ -2697,11 +2743,13 @@ static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* ar
     };
     for ( uint32_t channel = 0U; channel < EXEC_PWM_GEN_CHANNEL_COUNT; channel++ )
     {
-        if ( !HW_PWM_GEN_compute_psc( 1000U, pwm_clocks[channel], &pwm_payloads[channel].psc )
-             || !HW_PWM_GEN_compute_arr( 1000U, pwm_clocks[channel], pwm_payloads[channel].psc,
+        if ( !HW_PWM_GEN_compute_psc( CONSOLE_FLASH_OUTPUT_STRESS_PWM_FREQ_HZ, pwm_clocks[channel],
+                                      &pwm_payloads[channel].psc )
+             || !HW_PWM_GEN_compute_arr( CONSOLE_FLASH_OUTPUT_STRESS_PWM_FREQ_HZ,
+                                         pwm_clocks[channel], pwm_payloads[channel].psc,
                                          &pwm_payloads[channel].arr )
-             || !HW_PWM_GEN_compute_ccr( 500U, pwm_payloads[channel].arr,
-                                         &pwm_payloads[channel].ccr ) )
+             || !HW_PWM_GEN_compute_ccr( CONSOLE_FLASH_OUTPUT_STRESS_PWM_DUTY_PERMILLE,
+                                         pwm_payloads[channel].arr, &pwm_payloads[channel].ccr ) )
         {
             CONSOLE_Printf( "Output stress PWM preparation failed.\r\n" );
             return;
@@ -2709,12 +2757,28 @@ static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* ar
     }
 
     DutDriverConfiguration_T configuration = { 0 };
-    configuration.digital_outputs.channels[EXEC_DIGITAL_OUTPUT_CHANNEL_1] =
-        ( ExecDigitalOutputChannelConfig_T ){
+    for ( uint32_t channel = 0U; channel < EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT; channel++ )
+    {
+        configuration.digital_outputs.channels[channel] = ( ExecDigitalOutputChannelConfig_T ){
             .is_enabled   = true,
             .mode         = EXEC_DIGITAL_OUTPUT_MODE_3V3,
             .initial_high = false,
         };
+    }
+    for ( uint32_t channel = 0U; channel < EXEC_DIGITAL_INPUT_CHANNEL_COUNT; channel++ )
+    {
+        configuration.digital_inputs.channels[channel] = EXEC_DIGITAL_INPUT_MODE_3V3;
+    }
+    configuration.analogue_output = ( ExecAnalogueOutputConfig_T ){
+        .is_enabled        = false,
+        .use_external_vref = false,
+    };
+    configuration.analogue_input = ( ExecAnalogueInputConfig_T ){
+        .is_enabled      = true,
+        .sample_rate     = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_10K_HZ,
+        .ch_0_is_enabled = true,
+        .ch_1_is_enabled = true,
+    };
     for ( uint32_t channel = 0U; channel < EXEC_PWM_GEN_CHANNEL_COUNT; channel++ )
     {
         configuration.pwm_generation_channels[channel] = ( ExecPwmGenConfig_T ){
@@ -2726,6 +2790,17 @@ static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* ar
             .initial_psc   = pwm_payloads[channel].psc,
         };
     }
+    configuration.pwm_capture_channels[EXEC_PWM_CAPTURE_CHANNEL_1] = ( ExecPwmCaptureConfig_T ){
+        .is_enabled = true,
+        .mode       = EXEC_PWM_CAPTURE_LV_3V3,
+    };
+    configuration.pwm_capture_channels[EXEC_PWM_CAPTURE_CHANNEL_2] = ( ExecPwmCaptureConfig_T ){
+        .is_enabled = true,
+        .mode       = EXEC_PWM_CAPTURE_HV_12V,
+    };
+    configuration.spi_channels[EXEC_SPI_CHANNEL_1] = ( ExecSPIConfig_T ){
+        .is_enabled = false,
+    };
     configuration.spi_channels[EXEC_SPI_CHANNEL_2] = ( ExecSPIConfig_T ){
         .is_enabled = true,
         .spi_mode   = EXEC_SPI_MASTER_MODE,
@@ -2743,9 +2818,15 @@ static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* ar
             .word_length    = HW_UART_WORD_LENGTH_8_BITS,
             .stop_bits      = HW_UART_STOP_BITS_1,
             .parity         = HW_UART_PARITY_NONE,
-            .rx_enabled     = false,
+            .rx_enabled     = true,
             .tx_enabled     = true,
             .is_enabled     = true,
+        };
+    }
+    for ( uint32_t channel = 0U; channel < EXEC_CAN_CHANNEL_COUNT; channel++ )
+    {
+        configuration.can_channels[channel] = ( EXEC_CAN_Config_T ){
+            .is_enabled = false,
         };
     }
 
@@ -2756,7 +2837,7 @@ static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* ar
     }
 
     const uint32_t instruction_bytes = CONSOLE_Flash_EncodeOutputStressInstruction(
-        console_flash_write_buffer, 1U, high_bitmask, low_bitmask, pwm_payloads );
+        console_flash_write_buffer, 1U, 0U, all_output_mask, pwm_payloads );
     if ( instruction_bytes > sizeof( console_flash_write_buffer )
          || sample_count > ( UINT32_MAX / instruction_bytes ) )
     {
@@ -2777,6 +2858,24 @@ static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* ar
 
     for ( uint32_t sample = 0U; sample < sample_count; sample++ )
     {
+        const uint32_t logical_pattern = CONSOLE_Flash_StressLogicalPattern( sample );
+        uint32_t       high_bitmask    = 0U;
+        for ( uint32_t channel = 0U; channel < EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT; channel++ )
+        {
+            if ( ( logical_pattern & ( 1UL << channel ) ) != 0U )
+            {
+                high_bitmask |= output_pin_masks[channel];
+            }
+        }
+        CONSOLE_Flash_WriteU32Le(
+            &console_flash_write_buffer[sizeof( ExecutionInstructionHeader_T )
+                                        + EXECUTION_OPERATION_HEADER_SIZE_BYTES],
+            high_bitmask );
+        CONSOLE_Flash_WriteU32Le(
+            &console_flash_write_buffer[sizeof( ExecutionInstructionHeader_T )
+                                        + EXECUTION_OPERATION_HEADER_SIZE_BYTES
+                                        + sizeof( uint32_t )],
+            all_output_mask & ~high_bitmask );
         CONSOLE_Flash_WriteU32Le( console_flash_write_buffer, 1U + ( sample * interval_ticks ) );
         TickType_t progress_started_at = xTaskGetTickCount();
         for ( ;; )
@@ -2825,20 +2924,30 @@ static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* ar
 
     console_flash_last_upload_records = sample_count;
     console_flash_last_upload_bytes   = upload_bytes;
+    console_flash_stress_sample_count = sample_count;
+    console_flash_stress_interval_ticks = interval_ticks;
     console_flash_run_tick_count =
         1U + ( ( sample_count - 1U ) * interval_ticks ) + CONSOLE_FLASH_OUTPUT_STRESS_DRAIN_TICKS;
     CONSOLE_Flash_ResetExecutionHarnessState();
     EXECUTION_MANAGER_RequestOperationTiming();
 
-    CONSOLE_Printf(
-        "Output stress upload PASS: samples=%lu interval=%lu ticks instruction=%lu bytes "
-        "run_ticks=%lu.\r\n",
-        ( unsigned long )sample_count, ( unsigned long )interval_ticks,
-        ( unsigned long )instruction_bytes, ( unsigned long )console_flash_run_tick_count );
-    CONSOLE_Printf( "Paths: DO1, PWM LV/HV, UART1/2, SPI2.\r\n" );
-    CONSOLE_Printf( "Next: 'run_state receive', 'run_state configure', "
-                    "'run_state frequency 10000', then 'run_state execute %lu 0'.\r\n",
+    CONSOLE_Printf( "Stress test upload PASS: samples=%lu interval=%lu ticks instruction=%lu bytes "
+                    "run_ticks=%lu.\r\n",
+                    ( unsigned long )sample_count, ( unsigned long )interval_ticks,
+                    ( unsigned long )instruction_bytes,
                     ( unsigned long )console_flash_run_tick_count );
+    CONSOLE_Printf( "Active paths: DO 1..10 (3.3V) -> DI 1..10 (3.3V)\r\n" );
+    CONSOLE_Printf( "              AI (10kHz DMA dual-ch)\r\n" );
+    CONSOLE_Printf( "              PWM Gen LV (1MHz 50%%) -> PWM Cap LV (3.3V)\r\n" );
+    CONSOLE_Printf( "              PWM Gen HV (1MHz 50%%) -> PWM Cap HV (12V)\r\n" );
+    CONSOLE_Printf( "              UART1 (2Mbps TX+RX loopback, 16B/tick 0x55)\r\n" );
+    CONSOLE_Printf( "              UART2 (2Mbps TX+RX loopback, 16B/tick 0xAA)\r\n" );
+    CONSOLE_Printf( "              SPI2 (45Mbps TX+RX loopback, 256B/tick 0xA5)\r\n" );
+    CONSOLE_Printf( "Excluded:     AO, CAN 1/2, SPI CH1 (pending driver fixes).\r\n" );
+    CONSOLE_Printf( "Next: 'run_state receive', 'run_state configure', "
+                    "'run_state frequency 100', then 'run_state execute %lu'.\r\n",
+                    ( unsigned long )console_flash_run_tick_count );
+    CONSOLE_Printf( "Verify: 'flash results verify_stress' and 'execution status'.\r\n" );
 }
 
 /** Uploads a deterministic framing-compatible instruction stream through Flash Manager. */
@@ -3620,17 +3729,18 @@ static void CONSOLE_Flash_VerifyAnalogueLoopbackResultsCommand( uint16_t argc, c
 }
 
 /** Retrieves sparse byte-stream records and verifies a repeated-byte loopback. */
-static void CONSOLE_Flash_VerifyByteStreamLoopbackResults(
-    uint16_t argc, char* argv[], uint8_t expected_peripheral_type, uint32_t channel_count,
-    const char* peripheral_name )
+static void CONSOLE_Flash_VerifyByteStreamLoopbackResults( uint16_t argc, char* argv[],
+                                                           uint8_t     expected_peripheral_type,
+                                                           uint32_t    channel_count,
+                                                           const char* peripheral_name )
 {
     uint32_t channel = 0U;
     uint32_t value   = 0U;
     uint32_t length  = 0U;
     if ( argc != 6U || !CONSOLE_Flash_ParseU32( argv[3], &channel )
          || !CONSOLE_Flash_ParseU32( argv[4], &value )
-         || !CONSOLE_Flash_ParseU32( argv[5], &length ) || channel < 1U
-         || channel > channel_count || value > UINT8_MAX || length == 0U )
+         || !CONSOLE_Flash_ParseU32( argv[5], &length ) || channel < 1U || channel > channel_count
+         || value > UINT8_MAX || length == 0U )
     {
         CONSOLE_Printf( "Usage: flash results verify_<uart|spi>_loopback <channel 1..%lu> "
                         "<byte 0..255> <length>\r\n",
@@ -3729,8 +3839,8 @@ static void CONSOLE_Flash_VerifyByteStreamLoopbackResults(
         {
             if ( CONSOLE_Flash_HasTimedOut( last_progress_at, CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
             {
-                CONSOLE_Printf( "%s result retrieval timeout after %lu bytes.\r\n",
-                                peripheral_name, ( unsigned long )received_bytes );
+                CONSOLE_Printf( "%s result retrieval timeout after %lu bytes.\r\n", peripheral_name,
+                                ( unsigned long )received_bytes );
                 return;
             }
             vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
@@ -3757,9 +3867,8 @@ static void CONSOLE_Flash_VerifyByteStreamLoopbackResults(
     if ( passed )
     {
         CONSOLE_Printf( "%s loopback PASS: channel=%lu records=%lu bytes=%lu byte=0x%02lX.\r\n",
-                        peripheral_name, ( unsigned long )channel,
-                        ( unsigned long )record_count, ( unsigned long )received_bytes,
-                        ( unsigned long )value );
+                        peripheral_name, ( unsigned long )channel, ( unsigned long )record_count,
+                        ( unsigned long )received_bytes, ( unsigned long )value );
     }
     else
     {
@@ -3768,8 +3877,8 @@ static void CONSOLE_Flash_VerifyByteStreamLoopbackResults(
                         ( unsigned long )received_bytes, ( unsigned long )expected_bytes );
         if ( mismatch_recorded )
         {
-            CONSOLE_Printf( " first_mismatch=%lu actual=0x%02X",
-                            ( unsigned long )mismatch_offset, ( unsigned int )mismatch_actual );
+            CONSOLE_Printf( " first_mismatch=%lu actual=0x%02X", ( unsigned long )mismatch_offset,
+                            ( unsigned int )mismatch_actual );
         }
         CONSOLE_Printf( ".\r\n" );
     }
@@ -3785,6 +3894,558 @@ static void CONSOLE_Flash_VerifySpiLoopbackResultsCommand( uint16_t argc, char* 
 {
     CONSOLE_Flash_VerifyByteStreamLoopbackResults(
         argc, argv, FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE, EXEC_SPI_CHANNEL_COUNT, "SPI" );
+}
+
+/** Retrieves CAN result records and verifies the expected loopback frame. */
+static void CONSOLE_Flash_VerifyCanLoopbackResultsCommand( uint16_t argc, char* argv[] )
+{
+    uint32_t channel    = 0U;
+    uint32_t identifier = 0U;
+    uint32_t value      = 0U;
+    uint32_t dlc        = 0U;
+    if ( argc != 7U || !CONSOLE_Flash_ParseU32( argv[3], &channel )
+         || !CONSOLE_Flash_ParseU32( argv[4], &identifier )
+         || !CONSOLE_Flash_ParseU32( argv[5], &value ) || !CONSOLE_Flash_ParseU32( argv[6], &dlc )
+         || channel == 0U || channel > EXEC_CAN_CHANNEL_COUNT
+         || identifier > EXEC_CAN_STANDARD_ID_MAX || value > UINT8_MAX
+         || dlc > EXEC_CAN_MAX_PAYLOAD_SIZE )
+    {
+        CONSOLE_Printf( "Usage: flash results verify_can_loopback <channel 1..2> <id> "
+                        "<byte 0..255> <dlc 0..8>\r\n" );
+        return;
+    }
+
+    if ( !RUN_STATE_MANAGER_RequestResultTransfer()
+         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_RESULT_TRANSFER,
+                                            CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "RSM result transfer start failed.\r\n" );
+        return;
+    }
+
+    FlashManagerResultTransferStatus_T status = FLASH_MANAGER_RESULT_TRANSFER_OK;
+    uint8_t                            header_bytes[sizeof( FlashManagerResultHeader_T )] = { 0 };
+    uint32_t                           header_fill                                        = 0U;
+    uint32_t                           payload_remaining                                  = 0U;
+    uint32_t                           records                                            = 0U;
+    uint32_t                           frames                                             = 0U;
+    uint8_t                            packet_bytes[sizeof( EXEC_CAN_Packet_T )]          = { 0 };
+    uint32_t                           packet_fill                                        = 0U;
+    bool                               valid                                              = true;
+    TickType_t                         last_progress_at = xTaskGetTickCount();
+
+    for ( ;; )
+    {
+        uint32_t bytes_read = 0U;
+        status              = FLASH_MANAGER_ReadResultBytes( console_flash_read_buffer,
+                                                             CONSOLE_FLASH_RESULT_READ_BYTES, &bytes_read );
+        if ( status == FLASH_MANAGER_RESULT_TRANSFER_BUSY )
+        {
+            if ( CONSOLE_Flash_HasTimedOut( last_progress_at, CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            {
+                CONSOLE_Printf( "CAN result retrieval timeout.\r\n" );
+                return;
+            }
+            vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+            continue;
+        }
+        if ( status == FLASH_MANAGER_RESULT_TRANSFER_END_OF_STREAM )
+        {
+            break;
+        }
+        if ( status != FLASH_MANAGER_RESULT_TRANSFER_OK )
+        {
+            CONSOLE_Printf( "CAN result retrieval failed (status=%d).\r\n", ( int )status );
+            return;
+        }
+        last_progress_at = xTaskGetTickCount();
+
+        uint32_t offset = 0U;
+        while ( offset < bytes_read )
+        {
+            if ( header_fill < sizeof( header_bytes ) )
+            {
+                const uint32_t copy = ( bytes_read - offset < sizeof( header_bytes ) - header_fill )
+                                          ? bytes_read - offset
+                                          : sizeof( header_bytes ) - header_fill;
+                ( void )memcpy( &header_bytes[header_fill], &console_flash_read_buffer[offset],
+                                copy );
+                header_fill += copy;
+                offset += copy;
+                if ( header_fill == sizeof( header_bytes ) )
+                {
+                    FlashManagerResultHeader_T header = { 0 };
+                    ( void )memcpy( &header, header_bytes, sizeof( header ) );
+                    valid = valid
+                            && header.peripheral_type == FLASH_MANAGER_RESULT_PERIPHERAL_CAN_RECEIVE
+                            && header.channel == ( uint8_t )( channel - 1U )
+                            && header.payload_length_bytes > 0U
+                            && ( header.payload_length_bytes % sizeof( EXEC_CAN_Packet_T ) ) == 0U;
+                    payload_remaining = header.payload_length_bytes;
+                    records++;
+                }
+                continue;
+            }
+
+            const uint32_t copy = ( bytes_read - offset < payload_remaining ) ? bytes_read - offset
+                                                                              : payload_remaining;
+            for ( uint32_t index = 0U; index < copy; index++ )
+            {
+                packet_bytes[packet_fill++] = console_flash_read_buffer[offset + index];
+                if ( packet_fill == sizeof( EXEC_CAN_Packet_T ) )
+                {
+                    EXEC_CAN_Packet_T packet = { 0 };
+                    ( void )memcpy( &packet, packet_bytes, sizeof( packet ) );
+                    valid = valid && packet.id == identifier && packet.dlc == dlc;
+                    for ( uint32_t byte = 0U; byte < dlc; byte++ )
+                    {
+                        valid = valid && packet.data[byte] == value;
+                    }
+                    packet_fill = 0U;
+                    frames++;
+                }
+            }
+            payload_remaining -= copy;
+            offset += copy;
+            if ( payload_remaining == 0U )
+            {
+                header_fill = 0U;
+                packet_fill = 0U;
+            }
+        }
+    }
+
+    const bool passed =
+        valid && records > 0U && frames > 0U && payload_remaining == 0U && packet_fill == 0U;
+    const bool transfer_complete =
+        RUN_STATE_MANAGER_RequestResultTransferComplete()
+        && CONSOLE_Flash_WaitForRunState( RUN_STATE_ARMED, CONSOLE_FLASH_STATE_TIMEOUT_MS );
+    if ( !transfer_complete )
+    {
+        CONSOLE_Printf( "RSM result transfer completion failed.\r\n" );
+        return;
+    }
+    CONSOLE_Printf( "CAN loopback %s: channel=%lu records=%lu frames=%lu id=0x%03lX "
+                    "byte=0x%02lX dlc=%lu.\r\n",
+                    passed ? "PASS" : "FAIL", ( unsigned long )channel, ( unsigned long )records,
+                    ( unsigned long )frames, ( unsigned long )identifier, ( unsigned long )value,
+                    ( unsigned long )dlc );
+}
+
+/** Retrieves and validates multi-peripheral loopback results from the stress test run. */
+static void CONSOLE_Flash_VerifyStressResultsCommand( uint16_t argc, char* argv[] )
+{
+    ( void )argv;
+    if ( argc != 3U )
+    {
+        CONSOLE_Printf( "Usage: flash results verify_stress\r\n" );
+        return;
+    }
+
+    if ( !RUN_STATE_MANAGER_RequestResultTransfer()
+         || !CONSOLE_Flash_WaitForRunState( RUN_STATE_RESULT_TRANSFER,
+                                            CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
+    {
+        CONSOLE_Printf( "RSM result transfer start failed.\r\n" );
+        return;
+    }
+
+    FlashManagerResultTransferStatus_T status = FLASH_MANAGER_RESULT_TRANSFER_OK;
+    uint8_t                            header_bytes[sizeof( FlashManagerResultHeader_T )] = { 0 };
+    uint32_t                           header_fill                                        = 0U;
+    FlashManagerResultHeader_T         header                                             = { 0 };
+    uint32_t                           payload_remaining                                  = 0U;
+    uint32_t                           payload_offset                                     = 0U;
+    uint8_t                            payload_scratch[8]                                 = { 0 };
+    uint32_t                           payload_scratch_fill                               = 0U;
+
+    uint32_t total_records      = 0U;
+    uint32_t total_result_bytes = 0U;
+
+    /* DI tracking */
+    uint32_t di_record_count           = 0U;
+    uint32_t last_di_sample            = 0U;
+    uint32_t di_mismatch_count         = 0U;
+    uint32_t di_channel_mismatches[EXEC_DIGITAL_INPUT_CHANNEL_COUNT] = { 0U };
+    uint32_t di_first_mismatch_tick    = 0U;
+    uint8_t  di_first_mismatch_channel = 0U;
+    bool     di_first_expected_high   = false;
+    bool     di_first_actual_high     = false;
+
+    /* AI tracking */
+    uint32_t ai_record_count = 0U;
+    uint32_t last_ai_ch0     = 0U;
+    uint32_t last_ai_ch1     = 0U;
+
+    /* PWM capture tracking */
+    uint32_t pwm_lv_records     = 0U;
+    uint32_t pwm_hv_records     = 0U;
+    uint32_t last_pwm_lv_period = 0U;
+    uint32_t last_pwm_lv_high   = 0U;
+    uint32_t last_pwm_hv_period = 0U;
+    uint32_t last_pwm_hv_high   = 0U;
+
+    /* UART tracking */
+    uint32_t uart1_bytes       = 0U;
+    uint32_t uart2_bytes       = 0U;
+    bool     uart_mismatch     = false;
+    uint8_t  uart_bad_channel  = 0U;
+    uint8_t  uart_bad_expected = 0U;
+    uint8_t  uart_bad_actual   = 0U;
+
+    /* SPI tracking */
+    uint32_t spi2_bytes     = 0U;
+    bool     spi_mismatch   = false;
+    uint8_t  spi_bad_actual = 0U;
+
+    /* Unexpected peripheral records */
+    uint32_t unexpected_records = 0U;
+    bool     structure_valid    = true;
+
+    TickType_t last_progress_at = xTaskGetTickCount();
+
+    for ( ;; )
+    {
+        uint32_t bytes_read = 0U;
+        status              = FLASH_MANAGER_ReadResultBytes( console_flash_read_buffer,
+                                                             CONSOLE_FLASH_RESULT_READ_BYTES, &bytes_read );
+        if ( status == FLASH_MANAGER_RESULT_TRANSFER_OK )
+        {
+            last_progress_at = xTaskGetTickCount();
+            uint32_t offset  = 0U;
+            while ( offset < bytes_read )
+            {
+                if ( header_fill < sizeof( header_bytes ) )
+                {
+                    const uint32_t copy =
+                        ( bytes_read - offset < sizeof( header_bytes ) - header_fill )
+                            ? bytes_read - offset
+                            : sizeof( header_bytes ) - header_fill;
+                    ( void )memcpy( &header_bytes[header_fill], &console_flash_read_buffer[offset],
+                                    copy );
+                    header_fill += copy;
+                    offset += copy;
+                    total_result_bytes += copy;
+                    if ( header_fill == sizeof( header_bytes ) )
+                    {
+                        ( void )memcpy( &header, header_bytes, sizeof( header ) );
+                        payload_remaining    = header.payload_length_bytes;
+                        payload_offset       = 0U;
+                        payload_scratch_fill = 0U;
+                        total_records++;
+                    }
+                    continue;
+                }
+
+                const uint32_t copy = ( bytes_read - offset < payload_remaining )
+                                          ? bytes_read - offset
+                                          : payload_remaining;
+
+                switch ( header.peripheral_type )
+                {
+                    case FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT: {
+                        if ( header.payload_length_bytes != sizeof( uint32_t ) )
+                        {
+                            structure_valid = false;
+                        }
+                        const uint32_t sc =
+                            ( copy < sizeof( payload_scratch ) - payload_scratch_fill )
+                                ? copy
+                                : sizeof( payload_scratch ) - payload_scratch_fill;
+                        ( void )memcpy( &payload_scratch[payload_scratch_fill],
+                                        &console_flash_read_buffer[offset], sc );
+                        payload_scratch_fill += sc;
+                        break;
+                    }
+
+                    case FLASH_MANAGER_RESULT_PERIPHERAL_ANALOGUE_INPUT: {
+                        if ( header.payload_length_bytes != ( 2U * sizeof( uint32_t ) ) )
+                        {
+                            structure_valid = false;
+                        }
+                        const uint32_t sc =
+                            ( copy < sizeof( payload_scratch ) - payload_scratch_fill )
+                                ? copy
+                                : sizeof( payload_scratch ) - payload_scratch_fill;
+                        ( void )memcpy( &payload_scratch[payload_scratch_fill],
+                                        &console_flash_read_buffer[offset], sc );
+                        payload_scratch_fill += sc;
+                        break;
+                    }
+
+                    case FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE: {
+                        if ( header.payload_length_bytes != ( 2U * sizeof( uint32_t ) ) )
+                        {
+                            structure_valid = false;
+                        }
+                        const uint32_t sc =
+                            ( copy < sizeof( payload_scratch ) - payload_scratch_fill )
+                                ? copy
+                                : sizeof( payload_scratch ) - payload_scratch_fill;
+                        ( void )memcpy( &payload_scratch[payload_scratch_fill],
+                                        &console_flash_read_buffer[offset], sc );
+                        payload_scratch_fill += sc;
+                        break;
+                    }
+
+                    case FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE: {
+                        const uint8_t expected =
+                            ( header.channel == ( uint8_t )EXEC_UART_CHANNEL_1 ) ? 0x55U : 0xAAU;
+                        if ( header.channel == ( uint8_t )EXEC_UART_CHANNEL_1 )
+                        {
+                            uart1_bytes += copy;
+                        }
+                        else if ( header.channel == ( uint8_t )EXEC_UART_CHANNEL_2 )
+                        {
+                            uart2_bytes += copy;
+                        }
+                        else
+                        {
+                            structure_valid = false;
+                        }
+
+                        for ( uint32_t i = 0U; i < copy; i++ )
+                        {
+                            const uint8_t byte = console_flash_read_buffer[offset + i];
+                            if ( ( byte != expected ) && !uart_mismatch )
+                            {
+                                uart_mismatch     = true;
+                                uart_bad_channel  = header.channel + 1U;
+                                uart_bad_expected = expected;
+                                uart_bad_actual   = byte;
+                            }
+                        }
+                        break;
+                    }
+
+                    case FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE: {
+                        if ( header.channel == ( uint8_t )EXEC_SPI_CHANNEL_2 )
+                        {
+                            spi2_bytes += copy;
+                        }
+                        else
+                        {
+                            structure_valid = false;
+                        }
+
+                        for ( uint32_t i = 0U; i < copy; i++ )
+                        {
+                            const uint8_t byte = console_flash_read_buffer[offset + i];
+                            if ( ( byte != 0xA5U ) && !spi_mismatch )
+                            {
+                                spi_mismatch   = true;
+                                spi_bad_actual = byte;
+                            }
+                        }
+                        break;
+                    }
+
+                    default:
+                        unexpected_records++;
+                        structure_valid = false;
+                        break;
+                }
+
+                payload_offset += copy;
+                payload_remaining -= copy;
+                total_result_bytes += copy;
+                offset += copy;
+
+                if ( payload_remaining == 0U )
+                {
+                    if ( header.peripheral_type == FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT )
+                    {
+                        di_record_count++;
+                        if ( payload_scratch_fill >= sizeof( uint32_t ) )
+                        {
+                            ( void )memcpy( &last_di_sample, payload_scratch, sizeof( uint32_t ) );
+                            uint32_t expected_logical_pattern = 0U;
+                            if ( header.timestamp > 1U && console_flash_stress_sample_count > 0U
+                                 && console_flash_stress_interval_ticks > 0U )
+                            {
+                                uint32_t sample_index =
+                                    ( header.timestamp - 2U ) / console_flash_stress_interval_ticks;
+                                if ( sample_index >= console_flash_stress_sample_count )
+                                {
+                                    sample_index = console_flash_stress_sample_count - 1U;
+                                }
+                                expected_logical_pattern =
+                                    CONSOLE_Flash_StressLogicalPattern( sample_index );
+                            }
+
+                            const uint32_t expected_sample = CONSOLE_Flash_StressDigitalInputMask(
+                                expected_logical_pattern );
+                            const uint32_t mismatch_bits = last_di_sample ^ expected_sample;
+                            for ( uint32_t channel = 0U;
+                                  channel < EXEC_DIGITAL_INPUT_CHANNEL_COUNT; channel++ )
+                            {
+                                const uint32_t pin_mask =
+                                    1UL << console_flash_stress_di_pin_positions[channel];
+                                if ( ( mismatch_bits & pin_mask ) != 0U )
+                                {
+                                    di_mismatch_count++;
+                                    di_channel_mismatches[channel]++;
+                                    if ( di_first_mismatch_tick == 0U )
+                                    {
+                                        di_first_mismatch_tick    = header.timestamp;
+                                        di_first_mismatch_channel = ( uint8_t )( channel + 1U );
+                                        di_first_expected_high =
+                                            ( expected_sample & pin_mask ) != 0U;
+                                        di_first_actual_high =
+                                            ( last_di_sample & pin_mask ) != 0U;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else if ( header.peripheral_type
+                              == FLASH_MANAGER_RESULT_PERIPHERAL_ANALOGUE_INPUT )
+                    {
+                        ai_record_count++;
+                        if ( payload_scratch_fill >= ( 2U * sizeof( uint32_t ) ) )
+                        {
+                            ( void )memcpy( &last_ai_ch0, payload_scratch, sizeof( uint32_t ) );
+                            ( void )memcpy( &last_ai_ch1, &payload_scratch[sizeof( uint32_t )],
+                                            sizeof( uint32_t ) );
+                        }
+                    }
+                    else if ( header.peripheral_type
+                              == FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE )
+                    {
+                        if ( header.channel == ( uint8_t )EXEC_PWM_CAPTURE_CHANNEL_1 )
+                        {
+                            pwm_lv_records++;
+                            if ( payload_scratch_fill >= ( 2U * sizeof( uint32_t ) ) )
+                            {
+                                ( void )memcpy( &last_pwm_lv_period, payload_scratch,
+                                                sizeof( uint32_t ) );
+                                ( void )memcpy( &last_pwm_lv_high,
+                                                &payload_scratch[sizeof( uint32_t )],
+                                                sizeof( uint32_t ) );
+                            }
+                        }
+                        else if ( header.channel == ( uint8_t )EXEC_PWM_CAPTURE_CHANNEL_2 )
+                        {
+                            pwm_hv_records++;
+                            if ( payload_scratch_fill >= ( 2U * sizeof( uint32_t ) ) )
+                            {
+                                ( void )memcpy( &last_pwm_hv_period, payload_scratch,
+                                                sizeof( uint32_t ) );
+                                ( void )memcpy( &last_pwm_hv_high,
+                                                &payload_scratch[sizeof( uint32_t )],
+                                                sizeof( uint32_t ) );
+                            }
+                        }
+                    }
+
+                    header_fill          = 0U;
+                    payload_scratch_fill = 0U;
+                }
+            }
+            continue;
+        }
+
+        if ( status == FLASH_MANAGER_RESULT_TRANSFER_BUSY )
+        {
+            if ( CONSOLE_Flash_HasTimedOut( last_progress_at, CONSOLE_FLASH_PROGRESS_TIMEOUT_MS ) )
+            {
+                CONSOLE_Printf( "Stress result retrieval timeout after %lu bytes.\r\n",
+                                ( unsigned long )total_result_bytes );
+                return;
+            }
+            vTaskDelay( pdMS_TO_TICKS( CONSOLE_FLASH_POLL_PERIOD_MS ) );
+            continue;
+        }
+
+        if ( status == FLASH_MANAGER_RESULT_TRANSFER_END_OF_STREAM )
+        {
+            break;
+        }
+
+        CONSOLE_Printf( "Stress result retrieval failed (status=%d).\r\n", ( int )status );
+        return;
+    }
+
+    const bool transfer_complete =
+        RUN_STATE_MANAGER_RequestResultTransferComplete()
+        && CONSOLE_Flash_WaitForRunState( RUN_STATE_ARMED, CONSOLE_FLASH_STATE_TIMEOUT_MS );
+    if ( !transfer_complete )
+    {
+        CONSOLE_Printf( "RSM result transfer completion failed.\r\n" );
+        return;
+    }
+
+    const bool framing_ok = ( header_fill == 0U ) && ( payload_remaining == 0U );
+    const bool passed     = framing_ok && structure_valid && ( di_mismatch_count == 0U )
+                        && !uart_mismatch && !spi_mismatch && ( di_record_count > 0U )
+                        && ( ai_record_count > 0U )
+                        && ( uart1_bytes > 0U ) && ( uart2_bytes > 0U ) && ( spi2_bytes > 0U )
+                        && ( pwm_lv_records > 0U ) && ( pwm_hv_records > 0U );
+
+    CONSOLE_Printf( "================ STRESS TEST VERIFICATION ================\r\n" );
+    CONSOLE_Printf( "Overall Result: %s\r\n", passed ? "PASS" : "FAIL" );
+    CONSOLE_Printf( "Total records:  %lu (%lu bytes transferred)\r\n",
+                    ( unsigned long )total_records, ( unsigned long )total_result_bytes );
+    CONSOLE_Printf( "DO1..10 -> DI1..10: %s (records=%lu, mismatches=%lu, "
+                    "last_sample=0x%08lX)\r\n",
+                    ( di_record_count > 0U && di_mismatch_count == 0U ) ? "PASS" : "FAIL",
+                    ( unsigned long )di_record_count, ( unsigned long )di_mismatch_count,
+                    ( unsigned long )last_di_sample );
+    for ( uint32_t channel = 0U; channel < EXEC_DIGITAL_INPUT_CHANNEL_COUNT; channel++ )
+    {
+        CONSOLE_Printf( "  DO%lu -> DI%lu: %s (mismatches=%lu/%lu)\r\n",
+                        ( unsigned long )( channel + 1U ), ( unsigned long )( channel + 1U ),
+                        ( di_record_count > 0U && di_channel_mismatches[channel] == 0U ) ? "PASS"
+                                                                                       : "FAIL",
+                        ( unsigned long )di_channel_mismatches[channel],
+                        ( unsigned long )di_record_count );
+    }
+    if ( di_first_mismatch_tick != 0U )
+    {
+        CONSOLE_Printf( "DI first mismatch: tick=%lu channel=%u expected=%s actual=%s\r\n",
+                        ( unsigned long )di_first_mismatch_tick, di_first_mismatch_channel,
+                        di_first_expected_high ? "HIGH" : "LOW",
+                        di_first_actual_high ? "HIGH" : "LOW" );
+    }
+    CONSOLE_Printf(
+        "AI (dual DMA):    COLLECTED, NOT VERIFIED (records=%lu, last ch0=%lu, ch1=%lu counts)\r\n",
+        ( unsigned long )ai_record_count, ( unsigned long )last_ai_ch0,
+        ( unsigned long )last_ai_ch1 );
+    CONSOLE_Printf( "PWM LV (1MHz/50%%): %s (records=%lu, period=%lu, high=%lu ticks)\r\n",
+                    ( pwm_lv_records > 0U ) ? "PASS" : "FAIL", ( unsigned long )pwm_lv_records,
+                    ( unsigned long )last_pwm_lv_period, ( unsigned long )last_pwm_lv_high );
+    CONSOLE_Printf( "PWM HV (1MHz/50%%): %s (records=%lu, period=%lu, high=%lu ticks)\r\n",
+                    ( pwm_hv_records > 0U ) ? "PASS" : "FAIL", ( unsigned long )pwm_hv_records,
+                    ( unsigned long )last_pwm_hv_period, ( unsigned long )last_pwm_hv_high );
+    CONSOLE_Printf( "UART1 (2Mbit/s):  %s (%lu bytes received, pattern=0x55)\r\n",
+                    ( uart1_bytes > 0U && !uart_mismatch ) ? "PASS" : "FAIL",
+                    ( unsigned long )uart1_bytes );
+    CONSOLE_Printf( "UART2 (2Mbit/s):  %s (%lu bytes received, pattern=0xAA)\r\n",
+                    ( uart2_bytes > 0U && !uart_mismatch ) ? "PASS" : "FAIL",
+                    ( unsigned long )uart2_bytes );
+    CONSOLE_Printf( "SPI2 (45Mbit/s):  %s (%lu bytes received, pattern=0xA5)\r\n",
+                    ( spi2_bytes > 0U && !spi_mismatch ) ? "PASS" : "FAIL",
+                    ( unsigned long )spi2_bytes );
+    if ( uart_mismatch )
+    {
+        CONSOLE_Printf( "UART data mismatch on CH%u: expected 0x%02X, got 0x%02X\r\n",
+                        uart_bad_channel, uart_bad_expected, uart_bad_actual );
+    }
+    if ( spi_mismatch )
+    {
+        CONSOLE_Printf( "SPI data mismatch on SPI2: expected 0xA5, got 0x%02X\r\n",
+                        spi_bad_actual );
+    }
+    if ( unexpected_records > 0U )
+    {
+        CONSOLE_Printf( "Unexpected peripheral records: %lu\r\n",
+                        ( unsigned long )unexpected_records );
+    }
+    if ( !framing_ok )
+    {
+        CONSOLE_Printf( "Framing error: stream ended with partial record.\r\n" );
+    }
+    CONSOLE_Printf( "==========================================================\r\n" );
 }
 
 /** Retrieves sparse PWM capture records and checks the final capture against the uploaded target.
@@ -4105,6 +4766,17 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
             CONSOLE_Flash_VerifySpiLoopbackResultsCommand( argc, argv );
             return;
         }
+        if ( argc == 7U && strcmp( argv[2], "verify_can_loopback" ) == 0 )
+        {
+            CONSOLE_Flash_VerifyCanLoopbackResultsCommand( argc, argv );
+            return;
+        }
+
+        if ( argc == 3U && strcmp( argv[2], "verify_stress" ) == 0 )
+        {
+            CONSOLE_Flash_VerifyStressResultsCommand( argc, argv );
+            return;
+        }
 
         if ( ( argc == 2U ) || ( ( argc == 3U ) && ( strcmp( argv[2], "verify" ) == 0 ) ) )
         {
@@ -4112,12 +4784,12 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
             return;
         }
 
-        CONSOLE_Printf( "Usage: flash results [verify] | "
-                        "verify_do_di <delay_ticks> <high_ticks> | verify_do_pattern | "
-                        "verify_ao_ai <input_channel> | "
-                        "verify_pwm_capture <input_channel> | "
-                        "verify_uart_loopback <channel> <byte> <length> | "
-                        "verify_spi_loopback <channel> <byte> <length>\r\n" );
+        CONSOLE_Printf( "Usage: flash results [verify] | verify_stress\r\n" );
+        CONSOLE_Printf( "  verify_do_di <delay_ticks> <high_ticks> | verify_do_pattern\r\n" );
+        CONSOLE_Printf( "  verify_ao_ai <input_channel> | verify_pwm_capture <input_channel>\r\n" );
+        CONSOLE_Printf( "  verify_uart_loopback <channel> <byte> <length>\r\n" );
+        CONSOLE_Printf( "  verify_spi_loopback <channel> <byte> <length>\r\n" );
+        CONSOLE_Printf( "  verify_can_loopback <channel> <id> <byte> <dlc>\r\n" );
         return;
     }
 

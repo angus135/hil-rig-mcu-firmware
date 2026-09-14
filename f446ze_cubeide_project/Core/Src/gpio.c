@@ -62,9 +62,6 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOC, LED_R_2_Pin|LED_R_1_Pin|LED_R_0_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(Digital_Input_5_GPIO_Port, Digital_Input_5_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOG, Digital_Output_0_Pin|Digital_Output_1_Pin|Digital_Output_2_Pin|Digital_Output_3_Pin
                           |Digital_Output_4_Pin|Digital_Output_5_Pin|Digital_Output_6_Pin|Digital_Output_7_Pin
                           |Digital_Output_8_Pin|Digital_Output_9_Pin, GPIO_PIN_SET);
@@ -95,21 +92,14 @@ void MX_GPIO_Init(void)
   HAL_GPIO_Init(STATUS_5V_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : Digital_Input_0_Pin Digital_Input_1_Pin Digital_Input_2_Pin Digital_Input_3_Pin
-                           Digital_Input_4_Pin Digital_Input_6_Pin Digital_Input_7_Pin Digital_Input_8_Pin
-                           Digital_Input_9_Pin */
+                           Digital_Input_4_Pin Digital_Input_5_Pin Digital_Input_6_Pin Digital_Input_7_Pin
+                           Digital_Input_8_Pin Digital_Input_9_Pin */
   GPIO_InitStruct.Pin = Digital_Input_0_Pin|Digital_Input_1_Pin|Digital_Input_2_Pin|Digital_Input_3_Pin
-                          |Digital_Input_4_Pin|Digital_Input_6_Pin|Digital_Input_7_Pin|Digital_Input_8_Pin
-                          |Digital_Input_9_Pin;
+                          |Digital_Input_4_Pin|Digital_Input_5_Pin|Digital_Input_6_Pin|Digital_Input_7_Pin
+                          |Digital_Input_8_Pin|Digital_Input_9_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : Digital_Input_5_Pin */
-  GPIO_InitStruct.Pin = Digital_Input_5_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(Digital_Input_5_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : Digital_Output_0_Pin Digital_Output_1_Pin Digital_Output_2_Pin Digital_Output_3_Pin
                            Digital_Output_4_Pin Digital_Output_5_Pin Digital_Output_6_Pin Digital_Output_7_Pin
