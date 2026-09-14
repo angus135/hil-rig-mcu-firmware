@@ -372,7 +372,8 @@ static void CONSOLE_RunStateManager_WaitForState( bool accepted, RunState_T expe
                             CONSOLE_RunStateManager_StateName( status.state ) );
             return;
         }
-        if ( status.state == RUN_STATE_FAULT || ( ( TickType_t )( xTaskGetTickCount() - start ) ) >= timeout )
+        if ( status.state == RUN_STATE_FAULT
+             || ( ( TickType_t )( xTaskGetTickCount() - start ) ) >= timeout )
         {
             CONSOLE_Printf( "Run state transition did not reach %s (current=%s).\r\n",
                             CONSOLE_RunStateManager_StateName( expected ),
