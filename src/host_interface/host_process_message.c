@@ -337,8 +337,7 @@ HOST_INTERFACE_process_Test_Configuration( const HIL_Application_Message_T* rece
 HOST_Interface_Status_T
 HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* recent_received_message,
                                           HIL_Application_Message_T*       response_message,
-                                          bool* response_required, uint8_t* data,
-                                          size_t data_size )
+                                          bool* response_required, uint8_t* data, size_t data_size )
 {
     ( void )recent_received_message;
     ( void )response_message;
@@ -381,7 +380,8 @@ HOST_INTERFACE_process_Global_Control( const HIL_Application_Message_T* recent_r
  * @note The host device (Python) never sends Test Results to the firmware; firmware
  *       generates and sends Test Results to Python during the result transfer phase.
  *
- * @todo For OUTBOUND result message production (e.g. in HOST_INTERFACE_Task / result transfer loop):
+ * @todo For OUTBOUND result message production (e.g. in HOST_INTERFACE_Task / result transfer
+ * loop):
  *
  * Pseudocode for result transmission:
  *   HIL_Application_Message_T out_msg;
