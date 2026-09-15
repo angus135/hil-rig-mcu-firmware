@@ -123,4 +123,31 @@ if(HOST_INTERFACE_ENABLE_TESTS AND BUILD_TESTING)
 
     add_test(NAME instruction_message_handler_tests COMMAND instruction_message_handler_tests)
 
+    add_executable(result_message_producer_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_result_message_producer.cpp
+    )
+
+    target_link_libraries(result_message_producer_tests
+        PRIVATE
+            project_warnings
+            global_config
+            cubeide_hal
+            hil_rig_protocol::hil_rig_protocol
+            rtos
+            gtest
+            gtest_main
+            gmock
+    )
+
+    target_include_directories(result_message_producer_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/src/rtos
+            ${CMAKE_SOURCE_DIR}/src/flash_manager
+    )
+
+    add_test(NAME result_message_producer_tests COMMAND result_message_producer_tests)
+
 endif()
