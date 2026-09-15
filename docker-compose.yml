@@ -26,4 +26,5 @@ services:
       bash -lc "
         cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Debug &&
         cmake --build build --parallel &&
-        ctest --test-dir build --parallel $(nproc) --output-on-failure
+        ctest --test-dir build --parallel $$(nproc) --output-on-failure
+      "
