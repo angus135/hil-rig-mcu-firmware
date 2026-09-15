@@ -98,6 +98,7 @@ if(HOST_INTERFACE_ENABLE_TESTS AND BUILD_TESTING)
             cubeide_hal
             hil_rig_protocol::hil_rig_protocol
             rtos
+            execution_manager
             gtest
             gtest_main
             gmock
