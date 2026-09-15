@@ -112,28 +112,26 @@ static bool RESULT_PRODUCER_PeekNextRecord( ResultProducerStream_T*     stream,
 static void RESULT_PRODUCER_ConsumeRecord( ResultProducerStream_T* stream,
                                            uint16_t                payload_length_bytes );
 
-static bool RESULT_PRODUCER_DecodeDigitalInput( const uint8_t*                payload,
-                                                uint16_t                      length,
+static bool RESULT_PRODUCER_DecodeDigitalInput( const uint8_t* payload, uint16_t length,
                                                 HIL_Application_Test_Result_T* result );
 
-static bool RESULT_PRODUCER_DecodeAnalogueInput( const uint8_t*                payload,
-                                                 uint16_t                      length,
+static bool RESULT_PRODUCER_DecodeAnalogueInput( const uint8_t* payload, uint16_t length,
                                                  HIL_Application_Test_Result_T* result );
 
 static bool RESULT_PRODUCER_DecodePwmCapture( uint8_t channel, const uint8_t* payload,
-                                              uint16_t                      length,
+                                              uint16_t                       length,
                                               HIL_Application_Test_Result_T* result );
 
 static bool RESULT_PRODUCER_DecodeUartReceiveStub( uint8_t channel, const uint8_t* payload,
-                                                   uint16_t                      length,
+                                                   uint16_t                       length,
                                                    HIL_Application_Test_Result_T* result );
 
 static bool RESULT_PRODUCER_DecodeSpiReceiveStub( uint8_t channel, const uint8_t* payload,
-                                                  uint16_t                      length,
+                                                  uint16_t                       length,
                                                   HIL_Application_Test_Result_T* result );
 
 static bool RESULT_PRODUCER_DecodeCanReceiveStub( uint8_t channel, const uint8_t* payload,
-                                                  uint16_t                      length,
+                                                  uint16_t                       length,
                                                   HIL_Application_Test_Result_T* result );
 
 static bool RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T* header,
@@ -170,9 +168,8 @@ RESULT_PRODUCER_FetchFromFlash( ResultProducerStream_T* const stream )
     }
 
     uint32_t                                 bytes_read = 0U;
-    const FlashManagerResultTransferStatus_T status =
-        FLASH_MANAGER_ReadResultBytes( stream->buffer + stream->write_offset,
-                                       ( uint32_t )capacity, &bytes_read );
+    const FlashManagerResultTransferStatus_T status     = FLASH_MANAGER_ReadResultBytes(
+        stream->buffer + stream->write_offset, ( uint32_t )capacity, &bytes_read );
 
     if ( ( status == FLASH_MANAGER_RESULT_TRANSFER_OK ) && ( bytes_read > 0U ) )
     {
@@ -223,8 +220,7 @@ static void RESULT_PRODUCER_ConsumeRecord( ResultProducerStream_T* const stream,
 /**
  * @brief Unpacks a digital input 32-bit pinmask into protocol digital input values.
  */
-static bool RESULT_PRODUCER_DecodeDigitalInput( const uint8_t* const                payload,
-                                                const uint16_t                      length,
+static bool RESULT_PRODUCER_DecodeDigitalInput( const uint8_t* const payload, const uint16_t length,
                                                 HIL_Application_Test_Result_T* const result )
 {
     if ( ( payload == NULL ) || ( length != sizeof( uint32_t ) ) )
@@ -246,8 +242,8 @@ static bool RESULT_PRODUCER_DecodeDigitalInput( const uint8_t* const            
 /**
  * @brief Unpacks raw microvolt measurements for analogue input channels 0 and 1.
  */
-static bool RESULT_PRODUCER_DecodeAnalogueInput( const uint8_t* const                payload,
-                                                 const uint16_t                      length,
+static bool RESULT_PRODUCER_DecodeAnalogueInput( const uint8_t* const                 payload,
+                                                 const uint16_t                       length,
                                                  HIL_Application_Test_Result_T* const result )
 {
     if ( ( payload == NULL ) || ( length != ( 2U * sizeof( uint32_t ) ) ) )
@@ -271,7 +267,7 @@ static bool RESULT_PRODUCER_DecodeAnalogueInput( const uint8_t* const           
  * @brief Unpacks timer ticks into physical period nanoseconds and duty cycle permyriad.
  */
 static bool RESULT_PRODUCER_DecodePwmCapture( const uint8_t channel, const uint8_t* const payload,
-                                              const uint16_t                      length,
+                                              const uint16_t                       length,
                                               HIL_Application_Test_Result_T* const result )
 {
     if ( ( payload == NULL ) || ( channel >= HIL_APPLICATION_PWM_INPUT_CHANNEL_COUNT )
@@ -288,7 +284,7 @@ static bool RESULT_PRODUCER_DecodePwmCapture( const uint8_t channel, const uint8
 
     if ( period_ticks == 0U )
     {
-        result->pwm_inputs[channel].period_nanoseconds    = 0U;
+        result->pwm_inputs[channel].period_nanoseconds   = 0U;
         result->pwm_inputs[channel].duty_cycle_permyriad = 0U;
         return true;
     }
@@ -303,7 +299,7 @@ static bool RESULT_PRODUCER_DecodePwmCapture( const uint8_t channel, const uint8
     const uint64_t duty_permyriad =
         ( ( uint64_t )high_ticks * RESULT_PRODUCER_PERMYRIAD_SCALE ) / period_ticks;
 
-    result->pwm_inputs[channel].period_nanoseconds    = ( uint32_t )period_ns;
+    result->pwm_inputs[channel].period_nanoseconds   = ( uint32_t )period_ns;
     result->pwm_inputs[channel].duty_cycle_permyriad = ( uint16_t )duty_permyriad;
 
     return true;
@@ -312,10 +308,10 @@ static bool RESULT_PRODUCER_DecodePwmCapture( const uint8_t channel, const uint8
 /**
  * @brief Placeholder stub for future UART receive result decoding.
  */
-static bool
-RESULT_PRODUCER_DecodeUartReceiveStub( const uint8_t channel, const uint8_t* const payload,
-                                       const uint16_t                      length,
-                                       HIL_Application_Test_Result_T* const result )
+static bool RESULT_PRODUCER_DecodeUartReceiveStub( const uint8_t                        channel,
+                                                   const uint8_t* const                 payload,
+                                                   const uint16_t                       length,
+                                                   HIL_Application_Test_Result_T* const result )
 {
     ( void )channel;
     ( void )payload;
@@ -327,10 +323,10 @@ RESULT_PRODUCER_DecodeUartReceiveStub( const uint8_t channel, const uint8_t* con
 /**
  * @brief Placeholder stub for future SPI receive result decoding.
  */
-static bool
-RESULT_PRODUCER_DecodeSpiReceiveStub( const uint8_t channel, const uint8_t* const payload,
-                                      const uint16_t                      length,
-                                      HIL_Application_Test_Result_T* const result )
+static bool RESULT_PRODUCER_DecodeSpiReceiveStub( const uint8_t                        channel,
+                                                  const uint8_t* const                 payload,
+                                                  const uint16_t                       length,
+                                                  HIL_Application_Test_Result_T* const result )
 {
     ( void )channel;
     ( void )payload;
@@ -342,10 +338,10 @@ RESULT_PRODUCER_DecodeSpiReceiveStub( const uint8_t channel, const uint8_t* cons
 /**
  * @brief Placeholder stub for future CAN receive result decoding.
  */
-static bool
-RESULT_PRODUCER_DecodeCanReceiveStub( const uint8_t channel, const uint8_t* const payload,
-                                      const uint16_t                      length,
-                                      HIL_Application_Test_Result_T* const result )
+static bool RESULT_PRODUCER_DecodeCanReceiveStub( const uint8_t                        channel,
+                                                  const uint8_t* const                 payload,
+                                                  const uint16_t                       length,
+                                                  HIL_Application_Test_Result_T* const result )
 {
     ( void )channel;
     ( void )payload;
