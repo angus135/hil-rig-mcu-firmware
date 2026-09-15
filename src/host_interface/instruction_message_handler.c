@@ -249,7 +249,8 @@ static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_UploadToFlash( const uin
  *
  * Enforces:
  *   - Non-null instruction argument.
- *   - Strictly increasing tick order across the upload sequence (monotonic, non-consecutive allowed).
+ *   - Strictly increasing tick order across the upload sequence (monotonic, non-consecutive
+ * allowed).
  *   - Digital output state values are strictly 0 or 1.
  *   - PWM duty cycle is in the valid 0..10000 permyriad range (0..100%).
  *   - PWM duty cycle is zero when period is zero (disabled output invariant).
