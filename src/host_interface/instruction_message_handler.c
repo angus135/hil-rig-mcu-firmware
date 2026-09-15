@@ -721,6 +721,14 @@ HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_HandleInstruction(
         return HOST_INTERFACE_STATUS_OK;
     }
 
+    // Layer 2: Canonical Execution Manager validation check
+    const ExecutionInstructionValidationResult_T canonical_val_status =
+        EXECUTION_INSTRUCTION_Validate( instruction_buffer, instruction_size_bytes );
+    if ( canonical_val_status != EXECUTION_INSTRUCTION_VALIDATION_OK )
+    {
+        return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+    }
+
     const HOST_Interface_Status_T upload_status =
         HOST_INSTRUCTION_HANDLER_UploadToFlash( instruction_buffer, instruction_size_bytes );
 
