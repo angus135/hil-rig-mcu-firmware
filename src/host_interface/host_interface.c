@@ -955,6 +955,23 @@ void HOST_INTERFACE_Task( void* task_parameters )
         {
         }
 
+        /*
+         * TODO: When in the result transfer phase (FLASH_MANAGER_STATE_TRANSFERRING_RESULTS),
+         *       if !outgoing_message_pending:
+         *
+         *       HIL_Application_Message_T result_msg;
+         *       Result_Message_Producer_Status_T res_status =
+         *           RESULT_MESSAGE_PRODUCER_ProduceNextMessage(&result_msg);
+         *
+         *       if (res_status == RESULT_MESSAGE_PRODUCER_STATUS_OK) {
+         *           result_msg.test_id = active_test_id; // Stamp active Test ID
+         *           outgoing_message = result_msg;
+         *           outgoing_message_pending = true;
+         *       } else if (res_status == RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM) {
+         *           FLASH_MANAGER_FinishResultTransfer();
+         *       }
+         */
+
         vTaskDelayUntil( &protocol_state.initial_ticks, pdMS_TO_TICKS( HOST_INTERFACE_PERIOD_MS ) );
     }
 }
