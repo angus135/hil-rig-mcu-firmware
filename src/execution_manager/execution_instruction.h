@@ -62,7 +62,8 @@ typedef enum
     /** Instruction buffer or operation payload is not 4-byte aligned. */
     EXECUTION_INSTRUCTION_VALIDATION_UNALIGNED,
 
-    /** Header fields violate protocol rules (e.g. non-zero reserved, unaligned length, length mismatch). */
+    /** Header fields violate protocol rules (e.g. non-zero reserved, unaligned length, length
+       mismatch). */
     EXECUTION_INSTRUCTION_VALIDATION_INVALID_HEADER,
 
     /** Operation contains an unrecognized or unsupported opcode. */
@@ -74,7 +75,8 @@ typedef enum
     /** Operation payload length does not match expected size for the given opcode. */
     EXECUTION_INSTRUCTION_VALIDATION_INVALID_PAYLOAD_LENGTH,
 
-    /** Operation payload values violate hardware constraints (e.g. overlapping bitmasks, invalid duty). */
+    /** Operation payload values violate hardware constraints (e.g. overlapping bitmasks, invalid
+       duty). */
     EXECUTION_INSTRUCTION_VALIDATION_INVALID_PAYLOAD_DATA,
 
     /** Decoded operation count does not match the header operation_count. */
@@ -140,8 +142,8 @@ _Static_assert( sizeof( ExecutionInstructionHeader_T ) == 8U,
  *
  * @return EXECUTION_INSTRUCTION_VALIDATION_OK on success, or specific failure code.
  */
-ExecutionInstructionValidationResult_T
-EXECUTION_INSTRUCTION_Validate( const uint8_t* data, size_t length );
+ExecutionInstructionValidationResult_T EXECUTION_INSTRUCTION_Validate( const uint8_t* data,
+                                                                       size_t         length );
 
 #ifdef __cplusplus
 }

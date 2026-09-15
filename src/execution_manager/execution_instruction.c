@@ -46,27 +46,27 @@
 
 static ExecutionInstructionValidationResult_T
 EXECUTION_INSTRUCTION_ValidateDigitalOutput( uint8_t channel, const uint8_t* payload,
-                                            uint16_t payload_length );
-
-static ExecutionInstructionValidationResult_T
-EXECUTION_INSTRUCTION_ValidateAnalogueOutput( uint8_t channel, const uint8_t* payload,
                                              uint16_t payload_length );
 
 static ExecutionInstructionValidationResult_T
+EXECUTION_INSTRUCTION_ValidateAnalogueOutput( uint8_t channel, const uint8_t* payload,
+                                              uint16_t payload_length );
+
+static ExecutionInstructionValidationResult_T
 EXECUTION_INSTRUCTION_ValidatePwmUpdate( uint8_t channel, const uint8_t* payload,
-                                        uint16_t payload_length );
+                                         uint16_t payload_length );
 
 static ExecutionInstructionValidationResult_T
 EXECUTION_INSTRUCTION_ValidateCanTransmit( uint8_t channel, const uint8_t* payload,
-                                          uint16_t payload_length );
+                                           uint16_t payload_length );
 
 static ExecutionInstructionValidationResult_T
 EXECUTION_INSTRUCTION_ValidateSpiTransmit( uint8_t channel, const uint8_t* payload,
-                                          uint16_t payload_length );
+                                           uint16_t payload_length );
 
 static ExecutionInstructionValidationResult_T
 EXECUTION_INSTRUCTION_ValidateUartTransmit( uint8_t channel, const uint8_t* payload,
-                                           uint16_t payload_length );
+                                            uint16_t payload_length );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -75,7 +75,7 @@ EXECUTION_INSTRUCTION_ValidateUartTransmit( uint8_t channel, const uint8_t* payl
 
 static ExecutionInstructionValidationResult_T
 EXECUTION_INSTRUCTION_ValidateDigitalOutput( const uint8_t channel, const uint8_t* const payload,
-                                            const uint16_t payload_length )
+                                             const uint16_t payload_length )
 {
     if ( channel != EXECUTION_OPERATION_CHANNEL_UNUSED )
     {
@@ -107,7 +107,7 @@ EXECUTION_INSTRUCTION_ValidateDigitalOutput( const uint8_t channel, const uint8_
 
 static ExecutionInstructionValidationResult_T
 EXECUTION_INSTRUCTION_ValidateAnalogueOutput( const uint8_t channel, const uint8_t* const payload,
-                                             const uint16_t payload_length )
+                                              const uint16_t payload_length )
 {
     if ( channel != EXECUTION_OPERATION_CHANNEL_UNUSED )
     {
@@ -126,9 +126,8 @@ EXECUTION_INSTRUCTION_ValidateAnalogueOutput( const uint8_t channel, const uint8
 
     for ( uint8_t i = 0U; i < frame_count; i++ )
     {
-        const uint8_t frame_first_byte =
-            payload[i * EXECUTION_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES];
-        const uint8_t dac_channel = ( frame_first_byte >> 3U ) & 0x1FU;
+        const uint8_t frame_first_byte = payload[i * EXECUTION_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES];
+        const uint8_t dac_channel      = ( frame_first_byte >> 3U ) & 0x1FU;
 
         if ( dac_channel > EXECUTION_VALIDATION_MAX_DAC_CHANNEL )
         {
@@ -141,7 +140,7 @@ EXECUTION_INSTRUCTION_ValidateAnalogueOutput( const uint8_t channel, const uint8
 
 static ExecutionInstructionValidationResult_T
 EXECUTION_INSTRUCTION_ValidatePwmUpdate( const uint8_t channel, const uint8_t* const payload,
-                                        const uint16_t payload_length )
+                                         const uint16_t payload_length )
 {
     if ( ( channel != EXECUTION_OPERATION_PWM_CHANNEL_LV )
          && ( channel != EXECUTION_OPERATION_PWM_CHANNEL_HV ) )
@@ -174,7 +173,7 @@ EXECUTION_INSTRUCTION_ValidatePwmUpdate( const uint8_t channel, const uint8_t* c
 
 static ExecutionInstructionValidationResult_T
 EXECUTION_INSTRUCTION_ValidateCanTransmit( const uint8_t channel, const uint8_t* const payload,
-                                          const uint16_t payload_length )
+                                           const uint16_t payload_length )
 {
     if ( ( channel != EXECUTION_OPERATION_CAN_CHANNEL_1 )
          && ( channel != EXECUTION_OPERATION_CAN_CHANNEL_2 ) )
@@ -226,7 +225,7 @@ EXECUTION_INSTRUCTION_ValidateCanTransmit( const uint8_t channel, const uint8_t*
 
 static ExecutionInstructionValidationResult_T
 EXECUTION_INSTRUCTION_ValidateSpiTransmit( const uint8_t channel, const uint8_t* const payload,
-                                          const uint16_t payload_length )
+                                           const uint16_t payload_length )
 {
     if ( ( channel != EXECUTION_OPERATION_SPI_CHANNEL_1 )
          && ( channel != EXECUTION_OPERATION_SPI_CHANNEL_2 ) )
@@ -283,7 +282,7 @@ EXECUTION_INSTRUCTION_ValidateSpiTransmit( const uint8_t channel, const uint8_t*
 
 static ExecutionInstructionValidationResult_T
 EXECUTION_INSTRUCTION_ValidateUartTransmit( const uint8_t channel, const uint8_t* const payload,
-                                           const uint16_t payload_length )
+                                            const uint16_t payload_length )
 {
     ( void )payload;
 
@@ -307,8 +306,8 @@ EXECUTION_INSTRUCTION_ValidateUartTransmit( const uint8_t channel, const uint8_t
  *------------------------------------------------------------------------------
  */
 
-ExecutionInstructionValidationResult_T
-EXECUTION_INSTRUCTION_Validate( const uint8_t* const data, const size_t length )
+ExecutionInstructionValidationResult_T EXECUTION_INSTRUCTION_Validate( const uint8_t* const data,
+                                                                       const size_t         length )
 {
     if ( data == NULL )
     {
@@ -375,13 +374,10 @@ EXECUTION_INSTRUCTION_Validate( const uint8_t* const data, const size_t length )
         ExecutionOperationHeaderWord_T header_word = 0U;
         ( void )memcpy( &header_word, data + offset, sizeof( header_word ) );
 
-        const ExecutionOperationOpcode_T opcode = EXECUTION_OPERATION_GET_OPCODE( header_word );
-        const uint8_t                    channel =
-            EXECUTION_OPERATION_GET_CHANNEL( header_word );
-        const uint16_t payload_length =
-            EXECUTION_OPERATION_GET_PAYLOAD_LENGTH_BYTES( header_word );
-        const uint32_t encoded_size =
-            EXECUTION_OPERATION_ENCODED_SIZE_BYTES( payload_length );
+        const ExecutionOperationOpcode_T opcode  = EXECUTION_OPERATION_GET_OPCODE( header_word );
+        const uint8_t                    channel = EXECUTION_OPERATION_GET_CHANNEL( header_word );
+        const uint16_t payload_length = EXECUTION_OPERATION_GET_PAYLOAD_LENGTH_BYTES( header_word );
+        const uint32_t encoded_size   = EXECUTION_OPERATION_ENCODED_SIZE_BYTES( payload_length );
 
         if ( ( length - offset ) < encoded_size )
         {
@@ -400,39 +396,38 @@ EXECUTION_INSTRUCTION_Validate( const uint8_t* const data, const size_t length )
             }
         }
 
-        ExecutionInstructionValidationResult_T op_result =
-            EXECUTION_INSTRUCTION_VALIDATION_OK;
+        ExecutionInstructionValidationResult_T op_result = EXECUTION_INSTRUCTION_VALIDATION_OK;
 
         switch ( opcode )
         {
             case EXECUTION_OPERATION_OPCODE_DIGITAL_OUTPUT_UPDATE:
-                op_result = EXECUTION_INSTRUCTION_ValidateDigitalOutput(
-                    channel, payload, payload_length );
+                op_result =
+                    EXECUTION_INSTRUCTION_ValidateDigitalOutput( channel, payload, payload_length );
                 break;
 
             case EXECUTION_OPERATION_OPCODE_ANALOGUE_OUTPUT_BATCH:
-                op_result = EXECUTION_INSTRUCTION_ValidateAnalogueOutput(
-                    channel, payload, payload_length );
+                op_result = EXECUTION_INSTRUCTION_ValidateAnalogueOutput( channel, payload,
+                                                                          payload_length );
                 break;
 
             case EXECUTION_OPERATION_OPCODE_PWM_UPDATE:
-                op_result = EXECUTION_INSTRUCTION_ValidatePwmUpdate(
-                    channel, payload, payload_length );
+                op_result =
+                    EXECUTION_INSTRUCTION_ValidatePwmUpdate( channel, payload, payload_length );
                 break;
 
             case EXECUTION_OPERATION_OPCODE_CAN_TRANSMIT:
-                op_result = EXECUTION_INSTRUCTION_ValidateCanTransmit(
-                    channel, payload, payload_length );
+                op_result =
+                    EXECUTION_INSTRUCTION_ValidateCanTransmit( channel, payload, payload_length );
                 break;
 
             case EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT:
-                op_result = EXECUTION_INSTRUCTION_ValidateSpiTransmit(
-                    channel, payload, payload_length );
+                op_result =
+                    EXECUTION_INSTRUCTION_ValidateSpiTransmit( channel, payload, payload_length );
                 break;
 
             case EXECUTION_OPERATION_OPCODE_UART_TRANSMIT:
-                op_result = EXECUTION_INSTRUCTION_ValidateUartTransmit(
-                    channel, payload, payload_length );
+                op_result =
+                    EXECUTION_INSTRUCTION_ValidateUartTransmit( channel, payload, payload_length );
                 break;
 
             default:
