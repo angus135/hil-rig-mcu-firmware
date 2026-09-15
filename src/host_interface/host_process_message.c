@@ -24,6 +24,8 @@
 #include "hil_rig_protocol/transport/transport.h"
 #include "hil_rig_protocol/version.h"
 #include "host_interface.h"
+#include "instruction_message_handler.h"
+#include "result_message_producer.h"
 #include "run_state_manager.h"
 
 /**-----------------------------------------------------------------------------
@@ -255,6 +257,18 @@ HOST_INTERFACE_process_Test_Configuration( const HIL_Application_Message_T* rece
 {
     ( void )data;
     ( void )data_size;
+
+    /*
+     * TODO: Store active Test ID and reset session handlers:
+     *
+     * Pseudocode:
+     *   // 1. Cache the 16-byte active Test ID from recent_received_message->test_id
+     *   // 2. Reset instruction delta state:
+     *   HOST_INSTRUCTION_HANDLER_Reset();
+     *   // 3. Reset result stream aggregation state:
+     *   RESULT_MESSAGE_PRODUCER_Reset();
+     */
+
     return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
     /** CALL CALLUMS FUNCTION TO PASS CONFIGURAITON MESSAGE
      *
@@ -292,11 +306,49 @@ HOST_INTERFACE_process_Test_Configuration( const HIL_Application_Message_T* rece
     return HOST_INTERFACE_STATUS_OK;
 }
 
+/**
+ * @brief Process an incoming Test Instruction message from the host device.
+ *
+ * @todo Implementation guidelines & pseudocode:
+ *
+ * 1. Validate Test ID correlation:
+ *    if (!recent_received_message->has_test_id ||
+ *        memcmp(recent_received_message->test_id.bytes, active_test_id.bytes, 16) != 0)
+ *    {
+ *        HOST_INTERFACE_Default_Error(response_message);
+ *        response_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_REJECTED;
+ *        *response_required = true;
+ *        return HOST_INTERFACE_STATUS_INCONSISTENT_TEST_ID;
+ *    }
+ *
+ * 2. Forward to the Instruction Message Handler:
+ *    HOST_Interface_Status_T status =
+ *        HOST_INSTRUCTION_HANDLER_HandleInstruction(&recent_received_message->body.test_instruction);
+ *
+ * 3. Handle outcome:
+ *    - On HOST_INTERFACE_STATUS_OK:
+ *        *response_required = false;  // Fixed instruction ticks have no Application response
+ *        return HOST_INTERFACE_STATUS_OK;
+ *    - On error (validation failure, flash upload error, state error):
+ *        HOST_INTERFACE_Default_Error(response_message);
+ *        *response_required = true;
+ *        return status;
+ */
 HOST_Interface_Status_T
 HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* recent_received_message,
                                           HIL_Application_Message_T*       response_message,
                                           bool* response_required, uint8_t* data,
-                                          size_t data_size );
+                                          size_t data_size )
+{
+    ( void )recent_received_message;
+    ( void )response_message;
+    ( void )response_required;
+    ( void )data;
+    ( void )data_size;
+
+    /* TODO: Call HOST_INSTRUCTION_HANDLER_HandleInstruction() per pseudocode above */
+    return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
+}
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Instruction_Data(
     const HIL_Application_Message_T* recent_received_message,
@@ -323,10 +375,52 @@ HOST_INTERFACE_process_Global_Control( const HIL_Application_Message_T* recent_r
                                        HIL_Application_Message_T*       response_message,
                                        bool* response_required, uint8_t* data, size_t data_size );
 
+/**
+ * @brief Process an incoming Test Result message.
+ *
+ * @note The host device (Python) never sends Test Results to the firmware; firmware
+ *       generates and sends Test Results to Python during the result transfer phase.
+ *
+ * @todo For OUTBOUND result message production (e.g. in HOST_INTERFACE_Task / result transfer loop):
+ *
+ * Pseudocode for result transmission:
+ *   HIL_Application_Message_T out_msg;
+ *   Result_Message_Producer_Status_T res_status =
+ *       RESULT_MESSAGE_PRODUCER_ProduceNextMessage(&out_msg);
+ *
+ *   if (res_status == RESULT_MESSAGE_PRODUCER_STATUS_OK)
+ *   {
+ *       // Producer sets type = TEST_RESULT, subtype = NONE, has_test_id = 1U.
+ *       // Stamp the active session's Test ID onto the message:
+ *       out_msg.test_id = active_test_id;
+ *
+ *       // Offer out_msg to Transport for USB transmission
+ *   }
+ *   else if (res_status == RESULT_MESSAGE_PRODUCER_STATUS_NO_DATA_AVAILABLE)
+ *   {
+ *       // Flash Manager is prefetching from NAND (BUSY) -> yield and retry next tick
+ *   }
+ *   else if (res_status == RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM)
+ *   {
+ *       // All stored results have been read -> complete transfer:
+ *       FLASH_MANAGER_FinishResultTransfer();
+ *       // Signal Run State Manager that result transfer is complete
+ *   }
+ */
 HOST_Interface_Status_T
 HOST_INTERFACE_process_Test_Result( const HIL_Application_Message_T* recent_received_message,
                                     HIL_Application_Message_T*       response_message,
-                                    bool* response_required, uint8_t* data, size_t data_size );
+                                    bool* response_required, uint8_t* data, size_t data_size )
+{
+    ( void )recent_received_message;
+    ( void )data;
+    ( void )data_size;
+
+    // Incoming Test Result from host is unexpected
+    HOST_INTERFACE_Default_Error( response_message );
+    *response_required = true;
+    return HOST_INTERFACE_STATUS_OK;
+}
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Result_Data(
     const HIL_Application_Message_T* recent_received_message,

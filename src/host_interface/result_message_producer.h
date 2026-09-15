@@ -98,6 +98,13 @@ void RESULT_MESSAGE_PRODUCER_Reset( void );
  *          returns RESULT_MESSAGE_PRODUCER_STATUS_NO_DATA_AVAILABLE. When all stored result
  *          bytes have been consumed, returns RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM.
  *
+ * @par Test ID Stamping Contract:
+ *      This function sets out_message->type to HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT,
+ *      out_message->subtype to HIL_APPLICATION_MESSAGE_SUBTYPE_NONE, and
+ *      out_message->has_test_id to 1U. The 16-byte test_id field is left zeroed for
+ *      the calling Host Interface / session task to stamp with the active session's
+ *      Test ID before serialisation and transmission over USB.
+ *
  * @param[out] out_message Pointer to destination Application Message structure to populate.
  *                         Must not be NULL.
  *
