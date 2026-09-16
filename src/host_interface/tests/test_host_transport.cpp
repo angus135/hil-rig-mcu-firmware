@@ -231,15 +231,22 @@ std::vector<uint8_t> MakeEchoRequest()
 
 std::vector<uint8_t> MakeStatusRequest( uint32_t request_id = 0xA1B2C3D4U )
 {
-    return { static_cast<uint8_t>( 'H' ), static_cast<uint8_t>( 'R' ),
-             static_cast<uint8_t>( 'T' ), static_cast<uint8_t>( 'P' ),
-             PROTOCOL_TEST_HARNESS_VERSION, PROTOCOL_TEST_HARNESS_OPCODE_STATUS_REQUEST,
-             0U, 0U,
+    return { static_cast<uint8_t>( 'H' ),
+             static_cast<uint8_t>( 'R' ),
+             static_cast<uint8_t>( 'T' ),
+             static_cast<uint8_t>( 'P' ),
+             PROTOCOL_TEST_HARNESS_VERSION,
+             PROTOCOL_TEST_HARNESS_OPCODE_STATUS_REQUEST,
+             0U,
+             0U,
              static_cast<uint8_t>( request_id & 0xFFU ),
              static_cast<uint8_t>( ( request_id >> 8U ) & 0xFFU ),
              static_cast<uint8_t>( ( request_id >> 16U ) & 0xFFU ),
              static_cast<uint8_t>( ( request_id >> 24U ) & 0xFFU ),
-             0U, 0U, 0U, 0U };
+             0U,
+             0U,
+             0U,
+             0U };
 }
 
 uint32_t ReadU32LE( const uint8_t* data )
@@ -293,13 +300,87 @@ bool WaitForHostPeerApplicationMessage( HostPeerHarness& peer, uint32_t first_ms
 std::vector<uint8_t> ReadHostPeerApplicationMessage( HostPeerHarness& peer )
 {
     std::array<uint8_t, HOST_TRANSPORT_MAX_APPLICATION_MESSAGE_SIZE> response{};
-    size_t response_size = 0U;
+    size_t                                                           response_size = 0U;
     if ( HIL_TRANSPORT_Read_Application_Data( &peer.context, response.data(), response.size(),
-                                              &response_size ) != HIL_TRANSPORT_STATUS_OK )
+                                              &response_size )
+         != HIL_TRANSPORT_STATUS_OK )
     {
         return {};
     }
     return { response.begin(), response.begin() + static_cast<std::ptrdiff_t>( response_size ) };
+}
+
+HIL_Application_Message_T MatchingSystemInfoRequest()
+{
+    HIL_Application_Message_T message{};
+    message.type                           = HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_REQUEST;
+    message.subtype                        = HIL_APPLICATION_MESSAGE_SUBTYPE_BASIC;
+    message.has_test_id                    = 0U;
+    message.body.system_info_request.query = HIL_APPLICATION_SYSTEM_INFO_QUERY_BASIC;
+    message.body.system_info_request.application_protocol_major = HIL_RIG_PROTOCOL_VERSION_MAJOR;
+    message.body.system_info_request.application_protocol_minor = HIL_RIG_PROTOCOL_VERSION_MINOR;
+    message.body.system_info_request.application_protocol_patch = HIL_RIG_PROTOCOL_VERSION_PATCH;
+    return message;
+}
+
+bool IsMatchingSystemInfoResponse( HIL_Application_Context_T& codec, const uint8_t* message,
+                                   size_t message_size )
+{
+    HIL_Application_Message_T decoded{};
+    size_t                    required_storage = 0U;
+    size_t                    used_storage     = 0U;
+
+    if ( HIL_APPLICATION_Decode_Storage_Size( &codec, message, message_size, &required_storage )
+             != HIL_APPLICATION_STATUS_OK
+         || required_storage != 0U
+         || HIL_APPLICATION_Decode_Message( &codec, message, message_size, &decoded, nullptr, 0U,
+                                            &used_storage )
+                != HIL_APPLICATION_STATUS_OK
+         || used_storage != 0U )
+    {
+        return false;
+    }
+
+    return decoded.type == HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_RESPONSE
+           && decoded.subtype == HIL_APPLICATION_MESSAGE_SUBTYPE_BASIC && decoded.has_test_id == 0U
+           && decoded.body.system_info_response.application_protocol_major
+                  == HIL_RIG_PROTOCOL_VERSION_MAJOR
+           && decoded.body.system_info_response.application_protocol_minor
+                  == HIL_RIG_PROTOCOL_VERSION_MINOR
+           && decoded.body.system_info_response.application_protocol_patch
+                  == HIL_RIG_PROTOCOL_VERSION_PATCH;
+}
+
+bool CompleteDirectApplicationDiscovery( HIL_Application_Context_T& codec )
+{
+    const std::vector<uint8_t> request =
+        application_test_fixtures::Encode( codec, MatchingSystemInfoRequest() );
+    std::array<uint8_t, HOST_TRANSPORT_MAX_APPLICATION_MESSAGE_SIZE> response{};
+    size_t                                                           response_size = 0U;
+
+    return !request.empty()
+           && APPLICATION_TEST_HARNESS_Handle_Message(
+                  request.data(), request.size(), response.data(), response.size(), &response_size )
+                  == HIL_APPLICATION_STATUS_OK
+           && IsMatchingSystemInfoResponse( codec, response.data(), response_size );
+}
+
+bool CompleteTransportApplicationDiscovery( HostPeerHarness& peer, HIL_Application_Context_T& codec,
+                                            uint32_t first_ms, uint32_t last_ms )
+{
+    const std::vector<uint8_t> request =
+        application_test_fixtures::Encode( codec, MatchingSystemInfoRequest() );
+
+    if ( request.empty()
+         || HIL_TRANSPORT_Submit_Application_Data( &peer.context, request.data(), request.size() )
+                != HIL_TRANSPORT_STATUS_OK
+         || !WaitForHostPeerApplicationMessage( peer, first_ms, last_ms ) )
+    {
+        return false;
+    }
+
+    const std::vector<uint8_t> response = ReadHostPeerApplicationMessage( peer );
+    return IsMatchingSystemInfoResponse( codec, response.data(), response.size() );
 }
 
 }  // namespace
@@ -614,6 +695,7 @@ TEST_F( HostTransportTest, RawApplicationConfigurationAndInstructionRoundTripThr
 
     HIL_Application_Context_T codec{};
     ASSERT_TRUE( InitCodec( codec ) );
+    ASSERT_TRUE( CompleteTransportApplicationDiscovery( peer, codec, 40U, 100U ) );
     const std::vector<uint8_t> configuration = Encode( codec, RepresentativeConfiguration() );
     ASSERT_EQ( configuration.size(), 242U );
     ASSERT_EQ( HIL_TRANSPORT_STATUS_OK,
@@ -621,7 +703,7 @@ TEST_F( HostTransportTest, RawApplicationConfigurationAndInstructionRoundTripThr
                                                       configuration.size() ) );
 
     bool configuration_accepted = false;
-    for ( uint32_t now_ms = 40U; now_ms < 100U; ++now_ms )
+    for ( uint32_t now_ms = 100U; now_ms < 160U; ++now_ms )
     {
         ASSERT_TRUE( ServiceHostPeerAndFirmware( peer, now_ms ) );
         if ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->configurations_accepted == 1U )
@@ -636,7 +718,7 @@ TEST_F( HostTransportTest, RawApplicationConfigurationAndInstructionRoundTripThr
     const std::vector<uint8_t> instruction = Encode( codec, Instruction( 0U ) );
     ASSERT_EQ( instruction.size(), 73U );
     HIL_Transport_Status_T submit_status = HIL_TRANSPORT_STATUS_NOT_READY;
-    for ( uint32_t now_ms = 100U; now_ms < 140U; ++now_ms )
+    for ( uint32_t now_ms = 160U; now_ms < 200U; ++now_ms )
     {
         submit_status = HIL_TRANSPORT_Submit_Application_Data( &peer.context, instruction.data(),
                                                                instruction.size() );
@@ -648,17 +730,17 @@ TEST_F( HostTransportTest, RawApplicationConfigurationAndInstructionRoundTripThr
         ASSERT_TRUE( ServiceHostPeerAndFirmware( peer, now_ms ) );
     }
     ASSERT_EQ( submit_status, HIL_TRANSPORT_STATUS_OK );
-    ASSERT_TRUE( WaitForHostPeerApplicationMessage( peer, 140U, 220U ) );
+    ASSERT_TRUE( WaitForHostPeerApplicationMessage( peer, 200U, 280U ) );
 
     const std::vector<uint8_t> result_bytes = ReadHostPeerApplicationMessage( peer );
     ASSERT_EQ( result_bytes.size(), 62U );
 
     HIL_Application_Message_T result{};
-    size_t required_storage = 0U;
-    size_t used_storage = 0U;
+    size_t                    required_storage = 0U;
+    size_t                    used_storage     = 0U;
     ASSERT_EQ( HIL_APPLICATION_STATUS_OK,
-               HIL_APPLICATION_Decode_Storage_Size( &codec, result_bytes.data(), result_bytes.size(),
-                                                    &required_storage ) );
+               HIL_APPLICATION_Decode_Storage_Size( &codec, result_bytes.data(),
+                                                    result_bytes.size(), &required_storage ) );
     ASSERT_EQ( required_storage, 0U );
     ASSERT_EQ( HIL_APPLICATION_STATUS_OK,
                HIL_APPLICATION_Decode_Message( &codec, result_bytes.data(), result_bytes.size(),
@@ -671,8 +753,8 @@ TEST_F( HostTransportTest, RawApplicationConfigurationAndInstructionRoundTripThr
     EXPECT_EQ( result.body.test_result.analog_inputs[1].microvolts, 8048525U );
 
     const auto* host_diagnostics = HOST_TRANSPORT_Get_Diagnostics();
-    EXPECT_EQ( host_diagnostics->application_requests_received, 2U );
-    EXPECT_EQ( host_diagnostics->responses_submitted, 1U );
+    EXPECT_EQ( host_diagnostics->application_requests_received, 3U );
+    EXPECT_EQ( host_diagnostics->responses_submitted, 2U );
     EXPECT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->instructions_accepted, 1U );
     EXPECT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->results_encoded, 1U );
 }
@@ -685,11 +767,9 @@ TEST_F( HostTransportTest, MalformedNonHrtpPayloadIsApplicationDecodeFailureOnly
 
     HostPeerHarness peer{};
     ASSERT_TRUE( EstablishHostPeer( peer ) );
-    const std::array<uint8_t, 7> malformed = { 0x01U, 0x02U, 0x03U, 0x04U,
-                                                0x05U, 0x06U, 0x07U };
-    ASSERT_EQ( HIL_TRANSPORT_STATUS_OK,
-               HIL_TRANSPORT_Submit_Application_Data( &peer.context, malformed.data(),
-                                                      malformed.size() ) );
+    const std::array<uint8_t, 7> malformed = { 0x01U, 0x02U, 0x03U, 0x04U, 0x05U, 0x06U, 0x07U };
+    ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, HIL_TRANSPORT_Submit_Application_Data(
+                                            &peer.context, malformed.data(), malformed.size() ) );
 
     for ( uint32_t now_ms = 40U; now_ms < 100U; ++now_ms )
     {
@@ -718,29 +798,32 @@ TEST_F( HostTransportTest, StatusV2ReportsApplicationHarnessAndProtocolProfile )
 
     HIL_Application_Context_T codec{};
     ASSERT_TRUE( InitCodec( codec ) );
+    ASSERT_TRUE( CompleteTransportApplicationDiscovery( peer, codec, 40U, 100U ) );
     const std::vector<uint8_t> configuration = Encode( codec, RepresentativeConfiguration() );
     ASSERT_EQ( HIL_TRANSPORT_STATUS_OK,
                HIL_TRANSPORT_Submit_Application_Data( &peer.context, configuration.data(),
                                                       configuration.size() ) );
-    for ( uint32_t now_ms = 40U; now_ms < 100U; ++now_ms )
+    for ( uint32_t now_ms = 100U; now_ms < 160U; ++now_ms )
     {
         ASSERT_TRUE( ServiceHostPeerAndFirmware( peer, now_ms ) );
-        if ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->configurations_accepted == 1U ) break;
+        if ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->configurations_accepted == 1U )
+            break;
     }
     ASSERT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->configurations_accepted, 1U );
 
-    const std::vector<uint8_t> request = MakeStatusRequest();
-    HIL_Transport_Status_T submit_status = HIL_TRANSPORT_STATUS_NOT_READY;
-    for ( uint32_t now_ms = 100U; now_ms < 140U; ++now_ms )
+    const std::vector<uint8_t> request       = MakeStatusRequest();
+    HIL_Transport_Status_T     submit_status = HIL_TRANSPORT_STATUS_NOT_READY;
+    for ( uint32_t now_ms = 160U; now_ms < 200U; ++now_ms )
     {
-        submit_status = HIL_TRANSPORT_Submit_Application_Data( &peer.context, request.data(),
-                                                               request.size() );
-        if ( submit_status == HIL_TRANSPORT_STATUS_OK ) break;
+        submit_status =
+            HIL_TRANSPORT_Submit_Application_Data( &peer.context, request.data(), request.size() );
+        if ( submit_status == HIL_TRANSPORT_STATUS_OK )
+            break;
         ASSERT_EQ( submit_status, HIL_TRANSPORT_STATUS_NOT_READY );
         ASSERT_TRUE( ServiceHostPeerAndFirmware( peer, now_ms ) );
     }
     ASSERT_EQ( submit_status, HIL_TRANSPORT_STATUS_OK );
-    ASSERT_TRUE( WaitForHostPeerApplicationMessage( peer, 140U, 220U ) );
+    ASSERT_TRUE( WaitForHostPeerApplicationMessage( peer, 200U, 280U ) );
 
     const std::vector<uint8_t> response = ReadHostPeerApplicationMessage( peer );
     ASSERT_EQ( response.size(), 144U );
@@ -754,7 +837,7 @@ TEST_F( HostTransportTest, StatusV2ReportsApplicationHarnessAndProtocolProfile )
     EXPECT_EQ( ReadU32LE( &payload[15U * 4U] ), HIL_RIG_PROTOCOL_VERSION_PATCH );
     EXPECT_EQ( ReadU32LE( &payload[16U * 4U] ), 1U );
     EXPECT_EQ( ReadU32LE( &payload[17U * 4U] ), HIL_APPLICATION_STATUS_OK );
-    EXPECT_EQ( ReadU32LE( &payload[18U * 4U] ), 1U );
+    EXPECT_EQ( ReadU32LE( &payload[18U * 4U] ), 2U );
     EXPECT_EQ( ReadU32LE( &payload[22U * 4U] ), 1U );
     EXPECT_EQ( ReadU32LE( &payload[25U * 4U] ),
                APPLICATION_TEST_HARNESS_STATE_ACCEPTING_INSTRUCTIONS );
@@ -775,20 +858,23 @@ TEST_F( HostTransportTest, EncodedResultSurvivesBackpressureAndIsEventuallySubmi
 
     HIL_Application_Context_T codec{};
     ASSERT_TRUE( InitCodec( codec ) );
+    ASSERT_TRUE( CompleteDirectApplicationDiscovery( codec ) );
     const std::vector<uint8_t> configuration = Encode( codec, RepresentativeConfiguration() );
-    const std::vector<uint8_t> instruction = Encode( codec, Instruction( 0U ) );
-    std::array<uint8_t, 512> result{};
-    size_t result_size = 0U;
+    const std::vector<uint8_t> instruction   = Encode( codec, Instruction( 0U ) );
+    std::array<uint8_t, 512>   result{};
+    size_t                     result_size = 0U;
     ASSERT_EQ( APPLICATION_TEST_HARNESS_Handle_Message( configuration.data(), configuration.size(),
-                                                       result.data(), result.size(), &result_size ),
+                                                        result.data(), result.size(),
+                                                        &result_size ),
                HIL_APPLICATION_STATUS_OK );
     ASSERT_EQ( result_size, 0U );
     ASSERT_EQ( APPLICATION_TEST_HARNESS_Handle_Message( instruction.data(), instruction.size(),
-                                                       result.data(), result.size(), &result_size ),
+                                                        result.data(), result.size(),
+                                                        &result_size ),
                HIL_APPLICATION_STATUS_OK );
     ASSERT_EQ( result_size, 62U );
-    ASSERT_TRUE( HOST_TRANSPORT_Test_Seed_Pending_Response( result.data(),
-                                                           static_cast<uint32_t>( result_size ) ) );
+    ASSERT_TRUE( HOST_TRANSPORT_Test_Seed_Pending_Response(
+        result.data(), static_cast<uint32_t>( result_size ) ) );
 
     HOST_TRANSPORT_Service( 1U );
     EXPECT_TRUE( HOST_TRANSPORT_Test_Response_Is_Pending() );
@@ -809,12 +895,13 @@ TEST_F( HostTransportTest, LinkDisconnectClearsOnlyActiveApplicationTransaction 
     ASSERT_TRUE( HOST_TRANSPORT_Init() );
     HIL_Application_Context_T codec{};
     ASSERT_TRUE( InitCodec( codec ) );
-    const auto configuration = Encode( codec, RepresentativeConfiguration() );
+    ASSERT_TRUE( CompleteDirectApplicationDiscovery( codec ) );
+    const auto               configuration = Encode( codec, RepresentativeConfiguration() );
     std::array<uint8_t, 512> response{};
-    size_t response_size = 0U;
+    size_t                   response_size = 0U;
     ASSERT_EQ( APPLICATION_TEST_HARNESS_Handle_Message( configuration.data(), configuration.size(),
-                                                       response.data(), response.size(),
-                                                       &response_size ),
+                                                        response.data(), response.size(),
+                                                        &response_size ),
                HIL_APPLICATION_STATUS_OK );
     const uint32_t digest = APPLICATION_TEST_HARNESS_Get_Diagnostics()->configuration_digest;
 
@@ -844,12 +931,13 @@ TEST_F( HostTransportTest, TransportSessionResetEventClearsActiveApplicationTran
 
     HIL_Application_Context_T codec{};
     ASSERT_TRUE( InitCodec( codec ) );
-    const auto configuration = Encode( codec, RepresentativeConfiguration() );
+    ASSERT_TRUE( CompleteDirectApplicationDiscovery( codec ) );
+    const auto               configuration = Encode( codec, RepresentativeConfiguration() );
     std::array<uint8_t, 512> response{};
-    size_t response_size = 0U;
+    size_t                   response_size = 0U;
     ASSERT_EQ( APPLICATION_TEST_HARNESS_Handle_Message( configuration.data(), configuration.size(),
-                                                       response.data(), response.size(),
-                                                       &response_size ),
+                                                        response.data(), response.size(),
+                                                        &response_size ),
                HIL_APPLICATION_STATUS_OK );
     ASSERT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->state,
                APPLICATION_TEST_HARNESS_STATE_ACCEPTING_INSTRUCTIONS );
@@ -859,7 +947,8 @@ TEST_F( HostTransportTest, TransportSessionResetEventClearsActiveApplicationTran
     {
         ASSERT_TRUE( ServiceHostPeerAndFirmware( peer, now_ms ) );
         if ( HOST_TRANSPORT_Get_Diagnostics()
-                 ->transport_event_counts[HIL_TRANSPORT_EVENT_SESSION_RESET] != 0U )
+                 ->transport_event_counts[HIL_TRANSPORT_EVENT_SESSION_RESET]
+             != 0U )
         {
             break;
         }
@@ -869,7 +958,7 @@ TEST_F( HostTransportTest, TransportSessionResetEventClearsActiveApplicationTran
     EXPECT_EQ( app->state, APPLICATION_TEST_HARNESS_STATE_WAITING_FOR_CONFIGURATION );
     EXPECT_EQ( app->configurations_accepted, 1U );
     EXPECT_EQ( app->active_expected_tick_count, 0U );
-    EXPECT_GT( HOST_TRANSPORT_Get_Diagnostics()
-                   ->transport_event_counts[HIL_TRANSPORT_EVENT_SESSION_RESET],
-               0U );
+    EXPECT_GT(
+        HOST_TRANSPORT_Get_Diagnostics()->transport_event_counts[HIL_TRANSPORT_EVENT_SESSION_RESET],
+        0U );
 }

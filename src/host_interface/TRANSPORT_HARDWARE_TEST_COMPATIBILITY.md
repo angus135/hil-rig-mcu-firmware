@@ -11,8 +11,8 @@ The reviewed implementation baseline is immutable and recorded below. The exact 
 | Reviewed PR #63 implementation baseline | `c6c0af2af586108949c30fb4a12df54eb9dd2fda` |
 | Final firmware commit used for hardware testing | `TO BE RECORDED AFTER COMMITTING THIS CHANGE SET` |
 | Protocol submodule path | `src/host_interface/shared_protocol` |
-| Protocol compatibility commit | `TO BE RECORDED FROM THE PARENT REPOSITORY` |
-| Protocol version in supplied snapshot | `0.1.0` |
+| Protocol compatibility commit | `49431179c7ba30cbce09c1d20df8cde7780b0840` |
+| Protocol version | `0.2.0` |
 | Application compatibility profile | `APP1` / `0x41505031` |
 | Board | NUCLEO-F446ZE |
 | MCU | STM32F446ZETx / STM32F446Z(C-E)Tx |
@@ -78,6 +78,13 @@ The following values must be updated after running the hardware test on the actu
 | Observed `HOST_INTERFACE_Task` stack high-water | NOT YET MEASURED |
 | Empty/small/binary/maximum ECHO | NOT YET RUN |
 | STATUS v2 query | NOT YET RUN |
+| Matching System Information discovery | NOT YET RUN |
+| Mismatched System Information patch blocks ordinary traffic | NOT YET RUN |
 | Representative Application configuration + 3 fixed instruction/result ticks | NOT YET RUN |
+| START synthetic test-only completion Response | NOT YET RUN |
+| ABORT synthetic test-only completion Response | NOT YET RUN |
+| RESET_APPLICATION synthetic test-only completion Response | NOT YET RUN |
+| All Application Response scopes, test-only decode/re-encode round trip | NOT YET RUN |
+| All Application Error forms, including empty, binary, and 255-byte diagnostics, test-only decode/re-encode round trip | NOT YET RUN |
 | Reset/re-enumeration/re-session ECHO | NOT YET RUN |
 | Long soak result | NOT YET RUN |

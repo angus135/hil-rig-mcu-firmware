@@ -453,28 +453,26 @@ static void HOST_TRANSPORT_Populate_HRTP_Status( PROTOCOL_TEST_HARNESS_Status_Da
     status_data->usb_tx_bytes          = g_host_transport_diagnostics.usb_tx_bytes;
     status_data->application_requests_received =
         g_host_transport_diagnostics.application_requests_received;
-    status_data->responses_submitted    = g_host_transport_diagnostics.responses_submitted;
-    status_data->usb_tx_busy_retries    = g_host_transport_diagnostics.usb_tx_busy_retries;
-    status_data->invalid_hrtp_messages  = g_host_transport_diagnostics.invalid_harness_messages;
-    status_data->maximum_service_gap_ms = g_host_transport_diagnostics.maximum_service_gap_ms;
-    status_data->transport_session_state = g_host_transport_diagnostics.transport_session_state;
+    status_data->responses_submitted      = g_host_transport_diagnostics.responses_submitted;
+    status_data->usb_tx_busy_retries      = g_host_transport_diagnostics.usb_tx_busy_retries;
+    status_data->invalid_hrtp_messages    = g_host_transport_diagnostics.invalid_harness_messages;
+    status_data->maximum_service_gap_ms   = g_host_transport_diagnostics.maximum_service_gap_ms;
+    status_data->transport_session_state  = g_host_transport_diagnostics.transport_session_state;
     status_data->compatibility_profile_id = APPLICATION_TEST_HARNESS_COMPATIBILITY_PROFILE_ID;
-    status_data->application_codec_initialized = application_diagnostics->codec_initialized;
-    status_data->application_initialization_status =
-        application_diagnostics->initialization_status;
+    status_data->application_codec_initialized     = application_diagnostics->codec_initialized;
+    status_data->application_initialization_status = application_diagnostics->initialization_status;
     status_data->non_hrtp_application_messages_received =
         application_diagnostics->application_messages_received;
-    status_data->application_decode_failures = application_diagnostics->decode_failures;
+    status_data->application_decode_failures     = application_diagnostics->decode_failures;
     status_data->application_semantic_rejections = application_diagnostics->semantic_rejections;
-    status_data->application_encode_failures = application_diagnostics->encode_failures;
-    status_data->configurations_accepted = application_diagnostics->configurations_accepted;
-    status_data->instructions_accepted   = application_diagnostics->instructions_accepted;
-    status_data->results_encoded         = application_diagnostics->results_encoded;
-    status_data->application_harness_state = application_diagnostics->state;
-    status_data->next_expected_tick        = application_diagnostics->next_expected_tick;
-    status_data->active_expected_tick_count =
-        application_diagnostics->active_expected_tick_count;
-    status_data->last_application_status = application_diagnostics->last_application_status;
+    status_data->application_encode_failures     = application_diagnostics->encode_failures;
+    status_data->configurations_accepted         = application_diagnostics->configurations_accepted;
+    status_data->instructions_accepted           = application_diagnostics->instructions_accepted;
+    status_data->results_encoded                 = application_diagnostics->results_encoded;
+    status_data->application_harness_state       = application_diagnostics->state;
+    status_data->next_expected_tick              = application_diagnostics->next_expected_tick;
+    status_data->active_expected_tick_count = application_diagnostics->active_expected_tick_count;
+    status_data->last_application_status    = application_diagnostics->last_application_status;
     status_data->last_decoded_application_message_type =
         application_diagnostics->last_decoded_message_type;
     status_data->configuration_digest = application_diagnostics->configuration_digest;

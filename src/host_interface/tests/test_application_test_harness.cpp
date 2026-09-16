@@ -3,6 +3,7 @@
 extern "C"
 {
 #include "application_test_harness.h"
+#include "hil_rig_protocol/version.h"
 }
 
 #include <gtest/gtest.h>
@@ -39,6 +40,90 @@ constexpr std::array<uint32_t, 3> kExpectedAnalogInput1 = {
 };
 constexpr uint32_t kExpectedAnalogInput0 = 4813713U;
 
+HIL_Application_Message_T BasicSystemInfoRequest()
+{
+    HIL_Application_Message_T message{};
+    message.type        = HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_REQUEST;
+    message.subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_BASIC;
+    message.has_test_id = 0U;
+    message.body.system_info_request.request_firmware_git_hash = 1U;
+    message.body.system_info_request.query = HIL_APPLICATION_SYSTEM_INFO_QUERY_BASIC;
+    message.body.system_info_request.application_protocol_major = HIL_RIG_PROTOCOL_VERSION_MAJOR;
+    message.body.system_info_request.application_protocol_minor = HIL_RIG_PROTOCOL_VERSION_MINOR;
+    message.body.system_info_request.application_protocol_patch = HIL_RIG_PROTOCOL_VERSION_PATCH;
+    return message;
+}
+
+HIL_Application_Message_T ExecutionControl( HIL_Application_Control_Command_T command )
+{
+    HIL_Application_Message_T message{};
+    message.type                           = HIL_APPLICATION_MESSAGE_TYPE_EXECUTION_CONTROL;
+    message.subtype                        = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    message.has_test_id                    = 1U;
+    message.test_id                        = MakeTestId( 0x50U );
+    message.body.execution_control.command = command;
+    message.body.execution_control.flags   = 0U;
+    return message;
+}
+
+HIL_Application_Message_T ResetApplication()
+{
+    HIL_Application_Message_T message{};
+    message.type                        = HIL_APPLICATION_MESSAGE_TYPE_GLOBAL_CONTROL;
+    message.subtype                     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    message.has_test_id                 = 0U;
+    message.body.global_control.command = HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION;
+    message.body.global_control.flags   = 0U;
+    return message;
+}
+
+HIL_Application_Message_T ApplicationResponse( HIL_Application_Response_Scope_T scope )
+{
+    HIL_Application_Message_T message{};
+    message.type        = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+    message.subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    message.has_test_id = scope == HIL_APPLICATION_RESPONSE_SCOPE_GLOBAL_CONTROL ? 0U : 1U;
+    message.test_id     = MakeTestId( 0x60U );
+
+    auto& response                  = message.body.response;
+    response.scope                  = scope;
+    response.outcome                = scope == HIL_APPLICATION_RESPONSE_SCOPE_EXECUTION_CONTROL
+                               || scope == HIL_APPLICATION_RESPONSE_SCOPE_GLOBAL_CONTROL
+                                          ? HIL_APPLICATION_RESPONSE_OUTCOME_COMPLETED
+                                          : HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
+    response.reason                 = HIL_APPLICATION_RESPONSE_REASON_NONE;
+    response.tick_number            = 0x10203040U;
+    response.control_command        = scope == HIL_APPLICATION_RESPONSE_SCOPE_EXECUTION_CONTROL
+                                          ? HIL_APPLICATION_CONTROL_ABORT
+                                          : HIL_APPLICATION_CONTROL_INVALID;
+    response.global_control_command = scope == HIL_APPLICATION_RESPONSE_SCOPE_GLOBAL_CONTROL
+                                          ? HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION
+                                          : HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
+    response.detail                 = 0x50607080U;
+    return message;
+}
+
+HIL_Application_Message_T ApplicationError( uint8_t has_test_id, uint8_t has_tick_number,
+                                            const uint8_t* diagnostic_data,
+                                            uint8_t        diagnostic_size )
+{
+    HIL_Application_Message_T message{};
+    message.type        = HIL_APPLICATION_MESSAGE_TYPE_ERROR;
+    message.subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    message.has_test_id = has_test_id;
+    message.test_id     = MakeTestId( 0x70U );
+
+    auto& error                = message.body.error;
+    error.category             = HIL_APPLICATION_ERROR_CATEGORY_EXECUTION;
+    error.recoverable          = 1U;
+    error.has_tick_number      = has_tick_number;
+    error.tick_number          = has_tick_number == 1U ? 345U : 0U;
+    error.detail               = 0xA0B0C0D0U;
+    error.diagnostic_data.data = diagnostic_data;
+    error.diagnostic_data.size = diagnostic_size;
+    return message;
+}
+
 template <typename T, typename = void> struct HasTerminationMember : std::false_type
 {
 };
@@ -60,6 +145,11 @@ protected:
         APPLICATION_TEST_HARNESS_Test_Reset();
         ASSERT_EQ( APPLICATION_TEST_HARNESS_Init(), HIL_APPLICATION_STATUS_OK );
         ASSERT_TRUE( InitCodec( codec_ ) );
+
+        std::vector<uint8_t> response;
+        ASSERT_EQ( Handle( EncodeMessage( BasicSystemInfoRequest() ), &response ),
+                   HIL_APPLICATION_STATUS_OK );
+        ASSERT_FALSE( response.empty() );
     }
 
     std::vector<uint8_t> EncodeMessage( const HIL_Application_Message_T& message )
@@ -85,24 +175,36 @@ protected:
 
     HIL_Application_Message_T DecodeMessage( const std::vector<uint8_t>& bytes )
     {
-        HIL_Application_Message_T                                                    decoded{};
-        alignas( HIL_APPLICATION_DECODE_STORAGE_ALIGNMENT ) std::array<uint8_t, 255> storage{};
-        size_t                                                                       required = 0U;
-        size_t                                                                       used     = 0U;
+        HIL_Application_Message_T decoded{};
+        size_t                    required = 0U;
+        size_t                    used     = 0U;
         EXPECT_EQ(
             HIL_APPLICATION_Decode_Storage_Size( &codec_, bytes.data(), bytes.size(), &required ),
             HIL_APPLICATION_STATUS_OK );
-        EXPECT_LE( required, storage.size() );
-        EXPECT_EQ( HIL_APPLICATION_Decode_Message( &codec_, bytes.data(), bytes.size(), &decoded,
-                                                   required == 0U ? nullptr : storage.data(),
-                                                   required == 0U ? 0U : storage.size(), &used ),
-                   HIL_APPLICATION_STATUS_OK );
+        EXPECT_LE( required, decode_storage_.size() );
+        EXPECT_EQ(
+            HIL_APPLICATION_Decode_Message( &codec_, bytes.data(), bytes.size(), &decoded,
+                                            required == 0U ? nullptr : decode_storage_.data(),
+                                            required == 0U ? 0U : decode_storage_.size(), &used ),
+            HIL_APPLICATION_STATUS_OK );
         EXPECT_EQ( used, required );
         return decoded;
     }
 
+    void ExpectWorkflowCountersUnchanged( const APPLICATION_TEST_HARNESS_Diagnostics_T& before )
+    {
+        const auto* after = APPLICATION_TEST_HARNESS_Get_Diagnostics();
+        EXPECT_EQ( after->configurations_accepted, before.configurations_accepted );
+        EXPECT_EQ( after->instructions_accepted, before.instructions_accepted );
+        EXPECT_EQ( after->results_encoded, before.results_encoded );
+        EXPECT_EQ( after->state, before.state );
+        EXPECT_EQ( after->next_expected_tick, before.next_expected_tick );
+        EXPECT_EQ( after->active_expected_tick_count, before.active_expected_tick_count );
+    }
+
     HIL_Application_Context_T codec_{};
     std::array<uint8_t, 512>  response_buffer_{};
+    alignas( HIL_APPLICATION_DECODE_STORAGE_ALIGNMENT ) std::array<uint8_t, 255> decode_storage_{};
 };
 
 TEST_F( ApplicationHarnessTest, InitializesRequiredProfileAndReportsInitializationFailure )
@@ -125,6 +227,201 @@ TEST_F( ApplicationHarnessTest, InitializesRequiredProfileAndReportsInitializati
     EXPECT_EQ( diagnostics->state, APPLICATION_TEST_HARNESS_STATE_UNINITIALIZED );
 
     EXPECT_EQ( APPLICATION_TEST_HARNESS_Init(), HIL_APPLICATION_STATUS_OK );
+}
+
+TEST_F( ApplicationHarnessTest, MatchingDiscoveryReturnsExactLocalSystemInformation )
+{
+    APPLICATION_TEST_HARNESS_Reset_Transaction();
+
+    std::vector<uint8_t> response;
+    ASSERT_EQ( Handle( EncodeMessage( BasicSystemInfoRequest() ), &response ),
+               HIL_APPLICATION_STATUS_OK );
+
+    const HIL_Application_Message_T decoded = DecodeMessage( response );
+    ASSERT_EQ( decoded.type, HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_RESPONSE );
+    EXPECT_EQ( decoded.subtype, HIL_APPLICATION_MESSAGE_SUBTYPE_BASIC );
+    EXPECT_EQ( decoded.has_test_id, 0U );
+    const auto& system_info = decoded.body.system_info_response;
+    EXPECT_EQ( system_info.application_protocol_major, HIL_RIG_PROTOCOL_VERSION_MAJOR );
+    EXPECT_EQ( system_info.application_protocol_minor, HIL_RIG_PROTOCOL_VERSION_MINOR );
+    EXPECT_EQ( system_info.application_protocol_patch, HIL_RIG_PROTOCOL_VERSION_PATCH );
+    EXPECT_EQ( system_info.firmware_version_major, 0U );
+    EXPECT_EQ( system_info.firmware_version_minor, 0U );
+    EXPECT_EQ( system_info.firmware_version_patch, 0U );
+    EXPECT_EQ( system_info.diagnostic_data.size, 0U );
+    EXPECT_EQ( system_info.firmware_git_hash.size, 0U );
+
+    EXPECT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ) ),
+               HIL_APPLICATION_STATUS_OK );
+}
+
+TEST_F( ApplicationHarnessTest, MismatchedDiscoveryReturnsLocalInformationButKeepsMessagesBlocked )
+{
+    APPLICATION_TEST_HARNESS_Reset_Transaction();
+
+    std::vector<uint8_t> mismatched_request = EncodeMessage( BasicSystemInfoRequest() );
+    constexpr size_t     kPatchOffset       = HIL_APPLICATION_HEADER_SIZE_BYTES + 6U;
+    ASSERT_GT( mismatched_request.size(), kPatchOffset );
+    mismatched_request[kPatchOffset] = static_cast<uint8_t>( HIL_RIG_PROTOCOL_VERSION_PATCH + 1U );
+
+    std::vector<uint8_t> response;
+    ASSERT_EQ( Handle( mismatched_request, &response ), HIL_APPLICATION_STATUS_OK );
+    const HIL_Application_Message_T decoded = DecodeMessage( response );
+    ASSERT_EQ( decoded.type, HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_RESPONSE );
+    EXPECT_EQ( decoded.body.system_info_response.application_protocol_major,
+               HIL_RIG_PROTOCOL_VERSION_MAJOR );
+    EXPECT_EQ( decoded.body.system_info_response.application_protocol_minor,
+               HIL_RIG_PROTOCOL_VERSION_MINOR );
+    EXPECT_EQ( decoded.body.system_info_response.application_protocol_patch,
+               HIL_RIG_PROTOCOL_VERSION_PATCH );
+
+    EXPECT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ), &response ),
+               HIL_APPLICATION_STATUS_VERSION_MISMATCH );
+    EXPECT_TRUE( response.empty() );
+    const auto* diagnostics = APPLICATION_TEST_HARNESS_Get_Diagnostics();
+    EXPECT_EQ( diagnostics->configurations_accepted, 0U );
+    EXPECT_EQ( diagnostics->instructions_accepted, 0U );
+    EXPECT_EQ( diagnostics->results_encoded, 0U );
+    EXPECT_EQ( diagnostics->state, APPLICATION_TEST_HARNESS_STATE_WAITING_FOR_CONFIGURATION );
+}
+
+TEST_F( ApplicationHarnessTest, SyntheticExecutionControlResponsesPreserveTestIdAndWorkflow )
+{
+    const auto before = *APPLICATION_TEST_HARNESS_Get_Diagnostics();
+
+    for ( const HIL_Application_Control_Command_T command :
+          { HIL_APPLICATION_CONTROL_START, HIL_APPLICATION_CONTROL_ABORT } )
+    {
+        const HIL_Application_Message_T control = ExecutionControl( command );
+        std::vector<uint8_t>            response;
+        ASSERT_EQ( Handle( EncodeMessage( control ), &response ), HIL_APPLICATION_STATUS_OK );
+
+        const HIL_Application_Message_T decoded = DecodeMessage( response );
+        ASSERT_EQ( decoded.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+        EXPECT_EQ( decoded.subtype, HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
+        EXPECT_EQ( decoded.has_test_id, 1U );
+        EXPECT_EQ( std::memcmp( decoded.test_id.bytes, control.test_id.bytes,
+                                HIL_APPLICATION_TEST_ID_SIZE ),
+                   0 );
+        EXPECT_EQ( decoded.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_EXECUTION_CONTROL );
+        EXPECT_EQ( decoded.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_COMPLETED );
+        EXPECT_EQ( decoded.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_NONE );
+        EXPECT_EQ( decoded.body.response.control_command, command );
+        EXPECT_EQ( decoded.body.response.detail, 0U );
+    }
+
+    ExpectWorkflowCountersUnchanged( before );
+}
+
+TEST_F( ApplicationHarnessTest, SyntheticResetApplicationResponsePreservesWorkflow )
+{
+    ASSERT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ) ),
+               HIL_APPLICATION_STATUS_OK );
+    const auto before = *APPLICATION_TEST_HARNESS_Get_Diagnostics();
+
+    std::vector<uint8_t> response;
+    ASSERT_EQ( Handle( EncodeMessage( ResetApplication() ), &response ),
+               HIL_APPLICATION_STATUS_OK );
+
+    const HIL_Application_Message_T decoded = DecodeMessage( response );
+    ASSERT_EQ( decoded.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( decoded.has_test_id, 0U );
+    EXPECT_EQ( decoded.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_GLOBAL_CONTROL );
+    EXPECT_EQ( decoded.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_COMPLETED );
+    EXPECT_EQ( decoded.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_NONE );
+    EXPECT_EQ( decoded.body.response.global_control_command,
+               HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION );
+    EXPECT_EQ( decoded.body.response.detail, 0U );
+
+    ExpectWorkflowCountersUnchanged( before );
+    EXPECT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->configuration_digest,
+               before.configuration_digest );
+}
+
+TEST_F( ApplicationHarnessTest, TestOnlyResponseRoundTripPreservesEveryScope )
+{
+    const auto before = *APPLICATION_TEST_HARNESS_Get_Diagnostics();
+    constexpr std::array<HIL_Application_Response_Scope_T, 5> kScopes = {
+        HIL_APPLICATION_RESPONSE_SCOPE_TEST_CONFIGURATION,
+        HIL_APPLICATION_RESPONSE_SCOPE_TICK,
+        HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST,
+        HIL_APPLICATION_RESPONSE_SCOPE_EXECUTION_CONTROL,
+        HIL_APPLICATION_RESPONSE_SCOPE_GLOBAL_CONTROL,
+    };
+
+    for ( const HIL_Application_Response_Scope_T scope : kScopes )
+    {
+        const std::vector<uint8_t> encoded = EncodeMessage( ApplicationResponse( scope ) );
+        ASSERT_FALSE( encoded.empty() );
+        std::vector<uint8_t> response;
+        ASSERT_EQ( Handle( encoded, &response ), HIL_APPLICATION_STATUS_OK );
+        EXPECT_EQ( response, encoded );
+        EXPECT_EQ( DecodeMessage( response ).body.response.scope, scope );
+    }
+
+    ExpectWorkflowCountersUnchanged( before );
+}
+
+TEST_F( ApplicationHarnessTest, TestOnlyErrorRoundTripPreservesAllFormsAndDiagnosticData )
+{
+    constexpr std::array<uint8_t, 7> kBinaryDiagnostic = {
+        0x00U, 0x7EU, 0x7FU, 0x80U, 0xFEU, 0xFFU, 0xA5U,
+    };
+    std::array<uint8_t, 255> maximum_diagnostic{};
+    for ( size_t i = 0U; i < maximum_diagnostic.size(); ++i )
+    {
+        maximum_diagnostic[i] = static_cast<uint8_t>( ( i * 37U ) & 0xFFU );
+    }
+    const std::array<HIL_Application_Message_T, 3> errors = {
+        ApplicationError( 0U, 0U, nullptr, 0U ),
+        ApplicationError( 1U, 0U, kBinaryDiagnostic.data(),
+                          static_cast<uint8_t>( kBinaryDiagnostic.size() ) ),
+        ApplicationError( 1U, 1U, maximum_diagnostic.data(),
+                          static_cast<uint8_t>( maximum_diagnostic.size() ) ),
+    };
+    const auto before = *APPLICATION_TEST_HARNESS_Get_Diagnostics();
+
+    for ( const HIL_Application_Message_T& error : errors )
+    {
+        const std::vector<uint8_t> encoded = EncodeMessage( error );
+        ASSERT_FALSE( encoded.empty() );
+        std::vector<uint8_t> response;
+        ASSERT_EQ( Handle( encoded, &response ), HIL_APPLICATION_STATUS_OK );
+        EXPECT_EQ( response, encoded );
+
+        const HIL_Application_Message_T decoded = DecodeMessage( response );
+        ASSERT_EQ( decoded.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
+        EXPECT_EQ( decoded.has_test_id, error.has_test_id );
+        EXPECT_EQ( decoded.body.error.has_tick_number, error.body.error.has_tick_number );
+        EXPECT_EQ( decoded.body.error.tick_number, error.body.error.tick_number );
+        EXPECT_EQ( decoded.body.error.detail, error.body.error.detail );
+        EXPECT_EQ( decoded.body.error.diagnostic_data.size, error.body.error.diagnostic_data.size );
+        if ( error.body.error.diagnostic_data.size != 0U )
+        {
+            EXPECT_EQ( std::memcmp( decoded.body.error.diagnostic_data.data,
+                                    error.body.error.diagnostic_data.data,
+                                    error.body.error.diagnostic_data.size ),
+                       0 );
+        }
+    }
+
+    ExpectWorkflowCountersUnchanged( before );
+}
+
+TEST_F( ApplicationHarnessTest, TestOnlyRoundTripEncodeFailurePublishesNoOutput )
+{
+    const std::vector<uint8_t> encoded =
+        EncodeMessage( ApplicationResponse( HIL_APPLICATION_RESPONSE_SCOPE_TICK ) );
+    ASSERT_GT( encoded.size(), 1U );
+    const auto before = *APPLICATION_TEST_HARNESS_Get_Diagnostics();
+
+    std::vector<uint8_t> response;
+    EXPECT_EQ( Handle( encoded, &response, encoded.size() - 1U ),
+               HIL_APPLICATION_STATUS_BUFFER_TOO_SMALL );
+    EXPECT_TRUE( response.empty() );
+    EXPECT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->encode_failures,
+               before.encode_failures + 1U );
+    ExpectWorkflowCountersUnchanged( before );
 }
 
 TEST_F( ApplicationHarnessTest, AcceptsRepresentativeConfigurationWithExactSizeAndDigest )
@@ -248,7 +545,7 @@ TEST_F( ApplicationHarnessTest, MaximumExtensionConfigurationProducesExactTickZe
                    source.body.test_instruction.pwm_outputs[i].duty_cycle_permyriad );
     }
 
-    EXPECT_EQ( diagnostics->application_messages_received, 2U );
+    EXPECT_EQ( diagnostics->application_messages_received, 3U );
     EXPECT_EQ( diagnostics->configurations_accepted, 1U );
     EXPECT_EQ( diagnostics->instructions_accepted, 1U );
     EXPECT_EQ( diagnostics->results_encoded, 1U );
@@ -260,7 +557,7 @@ TEST_F( ApplicationHarnessTest, MaximumExtensionConfigurationProducesExactTickZe
 
     EXPECT_EQ( Handle( instruction, &response ), HIL_APPLICATION_STATUS_VALIDATION_FAILED );
     EXPECT_TRUE( response.empty() );
-    EXPECT_EQ( diagnostics->application_messages_received, 3U );
+    EXPECT_EQ( diagnostics->application_messages_received, 4U );
     EXPECT_EQ( diagnostics->semantic_rejections, 1U );
     EXPECT_EQ( diagnostics->configurations_accepted, 1U );
     EXPECT_EQ( diagnostics->instructions_accepted, 1U );
@@ -485,6 +782,11 @@ TEST_F( ApplicationHarnessTest, TransactionResetPreservesInitializationAndCumula
     EXPECT_EQ( after->results_encoded, before.results_encoded );
     EXPECT_EQ( after->configuration_digest, before.configuration_digest );
     EXPECT_EQ( after->instruction_digest, before.instruction_digest );
+
+    std::vector<uint8_t> response;
+    EXPECT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ), &response ),
+               HIL_APPLICATION_STATUS_VERSION_MISMATCH );
+    EXPECT_TRUE( response.empty() );
 }
 
 }  // namespace

@@ -11,6 +11,8 @@
 
 #include "application_test_harness.h"
 
+#include "hil_rig_protocol/version.h"
+
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -39,6 +41,7 @@ typedef struct
     HIL_Application_Message_T decoded_message;
     HIL_Application_Message_T outgoing_message;
     HIL_Application_Test_Id_T active_test_id;
+    uint8_t                   protocol_version_confirmed;
 
     uint8_t digital_input_enabled[HIL_APPLICATION_DIGITAL_INPUT_CHANNEL_COUNT];
     uint8_t analog_input_enabled[HIL_APPLICATION_ANALOG_INPUT_CHANNEL_COUNT];
@@ -240,6 +243,46 @@ static HIL_Application_Status_T APPLICATION_TEST_HARNESS_Reject( HIL_Application
     return status;
 }
 
+static HIL_Application_Status_T
+APPLICATION_TEST_HARNESS_Encode_Message( const HIL_Application_Message_T* outgoing_message,
+                                         uint8_t* response, size_t response_capacity,
+                                         size_t* response_size )
+{
+    size_t                   encoded_size = 0U;
+    size_t                   output_size  = 0U;
+    HIL_Application_Status_T status;
+
+    status = HIL_APPLICATION_Encoded_Size( &s_application_harness.context, outgoing_message,
+                                           &encoded_size );
+    if ( status != HIL_APPLICATION_STATUS_OK || encoded_size == 0U
+         || encoded_size > APPLICATION_TEST_HARNESS_MAX_ENCODED_MESSAGE_SIZE )
+    {
+        if ( status == HIL_APPLICATION_STATUS_OK )
+        {
+            status = HIL_APPLICATION_STATUS_INTERNAL_ERROR;
+        }
+        APPLICATION_TEST_HARNESS_Increment( &s_application_harness.diagnostics.encode_failures );
+        APPLICATION_TEST_HARNESS_Set_Status( status );
+        return status;
+    }
+
+    status = HIL_APPLICATION_Encode_Message( &s_application_harness.context, outgoing_message,
+                                             response, response_capacity, &output_size );
+    if ( status != HIL_APPLICATION_STATUS_OK || output_size != encoded_size )
+    {
+        if ( status == HIL_APPLICATION_STATUS_OK )
+        {
+            status = HIL_APPLICATION_STATUS_INTERNAL_ERROR;
+        }
+        APPLICATION_TEST_HARNESS_Increment( &s_application_harness.diagnostics.encode_failures );
+        APPLICATION_TEST_HARNESS_Set_Status( status );
+        return status;
+    }
+
+    *response_size = output_size;
+    return HIL_APPLICATION_STATUS_OK;
+}
+
 static void APPLICATION_TEST_HARNESS_Clear_Active_Transaction( void )
 {
     memset( &s_application_harness.active_test_id, 0,
@@ -250,6 +293,7 @@ static void APPLICATION_TEST_HARNESS_Clear_Active_Transaction( void )
             sizeof( s_application_harness.analog_input_enabled ) );
     memset( s_application_harness.pwm_input_enabled, 0,
             sizeof( s_application_harness.pwm_input_enabled ) );
+    s_application_harness.protocol_version_confirmed = 0U;
 
     s_application_harness.diagnostics.next_expected_tick         = 0U;
     s_application_harness.diagnostics.active_expected_tick_count = 0U;
@@ -401,8 +445,6 @@ APPLICATION_TEST_HARNESS_Accept_Instruction( uint8_t* response, size_t response_
     const HIL_Application_Test_Instruction_T* instruction =
         &s_application_harness.decoded_message.body.test_instruction;
     uint32_t                 instruction_digest;
-    size_t                   encoded_size = 0U;
-    size_t                   output_size  = 0U;
     HIL_Application_Status_T status;
 
     if ( s_application_harness.diagnostics.state
@@ -424,35 +466,13 @@ APPLICATION_TEST_HARNESS_Accept_Instruction( uint8_t* response, size_t response_
     instruction_digest = APPLICATION_TEST_HARNESS_Instruction_Digest( instruction );
     APPLICATION_TEST_HARNESS_Build_Result( instruction, instruction_digest );
 
-    status = HIL_APPLICATION_Encoded_Size( &s_application_harness.context,
-                                           &s_application_harness.outgoing_message, &encoded_size );
-    if ( status != HIL_APPLICATION_STATUS_OK || encoded_size == 0U
-         || encoded_size > APPLICATION_TEST_HARNESS_MAX_ENCODED_MESSAGE_SIZE )
+    status = APPLICATION_TEST_HARNESS_Encode_Message( &s_application_harness.outgoing_message,
+                                                      response, response_capacity, response_size );
+    if ( status != HIL_APPLICATION_STATUS_OK )
     {
-        if ( status == HIL_APPLICATION_STATUS_OK )
-        {
-            status = HIL_APPLICATION_STATUS_INTERNAL_ERROR;
-        }
-        APPLICATION_TEST_HARNESS_Increment( &s_application_harness.diagnostics.encode_failures );
-        APPLICATION_TEST_HARNESS_Set_Status( status );
         return status;
     }
 
-    status = HIL_APPLICATION_Encode_Message( &s_application_harness.context,
-                                             &s_application_harness.outgoing_message, response,
-                                             response_capacity, &output_size );
-    if ( status != HIL_APPLICATION_STATUS_OK || output_size != encoded_size )
-    {
-        if ( status == HIL_APPLICATION_STATUS_OK )
-        {
-            status = HIL_APPLICATION_STATUS_INTERNAL_ERROR;
-        }
-        APPLICATION_TEST_HARNESS_Increment( &s_application_harness.diagnostics.encode_failures );
-        APPLICATION_TEST_HARNESS_Set_Status( status );
-        return status;
-    }
-
-    *response_size                                       = output_size;
     s_application_harness.diagnostics.instruction_digest = instruction_digest;
     APPLICATION_TEST_HARNESS_Increment( &s_application_harness.diagnostics.instructions_accepted );
     APPLICATION_TEST_HARNESS_Increment( &s_application_harness.diagnostics.results_encoded );
@@ -464,6 +484,109 @@ APPLICATION_TEST_HARNESS_Accept_Instruction( uint8_t* response, size_t response_
     }
     APPLICATION_TEST_HARNESS_Set_Status( HIL_APPLICATION_STATUS_OK );
     return HIL_APPLICATION_STATUS_OK;
+}
+
+static HIL_Application_Status_T
+APPLICATION_TEST_HARNESS_Handle_System_Info_Request( uint8_t* response, size_t response_capacity,
+                                                     size_t* response_size )
+{
+    const HIL_Application_System_Info_Request_T* request =
+        &s_application_harness.decoded_message.body.system_info_request;
+    HIL_Application_Status_T                version_status;
+    HIL_Application_Status_T                status;
+    HIL_Application_System_Info_Response_T* system_info_response;
+
+    version_status = HIL_APPLICATION_Check_Protocol_Version( request->application_protocol_major,
+                                                             request->application_protocol_minor,
+                                                             request->application_protocol_patch );
+
+    memset( &s_application_harness.outgoing_message, 0,
+            sizeof( s_application_harness.outgoing_message ) );
+    s_application_harness.outgoing_message.type = HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_RESPONSE;
+    s_application_harness.outgoing_message.subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_BASIC;
+    s_application_harness.outgoing_message.has_test_id = 0U;
+
+    system_info_response = &s_application_harness.outgoing_message.body.system_info_response;
+    system_info_response->application_protocol_major = HIL_RIG_PROTOCOL_VERSION_MAJOR;
+    system_info_response->application_protocol_minor = HIL_RIG_PROTOCOL_VERSION_MINOR;
+    system_info_response->application_protocol_patch = HIL_RIG_PROTOCOL_VERSION_PATCH;
+    system_info_response->firmware_version_major     = 0U;
+    system_info_response->firmware_version_minor     = 0U;
+    system_info_response->firmware_version_patch     = 0U;
+
+    status = APPLICATION_TEST_HARNESS_Encode_Message( &s_application_harness.outgoing_message,
+                                                      response, response_capacity, response_size );
+    if ( status != HIL_APPLICATION_STATUS_OK )
+    {
+        s_application_harness.protocol_version_confirmed = 0U;
+        return status;
+    }
+
+    s_application_harness.protocol_version_confirmed =
+        version_status == HIL_APPLICATION_STATUS_OK ? 1U : 0U;
+    APPLICATION_TEST_HARNESS_Set_Status( HIL_APPLICATION_STATUS_OK );
+    return HIL_APPLICATION_STATUS_OK;
+}
+
+static HIL_Application_Status_T
+APPLICATION_TEST_HARNESS_Handle_Execution_Control( uint8_t* response, size_t response_capacity,
+                                                   size_t* response_size )
+{
+    HIL_Application_Response_T* application_response;
+    HIL_Application_Status_T    status;
+
+    memset( &s_application_harness.outgoing_message, 0,
+            sizeof( s_application_harness.outgoing_message ) );
+    s_application_harness.outgoing_message.type        = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+    s_application_harness.outgoing_message.subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    s_application_harness.outgoing_message.has_test_id = 1U;
+    s_application_harness.outgoing_message.test_id = s_application_harness.decoded_message.test_id;
+
+    application_response          = &s_application_harness.outgoing_message.body.response;
+    application_response->scope   = HIL_APPLICATION_RESPONSE_SCOPE_EXECUTION_CONTROL;
+    application_response->outcome = HIL_APPLICATION_RESPONSE_OUTCOME_COMPLETED;
+    application_response->reason  = HIL_APPLICATION_RESPONSE_REASON_NONE;
+    application_response->control_command =
+        s_application_harness.decoded_message.body.execution_control.command;
+    application_response->detail = 0U;
+
+    status = APPLICATION_TEST_HARNESS_Encode_Message( &s_application_harness.outgoing_message,
+                                                      response, response_capacity, response_size );
+    if ( status == HIL_APPLICATION_STATUS_OK )
+    {
+        APPLICATION_TEST_HARNESS_Set_Status( HIL_APPLICATION_STATUS_OK );
+    }
+    return status;
+}
+
+static HIL_Application_Status_T
+APPLICATION_TEST_HARNESS_Handle_Global_Control( uint8_t* response, size_t response_capacity,
+                                                size_t* response_size )
+{
+    HIL_Application_Response_T* application_response;
+    HIL_Application_Status_T    status;
+
+    memset( &s_application_harness.outgoing_message, 0,
+            sizeof( s_application_harness.outgoing_message ) );
+    s_application_harness.outgoing_message.type        = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+    s_application_harness.outgoing_message.subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    s_application_harness.outgoing_message.has_test_id = 0U;
+
+    application_response          = &s_application_harness.outgoing_message.body.response;
+    application_response->scope   = HIL_APPLICATION_RESPONSE_SCOPE_GLOBAL_CONTROL;
+    application_response->outcome = HIL_APPLICATION_RESPONSE_OUTCOME_COMPLETED;
+    application_response->reason  = HIL_APPLICATION_RESPONSE_REASON_NONE;
+    application_response->global_control_command =
+        s_application_harness.decoded_message.body.global_control.command;
+    application_response->detail = 0U;
+
+    status = APPLICATION_TEST_HARNESS_Encode_Message( &s_application_harness.outgoing_message,
+                                                      response, response_capacity, response_size );
+    if ( status == HIL_APPLICATION_STATUS_OK )
+    {
+        APPLICATION_TEST_HARNESS_Set_Status( HIL_APPLICATION_STATUS_OK );
+    }
+    return status;
 }
 
 HIL_Application_Status_T APPLICATION_TEST_HARNESS_Handle_Message( const uint8_t* message,
@@ -531,8 +654,19 @@ HIL_Application_Status_T APPLICATION_TEST_HARNESS_Handle_Message( const uint8_t*
     s_application_harness.diagnostics.last_decoded_message_type =
         ( uint32_t )s_application_harness.decoded_message.type;
 
+    if ( s_application_harness.decoded_message.type
+             != HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_REQUEST
+         && s_application_harness.protocol_version_confirmed == 0U )
+    {
+        return APPLICATION_TEST_HARNESS_Reject( HIL_APPLICATION_STATUS_VERSION_MISMATCH );
+    }
+
     switch ( s_application_harness.decoded_message.type )
     {
+        case HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_REQUEST:
+            return APPLICATION_TEST_HARNESS_Handle_System_Info_Request( response, response_capacity,
+                                                                        response_size );
+
         case HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION:
             return APPLICATION_TEST_HARNESS_Accept_Configuration();
 
@@ -540,6 +674,31 @@ HIL_Application_Status_T APPLICATION_TEST_HARNESS_Handle_Message( const uint8_t*
             return APPLICATION_TEST_HARNESS_Accept_Instruction( response, response_capacity,
                                                                 response_size );
 
+        case HIL_APPLICATION_MESSAGE_TYPE_EXECUTION_CONTROL:
+            return APPLICATION_TEST_HARNESS_Handle_Execution_Control( response, response_capacity,
+                                                                      response_size );
+
+        case HIL_APPLICATION_MESSAGE_TYPE_GLOBAL_CONTROL:
+            return APPLICATION_TEST_HARNESS_Handle_Global_Control( response, response_capacity,
+                                                                   response_size );
+
+        case HIL_APPLICATION_MESSAGE_TYPE_RESPONSE:
+        case HIL_APPLICATION_MESSAGE_TYPE_ERROR:
+            status = APPLICATION_TEST_HARNESS_Encode_Message(
+                &s_application_harness.decoded_message, response, response_capacity,
+                response_size );
+            if ( status == HIL_APPLICATION_STATUS_OK )
+            {
+                APPLICATION_TEST_HARNESS_Set_Status( HIL_APPLICATION_STATUS_OK );
+            }
+            return status;
+
+        case HIL_APPLICATION_MESSAGE_TYPE_INVALID:
+        case HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_RESPONSE:
+        case HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_INSTRUCTION_DATA:
+        case HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT:
+        case HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_RESULT_DATA:
+        case HIL_APPLICATION_MESSAGE_TYPE_RESERVED:
         default:
             return APPLICATION_TEST_HARNESS_Reject( HIL_APPLICATION_STATUS_UNSUPPORTED_MESSAGE );
     }

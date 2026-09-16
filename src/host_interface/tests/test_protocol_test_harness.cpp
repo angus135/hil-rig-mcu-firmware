@@ -210,37 +210,37 @@ TEST( ProtocolTestHarness, StatusResponseHasFixedLittleEndianSchema )
 {
     auto request = Request( PROTOCOL_TEST_HARNESS_OPCODE_STATUS_REQUEST, 0x11223344U );
     PROTOCOL_TEST_HARNESS_Status_Data_T status{};
-    status.link_state                              = 1U;
-    status.link_generation                         = 2U;
-    status.transport_event_count                   = 3U;
-    status.usb_rx_bytes                            = 4U;
-    status.usb_tx_bytes                            = 5U;
-    status.application_requests_received           = 6U;
-    status.responses_submitted                     = 7U;
-    status.usb_tx_busy_retries                     = 8U;
-    status.invalid_hrtp_messages                   = 9U;
-    status.maximum_service_gap_ms                  = 10U;
-    status.transport_session_state                 = 11U;
-    status.compatibility_profile_id                = 0x41505031U;
-    status.application_codec_initialized           = 16U;
-    status.application_initialization_status       = 17U;
-    status.non_hrtp_application_messages_received  = 18U;
-    status.application_decode_failures             = 19U;
-    status.application_semantic_rejections         = 20U;
-    status.application_encode_failures             = 21U;
-    status.configurations_accepted                 = 22U;
-    status.instructions_accepted                   = 23U;
-    status.results_encoded                         = 24U;
-    status.application_harness_state               = 25U;
-    status.next_expected_tick                      = 26U;
-    status.active_expected_tick_count              = 27U;
-    status.last_application_status                 = 28U;
-    status.last_decoded_application_message_type   = 29U;
-    status.configuration_digest                    = 30U;
-    status.instruction_digest                      = 31U;
+    status.link_state                             = 1U;
+    status.link_generation                        = 2U;
+    status.transport_event_count                  = 3U;
+    status.usb_rx_bytes                           = 4U;
+    status.usb_tx_bytes                           = 5U;
+    status.application_requests_received          = 6U;
+    status.responses_submitted                    = 7U;
+    status.usb_tx_busy_retries                    = 8U;
+    status.invalid_hrtp_messages                  = 9U;
+    status.maximum_service_gap_ms                 = 10U;
+    status.transport_session_state                = 11U;
+    status.compatibility_profile_id               = 0x41505031U;
+    status.application_codec_initialized          = 16U;
+    status.application_initialization_status      = 17U;
+    status.non_hrtp_application_messages_received = 18U;
+    status.application_decode_failures            = 19U;
+    status.application_semantic_rejections        = 20U;
+    status.application_encode_failures            = 21U;
+    status.configurations_accepted                = 22U;
+    status.instructions_accepted                  = 23U;
+    status.results_encoded                        = 24U;
+    status.application_harness_state              = 25U;
+    status.next_expected_tick                     = 26U;
+    status.active_expected_tick_count             = 27U;
+    status.last_application_status                = 28U;
+    status.last_decoded_application_message_type  = 29U;
+    status.configuration_digest                   = 30U;
+    status.instruction_digest                     = 31U;
 
     std::array<uint8_t, kMaxMessage> response{};
-    size_t response_length = 0U;
+    size_t                           response_length = 0U;
 
     ASSERT_EQ( PROTOCOL_TEST_HARNESS_RESULT_OK,
                PROTOCOL_TEST_HARNESS_Build_Response( request.data(), request.size(), kMaxMessage,
@@ -255,17 +255,40 @@ TEST( ProtocolTestHarness, StatusResponseHasFixedLittleEndianSchema )
     const uint8_t* payload = &response[PROTOCOL_TEST_HARNESS_HEADER_SIZE];
     const std::array<uint32_t, PROTOCOL_TEST_HARNESS_STATUS_FIELD_COUNT> expected = {
         2U,
-        1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U, 9U, 10U, 11U,
+        1U,
+        2U,
+        3U,
+        4U,
+        5U,
+        6U,
+        7U,
+        8U,
+        9U,
+        10U,
+        11U,
         0x41505031U,
         HIL_RIG_PROTOCOL_VERSION_MAJOR,
         HIL_RIG_PROTOCOL_VERSION_MINOR,
         HIL_RIG_PROTOCOL_VERSION_PATCH,
-        16U, 17U, 18U, 19U, 20U, 21U, 22U, 23U, 24U, 25U, 26U, 27U, 28U, 29U,
-        30U, 31U,
+        16U,
+        17U,
+        18U,
+        19U,
+        20U,
+        21U,
+        22U,
+        23U,
+        24U,
+        25U,
+        26U,
+        27U,
+        28U,
+        29U,
+        30U,
+        31U,
     };
     for ( size_t i = 0U; i < expected.size(); ++i )
     {
         EXPECT_EQ( expected[i], ReadU32LE( &payload[i * sizeof( uint32_t )] ) ) << "field " << i;
     }
 }
-

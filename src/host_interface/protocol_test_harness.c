@@ -83,16 +83,15 @@ PROTOCOL_TEST_HARNESS_Write_Status_Payload( uint8_t*                            
                                         status_data->application_codec_initialized );
     PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[17U * 4U],
                                         status_data->application_initialization_status );
-    PROTOCOL_TEST_HARNESS_Write_U32_LE(
-        &payload[18U * 4U], status_data->non_hrtp_application_messages_received );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[18U * 4U],
+                                        status_data->non_hrtp_application_messages_received );
     PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[19U * 4U],
                                         status_data->application_decode_failures );
     PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[20U * 4U],
                                         status_data->application_semantic_rejections );
     PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[21U * 4U],
                                         status_data->application_encode_failures );
-    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[22U * 4U],
-                                        status_data->configurations_accepted );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[22U * 4U], status_data->configurations_accepted );
     PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[23U * 4U], status_data->instructions_accepted );
     PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[24U * 4U], status_data->results_encoded );
     PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[25U * 4U],
@@ -101,8 +100,8 @@ PROTOCOL_TEST_HARNESS_Write_Status_Payload( uint8_t*                            
     PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[27U * 4U],
                                         status_data->active_expected_tick_count );
     PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[28U * 4U], status_data->last_application_status );
-    PROTOCOL_TEST_HARNESS_Write_U32_LE(
-        &payload[29U * 4U], status_data->last_decoded_application_message_type );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[29U * 4U],
+                                        status_data->last_decoded_application_message_type );
     PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[30U * 4U], status_data->configuration_digest );
     PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[31U * 4U], status_data->instruction_digest );
 }
