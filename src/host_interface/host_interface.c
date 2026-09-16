@@ -943,12 +943,13 @@ void HOST_INTERFACE_Task( void* task_parameters )
     static HIL_Application_Message_T       outgoing_message         = { 0 };
     static HIL_Application_Message_T       incoming_message         = { 0 };
     bool                                   outgoing_message_pending = false;
-    uint8_t outgoing_variable_data[HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE];
+    uint8_t outgoing_variable_data[HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE] = {0};
 
 
     ( void )task_parameters;
 
     uint32_t notifications = 0U;
+    uint32_t carry_on_notifications = 0U;
 
     HostInterfaceTaskHandle = xTaskGetCurrentTaskHandle();
 
@@ -959,6 +960,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
         // These results belong to one service cycle. A failed outgoing submit
         // leaves the pending message unchanged, while incoming availability is
         // reported only for a newly decoded message from this cycle.
+        notifications = 0U;
         bool outgoing_message_accepted  = false;
         bool incoming_message_available = false;
 
@@ -970,14 +972,11 @@ void HOST_INTERFACE_Task( void* task_parameters )
             &protocol_state, outgoing_message_pending ? &outgoing_message : NULL,
             &outgoing_message_accepted, true, &incoming_message, &incoming_message_available );
 
-        ( void )xTaskNotifyWait(
-        0U,
-        UINT32_MAX,
-        &notifications,
-        0U );
+        ( void )xTaskNotifyWait( 0U, UINT32_MAX, &notifications, 0U );
+        carry_on_notifications = carry_on_notifications | notifications;
 
         // TODO add check for != HOST_INTERFACE_STATUS_OK
-        HOST_INTERFACE_process_message(incoming_message_available, &incoming_message, outgoing_message_accepted, &outgoing_message, &outgoing_message_pending, &outgoing_variable_data, HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE, &notifications);
+        HOST_INTERFACE_process_message(incoming_message_available, &incoming_message, outgoing_message_accepted, &outgoing_message, &outgoing_message_pending, outgoing_variable_data, HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE, &carry_on_notifications);
         
         if ( outgoing_message_accepted )
         {

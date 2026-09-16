@@ -324,7 +324,7 @@ HOST_INTERFACE_process_Test_Configuration( const HIL_Application_Message_T* inco
  *    }
  *
  * 2. Forward to the Instruction Message Handler:
- *    HOST_Interface_Status_T status =
+ *    HOST_Interface_Status_T host_status =
  *        HOST_INSTRUCTION_HANDLER_HandleInstruction(&incoming_message->body.test_instruction);
  *
  * 3. Handle outcome:
@@ -334,7 +334,7 @@ HOST_INTERFACE_process_Test_Configuration( const HIL_Application_Message_T* inco
  *    - On error (validation failure, flash upload error, state error):
  *        HOST_INTERFACE_Default_Error(outgoing_message);
  *        *response_required = true;
- *        return status;
+ *        return host_status;
  */
 HOST_Interface_Status_T
 HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incoming_message,
@@ -503,107 +503,110 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
         return false;
     }
     HIL_Application_Message_T temp_outgoing_message = {0};
-    HOST_Interface_Status_T   status                = HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+    HOST_Interface_Status_T   host_status                = HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+    Result_Message_Producer_Status_T result_status =
+        RESULT_MESSAGE_PRODUCER_STATUS_NO_DATA_AVAILABLE;
+    
     if (incoming_message_available) {
         switch ( incoming_message->type )
         {
             case HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_REQUEST:
-                status = HOST_INTERFACE_process_Info_Request( incoming_message, &temp_outgoing_message,
+                host_status = HOST_INTERFACE_process_Info_Request( incoming_message, &temp_outgoing_message,
                                                             response_required, data, data_size );
-                if ( status != HOST_INTERFACE_STATUS_OK )
+                if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
-                    return status;
+                    return host_status;
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_RESPONSE:
-                status = HOST_INTERFACE_process_Info_Response( incoming_message, &temp_outgoing_message,
+                host_status = HOST_INTERFACE_process_Info_Response( incoming_message, &temp_outgoing_message,
                                                             response_required, data, data_size );
-                if ( status != HOST_INTERFACE_STATUS_OK )
+                if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
-                    return status;
+                    return host_status;
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION:
-                status = HOST_INTERFACE_process_Test_Configuration(
+                host_status = HOST_INTERFACE_process_Test_Configuration(
                     incoming_message, &temp_outgoing_message, response_required, data, data_size );
-                if ( status != HOST_INTERFACE_STATUS_OK )
+                if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
-                    return status;
+                    return host_status;
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION:
-                status = HOST_INTERFACE_process_Test_Instructions( incoming_message, &temp_outgoing_message,
+                host_status = HOST_INTERFACE_process_Test_Instructions( incoming_message, &temp_outgoing_message,
                                                                 response_required, data, data_size );
-                if ( status != HOST_INTERFACE_STATUS_OK )
+                if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
-                    return status;
+                    return host_status;
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_INSTRUCTION_DATA:
-                status = HOST_INTERFACE_process_Variable_Instruction_Data(
+                host_status = HOST_INTERFACE_process_Variable_Instruction_Data(
                     incoming_message, &temp_outgoing_message, response_required, data, data_size );
-                if ( status != HOST_INTERFACE_STATUS_OK )
+                if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
-                    return status;
+                    return host_status;
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_EXECUTION_CONTROL:
-                status = HOST_INTERFACE_process_Execution_Control( incoming_message, &temp_outgoing_message,
+                host_status = HOST_INTERFACE_process_Execution_Control( incoming_message, &temp_outgoing_message,
                                                                 response_required, data, data_size );
-                if ( status != HOST_INTERFACE_STATUS_OK )
+                if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
-                    return status;
+                    return host_status;
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_GLOBAL_CONTROL:
-                status = HOST_INTERFACE_process_Global_Control( incoming_message, &temp_outgoing_message,
+                host_status = HOST_INTERFACE_process_Global_Control( incoming_message, &temp_outgoing_message,
                                                                 response_required, data, data_size );
-                if ( status != HOST_INTERFACE_STATUS_OK )
+                if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
-                    return status;
+                    return host_status;
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT:
-                status = HOST_INTERFACE_process_Test_Result( incoming_message, &temp_outgoing_message,
+                host_status = HOST_INTERFACE_process_Test_Result( incoming_message, &temp_outgoing_message,
                                                             response_required, data, data_size );
-                if ( status != HOST_INTERFACE_STATUS_OK )
+                if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
-                    return status;
+                    return host_status;
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_RESULT_DATA:
-                status = HOST_INTERFACE_process_Variable_Result_Data(
+                host_status = HOST_INTERFACE_process_Variable_Result_Data(
                     incoming_message, &temp_outgoing_message, response_required, data, data_size );
-                if ( status != HOST_INTERFACE_STATUS_OK )
+                if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
-                    return status;
+                    return host_status;
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_RESPONSE:
-                status = HOST_INTERFACE_process_Response( incoming_message, &temp_outgoing_message,
+                host_status = HOST_INTERFACE_process_Response( incoming_message, &temp_outgoing_message,
                                                         response_required, data, data_size );
-                if ( status != HOST_INTERFACE_STATUS_OK )
+                if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
-                    return status;
+                    return host_status;
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_ERROR:
-                status = HOST_INTERFACE_process_Error( incoming_message, &temp_outgoing_message,
+                host_status = HOST_INTERFACE_process_Error( incoming_message, &temp_outgoing_message,
                                                     response_required, data, data_size );
-                if ( status != HOST_INTERFACE_STATUS_OK )
+                if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
-                    return status;
+                    return host_status;
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_INVALID:
@@ -626,17 +629,43 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
         outgoing_message->test_id     = incoming_message->test_id;
         return HOST_INTERFACE_STATUS_OK;
     }
-    // If no response is required then we can proces internal message requests
-    switch ( notifications )
+    // If no response is required then we can process internal message requests
+    switch ( *notifications )
     {
         case HOST_INTERFACE_NOTIFY_PACKAGE_RECEIVE:
         case HOST_INTERFACE_NOTIFY_CONFIGURATION:
         case HOST_INTERFACE_NOTIFY_EXECUTION:
         case HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE:
         case HOST_INTERFACE_NOTIFY_RESULT_TRANSFER:
+            result_status = RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &temp_outgoing_message );
+            if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM )
+            {
+                // clear the notification flag
+                *notifications = *notifications & ~( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
+                // TODO signal the runstate manager
+                *response_required = false;
+                return HOST_INTERFACE_STATUS_OK;
+            }
+            if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_NO_DATA_AVAILABLE )
+            {
+                *response_required = false;
+                return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+            }
+            if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_OK )
+            {
+                *outgoing_message = temp_outgoing_message;
+                outgoing_message->has_test_id = incoming_message->has_test_id;
+                outgoing_message->test_id     = incoming_message->test_id;
+                *response_required = true;
+                return HOST_INTERFACE_STATUS_OK;
+            }
+            *response_required = false;
+            return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+
         case HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE:
         case HOST_INTERFACE_NOTIFY_FAULT:
         default:
+            *notifications = 0U;
             return HOST_INTERFACE_STATUS_UNSUPPORTED_NOTIFICATION;
     }
 
