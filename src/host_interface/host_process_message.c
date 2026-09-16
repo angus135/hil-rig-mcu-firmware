@@ -20,6 +20,7 @@
 
 #include "host_process_message.h"
 #include "hil_rig_protocol/application/application.h"
+#include "hil_rig_protocol/application/application_error.h"
 #include "hil_rig_protocol/application/application_message.h"
 #include "hil_rig_protocol/transport/transport.h"
 #include "hil_rig_protocol/version.h"
@@ -347,9 +348,26 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incom
     ( void )data;
     ( void )data_size;
 
-    /* TODO: Call HOST_INSTRUCTION_HANDLER_HandleInstruction() per pseudocode above */
-    //HOST_INSTRUCTION_HANDLER_HandleInstruction()
-    return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
+    HOST_Interface_Status_T instruction_status = HOST_INSTRUCTION_HANDLER_HandleInstruction(&incoming_message->body.test_instruction);
+    if ( instruction_status != HOST_INTERFACE_STATUS_OK )
+    {
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        *response_required = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+    // Set the type and subtype
+    outgoing_message->type    = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+    outgoing_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    // Set Response body
+    outgoing_message->body.response.scope             = HIL_APPLICATION_RESPONSE_SCOPE_TICK;
+    outgoing_message->body.response.outcome          = HIL_APPLICATION_RESPONSE_OUTCOME_COMPLETED;
+    outgoing_message->body.response.reason      = HIL_APPLICATION_RESPONSE_REASON_NONE;
+    outgoing_message->body.response.tick_number          = incoming_message->body.test_instruction.tick_number;
+    outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_RESERVED;
+    outgoing_message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_RESERVED;
+    outgoing_message->body.response.detail               = 0U;
+    *response_required = true;
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Instruction_Data(
@@ -640,9 +658,14 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
             result_status = RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &temp_outgoing_message );
             if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM )
             {
-                // clear the notification flag
+                // clear the result notification flag
                 *notifications = *notifications & ~( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
-                // TODO signal the runstate manager
+                if ( RUN_STATE_MANAGER_RequestResultTransferComplete() == false )
+                {
+                    HOST_INTERFACE_Default_Error( &temp_outgoing_message );
+                    temp_outgoing_message.body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
+                    *response_required                    = true;
+                }
                 *response_required = false;
                 return HOST_INTERFACE_STATUS_OK;
             }
@@ -653,9 +676,6 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
             }
             if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_OK )
             {
-                *outgoing_message = temp_outgoing_message;
-                outgoing_message->has_test_id = incoming_message->has_test_id;
-                outgoing_message->test_id     = incoming_message->test_id;
                 *response_required = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
@@ -668,5 +688,14 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
             *notifications = 0U;
             return HOST_INTERFACE_STATUS_UNSUPPORTED_NOTIFICATION;
     }
-
+     // Check if a response is required
+    if ( *response_required  )
+    {
+        if ( !outgoing_message_accepted )
+        {
+            return HOST_INTERFACE_STATUS_OUTGOING_REQUIRED;
+        }
+        *outgoing_message = temp_outgoing_message;
+        return HOST_INTERFACE_STATUS_OK;
+    }
 }
