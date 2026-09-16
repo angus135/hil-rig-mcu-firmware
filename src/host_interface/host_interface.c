@@ -26,6 +26,7 @@
 #include "hw_usb.h"
 #include "host_interface.h"
 #include "rtos_config.h"
+#include "host_process_message.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -61,6 +62,7 @@
 
 /** Maximum number of Transport reliable-delivery retries. */
 #define HOST_INTERFACE_TRANSPORT_MAX_RETRIES ( 5U )
+#define HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE 255
 
 #ifndef TEST_BUILD
 #include "main.h"
@@ -941,6 +943,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
     static HIL_Application_Message_T       outgoing_message         = { 0 };
     static HIL_Application_Message_T       incoming_message         = { 0 };
     bool                                   outgoing_message_pending = false;
+    uint8_t outgoing_variable_data[HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE];
 
 
     ( void )task_parameters;
@@ -972,6 +975,9 @@ void HOST_INTERFACE_Task( void* task_parameters )
         UINT32_MAX,
         &notifications,
         0U );
+
+        // TODO add check for != HOST_INTERFACE_STATUS_OK
+        HOST_INTERFACE_process_message(incoming_message_available, &incoming_message, outgoing_message_accepted, &outgoing_message, &outgoing_message_pending, &outgoing_variable_data, HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE, &notifications);
         
         if ( outgoing_message_accepted )
         {
