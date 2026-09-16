@@ -495,7 +495,7 @@ HOST_INTERFACE_process_Error( const HIL_Application_Message_T* incoming_message,
 HOST_Interface_Status_T
 HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Application_Message_T* incoming_message,
                                 bool outgoing_message_accepted, HIL_Application_Message_T*       outgoing_message,
-                                bool* response_required, uint8_t* data, size_t data_size, uint32_t notifications )
+                                bool* response_required, uint8_t* data, size_t data_size, uint32_t* notifications )
 {
     if ( incoming_message == NULL || outgoing_message == NULL || response_required == NULL
          || data == NULL )

@@ -25,6 +25,9 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "hil_rig_protocol/application/application.h"
+#include "hil_rig_protocol/application/application_message.h"
+#include "hil_rig_protocol/transport/transport.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -122,6 +125,11 @@ typedef enum
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+HOST_Interface_Status_T
+HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Application_Message_T* incoming_message,
+                                bool outgoing_message_accepted, HIL_Application_Message_T*       outgoing_message,
+                                bool* response_required, uint8_t* data, size_t data_size, uint32_t* notifications );
 
 #ifdef __cplusplus
 }
