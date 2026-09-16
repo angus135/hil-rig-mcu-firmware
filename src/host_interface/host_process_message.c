@@ -302,6 +302,8 @@ HOST_INTERFACE_process_Test_Configuration( const HIL_Application_Message_T* rece
             return HOST_INTERFACE_STATUS_OK;
         }
     }
+    HOST_INSTRUCTION_HANDLER_Reset();
+    RESULT_MESSAGE_PRODUCER_Reset();
     *response_required = false;
     return HOST_INTERFACE_STATUS_OK;
 }
@@ -346,6 +348,7 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* recen
     ( void )data_size;
 
     /* TODO: Call HOST_INSTRUCTION_HANDLER_HandleInstruction() per pseudocode above */
+    //HOST_INSTRUCTION_HANDLER_HandleInstruction()
     return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
 }
 

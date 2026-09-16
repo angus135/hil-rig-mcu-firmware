@@ -28,6 +28,7 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "rtos_config.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -42,10 +43,18 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+extern TaskHandle_t host_interface_task_handle;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Notify the Host interface to send some message
+ *
+ */
+bool HOST_INTERFACE_Notify( uint32_t notification );
 
 /**
  * @brief Host Interface Task
