@@ -31,6 +31,14 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+#define HOST_INTERFACE_NOTIFY_PACKAGE_RECEIVE          ( 1UL << 0U )
+#define HOST_INTERFACE_NOTIFY_CONFIGURATION            ( 1UL << 1U )
+#define HOST_INTERFACE_NOTIFY_EXECUTION                ( 1UL << 2U )
+#define HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE       ( 1UL << 3U )
+#define HOST_INTERFACE_NOTIFY_RESULT_TRANSFER          ( 1UL << 4U )
+#define HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE ( 1UL << 5U )
+#define HOST_INTERFACE_NOTIFY_FAULT                    ( 1UL << 6U )
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -102,6 +110,12 @@ typedef enum
 
     /** Failed to transition to a different state. */
     HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE = 18,
+
+    /** An incoming message requries a response but the outgoing message is busy */
+    HOST_INTERFACE_STATUS_OUTGOING_REQUIRED = 19,
+
+    /** Failed to transition to a different state. */
+    HOST_INTERFACE_STATUS_UNSUPPORTED_NOTIFICATION = 20,
 } HOST_Interface_Status_T;
 
 /**-----------------------------------------------------------------------------
