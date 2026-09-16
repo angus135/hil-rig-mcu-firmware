@@ -265,7 +265,7 @@ typedef struct
  *------------------------------------------------------------------------------
  */
 
-TaskHandle_t* HostInterfaceTaskHandle = NULL;  // NOLINT(readability-identifier-naming)
+static TaskHandle_t HostInterfaceTaskHandle = NULL;  // NOLINT(readability-identifier-naming)
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -901,6 +901,22 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
  */
 
 /**
+ * @brief Notify the Host interface to send some message
+ *
+ */
+bool HOST_INTERFACE_Notify( uint32_t notification )
+{
+    if ( HostInterfaceTaskHandle == NULL )
+    {
+        return false;
+    }
+
+    return xTaskNotify( HostInterfaceTaskHandle,
+                        notification,
+                        eSetBits ) == pdPASS;
+}
+
+/**
  * @brief Host Interface Task
  *
  * @details
@@ -926,7 +942,13 @@ void HOST_INTERFACE_Task( void* task_parameters )
     static HIL_Application_Message_T       incoming_message         = { 0 };
     bool                                   outgoing_message_pending = false;
 
+
     ( void )task_parameters;
+
+    uint32_t notifications = 0U;
+
+    HostInterfaceTaskHandle = xTaskGetCurrentTaskHandle();
+
     HOST_INTERFACE_Protocol_Init( &protocol_state );
 
     while ( true )
@@ -945,6 +967,12 @@ void HOST_INTERFACE_Task( void* task_parameters )
             &protocol_state, outgoing_message_pending ? &outgoing_message : NULL,
             &outgoing_message_accepted, true, &incoming_message, &incoming_message_available );
 
+        ( void )xTaskNotifyWait(
+        0U,
+        UINT32_MAX,
+        &notifications,
+        0U );
+        
         if ( outgoing_message_accepted )
         {
             outgoing_message         = ( HIL_Application_Message_T ){ 0 };
