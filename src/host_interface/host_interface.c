@@ -976,7 +976,16 @@ void HOST_INTERFACE_Task( void* task_parameters )
         carry_on_notifications = carry_on_notifications | notifications;
 
         // TODO add check for != HOST_INTERFACE_STATUS_OK
-        HOST_INTERFACE_process_message(incoming_message_available, &incoming_message, outgoing_message_accepted, &outgoing_message, &outgoing_message_pending, outgoing_variable_data, HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE, &carry_on_notifications);
+        if ( HOST_INTERFACE_process_message(
+                 incoming_message_available, &incoming_message, outgoing_message_accepted,
+                 &outgoing_message, &outgoing_message_pending, outgoing_variable_data,
+                 HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE, &carry_on_notifications )
+             == HOST_INTERFACE_STATUS_OUTGOING_REQUIRED)
+        {
+            // TODO store overflow outgoing message
+            // TODO Poll outgoing_message_accepted for 100ms Then fault
+            incoming_message_available = false;
+        }
 
         /*
          * TODO: When in the result transfer phase (FLASH_MANAGER_STATE_TRANSFERRING_RESULTS),
