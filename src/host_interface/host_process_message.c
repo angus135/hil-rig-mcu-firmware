@@ -525,6 +525,35 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
                 return HOST_INTERFACE_STATUS_OK;
             }
         case HIL_APPLICATION_CONTROL_ABORT:
+            // Signal run state manager to abort
+            // TODO set up abort instead of just fault
+            status = HOST_INTERFACE_request_state_tranistion(RUN_STATE_FAULT, 2, 0);
+            if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
+            {
+                // Construct the error message
+                HOST_INTERFACE_Default_Error( outgoing_message );
+                // TODO  more specific error catagory
+                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+                *response_required = true;
+                return HOST_INTERFACE_STATUS_OK;
+            }
+            if ( status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
+            {
+                // Construct the error message
+                HOST_INTERFACE_Default_Error( outgoing_message );
+                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
+                *response_required = true;
+                return HOST_INTERFACE_STATUS_OK;
+            }
+            if ( status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE )
+            {
+                // Construct the error message
+                HOST_INTERFACE_Default_Error( outgoing_message );
+                // TODO  more specific error catagory
+                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_RESERVED;
+                *response_required = true;
+                return HOST_INTERFACE_STATUS_OK;
+            }
         case HIL_APPLICATION_CONTROL_RESERVED:
         default:
             *response_required = false;
