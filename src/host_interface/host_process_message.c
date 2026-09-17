@@ -484,47 +484,61 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Instruction_Data(
 HOST_Interface_Status_T
 HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incoming_message,
                                           HIL_Application_Message_T*       outgoing_message,
-                                          bool* response_required, uint8_t* data,
-                                          size_t data_size );
+                                          bool* response_required, uint8_t* data, size_t data_size )
+{
+
+    return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
+
+    HOST_Interface_Status_T status = HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+    switch ( incoming_message->body.execution_control.command )
+    {
+        case HIL_APPLICATION_CONTROL_INVALID:
+            *response_required = false;
+            return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
+        case HIL_APPLICATION_CONTROL_START:
+            // Signal run state manager to move to execution
+            status = HOST_INTERFACE_request_state_tranistion(RUN_STATE_EXECUTION, 2, 0);
+            if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
+            {
+                // Construct the error message
+                HOST_INTERFACE_Default_Error( outgoing_message );
+                // TODO  more specific error catagory
+                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+                *response_required = true;
+                return HOST_INTERFACE_STATUS_OK;
+            }
+            if ( status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
+            {
+                // Construct the error message
+                HOST_INTERFACE_Default_Error( outgoing_message );
+                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
+                *response_required = true;
+                return HOST_INTERFACE_STATUS_OK;
+            }
+            if ( status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE )
+            {
+                // Construct the error message
+                HOST_INTERFACE_Default_Error( outgoing_message );
+                // TODO  more specific error catagory
+                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_RESERVED;
+                *response_required = true;
+                return HOST_INTERFACE_STATUS_OK;
+            }
+        case HIL_APPLICATION_CONTROL_ABORT:
+        case HIL_APPLICATION_CONTROL_RESERVED:
+        default:
+            *response_required = false;
+            return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
+    }
+
+}
 
 HOST_Interface_Status_T
 HOST_INTERFACE_process_Global_Control( const HIL_Application_Message_T* incoming_message,
                                        HIL_Application_Message_T*       outgoing_message,
                                        bool* response_required, uint8_t* data, size_t data_size );
 
-/**
- * @brief Process an incoming Test Result message.
- *
- * @note The host device (Python) never sends Test Results to the firmware; firmware
- *       generates and sends Test Results to Python during the result transfer phase.
- *
- * @todo For OUTBOUND result message production (e.g. in HOST_INTERFACE_Task / result transfer
- * loop):
- *
- * Pseudocode for result transmission:
- *   HIL_Application_Message_T out_msg;
- *   Result_Message_Producer_Status_T res_status =
- *       RESULT_MESSAGE_PRODUCER_ProduceNextMessage(&out_msg);
- *
- *   if (res_status == RESULT_MESSAGE_PRODUCER_STATUS_OK)
- *   {
- *       // Producer sets type = TEST_RESULT, subtype = NONE, has_test_id = 1U.
- *       // Stamp the active session's Test ID onto the message:
- *       out_msg.test_id = active_test_id;
- *
- *       // Offer out_msg to Transport for USB transmission
- *   }
- *   else if (res_status == RESULT_MESSAGE_PRODUCER_STATUS_NO_DATA_AVAILABLE)
- *   {
- *       // Flash Manager is prefetching from NAND (BUSY) -> yield and retry next tick
- *   }
- *   else if (res_status == RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM)
- *   {
- *       // All stored results have been read -> complete transfer:
- *       FLASH_MANAGER_FinishResultTransfer();
- *       // Signal Run State Manager that result transfer is complete
- *   }
- */
+
 HOST_Interface_Status_T
 HOST_INTERFACE_process_Test_Result( const HIL_Application_Message_T* incoming_message,
                                     HIL_Application_Message_T*       outgoing_message,
