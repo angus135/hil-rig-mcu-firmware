@@ -83,6 +83,115 @@ HOST_Interface_Status_T HOST_INTERFACE_Default_Error( HIL_Application_Message_T*
     return HOST_INTERFACE_STATUS_OK;
 }
 
+/**
+ * @brief Takes the state you want to transition to and calls the associated request function.
+ *
+ * @details expected tick count is used by the execution start request but for all others it can be
+ *          0
+ *          If the request shouldnt be supported by the host interface it will reutrn
+ *          HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE
+ *
+ * @param[in] expected_state                  The state we want to transition to
+ * @param[in] expected_tick_count             Only used for execution request
+ * 
+ * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully
+ */
+HOST_Interface_Status_T HOST_INTERFACE_state_to_state_request( RunState_T expected_state, uint32_t expected_tick_count )
+{
+    RunStateExecutionRequest_T execution_request = { 0 };
+    execution_request.tick_count = expected_tick_count;
+    RunStateFaultReason_T fault_request = RUN_STATE_FAULT_EXTERNAL_REQUEST;
+    switch ( expected_state )
+    {
+        case RUN_STATE_IDLE:
+            return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
+        case RUN_STATE_TEST_PACKAGE_RECEIVE:
+            if ( RUN_STATE_MANAGER_RequestPackageReceive() != true)
+            {
+                return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
+            }
+            return HOST_INTERFACE_STATUS_OK;
+        case RUN_STATE_CONFIGURATION:
+            if ( RUN_STATE_MANAGER_RequestConfiguration() != true)
+            {
+                return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
+            }
+            return HOST_INTERFACE_STATUS_OK;
+        case RUN_STATE_ARMED:
+            return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
+        case RUN_STATE_EXECUTION:
+            if ( RUN_STATE_MANAGER_RequestExecution( &execution_request ) != RUN_STATE_EXECUTION_REQUEST_ACCEPTED )
+            {
+                return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
+            }
+            return HOST_INTERFACE_STATUS_OK;
+        case RUN_STATE_RESULT_FINALISATION:
+            return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
+        case RUN_STATE_RESULTS_READY:
+            return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
+        case RUN_STATE_RESULT_TRANSFER:
+            if ( RUN_STATE_MANAGER_RequestResultTransfer() != true )
+            {
+                return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
+            }
+            return HOST_INTERFACE_STATUS_OK;
+        case RUN_STATE_FAULT:
+            if ( RUN_STATE_MANAGER_RequestFault(fault_request) != true )
+            {
+                return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
+            }
+            return HOST_INTERFACE_STATUS_OK;
+        default:
+            return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
+    }
+}
+
+/**
+ * @brief Takes the state you want to transition to and calls the associated request function with
+retrys.
+ *
+ * @details expected tick count is used by the execution start request but for all others it can be
+ *          0
+ *          If the request shouldnt be supported by the host interface it will reutrn
+ *          HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE
+ *
+ * @param[in] expected_state                  The state we want to transition to
+ * @param[in] num_trys                        The number of attempts to transition states (1ms wait between)
+ * @param[in] expected_tick_count             Only used for execution request
+ * 
+ * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully
+ */
+HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion(RunState_T expected_state, uint8_t num_trys, uint32_t expected_tick_count )
+{
+    for ( uint8_t i=0; i<num_trys; i++)
+    {
+        // request to transition state
+        if ( HOST_INTERFACE_state_to_state_request( expected_state, expected_tick_count )
+             == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
+        {
+            return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
+        }
+        // Check we transitioned to the correct state
+        RunStateManagerStatus_T run_state_status = { 0 };
+        RUN_STATE_MANAGER_GetStatus( &run_state_status );
+        if ( run_state_status.state == expected_state )
+        {
+            return HOST_INTERFACE_STATUS_OK;
+        }
+        // If error then return 
+        if ( (( !run_state_status.transition_pending )
+             && ( run_state_status.last_request_result != RUN_STATE_REQUEST_RESULT_ACCEPTED )
+             && ( run_state_status.last_request_result != RUN_STATE_REQUEST_RESULT_NONE )) || run_state_status.state == RUN_STATE_FAULT )
+        {
+            return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+        }
+        // wait before trying again
+        vTaskDelay( pdMS_TO_TICKS( 1U ) );
+    }
+    return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
+}
+
+
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
@@ -259,17 +368,6 @@ HOST_INTERFACE_process_Test_Configuration( const HIL_Application_Message_T* inco
     ( void )data;
     ( void )data_size;
 
-    /*
-     * TODO: Store active Test ID and reset session handlers:
-     *
-     * Pseudocode:
-     *   // 1. Cache the 16-byte active Test ID from incoming_message->test_id
-     *   // 2. Reset instruction delta state:
-     *   HOST_INSTRUCTION_HANDLER_Reset();
-     *   // 3. Reset result stream aggregation state:
-     *   RESULT_MESSAGE_PRODUCER_Reset();
-     */
-
     return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
     /** CALL CALLUMS FUNCTION TO PASS CONFIGURAITON MESSAGE
      *
@@ -279,29 +377,32 @@ HOST_INTERFACE_process_Test_Configuration( const HIL_Application_Message_T* inco
      */
 
     // Signal run state manager to move to package recieving state
-    RunStateManagerStatus_T run_state = { 0 };
-    RUN_STATE_MANAGER_GetStatus( &run_state );
-    size_t counter       = 0;
-    size_t counter_limit = 100;
-    if ( RUN_STATE_MANAGER_RequestPackageReceive() == false )
+    HOST_Interface_Status_T status = HOST_INTERFACE_request_state_tranistion(RUN_STATE_CONFIGURATION, 2, 0);
+    if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
     {
-        // report error to host device
+        // Construct the error message
         HOST_INTERFACE_Default_Error( outgoing_message );
+        // TODO  more specific error catagory
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
         *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
-    while ( run_state.state != RUN_STATE_TEST_PACKAGE_RECEIVE )
+    if ( status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
     {
-        // wait
-        RUN_STATE_MANAGER_GetStatus( &run_state );
-        counter += 1;
-        if ( counter >= counter_limit )
-        {
-            HOST_INTERFACE_Default_Error( outgoing_message );
-            outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_TIMEOUT;
-            *response_required                    = true;
-            return HOST_INTERFACE_STATUS_OK;
-        }
+        // Construct the error message
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
+        *response_required = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+    if ( status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE )
+    {
+        // Construct the error message
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        // TODO  more specific error catagory
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_RESERVED;
+        *response_required = true;
+        return HOST_INTERFACE_STATUS_OK;
     }
     HOST_INSTRUCTION_HANDLER_Reset();
     RESULT_MESSAGE_PRODUCER_Reset();
@@ -342,12 +443,8 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incom
                                           HIL_Application_Message_T*       outgoing_message,
                                           bool* response_required, uint8_t* data, size_t data_size )
 {
-    ( void )incoming_message;
-    ( void )outgoing_message;
-    ( void )response_required;
     ( void )data;
-    ( void )data_size;
-
+    (void) data_size;
     HOST_Interface_Status_T instruction_status = HOST_INSTRUCTION_HANDLER_HandleInstruction(&incoming_message->body.test_instruction);
     if ( instruction_status != HOST_INTERFACE_STATUS_OK )
     {
