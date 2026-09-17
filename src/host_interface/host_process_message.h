@@ -48,6 +48,21 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+typedef enum
+{
+    HOST_REQUEST_IDLE = 0,
+    HOST_REQUEST_TEST_PACKAGE_RECEIVE,
+    HOST_REQUEST_CONFIGURATION,
+    HOST_REQUEST_ARMED,
+    HOST_REQUEST_EXECUTION,
+    HOST_REQUEST_RESULT_FINALISATION,
+    HOST_REQUEST_RESULTS_READY,
+    HOST_REQUEST_RESULT_TRANSFER,
+    HOST_REQUEST_FAULT,
+    HOST_REQUEST_ABORT,
+    HOST_REQUEST_RESET
+} Host_RunState_Request_T;
+
 /**
  * @brief Result of one local host information function.
  *
@@ -121,6 +136,8 @@ typedef enum
     /** Failed to transition to a different state. */
     HOST_INTERFACE_STATUS_UNSUPPORTED_NOTIFICATION = 20,
 } HOST_Interface_Status_T;
+
+
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes

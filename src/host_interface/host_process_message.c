@@ -96,51 +96,61 @@ HOST_Interface_Status_T HOST_INTERFACE_Default_Error( HIL_Application_Message_T*
  * 
  * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully
  */
-HOST_Interface_Status_T HOST_INTERFACE_state_to_state_request( RunState_T expected_state, uint32_t expected_tick_count )
+HOST_Interface_Status_T HOST_INTERFACE_state_to_state_request( Host_RunState_Request_T request, uint32_t expected_tick_count )
 {
     RunStateExecutionRequest_T execution_request = { 0 };
     execution_request.tick_count = expected_tick_count;
     RunStateFaultReason_T fault_request = RUN_STATE_FAULT_EXTERNAL_REQUEST;
-    switch ( expected_state )
+    switch ( request )
     {
-        case RUN_STATE_IDLE:
+        case HOST_REQUEST_IDLE:
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
-        case RUN_STATE_TEST_PACKAGE_RECEIVE:
+        case HOST_REQUEST_TEST_PACKAGE_RECEIVE:
             if ( RUN_STATE_MANAGER_RequestPackageReceive() != true)
             {
                 return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
             }
             return HOST_INTERFACE_STATUS_OK;
-        case RUN_STATE_CONFIGURATION:
+        case HOST_REQUEST_CONFIGURATION:
             if ( RUN_STATE_MANAGER_RequestConfiguration() != true)
             {
                 return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
             }
             return HOST_INTERFACE_STATUS_OK;
-        case RUN_STATE_ARMED:
+        case HOST_REQUEST_ARMED:
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
-        case RUN_STATE_EXECUTION:
+        case HOST_REQUEST_EXECUTION:
             if ( RUN_STATE_MANAGER_RequestExecution( &execution_request ) != RUN_STATE_EXECUTION_REQUEST_ACCEPTED )
             {
                 return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
             }
             return HOST_INTERFACE_STATUS_OK;
-        case RUN_STATE_RESULT_FINALISATION:
+        case HOST_REQUEST_RESULT_FINALISATION:
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
-        case RUN_STATE_RESULTS_READY:
+        case HOST_REQUEST_RESULTS_READY:
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
-        case RUN_STATE_RESULT_TRANSFER:
+        case HOST_REQUEST_RESULT_TRANSFER:
             if ( RUN_STATE_MANAGER_RequestResultTransfer() != true )
             {
                 return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
             }
             return HOST_INTERFACE_STATUS_OK;
-        case RUN_STATE_FAULT:
+        case HOST_REQUEST_FAULT:
             if ( RUN_STATE_MANAGER_RequestFault(fault_request) != true )
             {
                 return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
             }
             return HOST_INTERFACE_STATUS_OK;
+        case HOST_REQUEST_ABORT:
+            if ( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() != true )
+            {
+               return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE; 
+            }
+        case HOST_REQUEST_RESET:
+            if ( RUN_STATE_MANAGER_RequestReset() != true )
+            {
+                return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE; 
+            }
         default:
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
     }
@@ -161,12 +171,12 @@ retrys.
  * 
  * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully
  */
-HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion(RunState_T expected_state, uint8_t num_trys, uint32_t expected_tick_count )
+HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion(RunState_T expected_state , Host_RunState_Request_T request, uint8_t num_trys, uint32_t expected_tick_count )
 {
     for ( uint8_t i=0; i<num_trys; i++)
     {
         // request to transition state
-        if ( HOST_INTERFACE_state_to_state_request( expected_state, expected_tick_count )
+        if ( HOST_INTERFACE_state_to_state_request( request, expected_tick_count )
              == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
         {
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
@@ -377,7 +387,7 @@ HOST_INTERFACE_process_Test_Configuration( const HIL_Application_Message_T* inco
      */
 
     // Signal run state manager to move to package recieving state
-    HOST_Interface_Status_T status = HOST_INTERFACE_request_state_tranistion(RUN_STATE_CONFIGURATION, 2, 0);
+    HOST_Interface_Status_T status = HOST_INTERFACE_request_state_tranistion(RUN_STATE_CONFIGURATION, HOST_REQUEST_CONFIGURATION, 2, 0);
     if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
     {
         // Construct the error message
@@ -495,7 +505,7 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
         case HIL_APPLICATION_CONTROL_START:
             // Signal run state manager to move to execution
-            status = HOST_INTERFACE_request_state_tranistion(RUN_STATE_EXECUTION, 2, 0);
+            status = HOST_INTERFACE_request_state_tranistion(RUN_STATE_EXECUTION, HOST_REQUEST_EXECUTION, 2, 0);
             if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
             {
                 // Construct the error message
@@ -524,8 +534,7 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
             }
         case HIL_APPLICATION_CONTROL_ABORT:
             // Signal run state manager to abort
-            // TODO set up abort instead of just fault
-            status = HOST_INTERFACE_request_state_tranistion(RUN_STATE_FAULT, 2, 0);
+            status = HOST_INTERFACE_request_state_tranistion(RUN_STATE_FAULT, HOST_REQUEST_FAULT, 2, 0);
             if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
             {
                 // Construct the error message
@@ -575,8 +584,8 @@ HOST_INTERFACE_process_Global_Control( const HIL_Application_Message_T* incoming
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
         case HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION:
             // Signal run state manager to abort
-            // TODO set up abort instead of just fault
-            status = HOST_INTERFACE_request_state_tranistion(RUN_STATE_FAULT, 2, 0);
+            // TODO set up reset instead of just fault
+            status = HOST_INTERFACE_request_state_tranistion(RUN_STATE_IDLE, HOST_REQUEST_RESET, 2, 0);
             if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
             {
                 // Construct the error message
