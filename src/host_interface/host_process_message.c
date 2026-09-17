@@ -602,31 +602,22 @@ HOST_INTERFACE_process_Error( const HIL_Application_Message_T* incoming_message,
     }
 }
 
-/**-----------------------------------------------------------------------------
- *  Public Function Definitions
- *------------------------------------------------------------------------------
- */
-
-HOST_Interface_Status_T
-HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Application_Message_T* incoming_message,
-                                bool outgoing_message_accepted, HIL_Application_Message_T*       outgoing_message,
-                                bool* response_required, uint8_t* data, size_t data_size, uint32_t* notifications )
+HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
+    bool incoming_message_available, const HIL_Application_Message_T* incoming_message, HIL_Application_Message_T* outgoing_message,
+    bool* response_required, uint8_t* data, size_t data_size )
 {
     if ( incoming_message == NULL || outgoing_message == NULL || response_required == NULL
          || data == NULL )
     {
         return false;
     }
-    HIL_Application_Message_T temp_outgoing_message = {0};
     HOST_Interface_Status_T   host_status                = HOST_INTERFACE_STATUS_INTERNAL_ERROR;
-    Result_Message_Producer_Status_T result_status =
-        RESULT_MESSAGE_PRODUCER_STATUS_NO_DATA_AVAILABLE;
     
     if (incoming_message_available) {
         switch ( incoming_message->type )
         {
             case HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_REQUEST:
-                host_status = HOST_INTERFACE_process_Info_Request( incoming_message, &temp_outgoing_message,
+                host_status = HOST_INTERFACE_process_Info_Request( incoming_message, outgoing_message,
                                                             response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
@@ -635,7 +626,7 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_RESPONSE:
-                host_status = HOST_INTERFACE_process_Info_Response( incoming_message, &temp_outgoing_message,
+                host_status = HOST_INTERFACE_process_Info_Response( incoming_message, outgoing_message,
                                                             response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
@@ -645,7 +636,7 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION:
                 host_status = HOST_INTERFACE_process_Test_Configuration(
-                    incoming_message, &temp_outgoing_message, response_required, data, data_size );
+                    incoming_message, outgoing_message, response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
@@ -653,7 +644,7 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION:
-                host_status = HOST_INTERFACE_process_Test_Instructions( incoming_message, &temp_outgoing_message,
+                host_status = HOST_INTERFACE_process_Test_Instructions( incoming_message, outgoing_message,
                                                                 response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
@@ -663,7 +654,7 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_INSTRUCTION_DATA:
                 host_status = HOST_INTERFACE_process_Variable_Instruction_Data(
-                    incoming_message, &temp_outgoing_message, response_required, data, data_size );
+                    incoming_message, outgoing_message, response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
@@ -671,7 +662,7 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_EXECUTION_CONTROL:
-                host_status = HOST_INTERFACE_process_Execution_Control( incoming_message, &temp_outgoing_message,
+                host_status = HOST_INTERFACE_process_Execution_Control( incoming_message, outgoing_message,
                                                                 response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
@@ -680,7 +671,7 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_GLOBAL_CONTROL:
-                host_status = HOST_INTERFACE_process_Global_Control( incoming_message, &temp_outgoing_message,
+                host_status = HOST_INTERFACE_process_Global_Control( incoming_message, outgoing_message,
                                                                 response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
@@ -689,7 +680,7 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT:
-                host_status = HOST_INTERFACE_process_Test_Result( incoming_message, &temp_outgoing_message,
+                host_status = HOST_INTERFACE_process_Test_Result( incoming_message, outgoing_message,
                                                             response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
@@ -699,7 +690,7 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_RESULT_DATA:
                 host_status = HOST_INTERFACE_process_Variable_Result_Data(
-                    incoming_message, &temp_outgoing_message, response_required, data, data_size );
+                    incoming_message, outgoing_message, response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
@@ -707,7 +698,7 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_RESPONSE:
-                host_status = HOST_INTERFACE_process_Response( incoming_message, &temp_outgoing_message,
+                host_status = HOST_INTERFACE_process_Response( incoming_message, outgoing_message,
                                                         response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
@@ -716,7 +707,7 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_ERROR:
-                host_status = HOST_INTERFACE_process_Error( incoming_message, &temp_outgoing_message,
+                host_status = HOST_INTERFACE_process_Error( incoming_message, outgoing_message,
                                                     response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
@@ -732,19 +723,13 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
                 return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
         }
     }
-    // Check if a response is required
-    if ( *response_required  )
-    {
-        if ( !outgoing_message_accepted )
-        {
-            return HOST_INTERFACE_STATUS_OUTGOING_REQUIRED;
-        }
-        *outgoing_message = temp_outgoing_message;
-        outgoing_message->has_test_id = incoming_message->has_test_id;
-        outgoing_message->test_id     = incoming_message->test_id;
-        return HOST_INTERFACE_STATUS_OK;
-    }
-    // If no response is required then we can process internal message requests
+}
+
+HOST_Interface_Status_T HOST_INTERFACE_process_internal_message( HIL_Application_Message_T* outgoing_message,
+    bool* response_required, uint8_t* data, size_t data_size, uint32_t* notifications )
+{
+    Result_Message_Producer_Status_T result_status =
+        RESULT_MESSAGE_PRODUCER_STATUS_NO_DATA_AVAILABLE;
     switch ( *notifications )
     {
         case HOST_INTERFACE_NOTIFY_PACKAGE_RECEIVE:
@@ -752,15 +737,15 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
         case HOST_INTERFACE_NOTIFY_EXECUTION:
         case HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE:
         case HOST_INTERFACE_NOTIFY_RESULT_TRANSFER:
-            result_status = RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &temp_outgoing_message );
+            result_status = RESULT_MESSAGE_PRODUCER_ProduceNextMessage( outgoing_message );
             if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM )
             {
                 // clear the result notification flag
                 *notifications = *notifications & ~( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
                 if ( RUN_STATE_MANAGER_RequestResultTransferComplete() == false )
                 {
-                    HOST_INTERFACE_Default_Error( &temp_outgoing_message );
-                    temp_outgoing_message.body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
+                    HOST_INTERFACE_Default_Error( outgoing_message );
+                    outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
                     *response_required                    = true;
                 }
                 *response_required = false;
@@ -785,7 +770,55 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
             *notifications = 0U;
             return HOST_INTERFACE_STATUS_UNSUPPORTED_NOTIFICATION;
     }
-     // Check if a response is required
+}
+
+/**-----------------------------------------------------------------------------
+ *  Public Function Definitions
+ *------------------------------------------------------------------------------
+ */
+
+HOST_Interface_Status_T
+HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Application_Message_T* incoming_message,
+                                bool outgoing_message_accepted, HIL_Application_Message_T*       outgoing_message,
+                                bool* response_required, uint8_t* data, size_t data_size, uint32_t* notifications )
+{
+    if ( incoming_message == NULL || outgoing_message == NULL || response_required == NULL
+         || data == NULL )
+    {
+        return false;
+    }
+    HIL_Application_Message_T temp_outgoing_message = {0};
+    HOST_Interface_Status_T   host_status                = HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+    
+    // PROCESS INCOMING MESSAGE
+    host_status = HOST_INTERFACE_process_incoming_message(incoming_message_available, incoming_message, &temp_outgoing_message, response_required, data, data_size);
+    if ( host_status != HOST_INTERFACE_STATUS_OK )
+    {
+        *response_required = false;
+        return host_status;
+    }
+
+    // CHECK IF A RESPONSE IS REQUIRED
+    if ( *response_required  )
+    {
+        if ( !outgoing_message_accepted )
+        {
+            return HOST_INTERFACE_STATUS_OUTGOING_REQUIRED;
+        }
+        *outgoing_message = temp_outgoing_message;
+        outgoing_message->has_test_id = incoming_message->has_test_id;
+        outgoing_message->test_id     = incoming_message->test_id;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+    // If no response is required then we can process internal message requests
+    // PROCESS INTERNAL REQUESTS
+    host_status = HOST_INTERFACE_process_internal_message(&temp_outgoing_message, response_required, data, data_size, notifications);
+    if ( host_status != HOST_INTERFACE_STATUS_OK )
+    {
+        *response_required = false;
+        return host_status;
+    }
+    // Check if a response is required
     if ( *response_required  )
     {
         if ( !outgoing_message_accepted )

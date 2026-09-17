@@ -34,6 +34,7 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+// NOTIFICATIONS
 #define HOST_INTERFACE_NOTIFY_PACKAGE_RECEIVE          ( 1UL << 0U )
 #define HOST_INTERFACE_NOTIFY_CONFIGURATION            ( 1UL << 1U )
 #define HOST_INTERFACE_NOTIFY_EXECUTION                ( 1UL << 2U )
