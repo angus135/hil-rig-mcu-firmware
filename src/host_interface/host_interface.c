@@ -977,16 +977,6 @@ void HOST_INTERFACE_Task( void* task_parameters )
 
         // TODO add check for != HOST_INTERFACE_STATUS_OK
         HOST_INTERFACE_process_message(incoming_message_available, &incoming_message, outgoing_message_accepted, &outgoing_message, &outgoing_message_pending, outgoing_variable_data, HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE, &carry_on_notifications);
-        
-        if ( outgoing_message_accepted )
-        {
-            outgoing_message         = ( HIL_Application_Message_T ){ 0 };
-            outgoing_message_pending = false;
-        }
-
-        if ( incoming_message_available )
-        {
-        }
 
         /*
          * TODO: When in the result transfer phase (FLASH_MANAGER_STATE_TRANSFERRING_RESULTS),
