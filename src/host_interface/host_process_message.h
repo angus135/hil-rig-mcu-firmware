@@ -146,7 +146,7 @@ typedef enum
 
 HOST_Interface_Status_T
 HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Application_Message_T* incoming_message,
-                                bool outgoing_message_accepted, HIL_Application_Message_T*       outgoing_message,
+                                bool outgoing_message_accepted, HIL_Application_Message_T*       outgoing_message, HIL_Application_Message_T* overflow_outgoing_message,
                                 bool* response_required, uint8_t* data, size_t data_size, uint32_t* notifications, uint32_t* expected_tick_count );
 
 #ifdef __cplusplus
