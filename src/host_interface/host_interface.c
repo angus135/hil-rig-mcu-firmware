@@ -949,7 +949,9 @@ void HOST_INTERFACE_Task( void* task_parameters )
     uint32_t carry_on_notifications = 0U;
     uint32_t expected_tick_count    = 0U;
 
-    bool output_overflow = false;
+    TickType_t overflow_timer;
+
+    bool can_consume_incoming = true;
 
     HIL_Application_Message_T overflow_outgoing_message = { 0 };
     HostInterfaceTaskHandle                             = xTaskGetCurrentTaskHandle();
@@ -971,12 +973,13 @@ void HOST_INTERFACE_Task( void* task_parameters )
         // backpressure without stopping USB/Transport service.
         HOST_INTERFACE_Protocol_Process(
             &protocol_state, outgoing_message_pending ? &outgoing_message : NULL,
-            &outgoing_message_accepted, true, &incoming_message, &incoming_message_available );
+            &outgoing_message_accepted, can_consume_incoming, &incoming_message, &incoming_message_available );
 
         ( void )xTaskNotifyWait( 0U, UINT32_MAX, &notifications, 0U );
         carry_on_notifications = carry_on_notifications | notifications;
 
-        if ( !output_overflow )
+        // check if we are overflowing (inverse of can_consume_incoming)
+        if ( can_consume_incoming )
         {
             if ( HOST_INTERFACE_process_message(
                      incoming_message_available, &incoming_message, outgoing_message_accepted,
@@ -985,17 +988,26 @@ void HOST_INTERFACE_Task( void* task_parameters )
                      &carry_on_notifications, &expected_tick_count )
                  == HOST_INTERFACE_STATUS_OUTGOING_REQUIRED )
             {
-                // TODO store overflow outgoing message
-                output_overflow = true;
-                // TODO Poll outgoing_message_accepted for 100ms Then fault
-                incoming_message_available = false;
+                // We are overflowing, so stop processing incomming messages
+                can_consume_incoming = false;
+                overflow_timer = xTaskGetTickCount();
             }
         }
         else
         {
+            // if we are overflowing poll outgoing_message_accepted for 100ms Then fault
             if ( outgoing_message_accepted )
             {
-                output_overflow = false;
+                // overflow over so pass the latest output message and return to normal
+                outgoing_message = overflow_outgoing_message;
+                outgoing_message_pending = true;
+                can_consume_incoming = true;
+            }
+            else if ( xTaskGetTickCount() - overflow_timer >= pdMS_TO_TICKS( 100U ) )
+            {
+                // Outgoing message overflow timeout
+                HOST_INTERFACE_Error_Handler();
+                return;
             }
         }
 
