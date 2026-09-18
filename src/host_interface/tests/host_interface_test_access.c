@@ -75,7 +75,7 @@ void HOST_INTERFACE_Test_Access_Process_Once( void )
     bool                      outgoing_message_accepted;
     bool                      incoming_message_available;
 
-    HOST_INTERFACE_Protocol_Process( &s_protocol_state, NULL, &outgoing_message_accepted,
+    HOST_INTERFACE_Protocol_Process( &s_protocol_state, NULL, &outgoing_message_accepted, true,
                                      &incoming_message, &incoming_message_available );
 }
 
