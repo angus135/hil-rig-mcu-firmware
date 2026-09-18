@@ -22,6 +22,7 @@
 #include "hil_rig_protocol/application/application.h"
 #include "hil_rig_protocol/application/application_error.h"
 #include "hil_rig_protocol/application/application_message.h"
+#include "hil_rig_protocol/application/application_response.h"
 #include "hil_rig_protocol/transport/transport.h"
 #include "hil_rig_protocol/version.h"
 #include "host_interface.h"
@@ -467,7 +468,7 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incom
     outgoing_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
     // Set Response body
     outgoing_message->body.response.scope             = HIL_APPLICATION_RESPONSE_SCOPE_TICK;
-    outgoing_message->body.response.outcome          = HIL_APPLICATION_RESPONSE_OUTCOME_COMPLETED;
+    outgoing_message->body.response.outcome          = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
     outgoing_message->body.response.reason      = HIL_APPLICATION_RESPONSE_REASON_NONE;
     outgoing_message->body.response.tick_number          = incoming_message->body.test_instruction.tick_number;
     outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_RESERVED;
@@ -561,6 +562,16 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
                 *response_required = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
+            if ( status == HOST_INTERFACE_STATUS_OK )
+            {
+                *response_required = false;
+                return HOST_INTERFACE_STATUS_OK;
+            }
+            // Construct the error message
+            HOST_INTERFACE_Default_Error( outgoing_message );
+            // TODO  more specific error catagory
+            *response_required = true;
+            return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_CONTROL_RESERVED:
             *response_required = false;
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
@@ -612,6 +623,16 @@ HOST_INTERFACE_process_Global_Control( const HIL_Application_Message_T* incoming
                 *response_required = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
+            if ( status == HOST_INTERFACE_STATUS_OK )
+            {
+                *response_required = false;
+                return HOST_INTERFACE_STATUS_OK;
+            }
+            // Construct the error message
+            HOST_INTERFACE_Default_Error( outgoing_message );
+            // TODO  more specific error catagory
+            *response_required = true;
+            return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_GLOBAL_CONTROL_RESERVED:
             *response_required = false;
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
