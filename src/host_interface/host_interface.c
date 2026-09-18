@@ -950,8 +950,11 @@ void HOST_INTERFACE_Task( void* task_parameters )
 
     uint32_t notifications = 0U;
     uint32_t carry_on_notifications = 0U;
-    uint32_t expected_tick_count = 0U;
+    uint32_t expected_tick_count    = 0U;
 
+    bool output_overflow = false;
+    
+    HIL_Application_Message_T overflow_outgoing_message = {0};
     HostInterfaceTaskHandle = xTaskGetCurrentTaskHandle();
 
     HOST_INTERFACE_Protocol_Init( &protocol_state );
@@ -976,16 +979,26 @@ void HOST_INTERFACE_Task( void* task_parameters )
         ( void )xTaskNotifyWait( 0U, UINT32_MAX, &notifications, 0U );
         carry_on_notifications = carry_on_notifications | notifications;
 
-        // TODO add check for != HOST_INTERFACE_STATUS_OK
-        if ( HOST_INTERFACE_process_message(
-                 incoming_message_available, &incoming_message, outgoing_message_accepted,
-                 &outgoing_message, &outgoing_message_pending, outgoing_variable_data,
-                 HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE, &carry_on_notifications, &expected_tick_count )
-             == HOST_INTERFACE_STATUS_OUTGOING_REQUIRED)
+        if ( !output_overflow )
         {
-            // TODO store overflow outgoing message
-            // TODO Poll outgoing_message_accepted for 100ms Then fault
-            incoming_message_available = false;
+            if ( HOST_INTERFACE_process_message(
+                    incoming_message_available, &incoming_message, outgoing_message_accepted,
+                    &outgoing_message, &overflow_outgoing_message, &outgoing_message_pending, outgoing_variable_data,
+                    HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE, &carry_on_notifications, &expected_tick_count )
+                == HOST_INTERFACE_STATUS_OUTGOING_REQUIRED)
+            {
+                // TODO store overflow outgoing message
+                output_overflow = true;
+                // TODO Poll outgoing_message_accepted for 100ms Then fault
+                incoming_message_available = false;
+            }
+        }
+        else
+        {
+            if ( outgoing_message_accepted )
+            {
+                output_overflow = false;
+            }
         }
 
         /*

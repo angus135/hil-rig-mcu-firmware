@@ -1021,14 +1021,15 @@ HOST_Interface_Status_T HOST_INTERFACE_process_internal_message( HIL_Application
 
 HOST_Interface_Status_T
 HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Application_Message_T* incoming_message,
-                                bool outgoing_message_accepted, HIL_Application_Message_T*       outgoing_message,
+                                bool outgoing_message_accepted, HIL_Application_Message_T*       outgoing_message, HIL_Application_Message_T* overflow_outgoing_message,
                                 bool* response_required, uint8_t* data, size_t data_size, uint32_t* notifications, uint32_t* expected_tick_count )
 {
     if ( incoming_message == NULL || outgoing_message == NULL || response_required == NULL
          || data == NULL )
     {
-        return false;
+        return HOST_INTERFACE_STATUS_INVALID_ARGUMENT;
     }
+    // create temporary output message (incase output is not accepted)
     HIL_Application_Message_T temp_outgoing_message = {0};
     HOST_Interface_Status_T   host_status = HOST_INTERFACE_STATUS_INTERNAL_ERROR;
     
@@ -1045,6 +1046,8 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
     {
         if ( !outgoing_message_accepted )
         {
+            *overflow_outgoing_message = temp_outgoing_message;
+            *response_required = true;
             return HOST_INTERFACE_STATUS_OUTGOING_REQUIRED;
         }
         *outgoing_message = temp_outgoing_message;
@@ -1065,6 +1068,8 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
     {
         if ( !outgoing_message_accepted )
         {
+            *overflow_outgoing_message = temp_outgoing_message;
+            *response_required = true;
             return HOST_INTERFACE_STATUS_OUTGOING_REQUIRED;
         }
         *outgoing_message = temp_outgoing_message;
