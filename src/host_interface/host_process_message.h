@@ -35,13 +35,13 @@ extern "C"
  */
 
 // NOTIFICATIONS
-#define HOST_INTERFACE_NOTIFY_PACKAGE_RECEIVE          ( 1UL << 0U )
-#define HOST_INTERFACE_NOTIFY_CONFIGURATION            ( 1UL << 1U )
-#define HOST_INTERFACE_NOTIFY_EXECUTION                ( 1UL << 2U )
-#define HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE       ( 1UL << 3U )
-#define HOST_INTERFACE_NOTIFY_RESULT_TRANSFER          ( 1UL << 4U )
+#define HOST_INTERFACE_NOTIFY_PACKAGE_RECEIVE ( 1UL << 0U )
+#define HOST_INTERFACE_NOTIFY_CONFIGURATION ( 1UL << 1U )
+#define HOST_INTERFACE_NOTIFY_EXECUTION ( 1UL << 2U )
+#define HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE ( 1UL << 3U )
+#define HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ( 1UL << 4U )
 #define HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE ( 1UL << 5U )
-#define HOST_INTERFACE_NOTIFY_FAULT                    ( 1UL << 6U )
+#define HOST_INTERFACE_NOTIFY_FAULT ( 1UL << 6U )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -137,17 +137,16 @@ typedef enum
     HOST_INTERFACE_STATUS_UNSUPPORTED_NOTIFICATION = 20,
 } HOST_Interface_Status_T;
 
-
-
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
 
-HOST_Interface_Status_T
-HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Application_Message_T* incoming_message,
-                                bool outgoing_message_accepted, HIL_Application_Message_T*       outgoing_message, HIL_Application_Message_T* overflow_outgoing_message,
-                                bool* response_required, uint8_t* data, size_t data_size, uint32_t* notifications, uint32_t* expected_tick_count );
+HOST_Interface_Status_T HOST_INTERFACE_process_message(
+    bool incoming_message_available, const HIL_Application_Message_T* incoming_message,
+    bool outgoing_message_accepted, HIL_Application_Message_T* outgoing_message,
+    HIL_Application_Message_T* overflow_outgoing_message, bool* response_required, uint8_t* data,
+    size_t data_size, uint32_t* notifications, uint32_t* expected_tick_count );
 
 #ifdef __cplusplus
 }
