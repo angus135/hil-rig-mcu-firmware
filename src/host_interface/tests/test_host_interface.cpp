@@ -15,6 +15,8 @@
 
 extern "C"
 {
+#include "hil_rig_protocol/application/application.h"
+#include "hil_rig_protocol/version.h"
 #include "hil_rig_protocol/transport/transport.h"
 #include "host_interface_test_access.h"
 #include "hw_usb.h"
@@ -38,6 +40,40 @@ std::vector<std::vector<uint8_t>> accepted_usb_output;
 std::vector<uint8_t>              usb_receive_bytes;
 size_t                            usb_receive_offset = 0U;
 TickType_t                        test_ticks         = 0U;
+
+std::vector<uint8_t> MakeBasicSystemInfoRequest()
+{
+    HIL_Application_Config_T  config{};
+    HIL_Application_Context_T context{};
+
+    if ( HIL_APPLICATION_Default_Config( &config ) != HIL_APPLICATION_STATUS_OK
+         || HIL_APPLICATION_Init( &context, &config ) != HIL_APPLICATION_STATUS_OK )
+    {
+        return {};
+    }
+
+    HIL_Application_Message_T message{};
+    message.type        = HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_REQUEST;
+    message.subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_BASIC;
+    message.has_test_id = 0U;
+    message.body.system_info_request.request_firmware_git_hash = 1U;
+    message.body.system_info_request.query = HIL_APPLICATION_SYSTEM_INFO_QUERY_BASIC;
+    message.body.system_info_request.application_protocol_major = HIL_RIG_PROTOCOL_VERSION_MAJOR;
+    message.body.system_info_request.application_protocol_minor = HIL_RIG_PROTOCOL_VERSION_MINOR;
+    message.body.system_info_request.application_protocol_patch = HIL_RIG_PROTOCOL_VERSION_PATCH;
+
+    std::vector<uint8_t> encoded( HIL_APPLICATION_DEFAULT_MAX_MESSAGE_SIZE );
+    size_t               encoded_size = 0U;
+    if ( HIL_APPLICATION_Encode_Message( &context, &message, encoded.data(), encoded.size(),
+                                         &encoded_size )
+         != HIL_APPLICATION_STATUS_OK )
+    {
+        return {};
+    }
+
+    encoded.resize( encoded_size );
+    return encoded;
+}
 
 }  // namespace
 
@@ -181,6 +217,36 @@ protected:
 
         ASSERT_EQ( 1U, accepted_usb_output.size() );
     }
+
+    void EstablishHostInterfaceSession( hil_rig_protocol::test::TransportTestEndpoint& host )
+    {
+        StartHandshakeWithPendingRigResponse( host );
+
+        const std::vector<uint8_t> rig_response = accepted_usb_output.back();
+        ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, host.ReceiveBytes( rig_response ).status );
+        ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, host.Process( test_ticks ) );
+
+        const auto host_acknowledgement = host.PeekOutput();
+        ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, host_acknowledgement.status );
+        ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, host.CommitOutput( test_ticks ) );
+
+        usb_receive_bytes  = host_acknowledgement.bytes;
+        usb_receive_offset = 0U;
+        accepted_usb_output.clear();
+        HOST_INTERFACE_Test_Access_Process_Once();
+
+        ASSERT_EQ( 1U, accepted_usb_output.size() );
+        const std::vector<uint8_t> rig_acknowledgement = accepted_usb_output.back();
+        ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, host.ReceiveBytes( rig_acknowledgement ).status );
+        ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, host.Process( test_ticks ) );
+
+        HIL_Transport_Status_Snapshot_T status = {};
+        ASSERT_EQ( HIL_TRANSPORT_STATUS_OK,
+                   HOST_INTERFACE_Test_Access_Get_Transport_Status( &status ) );
+        ASSERT_EQ( HIL_TRANSPORT_SESSION_STATE_ESTABLISHED, status.session_state );
+        ASSERT_EQ( HIL_TRANSPORT_SESSION_STATE_ESTABLISHED,
+                   host.GetStatus().snapshot.session_state );
+    }
 };
 
 TEST_F( HostInterfaceTest, ProtocolInitConfiguresBoundedReliableDelivery )
@@ -198,6 +264,57 @@ TEST_F( HostInterfaceTest, ProtocolInitConfiguresBoundedReliableDelivery )
 TEST_F( HostInterfaceTest, ApplicationDecodeStorageMeetsPublicAlignmentRequirement )
 {
     EXPECT_TRUE( HOST_INTERFACE_Test_Access_Application_Decode_Storage_Is_Aligned() );
+}
+
+TEST_F( HostInterfaceTest, CannotConsumeIncomingMessageLeavesItForLaterCycle )
+{
+    hil_rig_protocol::test::TransportTestEndpoint host{};
+
+    EstablishHostInterfaceSession( host );
+
+    const std::vector<uint8_t> application_bytes = MakeBasicSystemInfoRequest();
+    ASSERT_FALSE( application_bytes.empty() );
+    ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, host.SubmitApplication( application_bytes ) );
+    ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, host.Process( test_ticks ) );
+
+    const auto host_application_frame = host.PeekOutput();
+    ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, host_application_frame.status );
+    ASSERT_EQ( HIL_TRANSPORT_STATUS_OK, host.CommitOutput( test_ticks ) );
+
+    usb_receive_bytes                            = host_application_frame.bytes;
+    usb_receive_offset                           = 0U;
+    const uint32_t monitor_calls_before_receive  = usb_monitor_calls;
+    const uint32_t transmit_calls_before_receive = usb_transmit_calls;
+
+    HIL_Application_Message_T incoming_message{};
+    incoming_message.type           = HIL_APPLICATION_MESSAGE_TYPE_ERROR;
+    bool incoming_message_available = true;
+
+    HOST_INTERFACE_Test_Access_Process_Once_With_Consumption( false, &incoming_message,
+                                                              &incoming_message_available );
+
+    EXPECT_FALSE( incoming_message_available );
+    EXPECT_EQ( HIL_APPLICATION_MESSAGE_TYPE_INVALID, incoming_message.type );
+    EXPECT_EQ( monitor_calls_before_receive + 1U, usb_monitor_calls );
+    EXPECT_GT( usb_transmit_calls, transmit_calls_before_receive );
+    EXPECT_FALSE( accepted_usb_output.empty() );
+
+    HOST_INTERFACE_Test_Access_Process_Once_With_Consumption( true, &incoming_message,
+                                                              &incoming_message_available );
+
+    ASSERT_TRUE( incoming_message_available );
+    EXPECT_EQ( HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_REQUEST, incoming_message.type );
+    EXPECT_EQ( HIL_APPLICATION_MESSAGE_SUBTYPE_BASIC, incoming_message.subtype );
+    EXPECT_EQ( 0U, incoming_message.has_test_id );
+    EXPECT_EQ( 1U, incoming_message.body.system_info_request.request_firmware_git_hash );
+    EXPECT_EQ( HIL_APPLICATION_SYSTEM_INFO_QUERY_BASIC,
+               incoming_message.body.system_info_request.query );
+    EXPECT_EQ( HIL_RIG_PROTOCOL_VERSION_MAJOR,
+               incoming_message.body.system_info_request.application_protocol_major );
+    EXPECT_EQ( HIL_RIG_PROTOCOL_VERSION_MINOR,
+               incoming_message.body.system_info_request.application_protocol_minor );
+    EXPECT_EQ( HIL_RIG_PROTOCOL_VERSION_PATCH,
+               incoming_message.body.system_info_request.application_protocol_patch );
 }
 
 TEST_F( HostInterfaceTest, FirstDisconnectedObservationDiscardsAbandonedUSBOutput )

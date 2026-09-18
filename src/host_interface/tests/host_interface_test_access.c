@@ -71,12 +71,28 @@ void HOST_INTERFACE_Test_Access_Reset_Protocol( void )
  */
 void HOST_INTERFACE_Test_Access_Process_Once( void )
 {
-    HIL_Application_Message_T incoming_message;
-    bool                      outgoing_message_accepted;
-    bool                      incoming_message_available;
+    HIL_Application_Message_T incoming_message           = { 0 };
+    bool                      incoming_message_available = false;
+    bool                      outgoing_message_accepted  = false;
 
     HOST_INTERFACE_Protocol_Process( &s_protocol_state, NULL, &outgoing_message_accepted, true,
                                      &incoming_message, &incoming_message_available );
+}
+
+void HOST_INTERFACE_Test_Access_Process_Once_With_Consumption(
+    const bool can_consume_incoming_message, HIL_Application_Message_T* const incoming_message,
+    bool* const incoming_message_available )
+{
+    bool outgoing_message_accepted = false;
+
+    if ( incoming_message == NULL || incoming_message_available == NULL )
+    {
+        return;
+    }
+
+    HOST_INTERFACE_Protocol_Process( &s_protocol_state, NULL, &outgoing_message_accepted,
+                                     can_consume_incoming_message, incoming_message,
+                                     incoming_message_available );
 }
 
 /**
