@@ -950,6 +950,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
 
     uint32_t notifications = 0U;
     uint32_t carry_on_notifications = 0U;
+    uint32_t expected_tick_count = 0U;
 
     HostInterfaceTaskHandle = xTaskGetCurrentTaskHandle();
 
@@ -979,7 +980,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
         if ( HOST_INTERFACE_process_message(
                  incoming_message_available, &incoming_message, outgoing_message_accepted,
                  &outgoing_message, &outgoing_message_pending, outgoing_variable_data,
-                 HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE, &carry_on_notifications )
+                 HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE, &carry_on_notifications, &expected_tick_count )
              == HOST_INTERFACE_STATUS_OUTGOING_REQUIRED)
         {
             // TODO store overflow outgoing message
