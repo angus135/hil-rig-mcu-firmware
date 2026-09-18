@@ -913,9 +913,7 @@ bool HOST_INTERFACE_Notify( uint32_t notification )
         return false;
     }
 
-    return xTaskNotify( HostInterfaceTaskHandle,
-                        notification,
-                        eSetBits ) == pdPASS;
+    return xTaskNotify( HostInterfaceTaskHandle, notification, eSetBits ) == pdPASS;
 }
 
 /**
@@ -939,23 +937,22 @@ bool HOST_INTERFACE_Notify( uint32_t notification )
  */
 void HOST_INTERFACE_Task( void* task_parameters )
 {
-    static HOST_INTERFACE_Protocol_State_T protocol_state           = { 0 };
-    static HIL_Application_Message_T       outgoing_message         = { 0 };
-    static HIL_Application_Message_T       incoming_message         = { 0 };
-    bool                                   outgoing_message_pending = false;
-    uint8_t outgoing_variable_data[HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE] = {0};
-
+    static HOST_INTERFACE_Protocol_State_T protocol_state                      = { 0 };
+    static HIL_Application_Message_T       outgoing_message                    = { 0 };
+    static HIL_Application_Message_T       incoming_message                    = { 0 };
+    bool                                   outgoing_message_pending            = false;
+    uint8_t outgoing_variable_data[HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE] = { 0 };
 
     ( void )task_parameters;
 
-    uint32_t notifications = 0U;
+    uint32_t notifications          = 0U;
     uint32_t carry_on_notifications = 0U;
     uint32_t expected_tick_count    = 0U;
 
     bool output_overflow = false;
-    
-    HIL_Application_Message_T overflow_outgoing_message = {0};
-    HostInterfaceTaskHandle = xTaskGetCurrentTaskHandle();
+
+    HIL_Application_Message_T overflow_outgoing_message = { 0 };
+    HostInterfaceTaskHandle                             = xTaskGetCurrentTaskHandle();
 
     HOST_INTERFACE_Protocol_Init( &protocol_state );
 
@@ -964,7 +961,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
         // These results belong to one service cycle. A failed outgoing submit
         // leaves the pending message unchanged, while incoming availability is
         // reported only for a newly decoded message from this cycle.
-        notifications = 0U;
+        notifications                   = 0U;
         bool outgoing_message_accepted  = false;
         bool incoming_message_available = false;
 
@@ -982,10 +979,11 @@ void HOST_INTERFACE_Task( void* task_parameters )
         if ( !output_overflow )
         {
             if ( HOST_INTERFACE_process_message(
-                    incoming_message_available, &incoming_message, outgoing_message_accepted,
-                    &outgoing_message, &overflow_outgoing_message, &outgoing_message_pending, outgoing_variable_data,
-                    HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE, &carry_on_notifications, &expected_tick_count )
-                == HOST_INTERFACE_STATUS_OUTGOING_REQUIRED)
+                     incoming_message_available, &incoming_message, outgoing_message_accepted,
+                     &outgoing_message, &overflow_outgoing_message, &outgoing_message_pending,
+                     outgoing_variable_data, HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE,
+                     &carry_on_notifications, &expected_tick_count )
+                 == HOST_INTERFACE_STATUS_OUTGOING_REQUIRED )
             {
                 // TODO store overflow outgoing message
                 output_overflow = true;

@@ -94,26 +94,27 @@ HOST_Interface_Status_T HOST_INTERFACE_Default_Error( HIL_Application_Message_T*
  *
  * @param[in] expected_state                  The state we want to transition to
  * @param[in] expected_tick_count             Only used for execution request
- * 
+ *
  * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully
  */
-HOST_Interface_Status_T HOST_INTERFACE_state_to_state_request( Host_RunState_Request_T request, uint32_t expected_tick_count )
+HOST_Interface_Status_T HOST_INTERFACE_state_to_state_request( Host_RunState_Request_T request,
+                                                               uint32_t expected_tick_count )
 {
     RunStateExecutionRequest_T execution_request = { 0 };
-    execution_request.tick_count = expected_tick_count;
-    RunStateFaultReason_T fault_request = RUN_STATE_FAULT_EXTERNAL_REQUEST;
+    execution_request.tick_count                 = expected_tick_count;
+    RunStateFaultReason_T fault_request          = RUN_STATE_FAULT_EXTERNAL_REQUEST;
     switch ( request )
     {
         case HOST_REQUEST_IDLE:
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
         case HOST_REQUEST_TEST_PACKAGE_RECEIVE:
-            if ( RUN_STATE_MANAGER_RequestPackageReceive() != true)
+            if ( RUN_STATE_MANAGER_RequestPackageReceive() != true )
             {
                 return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
             }
             return HOST_INTERFACE_STATUS_OK;
         case HOST_REQUEST_CONFIGURATION:
-            if ( RUN_STATE_MANAGER_RequestConfiguration() != true)
+            if ( RUN_STATE_MANAGER_RequestConfiguration() != true )
             {
                 return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
             }
@@ -121,7 +122,8 @@ HOST_Interface_Status_T HOST_INTERFACE_state_to_state_request( Host_RunState_Req
         case HOST_REQUEST_ARMED:
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
         case HOST_REQUEST_EXECUTION:
-            if ( RUN_STATE_MANAGER_RequestExecution( &execution_request ) != RUN_STATE_EXECUTION_REQUEST_ACCEPTED )
+            if ( RUN_STATE_MANAGER_RequestExecution( &execution_request )
+                 != RUN_STATE_EXECUTION_REQUEST_ACCEPTED )
             {
                 return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
             }
@@ -137,7 +139,7 @@ HOST_Interface_Status_T HOST_INTERFACE_state_to_state_request( Host_RunState_Req
             }
             return HOST_INTERFACE_STATUS_OK;
         case HOST_REQUEST_FAULT:
-            if ( RUN_STATE_MANAGER_RequestFault(fault_request) != true )
+            if ( RUN_STATE_MANAGER_RequestFault( fault_request ) != true )
             {
                 return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
             }
@@ -145,12 +147,12 @@ HOST_Interface_Status_T HOST_INTERFACE_state_to_state_request( Host_RunState_Req
         case HOST_REQUEST_ABORT:
             if ( RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR() != true )
             {
-               return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE; 
+                return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
             }
         case HOST_REQUEST_RESET:
             if ( RUN_STATE_MANAGER_RequestReset() != true )
             {
-                return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE; 
+                return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
             }
         default:
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
@@ -167,14 +169,18 @@ retrys.
  *          HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE
  *
  * @param[in] expected_state                  The state we want to transition to
- * @param[in] num_trys                        The number of attempts to transition states (1ms wait between)
+ * @param[in] num_trys                        The number of attempts to transition states (1ms wait
+between)
  * @param[in] expected_tick_count             Only used for execution request
- * 
+ *
  * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully
  */
-HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion(RunState_T expected_state , Host_RunState_Request_T request, uint8_t num_trys, uint32_t expected_tick_count )
+HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion( RunState_T expected_state,
+                                                                 Host_RunState_Request_T request,
+                                                                 uint8_t                 num_trys,
+                                                                 uint32_t expected_tick_count )
 {
-    for ( uint8_t i=0; i<num_trys; i++)
+    for ( uint8_t i = 0; i < num_trys; i++ )
     {
         // request to transition state
         if ( HOST_INTERFACE_state_to_state_request( request, expected_tick_count )
@@ -189,10 +195,11 @@ HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion(RunState_T expec
         {
             return HOST_INTERFACE_STATUS_OK;
         }
-        // If error then return 
-        if ( (( !run_state_status.transition_pending )
-             && ( run_state_status.last_request_result != RUN_STATE_REQUEST_RESULT_ACCEPTED )
-             && ( run_state_status.last_request_result != RUN_STATE_REQUEST_RESULT_NONE )) || run_state_status.state == RUN_STATE_FAULT )
+        // If error then return
+        if ( ( ( !run_state_status.transition_pending )
+               && ( run_state_status.last_request_result != RUN_STATE_REQUEST_RESULT_ACCEPTED )
+               && ( run_state_status.last_request_result != RUN_STATE_REQUEST_RESULT_NONE ) )
+             || run_state_status.state == RUN_STATE_FAULT )
         {
             return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
         }
@@ -201,7 +208,6 @@ HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion(RunState_T expec
     }
     return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
 }
-
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -370,11 +376,9 @@ spans
  * @param[out] data_size                      the size available to write to at data
  * @return HOST_INTERFACE_STATUS_OK if the message is processed succesfully
  */
-HOST_Interface_Status_T
-HOST_INTERFACE_process_Test_Configuration( const HIL_Application_Message_T* incoming_message,
-                                           HIL_Application_Message_T*       outgoing_message,
-                                           bool* response_required, uint8_t* data,
-                                           size_t data_size, uint32_t* expected_tick_count )
+HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
+    const HIL_Application_Message_T* incoming_message, HIL_Application_Message_T* outgoing_message,
+    bool* response_required, uint8_t* data, size_t data_size, uint32_t* expected_tick_count )
 {
     ( void )data;
     ( void )data_size;
@@ -388,14 +392,15 @@ HOST_INTERFACE_process_Test_Configuration( const HIL_Application_Message_T* inco
      */
 
     // Signal run state manager to move to package recieving state
-    HOST_Interface_Status_T status = HOST_INTERFACE_request_state_tranistion(RUN_STATE_CONFIGURATION, HOST_REQUEST_CONFIGURATION, 2, 0);
+    HOST_Interface_Status_T status = HOST_INTERFACE_request_state_tranistion(
+        RUN_STATE_CONFIGURATION, HOST_REQUEST_CONFIGURATION, 2, 0 );
     if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
     {
         // Construct the error message
         HOST_INTERFACE_Default_Error( outgoing_message );
         // TODO  more specific error catagory
         outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-        *response_required = true;
+        *response_required                    = true;
         return HOST_INTERFACE_STATUS_OK;
     }
     if ( status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
@@ -403,7 +408,7 @@ HOST_INTERFACE_process_Test_Configuration( const HIL_Application_Message_T* inco
         // Construct the error message
         HOST_INTERFACE_Default_Error( outgoing_message );
         outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-        *response_required = true;
+        *response_required                    = true;
         return HOST_INTERFACE_STATUS_OK;
     }
     if ( status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE )
@@ -412,7 +417,7 @@ HOST_INTERFACE_process_Test_Configuration( const HIL_Application_Message_T* inco
         HOST_INTERFACE_Default_Error( outgoing_message );
         // TODO  more specific error catagory
         outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_RESERVED;
-        *response_required = true;
+        *response_required                    = true;
         return HOST_INTERFACE_STATUS_OK;
     }
     *expected_tick_count = incoming_message->body.test_configuration.expected_tick_count;
@@ -450,14 +455,14 @@ HOST_INTERFACE_process_Test_Configuration( const HIL_Application_Message_T* inco
  *        *response_required = true;
  *        return host_status;
  */
-HOST_Interface_Status_T
-HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incoming_message,
-                                          HIL_Application_Message_T*       outgoing_message,
-                                          bool* response_required, uint8_t* data, size_t data_size, uint32_t* expected_tick_count )
+HOST_Interface_Status_T HOST_INTERFACE_process_Test_Instructions(
+    const HIL_Application_Message_T* incoming_message, HIL_Application_Message_T* outgoing_message,
+    bool* response_required, uint8_t* data, size_t data_size, uint32_t* expected_tick_count )
 {
     ( void )data;
-    (void) data_size;
-    HOST_Interface_Status_T instruction_status = HOST_INSTRUCTION_HANDLER_HandleInstruction(&incoming_message->body.test_instruction);
+    ( void )data_size;
+    HOST_Interface_Status_T instruction_status =
+        HOST_INSTRUCTION_HANDLER_HandleInstruction( &incoming_message->body.test_instruction );
     // If this is the last instruction message then attempt to transition to the ARMED state
     if ( incoming_message->body.test_instruction.tick_number == *expected_tick_count )
     {
@@ -470,7 +475,7 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incom
             HOST_INTERFACE_Default_Error( outgoing_message );
             // TODO  more specific error catagory
             outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-            *response_required = true;
+            *response_required                    = true;
             return HOST_INTERFACE_STATUS_OK;
         }
         if ( status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
@@ -478,7 +483,7 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incom
             // Construct the error message
             HOST_INTERFACE_Default_Error( outgoing_message );
             outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-            *response_required = true;
+            *response_required                    = true;
             return HOST_INTERFACE_STATUS_OK;
         }
         if ( status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE )
@@ -487,21 +492,23 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incom
             HOST_INTERFACE_Default_Error( outgoing_message );
             // TODO  more specific error catagory
             outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_RESERVED;
-            *response_required = true;
+            *response_required                    = true;
             return HOST_INTERFACE_STATUS_OK;
         }
         // Set the type and subtype
         outgoing_message->type    = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
         outgoing_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
         // Set Response body
-        outgoing_message->body.response.scope             = HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST;
-        outgoing_message->body.response.outcome          = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
-        outgoing_message->body.response.reason      = HIL_APPLICATION_RESPONSE_REASON_NONE;
-        outgoing_message->body.response.tick_number          = incoming_message->body.test_instruction.tick_number;
+        outgoing_message->body.response.scope   = HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST;
+        outgoing_message->body.response.outcome = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
+        outgoing_message->body.response.reason  = HIL_APPLICATION_RESPONSE_REASON_NONE;
+        outgoing_message->body.response.tick_number =
+            incoming_message->body.test_instruction.tick_number;
         outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_RESERVED;
-        outgoing_message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_RESERVED;
-        outgoing_message->body.response.detail               = 0U;
-        *response_required = true;
+        outgoing_message->body.response.global_control_command =
+            HIL_APPLICATION_GLOBAL_CONTROL_RESERVED;
+        outgoing_message->body.response.detail = 0U;
+        *response_required                     = true;
         return HOST_INTERFACE_STATUS_OK;
     }
     if ( instruction_status != HOST_INTERFACE_STATUS_OK )
@@ -514,21 +521,22 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incom
     outgoing_message->type    = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
     outgoing_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
     // Set Response body
-    outgoing_message->body.response.scope             = HIL_APPLICATION_RESPONSE_SCOPE_TICK;
-    outgoing_message->body.response.outcome          = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
-    outgoing_message->body.response.reason      = HIL_APPLICATION_RESPONSE_REASON_NONE;
-    outgoing_message->body.response.tick_number          = incoming_message->body.test_instruction.tick_number;
+    outgoing_message->body.response.scope   = HIL_APPLICATION_RESPONSE_SCOPE_TICK;
+    outgoing_message->body.response.outcome = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
+    outgoing_message->body.response.reason  = HIL_APPLICATION_RESPONSE_REASON_NONE;
+    outgoing_message->body.response.tick_number =
+        incoming_message->body.test_instruction.tick_number;
     outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_RESERVED;
-    outgoing_message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_RESERVED;
-    outgoing_message->body.response.detail               = 0U;
-    *response_required = true;
+    outgoing_message->body.response.global_control_command =
+        HIL_APPLICATION_GLOBAL_CONTROL_RESERVED;
+    outgoing_message->body.response.detail = 0U;
+    *response_required                     = true;
     return HOST_INTERFACE_STATUS_OK;
 }
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Instruction_Data(
-    const HIL_Application_Message_T* incoming_message,
-    HIL_Application_Message_T* outgoing_message, bool* response_required, uint8_t* data,
-    size_t data_size )
+    const HIL_Application_Message_T* incoming_message, HIL_Application_Message_T* outgoing_message,
+    bool* response_required, uint8_t* data, size_t data_size )
 {
     // NOT IMPLEMENTED
     ( void )incoming_message;
@@ -553,14 +561,15 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
         case HIL_APPLICATION_CONTROL_START:
             // Signal run state manager to move to execution
-            status = HOST_INTERFACE_request_state_tranistion(RUN_STATE_EXECUTION, HOST_REQUEST_EXECUTION, 2, 0);
+            status = HOST_INTERFACE_request_state_tranistion( RUN_STATE_EXECUTION,
+                                                              HOST_REQUEST_EXECUTION, 2, 0 );
             if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
             {
                 // Construct the error message
                 HOST_INTERFACE_Default_Error( outgoing_message );
                 // TODO  more specific error catagory
                 outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-                *response_required = true;
+                *response_required                    = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             if ( status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
@@ -568,7 +577,7 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
                 // Construct the error message
                 HOST_INTERFACE_Default_Error( outgoing_message );
                 outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-                *response_required = true;
+                *response_required                    = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             if ( status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE )
@@ -577,7 +586,7 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
                 HOST_INTERFACE_Default_Error( outgoing_message );
                 // TODO  more specific error catagory
                 outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_RESERVED;
-                *response_required = true;
+                *response_required                    = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             if ( status == HOST_INTERFACE_STATUS_OK )
@@ -592,14 +601,15 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
             return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_CONTROL_ABORT:
             // Signal run state manager to abort
-            status = HOST_INTERFACE_request_state_tranistion(RUN_STATE_FAULT, HOST_REQUEST_FAULT, 2, 0);
+            status = HOST_INTERFACE_request_state_tranistion( RUN_STATE_FAULT, HOST_REQUEST_FAULT,
+                                                              2, 0 );
             if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
             {
                 // Construct the error message
                 HOST_INTERFACE_Default_Error( outgoing_message );
                 // TODO  more specific error catagory
                 outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-                *response_required = true;
+                *response_required                    = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             if ( status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
@@ -607,7 +617,7 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
                 // Construct the error message
                 HOST_INTERFACE_Default_Error( outgoing_message );
                 outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-                *response_required = true;
+                *response_required                    = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             if ( status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE )
@@ -616,7 +626,7 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
                 HOST_INTERFACE_Default_Error( outgoing_message );
                 // TODO  more specific error catagory
                 outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_RESERVED;
-                *response_required = true;
+                *response_required                    = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             if ( status == HOST_INTERFACE_STATUS_OK )
@@ -636,7 +646,6 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
             *response_required = false;
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
     }
-
 }
 
 HOST_Interface_Status_T
@@ -653,14 +662,15 @@ HOST_INTERFACE_process_Global_Control( const HIL_Application_Message_T* incoming
         case HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION:
             // Signal run state manager to abort
             // TODO set up reset instead of just fault
-            status = HOST_INTERFACE_request_state_tranistion(RUN_STATE_IDLE, HOST_REQUEST_RESET, 2, 0);
+            status =
+                HOST_INTERFACE_request_state_tranistion( RUN_STATE_IDLE, HOST_REQUEST_RESET, 2, 0 );
             if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
             {
                 // Construct the error message
                 HOST_INTERFACE_Default_Error( outgoing_message );
                 // TODO  more specific error catagory
                 outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-                *response_required = true;
+                *response_required                    = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             if ( status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
@@ -668,7 +678,7 @@ HOST_INTERFACE_process_Global_Control( const HIL_Application_Message_T* incoming
                 // Construct the error message
                 HOST_INTERFACE_Default_Error( outgoing_message );
                 outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-                *response_required = true;
+                *response_required                    = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             if ( status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE )
@@ -677,7 +687,7 @@ HOST_INTERFACE_process_Global_Control( const HIL_Application_Message_T* incoming
                 HOST_INTERFACE_Default_Error( outgoing_message );
                 // TODO  more specific error catagory
                 outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_RESERVED;
-                *response_required = true;
+                *response_required                    = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             if ( status == HOST_INTERFACE_STATUS_OK )
@@ -699,7 +709,6 @@ HOST_INTERFACE_process_Global_Control( const HIL_Application_Message_T* incoming
     }
 }
 
-
 HOST_Interface_Status_T
 HOST_INTERFACE_process_Test_Result( const HIL_Application_Message_T* incoming_message,
                                     HIL_Application_Message_T*       outgoing_message,
@@ -716,9 +725,8 @@ HOST_INTERFACE_process_Test_Result( const HIL_Application_Message_T* incoming_me
 }
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Result_Data(
-    const HIL_Application_Message_T* incoming_message,
-    HIL_Application_Message_T* outgoing_message, bool* response_required, uint8_t* data,
-    size_t data_size )
+    const HIL_Application_Message_T* incoming_message, HIL_Application_Message_T* outgoing_message,
+    bool* response_required, uint8_t* data, size_t data_size )
 {
     // NOT IMPLEMENTED
     ( void )incoming_message;
@@ -794,59 +802,61 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Execution_Complete_Notification(
     uint8_t* data, size_t data_size );
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Transfer_Complete_Notification(
-    HIL_Application_Message_T* outgoing_message, uint32_t* notifications, 
-    bool* response_required, uint8_t* data, size_t data_size );
+    HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
+    uint8_t* data, size_t data_size );
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Result_Transfer_Notification(
-    HIL_Application_Message_T* outgoing_message, uint32_t* notifications, 
-    bool* response_required, uint8_t* data, size_t data_size )
+    HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
+    uint8_t* data, size_t data_size )
 {
-    Result_Message_Producer_Status_T result_status = RESULT_MESSAGE_PRODUCER_ProduceNextMessage( outgoing_message );
-            if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM )
-            {
-                // clear the result notification flag
-                *notifications = *notifications & ~( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
-                if ( RUN_STATE_MANAGER_RequestResultTransferComplete() == false )
-                {
-                    HOST_INTERFACE_Default_Error( outgoing_message );
-                    outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-                    *response_required                    = true;
-                }
-                *response_required = false;
-                return HOST_INTERFACE_STATUS_OK;
-            }
-            if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_NO_DATA_AVAILABLE )
-            {
-                *response_required = false;
-                return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
-            }
-            if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_OK )
-            {
-                *response_required = true;
-                return HOST_INTERFACE_STATUS_OK;
-            }
-            *response_required = false;
-            return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+    Result_Message_Producer_Status_T result_status =
+        RESULT_MESSAGE_PRODUCER_ProduceNextMessage( outgoing_message );
+    if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM )
+    {
+        // clear the result notification flag
+        *notifications = *notifications & ~( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
+        if ( RUN_STATE_MANAGER_RequestResultTransferComplete() == false )
+        {
+            HOST_INTERFACE_Default_Error( outgoing_message );
+            outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
+            *response_required                    = true;
+        }
+        *response_required = false;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+    if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_NO_DATA_AVAILABLE )
+    {
+        *response_required = false;
+        return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+    }
+    if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_OK )
+    {
+        *response_required = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+    *response_required = false;
+    return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
 }
 
 HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
-    bool incoming_message_available, const HIL_Application_Message_T* incoming_message, HIL_Application_Message_T* outgoing_message,
-    bool* response_required, uint8_t* data, size_t data_size, uint32_t* expected_tick_count )
+    bool incoming_message_available, const HIL_Application_Message_T* incoming_message,
+    HIL_Application_Message_T* outgoing_message, bool* response_required, uint8_t* data,
+    size_t data_size, uint32_t* expected_tick_count )
 {
     if ( incoming_message == NULL || outgoing_message == NULL || response_required == NULL
          || data == NULL )
     {
         return false;
     }
-    HOST_Interface_Status_T   host_status                = HOST_INTERFACE_STATUS_INTERNAL_ERROR;
-    
-    
-    if (incoming_message_available) {
+    HOST_Interface_Status_T host_status = HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+
+    if ( incoming_message_available )
+    {
         switch ( incoming_message->type )
         {
             case HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_REQUEST:
-                host_status = HOST_INTERFACE_process_Info_Request( incoming_message, outgoing_message,
-                                                            response_required, data, data_size );
+                host_status = HOST_INTERFACE_process_Info_Request(
+                    incoming_message, outgoing_message, response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
@@ -854,8 +864,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_RESPONSE:
-                host_status = HOST_INTERFACE_process_Info_Response( incoming_message, outgoing_message,
-                                                            response_required, data, data_size );
+                host_status = HOST_INTERFACE_process_Info_Response(
+                    incoming_message, outgoing_message, response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
@@ -864,7 +874,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION:
                 host_status = HOST_INTERFACE_process_Test_Configuration(
-                    incoming_message, outgoing_message, response_required, data, data_size, expected_tick_count );
+                    incoming_message, outgoing_message, response_required, data, data_size,
+                    expected_tick_count );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
@@ -872,8 +883,9 @@ HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION:
-                host_status = HOST_INTERFACE_process_Test_Instructions( incoming_message, outgoing_message,
-                                                                response_required, data, data_size, expected_tick_count);
+                host_status = HOST_INTERFACE_process_Test_Instructions(
+                    incoming_message, outgoing_message, response_required, data, data_size,
+                    expected_tick_count );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
@@ -890,8 +902,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_EXECUTION_CONTROL:
-                host_status = HOST_INTERFACE_process_Execution_Control( incoming_message, outgoing_message,
-                                                                response_required, data, data_size );
+                host_status = HOST_INTERFACE_process_Execution_Control(
+                    incoming_message, outgoing_message, response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
@@ -899,8 +911,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_GLOBAL_CONTROL:
-                host_status = HOST_INTERFACE_process_Global_Control( incoming_message, outgoing_message,
-                                                                response_required, data, data_size );
+                host_status = HOST_INTERFACE_process_Global_Control(
+                    incoming_message, outgoing_message, response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
@@ -908,8 +920,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
                 }
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT:
-                host_status = HOST_INTERFACE_process_Test_Result( incoming_message, outgoing_message,
-                                                            response_required, data, data_size );
+                host_status = HOST_INTERFACE_process_Test_Result(
+                    incoming_message, outgoing_message, response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
@@ -927,7 +939,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_RESPONSE:
                 host_status = HOST_INTERFACE_process_Response( incoming_message, outgoing_message,
-                                                        response_required, data, data_size );
+                                                               response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
@@ -936,7 +948,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_ERROR:
                 host_status = HOST_INTERFACE_process_Error( incoming_message, outgoing_message,
-                                                    response_required, data, data_size );
+                                                            response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
@@ -953,14 +965,17 @@ HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
     }
 }
 
-HOST_Interface_Status_T HOST_INTERFACE_process_internal_message( HIL_Application_Message_T* outgoing_message,
-    bool* response_required, uint8_t* data, size_t data_size, uint32_t* notifications )
+HOST_Interface_Status_T
+HOST_INTERFACE_process_internal_message( HIL_Application_Message_T* outgoing_message,
+                                         bool* response_required, uint8_t* data, size_t data_size,
+                                         uint32_t* notifications )
 {
     HOST_Interface_Status_T host_status = HOST_INTERFACE_STATUS_UNINITIALIZED;
     switch ( *notifications )
     {
         case HOST_INTERFACE_NOTIFY_PACKAGE_RECEIVE:
-            host_status = HOST_INTERFACE_process_Package_Received_Notification(outgoing_message, notifications, response_required, data, data_size);
+            host_status = HOST_INTERFACE_process_Package_Received_Notification(
+                outgoing_message, notifications, response_required, data, data_size );
             if ( host_status != HOST_INTERFACE_STATUS_OK )
             {
                 *response_required = false;
@@ -968,7 +983,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_internal_message( HIL_Application
             }
             return HOST_INTERFACE_STATUS_OK;
         case HOST_INTERFACE_NOTIFY_CONFIGURATION:
-            host_status = HOST_INTERFACE_process_Config_Started_Notification(outgoing_message, notifications, response_required, data, data_size);
+            host_status = HOST_INTERFACE_process_Config_Started_Notification(
+                outgoing_message, notifications, response_required, data, data_size );
             if ( host_status != HOST_INTERFACE_STATUS_OK )
             {
                 *response_required = false;
@@ -976,7 +992,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_internal_message( HIL_Application
             }
             return HOST_INTERFACE_STATUS_OK;
         case HOST_INTERFACE_NOTIFY_EXECUTION:
-            host_status = HOST_INTERFACE_process_Execution_Started_Notification(outgoing_message, notifications, response_required, data, data_size);
+            host_status = HOST_INTERFACE_process_Execution_Started_Notification(
+                outgoing_message, notifications, response_required, data, data_size );
             if ( host_status != HOST_INTERFACE_STATUS_OK )
             {
                 *response_required = false;
@@ -984,7 +1001,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_internal_message( HIL_Application
             }
             return HOST_INTERFACE_STATUS_OK;
         case HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE:
-            host_status = HOST_INTERFACE_process_Execution_Complete_Notification(outgoing_message, notifications, response_required, data, data_size);
+            host_status = HOST_INTERFACE_process_Execution_Complete_Notification(
+                outgoing_message, notifications, response_required, data, data_size );
             if ( host_status != HOST_INTERFACE_STATUS_OK )
             {
                 *response_required = false;
@@ -992,7 +1010,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_internal_message( HIL_Application
             }
             return HOST_INTERFACE_STATUS_OK;
         case HOST_INTERFACE_NOTIFY_RESULT_TRANSFER:
-            host_status = HOST_INTERFACE_process_Result_Transfer_Notification(outgoing_message, notifications, response_required, data, data_size);
+            host_status = HOST_INTERFACE_process_Result_Transfer_Notification(
+                outgoing_message, notifications, response_required, data, data_size );
             if ( host_status != HOST_INTERFACE_STATUS_OK )
             {
                 *response_required = false;
@@ -1000,7 +1019,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_internal_message( HIL_Application
             }
             return HOST_INTERFACE_STATUS_OK;
         case HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE:
-            host_status = HOST_INTERFACE_process_Transfer_Complete_Notification(outgoing_message, notifications, response_required, data, data_size);
+            host_status = HOST_INTERFACE_process_Transfer_Complete_Notification(
+                outgoing_message, notifications, response_required, data, data_size );
             if ( host_status != HOST_INTERFACE_STATUS_OK )
             {
                 *response_required = false;
@@ -1019,10 +1039,11 @@ HOST_Interface_Status_T HOST_INTERFACE_process_internal_message( HIL_Application
  *------------------------------------------------------------------------------
  */
 
-HOST_Interface_Status_T
-HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Application_Message_T* incoming_message,
-                                bool outgoing_message_accepted, HIL_Application_Message_T*       outgoing_message, HIL_Application_Message_T* overflow_outgoing_message,
-                                bool* response_required, uint8_t* data, size_t data_size, uint32_t* notifications, uint32_t* expected_tick_count )
+HOST_Interface_Status_T HOST_INTERFACE_process_message(
+    bool incoming_message_available, const HIL_Application_Message_T* incoming_message,
+    bool outgoing_message_accepted, HIL_Application_Message_T* outgoing_message,
+    HIL_Application_Message_T* overflow_outgoing_message, bool* response_required, uint8_t* data,
+    size_t data_size, uint32_t* notifications, uint32_t* expected_tick_count )
 {
     if ( incoming_message == NULL || outgoing_message == NULL || response_required == NULL
          || data == NULL )
@@ -1030,11 +1051,13 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
         return HOST_INTERFACE_STATUS_INVALID_ARGUMENT;
     }
     // create temporary output message (incase output is not accepted)
-    HIL_Application_Message_T temp_outgoing_message = {0};
-    HOST_Interface_Status_T   host_status = HOST_INTERFACE_STATUS_INTERNAL_ERROR;
-    
+    HIL_Application_Message_T temp_outgoing_message = { 0 };
+    HOST_Interface_Status_T   host_status           = HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+
     // PROCESS INCOMING MESSAGE
-    host_status = HOST_INTERFACE_process_incoming_message(incoming_message_available, incoming_message, &temp_outgoing_message, response_required, data, data_size, expected_tick_count);
+    host_status = HOST_INTERFACE_process_incoming_message(
+        incoming_message_available, incoming_message, &temp_outgoing_message, response_required,
+        data, data_size, expected_tick_count );
     if ( host_status != HOST_INTERFACE_STATUS_OK )
     {
         *response_required = false;
@@ -1042,34 +1065,35 @@ HOST_INTERFACE_process_message( bool incoming_message_available, const HIL_Appli
     }
 
     // CHECK IF A RESPONSE IS REQUIRED
-    if ( *response_required  )
+    if ( *response_required )
     {
         if ( !outgoing_message_accepted )
         {
             *overflow_outgoing_message = temp_outgoing_message;
-            *response_required = true;
+            *response_required         = true;
             return HOST_INTERFACE_STATUS_OUTGOING_REQUIRED;
         }
-        *outgoing_message = temp_outgoing_message;
+        *outgoing_message             = temp_outgoing_message;
         outgoing_message->has_test_id = incoming_message->has_test_id;
         outgoing_message->test_id     = incoming_message->test_id;
         return HOST_INTERFACE_STATUS_OK;
     }
     // If no response is required then we can process internal message requests
     // PROCESS INTERNAL REQUESTS
-    host_status = HOST_INTERFACE_process_internal_message(&temp_outgoing_message, response_required, data, data_size, notifications);
+    host_status = HOST_INTERFACE_process_internal_message(
+        &temp_outgoing_message, response_required, data, data_size, notifications );
     if ( host_status != HOST_INTERFACE_STATUS_OK )
     {
         *response_required = false;
         return host_status;
     }
     // Check if a response is required
-    if ( *response_required  )
+    if ( *response_required )
     {
         if ( !outgoing_message_accepted )
         {
             *overflow_outgoing_message = temp_outgoing_message;
-            *response_required = true;
+            *response_required         = true;
             return HOST_INTERFACE_STATUS_OUTGOING_REQUIRED;
         }
         *outgoing_message = temp_outgoing_message;
