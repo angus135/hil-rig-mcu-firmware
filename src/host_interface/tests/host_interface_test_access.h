@@ -10,6 +10,7 @@
 
 #include <stdbool.h>
 
+#include "hil_rig_protocol/application/application.h"
 #include "hil_rig_protocol/transport/transport.h"
 
 /**
@@ -40,6 +41,18 @@ void HOST_INTERFACE_Test_Access_Reset_Protocol( void );
  * @brief Process one Host Interface protocol cycle for tests.
  */
 void HOST_INTERFACE_Test_Access_Process_Once( void );
+
+/**
+ * @brief Process one cycle while selecting whether a new Application message may be consumed.
+ *
+ * @param[in] can_consume_incoming_message Whether this cycle may read one
+ *                                         complete Transport Application message.
+ * @param[out] incoming_message            Receives the decoded message when available.
+ * @param[out] incoming_message_available  Reports whether a new decoded message was produced.
+ */
+void HOST_INTERFACE_Test_Access_Process_Once_With_Consumption(
+    bool can_consume_incoming_message, HIL_Application_Message_T* incoming_message,
+    bool* incoming_message_available );
 
 /**
  * @brief Read the public Transport status for the processing-test instance.
