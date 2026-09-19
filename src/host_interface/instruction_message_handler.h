@@ -40,6 +40,18 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+/** @brief Timer input clock frequency for Low Voltage PWM generation (TIM12 on APB1). */
+#define HOST_INSTRUCTION_PWM_LV_TIMER_CLOCK_HZ ( 90000000U )
+
+/** @brief Timer input clock frequency for High Voltage PWM generation (TIM8 on APB2). */
+#define HOST_INSTRUCTION_PWM_HV_TIMER_CLOCK_HZ ( 180000000U )
+
+/** @brief Number of nanoseconds in one second, used for period-to-frequency conversion. */
+#define HOST_INSTRUCTION_NANOSECONDS_PER_SECOND ( 1000000000U )
+
+/** @brief Scaling factor to convert application microvolt values to Volts. */
+#define HOST_INSTRUCTION_MICROVOLTS_PER_VOLT ( 1000000.0f )
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
