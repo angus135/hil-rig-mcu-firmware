@@ -17,6 +17,7 @@
 #include "exec_analogue_output.h"
 #include "exec_analogue_input.h"
 #include "exec_digital_output.h"
+#include "hw_pwm_gen.h"
 #include "execution_manager/execution_instruction.h"
 #include "execution_manager/execution_operation_payloads.h"
 #include "flash_manager/flash_manager.h"
@@ -225,7 +226,6 @@ HOST_INTERFACE_I2c_Parser( const HIL_Application_Message_T* config_message,
             case HIL_APPLICATION_BUS_ROLE_RESERVED:
                 driver_config->i2c_channels[i].mode = HW_I2C_MODE_SLAVE;
         }
-            
     }
 }
 
@@ -233,6 +233,19 @@ HOST_Interface_Status_T
 HOST_INTERFACE_Pwm_Output_Parser( const HIL_Application_Message_T* config_message,
                                     DutDriverConfiguration_T*        driver_config )
 {
+    // TODO promote pwm parameter calculation functions to exec mid level
+    for ( uint8_t i = 0; i < EXEC_PWM_GEN_CHANNEL_COUNT; i++ )
+    {
+        driver_config->pwm_generation_channels[i].is_enabled =
+            config_message->body.test_configuration.pwm_out[i].enabled;
+        uint16_t psc = 0;
+        config_message->body.test_configuration.pwm_out[i].initial_period_nanoseconds
+        uint16_t freq = 
+        HW_PWM_GEN_compute_psc()
+        HW_PWM_GEN_compute_arr();
+        HW_PWM_GEN_compute_ccr();
+        driver_config->pwm_generation_channels[i].is_enabled = config_message->body.test_configuration.pwm_out[i].;
+    }
 }
 
 HOST_Interface_Status_T
