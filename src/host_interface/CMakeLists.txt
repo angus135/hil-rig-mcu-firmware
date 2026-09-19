@@ -5,13 +5,13 @@
 # -----------------------------
 
 set(HOST_INTERFACE_SOURCES
-    host_communications.c
+    host_interface.c
     result_send.c
     test_package_recieve.c
 )
 
 set(HOST_INTERFACE_HEADERS
-    host_communications.h
+    host_interface.h
     result_send.h
     test_package_recieve.h
 )
@@ -32,6 +32,7 @@ target_link_libraries(host_interface
         global_config
         project_warnings
         cubeide_hal
+        hil_rig_protocol::hil_rig_protocol
         rtos
         hw_timer
         hw_gpio
@@ -39,7 +40,7 @@ target_link_libraries(host_interface
 )
 
 # Add flash_manager as a private dependency when the documented instruction-
-# upload workflow is implemented in host_communications.c.
+# upload workflow is implemented in host_interface.c.
 
 # -----------------------------
 # Tests for this module (gtest/gmock)
@@ -51,12 +52,20 @@ if(HOST_INTERFACE_ENABLE_TESTS AND BUILD_TESTING)
 
     add_executable(host_interface_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_host_interface.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/host_interface_test_access.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/shared_protocol/tests/c/integration/support/transport_test_endpoint.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/shared_protocol/tests/c/integration/support/transport_test_link.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/shared_protocol/tests/c/integration/support/transport_pair_harness.cpp
     )
 
     target_link_libraries(host_interface_tests
         PRIVATE
             project_warnings
-            host_interface
+            global_config
+            cubeide_hal
+            hil_rig_protocol::hil_rig_protocol
+            rtos
+            hw_usb
             gtest
             gtest_main
             gmock
@@ -66,6 +75,7 @@ if(HOST_INTERFACE_ENABLE_TESTS AND BUILD_TESTING)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests
+            ${CMAKE_CURRENT_SOURCE_DIR}/shared_protocol/tests/c/integration
     )
 
     add_test(NAME host_interface_tests COMMAND host_interface_tests)
