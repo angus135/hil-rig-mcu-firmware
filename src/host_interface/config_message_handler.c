@@ -290,17 +290,40 @@ HOST_Interface_Status_T
 HOST_INTERFACE_Pwm_Input_Parser( const HIL_Application_Message_T* config_message,
                                     DutDriverConfiguration_T*        driver_config )
 {
-    
+    for ( uint8_t i = 0; i < TEST_CONFIGURATION_PWM_CAPTURE_CHANNEL_COUNT; i++ )
+    {
+        driver_config->pwm_capture_channels[i].is_enabled = config_message->body.test_configuration.pwm_in[i].enabled;
+        // TODO set up invalid/disabled modes in exec PWM input
+        switch ( config_message->body.test_configuration.pwm_in[i].voltage_level )
+        {
+            case HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_INVALID:
+                driver_config->pwm_capture_channels[i].mode = EXEC_PWM_CAPTURE_LV_3V3;
+                driver_config->pwm_capture_channels[i].is_enabled = false;
+            case HIL_APPLICATION_PERIPHERAL_CONFIG_3V3:
+                driver_config->pwm_capture_channels[i].mode = EXEC_PWM_CAPTURE_LV_3V3;
+            case HIL_APPLICATION_PERIPHERAL_CONFIG_5V:
+                driver_config->pwm_capture_channels[i].mode = EXEC_PWM_CAPTURE_LV_5V;
+            case HIL_APPLICATION_PERIPHERAL_CONFIG_12V:
+                driver_config->pwm_capture_channels[i].mode = EXEC_PWM_CAPTURE_HV_12V;
+            case HIL_APPLICATION_PERIPHERAL_CONFIG_24V:
+                driver_config->pwm_capture_channels[i].mode = EXEC_PWM_CAPTURE_HV_24V;
+            case HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_RESERVED:
+                driver_config->pwm_capture_channels[i].mode = EXEC_PWM_CAPTURE_LV_3V3;
+                driver_config->pwm_capture_channels[i].is_enabled =false;
+        }
+    }
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 HOST_Interface_Status_T
 HOST_INTERFACE_Spi_Parser( const HIL_Application_Message_T* config_message,
                                     DutDriverConfiguration_T*        driver_config )
 {
+    
 }
 
 HOST_Interface_Status_T
-HOST_INTERFACE_uart_Parser( const HIL_Application_Message_T* config_message,
+HOST_INTERFACE_Uart_Parser( const HIL_Application_Message_T* config_message,
                                     DutDriverConfiguration_T*        driver_config )
 {
 
