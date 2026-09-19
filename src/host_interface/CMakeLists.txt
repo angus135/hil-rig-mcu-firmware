@@ -9,6 +9,7 @@ set(HOST_INTERFACE_SOURCES
     host_process_message.c
     instruction_message_handler.c
     result_message_producer.c
+    config_message_handler.c
 )
 
 set(HOST_INTERFACE_HEADERS
@@ -16,6 +17,7 @@ set(HOST_INTERFACE_HEADERS
     host_process_message.h
     instruction_message_handler.h
     result_message_producer.h
+    config_message_handler.h
 )
 
 add_library(host_interface STATIC

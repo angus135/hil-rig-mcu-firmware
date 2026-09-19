@@ -949,7 +949,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
     uint32_t carry_on_notifications = 0U;
     uint32_t expected_tick_count    = 0U;
 
-    TickType_t overflow_timer;
+    TickType_t overflow_timer = xTaskGetTickCount();
 
     bool can_consume_incoming = true;
 
