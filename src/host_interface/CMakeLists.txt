@@ -6,14 +6,18 @@
 
 set(HOST_INTERFACE_SOURCES
     host_interface.c
-    result_send.c
-    test_package_recieve.c
+    host_process_message.c
+    instruction_message_handler.c
+    result_message_producer.c
+    config_message_handler.c
 )
 
 set(HOST_INTERFACE_HEADERS
     host_interface.h
-    result_send.h
-    test_package_recieve.h
+    host_process_message.h
+    instruction_message_handler.h
+    result_message_producer.h
+    config_message_handler.h
 )
 
 add_library(host_interface STATIC
@@ -37,6 +41,13 @@ target_link_libraries(host_interface
         hw_timer
         hw_gpio
         hw_usb
+        hw_pwm_gen
+        exec_digital_output
+        exec_analogue_output
+        exec_pwm_gen
+        execution_manager
+        flash_manager
+        run_state_manager
 )
 
 # Add flash_manager as a private dependency when the documented instruction-
@@ -79,5 +90,66 @@ if(HOST_INTERFACE_ENABLE_TESTS AND BUILD_TESTING)
     )
 
     add_test(NAME host_interface_tests COMMAND host_interface_tests)
+
+    add_executable(instruction_message_handler_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_instruction_message_handler.cpp
+    )
+
+    target_link_libraries(instruction_message_handler_tests
+        PRIVATE
+            project_warnings
+            global_config
+            cubeide_hal
+            hil_rig_protocol::hil_rig_protocol
+            rtos
+            execution_manager
+            gtest
+            gtest_main
+            gmock
+    )
+
+    target_include_directories(instruction_message_handler_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/src/rtos
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_digital_output
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_analogue_output
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_pwm_gen
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_pwm_gen
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_gpio
+            ${CMAKE_SOURCE_DIR}/src/execution_manager
+            ${CMAKE_SOURCE_DIR}/src/flash_manager
+    )
+
+    add_test(NAME instruction_message_handler_tests COMMAND instruction_message_handler_tests)
+
+    add_executable(result_message_producer_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_result_message_producer.cpp
+    )
+
+    target_link_libraries(result_message_producer_tests
+        PRIVATE
+            project_warnings
+            global_config
+            cubeide_hal
+            hil_rig_protocol::hil_rig_protocol
+            rtos
+            gtest
+            gtest_main
+            gmock
+    )
+
+    target_include_directories(result_message_producer_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/src/rtos
+            ${CMAKE_SOURCE_DIR}/src/flash_manager
+    )
+
+    add_test(NAME result_message_producer_tests COMMAND result_message_producer_tests)
 
 endif()

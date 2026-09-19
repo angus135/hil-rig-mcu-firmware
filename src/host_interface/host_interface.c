@@ -26,6 +26,7 @@
 #include "hw_usb.h"
 #include "host_interface.h"
 #include "rtos_config.h"
+#include "host_process_message.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -61,6 +62,7 @@
 
 /** Maximum number of Transport reliable-delivery retries. */
 #define HOST_INTERFACE_TRANSPORT_MAX_RETRIES ( 5U )
+#define HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE 255
 
 #ifndef TEST_BUILD
 #include "main.h"
@@ -265,7 +267,7 @@ typedef struct
  *------------------------------------------------------------------------------
  */
 
-TaskHandle_t* HostInterfaceTaskHandle = NULL;  // NOLINT(readability-identifier-naming)
+static TaskHandle_t HostInterfaceTaskHandle = NULL;  // NOLINT(readability-identifier-naming)
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -901,6 +903,20 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
  */
 
 /**
+ * @brief Notify the Host interface to send some message
+ *
+ */
+bool HOST_INTERFACE_Notify( uint32_t notification )
+{
+    if ( HostInterfaceTaskHandle == NULL )
+    {
+        return false;
+    }
+
+    return xTaskNotify( HostInterfaceTaskHandle, notification, eSetBits ) == pdPASS;
+}
+
+/**
  * @brief Host Interface Task
  *
  * @details
@@ -921,12 +937,25 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
  */
 void HOST_INTERFACE_Task( void* task_parameters )
 {
-    static HOST_INTERFACE_Protocol_State_T protocol_state           = { 0 };
-    static HIL_Application_Message_T       outgoing_message         = { 0 };
-    static HIL_Application_Message_T       incoming_message         = { 0 };
-    bool                                   outgoing_message_pending = false;
+    static HOST_INTERFACE_Protocol_State_T protocol_state                      = { 0 };
+    static HIL_Application_Message_T       outgoing_message                    = { 0 };
+    static HIL_Application_Message_T       incoming_message                    = { 0 };
+    bool                                   outgoing_message_pending            = false;
+    uint8_t outgoing_variable_data[HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE] = { 0 };
 
     ( void )task_parameters;
+
+    uint32_t notifications          = 0U;
+    uint32_t carry_on_notifications = 0U;
+    uint32_t expected_tick_count    = 0U;
+
+    TickType_t overflow_timer = xTaskGetTickCount();
+
+    bool can_consume_incoming = true;
+
+    HIL_Application_Message_T overflow_outgoing_message = { 0 };
+    HostInterfaceTaskHandle                             = xTaskGetCurrentTaskHandle();
+
     HOST_INTERFACE_Protocol_Init( &protocol_state );
 
     while ( true )
@@ -934,6 +963,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
         // These results belong to one service cycle. A failed outgoing submit
         // leaves the pending message unchanged, while incoming availability is
         // reported only for a newly decoded message from this cycle.
+        notifications                   = 0U;
         bool outgoing_message_accepted  = false;
         bool incoming_message_available = false;
 
@@ -943,17 +973,60 @@ void HOST_INTERFACE_Task( void* task_parameters )
         // backpressure without stopping USB/Transport service.
         HOST_INTERFACE_Protocol_Process(
             &protocol_state, outgoing_message_pending ? &outgoing_message : NULL,
-            &outgoing_message_accepted, true, &incoming_message, &incoming_message_available );
+            &outgoing_message_accepted, can_consume_incoming, &incoming_message, &incoming_message_available );
 
-        if ( outgoing_message_accepted )
+        ( void )xTaskNotifyWait( 0U, UINT32_MAX, &notifications, 0U );
+        carry_on_notifications = carry_on_notifications | notifications;
+
+        // check if we are overflowing (inverse of can_consume_incoming)
+        if ( can_consume_incoming )
         {
-            outgoing_message         = ( HIL_Application_Message_T ){ 0 };
-            outgoing_message_pending = false;
+            if ( HOST_INTERFACE_process_message(
+                     incoming_message_available, &incoming_message, outgoing_message_accepted,
+                     &outgoing_message, &overflow_outgoing_message, &outgoing_message_pending,
+                     outgoing_variable_data, HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE,
+                     &carry_on_notifications, &expected_tick_count )
+                 == HOST_INTERFACE_STATUS_OUTGOING_REQUIRED )
+            {
+                // We are overflowing, so stop processing incomming messages
+                can_consume_incoming = false;
+                overflow_timer = xTaskGetTickCount();
+            }
+        }
+        else
+        {
+            // if we are overflowing poll outgoing_message_accepted for 100ms Then fault
+            if ( outgoing_message_accepted )
+            {
+                // overflow over so pass the latest output message and return to normal
+                outgoing_message = overflow_outgoing_message;
+                outgoing_message_pending = true;
+                can_consume_incoming = true;
+            }
+            else if ( xTaskGetTickCount() - overflow_timer >= pdMS_TO_TICKS( 100U ) )
+            {
+                // Outgoing message overflow timeout
+                HOST_INTERFACE_Error_Handler();
+                return;
+            }
         }
 
-        if ( incoming_message_available )
-        {
-        }
+        /*
+         * TODO: When in the result transfer phase (FLASH_MANAGER_STATE_TRANSFERRING_RESULTS),
+         *       if !outgoing_message_pending:
+         *
+         *       HIL_Application_Message_T result_msg;
+         *       Result_Message_Producer_Status_T res_status =
+         *           RESULT_MESSAGE_PRODUCER_ProduceNextMessage(&result_msg);
+         *
+         *       if (res_status == RESULT_MESSAGE_PRODUCER_STATUS_OK) {
+         *           result_msg.test_id = active_test_id; // Stamp active Test ID
+         *           outgoing_message = result_msg;
+         *           outgoing_message_pending = true;
+         *       } else if (res_status == RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM) {
+         *           FLASH_MANAGER_FinishResultTransfer();
+         *       }
+         */
 
         vTaskDelayUntil( &protocol_state.initial_ticks, pdMS_TO_TICKS( HOST_INTERFACE_PERIOD_MS ) );
     }
