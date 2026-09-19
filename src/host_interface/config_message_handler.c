@@ -13,6 +13,7 @@
  *------------------------------------------------------------------------------
  */
 
+#include "host_process_message.h"
 #include "instruction_message_handler.h"
 #include "exec_analogue_output.h"
 #include "exec_analogue_input.h"
@@ -63,7 +64,8 @@ HOST_INTERFACE_Analog_Input_Parser( const HIL_Application_Message_T* config_mess
     driver_config->analogue_input.ch_0_is_enabled = config_message->body.test_configuration.analog_in[0].enabled;
     driver_config->analogue_input.ch_1_is_enabled = config_message->body.test_configuration.analog_in[0].enabled;
     driver_config->analogue_input.is_enabled = true;
-    driver_config->analogue_input.sample_rate =  EXEC_ANALOGUE_INPUT_SAMPLE_RATE_1K_HZ;
+    driver_config->analogue_input.sample_rate = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_1K_HZ;
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 HOST_Interface_Status_T
@@ -81,6 +83,7 @@ HOST_INTERFACE_Analog_Output_Parser( const HIL_Application_Message_T* config_mes
             driver_config->analogue_output.use_external_vref = true;
         }
     }
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 HOST_Interface_Status_T
@@ -109,6 +112,7 @@ HOST_INTERFACE_Can_Parser( const HIL_Application_Message_T* config_message,
         driver_config->can_channels[i].is_enabled =
             config_message->body.test_configuration.can[i].enabled;
     }
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 HOST_Interface_Status_T
@@ -139,6 +143,7 @@ HOST_INTERFACE_Digital_Output_Parser( const HIL_Application_Message_T* config_me
                 driver_config->digital_outputs.channels[i].is_enabled = false;
         }
     }
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 HOST_Interface_Status_T
@@ -169,6 +174,7 @@ HOST_INTERFACE_Digital_Input_Parser( const HIL_Application_Message_T* config_mes
             driver_config->digital_inputs.channels[i] = EXEC_DIGITAL_INPUT_MODE_DISABLED;
         }
     }
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 HOST_Interface_Status_T
@@ -227,6 +233,7 @@ HOST_INTERFACE_I2c_Parser( const HIL_Application_Message_T* config_message,
                 driver_config->i2c_channels[i].mode = HW_I2C_MODE_SLAVE;
         }
     }
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 HOST_Interface_Status_T
@@ -238,20 +245,52 @@ HOST_INTERFACE_Pwm_Output_Parser( const HIL_Application_Message_T* config_messag
     {
         driver_config->pwm_generation_channels[i].is_enabled =
             config_message->body.test_configuration.pwm_out[i].enabled;
+        switch ( config_message->body.test_configuration.pwm_out[i].voltage_level )
+        {
+            case HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_INVALID:
+                driver_config->pwm_generation_channels[i].voltage_level = EXEC_PWM_GEN_VOLTAGE_DISABLED;
+            case HIL_APPLICATION_PERIPHERAL_CONFIG_3V3:
+                driver_config->pwm_generation_channels[i].voltage_level = EXEC_PWM_GEN_VOLTAGE_3V3;
+            case HIL_APPLICATION_PERIPHERAL_CONFIG_5V:
+                driver_config->pwm_generation_channels[i].voltage_level = EXEC_PWM_GEN_VOLTAGE_5V;
+            case HIL_APPLICATION_PERIPHERAL_CONFIG_12V:
+                driver_config->pwm_generation_channels[i].voltage_level = EXEC_PWM_GEN_VOLTAGE_12V;
+            case HIL_APPLICATION_PERIPHERAL_CONFIG_24V:
+                driver_config->pwm_generation_channels[i].voltage_level = EXEC_PWM_GEN_VOLTAGE_24V;
+            case HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_RESERVED:
+                driver_config->pwm_generation_channels[i].voltage_level = EXEC_PWM_GEN_VOLTAGE_DISABLED;
+        }
+
+        const uint32_t period_ns      = config_message->body.test_configuration.pwm_out[i].initial_period_nanoseconds;
+        const uint16_t duty_permyriad =
+            config_message->body.test_configuration.pwm_out[i].initial_duty_cycle_permyriad;
         uint16_t psc = 0;
-        config_message->body.test_configuration.pwm_out[i].initial_period_nanoseconds
-        uint16_t freq = 
-        HW_PWM_GEN_compute_psc()
-        HW_PWM_GEN_compute_arr();
-        HW_PWM_GEN_compute_ccr();
-        driver_config->pwm_generation_channels[i].is_enabled = config_message->body.test_configuration.pwm_out[i].;
+        uint16_t arr = 0;
+        uint16_t ccr = 0;
+        // TODO make more rhobust checking method
+        const uint32_t timer_clock_hz = ( i == 0 ? HOST_INSTRUCTION_PWM_LV_TIMER_CLOCK_HZ : HOST_INSTRUCTION_PWM_HV_TIMER_CLOCK_HZ);
+
+        const uint32_t frequency_hz  = HOST_INSTRUCTION_NANOSECONDS_PER_SECOND / period_ns;
+        const uint16_t duty_permille = ( uint16_t )( duty_permyriad / 10U );
+
+        if ( !HW_PWM_GEN_compute_psc( frequency_hz, timer_clock_hz, &psc )
+             || !HW_PWM_GEN_compute_arr( frequency_hz, timer_clock_hz, psc, &arr )
+             || !HW_PWM_GEN_compute_ccr( duty_permille, arr, &ccr ) )
+        {
+            return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+        }
+        driver_config->pwm_generation_channels[i].initial_psc = psc;
+        driver_config->pwm_generation_channels[i].initial_arr = arr;
+        driver_config->pwm_generation_channels[i].initial_ccr = ccr;
     }
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 HOST_Interface_Status_T
 HOST_INTERFACE_Pwm_Input_Parser( const HIL_Application_Message_T* config_message,
                                     DutDriverConfiguration_T*        driver_config )
 {
+    
 }
 
 HOST_Interface_Status_T
