@@ -150,11 +150,13 @@ HOST_Interface_Status_T HOST_INTERFACE_state_to_state_request( Host_RunState_Req
             {
                 return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
             }
+            return HOST_INTERFACE_STATUS_OK;
         case HOST_REQUEST_RESET:
             if ( RUN_STATE_MANAGER_RequestReset() != true )
             {
                 return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
             }
+            return HOST_INTERFACE_STATUS_OK;
         default:
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
     }
@@ -879,7 +881,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
     if ( incoming_message == NULL || outgoing_message == NULL || response_required == NULL
          || data == NULL )
     {
-        return false;
+        return HOST_INTERFACE_STATUS_INVALID_ARGUMENT;
     }
     HOST_Interface_Status_T host_status = HOST_INTERFACE_STATUS_INTERNAL_ERROR;
 
@@ -1132,4 +1134,5 @@ HOST_Interface_Status_T HOST_INTERFACE_process_message(
         *outgoing_message = temp_outgoing_message;
         return HOST_INTERFACE_STATUS_OK;
     }
+    return HOST_INTERFACE_STATUS_OK;
 }
