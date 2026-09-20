@@ -403,8 +403,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
         return HOST_INTERFACE_STATUS_OK;
     }
     // Signal run state manager to move to package recieving state
-    status = HOST_INTERFACE_request_state_tranistion( RUN_STATE_CONFIGURATION,
-                                                      HOST_REQUEST_CONFIGURATION, 2, 0 );
+    status = HOST_INTERFACE_request_state_tranistion( RUN_STATE_TEST_PACKAGE_RECEIVE,
+                                                      HOST_REQUEST_TEST_PACKAGE_RECEIVE, 2, 0 );
     if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
     {
         // Construct the error message
