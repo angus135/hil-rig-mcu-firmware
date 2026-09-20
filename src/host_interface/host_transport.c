@@ -172,7 +172,8 @@ static void HOST_TRANSPORT_Record_Event( const HIL_Transport_Event_T* event )
     {
         s_host_transport.pending_response_length = 0U;
         s_host_transport.response_pending        = false;
-        APPLICATION_TEST_HARNESS_Reset_Transaction();
+        s_host_transport.pending_response_is_spontaneous = false;
+        APPLICATION_TEST_HARNESS_Reset_Session();
     }
 
     g_host_transport_diagnostics.most_recent_event    = diagnostic;
@@ -233,7 +234,12 @@ static void HOST_TRANSPORT_Try_Submit_Response( void )
         s_host_transport.pending_response_length = 0U;
         if ( s_host_transport.pending_response_is_spontaneous )
         {
-            APPLICATION_TEST_HARNESS_Commit_Output();
+            HIL_Application_Status_T application_status =
+                APPLICATION_TEST_HARNESS_Commit_Output();
+            if ( application_status != HIL_APPLICATION_STATUS_OK )
+            {
+                HOST_TRANSPORT_Increment( &g_host_transport_diagnostics.response_submit_failures );
+            }
             s_host_transport.pending_response_is_spontaneous = false;
         }
         HOST_TRANSPORT_Increment( &g_host_transport_diagnostics.responses_submitted );
@@ -562,7 +568,7 @@ static bool HOST_TRANSPORT_Read_Application_Message( void )
             s_host_transport.application_message, message_size, s_host_transport.pending_response,
             sizeof( s_host_transport.pending_response ), &response_size );
 
-        if ( application_status != HIL_APPLICATION_STATUS_OK )
+        if ( application_status != HIL_APPLICATION_STATUS_OK && response_size == 0U )
         {
             return true;
         }
@@ -736,7 +742,7 @@ void HOST_TRANSPORT_Set_Link_State( bool connected, uint32_t now_ms )
     HOST_TRANSPORT_Clear_Caller_State();
     if ( !connected )
     {
-        APPLICATION_TEST_HARNESS_Reset_Transaction();
+        APPLICATION_TEST_HARNESS_Reset_Session();
     }
     HW_USB_Discard_Protocol_Buffers();
 

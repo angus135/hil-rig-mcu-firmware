@@ -126,7 +126,7 @@ The hardware-test configuration starts from `HIL_TRANSPORT_Default_Config()` and
 | Maximum retries | 5 |
 | Operating mode | `HIL_TRANSPORT_OPERATING_MODE_NORMAL` |
 
-With the Transport profile above and protocol commit `49431179c7ba30cbce09c1d20df8cde7780b0840`, `HIL_TRANSPORT_Required_Storage_Size()` reports 3289 bytes and the public workspace alignment is 16 bytes on the host build used during implementation. Firmware reserves an aligned 4096-byte workspace and refuses initialization if the runtime-required size exceeds it or the alignment check fails.
+The protocol compatibility pin for this branch is `cc1e6f29c7deb39c0dffc7edd1f4defc10fc1674`. Firmware reserves an aligned 4096-byte workspace and refuses initialization if the runtime-required size exceeds it or the alignment check fails. The runtime result of `HIL_TRANSPORT_Required_Storage_Size()` remains authoritative; no stale fixed measurement is used as compatibility evidence.
 
 ## Buffering and service bounds
 
@@ -177,9 +177,9 @@ Supported opcodes:
 
 ECHO preserves the request ID and returns the request payload byte-for-byte with opcode `0x81`. The maximum payload is the configured 512-byte Application capacity minus the 16-byte envelope header, so the maximum ECHO payload is **496 bytes**.
 
-### STATUS schema version 2
+### STATUS schema version 3
 
-STATUS responses use opcode `0x82`, preserve the request ID, and contain a 128-byte payload of 32 little-endian `uint32_t` values. The complete HRTP response is therefore 144 bytes.
+STATUS responses use opcode `0x82`, preserve the request ID, and contain a 192-byte payload of 48 little-endian `uint32_t` values. The complete HRTP response is therefore 208 bytes. Field 36 is the maximum observed upload chunk count for a tick; it is not the protocol's eight-chunk limit.
 
 | Index | Field |
 | ---: | --- |
@@ -240,17 +240,17 @@ No additional harness checksum is used. Transport integrity plus the shared Appl
 
 ## Application v0.3.0 test paths
 
-The harness accepts a BASIC System Information Request before any ordinary Application message. It compares the received major/minor/patch triplet with `HIL_APPLICATION_Check_Protocol_Version()` and always returns a structurally valid BASIC System Information Response containing local protocol `0.3.0`, test-only firmware version `0.0.0`, and empty diagnostic and Git-hash spans. Only an exact match confirms compatibility. A mismatch remains diagnosable through that response but leaves ordinary Application traffic blocked with `VERSION_MISMATCH`. `APPLICATION_TEST_HARNESS_Reset_Transaction()` clears confirmation because Transport session compatibility must be established again after a new session.
+The harness accepts a BASIC System Information Request before any ordinary Application message. It compares the received major/minor/patch triplet with `HIL_APPLICATION_Check_Protocol_Version()` and always returns a structurally valid BASIC System Information Response containing local protocol `0.3.0`, test-only firmware version `0.0.0`, and empty diagnostic and Git-hash spans. Only an exact match confirms compatibility. A mismatch remains diagnosable through that response; decoded ordinary requests receive correlated negative Application Responses with `VERSION_MISMATCH`, while malformed messages still produce no Application response. `Reset_Transaction()` preserves session confirmation; `Reset_Session()` clears it on link/session reset.
 
-The harness accepts representative and all-disabled configurations, fixed instructions, and streamed variable updates. Variable updates retain up to eight chunks per tick and preserve sparse tick omission. `FINALIZE_TEST_UPLOAD` validates the upload and returns a `COMPLETE_TEST` acceptance Response. START then enters deferred result emission: fixed or variable results are polled from the single pending output slot, with empty variable results emitted for omitted ticks. ABORT and RESET_APPLICATION clear the active transaction.
+The harness accepts representative and all-disabled configurations, fixed instructions, and streamed variable updates. Variable updates retain up to eight chunks per tick and preserve sparse tick omission. `FINALIZE_TEST_UPLOAD` validates the upload and returns a `COMPLETE_TEST` acceptance Response. START then enters deferred result emission: fixed or variable results are polled from the single pending output slot, with empty variable results emitted for omitted ticks. Type 34 results are bounded to 512-byte messages and may be emitted in up to eight ordered chunks while preserving repeated UART, SPI, and CAN records. ABORT and RESET_APPLICATION clear the active transaction.
 
-Structurally valid START and ABORT messages receive an Application Response with the received Test ID and `EXECUTION_CONTROL` scope. RESET_APPLICATION receives a no-Test-ID `GLOBAL_CONTROL` completion Response. These are deterministic test-harness lifecycle responses and do not operate real hardware.
+Structurally valid START and ABORT messages receive correlated Application Responses with the received Test ID and `EXECUTION_CONTROL` scope. Semantic rejections use the request's scope and Test ID, including wrong-Test-ID tick responses. RESET_APPLICATION receives a no-Test-ID `GLOBAL_CONTROL` completion Response. These are deterministic test-harness lifecycle responses and do not operate real hardware.
 
 For physical codec coverage only, a successfully decoded inbound Application Response or Error is synchronously re-encoded into the pending response buffer. This keeps decoded diagnostic span storage valid through C encoding and exercises both C decode and encode across Transport. It does not acknowledge Test Results, create a response workflow, or add Application state.
 
 ## Backpressure behavior
 
-The harness has one fixed pending-response/result slot. A complete HRTP response, encoded Test Result, synthetic control Response, discovery Response, or test-only round trip is built once. If `HIL_TRANSPORT_Submit_Application_Data()` returns `NOT_READY` or `CAPACITY_EXHAUSTED`, the exact bytes remain in that slot and are retried in later service iterations.
+The harness has one fixed pending-response/result slot. A complete HRTP response, encoded Test Result or Variable Test Result chunk, synthetic control Response, discovery Response, or test-only round trip is built once. If `HIL_TRANSPORT_Submit_Application_Data()` returns `NOT_READY` or `CAPACITY_EXHAUSTED`, the exact bytes remain in that slot and are retried in later service iterations.
 
 While the slot is occupied, the next Transport Application message remains unread. A Test Instruction or variable Update advances its transaction only after the accepted response or deferred result has been encoded successfully into this caller-owned buffer.
 
@@ -304,5 +304,8 @@ Record the following separate physical-Transport checks with the same firmware i
 | RESET_APPLICATION | Synthetic test-only no-Test-ID `GLOBAL_CONTROL` completion Response preserves the command. |
 | Representative fixed upload | Configuration acceptance, three fixed instruction tick acknowledgements, finalization, START completion, and three deferred fixed results are correlated by Test ID/tick. |
 | Sparse variable upload | Two chunks at ticks 0 and 2 cover digital, analogue, PWM, UART, SPI, and CAN operations; finalization succeeds and tick 1 emits an empty variable result. |
+| Synthetic multi-chunk Type 34 stream | Eight valid Type 21 chunks produce ordered repeated UART, SPI, and CAN records across bounded Type 34 result chunks; this is software/on-target validation only until a board is tested. |
 | Every Application Response scope | Inbound TEST_CONFIGURATION, TICK, COMPLETE_TEST, EXECUTION_CONTROL, and GLOBAL_CONTROL Response bytes round trip exactly. |
 | Every Application Error form | Empty global, binary test-scoped, and 255-byte tick-scoped Error diagnostics round trip exactly. |
+
+The source, host-native, and in-memory Transport checks above are synthetic on-target or host-side software validation. They do not validate physical peripheral timing, electrical levels, USB signal integrity, or real UART/SPI/CAN/I2C/GPIO/ADC/PWM behavior. Those physical checks remain pending and must not be reported as passed by this harness.

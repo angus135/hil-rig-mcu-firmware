@@ -29,6 +29,9 @@ extern "C"
 #define APPLICATION_TEST_HARNESS_COMPATIBILITY_PROFILE_ID UINT32_C( 0x41505032 )
 #define APPLICATION_TEST_HARNESS_MAX_RETAINED_TICKS 4U
 #define APPLICATION_TEST_HARNESS_MAX_VARIABLE_ASSEMBLY_BYTES 4096U
+#define APPLICATION_TEST_HARNESS_MAX_VARIABLE_RECORDS_PER_TICK 512U
+#define APPLICATION_TEST_HARNESS_MAX_RESULT_RECORDS_PER_CHUNK 64U
+#define APPLICATION_TEST_HARNESS_MAX_RESULT_CHUNKS_PER_TICK 8U
 
 typedef enum
 {
@@ -82,10 +85,13 @@ typedef struct
 HIL_Application_Status_T APPLICATION_TEST_HARNESS_Init( void );
 
 /**
- * Clear the active test transaction and per-Transport-session protocol
- * confirmation while preserving codec initialization and cumulative diagnostics.
+ * Clear the active test transaction while preserving protocol confirmation and
+ * cumulative diagnostics.
  */
 void APPLICATION_TEST_HARNESS_Reset_Transaction( void );
+
+/** Clear the active test and require protocol discovery for a new session. */
+void APPLICATION_TEST_HARNESS_Reset_Session( void );
 
 /**
  * Decode and process one non-HRTP Transport Application payload.
@@ -94,14 +100,9 @@ void APPLICATION_TEST_HARNESS_Reset_Transaction( void );
  * Response and confirms the exact protocol triplet only when it matches. Until
  * then, ordinary Application messages are rejected with VERSION_MISMATCH.
  *
- * A successful Test Configuration is consumed with response_size == 0. A
- * successful Test Instruction publishes exactly one encoded Test Result into
- * response. Structurally valid Execution and Global Control requests publish
- * synthetic test-only completion Responses; they do not perform lifecycle or
- * hardware operations. Inbound Response and Error messages are synchronously
- * decoded and re-encoded into response only to exercise the C codec over
- * Transport while decoded span storage remains valid. Decode, semantic, and
- * encode failures publish no output.
+ * Structurally valid requests publish correlated Application Responses for
+ * acceptance or semantic rejection. Results are emitted through Poll_Output
+ * after START; malformed or codec-invalid messages publish no output.
  */
 HIL_Application_Status_T APPLICATION_TEST_HARNESS_Handle_Message( const uint8_t* message,
                                                                   size_t         message_size,

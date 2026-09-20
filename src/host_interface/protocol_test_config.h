@@ -42,10 +42,9 @@
 #define HOST_TRANSPORT_INITIAL_RELIABLE_SEQUENCE 0U
 
 /**
- * Static workspace reserved for Transport. The selected configuration requires
- * 3289 bytes at protocol commit a24fccc403007cbf6268ff7d0d21f50566a6b2de.
- * The runtime sizing check remains authoritative and fails initialization if a
- * later protocol revision exceeds this capacity.
+ * Static workspace reserved for Transport. The runtime sizing check remains
+ * authoritative and fails initialization if the pinned protocol configuration
+ * exceeds this capacity.
  */
 #define HOST_TRANSPORT_WORKSPACE_CAPACITY_BYTES 4096U
 

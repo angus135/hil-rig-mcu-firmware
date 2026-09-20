@@ -9,7 +9,7 @@ The reviewed implementation baseline is immutable and recorded below. The exact 
 | Firmware branch | `test/DEV-138--protocol-test` |
 | Firmware branch-point/base commit | `7987ca6cb78106530c9362b03a1addc624bede9b` |
 | Reviewed PR #63 implementation baseline | `c6c0af2af586108949c30fb4a12df54eb9dd2fda` |
-| Final firmware commit used for hardware testing | `TO BE RECORDED AFTER COMMITTING THIS CHANGE SET` |
+| Final firmware implementation commit | `TO BE RECORDED BEFORE PUSH` |
 | Protocol submodule path | `src/host_interface/shared_protocol` |
 | Protocol compatibility commit | `cc1e6f29c7deb39c0dffc7edd1f4defc10fc1674` |
 | Protocol version | `0.3.0` |
@@ -27,7 +27,7 @@ The reviewed implementation baseline is immutable and recorded below. The exact 
 Before physical testing results are recorded:
 
 1. Commit the firmware changes represented by this compatibility manifest.
-2. Replace `TO BE RECORDED AFTER COMMITTING THIS CHANGE SET` with the immutable firmware implementation commit selected for testing. A documentation-only follow-up commit may record that implementation commit without changing the tested firmware code.
+2. Replace `TO BE RECORDED BEFORE PUSH` with the immutable firmware implementation commit selected for testing. A documentation-only follow-up commit may record that implementation commit without changing the tested firmware code.
 3. Record the same firmware implementation commit in the Python hardware-test compatibility evidence.
 4. Do not combine hardware results obtained from different firmware implementation commits under one validation record.
 
@@ -44,7 +44,7 @@ Before physical testing results are recorded:
 | `retransmit_timeout_ms` | 100 |
 | `max_retries` | 5 |
 | Operating mode | `HIL_TRANSPORT_OPERATING_MODE_NORMAL` |
-| Required workspace measured from pinned protocol | 3289 bytes |
+| Required workspace evidence | Runtime `HIL_TRANSPORT_Required_Storage_Size()` is authoritative; no stale fixed measurement claimed |
 | Reserved workspace | 4096 bytes |
 | Workspace alignment measured during implementation | 16 bytes |
 
@@ -62,7 +62,7 @@ The runtime results of `HIL_TRANSPORT_Default_Config()`, `HIL_TRANSPORT_Required
 | Pending response | 512 bytes |
 | Transport output copy | 640 bytes |
 | Maximum ECHO payload | 496 bytes |
-| Application decode storage | 255 bytes, statically aligned |
+| Application decode storage | 4096 bytes, statically aligned |
 | STATUS v3 payload / complete response | 192 / 208 bytes |
 
 ## MCU validation record
@@ -82,6 +82,7 @@ The following values must be updated after running the hardware test on the actu
 | Mismatched System Information patch blocks ordinary traffic | NOT YET RUN |
 | Representative Application configuration + 3 fixed instruction/result ticks | NOT YET RUN |
 | Sparse variable upload with deferred results | NOT YET RUN |
+| Synthetic eight-chunk Type 34 result stream with repeated UART/SPI/CAN records | SOFTWARE-TESTED; PHYSICAL TEST PENDING |
 | START synthetic test-only completion Response | NOT YET RUN |
 | ABORT synthetic test-only completion Response | NOT YET RUN |
 | RESET_APPLICATION synthetic test-only completion Response | NOT YET RUN |
@@ -89,3 +90,9 @@ The following values must be updated after running the hardware test on the actu
 | All Application Error forms, including empty, binary, and 255-byte diagnostics, test-only decode/re-encode round trip | NOT YET RUN |
 | Reset/re-enumeration/re-session ECHO | NOT YET RUN |
 | Long soak result | NOT YET RUN |
+
+The host-native C tests, Python tests, and in-memory Transport tests validate the
+synthetic bounded Application harness and codec path. They do not validate
+physical peripheral timing, electrical behavior, USB signal integrity, or real
+UART/SPI/CAN/I2C/GPIO/ADC/PWM behavior; those checks remain pending physical
+hardware testing.

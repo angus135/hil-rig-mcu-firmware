@@ -330,7 +330,13 @@ TEST_F( ApplicationHarnessTest, MismatchedDiscoveryReturnsLocalInformationButKee
 
     EXPECT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ), &response ),
                HIL_APPLICATION_STATUS_VERSION_MISMATCH );
-    EXPECT_TRUE( response.empty() );
+    ASSERT_FALSE( response.empty() );
+    const auto rejected = DecodeMessage( response );
+    ASSERT_EQ( rejected.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( rejected.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TEST_CONFIGURATION );
+    EXPECT_EQ( rejected.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
+    EXPECT_EQ( rejected.body.response.reason,
+               HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED );
     const auto* diagnostics = APPLICATION_TEST_HARNESS_Get_Diagnostics();
     EXPECT_EQ( diagnostics->configurations_accepted, 0U );
     EXPECT_EQ( diagnostics->instructions_accepted, 0U );
@@ -341,10 +347,19 @@ TEST_F( ApplicationHarnessTest, MismatchedDiscoveryReturnsLocalInformationButKee
 TEST_F( ApplicationHarnessTest, SyntheticExecutionControlResponsesPreserveTestIdAndWorkflow )
 {
     std::vector<uint8_t> response;
+    const auto request = ExecutionControl( HIL_APPLICATION_CONTROL_START );
     EXPECT_NE( Handle( EncodeMessage( ExecutionControl( HIL_APPLICATION_CONTROL_START ) ),
                        &response ),
                HIL_APPLICATION_STATUS_OK );
-    EXPECT_TRUE( response.empty() );
+    const auto decoded = DecodeMessage( response );
+    ASSERT_EQ( decoded.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( std::memcmp( decoded.test_id.bytes, request.test_id.bytes,
+                            HIL_APPLICATION_TEST_ID_SIZE ),
+               0 );
+    EXPECT_EQ( decoded.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_EXECUTION_CONTROL );
+    EXPECT_EQ( decoded.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
+    EXPECT_EQ( decoded.body.response.reason,
+               HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED );
 }
 
 TEST_F( ApplicationHarnessTest, SyntheticResetApplicationResponsePreservesWorkflow )
@@ -610,6 +625,28 @@ TEST_F( ApplicationHarnessTest, MaximumExtensionConfigurationProducesExactTickZe
     EXPECT_EQ( diagnostics->instruction_digest, kInstructionDigests[0] );
 }
 
+TEST_F( ApplicationHarnessTest, OmittedFixedTickUsesConfiguredInitialOutputState )
+{
+    auto config = RepresentativeConfiguration( nullptr, 0U, 1U );
+    const auto test_id = config.test_id;
+    std::vector<uint8_t> response;
+    ASSERT_EQ( Handle( EncodeMessage( config ), &response ), HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( Handle( EncodeMessage( FinalizeUpload( test_id ) ), &response ),
+               HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( Handle( EncodeMessage( Start( test_id ) ), &response ), HIL_APPLICATION_STATUS_OK );
+
+    const auto decoded = PollResult();
+    ASSERT_EQ( decoded.type, HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT );
+    for ( size_t i = 0U; i < HIL_APPLICATION_DIGITAL_INPUT_CHANNEL_COUNT; ++i )
+    {
+        EXPECT_EQ( decoded.body.test_result.digital_inputs[i].high, i % 2U );
+    }
+    EXPECT_EQ( decoded.body.test_result.pwm_inputs[0].period_nanoseconds, 1000000U );
+    EXPECT_EQ( decoded.body.test_result.pwm_inputs[0].duty_cycle_permyriad, 2500U );
+    EXPECT_EQ( decoded.body.test_result.pwm_inputs[1].period_nanoseconds, 2000000U );
+    EXPECT_EQ( decoded.body.test_result.pwm_inputs[1].duty_cycle_permyriad, 7500U );
+}
+
 TEST_F( ApplicationHarnessTest, ThreeGoldenInstructionsProduceExactFixedResults )
 {
     ASSERT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ) ),
@@ -737,6 +774,220 @@ TEST_F( ApplicationHarnessTest, SparseVariableUploadRetainsTwoChunksAndEmitsEmpt
                APPLICATION_TEST_HARNESS_STATE_COMPLETE );
 }
 
+TEST_F( ApplicationHarnessTest, CompletedFixedTransactionCanBeFollowedByVariableTransaction )
+{
+    const auto fixed_id = MakeTestId( 0x21U );
+    auto       fixed_config = RepresentativeConfiguration( nullptr, 0U, 1U );
+    fixed_config.test_id = fixed_id;
+    ASSERT_EQ( Handle( EncodeMessage( fixed_config ) ), HIL_APPLICATION_STATUS_OK );
+
+    auto fixed_instruction = Instruction( 0U );
+    fixed_instruction.test_id = fixed_id;
+    std::vector<uint8_t> response;
+    ASSERT_EQ( Handle( EncodeMessage( fixed_instruction ), &response ),
+               HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( Handle( EncodeMessage( FinalizeUpload( fixed_id ) ), &response ),
+               HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( Handle( EncodeMessage( Start( fixed_id ) ), &response ),
+               HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( PollResult().type, HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT );
+
+    constexpr std::array<uint8_t, 8> profile = { 'H', 'T', 'V', '3', 1U, 0U, 0U, 16U };
+    const auto variable_id = MakeTestId( 0x31U );
+    auto       variable_config = RepresentativeConfiguration( profile.data(),
+                                                               static_cast<uint8_t>( profile.size() ),
+                                                               2U );
+    variable_config.test_id = variable_id;
+    ASSERT_EQ( Handle( EncodeMessage( variable_config ), &response ),
+               HIL_APPLICATION_STATUS_OK );
+
+    constexpr std::array<uint8_t, 2> uart = { 'N', 'E' };
+    const std::array<HIL_Application_Logical_Operation_T, 1> operations = {
+        HIL_Application_Logical_Operation_T{ HIL_APPLICATION_PERIPHERAL_UART, 0U,
+                                             { uart.data(), static_cast<uint8_t>( uart.size() ) } },
+    };
+    ASSERT_EQ( Handle( EncodeMessage( Update( variable_id, 0U,
+                                               HIL_APPLICATION_INSTRUCTION_FLAG_COMPLETE_TICK,
+                                               operations.data(),
+                                               static_cast<uint8_t>( operations.size() ) ) ),
+                       &response ),
+               HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( Handle( EncodeMessage( FinalizeUpload( variable_id ) ), &response ),
+               HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( Handle( EncodeMessage( Start( variable_id ) ), &response ),
+               HIL_APPLICATION_STATUS_OK );
+
+    const auto first = PollResult();
+    ASSERT_EQ( first.type, HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT );
+    ASSERT_EQ( first.body.variable_test_result.record_count, 1U );
+    EXPECT_EQ( first.body.variable_test_result.records[0].data.size, uart.size() );
+    EXPECT_EQ( std::memcmp( first.body.variable_test_result.records[0].data.data, uart.data(),
+                            uart.size() ),
+               0 );
+    EXPECT_EQ( PollResult().body.variable_test_result.record_count, 0U );
+    EXPECT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->state,
+               APPLICATION_TEST_HARNESS_STATE_COMPLETE );
+}
+
+TEST_F( ApplicationHarnessTest, NewVariableTransactionClearsOmittedTickAndOldRecords )
+{
+    constexpr std::array<uint8_t, 8> profile = { 'H', 'T', 'V', '3', 1U, 0U, 0U, 16U };
+    constexpr std::array<uint8_t, 3> old_data = { 'O', 'L', 'D' };
+    constexpr std::array<uint8_t, 3> new_data = { 'N', 'E', 'W' };
+    const auto first_id = MakeTestId( 0x41U );
+    auto first_config = RepresentativeConfiguration( profile.data(),
+                                                     static_cast<uint8_t>( profile.size() ), 3U );
+    first_config.test_id = first_id;
+    ASSERT_EQ( Handle( EncodeMessage( first_config ) ), HIL_APPLICATION_STATUS_OK );
+    const std::array<HIL_Application_Logical_Operation_T, 1> old_operation = {
+        HIL_Application_Logical_Operation_T{ HIL_APPLICATION_PERIPHERAL_UART, 0U,
+                                             { old_data.data(), static_cast<uint8_t>( old_data.size() ) } },
+    };
+    std::vector<uint8_t> response;
+    ASSERT_EQ( Handle( EncodeMessage( Update( first_id, 0U,
+                                               HIL_APPLICATION_INSTRUCTION_FLAG_COMPLETE_TICK,
+                                               old_operation.data(), 1U ) ),
+                       &response ),
+               HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( Handle( EncodeMessage( FinalizeUpload( first_id ) ), &response ),
+               HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( Handle( EncodeMessage( Start( first_id ) ), &response ),
+               HIL_APPLICATION_STATUS_OK );
+    EXPECT_EQ( PollResult().body.variable_test_result.record_count, 1U );
+    EXPECT_EQ( PollResult().body.variable_test_result.record_count, 0U );
+    EXPECT_EQ( PollResult().body.variable_test_result.record_count, 0U );
+
+    const auto second_id = MakeTestId( 0x51U );
+    auto second_config = RepresentativeConfiguration( profile.data(),
+                                                      static_cast<uint8_t>( profile.size() ), 3U );
+    second_config.test_id = second_id;
+    ASSERT_EQ( Handle( EncodeMessage( second_config ) ), HIL_APPLICATION_STATUS_OK );
+    const std::array<HIL_Application_Logical_Operation_T, 1> new_operation = {
+        HIL_Application_Logical_Operation_T{ HIL_APPLICATION_PERIPHERAL_UART, 0U,
+                                             { new_data.data(), static_cast<uint8_t>( new_data.size() ) } },
+    };
+    ASSERT_EQ( Handle( EncodeMessage( Update( second_id, 2U,
+                                               HIL_APPLICATION_INSTRUCTION_FLAG_COMPLETE_TICK,
+                                               new_operation.data(), 1U ) ),
+                       &response ),
+               HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( Handle( EncodeMessage( FinalizeUpload( second_id ) ), &response ),
+               HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( Handle( EncodeMessage( Start( second_id ) ), &response ),
+               HIL_APPLICATION_STATUS_OK );
+
+    EXPECT_EQ( PollResult().body.variable_test_result.record_count, 0U );
+    EXPECT_EQ( PollResult().body.variable_test_result.record_count, 0U );
+    const auto third = PollResult();
+    ASSERT_EQ( third.body.variable_test_result.record_count, 1U );
+    EXPECT_EQ( std::memcmp( third.body.variable_test_result.records[0].data.data, new_data.data(),
+                            new_data.size() ),
+               0 );
+}
+
+TEST_F( ApplicationHarnessTest, RepeatedCommunicationRecordsEmitEightOrderedResultChunks )
+{
+    constexpr std::array<uint8_t, 8> profile = { 'H', 'T', 'V', '3', 1U, 0U, 0U, 16U };
+    const auto test_id = MakeTestId( 0x61U );
+    auto config = RepresentativeConfiguration( profile.data(),
+                                               static_cast<uint8_t>( profile.size() ), 1U );
+    config.test_id = test_id;
+    ASSERT_EQ( Handle( EncodeMessage( config ) ), HIL_APPLICATION_STATUS_OK );
+
+    constexpr std::array<uint8_t, 2> uart = { 'U', '0' };
+    constexpr std::array<uint8_t, 4> spi = { 1U, 2U, 'S', '0' };
+    constexpr std::array<uint8_t, 12> can = { 0x23U, 0x01U, 3U, 'C', '0', 0U, 0U,
+                                              0U,    0U,    0U, 0U, 0U };
+    std::vector<uint8_t> response;
+    for ( uint8_t chunk = 0U; chunk < 8U; ++chunk )
+    {
+        const std::array<HIL_Application_Logical_Operation_T, 6> operations = {
+            HIL_Application_Logical_Operation_T{ HIL_APPLICATION_PERIPHERAL_UART, 0U,
+                                                 { uart.data(), static_cast<uint8_t>( uart.size() ) } },
+            HIL_Application_Logical_Operation_T{ HIL_APPLICATION_PERIPHERAL_UART, 1U,
+                                                 { uart.data(), static_cast<uint8_t>( uart.size() ) } },
+            HIL_Application_Logical_Operation_T{ HIL_APPLICATION_PERIPHERAL_SPI, 0U,
+                                                 { spi.data(), static_cast<uint8_t>( spi.size() ) } },
+            HIL_Application_Logical_Operation_T{ HIL_APPLICATION_PERIPHERAL_SPI, 1U,
+                                                 { spi.data(), static_cast<uint8_t>( spi.size() ) } },
+            HIL_Application_Logical_Operation_T{ HIL_APPLICATION_PERIPHERAL_CAN, 0U,
+                                                 { can.data(), static_cast<uint8_t>( can.size() ) } },
+            HIL_Application_Logical_Operation_T{ HIL_APPLICATION_PERIPHERAL_CAN, 1U,
+                                                 { can.data(), static_cast<uint8_t>( can.size() ) } },
+        };
+        const uint8_t flags = chunk < 7U ? HIL_APPLICATION_INSTRUCTION_FLAG_HAS_MORE_CHUNKS
+                                         : HIL_APPLICATION_INSTRUCTION_FLAG_COMPLETE_TICK;
+        ASSERT_EQ( Handle( EncodeMessage( Update( test_id, 0U, flags, operations.data(),
+                                                  static_cast<uint8_t>( operations.size() ) ) ),
+                           &response ),
+                   HIL_APPLICATION_STATUS_OK );
+        if ( chunk < 7U ) EXPECT_TRUE( response.empty() );
+    }
+    ASSERT_EQ( Handle( EncodeMessage( FinalizeUpload( test_id ) ), &response ),
+               HIL_APPLICATION_STATUS_OK );
+    ASSERT_EQ( Handle( EncodeMessage( Start( test_id ) ), &response ), HIL_APPLICATION_STATUS_OK );
+
+    for ( uint8_t chunk = 0U; chunk < 8U; ++chunk )
+    {
+        const auto decoded = PollResult();
+        ASSERT_EQ( decoded.type, HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT );
+        const auto& result = decoded.body.variable_test_result;
+        EXPECT_EQ( result.tick_number, 0U );
+        EXPECT_EQ( result.record_count, 6U );
+        EXPECT_EQ( result.flags, chunk < 7U ? HIL_APPLICATION_RESULT_FLAG_HAS_MORE_CHUNKS
+                                            : HIL_APPLICATION_RESULT_FLAG_COMPLETE_TICK );
+        EXPECT_EQ( result.records[0].peripheral_type, HIL_APPLICATION_PERIPHERAL_UART );
+        EXPECT_EQ( result.records[2].peripheral_type, HIL_APPLICATION_PERIPHERAL_SPI );
+        EXPECT_EQ( result.records[2].data.size, 2U );
+        EXPECT_EQ( std::memcmp( result.records[2].data.data, "S0", 2U ), 0 );
+        EXPECT_EQ( result.records[4].peripheral_type, HIL_APPLICATION_PERIPHERAL_CAN );
+    }
+    const auto* diagnostics = APPLICATION_TEST_HARNESS_Get_Diagnostics();
+    EXPECT_EQ( diagnostics->result_messages_emitted, 8U );
+    EXPECT_EQ( diagnostics->result_records_emitted, 48U );
+    EXPECT_EQ( diagnostics->results_encoded, 1U );
+    EXPECT_EQ( diagnostics->maximum_chunk_count, 8U );
+}
+
+TEST_F( ApplicationHarnessTest, RejectsNinthVariableUploadChunkWithCorrelatedTickResponse )
+{
+    constexpr std::array<uint8_t, 8> profile = { 'H', 'T', 'V', '3', 1U, 0U, 0U, 16U };
+    const auto test_id = MakeTestId( 0x62U );
+    auto config = RepresentativeConfiguration( profile.data(), static_cast<uint8_t>( profile.size() ), 1U );
+    config.test_id = test_id;
+    ASSERT_EQ( Handle( EncodeMessage( config ) ), HIL_APPLICATION_STATUS_OK );
+
+    constexpr std::array<uint8_t, 2> uart = { 'U', '9' };
+    const std::array<HIL_Application_Logical_Operation_T, 1> operations = {
+        HIL_Application_Logical_Operation_T{ HIL_APPLICATION_PERIPHERAL_UART, 0U,
+                                             { uart.data(), static_cast<uint8_t>( uart.size() ) } },
+    };
+    std::vector<uint8_t> response;
+    for ( uint8_t chunk = 0U; chunk < 8U; ++chunk )
+    {
+        ASSERT_EQ( Handle( EncodeMessage( Update( test_id, 0U,
+                                                   HIL_APPLICATION_INSTRUCTION_FLAG_HAS_MORE_CHUNKS,
+                                                   operations.data(), 1U ) ),
+                           &response ),
+                   HIL_APPLICATION_STATUS_OK );
+        EXPECT_TRUE( response.empty() );
+    }
+
+    EXPECT_EQ( Handle( EncodeMessage( Update( test_id, 0U,
+                                               HIL_APPLICATION_INSTRUCTION_FLAG_HAS_MORE_CHUNKS,
+                                               operations.data(), 1U ) ),
+                       &response ),
+               HIL_APPLICATION_STATUS_BUFFER_TOO_SMALL );
+    ASSERT_FALSE( response.empty() );
+    const auto decoded = DecodeMessage( response );
+    EXPECT_EQ( decoded.test_id.bytes[0], 0x62U );
+    EXPECT_EQ( decoded.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TICK );
+    EXPECT_EQ( decoded.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
+    EXPECT_EQ( decoded.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_STORAGE_UNAVAILABLE );
+    EXPECT_EQ( APPLICATION_TEST_HARNESS_Get_Diagnostics()->state,
+                APPLICATION_TEST_HARNESS_STATE_UPLOAD_INVALID );
+}
+
 TEST_F( ApplicationHarnessTest, DisabledInputsProduceZeroOracleValues )
 {
     ASSERT_EQ( Handle( EncodeMessage( DisabledConfiguration() ) ), HIL_APPLICATION_STATUS_OK );
@@ -762,8 +1013,15 @@ TEST_F( ApplicationHarnessTest, DisabledInputsProduceZeroOracleValues )
 
 TEST_F( ApplicationHarnessTest, RejectsInstructionBeforeConfiguration )
 {
-    EXPECT_EQ( Handle( EncodeMessage( Instruction( 0U ) ) ),
+    std::vector<uint8_t> response;
+    EXPECT_EQ( Handle( EncodeMessage( Instruction( 0U ) ), &response ),
                HIL_APPLICATION_STATUS_VALIDATION_FAILED );
+    ASSERT_FALSE( response.empty() );
+    const auto decoded = DecodeMessage( response );
+    EXPECT_EQ( decoded.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TICK );
+    EXPECT_EQ( decoded.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
+    EXPECT_EQ( decoded.body.response.reason,
+               HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED );
     const auto* diagnostics = APPLICATION_TEST_HARNESS_Get_Diagnostics();
     EXPECT_EQ( diagnostics->state, APPLICATION_TEST_HARNESS_STATE_WAITING_FOR_CONFIGURATION );
     EXPECT_EQ( diagnostics->next_expected_tick, 0U );
@@ -776,8 +1034,15 @@ TEST_F( ApplicationHarnessTest, RejectsWrongTestIdWithoutChangingTransaction )
                HIL_APPLICATION_STATUS_OK );
     HIL_Application_Message_T instruction = Instruction( 0U );
     instruction.test_id                   = MakeTestId( 0x70U );
-    EXPECT_EQ( Handle( EncodeMessage( instruction ) ),
+    std::vector<uint8_t> response;
+    EXPECT_EQ( Handle( EncodeMessage( instruction ), &response ),
                HIL_APPLICATION_STATUS_INCONSISTENT_TEST_ID );
+    ASSERT_FALSE( response.empty() );
+    const auto decoded = DecodeMessage( response );
+    EXPECT_EQ( decoded.test_id.bytes[0], 0x70U );
+    EXPECT_EQ( decoded.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TICK );
+    EXPECT_EQ( decoded.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
+    EXPECT_EQ( decoded.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_INCONSISTENT_TEST_ID );
     const auto* diagnostics = APPLICATION_TEST_HARNESS_Get_Diagnostics();
     EXPECT_EQ( diagnostics->next_expected_tick, 0U );
     EXPECT_EQ( diagnostics->state, APPLICATION_TEST_HARNESS_STATE_UPLOAD_INVALID );
@@ -913,8 +1178,10 @@ TEST_F( ApplicationHarnessTest, TransactionResetPreservesInitializationAndCumula
 
     std::vector<uint8_t> response;
     EXPECT_EQ( Handle( EncodeMessage( RepresentativeConfiguration() ), &response ),
-               HIL_APPLICATION_STATUS_VERSION_MISMATCH );
-    EXPECT_TRUE( response.empty() );
+               HIL_APPLICATION_STATUS_OK );
+    ASSERT_FALSE( response.empty() );
+    EXPECT_EQ( DecodeMessage( response ).body.response.scope,
+               HIL_APPLICATION_RESPONSE_SCOPE_TEST_CONFIGURATION );
 }
 
 }  // namespace
