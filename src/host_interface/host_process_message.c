@@ -927,7 +927,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
                     return host_status;
                 }
                 break;
-            case HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_INSTRUCTION_DATA:
+            case HIL_APPLICATION_MESSAGE_TYPE_UPDATE_INSTRUCTION:
                 host_status = HOST_INTERFACE_process_Variable_Instruction_Data(
                     incoming_message, outgoing_message, response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
@@ -963,7 +963,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
                     return host_status;
                 }
                 break;
-            case HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_RESULT_DATA:
+            case HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT:
                 host_status = HOST_INTERFACE_process_Variable_Result_Data(
                     incoming_message, outgoing_message, response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
@@ -998,6 +998,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
                 return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
         }
     }
+
+    return host_status;
 }
 
 HOST_Interface_Status_T
