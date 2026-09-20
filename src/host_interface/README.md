@@ -2,11 +2,11 @@
 
 ## Purpose
 
-This directory contains the temporary firmware half of the DEV-138 Transport/Application hardware-test harness on branch `test/DEV-138--protocol-test`. It exercises the shared C Transport implementation over STM32 USB CDC and the shared public Application codec for System Information, Test Configuration, fixed Test Instruction, fixed Test Result, Execution Control, Global Control, Application Response, and Application Error messages.
+This directory contains the temporary firmware half of the DEV-138 Transport/Application hardware-test harness on branch `test/DEV-138--protocol-test`. It exercises the shared C Transport implementation over STM32 USB CDC and the shared public Application codec for System Information, Test Configuration, fixed and variable Test Instructions, fixed and variable Test Results, upload finalization, Execution Control, Global Control, Application Response, and Application Error messages.
 
 This branch is **not intended to merge into `main`**. Reusable USB or host-interface pieces may be extracted into later production PRs, but the `HRTP` ECHO/STATUS diagnostics and `application_test_harness` result oracle are test-only behavior.
 
-The harness does not configure or operate real HIL peripherals. It does not implement variable instruction/result data or a production Application lifecycle. Its System Information confirmation, synthetic control Responses, and inbound Application Response/Error round trips exist only to test the shared codec and physical Transport data path.
+The harness does not configure or operate real HIL peripherals. Its result values are deterministic synthetic oracle values. Its System Information confirmation, v0.3 upload lifecycle, and inbound Application Response/Error round trips exist only to test the shared codec and physical Transport data path.
 
 ## Shared protocol dependency
 
@@ -16,7 +16,7 @@ The shared protocol repository is a Git submodule at:
 src/host_interface/shared_protocol
 ```
 
-This branch pins the submodule to merged protocol `main` commit `49431179c7ba30cbce09c1d20df8cde7780b0840`, whose public protocol version is `0.2.0`.
+This branch pins the submodule to protocol commit `cc1e6f29c7deb39c0dffc7edd1f4defc10fc1674`, whose public protocol version is `0.3.0`.
 
 Clone with submodules:
 
@@ -183,7 +183,7 @@ STATUS responses use opcode `0x82`, preserve the request ID, and contain a 128-b
 
 | Index | Field |
 | ---: | --- |
-| 0 | status schema version (`2`) |
+| 0 | status schema version (`3`) |
 | 1 | current link state |
 | 2 | link generation |
 | 3 | total Transport event count |
@@ -195,7 +195,7 @@ STATUS responses use opcode `0x82`, preserve the request ID, and contain a 128-b
 | 9 | invalid HRTP messages |
 | 10 | maximum service gap in ms |
 | 11 | public Transport session state |
-| 12 | compatibility profile ID (`0x41505031`, `APP1`) |
+| 12 | compatibility profile ID (`0x41505032`, `APP2`) |
 | 13 | protocol version major |
 | 14 | protocol version minor |
 | 15 | protocol version patch |
@@ -215,18 +215,36 @@ STATUS responses use opcode `0x82`, preserve the request ID, and contain a 128-b
 | 29 | last successfully decoded Application message type |
 | 30 | current/last accepted configuration digest |
 | 31 | last accepted instruction digest |
+| 32 | selected instruction family |
+| 33 | selected result family |
+| 34 | completed instruction ticks |
+| 35 | current upload chunk count |
+| 36 | maximum chunks per tick |
+| 37 | finalization requests |
+| 38 | accepted finalizations |
+| 39 | accepted variable operations |
+| 40 | emitted result records |
+| 41 | capture overflow events |
+| 42 | I2C NOT_IMPLEMENTED rejections |
+| 43 | maximum decode storage required |
+| 44 | decode storage used |
+| 45 | selected test profile |
+| 46 | selected fault mode |
+| 47 | spontaneous output pending |
 
-The version fields are sourced from the public protocol version macros. At protocol commit `49431179c7ba30cbce09c1d20df8cde7780b0840` they report `0.2.0`.
+The version fields are sourced from the public protocol version macros. At protocol commit `cc1e6f29c7deb39c0dffc7edd1f4defc10fc1674` they report `0.3.0`.
 
 A payload is treated as HRTP only when bytes 0 through 3 are exactly `HRTP`. Invalid HRTP version, flags, opcode, or declared length increments the invalid-HRTP diagnostic and produces no response. Any non-HRTP payload, including malformed input, is passed directly to the Application codec and is accounted for as an Application decode/semantic failure rather than an HRTP error.
 
 No additional harness checksum is used. Transport integrity plus the shared Application codec and deterministic test oracle provide the hardware-test checks.
 
-## Application v0.2.0 test paths
+## Application v0.3.0 test paths
 
-The harness accepts a BASIC System Information Request before any ordinary Application message. It compares the received major/minor/patch triplet with `HIL_APPLICATION_Check_Protocol_Version()` and always returns a structurally valid BASIC System Information Response containing local protocol `0.2.0`, test-only firmware version `0.0.0`, and empty diagnostic and Git-hash spans. Only an exact match confirms compatibility. A mismatch remains diagnosable through that response but leaves ordinary Application traffic blocked with `VERSION_MISMATCH`. `APPLICATION_TEST_HARNESS_Reset_Transaction()` clears confirmation because Transport session compatibility must be established again after a new session.
+The harness accepts a BASIC System Information Request before any ordinary Application message. It compares the received major/minor/patch triplet with `HIL_APPLICATION_Check_Protocol_Version()` and always returns a structurally valid BASIC System Information Response containing local protocol `0.3.0`, test-only firmware version `0.0.0`, and empty diagnostic and Git-hash spans. Only an exact match confirms compatibility. A mismatch remains diagnosable through that response but leaves ordinary Application traffic blocked with `VERSION_MISMATCH`. `APPLICATION_TEST_HARNESS_Reset_Transaction()` clears confirmation because Transport session compatibility must be established again after a new session.
 
-Structurally valid START and ABORT messages receive a synthetic, test-only Application Response with the received Test ID, `EXECUTION_CONTROL` scope, `COMPLETED` outcome, `NONE` reason, the received command, and zero detail. RESET_APPLICATION similarly receives a synthetic no-Test-ID `GLOBAL_CONTROL` completion Response. These responses do not start, abort, reset, or otherwise model Application lifecycle or hardware execution.
+The harness accepts representative and all-disabled configurations, fixed instructions, and streamed variable updates. Variable updates retain up to eight chunks per tick and preserve sparse tick omission. `FINALIZE_TEST_UPLOAD` validates the upload and returns a `COMPLETE_TEST` acceptance Response. START then enters deferred result emission: fixed or variable results are polled from the single pending output slot, with empty variable results emitted for omitted ticks. ABORT and RESET_APPLICATION clear the active transaction.
+
+Structurally valid START and ABORT messages receive an Application Response with the received Test ID and `EXECUTION_CONTROL` scope. RESET_APPLICATION receives a no-Test-ID `GLOBAL_CONTROL` completion Response. These are deterministic test-harness lifecycle responses and do not operate real hardware.
 
 For physical codec coverage only, a successfully decoded inbound Application Response or Error is synchronously re-encoded into the pending response buffer. This keeps decoded diagnostic span storage valid through C encoding and exercises both C decode and encode across Transport. It does not acknowledge Test Results, create a response workflow, or add Application state.
 
@@ -234,7 +252,7 @@ For physical codec coverage only, a successfully decoded inbound Application Res
 
 The harness has one fixed pending-response/result slot. A complete HRTP response, encoded Test Result, synthetic control Response, discovery Response, or test-only round trip is built once. If `HIL_TRANSPORT_Submit_Application_Data()` returns `NOT_READY` or `CAPACITY_EXHAUSTED`, the exact bytes remain in that slot and are retried in later service iterations.
 
-While the slot is occupied, the next Transport Application message remains unread. A Test Instruction advances `next_expected_tick` only after its Test Result has been encoded successfully into this caller-owned buffer.
+While the slot is occupied, the next Transport Application message remains unread. A Test Instruction or variable Update advances its transaction only after the accepted response or deferred result has been encoded successfully into this caller-owned buffer.
 
 ## Debugger-visible diagnostics
 
@@ -250,7 +268,7 @@ While the slot is occupied, the next Transport Application message remains unrea
 - USB busy retries and maximum consecutive busy iterations;
 - output peek, acceptance, commit, and commit-failure counts;
 - total Transport Application request, response/result submission/retry/failure, and invalid-HRTP counts;
-- Application codec initialization, decode/semantic/encode counters, accepted configuration/instruction/result counts, workflow state, expected ticks, last status/type, and semantic digests through STATUS v2;
+- Application codec initialization, decode/semantic/encode counters, accepted configuration/instruction/result counts, workflow state, expected ticks, upload family/chunk/finalization counters, last status/type, and semantic digests through STATUS v3;
 - total and per-type Transport event counts, the most recent event, and an eight-entry recent-event ring; and
 - bounded-operation budget exhaustion count.
 
@@ -273,16 +291,18 @@ After the matching Python runner exists:
 
 Successful completion of these steps is hardware validation. A source build or host unit test alone must not be treated as proof of USB or MCU behavior.
 
-## Application v0.2.0 hardware validation
+## Application v0.3.0 hardware validation
 
 Record the following separate physical-Transport checks with the same firmware implementation commit:
 
 | Item | Expected hardware-test behavior |
 | --- | --- |
-| Matching System Information discovery | BASIC response reports local protocol `0.2.0`, firmware `0.0.0`, and empty optional spans; subsequent ordinary traffic is accepted by the test harness. |
+| Matching System Information discovery | BASIC response reports local protocol `0.3.0`, firmware `0.0.0`, and empty optional spans; subsequent ordinary traffic is accepted by the test harness. |
 | Mismatched System Information patch | BASIC local-version response is returned; a subsequent ordinary message is rejected with `VERSION_MISMATCH`. |
 | START | Synthetic test-only `EXECUTION_CONTROL` completion Response preserves the Test ID and command. |
 | ABORT | Synthetic test-only `EXECUTION_CONTROL` completion Response preserves the Test ID and command. |
 | RESET_APPLICATION | Synthetic test-only no-Test-ID `GLOBAL_CONTROL` completion Response preserves the command. |
+| Representative fixed upload | Configuration acceptance, three fixed instruction tick acknowledgements, finalization, START completion, and three deferred fixed results are correlated by Test ID/tick. |
+| Sparse variable upload | Two chunks at ticks 0 and 2 cover digital, analogue, PWM, UART, SPI, and CAN operations; finalization succeeds and tick 1 emits an empty variable result. |
 | Every Application Response scope | Inbound TEST_CONFIGURATION, TICK, COMPLETE_TEST, EXECUTION_CONTROL, and GLOBAL_CONTROL Response bytes round trip exactly. |
 | Every Application Error form | Empty global, binary test-scoped, and 255-byte tick-scoped Error diagnostics round trip exactly. |

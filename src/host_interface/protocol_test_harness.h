@@ -25,8 +25,8 @@ extern "C"
 #define PROTOCOL_TEST_HARNESS_OPCODE_ECHO_RESPONSE 0x81U
 #define PROTOCOL_TEST_HARNESS_OPCODE_STATUS_RESPONSE 0x82U
 #define PROTOCOL_TEST_HARNESS_SUPPORTED_FLAGS 0U
-#define PROTOCOL_TEST_HARNESS_STATUS_SCHEMA_VERSION 2U
-#define PROTOCOL_TEST_HARNESS_STATUS_FIELD_COUNT 32U
+#define PROTOCOL_TEST_HARNESS_STATUS_SCHEMA_VERSION 3U
+#define PROTOCOL_TEST_HARNESS_STATUS_FIELD_COUNT 48U
 #define PROTOCOL_TEST_HARNESS_STATUS_PAYLOAD_SIZE                                                  \
     ( PROTOCOL_TEST_HARNESS_STATUS_FIELD_COUNT * sizeof( uint32_t ) )
 
@@ -73,6 +73,22 @@ typedef struct
     uint32_t last_decoded_application_message_type;
     uint32_t configuration_digest;
     uint32_t instruction_digest;
+    uint32_t selected_instruction_family;
+    uint32_t selected_result_family;
+    uint32_t completed_instruction_ticks;
+    uint32_t current_chunk_count;
+    uint32_t maximum_chunk_count;
+    uint32_t finalization_requests;
+    uint32_t accepted_finalizations;
+    uint32_t variable_operations_accepted;
+    uint32_t result_records_emitted;
+    uint32_t capture_overflow_events;
+    uint32_t i2c_not_implemented_rejections;
+    uint32_t maximum_decode_storage_required;
+    uint32_t decode_storage_used;
+    uint32_t selected_test_profile;
+    uint32_t selected_fault_mode;
+    uint32_t spontaneous_output_pending;
 } PROTOCOL_TEST_HARNESS_Status_Data_T;
 
 /**

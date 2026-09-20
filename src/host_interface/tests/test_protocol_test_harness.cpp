@@ -221,7 +221,7 @@ TEST( ProtocolTestHarness, StatusResponseHasFixedLittleEndianSchema )
     status.invalid_hrtp_messages                  = 9U;
     status.maximum_service_gap_ms                 = 10U;
     status.transport_session_state                = 11U;
-    status.compatibility_profile_id               = 0x41505031U;
+    status.compatibility_profile_id               = 0x41505032U;
     status.application_codec_initialized          = 16U;
     status.application_initialization_status      = 17U;
     status.non_hrtp_application_messages_received = 18U;
@@ -246,15 +246,15 @@ TEST( ProtocolTestHarness, StatusResponseHasFixedLittleEndianSchema )
                PROTOCOL_TEST_HARNESS_Build_Response( request.data(), request.size(), kMaxMessage,
                                                      &status, response.data(), response.size(),
                                                      &response_length ) );
-    ASSERT_EQ( 144U, response_length );
-    ASSERT_EQ( 128U, PROTOCOL_TEST_HARNESS_STATUS_PAYLOAD_SIZE );
+    ASSERT_EQ( 208U, response_length );
+    ASSERT_EQ( 192U, PROTOCOL_TEST_HARNESS_STATUS_PAYLOAD_SIZE );
     EXPECT_EQ( PROTOCOL_TEST_HARNESS_OPCODE_STATUS_RESPONSE, response[5] );
     EXPECT_EQ( 0x11223344U, ReadU32LE( &response[8] ) );
-    EXPECT_EQ( 128U, ReadU32LE( &response[12] ) );
+    EXPECT_EQ( 192U, ReadU32LE( &response[12] ) );
 
     const uint8_t* payload = &response[PROTOCOL_TEST_HARNESS_HEADER_SIZE];
     const std::array<uint32_t, PROTOCOL_TEST_HARNESS_STATUS_FIELD_COUNT> expected = {
-        2U,
+        3U,
         1U,
         2U,
         3U,
@@ -266,7 +266,7 @@ TEST( ProtocolTestHarness, StatusResponseHasFixedLittleEndianSchema )
         9U,
         10U,
         11U,
-        0x41505031U,
+        0x41505032U,
         HIL_RIG_PROTOCOL_VERSION_MAJOR,
         HIL_RIG_PROTOCOL_VERSION_MINOR,
         HIL_RIG_PROTOCOL_VERSION_PATCH,
@@ -286,6 +286,22 @@ TEST( ProtocolTestHarness, StatusResponseHasFixedLittleEndianSchema )
         29U,
         30U,
         31U,
+        0U,
+        0U,
+        0U,
+        0U,
+        0U,
+        0U,
+        0U,
+        0U,
+        0U,
+        0U,
+        0U,
+        0U,
+        0U,
+        0U,
+        0U,
+        0U,
     };
     for ( size_t i = 0U; i < expected.size(); ++i )
     {

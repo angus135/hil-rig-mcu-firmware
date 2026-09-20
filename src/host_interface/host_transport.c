@@ -32,7 +32,7 @@ _Static_assert( HOST_TRANSPORT_MAX_APPLICATION_MESSAGE_SIZE >= PROTOCOL_TEST_HAR
                 "Harness header must fit one configured Application message." );
 _Static_assert( PROTOCOL_TEST_HARNESS_HEADER_SIZE + PROTOCOL_TEST_HARNESS_STATUS_PAYLOAD_SIZE
                     <= HOST_TRANSPORT_MAX_APPLICATION_MESSAGE_SIZE,
-                "HRTP STATUS v2 must fit one configured Application message." );
+                "HRTP STATUS v3 must fit one configured Application message." );
 _Static_assert( HOST_TRANSPORT_STATUS_COUNT == 11U,
                 "Update status diagnostics for a changed public Transport status enum." );
 _Static_assert( HOST_TRANSPORT_EVENT_TYPE_COUNT == 8U,
@@ -59,6 +59,7 @@ typedef struct
     uint8_t pending_response[HOST_TRANSPORT_MAX_APPLICATION_MESSAGE_SIZE];
     size_t  pending_response_length;
     bool    response_pending;
+    bool    pending_response_is_spontaneous;
 
     uint8_t output_buffer[HOST_TRANSPORT_MAX_ENCODED_FRAME_SIZE];
 
@@ -128,6 +129,7 @@ static void HOST_TRANSPORT_Clear_Caller_State( void )
     s_host_transport.pending_rx_length               = 0U;
     s_host_transport.pending_response_length         = 0U;
     s_host_transport.response_pending                = false;
+    s_host_transport.pending_response_is_spontaneous = false;
     s_host_transport.consecutive_usb_busy_iterations = 0U;
     g_host_transport_diagnostics.pending_rx_length   = 0U;
 }
@@ -229,6 +231,11 @@ static void HOST_TRANSPORT_Try_Submit_Response( void )
     {
         s_host_transport.response_pending        = false;
         s_host_transport.pending_response_length = 0U;
+        if ( s_host_transport.pending_response_is_spontaneous )
+        {
+            APPLICATION_TEST_HARNESS_Commit_Output();
+            s_host_transport.pending_response_is_spontaneous = false;
+        }
         HOST_TRANSPORT_Increment( &g_host_transport_diagnostics.responses_submitted );
         return;
     }
@@ -243,6 +250,7 @@ static void HOST_TRANSPORT_Try_Submit_Response( void )
     /* A locally generated response should never hit a permanent submission error. */
     s_host_transport.response_pending        = false;
     s_host_transport.pending_response_length = 0U;
+    s_host_transport.pending_response_is_spontaneous = false;
     HOST_TRANSPORT_Increment( &g_host_transport_diagnostics.response_submit_failures );
 }
 
@@ -477,6 +485,22 @@ static void HOST_TRANSPORT_Populate_HRTP_Status( PROTOCOL_TEST_HARNESS_Status_Da
         application_diagnostics->last_decoded_message_type;
     status_data->configuration_digest = application_diagnostics->configuration_digest;
     status_data->instruction_digest   = application_diagnostics->instruction_digest;
+    status_data->selected_instruction_family = application_diagnostics->selected_instruction_family;
+    status_data->selected_result_family = application_diagnostics->selected_result_family;
+    status_data->completed_instruction_ticks = application_diagnostics->completed_instruction_ticks;
+    status_data->current_chunk_count = application_diagnostics->current_chunk_count;
+    status_data->maximum_chunk_count = application_diagnostics->maximum_chunk_count;
+    status_data->finalization_requests = application_diagnostics->finalization_requests;
+    status_data->accepted_finalizations = application_diagnostics->accepted_finalizations;
+    status_data->variable_operations_accepted = application_diagnostics->variable_operations_accepted;
+    status_data->result_records_emitted = application_diagnostics->result_records_emitted;
+    status_data->capture_overflow_events = application_diagnostics->capture_overflow_events;
+    status_data->i2c_not_implemented_rejections = application_diagnostics->i2c_not_implemented_rejections;
+    status_data->maximum_decode_storage_required = application_diagnostics->maximum_decode_storage_required;
+    status_data->decode_storage_used = application_diagnostics->decode_storage_used;
+    status_data->selected_test_profile = application_diagnostics->selected_test_profile;
+    status_data->selected_fault_mode = application_diagnostics->selected_fault_mode;
+    status_data->spontaneous_output_pending = application_diagnostics->spontaneous_output_pending;
 }
 
 static bool HOST_TRANSPORT_Read_Application_Message( void )
@@ -488,6 +512,19 @@ static bool HOST_TRANSPORT_Read_Application_Message( void )
     if ( s_host_transport.response_pending )
     {
         return false;
+    }
+
+    /* Rig-originated Application results share the one pending output slot. */
+    if ( APPLICATION_TEST_HARNESS_Poll_Output( s_host_transport.pending_response,
+                                               sizeof( s_host_transport.pending_response ),
+                                               &response_size ) == HIL_APPLICATION_STATUS_OK
+         && response_size > 0U )
+    {
+        s_host_transport.pending_response_length = response_size;
+        s_host_transport.response_pending = true;
+        s_host_transport.pending_response_is_spontaneous = true;
+        HOST_TRANSPORT_Try_Submit_Response();
+        return true;
     }
 
     status = HIL_TRANSPORT_Read_Application_Data(

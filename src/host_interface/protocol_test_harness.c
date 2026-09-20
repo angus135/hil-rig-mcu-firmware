@@ -13,10 +13,10 @@
 
 #include <string.h>
 
-_Static_assert( PROTOCOL_TEST_HARNESS_STATUS_FIELD_COUNT == 32U,
-                "HRTP STATUS v2 field count must remain fixed." );
-_Static_assert( PROTOCOL_TEST_HARNESS_STATUS_PAYLOAD_SIZE == 128U,
-                "HRTP STATUS v2 payload must contain 32 little-endian uint32_t fields." );
+_Static_assert( PROTOCOL_TEST_HARNESS_STATUS_FIELD_COUNT == 48U,
+                "HRTP STATUS v3 field count must remain fixed." );
+_Static_assert( PROTOCOL_TEST_HARNESS_STATUS_PAYLOAD_SIZE == 192U,
+                "HRTP STATUS v3 payload must contain 48 little-endian uint32_t fields." );
 
 static uint16_t PROTOCOL_TEST_HARNESS_Read_U16_LE( const uint8_t* data )
 {
@@ -104,6 +104,22 @@ PROTOCOL_TEST_HARNESS_Write_Status_Payload( uint8_t*                            
                                         status_data->last_decoded_application_message_type );
     PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[30U * 4U], status_data->configuration_digest );
     PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[31U * 4U], status_data->instruction_digest );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[32U * 4U], status_data->selected_instruction_family );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[33U * 4U], status_data->selected_result_family );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[34U * 4U], status_data->completed_instruction_ticks );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[35U * 4U], status_data->current_chunk_count );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[36U * 4U], status_data->maximum_chunk_count );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[37U * 4U], status_data->finalization_requests );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[38U * 4U], status_data->accepted_finalizations );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[39U * 4U], status_data->variable_operations_accepted );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[40U * 4U], status_data->result_records_emitted );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[41U * 4U], status_data->capture_overflow_events );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[42U * 4U], status_data->i2c_not_implemented_rejections );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[43U * 4U], status_data->maximum_decode_storage_required );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[44U * 4U], status_data->decode_storage_used );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[45U * 4U], status_data->selected_test_profile );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[46U * 4U], status_data->selected_fault_mode );
+    PROTOCOL_TEST_HARNESS_Write_U32_LE( &payload[47U * 4U], status_data->spontaneous_output_pending );
 }
 
 PROTOCOL_TEST_HARNESS_Result_T PROTOCOL_TEST_HARNESS_Build_Response(

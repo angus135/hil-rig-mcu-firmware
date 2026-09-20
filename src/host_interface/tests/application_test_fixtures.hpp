@@ -33,7 +33,6 @@ inline HIL_Application_Config_T CodecConfig()
     HIL_Application_Config_T config{};
     config.max_encoded_message_size          = 512U;
     config.max_variable_data_size            = 255U;
-    config.max_variable_transfers_per_tick   = 8U;
     config.max_expected_tick_count           = 1000000U;
     return config;
 }
@@ -105,12 +104,10 @@ inline HIL_Application_Message_T RepresentativeConfiguration(
 
     config.can[0].enabled             = 1U;
     config.can[0].bit_rate            = 500000U;
-    config.can[0].capture_limit_bytes = 64U;
     config.can[0].filter_id           = 0x123U;
     config.can[0].filter_mask         = 0x7FFU;
     config.can[1].enabled             = 1U;
     config.can[1].bit_rate            = 250000U;
-    config.can[1].capture_limit_bytes = 64U;
     config.can[1].filter_id           = 0x400U;
     config.can[1].filter_mask         = 0x700U;
 
@@ -121,7 +118,6 @@ inline HIL_Application_Message_T RepresentativeConfiguration(
     config.spi[0].bit_order           = HIL_APPLICATION_SPI_BIT_ORDER_MSB_FIRST;
     config.spi[0].clock_polarity      = HIL_APPLICATION_SPI_CLOCK_POLARITY_IDLE_LOW;
     config.spi[0].clock_phase         = HIL_APPLICATION_SPI_CLOCK_PHASE_FIRST_EDGE;
-    config.spi[0].capture_limit_bytes = 64U;
     config.spi[1].enabled             = 1U;
     config.spi[1].bit_rate            = 703125U;
     config.spi[1].role                = HIL_APPLICATION_BUS_ROLE_SLAVE;
@@ -129,7 +125,6 @@ inline HIL_Application_Message_T RepresentativeConfiguration(
     config.spi[1].bit_order           = HIL_APPLICATION_SPI_BIT_ORDER_LSB_FIRST;
     config.spi[1].clock_polarity      = HIL_APPLICATION_SPI_CLOCK_POLARITY_IDLE_HIGH;
     config.spi[1].clock_phase         = HIL_APPLICATION_SPI_CLOCK_PHASE_SECOND_EDGE;
-    config.spi[1].capture_limit_bytes = 64U;
 
     config.uart[0].enabled             = 1U;
     config.uart[0].baud_rate           = 115200U;
@@ -139,7 +134,6 @@ inline HIL_Application_Message_T RepresentativeConfiguration(
     config.uart[0].stop_bits           = HIL_APPLICATION_UART_STOP_BITS_1;
     config.uart[0].rx_enabled          = 1U;
     config.uart[0].tx_enabled          = 1U;
-    config.uart[0].capture_limit_bytes = 64U;
     config.uart[1].enabled             = 1U;
     config.uart[1].baud_rate           = 57600U;
     config.uart[1].electrical_mode     = HIL_APPLICATION_UART_ELECTRICAL_MODE_RS232;
@@ -148,22 +142,8 @@ inline HIL_Application_Message_T RepresentativeConfiguration(
     config.uart[1].stop_bits           = HIL_APPLICATION_UART_STOP_BITS_2;
     config.uart[1].rx_enabled          = 1U;
     config.uart[1].tx_enabled          = 1U;
-    config.uart[1].capture_limit_bytes = 64U;
 
-    config.i2c[0].enabled             = 1U;
-    config.i2c[0].bit_rate            = 100000U;
-    config.i2c[0].role                = HIL_APPLICATION_BUS_ROLE_MASTER;
-    config.i2c[0].own_address_7bit    = 0U;
-    config.i2c[0].voltage_level       = HIL_APPLICATION_I2C_VOLTAGE_3V3;
-    config.i2c[0].pull_up             = HIL_APPLICATION_I2C_PULL_UP_4K7;
-    config.i2c[0].capture_limit_bytes = 64U;
-    config.i2c[1].enabled             = 1U;
-    config.i2c[1].bit_rate            = 400000U;
-    config.i2c[1].role                = HIL_APPLICATION_BUS_ROLE_SLAVE;
-    config.i2c[1].own_address_7bit    = 0x42U;
-    config.i2c[1].voltage_level       = HIL_APPLICATION_I2C_VOLTAGE_5V;
-    config.i2c[1].pull_up             = HIL_APPLICATION_I2C_PULL_UP_2K2;
-    config.i2c[1].capture_limit_bytes = 64U;
+    // Enabled I2C is reserved for raw-negative NOT_IMPLEMENTED coverage.
 
     config.extension_data.data = extension_size == 0U ? nullptr : extension;
     config.extension_data.size = extension_size;

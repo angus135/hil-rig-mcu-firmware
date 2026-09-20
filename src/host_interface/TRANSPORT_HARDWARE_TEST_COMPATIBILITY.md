@@ -11,9 +11,9 @@ The reviewed implementation baseline is immutable and recorded below. The exact 
 | Reviewed PR #63 implementation baseline | `c6c0af2af586108949c30fb4a12df54eb9dd2fda` |
 | Final firmware commit used for hardware testing | `TO BE RECORDED AFTER COMMITTING THIS CHANGE SET` |
 | Protocol submodule path | `src/host_interface/shared_protocol` |
-| Protocol compatibility commit | `49431179c7ba30cbce09c1d20df8cde7780b0840` |
-| Protocol version | `0.2.0` |
-| Application compatibility profile | `APP1` / `0x41505031` |
+| Protocol compatibility commit | `cc1e6f29c7deb39c0dffc7edd1f4defc10fc1674` |
+| Protocol version | `0.3.0` |
+| Application compatibility profile | `APP2` / `0x41505032` |
 | Board | NUCLEO-F446ZE |
 | MCU | STM32F446ZETx / STM32F446Z(C-E)Tx |
 | STM32CubeIDE version represented by checked-in build artifacts | 1.18.1 |
@@ -63,7 +63,7 @@ The runtime results of `HIL_TRANSPORT_Default_Config()`, `HIL_TRANSPORT_Required
 | Transport output copy | 640 bytes |
 | Maximum ECHO payload | 496 bytes |
 | Application decode storage | 255 bytes, statically aligned |
-| STATUS v2 payload / complete response | 128 / 144 bytes |
+| STATUS v3 payload / complete response | 192 / 208 bytes |
 
 ## MCU validation record
 
@@ -77,10 +77,11 @@ The following values must be updated after running the hardware test on the actu
 | Clean Release MCU build | NOT YET RUN |
 | Observed `HOST_INTERFACE_Task` stack high-water | NOT YET MEASURED |
 | Empty/small/binary/maximum ECHO | NOT YET RUN |
-| STATUS v2 query | NOT YET RUN |
+| STATUS v3 query | NOT YET RUN |
 | Matching System Information discovery | NOT YET RUN |
 | Mismatched System Information patch blocks ordinary traffic | NOT YET RUN |
 | Representative Application configuration + 3 fixed instruction/result ticks | NOT YET RUN |
+| Sparse variable upload with deferred results | NOT YET RUN |
 | START synthetic test-only completion Response | NOT YET RUN |
 | ABORT synthetic test-only completion Response | NOT YET RUN |
 | RESET_APPLICATION synthetic test-only completion Response | NOT YET RUN |

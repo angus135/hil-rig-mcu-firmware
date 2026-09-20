@@ -12,21 +12,25 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Compiler options / warnings
-set(COMMON_WARN_FLAGS
-    -Wall
-    -Wextra
-    -Wpedantic
-    -Wshadow              
-    -Wundef               
-    -Wconversion          
-    -Wsign-conversion     
-    -Wcast-qual           
-    -Wformat=2            
-    -Wswitch-enum         
-    -Wswitch-default      
-    -Wmissing-declarations
-    -Wpointer-arith
-)
+if(MSVC)
+    set(COMMON_WARN_FLAGS /W4 /permissive-)
+else()
+    set(COMMON_WARN_FLAGS
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wshadow
+        -Wundef
+        -Wconversion
+        -Wsign-conversion
+        -Wcast-qual
+        -Wformat=2
+        -Wswitch-enum
+        -Wswitch-default
+        -Wmissing-declarations
+        -Wpointer-arith
+    )
+endif()
 
 add_library(project_warnings INTERFACE)
 target_compile_options(project_warnings INTERFACE ${COMMON_WARN_FLAGS})
