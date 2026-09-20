@@ -208,7 +208,7 @@ HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion( RunState_T expe
             return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
         }
         // wait before trying again
-        vTaskDelay( pdMS_TO_TICKS( 1U ) );
+        vTaskDelay( pdMS_TO_TICKS( 10U ) );
     }
     return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
 }
