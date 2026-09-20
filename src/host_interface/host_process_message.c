@@ -383,8 +383,6 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
 {
     ( void )data;
     ( void )data_size;
-
-    return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
     DutDriverConfiguration_T driver_config = { 0 };
     // Convert the config message to driver struct
     HOST_Interface_Status_T status =
