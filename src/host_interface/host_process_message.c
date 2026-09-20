@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 #include "host_process_message.h"
+#include "config_message_handler.h"
 #include "hil_rig_protocol/application/application.h"
 #include "hil_rig_protocol/application/application_error.h"
 #include "hil_rig_protocol/application/application_message.h"
@@ -384,15 +385,32 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     ( void )data_size;
 
     return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
-    /** CALL CALLUMS FUNCTION TO PASS CONFIGURAITON MESSAGE
-     *
-     *
-     *
-     *
-     */
-
+    DutDriverConfiguration_T driver_config = { 0 };
+    // Convert the config message to driver struct
+    HOST_Interface_Status_T status =
+        HOST_INTERFACE_Config_Message_To_Driver( incoming_message, &driver_config );
+    if ( status != HOST_INTERFACE_STATUS_OK )
+    {
+        // Construct the error message
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        // TODO  more specific error catagory
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+        *response_required                    = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+    // Commit the driver struct
+    status = HOST_INTERFACE_Commit_Config_Message( &driver_config );
+    if ( status != HOST_INTERFACE_STATUS_OK )
+    {
+        // Construct the error message
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        // TODO  more specific error catagory
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+        *response_required                    = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
     // Signal run state manager to move to package recieving state
-    HOST_Interface_Status_T status = HOST_INTERFACE_request_state_tranistion(
+    status = HOST_INTERFACE_request_state_tranistion(
         RUN_STATE_CONFIGURATION, HOST_REQUEST_CONFIGURATION, 2, 0 );
     if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
     {
