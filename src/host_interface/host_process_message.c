@@ -324,9 +324,11 @@ HOST_INTERFACE_process_Info_Response( const HIL_Application_Message_T* incoming_
         case HIL_APPLICATION_MESSAGE_SUBTYPE_BASIC:
             // Check protocol version
             if ( incoming_message->body.system_info_response.application_protocol_major
-                 != HIL_RIG_PROTOCOL_VERSION_MAJOR || incoming_message->body.system_info_response.application_protocol_minor
-                 != HIL_RIG_PROTOCOL_VERSION_MINOR || incoming_message->body.system_info_response.application_protocol_patch
-                 != HIL_RIG_PROTOCOL_VERSION_PATCH )
+                     != HIL_RIG_PROTOCOL_VERSION_MAJOR
+                 || incoming_message->body.system_info_response.application_protocol_minor
+                        != HIL_RIG_PROTOCOL_VERSION_MINOR
+                 || incoming_message->body.system_info_response.application_protocol_patch
+                        != HIL_RIG_PROTOCOL_VERSION_PATCH )
             {
                 // Construct the error message
                 HOST_INTERFACE_Default_Error( outgoing_message );
