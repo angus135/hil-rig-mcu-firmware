@@ -9,7 +9,7 @@ The reviewed implementation baseline is immutable and recorded below. The exact 
 | Firmware branch | `test/DEV-138--protocol-test` |
 | Firmware branch-point/base commit | `7987ca6cb78106530c9362b03a1addc624bede9b` |
 | Reviewed PR #63 implementation baseline | `c6c0af2af586108949c30fb4a12df54eb9dd2fda` |
-| Final firmware implementation commit | `TO BE RECORDED BEFORE PUSH` |
+| Final firmware implementation commit | `27c8e50` (`fix: complete v0.3 application hardware harness`) |
 | Protocol submodule path | `src/host_interface/shared_protocol` |
 | Protocol compatibility commit | `cc1e6f29c7deb39c0dffc7edd1f4defc10fc1674` |
 | Protocol version | `0.3.0` |
