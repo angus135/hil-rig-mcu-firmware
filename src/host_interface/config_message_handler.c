@@ -319,7 +319,114 @@ HOST_Interface_Status_T
 HOST_INTERFACE_Spi_Parser( const HIL_Application_Message_T* config_message,
                                     DutDriverConfiguration_T*        driver_config )
 {
-    
+    for ( uint8_t i = 0; i < TEST_CONFIGURATION_SPI_CHANNEL_COUNT; i++ )
+    {
+        driver_config->spi_channels[i].is_enabled =
+            config_message->body.test_configuration.spi[i].enabled;
+        // TODO add additional modes (e.g. invalid)
+        switch ( config_message->body.test_configuration.spi[i].role )
+        {
+            case HIL_APPLICATION_BUS_ROLE_INVALID:
+                driver_config->spi_channels[i].spi_mode = EXEC_SPI_SLAVE_MODE;
+                driver_config->spi_channels[i].is_enabled = false;
+            case HIL_APPLICATION_BUS_ROLE_MASTER:
+                driver_config->spi_channels[i].spi_mode = EXEC_SPI_MASTER_MODE;
+            case HIL_APPLICATION_BUS_ROLE_SLAVE:
+                driver_config->spi_channels[i].spi_mode = EXEC_SPI_SLAVE_MODE;
+            case HIL_APPLICATION_BUS_ROLE_RESERVED:
+                driver_config->spi_channels[i].spi_mode = EXEC_SPI_SLAVE_MODE;
+                driver_config->spi_channels[i].is_enabled = false;
+        }
+        // TODO add additional bit ordering (e.g. invalid)
+        switch ( config_message->body.test_configuration.spi[i].bit_order )
+        {
+            case HIL_APPLICATION_SPI_BIT_ORDER_INVALID:
+                driver_config->spi_channels[i].first_bit = EXEC_SPI_FIRST_MSB;
+                driver_config->spi_channels[i].is_enabled = false;
+            case HIL_APPLICATION_SPI_BIT_ORDER_MSB_FIRST:
+                driver_config->spi_channels[i].first_bit = EXEC_SPI_FIRST_MSB;
+            case HIL_APPLICATION_SPI_BIT_ORDER_LSB_FIRST:
+                driver_config->spi_channels[i].first_bit = EXEC_SPI_FIRST_LSB;
+            case HIL_APPLICATION_SPI_BIT_ORDER_RESERVED:
+                driver_config->spi_channels[i].first_bit = EXEC_SPI_FIRST_MSB;
+                driver_config->spi_channels[i].is_enabled = false;
+        }
+        if (config_message->body.test_configuration.spi[i].bit_rate >= 45000000)
+        {
+            driver_config->spi_channels[i].baud_rate = EXEC_SPI_BAUD_45MBIT;
+        }
+        else if ( config_message->body.test_configuration.spi[i].bit_rate >= 22500000 )
+        {
+            driver_config->spi_channels[i].baud_rate = EXEC_SPI_BAUD_22M5BIT;
+        }
+        else if ( config_message->body.test_configuration.spi[i].bit_rate >= 11250000 )
+        {
+            driver_config->spi_channels[i].baud_rate = EXEC_SPI_BAUD_11M25BIT;
+        }
+        else if ( config_message->body.test_configuration.spi[i].bit_rate >= 5625000 )
+        {
+            driver_config->spi_channels[i].baud_rate = EXEC_SPI_BAUD_5M625BIT;
+        }
+        else if ( config_message->body.test_configuration.spi[i].bit_rate >= 1406000 )
+        {
+            driver_config->spi_channels[i].baud_rate = EXEC_SPI_BAUD_1M406BIT;
+        }
+        else if ( config_message->body.test_configuration.spi[i].bit_rate >= 703000 )
+        {
+            driver_config->spi_channels[i].baud_rate = EXEC_SPI_BAUD_703KBIT;
+        }
+        else if ( config_message->body.test_configuration.spi[i].bit_rate >= 352000 )
+        {
+            driver_config->spi_channels[i].baud_rate = EXEC_SPI_BAUD_352KBIT;
+        }
+        else
+        {
+            driver_config->spi_channels[i].baud_rate = 0;
+            driver_config->spi_channels[i].is_enabled = false;
+        }
+        // TODO use capture limit
+        // TODO add invalid types to exec drivers
+        switch ( config_message->body.test_configuration.spi[i].clock_polarity )
+        {
+            case HIL_APPLICATION_SPI_CLOCK_POLARITY_INVALID:
+                driver_config->spi_channels[i].cpol = EXEC_SPI_CPOL_LOW;
+                driver_config->spi_channels[i].is_enabled = false;
+            case HIL_APPLICATION_SPI_CLOCK_POLARITY_IDLE_LOW:
+                driver_config->spi_channels[i].cpol = EXEC_SPI_CPOL_LOW;
+            case HIL_APPLICATION_SPI_CLOCK_POLARITY_IDLE_HIGH:
+                driver_config->spi_channels[i].cpol = EXEC_SPI_CPOL_HIGH;
+            case HIL_APPLICATION_SPI_CLOCK_POLARITY_RESERVED:
+                driver_config->spi_channels[i].cpol = EXEC_SPI_CPOL_LOW;
+                driver_config->spi_channels[i].is_enabled = false;
+        }
+        switch ( config_message->body.test_configuration.spi[i].clock_phase )
+        {
+            case HIL_APPLICATION_SPI_CLOCK_PHASE_INVALID:
+                driver_config->spi_channels[i].cpha = EXEC_SPI_CPHA_1_EDGE;
+                driver_config->spi_channels[i].is_enabled = false;
+            case HIL_APPLICATION_SPI_CLOCK_PHASE_FIRST_EDGE:
+                driver_config->spi_channels[i].cpha = EXEC_SPI_CPHA_1_EDGE;
+            case HIL_APPLICATION_SPI_CLOCK_PHASE_SECOND_EDGE:
+                driver_config->spi_channels[i].cpha = EXEC_SPI_CPHA_2_EDGE;
+            case HIL_APPLICATION_SPI_CLOCK_PHASE_RESERVED:
+                driver_config->spi_channels[i].cpha = EXEC_SPI_CPHA_1_EDGE;
+                driver_config->spi_channels[i].is_enabled = false;
+        }
+        switch ( config_message->body.test_configuration.spi[i].data_width )
+        {
+            case HIL_APPLICATION_SPI_DATA_WIDTH_INVALID:
+                driver_config->spi_channels[i].data_size = EXEC_SPI_SIZE_8_BIT;
+                driver_config->spi_channels[i].is_enabled = false;
+            case HIL_APPLICATION_SPI_DATA_WIDTH_8_BITS:
+                driver_config->spi_channels[i].data_size = EXEC_SPI_SIZE_8_BIT;
+            case HIL_APPLICATION_SPI_DATA_WIDTH_16_BITS:
+                driver_config->spi_channels[i].data_size = EXEC_SPI_SIZE_16_BIT;
+            case HIL_APPLICATION_SPI_DATA_WIDTH_RESERVED:
+                driver_config->spi_channels[i].data_size = EXEC_SPI_SIZE_8_BIT;
+                driver_config->spi_channels[i].is_enabled = false;   
+        }
+    }
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 HOST_Interface_Status_T
