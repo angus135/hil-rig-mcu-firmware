@@ -408,8 +408,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
         return HOST_INTERFACE_STATUS_OK;
     }
     // Signal run state manager to move to package recieving state
-    status = HOST_INTERFACE_request_state_tranistion(
-        RUN_STATE_CONFIGURATION, HOST_REQUEST_CONFIGURATION, 2, 0 );
+    status = HOST_INTERFACE_request_state_tranistion( RUN_STATE_CONFIGURATION,
+                                                      HOST_REQUEST_CONFIGURATION, 2, 0 );
     if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
     {
         // Construct the error message
@@ -803,28 +803,45 @@ HOST_INTERFACE_process_Error( const HIL_Application_Message_T* incoming_message,
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Package_Received_Notification(
     HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
-    uint8_t* data, size_t data_size );
+    uint8_t* data, size_t data_size )
+{
+    return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
+}
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Config_Started_Notification(
     HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
-    uint8_t* data, size_t data_size );
+    uint8_t* data, size_t data_size )
+{
+    return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
+}
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Execution_Started_Notification(
     HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
-    uint8_t* data, size_t data_size );
+    uint8_t* data, size_t data_size )
+{
+    return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
+}
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Execution_Complete_Notification(
     HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
-    uint8_t* data, size_t data_size );
+    uint8_t* data, size_t data_size )
+{
+    return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
+}
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Transfer_Complete_Notification(
     HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
-    uint8_t* data, size_t data_size );
+    uint8_t* data, size_t data_size )
+{
+    return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
+}
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Result_Transfer_Notification(
     HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
     uint8_t* data, size_t data_size )
 {
+    ( void )data;
+    ( void )data_size;
     Result_Message_Producer_Status_T result_status =
         RESULT_MESSAGE_PRODUCER_ProduceNextMessage( outgoing_message );
     if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM )

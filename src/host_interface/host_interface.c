@@ -971,9 +971,10 @@ void HOST_INTERFACE_Task( void* task_parameters )
         // cycle. This argument is intentionally separate from the output
         // availability flag: future application dispatch code can provide
         // backpressure without stopping USB/Transport service.
-        HOST_INTERFACE_Protocol_Process(
-            &protocol_state, outgoing_message_pending ? &outgoing_message : NULL,
-            &outgoing_message_accepted, can_consume_incoming, &incoming_message, &incoming_message_available );
+        HOST_INTERFACE_Protocol_Process( &protocol_state,
+                                         outgoing_message_pending ? &outgoing_message : NULL,
+                                         &outgoing_message_accepted, can_consume_incoming,
+                                         &incoming_message, &incoming_message_available );
 
         ( void )xTaskNotifyWait( 0U, UINT32_MAX, &notifications, 0U );
         carry_on_notifications = carry_on_notifications | notifications;
@@ -990,7 +991,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
             {
                 // We are overflowing, so stop processing incomming messages
                 can_consume_incoming = false;
-                overflow_timer = xTaskGetTickCount();
+                overflow_timer       = xTaskGetTickCount();
             }
         }
         else
@@ -999,9 +1000,9 @@ void HOST_INTERFACE_Task( void* task_parameters )
             if ( outgoing_message_accepted )
             {
                 // overflow over so pass the latest output message and return to normal
-                outgoing_message = overflow_outgoing_message;
+                outgoing_message         = overflow_outgoing_message;
                 outgoing_message_pending = true;
-                can_consume_incoming = true;
+                can_consume_incoming     = true;
             }
             else if ( xTaskGetTickCount() - overflow_timer >= pdMS_TO_TICKS( 100U ) )
             {
