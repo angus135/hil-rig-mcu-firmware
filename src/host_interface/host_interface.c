@@ -267,7 +267,7 @@ typedef struct
  *------------------------------------------------------------------------------
  */
 
-static TaskHandle_t HostInterfaceTaskHandle = NULL;  // NOLINT(readability-identifier-naming)
+TaskHandle_t HostInterfaceTaskHandle = NULL;  // NOLINT(readability-identifier-naming)
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
