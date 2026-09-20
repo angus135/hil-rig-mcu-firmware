@@ -19,16 +19,10 @@
 #include "exec_analogue_input.h"
 #include "exec_digital_output.h"
 #include "hw_pwm_gen.h"
-#include "execution_manager/execution_instruction.h"
-#include "execution_manager/execution_operation_payloads.h"
-#include "flash_manager/flash_manager.h"
-#include "hw_pwm_gen.h"
 #include "test_configuration.h"
 
 #include <stdbool.h>
-#include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -130,17 +124,23 @@ HOST_INTERFACE_Digital_Output_Parser( const HIL_Application_Message_T* config_me
             case HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_INVALID:
                 driver_config->digital_outputs.channels[i].mode = EXEC_DIGITAL_OUTPUT_MODE_COUNT;
                 driver_config->digital_outputs.channels[i].is_enabled = false;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_3V3:
                 driver_config->digital_outputs.channels[i].mode = EXEC_DIGITAL_OUTPUT_MODE_3V3;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_5V:
                 driver_config->digital_outputs.channels[i].mode = EXEC_DIGITAL_OUTPUT_MODE_5V;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_12V:
                 driver_config->digital_outputs.channels[i].mode = EXEC_DIGITAL_OUTPUT_MODE_12V;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_24V:
                 driver_config->digital_outputs.channels[i].mode = EXEC_DIGITAL_OUTPUT_MODE_24V;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_RESERVED:
                 driver_config->digital_outputs.channels[i].mode = EXEC_DIGITAL_OUTPUT_MODE_COUNT;
                 driver_config->digital_outputs.channels[i].is_enabled = false;
+                break;
         }
     }
     return HOST_INTERFACE_STATUS_OK;
@@ -156,16 +156,22 @@ HOST_INTERFACE_Digital_Input_Parser( const HIL_Application_Message_T* config_mes
         {
             case HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_INVALID:
                 driver_config->digital_inputs.channels[i] = EXEC_DIGITAL_INPUT_MODE_DISABLED;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_3V3:
                 driver_config->digital_inputs.channels[i] = EXEC_DIGITAL_INPUT_MODE_3V3;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_5V:
                 driver_config->digital_inputs.channels[i] = EXEC_DIGITAL_INPUT_MODE_5V;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_12V:
                 driver_config->digital_inputs.channels[i] = EXEC_DIGITAL_INPUT_MODE_12V;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_24V:
                 driver_config->digital_inputs.channels[i] = EXEC_DIGITAL_INPUT_MODE_24V;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_RESERVED:
                 driver_config->digital_inputs.channels[i] = EXEC_DIGITAL_INPUT_MODE_DISABLED;
+                break;
         }
         // a bit of redundancy in the application message
         // currently the .enabled takes priority 
@@ -190,16 +196,24 @@ HOST_INTERFACE_I2c_Parser( const HIL_Application_Message_T* config_message,
         {
             case HIL_APPLICATION_I2C_PULL_UP_INVALID:
                 driver_config->i2c_channels[i].pullup = EXEC_I2C_PULLUP_COUNT;
+                driver_config->i2c_channels[i].is_enabled = false;
+                break;
             case HIL_APPLICATION_I2C_PULL_UP_1K:
                 driver_config->i2c_channels[i].pullup = EXEC_I2C_PULLUP_1K;
+                break;
             case HIL_APPLICATION_I2C_PULL_UP_2K2:
                 driver_config->i2c_channels[i].pullup = EXEC_I2C_PULLUP_2K2;
+                break;
             case HIL_APPLICATION_I2C_PULL_UP_4K7:
                 driver_config->i2c_channels[i].pullup = EXEC_I2C_PULLUP_4K7;
+                break;
             case HIL_APPLICATION_I2C_PULL_UP_10K:
                 driver_config->i2c_channels[i].pullup = EXEC_I2C_PULLUP_10K;
+                break;
             case HIL_APPLICATION_I2C_PULL_UP_RESERVED:
                 driver_config->i2c_channels[i].pullup = EXEC_I2C_PULLUP_COUNT;
+                driver_config->i2c_channels[i].is_enabled = false;
+                break;
         }
         if (config_message->body.test_configuration.i2c[i].bit_rate >= 400000 )
         {
@@ -212,25 +226,37 @@ HOST_INTERFACE_I2c_Parser( const HIL_Application_Message_T* config_message,
         switch ( config_message->body.test_configuration.i2c[i].voltage_level )
         {
             case HIL_APPLICATION_I2C_VOLTAGE_INVALID:
-                driver_config->i2c_channels[i].voltage =EXEC_I2C_VOLTAGE_COUNT;
+                driver_config->i2c_channels[i].voltage = EXEC_I2C_VOLTAGE_COUNT;
+                driver_config->i2c_channels[i].is_enabled = false;
+                break;
             case HIL_APPLICATION_I2C_VOLTAGE_3V3:
-                driver_config->i2c_channels[i].voltage =EXEC_I2C_VOLTAGE_3V3;
+                driver_config->i2c_channels[i].voltage = EXEC_I2C_VOLTAGE_3V3;
+                break;
             case HIL_APPLICATION_I2C_VOLTAGE_5V:
-                driver_config->i2c_channels[i].voltage =EXEC_I2C_VOLTAGE_5V;
+                driver_config->i2c_channels[i].voltage = EXEC_I2C_VOLTAGE_5V;
+                break;
             case HIL_APPLICATION_I2C_VOLTAGE_RESERVED:
-                driver_config->i2c_channels[i].voltage =EXEC_I2C_VOLTAGE_COUNT;
+                driver_config->i2c_channels[i].voltage = EXEC_I2C_VOLTAGE_COUNT;
+                driver_config->i2c_channels[i].is_enabled = false;
+                break;
         }
         //TODO add other modes in the exec level drivers
         switch ( config_message->body.test_configuration.i2c[i].role )
         {
             case HIL_APPLICATION_BUS_ROLE_INVALID:
                 driver_config->i2c_channels[i].mode = HW_I2C_MODE_SLAVE;
+                driver_config->i2c_channels[i].is_enabled = false;
+                break;
             case HIL_APPLICATION_BUS_ROLE_MASTER:
                 driver_config->i2c_channels[i].mode = HW_I2C_MODE_MASTER;
+                break;
             case HIL_APPLICATION_BUS_ROLE_SLAVE:
                 driver_config->i2c_channels[i].mode = HW_I2C_MODE_SLAVE;
+                break;
             case HIL_APPLICATION_BUS_ROLE_RESERVED:
                 driver_config->i2c_channels[i].mode = HW_I2C_MODE_SLAVE;
+                driver_config->i2c_channels[i].is_enabled = false;
+                break;
         }
     }
     return HOST_INTERFACE_STATUS_OK;
@@ -248,17 +274,27 @@ HOST_INTERFACE_Pwm_Output_Parser( const HIL_Application_Message_T* config_messag
         switch ( config_message->body.test_configuration.pwm_out[i].voltage_level )
         {
             case HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_INVALID:
-                driver_config->pwm_generation_channels[i].voltage_level = EXEC_PWM_GEN_VOLTAGE_DISABLED;
+                driver_config->pwm_generation_channels[i].voltage_level =
+                    EXEC_PWM_GEN_VOLTAGE_DISABLED;
+                driver_config->pwm_generation_channels[i].is_enabled = false;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_3V3:
                 driver_config->pwm_generation_channels[i].voltage_level = EXEC_PWM_GEN_VOLTAGE_3V3;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_5V:
                 driver_config->pwm_generation_channels[i].voltage_level = EXEC_PWM_GEN_VOLTAGE_5V;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_12V:
                 driver_config->pwm_generation_channels[i].voltage_level = EXEC_PWM_GEN_VOLTAGE_12V;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_24V:
                 driver_config->pwm_generation_channels[i].voltage_level = EXEC_PWM_GEN_VOLTAGE_24V;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_RESERVED:
-                driver_config->pwm_generation_channels[i].voltage_level = EXEC_PWM_GEN_VOLTAGE_DISABLED;
+                driver_config->pwm_generation_channels[i].voltage_level =
+                    EXEC_PWM_GEN_VOLTAGE_DISABLED;
+                driver_config->pwm_generation_channels[i].is_enabled = false;
+                break;
         }
 
         const uint32_t period_ns      = config_message->body.test_configuration.pwm_out[i].initial_period_nanoseconds;
@@ -299,17 +335,23 @@ HOST_INTERFACE_Pwm_Input_Parser( const HIL_Application_Message_T* config_message
             case HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_INVALID:
                 driver_config->pwm_capture_channels[i].mode = EXEC_PWM_CAPTURE_LV_3V3;
                 driver_config->pwm_capture_channels[i].is_enabled = false;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_3V3:
                 driver_config->pwm_capture_channels[i].mode = EXEC_PWM_CAPTURE_LV_3V3;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_5V:
                 driver_config->pwm_capture_channels[i].mode = EXEC_PWM_CAPTURE_LV_5V;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_12V:
                 driver_config->pwm_capture_channels[i].mode = EXEC_PWM_CAPTURE_HV_12V;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_24V:
                 driver_config->pwm_capture_channels[i].mode = EXEC_PWM_CAPTURE_HV_24V;
+                break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_RESERVED:
                 driver_config->pwm_capture_channels[i].mode = EXEC_PWM_CAPTURE_LV_3V3;
-                driver_config->pwm_capture_channels[i].is_enabled =false;
+                driver_config->pwm_capture_channels[i].is_enabled = false;
+                break;
         }
     }
     return HOST_INTERFACE_STATUS_OK;
@@ -329,13 +371,17 @@ HOST_INTERFACE_Spi_Parser( const HIL_Application_Message_T* config_message,
             case HIL_APPLICATION_BUS_ROLE_INVALID:
                 driver_config->spi_channels[i].spi_mode = EXEC_SPI_SLAVE_MODE;
                 driver_config->spi_channels[i].is_enabled = false;
+                break;
             case HIL_APPLICATION_BUS_ROLE_MASTER:
                 driver_config->spi_channels[i].spi_mode = EXEC_SPI_MASTER_MODE;
+                break;
             case HIL_APPLICATION_BUS_ROLE_SLAVE:
                 driver_config->spi_channels[i].spi_mode = EXEC_SPI_SLAVE_MODE;
+                break;
             case HIL_APPLICATION_BUS_ROLE_RESERVED:
                 driver_config->spi_channels[i].spi_mode = EXEC_SPI_SLAVE_MODE;
                 driver_config->spi_channels[i].is_enabled = false;
+                break;
         }
         // TODO add additional bit ordering (e.g. invalid)
         switch ( config_message->body.test_configuration.spi[i].bit_order )
@@ -343,13 +389,17 @@ HOST_INTERFACE_Spi_Parser( const HIL_Application_Message_T* config_message,
             case HIL_APPLICATION_SPI_BIT_ORDER_INVALID:
                 driver_config->spi_channels[i].first_bit = EXEC_SPI_FIRST_MSB;
                 driver_config->spi_channels[i].is_enabled = false;
+                break;
             case HIL_APPLICATION_SPI_BIT_ORDER_MSB_FIRST:
                 driver_config->spi_channels[i].first_bit = EXEC_SPI_FIRST_MSB;
+                break;
             case HIL_APPLICATION_SPI_BIT_ORDER_LSB_FIRST:
                 driver_config->spi_channels[i].first_bit = EXEC_SPI_FIRST_LSB;
+                break;
             case HIL_APPLICATION_SPI_BIT_ORDER_RESERVED:
                 driver_config->spi_channels[i].first_bit = EXEC_SPI_FIRST_MSB;
                 driver_config->spi_channels[i].is_enabled = false;
+                break;
         }
         if (config_message->body.test_configuration.spi[i].bit_rate >= 45000000)
         {
@@ -391,39 +441,51 @@ HOST_INTERFACE_Spi_Parser( const HIL_Application_Message_T* config_message,
             case HIL_APPLICATION_SPI_CLOCK_POLARITY_INVALID:
                 driver_config->spi_channels[i].cpol = EXEC_SPI_CPOL_LOW;
                 driver_config->spi_channels[i].is_enabled = false;
+                break;
             case HIL_APPLICATION_SPI_CLOCK_POLARITY_IDLE_LOW:
                 driver_config->spi_channels[i].cpol = EXEC_SPI_CPOL_LOW;
+                break;
             case HIL_APPLICATION_SPI_CLOCK_POLARITY_IDLE_HIGH:
                 driver_config->spi_channels[i].cpol = EXEC_SPI_CPOL_HIGH;
+                break;
             case HIL_APPLICATION_SPI_CLOCK_POLARITY_RESERVED:
                 driver_config->spi_channels[i].cpol = EXEC_SPI_CPOL_LOW;
                 driver_config->spi_channels[i].is_enabled = false;
+                break;
         }
         switch ( config_message->body.test_configuration.spi[i].clock_phase )
         {
             case HIL_APPLICATION_SPI_CLOCK_PHASE_INVALID:
                 driver_config->spi_channels[i].cpha = EXEC_SPI_CPHA_1_EDGE;
                 driver_config->spi_channels[i].is_enabled = false;
+                break;
             case HIL_APPLICATION_SPI_CLOCK_PHASE_FIRST_EDGE:
                 driver_config->spi_channels[i].cpha = EXEC_SPI_CPHA_1_EDGE;
+                break;
             case HIL_APPLICATION_SPI_CLOCK_PHASE_SECOND_EDGE:
                 driver_config->spi_channels[i].cpha = EXEC_SPI_CPHA_2_EDGE;
+                break;
             case HIL_APPLICATION_SPI_CLOCK_PHASE_RESERVED:
                 driver_config->spi_channels[i].cpha = EXEC_SPI_CPHA_1_EDGE;
                 driver_config->spi_channels[i].is_enabled = false;
+                break;
         }
         switch ( config_message->body.test_configuration.spi[i].data_width )
         {
             case HIL_APPLICATION_SPI_DATA_WIDTH_INVALID:
                 driver_config->spi_channels[i].data_size = EXEC_SPI_SIZE_8_BIT;
                 driver_config->spi_channels[i].is_enabled = false;
+                break;
             case HIL_APPLICATION_SPI_DATA_WIDTH_8_BITS:
                 driver_config->spi_channels[i].data_size = EXEC_SPI_SIZE_8_BIT;
+                break;
             case HIL_APPLICATION_SPI_DATA_WIDTH_16_BITS:
                 driver_config->spi_channels[i].data_size = EXEC_SPI_SIZE_16_BIT;
+                break;
             case HIL_APPLICATION_SPI_DATA_WIDTH_RESERVED:
                 driver_config->spi_channels[i].data_size = EXEC_SPI_SIZE_8_BIT;
-                driver_config->spi_channels[i].is_enabled = false;   
+                driver_config->spi_channels[i].is_enabled = false;
+                break;  
         }
     }
     return HOST_INTERFACE_STATUS_OK;
@@ -433,7 +495,96 @@ HOST_Interface_Status_T
 HOST_INTERFACE_Uart_Parser( const HIL_Application_Message_T* config_message,
                                     DutDriverConfiguration_T*        driver_config )
 {
-
+    for ( uint8_t i = 0; i < EXEC_UART_CHANNEL_COUNT; i++ )
+    {
+        // TODO add way to use the captured bytes limit. 
+        driver_config->uart_channels[i].is_enabled =
+            config_message->body.test_configuration.uart[i].enabled;
+        driver_config->uart_channels[i].rx_enabled =
+            config_message->body.test_configuration.uart[i].rx_enabled;
+        driver_config->uart_channels[i].tx_enabled =
+            config_message->body.test_configuration.uart[i].tx_enabled;
+        driver_config->uart_channels[i].baud_rate =
+            config_message->body.test_configuration.uart[i].baud_rate;
+        switch ( config_message->body.test_configuration.uart[i].electrical_mode )
+        {
+            case HIL_APPLICATION_UART_ELECTRICAL_MODE_INVALID:
+                driver_config->uart_channels[i].interface_mode = EXEC_UART_MODE_DISABLED;
+                driver_config->uart_channels[i].is_enabled     = false;
+                break;
+            case HIL_APPLICATION_UART_ELECTRICAL_MODE_TTL_3V3:
+                driver_config->uart_channels[i].interface_mode = EXEC_UART_MODE_TTL_3V3;
+                break;
+            case HIL_APPLICATION_UART_ELECTRICAL_MODE_TTL_5V:
+                driver_config->uart_channels[i].interface_mode = EXEC_UART_MODE_TTL_5V0;
+                break;
+            case HIL_APPLICATION_UART_ELECTRICAL_MODE_RS232:
+                driver_config->uart_channels[i].interface_mode = EXEC_UART_MODE_RS232;
+                break;
+            case HIL_APPLICATION_UART_ELECTRICAL_MODE_RESERVED:
+                driver_config->uart_channels[i].interface_mode = EXEC_UART_MODE_DISABLED;
+                driver_config->uart_channels[i].is_enabled     = false;
+                break;
+        }
+        // TODO add invalid flag in uart exec config structs
+        switch ( config_message->body.test_configuration.uart[i].word_length )
+        {
+            case HIL_APPLICATION_UART_WORD_LENGTH_INVALID:
+                driver_config->uart_channels[i].word_length = HW_UART_WORD_LENGTH_8_BITS;
+                driver_config->uart_channels[i].is_enabled  = false;
+                break;
+            case HIL_APPLICATION_UART_WORD_LENGTH_8_BITS:
+                driver_config->uart_channels[i].word_length = HW_UART_WORD_LENGTH_8_BITS;
+                break;
+            case HIL_APPLICATION_UART_WORD_LENGTH_9_BITS:
+                driver_config->uart_channels[i].word_length = HW_UART_WORD_LENGTH_9_BITS;
+                break;
+            case HIL_APPLICATION_UART_WORD_LENGTH_RESERVED:
+                driver_config->uart_channels[i].word_length = HW_UART_WORD_LENGTH_8_BITS;
+                driver_config->uart_channels[i].is_enabled  = false;
+                break;
+        }
+        //TODO add extra options to UART exec config structs
+        switch ( config_message->body.test_configuration.uart[i].parity )
+        {
+            case HIL_APPLICATION_UART_PARITY_INVALID:
+                driver_config->uart_channels[i].parity = HW_UART_PARITY_NONE;
+                driver_config->uart_channels[i].is_enabled = false;
+                break;
+            case HIL_APPLICATION_UART_PARITY_NONE:
+                driver_config->uart_channels[i].parity = HW_UART_PARITY_NONE;
+                break;
+            case HIL_APPLICATION_UART_PARITY_EVEN:
+                driver_config->uart_channels[i].parity = HW_UART_PARITY_EVEN;
+                break;
+            case HIL_APPLICATION_UART_PARITY_ODD:
+                driver_config->uart_channels[i].parity = HW_UART_PARITY_ODD;
+                break;
+            case HIL_APPLICATION_UART_PARITY_RESERVED:
+                driver_config->uart_channels[i].parity = HW_UART_PARITY_NONE;
+                driver_config->uart_channels[i].is_enabled = false;
+                break;
+        }
+        // TODO add invalid option to UART exec struct
+        switch ( config_message->body.test_configuration.uart[i].stop_bits )
+        {
+            case HIL_APPLICATION_UART_STOP_BITS_INVALID:
+                driver_config->uart_channels[i].stop_bits = HW_UART_STOP_BITS_1;
+                driver_config->uart_channels[i].is_enabled = false;
+                break;
+            case HIL_APPLICATION_UART_STOP_BITS_1:
+                driver_config->uart_channels[i].stop_bits = HW_UART_STOP_BITS_1;
+                break;
+            case HIL_APPLICATION_UART_STOP_BITS_2:
+                driver_config->uart_channels[i].stop_bits = HW_UART_STOP_BITS_2;
+                break;
+            case HIL_APPLICATION_UART_STOP_BITS_RESERVED:
+                driver_config->uart_channels[i].stop_bits = HW_UART_STOP_BITS_1;
+                driver_config->uart_channels[i].is_enabled = false;
+                break;
+        }
+    }
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 
@@ -446,6 +597,56 @@ HOST_Interface_Status_T
 HOST_INTERFACE_Config_Message_To_Driver( const HIL_Application_Message_T* config_message,
                                          DutDriverConfiguration_T*        driver_config )
 {
-    
+    if ( HOST_INTERFACE_Analog_Input_Parser( config_message, driver_config )
+         != HOST_INTERFACE_STATUS_OK )
+    {
+        return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+    }
+    if ( HOST_INTERFACE_Analog_Output_Parser( config_message, driver_config )
+         != HOST_INTERFACE_STATUS_OK )
+    {
+        return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+    }
+    if ( HOST_INTERFACE_Digital_Input_Parser( config_message, driver_config )
+         != HOST_INTERFACE_STATUS_OK )
+    {
+        return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+    }
+    if ( HOST_INTERFACE_Digital_Output_Parser( config_message, driver_config )
+         != HOST_INTERFACE_STATUS_OK )
+    {
+        return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+    }
+    if ( HOST_INTERFACE_Pwm_Input_Parser( config_message, driver_config )
+         != HOST_INTERFACE_STATUS_OK )
+    {
+        return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+    }
+    if ( HOST_INTERFACE_Pwm_Output_Parser( config_message, driver_config )
+         != HOST_INTERFACE_STATUS_OK )
+    {
+        return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+    }
+    if ( HOST_INTERFACE_Can_Parser( config_message, driver_config )
+         != HOST_INTERFACE_STATUS_OK )
+    {
+        return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+    }
+    if ( HOST_INTERFACE_I2c_Parser( config_message, driver_config )
+         != HOST_INTERFACE_STATUS_OK )
+    {
+        return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+    }
+    if ( HOST_INTERFACE_Uart_Parser( config_message, driver_config )
+         != HOST_INTERFACE_STATUS_OK )
+    {
+        return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+    }
+    if ( HOST_INTERFACE_Spi_Parser( config_message, driver_config )
+         != HOST_INTERFACE_STATUS_OK )
+    {
+        return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+    }
+    return HOST_INTERFACE_STATUS_OK;
 }
 
