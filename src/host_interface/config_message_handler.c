@@ -650,3 +650,9 @@ HOST_INTERFACE_Config_Message_To_Driver( const HIL_Application_Message_T* config
     return HOST_INTERFACE_STATUS_OK;
 }
 
+HOST_Interface_Status_T
+HOST_INTERFACE_Commit_Config_Message( const DutDriverConfiguration_T* driver_config )
+{
+    // FOR CALLUM
+    return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
+}
