@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "host_process_message.h"
 #include "config_message_handler.h"
@@ -323,21 +324,13 @@ HOST_INTERFACE_process_Info_Response( const HIL_Application_Message_T* incoming_
         case HIL_APPLICATION_MESSAGE_SUBTYPE_BASIC:
             // Check protocol version
             if ( incoming_message->body.system_info_response.application_protocol_major
-                 == HIL_RIG_PROTOCOL_VERSION_MAJOR )
+                 != HIL_RIG_PROTOCOL_VERSION_MAJOR || incoming_message->body.system_info_response.application_protocol_minor
+                 != HIL_RIG_PROTOCOL_VERSION_MINOR || incoming_message->body.system_info_response.application_protocol_patch
+                 != HIL_RIG_PROTOCOL_VERSION_PATCH )
             {
-                *response_required = false;
-                return HOST_INTERFACE_STATUS_OK;
-            }
-            if ( incoming_message->body.system_info_response.application_protocol_minor
-                 == HIL_RIG_PROTOCOL_VERSION_MINOR )
-            {
-                *response_required = false;
-                return HOST_INTERFACE_STATUS_OK;
-            }
-            if ( incoming_message->body.system_info_response.application_protocol_patch
-                 == HIL_RIG_PROTOCOL_VERSION_PATCH )
-            {
-                *response_required = false;
+                // Construct the error message
+                HOST_INTERFACE_Default_Error( outgoing_message );
+                *response_required = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             // Check firmware version TODO
@@ -347,9 +340,7 @@ HOST_INTERFACE_process_Info_Response( const HIL_Application_Message_T* incoming_
             // {
             //     default:
             // }
-            // Construct the error message
-            HOST_INTERFACE_Default_Error( outgoing_message );
-            *response_required = true;
+            *response_required = false;
             return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_MESSAGE_SUBTYPE_RESERVED:
             // Construct the error message
@@ -998,8 +989,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
                 return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
         }
     }
-
-    return host_status;
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 HOST_Interface_Status_T

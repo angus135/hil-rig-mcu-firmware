@@ -480,7 +480,7 @@ TEST_F( HostProcessMessageTest, InfoResponseRejectsMajorMismatchEvenWhenMinorAnd
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_RESPONSE,
                      HIL_APPLICATION_MESSAGE_SUBTYPE_BASIC );
     incoming.body.system_info_response.application_protocol_major =
-        static_cast<uint8_t>( HIL_RIG_PROTOCOL_VERSION_MAJOR + 1U );
+        static_cast<uint16_t>( HIL_RIG_PROTOCOL_VERSION_MAJOR + 1U );
     incoming.body.system_info_response.application_protocol_minor = HIL_RIG_PROTOCOL_VERSION_MINOR;
     incoming.body.system_info_response.application_protocol_patch = HIL_RIG_PROTOCOL_VERSION_PATCH;
 
@@ -893,7 +893,8 @@ TEST_F( HostProcessMessageTest, IncomingDispatcherDoesNothingWhenNoMessageIsAvai
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Incoming_Message(
                    false, &incoming, &outgoing, &response_required, data, sizeof( data ),
                    &expected_tick_count ),
-               HOST_INTERFACE_STATUS_INTERNAL_ERROR );
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_FALSE( response_required );
 }
 
 TEST_F( HostProcessMessageTest, InternalDispatcherRejectsUnknownNotification )
