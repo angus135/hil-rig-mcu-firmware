@@ -61,6 +61,58 @@ option(HOST_INTERFACE_ENABLE_TESTS "Build tests for host_interface module" ON)
 
 if(HOST_INTERFACE_ENABLE_TESTS AND BUILD_TESTING)
 
+    add_executable(host_process_message_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_host_process_message.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/host_process_message_test_access.c
+    )
+
+    target_link_libraries(host_process_message_tests
+        PRIVATE
+            project_warnings
+            global_config
+            cubeide_hal
+            hil_rig_protocol::hil_rig_protocol
+            rtos
+            gtest
+            gtest_main
+            gmock
+    )
+
+    target_include_directories(host_process_message_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/src/rtos
+            ${CMAKE_SOURCE_DIR}/src/run_state_manager
+            ${CMAKE_SOURCE_DIR}/src/flash_manager
+            ${CMAKE_SOURCE_DIR}/src/execution_manager
+
+            ${CMAKE_SOURCE_DIR}/src/test_configuration
+
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_analogue_input
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_analogue_output
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_can
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_digital_input
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_digital_output
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_i2c
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_pwm_capture
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_pwm_gen
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_spi
+            ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_uart
+
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_pwm_gen
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_can
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_gpio
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_i2c
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_pwm_gen
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_pwm_capture
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_spi
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_uart
+    )
+
+    add_test(NAME host_process_message_tests COMMAND host_process_message_tests)
+
     add_executable(host_interface_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_host_interface.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/host_interface_test_access.c
@@ -68,6 +120,7 @@ if(HOST_INTERFACE_ENABLE_TESTS AND BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/shared_protocol/tests/c/integration/support/transport_test_link.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/shared_protocol/tests/c/integration/support/transport_pair_harness.cpp
     )
+
 
     target_link_libraries(host_interface_tests
         PRIVATE

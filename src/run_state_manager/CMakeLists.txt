@@ -31,6 +31,7 @@ target_link_libraries(run_state_manager
         project_warnings
         cubeide_hal
         rtos
+        hw_can
         hw_timer
         hw_gpio
         logic_expander
