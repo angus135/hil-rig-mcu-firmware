@@ -307,6 +307,13 @@ HOST_INTERFACE_Pwm_Output_Parser( const HIL_Application_Message_T* config_messag
         const uint32_t timer_clock_hz = ( i == 0 ? HOST_INSTRUCTION_PWM_LV_TIMER_CLOCK_HZ
                                                  : HOST_INSTRUCTION_PWM_HV_TIMER_CLOCK_HZ );
 
+        if ( !driver_config->pwm_generation_channels[i].is_enabled || ( period_ns == 0U ) )
+        {
+            driver_config->pwm_generation_channels[i].initial_psc = 0U;
+            driver_config->pwm_generation_channels[i].initial_arr = 0U;
+            driver_config->pwm_generation_channels[i].initial_ccr = 0U;
+            continue;
+        }
         const uint32_t frequency_hz  = HOST_INSTRUCTION_NANOSECONDS_PER_SECOND / period_ns;
         const uint16_t duty_permille = ( uint16_t )( duty_permyriad / 10U );
 
