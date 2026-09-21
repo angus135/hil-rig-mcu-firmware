@@ -477,12 +477,12 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Instructions(
     ( void )data_size;
     HOST_Interface_Status_T instruction_status =
         HOST_INSTRUCTION_HANDLER_HandleInstruction( &incoming_message->body.test_instruction );
-    // If this is the last instruction message then attempt to transition to the ARMED state
+    // If this is the last instruction message then attempt to transition to the CONFIGURATION state
     if ( incoming_message->body.test_instruction.tick_number == *expected_tick_count )
     {
-        // Request transition to armed
+        // Request transition to CONFIGURATION
         HOST_Interface_Status_T status = HOST_INTERFACE_request_state_tranistion(
-            RUN_STATE_ARMED, HOST_REQUEST_ARMED, 4, *expected_tick_count );
+            RUN_STATE_CONFIGURATION, HOST_REQUEST_CONFIGURATION, 4, *expected_tick_count );
         if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
         {
             // Construct the error message
