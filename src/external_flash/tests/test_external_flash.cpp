@@ -525,6 +525,34 @@ TEST_F( ExternalFlashTest, FinishInstructionUploadRejectsIncompleteUpload )
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_ERROR, EXTERNAL_FLASH_FinishInstructionUpload() );
 }
 
+TEST_F( ExternalFlashTest, UpdateInstructionUploadExpectedLengthValidatesStateAndBounds )
+{
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_NOT_INITIALISED,
+               EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( TEST_PAGE_SIZE_BYTES ) );
+
+    InitDriverAllGood();
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_ERROR,
+               EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( TEST_PAGE_SIZE_BYTES ) );
+
+    StartInstructionUploadAllGood( TEST_PAGE_SIZE_BYTES * 2U );
+
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_INVALID_ARG,
+               EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( TEST_PAGE_SIZE_BYTES * 3U ) );
+
+    EXPECT_CALL( mock, ProgramPageDma( Eq( TEST_INSTRUCTION_PAGE ), Eq( 0U ), Eq( transfer_data ),
+                                       Eq( TEST_PAGE_SIZE_BYTES ) ) )
+        .WillOnce( Return( HW_NAND_STATUS_OK ) );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
+               EXTERNAL_FLASH_WriteInstructionPage( transfer_data, TEST_PAGE_SIZE_BYTES ) );
+
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_INVALID_ARG,
+               EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( TEST_PAGE_SIZE_BYTES - 1U ) );
+
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
+               EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( TEST_PAGE_SIZE_BYTES ) );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_FinishInstructionUpload() );
+}
+
 TEST_F( ExternalFlashTest, ResultSessionUsesWearRotationStartOffset )
 {
     InitDriverAllGood();

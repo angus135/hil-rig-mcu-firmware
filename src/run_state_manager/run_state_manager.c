@@ -21,6 +21,7 @@
 #include "exec_can.h"
 #include "exec_spi.h"
 #include "exec_uart.h"
+#include "execution_instruction.h"
 #include "execution_manager.h"
 #include "flash_manager.h"
 #include "hw_timer.h"
@@ -53,6 +54,7 @@
 #define RUN_STATE_MANAGER_NOTIFY_DISCARD_RESULTS ( 1UL << 9U )
 
 #define RUN_STATE_MANAGER_PENDING_POLL_MS ( 10U )
+#define RUN_STATE_MANAGER_INSTRUCTION_UPLOAD_TIMEOUT_MS ( 15000U )
 #define RUN_STATE_MANAGER_CONFIGURATION_TIMEOUT_MS ( 15000U )
 #define RUN_STATE_MANAGER_EXECUTION_PREPARATION_TIMEOUT_MS ( 15000U )
 #define RUN_STATE_MANAGER_DRIVER_START_TIMEOUT_MS ( 15000U )
@@ -76,6 +78,8 @@
 typedef enum
 {
     RUN_STATE_PENDING_NONE = 0,
+    RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION,
+    RUN_STATE_PENDING_INSTRUCTION_UPLOAD_FINALISATION,
     RUN_STATE_PENDING_CONFIGURATION,
     RUN_STATE_PENDING_EXECUTION_PREPARATION,
     RUN_STATE_PENDING_DRIVER_START,
@@ -119,6 +123,8 @@ static volatile bool execution_abort_requested = false;
 
 static TaskHandle_t run_state_manager_task_handle = NULL;
 
+static uint32_t package_receive_expected_ticks = 0U;
+
 static volatile RunStateFaultReason_T   fault_reason           = RUN_STATE_FAULT_NONE;
 static volatile RunStateFaultReason_T   requested_fault_reason = RUN_STATE_FAULT_NONE;
 static volatile RunStateRequest_T       last_request           = RUN_STATE_REQUEST_NONE;
@@ -153,6 +159,8 @@ static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason );
 static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state,
                                                    RunState_T next_state );
 
+static bool RUN_STATE_MANAGER_BeginInstructionUpload( uint32_t expected_tick_count );
+static bool RUN_STATE_MANAGER_BeginInstructionUploadFinalisation( void );
 static bool RUN_STATE_MANAGER_EnterTestPackageReceive( void );
 static bool RUN_STATE_MANAGER_EnterConfiguration( void );
 static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void );
@@ -202,6 +210,10 @@ static bool RUN_STATE_MANAGER_Notify( uint32_t notification )
     {
         return false;
     }
+
+    taskENTER_CRITICAL();
+    last_request_result = RUN_STATE_REQUEST_RESULT_NONE;
+    taskEXIT_CRITICAL();
 
     return xTaskNotify( run_state_manager_task_handle, notification, eSetBits ) == pdPASS;
 }
@@ -417,6 +429,131 @@ static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state, Run
         default:
             return false;
     }
+}
+
+/**
+ * @brief Begins instruction upload preparation in Flash Manager.
+ *
+ * Sizing is conservatively estimated using the expected ticks transmitted
+ * in the configuration message and the maximum instruction size, reserving
+ * at least one physical NAND block (128 KB) and bounded by partition capacity.
+ *
+ * @return true when Flash Manager accepts the request or is already in upload state;
+ *         false if in an invalid state or request fails.
+ */
+static bool RUN_STATE_MANAGER_BeginInstructionUpload( uint32_t expected_tick_count )
+{
+    FlashManagerState_T flash_state = FLASH_MANAGER_STATE_UNINITIALISED;
+    if ( !FLASH_MANAGER_GetState( &flash_state ) )
+    {
+        RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+        return false;
+    }
+
+    /* Re-entrant / already ready case (e.g. console command) */
+    if ( flash_state == FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD )
+    {
+        return RUN_STATE_MANAGER_TransitionTo( RUN_STATE_TEST_PACKAGE_RECEIVE );
+    }
+
+    if ( flash_state != FLASH_MANAGER_STATE_IDLE )
+    {
+        RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+        return false;
+    }
+
+    /* Conservative estimate: minimum 1 physical NAND block (128 KB) */
+    uint32_t upload_estimate = 128U * 1024U;
+
+    if ( expected_tick_count > 0U )
+    {
+        const uint64_t calculated =
+            ( uint64_t )expected_tick_count * ( uint64_t )EXECUTION_INSTRUCTION_MAX_SIZE_BYTES;
+
+        uint32_t instruction_capacity = 0U;
+        if ( FLASH_MANAGER_GetInstructionCapacityBytes( &instruction_capacity )
+             && ( instruction_capacity > 0U ) )
+        {
+            if ( calculated > ( uint64_t )instruction_capacity )
+            {
+                upload_estimate = instruction_capacity;
+            }
+            else if ( calculated > ( uint64_t )upload_estimate )
+            {
+                upload_estimate = ( uint32_t )calculated;
+            }
+        }
+        else
+        {
+            const uint32_t fallback_capacity = 64U * 1024U * 1024U;
+            if ( calculated > ( uint64_t )fallback_capacity )
+            {
+                upload_estimate = fallback_capacity;
+            }
+            else if ( calculated > ( uint64_t )upload_estimate )
+            {
+                upload_estimate = ( uint32_t )calculated;
+            }
+        }
+    }
+
+    const FlashManagerInstructionUploadRequestStatus_T status =
+        FLASH_MANAGER_RequestInstructionUploadStart( upload_estimate );
+
+    if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
+    {
+        if ( RUN_STATE_MANAGER_TransitionTo( RUN_STATE_TEST_PACKAGE_RECEIVE ) )
+        {
+            RUN_STATE_MANAGER_StartPendingOperation(
+                RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION );
+            return true;
+        }
+    }
+
+    RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+    return false;
+}
+
+/**
+ * @brief Begins finalisation of the uploaded instruction stream.
+ *
+ * @return true when finalisation is requested or Flash Manager is already idle;
+ *         false if in an invalid state or request fails.
+ */
+static bool RUN_STATE_MANAGER_BeginInstructionUploadFinalisation( void )
+{
+    FlashManagerState_T flash_state = FLASH_MANAGER_STATE_UNINITIALISED;
+    if ( !FLASH_MANAGER_GetState( &flash_state ) )
+    {
+        RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+        return false;
+    }
+
+    /* If already IDLE (no instructions uploaded or test harness), proceed to configuration */
+    if ( flash_state == FLASH_MANAGER_STATE_IDLE )
+    {
+        if ( RUN_STATE_MANAGER_TransitionTo( RUN_STATE_CONFIGURATION ) )
+        {
+            RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_CONFIGURATION );
+            return true;
+        }
+        return false;
+    }
+
+    if ( flash_state == FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD )
+    {
+        const FlashManagerInstructionUploadRequestStatus_T status =
+            FLASH_MANAGER_RequestInstructionUploadFinish();
+        if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
+        {
+            RUN_STATE_MANAGER_StartPendingOperation(
+                RUN_STATE_PENDING_INSTRUCTION_UPLOAD_FINALISATION );
+            return true;
+        }
+    }
+
+    RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+    return false;
 }
 
 static bool RUN_STATE_MANAGER_EnterTestPackageReceive( void )
@@ -985,6 +1122,46 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
 
     switch ( pending_operation )
     {
+        case RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION:
+            if ( flash_state == FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD )
+            {
+                RUN_STATE_MANAGER_ClearPendingOperation();
+            }
+            else if ( flash_state != FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD )
+            {
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+            }
+            else if ( RUN_STATE_MANAGER_PendingOperationTimedOut(
+                          pdMS_TO_TICKS( RUN_STATE_MANAGER_INSTRUCTION_UPLOAD_TIMEOUT_MS ) ) )
+            {
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+            }
+            break;
+
+        case RUN_STATE_PENDING_INSTRUCTION_UPLOAD_FINALISATION:
+            if ( flash_state == FLASH_MANAGER_STATE_IDLE )
+            {
+                RUN_STATE_MANAGER_ClearPendingOperation();
+                if ( RUN_STATE_MANAGER_TransitionTo( RUN_STATE_CONFIGURATION ) )
+                {
+                    RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_CONFIGURATION );
+                }
+                else
+                {
+                    RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_INVALID_TRANSITION );
+                }
+            }
+            else if ( flash_state != FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD )
+            {
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+            }
+            else if ( RUN_STATE_MANAGER_PendingOperationTimedOut(
+                          pdMS_TO_TICKS( RUN_STATE_MANAGER_INSTRUCTION_UPLOAD_TIMEOUT_MS ) ) )
+            {
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+            }
+            break;
+
         case RUN_STATE_PENDING_CONFIGURATION:
             /* Handled before querying Flash Manager state. */
             break;
@@ -1058,18 +1235,17 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
         case RUN_STATE_REQUEST_PACKAGE_RECEIVE:
             if ( run_state == RUN_STATE_IDLE )
             {
-                accepted = RUN_STATE_MANAGER_TransitionTo( RUN_STATE_TEST_PACKAGE_RECEIVE );
+                taskENTER_CRITICAL();
+                const uint32_t expected_ticks = package_receive_expected_ticks;
+                taskEXIT_CRITICAL();
+                accepted = RUN_STATE_MANAGER_BeginInstructionUpload( expected_ticks );
             }
             break;
 
         case RUN_STATE_REQUEST_CONFIGURATION_READY:
             if ( run_state == RUN_STATE_TEST_PACKAGE_RECEIVE )
             {
-                accepted = RUN_STATE_MANAGER_TransitionTo( RUN_STATE_CONFIGURATION );
-                if ( accepted )
-                {
-                    RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_CONFIGURATION );
-                }
+                accepted = RUN_STATE_MANAGER_BeginInstructionUploadFinalisation();
             }
             break;
 
@@ -1161,6 +1337,10 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
                     TEST_CONFIGURATION_ReleaseRunOwnership();
                     run_configuration_owned = false;
                 }
+            }
+            else if ( run_state == RUN_STATE_IDLE )
+            {
+                accepted = true;
             }
             break;
 
@@ -1470,15 +1650,24 @@ void RUN_STATE_MANAGER_Init( void )
     last_transition_duration_ms  = 0U;
     run_state                    = RUN_STATE_IDLE;
     run_configuration_owned      = false;
+    package_receive_expected_ticks = 0U;
 
     HW_TIMER_Set_Execution_Guard( RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR );
     FLASH_MANAGER_SetFaultCallback( RUN_STATE_MANAGER_HandleFlashFault );
     EXECUTION_MANAGER_SetTerminalCallback( RUN_STATE_MANAGER_HandleExecutionTerminalFromISR );
 }
 
+bool RUN_STATE_MANAGER_RequestPackageReceiveWithTicks( uint32_t expected_tick_count )
+{
+    taskENTER_CRITICAL();
+    package_receive_expected_ticks = expected_tick_count;
+    taskEXIT_CRITICAL();
+    return RUN_STATE_MANAGER_Notify( RUN_STATE_MANAGER_NOTIFY_PACKAGE_RECEIVE );
+}
+
 bool RUN_STATE_MANAGER_RequestPackageReceive( void )
 {
-    return RUN_STATE_MANAGER_Notify( RUN_STATE_MANAGER_NOTIFY_PACKAGE_RECEIVE );
+    return RUN_STATE_MANAGER_RequestPackageReceiveWithTicks( 0U );
 }
 
 bool RUN_STATE_MANAGER_RequestConfiguration( void )

@@ -271,6 +271,16 @@ RunStateFrequencyMode_T RUN_STATE_MANAGER_Get_Execution_Frequency( void );
 void RUN_STATE_MANAGER_Init( void );
 
 /**
+ * @brief Requests entry into test-package reception from IDLE with an expected tick count.
+ *
+ * @param expected_tick_count Expected execution ticks from the configuration message,
+ *                            used to size the conservative instruction upload reservation.
+ *
+ * @returns true if the request was delivered to the task, otherwise false.
+ */
+bool RUN_STATE_MANAGER_RequestPackageReceiveWithTicks( uint32_t expected_tick_count );
+
+/**
  * @brief Requests entry into test-package reception from IDLE.
  *
  * @returns true if the request was delivered to the task, otherwise false.

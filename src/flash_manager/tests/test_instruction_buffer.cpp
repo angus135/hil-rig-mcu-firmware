@@ -1227,17 +1227,26 @@ TEST_F( InstructionBufferTest, CompleteUploadDrainRejectsMissingOrInconsistentOw
  *------------------------------------------------------------------------------
  */
 
-TEST_F( InstructionBufferTest, FinaliseUploadRejectsIncompleteInputWithoutPublishingPartialPage )
+TEST_F( InstructionBufferTest, FinaliseUploadAcceptsPartialInputAndSnapsLength )
 {
     std::array<uint8_t, 5U> partial = {};
     PrepareUpload( partial.size() + 3U );
     ASSERT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_ACCEPTED,
                INSTRUCTION_BUFFER_WriteUploadBytes( partial.data(), partial.size() ) );
 
+    EXPECT_TRUE( INSTRUCTION_BUFFER_FinaliseUpload() );
+    EXPECT_TRUE( instruction_buffer_context.is_upload_finalised );
+    EXPECT_EQ( partial.size(), instruction_buffer_context.upload_expected_length_bytes );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND,
+               instruction_buffer_context.page_states[0] );
+}
+
+TEST_F( InstructionBufferTest, FinaliseUploadRejectsZeroBytesAccepted )
+{
+    PrepareUpload( 8U );
+
     EXPECT_FALSE( INSTRUCTION_BUFFER_FinaliseUpload() );
     EXPECT_FALSE( instruction_buffer_context.is_upload_finalised );
-    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_FILLING_FROM_HOST,
-               instruction_buffer_context.page_states[0] );
 }
 
 TEST_F( InstructionBufferTest, FinaliseUploadPublishesFinalPartialPageAndStopsProduction )

@@ -1077,6 +1077,22 @@ bool INSTRUCTION_BUFFER_GetUploadExpectedLength( uint32_t* expected_length_bytes
 }
 
 /**
+ * @brief Returns the total accepted host bytes in the prepared upload.
+ */
+bool INSTRUCTION_BUFFER_GetUploadAcceptedLength( uint32_t* accepted_length_bytes )
+{
+    if ( ( accepted_length_bytes == NULL ) || !instruction_buffer_context.is_initialised
+         || !instruction_buffer_context.is_upload_prepared )
+    {
+        return false;
+    }
+
+    *accepted_length_bytes = instruction_buffer_context.upload_accepted_length_bytes;
+
+    return true;
+}
+
+/**
  * @brief Atomically appends one complete host chunk to upload RAM.
  */
 InstructionBufferUploadWriteStatus_T INSTRUCTION_BUFFER_WriteUploadBytes( const uint8_t* data,
@@ -1218,13 +1234,18 @@ bool INSTRUCTION_BUFFER_FinaliseUpload( void )
          || ( instruction_buffer_context.page_states[drain_page_index]
               == INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND )
          || ( instruction_buffer_context.upload_accepted_length_bytes
-              != instruction_buffer_context.upload_expected_length_bytes )
+              > instruction_buffer_context.upload_expected_length_bytes )
+         || ( instruction_buffer_context.upload_accepted_length_bytes == 0U )
          || ( instruction_buffer_context.page_size_bytes == 0U )
          || ( instruction_buffer_context.upload_persisted_length_bytes
               > instruction_buffer_context.upload_accepted_length_bytes ) )
     {
         return false;
     }
+
+    /* Snap expected length to the actual accepted host payload */
+    instruction_buffer_context.upload_expected_length_bytes =
+        instruction_buffer_context.upload_accepted_length_bytes;
 
     uint32_t partial_length_bytes = instruction_buffer_context.upload_expected_length_bytes
                                     % instruction_buffer_context.page_size_bytes;

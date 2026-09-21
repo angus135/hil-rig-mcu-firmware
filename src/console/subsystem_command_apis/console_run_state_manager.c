@@ -305,6 +305,7 @@ static void CONSOLE_RunStateManager_PrintUsage( void )
     CONSOLE_Printf( "Usage:\r\n" );
     CONSOLE_Printf( "  run_state status\r\n" );
     CONSOLE_Printf( "  run_state frequency <100|1000|10000>\r\n" );
+    CONSOLE_Printf( "  run_state receive [expected_tick_count]\r\n" );
     CONSOLE_Printf( "  run_state execute <tick_count>\r\n" );
     CONSOLE_Printf( "  run_state <receive|configure|execution_complete>\r\n" );
     CONSOLE_Printf( "  run_state <transfer|transfer_complete|repeat|discard|fault|reset>\r\n" );
@@ -359,6 +360,7 @@ static void CONSOLE_RunStateManager_WaitForState( bool accepted, RunState_T expe
     const TickType_t timeout = pdMS_TO_TICKS( 30000U );
     for ( ;; )
     {
+        vTaskDelay( pdMS_TO_TICKS( 10U ) );
         RunStateManagerStatus_T status = { 0 };
         RUN_STATE_MANAGER_GetStatus( &status );
         if ( status.state == expected )
@@ -384,7 +386,6 @@ static void CONSOLE_RunStateManager_WaitForState( bool accepted, RunState_T expe
                             CONSOLE_RunStateManager_StateName( status.state ) );
             return;
         }
-        vTaskDelay( pdMS_TO_TICKS( 10U ) );
     }
 }
 
@@ -448,6 +449,21 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
             RUN_STATE_MANAGER_RequestExecution( &request );
         CONSOLE_RunStateManager_WaitForState( result == RUN_STATE_EXECUTION_REQUEST_ACCEPTED,
                                               RUN_STATE_RESULTS_READY );
+        return;
+    }
+    if ( ( argc == 3U ) && ( strcmp( argv[1], "receive" ) == 0 ) )
+    {
+        uint32_t expected_tick_count = 0U;
+        if ( !CONSOLE_RunStateManager_ParseU32( argv[2], &expected_tick_count )
+             || expected_tick_count == 0U )
+        {
+            CONSOLE_RunStateManager_PrintUsage();
+            return;
+        }
+
+        CONSOLE_RunStateManager_WaitForState(
+            RUN_STATE_MANAGER_RequestPackageReceiveWithTicks( expected_tick_count ),
+            RUN_STATE_TEST_PACKAGE_RECEIVE );
         return;
     }
     if ( argc != 2U )

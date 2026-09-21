@@ -148,6 +148,12 @@ extern "C" bool RUN_STATE_MANAGER_RequestPackageReceive( void )
     return g_mock_deps != nullptr ? g_mock_deps->RUN_STATE_MANAGER_RequestPackageReceive() : true;
 }
 
+extern "C" bool RUN_STATE_MANAGER_RequestPackageReceiveWithTicks( uint32_t expected_tick_count )
+{
+    ( void )expected_tick_count;
+    return g_mock_deps != nullptr ? g_mock_deps->RUN_STATE_MANAGER_RequestPackageReceive() : true;
+}
+
 extern "C" bool RUN_STATE_MANAGER_RequestConfiguration( void )
 {
     return g_mock_deps != nullptr ? g_mock_deps->RUN_STATE_MANAGER_RequestConfiguration() : true;
@@ -618,7 +624,7 @@ TEST_F( HostProcessMessageTest, FinalInstructionUsesUnsupportedArmedTransitionPa
         HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
     EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
-    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
+    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_RESERVED );
 }
 
 TEST_F( HostProcessMessageTest, VariableInstructionDataIsNotImplemented )

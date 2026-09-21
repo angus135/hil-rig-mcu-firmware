@@ -110,7 +110,7 @@ HOST_Interface_Status_T HOST_INTERFACE_state_to_state_request( Host_RunState_Req
         case HOST_REQUEST_IDLE:
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
         case HOST_REQUEST_TEST_PACKAGE_RECEIVE:
-            if ( RUN_STATE_MANAGER_RequestPackageReceive() != true )
+            if ( RUN_STATE_MANAGER_RequestPackageReceiveWithTicks( expected_tick_count ) != true )
             {
                 return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
             }
@@ -393,8 +393,9 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     }
 
     // Signal run state manager to move to package recieving state
-    status = HOST_INTERFACE_request_state_tranistion( RUN_STATE_TEST_PACKAGE_RECEIVE,
-                                                      HOST_REQUEST_TEST_PACKAGE_RECEIVE, 2, 0 );
+    status = HOST_INTERFACE_request_state_tranistion(
+        RUN_STATE_TEST_PACKAGE_RECEIVE, HOST_REQUEST_TEST_PACKAGE_RECEIVE, 2,
+        incoming_message->body.test_configuration.expected_tick_count );
     if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
     {
         // Construct the error message

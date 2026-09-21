@@ -954,6 +954,12 @@ static bool FLASH_MANAGER_DrainInstructionUploadPages( void )
  */
 static bool FLASH_MANAGER_FinaliseInstructionUpload( void )
 {
+    uint32_t accepted_length = 0U;
+    if ( INSTRUCTION_BUFFER_GetUploadExpectedLength( &accepted_length ) )
+    {
+        ( void )EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( accepted_length );
+    }
+
     if ( !FLASH_MANAGER_DrainInstructionUploadPages() )
     {
         return false;
@@ -1225,6 +1231,23 @@ bool FLASH_MANAGER_GetResultCapacityBytes( uint32_t* capacity_bytes )
     }
 
     *capacity_bytes = info.result_capacity_bytes;
+    return true;
+}
+
+bool FLASH_MANAGER_GetInstructionCapacityBytes( uint32_t* capacity_bytes )
+{
+    if ( capacity_bytes == NULL )
+    {
+        return false;
+    }
+
+    ExternalFlashInfo_T info = { 0 };
+    if ( EXTERNAL_FLASH_GetInfo( &info ) != EXTERNAL_FLASH_STATUS_OK )
+    {
+        return false;
+    }
+
+    *capacity_bytes = info.instruction_capacity_bytes;
     return true;
 }
 
@@ -1586,7 +1609,8 @@ FlashManagerInstructionUploadRequestStatus_T FLASH_MANAGER_RequestInstructionUpl
         return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_TASK_NOT_READY;
     }
 
-    if ( !INSTRUCTION_BUFFER_IsUploadInputComplete() )
+    uint32_t accepted_length = 0U;
+    if ( !INSTRUCTION_BUFFER_GetUploadAcceptedLength( &accepted_length ) || ( accepted_length == 0U ) )
     {
         FLASH_MANAGER_Unlock();
         return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE;
@@ -1601,6 +1625,8 @@ FlashManagerInstructionUploadRequestStatus_T FLASH_MANAGER_RequestInstructionUpl
         FLASH_MANAGER_Unlock();
         return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY;
     }
+
+    ( void )EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( accepted_length );
 
     flash_manager_context.state = FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD;
 

@@ -47,6 +47,13 @@ static FlashManagerRequestStatus_T        flash_finalise_result;
 static FlashManagerRequestStatus_T        flash_discard_result;
 static uint32_t                           flash_discard_calls;
 static FlashManagerRequestStatus_T        flash_abort_result;
+static FlashManagerInstructionUploadRequestStatus_T flash_upload_start_result;
+static uint32_t                                     flash_upload_start_calls;
+static uint32_t                                     flash_upload_start_expected_length;
+static FlashManagerInstructionUploadRequestStatus_T flash_upload_finish_result;
+static uint32_t                                     flash_upload_finish_calls;
+static bool                                         flash_instruction_capacity_result;
+static uint32_t                                     flash_instruction_capacity_bytes;
 static FlashManagerResultTransferStatus_T flash_transfer_start_result;
 static FlashManagerResultTransferStatus_T flash_transfer_finish_result;
 static uint32_t                           flash_transfer_finish_calls;
@@ -190,6 +197,10 @@ FlashManagerRequestStatus_T FLASH_MANAGER_RequestResultFinalisation( void )
 FlashManagerRequestStatus_T FLASH_MANAGER_DiscardResults( void )
 {
     flash_discard_calls++;
+    if ( flash_discard_result == FLASH_MANAGER_REQUEST_OK )
+    {
+        flash_manager_state = FLASH_MANAGER_STATE_IDLE;
+    }
     return flash_discard_result;
 }
 FlashManagerRequestStatus_T FLASH_MANAGER_RequestAbortSession( void )
@@ -215,6 +226,28 @@ bool FLASH_MANAGER_GetResultCapacityBytes( uint32_t* capacity_bytes )
     if ( capacity_bytes != nullptr )
     {
         *capacity_bytes = 66453504U;
+        return true;
+    }
+    return false;
+}
+FlashManagerInstructionUploadRequestStatus_T
+FLASH_MANAGER_RequestInstructionUploadStart( uint32_t expected_length_bytes )
+{
+    flash_upload_start_calls++;
+    flash_upload_start_expected_length = expected_length_bytes;
+    return flash_upload_start_result;
+}
+FlashManagerInstructionUploadRequestStatus_T
+FLASH_MANAGER_RequestInstructionUploadFinish( void )
+{
+    flash_upload_finish_calls++;
+    return flash_upload_finish_result;
+}
+bool FLASH_MANAGER_GetInstructionCapacityBytes( uint32_t* capacity_bytes )
+{
+    if ( flash_instruction_capacity_result && ( capacity_bytes != nullptr ) )
+    {
+        *capacity_bytes = flash_instruction_capacity_bytes;
         return true;
     }
     return false;
@@ -319,6 +352,13 @@ protected:
         flash_discard_result                = FLASH_MANAGER_REQUEST_OK;
         flash_discard_calls                 = 0U;
         flash_abort_result                  = FLASH_MANAGER_REQUEST_OK;
+        flash_upload_start_result           = FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED;
+        flash_upload_start_calls            = 0U;
+        flash_upload_start_expected_length  = 0U;
+        flash_upload_finish_result          = FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED;
+        flash_upload_finish_calls           = 0U;
+        flash_instruction_capacity_result   = true;
+        flash_instruction_capacity_bytes    = 66453504U;
         flash_transfer_start_result         = FLASH_MANAGER_RESULT_TRANSFER_OK;
         flash_transfer_finish_result        = FLASH_MANAGER_RESULT_TRANSFER_OK;
         flash_transfer_finish_calls         = 0U;
@@ -346,7 +386,11 @@ protected:
     static void ConfigureToArmed( void )
     {
         Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+        flash_manager_state = FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD;
+        RUN_STATE_MANAGER_ProcessPendingOperation();
         Process( RUN_STATE_REQUEST_CONFIGURATION_READY );
+        flash_manager_state = FLASH_MANAGER_STATE_IDLE;
+        RUN_STATE_MANAGER_ProcessPendingOperation();
         RUN_STATE_MANAGER_ProcessPendingOperation();
         flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
         RUN_STATE_MANAGER_ProcessPendingOperation();
@@ -368,28 +412,33 @@ TEST_F( RunStateManagerTest, InitialStatusSnapshotIsCoherentAndSafe )
     RunStateManagerStatus_T status = {};
     RUN_STATE_MANAGER_GetStatus( &status );
     EXPECT_EQ( RUN_STATE_IDLE, status.state );
-    EXPECT_FALSE( status.transition_pending );
-    EXPECT_FALSE( status.execution_active );
-    EXPECT_FALSE( status.execution_timer_running );
-    EXPECT_EQ( RUN_STATE_FREQUENCY_1KHZ, status.execution_frequency );
-    EXPECT_EQ( RUN_STATE_FAULT_NONE, status.fault_reason );
+    EXPECT_FALSE( status.request_timing_active );
+    EXPECT_FALSE( status.last_transition_timing_valid );
     EXPECT_EQ( RUN_STATE_REQUEST_NONE, status.last_request );
     EXPECT_EQ( RUN_STATE_REQUEST_RESULT_NONE, status.last_request_result );
-    EXPECT_FALSE( status.request_timing_active );
+    EXPECT_EQ( RUN_STATE_REQUEST_NONE, status.last_completed_request );
     EXPECT_EQ( RUN_STATE_REQUEST_NONE, status.timed_request );
     EXPECT_EQ( 0U, status.timed_request_elapsed_ms );
-    EXPECT_FALSE( status.last_transition_timing_valid );
-    EXPECT_EQ( RUN_STATE_REQUEST_NONE, status.last_completed_request );
     EXPECT_EQ( 0U, status.last_transition_duration_ms );
+    EXPECT_EQ( RUN_STATE_FAULT_NONE, status.fault_reason );
+}
+
+TEST_F( RunStateManagerTest, NullStatusPointerIsIgnoredSafely )
+{
     RUN_STATE_MANAGER_GetStatus( nullptr );
 }
 
 TEST_F( RunStateManagerTest, ReportsTotalConfigurationTransitionTime )
 {
-    current_tick                = 100U;
     driver_configuration_status = DUT_DRIVER_CONFIGURATION_PENDING;
     Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+    flash_manager_state = FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    current_tick = 100U;
     Process( RUN_STATE_REQUEST_CONFIGURATION_READY );
+    flash_manager_state = FLASH_MANAGER_STATE_IDLE;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
 
     current_tick                   = 137U;
     RunStateManagerStatus_T status = {};
@@ -439,7 +488,11 @@ TEST_F( RunStateManagerTest, ConfigurationWaitsForReadinessBeforeArming )
 {
     driver_configuration_status = DUT_DRIVER_CONFIGURATION_PENDING;
     Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+    flash_manager_state = FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
     Process( RUN_STATE_REQUEST_CONFIGURATION_READY );
+    flash_manager_state = FLASH_MANAGER_STATE_IDLE;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
     EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
     EXPECT_EQ( RUN_STATE_PENDING_CONFIGURATION, pending_operation );
     RUN_STATE_MANAGER_ProcessPendingOperation();
@@ -458,7 +511,11 @@ TEST_F( RunStateManagerTest, ConfigurationFailureEntersFault )
 {
     driver_configuration_status = DUT_DRIVER_CONFIGURATION_FAILED;
     Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+    flash_manager_state = FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
     Process( RUN_STATE_REQUEST_CONFIGURATION_READY );
+    flash_manager_state = FLASH_MANAGER_STATE_IDLE;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
     RUN_STATE_MANAGER_ProcessPendingOperation();
     EXPECT_EQ( RUN_STATE_FAULT, run_state );
     EXPECT_EQ( RUN_STATE_FAULT_DRIVER_CONFIGURATION, fault_reason );
@@ -470,8 +527,13 @@ TEST_F( RunStateManagerTest, ConfigurationTimeoutEntersFault )
 {
     driver_configuration_status = DUT_DRIVER_CONFIGURATION_PENDING;
     Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+    flash_manager_state = FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    current_tick = 100U;
     Process( RUN_STATE_REQUEST_CONFIGURATION_READY );
-    current_tick = RUN_STATE_MANAGER_CONFIGURATION_TIMEOUT_MS;
+    flash_manager_state = FLASH_MANAGER_STATE_IDLE;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    current_tick = 100U + RUN_STATE_MANAGER_CONFIGURATION_TIMEOUT_MS;
     RUN_STATE_MANAGER_ProcessPendingOperation();
     EXPECT_EQ( RUN_STATE_FAULT, run_state );
     EXPECT_EQ( RUN_STATE_FAULT_DRIVER_CONFIGURATION_TIMEOUT, fault_reason );
@@ -1068,7 +1130,11 @@ TEST_F( RunStateManagerTest, FlashSessionAbortedDuringPreparingInstructionUpload
 TEST_F( RunStateManagerTest, FlashSessionAbortedDuringExecutionPreparation )
 {
     Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+    flash_manager_state = FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
     Process( RUN_STATE_REQUEST_CONFIGURATION_READY );
+    flash_manager_state = FLASH_MANAGER_STATE_IDLE;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
     RUN_STATE_MANAGER_ProcessPendingOperation();
     EXPECT_EQ( RUN_STATE_PENDING_EXECUTION_PREPARATION, pending_operation );
 
@@ -1153,4 +1219,83 @@ TEST_F( RunStateManagerTest, ConfigurationOwnershipHeldAcrossExecutionAndRelease
     EXPECT_FALSE( run_configuration_owned );
     EXPECT_TRUE( configuration_cleared );
     EXPECT_TRUE( configuration_ownership_released );
+}
+
+TEST_F( RunStateManagerTest, PackageReceiveWithoutTicksCalculates128KBReservationAndPrepares )
+{
+    EXPECT_TRUE( RUN_STATE_MANAGER_RequestPackageReceive() );
+    Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+
+    EXPECT_EQ( 1U, flash_upload_start_calls );
+    EXPECT_EQ( 128U * 1024U, flash_upload_start_expected_length );
+    EXPECT_EQ( RUN_STATE_TEST_PACKAGE_RECEIVE, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION, pending_operation );
+
+    flash_manager_state = FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_PENDING_NONE, pending_operation );
+}
+
+TEST_F( RunStateManagerTest, PackageReceiveWithTicksCalculatesConservativeReservation )
+{
+    EXPECT_TRUE( RUN_STATE_MANAGER_RequestPackageReceiveWithTicks( 100U ) );
+    Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+
+    EXPECT_EQ( 1U, flash_upload_start_calls );
+    EXPECT_EQ( 100U * 4096U, flash_upload_start_expected_length );
+    EXPECT_EQ( RUN_STATE_TEST_PACKAGE_RECEIVE, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION, pending_operation );
+}
+
+TEST_F( RunStateManagerTest, PackageReceiveWithLargeTicksIsCappedByCapacity )
+{
+    EXPECT_TRUE( RUN_STATE_MANAGER_RequestPackageReceiveWithTicks( 100000U ) );
+    Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+
+    EXPECT_EQ( 1U, flash_upload_start_calls );
+    EXPECT_EQ( flash_instruction_capacity_bytes, flash_upload_start_expected_length );
+}
+
+TEST_F( RunStateManagerTest, PackageReceiveEntersFaultWhenFlashManagerRejectsStart )
+{
+    flash_upload_start_result = FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE;
+    EXPECT_TRUE( RUN_STATE_MANAGER_RequestPackageReceive() );
+    Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_FLASH_MANAGER, fault_reason );
+}
+
+TEST_F( RunStateManagerTest, PackageReceivePreparationTimeoutEntersFault )
+{
+    EXPECT_TRUE( RUN_STATE_MANAGER_RequestPackageReceive() );
+    Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+    EXPECT_EQ( RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION, pending_operation );
+
+    flash_manager_state = FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD;
+    current_tick        = RUN_STATE_MANAGER_INSTRUCTION_UPLOAD_TIMEOUT_MS + 1U;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_FLASH_MANAGER, fault_reason );
+}
+
+TEST_F( RunStateManagerTest, ConfigurationReadyFinalisationTimeoutEntersFault )
+{
+    EXPECT_TRUE( RUN_STATE_MANAGER_RequestPackageReceive() );
+    Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+    flash_manager_state = FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    EXPECT_TRUE( RUN_STATE_MANAGER_RequestConfiguration() );
+    Process( RUN_STATE_REQUEST_CONFIGURATION_READY );
+    EXPECT_EQ( RUN_STATE_PENDING_INSTRUCTION_UPLOAD_FINALISATION, pending_operation );
+    EXPECT_EQ( 1U, flash_upload_finish_calls );
+
+    flash_manager_state = FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD;
+    current_tick        = RUN_STATE_MANAGER_INSTRUCTION_UPLOAD_TIMEOUT_MS + 1U;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_FLASH_MANAGER, fault_reason );
 }

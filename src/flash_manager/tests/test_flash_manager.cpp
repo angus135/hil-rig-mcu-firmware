@@ -104,6 +104,11 @@ static uint8_t write_instruction_page_data[TEST_MAX_INSTRUCTION_READS][TEST_PAGE
 static ExternalFlashStatus_T finish_instruction_upload_status = EXTERNAL_FLASH_STATUS_OK;
 static uint32_t              finish_instruction_upload_calls  = 0U;
 
+static ExternalFlashStatus_T update_instruction_upload_expected_length_status =
+    EXTERNAL_FLASH_STATUS_OK;
+static uint32_t update_instruction_upload_expected_length_calls = 0U;
+static uint32_t update_instruction_upload_expected_length_value = 0U;
+
 static ExternalFlashStatus_T read_instruction_page_status = EXTERNAL_FLASH_STATUS_OK;
 static uint32_t              read_instruction_page_calls  = 0U;
 static uint32_t              read_instruction_page_offsets[TEST_MAX_INSTRUCTION_READS] = {};
@@ -243,6 +248,14 @@ extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_FinishInstructionUpload( void )
     return finish_instruction_upload_status;
 }
 
+extern "C" ExternalFlashStatus_T
+EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( uint32_t expected_length )
+{
+    update_instruction_upload_expected_length_calls++;
+    update_instruction_upload_expected_length_value = expected_length;
+    return update_instruction_upload_expected_length_status;
+}
+
 extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructionPage( uint32_t offset, uint8_t* data,
                                                                      uint32_t length )
 {
@@ -378,6 +391,10 @@ protected:
 
         finish_instruction_upload_status = EXTERNAL_FLASH_STATUS_OK;
         finish_instruction_upload_calls  = 0U;
+
+        update_instruction_upload_expected_length_status = EXTERNAL_FLASH_STATUS_OK;
+        update_instruction_upload_expected_length_calls  = 0U;
+        update_instruction_upload_expected_length_value  = 0U;
 
         read_instruction_page_status = EXTERNAL_FLASH_STATUS_OK;
         read_instruction_page_calls  = 0U;

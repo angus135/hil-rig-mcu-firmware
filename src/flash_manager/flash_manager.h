@@ -472,6 +472,18 @@ bool FLASH_MANAGER_GetExecutionDiagnostics( FlashManagerExecutionDiagnostics_T* 
  */
 bool FLASH_MANAGER_GetResultCapacityBytes( uint32_t* capacity_bytes );
 
+/**
+ * @brief Reads the maximum instruction partition capacity in bytes.
+ *
+ * @param[out] capacity_bytes Destination for the instruction capacity in bytes.
+ *
+ * @return true when capacity was read successfully; false for a null destination
+ *         or when external flash is uninitialised.
+ *
+ * @note Call from task context only.
+ */
+bool FLASH_MANAGER_GetInstructionCapacityBytes( uint32_t* capacity_bytes );
+
 /* Execution ISR instruction serving and result logging. */
 
 /**
