@@ -904,6 +904,20 @@ TEST_F( HostProcessMessageTest, IncomingDispatcherDoesNothingWhenNoMessageIsAvai
     EXPECT_FALSE( response_required );
 }
 
+/**
+ * @brief Verifies that internal dispatcher returns OK and requires no response when notifications bitmask is zero.
+ */
+TEST_F( HostProcessMessageTest, InternalDispatcherHandlesZeroNotificationsGracefully )
+{
+    notifications = 0U;
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Internal_Message(
+                   &outgoing, &response_required, data, sizeof( data ), &notifications ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_FALSE( response_required );
+    EXPECT_EQ( notifications, 0U );
+}
+
 TEST_F( HostProcessMessageTest, InternalDispatcherRejectsUnknownNotification )
 {
     notifications = HOST_INTERFACE_NOTIFY_FAULT;
@@ -949,9 +963,17 @@ TEST_F( HostProcessMessageTest, ProcessMessageCopiesResponseAndPreservesTestId )
     EXPECT_EQ( std::memcmp( &outgoing.test_id, &incoming.test_id, sizeof( incoming.test_id ) ), 0 );
 }
 
+/**
+ * @brief Verifies that response is stored in overflow buffer with test_id preserved when output is busy.
+ */
 TEST_F( HostProcessMessageTest, ProcessMessageStoresResponseInOverflowWhenOutputIsBusy )
 {
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT );
+    incoming.has_test_id = 1U;
+    for ( size_t i = 0U; i < sizeof( incoming.test_id.bytes ); i++ )
+    {
+        incoming.test_id.bytes[i] = static_cast<uint8_t>( i + 1U );
+    }
 
     EXPECT_EQ( HOST_INTERFACE_process_message(
                    true, &incoming, false, &outgoing, &overflow_outgoing, &response_required, data,
@@ -959,6 +981,8 @@ TEST_F( HostProcessMessageTest, ProcessMessageStoresResponseInOverflowWhenOutput
                HOST_INTERFACE_STATUS_OUTGOING_REQUIRED );
     EXPECT_TRUE( response_required );
     EXPECT_EQ( overflow_outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
+    EXPECT_EQ( overflow_outgoing.has_test_id, 1U );
+    EXPECT_EQ( std::memcmp( &overflow_outgoing.test_id, &incoming.test_id, sizeof( incoming.test_id ) ), 0 );
 }
 
 TEST_F( HostProcessMessageTest, ProcessMessageCanServiceResultTransferAfterNonRespondingInput )
@@ -983,3 +1007,19 @@ TEST_F( HostProcessMessageTest, ProcessMessageCanServiceResultTransferAfterNonRe
     EXPECT_TRUE( response_required );
     EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT );
 }
+
+/**
+ * @brief Verifies that process_message returns OK and requires no response when no incoming message is available, even if output is busy.
+ */
+TEST_F( HostProcessMessageTest, ProcessMessageReturnsOkAndNoResponseWhenNoIncomingMessage )
+{
+    response_required = true;
+    notifications     = 0U;
+
+    EXPECT_EQ( HOST_INTERFACE_process_message( false, &incoming, false, &outgoing, &overflow_outgoing,
+                                               &response_required, data, sizeof( data ),
+                                               &notifications, &expected_tick_count ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_FALSE( response_required );
+}
+

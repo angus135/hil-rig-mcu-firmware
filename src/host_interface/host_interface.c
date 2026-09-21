@@ -979,12 +979,19 @@ void HOST_INTERFACE_Task( void* task_parameters )
         ( void )xTaskNotifyWait( 0U, UINT32_MAX, &notifications, 0U );
         carry_on_notifications = carry_on_notifications | notifications;
 
+        if ( outgoing_message_accepted )
+        {
+            outgoing_message_pending = false;
+        }
+
         // check if we are overflowing (inverse of can_consume_incoming)
         if ( can_consume_incoming )
         {
+            const bool outgoing_available    = !outgoing_message_pending;
+            bool       new_response_required = false;
             if ( HOST_INTERFACE_process_message(
-                     incoming_message_available, &incoming_message, outgoing_message_accepted,
-                     &outgoing_message, &overflow_outgoing_message, &outgoing_message_pending,
+                     incoming_message_available, &incoming_message, outgoing_available,
+                     &outgoing_message, &overflow_outgoing_message, &new_response_required,
                      outgoing_variable_data, HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE,
                      &carry_on_notifications, &expected_tick_count )
                  == HOST_INTERFACE_STATUS_OUTGOING_REQUIRED )
@@ -992,6 +999,10 @@ void HOST_INTERFACE_Task( void* task_parameters )
                 // We are overflowing, so stop processing incomming messages
                 can_consume_incoming = false;
                 overflow_timer       = xTaskGetTickCount();
+            }
+            else if ( new_response_required )
+            {
+                outgoing_message_pending = true;
             }
         }
         else

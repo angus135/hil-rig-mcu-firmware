@@ -880,6 +880,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
     {
         return HOST_INTERFACE_STATUS_INVALID_ARGUMENT;
     }
+    *response_required                  = false;
     HOST_Interface_Status_T host_status = HOST_INTERFACE_STATUS_INTERNAL_ERROR;
 
     if ( incoming_message_available )
@@ -1003,6 +1004,12 @@ HOST_INTERFACE_process_internal_message( HIL_Application_Message_T* outgoing_mes
                                          bool* response_required, uint8_t* data, size_t data_size,
                                          uint32_t* notifications )
 {
+    if ( *notifications == 0U )
+    {
+        *response_required = false;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
     HOST_Interface_Status_T host_status = HOST_INTERFACE_STATUS_UNINITIALIZED;
     switch ( *notifications )
     {
@@ -1083,9 +1090,11 @@ HOST_Interface_Status_T HOST_INTERFACE_process_message(
     {
         return HOST_INTERFACE_STATUS_INVALID_ARGUMENT;
     }
+    *response_required = false;
     // create temporary output message (incase output is not accepted)
     static HIL_Application_Message_T temp_outgoing_message = { 0 };
-    HOST_Interface_Status_T   host_status           = HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+    ( void )memset( &temp_outgoing_message, 0, sizeof( temp_outgoing_message ) );
+    HOST_Interface_Status_T host_status = HOST_INTERFACE_STATUS_INTERNAL_ERROR;
 
     // PROCESS INCOMING MESSAGE
     host_status = HOST_INTERFACE_process_incoming_message(
@@ -1102,8 +1111,10 @@ HOST_Interface_Status_T HOST_INTERFACE_process_message(
     {
         if ( !outgoing_message_accepted )
         {
-            *overflow_outgoing_message = temp_outgoing_message;
-            *response_required         = true;
+            *overflow_outgoing_message             = temp_outgoing_message;
+            overflow_outgoing_message->has_test_id = incoming_message->has_test_id;
+            overflow_outgoing_message->test_id     = incoming_message->test_id;
+            *response_required                     = true;
             return HOST_INTERFACE_STATUS_OUTGOING_REQUIRED;
         }
         *outgoing_message             = temp_outgoing_message;
