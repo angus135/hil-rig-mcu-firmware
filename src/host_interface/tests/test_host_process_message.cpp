@@ -529,6 +529,7 @@ TEST_F( HostProcessMessageTest, TestConfigurationConversionFailureReturnsProtoco
 TEST_F( HostProcessMessageTest, TestConfigurationCommitFailureReturnsProtocolErrorResponse )
 {
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION );
+    run_state_status.state = RUN_STATE_TEST_PACKAGE_RECEIVE;
 
     EXPECT_CALL( *g_mock_deps, HOST_INTERFACE_Commit_Config_Message( _ ) )
         .WillOnce( Return( HOST_INTERFACE_STATUS_INTERNAL_ERROR ) );
@@ -546,9 +547,9 @@ TEST_F( HostProcessMessageTest, TestConfigurationSuccessCopiesExpectedTicksAndRe
 {
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION );
     incoming.body.test_configuration.expected_tick_count = 4567U;
-    run_state_status.state                               = RUN_STATE_CONFIGURATION;
+    run_state_status.state                               = RUN_STATE_TEST_PACKAGE_RECEIVE;
 
-    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestConfiguration() )
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestPackageReceive() )
         .WillOnce( Return( true ) );
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
         .WillOnce(
