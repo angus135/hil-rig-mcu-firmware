@@ -72,6 +72,7 @@ typedef struct
     uint32_t sample_count;
     uint32_t latest_cycles;
     uint32_t maximum_cycles;
+    uint32_t max_sample_number;
     uint32_t core_clock_hz;
 } HW_TIMER_ExecutionTiming_T;
 

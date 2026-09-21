@@ -358,6 +358,8 @@ static void CONSOLE_RunStateManager_WaitForState( bool accepted, RunState_T expe
     CONSOLE_RunStateManager_PrintRequestResult( true );
     const TickType_t start   = xTaskGetTickCount();
     const TickType_t timeout = pdMS_TO_TICKS( 30000U );
+    RunStateManagerStatus_T initial_status = { 0 };
+    RUN_STATE_MANAGER_GetStatus( &initial_status );
     for ( ;; )
     {
         vTaskDelay( pdMS_TO_TICKS( 10U ) );
@@ -378,7 +380,7 @@ static void CONSOLE_RunStateManager_WaitForState( bool accepted, RunState_T expe
                             CONSOLE_RunStateManager_StateName( status.state ) );
             return;
         }
-        if ( status.state == RUN_STATE_FAULT
+        if ( ( ( initial_status.state != RUN_STATE_FAULT ) && ( status.state == RUN_STATE_FAULT ) )
              || ( ( TickType_t )( xTaskGetTickCount() - start ) ) >= timeout )
         {
             CONSOLE_Printf( "Run state transition did not reach %s (current=%s).\r\n",
@@ -500,14 +502,15 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                 ( ( uint64_t )execution_timing.maximum_cycles * 1000000000ULL )
                 / execution_timing.core_clock_hz;
             CONSOLE_Printf( "Execution ISR: samples=%lu, latest=%lu cycles (%lu.%03lu us), "
-                            "max=%lu cycles (%lu.%03lu us)\r\n",
+                            "max=%lu cycles (%lu.%03lu us) at sample=%lu\r\n",
                             ( unsigned long )execution_timing.sample_count,
                             ( unsigned long )execution_timing.latest_cycles,
                             ( unsigned long )( latest_ns / 1000ULL ),
                             ( unsigned long )( latest_ns % 1000ULL ),
                             ( unsigned long )execution_timing.maximum_cycles,
                             ( unsigned long )( maximum_ns / 1000ULL ),
-                            ( unsigned long )( maximum_ns % 1000ULL ) );
+                            ( unsigned long )( maximum_ns % 1000ULL ),
+                            ( unsigned long )execution_timing.max_sample_number );
         }
         else
         {
@@ -523,10 +526,11 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                 const uint32_t average_cycles =
                     ( uint32_t )( operation_timing.total_cycles / operation_timing.sample_count );
                 CONSOLE_Printf(
-                    "Output timing: %s samples=%lu avg=%lu cycles max=%lu cycles\r\n",
+                    "Output timing: %s samples=%lu avg=%lu cycles max=%lu cycles at sample=%lu\r\n",
                     CONSOLE_RunStateManager_OpcodeName( ( ExecutionOperationOpcode_T )opcode ),
                     ( unsigned long )operation_timing.sample_count, ( unsigned long )average_cycles,
-                    ( unsigned long )operation_timing.maximum_cycles );
+                    ( unsigned long )operation_timing.maximum_cycles,
+                    ( unsigned long )operation_timing.max_sample );
             }
         }
         for ( uint32_t measurement = 0U; measurement < EXECUTION_MEASUREMENT_COUNT; measurement++ )
@@ -539,12 +543,13 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                 const uint32_t average_cycles = ( uint32_t )( measurement_timing.total_cycles
                                                               / measurement_timing.sample_count );
                 CONSOLE_Printf(
-                    "Measurement timing: %s samples=%lu avg=%lu cycles max=%lu cycles\r\n",
+                    "Measurement timing: %s samples=%lu avg=%lu cycles max=%lu cycles at tick=%lu\r\n",
                     CONSOLE_RunStateManager_MeasurementName(
                         ( ExecutionMeasurementType_T )measurement ),
                     ( unsigned long )measurement_timing.sample_count,
                     ( unsigned long )average_cycles,
-                    ( unsigned long )measurement_timing.maximum_cycles );
+                    ( unsigned long )measurement_timing.maximum_cycles,
+                    ( unsigned long )measurement_timing.max_timestamp );
             }
         }
         const ExecutionManagerFailure_T execution_failure = EXECUTION_MANAGER_GetFailure();

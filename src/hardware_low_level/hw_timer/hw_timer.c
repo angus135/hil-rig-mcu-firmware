@@ -94,6 +94,7 @@ static HW_TIMER_ExecutionGuard_T volatile execution_timer_guard       = NULL;
 static volatile uint32_t execution_isr_sample_count                   = 0U;
 static volatile uint32_t execution_isr_latest_cycles                  = 0U;
 static volatile uint32_t execution_isr_maximum_cycles                 = 0U;
+static volatile uint32_t execution_isr_max_sample_number              = 0U;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -119,7 +120,8 @@ static inline void HW_TIMER_Record_Execution_ISR_Cycles( uint32_t start_cycles )
     execution_isr_sample_count++;
     if ( elapsed_cycles > execution_isr_maximum_cycles )
     {
-        execution_isr_maximum_cycles = elapsed_cycles;
+        execution_isr_maximum_cycles    = elapsed_cycles;
+        execution_isr_max_sample_number = execution_isr_sample_count;
     }
 }
 #endif
@@ -309,9 +311,10 @@ bool HW_TIMER_Start_Timer( Timer_T timer )
 {
     if ( timer == EXECUTION_MANAGER_TIMER )
     {
-        execution_isr_sample_count   = 0U;
-        execution_isr_latest_cycles  = 0U;
-        execution_isr_maximum_cycles = 0U;
+        execution_isr_sample_count      = 0U;
+        execution_isr_latest_cycles     = 0U;
+        execution_isr_maximum_cycles    = 0U;
+        execution_isr_max_sample_number = 0U;
     }
 
 #ifdef TEST_BUILD
@@ -497,9 +500,10 @@ void HW_TIMER_Get_Execution_Timing( HW_TIMER_ExecutionTiming_T* timing )
         return;
     }
 
-    timing->sample_count   = execution_isr_sample_count;
-    timing->latest_cycles  = execution_isr_latest_cycles;
-    timing->maximum_cycles = execution_isr_maximum_cycles;
+    timing->sample_count        = execution_isr_sample_count;
+    timing->latest_cycles       = execution_isr_latest_cycles;
+    timing->maximum_cycles      = execution_isr_maximum_cycles;
+    timing->max_sample_number   = execution_isr_max_sample_number;
 #ifdef TEST_BUILD
     timing->core_clock_hz = 0U;
 #else
