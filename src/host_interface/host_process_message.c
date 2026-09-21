@@ -391,17 +391,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
         *response_required                    = true;
         return HOST_INTERFACE_STATUS_OK;
     }
-    // Commit the driver struct
-    status = HOST_INTERFACE_Commit_Config_Message( &driver_config );
-    if ( status != HOST_INTERFACE_STATUS_OK )
-    {
-        // Construct the error message
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        // TODO  more specific error catagory
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-        *response_required                    = true;
-        return HOST_INTERFACE_STATUS_OK;
-    }
+
     // Signal run state manager to move to package recieving state
     status = HOST_INTERFACE_request_state_tranistion( RUN_STATE_TEST_PACKAGE_RECEIVE,
                                                       HOST_REQUEST_TEST_PACKAGE_RECEIVE, 2, 0 );
@@ -431,6 +421,19 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
         *response_required                    = true;
         return HOST_INTERFACE_STATUS_OK;
     }
+
+    // Commit the driver struct
+    status = HOST_INTERFACE_Commit_Config_Message( &driver_config );
+    if ( status != HOST_INTERFACE_STATUS_OK )
+    {
+        // Construct the error message
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        // TODO  more specific error catagory
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+        *response_required                    = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
     *expected_tick_count = incoming_message->body.test_configuration.expected_tick_count;
     HOST_INSTRUCTION_HANDLER_Reset();
     RESULT_MESSAGE_PRODUCER_Reset();
