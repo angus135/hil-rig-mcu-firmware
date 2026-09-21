@@ -41,10 +41,13 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-#define HW_I2C_RX_BUFFER_SIZE ( 512U )
-#define HW_I2C_TX_MAX_MESSAGE_SIZE ( 256U )
+
+ /*Temporarily reclaimed I2C memory as we have run out of RAM*/
+
+#define HW_I2C_RX_BUFFER_SIZE ( 16U )
+#define HW_I2C_TX_MAX_MESSAGE_SIZE ( 16U )
 #define HW_I2C_MASTER_TRANSACTION_QUEUE_DEPTH ( 8U )
-#define HW_I2C_RX_MESSAGE_QUEUE_DEPTH ( 8U )
+#define HW_I2C_RX_MESSAGE_QUEUE_DEPTH ( 2U )
 
 /* Compatibility name retained for the non-queued slave TX staging API. */
 #define HW_I2C_TX_STAGE_SIZE HW_I2C_TX_MAX_MESSAGE_SIZE
