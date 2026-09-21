@@ -688,9 +688,9 @@ HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_HandleInstruction(
     }
 
 #if defined( __cplusplus )
-    alignas( 4 ) uint8_t instruction_buffer[EXECUTION_INSTRUCTION_MAX_SIZE_BYTES];
+    static alignas( 4 ) uint8_t instruction_buffer[EXECUTION_INSTRUCTION_MAX_SIZE_BYTES];
 #else
-    _Alignas( 4 ) uint8_t instruction_buffer[EXECUTION_INSTRUCTION_MAX_SIZE_BYTES];
+    static _Alignas( 4 ) uint8_t instruction_buffer[EXECUTION_INSTRUCTION_MAX_SIZE_BYTES];
 #endif
     size_t instruction_size_bytes = 0U;
 

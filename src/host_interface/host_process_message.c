@@ -378,7 +378,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
 {
     ( void )data;
     ( void )data_size;
-    DutDriverConfiguration_T driver_config = { 0 };
+    static DutDriverConfiguration_T driver_config = { 0 };
     // Convert the config message to driver struct
     HOST_Interface_Status_T status =
         HOST_INTERFACE_Config_Message_To_Driver( incoming_message, &driver_config );
@@ -1083,7 +1083,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_message(
         return HOST_INTERFACE_STATUS_INVALID_ARGUMENT;
     }
     // create temporary output message (incase output is not accepted)
-    HIL_Application_Message_T temp_outgoing_message = { 0 };
+    static HIL_Application_Message_T temp_outgoing_message = { 0 };
     HOST_Interface_Status_T   host_status           = HOST_INTERFACE_STATUS_INTERNAL_ERROR;
 
     // PROCESS INCOMING MESSAGE
