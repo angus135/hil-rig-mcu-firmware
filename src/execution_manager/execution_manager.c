@@ -136,12 +136,14 @@ EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken )
     FlashManagerInstructionReadStatus_T read_status = FLASH_MANAGER_INSTRUCTION_END_OF_STREAM;
 
     /* Measurements are captured before outputs at this boundary. */
+    // clang-format off
     const bool measurements_accepted =
         operation_timing_active
             ? EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurementsProfiled( current_tick,
                                                                        higher_priority_task_woken )
             : EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( current_tick,
                                                                higher_priority_task_woken );
+    // clang-format on
     if ( !measurements_accepted )
     {
         return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_MEASUREMENT_REJECTED,
@@ -165,11 +167,13 @@ EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken )
         if ( instruction->header.timestamp == current_tick )
         {
             const ExecutionOperationAdapterResult_T operation_result =
+                // clang-format off
                 operation_timing_active
                     ? EXECUTION_OPERATION_ADAPTER_ApplyOperationsProfiled(
                         instruction->operations, instruction->header.operation_count )
                     : EXECUTION_OPERATION_ADAPTER_ApplyOperations(
                         instruction->operations, instruction->header.operation_count );
+            // clang-format on
             if ( operation_result != EXECUTION_OPERATION_ADAPTER_ACCEPTED )
             {
                 return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_OPERATION_REJECTED,
