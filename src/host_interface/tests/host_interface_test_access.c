@@ -33,6 +33,12 @@ HOST_Interface_Status_T HOST_INTERFACE_process_message(
     return HOST_INTERFACE_STATUS_OK;
 }
 
+bool RUN_STATE_MANAGER_RequestFault( RunStateFaultReason_T reason )
+{
+    ( void )reason;
+    return true;
+}
+
 static HOST_INTERFACE_Protocol_State_T s_protocol_state;
 
 /**

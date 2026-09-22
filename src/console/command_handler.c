@@ -45,6 +45,7 @@
 #include "subsystem_command_apis/console_pwm_capture.h"
 #include "subsystem_command_apis/console_can.h"
 #include "subsystem_command_apis/console_flash_manager.h"
+#include "subsystem_command_apis/console_host_interface.h"
 #include "subsystem_command_apis/console_run_state_manager.h"
 #include "subsystem_command_apis/console_test_configuration.h"
 
@@ -147,6 +148,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"flash",               CONSOLE_FlashManager_Command,           "External Flash and Flash Manager hardware bring-up"},
     {"run_state",           CONSOLE_RunStateManager_Command,        "Manual lifecycle and execution-timer control"},
     {"test_config",         CONSOLE_TestConfiguration_Command,      "Commit DUT lifecycle test configurations"},
+    {"host",                CONSOLE_HostInterface_Command,          "Host Interface status and diagnostics"},
 
 };
 

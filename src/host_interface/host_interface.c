@@ -23,10 +23,11 @@
 
 #include "hil_rig_protocol/application/application.h"
 #include "hil_rig_protocol/transport/transport.h"
-#include "hw_usb.h"
 #include "host_interface.h"
-#include "rtos_config.h"
 #include "host_process_message.h"
+#include "hw_usb.h"
+#include "rtos_config.h"
+#include "run_state_manager.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -65,8 +66,8 @@
 #define HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE 255
 
 #ifndef TEST_BUILD
-#include "main.h"
-#define HOST_INTERFACE_Error_Handler() Error_Handler()
+#define HOST_INTERFACE_Error_Handler()                                                             \
+    ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR )
 #else
 #define HOST_INTERFACE_Error_Handler()
 #endif
@@ -805,6 +806,8 @@ static void HOST_INTERFACE_Protocol_Process(
     }
 }
 
+static HostInterfaceStatus_T s_host_interface_status = { 0 };
+
 /**
  * @brief Initialize all Host Interface protocol layers and owned storage.
  *
@@ -825,7 +828,13 @@ static void HOST_INTERFACE_Protocol_Process(
  */
 static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const protocol_state )
 {
-    // Clear stale parser, codec, USB, clock, and output-ownership state before
+    if ( protocol_state == NULL )
+    {
+        HOST_INTERFACE_Error_Handler();
+        return;
+    }
+
+    // Explicitly zero the caller-owned struct before configuring or
     // initializing each layer. This also gives all optional state deterministic
     // zero values before the public APIs populate their contexts.
     *protocol_state = ( HOST_INTERFACE_Protocol_State_T ){ 0 };
@@ -835,7 +844,7 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
     // servicing depend on a valid low-level connection abstraction.
     if ( !HW_USB_Init() )
     {
-        HOST_INTERFACE_Error_Handler();
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_USB_INIT );
     }
 
     // =======------- INITIALISE APPLICATION LAYER
@@ -845,14 +854,14 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
         HIL_APPLICATION_Default_Config( &protocol_state->application.config );
     if ( protocol_state->application.status != HIL_APPLICATION_STATUS_OK )
     {
-        HOST_INTERFACE_Error_Handler();
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_CODEC_INIT );
     }
 
     protocol_state->application.status = HIL_APPLICATION_Init(
         &protocol_state->application.context, &protocol_state->application.config );
     if ( protocol_state->application.status != HIL_APPLICATION_STATUS_OK )
     {
-        HOST_INTERFACE_Error_Handler();
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_CODEC_INIT );
     }
 
     // =======------- INITIALISE TRANSPORT LAYER
@@ -874,7 +883,7 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
          || protocol_state->transport.required_workspace_size
                 > sizeof( protocol_state->transport.workspace ) )
     {
-        HOST_INTERFACE_Error_Handler();
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_TRANSPORT_INIT );
     }
 
     protocol_state->transport.storage.workspace = protocol_state->transport.workspace;
@@ -888,7 +897,7 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
                             &protocol_state->transport.config, &protocol_state->transport.storage );
     if ( protocol_state->transport.status != HIL_TRANSPORT_STATUS_OK )
     {
-        HOST_INTERFACE_Error_Handler();
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_TRANSPORT_INIT );
     }
 
     // Start both periodic scheduling and logical Transport time from the same
@@ -1017,11 +1026,24 @@ void HOST_INTERFACE_Task( void* task_parameters )
             }
             else if ( xTaskGetTickCount() - overflow_timer >= pdMS_TO_TICKS( 100U ) )
             {
-                // Outgoing message overflow timeout
-                HOST_INTERFACE_Error_Handler();
-                return;
+                // Outgoing message overflow timeout: transition RSM to FAULT
+                ( void )RUN_STATE_MANAGER_RequestFault(
+                    RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED );
+                // Clear the blocked state and resume consumption so task stays healthy
+                can_consume_incoming     = true;
+                outgoing_message_pending = false;
             }
         }
+
+        s_host_interface_status = ( HostInterfaceStatus_T ){
+            .is_initialized          = true,
+            .usb_connected           = ( HW_USB_Get_Connection_State() != HW_USB_CONNECTION_STATE_DISCONNECTED ),
+            .can_consume_incoming     = can_consume_incoming,
+            .outgoing_message_pending = outgoing_message_pending,
+            .is_overflowing          = !can_consume_incoming,
+            .expected_tick_count     = expected_tick_count,
+            .carry_on_notifications  = carry_on_notifications,
+        };
 
         /*
          * TODO: When in the result transfer phase (FLASH_MANAGER_STATE_TRANSFERRING_RESULTS),
@@ -1043,3 +1065,12 @@ void HOST_INTERFACE_Task( void* task_parameters )
         vTaskDelayUntil( &protocol_state.initial_ticks, pdMS_TO_TICKS( HOST_INTERFACE_PERIOD_MS ) );
     }
 }
+
+void HOST_INTERFACE_GetStatus( HostInterfaceStatus_T* status )
+{
+    if ( status != NULL )
+    {
+        *status = s_host_interface_status;
+    }
+}
+

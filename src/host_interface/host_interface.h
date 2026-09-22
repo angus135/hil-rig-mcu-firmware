@@ -43,6 +43,17 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+typedef struct
+{
+    bool     is_initialized;
+    bool     usb_connected;
+    bool     can_consume_incoming;
+    bool     outgoing_message_pending;
+    bool     is_overflowing;
+    uint32_t expected_tick_count;
+    uint32_t carry_on_notifications;
+} HostInterfaceStatus_T;
+
 extern TaskHandle_t host_interface_task_handle;
 
 /**-----------------------------------------------------------------------------
@@ -55,6 +66,13 @@ extern TaskHandle_t host_interface_task_handle;
  *
  */
 bool HOST_INTERFACE_Notify( uint32_t notification );
+
+/**
+ * @brief Queries the live runtime status of the Host Interface task.
+ *
+ * @param[out] status Receives a snapshot of the current status.
+ */
+void HOST_INTERFACE_GetStatus( HostInterfaceStatus_T* status );
 
 /**
  * @brief Host Interface Task

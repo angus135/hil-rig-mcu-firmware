@@ -154,6 +154,16 @@ static const char* CONSOLE_RunStateManager_FaultName( RunStateFaultReason_T reas
             return "Flash result disposition";
         case RUN_STATE_FAULT_FLASH_MANAGER:
             return "Flash Manager";
+        case RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED:
+            return "Host Interface outgoing response blocked / unconsumed";
+        case RUN_STATE_FAULT_HOST_INTERFACE_USB_INIT:
+            return "Host Interface USB initialization failed";
+        case RUN_STATE_FAULT_HOST_INTERFACE_CODEC_INIT:
+            return "Host Interface Application codec initialization failed";
+        case RUN_STATE_FAULT_HOST_INTERFACE_TRANSPORT_INIT:
+            return "Host Interface Transport initialization failed";
+        case RUN_STATE_FAULT_HOST_INTERFACE_ERROR:
+            return "Host Interface general error";
         case RUN_STATE_FAULT_INTERNAL:
             return "internal RSM error";
         default:

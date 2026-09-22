@@ -13,6 +13,7 @@ set(CONSOLE_SOURCES
     subsystem_command_apis/console_I2C.c
     subsystem_command_apis/console_can.c
     subsystem_command_apis/console_flash_manager.c
+    subsystem_command_apis/console_host_interface.c
     subsystem_command_apis/console_run_state_manager.c
     subsystem_command_apis/console_test_configuration.c
 )
@@ -21,6 +22,7 @@ set(CONSOLE_HEADERS
     console.h
     subsystem_command_apis/console_can.h
     subsystem_command_apis/console_flash_manager.h
+    subsystem_command_apis/console_host_interface.h
     subsystem_command_apis/console_run_state_manager.h
     subsystem_command_apis/console_test_configuration.h
 )
@@ -66,6 +68,7 @@ target_link_libraries(console
     hw_timer
     run_state_manager
     test_configuration
+    host_interface
 )
 
 # -----------------------------

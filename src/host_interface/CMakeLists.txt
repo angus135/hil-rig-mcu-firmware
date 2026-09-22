@@ -140,6 +140,10 @@ if(HOST_INTERFACE_ENABLE_TESTS AND BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests
             ${CMAKE_CURRENT_SOURCE_DIR}/shared_protocol/tests/c/integration
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/src/rtos
+            ${CMAKE_SOURCE_DIR}/src/run_state_manager
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_can
     )
 
     add_test(NAME host_interface_tests COMMAND host_interface_tests)
