@@ -1007,8 +1007,20 @@ void HOST_INTERFACE_Task( void* task_parameters )
             s_host_interface_status.is_faulted = false;
         }
 
+        if ( incoming_message_available )
+        {
+            s_host_interface_status.rx_message_count++;
+            s_host_interface_status.last_rx_message_type = ( uint8_t )incoming_message.type;
+            if ( incoming_message.type == HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION )
+            {
+                s_host_interface_status.last_rx_tick =
+                    incoming_message.body.test_instruction.tick_number;
+            }
+        }
+
         if ( outgoing_message_accepted )
         {
+            s_host_interface_status.tx_message_count++;
             outgoing_message_pending = false;
         }
 
@@ -1031,6 +1043,16 @@ void HOST_INTERFACE_Task( void* task_parameters )
             else if ( new_response_required )
             {
                 outgoing_message_pending = true;
+                if ( ( outgoing_message.type == HIL_APPLICATION_MESSAGE_TYPE_RESPONSE )
+                     && ( outgoing_message.body.response.outcome
+                          == HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED ) )
+                {
+                    s_host_interface_status.rejected_instruction_count++;
+                    s_host_interface_status.last_rejected_tick =
+                        outgoing_message.body.response.tick_number;
+                    s_host_interface_status.last_rejected_reason =
+                        ( uint32_t )outgoing_message.body.response.reason;
+                }
             }
         }
         else
@@ -1042,6 +1064,16 @@ void HOST_INTERFACE_Task( void* task_parameters )
                 outgoing_message         = overflow_outgoing_message;
                 outgoing_message_pending = true;
                 can_consume_incoming     = true;
+                if ( ( outgoing_message.type == HIL_APPLICATION_MESSAGE_TYPE_RESPONSE )
+                     && ( outgoing_message.body.response.outcome
+                          == HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED ) )
+                {
+                    s_host_interface_status.rejected_instruction_count++;
+                    s_host_interface_status.last_rejected_tick =
+                        outgoing_message.body.response.tick_number;
+                    s_host_interface_status.last_rejected_reason =
+                        ( uint32_t )outgoing_message.body.response.reason;
+                }
             }
             else if ( xTaskGetTickCount() - overflow_timer >= pdMS_TO_TICKS( 100U ) )
             {
@@ -1060,6 +1092,9 @@ void HOST_INTERFACE_Task( void* task_parameters )
             }
         }
 
+        HIL_Transport_Status_Snapshot_T transport_snapshot = { 0 };
+        ( void )HIL_TRANSPORT_Get_Status( &protocol_state.transport.context, &transport_snapshot );
+
         s_host_interface_status.is_initialized          = true;
         s_host_interface_status.usb_connected           = ( HW_USB_Get_Connection_State() != HW_USB_CONNECTION_STATE_DISCONNECTED );
         s_host_interface_status.can_consume_incoming     = can_consume_incoming;
@@ -1067,6 +1102,9 @@ void HOST_INTERFACE_Task( void* task_parameters )
         s_host_interface_status.is_overflowing          = !can_consume_incoming;
         s_host_interface_status.expected_tick_count     = expected_tick_count;
         s_host_interface_status.carry_on_notifications  = carry_on_notifications;
+        s_host_interface_status.transport_session_state  = transport_snapshot.session_state;
+        s_host_interface_status.transport_reliable_pending = ( transport_snapshot.reliable_delivery_pending != 0U );
+        s_host_interface_status.transport_last_failure  = transport_snapshot.last_failure;
 
         /*
          * TODO: When in the result transfer phase (FLASH_MANAGER_STATE_TRANSFERRING_RESULTS),
