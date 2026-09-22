@@ -807,18 +807,39 @@ TEST_F( FlashManagerTest, InstructionUploadDrainFailureRetainsPageAndReportsFail
     EXPECT_EQ( 2U, write_instruction_page_calls );
 }
 
-TEST_F( FlashManagerTest, InstructionUploadFinishRejectsUnavailableIncompleteAndInvalidState )
+TEST_F( FlashManagerTest, InstructionUploadFinishRejectsUnavailableAndInvalidState )
 {
     EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOT_INITIALISED,
                FLASH_MANAGER_RequestInstructionUploadFinish() );
 
-    PrepareInstructionUpload( TEST_PAGE_SIZE_BYTES );
-    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE,
-               FLASH_MANAGER_RequestInstructionUploadFinish() );
-
+    Initialise();
     flash_manager_context.state = FLASH_MANAGER_STATE_EXECUTING;
     EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE,
                FLASH_MANAGER_RequestInstructionUploadFinish() );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadFinishAcceptsZeroBytesAndEmitsEndOfStream )
+{
+    PrepareInstructionUpload( TEST_PAGE_SIZE_BYTES );
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_RequestInstructionUploadFinish() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD, flash_manager_context.state );
+
+    ASSERT_TRUE( FLASH_MANAGER_FinaliseInstructionUpload() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, flash_manager_context.state );
+
+    // Execution preparation with 0 committed instruction bytes
+    FLASH_MANAGER_TEST_SetInstructionLength( 0U );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK,
+               FLASH_MANAGER_RequestExecutionPreparation( TEST_RESULT_CAPACITY_BYTES ) );
+    ASSERT_TRUE( FLASH_MANAGER_PrepareExecution() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_EXECUTING, flash_manager_context.state );
+
+    // First peek from ISR emits END_OF_STREAM immediately
+    const FlashManagerInstructionView_T* view = nullptr;
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_END_OF_STREAM,
+               FLASH_MANAGER_PeekNextInstructionFromISR( &view ) );
+    EXPECT_EQ( FLASH_MANAGER_STATE_EXECUTING, flash_manager_context.state );
 }
 
 TEST_F( FlashManagerTest, InstructionUploadFinishReturnsBusyDuringActiveNandWrite )

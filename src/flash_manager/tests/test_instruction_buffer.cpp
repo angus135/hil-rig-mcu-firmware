@@ -1240,12 +1240,22 @@ TEST_F( InstructionBufferTest, FinaliseUploadAcceptsPartialInputAndSnapsLength )
     EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND, instruction_buffer_context.page_states[0] );
 }
 
-TEST_F( InstructionBufferTest, FinaliseUploadRejectsZeroBytesAccepted )
+TEST_F( InstructionBufferTest, FinaliseUploadAcceptsZeroBytesAccepted )
 {
     PrepareUpload( 8U );
 
-    EXPECT_FALSE( INSTRUCTION_BUFFER_FinaliseUpload() );
-    EXPECT_FALSE( instruction_buffer_context.is_upload_finalised );
+    EXPECT_TRUE( INSTRUCTION_BUFFER_FinaliseUpload() );
+    EXPECT_TRUE( instruction_buffer_context.is_upload_finalised );
+    EXPECT_EQ( 0U, instruction_buffer_context.upload_expected_length_bytes );
+    EXPECT_TRUE( INSTRUCTION_BUFFER_IsUploadPersisted() );
+}
+
+TEST_F( InstructionBufferTest, PrepareReadZeroBytesEmitsEndOfStreamOnFirstPeek )
+{
+    Prepare( 0U );
+
+    const FlashManagerInstructionView_T* view = nullptr;
+    EXPECT_EQ( INSTRUCTION_BUFFER_PEEK_END_OF_STREAM, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
 }
 
 TEST_F( InstructionBufferTest, FinaliseUploadPublishesFinalPartialPageAndStopsProduction )

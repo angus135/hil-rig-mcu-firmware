@@ -1610,8 +1610,7 @@ FlashManagerInstructionUploadRequestStatus_T FLASH_MANAGER_RequestInstructionUpl
     }
 
     uint32_t accepted_length = 0U;
-    if ( !INSTRUCTION_BUFFER_GetUploadAcceptedLength( &accepted_length )
-         || ( accepted_length == 0U ) )
+    if ( !INSTRUCTION_BUFFER_GetUploadAcceptedLength( &accepted_length ) )
     {
         FLASH_MANAGER_Unlock();
         return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE;

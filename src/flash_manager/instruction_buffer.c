@@ -1235,7 +1235,6 @@ bool INSTRUCTION_BUFFER_FinaliseUpload( void )
               == INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND )
          || ( instruction_buffer_context.upload_accepted_length_bytes
               > instruction_buffer_context.upload_expected_length_bytes )
-         || ( instruction_buffer_context.upload_accepted_length_bytes == 0U )
          || ( instruction_buffer_context.page_size_bytes == 0U )
          || ( instruction_buffer_context.upload_persisted_length_bytes
               > instruction_buffer_context.upload_accepted_length_bytes ) )
