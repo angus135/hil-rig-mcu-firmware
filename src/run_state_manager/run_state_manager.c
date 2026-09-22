@@ -614,6 +614,11 @@ static bool RUN_STATE_MANAGER_EnterConfiguration( void )
     return true;
 }
 
+static bool RUN_STATE_MANAGER_EnterArmed( void )
+{
+    return HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_ARMED );
+}
+    
 /**
  * @brief Enters production execution.
  *
@@ -1522,6 +1527,11 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
             break;
 
         case RUN_STATE_ARMED:
+            if ( !RUN_STATE_MANAGER_EnterArmed() )
+            {
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_INTERNAL );
+                return false;
+            }
             break;
 
         case RUN_STATE_EXECUTION:
