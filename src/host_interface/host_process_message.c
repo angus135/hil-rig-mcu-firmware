@@ -909,7 +909,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Armed_Notification(
 {
     ( void )data;
     ( void )data_size;
-    (void) notifications;
+    // clear the armed notification flag
+    *notifications = *notifications & ~( HOST_INTERFACE_NOTIFY_ARMED );
     // Set the type and subtype
     outgoing_message->type    = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
     outgoing_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
