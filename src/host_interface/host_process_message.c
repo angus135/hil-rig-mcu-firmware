@@ -380,7 +380,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
 {
     ( void )data;
     ( void )data_size;
-    
+
     bool check = false;
     switch ( incoming_message->body.test_configuration.tick_duration_us.microseconds)
     {
@@ -519,7 +519,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
  */
 HOST_Interface_Status_T HOST_INTERFACE_process_Test_Instructions(
     const HIL_Application_Message_T* incoming_message, HIL_Application_Message_T* outgoing_message,
-    bool* response_required, uint8_t* data, size_t data_size, uint32_t* expected_tick_count )
+    bool* response_required, uint8_t* data, size_t data_size )
 {
     ( void )data;
     ( void )data_size;
@@ -1010,8 +1010,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION:
                 host_status = HOST_INTERFACE_process_Test_Instructions(
-                    incoming_message, outgoing_message, response_required, data, data_size,
-                    expected_tick_count );
+                    incoming_message, outgoing_message, response_required, data, data_size);
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
