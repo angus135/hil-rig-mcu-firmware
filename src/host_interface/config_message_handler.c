@@ -49,20 +49,68 @@
  *------------------------------------------------------------------------------
  */
 
-HOST_Interface_Status_T
+static HOST_Interface_Status_T
+HOST_INTERFACE_Analog_Input_Parser( const HIL_Application_Message_T* config_message,
+                                    DutDriverConfiguration_T*        driver_config );
+
+static HOST_Interface_Status_T
+HOST_INTERFACE_Analog_Output_Parser( const HIL_Application_Message_T* config_message,
+                                     DutDriverConfiguration_T*        driver_config );
+
+static HOST_Interface_Status_T
+HOST_INTERFACE_Can_Parser( const HIL_Application_Message_T* config_message,
+                           DutDriverConfiguration_T*        driver_config );
+
+static HOST_Interface_Status_T
+HOST_INTERFACE_Digital_Output_Parser( const HIL_Application_Message_T* config_message,
+                                      DutDriverConfiguration_T*        driver_config );
+
+static HOST_Interface_Status_T
+HOST_INTERFACE_Digital_Input_Parser( const HIL_Application_Message_T* config_message,
+                                     DutDriverConfiguration_T*        driver_config );
+
+static HOST_Interface_Status_T
+HOST_INTERFACE_I2c_Parser( const HIL_Application_Message_T* config_message,
+                           DutDriverConfiguration_T*        driver_config );
+
+static HOST_Interface_Status_T
+HOST_INTERFACE_Pwm_Output_Parser( const HIL_Application_Message_T* config_message,
+                                  DutDriverConfiguration_T*        driver_config );
+
+static HOST_Interface_Status_T
+HOST_INTERFACE_Pwm_Input_Parser( const HIL_Application_Message_T* config_message,
+                                 DutDriverConfiguration_T*        driver_config );
+
+static HOST_Interface_Status_T
+HOST_INTERFACE_Spi_Parser( const HIL_Application_Message_T* config_message,
+                           DutDriverConfiguration_T*        driver_config );
+
+static HOST_Interface_Status_T
+HOST_INTERFACE_Uart_Parser( const HIL_Application_Message_T* config_message,
+                            DutDriverConfiguration_T*        driver_config );
+
+/**-----------------------------------------------------------------------------
+ *  Private Function Definitions
+ *------------------------------------------------------------------------------
+ */
+
+static HOST_Interface_Status_T
 HOST_INTERFACE_Analog_Input_Parser( const HIL_Application_Message_T* config_message,
                                     DutDriverConfiguration_T*        driver_config )
 {
-    driver_config->analogue_input.ch_0_is_enabled =
-        config_message->body.test_configuration.analog_in[0].enabled;
-    driver_config->analogue_input.ch_1_is_enabled =
-        config_message->body.test_configuration.analog_in[0].enabled;
-    driver_config->analogue_input.is_enabled  = true;
-    driver_config->analogue_input.sample_rate = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_1K_HZ;
+    const bool ch0_enabled =
+        config_message->body.test_configuration.analog_in[0].enabled != 0U;
+    const bool ch1_enabled =
+        config_message->body.test_configuration.analog_in[1].enabled != 0U;
+
+    driver_config->analogue_input.ch_0_is_enabled = ch0_enabled;
+    driver_config->analogue_input.ch_1_is_enabled = ch1_enabled;
+    driver_config->analogue_input.is_enabled      = ch0_enabled || ch1_enabled;
+    driver_config->analogue_input.sample_rate     = EXEC_ANALOGUE_INPUT_SAMPLE_RATE_1K_HZ;
     return HOST_INTERFACE_STATUS_OK;
 }
 
-HOST_Interface_Status_T
+static HOST_Interface_Status_T
 HOST_INTERFACE_Analog_Output_Parser( const HIL_Application_Message_T* config_message,
                                      DutDriverConfiguration_T*        driver_config )
 {
@@ -80,8 +128,9 @@ HOST_INTERFACE_Analog_Output_Parser( const HIL_Application_Message_T* config_mes
     return HOST_INTERFACE_STATUS_OK;
 }
 
-HOST_Interface_Status_T HOST_INTERFACE_Can_Parser( const HIL_Application_Message_T* config_message,
-                                                   DutDriverConfiguration_T*        driver_config )
+static HOST_Interface_Status_T
+HOST_INTERFACE_Can_Parser( const HIL_Application_Message_T* config_message,
+                           DutDriverConfiguration_T*        driver_config )
 {
     for ( uint8_t i = 0; i < EXEC_CAN_CHANNEL_COUNT; i++ )
     {
@@ -108,7 +157,7 @@ HOST_Interface_Status_T HOST_INTERFACE_Can_Parser( const HIL_Application_Message
     return HOST_INTERFACE_STATUS_OK;
 }
 
-HOST_Interface_Status_T
+static HOST_Interface_Status_T
 HOST_INTERFACE_Digital_Output_Parser( const HIL_Application_Message_T* config_message,
                                       DutDriverConfiguration_T*        driver_config )
 {
@@ -121,7 +170,7 @@ HOST_INTERFACE_Digital_Output_Parser( const HIL_Application_Message_T* config_me
         switch ( config_message->body.test_configuration.digital_out[i].voltage_level )
         {
             case HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_INVALID:
-                driver_config->digital_outputs.channels[i].mode = EXEC_DIGITAL_OUTPUT_MODE_COUNT;
+                driver_config->digital_outputs.channels[i].mode = EXEC_DIGITAL_OUTPUT_MODE_3V3;
                 driver_config->digital_outputs.channels[i].is_enabled = false;
                 break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_3V3:
@@ -137,7 +186,8 @@ HOST_INTERFACE_Digital_Output_Parser( const HIL_Application_Message_T* config_me
                 driver_config->digital_outputs.channels[i].mode = EXEC_DIGITAL_OUTPUT_MODE_24V;
                 break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_RESERVED:
-                driver_config->digital_outputs.channels[i].mode = EXEC_DIGITAL_OUTPUT_MODE_COUNT;
+            default:
+                driver_config->digital_outputs.channels[i].mode = EXEC_DIGITAL_OUTPUT_MODE_3V3;
                 driver_config->digital_outputs.channels[i].is_enabled = false;
                 break;
         }
@@ -145,7 +195,7 @@ HOST_INTERFACE_Digital_Output_Parser( const HIL_Application_Message_T* config_me
     return HOST_INTERFACE_STATUS_OK;
 }
 
-HOST_Interface_Status_T
+static HOST_Interface_Status_T
 HOST_INTERFACE_Digital_Input_Parser( const HIL_Application_Message_T* config_message,
                                      DutDriverConfiguration_T*        driver_config )
 {
@@ -169,6 +219,7 @@ HOST_INTERFACE_Digital_Input_Parser( const HIL_Application_Message_T* config_mes
                 driver_config->digital_inputs.channels[i] = EXEC_DIGITAL_INPUT_MODE_24V;
                 break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_RESERVED:
+            default:
                 driver_config->digital_inputs.channels[i] = EXEC_DIGITAL_INPUT_MODE_DISABLED;
                 break;
         }
@@ -182,8 +233,9 @@ HOST_INTERFACE_Digital_Input_Parser( const HIL_Application_Message_T* config_mes
     return HOST_INTERFACE_STATUS_OK;
 }
 
-HOST_Interface_Status_T HOST_INTERFACE_I2c_Parser( const HIL_Application_Message_T* config_message,
-                                                   DutDriverConfiguration_T*        driver_config )
+static HOST_Interface_Status_T
+HOST_INTERFACE_I2c_Parser( const HIL_Application_Message_T* config_message,
+                           DutDriverConfiguration_T*        driver_config )
 {
     for ( uint8_t i = 0; i < EXEC_I2C_CHANNEL_COUNT; i++ )
     {
@@ -210,6 +262,7 @@ HOST_Interface_Status_T HOST_INTERFACE_I2c_Parser( const HIL_Application_Message
                 driver_config->i2c_channels[i].pullup = EXEC_I2C_PULLUP_10K;
                 break;
             case HIL_APPLICATION_I2C_PULL_UP_RESERVED:
+            default:
                 driver_config->i2c_channels[i].pullup     = EXEC_I2C_PULLUP_COUNT;
                 driver_config->i2c_channels[i].is_enabled = false;
                 break;
@@ -235,6 +288,7 @@ HOST_Interface_Status_T HOST_INTERFACE_I2c_Parser( const HIL_Application_Message
                 driver_config->i2c_channels[i].voltage = EXEC_I2C_VOLTAGE_5V;
                 break;
             case HIL_APPLICATION_I2C_VOLTAGE_RESERVED:
+            default:
                 driver_config->i2c_channels[i].voltage    = EXEC_I2C_VOLTAGE_COUNT;
                 driver_config->i2c_channels[i].is_enabled = false;
                 break;
@@ -253,6 +307,7 @@ HOST_Interface_Status_T HOST_INTERFACE_I2c_Parser( const HIL_Application_Message
                 driver_config->i2c_channels[i].mode = HW_I2C_MODE_SLAVE;
                 break;
             case HIL_APPLICATION_BUS_ROLE_RESERVED:
+            default:
                 driver_config->i2c_channels[i].mode       = HW_I2C_MODE_SLAVE;
                 driver_config->i2c_channels[i].is_enabled = false;
                 break;
@@ -261,7 +316,7 @@ HOST_Interface_Status_T HOST_INTERFACE_I2c_Parser( const HIL_Application_Message
     return HOST_INTERFACE_STATUS_OK;
 }
 
-HOST_Interface_Status_T
+static HOST_Interface_Status_T
 HOST_INTERFACE_Pwm_Output_Parser( const HIL_Application_Message_T* config_message,
                                   DutDriverConfiguration_T*        driver_config )
 {
@@ -290,6 +345,7 @@ HOST_INTERFACE_Pwm_Output_Parser( const HIL_Application_Message_T* config_messag
                 driver_config->pwm_generation_channels[i].voltage_level = EXEC_PWM_GEN_VOLTAGE_24V;
                 break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_RESERVED:
+            default:
                 driver_config->pwm_generation_channels[i].voltage_level =
                     EXEC_PWM_GEN_VOLTAGE_DISABLED;
                 driver_config->pwm_generation_channels[i].is_enabled = false;
@@ -330,7 +386,7 @@ HOST_INTERFACE_Pwm_Output_Parser( const HIL_Application_Message_T* config_messag
     return HOST_INTERFACE_STATUS_OK;
 }
 
-HOST_Interface_Status_T
+static HOST_Interface_Status_T
 HOST_INTERFACE_Pwm_Input_Parser( const HIL_Application_Message_T* config_message,
                                  DutDriverConfiguration_T*        driver_config )
 {
@@ -358,6 +414,7 @@ HOST_INTERFACE_Pwm_Input_Parser( const HIL_Application_Message_T* config_message
                 driver_config->pwm_capture_channels[i].mode = EXEC_PWM_CAPTURE_HV_24V;
                 break;
             case HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_RESERVED:
+            default:
                 driver_config->pwm_capture_channels[i].mode       = EXEC_PWM_CAPTURE_LV_3V3;
                 driver_config->pwm_capture_channels[i].is_enabled = false;
                 break;
@@ -366,8 +423,9 @@ HOST_INTERFACE_Pwm_Input_Parser( const HIL_Application_Message_T* config_message
     return HOST_INTERFACE_STATUS_OK;
 }
 
-HOST_Interface_Status_T HOST_INTERFACE_Spi_Parser( const HIL_Application_Message_T* config_message,
-                                                   DutDriverConfiguration_T*        driver_config )
+static HOST_Interface_Status_T
+HOST_INTERFACE_Spi_Parser( const HIL_Application_Message_T* config_message,
+                           DutDriverConfiguration_T*        driver_config )
 {
     for ( uint8_t i = 0; i < TEST_CONFIGURATION_SPI_CHANNEL_COUNT; i++ )
     {
@@ -387,6 +445,7 @@ HOST_Interface_Status_T HOST_INTERFACE_Spi_Parser( const HIL_Application_Message
                 driver_config->spi_channels[i].spi_mode = EXEC_SPI_SLAVE_MODE;
                 break;
             case HIL_APPLICATION_BUS_ROLE_RESERVED:
+            default:
                 driver_config->spi_channels[i].spi_mode   = EXEC_SPI_SLAVE_MODE;
                 driver_config->spi_channels[i].is_enabled = false;
                 break;
@@ -405,6 +464,7 @@ HOST_Interface_Status_T HOST_INTERFACE_Spi_Parser( const HIL_Application_Message
                 driver_config->spi_channels[i].first_bit = EXEC_SPI_FIRST_LSB;
                 break;
             case HIL_APPLICATION_SPI_BIT_ORDER_RESERVED:
+            default:
                 driver_config->spi_channels[i].first_bit  = EXEC_SPI_FIRST_MSB;
                 driver_config->spi_channels[i].is_enabled = false;
                 break;
@@ -439,7 +499,7 @@ HOST_Interface_Status_T HOST_INTERFACE_Spi_Parser( const HIL_Application_Message
         }
         else
         {
-            driver_config->spi_channels[i].baud_rate  = 0;
+            driver_config->spi_channels[i].baud_rate  = EXEC_SPI_BAUD_45MBIT;
             driver_config->spi_channels[i].is_enabled = false;
         }
         // TODO use capture limit
@@ -457,6 +517,7 @@ HOST_Interface_Status_T HOST_INTERFACE_Spi_Parser( const HIL_Application_Message
                 driver_config->spi_channels[i].cpol = EXEC_SPI_CPOL_HIGH;
                 break;
             case HIL_APPLICATION_SPI_CLOCK_POLARITY_RESERVED:
+            default:
                 driver_config->spi_channels[i].cpol       = EXEC_SPI_CPOL_LOW;
                 driver_config->spi_channels[i].is_enabled = false;
                 break;
@@ -474,6 +535,7 @@ HOST_Interface_Status_T HOST_INTERFACE_Spi_Parser( const HIL_Application_Message
                 driver_config->spi_channels[i].cpha = EXEC_SPI_CPHA_2_EDGE;
                 break;
             case HIL_APPLICATION_SPI_CLOCK_PHASE_RESERVED:
+            default:
                 driver_config->spi_channels[i].cpha       = EXEC_SPI_CPHA_1_EDGE;
                 driver_config->spi_channels[i].is_enabled = false;
                 break;
@@ -491,6 +553,7 @@ HOST_Interface_Status_T HOST_INTERFACE_Spi_Parser( const HIL_Application_Message
                 driver_config->spi_channels[i].data_size = EXEC_SPI_SIZE_16_BIT;
                 break;
             case HIL_APPLICATION_SPI_DATA_WIDTH_RESERVED:
+            default:
                 driver_config->spi_channels[i].data_size  = EXEC_SPI_SIZE_8_BIT;
                 driver_config->spi_channels[i].is_enabled = false;
                 break;
@@ -499,8 +562,9 @@ HOST_Interface_Status_T HOST_INTERFACE_Spi_Parser( const HIL_Application_Message
     return HOST_INTERFACE_STATUS_OK;
 }
 
-HOST_Interface_Status_T HOST_INTERFACE_Uart_Parser( const HIL_Application_Message_T* config_message,
-                                                    DutDriverConfiguration_T*        driver_config )
+static HOST_Interface_Status_T
+HOST_INTERFACE_Uart_Parser( const HIL_Application_Message_T* config_message,
+                            DutDriverConfiguration_T*        driver_config )
 {
     for ( uint8_t i = 0; i < EXEC_UART_CHANNEL_COUNT; i++ )
     {
@@ -529,6 +593,7 @@ HOST_Interface_Status_T HOST_INTERFACE_Uart_Parser( const HIL_Application_Messag
                 driver_config->uart_channels[i].interface_mode = EXEC_UART_MODE_RS232;
                 break;
             case HIL_APPLICATION_UART_ELECTRICAL_MODE_RESERVED:
+            default:
                 driver_config->uart_channels[i].interface_mode = EXEC_UART_MODE_DISABLED;
                 driver_config->uart_channels[i].is_enabled     = false;
                 break;
@@ -547,6 +612,7 @@ HOST_Interface_Status_T HOST_INTERFACE_Uart_Parser( const HIL_Application_Messag
                 driver_config->uart_channels[i].word_length = HW_UART_WORD_LENGTH_9_BITS;
                 break;
             case HIL_APPLICATION_UART_WORD_LENGTH_RESERVED:
+            default:
                 driver_config->uart_channels[i].word_length = HW_UART_WORD_LENGTH_8_BITS;
                 driver_config->uart_channels[i].is_enabled  = false;
                 break;
@@ -568,6 +634,7 @@ HOST_Interface_Status_T HOST_INTERFACE_Uart_Parser( const HIL_Application_Messag
                 driver_config->uart_channels[i].parity = HW_UART_PARITY_ODD;
                 break;
             case HIL_APPLICATION_UART_PARITY_RESERVED:
+            default:
                 driver_config->uart_channels[i].parity     = HW_UART_PARITY_NONE;
                 driver_config->uart_channels[i].is_enabled = false;
                 break;
@@ -586,6 +653,7 @@ HOST_Interface_Status_T HOST_INTERFACE_Uart_Parser( const HIL_Application_Messag
                 driver_config->uart_channels[i].stop_bits = HW_UART_STOP_BITS_2;
                 break;
             case HIL_APPLICATION_UART_STOP_BITS_RESERVED:
+            default:
                 driver_config->uart_channels[i].stop_bits  = HW_UART_STOP_BITS_1;
                 driver_config->uart_channels[i].is_enabled = false;
                 break;
