@@ -925,6 +925,11 @@ bool HOST_INTERFACE_Notify( uint32_t notification )
     return xTaskNotify( HostInterfaceTaskHandle, notification, eSetBits ) == pdPASS;
 }
 
+void HOST_INTERFACE_Reset( void )
+{
+    ( void )HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_RESET );
+}
+
 /**
  * @brief Host Interface Task
  *
@@ -950,7 +955,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
     static HIL_Application_Message_T       outgoing_message                    = { 0 };
     static HIL_Application_Message_T       incoming_message                    = { 0 };
     bool                                   outgoing_message_pending            = false;
-    uint8_t outgoing_variable_data[HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE] = { 0 };
+    static uint8_t outgoing_variable_data[HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE] = { 0 };
 
     ( void )task_parameters;
 
@@ -962,7 +967,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
 
     bool can_consume_incoming = true;
 
-    HIL_Application_Message_T overflow_outgoing_message = { 0 };
+    static HIL_Application_Message_T overflow_outgoing_message = { 0 };
     HostInterfaceTaskHandle                             = xTaskGetCurrentTaskHandle();
 
     HOST_INTERFACE_Protocol_Init( &protocol_state );
@@ -987,6 +992,20 @@ void HOST_INTERFACE_Task( void* task_parameters )
 
         ( void )xTaskNotifyWait( 0U, UINT32_MAX, &notifications, 0U );
         carry_on_notifications = carry_on_notifications | notifications;
+
+        if ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESET ) != 0U )
+        {
+            carry_on_notifications &= ~( HOST_INTERFACE_NOTIFY_RESET );
+            outgoing_message_pending          = false;
+            can_consume_incoming              = true;
+            expected_tick_count               = 0U;
+            s_host_interface_status.is_faulted = false;
+        }
+
+        if ( ( RUN_STATE_MANAGER_GetState() == RUN_STATE_IDLE ) && s_host_interface_status.is_faulted )
+        {
+            s_host_interface_status.is_faulted = false;
+        }
 
         if ( outgoing_message_accepted )
         {
@@ -1026,24 +1045,28 @@ void HOST_INTERFACE_Task( void* task_parameters )
             }
             else if ( xTaskGetTickCount() - overflow_timer >= pdMS_TO_TICKS( 100U ) )
             {
-                // Outgoing message overflow timeout: transition RSM to FAULT
+                // Outgoing message overflow timeout: record snapshot and transition RSM to FAULT
+                s_host_interface_status.is_faulted                = true;
+                s_host_interface_status.last_fault_reason         = RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED;
+                s_host_interface_status.response_blocked_count++;
+                s_host_interface_status.last_blocked_message_type = ( uint8_t )overflow_outgoing_message.type;
+
                 ( void )RUN_STATE_MANAGER_RequestFault(
                     RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED );
+
                 // Clear the blocked state and resume consumption so task stays healthy
                 can_consume_incoming     = true;
                 outgoing_message_pending = false;
             }
         }
 
-        s_host_interface_status = ( HostInterfaceStatus_T ){
-            .is_initialized          = true,
-            .usb_connected           = ( HW_USB_Get_Connection_State() != HW_USB_CONNECTION_STATE_DISCONNECTED ),
-            .can_consume_incoming     = can_consume_incoming,
-            .outgoing_message_pending = outgoing_message_pending,
-            .is_overflowing          = !can_consume_incoming,
-            .expected_tick_count     = expected_tick_count,
-            .carry_on_notifications  = carry_on_notifications,
-        };
+        s_host_interface_status.is_initialized          = true;
+        s_host_interface_status.usb_connected           = ( HW_USB_Get_Connection_State() != HW_USB_CONNECTION_STATE_DISCONNECTED );
+        s_host_interface_status.can_consume_incoming     = can_consume_incoming;
+        s_host_interface_status.outgoing_message_pending = outgoing_message_pending;
+        s_host_interface_status.is_overflowing          = !can_consume_incoming;
+        s_host_interface_status.expected_tick_count     = expected_tick_count;
+        s_host_interface_status.carry_on_notifications  = carry_on_notifications;
 
         /*
          * TODO: When in the result transfer phase (FLASH_MANAGER_STATE_TRANSFERRING_RESULTS),

@@ -49,6 +49,13 @@ static void CONSOLE_HostInterface_PrintStatus( void )
     CONSOLE_Printf( "  Can consume input:   %s\r\n", status.can_consume_incoming ? "yes" : "no" );
     CONSOLE_Printf( "  Outgoing pending:    %s\r\n", status.outgoing_message_pending ? "yes" : "no" );
     CONSOLE_Printf( "  Overflow state:      %s\r\n", status.is_overflowing ? "OVERFLOWING" : "normal" );
+    CONSOLE_Printf( "  Fault state:         %s\r\n", status.is_faulted ? "FAULTED" : "none" );
+    CONSOLE_Printf( "  Blocked responses:   %lu\r\n", ( unsigned long )status.response_blocked_count );
+    if ( status.is_faulted || status.response_blocked_count > 0U )
+    {
+        CONSOLE_Printf( "  Last fault reason:   %u\r\n", ( unsigned int )status.last_fault_reason );
+        CONSOLE_Printf( "  Last blocked msg:    0x%02X\r\n", ( unsigned int )status.last_blocked_message_type );
+    }
     CONSOLE_Printf( "  Expected tick count: %lu\r\n", ( unsigned long )status.expected_tick_count );
     CONSOLE_Printf( "  Notifications:       0x%08lX\r\n", ( unsigned long )status.carry_on_notifications );
 }

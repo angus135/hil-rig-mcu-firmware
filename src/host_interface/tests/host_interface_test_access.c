@@ -39,6 +39,11 @@ bool RUN_STATE_MANAGER_RequestFault( RunStateFaultReason_T reason )
     return true;
 }
 
+RunState_T RUN_STATE_MANAGER_GetState( void )
+{
+    return RUN_STATE_IDLE;
+}
+
 static HOST_INTERFACE_Protocol_State_T s_protocol_state;
 
 /**

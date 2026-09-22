@@ -42,6 +42,7 @@ extern "C"
 #define HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ( 1UL << 4U )
 #define HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE ( 1UL << 5U )
 #define HOST_INTERFACE_NOTIFY_FAULT ( 1UL << 6U )
+#define HOST_INTERFACE_NOTIFY_RESET ( 1UL << 7U )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures

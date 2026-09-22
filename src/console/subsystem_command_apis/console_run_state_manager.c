@@ -23,6 +23,7 @@
 #include "execution_operation_adapters.h"
 #include "exec_spi.h"
 #include "hw_timer.h"
+#include "host_interface.h"
 #include "run_state_manager.h"
 #include "rtos_config.h"
 #include <stdbool.h>
@@ -686,6 +687,7 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
     }
     else if ( strcmp( argv[1], "reset" ) == 0 )
     {
+        HOST_INTERFACE_Reset();
         CONSOLE_RunStateManager_WaitForState( RUN_STATE_MANAGER_RequestReset(), RUN_STATE_IDLE );
     }
     else

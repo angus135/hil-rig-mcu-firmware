@@ -29,6 +29,7 @@ extern "C"
 #include <stdint.h>
 #include <stdbool.h>
 #include "rtos_config.h"
+#include "run_state_manager.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -38,6 +39,15 @@ extern "C"
 #define HOST_INTERFACE_TASK_MEMORY 256
 #define HOST_INTERFACE_TASK_PRIORITY 3
 
+#define HOST_INTERFACE_NOTIFY_PACKAGE_RECEIVE ( 1UL << 0U )
+#define HOST_INTERFACE_NOTIFY_CONFIGURATION ( 1UL << 1U )
+#define HOST_INTERFACE_NOTIFY_EXECUTION ( 1UL << 2U )
+#define HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE ( 1UL << 3U )
+#define HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ( 1UL << 4U )
+#define HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE ( 1UL << 5U )
+#define HOST_INTERFACE_NOTIFY_FAULT ( 1UL << 6U )
+#define HOST_INTERFACE_NOTIFY_RESET ( 1UL << 7U )
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -45,13 +55,17 @@ extern "C"
 
 typedef struct
 {
-    bool     is_initialized;
-    bool     usb_connected;
-    bool     can_consume_incoming;
-    bool     outgoing_message_pending;
-    bool     is_overflowing;
-    uint32_t expected_tick_count;
-    uint32_t carry_on_notifications;
+    bool                  is_initialized;
+    bool                  usb_connected;
+    bool                  can_consume_incoming;
+    bool                  outgoing_message_pending;
+    bool                  is_overflowing;
+    bool                  is_faulted;
+    RunStateFaultReason_T last_fault_reason;
+    uint32_t              response_blocked_count;
+    uint8_t               last_blocked_message_type;
+    uint32_t              expected_tick_count;
+    uint32_t              carry_on_notifications;
 } HostInterfaceStatus_T;
 
 extern TaskHandle_t host_interface_task_handle;
@@ -60,6 +74,11 @@ extern TaskHandle_t host_interface_task_handle;
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Resets Host Interface internal state (clears pending responses and fault latch).
+ */
+void HOST_INTERFACE_Reset( void );
 
 /**
  * @brief Notify the Host interface to send some message
