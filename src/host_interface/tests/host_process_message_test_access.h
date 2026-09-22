@@ -34,7 +34,7 @@ HOST_INTERFACE_Test_Access_State_To_State_Request( Host_RunState_Request_T reque
                                                    uint32_t                expected_tick_count );
 
 HOST_Interface_Status_T HOST_INTERFACE_Test_Access_Request_State_Transition(
-    RunState_T expected_state, Host_RunState_Request_T request, uint8_t num_trys,
+    RunState_T expected_state, Host_RunState_Request_T request, uint16_t num_trys,
     uint32_t expected_tick_count );
 
 HOST_Interface_Status_T HOST_INTERFACE_Test_Access_Process_Info_Request(
@@ -50,6 +50,10 @@ HOST_Interface_Status_T HOST_INTERFACE_Test_Access_Process_Test_Configuration(
     bool* response_required, uint8_t* data, size_t data_size, uint32_t* expected_tick_count );
 
 HOST_Interface_Status_T HOST_INTERFACE_Test_Access_Process_Test_Instructions(
+    const HIL_Application_Message_T* incoming_message, HIL_Application_Message_T* outgoing_message,
+    bool* response_required, uint8_t* data, size_t data_size );
+
+HOST_Interface_Status_T HOST_INTERFACE_Test_Access_Process_Finalize_Test_Upload(
     const HIL_Application_Message_T* incoming_message, HIL_Application_Message_T* outgoing_message,
     bool* response_required, uint8_t* data, size_t data_size, uint32_t* expected_tick_count );
 
@@ -89,7 +93,7 @@ HOST_Interface_Status_T HOST_INTERFACE_Test_Access_Process_Config_Started_Notifi
     HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
     uint8_t* data, size_t data_size );
 
-HOST_Interface_Status_T HOST_INTERFACE_Test_Access_Process_Execution_Started_Notification(
+HOST_Interface_Status_T HOST_INTERFACE_Test_Access_Process_Armed_Notification(
     HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
     uint8_t* data, size_t data_size );
 

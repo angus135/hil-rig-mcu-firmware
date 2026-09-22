@@ -11,6 +11,7 @@ extern "C"
 #include "dut_driver_lifecycle.h"
 #include "execution_manager.h"
 #include "flash_manager.h"
+#include "host_interface.h"
 #include "hw_timer.h"
 #include "logic_expander.h"
 #include "test_configuration.h"
@@ -69,6 +70,9 @@ static bool                                         execution_prepare_result;
 static uint32_t                                     execution_prepare_tick_count;
 static uint32_t                                     execution_abort_calls;
 static ExecutionManagerTerminalCallback_T           execution_terminal_callback;
+static bool                                         host_interface_notify_result;
+static uint32_t                                     host_interface_notified_bits;
+static uint32_t                                     host_interface_notify_calls;
 
 extern "C"
 {
@@ -295,6 +299,12 @@ void HW_CAN_GetDiagnostic( HW_CAN_Diagnostic_T* diag )
         std::memset( diag, 0, sizeof( *diag ) );
     }
 }
+bool HOST_INTERFACE_Notify( uint32_t notification )
+{
+    host_interface_notify_calls++;
+    host_interface_notified_bits |= notification;
+    return host_interface_notify_result;
+}
 }
 
 extern "C"
@@ -373,6 +383,9 @@ protected:
         execution_prepare_tick_count        = 0U;
         execution_abort_calls               = 0U;
         execution_terminal_callback         = nullptr;
+        host_interface_notify_result        = true;
+        host_interface_notified_bits        = 0U;
+        host_interface_notify_calls         = 0U;
         run_state_manager_task_handle       = TEST_RSM_TASK_HANDLE;
         RUN_STATE_MANAGER_Init();
         timer_stop_calls      = 0U;
@@ -1087,6 +1100,38 @@ TEST_F( RunStateManagerTest, ResultTransferFinishFailureTransitionsToFault )
     EXPECT_EQ( RUN_STATE_FAULT_FLASH_RESULT_TRANSFER, fault_reason );
     EXPECT_EQ( RUN_STATE_REQUEST_RESULT_FAILED, last_request_result );
     EXPECT_EQ( 1U, flash_transfer_finish_calls );
+}
+
+TEST_F( RunStateManagerTest, ResultTransferEntryNotifiesHostInterface )
+{
+    EnterExecution();
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    flash_manager_state = FLASH_MANAGER_STATE_RESULTS_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_RESULTS_READY, run_state );
+
+    host_interface_notify_calls  = 0U;
+    host_interface_notified_bits = 0U;
+    Process( RUN_STATE_REQUEST_RESULT_TRANSFER );
+    EXPECT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
+    EXPECT_EQ( 1U, host_interface_notify_calls );
+    EXPECT_EQ( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER, host_interface_notified_bits );
+}
+
+TEST_F( RunStateManagerTest, ResultTransferEntryFailureTransitionsToFault )
+{
+    EnterExecution();
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    flash_manager_state = FLASH_MANAGER_STATE_RESULTS_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_RESULTS_READY, run_state );
+
+    host_interface_notify_result = false;
+    Process( RUN_STATE_REQUEST_RESULT_TRANSFER );
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_HOST_INTERFACE_ERROR, fault_reason );
 }
 
 TEST_F( RunStateManagerTest, FlashSessionAbortedDuringPackageReceiveFault )

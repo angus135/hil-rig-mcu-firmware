@@ -26,6 +26,7 @@
 
 extern "C"
 {
+#include "host_interface.h"
 #include "config_message_handler.h"
 #include "host_process_message.h"
 #include "host_process_message_test_access.h"
@@ -81,6 +82,7 @@ public:
     MOCK_METHOD( bool, RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR, () );
     MOCK_METHOD( bool, RUN_STATE_MANAGER_RequestReset, () );
     MOCK_METHOD( bool, RUN_STATE_MANAGER_RequestResultTransferComplete, () );
+    MOCK_METHOD( bool, RUN_STATE_MANAGER_Set_Execution_Frequency, ( RunStateFrequencyMode_T ) );
     MOCK_METHOD( void, RUN_STATE_MANAGER_GetStatus, ( RunStateManagerStatus_T* ));
 };
 
@@ -200,6 +202,12 @@ extern "C" bool RUN_STATE_MANAGER_RequestResultTransferComplete( void )
                                   : true;
 }
 
+extern "C" bool RUN_STATE_MANAGER_Set_Execution_Frequency( RunStateFrequencyMode_T mode )
+{
+    return g_mock_deps != nullptr ? g_mock_deps->RUN_STATE_MANAGER_Set_Execution_Frequency( mode )
+                                  : true;
+}
+
 extern "C" void RUN_STATE_MANAGER_GetStatus( RunStateManagerStatus_T* status )
 {
     if ( g_mock_deps != nullptr )
@@ -264,6 +272,8 @@ protected:
             .WillByDefault( Return( true ) );
         ON_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestReset() ).WillByDefault( Return( true ) );
         ON_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestResultTransferComplete() )
+            .WillByDefault( Return( true ) );
+        ON_CALL( *g_mock_deps, RUN_STATE_MANAGER_Set_Execution_Frequency( _ ) )
             .WillByDefault( Return( true ) );
         ON_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
             .WillByDefault( [this]( RunStateManagerStatus_T* status ) {
@@ -552,14 +562,17 @@ TEST_F( HostProcessMessageTest, TestConfigurationCommitFailureReturnsProtocolErr
 TEST_F( HostProcessMessageTest, TestConfigurationSuccessCopiesExpectedTicksAndResetsHandlers )
 {
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION );
-    incoming.body.test_configuration.expected_tick_count = 4567U;
-    run_state_status.state                               = RUN_STATE_TEST_PACKAGE_RECEIVE;
+    incoming.body.test_configuration.expected_tick_count            = 4567U;
+    incoming.body.test_configuration.tick_duration_us.microseconds = 1000U;
+    run_state_status.state                                          = RUN_STATE_TEST_PACKAGE_RECEIVE;
 
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestPackageReceive() )
         .WillOnce( Return( true ) );
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
         .WillOnce(
             Invoke( [this]( RunStateManagerStatus_T* status ) { *status = run_state_status; } ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_1KHZ ) )
+        .WillOnce( Return( true ) );
     EXPECT_CALL( *g_mock_deps, HOST_INSTRUCTION_HANDLER_Reset() ).Times( 1 );
     EXPECT_CALL( *g_mock_deps, RESULT_MESSAGE_PRODUCER_Reset() ).Times( 1 );
 
@@ -567,8 +580,33 @@ TEST_F( HostProcessMessageTest, TestConfigurationSuccessCopiesExpectedTicksAndRe
         HOST_INTERFACE_Test_Access_Process_Test_Configuration(
             &incoming, &outgoing, &response_required, data, sizeof( data ), &expected_tick_count ),
         HOST_INTERFACE_STATUS_OK );
-    EXPECT_FALSE( response_required );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TEST_CONFIGURATION );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED );
     EXPECT_EQ( expected_tick_count, 4567U );
+}
+
+TEST_F( HostProcessMessageTest, TestConfigurationInvalidFrequencyReturnsProtocolErrorResponse )
+{
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION );
+    incoming.body.test_configuration.expected_tick_count            = 4567U;
+    incoming.body.test_configuration.tick_duration_us.microseconds = 500U;
+    run_state_status.state                                          = RUN_STATE_TEST_PACKAGE_RECEIVE;
+
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestPackageReceive() )
+        .WillOnce( Return( true ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
+        .WillOnce(
+            Invoke( [this]( RunStateManagerStatus_T* status ) { *status = run_state_status; } ) );
+
+    EXPECT_EQ(
+        HOST_INTERFACE_Test_Access_Process_Test_Configuration(
+            &incoming, &outgoing, &response_required, data, sizeof( data ), &expected_tick_count ),
+        HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
+    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
 }
 
 TEST_F( HostProcessMessageTest, TestInstructionHandlerFailureProducesRejectedResponse )
@@ -582,7 +620,7 @@ TEST_F( HostProcessMessageTest, TestInstructionHandlerFailureProducesRejectedRes
 
     EXPECT_EQ(
         HOST_INTERFACE_Test_Access_Process_Test_Instructions(
-            &incoming, &outgoing, &response_required, data, sizeof( data ), &expected_tick_count ),
+            &incoming, &outgoing, &response_required, data, sizeof( data ) ),
         HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
     EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
@@ -603,7 +641,7 @@ TEST_F( HostProcessMessageTest, TestInstructionBuildsTickResponseForNonFinalInst
 
     EXPECT_EQ(
         HOST_INTERFACE_Test_Access_Process_Test_Instructions(
-            &incoming, &outgoing, &response_required, data, sizeof( data ), &expected_tick_count ),
+            &incoming, &outgoing, &response_required, data, sizeof( data ) ),
         HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
     EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
@@ -613,7 +651,7 @@ TEST_F( HostProcessMessageTest, TestInstructionBuildsTickResponseForNonFinalInst
     EXPECT_EQ( outgoing.body.response.tick_number, 4U );
 }
 
-TEST_F( HostProcessMessageTest, FinalInstructionUsesUnsupportedArmedTransitionPath )
+TEST_F( HostProcessMessageTest, TestInstructionWithFinalTickNumberBuildsTickResponse )
 {
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION );
     incoming.body.test_instruction.tick_number = 9U;
@@ -624,11 +662,14 @@ TEST_F( HostProcessMessageTest, FinalInstructionUsesUnsupportedArmedTransitionPa
 
     EXPECT_EQ(
         HOST_INTERFACE_Test_Access_Process_Test_Instructions(
-            &incoming, &outgoing, &response_required, data, sizeof( data ), &expected_tick_count ),
+            &incoming, &outgoing, &response_required, data, sizeof( data ) ),
         HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
-    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
-    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_RESERVED );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.subtype, HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TICK );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED );
+    EXPECT_EQ( outgoing.body.response.tick_number, 9U );
 }
 
 TEST_F( HostProcessMessageTest, VariableInstructionDataIsNotImplemented )
@@ -782,8 +823,6 @@ TEST_F( HostProcessMessageTest, UnimplementedNotificationsReturnNotImplemented )
           HOST_INTERFACE_Test_Access_Process_Package_Received_Notification },
         { HOST_INTERFACE_NOTIFY_CONFIGURATION,
           HOST_INTERFACE_Test_Access_Process_Config_Started_Notification },
-        { HOST_INTERFACE_NOTIFY_ARMED,
-          HOST_INTERFACE_Test_Access_Process_Execution_Started_Notification },
         { HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE,
           HOST_INTERFACE_Test_Access_Process_Execution_Complete_Notification },
         { HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE,
@@ -797,6 +836,20 @@ TEST_F( HostProcessMessageTest, UnimplementedNotificationsReturnNotImplemented )
                                        sizeof( data ) ),
                    HOST_INTERFACE_STATUS_NOT_IMPLEMENTED );
     }
+}
+
+TEST_F( HostProcessMessageTest, ArmedNotificationProducesCompleteTestResponse )
+{
+    notifications = HOST_INTERFACE_NOTIFY_ARMED;
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Armed_Notification(
+                   &outgoing, &notifications, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED );
+    EXPECT_EQ( notifications, 0U );
 }
 
 TEST_F( HostProcessMessageTest, ResultTransferNotificationProducesNextResultMessage )
@@ -1049,8 +1102,7 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsAcceptsValidInstruction )
         .WillOnce( Return( HOST_INTERFACE_STATUS_OK ) );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
-                   &incoming, &outgoing, &response_required, data, sizeof( data ),
-                   &expected_tick_count ),
+                   &incoming, &outgoing, &response_required, data, sizeof( data ) ),
                HOST_INTERFACE_STATUS_OK );
 
     EXPECT_TRUE( response_required );
@@ -1073,8 +1125,7 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInvalidInstruction
         .WillOnce( Return( HOST_INTERFACE_STATUS_VALIDATION_FAILED ) );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
-                   &incoming, &outgoing, &response_required, data, sizeof( data ),
-                   &expected_tick_count ),
+                   &incoming, &outgoing, &response_required, data, sizeof( data ) ),
                HOST_INTERFACE_STATUS_OK );
 
     EXPECT_TRUE( response_required );
@@ -1097,8 +1148,7 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInconsistentTick )
         .WillOnce( Return( HOST_INTERFACE_STATUS_INCONSISTENT_TICK ) );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
-                   &incoming, &outgoing, &response_required, data, sizeof( data ),
-                   &expected_tick_count ),
+                   &incoming, &outgoing, &response_required, data, sizeof( data ) ),
                HOST_INTERFACE_STATUS_OK );
 
     EXPECT_TRUE( response_required );
@@ -1109,24 +1159,22 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInconsistentTick )
     EXPECT_EQ( outgoing.body.response.tick_number, 2U );
 }
 
-TEST_F( HostProcessMessageTest, ProcessTestInstructionsFinalTickTransitionsToConfiguration )
+TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadTransitionsToArmed )
 {
-    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION,
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_FINALIZE_TEST_UPLOAD,
                      HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
     incoming.body.test_instruction.tick_number = 100U;
     expected_tick_count                        = 100U;
     response_required                          = false;
-    run_state_status.state                     = RUN_STATE_CONFIGURATION;
+    run_state_status.state                     = RUN_STATE_ARMED;
 
-    EXPECT_CALL( *g_mock_deps, HOST_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
-        .WillOnce( Return( HOST_INTERFACE_STATUS_OK ) );
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestConfiguration() )
         .WillOnce( Return( true ) );
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
         .WillOnce(
             Invoke( [this]( RunStateManagerStatus_T* status ) { *status = run_state_status; } ) );
 
-    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Finalize_Test_Upload(
                    &incoming, &outgoing, &response_required, data, sizeof( data ),
                    &expected_tick_count ),
                HOST_INTERFACE_STATUS_OK );
@@ -1139,29 +1187,24 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsFinalTickTransitionsToCon
     EXPECT_EQ( outgoing.body.response.tick_number, 100U );
 }
 
-TEST_F( HostProcessMessageTest, ProcessTestInstructionsFinalTickRejectsOnValidationFailureWithoutTransition )
+TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadHandlesTransitionFailure )
 {
-    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION,
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_FINALIZE_TEST_UPLOAD,
                      HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
     incoming.body.test_instruction.tick_number = 100U;
     expected_tick_count                        = 100U;
     response_required                          = false;
 
-    EXPECT_CALL( *g_mock_deps, HOST_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
-        .WillOnce( Return( HOST_INTERFACE_STATUS_VALIDATION_FAILED ) );
-    /* Should NEVER call RequestConfiguration if instruction handling failed */
-    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestConfiguration() ).Times( 0 );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestConfiguration() )
+        .WillOnce( Return( false ) );
 
-    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Finalize_Test_Upload(
                    &incoming, &outgoing, &response_required, data, sizeof( data ),
                    &expected_tick_count ),
                HOST_INTERFACE_STATUS_OK );
 
     EXPECT_TRUE( response_required );
-    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
-    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TICK );
-    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
-    EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED );
-    EXPECT_EQ( outgoing.body.response.tick_number, 100U );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
+    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_INTERNAL );
 }
 

@@ -192,13 +192,18 @@ HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion( RunState_T expe
     }
 
     // Request transition once
-    if ( HOST_INTERFACE_state_to_state_request( request, expected_tick_count )
-         == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
+    HOST_Interface_Status_T state_req_status =
+        HOST_INTERFACE_state_to_state_request( request, expected_tick_count );
+    if ( state_req_status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
     {
         return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
     }
+    if ( state_req_status != HOST_INTERFACE_STATUS_OK )
+    {
+        return state_req_status;
+    }
     // TODO change to use a timeout number instead of number of tries
-    for ( uint8_t i = 0; i < num_trys; i++ )
+    for ( uint16_t i = 0; i < num_trys; i++ )
     {
         RunStateManagerStatus_T run_state_status = { 0 };
         RUN_STATE_MANAGER_GetStatus( &run_state_status );
