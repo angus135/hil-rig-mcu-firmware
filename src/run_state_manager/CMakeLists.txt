@@ -38,6 +38,7 @@ target_link_libraries(run_state_manager
         flash_manager
         execution_manager
         test_configuration
+        host_interface
 )
 
 # -----------------------------

@@ -31,6 +31,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "hw_can.h"
+#include "host_interface.h"
 
 #define RUN_STATE_TAIL_MARGIN_NUMERATOR ( 120U )
 #define RUN_STATE_TAIL_MARGIN_DENOMINATOR ( 100U )
@@ -171,6 +172,7 @@ static bool RUN_STATE_MANAGER_BeginDriverShutdown( bool force_abort, bool clear_
                                                    RunStatePendingOperation_T operation );
 static bool RUN_STATE_MANAGER_BeginResultFinalisation( void );
 static bool RUN_STATE_MANAGER_BeginResultTransfer( void );
+static bool RUN_STATE_MANAGER_EnterResultTransfer( void );
 static bool RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle( void );
 static bool RUN_STATE_MANAGER_CompleteResultTransfer( void );
 static bool RUN_STATE_MANAGER_DiscardCompletedResults( RunState_T next_state );
@@ -565,6 +567,16 @@ static bool RUN_STATE_MANAGER_EnterTestPackageReceive( void )
      * Until that interface exists, entering the state is sufficient.
      */
     return true;
+}
+
+/**
+ * @brief Performs entry actions when transitioning into RUN_STATE_RESULT_TRANSFER.
+ *
+ * @return true if the Host Interface was notified successfully; otherwise false.
+ */
+static bool RUN_STATE_MANAGER_EnterResultTransfer( void )
+{
+    return HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
 }
 
 /**
@@ -1525,7 +1537,11 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
             break;
 
         case RUN_STATE_RESULT_TRANSFER:
-            /* Future Host Interface result-transfer entry action. */
+            if ( !RUN_STATE_MANAGER_EnterResultTransfer() )
+            {
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
+                return false;
+            }
             break;
 
         case RUN_STATE_FAULT:
