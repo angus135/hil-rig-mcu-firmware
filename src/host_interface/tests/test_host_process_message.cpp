@@ -782,7 +782,7 @@ TEST_F( HostProcessMessageTest, UnimplementedNotificationsReturnNotImplemented )
           HOST_INTERFACE_Test_Access_Process_Package_Received_Notification },
         { HOST_INTERFACE_NOTIFY_CONFIGURATION,
           HOST_INTERFACE_Test_Access_Process_Config_Started_Notification },
-        { HOST_INTERFACE_NOTIFY_EXECUTION,
+        { HOST_INTERFACE_NOTIFY_ARMED,
           HOST_INTERFACE_Test_Access_Process_Execution_Started_Notification },
         { HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE,
           HOST_INTERFACE_Test_Access_Process_Execution_Complete_Notification },
