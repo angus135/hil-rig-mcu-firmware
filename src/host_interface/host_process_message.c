@@ -436,6 +436,32 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
         *response_required                    = true;
         return HOST_INTERFACE_STATUS_OK;
     }
+    bool check = false;
+    switch ( incoming_message->body.test_configuration.tick_duration_us.microseconds)
+    {
+        case 10000U:
+            check = RUN_STATE_MANAGER_Set_Execution_Frequency(RUN_STATE_FREQUENCY_100HZ);
+        case 1000U:
+            check = RUN_STATE_MANAGER_Set_Execution_Frequency(RUN_STATE_FREQUENCY_1KHZ);
+        case 100U:
+            check = RUN_STATE_MANAGER_Set_Execution_Frequency(RUN_STATE_FREQUENCY_10KHZ);
+        default:
+            // Construct the error message
+            HOST_INTERFACE_Default_Error( outgoing_message );
+            // TODO  more specific error catagory
+            outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+            *response_required                    = true;
+            return HOST_INTERFACE_STATUS_OK;
+    }
+    if ( !check )
+    {
+        // Construct the error message
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        // TODO  more specific error catagory
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+        *response_required                    = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
 
     *expected_tick_count = incoming_message->body.test_configuration.expected_tick_count;
     HOST_INSTRUCTION_HANDLER_Reset();
@@ -857,11 +883,27 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Config_Started_Notification(
     return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
 }
 
-HOST_Interface_Status_T HOST_INTERFACE_process_Execution_Started_Notification(
+HOST_Interface_Status_T HOST_INTERFACE_process_Armed_Notification(
     HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
     uint8_t* data, size_t data_size )
 {
-    return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
+    ( void )data;
+    ( void )data_size;
+    (void) notifications;
+    // Set the type and subtype
+    outgoing_message->type    = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+    outgoing_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    // Set Response body
+    outgoing_message->body.response.scope   = HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST;
+    outgoing_message->body.response.outcome = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
+    outgoing_message->body.response.reason  = HIL_APPLICATION_RESPONSE_REASON_NONE;
+    outgoing_message->body.response.tick_number = 0U;
+    outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
+    outgoing_message->body.response.global_control_command =
+        HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
+    outgoing_message->body.response.detail = 0U;
+    *response_required                     = true;
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Execution_Complete_Notification(
@@ -1074,8 +1116,8 @@ HOST_INTERFACE_process_internal_message( HIL_Application_Message_T* outgoing_mes
                 return host_status;
             }
             return HOST_INTERFACE_STATUS_OK;
-        case HOST_INTERFACE_NOTIFY_EXECUTION:
-            host_status = HOST_INTERFACE_process_Execution_Started_Notification(
+        case HOST_INTERFACE_NOTIFY_ARMED:
+            host_status = HOST_INTERFACE_process_Armed_Notification(
                 outgoing_message, notifications, response_required, data, data_size );
             if ( host_status != HOST_INTERFACE_STATUS_OK )
             {

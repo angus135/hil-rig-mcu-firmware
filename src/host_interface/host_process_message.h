@@ -34,16 +34,6 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-// NOTIFICATIONS
-#define HOST_INTERFACE_NOTIFY_PACKAGE_RECEIVE ( 1UL << 0U )
-#define HOST_INTERFACE_NOTIFY_CONFIGURATION ( 1UL << 1U )
-#define HOST_INTERFACE_NOTIFY_EXECUTION ( 1UL << 2U )
-#define HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE ( 1UL << 3U )
-#define HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ( 1UL << 4U )
-#define HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE ( 1UL << 5U )
-#define HOST_INTERFACE_NOTIFY_FAULT ( 1UL << 6U )
-#define HOST_INTERFACE_NOTIFY_RESET ( 1UL << 7U )
-
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
