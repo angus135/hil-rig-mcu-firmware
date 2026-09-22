@@ -380,6 +380,37 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
 {
     ( void )data;
     ( void )data_size;
+    
+    bool check = false;
+    switch ( incoming_message->body.test_configuration.tick_duration_us.microseconds)
+    {
+        case 10000U:
+            check = RUN_STATE_MANAGER_Set_Execution_Frequency(RUN_STATE_FREQUENCY_100HZ);
+            break;
+        case 1000U:
+            check = RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_1KHZ );
+            break;
+        case 100U:
+            check = RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_10KHZ );
+            break;
+        default:
+            // Construct the error message
+            HOST_INTERFACE_Default_Error( outgoing_message );
+            // TODO  more specific error catagory
+            outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+            *response_required                    = true;
+            return HOST_INTERFACE_STATUS_OK;
+    }
+    if ( !check )
+    {
+        // Construct the error message
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        // TODO  more specific error catagory
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+        *response_required                    = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
     static DutDriverConfiguration_T driver_config = { 0 };
     // Convert the config message to driver struct
     HOST_Interface_Status_T status =
@@ -428,35 +459,6 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     // Commit the driver struct
     status = HOST_INTERFACE_Commit_Config_Message( &driver_config );
     if ( status != HOST_INTERFACE_STATUS_OK )
-    {
-        // Construct the error message
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        // TODO  more specific error catagory
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-        *response_required                    = true;
-        return HOST_INTERFACE_STATUS_OK;
-    }
-    bool check = false;
-    switch ( incoming_message->body.test_configuration.tick_duration_us.microseconds)
-    {
-        case 10000U:
-            check = RUN_STATE_MANAGER_Set_Execution_Frequency(RUN_STATE_FREQUENCY_100HZ);
-            break;
-        case 1000U:
-            check = RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_1KHZ );
-            break;
-        case 100U:
-            check = RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_10KHZ );
-            break;
-        default:
-            // Construct the error message
-            HOST_INTERFACE_Default_Error( outgoing_message );
-            // TODO  more specific error catagory
-            outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-            *response_required                    = true;
-            return HOST_INTERFACE_STATUS_OK;
-    }
-    if ( !check )
     {
         // Construct the error message
         HOST_INTERFACE_Default_Error( outgoing_message );
