@@ -502,7 +502,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Instructions(
         }
         outgoing_message->body.response.tick_number =
             incoming_message->body.test_instruction.tick_number;
-        outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_RESERVED;
+        outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
         outgoing_message->body.response.global_control_command =
             HIL_APPLICATION_GLOBAL_CONTROL_RESERVED;
         outgoing_message->body.response.detail = ( uint32_t )instruction_status;
