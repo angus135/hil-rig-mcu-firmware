@@ -571,7 +571,7 @@ TEST_F( HostProcessMessageTest, TestConfigurationSuccessCopiesExpectedTicksAndRe
     EXPECT_EQ( expected_tick_count, 4567U );
 }
 
-TEST_F( HostProcessMessageTest, TestInstructionHandlerFailureProducesErrorResponse )
+TEST_F( HostProcessMessageTest, TestInstructionHandlerFailureProducesRejectedResponse )
 {
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION );
     incoming.body.test_instruction.tick_number = 1U;
@@ -585,7 +585,11 @@ TEST_F( HostProcessMessageTest, TestInstructionHandlerFailureProducesErrorRespon
             &incoming, &outgoing, &response_required, data, sizeof( data ), &expected_tick_count ),
         HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
-    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TICK );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
+    EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED );
+    EXPECT_EQ( outgoing.body.response.tick_number, 1U );
 }
 
 TEST_F( HostProcessMessageTest, TestInstructionBuildsTickResponseForNonFinalInstruction )
@@ -1027,3 +1031,137 @@ TEST_F( HostProcessMessageTest, ProcessMessageReturnsOkAndNoResponseWhenNoIncomi
                HOST_INTERFACE_STATUS_OK );
     EXPECT_FALSE( response_required );
 }
+
+/**-----------------------------------------------------------------------------
+ *  Test Instruction Processing Tests
+ *------------------------------------------------------------------------------
+ */
+
+TEST_F( HostProcessMessageTest, ProcessTestInstructionsAcceptsValidInstruction )
+{
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION,
+                     HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
+    incoming.body.test_instruction.tick_number = 1U;
+    expected_tick_count                        = 100U;
+    response_required                          = false;
+
+    EXPECT_CALL( *g_mock_deps, HOST_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
+        .WillOnce( Return( HOST_INTERFACE_STATUS_OK ) );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
+                   &incoming, &outgoing, &response_required, data, sizeof( data ),
+                   &expected_tick_count ),
+               HOST_INTERFACE_STATUS_OK );
+
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TICK );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED );
+    EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_NONE );
+    EXPECT_EQ( outgoing.body.response.tick_number, 1U );
+}
+
+TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInvalidInstruction )
+{
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION,
+                     HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
+    incoming.body.test_instruction.tick_number = 2U;
+    expected_tick_count                        = 100U;
+    response_required                          = false;
+
+    EXPECT_CALL( *g_mock_deps, HOST_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
+        .WillOnce( Return( HOST_INTERFACE_STATUS_VALIDATION_FAILED ) );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
+                   &incoming, &outgoing, &response_required, data, sizeof( data ),
+                   &expected_tick_count ),
+               HOST_INTERFACE_STATUS_OK );
+
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TICK );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
+    EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED );
+    EXPECT_EQ( outgoing.body.response.tick_number, 2U );
+}
+
+TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInconsistentTick )
+{
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION,
+                     HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
+    incoming.body.test_instruction.tick_number = 2U;
+    expected_tick_count                        = 100U;
+    response_required                          = false;
+
+    EXPECT_CALL( *g_mock_deps, HOST_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
+        .WillOnce( Return( HOST_INTERFACE_STATUS_INCONSISTENT_TICK ) );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
+                   &incoming, &outgoing, &response_required, data, sizeof( data ),
+                   &expected_tick_count ),
+               HOST_INTERFACE_STATUS_OK );
+
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TICK );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
+    EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_INVALID_TICK );
+    EXPECT_EQ( outgoing.body.response.tick_number, 2U );
+}
+
+TEST_F( HostProcessMessageTest, ProcessTestInstructionsFinalTickTransitionsToConfiguration )
+{
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION,
+                     HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
+    incoming.body.test_instruction.tick_number = 100U;
+    expected_tick_count                        = 100U;
+    response_required                          = false;
+    run_state_status.state                     = RUN_STATE_CONFIGURATION;
+
+    EXPECT_CALL( *g_mock_deps, HOST_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
+        .WillOnce( Return( HOST_INTERFACE_STATUS_OK ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestConfiguration() )
+        .WillOnce( Return( true ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
+        .WillOnce(
+            Invoke( [this]( RunStateManagerStatus_T* status ) { *status = run_state_status; } ) );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
+                   &incoming, &outgoing, &response_required, data, sizeof( data ),
+                   &expected_tick_count ),
+               HOST_INTERFACE_STATUS_OK );
+
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED );
+    EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_NONE );
+    EXPECT_EQ( outgoing.body.response.tick_number, 100U );
+}
+
+TEST_F( HostProcessMessageTest, ProcessTestInstructionsFinalTickRejectsOnValidationFailureWithoutTransition )
+{
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION,
+                     HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
+    incoming.body.test_instruction.tick_number = 100U;
+    expected_tick_count                        = 100U;
+    response_required                          = false;
+
+    EXPECT_CALL( *g_mock_deps, HOST_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
+        .WillOnce( Return( HOST_INTERFACE_STATUS_VALIDATION_FAILED ) );
+    /* Should NEVER call RequestConfiguration if instruction handling failed */
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestConfiguration() ).Times( 0 );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
+                   &incoming, &outgoing, &response_required, data, sizeof( data ),
+                   &expected_tick_count ),
+               HOST_INTERFACE_STATUS_OK );
+
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TICK );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
+    EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED );
+    EXPECT_EQ( outgoing.body.response.tick_number, 100U );
+}
+

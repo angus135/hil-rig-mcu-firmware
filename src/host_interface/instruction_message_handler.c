@@ -28,6 +28,7 @@
 #include "execution_manager/execution_operation_payloads.h"
 #include "flash_manager/flash_manager.h"
 #include "hw_pwm_gen.h"
+#include "test_configuration.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -277,6 +278,39 @@ static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_ValidateInstruction(
         if ( ( period_ns == 0U ) && ( duty_permyriad != 0U ) )
         {
             return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+        }
+    }
+
+    DutDriverConfiguration_T active_config = { 0 };
+    if ( TEST_CONFIGURATION_GetActive( &active_config ) )
+    {
+        for ( uint8_t i = 0U; i < HIL_APPLICATION_DIGITAL_OUTPUT_CHANNEL_COUNT; i++ )
+        {
+            if ( ( instruction->digital_outputs[i].high != 0U )
+                 && ( ( i >= ( uint8_t )EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT )
+                      || !active_config.digital_outputs.channels[i].is_enabled ) )
+            {
+                return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+            }
+        }
+
+        for ( uint8_t i = 0U; i < HIL_APPLICATION_ANALOG_OUTPUT_CHANNEL_COUNT; i++ )
+        {
+            if ( ( instruction->analog_outputs[i].microvolts != 0U )
+                 && !active_config.analogue_output.is_enabled )
+            {
+                return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+            }
+        }
+
+        for ( uint8_t channel = 0U; channel < HIL_APPLICATION_PWM_OUTPUT_CHANNEL_COUNT; channel++ )
+        {
+            if ( ( instruction->pwm_outputs[channel].period_nanoseconds != 0U )
+                 && ( ( channel >= ( uint8_t )EXEC_PWM_GEN_CHANNEL_COUNT )
+                      || !active_config.pwm_generation_channels[channel].is_enabled ) )
+            {
+                return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
+            }
         }
     }
 

@@ -80,6 +80,9 @@ public:
                  ( uint32_t frequency_hz, uint32_t timer_clock_hz, uint16_t psc, uint16_t* arr ) );
     MOCK_METHOD( bool, HW_PWM_GEN_compute_ccr,
                  ( uint16_t duty_permille, uint16_t arr, uint16_t* ccr ) );
+
+    /* Test Configuration Mock */
+    MOCK_METHOD( bool, TEST_CONFIGURATION_GetActive, ( DutDriverConfiguration_T* configuration ) );
 };
 
 static MockInstructionHandlerDependencies* g_mock_deps = nullptr;
@@ -88,6 +91,28 @@ static MockInstructionHandlerDependencies* g_mock_deps = nullptr;
  *  Link Seams: Mocked C Function Definitions
  *------------------------------------------------------------------------------
  */
+
+extern "C" bool TEST_CONFIGURATION_GetActive( DutDriverConfiguration_T* configuration )
+{
+    if ( g_mock_deps != nullptr )
+    {
+        return g_mock_deps->TEST_CONFIGURATION_GetActive( configuration );
+    }
+    if ( configuration != nullptr )
+    {
+        ( void )memset( configuration, 0, sizeof( DutDriverConfiguration_T ) );
+        for ( size_t i = 0; i < EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT; i++ )
+        {
+            configuration->digital_outputs.channels[i].is_enabled = true;
+        }
+        configuration->analogue_output.is_enabled = true;
+        for ( size_t i = 0; i < EXEC_PWM_GEN_CHANNEL_COUNT; i++ )
+        {
+            configuration->pwm_generation_channels[i].is_enabled = true;
+        }
+    }
+    return true;
+}
 
 extern "C" FlashManagerInstructionUploadRequestStatus_T
 FLASH_MANAGER_SubmitInstructionUploadBytes( const uint8_t* data, uint32_t length )
@@ -244,6 +269,24 @@ protected:
                 if ( ccr != nullptr )
                 {
                     *ccr = 500U;
+                }
+                return true;
+            } );
+
+        ON_CALL( *g_mock_deps, TEST_CONFIGURATION_GetActive( _ ) )
+            .WillByDefault( []( DutDriverConfiguration_T* config ) {
+                if ( config != nullptr )
+                {
+                    ( void )memset( config, 0, sizeof( DutDriverConfiguration_T ) );
+                    for ( size_t i = 0; i < EXEC_DIGITAL_OUTPUT_CHANNEL_COUNT; i++ )
+                    {
+                        config->digital_outputs.channels[i].is_enabled = true;
+                    }
+                    config->analogue_output.is_enabled = true;
+                    for ( size_t i = 0; i < EXEC_PWM_GEN_CHANNEL_COUNT; i++ )
+                    {
+                        config->pwm_generation_channels[i].is_enabled = true;
+                    }
                 }
                 return true;
             } );
@@ -650,3 +693,97 @@ TEST_F( InstructionMessageHandlerTest, FlashManagerInvalidStateReturnsStateTrans
     EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
                HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE );
 }
+
+/**-----------------------------------------------------------------------------
+ *  Public API Tests: Configuration Guard Validation
+ *------------------------------------------------------------------------------
+ */
+
+TEST_F( InstructionMessageHandlerTest, DisabledDigitalOutputReturnsValidationFailed )
+{
+    EXPECT_CALL( *g_mock_deps, TEST_CONFIGURATION_GetActive( _ ) )
+        .WillOnce( []( DutDriverConfiguration_T* config ) {
+            if ( config != nullptr )
+            {
+                ( void )memset( config, 0, sizeof( DutDriverConfiguration_T ) );
+                /* Channel 0 disabled, channel 1 enabled */
+                config->digital_outputs.channels[0].is_enabled = false;
+                config->digital_outputs.channels[1].is_enabled = true;
+            }
+            return true;
+        } );
+
+    HIL_Application_Test_Instruction_T instruction = {};
+    instruction.tick_number                        = 1U;
+    instruction.digital_outputs[0].high            = 1U;
+
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_VALIDATION_FAILED );
+}
+
+TEST_F( InstructionMessageHandlerTest, DisabledAnalogueOutputReturnsValidationFailed )
+{
+    EXPECT_CALL( *g_mock_deps, TEST_CONFIGURATION_GetActive( _ ) )
+        .WillOnce( []( DutDriverConfiguration_T* config ) {
+            if ( config != nullptr )
+            {
+                ( void )memset( config, 0, sizeof( DutDriverConfiguration_T ) );
+                config->analogue_output.is_enabled = false;
+            }
+            return true;
+        } );
+
+    HIL_Application_Test_Instruction_T instruction = {};
+    instruction.tick_number                        = 1U;
+    instruction.analog_outputs[0].microvolts       = 2500000U;
+
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_VALIDATION_FAILED );
+}
+
+TEST_F( InstructionMessageHandlerTest, DisabledPwmOutputReturnsValidationFailed )
+{
+    EXPECT_CALL( *g_mock_deps, TEST_CONFIGURATION_GetActive( _ ) )
+        .WillOnce( []( DutDriverConfiguration_T* config ) {
+            if ( config != nullptr )
+            {
+                ( void )memset( config, 0, sizeof( DutDriverConfiguration_T ) );
+                config->pwm_generation_channels[0].is_enabled = false;
+            }
+            return true;
+        } );
+
+    HIL_Application_Test_Instruction_T instruction  = {};
+    instruction.tick_number                         = 1U;
+    instruction.pwm_outputs[0].period_nanoseconds   = 1000000U;
+    instruction.pwm_outputs[0].duty_cycle_permyriad = 5000U;
+
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_VALIDATION_FAILED );
+}
+
+TEST_F( InstructionMessageHandlerTest, DisabledPeripheralsInactiveValuesAllowed )
+{
+    EXPECT_CALL( *g_mock_deps, TEST_CONFIGURATION_GetActive( _ ) )
+        .WillRepeatedly( []( DutDriverConfiguration_T* config ) {
+            if ( config != nullptr )
+            {
+                ( void )memset( config, 0, sizeof( DutDriverConfiguration_T ) );
+                /* All peripherals disabled */
+            }
+            return true;
+        } );
+
+    HIL_Application_Test_Instruction_T instruction = {};
+    instruction.tick_number                        = 1U;
+    /* All outputs are 0 / inactive */
+    instruction.digital_outputs[0].high            = 0U;
+    instruction.analog_outputs[0].microvolts       = 0U;
+    instruction.pwm_outputs[0].period_nanoseconds  = 0U;
+    instruction.pwm_outputs[0].duty_cycle_permyriad = 0U;
+
+    /* Output-free tick is valid and accepted */
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_OK );
+}
+

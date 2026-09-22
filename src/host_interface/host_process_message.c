@@ -478,6 +478,38 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Instructions(
     ( void )data_size;
     HOST_Interface_Status_T instruction_status =
         HOST_INSTRUCTION_HANDLER_HandleInstruction( &incoming_message->body.test_instruction );
+
+    if ( instruction_status != HOST_INTERFACE_STATUS_OK )
+    {
+        outgoing_message->type    = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+        outgoing_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+        outgoing_message->body.response.scope   = HIL_APPLICATION_RESPONSE_SCOPE_TICK;
+        outgoing_message->body.response.outcome = HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED;
+        if ( instruction_status == HOST_INTERFACE_STATUS_INCONSISTENT_TICK )
+        {
+            outgoing_message->body.response.reason = HIL_APPLICATION_RESPONSE_REASON_INVALID_TICK;
+        }
+        else if ( ( instruction_status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
+                  || ( instruction_status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE ) )
+        {
+            outgoing_message->body.response.reason =
+                HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE;
+        }
+        else
+        {
+            outgoing_message->body.response.reason =
+                HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED;
+        }
+        outgoing_message->body.response.tick_number =
+            incoming_message->body.test_instruction.tick_number;
+        outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_RESERVED;
+        outgoing_message->body.response.global_control_command =
+            HIL_APPLICATION_GLOBAL_CONTROL_RESERVED;
+        outgoing_message->body.response.detail = ( uint32_t )instruction_status;
+        *response_required                     = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
     // If this is the last instruction message then attempt to transition to the CONFIGURATION state
     if ( incoming_message->body.test_instruction.tick_number == *expected_tick_count )
     {
@@ -526,12 +558,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Instructions(
         *response_required                     = true;
         return HOST_INTERFACE_STATUS_OK;
     }
-    if ( instruction_status != HOST_INTERFACE_STATUS_OK )
-    {
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        *response_required = true;
-        return HOST_INTERFACE_STATUS_OK;
-    }
+
     // Set the type and subtype
     outgoing_message->type    = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
     outgoing_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
