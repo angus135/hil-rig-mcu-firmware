@@ -183,7 +183,7 @@ between)
  */
 HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion( RunState_T expected_state,
                                                                  Host_RunState_Request_T request,
-                                                                 uint8_t                 num_trys,
+                                                                 uint16_t                 num_trys,
                                                                  uint32_t expected_tick_count )
 {
     if ( num_trys == 0U )
