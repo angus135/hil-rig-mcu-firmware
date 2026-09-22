@@ -440,7 +440,21 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     *expected_tick_count = incoming_message->body.test_configuration.expected_tick_count;
     HOST_INSTRUCTION_HANDLER_Reset();
     RESULT_MESSAGE_PRODUCER_Reset();
-    *response_required = false;
+
+    // Set the type and subtype
+    outgoing_message->type    = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+    outgoing_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    // Set Response body
+    outgoing_message->body.response.scope   = HIL_APPLICATION_RESPONSE_SCOPE_TEST_CONFIGURATION;
+    outgoing_message->body.response.outcome = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
+    outgoing_message->body.response.reason  = HIL_APPLICATION_RESPONSE_REASON_NONE;
+    outgoing_message->body.response.tick_number =
+        incoming_message->body.test_instruction.tick_number;
+    outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
+    outgoing_message->body.response.global_control_command =
+        HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
+    outgoing_message->body.response.detail = 0U;
+    *response_required                     = true;
     return HOST_INTERFACE_STATUS_OK;
 }
 
