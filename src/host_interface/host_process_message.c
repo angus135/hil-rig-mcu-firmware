@@ -436,6 +436,32 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
         *response_required                    = true;
         return HOST_INTERFACE_STATUS_OK;
     }
+    bool check = false;
+    switch ( incoming_message->body.test_configuration.tick_duration_us.microseconds)
+    {
+        case 10000U:
+            check = RUN_STATE_MANAGER_Set_Execution_Frequency(RUN_STATE_FREQUENCY_100HZ);
+        case 1000U:
+            check = RUN_STATE_MANAGER_Set_Execution_Frequency(RUN_STATE_FREQUENCY_1KHZ);
+        case 100U:
+            check = RUN_STATE_MANAGER_Set_Execution_Frequency(RUN_STATE_FREQUENCY_10KHZ);
+        default:
+            // Construct the error message
+            HOST_INTERFACE_Default_Error( outgoing_message );
+            // TODO  more specific error catagory
+            outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+            *response_required                    = true;
+            return HOST_INTERFACE_STATUS_OK;
+    }
+    if ( !check )
+    {
+        // Construct the error message
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        // TODO  more specific error catagory
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+        *response_required                    = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
 
     *expected_tick_count = incoming_message->body.test_configuration.expected_tick_count;
     HOST_INSTRUCTION_HANDLER_Reset();
