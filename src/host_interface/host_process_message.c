@@ -186,32 +186,44 @@ HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion( RunState_T expe
                                                                  uint8_t                 num_trys,
                                                                  uint32_t expected_tick_count )
 {
+    if ( num_trys == 0U )
+    {
+        return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
+    }
+
+    // Request transition once
+    if ( HOST_INTERFACE_state_to_state_request( request, expected_tick_count )
+         == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
+    {
+        return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
+    }
+
     for ( uint8_t i = 0; i < num_trys; i++ )
     {
-        // request to transition state
-        if ( HOST_INTERFACE_state_to_state_request( request, expected_tick_count )
-             == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
-        {
-            return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
-        }
-        // Check we transitioned to the correct state
         RunStateManagerStatus_T run_state_status = { 0 };
         RUN_STATE_MANAGER_GetStatus( &run_state_status );
-        if ( run_state_status.state == expected_state )
+
+        // Transition is complete only when expected state is reached AND no operation is pending
+        if ( ( run_state_status.state == expected_state ) && ( !run_state_status.transition_pending ) )
         {
             return HOST_INTERFACE_STATUS_OK;
         }
-        // If error then return
-        if ( ( ( !run_state_status.transition_pending )
-               && ( run_state_status.last_request_result != RUN_STATE_REQUEST_RESULT_ACCEPTED )
-               && ( run_state_status.last_request_result != RUN_STATE_REQUEST_RESULT_NONE ) )
-             || run_state_status.state == RUN_STATE_FAULT )
+
+        if ( run_state_status.state == RUN_STATE_FAULT )
         {
             return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
         }
-        // wait before trying again
+
+        if ( ( !run_state_status.transition_pending )
+             && ( run_state_status.last_request_result != RUN_STATE_REQUEST_RESULT_ACCEPTED )
+             && ( run_state_status.last_request_result != RUN_STATE_REQUEST_RESULT_NONE ) )
+        {
+            return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+        }
+
         vTaskDelay( pdMS_TO_TICKS( 10U ) );
     }
+
     return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
 }
 
@@ -396,7 +408,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
 
     // Signal run state manager to move to package recieving state
     status = HOST_INTERFACE_request_state_tranistion(
-        RUN_STATE_TEST_PACKAGE_RECEIVE, HOST_REQUEST_TEST_PACKAGE_RECEIVE, 2,
+        RUN_STATE_TEST_PACKAGE_RECEIVE, HOST_REQUEST_TEST_PACKAGE_RECEIVE, 100,
         incoming_message->body.test_configuration.expected_tick_count );
     if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
     {
@@ -560,7 +572,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Instructions(
     {
         // Request transition to CONFIGURATION
         HOST_Interface_Status_T status = HOST_INTERFACE_request_state_tranistion(
-            RUN_STATE_CONFIGURATION, HOST_REQUEST_CONFIGURATION, 4, *expected_tick_count );
+            RUN_STATE_CONFIGURATION, HOST_REQUEST_CONFIGURATION, 100, *expected_tick_count );
         if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
         {
             // Construct the error message
@@ -649,7 +661,7 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
         case HIL_APPLICATION_CONTROL_START:
             // Signal run state manager to move to execution
             status = HOST_INTERFACE_request_state_tranistion( RUN_STATE_EXECUTION,
-                                                              HOST_REQUEST_EXECUTION, 2, 0 );
+                                                              HOST_REQUEST_EXECUTION, 100, 0 );
             if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
             {
                 // Construct the error message
