@@ -845,7 +845,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Finalize_Test_Upload(
     ( void )data_size;
     // Request transition to CONFIGURATION
     HOST_Interface_Status_T status = HOST_INTERFACE_request_state_tranistion(
-        RUN_STATE_CONFIGURATION, HOST_REQUEST_CONFIGURATION, 4, *expected_tick_count );
+        RUN_STATE_CONFIGURATION, HOST_REQUEST_CONFIGURATION, 3000, *expected_tick_count );
     if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
     {
         // Construct the error message
