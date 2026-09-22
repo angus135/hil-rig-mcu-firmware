@@ -356,8 +356,8 @@ static void CONSOLE_RunStateManager_WaitForState( bool accepted, RunState_T expe
     }
 
     CONSOLE_RunStateManager_PrintRequestResult( true );
-    const TickType_t start   = xTaskGetTickCount();
-    const TickType_t timeout = pdMS_TO_TICKS( 30000U );
+    const TickType_t        start          = xTaskGetTickCount();
+    const TickType_t        timeout        = pdMS_TO_TICKS( 30000U );
     RunStateManagerStatus_T initial_status = { 0 };
     RUN_STATE_MANAGER_GetStatus( &initial_status );
     for ( ;; )
@@ -542,14 +542,14 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
             {
                 const uint32_t average_cycles = ( uint32_t )( measurement_timing.total_cycles
                                                               / measurement_timing.sample_count );
-                CONSOLE_Printf(
-                    "Measurement timing: %s samples=%lu avg=%lu cycles max=%lu cycles at tick=%lu\r\n",
-                    CONSOLE_RunStateManager_MeasurementName(
-                        ( ExecutionMeasurementType_T )measurement ),
-                    ( unsigned long )measurement_timing.sample_count,
-                    ( unsigned long )average_cycles,
-                    ( unsigned long )measurement_timing.maximum_cycles,
-                    ( unsigned long )measurement_timing.max_timestamp );
+                CONSOLE_Printf( "Measurement timing: %s samples=%lu avg=%lu cycles max=%lu cycles "
+                                "at tick=%lu\r\n",
+                                CONSOLE_RunStateManager_MeasurementName(
+                                    ( ExecutionMeasurementType_T )measurement ),
+                                ( unsigned long )measurement_timing.sample_count,
+                                ( unsigned long )average_cycles,
+                                ( unsigned long )measurement_timing.maximum_cycles,
+                                ( unsigned long )measurement_timing.max_timestamp );
             }
         }
         const ExecutionManagerFailure_T execution_failure = EXECUTION_MANAGER_GetFailure();

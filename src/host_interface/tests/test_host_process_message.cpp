@@ -905,7 +905,8 @@ TEST_F( HostProcessMessageTest, IncomingDispatcherDoesNothingWhenNoMessageIsAvai
 }
 
 /**
- * @brief Verifies that internal dispatcher returns OK and requires no response when notifications bitmask is zero.
+ * @brief Verifies that internal dispatcher returns OK and requires no response when notifications
+ * bitmask is zero.
  */
 TEST_F( HostProcessMessageTest, InternalDispatcherHandlesZeroNotificationsGracefully )
 {
@@ -964,7 +965,8 @@ TEST_F( HostProcessMessageTest, ProcessMessageCopiesResponseAndPreservesTestId )
 }
 
 /**
- * @brief Verifies that response is stored in overflow buffer with test_id preserved when output is busy.
+ * @brief Verifies that response is stored in overflow buffer with test_id preserved when output is
+ * busy.
  */
 TEST_F( HostProcessMessageTest, ProcessMessageStoresResponseInOverflowWhenOutputIsBusy )
 {
@@ -982,7 +984,9 @@ TEST_F( HostProcessMessageTest, ProcessMessageStoresResponseInOverflowWhenOutput
     EXPECT_TRUE( response_required );
     EXPECT_EQ( overflow_outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
     EXPECT_EQ( overflow_outgoing.has_test_id, 1U );
-    EXPECT_EQ( std::memcmp( &overflow_outgoing.test_id, &incoming.test_id, sizeof( incoming.test_id ) ), 0 );
+    EXPECT_EQ(
+        std::memcmp( &overflow_outgoing.test_id, &incoming.test_id, sizeof( incoming.test_id ) ),
+        0 );
 }
 
 TEST_F( HostProcessMessageTest, ProcessMessageCanServiceResultTransferAfterNonRespondingInput )
@@ -1009,17 +1013,17 @@ TEST_F( HostProcessMessageTest, ProcessMessageCanServiceResultTransferAfterNonRe
 }
 
 /**
- * @brief Verifies that process_message returns OK and requires no response when no incoming message is available, even if output is busy.
+ * @brief Verifies that process_message returns OK and requires no response when no incoming message
+ * is available, even if output is busy.
  */
 TEST_F( HostProcessMessageTest, ProcessMessageReturnsOkAndNoResponseWhenNoIncomingMessage )
 {
     response_required = true;
     notifications     = 0U;
 
-    EXPECT_EQ( HOST_INTERFACE_process_message( false, &incoming, false, &outgoing, &overflow_outgoing,
-                                               &response_required, data, sizeof( data ),
-                                               &notifications, &expected_tick_count ),
+    EXPECT_EQ( HOST_INTERFACE_process_message(
+                   false, &incoming, false, &outgoing, &overflow_outgoing, &response_required, data,
+                   sizeof( data ), &notifications, &expected_tick_count ),
                HOST_INTERFACE_STATUS_OK );
     EXPECT_FALSE( response_required );
 }
-

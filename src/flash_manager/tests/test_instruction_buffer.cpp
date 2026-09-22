@@ -1237,8 +1237,7 @@ TEST_F( InstructionBufferTest, FinaliseUploadAcceptsPartialInputAndSnapsLength )
     EXPECT_TRUE( INSTRUCTION_BUFFER_FinaliseUpload() );
     EXPECT_TRUE( instruction_buffer_context.is_upload_finalised );
     EXPECT_EQ( partial.size(), instruction_buffer_context.upload_expected_length_bytes );
-    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND,
-               instruction_buffer_context.page_states[0] );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND, instruction_buffer_context.page_states[0] );
 }
 
 TEST_F( InstructionBufferTest, FinaliseUploadRejectsZeroBytesAccepted )

@@ -98,10 +98,8 @@ static HOST_Interface_Status_T
 HOST_INTERFACE_Analog_Input_Parser( const HIL_Application_Message_T* config_message,
                                     DutDriverConfiguration_T*        driver_config )
 {
-    const bool ch0_enabled =
-        config_message->body.test_configuration.analog_in[0].enabled != 0U;
-    const bool ch1_enabled =
-        config_message->body.test_configuration.analog_in[1].enabled != 0U;
+    const bool ch0_enabled = config_message->body.test_configuration.analog_in[0].enabled != 0U;
+    const bool ch1_enabled = config_message->body.test_configuration.analog_in[1].enabled != 0U;
 
     driver_config->analogue_input.ch_0_is_enabled = ch0_enabled;
     driver_config->analogue_input.ch_1_is_enabled = ch1_enabled;

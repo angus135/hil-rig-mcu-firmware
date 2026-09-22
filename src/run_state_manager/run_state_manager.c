@@ -1636,20 +1636,20 @@ void RUN_STATE_MANAGER_Init( void )
     execution_request_pending    = false;
     prepared_execution =
         ( RunStatePreparedExecution_T ){ .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
-    execution_abort_requested    = false;
-    fault_reason                 = RUN_STATE_FAULT_NONE;
-    requested_fault_reason       = RUN_STATE_FAULT_NONE;
-    last_request                 = RUN_STATE_REQUEST_NONE;
-    last_request_result          = RUN_STATE_REQUEST_RESULT_NONE;
-    request_timing_active        = false;
-    timed_request                = RUN_STATE_REQUEST_NONE;
-    timed_request_target_state   = RUN_STATE_IDLE;
-    timed_request_started_at     = 0U;
-    last_transition_timing_valid = false;
-    last_completed_request       = RUN_STATE_REQUEST_NONE;
-    last_transition_duration_ms  = 0U;
-    run_state                    = RUN_STATE_IDLE;
-    run_configuration_owned      = false;
+    execution_abort_requested      = false;
+    fault_reason                   = RUN_STATE_FAULT_NONE;
+    requested_fault_reason         = RUN_STATE_FAULT_NONE;
+    last_request                   = RUN_STATE_REQUEST_NONE;
+    last_request_result            = RUN_STATE_REQUEST_RESULT_NONE;
+    request_timing_active          = false;
+    timed_request                  = RUN_STATE_REQUEST_NONE;
+    timed_request_target_state     = RUN_STATE_IDLE;
+    timed_request_started_at       = 0U;
+    last_transition_timing_valid   = false;
+    last_completed_request         = RUN_STATE_REQUEST_NONE;
+    last_transition_duration_ms    = 0U;
+    run_state                      = RUN_STATE_IDLE;
+    run_configuration_owned        = false;
     package_receive_expected_ticks = 0U;
 
     HW_TIMER_Set_Execution_Guard( RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR );

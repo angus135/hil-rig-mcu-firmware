@@ -240,7 +240,8 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionPage( const uint8_t* data,
  *       at least the committed instruction bytes and no greater than the
  *       initially declared expected length.
  */
-ExternalFlashStatus_T EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( uint32_t expected_length );
+ExternalFlashStatus_T
+EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( uint32_t expected_length );
 
 /**
  * @brief Finishes an instruction upload and commits any final partial page.

@@ -1073,7 +1073,8 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionPage( const uint8_t* data,
 /**
  * @brief Updates the expected instruction upload length before finalising a variable stream.
  */
-ExternalFlashStatus_T EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( uint32_t expected_length )
+ExternalFlashStatus_T
+EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( uint32_t expected_length )
 {
     if ( !external_flash_initialised )
     {

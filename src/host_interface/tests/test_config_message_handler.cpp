@@ -80,7 +80,8 @@ public:
                  ( uint16_t duty_permille, uint16_t arr, uint16_t* ccr ) );
 
     /* Test Configuration Storage Mock */
-    MOCK_METHOD( bool, TEST_CONFIGURATION_Commit, ( const DutDriverConfiguration_T* configuration ) );
+    MOCK_METHOD( bool, TEST_CONFIGURATION_Commit,
+                 ( const DutDriverConfiguration_T* configuration ) );
 };
 
 static MockConfigHandlerDependencies* g_mock_deps = nullptr;
@@ -289,21 +290,25 @@ TEST_F( ConfigMessageHandlerTest, AnalogOutputEnabledSetsExternalVref )
 /* Digital Output Parser */
 TEST_F( ConfigMessageHandlerTest, DigitalOutputVoltageModesAndInitialStates )
 {
-    app_msg.body.test_configuration.digital_out[0].enabled      = 1U;
-    app_msg.body.test_configuration.digital_out[0].voltage_level = HIL_APPLICATION_PERIPHERAL_CONFIG_3V3;
-    app_msg.body.test_configuration.digital_out[0].initial_high  = 0U;
+    app_msg.body.test_configuration.digital_out[0].enabled = 1U;
+    app_msg.body.test_configuration.digital_out[0].voltage_level =
+        HIL_APPLICATION_PERIPHERAL_CONFIG_3V3;
+    app_msg.body.test_configuration.digital_out[0].initial_high = 0U;
 
-    app_msg.body.test_configuration.digital_out[1].enabled      = 1U;
-    app_msg.body.test_configuration.digital_out[1].voltage_level = HIL_APPLICATION_PERIPHERAL_CONFIG_5V;
-    app_msg.body.test_configuration.digital_out[1].initial_high  = 1U;
+    app_msg.body.test_configuration.digital_out[1].enabled = 1U;
+    app_msg.body.test_configuration.digital_out[1].voltage_level =
+        HIL_APPLICATION_PERIPHERAL_CONFIG_5V;
+    app_msg.body.test_configuration.digital_out[1].initial_high = 1U;
 
-    app_msg.body.test_configuration.digital_out[2].enabled      = 1U;
-    app_msg.body.test_configuration.digital_out[2].voltage_level = HIL_APPLICATION_PERIPHERAL_CONFIG_12V;
+    app_msg.body.test_configuration.digital_out[2].enabled = 1U;
+    app_msg.body.test_configuration.digital_out[2].voltage_level =
+        HIL_APPLICATION_PERIPHERAL_CONFIG_12V;
 
-    app_msg.body.test_configuration.digital_out[3].enabled      = 1U;
-    app_msg.body.test_configuration.digital_out[3].voltage_level = HIL_APPLICATION_PERIPHERAL_CONFIG_24V;
+    app_msg.body.test_configuration.digital_out[3].enabled = 1U;
+    app_msg.body.test_configuration.digital_out[3].voltage_level =
+        HIL_APPLICATION_PERIPHERAL_CONFIG_24V;
 
-    app_msg.body.test_configuration.digital_out[4].enabled      = 0U;
+    app_msg.body.test_configuration.digital_out[4].enabled = 0U;
     app_msg.body.test_configuration.digital_out[4].voltage_level =
         HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_INVALID;
 
@@ -331,19 +336,23 @@ TEST_F( ConfigMessageHandlerTest, DigitalOutputVoltageModesAndInitialStates )
 /* Digital Input Parser */
 TEST_F( ConfigMessageHandlerTest, DigitalInputVoltageModes )
 {
-    app_msg.body.test_configuration.digital_in[0].enabled       = 1U;
-    app_msg.body.test_configuration.digital_in[0].voltage_level = HIL_APPLICATION_PERIPHERAL_CONFIG_3V3;
+    app_msg.body.test_configuration.digital_in[0].enabled = 1U;
+    app_msg.body.test_configuration.digital_in[0].voltage_level =
+        HIL_APPLICATION_PERIPHERAL_CONFIG_3V3;
 
-    app_msg.body.test_configuration.digital_in[1].enabled       = 1U;
-    app_msg.body.test_configuration.digital_in[1].voltage_level = HIL_APPLICATION_PERIPHERAL_CONFIG_5V;
+    app_msg.body.test_configuration.digital_in[1].enabled = 1U;
+    app_msg.body.test_configuration.digital_in[1].voltage_level =
+        HIL_APPLICATION_PERIPHERAL_CONFIG_5V;
 
-    app_msg.body.test_configuration.digital_in[2].enabled       = 1U;
-    app_msg.body.test_configuration.digital_in[2].voltage_level = HIL_APPLICATION_PERIPHERAL_CONFIG_12V;
+    app_msg.body.test_configuration.digital_in[2].enabled = 1U;
+    app_msg.body.test_configuration.digital_in[2].voltage_level =
+        HIL_APPLICATION_PERIPHERAL_CONFIG_12V;
 
-    app_msg.body.test_configuration.digital_in[3].enabled       = 1U;
-    app_msg.body.test_configuration.digital_in[3].voltage_level = HIL_APPLICATION_PERIPHERAL_CONFIG_24V;
+    app_msg.body.test_configuration.digital_in[3].enabled = 1U;
+    app_msg.body.test_configuration.digital_in[3].voltage_level =
+        HIL_APPLICATION_PERIPHERAL_CONFIG_24V;
 
-    app_msg.body.test_configuration.digital_in[4].enabled       = 0U;
+    app_msg.body.test_configuration.digital_in[4].enabled = 0U;
     app_msg.body.test_configuration.digital_in[4].voltage_level =
         HIL_APPLICATION_PERIPHERAL_CONFIG_VOLTAGE_INVALID;
 
@@ -360,14 +369,16 @@ TEST_F( ConfigMessageHandlerTest, DigitalInputVoltageModes )
 /* PWM Output Parser */
 TEST_F( ConfigMessageHandlerTest, PwmOutputComputeRegistersSuccess )
 {
-    app_msg.body.test_configuration.pwm_out[0].enabled                     = 1U;
-    app_msg.body.test_configuration.pwm_out[0].voltage_level               = HIL_APPLICATION_PERIPHERAL_CONFIG_5V;
-    app_msg.body.test_configuration.pwm_out[0].initial_period_nanoseconds  = 1000000U; /* 1 kHz */
+    app_msg.body.test_configuration.pwm_out[0].enabled       = 1U;
+    app_msg.body.test_configuration.pwm_out[0].voltage_level = HIL_APPLICATION_PERIPHERAL_CONFIG_5V;
+    app_msg.body.test_configuration.pwm_out[0].initial_period_nanoseconds   = 1000000U; /* 1 kHz */
     app_msg.body.test_configuration.pwm_out[0].initial_duty_cycle_permyriad = 5000U;    /* 50% */
 
-    EXPECT_CALL( *g_mock_deps, HW_PWM_GEN_compute_psc( 1000U, HOST_INSTRUCTION_PWM_LV_TIMER_CLOCK_HZ, _ ) )
+    EXPECT_CALL( *g_mock_deps,
+                 HW_PWM_GEN_compute_psc( 1000U, HOST_INSTRUCTION_PWM_LV_TIMER_CLOCK_HZ, _ ) )
         .WillOnce( DoAll( SetArgPointee<2>( 89U ), Return( true ) ) );
-    EXPECT_CALL( *g_mock_deps, HW_PWM_GEN_compute_arr( 1000U, HOST_INSTRUCTION_PWM_LV_TIMER_CLOCK_HZ, 89U, _ ) )
+    EXPECT_CALL( *g_mock_deps,
+                 HW_PWM_GEN_compute_arr( 1000U, HOST_INSTRUCTION_PWM_LV_TIMER_CLOCK_HZ, 89U, _ ) )
         .WillOnce( DoAll( SetArgPointee<3>( 999U ), Return( true ) ) );
     EXPECT_CALL( *g_mock_deps, HW_PWM_GEN_compute_ccr( 500U, 999U, _ ) )
         .WillOnce( DoAll( SetArgPointee<2>( 500U ), Return( true ) ) );
@@ -384,13 +395,13 @@ TEST_F( ConfigMessageHandlerTest, PwmOutputComputeRegistersSuccess )
 
 TEST_F( ConfigMessageHandlerTest, PwmOutputComputeFailureRejectsConfiguration )
 {
-    app_msg.body.test_configuration.pwm_out[0].enabled                     = 1U;
-    app_msg.body.test_configuration.pwm_out[0].voltage_level               = HIL_APPLICATION_PERIPHERAL_CONFIG_3V3;
-    app_msg.body.test_configuration.pwm_out[0].initial_period_nanoseconds  = 1000U;
+    app_msg.body.test_configuration.pwm_out[0].enabled = 1U;
+    app_msg.body.test_configuration.pwm_out[0].voltage_level =
+        HIL_APPLICATION_PERIPHERAL_CONFIG_3V3;
+    app_msg.body.test_configuration.pwm_out[0].initial_period_nanoseconds   = 1000U;
     app_msg.body.test_configuration.pwm_out[0].initial_duty_cycle_permyriad = 5000U;
 
-    EXPECT_CALL( *g_mock_deps, HW_PWM_GEN_compute_psc( _, _, _ ) )
-        .WillOnce( Return( false ) );
+    EXPECT_CALL( *g_mock_deps, HW_PWM_GEN_compute_psc( _, _, _ ) ).WillOnce( Return( false ) );
 
     EXPECT_EQ( HOST_INTERFACE_Pwm_Output_Parser( &app_msg, &driver_config ),
                HOST_INTERFACE_STATUS_VALIDATION_FAILED );
@@ -428,8 +439,7 @@ TEST_F( ConfigMessageHandlerTest, CanChannelsFilterBanksAndBitrates )
     app_msg.body.test_configuration.can[1].filter_id   = 0x456U;
     app_msg.body.test_configuration.can[1].filter_mask = 0x7FFU;
 
-    EXPECT_EQ( HOST_INTERFACE_Can_Parser( &app_msg, &driver_config ),
-               HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( HOST_INTERFACE_Can_Parser( &app_msg, &driver_config ), HOST_INTERFACE_STATUS_OK );
 
     EXPECT_TRUE( driver_config.can_channels[0].is_enabled );
     EXPECT_EQ( driver_config.can_channels[0].bitrate, 500000U );
@@ -447,16 +457,17 @@ TEST_F( ConfigMessageHandlerTest, CanChannelsFilterBanksAndBitrates )
 /* SPI Parser */
 TEST_F( ConfigMessageHandlerTest, SpiBaudRateBracketsAndModes )
 {
-    app_msg.body.test_configuration.spi[0].enabled        = 1U;
-    app_msg.body.test_configuration.spi[0].role           = HIL_APPLICATION_BUS_ROLE_MASTER;
-    app_msg.body.test_configuration.spi[0].data_width     = HIL_APPLICATION_SPI_DATA_WIDTH_16_BITS;
-    app_msg.body.test_configuration.spi[0].bit_order      = HIL_APPLICATION_SPI_BIT_ORDER_LSB_FIRST;
-    app_msg.body.test_configuration.spi[0].clock_polarity = HIL_APPLICATION_SPI_CLOCK_POLARITY_IDLE_HIGH;
-    app_msg.body.test_configuration.spi[0].clock_phase    = HIL_APPLICATION_SPI_CLOCK_PHASE_SECOND_EDGE;
-    app_msg.body.test_configuration.spi[0].bit_rate       = 22500000U;
+    app_msg.body.test_configuration.spi[0].enabled    = 1U;
+    app_msg.body.test_configuration.spi[0].role       = HIL_APPLICATION_BUS_ROLE_MASTER;
+    app_msg.body.test_configuration.spi[0].data_width = HIL_APPLICATION_SPI_DATA_WIDTH_16_BITS;
+    app_msg.body.test_configuration.spi[0].bit_order  = HIL_APPLICATION_SPI_BIT_ORDER_LSB_FIRST;
+    app_msg.body.test_configuration.spi[0].clock_polarity =
+        HIL_APPLICATION_SPI_CLOCK_POLARITY_IDLE_HIGH;
+    app_msg.body.test_configuration.spi[0].clock_phase =
+        HIL_APPLICATION_SPI_CLOCK_PHASE_SECOND_EDGE;
+    app_msg.body.test_configuration.spi[0].bit_rate = 22500000U;
 
-    EXPECT_EQ( HOST_INTERFACE_Spi_Parser( &app_msg, &driver_config ),
-               HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( HOST_INTERFACE_Spi_Parser( &app_msg, &driver_config ), HOST_INTERFACE_STATUS_OK );
 
     EXPECT_TRUE( driver_config.spi_channels[0].is_enabled );
     EXPECT_EQ( driver_config.spi_channels[0].spi_mode, EXEC_SPI_MASTER_MODE );
@@ -470,17 +481,17 @@ TEST_F( ConfigMessageHandlerTest, SpiBaudRateBracketsAndModes )
 /* UART Parser */
 TEST_F( ConfigMessageHandlerTest, UartElectricalModesAndOptions )
 {
-    app_msg.body.test_configuration.uart[0].enabled         = 1U;
-    app_msg.body.test_configuration.uart[0].baud_rate       = 115200U;
-    app_msg.body.test_configuration.uart[0].electrical_mode = HIL_APPLICATION_UART_ELECTRICAL_MODE_RS232;
-    app_msg.body.test_configuration.uart[0].word_length     = HIL_APPLICATION_UART_WORD_LENGTH_9_BITS;
-    app_msg.body.test_configuration.uart[0].parity          = HIL_APPLICATION_UART_PARITY_EVEN;
-    app_msg.body.test_configuration.uart[0].stop_bits       = HIL_APPLICATION_UART_STOP_BITS_2;
-    app_msg.body.test_configuration.uart[0].rx_enabled      = 1U;
-    app_msg.body.test_configuration.uart[0].tx_enabled      = 1U;
+    app_msg.body.test_configuration.uart[0].enabled   = 1U;
+    app_msg.body.test_configuration.uart[0].baud_rate = 115200U;
+    app_msg.body.test_configuration.uart[0].electrical_mode =
+        HIL_APPLICATION_UART_ELECTRICAL_MODE_RS232;
+    app_msg.body.test_configuration.uart[0].word_length = HIL_APPLICATION_UART_WORD_LENGTH_9_BITS;
+    app_msg.body.test_configuration.uart[0].parity      = HIL_APPLICATION_UART_PARITY_EVEN;
+    app_msg.body.test_configuration.uart[0].stop_bits   = HIL_APPLICATION_UART_STOP_BITS_2;
+    app_msg.body.test_configuration.uart[0].rx_enabled  = 1U;
+    app_msg.body.test_configuration.uart[0].tx_enabled  = 1U;
 
-    EXPECT_EQ( HOST_INTERFACE_Uart_Parser( &app_msg, &driver_config ),
-               HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( HOST_INTERFACE_Uart_Parser( &app_msg, &driver_config ), HOST_INTERFACE_STATUS_OK );
 
     EXPECT_TRUE( driver_config.uart_channels[0].is_enabled );
     EXPECT_EQ( driver_config.uart_channels[0].baud_rate, 115200U );
@@ -502,8 +513,7 @@ TEST_F( ConfigMessageHandlerTest, I2cSpeedPullupAndAddress )
     app_msg.body.test_configuration.i2c[0].voltage_level    = HIL_APPLICATION_I2C_VOLTAGE_3V3;
     app_msg.body.test_configuration.i2c[0].own_address_7bit = 0x50U;
 
-    EXPECT_EQ( HOST_INTERFACE_I2c_Parser( &app_msg, &driver_config ),
-               HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( HOST_INTERFACE_I2c_Parser( &app_msg, &driver_config ), HOST_INTERFACE_STATUS_OK );
 
     EXPECT_TRUE( driver_config.i2c_channels[0].is_enabled );
     EXPECT_EQ( driver_config.i2c_channels[0].mode, HW_I2C_MODE_MASTER );
@@ -525,8 +535,7 @@ TEST_F( ConfigMessageHandlerTest, CommitConfigSuccessPassesThrough )
     EXPECT_CALL( *g_mock_deps, TEST_CONFIGURATION_Commit( &driver_config ) )
         .WillOnce( Return( true ) );
 
-    EXPECT_EQ( HOST_INTERFACE_Commit_Config_Message( &driver_config ),
-               HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( HOST_INTERFACE_Commit_Config_Message( &driver_config ), HOST_INTERFACE_STATUS_OK );
 }
 
 TEST_F( ConfigMessageHandlerTest, CommitConfigStorageFailureReturnsInternalError )

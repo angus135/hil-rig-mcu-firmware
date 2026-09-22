@@ -41,8 +41,7 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-
- /*Temporarily reclaimed I2C memory as we have run out of RAM*/
+/*Temporarily reclaimed I2C memory as we have run out of RAM*/
 
 #define HW_I2C_RX_BUFFER_SIZE ( 16U )
 #define HW_I2C_TX_MAX_MESSAGE_SIZE ( 16U )

@@ -25,28 +25,28 @@ static bool               active_configuration_available;
 static bool               configuration_cleared;
 static bool               configuration_ownership_released;
 static bool               driver_configure_result;
-static DutDriverConfigurationStatus_T     driver_configuration_status;
-static DutDriverStartStatus_T             driver_start_status;
-static bool                               driver_start_result;
-static bool                               driver_epoch_result;
-static uint32_t                           driver_epoch_calls;
-static bool                               driver_stop_result;
-static bool                               driver_shutdown_begin_result;
-static DutDriverShutdownStatus_T          driver_shutdown_status;
-static uint32_t                           driver_shutdown_begin_calls;
-static bool                               driver_shutdown_force;
-static bool                               driver_shutdown_clear_configuration;
-static uint32_t                           driver_start_calls;
-static uint32_t                           driver_stop_calls;
-static uint32_t                           driver_idle_calls;
-static uint32_t                           driver_fault_calls;
-static FlashManagerState_T                flash_manager_state;
-static bool                               flash_get_state_result;
-static FlashManagerRequestStatus_T        flash_prepare_result;
-static FlashManagerRequestStatus_T        flash_finalise_result;
-static FlashManagerRequestStatus_T        flash_discard_result;
-static uint32_t                           flash_discard_calls;
-static FlashManagerRequestStatus_T        flash_abort_result;
+static DutDriverConfigurationStatus_T               driver_configuration_status;
+static DutDriverStartStatus_T                       driver_start_status;
+static bool                                         driver_start_result;
+static bool                                         driver_epoch_result;
+static uint32_t                                     driver_epoch_calls;
+static bool                                         driver_stop_result;
+static bool                                         driver_shutdown_begin_result;
+static DutDriverShutdownStatus_T                    driver_shutdown_status;
+static uint32_t                                     driver_shutdown_begin_calls;
+static bool                                         driver_shutdown_force;
+static bool                                         driver_shutdown_clear_configuration;
+static uint32_t                                     driver_start_calls;
+static uint32_t                                     driver_stop_calls;
+static uint32_t                                     driver_idle_calls;
+static uint32_t                                     driver_fault_calls;
+static FlashManagerState_T                          flash_manager_state;
+static bool                                         flash_get_state_result;
+static FlashManagerRequestStatus_T                  flash_prepare_result;
+static FlashManagerRequestStatus_T                  flash_finalise_result;
+static FlashManagerRequestStatus_T                  flash_discard_result;
+static uint32_t                                     flash_discard_calls;
+static FlashManagerRequestStatus_T                  flash_abort_result;
 static FlashManagerInstructionUploadRequestStatus_T flash_upload_start_result;
 static uint32_t                                     flash_upload_start_calls;
 static uint32_t                                     flash_upload_start_expected_length;
@@ -54,21 +54,21 @@ static FlashManagerInstructionUploadRequestStatus_T flash_upload_finish_result;
 static uint32_t                                     flash_upload_finish_calls;
 static bool                                         flash_instruction_capacity_result;
 static uint32_t                                     flash_instruction_capacity_bytes;
-static FlashManagerResultTransferStatus_T flash_transfer_start_result;
-static FlashManagerResultTransferStatus_T flash_transfer_finish_result;
-static uint32_t                           flash_transfer_finish_calls;
-static uint32_t                           flash_abort_calls;
-static uint32_t                           timer_configure_calls;
-static bool                               timer_start_result;
-static uint32_t                           timer_start_calls;
-static uint32_t                           timer_stop_calls;
-static HW_TIMER_ExecutionGuard_T          execution_guard;
-static FlashManagerFaultCallback_T        flash_fault_callback;
-static uint32_t                           flash_prepare_capacity;
-static bool                               execution_prepare_result;
-static uint32_t                           execution_prepare_tick_count;
-static uint32_t                           execution_abort_calls;
-static ExecutionManagerTerminalCallback_T execution_terminal_callback;
+static FlashManagerResultTransferStatus_T           flash_transfer_start_result;
+static FlashManagerResultTransferStatus_T           flash_transfer_finish_result;
+static uint32_t                                     flash_transfer_finish_calls;
+static uint32_t                                     flash_abort_calls;
+static uint32_t                                     timer_configure_calls;
+static bool                                         timer_start_result;
+static uint32_t                                     timer_start_calls;
+static uint32_t                                     timer_stop_calls;
+static HW_TIMER_ExecutionGuard_T                    execution_guard;
+static FlashManagerFaultCallback_T                  flash_fault_callback;
+static uint32_t                                     flash_prepare_capacity;
+static bool                                         execution_prepare_result;
+static uint32_t                                     execution_prepare_tick_count;
+static uint32_t                                     execution_abort_calls;
+static ExecutionManagerTerminalCallback_T           execution_terminal_callback;
 
 extern "C"
 {
@@ -237,8 +237,7 @@ FLASH_MANAGER_RequestInstructionUploadStart( uint32_t expected_length_bytes )
     flash_upload_start_expected_length = expected_length_bytes;
     return flash_upload_start_result;
 }
-FlashManagerInstructionUploadRequestStatus_T
-FLASH_MANAGER_RequestInstructionUploadFinish( void )
+FlashManagerInstructionUploadRequestStatus_T FLASH_MANAGER_RequestInstructionUploadFinish( void )
 {
     flash_upload_finish_calls++;
     return flash_upload_finish_result;

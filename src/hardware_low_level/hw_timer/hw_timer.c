@@ -500,10 +500,10 @@ void HW_TIMER_Get_Execution_Timing( HW_TIMER_ExecutionTiming_T* timing )
         return;
     }
 
-    timing->sample_count        = execution_isr_sample_count;
-    timing->latest_cycles       = execution_isr_latest_cycles;
-    timing->maximum_cycles      = execution_isr_maximum_cycles;
-    timing->max_sample_number   = execution_isr_max_sample_number;
+    timing->sample_count      = execution_isr_sample_count;
+    timing->latest_cycles     = execution_isr_latest_cycles;
+    timing->maximum_cycles    = execution_isr_maximum_cycles;
+    timing->max_sample_number = execution_isr_max_sample_number;
 #ifdef TEST_BUILD
     timing->core_clock_hz = 0U;
 #else
