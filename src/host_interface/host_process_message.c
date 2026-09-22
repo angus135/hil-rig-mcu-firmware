@@ -441,10 +441,13 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     {
         case 10000U:
             check = RUN_STATE_MANAGER_Set_Execution_Frequency(RUN_STATE_FREQUENCY_100HZ);
+            break;
         case 1000U:
-            check = RUN_STATE_MANAGER_Set_Execution_Frequency(RUN_STATE_FREQUENCY_1KHZ);
+            check = RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_1KHZ );
+            break;
         case 100U:
-            check = RUN_STATE_MANAGER_Set_Execution_Frequency(RUN_STATE_FREQUENCY_10KHZ);
+            check = RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_10KHZ );
+            break;
         default:
             // Construct the error message
             HOST_INTERFACE_Default_Error( outgoing_message );
