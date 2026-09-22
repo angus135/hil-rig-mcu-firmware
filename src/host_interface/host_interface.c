@@ -951,10 +951,10 @@ void HOST_INTERFACE_Reset( void )
  */
 void HOST_INTERFACE_Task( void* task_parameters )
 {
-    static HOST_INTERFACE_Protocol_State_T protocol_state                      = { 0 };
-    static HIL_Application_Message_T       outgoing_message                    = { 0 };
-    static HIL_Application_Message_T       incoming_message                    = { 0 };
-    bool                                   outgoing_message_pending            = false;
+    static HOST_INTERFACE_Protocol_State_T protocol_state                             = { 0 };
+    static HIL_Application_Message_T       outgoing_message                           = { 0 };
+    static HIL_Application_Message_T       incoming_message                           = { 0 };
+    bool                                   outgoing_message_pending                   = false;
     static uint8_t outgoing_variable_data[HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE] = { 0 };
 
     ( void )task_parameters;
@@ -968,7 +968,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
     bool can_consume_incoming = true;
 
     static HIL_Application_Message_T overflow_outgoing_message = { 0 };
-    HostInterfaceTaskHandle                             = xTaskGetCurrentTaskHandle();
+    HostInterfaceTaskHandle                                    = xTaskGetCurrentTaskHandle();
 
     HOST_INTERFACE_Protocol_Init( &protocol_state );
 
@@ -996,13 +996,14 @@ void HOST_INTERFACE_Task( void* task_parameters )
         if ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESET ) != 0U )
         {
             carry_on_notifications &= ~( HOST_INTERFACE_NOTIFY_RESET );
-            outgoing_message_pending          = false;
-            can_consume_incoming              = true;
-            expected_tick_count               = 0U;
+            outgoing_message_pending           = false;
+            can_consume_incoming               = true;
+            expected_tick_count                = 0U;
             s_host_interface_status.is_faulted = false;
         }
 
-        if ( ( RUN_STATE_MANAGER_GetState() == RUN_STATE_IDLE ) && s_host_interface_status.is_faulted )
+        if ( ( RUN_STATE_MANAGER_GetState() == RUN_STATE_IDLE )
+             && s_host_interface_status.is_faulted )
         {
             s_host_interface_status.is_faulted = false;
         }
@@ -1078,10 +1079,12 @@ void HOST_INTERFACE_Task( void* task_parameters )
             else if ( xTaskGetTickCount() - overflow_timer >= pdMS_TO_TICKS( 100U ) )
             {
                 // Outgoing message overflow timeout: record snapshot and transition RSM to FAULT
-                s_host_interface_status.is_faulted                = true;
-                s_host_interface_status.last_fault_reason         = RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED;
+                s_host_interface_status.is_faulted = true;
+                s_host_interface_status.last_fault_reason =
+                    RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED;
                 s_host_interface_status.response_blocked_count++;
-                s_host_interface_status.last_blocked_message_type = ( uint8_t )overflow_outgoing_message.type;
+                s_host_interface_status.last_blocked_message_type =
+                    ( uint8_t )overflow_outgoing_message.type;
 
                 ( void )RUN_STATE_MANAGER_RequestFault(
                     RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED );
@@ -1095,16 +1098,18 @@ void HOST_INTERFACE_Task( void* task_parameters )
         HIL_Transport_Status_Snapshot_T transport_snapshot = { 0 };
         ( void )HIL_TRANSPORT_Get_Status( &protocol_state.transport.context, &transport_snapshot );
 
-        s_host_interface_status.is_initialized          = true;
-        s_host_interface_status.usb_connected           = ( HW_USB_Get_Connection_State() != HW_USB_CONNECTION_STATE_DISCONNECTED );
+        s_host_interface_status.is_initialized = true;
+        s_host_interface_status.usb_connected =
+            ( HW_USB_Get_Connection_State() != HW_USB_CONNECTION_STATE_DISCONNECTED );
         s_host_interface_status.can_consume_incoming     = can_consume_incoming;
         s_host_interface_status.outgoing_message_pending = outgoing_message_pending;
-        s_host_interface_status.is_overflowing          = !can_consume_incoming;
-        s_host_interface_status.expected_tick_count     = expected_tick_count;
-        s_host_interface_status.carry_on_notifications  = carry_on_notifications;
+        s_host_interface_status.is_overflowing           = !can_consume_incoming;
+        s_host_interface_status.expected_tick_count      = expected_tick_count;
+        s_host_interface_status.carry_on_notifications   = carry_on_notifications;
         s_host_interface_status.transport_session_state  = transport_snapshot.session_state;
-        s_host_interface_status.transport_reliable_pending = ( transport_snapshot.reliable_delivery_pending != 0U );
-        s_host_interface_status.transport_last_failure  = transport_snapshot.last_failure;
+        s_host_interface_status.transport_reliable_pending =
+            ( transport_snapshot.reliable_delivery_pending != 0U );
+        s_host_interface_status.transport_last_failure = transport_snapshot.last_failure;
 
         /*
          * TODO: When in the result transfer phase (FLASH_MANAGER_STATE_TRANSFERRING_RESULTS),
@@ -1134,4 +1139,3 @@ void HOST_INTERFACE_GetStatus( HostInterfaceStatus_T* status )
         *status = s_host_interface_status;
     }
 }
-

@@ -69,20 +69,20 @@ typedef struct
     uint32_t              carry_on_notifications;
 
     /* Traffic & Activity Counters */
-    uint32_t              rx_message_count;
-    uint32_t              tx_message_count;
-    uint8_t               last_rx_message_type;
-    uint32_t              last_rx_tick;
+    uint32_t rx_message_count;
+    uint32_t tx_message_count;
+    uint8_t  last_rx_message_type;
+    uint32_t last_rx_tick;
 
     /* Instruction Validation & Rejection Diagnostics */
-    uint32_t              rejected_instruction_count;
-    uint32_t              last_rejected_tick;
-    uint32_t              last_rejected_reason;
+    uint32_t rejected_instruction_count;
+    uint32_t last_rejected_tick;
+    uint32_t last_rejected_reason;
 
     /* Transport Layer Live Status */
     HIL_Transport_Session_State_T transport_session_state;
-    bool                  transport_reliable_pending;
-    HIL_Transport_Failure_T transport_last_failure;
+    bool                          transport_reliable_pending;
+    HIL_Transport_Failure_T       transport_last_failure;
 } HostInterfaceStatus_T;
 
 extern TaskHandle_t host_interface_task_handle;

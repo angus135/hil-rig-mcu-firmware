@@ -63,9 +63,10 @@ extern HOST_Interface_Status_T HOST_INTERFACE_process_Package_Received_Notificat
 extern HOST_Interface_Status_T HOST_INTERFACE_process_Config_Started_Notification(
     HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
     uint8_t* data, size_t data_size );
-extern HOST_Interface_Status_T HOST_INTERFACE_process_Armed_Notification(
-    HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
-    uint8_t* data, size_t data_size );
+extern HOST_Interface_Status_T
+HOST_INTERFACE_process_Armed_Notification( HIL_Application_Message_T* outgoing_message,
+                                           uint32_t* notifications, bool* response_required,
+                                           uint8_t* data, size_t data_size );
 extern HOST_Interface_Status_T HOST_INTERFACE_process_Execution_Complete_Notification(
     HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
     uint8_t* data, size_t data_size );
@@ -169,8 +170,7 @@ HOST_INTERFACE_TEST_FORWARD_NOTIFICATION( Process_Package_Received_Notification,
                                           process_Package_Received_Notification )
 HOST_INTERFACE_TEST_FORWARD_NOTIFICATION( Process_Config_Started_Notification,
                                           process_Config_Started_Notification )
-HOST_INTERFACE_TEST_FORWARD_NOTIFICATION( Process_Armed_Notification,
-                                          process_Armed_Notification )
+HOST_INTERFACE_TEST_FORWARD_NOTIFICATION( Process_Armed_Notification, process_Armed_Notification )
 HOST_INTERFACE_TEST_FORWARD_NOTIFICATION( Process_Execution_Complete_Notification,
                                           process_Execution_Complete_Notification )
 HOST_INTERFACE_TEST_FORWARD_NOTIFICATION( Process_Transfer_Complete_Notification,

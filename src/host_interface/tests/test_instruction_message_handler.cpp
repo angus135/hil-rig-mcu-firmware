@@ -82,7 +82,7 @@ public:
                  ( uint16_t duty_permille, uint16_t arr, uint16_t* ccr ) );
 
     /* Test Configuration Mock */
-    MOCK_METHOD( bool, TEST_CONFIGURATION_GetActive, ( DutDriverConfiguration_T* configuration ) );
+    MOCK_METHOD( bool, TEST_CONFIGURATION_GetActive, ( DutDriverConfiguration_T * configuration ) );
 };
 
 static MockInstructionHandlerDependencies* g_mock_deps = nullptr;
@@ -777,13 +777,12 @@ TEST_F( InstructionMessageHandlerTest, DisabledPeripheralsInactiveValuesAllowed 
     HIL_Application_Test_Instruction_T instruction = {};
     instruction.tick_number                        = 1U;
     /* All outputs are 0 / inactive */
-    instruction.digital_outputs[0].high            = 0U;
-    instruction.analog_outputs[0].microvolts       = 0U;
-    instruction.pwm_outputs[0].period_nanoseconds  = 0U;
+    instruction.digital_outputs[0].high             = 0U;
+    instruction.analog_outputs[0].microvolts        = 0U;
+    instruction.pwm_outputs[0].period_nanoseconds   = 0U;
     instruction.pwm_outputs[0].duty_cycle_permyriad = 0U;
 
     /* Output-free tick is valid and accepted */
     EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
                HOST_INTERFACE_STATUS_OK );
 }
-

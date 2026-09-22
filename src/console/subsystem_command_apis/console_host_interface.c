@@ -89,7 +89,8 @@ static const char* CONSOLE_HostInterface_MessageTypeName( uint8_t type )
     }
 }
 
-static const char* CONSOLE_HostInterface_TransportSessionStateName( HIL_Transport_Session_State_T state )
+static const char*
+CONSOLE_HostInterface_TransportSessionStateName( HIL_Transport_Session_State_T state )
 {
     switch ( state )
     {
@@ -150,9 +151,11 @@ static void CONSOLE_HostInterface_PrintStatus( void )
     CONSOLE_Printf( "Host Interface Status:\r\n" );
     CONSOLE_Printf( "  Initialized:         %s\r\n", status.is_initialized ? "yes" : "no" );
     CONSOLE_Printf( "  USB link connected:  %s\r\n", status.usb_connected ? "yes" : "no" );
-    CONSOLE_Printf( "  Transport session:   %s\r\n",
-                    CONSOLE_HostInterface_TransportSessionStateName( status.transport_session_state ) );
-    CONSOLE_Printf( "  Reliable TX pending: %s\r\n", status.transport_reliable_pending ? "yes" : "no" );
+    CONSOLE_Printf(
+        "  Transport session:   %s\r\n",
+        CONSOLE_HostInterface_TransportSessionStateName( status.transport_session_state ) );
+    CONSOLE_Printf( "  Reliable TX pending: %s\r\n",
+                    status.transport_reliable_pending ? "yes" : "no" );
     CONSOLE_Printf( "  Traffic:             RX=%lu, TX=%lu\r\n",
                     ( unsigned long )status.rx_message_count,
                     ( unsigned long )status.tx_message_count );
@@ -171,8 +174,10 @@ static void CONSOLE_HostInterface_PrintStatus( void )
         }
     }
     CONSOLE_Printf( "  Can consume input:   %s\r\n", status.can_consume_incoming ? "yes" : "no" );
-    CONSOLE_Printf( "  Outgoing pending:    %s\r\n", status.outgoing_message_pending ? "yes" : "no" );
-    CONSOLE_Printf( "  Overflow state:      %s\r\n", status.is_overflowing ? "OVERFLOWING" : "normal" );
+    CONSOLE_Printf( "  Outgoing pending:    %s\r\n",
+                    status.outgoing_message_pending ? "yes" : "no" );
+    CONSOLE_Printf( "  Overflow state:      %s\r\n",
+                    status.is_overflowing ? "OVERFLOWING" : "normal" );
     CONSOLE_Printf( "  Fault state:         %s\r\n", status.is_faulted ? "FAULTED" : "none" );
     if ( status.rejected_instruction_count > 0U )
     {
@@ -181,7 +186,8 @@ static void CONSOLE_HostInterface_PrintStatus( void )
                         ( unsigned long )status.last_rejected_tick,
                         CONSOLE_HostInterface_ResponseReasonName( status.last_rejected_reason ) );
     }
-    CONSOLE_Printf( "  Blocked responses:   %lu\r\n", ( unsigned long )status.response_blocked_count );
+    CONSOLE_Printf( "  Blocked responses:   %lu\r\n",
+                    ( unsigned long )status.response_blocked_count );
     if ( status.is_faulted || status.response_blocked_count > 0U )
     {
         CONSOLE_Printf( "  Last fault reason:   %s (%u)\r\n",
@@ -191,7 +197,8 @@ static void CONSOLE_HostInterface_PrintStatus( void )
                         CONSOLE_HostInterface_MessageTypeName( status.last_blocked_message_type ) );
     }
     CONSOLE_Printf( "  Expected tick count: %lu\r\n", ( unsigned long )status.expected_tick_count );
-    CONSOLE_Printf( "  Notifications:       0x%08lX\r\n", ( unsigned long )status.carry_on_notifications );
+    CONSOLE_Printf( "  Notifications:       0x%08lX\r\n",
+                    ( unsigned long )status.carry_on_notifications );
 }
 
 /**-----------------------------------------------------------------------------

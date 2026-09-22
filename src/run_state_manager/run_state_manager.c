@@ -618,7 +618,7 @@ static bool RUN_STATE_MANAGER_EnterArmed( void )
 {
     return HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_ARMED );
 }
-    
+
 /**
  * @brief Enters production execution.
  *
@@ -1634,7 +1634,8 @@ bool RUN_STATE_MANAGER_Set_Execution_Frequency( RunStateFrequencyMode_T mode )
     }
 
     taskENTER_CRITICAL();
-    const bool accepted = ( run_state == RUN_STATE_IDLE || run_state == RUN_STATE_ARMED || run_state == RUN_STATE_TEST_PACKAGE_RECEIVE )
+    const bool accepted = ( run_state == RUN_STATE_IDLE || run_state == RUN_STATE_ARMED
+                            || run_state == RUN_STATE_TEST_PACKAGE_RECEIVE )
                           && pending_operation == RUN_STATE_PENDING_NONE && !execution_active
                           && !execution_request_pending;
     if ( accepted )

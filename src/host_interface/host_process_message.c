@@ -183,7 +183,7 @@ between)
  */
 HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion( RunState_T expected_state,
                                                                  Host_RunState_Request_T request,
-                                                                 uint16_t                 num_trys,
+                                                                 uint16_t                num_trys,
                                                                  uint32_t expected_tick_count )
 {
     if ( num_trys == 0U )
@@ -209,7 +209,8 @@ HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion( RunState_T expe
         RUN_STATE_MANAGER_GetStatus( &run_state_status );
 
         // Transition is complete only when expected state is reached AND no operation is pending
-        if ( ( run_state_status.state == expected_state ) && ( !run_state_status.transition_pending ) )
+        if ( ( run_state_status.state == expected_state )
+             && ( !run_state_status.transition_pending ) )
         {
             return HOST_INTERFACE_STATUS_OK;
         }
@@ -456,10 +457,10 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     }
 
     bool check = false;
-    switch ( incoming_message->body.test_configuration.tick_duration_us.microseconds)
+    switch ( incoming_message->body.test_configuration.tick_duration_us.microseconds )
     {
         case 10000U:
-            check = RUN_STATE_MANAGER_Set_Execution_Frequency(RUN_STATE_FREQUENCY_100HZ);
+            check = RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_100HZ );
             break;
         case 1000U:
             check = RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_1KHZ );
@@ -498,11 +499,10 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     outgoing_message->body.response.reason  = HIL_APPLICATION_RESPONSE_REASON_NONE;
     outgoing_message->body.response.tick_number =
         incoming_message->body.test_instruction.tick_number;
-    outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
-    outgoing_message->body.response.global_control_command =
-        HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
-    outgoing_message->body.response.detail = 0U;
-    *response_required                     = true;
+    outgoing_message->body.response.control_command        = HIL_APPLICATION_CONTROL_INVALID;
+    outgoing_message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
+    outgoing_message->body.response.detail                 = 0U;
+    *response_required                                     = true;
     return HOST_INTERFACE_STATUS_OK;
 }
 
@@ -534,9 +534,10 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
  *        *response_required = true;
  *        return host_status;
  */
-HOST_Interface_Status_T HOST_INTERFACE_process_Test_Instructions(
-    const HIL_Application_Message_T* incoming_message, HIL_Application_Message_T* outgoing_message,
-    bool* response_required, uint8_t* data, size_t data_size )
+HOST_Interface_Status_T
+HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incoming_message,
+                                          HIL_Application_Message_T*       outgoing_message,
+                                          bool* response_required, uint8_t* data, size_t data_size )
 {
     ( void )data;
     ( void )data_size;
@@ -545,8 +546,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Instructions(
 
     if ( instruction_status != HOST_INTERFACE_STATUS_OK )
     {
-        outgoing_message->type    = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
-        outgoing_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+        outgoing_message->type                  = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+        outgoing_message->subtype               = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
         outgoing_message->body.response.scope   = HIL_APPLICATION_RESPONSE_SCOPE_TICK;
         outgoing_message->body.response.outcome = HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED;
         if ( instruction_status == HOST_INTERFACE_STATUS_INCONSISTENT_TICK )
@@ -583,11 +584,10 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Instructions(
     outgoing_message->body.response.reason  = HIL_APPLICATION_RESPONSE_REASON_NONE;
     outgoing_message->body.response.tick_number =
         incoming_message->body.test_instruction.tick_number;
-    outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
-    outgoing_message->body.response.global_control_command =
-        HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
-    outgoing_message->body.response.detail = 0U;
-    *response_required                     = true;
+    outgoing_message->body.response.control_command        = HIL_APPLICATION_CONTROL_INVALID;
+    outgoing_message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
+    outgoing_message->body.response.detail                 = 0U;
+    *response_required                                     = true;
     return HOST_INTERFACE_STATUS_OK;
 }
 
@@ -887,11 +887,10 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Finalize_Test_Upload(
     outgoing_message->body.response.reason  = HIL_APPLICATION_RESPONSE_REASON_NONE;
     outgoing_message->body.response.tick_number =
         incoming_message->body.test_instruction.tick_number;
-    outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
-    outgoing_message->body.response.global_control_command =
-        HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
-    outgoing_message->body.response.detail = 0U;
-    *response_required                     = true;
+    outgoing_message->body.response.control_command        = HIL_APPLICATION_CONTROL_INVALID;
+    outgoing_message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
+    outgoing_message->body.response.detail                 = 0U;
+    *response_required                                     = true;
     return HOST_INTERFACE_STATUS_OK;
 }
 
@@ -909,9 +908,10 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Config_Started_Notification(
     return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
 }
 
-HOST_Interface_Status_T HOST_INTERFACE_process_Armed_Notification(
-    HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
-    uint8_t* data, size_t data_size )
+HOST_Interface_Status_T
+HOST_INTERFACE_process_Armed_Notification( HIL_Application_Message_T* outgoing_message,
+                                           uint32_t* notifications, bool* response_required,
+                                           uint8_t* data, size_t data_size )
 {
     ( void )data;
     ( void )data_size;
@@ -921,15 +921,14 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Armed_Notification(
     outgoing_message->type    = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
     outgoing_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
     // Set Response body
-    outgoing_message->body.response.scope   = HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST;
-    outgoing_message->body.response.outcome = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
-    outgoing_message->body.response.reason  = HIL_APPLICATION_RESPONSE_REASON_NONE;
-    outgoing_message->body.response.tick_number = 0U;
+    outgoing_message->body.response.scope           = HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST;
+    outgoing_message->body.response.outcome         = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
+    outgoing_message->body.response.reason          = HIL_APPLICATION_RESPONSE_REASON_NONE;
+    outgoing_message->body.response.tick_number     = 0U;
     outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
-    outgoing_message->body.response.global_control_command =
-        HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
-    outgoing_message->body.response.detail = 0U;
-    *response_required                     = true;
+    outgoing_message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
+    outgoing_message->body.response.detail                 = 0U;
+    *response_required                                     = true;
     return HOST_INTERFACE_STATUS_OK;
 }
 
@@ -1029,7 +1028,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
                 break;
             case HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION:
                 host_status = HOST_INTERFACE_process_Test_Instructions(
-                    incoming_message, outgoing_message, response_required, data, data_size);
+                    incoming_message, outgoing_message, response_required, data, data_size );
                 if ( host_status != HOST_INTERFACE_STATUS_OK )
                 {
                     *response_required = false;
