@@ -18,10 +18,12 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "host_process_message.h"
 #include "config_message_handler.h"
 #include "hil_rig_protocol/application/application.h"
+#include "hil_rig_protocol/application/application_control.h"
 #include "hil_rig_protocol/application/application_error.h"
 #include "hil_rig_protocol/application/application_message.h"
 #include "hil_rig_protocol/application/application_response.h"
@@ -418,7 +420,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
         // Construct the error message
         HOST_INTERFACE_Default_Error( outgoing_message );
         // TODO  more specific error catagory
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_RESERVED;
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
         *response_required                    = true;
         return HOST_INTERFACE_STATUS_OK;
     }
@@ -504,7 +506,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Instructions(
             incoming_message->body.test_instruction.tick_number;
         outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
         outgoing_message->body.response.global_control_command =
-            HIL_APPLICATION_GLOBAL_CONTROL_RESERVED;
+            HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
         outgoing_message->body.response.detail = ( uint32_t )instruction_status;
         *response_required                     = true;
         return HOST_INTERFACE_STATUS_OK;
@@ -538,7 +540,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Instructions(
             // Construct the error message
             HOST_INTERFACE_Default_Error( outgoing_message );
             // TODO  more specific error catagory
-            outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_RESERVED;
+            outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
             *response_required                    = true;
             return HOST_INTERFACE_STATUS_OK;
         }
@@ -551,9 +553,9 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Instructions(
         outgoing_message->body.response.reason  = HIL_APPLICATION_RESPONSE_REASON_NONE;
         outgoing_message->body.response.tick_number =
             incoming_message->body.test_instruction.tick_number;
-        outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_RESERVED;
+        outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
         outgoing_message->body.response.global_control_command =
-            HIL_APPLICATION_GLOBAL_CONTROL_RESERVED;
+            HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
         outgoing_message->body.response.detail = 0U;
         *response_required                     = true;
         return HOST_INTERFACE_STATUS_OK;
@@ -568,9 +570,9 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Instructions(
     outgoing_message->body.response.reason  = HIL_APPLICATION_RESPONSE_REASON_NONE;
     outgoing_message->body.response.tick_number =
         incoming_message->body.test_instruction.tick_number;
-    outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_RESERVED;
+    outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
     outgoing_message->body.response.global_control_command =
-        HIL_APPLICATION_GLOBAL_CONTROL_RESERVED;
+        HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
     outgoing_message->body.response.detail = 0U;
     *response_required                     = true;
     return HOST_INTERFACE_STATUS_OK;
@@ -627,7 +629,7 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
                 // Construct the error message
                 HOST_INTERFACE_Default_Error( outgoing_message );
                 // TODO  more specific error catagory
-                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_RESERVED;
+                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
                 *response_required                    = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
@@ -667,7 +669,7 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
                 // Construct the error message
                 HOST_INTERFACE_Default_Error( outgoing_message );
                 // TODO  more specific error catagory
-                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_RESERVED;
+                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
                 *response_required                    = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
@@ -728,7 +730,7 @@ HOST_INTERFACE_process_Global_Control( const HIL_Application_Message_T* incoming
                 // Construct the error message
                 HOST_INTERFACE_Default_Error( outgoing_message );
                 // TODO  more specific error catagory
-                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_RESERVED;
+                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
                 *response_required                    = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
