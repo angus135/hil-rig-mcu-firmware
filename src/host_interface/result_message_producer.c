@@ -68,6 +68,9 @@ typedef struct
     /** Set to true when Flash Manager signals end of stored result stream. */
     bool is_flash_end_of_stream;
 
+    /** Sequential tick number (0..N-1) to emit to host. */
+    uint32_t next_tick_number;
+
     /** Indicates whether an active tick message is currently being aggregated. */
     bool has_active_tick;
 
@@ -453,6 +456,7 @@ RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* const out
 
                     stream->has_emitted_tick  = true;
                     stream->last_emitted_tick = stream->active_tick_number;
+                    stream->next_tick_number++;
                     stream->has_active_tick   = false;
                     return RESULT_MESSAGE_PRODUCER_STATUS_OK;
                 }
@@ -494,38 +498,10 @@ RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* const out
                 return RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA;
             }
 
-            if ( stream->has_emitted_tick && ( header.timestamp <= stream->last_emitted_tick ) )
-            {
-                return RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA;
-            }
-
-            const uint32_t expected_next_timestamp =
-                stream->has_emitted_tick ? ( stream->last_emitted_tick + 1U ) : 1U;
-
-            if ( header.timestamp > expected_next_timestamp )
-            {
-                // Synthesize contiguous intermediate tick with latched values
-                out_message->type             = HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT;
-                out_message->subtype          = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-                out_message->has_test_id      = 1U;
-                ( void )memset( &out_message->body.test_result, 0,
-                                sizeof( out_message->body.test_result ) );
-                out_message->body.test_result.tick_number = expected_next_timestamp - 1U;
-                out_message->body.test_result.condition   = HIL_APPLICATION_RESULT_CONDITION_OK;
-                for ( uint8_t ch = 0U; ch < HIL_APPLICATION_PWM_INPUT_CHANNEL_COUNT; ch++ )
-                {
-                    out_message->body.test_result.pwm_inputs[ch] = stream->last_pwm_inputs[ch];
-                }
-
-                stream->has_emitted_tick  = true;
-                stream->last_emitted_tick = expected_next_timestamp;
-                return RESULT_MESSAGE_PRODUCER_STATUS_OK;
-            }
-
             stream->has_active_tick    = true;
-            stream->active_tick_number = header.timestamp;
+            stream->active_tick_number = stream->next_tick_number + 1U;
             ( void )memset( &stream->staged_result, 0, sizeof( stream->staged_result ) );
-            stream->staged_result.tick_number = header.timestamp - 1U;
+            stream->staged_result.tick_number = stream->next_tick_number;
             stream->staged_result.condition   = HIL_APPLICATION_RESULT_CONDITION_OK;
             /* Latch latest PWM input measurements into the new tick */
             for ( uint8_t ch = 0U; ch < HIL_APPLICATION_PWM_INPUT_CHANNEL_COUNT; ch++ )
@@ -545,7 +521,7 @@ RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* const out
         }
         else if ( header.timestamp > stream->active_tick_number )
         {
-            // Record belongs to a future tick; preserve it in buffer and emit current tick
+            /* Record belongs to a future tick; emit current tick and advance sequential counter */
             out_message->type             = HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT;
             out_message->subtype          = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
             out_message->has_test_id      = 1U;
@@ -553,6 +529,7 @@ RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* const out
 
             stream->has_emitted_tick  = true;
             stream->last_emitted_tick = stream->active_tick_number;
+            stream->next_tick_number++;
             stream->has_active_tick   = false;
             return RESULT_MESSAGE_PRODUCER_STATUS_OK;
         }

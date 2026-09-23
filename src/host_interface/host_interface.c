@@ -613,6 +613,21 @@ static void HOST_INTERFACE_Protocol_Process(
     {
         if ( outgoing_message != NULL )
         {
+            // If remaining space in batch buffer is too small, flush to USB first
+            if ( ( sizeof( protocol_state->application.send_byte_span )
+                   - protocol_state->application.used_send_byte_span_size ) < 64U )
+            {
+                if ( protocol_state->application.used_send_byte_span_size > 0U )
+                {
+                    if ( HW_USB_Transmit(
+                             protocol_state->application.send_byte_span,
+                             ( uint16_t )protocol_state->application.used_send_byte_span_size ) )
+                    {
+                        protocol_state->application.used_send_byte_span_size = 0U;
+                    }
+                }
+            }
+
             const size_t current_offset = protocol_state->application.used_send_byte_span_size;
             const size_t available_space =
                 sizeof( protocol_state->application.send_byte_span ) - current_offset;

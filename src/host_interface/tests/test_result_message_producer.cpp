@@ -340,7 +340,7 @@ TEST_F( ResultMessageProducerTest, MapsEveryPhysicalDigitalInputPinToItsProtocol
 TEST_F( ResultMessageProducerTest, DecodeAnalogueInputRecord )
 {
     const uint32_t voltages[2] = { 1250000U, 3300000U };
-    simulated_stream_.AppendRecord( 1U, FLASH_MANAGER_RESULT_PERIPHERAL_ANALOGUE_INPUT, 0U,
+    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_ANALOGUE_INPUT, 0U,
                                     voltages, sizeof( voltages ) );
 
     EXPECT_CALL( *mock_flash_, FLASH_MANAGER_ReadResultBytes( _, _, _ ) )
@@ -354,7 +354,7 @@ TEST_F( ResultMessageProducerTest, DecodeAnalogueInputRecord )
     EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &message ),
                RESULT_MESSAGE_PRODUCER_STATUS_OK );
 
-    EXPECT_EQ( message.body.test_result.tick_number, 1U );
+    EXPECT_EQ( message.body.test_result.tick_number, 0U );
     EXPECT_EQ( message.body.test_result.analog_inputs[0].microvolts, 1250000U );
     EXPECT_EQ( message.body.test_result.analog_inputs[1].microvolts, 3300000U );
 }
@@ -363,12 +363,12 @@ TEST_F( ResultMessageProducerTest, DecodePwmCaptureRecords )
 {
     // Channel 0: 90000 ticks period (1ms @ 90MHz), 45000 ticks high (50% = 5000 permyriad)
     const uint32_t pwm_ch0[2] = { 90000U, 45000U };
-    simulated_stream_.AppendRecord( 2U, FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE, 0U, pwm_ch0,
+    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE, 0U, pwm_ch0,
                                     sizeof( pwm_ch0 ) );
 
     // Channel 1: 180000 ticks period (2ms @ 90MHz), 18000 ticks high (10% = 1000 permyriad)
     const uint32_t pwm_ch1[2] = { 180000U, 18000U };
-    simulated_stream_.AppendRecord( 2U, FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE, 1U, pwm_ch1,
+    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE, 1U, pwm_ch1,
                                     sizeof( pwm_ch1 ) );
 
     EXPECT_CALL( *mock_flash_, FLASH_MANAGER_ReadResultBytes( _, _, _ ) )
@@ -382,7 +382,7 @@ TEST_F( ResultMessageProducerTest, DecodePwmCaptureRecords )
     EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &message ),
                RESULT_MESSAGE_PRODUCER_STATUS_OK );
 
-    EXPECT_EQ( message.body.test_result.tick_number, 2U );
+    EXPECT_EQ( message.body.test_result.tick_number, 0U );
     EXPECT_EQ( message.body.test_result.pwm_inputs[0].period_nanoseconds, 1000000U );
     EXPECT_EQ( message.body.test_result.pwm_inputs[0].duty_cycle_permyriad, 5000U );
     EXPECT_EQ( message.body.test_result.pwm_inputs[1].period_nanoseconds, 2000000U );
@@ -478,7 +478,7 @@ TEST_F( ResultMessageProducerTest, AggregatesMultipleRecordsInSingleTick )
 TEST_F( ResultMessageProducerTest, ReassemblesRecordSplitAcrossSmallChunks )
 {
     const uint32_t voltages[2] = { 2500000U, 1800000U };
-    simulated_stream_.AppendRecord( 10U, FLASH_MANAGER_RESULT_PERIPHERAL_ANALOGUE_INPUT, 0U,
+    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_ANALOGUE_INPUT, 0U,
                                     voltages, sizeof( voltages ) );
 
     // Read in 3-byte chunks to force split headers and split payloads
@@ -492,7 +492,7 @@ TEST_F( ResultMessageProducerTest, ReassemblesRecordSplitAcrossSmallChunks )
 
     EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &message ),
                RESULT_MESSAGE_PRODUCER_STATUS_OK );
-    EXPECT_EQ( message.body.test_result.tick_number, 10U );
+    EXPECT_EQ( message.body.test_result.tick_number, 0U );
     EXPECT_EQ( message.body.test_result.analog_inputs[0].microvolts, 2500000U );
     EXPECT_EQ( message.body.test_result.analog_inputs[1].microvolts, 1800000U );
 }
@@ -668,4 +668,55 @@ TEST_F( ResultMessageProducerTest, PeripheralStubsProcessedWithoutError )
                RESULT_MESSAGE_PRODUCER_STATUS_OK );
     EXPECT_EQ( message.body.test_result.tick_number, 0U );
     EXPECT_EQ( message.body.test_result.condition, HIL_APPLICATION_RESULT_CONDITION_OK );
+}
+
+TEST_F( ResultMessageProducerTest, SequentialTicksSynthesizedAcrossFlashGaps )
+{
+    // Record at tick 0 (PWM capture) and record at tick 2 (Analogue input) - tick 1 is absent in flash
+    const uint32_t pwm[2]      = { 90000U, 45000U };
+    const uint32_t voltages[2] = { 1000000U, 2000000U };
+
+    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE, 0U, pwm,
+                                    sizeof( pwm ) );
+    simulated_stream_.AppendRecord( 2U, FLASH_MANAGER_RESULT_PERIPHERAL_ANALOGUE_INPUT, 0U,
+                                    voltages, sizeof( voltages ) );
+
+    EXPECT_CALL( *mock_flash_, FLASH_MANAGER_ReadResultBytes( _, _, _ ) )
+        .WillRepeatedly( [this]( uint8_t* dest, uint32_t cap, uint32_t* read ) {
+            return simulated_stream_.ReadChunk( dest, cap, read );
+        } );
+
+    HIL_Application_Message_T msg0;
+    std::memset( &msg0, 0, sizeof( msg0 ) );
+    EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &msg0 ),
+               RESULT_MESSAGE_PRODUCER_STATUS_OK );
+    EXPECT_EQ( msg0.body.test_result.tick_number, 0U );
+    EXPECT_EQ( msg0.body.test_result.pwm_inputs[0].period_nanoseconds, 1000000U );
+    EXPECT_EQ( msg0.body.test_result.pwm_inputs[0].duty_cycle_permyriad, 5000U );
+
+    // Call 2: Synthesizes tick 1 and retains latched PWM measurements from tick 0
+    HIL_Application_Message_T msg1;
+    std::memset( &msg1, 0, sizeof( msg1 ) );
+    EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &msg1 ),
+               RESULT_MESSAGE_PRODUCER_STATUS_OK );
+    EXPECT_EQ( msg1.body.test_result.tick_number, 1U );
+    EXPECT_EQ( msg1.body.test_result.pwm_inputs[0].period_nanoseconds, 1000000U );
+    EXPECT_EQ( msg1.body.test_result.pwm_inputs[0].duty_cycle_permyriad, 5000U );
+
+    // Call 3: Produces tick 2 with new analogue measurements and retained PWM
+    HIL_Application_Message_T msg2;
+    std::memset( &msg2, 0, sizeof( msg2 ) );
+    EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &msg2 ),
+               RESULT_MESSAGE_PRODUCER_STATUS_OK );
+    EXPECT_EQ( msg2.body.test_result.tick_number, 2U );
+    EXPECT_EQ( msg2.body.test_result.analog_inputs[0].microvolts, 1000000U );
+    EXPECT_EQ( msg2.body.test_result.analog_inputs[1].microvolts, 2000000U );
+    EXPECT_EQ( msg2.body.test_result.pwm_inputs[0].period_nanoseconds, 1000000U );
+    EXPECT_EQ( msg2.body.test_result.pwm_inputs[0].duty_cycle_permyriad, 5000U );
+
+    // Call 4: End of stream
+    HIL_Application_Message_T msg3;
+    std::memset( &msg3, 0, sizeof( msg3 ) );
+    EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &msg3 ),
+               RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM );
 }
