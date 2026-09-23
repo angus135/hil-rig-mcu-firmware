@@ -97,6 +97,19 @@ typedef struct
 /** @brief Singleton stream context for result message production. */
 static ResultProducerStream_T result_producer_stream = { 0 };
 
+/**
+ * @brief Physical GPIOD pin masks indexed by zero-based protocol DI channel.
+ *
+ * Execution samples retain the GPIO port bit positions. The protocol exposes
+ * digital inputs as a packed channel array, so the result boundary must map
+ * physical DI1..DI10 to protocol channels 0..9.
+ */
+static const uint32_t
+    RESULT_PRODUCER_DIGITAL_INPUT_PIN_MASKS[HIL_APPLICATION_DIGITAL_INPUT_CHANNEL_COUNT] = {
+        1UL << 8U,  1UL << 9U,  1UL << 10U, 1UL << 11U, 1UL << 14U,
+        1UL << 15U, 1UL << 0U,  1UL << 1U,  1UL << 2U,  1UL << 3U,
+    };
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -231,9 +244,10 @@ static bool RESULT_PRODUCER_DecodeDigitalInput( const uint8_t* const payload, co
     uint32_t pin_mask = 0U;
     ( void )memcpy( &pin_mask, payload, sizeof( pin_mask ) );
 
-    for ( uint8_t i = 0U; i < HIL_APPLICATION_DIGITAL_INPUT_CHANNEL_COUNT; i++ )
+    for ( uint8_t channel = 0U; channel < HIL_APPLICATION_DIGITAL_INPUT_CHANNEL_COUNT; channel++ )
     {
-        result->digital_inputs[i].high = ( uint8_t )( ( pin_mask >> i ) & 1U );
+        result->digital_inputs[channel].high =
+            ( uint8_t )( ( pin_mask & RESULT_PRODUCER_DIGITAL_INPUT_PIN_MASKS[channel] ) != 0U );
     }
 
     return true;

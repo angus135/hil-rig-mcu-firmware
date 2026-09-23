@@ -280,8 +280,8 @@ TEST_F( ResultMessageProducerTest, ZeroExecutionTimestampReturnsCorruptData )
 
 TEST_F( ResultMessageProducerTest, DecodeDigitalInputRecord )
 {
-    // Pin mask: pin 0, 2, 4, 8 high -> 0x0115
-    const uint32_t digital_mask = ( 1U << 0 ) | ( 1U << 2 ) | ( 1U << 4 ) | ( 1U << 8 );
+    // Protocol channels 0, 2, 4, and 8 are physical GPIOD pins 8, 10, 14, and 2.
+    const uint32_t digital_mask = ( 1U << 8 ) | ( 1U << 10 ) | ( 1U << 14 ) | ( 1U << 2 );
     simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
                                     &digital_mask, sizeof( digital_mask ) );
 
@@ -302,13 +302,39 @@ TEST_F( ResultMessageProducerTest, DecodeDigitalInputRecord )
     EXPECT_EQ( message.body.test_result.tick_number, 0U );
     EXPECT_EQ( message.body.test_result.condition, HIL_APPLICATION_RESULT_CONDITION_OK );
 
-    EXPECT_EQ( message.body.test_result.digital_inputs[0].high, 1U );
-    EXPECT_EQ( message.body.test_result.digital_inputs[1].high, 0U );
-    EXPECT_EQ( message.body.test_result.digital_inputs[2].high, 1U );
-    EXPECT_EQ( message.body.test_result.digital_inputs[3].high, 0U );
-    EXPECT_EQ( message.body.test_result.digital_inputs[4].high, 1U );
-    EXPECT_EQ( message.body.test_result.digital_inputs[8].high, 1U );
-    EXPECT_EQ( message.body.test_result.digital_inputs[9].high, 0U );
+    const uint8_t expected_channels[HIL_APPLICATION_DIGITAL_INPUT_CHANNEL_COUNT] = {
+        1U, 0U, 1U, 0U, 1U, 0U, 0U, 0U, 1U, 0U,
+    };
+    for ( uint8_t channel = 0U; channel < HIL_APPLICATION_DIGITAL_INPUT_CHANNEL_COUNT; channel++ )
+    {
+        EXPECT_EQ( message.body.test_result.digital_inputs[channel].high,
+                   expected_channels[channel] );
+    }
+}
+
+TEST_F( ResultMessageProducerTest, MapsEveryPhysicalDigitalInputPinToItsProtocolChannel )
+{
+    const uint8_t physical_pin_positions[HIL_APPLICATION_DIGITAL_INPUT_CHANNEL_COUNT] = {
+        8U, 9U, 10U, 11U, 14U, 15U, 0U, 1U, 2U, 3U,
+    };
+
+    for ( uint8_t active_channel = 0U;
+          active_channel < HIL_APPLICATION_DIGITAL_INPUT_CHANNEL_COUNT; active_channel++ )
+    {
+        const uint32_t physical_pin_mask = 1UL << physical_pin_positions[active_channel];
+        HIL_Application_Test_Result_T result;
+        std::memset( &result, 0, sizeof( result ) );
+
+        ASSERT_TRUE( RESULT_PRODUCER_DecodeDigitalInput(
+            reinterpret_cast<const uint8_t*>( &physical_pin_mask ), sizeof( physical_pin_mask ),
+            &result ) );
+
+        for ( uint8_t channel = 0U; channel < HIL_APPLICATION_DIGITAL_INPUT_CHANNEL_COUNT;
+              channel++ )
+        {
+            EXPECT_EQ( result.digital_inputs[channel].high, channel == active_channel ? 1U : 0U );
+        }
+    }
 }
 
 TEST_F( ResultMessageProducerTest, DecodeAnalogueInputRecord )
@@ -392,7 +418,7 @@ TEST_F( ResultMessageProducerTest, DecodePwmCaptureZeroTicksYieldsZeroOutput )
 TEST_F( ResultMessageProducerTest, AggregatesMultipleRecordsInSingleTick )
 {
     // Tick 0: Digital, Analogue, and PWM
-    const uint32_t digital_mask = 0x03;
+    const uint32_t digital_mask = ( 1U << 8 ) | ( 1U << 9 );
     const uint32_t voltages[2]  = { 500000U, 1000000U };
     const uint32_t pwm[2]       = { 90000U, 90000U };  // 100% duty = 10000 permyriad
 
