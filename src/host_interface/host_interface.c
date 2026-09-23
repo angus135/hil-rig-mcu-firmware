@@ -995,7 +995,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
 
         if ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESET ) != 0U )
         {
-            carry_on_notifications &= ( uint32_t )~( HOST_INTERFACE_NOTIFY_RESET );
+            carry_on_notifications &= ( uint32_t ) ~( HOST_INTERFACE_NOTIFY_RESET );
             outgoing_message_pending           = false;
             can_consume_incoming               = true;
             expected_tick_count                = 0U;

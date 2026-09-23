@@ -1244,10 +1244,10 @@ TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadRejectsWhenSessionIdle 
 {
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_FINALIZE_TEST_UPLOAD );
 
-    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Finalize_Test_Upload(
-                   &incoming, &outgoing, &response_required, data, sizeof( data ),
-                   &expected_tick_count ),
-               HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ(
+        HOST_INTERFACE_Test_Access_Process_Finalize_Test_Upload(
+            &incoming, &outgoing, &response_required, data, sizeof( data ), &expected_tick_count ),
+        HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
     EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
     EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
@@ -1271,7 +1271,8 @@ TEST_F( HostProcessMessageTest, ProcessExecutionControlStartRejectsWhenSessionNo
 }
 
 /**
- * @brief Verifies that Test Instruction is rejected when incoming test_id does not match active session test_id.
+ * @brief Verifies that Test Instruction is rejected when incoming test_id does not match active
+ * session test_id.
  */
 TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsMismatchedTestId )
 {
@@ -1296,7 +1297,8 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsMismatchedTestId )
 }
 
 /**
- * @brief Verifies that Armed notification suppresses duplicate complete-test response if session is already ARMED.
+ * @brief Verifies that Armed notification suppresses duplicate complete-test response if session is
+ * already ARMED.
  */
 TEST_F( HostProcessMessageTest, ArmedNotificationDoesNotDuplicateResponseIfAlreadyArmed )
 {
@@ -1311,7 +1313,8 @@ TEST_F( HostProcessMessageTest, ArmedNotificationDoesNotDuplicateResponseIfAlrea
 }
 
 /**
- * @brief Verifies that Armed notification produces complete-test response and sets ARMED if not already ARMED.
+ * @brief Verifies that Armed notification produces complete-test response and sets ARMED if not
+ * already ARMED.
  */
 TEST_F( HostProcessMessageTest, ArmedNotificationProducesResponseAndSetsArmedState )
 {
@@ -1379,7 +1382,8 @@ TEST_F( HostProcessMessageTest, ResultTransferNotificationSetsCompletedAtEndOfSt
 }
 
 /**
- * @brief Verifies that Process Internal Message handles bitmask correctly when multiple bits are set.
+ * @brief Verifies that Process Internal Message handles bitmask correctly when multiple bits are
+ * set.
  */
 TEST_F( HostProcessMessageTest, ProcessInternalMessageHandlesQueuedNotificationBits )
 {

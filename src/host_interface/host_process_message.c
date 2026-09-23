@@ -928,7 +928,7 @@ HOST_INTERFACE_process_Error( const HIL_Application_Message_T* incoming_message,
 {
     ( void )data;
     ( void )data_size;
-    s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+    s_session.state             = HOST_INTERFACE_SESSION_FAULTED;
     RunStateFaultReason_T fault = RUN_STATE_FAULT_EXTERNAL_REQUEST;
     switch ( incoming_message->body.error.category )
     {
@@ -1012,13 +1012,13 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Finalize_Test_Upload(
     /* Update the session to track progression through the test*/
     s_session.state = HOST_INTERFACE_SESSION_ARMED;
 
-    outgoing_message->type                      = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
-    outgoing_message->subtype                   = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-    outgoing_message->body.response.scope       = HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST;
-    outgoing_message->body.response.outcome     = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
-    outgoing_message->body.response.reason      = HIL_APPLICATION_RESPONSE_REASON_NONE;
-    outgoing_message->body.response.tick_number = 0U; /* FIXED line 889 bug */
-    outgoing_message->body.response.control_command        = HIL_APPLICATION_CONTROL_INVALID;
+    outgoing_message->type                          = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+    outgoing_message->subtype                       = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    outgoing_message->body.response.scope           = HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST;
+    outgoing_message->body.response.outcome         = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
+    outgoing_message->body.response.reason          = HIL_APPLICATION_RESPONSE_REASON_NONE;
+    outgoing_message->body.response.tick_number     = 0U; /* FIXED line 889 bug */
+    outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
     outgoing_message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
     outgoing_message->body.response.detail                 = 0U;
     *response_required                                     = true;
@@ -1048,7 +1048,7 @@ HOST_INTERFACE_process_Armed_Notification( HIL_Application_Message_T* outgoing_m
     ( void )data;
     ( void )data_size;
     // clear the armed notification flag
-    *notifications = *notifications & ( uint32_t )~( HOST_INTERFACE_NOTIFY_ARMED );
+    *notifications = *notifications & ( uint32_t ) ~( HOST_INTERFACE_NOTIFY_ARMED );
 
     // If session is already ARMED, the response was already sent by FINALIZE_TEST_UPLOAD
     if ( s_session.state == HOST_INTERFACE_SESSION_ARMED )
@@ -1075,7 +1075,7 @@ HOST_INTERFACE_process_Armed_Notification( HIL_Application_Message_T* outgoing_m
         outgoing_message->has_test_id = 1U;
         outgoing_message->test_id     = s_session.active_test_id;
     }
-    *response_required                                     = true;
+    *response_required = true;
     return HOST_INTERFACE_STATUS_OK;
 }
 
@@ -1104,7 +1104,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Result_Transfer_Notification(
     if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM )
     {
         // clear the result notification flag
-        *notifications = *notifications & ( uint32_t )~( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
+        *notifications = *notifications & ( uint32_t ) ~( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
         if ( RUN_STATE_MANAGER_RequestResultTransferComplete() == false )
         {
             s_session.state = HOST_INTERFACE_SESSION_FAULTED;
