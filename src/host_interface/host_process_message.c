@@ -54,10 +54,54 @@
  *------------------------------------------------------------------------------
  */
 
+/* The test session context */
+static HostTestSession_T s_session = {
+    .state               = HOST_INTERFACE_SESSION_STATE_IDLE,
+    .has_active_test_id  = false,
+    .active_test_id      = { { 0 } },
+    .instruction_family  = HOST_INSTRUCTION_FAMILY_UNSET,
+    .expected_tick_count = 0U,
+};
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+void HOST_INTERFACE_Reset_Session( void )
+{
+    s_session.state              = HOST_INTERFACE_SESSION_STATE_IDLE;
+    s_session.has_active_test_id = false;
+    ( void )memset( &s_session.active_test_id, 0, sizeof( s_session.active_test_id ) );
+    s_session.instruction_family  = HOST_INSTRUCTION_FAMILY_UNSET;
+    s_session.expected_tick_count = 0U;
+    HOST_INSTRUCTION_HANDLER_Reset();
+    RESULT_MESSAGE_PRODUCER_Reset();
+}
+
+const HostTestSession_T* HOST_INTERFACE_Get_Session( void )
+{
+    return &s_session;
+}
+
+/**
+ * @brief Helper to validate that an incoming message's Test ID matches the session.
+ */
+static bool HOST_INTERFACE_Validate_Test_Id( const HIL_Application_Message_T* incoming_message )
+{
+    if ( !s_session.has_active_test_id )
+    {
+        return true;
+    }
+    if ( ( incoming_message->has_test_id == 0U )
+         || ( memcmp( incoming_message->test_id.bytes, s_session.active_test_id.bytes,
+                      sizeof( s_session.active_test_id.bytes ) )
+              != 0 ) )
+    {
+        return false;
+    }
+    return true;
+}
 
 /**
  * @brief Construct a generic error message
@@ -399,6 +443,16 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     ( void )data;
     ( void )data_size;
 
+    // Only accept configuration when IDLE or COMPLETED
+    if ( ( s_session.state != HOST_INTERFACE_SESSION_STATE_IDLE )
+         && ( s_session.state != HOST_INTERFACE_SESSION_COMPLETED ) )
+    {
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+        *response_required                    = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
     static DutDriverConfiguration_T driver_config = { 0 };
     // Convert the config message to driver struct
     HOST_Interface_Status_T status =
@@ -503,6 +557,14 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     outgoing_message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
     outgoing_message->body.response.detail                 = 0U;
     *response_required                                     = true;
+
+    /* Update the session state to track the progression through the tests*/
+    s_session.state               = HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS;
+    s_session.has_active_test_id  = ( incoming_message->has_test_id != 0U );
+    s_session.active_test_id      = incoming_message->test_id;
+    s_session.instruction_family  = HOST_INSTRUCTION_FAMILY_UNSET;
+    s_session.expected_tick_count = incoming_message->body.test_configuration.expected_tick_count;
+
     return HOST_INTERFACE_STATUS_OK;
 }
 
@@ -541,6 +603,34 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incom
 {
     ( void )data;
     ( void )data_size;
+    // 1. Session state check
+    if ( s_session.state != HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS )
+    {
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+        *response_required                    = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
+    // 2. Test ID correlation check
+    if ( !HOST_INTERFACE_Validate_Test_Id( incoming_message ) )
+    {
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+        *response_required                    = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
+    // 3. Family exclusivity check (cannot send legacy Type 17 if variable Type 21 is active)
+    if ( s_session.instruction_family == HOST_INSTRUCTION_FAMILY_VARIABLE_UPDATE )
+    {
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+        *response_required                    = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+    s_session.instruction_family = HOST_INSTRUCTION_FAMILY_LEGACY_FIXED;
+
     HOST_Interface_Status_T instruction_status =
         HOST_INSTRUCTION_HANDLER_HandleInstruction( &incoming_message->body.test_instruction );
 
@@ -617,6 +707,23 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
             *response_required = false;
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
         case HIL_APPLICATION_CONTROL_START:
+
+            // Must be ARMED to start
+            if ( s_session.state != HOST_INTERFACE_SESSION_ARMED )
+            {
+                HOST_INTERFACE_Default_Error( outgoing_message );
+                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+                *response_required                    = true;
+                return HOST_INTERFACE_STATUS_OK;
+            }
+            if ( !HOST_INTERFACE_Validate_Test_Id( incoming_message ) )
+            {
+                HOST_INTERFACE_Default_Error( outgoing_message );
+                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+                *response_required                    = true;
+                return HOST_INTERFACE_STATUS_OK;
+            }
+
             // Signal run state manager to move to execution
             status = HOST_INTERFACE_request_state_tranistion( RUN_STATE_EXECUTION,
                                                               HOST_REQUEST_EXECUTION, 100, 0 );
@@ -648,6 +755,7 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
             }
             if ( status == HOST_INTERFACE_STATUS_OK )
             {
+                s_session.state    = HOST_INTERFACE_SESSION_EXECUTING;
                 *response_required = false;
                 return HOST_INTERFACE_STATUS_OK;
             }
@@ -657,6 +765,8 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
             *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_CONTROL_ABORT:
+            s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+
             // Signal run state manager to abort
             status = HOST_INTERFACE_request_state_tranistion( RUN_STATE_FAULT, HOST_REQUEST_FAULT,
                                                               2, 0 );
@@ -688,6 +798,7 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
             }
             if ( status == HOST_INTERFACE_STATUS_OK )
             {
+
                 *response_required = false;
                 return HOST_INTERFACE_STATUS_OK;
             }
@@ -848,6 +959,24 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Finalize_Test_Upload(
 {
     ( void )data;
     ( void )data_size;
+
+    // 1. Session state check
+    if ( s_session.state != HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS )
+    {
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+        *response_required                    = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+    // 2. Test ID check
+    if ( !HOST_INTERFACE_Validate_Test_Id( incoming_message ) )
+    {
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+        *response_required                    = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
     // Request transition to CONFIGURATION
     // TODO change 3000 back to 4
     HOST_Interface_Status_T status = HOST_INTERFACE_request_state_tranistion(
@@ -891,6 +1020,17 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Finalize_Test_Upload(
     outgoing_message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
     outgoing_message->body.response.detail                 = 0U;
     *response_required                                     = true;
+
+    /* Update the session to track progression through the test*/
+    s_session.state = HOST_INTERFACE_SESSION_ARMED;
+
+    outgoing_message->type                      = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+    outgoing_message->subtype                   = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    outgoing_message->body.response.scope       = HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST;
+    outgoing_message->body.response.outcome     = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
+    outgoing_message->body.response.reason      = HIL_APPLICATION_RESPONSE_REASON_NONE;
+    outgoing_message->body.response.tick_number = 0U; /* FIXED line 889 bug */
+
     return HOST_INTERFACE_STATUS_OK;
 }
 

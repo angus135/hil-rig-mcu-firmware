@@ -85,6 +85,21 @@ typedef struct
     HIL_Transport_Failure_T       transport_last_failure;
 } HostInterfaceStatus_T;
 
+/**
+ * @brief Live application-layer test session state.
+ */
+typedef enum
+{
+    HOST_INTERFACE_SESSION_STATE_IDLE = 0,
+    HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS, /**< Config accepted; receiving & uploading
+                                                      instructions */
+    HOST_INTERFACE_SESSION_ARMED,     /**< Upload finalized & hardware armed; ready for START */
+    HOST_INTERFACE_SESSION_EXECUTING, /**< Running on hardware */
+    HOST_INTERFACE_SESSION_RESULT_TRANSFER, /**< Streaming results (Type 32/34) to host */
+    HOST_INTERFACE_SESSION_COMPLETED,       /**< All results transferred; ready to return to IDLE */
+    HOST_INTERFACE_SESSION_FAULTED          /**< Fault or aborted */
+} HOST_INTERFACE_Session_State_T;
+
 extern TaskHandle_t host_interface_task_handle;
 
 /**-----------------------------------------------------------------------------

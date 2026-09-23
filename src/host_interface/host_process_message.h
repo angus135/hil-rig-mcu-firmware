@@ -29,6 +29,8 @@ extern "C"
 #include "hil_rig_protocol/application/application_message.h"
 #include "hil_rig_protocol/transport/transport.h"
 
+#include "host_interface.h"
+
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
@@ -128,6 +130,28 @@ typedef enum
     HOST_INTERFACE_STATUS_UNSUPPORTED_NOTIFICATION = 20,
 } HOST_Interface_Status_T;
 
+/**
+ * @brief Active instruction family within a test session.
+ */
+typedef enum
+{
+    HOST_INSTRUCTION_FAMILY_UNSET = 0,
+    HOST_INSTRUCTION_FAMILY_LEGACY_FIXED,   /**< TEST_INSTRUCTION (Type 17) */
+    HOST_INSTRUCTION_FAMILY_VARIABLE_UPDATE /**< UPDATE_INSTRUCTION (Type 21) */
+} HostInstructionFamily_T;
+
+/**
+ * @brief Session context tracked by the Host Interface.
+ */
+typedef struct
+{
+    HOST_INTERFACE_Session_State_T state;
+    bool                           has_active_test_id;
+    HIL_Application_Test_Id_T      active_test_id;
+    HostInstructionFamily_T        instruction_family;
+    uint32_t                       expected_tick_count;
+} HostTestSession_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -138,6 +162,16 @@ HOST_Interface_Status_T HOST_INTERFACE_process_message(
     bool outgoing_message_accepted, HIL_Application_Message_T* outgoing_message,
     HIL_Application_Message_T* overflow_outgoing_message, bool* response_required, uint8_t* data,
     size_t data_size, uint32_t* notifications, uint32_t* expected_tick_count );
+
+/**
+ * @brief Resets the active test session to IDLE.
+ */
+void HOST_INTERFACE_Reset_Session( void );
+
+/**
+ * @brief Returns a read-only pointer to the active session state.
+ */
+const HostTestSession_T* HOST_INTERFACE_Get_Session( void );
 
 #ifdef __cplusplus
 }
