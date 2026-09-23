@@ -20,6 +20,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "hil_rig_protocol/application/application.h"
 #include "hil_rig_protocol/transport/transport.h"
@@ -33,6 +34,12 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
+
+/**
+ * Set to 1 to enable direct length-prefixed USB streaming test path (bypassing Transport Stop-and-Wait).
+ * Set to 0 to use original Transport session & frame layer.
+ */
+#define HOST_INTERFACE_DIRECT_USB_STREAMING ( 1 )
 
 /** Period between Host Interface task iterations. */
 #define HOST_INTERFACE_PERIOD_MS ( 1U )
@@ -538,6 +545,100 @@ static void HOST_INTERFACE_Protocol_Process(
     // before the Host Interface inspects the Transport queues.
     HW_USB_Monitor_Process();
 
+#if HOST_INTERFACE_DIRECT_USB_STREAMING
+    /* =========================================================================
+     * 1. DIRECT USB RECEIVE (Bypasses HIL_TRANSPORT_Receive_Bytes & Process)
+     * ========================================================================= */
+    if ( HW_USB_Get_Connection_State() == HW_USB_CONNECTION_STATE_ACTIVE )
+    {
+        /* Compact unconsumed bytes if offset has advanced */
+        if ( protocol_state->usb.receive_offset > 0U )
+        {
+            const uint32_t remaining =
+                protocol_state->usb.receive_count - protocol_state->usb.receive_offset;
+            if ( remaining > 0U )
+            {
+                ( void )memmove(
+                    &protocol_state->usb.receive_buffer[0],
+                    &protocol_state->usb.receive_buffer[protocol_state->usb.receive_offset],
+                    remaining );
+            }
+            protocol_state->usb.receive_count  = remaining;
+            protocol_state->usb.receive_offset = 0U;
+        }
+
+        /* Refill staging buffer if there is available space */
+        if ( protocol_state->usb.receive_count < sizeof( protocol_state->usb.receive_buffer ) )
+        {
+            const uint32_t rx = HW_USB_Receive(
+                &protocol_state->usb.receive_buffer[protocol_state->usb.receive_count],
+                ( uint32_t )( sizeof( protocol_state->usb.receive_buffer )
+                              - protocol_state->usb.receive_count ) );
+            protocol_state->usb.receive_count += rx;
+        }
+
+        /* Process all complete 2-byte-length framed Application messages */
+        if ( can_consume_incoming_message
+             && ( ( protocol_state->usb.receive_count - protocol_state->usb.receive_offset )
+                  >= 2U ) )
+        {
+            const uint8_t* const frame =
+                &protocol_state->usb.receive_buffer[protocol_state->usb.receive_offset];
+            const uint16_t msg_len = ( uint16_t )frame[0] | ( ( uint16_t )frame[1] << 8 );
+            const size_t   total_frame_len = ( size_t )msg_len + 2U;
+            const size_t   bytes_available = ( size_t )( protocol_state->usb.receive_count
+                                                       - protocol_state->usb.receive_offset );
+
+            if ( bytes_available >= total_frame_len )
+            {
+                size_t required_decode_capacity = 0U;
+                protocol_state->application.status = HIL_APPLICATION_Decode_Message(
+                    &protocol_state->application.context, &frame[2], msg_len, incoming_message,
+                    protocol_state->application.receive_data,
+                    sizeof( protocol_state->application.receive_data ), &required_decode_capacity );
+
+                protocol_state->usb.receive_offset += ( uint32_t )total_frame_len;
+                if ( protocol_state->application.status == HIL_APPLICATION_STATUS_OK )
+                {
+                    *incoming_message_available = true;
+                }
+            }
+        }
+    }
+
+    /* =========================================================================
+     * 2. DIRECT USB TRANSMIT (Bypasses HIL_TRANSPORT_Submit & Peek_Output)
+     * ========================================================================= */
+    if ( ( outgoing_message != NULL )
+         && ( HW_USB_Get_Connection_State() == HW_USB_CONNECTION_STATE_ACTIVE ) )
+    {
+        size_t payload_len = 0U;
+        // Leave 2 bytes at the beginning for the length header
+        protocol_state->application.status = HIL_APPLICATION_Encode_Message(
+            &protocol_state->application.context, outgoing_message,
+            &protocol_state->application.send_byte_span[2],
+            sizeof( protocol_state->application.send_byte_span) - 2U, &payload_len );
+
+        if ( protocol_state->application.status == HIL_APPLICATION_STATUS_OK )
+        {
+            // Prepend 2-byte Little Endian length header
+            protocol_state->application.send_byte_span[0] = ( uint8_t )( payload_len & 0xFFU );
+            protocol_state->application.send_byte_span[1] =
+                ( uint8_t )( ( payload_len >> 8 ) & 0xFFU );
+
+            if ( HW_USB_Transmit( protocol_state->application.send_byte_span,
+                                  ( uint16_t )( payload_len + 2U ) ) )
+            {
+                *outgoing_message_accepted = true;
+            }
+        }
+        else if ( protocol_state->application.status == HIL_APPLICATION_STATUS_INTERNAL_ERROR
+                  || protocol_state->application.status == HIL_APPLICATION_STATUS_BUFFER_TOO_SMALL )
+        {
+            HOST_INTERFACE_Error_Handler();
+        }
+    }
+#else
     // =======------- DRAIN TRANSPORT EVENTS
     // Event draining is mandatory service work. Transport uses a bounded FIFO;
     // leaving events unread can prevent later state transitions from publishing
@@ -804,6 +905,7 @@ static void HOST_INTERFACE_Protocol_Process(
             HOST_INTERFACE_Error_Handler();
         }
     }
+#endif
 }
 
 static HostInterfaceStatus_T s_host_interface_status = { 0 };

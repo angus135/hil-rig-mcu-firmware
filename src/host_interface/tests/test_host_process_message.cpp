@@ -671,7 +671,7 @@ TEST_F( HostProcessMessageTest, TestInstructionHandlerFailureProducesRejectedRes
     EXPECT_EQ( outgoing.body.response.tick_number, 1U );
 }
 
-TEST_F( HostProcessMessageTest, TestInstructionBuildsTickResponseForNonFinalInstruction )
+TEST_F( HostProcessMessageTest, TestInstructionIngestsDirectlyWithoutPerTickResponse )
 {
     HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS );
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION );
@@ -684,15 +684,10 @@ TEST_F( HostProcessMessageTest, TestInstructionBuildsTickResponseForNonFinalInst
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
                HOST_INTERFACE_STATUS_OK );
-    EXPECT_TRUE( response_required );
-    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
-    EXPECT_EQ( outgoing.subtype, HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
-    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TICK );
-    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED );
-    EXPECT_EQ( outgoing.body.response.tick_number, 4U );
+    EXPECT_FALSE( response_required );
 }
 
-TEST_F( HostProcessMessageTest, TestInstructionWithFinalTickNumberBuildsTickResponse )
+TEST_F( HostProcessMessageTest, TestInstructionWithFinalTickNumberIngestsDirectlyWithoutPerTickResponse )
 {
     HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS );
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION );
@@ -705,12 +700,7 @@ TEST_F( HostProcessMessageTest, TestInstructionWithFinalTickNumberBuildsTickResp
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
                HOST_INTERFACE_STATUS_OK );
-    EXPECT_TRUE( response_required );
-    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
-    EXPECT_EQ( outgoing.subtype, HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
-    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TICK );
-    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED );
-    EXPECT_EQ( outgoing.body.response.tick_number, 9U );
+    EXPECT_FALSE( response_required );
 }
 
 TEST_F( HostProcessMessageTest, VariableInstructionDataIsNotImplemented )

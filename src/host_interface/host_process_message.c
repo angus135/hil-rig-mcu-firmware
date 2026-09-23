@@ -696,19 +696,8 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incom
         return HOST_INTERFACE_STATUS_OK;
     }
 
-    // Set the type and subtype
-    outgoing_message->type    = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
-    outgoing_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-    // Set Response body
-    outgoing_message->body.response.scope   = HIL_APPLICATION_RESPONSE_SCOPE_TICK;
-    outgoing_message->body.response.outcome = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
-    outgoing_message->body.response.reason  = HIL_APPLICATION_RESPONSE_REASON_NONE;
-    outgoing_message->body.response.tick_number =
-        incoming_message->body.test_instruction.tick_number;
-    outgoing_message->body.response.control_command        = HIL_APPLICATION_CONTROL_INVALID;
-    outgoing_message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
-    outgoing_message->body.response.detail                 = 0U;
-    *response_required                                     = true;
+    // Success: Ingest directly into flash/RAM storage with zero per-tick Application responses.
+    *response_required = false;
     return HOST_INTERFACE_STATUS_OK;
 }
 
