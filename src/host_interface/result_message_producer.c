@@ -80,6 +80,9 @@ typedef struct
     /** Timestamp of the most recently emitted tick message. */
     uint32_t last_emitted_tick;
 
+    /** Latched PWM input values held across ticks until updated. */
+    HIL_Application_Pwm_Input_Value_T last_pwm_inputs[HIL_APPLICATION_PWM_INPUT_CHANNEL_COUNT];
+
     /** Partially or fully populated test result for active_tick_number. */
     HIL_Application_Test_Result_T staged_result;
 } ResultProducerStream_T;
@@ -300,6 +303,7 @@ static bool RESULT_PRODUCER_DecodePwmCapture( const uint8_t channel, const uint8
     {
         result->pwm_inputs[channel].period_nanoseconds   = 0U;
         result->pwm_inputs[channel].duty_cycle_permyriad = 0U;
+        result_producer_stream.last_pwm_inputs[channel]  = result->pwm_inputs[channel];
         return true;
     }
 
@@ -315,6 +319,7 @@ static bool RESULT_PRODUCER_DecodePwmCapture( const uint8_t channel, const uint8
 
     result->pwm_inputs[channel].period_nanoseconds   = ( uint32_t )period_ns;
     result->pwm_inputs[channel].duty_cycle_permyriad = ( uint16_t )duty_permyriad;
+    result_producer_stream.last_pwm_inputs[channel]  = result->pwm_inputs[channel];
 
     return true;
 }
@@ -494,11 +499,39 @@ RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* const out
                 return RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA;
             }
 
+            const uint32_t expected_next_timestamp =
+                stream->has_emitted_tick ? ( stream->last_emitted_tick + 1U ) : 1U;
+
+            if ( header.timestamp > expected_next_timestamp )
+            {
+                // Synthesize contiguous intermediate tick with latched values
+                out_message->type             = HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT;
+                out_message->subtype          = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+                out_message->has_test_id      = 1U;
+                ( void )memset( &out_message->body.test_result, 0,
+                                sizeof( out_message->body.test_result ) );
+                out_message->body.test_result.tick_number = expected_next_timestamp - 1U;
+                out_message->body.test_result.condition   = HIL_APPLICATION_RESULT_CONDITION_OK;
+                for ( uint8_t ch = 0U; ch < HIL_APPLICATION_PWM_INPUT_CHANNEL_COUNT; ch++ )
+                {
+                    out_message->body.test_result.pwm_inputs[ch] = stream->last_pwm_inputs[ch];
+                }
+
+                stream->has_emitted_tick  = true;
+                stream->last_emitted_tick = expected_next_timestamp;
+                return RESULT_MESSAGE_PRODUCER_STATUS_OK;
+            }
+
             stream->has_active_tick    = true;
             stream->active_tick_number = header.timestamp;
             ( void )memset( &stream->staged_result, 0, sizeof( stream->staged_result ) );
             stream->staged_result.tick_number = header.timestamp - 1U;
             stream->staged_result.condition   = HIL_APPLICATION_RESULT_CONDITION_OK;
+            /* Latch latest PWM input measurements into the new tick */
+            for ( uint8_t ch = 0U; ch < HIL_APPLICATION_PWM_INPUT_CHANNEL_COUNT; ch++ )
+            {
+                stream->staged_result.pwm_inputs[ch] = stream->last_pwm_inputs[ch];
+            }
         }
 
         if ( header.timestamp == stream->active_tick_number )
