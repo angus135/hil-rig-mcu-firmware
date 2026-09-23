@@ -466,6 +466,15 @@ RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* const out
         // Complete record found in stream buffer
         if ( !stream->has_active_tick )
         {
+            /*
+             * Execution boundaries are stored as one-based timestamps (1..N),
+             * while Application result ticks are zero-based (0..N-1).
+             */
+            if ( header.timestamp == 0U )
+            {
+                return RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA;
+            }
+
             if ( stream->has_emitted_tick && ( header.timestamp <= stream->last_emitted_tick ) )
             {
                 return RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA;
@@ -474,7 +483,7 @@ RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* const out
             stream->has_active_tick    = true;
             stream->active_tick_number = header.timestamp;
             ( void )memset( &stream->staged_result, 0, sizeof( stream->staged_result ) );
-            stream->staged_result.tick_number = header.timestamp;
+            stream->staged_result.tick_number = header.timestamp - 1U;
             stream->staged_result.condition   = HIL_APPLICATION_RESULT_CONDITION_OK;
         }
 

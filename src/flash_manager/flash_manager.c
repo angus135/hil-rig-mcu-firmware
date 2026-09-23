@@ -2095,7 +2095,7 @@ FlashManagerResultTransferStatus_T FLASH_MANAGER_FinishResultTransfer( void )
     {
         FLASH_MANAGER_Unlock();
 
-        return FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE;
+        return FLASH_MANAGER_RESULT_TRANSFER_INCOMPLETE;
     }
 
     /*

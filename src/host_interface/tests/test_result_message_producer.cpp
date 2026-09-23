@@ -99,11 +99,17 @@ public:
         read_cursor_ = 0;
     }
 
-    void AppendRecord( uint32_t timestamp, uint8_t peripheral_type, uint8_t channel,
+    void AppendRecord( uint32_t protocol_tick, uint8_t peripheral_type, uint8_t channel,
                        const void* payload, uint16_t payload_length )
     {
+        AppendRawRecord( protocol_tick + 1U, peripheral_type, channel, payload, payload_length );
+    }
+
+    void AppendRawRecord( uint32_t execution_timestamp, uint8_t peripheral_type, uint8_t channel,
+                          const void* payload, uint16_t payload_length )
+    {
         FlashManagerResultHeader_T header;
-        header.timestamp            = timestamp;
+        header.timestamp            = execution_timestamp;
         header.payload_length_bytes = payload_length;
         header.peripheral_type      = peripheral_type;
         header.channel              = channel;
@@ -249,6 +255,22 @@ TEST_F( ResultMessageProducerTest, FlashInternalErrorReturnsInternalError )
 
     EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &message ),
                RESULT_MESSAGE_PRODUCER_STATUS_INTERNAL_ERROR );
+}
+
+TEST_F( ResultMessageProducerTest, ZeroExecutionTimestampReturnsCorruptData )
+{
+    const uint32_t digital_mask = 0U;
+    simulated_stream_.AppendRawRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
+                                       &digital_mask, sizeof( digital_mask ) );
+
+    EXPECT_CALL( *mock_flash_, FLASH_MANAGER_ReadResultBytes( _, _, _ ) )
+        .WillRepeatedly( [this]( uint8_t* dest, uint32_t cap, uint32_t* read ) {
+            return simulated_stream_.ReadChunk( dest, cap, read );
+        } );
+
+    HIL_Application_Message_T message{};
+    EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &message ),
+               RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA );
 }
 
 /**-----------------------------------------------------------------------------

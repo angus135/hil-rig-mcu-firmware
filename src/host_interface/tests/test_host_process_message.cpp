@@ -708,13 +708,21 @@ TEST_F( HostProcessMessageTest, ExecutionControlRejectsInvalidAndReservedCommand
 
 TEST_F( HostProcessMessageTest, ExecutionControlStartSucceedsWhenExecutionStateIsReached )
 {
-    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_ARMED );
+    constexpr uint32_t expected_tick_count = 600U;
+    HostTestSession_T   session{};
+    session.state               = HOST_INTERFACE_SESSION_ARMED;
+    session.expected_tick_count = expected_tick_count;
+    HOST_INTERFACE_Test_Access_Set_Session( &session );
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_EXECUTION_CONTROL );
     incoming.body.execution_control.command = HIL_APPLICATION_CONTROL_START;
     run_state_status.state                  = RUN_STATE_EXECUTION;
 
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestExecution( _ ) )
-        .WillOnce( Return( RUN_STATE_EXECUTION_REQUEST_ACCEPTED ) );
+        .WillOnce( Invoke( [expected_tick_count]( RequestExecutionArgument_T request ) {
+            EXPECT_NE( request, nullptr );
+            EXPECT_EQ( request->tick_count, expected_tick_count );
+            return RUN_STATE_EXECUTION_REQUEST_ACCEPTED;
+        } ) );
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
         .WillOnce(
             Invoke( [this]( RunStateManagerStatus_T* status ) { *status = run_state_status; } ) );
@@ -722,7 +730,71 @@ TEST_F( HostProcessMessageTest, ExecutionControlStartSucceedsWhenExecutionStateI
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Execution_Control(
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
                HOST_INTERFACE_STATUS_OK );
-    EXPECT_FALSE( response_required );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( HIL_APPLICATION_MESSAGE_TYPE_RESPONSE, outgoing.type );
+    EXPECT_EQ( HIL_APPLICATION_RESPONSE_SCOPE_EXECUTION_CONTROL, outgoing.body.response.scope );
+    EXPECT_EQ( HIL_APPLICATION_RESPONSE_OUTCOME_COMPLETED, outgoing.body.response.outcome );
+    EXPECT_EQ( HIL_APPLICATION_RESPONSE_REASON_NONE, outgoing.body.response.reason );
+    EXPECT_EQ( HIL_APPLICATION_CONTROL_START, outgoing.body.response.control_command );
+    EXPECT_EQ( HOST_INTERFACE_SESSION_EXECUTING, HOST_INTERFACE_Get_Session()->state );
+}
+
+TEST_F( HostProcessMessageTest, ExecutionControlStartAdmissionFailureReturnsRejectedResponse )
+{
+    HostTestSession_T session{};
+    session.state               = HOST_INTERFACE_SESSION_ARMED;
+    session.expected_tick_count = 600U;
+    HOST_INTERFACE_Test_Access_Set_Session( &session );
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_EXECUTION_CONTROL );
+    incoming.body.execution_control.command = HIL_APPLICATION_CONTROL_START;
+
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestExecution( _ ) )
+        .WillOnce( Return( RUN_STATE_EXECUTION_REQUEST_INVALID_STATE ) );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Execution_Control(
+                   &incoming, &outgoing, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( HIL_APPLICATION_MESSAGE_TYPE_RESPONSE, outgoing.type );
+    EXPECT_EQ( HIL_APPLICATION_RESPONSE_SCOPE_EXECUTION_CONTROL, outgoing.body.response.scope );
+    EXPECT_EQ( HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED, outgoing.body.response.outcome );
+    EXPECT_EQ( HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED,
+               outgoing.body.response.reason );
+    EXPECT_EQ( HIL_APPLICATION_CONTROL_START, outgoing.body.response.control_command );
+    EXPECT_EQ( HOST_INTERFACE_SESSION_ARMED, HOST_INTERFACE_Get_Session()->state );
+}
+
+TEST_F( HostProcessMessageTest, ExecutionControlStartFaultReturnsFailedResponseWithFaultReason )
+{
+    HostTestSession_T session{};
+    session.state               = HOST_INTERFACE_SESSION_ARMED;
+    session.expected_tick_count = 600U;
+    HOST_INTERFACE_Test_Access_Set_Session( &session );
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_EXECUTION_CONTROL );
+    incoming.body.execution_control.command = HIL_APPLICATION_CONTROL_START;
+    run_state_status.state                  = RUN_STATE_FAULT;
+
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestExecution( _ ) )
+        .WillOnce( Return( RUN_STATE_EXECUTION_REQUEST_ACCEPTED ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
+        .WillOnce(
+            Invoke( [this]( RunStateManagerStatus_T* status ) { *status = run_state_status; } ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetFaultReason() )
+        .WillOnce( Return( RUN_STATE_FAULT_DRIVER_START ) );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Execution_Control(
+                   &incoming, &outgoing, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( HIL_APPLICATION_MESSAGE_TYPE_RESPONSE, outgoing.type );
+    EXPECT_EQ( HIL_APPLICATION_RESPONSE_SCOPE_EXECUTION_CONTROL, outgoing.body.response.scope );
+    EXPECT_EQ( HIL_APPLICATION_RESPONSE_OUTCOME_FAILED, outgoing.body.response.outcome );
+    EXPECT_EQ( HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE,
+               outgoing.body.response.reason );
+    EXPECT_EQ( HIL_APPLICATION_CONTROL_START, outgoing.body.response.control_command );
+    EXPECT_EQ( static_cast<uint32_t>( RUN_STATE_FAULT_DRIVER_START ),
+               outgoing.body.response.detail );
+    EXPECT_EQ( HOST_INTERFACE_SESSION_ARMED, HOST_INTERFACE_Get_Session()->state );
 }
 
 TEST_F( HostProcessMessageTest, ExecutionControlAbortSucceedsWhenFaultStateIsReached )
@@ -1271,8 +1343,40 @@ TEST_F( HostProcessMessageTest, ProcessExecutionControlStartRejectsWhenSessionNo
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
                HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
-    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
-    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_EXECUTION_CONTROL );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
+    EXPECT_EQ( outgoing.body.response.reason,
+               HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED );
+    EXPECT_EQ( outgoing.body.response.control_command, HIL_APPLICATION_CONTROL_START );
+}
+
+TEST_F( HostProcessMessageTest, ProcessExecutionControlStartRejectsMismatchedTestId )
+{
+    HostTestSession_T session{};
+    session.state                   = HOST_INTERFACE_SESSION_ARMED;
+    session.has_active_test_id      = true;
+    session.active_test_id.bytes[0] = 0xAA;
+    session.expected_tick_count     = 600U;
+    HOST_INTERFACE_Test_Access_Set_Session( &session );
+
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_EXECUTION_CONTROL );
+    incoming.has_test_id                    = 1U;
+    incoming.test_id.bytes[0]               = 0xBB;
+    incoming.body.execution_control.command = HIL_APPLICATION_CONTROL_START;
+
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestExecution( _ ) ).Times( 0 );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Execution_Control(
+                   &incoming, &outgoing, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_EXECUTION_CONTROL );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
+    EXPECT_EQ( outgoing.body.response.reason,
+               HIL_APPLICATION_RESPONSE_REASON_INCONSISTENT_TEST_ID );
+    EXPECT_EQ( outgoing.body.response.control_command, HIL_APPLICATION_CONTROL_START );
 }
 
 /**

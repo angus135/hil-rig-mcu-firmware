@@ -132,6 +132,22 @@ HOST_Interface_Status_T HOST_INTERFACE_Default_Error( HIL_Application_Message_T*
     return HOST_INTERFACE_STATUS_OK;
 }
 
+/** Builds the correlated Application Response for an Execution Control request. */
+static void HOST_INTERFACE_BuildExecutionControlResponse(
+    HIL_Application_Message_T* message, HIL_Application_Response_Outcome_T outcome,
+    HIL_Application_Response_Reason_T reason, HIL_Application_Control_Command_T command )
+{
+    message->type                                 = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+    message->subtype                              = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    message->body.response.scope = HIL_APPLICATION_RESPONSE_SCOPE_EXECUTION_CONTROL;
+    message->body.response.outcome                = outcome;
+    message->body.response.reason                 = reason;
+    message->body.response.tick_number            = 0U;
+    message->body.response.control_command        = command;
+    message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
+    message->body.response.detail                 = 0U;
+}
+
 /**
  * @brief Takes the state you want to transition to and calls the associated request function.
  *
@@ -711,57 +727,66 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
             // Must be ARMED to start
             if ( s_session.state != HOST_INTERFACE_SESSION_ARMED )
             {
-                HOST_INTERFACE_Default_Error( outgoing_message );
-                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-                *response_required                    = true;
+                HOST_INTERFACE_BuildExecutionControlResponse(
+                    outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+                    HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED,
+                    HIL_APPLICATION_CONTROL_START );
+                *response_required = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             if ( !HOST_INTERFACE_Validate_Test_Id( incoming_message ) )
             {
-                HOST_INTERFACE_Default_Error( outgoing_message );
-                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-                *response_required                    = true;
+                HOST_INTERFACE_BuildExecutionControlResponse(
+                    outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+                    HIL_APPLICATION_RESPONSE_REASON_INCONSISTENT_TEST_ID,
+                    HIL_APPLICATION_CONTROL_START );
+                *response_required = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
 
             // Signal run state manager to move to execution
-            status = HOST_INTERFACE_request_state_tranistion( RUN_STATE_EXECUTION,
-                                                              HOST_REQUEST_EXECUTION, 100, 0 );
+            status = HOST_INTERFACE_request_state_tranistion(
+                RUN_STATE_EXECUTION, HOST_REQUEST_EXECUTION, 100, s_session.expected_tick_count );
             if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
             {
-                // Construct the error message
-                HOST_INTERFACE_Default_Error( outgoing_message );
-                // TODO  more specific error catagory
-                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-                *response_required                    = true;
+                HOST_INTERFACE_BuildExecutionControlResponse(
+                    outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+                    HIL_APPLICATION_RESPONSE_REASON_UNSUPPORTED, HIL_APPLICATION_CONTROL_START );
+                *response_required = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             if ( status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
             {
-                // Construct the error message
-                HOST_INTERFACE_Default_Error( outgoing_message );
-                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-                *response_required                    = true;
+                HOST_INTERFACE_BuildExecutionControlResponse(
+                    outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_FAILED,
+                    HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE,
+                    HIL_APPLICATION_CONTROL_START );
+                outgoing_message->body.response.detail =
+                    ( uint32_t )RUN_STATE_MANAGER_GetFaultReason();
+                *response_required = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             if ( status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE )
             {
-                // Construct the error message
-                HOST_INTERFACE_Default_Error( outgoing_message );
-                // TODO  more specific error catagory
-                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-                *response_required                    = true;
+                HOST_INTERFACE_BuildExecutionControlResponse(
+                    outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+                    HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED,
+                    HIL_APPLICATION_CONTROL_START );
+                *response_required = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             if ( status == HOST_INTERFACE_STATUS_OK )
             {
-                s_session.state    = HOST_INTERFACE_SESSION_EXECUTING;
-                *response_required = false;
+                s_session.state = HOST_INTERFACE_SESSION_EXECUTING;
+                HOST_INTERFACE_BuildExecutionControlResponse(
+                    outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_COMPLETED,
+                    HIL_APPLICATION_RESPONSE_REASON_NONE, HIL_APPLICATION_CONTROL_START );
+                *response_required = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
-            // Construct the error message
-            HOST_INTERFACE_Default_Error( outgoing_message );
-            // TODO  more specific error catagory
+            HOST_INTERFACE_BuildExecutionControlResponse(
+                outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_FAILED,
+                HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE, HIL_APPLICATION_CONTROL_START );
             *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_CONTROL_ABORT:

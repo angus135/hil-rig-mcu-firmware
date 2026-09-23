@@ -344,6 +344,9 @@ typedef enum
     /** The operation is not permitted in the current lifecycle state. */
     FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE,
 
+    /** Unread result bytes remain; continue reading before finishing the transfer. */
+    FLASH_MANAGER_RESULT_TRANSFER_INCOMPLETE,
+
     /** A destination pointer or requested capacity was invalid. */
     FLASH_MANAGER_RESULT_TRANSFER_INVALID_ARGUMENT,
 
@@ -783,6 +786,9 @@ FLASH_MANAGER_ReadResultBytes( uint8_t* destination, uint32_t destination_capaci
  * @brief Completes a fully consumed result transfer.
  *
  * @return Result-transfer status.
+ * @retval FLASH_MANAGER_RESULT_TRANSFER_OK The transfer was completed.
+ * @retval FLASH_MANAGER_RESULT_TRANSFER_INCOMPLETE Unread result bytes remain;
+ *         the transfer stays active and reading may continue.
  *
  * @note This succeeds only after every stored result byte has been returned.
  *       FLASH_MANAGER_ReadResultBytes() reports END_OF_STREAM once this

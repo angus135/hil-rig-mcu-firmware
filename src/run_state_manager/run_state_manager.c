@@ -954,6 +954,11 @@ static bool RUN_STATE_MANAGER_CompleteResultTransfer( void )
 {
     const FlashManagerResultTransferStatus_T status = FLASH_MANAGER_FinishResultTransfer();
 
+    if ( status == FLASH_MANAGER_RESULT_TRANSFER_INCOMPLETE )
+    {
+        return false;
+    }
+
     if ( status != FLASH_MANAGER_RESULT_TRANSFER_OK )
     {
         RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_RESULT_TRANSFER );

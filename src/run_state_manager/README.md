@@ -61,7 +61,7 @@ asynchronous transition was pending, or failed during its entry action.
 | `execute <ticks> [result bytes]` | `ARMED` | Start Flash preparation and DUT startup; enter `EXECUTION` only after both complete |
 | `execution_complete` | `EXECUTION` | Stop execution and start Flash finalisation |
 | `transfer` | `RESULTS_READY` | Enter `RESULT_TRANSFER` |
-| `transfer_complete` | `RESULT_TRANSFER` | Retain the test, reapply its configuration, and enter `ARMED` |
+| `transfer_complete` | `RESULT_TRANSFER` | After all bytes are read, retain the test, reapply its configuration, and enter `ARMED`; otherwise reject the request and keep the transfer active |
 | `repeat` | `RESULTS_READY` | Discard results, retain configuration/instructions, and enter `ARMED` |
 | `discard` | `RESULTS_READY` or `ARMED` | Discard available results if necessary, clear the retained test, and enter `IDLE` |
 | `fault` | Any state | Enter `FAULT` and retain the first cause |

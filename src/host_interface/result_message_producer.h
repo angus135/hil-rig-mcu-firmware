@@ -90,7 +90,8 @@ void RESULT_MESSAGE_PRODUCER_Reset( void );
  * @details Reads packed [FlashManagerResultHeader_T][payload] records from the
  *          Flash Manager result stream, unpacks driver measurement payloads
  *          (digital inputs, analogue inputs, PWM capture), aggregates all measurements
- *          belonging to the next execution tick timestamp, and populates the
+ *          belonging to the next one-based execution timestamp, converts that
+ *          timestamp to the protocol's zero-based result tick, and populates the
  *          supplied Application Message envelope with message type
  *          HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT.
  *

@@ -1081,7 +1081,7 @@ TEST_F( RunStateManagerTest, DiscardResultsFailurePreservesResultsReadyAndAllows
     EXPECT_TRUE( configuration_ownership_released );
 }
 
-TEST_F( RunStateManagerTest, ResultTransferFinishFailureTransitionsToFault )
+TEST_F( RunStateManagerTest, IncompleteResultTransferFinishIsRejectedAndAllowsRetry )
 {
     EnterExecution();
     Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
@@ -1093,7 +1093,36 @@ TEST_F( RunStateManagerTest, ResultTransferFinishFailureTransitionsToFault )
     Process( RUN_STATE_REQUEST_RESULT_TRANSFER );
     EXPECT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
 
-    flash_transfer_finish_result = FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE;
+    flash_transfer_finish_result = FLASH_MANAGER_RESULT_TRANSFER_INCOMPLETE;
+    Process( RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE );
+
+    EXPECT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_NONE, fault_reason );
+    EXPECT_EQ( RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE, last_request_result );
+    EXPECT_EQ( 1U, flash_transfer_finish_calls );
+
+    flash_transfer_finish_result = FLASH_MANAGER_RESULT_TRANSFER_OK;
+    Process( RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE );
+
+    EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_CONFIGURATION, pending_operation );
+    EXPECT_EQ( RUN_STATE_REQUEST_RESULT_ACCEPTED, last_request_result );
+    EXPECT_EQ( 2U, flash_transfer_finish_calls );
+}
+
+TEST_F( RunStateManagerTest, ResultTransferFinishInternalFailureTransitionsToFault )
+{
+    EnterExecution();
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    flash_manager_state = FLASH_MANAGER_STATE_RESULTS_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    ASSERT_EQ( RUN_STATE_RESULTS_READY, run_state );
+
+    Process( RUN_STATE_REQUEST_RESULT_TRANSFER );
+    ASSERT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
+
+    flash_transfer_finish_result = FLASH_MANAGER_RESULT_TRANSFER_INTERNAL_ERROR;
     Process( RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE );
 
     EXPECT_EQ( RUN_STATE_FAULT, run_state );
