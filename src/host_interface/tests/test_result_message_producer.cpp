@@ -361,13 +361,13 @@ TEST_F( ResultMessageProducerTest, DecodeAnalogueInputRecord )
 
 TEST_F( ResultMessageProducerTest, DecodePwmCaptureRecords )
 {
-    // Channel 0: 90000 ticks period (1ms @ 90MHz), 45000 ticks high (50% = 5000 permyriad)
-    const uint32_t pwm_ch0[2] = { 90000U, 45000U };
+    // Channel 0: 89998 raw ticks (hardware captures N-2 in slave-reset mode -> 90000 corrected = 1ms @ 90MHz), 44998 ticks high (50% = 5000 permyriad)
+    const uint32_t pwm_ch0[2] = { 89998U, 44998U };
     simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE, 0U, pwm_ch0,
                                     sizeof( pwm_ch0 ) );
 
-    // Channel 1: 180000 ticks period (2ms @ 90MHz), 18000 ticks high (10% = 1000 permyriad)
-    const uint32_t pwm_ch1[2] = { 180000U, 18000U };
+    // Channel 1: 179998 raw ticks (180000 corrected = 2ms @ 90MHz), 17998 ticks high (10% = 1000 permyriad)
+    const uint32_t pwm_ch1[2] = { 179998U, 17998U };
     simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE, 1U, pwm_ch1,
                                     sizeof( pwm_ch1 ) );
 
@@ -420,7 +420,7 @@ TEST_F( ResultMessageProducerTest, AggregatesMultipleRecordsInSingleTick )
     // Tick 0: Digital, Analogue, and PWM
     const uint32_t digital_mask = ( 1U << 8 ) | ( 1U << 9 );
     const uint32_t voltages[2]  = { 500000U, 1000000U };
-    const uint32_t pwm[2]       = { 90000U, 90000U };  // 100% duty = 10000 permyriad
+    const uint32_t pwm[2]       = { 89998U, 89998U };  // 100% duty = 10000 permyriad
 
     simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
                                     &digital_mask, sizeof( digital_mask ) );
@@ -673,7 +673,7 @@ TEST_F( ResultMessageProducerTest, PeripheralStubsProcessedWithoutError )
 TEST_F( ResultMessageProducerTest, SequentialTicksSynthesizedAcrossFlashGaps )
 {
     // Record at tick 0 (PWM capture) and record at tick 2 (Analogue input) - tick 1 is absent in flash
-    const uint32_t pwm[2]      = { 90000U, 45000U };
+    const uint32_t pwm[2]      = { 89998U, 44998U };
     const uint32_t voltages[2] = { 1000000U, 2000000U };
 
     simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE, 0U, pwm,

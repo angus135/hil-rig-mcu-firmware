@@ -315,10 +315,19 @@ static bool RESULT_PRODUCER_DecodePwmCapture( const uint8_t channel, const uint8
         return false;
     }
 
-    const uint64_t period_ns = ( ( uint64_t )period_ticks * RESULT_PRODUCER_NANOSECONDS_PER_SECOND )
+    /*
+     * In hardware Slave-Reset mode, the STM32 timer slave-mode controller takes 2 timer clock
+     * cycles to resynchronize the trigger and reset the counter on the rising edge.
+     * Therefore, both the captured period and high time are reduced by exactly 2 timer clock counts.
+     * We add 2 clock counts to restore the true physical pulse duration.
+     */
+    const uint32_t corrected_period_ticks = period_ticks + 2U;
+    const uint32_t corrected_high_ticks   = high_ticks + 2U;
+
+    const uint64_t period_ns = ( ( uint64_t )corrected_period_ticks * RESULT_PRODUCER_NANOSECONDS_PER_SECOND )
                                / RESULT_PRODUCER_PWM_TIMER_CLOCK_HZ;
     const uint64_t duty_permyriad =
-        ( ( uint64_t )high_ticks * RESULT_PRODUCER_PERMYRIAD_SCALE ) / period_ticks;
+        ( ( uint64_t )corrected_high_ticks * RESULT_PRODUCER_PERMYRIAD_SCALE ) / corrected_period_ticks;
 
     result->pwm_inputs[channel].period_nanoseconds   = ( uint32_t )period_ns;
     result->pwm_inputs[channel].duty_cycle_permyriad = ( uint16_t )duty_permyriad;

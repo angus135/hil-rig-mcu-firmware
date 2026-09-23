@@ -705,6 +705,20 @@ void HOST_INSTRUCTION_HANDLER_Reset( void )
     last_instruction_timestamp = 0U;
     has_received_instruction   = false;
     ( void )memset( &tracked_peripheral_state, 0, sizeof( tracked_peripheral_state ) );
+
+    DutDriverConfiguration_T active_config = { 0 };
+    if ( TEST_CONFIGURATION_GetActive( &active_config ) )
+    {
+        for ( uint8_t i = 0U; i < HIL_APPLICATION_DIGITAL_OUTPUT_CHANNEL_COUNT; i++ )
+        {
+            if ( active_config.digital_outputs.channels[i].is_enabled )
+            {
+                tracked_peripheral_state.digital_outputs[i] =
+                    active_config.digital_outputs.channels[i].initial_high ? 1U : 0U;
+            }
+        }
+    }
+
     tracked_peripheral_state.initialized = true;
 }
 
