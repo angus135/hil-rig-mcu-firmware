@@ -506,12 +506,9 @@ static bool RUN_STATE_MANAGER_BeginInstructionUpload( uint32_t expected_tick_cou
 
     if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
     {
-        if ( RUN_STATE_MANAGER_TransitionTo( RUN_STATE_TEST_PACKAGE_RECEIVE ) )
-        {
-            RUN_STATE_MANAGER_StartPendingOperation(
-                RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION );
-            return true;
-        }
+        RUN_STATE_MANAGER_StartPendingOperation(
+            RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION );
+        return true;
     }
 
     RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
@@ -1155,6 +1152,10 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
             if ( flash_state == FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD )
             {
                 RUN_STATE_MANAGER_ClearPendingOperation();
+                if ( !RUN_STATE_MANAGER_TransitionTo( RUN_STATE_TEST_PACKAGE_RECEIVE ) )
+                {
+                    RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_INVALID_TRANSITION );
+                }
             }
             else if ( flash_state != FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD )
             {

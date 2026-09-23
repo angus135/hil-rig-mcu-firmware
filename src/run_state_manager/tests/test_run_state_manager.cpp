@@ -1137,6 +1137,8 @@ TEST_F( RunStateManagerTest, ResultTransferEntryFailureTransitionsToFault )
 TEST_F( RunStateManagerTest, FlashSessionAbortedDuringPackageReceiveFault )
 {
     Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+    flash_manager_state = FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
     EXPECT_EQ( RUN_STATE_TEST_PACKAGE_RECEIVE, run_state );
 
     flash_manager_state    = FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD;
@@ -1161,7 +1163,8 @@ TEST_F( RunStateManagerTest, FlashSessionAbortedDuringPackageReceiveFault )
 TEST_F( RunStateManagerTest, FlashSessionAbortedDuringPreparingInstructionUpload )
 {
     Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
-    EXPECT_EQ( RUN_STATE_TEST_PACKAGE_RECEIVE, run_state );
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION, pending_operation );
 
     flash_manager_state    = FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD;
     requested_fault_reason = RUN_STATE_FAULT_EXTERNAL_REQUEST;
@@ -1272,11 +1275,12 @@ TEST_F( RunStateManagerTest, PackageReceiveWithoutTicksCalculates128KBReservatio
 
     EXPECT_EQ( 1U, flash_upload_start_calls );
     EXPECT_EQ( 128U * 1024U, flash_upload_start_expected_length );
-    EXPECT_EQ( RUN_STATE_TEST_PACKAGE_RECEIVE, run_state );
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
     EXPECT_EQ( RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION, pending_operation );
 
     flash_manager_state = FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD;
     RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_TEST_PACKAGE_RECEIVE, run_state );
     EXPECT_EQ( RUN_STATE_PENDING_NONE, pending_operation );
 }
 
@@ -1287,8 +1291,13 @@ TEST_F( RunStateManagerTest, PackageReceiveWithTicksCalculatesConservativeReserv
 
     EXPECT_EQ( 1U, flash_upload_start_calls );
     EXPECT_EQ( 100U * 4096U, flash_upload_start_expected_length );
-    EXPECT_EQ( RUN_STATE_TEST_PACKAGE_RECEIVE, run_state );
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
     EXPECT_EQ( RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION, pending_operation );
+
+    flash_manager_state = FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_TEST_PACKAGE_RECEIVE, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_NONE, pending_operation );
 }
 
 TEST_F( RunStateManagerTest, PackageReceiveWithLargeTicksIsCappedByCapacity )
@@ -1314,6 +1323,7 @@ TEST_F( RunStateManagerTest, PackageReceivePreparationTimeoutEntersFault )
 {
     EXPECT_TRUE( RUN_STATE_MANAGER_RequestPackageReceive() );
     Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
     EXPECT_EQ( RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION, pending_operation );
 
     flash_manager_state = FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD;
