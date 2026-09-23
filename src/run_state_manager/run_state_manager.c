@@ -172,6 +172,7 @@ static bool RUN_STATE_MANAGER_BeginDriverShutdown( bool force_abort, bool clear_
                                                    RunStatePendingOperation_T operation );
 static bool RUN_STATE_MANAGER_BeginResultFinalisation( void );
 static bool RUN_STATE_MANAGER_BeginResultTransfer( void );
+static bool RUN_STATE_MANAGER_EnterResultsReady( void );
 static bool RUN_STATE_MANAGER_EnterResultTransfer( void );
 static bool RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle( void );
 static bool RUN_STATE_MANAGER_CompleteResultTransfer( void );
@@ -377,6 +378,7 @@ static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason )
     taskEXIT_CRITICAL();
     RUN_STATE_MANAGER_RecordFault( reason );
     ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_FAULT );
+    ( void )HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_FAULT );
 }
 
 /**
@@ -567,6 +569,16 @@ static bool RUN_STATE_MANAGER_EnterTestPackageReceive( void )
      * Until that interface exists, entering the state is sufficient.
      */
     return true;
+}
+
+/**
+ * @brief Performs entry actions when transitioning into RUN_STATE_RESULTS_READY.
+ *
+ * @return true if the Host Interface was notified successfully; otherwise false.
+ */
+static bool RUN_STATE_MANAGER_EnterResultsReady( void )
+{
+    return HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE );
 }
 
 /**
@@ -1543,7 +1555,14 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
             break;
 
         case RUN_STATE_RESULT_FINALISATION:
+            break;
+
         case RUN_STATE_RESULTS_READY:
+            if ( !RUN_STATE_MANAGER_EnterResultsReady() )
+            {
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
+                return false;
+            }
             break;
 
         case RUN_STATE_RESULT_TRANSFER:

@@ -101,6 +101,10 @@ HOST_Interface_Status_T HOST_INTERFACE_Test_Access_Process_Execution_Complete_No
     HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
     uint8_t* data, size_t data_size );
 
+HOST_Interface_Status_T HOST_INTERFACE_Test_Access_Process_Fault_Notification(
+    HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
+    uint8_t* data, size_t data_size );
+
 HOST_Interface_Status_T HOST_INTERFACE_Test_Access_Process_Transfer_Complete_Notification(
     HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
     uint8_t* data, size_t data_size );

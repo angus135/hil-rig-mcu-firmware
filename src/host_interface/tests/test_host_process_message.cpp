@@ -84,6 +84,7 @@ public:
     MOCK_METHOD( bool, RUN_STATE_MANAGER_RequestResultTransferComplete, () );
     MOCK_METHOD( bool, RUN_STATE_MANAGER_Set_Execution_Frequency, ( RunStateFrequencyMode_T ) );
     MOCK_METHOD( void, RUN_STATE_MANAGER_GetStatus, ( RunStateManagerStatus_T* ));
+    MOCK_METHOD( RunStateFaultReason_T, RUN_STATE_MANAGER_GetFaultReason, () );
 };
 
 static MockHostProcessMessageDependencies* g_mock_deps = nullptr;
@@ -214,6 +215,12 @@ extern "C" void RUN_STATE_MANAGER_GetStatus( RunStateManagerStatus_T* status )
     {
         g_mock_deps->RUN_STATE_MANAGER_GetStatus( status );
     }
+}
+
+extern "C" RunStateFaultReason_T RUN_STATE_MANAGER_GetFaultReason( void )
+{
+    return g_mock_deps != nullptr ? g_mock_deps->RUN_STATE_MANAGER_GetFaultReason()
+                                  : RUN_STATE_FAULT_NONE;
 }
 
 class HostProcessMessageTest : public ::testing::Test
@@ -826,8 +833,6 @@ TEST_F( HostProcessMessageTest, UnimplementedNotificationsReturnNotImplemented )
           HOST_INTERFACE_Test_Access_Process_Package_Received_Notification },
         { HOST_INTERFACE_NOTIFY_CONFIGURATION,
           HOST_INTERFACE_Test_Access_Process_Config_Started_Notification },
-        { HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE,
-          HOST_INTERFACE_Test_Access_Process_Execution_Complete_Notification },
         { HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE,
           HOST_INTERFACE_Test_Access_Process_Transfer_Complete_Notification },
     };
@@ -981,7 +986,7 @@ TEST_F( HostProcessMessageTest, InternalDispatcherHandlesZeroNotificationsGracef
 
 TEST_F( HostProcessMessageTest, InternalDispatcherRejectsUnknownNotification )
 {
-    notifications = HOST_INTERFACE_NOTIFY_FAULT;
+    notifications = ( ( uint32_t )1U << 31U );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Internal_Message(
                    &outgoing, &response_required, data, sizeof( data ), &notifications ),
@@ -1420,3 +1425,104 @@ TEST_F( HostProcessMessageTest, GlobalControlResetResetsSessionToIdle )
                HOST_INTERFACE_STATUS_OK );
     EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_STATE_IDLE );
 }
+
+/**
+ * @brief Verifies that Execution Complete notification requests result transfer from RSM
+ * when session is EXECUTING.
+ */
+TEST_F( HostProcessMessageTest, ExecutionCompleteNotificationRequestsResultTransfer )
+{
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_EXECUTING );
+    notifications = HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE;
+
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestResultTransfer() )
+        .WillOnce( Return( true ) );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Execution_Complete_Notification(
+                   &outgoing, &notifications, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_FALSE( response_required );
+    EXPECT_EQ( notifications, 0U );
+}
+
+/**
+ * @brief Verifies that Execution Complete notification transitions session to FAULTED and
+ * sends an error message if requesting result transfer fails.
+ */
+TEST_F( HostProcessMessageTest, ExecutionCompleteNotificationFailsTransitionToFault )
+{
+    HostTestSession_T session{};
+    session.state                   = HOST_INTERFACE_SESSION_EXECUTING;
+    session.has_active_test_id      = true;
+    session.active_test_id.bytes[0] = 0x55;
+    HOST_INTERFACE_Test_Access_Set_Session( &session );
+    notifications = HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE;
+
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestResultTransfer() )
+        .WillOnce( Return( false ) );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Execution_Complete_Notification(
+                   &outgoing, &notifications, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
+    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_INTERNAL );
+    EXPECT_EQ( outgoing.has_test_id, 1U );
+    EXPECT_EQ( outgoing.test_id.bytes[0], 0x55 );
+    EXPECT_EQ( notifications, 0U );
+    EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_FAULTED );
+}
+
+/**
+ * @brief Verifies that Fault notification sets session state to FAULTED and produces
+ * an Application ERROR message stamped with fault detail and active test_id.
+ */
+TEST_F( HostProcessMessageTest, FaultNotificationProducesErrorMessageAndSetsFaultState )
+{
+    HostTestSession_T session{};
+    session.state                   = HOST_INTERFACE_SESSION_EXECUTING;
+    session.has_active_test_id      = true;
+    session.active_test_id.bytes[0] = 0xAA;
+    HOST_INTERFACE_Test_Access_Set_Session( &session );
+    notifications = HOST_INTERFACE_NOTIFY_FAULT;
+
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetFaultReason() )
+        .WillOnce( Return( RUN_STATE_FAULT_DRIVER_START_TIMEOUT ) );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Fault_Notification(
+                   &outgoing, &notifications, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
+    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_HARDWARE );
+    EXPECT_EQ( outgoing.body.error.detail,
+               static_cast<uint32_t>( RUN_STATE_FAULT_DRIVER_START_TIMEOUT ) );
+    EXPECT_EQ( outgoing.has_test_id, 1U );
+    EXPECT_EQ( outgoing.test_id.bytes[0], 0xAA );
+    EXPECT_EQ( notifications, 0U );
+    EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_FAULTED );
+}
+
+/**
+ * @brief Verifies that Process Internal Message dispatches Fault notification correctly.
+ */
+TEST_F( HostProcessMessageTest, ProcessInternalMessageHandlesFaultNotification )
+{
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_EXECUTING );
+    notifications = HOST_INTERFACE_NOTIFY_FAULT;
+
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetFaultReason() )
+        .WillOnce( Return( RUN_STATE_FAULT_EXECUTION_TIMER ) );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Internal_Message(
+                   &outgoing, &response_required, data, sizeof( data ), &notifications ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
+    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_HARDWARE );
+    EXPECT_EQ( outgoing.body.error.detail,
+               static_cast<uint32_t>( RUN_STATE_FAULT_EXECUTION_TIMER ) );
+    EXPECT_EQ( notifications, 0U );
+    EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_FAULTED );
+}
+

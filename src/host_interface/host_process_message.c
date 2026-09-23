@@ -1083,7 +1083,55 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Execution_Complete_Notification(
     HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
     uint8_t* data, size_t data_size )
 {
-    return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
+    ( void )outgoing_message;
+    ( void )data;
+    ( void )data_size;
+
+    *notifications = *notifications & ( uint32_t )~( HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE );
+
+    if ( ( s_session.state == HOST_INTERFACE_SESSION_EXECUTING )
+         || ( s_session.state == HOST_INTERFACE_SESSION_ARMED ) )
+    {
+        if ( RUN_STATE_MANAGER_RequestResultTransfer() != true )
+        {
+            s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+            HOST_INTERFACE_Default_Error( outgoing_message );
+            outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
+            if ( s_session.has_active_test_id )
+            {
+                outgoing_message->has_test_id = 1U;
+                outgoing_message->test_id     = s_session.active_test_id;
+            }
+            *response_required = true;
+            return HOST_INTERFACE_STATUS_OK;
+        }
+    }
+
+    *response_required = false;
+    return HOST_INTERFACE_STATUS_OK;
+}
+
+HOST_Interface_Status_T HOST_INTERFACE_process_Fault_Notification(
+    HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
+    uint8_t* data, size_t data_size )
+{
+    ( void )data;
+    ( void )data_size;
+
+    *notifications = *notifications & ( uint32_t )~( HOST_INTERFACE_NOTIFY_FAULT );
+
+    s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+
+    HOST_INTERFACE_Default_Error( outgoing_message );
+    outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_HARDWARE;
+    outgoing_message->body.error.detail   = ( uint32_t )RUN_STATE_MANAGER_GetFaultReason();
+    if ( s_session.has_active_test_id )
+    {
+        outgoing_message->has_test_id = 1U;
+        outgoing_message->test_id     = s_session.active_test_id;
+    }
+    *response_required = true;
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Transfer_Complete_Notification(
@@ -1351,6 +1399,18 @@ HOST_INTERFACE_process_internal_message( HIL_Application_Message_T* outgoing_mes
     if ( ( *notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE ) != 0U )
     {
         host_status = HOST_INTERFACE_process_Transfer_Complete_Notification(
+            outgoing_message, notifications, response_required, data, data_size );
+        if ( host_status != HOST_INTERFACE_STATUS_OK )
+        {
+            *response_required = false;
+            return host_status;
+        }
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
+    if ( ( *notifications & HOST_INTERFACE_NOTIFY_FAULT ) != 0U )
+    {
+        host_status = HOST_INTERFACE_process_Fault_Notification(
             outgoing_message, notifications, response_required, data, data_size );
         if ( host_status != HOST_INTERFACE_STATUS_OK )
         {

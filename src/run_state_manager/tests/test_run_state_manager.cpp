@@ -1343,3 +1343,50 @@ TEST_F( RunStateManagerTest, ConfigurationReadyFinalisationTimeoutEntersFault )
     EXPECT_EQ( RUN_STATE_FAULT, run_state );
     EXPECT_EQ( RUN_STATE_FAULT_FLASH_MANAGER, fault_reason );
 }
+
+/**
+ * @brief Verifies that entering RUN_STATE_RESULTS_READY notifies Host Interface with
+ * HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE.
+ */
+TEST_F( RunStateManagerTest, ResultsReadyNotifiesHostInterfaceExecutionComplete )
+{
+    EnterExecution();
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    flash_manager_state = FLASH_MANAGER_STATE_RESULTS_READY;
+
+    host_interface_notified_bits = 0U;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_RESULTS_READY, run_state );
+    EXPECT_NE( 0U, host_interface_notified_bits & HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE );
+}
+
+/**
+ * @brief Verifies that failure to notify Host Interface upon entering RESULTS_READY
+ * causes RSM to transition to RUN_STATE_FAULT with RUN_STATE_FAULT_HOST_INTERFACE_ERROR.
+ */
+TEST_F( RunStateManagerTest, ResultsReadyNotificationFailureEntersFault )
+{
+    EnterExecution();
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    flash_manager_state = FLASH_MANAGER_STATE_RESULTS_READY;
+
+    host_interface_notify_result = false;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_EQ( RUN_STATE_FAULT_HOST_INTERFACE_ERROR, fault_reason );
+}
+
+/**
+ * @brief Verifies that entering RUN_STATE_FAULT notifies Host Interface with
+ * HOST_INTERFACE_NOTIFY_FAULT.
+ */
+TEST_F( RunStateManagerTest, FaultNotifiesHostInterfaceFault )
+{
+    host_interface_notified_bits = 0U;
+    Process( RUN_STATE_REQUEST_FAULT );
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+    EXPECT_NE( 0U, host_interface_notified_bits & HOST_INTERFACE_NOTIFY_FAULT );
+}
+
