@@ -607,35 +607,74 @@ static void HOST_INTERFACE_Protocol_Process(
     }
 
     /* =========================================================================
-     * 2. DIRECT USB TRANSMIT (Bypasses HIL_TRANSPORT_Submit & Peek_Output)
+     * 2. DIRECT USB TRANSMIT (Chunked Batch Streaming over USB CDC)
      * ========================================================================= */
-    if ( ( outgoing_message != NULL )
-         && ( HW_USB_Get_Connection_State() == HW_USB_CONNECTION_STATE_ACTIVE ) )
+    if ( HW_USB_Get_Connection_State() == HW_USB_CONNECTION_STATE_ACTIVE )
     {
-        size_t payload_len = 0U;
-        // Leave 2 bytes at the beginning for the length header
-        protocol_state->application.status = HIL_APPLICATION_Encode_Message(
-            &protocol_state->application.context, outgoing_message,
-            &protocol_state->application.send_byte_span[2],
-            sizeof( protocol_state->application.send_byte_span) - 2U, &payload_len );
-
-        if ( protocol_state->application.status == HIL_APPLICATION_STATUS_OK )
+        if ( outgoing_message != NULL )
         {
-            // Prepend 2-byte Little Endian length header
-            protocol_state->application.send_byte_span[0] = ( uint8_t )( payload_len & 0xFFU );
-            protocol_state->application.send_byte_span[1] =
-                ( uint8_t )( ( payload_len >> 8 ) & 0xFFU );
+            const size_t current_offset = protocol_state->application.used_send_byte_span_size;
+            const size_t available_space =
+                sizeof( protocol_state->application.send_byte_span ) - current_offset;
 
-            if ( HW_USB_Transmit( protocol_state->application.send_byte_span,
-                                  ( uint16_t )( payload_len + 2U ) ) )
+            // Check if there is space for at least 2-byte header + message
+            if ( available_space >= 32U )
             {
-                *outgoing_message_accepted = true;
+                size_t payload_len = 0U;
+                protocol_state->application.status = HIL_APPLICATION_Encode_Message(
+                    &protocol_state->application.context, outgoing_message,
+                    &protocol_state->application.send_byte_span[current_offset + 2U],
+                    available_space - 2U, &payload_len );
+
+                if ( protocol_state->application.status == HIL_APPLICATION_STATUS_OK )
+                {
+                    // Prepend 2-byte Little Endian length header
+                    protocol_state->application.send_byte_span[current_offset] =
+                        ( uint8_t )( payload_len & 0xFFU );
+                    protocol_state->application.send_byte_span[current_offset + 1U] =
+                        ( uint8_t )( ( payload_len >> 8 ) & 0xFFU );
+
+                    protocol_state->application.used_send_byte_span_size += ( payload_len + 2U );
+                    *outgoing_message_accepted = true;
+                }
+                else if ( protocol_state->application.status
+                              == HIL_APPLICATION_STATUS_INTERNAL_ERROR
+                          || protocol_state->application.status
+                                 == HIL_APPLICATION_STATUS_BUFFER_TOO_SMALL )
+                {
+                    HOST_INTERFACE_Error_Handler();
+                }
+            }
+
+            // Flush chunk immediately if not a result message or if batch is full (>= 400 bytes)
+            const bool is_result_msg =
+                ( outgoing_message->type == HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT )
+                || ( outgoing_message->type
+                     == HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT );
+
+            if ( protocol_state->application.used_send_byte_span_size > 0U )
+            {
+                if ( ( !is_result_msg )
+                     || ( protocol_state->application.used_send_byte_span_size >= 400U ) )
+                {
+                    if ( HW_USB_Transmit(
+                             protocol_state->application.send_byte_span,
+                             ( uint16_t )protocol_state->application.used_send_byte_span_size ) )
+                    {
+                        protocol_state->application.used_send_byte_span_size = 0U;
+                    }
+                }
             }
         }
-        else if ( protocol_state->application.status == HIL_APPLICATION_STATUS_INTERNAL_ERROR
-                  || protocol_state->application.status == HIL_APPLICATION_STATUS_BUFFER_TOO_SMALL )
+        else if ( protocol_state->application.used_send_byte_span_size > 0U )
         {
-            HOST_INTERFACE_Error_Handler();
+            // Flush any remaining buffered bytes when no new message is queued
+            if ( HW_USB_Transmit(
+                     protocol_state->application.send_byte_span,
+                     ( uint16_t )protocol_state->application.used_send_byte_span_size ) )
+            {
+                protocol_state->application.used_send_byte_span_size = 0U;
+            }
         }
     }
 #else
@@ -1336,6 +1375,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
             outgoing_message_pending
             || ( HW_USB_Get_Receive_Stream_Used_Bytes() > 0U )
             || ( protocol_state.usb.receive_offset < protocol_state.usb.receive_count )
+            || ( protocol_state.application.used_send_byte_span_size > 0U )
             || ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ) != 0U );
 
         if ( is_active_work )
