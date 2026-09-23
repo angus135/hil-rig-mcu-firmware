@@ -33,6 +33,16 @@ HOST_Interface_Status_T HOST_INTERFACE_process_message(
     return HOST_INTERFACE_STATUS_OK;
 }
 
+void HOST_INTERFACE_Reset_Session( void )
+{
+}
+
+const HostTestSession_T* HOST_INTERFACE_Get_Session( void )
+{
+    static const HostTestSession_T s_stub_session = { 0 };
+    return &s_stub_session;
+}
+
 bool RUN_STATE_MANAGER_RequestFault( RunStateFaultReason_T reason )
 {
     ( void )reason;

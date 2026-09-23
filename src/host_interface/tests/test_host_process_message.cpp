@@ -240,6 +240,7 @@ protected:
         notifications       = 0U;
         expected_tick_count = 0U;
         std::memset( &run_state_status, 0, sizeof( run_state_status ) );
+        HOST_INTERFACE_Reset_Session();
 
         ON_CALL( *g_mock_deps, HOST_INTERFACE_Config_Message_To_Driver( _, _ ) )
             .WillByDefault( Return( HOST_INTERFACE_STATUS_OK ) );
@@ -612,6 +613,7 @@ TEST_F( HostProcessMessageTest, TestConfigurationInvalidFrequencyReturnsProtocol
 
 TEST_F( HostProcessMessageTest, TestInstructionHandlerFailureProducesRejectedResponse )
 {
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS );
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION );
     incoming.body.test_instruction.tick_number = 1U;
     expected_tick_count                        = 10U;
@@ -632,6 +634,7 @@ TEST_F( HostProcessMessageTest, TestInstructionHandlerFailureProducesRejectedRes
 
 TEST_F( HostProcessMessageTest, TestInstructionBuildsTickResponseForNonFinalInstruction )
 {
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS );
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION );
     incoming.body.test_instruction.tick_number = 4U;
     expected_tick_count                        = 9U;
@@ -652,6 +655,7 @@ TEST_F( HostProcessMessageTest, TestInstructionBuildsTickResponseForNonFinalInst
 
 TEST_F( HostProcessMessageTest, TestInstructionWithFinalTickNumberBuildsTickResponse )
 {
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS );
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION );
     incoming.body.test_instruction.tick_number = 9U;
     expected_tick_count                        = 9U;
@@ -697,6 +701,7 @@ TEST_F( HostProcessMessageTest, ExecutionControlRejectsInvalidAndReservedCommand
 
 TEST_F( HostProcessMessageTest, ExecutionControlStartSucceedsWhenExecutionStateIsReached )
 {
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_ARMED );
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_EXECUTION_CONTROL );
     incoming.body.execution_control.command = HIL_APPLICATION_CONTROL_START;
     run_state_status.state                  = RUN_STATE_EXECUTION;
@@ -1090,6 +1095,7 @@ TEST_F( HostProcessMessageTest, ProcessMessageReturnsOkAndNoResponseWhenNoIncomi
 
 TEST_F( HostProcessMessageTest, ProcessTestInstructionsAcceptsValidInstruction )
 {
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS );
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION,
                      HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
     incoming.body.test_instruction.tick_number = 1U;
@@ -1113,6 +1119,7 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsAcceptsValidInstruction )
 
 TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInvalidInstruction )
 {
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS );
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION,
                      HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
     incoming.body.test_instruction.tick_number = 2U;
@@ -1136,6 +1143,7 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInvalidInstruction
 
 TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInconsistentTick )
 {
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS );
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION,
                      HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
     incoming.body.test_instruction.tick_number = 2U;
@@ -1159,6 +1167,7 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInconsistentTick )
 
 TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadTransitionsToArmed )
 {
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS );
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_FINALIZE_TEST_UPLOAD,
                      HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
     incoming.body.test_instruction.tick_number = 100U;
@@ -1182,11 +1191,12 @@ TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadTransitionsToArmed )
     EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST );
     EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED );
     EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_NONE );
-    EXPECT_EQ( outgoing.body.response.tick_number, 100U );
+    EXPECT_EQ( outgoing.body.response.tick_number, 0U );
 }
 
 TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadHandlesTransitionFailure )
 {
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS );
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_FINALIZE_TEST_UPLOAD,
                      HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
     incoming.body.test_instruction.tick_number = 100U;
@@ -1204,4 +1214,205 @@ TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadHandlesTransitionFailur
     EXPECT_TRUE( response_required );
     EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
     EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_INTERNAL );
+}
+
+/**-----------------------------------------------------------------------------
+ *  Session State & Notification Integration Tests
+ *------------------------------------------------------------------------------
+ */
+
+/**
+ * @brief Verifies that Test Instruction is rejected with protocol error when session is IDLE.
+ */
+TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsWhenSessionIdle )
+{
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION );
+    incoming.body.test_instruction.tick_number = 1U;
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
+                   &incoming, &outgoing, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
+    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
+}
+
+/**
+ * @brief Verifies that Finalize Test Upload is rejected with protocol error when session is IDLE.
+ */
+TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadRejectsWhenSessionIdle )
+{
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_FINALIZE_TEST_UPLOAD );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Finalize_Test_Upload(
+                   &incoming, &outgoing, &response_required, data, sizeof( data ),
+                   &expected_tick_count ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
+    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
+}
+
+/**
+ * @brief Verifies that Execution Control START is rejected when session is not ARMED.
+ */
+TEST_F( HostProcessMessageTest, ProcessExecutionControlStartRejectsWhenSessionNotArmed )
+{
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS );
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_EXECUTION_CONTROL );
+    incoming.body.execution_control.command = HIL_APPLICATION_CONTROL_START;
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Execution_Control(
+                   &incoming, &outgoing, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
+    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
+}
+
+/**
+ * @brief Verifies that Test Instruction is rejected when incoming test_id does not match active session test_id.
+ */
+TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsMismatchedTestId )
+{
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS );
+    HostTestSession_T session{};
+    session.state                   = HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS;
+    session.has_active_test_id      = true;
+    session.active_test_id.bytes[0] = 0xAA;
+    HOST_INTERFACE_Test_Access_Set_Session( &session );
+
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION );
+    incoming.has_test_id                       = 1U;
+    incoming.test_id.bytes[0]                  = 0xBB;
+    incoming.body.test_instruction.tick_number = 1U;
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
+                   &incoming, &outgoing, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
+    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
+}
+
+/**
+ * @brief Verifies that Armed notification suppresses duplicate complete-test response if session is already ARMED.
+ */
+TEST_F( HostProcessMessageTest, ArmedNotificationDoesNotDuplicateResponseIfAlreadyArmed )
+{
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_ARMED );
+    notifications = HOST_INTERFACE_NOTIFY_ARMED;
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Armed_Notification(
+                   &outgoing, &notifications, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_FALSE( response_required );
+    EXPECT_EQ( notifications, 0U );
+}
+
+/**
+ * @brief Verifies that Armed notification produces complete-test response and sets ARMED if not already ARMED.
+ */
+TEST_F( HostProcessMessageTest, ArmedNotificationProducesResponseAndSetsArmedState )
+{
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_COMPLETED );
+    notifications = HOST_INTERFACE_NOTIFY_ARMED;
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Armed_Notification(
+                   &outgoing, &notifications, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED );
+    EXPECT_EQ( notifications, 0U );
+    EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_ARMED );
+}
+
+/**
+ * @brief Verifies that Result Transfer notification sets session state and stamps active test_id.
+ */
+TEST_F( HostProcessMessageTest, ResultTransferNotificationUpdatesStateAndStampsTestId )
+{
+    HostTestSession_T session{};
+    session.state                   = HOST_INTERFACE_SESSION_EXECUTING;
+    session.has_active_test_id      = true;
+    session.active_test_id.bytes[0] = 0x42;
+    HOST_INTERFACE_Test_Access_Set_Session( &session );
+
+    notifications = HOST_INTERFACE_NOTIFY_RESULT_TRANSFER;
+
+    EXPECT_CALL( *g_mock_deps, RESULT_MESSAGE_PRODUCER_ProduceNextMessage( _ ) )
+        .WillOnce( DoAll( Invoke( []( HIL_Application_Message_T* message ) {
+                              message->type = HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT;
+                          } ),
+                          Return( RESULT_MESSAGE_PRODUCER_STATUS_OK ) ) );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Result_Transfer_Notification(
+                   &outgoing, &notifications, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_RESULT_TRANSFER );
+    EXPECT_EQ( outgoing.has_test_id, 1U );
+    EXPECT_EQ( outgoing.test_id.bytes[0], 0x42 );
+}
+
+/**
+ * @brief Verifies that Result Transfer notification marks session COMPLETED upon end of stream.
+ */
+TEST_F( HostProcessMessageTest, ResultTransferNotificationSetsCompletedAtEndOfStream )
+{
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_RESULT_TRANSFER );
+    notifications = HOST_INTERFACE_NOTIFY_RESULT_TRANSFER;
+
+    EXPECT_CALL( *g_mock_deps, RESULT_MESSAGE_PRODUCER_ProduceNextMessage( _ ) )
+        .WillOnce( Return( RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestResultTransferComplete() )
+        .WillOnce( Return( true ) );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Result_Transfer_Notification(
+                   &outgoing, &notifications, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_FALSE( response_required );
+    EXPECT_EQ( notifications, 0U );
+    EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_COMPLETED );
+}
+
+/**
+ * @brief Verifies that Process Internal Message handles bitmask correctly when multiple bits are set.
+ */
+TEST_F( HostProcessMessageTest, ProcessInternalMessageHandlesQueuedNotificationBits )
+{
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_STATE_IDLE );
+    notifications = HOST_INTERFACE_NOTIFY_ARMED | HOST_INTERFACE_NOTIFY_RESULT_TRANSFER;
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Internal_Message(
+                   &outgoing, &response_required, data, sizeof( data ), &notifications ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST );
+    // ARMED bit was consumed, RESULT_TRANSFER bit must remain
+    EXPECT_EQ( notifications, HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
+}
+
+/**
+ * @brief Verifies that Global Control Reset Application resets session to IDLE.
+ */
+TEST_F( HostProcessMessageTest, GlobalControlResetResetsSessionToIdle )
+{
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_FAULTED );
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_GLOBAL_CONTROL );
+    incoming.body.global_control.command = HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION;
+    run_state_status.state               = RUN_STATE_IDLE;
+
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestReset() ).WillOnce( Return( true ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
+        .WillOnce(
+            Invoke( [this]( RunStateManagerStatus_T* status ) { *status = run_state_status; } ) );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Global_Control(
+                   &incoming, &outgoing, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_STATE_IDLE );
 }

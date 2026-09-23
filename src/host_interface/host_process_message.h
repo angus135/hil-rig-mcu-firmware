@@ -29,8 +29,6 @@ extern "C"
 #include "hil_rig_protocol/application/application_message.h"
 #include "hil_rig_protocol/transport/transport.h"
 
-#include "host_interface.h"
-
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
@@ -131,6 +129,21 @@ typedef enum
 } HOST_Interface_Status_T;
 
 /**
+ * @brief Live application-layer test session state.
+ */
+typedef enum
+{
+    HOST_INTERFACE_SESSION_STATE_IDLE = 0,
+    HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS, /**< Config accepted; receiving & uploading
+                                                      instructions */
+    HOST_INTERFACE_SESSION_ARMED,     /**< Upload finalized & hardware armed; ready for START */
+    HOST_INTERFACE_SESSION_EXECUTING, /**< Running on hardware */
+    HOST_INTERFACE_SESSION_RESULT_TRANSFER, /**< Streaming results (Type 32/34) to host */
+    HOST_INTERFACE_SESSION_COMPLETED,       /**< All results transferred; ready to return to IDLE */
+    HOST_INTERFACE_SESSION_FAULTED          /**< Fault or aborted */
+} HOST_INTERFACE_Session_State_T;
+
+/**
  * @brief Active instruction family within a test session.
  */
 typedef enum
@@ -177,4 +190,4 @@ const HostTestSession_T* HOST_INTERFACE_Get_Session( void );
 }
 #endif
 
-#endif /* HOST_INTERFACE_H */
+#endif /* HOST_PROCESS_MESSAGE_H */

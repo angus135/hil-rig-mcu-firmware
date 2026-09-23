@@ -197,5 +197,18 @@ HOST_INTERFACE_Test_Access_Process_Internal_Message( HIL_Application_Message_T* 
                                                     data_size, notifications );
 }
 
+void HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_Session_State_T state )
+{
+    s_session.state = state;
+}
+
+void HOST_INTERFACE_Test_Access_Set_Session( const HostTestSession_T* session )
+{
+    if ( session != NULL )
+    {
+        s_session = *session;
+    }
+}
+
 #undef HOST_INTERFACE_TEST_FORWARD_4
 #undef HOST_INTERFACE_TEST_FORWARD_NOTIFICATION

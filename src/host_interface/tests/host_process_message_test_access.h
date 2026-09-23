@@ -119,6 +119,10 @@ HOST_INTERFACE_Test_Access_Process_Internal_Message( HIL_Application_Message_T* 
                                                      bool* response_required, uint8_t* data,
                                                      size_t data_size, uint32_t* notifications );
 
+void HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_Session_State_T state );
+
+void HOST_INTERFACE_Test_Access_Set_Session( const HostTestSession_T* session );
+
 #ifdef __cplusplus
 }
 #endif

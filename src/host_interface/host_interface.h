@@ -40,14 +40,14 @@ extern "C"
 #define HOST_INTERFACE_TASK_MEMORY 256
 #define HOST_INTERFACE_TASK_PRIORITY 3
 
-#define HOST_INTERFACE_NOTIFY_PACKAGE_RECEIVE ( 1UL << 0U )
-#define HOST_INTERFACE_NOTIFY_CONFIGURATION ( 1UL << 1U )
-#define HOST_INTERFACE_NOTIFY_ARMED ( 1UL << 2U )
-#define HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE ( 1UL << 3U )
-#define HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ( 1UL << 4U )
-#define HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE ( 1UL << 5U )
-#define HOST_INTERFACE_NOTIFY_FAULT ( 1UL << 6U )
-#define HOST_INTERFACE_NOTIFY_RESET ( 1UL << 7U )
+#define HOST_INTERFACE_NOTIFY_PACKAGE_RECEIVE ( ( uint32_t )1U << 0U )
+#define HOST_INTERFACE_NOTIFY_CONFIGURATION ( ( uint32_t )1U << 1U )
+#define HOST_INTERFACE_NOTIFY_ARMED ( ( uint32_t )1U << 2U )
+#define HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE ( ( uint32_t )1U << 3U )
+#define HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ( ( uint32_t )1U << 4U )
+#define HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE ( ( uint32_t )1U << 5U )
+#define HOST_INTERFACE_NOTIFY_FAULT ( ( uint32_t )1U << 6U )
+#define HOST_INTERFACE_NOTIFY_RESET ( ( uint32_t )1U << 7U )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -84,21 +84,6 @@ typedef struct
     bool                          transport_reliable_pending;
     HIL_Transport_Failure_T       transport_last_failure;
 } HostInterfaceStatus_T;
-
-/**
- * @brief Live application-layer test session state.
- */
-typedef enum
-{
-    HOST_INTERFACE_SESSION_STATE_IDLE = 0,
-    HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS, /**< Config accepted; receiving & uploading
-                                                      instructions */
-    HOST_INTERFACE_SESSION_ARMED,     /**< Upload finalized & hardware armed; ready for START */
-    HOST_INTERFACE_SESSION_EXECUTING, /**< Running on hardware */
-    HOST_INTERFACE_SESSION_RESULT_TRANSFER, /**< Streaming results (Type 32/34) to host */
-    HOST_INTERFACE_SESSION_COMPLETED,       /**< All results transferred; ready to return to IDLE */
-    HOST_INTERFACE_SESSION_FAULTED          /**< Fault or aborted */
-} HOST_INTERFACE_Session_State_T;
 
 extern TaskHandle_t host_interface_task_handle;
 

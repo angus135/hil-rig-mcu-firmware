@@ -860,6 +860,7 @@ HOST_INTERFACE_process_Global_Control( const HIL_Application_Message_T* incoming
             }
             if ( status == HOST_INTERFACE_STATUS_OK )
             {
+                HOST_INTERFACE_Reset_Session();
                 *response_required = false;
                 return HOST_INTERFACE_STATUS_OK;
             }
@@ -927,6 +928,7 @@ HOST_INTERFACE_process_Error( const HIL_Application_Message_T* incoming_message,
 {
     ( void )data;
     ( void )data_size;
+    s_session.state = HOST_INTERFACE_SESSION_FAULTED;
     RunStateFaultReason_T fault = RUN_STATE_FAULT_EXTERNAL_REQUEST;
     switch ( incoming_message->body.error.category )
     {
@@ -1007,20 +1009,6 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Finalize_Test_Upload(
         *response_required                    = true;
         return HOST_INTERFACE_STATUS_OK;
     }
-    // Set the type and subtype
-    outgoing_message->type    = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
-    outgoing_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-    // Set Response body
-    outgoing_message->body.response.scope   = HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST;
-    outgoing_message->body.response.outcome = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
-    outgoing_message->body.response.reason  = HIL_APPLICATION_RESPONSE_REASON_NONE;
-    outgoing_message->body.response.tick_number =
-        incoming_message->body.test_instruction.tick_number;
-    outgoing_message->body.response.control_command        = HIL_APPLICATION_CONTROL_INVALID;
-    outgoing_message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
-    outgoing_message->body.response.detail                 = 0U;
-    *response_required                                     = true;
-
     /* Update the session to track progression through the test*/
     s_session.state = HOST_INTERFACE_SESSION_ARMED;
 
@@ -1030,6 +1018,10 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Finalize_Test_Upload(
     outgoing_message->body.response.outcome     = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
     outgoing_message->body.response.reason      = HIL_APPLICATION_RESPONSE_REASON_NONE;
     outgoing_message->body.response.tick_number = 0U; /* FIXED line 889 bug */
+    outgoing_message->body.response.control_command        = HIL_APPLICATION_CONTROL_INVALID;
+    outgoing_message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
+    outgoing_message->body.response.detail                 = 0U;
+    *response_required                                     = true;
 
     return HOST_INTERFACE_STATUS_OK;
 }
@@ -1056,7 +1048,17 @@ HOST_INTERFACE_process_Armed_Notification( HIL_Application_Message_T* outgoing_m
     ( void )data;
     ( void )data_size;
     // clear the armed notification flag
-    *notifications = *notifications & ~( HOST_INTERFACE_NOTIFY_ARMED );
+    *notifications = *notifications & ( uint32_t )~( HOST_INTERFACE_NOTIFY_ARMED );
+
+    // If session is already ARMED, the response was already sent by FINALIZE_TEST_UPLOAD
+    if ( s_session.state == HOST_INTERFACE_SESSION_ARMED )
+    {
+        *response_required = false;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
+    s_session.state = HOST_INTERFACE_SESSION_ARMED;
+
     // Set the type and subtype
     outgoing_message->type    = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
     outgoing_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
@@ -1068,6 +1070,11 @@ HOST_INTERFACE_process_Armed_Notification( HIL_Application_Message_T* outgoing_m
     outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
     outgoing_message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
     outgoing_message->body.response.detail                 = 0U;
+    if ( s_session.has_active_test_id )
+    {
+        outgoing_message->has_test_id = 1U;
+        outgoing_message->test_id     = s_session.active_test_id;
+    }
     *response_required                                     = true;
     return HOST_INTERFACE_STATUS_OK;
 }
@@ -1097,13 +1104,16 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Result_Transfer_Notification(
     if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM )
     {
         // clear the result notification flag
-        *notifications = *notifications & ~( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
+        *notifications = *notifications & ( uint32_t )~( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
         if ( RUN_STATE_MANAGER_RequestResultTransferComplete() == false )
         {
+            s_session.state = HOST_INTERFACE_SESSION_FAULTED;
             HOST_INTERFACE_Default_Error( outgoing_message );
             outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
             *response_required                    = true;
+            return HOST_INTERFACE_STATUS_OK;
         }
+        s_session.state    = HOST_INTERFACE_SESSION_COMPLETED;
         *response_required = false;
         return HOST_INTERFACE_STATUS_OK;
     }
@@ -1114,6 +1124,12 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Result_Transfer_Notification(
     }
     if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_OK )
     {
+        s_session.state = HOST_INTERFACE_SESSION_RESULT_TRANSFER;
+        if ( s_session.has_active_test_id )
+        {
+            outgoing_message->has_test_id = 1U;
+            outgoing_message->test_id     = s_session.active_test_id;
+        }
         *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
@@ -1271,67 +1287,82 @@ HOST_INTERFACE_process_internal_message( HIL_Application_Message_T* outgoing_mes
     }
 
     HOST_Interface_Status_T host_status = HOST_INTERFACE_STATUS_UNINITIALIZED;
-    switch ( *notifications )
+
+    if ( ( *notifications & HOST_INTERFACE_NOTIFY_PACKAGE_RECEIVE ) != 0U )
     {
-        case HOST_INTERFACE_NOTIFY_PACKAGE_RECEIVE:
-            host_status = HOST_INTERFACE_process_Package_Received_Notification(
-                outgoing_message, notifications, response_required, data, data_size );
-            if ( host_status != HOST_INTERFACE_STATUS_OK )
-            {
-                *response_required = false;
-                return host_status;
-            }
-            return HOST_INTERFACE_STATUS_OK;
-        case HOST_INTERFACE_NOTIFY_CONFIGURATION:
-            host_status = HOST_INTERFACE_process_Config_Started_Notification(
-                outgoing_message, notifications, response_required, data, data_size );
-            if ( host_status != HOST_INTERFACE_STATUS_OK )
-            {
-                *response_required = false;
-                return host_status;
-            }
-            return HOST_INTERFACE_STATUS_OK;
-        case HOST_INTERFACE_NOTIFY_ARMED:
-            host_status = HOST_INTERFACE_process_Armed_Notification(
-                outgoing_message, notifications, response_required, data, data_size );
-            if ( host_status != HOST_INTERFACE_STATUS_OK )
-            {
-                *response_required = false;
-                return host_status;
-            }
-            return HOST_INTERFACE_STATUS_OK;
-        case HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE:
-            host_status = HOST_INTERFACE_process_Execution_Complete_Notification(
-                outgoing_message, notifications, response_required, data, data_size );
-            if ( host_status != HOST_INTERFACE_STATUS_OK )
-            {
-                *response_required = false;
-                return host_status;
-            }
-            return HOST_INTERFACE_STATUS_OK;
-        case HOST_INTERFACE_NOTIFY_RESULT_TRANSFER:
-            host_status = HOST_INTERFACE_process_Result_Transfer_Notification(
-                outgoing_message, notifications, response_required, data, data_size );
-            if ( host_status != HOST_INTERFACE_STATUS_OK )
-            {
-                *response_required = false;
-                return host_status;
-            }
-            return HOST_INTERFACE_STATUS_OK;
-        case HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE:
-            host_status = HOST_INTERFACE_process_Transfer_Complete_Notification(
-                outgoing_message, notifications, response_required, data, data_size );
-            if ( host_status != HOST_INTERFACE_STATUS_OK )
-            {
-                *response_required = false;
-                return host_status;
-            }
-            return HOST_INTERFACE_STATUS_OK;
-        case HOST_INTERFACE_NOTIFY_FAULT:
-        default:
-            *notifications = 0U;
-            return HOST_INTERFACE_STATUS_UNSUPPORTED_NOTIFICATION;
+        host_status = HOST_INTERFACE_process_Package_Received_Notification(
+            outgoing_message, notifications, response_required, data, data_size );
+        if ( host_status != HOST_INTERFACE_STATUS_OK )
+        {
+            *response_required = false;
+            return host_status;
+        }
+        return HOST_INTERFACE_STATUS_OK;
     }
+
+    if ( ( *notifications & HOST_INTERFACE_NOTIFY_CONFIGURATION ) != 0U )
+    {
+        host_status = HOST_INTERFACE_process_Config_Started_Notification(
+            outgoing_message, notifications, response_required, data, data_size );
+        if ( host_status != HOST_INTERFACE_STATUS_OK )
+        {
+            *response_required = false;
+            return host_status;
+        }
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
+    if ( ( *notifications & HOST_INTERFACE_NOTIFY_ARMED ) != 0U )
+    {
+        host_status = HOST_INTERFACE_process_Armed_Notification(
+            outgoing_message, notifications, response_required, data, data_size );
+        if ( host_status != HOST_INTERFACE_STATUS_OK )
+        {
+            *response_required = false;
+            return host_status;
+        }
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
+    if ( ( *notifications & HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE ) != 0U )
+    {
+        host_status = HOST_INTERFACE_process_Execution_Complete_Notification(
+            outgoing_message, notifications, response_required, data, data_size );
+        if ( host_status != HOST_INTERFACE_STATUS_OK )
+        {
+            *response_required = false;
+            return host_status;
+        }
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
+    if ( ( *notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ) != 0U )
+    {
+        host_status = HOST_INTERFACE_process_Result_Transfer_Notification(
+            outgoing_message, notifications, response_required, data, data_size );
+        if ( host_status != HOST_INTERFACE_STATUS_OK )
+        {
+            *response_required = false;
+            return host_status;
+        }
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
+    if ( ( *notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE ) != 0U )
+    {
+        host_status = HOST_INTERFACE_process_Transfer_Complete_Notification(
+            outgoing_message, notifications, response_required, data, data_size );
+        if ( host_status != HOST_INTERFACE_STATUS_OK )
+        {
+            *response_required = false;
+            return host_status;
+        }
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
+    *notifications     = 0U;
+    *response_required = false;
+    return HOST_INTERFACE_STATUS_UNSUPPORTED_NOTIFICATION;
 }
 
 /**-----------------------------------------------------------------------------

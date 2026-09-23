@@ -171,6 +171,7 @@ if(HOST_INTERFACE_ENABLE_TESTS AND BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/tests
             ${CMAKE_SOURCE_DIR}/src
             ${CMAKE_SOURCE_DIR}/src/rtos
+            ${CMAKE_SOURCE_DIR}/src/run_state_manager
             ${CMAKE_SOURCE_DIR}/src/execution_manager
             ${CMAKE_SOURCE_DIR}/src/flash_manager
             ${CMAKE_SOURCE_DIR}/src/test_configuration
@@ -244,6 +245,7 @@ if(HOST_INTERFACE_ENABLE_TESTS AND BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/tests
             ${CMAKE_SOURCE_DIR}/src
             ${CMAKE_SOURCE_DIR}/src/rtos
+            ${CMAKE_SOURCE_DIR}/src/run_state_manager
             ${CMAKE_SOURCE_DIR}/src/test_configuration
             ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_analogue_input
             ${CMAKE_SOURCE_DIR}/src/execution_mid_level/exec_analogue_output
