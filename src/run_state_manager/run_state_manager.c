@@ -506,8 +506,7 @@ static bool RUN_STATE_MANAGER_BeginInstructionUpload( uint32_t expected_tick_cou
 
     if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
     {
-        RUN_STATE_MANAGER_StartPendingOperation(
-            RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION );
+        RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION );
         return true;
     }
 

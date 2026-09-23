@@ -1087,7 +1087,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Execution_Complete_Notification(
     ( void )data;
     ( void )data_size;
 
-    *notifications = *notifications & ( uint32_t )~( HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE );
+    *notifications = *notifications & ( uint32_t ) ~( HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE );
 
     if ( ( s_session.state == HOST_INTERFACE_SESSION_EXECUTING )
          || ( s_session.state == HOST_INTERFACE_SESSION_ARMED ) )
@@ -1111,14 +1111,15 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Execution_Complete_Notification(
     return HOST_INTERFACE_STATUS_OK;
 }
 
-HOST_Interface_Status_T HOST_INTERFACE_process_Fault_Notification(
-    HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
-    uint8_t* data, size_t data_size )
+HOST_Interface_Status_T
+HOST_INTERFACE_process_Fault_Notification( HIL_Application_Message_T* outgoing_message,
+                                           uint32_t* notifications, bool* response_required,
+                                           uint8_t* data, size_t data_size )
 {
     ( void )data;
     ( void )data_size;
 
-    *notifications = *notifications & ( uint32_t )~( HOST_INTERFACE_NOTIFY_FAULT );
+    *notifications = *notifications & ( uint32_t ) ~( HOST_INTERFACE_NOTIFY_FAULT );
 
     s_session.state = HOST_INTERFACE_SESSION_FAULTED;
 

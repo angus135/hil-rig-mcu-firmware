@@ -1399,4 +1399,3 @@ TEST_F( RunStateManagerTest, FaultNotifiesHostInterfaceFault )
     EXPECT_EQ( RUN_STATE_FAULT, run_state );
     EXPECT_NE( 0U, host_interface_notified_bits & HOST_INTERFACE_NOTIFY_FAULT );
 }
-

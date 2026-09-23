@@ -177,8 +177,7 @@ HOST_INTERFACE_TEST_FORWARD_NOTIFICATION( Process_Config_Started_Notification,
 HOST_INTERFACE_TEST_FORWARD_NOTIFICATION( Process_Armed_Notification, process_Armed_Notification )
 HOST_INTERFACE_TEST_FORWARD_NOTIFICATION( Process_Execution_Complete_Notification,
                                           process_Execution_Complete_Notification )
-HOST_INTERFACE_TEST_FORWARD_NOTIFICATION( Process_Fault_Notification,
-                                          process_Fault_Notification )
+HOST_INTERFACE_TEST_FORWARD_NOTIFICATION( Process_Fault_Notification, process_Fault_Notification )
 HOST_INTERFACE_TEST_FORWARD_NOTIFICATION( Process_Transfer_Complete_Notification,
                                           process_Transfer_Complete_Notification )
 HOST_INTERFACE_TEST_FORWARD_NOTIFICATION( Process_Result_Transfer_Notification,

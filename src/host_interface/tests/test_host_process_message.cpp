@@ -1525,4 +1525,3 @@ TEST_F( HostProcessMessageTest, ProcessInternalMessageHandlesFaultNotification )
     EXPECT_EQ( notifications, 0U );
     EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_FAULTED );
 }
-
