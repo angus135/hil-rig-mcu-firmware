@@ -1000,6 +1000,8 @@ void HOST_INTERFACE_Task( void* task_parameters )
             can_consume_incoming               = true;
             expected_tick_count                = 0U;
             s_host_interface_status.is_faulted = false;
+            s_host_interface_status.instruction_phase_active = false;
+            s_host_interface_status.result_phase_active      = false;
             HOST_INTERFACE_Reset_Session();
         }
 
@@ -1017,6 +1019,64 @@ void HOST_INTERFACE_Task( void* task_parameters )
             {
                 s_host_interface_status.last_rx_tick =
                     incoming_message.body.test_instruction.tick_number;
+                if ( !s_host_interface_status.instruction_phase_active )
+                {
+                    s_host_interface_status.instruction_phase_active      = true;
+                    s_host_interface_status.instruction_start_tick       = xTaskGetTickCount();
+                    s_host_interface_status.instruction_end_tick         = 0U;
+                    s_host_interface_status.instruction_rx_count         = 0U;
+                    s_host_interface_status.instruction_duration_ms      = 0U;
+                    s_host_interface_status.instruction_rate_msgs_per_sec = 0U;
+                }
+                s_host_interface_status.instruction_rx_count++;
+                const uint32_t elapsed_ticks =
+                    xTaskGetTickCount() - s_host_interface_status.instruction_start_tick;
+                s_host_interface_status.instruction_duration_ms = elapsed_ticks;
+                if ( elapsed_ticks > 0U )
+                {
+                    s_host_interface_status.instruction_rate_msgs_per_sec =
+                        ( s_host_interface_status.instruction_rx_count * 1000U ) / elapsed_ticks;
+                }
+                else
+                {
+                    s_host_interface_status.instruction_rate_msgs_per_sec =
+                        s_host_interface_status.instruction_rx_count * 1000U;
+                }
+            }
+            else if ( incoming_message.type == HIL_APPLICATION_MESSAGE_TYPE_FINALIZE_TEST_UPLOAD )
+            {
+                if ( s_host_interface_status.instruction_phase_active )
+                {
+                    s_host_interface_status.instruction_phase_active = false;
+                    s_host_interface_status.instruction_end_tick    = xTaskGetTickCount();
+                    const uint32_t elapsed_ticks = s_host_interface_status.instruction_end_tick
+                                                   - s_host_interface_status.instruction_start_tick;
+                    s_host_interface_status.instruction_duration_ms = elapsed_ticks;
+                    if ( elapsed_ticks > 0U )
+                    {
+                        s_host_interface_status.instruction_rate_msgs_per_sec =
+                            ( s_host_interface_status.instruction_rx_count * 1000U )
+                            / elapsed_ticks;
+                    }
+                    else
+                    {
+                        s_host_interface_status.instruction_rate_msgs_per_sec =
+                            s_host_interface_status.instruction_rx_count * 1000U;
+                    }
+                }
+            }
+        }
+
+        if ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ) != 0U )
+        {
+            if ( !s_host_interface_status.result_phase_active )
+            {
+                s_host_interface_status.result_phase_active      = true;
+                s_host_interface_status.result_start_tick       = xTaskGetTickCount();
+                s_host_interface_status.result_end_tick         = 0U;
+                s_host_interface_status.result_tx_count         = 0U;
+                s_host_interface_status.result_duration_ms      = 0U;
+                s_host_interface_status.result_rate_msgs_per_sec = 0U;
             }
         }
 
@@ -1024,6 +1084,47 @@ void HOST_INTERFACE_Task( void* task_parameters )
         {
             s_host_interface_status.tx_message_count++;
             outgoing_message_pending = false;
+
+            if ( s_host_interface_status.result_phase_active
+                 && ( ( outgoing_message.type == HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT )
+                      || ( outgoing_message.type
+                           == HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT ) ) )
+            {
+                s_host_interface_status.result_tx_count++;
+                const uint32_t elapsed_ticks =
+                    xTaskGetTickCount() - s_host_interface_status.result_start_tick;
+                s_host_interface_status.result_duration_ms = elapsed_ticks;
+                if ( elapsed_ticks > 0U )
+                {
+                    s_host_interface_status.result_rate_msgs_per_sec =
+                        ( s_host_interface_status.result_tx_count * 1000U ) / elapsed_ticks;
+                }
+                else
+                {
+                    s_host_interface_status.result_rate_msgs_per_sec =
+                        s_host_interface_status.result_tx_count * 1000U;
+                }
+            }
+        }
+
+        if ( s_host_interface_status.result_phase_active
+             && ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ) == 0U ) )
+        {
+            s_host_interface_status.result_phase_active = false;
+            s_host_interface_status.result_end_tick    = xTaskGetTickCount();
+            const uint32_t elapsed_ticks = s_host_interface_status.result_end_tick
+                                           - s_host_interface_status.result_start_tick;
+            s_host_interface_status.result_duration_ms = elapsed_ticks;
+            if ( elapsed_ticks > 0U )
+            {
+                s_host_interface_status.result_rate_msgs_per_sec =
+                    ( s_host_interface_status.result_tx_count * 1000U ) / elapsed_ticks;
+            }
+            else
+            {
+                s_host_interface_status.result_rate_msgs_per_sec =
+                    s_host_interface_status.result_tx_count * 1000U;
+            }
         }
 
         // check if we are overflowing (inverse of can_consume_incoming)
@@ -1129,7 +1230,22 @@ void HOST_INTERFACE_Task( void* task_parameters )
          *       }
          */
 
-        vTaskDelayUntil( &protocol_state.initial_ticks, pdMS_TO_TICKS( HOST_INTERFACE_PERIOD_MS ) );
+        const bool is_active_work =
+            outgoing_message_pending
+            || ( HW_USB_Get_Receive_Stream_Used_Bytes() > 0U )
+            || ( protocol_state.usb.receive_offset < protocol_state.usb.receive_count )
+            || ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ) != 0U );
+
+        if ( is_active_work )
+        {
+            s_host_interface_status.effective_period_ms = 0U;
+            taskYIELD();
+        }
+        else
+        {
+            s_host_interface_status.effective_period_ms = HOST_INTERFACE_PERIOD_MS;
+            vTaskDelay( pdMS_TO_TICKS( HOST_INTERFACE_PERIOD_MS ) );
+        }
     }
 }
 

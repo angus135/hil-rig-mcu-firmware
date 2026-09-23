@@ -39,6 +39,20 @@
  *------------------------------------------------------------------------------
  */
 
+/** Delay between Run State Manager transition-status polls. */
+#define HOST_INTERFACE_STATE_TRANSITION_RETRY_DELAY_MS ( 10U )
+
+/**
+ * Package preparation wait covering the RSM's 15-second Flash timeout.
+ *
+ * The 16-second bound leaves scheduling margin while remaining below the
+ * application's 30-second response timeout.
+ */
+#define HOST_INTERFACE_PACKAGE_RECEIVE_WAIT_TIMEOUT_MS ( 16000U )
+#define HOST_INTERFACE_PACKAGE_RECEIVE_WAIT_ATTEMPTS                                      \
+    ( HOST_INTERFACE_PACKAGE_RECEIVE_WAIT_TIMEOUT_MS                                      \
+      / HOST_INTERFACE_STATE_TRANSITION_RETRY_DELAY_MS )
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -235,7 +249,7 @@ retrys.
  *          HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE
  *
  * @param[in] expected_state                  The state we want to transition to
- * @param[in] num_trys                        The number of attempts to transition states (1ms wait
+ * @param[in] num_trys                        The number of attempts to transition states (10ms wait
 between)
  * @param[in] expected_tick_count             Only used for execution request
  *
@@ -287,7 +301,7 @@ HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion( RunState_T expe
             return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
         }
 
-        vTaskDelay( pdMS_TO_TICKS( 10U ) );
+        vTaskDelay( pdMS_TO_TICKS( HOST_INTERFACE_STATE_TRANSITION_RETRY_DELAY_MS ) );
     }
 
     return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
@@ -485,7 +499,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
 
     // Signal run state manager to move to package recieving state
     status = HOST_INTERFACE_request_state_tranistion(
-        RUN_STATE_TEST_PACKAGE_RECEIVE, HOST_REQUEST_TEST_PACKAGE_RECEIVE, 100,
+        RUN_STATE_TEST_PACKAGE_RECEIVE, HOST_REQUEST_TEST_PACKAGE_RECEIVE,
+        HOST_INTERFACE_PACKAGE_RECEIVE_WAIT_ATTEMPTS,
         incoming_message->body.test_configuration.expected_tick_count );
     if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
     {

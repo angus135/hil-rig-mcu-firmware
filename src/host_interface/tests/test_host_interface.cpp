@@ -176,6 +176,10 @@ extern "C" void vTaskDelayUntil( TickType_t*, TickType_t )
 {
 }
 
+extern "C" void vTaskDelay( TickType_t )
+{
+}
+
 extern "C" TaskHandle_t xTaskGetCurrentTaskHandle( void )
 {
     return nullptr;

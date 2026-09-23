@@ -199,6 +199,26 @@ static void CONSOLE_HostInterface_PrintStatus( void )
     CONSOLE_Printf( "  Expected tick count: %lu\r\n", ( unsigned long )status.expected_tick_count );
     CONSOLE_Printf( "  Notifications:       0x%08lX\r\n",
                     ( unsigned long )status.carry_on_notifications );
+    if ( status.instruction_rx_count > 0U || status.instruction_phase_active )
+    {
+        CONSOLE_Printf(
+            "  Instruction Rx:      count=%lu, duration=%lu ms, rate=%lu msgs/s%s\r\n",
+            ( unsigned long )status.instruction_rx_count,
+            ( unsigned long )status.instruction_duration_ms,
+            ( unsigned long )status.instruction_rate_msgs_per_sec,
+            status.instruction_phase_active ? " (active)" : "" );
+    }
+    if ( status.result_tx_count > 0U || status.result_phase_active )
+    {
+        CONSOLE_Printf(
+            "  Result Tx:           count=%lu, duration=%lu ms, rate=%lu msgs/s%s\r\n",
+            ( unsigned long )status.result_tx_count,
+            ( unsigned long )status.result_duration_ms,
+            ( unsigned long )status.result_rate_msgs_per_sec,
+            status.result_phase_active ? " (active)" : "" );
+    }
+    CONSOLE_Printf( "  Effective period:    %lu ms\r\n",
+                    ( unsigned long )status.effective_period_ms );
 }
 
 /**-----------------------------------------------------------------------------

@@ -83,6 +83,25 @@ typedef struct
     HIL_Transport_Session_State_T transport_session_state;
     bool                          transport_reliable_pending;
     HIL_Transport_Failure_T       transport_last_failure;
+
+    /* Instruction Receive Timing & Statistics */
+    bool     instruction_phase_active;
+    uint32_t instruction_rx_count;
+    uint32_t instruction_start_tick;
+    uint32_t instruction_end_tick;
+    uint32_t instruction_duration_ms;
+    uint32_t instruction_rate_msgs_per_sec;
+
+    /* Result Transfer Timing & Statistics */
+    bool     result_phase_active;
+    uint32_t result_tx_count;
+    uint32_t result_start_tick;
+    uint32_t result_end_tick;
+    uint32_t result_duration_ms;
+    uint32_t result_rate_msgs_per_sec;
+
+    /* Dynamic Scheduling Status */
+    uint32_t effective_period_ms;
 } HostInterfaceStatus_T;
 
 extern TaskHandle_t host_interface_task_handle;

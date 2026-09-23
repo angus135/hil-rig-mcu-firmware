@@ -596,6 +596,38 @@ TEST_F( HostProcessMessageTest, TestConfigurationSuccessCopiesExpectedTicksAndRe
     EXPECT_EQ( expected_tick_count, 4567U );
 }
 
+/** Verifies that Flash preparation may exceed the former one-second Host Interface wait. */
+TEST_F( HostProcessMessageTest, TestConfigurationWaitCoversRunStateFlashPreparationTimeout )
+{
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION );
+    incoming.body.test_configuration.expected_tick_count           = 11000U;
+    incoming.body.test_configuration.tick_duration_us.microseconds = 100U;
+
+    uint32_t status_poll_count = 0U;
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestPackageReceive() )
+        .WillOnce( Return( true ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
+        .WillRepeatedly( Invoke( [&status_poll_count]( RunStateManagerStatus_T* status ) {
+            status->state              = status_poll_count >= 100U ? RUN_STATE_TEST_PACKAGE_RECEIVE
+                                                                  : RUN_STATE_IDLE;
+            status->transition_pending = status_poll_count < 100U;
+            status_poll_count++;
+        } ) );
+    EXPECT_CALL( *g_mock_deps,
+                 RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_10KHZ ) )
+        .WillOnce( Return( true ) );
+
+    EXPECT_EQ(
+        HOST_INTERFACE_Test_Access_Process_Test_Configuration(
+            &incoming, &outgoing, &response_required, data, sizeof( data ), &expected_tick_count ),
+        HOST_INTERFACE_STATUS_OK );
+    EXPECT_GT( status_poll_count, 100U );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TEST_CONFIGURATION );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED );
+}
+
 TEST_F( HostProcessMessageTest, TestConfigurationInvalidFrequencyReturnsProtocolErrorResponse )
 {
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION );
