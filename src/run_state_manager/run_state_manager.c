@@ -94,6 +94,7 @@ typedef struct
 {
     uint32_t                tick_count;
     RunStateFrequencyMode_T frequency;
+    bool                    enable_drain_tail;
 } RunStatePreparedExecution_T;
 
 /**-----------------------------------------------------------------------------
@@ -118,7 +119,8 @@ static bool driver_cleanup_complete = true;
 static bool                        execution_timer_running   = false;
 static bool                        execution_request_pending = false;
 static RunStatePreparedExecution_T prepared_execution        = { .tick_count = 0U,
-                                                                 .frequency  = RUN_STATE_FREQUENCY_1KHZ };
+                                                                 .frequency  = RUN_STATE_FREQUENCY_1KHZ,
+                                                                 .enable_drain_tail = false };
 
 static volatile bool execution_abort_requested = false;
 
@@ -794,14 +796,12 @@ static bool RUN_STATE_MANAGER_BeginDriverStart( void )
     DutDriverLifecycleStatus_T driver_status = { 0 };
     DUT_DRIVER_LIFECYCLE_GetStatus( &driver_status );
 
-    /*
-     * The host tick count names the final instruction boundary.  Keep the
-     * timer alive for a conservative, task-context-selected drain tail so
-     * asynchronous peripherals can complete and their measurements can be
-     * collected without requiring callers to hand-tune the final tick.
-     */
-    const uint32_t execution_tail_ticks =
-        RUN_STATE_MANAGER_CalculateDrainTailTicks( prepared_execution.frequency );
+    /* Legacy console sessions may request the historical peripheral drain tail.
+     * Variable-message sessions keep the execution range exactly host-defined. */
+    const uint32_t execution_tail_ticks = prepared_execution.enable_drain_tail
+                                              ? RUN_STATE_MANAGER_CalculateDrainTailTicks(
+                                                    prepared_execution.frequency )
+                                              : 0U;
 
     uint32_t effective_tick_count = prepared_execution.tick_count;
     if ( execution_tail_ticks > ( UINT32_MAX - effective_tick_count ) )
@@ -1686,7 +1686,9 @@ void RUN_STATE_MANAGER_Init( void )
     execution_timer_running      = false;
     execution_request_pending    = false;
     prepared_execution =
-        ( RunStatePreparedExecution_T ){ .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
+        ( RunStatePreparedExecution_T ){ .tick_count = 0U,
+                                        .frequency  = RUN_STATE_FREQUENCY_1KHZ,
+                                        .enable_drain_tail = false };
     execution_abort_requested      = false;
     fault_reason                   = RUN_STATE_FAULT_NONE;
     requested_fault_reason         = RUN_STATE_FAULT_NONE;
@@ -1750,6 +1752,7 @@ RUN_STATE_MANAGER_RequestExecution( const RunStateExecutionRequest_T* request )
         prepared_execution = ( RunStatePreparedExecution_T ){
             .tick_count = request->tick_count,
             .frequency  = frequency_mode,
+            .enable_drain_tail = request->enable_drain_tail,
         };
         execution_request_pending = true;
     }

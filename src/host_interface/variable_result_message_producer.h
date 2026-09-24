@@ -60,6 +60,14 @@ extern "C"
 void VARIABLE_RESULT_MESSAGE_PRODUCER_Reset( void );
 
 /**
+ * @brief Sets the number of result intervals visible to the host.
+ *
+ * Internal peripheral drain ticks may be captured after this range, but are
+ * consumed without emitting VARIABLE_TEST_RESULT messages.
+ */
+void VARIABLE_RESULT_MESSAGE_PRODUCER_SetExpectedTickCount( uint32_t tick_count );
+
+/**
  * @brief Retrieves raw measurement record(s) from Flash Manager and constructs
  *        the next Application Variable Test Result protocol message.
  *

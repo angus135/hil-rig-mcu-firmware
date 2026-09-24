@@ -184,6 +184,8 @@ HOST_Interface_Status_T HOST_INTERFACE_state_to_state_request( Host_RunState_Req
 {
     RunStateExecutionRequest_T execution_request = { 0 };
     execution_request.tick_count                 = expected_tick_count;
+    execution_request.enable_drain_tail =
+        ( s_session.instruction_family == HOST_INSTRUCTION_FAMILY_LEGACY_FIXED );
     RunStateFaultReason_T fault_request          = RUN_STATE_FAULT_EXTERNAL_REQUEST;
     switch ( request )
     {
@@ -580,6 +582,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     RESULT_MESSAGE_PRODUCER_Reset();
     HOST_VARIABLE_INSTRUCTION_HANDLER_Reset();
     VARIABLE_RESULT_MESSAGE_PRODUCER_Reset();
+    VARIABLE_RESULT_MESSAGE_PRODUCER_SetExpectedTickCount( *expected_tick_count );
 
     // Set the type and subtype
     outgoing_message->type    = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;

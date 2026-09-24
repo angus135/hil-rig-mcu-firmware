@@ -36,8 +36,15 @@
 /** @brief Internal staging capacity for reassembling records from Flash Manager. */
 #define VAR_RESULT_PRODUCER_BUFFER_CAPACITY ( 1024U + sizeof( FlashManagerResultHeader_T ) )
 
-/** @brief Maximum payload bytes held in temporary staging per tick. */
-#define VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY ( 512U )
+/**
+ * @brief Maximum captured payload staged for one tick.
+ *
+ * A variable result has a 23-byte envelope and a 12-byte body header. With at
+ * most eleven distinct captured peripheral records, 400 payload bytes leave
+ * room for every record header and alignment pad while keeping the complete
+ * Application message within its 512-byte protocol ceiling.
+ */
+#define VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY ( 400U )
 
 /** @brief Timer input clock frequency for PWM capture (TIM2 and TIM5 on APB1). */
 #define VAR_RESULT_PRODUCER_PWM_TIMER_CLOCK_HZ ( 90000000U )
@@ -93,6 +100,14 @@ typedef struct
 
     /** Current write offset in staged_payload_storage. */
     size_t staged_payload_offset;
+
+    /** Set when capture bytes are truncated to the bounded wire representation. */
+    bool capture_overflow;
+
+    /** Number of zero-based result ticks visible to the host. */
+    uint32_t expected_tick_count;
+
+    bool expected_tick_count_configured;
 } VariableResultProducerStream_T;
 
 /**-----------------------------------------------------------------------------
@@ -130,6 +145,9 @@ static void VAR_RESULT_PRODUCER_ConsumeRecord( VariableResultProducerStream_T* s
 static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T* header,
                                                 const uint8_t*                    payload,
                                                 VariableResultProducerStream_T*   stream );
+
+static void VAR_RESULT_PRODUCER_PopulateResultMetadata(
+    const VariableResultProducerStream_T* stream, HIL_Application_Message_T* out_message );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -358,74 +376,137 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
 
         case FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE: {
             if ( ( header->channel >= HIL_APPLICATION_UART_CHANNEL_COUNT )
-                 || ( header->payload_length_bytes == 0U )
-                 || ( stream->staged_record_count >= VARIABLE_RESULT_MAX_STAGED_RECORDS )
-                 || ( ( stream->staged_payload_offset + header->payload_length_bytes )
-                      > sizeof( stream->staged_payload_storage ) ) )
+                 || ( header->payload_length_bytes == 0U ) )
             {
                 return false;
             }
 
+            if ( stream->staged_record_count >= VARIABLE_RESULT_MAX_STAGED_RECORDS )
+            {
+                stream->capture_overflow = true;
+                return true;
+            }
+
+            size_t copied_length = header->payload_length_bytes;
+            if ( copied_length > UINT8_MAX )
+            {
+                copied_length           = UINT8_MAX;
+                stream->capture_overflow = true;
+            }
+            const size_t available = sizeof( stream->staged_payload_storage )
+                                     - stream->staged_payload_offset;
+            if ( copied_length > available )
+            {
+                copied_length           = available;
+                stream->capture_overflow = true;
+            }
+            if ( copied_length == 0U )
+            {
+                return true;
+            }
+
             uint8_t* const dest = &stream->staged_payload_storage[stream->staged_payload_offset];
-            ( void )memcpy( dest, payload, header->payload_length_bytes );
+            ( void )memcpy( dest, payload, copied_length );
 
             HIL_Application_Captured_Record_T* const rec =
                 &stream->staged_records[stream->staged_record_count++];
             rec->peripheral_type = HIL_APPLICATION_PERIPHERAL_UART;
             rec->channel         = header->channel;
             rec->data.data       = dest;
-            rec->data.size       = ( uint8_t )header->payload_length_bytes;
+            rec->data.size       = ( uint8_t )copied_length;
 
-            stream->staged_payload_offset += header->payload_length_bytes;
+            stream->staged_payload_offset += copied_length;
             return true;
         }
 
         case FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE: {
             if ( ( header->channel >= HIL_APPLICATION_SPI_CHANNEL_COUNT )
-                 || ( header->payload_length_bytes == 0U )
-                 || ( stream->staged_record_count >= VARIABLE_RESULT_MAX_STAGED_RECORDS )
-                 || ( ( stream->staged_payload_offset + header->payload_length_bytes )
-                      > sizeof( stream->staged_payload_storage ) ) )
+                 || ( header->payload_length_bytes == 0U ) )
             {
                 return false;
             }
 
+            if ( stream->staged_record_count >= VARIABLE_RESULT_MAX_STAGED_RECORDS )
+            {
+                stream->capture_overflow = true;
+                return true;
+            }
+
+            size_t copied_length = header->payload_length_bytes;
+            if ( copied_length > UINT8_MAX )
+            {
+                copied_length           = UINT8_MAX;
+                stream->capture_overflow = true;
+            }
+            const size_t available = sizeof( stream->staged_payload_storage )
+                                     - stream->staged_payload_offset;
+            if ( copied_length > available )
+            {
+                copied_length           = available;
+                stream->capture_overflow = true;
+            }
+            if ( copied_length == 0U )
+            {
+                return true;
+            }
+
             uint8_t* const dest = &stream->staged_payload_storage[stream->staged_payload_offset];
-            ( void )memcpy( dest, payload, header->payload_length_bytes );
+            ( void )memcpy( dest, payload, copied_length );
 
             HIL_Application_Captured_Record_T* const rec =
                 &stream->staged_records[stream->staged_record_count++];
             rec->peripheral_type = HIL_APPLICATION_PERIPHERAL_SPI;
             rec->channel         = header->channel;
             rec->data.data       = dest;
-            rec->data.size       = ( uint8_t )header->payload_length_bytes;
+            rec->data.size       = ( uint8_t )copied_length;
 
-            stream->staged_payload_offset += header->payload_length_bytes;
+            stream->staged_payload_offset += copied_length;
             return true;
         }
 
         case FLASH_MANAGER_RESULT_PERIPHERAL_CAN_RECEIVE: {
             if ( ( header->channel >= HIL_APPLICATION_CAN_CHANNEL_COUNT )
                  || ( header->payload_length_bytes == 0U )
-                 || ( ( header->payload_length_bytes % 12U ) != 0U )
-                 || ( stream->staged_record_count >= VARIABLE_RESULT_MAX_STAGED_RECORDS )
-                 || ( ( stream->staged_payload_offset + header->payload_length_bytes )
-                      > sizeof( stream->staged_payload_storage ) ) )
+                 || ( ( header->payload_length_bytes % 12U ) != 0U ) )
             {
                 return false;
             }
 
+            if ( stream->staged_record_count >= VARIABLE_RESULT_MAX_STAGED_RECORDS )
+            {
+                stream->capture_overflow = true;
+                return true;
+            }
+
+            size_t copied_length = header->payload_length_bytes;
+            if ( copied_length > UINT8_MAX )
+            {
+                copied_length           = UINT8_MAX - ( UINT8_MAX % 12U );
+                stream->capture_overflow = true;
+            }
+            const size_t available = sizeof( stream->staged_payload_storage )
+                                     - stream->staged_payload_offset;
+            if ( copied_length > available )
+            {
+                copied_length           = available - ( available % 12U );
+                stream->capture_overflow = true;
+            }
+            if ( copied_length == 0U )
+            {
+                return true;
+            }
+
             uint8_t* const dest = &stream->staged_payload_storage[stream->staged_payload_offset];
-            ( void )memcpy( dest, payload, header->payload_length_bytes );
+            ( void )memcpy( dest, payload, copied_length );
 
             HIL_Application_Captured_Record_T* const rec =
                 &stream->staged_records[stream->staged_record_count++];
             rec->peripheral_type = HIL_APPLICATION_PERIPHERAL_CAN;
             rec->channel         = header->channel;
             rec->data.data       = dest;
-            rec->data.size       = ( uint8_t )header->payload_length_bytes;
+            rec->data.size       = ( uint8_t )copied_length;
 
-            stream->staged_payload_offset += header->payload_length_bytes;
+            stream->staged_payload_offset += copied_length;
             return true;
         }
 
@@ -442,6 +523,22 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
 void VARIABLE_RESULT_MESSAGE_PRODUCER_Reset( void )
 {
     ( void )memset( &s_var_stream, 0, sizeof( s_var_stream ) );
+}
+
+void VARIABLE_RESULT_MESSAGE_PRODUCER_SetExpectedTickCount( const uint32_t tick_count )
+{
+    s_var_stream.expected_tick_count = tick_count;
+    s_var_stream.expected_tick_count_configured = true;
+}
+
+static void VAR_RESULT_PRODUCER_PopulateResultMetadata(
+    const VariableResultProducerStream_T* const stream, HIL_Application_Message_T* const out_message )
+{
+    out_message->body.variable_test_result.condition =
+        stream->capture_overflow ? HIL_APPLICATION_RESULT_CONDITION_PARTIAL
+                                 : HIL_APPLICATION_RESULT_CONDITION_OK;
+    out_message->body.variable_test_result.problem_detail =
+        stream->capture_overflow ? HIL_APPLICATION_RESULT_PROBLEM_DETAIL_CAPTURE_OVERFLOW : 0U;
 }
 
 Result_Message_Producer_Status_T
@@ -471,8 +568,13 @@ VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* 
                     out_message->has_test_id = 1U;
                     out_message->body.variable_test_result.tick_number =
                         stream->active_tick_number - 1U;
-                    out_message->body.variable_test_result.condition =
-                        HIL_APPLICATION_RESULT_CONDITION_OK;
+                    if ( stream->expected_tick_count_configured
+                         && ( ( stream->active_tick_number - 1U ) >= stream->expected_tick_count ) )
+                    {
+                        stream->has_active_tick = false;
+                        return RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM;
+                    }
+                    VAR_RESULT_PRODUCER_PopulateResultMetadata( stream, out_message );
                     out_message->body.variable_test_result.flags =
                         HIL_APPLICATION_RESULT_FLAG_COMPLETE_TICK;
                     out_message->body.variable_test_result.problem_detail = 0U;
@@ -544,11 +646,17 @@ VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* 
         else if ( header.timestamp > stream->active_tick_number )
         {
             /* Record belongs to a future tick; emit current staged tick */
+            if ( stream->expected_tick_count_configured
+                 && ( ( stream->active_tick_number - 1U ) >= stream->expected_tick_count ) )
+            {
+                stream->has_active_tick = false;
+                continue;
+            }
             out_message->type        = HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT;
             out_message->subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
             out_message->has_test_id = 1U;
             out_message->body.variable_test_result.tick_number = stream->active_tick_number - 1U;
-            out_message->body.variable_test_result.condition = HIL_APPLICATION_RESULT_CONDITION_OK;
+            VAR_RESULT_PRODUCER_PopulateResultMetadata( stream, out_message );
             out_message->body.variable_test_result.flags =
                 HIL_APPLICATION_RESULT_FLAG_COMPLETE_TICK;
             out_message->body.variable_test_result.problem_detail = 0U;

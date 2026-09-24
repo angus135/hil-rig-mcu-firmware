@@ -46,11 +46,18 @@
 /** Period between Host Interface task iterations. */
 #define HOST_INTERFACE_PERIOD_MS ( 1U )
 
-/** Capacity of the task-owned staging buffer used to pull bytes from USB. */
-#define HOST_INTERFACE_USB_RECEIVE_CAPACITY ( 512U )
-
 /** Capacity of one complete encoded Application message. */
 #define HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY ( HIL_APPLICATION_DEFAULT_MAX_MESSAGE_SIZE )
+
+/** Length prefix prepended to each Application message in direct USB streaming mode. */
+#define HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE ( 2U )
+
+/** Capacity for one maximum-sized length-prefixed direct USB message. */
+#define HOST_INTERFACE_USB_RECEIVE_CAPACITY                                                \
+    ( HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY + HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE )
+
+/** Flush threshold for batched direct USB result messages. */
+#define HOST_INTERFACE_DIRECT_USB_FLUSH_THRESHOLD ( 400U )
 
 /**
  * Maximum decode-storage capacity reserved for variable-length Application data.
@@ -58,8 +65,16 @@
  * The Application codec requires this storage to be aligned for the typed data
  * that variable-length message fields may reference after decoding.
  */
+#define HOST_INTERFACE_MAX_UPDATE_OPERATION_COUNT                                                  \
+    ( 1U + HIL_APPLICATION_ANALOG_OUTPUT_CHANNEL_COUNT                                             \
+      + HIL_APPLICATION_PWM_OUTPUT_CHANNEL_COUNT + HIL_APPLICATION_UART_CHANNEL_COUNT              \
+      + HIL_APPLICATION_SPI_CHANNEL_COUNT + HIL_APPLICATION_CAN_CHANNEL_COUNT )
+
 #define HOST_INTERFACE_APPLICATION_DECODE_CAPACITY                                                 \
-    ( HIL_APPLICATION_ABSOLUTE_MAX_VARIABLE_DATA_SIZE )
+    ( HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY                                                  \
+      + ( HOST_INTERFACE_MAX_UPDATE_OPERATION_COUNT                                                \
+          * sizeof( HIL_Application_Logical_Operation_T ) )                                        \
+      + HIL_APPLICATION_DECODE_STORAGE_ALIGNMENT - 1U )
 
 /** Capacity reserved for the caller-owned Transport workspace. */
 #define HOST_INTERFACE_TRANSPORT_WORKSPACE_CAPACITY ( 4096U )
@@ -73,6 +88,18 @@
 /** Maximum number of Transport reliable-delivery retries. */
 #define HOST_INTERFACE_TRANSPORT_MAX_RETRIES ( 5U )
 #define HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE 255
+
+#if defined( __cplusplus )
+static_assert( HOST_INTERFACE_USB_RECEIVE_CAPACITY
+                   >= ( HIL_APPLICATION_ABSOLUTE_MAX_MESSAGE_SIZE
+                        + HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE ),
+               "Direct USB receive staging cannot hold a maximum-sized framed message" );
+#else
+_Static_assert( HOST_INTERFACE_USB_RECEIVE_CAPACITY
+                    >= ( HIL_APPLICATION_ABSOLUTE_MAX_MESSAGE_SIZE
+                         + HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE ),
+                "Direct USB receive staging cannot hold a maximum-sized framed message" );
+#endif
 
 #ifndef TEST_BUILD
 #define HOST_INTERFACE_Error_Handler()                                                             \
@@ -136,8 +163,9 @@ typedef struct
     /** Application codec policy copied during initialization. */
     HIL_Application_Config_T config;
 
-    /** Encoded bytes prepared for one outgoing Application message. */
-    uint8_t send_byte_span[HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY];
+    /** Length-prefixed encoded messages batched for direct USB transmission. */
+    uint8_t send_byte_span[HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY
+                           + HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE];
 
     /** Number of valid bytes currently in send_byte_span. */
     size_t used_send_byte_span_size;
@@ -615,53 +643,65 @@ static void HOST_INTERFACE_Protocol_Process(
     {
         if ( outgoing_message != NULL )
         {
-            // If remaining space in batch buffer is too small, flush to USB first
+            size_t encoded_message_size = 0U;
+            protocol_state->application.status = HIL_APPLICATION_Encoded_Size(
+                &protocol_state->application.context, outgoing_message, &encoded_message_size );
+
+            if ( protocol_state->application.status != HIL_APPLICATION_STATUS_OK
+                 || encoded_message_size
+                            > ( sizeof( protocol_state->application.send_byte_span )
+                                - HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE ) )
+            {
+                HOST_INTERFACE_Error_Handler();
+                return;
+            }
+
+            const size_t framed_message_size =
+                HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE + encoded_message_size;
+
+            // Flush the current batch before appending when this complete frame will not fit.
             if ( ( sizeof( protocol_state->application.send_byte_span )
                    - protocol_state->application.used_send_byte_span_size )
-                 < 64U )
+                 < framed_message_size )
             {
-                if ( protocol_state->application.used_send_byte_span_size > 0U )
+                if ( protocol_state->application.used_send_byte_span_size == 0U
+                     || !HW_USB_Transmit(
+                         protocol_state->application.send_byte_span,
+                         ( uint16_t )protocol_state->application.used_send_byte_span_size ) )
                 {
-                    if ( HW_USB_Transmit(
-                             protocol_state->application.send_byte_span,
-                             ( uint16_t )protocol_state->application.used_send_byte_span_size ) )
-                    {
-                        protocol_state->application.used_send_byte_span_size = 0U;
-                    }
+                    return;
                 }
+                protocol_state->application.used_send_byte_span_size = 0U;
             }
 
             const size_t current_offset = protocol_state->application.used_send_byte_span_size;
             const size_t available_space =
                 sizeof( protocol_state->application.send_byte_span ) - current_offset;
 
-            // Check if there is space for at least 2-byte header + message
-            if ( available_space >= 32U )
+            size_t payload_len                 = 0U;
+            protocol_state->application.status = HIL_APPLICATION_Encode_Message(
+                &protocol_state->application.context, outgoing_message,
+                &protocol_state->application
+                     .send_byte_span[current_offset + HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE],
+                available_space - HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE, &payload_len );
+
+            if ( protocol_state->application.status == HIL_APPLICATION_STATUS_OK )
             {
-                size_t payload_len                 = 0U;
-                protocol_state->application.status = HIL_APPLICATION_Encode_Message(
-                    &protocol_state->application.context, outgoing_message,
-                    &protocol_state->application.send_byte_span[current_offset + 2U],
-                    available_space - 2U, &payload_len );
+                // Prepend 2-byte Little Endian length header
+                protocol_state->application.send_byte_span[current_offset] =
+                    ( uint8_t )( payload_len & 0xFFU );
+                protocol_state->application.send_byte_span[current_offset + 1U] =
+                    ( uint8_t )( ( payload_len >> 8 ) & 0xFFU );
 
-                if ( protocol_state->application.status == HIL_APPLICATION_STATUS_OK )
-                {
-                    // Prepend 2-byte Little Endian length header
-                    protocol_state->application.send_byte_span[current_offset] =
-                        ( uint8_t )( payload_len & 0xFFU );
-                    protocol_state->application.send_byte_span[current_offset + 1U] =
-                        ( uint8_t )( ( payload_len >> 8 ) & 0xFFU );
-
-                    protocol_state->application.used_send_byte_span_size += ( payload_len + 2U );
-                    *outgoing_message_accepted = true;
-                }
-                else if ( protocol_state->application.status
-                              == HIL_APPLICATION_STATUS_INTERNAL_ERROR
-                          || protocol_state->application.status
-                                 == HIL_APPLICATION_STATUS_BUFFER_TOO_SMALL )
-                {
-                    HOST_INTERFACE_Error_Handler();
-                }
+                protocol_state->application.used_send_byte_span_size +=
+                    HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE + payload_len;
+                *outgoing_message_accepted = true;
+            }
+            else if ( protocol_state->application.status == HIL_APPLICATION_STATUS_INTERNAL_ERROR
+                      || protocol_state->application.status
+                             == HIL_APPLICATION_STATUS_BUFFER_TOO_SMALL )
+            {
+                HOST_INTERFACE_Error_Handler();
             }
 
             // Flush chunk immediately if not a result message or if batch is full (>= 400 bytes)
@@ -672,7 +712,8 @@ static void HOST_INTERFACE_Protocol_Process(
             if ( protocol_state->application.used_send_byte_span_size > 0U )
             {
                 if ( ( !is_result_msg )
-                     || ( protocol_state->application.used_send_byte_span_size >= 400U ) )
+                     || ( protocol_state->application.used_send_byte_span_size
+                          >= HOST_INTERFACE_DIRECT_USB_FLUSH_THRESHOLD ) )
                 {
                     if ( HW_USB_Transmit(
                              protocol_state->application.send_byte_span,

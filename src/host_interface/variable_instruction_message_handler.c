@@ -39,7 +39,26 @@
  *------------------------------------------------------------------------------
  */
 
-#define HOST_VAR_MAX_SPI_CONVERTED_PAYLOAD_BYTES ( 512U )
+/**
+ * @brief Conservative canonical-size bound for one maximum-sized wire instruction.
+ *
+ * SPI has the largest conversion ratio because each one-byte packet length becomes
+ * a four-byte canonical length. Other operation families expand by no more than
+ * this four-times bound.
+ */
+#define HOST_VAR_MAX_CANONICAL_INSTRUCTION_BOUND_BYTES                                            \
+    ( sizeof( ExecutionInstructionHeader_T )                                                      \
+      + ( 4U * HIL_APPLICATION_ABSOLUTE_MAX_MESSAGE_SIZE ) )
+
+#if defined( __cplusplus )
+static_assert( EXECUTION_INSTRUCTION_MAX_SIZE_BYTES
+                   >= HOST_VAR_MAX_CANONICAL_INSTRUCTION_BOUND_BYTES,
+               "Canonical instruction buffer is smaller than the maximum wire conversion" );
+#else
+_Static_assert( EXECUTION_INSTRUCTION_MAX_SIZE_BYTES
+                    >= HOST_VAR_MAX_CANONICAL_INSTRUCTION_BOUND_BYTES,
+                "Canonical instruction buffer is smaller than the maximum wire conversion" );
+#endif
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -451,35 +470,37 @@ HOST_VAR_INSTRUCTION_EncodeSpi( const HIL_Application_Logical_Operation_T* const
                                          + EXECUTION_SPI_PACKET_SIZES_LENGTH_BYTES( packet_count )
                                          + data_len;
 
-    if ( converted_payload_len > HOST_VAR_MAX_SPI_CONVERTED_PAYLOAD_BYTES )
+    const size_t operation_offset = writer->offset;
+    const HOST_Interface_Status_T append_status = HOST_VAR_INSTRUCTION_AppendOperation(
+        writer, EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT, op->channel, NULL,
+        ( uint16_t )converted_payload_len );
+    if ( append_status != HOST_INTERFACE_STATUS_OK )
     {
-        return HOST_INTERFACE_STATUS_BUFFER_TOO_SMALL;
+        return append_status;
     }
 
-    uint8_t converted_buffer[HOST_VAR_MAX_SPI_CONVERTED_PAYLOAD_BYTES];
-    ( void )memset( converted_buffer, 0, converted_payload_len );
+    uint8_t* const converted_payload =
+        writer->buffer + operation_offset + sizeof( ExecutionOperationHeaderWord_T );
 
     // 1. Prefix: packet_count (4 bytes LE)
     const uint32_t packet_count_u32 = ( uint32_t )packet_count;
-    ( void )memcpy( &converted_buffer[EXECUTION_SPI_PACKET_COUNT_OFFSET_BYTES], &packet_count_u32,
+    ( void )memcpy( &converted_payload[EXECUTION_SPI_PACKET_COUNT_OFFSET_BYTES], &packet_count_u32,
                     sizeof( packet_count_u32 ) );
 
     // 2. Packet sizes (4 bytes LE each)
     for ( uint8_t i = 0U; i < packet_count; i++ )
     {
         const uint32_t pkt_len_u32 = ( uint32_t )packet_lengths[i];
-        ( void )memcpy( &converted_buffer[EXECUTION_SPI_PACKET_SIZES_OFFSET_BYTES
-                                          + ( i * EXECUTION_SPI_PACKET_SIZE_FIELD_BYTES )],
+        ( void )memcpy( &converted_payload[EXECUTION_SPI_PACKET_SIZES_OFFSET_BYTES
+                                           + ( i * EXECUTION_SPI_PACKET_SIZE_FIELD_BYTES )],
                         &pkt_len_u32, sizeof( pkt_len_u32 ) );
     }
 
     // 3. Packet data bytes
-    ( void )memcpy( &converted_buffer[EXECUTION_SPI_DATA_OFFSET_BYTES( packet_count )], packet_data,
+    ( void )memcpy( &converted_payload[EXECUTION_SPI_DATA_OFFSET_BYTES( packet_count )], packet_data,
                     data_len );
 
-    return HOST_VAR_INSTRUCTION_AppendOperation( writer, EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT,
-                                                 op->channel, converted_buffer,
-                                                 ( uint16_t )converted_payload_len );
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 /**

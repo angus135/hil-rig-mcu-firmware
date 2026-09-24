@@ -134,6 +134,8 @@ typedef struct
      * budgets and derives the reservation from the committed configuration.
      */
     uint32_t maximum_result_length_bytes;
+    /** Keep the legacy peripheral drain tail after the requested range. */
+    bool enable_drain_tail;
 } RunStateExecutionRequest_T;
 
 /** Immediate admission result for an asynchronous execution request. */

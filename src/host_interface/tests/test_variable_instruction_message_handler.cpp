@@ -496,6 +496,46 @@ TEST_F( VariableInstructionMessageHandlerTest, SerialTransmitOperationsPackCorre
 }
 
 /**
+ * @brief A maximum-sized packetised SPI span expands safely into canonical format.
+ */
+TEST_F( VariableInstructionMessageHandlerTest, MaximumSpiPayloadFitsCanonicalInstruction )
+{
+    static uint8_t spi_data[HIL_APPLICATION_ABSOLUTE_MAX_VARIABLE_DATA_SIZE]{};
+    constexpr uint8_t packet_count = 127U;
+
+    spi_data[0] = packet_count;
+    for ( uint8_t packet = 0U; packet < packet_count; packet++ )
+    {
+        spi_data[1U + packet]                = 1U;
+        spi_data[1U + packet_count + packet] = packet;
+    }
+
+    HIL_Application_Logical_Operation_T op{};
+    op.peripheral_type = HIL_APPLICATION_PERIPHERAL_SPI;
+    op.channel         = 0U;
+    op.payload.data    = spi_data;
+    op.payload.size    = sizeof( spi_data );
+
+    instruction.tick_number     = 1000U;
+    instruction.operation_count = 1U;
+    instruction.operations      = &op;
+
+    ASSERT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_OK );
+
+    constexpr size_t converted_payload_size =
+        EXECUTION_SPI_PREFIX_SIZE_BYTES
+        + EXECUTION_SPI_PACKET_SIZES_LENGTH_BYTES( packet_count ) + packet_count;
+    const size_t expected_size = sizeof( ExecutionInstructionHeader_T )
+                                 + EXECUTION_OPERATION_ENCODED_SIZE_BYTES(
+                                     converted_payload_size );
+
+    EXPECT_EQ( converted_payload_size, 639U );
+    EXPECT_EQ( uploaded_bytes.size(), expected_size );
+    EXPECT_LE( uploaded_bytes.size(), EXECUTION_INSTRUCTION_MAX_SIZE_BYTES );
+}
+
+/**
  * @brief Unrecognized peripheral type returns VALIDATION_FAILED.
  */
 TEST_F( VariableInstructionMessageHandlerTest, RejectsUnknownPeripheralType )
