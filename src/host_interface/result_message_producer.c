@@ -101,7 +101,7 @@ typedef struct
  */
 
 /** @brief Singleton stream context for result message production. */
-static ResultProducerStream_T result_producer_stream = { 0 };
+static ResultProducerStream_T result_producer_stream;
 
 /**
  * @brief Physical GPIOD pin masks indexed by zero-based protocol DI channel.
@@ -140,18 +140,6 @@ static bool RESULT_PRODUCER_DecodeAnalogueInput( const uint8_t* payload, uint16_
 static bool RESULT_PRODUCER_DecodePwmCapture( uint8_t channel, const uint8_t* payload,
                                               uint16_t                       length,
                                               HIL_Application_Test_Result_T* result );
-
-static bool RESULT_PRODUCER_DecodeUartReceiveStub( uint8_t channel, const uint8_t* payload,
-                                                   uint16_t                       length,
-                                                   HIL_Application_Test_Result_T* result );
-
-static bool RESULT_PRODUCER_DecodeSpiReceiveStub( uint8_t channel, const uint8_t* payload,
-                                                  uint16_t                       length,
-                                                  HIL_Application_Test_Result_T* result );
-
-static bool RESULT_PRODUCER_DecodeCanReceiveStub( uint8_t channel, const uint8_t* payload,
-                                                  uint16_t                       length,
-                                                  HIL_Application_Test_Result_T* result );
 
 static bool RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T* header,
                                             const uint8_t*                    payload,
@@ -337,51 +325,6 @@ static bool RESULT_PRODUCER_DecodePwmCapture( const uint8_t channel, const uint8
 }
 
 /**
- * @brief Placeholder stub for future UART receive result decoding.
- */
-static bool RESULT_PRODUCER_DecodeUartReceiveStub( const uint8_t                        channel,
-                                                   const uint8_t* const                 payload,
-                                                   const uint16_t                       length,
-                                                   HIL_Application_Test_Result_T* const result )
-{
-    ( void )channel;
-    ( void )payload;
-    ( void )length;
-    ( void )result;
-    return true;
-}
-
-/**
- * @brief Placeholder stub for future SPI receive result decoding.
- */
-static bool RESULT_PRODUCER_DecodeSpiReceiveStub( const uint8_t                        channel,
-                                                  const uint8_t* const                 payload,
-                                                  const uint16_t                       length,
-                                                  HIL_Application_Test_Result_T* const result )
-{
-    ( void )channel;
-    ( void )payload;
-    ( void )length;
-    ( void )result;
-    return true;
-}
-
-/**
- * @brief Placeholder stub for future CAN receive result decoding.
- */
-static bool RESULT_PRODUCER_DecodeCanReceiveStub( const uint8_t                        channel,
-                                                  const uint8_t* const                 payload,
-                                                  const uint16_t                       length,
-                                                  HIL_Application_Test_Result_T* const result )
-{
-    ( void )channel;
-    ( void )payload;
-    ( void )length;
-    ( void )result;
-    return true;
-}
-
-/**
  * @brief Dispatches a flash result record to the corresponding peripheral decoder.
  */
 static bool RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T* const header,
@@ -401,18 +344,6 @@ static bool RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T* co
         case FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE:
             return RESULT_PRODUCER_DecodePwmCapture( header->channel, payload,
                                                      header->payload_length_bytes, result );
-
-        case FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE:
-            return RESULT_PRODUCER_DecodeUartReceiveStub( header->channel, payload,
-                                                          header->payload_length_bytes, result );
-
-        case FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE:
-            return RESULT_PRODUCER_DecodeSpiReceiveStub( header->channel, payload,
-                                                         header->payload_length_bytes, result );
-
-        case FLASH_MANAGER_RESULT_PERIPHERAL_CAN_RECEIVE:
-            return RESULT_PRODUCER_DecodeCanReceiveStub( header->channel, payload,
-                                                         header->payload_length_bytes, result );
 
         default:
             return false;

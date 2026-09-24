@@ -9,7 +9,7 @@
 #include <stdint.h>
 
 #include "host_interface_test_access.h"
-
+#define HOST_INTERFACE_DIRECT_USB_STREAMING ( 0 )
 #include "../host_interface.c"  // NOLINT
 
 /* The Host Interface integration tests exercise the protocol service loop

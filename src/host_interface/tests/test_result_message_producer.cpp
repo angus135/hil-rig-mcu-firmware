@@ -539,9 +539,9 @@ TEST_F( ResultMessageProducerTest, PwmHighTicksGreaterThanPeriodTicksTriggersCor
 TEST_F( ResultMessageProducerTest, NonMonotonicTimestampInBufferTriggersCorruptData )
 {
     const uint32_t digital_mask = 0U;
-    simulated_stream_.AppendRecord( 5U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
+    simulated_stream_.AppendRecord( 1U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
                                     &digital_mask, sizeof( digital_mask ) );
-    simulated_stream_.AppendRecord( 3U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
+    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
                                     &digital_mask, sizeof( digital_mask ) );
 
     EXPECT_CALL( *mock_flash_, FLASH_MANAGER_ReadResultBytes( _, _, _ ) )
@@ -550,8 +550,14 @@ TEST_F( ResultMessageProducerTest, NonMonotonicTimestampInBufferTriggersCorruptD
         } );
 
     HIL_Application_Message_T msg0;
-    // Tick 3 behind Tick 5 in stream buffer triggers CORRUPT_DATA immediately
+    // Call 1 synthesizes tick 0 before tick 1
     EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &msg0 ),
+               RESULT_MESSAGE_PRODUCER_STATUS_OK );
+    EXPECT_EQ( msg0.body.test_result.tick_number, 0U );
+
+    // Call 2: Tick 0 behind Tick 1 in stream buffer triggers CORRUPT_DATA
+    HIL_Application_Message_T msg1;
+    EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &msg1 ),
                RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA );
 }
 
@@ -560,13 +566,12 @@ TEST_F( ResultMessageProducerTest, NonMonotonicTimestampAcrossSeparateFetchesTri
     const uint32_t digital_mask = 0U;
     const uint32_t record_len   = sizeof( FlashManagerResultHeader_T ) + sizeof( digital_mask );
 
-    simulated_stream_.AppendRecord( 5U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
+    simulated_stream_.AppendRecord( 1U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
                                     &digital_mask, sizeof( digital_mask ) );
-    simulated_stream_.AppendRecord( 3U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
+    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
                                     &digital_mask, sizeof( digital_mask ) );
 
-    // Deliver exactly record 1 on first fetch, then simulate BUSY so tick 5 is emitted, then
-    // deliver record 2
+    // Deliver record 1 on first fetch, then simulate BUSY, then deliver record 2
     int call_count = 0;
     EXPECT_CALL( *mock_flash_, FLASH_MANAGER_ReadResultBytes( _, _, _ ) )
         .WillRepeatedly(
@@ -585,13 +590,19 @@ TEST_F( ResultMessageProducerTest, NonMonotonicTimestampAcrossSeparateFetchesTri
             } );
 
     HIL_Application_Message_T msg0;
-    // Call 1 reads tick 5, encounters BUSY on next chunk, and returns NO_DATA_AVAILABLE
+    // Call 1 synthesizes tick 0 before tick 1
     EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &msg0 ),
-               RESULT_MESSAGE_PRODUCER_STATUS_NO_DATA_AVAILABLE );
+               RESULT_MESSAGE_PRODUCER_STATUS_OK );
+    EXPECT_EQ( msg0.body.test_result.tick_number, 0U );
 
-    // Call 2 reads tick 3, detects 3 <= 5 (non-monotonic) and returns CORRUPT_DATA
+    // Call 2 reads tick 1, encounters BUSY on next chunk, and returns NO_DATA_AVAILABLE
     HIL_Application_Message_T msg1;
     EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &msg1 ),
+               RESULT_MESSAGE_PRODUCER_STATUS_NO_DATA_AVAILABLE );
+
+    // Call 3 reads tick 0, detects 0 <= 1 (non-monotonic) and returns CORRUPT_DATA
+    HIL_Application_Message_T msg2;
+    EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &msg2 ),
                RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA );
 }
 
@@ -599,12 +610,12 @@ TEST_F( ResultMessageProducerTest, NonMonotonicTimestampAfterEmittedTickTriggers
 {
     const uint32_t digital_mask = 0U;
 
-    // Stream contains Tick 5, Tick 7, and then Tick 6 (violating monotonicity after Tick 7)
-    simulated_stream_.AppendRecord( 5U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
+    // Stream contains Tick 0, Tick 2, and then Tick 1 (violating monotonicity after Tick 2)
+    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
                                     &digital_mask, sizeof( digital_mask ) );
-    simulated_stream_.AppendRecord( 7U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
+    simulated_stream_.AppendRecord( 2U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
                                     &digital_mask, sizeof( digital_mask ) );
-    simulated_stream_.AppendRecord( 6U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
+    simulated_stream_.AppendRecord( 1U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
                                     &digital_mask, sizeof( digital_mask ) );
 
     EXPECT_CALL( *mock_flash_, FLASH_MANAGER_ReadResultBytes( _, _, _ ) )
@@ -613,15 +624,21 @@ TEST_F( ResultMessageProducerTest, NonMonotonicTimestampAfterEmittedTickTriggers
         } );
 
     HIL_Application_Message_T msg0;
-    // Call 1 emits tick 5 (since it peeks tick 7 and sees 7 > 5)
+    // Call 1 emits tick 0
     EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &msg0 ),
                RESULT_MESSAGE_PRODUCER_STATUS_OK );
-    EXPECT_EQ( msg0.body.test_result.tick_number, 5U );
+    EXPECT_EQ( msg0.body.test_result.tick_number, 0U );
 
-    // Call 2 processes tick 7, peeks tick 6 (6 <= 7), detects monotonicity violation and returns
-    // CORRUPT_DATA
+    // Call 2 synthesizes tick 1 (gap before tick 2)
     HIL_Application_Message_T msg1;
     EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &msg1 ),
+               RESULT_MESSAGE_PRODUCER_STATUS_OK );
+    EXPECT_EQ( msg1.body.test_result.tick_number, 1U );
+
+    // Call 3 processes tick 2, peeks tick 1 (1 <= 2), detects monotonicity violation and returns
+    // CORRUPT_DATA
+    HIL_Application_Message_T msg2;
+    EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &msg2 ),
                RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA );
 }
 
@@ -641,19 +658,15 @@ TEST_F( ResultMessageProducerTest, UnknownPeripheralTypeTriggersCorruptData )
 }
 
 /**-----------------------------------------------------------------------------
- *  Tests: Peripheral Expansion Stubs (UART, SPI, CAN)
+ *  Tests: Serial Peripherals Rejected in Legacy Fixed Producer
  *------------------------------------------------------------------------------
  */
 
-TEST_F( ResultMessageProducerTest, PeripheralStubsProcessedWithoutError )
+TEST_F( ResultMessageProducerTest, SerialPeripheralsRejectedAsCorruptInLegacyProducer )
 {
     const uint8_t dummy_rx[16] = { 0 };
 
     simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE, 0U, dummy_rx,
-                                    sizeof( dummy_rx ) );
-    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE, 0U, dummy_rx,
-                                    sizeof( dummy_rx ) );
-    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_CAN_RECEIVE, 0U, dummy_rx,
                                     sizeof( dummy_rx ) );
 
     EXPECT_CALL( *mock_flash_, FLASH_MANAGER_ReadResultBytes( _, _, _ ) )
@@ -665,9 +678,7 @@ TEST_F( ResultMessageProducerTest, PeripheralStubsProcessedWithoutError )
     std::memset( &message, 0, sizeof( message ) );
 
     EXPECT_EQ( RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &message ),
-               RESULT_MESSAGE_PRODUCER_STATUS_OK );
-    EXPECT_EQ( message.body.test_result.tick_number, 0U );
-    EXPECT_EQ( message.body.test_result.condition, HIL_APPLICATION_RESULT_CONDITION_OK );
+               RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA );
 }
 
 TEST_F( ResultMessageProducerTest, SequentialTicksSynthesizedAcrossFlashGaps )

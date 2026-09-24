@@ -32,6 +32,8 @@
 #include "host_interface.h"
 #include "instruction_message_handler.h"
 #include "result_message_producer.h"
+#include "variable_instruction_message_handler.h"
+#include "variable_result_message_producer.h"
 #include "run_state_manager.h"
 
 /**-----------------------------------------------------------------------------
@@ -91,6 +93,8 @@ void HOST_INTERFACE_Reset_Session( void )
     s_session.expected_tick_count = 0U;
     HOST_INSTRUCTION_HANDLER_Reset();
     RESULT_MESSAGE_PRODUCER_Reset();
+    HOST_VARIABLE_INSTRUCTION_HANDLER_Reset();
+    VARIABLE_RESULT_MESSAGE_PRODUCER_Reset();
 }
 
 const HostTestSession_T* HOST_INTERFACE_Get_Session( void )
@@ -574,6 +578,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     *expected_tick_count = incoming_message->body.test_configuration.expected_tick_count;
     HOST_INSTRUCTION_HANDLER_Reset();
     RESULT_MESSAGE_PRODUCER_Reset();
+    HOST_VARIABLE_INSTRUCTION_HANDLER_Reset();
+    VARIABLE_RESULT_MESSAGE_PRODUCER_Reset();
 
     // Set the type and subtype
     outgoing_message->type    = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
@@ -705,13 +711,80 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Instruction_Data(
     const HIL_Application_Message_T* incoming_message, HIL_Application_Message_T* outgoing_message,
     bool* response_required, uint8_t* data, size_t data_size )
 {
-    // NOT IMPLEMENTED
-    ( void )incoming_message;
-    ( void )outgoing_message;
     ( void )data;
     ( void )data_size;
+
+    if ( incoming_message == NULL || outgoing_message == NULL || response_required == NULL )
+    {
+        return HOST_INTERFACE_STATUS_INVALID_ARGUMENT;
+    }
+
+    // 1. Session state check
+    if ( s_session.state != HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS )
+    {
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+        *response_required                    = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
+    // 2. Test ID correlation check
+    if ( !HOST_INTERFACE_Validate_Test_Id( incoming_message ) )
+    {
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+        *response_required                    = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
+    // 3. Family exclusivity check (cannot send variable Type 21 if legacy Type 17 is active)
+    if ( s_session.instruction_family == HOST_INSTRUCTION_FAMILY_LEGACY_FIXED )
+    {
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+        *response_required                    = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+    s_session.instruction_family = HOST_INSTRUCTION_FAMILY_VARIABLE_UPDATE;
+
+    HOST_Interface_Status_T instruction_status =
+        HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
+            &incoming_message->body.update_instruction );
+
+    if ( instruction_status != HOST_INTERFACE_STATUS_OK )
+    {
+        outgoing_message->type                  = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+        outgoing_message->subtype               = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+        outgoing_message->body.response.scope   = HIL_APPLICATION_RESPONSE_SCOPE_TICK;
+        outgoing_message->body.response.outcome = HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED;
+        if ( instruction_status == HOST_INTERFACE_STATUS_INCONSISTENT_TICK )
+        {
+            outgoing_message->body.response.reason = HIL_APPLICATION_RESPONSE_REASON_INVALID_TICK;
+        }
+        else if ( ( instruction_status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
+                  || ( instruction_status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE ) )
+        {
+            outgoing_message->body.response.reason =
+                HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE;
+        }
+        else
+        {
+            outgoing_message->body.response.reason =
+                HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED;
+        }
+        outgoing_message->body.response.tick_number =
+            incoming_message->body.update_instruction.tick_number;
+        outgoing_message->body.response.control_command        = HIL_APPLICATION_CONTROL_INVALID;
+        outgoing_message->body.response.global_control_command =
+            HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
+        outgoing_message->body.response.detail = ( uint32_t )instruction_status;
+        *response_required                     = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
+    // Success: Ingest directly into flash/RAM storage with zero per-tick Application responses.
     *response_required = false;
-    return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 HOST_Interface_Status_T
@@ -1176,9 +1249,10 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Result_Transfer_Notification(
     uint8_t* data, size_t data_size )
 {
     ( void )data;
-    ( void )data_size;
     Result_Message_Producer_Status_T result_status =
-        RESULT_MESSAGE_PRODUCER_ProduceNextMessage( outgoing_message );
+        ( s_session.instruction_family == HOST_INSTRUCTION_FAMILY_VARIABLE_UPDATE )
+            ? VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( outgoing_message )
+            : RESULT_MESSAGE_PRODUCER_ProduceNextMessage( outgoing_message );
     if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM )
     {
         // clear the result notification flag

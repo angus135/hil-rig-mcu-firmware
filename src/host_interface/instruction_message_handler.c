@@ -173,38 +173,6 @@ static HOST_Interface_Status_T
 HOST_INSTRUCTION_HANDLER_EncodePwmOutputs( const HIL_Application_Test_Instruction_T* instruction,
                                            HostInstructionWriter_T*                  writer );
 
-/**
- * @brief Placeholder stub for future UART transmit instruction encoding.
- *
- * @param[in]     instruction Pointer to the incoming application test instruction.
- * @param[in,out] writer      Cursor context for appending the operation.
- *
- * @return HOST_INTERFACE_STATUS_OK.
- */
-static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_EncodeUartTransmitStub(
-    const HIL_Application_Test_Instruction_T* instruction, HostInstructionWriter_T* writer );
-
-/**
- * @brief Placeholder stub for future SPI transmit instruction encoding.
- *
- * @param[in]     instruction Pointer to the incoming application test instruction.
- * @param[in,out] writer      Cursor context for appending the operation.
- *
- * @return HOST_INTERFACE_STATUS_OK.
- */
-static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_EncodeSpiTransmitStub(
-    const HIL_Application_Test_Instruction_T* instruction, HostInstructionWriter_T* writer );
-
-/**
- * @brief Placeholder stub for future CAN transmit instruction encoding.
- *
- * @param[in]     instruction Pointer to the incoming application test instruction.
- * @param[in,out] writer      Cursor context for appending the operation.
- *
- * @return HOST_INTERFACE_STATUS_OK.
- */
-static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_EncodeCanTransmitStub(
-    const HIL_Application_Test_Instruction_T* instruction, HostInstructionWriter_T* writer );
 
 /**
  * @brief Converts an application instruction into canonical Execution Manager format.
@@ -543,41 +511,6 @@ static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_EncodePwmOutputs(
     return HOST_INTERFACE_STATUS_OK;
 }
 
-/**
- * @brief Placeholder stub for future UART transmit instruction encoding.
- */
-static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_EncodeUartTransmitStub(
-    const HIL_Application_Test_Instruction_T* const instruction,
-    HostInstructionWriter_T* const                  writer )
-{
-    ( void )instruction;
-    ( void )writer;
-    return HOST_INTERFACE_STATUS_OK;
-}
-
-/**
- * @brief Placeholder stub for future SPI transmit instruction encoding.
- */
-static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_EncodeSpiTransmitStub(
-    const HIL_Application_Test_Instruction_T* const instruction,
-    HostInstructionWriter_T* const                  writer )
-{
-    ( void )instruction;
-    ( void )writer;
-    return HOST_INTERFACE_STATUS_OK;
-}
-
-/**
- * @brief Placeholder stub for future CAN transmit instruction encoding.
- */
-static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_EncodeCanTransmitStub(
-    const HIL_Application_Test_Instruction_T* const instruction,
-    HostInstructionWriter_T* const                  writer )
-{
-    ( void )instruction;
-    ( void )writer;
-    return HOST_INTERFACE_STATUS_OK;
-}
 
 /**
  * @brief Converts an application instruction into canonical Execution Manager format.
@@ -618,25 +551,6 @@ static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_ConvertInstruction(
 
     // 3. PWM Outputs
     status = HOST_INSTRUCTION_HANDLER_EncodePwmOutputs( instruction, &writer );
-    if ( status != HOST_INTERFACE_STATUS_OK )
-    {
-        return status;
-    }
-
-    // 4. Peripheral Stubs (for future protocol extensions)
-    status = HOST_INSTRUCTION_HANDLER_EncodeUartTransmitStub( instruction, &writer );
-    if ( status != HOST_INTERFACE_STATUS_OK )
-    {
-        return status;
-    }
-
-    status = HOST_INSTRUCTION_HANDLER_EncodeSpiTransmitStub( instruction, &writer );
-    if ( status != HOST_INTERFACE_STATUS_OK )
-    {
-        return status;
-    }
-
-    status = HOST_INSTRUCTION_HANDLER_EncodeCanTransmitStub( instruction, &writer );
     if ( status != HOST_INTERFACE_STATUS_OK )
     {
         return status;

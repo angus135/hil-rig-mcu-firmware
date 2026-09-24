@@ -39,7 +39,9 @@
  * Set to 1 to enable direct length-prefixed USB streaming test path (bypassing Transport Stop-and-Wait).
  * Set to 0 to use original Transport session & frame layer.
  */
+#ifndef HOST_INTERFACE_DIRECT_USB_STREAMING
 #define HOST_INTERFACE_DIRECT_USB_STREAMING ( 1 )
+#endif
 
 /** Period between Host Interface task iterations. */
 #define HOST_INTERFACE_PERIOD_MS ( 1U )
