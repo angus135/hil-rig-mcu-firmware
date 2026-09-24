@@ -28,6 +28,7 @@ static volatile uint32_t                  current_tick         = 0U;
 static volatile ExecutionManagerFailure_T execution_failure    = EXECUTION_MANAGER_FAILURE_NONE;
 static volatile ExecutionState_T          execution_state      = EXECUTION_STATE_IDLE;
 static bool                               instruction_stream_exhausted = false;
+static volatile bool                      boundary_zero_pending       = false;
 static bool                               operation_timing_requested   = false;
 static bool                               operation_timing_active      = false;
 static ExecutionManagerTerminalCallback_T terminal_callback            = NULL;
@@ -73,6 +74,7 @@ bool EXECUTION_MANAGER_Prepare( uint32_t tick_count )
     execution_failure            = EXECUTION_MANAGER_FAILURE_NONE;
     execution_state              = EXECUTION_STATE_READY;
     instruction_stream_exhausted = false;
+    boundary_zero_pending        = true;
     operation_timing_active      = operation_timing_requested;
     operation_timing_requested   = false;
     EXECUTION_OPERATION_ADAPTER_ResetFailure();
@@ -122,32 +124,34 @@ EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken )
                                               higher_priority_task_woken );
     }
 
-    /*
-     * Tick zero is the configured initial condition at the instant the
-     * execution timer starts. Each interrupt marks the next execution-clock
-     * boundary, so the first interrupt processes tick one.
-     *
-     * Future measurement collection belongs immediately after this increment
-     * and before output dispatch. Keeping the tick stable for the remainder of
-     * the ISR gives every driver call at one boundary the same timestamp.
-     */
-    current_tick++;
+    const bool is_boundary_zero = boundary_zero_pending;
+    if ( is_boundary_zero )
+    {
+        boundary_zero_pending = false;
+    }
+    else
+    {
+        current_tick++;
+    }
 
     FlashManagerInstructionReadStatus_T read_status = FLASH_MANAGER_INSTRUCTION_END_OF_STREAM;
 
-    /* Measurements are captured before outputs at this boundary. */
-    // clang-format off
-    const bool measurements_accepted =
-        operation_timing_active
-            ? EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurementsProfiled( current_tick,
-                                                                       higher_priority_task_woken )
-            : EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( current_tick,
-                                                               higher_priority_task_woken );
-    // clang-format on
-    if ( !measurements_accepted )
+    /* Boundary zero opens interval zero, so there is no completed interval to measure yet. */
+    if ( !is_boundary_zero )
     {
-        return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_MEASUREMENT_REJECTED,
-                                              higher_priority_task_woken );
+        // clang-format off
+        const bool measurements_accepted =
+            operation_timing_active
+                ? EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurementsProfiled(
+                    current_tick, higher_priority_task_woken )
+                : EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements(
+                    current_tick, higher_priority_task_woken );
+        // clang-format on
+        if ( !measurements_accepted )
+        {
+            return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_MEASUREMENT_REJECTED,
+                                                  higher_priority_task_woken );
+        }
     }
 
     /* Process outputs */
@@ -202,7 +206,7 @@ EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken )
         instruction_stream_exhausted = true;
     }
 
-    if ( current_tick == execution_tick_count )
+    if ( !is_boundary_zero && ( current_tick == execution_tick_count ) )
     {
         if ( !instruction_stream_exhausted )
         {

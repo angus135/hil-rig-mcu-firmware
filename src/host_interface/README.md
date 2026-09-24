@@ -68,9 +68,8 @@ byte length and guarantee:
   timestamp in word zero, then operation length in bits 0-15, operation count
   in bits 16-23, and zeroed reserved bits in bits 24-31 of word one;
 - strictly increasing instruction timestamps;
-- instruction timestamps in the range 1 through the validated run tick count;
-- no timestamp-zero instruction, because tick zero is the configured initial
-  condition rather than a timer-dispatched boundary;
+- instruction timestamps in the range zero through one less than the validated
+  run tick count;
 - exactly one instruction for each output-bearing tick;
 - valid operation headers, opcodes, channels, payload layouts, and four-byte
   padding between operation boundaries;
@@ -93,10 +92,17 @@ will be supplied.
 
 ## Result timestamp interpretation
 
-Every result timestamp identifies the execution-clock boundary at which its
-driver was polled. The first periodic result boundary is tick one; tick zero is
-reserved for configured initial conditions. At a boundary, measurements occur
-before output operations carrying the same timestamp.
+Every canonical result timestamp identifies the execution-clock boundary at
+which its driver was polled. Boundary zero applies outputs without collecting a
+measurement. Canonical result boundaries therefore run from one through the
+validated tick count. At each of those boundaries, measurements occur before
+output operations carrying the same canonical timestamp.
+
+Application wire tick `t` identifies logical interval `[t, t + 1)`. A wire
+instruction retains timestamp `t` in the canonical stream and is applied at
+the interval's opening boundary. A canonical measurement from boundary `t + 1`
+is emitted as wire result tick `t`, identifying the interval's closing
+boundary. Both fixed and variable message families use this mapping.
 
 The peripheral type defines what was observed at that boundary. A digital-input
 result is an instantaneous sample. UART and SPI bytes, CAN frames, PWM captures,

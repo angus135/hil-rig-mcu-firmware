@@ -137,10 +137,12 @@ Before a run, request Flash Manager execution preparation and wait for
 stop TIM4, ensure the ISR has returned and all result leases are resolved, then
 request result finalisation and wait for `RESULTS_READY` or `FAULT`.
 
-The validated `tick_count` is the number of execution-timer periods and the
-final boundary tick. Tick zero is the configured initial condition. The first
-TIM4 interrupt processes tick one, and a run of N ticks completes at boundary
-N. Valid output instruction timestamps are therefore 1 through N.
+The validated `tick_count` is the number of logical execution intervals and the
+final measurement boundary. The first TIM4 interrupt processes boundary zero,
+skips measurement, and applies timestamp-zero output operations. Later
+interrupts process boundaries 1 through N, so a run of N ticks completes at
+boundary N after N measurements. Valid output instruction timestamps are zero
+through N - 1.
 
 There is at most one grouped instruction for each output-bearing tick, and
 instructions are ordered by timestamp. If the Execution Manager observes an

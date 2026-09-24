@@ -39,6 +39,12 @@ extern "C"
 
 /* White-box include of the C file to inspect static state directly */
 #include "variable_instruction_message_handler.c"  // NOLINT
+
+uint8_t* HOST_INSTRUCTION_HANDLER_GetSharedBuffer( void )
+{
+    alignas( 4 ) static uint8_t s_test_shared_buf[EXECUTION_INSTRUCTION_MAX_SIZE_BYTES];
+    return s_test_shared_buf;
+}
 }
 
 using ::testing::_;
@@ -297,7 +303,7 @@ TEST_F( VariableInstructionMessageHandlerTest, DigitalOutputPacksMaskCorrectly )
     op.payload.data    = mask_bytes;
     op.payload.size    = sizeof( mask_bytes );
 
-    instruction.tick_number     = 0U;
+    instruction.tick_number     = 300U;
     instruction.operation_count = 1U;
     instruction.operations      = &op;
 
@@ -311,10 +317,35 @@ TEST_F( VariableInstructionMessageHandlerTest, DigitalOutputPacksMaskCorrectly )
 
     ExecutionInstructionHeader_T header{};
     std::memcpy( &header, uploaded_bytes.data(), sizeof( header ) );
-    EXPECT_EQ( header.timestamp, 1U );
+    EXPECT_EQ( header.timestamp, 300U );
     EXPECT_EQ( header.operation_count, 1U );
     EXPECT_EQ( header.operations_length_bytes,
                expected_size - sizeof( ExecutionInstructionHeader_T ) );
+}
+
+/**
+ * @brief Tick-zero update remains a canonical timestamp-zero instruction.
+ */
+TEST_F( VariableInstructionMessageHandlerTest, TickZeroRetainsTimestampZero )
+{
+    static uint8_t                      mask_bytes[2] = { 0x01, 0x00 };
+    HIL_Application_Logical_Operation_T op{};
+    op.peripheral_type = HIL_APPLICATION_PERIPHERAL_DIGITAL_OUTPUT;
+    op.channel         = 0U;
+    op.payload.data    = mask_bytes;
+    op.payload.size    = sizeof( mask_bytes );
+
+    instruction.tick_number     = 0U;
+    instruction.operation_count = 1U;
+    instruction.operations      = &op;
+
+    ASSERT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_OK );
+    ASSERT_GE( uploaded_bytes.size(), sizeof( ExecutionInstructionHeader_T ) );
+
+    ExecutionInstructionHeader_T header{};
+    std::memcpy( &header, uploaded_bytes.data(), sizeof( header ) );
+    EXPECT_EQ( header.timestamp, 0U );
 }
 
 /**

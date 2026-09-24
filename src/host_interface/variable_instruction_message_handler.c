@@ -11,7 +11,7 @@
  *  Notes:
  *      Processes sparse logical operations (Digital, Analogue, PWM, UART, SPI, CAN)
  *      from UPDATE_INSTRUCTION messages without multi-chunk fragmentation. Converts
- *      zero-based protocol ticks to one-based Execution Manager boundary timestamps.
+ *      protocol ticks to Execution Manager instruction timestamps.
  ******************************************************************************/
 
 /**-----------------------------------------------------------------------------
@@ -20,6 +20,7 @@
  */
 
 #include "variable_instruction_message_handler.h"
+#include "instruction_message_handler.h"
 #include "exec_analogue_output.h"
 #include "exec_digital_output.h"
 #include "execution_manager/execution_instruction.h"
@@ -612,13 +613,12 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_ConvertInstruction(
         return HOST_INTERFACE_STATUS_OK;
     }
 
-    // Build ExecutionInstructionHeader_T
-    // Convert 0-based protocol tick to 1-based Execution Manager boundary timestamp
+    // Build ExecutionInstructionHeader_T using the same tick mapping as legacy instructions.
     const uint16_t operations_length_bytes =
         ( uint16_t )( writer.offset - sizeof( ExecutionInstructionHeader_T ) );
 
     ExecutionInstructionHeader_T header;
-    header.timestamp               = instruction->tick_number + 1U;
+    header.timestamp               = instruction->tick_number;
     header.operations_length_bytes = operations_length_bytes;
     header.operation_count         = writer.operation_count;
     header.reserved                = 0U;
@@ -698,15 +698,12 @@ HOST_Interface_Status_T HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
         return HOST_INTERFACE_STATUS_INCONSISTENT_TICK;
     }
 
-#if defined( __cplusplus )
-    alignas( 4 ) static uint8_t instruction_buffer[EXECUTION_INSTRUCTION_MAX_SIZE_BYTES];
-#else
-    _Alignas( 4 ) static uint8_t instruction_buffer[EXECUTION_INSTRUCTION_MAX_SIZE_BYTES];
-#endif
-    size_t instruction_size_bytes = 0U;
+    uint8_t* const instruction_buffer = HOST_INSTRUCTION_HANDLER_GetSharedBuffer();
+    size_t         instruction_size_bytes = 0U;
 
     const HOST_Interface_Status_T status = HOST_VAR_INSTRUCTION_ConvertInstruction(
-        instruction, instruction_buffer, sizeof( instruction_buffer ), &instruction_size_bytes );
+        instruction, instruction_buffer, EXECUTION_INSTRUCTION_MAX_SIZE_BYTES,
+        &instruction_size_bytes );
 
     if ( status != HOST_INTERFACE_STATUS_OK )
     {

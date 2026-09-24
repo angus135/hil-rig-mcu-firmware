@@ -105,6 +105,16 @@ void HOST_INSTRUCTION_HANDLER_Reset( void );
 HOST_Interface_Status_T
 HOST_INSTRUCTION_HANDLER_HandleInstruction( const HIL_Application_Test_Instruction_T* instruction );
 
+/**
+ * @brief Returns the shared 4-byte aligned instruction assembly buffer.
+ *
+ * @details Shared between fixed and variable instruction handlers to prevent
+ *          RAM overflow. Buffer capacity is EXECUTION_INSTRUCTION_MAX_SIZE_BYTES.
+ *
+ * @return Pointer to 4-byte aligned shared instruction buffer.
+ */
+uint8_t* HOST_INSTRUCTION_HANDLER_GetSharedBuffer( void );
+
 #ifdef __cplusplus
 }
 #endif

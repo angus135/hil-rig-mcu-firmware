@@ -107,6 +107,17 @@ static bool has_received_instruction = false;
 /** @brief Retained peripheral state for detecting genuine output transitions. */
 static HostInstructionStateTracker_T tracked_peripheral_state = { 0 };
 
+#if defined( __cplusplus )
+alignas( 4 ) static uint8_t s_shared_instruction_buffer[EXECUTION_INSTRUCTION_MAX_SIZE_BYTES];
+#else
+_Alignas( 4 ) static uint8_t s_shared_instruction_buffer[EXECUTION_INSTRUCTION_MAX_SIZE_BYTES];
+#endif
+
+uint8_t* HOST_INSTRUCTION_HANDLER_GetSharedBuffer( void )
+{
+    return s_shared_instruction_buffer;
+}
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -647,15 +658,12 @@ HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_HandleInstruction(
         return validation_status;
     }
 
-#if defined( __cplusplus )
-    alignas( 4 ) static uint8_t instruction_buffer[EXECUTION_INSTRUCTION_MAX_SIZE_BYTES];
-#else
-    _Alignas( 4 ) static uint8_t instruction_buffer[EXECUTION_INSTRUCTION_MAX_SIZE_BYTES];
-#endif
-    size_t instruction_size_bytes = 0U;
+    uint8_t* const instruction_buffer = s_shared_instruction_buffer;
+    size_t         instruction_size_bytes = 0U;
 
     const HOST_Interface_Status_T status = HOST_INSTRUCTION_HANDLER_ConvertInstruction(
-        instruction, instruction_buffer, sizeof( instruction_buffer ), &instruction_size_bytes );
+        instruction, instruction_buffer, sizeof( s_shared_instruction_buffer ),
+        &instruction_size_bytes );
 
     if ( status != HOST_INTERFACE_STATUS_OK )
     {

@@ -35,7 +35,7 @@
  */
 
 /** @brief Internal staging capacity for reassembling records from Flash Manager. */
-#define RESULT_PRODUCER_BUFFER_CAPACITY ( 2048U + sizeof( FlashManagerResultHeader_T ) )
+#define RESULT_PRODUCER_BUFFER_CAPACITY ( 1024U + sizeof( FlashManagerResultHeader_T ) )
 
 /** @brief Timer input clock frequency for PWM capture (TIM2 and TIM5 on APB1). */
 #define RESULT_PRODUCER_PWM_TIMER_CLOCK_HZ ( 90000000U )
