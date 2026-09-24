@@ -173,7 +173,6 @@ static HOST_Interface_Status_T
 HOST_INSTRUCTION_HANDLER_EncodePwmOutputs( const HIL_Application_Test_Instruction_T* instruction,
                                            HostInstructionWriter_T*                  writer );
 
-
 /**
  * @brief Converts an application instruction into canonical Execution Manager format.
  *
@@ -510,7 +509,6 @@ static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_EncodePwmOutputs(
 
     return HOST_INTERFACE_STATUS_OK;
 }
-
 
 /**
  * @brief Converts an application instruction into canonical Execution Manager format.

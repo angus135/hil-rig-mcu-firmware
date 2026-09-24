@@ -318,8 +318,8 @@ TEST_F( ResultMessageProducerTest, MapsEveryPhysicalDigitalInputPinToItsProtocol
         8U, 9U, 10U, 11U, 14U, 15U, 0U, 1U, 2U, 3U,
     };
 
-    for ( uint8_t active_channel = 0U;
-          active_channel < HIL_APPLICATION_DIGITAL_INPUT_CHANNEL_COUNT; active_channel++ )
+    for ( uint8_t active_channel = 0U; active_channel < HIL_APPLICATION_DIGITAL_INPUT_CHANNEL_COUNT;
+          active_channel++ )
     {
         const uint32_t physical_pin_mask = 1UL << physical_pin_positions[active_channel];
         HIL_Application_Test_Result_T result;
@@ -361,12 +361,14 @@ TEST_F( ResultMessageProducerTest, DecodeAnalogueInputRecord )
 
 TEST_F( ResultMessageProducerTest, DecodePwmCaptureRecords )
 {
-    // Channel 0: 89998 raw ticks (hardware captures N-2 in slave-reset mode -> 90000 corrected = 1ms @ 90MHz), 44998 ticks high (50% = 5000 permyriad)
+    // Channel 0: 89998 raw ticks (hardware captures N-2 in slave-reset mode -> 90000 corrected =
+    // 1ms @ 90MHz), 44998 ticks high (50% = 5000 permyriad)
     const uint32_t pwm_ch0[2] = { 89998U, 44998U };
     simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE, 0U, pwm_ch0,
                                     sizeof( pwm_ch0 ) );
 
-    // Channel 1: 179998 raw ticks (180000 corrected = 2ms @ 90MHz), 17998 ticks high (10% = 1000 permyriad)
+    // Channel 1: 179998 raw ticks (180000 corrected = 2ms @ 90MHz), 17998 ticks high (10% = 1000
+    // permyriad)
     const uint32_t pwm_ch1[2] = { 179998U, 17998U };
     simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE, 1U, pwm_ch1,
                                     sizeof( pwm_ch1 ) );
@@ -683,7 +685,8 @@ TEST_F( ResultMessageProducerTest, SerialPeripheralsRejectedAsCorruptInLegacyPro
 
 TEST_F( ResultMessageProducerTest, SequentialTicksSynthesizedAcrossFlashGaps )
 {
-    // Record at tick 0 (PWM capture) and record at tick 2 (Analogue input) - tick 1 is absent in flash
+    // Record at tick 0 (PWM capture) and record at tick 2 (Analogue input) - tick 1 is absent in
+    // flash
     const uint32_t pwm[2]      = { 89998U, 44998U };
     const uint32_t voltages[2] = { 1000000U, 2000000U };
 

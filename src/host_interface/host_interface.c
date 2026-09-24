@@ -36,8 +36,8 @@
  */
 
 /**
- * Set to 1 to enable direct length-prefixed USB streaming test path (bypassing Transport Stop-and-Wait).
- * Set to 0 to use original Transport session & frame layer.
+ * Set to 1 to enable direct length-prefixed USB streaming test path (bypassing Transport
+ * Stop-and-Wait). Set to 0 to use original Transport session & frame layer.
  */
 #ifndef HOST_INTERFACE_DIRECT_USB_STREAMING
 #define HOST_INTERFACE_DIRECT_USB_STREAMING ( 1 )
@@ -586,14 +586,14 @@ static void HOST_INTERFACE_Protocol_Process(
         {
             const uint8_t* const frame =
                 &protocol_state->usb.receive_buffer[protocol_state->usb.receive_offset];
-            const uint16_t msg_len = ( uint16_t )frame[0] | ( ( uint16_t )frame[1] << 8 );
+            const uint16_t msg_len         = ( uint16_t )frame[0] | ( ( uint16_t )frame[1] << 8 );
             const size_t   total_frame_len = ( size_t )msg_len + 2U;
             const size_t   bytes_available = ( size_t )( protocol_state->usb.receive_count
                                                        - protocol_state->usb.receive_offset );
 
             if ( bytes_available >= total_frame_len )
             {
-                size_t required_decode_capacity = 0U;
+                size_t required_decode_capacity    = 0U;
                 protocol_state->application.status = HIL_APPLICATION_Decode_Message(
                     &protocol_state->application.context, &frame[2], msg_len, incoming_message,
                     protocol_state->application.receive_data,
@@ -617,7 +617,8 @@ static void HOST_INTERFACE_Protocol_Process(
         {
             // If remaining space in batch buffer is too small, flush to USB first
             if ( ( sizeof( protocol_state->application.send_byte_span )
-                   - protocol_state->application.used_send_byte_span_size ) < 64U )
+                   - protocol_state->application.used_send_byte_span_size )
+                 < 64U )
             {
                 if ( protocol_state->application.used_send_byte_span_size > 0U )
                 {
@@ -637,7 +638,7 @@ static void HOST_INTERFACE_Protocol_Process(
             // Check if there is space for at least 2-byte header + message
             if ( available_space >= 32U )
             {
-                size_t payload_len = 0U;
+                size_t payload_len                 = 0U;
                 protocol_state->application.status = HIL_APPLICATION_Encode_Message(
                     &protocol_state->application.context, outgoing_message,
                     &protocol_state->application.send_byte_span[current_offset + 2U],
@@ -666,8 +667,7 @@ static void HOST_INTERFACE_Protocol_Process(
             // Flush chunk immediately if not a result message or if batch is full (>= 400 bytes)
             const bool is_result_msg =
                 ( outgoing_message->type == HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT )
-                || ( outgoing_message->type
-                     == HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT );
+                || ( outgoing_message->type == HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT );
 
             if ( protocol_state->application.used_send_byte_span_size > 0U )
             {
@@ -1154,10 +1154,10 @@ void HOST_INTERFACE_Task( void* task_parameters )
         if ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESET ) != 0U )
         {
             carry_on_notifications &= ( uint32_t ) ~( HOST_INTERFACE_NOTIFY_RESET );
-            outgoing_message_pending           = false;
-            can_consume_incoming               = true;
-            expected_tick_count                = 0U;
-            s_host_interface_status.is_faulted = false;
+            outgoing_message_pending                         = false;
+            can_consume_incoming                             = true;
+            expected_tick_count                              = 0U;
+            s_host_interface_status.is_faulted               = false;
             s_host_interface_status.instruction_phase_active = false;
             s_host_interface_status.result_phase_active      = false;
             HOST_INTERFACE_Reset_Session();
@@ -1180,10 +1180,10 @@ void HOST_INTERFACE_Task( void* task_parameters )
                 if ( !s_host_interface_status.instruction_phase_active )
                 {
                     s_host_interface_status.instruction_phase_active      = true;
-                    s_host_interface_status.instruction_start_tick       = xTaskGetTickCount();
-                    s_host_interface_status.instruction_end_tick         = 0U;
-                    s_host_interface_status.instruction_rx_count         = 0U;
-                    s_host_interface_status.instruction_duration_ms      = 0U;
+                    s_host_interface_status.instruction_start_tick        = xTaskGetTickCount();
+                    s_host_interface_status.instruction_end_tick          = 0U;
+                    s_host_interface_status.instruction_rx_count          = 0U;
+                    s_host_interface_status.instruction_duration_ms       = 0U;
                     s_host_interface_status.instruction_rate_msgs_per_sec = 0U;
                 }
                 s_host_interface_status.instruction_rx_count++;
@@ -1206,7 +1206,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
                 if ( s_host_interface_status.instruction_phase_active )
                 {
                     s_host_interface_status.instruction_phase_active = false;
-                    s_host_interface_status.instruction_end_tick    = xTaskGetTickCount();
+                    s_host_interface_status.instruction_end_tick     = xTaskGetTickCount();
                     const uint32_t elapsed_ticks = s_host_interface_status.instruction_end_tick
                                                    - s_host_interface_status.instruction_start_tick;
                     s_host_interface_status.instruction_duration_ms = elapsed_ticks;
@@ -1230,10 +1230,10 @@ void HOST_INTERFACE_Task( void* task_parameters )
             if ( !s_host_interface_status.result_phase_active )
             {
                 s_host_interface_status.result_phase_active      = true;
-                s_host_interface_status.result_start_tick       = xTaskGetTickCount();
-                s_host_interface_status.result_end_tick         = 0U;
-                s_host_interface_status.result_tx_count         = 0U;
-                s_host_interface_status.result_duration_ms      = 0U;
+                s_host_interface_status.result_start_tick        = xTaskGetTickCount();
+                s_host_interface_status.result_end_tick          = 0U;
+                s_host_interface_status.result_tx_count          = 0U;
+                s_host_interface_status.result_duration_ms       = 0U;
                 s_host_interface_status.result_rate_msgs_per_sec = 0U;
             }
         }
@@ -1269,9 +1269,9 @@ void HOST_INTERFACE_Task( void* task_parameters )
              && ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ) == 0U ) )
         {
             s_host_interface_status.result_phase_active = false;
-            s_host_interface_status.result_end_tick    = xTaskGetTickCount();
-            const uint32_t elapsed_ticks = s_host_interface_status.result_end_tick
-                                           - s_host_interface_status.result_start_tick;
+            s_host_interface_status.result_end_tick     = xTaskGetTickCount();
+            const uint32_t elapsed_ticks =
+                s_host_interface_status.result_end_tick - s_host_interface_status.result_start_tick;
             s_host_interface_status.result_duration_ms = elapsed_ticks;
             if ( elapsed_ticks > 0U )
             {
@@ -1389,8 +1389,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
          */
 
         const bool is_active_work =
-            outgoing_message_pending
-            || ( HW_USB_Get_Receive_Stream_Used_Bytes() > 0U )
+            outgoing_message_pending || ( HW_USB_Get_Receive_Stream_Used_Bytes() > 0U )
             || ( protocol_state.usb.receive_offset < protocol_state.usb.receive_count )
             || ( protocol_state.application.used_send_byte_span_size > 0U )
             || ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ) != 0U );

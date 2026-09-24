@@ -108,9 +108,9 @@ static VariableResultProducerStream_T s_var_stream;
  */
 static const uint32_t
     VAR_RESULT_PRODUCER_DIGITAL_INPUT_PIN_MASKS[HIL_APPLICATION_DIGITAL_INPUT_CHANNEL_COUNT] = {
-        1UL << 8U,  1UL << 9U,  1UL << 10U, 1UL << 11U, 1UL << 14U,
-        1UL << 15U, 1UL << 0U,  1UL << 1U,  1UL << 2U,  1UL << 3U,
-    };
+        1UL << 8U,  1UL << 9U, 1UL << 10U, 1UL << 11U, 1UL << 14U,
+        1UL << 15U, 1UL << 0U, 1UL << 1U,  1UL << 2U,  1UL << 3U,
+};
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -224,8 +224,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
 
     switch ( header->peripheral_type )
     {
-        case FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT:
-        {
+        case FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT: {
             if ( ( header->payload_length_bytes != sizeof( uint32_t ) )
                  || ( stream->staged_record_count >= VARIABLE_RESULT_MAX_STAGED_RECORDS )
                  || ( ( stream->staged_payload_offset + 2U )
@@ -247,8 +246,8 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
             }
 
             uint8_t* const dest = &stream->staged_payload_storage[stream->staged_payload_offset];
-            dest[0] = ( uint8_t )( channel_mask & 0xFFU );
-            dest[1] = ( uint8_t )( ( channel_mask >> 8U ) & 0xFFU );
+            dest[0]             = ( uint8_t )( channel_mask & 0xFFU );
+            dest[1]             = ( uint8_t )( ( channel_mask >> 8U ) & 0xFFU );
 
             HIL_Application_Captured_Record_T* const rec =
                 &stream->staged_records[stream->staged_record_count++];
@@ -261,8 +260,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
             return true;
         }
 
-        case FLASH_MANAGER_RESULT_PERIPHERAL_ANALOGUE_INPUT:
-        {
+        case FLASH_MANAGER_RESULT_PERIPHERAL_ANALOGUE_INPUT: {
             if ( ( header->payload_length_bytes != ( 2U * sizeof( uint32_t ) ) )
                  || ( ( stream->staged_record_count + 2U ) > VARIABLE_RESULT_MAX_STAGED_RECORDS )
                  || ( ( stream->staged_payload_offset + 8U )
@@ -299,8 +297,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
             return true;
         }
 
-        case FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE:
-        {
+        case FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE: {
             if ( ( header->channel >= HIL_APPLICATION_PWM_INPUT_CHANNEL_COUNT )
                  || ( header->payload_length_bytes != ( 2U * sizeof( uint32_t ) ) )
                  || ( stream->staged_record_count >= VARIABLE_RESULT_MAX_STAGED_RECORDS )
@@ -332,21 +329,21 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
                 const uint64_t ns = ( ( uint64_t )corrected_period_ticks
                                       * VAR_RESULT_PRODUCER_NANOSECONDS_PER_SECOND )
                                     / VAR_RESULT_PRODUCER_PWM_TIMER_CLOCK_HZ;
-                const uint64_t duty = ( ( uint64_t )corrected_high_ticks
-                                        * VAR_RESULT_PRODUCER_PERMYRIAD_SCALE )
-                                      / corrected_period_ticks;
+                const uint64_t duty =
+                    ( ( uint64_t )corrected_high_ticks * VAR_RESULT_PRODUCER_PERMYRIAD_SCALE )
+                    / corrected_period_ticks;
 
                 period_ns      = ( uint32_t )ns;
                 duty_permyriad = ( uint16_t )duty;
             }
 
             uint8_t* const dest = &stream->staged_payload_storage[stream->staged_payload_offset];
-            dest[0] = ( uint8_t )( period_ns & 0xFFU );
-            dest[1] = ( uint8_t )( ( period_ns >> 8U ) & 0xFFU );
-            dest[2] = ( uint8_t )( ( period_ns >> 16U ) & 0xFFU );
-            dest[3] = ( uint8_t )( ( period_ns >> 24U ) & 0xFFU );
-            dest[4] = ( uint8_t )( duty_permyriad & 0xFFU );
-            dest[5] = ( uint8_t )( ( duty_permyriad >> 8U ) & 0xFFU );
+            dest[0]             = ( uint8_t )( period_ns & 0xFFU );
+            dest[1]             = ( uint8_t )( ( period_ns >> 8U ) & 0xFFU );
+            dest[2]             = ( uint8_t )( ( period_ns >> 16U ) & 0xFFU );
+            dest[3]             = ( uint8_t )( ( period_ns >> 24U ) & 0xFFU );
+            dest[4]             = ( uint8_t )( duty_permyriad & 0xFFU );
+            dest[5]             = ( uint8_t )( ( duty_permyriad >> 8U ) & 0xFFU );
 
             HIL_Application_Captured_Record_T* const rec =
                 &stream->staged_records[stream->staged_record_count++];
@@ -359,8 +356,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
             return true;
         }
 
-        case FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE:
-        {
+        case FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE: {
             if ( ( header->channel >= HIL_APPLICATION_UART_CHANNEL_COUNT )
                  || ( header->payload_length_bytes == 0U )
                  || ( stream->staged_record_count >= VARIABLE_RESULT_MAX_STAGED_RECORDS )
@@ -384,8 +380,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
             return true;
         }
 
-        case FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE:
-        {
+        case FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE: {
             if ( ( header->channel >= HIL_APPLICATION_SPI_CHANNEL_COUNT )
                  || ( header->payload_length_bytes == 0U )
                  || ( stream->staged_record_count >= VARIABLE_RESULT_MAX_STAGED_RECORDS )
@@ -409,8 +404,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
             return true;
         }
 
-        case FLASH_MANAGER_RESULT_PERIPHERAL_CAN_RECEIVE:
-        {
+        case FLASH_MANAGER_RESULT_PERIPHERAL_CAN_RECEIVE: {
             if ( ( header->channel >= HIL_APPLICATION_CAN_CHANNEL_COUNT )
                  || ( header->payload_length_bytes == 0U )
                  || ( ( header->payload_length_bytes % 12U ) != 0U )
@@ -472,9 +466,9 @@ VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* 
                 if ( stream->has_active_tick )
                 {
                     // Emit the final aggregated tick
-                    out_message->type              = HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT;
-                    out_message->subtype           = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-                    out_message->has_test_id       = 1U;
+                    out_message->type        = HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT;
+                    out_message->subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+                    out_message->has_test_id = 1U;
                     out_message->body.variable_test_result.tick_number =
                         stream->active_tick_number - 1U;
                     out_message->body.variable_test_result.condition =
@@ -487,9 +481,9 @@ VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* 
                     out_message->body.variable_test_result.records =
                         ( stream->staged_record_count > 0U ) ? stream->staged_records : NULL;
 
-                    stream->has_emitted_tick        = true;
-                    stream->last_emitted_timestamp  = stream->active_tick_number;
-                    stream->has_active_tick         = false;
+                    stream->has_emitted_tick       = true;
+                    stream->last_emitted_timestamp = stream->active_tick_number;
+                    stream->has_active_tick        = false;
                     return RESULT_MESSAGE_PRODUCER_STATUS_OK;
                 }
 
@@ -526,7 +520,8 @@ VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* 
                 return RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA;
             }
 
-            if ( stream->has_emitted_tick && ( header.timestamp <= stream->last_emitted_timestamp ) )
+            if ( stream->has_emitted_tick
+                 && ( header.timestamp <= stream->last_emitted_timestamp ) )
             {
                 return RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA;
             }
@@ -549,18 +544,15 @@ VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* 
         else if ( header.timestamp > stream->active_tick_number )
         {
             /* Record belongs to a future tick; emit current staged tick */
-            out_message->type              = HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT;
-            out_message->subtype           = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-            out_message->has_test_id       = 1U;
-            out_message->body.variable_test_result.tick_number =
-                stream->active_tick_number - 1U;
-            out_message->body.variable_test_result.condition =
-                HIL_APPLICATION_RESULT_CONDITION_OK;
+            out_message->type        = HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT;
+            out_message->subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+            out_message->has_test_id = 1U;
+            out_message->body.variable_test_result.tick_number = stream->active_tick_number - 1U;
+            out_message->body.variable_test_result.condition = HIL_APPLICATION_RESULT_CONDITION_OK;
             out_message->body.variable_test_result.flags =
                 HIL_APPLICATION_RESULT_FLAG_COMPLETE_TICK;
             out_message->body.variable_test_result.problem_detail = 0U;
-            out_message->body.variable_test_result.record_count =
-                stream->staged_record_count;
+            out_message->body.variable_test_result.record_count   = stream->staged_record_count;
             out_message->body.variable_test_result.records =
                 ( stream->staged_record_count > 0U ) ? stream->staged_records : NULL;
 

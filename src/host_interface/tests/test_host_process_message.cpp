@@ -165,8 +165,7 @@ extern "C" void HOST_VARIABLE_INSTRUCTION_HANDLER_Reset( void )
     }
 }
 
-extern "C" HOST_Interface_Status_T
-HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
+extern "C" HOST_Interface_Status_T HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
     const HIL_Application_Update_Instruction_T* instruction )
 {
     if ( g_mock_deps != nullptr )
@@ -662,8 +661,8 @@ TEST_F( HostProcessMessageTest, TestConfigurationWaitCoversRunStateFlashPreparat
         .WillOnce( Return( true ) );
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
         .WillRepeatedly( Invoke( [&status_poll_count]( RunStateManagerStatus_T* status ) {
-            status->state              = status_poll_count >= 100U ? RUN_STATE_TEST_PACKAGE_RECEIVE
-                                                                  : RUN_STATE_IDLE;
+            status->state =
+                status_poll_count >= 100U ? RUN_STATE_TEST_PACKAGE_RECEIVE : RUN_STATE_IDLE;
             status->transition_pending = status_poll_count < 100U;
             status_poll_count++;
         } ) );
@@ -741,7 +740,8 @@ TEST_F( HostProcessMessageTest, TestInstructionIngestsDirectlyWithoutPerTickResp
     EXPECT_FALSE( response_required );
 }
 
-TEST_F( HostProcessMessageTest, TestInstructionWithFinalTickNumberIngestsDirectlyWithoutPerTickResponse )
+TEST_F( HostProcessMessageTest,
+        TestInstructionWithFinalTickNumberIngestsDirectlyWithoutPerTickResponse )
 {
     HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS );
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION );
@@ -848,7 +848,7 @@ TEST_F( HostProcessMessageTest, ExecutionControlRejectsInvalidAndReservedCommand
 TEST_F( HostProcessMessageTest, ExecutionControlStartSucceedsWhenExecutionStateIsReached )
 {
     constexpr uint32_t expected_tick_count = 600U;
-    HostTestSession_T   session{};
+    HostTestSession_T  session{};
     session.state               = HOST_INTERFACE_SESSION_ARMED;
     session.expected_tick_count = expected_tick_count;
     HOST_INTERFACE_Test_Access_Set_Session( &session );
@@ -928,8 +928,7 @@ TEST_F( HostProcessMessageTest, ExecutionControlStartFaultReturnsFailedResponseW
     EXPECT_EQ( HIL_APPLICATION_MESSAGE_TYPE_RESPONSE, outgoing.type );
     EXPECT_EQ( HIL_APPLICATION_RESPONSE_SCOPE_EXECUTION_CONTROL, outgoing.body.response.scope );
     EXPECT_EQ( HIL_APPLICATION_RESPONSE_OUTCOME_FAILED, outgoing.body.response.outcome );
-    EXPECT_EQ( HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE,
-               outgoing.body.response.reason );
+    EXPECT_EQ( HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE, outgoing.body.response.reason );
     EXPECT_EQ( HIL_APPLICATION_CONTROL_START, outgoing.body.response.control_command );
     EXPECT_EQ( static_cast<uint32_t>( RUN_STATE_FAULT_DRIVER_START ),
                outgoing.body.response.detail );
@@ -1146,7 +1145,7 @@ TEST_F( HostProcessMessageTest, VariableResultTransferNotificationProducesNextRe
 
     EXPECT_CALL( *g_mock_deps, VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( _ ) )
         .WillOnce( DoAll( Invoke( []( HIL_Application_Message_T* message ) {
-                               message->type    = HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT;
+                              message->type    = HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT;
                               message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
                           } ),
                           Return( RESULT_MESSAGE_PRODUCER_STATUS_OK ) ) );

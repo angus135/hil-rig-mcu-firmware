@@ -171,8 +171,8 @@ protected:
     }
 
     std::unique_ptr<NiceMock<MockFlashManagerResultDependencies>> mock_flash_;
-    SimulatedFlashResultStream                                   simulated_stream_;
-    HIL_Application_Message_T                                    out_msg_{};
+    SimulatedFlashResultStream                                    simulated_stream_;
+    HIL_Application_Message_T                                     out_msg_{};
 };
 
 /**
@@ -217,8 +217,8 @@ TEST_F( VariableResultMessageProducerTest, ProducesDigitalInputRecord )
 {
     /* Protocol channels 0 (pin 8), 2 (pin 10), 4 (pin 14), 6 (pin 0) */
     const uint32_t pinmask = ( 1UL << 8U ) | ( 1UL << 10U ) | ( 1UL << 14U ) | ( 1UL << 0U );
-    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
-                                    &pinmask, sizeof( pinmask ) );
+    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U, &pinmask,
+                                    sizeof( pinmask ) );
     HookSimulatedStream();
 
     EXPECT_EQ( VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &out_msg_ ),
@@ -297,8 +297,8 @@ TEST_F( VariableResultMessageProducerTest, ProducesPwmCaptureRecord )
         uint32_t high_ticks;
     } pwm_data = { 89998U, 44998U };
 
-    simulated_stream_.AppendRecord( 3U, FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE, 0U,
-                                    &pwm_data, sizeof( pwm_data ) );
+    simulated_stream_.AppendRecord( 3U, FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE, 0U, &pwm_data,
+                                    sizeof( pwm_data ) );
     HookSimulatedStream();
 
     EXPECT_EQ( VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &out_msg_ ),
@@ -313,7 +313,7 @@ TEST_F( VariableResultMessageProducerTest, ProducesPwmCaptureRecord )
     EXPECT_EQ( rec.data.size, 6U );
     ASSERT_NE( rec.data.data, nullptr );
 
-    uint32_t period_ns = 0U;
+    uint32_t period_ns      = 0U;
     uint16_t duty_permyriad = 0U;
     std::memcpy( &period_ns, rec.data.data, sizeof( period_ns ) );
     std::memcpy( &duty_permyriad, rec.data.data + 4, sizeof( duty_permyriad ) );
@@ -328,8 +328,8 @@ TEST_F( VariableResultMessageProducerTest, ProducesSerialRecords )
 {
     uint8_t uart_payload[4] = { 'P', 'O', 'N', 'G' };
     uint8_t spi_payload[2]  = { 0x11, 0x22 };
-    uint8_t can_payload[12] = { 0x34, 0x12, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00,
-                                0xDE, 0xAD, 0xBE, 0xEF };
+    uint8_t can_payload[12] = { 0x34, 0x12, 0x00, 0x00, 0x00, 0x00,
+                                0x04, 0x00, 0xDE, 0xAD, 0xBE, 0xEF };
 
     simulated_stream_.AppendRecord( 2U, FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE, 0U,
                                     uart_payload, sizeof( uart_payload ) );
@@ -369,9 +369,9 @@ TEST_F( VariableResultMessageProducerTest, ProducesSerialRecords )
  */
 TEST_F( VariableResultMessageProducerTest, AggregatesRecordsForSameTickAndPeeksNextTick )
 {
-    uint32_t mask_tick0 = 0x00000001U;
+    uint32_t       mask_tick0      = 0x00000001U;
     const uint32_t uvolts_tick0[2] = { 3300000U, 1200000U };
-    uint32_t mask_tick1 = 0x00000002U;
+    uint32_t       mask_tick1      = 0x00000002U;
 
     /* Tick 0: 1 DI + 2 AI records = 3 records */
     simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
@@ -408,8 +408,8 @@ TEST_F( VariableResultMessageProducerTest, AggregatesRecordsForSameTickAndPeeksN
 TEST_F( VariableResultMessageProducerTest, ReassemblesAcrossSmallFlashChunks )
 {
     uint32_t pinmask = 0x00000100U;
-    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
-                                    &pinmask, sizeof( pinmask ) );
+    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U, &pinmask,
+                                    sizeof( pinmask ) );
 
     /* Force tiny reads of 3 bytes each to stress boundary reassembly */
     HookSimulatedStream( 3U );
@@ -427,10 +427,10 @@ TEST_F( VariableResultMessageProducerTest, DetectsNonMonotonicTimestampCorruptio
 {
     uint32_t val = 0U;
     /* Record at timestamp 5, followed by record at timestamp 3 */
-    simulated_stream_.AppendRawRecord( 5U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
-                                       &val, sizeof( val ) );
-    simulated_stream_.AppendRawRecord( 3U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U,
-                                       &val, sizeof( val ) );
+    simulated_stream_.AppendRawRecord( 5U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U, &val,
+                                       sizeof( val ) );
+    simulated_stream_.AppendRawRecord( 3U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U, &val,
+                                       sizeof( val ) );
     HookSimulatedStream();
 
     /* First tick (timestamp 5 - 1 = tick 4) produces OK while peeking the next record */
@@ -463,8 +463,8 @@ TEST_F( VariableResultMessageProducerTest, DetectsPwmHighTicksGreaterThanPeriodC
         uint32_t high_ticks;
     } bad_pwm = { 4000U, 6000U }; /* High (6000) > Period (4000) */
 
-    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE, 0U,
-                                    &bad_pwm, sizeof( bad_pwm ) );
+    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE, 0U, &bad_pwm,
+                                    sizeof( bad_pwm ) );
     HookSimulatedStream();
 
     EXPECT_EQ( VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &out_msg_ ),

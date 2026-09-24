@@ -94,37 +94,44 @@ static HostVarInstructionStateTracker_T tracked_digital_state;
  *------------------------------------------------------------------------------
  */
 
-static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_AppendOperation(
-    HostInstructionWriter_T* writer, ExecutionOperationOpcode_T opcode, uint8_t channel,
-    const void* payload, uint16_t payload_size_bytes );
+static HOST_Interface_Status_T
+HOST_VAR_INSTRUCTION_AppendOperation( HostInstructionWriter_T*   writer,
+                                      ExecutionOperationOpcode_T opcode, uint8_t channel,
+                                      const void* payload, uint16_t payload_size_bytes );
 
-static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeDigital(
-    const HIL_Application_Logical_Operation_T* op, const DutDriverConfiguration_T* config,
-    bool config_valid, HostInstructionWriter_T* writer );
+static HOST_Interface_Status_T
+HOST_VAR_INSTRUCTION_EncodeDigital( const HIL_Application_Logical_Operation_T* op,
+                                    const DutDriverConfiguration_T* config, bool config_valid,
+                                    HostInstructionWriter_T* writer );
 
 static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeAnalogue(
     const HIL_Application_Logical_Operation_T* op, const DutDriverConfiguration_T* config,
     bool config_valid, AnalogueOutputPreparedBatch_T* batch, uint8_t* batch_frame_count );
 
-static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodePwm(
-    const HIL_Application_Logical_Operation_T* op, const DutDriverConfiguration_T* config,
-    bool config_valid, HostInstructionWriter_T* writer );
+static HOST_Interface_Status_T
+HOST_VAR_INSTRUCTION_EncodePwm( const HIL_Application_Logical_Operation_T* op,
+                                const DutDriverConfiguration_T* config, bool config_valid,
+                                HostInstructionWriter_T* writer );
 
-static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeUart(
-    const HIL_Application_Logical_Operation_T* op, const DutDriverConfiguration_T* config,
-    bool config_valid, HostInstructionWriter_T* writer );
+static HOST_Interface_Status_T
+HOST_VAR_INSTRUCTION_EncodeUart( const HIL_Application_Logical_Operation_T* op,
+                                 const DutDriverConfiguration_T* config, bool config_valid,
+                                 HostInstructionWriter_T* writer );
 
-static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeSpi(
-    const HIL_Application_Logical_Operation_T* op, const DutDriverConfiguration_T* config,
-    bool config_valid, HostInstructionWriter_T* writer );
+static HOST_Interface_Status_T
+HOST_VAR_INSTRUCTION_EncodeSpi( const HIL_Application_Logical_Operation_T* op,
+                                const DutDriverConfiguration_T* config, bool config_valid,
+                                HostInstructionWriter_T* writer );
 
-static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeCan(
-    const HIL_Application_Logical_Operation_T* op, const DutDriverConfiguration_T* config,
-    bool config_valid, HostInstructionWriter_T* writer );
+static HOST_Interface_Status_T
+HOST_VAR_INSTRUCTION_EncodeCan( const HIL_Application_Logical_Operation_T* op,
+                                const DutDriverConfiguration_T* config, bool config_valid,
+                                HostInstructionWriter_T* writer );
 
-static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_ConvertInstruction(
-    const HIL_Application_Update_Instruction_T* instruction, uint8_t* destination,
-    size_t destination_capacity, size_t* bytes_written );
+static HOST_Interface_Status_T
+HOST_VAR_INSTRUCTION_ConvertInstruction( const HIL_Application_Update_Instruction_T* instruction,
+                                         uint8_t* destination, size_t destination_capacity,
+                                         size_t* bytes_written );
 
 static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_UploadToFlash( const uint8_t* data,
                                                                    size_t         length );
@@ -179,18 +186,18 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_AppendOperation(
 /**
  * @brief Decodes a 2-byte digital bank mask and encodes transitions into an execution operation.
  */
-static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeDigital(
-    const HIL_Application_Logical_Operation_T* const op,
-    const DutDriverConfiguration_T* const config, const bool config_valid,
-    HostInstructionWriter_T* const writer )
+static HOST_Interface_Status_T
+HOST_VAR_INSTRUCTION_EncodeDigital( const HIL_Application_Logical_Operation_T* const op,
+                                    const DutDriverConfiguration_T* const            config,
+                                    const bool config_valid, HostInstructionWriter_T* const writer )
 {
     if ( ( op->channel != 0U ) || ( op->payload.size != 2U ) || ( op->payload.data == NULL ) )
     {
         return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
     }
 
-    const uint16_t mask = ( uint16_t )op->payload.data[0]
-                          | ( ( uint16_t )op->payload.data[1] << 8U );
+    const uint16_t mask =
+        ( uint16_t )op->payload.data[0] | ( ( uint16_t )op->payload.data[1] << 8U );
 
     // Reserved bits 10..15 must be zero
     if ( ( mask & 0xFC00U ) != 0U )
@@ -205,7 +212,7 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeDigital(
 
     for ( uint8_t i = 0U; i < HIL_APPLICATION_DIGITAL_OUTPUT_CHANNEL_COUNT; i++ )
     {
-        const uint8_t new_state = ( ( mask & ( 1U << i ) ) != 0U ) ? 1U : 0U;
+        const uint8_t new_state  = ( ( mask & ( 1U << i ) ) != 0U ) ? 1U : 0U;
         const uint8_t prev_state = tracked_digital_state.digital_outputs[i];
 
         if ( config_valid && ( new_state != 0U ) )
@@ -276,10 +283,9 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeAnalogue(
         return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
     }
 
-    const uint32_t microvolts = ( uint32_t )op->payload.data[0]
-                                | ( ( uint32_t )op->payload.data[1] << 8U )
-                                | ( ( uint32_t )op->payload.data[2] << 16U )
-                                | ( ( uint32_t )op->payload.data[3] << 24U );
+    const uint32_t microvolts =
+        ( uint32_t )op->payload.data[0] | ( ( uint32_t )op->payload.data[1] << 8U )
+        | ( ( uint32_t )op->payload.data[2] << 16U ) | ( ( uint32_t )op->payload.data[3] << 24U );
 
     const float voltage_v = ( float )microvolts / HOST_VAR_INSTRUCTION_MICROVOLTS_PER_VOLT;
 
@@ -301,13 +307,13 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeAnalogue(
 /**
  * @brief Decodes 6-byte PWM output (period + duty) and encodes timer registers.
  */
-static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodePwm(
-    const HIL_Application_Logical_Operation_T* const op,
-    const DutDriverConfiguration_T* const config, const bool config_valid,
-    HostInstructionWriter_T* const writer )
+static HOST_Interface_Status_T
+HOST_VAR_INSTRUCTION_EncodePwm( const HIL_Application_Logical_Operation_T* const op,
+                                const DutDriverConfiguration_T* const            config,
+                                const bool config_valid, HostInstructionWriter_T* const writer )
 {
-    if ( ( op->channel >= HIL_APPLICATION_PWM_OUTPUT_CHANNEL_COUNT )
-         || ( op->payload.size != 6U ) || ( op->payload.data == NULL ) )
+    if ( ( op->channel >= HIL_APPLICATION_PWM_OUTPUT_CHANNEL_COUNT ) || ( op->payload.size != 6U )
+         || ( op->payload.data == NULL ) )
     {
         return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
     }
@@ -321,13 +327,12 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodePwm(
         }
     }
 
-    const uint32_t period_ns = ( uint32_t )op->payload.data[0]
-                               | ( ( uint32_t )op->payload.data[1] << 8U )
-                               | ( ( uint32_t )op->payload.data[2] << 16U )
-                               | ( ( uint32_t )op->payload.data[3] << 24U );
+    const uint32_t period_ns =
+        ( uint32_t )op->payload.data[0] | ( ( uint32_t )op->payload.data[1] << 8U )
+        | ( ( uint32_t )op->payload.data[2] << 16U ) | ( ( uint32_t )op->payload.data[3] << 24U );
 
-    const uint16_t duty_permyriad = ( uint16_t )op->payload.data[4]
-                                    | ( ( uint16_t )op->payload.data[5] << 8U );
+    const uint16_t duty_permyriad =
+        ( uint16_t )op->payload.data[4] | ( ( uint16_t )op->payload.data[5] << 8U );
 
     if ( duty_permyriad > 10000U )
     {
@@ -361,20 +366,20 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodePwm(
         return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
     }
 
-    return HOST_VAR_INSTRUCTION_AppendOperation(
-        writer, EXECUTION_OPERATION_OPCODE_PWM_UPDATE, op->channel, &payload, sizeof( payload ) );
+    return HOST_VAR_INSTRUCTION_AppendOperation( writer, EXECUTION_OPERATION_OPCODE_PWM_UPDATE,
+                                                 op->channel, &payload, sizeof( payload ) );
 }
 
 /**
  * @brief Appends raw UART TX data bytes.
  */
-static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeUart(
-    const HIL_Application_Logical_Operation_T* const op,
-    const DutDriverConfiguration_T* const config, const bool config_valid,
-    HostInstructionWriter_T* const writer )
+static HOST_Interface_Status_T
+HOST_VAR_INSTRUCTION_EncodeUart( const HIL_Application_Logical_Operation_T* const op,
+                                 const DutDriverConfiguration_T* const            config,
+                                 const bool config_valid, HostInstructionWriter_T* const writer )
 {
-    if ( ( op->channel >= HIL_APPLICATION_UART_CHANNEL_COUNT )
-         || ( op->payload.size == 0U ) || ( op->payload.data == NULL ) )
+    if ( ( op->channel >= HIL_APPLICATION_UART_CHANNEL_COUNT ) || ( op->payload.size == 0U )
+         || ( op->payload.data == NULL ) )
     {
         return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
     }
@@ -388,21 +393,21 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeUart(
         }
     }
 
-    return HOST_VAR_INSTRUCTION_AppendOperation(
-        writer, EXECUTION_OPERATION_OPCODE_UART_TRANSMIT, op->channel,
-        op->payload.data, ( uint16_t )op->payload.size );
+    return HOST_VAR_INSTRUCTION_AppendOperation( writer, EXECUTION_OPERATION_OPCODE_UART_TRANSMIT,
+                                                 op->channel, op->payload.data,
+                                                 ( uint16_t )op->payload.size );
 }
 
 /**
  * @brief Converts protocol packetised SPI layout into Execution Manager SPI format.
  */
-static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeSpi(
-    const HIL_Application_Logical_Operation_T* const op,
-    const DutDriverConfiguration_T* const config, const bool config_valid,
-    HostInstructionWriter_T* const writer )
+static HOST_Interface_Status_T
+HOST_VAR_INSTRUCTION_EncodeSpi( const HIL_Application_Logical_Operation_T* const op,
+                                const DutDriverConfiguration_T* const            config,
+                                const bool config_valid, HostInstructionWriter_T* const writer )
 {
-    if ( ( op->channel >= HIL_APPLICATION_SPI_CHANNEL_COUNT )
-         || ( op->payload.size < 2U ) || ( op->payload.data == NULL ) )
+    if ( ( op->channel >= HIL_APPLICATION_SPI_CHANNEL_COUNT ) || ( op->payload.size < 2U )
+         || ( op->payload.data == NULL ) )
     {
         return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
     }
@@ -441,9 +446,9 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeSpi(
         return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
     }
 
-    const size_t converted_payload_len =
-        EXECUTION_SPI_PREFIX_SIZE_BYTES
-        + EXECUTION_SPI_PACKET_SIZES_LENGTH_BYTES( packet_count ) + data_len;
+    const size_t converted_payload_len = EXECUTION_SPI_PREFIX_SIZE_BYTES
+                                         + EXECUTION_SPI_PACKET_SIZES_LENGTH_BYTES( packet_count )
+                                         + data_len;
 
     if ( converted_payload_len > HOST_VAR_MAX_SPI_CONVERTED_PAYLOAD_BYTES )
     {
@@ -455,8 +460,8 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeSpi(
 
     // 1. Prefix: packet_count (4 bytes LE)
     const uint32_t packet_count_u32 = ( uint32_t )packet_count;
-    ( void )memcpy( &converted_buffer[EXECUTION_SPI_PACKET_COUNT_OFFSET_BYTES],
-                    &packet_count_u32, sizeof( packet_count_u32 ) );
+    ( void )memcpy( &converted_buffer[EXECUTION_SPI_PACKET_COUNT_OFFSET_BYTES], &packet_count_u32,
+                    sizeof( packet_count_u32 ) );
 
     // 2. Packet sizes (4 bytes LE each)
     for ( uint8_t i = 0U; i < packet_count; i++ )
@@ -468,24 +473,23 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeSpi(
     }
 
     // 3. Packet data bytes
-    ( void )memcpy( &converted_buffer[EXECUTION_SPI_DATA_OFFSET_BYTES( packet_count )],
-                    packet_data, data_len );
+    ( void )memcpy( &converted_buffer[EXECUTION_SPI_DATA_OFFSET_BYTES( packet_count )], packet_data,
+                    data_len );
 
-    return HOST_VAR_INSTRUCTION_AppendOperation(
-        writer, EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT, op->channel,
-        converted_buffer, ( uint16_t )converted_payload_len );
+    return HOST_VAR_INSTRUCTION_AppendOperation( writer, EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT,
+                                                 op->channel, converted_buffer,
+                                                 ( uint16_t )converted_payload_len );
 }
 
 /**
  * @brief Appends 12-byte standard CAN packets.
  */
-static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeCan(
-    const HIL_Application_Logical_Operation_T* const op,
-    const DutDriverConfiguration_T* const config, const bool config_valid,
-    HostInstructionWriter_T* const writer )
+static HOST_Interface_Status_T
+HOST_VAR_INSTRUCTION_EncodeCan( const HIL_Application_Logical_Operation_T* const op,
+                                const DutDriverConfiguration_T* const            config,
+                                const bool config_valid, HostInstructionWriter_T* const writer )
 {
-    if ( ( op->channel >= HIL_APPLICATION_CAN_CHANNEL_COUNT )
-         || ( op->payload.size == 0U )
+    if ( ( op->channel >= HIL_APPLICATION_CAN_CHANNEL_COUNT ) || ( op->payload.size == 0U )
          || ( ( op->payload.size % EXECUTION_CAN_PACKET_SIZE_BYTES ) != 0U )
          || ( op->payload.data == NULL ) )
     {
@@ -501,9 +505,9 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeCan(
         }
     }
 
-    return HOST_VAR_INSTRUCTION_AppendOperation(
-        writer, EXECUTION_OPERATION_OPCODE_CAN_TRANSMIT, op->channel,
-        op->payload.data, ( uint16_t )op->payload.size );
+    return HOST_VAR_INSTRUCTION_AppendOperation( writer, EXECUTION_OPERATION_OPCODE_CAN_TRANSMIT,
+                                                 op->channel, op->payload.data,
+                                                 ( uint16_t )op->payload.size );
 }
 
 /**
@@ -534,39 +538,39 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_ConvertInstruction(
 
     for ( uint8_t i = 0U; i < instruction->operation_count; i++ )
     {
-        const HIL_Application_Logical_Operation_T* const op = &instruction->operations[i];
-        HOST_Interface_Status_T status = HOST_INTERFACE_STATUS_OK;
+        const HIL_Application_Logical_Operation_T* const op     = &instruction->operations[i];
+        HOST_Interface_Status_T                          status = HOST_INTERFACE_STATUS_OK;
 
         switch ( op->peripheral_type )
         {
             case HIL_APPLICATION_PERIPHERAL_DIGITAL_OUTPUT:
-                status = HOST_VAR_INSTRUCTION_EncodeDigital(
-                    op, &active_config, config_valid, &writer );
+                status =
+                    HOST_VAR_INSTRUCTION_EncodeDigital( op, &active_config, config_valid, &writer );
                 break;
 
             case HIL_APPLICATION_PERIPHERAL_ANALOG_OUTPUT:
-                status = HOST_VAR_INSTRUCTION_EncodeAnalogue(
-                    op, &active_config, config_valid, &dac_batch, &dac_batch_frame_count );
+                status = HOST_VAR_INSTRUCTION_EncodeAnalogue( op, &active_config, config_valid,
+                                                              &dac_batch, &dac_batch_frame_count );
                 break;
 
             case HIL_APPLICATION_PERIPHERAL_PWM_OUTPUT:
-                status = HOST_VAR_INSTRUCTION_EncodePwm(
-                    op, &active_config, config_valid, &writer );
+                status =
+                    HOST_VAR_INSTRUCTION_EncodePwm( op, &active_config, config_valid, &writer );
                 break;
 
             case HIL_APPLICATION_PERIPHERAL_UART:
-                status = HOST_VAR_INSTRUCTION_EncodeUart(
-                    op, &active_config, config_valid, &writer );
+                status =
+                    HOST_VAR_INSTRUCTION_EncodeUart( op, &active_config, config_valid, &writer );
                 break;
 
             case HIL_APPLICATION_PERIPHERAL_SPI:
-                status = HOST_VAR_INSTRUCTION_EncodeSpi(
-                    op, &active_config, config_valid, &writer );
+                status =
+                    HOST_VAR_INSTRUCTION_EncodeSpi( op, &active_config, config_valid, &writer );
                 break;
 
             case HIL_APPLICATION_PERIPHERAL_CAN:
-                status = HOST_VAR_INSTRUCTION_EncodeCan(
-                    op, &active_config, config_valid, &writer );
+                status =
+                    HOST_VAR_INSTRUCTION_EncodeCan( op, &active_config, config_valid, &writer );
                 break;
 
             case HIL_APPLICATION_PERIPHERAL_INVALID:

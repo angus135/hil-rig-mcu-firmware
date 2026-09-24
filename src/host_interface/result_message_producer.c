@@ -112,9 +112,9 @@ static ResultProducerStream_T result_producer_stream;
  */
 static const uint32_t
     RESULT_PRODUCER_DIGITAL_INPUT_PIN_MASKS[HIL_APPLICATION_DIGITAL_INPUT_CHANNEL_COUNT] = {
-        1UL << 8U,  1UL << 9U,  1UL << 10U, 1UL << 11U, 1UL << 14U,
-        1UL << 15U, 1UL << 0U,  1UL << 1U,  1UL << 2U,  1UL << 3U,
-    };
+        1UL << 8U,  1UL << 9U, 1UL << 10U, 1UL << 11U, 1UL << 14U,
+        1UL << 15U, 1UL << 0U, 1UL << 1U,  1UL << 2U,  1UL << 3U,
+};
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -306,16 +306,18 @@ static bool RESULT_PRODUCER_DecodePwmCapture( const uint8_t channel, const uint8
     /*
      * In hardware Slave-Reset mode, the STM32 timer slave-mode controller takes 2 timer clock
      * cycles to resynchronize the trigger and reset the counter on the rising edge.
-     * Therefore, both the captured period and high time are reduced by exactly 2 timer clock counts.
-     * We add 2 clock counts to restore the true physical pulse duration.
+     * Therefore, both the captured period and high time are reduced by exactly 2 timer clock
+     * counts. We add 2 clock counts to restore the true physical pulse duration.
      */
     const uint32_t corrected_period_ticks = period_ticks + 2U;
     const uint32_t corrected_high_ticks   = high_ticks + 2U;
 
-    const uint64_t period_ns = ( ( uint64_t )corrected_period_ticks * RESULT_PRODUCER_NANOSECONDS_PER_SECOND )
-                               / RESULT_PRODUCER_PWM_TIMER_CLOCK_HZ;
+    const uint64_t period_ns =
+        ( ( uint64_t )corrected_period_ticks * RESULT_PRODUCER_NANOSECONDS_PER_SECOND )
+        / RESULT_PRODUCER_PWM_TIMER_CLOCK_HZ;
     const uint64_t duty_permyriad =
-        ( ( uint64_t )corrected_high_ticks * RESULT_PRODUCER_PERMYRIAD_SCALE ) / corrected_period_ticks;
+        ( ( uint64_t )corrected_high_ticks * RESULT_PRODUCER_PERMYRIAD_SCALE )
+        / corrected_period_ticks;
 
     result->pwm_inputs[channel].period_nanoseconds   = ( uint32_t )period_ns;
     result->pwm_inputs[channel].duty_cycle_permyriad = ( uint16_t )duty_permyriad;
@@ -397,7 +399,7 @@ RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* const out
                     stream->has_emitted_tick  = true;
                     stream->last_emitted_tick = stream->active_tick_number;
                     stream->next_tick_number++;
-                    stream->has_active_tick   = false;
+                    stream->has_active_tick = false;
                     return RESULT_MESSAGE_PRODUCER_STATUS_OK;
                 }
 
@@ -470,7 +472,7 @@ RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* const out
             stream->has_emitted_tick  = true;
             stream->last_emitted_tick = stream->active_tick_number;
             stream->next_tick_number++;
-            stream->has_active_tick   = false;
+            stream->has_active_tick = false;
             return RESULT_MESSAGE_PRODUCER_STATUS_OK;
         }
         else

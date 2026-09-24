@@ -51,8 +51,8 @@
  * application's 30-second response timeout.
  */
 #define HOST_INTERFACE_PACKAGE_RECEIVE_WAIT_TIMEOUT_MS ( 16000U )
-#define HOST_INTERFACE_PACKAGE_RECEIVE_WAIT_ATTEMPTS                                      \
-    ( HOST_INTERFACE_PACKAGE_RECEIVE_WAIT_TIMEOUT_MS                                      \
+#define HOST_INTERFACE_PACKAGE_RECEIVE_WAIT_ATTEMPTS                                               \
+    ( HOST_INTERFACE_PACKAGE_RECEIVE_WAIT_TIMEOUT_MS                                               \
       / HOST_INTERFACE_STATE_TRANSITION_RETRY_DELAY_MS )
 
 /**-----------------------------------------------------------------------------
@@ -155,13 +155,13 @@ static void HOST_INTERFACE_BuildExecutionControlResponse(
     HIL_Application_Message_T* message, HIL_Application_Response_Outcome_T outcome,
     HIL_Application_Response_Reason_T reason, HIL_Application_Control_Command_T command )
 {
-    message->type                                 = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
-    message->subtype                              = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-    message->body.response.scope = HIL_APPLICATION_RESPONSE_SCOPE_EXECUTION_CONTROL;
-    message->body.response.outcome                = outcome;
-    message->body.response.reason                 = reason;
-    message->body.response.tick_number            = 0U;
-    message->body.response.control_command        = command;
+    message->type                          = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+    message->subtype                       = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    message->body.response.scope           = HIL_APPLICATION_RESPONSE_SCOPE_EXECUTION_CONTROL;
+    message->body.response.outcome         = outcome;
+    message->body.response.reason          = reason;
+    message->body.response.tick_number     = 0U;
+    message->body.response.control_command = command;
     message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
     message->body.response.detail                 = 0U;
 }
@@ -774,7 +774,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Instruction_Data(
         }
         outgoing_message->body.response.tick_number =
             incoming_message->body.update_instruction.tick_number;
-        outgoing_message->body.response.control_command        = HIL_APPLICATION_CONTROL_INVALID;
+        outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
         outgoing_message->body.response.global_control_command =
             HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
         outgoing_message->body.response.detail = ( uint32_t )instruction_status;

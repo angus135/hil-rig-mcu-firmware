@@ -171,7 +171,7 @@ class VariableInstructionMessageHandlerTest : public ::testing::Test
 {
 protected:
     HIL_Application_Update_Instruction_T instruction{};
-    std::vector<uint8_t> uploaded_bytes{};
+    std::vector<uint8_t>                 uploaded_bytes{};
 
     void SetUp() override
     {
@@ -225,7 +225,7 @@ TEST_F( VariableInstructionMessageHandlerTest, RejectsNullOrEmptyInstruction )
  */
 TEST_F( VariableInstructionMessageHandlerTest, EnforcesMonotonicTickSequencing )
 {
-    static uint8_t mask[2] = { 0x01, 0x00 };
+    static uint8_t                      mask[2] = { 0x01, 0x00 };
     HIL_Application_Logical_Operation_T op{};
     op.peripheral_type = HIL_APPLICATION_PERIPHERAL_DIGITAL_OUTPUT;
     op.channel         = 0U;
@@ -265,7 +265,7 @@ TEST_F( VariableInstructionMessageHandlerTest, EnforcesMonotonicTickSequencing )
  */
 TEST_F( VariableInstructionMessageHandlerTest, ResetRestartsTickSequence )
 {
-    static uint8_t mask[2] = { 0x01, 0x00 };
+    static uint8_t                      mask[2] = { 0x01, 0x00 };
     HIL_Application_Logical_Operation_T op{};
     op.peripheral_type = HIL_APPLICATION_PERIPHERAL_DIGITAL_OUTPUT;
     op.channel         = 0U;
@@ -290,7 +290,7 @@ TEST_F( VariableInstructionMessageHandlerTest, ResetRestartsTickSequence )
  */
 TEST_F( VariableInstructionMessageHandlerTest, DigitalOutputPacksMaskCorrectly )
 {
-    static uint8_t mask_bytes[2] = { 0x55, 0x01 }; /* 0x0155 */
+    static uint8_t                      mask_bytes[2] = { 0x55, 0x01 }; /* 0x0155 */
     HIL_Application_Logical_Operation_T op{};
     op.peripheral_type = HIL_APPLICATION_PERIPHERAL_DIGITAL_OUTPUT;
     op.channel         = 0U;
@@ -305,15 +305,16 @@ TEST_F( VariableInstructionMessageHandlerTest, DigitalOutputPacksMaskCorrectly )
                HOST_INTERFACE_STATUS_OK );
 
     /* Execution header (8) + header word (4) + ExecutionDigitalOutputPayload_T (8) = 20 bytes */
-    const size_t expected_size = sizeof( ExecutionInstructionHeader_T ) + 4U +
-                                 sizeof( ExecutionDigitalOutputPayload_T );
+    const size_t expected_size =
+        sizeof( ExecutionInstructionHeader_T ) + 4U + sizeof( ExecutionDigitalOutputPayload_T );
     ASSERT_EQ( uploaded_bytes.size(), expected_size );
 
     ExecutionInstructionHeader_T header{};
     std::memcpy( &header, uploaded_bytes.data(), sizeof( header ) );
     EXPECT_EQ( header.timestamp, 1U );
     EXPECT_EQ( header.operation_count, 1U );
-    EXPECT_EQ( header.operations_length_bytes, expected_size - sizeof( ExecutionInstructionHeader_T ) );
+    EXPECT_EQ( header.operations_length_bytes,
+               expected_size - sizeof( ExecutionInstructionHeader_T ) );
 }
 
 /**
@@ -321,7 +322,7 @@ TEST_F( VariableInstructionMessageHandlerTest, DigitalOutputPacksMaskCorrectly )
  */
 TEST_F( VariableInstructionMessageHandlerTest, DigitalOutputRejectsInvalidChannelOrLength )
 {
-    static uint8_t mask_bytes[2] = { 0x01, 0x00 };
+    static uint8_t                      mask_bytes[2] = { 0x01, 0x00 };
     HIL_Application_Logical_Operation_T op{};
     op.peripheral_type = HIL_APPLICATION_PERIPHERAL_DIGITAL_OUTPUT;
     op.channel         = 1U; /* Non-zero channel invalid */
@@ -351,7 +352,7 @@ TEST_F( VariableInstructionMessageHandlerTest, AnalogueOutputPacksFrameCorrectly
 {
     /* Microvolts: 2,500,000 uV = 2.5 V */
     uint32_t microvolts = 2500000U;
-    uint8_t voltage_bytes[4];
+    uint8_t  voltage_bytes[4];
     std::memcpy( voltage_bytes, &microvolts, sizeof( microvolts ) );
 
     HIL_Application_Logical_Operation_T op{};
@@ -382,8 +383,8 @@ TEST_F( VariableInstructionMessageHandlerTest, AnalogueOutputPacksFrameCorrectly
 TEST_F( VariableInstructionMessageHandlerTest, PwmGenerationPacksRegistersCorrectly )
 {
     /* 50,000 ns period = 20,000 Hz. 5,000 permyriad duty = 50% */
-    uint8_t pwm_bytes[6];
-    uint32_t period_ns = 50000U;
+    uint8_t  pwm_bytes[6];
+    uint32_t period_ns      = 50000U;
     uint16_t duty_permyriad = 5000U;
     std::memcpy( &pwm_bytes[0], &period_ns, sizeof( period_ns ) );
     std::memcpy( &pwm_bytes[4], &duty_permyriad, sizeof( duty_permyriad ) );
@@ -408,9 +409,9 @@ TEST_F( VariableInstructionMessageHandlerTest, PwmGenerationPacksRegistersCorrec
     EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
                HOST_INTERFACE_STATUS_OK );
 
-    const size_t expected_size = sizeof( ExecutionInstructionHeader_T ) +
-                                 EXECUTION_OPERATION_ENCODED_SIZE_BYTES(
-                                     sizeof( ExecutionPwmUpdatePayload_T ) );
+    const size_t expected_size =
+        sizeof( ExecutionInstructionHeader_T )
+        + EXECUTION_OPERATION_ENCODED_SIZE_BYTES( sizeof( ExecutionPwmUpdatePayload_T ) );
     ASSERT_EQ( uploaded_bytes.size(), expected_size );
 }
 
@@ -425,9 +426,9 @@ TEST_F( VariableInstructionMessageHandlerTest, SerialTransmitOperationsPackCorre
     static uint8_t spi_data[4] = { 1U, 2U, 0xDE, 0xAD };
     /* CAN: ExecutionCanPacket_T layout (id: 2B, dlc: 1B, data: 8B, reserved: 1B) = 12 bytes */
     static uint8_t can_data[12]{};
-    uint16_t can_id = 0x123U;
+    uint16_t       can_id = 0x123U;
     std::memcpy( &can_data[0], &can_id, sizeof( can_id ) );
-    can_data[2] = 4U;  /* DLC */
+    can_data[2] = 4U; /* DLC */
     can_data[3] = 0xAA;
     can_data[4] = 0xBB;
     can_data[5] = 0xCC;
@@ -468,7 +469,7 @@ TEST_F( VariableInstructionMessageHandlerTest, SerialTransmitOperationsPackCorre
  */
 TEST_F( VariableInstructionMessageHandlerTest, RejectsUnknownPeripheralType )
 {
-    static uint8_t dummy[2] = { 0 };
+    static uint8_t                      dummy[2] = { 0 };
     HIL_Application_Logical_Operation_T op{};
     op.peripheral_type = ( HIL_Application_Peripheral_Type_T )0x7FU;
     op.channel         = 0U;
@@ -488,7 +489,7 @@ TEST_F( VariableInstructionMessageHandlerTest, RejectsUnknownPeripheralType )
  */
 TEST_F( VariableInstructionMessageHandlerTest, TranslatesFlashManagerStatusesCorrectly )
 {
-    static uint8_t mask[2] = { 0x01, 0x00 };
+    static uint8_t                      mask[2] = { 0x01, 0x00 };
     HIL_Application_Logical_Operation_T op{};
     op.peripheral_type = HIL_APPLICATION_PERIPHERAL_DIGITAL_OUTPUT;
     op.channel         = 0U;
