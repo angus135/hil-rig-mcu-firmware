@@ -1274,8 +1274,9 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Result_Transfer_Notification(
     }
     if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_NO_DATA_AVAILABLE )
     {
+        // Flash Manager is busy prefetching the next NAND page into RAM; retry on next cycle
         *response_required = false;
-        return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+        return HOST_INTERFACE_STATUS_OK;
     }
     if ( result_status == RESULT_MESSAGE_PRODUCER_STATUS_OK )
     {
@@ -1288,8 +1289,14 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Result_Transfer_Notification(
         *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
-    *response_required = false;
-    return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+    // Result producer failed with corrupt data or internal error
+    *notifications = *notifications & ( uint32_t ) ~( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
+    s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+    ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
+    HOST_INTERFACE_Default_Error( outgoing_message );
+    outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
+    *response_required                    = true;
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 HOST_Interface_Status_T HOST_INTERFACE_process_incoming_message(
@@ -1491,6 +1498,23 @@ HOST_INTERFACE_process_internal_message( HIL_Application_Message_T* outgoing_mes
         return HOST_INTERFACE_STATUS_OK;
     }
 
+    // NOTIFY_FAULT is checked before NOTIFY_RESULT_TRANSFER so that a hardware
+    // fault preempts result streaming. If FAULT is deferred behind RESULT_TRANSFER,
+    // the result handler runs and returns every iteration while FAULT sits unprocessed
+    // in carry_on_notifications — the fault error message is never sent to the host
+    // and RESULT_TRANSFER keeps producing messages into a stalled outgoing slot.
+    if ( ( *notifications & HOST_INTERFACE_NOTIFY_FAULT ) != 0U )
+    {
+        host_status = HOST_INTERFACE_process_Fault_Notification(
+            outgoing_message, notifications, response_required, data, data_size );
+        if ( host_status != HOST_INTERFACE_STATUS_OK )
+        {
+            *response_required = false;
+            return host_status;
+        }
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
     if ( ( *notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ) != 0U )
     {
         host_status = HOST_INTERFACE_process_Result_Transfer_Notification(
@@ -1506,18 +1530,6 @@ HOST_INTERFACE_process_internal_message( HIL_Application_Message_T* outgoing_mes
     if ( ( *notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE ) != 0U )
     {
         host_status = HOST_INTERFACE_process_Transfer_Complete_Notification(
-            outgoing_message, notifications, response_required, data, data_size );
-        if ( host_status != HOST_INTERFACE_STATUS_OK )
-        {
-            *response_required = false;
-            return host_status;
-        }
-        return HOST_INTERFACE_STATUS_OK;
-    }
-
-    if ( ( *notifications & HOST_INTERFACE_NOTIFY_FAULT ) != 0U )
-    {
-        host_status = HOST_INTERFACE_process_Fault_Notification(
             outgoing_message, notifications, response_required, data, data_size );
         if ( host_status != HOST_INTERFACE_STATUS_OK )
         {

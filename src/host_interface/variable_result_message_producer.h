@@ -29,6 +29,7 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
+#include "flash_manager/flash_manager.h"
 #include "hil_rig_protocol/application/application_message.h"
 #include "result_message_producer.h"
 
@@ -43,6 +44,26 @@ extern "C"
 
 /** @brief Maximum number of distinct captured records staged per variable result tick. */
 #define VARIABLE_RESULT_MAX_STAGED_RECORDS ( 32U )
+
+/**
+ * @brief Live observational diagnostics for the variable result stream producer.
+ */
+typedef struct
+{
+    Result_Message_Producer_Status_T   last_status;
+    FlashManagerResultTransferStatus_T last_flash_status;
+    size_t                             buffered_bytes;
+    size_t                             read_offset;
+    size_t                             write_offset;
+    uint32_t                           active_tick_number;
+    uint32_t                           next_result_tick;
+    uint32_t                           last_emitted_timestamp;
+    uint8_t                            staged_record_count;
+    bool                               has_active_tick;
+    bool                               has_emitted_tick;
+    bool                               is_flash_end_of_stream;
+    bool                               capture_overflow;
+} VariableResultProducerDiagnostics_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -104,6 +125,13 @@ void VARIABLE_RESULT_MESSAGE_PRODUCER_SetExpectedTickCount( uint32_t tick_count 
  */
 Result_Message_Producer_Status_T
 VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* out_message );
+
+/**
+ * @brief Retrieves live observational diagnostics of the variable result producer stream.
+ *
+ * @param[out] diags Destination structure to populate. Must not be NULL.
+ */
+void VARIABLE_RESULT_MESSAGE_PRODUCER_GetDiagnostics( VariableResultProducerDiagnostics_T* diags );
 
 #ifdef __cplusplus
 }

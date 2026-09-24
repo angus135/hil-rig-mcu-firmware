@@ -89,6 +89,9 @@ typedef struct
     /** Timestamp of the most recently emitted tick message. */
     uint32_t last_emitted_timestamp;
 
+    /** Number of zero-based result ticks already emitted. */
+    uint32_t next_result_tick;
+
     /** Staged captured records for the active tick. */
     HIL_Application_Captured_Record_T staged_records[VARIABLE_RESULT_MAX_STAGED_RECORDS];
 
@@ -117,6 +120,9 @@ typedef struct
 
 /** @brief Singleton stream context for variable result message production. */
 static VariableResultProducerStream_T s_var_stream;
+
+/** @brief Live diagnostics state for variable result production. */
+static VariableResultProducerDiagnostics_T s_var_diagnostics = { 0 };
 
 /**
  * @brief Physical GPIOD pin masks indexed by zero-based protocol DI channel.
@@ -149,6 +155,9 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
 static void VAR_RESULT_PRODUCER_PopulateResultMetadata(
     const VariableResultProducerStream_T* stream, HIL_Application_Message_T* out_message );
 
+static void VAR_RESULT_PRODUCER_EmitEmptyTick( VariableResultProducerStream_T* stream,
+                                               HIL_Application_Message_T*     out_message );
+
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
@@ -175,12 +184,15 @@ VAR_RESULT_PRODUCER_FetchFromFlash( VariableResultProducerStream_T* const stream
     const size_t capacity = sizeof( stream->buffer ) - stream->write_offset;
     if ( capacity == 0U )
     {
+        s_var_diagnostics.last_flash_status = FLASH_MANAGER_RESULT_TRANSFER_OK;
         return FLASH_MANAGER_RESULT_TRANSFER_OK;
     }
 
     uint32_t                                 bytes_read = 0U;
     const FlashManagerResultTransferStatus_T status     = FLASH_MANAGER_ReadResultBytes(
         stream->buffer + stream->write_offset, ( uint32_t )capacity, &bytes_read );
+
+    s_var_diagnostics.last_flash_status = status;
 
     if ( ( status == FLASH_MANAGER_RESULT_TRANSFER_OK ) && ( bytes_read > 0U ) )
     {
@@ -375,10 +387,13 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
         }
 
         case FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE: {
-            if ( ( header->channel >= HIL_APPLICATION_UART_CHANNEL_COUNT )
-                 || ( header->payload_length_bytes == 0U ) )
+            if ( header->channel >= HIL_APPLICATION_UART_CHANNEL_COUNT )
             {
                 return false;
+            }
+            if ( header->payload_length_bytes == 0U )
+            {
+                return true;
             }
 
             if ( stream->staged_record_count >= VARIABLE_RESULT_MAX_STAGED_RECORDS )
@@ -420,10 +435,13 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
         }
 
         case FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE: {
-            if ( ( header->channel >= HIL_APPLICATION_SPI_CHANNEL_COUNT )
-                 || ( header->payload_length_bytes == 0U ) )
+            if ( header->channel >= HIL_APPLICATION_SPI_CHANNEL_COUNT )
             {
                 return false;
+            }
+            if ( header->payload_length_bytes == 0U )
+            {
+                return true;
             }
 
             if ( stream->staged_record_count >= VARIABLE_RESULT_MAX_STAGED_RECORDS )
@@ -465,9 +483,15 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
         }
 
         case FLASH_MANAGER_RESULT_PERIPHERAL_CAN_RECEIVE: {
-            if ( ( header->channel >= HIL_APPLICATION_CAN_CHANNEL_COUNT )
-                 || ( header->payload_length_bytes == 0U )
-                 || ( ( header->payload_length_bytes % 12U ) != 0U ) )
+            if ( header->channel >= HIL_APPLICATION_CAN_CHANNEL_COUNT )
+            {
+                return false;
+            }
+            if ( header->payload_length_bytes == 0U )
+            {
+                return true;
+            }
+            if ( ( header->payload_length_bytes % 12U ) != 0U )
             {
                 return false;
             }
@@ -499,6 +523,12 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
             uint8_t* const dest = &stream->staged_payload_storage[stream->staged_payload_offset];
             ( void )memcpy( dest, payload, copied_length );
 
+            /* Zero the reserved 12th byte in every 12-byte classical CAN frame */
+            for ( size_t f = 0U; f < copied_length; f += 12U )
+            {
+                dest[f + 11U] = 0U;
+            }
+
             HIL_Application_Captured_Record_T* const rec =
                 &stream->staged_records[stream->staged_record_count++];
             rec->peripheral_type = HIL_APPLICATION_PERIPHERAL_CAN;
@@ -523,6 +553,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
 void VARIABLE_RESULT_MESSAGE_PRODUCER_Reset( void )
 {
     ( void )memset( &s_var_stream, 0, sizeof( s_var_stream ) );
+    ( void )memset( &s_var_diagnostics, 0, sizeof( s_var_diagnostics ) );
 }
 
 void VARIABLE_RESULT_MESSAGE_PRODUCER_SetExpectedTickCount( const uint32_t tick_count )
@@ -541,8 +572,25 @@ static void VAR_RESULT_PRODUCER_PopulateResultMetadata(
         stream->capture_overflow ? HIL_APPLICATION_RESULT_PROBLEM_DETAIL_CAPTURE_OVERFLOW : 0U;
 }
 
-Result_Message_Producer_Status_T
-VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* const out_message )
+static void VAR_RESULT_PRODUCER_EmitEmptyTick( VariableResultProducerStream_T* const stream,
+                                               HIL_Application_Message_T* const out_message )
+{
+    out_message->type        = HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT;
+    out_message->subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    out_message->has_test_id = 1U;
+    out_message->body.variable_test_result.tick_number = stream->next_result_tick;
+    VAR_RESULT_PRODUCER_PopulateResultMetadata( stream, out_message );
+    out_message->body.variable_test_result.flags        = HIL_APPLICATION_RESULT_FLAG_COMPLETE_TICK;
+    out_message->body.variable_test_result.record_count = 0U;
+    out_message->body.variable_test_result.records       = NULL;
+
+    stream->has_emitted_tick       = true;
+    stream->last_emitted_timestamp = stream->next_result_tick + 1U;
+    stream->next_result_tick++;
+}
+
+static Result_Message_Producer_Status_T
+VAR_RESULT_PRODUCER_ProduceNextMessageInternal( HIL_Application_Message_T* const out_message )
 {
     if ( out_message == NULL )
     {
@@ -577,7 +625,6 @@ VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* 
                     VAR_RESULT_PRODUCER_PopulateResultMetadata( stream, out_message );
                     out_message->body.variable_test_result.flags =
                         HIL_APPLICATION_RESULT_FLAG_COMPLETE_TICK;
-                    out_message->body.variable_test_result.problem_detail = 0U;
                     out_message->body.variable_test_result.record_count =
                         stream->staged_record_count;
                     out_message->body.variable_test_result.records =
@@ -585,7 +632,15 @@ VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* 
 
                     stream->has_emitted_tick       = true;
                     stream->last_emitted_timestamp = stream->active_tick_number;
+                    stream->next_result_tick       = stream->active_tick_number;
                     stream->has_active_tick        = false;
+                    return RESULT_MESSAGE_PRODUCER_STATUS_OK;
+                }
+
+                if ( stream->expected_tick_count_configured
+                     && ( stream->next_result_tick < stream->expected_tick_count ) )
+                {
+                    VAR_RESULT_PRODUCER_EmitEmptyTick( stream, out_message );
                     return RESULT_MESSAGE_PRODUCER_STATUS_OK;
                 }
 
@@ -628,6 +683,13 @@ VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* 
                 return RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA;
             }
 
+            if ( stream->expected_tick_count_configured
+                 && ( header.timestamp > ( stream->next_result_tick + 1U ) ) )
+            {
+                VAR_RESULT_PRODUCER_EmitEmptyTick( stream, out_message );
+                return RESULT_MESSAGE_PRODUCER_STATUS_OK;
+            }
+
             stream->has_active_tick       = true;
             stream->active_tick_number    = header.timestamp;
             stream->staged_record_count   = 0U;
@@ -659,13 +721,13 @@ VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* 
             VAR_RESULT_PRODUCER_PopulateResultMetadata( stream, out_message );
             out_message->body.variable_test_result.flags =
                 HIL_APPLICATION_RESULT_FLAG_COMPLETE_TICK;
-            out_message->body.variable_test_result.problem_detail = 0U;
             out_message->body.variable_test_result.record_count   = stream->staged_record_count;
             out_message->body.variable_test_result.records =
                 ( stream->staged_record_count > 0U ) ? stream->staged_records : NULL;
 
             stream->has_emitted_tick       = true;
             stream->last_emitted_timestamp = stream->active_tick_number;
+            stream->next_result_tick       = stream->active_tick_number;
             stream->has_active_tick        = false;
             return RESULT_MESSAGE_PRODUCER_STATUS_OK;
         }
@@ -674,5 +736,34 @@ VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* 
             // Non-monotonic timestamp in flash stream
             return RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA;
         }
+    }
+}
+
+Result_Message_Producer_Status_T
+VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* const out_message )
+{
+    const Result_Message_Producer_Status_T status =
+        VAR_RESULT_PRODUCER_ProduceNextMessageInternal( out_message );
+    s_var_diagnostics.last_status = status;
+    return status;
+}
+
+void VARIABLE_RESULT_MESSAGE_PRODUCER_GetDiagnostics(
+    VariableResultProducerDiagnostics_T* const diags )
+{
+    if ( diags != NULL )
+    {
+        *diags                   = s_var_diagnostics;
+        diags->buffered_bytes    = s_var_stream.write_offset - s_var_stream.read_offset;
+        diags->read_offset       = s_var_stream.read_offset;
+        diags->write_offset      = s_var_stream.write_offset;
+        diags->active_tick_number = s_var_stream.active_tick_number;
+        diags->next_result_tick  = s_var_stream.next_result_tick;
+        diags->last_emitted_timestamp = s_var_stream.last_emitted_timestamp;
+        diags->staged_record_count = ( uint8_t )s_var_stream.staged_record_count;
+        diags->has_active_tick     = s_var_stream.has_active_tick;
+        diags->has_emitted_tick    = s_var_stream.has_emitted_tick;
+        diags->is_flash_end_of_stream = s_var_stream.is_flash_end_of_stream;
+        diags->capture_overflow    = s_var_stream.capture_overflow;
     }
 }

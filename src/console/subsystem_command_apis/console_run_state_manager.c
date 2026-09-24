@@ -315,6 +315,7 @@ static void CONSOLE_RunStateManager_PrintUsage( void )
 {
     CONSOLE_Printf( "Usage:\r\n" );
     CONSOLE_Printf( "  run_state status\r\n" );
+    CONSOLE_Printf( "  run_state timing\r\n" );
     CONSOLE_Printf( "  run_state frequency <100|1000|10000>\r\n" );
     CONSOLE_Printf( "  run_state receive [expected_tick_count]\r\n" );
     CONSOLE_Printf( "  run_state execute <tick_count>\r\n" );
@@ -647,6 +648,18 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                         ( unsigned int )run_status.can_diag.rx_dropped1,
                         ( unsigned int )run_status.can_diag.rx_queued2,
                         ( unsigned int )run_status.can_diag.rx_dropped2 );
+    }
+    else if ( strcmp( argv[1], "timing" ) == 0 )
+    {
+        if ( RUN_STATE_MANAGER_IsExecutionTimerRunning() )
+        {
+            CONSOLE_Printf( "Timing request rejected while execution is active.\r\n" );
+            return;
+        }
+
+        EXECUTION_MANAGER_RequestOperationTiming();
+        CONSOLE_Printf(
+            "Per-operation and per-measurement ISR timing enabled for the next run.\r\n" );
     }
     else if ( strcmp( argv[1], "receive" ) == 0 )
     {

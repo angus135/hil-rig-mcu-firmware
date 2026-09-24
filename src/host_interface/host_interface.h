@@ -28,9 +28,14 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include "rtos_config.h"
 #include "run_state_manager.h"
+#include "hw_usb.h"
+#include "hil_rig_protocol/application/application_status.h"
 #include "hil_rig_protocol/transport/transport_types.h"
+#include "result_message_producer.h"
+#include "variable_result_message_producer.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -56,23 +61,39 @@ extern "C"
 
 typedef struct
 {
-    bool                  is_initialized;
-    bool                  usb_connected;
-    bool                  can_consume_incoming;
-    bool                  outgoing_message_pending;
-    bool                  is_overflowing;
-    bool                  is_faulted;
-    RunStateFaultReason_T last_fault_reason;
-    uint32_t              response_blocked_count;
-    uint8_t               last_blocked_message_type;
-    uint32_t              expected_tick_count;
-    uint32_t              carry_on_notifications;
+    bool                      is_initialized;
+    bool                      usb_connected;
+    HW_USB_Connection_State_T usb_connection_state;
+    uint32_t                  usb_rx_stream_used_bytes;
+    bool                      can_consume_incoming;
+    bool                      outgoing_message_pending;
+    uint8_t                   outgoing_pending_message_type;
+    uint32_t                  outgoing_pending_tick;
+    bool                      is_overflowing;
+    uint8_t                   overflow_message_type;
+    uint32_t                  overflow_message_tick;
+    uint32_t                  overflow_duration_ms;
+    bool                      is_faulted;
+    RunStateFaultReason_T     last_fault_reason;
+    uint32_t                  response_blocked_count;
+    uint8_t                   last_blocked_message_type;
+    uint32_t                  last_blocked_message_tick;
+    uint32_t                  expected_tick_count;
+    uint32_t                  carry_on_notifications;
 
     /* Traffic & Activity Counters */
     uint32_t rx_message_count;
     uint32_t tx_message_count;
     uint8_t  last_rx_message_type;
     uint32_t last_rx_tick;
+    uint8_t  last_tx_message_type;
+    uint32_t last_tx_tick;
+
+    /* Codec & Protocol Live Diagnostics */
+    HIL_Application_Status_T last_encode_status;
+    uint8_t                  last_encode_failed_type;
+    size_t                   last_encode_size;
+    HIL_Application_Status_T last_decode_status;
 
     /* Instruction Validation & Rejection Diagnostics */
     uint32_t rejected_instruction_count;
@@ -83,6 +104,11 @@ typedef struct
     HIL_Transport_Session_State_T transport_session_state;
     bool                          transport_reliable_pending;
     HIL_Transport_Failure_T       transport_last_failure;
+    HIL_Transport_Status_T        transport_last_submit_status;
+
+    /* Result Stream Producer Diagnostics */
+    Result_Message_Producer_Status_T    result_producer_last_status;
+    VariableResultProducerDiagnostics_T var_producer_diags;
 
     /* Instruction Receive Timing & Statistics */
     bool     instruction_phase_active;

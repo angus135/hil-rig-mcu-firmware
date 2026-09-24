@@ -56,8 +56,16 @@
 #define HOST_INTERFACE_USB_RECEIVE_CAPACITY                                                \
     ( HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY + HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE )
 
-/** Flush threshold for batched direct USB result messages. */
+/** Capacity of the underlying USB transmit ring used by one direct batch. */
+#define HOST_INTERFACE_DIRECT_USB_SEND_CAPACITY ( 1024U )
+
+/** Flush threshold for batched direct USB result messages (not a multiple of 64 to avoid ZLP stall). */
 #define HOST_INTERFACE_DIRECT_USB_FLUSH_THRESHOLD ( 400U )
+#define HOST_INTERFACE_OUTGOING_BACKPRESSURE_TIMEOUT_MS ( 5000U )
+
+_Static_assert( HOST_INTERFACE_DIRECT_USB_FLUSH_THRESHOLD
+                    <= HOST_INTERFACE_DIRECT_USB_SEND_CAPACITY,
+                "Direct USB flush threshold must fit the result batch buffer" );
 
 /**
  * Maximum decode-storage capacity reserved for variable-length Application data.
@@ -164,8 +172,7 @@ typedef struct
     HIL_Application_Config_T config;
 
     /** Length-prefixed encoded messages batched for direct USB transmission. */
-    uint8_t send_byte_span[HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY
-                           + HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE];
+    uint8_t send_byte_span[HOST_INTERFACE_DIRECT_USB_SEND_CAPACITY];
 
     /** Number of valid bytes currently in send_byte_span. */
     size_t used_send_byte_span_size;
@@ -664,14 +671,16 @@ static void HOST_INTERFACE_Protocol_Process(
                    - protocol_state->application.used_send_byte_span_size )
                  < framed_message_size )
             {
-                if ( protocol_state->application.used_send_byte_span_size == 0U
-                     || !HW_USB_Transmit(
-                         protocol_state->application.send_byte_span,
-                         ( uint16_t )protocol_state->application.used_send_byte_span_size ) )
+                if ( protocol_state->application.used_send_byte_span_size > 0U )
                 {
-                    return;
+                    if ( !HW_USB_Transmit(
+                             protocol_state->application.send_byte_span,
+                             ( uint16_t )protocol_state->application.used_send_byte_span_size ) )
+                    {
+                        return;
+                    }
+                    protocol_state->application.used_send_byte_span_size = 0U;
                 }
-                protocol_state->application.used_send_byte_span_size = 0U;
             }
 
             const size_t current_offset = protocol_state->application.used_send_byte_span_size;
@@ -704,23 +713,14 @@ static void HOST_INTERFACE_Protocol_Process(
                 HOST_INTERFACE_Error_Handler();
             }
 
-            // Flush chunk immediately if not a result message or if batch is full (>= 400 bytes)
-            const bool is_result_msg =
-                ( outgoing_message->type == HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT )
-                || ( outgoing_message->type == HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT );
-
+            // Flush immediately into USB transmit ring buffer
             if ( protocol_state->application.used_send_byte_span_size > 0U )
             {
-                if ( ( !is_result_msg )
-                     || ( protocol_state->application.used_send_byte_span_size
-                          >= HOST_INTERFACE_DIRECT_USB_FLUSH_THRESHOLD ) )
+                if ( HW_USB_Transmit(
+                         protocol_state->application.send_byte_span,
+                         ( uint16_t )protocol_state->application.used_send_byte_span_size ) )
                 {
-                    if ( HW_USB_Transmit(
-                             protocol_state->application.send_byte_span,
-                             ( uint16_t )protocol_state->application.used_send_byte_span_size ) )
-                    {
-                        protocol_state->application.used_send_byte_span_size = 0U;
-                    }
+                    protocol_state->application.used_send_byte_span_size = 0U;
                 }
             }
         }
@@ -871,6 +871,8 @@ static void HOST_INTERFACE_Protocol_Process(
                     sizeof( protocol_state->application.receive_data ),
                     &protocol_state->application.used_receive_data_size );
 
+                s_host_interface_status.last_decode_status = protocol_state->application.status;
+
                 if ( protocol_state->application.status == HIL_APPLICATION_STATUS_OK )
                 {
                     // The caller now owns the decision to consume or copy this
@@ -905,11 +907,17 @@ static void HOST_INTERFACE_Protocol_Process(
                                             sizeof( protocol_state->application.send_byte_span ),
                                             &protocol_state->application.used_send_byte_span_size );
 
+        s_host_interface_status.last_encode_status = protocol_state->application.status;
+
         if ( protocol_state->application.status == HIL_APPLICATION_STATUS_OK )
         {
+            s_host_interface_status.last_encode_size =
+                protocol_state->application.used_send_byte_span_size;
             protocol_state->transport.status = HIL_TRANSPORT_Submit_Application_Data(
                 &protocol_state->transport.context, protocol_state->application.send_byte_span,
                 protocol_state->application.used_send_byte_span_size );
+
+            s_host_interface_status.transport_last_submit_status = protocol_state->transport.status;
 
             if ( protocol_state->transport.status == HIL_TRANSPORT_STATUS_OK )
             {
@@ -925,10 +933,14 @@ static void HOST_INTERFACE_Protocol_Process(
                 HOST_INTERFACE_Error_Handler();
             }
         }
-        else if ( protocol_state->application.status == HIL_APPLICATION_STATUS_INTERNAL_ERROR
-                  || protocol_state->application.status == HIL_APPLICATION_STATUS_BUFFER_TOO_SMALL )
+        else
         {
-            HOST_INTERFACE_Error_Handler();
+            s_host_interface_status.last_encode_failed_type = ( uint8_t )outgoing_message->type;
+            if ( protocol_state->application.status == HIL_APPLICATION_STATUS_INTERNAL_ERROR
+                 || protocol_state->application.status == HIL_APPLICATION_STATUS_BUFFER_TOO_SMALL )
+            {
+                HOST_INTERFACE_Error_Handler();
+            }
         }
     }
 
@@ -1129,6 +1141,38 @@ void HOST_INTERFACE_Reset( void )
     ( void )HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_RESET );
 }
 
+static uint32_t HOST_INTERFACE_GetMessageTick( const HIL_Application_Message_T* const msg )
+{
+    if ( msg == NULL )
+    {
+        return 0U;
+    }
+    switch ( msg->type )
+    {
+        case HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION:
+            return msg->body.test_instruction.tick_number;
+        case HIL_APPLICATION_MESSAGE_TYPE_UPDATE_INSTRUCTION:
+            return msg->body.update_instruction.tick_number;
+        case HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT:
+            return msg->body.test_result.tick_number;
+        case HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT:
+            return msg->body.variable_test_result.tick_number;
+        case HIL_APPLICATION_MESSAGE_TYPE_RESPONSE:
+            return msg->body.response.tick_number;
+        case HIL_APPLICATION_MESSAGE_TYPE_INVALID:
+        case HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_REQUEST:
+        case HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_RESPONSE:
+        case HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION:
+        case HIL_APPLICATION_MESSAGE_TYPE_EXECUTION_CONTROL:
+        case HIL_APPLICATION_MESSAGE_TYPE_GLOBAL_CONTROL:
+        case HIL_APPLICATION_MESSAGE_TYPE_FINALIZE_TEST_UPLOAD:
+        case HIL_APPLICATION_MESSAGE_TYPE_ERROR:
+        case HIL_APPLICATION_MESSAGE_TYPE_RESERVED:
+        default:
+            return 0U;
+    }
+}
+
 /**
  * @brief Host Interface Task
  *
@@ -1282,6 +1326,9 @@ void HOST_INTERFACE_Task( void* task_parameters )
         if ( outgoing_message_accepted )
         {
             s_host_interface_status.tx_message_count++;
+            s_host_interface_status.last_tx_message_type = ( uint8_t )outgoing_message.type;
+            s_host_interface_status.last_tx_tick =
+                HOST_INTERFACE_GetMessageTick( &outgoing_message );
             outgoing_message_pending = false;
 
             if ( s_host_interface_status.result_phase_active
@@ -1377,7 +1424,8 @@ void HOST_INTERFACE_Task( void* task_parameters )
                         ( uint32_t )outgoing_message.body.response.reason;
                 }
             }
-            else if ( xTaskGetTickCount() - overflow_timer >= pdMS_TO_TICKS( 100U ) )
+            else if ( xTaskGetTickCount() - overflow_timer
+                      >= pdMS_TO_TICKS( HOST_INTERFACE_OUTGOING_BACKPRESSURE_TIMEOUT_MS ) )
             {
                 // Outgoing message overflow timeout: record snapshot and transition RSM to FAULT
                 s_host_interface_status.is_faulted = true;
@@ -1386,6 +1434,8 @@ void HOST_INTERFACE_Task( void* task_parameters )
                 s_host_interface_status.response_blocked_count++;
                 s_host_interface_status.last_blocked_message_type =
                     ( uint8_t )overflow_outgoing_message.type;
+                s_host_interface_status.last_blocked_message_tick =
+                    HOST_INTERFACE_GetMessageTick( &overflow_outgoing_message );
 
                 ( void )RUN_STATE_MANAGER_RequestFault(
                     RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED );
@@ -1400,11 +1450,23 @@ void HOST_INTERFACE_Task( void* task_parameters )
         ( void )HIL_TRANSPORT_Get_Status( &protocol_state.transport.context, &transport_snapshot );
 
         s_host_interface_status.is_initialized = true;
+        s_host_interface_status.usb_connection_state = HW_USB_Get_Connection_State();
         s_host_interface_status.usb_connected =
-            ( HW_USB_Get_Connection_State() != HW_USB_CONNECTION_STATE_DISCONNECTED );
+            ( s_host_interface_status.usb_connection_state != HW_USB_CONNECTION_STATE_DISCONNECTED );
+        s_host_interface_status.usb_rx_stream_used_bytes = HW_USB_Get_Receive_Stream_Used_Bytes();
         s_host_interface_status.can_consume_incoming     = can_consume_incoming;
         s_host_interface_status.outgoing_message_pending = outgoing_message_pending;
-        s_host_interface_status.is_overflowing           = !can_consume_incoming;
+        s_host_interface_status.outgoing_pending_message_type =
+            outgoing_message_pending ? ( uint8_t )outgoing_message.type : 0U;
+        s_host_interface_status.outgoing_pending_tick =
+            outgoing_message_pending ? HOST_INTERFACE_GetMessageTick( &outgoing_message ) : 0U;
+        s_host_interface_status.is_overflowing = !can_consume_incoming;
+        s_host_interface_status.overflow_message_type =
+            !can_consume_incoming ? ( uint8_t )overflow_outgoing_message.type : 0U;
+        s_host_interface_status.overflow_message_tick =
+            !can_consume_incoming ? HOST_INTERFACE_GetMessageTick( &overflow_outgoing_message ) : 0U;
+        s_host_interface_status.overflow_duration_ms =
+            !can_consume_incoming ? ( uint32_t )( xTaskGetTickCount() - overflow_timer ) : 0U;
         s_host_interface_status.expected_tick_count      = expected_tick_count;
         s_host_interface_status.carry_on_notifications   = carry_on_notifications;
         s_host_interface_status.transport_session_state  = transport_snapshot.session_state;
@@ -1429,11 +1491,16 @@ void HOST_INTERFACE_Task( void* task_parameters )
          *       }
          */
 
+        // For all active work (uploads, control traffic, and result streaming),
+        // yield with taskYIELD() to maximize throughput (10k+ msgs/s).
+        // Only sleep with vTaskDelay(1) when idle or when in USB overflow.
         const bool is_active_work =
-            outgoing_message_pending || ( HW_USB_Get_Receive_Stream_Used_Bytes() > 0U )
-            || ( protocol_state.usb.receive_offset < protocol_state.usb.receive_count )
-            || ( protocol_state.application.used_send_byte_span_size > 0U )
-            || ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ) != 0U );
+            can_consume_incoming
+            && ( outgoing_message_pending || ( HW_USB_Get_Receive_Stream_Used_Bytes() > 0U )
+                 || ( protocol_state.usb.receive_offset < protocol_state.usb.receive_count )
+                 || ( protocol_state.application.used_send_byte_span_size > 0U )
+                 || ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER )
+                      != 0U ) );
 
         if ( is_active_work )
         {
@@ -1452,6 +1519,9 @@ void HOST_INTERFACE_GetStatus( HostInterfaceStatus_T* status )
 {
     if ( status != NULL )
     {
+        VARIABLE_RESULT_MESSAGE_PRODUCER_GetDiagnostics( &s_host_interface_status.var_producer_diags );
+        s_host_interface_status.usb_connection_state     = HW_USB_Get_Connection_State();
+        s_host_interface_status.usb_rx_stream_used_bytes = HW_USB_Get_Receive_Stream_Used_Bytes();
         *status = s_host_interface_status;
     }
 }
