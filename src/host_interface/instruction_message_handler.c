@@ -658,7 +658,7 @@ HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_HandleInstruction(
         return validation_status;
     }
 
-    uint8_t* const instruction_buffer = s_shared_instruction_buffer;
+    uint8_t* const instruction_buffer     = s_shared_instruction_buffer;
     size_t         instruction_size_bytes = 0U;
 
     const HOST_Interface_Status_T status = HOST_INSTRUCTION_HANDLER_ConvertInstruction(

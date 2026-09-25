@@ -279,8 +279,7 @@ CONSOLE_HostInterface_ProducerStatusName( Result_Message_Producer_Status_T statu
     }
 }
 
-static const char*
-CONSOLE_HostInterface_USBConnectionStateName( HW_USB_Connection_State_T state )
+static const char* CONSOLE_HostInterface_USBConnectionStateName( HW_USB_Connection_State_T state )
 {
     switch ( state )
     {
@@ -411,9 +410,10 @@ static void CONSOLE_HostInterface_PrintStatus( void )
     CONSOLE_Printf( "  Can consume input:   %s\r\n", status.can_consume_incoming ? "yes" : "no" );
     if ( status.outgoing_message_pending )
     {
-        CONSOLE_Printf( "  Outgoing pending:    yes (%s, tick=%lu)\r\n",
-                        CONSOLE_HostInterface_MessageTypeName( status.outgoing_pending_message_type ),
-                        ( unsigned long )status.outgoing_pending_tick );
+        CONSOLE_Printf(
+            "  Outgoing pending:    yes (%s, tick=%lu)\r\n",
+            CONSOLE_HostInterface_MessageTypeName( status.outgoing_pending_message_type ),
+            ( unsigned long )status.outgoing_pending_tick );
     }
     else
     {
@@ -452,17 +452,20 @@ static void CONSOLE_HostInterface_PrintStatus( void )
     CONSOLE_Printf( "  Expected tick count: %lu\r\n", ( unsigned long )status.expected_tick_count );
     CONSOLE_Printf( "  Notifications:       0x%08lX\r\n",
                     ( unsigned long )status.carry_on_notifications );
-    CONSOLE_Printf( "  Producer Status:     last=%s, next_tick=%lu, active_tick=%lu, staged_recs=%u%s\r\n",
-                    CONSOLE_HostInterface_ProducerStatusName( status.var_producer_diags.last_status ),
-                    ( unsigned long )status.var_producer_diags.next_result_tick,
-                    ( unsigned long )status.var_producer_diags.active_tick_number,
-                    ( unsigned int )status.var_producer_diags.staged_record_count,
-                    status.var_producer_diags.is_flash_end_of_stream ? " (flash EOS)" : "" );
-    CONSOLE_Printf( "  Producer Stream:     buffered=%u, read_offset=%u, write_offset=%u, flash_status=%s\r\n",
-                    ( unsigned int )status.var_producer_diags.buffered_bytes,
-                    ( unsigned int )status.var_producer_diags.read_offset,
-                    ( unsigned int )status.var_producer_diags.write_offset,
-                    CONSOLE_HostInterface_FlashTransferStatusName( status.var_producer_diags.last_flash_status ) );
+    CONSOLE_Printf(
+        "  Producer Status:     last=%s, next_tick=%lu, active_tick=%lu, staged_recs=%u%s\r\n",
+        CONSOLE_HostInterface_ProducerStatusName( status.var_producer_diags.last_status ),
+        ( unsigned long )status.var_producer_diags.next_result_tick,
+        ( unsigned long )status.var_producer_diags.active_tick_number,
+        ( unsigned int )status.var_producer_diags.staged_record_count,
+        status.var_producer_diags.is_flash_end_of_stream ? " (flash EOS)" : "" );
+    CONSOLE_Printf(
+        "  Producer Stream:     buffered=%u, read_offset=%u, write_offset=%u, flash_status=%s\r\n",
+        ( unsigned int )status.var_producer_diags.buffered_bytes,
+        ( unsigned int )status.var_producer_diags.read_offset,
+        ( unsigned int )status.var_producer_diags.write_offset,
+        CONSOLE_HostInterface_FlashTransferStatusName(
+            status.var_producer_diags.last_flash_status ) );
     if ( status.instruction_rx_count > 0U || status.instruction_phase_active )
     {
         CONSOLE_Printf( "  Instruction Rx:      count=%lu, duration=%lu ms, rate=%lu msgs/s%s\r\n",

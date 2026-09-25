@@ -27,13 +27,13 @@ static uint32_t                           execution_tick_count          = 0U;
 static volatile uint32_t                  current_tick                  = 0U;
 static volatile uint32_t                  last_completed_boundary       = 0U;
 static volatile bool                      last_completed_boundary_valid = false;
-static volatile ExecutionManagerFailure_T execution_failure             = EXECUTION_MANAGER_FAILURE_NONE;
-static volatile ExecutionState_T          execution_state               = EXECUTION_STATE_IDLE;
-static bool                               instruction_stream_exhausted  = false;
-static volatile bool                      boundary_zero_pending         = false;
-static bool                               operation_timing_requested    = false;
-static bool                               operation_timing_active       = false;
-static ExecutionManagerTerminalCallback_T terminal_callback             = NULL;
+static volatile ExecutionManagerFailure_T execution_failure = EXECUTION_MANAGER_FAILURE_NONE;
+static volatile ExecutionState_T          execution_state   = EXECUTION_STATE_IDLE;
+static bool                               instruction_stream_exhausted = false;
+static volatile bool                      boundary_zero_pending        = false;
+static bool                               operation_timing_requested   = false;
+static bool                               operation_timing_active      = false;
+static ExecutionManagerTerminalCallback_T terminal_callback            = NULL;
 
 static ExecutionManagerTickResult_T
 EXECUTION_MANAGER_FailFromISR( ExecutionManagerFailure_T failure,

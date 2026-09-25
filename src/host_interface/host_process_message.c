@@ -186,7 +186,7 @@ HOST_Interface_Status_T HOST_INTERFACE_state_to_state_request( Host_RunState_Req
     execution_request.tick_count                 = expected_tick_count;
     execution_request.enable_drain_tail =
         ( s_session.instruction_family == HOST_INSTRUCTION_FAMILY_LEGACY_FIXED );
-    RunStateFaultReason_T fault_request          = RUN_STATE_FAULT_EXTERNAL_REQUEST;
+    RunStateFaultReason_T fault_request = RUN_STATE_FAULT_EXTERNAL_REQUEST;
     switch ( request )
     {
         case HOST_REQUEST_IDLE:
@@ -1290,7 +1290,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Result_Transfer_Notification(
         return HOST_INTERFACE_STATUS_OK;
     }
     // Result producer failed with corrupt data or internal error
-    *notifications = *notifications & ( uint32_t ) ~( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
+    *notifications  = *notifications & ( uint32_t ) ~( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
     s_session.state = HOST_INTERFACE_SESSION_FAULTED;
     ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
     HOST_INTERFACE_Default_Error( outgoing_message );

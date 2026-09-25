@@ -230,7 +230,7 @@ typedef struct
     /** RUN_METADATA_VALID_* bits for the fields supplied below. */
     uint32_t valid_sections;
 
-    uint32_t last_completed_boundary;
+    uint32_t                       last_completed_boundary;
     RunMetadataIsrTiming_T         isr_timing;
     RunMetadataInstructionBuffer_T instruction_buffer;
     RunMetadataResultBuffer_T      result_buffer;

@@ -1493,38 +1493,38 @@ TEST_F( RunStateManagerTest, SuccessfulExecutionCapturesMetadataAndSealsSnapshot
 
     flash_diagnostics_result    = true;
     flash_execution_diagnostics = {
-        .result_pages_drained                 = 5U,
-        .result_bytes_drained                 = 10240ULL,
-        .result_page_drain_total_cycles       = 15000ULL,
-        .result_page_drain_latest_cycles      = 3000U,
-        .result_page_drain_max_cycles         = 4000U,
-        .result_reserve_failures              = 0U,
-        .last_failed_reserve_payload_bytes    = 0U,
-        .free_bytes_at_last_reserve_failure   = 100000U,
-        .current_pending_result_bytes         = 0U,
-        .peak_pending_result_bytes            = 4096U,
-        .peak_pending_result_boundary         = 3U,
-        .committed_result_records             = 10U,
-        .committed_result_bytes               = 2048U,
-        .result_commit_failures               = 0U,
-        .last_commit_failure                  = FLASH_MANAGER_RESULT_COMMIT_OK,
-        .instruction_occupancy_samples        = 10U,
-        .minimum_unread_instruction_bytes     = 512U,
-        .minimum_unread_instruction_boundary  = 2U,
-        .instruction_pages_refilled           = 2U,
-        .instruction_bytes_refilled           = 4096ULL,
-        .instruction_page_refill_total_cycles = 8000ULL,
-        .instruction_page_refill_latest_cycles = 4000U,
-        .instruction_page_refill_max_cycles   = 4500U,
-        .instruction_page_publish_samples     = 2U,
-        .instruction_page_publish_total_cycles = 2000ULL,
+        .result_pages_drained                   = 5U,
+        .result_bytes_drained                   = 10240ULL,
+        .result_page_drain_total_cycles         = 15000ULL,
+        .result_page_drain_latest_cycles        = 3000U,
+        .result_page_drain_max_cycles           = 4000U,
+        .result_reserve_failures                = 0U,
+        .last_failed_reserve_payload_bytes      = 0U,
+        .free_bytes_at_last_reserve_failure     = 100000U,
+        .current_pending_result_bytes           = 0U,
+        .peak_pending_result_bytes              = 4096U,
+        .peak_pending_result_boundary           = 3U,
+        .committed_result_records               = 10U,
+        .committed_result_bytes                 = 2048U,
+        .result_commit_failures                 = 0U,
+        .last_commit_failure                    = FLASH_MANAGER_RESULT_COMMIT_OK,
+        .instruction_occupancy_samples          = 10U,
+        .minimum_unread_instruction_bytes       = 512U,
+        .minimum_unread_instruction_boundary    = 2U,
+        .instruction_pages_refilled             = 2U,
+        .instruction_bytes_refilled             = 4096ULL,
+        .instruction_page_refill_total_cycles   = 8000ULL,
+        .instruction_page_refill_latest_cycles  = 4000U,
+        .instruction_page_refill_max_cycles     = 4500U,
+        .instruction_page_publish_samples       = 2U,
+        .instruction_page_publish_total_cycles  = 2000ULL,
         .instruction_page_publish_latest_cycles = 1000U,
-        .instruction_page_publish_max_cycles  = 1100U,
-        .nand_service_gap_samples             = 4U,
-        .nand_service_gap_total_cycles        = 20000ULL,
-        .nand_service_gap_latest_cycles       = 5000U,
-        .nand_service_gap_max_cycles          = 6000U,
-        .refill_drain_contentions             = 1U,
+        .instruction_page_publish_max_cycles    = 1100U,
+        .nand_service_gap_samples               = 4U,
+        .nand_service_gap_total_cycles          = 20000ULL,
+        .nand_service_gap_latest_cycles         = 5000U,
+        .nand_service_gap_max_cycles            = 6000U,
+        .refill_drain_contentions               = 1U,
     };
 
     BaseType_t task_woken = pdFALSE;
@@ -1636,7 +1636,7 @@ TEST_F( RunStateManagerTest, RunMetadataDirectUnitInvariants )
 
     /* Invalid capture flags rejected */
     RunMetadataExecutionCapture_T capture = {};
-    capture.valid_sections               = 0x80000000U;
+    capture.valid_sections                = 0x80000000U;
     EXPECT_FALSE( RUN_METADATA_CaptureExecution( &capture ) );
 
     /* Valid capture accepted once */
@@ -1657,4 +1657,3 @@ TEST_F( RunStateManagerTest, RunMetadataDirectUnitInvariants )
     EXPECT_EQ( RUN_METADATA_RESULT_STREAM_COMPLETE, snapshot.result_stream_status );
     EXPECT_EQ( 7U, snapshot.last_completed_boundary );
 }
-

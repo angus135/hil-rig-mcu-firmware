@@ -118,9 +118,8 @@ static bool driver_cleanup_complete = true;
 
 static bool                        execution_timer_running   = false;
 static bool                        execution_request_pending = false;
-static RunStatePreparedExecution_T prepared_execution        = { .tick_count = 0U,
-                                                                 .frequency  = RUN_STATE_FREQUENCY_1KHZ,
-                                                                 .enable_drain_tail = false };
+static RunStatePreparedExecution_T prepared_execution        = {
+           .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ, .enable_drain_tail = false };
 
 static volatile bool execution_abort_requested = false;
 
@@ -403,40 +402,29 @@ static void RUN_STATE_MANAGER_CaptureExecutionMetadata( void )
     if ( FLASH_MANAGER_GetExecutionDiagnostics( &flash_diag ) )
     {
         capture.valid_sections |= RUN_METADATA_VALID_INSTRUCTION_BUFFER;
-        capture.instruction_buffer.sample_count =
-            flash_diag.instruction_occupancy_samples;
+        capture.instruction_buffer.sample_count = flash_diag.instruction_occupancy_samples;
         capture.instruction_buffer.minimum_unread_bytes =
             flash_diag.minimum_unread_instruction_bytes;
         capture.instruction_buffer.minimum_boundary =
             flash_diag.minimum_unread_instruction_boundary;
 
         capture.valid_sections |= RUN_METADATA_VALID_RESULT_BUFFER;
-        capture.result_buffer.committed_record_count =
-            flash_diag.committed_result_records;
-        capture.result_buffer.committed_bytes =
-            flash_diag.committed_result_bytes;
-        capture.result_buffer.peak_pending_bytes =
-            flash_diag.peak_pending_result_bytes;
-        capture.result_buffer.peak_pending_boundary =
-            flash_diag.peak_pending_result_boundary;
-        capture.result_buffer.reserve_failure_count =
-            flash_diag.result_reserve_failures;
-        capture.result_buffer.commit_failure_count =
-            flash_diag.result_commit_failures;
+        capture.result_buffer.committed_record_count = flash_diag.committed_result_records;
+        capture.result_buffer.committed_bytes        = flash_diag.committed_result_bytes;
+        capture.result_buffer.peak_pending_bytes     = flash_diag.peak_pending_result_bytes;
+        capture.result_buffer.peak_pending_boundary  = flash_diag.peak_pending_result_boundary;
+        capture.result_buffer.reserve_failure_count  = flash_diag.result_reserve_failures;
+        capture.result_buffer.commit_failure_count   = flash_diag.result_commit_failures;
 
         capture.valid_sections |= RUN_METADATA_VALID_FLASH_THROUGHPUT;
-        capture.flash_throughput.result_pages_drained =
-            flash_diag.result_pages_drained;
-        capture.flash_throughput.result_bytes_drained =
-            flash_diag.result_bytes_drained;
+        capture.flash_throughput.result_pages_drained = flash_diag.result_pages_drained;
+        capture.flash_throughput.result_bytes_drained = flash_diag.result_bytes_drained;
         capture.flash_throughput.result_drain_total_cycles =
             flash_diag.result_page_drain_total_cycles;
         capture.flash_throughput.result_drain_maximum_cycles =
             flash_diag.result_page_drain_max_cycles;
-        capture.flash_throughput.instruction_pages_refilled =
-            flash_diag.instruction_pages_refilled;
-        capture.flash_throughput.instruction_bytes_refilled =
-            flash_diag.instruction_bytes_refilled;
+        capture.flash_throughput.instruction_pages_refilled = flash_diag.instruction_pages_refilled;
+        capture.flash_throughput.instruction_bytes_refilled = flash_diag.instruction_bytes_refilled;
         capture.flash_throughput.instruction_refill_total_cycles =
             flash_diag.instruction_page_refill_total_cycles;
         capture.flash_throughput.instruction_refill_maximum_cycles =
@@ -447,8 +435,7 @@ static void RUN_STATE_MANAGER_CaptureExecutionMetadata( void )
             flash_diag.instruction_page_publish_total_cycles;
         capture.flash_throughput.instruction_publish_maximum_cycles =
             flash_diag.instruction_page_publish_max_cycles;
-        capture.flash_throughput.service_gap_sample_count =
-            flash_diag.nand_service_gap_samples;
+        capture.flash_throughput.service_gap_sample_count = flash_diag.nand_service_gap_samples;
         capture.flash_throughput.service_gap_total_cycles =
             flash_diag.nand_service_gap_total_cycles;
         capture.flash_throughput.service_gap_maximum_cycles =
@@ -933,10 +920,10 @@ static bool RUN_STATE_MANAGER_BeginDriverStart( void )
 
     /* Legacy console sessions may request the historical peripheral drain tail.
      * Variable-message sessions keep the execution range exactly host-defined. */
-    const uint32_t execution_tail_ticks = prepared_execution.enable_drain_tail
-                                              ? RUN_STATE_MANAGER_CalculateDrainTailTicks(
-                                                    prepared_execution.frequency )
-                                              : 0U;
+    const uint32_t execution_tail_ticks =
+        prepared_execution.enable_drain_tail
+            ? RUN_STATE_MANAGER_CalculateDrainTailTicks( prepared_execution.frequency )
+            : 0U;
 
     uint32_t effective_tick_count = prepared_execution.tick_count;
     if ( execution_tail_ticks > ( UINT32_MAX - effective_tick_count ) )
@@ -1377,14 +1364,16 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
             }
             else if ( flash_state != FLASH_MANAGER_STATE_FINALISING_RESULTS )
             {
-                ( void )RUN_METADATA_SetResultStreamStatus( RUN_METADATA_RESULT_STREAM_UNAVAILABLE );
+                ( void )RUN_METADATA_SetResultStreamStatus(
+                    RUN_METADATA_RESULT_STREAM_UNAVAILABLE );
                 ( void )RUN_METADATA_Seal();
                 RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_RESULT_FINALISATION );
             }
             else if ( RUN_STATE_MANAGER_PendingOperationTimedOut(
                           pdMS_TO_TICKS( RUN_STATE_MANAGER_RESULT_FINALISATION_TIMEOUT_MS ) ) )
             {
-                ( void )RUN_METADATA_SetResultStreamStatus( RUN_METADATA_RESULT_STREAM_UNAVAILABLE );
+                ( void )RUN_METADATA_SetResultStreamStatus(
+                    RUN_METADATA_RESULT_STREAM_UNAVAILABLE );
                 ( void )RUN_METADATA_Seal();
                 RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_RESULT_FINALISATION_TIMEOUT );
             }
@@ -1832,10 +1821,8 @@ void RUN_STATE_MANAGER_Init( void )
     driver_cleanup_complete      = true;
     execution_timer_running      = false;
     execution_request_pending    = false;
-    prepared_execution =
-        ( RunStatePreparedExecution_T ){ .tick_count = 0U,
-                                        .frequency  = RUN_STATE_FREQUENCY_1KHZ,
-                                        .enable_drain_tail = false };
+    prepared_execution           = ( RunStatePreparedExecution_T ){
+                  .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ, .enable_drain_tail = false };
     execution_abort_requested      = false;
     fault_reason                   = RUN_STATE_FAULT_NONE;
     requested_fault_reason         = RUN_STATE_FAULT_NONE;
@@ -1898,8 +1885,8 @@ RUN_STATE_MANAGER_RequestExecution( const RunStateExecutionRequest_T* request )
     {
         RUN_METADATA_Reset();
         prepared_execution = ( RunStatePreparedExecution_T ){
-            .tick_count = request->tick_count,
-            .frequency  = frequency_mode,
+            .tick_count        = request->tick_count,
+            .frequency         = frequency_mode,
             .enable_drain_tail = request->enable_drain_tail,
         };
         execution_request_pending = true;

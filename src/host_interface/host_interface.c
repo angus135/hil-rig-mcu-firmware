@@ -53,13 +53,14 @@
 #define HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE ( 2U )
 
 /** Capacity for one maximum-sized length-prefixed direct USB message. */
-#define HOST_INTERFACE_USB_RECEIVE_CAPACITY                                                \
+#define HOST_INTERFACE_USB_RECEIVE_CAPACITY                                                        \
     ( HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY + HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE )
 
 /** Capacity of the underlying USB transmit ring used by one direct batch. */
 #define HOST_INTERFACE_DIRECT_USB_SEND_CAPACITY ( 1024U )
 
-/** Flush threshold for batched direct USB result messages (not a multiple of 64 to avoid ZLP stall). */
+/** Flush threshold for batched direct USB result messages (not a multiple of 64 to avoid ZLP
+ * stall). */
 #define HOST_INTERFACE_DIRECT_USB_FLUSH_THRESHOLD ( 400U )
 #define HOST_INTERFACE_OUTGOING_BACKPRESSURE_TIMEOUT_MS ( 5000U )
 
@@ -74,9 +75,9 @@ _Static_assert( HOST_INTERFACE_DIRECT_USB_FLUSH_THRESHOLD
  * that variable-length message fields may reference after decoding.
  */
 #define HOST_INTERFACE_MAX_UPDATE_OPERATION_COUNT                                                  \
-    ( 1U + HIL_APPLICATION_ANALOG_OUTPUT_CHANNEL_COUNT                                             \
-      + HIL_APPLICATION_PWM_OUTPUT_CHANNEL_COUNT + HIL_APPLICATION_UART_CHANNEL_COUNT              \
-      + HIL_APPLICATION_SPI_CHANNEL_COUNT + HIL_APPLICATION_CAN_CHANNEL_COUNT )
+    ( 1U + HIL_APPLICATION_ANALOG_OUTPUT_CHANNEL_COUNT + HIL_APPLICATION_PWM_OUTPUT_CHANNEL_COUNT  \
+      + HIL_APPLICATION_UART_CHANNEL_COUNT + HIL_APPLICATION_SPI_CHANNEL_COUNT                     \
+      + HIL_APPLICATION_CAN_CHANNEL_COUNT )
 
 #define HOST_INTERFACE_APPLICATION_DECODE_CAPACITY                                                 \
     ( HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY                                                  \
@@ -657,14 +658,13 @@ static void HOST_INTERFACE_Protocol_Process(
     {
         if ( outgoing_message != NULL )
         {
-            size_t encoded_message_size = 0U;
+            size_t encoded_message_size        = 0U;
             protocol_state->application.status = HIL_APPLICATION_Encoded_Size(
                 &protocol_state->application.context, outgoing_message, &encoded_message_size );
 
             if ( protocol_state->application.status != HIL_APPLICATION_STATUS_OK
-                 || encoded_message_size
-                            > ( sizeof( protocol_state->application.send_byte_span )
-                                - HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE ) )
+                 || encoded_message_size > ( sizeof( protocol_state->application.send_byte_span )
+                                             - HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE ) )
             {
                 HOST_INTERFACE_Error_Handler();
                 return;
@@ -1454,10 +1454,10 @@ void HOST_INTERFACE_Task( void* task_parameters )
         HIL_Transport_Status_Snapshot_T transport_snapshot = { 0 };
         ( void )HIL_TRANSPORT_Get_Status( &protocol_state.transport.context, &transport_snapshot );
 
-        s_host_interface_status.is_initialized = true;
+        s_host_interface_status.is_initialized       = true;
         s_host_interface_status.usb_connection_state = HW_USB_Get_Connection_State();
-        s_host_interface_status.usb_connected =
-            ( s_host_interface_status.usb_connection_state != HW_USB_CONNECTION_STATE_DISCONNECTED );
+        s_host_interface_status.usb_connected = ( s_host_interface_status.usb_connection_state
+                                                  != HW_USB_CONNECTION_STATE_DISCONNECTED );
         s_host_interface_status.usb_rx_stream_used_bytes = HW_USB_Get_Receive_Stream_Used_Bytes();
         s_host_interface_status.can_consume_incoming     = can_consume_incoming;
         s_host_interface_status.outgoing_message_pending = outgoing_message_pending;
@@ -1469,12 +1469,13 @@ void HOST_INTERFACE_Task( void* task_parameters )
         s_host_interface_status.overflow_message_type =
             !can_consume_incoming ? ( uint8_t )overflow_outgoing_message.type : 0U;
         s_host_interface_status.overflow_message_tick =
-            !can_consume_incoming ? HOST_INTERFACE_GetMessageTick( &overflow_outgoing_message ) : 0U;
+            !can_consume_incoming ? HOST_INTERFACE_GetMessageTick( &overflow_outgoing_message )
+                                  : 0U;
         s_host_interface_status.overflow_duration_ms =
             !can_consume_incoming ? ( uint32_t )( xTaskGetTickCount() - overflow_timer ) : 0U;
-        s_host_interface_status.expected_tick_count      = expected_tick_count;
-        s_host_interface_status.carry_on_notifications   = carry_on_notifications;
-        s_host_interface_status.transport_session_state  = transport_snapshot.session_state;
+        s_host_interface_status.expected_tick_count     = expected_tick_count;
+        s_host_interface_status.carry_on_notifications  = carry_on_notifications;
+        s_host_interface_status.transport_session_state = transport_snapshot.session_state;
         s_host_interface_status.transport_reliable_pending =
             ( transport_snapshot.reliable_delivery_pending != 0U );
         s_host_interface_status.transport_last_failure = transport_snapshot.last_failure;
@@ -1504,8 +1505,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
             && ( outgoing_message_pending || ( HW_USB_Get_Receive_Stream_Used_Bytes() > 0U )
                  || ( protocol_state.usb.receive_offset < protocol_state.usb.receive_count )
                  || ( protocol_state.application.used_send_byte_span_size > 0U )
-                 || ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER )
-                      != 0U ) );
+                 || ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ) != 0U ) );
 
         if ( is_active_work )
         {
@@ -1524,9 +1524,10 @@ void HOST_INTERFACE_GetStatus( HostInterfaceStatus_T* status )
 {
     if ( status != NULL )
     {
-        VARIABLE_RESULT_MESSAGE_PRODUCER_GetDiagnostics( &s_host_interface_status.var_producer_diags );
+        VARIABLE_RESULT_MESSAGE_PRODUCER_GetDiagnostics(
+            &s_host_interface_status.var_producer_diags );
         s_host_interface_status.usb_connection_state     = HW_USB_Get_Connection_State();
         s_host_interface_status.usb_rx_stream_used_bytes = HW_USB_Get_Receive_Stream_Used_Bytes();
-        *status = s_host_interface_status;
+        *status                                          = s_host_interface_status;
     }
 }

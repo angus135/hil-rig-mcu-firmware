@@ -1100,8 +1100,7 @@ TEST_F( HostProcessMessageTest, ResultTransferNotificationProducesNextResultMess
     EXPECT_EQ( notifications, HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
 }
 
-TEST_F( HostProcessMessageTest,
-        ResultTransferNotificationRetriesWhenNoDataIsAvailable )
+TEST_F( HostProcessMessageTest, ResultTransferNotificationRetriesWhenNoDataIsAvailable )
 {
     notifications = HOST_INTERFACE_NOTIFY_RESULT_TRANSFER;
 
@@ -1131,8 +1130,7 @@ TEST_F( HostProcessMessageTest, ResultTransferNotificationClearsFlagAtEndOfStrea
     EXPECT_EQ( notifications, 0U );
 }
 
-TEST_F( HostProcessMessageTest,
-        ResultTransferNotificationFaultsSessionOnCorruptData )
+TEST_F( HostProcessMessageTest, ResultTransferNotificationFaultsSessionOnCorruptData )
 {
     notifications = HOST_INTERFACE_NOTIFY_RESULT_TRANSFER;
 

@@ -152,11 +152,12 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
                                                 const uint8_t*                    payload,
                                                 VariableResultProducerStream_T*   stream );
 
-static void VAR_RESULT_PRODUCER_PopulateResultMetadata(
-    const VariableResultProducerStream_T* stream, HIL_Application_Message_T* out_message );
+static void
+VAR_RESULT_PRODUCER_PopulateResultMetadata( const VariableResultProducerStream_T* stream,
+                                            HIL_Application_Message_T*            out_message );
 
 static void VAR_RESULT_PRODUCER_EmitEmptyTick( VariableResultProducerStream_T* stream,
-                                               HIL_Application_Message_T*     out_message );
+                                               HIL_Application_Message_T*      out_message );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -405,14 +406,14 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
             size_t copied_length = header->payload_length_bytes;
             if ( copied_length > UINT8_MAX )
             {
-                copied_length           = UINT8_MAX;
+                copied_length            = UINT8_MAX;
                 stream->capture_overflow = true;
             }
-            const size_t available = sizeof( stream->staged_payload_storage )
-                                     - stream->staged_payload_offset;
+            const size_t available =
+                sizeof( stream->staged_payload_storage ) - stream->staged_payload_offset;
             if ( copied_length > available )
             {
-                copied_length           = available;
+                copied_length            = available;
                 stream->capture_overflow = true;
             }
             if ( copied_length == 0U )
@@ -453,14 +454,14 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
             size_t copied_length = header->payload_length_bytes;
             if ( copied_length > UINT8_MAX )
             {
-                copied_length           = UINT8_MAX;
+                copied_length            = UINT8_MAX;
                 stream->capture_overflow = true;
             }
-            const size_t available = sizeof( stream->staged_payload_storage )
-                                     - stream->staged_payload_offset;
+            const size_t available =
+                sizeof( stream->staged_payload_storage ) - stream->staged_payload_offset;
             if ( copied_length > available )
             {
-                copied_length           = available;
+                copied_length            = available;
                 stream->capture_overflow = true;
             }
             if ( copied_length == 0U )
@@ -505,14 +506,14 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
             size_t copied_length = header->payload_length_bytes;
             if ( copied_length > UINT8_MAX )
             {
-                copied_length           = UINT8_MAX - ( UINT8_MAX % 12U );
+                copied_length            = UINT8_MAX - ( UINT8_MAX % 12U );
                 stream->capture_overflow = true;
             }
-            const size_t available = sizeof( stream->staged_payload_storage )
-                                     - stream->staged_payload_offset;
+            const size_t available =
+                sizeof( stream->staged_payload_storage ) - stream->staged_payload_offset;
             if ( copied_length > available )
             {
-                copied_length           = available - ( available % 12U );
+                copied_length            = available - ( available % 12U );
                 stream->capture_overflow = true;
             }
             if ( copied_length == 0U )
@@ -558,12 +559,13 @@ void VARIABLE_RESULT_MESSAGE_PRODUCER_Reset( void )
 
 void VARIABLE_RESULT_MESSAGE_PRODUCER_SetExpectedTickCount( const uint32_t tick_count )
 {
-    s_var_stream.expected_tick_count = tick_count;
+    s_var_stream.expected_tick_count            = tick_count;
     s_var_stream.expected_tick_count_configured = true;
 }
 
-static void VAR_RESULT_PRODUCER_PopulateResultMetadata(
-    const VariableResultProducerStream_T* const stream, HIL_Application_Message_T* const out_message )
+static void
+VAR_RESULT_PRODUCER_PopulateResultMetadata( const VariableResultProducerStream_T* const stream,
+                                            HIL_Application_Message_T* const out_message )
 {
     out_message->body.variable_test_result.condition =
         stream->capture_overflow ? HIL_APPLICATION_RESULT_CONDITION_PARTIAL
@@ -573,7 +575,7 @@ static void VAR_RESULT_PRODUCER_PopulateResultMetadata(
 }
 
 static void VAR_RESULT_PRODUCER_EmitEmptyTick( VariableResultProducerStream_T* const stream,
-                                               HIL_Application_Message_T* const out_message )
+                                               HIL_Application_Message_T* const      out_message )
 {
     out_message->type        = HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT;
     out_message->subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
@@ -582,7 +584,7 @@ static void VAR_RESULT_PRODUCER_EmitEmptyTick( VariableResultProducerStream_T* c
     VAR_RESULT_PRODUCER_PopulateResultMetadata( stream, out_message );
     out_message->body.variable_test_result.flags        = HIL_APPLICATION_RESULT_FLAG_COMPLETE_TICK;
     out_message->body.variable_test_result.record_count = 0U;
-    out_message->body.variable_test_result.records       = NULL;
+    out_message->body.variable_test_result.records      = NULL;
 
     stream->has_emitted_tick       = true;
     stream->last_emitted_timestamp = stream->next_result_tick + 1U;
@@ -721,7 +723,7 @@ VAR_RESULT_PRODUCER_ProduceNextMessageInternal( HIL_Application_Message_T* const
             VAR_RESULT_PRODUCER_PopulateResultMetadata( stream, out_message );
             out_message->body.variable_test_result.flags =
                 HIL_APPLICATION_RESULT_FLAG_COMPLETE_TICK;
-            out_message->body.variable_test_result.record_count   = stream->staged_record_count;
+            out_message->body.variable_test_result.record_count = stream->staged_record_count;
             out_message->body.variable_test_result.records =
                 ( stream->staged_record_count > 0U ) ? stream->staged_records : NULL;
 
@@ -753,17 +755,17 @@ void VARIABLE_RESULT_MESSAGE_PRODUCER_GetDiagnostics(
 {
     if ( diags != NULL )
     {
-        *diags                   = s_var_diagnostics;
-        diags->buffered_bytes    = s_var_stream.write_offset - s_var_stream.read_offset;
-        diags->read_offset       = s_var_stream.read_offset;
-        diags->write_offset      = s_var_stream.write_offset;
-        diags->active_tick_number = s_var_stream.active_tick_number;
-        diags->next_result_tick  = s_var_stream.next_result_tick;
+        *diags                        = s_var_diagnostics;
+        diags->buffered_bytes         = s_var_stream.write_offset - s_var_stream.read_offset;
+        diags->read_offset            = s_var_stream.read_offset;
+        diags->write_offset           = s_var_stream.write_offset;
+        diags->active_tick_number     = s_var_stream.active_tick_number;
+        diags->next_result_tick       = s_var_stream.next_result_tick;
         diags->last_emitted_timestamp = s_var_stream.last_emitted_timestamp;
-        diags->staged_record_count = ( uint8_t )s_var_stream.staged_record_count;
-        diags->has_active_tick     = s_var_stream.has_active_tick;
-        diags->has_emitted_tick    = s_var_stream.has_emitted_tick;
+        diags->staged_record_count    = ( uint8_t )s_var_stream.staged_record_count;
+        diags->has_active_tick        = s_var_stream.has_active_tick;
+        diags->has_emitted_tick       = s_var_stream.has_emitted_tick;
         diags->is_flash_end_of_stream = s_var_stream.is_flash_end_of_stream;
-        diags->capture_overflow    = s_var_stream.capture_overflow;
+        diags->capture_overflow       = s_var_stream.capture_overflow;
     }
 }

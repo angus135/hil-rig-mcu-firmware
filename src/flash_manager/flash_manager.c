@@ -1773,7 +1773,7 @@ FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
     const uint32_t pending_bytes = RESULT_BUFFER_GetPendingBytes();
     if ( pending_bytes > flash_manager_execution_diagnostics.peak_pending_result_bytes )
     {
-        flash_manager_execution_diagnostics.peak_pending_result_bytes = pending_bytes;
+        flash_manager_execution_diagnostics.peak_pending_result_bytes    = pending_bytes;
         flash_manager_execution_diagnostics.peak_pending_result_boundary = timestamp;
     }
 
@@ -1922,7 +1922,7 @@ void FLASH_MANAGER_RecordInstructionOccupancyFromISR( uint32_t boundary )
          || ( unread_bytes
               < flash_manager_execution_diagnostics.minimum_unread_instruction_bytes ) )
     {
-        flash_manager_execution_diagnostics.minimum_unread_instruction_bytes = unread_bytes;
+        flash_manager_execution_diagnostics.minimum_unread_instruction_bytes    = unread_bytes;
         flash_manager_execution_diagnostics.minimum_unread_instruction_boundary = boundary;
     }
 }

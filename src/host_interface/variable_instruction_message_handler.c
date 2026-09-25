@@ -46,9 +46,8 @@
  * a four-byte canonical length. Other operation families expand by no more than
  * this four-times bound.
  */
-#define HOST_VAR_MAX_CANONICAL_INSTRUCTION_BOUND_BYTES                                            \
-    ( sizeof( ExecutionInstructionHeader_T )                                                      \
-      + ( 4U * HIL_APPLICATION_ABSOLUTE_MAX_MESSAGE_SIZE ) )
+#define HOST_VAR_MAX_CANONICAL_INSTRUCTION_BOUND_BYTES                                             \
+    ( sizeof( ExecutionInstructionHeader_T ) + ( 4U * HIL_APPLICATION_ABSOLUTE_MAX_MESSAGE_SIZE ) )
 
 #if defined( __cplusplus )
 static_assert( EXECUTION_INSTRUCTION_MAX_SIZE_BYTES
@@ -470,8 +469,8 @@ HOST_VAR_INSTRUCTION_EncodeSpi( const HIL_Application_Logical_Operation_T* const
                                          + EXECUTION_SPI_PACKET_SIZES_LENGTH_BYTES( packet_count )
                                          + data_len;
 
-    const size_t operation_offset = writer->offset;
-    const HOST_Interface_Status_T append_status = HOST_VAR_INSTRUCTION_AppendOperation(
+    const size_t                  operation_offset = writer->offset;
+    const HOST_Interface_Status_T append_status    = HOST_VAR_INSTRUCTION_AppendOperation(
         writer, EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT, op->channel, NULL,
         ( uint16_t )converted_payload_len );
     if ( append_status != HOST_INTERFACE_STATUS_OK )
@@ -497,8 +496,8 @@ HOST_VAR_INSTRUCTION_EncodeSpi( const HIL_Application_Logical_Operation_T* const
     }
 
     // 3. Packet data bytes
-    ( void )memcpy( &converted_payload[EXECUTION_SPI_DATA_OFFSET_BYTES( packet_count )], packet_data,
-                    data_len );
+    ( void )memcpy( &converted_payload[EXECUTION_SPI_DATA_OFFSET_BYTES( packet_count )],
+                    packet_data, data_len );
 
     return HOST_INTERFACE_STATUS_OK;
 }
@@ -719,7 +718,7 @@ HOST_Interface_Status_T HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
         return HOST_INTERFACE_STATUS_INCONSISTENT_TICK;
     }
 
-    uint8_t* const instruction_buffer = HOST_INSTRUCTION_HANDLER_GetSharedBuffer();
+    uint8_t* const instruction_buffer     = HOST_INSTRUCTION_HANDLER_GetSharedBuffer();
     size_t         instruction_size_bytes = 0U;
 
     const HOST_Interface_Status_T status = HOST_VAR_INSTRUCTION_ConvertInstruction(
