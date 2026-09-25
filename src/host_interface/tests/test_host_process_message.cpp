@@ -80,6 +80,7 @@ public:
                  ( const HIL_Application_Update_Instruction_T* ));
 
     MOCK_METHOD( void, VARIABLE_RESULT_MESSAGE_PRODUCER_Reset, () );
+    MOCK_METHOD( void, VARIABLE_RESULT_MESSAGE_PRODUCER_SetExpectedTickCount, ( uint32_t ) );
     MOCK_METHOD( Result_Message_Producer_Status_T,
                  VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage,
                  ( HIL_Application_Message_T* ));
@@ -180,6 +181,14 @@ extern "C" void VARIABLE_RESULT_MESSAGE_PRODUCER_Reset( void )
     if ( g_mock_deps != nullptr )
     {
         g_mock_deps->VARIABLE_RESULT_MESSAGE_PRODUCER_Reset();
+    }
+}
+
+extern "C" void VARIABLE_RESULT_MESSAGE_PRODUCER_SetExpectedTickCount( uint32_t tick_count )
+{
+    if ( g_mock_deps != nullptr )
+    {
+        g_mock_deps->VARIABLE_RESULT_MESSAGE_PRODUCER_SetExpectedTickCount( tick_count );
     }
 }
 
@@ -310,6 +319,8 @@ protected:
         ON_CALL( *g_mock_deps, HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
             .WillByDefault( Return( HOST_INTERFACE_STATUS_OK ) );
         ON_CALL( *g_mock_deps, VARIABLE_RESULT_MESSAGE_PRODUCER_Reset() ).WillByDefault( [] {} );
+        ON_CALL( *g_mock_deps, VARIABLE_RESULT_MESSAGE_PRODUCER_SetExpectedTickCount( _ ) )
+            .WillByDefault( [] {} );
         ON_CALL( *g_mock_deps, VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( _ ) )
             .WillByDefault( Return( RESULT_MESSAGE_PRODUCER_STATUS_OK ) );
 
@@ -1090,7 +1101,7 @@ TEST_F( HostProcessMessageTest, ResultTransferNotificationProducesNextResultMess
 }
 
 TEST_F( HostProcessMessageTest,
-        ResultTransferNotificationReturnsInternalErrorWhenNoDataIsAvailable )
+        ResultTransferNotificationRetriesWhenNoDataIsAvailable )
 {
     notifications = HOST_INTERFACE_NOTIFY_RESULT_TRANSFER;
 
@@ -1099,7 +1110,7 @@ TEST_F( HostProcessMessageTest,
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Result_Transfer_Notification(
                    &outgoing, &notifications, &response_required, data, sizeof( data ) ),
-               HOST_INTERFACE_STATUS_INTERNAL_ERROR );
+               HOST_INTERFACE_STATUS_OK );
     EXPECT_FALSE( response_required );
     EXPECT_EQ( notifications, HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
 }
@@ -1121,17 +1132,21 @@ TEST_F( HostProcessMessageTest, ResultTransferNotificationClearsFlagAtEndOfStrea
 }
 
 TEST_F( HostProcessMessageTest,
-        ResultTransferNotificationPropagatesUnexpectedProducerStatusAsInternalError )
+        ResultTransferNotificationFaultsSessionOnCorruptData )
 {
     notifications = HOST_INTERFACE_NOTIFY_RESULT_TRANSFER;
 
     EXPECT_CALL( *g_mock_deps, RESULT_MESSAGE_PRODUCER_ProduceNextMessage( _ ) )
         .WillOnce( Return( RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA ) );
+    EXPECT_CALL( *g_mock_deps,
+                 RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+        .WillOnce( Return( true ) );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Result_Transfer_Notification(
                    &outgoing, &notifications, &response_required, data, sizeof( data ) ),
-               HOST_INTERFACE_STATUS_INTERNAL_ERROR );
-    EXPECT_FALSE( response_required );
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( notifications, 0U );
 }
 
 TEST_F( HostProcessMessageTest, VariableResultTransferNotificationProducesNextResultMessage )

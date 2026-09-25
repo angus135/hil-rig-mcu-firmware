@@ -377,6 +377,7 @@ typedef void ( *FlashManagerFaultCallback_T )( bool from_isr );
 typedef struct
 {
     uint32_t                         result_pages_drained;
+    uint64_t                         result_bytes_drained;
     uint64_t                         result_page_drain_total_cycles;
     uint32_t                         result_page_drain_latest_cycles;
     uint32_t                         result_page_drain_max_cycles;
@@ -385,9 +386,16 @@ typedef struct
     uint32_t                         free_bytes_at_last_reserve_failure;
     uint32_t                         current_pending_result_bytes;
     uint32_t                         peak_pending_result_bytes;
+    uint32_t                         peak_pending_result_boundary;
+    uint32_t                         committed_result_records;
+    uint32_t                         committed_result_bytes;
     uint32_t                         result_commit_failures;
     FlashManagerResultCommitStatus_T last_commit_failure;
+    uint32_t                         instruction_occupancy_samples;
+    uint32_t                         minimum_unread_instruction_bytes;
+    uint32_t                         minimum_unread_instruction_boundary;
     uint32_t                         instruction_pages_refilled;
+    uint64_t                         instruction_bytes_refilled;
     uint64_t                         instruction_page_refill_total_cycles;
     uint32_t                         instruction_page_refill_latest_cycles;
     uint32_t                         instruction_page_refill_max_cycles;
@@ -595,6 +603,16 @@ FLASH_MANAGER_PeekNextInstructionFromISR( const FlashManagerInstructionView_T** 
  *       has finished.
  */
 bool FLASH_MANAGER_ConsumeInstructionFromISR( BaseType_t* higher_priority_task_woken );
+
+/**
+ * @brief Samples instruction headroom for execution diagnostics.
+ *
+ * Samples are ignored after the complete instruction stream has been consumed,
+ * so normal end-of-stream does not manufacture a zero-byte low-water mark.
+ * Call from the execution ISR before peeking and after successfully consuming
+ * an instruction.
+ */
+void FLASH_MANAGER_RecordInstructionOccupancyFromISR( uint32_t boundary );
 
 /* Host Interface instruction upload. */
 

@@ -6,11 +6,13 @@
 
 set(RUN_STATE_MANAGER_SOURCES
     run_state_manager.c
+    run_metadata.c
     dut_driver_lifecycle.c
 )
 
 set(RUN_STATE_MANAGER_HEADERS
     run_state_manager.h
+    run_metadata.h
     dut_driver_lifecycle.h
 )
 

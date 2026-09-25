@@ -158,6 +158,7 @@ static bool RUN_STATE_MANAGER_RequestFaultFromISRInternal( RunStateFaultReason_T
 static bool RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR( void );
 static void RUN_STATE_MANAGER_RecordFault( RunStateFaultReason_T reason );
 static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason );
+static void RUN_STATE_MANAGER_CaptureExecutionMetadata( void );
 
 static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state,
                                                    RunState_T next_state );
@@ -240,11 +241,12 @@ RUN_STATE_MANAGER_HandleExecutionTerminalFromISR( ExecutionManagerTickResult_T r
                                                   ExecutionManagerFailure_T    failure,
                                                   BaseType_t* higher_priority_task_woken )
 {
-    ( void )failure;
     execution_abort_requested = true;
 
     if ( result == EXECUTION_MANAGER_TICK_COMPLETE )
     {
+        ( void )RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_COMPLETE,
+                                            RUN_METADATA_FAILURE_SOURCE_NONE, 0U );
         if ( run_state_manager_task_handle != NULL )
         {
             ( void )xTaskNotifyFromISR( run_state_manager_task_handle,
@@ -254,6 +256,9 @@ RUN_STATE_MANAGER_HandleExecutionTerminalFromISR( ExecutionManagerTickResult_T r
     }
     else
     {
+        ( void )RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_FAILED,
+                                            RUN_METADATA_FAILURE_SOURCE_EXECUTION_MANAGER,
+                                            ( uint32_t )failure );
         ( void )RUN_STATE_MANAGER_RequestFaultFromISRInternal( RUN_STATE_FAULT_EXECUTION_MANAGER,
                                                                higher_priority_task_woken );
     }
@@ -371,6 +376,90 @@ static void RUN_STATE_MANAGER_RecordFault( RunStateFaultReason_T reason )
     }
 }
 
+static void RUN_STATE_MANAGER_CaptureExecutionMetadata( void )
+{
+    RunMetadataExecutionCapture_T capture = { 0 };
+
+    uint32_t boundary = 0U;
+    if ( EXECUTION_MANAGER_GetLastCompletedBoundary( &boundary ) )
+    {
+        capture.valid_sections |= RUN_METADATA_VALID_LAST_COMPLETED_BOUNDARY;
+        capture.last_completed_boundary = boundary;
+    }
+
+    HW_TIMER_ExecutionTiming_T timer_timing = { 0 };
+    HW_TIMER_Get_Execution_Timing( &timer_timing );
+    if ( timer_timing.sample_count > 0U )
+    {
+        capture.valid_sections |= RUN_METADATA_VALID_ISR_TIMING;
+        capture.isr_timing.sample_count     = timer_timing.sample_count;
+        capture.isr_timing.total_cycles     = timer_timing.total_cycles;
+        capture.isr_timing.minimum_cycles   = timer_timing.minimum_cycles;
+        capture.isr_timing.maximum_cycles   = timer_timing.maximum_cycles;
+        capture.isr_timing.maximum_boundary = timer_timing.max_sample_number;
+    }
+
+    FlashManagerExecutionDiagnostics_T flash_diag = { 0 };
+    if ( FLASH_MANAGER_GetExecutionDiagnostics( &flash_diag ) )
+    {
+        capture.valid_sections |= RUN_METADATA_VALID_INSTRUCTION_BUFFER;
+        capture.instruction_buffer.sample_count =
+            flash_diag.instruction_occupancy_samples;
+        capture.instruction_buffer.minimum_unread_bytes =
+            flash_diag.minimum_unread_instruction_bytes;
+        capture.instruction_buffer.minimum_boundary =
+            flash_diag.minimum_unread_instruction_boundary;
+
+        capture.valid_sections |= RUN_METADATA_VALID_RESULT_BUFFER;
+        capture.result_buffer.committed_record_count =
+            flash_diag.committed_result_records;
+        capture.result_buffer.committed_bytes =
+            flash_diag.committed_result_bytes;
+        capture.result_buffer.peak_pending_bytes =
+            flash_diag.peak_pending_result_bytes;
+        capture.result_buffer.peak_pending_boundary =
+            flash_diag.peak_pending_result_boundary;
+        capture.result_buffer.reserve_failure_count =
+            flash_diag.result_reserve_failures;
+        capture.result_buffer.commit_failure_count =
+            flash_diag.result_commit_failures;
+
+        capture.valid_sections |= RUN_METADATA_VALID_FLASH_THROUGHPUT;
+        capture.flash_throughput.result_pages_drained =
+            flash_diag.result_pages_drained;
+        capture.flash_throughput.result_bytes_drained =
+            flash_diag.result_bytes_drained;
+        capture.flash_throughput.result_drain_total_cycles =
+            flash_diag.result_page_drain_total_cycles;
+        capture.flash_throughput.result_drain_maximum_cycles =
+            flash_diag.result_page_drain_max_cycles;
+        capture.flash_throughput.instruction_pages_refilled =
+            flash_diag.instruction_pages_refilled;
+        capture.flash_throughput.instruction_bytes_refilled =
+            flash_diag.instruction_bytes_refilled;
+        capture.flash_throughput.instruction_refill_total_cycles =
+            flash_diag.instruction_page_refill_total_cycles;
+        capture.flash_throughput.instruction_refill_maximum_cycles =
+            flash_diag.instruction_page_refill_max_cycles;
+        capture.flash_throughput.instruction_publish_sample_count =
+            flash_diag.instruction_page_publish_samples;
+        capture.flash_throughput.instruction_publish_total_cycles =
+            flash_diag.instruction_page_publish_total_cycles;
+        capture.flash_throughput.instruction_publish_maximum_cycles =
+            flash_diag.instruction_page_publish_max_cycles;
+        capture.flash_throughput.service_gap_sample_count =
+            flash_diag.nand_service_gap_samples;
+        capture.flash_throughput.service_gap_total_cycles =
+            flash_diag.nand_service_gap_total_cycles;
+        capture.flash_throughput.service_gap_maximum_cycles =
+            flash_diag.nand_service_gap_max_cycles;
+        capture.flash_throughput.refill_drain_contention_count =
+            flash_diag.refill_drain_contentions;
+    }
+
+    ( void )RUN_METADATA_CaptureExecution( &capture );
+}
+
 static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason )
 {
     request_timing_active     = false;
@@ -379,6 +468,52 @@ static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason )
     execution_request_pending = false;
     taskEXIT_CRITICAL();
     RUN_STATE_MANAGER_RecordFault( reason );
+
+    if ( reason == RUN_STATE_FAULT_EXTERNAL_REQUEST )
+    {
+        ( void )RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_ABORTED,
+                                            RUN_METADATA_FAILURE_SOURCE_RUN_STATE_MANAGER,
+                                            ( uint32_t )reason );
+    }
+    else if ( ( reason == RUN_STATE_FAULT_FLASH_MANAGER )
+              || ( reason == RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION )
+              || ( reason == RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION_TIMEOUT )
+              || ( reason == RUN_STATE_FAULT_FLASH_RESULT_FINALISATION )
+              || ( reason == RUN_STATE_FAULT_FLASH_RESULT_FINALISATION_TIMEOUT )
+              || ( reason == RUN_STATE_FAULT_FLASH_RESULT_TRANSFER )
+              || ( reason == RUN_STATE_FAULT_FLASH_RESULT_DISPOSITION ) )
+    {
+        ( void )RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_FAILED,
+                                            RUN_METADATA_FAILURE_SOURCE_FLASH_MANAGER,
+                                            ( uint32_t )reason );
+    }
+    else if ( ( reason == RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED )
+              || ( reason == RUN_STATE_FAULT_HOST_INTERFACE_USB_INIT )
+              || ( reason == RUN_STATE_FAULT_HOST_INTERFACE_CODEC_INIT )
+              || ( reason == RUN_STATE_FAULT_HOST_INTERFACE_TRANSPORT_INIT )
+              || ( reason == RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+    {
+        ( void )RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_FAILED,
+                                            RUN_METADATA_FAILURE_SOURCE_HOST_INTERFACE,
+                                            ( uint32_t )reason );
+    }
+    else if ( reason == RUN_STATE_FAULT_EXECUTION_MANAGER )
+    {
+        ( void )RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_FAILED,
+                                            RUN_METADATA_FAILURE_SOURCE_EXECUTION_MANAGER,
+                                            ( uint32_t )EXECUTION_MANAGER_GetFailure() );
+    }
+    else if ( reason != RUN_STATE_FAULT_NONE )
+    {
+        ( void )RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_FAILED,
+                                            RUN_METADATA_FAILURE_SOURCE_RUN_STATE_MANAGER,
+                                            ( uint32_t )reason );
+    }
+
+    RUN_STATE_MANAGER_CaptureExecutionMetadata();
+    ( void )RUN_METADATA_SetResultStreamStatus( RUN_METADATA_RESULT_STREAM_UNAVAILABLE );
+    ( void )RUN_METADATA_Seal();
+
     ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_FAULT );
     ( void )HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_FAULT );
 }
@@ -852,6 +987,7 @@ static bool RUN_STATE_MANAGER_BeginDriverStart( void )
 static bool RUN_STATE_MANAGER_StopExecution( void )
 {
     RUN_STATE_MANAGER_StopExecutionTimer();
+    RUN_STATE_MANAGER_CaptureExecutionMetadata();
     EXECUTION_MANAGER_Abort();
 
     execution_active = false;
@@ -872,6 +1008,7 @@ static bool RUN_STATE_MANAGER_BeginDriverShutdown( bool force_abort, bool clear_
         execution_abort_requested = true;
     }
     RUN_STATE_MANAGER_StopExecutionTimer();
+    RUN_STATE_MANAGER_CaptureExecutionMetadata();
     execution_active        = false;
     driver_cleanup_complete = false;
 
@@ -1231,15 +1368,24 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
             if ( flash_state == FLASH_MANAGER_STATE_RESULTS_READY )
             {
                 RUN_STATE_MANAGER_ClearPendingOperation();
+                const RunMetadataResultStreamStatus_T stream_status =
+                    ( fault_reason == RUN_STATE_FAULT_NONE ) ? RUN_METADATA_RESULT_STREAM_COMPLETE
+                                                             : RUN_METADATA_RESULT_STREAM_PARTIAL;
+                ( void )RUN_METADATA_SetResultStreamStatus( stream_status );
+                ( void )RUN_METADATA_Seal();
                 ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_RESULTS_READY );
             }
             else if ( flash_state != FLASH_MANAGER_STATE_FINALISING_RESULTS )
             {
+                ( void )RUN_METADATA_SetResultStreamStatus( RUN_METADATA_RESULT_STREAM_UNAVAILABLE );
+                ( void )RUN_METADATA_Seal();
                 RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_RESULT_FINALISATION );
             }
             else if ( RUN_STATE_MANAGER_PendingOperationTimedOut(
                           pdMS_TO_TICKS( RUN_STATE_MANAGER_RESULT_FINALISATION_TIMEOUT_MS ) ) )
             {
+                ( void )RUN_METADATA_SetResultStreamStatus( RUN_METADATA_RESULT_STREAM_UNAVAILABLE );
+                ( void )RUN_METADATA_Seal();
                 RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_RESULT_FINALISATION_TIMEOUT );
             }
             break;
@@ -1678,6 +1824,7 @@ RunStateFrequencyMode_T RUN_STATE_MANAGER_Get_Execution_Frequency( void )
 void RUN_STATE_MANAGER_Init( void )
 {
     RUN_STATE_MANAGER_StopExecutionTimer();
+    RUN_METADATA_Reset();
     frequency_mode               = RUN_STATE_FREQUENCY_1KHZ;
     pending_operation            = RUN_STATE_PENDING_NONE;
     pending_operation_started_at = 0U;
@@ -1749,6 +1896,7 @@ RUN_STATE_MANAGER_RequestExecution( const RunStateExecutionRequest_T* request )
     }
     else
     {
+        RUN_METADATA_Reset();
         prepared_execution = ( RunStatePreparedExecution_T ){
             .tick_count = request->tick_count,
             .frequency  = frequency_mode,

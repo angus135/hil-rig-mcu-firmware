@@ -100,6 +100,14 @@ uint32_t EXECUTION_MANAGER_GetCurrentTick( void );
 /** Returns the first failure latched during the current run. */
 ExecutionManagerFailure_T EXECUTION_MANAGER_GetFailure( void );
 
+/**
+ * @brief Gets the last boundary whose measurement, instruction, and checks succeeded.
+ *
+ * @param boundary Destination for the boundary index.
+ * @return true when at least one boundary completed successfully; otherwise false.
+ */
+bool EXECUTION_MANAGER_GetLastCompletedBoundary( uint32_t* boundary );
+
 #ifdef __cplusplus
 }
 #endif

@@ -23,15 +23,17 @@ typedef enum
     EXECUTION_STATE_FAILED
 } ExecutionState_T;
 
-static uint32_t                           execution_tick_count = 0U;
-static volatile uint32_t                  current_tick         = 0U;
-static volatile ExecutionManagerFailure_T execution_failure    = EXECUTION_MANAGER_FAILURE_NONE;
-static volatile ExecutionState_T          execution_state      = EXECUTION_STATE_IDLE;
-static bool                               instruction_stream_exhausted = false;
-static volatile bool                      boundary_zero_pending       = false;
-static bool                               operation_timing_requested   = false;
-static bool                               operation_timing_active      = false;
-static ExecutionManagerTerminalCallback_T terminal_callback            = NULL;
+static uint32_t                           execution_tick_count          = 0U;
+static volatile uint32_t                  current_tick                  = 0U;
+static volatile uint32_t                  last_completed_boundary       = 0U;
+static volatile bool                      last_completed_boundary_valid = false;
+static volatile ExecutionManagerFailure_T execution_failure             = EXECUTION_MANAGER_FAILURE_NONE;
+static volatile ExecutionState_T          execution_state               = EXECUTION_STATE_IDLE;
+static bool                               instruction_stream_exhausted  = false;
+static volatile bool                      boundary_zero_pending         = false;
+static bool                               operation_timing_requested    = false;
+static bool                               operation_timing_active       = false;
+static ExecutionManagerTerminalCallback_T terminal_callback             = NULL;
 
 static ExecutionManagerTickResult_T
 EXECUTION_MANAGER_FailFromISR( ExecutionManagerFailure_T failure,
@@ -69,14 +71,16 @@ bool EXECUTION_MANAGER_Prepare( uint32_t tick_count )
         return false;
     }
 
-    execution_tick_count         = tick_count;
-    current_tick                 = 0U;
-    execution_failure            = EXECUTION_MANAGER_FAILURE_NONE;
-    execution_state              = EXECUTION_STATE_READY;
-    instruction_stream_exhausted = false;
-    boundary_zero_pending        = true;
-    operation_timing_active      = operation_timing_requested;
-    operation_timing_requested   = false;
+    execution_tick_count          = tick_count;
+    current_tick                  = 0U;
+    last_completed_boundary       = 0U;
+    last_completed_boundary_valid = false;
+    execution_failure             = EXECUTION_MANAGER_FAILURE_NONE;
+    execution_state               = EXECUTION_STATE_READY;
+    instruction_stream_exhausted  = false;
+    boundary_zero_pending         = true;
+    operation_timing_active       = operation_timing_requested;
+    operation_timing_requested    = false;
     EXECUTION_OPERATION_ADAPTER_ResetFailure();
     EXECUTION_OPERATION_ADAPTER_ResetTiming();
     EXECUTION_MEASUREMENT_ADAPTER_ResetTiming();
@@ -101,6 +105,17 @@ uint32_t EXECUTION_MANAGER_GetCurrentTick( void )
 ExecutionManagerFailure_T EXECUTION_MANAGER_GetFailure( void )
 {
     return execution_failure;
+}
+
+bool EXECUTION_MANAGER_GetLastCompletedBoundary( uint32_t* boundary )
+{
+    if ( ( boundary == NULL ) || !last_completed_boundary_valid )
+    {
+        return false;
+    }
+
+    *boundary = last_completed_boundary;
+    return true;
 }
 
 ExecutionManagerTickResult_T
@@ -154,6 +169,8 @@ EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken )
         }
     }
 
+    FLASH_MANAGER_RecordInstructionOccupancyFromISR( current_tick );
+
     /* Process outputs */
     if ( !instruction_stream_exhausted )
     {
@@ -189,6 +206,8 @@ EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken )
                 return EXECUTION_MANAGER_FailFromISR( EXECUTION_MANAGER_FAILURE_INSTRUCTION_CONSUME,
                                                       higher_priority_task_woken );
             }
+
+            FLASH_MANAGER_RecordInstructionOccupancyFromISR( current_tick );
         }
     }
     else if ( read_status == FLASH_MANAGER_INSTRUCTION_NOT_BUFFERED )
@@ -229,7 +248,9 @@ EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken )
             instruction_stream_exhausted = true;
         }
 
-        execution_state = EXECUTION_STATE_COMPLETE;
+        last_completed_boundary       = current_tick;
+        last_completed_boundary_valid = true;
+        execution_state               = EXECUTION_STATE_COMPLETE;
         if ( terminal_callback != NULL )
         {
             terminal_callback( EXECUTION_MANAGER_TICK_COMPLETE, EXECUTION_MANAGER_FAILURE_NONE,
@@ -238,5 +259,7 @@ EXECUTION_MANAGER_ProcessTickFromISR( BaseType_t* higher_priority_task_woken )
         return EXECUTION_MANAGER_TICK_COMPLETE;
     }
 
+    last_completed_boundary       = current_tick;
+    last_completed_boundary_valid = true;
     return EXECUTION_MANAGER_TICK_CONTINUE;
 }

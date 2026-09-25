@@ -113,6 +113,7 @@ if(HOST_INTERFACE_ENABLE_TESTS AND BUILD_TESTING)
             ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_pwm_capture
             ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_spi
             ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_uart
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_usb
     )
 
     add_test(NAME host_process_message_tests COMMAND host_process_message_tests)

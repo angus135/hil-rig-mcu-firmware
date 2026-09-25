@@ -91,6 +91,11 @@ extern "C" bool FLASH_MANAGER_ConsumeInstructionFromISR( BaseType_t* task_woken 
     return consume_result;
 }
 
+extern "C" void FLASH_MANAGER_RecordInstructionOccupancyFromISR( uint32_t boundary )
+{
+    ( void )boundary;
+}
+
 extern "C" ExecutionOperationAdapterResult_T
 EXECUTION_OPERATION_ADAPTER_ApplyOperations( const uint8_t* operations, uint8_t operation_count )
 {
@@ -421,4 +426,41 @@ TEST_F( ExecutionManagerTest, ExhaustedStreamAtFinalTickCompletesNormally )
 
     EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_COMPLETE );
     EXPECT_EQ( EXECUTION_MANAGER_GetFailure(), EXECUTION_MANAGER_FAILURE_NONE );
+}
+
+TEST_F( ExecutionManagerTest, CompletedBoundaryTracksSuccessfulExecutionBoundaries )
+{
+    uint32_t boundary = 999U;
+    EXPECT_FALSE( EXECUTION_MANAGER_GetLastCompletedBoundary( nullptr ) );
+    EXPECT_FALSE( EXECUTION_MANAGER_GetLastCompletedBoundary( &boundary ) );
+
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 2U ) );
+    EXPECT_FALSE( EXECUTION_MANAGER_GetLastCompletedBoundary( &boundary ) );
+
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_CONTINUE );
+    EXPECT_TRUE( EXECUTION_MANAGER_GetLastCompletedBoundary( &boundary ) );
+    EXPECT_EQ( 0U, boundary );
+
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_CONTINUE );
+    EXPECT_TRUE( EXECUTION_MANAGER_GetLastCompletedBoundary( &boundary ) );
+    EXPECT_EQ( 1U, boundary );
+
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_COMPLETE );
+    EXPECT_TRUE( EXECUTION_MANAGER_GetLastCompletedBoundary( &boundary ) );
+    EXPECT_EQ( 2U, boundary );
+}
+
+TEST_F( ExecutionManagerTest, FailedBoundaryDoesNotAdvanceCompletedBoundary )
+{
+    uint32_t boundary = 999U;
+    ASSERT_TRUE( EXECUTION_MANAGER_Prepare( 2U ) );
+
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_CONTINUE );
+    EXPECT_TRUE( EXECUTION_MANAGER_GetLastCompletedBoundary( &boundary ) );
+    EXPECT_EQ( 0U, boundary );
+
+    measurement_result = false;
+    EXPECT_EQ( ProcessTick(), EXECUTION_MANAGER_TICK_FAILED );
+    EXPECT_TRUE( EXECUTION_MANAGER_GetLastCompletedBoundary( &boundary ) );
+    EXPECT_EQ( 0U, boundary );
 }

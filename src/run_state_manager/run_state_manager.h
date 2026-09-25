@@ -28,6 +28,7 @@ extern "C"
 #include <stdint.h>
 #include <stdbool.h>
 #include "hw_can.h"
+#include "run_metadata.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros

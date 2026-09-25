@@ -94,9 +94,6 @@ _Static_assert( ( INSTRUCTION_BUFFER_STORAGE_BYTES % sizeof( uint32_t ) ) == 0U,
 #define INSTRUCTION_BUFFER_COLD_NOINLINE
 #endif
 
-/** Required alignment of instruction headers, operations, and payloads. */
-#define INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES ( 4U )
-
 /* The serialized NAND layout depends on this fixed header width. */
 #if defined( __cplusplus )
 static_assert( sizeof( ExecutionInstructionHeader_T ) == 8U,
@@ -896,6 +893,19 @@ uint32_t INSTRUCTION_BUFFER_GetBufferedUnreadBytes( void )
     }
 
     return instruction_buffer_context.next_nand_read_offset_bytes
+           - instruction_buffer_context.consumer_stream_offset_bytes;
+}
+
+uint32_t INSTRUCTION_BUFFER_GetUnconsumedBytes( void )
+{
+    if ( !instruction_buffer_context.is_read_prepared
+         || ( instruction_buffer_context.consumer_stream_offset_bytes
+              > instruction_buffer_context.instruction_length_bytes ) )
+    {
+        return 0U;
+    }
+
+    return instruction_buffer_context.instruction_length_bytes
            - instruction_buffer_context.consumer_stream_offset_bytes;
 }
 

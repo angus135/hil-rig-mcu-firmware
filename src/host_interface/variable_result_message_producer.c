@@ -122,7 +122,7 @@ typedef struct
 static VariableResultProducerStream_T s_var_stream;
 
 /** @brief Live diagnostics state for variable result production. */
-static VariableResultProducerDiagnostics_T s_var_diagnostics = { 0 };
+static VariableResultProducerDiagnostics_T s_var_diagnostics;
 
 /**
  * @brief Physical GPIOD pin masks indexed by zero-based protocol DI channel.

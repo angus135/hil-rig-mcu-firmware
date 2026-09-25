@@ -329,7 +329,7 @@ TEST_F( VariableResultMessageProducerTest, ProducesSerialRecords )
     uint8_t uart_payload[4] = { 'P', 'O', 'N', 'G' };
     uint8_t spi_payload[2]  = { 0x11, 0x22 };
     uint8_t can_payload[12] = { 0x34, 0x12, 0x00, 0x00, 0x00, 0x00,
-                                0x04, 0x00, 0xDE, 0xAD, 0xBE, 0xEF };
+                                0x04, 0x00, 0xDE, 0xAD, 0xBE, 0x00 };
 
     simulated_stream_.AppendRecord( 2U, FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE, 0U,
                                     uart_payload, sizeof( uart_payload ) );

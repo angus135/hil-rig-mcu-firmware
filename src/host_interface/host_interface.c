@@ -315,6 +315,13 @@ typedef struct
 TaskHandle_t HostInterfaceTaskHandle = NULL;  // NOLINT(readability-identifier-naming)
 
 /**-----------------------------------------------------------------------------
+ *  Private (static) Variables
+ *------------------------------------------------------------------------------
+ */
+
+static HostInterfaceStatus_T s_host_interface_status = { 0 };
+
+/**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
  */
@@ -1016,8 +1023,6 @@ static void HOST_INTERFACE_Protocol_Process(
     }
 #endif
 }
-
-static HostInterfaceStatus_T s_host_interface_status = { 0 };
 
 /**
  * @brief Initialize all Host Interface protocol layers and owned storage.

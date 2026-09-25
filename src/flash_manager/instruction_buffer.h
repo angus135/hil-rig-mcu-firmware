@@ -260,6 +260,9 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
 /** Returns the number of unread instruction bytes currently buffered. */
 uint32_t INSTRUCTION_BUFFER_GetBufferedUnreadBytes( void );
 
+/** Returns logical instruction bytes not yet consumed by execution. */
+uint32_t INSTRUCTION_BUFFER_GetUnconsumedBytes( void );
+
 /**
  * @brief Returns a read-only view of the next complete instruction.
  *

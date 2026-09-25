@@ -54,6 +54,14 @@ RunState_T RUN_STATE_MANAGER_GetState( void )
     return RUN_STATE_IDLE;
 }
 
+void VARIABLE_RESULT_MESSAGE_PRODUCER_GetDiagnostics( VariableResultProducerDiagnostics_T* diags )
+{
+    if ( diags != NULL )
+    {
+        ( void )memset( diags, 0, sizeof( *diags ) );
+    }
+}
+
 static HOST_INTERFACE_Protocol_State_T s_protocol_state;
 
 /**

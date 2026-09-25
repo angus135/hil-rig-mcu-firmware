@@ -70,6 +70,12 @@ static bool                                         execution_prepare_result;
 static uint32_t                                     execution_prepare_tick_count;
 static uint32_t                                     execution_abort_calls;
 static ExecutionManagerTerminalCallback_T           execution_terminal_callback;
+static bool                                         execution_boundary_result;
+static uint32_t                                     execution_last_boundary;
+static ExecutionManagerFailure_T                    execution_failure_code;
+static HW_TIMER_ExecutionTiming_T                   timer_execution_timing;
+static bool                                         flash_diagnostics_result;
+static FlashManagerExecutionDiagnostics_T           flash_execution_diagnostics;
 static bool                                         host_interface_notify_result;
 static uint32_t                                     host_interface_notified_bits;
 static uint32_t                                     host_interface_notify_calls;
@@ -292,6 +298,35 @@ void EXECUTION_MANAGER_SetTerminalCallback( ExecutionManagerTerminalCallback_T c
 {
     execution_terminal_callback = callback;
 }
+bool EXECUTION_MANAGER_GetLastCompletedBoundary( uint32_t* boundary )
+{
+    if ( execution_boundary_result && ( boundary != nullptr ) )
+    {
+        *boundary = execution_last_boundary;
+        return true;
+    }
+    return false;
+}
+ExecutionManagerFailure_T EXECUTION_MANAGER_GetFailure( void )
+{
+    return execution_failure_code;
+}
+void HW_TIMER_Get_Execution_Timing( HW_TIMER_ExecutionTiming_T* timing )
+{
+    if ( timing != nullptr )
+    {
+        *timing = timer_execution_timing;
+    }
+}
+bool FLASH_MANAGER_GetExecutionDiagnostics( FlashManagerExecutionDiagnostics_T* diagnostics )
+{
+    if ( flash_diagnostics_result && ( diagnostics != nullptr ) )
+    {
+        *diagnostics = flash_execution_diagnostics;
+        return true;
+    }
+    return false;
+}
 void HW_CAN_GetDiagnostic( HW_CAN_Diagnostic_T* diag )
 {
     if ( diag != nullptr )
@@ -383,6 +418,12 @@ protected:
         execution_prepare_tick_count        = 0U;
         execution_abort_calls               = 0U;
         execution_terminal_callback         = nullptr;
+        execution_boundary_result           = false;
+        execution_last_boundary             = 0U;
+        execution_failure_code              = EXECUTION_MANAGER_FAILURE_NONE;
+        timer_execution_timing              = {};
+        flash_diagnostics_result            = false;
+        flash_execution_diagnostics         = {};
         host_interface_notify_result        = true;
         host_interface_notified_bits        = 0U;
         host_interface_notify_calls         = 0U;
@@ -1428,3 +1469,192 @@ TEST_F( RunStateManagerTest, FaultNotifiesHostInterfaceFault )
     EXPECT_EQ( RUN_STATE_FAULT, run_state );
     EXPECT_NE( 0U, host_interface_notified_bits & HOST_INTERFACE_NOTIFY_FAULT );
 }
+
+/**
+ * @brief Verifies that a successful execution captures boundary, ISR timing, and Flash diagnostics,
+ * sets the result stream status to COMPLETE, and seals the snapshot.
+ */
+TEST_F( RunStateManagerTest, SuccessfulExecutionCapturesMetadataAndSealsSnapshot )
+{
+    EnterExecution();
+
+    execution_boundary_result = true;
+    execution_last_boundary   = 10U;
+
+    timer_execution_timing = {
+        .sample_count      = 11U,
+        .total_cycles      = 55000ULL,
+        .latest_cycles     = 5000U,
+        .minimum_cycles    = 4500U,
+        .maximum_cycles    = 6000U,
+        .max_sample_number = 4U,
+        .core_clock_hz     = 180000000U,
+    };
+
+    flash_diagnostics_result    = true;
+    flash_execution_diagnostics = {
+        .result_pages_drained                 = 5U,
+        .result_bytes_drained                 = 10240ULL,
+        .result_page_drain_total_cycles       = 15000ULL,
+        .result_page_drain_latest_cycles      = 3000U,
+        .result_page_drain_max_cycles         = 4000U,
+        .result_reserve_failures              = 0U,
+        .last_failed_reserve_payload_bytes    = 0U,
+        .free_bytes_at_last_reserve_failure   = 100000U,
+        .current_pending_result_bytes         = 0U,
+        .peak_pending_result_bytes            = 4096U,
+        .peak_pending_result_boundary         = 3U,
+        .committed_result_records             = 10U,
+        .committed_result_bytes               = 2048U,
+        .result_commit_failures               = 0U,
+        .last_commit_failure                  = FLASH_MANAGER_RESULT_COMMIT_OK,
+        .instruction_occupancy_samples        = 10U,
+        .minimum_unread_instruction_bytes     = 512U,
+        .minimum_unread_instruction_boundary  = 2U,
+        .instruction_pages_refilled           = 2U,
+        .instruction_bytes_refilled           = 4096ULL,
+        .instruction_page_refill_total_cycles = 8000ULL,
+        .instruction_page_refill_latest_cycles = 4000U,
+        .instruction_page_refill_max_cycles   = 4500U,
+        .instruction_page_publish_samples     = 2U,
+        .instruction_page_publish_total_cycles = 2000ULL,
+        .instruction_page_publish_latest_cycles = 1000U,
+        .instruction_page_publish_max_cycles  = 1100U,
+        .nand_service_gap_samples             = 4U,
+        .nand_service_gap_total_cycles        = 20000ULL,
+        .nand_service_gap_latest_cycles       = 5000U,
+        .nand_service_gap_max_cycles          = 6000U,
+        .refill_drain_contentions             = 1U,
+    };
+
+    BaseType_t task_woken = pdFALSE;
+    execution_terminal_callback( EXECUTION_MANAGER_TICK_COMPLETE, EXECUTION_MANAGER_FAILURE_NONE,
+                                 &task_woken );
+
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    flash_manager_state = FLASH_MANAGER_STATE_RESULTS_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_RESULTS_READY, run_state );
+
+    RunMetadataSnapshot_T snapshot = {};
+    ASSERT_TRUE( RUN_METADATA_GetSnapshot( &snapshot ) );
+    EXPECT_EQ( RUN_METADATA_STRUCTURE_VERSION, snapshot.structure_version );
+    EXPECT_EQ( RUN_METADATA_TERMINAL_COMPLETE, snapshot.terminal_status );
+    EXPECT_EQ( RUN_METADATA_RESULT_STREAM_COMPLETE, snapshot.result_stream_status );
+    EXPECT_EQ( RUN_METADATA_FAILURE_SOURCE_NONE, snapshot.failure_source );
+    EXPECT_EQ( 0U, snapshot.failure_reason );
+    EXPECT_EQ( 10U, snapshot.last_completed_boundary );
+
+    EXPECT_NE( 0U, snapshot.valid_sections & RUN_METADATA_VALID_TERMINAL );
+    EXPECT_NE( 0U, snapshot.valid_sections & RUN_METADATA_VALID_LAST_COMPLETED_BOUNDARY );
+    EXPECT_NE( 0U, snapshot.valid_sections & RUN_METADATA_VALID_ISR_TIMING );
+    EXPECT_NE( 0U, snapshot.valid_sections & RUN_METADATA_VALID_INSTRUCTION_BUFFER );
+    EXPECT_NE( 0U, snapshot.valid_sections & RUN_METADATA_VALID_RESULT_BUFFER );
+    EXPECT_NE( 0U, snapshot.valid_sections & RUN_METADATA_VALID_FLASH_THROUGHPUT );
+
+    EXPECT_EQ( 11U, snapshot.isr_timing.sample_count );
+    EXPECT_EQ( 55000ULL, snapshot.isr_timing.total_cycles );
+    EXPECT_EQ( 4500U, snapshot.isr_timing.minimum_cycles );
+    EXPECT_EQ( 6000U, snapshot.isr_timing.maximum_cycles );
+    EXPECT_EQ( 4U, snapshot.isr_timing.maximum_boundary );
+
+    EXPECT_EQ( 10U, snapshot.instruction_buffer.sample_count );
+    EXPECT_EQ( 512U, snapshot.instruction_buffer.minimum_unread_bytes );
+    EXPECT_EQ( 2U, snapshot.instruction_buffer.minimum_boundary );
+
+    EXPECT_EQ( 10U, snapshot.result_buffer.committed_record_count );
+    EXPECT_EQ( 2048U, snapshot.result_buffer.committed_bytes );
+    EXPECT_EQ( 4096U, snapshot.result_buffer.peak_pending_bytes );
+    EXPECT_EQ( 3U, snapshot.result_buffer.peak_pending_boundary );
+
+    EXPECT_EQ( 5U, snapshot.flash_throughput.result_pages_drained );
+    EXPECT_EQ( 10240ULL, snapshot.flash_throughput.result_bytes_drained );
+    EXPECT_EQ( 2U, snapshot.flash_throughput.instruction_pages_refilled );
+    EXPECT_EQ( 4096ULL, snapshot.flash_throughput.instruction_bytes_refilled );
+    EXPECT_EQ( 1U, snapshot.flash_throughput.refill_drain_contention_count );
+}
+
+/**
+ * @brief Verifies that execution failure latches first cause, captures partial diagnostics,
+ * sets result stream status to PARTIAL, and seals the snapshot upon finalisation.
+ */
+TEST_F( RunStateManagerTest, ExecutionFailureLatchesFirstCauseAndCapturesPartialMetadata )
+{
+    EnterExecution();
+
+    execution_boundary_result = true;
+    execution_last_boundary   = 3U;
+
+    BaseType_t task_woken = pdFALSE;
+    execution_terminal_callback( EXECUTION_MANAGER_TICK_FAILED,
+                                 EXECUTION_MANAGER_FAILURE_INSTRUCTION_LATE, &task_woken );
+
+    Process( RUN_STATE_REQUEST_FAULT );
+    EXPECT_EQ( RUN_STATE_FAULT, run_state );
+
+    RunMetadataSnapshot_T snapshot = {};
+    ASSERT_TRUE( RUN_METADATA_GetSnapshot( &snapshot ) );
+    EXPECT_EQ( RUN_METADATA_TERMINAL_FAILED, snapshot.terminal_status );
+    EXPECT_EQ( RUN_METADATA_FAILURE_SOURCE_EXECUTION_MANAGER, snapshot.failure_source );
+    EXPECT_EQ( static_cast<uint32_t>( EXECUTION_MANAGER_FAILURE_INSTRUCTION_LATE ),
+               snapshot.failure_reason );
+    EXPECT_EQ( 3U, snapshot.last_completed_boundary );
+    EXPECT_EQ( RUN_METADATA_RESULT_STREAM_UNAVAILABLE, snapshot.result_stream_status );
+}
+
+/**
+ * @brief Verifies that RUN_METADATA invariants (reset, latching once, seal check, invalid flags)
+ * hold according to specification.
+ */
+TEST_F( RunStateManagerTest, RunMetadataDirectUnitInvariants )
+{
+    RUN_METADATA_Reset();
+
+    RunMetadataSnapshot_T snapshot = {};
+    EXPECT_FALSE( RUN_METADATA_GetSnapshot( nullptr ) );
+    EXPECT_FALSE( RUN_METADATA_GetSnapshot( &snapshot ) );
+    EXPECT_FALSE( RUN_METADATA_Seal() );
+
+    /* Complete requires NONE source and 0 reason */
+    EXPECT_FALSE( RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_COMPLETE,
+                                              RUN_METADATA_FAILURE_SOURCE_EXECUTION_MANAGER, 1U ) );
+    /* Failure requires non-NONE source and non-zero reason */
+    EXPECT_FALSE( RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_FAILED,
+                                              RUN_METADATA_FAILURE_SOURCE_NONE, 0U ) );
+    EXPECT_FALSE( RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_FAILED,
+                                              RUN_METADATA_FAILURE_SOURCE_RUN_STATE_MANAGER, 0U ) );
+
+    /* Successful latch */
+    EXPECT_TRUE( RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_COMPLETE,
+                                             RUN_METADATA_FAILURE_SOURCE_NONE, 0U ) );
+
+    /* Second latch attempt fails */
+    EXPECT_FALSE( RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_FAILED,
+                                              RUN_METADATA_FAILURE_SOURCE_EXECUTION_MANAGER, 2U ) );
+
+    /* Invalid capture flags rejected */
+    RunMetadataExecutionCapture_T capture = {};
+    capture.valid_sections               = 0x80000000U;
+    EXPECT_FALSE( RUN_METADATA_CaptureExecution( &capture ) );
+
+    /* Valid capture accepted once */
+    capture.valid_sections          = RUN_METADATA_VALID_LAST_COMPLETED_BOUNDARY;
+    capture.last_completed_boundary = 7U;
+    EXPECT_TRUE( RUN_METADATA_CaptureExecution( &capture ) );
+    EXPECT_FALSE( RUN_METADATA_CaptureExecution( &capture ) );
+
+    /* Seal requires non-pending stream status */
+    EXPECT_FALSE( RUN_METADATA_Seal() );
+    EXPECT_TRUE( RUN_METADATA_SetResultStreamStatus( RUN_METADATA_RESULT_STREAM_COMPLETE ) );
+    EXPECT_FALSE( RUN_METADATA_SetResultStreamStatus( RUN_METADATA_RESULT_STREAM_PARTIAL ) );
+    EXPECT_TRUE( RUN_METADATA_Seal() );
+    EXPECT_TRUE( RUN_METADATA_Seal() );
+
+    ASSERT_TRUE( RUN_METADATA_GetSnapshot( &snapshot ) );
+    EXPECT_EQ( RUN_METADATA_TERMINAL_COMPLETE, snapshot.terminal_status );
+    EXPECT_EQ( RUN_METADATA_RESULT_STREAM_COMPLETE, snapshot.result_stream_status );
+    EXPECT_EQ( 7U, snapshot.last_completed_boundary );
+}
+
