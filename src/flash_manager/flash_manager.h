@@ -344,6 +344,9 @@ typedef enum
     /** The operation is not permitted in the current lifecycle state. */
     FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE,
 
+    /** Unread result bytes remain; continue reading before finishing the transfer. */
+    FLASH_MANAGER_RESULT_TRANSFER_INCOMPLETE,
+
     /** A destination pointer or requested capacity was invalid. */
     FLASH_MANAGER_RESULT_TRANSFER_INVALID_ARGUMENT,
 
@@ -374,6 +377,7 @@ typedef void ( *FlashManagerFaultCallback_T )( bool from_isr );
 typedef struct
 {
     uint32_t                         result_pages_drained;
+    uint64_t                         result_bytes_drained;
     uint64_t                         result_page_drain_total_cycles;
     uint32_t                         result_page_drain_latest_cycles;
     uint32_t                         result_page_drain_max_cycles;
@@ -382,9 +386,16 @@ typedef struct
     uint32_t                         free_bytes_at_last_reserve_failure;
     uint32_t                         current_pending_result_bytes;
     uint32_t                         peak_pending_result_bytes;
+    uint32_t                         peak_pending_result_boundary;
+    uint32_t                         committed_result_records;
+    uint32_t                         committed_result_bytes;
     uint32_t                         result_commit_failures;
     FlashManagerResultCommitStatus_T last_commit_failure;
+    uint32_t                         instruction_occupancy_samples;
+    uint32_t                         minimum_unread_instruction_bytes;
+    uint32_t                         minimum_unread_instruction_boundary;
     uint32_t                         instruction_pages_refilled;
+    uint64_t                         instruction_bytes_refilled;
     uint64_t                         instruction_page_refill_total_cycles;
     uint32_t                         instruction_page_refill_latest_cycles;
     uint32_t                         instruction_page_refill_max_cycles;
@@ -471,6 +482,18 @@ bool FLASH_MANAGER_GetExecutionDiagnostics( FlashManagerExecutionDiagnostics_T* 
  * @note Call from task context only.
  */
 bool FLASH_MANAGER_GetResultCapacityBytes( uint32_t* capacity_bytes );
+
+/**
+ * @brief Reads the maximum instruction partition capacity in bytes.
+ *
+ * @param[out] capacity_bytes Destination for the instruction capacity in bytes.
+ *
+ * @return true when capacity was read successfully; false for a null destination
+ *         or when external flash is uninitialised.
+ *
+ * @note Call from task context only.
+ */
+bool FLASH_MANAGER_GetInstructionCapacityBytes( uint32_t* capacity_bytes );
 
 /* Execution ISR instruction serving and result logging. */
 
@@ -580,6 +603,16 @@ FLASH_MANAGER_PeekNextInstructionFromISR( const FlashManagerInstructionView_T** 
  *       has finished.
  */
 bool FLASH_MANAGER_ConsumeInstructionFromISR( BaseType_t* higher_priority_task_woken );
+
+/**
+ * @brief Samples instruction headroom for execution diagnostics.
+ *
+ * Samples are ignored after the complete instruction stream has been consumed,
+ * so normal end-of-stream does not manufacture a zero-byte low-water mark.
+ * Call from the execution ISR before peeking and after successfully consuming
+ * an instruction.
+ */
+void FLASH_MANAGER_RecordInstructionOccupancyFromISR( uint32_t boundary );
 
 /* Host Interface instruction upload. */
 
@@ -771,6 +804,9 @@ FLASH_MANAGER_ReadResultBytes( uint8_t* destination, uint32_t destination_capaci
  * @brief Completes a fully consumed result transfer.
  *
  * @return Result-transfer status.
+ * @retval FLASH_MANAGER_RESULT_TRANSFER_OK The transfer was completed.
+ * @retval FLASH_MANAGER_RESULT_TRANSFER_INCOMPLETE Unread result bytes remain;
+ *         the transfer stays active and reading may continue.
  *
  * @note This succeeds only after every stored result byte has been returned.
  *       FLASH_MANAGER_ReadResultBytes() reports END_OF_STREAM once this

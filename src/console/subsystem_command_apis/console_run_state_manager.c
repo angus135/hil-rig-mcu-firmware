@@ -23,6 +23,7 @@
 #include "execution_operation_adapters.h"
 #include "exec_spi.h"
 #include "hw_timer.h"
+#include "host_interface.h"
 #include "run_state_manager.h"
 #include "rtos_config.h"
 #include <stdbool.h>
@@ -154,6 +155,16 @@ static const char* CONSOLE_RunStateManager_FaultName( RunStateFaultReason_T reas
             return "Flash result disposition";
         case RUN_STATE_FAULT_FLASH_MANAGER:
             return "Flash Manager";
+        case RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED:
+            return "Host Interface outgoing response blocked / unconsumed";
+        case RUN_STATE_FAULT_HOST_INTERFACE_USB_INIT:
+            return "Host Interface USB initialization failed";
+        case RUN_STATE_FAULT_HOST_INTERFACE_CODEC_INIT:
+            return "Host Interface Application codec initialization failed";
+        case RUN_STATE_FAULT_HOST_INTERFACE_TRANSPORT_INIT:
+            return "Host Interface Transport initialization failed";
+        case RUN_STATE_FAULT_HOST_INTERFACE_ERROR:
+            return "Host Interface general error";
         case RUN_STATE_FAULT_INTERNAL:
             return "internal RSM error";
         default:
@@ -304,7 +315,9 @@ static void CONSOLE_RunStateManager_PrintUsage( void )
 {
     CONSOLE_Printf( "Usage:\r\n" );
     CONSOLE_Printf( "  run_state status\r\n" );
+    CONSOLE_Printf( "  run_state timing\r\n" );
     CONSOLE_Printf( "  run_state frequency <100|1000|10000>\r\n" );
+    CONSOLE_Printf( "  run_state receive [expected_tick_count]\r\n" );
     CONSOLE_Printf( "  run_state execute <tick_count>\r\n" );
     CONSOLE_Printf( "  run_state <receive|configure|execution_complete>\r\n" );
     CONSOLE_Printf( "  run_state <transfer|transfer_complete|repeat|discard|fault|reset>\r\n" );
@@ -355,10 +368,13 @@ static void CONSOLE_RunStateManager_WaitForState( bool accepted, RunState_T expe
     }
 
     CONSOLE_RunStateManager_PrintRequestResult( true );
-    const TickType_t start   = xTaskGetTickCount();
-    const TickType_t timeout = pdMS_TO_TICKS( 30000U );
+    const TickType_t        start          = xTaskGetTickCount();
+    const TickType_t        timeout        = pdMS_TO_TICKS( 30000U );
+    RunStateManagerStatus_T initial_status = { 0 };
+    RUN_STATE_MANAGER_GetStatus( &initial_status );
     for ( ;; )
     {
+        vTaskDelay( pdMS_TO_TICKS( 10U ) );
         RunStateManagerStatus_T status = { 0 };
         RUN_STATE_MANAGER_GetStatus( &status );
         if ( status.state == expected )
@@ -376,7 +392,7 @@ static void CONSOLE_RunStateManager_WaitForState( bool accepted, RunState_T expe
                             CONSOLE_RunStateManager_StateName( status.state ) );
             return;
         }
-        if ( status.state == RUN_STATE_FAULT
+        if ( ( ( initial_status.state != RUN_STATE_FAULT ) && ( status.state == RUN_STATE_FAULT ) )
              || ( ( TickType_t )( xTaskGetTickCount() - start ) ) >= timeout )
         {
             CONSOLE_Printf( "Run state transition did not reach %s (current=%s).\r\n",
@@ -384,7 +400,6 @@ static void CONSOLE_RunStateManager_WaitForState( bool accepted, RunState_T expe
                             CONSOLE_RunStateManager_StateName( status.state ) );
             return;
         }
-        vTaskDelay( pdMS_TO_TICKS( 10U ) );
     }
 }
 
@@ -450,6 +465,21 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                                               RUN_STATE_RESULTS_READY );
         return;
     }
+    if ( ( argc == 3U ) && ( strcmp( argv[1], "receive" ) == 0 ) )
+    {
+        uint32_t expected_tick_count = 0U;
+        if ( !CONSOLE_RunStateManager_ParseU32( argv[2], &expected_tick_count )
+             || expected_tick_count == 0U )
+        {
+            CONSOLE_RunStateManager_PrintUsage();
+            return;
+        }
+
+        CONSOLE_RunStateManager_WaitForState(
+            RUN_STATE_MANAGER_RequestPackageReceiveWithTicks( expected_tick_count ),
+            RUN_STATE_TEST_PACKAGE_RECEIVE );
+        return;
+    }
     if ( argc != 2U )
     {
         CONSOLE_RunStateManager_PrintUsage();
@@ -484,14 +514,15 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                 ( ( uint64_t )execution_timing.maximum_cycles * 1000000000ULL )
                 / execution_timing.core_clock_hz;
             CONSOLE_Printf( "Execution ISR: samples=%lu, latest=%lu cycles (%lu.%03lu us), "
-                            "max=%lu cycles (%lu.%03lu us)\r\n",
+                            "max=%lu cycles (%lu.%03lu us) at sample=%lu\r\n",
                             ( unsigned long )execution_timing.sample_count,
                             ( unsigned long )execution_timing.latest_cycles,
                             ( unsigned long )( latest_ns / 1000ULL ),
                             ( unsigned long )( latest_ns % 1000ULL ),
                             ( unsigned long )execution_timing.maximum_cycles,
                             ( unsigned long )( maximum_ns / 1000ULL ),
-                            ( unsigned long )( maximum_ns % 1000ULL ) );
+                            ( unsigned long )( maximum_ns % 1000ULL ),
+                            ( unsigned long )execution_timing.max_sample_number );
         }
         else
         {
@@ -507,10 +538,11 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                 const uint32_t average_cycles =
                     ( uint32_t )( operation_timing.total_cycles / operation_timing.sample_count );
                 CONSOLE_Printf(
-                    "Output timing: %s samples=%lu avg=%lu cycles max=%lu cycles\r\n",
+                    "Output timing: %s samples=%lu avg=%lu cycles max=%lu cycles at sample=%lu\r\n",
                     CONSOLE_RunStateManager_OpcodeName( ( ExecutionOperationOpcode_T )opcode ),
                     ( unsigned long )operation_timing.sample_count, ( unsigned long )average_cycles,
-                    ( unsigned long )operation_timing.maximum_cycles );
+                    ( unsigned long )operation_timing.maximum_cycles,
+                    ( unsigned long )operation_timing.max_sample );
             }
         }
         for ( uint32_t measurement = 0U; measurement < EXECUTION_MEASUREMENT_COUNT; measurement++ )
@@ -522,13 +554,14 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
             {
                 const uint32_t average_cycles = ( uint32_t )( measurement_timing.total_cycles
                                                               / measurement_timing.sample_count );
-                CONSOLE_Printf(
-                    "Measurement timing: %s samples=%lu avg=%lu cycles max=%lu cycles\r\n",
-                    CONSOLE_RunStateManager_MeasurementName(
-                        ( ExecutionMeasurementType_T )measurement ),
-                    ( unsigned long )measurement_timing.sample_count,
-                    ( unsigned long )average_cycles,
-                    ( unsigned long )measurement_timing.maximum_cycles );
+                CONSOLE_Printf( "Measurement timing: %s samples=%lu avg=%lu cycles max=%lu cycles "
+                                "at tick=%lu\r\n",
+                                CONSOLE_RunStateManager_MeasurementName(
+                                    ( ExecutionMeasurementType_T )measurement ),
+                                ( unsigned long )measurement_timing.sample_count,
+                                ( unsigned long )average_cycles,
+                                ( unsigned long )measurement_timing.maximum_cycles,
+                                ( unsigned long )measurement_timing.max_timestamp );
             }
         }
         const ExecutionManagerFailure_T execution_failure = EXECUTION_MANAGER_GetFailure();
@@ -616,6 +649,18 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                         ( unsigned int )run_status.can_diag.rx_queued2,
                         ( unsigned int )run_status.can_diag.rx_dropped2 );
     }
+    else if ( strcmp( argv[1], "timing" ) == 0 )
+    {
+        if ( RUN_STATE_MANAGER_IsExecutionTimerRunning() )
+        {
+            CONSOLE_Printf( "Timing request rejected while execution is active.\r\n" );
+            return;
+        }
+
+        EXECUTION_MANAGER_RequestOperationTiming();
+        CONSOLE_Printf(
+            "Per-operation and per-measurement ISR timing enabled for the next run.\r\n" );
+    }
     else if ( strcmp( argv[1], "receive" ) == 0 )
     {
         CONSOLE_RunStateManager_WaitForState( RUN_STATE_MANAGER_RequestPackageReceive(),
@@ -655,6 +700,7 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
     }
     else if ( strcmp( argv[1], "reset" ) == 0 )
     {
+        HOST_INTERFACE_Reset();
         CONSOLE_RunStateManager_WaitForState( RUN_STATE_MANAGER_RequestReset(), RUN_STATE_IDLE );
     }
     else

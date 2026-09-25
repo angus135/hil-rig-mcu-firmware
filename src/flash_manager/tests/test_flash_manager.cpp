@@ -104,6 +104,11 @@ static uint8_t write_instruction_page_data[TEST_MAX_INSTRUCTION_READS][TEST_PAGE
 static ExternalFlashStatus_T finish_instruction_upload_status = EXTERNAL_FLASH_STATUS_OK;
 static uint32_t              finish_instruction_upload_calls  = 0U;
 
+static ExternalFlashStatus_T update_instruction_upload_expected_length_status =
+    EXTERNAL_FLASH_STATUS_OK;
+static uint32_t update_instruction_upload_expected_length_calls = 0U;
+static uint32_t update_instruction_upload_expected_length_value = 0U;
+
 static ExternalFlashStatus_T read_instruction_page_status = EXTERNAL_FLASH_STATUS_OK;
 static uint32_t              read_instruction_page_calls  = 0U;
 static uint32_t              read_instruction_page_offsets[TEST_MAX_INSTRUCTION_READS] = {};
@@ -243,6 +248,14 @@ extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_FinishInstructionUpload( void )
     return finish_instruction_upload_status;
 }
 
+extern "C" ExternalFlashStatus_T
+EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( uint32_t expected_length )
+{
+    update_instruction_upload_expected_length_calls++;
+    update_instruction_upload_expected_length_value = expected_length;
+    return update_instruction_upload_expected_length_status;
+}
+
 extern "C" ExternalFlashStatus_T EXTERNAL_FLASH_ReadInstructionPage( uint32_t offset, uint8_t* data,
                                                                      uint32_t length )
 {
@@ -378,6 +391,10 @@ protected:
 
         finish_instruction_upload_status = EXTERNAL_FLASH_STATUS_OK;
         finish_instruction_upload_calls  = 0U;
+
+        update_instruction_upload_expected_length_status = EXTERNAL_FLASH_STATUS_OK;
+        update_instruction_upload_expected_length_calls  = 0U;
+        update_instruction_upload_expected_length_value  = 0U;
 
         read_instruction_page_status = EXTERNAL_FLASH_STATUS_OK;
         read_instruction_page_calls  = 0U;
@@ -790,18 +807,39 @@ TEST_F( FlashManagerTest, InstructionUploadDrainFailureRetainsPageAndReportsFail
     EXPECT_EQ( 2U, write_instruction_page_calls );
 }
 
-TEST_F( FlashManagerTest, InstructionUploadFinishRejectsUnavailableIncompleteAndInvalidState )
+TEST_F( FlashManagerTest, InstructionUploadFinishRejectsUnavailableAndInvalidState )
 {
     EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOT_INITIALISED,
                FLASH_MANAGER_RequestInstructionUploadFinish() );
 
-    PrepareInstructionUpload( TEST_PAGE_SIZE_BYTES );
-    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE,
-               FLASH_MANAGER_RequestInstructionUploadFinish() );
-
+    Initialise();
     flash_manager_context.state = FLASH_MANAGER_STATE_EXECUTING;
     EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE,
                FLASH_MANAGER_RequestInstructionUploadFinish() );
+}
+
+TEST_F( FlashManagerTest, InstructionUploadFinishAcceptsZeroBytesAndEmitsEndOfStream )
+{
+    PrepareInstructionUpload( TEST_PAGE_SIZE_BYTES );
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED,
+               FLASH_MANAGER_RequestInstructionUploadFinish() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD, flash_manager_context.state );
+
+    ASSERT_TRUE( FLASH_MANAGER_FinaliseInstructionUpload() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_IDLE, flash_manager_context.state );
+
+    // Execution preparation with 0 committed instruction bytes
+    FLASH_MANAGER_TEST_SetInstructionLength( 0U );
+    ASSERT_EQ( FLASH_MANAGER_REQUEST_OK,
+               FLASH_MANAGER_RequestExecutionPreparation( TEST_RESULT_CAPACITY_BYTES ) );
+    ASSERT_TRUE( FLASH_MANAGER_PrepareExecution() );
+    EXPECT_EQ( FLASH_MANAGER_STATE_EXECUTING, flash_manager_context.state );
+
+    // First peek from ISR emits END_OF_STREAM immediately
+    const FlashManagerInstructionView_T* view = nullptr;
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_END_OF_STREAM,
+               FLASH_MANAGER_PeekNextInstructionFromISR( &view ) );
+    EXPECT_EQ( FLASH_MANAGER_STATE_EXECUTING, flash_manager_context.state );
 }
 
 TEST_F( FlashManagerTest, InstructionUploadFinishReturnsBusyDuringActiveNandWrite )
@@ -1884,7 +1922,7 @@ TEST_F( FlashManagerTest, ResultTransferRejectsEarlyFinish )
     EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE, FLASH_MANAGER_FinishResultTransfer() );
     ASSERT_EQ( FLASH_MANAGER_RESULT_TRANSFER_OK, FLASH_MANAGER_RequestResultTransferStart() );
 
-    EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE, FLASH_MANAGER_FinishResultTransfer() );
+    EXPECT_EQ( FLASH_MANAGER_RESULT_TRANSFER_INCOMPLETE, FLASH_MANAGER_FinishResultTransfer() );
     EXPECT_EQ( FLASH_MANAGER_STATE_TRANSFERRING_RESULTS, flash_manager_context.state );
 }
 

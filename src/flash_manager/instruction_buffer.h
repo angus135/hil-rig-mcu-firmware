@@ -260,6 +260,9 @@ bool INSTRUCTION_BUFFER_CompleteFillPage( const InstructionBufferPageFillLease_T
 /** Returns the number of unread instruction bytes currently buffered. */
 uint32_t INSTRUCTION_BUFFER_GetBufferedUnreadBytes( void );
 
+/** Returns logical instruction bytes not yet consumed by execution. */
+uint32_t INSTRUCTION_BUFFER_GetUnconsumedBytes( void );
+
 /**
  * @brief Returns a read-only view of the next complete instruction.
  *
@@ -344,6 +347,21 @@ bool INSTRUCTION_BUFFER_PrepareUpload( uint32_t expected_length_bytes );
  * @note This accessor performs no NAND access and uses no RTOS primitives.
  */
 bool INSTRUCTION_BUFFER_GetUploadExpectedLength( uint32_t* expected_length_bytes );
+
+/**
+ * @brief Returns the total accepted host bytes in the prepared instruction upload.
+ *
+ * @param[out] accepted_length_bytes
+ *      Destination for the current accepted stream length.
+ *
+ * @retval true
+ *      Upload mode is prepared and the accepted length was returned.
+ * @retval false
+ *      The output pointer was null or no upload is currently prepared.
+ *
+ * @note This accessor performs no NAND access and uses no RTOS primitives.
+ */
+bool INSTRUCTION_BUFFER_GetUploadAcceptedLength( uint32_t* accepted_length_bytes );
 
 /**
  * @brief Atomically appends one canonical host chunk to upload RAM.

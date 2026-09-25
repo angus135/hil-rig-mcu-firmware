@@ -6,6 +6,7 @@
 
 set(EXECUTION_MANAGER_SOURCES
     execution_manager.c
+    execution_instruction.c
     execution_measurement_adapters.c
     execution_operation_adapters.c
 )
@@ -130,5 +131,25 @@ if(EXECUTION_MANAGER_ENABLE_TESTS AND BUILD_TESTING)
     )
 
     add_test(NAME execution_measurement_adapters_tests COMMAND execution_measurement_adapters_tests)
+
+    add_executable(execution_instruction_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_execution_instruction.cpp
+    )
+
+    target_link_libraries(execution_instruction_tests
+        PRIVATE
+            project_warnings
+            execution_manager
+            gtest
+            gtest_main
+    )
+
+    target_include_directories(execution_instruction_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+
+    add_test(NAME execution_instruction_tests COMMAND execution_instruction_tests)
 
 endif()

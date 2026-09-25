@@ -94,9 +94,6 @@ _Static_assert( ( INSTRUCTION_BUFFER_STORAGE_BYTES % sizeof( uint32_t ) ) == 0U,
 #define INSTRUCTION_BUFFER_COLD_NOINLINE
 #endif
 
-/** Required alignment of instruction headers, operations, and payloads. */
-#define INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES ( 4U )
-
 /* The serialized NAND layout depends on this fixed header width. */
 #if defined( __cplusplus )
 static_assert( sizeof( ExecutionInstructionHeader_T ) == 8U,
@@ -899,6 +896,19 @@ uint32_t INSTRUCTION_BUFFER_GetBufferedUnreadBytes( void )
            - instruction_buffer_context.consumer_stream_offset_bytes;
 }
 
+uint32_t INSTRUCTION_BUFFER_GetUnconsumedBytes( void )
+{
+    if ( !instruction_buffer_context.is_read_prepared
+         || ( instruction_buffer_context.consumer_stream_offset_bytes
+              > instruction_buffer_context.instruction_length_bytes ) )
+    {
+        return 0U;
+    }
+
+    return instruction_buffer_context.instruction_length_bytes
+           - instruction_buffer_context.consumer_stream_offset_bytes;
+}
+
 /**
  * @brief Returns the current instruction view without advancing the stream.
  *
@@ -1077,6 +1087,22 @@ bool INSTRUCTION_BUFFER_GetUploadExpectedLength( uint32_t* expected_length_bytes
 }
 
 /**
+ * @brief Returns the total accepted host bytes in the prepared upload.
+ */
+bool INSTRUCTION_BUFFER_GetUploadAcceptedLength( uint32_t* accepted_length_bytes )
+{
+    if ( ( accepted_length_bytes == NULL ) || !instruction_buffer_context.is_initialised
+         || !instruction_buffer_context.is_upload_prepared )
+    {
+        return false;
+    }
+
+    *accepted_length_bytes = instruction_buffer_context.upload_accepted_length_bytes;
+
+    return true;
+}
+
+/**
  * @brief Atomically appends one complete host chunk to upload RAM.
  */
 InstructionBufferUploadWriteStatus_T INSTRUCTION_BUFFER_WriteUploadBytes( const uint8_t* data,
@@ -1218,13 +1244,17 @@ bool INSTRUCTION_BUFFER_FinaliseUpload( void )
          || ( instruction_buffer_context.page_states[drain_page_index]
               == INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND )
          || ( instruction_buffer_context.upload_accepted_length_bytes
-              != instruction_buffer_context.upload_expected_length_bytes )
+              > instruction_buffer_context.upload_expected_length_bytes )
          || ( instruction_buffer_context.page_size_bytes == 0U )
          || ( instruction_buffer_context.upload_persisted_length_bytes
               > instruction_buffer_context.upload_accepted_length_bytes ) )
     {
         return false;
     }
+
+    /* Snap expected length to the actual accepted host payload */
+    instruction_buffer_context.upload_expected_length_bytes =
+        instruction_buffer_context.upload_accepted_length_bytes;
 
     uint32_t partial_length_bytes = instruction_buffer_context.upload_expected_length_bytes
                                     % instruction_buffer_context.page_size_bytes;

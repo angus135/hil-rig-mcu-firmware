@@ -20,26 +20,53 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "hil_rig_protocol/application/application.h"
 #include "hil_rig_protocol/transport/transport.h"
-#include "hw_usb.h"
 #include "host_interface.h"
+#include "host_process_message.h"
+#include "hw_usb.h"
 #include "rtos_config.h"
+#include "run_state_manager.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
 
+/**
+ * Set to 1 to enable direct length-prefixed USB streaming test path (bypassing Transport
+ * Stop-and-Wait). Set to 0 to use original Transport session & frame layer.
+ */
+#ifndef HOST_INTERFACE_DIRECT_USB_STREAMING
+#define HOST_INTERFACE_DIRECT_USB_STREAMING ( 1 )
+#endif
+
 /** Period between Host Interface task iterations. */
 #define HOST_INTERFACE_PERIOD_MS ( 1U )
 
-/** Capacity of the task-owned staging buffer used to pull bytes from USB. */
-#define HOST_INTERFACE_USB_RECEIVE_CAPACITY ( 512U )
-
 /** Capacity of one complete encoded Application message. */
 #define HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY ( HIL_APPLICATION_DEFAULT_MAX_MESSAGE_SIZE )
+
+/** Length prefix prepended to each Application message in direct USB streaming mode. */
+#define HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE ( 2U )
+
+/** Capacity for one maximum-sized length-prefixed direct USB message. */
+#define HOST_INTERFACE_USB_RECEIVE_CAPACITY                                                        \
+    ( HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY + HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE )
+
+/** Capacity of the underlying USB transmit ring used by one direct batch. */
+#define HOST_INTERFACE_DIRECT_USB_SEND_CAPACITY ( 1024U )
+
+/** Flush threshold for batched direct USB result messages (not a multiple of 64 to avoid ZLP
+ * stall). */
+#define HOST_INTERFACE_DIRECT_USB_FLUSH_THRESHOLD ( 400U )
+#define HOST_INTERFACE_OUTGOING_BACKPRESSURE_TIMEOUT_MS ( 5000U )
+
+_Static_assert( HOST_INTERFACE_DIRECT_USB_FLUSH_THRESHOLD
+                    <= HOST_INTERFACE_DIRECT_USB_SEND_CAPACITY,
+                "Direct USB flush threshold must fit the result batch buffer" );
 
 /**
  * Maximum decode-storage capacity reserved for variable-length Application data.
@@ -47,8 +74,16 @@
  * The Application codec requires this storage to be aligned for the typed data
  * that variable-length message fields may reference after decoding.
  */
+#define HOST_INTERFACE_MAX_UPDATE_OPERATION_COUNT                                                  \
+    ( 1U + HIL_APPLICATION_ANALOG_OUTPUT_CHANNEL_COUNT + HIL_APPLICATION_PWM_OUTPUT_CHANNEL_COUNT  \
+      + HIL_APPLICATION_UART_CHANNEL_COUNT + HIL_APPLICATION_SPI_CHANNEL_COUNT                     \
+      + HIL_APPLICATION_CAN_CHANNEL_COUNT )
+
 #define HOST_INTERFACE_APPLICATION_DECODE_CAPACITY                                                 \
-    ( HIL_APPLICATION_ABSOLUTE_MAX_VARIABLE_DATA_SIZE )
+    ( HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY                                                  \
+      + ( HOST_INTERFACE_MAX_UPDATE_OPERATION_COUNT                                                \
+          * sizeof( HIL_Application_Logical_Operation_T ) )                                        \
+      + HIL_APPLICATION_DECODE_STORAGE_ALIGNMENT - 1U )
 
 /** Capacity reserved for the caller-owned Transport workspace. */
 #define HOST_INTERFACE_TRANSPORT_WORKSPACE_CAPACITY ( 4096U )
@@ -61,10 +96,23 @@
 
 /** Maximum number of Transport reliable-delivery retries. */
 #define HOST_INTERFACE_TRANSPORT_MAX_RETRIES ( 5U )
+#define HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE 255
+
+#if defined( __cplusplus )
+static_assert( HOST_INTERFACE_USB_RECEIVE_CAPACITY
+                   >= ( HIL_APPLICATION_ABSOLUTE_MAX_MESSAGE_SIZE
+                        + HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE ),
+               "Direct USB receive staging cannot hold a maximum-sized framed message" );
+#else
+_Static_assert( HOST_INTERFACE_USB_RECEIVE_CAPACITY
+                    >= ( HIL_APPLICATION_ABSOLUTE_MAX_MESSAGE_SIZE
+                         + HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE ),
+                "Direct USB receive staging cannot hold a maximum-sized framed message" );
+#endif
 
 #ifndef TEST_BUILD
-#include "main.h"
-#define HOST_INTERFACE_Error_Handler() Error_Handler()
+#define HOST_INTERFACE_Error_Handler()                                                             \
+    ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR )
 #else
 #define HOST_INTERFACE_Error_Handler()
 #endif
@@ -124,8 +172,8 @@ typedef struct
     /** Application codec policy copied during initialization. */
     HIL_Application_Config_T config;
 
-    /** Encoded bytes prepared for one outgoing Application message. */
-    uint8_t send_byte_span[HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY];
+    /** Length-prefixed encoded messages batched for direct USB transmission. */
+    uint8_t send_byte_span[HOST_INTERFACE_DIRECT_USB_SEND_CAPACITY];
 
     /** Number of valid bytes currently in send_byte_span. */
     size_t used_send_byte_span_size;
@@ -265,7 +313,14 @@ typedef struct
  *------------------------------------------------------------------------------
  */
 
-TaskHandle_t* HostInterfaceTaskHandle = NULL;  // NOLINT(readability-identifier-naming)
+TaskHandle_t HostInterfaceTaskHandle = NULL;  // NOLINT(readability-identifier-naming)
+
+/**-----------------------------------------------------------------------------
+ *  Private (static) Variables
+ *------------------------------------------------------------------------------
+ */
+
+static HostInterfaceStatus_T s_host_interface_status = { 0 };
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -535,6 +590,159 @@ static void HOST_INTERFACE_Protocol_Process(
     // before the Host Interface inspects the Transport queues.
     HW_USB_Monitor_Process();
 
+#if HOST_INTERFACE_DIRECT_USB_STREAMING
+    /* =========================================================================
+     * 1. DIRECT USB RECEIVE (Bypasses HIL_TRANSPORT_Receive_Bytes & Process)
+     * ========================================================================= */
+    if ( HW_USB_Get_Connection_State() == HW_USB_CONNECTION_STATE_ACTIVE )
+    {
+        /* Compact unconsumed bytes if offset has advanced */
+        if ( protocol_state->usb.receive_offset > 0U )
+        {
+            const uint32_t remaining =
+                protocol_state->usb.receive_count - protocol_state->usb.receive_offset;
+            if ( remaining > 0U )
+            {
+                ( void )memmove(
+                    &protocol_state->usb.receive_buffer[0],
+                    &protocol_state->usb.receive_buffer[protocol_state->usb.receive_offset],
+                    remaining );
+            }
+            protocol_state->usb.receive_count  = remaining;
+            protocol_state->usb.receive_offset = 0U;
+        }
+
+        /* Refill staging buffer if there is available space */
+        if ( protocol_state->usb.receive_count < sizeof( protocol_state->usb.receive_buffer ) )
+        {
+            const uint32_t rx = HW_USB_Receive(
+                &protocol_state->usb.receive_buffer[protocol_state->usb.receive_count],
+                ( uint32_t )( sizeof( protocol_state->usb.receive_buffer )
+                              - protocol_state->usb.receive_count ) );
+            protocol_state->usb.receive_count += rx;
+        }
+
+        /* Process all complete 2-byte-length framed Application messages */
+        if ( can_consume_incoming_message
+             && ( ( protocol_state->usb.receive_count - protocol_state->usb.receive_offset )
+                  >= 2U ) )
+        {
+            const uint8_t* const frame =
+                &protocol_state->usb.receive_buffer[protocol_state->usb.receive_offset];
+            const uint16_t msg_len         = ( uint16_t )frame[0] | ( ( uint16_t )frame[1] << 8 );
+            const size_t   total_frame_len = ( size_t )msg_len + 2U;
+            const size_t   bytes_available = ( size_t )( protocol_state->usb.receive_count
+                                                       - protocol_state->usb.receive_offset );
+
+            if ( bytes_available >= total_frame_len )
+            {
+                size_t required_decode_capacity    = 0U;
+                protocol_state->application.status = HIL_APPLICATION_Decode_Message(
+                    &protocol_state->application.context, &frame[2], msg_len, incoming_message,
+                    protocol_state->application.receive_data,
+                    sizeof( protocol_state->application.receive_data ), &required_decode_capacity );
+
+                protocol_state->usb.receive_offset += ( uint32_t )total_frame_len;
+                if ( protocol_state->application.status == HIL_APPLICATION_STATUS_OK )
+                {
+                    *incoming_message_available = true;
+                }
+            }
+        }
+    }
+
+    /* =========================================================================
+     * 2. DIRECT USB TRANSMIT (Chunked Batch Streaming over USB CDC)
+     * ========================================================================= */
+    if ( HW_USB_Get_Connection_State() == HW_USB_CONNECTION_STATE_ACTIVE )
+    {
+        if ( outgoing_message != NULL )
+        {
+            size_t encoded_message_size        = 0U;
+            protocol_state->application.status = HIL_APPLICATION_Encoded_Size(
+                &protocol_state->application.context, outgoing_message, &encoded_message_size );
+
+            if ( protocol_state->application.status != HIL_APPLICATION_STATUS_OK
+                 || encoded_message_size > ( sizeof( protocol_state->application.send_byte_span )
+                                             - HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE ) )
+            {
+                HOST_INTERFACE_Error_Handler();
+                return;
+            }
+
+            const size_t framed_message_size =
+                HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE + encoded_message_size;
+
+            // Flush the current batch before appending when this complete frame will not fit.
+            if ( ( sizeof( protocol_state->application.send_byte_span )
+                   - protocol_state->application.used_send_byte_span_size )
+                 < framed_message_size )
+            {
+                if ( protocol_state->application.used_send_byte_span_size > 0U )
+                {
+                    if ( !HW_USB_Transmit(
+                             protocol_state->application.send_byte_span,
+                             ( uint16_t )protocol_state->application.used_send_byte_span_size ) )
+                    {
+                        return;
+                    }
+                    protocol_state->application.used_send_byte_span_size = 0U;
+                }
+            }
+
+            const size_t current_offset = protocol_state->application.used_send_byte_span_size;
+            const size_t available_space =
+                sizeof( protocol_state->application.send_byte_span ) - current_offset;
+
+            size_t payload_len                 = 0U;
+            protocol_state->application.status = HIL_APPLICATION_Encode_Message(
+                &protocol_state->application.context, outgoing_message,
+                &protocol_state->application
+                     .send_byte_span[current_offset + HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE],
+                available_space - HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE, &payload_len );
+
+            if ( protocol_state->application.status == HIL_APPLICATION_STATUS_OK )
+            {
+                // Prepend 2-byte Little Endian length header
+                protocol_state->application.send_byte_span[current_offset] =
+                    ( uint8_t )( payload_len & 0xFFU );
+                protocol_state->application.send_byte_span[current_offset + 1U] =
+                    ( uint8_t )( ( payload_len >> 8 ) & 0xFFU );
+
+                protocol_state->application.used_send_byte_span_size +=
+                    HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE + payload_len;
+                *outgoing_message_accepted = true;
+            }
+            else if ( protocol_state->application.status == HIL_APPLICATION_STATUS_INTERNAL_ERROR
+                      || protocol_state->application.status
+                             == HIL_APPLICATION_STATUS_BUFFER_TOO_SMALL )
+            {
+                HOST_INTERFACE_Error_Handler();
+            }
+
+            // Flush immediately into USB transmit ring buffer
+            if ( protocol_state->application.used_send_byte_span_size > 0U )
+            {
+                if ( HW_USB_Transmit(
+                         protocol_state->application.send_byte_span,
+                         ( uint16_t )protocol_state->application.used_send_byte_span_size ) )
+                {
+                    protocol_state->application.used_send_byte_span_size = 0U;
+                }
+            }
+        }
+        else if ( protocol_state->application.used_send_byte_span_size > 0U )
+        {
+            // Flush any remaining buffered bytes when no new message is queued
+            if ( HW_USB_Transmit(
+                     protocol_state->application.send_byte_span,
+                     ( uint16_t )protocol_state->application.used_send_byte_span_size ) )
+            {
+                protocol_state->application.used_send_byte_span_size = 0U;
+            }
+        }
+    }
+#else
     // =======------- DRAIN TRANSPORT EVENTS
     // Event draining is mandatory service work. Transport uses a bounded FIFO;
     // leaving events unread can prevent later state transitions from publishing
@@ -670,6 +878,8 @@ static void HOST_INTERFACE_Protocol_Process(
                     sizeof( protocol_state->application.receive_data ),
                     &protocol_state->application.used_receive_data_size );
 
+                s_host_interface_status.last_decode_status = protocol_state->application.status;
+
                 if ( protocol_state->application.status == HIL_APPLICATION_STATUS_OK )
                 {
                     // The caller now owns the decision to consume or copy this
@@ -704,11 +914,17 @@ static void HOST_INTERFACE_Protocol_Process(
                                             sizeof( protocol_state->application.send_byte_span ),
                                             &protocol_state->application.used_send_byte_span_size );
 
+        s_host_interface_status.last_encode_status = protocol_state->application.status;
+
         if ( protocol_state->application.status == HIL_APPLICATION_STATUS_OK )
         {
+            s_host_interface_status.last_encode_size =
+                protocol_state->application.used_send_byte_span_size;
             protocol_state->transport.status = HIL_TRANSPORT_Submit_Application_Data(
                 &protocol_state->transport.context, protocol_state->application.send_byte_span,
                 protocol_state->application.used_send_byte_span_size );
+
+            s_host_interface_status.transport_last_submit_status = protocol_state->transport.status;
 
             if ( protocol_state->transport.status == HIL_TRANSPORT_STATUS_OK )
             {
@@ -724,10 +940,14 @@ static void HOST_INTERFACE_Protocol_Process(
                 HOST_INTERFACE_Error_Handler();
             }
         }
-        else if ( protocol_state->application.status == HIL_APPLICATION_STATUS_INTERNAL_ERROR
-                  || protocol_state->application.status == HIL_APPLICATION_STATUS_BUFFER_TOO_SMALL )
+        else
         {
-            HOST_INTERFACE_Error_Handler();
+            s_host_interface_status.last_encode_failed_type = ( uint8_t )outgoing_message->type;
+            if ( protocol_state->application.status == HIL_APPLICATION_STATUS_INTERNAL_ERROR
+                 || protocol_state->application.status == HIL_APPLICATION_STATUS_BUFFER_TOO_SMALL )
+            {
+                HOST_INTERFACE_Error_Handler();
+            }
         }
     }
 
@@ -801,6 +1021,7 @@ static void HOST_INTERFACE_Protocol_Process(
             HOST_INTERFACE_Error_Handler();
         }
     }
+#endif
 }
 
 /**
@@ -823,7 +1044,13 @@ static void HOST_INTERFACE_Protocol_Process(
  */
 static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const protocol_state )
 {
-    // Clear stale parser, codec, USB, clock, and output-ownership state before
+    if ( protocol_state == NULL )
+    {
+        HOST_INTERFACE_Error_Handler();
+        return;
+    }
+
+    // Explicitly zero the caller-owned struct before configuring or
     // initializing each layer. This also gives all optional state deterministic
     // zero values before the public APIs populate their contexts.
     *protocol_state = ( HOST_INTERFACE_Protocol_State_T ){ 0 };
@@ -833,7 +1060,7 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
     // servicing depend on a valid low-level connection abstraction.
     if ( !HW_USB_Init() )
     {
-        HOST_INTERFACE_Error_Handler();
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_USB_INIT );
     }
 
     // =======------- INITIALISE APPLICATION LAYER
@@ -843,14 +1070,14 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
         HIL_APPLICATION_Default_Config( &protocol_state->application.config );
     if ( protocol_state->application.status != HIL_APPLICATION_STATUS_OK )
     {
-        HOST_INTERFACE_Error_Handler();
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_CODEC_INIT );
     }
 
     protocol_state->application.status = HIL_APPLICATION_Init(
         &protocol_state->application.context, &protocol_state->application.config );
     if ( protocol_state->application.status != HIL_APPLICATION_STATUS_OK )
     {
-        HOST_INTERFACE_Error_Handler();
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_CODEC_INIT );
     }
 
     // =======------- INITIALISE TRANSPORT LAYER
@@ -872,7 +1099,7 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
          || protocol_state->transport.required_workspace_size
                 > sizeof( protocol_state->transport.workspace ) )
     {
-        HOST_INTERFACE_Error_Handler();
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_TRANSPORT_INIT );
     }
 
     protocol_state->transport.storage.workspace = protocol_state->transport.workspace;
@@ -886,7 +1113,7 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
                             &protocol_state->transport.config, &protocol_state->transport.storage );
     if ( protocol_state->transport.status != HIL_TRANSPORT_STATUS_OK )
     {
-        HOST_INTERFACE_Error_Handler();
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_TRANSPORT_INIT );
     }
 
     // Start both periodic scheduling and logical Transport time from the same
@@ -899,6 +1126,57 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Notify the Host interface to send some message
+ *
+ */
+bool HOST_INTERFACE_Notify( uint32_t notification )
+{
+    if ( HostInterfaceTaskHandle == NULL )
+    {
+        return false;
+    }
+
+    return xTaskNotify( HostInterfaceTaskHandle, notification, eSetBits ) == pdPASS;
+}
+
+void HOST_INTERFACE_Reset( void )
+{
+    ( void )HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_RESET );
+}
+
+static uint32_t HOST_INTERFACE_GetMessageTick( const HIL_Application_Message_T* const msg )
+{
+    if ( msg == NULL )
+    {
+        return 0U;
+    }
+    switch ( msg->type )
+    {
+        case HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION:
+            return msg->body.test_instruction.tick_number;
+        case HIL_APPLICATION_MESSAGE_TYPE_UPDATE_INSTRUCTION:
+            return msg->body.update_instruction.tick_number;
+        case HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT:
+            return msg->body.test_result.tick_number;
+        case HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT:
+            return msg->body.variable_test_result.tick_number;
+        case HIL_APPLICATION_MESSAGE_TYPE_RESPONSE:
+            return msg->body.response.tick_number;
+        case HIL_APPLICATION_MESSAGE_TYPE_INVALID:
+        case HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_REQUEST:
+        case HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_RESPONSE:
+        case HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION:
+        case HIL_APPLICATION_MESSAGE_TYPE_EXECUTION_CONTROL:
+        case HIL_APPLICATION_MESSAGE_TYPE_GLOBAL_CONTROL:
+        case HIL_APPLICATION_MESSAGE_TYPE_FINALIZE_TEST_UPLOAD:
+        case HIL_APPLICATION_MESSAGE_TYPE_ERROR:
+        case HIL_APPLICATION_MESSAGE_TYPE_RESERVED:
+        default:
+            return 0U;
+    }
+}
 
 /**
  * @brief Host Interface Task
@@ -921,12 +1199,25 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
  */
 void HOST_INTERFACE_Task( void* task_parameters )
 {
-    static HOST_INTERFACE_Protocol_State_T protocol_state           = { 0 };
-    static HIL_Application_Message_T       outgoing_message         = { 0 };
-    static HIL_Application_Message_T       incoming_message         = { 0 };
-    bool                                   outgoing_message_pending = false;
+    static HOST_INTERFACE_Protocol_State_T protocol_state                             = { 0 };
+    static HIL_Application_Message_T       outgoing_message                           = { 0 };
+    static HIL_Application_Message_T       incoming_message                           = { 0 };
+    bool                                   outgoing_message_pending                   = false;
+    static uint8_t outgoing_variable_data[HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE] = { 0 };
 
     ( void )task_parameters;
+
+    uint32_t notifications          = 0U;
+    uint32_t carry_on_notifications = 0U;
+    uint32_t expected_tick_count    = 0U;
+
+    TickType_t overflow_timer = xTaskGetTickCount();
+
+    bool can_consume_incoming = true;
+
+    static HIL_Application_Message_T overflow_outgoing_message = { 0 };
+    HostInterfaceTaskHandle                                    = xTaskGetCurrentTaskHandle();
+
     HOST_INTERFACE_Protocol_Init( &protocol_state );
 
     while ( true )
@@ -934,6 +1225,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
         // These results belong to one service cycle. A failed outgoing submit
         // leaves the pending message unchanged, while incoming availability is
         // reported only for a newly decoded message from this cycle.
+        notifications                   = 0U;
         bool outgoing_message_accepted  = false;
         bool incoming_message_available = false;
 
@@ -941,20 +1233,301 @@ void HOST_INTERFACE_Task( void* task_parameters )
         // cycle. This argument is intentionally separate from the output
         // availability flag: future application dispatch code can provide
         // backpressure without stopping USB/Transport service.
-        HOST_INTERFACE_Protocol_Process(
-            &protocol_state, outgoing_message_pending ? &outgoing_message : NULL,
-            &outgoing_message_accepted, true, &incoming_message, &incoming_message_available );
+        HOST_INTERFACE_Protocol_Process( &protocol_state,
+                                         outgoing_message_pending ? &outgoing_message : NULL,
+                                         &outgoing_message_accepted, can_consume_incoming,
+                                         &incoming_message, &incoming_message_available );
 
-        if ( outgoing_message_accepted )
+        ( void )xTaskNotifyWait( 0U, UINT32_MAX, &notifications, 0U );
+        carry_on_notifications = carry_on_notifications | notifications;
+
+        if ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESET ) != 0U )
         {
-            outgoing_message         = ( HIL_Application_Message_T ){ 0 };
-            outgoing_message_pending = false;
+            carry_on_notifications &= ( uint32_t ) ~( HOST_INTERFACE_NOTIFY_RESET );
+            outgoing_message_pending                         = false;
+            can_consume_incoming                             = true;
+            expected_tick_count                              = 0U;
+            s_host_interface_status.is_faulted               = false;
+            s_host_interface_status.instruction_phase_active = false;
+            s_host_interface_status.result_phase_active      = false;
+            HOST_INTERFACE_Reset_Session();
+        }
+
+        if ( ( RUN_STATE_MANAGER_GetState() == RUN_STATE_IDLE )
+             && s_host_interface_status.is_faulted )
+        {
+            s_host_interface_status.is_faulted = false;
         }
 
         if ( incoming_message_available )
         {
+            s_host_interface_status.rx_message_count++;
+            s_host_interface_status.last_rx_message_type = ( uint8_t )incoming_message.type;
+            if ( incoming_message.type == HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION )
+            {
+                s_host_interface_status.last_rx_tick =
+                    incoming_message.body.test_instruction.tick_number;
+                if ( !s_host_interface_status.instruction_phase_active )
+                {
+                    s_host_interface_status.instruction_phase_active      = true;
+                    s_host_interface_status.instruction_start_tick        = xTaskGetTickCount();
+                    s_host_interface_status.instruction_end_tick          = 0U;
+                    s_host_interface_status.instruction_rx_count          = 0U;
+                    s_host_interface_status.instruction_duration_ms       = 0U;
+                    s_host_interface_status.instruction_rate_msgs_per_sec = 0U;
+                }
+                s_host_interface_status.instruction_rx_count++;
+                const uint32_t elapsed_ticks =
+                    xTaskGetTickCount() - s_host_interface_status.instruction_start_tick;
+                s_host_interface_status.instruction_duration_ms = elapsed_ticks;
+                if ( elapsed_ticks > 0U )
+                {
+                    s_host_interface_status.instruction_rate_msgs_per_sec =
+                        ( s_host_interface_status.instruction_rx_count * 1000U ) / elapsed_ticks;
+                }
+                else
+                {
+                    s_host_interface_status.instruction_rate_msgs_per_sec =
+                        s_host_interface_status.instruction_rx_count * 1000U;
+                }
+            }
+            else if ( incoming_message.type == HIL_APPLICATION_MESSAGE_TYPE_FINALIZE_TEST_UPLOAD )
+            {
+                if ( s_host_interface_status.instruction_phase_active )
+                {
+                    s_host_interface_status.instruction_phase_active = false;
+                    s_host_interface_status.instruction_end_tick     = xTaskGetTickCount();
+                    const uint32_t elapsed_ticks = s_host_interface_status.instruction_end_tick
+                                                   - s_host_interface_status.instruction_start_tick;
+                    s_host_interface_status.instruction_duration_ms = elapsed_ticks;
+                    if ( elapsed_ticks > 0U )
+                    {
+                        s_host_interface_status.instruction_rate_msgs_per_sec =
+                            ( s_host_interface_status.instruction_rx_count * 1000U )
+                            / elapsed_ticks;
+                    }
+                    else
+                    {
+                        s_host_interface_status.instruction_rate_msgs_per_sec =
+                            s_host_interface_status.instruction_rx_count * 1000U;
+                    }
+                }
+            }
         }
 
-        vTaskDelayUntil( &protocol_state.initial_ticks, pdMS_TO_TICKS( HOST_INTERFACE_PERIOD_MS ) );
+        if ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ) != 0U )
+        {
+            if ( !s_host_interface_status.result_phase_active )
+            {
+                s_host_interface_status.result_phase_active      = true;
+                s_host_interface_status.result_start_tick        = xTaskGetTickCount();
+                s_host_interface_status.result_end_tick          = 0U;
+                s_host_interface_status.result_tx_count          = 0U;
+                s_host_interface_status.result_duration_ms       = 0U;
+                s_host_interface_status.result_rate_msgs_per_sec = 0U;
+            }
+        }
+
+        if ( outgoing_message_accepted )
+        {
+            s_host_interface_status.tx_message_count++;
+            s_host_interface_status.last_tx_message_type = ( uint8_t )outgoing_message.type;
+            s_host_interface_status.last_tx_tick =
+                HOST_INTERFACE_GetMessageTick( &outgoing_message );
+            outgoing_message_pending = false;
+
+            if ( s_host_interface_status.result_phase_active
+                 && ( ( outgoing_message.type == HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT )
+                      || ( outgoing_message.type
+                           == HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT ) ) )
+            {
+                s_host_interface_status.result_tx_count++;
+                const uint32_t elapsed_ticks =
+                    xTaskGetTickCount() - s_host_interface_status.result_start_tick;
+                s_host_interface_status.result_duration_ms = elapsed_ticks;
+                if ( elapsed_ticks > 0U )
+                {
+                    s_host_interface_status.result_rate_msgs_per_sec =
+                        ( s_host_interface_status.result_tx_count * 1000U ) / elapsed_ticks;
+                }
+                else
+                {
+                    s_host_interface_status.result_rate_msgs_per_sec =
+                        s_host_interface_status.result_tx_count * 1000U;
+                }
+            }
+        }
+
+        if ( s_host_interface_status.result_phase_active
+             && ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ) == 0U ) )
+        {
+            s_host_interface_status.result_phase_active = false;
+            s_host_interface_status.result_end_tick     = xTaskGetTickCount();
+            const uint32_t elapsed_ticks =
+                s_host_interface_status.result_end_tick - s_host_interface_status.result_start_tick;
+            s_host_interface_status.result_duration_ms = elapsed_ticks;
+            if ( elapsed_ticks > 0U )
+            {
+                s_host_interface_status.result_rate_msgs_per_sec =
+                    ( s_host_interface_status.result_tx_count * 1000U ) / elapsed_ticks;
+            }
+            else
+            {
+                s_host_interface_status.result_rate_msgs_per_sec =
+                    s_host_interface_status.result_tx_count * 1000U;
+            }
+        }
+
+        // check if we are overflowing (inverse of can_consume_incoming)
+        if ( can_consume_incoming )
+        {
+            const bool outgoing_available    = !outgoing_message_pending;
+            bool       new_response_required = false;
+            if ( HOST_INTERFACE_process_message(
+                     incoming_message_available, &incoming_message, outgoing_available,
+                     &outgoing_message, &overflow_outgoing_message, &new_response_required,
+                     outgoing_variable_data, HOST_INTERFACE_OUTGOING_VARIABLE_DATA_SIZE,
+                     &carry_on_notifications, &expected_tick_count )
+                 == HOST_INTERFACE_STATUS_OUTGOING_REQUIRED )
+            {
+                // We are overflowing, so stop processing incomming messages
+                can_consume_incoming = false;
+                overflow_timer       = xTaskGetTickCount();
+            }
+            else if ( new_response_required )
+            {
+                outgoing_message_pending = true;
+                if ( ( outgoing_message.type == HIL_APPLICATION_MESSAGE_TYPE_RESPONSE )
+                     && ( outgoing_message.body.response.outcome
+                          == HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED ) )
+                {
+                    s_host_interface_status.rejected_instruction_count++;
+                    s_host_interface_status.last_rejected_tick =
+                        outgoing_message.body.response.tick_number;
+                    s_host_interface_status.last_rejected_reason =
+                        ( uint32_t )outgoing_message.body.response.reason;
+                }
+            }
+        }
+        else
+        {
+            // if we are overflowing poll outgoing_message_accepted for 100ms Then fault
+            if ( outgoing_message_accepted )
+            {
+                // overflow over so pass the latest output message and return to normal
+                outgoing_message         = overflow_outgoing_message;
+                outgoing_message_pending = true;
+                can_consume_incoming     = true;
+                if ( ( outgoing_message.type == HIL_APPLICATION_MESSAGE_TYPE_RESPONSE )
+                     && ( outgoing_message.body.response.outcome
+                          == HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED ) )
+                {
+                    s_host_interface_status.rejected_instruction_count++;
+                    s_host_interface_status.last_rejected_tick =
+                        outgoing_message.body.response.tick_number;
+                    s_host_interface_status.last_rejected_reason =
+                        ( uint32_t )outgoing_message.body.response.reason;
+                }
+            }
+            else if ( xTaskGetTickCount() - overflow_timer
+                      >= pdMS_TO_TICKS( HOST_INTERFACE_OUTGOING_BACKPRESSURE_TIMEOUT_MS ) )
+            {
+                // Outgoing message overflow timeout: record snapshot and transition RSM to FAULT
+                s_host_interface_status.is_faulted = true;
+                s_host_interface_status.last_fault_reason =
+                    RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED;
+                s_host_interface_status.response_blocked_count++;
+                s_host_interface_status.last_blocked_message_type =
+                    ( uint8_t )overflow_outgoing_message.type;
+                s_host_interface_status.last_blocked_message_tick =
+                    HOST_INTERFACE_GetMessageTick( &overflow_outgoing_message );
+
+                ( void )RUN_STATE_MANAGER_RequestFault(
+                    RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED );
+
+                // Clear the blocked state and resume consumption so task stays healthy
+                can_consume_incoming     = true;
+                outgoing_message_pending = false;
+            }
+        }
+
+        HIL_Transport_Status_Snapshot_T transport_snapshot = { 0 };
+        ( void )HIL_TRANSPORT_Get_Status( &protocol_state.transport.context, &transport_snapshot );
+
+        s_host_interface_status.is_initialized       = true;
+        s_host_interface_status.usb_connection_state = HW_USB_Get_Connection_State();
+        s_host_interface_status.usb_connected = ( s_host_interface_status.usb_connection_state
+                                                  != HW_USB_CONNECTION_STATE_DISCONNECTED );
+        s_host_interface_status.usb_rx_stream_used_bytes = HW_USB_Get_Receive_Stream_Used_Bytes();
+        s_host_interface_status.can_consume_incoming     = can_consume_incoming;
+        s_host_interface_status.outgoing_message_pending = outgoing_message_pending;
+        s_host_interface_status.outgoing_pending_message_type =
+            outgoing_message_pending ? ( uint8_t )outgoing_message.type : 0U;
+        s_host_interface_status.outgoing_pending_tick =
+            outgoing_message_pending ? HOST_INTERFACE_GetMessageTick( &outgoing_message ) : 0U;
+        s_host_interface_status.is_overflowing = !can_consume_incoming;
+        s_host_interface_status.overflow_message_type =
+            !can_consume_incoming ? ( uint8_t )overflow_outgoing_message.type : 0U;
+        s_host_interface_status.overflow_message_tick =
+            !can_consume_incoming ? HOST_INTERFACE_GetMessageTick( &overflow_outgoing_message )
+                                  : 0U;
+        s_host_interface_status.overflow_duration_ms =
+            !can_consume_incoming ? ( uint32_t )( xTaskGetTickCount() - overflow_timer ) : 0U;
+        s_host_interface_status.expected_tick_count     = expected_tick_count;
+        s_host_interface_status.carry_on_notifications  = carry_on_notifications;
+        s_host_interface_status.transport_session_state = transport_snapshot.session_state;
+        s_host_interface_status.transport_reliable_pending =
+            ( transport_snapshot.reliable_delivery_pending != 0U );
+        s_host_interface_status.transport_last_failure = transport_snapshot.last_failure;
+
+        /*
+         * TODO: When in the result transfer phase (FLASH_MANAGER_STATE_TRANSFERRING_RESULTS),
+         *       if !outgoing_message_pending:
+         *
+         *       HIL_Application_Message_T result_msg;
+         *       Result_Message_Producer_Status_T res_status =
+         *           RESULT_MESSAGE_PRODUCER_ProduceNextMessage(&result_msg);
+         *
+         *       if (res_status == RESULT_MESSAGE_PRODUCER_STATUS_OK) {
+         *           result_msg.test_id = active_test_id; // Stamp active Test ID
+         *           outgoing_message = result_msg;
+         *           outgoing_message_pending = true;
+         *       } else if (res_status == RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM) {
+         *           FLASH_MANAGER_FinishResultTransfer();
+         *       }
+         */
+
+        // For all active work (uploads, control traffic, and result streaming),
+        // yield with taskYIELD() to maximize throughput (10k+ msgs/s).
+        // Only sleep with vTaskDelay(1) when idle or when in USB overflow.
+        const bool is_active_work =
+            can_consume_incoming
+            && ( outgoing_message_pending || ( HW_USB_Get_Receive_Stream_Used_Bytes() > 0U )
+                 || ( protocol_state.usb.receive_offset < protocol_state.usb.receive_count )
+                 || ( protocol_state.application.used_send_byte_span_size > 0U )
+                 || ( ( carry_on_notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER ) != 0U ) );
+
+        if ( is_active_work )
+        {
+            s_host_interface_status.effective_period_ms = 0U;
+            taskYIELD();
+        }
+        else
+        {
+            s_host_interface_status.effective_period_ms = HOST_INTERFACE_PERIOD_MS;
+            vTaskDelay( pdMS_TO_TICKS( HOST_INTERFACE_PERIOD_MS ) );
+        }
+    }
+}
+
+void HOST_INTERFACE_GetStatus( HostInterfaceStatus_T* status )
+{
+    if ( status != NULL )
+    {
+        VARIABLE_RESULT_MESSAGE_PRODUCER_GetDiagnostics(
+            &s_host_interface_status.var_producer_diags );
+        s_host_interface_status.usb_connection_state     = HW_USB_Get_Connection_State();
+        s_host_interface_status.usb_rx_stream_used_bytes = HW_USB_Get_Receive_Stream_Used_Bytes();
+        *status                                          = s_host_interface_status;
     }
 }

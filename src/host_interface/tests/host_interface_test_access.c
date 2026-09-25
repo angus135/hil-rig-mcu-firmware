@@ -9,8 +9,58 @@
 #include <stdint.h>
 
 #include "host_interface_test_access.h"
-
+#define HOST_INTERFACE_DIRECT_USB_STREAMING ( 0 )
 #include "../host_interface.c"  // NOLINT
+
+/* The Host Interface integration tests exercise the protocol service loop
+ * directly. Keep task-level message dispatch out of this white-box target. */
+HOST_Interface_Status_T HOST_INTERFACE_process_message(
+    bool incoming_message_available, const HIL_Application_Message_T* incoming_message,
+    bool outgoing_message_accepted, HIL_Application_Message_T* outgoing_message,
+    HIL_Application_Message_T* overflow_outgoing_message, bool* response_required, uint8_t* data,
+    size_t data_size, uint32_t* notifications, uint32_t* expected_tick_count )
+{
+    ( void )incoming_message_available;
+    ( void )incoming_message;
+    ( void )outgoing_message_accepted;
+    ( void )outgoing_message;
+    ( void )overflow_outgoing_message;
+    ( void )response_required;
+    ( void )data;
+    ( void )data_size;
+    ( void )notifications;
+    ( void )expected_tick_count;
+    return HOST_INTERFACE_STATUS_OK;
+}
+
+void HOST_INTERFACE_Reset_Session( void )
+{
+}
+
+const HostTestSession_T* HOST_INTERFACE_Get_Session( void )
+{
+    static const HostTestSession_T s_stub_session = { 0 };
+    return &s_stub_session;
+}
+
+bool RUN_STATE_MANAGER_RequestFault( RunStateFaultReason_T reason )
+{
+    ( void )reason;
+    return true;
+}
+
+RunState_T RUN_STATE_MANAGER_GetState( void )
+{
+    return RUN_STATE_IDLE;
+}
+
+void VARIABLE_RESULT_MESSAGE_PRODUCER_GetDiagnostics( VariableResultProducerDiagnostics_T* diags )
+{
+    if ( diags != NULL )
+    {
+        ( void )memset( diags, 0, sizeof( *diags ) );
+    }
+}
 
 static HOST_INTERFACE_Protocol_State_T s_protocol_state;
 

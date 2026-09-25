@@ -385,6 +385,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurementsProfiled(
         if ( elapsed_cycles > timing->maximum_cycles )
         {
             timing->maximum_cycles = elapsed_cycles;
+            timing->max_timestamp  = timestamp;
         }
 
         if ( !accepted )
@@ -404,6 +405,7 @@ void EXECUTION_MEASUREMENT_ADAPTER_ResetTiming( void )
         execution_measurement_timing[type].sample_count   = 0U;
         execution_measurement_timing[type].total_cycles   = 0U;
         execution_measurement_timing[type].maximum_cycles = 0U;
+        execution_measurement_timing[type].max_timestamp  = 0U;
     }
 }
 
@@ -419,6 +421,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_GetTiming( ExecutionMeasurementType_T    type
     timing->sample_count   = execution_measurement_timing[type].sample_count;
     timing->total_cycles   = execution_measurement_timing[type].total_cycles;
     timing->maximum_cycles = execution_measurement_timing[type].maximum_cycles;
+    timing->max_timestamp  = execution_measurement_timing[type].max_timestamp;
     taskEXIT_CRITICAL();
     return true;
 }

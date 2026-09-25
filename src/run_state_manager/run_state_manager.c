@@ -21,6 +21,7 @@
 #include "exec_can.h"
 #include "exec_spi.h"
 #include "exec_uart.h"
+#include "execution_instruction.h"
 #include "execution_manager.h"
 #include "flash_manager.h"
 #include "hw_timer.h"
@@ -30,6 +31,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "hw_can.h"
+#include "host_interface.h"
 
 #define RUN_STATE_TAIL_MARGIN_NUMERATOR ( 120U )
 #define RUN_STATE_TAIL_MARGIN_DENOMINATOR ( 100U )
@@ -53,6 +55,7 @@
 #define RUN_STATE_MANAGER_NOTIFY_DISCARD_RESULTS ( 1UL << 9U )
 
 #define RUN_STATE_MANAGER_PENDING_POLL_MS ( 10U )
+#define RUN_STATE_MANAGER_INSTRUCTION_UPLOAD_TIMEOUT_MS ( 15000U )
 #define RUN_STATE_MANAGER_CONFIGURATION_TIMEOUT_MS ( 15000U )
 #define RUN_STATE_MANAGER_EXECUTION_PREPARATION_TIMEOUT_MS ( 15000U )
 #define RUN_STATE_MANAGER_DRIVER_START_TIMEOUT_MS ( 15000U )
@@ -76,6 +79,8 @@
 typedef enum
 {
     RUN_STATE_PENDING_NONE = 0,
+    RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION,
+    RUN_STATE_PENDING_INSTRUCTION_UPLOAD_FINALISATION,
     RUN_STATE_PENDING_CONFIGURATION,
     RUN_STATE_PENDING_EXECUTION_PREPARATION,
     RUN_STATE_PENDING_DRIVER_START,
@@ -89,6 +94,7 @@ typedef struct
 {
     uint32_t                tick_count;
     RunStateFrequencyMode_T frequency;
+    bool                    enable_drain_tail;
 } RunStatePreparedExecution_T;
 
 /**-----------------------------------------------------------------------------
@@ -112,12 +118,14 @@ static bool driver_cleanup_complete = true;
 
 static bool                        execution_timer_running   = false;
 static bool                        execution_request_pending = false;
-static RunStatePreparedExecution_T prepared_execution        = { .tick_count = 0U,
-                                                                 .frequency  = RUN_STATE_FREQUENCY_1KHZ };
+static RunStatePreparedExecution_T prepared_execution        = {
+           .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ, .enable_drain_tail = false };
 
 static volatile bool execution_abort_requested = false;
 
 static TaskHandle_t run_state_manager_task_handle = NULL;
+
+static uint32_t package_receive_expected_ticks = 0U;
 
 static volatile RunStateFaultReason_T   fault_reason           = RUN_STATE_FAULT_NONE;
 static volatile RunStateFaultReason_T   requested_fault_reason = RUN_STATE_FAULT_NONE;
@@ -149,10 +157,13 @@ static bool RUN_STATE_MANAGER_RequestFaultFromISRInternal( RunStateFaultReason_T
 static bool RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR( void );
 static void RUN_STATE_MANAGER_RecordFault( RunStateFaultReason_T reason );
 static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason );
+static void RUN_STATE_MANAGER_CaptureExecutionMetadata( void );
 
 static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state,
                                                    RunState_T next_state );
 
+static bool RUN_STATE_MANAGER_BeginInstructionUpload( uint32_t expected_tick_count );
+static bool RUN_STATE_MANAGER_BeginInstructionUploadFinalisation( void );
 static bool RUN_STATE_MANAGER_EnterTestPackageReceive( void );
 static bool RUN_STATE_MANAGER_EnterConfiguration( void );
 static bool RUN_STATE_MANAGER_BeginExecutionPreparation( void );
@@ -163,6 +174,8 @@ static bool RUN_STATE_MANAGER_BeginDriverShutdown( bool force_abort, bool clear_
                                                    RunStatePendingOperation_T operation );
 static bool RUN_STATE_MANAGER_BeginResultFinalisation( void );
 static bool RUN_STATE_MANAGER_BeginResultTransfer( void );
+static bool RUN_STATE_MANAGER_EnterResultsReady( void );
+static bool RUN_STATE_MANAGER_EnterResultTransfer( void );
 static bool RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle( void );
 static bool RUN_STATE_MANAGER_CompleteResultTransfer( void );
 static bool RUN_STATE_MANAGER_DiscardCompletedResults( RunState_T next_state );
@@ -203,6 +216,10 @@ static bool RUN_STATE_MANAGER_Notify( uint32_t notification )
         return false;
     }
 
+    taskENTER_CRITICAL();
+    last_request_result = RUN_STATE_REQUEST_RESULT_NONE;
+    taskEXIT_CRITICAL();
+
     return xTaskNotify( run_state_manager_task_handle, notification, eSetBits ) == pdPASS;
 }
 
@@ -223,11 +240,12 @@ RUN_STATE_MANAGER_HandleExecutionTerminalFromISR( ExecutionManagerTickResult_T r
                                                   ExecutionManagerFailure_T    failure,
                                                   BaseType_t* higher_priority_task_woken )
 {
-    ( void )failure;
     execution_abort_requested = true;
 
     if ( result == EXECUTION_MANAGER_TICK_COMPLETE )
     {
+        ( void )RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_COMPLETE,
+                                            RUN_METADATA_FAILURE_SOURCE_NONE, 0U );
         if ( run_state_manager_task_handle != NULL )
         {
             ( void )xTaskNotifyFromISR( run_state_manager_task_handle,
@@ -237,6 +255,9 @@ RUN_STATE_MANAGER_HandleExecutionTerminalFromISR( ExecutionManagerTickResult_T r
     }
     else
     {
+        ( void )RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_FAILED,
+                                            RUN_METADATA_FAILURE_SOURCE_EXECUTION_MANAGER,
+                                            ( uint32_t )failure );
         ( void )RUN_STATE_MANAGER_RequestFaultFromISRInternal( RUN_STATE_FAULT_EXECUTION_MANAGER,
                                                                higher_priority_task_woken );
     }
@@ -354,6 +375,78 @@ static void RUN_STATE_MANAGER_RecordFault( RunStateFaultReason_T reason )
     }
 }
 
+static void RUN_STATE_MANAGER_CaptureExecutionMetadata( void )
+{
+    RunMetadataExecutionCapture_T capture = { 0 };
+
+    uint32_t boundary = 0U;
+    if ( EXECUTION_MANAGER_GetLastCompletedBoundary( &boundary ) )
+    {
+        capture.valid_sections |= RUN_METADATA_VALID_LAST_COMPLETED_BOUNDARY;
+        capture.last_completed_boundary = boundary;
+    }
+
+    HW_TIMER_ExecutionTiming_T timer_timing = { 0 };
+    HW_TIMER_Get_Execution_Timing( &timer_timing );
+    if ( timer_timing.sample_count > 0U )
+    {
+        capture.valid_sections |= RUN_METADATA_VALID_ISR_TIMING;
+        capture.isr_timing.sample_count     = timer_timing.sample_count;
+        capture.isr_timing.total_cycles     = timer_timing.total_cycles;
+        capture.isr_timing.minimum_cycles   = timer_timing.minimum_cycles;
+        capture.isr_timing.maximum_cycles   = timer_timing.maximum_cycles;
+        capture.isr_timing.maximum_boundary = timer_timing.max_sample_number;
+    }
+
+    FlashManagerExecutionDiagnostics_T flash_diag = { 0 };
+    if ( FLASH_MANAGER_GetExecutionDiagnostics( &flash_diag ) )
+    {
+        capture.valid_sections |= RUN_METADATA_VALID_INSTRUCTION_BUFFER;
+        capture.instruction_buffer.sample_count = flash_diag.instruction_occupancy_samples;
+        capture.instruction_buffer.minimum_unread_bytes =
+            flash_diag.minimum_unread_instruction_bytes;
+        capture.instruction_buffer.minimum_boundary =
+            flash_diag.minimum_unread_instruction_boundary;
+
+        capture.valid_sections |= RUN_METADATA_VALID_RESULT_BUFFER;
+        capture.result_buffer.committed_record_count = flash_diag.committed_result_records;
+        capture.result_buffer.committed_bytes        = flash_diag.committed_result_bytes;
+        capture.result_buffer.peak_pending_bytes     = flash_diag.peak_pending_result_bytes;
+        capture.result_buffer.peak_pending_boundary  = flash_diag.peak_pending_result_boundary;
+        capture.result_buffer.reserve_failure_count  = flash_diag.result_reserve_failures;
+        capture.result_buffer.commit_failure_count   = flash_diag.result_commit_failures;
+
+        capture.valid_sections |= RUN_METADATA_VALID_FLASH_THROUGHPUT;
+        capture.flash_throughput.result_pages_drained = flash_diag.result_pages_drained;
+        capture.flash_throughput.result_bytes_drained = flash_diag.result_bytes_drained;
+        capture.flash_throughput.result_drain_total_cycles =
+            flash_diag.result_page_drain_total_cycles;
+        capture.flash_throughput.result_drain_maximum_cycles =
+            flash_diag.result_page_drain_max_cycles;
+        capture.flash_throughput.instruction_pages_refilled = flash_diag.instruction_pages_refilled;
+        capture.flash_throughput.instruction_bytes_refilled = flash_diag.instruction_bytes_refilled;
+        capture.flash_throughput.instruction_refill_total_cycles =
+            flash_diag.instruction_page_refill_total_cycles;
+        capture.flash_throughput.instruction_refill_maximum_cycles =
+            flash_diag.instruction_page_refill_max_cycles;
+        capture.flash_throughput.instruction_publish_sample_count =
+            flash_diag.instruction_page_publish_samples;
+        capture.flash_throughput.instruction_publish_total_cycles =
+            flash_diag.instruction_page_publish_total_cycles;
+        capture.flash_throughput.instruction_publish_maximum_cycles =
+            flash_diag.instruction_page_publish_max_cycles;
+        capture.flash_throughput.service_gap_sample_count = flash_diag.nand_service_gap_samples;
+        capture.flash_throughput.service_gap_total_cycles =
+            flash_diag.nand_service_gap_total_cycles;
+        capture.flash_throughput.service_gap_maximum_cycles =
+            flash_diag.nand_service_gap_max_cycles;
+        capture.flash_throughput.refill_drain_contention_count =
+            flash_diag.refill_drain_contentions;
+    }
+
+    ( void )RUN_METADATA_CaptureExecution( &capture );
+}
+
 static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason )
 {
     request_timing_active     = false;
@@ -362,7 +455,54 @@ static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason )
     execution_request_pending = false;
     taskEXIT_CRITICAL();
     RUN_STATE_MANAGER_RecordFault( reason );
+
+    if ( reason == RUN_STATE_FAULT_EXTERNAL_REQUEST )
+    {
+        ( void )RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_ABORTED,
+                                            RUN_METADATA_FAILURE_SOURCE_RUN_STATE_MANAGER,
+                                            ( uint32_t )reason );
+    }
+    else if ( ( reason == RUN_STATE_FAULT_FLASH_MANAGER )
+              || ( reason == RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION )
+              || ( reason == RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION_TIMEOUT )
+              || ( reason == RUN_STATE_FAULT_FLASH_RESULT_FINALISATION )
+              || ( reason == RUN_STATE_FAULT_FLASH_RESULT_FINALISATION_TIMEOUT )
+              || ( reason == RUN_STATE_FAULT_FLASH_RESULT_TRANSFER )
+              || ( reason == RUN_STATE_FAULT_FLASH_RESULT_DISPOSITION ) )
+    {
+        ( void )RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_FAILED,
+                                            RUN_METADATA_FAILURE_SOURCE_FLASH_MANAGER,
+                                            ( uint32_t )reason );
+    }
+    else if ( ( reason == RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED )
+              || ( reason == RUN_STATE_FAULT_HOST_INTERFACE_USB_INIT )
+              || ( reason == RUN_STATE_FAULT_HOST_INTERFACE_CODEC_INIT )
+              || ( reason == RUN_STATE_FAULT_HOST_INTERFACE_TRANSPORT_INIT )
+              || ( reason == RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+    {
+        ( void )RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_FAILED,
+                                            RUN_METADATA_FAILURE_SOURCE_HOST_INTERFACE,
+                                            ( uint32_t )reason );
+    }
+    else if ( reason == RUN_STATE_FAULT_EXECUTION_MANAGER )
+    {
+        ( void )RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_FAILED,
+                                            RUN_METADATA_FAILURE_SOURCE_EXECUTION_MANAGER,
+                                            ( uint32_t )EXECUTION_MANAGER_GetFailure() );
+    }
+    else if ( reason != RUN_STATE_FAULT_NONE )
+    {
+        ( void )RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_FAILED,
+                                            RUN_METADATA_FAILURE_SOURCE_RUN_STATE_MANAGER,
+                                            ( uint32_t )reason );
+    }
+
+    RUN_STATE_MANAGER_CaptureExecutionMetadata();
+    ( void )RUN_METADATA_SetResultStreamStatus( RUN_METADATA_RESULT_STREAM_UNAVAILABLE );
+    ( void )RUN_METADATA_Seal();
+
     ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_FAULT );
+    ( void )HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_FAULT );
 }
 
 /**
@@ -419,6 +559,127 @@ static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state, Run
     }
 }
 
+/**
+ * @brief Begins instruction upload preparation in Flash Manager.
+ *
+ * Sizing is conservatively estimated using the expected ticks transmitted
+ * in the configuration message and the maximum instruction size, reserving
+ * at least one physical NAND block (128 KB) and bounded by partition capacity.
+ *
+ * @return true when Flash Manager accepts the request or is already in upload state;
+ *         false if in an invalid state or request fails.
+ */
+static bool RUN_STATE_MANAGER_BeginInstructionUpload( uint32_t expected_tick_count )
+{
+    FlashManagerState_T flash_state = FLASH_MANAGER_STATE_UNINITIALISED;
+    if ( !FLASH_MANAGER_GetState( &flash_state ) )
+    {
+        RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+        return false;
+    }
+
+    /* Re-entrant / already ready case (e.g. console command) */
+    if ( flash_state == FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD )
+    {
+        return RUN_STATE_MANAGER_TransitionTo( RUN_STATE_TEST_PACKAGE_RECEIVE );
+    }
+
+    if ( flash_state != FLASH_MANAGER_STATE_IDLE )
+    {
+        RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+        return false;
+    }
+
+    /* Conservative estimate: minimum 1 physical NAND block (128 KB) */
+    uint32_t upload_estimate = 128U * 1024U;
+
+    if ( expected_tick_count > 0U )
+    {
+        const uint64_t calculated =
+            ( uint64_t )expected_tick_count * ( uint64_t )EXECUTION_INSTRUCTION_MAX_SIZE_BYTES;
+
+        uint32_t instruction_capacity = 0U;
+        if ( FLASH_MANAGER_GetInstructionCapacityBytes( &instruction_capacity )
+             && ( instruction_capacity > 0U ) )
+        {
+            if ( calculated > ( uint64_t )instruction_capacity )
+            {
+                upload_estimate = instruction_capacity;
+            }
+            else if ( calculated > ( uint64_t )upload_estimate )
+            {
+                upload_estimate = ( uint32_t )calculated;
+            }
+        }
+        else
+        {
+            const uint32_t fallback_capacity = 64U * 1024U * 1024U;
+            if ( calculated > ( uint64_t )fallback_capacity )
+            {
+                upload_estimate = fallback_capacity;
+            }
+            else if ( calculated > ( uint64_t )upload_estimate )
+            {
+                upload_estimate = ( uint32_t )calculated;
+            }
+        }
+    }
+
+    const FlashManagerInstructionUploadRequestStatus_T status =
+        FLASH_MANAGER_RequestInstructionUploadStart( upload_estimate );
+
+    if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
+    {
+        RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION );
+        return true;
+    }
+
+    RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+    return false;
+}
+
+/**
+ * @brief Begins finalisation of the uploaded instruction stream.
+ *
+ * @return true when finalisation is requested or Flash Manager is already idle;
+ *         false if in an invalid state or request fails.
+ */
+static bool RUN_STATE_MANAGER_BeginInstructionUploadFinalisation( void )
+{
+    FlashManagerState_T flash_state = FLASH_MANAGER_STATE_UNINITIALISED;
+    if ( !FLASH_MANAGER_GetState( &flash_state ) )
+    {
+        RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+        return false;
+    }
+
+    /* If already IDLE (no instructions uploaded or test harness), proceed to configuration */
+    if ( flash_state == FLASH_MANAGER_STATE_IDLE )
+    {
+        if ( RUN_STATE_MANAGER_TransitionTo( RUN_STATE_CONFIGURATION ) )
+        {
+            RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_CONFIGURATION );
+            return true;
+        }
+        return false;
+    }
+
+    if ( flash_state == FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD )
+    {
+        const FlashManagerInstructionUploadRequestStatus_T status =
+            FLASH_MANAGER_RequestInstructionUploadFinish();
+        if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
+        {
+            RUN_STATE_MANAGER_StartPendingOperation(
+                RUN_STATE_PENDING_INSTRUCTION_UPLOAD_FINALISATION );
+            return true;
+        }
+    }
+
+    RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+    return false;
+}
+
 static bool RUN_STATE_MANAGER_EnterTestPackageReceive( void )
 {
     /*
@@ -428,6 +689,26 @@ static bool RUN_STATE_MANAGER_EnterTestPackageReceive( void )
      * Until that interface exists, entering the state is sufficient.
      */
     return true;
+}
+
+/**
+ * @brief Performs entry actions when transitioning into RUN_STATE_RESULTS_READY.
+ *
+ * @return true if the Host Interface was notified successfully; otherwise false.
+ */
+static bool RUN_STATE_MANAGER_EnterResultsReady( void )
+{
+    return HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE );
+}
+
+/**
+ * @brief Performs entry actions when transitioning into RUN_STATE_RESULT_TRANSFER.
+ *
+ * @return true if the Host Interface was notified successfully; otherwise false.
+ */
+static bool RUN_STATE_MANAGER_EnterResultTransfer( void )
+{
+    return HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
 }
 
 /**
@@ -463,6 +744,11 @@ static bool RUN_STATE_MANAGER_EnterConfiguration( void )
     }
 
     return true;
+}
+
+static bool RUN_STATE_MANAGER_EnterArmed( void )
+{
+    return HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_ARMED );
 }
 
 /**
@@ -632,14 +918,12 @@ static bool RUN_STATE_MANAGER_BeginDriverStart( void )
     DutDriverLifecycleStatus_T driver_status = { 0 };
     DUT_DRIVER_LIFECYCLE_GetStatus( &driver_status );
 
-    /*
-     * The host tick count names the final instruction boundary.  Keep the
-     * timer alive for a conservative, task-context-selected drain tail so
-     * asynchronous peripherals can complete and their measurements can be
-     * collected without requiring callers to hand-tune the final tick.
-     */
+    /* Legacy console sessions may request the historical peripheral drain tail.
+     * Variable-message sessions keep the execution range exactly host-defined. */
     const uint32_t execution_tail_ticks =
-        RUN_STATE_MANAGER_CalculateDrainTailTicks( prepared_execution.frequency );
+        prepared_execution.enable_drain_tail
+            ? RUN_STATE_MANAGER_CalculateDrainTailTicks( prepared_execution.frequency )
+            : 0U;
 
     uint32_t effective_tick_count = prepared_execution.tick_count;
     if ( execution_tail_ticks > ( UINT32_MAX - effective_tick_count ) )
@@ -690,6 +974,7 @@ static bool RUN_STATE_MANAGER_BeginDriverStart( void )
 static bool RUN_STATE_MANAGER_StopExecution( void )
 {
     RUN_STATE_MANAGER_StopExecutionTimer();
+    RUN_STATE_MANAGER_CaptureExecutionMetadata();
     EXECUTION_MANAGER_Abort();
 
     execution_active = false;
@@ -710,6 +995,7 @@ static bool RUN_STATE_MANAGER_BeginDriverShutdown( bool force_abort, bool clear_
         execution_abort_requested = true;
     }
     RUN_STATE_MANAGER_StopExecutionTimer();
+    RUN_STATE_MANAGER_CaptureExecutionMetadata();
     execution_active        = false;
     driver_cleanup_complete = false;
 
@@ -791,6 +1077,11 @@ static bool RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle( void )
 static bool RUN_STATE_MANAGER_CompleteResultTransfer( void )
 {
     const FlashManagerResultTransferStatus_T status = FLASH_MANAGER_FinishResultTransfer();
+
+    if ( status == FLASH_MANAGER_RESULT_TRANSFER_INCOMPLETE )
+    {
+        return false;
+    }
 
     if ( status != FLASH_MANAGER_RESULT_TRANSFER_OK )
     {
@@ -985,6 +1276,50 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
 
     switch ( pending_operation )
     {
+        case RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION:
+            if ( flash_state == FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD )
+            {
+                RUN_STATE_MANAGER_ClearPendingOperation();
+                if ( !RUN_STATE_MANAGER_TransitionTo( RUN_STATE_TEST_PACKAGE_RECEIVE ) )
+                {
+                    RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_INVALID_TRANSITION );
+                }
+            }
+            else if ( flash_state != FLASH_MANAGER_STATE_PREPARING_INSTRUCTION_UPLOAD )
+            {
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+            }
+            else if ( RUN_STATE_MANAGER_PendingOperationTimedOut(
+                          pdMS_TO_TICKS( RUN_STATE_MANAGER_INSTRUCTION_UPLOAD_TIMEOUT_MS ) ) )
+            {
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+            }
+            break;
+
+        case RUN_STATE_PENDING_INSTRUCTION_UPLOAD_FINALISATION:
+            if ( flash_state == FLASH_MANAGER_STATE_IDLE )
+            {
+                RUN_STATE_MANAGER_ClearPendingOperation();
+                if ( RUN_STATE_MANAGER_TransitionTo( RUN_STATE_CONFIGURATION ) )
+                {
+                    RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_CONFIGURATION );
+                }
+                else
+                {
+                    RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_INVALID_TRANSITION );
+                }
+            }
+            else if ( flash_state != FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD )
+            {
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+            }
+            else if ( RUN_STATE_MANAGER_PendingOperationTimedOut(
+                          pdMS_TO_TICKS( RUN_STATE_MANAGER_INSTRUCTION_UPLOAD_TIMEOUT_MS ) ) )
+            {
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+            }
+            break;
+
         case RUN_STATE_PENDING_CONFIGURATION:
             /* Handled before querying Flash Manager state. */
             break;
@@ -1020,15 +1355,26 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
             if ( flash_state == FLASH_MANAGER_STATE_RESULTS_READY )
             {
                 RUN_STATE_MANAGER_ClearPendingOperation();
+                const RunMetadataResultStreamStatus_T stream_status =
+                    ( fault_reason == RUN_STATE_FAULT_NONE ) ? RUN_METADATA_RESULT_STREAM_COMPLETE
+                                                             : RUN_METADATA_RESULT_STREAM_PARTIAL;
+                ( void )RUN_METADATA_SetResultStreamStatus( stream_status );
+                ( void )RUN_METADATA_Seal();
                 ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_RESULTS_READY );
             }
             else if ( flash_state != FLASH_MANAGER_STATE_FINALISING_RESULTS )
             {
+                ( void )RUN_METADATA_SetResultStreamStatus(
+                    RUN_METADATA_RESULT_STREAM_UNAVAILABLE );
+                ( void )RUN_METADATA_Seal();
                 RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_RESULT_FINALISATION );
             }
             else if ( RUN_STATE_MANAGER_PendingOperationTimedOut(
                           pdMS_TO_TICKS( RUN_STATE_MANAGER_RESULT_FINALISATION_TIMEOUT_MS ) ) )
             {
+                ( void )RUN_METADATA_SetResultStreamStatus(
+                    RUN_METADATA_RESULT_STREAM_UNAVAILABLE );
+                ( void )RUN_METADATA_Seal();
                 RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_RESULT_FINALISATION_TIMEOUT );
             }
             break;
@@ -1058,18 +1404,17 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
         case RUN_STATE_REQUEST_PACKAGE_RECEIVE:
             if ( run_state == RUN_STATE_IDLE )
             {
-                accepted = RUN_STATE_MANAGER_TransitionTo( RUN_STATE_TEST_PACKAGE_RECEIVE );
+                taskENTER_CRITICAL();
+                const uint32_t expected_ticks = package_receive_expected_ticks;
+                taskEXIT_CRITICAL();
+                accepted = RUN_STATE_MANAGER_BeginInstructionUpload( expected_ticks );
             }
             break;
 
         case RUN_STATE_REQUEST_CONFIGURATION_READY:
             if ( run_state == RUN_STATE_TEST_PACKAGE_RECEIVE )
             {
-                accepted = RUN_STATE_MANAGER_TransitionTo( RUN_STATE_CONFIGURATION );
-                if ( accepted )
-                {
-                    RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_CONFIGURATION );
-                }
+                accepted = RUN_STATE_MANAGER_BeginInstructionUploadFinalisation();
             }
             break;
 
@@ -1161,6 +1506,10 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
                     TEST_CONFIGURATION_ReleaseRunOwnership();
                     run_configuration_owned = false;
                 }
+            }
+            else if ( run_state == RUN_STATE_IDLE )
+            {
+                accepted = true;
             }
             break;
 
@@ -1330,6 +1679,11 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
             break;
 
         case RUN_STATE_ARMED:
+            if ( !RUN_STATE_MANAGER_EnterArmed() )
+            {
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_INTERNAL );
+                return false;
+            }
             break;
 
         case RUN_STATE_EXECUTION:
@@ -1341,11 +1695,22 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
             break;
 
         case RUN_STATE_RESULT_FINALISATION:
+            break;
+
         case RUN_STATE_RESULTS_READY:
+            if ( !RUN_STATE_MANAGER_EnterResultsReady() )
+            {
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
+                return false;
+            }
             break;
 
         case RUN_STATE_RESULT_TRANSFER:
-            /* Future Host Interface result-transfer entry action. */
+            if ( !RUN_STATE_MANAGER_EnterResultTransfer() )
+            {
+                RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
+                return false;
+            }
             break;
 
         case RUN_STATE_FAULT:
@@ -1428,7 +1793,8 @@ bool RUN_STATE_MANAGER_Set_Execution_Frequency( RunStateFrequencyMode_T mode )
     }
 
     taskENTER_CRITICAL();
-    const bool accepted = ( run_state == RUN_STATE_IDLE || run_state == RUN_STATE_ARMED )
+    const bool accepted = ( run_state == RUN_STATE_IDLE || run_state == RUN_STATE_ARMED
+                            || run_state == RUN_STATE_TEST_PACKAGE_RECEIVE )
                           && pending_operation == RUN_STATE_PENDING_NONE && !execution_active
                           && !execution_request_pending;
     if ( accepted )
@@ -1447,6 +1813,7 @@ RunStateFrequencyMode_T RUN_STATE_MANAGER_Get_Execution_Frequency( void )
 void RUN_STATE_MANAGER_Init( void )
 {
     RUN_STATE_MANAGER_StopExecutionTimer();
+    RUN_METADATA_Reset();
     frequency_mode               = RUN_STATE_FREQUENCY_1KHZ;
     pending_operation            = RUN_STATE_PENDING_NONE;
     pending_operation_started_at = 0U;
@@ -1454,31 +1821,40 @@ void RUN_STATE_MANAGER_Init( void )
     driver_cleanup_complete      = true;
     execution_timer_running      = false;
     execution_request_pending    = false;
-    prepared_execution =
-        ( RunStatePreparedExecution_T ){ .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ };
-    execution_abort_requested    = false;
-    fault_reason                 = RUN_STATE_FAULT_NONE;
-    requested_fault_reason       = RUN_STATE_FAULT_NONE;
-    last_request                 = RUN_STATE_REQUEST_NONE;
-    last_request_result          = RUN_STATE_REQUEST_RESULT_NONE;
-    request_timing_active        = false;
-    timed_request                = RUN_STATE_REQUEST_NONE;
-    timed_request_target_state   = RUN_STATE_IDLE;
-    timed_request_started_at     = 0U;
-    last_transition_timing_valid = false;
-    last_completed_request       = RUN_STATE_REQUEST_NONE;
-    last_transition_duration_ms  = 0U;
-    run_state                    = RUN_STATE_IDLE;
-    run_configuration_owned      = false;
+    prepared_execution           = ( RunStatePreparedExecution_T ){
+                  .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ, .enable_drain_tail = false };
+    execution_abort_requested      = false;
+    fault_reason                   = RUN_STATE_FAULT_NONE;
+    requested_fault_reason         = RUN_STATE_FAULT_NONE;
+    last_request                   = RUN_STATE_REQUEST_NONE;
+    last_request_result            = RUN_STATE_REQUEST_RESULT_NONE;
+    request_timing_active          = false;
+    timed_request                  = RUN_STATE_REQUEST_NONE;
+    timed_request_target_state     = RUN_STATE_IDLE;
+    timed_request_started_at       = 0U;
+    last_transition_timing_valid   = false;
+    last_completed_request         = RUN_STATE_REQUEST_NONE;
+    last_transition_duration_ms    = 0U;
+    run_state                      = RUN_STATE_IDLE;
+    run_configuration_owned        = false;
+    package_receive_expected_ticks = 0U;
 
     HW_TIMER_Set_Execution_Guard( RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR );
     FLASH_MANAGER_SetFaultCallback( RUN_STATE_MANAGER_HandleFlashFault );
     EXECUTION_MANAGER_SetTerminalCallback( RUN_STATE_MANAGER_HandleExecutionTerminalFromISR );
 }
 
+bool RUN_STATE_MANAGER_RequestPackageReceiveWithTicks( uint32_t expected_tick_count )
+{
+    taskENTER_CRITICAL();
+    package_receive_expected_ticks = expected_tick_count;
+    taskEXIT_CRITICAL();
+    return RUN_STATE_MANAGER_Notify( RUN_STATE_MANAGER_NOTIFY_PACKAGE_RECEIVE );
+}
+
 bool RUN_STATE_MANAGER_RequestPackageReceive( void )
 {
-    return RUN_STATE_MANAGER_Notify( RUN_STATE_MANAGER_NOTIFY_PACKAGE_RECEIVE );
+    return RUN_STATE_MANAGER_RequestPackageReceiveWithTicks( 0U );
 }
 
 bool RUN_STATE_MANAGER_RequestConfiguration( void )
@@ -1507,9 +1883,11 @@ RUN_STATE_MANAGER_RequestExecution( const RunStateExecutionRequest_T* request )
     }
     else
     {
+        RUN_METADATA_Reset();
         prepared_execution = ( RunStatePreparedExecution_T ){
-            .tick_count = request->tick_count,
-            .frequency  = frequency_mode,
+            .tick_count        = request->tick_count,
+            .frequency         = frequency_mode,
+            .enable_drain_tail = request->enable_drain_tail,
         };
         execution_request_pending = true;
     }

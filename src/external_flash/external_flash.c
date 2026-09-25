@@ -1071,6 +1071,33 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionPage( const uint8_t* data,
 }
 
 /**
+ * @brief Updates the expected instruction upload length before finalising a variable stream.
+ */
+ExternalFlashStatus_T
+EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( uint32_t expected_length )
+{
+    if ( !external_flash_initialised )
+    {
+        return EXTERNAL_FLASH_STATUS_NOT_INITIALISED;
+    }
+
+    if ( !external_flash_instruction_upload_active )
+    {
+        return EXTERNAL_FLASH_STATUS_ERROR;
+    }
+
+    if ( ( expected_length < external_flash_committed_instruction_length_bytes )
+         || ( expected_length > external_flash_instruction_expected_length_bytes ) )
+    {
+        return EXTERNAL_FLASH_STATUS_INVALID_ARG;
+    }
+
+    external_flash_instruction_expected_length_bytes = expected_length;
+
+    return EXTERNAL_FLASH_STATUS_OK;
+}
+
+/**
  * @brief Commits any final staged instruction page and closes the upload.
  */
 ExternalFlashStatus_T EXTERNAL_FLASH_FinishInstructionUpload( void )

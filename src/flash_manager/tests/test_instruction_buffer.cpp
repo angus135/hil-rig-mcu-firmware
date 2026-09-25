@@ -1227,17 +1227,35 @@ TEST_F( InstructionBufferTest, CompleteUploadDrainRejectsMissingOrInconsistentOw
  *------------------------------------------------------------------------------
  */
 
-TEST_F( InstructionBufferTest, FinaliseUploadRejectsIncompleteInputWithoutPublishingPartialPage )
+TEST_F( InstructionBufferTest, FinaliseUploadAcceptsPartialInputAndSnapsLength )
 {
     std::array<uint8_t, 5U> partial = {};
     PrepareUpload( partial.size() + 3U );
     ASSERT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_ACCEPTED,
                INSTRUCTION_BUFFER_WriteUploadBytes( partial.data(), partial.size() ) );
 
-    EXPECT_FALSE( INSTRUCTION_BUFFER_FinaliseUpload() );
-    EXPECT_FALSE( instruction_buffer_context.is_upload_finalised );
-    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_FILLING_FROM_HOST,
-               instruction_buffer_context.page_states[0] );
+    EXPECT_TRUE( INSTRUCTION_BUFFER_FinaliseUpload() );
+    EXPECT_TRUE( instruction_buffer_context.is_upload_finalised );
+    EXPECT_EQ( partial.size(), instruction_buffer_context.upload_expected_length_bytes );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND, instruction_buffer_context.page_states[0] );
+}
+
+TEST_F( InstructionBufferTest, FinaliseUploadAcceptsZeroBytesAccepted )
+{
+    PrepareUpload( 8U );
+
+    EXPECT_TRUE( INSTRUCTION_BUFFER_FinaliseUpload() );
+    EXPECT_TRUE( instruction_buffer_context.is_upload_finalised );
+    EXPECT_EQ( 0U, instruction_buffer_context.upload_expected_length_bytes );
+    EXPECT_TRUE( INSTRUCTION_BUFFER_IsUploadPersisted() );
+}
+
+TEST_F( InstructionBufferTest, PrepareReadZeroBytesEmitsEndOfStreamOnFirstPeek )
+{
+    Prepare( 0U );
+
+    const FlashManagerInstructionView_T* view = nullptr;
+    EXPECT_EQ( INSTRUCTION_BUFFER_PEEK_END_OF_STREAM, INSTRUCTION_BUFFER_PeekInstruction( &view ) );
 }
 
 TEST_F( InstructionBufferTest, FinaliseUploadPublishesFinalPartialPageAndStopsProduction )

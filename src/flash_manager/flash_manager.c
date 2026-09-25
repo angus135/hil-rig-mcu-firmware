@@ -280,6 +280,7 @@ static FlashManagerPageProcessStatus_T FLASH_MANAGER_DrainOneResultPage( void )
     }
 
     flash_manager_execution_diagnostics.result_pages_drained++;
+    flash_manager_execution_diagnostics.result_bytes_drained += drain_lease.valid_length_bytes;
     flash_manager_execution_diagnostics.result_page_drain_latest_cycles = drain_cycles;
     flash_manager_execution_diagnostics.result_page_drain_total_cycles += drain_cycles;
     if ( drain_cycles > flash_manager_execution_diagnostics.result_page_drain_max_cycles )
@@ -342,17 +343,24 @@ static FlashManagerPageProcessStatus_T FLASH_MANAGER_FillOneInstructionPage( voi
         &fill_lease, nand_read_status == EXTERNAL_FLASH_STATUS_OK );
     const uint32_t publish_cycles = FLASH_MANAGER_ReadCycleCounter() - publish_start_cycles;
 
-    flash_manager_execution_diagnostics.instruction_page_publish_samples++;
-    flash_manager_execution_diagnostics.instruction_page_publish_total_cycles += publish_cycles;
-    flash_manager_execution_diagnostics.instruction_page_publish_latest_cycles = publish_cycles;
-    if ( publish_cycles > flash_manager_execution_diagnostics.instruction_page_publish_max_cycles )
-    {
-        flash_manager_execution_diagnostics.instruction_page_publish_max_cycles = publish_cycles;
-    }
-
     if ( ( nand_read_status != EXTERNAL_FLASH_STATUS_OK ) || !fill_completion_succeeded )
     {
         return FLASH_MANAGER_PAGE_ERROR;
+    }
+
+    if ( flash_manager_context.state == FLASH_MANAGER_STATE_EXECUTING )
+    {
+        flash_manager_execution_diagnostics.instruction_bytes_refilled +=
+            fill_lease.read_length_bytes;
+        flash_manager_execution_diagnostics.instruction_page_publish_samples++;
+        flash_manager_execution_diagnostics.instruction_page_publish_total_cycles += publish_cycles;
+        flash_manager_execution_diagnostics.instruction_page_publish_latest_cycles = publish_cycles;
+        if ( publish_cycles
+             > flash_manager_execution_diagnostics.instruction_page_publish_max_cycles )
+        {
+            flash_manager_execution_diagnostics.instruction_page_publish_max_cycles =
+                publish_cycles;
+        }
     }
 
     return FLASH_MANAGER_PAGE_PROCESSED;
@@ -954,6 +962,12 @@ static bool FLASH_MANAGER_DrainInstructionUploadPages( void )
  */
 static bool FLASH_MANAGER_FinaliseInstructionUpload( void )
 {
+    uint32_t accepted_length = 0U;
+    if ( INSTRUCTION_BUFFER_GetUploadExpectedLength( &accepted_length ) )
+    {
+        ( void )EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( accepted_length );
+    }
+
     if ( !FLASH_MANAGER_DrainInstructionUploadPages() )
     {
         return false;
@@ -1225,6 +1239,23 @@ bool FLASH_MANAGER_GetResultCapacityBytes( uint32_t* capacity_bytes )
     }
 
     *capacity_bytes = info.result_capacity_bytes;
+    return true;
+}
+
+bool FLASH_MANAGER_GetInstructionCapacityBytes( uint32_t* capacity_bytes )
+{
+    if ( capacity_bytes == NULL )
+    {
+        return false;
+    }
+
+    ExternalFlashInfo_T info = { 0 };
+    if ( EXTERNAL_FLASH_GetInfo( &info ) != EXTERNAL_FLASH_STATUS_OK )
+    {
+        return false;
+    }
+
+    *capacity_bytes = info.instruction_capacity_bytes;
     return true;
 }
 
@@ -1586,7 +1617,8 @@ FlashManagerInstructionUploadRequestStatus_T FLASH_MANAGER_RequestInstructionUpl
         return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_TASK_NOT_READY;
     }
 
-    if ( !INSTRUCTION_BUFFER_IsUploadInputComplete() )
+    uint32_t accepted_length = 0U;
+    if ( !INSTRUCTION_BUFFER_GetUploadAcceptedLength( &accepted_length ) )
     {
         FLASH_MANAGER_Unlock();
         return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE;
@@ -1601,6 +1633,8 @@ FlashManagerInstructionUploadRequestStatus_T FLASH_MANAGER_RequestInstructionUpl
         FLASH_MANAGER_Unlock();
         return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY;
     }
+
+    ( void )EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( accepted_length );
 
     flash_manager_context.state = FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD;
 
@@ -1656,11 +1690,6 @@ bool FLASH_MANAGER_ReserveResultRecordFromISR( uint16_t payload_capacity_bytes,
             payload_capacity_bytes;
         flash_manager_execution_diagnostics.free_bytes_at_last_reserve_failure =
             RESULT_BUFFER_GetFreeBytes();
-        const uint32_t pending_bytes = RESULT_BUFFER_GetPendingBytes();
-        if ( pending_bytes > flash_manager_execution_diagnostics.peak_pending_result_bytes )
-        {
-            flash_manager_execution_diagnostics.peak_pending_result_bytes = pending_bytes;
-        }
     }
     return reserved;
 }
@@ -1744,17 +1773,22 @@ FlashManagerResultCommitStatus_T FLASH_MANAGER_CommitResultRecordFromISR(
     const uint32_t pending_bytes = RESULT_BUFFER_GetPendingBytes();
     if ( pending_bytes > flash_manager_execution_diagnostics.peak_pending_result_bytes )
     {
-        flash_manager_execution_diagnostics.peak_pending_result_bytes = pending_bytes;
+        flash_manager_execution_diagnostics.peak_pending_result_bytes    = pending_bytes;
+        flash_manager_execution_diagnostics.peak_pending_result_boundary = timestamp;
     }
 
     switch ( buffer_status )
     {
         case RESULT_BUFFER_RECORD_COMMIT_OK:
             flash_manager_context.committed_result_length_bytes += record_length_bytes;
+            flash_manager_execution_diagnostics.committed_result_records++;
+            flash_manager_execution_diagnostics.committed_result_bytes += record_length_bytes;
             return FLASH_MANAGER_RESULT_COMMIT_OK;
 
         case RESULT_BUFFER_RECORD_COMMIT_PAGE_READY_TO_DRAIN:
             flash_manager_context.committed_result_length_bytes += record_length_bytes;
+            flash_manager_execution_diagnostics.committed_result_records++;
+            flash_manager_execution_diagnostics.committed_result_bytes += record_length_bytes;
             /*
              * The page has already been committed in RAM. Notify the Flash
              * Manager task so it can drain the page after this ISR returns.
@@ -1871,6 +1905,26 @@ bool FLASH_MANAGER_ConsumeInstructionFromISR( BaseType_t* higher_priority_task_w
     }
 
     return false;
+}
+
+void FLASH_MANAGER_RecordInstructionOccupancyFromISR( uint32_t boundary )
+{
+    if ( ( flash_manager_context.state != FLASH_MANAGER_STATE_EXECUTING )
+         || ( INSTRUCTION_BUFFER_GetUnconsumedBytes() == 0U ) )
+    {
+        return;
+    }
+
+    const uint32_t unread_bytes = INSTRUCTION_BUFFER_GetBufferedUnreadBytes();
+    flash_manager_execution_diagnostics.instruction_occupancy_samples++;
+
+    if ( ( flash_manager_execution_diagnostics.instruction_occupancy_samples == 1U )
+         || ( unread_bytes
+              < flash_manager_execution_diagnostics.minimum_unread_instruction_bytes ) )
+    {
+        flash_manager_execution_diagnostics.minimum_unread_instruction_bytes    = unread_bytes;
+        flash_manager_execution_diagnostics.minimum_unread_instruction_boundary = boundary;
+    }
 }
 
 /* Host Interface result retrieval. */
@@ -2069,7 +2123,7 @@ FlashManagerResultTransferStatus_T FLASH_MANAGER_FinishResultTransfer( void )
     {
         FLASH_MANAGER_Unlock();
 
-        return FLASH_MANAGER_RESULT_TRANSFER_INVALID_STATE;
+        return FLASH_MANAGER_RESULT_TRANSFER_INCOMPLETE;
     }
 
     /*

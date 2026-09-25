@@ -2719,16 +2719,13 @@ static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* ar
         return;
     }
 
-    if ( !CONSOLE_Flash_RequireIdle() )
-    {
-        return;
-    }
-
     RunStateManagerStatus_T run_status = { 0 };
     RUN_STATE_MANAGER_GetStatus( &run_status );
-    if ( run_status.state != RUN_STATE_IDLE && run_status.state != RUN_STATE_TEST_PACKAGE_RECEIVE )
+    if ( run_status.state != RUN_STATE_TEST_PACKAGE_RECEIVE
+         || !CONSOLE_Flash_WaitForState( FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD,
+                                         CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
     {
-        CONSOLE_Printf( "Output stress setup requires RSM IDLE or TEST_PACKAGE_RECEIVE.\r\n" );
+        CONSOLE_Printf( "Output stress setup requires an RSM-owned instruction upload.\r\n" );
         return;
     }
 
@@ -2865,15 +2862,7 @@ static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* ar
     }
 
     const uint32_t                               upload_bytes = sample_count * instruction_bytes;
-    FlashManagerInstructionUploadRequestStatus_T status =
-        FLASH_MANAGER_RequestInstructionUploadStart( upload_bytes );
-    if ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED
-         || !CONSOLE_Flash_WaitForState( FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD,
-                                         CONSOLE_FLASH_STATE_TIMEOUT_MS ) )
-    {
-        CONSOLE_Printf( "Output stress upload start failed (status=%d).\r\n", ( int )status );
-        return;
-    }
+    FlashManagerInstructionUploadRequestStatus_T status;
 
     for ( uint32_t sample = 0U; sample < sample_count; sample++ )
     {
@@ -2964,8 +2953,8 @@ static void CONSOLE_Flash_UploadOutputStressTestCommand( uint16_t argc, char* ar
     CONSOLE_Printf( "              SPI1 (22.5Mbps TX+RX loopback, 128B/tick 0x5A)\r\n" );
     CONSOLE_Printf( "              SPI2 (45Mbps TX+RX loopback, 256B/tick 0xA5)\r\n" );
     CONSOLE_Printf( "Excluded:     AO, CAN 1/2.\r\n" );
-    CONSOLE_Printf( "Next: 'run_state receive', 'run_state configure', "
-                    "'run_state frequency 100', then 'run_state execute %lu'.\r\n",
+    CONSOLE_Printf( "Next: 'run_state configure', 'run_state frequency 10000', then "
+                    "'run_state execute %lu'.\r\n",
                     ( unsigned long )console_flash_run_tick_count );
     CONSOLE_Printf( "Verify: 'flash results verify_stress' and 'execution status'.\r\n" );
 }

@@ -176,6 +176,30 @@ extern "C" void vTaskDelayUntil( TickType_t*, TickType_t )
 {
 }
 
+extern "C" void vTaskDelay( TickType_t )
+{
+}
+
+extern "C" TaskHandle_t xTaskGetCurrentTaskHandle( void )
+{
+    return nullptr;
+}
+
+extern "C" BaseType_t xTaskNotifyWait( uint32_t, uint32_t, uint32_t* notification_value,
+                                       TickType_t )
+{
+    if ( notification_value != nullptr )
+    {
+        *notification_value = 0U;
+    }
+    return pdPASS;
+}
+
+extern "C" BaseType_t xTaskNotify( TaskHandle_t, uint32_t, eNotifyAction )
+{
+    return pdPASS;
+}
+
 class HostInterfaceTest : public ::testing::Test
 {
 protected:

@@ -27,7 +27,7 @@ the result stream is ready, then automatically enters `RESULTS_READY`.
 The current bring-up commands are:
 
 ```text
-run_state receive
+run_state receive [expected_tick_count]
 run_state configure
 run_state frequency <100|1000|10000>
 run_state execute <tick_count>
@@ -56,12 +56,12 @@ asynchronous transition was pending, or failed during its entry action.
 
 | Console event | Required state | Result |
 |---|---|---|
-| `receive` | `IDLE` | Enter `TEST_PACKAGE_RECEIVE` |
+| `receive [expected ticks]` | `IDLE` | Enter `TEST_PACKAGE_RECEIVE` and prepare the instruction upload |
 | `configure` | `TEST_PACKAGE_RECEIVE` | Enter `CONFIGURATION`, then automatically `ARMED` on success |
 | `execute <ticks> [result bytes]` | `ARMED` | Start Flash preparation and DUT startup; enter `EXECUTION` only after both complete |
 | `execution_complete` | `EXECUTION` | Stop execution and start Flash finalisation |
 | `transfer` | `RESULTS_READY` | Enter `RESULT_TRANSFER` |
-| `transfer_complete` | `RESULT_TRANSFER` | Retain the test, reapply its configuration, and enter `ARMED` |
+| `transfer_complete` | `RESULT_TRANSFER` | After all bytes are read, retain the test, reapply its configuration, and enter `ARMED`; otherwise reject the request and keep the transfer active |
 | `repeat` | `RESULTS_READY` | Discard results, retain configuration/instructions, and enter `ARMED` |
 | `discard` | `RESULTS_READY` or `ARMED` | Discard available results if necessary, clear the retained test, and enter `IDLE` |
 | `fault` | Any state | Enter `FAULT` and retain the first cause |
@@ -137,10 +137,12 @@ Before a run, request Flash Manager execution preparation and wait for
 stop TIM4, ensure the ISR has returned and all result leases are resolved, then
 request result finalisation and wait for `RESULTS_READY` or `FAULT`.
 
-The validated `tick_count` is the number of execution-timer periods and the
-final boundary tick. Tick zero is the configured initial condition. The first
-TIM4 interrupt processes tick one, and a run of N ticks completes at boundary
-N. Valid output instruction timestamps are therefore 1 through N.
+The validated `tick_count` is the number of logical execution intervals and the
+final measurement boundary. The first TIM4 interrupt processes boundary zero,
+skips measurement, and applies timestamp-zero output operations. Later
+interrupts process boundaries 1 through N, so a run of N ticks completes at
+boundary N after N measurements. Valid output instruction timestamps are zero
+through N - 1.
 
 There is at most one grouped instruction for each output-bearing tick, and
 instructions are ordered by timestamp. If the Execution Manager observes an

@@ -50,12 +50,14 @@ typedef void ( *ExecutionManagerTerminalCallback_T )( ExecutionManagerTickResult
  * timer must be stopped while this function executes, and Flash Manager must
  * already be prepared for execution.
  *
- * Tick zero is the configured initial condition and is not processed by a
- * timer interrupt. The first interrupt processes tick one. A run of N ticks
- * therefore processes boundaries 1 through N and completes after boundary N.
- * Output instruction timestamps must be in that range.
+ * The first interrupt processes boundary zero without taking a measurement and
+ * applies any timestamp-zero instruction. Each later boundary first measures
+ * the interval that just ended, then applies the instruction for the interval
+ * beginning at that boundary. A run of N ticks therefore processes boundaries
+ * zero through N and completes after boundary N, producing N measurements.
+ * Output instruction timestamps must be in the range zero through N - 1.
  *
- * @param tick_count Final boundary tick and number of timer periods in the run.
+ * @param tick_count Number of logical intervals and final measurement boundary.
  * @return true when the run was accepted; otherwise, false.
  */
 bool EXECUTION_MANAGER_Prepare( uint32_t tick_count );
@@ -89,13 +91,22 @@ void EXECUTION_MANAGER_SetTerminalCallback( ExecutionManagerTerminalCallback_T c
 void EXECUTION_MANAGER_Abort( void );
 
 /**
- * Returns zero before the first interrupt, then the boundary currently or
- * most recently processed.
+ * Returns the boundary currently or most recently processed. Zero represents
+ * both the prepared state before the first interrupt and boundary zero after
+ * the priming interrupt.
  */
 uint32_t EXECUTION_MANAGER_GetCurrentTick( void );
 
 /** Returns the first failure latched during the current run. */
 ExecutionManagerFailure_T EXECUTION_MANAGER_GetFailure( void );
+
+/**
+ * @brief Gets the last boundary whose measurement, instruction, and checks succeeded.
+ *
+ * @param boundary Destination for the boundary index.
+ * @return true when at least one boundary completed successfully; otherwise false.
+ */
+bool EXECUTION_MANAGER_GetLastCompletedBoundary( uint32_t* boundary );
 
 #ifdef __cplusplus
 }

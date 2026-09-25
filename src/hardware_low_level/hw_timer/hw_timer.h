@@ -70,8 +70,11 @@ typedef void ( *HW_TIMER_ExecutionCallback_T )( BaseType_t* higher_priority_task
 typedef struct
 {
     uint32_t sample_count;
+    uint64_t total_cycles;
     uint32_t latest_cycles;
+    uint32_t minimum_cycles;
     uint32_t maximum_cycles;
+    uint32_t max_sample_number;
     uint32_t core_clock_hz;
 } HW_TIMER_ExecutionTiming_T;
 
