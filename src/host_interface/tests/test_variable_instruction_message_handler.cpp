@@ -612,3 +612,96 @@ TEST_F( VariableInstructionMessageHandlerTest, TranslatesFlashManagerStatusesCor
     EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
                HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE );
 }
+
+/**
+ * @brief Accepts multi-chunk instruction sequence sharing the same tick_number when HAS_MORE_CHUNKS is set.
+ */
+TEST_F( VariableInstructionMessageHandlerTest, AcceptsMultiChunkInstructionSameTick )
+{
+    static uint8_t uart1[4] = { 'A', 'B', 'C', 'D' };
+    static uint8_t uart2[4] = { 'E', 'F', 'G', 'H' };
+
+    HIL_Application_Logical_Operation_T op1{};
+    op1.peripheral_type = HIL_APPLICATION_PERIPHERAL_UART;
+    op1.channel         = 0U;
+    op1.payload.data    = uart1;
+    op1.payload.size    = sizeof( uart1 );
+
+    HIL_Application_Logical_Operation_T op2{};
+    op2.peripheral_type = HIL_APPLICATION_PERIPHERAL_UART;
+    op2.channel         = 0U;
+    op2.payload.data    = uart2;
+    op2.payload.size    = sizeof( uart2 );
+
+    // Chunk 1 for tick 5 with HAS_MORE_CHUNKS
+    HIL_Application_Update_Instruction_T chunk1{};
+    chunk1.tick_number     = 5U;
+    chunk1.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_HAS_MORE_CHUNKS;
+    chunk1.operation_count = 1U;
+    chunk1.operations      = &op1;
+
+    EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) )
+        .WillOnce( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED ) );
+    EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &chunk1 ),
+               HOST_INTERFACE_STATUS_OK );
+
+    // Chunk 2 for tick 5 with COMPLETE_TICK
+    HIL_Application_Update_Instruction_T chunk2{};
+    chunk2.tick_number     = 5U;
+    chunk2.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_COMPLETE_TICK;
+    chunk2.operation_count = 1U;
+    chunk2.operations      = &op2;
+
+    EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) )
+        .WillOnce( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED ) );
+    EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &chunk2 ),
+               HOST_INTERFACE_STATUS_OK );
+
+    // Tick 6 after completion of tick 5
+    HIL_Application_Update_Instruction_T next_tick{};
+    next_tick.tick_number     = 6U;
+    next_tick.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_COMPLETE_TICK;
+    next_tick.operation_count = 1U;
+    next_tick.operations      = &op1;
+
+    EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) )
+        .WillOnce( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED ) );
+    EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &next_tick ),
+               HOST_INTERFACE_STATUS_OK );
+}
+
+/**
+ * @brief Rejects new tick number when previous chunk expected more chunks for the current tick.
+ */
+TEST_F( VariableInstructionMessageHandlerTest, RejectsTickIncrementWhenExpectingMoreChunks )
+{
+    static uint8_t uart1[4] = { 'A', 'B', 'C', 'D' };
+
+    HIL_Application_Logical_Operation_T op1{};
+    op1.peripheral_type = HIL_APPLICATION_PERIPHERAL_UART;
+    op1.channel         = 0U;
+    op1.payload.data    = uart1;
+    op1.payload.size    = sizeof( uart1 );
+
+    // Chunk 1 for tick 5 with HAS_MORE_CHUNKS
+    HIL_Application_Update_Instruction_T chunk1{};
+    chunk1.tick_number     = 5U;
+    chunk1.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_HAS_MORE_CHUNKS;
+    chunk1.operation_count = 1U;
+    chunk1.operations      = &op1;
+
+    EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) )
+        .WillOnce( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED ) );
+    EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &chunk1 ),
+               HOST_INTERFACE_STATUS_OK );
+
+    // Attempt to submit tick 6 while tick 5 has more chunks pending
+    HIL_Application_Update_Instruction_T chunk2{};
+    chunk2.tick_number     = 6U;
+    chunk2.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_COMPLETE_TICK;
+    chunk2.operation_count = 1U;
+    chunk2.operations      = &op1;
+
+    EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &chunk2 ),
+               HOST_INTERFACE_STATUS_INCONSISTENT_TICK );
+}

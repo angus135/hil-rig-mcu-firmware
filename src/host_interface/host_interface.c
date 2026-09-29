@@ -47,7 +47,7 @@
 #define HOST_INTERFACE_PERIOD_MS ( 1U )
 
 /** Capacity of one complete encoded Application message. */
-#define HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY ( HIL_APPLICATION_DEFAULT_MAX_MESSAGE_SIZE )
+#define HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY ( 2302U )
 
 /** Length prefix prepended to each Application message in direct USB streaming mode. */
 #define HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE ( 2U )
@@ -56,8 +56,9 @@
 #define HOST_INTERFACE_USB_RECEIVE_CAPACITY                                                        \
     ( HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY + HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE )
 
-/** Capacity of the underlying USB transmit ring used by one direct batch. */
-#define HOST_INTERFACE_DIRECT_USB_SEND_CAPACITY ( 1024U )
+/** Capacity of the direct USB send buffer (holds at least one max-sized framed message). */
+#define HOST_INTERFACE_DIRECT_USB_SEND_CAPACITY                                                    \
+    ( HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY + HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE )
 
 /** Flush threshold for batched direct USB result messages (not a multiple of 64 to avoid ZLP
  * stall). */
@@ -349,7 +350,9 @@ typedef struct
     uint16_t outstanding_count;
 
     bool       produced_tick_valid;
+    bool       last_produced_had_more_chunks;
     bool       staged_tick_valid;
+    bool       last_staged_had_more_chunks;
     bool       queued_tick_valid;
     bool       completed_tick_valid;
     bool       flush_rejection_latched;
@@ -404,6 +407,7 @@ HOST_INTERFACE_Transport_Clock_Update( HOST_INTERFACE_Transport_Clock_T* transpo
                                        TickType_t current_ticks, bool configured_suspended );
 #endif
 static uint32_t HOST_INTERFACE_GetMessageTick( const HIL_Application_Message_T* msg );
+static bool     HOST_INTERFACE_GetMessageHasMoreChunks( const HIL_Application_Message_T* msg );
 static bool     HOST_INTERFACE_IsResultMessage( const HIL_Application_Message_T* msg );
 static void     HOST_INTERFACE_Result_Tx_Audit_Reset( void );
 static void     HOST_INTERFACE_Result_Tx_Record_Produced( const HIL_Application_Message_T* msg );
@@ -521,22 +525,24 @@ static void HOST_INTERFACE_Result_Tx_Audit_Reset( void )
     taskEXIT_CRITICAL();
     s_result_tx_audit.outstanding_head           = 0U;
     s_result_tx_audit.outstanding_count          = 0U;
-    s_result_tx_audit.produced_tick_valid        = false;
-    s_result_tx_audit.staged_tick_valid          = false;
-    s_result_tx_audit.queued_tick_valid          = false;
-    s_result_tx_audit.completed_tick_valid       = false;
-    s_result_tx_audit.flush_rejection_latched    = false;
-    s_result_tx_audit.invariant_fault_latched    = false;
-    s_result_tx_audit.final_validation_complete  = false;
-    s_result_tx_audit.flush_rejection_started_at = 0U;
-    s_result_tx_audit.last_produced_tick         = 0U;
-    s_result_tx_audit.last_staged_tick           = 0U;
-    s_result_tx_audit.last_queued_tick           = 0U;
-    s_result_tx_audit.last_completed_tick        = 0U;
-    s_result_tx_audit.observed_discard_count     = 0U;
-    s_result_tx_audit.observed_discarded_bytes   = 0U;
-    s_result_tx_audit.observed_accepted_bytes    = 0U;
-    s_result_tx_audit.observed_completed_bytes   = 0U;
+    s_result_tx_audit.produced_tick_valid           = false;
+    s_result_tx_audit.last_produced_had_more_chunks = false;
+    s_result_tx_audit.staged_tick_valid             = false;
+    s_result_tx_audit.last_staged_had_more_chunks   = false;
+    s_result_tx_audit.queued_tick_valid             = false;
+    s_result_tx_audit.completed_tick_valid          = false;
+    s_result_tx_audit.flush_rejection_latched       = false;
+    s_result_tx_audit.invariant_fault_latched       = false;
+    s_result_tx_audit.final_validation_complete     = false;
+    s_result_tx_audit.flush_rejection_started_at    = 0U;
+    s_result_tx_audit.last_produced_tick            = 0U;
+    s_result_tx_audit.last_staged_tick              = 0U;
+    s_result_tx_audit.last_queued_tick              = 0U;
+    s_result_tx_audit.last_completed_tick           = 0U;
+    s_result_tx_audit.observed_discard_count        = 0U;
+    s_result_tx_audit.observed_discarded_bytes      = 0U;
+    s_result_tx_audit.observed_accepted_bytes       = 0U;
+    s_result_tx_audit.observed_completed_bytes      = 0U;
 
     s_host_interface_status.result_produced_count            = 0U;
     s_host_interface_status.result_staged_count              = 0U;
@@ -552,6 +558,8 @@ static void HOST_INTERFACE_Result_Tx_Audit_Reset( void )
     s_host_interface_status.result_audit_entry_count         = 0U;
     s_host_interface_status.result_audit_overwrite_count     = 0U;
     s_host_interface_status.result_custody_complete          = false;
+    s_host_interface_status.is_faulted                       = false;
+    s_host_interface_status.last_fault_reason                = RUN_STATE_FAULT_NONE;
     s_host_interface_status.result_invariant_failure = HOST_INTERFACE_RESULT_TX_INVARIANT_NONE;
 
     if ( HW_USB_Get_Transmit_Diagnostics( &usb_diags ) )
@@ -564,7 +572,7 @@ static void HOST_INTERFACE_Result_Tx_Audit_Reset( void )
     }
 }
 
-/** Records producer output and enforces the one-complete-result-per-tick contract. */
+/** Records producer output and enforces result tick monotonicity and multi-chunk rules. */
 static void HOST_INTERFACE_Result_Tx_Record_Produced( const HIL_Application_Message_T* const msg )
 {
     if ( !HOST_INTERFACE_IsResultMessage( msg ) )
@@ -572,17 +580,34 @@ static void HOST_INTERFACE_Result_Tx_Record_Produced( const HIL_Application_Mess
         return;
     }
 
-    const uint32_t tick = HOST_INTERFACE_GetMessageTick( msg );
-    if ( s_result_tx_audit.produced_tick_valid
-         && tick != ( s_result_tx_audit.last_produced_tick + 1U ) )
+    const uint32_t tick     = HOST_INTERFACE_GetMessageTick( msg );
+    const bool     has_more = HOST_INTERFACE_GetMessageHasMoreChunks( msg );
+
+    if ( s_result_tx_audit.produced_tick_valid )
     {
-        HOST_INTERFACE_Result_Tx_Fault( HOST_INTERFACE_RESULT_TX_INVARIANT_PRODUCED_TICK,
-                                        s_result_tx_audit.last_produced_tick + 1U, tick );
-        return;
+        if ( s_result_tx_audit.last_produced_had_more_chunks )
+        {
+            if ( tick != s_result_tx_audit.last_produced_tick )
+            {
+                HOST_INTERFACE_Result_Tx_Fault( HOST_INTERFACE_RESULT_TX_INVARIANT_PRODUCED_TICK,
+                                                s_result_tx_audit.last_produced_tick, tick );
+                return;
+            }
+        }
+        else
+        {
+            if ( tick != ( s_result_tx_audit.last_produced_tick + 1U ) )
+            {
+                HOST_INTERFACE_Result_Tx_Fault( HOST_INTERFACE_RESULT_TX_INVARIANT_PRODUCED_TICK,
+                                                s_result_tx_audit.last_produced_tick + 1U, tick );
+                return;
+            }
+        }
     }
 
-    s_result_tx_audit.produced_tick_valid = true;
-    s_result_tx_audit.last_produced_tick  = tick;
+    s_result_tx_audit.produced_tick_valid           = true;
+    s_result_tx_audit.last_produced_tick            = tick;
+    s_result_tx_audit.last_produced_had_more_chunks = has_more;
     s_host_interface_status.result_produced_count++;
     s_host_interface_status.result_last_produced_tick = tick;
     HOST_INTERFACE_Result_Tx_Record_Event( HOST_INTERFACE_RESULT_TX_EVENT_PRODUCED, tick, tick, 1U,
@@ -601,13 +626,29 @@ HOST_INTERFACE_Result_Tx_Record_Staged( HOST_INTERFACE_Application_State_T* cons
         return;
     }
 
-    const uint32_t tick = HOST_INTERFACE_GetMessageTick( msg );
-    if ( s_result_tx_audit.staged_tick_valid
-         && tick != ( s_result_tx_audit.last_staged_tick + 1U ) )
+    const uint32_t tick     = HOST_INTERFACE_GetMessageTick( msg );
+    const bool     has_more = HOST_INTERFACE_GetMessageHasMoreChunks( msg );
+
+    if ( s_result_tx_audit.staged_tick_valid )
     {
-        HOST_INTERFACE_Result_Tx_Fault( HOST_INTERFACE_RESULT_TX_INVARIANT_STAGED_TICK,
-                                        s_result_tx_audit.last_staged_tick + 1U, tick );
-        return;
+        if ( s_result_tx_audit.last_staged_had_more_chunks )
+        {
+            if ( tick != s_result_tx_audit.last_staged_tick )
+            {
+                HOST_INTERFACE_Result_Tx_Fault( HOST_INTERFACE_RESULT_TX_INVARIANT_STAGED_TICK,
+                                                s_result_tx_audit.last_staged_tick, tick );
+                return;
+            }
+        }
+        else
+        {
+            if ( tick != ( s_result_tx_audit.last_staged_tick + 1U ) )
+            {
+                HOST_INTERFACE_Result_Tx_Fault( HOST_INTERFACE_RESULT_TX_INVARIANT_STAGED_TICK,
+                                                s_result_tx_audit.last_staged_tick + 1U, tick );
+                return;
+            }
+        }
     }
 
     if ( application->staged_result_message_count == 0U )
@@ -617,8 +658,9 @@ HOST_INTERFACE_Result_Tx_Record_Staged( HOST_INTERFACE_Application_State_T* cons
     application->staged_result_last_tick = tick;
     application->staged_result_message_count++;
 
-    s_result_tx_audit.staged_tick_valid = true;
-    s_result_tx_audit.last_staged_tick  = tick;
+    s_result_tx_audit.staged_tick_valid           = true;
+    s_result_tx_audit.last_staged_tick            = tick;
+    s_result_tx_audit.last_staged_had_more_chunks = has_more;
     s_host_interface_status.result_staged_count++;
     s_host_interface_status.result_last_staged_tick     = tick;
     s_host_interface_status.result_staged_message_count = application->staged_result_message_count;
@@ -699,8 +741,9 @@ static bool HOST_INTERFACE_Direct_USB_Flush( HOST_INTERFACE_Application_State_T*
         const uint16_t count      = application->staged_result_message_count;
 
         if ( ( s_result_tx_audit.queued_tick_valid
-               && first_tick != ( s_result_tx_audit.last_queued_tick + 1U ) )
-             || ( ( uint32_t )count != ( last_tick - first_tick + 1U ) ) )
+               && first_tick != ( s_result_tx_audit.last_queued_tick + 1U )
+               && first_tick != s_result_tx_audit.last_queued_tick )
+             || ( last_tick < first_tick ) )
         {
             const uint32_t expected = s_result_tx_audit.queued_tick_valid
                                           ? s_result_tx_audit.last_queued_tick + 1U
@@ -826,7 +869,8 @@ static void HOST_INTERFACE_Result_Tx_Update_USB_Completion( void )
         }
 
         if ( s_result_tx_audit.completed_tick_valid
-             && batch->first_tick != ( s_result_tx_audit.last_completed_tick + 1U ) )
+             && batch->first_tick != ( s_result_tx_audit.last_completed_tick + 1U )
+             && batch->first_tick != s_result_tx_audit.last_completed_tick )
         {
             HOST_INTERFACE_Result_Tx_Fault( HOST_INTERFACE_RESULT_TX_INVARIANT_COMPLETED_TICK,
                                             s_result_tx_audit.last_completed_tick + 1U,
@@ -858,10 +902,12 @@ static void HOST_INTERFACE_Result_Tx_Update_USB_Completion( void )
     {
         s_result_tx_audit.final_validation_complete = true;
         const uint32_t expected                     = s_host_interface_status.expected_tick_count;
-        if ( expected == 0U || s_host_interface_status.result_produced_count != expected
-             || s_host_interface_status.result_staged_count != expected
-             || s_host_interface_status.result_usb_queued_count != expected
-             || s_host_interface_status.result_cdc_completed_count != expected )
+        if ( expected == 0U
+             || ( s_result_tx_audit.last_completed_tick + 1U ) != expected
+             || s_host_interface_status.result_produced_count < expected
+             || s_host_interface_status.result_staged_count != s_host_interface_status.result_produced_count
+             || s_host_interface_status.result_usb_queued_count != s_host_interface_status.result_produced_count
+             || s_host_interface_status.result_cdc_completed_count != s_host_interface_status.result_produced_count )
         {
             HOST_INTERFACE_Result_Tx_Fault( HOST_INTERFACE_RESULT_TX_INVARIANT_FINAL_COUNTS,
                                             expected,
@@ -1718,6 +1764,23 @@ static uint32_t HOST_INTERFACE_GetMessageTick( const HIL_Application_Message_T* 
         default:
             return 0U;
     }
+}
+
+static bool HOST_INTERFACE_GetMessageHasMoreChunks( const HIL_Application_Message_T* const msg )
+{
+    if ( msg == NULL )
+    {
+        return false;
+    }
+    if ( msg->type == HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT )
+    {
+        return ( msg->body.variable_test_result.flags & HIL_APPLICATION_RESULT_FLAG_HAS_MORE_CHUNKS ) != 0U;
+    }
+    if ( msg->type == HIL_APPLICATION_MESSAGE_TYPE_UPDATE_INSTRUCTION )
+    {
+        return ( msg->body.update_instruction.flags & HIL_APPLICATION_INSTRUCTION_FLAG_HAS_MORE_CHUNKS ) != 0U;
+    }
+    return false;
 }
 
 /**

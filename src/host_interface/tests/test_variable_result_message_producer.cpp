@@ -501,3 +501,43 @@ TEST_F( VariableResultMessageProducerTest, ProducesLargeSerialRecordBeyond255Byt
     ASSERT_NE( rec_spi.data.data, nullptr );
     EXPECT_EQ( std::memcmp( rec_spi.data.data, large_spi_payload.data(), 562U ), 0 );
 }
+
+/**
+ * @brief Multiple large records on the same tick trigger multi-chunk emission with HAS_MORE_CHUNKS.
+ */
+TEST_F( VariableResultMessageProducerTest, ProducesMultiChunkResultsForLargeTick )
+{
+    std::vector<uint8_t> uart1( 400U, 'U' );
+    std::vector<uint8_t> uart2( 700U, 'V' );
+
+    // Both records belong to tick 3 (400B + 700B = 1100B > 1024B capacity)
+    simulated_stream_.AppendRecord( 3U, FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE, 0U,
+                                    uart1.data(), static_cast<uint16_t>( uart1.size() ) );
+    simulated_stream_.AppendRecord( 3U, FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE, 1U,
+                                    uart2.data(), static_cast<uint16_t>( uart2.size() ) );
+    HookSimulatedStream();
+
+    // Chunk 1 for tick 3: emits HAS_MORE_CHUNKS because second record cannot fit in remaining staging
+    EXPECT_EQ( VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &out_msg_ ),
+               RESULT_MESSAGE_PRODUCER_STATUS_OK );
+    EXPECT_EQ( out_msg_.body.variable_test_result.tick_number, 3U );
+    EXPECT_EQ( out_msg_.body.variable_test_result.flags,
+               HIL_APPLICATION_RESULT_FLAG_HAS_MORE_CHUNKS );
+    EXPECT_EQ( out_msg_.body.variable_test_result.record_count, 1U );
+    EXPECT_EQ( out_msg_.body.variable_test_result.records[0].channel, 0U );
+    EXPECT_EQ( out_msg_.body.variable_test_result.records[0].data.size, 400U );
+
+    // Chunk 2 for tick 3: emits COMPLETE_TICK
+    EXPECT_EQ( VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &out_msg_ ),
+               RESULT_MESSAGE_PRODUCER_STATUS_OK );
+    EXPECT_EQ( out_msg_.body.variable_test_result.tick_number, 3U );
+    EXPECT_EQ( out_msg_.body.variable_test_result.flags,
+               HIL_APPLICATION_RESULT_FLAG_COMPLETE_TICK );
+    EXPECT_EQ( out_msg_.body.variable_test_result.record_count, 1U );
+    EXPECT_EQ( out_msg_.body.variable_test_result.records[0].channel, 1U );
+    EXPECT_EQ( out_msg_.body.variable_test_result.records[0].data.size, 700U );
+
+    // End of stream
+    EXPECT_EQ( VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &out_msg_ ),
+               RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM );
+}

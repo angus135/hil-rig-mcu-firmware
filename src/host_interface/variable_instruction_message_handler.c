@@ -104,6 +104,9 @@ static uint32_t last_instruction_tick = 0U;
 /** @brief Indicates whether at least one instruction has been processed since reset. */
 static bool has_received_instruction = false;
 
+/** @brief Indicates whether the last processed instruction had the HAS_MORE_CHUNKS flag set. */
+static bool last_instruction_had_more_chunks = false;
+
 /** @brief Retained digital output pin state for transition detection. */
 static HostVarInstructionStateTracker_T tracked_digital_state;
 
@@ -682,8 +685,9 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_UploadToFlash( const uint8_t
 
 void HOST_VARIABLE_INSTRUCTION_HANDLER_Reset( void )
 {
-    last_instruction_tick    = 0U;
-    has_received_instruction = false;
+    last_instruction_tick            = 0U;
+    has_received_instruction        = false;
+    last_instruction_had_more_chunks = false;
     ( void )memset( &tracked_digital_state, 0, sizeof( tracked_digital_state ) );
 
     DutDriverConfiguration_T active_config;
@@ -712,9 +716,22 @@ HOST_Interface_Status_T HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
         return HOST_INTERFACE_STATUS_INVALID_ARGUMENT;
     }
 
-    if ( has_received_instruction && ( instruction->tick_number <= last_instruction_tick ) )
+    if ( has_received_instruction )
     {
-        return HOST_INTERFACE_STATUS_INCONSISTENT_TICK;
+        if ( last_instruction_had_more_chunks )
+        {
+            if ( instruction->tick_number != last_instruction_tick )
+            {
+                return HOST_INTERFACE_STATUS_INCONSISTENT_TICK;
+            }
+        }
+        else
+        {
+            if ( instruction->tick_number <= last_instruction_tick )
+            {
+                return HOST_INTERFACE_STATUS_INCONSISTENT_TICK;
+            }
+        }
     }
 
     uint8_t* const instruction_buffer     = HOST_INSTRUCTION_HANDLER_GetSharedBuffer();
@@ -729,11 +746,15 @@ HOST_Interface_Status_T HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
         return status;
     }
 
+    const bool has_more_chunks =
+        ( ( instruction->flags & HIL_APPLICATION_INSTRUCTION_FLAG_HAS_MORE_CHUNKS ) != 0U );
+
     // Output-free tick: no operations changed, no flash instruction to upload
     if ( instruction_size_bytes == 0U )
     {
-        last_instruction_tick    = instruction->tick_number;
-        has_received_instruction = true;
+        last_instruction_tick            = instruction->tick_number;
+        has_received_instruction        = true;
+        last_instruction_had_more_chunks = has_more_chunks;
         return HOST_INTERFACE_STATUS_OK;
     }
 
@@ -750,8 +771,9 @@ HOST_Interface_Status_T HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
 
     if ( upload_status == HOST_INTERFACE_STATUS_OK )
     {
-        last_instruction_tick    = instruction->tick_number;
-        has_received_instruction = true;
+        last_instruction_tick            = instruction->tick_number;
+        has_received_instruction        = true;
+        last_instruction_had_more_chunks = has_more_chunks;
     }
 
     return upload_status;

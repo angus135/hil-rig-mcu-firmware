@@ -41,13 +41,13 @@
 #define CONSOLE_PRINTF_BUFFER_SIZE 128U
 #define CONSOLE_RX_BUFFER_SIZE 32U
 
-#define CONSOLE_TX_BUFFER_SIZE 2048U
+#define CONSOLE_TX_BUFFER_SIZE 512U
 #define CONSOLE_TX_FLUSH_CHUNK_SIZE 64U
 #define CONSOLE_TX_TIMEOUT_MS 100U
 
 #define CONSOLE_BAUD_RATE 115200U
 
-#define CONSOLE_HISTORY_DEPTH 8U
+#define CONSOLE_HISTORY_DEPTH 3U
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures

@@ -451,7 +451,7 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
 
     if ( ( argc == 3U ) && ( strcmp( argv[1], "execute" ) == 0 ) )
     {
-        RunStateExecutionRequest_T request = { 0U, 0U };
+        RunStateExecutionRequest_T request = { 0 };
         if ( !CONSOLE_RunStateManager_ParseU32( argv[2], &request.tick_count )
              || ( request.tick_count == 0U ) )
         {

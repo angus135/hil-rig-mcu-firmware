@@ -42,7 +42,12 @@
  * Supports large serial transfers (SPI, UART, CAN) staged for one tick while
  * remaining bounded and statically allocated.
  */
-#define VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY ( 2048U )
+#define VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY ( 1024U )
+
+/**
+ * @brief Payload threshold for flushing an intermediate chunk (HAS_MORE_CHUNKS).
+ */
+#define VAR_RESULT_PRODUCER_CHUNK_PAYLOAD_THRESHOLD ( 512U )
 
 /** @brief Timer input clock frequency for PWM capture (TIM2 and TIM5 on APB1). */
 #define VAR_RESULT_PRODUCER_PWM_TIMER_CLOCK_HZ ( 90000000U )
@@ -150,6 +155,9 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
                                                 const uint8_t*                    payload,
                                                 VariableResultProducerStream_T*   stream );
 
+static bool VAR_RESULT_PRODUCER_CanStageRecord( const FlashManagerResultHeader_T* header,
+                                                const VariableResultProducerStream_T* stream );
+
 static void
 VAR_RESULT_PRODUCER_PopulateResultMetadata( const VariableResultProducerStream_T* stream,
                                             HIL_Application_Message_T*            out_message );
@@ -237,6 +245,56 @@ static void VAR_RESULT_PRODUCER_ConsumeRecord( VariableResultProducerStream_T* c
                                                const uint16_t payload_length_bytes )
 {
     stream->read_offset += sizeof( FlashManagerResultHeader_T ) + ( size_t )payload_length_bytes;
+}
+
+/**
+ * @brief Checks whether the next flash record fits into the remaining staged storage for this chunk.
+ */
+static bool VAR_RESULT_PRODUCER_CanStageRecord( const FlashManagerResultHeader_T* const     header,
+                                                const VariableResultProducerStream_T* const stream )
+{
+    size_t req_records = 1U;
+    size_t req_bytes   = header->payload_length_bytes;
+
+    switch ( header->peripheral_type )
+    {
+        case FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT:
+            req_records = 1U;
+            req_bytes   = 2U;
+            break;
+
+        case FLASH_MANAGER_RESULT_PERIPHERAL_ANALOGUE_INPUT:
+            req_records = 2U;
+            req_bytes   = 8U;
+            break;
+
+        case FLASH_MANAGER_RESULT_PERIPHERAL_PWM_CAPTURE:
+            req_records = 1U;
+            req_bytes   = 6U;
+            break;
+
+        case FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE:
+        case FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE:
+        case FLASH_MANAGER_RESULT_PERIPHERAL_CAN_RECEIVE:
+            req_records = 1U;
+            req_bytes   = ( size_t )header->payload_length_bytes;
+            break;
+
+        default:
+            return false;
+    }
+
+    if ( ( stream->staged_record_count + req_records ) > VARIABLE_RESULT_MAX_STAGED_RECORDS )
+    {
+        return false;
+    }
+
+    if ( ( stream->staged_payload_offset + req_bytes ) > sizeof( stream->staged_payload_storage ) )
+    {
+        return false;
+    }
+
+    return true;
 }
 
 /**
@@ -683,6 +741,31 @@ VAR_RESULT_PRODUCER_ProduceNextMessageInternal( HIL_Application_Message_T* const
 
         if ( header.timestamp == stream->active_tick_number )
         {
+            if ( ( stream->staged_record_count > 0U )
+                 && ( ( stream->staged_payload_offset
+                        >= VAR_RESULT_PRODUCER_CHUNK_PAYLOAD_THRESHOLD )
+                      || !VAR_RESULT_PRODUCER_CanStageRecord( &header, stream ) ) )
+            {
+                out_message->type        = HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT;
+                out_message->subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+                out_message->has_test_id = 1U;
+                out_message->body.variable_test_result.tick_number =
+                    stream->active_tick_number - 1U;
+                VAR_RESULT_PRODUCER_PopulateResultMetadata( stream, out_message );
+                out_message->body.variable_test_result.flags =
+                    HIL_APPLICATION_RESULT_FLAG_HAS_MORE_CHUNKS;
+                out_message->body.variable_test_result.record_count =
+                    stream->staged_record_count;
+                out_message->body.variable_test_result.records =
+                    stream->staged_records;
+
+                stream->has_emitted_tick       = true;
+                stream->last_emitted_timestamp = stream->active_tick_number;
+                stream->staged_record_count    = 0U;
+                stream->staged_payload_offset  = 0U;
+                return RESULT_MESSAGE_PRODUCER_STATUS_OK;
+            }
+
             if ( !VAR_RESULT_PRODUCER_DispatchRecord( &header, payload, stream ) )
             {
                 return RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA;

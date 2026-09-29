@@ -50,7 +50,7 @@
  */
 
 // Maximum number of bytes that can be queued for USB transmission.
-#define MAX_USB_TRANSMIT_BYTES 2048U
+#define MAX_USB_TRANSMIT_BYTES 2304U
 
 // Maximum number of bytes that can be queued from USB receive callbacks.
 #define MAX_USB_RECEIVE_STREAM_BYTES 1024U

@@ -572,3 +572,29 @@ TEST( HostInterfaceDirectUsbTest, StalledCDCCompletionLatchesFirmwareFault )
     EXPECT_EQ( HOST_INTERFACE_RESULT_TX_INVARIANT_CDC_COMPLETION_TIMEOUT,
                status.result_invariant_failure );
 }
+
+/** Verifies that multi-chunk results for the same tick preserve custody without tripping invariants. */
+TEST( HostInterfaceDirectUsbTest, MultiChunkResultPreservesCustodyWithoutFault )
+{
+    InitialisePath( 0U );
+    VariableResultMessage chunk_zero( 0U );
+    chunk_zero.message.body.variable_test_result.flags = HIL_APPLICATION_RESULT_FLAG_HAS_MORE_CHUNKS;
+
+    VariableResultMessage chunk_one( 0U );
+    chunk_one.message.body.variable_test_result.flags = HIL_APPLICATION_RESULT_FLAG_COMPLETE_TICK;
+
+    ASSERT_TRUE( HOST_INTERFACE_Test_Access_Submit_Outgoing( &chunk_zero.message ) );
+    DrainUsb();
+
+    ASSERT_TRUE( HOST_INTERFACE_Test_Access_Submit_Outgoing( &chunk_one.message ) );
+    FlushDirectPath();
+
+    HostInterfaceStatus_T status{};
+    HOST_INTERFACE_GetStatus( &status );
+    EXPECT_FALSE( status.is_faulted );
+    EXPECT_EQ( HOST_INTERFACE_RESULT_TX_INVARIANT_NONE, status.result_invariant_failure );
+    EXPECT_EQ( 2U, status.result_staged_count );
+    EXPECT_EQ( 2U, status.result_cdc_completed_count );
+    EXPECT_EQ( 0U, status.result_last_cdc_completed_tick );
+}
+

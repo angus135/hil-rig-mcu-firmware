@@ -1409,6 +1409,10 @@ HW_CAN_Result_T HW_CAN_Tx_Buffer_Write1( CAN_Packet_T source[], uint16_t length 
     {
         return HW_CAN_RESULT_ERROR;
     }
+    if ( can_tx_active1 )
+    {
+        return HW_CAN_RESULT_BUSY;
+    }
     for ( uint16_t i = 0; i < length; i++ )
     {
         if ( !HW_CAN_Packet_Is_Valid( &source[i] ) )
@@ -1458,6 +1462,10 @@ HW_CAN_Result_T HW_CAN_Tx_Buffer_Write2( CAN_Packet_T source[], uint16_t length 
     if ( length > 0U && source == NULL )
     {
         return HW_CAN_RESULT_ERROR;
+    }
+    if ( can_tx_active2 )
+    {
+        return HW_CAN_RESULT_BUSY;
     }
     for ( uint16_t i = 0; i < length; i++ )
     {
@@ -1950,13 +1958,23 @@ static HW_CAN_Result_T HW_CAN_Tx_Trigger( CAN_HandleTypeDef* hcan, CAN_Packet_T 
                                           volatile uint32_t*           pending_mailbox,
                                           volatile HW_CAN_Tx_Status_T* status )
 {
-    if ( *w_p == *r_p && !*active )
-    {
-        return HW_CAN_RESULT_EMPTY;
-    }
     if ( *status == HW_CAN_TX_STATUS_ERROR )
     {
         return HW_CAN_RESULT_ERROR;
+    }
+
+    bool mailbox_active = ( ( hcan->Instance->sTxMailBox[0].TIR & CAN_TI0R_TXRQ ) != 0U )
+                          || ( ( hcan->Instance->sTxMailBox[1].TIR & CAN_TI0R_TXRQ ) != 0U )
+                          || ( ( hcan->Instance->sTxMailBox[2].TIR & CAN_TI0R_TXRQ ) != 0U );
+
+    if ( *active || mailbox_active )
+    {
+        return HW_CAN_RESULT_BUSY;
+    }
+
+    if ( *w_p == *r_p )
+    {
+        return HW_CAN_RESULT_EMPTY;
     }
 
     static const uint32_t request_complete_flags[3] = {

@@ -1526,7 +1526,10 @@ FLASH_MANAGER_SubmitInstructionUploadBytes( const uint8_t* data, uint32_t length
         return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOT_INITIALISED;
     }
 
-    if ( ( data == NULL ) || ( length == 0U ) )
+    ExternalFlashInfo_T info;
+    if ( ( data == NULL ) || ( length == 0U )
+         || ( EXTERNAL_FLASH_GetInfo( &info ) != EXTERNAL_FLASH_STATUS_OK )
+         || ( length > info.page_size_bytes ) )
     {
         return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_ARGUMENT;
     }

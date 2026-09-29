@@ -367,13 +367,14 @@ bool INSTRUCTION_BUFFER_GetUploadAcceptedLength( uint32_t* accepted_length_bytes
  * @brief Atomically appends one canonical host chunk to upload RAM.
  *
  * @param[in] data   Canonical instruction bytes in stream order.
- * @param[in] length Number of bytes to append; at most one NAND page.
+ * @param[in] length Number of bytes to append; at most two NAND pages.
  *
  * @return Upload write status.
  *
  * @note The complete chunk is copied or no state is changed. BUSY therefore
  *       permits the caller to retry the identical data and length.
- * @note A chunk may fill the tail of one page and continue into the next page.
+ * @note A maximum-size chunk beginning in a partial page may occupy the tail of
+ *       that page and continue through two successor pages.
  * @note Chunk boundaries are transport boundaries only. They need not align
  *       with instruction or NAND-page boundaries.
  * @note Full pages become immutable and ready for NAND immediately. The final

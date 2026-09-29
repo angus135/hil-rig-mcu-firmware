@@ -266,10 +266,13 @@ typedef struct
  *------------------------------------------------------------------------------
  */
 
+#if GLOBAL_CONFIG__CONSOLE_FLASH_TEST_HARNESS_ENABLED
 static uint8_t console_flash_page_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES];
 #define console_flash_write_buffer console_flash_page_buffer
 #define console_flash_read_buffer console_flash_page_buffer
+#endif
 
+#if GLOBAL_CONFIG__CONSOLE_FLASH_TEST_HARNESS_ENABLED
 static uint32_t console_flash_last_upload_records   = 0U;
 static uint32_t console_flash_last_upload_bytes     = 0U;
 static uint8_t  console_flash_last_upload_seed      = 0U;
@@ -329,6 +332,7 @@ static ConsoleFlashExecutionTestContext_T console_flash_execution_test = {
     .last_instruction_status      = FLASH_MANAGER_INSTRUCTION_END_OF_STREAM,
     .last_commit_status           = FLASH_MANAGER_RESULT_COMMIT_OK,
 };
+#endif
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -337,6 +341,11 @@ static ConsoleFlashExecutionTestContext_T console_flash_execution_test = {
 
 static void        CONSOLE_Flash_PrintUsage( void );
 static const char* CONSOLE_Flash_StateName( FlashManagerState_T state );
+static void        CONSOLE_Flash_PrintNandPhaseTiming( const char*                  label,
+                                                       const HW_NAND_PhaseTiming_T* timing );
+static void        CONSOLE_Flash_StatusCommand( void );
+
+#if GLOBAL_CONFIG__CONSOLE_FLASH_TEST_HARNESS_ENABLED
 static bool        CONSOLE_Flash_ParseU32( const char* text, uint32_t* value );
 static bool CONSOLE_Flash_WaitForState( FlashManagerState_T expected_state, uint32_t timeout_ms );
 static bool CONSOLE_Flash_WaitForRunState( RunState_T expected_state, uint32_t timeout_ms );
@@ -385,8 +394,6 @@ static void     CONSOLE_Flash_FillInstructionChunk( uint8_t* destination, uint32
 static uint32_t CONSOLE_Flash_Fnv1aUpdate( uint32_t hash, const uint8_t* data, uint32_t length );
 static uint32_t CONSOLE_Flash_StressLogicalPattern( uint32_t sample_index );
 static uint32_t CONSOLE_Flash_StressDigitalInputMask( uint32_t logical_pattern );
-static void     CONSOLE_Flash_PrintNandPhaseTiming( const char*                  label,
-                                                    const HW_NAND_PhaseTiming_T* timing );
 #ifndef TEST_BUILD
 static void CONSOLE_Flash_RecordPageTiming( ConsoleFlashPageTiming_T* timing,
                                             uint32_t                  elapsed_cycles );
@@ -395,7 +402,6 @@ static void CONSOLE_Flash_PrintPageTiming( const char* label, uint32_t operation
                                            const ConsoleFlashPageTiming_T* timing );
 #endif
 
-static void CONSOLE_Flash_StatusCommand( void );
 static void CONSOLE_Flash_ExternalTestCommand( uint16_t argc, char* argv[] );
 #ifndef TEST_BUILD
 static void CONSOLE_Flash_ThroughputTestCommand( uint16_t argc, char* argv[] );
@@ -420,6 +426,7 @@ static void CONSOLE_Flash_VerifyDigitalLoopbackResultsCommand( uint16_t argc, ch
 static void CONSOLE_Flash_VerifyAnalogueLoopbackResultsCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_VerifyPwmLoopbackResultsCommand( uint16_t argc, char* argv[] );
 static void CONSOLE_Flash_VerifyStressResultsCommand( uint16_t argc, char* argv[] );
+#endif
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -429,8 +436,9 @@ static void CONSOLE_Flash_VerifyStressResultsCommand( uint16_t argc, char* argv[
 /** Prints the staged destructive-test workflow. */
 static void CONSOLE_Flash_PrintUsage( void )
 {
-    CONSOLE_Printf( "Flash hardware bring-up (destructive):\r\n" );
+    CONSOLE_Printf( "Flash commands:\r\n" );
     CONSOLE_Printf( "  flash status\r\n" );
+#if GLOBAL_CONFIG__CONSOLE_FLASH_TEST_HARNESS_ENABLED
     CONSOLE_Printf( "  flash external_test [seed]\r\n" );
 #ifndef TEST_BUILD
     CONSOLE_Printf( "  flash throughput_test [page_count]\r\n" );
@@ -463,6 +471,9 @@ static void CONSOLE_Flash_PrintUsage( void )
     CONSOLE_Printf( "  flash results verify_spi_loopback <channel 1..2> <byte> <length>\r\n" );
     CONSOLE_Printf( "  flash results verify_can_loopback <channel 1..2> <id> <byte> <dlc>\r\n" );
     CONSOLE_Printf( "Use 'flash status' after every phase. Reset after FAULT.\r\n" );
+#else
+    CONSOLE_Printf( "  (flash test harness is disabled in this build)\r\n" );
+#endif
 }
 
 /** Returns a printable lifecycle state name. */
@@ -499,6 +510,7 @@ static const char* CONSOLE_Flash_StateName( FlashManagerState_T state )
     }
 }
 
+#if GLOBAL_CONFIG__CONSOLE_FLASH_TEST_HARNESS_ENABLED
 /** Parses one unsigned decimal or 0x-prefixed console argument. */
 static bool CONSOLE_Flash_ParseU32( const char* text, uint32_t* value )
 {
@@ -983,6 +995,7 @@ static uint32_t CONSOLE_Flash_StressDigitalInputMask( uint32_t logical_pattern )
     }
     return physical_mask;
 }
+#endif
 
 static void CONSOLE_Flash_PrintNandPhaseTiming( const char*                  label,
                                                 const HW_NAND_PhaseTiming_T* timing )
@@ -995,6 +1008,7 @@ static void CONSOLE_Flash_PrintNandPhaseTiming( const char*                  lab
                     ( unsigned long )average_cycles, ( unsigned long )timing->maximum_cycles );
 }
 
+#if GLOBAL_CONFIG__CONSOLE_FLASH_TEST_HARNESS_ENABLED
 #ifndef TEST_BUILD
 static void CONSOLE_Flash_RecordPageTiming( ConsoleFlashPageTiming_T* timing,
                                             uint32_t                  elapsed_cycles )
@@ -1030,6 +1044,7 @@ static void CONSOLE_Flash_PrintPageTiming( const char* label, uint32_t operation
                     ( unsigned long )( bytes_per_second / 1000000U ),
                     ( unsigned long )( ( bytes_per_second % 1000000U ) / 1000U ) );
 }
+#endif
 #endif
 
 /** Prints Flash Manager lifecycle and External Flash/NAND diagnostic state. */
@@ -1135,6 +1150,7 @@ static void CONSOLE_Flash_StatusCommand( void )
                         ( unsigned long )diagnostics.refill_drain_contentions );
     }
 
+#if GLOBAL_CONFIG__CONSOLE_FLASH_TEST_HARNESS_ENABLED
     if ( console_flash_last_upload_records != 0U )
     {
         CONSOLE_Printf( "Last upload test: instructions=%lu bytes=%lu seed=0x%02X\r\n",
@@ -1151,8 +1167,10 @@ static void CONSOLE_Flash_StatusCommand( void )
                     ( unsigned long )console_flash_execution_test.current_tick,
                     ( unsigned long )console_flash_execution_test.instructions_consumed,
                     ( unsigned long )console_flash_execution_test.expected_records );
+#endif
 }
 
+#if GLOBAL_CONFIG__CONSOLE_FLASH_TEST_HARNESS_ENABLED
 /** Programs and verifies full and partial pages in both logical partitions. */
 static void CONSOLE_Flash_ExternalTestCommand( uint16_t argc, char* argv[] )
 {
@@ -4650,6 +4668,7 @@ static void CONSOLE_Flash_VerifyPwmLoopbackResultsCommand( uint16_t argc, char* 
                     ( unsigned long )( console_flash_pwm_loopback.duty_permille / 10U ),
                     ( unsigned long )( console_flash_pwm_loopback.duty_permille % 10U ) );
 }
+#endif
 
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
@@ -4675,6 +4694,7 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
         return;
     }
 
+#if GLOBAL_CONFIG__CONSOLE_FLASH_TEST_HARNESS_ENABLED
     if ( strcmp( argv[1], "external_test" ) == 0 )
     {
         CONSOLE_Flash_ExternalTestCommand( argc, argv );
@@ -4824,6 +4844,10 @@ void CONSOLE_FlashManager_Command( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "  verify_can_loopback <channel> <id> <byte> <dlc>\r\n" );
         return;
     }
+#else
+    CONSOLE_Printf( "Flash test harness is disabled in this build (use 'flash status').\r\n" );
+    return;
+#endif
 
     CONSOLE_Printf( "Unknown flash command.\r\n" );
     CONSOLE_Flash_PrintUsage();

@@ -518,59 +518,57 @@ static bool INSTRUCTION_BUFFER_AreUploadPagesEmpty( void )
 static InstructionBufferUploadCapacityStatus_T
 INSTRUCTION_BUFFER_CheckUploadCapacity( uint32_t length )
 {
-    uint8_t                      page_index = instruction_buffer_context.upload_write_page_index;
-    InstructionBufferPageState_T page_state = instruction_buffer_context.page_states[page_index];
-    uint32_t valid_length_bytes = instruction_buffer_context.page_valid_bytes[page_index];
-    uint32_t available_length_bytes;
+    uint8_t  page_index      = instruction_buffer_context.upload_write_page_index;
+    uint32_t remaining_bytes = length;
 
-    if ( page_state == INSTRUCTION_BUFFER_PAGE_EMPTY )
+    while ( remaining_bytes > 0U )
     {
-        if ( valid_length_bytes != 0U )
+        const InstructionBufferPageState_T page_state =
+            instruction_buffer_context.page_states[page_index];
+        const uint32_t valid_length_bytes =
+            instruction_buffer_context.page_valid_bytes[page_index];
+        uint32_t available_length_bytes = 0U;
+
+        if ( page_state == INSTRUCTION_BUFFER_PAGE_EMPTY )
         {
-            return INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
+            if ( valid_length_bytes != 0U )
+            {
+                return INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
+            }
+
+            available_length_bytes = instruction_buffer_context.page_size_bytes;
+        }
+        else if ( page_state == INSTRUCTION_BUFFER_PAGE_FILLING_FROM_HOST )
+        {
+            if ( ( page_index != instruction_buffer_context.upload_write_page_index )
+                 || ( valid_length_bytes >= instruction_buffer_context.page_size_bytes )
+                 || ( valid_length_bytes
+                      > instruction_buffer_context.upload_accepted_length_bytes ) )
+            {
+                return INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
+            }
+
+            available_length_bytes =
+                instruction_buffer_context.page_size_bytes - valid_length_bytes;
+        }
+        else
+        {
+            return ( page_state == INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND
+                     || page_state == INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND )
+                       ? INSTRUCTION_BUFFER_UPLOAD_CAPACITY_BUSY
+                       : INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
         }
 
-        available_length_bytes = instruction_buffer_context.page_size_bytes;
-    }
-    else if ( page_state == INSTRUCTION_BUFFER_PAGE_FILLING_FROM_HOST )
-    {
-        if ( ( valid_length_bytes >= instruction_buffer_context.page_size_bytes )
-             || ( valid_length_bytes > instruction_buffer_context.upload_accepted_length_bytes ) )
+        if ( remaining_bytes <= available_length_bytes )
         {
-            return INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
+            return INSTRUCTION_BUFFER_UPLOAD_CAPACITY_AVAILABLE;
         }
 
-        available_length_bytes = instruction_buffer_context.page_size_bytes - valid_length_bytes;
-    }
-    else
-    {
-        return ( page_state == INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND
-                 || page_state == INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND )
-                   ? INSTRUCTION_BUFFER_UPLOAD_CAPACITY_BUSY
-                   : INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
+        remaining_bytes -= available_length_bytes;
+        page_index = INSTRUCTION_BUFFER_NextPageIndex( page_index );
     }
 
-    if ( length <= available_length_bytes )
-    {
-        return INSTRUCTION_BUFFER_UPLOAD_CAPACITY_AVAILABLE;
-    }
-
-    /* A one-page host chunk can cross into at most one successor page. */
-    uint8_t successor_page_index = INSTRUCTION_BUFFER_NextPageIndex( page_index );
-    InstructionBufferPageState_T successor_state =
-        instruction_buffer_context.page_states[successor_page_index];
-
-    if ( successor_state != INSTRUCTION_BUFFER_PAGE_EMPTY )
-    {
-        return ( successor_state == INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND
-                 || successor_state == INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND )
-                   ? INSTRUCTION_BUFFER_UPLOAD_CAPACITY_BUSY
-                   : INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
-    }
-
-    return ( instruction_buffer_context.page_valid_bytes[successor_page_index] == 0U )
-               ? INSTRUCTION_BUFFER_UPLOAD_CAPACITY_AVAILABLE
-               : INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
+    return INSTRUCTION_BUFFER_UPLOAD_CAPACITY_AVAILABLE;
 }
 
 static bool INSTRUCTION_BUFFER_CopyUploadBytes( const uint8_t* data, uint32_t length )
@@ -1116,7 +1114,8 @@ InstructionBufferUploadWriteStatus_T INSTRUCTION_BUFFER_WriteUploadBytes( const 
     }
 
     if ( ( data == NULL ) || ( length == 0U )
-         || ( length > instruction_buffer_context.page_size_bytes ) )
+         || ( length > ( instruction_buffer_context.page_size_bytes
+                          * INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT ) ) )
     {
         return INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_ARGUMENT;
     }
