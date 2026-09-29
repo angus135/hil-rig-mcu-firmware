@@ -1405,10 +1405,6 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  */
 HW_CAN_Result_T HW_CAN_Tx_Buffer_Write1( CAN_Packet_T source[], uint16_t length )
 {
-    if ( can_tx_active1 )
-    {
-        return HW_CAN_RESULT_BUSY;
-    }
     if ( length > 0U && source == NULL )
     {
         return HW_CAN_RESULT_ERROR;
@@ -1459,10 +1455,6 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  */
 HW_CAN_Result_T HW_CAN_Tx_Buffer_Write2( CAN_Packet_T source[], uint16_t length )
 {
-    if ( can_tx_active2 )
-    {
-        return HW_CAN_RESULT_BUSY;
-    }
     if ( length > 0U && source == NULL )
     {
         return HW_CAN_RESULT_ERROR;
@@ -1958,23 +1950,13 @@ static HW_CAN_Result_T HW_CAN_Tx_Trigger( CAN_HandleTypeDef* hcan, CAN_Packet_T 
                                           volatile uint32_t*           pending_mailbox,
                                           volatile HW_CAN_Tx_Status_T* status )
 {
-    if ( *active )
-    {
-        return HW_CAN_RESULT_BUSY;
-    }
-    if ( *w_p == *r_p )
+    if ( *w_p == *r_p && !*active )
     {
         return HW_CAN_RESULT_EMPTY;
     }
     if ( *status == HW_CAN_TX_STATUS_ERROR )
     {
         return HW_CAN_RESULT_ERROR;
-    }
-    if ( ( hcan->Instance->sTxMailBox[0].TIR & CAN_TI0R_TXRQ ) != 0U
-         || ( hcan->Instance->sTxMailBox[1].TIR & CAN_TI0R_TXRQ ) != 0U
-         || ( hcan->Instance->sTxMailBox[2].TIR & CAN_TI0R_TXRQ ) != 0U )
-    {
-        return HW_CAN_RESULT_BUSY;
     }
 
     static const uint32_t request_complete_flags[3] = {
@@ -1999,7 +1981,6 @@ static HW_CAN_Result_T HW_CAN_Tx_Trigger( CAN_HandleTypeDef* hcan, CAN_Packet_T 
 
     *active          = true;
     *completed       = false;
-    *pending_mailbox = 0U;
     *status          = HW_CAN_TX_STATUS_ACTIVE;
     SET_BIT( hcan->Instance->IER, CAN_IER_TMEIE );
 
