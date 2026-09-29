@@ -20,7 +20,7 @@ extern "C"
 #include "host_interface_test_access.h"
 #include "rtos_config.h"
 #include "hw_usb_mocks.h"
-#include "hw_usb.c"  // NOLINT
+#include "hw_usb.c"                            // NOLINT
 #include "variable_result_message_producer.c"  // NOLINT
 }
 
@@ -32,15 +32,15 @@ constexpr uint32_t kSpiTotalBytes     = 70312U;
 constexpr uint32_t kCanTotalFrames    = 370U;
 
 USBD_CDC_HandleTypeDef cdc_handle{};
-uint8_t*                active_cdc_data   = nullptr;
-uint16_t                active_cdc_length = 0U;
-std::vector<uint8_t>    transmitted_bytes;
-uint8_t                 fake_stream_storage = 0U;
-uint8_t                 fake_mutex_storage  = 0U;
-TickType_t              test_ticks          = 0U;
-std::vector<uint8_t>    flash_result_bytes;
-size_t                  flash_read_offset = 0U;
-uint32_t                flash_max_chunk_size = 0U;
+uint8_t*               active_cdc_data   = nullptr;
+uint16_t               active_cdc_length = 0U;
+std::vector<uint8_t>   transmitted_bytes;
+uint8_t                fake_stream_storage = 0U;
+uint8_t                fake_mutex_storage  = 0U;
+TickType_t             test_ticks          = 0U;
+std::vector<uint8_t>   flash_result_bytes;
+size_t                 flash_read_offset    = 0U;
+uint32_t               flash_max_chunk_size = 0U;
 
 uint32_t DistributedUnits( const uint32_t index, const uint32_t total_units )
 {
@@ -63,11 +63,11 @@ HIL_Application_Test_Id_T TestId()
 
 struct VariableResultMessage
 {
-    std::array<uint8_t, 5U>  uart{};
-    std::array<uint8_t, 71U> spi{};
-    std::array<uint8_t, 12U> can{};
+    std::array<uint8_t, 5U>                           uart{};
+    std::array<uint8_t, 71U>                          spi{};
+    std::array<uint8_t, 12U>                          can{};
     std::array<HIL_Application_Captured_Record_T, 3U> records{};
-    HIL_Application_Message_T message{};
+    HIL_Application_Message_T                         message{};
 
     explicit VariableResultMessage( const uint32_t tick )
     {
@@ -84,9 +84,18 @@ struct VariableResultMessage
             spi[index] = static_cast<uint8_t>( ( tick * 3U ) + index );
         }
 
-        can = { 0x34U, 0x02U, 0x04U, static_cast<uint8_t>( tick ),
-                static_cast<uint8_t>( tick >> 8U ), 0xBEU, 0x00U, 0x00U,
-                0x00U, 0x00U, 0x00U, 0x00U };
+        can = { 0x34U,
+                0x02U,
+                0x04U,
+                static_cast<uint8_t>( tick ),
+                static_cast<uint8_t>( tick >> 8U ),
+                0xBEU,
+                0x00U,
+                0x00U,
+                0x00U,
+                0x00U,
+                0x00U,
+                0x00U };
 
         records[0].peripheral_type = HIL_APPLICATION_PERIPHERAL_UART;
         records[0].channel         = 0U;
@@ -102,10 +111,10 @@ struct VariableResultMessage
         message.subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
         message.has_test_id = 1U;
         message.test_id     = TestId();
-        message.body.variable_test_result.tick_number    = tick;
-        message.body.variable_test_result.record_count   = has_can ? 3U : 2U;
-        message.body.variable_test_result.condition      = HIL_APPLICATION_RESULT_CONDITION_OK;
-        message.body.variable_test_result.flags = HIL_APPLICATION_RESULT_FLAG_COMPLETE_TICK;
+        message.body.variable_test_result.tick_number  = tick;
+        message.body.variable_test_result.record_count = has_can ? 3U : 2U;
+        message.body.variable_test_result.condition    = HIL_APPLICATION_RESULT_CONDITION_OK;
+        message.body.variable_test_result.flags        = HIL_APPLICATION_RESULT_FLAG_COMPLETE_TICK;
         message.body.variable_test_result.problem_detail = 0U;
         message.body.variable_test_result.records        = records.data();
     }
@@ -120,18 +129,17 @@ std::vector<uint8_t> EncodeFramed( const HIL_Application_Context_T& context,
 
     std::vector<uint8_t> framed( encoded_size + 2U );
     size_t               used = 0U;
-    EXPECT_EQ( HIL_APPLICATION_STATUS_OK,
-               HIL_APPLICATION_Encode_Message( &context, &message, &framed[2], encoded_size,
-                                               &used ) );
+    EXPECT_EQ(
+        HIL_APPLICATION_STATUS_OK,
+        HIL_APPLICATION_Encode_Message( &context, &message, &framed[2], encoded_size, &used ) );
     EXPECT_EQ( encoded_size, used );
     framed[0] = static_cast<uint8_t>( encoded_size & 0xFFU );
     framed[1] = static_cast<uint8_t>( ( encoded_size >> 8U ) & 0xFFU );
     return framed;
 }
 
-void AppendFlashRecord( const uint32_t tick, const uint8_t peripheral_type,
-                        const uint8_t channel, const uint8_t* const payload,
-                        const uint16_t payload_size )
+void AppendFlashRecord( const uint32_t tick, const uint8_t peripheral_type, const uint8_t channel,
+                        const uint8_t* const payload, const uint16_t payload_size )
 {
     FlashManagerResultHeader_T header{};
     header.timestamp            = tick + 1U;
@@ -152,17 +160,25 @@ void PopulateDistributedFlashResults()
 
     for ( uint32_t tick = 0U; tick < kWorkloadTickCount; ++tick )
     {
-        std::array<uint8_t, 5U> uart{};
+        std::array<uint8_t, 5U>  uart{};
         std::array<uint8_t, 71U> spi{};
         std::array<uint8_t, 12U> can = {
-            0x34U, 0x02U, 0x04U, static_cast<uint8_t>( tick ),
-            static_cast<uint8_t>( tick >> 8U ), 0xBEU, 0x00U, 0x00U,
-            0x00U, 0x00U, 0x00U, 0x00U,
+            0x34U,
+            0x02U,
+            0x04U,
+            static_cast<uint8_t>( tick ),
+            static_cast<uint8_t>( tick >> 8U ),
+            0xBEU,
+            0x00U,
+            0x00U,
+            0x00U,
+            0x00U,
+            0x00U,
+            0x00U,
         };
         const uint16_t uart_size =
             static_cast<uint16_t>( DistributedUnits( tick, kUartTotalBytes ) );
-        const uint16_t spi_size =
-            static_cast<uint16_t>( DistributedUnits( tick, kSpiTotalBytes ) );
+        const uint16_t spi_size = static_cast<uint16_t>( DistributedUnits( tick, kSpiTotalBytes ) );
 
         for ( size_t index = 0U; index < uart.size(); ++index )
         {
@@ -192,8 +208,8 @@ void CompleteActiveTransfer()
 
     transmitted_bytes.insert( transmitted_bytes.end(), active_cdc_data,
                               active_cdc_data + active_cdc_length );
-    active_cdc_data   = nullptr;
-    active_cdc_length = 0U;
+    active_cdc_data    = nullptr;
+    active_cdc_length  = 0U;
     cdc_handle.TxState = 0U;
     HW_USB_Monitor_Process();
 }
@@ -260,15 +276,14 @@ void ExpectTransmittedBytes( const std::vector<uint8_t>& expected_bytes )
 {
     EXPECT_EQ( 0U, HOST_INTERFACE_Test_Access_Get_Direct_Pending_Bytes() );
     ASSERT_EQ( expected_bytes.size(), transmitted_bytes.size() );
-    const auto mismatch = std::mismatch( expected_bytes.begin(), expected_bytes.end(),
-                                         transmitted_bytes.begin() );
+    const auto mismatch =
+        std::mismatch( expected_bytes.begin(), expected_bytes.end(), transmitted_bytes.begin() );
     EXPECT_EQ( expected_bytes.end(), mismatch.first )
         << "first differing USB stream byte at offset "
         << std::distance( expected_bytes.begin(), mismatch.first );
 }
 
-void RunDistributedWorkload( const size_t initial_ring_offset,
-                             const uint32_t completion_interval )
+void RunDistributedWorkload( const size_t initial_ring_offset, const uint32_t completion_interval )
 {
     InitialisePath( initial_ring_offset );
 
@@ -280,7 +295,7 @@ void RunDistributedWorkload( const size_t initial_ring_offset,
     std::vector<uint8_t> expected_bytes;
     for ( uint32_t tick = 0U; tick < kWorkloadTickCount; ++tick )
     {
-        VariableResultMessage result( tick );
+        VariableResultMessage      result( tick );
         const std::vector<uint8_t> framed = EncodeFramed( context, result.message );
         if ( tick == 140U )
         {
@@ -318,8 +333,7 @@ void RunDistributedWorkload( const size_t initial_ring_offset,
     EXPECT_EQ( HOST_INTERFACE_RESULT_TX_INVARIANT_NONE, status.result_invariant_failure );
 }
 
-void RunProducerToUsbWorkload( const uint32_t flash_chunk_size,
-                               const uint32_t completion_interval )
+void RunProducerToUsbWorkload( const uint32_t flash_chunk_size, const uint32_t completion_interval )
 {
     constexpr uint32_t kExpectedTickCount = 2002U;
 
@@ -352,8 +366,7 @@ void RunProducerToUsbWorkload( const uint32_t flash_chunk_size,
             CompleteActiveTransfer();
         }
 
-        if ( ( ( expected_tick + 1U ) % completion_interval ) == 0U
-             && active_cdc_data != nullptr )
+        if ( ( ( expected_tick + 1U ) % completion_interval ) == 0U && active_cdc_data != nullptr )
         {
             CompleteActiveTransfer();
         }
@@ -382,8 +395,8 @@ void RunProducerToUsbWorkload( const uint32_t flash_chunk_size,
 extern "C" USBD_HandleTypeDef hUsbDeviceFS = {};
 
 extern "C" FlashManagerResultTransferStatus_T
-FLASH_MANAGER_ReadResultBytes( uint8_t* const destination,
-                               const uint32_t destination_capacity_bytes,
+FLASH_MANAGER_ReadResultBytes( uint8_t* const  destination,
+                               const uint32_t  destination_capacity_bytes,
                                uint32_t* const bytes_read )
 {
     if ( destination == nullptr || bytes_read == nullptr )
@@ -396,9 +409,8 @@ FLASH_MANAGER_ReadResultBytes( uint8_t* const destination,
         return FLASH_MANAGER_RESULT_TRANSFER_END_OF_STREAM;
     }
 
-    size_t bytes_to_copy =
-        std::min( static_cast<size_t>( destination_capacity_bytes ),
-                  flash_result_bytes.size() - flash_read_offset );
+    size_t bytes_to_copy = std::min( static_cast<size_t>( destination_capacity_bytes ),
+                                     flash_result_bytes.size() - flash_read_offset );
     if ( flash_max_chunk_size > 0U )
     {
         bytes_to_copy = std::min( bytes_to_copy, static_cast<size_t>( flash_max_chunk_size ) );
@@ -428,8 +440,7 @@ extern "C" StreamBufferHandle_t xStreamBufferCreate( size_t, size_t )
     return reinterpret_cast<StreamBufferHandle_t>( &fake_stream_storage );
 }
 
-extern "C" size_t xStreamBufferSendFromISR( StreamBufferHandle_t, const void*, size_t,
-                                              BaseType_t* )
+extern "C" size_t xStreamBufferSendFromISR( StreamBufferHandle_t, const void*, size_t, BaseType_t* )
 {
     return 0U;
 }
@@ -478,7 +489,7 @@ extern "C" TaskHandle_t xTaskGetCurrentTaskHandle( void )
 }
 
 extern "C" BaseType_t xTaskNotifyWait( uint32_t, uint32_t, uint32_t* const notification_value,
-                                        TickType_t )
+                                       TickType_t )
 {
     if ( notification_value != nullptr )
     {
@@ -505,16 +516,15 @@ TEST( HostInterfaceDirectUsbTest, DistributedVariableResultsRemainExactAcrossBac
  */
 TEST( HostInterfaceDirectUsbTest, DistributedVariableResultsRemainExactForAdversarialRingPhases )
 {
-    const std::array<size_t, 3U> ring_offsets = { 1U, 1023U, 1994U };
+    const std::array<size_t, 3U>   ring_offsets         = { 1U, 1023U, 1994U };
     const std::array<uint32_t, 3U> completion_intervals = { 1U, 5U, 17U };
 
     for ( const size_t ring_offset : ring_offsets )
     {
         for ( const uint32_t completion_interval : completion_intervals )
         {
-            SCOPED_TRACE( testing::Message()
-                          << "ring offset " << ring_offset << ", completion interval "
-                          << completion_interval );
+            SCOPED_TRACE( testing::Message() << "ring offset " << ring_offset
+                                             << ", completion interval " << completion_interval );
             RunDistributedWorkload( ring_offset, completion_interval );
         }
     }
@@ -542,8 +552,7 @@ TEST( HostInterfaceDirectUsbTest, ResultTickDiscontinuityLatchesFirmwareFault )
     HOST_INTERFACE_GetStatus( &status );
     EXPECT_TRUE( status.is_faulted );
     EXPECT_EQ( RUN_STATE_FAULT_HOST_INTERFACE_ERROR, status.last_fault_reason );
-    EXPECT_EQ( HOST_INTERFACE_RESULT_TX_INVARIANT_STAGED_TICK,
-               status.result_invariant_failure );
+    EXPECT_EQ( HOST_INTERFACE_RESULT_TX_INVARIANT_STAGED_TICK, status.result_invariant_failure );
 }
 
 /** Verifies that a CDC-owned result span cannot remain silently stuck. */

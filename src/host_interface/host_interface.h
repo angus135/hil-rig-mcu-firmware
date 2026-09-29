@@ -188,7 +188,7 @@ typedef struct
     uint32_t                         result_audit_overwrite_count;
     bool                             result_custody_complete;
     HostInterfaceResultTxInvariant_T result_invariant_failure;
-    HW_USB_Transmit_Diagnostics_T     usb_tx_diags;
+    HW_USB_Transmit_Diagnostics_T    usb_tx_diags;
 
     /* Dynamic Scheduling Status */
     uint32_t effective_period_ms;
@@ -227,8 +227,8 @@ void HOST_INTERFACE_GetStatus( HostInterfaceStatus_T* status );
  * @param[out] entry Destination for the copied trace entry.
  * @return true when the requested retained entry exists.
  */
-bool HOST_INTERFACE_GetResultTxAuditEntry(
-    uint32_t newest_offset, HostInterfaceResultTxAuditEntry_T* entry );
+bool HOST_INTERFACE_GetResultTxAuditEntry( uint32_t                           newest_offset,
+                                           HostInterfaceResultTxAuditEntry_T* entry );
 
 /**
  * @brief Host Interface Task

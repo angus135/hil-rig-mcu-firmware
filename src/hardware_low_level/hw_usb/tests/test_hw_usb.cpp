@@ -726,10 +726,8 @@ TEST_F( HWUSBTest, TransmitDiagnosticsTrackAcceptanceSubmissionAndCompletionSepa
     EXPECT_EQ( 0U, diagnostics.completed_bytes );
     EXPECT_EQ( sizeof( data ), diagnostics.current_buffered_bytes );
     EXPECT_EQ( sizeof( data ), diagnostics.current_active_bytes );
-    EXPECT_EQ( diagnostics.integrity_accepted_bytes,
-               diagnostics.integrity_submitted_bytes );
-    EXPECT_EQ( diagnostics.accepted_stream_crc32,
-               diagnostics.submitted_stream_crc32 );
+    EXPECT_EQ( diagnostics.integrity_accepted_bytes, diagnostics.integrity_submitted_bytes );
+    EXPECT_EQ( diagnostics.accepted_stream_crc32, diagnostics.submitted_stream_crc32 );
 
     cdc_handle.TxState = 0U;
     HW_USB_Monitor_Process();
@@ -744,7 +742,7 @@ TEST_F( HWUSBTest, TransmitDiagnosticsTrackAcceptanceSubmissionAndCompletionSepa
 /** Verifies that a full-ring refusal is observable without mutating byte totals. */
 TEST_F( HWUSBTest, TransmitDiagnosticsTrackNoSpaceRejection )
 {
-    const uint8_t data = 0x5AU;
+    const uint8_t data              = 0x5AU;
     usb_state.transmit_num_buffered = MAX_USB_TRANSMIT_BYTES;
 
     EXPECT_FALSE( HW_USB_Transmit( &data, 1U ) );
@@ -772,8 +770,6 @@ TEST_F( HWUSBTest, TransmitDiagnosticsDetectRingContentChangeBeforeCDCSubmission
 
     HW_USB_Transmit_Diagnostics_T diagnostics = {};
     ASSERT_TRUE( HW_USB_Get_Transmit_Diagnostics( &diagnostics ) );
-    EXPECT_EQ( diagnostics.integrity_accepted_bytes,
-               diagnostics.integrity_submitted_bytes );
-    EXPECT_NE( diagnostics.accepted_stream_crc32,
-               diagnostics.submitted_stream_crc32 );
+    EXPECT_EQ( diagnostics.integrity_accepted_bytes, diagnostics.integrity_submitted_bytes );
+    EXPECT_NE( diagnostics.accepted_stream_crc32, diagnostics.submitted_stream_crc32 );
 }

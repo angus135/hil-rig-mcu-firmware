@@ -104,8 +104,7 @@ static const char* CONSOLE_HostInterface_FaultName( RunStateFaultReason_T reason
     }
 }
 
-static const char*
-CONSOLE_HostInterface_ResultEventName( const HostInterfaceResultTxEvent_T event )
+static const char* CONSOLE_HostInterface_ResultEventName( const HostInterfaceResultTxEvent_T event )
 {
     switch ( event )
     {
@@ -128,8 +127,8 @@ CONSOLE_HostInterface_ResultEventName( const HostInterfaceResultTxEvent_T event 
     }
 }
 
-static const char* CONSOLE_HostInterface_ResultInvariantName(
-    const HostInterfaceResultTxInvariant_T invariant )
+static const char*
+CONSOLE_HostInterface_ResultInvariantName( const HostInterfaceResultTxInvariant_T invariant )
 {
     switch ( invariant )
     {
@@ -541,17 +540,16 @@ static void CONSOLE_HostInterface_PrintStatus( void )
                         ( unsigned long )status.result_rate_msgs_per_sec,
                         status.result_phase_active ? " (active)" : "" );
     }
-    CONSOLE_Printf(
-        "  Result custody:      produced=%lu[%lu], staged=%lu[%lu], queued=%lu[%lu], "
-        "cdc_done=%lu[%lu]\r\n",
-        ( unsigned long )status.result_produced_count,
-        ( unsigned long )status.result_last_produced_tick,
-        ( unsigned long )status.result_staged_count,
-        ( unsigned long )status.result_last_staged_tick,
-        ( unsigned long )status.result_usb_queued_count,
-        ( unsigned long )status.result_last_usb_queued_tick,
-        ( unsigned long )status.result_cdc_completed_count,
-        ( unsigned long )status.result_last_cdc_completed_tick );
+    CONSOLE_Printf( "  Result custody:      produced=%lu[%lu], staged=%lu[%lu], queued=%lu[%lu], "
+                    "cdc_done=%lu[%lu]\r\n",
+                    ( unsigned long )status.result_produced_count,
+                    ( unsigned long )status.result_last_produced_tick,
+                    ( unsigned long )status.result_staged_count,
+                    ( unsigned long )status.result_last_staged_tick,
+                    ( unsigned long )status.result_usb_queued_count,
+                    ( unsigned long )status.result_last_usb_queued_tick,
+                    ( unsigned long )status.result_cdc_completed_count,
+                    ( unsigned long )status.result_last_cdc_completed_tick );
     CONSOLE_Printf(
         "  Result pending:      staged=%u, USB batches=%u, USB rejects=%lu, complete=%s, "
         "invariant=%s\r\n",
@@ -580,13 +578,12 @@ static void CONSOLE_HostInterface_PrintStatus( void )
         ( unsigned long )status.usb_tx_diags.discard_count,
         ( unsigned long )status.usb_tx_diags.live_start,
         ( unsigned long )status.usb_tx_diags.waiting_end );
-    CONSOLE_Printf(
-        "  USB TX integrity:    epoch=%lu bytes=%lu/%lu crc=%08lX/%08lX\r\n",
-        ( unsigned long )status.usb_tx_diags.integrity_epoch,
-        ( unsigned long )status.usb_tx_diags.integrity_accepted_bytes,
-        ( unsigned long )status.usb_tx_diags.integrity_submitted_bytes,
-        ( unsigned long )status.usb_tx_diags.accepted_stream_crc32,
-        ( unsigned long )status.usb_tx_diags.submitted_stream_crc32 );
+    CONSOLE_Printf( "  USB TX integrity:    epoch=%lu bytes=%lu/%lu crc=%08lX/%08lX\r\n",
+                    ( unsigned long )status.usb_tx_diags.integrity_epoch,
+                    ( unsigned long )status.usb_tx_diags.integrity_accepted_bytes,
+                    ( unsigned long )status.usb_tx_diags.integrity_submitted_bytes,
+                    ( unsigned long )status.usb_tx_diags.accepted_stream_crc32,
+                    ( unsigned long )status.usb_tx_diags.submitted_stream_crc32 );
     CONSOLE_Printf( "  Result trace:        retained=%lu, overwritten=%lu\r\n",
                     ( unsigned long )status.result_audit_entry_count,
                     ( unsigned long )status.result_audit_overwrite_count );
@@ -617,24 +614,21 @@ static void CONSOLE_HostInterface_PrintTrace( void )
         }
         if ( entry.event == HOST_INTERFACE_RESULT_TX_EVENT_INVARIANT_FAULT )
         {
-            CONSOLE_Printf(
-                "  #%lu %-15s expected=%lu actual=%lu invariant=%lu usb=%lu/%lu\r\n",
-                ( unsigned long )entry.sequence,
-                CONSOLE_HostInterface_ResultEventName( entry.event ),
-                ( unsigned long )entry.first_tick, ( unsigned long )entry.last_tick,
-                ( unsigned long )entry.crc32,
-                ( unsigned long )entry.usb_accepted_bytes,
-                ( unsigned long )entry.usb_completed_bytes );
+            CONSOLE_Printf( "  #%lu %-15s expected=%lu actual=%lu invariant=%lu usb=%lu/%lu\r\n",
+                            ( unsigned long )entry.sequence,
+                            CONSOLE_HostInterface_ResultEventName( entry.event ),
+                            ( unsigned long )entry.first_tick, ( unsigned long )entry.last_tick,
+                            ( unsigned long )entry.crc32, ( unsigned long )entry.usb_accepted_bytes,
+                            ( unsigned long )entry.usb_completed_bytes );
             continue;
         }
-        CONSOLE_Printf(
-            "  #%lu %-15s ticks=%lu..%lu msgs=%u bytes=%u crc=%08lX usb=%lu/%lu\r\n",
-            ( unsigned long )entry.sequence,
-            CONSOLE_HostInterface_ResultEventName( entry.event ),
-            ( unsigned long )entry.first_tick, ( unsigned long )entry.last_tick,
-            ( unsigned int )entry.message_count, ( unsigned int )entry.size_bytes,
-            ( unsigned long )entry.crc32, ( unsigned long )entry.usb_accepted_bytes,
-            ( unsigned long )entry.usb_completed_bytes );
+        CONSOLE_Printf( "  #%lu %-15s ticks=%lu..%lu msgs=%u bytes=%u crc=%08lX usb=%lu/%lu\r\n",
+                        ( unsigned long )entry.sequence,
+                        CONSOLE_HostInterface_ResultEventName( entry.event ),
+                        ( unsigned long )entry.first_tick, ( unsigned long )entry.last_tick,
+                        ( unsigned int )entry.message_count, ( unsigned int )entry.size_bytes,
+                        ( unsigned long )entry.crc32, ( unsigned long )entry.usb_accepted_bytes,
+                        ( unsigned long )entry.usb_completed_bytes );
     }
 }
 

@@ -108,11 +108,10 @@ extern "C" bool HW_USB_Transmit( const uint8_t* const data, const uint16_t size_
     usb_transmit_buffered += size_bytes;
     ++usb_tx_diags.accepted_request_count;
     usb_tx_diags.accepted_bytes += size_bytes;
-    usb_tx_diags.last_accepted_size = size_bytes;
+    usb_tx_diags.last_accepted_size     = size_bytes;
     usb_tx_diags.current_buffered_bytes = static_cast<uint32_t>( usb_transmit_buffered );
-    usb_tx_diags.peak_buffered_bytes =
-        std::max( usb_tx_diags.peak_buffered_bytes,
-                  static_cast<uint32_t>( usb_transmit_buffered ) );
+    usb_tx_diags.peak_buffered_bytes    = std::max( usb_tx_diags.peak_buffered_bytes,
+                                                    static_cast<uint32_t>( usb_transmit_buffered ) );
 
     if ( disconnect_after_usb_output_accept )
     {
@@ -132,7 +131,7 @@ extern "C" void HW_USB_Discard_Transmit_Data( void )
     ++usb_tx_diags.discard_count;
     usb_tx_diags.discarded_bytes += usb_transmit_buffered;
     accepted_usb_output.clear();
-    usb_transmit_buffered = 0U;
+    usb_transmit_buffered               = 0U;
     usb_tx_diags.current_buffered_bytes = 0U;
 }
 
@@ -173,8 +172,7 @@ extern "C" uint32_t HW_USB_Get_Receive_Stream_Free_Bytes( void )
     return 0U;
 }
 
-extern "C" bool
-HW_USB_Get_Transmit_Diagnostics( HW_USB_Transmit_Diagnostics_T* const diagnostics )
+extern "C" bool HW_USB_Get_Transmit_Diagnostics( HW_USB_Transmit_Diagnostics_T* const diagnostics )
 {
     if ( diagnostics == nullptr )
     {
