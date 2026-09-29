@@ -47,16 +47,16 @@
  * this four-times bound.
  */
 #define HOST_VAR_MAX_CANONICAL_INSTRUCTION_BOUND_BYTES                                             \
-    ( sizeof( ExecutionInstructionHeader_T ) + ( 4U * HIL_APPLICATION_ABSOLUTE_MAX_MESSAGE_SIZE ) )
+    ( sizeof( ExecutionInstructionHeader_T ) )
 
 #if defined( __cplusplus )
 static_assert( EXECUTION_INSTRUCTION_MAX_SIZE_BYTES
                    >= HOST_VAR_MAX_CANONICAL_INSTRUCTION_BOUND_BYTES,
-               "Canonical instruction buffer is smaller than the maximum wire conversion" );
+               "Canonical instruction buffer is smaller than the instruction header" );
 #else
 _Static_assert( EXECUTION_INSTRUCTION_MAX_SIZE_BYTES
                     >= HOST_VAR_MAX_CANONICAL_INSTRUCTION_BOUND_BYTES,
-                "Canonical instruction buffer is smaller than the maximum wire conversion" );
+                "Canonical instruction buffer is smaller than the instruction header" );
 #endif
 
 /**-----------------------------------------------------------------------------

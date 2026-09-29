@@ -266,8 +266,9 @@ typedef struct
  *------------------------------------------------------------------------------
  */
 
-static uint8_t console_flash_write_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES];
-static uint8_t console_flash_read_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES];
+static uint8_t console_flash_page_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES];
+#define console_flash_write_buffer console_flash_page_buffer
+#define console_flash_read_buffer console_flash_page_buffer
 
 static uint32_t console_flash_last_upload_records   = 0U;
 static uint32_t console_flash_last_upload_bytes     = 0U;
@@ -3358,18 +3359,20 @@ static void CONSOLE_Flash_ResultsCommand( bool verify_echo_stream )
                 }
                 else
                 {
-                    CONSOLE_Flash_FillInstructionChunk( console_flash_write_buffer, total_bytes,
+                    uint8_t* const expected_chunk =
+                        &console_flash_page_buffer[CONSOLE_FLASH_RESULT_READ_BYTES];
+                    CONSOLE_Flash_FillInstructionChunk( expected_chunk, total_bytes,
                                                         bytes_read,
                                                         console_flash_last_upload_seed );
 
                     for ( uint32_t index = 0U; index < bytes_read; index++ )
                     {
-                        if ( console_flash_read_buffer[index] != console_flash_write_buffer[index] )
+                        if ( console_flash_read_buffer[index] != expected_chunk[index] )
                         {
                             byte_verification_passed = false;
                             mismatch_captured        = true;
                             first_bad_offset         = total_bytes + index;
-                            first_expected           = console_flash_write_buffer[index];
+                            first_expected           = expected_chunk[index];
                             first_actual             = console_flash_read_buffer[index];
                             break;
                         }

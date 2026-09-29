@@ -103,12 +103,12 @@ _Static_assert( HOST_INTERFACE_DIRECT_USB_FLUSH_THRESHOLD
 
 #if defined( __cplusplus )
 static_assert( HOST_INTERFACE_USB_RECEIVE_CAPACITY
-                   >= ( HIL_APPLICATION_ABSOLUTE_MAX_MESSAGE_SIZE
+                   >= ( HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY
                         + HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE ),
                "Direct USB receive staging cannot hold a maximum-sized framed message" );
 #else
 _Static_assert( HOST_INTERFACE_USB_RECEIVE_CAPACITY
-                    >= ( HIL_APPLICATION_ABSOLUTE_MAX_MESSAGE_SIZE
+                    >= ( HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY
                          + HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE ),
                 "Direct USB receive staging cannot hold a maximum-sized framed message" );
 #endif
@@ -188,11 +188,13 @@ typedef struct
     uint32_t staged_result_first_tick;
     uint32_t staged_result_last_tick;
 
+#if !HOST_INTERFACE_DIRECT_USB_STREAMING
     /** Encoded bytes copied from one incoming Transport message. */
     uint8_t receive_byte_span[HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY];
 
     /** Number of valid bytes currently in receive_byte_span. */
     size_t used_receive_byte_span_size;
+#endif
 
     /**
      * Aligned storage referenced by variable-length fields in a decoded message.
@@ -302,11 +304,13 @@ typedef struct
     /** Application codec state and message buffers. */
     HOST_INTERFACE_Application_State_T application;
 
+#if !HOST_INTERFACE_DIRECT_USB_STREAMING
     /** Transport context, workspace, and output/event state. */
     HOST_INTERFACE_Transport_State_T transport;
 
     /** Logical Transport clock state. */
     HOST_INTERFACE_Transport_Clock_T transport_clock;
+#endif
 
     /** Initial task tick used by vTaskDelayUntil for periodic scheduling. */
     TickType_t initial_ticks;
@@ -394,9 +398,11 @@ static void
 HOST_INTERFACE_Protocol_Update_Link_State( HOST_INTERFACE_Protocol_State_T* protocol_state,
                                            HIL_Transport_Link_State_T       observed_link_state,
                                            uint32_t                         now );
+#if !HOST_INTERFACE_DIRECT_USB_STREAMING
 static uint32_t
 HOST_INTERFACE_Transport_Clock_Update( HOST_INTERFACE_Transport_Clock_T* transport_clock,
                                        TickType_t current_ticks, bool configured_suspended );
+#endif
 static uint32_t HOST_INTERFACE_GetMessageTick( const HIL_Application_Message_T* msg );
 static bool     HOST_INTERFACE_IsResultMessage( const HIL_Application_Message_T* msg );
 static void     HOST_INTERFACE_Result_Tx_Audit_Reset( void );
@@ -870,6 +876,7 @@ static void HOST_INTERFACE_Result_Tx_Update_USB_Completion( void )
     s_result_tx_audit.observed_completed_bytes = usb_diags.completed_bytes;
 }
 
+#if !HOST_INTERFACE_DIRECT_USB_STREAMING
 /**
  * @brief Convert RTOS ticks into the logical time used by Transport.
  *
@@ -922,6 +929,7 @@ HOST_INTERFACE_Transport_Clock_Update( HOST_INTERFACE_Transport_Clock_T* const t
     transport_clock->effective_time_ms += elapsed_ticks;
     return transport_clock->effective_time_ms;
 }
+#endif
 
 /**
  * @brief Apply a newly observed physical-link state to Host Interface state.
@@ -948,6 +956,9 @@ HOST_INTERFACE_Protocol_Update_Link_State( HOST_INTERFACE_Protocol_State_T* cons
                                            const HIL_Transport_Link_State_T observed_link_state,
                                            const uint32_t                   now )
 {
+#if HOST_INTERFACE_DIRECT_USB_STREAMING
+    ( void )now;
+#endif
     // Link notifications are edge-triggered at this layer. The initial
     // observation is always forwarded, including an initial disconnected state.
     if ( ( protocol_state->link_state_observed == true )
@@ -963,7 +974,9 @@ HOST_INTERFACE_Protocol_Update_Link_State( HOST_INTERFACE_Protocol_State_T* cons
         // belong to the old physical connection.
         protocol_state->usb.receive_count                          = 0U;
         protocol_state->usb.receive_offset                         = 0U;
+#if !HOST_INTERFACE_DIRECT_USB_STREAMING
         protocol_state->transport.output_acceptance_pending_commit = false;
+#endif
         HW_USB_Discard_Transmit_Data();
 
         // Drain bytes already queued by the USB driver. They were received
@@ -980,18 +993,22 @@ HOST_INTERFACE_Protocol_Update_Link_State( HOST_INTERFACE_Protocol_State_T* cons
         }
     }
 
+#if !HOST_INTERFACE_DIRECT_USB_STREAMING
     // Transport owns session-scoped parser and reliability cleanup. The Host
     // Interface only supplies the observation and caller-owned logical time.
     protocol_state->transport.status = HIL_TRANSPORT_Notify_Link_State(
         &protocol_state->transport.context, observed_link_state, now );
+#endif
     protocol_state->observed_link_state = observed_link_state;
     protocol_state->link_state_observed = true;
 
+#if !HOST_INTERFACE_DIRECT_USB_STREAMING
     if ( protocol_state->transport.status == HIL_TRANSPORT_STATUS_INTERNAL_ERROR
          || protocol_state->transport.status == HIL_TRANSPORT_STATUS_INVALID_ARGUMENT )
     {
         HOST_INTERFACE_Error_Handler();
     }
+#endif
 }
 
 /**
@@ -1063,8 +1080,12 @@ static void HOST_INTERFACE_Protocol_Process(
     const HW_USB_Connection_State_T usb_connection_state = HW_USB_Get_Connection_State();
     const bool                      configured_suspended =
         usb_connection_state == HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED;
+#if HOST_INTERFACE_DIRECT_USB_STREAMING
+    const uint32_t now = 0U;
+#else
     const uint32_t now = HOST_INTERFACE_Transport_Clock_Update(
         &protocol_state->transport_clock, xTaskGetTickCount(), configured_suspended );
+#endif
     HIL_Transport_Link_State_T observed_link_state;
 
     // Outputs describe this cycle only. A false incoming availability result
@@ -1095,6 +1116,7 @@ static void HOST_INTERFACE_Protocol_Process(
     // the previous message before allowing another active cycle.
     protocol_state->application.used_receive_data_size = 0U;
 
+#if !HOST_INTERFACE_DIRECT_USB_STREAMING
     if ( protocol_state->transport.output_acceptance_pending_commit )
     {
         // USB accepted a frame immediately before suspension, so the prior
@@ -1108,6 +1130,7 @@ static void HOST_INTERFACE_Protocol_Process(
         }
         protocol_state->transport.output_acceptance_pending_commit = false;
     }
+#endif
 
     // Allow the USB abstraction to process low-level receive/transmit state
     // before the Host Interface inspects the Transport queues.
@@ -1595,6 +1618,7 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
         ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_CODEC_INIT );
     }
 
+#if !HOST_INTERFACE_DIRECT_USB_STREAMING
     // =======------- INITIALISE TRANSPORT LAYER
     // Transport configuration is copied into task state so the same policy is
     // available for workspace sizing and actual initialization.
@@ -1630,11 +1654,14 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
     {
         ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_TRANSPORT_INIT );
     }
+#endif
 
     // Start both periodic scheduling and logical Transport time from the same
     // tick observation so the first cycle has no artificial elapsed interval.
     protocol_state->initial_ticks              = xTaskGetTickCount();
+#if !HOST_INTERFACE_DIRECT_USB_STREAMING
     protocol_state->transport_clock.last_ticks = protocol_state->initial_ticks;
+#endif
 }
 
 /**-----------------------------------------------------------------------------
@@ -1970,8 +1997,10 @@ void HOST_INTERFACE_Task( void* task_parameters )
             }
         }
 
+#if !HOST_INTERFACE_DIRECT_USB_STREAMING
         HIL_Transport_Status_Snapshot_T transport_snapshot = { 0 };
         ( void )HIL_TRANSPORT_Get_Status( &protocol_state.transport.context, &transport_snapshot );
+#endif
 
         s_host_interface_status.is_initialized       = true;
         s_host_interface_status.usb_connection_state = HW_USB_Get_Connection_State();
@@ -1994,10 +2023,12 @@ void HOST_INTERFACE_Task( void* task_parameters )
             !can_consume_incoming ? ( uint32_t )( xTaskGetTickCount() - overflow_timer ) : 0U;
         s_host_interface_status.expected_tick_count     = expected_tick_count;
         s_host_interface_status.carry_on_notifications  = carry_on_notifications;
+#if !HOST_INTERFACE_DIRECT_USB_STREAMING
         s_host_interface_status.transport_session_state = transport_snapshot.session_state;
         s_host_interface_status.transport_reliable_pending =
             ( transport_snapshot.reliable_delivery_pending != 0U );
         s_host_interface_status.transport_last_failure = transport_snapshot.last_failure;
+#endif
 
         /*
          * TODO: When in the result transfer phase (FLASH_MANAGER_STATE_TRANSFERRING_RESULTS),

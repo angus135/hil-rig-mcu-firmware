@@ -500,9 +500,9 @@ TEST_F( VariableInstructionMessageHandlerTest, SerialTransmitOperationsPackCorre
  */
 TEST_F( VariableInstructionMessageHandlerTest, MaximumSpiPayloadFitsCanonicalInstruction )
 {
-    static uint8_t    spi_data[HIL_APPLICATION_ABSOLUTE_MAX_VARIABLE_DATA_SIZE]{};
-    constexpr uint8_t packet_count = 127U;
-
+    constexpr uint8_t  packet_count  = 127U;
+    constexpr uint16_t spi_wire_size = 1U + ( 2U * packet_count );
+    static uint8_t     spi_data[spi_wire_size]{};
     spi_data[0] = packet_count;
     for ( uint8_t packet = 0U; packet < packet_count; packet++ )
     {
@@ -514,7 +514,7 @@ TEST_F( VariableInstructionMessageHandlerTest, MaximumSpiPayloadFitsCanonicalIns
     op.peripheral_type = HIL_APPLICATION_PERIPHERAL_SPI;
     op.channel         = 0U;
     op.payload.data    = spi_data;
-    op.payload.size    = sizeof( spi_data );
+    op.payload.size    = spi_wire_size;
 
     instruction.tick_number     = 1000U;
     instruction.operation_count = 1U;

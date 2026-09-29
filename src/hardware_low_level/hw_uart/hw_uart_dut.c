@@ -112,7 +112,7 @@
       | DMA_HIFCR_CHTIF5 )
 
 /* RX buffer size must remain a power of 2 for mask-based circular indexing. */
-#define HW_UART_RX_BUFFER_SIZE 4096U
+#define HW_UART_RX_BUFFER_SIZE 1024U
 
 #if ( ( HW_UART_RX_BUFFER_SIZE & ( HW_UART_RX_BUFFER_SIZE - 1U ) ) != 0U )
 #error "HW_UART_RX_BUFFER_SIZE must be a power of 2"

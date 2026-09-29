@@ -470,3 +470,33 @@ TEST_F( VariableResultMessageProducerTest, DetectsPwmHighTicksGreaterThanPeriodC
     EXPECT_EQ( VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &out_msg_ ),
                RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA );
 }
+
+/**
+ * @brief Serial receive records larger than 255 bytes (e.g. 562 bytes) pass through completely without truncation.
+ */
+TEST_F( VariableResultMessageProducerTest, ProducesLargeSerialRecordBeyond255Bytes )
+{
+    std::vector<uint8_t> large_spi_payload( 562U );
+    for ( size_t i = 0; i < large_spi_payload.size(); ++i )
+    {
+        large_spi_payload[i] = static_cast<uint8_t>( ( i * 7U + 3U ) & 0xFFU );
+    }
+
+    simulated_stream_.AppendRecord( 4U, FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE, 0U,
+                                    large_spi_payload.data(),
+                                    static_cast<uint16_t>( large_spi_payload.size() ) );
+    HookSimulatedStream();
+
+    EXPECT_EQ( VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &out_msg_ ),
+               RESULT_MESSAGE_PRODUCER_STATUS_OK );
+
+    EXPECT_EQ( out_msg_.body.variable_test_result.tick_number, 4U );
+    EXPECT_EQ( out_msg_.body.variable_test_result.record_count, 1U );
+
+    const auto& rec_spi = out_msg_.body.variable_test_result.records[0];
+    EXPECT_EQ( rec_spi.peripheral_type, HIL_APPLICATION_PERIPHERAL_SPI );
+    EXPECT_EQ( rec_spi.channel, 0U );
+    EXPECT_EQ( rec_spi.data.size, 562U );
+    ASSERT_NE( rec_spi.data.data, nullptr );
+    EXPECT_EQ( std::memcmp( rec_spi.data.data, large_spi_payload.data(), 562U ), 0 );
+}

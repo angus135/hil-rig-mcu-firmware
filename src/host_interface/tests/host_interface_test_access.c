@@ -75,15 +75,18 @@ static HOST_INTERFACE_Protocol_State_T s_protocol_state;
  */
 void HOST_INTERFACE_Test_Access_Get_Transport_Config( HIL_Transport_Config_T* const config )
 {
-    HOST_INTERFACE_Protocol_State_T protocol_state = { 0 };
-
     if ( config == NULL )
     {
         return;
     }
 
+#if !HOST_INTERFACE_DIRECT_USB_STREAMING
+    HOST_INTERFACE_Protocol_State_T protocol_state = { 0 };
     HOST_INTERFACE_Protocol_Init( &protocol_state );
     *config = protocol_state.transport.config;
+#else
+    *config = ( HIL_Transport_Config_T ){ 0 };
+#endif
 }
 
 /**
@@ -189,7 +192,15 @@ void HOST_INTERFACE_Test_Access_Process_Once_With_Consumption(
 HIL_Transport_Status_T
 HOST_INTERFACE_Test_Access_Get_Transport_Status( HIL_Transport_Status_Snapshot_T* const status )
 {
+#if !HOST_INTERFACE_DIRECT_USB_STREAMING
     return HIL_TRANSPORT_Get_Status( &s_protocol_state.transport.context, status );
+#else
+    if ( status != NULL )
+    {
+        *status = ( HIL_Transport_Status_Snapshot_T ){ 0 };
+    }
+    return HIL_TRANSPORT_STATUS_OK;
+#endif
 }
 
 /**
@@ -199,7 +210,11 @@ HOST_INTERFACE_Test_Access_Get_Transport_Status( HIL_Transport_Status_Snapshot_T
  */
 uint32_t HOST_INTERFACE_Test_Access_Get_Transport_Time( void )
 {
+#if !HOST_INTERFACE_DIRECT_USB_STREAMING
     return s_protocol_state.transport_clock.effective_time_ms;
+#else
+    return 0U;
+#endif
 }
 
 #endif

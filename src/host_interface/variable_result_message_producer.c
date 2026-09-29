@@ -34,17 +34,15 @@
  */
 
 /** @brief Internal staging capacity for reassembling records from Flash Manager. */
-#define VAR_RESULT_PRODUCER_BUFFER_CAPACITY ( 1024U + sizeof( FlashManagerResultHeader_T ) )
+#define VAR_RESULT_PRODUCER_BUFFER_CAPACITY ( 2048U + sizeof( FlashManagerResultHeader_T ) )
 
 /**
  * @brief Maximum captured payload staged for one tick.
  *
- * A variable result has a 23-byte envelope and a 12-byte body header. With at
- * most eleven distinct captured peripheral records, 400 payload bytes leave
- * room for every record header and alignment pad while keeping the complete
- * Application message within its 512-byte protocol ceiling.
+ * Supports large serial transfers (SPI, UART, CAN) staged for one tick while
+ * remaining bounded and statically allocated.
  */
-#define VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY ( 400U )
+#define VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY ( 2048U )
 
 /** @brief Timer input clock frequency for PWM capture (TIM2 and TIM5 on APB1). */
 #define VAR_RESULT_PRODUCER_PWM_TIMER_CLOCK_HZ ( 90000000U )
@@ -403,12 +401,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
                 return true;
             }
 
-            size_t copied_length = header->payload_length_bytes;
-            if ( copied_length > UINT8_MAX )
-            {
-                copied_length            = UINT8_MAX;
-                stream->capture_overflow = true;
-            }
+            size_t       copied_length = header->payload_length_bytes;
             const size_t available =
                 sizeof( stream->staged_payload_storage ) - stream->staged_payload_offset;
             if ( copied_length > available )
@@ -429,7 +422,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
             rec->peripheral_type = HIL_APPLICATION_PERIPHERAL_UART;
             rec->channel         = header->channel;
             rec->data.data       = dest;
-            rec->data.size       = ( uint8_t )copied_length;
+            rec->data.size       = ( uint16_t )copied_length;
 
             stream->staged_payload_offset += copied_length;
             return true;
@@ -451,12 +444,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
                 return true;
             }
 
-            size_t copied_length = header->payload_length_bytes;
-            if ( copied_length > UINT8_MAX )
-            {
-                copied_length            = UINT8_MAX;
-                stream->capture_overflow = true;
-            }
+            size_t       copied_length = header->payload_length_bytes;
             const size_t available =
                 sizeof( stream->staged_payload_storage ) - stream->staged_payload_offset;
             if ( copied_length > available )
@@ -477,7 +465,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
             rec->peripheral_type = HIL_APPLICATION_PERIPHERAL_SPI;
             rec->channel         = header->channel;
             rec->data.data       = dest;
-            rec->data.size       = ( uint8_t )copied_length;
+            rec->data.size       = ( uint16_t )copied_length;
 
             stream->staged_payload_offset += copied_length;
             return true;
@@ -503,12 +491,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
                 return true;
             }
 
-            size_t copied_length = header->payload_length_bytes;
-            if ( copied_length > UINT8_MAX )
-            {
-                copied_length            = UINT8_MAX - ( UINT8_MAX % 12U );
-                stream->capture_overflow = true;
-            }
+            size_t       copied_length = header->payload_length_bytes;
             const size_t available =
                 sizeof( stream->staged_payload_storage ) - stream->staged_payload_offset;
             if ( copied_length > available )
@@ -535,7 +518,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
             rec->peripheral_type = HIL_APPLICATION_PERIPHERAL_CAN;
             rec->channel         = header->channel;
             rec->data.data       = dest;
-            rec->data.size       = ( uint8_t )copied_length;
+            rec->data.size       = ( uint16_t )copied_length;
 
             stream->staged_payload_offset += copied_length;
             return true;
