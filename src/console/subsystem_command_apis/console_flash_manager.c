@@ -3361,8 +3361,7 @@ static void CONSOLE_Flash_ResultsCommand( bool verify_echo_stream )
                 {
                     uint8_t* const expected_chunk =
                         &console_flash_page_buffer[CONSOLE_FLASH_RESULT_READ_BYTES];
-                    CONSOLE_Flash_FillInstructionChunk( expected_chunk, total_bytes,
-                                                        bytes_read,
+                    CONSOLE_Flash_FillInstructionChunk( expected_chunk, total_bytes, bytes_read,
                                                         console_flash_last_upload_seed );
 
                     for ( uint32_t index = 0U; index < bytes_read; index++ )

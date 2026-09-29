@@ -472,7 +472,8 @@ TEST_F( VariableResultMessageProducerTest, DetectsPwmHighTicksGreaterThanPeriodC
 }
 
 /**
- * @brief Serial receive records larger than 255 bytes (e.g. 562 bytes) pass through completely without truncation.
+ * @brief Serial receive records larger than 255 bytes (e.g. 562 bytes) pass through completely
+ * without truncation.
  */
 TEST_F( VariableResultMessageProducerTest, ProducesLargeSerialRecordBeyond255Bytes )
 {

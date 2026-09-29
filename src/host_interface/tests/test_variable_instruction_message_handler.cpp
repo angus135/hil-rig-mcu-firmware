@@ -555,14 +555,12 @@ TEST_F( VariableInstructionMessageHandlerTest, UartPayloadBeyond255BytesFitsCano
     ASSERT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
                HOST_INTERFACE_STATUS_OK );
 
-    const size_t expected_size =
-        sizeof( ExecutionInstructionHeader_T )
-        + EXECUTION_OPERATION_ENCODED_SIZE_BYTES( sizeof( uart_data ) );
+    const size_t expected_size = sizeof( ExecutionInstructionHeader_T )
+                                 + EXECUTION_OPERATION_ENCODED_SIZE_BYTES( sizeof( uart_data ) );
 
     EXPECT_EQ( uploaded_bytes.size(), expected_size );
     EXPECT_LE( uploaded_bytes.size(), EXECUTION_INSTRUCTION_MAX_SIZE_BYTES );
 }
-
 
 /**
  * @brief Unrecognized peripheral type returns VALIDATION_FAILED.

@@ -422,4 +422,3 @@ TEST( ExecutionInstructionValidationTest, ValidMultiPacketSpiPayloadReturnsOk )
     EXPECT_EQ( EXECUTION_INSTRUCTION_Validate( buf.data, offset ),
                EXECUTION_INSTRUCTION_VALIDATION_OK );
 }
-

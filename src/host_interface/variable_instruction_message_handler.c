@@ -46,8 +46,7 @@
  * a four-byte canonical length. Other operation families expand by no more than
  * this four-times bound.
  */
-#define HOST_VAR_MAX_CANONICAL_INSTRUCTION_BOUND_BYTES                                             \
-    ( sizeof( ExecutionInstructionHeader_T ) )
+#define HOST_VAR_MAX_CANONICAL_INSTRUCTION_BOUND_BYTES ( sizeof( ExecutionInstructionHeader_T ) )
 
 #if defined( __cplusplus )
 static_assert( EXECUTION_INSTRUCTION_MAX_SIZE_BYTES

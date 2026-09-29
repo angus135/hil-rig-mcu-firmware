@@ -1979,9 +1979,9 @@ static HW_CAN_Result_T HW_CAN_Tx_Trigger( CAN_HandleTypeDef* hcan, CAN_Packet_T 
         }
     }
 
-    *active          = true;
-    *completed       = false;
-    *status          = HW_CAN_TX_STATUS_ACTIVE;
+    *active    = true;
+    *completed = false;
+    *status    = HW_CAN_TX_STATUS_ACTIVE;
     SET_BIT( hcan->Instance->IER, CAN_IER_TMEIE );
 
     HW_CAN_Result_T result = HW_CAN_Tx_Service( hcan, buffer, w_p, r_p, buffer_width, active,

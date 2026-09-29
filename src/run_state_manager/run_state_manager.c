@@ -1810,15 +1810,15 @@ void RUN_STATE_MANAGER_Init( void )
 {
     RUN_STATE_MANAGER_StopExecutionTimer();
     RUN_METADATA_Reset();
-    frequency_mode                     = RUN_STATE_FREQUENCY_1KHZ;
-    pending_operation                  = RUN_STATE_PENDING_NONE;
-    pending_operation_started_at       = 0U;
-    execution_active                   = false;
-    driver_cleanup_complete            = true;
-    execution_timer_running            = false;
-    execution_request_pending          = false;
-    prepared_execution                 = ( RunStatePreparedExecution_T ){
-                        .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ, .enable_drain_tail = false };
+    frequency_mode               = RUN_STATE_FREQUENCY_1KHZ;
+    pending_operation            = RUN_STATE_PENDING_NONE;
+    pending_operation_started_at = 0U;
+    execution_active             = false;
+    driver_cleanup_complete      = true;
+    execution_timer_running      = false;
+    execution_request_pending    = false;
+    prepared_execution           = ( RunStatePreparedExecution_T ){
+                  .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ, .enable_drain_tail = false };
     execution_abort_requested      = false;
     fault_reason                   = RUN_STATE_FAULT_NONE;
     requested_fault_reason         = RUN_STATE_FAULT_NONE;

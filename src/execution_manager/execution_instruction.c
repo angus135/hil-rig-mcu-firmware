@@ -38,7 +38,7 @@
 
 /** Maximum single-call UART transmit byte count bounded by canonical instruction capacity. */
 #define EXECUTION_VALIDATION_MAX_UART_PAYLOAD_BYTES                                                \
-    ( EXECUTION_INSTRUCTION_MAX_SIZE_BYTES - sizeof( ExecutionInstructionHeader_T )               \
+    ( EXECUTION_INSTRUCTION_MAX_SIZE_BYTES - sizeof( ExecutionInstructionHeader_T )                \
       - EXECUTION_OPERATION_HEADER_SIZE_BYTES )
 
 /**-----------------------------------------------------------------------------

@@ -972,8 +972,8 @@ HOST_INTERFACE_Protocol_Update_Link_State( HOST_INTERFACE_Protocol_State_T* cons
         // Do not offer bytes retained from an abandoned physical link to a new
         // session. The staged Transport suffix and any USB transmit ownership
         // belong to the old physical connection.
-        protocol_state->usb.receive_count                          = 0U;
-        protocol_state->usb.receive_offset                         = 0U;
+        protocol_state->usb.receive_count  = 0U;
+        protocol_state->usb.receive_offset = 0U;
 #if !HOST_INTERFACE_DIRECT_USB_STREAMING
         protocol_state->transport.output_acceptance_pending_commit = false;
 #endif
@@ -1658,7 +1658,7 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
 
     // Start both periodic scheduling and logical Transport time from the same
     // tick observation so the first cycle has no artificial elapsed interval.
-    protocol_state->initial_ticks              = xTaskGetTickCount();
+    protocol_state->initial_ticks = xTaskGetTickCount();
 #if !HOST_INTERFACE_DIRECT_USB_STREAMING
     protocol_state->transport_clock.last_ticks = protocol_state->initial_ticks;
 #endif
@@ -2021,8 +2021,8 @@ void HOST_INTERFACE_Task( void* task_parameters )
                                   : 0U;
         s_host_interface_status.overflow_duration_ms =
             !can_consume_incoming ? ( uint32_t )( xTaskGetTickCount() - overflow_timer ) : 0U;
-        s_host_interface_status.expected_tick_count     = expected_tick_count;
-        s_host_interface_status.carry_on_notifications  = carry_on_notifications;
+        s_host_interface_status.expected_tick_count    = expected_tick_count;
+        s_host_interface_status.carry_on_notifications = carry_on_notifications;
 #if !HOST_INTERFACE_DIRECT_USB_STREAMING
         s_host_interface_status.transport_session_state = transport_snapshot.session_state;
         s_host_interface_status.transport_reliable_pending =
