@@ -113,8 +113,9 @@ static RunStateFrequencyMode_T frequency_mode = RUN_STATE_FREQUENCY_1KHZ;
 static RunStatePendingOperation_T pending_operation            = RUN_STATE_PENDING_NONE;
 static TickType_t                 pending_operation_started_at = 0U;
 
-static bool execution_active        = false;
-static bool driver_cleanup_complete = true;
+static bool execution_active                   = false;
+static bool driver_cleanup_complete            = true;
+static bool result_transfer_completion_pending = false;
 
 static bool                        execution_timer_running   = false;
 static bool                        execution_request_pending = false;
@@ -449,8 +450,9 @@ static void RUN_STATE_MANAGER_CaptureExecutionMetadata( void )
 
 static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason )
 {
-    request_timing_active     = false;
-    execution_abort_requested = true;
+    request_timing_active              = false;
+    execution_abort_requested          = true;
+    result_transfer_completion_pending = false;
     taskENTER_CRITICAL();
     execution_request_pending = false;
     taskEXIT_CRITICAL();
@@ -748,6 +750,16 @@ static bool RUN_STATE_MANAGER_EnterConfiguration( void )
 
 static bool RUN_STATE_MANAGER_EnterArmed( void )
 {
+    if ( result_transfer_completion_pending )
+    {
+        if ( !HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE ) )
+        {
+            return false;
+        }
+        result_transfer_completion_pending = false;
+        return true;
+    }
+
     return HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_ARMED );
 }
 
@@ -1088,6 +1100,8 @@ static bool RUN_STATE_MANAGER_CompleteResultTransfer( void )
         RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_RESULT_TRANSFER );
         return false;
     }
+
+    result_transfer_completion_pending = true;
 
     if ( !RUN_STATE_MANAGER_TransitionTo( RUN_STATE_CONFIGURATION ) )
     {
@@ -1814,15 +1828,16 @@ void RUN_STATE_MANAGER_Init( void )
 {
     RUN_STATE_MANAGER_StopExecutionTimer();
     RUN_METADATA_Reset();
-    frequency_mode               = RUN_STATE_FREQUENCY_1KHZ;
-    pending_operation            = RUN_STATE_PENDING_NONE;
-    pending_operation_started_at = 0U;
-    execution_active             = false;
-    driver_cleanup_complete      = true;
-    execution_timer_running      = false;
-    execution_request_pending    = false;
-    prepared_execution           = ( RunStatePreparedExecution_T ){
-                  .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ, .enable_drain_tail = false };
+    frequency_mode                     = RUN_STATE_FREQUENCY_1KHZ;
+    pending_operation                  = RUN_STATE_PENDING_NONE;
+    pending_operation_started_at       = 0U;
+    execution_active                   = false;
+    driver_cleanup_complete            = true;
+    result_transfer_completion_pending = false;
+    execution_timer_running            = false;
+    execution_request_pending          = false;
+    prepared_execution                 = ( RunStatePreparedExecution_T ){
+                        .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ, .enable_drain_tail = false };
     execution_abort_requested      = false;
     fault_reason                   = RUN_STATE_FAULT_NONE;
     requested_fault_reason         = RUN_STATE_FAULT_NONE;

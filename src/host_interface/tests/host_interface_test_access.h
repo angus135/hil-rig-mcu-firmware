@@ -9,6 +9,7 @@
 #ifdef TEST_BUILD
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "hil_rig_protocol/application/application.h"
 #include "hil_rig_protocol/transport/transport.h"
@@ -41,6 +42,22 @@ void HOST_INTERFACE_Test_Access_Reset_Protocol( void );
  * @brief Process one Host Interface protocol cycle for tests.
  */
 void HOST_INTERFACE_Test_Access_Process_Once( void );
+
+/**
+ * @brief Submit one outgoing Application message through the production protocol service path.
+ *
+ * @param[in] outgoing_message Message to encode and submit, or NULL to service retained output.
+ * @return true when the Host Interface copied and accepted outgoing_message during this cycle.
+ */
+bool HOST_INTERFACE_Test_Access_Submit_Outgoing(
+    const HIL_Application_Message_T* outgoing_message );
+
+/**
+ * @brief Read the number of direct-stream bytes retained for a later USB retry.
+ *
+ * @return Number of valid bytes in the Host Interface direct transmit staging buffer.
+ */
+size_t HOST_INTERFACE_Test_Access_Get_Direct_Pending_Bytes( void );
 
 /**
  * @brief Process one cycle while selecting whether a new Application message may be consumed.

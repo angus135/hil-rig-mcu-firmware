@@ -153,6 +153,42 @@ if(HOST_INTERFACE_ENABLE_TESTS AND BUILD_TESTING)
 
     add_test(NAME host_interface_tests COMMAND host_interface_tests)
 
+    add_executable(host_interface_direct_usb_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_host_interface_direct_usb.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/host_interface_test_access.c
+    )
+
+    target_compile_definitions(host_interface_direct_usb_tests
+        PRIVATE
+            HOST_INTERFACE_DIRECT_USB_STREAMING=1
+            HOST_INTERFACE_TEST_REAL_VARIABLE_RESULT_PRODUCER=1
+    )
+
+    target_link_libraries(host_interface_direct_usb_tests
+        PRIVATE
+            project_warnings
+            global_config
+            cubeide_hal
+            hil_rig_protocol::hil_rig_protocol
+            rtos
+            gtest
+            gtest_main
+    )
+
+    target_include_directories(host_interface_direct_usb_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/src/rtos
+            ${CMAKE_SOURCE_DIR}/src/run_state_manager
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_can
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_usb
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_usb/tests
+    )
+
+    add_test(NAME host_interface_direct_usb_tests COMMAND host_interface_direct_usb_tests)
+
     add_executable(instruction_message_handler_tests
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_instruction_message_handler.cpp
     )

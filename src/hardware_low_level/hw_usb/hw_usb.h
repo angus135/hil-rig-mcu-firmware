@@ -66,6 +66,44 @@ typedef enum
     HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED,
 } HW_USB_Connection_State_T;
 
+/**
+ * @brief Cumulative USB transmit diagnostics and current ring state.
+ *
+ * Cumulative counters are monotonic from HW_USB_Init(). Accepted bytes have
+ * been copied into the ring, submitted bytes have been passed to CDC, and
+ * completed bytes are counted only after CDC clears TxState. Integrity byte
+ * counts and CRCs restart when a discard advances integrity_epoch, allowing
+ * the source stream and the bytes read back from the ring by CDC to be compared.
+ */
+typedef struct
+{
+    uint32_t accepted_request_count;
+    uint32_t rejected_no_space_count;
+    uint32_t rejected_suspended_count;
+    uint32_t rejected_discard_pending_count;
+    uint32_t cdc_submit_count;
+    uint32_t cdc_submit_failure_count;
+    uint32_t completed_transfer_count;
+    uint32_t discard_count;
+    uint64_t accepted_bytes;
+    uint64_t submitted_bytes;
+    uint64_t completed_bytes;
+    uint64_t discarded_bytes;
+    uint64_t integrity_accepted_bytes;
+    uint64_t integrity_submitted_bytes;
+    uint32_t integrity_epoch;
+    uint32_t accepted_stream_crc32;
+    uint32_t submitted_stream_crc32;
+    uint32_t peak_buffered_bytes;
+    uint32_t current_buffered_bytes;
+    uint32_t current_active_bytes;
+    uint32_t live_start;
+    uint32_t waiting_end;
+    uint16_t last_accepted_size;
+    uint16_t last_cdc_submit_size;
+    uint16_t last_completed_size;
+} HW_USB_Transmit_Diagnostics_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
@@ -200,6 +238,15 @@ uint32_t HW_USB_Get_Receive_Stream_Dropped_Bytes( void );
  * @return Number of bytes that can currently be written into the receive stream.
  */
 uint32_t HW_USB_Get_Receive_Stream_Free_Bytes( void );
+
+/**
+ * @brief Snapshot cumulative transmit diagnostics and current ring state.
+ *
+ * @param[out] diagnostics Destination for the consistent task-context snapshot.
+ * @return true when diagnostics were copied; false for a null destination or
+ *         when the transmit mutex is unavailable.
+ */
+bool HW_USB_Get_Transmit_Diagnostics( HW_USB_Transmit_Diagnostics_T* diagnostics );
 
 /**
  * @brief Advance the USB CDC transmit state machine.

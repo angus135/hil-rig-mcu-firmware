@@ -110,6 +110,13 @@ typedef struct HWUSBState_T
     // Number of received bytes that could not be copied into receive_stream.
     uint32_t receive_stream_bytes_dropped;
 
+    // Cumulative transmit-path diagnostics and high-water state.
+    HW_USB_Transmit_Diagnostics_T transmit_diagnostics;
+
+    // Running (unfinalised) CRC-32 states for the current integrity epoch.
+    uint32_t transmit_accepted_crc_state;
+    uint32_t transmit_submitted_crc_state;
+
 } HWUSBState_T;
 
 /**-----------------------------------------------------------------------------
@@ -148,6 +155,7 @@ static void        HW_USB_Reset_Transmit_State_Locked( void );
 static void        HW_USB_Monitor_Process_Locked( void );
 static uint32_t    HW_USB_Receive_Internal( uint8_t* destination, uint32_t max_size_bytes,
                                             TickType_t timeout_ticks );
+static uint32_t    HW_USB_CRC32_Update( uint32_t state, const uint8_t* data, uint32_t size_bytes );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -195,6 +203,22 @@ static void HW_USB_Reset_Transmit_State_Locked( void )
     usb_state.transmit_discard_pending     = false;
 }
 
+/** Updates an unfinalised IEEE CRC-32 state for a byte-stream suffix. */
+static uint32_t
+HW_USB_CRC32_Update( uint32_t state, const uint8_t* const data, const uint32_t size_bytes )
+{
+    for ( uint32_t byte_index = 0U; byte_index < size_bytes; byte_index++ )
+    {
+        state ^= data[byte_index];
+        for ( uint8_t bit = 0U; bit < 8U; bit++ )
+        {
+            const uint32_t mask = ( uint32_t )( -( int32_t )( state & 1U ) );
+            state               = ( state >> 1U ) ^ ( 0xEDB88320U & mask );
+        }
+    }
+    return state;
+}
+
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
  *------------------------------------------------------------------------------
@@ -212,6 +236,10 @@ static void HW_USB_Reset_Transmit_State_Locked( void )
  */
 bool HW_USB_Init( void )
 {
+    ( void )memset( &usb_state.transmit_diagnostics, 0,
+                    sizeof( usb_state.transmit_diagnostics ) );
+    usb_state.transmit_accepted_crc_state  = UINT32_MAX;
+    usb_state.transmit_submitted_crc_state = UINT32_MAX;
     usb_state.transmit_mutex = xSemaphoreCreateMutexStatic( &s_USB_Transmit_Mutex_Storage );
 
     if ( usb_state.transmit_mutex == NULL )
@@ -311,6 +339,7 @@ bool HW_USB_Transmit( const uint8_t* data, uint16_t size_bytes )
 
     if ( HW_USB_Get_Connection_State() == HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED )
     {
+        usb_state.transmit_diagnostics.rejected_suspended_count++;
         xSemaphoreGive( usb_state.transmit_mutex );
         return false;
     }
@@ -320,12 +349,14 @@ bool HW_USB_Transmit( const uint8_t* data, uint16_t size_bytes )
 
     if ( size_bytes > free_bytes )
     {
+        usb_state.transmit_diagnostics.rejected_no_space_count++;
         ( void )xSemaphoreGive( usb_state.transmit_mutex );
         return false;
     }
 
     if ( usb_state.transmit_discard_pending )
     {
+        usb_state.transmit_diagnostics.rejected_discard_pending_count++;
         xSemaphoreGive( usb_state.transmit_mutex );
         return false;
     }
@@ -355,6 +386,20 @@ bool HW_USB_Transmit( const uint8_t* data, uint16_t size_bytes )
         ( usb_state.transmit_waiting_end + size_bytes ) % MAX_USB_TRANSMIT_BYTES;
 
     usb_state.transmit_num_buffered += size_bytes;
+    usb_state.transmit_diagnostics.accepted_request_count++;
+    usb_state.transmit_diagnostics.accepted_bytes += size_bytes;
+    usb_state.transmit_diagnostics.integrity_accepted_bytes += size_bytes;
+    usb_state.transmit_accepted_crc_state =
+        HW_USB_CRC32_Update( usb_state.transmit_accepted_crc_state, data, size_bytes );
+    usb_state.transmit_diagnostics.accepted_stream_crc32 =
+        ~usb_state.transmit_accepted_crc_state;
+    usb_state.transmit_diagnostics.last_accepted_size = size_bytes;
+    if ( usb_state.transmit_num_buffered
+         > usb_state.transmit_diagnostics.peak_buffered_bytes )
+    {
+        usb_state.transmit_diagnostics.peak_buffered_bytes =
+            usb_state.transmit_num_buffered;
+    }
 
     // Attempt to start transmission immediately. If CDC is busy, the queued
     // data will remain buffered and will be retried by HW_USB_Monitor_Process().
@@ -384,6 +429,19 @@ void HW_USB_Discard_Transmit_Data( void )
     {
         return;
     }
+
+    const uint32_t newly_discarded_bytes = usb_state.transmit_discard_pending
+                                               ? 0U
+                                               : usb_state.transmit_num_buffered;
+    usb_state.transmit_diagnostics.discard_count++;
+    usb_state.transmit_diagnostics.discarded_bytes += newly_discarded_bytes;
+    usb_state.transmit_diagnostics.integrity_epoch++;
+    usb_state.transmit_diagnostics.integrity_accepted_bytes  = 0U;
+    usb_state.transmit_diagnostics.integrity_submitted_bytes = 0U;
+    usb_state.transmit_diagnostics.accepted_stream_crc32     = 0U;
+    usb_state.transmit_diagnostics.submitted_stream_crc32    = 0U;
+    usb_state.transmit_accepted_crc_state                    = UINT32_MAX;
+    usb_state.transmit_submitted_crc_state                   = UINT32_MAX;
 
     if ( HW_USB_CDC_Owns_Transmit_Buffer() )
     {
@@ -552,6 +610,28 @@ uint32_t HW_USB_Get_Receive_Stream_Free_Bytes( void )
     return ( uint32_t )xStreamBufferSpacesAvailable( usb_state.receive_stream );
 }
 
+bool HW_USB_Get_Transmit_Diagnostics( HW_USB_Transmit_Diagnostics_T* const diagnostics )
+{
+    if ( diagnostics == NULL || usb_state.transmit_mutex == NULL )
+    {
+        return false;
+    }
+    if ( xSemaphoreTake( usb_state.transmit_mutex, portMAX_DELAY ) != pdTRUE )
+    {
+        return false;
+    }
+
+    usb_state.transmit_diagnostics.current_buffered_bytes = usb_state.transmit_num_buffered;
+    usb_state.transmit_diagnostics.current_active_bytes =
+        usb_state.transmit_num_in_transmission;
+    usb_state.transmit_diagnostics.live_start  = usb_state.transmit_live_start;
+    usb_state.transmit_diagnostics.waiting_end = usb_state.transmit_waiting_end;
+    *diagnostics                                = usb_state.transmit_diagnostics;
+
+    xSemaphoreGive( usb_state.transmit_mutex );
+    return true;
+}
+
 /**
  * @brief Advance the USB CDC transmit state machine.
  *
@@ -600,6 +680,11 @@ static void HW_USB_Monitor_Process_Locked( void )
 
         // CDC has completed the active transfer, so those bytes can now be
         // removed from the ring buffer.
+        usb_state.transmit_diagnostics.completed_transfer_count++;
+        usb_state.transmit_diagnostics.completed_bytes +=
+            usb_state.transmit_num_in_transmission;
+        usb_state.transmit_diagnostics.last_completed_size =
+            ( uint16_t )usb_state.transmit_num_in_transmission;
         usb_state.transmit_live_start =
             ( usb_state.transmit_live_start + usb_state.transmit_num_in_transmission )
             % MAX_USB_TRANSMIT_BYTES;
@@ -640,10 +725,20 @@ static void HW_USB_Monitor_Process_Locked( void )
 
     // If CDC is still not ready for any reason, leave the data queued and retry
     // on the next call.
+    usb_state.transmit_diagnostics.last_cdc_submit_size = bytes_to_transmit;
     if ( CDC_Transmit_FS( transmit_data, bytes_to_transmit ) != USBD_OK )
     {
+        usb_state.transmit_diagnostics.cdc_submit_failure_count++;
         return;
     }
+
+    usb_state.transmit_diagnostics.cdc_submit_count++;
+    usb_state.transmit_diagnostics.submitted_bytes += bytes_to_transmit;
+    usb_state.transmit_diagnostics.integrity_submitted_bytes += bytes_to_transmit;
+    usb_state.transmit_submitted_crc_state = HW_USB_CRC32_Update(
+        usb_state.transmit_submitted_crc_state, transmit_data, bytes_to_transmit );
+    usb_state.transmit_diagnostics.submitted_stream_crc32 =
+        ~usb_state.transmit_submitted_crc_state;
 
     // CDC now owns this contiguous section of transmit_buffer. These bytes must
     // not be overwritten or removed until HW_USB_Transmit_Is_Complete() is true.

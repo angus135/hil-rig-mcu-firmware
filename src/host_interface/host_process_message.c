@@ -55,6 +55,12 @@
     ( HOST_INTERFACE_PACKAGE_RECEIVE_WAIT_TIMEOUT_MS                                               \
       / HOST_INTERFACE_STATE_TRANSITION_RETRY_DELAY_MS )
 
+/** Wait covering the RSM's asynchronous 15-second DUT shutdown timeout. */
+#define HOST_INTERFACE_POST_REPORT_RESET_WAIT_TIMEOUT_MS ( 16000U )
+#define HOST_INTERFACE_POST_REPORT_RESET_WAIT_ATTEMPTS                                             \
+    ( HOST_INTERFACE_POST_REPORT_RESET_WAIT_TIMEOUT_MS                                             \
+      / HOST_INTERFACE_STATE_TRANSITION_RETRY_DELAY_MS )
+
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -218,6 +224,12 @@ HOST_Interface_Status_T HOST_INTERFACE_state_to_state_request( Host_RunState_Req
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
         case HOST_REQUEST_RESULT_TRANSFER:
             if ( RUN_STATE_MANAGER_RequestResultTransfer() != true )
+            {
+                return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
+            }
+            return HOST_INTERFACE_STATUS_OK;
+        case HOST_REQUEST_DISCARD_RESULTS:
+            if ( RUN_STATE_MANAGER_RequestDiscardResults() != true )
             {
                 return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
             }
@@ -1244,7 +1256,36 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Transfer_Complete_Notification(
     HIL_Application_Message_T* outgoing_message, uint32_t* notifications, bool* response_required,
     uint8_t* data, size_t data_size )
 {
-    return HOST_INTERFACE_STATUS_NOT_IMPLEMENTED;
+    ( void )data;
+    ( void )data_size;
+
+    *notifications &= ( uint32_t ) ~( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE );
+
+    /*
+     * This is the post-report control seam. Until metadata control responses
+     * are implemented, always select the reset/new-upload policy by discarding
+     * the retained test and asking the RSM to return to IDLE.
+     */
+    HOST_Interface_Status_T reset_status = HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
+    if ( s_session.state == HOST_INTERFACE_SESSION_COMPLETED )
+    {
+        reset_status = HOST_INTERFACE_request_state_tranistion(
+            RUN_STATE_IDLE, HOST_REQUEST_DISCARD_RESULTS,
+            HOST_INTERFACE_POST_REPORT_RESET_WAIT_ATTEMPTS, 0U );
+    }
+
+    if ( reset_status != HOST_INTERFACE_STATUS_OK )
+    {
+        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
+        *response_required                    = true;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
+    HOST_INTERFACE_Reset_Session();
+    *response_required = false;
+    return HOST_INTERFACE_STATUS_OK;
 }
 
 HOST_Interface_Status_T HOST_INTERFACE_process_Result_Transfer_Notification(

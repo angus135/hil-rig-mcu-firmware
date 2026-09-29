@@ -94,6 +94,7 @@ public:
     MOCK_METHOD( bool, RUN_STATE_MANAGER_ExecutionAbortRequestedFromISR, () );
     MOCK_METHOD( bool, RUN_STATE_MANAGER_RequestReset, () );
     MOCK_METHOD( bool, RUN_STATE_MANAGER_RequestResultTransferComplete, () );
+    MOCK_METHOD( bool, RUN_STATE_MANAGER_RequestDiscardResults, () );
     MOCK_METHOD( bool, RUN_STATE_MANAGER_Set_Execution_Frequency, ( RunStateFrequencyMode_T ) );
     MOCK_METHOD( void, RUN_STATE_MANAGER_GetStatus, ( RunStateManagerStatus_T* ));
     MOCK_METHOD( RunStateFaultReason_T, RUN_STATE_MANAGER_GetFaultReason, () );
@@ -259,6 +260,11 @@ extern "C" bool RUN_STATE_MANAGER_RequestResultTransferComplete( void )
                                   : true;
 }
 
+extern "C" bool RUN_STATE_MANAGER_RequestDiscardResults( void )
+{
+    return g_mock_deps != nullptr ? g_mock_deps->RUN_STATE_MANAGER_RequestDiscardResults() : true;
+}
+
 extern "C" bool RUN_STATE_MANAGER_Set_Execution_Frequency( RunStateFrequencyMode_T mode )
 {
     return g_mock_deps != nullptr ? g_mock_deps->RUN_STATE_MANAGER_Set_Execution_Frequency( mode )
@@ -344,6 +350,8 @@ protected:
             .WillByDefault( Return( true ) );
         ON_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestReset() ).WillByDefault( Return( true ) );
         ON_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestResultTransferComplete() )
+            .WillByDefault( Return( true ) );
+        ON_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestDiscardResults() )
             .WillByDefault( Return( true ) );
         ON_CALL( *g_mock_deps, RUN_STATE_MANAGER_Set_Execution_Frequency( _ ) )
             .WillByDefault( Return( true ) );
@@ -436,9 +444,11 @@ TEST_F( HostProcessMessageTest, StateToStateRequestRejectsUnsupportedRequests )
                HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE );
 }
 
-TEST_F( HostProcessMessageTest, StateToStateRequestMapsResultTransferFaultAbortAndReset )
+TEST_F( HostProcessMessageTest, StateToStateRequestMapsResultTransferDiscardFaultAbortAndReset )
 {
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestResultTransfer() )
+        .WillOnce( Return( true ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestDiscardResults() )
         .WillOnce( Return( true ) );
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_EXTERNAL_REQUEST ) )
         .WillOnce( Return( true ) );
@@ -448,6 +458,9 @@ TEST_F( HostProcessMessageTest, StateToStateRequestMapsResultTransferFaultAbortA
 
     EXPECT_EQ(
         HOST_INTERFACE_Test_Access_State_To_State_Request( HOST_REQUEST_RESULT_TRANSFER, 0U ),
+        HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ(
+        HOST_INTERFACE_Test_Access_State_To_State_Request( HOST_REQUEST_DISCARD_RESULTS, 0U ),
         HOST_INTERFACE_STATUS_OK );
     EXPECT_EQ( HOST_INTERFACE_Test_Access_State_To_State_Request( HOST_REQUEST_FAULT, 0U ),
                HOST_INTERFACE_STATUS_OK );
@@ -1054,8 +1067,6 @@ TEST_F( HostProcessMessageTest, UnimplementedNotificationsReturnNotImplemented )
           HOST_INTERFACE_Test_Access_Process_Package_Received_Notification },
         { HOST_INTERFACE_NOTIFY_CONFIGURATION,
           HOST_INTERFACE_Test_Access_Process_Config_Started_Notification },
-        { HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE,
-          HOST_INTERFACE_Test_Access_Process_Transfer_Complete_Notification },
     };
 
     for ( const NotificationCase& test_case : cases )
@@ -1065,6 +1076,43 @@ TEST_F( HostProcessMessageTest, UnimplementedNotificationsReturnNotImplemented )
                                        sizeof( data ) ),
                    HOST_INTERFACE_STATUS_NOT_IMPLEMENTED );
     }
+}
+
+/** @brief Verifies that concluded tests currently select the reset/new-upload policy. */
+TEST_F( HostProcessMessageTest, TransferCompleteNotificationRequestsNewUploadReset )
+{
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_COMPLETED );
+    notifications          = HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE;
+    run_state_status.state = RUN_STATE_IDLE;
+
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestDiscardResults() )
+        .WillOnce( Return( true ) );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Transfer_Complete_Notification(
+                   &outgoing, &notifications, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_FALSE( response_required );
+    EXPECT_EQ( 0U, notifications );
+    EXPECT_EQ( HOST_INTERFACE_SESSION_STATE_IDLE, HOST_INTERFACE_Get_Session()->state );
+}
+
+/** @brief Verifies that a rejected reset request is surfaced as an internal error. */
+TEST_F( HostProcessMessageTest, TransferCompleteNotificationFaultsWhenResetRequestFails )
+{
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_COMPLETED );
+    notifications = HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE;
+
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestDiscardResults() )
+        .WillOnce( Return( false ) );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Transfer_Complete_Notification(
+                   &outgoing, &notifications, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( 0U, notifications );
+    EXPECT_EQ( HIL_APPLICATION_MESSAGE_TYPE_ERROR, outgoing.type );
+    EXPECT_EQ( HIL_APPLICATION_ERROR_CATEGORY_INTERNAL, outgoing.body.error.category );
+    EXPECT_EQ( HOST_INTERFACE_SESSION_FAULTED, HOST_INTERFACE_Get_Session()->state );
 }
 
 TEST_F( HostProcessMessageTest, ArmedNotificationProducesCompleteTestResponse )

@@ -34,6 +34,7 @@
 
 static void CONSOLE_HostInterface_PrintUsage( void );
 static void CONSOLE_HostInterface_PrintStatus( void );
+static void CONSOLE_HostInterface_PrintTrace( void );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -100,6 +101,64 @@ static const char* CONSOLE_HostInterface_FaultName( RunStateFaultReason_T reason
             return "internal fault";
         default:
             return "other RSM fault";
+    }
+}
+
+static const char*
+CONSOLE_HostInterface_ResultEventName( const HostInterfaceResultTxEvent_T event )
+{
+    switch ( event )
+    {
+        case HOST_INTERFACE_RESULT_TX_EVENT_PRODUCED:
+            return "produced";
+        case HOST_INTERFACE_RESULT_TX_EVENT_STAGED:
+            return "staged";
+        case HOST_INTERFACE_RESULT_TX_EVENT_USB_QUEUED:
+            return "usb-queued";
+        case HOST_INTERFACE_RESULT_TX_EVENT_USB_REJECTED:
+            return "usb-rejected";
+        case HOST_INTERFACE_RESULT_TX_EVENT_CDC_COMPLETED:
+            return "cdc-completed";
+        case HOST_INTERFACE_RESULT_TX_EVENT_USB_DISCARDED:
+            return "usb-discarded";
+        case HOST_INTERFACE_RESULT_TX_EVENT_INVARIANT_FAULT:
+            return "invariant-fault";
+        default:
+            return "unknown";
+    }
+}
+
+static const char* CONSOLE_HostInterface_ResultInvariantName(
+    const HostInterfaceResultTxInvariant_T invariant )
+{
+    switch ( invariant )
+    {
+        case HOST_INTERFACE_RESULT_TX_INVARIANT_NONE:
+            return "none";
+        case HOST_INTERFACE_RESULT_TX_INVARIANT_PRODUCED_TICK:
+            return "produced tick discontinuity";
+        case HOST_INTERFACE_RESULT_TX_INVARIANT_STAGED_TICK:
+            return "staged tick discontinuity";
+        case HOST_INTERFACE_RESULT_TX_INVARIANT_QUEUED_TICK:
+            return "queued tick discontinuity";
+        case HOST_INTERFACE_RESULT_TX_INVARIANT_COMPLETED_TICK:
+            return "completed tick discontinuity";
+        case HOST_INTERFACE_RESULT_TX_INVARIANT_OUTSTANDING_BATCH_OVERFLOW:
+            return "outstanding batch overflow";
+        case HOST_INTERFACE_RESULT_TX_INVARIANT_USB_ADMISSION_TIMEOUT:
+            return "USB admission timeout";
+        case HOST_INTERFACE_RESULT_TX_INVARIANT_CDC_COMPLETION_TIMEOUT:
+            return "CDC completion timeout";
+        case HOST_INTERFACE_RESULT_TX_INVARIANT_USB_COUNTER_REGRESSION:
+            return "USB counter regression";
+        case HOST_INTERFACE_RESULT_TX_INVARIANT_USB_STREAM_INTEGRITY:
+            return "USB ring stream integrity";
+        case HOST_INTERFACE_RESULT_TX_INVARIANT_ACTIVE_TRANSFER_DISCARDED:
+            return "active transfer discarded";
+        case HOST_INTERFACE_RESULT_TX_INVARIANT_FINAL_COUNTS:
+            return "final custody counts";
+        default:
+            return "unknown";
     }
 }
 
@@ -355,7 +414,7 @@ static const char* CONSOLE_HostInterface_ResponseReasonName( uint32_t reason )
 
 static void CONSOLE_HostInterface_PrintUsage( void )
 {
-    CONSOLE_Printf( "Usage: host <status|reset>\r\n" );
+    CONSOLE_Printf( "Usage: host <status|trace|reset>\r\n" );
 }
 
 static void CONSOLE_HostInterface_PrintStatus( void )
@@ -482,8 +541,101 @@ static void CONSOLE_HostInterface_PrintStatus( void )
                         ( unsigned long )status.result_rate_msgs_per_sec,
                         status.result_phase_active ? " (active)" : "" );
     }
+    CONSOLE_Printf(
+        "  Result custody:      produced=%lu[%lu], staged=%lu[%lu], queued=%lu[%lu], "
+        "cdc_done=%lu[%lu]\r\n",
+        ( unsigned long )status.result_produced_count,
+        ( unsigned long )status.result_last_produced_tick,
+        ( unsigned long )status.result_staged_count,
+        ( unsigned long )status.result_last_staged_tick,
+        ( unsigned long )status.result_usb_queued_count,
+        ( unsigned long )status.result_last_usb_queued_tick,
+        ( unsigned long )status.result_cdc_completed_count,
+        ( unsigned long )status.result_last_cdc_completed_tick );
+    CONSOLE_Printf(
+        "  Result pending:      staged=%u, USB batches=%u, USB rejects=%lu, complete=%s, "
+        "invariant=%s\r\n",
+        ( unsigned int )status.result_staged_message_count,
+        ( unsigned int )status.result_outstanding_batch_count,
+        ( unsigned long )status.result_usb_batch_rejection_count,
+        status.result_custody_complete ? "yes" : "no",
+        CONSOLE_HostInterface_ResultInvariantName( status.result_invariant_failure ) );
+    CONSOLE_Printf(
+        "  USB TX bytes:        accepted=%lu, submitted=%lu, completed=%lu, discarded=%lu, "
+        "buffered=%lu, active=%lu, peak=%lu\r\n",
+        ( unsigned long )status.usb_tx_diags.accepted_bytes,
+        ( unsigned long )status.usb_tx_diags.submitted_bytes,
+        ( unsigned long )status.usb_tx_diags.completed_bytes,
+        ( unsigned long )status.usb_tx_diags.discarded_bytes,
+        ( unsigned long )status.usb_tx_diags.current_buffered_bytes,
+        ( unsigned long )status.usb_tx_diags.current_active_bytes,
+        ( unsigned long )status.usb_tx_diags.peak_buffered_bytes );
+    CONSOLE_Printf(
+        "  USB TX operations:   accepted=%lu, CDC submit=%lu (busy/fail=%lu), complete=%lu, "
+        "discard=%lu, ring=%lu->%lu\r\n",
+        ( unsigned long )status.usb_tx_diags.accepted_request_count,
+        ( unsigned long )status.usb_tx_diags.cdc_submit_count,
+        ( unsigned long )status.usb_tx_diags.cdc_submit_failure_count,
+        ( unsigned long )status.usb_tx_diags.completed_transfer_count,
+        ( unsigned long )status.usb_tx_diags.discard_count,
+        ( unsigned long )status.usb_tx_diags.live_start,
+        ( unsigned long )status.usb_tx_diags.waiting_end );
+    CONSOLE_Printf(
+        "  USB TX integrity:    epoch=%lu bytes=%lu/%lu crc=%08lX/%08lX\r\n",
+        ( unsigned long )status.usb_tx_diags.integrity_epoch,
+        ( unsigned long )status.usb_tx_diags.integrity_accepted_bytes,
+        ( unsigned long )status.usb_tx_diags.integrity_submitted_bytes,
+        ( unsigned long )status.usb_tx_diags.accepted_stream_crc32,
+        ( unsigned long )status.usb_tx_diags.submitted_stream_crc32 );
+    CONSOLE_Printf( "  Result trace:        retained=%lu, overwritten=%lu\r\n",
+                    ( unsigned long )status.result_audit_entry_count,
+                    ( unsigned long )status.result_audit_overwrite_count );
     CONSOLE_Printf( "  Effective period:    %lu ms\r\n",
                     ( unsigned long )status.effective_period_ms );
+}
+
+static void CONSOLE_HostInterface_PrintTrace( void )
+{
+    HostInterfaceStatus_T status = { 0 };
+    HOST_INTERFACE_GetStatus( &status );
+    uint32_t entry_count = status.result_audit_entry_count;
+    if ( entry_count > HOST_INTERFACE_RESULT_TX_AUDIT_DEPTH )
+    {
+        entry_count = HOST_INTERFACE_RESULT_TX_AUDIT_DEPTH;
+    }
+
+    CONSOLE_Printf( "Result TX trace: %lu retained, %lu overwritten (oldest to newest)\r\n",
+                    ( unsigned long )entry_count,
+                    ( unsigned long )status.result_audit_overwrite_count );
+    for ( uint32_t remaining = entry_count; remaining > 0U; remaining-- )
+    {
+        HostInterfaceResultTxAuditEntry_T entry = { 0 };
+        if ( !HOST_INTERFACE_GetResultTxAuditEntry( remaining - 1U, &entry ) )
+        {
+            CONSOLE_Printf( "  trace changed while reading; retry command\r\n" );
+            return;
+        }
+        if ( entry.event == HOST_INTERFACE_RESULT_TX_EVENT_INVARIANT_FAULT )
+        {
+            CONSOLE_Printf(
+                "  #%lu %-15s expected=%lu actual=%lu invariant=%lu usb=%lu/%lu\r\n",
+                ( unsigned long )entry.sequence,
+                CONSOLE_HostInterface_ResultEventName( entry.event ),
+                ( unsigned long )entry.first_tick, ( unsigned long )entry.last_tick,
+                ( unsigned long )entry.crc32,
+                ( unsigned long )entry.usb_accepted_bytes,
+                ( unsigned long )entry.usb_completed_bytes );
+            continue;
+        }
+        CONSOLE_Printf(
+            "  #%lu %-15s ticks=%lu..%lu msgs=%u bytes=%u crc=%08lX usb=%lu/%lu\r\n",
+            ( unsigned long )entry.sequence,
+            CONSOLE_HostInterface_ResultEventName( entry.event ),
+            ( unsigned long )entry.first_tick, ( unsigned long )entry.last_tick,
+            ( unsigned int )entry.message_count, ( unsigned int )entry.size_bytes,
+            ( unsigned long )entry.crc32, ( unsigned long )entry.usb_accepted_bytes,
+            ( unsigned long )entry.usb_completed_bytes );
+    }
 }
 
 /**-----------------------------------------------------------------------------
@@ -502,6 +654,10 @@ void CONSOLE_HostInterface_Command( uint16_t argc, char* argv[] )
     if ( strcmp( argv[1], "status" ) == 0 )
     {
         CONSOLE_HostInterface_PrintStatus();
+    }
+    else if ( strcmp( argv[1], "trace" ) == 0 )
+    {
+        CONSOLE_HostInterface_PrintTrace();
     }
     else if ( strcmp( argv[1], "reset" ) == 0 )
     {

@@ -54,10 +54,56 @@ extern "C"
 #define HOST_INTERFACE_NOTIFY_FAULT ( ( uint32_t )1U << 6U )
 #define HOST_INTERFACE_NOTIFY_RESET ( ( uint32_t )1U << 7U )
 
+/** Number of recent result-path events retained for post-fault inspection. */
+#define HOST_INTERFACE_RESULT_TX_AUDIT_DEPTH ( 32U )
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
  */
+
+/** Result transfer checkpoints recorded by the Host Interface. */
+typedef enum
+{
+    HOST_INTERFACE_RESULT_TX_EVENT_PRODUCED = 0U,
+    HOST_INTERFACE_RESULT_TX_EVENT_STAGED,
+    HOST_INTERFACE_RESULT_TX_EVENT_USB_QUEUED,
+    HOST_INTERFACE_RESULT_TX_EVENT_USB_REJECTED,
+    HOST_INTERFACE_RESULT_TX_EVENT_CDC_COMPLETED,
+    HOST_INTERFACE_RESULT_TX_EVENT_USB_DISCARDED,
+    HOST_INTERFACE_RESULT_TX_EVENT_INVARIANT_FAULT,
+} HostInterfaceResultTxEvent_T;
+
+/** Locally provable result-transfer invariant failures. */
+typedef enum
+{
+    HOST_INTERFACE_RESULT_TX_INVARIANT_NONE = 0U,
+    HOST_INTERFACE_RESULT_TX_INVARIANT_PRODUCED_TICK,
+    HOST_INTERFACE_RESULT_TX_INVARIANT_STAGED_TICK,
+    HOST_INTERFACE_RESULT_TX_INVARIANT_QUEUED_TICK,
+    HOST_INTERFACE_RESULT_TX_INVARIANT_COMPLETED_TICK,
+    HOST_INTERFACE_RESULT_TX_INVARIANT_OUTSTANDING_BATCH_OVERFLOW,
+    HOST_INTERFACE_RESULT_TX_INVARIANT_USB_ADMISSION_TIMEOUT,
+    HOST_INTERFACE_RESULT_TX_INVARIANT_CDC_COMPLETION_TIMEOUT,
+    HOST_INTERFACE_RESULT_TX_INVARIANT_USB_COUNTER_REGRESSION,
+    HOST_INTERFACE_RESULT_TX_INVARIANT_USB_STREAM_INTEGRITY,
+    HOST_INTERFACE_RESULT_TX_INVARIANT_ACTIVE_TRANSFER_DISCARDED,
+    HOST_INTERFACE_RESULT_TX_INVARIANT_FINAL_COUNTS,
+} HostInterfaceResultTxInvariant_T;
+
+/** One entry in the bounded result-transfer audit trace. */
+typedef struct
+{
+    uint32_t                     sequence;
+    HostInterfaceResultTxEvent_T event;
+    uint32_t                     first_tick;
+    uint32_t                     last_tick;
+    uint16_t                     message_count;
+    uint16_t                     size_bytes;
+    uint32_t                     crc32;
+    uint64_t                     usb_accepted_bytes;
+    uint64_t                     usb_completed_bytes;
+} HostInterfaceResultTxAuditEntry_T;
 
 typedef struct
 {
@@ -126,6 +172,24 @@ typedef struct
     uint32_t result_duration_ms;
     uint32_t result_rate_msgs_per_sec;
 
+    /* Result path chain-of-custody diagnostics. */
+    uint32_t                         result_produced_count;
+    uint32_t                         result_staged_count;
+    uint32_t                         result_usb_queued_count;
+    uint32_t                         result_cdc_completed_count;
+    uint32_t                         result_usb_batch_rejection_count;
+    uint32_t                         result_last_produced_tick;
+    uint32_t                         result_last_staged_tick;
+    uint32_t                         result_last_usb_queued_tick;
+    uint32_t                         result_last_cdc_completed_tick;
+    uint16_t                         result_staged_message_count;
+    uint16_t                         result_outstanding_batch_count;
+    uint32_t                         result_audit_entry_count;
+    uint32_t                         result_audit_overwrite_count;
+    bool                             result_custody_complete;
+    HostInterfaceResultTxInvariant_T result_invariant_failure;
+    HW_USB_Transmit_Diagnostics_T     usb_tx_diags;
+
     /* Dynamic Scheduling Status */
     uint32_t effective_period_ms;
 } HostInterfaceStatus_T;
@@ -154,6 +218,17 @@ bool HOST_INTERFACE_Notify( uint32_t notification );
  * @param[out] status Receives a snapshot of the current status.
  */
 void HOST_INTERFACE_GetStatus( HostInterfaceStatus_T* status );
+
+/**
+ * @brief Retrieves one retained result-transfer event, indexed newest first.
+ *
+ * @param newest_offset Zero selects the newest retained entry, one the next
+ *                      oldest, and so on.
+ * @param[out] entry Destination for the copied trace entry.
+ * @return true when the requested retained entry exists.
+ */
+bool HOST_INTERFACE_GetResultTxAuditEntry(
+    uint32_t newest_offset, HostInterfaceResultTxAuditEntry_T* entry );
 
 /**
  * @brief Host Interface Task

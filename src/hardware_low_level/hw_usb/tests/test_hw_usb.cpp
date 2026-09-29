@@ -706,3 +706,74 @@ TEST_F( HWUSBTest, DiscardDoesNotSendAnInterruptedFrameSuffixAfterReconnect )
     EXPECT_EQ( sizeof( new_frame ), usb_state.transmit_num_buffered );
     EXPECT_EQ( sizeof( new_frame ), usb_state.transmit_num_in_transmission );
 }
+
+/** Verifies that accepted bytes are distinct from CDC-completed bytes. */
+TEST_F( HWUSBTest, TransmitDiagnosticsTrackAcceptanceSubmissionAndCompletionSeparately )
+{
+    const uint8_t data[] = { 0x11U, 0x22U, 0x33U, 0x44U };
+    EXPECT_CALL( mock, CDCTransmitFS( testing::_, sizeof( data ) ) )
+        .WillOnce( testing::Return( USBD_OK ) );
+
+    ASSERT_TRUE( HW_USB_Transmit( data, sizeof( data ) ) );
+
+    HW_USB_Transmit_Diagnostics_T diagnostics = {};
+    ASSERT_TRUE( HW_USB_Get_Transmit_Diagnostics( &diagnostics ) );
+    EXPECT_EQ( 1U, diagnostics.accepted_request_count );
+    EXPECT_EQ( sizeof( data ), diagnostics.accepted_bytes );
+    EXPECT_EQ( 1U, diagnostics.cdc_submit_count );
+    EXPECT_EQ( sizeof( data ), diagnostics.submitted_bytes );
+    EXPECT_EQ( 0U, diagnostics.completed_transfer_count );
+    EXPECT_EQ( 0U, diagnostics.completed_bytes );
+    EXPECT_EQ( sizeof( data ), diagnostics.current_buffered_bytes );
+    EXPECT_EQ( sizeof( data ), diagnostics.current_active_bytes );
+    EXPECT_EQ( diagnostics.integrity_accepted_bytes,
+               diagnostics.integrity_submitted_bytes );
+    EXPECT_EQ( diagnostics.accepted_stream_crc32,
+               diagnostics.submitted_stream_crc32 );
+
+    cdc_handle.TxState = 0U;
+    HW_USB_Monitor_Process();
+
+    ASSERT_TRUE( HW_USB_Get_Transmit_Diagnostics( &diagnostics ) );
+    EXPECT_EQ( 1U, diagnostics.completed_transfer_count );
+    EXPECT_EQ( sizeof( data ), diagnostics.completed_bytes );
+    EXPECT_EQ( 0U, diagnostics.current_buffered_bytes );
+    EXPECT_EQ( 0U, diagnostics.current_active_bytes );
+}
+
+/** Verifies that a full-ring refusal is observable without mutating byte totals. */
+TEST_F( HWUSBTest, TransmitDiagnosticsTrackNoSpaceRejection )
+{
+    const uint8_t data = 0x5AU;
+    usb_state.transmit_num_buffered = MAX_USB_TRANSMIT_BYTES;
+
+    EXPECT_FALSE( HW_USB_Transmit( &data, 1U ) );
+
+    HW_USB_Transmit_Diagnostics_T diagnostics = {};
+    ASSERT_TRUE( HW_USB_Get_Transmit_Diagnostics( &diagnostics ) );
+    EXPECT_EQ( 1U, diagnostics.rejected_no_space_count );
+    EXPECT_EQ( 0U, diagnostics.accepted_request_count );
+    EXPECT_EQ( 0U, diagnostics.accepted_bytes );
+    EXPECT_EQ( MAX_USB_TRANSMIT_BYTES, diagnostics.current_buffered_bytes );
+}
+
+/** Verifies that source and submitted CRCs expose corruption inside the USB ring. */
+TEST_F( HWUSBTest, TransmitDiagnosticsDetectRingContentChangeBeforeCDCSubmission )
+{
+    const uint8_t data[] = { 0x10U, 0x20U, 0x30U, 0x40U };
+    EXPECT_CALL( mock, CDCTransmitFS( testing::_, sizeof( data ) ) )
+        .WillOnce( testing::Return( USBD_BUSY ) );
+    ASSERT_TRUE( HW_USB_Transmit( data, sizeof( data ) ) );
+
+    usb_state.transmit_buffer[1] ^= 0xFFU;
+    EXPECT_CALL( mock, CDCTransmitFS( testing::_, sizeof( data ) ) )
+        .WillOnce( testing::Return( USBD_OK ) );
+    HW_USB_Monitor_Process();
+
+    HW_USB_Transmit_Diagnostics_T diagnostics = {};
+    ASSERT_TRUE( HW_USB_Get_Transmit_Diagnostics( &diagnostics ) );
+    EXPECT_EQ( diagnostics.integrity_accepted_bytes,
+               diagnostics.integrity_submitted_bytes );
+    EXPECT_NE( diagnostics.accepted_stream_crc32,
+               diagnostics.submitted_stream_crc32 );
+}

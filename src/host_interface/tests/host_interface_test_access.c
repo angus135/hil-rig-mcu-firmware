@@ -9,7 +9,9 @@
 #include <stdint.h>
 
 #include "host_interface_test_access.h"
+#ifndef HOST_INTERFACE_DIRECT_USB_STREAMING
 #define HOST_INTERFACE_DIRECT_USB_STREAMING ( 0 )
+#endif
 #include "../host_interface.c"  // NOLINT
 
 /* The Host Interface integration tests exercise the protocol service loop
@@ -54,6 +56,7 @@ RunState_T RUN_STATE_MANAGER_GetState( void )
     return RUN_STATE_IDLE;
 }
 
+#ifndef HOST_INTERFACE_TEST_REAL_VARIABLE_RESULT_PRODUCER
 void VARIABLE_RESULT_MESSAGE_PRODUCER_GetDiagnostics( VariableResultProducerDiagnostics_T* diags )
 {
     if ( diags != NULL )
@@ -61,6 +64,7 @@ void VARIABLE_RESULT_MESSAGE_PRODUCER_GetDiagnostics( VariableResultProducerDiag
         ( void )memset( diags, 0, sizeof( *diags ) );
     }
 }
+#endif
 
 static HOST_INTERFACE_Protocol_State_T s_protocol_state;
 
@@ -114,6 +118,7 @@ void HOST_INTERFACE_Test_Access_Observe_Disconnected_Link( void )
 void HOST_INTERFACE_Test_Access_Reset_Protocol( void )
 {
     HOST_INTERFACE_Protocol_Init( &s_protocol_state );
+    HOST_INTERFACE_Result_Tx_Audit_Reset();
 }
 
 /**
@@ -127,6 +132,36 @@ void HOST_INTERFACE_Test_Access_Process_Once( void )
 
     HOST_INTERFACE_Protocol_Process( &s_protocol_state, NULL, &outgoing_message_accepted, true,
                                      &incoming_message, &incoming_message_available );
+}
+
+/**
+ * @brief Submit one outgoing Application message through the production protocol service path.
+ *
+ * @param[in] outgoing_message Message to encode and submit, or NULL to service retained output.
+ * @return true when the Host Interface copied and accepted outgoing_message during this cycle.
+ */
+bool HOST_INTERFACE_Test_Access_Submit_Outgoing(
+    const HIL_Application_Message_T* const outgoing_message )
+{
+    HIL_Application_Message_T incoming_message           = { 0 };
+    bool                      incoming_message_available = false;
+    bool                      outgoing_message_accepted  = false;
+
+    HOST_INTERFACE_Protocol_Process( &s_protocol_state, outgoing_message,
+                                     &outgoing_message_accepted, true, &incoming_message,
+                                     &incoming_message_available );
+
+    return outgoing_message_accepted;
+}
+
+/**
+ * @brief Read the number of direct-stream bytes retained for a later USB retry.
+ *
+ * @return Number of valid bytes in the Host Interface direct transmit staging buffer.
+ */
+size_t HOST_INTERFACE_Test_Access_Get_Direct_Pending_Bytes( void )
+{
+    return s_protocol_state.application.used_send_byte_span_size;
 }
 
 void HOST_INTERFACE_Test_Access_Process_Once_With_Consumption(

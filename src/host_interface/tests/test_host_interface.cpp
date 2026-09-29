@@ -40,6 +40,7 @@ std::vector<std::vector<uint8_t>> accepted_usb_output;
 std::vector<uint8_t>              usb_receive_bytes;
 size_t                            usb_receive_offset = 0U;
 TickType_t                        test_ticks         = 0U;
+HW_USB_Transmit_Diagnostics_T     usb_tx_diags{};
 
 std::vector<uint8_t> MakeBasicSystemInfoRequest()
 {
@@ -105,6 +106,13 @@ extern "C" bool HW_USB_Transmit( const uint8_t* const data, const uint16_t size_
 
     accepted_usb_output.emplace_back( data, data + size_bytes );
     usb_transmit_buffered += size_bytes;
+    ++usb_tx_diags.accepted_request_count;
+    usb_tx_diags.accepted_bytes += size_bytes;
+    usb_tx_diags.last_accepted_size = size_bytes;
+    usb_tx_diags.current_buffered_bytes = static_cast<uint32_t>( usb_transmit_buffered );
+    usb_tx_diags.peak_buffered_bytes =
+        std::max( usb_tx_diags.peak_buffered_bytes,
+                  static_cast<uint32_t>( usb_transmit_buffered ) );
 
     if ( disconnect_after_usb_output_accept )
     {
@@ -121,8 +129,11 @@ extern "C" bool HW_USB_Transmit( const uint8_t* const data, const uint16_t size_
 extern "C" void HW_USB_Discard_Transmit_Data( void )
 {
     ++discard_transmit_calls;
+    ++usb_tx_diags.discard_count;
+    usb_tx_diags.discarded_bytes += usb_transmit_buffered;
     accepted_usb_output.clear();
     usb_transmit_buffered = 0U;
+    usb_tx_diags.current_buffered_bytes = 0U;
 }
 
 extern "C" void HW_USB_Receive_From_ISR( uint8_t*, uint32_t* )
@@ -160,6 +171,17 @@ extern "C" uint32_t HW_USB_Get_Receive_Stream_Dropped_Bytes( void )
 extern "C" uint32_t HW_USB_Get_Receive_Stream_Free_Bytes( void )
 {
     return 0U;
+}
+
+extern "C" bool
+HW_USB_Get_Transmit_Diagnostics( HW_USB_Transmit_Diagnostics_T* const diagnostics )
+{
+    if ( diagnostics == nullptr )
+    {
+        return false;
+    }
+    *diagnostics = usb_tx_diags;
+    return true;
 }
 
 extern "C" void HW_USB_Monitor_Process( void )
@@ -208,6 +230,7 @@ protected:
         connection_state                   = HW_USB_CONNECTION_STATE_DISCONNECTED;
         discard_transmit_calls             = 0U;
         usb_transmit_calls                 = 0U;
+        usb_tx_diags                       = {};
         usb_monitor_calls                  = 0U;
         disconnect_after_usb_output_accept = false;
         suspend_after_usb_output_accept    = false;

@@ -1061,7 +1061,7 @@ TEST_F( RunStateManagerTest, ExecutionGuardAllowsDispatchOnlyWhenActiveAndNoAbor
     EXPECT_FALSE( execution_guard() );
 }
 
-TEST_F( RunStateManagerTest, ResultTransferCompletionRetainsConfigurationAndRearms )
+TEST_F( RunStateManagerTest, ResultTransferCompletionSignalsHostAfterRearming )
 {
     EnterExecution();
     Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
@@ -1080,6 +1080,13 @@ TEST_F( RunStateManagerTest, ResultTransferCompletionRetainsConfigurationAndRear
     EXPECT_TRUE( run_configuration_owned );
     EXPECT_FALSE( configuration_cleared );
 
+    /* A rejected request must not overwrite the asynchronous completion route. */
+    Process( RUN_STATE_REQUEST_REPEAT );
+    EXPECT_EQ( RUN_STATE_REQUEST_RESULT_REJECTED_PENDING, last_request_result );
+
+    host_interface_notify_calls  = 0U;
+    host_interface_notified_bits = 0U;
+
     RUN_STATE_MANAGER_ProcessPendingOperation();
     EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
     EXPECT_EQ( RUN_STATE_PENDING_EXECUTION_PREPARATION, pending_operation );
@@ -1090,6 +1097,8 @@ TEST_F( RunStateManagerTest, ResultTransferCompletionRetainsConfigurationAndRear
     EXPECT_EQ( RUN_STATE_PENDING_NONE, pending_operation );
     EXPECT_TRUE( run_configuration_owned );
     EXPECT_FALSE( configuration_cleared );
+    EXPECT_EQ( 1U, host_interface_notify_calls );
+    EXPECT_EQ( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE, host_interface_notified_bits );
 }
 
 TEST_F( RunStateManagerTest, DiscardResultsFailurePreservesResultsReadyAndAllowsRetry )

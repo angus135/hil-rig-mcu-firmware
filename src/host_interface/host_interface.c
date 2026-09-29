@@ -64,6 +64,9 @@
 #define HOST_INTERFACE_DIRECT_USB_FLUSH_THRESHOLD ( 400U )
 #define HOST_INTERFACE_OUTGOING_BACKPRESSURE_TIMEOUT_MS ( 5000U )
 
+/** Maximum number of result batches that can await CDC completion. */
+#define HOST_INTERFACE_RESULT_TX_OUTSTANDING_BATCH_CAPACITY ( 16U )
+
 _Static_assert( HOST_INTERFACE_DIRECT_USB_FLUSH_THRESHOLD
                     <= HOST_INTERFACE_DIRECT_USB_SEND_CAPACITY,
                 "Direct USB flush threshold must fit the result batch buffer" );
@@ -177,6 +180,13 @@ typedef struct
 
     /** Number of valid bytes currently in send_byte_span. */
     size_t used_send_byte_span_size;
+
+    /** Result messages currently represented in the direct USB staging span. */
+    uint16_t staged_result_message_count;
+
+    /** First and last result ticks represented in the staging span. */
+    uint32_t staged_result_first_tick;
+    uint32_t staged_result_last_tick;
 
     /** Encoded bytes copied from one incoming Transport message. */
     uint8_t receive_byte_span[HOST_INTERFACE_APPLICATION_MESSAGE_CAPACITY];
@@ -308,6 +318,51 @@ typedef struct
     bool link_state_observed;
 } HOST_INTERFACE_Protocol_State_T;
 
+/** Metadata retained until the corresponding cumulative CDC byte count completes. */
+typedef struct
+{
+    uint64_t usb_completion_target;
+    uint32_t first_tick;
+    uint32_t last_tick;
+    uint16_t message_count;
+    uint16_t size_bytes;
+    uint32_t crc32;
+    TickType_t queued_at;
+} HOST_INTERFACE_Result_Tx_Batch_T;
+
+/** Private bounded audit and outstanding-ownership state. */
+typedef struct
+{
+    HostInterfaceResultTxAuditEntry_T entries[HOST_INTERFACE_RESULT_TX_AUDIT_DEPTH];
+    uint32_t                          next_entry;
+    uint32_t                          entry_count;
+    uint32_t                          overwrite_count;
+    uint32_t                          next_sequence;
+
+    HOST_INTERFACE_Result_Tx_Batch_T
+        outstanding[HOST_INTERFACE_RESULT_TX_OUTSTANDING_BATCH_CAPACITY];
+    uint16_t outstanding_head;
+    uint16_t outstanding_count;
+
+    bool produced_tick_valid;
+    bool staged_tick_valid;
+    bool queued_tick_valid;
+    bool completed_tick_valid;
+    bool flush_rejection_latched;
+    bool invariant_fault_latched;
+    bool final_validation_complete;
+    TickType_t flush_rejection_started_at;
+
+    uint32_t last_produced_tick;
+    uint32_t last_staged_tick;
+    uint32_t last_queued_tick;
+    uint32_t last_completed_tick;
+    uint32_t observed_discard_count;
+    uint64_t observed_discarded_bytes;
+    uint64_t observed_accepted_bytes;
+    uint64_t observed_completed_bytes;
+} HOST_INTERFACE_Result_Tx_Audit_State_T;
+
 /**-----------------------------------------------------------------------------
  *  Public (global) and Extern Variables
  *------------------------------------------------------------------------------
@@ -321,6 +376,7 @@ TaskHandle_t HostInterfaceTaskHandle = NULL;  // NOLINT(readability-identifier-n
  */
 
 static HostInterfaceStatus_T s_host_interface_status = { 0 };
+static HOST_INTERFACE_Result_Tx_Audit_State_T s_result_tx_audit = { 0 };
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -341,11 +397,490 @@ HOST_INTERFACE_Protocol_Update_Link_State( HOST_INTERFACE_Protocol_State_T* prot
 static uint32_t
 HOST_INTERFACE_Transport_Clock_Update( HOST_INTERFACE_Transport_Clock_T* transport_clock,
                                        TickType_t current_ticks, bool configured_suspended );
+static uint32_t HOST_INTERFACE_GetMessageTick( const HIL_Application_Message_T* msg );
+static bool HOST_INTERFACE_IsResultMessage( const HIL_Application_Message_T* msg );
+static void HOST_INTERFACE_Result_Tx_Audit_Reset( void );
+static void HOST_INTERFACE_Result_Tx_Record_Produced( const HIL_Application_Message_T* msg );
+#if HOST_INTERFACE_DIRECT_USB_STREAMING
+static void HOST_INTERFACE_Result_Tx_Record_Staged(
+    HOST_INTERFACE_Application_State_T* application, const HIL_Application_Message_T* msg,
+    const uint8_t* frame, size_t frame_size );
+static bool HOST_INTERFACE_Direct_USB_Flush( HOST_INTERFACE_Application_State_T* application );
+#endif
+static void HOST_INTERFACE_Result_Tx_Update_USB_Completion( void );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+
+#if HOST_INTERFACE_DIRECT_USB_STREAMING
+/** Returns IEEE CRC-32 for one immutable framed result or USB batch. */
+static uint32_t HOST_INTERFACE_Result_Tx_CRC32( const uint8_t* const data, const size_t size )
+{
+    uint32_t crc = UINT32_MAX;
+
+    for ( size_t byte_index = 0U; byte_index < size; byte_index++ )
+    {
+        crc ^= data[byte_index];
+        for ( uint8_t bit = 0U; bit < 8U; bit++ )
+        {
+            const uint32_t mask = ( uint32_t )( -( int32_t )( crc & 1U ) );
+            crc                 = ( crc >> 1U ) ^ ( 0xEDB88320U & mask );
+        }
+    }
+
+    return ~crc;
+}
+#endif
+
+/** Publishes one bounded trace entry; the Host task is the sole writer. */
+static void HOST_INTERFACE_Result_Tx_Record_Event(
+    const HostInterfaceResultTxEvent_T event, const uint32_t first_tick,
+    const uint32_t last_tick, const uint16_t message_count, const uint16_t size_bytes,
+    const uint32_t crc32 )
+{
+    HostInterfaceResultTxAuditEntry_T entry = {
+        .sequence            = s_result_tx_audit.next_sequence,
+        .event               = event,
+        .first_tick          = first_tick,
+        .last_tick           = last_tick,
+        .message_count       = message_count,
+        .size_bytes          = size_bytes,
+        .crc32               = crc32,
+        .usb_accepted_bytes  = s_host_interface_status.usb_tx_diags.accepted_bytes,
+        .usb_completed_bytes = s_host_interface_status.usb_tx_diags.completed_bytes,
+    };
+
+    taskENTER_CRITICAL();
+    s_result_tx_audit.entries[s_result_tx_audit.next_entry] = entry;
+    s_result_tx_audit.next_entry =
+        ( s_result_tx_audit.next_entry + 1U ) % HOST_INTERFACE_RESULT_TX_AUDIT_DEPTH;
+    if ( s_result_tx_audit.entry_count < HOST_INTERFACE_RESULT_TX_AUDIT_DEPTH )
+    {
+        s_result_tx_audit.entry_count++;
+    }
+    else
+    {
+        s_result_tx_audit.overwrite_count++;
+    }
+    s_result_tx_audit.next_sequence++;
+    s_host_interface_status.result_audit_entry_count = s_result_tx_audit.entry_count;
+    s_host_interface_status.result_audit_overwrite_count = s_result_tx_audit.overwrite_count;
+    taskEXIT_CRITICAL();
+}
+
+/** Latches the first locally provable custody failure and requests an RSM fault. */
+static void HOST_INTERFACE_Result_Tx_Fault(
+    const HostInterfaceResultTxInvariant_T invariant, const uint32_t expected_tick,
+    const uint32_t actual_tick )
+{
+    if ( s_result_tx_audit.invariant_fault_latched )
+    {
+        return;
+    }
+
+    s_result_tx_audit.invariant_fault_latched             = true;
+    s_host_interface_status.result_invariant_failure      = invariant;
+    s_host_interface_status.is_faulted                    = true;
+    s_host_interface_status.last_fault_reason             = RUN_STATE_FAULT_HOST_INTERFACE_ERROR;
+
+    HOST_INTERFACE_Result_Tx_Record_Event( HOST_INTERFACE_RESULT_TX_EVENT_INVARIANT_FAULT,
+                                           expected_tick, actual_tick, 0U, 0U,
+                                           ( uint32_t )invariant );
+    HOST_INTERFACE_Error_Handler();
+}
+
+/** Identifies fixed and variable result messages handled by the custody ledger. */
+static bool HOST_INTERFACE_IsResultMessage( const HIL_Application_Message_T* const msg )
+{
+    return msg != NULL
+           && ( msg->type == HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT
+                || msg->type == HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT );
+}
+
+/** Starts a fresh result-transfer ledger while preserving cumulative USB counters. */
+static void HOST_INTERFACE_Result_Tx_Audit_Reset( void )
+{
+    HW_USB_Transmit_Diagnostics_T usb_diags = { 0 };
+
+    // Entries and batch storage need not be erased; publishing zero counts
+    // makes all old slots unreachable while keeping the critical section short.
+    taskENTER_CRITICAL();
+    s_result_tx_audit.next_entry      = 0U;
+    s_result_tx_audit.entry_count     = 0U;
+    s_result_tx_audit.overwrite_count = 0U;
+    s_result_tx_audit.next_sequence   = 0U;
+    taskEXIT_CRITICAL();
+    s_result_tx_audit.outstanding_head          = 0U;
+    s_result_tx_audit.outstanding_count         = 0U;
+    s_result_tx_audit.produced_tick_valid       = false;
+    s_result_tx_audit.staged_tick_valid         = false;
+    s_result_tx_audit.queued_tick_valid         = false;
+    s_result_tx_audit.completed_tick_valid      = false;
+    s_result_tx_audit.flush_rejection_latched   = false;
+    s_result_tx_audit.invariant_fault_latched   = false;
+    s_result_tx_audit.final_validation_complete = false;
+    s_result_tx_audit.flush_rejection_started_at = 0U;
+    s_result_tx_audit.last_produced_tick        = 0U;
+    s_result_tx_audit.last_staged_tick          = 0U;
+    s_result_tx_audit.last_queued_tick          = 0U;
+    s_result_tx_audit.last_completed_tick       = 0U;
+    s_result_tx_audit.observed_discard_count    = 0U;
+    s_result_tx_audit.observed_discarded_bytes  = 0U;
+    s_result_tx_audit.observed_accepted_bytes   = 0U;
+    s_result_tx_audit.observed_completed_bytes  = 0U;
+
+    s_host_interface_status.result_produced_count            = 0U;
+    s_host_interface_status.result_staged_count              = 0U;
+    s_host_interface_status.result_usb_queued_count          = 0U;
+    s_host_interface_status.result_cdc_completed_count       = 0U;
+    s_host_interface_status.result_usb_batch_rejection_count = 0U;
+    s_host_interface_status.result_last_produced_tick        = 0U;
+    s_host_interface_status.result_last_staged_tick          = 0U;
+    s_host_interface_status.result_last_usb_queued_tick      = 0U;
+    s_host_interface_status.result_last_cdc_completed_tick   = 0U;
+    s_host_interface_status.result_staged_message_count      = 0U;
+    s_host_interface_status.result_outstanding_batch_count   = 0U;
+    s_host_interface_status.result_audit_entry_count         = 0U;
+    s_host_interface_status.result_audit_overwrite_count     = 0U;
+    s_host_interface_status.result_custody_complete          = false;
+    s_host_interface_status.result_invariant_failure =
+        HOST_INTERFACE_RESULT_TX_INVARIANT_NONE;
+
+    if ( HW_USB_Get_Transmit_Diagnostics( &usb_diags ) )
+    {
+        s_host_interface_status.usb_tx_diags       = usb_diags;
+        s_result_tx_audit.observed_discard_count   = usb_diags.discard_count;
+        s_result_tx_audit.observed_discarded_bytes = usb_diags.discarded_bytes;
+        s_result_tx_audit.observed_accepted_bytes  = usb_diags.accepted_bytes;
+        s_result_tx_audit.observed_completed_bytes = usb_diags.completed_bytes;
+    }
+}
+
+/** Records producer output and enforces the one-complete-result-per-tick contract. */
+static void
+HOST_INTERFACE_Result_Tx_Record_Produced( const HIL_Application_Message_T* const msg )
+{
+    if ( !HOST_INTERFACE_IsResultMessage( msg ) )
+    {
+        return;
+    }
+
+    const uint32_t tick = HOST_INTERFACE_GetMessageTick( msg );
+    if ( s_result_tx_audit.produced_tick_valid
+         && tick != ( s_result_tx_audit.last_produced_tick + 1U ) )
+    {
+        HOST_INTERFACE_Result_Tx_Fault( HOST_INTERFACE_RESULT_TX_INVARIANT_PRODUCED_TICK,
+                                        s_result_tx_audit.last_produced_tick + 1U, tick );
+        return;
+    }
+
+    s_result_tx_audit.produced_tick_valid              = true;
+    s_result_tx_audit.last_produced_tick                = tick;
+    s_host_interface_status.result_produced_count++;
+    s_host_interface_status.result_last_produced_tick   = tick;
+    HOST_INTERFACE_Result_Tx_Record_Event( HOST_INTERFACE_RESULT_TX_EVENT_PRODUCED, tick, tick,
+                                           1U, 0U, 0U );
+}
+
+#if HOST_INTERFACE_DIRECT_USB_STREAMING
+/** Records the exact framed bytes retained by direct USB staging. */
+static void HOST_INTERFACE_Result_Tx_Record_Staged(
+    HOST_INTERFACE_Application_State_T* const application,
+    const HIL_Application_Message_T* const msg, const uint8_t* const frame,
+    const size_t frame_size )
+{
+    if ( !HOST_INTERFACE_IsResultMessage( msg ) )
+    {
+        return;
+    }
+
+    const uint32_t tick = HOST_INTERFACE_GetMessageTick( msg );
+    if ( s_result_tx_audit.staged_tick_valid
+         && tick != ( s_result_tx_audit.last_staged_tick + 1U ) )
+    {
+        HOST_INTERFACE_Result_Tx_Fault( HOST_INTERFACE_RESULT_TX_INVARIANT_STAGED_TICK,
+                                        s_result_tx_audit.last_staged_tick + 1U, tick );
+        return;
+    }
+
+    if ( application->staged_result_message_count == 0U )
+    {
+        application->staged_result_first_tick = tick;
+    }
+    application->staged_result_last_tick = tick;
+    application->staged_result_message_count++;
+
+    s_result_tx_audit.staged_tick_valid            = true;
+    s_result_tx_audit.last_staged_tick              = tick;
+    s_host_interface_status.result_staged_count++;
+    s_host_interface_status.result_last_staged_tick = tick;
+    s_host_interface_status.result_staged_message_count =
+        application->staged_result_message_count;
+    HOST_INTERFACE_Result_Tx_Record_Event(
+        HOST_INTERFACE_RESULT_TX_EVENT_STAGED, tick, tick, 1U, ( uint16_t )frame_size,
+        HOST_INTERFACE_Result_Tx_CRC32( frame, frame_size ) );
+}
+
+/** Atomically admits the complete staged span to USB and retains its completion boundary. */
+static bool
+HOST_INTERFACE_Direct_USB_Flush( HOST_INTERFACE_Application_State_T* const application )
+{
+    HW_USB_Transmit_Diagnostics_T usb_diags = { 0 };
+    const uint16_t batch_size = ( uint16_t )application->used_send_byte_span_size;
+
+    if ( batch_size == 0U )
+    {
+        return true;
+    }
+
+    if ( application->staged_result_message_count > 0U
+         && s_result_tx_audit.outstanding_count
+                >= HOST_INTERFACE_RESULT_TX_OUTSTANDING_BATCH_CAPACITY )
+    {
+        HOST_INTERFACE_Result_Tx_Fault(
+            HOST_INTERFACE_RESULT_TX_INVARIANT_OUTSTANDING_BATCH_OVERFLOW,
+            HOST_INTERFACE_RESULT_TX_OUTSTANDING_BATCH_CAPACITY,
+            s_result_tx_audit.outstanding_count );
+        return false;
+    }
+
+    if ( !HW_USB_Transmit( application->send_byte_span, batch_size ) )
+    {
+        if ( application->staged_result_message_count > 0U )
+        {
+            s_host_interface_status.result_usb_batch_rejection_count++;
+            if ( !s_result_tx_audit.flush_rejection_latched )
+            {
+                s_result_tx_audit.flush_rejection_latched = true;
+                s_result_tx_audit.flush_rejection_started_at = xTaskGetTickCount();
+                ( void )HW_USB_Get_Transmit_Diagnostics(
+                    &s_host_interface_status.usb_tx_diags );
+                HOST_INTERFACE_Result_Tx_Record_Event(
+                    HOST_INTERFACE_RESULT_TX_EVENT_USB_REJECTED,
+                    application->staged_result_first_tick,
+                    application->staged_result_last_tick,
+                    application->staged_result_message_count, batch_size,
+                    HOST_INTERFACE_Result_Tx_CRC32( application->send_byte_span, batch_size ) );
+            }
+            else
+            {
+                const TickType_t elapsed =
+                    xTaskGetTickCount() - s_result_tx_audit.flush_rejection_started_at;
+                if ( elapsed
+                     >= pdMS_TO_TICKS( HOST_INTERFACE_OUTGOING_BACKPRESSURE_TIMEOUT_MS ) )
+                {
+                    HOST_INTERFACE_Result_Tx_Fault(
+                        HOST_INTERFACE_RESULT_TX_INVARIANT_USB_ADMISSION_TIMEOUT,
+                        HOST_INTERFACE_OUTGOING_BACKPRESSURE_TIMEOUT_MS,
+                        ( uint32_t )elapsed );
+                }
+            }
+        }
+        return false;
+    }
+
+    s_result_tx_audit.flush_rejection_latched = false;
+    if ( !HW_USB_Get_Transmit_Diagnostics( &usb_diags ) )
+    {
+        HOST_INTERFACE_Result_Tx_Fault(
+            HOST_INTERFACE_RESULT_TX_INVARIANT_USB_COUNTER_REGRESSION, 0U, 0U );
+        application->used_send_byte_span_size    = 0U;
+        application->staged_result_message_count = 0U;
+        s_host_interface_status.result_staged_message_count = 0U;
+        return true;
+    }
+    s_host_interface_status.usb_tx_diags = usb_diags;
+
+    if ( application->staged_result_message_count > 0U )
+    {
+        const uint32_t first_tick = application->staged_result_first_tick;
+        const uint32_t last_tick  = application->staged_result_last_tick;
+        const uint16_t count      = application->staged_result_message_count;
+
+        if ( ( s_result_tx_audit.queued_tick_valid
+               && first_tick != ( s_result_tx_audit.last_queued_tick + 1U ) )
+             || ( ( uint32_t )count != ( last_tick - first_tick + 1U ) ) )
+        {
+            const uint32_t expected = s_result_tx_audit.queued_tick_valid
+                                          ? s_result_tx_audit.last_queued_tick + 1U
+                                          : first_tick;
+            HOST_INTERFACE_Result_Tx_Fault(
+                HOST_INTERFACE_RESULT_TX_INVARIANT_QUEUED_TICK, expected, first_tick );
+            application->used_send_byte_span_size    = 0U;
+            application->staged_result_message_count = 0U;
+            s_host_interface_status.result_staged_message_count = 0U;
+            return true;
+        }
+
+        const uint16_t tail = ( uint16_t )(
+            ( s_result_tx_audit.outstanding_head + s_result_tx_audit.outstanding_count )
+            % HOST_INTERFACE_RESULT_TX_OUTSTANDING_BATCH_CAPACITY );
+        HOST_INTERFACE_Result_Tx_Batch_T* const batch =
+            &s_result_tx_audit.outstanding[tail];
+        // Discarded bytes never advance completed_bytes, so subtract them from
+        // the cumulative acceptance boundary used for this batch.
+        batch->usb_completion_target = usb_diags.accepted_bytes - usb_diags.discarded_bytes;
+        batch->first_tick       = first_tick;
+        batch->last_tick        = last_tick;
+        batch->message_count    = count;
+        batch->size_bytes       = batch_size;
+        batch->crc32 = HOST_INTERFACE_Result_Tx_CRC32( application->send_byte_span, batch_size );
+        batch->queued_at = xTaskGetTickCount();
+        s_result_tx_audit.outstanding_count++;
+        s_result_tx_audit.queued_tick_valid = true;
+        s_result_tx_audit.last_queued_tick  = last_tick;
+
+        s_host_interface_status.result_usb_queued_count += count;
+        s_host_interface_status.result_last_usb_queued_tick = last_tick;
+        s_host_interface_status.result_outstanding_batch_count =
+            s_result_tx_audit.outstanding_count;
+        HOST_INTERFACE_Result_Tx_Record_Event( HOST_INTERFACE_RESULT_TX_EVENT_USB_QUEUED,
+                                               first_tick, last_tick, count, batch_size,
+                                               batch->crc32 );
+    }
+
+    application->used_send_byte_span_size     = 0U;
+    application->staged_result_message_count  = 0U;
+    application->staged_result_first_tick     = 0U;
+    application->staged_result_last_tick      = 0U;
+    s_host_interface_status.result_staged_message_count = 0U;
+    return true;
+}
+#endif
+
+/** Reconciles cumulative USB/CDC progress with outstanding result batches. */
+static void HOST_INTERFACE_Result_Tx_Update_USB_Completion( void )
+{
+    HW_USB_Transmit_Diagnostics_T usb_diags = { 0 };
+    if ( !HW_USB_Get_Transmit_Diagnostics( &usb_diags ) )
+    {
+        return;
+    }
+
+    s_host_interface_status.usb_tx_diags = usb_diags;
+    if ( usb_diags.accepted_bytes < s_result_tx_audit.observed_accepted_bytes
+         || usb_diags.completed_bytes < s_result_tx_audit.observed_completed_bytes
+         || usb_diags.submitted_bytes > usb_diags.accepted_bytes
+         || usb_diags.completed_bytes > usb_diags.submitted_bytes
+         || usb_diags.discarded_bytes > usb_diags.accepted_bytes
+         || usb_diags.integrity_submitted_bytes > usb_diags.integrity_accepted_bytes )
+    {
+        HOST_INTERFACE_Result_Tx_Fault(
+            HOST_INTERFACE_RESULT_TX_INVARIANT_USB_COUNTER_REGRESSION,
+            ( uint32_t )s_result_tx_audit.observed_completed_bytes,
+            ( uint32_t )usb_diags.completed_bytes );
+        return;
+    }
+
+    if ( usb_diags.completed_bytes
+         > ( usb_diags.accepted_bytes - usb_diags.discarded_bytes ) )
+    {
+        HOST_INTERFACE_Result_Tx_Fault(
+            HOST_INTERFACE_RESULT_TX_INVARIANT_USB_COUNTER_REGRESSION,
+            ( uint32_t )( usb_diags.accepted_bytes - usb_diags.discarded_bytes ),
+            ( uint32_t )usb_diags.completed_bytes );
+        return;
+    }
+
+    if ( usb_diags.integrity_accepted_bytes == usb_diags.integrity_submitted_bytes
+         && usb_diags.accepted_stream_crc32 != usb_diags.submitted_stream_crc32 )
+    {
+        HOST_INTERFACE_Result_Tx_Fault(
+            HOST_INTERFACE_RESULT_TX_INVARIANT_USB_STREAM_INTEGRITY,
+            usb_diags.accepted_stream_crc32, usb_diags.submitted_stream_crc32 );
+        return;
+    }
+
+    if ( usb_diags.discard_count != s_result_tx_audit.observed_discard_count )
+    {
+        HOST_INTERFACE_Result_Tx_Record_Event(
+            HOST_INTERFACE_RESULT_TX_EVENT_USB_DISCARDED,
+            s_result_tx_audit.completed_tick_valid ? s_result_tx_audit.last_completed_tick : 0U,
+            s_result_tx_audit.queued_tick_valid ? s_result_tx_audit.last_queued_tick : 0U,
+            0U, ( uint16_t )usb_diags.last_accepted_size, 0U );
+        if ( usb_diags.discarded_bytes > s_result_tx_audit.observed_discarded_bytes
+             && ( s_host_interface_status.result_phase_active
+                  || s_result_tx_audit.outstanding_count > 0U
+                  || s_host_interface_status.result_staged_message_count > 0U ) )
+        {
+            HOST_INTERFACE_Result_Tx_Fault(
+                HOST_INTERFACE_RESULT_TX_INVARIANT_ACTIVE_TRANSFER_DISCARDED,
+                s_result_tx_audit.observed_discard_count, usb_diags.discard_count );
+        }
+        s_result_tx_audit.observed_discard_count = usb_diags.discard_count;
+        s_result_tx_audit.observed_discarded_bytes = usb_diags.discarded_bytes;
+    }
+
+    while ( s_result_tx_audit.outstanding_count > 0U )
+    {
+        HOST_INTERFACE_Result_Tx_Batch_T* const batch =
+            &s_result_tx_audit.outstanding[s_result_tx_audit.outstanding_head];
+        if ( usb_diags.completed_bytes < batch->usb_completion_target )
+        {
+            const TickType_t elapsed = xTaskGetTickCount() - batch->queued_at;
+            if ( elapsed >= pdMS_TO_TICKS( HOST_INTERFACE_OUTGOING_BACKPRESSURE_TIMEOUT_MS ) )
+            {
+                HOST_INTERFACE_Result_Tx_Fault(
+                    HOST_INTERFACE_RESULT_TX_INVARIANT_CDC_COMPLETION_TIMEOUT,
+                    HOST_INTERFACE_OUTGOING_BACKPRESSURE_TIMEOUT_MS,
+                    ( uint32_t )elapsed );
+            }
+            break;
+        }
+
+        if ( s_result_tx_audit.completed_tick_valid
+             && batch->first_tick != ( s_result_tx_audit.last_completed_tick + 1U ) )
+        {
+            HOST_INTERFACE_Result_Tx_Fault(
+                HOST_INTERFACE_RESULT_TX_INVARIANT_COMPLETED_TICK,
+                s_result_tx_audit.last_completed_tick + 1U, batch->first_tick );
+            return;
+        }
+
+        s_result_tx_audit.completed_tick_valid = true;
+        s_result_tx_audit.last_completed_tick  = batch->last_tick;
+        s_host_interface_status.result_cdc_completed_count += batch->message_count;
+        s_host_interface_status.result_last_cdc_completed_tick = batch->last_tick;
+        HOST_INTERFACE_Result_Tx_Record_Event(
+            HOST_INTERFACE_RESULT_TX_EVENT_CDC_COMPLETED, batch->first_tick, batch->last_tick,
+            batch->message_count, batch->size_bytes, batch->crc32 );
+
+        s_result_tx_audit.outstanding_head = ( uint16_t )(
+            ( s_result_tx_audit.outstanding_head + 1U )
+            % HOST_INTERFACE_RESULT_TX_OUTSTANDING_BATCH_CAPACITY );
+        s_result_tx_audit.outstanding_count--;
+        s_host_interface_status.result_outstanding_batch_count =
+            s_result_tx_audit.outstanding_count;
+    }
+
+#if HOST_INTERFACE_DIRECT_USB_STREAMING
+    if ( !s_result_tx_audit.final_validation_complete
+         && s_result_tx_audit.produced_tick_valid
+         && !s_host_interface_status.result_phase_active
+         && s_result_tx_audit.outstanding_count == 0U
+         && s_host_interface_status.result_staged_message_count == 0U )
+    {
+        s_result_tx_audit.final_validation_complete = true;
+        const uint32_t expected = s_host_interface_status.expected_tick_count;
+        if ( expected == 0U || s_host_interface_status.result_produced_count != expected
+             || s_host_interface_status.result_staged_count != expected
+             || s_host_interface_status.result_usb_queued_count != expected
+             || s_host_interface_status.result_cdc_completed_count != expected )
+        {
+            HOST_INTERFACE_Result_Tx_Fault(
+                HOST_INTERFACE_RESULT_TX_INVARIANT_FINAL_COUNTS, expected,
+                s_host_interface_status.result_cdc_completed_count );
+            return;
+        }
+        s_host_interface_status.result_custody_complete = true;
+    }
+#endif
+
+    s_result_tx_audit.observed_accepted_bytes  = usb_diags.accepted_bytes;
+    s_result_tx_audit.observed_completed_bytes = usb_diags.completed_bytes;
+}
 
 /**
  * @brief Convert RTOS ticks into the logical time used by Transport.
@@ -589,6 +1124,7 @@ static void HOST_INTERFACE_Protocol_Process(
     // Allow the USB abstraction to process low-level receive/transmit state
     // before the Host Interface inspects the Transport queues.
     HW_USB_Monitor_Process();
+    HOST_INTERFACE_Result_Tx_Update_USB_Completion();
 
 #if HOST_INTERFACE_DIRECT_USB_STREAMING
     /* =========================================================================
@@ -680,13 +1216,10 @@ static void HOST_INTERFACE_Protocol_Process(
             {
                 if ( protocol_state->application.used_send_byte_span_size > 0U )
                 {
-                    if ( !HW_USB_Transmit(
-                             protocol_state->application.send_byte_span,
-                             ( uint16_t )protocol_state->application.used_send_byte_span_size ) )
+                    if ( !HOST_INTERFACE_Direct_USB_Flush( &protocol_state->application ) )
                     {
                         return;
                     }
-                    protocol_state->application.used_send_byte_span_size = 0U;
                 }
             }
 
@@ -711,6 +1244,10 @@ static void HOST_INTERFACE_Protocol_Process(
 
                 protocol_state->application.used_send_byte_span_size +=
                     HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE + payload_len;
+                HOST_INTERFACE_Result_Tx_Record_Staged(
+                    &protocol_state->application, outgoing_message,
+                    &protocol_state->application.send_byte_span[current_offset],
+                    HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE + payload_len );
                 *outgoing_message_accepted = true;
             }
             else if ( protocol_state->application.status == HIL_APPLICATION_STATUS_INTERNAL_ERROR
@@ -723,23 +1260,13 @@ static void HOST_INTERFACE_Protocol_Process(
             // Flush immediately into USB transmit ring buffer
             if ( protocol_state->application.used_send_byte_span_size > 0U )
             {
-                if ( HW_USB_Transmit(
-                         protocol_state->application.send_byte_span,
-                         ( uint16_t )protocol_state->application.used_send_byte_span_size ) )
-                {
-                    protocol_state->application.used_send_byte_span_size = 0U;
-                }
+                ( void )HOST_INTERFACE_Direct_USB_Flush( &protocol_state->application );
             }
         }
         else if ( protocol_state->application.used_send_byte_span_size > 0U )
         {
             // Flush any remaining buffered bytes when no new message is queued
-            if ( HW_USB_Transmit(
-                     protocol_state->application.send_byte_span,
-                     ( uint16_t )protocol_state->application.used_send_byte_span_size ) )
-            {
-                protocol_state->application.used_send_byte_span_size = 0U;
-            }
+            ( void )HOST_INTERFACE_Direct_USB_Flush( &protocol_state->application );
         }
     }
 #else
@@ -1250,6 +1777,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
             s_host_interface_status.is_faulted               = false;
             s_host_interface_status.instruction_phase_active = false;
             s_host_interface_status.result_phase_active      = false;
+            HOST_INTERFACE_Result_Tx_Audit_Reset();
             HOST_INTERFACE_Reset_Session();
         }
 
@@ -1319,6 +1847,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
         {
             if ( !s_host_interface_status.result_phase_active )
             {
+                HOST_INTERFACE_Result_Tx_Audit_Reset();
                 s_host_interface_status.result_phase_active      = true;
                 s_host_interface_status.result_start_tick        = xTaskGetTickCount();
                 s_host_interface_status.result_end_tick          = 0U;
@@ -1390,6 +1919,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
                      &carry_on_notifications, &expected_tick_count )
                  == HOST_INTERFACE_STATUS_OUTGOING_REQUIRED )
             {
+                HOST_INTERFACE_Result_Tx_Record_Produced( &overflow_outgoing_message );
                 // We are overflowing, so stop processing incomming messages
                 can_consume_incoming = false;
                 overflow_timer       = xTaskGetTickCount();
@@ -1397,6 +1927,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
             else if ( new_response_required )
             {
                 outgoing_message_pending = true;
+                HOST_INTERFACE_Result_Tx_Record_Produced( &outgoing_message );
                 if ( ( outgoing_message.type == HIL_APPLICATION_MESSAGE_TYPE_RESPONSE )
                      && ( outgoing_message.body.response.outcome
                           == HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED ) )
@@ -1524,10 +2055,33 @@ void HOST_INTERFACE_GetStatus( HostInterfaceStatus_T* status )
 {
     if ( status != NULL )
     {
-        VARIABLE_RESULT_MESSAGE_PRODUCER_GetDiagnostics(
-            &s_host_interface_status.var_producer_diags );
-        s_host_interface_status.usb_connection_state     = HW_USB_Get_Connection_State();
-        s_host_interface_status.usb_rx_stream_used_bytes = HW_USB_Get_Receive_Stream_Used_Bytes();
-        *status                                          = s_host_interface_status;
+        *status = s_host_interface_status;
+        VARIABLE_RESULT_MESSAGE_PRODUCER_GetDiagnostics( &status->var_producer_diags );
+        status->usb_connection_state     = HW_USB_Get_Connection_State();
+        status->usb_rx_stream_used_bytes = HW_USB_Get_Receive_Stream_Used_Bytes();
+        ( void )HW_USB_Get_Transmit_Diagnostics( &status->usb_tx_diags );
     }
+}
+
+bool HOST_INTERFACE_GetResultTxAuditEntry(
+    const uint32_t newest_offset, HostInterfaceResultTxAuditEntry_T* const entry )
+{
+    if ( entry == NULL )
+    {
+        return false;
+    }
+
+    bool found = false;
+    taskENTER_CRITICAL();
+    if ( newest_offset < s_result_tx_audit.entry_count )
+    {
+        const uint32_t index =
+            ( s_result_tx_audit.next_entry + HOST_INTERFACE_RESULT_TX_AUDIT_DEPTH - 1U
+              - newest_offset )
+            % HOST_INTERFACE_RESULT_TX_AUDIT_DEPTH;
+        *entry = s_result_tx_audit.entries[index];
+        found  = true;
+    }
+    taskEXIT_CRITICAL();
+    return found;
 }
