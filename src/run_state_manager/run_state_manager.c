@@ -113,9 +113,8 @@ static RunStateFrequencyMode_T frequency_mode = RUN_STATE_FREQUENCY_1KHZ;
 static RunStatePendingOperation_T pending_operation            = RUN_STATE_PENDING_NONE;
 static TickType_t                 pending_operation_started_at = 0U;
 
-static bool execution_active                   = false;
-static bool driver_cleanup_complete            = true;
-static bool result_transfer_completion_pending = false;
+static bool execution_active        = false;
+static bool driver_cleanup_complete = true;
 
 static bool                        execution_timer_running   = false;
 static bool                        execution_request_pending = false;
@@ -320,10 +319,8 @@ static bool RUN_STATE_MANAGER_GetRequestTargetState( RunStateRequest_T request,
             *target_state = RUN_STATE_RESULTS_READY;
             return true;
         case RUN_STATE_REQUEST_RESULT_TRANSFER:
-            *target_state = RUN_STATE_RESULT_TRANSFER;
-            return true;
         case RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE:
-            *target_state = RUN_STATE_ARMED;
+            *target_state = RUN_STATE_RESULT_TRANSFER;
             return true;
         case RUN_STATE_REQUEST_DISCARD_RESULTS:
         case RUN_STATE_REQUEST_RESET:
@@ -450,9 +447,8 @@ static void RUN_STATE_MANAGER_CaptureExecutionMetadata( void )
 
 static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason )
 {
-    request_timing_active              = false;
-    execution_abort_requested          = true;
-    result_transfer_completion_pending = false;
+    request_timing_active     = false;
+    execution_abort_requested = true;
     taskENTER_CRITICAL();
     execution_request_pending = false;
     taskEXIT_CRITICAL();
@@ -551,7 +547,7 @@ static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state, Run
                    || next_state == RUN_STATE_ARMED || next_state == RUN_STATE_IDLE;
 
         case RUN_STATE_RESULT_TRANSFER:
-            return next_state == RUN_STATE_CONFIGURATION;
+            return next_state == RUN_STATE_CONFIGURATION || next_state == RUN_STATE_IDLE;
 
         case RUN_STATE_FAULT:
             return next_state == RUN_STATE_IDLE;
@@ -750,16 +746,6 @@ static bool RUN_STATE_MANAGER_EnterConfiguration( void )
 
 static bool RUN_STATE_MANAGER_EnterArmed( void )
 {
-    if ( result_transfer_completion_pending )
-    {
-        if ( !HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE ) )
-        {
-            return false;
-        }
-        result_transfer_completion_pending = false;
-        return true;
-    }
-
     return HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_ARMED );
 }
 
@@ -1085,7 +1071,7 @@ static bool RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle( void )
     return true;
 }
 
-/** Finishes a fully consumed Flash result stream and returns to ARMED via CONFIGURATION. */
+/** Finishes a fully consumed Flash result stream and notifies Host Interface. */
 static bool RUN_STATE_MANAGER_CompleteResultTransfer( void )
 {
     const FlashManagerResultTransferStatus_T status = FLASH_MANAGER_FinishResultTransfer();
@@ -1101,15 +1087,7 @@ static bool RUN_STATE_MANAGER_CompleteResultTransfer( void )
         return false;
     }
 
-    result_transfer_completion_pending = true;
-
-    if ( !RUN_STATE_MANAGER_TransitionTo( RUN_STATE_CONFIGURATION ) )
-    {
-        return false;
-    }
-
-    RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_CONFIGURATION );
-    return true;
+    return HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE );
 }
 
 /**
@@ -1488,6 +1466,10 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
                     return;
                 }
             }
+            else if ( run_state == RUN_STATE_RESULT_TRANSFER )
+            {
+                accepted = RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle();
+            }
             else if ( run_state == RUN_STATE_ARMED )
             {
                 ( void )FLASH_MANAGER_RequestAbortSession();
@@ -1833,7 +1815,6 @@ void RUN_STATE_MANAGER_Init( void )
     pending_operation_started_at       = 0U;
     execution_active                   = false;
     driver_cleanup_complete            = true;
-    result_transfer_completion_pending = false;
     execution_timer_running            = false;
     execution_request_pending          = false;
     prepared_execution                 = ( RunStatePreparedExecution_T ){

@@ -1061,7 +1061,7 @@ TEST_F( RunStateManagerTest, ExecutionGuardAllowsDispatchOnlyWhenActiveAndNoAbor
     EXPECT_FALSE( execution_guard() );
 }
 
-TEST_F( RunStateManagerTest, ResultTransferCompletionSignalsHostAfterRearming )
+TEST_F( RunStateManagerTest, ResultTransferCompleteNotifiesHostInterfaceAndAllowsDiscardToIdle )
 {
     EnterExecution();
     Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
@@ -1073,32 +1073,25 @@ TEST_F( RunStateManagerTest, ResultTransferCompletionSignalsHostAfterRearming )
     Process( RUN_STATE_REQUEST_RESULT_TRANSFER );
     EXPECT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
 
-    Process( RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE );
-    EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
-    EXPECT_EQ( RUN_STATE_PENDING_CONFIGURATION, pending_operation );
-    EXPECT_EQ( 1U, flash_transfer_finish_calls );
-    EXPECT_TRUE( run_configuration_owned );
-    EXPECT_FALSE( configuration_cleared );
-
-    /* A rejected request must not overwrite the asynchronous completion route. */
-    Process( RUN_STATE_REQUEST_REPEAT );
-    EXPECT_EQ( RUN_STATE_REQUEST_RESULT_REJECTED_PENDING, last_request_result );
-
     host_interface_notify_calls  = 0U;
     host_interface_notified_bits = 0U;
 
-    RUN_STATE_MANAGER_ProcessPendingOperation();
-    EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
-    EXPECT_EQ( RUN_STATE_PENDING_EXECUTION_PREPARATION, pending_operation );
-
-    flash_manager_state = FLASH_MANAGER_STATE_EXECUTING;
-    RUN_STATE_MANAGER_ProcessPendingOperation();
-    EXPECT_EQ( RUN_STATE_ARMED, run_state );
+    Process( RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE );
+    EXPECT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
     EXPECT_EQ( RUN_STATE_PENDING_NONE, pending_operation );
+    EXPECT_EQ( 1U, flash_transfer_finish_calls );
     EXPECT_TRUE( run_configuration_owned );
     EXPECT_FALSE( configuration_cleared );
     EXPECT_EQ( 1U, host_interface_notify_calls );
     EXPECT_EQ( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE, host_interface_notified_bits );
+
+    /* Discard results from RESULT_TRANSFER returns directly to IDLE */
+    Process( RUN_STATE_REQUEST_DISCARD_RESULTS );
+    EXPECT_EQ( RUN_STATE_PENDING_IDLE_SHUTDOWN, pending_operation );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
+    EXPECT_TRUE( configuration_cleared );
+    EXPECT_TRUE( configuration_ownership_released );
 }
 
 TEST_F( RunStateManagerTest, DiscardResultsFailurePreservesResultsReadyAndAllowsRetry )
@@ -1154,8 +1147,8 @@ TEST_F( RunStateManagerTest, IncompleteResultTransferFinishIsRejectedAndAllowsRe
     flash_transfer_finish_result = FLASH_MANAGER_RESULT_TRANSFER_OK;
     Process( RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE );
 
-    EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
-    EXPECT_EQ( RUN_STATE_PENDING_CONFIGURATION, pending_operation );
+    EXPECT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_NONE, pending_operation );
     EXPECT_EQ( RUN_STATE_REQUEST_RESULT_ACCEPTED, last_request_result );
     EXPECT_EQ( 2U, flash_transfer_finish_calls );
 }

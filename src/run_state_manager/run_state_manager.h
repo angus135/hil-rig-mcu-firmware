@@ -324,7 +324,7 @@ bool RUN_STATE_MANAGER_RequestExecutionComplete( void );
 /** Requests entry into result transfer from RESULTS_READY. */
 bool RUN_STATE_MANAGER_RequestResultTransfer( void );
 
-/** Finishes result transfer, reapplies the retained configuration, and returns to ARMED. */
+/** Finishes Flash Manager result transfer and notifies the Host Interface. */
 bool RUN_STATE_MANAGER_RequestResultTransferComplete( void );
 
 /** Discards completed results and returns to ARMED with configuration retained. */
