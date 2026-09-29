@@ -535,6 +535,36 @@ TEST_F( VariableInstructionMessageHandlerTest, MaximumSpiPayloadFitsCanonicalIns
 }
 
 /**
+ * @brief A UART payload beyond 255 bytes encodes and uploads safely.
+ */
+TEST_F( VariableInstructionMessageHandlerTest, UartPayloadBeyond255BytesFitsCanonicalInstruction )
+{
+    static uint8_t uart_data[400]{};
+    std::memset( uart_data, 0x42, sizeof( uart_data ) );
+
+    HIL_Application_Logical_Operation_T op{};
+    op.peripheral_type = HIL_APPLICATION_PERIPHERAL_UART;
+    op.channel         = 0U;
+    op.payload.data    = uart_data;
+    op.payload.size    = sizeof( uart_data );
+
+    instruction.tick_number     = 0U;
+    instruction.operation_count = 1U;
+    instruction.operations      = &op;
+
+    ASSERT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_OK );
+
+    const size_t expected_size =
+        sizeof( ExecutionInstructionHeader_T )
+        + EXECUTION_OPERATION_ENCODED_SIZE_BYTES( sizeof( uart_data ) );
+
+    EXPECT_EQ( uploaded_bytes.size(), expected_size );
+    EXPECT_LE( uploaded_bytes.size(), EXECUTION_INSTRUCTION_MAX_SIZE_BYTES );
+}
+
+
+/**
  * @brief Unrecognized peripheral type returns VALIDATION_FAILED.
  */
 TEST_F( VariableInstructionMessageHandlerTest, RejectsUnknownPeripheralType )

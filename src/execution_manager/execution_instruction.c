@@ -36,8 +36,10 @@
 /** Maximum 11-bit standard CAN identifier (0x7FF). */
 #define EXECUTION_VALIDATION_MAX_CAN_STD_ID ( 0x7FFU )
 
-/** Maximum single-call UART transmit byte count. */
-#define EXECUTION_VALIDATION_MAX_UART_PAYLOAD_BYTES ( 255U )
+/** Maximum single-call UART transmit byte count bounded by canonical instruction capacity. */
+#define EXECUTION_VALIDATION_MAX_UART_PAYLOAD_BYTES                                                \
+    ( EXECUTION_INSTRUCTION_MAX_SIZE_BYTES - sizeof( ExecutionInstructionHeader_T )               \
+      - EXECUTION_OPERATION_HEADER_SIZE_BYTES )
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes

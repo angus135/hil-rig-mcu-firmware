@@ -354,3 +354,72 @@ TEST( ExecutionInstructionValidationTest, NonZeroPaddingByteReturnsInvalidPayloa
     EXPECT_EQ( EXECUTION_INSTRUCTION_Validate( buf.data, offset ),
                EXECUTION_INSTRUCTION_VALIDATION_INVALID_PAYLOAD_DATA );
 }
+
+/**-----------------------------------------------------------------------------
+ *  Unit Tests: Serial Operations Validation (UART, SPI, CAN)
+ *------------------------------------------------------------------------------
+ */
+
+TEST( ExecutionInstructionValidationTest, ValidUartPayloadBeyond255BytesReturnsOk )
+{
+    AlignedBuffer buf;
+    size_t        offset = sizeof( ExecutionInstructionHeader_T );
+
+    uint8_t uart_payload[400];
+    std::memset( uart_payload, 0xAB, sizeof( uart_payload ) );
+
+    PackOperation( buf.data, offset, EXECUTION_OPERATION_OPCODE_UART_TRANSMIT,
+                   EXECUTION_OPERATION_UART_CHANNEL_1, uart_payload, sizeof( uart_payload ) );
+
+    PackHeader( buf.data, 1U,
+                static_cast<uint16_t>( offset - sizeof( ExecutionInstructionHeader_T ) ), 1U );
+
+    EXPECT_EQ( EXECUTION_INSTRUCTION_Validate( buf.data, offset ),
+               EXECUTION_INSTRUCTION_VALIDATION_OK );
+}
+
+TEST( ExecutionInstructionValidationTest, UartZeroPayloadLengthReturnsInvalidPayloadLength )
+{
+    AlignedBuffer buf;
+    size_t        offset = sizeof( ExecutionInstructionHeader_T );
+
+    PackOperation( buf.data, offset, EXECUTION_OPERATION_OPCODE_UART_TRANSMIT,
+                   EXECUTION_OPERATION_UART_CHANNEL_1, nullptr, 0U );
+
+    PackHeader( buf.data, 1U,
+                static_cast<uint16_t>( offset - sizeof( ExecutionInstructionHeader_T ) ), 1U );
+
+    EXPECT_EQ( EXECUTION_INSTRUCTION_Validate( buf.data, offset ),
+               EXECUTION_INSTRUCTION_VALIDATION_INVALID_PAYLOAD_LENGTH );
+}
+
+TEST( ExecutionInstructionValidationTest, ValidMultiPacketSpiPayloadReturnsOk )
+{
+    AlignedBuffer buf;
+    size_t        offset = sizeof( ExecutionInstructionHeader_T );
+
+    // Prefix (4 bytes packet_count=2), sizes (4 bytes * 2 = 8 bytes), data (255 + 96 = 351 bytes)
+    constexpr uint32_t packet_count = 2U;
+    constexpr uint32_t len0         = 255U;
+    constexpr uint32_t len1         = 96U;
+    constexpr uint16_t total_payload_size =
+        4U + ( 4U * packet_count ) + static_cast<uint16_t>( len0 + len1 );
+
+    uint8_t spi_payload[total_payload_size];
+    std::memset( spi_payload, 0, sizeof( spi_payload ) );
+
+    std::memcpy( &spi_payload[0], &packet_count, sizeof( packet_count ) );
+    std::memcpy( &spi_payload[4], &len0, sizeof( len0 ) );
+    std::memcpy( &spi_payload[8], &len1, sizeof( len1 ) );
+    std::memset( &spi_payload[12], 0x5A, len0 + len1 );
+
+    PackOperation( buf.data, offset, EXECUTION_OPERATION_OPCODE_SPI_TRANSMIT,
+                   EXECUTION_OPERATION_SPI_CHANNEL_1, spi_payload, total_payload_size );
+
+    PackHeader( buf.data, 1U,
+                static_cast<uint16_t>( offset - sizeof( ExecutionInstructionHeader_T ) ), 1U );
+
+    EXPECT_EQ( EXECUTION_INSTRUCTION_Validate( buf.data, offset ),
+               EXECUTION_INSTRUCTION_VALIDATION_OK );
+}
+
