@@ -87,6 +87,7 @@ extern "C"
  */
 
 #define HW_UART_TX_BUFFER_SIZE 2048U
+#define HW_UART_RX_BUFFER_SIZE 2048U
 
 /** Lowest baud supported by the HIL-RIG UART driver contract. */
 #define HW_UART_MIN_BAUD_RATE 2400U

@@ -46,7 +46,7 @@ extern "C"
  *------------------------------------------------------------------------------
  */
 
-#define TEST_HW_UART_RX_BUFFER_SIZE 1024U
+#define TEST_HW_UART_RX_BUFFER_SIZE 2048U
 #define TEST_HW_UART_CONSOLE_RX_CAPACITY 127U
 
 using ::testing::_;
