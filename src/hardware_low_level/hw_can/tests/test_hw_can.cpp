@@ -1674,8 +1674,8 @@ TEST_F( HWCANTest, StartingSecondBatchClearsCompletedState )
     EXPECT_FALSE( HW_CAN_Channel1_Sent() );
 }
 
-/** Verify that retriggering an active batch returns busy without changing its queue state. */
-TEST_F( HWCANTest, TriggerWhileActiveReturnsBusy )
+/** Verify that retriggering an active batch returns OK and preserves queue state. */
+TEST_F( HWCANTest, TriggerWhileActiveSucceedsAndPreservesActiveState )
 {
     mock_can1_regs.TSR      = CAN_TSR_TME0;
     CAN_Packet_T packets[2] = {
@@ -1687,14 +1687,14 @@ TEST_F( HWCANTest, TriggerWhileActiveReturnsBusy )
     ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
     uint16_t read_position = can_tx_rp1;
 
-    EXPECT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_BUSY );
+    EXPECT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
     EXPECT_EQ( can_tx_rp1, read_position );
     EXPECT_TRUE( can_tx_active1 );
     EXPECT_FALSE( HW_CAN_Channel1_Sent() );
 }
 
-/** Verify that loading a new batch while transmission is active returns busy. */
-TEST_F( HWCANTest, LoadWhileActiveReturnsBusy )
+/** Verify that loading a new batch while transmission is active appends to the queue. */
+TEST_F( HWCANTest, LoadWhileActiveAppendsToQueue )
 {
     mock_can1_regs.TSR     = CAN_TSR_TME0;
     CAN_Packet_T packet[1] = { { .id = 0x123, .dlc = 1, .data = { 0xAA } } };
@@ -1703,8 +1703,28 @@ TEST_F( HWCANTest, LoadWhileActiveReturnsBusy )
     ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
     uint16_t write_position = can_tx_wp1;
 
-    EXPECT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_BUSY );
-    EXPECT_EQ( can_tx_wp1, write_position );
+    EXPECT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_OK );
+    EXPECT_EQ( can_tx_wp1, ( write_position + 1U ) % TRANSMIT_BUFFER_WIDTH );
+    EXPECT_TRUE( can_tx_active1 );
+}
+
+/** Verify that all 3 hardware mailboxes are pipelined simultaneously when available. */
+TEST_F( HWCANTest, PipelinedMailboxesLoadAllThreeSimultaneously )
+{
+    mock_can1_regs.TSR      = CAN_TSR_TME;
+    CAN_Packet_T packets[3] = {
+        { .id = 0x101, .dlc = 1, .data = { 0x11 } },
+        { .id = 0x102, .dlc = 1, .data = { 0x22 } },
+        { .id = 0x103, .dlc = 1, .data = { 0x33 } },
+    };
+
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packets, 3 ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
+
+    EXPECT_NE( mock_can1_regs.sTxMailBox[0].TIR & CAN_TI0R_TXRQ, 0U );
+    EXPECT_NE( mock_can1_regs.sTxMailBox[1].TIR & CAN_TI0R_TXRQ, 0U );
+    EXPECT_NE( mock_can1_regs.sTxMailBox[2].TIR & CAN_TI0R_TXRQ, 0U );
+    EXPECT_EQ( can_tx_pending_mailbox1, CAN_TSR_RQCP0 | CAN_TSR_RQCP1 | CAN_TSR_RQCP2 );
     EXPECT_TRUE( can_tx_active1 );
 }
 
