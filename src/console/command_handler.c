@@ -468,7 +468,11 @@ static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] )
         return;
     }
 
-    const uint32_t timer_hz = 90000000U;
+    uint32_t timer_hz = 90000000U;
+    if ( channel == EXEC_PWM_GEN_CHANNEL_HV )
+    {
+        timer_hz = 180000000U;
+    }
     uint16_t       psc;
     uint16_t       arr;
     uint16_t       ccr;
