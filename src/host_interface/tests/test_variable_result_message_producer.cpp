@@ -517,7 +517,8 @@ TEST_F( VariableResultMessageProducerTest, ProducesMultiChunkResultsForLargeTick
                                     uart2.data(), static_cast<uint16_t>( uart2.size() ) );
     HookSimulatedStream();
 
-    // Chunk 1 for tick 3: emits HAS_MORE_CHUNKS because second record cannot fit in remaining staging
+    // Chunk 1 for tick 3: emits HAS_MORE_CHUNKS because second record cannot fit in remaining
+    // staging
     EXPECT_EQ( VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &out_msg_ ),
                RESULT_MESSAGE_PRODUCER_STATUS_OK );
     EXPECT_EQ( out_msg_.body.variable_test_result.tick_number, 3U );

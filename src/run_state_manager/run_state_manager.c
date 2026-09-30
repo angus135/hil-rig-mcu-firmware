@@ -662,10 +662,18 @@ static bool RUN_STATE_MANAGER_BeginInstructionUploadFinalisation( void )
         return false;
     }
 
+    if ( flash_state == FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD )
+    {
+        RUN_STATE_MANAGER_StartPendingOperation(
+            RUN_STATE_PENDING_INSTRUCTION_UPLOAD_FINALISATION );
+        return true;
+    }
+
     if ( flash_state == FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD )
     {
         const FlashManagerInstructionUploadRequestStatus_T status =
             FLASH_MANAGER_RequestInstructionUploadFinish();
+
         if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
         {
             RUN_STATE_MANAGER_StartPendingOperation(

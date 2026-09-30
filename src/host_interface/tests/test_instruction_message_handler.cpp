@@ -668,17 +668,31 @@ TEST_F( InstructionMessageHandlerTest, PwmComputationFailureReturnsValidationFai
  *------------------------------------------------------------------------------
  */
 
-TEST_F( InstructionMessageHandlerTest, FlashManagerBusyReturnsInternalError )
+TEST_F( InstructionMessageHandlerTest, FlashManagerBusyExhaustsRetriesReturnsInternalError )
 {
     HIL_Application_Test_Instruction_T instruction = {};
     instruction.tick_number                        = 1U;
     instruction.digital_outputs[0].high            = 1U;
 
     EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) )
-        .WillOnce( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY ) );
+        .WillRepeatedly( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY ) );
 
     EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
                HOST_INTERFACE_STATUS_INTERNAL_ERROR );
+}
+
+TEST_F( InstructionMessageHandlerTest, FlashManagerBusyRetriesAndSucceeds )
+{
+    HIL_Application_Test_Instruction_T instruction = {};
+    instruction.tick_number                        = 1U;
+    instruction.digital_outputs[0].high            = 1U;
+
+    EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) )
+        .WillOnce( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY ) )
+        .WillOnce( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED ) );
+
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_OK );
 }
 
 TEST_F( InstructionMessageHandlerTest, FlashManagerInvalidStateReturnsStateTransitionFailure )

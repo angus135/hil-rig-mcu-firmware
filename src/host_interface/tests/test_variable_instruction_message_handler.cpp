@@ -599,7 +599,7 @@ TEST_F( VariableInstructionMessageHandlerTest, TranslatesFlashManagerStatusesCor
 
     instruction.tick_number = 0U;
     EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) )
-        .WillOnce( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY ) );
+        .WillRepeatedly( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY ) );
     EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
                HOST_INTERFACE_STATUS_INTERNAL_ERROR );
 
@@ -614,7 +614,8 @@ TEST_F( VariableInstructionMessageHandlerTest, TranslatesFlashManagerStatusesCor
 }
 
 /**
- * @brief Accepts multi-chunk instruction sequence sharing the same tick_number when HAS_MORE_CHUNKS is set.
+ * @brief Accepts multi-chunk instruction sequence sharing the same tick_number when HAS_MORE_CHUNKS
+ * is set.
  */
 TEST_F( VariableInstructionMessageHandlerTest, AcceptsMultiChunkInstructionSameTick )
 {
@@ -704,4 +705,51 @@ TEST_F( VariableInstructionMessageHandlerTest, RejectsTickIncrementWhenExpecting
 
     EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &chunk2 ),
                HOST_INTERFACE_STATUS_INCONSISTENT_TICK );
+}
+
+TEST_F( VariableInstructionMessageHandlerTest, FlashManagerBusyExhaustsRetriesReturnsInternalError )
+{
+    static uint8_t uart_data[2] = { 0x12, 0x34 };
+
+    HIL_Application_Logical_Operation_T op{};
+    op.peripheral_type = HIL_APPLICATION_PERIPHERAL_UART;
+    op.channel         = 0U;
+    op.payload.data    = uart_data;
+    op.payload.size    = sizeof( uart_data );
+
+    HIL_Application_Update_Instruction_T instruction{};
+    instruction.tick_number     = 1U;
+    instruction.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_COMPLETE_TICK;
+    instruction.operation_count = 1U;
+    instruction.operations      = &op;
+
+    EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) )
+        .WillRepeatedly( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY ) );
+
+    EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_INTERNAL_ERROR );
+}
+
+TEST_F( VariableInstructionMessageHandlerTest, FlashManagerBusyRetriesAndSucceeds )
+{
+    static uint8_t uart_data[2] = { 0x12, 0x34 };
+
+    HIL_Application_Logical_Operation_T op{};
+    op.peripheral_type = HIL_APPLICATION_PERIPHERAL_UART;
+    op.channel         = 0U;
+    op.payload.data    = uart_data;
+    op.payload.size    = sizeof( uart_data );
+
+    HIL_Application_Update_Instruction_T instruction{};
+    instruction.tick_number     = 1U;
+    instruction.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_COMPLETE_TICK;
+    instruction.operation_count = 1U;
+    instruction.operations      = &op;
+
+    EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) )
+        .WillOnce( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY ) )
+        .WillOnce( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED ) );
+
+    EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_OK );
 }

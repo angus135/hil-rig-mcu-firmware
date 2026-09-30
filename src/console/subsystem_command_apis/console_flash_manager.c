@@ -346,7 +346,7 @@ static void        CONSOLE_Flash_PrintNandPhaseTiming( const char*              
 static void        CONSOLE_Flash_StatusCommand( void );
 
 #if GLOBAL_CONFIG__CONSOLE_FLASH_TEST_HARNESS_ENABLED
-static bool        CONSOLE_Flash_ParseU32( const char* text, uint32_t* value );
+static bool CONSOLE_Flash_ParseU32( const char* text, uint32_t* value );
 static bool CONSOLE_Flash_WaitForState( FlashManagerState_T expected_state, uint32_t timeout_ms );
 static bool CONSOLE_Flash_WaitForRunState( RunState_T expected_state, uint32_t timeout_ms );
 static bool CONSOLE_Flash_HasTimedOut( TickType_t start_tick, uint32_t timeout_ms );

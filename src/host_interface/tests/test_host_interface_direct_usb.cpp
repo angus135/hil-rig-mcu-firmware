@@ -435,6 +435,10 @@ extern "C" uint8_t CDC_Transmit_FS( uint8_t* const buffer, const uint16_t length
     return USBD_OK;
 }
 
+extern "C" void CDC_Resume_Receive_FS( void )
+{
+}
+
 extern "C" StreamBufferHandle_t xStreamBufferCreate( size_t, size_t )
 {
     return reinterpret_cast<StreamBufferHandle_t>( &fake_stream_storage );
@@ -573,12 +577,14 @@ TEST( HostInterfaceDirectUsbTest, StalledCDCCompletionLatchesFirmwareFault )
                status.result_invariant_failure );
 }
 
-/** Verifies that multi-chunk results for the same tick preserve custody without tripping invariants. */
+/** Verifies that multi-chunk results for the same tick preserve custody without tripping
+ * invariants. */
 TEST( HostInterfaceDirectUsbTest, MultiChunkResultPreservesCustodyWithoutFault )
 {
     InitialisePath( 0U );
     VariableResultMessage chunk_zero( 0U );
-    chunk_zero.message.body.variable_test_result.flags = HIL_APPLICATION_RESULT_FLAG_HAS_MORE_CHUNKS;
+    chunk_zero.message.body.variable_test_result.flags =
+        HIL_APPLICATION_RESULT_FLAG_HAS_MORE_CHUNKS;
 
     VariableResultMessage chunk_one( 0U );
     chunk_one.message.body.variable_test_result.flags = HIL_APPLICATION_RESULT_FLAG_COMPLETE_TICK;
@@ -597,4 +603,3 @@ TEST( HostInterfaceDirectUsbTest, MultiChunkResultPreservesCustodyWithoutFault )
     EXPECT_EQ( 2U, status.result_cdc_completed_count );
     EXPECT_EQ( 0U, status.result_last_cdc_completed_tick );
 }
-

@@ -27,6 +27,7 @@
 #include "execution_manager/execution_operation_payloads.h"
 #include "flash_manager/flash_manager.h"
 #include "hw_pwm_gen.h"
+#include "rtos_config.h"
 #include "test_configuration.h"
 
 #include <stdbool.h>
@@ -38,6 +39,8 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
+
+#define HOST_VAR_INSTRUCTION_FLASH_UPLOAD_MAX_RETRIES ( 200U )
 
 /**
  * @brief Conservative canonical-size bound for one maximum-sized wire instruction.
@@ -109,6 +112,12 @@ static bool last_instruction_had_more_chunks = false;
 
 /** @brief Retained digital output pin state for transition detection. */
 static HostVarInstructionStateTracker_T tracked_digital_state;
+
+/** @brief Detailed diagnostics of the most recent failure in variable instruction processing. */
+static uint32_t s_var_last_failed_stage        = 0U;
+static uint32_t s_var_last_stage_code          = 0U;
+static uint32_t s_var_last_failed_tick         = 0U;
+static uint32_t s_last_raw_flash_upload_status = 0U;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -569,31 +578,73 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_ConvertInstruction(
             case HIL_APPLICATION_PERIPHERAL_DIGITAL_OUTPUT:
                 status =
                     HOST_VAR_INSTRUCTION_EncodeDigital( op, &active_config, config_valid, &writer );
+                if ( status != HOST_INTERFACE_STATUS_OK )
+                {
+                    s_var_last_failed_stage = 10U;
+                    s_var_last_stage_code   = ( uint32_t )op->channel;
+                    s_var_last_failed_tick  = instruction->tick_number;
+                    return status;
+                }
                 break;
 
             case HIL_APPLICATION_PERIPHERAL_ANALOG_OUTPUT:
                 status = HOST_VAR_INSTRUCTION_EncodeAnalogue( op, &active_config, config_valid,
                                                               &dac_batch, &dac_batch_frame_count );
+                if ( status != HOST_INTERFACE_STATUS_OK )
+                {
+                    s_var_last_failed_stage = 11U;
+                    s_var_last_stage_code   = ( uint32_t )op->channel;
+                    s_var_last_failed_tick  = instruction->tick_number;
+                    return status;
+                }
                 break;
 
             case HIL_APPLICATION_PERIPHERAL_PWM_OUTPUT:
                 status =
                     HOST_VAR_INSTRUCTION_EncodePwm( op, &active_config, config_valid, &writer );
+                if ( status != HOST_INTERFACE_STATUS_OK )
+                {
+                    s_var_last_failed_stage = 12U;
+                    s_var_last_stage_code   = ( uint32_t )op->channel;
+                    s_var_last_failed_tick  = instruction->tick_number;
+                    return status;
+                }
                 break;
 
             case HIL_APPLICATION_PERIPHERAL_UART:
                 status =
                     HOST_VAR_INSTRUCTION_EncodeUart( op, &active_config, config_valid, &writer );
+                if ( status != HOST_INTERFACE_STATUS_OK )
+                {
+                    s_var_last_failed_stage = 13U;
+                    s_var_last_stage_code   = ( uint32_t )op->channel;
+                    s_var_last_failed_tick  = instruction->tick_number;
+                    return status;
+                }
                 break;
 
             case HIL_APPLICATION_PERIPHERAL_SPI:
                 status =
                     HOST_VAR_INSTRUCTION_EncodeSpi( op, &active_config, config_valid, &writer );
+                if ( status != HOST_INTERFACE_STATUS_OK )
+                {
+                    s_var_last_failed_stage = 14U;
+                    s_var_last_stage_code   = ( uint32_t )op->channel;
+                    s_var_last_failed_tick  = instruction->tick_number;
+                    return status;
+                }
                 break;
 
             case HIL_APPLICATION_PERIPHERAL_CAN:
                 status =
                     HOST_VAR_INSTRUCTION_EncodeCan( op, &active_config, config_valid, &writer );
+                if ( status != HOST_INTERFACE_STATUS_OK )
+                {
+                    s_var_last_failed_stage = 15U;
+                    s_var_last_stage_code   = ( uint32_t )op->channel;
+                    s_var_last_failed_tick  = instruction->tick_number;
+                    return status;
+                }
                 break;
 
             case HIL_APPLICATION_PERIPHERAL_INVALID:
@@ -603,12 +654,10 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_ConvertInstruction(
             case HIL_APPLICATION_PERIPHERAL_I2C:
             case HIL_APPLICATION_PERIPHERAL_RESERVED:
             default:
+                s_var_last_failed_stage = 16U;
+                s_var_last_stage_code   = ( uint32_t )op->peripheral_type;
+                s_var_last_failed_tick  = instruction->tick_number;
                 return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
-        }
-
-        if ( status != HOST_INTERFACE_STATUS_OK )
-        {
-            return status;
         }
     }
 
@@ -624,6 +673,9 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_ConvertInstruction(
 
         if ( status != HOST_INTERFACE_STATUS_OK )
         {
+            s_var_last_failed_stage = 17U;
+            s_var_last_stage_code   = ( uint32_t )dac_batch_frame_count;
+            s_var_last_failed_tick  = instruction->tick_number;
             return status;
         }
     }
@@ -657,17 +709,30 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_ConvertInstruction(
 static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_UploadToFlash( const uint8_t* const data,
                                                                    const size_t         length )
 {
-    const FlashManagerInstructionUploadRequestStatus_T upload_status =
+    FlashManagerInstructionUploadRequestStatus_T upload_status =
         FLASH_MANAGER_SubmitInstructionUploadBytes( data, ( uint32_t )length );
+
+    s_last_raw_flash_upload_status = ( uint32_t )upload_status;
+
+    if ( upload_status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
+    {
+        for ( uint32_t retry = 0U; retry < HOST_VAR_INSTRUCTION_FLASH_UPLOAD_MAX_RETRIES; retry++ )
+        {
+            taskYIELD();
+
+            upload_status = FLASH_MANAGER_SubmitInstructionUploadBytes( data, ( uint32_t )length );
+            s_last_raw_flash_upload_status = ( uint32_t )upload_status;
+
+            if ( upload_status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
+            {
+                break;
+            }
+        }
+    }
 
     if ( upload_status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
     {
         return HOST_INTERFACE_STATUS_OK;
-    }
-
-    if ( upload_status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
-    {
-        return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
     }
 
     if ( upload_status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE )
@@ -686,8 +751,12 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_UploadToFlash( const uint8_t
 void HOST_VARIABLE_INSTRUCTION_HANDLER_Reset( void )
 {
     last_instruction_tick            = 0U;
-    has_received_instruction        = false;
+    has_received_instruction         = false;
     last_instruction_had_more_chunks = false;
+    s_var_last_failed_stage          = 0U;
+    s_var_last_stage_code            = 0U;
+    s_var_last_failed_tick           = 0U;
+    s_last_raw_flash_upload_status   = 0U;
     ( void )memset( &tracked_digital_state, 0, sizeof( tracked_digital_state ) );
 
     DutDriverConfiguration_T active_config;
@@ -713,6 +782,9 @@ HOST_Interface_Status_T HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
     if ( ( instruction == NULL ) || ( instruction->operations == NULL )
          || ( instruction->operation_count == 0U ) )
     {
+        s_var_last_failed_stage = 1U;
+        s_var_last_stage_code   = 0U;
+        s_var_last_failed_tick  = ( instruction != NULL ) ? instruction->tick_number : 0U;
         return HOST_INTERFACE_STATUS_INVALID_ARGUMENT;
     }
 
@@ -722,6 +794,9 @@ HOST_Interface_Status_T HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
         {
             if ( instruction->tick_number != last_instruction_tick )
             {
+                s_var_last_failed_stage = 2U;
+                s_var_last_stage_code   = last_instruction_tick;
+                s_var_last_failed_tick  = instruction->tick_number;
                 return HOST_INTERFACE_STATUS_INCONSISTENT_TICK;
             }
         }
@@ -729,6 +804,9 @@ HOST_Interface_Status_T HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
         {
             if ( instruction->tick_number <= last_instruction_tick )
             {
+                s_var_last_failed_stage = 2U;
+                s_var_last_stage_code   = last_instruction_tick;
+                s_var_last_failed_tick  = instruction->tick_number;
                 return HOST_INTERFACE_STATUS_INCONSISTENT_TICK;
             }
         }
@@ -753,7 +831,7 @@ HOST_Interface_Status_T HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
     if ( instruction_size_bytes == 0U )
     {
         last_instruction_tick            = instruction->tick_number;
-        has_received_instruction        = true;
+        has_received_instruction         = true;
         last_instruction_had_more_chunks = has_more_chunks;
         return HOST_INTERFACE_STATUS_OK;
     }
@@ -763,6 +841,9 @@ HOST_Interface_Status_T HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
         EXECUTION_INSTRUCTION_Validate( instruction_buffer, instruction_size_bytes );
     if ( canonical_val_status != EXECUTION_INSTRUCTION_VALIDATION_OK )
     {
+        s_var_last_failed_stage = 20U;
+        s_var_last_stage_code   = ( uint32_t )canonical_val_status;
+        s_var_last_failed_tick  = instruction->tick_number;
         return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
     }
 
@@ -772,9 +853,33 @@ HOST_Interface_Status_T HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
     if ( upload_status == HOST_INTERFACE_STATUS_OK )
     {
         last_instruction_tick            = instruction->tick_number;
-        has_received_instruction        = true;
+        has_received_instruction         = true;
         last_instruction_had_more_chunks = has_more_chunks;
+    }
+    else
+    {
+        s_var_last_failed_stage = 30U;
+        s_var_last_stage_code   = s_last_raw_flash_upload_status;
+        s_var_last_failed_tick  = instruction->tick_number;
     }
 
     return upload_status;
+}
+
+void HOST_VARIABLE_INSTRUCTION_HANDLER_GetDiagnostics( uint32_t* const last_stage,
+                                                       uint32_t* const last_stage_code,
+                                                       uint32_t* const last_failed_tick )
+{
+    if ( last_stage != NULL )
+    {
+        *last_stage = s_var_last_failed_stage;
+    }
+    if ( last_stage_code != NULL )
+    {
+        *last_stage_code = s_var_last_stage_code;
+    }
+    if ( last_failed_tick != NULL )
+    {
+        *last_failed_tick = s_var_last_failed_tick;
+    }
 }

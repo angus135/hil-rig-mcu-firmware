@@ -37,8 +37,8 @@ extern "C"
 
 #define CAN_PACKET_SIZE ( 8U )
 #define CAN_STANDARD_ID_MAX ( 0x7FFU )
-#define HW_CAN_TX_QUEUE_CAPACITY ( 19U )
-#define HW_CAN_RX_QUEUE_CAPACITY ( 19U )
+#define HW_CAN_TX_QUEUE_CAPACITY ( 83U )
+#define HW_CAN_RX_QUEUE_CAPACITY ( 83U )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures

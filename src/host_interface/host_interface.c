@@ -29,6 +29,7 @@
 #include "hw_usb.h"
 #include "rtos_config.h"
 #include "run_state_manager.h"
+#include "variable_instruction_message_handler.h"
 
 /**-----------------------------------------------------------------------------
  *  Defines / Macros
@@ -523,8 +524,8 @@ static void HOST_INTERFACE_Result_Tx_Audit_Reset( void )
     s_result_tx_audit.overwrite_count = 0U;
     s_result_tx_audit.next_sequence   = 0U;
     taskEXIT_CRITICAL();
-    s_result_tx_audit.outstanding_head           = 0U;
-    s_result_tx_audit.outstanding_count          = 0U;
+    s_result_tx_audit.outstanding_head              = 0U;
+    s_result_tx_audit.outstanding_count             = 0U;
     s_result_tx_audit.produced_tick_valid           = false;
     s_result_tx_audit.last_produced_had_more_chunks = false;
     s_result_tx_audit.staged_tick_valid             = false;
@@ -902,12 +903,14 @@ static void HOST_INTERFACE_Result_Tx_Update_USB_Completion( void )
     {
         s_result_tx_audit.final_validation_complete = true;
         const uint32_t expected                     = s_host_interface_status.expected_tick_count;
-        if ( expected == 0U
-             || ( s_result_tx_audit.last_completed_tick + 1U ) != expected
+        if ( expected == 0U || ( s_result_tx_audit.last_completed_tick + 1U ) != expected
              || s_host_interface_status.result_produced_count < expected
-             || s_host_interface_status.result_staged_count != s_host_interface_status.result_produced_count
-             || s_host_interface_status.result_usb_queued_count != s_host_interface_status.result_produced_count
-             || s_host_interface_status.result_cdc_completed_count != s_host_interface_status.result_produced_count )
+             || s_host_interface_status.result_staged_count
+                    != s_host_interface_status.result_produced_count
+             || s_host_interface_status.result_usb_queued_count
+                    != s_host_interface_status.result_produced_count
+             || s_host_interface_status.result_cdc_completed_count
+                    != s_host_interface_status.result_produced_count )
         {
             HOST_INTERFACE_Result_Tx_Fault( HOST_INTERFACE_RESULT_TX_INVARIANT_FINAL_COUNTS,
                                             expected,
@@ -1227,7 +1230,13 @@ static void HOST_INTERFACE_Protocol_Process(
             const size_t   bytes_available = ( size_t )( protocol_state->usb.receive_count
                                                        - protocol_state->usb.receive_offset );
 
-            if ( bytes_available >= total_frame_len )
+            if ( total_frame_len > sizeof( protocol_state->usb.receive_buffer ) )
+            {
+                /* Frame length exceeds maximum buffer capacity; framing desynced, advance by 1 to
+                 * resync */
+                protocol_state->usb.receive_offset += 1U;
+            }
+            else if ( bytes_available >= total_frame_len )
             {
                 size_t required_decode_capacity    = 0U;
                 protocol_state->application.status = HIL_APPLICATION_Decode_Message(
@@ -1774,11 +1783,15 @@ static bool HOST_INTERFACE_GetMessageHasMoreChunks( const HIL_Application_Messag
     }
     if ( msg->type == HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT )
     {
-        return ( msg->body.variable_test_result.flags & HIL_APPLICATION_RESULT_FLAG_HAS_MORE_CHUNKS ) != 0U;
+        return ( msg->body.variable_test_result.flags
+                 & HIL_APPLICATION_RESULT_FLAG_HAS_MORE_CHUNKS )
+               != 0U;
     }
     if ( msg->type == HIL_APPLICATION_MESSAGE_TYPE_UPDATE_INSTRUCTION )
     {
-        return ( msg->body.update_instruction.flags & HIL_APPLICATION_INSTRUCTION_FLAG_HAS_MORE_CHUNKS ) != 0U;
+        return ( msg->body.update_instruction.flags
+                 & HIL_APPLICATION_INSTRUCTION_FLAG_HAS_MORE_CHUNKS )
+               != 0U;
     }
     return false;
 }
@@ -2015,6 +2028,8 @@ void HOST_INTERFACE_Task( void* task_parameters )
                         outgoing_message.body.response.tick_number;
                     s_host_interface_status.last_rejected_reason =
                         ( uint32_t )outgoing_message.body.response.reason;
+                    s_host_interface_status.last_rejected_detail =
+                        outgoing_message.body.response.detail;
                 }
             }
         }
@@ -2036,6 +2051,8 @@ void HOST_INTERFACE_Task( void* task_parameters )
                         outgoing_message.body.response.tick_number;
                     s_host_interface_status.last_rejected_reason =
                         ( uint32_t )outgoing_message.body.response.reason;
+                    s_host_interface_status.last_rejected_detail =
+                        outgoing_message.body.response.detail;
                 }
             }
             else if ( xTaskGetTickCount() - overflow_timer
@@ -2139,8 +2156,12 @@ void HOST_INTERFACE_GetStatus( HostInterfaceStatus_T* status )
     {
         *status = s_host_interface_status;
         VARIABLE_RESULT_MESSAGE_PRODUCER_GetDiagnostics( &status->var_producer_diags );
-        status->usb_connection_state     = HW_USB_Get_Connection_State();
-        status->usb_rx_stream_used_bytes = HW_USB_Get_Receive_Stream_Used_Bytes();
+        HOST_VARIABLE_INSTRUCTION_HANDLER_GetDiagnostics(
+            &status->var_instruction_last_stage, &status->var_instruction_last_stage_code,
+            &status->var_instruction_last_failed_tick );
+        status->usb_connection_state        = HW_USB_Get_Connection_State();
+        status->usb_rx_stream_used_bytes    = HW_USB_Get_Receive_Stream_Used_Bytes();
+        status->usb_rx_stream_dropped_bytes = HW_USB_Get_Receive_Stream_Dropped_Bytes();
         ( void )HW_USB_Get_Transmit_Diagnostics( &status->usb_tx_diags );
     }
 }

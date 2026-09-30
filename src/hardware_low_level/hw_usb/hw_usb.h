@@ -179,12 +179,10 @@ void HW_USB_Discard_Transmit_Data( void );
  *
  * If the receive stream buffer does not have enough free space, only the bytes
  * that fit are copied. Dropped bytes are counted for diagnostics. Higher-level
- * protocol code is expected to detect and recover from missing data.
- *
- * @param data_received Pointer to the received USB CDC bytes.
- * @param size_bytes Pointer to the number of received bytes.
+ * @return true if the receive stream buffer has space to accept another packet;
+ *         false if receive is paused due to backpressure (endpoint should not re-arm).
  */
-void HW_USB_Receive_From_ISR( uint8_t* data_received, uint32_t* size_bytes );
+bool HW_USB_Receive_From_ISR( uint8_t* data_received, uint32_t* size_bytes );
 
 /**
  * @brief Read received USB CDC bytes from the receive stream buffer.

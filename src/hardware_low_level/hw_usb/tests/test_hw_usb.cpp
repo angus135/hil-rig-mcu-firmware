@@ -41,7 +41,7 @@ extern "C"
  */
 
 static constexpr uint32_t EXPECTED_MAX_USB_TRANSMIT_BYTES          = 2304U;
-static constexpr uint32_t EXPECTED_MAX_USB_RECEIVE_STREAM_BYTES    = 1024U;
+static constexpr uint32_t EXPECTED_MAX_USB_RECEIVE_STREAM_BYTES    = 2048U;
 static constexpr size_t   EXPECTED_USB_RECEIVE_TRIGGER_LEVEL_BYTES = 1U;
 
 static_assert( MAX_USB_TRANSMIT_BYTES == EXPECTED_MAX_USB_TRANSMIT_BYTES,
@@ -93,6 +93,10 @@ extern "C" USBD_HandleTypeDef hUsbDeviceFS = {};
 extern "C" uint8_t CDC_Transmit_FS( uint8_t* Buf, uint16_t Len )
 {
     return g_mock->CDCTransmitFS( Buf, Len );
+}
+
+extern "C" void CDC_Resume_Receive_FS( void )
+{
 }
 
 extern "C" StreamBufferHandle_t xStreamBufferCreate( size_t xBufferSizeBytes,
@@ -275,8 +279,11 @@ TEST_F( HWUSBTest, ReceiveFromISRCopiesAllBytesToReceiveStreamAndYields )
                 *higher_priority_task_woken = pdTRUE;
                 return sent_length;
             } ) );
+    EXPECT_CALL( mock, StreamBufferSpacesAvailable( fake_stream ) )
+        .WillOnce( testing::Return( 512U ) );
 
-    HW_USB_Receive_From_ISR( data, &size );
+    EXPECT_TRUE( HW_USB_Receive_From_ISR( data, &size ) );
+    EXPECT_FALSE( usb_state.receive_stream_paused );
 
     EXPECT_EQ( 0U, usb_state.receive_stream_bytes_dropped );
 }
@@ -295,10 +302,34 @@ TEST_F( HWUSBTest, ReceiveFromISRCountsBytesNotWrittenToStreamAsDropped )
             *higher_priority_task_woken = pdFALSE;
             return 2U;
         } ) );
+    EXPECT_CALL( mock, StreamBufferSpacesAvailable( fake_stream ) )
+        .WillOnce( testing::Return( 512U ) );
 
-    HW_USB_Receive_From_ISR( data, &size );
+    EXPECT_TRUE( HW_USB_Receive_From_ISR( data, &size ) );
+    EXPECT_FALSE( usb_state.receive_stream_paused );
 
     EXPECT_EQ( 14U, usb_state.receive_stream_bytes_dropped );
+}
+
+TEST_F( HWUSBTest, ReceiveFromISRPausesWhenFreeSpaceBelowThreshold )
+{
+    uint8_t  data[] = { 1U, 2U, 3U, 4U };
+    uint32_t size   = sizeof( data );
+
+    usb_state.receive_stream        = fake_stream;
+    usb_state.receive_stream_paused = false;
+
+    EXPECT_CALL( mock, StreamBufferSendFromISR( fake_stream, testing::_, size, testing::_ ) )
+        .WillOnce( testing::Invoke( []( StreamBufferHandle_t, const void*, size_t sent_len,
+                                        BaseType_t* higher_priority_task_woken ) -> size_t {
+            *higher_priority_task_woken = pdFALSE;
+            return sent_len;
+        } ) );
+    EXPECT_CALL( mock, StreamBufferSpacesAvailable( fake_stream ) )
+        .WillOnce( testing::Return( 63U ) );
+
+    EXPECT_FALSE( HW_USB_Receive_From_ISR( data, &size ) );
+    EXPECT_TRUE( usb_state.receive_stream_paused );
 }
 
 TEST_F( HWUSBTest, ReceiveReturnsZeroForInvalidArgumentsOrUninitialisedStream )
@@ -364,7 +395,7 @@ TEST_F( HWUSBTest, ReceiveStreamDiagnosticFunctionsUseFreeRTOSSpaceAvailable )
 
     EXPECT_CALL( mock, StreamBufferSpacesAvailable( fake_stream ) )
         .WillOnce( testing::Return( 900U ) );
-    EXPECT_EQ( 124U, HW_USB_Get_Receive_Stream_Used_Bytes() );
+    EXPECT_EQ( EXPECTED_MAX_USB_RECEIVE_STREAM_BYTES - 900U, HW_USB_Get_Receive_Stream_Used_Bytes() );
 
     EXPECT_CALL( mock, StreamBufferSpacesAvailable( fake_stream ) )
         .WillOnce( testing::Return( 900U ) );

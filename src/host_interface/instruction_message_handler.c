@@ -28,6 +28,7 @@
 #include "execution_manager/execution_operation_payloads.h"
 #include "flash_manager/flash_manager.h"
 #include "hw_pwm_gen.h"
+#include "rtos_config.h"
 #include "test_configuration.h"
 
 #include <stdbool.h>
@@ -39,6 +40,8 @@
  *  Defines / Macros
  *------------------------------------------------------------------------------
  */
+
+#define HOST_INSTRUCTION_FLASH_UPLOAD_MAX_RETRIES ( 200U )
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -594,17 +597,26 @@ static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_ConvertInstruction(
 static HOST_Interface_Status_T HOST_INSTRUCTION_HANDLER_UploadToFlash( const uint8_t* const data,
                                                                        const size_t         length )
 {
-    const FlashManagerInstructionUploadRequestStatus_T upload_status =
+    FlashManagerInstructionUploadRequestStatus_T upload_status =
         FLASH_MANAGER_SubmitInstructionUploadBytes( data, ( uint32_t )length );
+
+    if ( upload_status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
+    {
+        for ( uint32_t retry = 0U; retry < HOST_INSTRUCTION_FLASH_UPLOAD_MAX_RETRIES; retry++ )
+        {
+            taskYIELD();
+
+            upload_status = FLASH_MANAGER_SubmitInstructionUploadBytes( data, ( uint32_t )length );
+            if ( upload_status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
+            {
+                break;
+            }
+        }
+    }
 
     if ( upload_status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
     {
         return HOST_INTERFACE_STATUS_OK;
-    }
-
-    if ( upload_status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
-    {
-        return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
     }
 
     if ( upload_status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE )

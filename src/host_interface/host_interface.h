@@ -55,7 +55,7 @@ extern "C"
 #define HOST_INTERFACE_NOTIFY_RESET ( ( uint32_t )1U << 7U )
 
 /** Number of recent result-path events retained for post-fault inspection. */
-#define HOST_INTERFACE_RESULT_TX_AUDIT_DEPTH ( 32U )
+#define HOST_INTERFACE_RESULT_TX_AUDIT_DEPTH ( 8U )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -111,6 +111,7 @@ typedef struct
     bool                      usb_connected;
     HW_USB_Connection_State_T usb_connection_state;
     uint32_t                  usb_rx_stream_used_bytes;
+    uint32_t                  usb_rx_stream_dropped_bytes;
     bool                      can_consume_incoming;
     bool                      outgoing_message_pending;
     uint8_t                   outgoing_pending_message_type;
@@ -145,6 +146,10 @@ typedef struct
     uint32_t rejected_instruction_count;
     uint32_t last_rejected_tick;
     uint32_t last_rejected_reason;
+    uint32_t last_rejected_detail;
+    uint32_t var_instruction_last_stage;
+    uint32_t var_instruction_last_stage_code;
+    uint32_t var_instruction_last_failed_tick;
 
     /* Transport Layer Live Status */
     HIL_Transport_Session_State_T transport_session_state;

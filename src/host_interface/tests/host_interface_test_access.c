@@ -66,6 +66,24 @@ void VARIABLE_RESULT_MESSAGE_PRODUCER_GetDiagnostics( VariableResultProducerDiag
 }
 #endif
 
+void HOST_VARIABLE_INSTRUCTION_HANDLER_GetDiagnostics( uint32_t* last_stage,
+                                                       uint32_t* last_stage_code,
+                                                       uint32_t* last_failed_tick )
+{
+    if ( last_stage != NULL )
+    {
+        *last_stage = 0U;
+    }
+    if ( last_stage_code != NULL )
+    {
+        *last_stage_code = 0U;
+    }
+    if ( last_failed_tick != NULL )
+    {
+        *last_failed_tick = 0U;
+    }
+}
+
 static HOST_INTERFACE_Protocol_State_T s_protocol_state;
 
 /**

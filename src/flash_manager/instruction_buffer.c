@@ -525,9 +525,8 @@ INSTRUCTION_BUFFER_CheckUploadCapacity( uint32_t length )
     {
         const InstructionBufferPageState_T page_state =
             instruction_buffer_context.page_states[page_index];
-        const uint32_t valid_length_bytes =
-            instruction_buffer_context.page_valid_bytes[page_index];
-        uint32_t available_length_bytes = 0U;
+        const uint32_t valid_length_bytes = instruction_buffer_context.page_valid_bytes[page_index];
+        uint32_t       available_length_bytes = 0U;
 
         if ( page_state == INSTRUCTION_BUFFER_PAGE_EMPTY )
         {
@@ -1115,7 +1114,7 @@ InstructionBufferUploadWriteStatus_T INSTRUCTION_BUFFER_WriteUploadBytes( const 
 
     if ( ( data == NULL ) || ( length == 0U )
          || ( length > ( instruction_buffer_context.page_size_bytes
-                          * INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT ) ) )
+                         * INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT ) ) )
     {
         return INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_ARGUMENT;
     }

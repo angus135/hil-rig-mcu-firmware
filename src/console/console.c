@@ -41,7 +41,7 @@
 #define CONSOLE_PRINTF_BUFFER_SIZE 128U
 #define CONSOLE_RX_BUFFER_SIZE 32U
 
-#define CONSOLE_TX_BUFFER_SIZE 512U
+#define CONSOLE_TX_BUFFER_SIZE 1024U
 #define CONSOLE_TX_FLUSH_CHUNK_SIZE 64U
 #define CONSOLE_TX_TIMEOUT_MS 100U
 
@@ -108,6 +108,7 @@ static void CONSOLE_Redraw_Line( void );
 static void CONSOLE_Load_Line( const char* line );
 static void CONSOLE_History_Up( void );
 static void CONSOLE_History_Down( void );
+static void CONSOLE_Flush_Tx( void );
 
 /**-----------------------------------------------------------------------------
  *  Private Function Definitions
@@ -285,18 +286,33 @@ static void CONSOLE_Write_Raw( const uint8_t* data, uint32_t length )
         return;
     }
 
-    uint32_t free_space = CONSOLE_Tx_Free();
-    uint32_t copy_len   = ( length < free_space ) ? length : free_space;
-
-    if ( copy_len < length )
+    uint32_t offset = 0U;
+    while ( offset < length )
     {
-        s_tx_overflow_count++;
-    }
+        uint32_t free_space = CONSOLE_Tx_Free();
+        if ( free_space == 0U )
+        {
+            CONSOLE_Flush_Tx();
+            free_space = CONSOLE_Tx_Free();
+            if ( free_space == 0U )
+            {
+                s_tx_overflow_count++;
+                break;
+            }
+        }
 
-    for ( uint32_t i = 0U; i < copy_len; i++ )
-    {
-        s_tx_buf[s_tx_head] = data[i];
-        s_tx_head           = ( s_tx_head + 1U ) % CONSOLE_TX_BUFFER_SIZE;
+        uint32_t to_copy = length - offset;
+        if ( to_copy > free_space )
+        {
+            to_copy = free_space;
+        }
+
+        for ( uint32_t i = 0U; i < to_copy; i++ )
+        {
+            s_tx_buf[s_tx_head] = data[offset + i];
+            s_tx_head           = ( s_tx_head + 1U ) % CONSOLE_TX_BUFFER_SIZE;
+        }
+        offset += to_copy;
     }
 }
 
@@ -315,28 +331,28 @@ static void CONSOLE_Write_Raw( const uint8_t* data, uint32_t length )
  */
 static void CONSOLE_Flush_Tx( void )
 {
-    if ( s_tx_head == s_tx_tail )
+    while ( s_tx_head != s_tx_tail )
     {
-        return;
-    }
+        uint32_t contiguous_len = 0U;
 
-    uint32_t contiguous_len = 0U;
+        if ( s_tx_head > s_tx_tail )
+        {
+            contiguous_len = s_tx_head - s_tx_tail;
+        }
+        else
+        {
+            contiguous_len = CONSOLE_TX_BUFFER_SIZE - s_tx_tail;
+        }
 
-    if ( s_tx_head > s_tx_tail )
-    {
-        contiguous_len = s_tx_head - s_tx_tail;
-    }
-    else
-    {
-        contiguous_len = CONSOLE_TX_BUFFER_SIZE - s_tx_tail;
-    }
+        uint32_t chunk_len = ( contiguous_len > CONSOLE_TX_FLUSH_CHUNK_SIZE )
+                                 ? CONSOLE_TX_FLUSH_CHUNK_SIZE
+                                 : contiguous_len;
 
-    uint32_t chunk_len = ( contiguous_len > CONSOLE_TX_FLUSH_CHUNK_SIZE )
-                             ? CONSOLE_TX_FLUSH_CHUNK_SIZE
-                             : contiguous_len;
-
-    if ( HW_UART_CONSOLE_Write_Blocking( &s_tx_buf[s_tx_tail], chunk_len, CONSOLE_TX_TIMEOUT_MS ) )
-    {
+        if ( !HW_UART_CONSOLE_Write_Blocking( &s_tx_buf[s_tx_tail], chunk_len,
+                                              CONSOLE_TX_TIMEOUT_MS ) )
+        {
+            break;
+        }
         s_tx_tail = ( s_tx_tail + chunk_len ) % CONSOLE_TX_BUFFER_SIZE;
     }
 }

@@ -1057,7 +1057,7 @@ TEST_F( InstructionBufferTest, WriteUploadBytesCanCompleteOnePageAndContinueInto
 /** Verifies one maximum-size instruction chunk can occupy two complete NAND pages. */
 TEST_F( InstructionBufferTest, WriteUploadBytesAcceptsTwoPageMaximumChunk )
 {
-    constexpr uint32_t chunk_length_bytes = 2U * TEST_INSTRUCTION_PAGE_SIZE_BYTES;
+    constexpr uint32_t chunk_length_bytes        = 2U * TEST_INSTRUCTION_PAGE_SIZE_BYTES;
     std::array<uint8_t, chunk_length_bytes> data = {};
     FillBytes( data.data(), data.size(), 0x20U );
 
@@ -1067,19 +1067,17 @@ TEST_F( InstructionBufferTest, WriteUploadBytesAcceptsTwoPageMaximumChunk )
                INSTRUCTION_BUFFER_WriteUploadBytes( data.data(), data.size() ) );
     EXPECT_EQ( chunk_length_bytes, instruction_buffer_context.upload_accepted_length_bytes );
     EXPECT_EQ( 2U, instruction_buffer_context.upload_write_page_index );
-    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND,
-               instruction_buffer_context.page_states[0] );
-    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND,
-               instruction_buffer_context.page_states[1] );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND, instruction_buffer_context.page_states[0] );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND, instruction_buffer_context.page_states[1] );
     EXPECT_EQ( 0, std::memcmp( data.data(), test_instruction_buffer_storage, data.size() ) );
 }
 
 /** Verifies two-page chunks can span three slots without losing atomic admission. */
 TEST_F( InstructionBufferTest, BusyTwoPageWriteAcrossThreeSlotsCopiesNothingAndCanBeRetried )
 {
-    std::array<uint8_t, TEST_INSTRUCTION_PAGE_SIZE_BYTES> full_page = {};
-    std::array<uint8_t, 8U> partial_page = {};
-    std::array<uint8_t, 2U * TEST_INSTRUCTION_PAGE_SIZE_BYTES> chunk = {};
+    std::array<uint8_t, TEST_INSTRUCTION_PAGE_SIZE_BYTES>      full_page    = {};
+    std::array<uint8_t, 8U>                                    partial_page = {};
+    std::array<uint8_t, 2U * TEST_INSTRUCTION_PAGE_SIZE_BYTES> chunk        = {};
     FillBytes( full_page.data(), full_page.size(), 0x10U );
     FillBytes( partial_page.data(), partial_page.size(), 0x70U );
     FillBytes( chunk.data(), chunk.size(), 0x90U );
@@ -1099,7 +1097,7 @@ TEST_F( InstructionBufferTest, BusyTwoPageWriteAcrossThreeSlotsCopiesNothingAndC
     ASSERT_TRUE( INSTRUCTION_BUFFER_CompleteUploadDrain( true ) );
 
     const uint32_t accepted_before = instruction_buffer_context.upload_accepted_length_bytes;
-    std::array<uint8_t, TEST_INSTRUCTION_PAGE_SIZE_BYTES> current_page_before = {};
+    std::array<uint8_t, TEST_INSTRUCTION_PAGE_SIZE_BYTES> current_page_before   = {};
     std::array<uint8_t, TEST_INSTRUCTION_PAGE_SIZE_BYTES> successor_page_before = {};
     std::memcpy( current_page_before.data(),
                  &test_instruction_buffer_storage[TEST_INSTRUCTION_PAGE_SIZE_BYTES
@@ -1111,11 +1109,11 @@ TEST_F( InstructionBufferTest, BusyTwoPageWriteAcrossThreeSlotsCopiesNothingAndC
     EXPECT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_BUSY,
                INSTRUCTION_BUFFER_WriteUploadBytes( chunk.data(), chunk.size() ) );
     EXPECT_EQ( accepted_before, instruction_buffer_context.upload_accepted_length_bytes );
-    EXPECT_EQ( 0, std::memcmp( current_page_before.data(),
-                               &test_instruction_buffer_storage[TEST_INSTRUCTION_PAGE_SIZE_BYTES
-                                                                * ( INSTRUCTION_BUFFER_PAGE_COUNT
-                                                                    - 1U )],
-                               current_page_before.size() ) );
+    EXPECT_EQ(
+        0, std::memcmp( current_page_before.data(),
+                        &test_instruction_buffer_storage[TEST_INSTRUCTION_PAGE_SIZE_BYTES
+                                                         * ( INSTRUCTION_BUFFER_PAGE_COUNT - 1U )],
+                        current_page_before.size() ) );
     EXPECT_EQ( 0, std::memcmp( successor_page_before.data(), test_instruction_buffer_storage,
                                successor_page_before.size() ) );
 
@@ -1128,8 +1126,7 @@ TEST_F( InstructionBufferTest, BusyTwoPageWriteAcrossThreeSlotsCopiesNothingAndC
                instruction_buffer_context.upload_accepted_length_bytes );
     EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND,
                instruction_buffer_context.page_states[INSTRUCTION_BUFFER_PAGE_COUNT - 1U] );
-    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND,
-               instruction_buffer_context.page_states[0] );
+    EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND, instruction_buffer_context.page_states[0] );
     EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_FILLING_FROM_HOST,
                instruction_buffer_context.page_states[1] );
     EXPECT_EQ( 8U, instruction_buffer_context.page_valid_bytes[1] );

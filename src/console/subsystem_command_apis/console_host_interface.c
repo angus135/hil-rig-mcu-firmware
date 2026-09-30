@@ -15,6 +15,7 @@
 #include "console_host_interface.h"
 #include "console.h"
 #include "host_interface.h"
+#include "host_process_message.h"
 #include "hw_usb.h"
 #include "hil_rig_protocol/application/application_message.h"
 #include "hil_rig_protocol/application/application_response.h"
@@ -411,6 +412,57 @@ static const char* CONSOLE_HostInterface_ResponseReasonName( uint32_t reason )
     }
 }
 
+static const char* CONSOLE_HostInterface_StatusName( HOST_Interface_Status_T status )
+{
+    switch ( status )
+    {
+        case HOST_INTERFACE_STATUS_OK:
+            return "OK";
+        case HOST_INTERFACE_STATUS_INVALID_ARGUMENT:
+            return "INVALID_ARGUMENT";
+        case HOST_INTERFACE_STATUS_UNINITIALIZED:
+            return "UNINITIALIZED";
+        case HOST_INTERFACE_STATUS_BUFFER_TOO_SMALL:
+            return "BUFFER_TOO_SMALL";
+        case HOST_INTERFACE_STATUS_INVALID_MESSAGE_TYPE:
+            return "INVALID_MESSAGE_TYPE";
+        case HOST_INTERFACE_STATUS_INVALID_SUBTYPE:
+            return "INVALID_SUBTYPE";
+        case HOST_INTERFACE_STATUS_MALFORMED_MESSAGE:
+            return "MALFORMED_MESSAGE";
+        case HOST_INTERFACE_STATUS_TRUNCATED_MESSAGE:
+            return "TRUNCATED_MESSAGE";
+        case HOST_INTERFACE_STATUS_INVALID_LENGTH:
+            return "INVALID_LENGTH";
+        case HOST_INTERFACE_STATUS_INVALID_COUNT:
+            return "INVALID_COUNT";
+        case HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE:
+            return "UNSUPPORTED_MESSAGE";
+        case HOST_INTERFACE_STATUS_INCONSISTENT_TEST_ID:
+            return "INCONSISTENT_TEST_ID";
+        case HOST_INTERFACE_STATUS_INCONSISTENT_TICK:
+            return "INCONSISTENT_TICK";
+        case HOST_INTERFACE_STATUS_INCOMPLETE_DATA:
+            return "INCOMPLETE_DATA";
+        case HOST_INTERFACE_STATUS_VALIDATION_FAILED:
+            return "VALIDATION_FAILED";
+        case HOST_INTERFACE_STATUS_NOT_IMPLEMENTED:
+            return "NOT_IMPLEMENTED";
+        case HOST_INTERFACE_STATUS_INTERNAL_ERROR:
+            return "INTERNAL_ERROR";
+        case HOST_INTERFACE_STATUS_OUT_OF_DATE:
+            return "OUT_OF_DATE";
+        case HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE:
+            return "STATE_TRANSITION_FAILURE";
+        case HOST_INTERFACE_STATUS_OUTGOING_REQUIRED:
+            return "OUTGOING_REQUIRED";
+        case HOST_INTERFACE_STATUS_UNSUPPORTED_NOTIFICATION:
+            return "UNSUPPORTED_NOTIFICATION";
+        default:
+            return "UNKNOWN";
+    }
+}
+
 static void CONSOLE_HostInterface_PrintUsage( void )
 {
     CONSOLE_Printf( "Usage: host <status|trace|reset>\r\n" );
@@ -423,10 +475,11 @@ static void CONSOLE_HostInterface_PrintStatus( void )
 
     CONSOLE_Printf( "Host Interface Status:\r\n" );
     CONSOLE_Printf( "  Initialized:         %s\r\n", status.is_initialized ? "yes" : "no" );
-    CONSOLE_Printf( "  USB link connected:  %s (state=%s, rx_stream_used=%lu)\r\n",
+    CONSOLE_Printf( "  USB link connected:  %s (state=%s, rx_stream_used=%lu, rx_dropped=%lu)\r\n",
                     status.usb_connected ? "yes" : "no",
                     CONSOLE_HostInterface_USBConnectionStateName( status.usb_connection_state ),
-                    ( unsigned long )status.usb_rx_stream_used_bytes );
+                    ( unsigned long )status.usb_rx_stream_used_bytes,
+                    ( unsigned long )status.usb_rx_stream_dropped_bytes );
     CONSOLE_Printf(
         "  Transport session:   %s (submit_status=%s, reliable_pending=%s, failure=%s)\r\n",
         CONSOLE_HostInterface_TransportSessionStateName( status.transport_session_state ),
@@ -491,10 +544,16 @@ static void CONSOLE_HostInterface_PrintStatus( void )
     CONSOLE_Printf( "  Fault state:         %s\r\n", status.is_faulted ? "FAULTED" : "none" );
     if ( status.rejected_instruction_count > 0U )
     {
-        CONSOLE_Printf( "  Rejected instr ct:   %lu (last tick=%lu, reason=%s)\r\n",
+        CONSOLE_Printf( "  Rejected instr ct:   %lu (last tick=%lu, reason=%s, detail=%s [%lu], "
+                        "stage=%lu, code=%lu)\r\n",
                         ( unsigned long )status.rejected_instruction_count,
                         ( unsigned long )status.last_rejected_tick,
-                        CONSOLE_HostInterface_ResponseReasonName( status.last_rejected_reason ) );
+                        CONSOLE_HostInterface_ResponseReasonName( status.last_rejected_reason ),
+                        CONSOLE_HostInterface_StatusName(
+                            ( HOST_Interface_Status_T )status.last_rejected_detail ),
+                        ( unsigned long )status.last_rejected_detail,
+                        ( unsigned long )status.var_instruction_last_stage,
+                        ( unsigned long )status.var_instruction_last_stage_code );
     }
     CONSOLE_Printf( "  Blocked responses:   %lu\r\n",
                     ( unsigned long )status.response_blocked_count );

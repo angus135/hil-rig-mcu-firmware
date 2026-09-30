@@ -135,8 +135,9 @@ extern "C" void HW_USB_Discard_Transmit_Data( void )
     usb_tx_diags.current_buffered_bytes = 0U;
 }
 
-extern "C" void HW_USB_Receive_From_ISR( uint8_t*, uint32_t* )
+extern "C" bool HW_USB_Receive_From_ISR( uint8_t*, uint32_t* )
 {
+    return true;
 }
 
 extern "C" uint32_t HW_USB_Receive( uint8_t* const destination, const uint32_t max_size_bytes )

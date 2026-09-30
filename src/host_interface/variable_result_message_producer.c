@@ -155,7 +155,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
                                                 const uint8_t*                    payload,
                                                 VariableResultProducerStream_T*   stream );
 
-static bool VAR_RESULT_PRODUCER_CanStageRecord( const FlashManagerResultHeader_T* header,
+static bool VAR_RESULT_PRODUCER_CanStageRecord( const FlashManagerResultHeader_T*     header,
                                                 const VariableResultProducerStream_T* stream );
 
 static void
@@ -248,7 +248,8 @@ static void VAR_RESULT_PRODUCER_ConsumeRecord( VariableResultProducerStream_T* c
 }
 
 /**
- * @brief Checks whether the next flash record fits into the remaining staged storage for this chunk.
+ * @brief Checks whether the next flash record fits into the remaining staged storage for this
+ * chunk.
  */
 static bool VAR_RESULT_PRODUCER_CanStageRecord( const FlashManagerResultHeader_T* const     header,
                                                 const VariableResultProducerStream_T* const stream )
@@ -754,10 +755,8 @@ VAR_RESULT_PRODUCER_ProduceNextMessageInternal( HIL_Application_Message_T* const
                 VAR_RESULT_PRODUCER_PopulateResultMetadata( stream, out_message );
                 out_message->body.variable_test_result.flags =
                     HIL_APPLICATION_RESULT_FLAG_HAS_MORE_CHUNKS;
-                out_message->body.variable_test_result.record_count =
-                    stream->staged_record_count;
-                out_message->body.variable_test_result.records =
-                    stream->staged_records;
+                out_message->body.variable_test_result.record_count = stream->staged_record_count;
+                out_message->body.variable_test_result.records      = stream->staged_records;
 
                 stream->has_emitted_tick       = true;
                 stream->last_emitted_timestamp = stream->active_tick_number;

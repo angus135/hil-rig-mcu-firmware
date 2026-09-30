@@ -1069,7 +1069,7 @@ TEST_F( ResultBufferTest, ReadBytesReturnsBusyOnEmptySlotAwaitingRefillAndResume
     // Consume all 3 loaded pages
     for ( uint32_t slot = 0U; slot < 3U; slot++ )
     {
-        std::array<uint8_t, TEST_PAGE_SIZE_BYTES> dest = {};
+        std::array<uint8_t, TEST_PAGE_SIZE_BYTES> dest       = {};
         uint32_t                                  bytes_read = 0U;
         ASSERT_EQ( RESULT_BUFFER_READ_PAGE_RELEASED,
                    RESULT_BUFFER_ReadBytes( dest.data(), dest.size(), &bytes_read ) );
@@ -1078,7 +1078,7 @@ TEST_F( ResultBufferTest, ReadBytesReturnsBusyOnEmptySlotAwaitingRefillAndResume
 
     // Now all 3 slots are EMPTY, and the 4th page has not yet been acquired/filled.
     // ReadBytes should return BUSY (not INVALID_STATE).
-    std::array<uint8_t, TEST_PAGE_SIZE_BYTES> dest = {};
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES> dest       = {};
     uint32_t                                  bytes_read = 0U;
     EXPECT_EQ( RESULT_BUFFER_READ_BUSY,
                RESULT_BUFFER_ReadBytes( dest.data(), dest.size(), &bytes_read ) );
@@ -1099,4 +1099,3 @@ TEST_F( ResultBufferTest, ReadBytesReturnsBusyOnEmptySlotAwaitingRefillAndResume
     EXPECT_EQ( 0x99U, dest[0] );
     EXPECT_TRUE( RESULT_BUFFER_IsReadComplete() );
 }
-

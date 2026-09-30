@@ -104,6 +104,13 @@ void HOST_VARIABLE_INSTRUCTION_HANDLER_Reset( void );
 HOST_Interface_Status_T HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
     const HIL_Application_Update_Instruction_T* instruction );
 
+/**
+ * @brief Queries the last variable instruction handler failure diagnostics.
+ */
+void HOST_VARIABLE_INSTRUCTION_HANDLER_GetDiagnostics( uint32_t* last_stage,
+                                                       uint32_t* last_stage_code,
+                                                       uint32_t* last_failed_tick );
+
 #ifdef __cplusplus
 }
 #endif

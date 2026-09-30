@@ -385,6 +385,7 @@ HOST_INTERFACE_process_Info_Request( const HIL_Application_Message_T* incoming_m
             // Diagnostic data depends on the sub-type
             switch ( incoming_message->subtype )
             {
+                case HIL_APPLICATION_MESSAGE_SUBTYPE_NONE:
                 default:
                     outgoing_message->body.system_info_response.diagnostic_data.size = 0;
                     outgoing_message->body.system_info_response.diagnostic_data.data = NULL;
@@ -600,11 +601,10 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     outgoing_message->type    = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
     outgoing_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
     // Set Response body
-    outgoing_message->body.response.scope   = HIL_APPLICATION_RESPONSE_SCOPE_TEST_CONFIGURATION;
-    outgoing_message->body.response.outcome = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
-    outgoing_message->body.response.reason  = HIL_APPLICATION_RESPONSE_REASON_NONE;
-    outgoing_message->body.response.tick_number =
-        incoming_message->body.test_instruction.tick_number;
+    outgoing_message->body.response.scope       = HIL_APPLICATION_RESPONSE_SCOPE_TEST_CONFIGURATION;
+    outgoing_message->body.response.outcome     = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
+    outgoing_message->body.response.reason      = HIL_APPLICATION_RESPONSE_REASON_NONE;
+    outgoing_message->body.response.tick_number = 0U;
     outgoing_message->body.response.control_command        = HIL_APPLICATION_CONTROL_INVALID;
     outgoing_message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
     outgoing_message->body.response.detail                 = 0U;

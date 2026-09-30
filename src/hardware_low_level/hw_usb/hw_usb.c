@@ -53,7 +53,12 @@
 #define MAX_USB_TRANSMIT_BYTES 2304U
 
 // Maximum number of bytes that can be queued from USB receive callbacks.
-#define MAX_USB_RECEIVE_STREAM_BYTES 1024U
+#define MAX_USB_RECEIVE_STREAM_BYTES 2048U
+
+// Flow control thresholds: pause when free space is under one full-speed packet;
+// resume with hysteresis once at least two packets can be buffered.
+#define USB_CDC_RX_MIN_FREE_BYTES 64U
+#define USB_CDC_RX_RESUME_FREE_BYTES 128U
 
 // Unblock a waiting receive task as soon as at least one byte is available.
 #define USB_RECEIVE_STREAM_TRIGGER_LEVEL_BYTES 1U
@@ -106,6 +111,9 @@ typedef struct HWUSBState_T
 
     // FreeRTOS stream buffer used to store bytes received from USB CDC.
     StreamBufferHandle_t receive_stream;
+
+    // Set when receive is paused to NAK the host; cleared when buffer has space.
+    bool receive_stream_paused;
 
     // Number of received bytes that could not be copied into receive_stream.
     uint32_t receive_stream_bytes_dropped;
@@ -255,6 +263,7 @@ bool HW_USB_Init( void )
         return false;
     }
 
+    usb_state.receive_stream_paused        = false;
     usb_state.receive_stream_bytes_dropped = 0U;
 
     // Initialising USB Device Driver
@@ -465,31 +474,32 @@ void HW_USB_Discard_Transmit_Data( void )
  * @param data_received Pointer to the received USB CDC bytes.
  * @param size_bytes Pointer to the number of received bytes.
  */
-void HW_USB_Receive_From_ISR( uint8_t* data_received, uint32_t* size_bytes )
+bool HW_USB_Receive_From_ISR( uint8_t* data_received, uint32_t* size_bytes )
 {
     BaseType_t higher_priority_task_woken = pdFALSE;
     size_t     bytes_written              = 0;
+    bool       should_rearm               = true;
 
     if ( data_received == NULL )
     {
-        return;
+        return true;
     }
 
     if ( size_bytes == NULL )
     {
-        return;
+        return true;
     }
 
     if ( *size_bytes == 0U )
     {
-        return;
+        return true;
     }
 
     // If the stream has not been created, drop the whole receive packet.
     if ( usb_state.receive_stream == NULL )
     {
         usb_state.receive_stream_bytes_dropped += *size_bytes;
-        return;
+        return true;
     }
 
     // Copy the received bytes into FreeRTOS-owned stream buffer storage.
@@ -503,8 +513,16 @@ void HW_USB_Receive_From_ISR( uint8_t* data_received, uint32_t* size_bytes )
         usb_state.receive_stream_bytes_dropped += ( uint32_t )( *size_bytes - bytes_written );
     }
 
+    const size_t free_bytes = xStreamBufferSpacesAvailable( usb_state.receive_stream );
+    if ( free_bytes < USB_CDC_RX_MIN_FREE_BYTES )
+    {
+        usb_state.receive_stream_paused = true;
+        should_rearm                    = false;
+    }
+
     // If a higher-priority task was unblocked by the stream write, yield to it.
     portYIELD_FROM_ISR( higher_priority_task_woken );
+    return should_rearm;
 }
 
 /**
@@ -554,6 +572,16 @@ static uint32_t HW_USB_Receive_Internal( uint8_t* destination, uint32_t max_size
 
     bytes_read = xStreamBufferReceive( usb_state.receive_stream, destination, max_size_bytes,
                                        timeout_ticks );
+
+    if ( usb_state.receive_stream_paused )
+    {
+        const size_t free_bytes = xStreamBufferSpacesAvailable( usb_state.receive_stream );
+        if ( free_bytes >= USB_CDC_RX_RESUME_FREE_BYTES )
+        {
+            usb_state.receive_stream_paused = false;
+            CDC_Resume_Receive_FS();
+        }
+    }
 
     return ( uint32_t )bytes_read;
 }
@@ -643,6 +671,16 @@ static void HW_USB_Monitor_Process_Locked( void )
     uint32_t contiguous_bytes_available = 0;
     uint16_t bytes_to_transmit          = 0;
     uint8_t* transmit_data              = NULL;
+
+    if ( usb_state.receive_stream_paused && ( usb_state.receive_stream != NULL ) )
+    {
+        const size_t free_bytes = xStreamBufferSpacesAvailable( usb_state.receive_stream );
+        if ( free_bytes >= USB_CDC_RX_RESUME_FREE_BYTES )
+        {
+            usb_state.receive_stream_paused = false;
+            CDC_Resume_Receive_FS();
+        }
+    }
 
     if ( HW_USB_Get_Connection_State() == HW_USB_CONNECTION_STATE_CONFIGURED_SUSPENDED )
     {
