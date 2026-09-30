@@ -375,7 +375,7 @@ TEST_F( ExternalFlashTest, InitRemovesBadBlocksFromCapacity )
 TEST_F( ExternalFlashTest, StartSessionErasesOnlyGoodResultBlocks )
 {
     InitDriverAllGood();
-    external_flash_allocator_bad_blocks[TEST_RESULT_BLOCK + 1U] = true;
+    EXTERNAL_FLASH_ALLOCATOR_SetPhysicalBlockBad( TEST_RESULT_BLOCK + 1U );
 
     EXPECT_CALL( mock, BlockErase( _ ) )
         .Times( EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 2U )
@@ -420,7 +420,7 @@ TEST_F( ExternalFlashTest, StartSessionRejectsReservationLargerThanResultPartiti
 TEST_F( ExternalFlashTest, StartInstructionUploadErasesOnlyGoodInstructionBlocks )
 {
     InitDriverAllGood();
-    external_flash_allocator_bad_blocks[1U] = true;
+    EXTERNAL_FLASH_ALLOCATOR_SetPhysicalBlockBad( 1U );
 
     EXPECT_CALL( mock, BlockErase( _ ) ).Times( 1U ).WillRepeatedly( Invoke( []( uint32_t block ) {
         EXPECT_LT( block, EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT );
