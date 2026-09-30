@@ -674,8 +674,10 @@ static bool RUN_STATE_MANAGER_BeginInstructionUploadFinalisation( void )
         const FlashManagerInstructionUploadRequestStatus_T status =
             FLASH_MANAGER_RequestInstructionUploadFinish();
 
-        if ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
+        if ( ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
+             || ( status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY ) )
         {
+            /* BUSY means a NAND write still owns the oldest upload page. */
             RUN_STATE_MANAGER_StartPendingOperation(
                 RUN_STATE_PENDING_INSTRUCTION_UPLOAD_FINALISATION );
             return true;
@@ -1307,6 +1309,25 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
                 else
                 {
                     RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_INVALID_TRANSITION );
+                }
+            }
+            else if ( flash_state == FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD )
+            {
+                if ( RUN_STATE_MANAGER_PendingOperationTimedOut(
+                         pdMS_TO_TICKS( RUN_STATE_MANAGER_INSTRUCTION_UPLOAD_TIMEOUT_MS ) ) )
+                {
+                    RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+                }
+                else
+                {
+                    const FlashManagerInstructionUploadRequestStatus_T status =
+                        FLASH_MANAGER_RequestInstructionUploadFinish();
+
+                    if ( ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED )
+                         && ( status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY ) )
+                    {
+                        RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_FLASH_MANAGER );
+                    }
                 }
             }
             else if ( flash_state != FLASH_MANAGER_STATE_FINALISING_INSTRUCTION_UPLOAD )

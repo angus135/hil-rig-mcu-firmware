@@ -1426,6 +1426,41 @@ TEST_F( RunStateManagerTest, ConfigurationReadyFinalisationTimeoutEntersFault )
     EXPECT_EQ( RUN_STATE_FAULT_FLASH_MANAGER, fault_reason );
 }
 
+/** Verifies that an in-flight NAND page delays upload finalisation without faulting. */
+TEST_F( RunStateManagerTest, ConfigurationReadyRetriesBusyInstructionUploadFinalisation )
+{
+    EXPECT_TRUE( RUN_STATE_MANAGER_RequestPackageReceive() );
+    Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
+    flash_manager_state = FLASH_MANAGER_STATE_INSTRUCTION_UPLOAD;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+
+    flash_upload_finish_result = FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY;
+    EXPECT_TRUE( RUN_STATE_MANAGER_RequestConfiguration() );
+    Process( RUN_STATE_REQUEST_CONFIGURATION_READY );
+
+    EXPECT_EQ( RUN_STATE_TEST_PACKAGE_RECEIVE, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_INSTRUCTION_UPLOAD_FINALISATION, pending_operation );
+    EXPECT_EQ( RUN_STATE_REQUEST_RESULT_ACCEPTED, last_request_result );
+    EXPECT_EQ( 1U, flash_upload_finish_calls );
+
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_TEST_PACKAGE_RECEIVE, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_INSTRUCTION_UPLOAD_FINALISATION, pending_operation );
+    EXPECT_EQ( 2U, flash_upload_finish_calls );
+
+    flash_upload_finish_result = FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_TEST_PACKAGE_RECEIVE, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_INSTRUCTION_UPLOAD_FINALISATION, pending_operation );
+    EXPECT_EQ( 3U, flash_upload_finish_calls );
+
+    flash_manager_state = FLASH_MANAGER_STATE_IDLE;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_CONFIGURATION, pending_operation );
+    EXPECT_EQ( RUN_STATE_FAULT_NONE, fault_reason );
+}
+
 /**
  * @brief Verifies that entering RUN_STATE_RESULTS_READY notifies Host Interface with
  * HOST_INTERFACE_NOTIFY_EXECUTION_COMPLETE.
