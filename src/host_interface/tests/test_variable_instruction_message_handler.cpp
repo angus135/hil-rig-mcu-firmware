@@ -125,6 +125,14 @@ extern "C" bool EXEC_ANALOGUE_OUTPUT_Prepare_Frame( uint8_t channel, float volta
     return true;
 }
 
+extern "C" void EXEC_ANALOGUE_OUTPUT_Scale( const float* value, float* scaled_value )
+{
+    if ( ( value != nullptr ) && ( scaled_value != nullptr ) )
+    {
+        *scaled_value = ( *value ) * 1.071072808f;
+    }
+}
+
 extern "C" bool HW_PWM_GEN_compute_psc( uint32_t frequency_hz, uint32_t timer_clock_hz,
                                         uint16_t* psc )
 {
@@ -396,7 +404,9 @@ TEST_F( VariableInstructionMessageHandlerTest, AnalogueOutputPacksFrameCorrectly
     instruction.operation_count = 1U;
     instruction.operations      = &op;
 
-    EXPECT_CALL( *g_mock_deps, EXEC_ANALOGUE_OUTPUT_Prepare_Frame( 0U, 2.5f, _ ) )
+    const float expected_scaled_voltage = 2.5f * 1.071072808f;
+    EXPECT_CALL( *g_mock_deps,
+                 EXEC_ANALOGUE_OUTPUT_Prepare_Frame( 0U, ::testing::FloatEq( expected_scaled_voltage ), _ ) )
         .WillOnce( DoAll( SetArgPointee<2>( AnalogueOutputPreparedFrame_T{ { 0x01, 0x02, 0x03 } } ),
                           Return( true ) ) );
 
