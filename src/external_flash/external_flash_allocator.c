@@ -446,28 +446,6 @@ ExternalFlashStatus_T EXTERNAL_FLASH_ALLOCATOR_ScanBadBlocks( void )
 
     return EXTERNAL_FLASH_STATUS_OK;
 }
-    external_flash_allocator_bad_block_count = 0U;
-
-    for ( uint32_t block = 0U; block < EXTERNAL_FLASH_ALLOCATOR_MANAGED_BLOCK_COUNT; block++ )
-    {
-        bool is_bad = false;
-
-        ExternalFlashStatus_T status =
-            EXTERNAL_FLASH_ALLOCATOR_MapNandStatus( HW_NAND_IsBlockBad( block, &is_bad ) );
-        if ( status != EXTERNAL_FLASH_STATUS_OK )
-        {
-            return status;
-        }
-
-        external_flash_allocator_bad_blocks[block] = is_bad;
-        if ( is_bad )
-        {
-            external_flash_allocator_bad_block_count++;
-        }
-    }
-
-    return EXTERNAL_FLASH_STATUS_OK;
-}
 
 uint32_t EXTERNAL_FLASH_ALLOCATOR_GetBadBlockCount( void )
 {

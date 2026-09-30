@@ -1633,26 +1633,21 @@ HOST_Interface_Status_T HOST_INTERFACE_process_message(
         outgoing_message->test_id     = incoming_message->test_id;
         return HOST_INTERFACE_STATUS_OK;
     }
-    // If no response is required then we can process internal message requests
-    // PROCESS INTERNAL REQUESTS
-    host_status = HOST_INTERFACE_process_internal_message(
-        &temp_outgoing_message, response_required, data, data_size, notifications );
-    if ( host_status != HOST_INTERFACE_STATUS_OK )
+    // If no response is required and outgoing slot is available, process internal message requests
+    if ( outgoing_message_accepted )
     {
-        *response_required = false;
-        return host_status;
-    }
-    // Check if a response is required
-    if ( *response_required )
-    {
-        if ( !outgoing_message_accepted )
+        host_status = HOST_INTERFACE_process_internal_message(
+            &temp_outgoing_message, response_required, data, data_size, notifications );
+        if ( host_status != HOST_INTERFACE_STATUS_OK )
         {
-            *overflow_outgoing_message = temp_outgoing_message;
-            *response_required         = true;
-            return HOST_INTERFACE_STATUS_OUTGOING_REQUIRED;
+            *response_required = false;
+            return host_status;
         }
-        *outgoing_message = temp_outgoing_message;
-        return HOST_INTERFACE_STATUS_OK;
+        if ( *response_required )
+        {
+            *outgoing_message = temp_outgoing_message;
+            return HOST_INTERFACE_STATUS_OK;
+        }
     }
     return HOST_INTERFACE_STATUS_OK;
 }

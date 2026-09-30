@@ -2071,6 +2071,8 @@ void HOST_INTERFACE_Task( void* task_parameters )
                 ( void )RUN_STATE_MANAGER_RequestFault(
                     RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED );
 
+                carry_on_notifications &= ( uint32_t ) ~( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
+
                 // Clear the blocked state and resume consumption so task stays healthy
                 can_consume_incoming     = true;
                 outgoing_message_pending = false;
