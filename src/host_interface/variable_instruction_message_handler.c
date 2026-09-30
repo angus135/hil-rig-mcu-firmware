@@ -306,11 +306,13 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_EncodeAnalogue(
         | ( ( uint32_t )op->payload.data[2] << 16U ) | ( ( uint32_t )op->payload.data[3] << 24U );
 
     const float voltage_v = ( float )microvolts / HOST_VAR_INSTRUCTION_MICROVOLTS_PER_VOLT;
+    float scaled_voltage;
+    EXEC_ANALOGUE_OUTPUT_Scale(&voltage_v, &scaled_voltage);
 
     AnalogueOutputPreparedFrame_T frame;
     ( void )memset( &frame, 0, sizeof( frame ) );
 
-    if ( !EXEC_ANALOGUE_OUTPUT_Prepare_Frame( op->channel, voltage_v, &frame ) )
+    if ( !EXEC_ANALOGUE_OUTPUT_Prepare_Frame( op->channel, scaled_voltage, &frame ) )
     {
         return HOST_INTERFACE_STATUS_VALIDATION_FAILED;
     }
