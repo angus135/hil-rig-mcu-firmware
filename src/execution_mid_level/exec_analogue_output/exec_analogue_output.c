@@ -284,13 +284,13 @@ static bool EXEC_ANALOGUE_OUTPUT_Configure_SPI( void )
  *------------------------------------------------------------------------------
  */
 
- /**
+/**
  * @brief computes the scaled value for analog outputs (post calibration)
  *
  */
 void EXEC_ANALOGUE_OUTPUT_Scale( const float* value, float* scaled_value )
 {
-    *scaled_value = *value*1.071072808;
+    *scaled_value = *value * 1.071072808;
 }
 
 /**

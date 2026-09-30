@@ -395,7 +395,8 @@ TEST_F( HWUSBTest, ReceiveStreamDiagnosticFunctionsUseFreeRTOSSpaceAvailable )
 
     EXPECT_CALL( mock, StreamBufferSpacesAvailable( fake_stream ) )
         .WillOnce( testing::Return( 900U ) );
-    EXPECT_EQ( EXPECTED_MAX_USB_RECEIVE_STREAM_BYTES - 900U, HW_USB_Get_Receive_Stream_Used_Bytes() );
+    EXPECT_EQ( EXPECTED_MAX_USB_RECEIVE_STREAM_BYTES - 900U,
+               HW_USB_Get_Receive_Stream_Used_Bytes() );
 
     EXPECT_CALL( mock, StreamBufferSpacesAvailable( fake_stream ) )
         .WillOnce( testing::Return( 900U ) );
