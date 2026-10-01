@@ -207,10 +207,44 @@ typedef struct
     uint32_t total_length_bytes;  // Total number of unread bytes across both spans for convenience
 } HwUartRxSpans_T;
 
+/**
+ * @brief Diagnostic telemetry and queue occupancy state for one UART channel.
+ */
+typedef struct
+{
+    uint32_t tx_count_bytes;      ///< Current queued TX bytes.
+    uint32_t tx_peak_bytes;       ///< Peak queued TX bytes observed.
+    uint32_t tx_reject_count;     ///< Count of times TX loading was rejected (e.g. buffer full).
+    uint32_t dma_error_count;     ///< Count of TX/RX DMA errors encountered.
+    uint32_t rx_unread_bytes;     ///< Current unread RX bytes in circular buffer.
+    uint32_t rx_unread_peak_bytes;///< Peak unread RX bytes observed.
+    uint32_t latched_faults;      ///< Bitmask of latched UART/DMA faults.
+    bool     tx_dma_active;       ///< TX DMA currently active flag.
+    bool     is_started;          ///< Channel started flag.
+    bool     is_configured;       ///< Channel configured flag.
+} HwUartDiagnostic_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Retrieve diagnostic telemetry and high watermarks for a DUT UART channel.
+ *
+ * @param channel The UART channel to inspect.
+ * @param diag Destination diagnostic structure.
+ *
+ * @return true if channel was valid and diag populated; false otherwise.
+ */
+bool HW_UART_Get_Diagnostic( HwUartChannel_T channel, HwUartDiagnostic_T* diag );
+
+/**
+ * @brief Reset peak watermarks and cumulative error counters for a UART channel.
+ *
+ * @param channel The UART channel whose diagnostics should be reset.
+ */
+void HW_UART_Reset_Diagnostic( HwUartChannel_T channel );
 /**
  * @brief  Configures the STM32 UART peripheral for a DUT-facing channel.
  *

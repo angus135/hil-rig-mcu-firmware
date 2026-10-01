@@ -141,11 +141,13 @@ bool HW_SPI_TX_Load_Slave_Stream( SPIPeripheralState_T* peripheral_state, const 
 
     if ( HW_SPI_Is_Frame_Aligned_Size_Fast( peripheral_state, size ) == false )
     {
+        peripheral_state->tx_queue_reject_count++;
         return false;
     }
 
     if ( size > HW_SPI_TX_Get_Free_Space_Fast( peripheral_state ) )
     {
+        peripheral_state->tx_queue_reject_count++;
         return false;
     }
 
@@ -167,6 +169,11 @@ bool HW_SPI_TX_Load_Slave_Stream( SPIPeripheralState_T* peripheral_state, const 
     peripheral_state->tx_write_position =
         HW_SPI_Wrap_Tx_Buffer_Index( peripheral_state->tx_write_position + size );
     peripheral_state->tx_num_bytes_pending = peripheral_state->tx_num_bytes_pending + size;
+
+    if ( peripheral_state->tx_num_bytes_pending > peripheral_state->peak_tx_num_bytes_pending )
+    {
+        peripheral_state->peak_tx_num_bytes_pending = peripheral_state->tx_num_bytes_pending;
+    }
 
     return true;
 }

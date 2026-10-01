@@ -191,6 +191,11 @@ typedef struct
     volatile uint32_t tx_dma_length_bytes;
     volatile bool     tx_dma_active;
 
+    volatile uint32_t tx_peak_count;
+    volatile uint32_t tx_reject_count;
+    volatile uint32_t dma_error_count;
+    volatile uint32_t rx_unread_peak;
+
 } HwUartRuntimeState_T;
 
 /**
@@ -663,6 +668,7 @@ static inline void HW_UART_Tx_Error_Handler( HwUartChannel_T channel )
     runtime->tx_dma_length_bytes = 0U;
     runtime->tx_dma_active       = false;
     runtime->latched_faults |= HW_UART_FAULT_TX_DMA;
+    runtime->dma_error_count++;
 }
 
 /**
@@ -676,6 +682,7 @@ static inline void HW_UART_Rx_Error_Handler( HwUartChannel_T channel )
     HwUartRuntimeState_T* runtime = &hw_uart_channel_states[channel].runtime;
     runtime->latched_faults |= HW_UART_FAULT_RX_DMA;
     runtime->rx_running = false;
+    runtime->dma_error_count++;
 }
 
 /**-----------------------------------------------------------------------------
@@ -944,6 +951,11 @@ HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
 
     uint32_t unread_bytes = HW_UART_Unread_Bytes_Count_Helper( read_index, dma_write_index );
 
+    if ( unread_bytes > state->runtime.rx_unread_peak )
+    {
+        state->runtime.rx_unread_peak = unread_bytes;
+    }
+
     if ( unread_bytes == 0U )
     {
         /* No Data Available */
@@ -1022,6 +1034,7 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
     if ( ( state->runtime.latched_faults & HW_UART_FAULT_TX_DMA ) != 0U
          || length_bytes > free_space )
     {
+        state->runtime.tx_reject_count++;
         HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
         return false;
     }
@@ -1052,12 +1065,18 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
 
     if ( ( state->runtime.latched_faults & HW_UART_FAULT_TX_DMA ) != 0U )
     {
+        state->runtime.tx_reject_count++;
         HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
         return false;
     }
 
     state->runtime.tx_head = new_head;
     state->runtime.tx_count += length_bytes;
+
+    if ( state->runtime.tx_count > state->runtime.tx_peak_count )
+    {
+        state->runtime.tx_peak_count = state->runtime.tx_count;
+    }
 
     HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
 
@@ -1367,3 +1386,42 @@ void HW_UART_CH2_RX_DMA_IRQ_HANDLER( void )
         *( hw_map->rx_dma_ifcr_reg ) = hw_map->rx_dma_ifcr_mask;
     }
 }
+
+bool HW_UART_Get_Diagnostic( HwUartChannel_T channel, HwUartDiagnostic_T* diag )
+{
+    if ( ( diag == NULL ) || !HW_UART_Is_Valid_Channel( channel ) )
+    {
+        return false;
+    }
+
+    const HwUartChannelState_T* state = &hw_uart_channel_states[channel];
+
+    diag->tx_count_bytes       = state->runtime.tx_count;
+    diag->tx_peak_bytes        = state->runtime.tx_peak_count;
+    diag->tx_reject_count      = state->runtime.tx_reject_count;
+    diag->dma_error_count      = state->runtime.dma_error_count;
+    diag->rx_unread_bytes      = HW_UART_Rx_Peek( channel ).total_length_bytes;
+    diag->rx_unread_peak_bytes = state->runtime.rx_unread_peak;
+    diag->latched_faults       = state->runtime.latched_faults;
+    diag->tx_dma_active        = state->runtime.tx_dma_active;
+    diag->is_started           = state->runtime.is_started;
+    diag->is_configured        = state->runtime.is_configured_and_initialised;
+
+    return true;
+}
+
+void HW_UART_Reset_Diagnostic( HwUartChannel_T channel )
+{
+    if ( !HW_UART_Is_Valid_Channel( channel ) )
+    {
+        return;
+    }
+
+    HwUartChannelState_T* state = &hw_uart_channel_states[channel];
+
+    state->runtime.tx_peak_count   = state->runtime.tx_count;
+    state->runtime.tx_reject_count = 0U;
+    state->runtime.dma_error_count = 0U;
+    state->runtime.rx_unread_peak  = 0U;
+}
+

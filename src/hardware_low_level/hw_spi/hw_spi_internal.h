@@ -217,6 +217,13 @@ struct SPIPeripheralState_T
     uint8_t                 tx_packet_read_position;   ///< Next descriptor slot to start via DMA.
     uint8_t tx_num_packets_pending;  ///< Number of queued master packet descriptors.
 
+    uint32_t peak_tx_num_bytes_pending;     ///< Peak queued TX bytes.
+    uint32_t peak_tx_num_packets_pending;   ///< Peak queued packet descriptors.
+    uint32_t tx_queue_reject_count;         ///< Total count of packet rejects.
+    uint32_t tx_dma_error_count;            ///< Total count of TX DMA transfer errors.
+    uint32_t tx_final_drain_timeout_count;  ///< Total count of final drain timeouts.
+    uint32_t rx_unread_peak_bytes;          ///< Peak unread RX bytes in buffer.
+
     DMA_TypeDef* rx_dma;          ///< RX DMA controller instance.
     uint32_t     rx_dma_stream;   ///< RX DMA stream selection.
     DMA_TypeDef* tx_dma;          ///< TX DMA controller instance.

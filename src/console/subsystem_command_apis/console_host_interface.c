@@ -465,6 +465,41 @@ static const char* CONSOLE_HostInterface_StatusName( HOST_Interface_Status_T sta
     }
 }
 
+static const char* CONSOLE_HostInterface_VarInstructionStageName( uint32_t stage )
+{
+    switch ( stage )
+    {
+        case 0U:
+            return "none";
+        case 1U:
+            return "null_or_empty_instruction";
+        case 2U:
+            return "inconsistent_tick";
+        case 10U:
+            return "encode_digital";
+        case 11U:
+            return "encode_analogue";
+        case 12U:
+            return "encode_pwm";
+        case 13U:
+            return "encode_uart";
+        case 14U:
+            return "encode_spi";
+        case 15U:
+            return "encode_can";
+        case 16U:
+            return "unsupported_peripheral";
+        case 17U:
+            return "encode_analogue_batch";
+        case 20U:
+            return "canonical_validation";
+        case 30U:
+            return "flash_upload";
+        default:
+            return "unknown";
+    }
+}
+
 static void CONSOLE_HostInterface_PrintUsage( void )
 {
     CONSOLE_Printf( "Usage: host <status|trace|reset>\r\n" );
@@ -544,16 +579,18 @@ static void CONSOLE_HostInterface_PrintStatus( void )
         CONSOLE_Printf( "  Overflow state:      normal\r\n" );
     }
     CONSOLE_Printf( "  Fault state:         %s\r\n", status.is_faulted ? "FAULTED" : "none" );
-    if ( status.rejected_instruction_count > 0U )
+    if ( ( status.rejected_instruction_count > 0U ) || ( status.var_instruction_last_stage > 0U ) )
     {
         CONSOLE_Printf( "  Rejected instr ct:   %lu (last tick=%lu, reason=%s, detail=%s [%lu], "
-                        "stage=%lu, code=%lu)\r\n",
+                        "stage=%s [%lu], code=%lu)\r\n",
                         ( unsigned long )status.rejected_instruction_count,
                         ( unsigned long )status.last_rejected_tick,
                         CONSOLE_HostInterface_ResponseReasonName( status.last_rejected_reason ),
                         CONSOLE_HostInterface_StatusName(
                             ( HOST_Interface_Status_T )status.last_rejected_detail ),
                         ( unsigned long )status.last_rejected_detail,
+                        CONSOLE_HostInterface_VarInstructionStageName(
+                            status.var_instruction_last_stage ),
                         ( unsigned long )status.var_instruction_last_stage,
                         ( unsigned long )status.var_instruction_last_stage_code );
     }

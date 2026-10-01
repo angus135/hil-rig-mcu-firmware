@@ -28,6 +28,8 @@ extern "C"
 #include <stdint.h>
 #include <stdbool.h>
 #include "hw_can.h"
+#include "hw_spi.h"
+#include "hw_uart_dut.h"
 #include "run_metadata.h"
 
 /**-----------------------------------------------------------------------------
@@ -175,6 +177,10 @@ typedef struct
     uint32_t                last_transition_duration_ms;
     /** CAN driver diagnostic snapshot — populated by RUN_STATE_MANAGER_GetStatus(). */
     HW_CAN_Diagnostic_T can_diag;
+    /** SPI driver diagnostic snapshot — populated by RUN_STATE_MANAGER_GetStatus(). */
+    HWSPI_Diagnostic_T  spi_diag[SPI_NUM_CHANNELS];
+    /** UART driver diagnostic snapshot — populated by RUN_STATE_MANAGER_GetStatus(). */
+    HwUartDiagnostic_T  uart_diag[HW_UART_CHANNEL_COUNT];
 } RunStateManagerStatus_T;
 
 /**-----------------------------------------------------------------------------

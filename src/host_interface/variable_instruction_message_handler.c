@@ -576,7 +576,7 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_AppendInstructionOperations(
                 if ( status != HOST_INTERFACE_STATUS_OK )
                 {
                     s_var_last_failed_stage = 10U;
-                    s_var_last_stage_code   = ( uint32_t )op->channel;
+                    s_var_last_stage_code   = ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
                     s_var_last_failed_tick  = instruction->tick_number;
                     return status;
                 }
@@ -588,7 +588,7 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_AppendInstructionOperations(
                 if ( status != HOST_INTERFACE_STATUS_OK )
                 {
                     s_var_last_failed_stage = 11U;
-                    s_var_last_stage_code   = ( uint32_t )op->channel;
+                    s_var_last_stage_code   = ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
                     s_var_last_failed_tick  = instruction->tick_number;
                     return status;
                 }
@@ -600,7 +600,7 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_AppendInstructionOperations(
                 if ( status != HOST_INTERFACE_STATUS_OK )
                 {
                     s_var_last_failed_stage = 12U;
-                    s_var_last_stage_code   = ( uint32_t )op->channel;
+                    s_var_last_stage_code   = ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
                     s_var_last_failed_tick  = instruction->tick_number;
                     return status;
                 }
@@ -612,7 +612,7 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_AppendInstructionOperations(
                 if ( status != HOST_INTERFACE_STATUS_OK )
                 {
                     s_var_last_failed_stage = 13U;
-                    s_var_last_stage_code   = ( uint32_t )op->channel;
+                    s_var_last_stage_code   = ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
                     s_var_last_failed_tick  = instruction->tick_number;
                     return status;
                 }
@@ -624,7 +624,7 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_AppendInstructionOperations(
                 if ( status != HOST_INTERFACE_STATUS_OK )
                 {
                     s_var_last_failed_stage = 14U;
-                    s_var_last_stage_code   = ( uint32_t )op->channel;
+                    s_var_last_stage_code   = ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
                     s_var_last_failed_tick  = instruction->tick_number;
                     return status;
                 }
@@ -636,7 +636,7 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_AppendInstructionOperations(
                 if ( status != HOST_INTERFACE_STATUS_OK )
                 {
                     s_var_last_failed_stage = 15U;
-                    s_var_last_stage_code   = ( uint32_t )op->channel;
+                    s_var_last_stage_code   = ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
                     s_var_last_failed_tick  = instruction->tick_number;
                     return status;
                 }

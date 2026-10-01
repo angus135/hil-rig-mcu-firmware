@@ -22,6 +22,7 @@
 #include "execution_measurement_adapters.h"
 #include "execution_operation_adapters.h"
 #include "exec_spi.h"
+#include "exec_uart.h"
 #include "hw_timer.h"
 #include "host_interface.h"
 #include "run_state_manager.h"
@@ -588,6 +589,14 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                                         ? "TX queue rejected batch"
                                         : "low-level TX fault observed after trigger" );
                 }
+                else if ( operation_failure.opcode == EXECUTION_OPERATION_OPCODE_UART_TRANSMIT )
+                {
+                    CONSOLE_Printf( "UART transmit detail: %s\r\n",
+                                    EXEC_UART_Was_Tx_Queue_Rejected(
+                                        ( ExecUartChannel_T )operation_failure.channel )
+                                        ? "TX queue rejected batch"
+                                        : "low-level TX fault observed after trigger" );
+                }
             }
         }
         CONSOLE_Printf( "Fault reason: %s\r\n",
@@ -650,6 +659,28 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                         ( unsigned int )run_status.can_diag.rx_dropped1,
                         ( unsigned int )run_status.can_diag.rx_queued2,
                         ( unsigned int )run_status.can_diag.rx_dropped2 );
+        for ( uint8_t ch = 0U; ch < SPI_NUM_CHANNELS; ch++ )
+        {
+            CONSOLE_Printf(
+                "SPI%u diag: tx_peak=%lu/%lu (pkts/bytes) tx_rejects=%lu dma_err=%lu drain_to=%lu rx_unread_peak=%lu\r\n",
+                ( unsigned int )( ch + 1U ),
+                ( unsigned long )run_status.spi_diag[ch].peak_tx_num_packets_pending,
+                ( unsigned long )run_status.spi_diag[ch].peak_tx_num_bytes_pending,
+                ( unsigned long )run_status.spi_diag[ch].tx_queue_reject_count,
+                ( unsigned long )run_status.spi_diag[ch].tx_dma_error_count,
+                ( unsigned long )run_status.spi_diag[ch].tx_final_drain_timeout_count,
+                ( unsigned long )run_status.spi_diag[ch].rx_unread_peak );
+        }
+        for ( uint8_t ch = 0U; ch < HW_UART_CHANNEL_COUNT; ch++ )
+        {
+            CONSOLE_Printf(
+                "UART%u diag: tx_peak=%lu tx_rejects=%lu dma_err=%lu rx_unread_peak=%lu\r\n",
+                ( unsigned int )( ch + 1U ),
+                ( unsigned long )run_status.uart_diag[ch].tx_peak_count,
+                ( unsigned long )run_status.uart_diag[ch].tx_reject_count,
+                ( unsigned long )run_status.uart_diag[ch].dma_error_count,
+                ( unsigned long )run_status.uart_diag[ch].rx_unread_peak );
+        }
     }
     else if ( strcmp( argv[1], "timing" ) == 0 )
     {

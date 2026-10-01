@@ -102,6 +102,8 @@ static const ExecUartHardwareMap_T exec_uart_hardware_map[EXEC_UART_CHANNEL_COUN
                               .mode_1_bit_i = 7U },
 };
 
+static bool uart_tx_queue_rejected[EXEC_UART_CHANNEL_COUNT] = { false, false };
+
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
  *------------------------------------------------------------------------------
@@ -337,6 +339,7 @@ bool EXEC_UART_Configure_Channel( ExecUartChannel_T channel, const ExecUartConfi
     state->lifecycle_state = EXEC_UART_STATE_CONFIGURED;
     state->rx_enabled      = config->rx_enabled;
     state->tx_enabled      = config->tx_enabled;
+    uart_tx_queue_rejected[channel] = false;
 
     return true;
 }
@@ -455,6 +458,7 @@ bool EXEC_UART_Transmit( ExecUartChannel_T channel, const uint8_t* data, uint32_
 
     if ( !HW_UART_Tx_Load_Buffer( hw_channel, data, length_bytes ) )
     {
+        uart_tx_queue_rejected[channel] = true;
         return false;
     }
 
@@ -578,3 +582,32 @@ bool EXEC_UART_Is_Rx_Faulted( ExecUartChannel_T channel )
 
     return HW_UART_Is_Rx_Faulted( exec_uart_hardware_map[channel].hw_channel );
 }
+
+bool EXEC_UART_Get_Diagnostic( ExecUartChannel_T channel, ExecUartDiagnostic_T* diag )
+{
+    if ( !EXEC_UART_Is_Valid_Channel( channel ) )
+    {
+        return false;
+    }
+
+    return HW_UART_Get_Diagnostic( exec_uart_hardware_map[channel].hw_channel, diag );
+}
+
+void EXEC_UART_Reset_Diagnostic( ExecUartChannel_T channel )
+{
+    if ( EXEC_UART_Is_Valid_Channel( channel ) )
+    {
+        HW_UART_Reset_Diagnostic( exec_uart_hardware_map[channel].hw_channel );
+    }
+}
+
+bool EXEC_UART_Was_Tx_Queue_Rejected( ExecUartChannel_T channel )
+{
+    if ( !EXEC_UART_Is_Valid_Channel( channel ) )
+    {
+        return false;
+    }
+
+    return uart_tx_queue_rejected[channel];
+}
+
