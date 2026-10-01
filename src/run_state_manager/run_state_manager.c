@@ -56,6 +56,7 @@
 
 #define RUN_STATE_MANAGER_PENDING_POLL_MS ( 10U )
 #define RUN_STATE_MANAGER_INSTRUCTION_UPLOAD_TIMEOUT_MS ( 15000U )
+#define RUN_STATE_MANAGER_INSTRUCTION_UPLOAD_INACTIVITY_TIMEOUT_MS ( 15000U )
 #define RUN_STATE_MANAGER_CONFIGURATION_TIMEOUT_MS ( 15000U )
 #define RUN_STATE_MANAGER_EXECUTION_PREPARATION_TIMEOUT_MS ( 15000U )
 #define RUN_STATE_MANAGER_DRIVER_START_TIMEOUT_MS ( 15000U )
@@ -126,6 +127,7 @@ static volatile bool execution_abort_requested = false;
 static TaskHandle_t run_state_manager_task_handle = NULL;
 
 static uint32_t package_receive_expected_ticks = 0U;
+static TickType_t instruction_upload_last_progress_at = 0U;
 
 static volatile RunStateFaultReason_T   fault_reason           = RUN_STATE_FAULT_NONE;
 static volatile RunStateFaultReason_T   requested_fault_reason = RUN_STATE_FAULT_NONE;
@@ -182,6 +184,7 @@ static bool RUN_STATE_MANAGER_DiscardCompletedResults( RunState_T next_state );
 static bool RUN_STATE_MANAGER_FlashIsIdle( void );
 
 static void RUN_STATE_MANAGER_ProcessPendingOperation( void );
+static void RUN_STATE_MANAGER_ProcessInstructionUploadTimeout( void );
 static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request );
 static void RUN_STATE_MANAGER_ProcessNotifications( uint32_t notifications );
 
@@ -473,6 +476,7 @@ static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason )
                                             ( uint32_t )reason );
     }
     else if ( ( reason == RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED )
+              || ( reason == RUN_STATE_FAULT_HOST_INTERFACE_INSTRUCTION_UPLOAD_TIMEOUT )
               || ( reason == RUN_STATE_FAULT_HOST_INTERFACE_USB_INIT )
               || ( reason == RUN_STATE_FAULT_HOST_INTERFACE_CODEC_INIT )
               || ( reason == RUN_STATE_FAULT_HOST_INTERFACE_TRANSPORT_INIT )
@@ -1407,6 +1411,27 @@ static void RUN_STATE_MANAGER_ProcessPendingOperation( void )
     }
 }
 
+/** Faults an instruction upload that has stopped making receive progress. */
+static void RUN_STATE_MANAGER_ProcessInstructionUploadTimeout( void )
+{
+    if ( run_state != RUN_STATE_TEST_PACKAGE_RECEIVE
+         || pending_operation != RUN_STATE_PENDING_NONE )
+    {
+        return;
+    }
+
+    taskENTER_CRITICAL();
+    const TickType_t elapsed = xTaskGetTickCount() - instruction_upload_last_progress_at;
+    taskEXIT_CRITICAL();
+
+    if ( elapsed
+         >= pdMS_TO_TICKS( RUN_STATE_MANAGER_INSTRUCTION_UPLOAD_INACTIVITY_TIMEOUT_MS ) )
+    {
+        RUN_STATE_MANAGER_EnterFault(
+            RUN_STATE_FAULT_HOST_INTERFACE_INSTRUCTION_UPLOAD_TIMEOUT );
+    }
+}
+
 /** Validates and processes one externally supplied lifecycle event. */
 static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
 {
@@ -1688,6 +1713,7 @@ static bool RUN_STATE_MANAGER_TransitionTo( RunState_T next_state )
                 RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_INTERNAL );
                 return false;
             }
+            instruction_upload_last_progress_at = xTaskGetTickCount();
             break;
 
         case RUN_STATE_CONFIGURATION:
@@ -1863,6 +1889,7 @@ void RUN_STATE_MANAGER_Init( void )
     run_state                      = RUN_STATE_IDLE;
     run_configuration_owned        = false;
     package_receive_expected_ticks = 0U;
+    instruction_upload_last_progress_at = 0U;
 
     HW_TIMER_Set_Execution_Guard( RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR );
     FLASH_MANAGER_SetFaultCallback( RUN_STATE_MANAGER_HandleFlashFault );
@@ -1880,6 +1907,17 @@ bool RUN_STATE_MANAGER_RequestPackageReceiveWithTicks( uint32_t expected_tick_co
 bool RUN_STATE_MANAGER_RequestPackageReceive( void )
 {
     return RUN_STATE_MANAGER_RequestPackageReceiveWithTicks( 0U );
+}
+
+void RUN_STATE_MANAGER_RecordInstructionUploadProgress( void )
+{
+    taskENTER_CRITICAL();
+    if ( run_state == RUN_STATE_TEST_PACKAGE_RECEIVE
+         && pending_operation == RUN_STATE_PENDING_NONE )
+    {
+        instruction_upload_last_progress_at = xTaskGetTickCount();
+    }
+    taskEXIT_CRITICAL();
 }
 
 bool RUN_STATE_MANAGER_RequestConfiguration( void )
@@ -2117,7 +2155,8 @@ void RUN_STATE_MANAGER_Task( void* task_parameters )
         uint32_t   notifications = 0U;
         TickType_t wait_ticks    = portMAX_DELAY;
 
-        if ( pending_operation != RUN_STATE_PENDING_NONE )
+        if ( pending_operation != RUN_STATE_PENDING_NONE
+             || run_state == RUN_STATE_TEST_PACKAGE_RECEIVE )
         {
             wait_ticks = pdMS_TO_TICKS( RUN_STATE_MANAGER_PENDING_POLL_MS );
         }
@@ -2128,5 +2167,6 @@ void RUN_STATE_MANAGER_Task( void* task_parameters )
         }
 
         RUN_STATE_MANAGER_ProcessPendingOperation();
+        RUN_STATE_MANAGER_ProcessInstructionUploadTimeout();
     }
 }

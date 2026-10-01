@@ -29,14 +29,13 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "can_packet.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
  */
 
-#define CAN_PACKET_SIZE ( 8U )
-#define CAN_STANDARD_ID_MAX ( 0x7FFU )
 #define HW_CAN_TX_QUEUE_CAPACITY ( 83U )
 #define HW_CAN_RX_QUEUE_CAPACITY ( 83U )
 
@@ -56,23 +55,6 @@ typedef struct CanProperties_T
     uint32_t timer_hz;
 
 } CanProperties_T;
-
-/**
- * @brief CAN packet containing an identifier and CAN data payload.
- *
- * The CAN identifier is a standard 11-bit CAN identifier stored in the
- * lower 11 bits of id.
- *
- * dlc contains the number of valid payload bytes, from 0 through
- * CAN_PACKET_SIZE. Only data[0] through data[dlc - 1] are valid.
- */
-typedef struct CAN_Packet_T
-{
-    uint16_t id;
-    uint8_t  dlc;
-    uint8_t  data[CAN_PACKET_SIZE];
-
-} CAN_Packet_T;
 
 /**
  * @brief Result codes returned by CAN lifecycle, configuration, and transfer operations.
@@ -403,7 +385,7 @@ HW_CAN_Result_T HW_CAN_Transmit2( uint8_t* txData, uint16_t id, uint8_t dlc );
  *         HW_CAN_RESULT_BUSY if transmission is active, or
  *         HW_CAN_RESULT_ERROR if the batch is invalid or does not fit.
  */
-HW_CAN_Result_T HW_CAN_Tx_Buffer_Write1( CAN_Packet_T source[], uint16_t length );
+HW_CAN_Result_T HW_CAN_Tx_Buffer_Write1( const CAN_Packet_T source[], uint16_t length );
 
 /** Discard all queued, not-yet-transmitted channel 1 packets. */
 void HW_CAN_Tx_Buffer_Cancel1( void );
@@ -488,7 +470,7 @@ uint16_t HW_CAN_Rx_Buffer_Pop1( CAN_Packet_T* dest );
  * @return 0 if the write was successful,
  *         1 if the buffer could not accept all packets.
  */
-HW_CAN_Result_T HW_CAN_Tx_Buffer_Write2( CAN_Packet_T source[], uint16_t length );
+HW_CAN_Result_T HW_CAN_Tx_Buffer_Write2( const CAN_Packet_T source[], uint16_t length );
 
 /** Discard all queued, not-yet-transmitted channel 2 packets. */
 void HW_CAN_Tx_Buffer_Cancel2( void );

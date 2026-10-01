@@ -90,6 +90,8 @@ static const char* CONSOLE_HostInterface_FaultName( RunStateFaultReason_T reason
             return "flash manager fault";
         case RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED:
             return "response blocked / unconsumed";
+        case RUN_STATE_FAULT_HOST_INTERFACE_INSTRUCTION_UPLOAD_TIMEOUT:
+            return "instruction upload inactivity timeout";
         case RUN_STATE_FAULT_HOST_INTERFACE_USB_INIT:
             return "USB init failed";
         case RUN_STATE_FAULT_HOST_INTERFACE_CODEC_INIT:

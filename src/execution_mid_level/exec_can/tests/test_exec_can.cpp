@@ -174,7 +174,7 @@ extern "C" uint16_t HW_CAN_Rx_Pending_Count2( void )
     return static_cast<uint16_t>( hardware_rx_queue[1].size() );
 }
 
-static HW_CAN_Result_T Load( size_t channel, CAN_Packet_T source[], uint16_t count )
+static HW_CAN_Result_T Load( size_t channel, const CAN_Packet_T source[], uint16_t count )
 {
     load_call_count[channel]++;
     last_hardware_tx_source = source;
@@ -185,12 +185,12 @@ static HW_CAN_Result_T Load( size_t channel, CAN_Packet_T source[], uint16_t cou
     return load_results[channel];
 }
 
-extern "C" HW_CAN_Result_T HW_CAN_Tx_Buffer_Write1( CAN_Packet_T source[], uint16_t count )
+extern "C" HW_CAN_Result_T HW_CAN_Tx_Buffer_Write1( const CAN_Packet_T source[], uint16_t count )
 {
     return Load( 0U, source, count );
 }
 
-extern "C" HW_CAN_Result_T HW_CAN_Tx_Buffer_Write2( CAN_Packet_T source[], uint16_t count )
+extern "C" HW_CAN_Result_T HW_CAN_Tx_Buffer_Write2( const CAN_Packet_T source[], uint16_t count )
 {
     return Load( 1U, source, count );
 }
@@ -400,7 +400,7 @@ TEST_F( ExecCANTest, AbortCancelsPendingTransmissionThenStopsChannel )
     EXPECT_FALSE( EXEC_CAN_Is_Started( EXEC_CAN_CHANNEL_1 ) );
 }
 
-TEST_F( ExecCANTest, CombinedTransmitRoutesBothChannelsAndConvertsPackets )
+TEST_F( ExecCANTest, CombinedTransmitRoutesBothChannelsIntoTheDriverQueue )
 {
     EXEC_CAN_Packet_T packets[2] = {
         { 0x123U, 3U, { 1U, 2U, 3U, 0xA5U, 0xA5U, 0xA5U, 0xA5U, 0xA5U } },
@@ -412,11 +412,11 @@ TEST_F( ExecCANTest, CombinedTransmitRoutesBothChannelsAndConvertsPackets )
     EXPECT_EQ( trigger_call_count[0], 1U );
     EXPECT_EQ( cancel_call_count[0], 0U );
     ASSERT_EQ( hardware_tx_queue[0].size(), 2U );
-    EXPECT_NE( last_hardware_tx_source, packets );
+    EXPECT_EQ( last_hardware_tx_source, packets );
     EXPECT_EQ( hardware_tx_queue[0][0].id, 0x123U );
     EXPECT_EQ( hardware_tx_queue[0][0].dlc, 3U );
     EXPECT_EQ( hardware_tx_queue[0][0].data[2], 3U );
-    EXPECT_EQ( hardware_tx_queue[0][0].data[3], 0U );
+    EXPECT_EQ( hardware_tx_queue[0][0].data[3], 0xA5U );
 
     EXPECT_EQ( EXEC_CAN_Transmit( EXEC_CAN_CHANNEL_2, packets, 1U ), EXEC_CAN_RESULT_OK );
     EXPECT_EQ( load_call_count[1], 1U );
@@ -456,10 +456,6 @@ TEST_F( ExecCANTest, TransmitRejectsInvalidArgumentsBeforeHardwareCalls )
     EXPECT_EQ( EXEC_CAN_Transmit( EXEC_CAN_CHANNEL_1, &valid, 0U ),
                EXEC_CAN_RESULT_INVALID_ARGUMENT );
 
-    std::array<EXEC_CAN_Packet_T, EXEC_CAN_MAX_BATCH_SIZE + 1U> oversized{};
-    EXPECT_EQ( EXEC_CAN_Transmit( EXEC_CAN_CHANNEL_1, oversized.data(), oversized.size() ),
-               EXEC_CAN_RESULT_INVALID_ARGUMENT );
-
     EXEC_CAN_Packet_T bad_id = { 0x800U, 0U, {} };
     EXPECT_EQ( EXEC_CAN_Transmit( EXEC_CAN_CHANNEL_1, &bad_id, 1U ),
                EXEC_CAN_RESULT_INVALID_ARGUMENT );
@@ -468,6 +464,28 @@ TEST_F( ExecCANTest, TransmitRejectsInvalidArgumentsBeforeHardwareCalls )
                EXEC_CAN_RESULT_INVALID_ARGUMENT );
     EXPECT_EQ( load_call_count[0], 0U );
     EXPECT_EQ( trigger_call_count[0], 0U );
+}
+
+TEST_F( ExecCANTest, TransmitDelegatesBatchCapacityToTheDriverQueue )
+{
+    std::array<EXEC_CAN_Packet_T, HW_CAN_TX_QUEUE_CAPACITY + 1U> packets{};
+    load_results[0] = HW_CAN_RESULT_BUSY;
+
+    EXPECT_EQ( EXEC_CAN_Transmit( EXEC_CAN_CHANNEL_1, packets.data(), packets.size() ),
+               EXEC_CAN_RESULT_BUSY );
+    EXPECT_EQ( load_call_count[0], 1U );
+    EXPECT_EQ( trigger_call_count[0], 0U );
+}
+
+TEST_F( ExecCANTest, TransmitLoadsUtilizationBatchWithinDriverQueueCapacity )
+{
+    std::array<EXEC_CAN_Packet_T, 23U> packets{};
+
+    EXPECT_EQ( EXEC_CAN_Transmit( EXEC_CAN_CHANNEL_1, packets.data(), packets.size() ),
+               EXEC_CAN_RESULT_OK );
+    EXPECT_EQ( load_call_count[0], 1U );
+    EXPECT_EQ( hardware_tx_queue[0].size(), packets.size() );
+    EXPECT_EQ( trigger_call_count[0], 1U );
 }
 
 TEST_F( ExecCANTest, ReceiveCopiesOnlyUpToCapacityAndConsumesPacketsExactlyOnce )
@@ -483,7 +501,7 @@ TEST_F( ExecCANTest, ReceiveCopiesOnlyUpToCapacityAndConsumesPacketsExactlyOnce 
 
     EXPECT_EQ( EXEC_CAN_Receive( EXEC_CAN_CHANNEL_1, destination, 2U, &read ), EXEC_CAN_RESULT_OK );
     EXPECT_EQ( read, 2U );
-    EXPECT_NE( last_hardware_rx_destination, destination );
+    EXPECT_EQ( last_hardware_rx_destination, destination );
     EXPECT_EQ( destination[0].id, 0x100U );
     EXPECT_EQ( destination[0].dlc, 2U );
     EXPECT_EQ( destination[0].data[1], 2U );
@@ -510,7 +528,7 @@ TEST_F( ExecCANTest, PendingReceivePacketsRoutesToSelectedChannel )
     EXPECT_EQ( EXEC_CAN_GetPendingReceivePackets( EXEC_CAN_CHANNEL_2 ), 7U );
 }
 
-TEST_F( ExecCANTest, ReceiveRoutesChannelTwoAndBoundsHardwareTemporaryStorage )
+TEST_F( ExecCANTest, ReceiveRoutesChannelTwoDirectlyIntoCallerStorage )
 {
     hardware_rx_queue[1] = { { 0x222U, 1U, { 0x5AU } } };
     std::array<EXEC_CAN_Packet_T, EXEC_CAN_MAX_BATCH_SIZE + 4U> destination{};
@@ -520,7 +538,7 @@ TEST_F( ExecCANTest, ReceiveRoutesChannelTwoAndBoundsHardwareTemporaryStorage )
         EXEC_CAN_Receive( EXEC_CAN_CHANNEL_2, destination.data(), destination.size(), &read ),
         EXEC_CAN_RESULT_OK );
     EXPECT_EQ( receive_call_count[1], 1U );
-    EXPECT_EQ( last_receive_capacity[1], EXEC_CAN_MAX_BATCH_SIZE );
+    EXPECT_EQ( last_receive_capacity[1], destination.size() );
     EXPECT_EQ( read, 1U );
     EXPECT_EQ( destination[0].id, 0x222U );
 }

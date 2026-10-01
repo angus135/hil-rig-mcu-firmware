@@ -563,13 +563,14 @@ TEST_F( ExecPWMCaptureTest, ConvertProducesCorrectFrequencyAndDutyCycle )
     ExecPwmCaptureResult_T   raw = {};
     ExecPwmCapturePhysical_T out = {};
     raw.is_valid                 = true;
-    raw.period_ticks             = 1000U;
-    raw.high_ticks               = 500U;
+    raw.period_ticks             = 998U;
+    raw.high_ticks               = 498U;
 
     EXPECT_CALL( mock_hw, Get_Timer_Clock_Hz( HW_PWM_CAPTURE_CHANNEL_1 ) )
         .WillOnce( Return( 1000000U ) );
 
     EXPECT_TRUE( EXEC_PWM_Capture_Convert( EXEC_PWM_CAPTURE_CHANNEL_1, &raw, &out ) );
+    EXPECT_EQ( out.period_nanoseconds, 1000000U );
     EXPECT_EQ( out.frequency_hz, 1000U );
     EXPECT_EQ( out.duty_cycle_bp, 5000U );
 }

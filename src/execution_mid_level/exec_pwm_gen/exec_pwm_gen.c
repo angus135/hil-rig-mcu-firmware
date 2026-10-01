@@ -214,9 +214,17 @@ static bool EXEC_PWM_GEN_Apply_Initial_State( ExecPwmGenChannel_T       channel,
  *------------------------------------------------------------------------------
  */
 
- uint32_t EXEC_PWM_GEN_calibrate(uint32_t frequency) {
-    return frequency*0.989119683;
- }
+uint32_t EXEC_PWM_GEN_calibrate( uint32_t frequency )
+{
+    /*
+     * TODO: A 0.9891x multiplier was tested here to offset an observed ~1% error against
+     * an external scope (theorised to be HSI oscillator inaccuracy). However, scaling
+     * here breaks internal loopback tests where generation and capture share the same
+     * clock. Disabled until HSI trimming or an HSE source is validated.
+     */
+    /* return ( uint32_t )( frequency * 0.989119683 ); */
+    return frequency;
+}
 
 bool EXEC_PWM_GEN_Configure_Channel( ExecPwmGenChannel_T channel, const ExecPwmGenConfig_T* config )
 {

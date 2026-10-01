@@ -231,7 +231,7 @@ e.g. here the buffer is 'full', even if ther is technically 1 spot left
  *          [0,0,0,0,0,0,0,0],
  */
 uint8_t HW_CAN_Buffer_Write( CAN_Packet_T buffer[], volatile uint16_t* w_p, volatile uint16_t* r_p,
-                             uint16_t buffer_width, CAN_Packet_T source[], uint16_t length )
+                             uint16_t buffer_width, const CAN_Packet_T source[], uint16_t length )
 {
     uint16_t temp_w_p = *w_p;
     uint16_t temp_r_p = *r_p;
@@ -1404,7 +1404,7 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was successful, 1 otherwise. (partially successful = 1)
  */
-HW_CAN_Result_T HW_CAN_Tx_Buffer_Write1( CAN_Packet_T source[], uint16_t length )
+HW_CAN_Result_T HW_CAN_Tx_Buffer_Write1( const CAN_Packet_T source[], uint16_t length )
 {
     if ( length > 0U && source == NULL )
     {
@@ -1465,7 +1465,7 @@ uint8_t can_tx_buffer1[X][CAN_PACKET_SIZE];
  *
  * @return 0 if the write was successful, 1 otherwise. (partially successful = 1)
  */
-HW_CAN_Result_T HW_CAN_Tx_Buffer_Write2( CAN_Packet_T source[], uint16_t length )
+HW_CAN_Result_T HW_CAN_Tx_Buffer_Write2( const CAN_Packet_T source[], uint16_t length )
 {
     if ( length > 0U && source == NULL )
     {

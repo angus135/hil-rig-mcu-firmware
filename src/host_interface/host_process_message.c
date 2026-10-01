@@ -718,6 +718,7 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incom
     }
 
     // Success: Ingest directly into flash/RAM storage with zero per-tick Application responses.
+    RUN_STATE_MANAGER_RecordInstructionUploadProgress();
     *response_required = false;
     return HOST_INTERFACE_STATUS_OK;
 }
@@ -798,6 +799,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Instruction_Data(
     }
 
     // Success: Ingest directly into flash/RAM storage with zero per-tick Application responses.
+    RUN_STATE_MANAGER_RecordInstructionUploadProgress();
     *response_required = false;
     return HOST_INTERFACE_STATUS_OK;
 }

@@ -174,7 +174,13 @@ void SystemClock_Config(void)
   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  /*
+   * TODO: The HSI RC oscillator is theorised to run ~1% fast on this board (~90.89 MHz
+   * vs 90.00 MHz nominal). Each HSITRIM step shifts the 16 MHz clock by ~0.5%.
+   * Trim down by 2 steps from default 16 (0x10) to 14 to pull the base clock towards
+   * nominal. Verify against an external frequency reference or evaluate HSE.
+   */
+  RCC_OscInitStruct.HSICalibrationValue = 14;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL.PLLM = 8;

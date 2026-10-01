@@ -121,6 +121,10 @@ bool EXEC_PWM_GEN_Is_Configured( ExecPwmGenChannel_T channel );
 
 /** @brief Returns true only while the selected channel is started. */
 bool EXEC_PWM_GEN_Is_Started( ExecPwmGenChannel_T channel );
+
+/** @brief Applies frequency calibration compensation. */
+uint32_t EXEC_PWM_GEN_calibrate( uint32_t frequency );
+
 #ifdef __cplusplus
 }
 #endif

@@ -101,6 +101,7 @@ public:
 };
 
 static MockHostProcessMessageDependencies* g_mock_deps = nullptr;
+static uint32_t instruction_upload_progress_calls = 0U;
 
 extern "C" HOST_Interface_Status_T
 HOST_INTERFACE_Config_Message_To_Driver( const HIL_Application_Message_T* message,
@@ -219,6 +220,11 @@ extern "C" bool RUN_STATE_MANAGER_RequestConfiguration( void )
     return g_mock_deps != nullptr ? g_mock_deps->RUN_STATE_MANAGER_RequestConfiguration() : true;
 }
 
+extern "C" void RUN_STATE_MANAGER_RecordInstructionUploadProgress( void )
+{
+    instruction_upload_progress_calls++;
+}
+
 extern "C" RequestExecutionResult_T
 RUN_STATE_MANAGER_RequestExecution( RequestExecutionArgument_T request )
 {
@@ -308,6 +314,7 @@ protected:
         response_required   = false;
         notifications       = 0U;
         expected_tick_count = 0U;
+        instruction_upload_progress_calls = 0U;
         std::memset( &run_state_status, 0, sizeof( run_state_status ) );
         HOST_INTERFACE_Reset_Session();
 
@@ -1431,6 +1438,7 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsAcceptsValidInstruction )
                HOST_INTERFACE_STATUS_OK );
 
     EXPECT_FALSE( response_required );
+    EXPECT_EQ( instruction_upload_progress_calls, 1U );
 }
 
 TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInvalidInstruction )
