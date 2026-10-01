@@ -63,6 +63,9 @@ extern "C"
 /** Capacity of each channel's DMA-backed receive ring, in bytes. */
 #define HW_SPI_RX_BUFFER_SIZE_BYTES 2048U
 
+/** Capacity of each channel's software transmit ring, in bytes. */
+#define HW_SPI_TX_BUFFER_SIZE_BYTES 4096U
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
