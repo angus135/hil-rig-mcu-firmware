@@ -1232,8 +1232,13 @@ static void HOST_INTERFACE_Protocol_Process(
 
             if ( total_frame_len > sizeof( protocol_state->usb.receive_buffer ) )
             {
-                /* Frame length exceeds maximum buffer capacity; framing desynced, advance by 1 to
-                 * resync */
+                /* Frame length exceeds maximum buffer capacity; unrecoverable framing or oversized message */
+                if ( !s_host_interface_status.is_faulted )
+                {
+                    s_host_interface_status.is_faulted        = true;
+                    s_host_interface_status.last_fault_reason = RUN_STATE_FAULT_HOST_INTERFACE_ERROR;
+                    HOST_INTERFACE_Error_Handler();
+                }
                 protocol_state->usb.receive_offset += 1U;
             }
             else if ( bytes_available >= total_frame_len )
