@@ -196,8 +196,7 @@ struct SPIPeripheralState_T
     Timer_T      tx_final_drain_timer;       ///< One-shot timer used for slow-baud final drain.
     uint8_t      tx_final_drain_timer_attempts;  ///< Bounded SPI_DAC drain intervals elapsed.
 
-    uint8_t rx_buffer[RX_BUFFER_SIZE_BYTES]
-        __attribute__( ( aligned( 2 ) ) );  ///< DMA-backed circular RX buffer.
+    uint8_t* rx_buffer;  ///< DMA-backed circular RX buffer (NULL for TX-only channels).
     uint32_t rx_position;  ///< Software consume index into rx_buffer, expressed in bytes.
 
     uint8_t tx_buffer[TX_BUFFER_SIZE_BYTES]
@@ -232,6 +231,7 @@ struct SPIPeripheralState_T
  */
 
 extern SPIPeripheralState_T channel_state_array[SPI_NUM_CHANNELS];
+uint8_t*             HW_SPI_Get_Rx_Buffer( SPIChannel_T peripheral );
 
 /**-----------------------------------------------------------------------------
  *  Internal Hot-Path Inline Helpers

@@ -28,6 +28,7 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
 #include "tests/hw_can_mocks.h"
 #endif
 #include "hw_can.h"
+#include "hardware_low_level/hw_clock_calibration/hw_clock_calibration.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -36,7 +37,7 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
  *------------------------------------------------------------------------------
  */
 
-#define CAN_TIMER_HZ 45000000
+#define CAN_TIMER_HZ HW_CLOCK_Get_PCLK1_Hz()
 #define TOTAL_TQ ( uint32_t )15
 #define MBPS_SAMPLE_POINT ( uint32_t )800
 

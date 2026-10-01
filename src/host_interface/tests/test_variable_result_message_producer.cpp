@@ -507,18 +507,17 @@ TEST_F( VariableResultMessageProducerTest, ProducesLargeSerialRecordBeyond255Byt
  */
 TEST_F( VariableResultMessageProducerTest, ProducesMultiChunkResultsForLargeTick )
 {
-    std::vector<uint8_t> uart1( 400U, 'U' );
+    std::vector<uint8_t> uart1( 600U, 'U' );
     std::vector<uint8_t> uart2( 700U, 'V' );
 
-    // Both records belong to tick 3 (400B + 700B = 1100B > 1024B capacity)
+    // Both records belong to tick 3 (600B triggers the 512B chunk threshold)
     simulated_stream_.AppendRecord( 3U, FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE, 0U,
                                     uart1.data(), static_cast<uint16_t>( uart1.size() ) );
     simulated_stream_.AppendRecord( 3U, FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE, 1U,
                                     uart2.data(), static_cast<uint16_t>( uart2.size() ) );
     HookSimulatedStream();
 
-    // Chunk 1 for tick 3: emits HAS_MORE_CHUNKS because second record cannot fit in remaining
-    // staging
+    // Chunk 1 for tick 3: emits HAS_MORE_CHUNKS because staged payload >= 512B threshold
     EXPECT_EQ( VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &out_msg_ ),
                RESULT_MESSAGE_PRODUCER_STATUS_OK );
     EXPECT_EQ( out_msg_.body.variable_test_result.tick_number, 3U );
@@ -526,7 +525,7 @@ TEST_F( VariableResultMessageProducerTest, ProducesMultiChunkResultsForLargeTick
                HIL_APPLICATION_RESULT_FLAG_HAS_MORE_CHUNKS );
     EXPECT_EQ( out_msg_.body.variable_test_result.record_count, 1U );
     EXPECT_EQ( out_msg_.body.variable_test_result.records[0].channel, 0U );
-    EXPECT_EQ( out_msg_.body.variable_test_result.records[0].data.size, 400U );
+    EXPECT_EQ( out_msg_.body.variable_test_result.records[0].data.size, 600U );
 
     // Chunk 2 for tick 3: emits COMPLETE_TICK
     EXPECT_EQ( VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &out_msg_ ),
@@ -542,3 +541,21 @@ TEST_F( VariableResultMessageProducerTest, ProducesMultiChunkResultsForLargeTick
     EXPECT_EQ( VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &out_msg_ ),
                RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM );
 }
+
+/**
+ * @brief When a single record exceeds staged payload storage capacity, producer faults
+ * with RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA instead of silently truncating.
+ */
+TEST_F( VariableResultMessageProducerTest, FaultsWhenRecordExceedsStagedPayloadCapacity )
+{
+    // A single SPI record of 2049 bytes exceeds the 2048-byte staged capacity
+    std::vector<uint8_t> oversized_spi( 2049U, 0xA5 );
+    simulated_stream_.AppendRecord( 1U, FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE, 0U,
+                                    oversized_spi.data(),
+                                    static_cast<uint16_t>( oversized_spi.size() ) );
+    HookSimulatedStream();
+
+    EXPECT_EQ( VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &out_msg_ ),
+               RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA );
+}
+

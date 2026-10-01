@@ -518,7 +518,7 @@ void HW_TIMER_Get_Execution_Timing( HW_TIMER_ExecutionTiming_T* timing )
 #ifdef TEST_BUILD
     timing->core_clock_hz = 0U;
 #else
-    timing->core_clock_hz = SystemCoreClock;
+    timing->core_clock_hz = HW_CLOCK_Get_SysClock_Hz();
 #endif
 }
 
@@ -560,11 +560,11 @@ uint32_t HW_TIMER_Get_Clock_Hz( Timer_T timer )
 
             if ( apb_prescaler == LL_RCC_APB1_DIV_1 )
             {
-                return pclk;
+                return HW_CLOCK_Calibrate_Hz( pclk );
             }
             else
             {
-                return pclk * 2U;
+                return HW_CLOCK_Calibrate_Hz( pclk * 2U );
             }
         }
 

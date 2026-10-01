@@ -57,6 +57,7 @@
 #endif
 
 #include "hw_uart_dut.h"
+#include "hardware_low_level/hw_clock_calibration/hw_clock_calibration.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -248,6 +249,16 @@ typedef struct
 /* Driver owned per-channel runtime and buffer storage */
 static HwUartChannelState_T hw_uart_channel_states[HW_UART_CHANNEL_COUNT];
 
+static uint32_t HW_UART_Get_Channel1_Clock_Hz( void )
+{
+    return HW_CLOCK_Calibrate_Hz( HAL_RCC_GetPCLK2Freq() );
+}
+
+static uint32_t HW_UART_Get_Channel2_Clock_Hz( void )
+{
+    return HW_CLOCK_Calibrate_Hz( HAL_RCC_GetPCLK1Freq() );
+}
+
 /* Fixed board-level mapping from logical UART channels to MCU peripherals */
 static const HwUartHardwareMap_T hw_uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
 
@@ -255,7 +266,7 @@ static const HwUartHardwareMap_T hw_uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
                             .rx_dma_stream           = HW_UART_CH1_DMA_RX_STREAM,
                             .tx_dma_stream           = HW_UART_CH1_DMA_TX_STREAM,
                             .uart_handle             = HW_UART_CH1_HANDLE,
-                            .get_peripheral_clock_hz = HAL_RCC_GetPCLK2Freq,
+                            .get_peripheral_clock_hz = HW_UART_Get_Channel1_Clock_Hz,
                             .tx_dma_controller       = HW_UART_CH1_DMA_CONTROLLER,
                             .tx_ll_stream            = HW_UART_CH1_DMA_TX_LL_STREAM,
                             .tx_dma_irq              = HW_UART_CH1_TX_DMA_IRQ,
@@ -268,7 +279,7 @@ static const HwUartHardwareMap_T hw_uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
                             .rx_dma_stream           = HW_UART_CH2_DMA_RX_STREAM,
                             .tx_dma_stream           = HW_UART_CH2_DMA_TX_STREAM,
                             .uart_handle             = HW_UART_CH2_HANDLE,
-                            .get_peripheral_clock_hz = HAL_RCC_GetPCLK1Freq,
+                            .get_peripheral_clock_hz = HW_UART_Get_Channel2_Clock_Hz,
                             .tx_dma_controller       = HW_UART_CH2_DMA_CONTROLLER,
                             .tx_ll_stream            = HW_UART_CH2_DMA_TX_LL_STREAM,
                             .tx_dma_irq              = HW_UART_CH2_TX_DMA_IRQ,

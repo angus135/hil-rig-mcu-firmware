@@ -23,6 +23,7 @@
 
 #include "result_message_producer.h"
 #include "flash_manager/flash_manager.h"
+#include "hardware_low_level/hw_clock_calibration/hw_clock_calibration.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -38,7 +39,7 @@
 #define RESULT_PRODUCER_BUFFER_CAPACITY ( 1024U + sizeof( FlashManagerResultHeader_T ) )
 
 /** @brief Timer input clock frequency for PWM capture (TIM2 and TIM5 on APB1). */
-#define RESULT_PRODUCER_PWM_TIMER_CLOCK_HZ ( 90000000U )
+#define RESULT_PRODUCER_PWM_TIMER_CLOCK_HZ ( HW_CLOCK_Get_Timer_APB1_Hz() )
 
 /** @brief Nanoseconds per second constant for period conversion. */
 #define RESULT_PRODUCER_NANOSECONDS_PER_SECOND ( 1000000000ULL )

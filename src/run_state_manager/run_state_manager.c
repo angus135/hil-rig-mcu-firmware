@@ -63,14 +63,10 @@
 #define RUN_STATE_MANAGER_RESULT_FINALISATION_TIMEOUT_MS ( 15000U )
 #define RUN_STATE_MANAGER_DRIVER_SHUTDOWN_TIMEOUT_MS ( 15000U )
 
-#define PSC_100HZ 14U
-#define ARR_100HZ 59999U
-
-#define PSC_1KHZ 1U
-#define ARR_1KHZ 44999U
-
-#define PSC_10KHZ 0U
-#define ARR_10KHZ 8999U
+/** Prescaler dividers for supported execution frequencies */
+#define PRESCALER_DIV_100HZ  ( 15U )
+#define PRESCALER_DIV_1KHZ   ( 2U )
+#define PRESCALER_DIV_10KHZ  ( 1U )
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -1792,20 +1788,40 @@ static bool RUN_STATE_MANAGER_StartExecutionTimer( void )
         return true;
     }
 
+    uint32_t prescaler_div = 1U;
+    uint32_t frequency_hz  = 1000U;
+
     switch ( prepared_execution.frequency )
     {
         case RUN_STATE_FREQUENCY_100HZ:
-            HW_TIMER_Configure_Timer( EXECUTION_MANAGER_TIMER, PSC_100HZ, ARR_100HZ );
+            prescaler_div = PRESCALER_DIV_100HZ;
+            frequency_hz  = 100U;
             break;
         case RUN_STATE_FREQUENCY_1KHZ:
-            HW_TIMER_Configure_Timer( EXECUTION_MANAGER_TIMER, PSC_1KHZ, ARR_1KHZ );
+            prescaler_div = PRESCALER_DIV_1KHZ;
+            frequency_hz  = 1000U;
             break;
         case RUN_STATE_FREQUENCY_10KHZ:
-            HW_TIMER_Configure_Timer( EXECUTION_MANAGER_TIMER, PSC_10KHZ, ARR_10KHZ );
+            prescaler_div = PRESCALER_DIV_10KHZ;
+            frequency_hz  = 10000U;
             break;
         default:
             return false;
     }
+
+    const uint32_t timer_clk     = HW_CLOCK_Get_Timer_APB1_Hz();
+    const uint32_t divider       = frequency_hz * prescaler_div;
+    const uint32_t period_counts = ( divider > 0U ) ? ( timer_clk / divider ) : 0U;
+
+    if ( ( period_counts == 0U ) || ( period_counts > 65536U ) )
+    {
+        return false;
+    }
+
+    const uint32_t psc = prescaler_div - 1U;
+    const uint32_t arr = period_counts - 1U;
+
+    HW_TIMER_Configure_Timer( EXECUTION_MANAGER_TIMER, psc, arr );
 
     if ( !HW_TIMER_Start_Timer( EXECUTION_MANAGER_TIMER ) )
     {

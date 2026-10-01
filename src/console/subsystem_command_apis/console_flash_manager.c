@@ -163,8 +163,8 @@
 #define CONSOLE_FLASH_OUTPUT_STRESS_LOGICAL_DI_MASK                                                \
     ( ( 1UL << EXEC_DIGITAL_INPUT_CHANNEL_COUNT ) - 1UL )
 /* Current board clock tree: TIM12 is APB1 x2; TIM8 is APB2 x2. */
-#define CONSOLE_FLASH_PWM_LV_TIMER_CLOCK_HZ ( 90000000U )
-#define CONSOLE_FLASH_PWM_HV_TIMER_CLOCK_HZ ( 180000000U )
+#define CONSOLE_FLASH_PWM_LV_TIMER_CLOCK_HZ ( HW_CLOCK_Get_Timer_APB1_Hz() )
+#define CONSOLE_FLASH_PWM_HV_TIMER_CLOCK_HZ ( HW_CLOCK_Get_Timer_APB2_Hz() )
 
 /* Exact TIM4 divisors for the current 90 MHz timer clock. */
 #define CONSOLE_FLASH_EXECUTION_100HZ_PSC ( 14U )
@@ -1034,7 +1034,7 @@ static void CONSOLE_Flash_PrintPageTiming( const char* label, uint32_t operation
     const uint32_t bytes_per_second =
         timing->total_cycles == 0U
             ? 0U
-            : ( uint32_t )( ( total_bytes * SystemCoreClock ) / timing->total_cycles );
+            : ( uint32_t )( ( total_bytes * HW_CLOCK_Get_SysClock_Hz() ) / timing->total_cycles );
 
     CONSOLE_Printf( "%s: operations=%lu avg=%lu min=%lu max=%lu cycles, "
                     "%lu.%03lu MB/s\r\n",

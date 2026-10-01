@@ -34,6 +34,7 @@ extern "C"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "hardware_low_level/hw_clock_calibration/hw_clock_calibration.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -41,10 +42,10 @@ extern "C"
  */
 
 /** @brief Timer input clock frequency for Low Voltage PWM generation (TIM12 on APB1). */
-#define HOST_INSTRUCTION_PWM_LV_TIMER_CLOCK_HZ ( 90000000U )
+#define HOST_INSTRUCTION_PWM_LV_TIMER_CLOCK_HZ ( HW_CLOCK_Get_Timer_APB1_Hz() )
 
 /** @brief Timer input clock frequency for High Voltage PWM generation (TIM8 on APB2). */
-#define HOST_INSTRUCTION_PWM_HV_TIMER_CLOCK_HZ ( 180000000U )
+#define HOST_INSTRUCTION_PWM_HV_TIMER_CLOCK_HZ ( HW_CLOCK_Get_Timer_APB2_Hz() )
 
 /** @brief Number of nanoseconds in one second, used for period-to-frequency conversion. */
 #define HOST_INSTRUCTION_NANOSECONDS_PER_SECOND ( 1000000000U )

@@ -26,6 +26,7 @@ extern "C"
 #include <stdint.h>
 #include <stdbool.h>
 #include "rtos_config.h"
+#include "hardware_low_level/hw_clock_calibration/hw_clock_calibration.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros

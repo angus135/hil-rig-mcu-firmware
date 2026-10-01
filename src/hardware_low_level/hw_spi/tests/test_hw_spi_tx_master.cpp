@@ -500,6 +500,7 @@ protected:
                                  IRQn_Type tx_irqn, Timer_T timer )
     {
         memset( state, 0, sizeof( *state ) );
+        state->rx_buffer                 = HW_SPI_Get_Rx_Buffer( logical );
         state->config                    = config;
         state->logical_peripheral        = logical;
         state->nss_pin                   = config.nss_pin;

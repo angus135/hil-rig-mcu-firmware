@@ -36,7 +36,29 @@
  *------------------------------------------------------------------------------
  */
 
-SPIPeripheralState_T channel_state_array[SPI_NUM_CHANNELS];
+static uint8_t s_spi1_rx_buffer[RX_BUFFER_SIZE_BYTES] __attribute__( ( aligned( 2 ) ) );
+static uint8_t s_spi2_rx_buffer[RX_BUFFER_SIZE_BYTES] __attribute__( ( aligned( 2 ) ) );
+
+static uint8_t* const SPI_RX_BUFFER_ARRAY[SPI_NUM_CHANNELS] = {
+    [SPI_CHANNEL_1] = s_spi1_rx_buffer,
+    [SPI_CHANNEL_2] = s_spi2_rx_buffer,
+    [SPI_DAC]       = NULL,
+};
+
+SPIPeripheralState_T channel_state_array[SPI_NUM_CHANNELS] = {
+    [SPI_CHANNEL_1] = { .rx_buffer = s_spi1_rx_buffer },
+    [SPI_CHANNEL_2] = { .rx_buffer = s_spi2_rx_buffer },
+    [SPI_DAC]       = { .rx_buffer = NULL },
+};
+
+uint8_t* HW_SPI_Get_Rx_Buffer( SPIChannel_T peripheral )
+{
+    if ( ( uint32_t )peripheral >= ( uint32_t )SPI_NUM_CHANNELS )
+    {
+        return NULL;
+    }
+    return SPI_RX_BUFFER_ARRAY[( uint32_t )peripheral];
+}
 
 static SPI_HandleTypeDef* const SPI_HAL_HANDLE_ARRAY[SPI_NUM_CHANNELS] = {
     [SPI_CHANNEL_1] = &SPI_CHANNEL_1_HANDLE,
@@ -569,6 +591,7 @@ bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configurat
     peripheral_state->is_started    = false;
     peripheral_state->cs_asserted   = false;
 
+    peripheral_state->rx_buffer      = SPI_RX_BUFFER_ARRAY[( uint32_t )peripheral];
     peripheral_state->rx_dma         = SPI_RX_DMA_ARRAY[( uint32_t )peripheral];
     peripheral_state->rx_dma_stream  = SPI_RX_DMA_STREAM_ARRAY[( uint32_t )peripheral];
     peripheral_state->tx_dma         = SPI_TX_DMA_ARRAY[( uint32_t )peripheral];

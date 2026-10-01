@@ -22,6 +22,7 @@
 
 #include "variable_result_message_producer.h"
 #include "flash_manager/flash_manager.h"
+#include "hardware_low_level/hw_clock_calibration/hw_clock_calibration.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -42,7 +43,7 @@
  * Supports large serial transfers (SPI, UART, CAN) staged for one tick while
  * remaining bounded and statically allocated.
  */
-#define VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY ( 1024U )
+#define VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY ( 2048U )
 
 /**
  * @brief Payload threshold for flushing an intermediate chunk (HAS_MORE_CHUNKS).
@@ -50,7 +51,7 @@
 #define VAR_RESULT_PRODUCER_CHUNK_PAYLOAD_THRESHOLD ( 512U )
 
 /** @brief Timer input clock frequency for PWM capture (TIM2 and TIM5 on APB1). */
-#define VAR_RESULT_PRODUCER_PWM_TIMER_CLOCK_HZ ( 90000000U )
+#define VAR_RESULT_PRODUCER_PWM_TIMER_CLOCK_HZ ( HW_CLOCK_Get_Timer_APB1_Hz() )
 
 /** @brief Nanoseconds per second constant for period conversion. */
 #define VAR_RESULT_PRODUCER_NANOSECONDS_PER_SECOND ( 1000000000ULL )
@@ -456,8 +457,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
 
             if ( stream->staged_record_count >= VARIABLE_RESULT_MAX_STAGED_RECORDS )
             {
-                stream->capture_overflow = true;
-                return true;
+                return false;
             }
 
             size_t       copied_length = header->payload_length_bytes;
@@ -465,8 +465,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
                 sizeof( stream->staged_payload_storage ) - stream->staged_payload_offset;
             if ( copied_length > available )
             {
-                copied_length            = available;
-                stream->capture_overflow = true;
+                return false;
             }
             if ( copied_length == 0U )
             {
@@ -499,8 +498,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
 
             if ( stream->staged_record_count >= VARIABLE_RESULT_MAX_STAGED_RECORDS )
             {
-                stream->capture_overflow = true;
-                return true;
+                return false;
             }
 
             size_t       copied_length = header->payload_length_bytes;
@@ -508,8 +506,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
                 sizeof( stream->staged_payload_storage ) - stream->staged_payload_offset;
             if ( copied_length > available )
             {
-                copied_length            = available;
-                stream->capture_overflow = true;
+                return false;
             }
             if ( copied_length == 0U )
             {
@@ -546,8 +543,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
 
             if ( stream->staged_record_count >= VARIABLE_RESULT_MAX_STAGED_RECORDS )
             {
-                stream->capture_overflow = true;
-                return true;
+                return false;
             }
 
             size_t       copied_length = header->payload_length_bytes;
@@ -555,8 +551,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
                 sizeof( stream->staged_payload_storage ) - stream->staged_payload_offset;
             if ( copied_length > available )
             {
-                copied_length            = available - ( available % 12U );
-                stream->capture_overflow = true;
+                return false;
             }
             if ( copied_length == 0U )
             {

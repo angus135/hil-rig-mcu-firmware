@@ -19,6 +19,7 @@
  */
 
 #include "console.h"
+#include "hardware_low_level/hw_clock_calibration/hw_clock_calibration.h"
 #include "exec_i2c.h"
 #include "logic_expander.h"
 #include "command_helpers.h"
@@ -468,10 +469,10 @@ static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] )
         return;
     }
 
-    uint32_t timer_hz = 90000000U;
+    uint32_t timer_hz = HW_CLOCK_Get_Timer_APB1_Hz();
     if ( channel == EXEC_PWM_GEN_CHANNEL_HV )
     {
-        timer_hz = 180000000U;
+        timer_hz = HW_CLOCK_Get_Timer_APB2_Hz();
     }
     uint16_t psc;
     uint16_t arr;
