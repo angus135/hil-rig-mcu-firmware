@@ -86,8 +86,8 @@ void HOST_VARIABLE_INSTRUCTION_HANDLER_Reset( void );
  *                        Must not be NULL.
  *
  * @retval HOST_INTERFACE_STATUS_OK
- *         Instruction was converted and accepted for flash upload, or determined
- *         to be an output-free tick.
+ *         Instruction was converted and accepted for flash upload, determined
+ *         to be an output-free tick, or buffered as an intermediate chunk (HAS_MORE_CHUNKS).
  * @retval HOST_INTERFACE_STATUS_INVALID_ARGUMENT
  *         instruction pointer is NULL.
  * @retval HOST_INTERFACE_STATUS_INCONSISTENT_TICK

@@ -644,19 +644,18 @@ TEST_F( VariableInstructionMessageHandlerTest, AcceptsMultiChunkInstructionSameT
     op2.payload.data    = uart2;
     op2.payload.size    = sizeof( uart2 );
 
-    // Chunk 1 for tick 5 with HAS_MORE_CHUNKS
+    // Chunk 1 for tick 5 with HAS_MORE_CHUNKS: buffers in RAM without uploading
     HIL_Application_Update_Instruction_T chunk1{};
     chunk1.tick_number     = 5U;
     chunk1.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_HAS_MORE_CHUNKS;
     chunk1.operation_count = 1U;
     chunk1.operations      = &op1;
 
-    EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) )
-        .WillOnce( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED ) );
     EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &chunk1 ),
                HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( uploaded_bytes.size(), 0U );
 
-    // Chunk 2 for tick 5 with COMPLETE_TICK
+    // Chunk 2 for tick 5 with COMPLETE_TICK: single combined instruction (op1 + op2) uploaded
     HIL_Application_Update_Instruction_T chunk2{};
     chunk2.tick_number     = 5U;
     chunk2.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_COMPLETE_TICK;
@@ -668,7 +667,14 @@ TEST_F( VariableInstructionMessageHandlerTest, AcceptsMultiChunkInstructionSameT
     EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &chunk2 ),
                HOST_INTERFACE_STATUS_OK );
 
+    ASSERT_GE( uploaded_bytes.size(), sizeof( ExecutionInstructionHeader_T ) );
+    const ExecutionInstructionHeader_T* header =
+        reinterpret_cast<const ExecutionInstructionHeader_T*>( uploaded_bytes.data() );
+    EXPECT_EQ( header->timestamp, 5U );
+    EXPECT_EQ( header->operation_count, 2U );
+
     // Tick 6 after completion of tick 5
+    uploaded_bytes.clear();
     HIL_Application_Update_Instruction_T next_tick{};
     next_tick.tick_number     = 6U;
     next_tick.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_COMPLETE_TICK;
@@ -694,17 +700,16 @@ TEST_F( VariableInstructionMessageHandlerTest, RejectsTickIncrementWhenExpecting
     op1.payload.data    = uart1;
     op1.payload.size    = sizeof( uart1 );
 
-    // Chunk 1 for tick 5 with HAS_MORE_CHUNKS
+    // Chunk 1 for tick 5 with HAS_MORE_CHUNKS: buffered in RAM
     HIL_Application_Update_Instruction_T chunk1{};
     chunk1.tick_number     = 5U;
     chunk1.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_HAS_MORE_CHUNKS;
     chunk1.operation_count = 1U;
     chunk1.operations      = &op1;
 
-    EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) )
-        .WillOnce( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED ) );
     EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &chunk1 ),
                HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( uploaded_bytes.size(), 0U );
 
     // Attempt to submit tick 6 while tick 5 has more chunks pending
     HIL_Application_Update_Instruction_T chunk2{};
@@ -715,6 +720,63 @@ TEST_F( VariableInstructionMessageHandlerTest, RejectsTickIncrementWhenExpecting
 
     EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &chunk2 ),
                HOST_INTERFACE_STATUS_INCONSISTENT_TICK );
+}
+
+/**
+ * @brief Rejects multi-chunk sequence when combined operations exceed maximum instruction capacity.
+ */
+TEST_F( VariableInstructionMessageHandlerTest, MultiChunkExceedingMaxCapacityFails )
+{
+    static uint8_t uart_payload[2000];
+    std::memset( uart_payload, 0x55, sizeof( uart_payload ) );
+
+    HIL_Application_Logical_Operation_T op1{};
+    op1.peripheral_type = HIL_APPLICATION_PERIPHERAL_UART;
+    op1.channel         = 0U;
+    op1.payload.data    = uart_payload;
+    op1.payload.size    = 2000U;
+
+    HIL_Application_Logical_Operation_T op2{};
+    op2.peripheral_type = HIL_APPLICATION_PERIPHERAL_UART;
+    op2.channel         = 0U;
+    op2.payload.data    = uart_payload;
+    op2.payload.size    = 2000U;
+
+    HIL_Application_Logical_Operation_T op3{};
+    op3.peripheral_type = HIL_APPLICATION_PERIPHERAL_UART;
+    op3.channel         = 0U;
+    op3.payload.data    = uart_payload;
+    op3.payload.size    = 2000U;
+
+    // Chunk 1: 2000 bytes (fits in 4096 capacity)
+    HIL_Application_Update_Instruction_T chunk1{};
+    chunk1.tick_number     = 10U;
+    chunk1.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_HAS_MORE_CHUNKS;
+    chunk1.operation_count = 1U;
+    chunk1.operations      = &op1;
+
+    EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &chunk1 ),
+               HOST_INTERFACE_STATUS_OK );
+
+    // Chunk 2: another 2000 bytes -> ~4016 bytes (still fits in 4096)
+    HIL_Application_Update_Instruction_T chunk2{};
+    chunk2.tick_number     = 10U;
+    chunk2.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_HAS_MORE_CHUNKS;
+    chunk2.operation_count = 1U;
+    chunk2.operations      = &op2;
+
+    EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &chunk2 ),
+               HOST_INTERFACE_STATUS_OK );
+
+    // Chunk 3: another 2000 bytes -> exceeds 4096 capacity
+    HIL_Application_Update_Instruction_T chunk3{};
+    chunk3.tick_number     = 10U;
+    chunk3.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_COMPLETE_TICK;
+    chunk3.operation_count = 1U;
+    chunk3.operations      = &op3;
+
+    EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &chunk3 ),
+               HOST_INTERFACE_STATUS_BUFFER_TOO_SMALL );
 }
 
 TEST_F( VariableInstructionMessageHandlerTest, FlashManagerBusyExhaustsRetriesReturnsInternalError )

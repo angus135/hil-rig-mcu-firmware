@@ -110,6 +110,12 @@ static bool has_received_instruction = false;
 /** @brief Indicates whether the last processed instruction had the HAS_MORE_CHUNKS flag set. */
 static bool last_instruction_had_more_chunks = false;
 
+/** @brief Writer state retained while accumulating multi-chunk instructions for one tick. */
+static HostInstructionWriter_T s_accumulated_writer;
+
+/** @brief Indicates whether a multi-chunk instruction is currently accumulating in the shared buffer. */
+static bool s_accumulating_chunk = false;
+
 /** @brief Retained digital output pin state for transition detection. */
 static HostVarInstructionStateTracker_T tracked_digital_state;
 
@@ -158,10 +164,8 @@ HOST_VAR_INSTRUCTION_EncodeCan( const HIL_Application_Logical_Operation_T* op,
                                 const DutDriverConfiguration_T* config, bool config_valid,
                                 HostInstructionWriter_T* writer );
 
-static HOST_Interface_Status_T
-HOST_VAR_INSTRUCTION_ConvertInstruction( const HIL_Application_Update_Instruction_T* instruction,
-                                         uint8_t* destination, size_t destination_capacity,
-                                         size_t* bytes_written );
+static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_AppendInstructionOperations(
+    const HIL_Application_Update_Instruction_T* instruction, HostInstructionWriter_T* writer );
 
 static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_UploadToFlash( const uint8_t* data,
                                                                    size_t         length );
@@ -545,23 +549,12 @@ HOST_VAR_INSTRUCTION_EncodeCan( const HIL_Application_Logical_Operation_T* const
 }
 
 /**
- * @brief Converts an application update instruction into canonical Execution Manager format.
+ * @brief Appends logical operations from an update instruction into the shared instruction writer.
  */
-static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_ConvertInstruction(
-    const HIL_Application_Update_Instruction_T* const instruction, uint8_t* const destination,
-    const size_t destination_capacity, size_t* const bytes_written )
+static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_AppendInstructionOperations(
+    const HIL_Application_Update_Instruction_T* const instruction,
+    HostInstructionWriter_T* const                    writer )
 {
-    if ( destination_capacity < sizeof( ExecutionInstructionHeader_T ) )
-    {
-        return HOST_INTERFACE_STATUS_BUFFER_TOO_SMALL;
-    }
-
-    HostInstructionWriter_T writer;
-    writer.buffer          = destination;
-    writer.capacity        = destination_capacity;
-    writer.offset          = sizeof( ExecutionInstructionHeader_T );
-    writer.operation_count = 0U;
-
     DutDriverConfiguration_T active_config;
     ( void )memset( &active_config, 0, sizeof( active_config ) );
     const bool config_valid = TEST_CONFIGURATION_GetActive( &active_config );
@@ -579,7 +572,7 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_ConvertInstruction(
         {
             case HIL_APPLICATION_PERIPHERAL_DIGITAL_OUTPUT:
                 status =
-                    HOST_VAR_INSTRUCTION_EncodeDigital( op, &active_config, config_valid, &writer );
+                    HOST_VAR_INSTRUCTION_EncodeDigital( op, &active_config, config_valid, writer );
                 if ( status != HOST_INTERFACE_STATUS_OK )
                 {
                     s_var_last_failed_stage = 10U;
@@ -603,7 +596,7 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_ConvertInstruction(
 
             case HIL_APPLICATION_PERIPHERAL_PWM_OUTPUT:
                 status =
-                    HOST_VAR_INSTRUCTION_EncodePwm( op, &active_config, config_valid, &writer );
+                    HOST_VAR_INSTRUCTION_EncodePwm( op, &active_config, config_valid, writer );
                 if ( status != HOST_INTERFACE_STATUS_OK )
                 {
                     s_var_last_failed_stage = 12U;
@@ -615,7 +608,7 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_ConvertInstruction(
 
             case HIL_APPLICATION_PERIPHERAL_UART:
                 status =
-                    HOST_VAR_INSTRUCTION_EncodeUart( op, &active_config, config_valid, &writer );
+                    HOST_VAR_INSTRUCTION_EncodeUart( op, &active_config, config_valid, writer );
                 if ( status != HOST_INTERFACE_STATUS_OK )
                 {
                     s_var_last_failed_stage = 13U;
@@ -627,7 +620,7 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_ConvertInstruction(
 
             case HIL_APPLICATION_PERIPHERAL_SPI:
                 status =
-                    HOST_VAR_INSTRUCTION_EncodeSpi( op, &active_config, config_valid, &writer );
+                    HOST_VAR_INSTRUCTION_EncodeSpi( op, &active_config, config_valid, writer );
                 if ( status != HOST_INTERFACE_STATUS_OK )
                 {
                     s_var_last_failed_stage = 14U;
@@ -639,7 +632,7 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_ConvertInstruction(
 
             case HIL_APPLICATION_PERIPHERAL_CAN:
                 status =
-                    HOST_VAR_INSTRUCTION_EncodeCan( op, &active_config, config_valid, &writer );
+                    HOST_VAR_INSTRUCTION_EncodeCan( op, &active_config, config_valid, writer );
                 if ( status != HOST_INTERFACE_STATUS_OK )
                 {
                     s_var_last_failed_stage = 15U;
@@ -663,14 +656,14 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_ConvertInstruction(
         }
     }
 
-    // Append analogue batch if any frames were prepared
+    // Append analogue batch if any frames were prepared in this chunk
     if ( dac_batch_frame_count > 0U )
     {
         const uint16_t batch_size =
             ( uint16_t )( dac_batch_frame_count * EXEC_ANALOGUE_OUTPUT_FRAME_SIZE_BYTES );
 
         const HOST_Interface_Status_T status = HOST_VAR_INSTRUCTION_AppendOperation(
-            &writer, EXECUTION_OPERATION_OPCODE_ANALOGUE_OUTPUT_BATCH,
+            writer, EXECUTION_OPERATION_OPCODE_ANALOGUE_OUTPUT_BATCH,
             EXECUTION_OPERATION_CHANNEL_UNUSED, dac_batch.bytes, batch_size );
 
         if ( status != HOST_INTERFACE_STATUS_OK )
@@ -682,26 +675,6 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_ConvertInstruction(
         }
     }
 
-    // Output-free tick
-    if ( writer.operation_count == 0U )
-    {
-        *bytes_written = 0U;
-        return HOST_INTERFACE_STATUS_OK;
-    }
-
-    // Build ExecutionInstructionHeader_T using the same tick mapping as legacy instructions.
-    const uint16_t operations_length_bytes =
-        ( uint16_t )( writer.offset - sizeof( ExecutionInstructionHeader_T ) );
-
-    ExecutionInstructionHeader_T header;
-    header.timestamp               = instruction->tick_number;
-    header.operations_length_bytes = operations_length_bytes;
-    header.operation_count         = writer.operation_count;
-    header.reserved                = 0U;
-
-    ( void )memcpy( destination, &header, sizeof( header ) );
-
-    *bytes_written = writer.offset;
     return HOST_INTERFACE_STATUS_OK;
 }
 
@@ -755,6 +728,8 @@ void HOST_VARIABLE_INSTRUCTION_HANDLER_Reset( void )
     last_instruction_tick            = 0U;
     has_received_instruction         = false;
     last_instruction_had_more_chunks = false;
+    s_accumulating_chunk             = false;
+    ( void )memset( &s_accumulated_writer, 0, sizeof( s_accumulated_writer ) );
     s_var_last_failed_stage          = 0U;
     s_var_last_stage_code            = 0U;
     s_var_last_failed_tick           = 0U;
@@ -796,6 +771,7 @@ HOST_Interface_Status_T HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
         {
             if ( instruction->tick_number != last_instruction_tick )
             {
+                s_accumulating_chunk    = false;
                 s_var_last_failed_stage = 2U;
                 s_var_last_stage_code   = last_instruction_tick;
                 s_var_last_failed_tick  = instruction->tick_number;
@@ -806,6 +782,7 @@ HOST_Interface_Status_T HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
         {
             if ( instruction->tick_number <= last_instruction_tick )
             {
+                s_accumulating_chunk    = false;
                 s_var_last_failed_stage = 2U;
                 s_var_last_stage_code   = last_instruction_tick;
                 s_var_last_failed_tick  = instruction->tick_number;
@@ -814,33 +791,63 @@ HOST_Interface_Status_T HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
         }
     }
 
-    uint8_t* const instruction_buffer     = HOST_INSTRUCTION_HANDLER_GetSharedBuffer();
-    size_t         instruction_size_bytes = 0U;
+    uint8_t* const instruction_buffer = HOST_INSTRUCTION_HANDLER_GetSharedBuffer();
 
-    const HOST_Interface_Status_T status = HOST_VAR_INSTRUCTION_ConvertInstruction(
-        instruction, instruction_buffer, EXECUTION_INSTRUCTION_MAX_SIZE_BYTES,
-        &instruction_size_bytes );
+    if ( !s_accumulating_chunk )
+    {
+        s_accumulated_writer.buffer          = instruction_buffer;
+        s_accumulated_writer.capacity        = EXECUTION_INSTRUCTION_MAX_SIZE_BYTES;
+        s_accumulated_writer.offset          = sizeof( ExecutionInstructionHeader_T );
+        s_accumulated_writer.operation_count = 0U;
+    }
+
+    const HOST_Interface_Status_T status =
+        HOST_VAR_INSTRUCTION_AppendInstructionOperations( instruction, &s_accumulated_writer );
 
     if ( status != HOST_INTERFACE_STATUS_OK )
     {
+        s_accumulating_chunk = false;
         return status;
     }
 
     const bool has_more_chunks =
         ( ( instruction->flags & HIL_APPLICATION_INSTRUCTION_FLAG_HAS_MORE_CHUNKS ) != 0U );
 
-    // Output-free tick: no operations changed, no flash instruction to upload
-    if ( instruction_size_bytes == 0U )
+    if ( has_more_chunks )
     {
+        s_accumulating_chunk             = true;
         last_instruction_tick            = instruction->tick_number;
         has_received_instruction         = true;
-        last_instruction_had_more_chunks = has_more_chunks;
+        last_instruction_had_more_chunks = true;
         return HOST_INTERFACE_STATUS_OK;
     }
 
+    s_accumulating_chunk = false;
+
+    // Output-free tick: no operations changed, no flash instruction to upload
+    if ( s_accumulated_writer.operation_count == 0U )
+    {
+        last_instruction_tick            = instruction->tick_number;
+        has_received_instruction         = true;
+        last_instruction_had_more_chunks = false;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
+    // Build ExecutionInstructionHeader_T using the same tick mapping as legacy instructions.
+    const uint16_t operations_length_bytes =
+        ( uint16_t )( s_accumulated_writer.offset - sizeof( ExecutionInstructionHeader_T ) );
+
+    ExecutionInstructionHeader_T header;
+    header.timestamp               = instruction->tick_number;
+    header.operations_length_bytes = operations_length_bytes;
+    header.operation_count         = s_accumulated_writer.operation_count;
+    header.reserved                = 0U;
+
+    ( void )memcpy( instruction_buffer, &header, sizeof( header ) );
+
     // Layer 2: Canonical Execution Manager validation check
     const ExecutionInstructionValidationResult_T canonical_val_status =
-        EXECUTION_INSTRUCTION_Validate( instruction_buffer, instruction_size_bytes );
+        EXECUTION_INSTRUCTION_Validate( instruction_buffer, s_accumulated_writer.offset );
     if ( canonical_val_status != EXECUTION_INSTRUCTION_VALIDATION_OK )
     {
         s_var_last_failed_stage = 20U;
@@ -850,13 +857,13 @@ HOST_Interface_Status_T HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction(
     }
 
     const HOST_Interface_Status_T upload_status =
-        HOST_VAR_INSTRUCTION_UploadToFlash( instruction_buffer, instruction_size_bytes );
+        HOST_VAR_INSTRUCTION_UploadToFlash( instruction_buffer, s_accumulated_writer.offset );
 
     if ( upload_status == HOST_INTERFACE_STATUS_OK )
     {
         last_instruction_tick            = instruction->tick_number;
         has_received_instruction         = true;
-        last_instruction_had_more_chunks = has_more_chunks;
+        last_instruction_had_more_chunks = false;
     }
     else
     {
