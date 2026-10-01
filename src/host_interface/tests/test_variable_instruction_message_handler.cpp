@@ -133,6 +133,11 @@ extern "C" void EXEC_ANALOGUE_OUTPUT_Scale( const float* value, float* scaled_va
     }
 }
 
+extern "C" uint32_t EXEC_PWM_GEN_calibrate( uint32_t frequency )
+{
+    return frequency;
+}
+
 extern "C" bool HW_PWM_GEN_compute_psc( uint32_t frequency_hz, uint32_t timer_clock_hz,
                                         uint16_t* psc )
 {
