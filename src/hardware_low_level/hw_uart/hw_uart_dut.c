@@ -1389,7 +1389,7 @@ void HW_UART_CH2_RX_DMA_IRQ_HANDLER( void )
 
 bool HW_UART_Get_Diagnostic( HwUartChannel_T channel, HwUartDiagnostic_T* diag )
 {
-    if ( ( diag == NULL ) || !HW_UART_Is_Valid_Channel( channel ) )
+    if ( ( diag == NULL ) || ( channel >= HW_UART_CHANNEL_COUNT ) )
     {
         return false;
     }
@@ -1412,7 +1412,7 @@ bool HW_UART_Get_Diagnostic( HwUartChannel_T channel, HwUartDiagnostic_T* diag )
 
 void HW_UART_Reset_Diagnostic( HwUartChannel_T channel )
 {
-    if ( !HW_UART_Is_Valid_Channel( channel ) )
+    if ( channel >= HW_UART_CHANNEL_COUNT )
     {
         return;
     }
