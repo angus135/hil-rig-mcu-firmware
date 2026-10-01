@@ -128,6 +128,7 @@ if(EXECUTION_MANAGER_ENABLE_TESTS AND BUILD_TESTING)
             ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_pwm_capture
             ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_spi
             ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_uart
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_can
     )
 
     add_test(NAME execution_measurement_adapters_tests COMMAND execution_measurement_adapters_tests)
