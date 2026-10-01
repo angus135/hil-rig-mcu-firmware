@@ -510,7 +510,7 @@ protected:
         state->is_master                 = config.spi_mode == SPI_MASTER_MODE;
         state->frame_size_bytes          = config.data_size == SPI_SIZE_16_BIT ? 2U : 1U;
         state->frame_shift               = config.data_size == SPI_SIZE_16_BIT ? 1U : 0U;
-        state->tx_uses_final_drain_timer = config.baud_rate > SPI_BAUD_5M625BIT;
+        state->tx_uses_final_drain_timer = config.baud_rate > SPI_BAUD_2M813BIT;
         state->tx_final_drain_cycles     = 0U;
         state->tx_final_drain_timer      = timer;
         state->rx_dma                    = rx_dma;

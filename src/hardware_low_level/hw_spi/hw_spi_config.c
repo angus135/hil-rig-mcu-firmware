@@ -144,7 +144,7 @@ static uint16_t HW_SPI_Config_Get_Cycles_Per_SCK( SPIBaudRate_T baud_rate )
 
 static bool HW_SPI_Config_Uses_Final_Drain_Timer( SPIBaudRate_T baud_rate )
 {
-    return baud_rate >= SPI_BAUD_2M813BIT;
+    return baud_rate > SPI_BAUD_2M813BIT;
 }
 
 static bool HW_SPI_Config_Is_Valid_NSS( SPIChannel_T         peripheral,
