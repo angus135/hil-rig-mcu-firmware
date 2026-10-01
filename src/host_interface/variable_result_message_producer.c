@@ -645,6 +645,20 @@ VAR_RESULT_PRODUCER_ProduceNextMessageInternal( HIL_Application_Message_T* const
 
         if ( !VAR_RESULT_PRODUCER_PeekNextRecord( stream, &header, &payload ) )
         {
+            const size_t buffered_bytes = stream->write_offset - stream->read_offset;
+            if ( buffered_bytes >= sizeof( FlashManagerResultHeader_T ) )
+            {
+                FlashManagerResultHeader_T peeked_header;
+                ( void )memcpy( &peeked_header, stream->buffer + stream->read_offset,
+                                sizeof( FlashManagerResultHeader_T ) );
+                const size_t total_record_size =
+                    sizeof( FlashManagerResultHeader_T ) + ( size_t )peeked_header.payload_length_bytes;
+                if ( total_record_size > sizeof( stream->buffer ) )
+                {
+                    return RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA;
+                }
+            }
+
             if ( stream->is_flash_end_of_stream )
             {
                 if ( stream->has_active_tick )

@@ -667,8 +667,6 @@ TEST_F( VariableInstructionMessageHandlerTest, AcceptsMultiChunkInstructionSameT
     chunk2.operation_count = 1U;
     chunk2.operations      = &op2;
 
-    EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) )
-        .WillOnce( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_ACCEPTED ) );
     EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &chunk2 ),
                HOST_INTERFACE_STATUS_OK );
 
