@@ -281,11 +281,11 @@ static void HW_SPI_Configure_Tx_Timer( SPIPeripheralState_T* peripheral_state )
 HW_SPI_ALWAYS_INLINE void
 HW_SPI_TX_Bounded_Final_Drain_Wait( const SPIPeripheralState_T* peripheral_state )
 {
-    volatile uint32_t wait_cycles = peripheral_state->tx_final_drain_cycles;
+    uint32_t wait_cycles = peripheral_state->tx_final_drain_cycles;
 
-    while ( wait_cycles > 0U )
+    while ( ( LL_SPI_IsActiveFlag_BSY( peripheral_state->spi_peripheral ) != 0U )
+            && ( wait_cycles > 0U ) )
     {
-        __asm volatile( "nop" );
         wait_cycles--;
     }
 }
