@@ -213,6 +213,11 @@ static bool EXEC_PWM_GEN_Apply_Initial_State( ExecPwmGenChannel_T       channel,
  *  Public Function Definitions
  *------------------------------------------------------------------------------
  */
+
+ uint32_t EXEC_PWM_GEN_calibrate(uint32_t frequency) {
+    return frequency*0.989119683;
+ }
+
 bool EXEC_PWM_GEN_Configure_Channel( ExecPwmGenChannel_T channel, const ExecPwmGenConfig_T* config )
 {
     if ( !EXEC_PWM_GEN_Is_Valid_Channel( channel ) || config == NULL )

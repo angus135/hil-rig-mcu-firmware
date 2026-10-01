@@ -385,7 +385,7 @@ HOST_VAR_INSTRUCTION_EncodePwm( const HIL_Application_Logical_Operation_T* const
                                         ? HOST_VAR_INSTRUCTION_PWM_LV_TIMER_CLOCK_HZ
                                         : HOST_VAR_INSTRUCTION_PWM_HV_TIMER_CLOCK_HZ;
 
-    const uint32_t frequency_hz  = HOST_VAR_INSTRUCTION_NANOSECONDS_PER_SECOND / period_ns;
+    const uint32_t frequency_hz  = EXEC_PWM_GEN_calibrate(HOST_VAR_INSTRUCTION_NANOSECONDS_PER_SECOND / period_ns);
     const uint16_t duty_permille = ( uint16_t )( duty_permyriad / 10U );
 
     ExecutionPwmUpdatePayload_T payload;
