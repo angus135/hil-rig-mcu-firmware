@@ -669,17 +669,17 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                 ( unsigned long )run_status.spi_diag[ch].tx_queue_reject_count,
                 ( unsigned long )run_status.spi_diag[ch].tx_dma_error_count,
                 ( unsigned long )run_status.spi_diag[ch].tx_final_drain_timeout_count,
-                ( unsigned long )run_status.spi_diag[ch].rx_unread_peak );
+                ( unsigned long )run_status.spi_diag[ch].rx_unread_peak_bytes );
         }
         for ( uint8_t ch = 0U; ch < HW_UART_CHANNEL_COUNT; ch++ )
         {
             CONSOLE_Printf(
                 "UART%u diag: tx_peak=%lu tx_rejects=%lu dma_err=%lu rx_unread_peak=%lu\r\n",
                 ( unsigned int )( ch + 1U ),
-                ( unsigned long )run_status.uart_diag[ch].tx_peak_count,
+                ( unsigned long )run_status.uart_diag[ch].tx_peak_bytes,
                 ( unsigned long )run_status.uart_diag[ch].tx_reject_count,
                 ( unsigned long )run_status.uart_diag[ch].dma_error_count,
-                ( unsigned long )run_status.uart_diag[ch].rx_unread_peak );
+                ( unsigned long )run_status.uart_diag[ch].rx_unread_peak_bytes );
         }
     }
     else if ( strcmp( argv[1], "timing" ) == 0 )
