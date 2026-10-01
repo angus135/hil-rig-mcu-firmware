@@ -694,7 +694,7 @@ TEST_F( FlashManagerTest, InstructionUploadSubmissionRejectsMissingTaskWithoutCo
 TEST_F( FlashManagerTest, InstructionUploadSubmissionRejectsChunkLargerThanMaximumInstruction )
 {
     std::array<uint8_t, EXECUTION_INSTRUCTION_MAX_SIZE_BYTES + 1U> data = {};
-    PrepareInstructionUpload( data.size() + 3U );
+    PrepareInstructionUpload( TEST_INSTRUCTION_CAPACITY_BYTES );
 
     EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_ARGUMENT,
                FLASH_MANAGER_SubmitInstructionUploadBytes( data.data(), data.size() ) );
