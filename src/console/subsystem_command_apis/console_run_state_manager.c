@@ -23,6 +23,8 @@
 #include "execution_operation_adapters.h"
 #include "exec_spi.h"
 #include "exec_uart.h"
+#include "hw_spi.h"
+#include "hw_uart_dut.h"
 #include "hw_timer.h"
 #include "host_interface.h"
 #include "run_state_manager.h"
@@ -659,27 +661,35 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
                         ( unsigned int )run_status.can_diag.rx_dropped1,
                         ( unsigned int )run_status.can_diag.rx_queued2,
                         ( unsigned int )run_status.can_diag.rx_dropped2 );
-        for ( uint8_t ch = 0U; ch < SPI_NUM_CHANNELS; ch++ )
+        for ( uint8_t ch = 0U; ch < ( uint8_t )SPI_NUM_CHANNELS; ch++ )
         {
-            CONSOLE_Printf(
-                "SPI%u diag: tx_peak=%lu/%lu (pkts/bytes) tx_rejects=%lu dma_err=%lu drain_to=%lu rx_unread_peak=%lu\r\n",
-                ( unsigned int )( ch + 1U ),
-                ( unsigned long )run_status.spi_diag[ch].peak_tx_num_packets_pending,
-                ( unsigned long )run_status.spi_diag[ch].peak_tx_num_bytes_pending,
-                ( unsigned long )run_status.spi_diag[ch].tx_queue_reject_count,
-                ( unsigned long )run_status.spi_diag[ch].tx_dma_error_count,
-                ( unsigned long )run_status.spi_diag[ch].tx_final_drain_timeout_count,
-                ( unsigned long )run_status.spi_diag[ch].rx_unread_peak_bytes );
+            HWSPI_Diagnostic_T spi_diag = { 0 };
+            if ( HW_SPI_Get_Diagnostics( ( SPIChannel_T )ch, &spi_diag ) )
+            {
+                CONSOLE_Printf(
+                    "SPI%u diag: tx_peak=%lu/%lu (pkts/bytes) tx_rejects=%lu dma_err=%lu drain_to=%lu rx_unread_peak=%lu\r\n",
+                    ( unsigned int )( ch + 1U ),
+                    ( unsigned long )spi_diag.peak_tx_num_packets_pending,
+                    ( unsigned long )spi_diag.peak_tx_num_bytes_pending,
+                    ( unsigned long )spi_diag.tx_queue_reject_count,
+                    ( unsigned long )spi_diag.tx_dma_error_count,
+                    ( unsigned long )spi_diag.tx_final_drain_timeout_count,
+                    ( unsigned long )spi_diag.rx_unread_peak_bytes );
+            }
         }
-        for ( uint8_t ch = 0U; ch < HW_UART_CHANNEL_COUNT; ch++ )
+        for ( uint8_t ch = 0U; ch < ( uint8_t )HW_UART_CHANNEL_COUNT; ch++ )
         {
-            CONSOLE_Printf(
-                "UART%u diag: tx_peak=%lu tx_rejects=%lu dma_err=%lu rx_unread_peak=%lu\r\n",
-                ( unsigned int )( ch + 1U ),
-                ( unsigned long )run_status.uart_diag[ch].tx_peak_bytes,
-                ( unsigned long )run_status.uart_diag[ch].tx_reject_count,
-                ( unsigned long )run_status.uart_diag[ch].dma_error_count,
-                ( unsigned long )run_status.uart_diag[ch].rx_unread_peak_bytes );
+            HwUartDiagnostic_T uart_diag = { 0 };
+            if ( HW_UART_Get_Diagnostic( ( HwUartChannel_T )ch, &uart_diag ) )
+            {
+                CONSOLE_Printf(
+                    "UART%u diag: tx_peak=%lu tx_rejects=%lu dma_err=%lu rx_unread_peak=%lu\r\n",
+                    ( unsigned int )( ch + 1U ),
+                    ( unsigned long )uart_diag.tx_peak_bytes,
+                    ( unsigned long )uart_diag.tx_reject_count,
+                    ( unsigned long )uart_diag.dma_error_count,
+                    ( unsigned long )uart_diag.rx_unread_peak_bytes );
+            }
         }
     }
     else if ( strcmp( argv[1], "timing" ) == 0 )

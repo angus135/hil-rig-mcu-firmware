@@ -2126,16 +2126,6 @@ void RUN_STATE_MANAGER_GetStatus( RunStateManagerStatus_T* status )
     taskEXIT_CRITICAL();
 
     HW_CAN_GetDiagnostic( &status->can_diag );
-
-    for ( uint32_t i = 0U; i < ( uint32_t )SPI_NUM_CHANNELS; i++ )
-    {
-        ( void )HW_SPI_Get_Diagnostics( ( SPIChannel_T )i, &status->spi_diag[i] );
-    }
-
-    for ( uint32_t i = 0U; i < ( uint32_t )HW_UART_CHANNEL_COUNT; i++ )
-    {
-        ( void )HW_UART_Get_Diagnostic( ( HwUartChannel_T )i, &status->uart_diag[i] );
-    }
 }
 
 bool RUN_STATE_MANAGER_IsTransitionPending( void )
