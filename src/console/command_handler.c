@@ -1681,8 +1681,9 @@ static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] )
 
         EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( voltage_destination );
 
-        CONSOLE_Printf( "Analogue input 0: %f\r\n", EXEC_ANALOGUE_INPUT_Scale(channel_0_voltage ));
-        CONSOLE_Printf( "Analogue input 1: %f\r\n", EXEC_ANALOGUE_INPUT_Scale(channel_1_voltage ));
+        CONSOLE_Printf( "Analogue input 0 raw value: %lu, scaled value: %lu\r\n", (uint32_t)channel_0_voltage, (uint32_t)EXEC_ANALOGUE_INPUT_Scale((uint32_t)channel_0_voltage ) );
+        CONSOLE_Printf( "Analogue input 1 raw value: %lu, scaled value: %lu\r\n", (uint32_t)channel_1_voltage, (uint32_t)EXEC_ANALOGUE_INPUT_Scale((uint32_t)channel_1_voltage ));
+        CONSOLE_Printf( "Done reading Analogue inputs\r\n");
     }
     else if ( strcmp( argv[1], "configure" ) == 0 )
     {

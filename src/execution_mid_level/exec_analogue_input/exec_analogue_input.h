@@ -151,7 +151,7 @@ void EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( ExecAnalogueInputVoltages_T volta
  * @param[in] value Raw ADC reading pointer.
  * @param[out] scaled_value Destination pointer for scaled voltage.
  */
-float EXEC_ANALOGUE_INPUT_Scale( const uint32_t value );
+float EXEC_ANALOGUE_INPUT_Scale( uint32_t value );
 
 #ifdef __cplusplus
 }

@@ -309,6 +309,7 @@ void CONSOLE_PWM_Capture_Command( uint16_t argc, char* argv[] )
             return;
         }
 
+        ExecPwmCapturePhysical_T out;
         if ( !EXEC_PWM_Capture_Consume( channel, &result ) )
         {
             CONSOLE_Printf( "No new valid PWM capture result\r\n" );
@@ -318,6 +319,9 @@ void CONSOLE_PWM_Capture_Command( uint16_t argc, char* argv[] )
         CONSOLE_Printf( "PWM capture result:\r\n" );
         CONSOLE_Printf( "  period_ticks: %lu\r\n", ( unsigned long )result.period_ticks );
         CONSOLE_Printf( "  high_ticks:   %lu\r\n", ( unsigned long )result.high_ticks );
+        EXEC_PWM_Capture_Convert(channel, &result, &out);
+        CONSOLE_Printf( "  freq: %lu\r\n", ( unsigned long )out.frequency_hz );
+        CONSOLE_Printf( "  duty: %lu\r\n", ( unsigned long )out.duty_cycle_bp );
         return;
     }
 
