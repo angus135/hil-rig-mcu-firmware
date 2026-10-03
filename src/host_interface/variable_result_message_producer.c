@@ -52,7 +52,8 @@ static_assert( ( VAR_RESULT_PRODUCER_BUFFER_CAPACITY + VAR_RESULT_PRODUCER_STAGE
                    <= EXECUTION_INSTRUCTION_MAX_SIZE_BYTES,
                "Variable result buffers exceed shared host workspace" );
 #else
-_Static_assert( ( VAR_RESULT_PRODUCER_BUFFER_CAPACITY + VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY )
+_Static_assert( ( VAR_RESULT_PRODUCER_BUFFER_CAPACITY
+                  + VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY )
                     <= EXECUTION_INSTRUCTION_MAX_SIZE_BYTES,
                 "Variable result buffers exceed shared host workspace" );
 #endif
@@ -303,7 +304,8 @@ static bool VAR_RESULT_PRODUCER_CanStageRecord( const FlashManagerResultHeader_T
         return false;
     }
 
-    if ( ( stream->staged_payload_offset + req_bytes ) > VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY )
+    if ( ( stream->staged_payload_offset + req_bytes )
+         > VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY )
     {
         return false;
     }
@@ -604,9 +606,9 @@ void VARIABLE_RESULT_MESSAGE_PRODUCER_Reset( void )
 {
     ( void )memset( &s_var_stream, 0, sizeof( s_var_stream ) );
     ( void )memset( &s_var_diagnostics, 0, sizeof( s_var_diagnostics ) );
-    s_var_stream.buffer                 = HOST_INSTRUCTION_HANDLER_GetSharedBuffer();
-    s_var_stream.staged_payload_storage = HOST_INSTRUCTION_HANDLER_GetSharedBuffer()
-                                          + VAR_RESULT_PRODUCER_BUFFER_CAPACITY;
+    s_var_stream.buffer = HOST_INSTRUCTION_HANDLER_GetSharedBuffer();
+    s_var_stream.staged_payload_storage =
+        HOST_INSTRUCTION_HANDLER_GetSharedBuffer() + VAR_RESULT_PRODUCER_BUFFER_CAPACITY;
 }
 
 void VARIABLE_RESULT_MESSAGE_PRODUCER_SetExpectedTickCount( const uint32_t tick_count )
@@ -627,7 +629,7 @@ VAR_RESULT_PRODUCER_PopulateResultMetadata( const VariableResultProducerStream_T
 }
 
 static void VAR_RESULT_PRODUCER_EmitEmptyTick( VariableResultProducerStream_T* const stream,
-                                                HIL_Application_Message_T* const      out_message )
+                                               HIL_Application_Message_T* const      out_message )
 {
     out_message->type        = HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT;
     out_message->subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
@@ -655,9 +657,9 @@ VAR_RESULT_PRODUCER_ProduceNextMessageInternal( HIL_Application_Message_T* const
 
     if ( stream->buffer == NULL )
     {
-        stream->buffer                 = HOST_INSTRUCTION_HANDLER_GetSharedBuffer();
-        stream->staged_payload_storage = HOST_INSTRUCTION_HANDLER_GetSharedBuffer()
-                                         + VAR_RESULT_PRODUCER_BUFFER_CAPACITY;
+        stream->buffer = HOST_INSTRUCTION_HANDLER_GetSharedBuffer();
+        stream->staged_payload_storage =
+            HOST_INSTRUCTION_HANDLER_GetSharedBuffer() + VAR_RESULT_PRODUCER_BUFFER_CAPACITY;
     }
 
     while ( 1 )

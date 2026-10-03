@@ -249,9 +249,9 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleSpiReceive( uint8_t channel, uint32_t t
 
     while ( remaining_bytes > 0U )
     {
-        uint16_t reservation_bytes =
-            ( uint16_t )( remaining_bytes < EXEC_SPI_MAX_RX_CHUNK_SIZE ? remaining_bytes
-                                                                      : EXEC_SPI_MAX_RX_CHUNK_SIZE );
+        uint16_t reservation_bytes = ( uint16_t )( remaining_bytes < EXEC_SPI_MAX_RX_CHUNK_SIZE
+                                                       ? remaining_bytes
+                                                       : EXEC_SPI_MAX_RX_CHUNK_SIZE );
         if ( reservation_bytes > FLASH_MANAGER_RESULT_MAX_PAYLOAD_BYTES )
         {
             reservation_bytes = FLASH_MANAGER_RESULT_MAX_PAYLOAD_BYTES;
@@ -305,7 +305,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive( uint8_t channel, uint32_t 
     {
         uint16_t reservation_bytes =
             ( uint16_t )( remaining_bytes < EXEC_UART_MAX_CHUNK_SIZE ? remaining_bytes
-                                                                    : EXEC_UART_MAX_CHUNK_SIZE );
+                                                                     : EXEC_UART_MAX_CHUNK_SIZE );
         if ( reservation_bytes > FLASH_MANAGER_RESULT_MAX_PAYLOAD_BYTES )
         {
             reservation_bytes = FLASH_MANAGER_RESULT_MAX_PAYLOAD_BYTES;

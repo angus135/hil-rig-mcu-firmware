@@ -953,9 +953,8 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionBytes( const uint8_t* data,
         uint32_t remaining       = length - bytes_written;
         uint32_t bytes_this_page = ( remaining < page_space ) ? remaining : page_space;
 
-        ( void )memcpy(
-            &external_flash_staging_page_buffer[external_flash_instruction_page_fill],
-            &data[bytes_written], bytes_this_page );
+        ( void )memcpy( &external_flash_staging_page_buffer[external_flash_instruction_page_fill],
+                        &data[bytes_written], bytes_this_page );
 
         external_flash_instruction_page_fill += bytes_this_page;
         external_flash_instruction_length_bytes += bytes_this_page;
@@ -1045,8 +1044,8 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionPage( const uint8_t* data,
 
         ( void )memcpy( external_flash_staging_page_buffer, data, valid_length );
 
-        status = EXTERNAL_FLASH_ProgramInstructionPageBuffer(
-            external_flash_staging_page_buffer, page_start_offset, valid_length );
+        status = EXTERNAL_FLASH_ProgramInstructionPageBuffer( external_flash_staging_page_buffer,
+                                                              page_start_offset, valid_length );
 
         EXTERNAL_FLASH_ClearInstructionPageBuffer();
     }

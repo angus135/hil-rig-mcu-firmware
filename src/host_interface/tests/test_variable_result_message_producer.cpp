@@ -73,7 +73,7 @@ FLASH_MANAGER_ReadResultBytes( uint8_t* destination, uint32_t destination_capaci
     return FLASH_MANAGER_RESULT_TRANSFER_END_OF_STREAM;
 }
 
-static uint8_t s_test_shared_buffer[EXECUTION_INSTRUCTION_MAX_SIZE_BYTES];
+static uint8_t      s_test_shared_buffer[EXECUTION_INSTRUCTION_MAX_SIZE_BYTES];
 extern "C" uint8_t* HOST_INSTRUCTION_HANDLER_GetSharedBuffer( void )
 {
     return s_test_shared_buffer;
