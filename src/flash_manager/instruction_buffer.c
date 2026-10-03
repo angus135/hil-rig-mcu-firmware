@@ -53,13 +53,13 @@
  */
 
 /*
- * Six slots provide instruction-consumption headroom while allowing ready-data
+ * Five slots provide instruction-consumption headroom while allowing ready-data
  * buffering and a NAND page fill to overlap without sharing slot ownership.
  */
-#define INSTRUCTION_BUFFER_PAGE_COUNT ( 6U )
+#define INSTRUCTION_BUFFER_PAGE_COUNT ( 5U )
 
-/* Two mirrored pages keep a two-page instruction contiguous at the ring end. */
-#define INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT ( 2U )
+/* Four mirrored pages keep a four-page instruction contiguous at the ring end. */
+#define INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT ( 4U )
 
 #define INSTRUCTION_BUFFER_MAX_CAPACITY_BYTES                                                      \
     ( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES * INSTRUCTION_BUFFER_PAGE_COUNT )

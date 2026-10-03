@@ -101,8 +101,17 @@ extern "C" uint16_t EXEC_CAN_GetPendingReceivePackets( EXEC_CAN_Channel_T channe
 extern "C" bool EXEC_SPI_Receive( ExecSPIChannel_T, uint8_t* destination, uint32_t capacity,
                                   uint32_t* bytes_read )
 {
-    *bytes_read = spi_bytes_read;
-    ( void )memset( destination, 0xA5, spi_bytes_read < capacity ? spi_bytes_read : capacity );
+    const uint32_t to_read = spi_bytes_read < capacity ? spi_bytes_read : capacity;
+    *bytes_read            = to_read;
+    ( void )memset( destination, 0xA5, to_read );
+    if ( spi_pending_bytes >= to_read )
+    {
+        spi_pending_bytes -= to_read;
+    }
+    else
+    {
+        spi_pending_bytes = 0U;
+    }
     return spi_receive_result;
 }
 extern "C" uint32_t EXEC_SPI_GetPendingReceiveBytes( ExecSPIChannel_T )
@@ -112,8 +121,17 @@ extern "C" uint32_t EXEC_SPI_GetPendingReceiveBytes( ExecSPIChannel_T )
 extern "C" bool EXEC_UART_Read( ExecUartChannel_T, uint8_t* destination, uint32_t capacity,
                                 uint32_t* bytes_read )
 {
-    *bytes_read = uart_bytes_read;
-    ( void )memset( destination, 0x55, uart_bytes_read < capacity ? uart_bytes_read : capacity );
+    const uint32_t to_read = uart_bytes_read < capacity ? uart_bytes_read : capacity;
+    *bytes_read            = to_read;
+    ( void )memset( destination, 0x55, to_read );
+    if ( uart_pending_bytes >= to_read )
+    {
+        uart_pending_bytes -= to_read;
+    }
+    else
+    {
+        uart_pending_bytes = 0U;
+    }
     return uart_read_result;
 }
 extern "C" uint32_t EXEC_UART_GetPendingReceiveBytes( ExecUartChannel_T )
@@ -272,14 +290,15 @@ TEST_F( ExecutionMeasurementAdaptersTest, EmptySpiSnapshotDoesNotReserveARecord 
 
 TEST_F( ExecutionMeasurementAdaptersTest, SpiReservationIsBoundedAndCommitsBytesRead )
 {
-    spi_pending_bytes = EXEC_SPI_MAX_RX_CHUNK_SIZE + 10U;
-    spi_bytes_read    = 21U;
+    spi_pending_bytes = FLASH_MANAGER_RESULT_MAX_PAYLOAD_BYTES + 500U;
+    spi_bytes_read    = FLASH_MANAGER_RESULT_MAX_PAYLOAD_BYTES + 500U;
 
     ASSERT_TRUE( EXECUTION_MEASUREMENT_ADAPTER_SampleSpiReceive( 1U, 8U, &task_woken ) );
-    EXPECT_EQ( reserved_bytes, EXEC_SPI_MAX_RX_CHUNK_SIZE );
     EXPECT_EQ( committed_peripheral, FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE );
     EXPECT_EQ( committed_channel, 1U );
-    EXPECT_EQ( committed_bytes, 21U );
+    /* The second chunk drained the remaining 500 bytes. */
+    EXPECT_EQ( committed_bytes, 500U );
+    EXPECT_EQ( reserved_bytes, 500U );
 }
 
 TEST_F( ExecutionMeasurementAdaptersTest, EmptyCanQueueDoesNotCommit )

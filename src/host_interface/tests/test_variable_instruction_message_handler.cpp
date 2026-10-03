@@ -730,28 +730,28 @@ TEST_F( VariableInstructionMessageHandlerTest, RejectsTickIncrementWhenExpecting
  */
 TEST_F( VariableInstructionMessageHandlerTest, MultiChunkExceedingMaxCapacityFails )
 {
-    static uint8_t uart_payload[2000];
+    static uint8_t uart_payload[3000];
     std::memset( uart_payload, 0x55, sizeof( uart_payload ) );
 
     HIL_Application_Logical_Operation_T op1{};
     op1.peripheral_type = HIL_APPLICATION_PERIPHERAL_UART;
     op1.channel         = 0U;
     op1.payload.data    = uart_payload;
-    op1.payload.size    = 2000U;
+    op1.payload.size    = 3000U;
 
     HIL_Application_Logical_Operation_T op2{};
     op2.peripheral_type = HIL_APPLICATION_PERIPHERAL_UART;
     op2.channel         = 0U;
     op2.payload.data    = uart_payload;
-    op2.payload.size    = 2000U;
+    op2.payload.size    = 3000U;
 
     HIL_Application_Logical_Operation_T op3{};
     op3.peripheral_type = HIL_APPLICATION_PERIPHERAL_UART;
     op3.channel         = 0U;
     op3.payload.data    = uart_payload;
-    op3.payload.size    = 2000U;
+    op3.payload.size    = 3000U;
 
-    // Chunk 1: 2000 bytes (fits in 4096 capacity)
+    // Chunk 1: 3000 bytes (fits in 8192 capacity)
     HIL_Application_Update_Instruction_T chunk1{};
     chunk1.tick_number     = 10U;
     chunk1.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_HAS_MORE_CHUNKS;
@@ -761,7 +761,7 @@ TEST_F( VariableInstructionMessageHandlerTest, MultiChunkExceedingMaxCapacityFai
     EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &chunk1 ),
                HOST_INTERFACE_STATUS_OK );
 
-    // Chunk 2: another 2000 bytes -> ~4016 bytes (still fits in 4096)
+    // Chunk 2: another 3000 bytes -> ~6016 bytes (still fits in 8192)
     HIL_Application_Update_Instruction_T chunk2{};
     chunk2.tick_number     = 10U;
     chunk2.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_HAS_MORE_CHUNKS;
@@ -771,7 +771,7 @@ TEST_F( VariableInstructionMessageHandlerTest, MultiChunkExceedingMaxCapacityFai
     EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &chunk2 ),
                HOST_INTERFACE_STATUS_OK );
 
-    // Chunk 3: another 2000 bytes -> exceeds 4096 capacity
+    // Chunk 3: another 3000 bytes -> exceeds 8192 capacity
     HIL_Application_Update_Instruction_T chunk3{};
     chunk3.tick_number     = 10U;
     chunk3.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_COMPLETE_TICK;

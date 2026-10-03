@@ -476,6 +476,11 @@ TEST_F( ConfigMessageHandlerTest, SpiBaudRateBracketsAndModes )
     EXPECT_EQ( driver_config.spi_channels[0].cpol, EXEC_SPI_CPOL_HIGH );
     EXPECT_EQ( driver_config.spi_channels[0].cpha, EXEC_SPI_CPHA_2_EDGE );
     EXPECT_EQ( driver_config.spi_channels[0].baud_rate, EXEC_SPI_BAUD_22M5BIT );
+
+    /* Test 2.813 MHz mapping */
+    app_msg.body.test_configuration.spi[0].bit_rate = 2813000U;
+    EXPECT_EQ( HOST_INTERFACE_Spi_Parser( &app_msg, &driver_config ), HOST_INTERFACE_STATUS_OK );
+    EXPECT_EQ( driver_config.spi_channels[0].baud_rate, EXEC_SPI_BAUD_2M813BIT );
 }
 
 /* UART Parser */

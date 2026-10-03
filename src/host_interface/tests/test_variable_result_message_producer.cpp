@@ -73,6 +73,12 @@ FLASH_MANAGER_ReadResultBytes( uint8_t* destination, uint32_t destination_capaci
     return FLASH_MANAGER_RESULT_TRANSFER_END_OF_STREAM;
 }
 
+static uint8_t s_test_shared_buffer[EXECUTION_INSTRUCTION_MAX_SIZE_BYTES];
+extern "C" uint8_t* HOST_INSTRUCTION_HANDLER_GetSharedBuffer( void )
+{
+    return s_test_shared_buffer;
+}
+
 class SimulatedFlashResultStream
 {
 public:
@@ -548,8 +554,8 @@ TEST_F( VariableResultMessageProducerTest, ProducesMultiChunkResultsForLargeTick
  */
 TEST_F( VariableResultMessageProducerTest, FaultsWhenRecordExceedsStagedPayloadCapacity )
 {
-    // A single SPI record of 2049 bytes exceeds the 2048-byte staged capacity
-    std::vector<uint8_t> oversized_spi( 2049U, 0xA5 );
+    // A single SPI record of 4097 bytes exceeds the 4096-byte staged capacity
+    std::vector<uint8_t> oversized_spi( 4097U, 0xA5 );
     simulated_stream_.AppendRecord( 1U, FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE, 0U,
                                     oversized_spi.data(),
                                     static_cast<uint16_t>( oversized_spi.size() ) );

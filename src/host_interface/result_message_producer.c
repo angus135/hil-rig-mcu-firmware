@@ -22,6 +22,8 @@
  */
 
 #include "result_message_producer.h"
+#include "instruction_message_handler.h"
+#include "execution_manager/execution_instruction.h"
 #include "flash_manager/flash_manager.h"
 #include "hardware_low_level/hw_clock_calibration/hw_clock_calibration.h"
 
@@ -36,7 +38,15 @@
  */
 
 /** @brief Internal staging capacity for reassembling records from Flash Manager. */
-#define RESULT_PRODUCER_BUFFER_CAPACITY ( 1024U + sizeof( FlashManagerResultHeader_T ) )
+#define RESULT_PRODUCER_BUFFER_CAPACITY ( 4096U )
+
+#if defined( __cplusplus )
+static_assert( RESULT_PRODUCER_BUFFER_CAPACITY <= EXECUTION_INSTRUCTION_MAX_SIZE_BYTES,
+               "Result producer buffer exceeds shared host workspace" );
+#else
+_Static_assert( RESULT_PRODUCER_BUFFER_CAPACITY <= EXECUTION_INSTRUCTION_MAX_SIZE_BYTES,
+                "Result producer buffer exceeds shared host workspace" );
+#endif
 
 /** @brief Timer input clock frequency for PWM capture (TIM2 and TIM5 on APB1). */
 #define RESULT_PRODUCER_PWM_TIMER_CLOCK_HZ ( HW_CLOCK_Get_Timer_APB1_Hz() )
@@ -57,8 +67,8 @@
  */
 typedef struct
 {
-    /** Staging buffer for streaming and reassembling record bytes. */
-    uint8_t buffer[RESULT_PRODUCER_BUFFER_CAPACITY];
+    /** Pointer to staging buffer for streaming and reassembling record bytes. */
+    uint8_t* buffer;
 
     /** Byte offset of the first unparsed byte in buffer. */
     size_t read_offset;
@@ -169,7 +179,7 @@ RESULT_PRODUCER_FetchFromFlash( ResultProducerStream_T* const stream )
         stream->read_offset  = 0U;
     }
 
-    const size_t capacity = sizeof( stream->buffer ) - stream->write_offset;
+    const size_t capacity = RESULT_PRODUCER_BUFFER_CAPACITY - stream->write_offset;
     if ( capacity == 0U )
     {
         return FLASH_MANAGER_RESULT_TRANSFER_OK;
@@ -372,6 +382,7 @@ static bool RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T* co
 void RESULT_MESSAGE_PRODUCER_Reset( void )
 {
     ( void )memset( &result_producer_stream, 0, sizeof( result_producer_stream ) );
+    result_producer_stream.buffer = HOST_INSTRUCTION_HANDLER_GetSharedBuffer();
 }
 
 /**
@@ -387,6 +398,11 @@ RESULT_MESSAGE_PRODUCER_ProduceNextMessage( HIL_Application_Message_T* const out
     }
 
     ResultProducerStream_T* const stream = &result_producer_stream;
+
+    if ( stream->buffer == NULL )
+    {
+        stream->buffer = HOST_INSTRUCTION_HANDLER_GetSharedBuffer();
+    }
 
     while ( 1 )
     {

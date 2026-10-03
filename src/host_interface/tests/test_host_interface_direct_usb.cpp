@@ -22,6 +22,12 @@ extern "C"
 #include "hw_usb_mocks.h"
 #include "hw_usb.c"                            // NOLINT
 #include "variable_result_message_producer.c"  // NOLINT
+
+uint8_t* HOST_INSTRUCTION_HANDLER_GetSharedBuffer( void )
+{
+    static uint8_t s_test_shared_buffer[EXECUTION_INSTRUCTION_MAX_SIZE_BYTES];
+    return s_test_shared_buffer;
+}
 }
 
 namespace {

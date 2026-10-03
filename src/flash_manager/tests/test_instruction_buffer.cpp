@@ -676,7 +676,8 @@ TEST_F( InstructionBufferTest, PeekAndConsumeSupportACompleteTwoPageInstruction 
 TEST_F( InstructionBufferTest, PeekRejectsInstructionOneWordLargerThanMaximum )
 {
     constexpr uint16_t operations_length_bytes = static_cast<uint16_t>(
-        TEST_INSTRUCTION_PAGE_SIZE_BYTES * 2U - sizeof( ExecutionInstructionHeader_T ) + 4U );
+        TEST_INSTRUCTION_PAGE_SIZE_BYTES * INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT
+        - sizeof( ExecutionInstructionHeader_T ) + 4U );
     constexpr uint32_t image_length_bytes =
         sizeof( ExecutionInstructionHeader_T ) + operations_length_bytes;
 

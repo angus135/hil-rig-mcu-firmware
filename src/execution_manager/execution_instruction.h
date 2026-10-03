@@ -38,7 +38,7 @@ extern "C"
  */
 
 /** Maximum encoded size of one complete instruction, including its header. */
-#define EXECUTION_INSTRUCTION_MAX_SIZE_BYTES ( 4096U )
+#define EXECUTION_INSTRUCTION_MAX_SIZE_BYTES ( 8192U )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures

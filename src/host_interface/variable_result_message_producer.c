@@ -21,6 +21,8 @@
  */
 
 #include "variable_result_message_producer.h"
+#include "instruction_message_handler.h"
+#include "execution_manager/execution_instruction.h"
 #include "flash_manager/flash_manager.h"
 #include "hardware_low_level/hw_clock_calibration/hw_clock_calibration.h"
 
@@ -35,7 +37,7 @@
  */
 
 /** @brief Internal staging capacity for reassembling records from Flash Manager. */
-#define VAR_RESULT_PRODUCER_BUFFER_CAPACITY ( 2048U + sizeof( FlashManagerResultHeader_T ) )
+#define VAR_RESULT_PRODUCER_BUFFER_CAPACITY ( 4096U )
 
 /**
  * @brief Maximum captured payload staged for one tick.
@@ -43,7 +45,17 @@
  * Supports large serial transfers (SPI, UART, CAN) staged for one tick while
  * remaining bounded and statically allocated.
  */
-#define VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY ( 2048U )
+#define VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY ( 4096U )
+
+#if defined( __cplusplus )
+static_assert( ( VAR_RESULT_PRODUCER_BUFFER_CAPACITY + VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY )
+                   <= EXECUTION_INSTRUCTION_MAX_SIZE_BYTES,
+               "Variable result buffers exceed shared host workspace" );
+#else
+_Static_assert( ( VAR_RESULT_PRODUCER_BUFFER_CAPACITY + VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY )
+                    <= EXECUTION_INSTRUCTION_MAX_SIZE_BYTES,
+                "Variable result buffers exceed shared host workspace" );
+#endif
 
 /**
  * @brief Payload threshold for flushing an intermediate chunk (HAS_MORE_CHUNKS).
@@ -69,8 +81,8 @@
  */
 typedef struct
 {
-    /** Staging buffer for streaming and reassembling record bytes from flash. */
-    uint8_t buffer[VAR_RESULT_PRODUCER_BUFFER_CAPACITY];
+    /** Pointer to staging buffer for streaming and reassembling record bytes from flash. */
+    uint8_t* buffer;
 
     /** Byte offset of first unparsed byte in buffer. */
     size_t read_offset;
@@ -102,8 +114,8 @@ typedef struct
     /** Number of valid records in staged_records. */
     uint8_t staged_record_count;
 
-    /** Buffer holding converted wire payloads referenced by staged_records spans. */
-    uint8_t staged_payload_storage[VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY];
+    /** Pointer to buffer holding converted wire payloads referenced by staged_records spans. */
+    uint8_t* staged_payload_storage;
 
     /** Current write offset in staged_payload_storage. */
     size_t staged_payload_offset;
@@ -189,7 +201,7 @@ VAR_RESULT_PRODUCER_FetchFromFlash( VariableResultProducerStream_T* const stream
         stream->read_offset  = 0U;
     }
 
-    const size_t capacity = sizeof( stream->buffer ) - stream->write_offset;
+    const size_t capacity = VAR_RESULT_PRODUCER_BUFFER_CAPACITY - stream->write_offset;
     if ( capacity == 0U )
     {
         s_var_diagnostics.last_flash_status = FLASH_MANAGER_RESULT_TRANSFER_OK;
@@ -291,7 +303,7 @@ static bool VAR_RESULT_PRODUCER_CanStageRecord( const FlashManagerResultHeader_T
         return false;
     }
 
-    if ( ( stream->staged_payload_offset + req_bytes ) > sizeof( stream->staged_payload_storage ) )
+    if ( ( stream->staged_payload_offset + req_bytes ) > VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY )
     {
         return false;
     }
@@ -317,7 +329,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
             if ( ( header->payload_length_bytes != sizeof( uint32_t ) )
                  || ( stream->staged_record_count >= VARIABLE_RESULT_MAX_STAGED_RECORDS )
                  || ( ( stream->staged_payload_offset + 2U )
-                      > sizeof( stream->staged_payload_storage ) ) )
+                      > VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY ) )
             {
                 return false;
             }
@@ -353,7 +365,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
             if ( ( header->payload_length_bytes != ( 2U * sizeof( uint32_t ) ) )
                  || ( ( stream->staged_record_count + 2U ) > VARIABLE_RESULT_MAX_STAGED_RECORDS )
                  || ( ( stream->staged_payload_offset + 8U )
-                      > sizeof( stream->staged_payload_storage ) ) )
+                      > VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY ) )
             {
                 return false;
             }
@@ -391,7 +403,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
                  || ( header->payload_length_bytes != ( 2U * sizeof( uint32_t ) ) )
                  || ( stream->staged_record_count >= VARIABLE_RESULT_MAX_STAGED_RECORDS )
                  || ( ( stream->staged_payload_offset + 6U )
-                      > sizeof( stream->staged_payload_storage ) ) )
+                      > VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY ) )
             {
                 return false;
             }
@@ -462,7 +474,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
 
             size_t       copied_length = header->payload_length_bytes;
             const size_t available =
-                sizeof( stream->staged_payload_storage ) - stream->staged_payload_offset;
+                VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY - stream->staged_payload_offset;
             if ( copied_length > available )
             {
                 return false;
@@ -503,7 +515,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
 
             size_t       copied_length = header->payload_length_bytes;
             const size_t available =
-                sizeof( stream->staged_payload_storage ) - stream->staged_payload_offset;
+                VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY - stream->staged_payload_offset;
             if ( copied_length > available )
             {
                 return false;
@@ -548,7 +560,7 @@ static bool VAR_RESULT_PRODUCER_DispatchRecord( const FlashManagerResultHeader_T
 
             size_t       copied_length = header->payload_length_bytes;
             const size_t available =
-                sizeof( stream->staged_payload_storage ) - stream->staged_payload_offset;
+                VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY - stream->staged_payload_offset;
             if ( copied_length > available )
             {
                 return false;
@@ -592,6 +604,9 @@ void VARIABLE_RESULT_MESSAGE_PRODUCER_Reset( void )
 {
     ( void )memset( &s_var_stream, 0, sizeof( s_var_stream ) );
     ( void )memset( &s_var_diagnostics, 0, sizeof( s_var_diagnostics ) );
+    s_var_stream.buffer                 = HOST_INSTRUCTION_HANDLER_GetSharedBuffer();
+    s_var_stream.staged_payload_storage = HOST_INSTRUCTION_HANDLER_GetSharedBuffer()
+                                          + VAR_RESULT_PRODUCER_BUFFER_CAPACITY;
 }
 
 void VARIABLE_RESULT_MESSAGE_PRODUCER_SetExpectedTickCount( const uint32_t tick_count )
@@ -612,7 +627,7 @@ VAR_RESULT_PRODUCER_PopulateResultMetadata( const VariableResultProducerStream_T
 }
 
 static void VAR_RESULT_PRODUCER_EmitEmptyTick( VariableResultProducerStream_T* const stream,
-                                               HIL_Application_Message_T* const      out_message )
+                                                HIL_Application_Message_T* const      out_message )
 {
     out_message->type        = HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT;
     out_message->subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
@@ -638,6 +653,13 @@ VAR_RESULT_PRODUCER_ProduceNextMessageInternal( HIL_Application_Message_T* const
 
     VariableResultProducerStream_T* const stream = &s_var_stream;
 
+    if ( stream->buffer == NULL )
+    {
+        stream->buffer                 = HOST_INSTRUCTION_HANDLER_GetSharedBuffer();
+        stream->staged_payload_storage = HOST_INSTRUCTION_HANDLER_GetSharedBuffer()
+                                         + VAR_RESULT_PRODUCER_BUFFER_CAPACITY;
+    }
+
     while ( 1 )
     {
         FlashManagerResultHeader_T header;
@@ -653,7 +675,7 @@ VAR_RESULT_PRODUCER_ProduceNextMessageInternal( HIL_Application_Message_T* const
                                 sizeof( FlashManagerResultHeader_T ) );
                 const size_t total_record_size = sizeof( FlashManagerResultHeader_T )
                                                  + ( size_t )peeked_header.payload_length_bytes;
-                if ( total_record_size > sizeof( stream->buffer ) )
+                if ( total_record_size > VAR_RESULT_PRODUCER_BUFFER_CAPACITY )
                 {
                     return RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA;
                 }

@@ -139,19 +139,10 @@ static uint32_t external_flash_committed_result_length_bytes = 0U;
 static uint32_t external_flash_result_session_capacity_bytes = 0U;
 
 /**
- * Page sized staging buffer used by the final partial result page path.
- *
- * Full page calls to EXTERNAL_FLASH_WriteResultPage do not use this buffer.
- * Those calls DMA directly from the caller supplied flash manager buffer.
+ * Page sized staging buffer used by the instruction byte upload path,
+ * final partial instruction page writes, and final partial result page writes.
  */
-static uint8_t external_flash_result_page_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES] = { 0xFFU };
-
-/**
- * Page sized staging buffer used by the instruction byte upload path and by
- * final partial page writes through EXTERNAL_FLASH_WriteInstructionPage.
- */
-static uint8_t external_flash_instruction_page_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES] = {
-    0xFFU };
+static uint8_t external_flash_staging_page_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES] = { 0xFFU };
 
 /** Page-sized scratch buffer used to replay data during mapped-block recovery. */
 static uint8_t external_flash_recovery_page_buffer[EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES] = { 0xFFU };
@@ -405,7 +396,7 @@ EXTERNAL_FLASH_GetPartitionCapacityBytes( ExternalFlashAllocatorPartition_T part
  */
 static void EXTERNAL_FLASH_ClearResultPageBuffer( void )
 {
-    ( void )memset( external_flash_result_page_buffer, 0xFF,
+    ( void )memset( external_flash_staging_page_buffer, 0xFF,
                     external_flash_geometry.page_size_bytes );
 }
 
@@ -414,7 +405,7 @@ static void EXTERNAL_FLASH_ClearResultPageBuffer( void )
  */
 static void EXTERNAL_FLASH_ClearInstructionPageBuffer( void )
 {
-    ( void )memset( external_flash_instruction_page_buffer, 0xFF,
+    ( void )memset( external_flash_staging_page_buffer, 0xFF,
                     external_flash_geometry.page_size_bytes );
     external_flash_instruction_page_fill = 0U;
 }
@@ -606,7 +597,7 @@ static ExternalFlashStatus_T EXTERNAL_FLASH_ProgramStagedInstructionPage( void )
     uint32_t bytes_to_commit = external_flash_instruction_page_fill;
 
     ExternalFlashStatus_T status = EXTERNAL_FLASH_ProgramInstructionPageBuffer(
-        external_flash_instruction_page_buffer, page_start_offset, bytes_to_commit );
+        external_flash_staging_page_buffer, page_start_offset, bytes_to_commit );
 
     if ( status == EXTERNAL_FLASH_STATUS_OK )
     {
@@ -785,9 +776,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_Init( void )
          || ( external_flash_geometry.page_size_bytes
               > ( UINT32_MAX / external_flash_geometry.pages_per_block ) )
          || ( external_flash_geometry.page_size_bytes
-              > sizeof( external_flash_result_page_buffer ) )
-         || ( external_flash_geometry.page_size_bytes
-              > sizeof( external_flash_instruction_page_buffer ) ) )
+              > sizeof( external_flash_staging_page_buffer ) ) )
     {
         return EXTERNAL_FLASH_STATUS_ERROR;
     }
@@ -965,7 +954,7 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionBytes( const uint8_t* data,
         uint32_t bytes_this_page = ( remaining < page_space ) ? remaining : page_space;
 
         ( void )memcpy(
-            &external_flash_instruction_page_buffer[external_flash_instruction_page_fill],
+            &external_flash_staging_page_buffer[external_flash_instruction_page_fill],
             &data[bytes_written], bytes_this_page );
 
         external_flash_instruction_page_fill += bytes_this_page;
@@ -1054,10 +1043,10 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionPage( const uint8_t* data,
     {
         EXTERNAL_FLASH_ClearInstructionPageBuffer();
 
-        ( void )memcpy( external_flash_instruction_page_buffer, data, valid_length );
+        ( void )memcpy( external_flash_staging_page_buffer, data, valid_length );
 
         status = EXTERNAL_FLASH_ProgramInstructionPageBuffer(
-            external_flash_instruction_page_buffer, page_start_offset, valid_length );
+            external_flash_staging_page_buffer, page_start_offset, valid_length );
 
         EXTERNAL_FLASH_ClearInstructionPageBuffer();
     }
@@ -1180,9 +1169,9 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteResultPage( const uint8_t* data, uint3
     {
         EXTERNAL_FLASH_ClearResultPageBuffer();
 
-        ( void )memcpy( external_flash_result_page_buffer, data, valid_length );
+        ( void )memcpy( external_flash_staging_page_buffer, data, valid_length );
 
-        status = EXTERNAL_FLASH_ProgramResultPageBuffer( external_flash_result_page_buffer,
+        status = EXTERNAL_FLASH_ProgramResultPageBuffer( external_flash_staging_page_buffer,
                                                          page_start_offset, valid_length );
 
         EXTERNAL_FLASH_ClearResultPageBuffer();

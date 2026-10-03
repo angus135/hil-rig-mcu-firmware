@@ -483,6 +483,10 @@ HOST_INTERFACE_Spi_Parser( const HIL_Application_Message_T* config_message,
         {
             driver_config->spi_channels[i].baud_rate = EXEC_SPI_BAUD_5M625BIT;
         }
+        else if ( config_message->body.test_configuration.spi[i].bit_rate >= 2812500 )
+        {
+            driver_config->spi_channels[i].baud_rate = EXEC_SPI_BAUD_2M813BIT;
+        }
         else if ( config_message->body.test_configuration.spi[i].bit_rate >= 1406000 )
         {
             driver_config->spi_channels[i].baud_rate = EXEC_SPI_BAUD_1M406BIT;

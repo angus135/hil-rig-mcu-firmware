@@ -1452,7 +1452,7 @@ TEST_F( RunStateManagerTest, PackageReceiveWithTicksCalculatesConservativeReserv
     Process( RUN_STATE_REQUEST_PACKAGE_RECEIVE );
 
     EXPECT_EQ( 1U, flash_upload_start_calls );
-    EXPECT_EQ( 100U * 4096U, flash_upload_start_expected_length );
+    EXPECT_EQ( 100U * EXECUTION_INSTRUCTION_MAX_SIZE_BYTES, flash_upload_start_expected_length );
     EXPECT_EQ( RUN_STATE_IDLE, run_state );
     EXPECT_EQ( RUN_STATE_PENDING_INSTRUCTION_UPLOAD_PREPARATION, pending_operation );
 

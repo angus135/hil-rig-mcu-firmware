@@ -39,6 +39,7 @@ extern "C"
  */
 
 #include "rtos_config.h"
+#include "external_flash.h"
 #include "execution_manager/execution_instruction.h"
 
 #include <stdbool.h>
@@ -235,6 +236,10 @@ typedef struct
 #define FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE ( 4U )
 #define FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE ( 5U )
 #define FLASH_MANAGER_RESULT_PERIPHERAL_CAN_RECEIVE ( 6U )
+
+/** Maximum payload bytes that can be reserved for a single result record (one NAND page minus header). */
+#define FLASH_MANAGER_RESULT_MAX_PAYLOAD_BYTES                                                     \
+    ( ( uint16_t )( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES - sizeof( FlashManagerResultHeader_T ) ) )
 
 /**
  * @brief Temporary driver write access to Flash Manager-owned result storage.
