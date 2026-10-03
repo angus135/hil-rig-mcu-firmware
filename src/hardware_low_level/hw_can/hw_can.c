@@ -164,8 +164,7 @@ static HW_CAN_Result_T HW_CAN_Tx_Trigger( CAN_HandleTypeDef* hcan, CAN_Packet_T 
                                           uint16_t buffer_width, volatile bool* active,
                                           volatile bool*               completed,
                                           volatile uint32_t*           pending_mailbox,
-                                          volatile HW_CAN_Tx_Status_T* status,
-                                          IRQn_Type                    tx_irq );
+                                          volatile HW_CAN_Tx_Status_T* status, IRQn_Type tx_irq );
 
 static void HW_CAN_Tx_IRQ( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[], volatile uint16_t* w_p,
                            volatile uint16_t* r_p, uint16_t buffer_width, volatile bool* active,
@@ -1762,7 +1761,8 @@ static void HW_CAN_Tx_IRQ( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[], volat
             any_completion_seen = true;
             bool succeeded =
                 ( ( tsr & success_flags[mailbox] ) != 0U )
-                && ( ( tsr & ( arbitration_lost_flags[mailbox] | transmit_error_flags[mailbox] ) ) == 0U );
+                && ( ( tsr & ( arbitration_lost_flags[mailbox] | transmit_error_flags[mailbox] ) )
+                     == 0U );
 
             if ( !succeeded )
             {
@@ -1951,7 +1951,7 @@ static HW_CAN_Result_T HW_CAN_Tx_Service( CAN_HandleTypeDef* hcan, CAN_Packet_T 
 
         CAN_Packet_T    packet       = buffer[*r_p];
         uint32_t        mailbox_flag = 0U;
-        HW_CAN_Result_T result       =
+        HW_CAN_Result_T result =
             HW_CAN_Transmit_To_Mailbox( hcan, packet.data, packet.id, packet.dlc, &mailbox_flag );
 
         if ( result == HW_CAN_RESULT_OK )
@@ -1992,8 +1992,7 @@ static HW_CAN_Result_T HW_CAN_Tx_Trigger( CAN_HandleTypeDef* hcan, CAN_Packet_T 
                                           uint16_t buffer_width, volatile bool* active,
                                           volatile bool*               completed,
                                           volatile uint32_t*           pending_mailbox,
-                                          volatile HW_CAN_Tx_Status_T* status,
-                                          IRQn_Type                    tx_irq )
+                                          volatile HW_CAN_Tx_Status_T* status, IRQn_Type tx_irq )
 {
     if ( *status == HW_CAN_TX_STATUS_ERROR )
     {
@@ -2007,7 +2006,7 @@ static HW_CAN_Result_T HW_CAN_Tx_Trigger( CAN_HandleTypeDef* hcan, CAN_Packet_T 
     {
         /* Transmission is already active; service any newly available mailboxes. */
         HW_CAN_Result_T svc_res = HW_CAN_Tx_Service( hcan, buffer, w_p, r_p, buffer_width, active,
-                                                    completed, pending_mailbox, status );
+                                                     completed, pending_mailbox, status );
         if ( tx_irq_was_enabled != 0U )
         {
             NVIC_EnableIRQ( tx_irq );

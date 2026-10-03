@@ -651,8 +651,8 @@ VAR_RESULT_PRODUCER_ProduceNextMessageInternal( HIL_Application_Message_T* const
                 FlashManagerResultHeader_T peeked_header;
                 ( void )memcpy( &peeked_header, stream->buffer + stream->read_offset,
                                 sizeof( FlashManagerResultHeader_T ) );
-                const size_t total_record_size =
-                    sizeof( FlashManagerResultHeader_T ) + ( size_t )peeked_header.payload_length_bytes;
+                const size_t total_record_size = sizeof( FlashManagerResultHeader_T )
+                                                 + ( size_t )peeked_header.payload_length_bytes;
                 if ( total_record_size > sizeof( stream->buffer ) )
                 {
                     return RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA;

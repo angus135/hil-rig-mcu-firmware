@@ -336,9 +336,9 @@ bool EXEC_UART_Configure_Channel( ExecUartChannel_T channel, const ExecUartConfi
         return false;
     }
 
-    state->lifecycle_state = EXEC_UART_STATE_CONFIGURED;
-    state->rx_enabled      = config->rx_enabled;
-    state->tx_enabled      = config->tx_enabled;
+    state->lifecycle_state          = EXEC_UART_STATE_CONFIGURED;
+    state->rx_enabled               = config->rx_enabled;
+    state->tx_enabled               = config->tx_enabled;
     uart_tx_queue_rejected[channel] = false;
 
     return true;
@@ -610,4 +610,3 @@ bool EXEC_UART_Was_Tx_Queue_Rejected( ExecUartChannel_T channel )
 
     return uart_tx_queue_rejected[channel];
 }
-

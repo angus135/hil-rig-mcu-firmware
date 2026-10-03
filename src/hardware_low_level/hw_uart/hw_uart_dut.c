@@ -1424,4 +1424,3 @@ void HW_UART_Reset_Diagnostic( HwUartChannel_T channel )
     state->runtime.dma_error_count = 0U;
     state->runtime.rx_unread_peak  = 0U;
 }
-

@@ -64,9 +64,9 @@
 #define RUN_STATE_MANAGER_DRIVER_SHUTDOWN_TIMEOUT_MS ( 15000U )
 
 /** Prescaler dividers for supported execution frequencies */
-#define PRESCALER_DIV_100HZ  ( 15U )
-#define PRESCALER_DIV_1KHZ   ( 2U )
-#define PRESCALER_DIV_10KHZ  ( 1U )
+#define PRESCALER_DIV_100HZ ( 15U )
+#define PRESCALER_DIV_1KHZ ( 2U )
+#define PRESCALER_DIV_10KHZ ( 1U )
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -122,7 +122,7 @@ static volatile bool execution_abort_requested = false;
 
 static TaskHandle_t run_state_manager_task_handle = NULL;
 
-static uint32_t package_receive_expected_ticks = 0U;
+static uint32_t   package_receive_expected_ticks      = 0U;
 static TickType_t instruction_upload_last_progress_at = 0U;
 
 static volatile RunStateFaultReason_T   fault_reason           = RUN_STATE_FAULT_NONE;
@@ -1420,11 +1420,9 @@ static void RUN_STATE_MANAGER_ProcessInstructionUploadTimeout( void )
     const TickType_t elapsed = xTaskGetTickCount() - instruction_upload_last_progress_at;
     taskEXIT_CRITICAL();
 
-    if ( elapsed
-         >= pdMS_TO_TICKS( RUN_STATE_MANAGER_INSTRUCTION_UPLOAD_INACTIVITY_TIMEOUT_MS ) )
+    if ( elapsed >= pdMS_TO_TICKS( RUN_STATE_MANAGER_INSTRUCTION_UPLOAD_INACTIVITY_TIMEOUT_MS ) )
     {
-        RUN_STATE_MANAGER_EnterFault(
-            RUN_STATE_FAULT_HOST_INTERFACE_INSTRUCTION_UPLOAD_TIMEOUT );
+        RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_HOST_INTERFACE_INSTRUCTION_UPLOAD_TIMEOUT );
     }
 }
 
@@ -1890,21 +1888,21 @@ void RUN_STATE_MANAGER_Init( void )
     execution_request_pending    = false;
     prepared_execution           = ( RunStatePreparedExecution_T ){
                   .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ, .enable_drain_tail = false };
-    execution_abort_requested      = false;
-    fault_reason                   = RUN_STATE_FAULT_NONE;
-    requested_fault_reason         = RUN_STATE_FAULT_NONE;
-    last_request                   = RUN_STATE_REQUEST_NONE;
-    last_request_result            = RUN_STATE_REQUEST_RESULT_NONE;
-    request_timing_active          = false;
-    timed_request                  = RUN_STATE_REQUEST_NONE;
-    timed_request_target_state     = RUN_STATE_IDLE;
-    timed_request_started_at       = 0U;
-    last_transition_timing_valid   = false;
-    last_completed_request         = RUN_STATE_REQUEST_NONE;
-    last_transition_duration_ms    = 0U;
-    run_state                      = RUN_STATE_IDLE;
-    run_configuration_owned        = false;
-    package_receive_expected_ticks = 0U;
+    execution_abort_requested           = false;
+    fault_reason                        = RUN_STATE_FAULT_NONE;
+    requested_fault_reason              = RUN_STATE_FAULT_NONE;
+    last_request                        = RUN_STATE_REQUEST_NONE;
+    last_request_result                 = RUN_STATE_REQUEST_RESULT_NONE;
+    request_timing_active               = false;
+    timed_request                       = RUN_STATE_REQUEST_NONE;
+    timed_request_target_state          = RUN_STATE_IDLE;
+    timed_request_started_at            = 0U;
+    last_transition_timing_valid        = false;
+    last_completed_request              = RUN_STATE_REQUEST_NONE;
+    last_transition_duration_ms         = 0U;
+    run_state                           = RUN_STATE_IDLE;
+    run_configuration_owned             = false;
+    package_receive_expected_ticks      = 0U;
     instruction_upload_last_progress_at = 0U;
 
     HW_TIMER_Set_Execution_Guard( RUN_STATE_MANAGER_ExecutionDispatchAllowedFromISR );

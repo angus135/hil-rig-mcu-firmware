@@ -212,16 +212,16 @@ typedef struct
  */
 typedef struct
 {
-    uint32_t tx_count_bytes;      ///< Current queued TX bytes.
-    uint32_t tx_peak_bytes;       ///< Peak queued TX bytes observed.
-    uint32_t tx_reject_count;     ///< Count of times TX loading was rejected (e.g. buffer full).
-    uint32_t dma_error_count;     ///< Count of TX/RX DMA errors encountered.
-    uint32_t rx_unread_bytes;     ///< Current unread RX bytes in circular buffer.
-    uint32_t rx_unread_peak_bytes;///< Peak unread RX bytes observed.
-    uint32_t latched_faults;      ///< Bitmask of latched UART/DMA faults.
-    bool     tx_dma_active;       ///< TX DMA currently active flag.
-    bool     is_started;          ///< Channel started flag.
-    bool     is_configured;       ///< Channel configured flag.
+    uint32_t tx_count_bytes;        ///< Current queued TX bytes.
+    uint32_t tx_peak_bytes;         ///< Peak queued TX bytes observed.
+    uint32_t tx_reject_count;       ///< Count of times TX loading was rejected (e.g. buffer full).
+    uint32_t dma_error_count;       ///< Count of TX/RX DMA errors encountered.
+    uint32_t rx_unread_bytes;       ///< Current unread RX bytes in circular buffer.
+    uint32_t rx_unread_peak_bytes;  ///< Peak unread RX bytes observed.
+    uint32_t latched_faults;        ///< Bitmask of latched UART/DMA faults.
+    bool     tx_dma_active;         ///< TX DMA currently active flag.
+    bool     is_started;            ///< Channel started flag.
+    bool     is_configured;         ///< Channel configured flag.
 } HwUartDiagnostic_T;
 
 /**-----------------------------------------------------------------------------

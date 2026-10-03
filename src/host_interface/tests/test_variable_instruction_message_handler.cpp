@@ -410,8 +410,8 @@ TEST_F( VariableInstructionMessageHandlerTest, AnalogueOutputPacksFrameCorrectly
     instruction.operations      = &op;
 
     const float expected_scaled_voltage = 2.5f * 1.071072808f;
-    EXPECT_CALL( *g_mock_deps,
-                 EXEC_ANALOGUE_OUTPUT_Prepare_Frame( 0U, ::testing::FloatEq( expected_scaled_voltage ), _ ) )
+    EXPECT_CALL( *g_mock_deps, EXEC_ANALOGUE_OUTPUT_Prepare_Frame(
+                                   0U, ::testing::FloatEq( expected_scaled_voltage ), _ ) )
         .WillOnce( DoAll( SetArgPointee<2>( AnalogueOutputPreparedFrame_T{ { 0x01, 0x02, 0x03 } } ),
                           Return( true ) ) );
 

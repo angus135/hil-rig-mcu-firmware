@@ -665,7 +665,8 @@ TEST_F( HWSPIRxTest, RxPeek_ReturnsTwoSpansWhenUnreadDataWraps )
 
     HWSPIRxSpans_T spans = HW_SPI_Rx_Peek( SPI_CHANNEL_1 );
 
-    EXPECT_EQ( spans.first_span.data, &HW_SPI_STATE( SPI_CHANNEL_1 )->rx_buffer[RX_BUFFER_SIZE_BYTES - 24U] );
+    EXPECT_EQ( spans.first_span.data,
+               &HW_SPI_STATE( SPI_CHANNEL_1 )->rx_buffer[RX_BUFFER_SIZE_BYTES - 24U] );
     EXPECT_EQ( spans.first_span.length_bytes, 24U );
     EXPECT_EQ( spans.second_span.data, &HW_SPI_STATE( SPI_CHANNEL_1 )->rx_buffer[0] );
     EXPECT_EQ( spans.second_span.length_bytes, 50U );
@@ -681,7 +682,8 @@ TEST_F( HWSPIRxTest, RxPeek_ConvertsDmaElementsBackToBytesIn16BitMode )
 
     EXPECT_CALL( mock,
                  DMAGetDataLength( Eq( SPI_CHANNEL_2_RX_DMA ), Eq( SPI_CHANNEL_2_RX_DMA_STREAM ) ) )
-        .WillOnce( Return( ( RX_BUFFER_SIZE_BYTES / 2U ) - 5U ) );  // 5 elements = 10 bytes, write index = 10
+        .WillOnce( Return( ( RX_BUFFER_SIZE_BYTES / 2U )
+                           - 5U ) );  // 5 elements = 10 bytes, write index = 10
 
     HWSPIRxSpans_T spans = HW_SPI_Rx_Peek( SPI_CHANNEL_2 );
 

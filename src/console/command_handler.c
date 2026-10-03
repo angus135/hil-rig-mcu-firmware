@@ -449,9 +449,10 @@ static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] )
         return;
     }
 
-    char* end_ptr                    = NULL;
-    errno                            = 0;
-    const unsigned long frequency_hz = EXEC_PWM_GEN_calibrate(strtoul( argv[4], &end_ptr, 10 )); // Scaling
+    char* end_ptr = NULL;
+    errno         = 0;
+    const unsigned long frequency_hz =
+        EXEC_PWM_GEN_calibrate( strtoul( argv[4], &end_ptr, 10 ) );  // Scaling
     if ( errno == ERANGE || end_ptr == argv[4] || *end_ptr != '\0' || argv[4][0] == '-'
          || frequency_hz == 0UL || frequency_hz > 1000000UL )
     {
@@ -1388,9 +1389,9 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
             char*          channel_end    = NULL;
             char*          voltage_end    = NULL;
             long           channel        = strtol( argv[argument_index], &channel_end, 10 );
-            float init_voltage = strtof( argv[argument_index + 1U], &voltage_end );
-            float          voltage = init_voltage;
-            EXEC_ANALOGUE_OUTPUT_Scale(&init_voltage, &voltage);
+            float          init_voltage   = strtof( argv[argument_index + 1U], &voltage_end );
+            float          voltage        = init_voltage;
+            EXEC_ANALOGUE_OUTPUT_Scale( &init_voltage, &voltage );
             AnalogueOutputPreparedFrame_T prepared_frame;
 
             if ( ( channel_end == argv[argument_index] ) || ( *channel_end != '\0' )
@@ -1463,7 +1464,7 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
 
     char* endptr2 = NULL;
     float voltage = strtof( argv[2], &endptr2 );
-    EXEC_ANALOGUE_OUTPUT_Scale(&voltage, &voltage);
+    EXEC_ANALOGUE_OUTPUT_Scale( &voltage, &voltage );
     if ( ( endptr2 == argv[2] ) || ( *endptr2 != '\0' ) )
     {
         CONSOLE_Printf( "Invalid voltage\r\n" );
@@ -1682,9 +1683,13 @@ static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] )
 
         EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( voltage_destination );
 
-        CONSOLE_Printf( "Analogue input 0 raw value: %lu, scaled value: %lu\r\n", (uint32_t)channel_0_voltage, (uint32_t)EXEC_ANALOGUE_INPUT_Scale((uint32_t)channel_0_voltage ) );
-        CONSOLE_Printf( "Analogue input 1 raw value: %lu, scaled value: %lu\r\n", (uint32_t)channel_1_voltage, (uint32_t)EXEC_ANALOGUE_INPUT_Scale((uint32_t)channel_1_voltage ));
-        CONSOLE_Printf( "Done reading Analogue inputs\r\n");
+        CONSOLE_Printf( "Analogue input 0 raw value: %lu, scaled value: %lu\r\n",
+                        ( uint32_t )channel_0_voltage,
+                        ( uint32_t )EXEC_ANALOGUE_INPUT_Scale( ( uint32_t )channel_0_voltage ) );
+        CONSOLE_Printf( "Analogue input 1 raw value: %lu, scaled value: %lu\r\n",
+                        ( uint32_t )channel_1_voltage,
+                        ( uint32_t )EXEC_ANALOGUE_INPUT_Scale( ( uint32_t )channel_1_voltage ) );
+        CONSOLE_Printf( "Done reading Analogue inputs\r\n" );
     }
     else if ( strcmp( argv[1], "configure" ) == 0 )
     {

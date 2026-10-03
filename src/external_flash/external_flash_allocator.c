@@ -70,8 +70,8 @@ static uint16_t
  *
  * Stored as a bitset to avoid placing large byte arrays on the stack or in RAM.
  */
-static uint32_t
-    external_flash_allocator_selected_blocks[EXTERNAL_FLASH_ALLOCATOR_BITMAP_WORDS] = { 0U };
+static uint32_t external_flash_allocator_selected_blocks[EXTERNAL_FLASH_ALLOCATOR_BITMAP_WORDS] = {
+    0U };
 
 static uint32_t external_flash_allocator_bad_block_count = 0U;
 
@@ -724,7 +724,8 @@ ExternalFlashStatus_T EXTERNAL_FLASH_ALLOCATOR_CommitMappedBlockReplacement(
     uint32_t* block_count = EXTERNAL_FLASH_ALLOCATOR_GetPartitionMapCount( partition );
 
     if ( ( config == NULL ) || ( block_map == NULL ) || ( block_count == NULL )
-         || ( logical_block >= *block_count ) || ( ( uint32_t )block_map[logical_block] != failed_block )
+         || ( logical_block >= *block_count )
+         || ( ( uint32_t )block_map[logical_block] != failed_block )
          || ( replacement_block < config->start_block )
          || ( replacement_block >= ( config->start_block + config->block_count ) )
          || EXTERNAL_FLASH_ALLOCATOR_IsPhysicalBlockBad( replacement_block )

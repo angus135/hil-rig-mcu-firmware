@@ -308,7 +308,8 @@ static bool RESULT_PRODUCER_DecodePwmCapture( const uint8_t channel, const uint8
      * In hardware Slave-Reset mode, the STM32 timer slave-mode controller takes 2 timer clock
      * cycles to resynchronize the trigger and reset the counter on the rising edge.
      * Therefore, both the captured period and high time are reduced by 2 timer clock counts.
-     * We add 2 clock counts (preserving 0 for zero duty) to restore the true physical pulse duration.
+     * We add 2 clock counts (preserving 0 for zero duty) to restore the true physical pulse
+     * duration.
      *
      * TODO: The +2 tick correction accurately compensates for the hardware slave-mode reset
      * resynchronization delay (which is critical for exact integer tick fidelity in loopback

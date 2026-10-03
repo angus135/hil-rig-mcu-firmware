@@ -738,11 +738,11 @@ void HW_SPI_Reset_Diagnostics( SPIChannel_T peripheral )
 
     SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State_Fast( peripheral );
 
-    peripheral_state->peak_tx_num_bytes_pending   = peripheral_state->tx_num_bytes_pending;
-    peripheral_state->peak_tx_num_packets_pending = ( uint32_t )peripheral_state->tx_num_packets_pending;
+    peripheral_state->peak_tx_num_bytes_pending = peripheral_state->tx_num_bytes_pending;
+    peripheral_state->peak_tx_num_packets_pending =
+        ( uint32_t )peripheral_state->tx_num_packets_pending;
     peripheral_state->tx_queue_reject_count        = 0U;
     peripheral_state->tx_dma_error_count           = 0U;
     peripheral_state->tx_final_drain_timeout_count = 0U;
     peripheral_state->rx_unread_peak_bytes         = 0U;
 }
-

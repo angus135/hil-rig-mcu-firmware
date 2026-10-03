@@ -333,8 +333,7 @@ void CONSOLE_PWM_Capture_Command( uint16_t argc, char* argv[] )
         }
 
         CONSOLE_Printf( "  period_ns:    %lu ns\r\n", ( unsigned long )out.period_nanoseconds );
-        CONSOLE_Printf( "  freq:         %lu.%02lu Hz\r\n",
-                        ( unsigned long )( freq_chz / 100U ),
+        CONSOLE_Printf( "  freq:         %lu.%02lu Hz\r\n", ( unsigned long )( freq_chz / 100U ),
                         ( unsigned long )( freq_chz % 100U ) );
         CONSOLE_Printf( "  duty:         %lu.%02lu%%\r\n",
                         ( unsigned long )( out.duty_cycle_bp / 100U ),

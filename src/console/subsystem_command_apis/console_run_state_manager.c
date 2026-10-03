@@ -666,15 +666,15 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
             HWSPI_Diagnostic_T spi_diag = { 0 };
             if ( HW_SPI_Get_Diagnostics( ( SPIChannel_T )ch, &spi_diag ) )
             {
-                CONSOLE_Printf(
-                    "SPI%u diag: tx_peak=%lu/%lu (pkts/bytes) tx_rejects=%lu dma_err=%lu drain_to=%lu rx_unread_peak=%lu\r\n",
-                    ( unsigned int )( ch + 1U ),
-                    ( unsigned long )spi_diag.peak_tx_num_packets_pending,
-                    ( unsigned long )spi_diag.peak_tx_num_bytes_pending,
-                    ( unsigned long )spi_diag.tx_queue_reject_count,
-                    ( unsigned long )spi_diag.tx_dma_error_count,
-                    ( unsigned long )spi_diag.tx_final_drain_timeout_count,
-                    ( unsigned long )spi_diag.rx_unread_peak_bytes );
+                CONSOLE_Printf( "SPI%u diag: tx_peak=%lu/%lu (pkts/bytes) tx_rejects=%lu "
+                                "dma_err=%lu drain_to=%lu rx_unread_peak=%lu\r\n",
+                                ( unsigned int )( ch + 1U ),
+                                ( unsigned long )spi_diag.peak_tx_num_packets_pending,
+                                ( unsigned long )spi_diag.peak_tx_num_bytes_pending,
+                                ( unsigned long )spi_diag.tx_queue_reject_count,
+                                ( unsigned long )spi_diag.tx_dma_error_count,
+                                ( unsigned long )spi_diag.tx_final_drain_timeout_count,
+                                ( unsigned long )spi_diag.rx_unread_peak_bytes );
             }
         }
         for ( uint8_t ch = 0U; ch < ( uint8_t )HW_UART_CHANNEL_COUNT; ch++ )
@@ -684,8 +684,7 @@ void CONSOLE_RunStateManager_Command( uint16_t argc, char* argv[] )
             {
                 CONSOLE_Printf(
                     "UART%u diag: tx_peak=%lu tx_rejects=%lu dma_err=%lu rx_unread_peak=%lu\r\n",
-                    ( unsigned int )( ch + 1U ),
-                    ( unsigned long )uart_diag.tx_peak_bytes,
+                    ( unsigned int )( ch + 1U ), ( unsigned long )uart_diag.tx_peak_bytes,
                     ( unsigned long )uart_diag.tx_reject_count,
                     ( unsigned long )uart_diag.dma_error_count,
                     ( unsigned long )uart_diag.rx_unread_peak_bytes );

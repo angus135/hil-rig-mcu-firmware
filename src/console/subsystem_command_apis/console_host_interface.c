@@ -581,18 +581,18 @@ static void CONSOLE_HostInterface_PrintStatus( void )
     CONSOLE_Printf( "  Fault state:         %s\r\n", status.is_faulted ? "FAULTED" : "none" );
     if ( ( status.rejected_instruction_count > 0U ) || ( status.var_instruction_last_stage > 0U ) )
     {
-        CONSOLE_Printf( "  Rejected instr ct:   %lu (last tick=%lu, reason=%s, detail=%s [%lu], "
-                        "stage=%s [%lu], code=%lu)\r\n",
-                        ( unsigned long )status.rejected_instruction_count,
-                        ( unsigned long )status.last_rejected_tick,
-                        CONSOLE_HostInterface_ResponseReasonName( status.last_rejected_reason ),
-                        CONSOLE_HostInterface_StatusName(
-                            ( HOST_Interface_Status_T )status.last_rejected_detail ),
-                        ( unsigned long )status.last_rejected_detail,
-                        CONSOLE_HostInterface_VarInstructionStageName(
-                            status.var_instruction_last_stage ),
-                        ( unsigned long )status.var_instruction_last_stage,
-                        ( unsigned long )status.var_instruction_last_stage_code );
+        CONSOLE_Printf(
+            "  Rejected instr ct:   %lu (last tick=%lu, reason=%s, detail=%s [%lu], "
+            "stage=%s [%lu], code=%lu)\r\n",
+            ( unsigned long )status.rejected_instruction_count,
+            ( unsigned long )status.last_rejected_tick,
+            CONSOLE_HostInterface_ResponseReasonName( status.last_rejected_reason ),
+            CONSOLE_HostInterface_StatusName(
+                ( HOST_Interface_Status_T )status.last_rejected_detail ),
+            ( unsigned long )status.last_rejected_detail,
+            CONSOLE_HostInterface_VarInstructionStageName( status.var_instruction_last_stage ),
+            ( unsigned long )status.var_instruction_last_stage,
+            ( unsigned long )status.var_instruction_last_stage_code );
     }
     CONSOLE_Printf( "  Blocked responses:   %lu\r\n",
                     ( unsigned long )status.response_blocked_count );

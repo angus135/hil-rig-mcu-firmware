@@ -113,7 +113,8 @@ static bool last_instruction_had_more_chunks = false;
 /** @brief Writer state retained while accumulating multi-chunk instructions for one tick. */
 static HostInstructionWriter_T s_accumulated_writer;
 
-/** @brief Indicates whether a multi-chunk instruction is currently accumulating in the shared buffer. */
+/** @brief Indicates whether a multi-chunk instruction is currently accumulating in the shared
+ * buffer. */
 static bool s_accumulating_chunk = false;
 
 /** @brief Retained digital output pin state for transition detection. */
@@ -389,7 +390,8 @@ HOST_VAR_INSTRUCTION_EncodePwm( const HIL_Application_Logical_Operation_T* const
                                         ? HOST_VAR_INSTRUCTION_PWM_LV_TIMER_CLOCK_HZ
                                         : HOST_VAR_INSTRUCTION_PWM_HV_TIMER_CLOCK_HZ;
 
-    const uint32_t frequency_hz  = EXEC_PWM_GEN_calibrate( HOST_VAR_INSTRUCTION_NANOSECONDS_PER_SECOND / period_ns );
+    const uint32_t frequency_hz =
+        EXEC_PWM_GEN_calibrate( HOST_VAR_INSTRUCTION_NANOSECONDS_PER_SECOND / period_ns );
     const uint16_t duty_permille = ( uint16_t )( duty_permyriad / 10U );
 
     ExecutionPwmUpdatePayload_T payload;
@@ -576,8 +578,9 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_AppendInstructionOperations(
                 if ( status != HOST_INTERFACE_STATUS_OK )
                 {
                     s_var_last_failed_stage = 10U;
-                    s_var_last_stage_code   = ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
-                    s_var_last_failed_tick  = instruction->tick_number;
+                    s_var_last_stage_code =
+                        ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
+                    s_var_last_failed_tick = instruction->tick_number;
                     return status;
                 }
                 break;
@@ -588,20 +591,21 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_AppendInstructionOperations(
                 if ( status != HOST_INTERFACE_STATUS_OK )
                 {
                     s_var_last_failed_stage = 11U;
-                    s_var_last_stage_code   = ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
-                    s_var_last_failed_tick  = instruction->tick_number;
+                    s_var_last_stage_code =
+                        ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
+                    s_var_last_failed_tick = instruction->tick_number;
                     return status;
                 }
                 break;
 
             case HIL_APPLICATION_PERIPHERAL_PWM_OUTPUT:
-                status =
-                    HOST_VAR_INSTRUCTION_EncodePwm( op, &active_config, config_valid, writer );
+                status = HOST_VAR_INSTRUCTION_EncodePwm( op, &active_config, config_valid, writer );
                 if ( status != HOST_INTERFACE_STATUS_OK )
                 {
                     s_var_last_failed_stage = 12U;
-                    s_var_last_stage_code   = ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
-                    s_var_last_failed_tick  = instruction->tick_number;
+                    s_var_last_stage_code =
+                        ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
+                    s_var_last_failed_tick = instruction->tick_number;
                     return status;
                 }
                 break;
@@ -612,32 +616,33 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_AppendInstructionOperations(
                 if ( status != HOST_INTERFACE_STATUS_OK )
                 {
                     s_var_last_failed_stage = 13U;
-                    s_var_last_stage_code   = ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
-                    s_var_last_failed_tick  = instruction->tick_number;
+                    s_var_last_stage_code =
+                        ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
+                    s_var_last_failed_tick = instruction->tick_number;
                     return status;
                 }
                 break;
 
             case HIL_APPLICATION_PERIPHERAL_SPI:
-                status =
-                    HOST_VAR_INSTRUCTION_EncodeSpi( op, &active_config, config_valid, writer );
+                status = HOST_VAR_INSTRUCTION_EncodeSpi( op, &active_config, config_valid, writer );
                 if ( status != HOST_INTERFACE_STATUS_OK )
                 {
                     s_var_last_failed_stage = 14U;
-                    s_var_last_stage_code   = ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
-                    s_var_last_failed_tick  = instruction->tick_number;
+                    s_var_last_stage_code =
+                        ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
+                    s_var_last_failed_tick = instruction->tick_number;
                     return status;
                 }
                 break;
 
             case HIL_APPLICATION_PERIPHERAL_CAN:
-                status =
-                    HOST_VAR_INSTRUCTION_EncodeCan( op, &active_config, config_valid, writer );
+                status = HOST_VAR_INSTRUCTION_EncodeCan( op, &active_config, config_valid, writer );
                 if ( status != HOST_INTERFACE_STATUS_OK )
                 {
                     s_var_last_failed_stage = 15U;
-                    s_var_last_stage_code   = ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
-                    s_var_last_failed_tick  = instruction->tick_number;
+                    s_var_last_stage_code =
+                        ( ( ( uint32_t )status ) << 16U ) | ( uint32_t )op->channel;
+                    s_var_last_failed_tick = instruction->tick_number;
                     return status;
                 }
                 break;
@@ -730,10 +735,10 @@ void HOST_VARIABLE_INSTRUCTION_HANDLER_Reset( void )
     last_instruction_had_more_chunks = false;
     s_accumulating_chunk             = false;
     ( void )memset( &s_accumulated_writer, 0, sizeof( s_accumulated_writer ) );
-    s_var_last_failed_stage          = 0U;
-    s_var_last_stage_code            = 0U;
-    s_var_last_failed_tick           = 0U;
-    s_last_raw_flash_upload_status   = 0U;
+    s_var_last_failed_stage        = 0U;
+    s_var_last_stage_code          = 0U;
+    s_var_last_failed_tick         = 0U;
+    s_last_raw_flash_upload_status = 0U;
     ( void )memset( &tracked_digital_state, 0, sizeof( tracked_digital_state ) );
 
     DutDriverConfiguration_T active_config;

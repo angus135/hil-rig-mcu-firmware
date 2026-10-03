@@ -558,4 +558,3 @@ TEST_F( VariableResultMessageProducerTest, FaultsWhenRecordExceedsStagedPayloadC
     EXPECT_EQ( VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &out_msg_ ),
                RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA );
 }
-
