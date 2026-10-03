@@ -1514,11 +1514,10 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
                     return;
                 }
             }
-            else if ( run_state == RUN_STATE_RESULT_TRANSFER )
-            {
-                accepted = RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle();
-            }
-            else if ( run_state == RUN_STATE_ARMED )
+            else if ( ( run_state == RUN_STATE_ARMED )
+                      || ( run_state == RUN_STATE_TEST_PACKAGE_RECEIVE )
+                      || ( run_state == RUN_STATE_CONFIGURATION )
+                      || ( run_state == RUN_STATE_RESULT_TRANSFER ) )
             {
                 ( void )FLASH_MANAGER_RequestAbortSession();
                 accepted = RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle();
@@ -1554,6 +1553,23 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
             else if ( run_state == RUN_STATE_IDLE )
             {
                 accepted = true;
+            }
+            else if ( run_state == RUN_STATE_RESULTS_READY )
+            {
+                accepted = RUN_STATE_MANAGER_DiscardCompletedResults( RUN_STATE_IDLE );
+                if ( !accepted && run_state != RUN_STATE_FAULT )
+                {
+                    last_request_result = RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE;
+                    return;
+                }
+            }
+            else if ( ( run_state == RUN_STATE_TEST_PACKAGE_RECEIVE )
+                      || ( run_state == RUN_STATE_CONFIGURATION )
+                      || ( run_state == RUN_STATE_ARMED )
+                      || ( run_state == RUN_STATE_RESULT_TRANSFER ) )
+            {
+                ( void )FLASH_MANAGER_RequestAbortSession();
+                accepted = RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle();
             }
             break;
 

@@ -46,7 +46,6 @@ if(EXEC_UART_ENABLE_TESTS AND BUILD_TESTING)
 
     target_link_libraries(exec_uart_tests
         PRIVATE
-            exec_uart
             gtest
             gtest_main
             gmock
@@ -56,6 +55,8 @@ if(EXEC_UART_ENABLE_TESTS AND BUILD_TESTING)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_uart
+            ${CMAKE_SOURCE_DIR}/src/logic_expander
     )
 
     add_test(NAME exec_uart_tests COMMAND exec_uart_tests)

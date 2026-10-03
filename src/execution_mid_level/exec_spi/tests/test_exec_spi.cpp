@@ -79,6 +79,8 @@ public:
 
     MOCK_METHOD( bool, TxIsComplete, ( SPIChannel_T peripheral ), () );
     MOCK_METHOD( bool, TxIsFaulted, ( SPIChannel_T peripheral ), () );
+    MOCK_METHOD( bool, GetDiagnostics, ( SPIChannel_T peripheral, HWSPI_Diagnostic_T* diag ), () );
+    MOCK_METHOD( void, ResetDiagnostics, ( SPIChannel_T peripheral ), () );
 };
 
 class MockLogicExpander
@@ -149,6 +151,16 @@ bool HW_SPI_Tx_Is_Complete( SPIChannel_T peripheral )
 bool HW_SPI_Tx_Is_Faulted( SPIChannel_T peripheral )
 {
     return g_mock_hw_spi->TxIsFaulted( peripheral );
+}
+
+bool HW_SPI_Get_Diagnostics( SPIChannel_T peripheral, HWSPI_Diagnostic_T* diag )
+{
+    return g_mock_hw_spi->GetDiagnostics( peripheral, diag );
+}
+
+void HW_SPI_Reset_Diagnostics( SPIChannel_T peripheral )
+{
+    g_mock_hw_spi->ResetDiagnostics( peripheral );
 }
 
 LogicExpanderStatus_T LOGIC_EXPANDER_Load_Control_Bit( LogicExpanderIndex_T expander,

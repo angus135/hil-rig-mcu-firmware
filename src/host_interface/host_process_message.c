@@ -552,9 +552,9 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     status = HOST_INTERFACE_Commit_Config_Message( &driver_config );
     if ( status != HOST_INTERFACE_STATUS_OK )
     {
-        // Construct the error message
+        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
         HOST_INTERFACE_Default_Error( outgoing_message );
-        // TODO  more specific error catagory
         outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
         *response_required                    = true;
         return HOST_INTERFACE_STATUS_OK;
@@ -573,18 +573,18 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
             check = RUN_STATE_MANAGER_Set_Execution_Frequency( RUN_STATE_FREQUENCY_10KHZ );
             break;
         default:
-            // Construct the error message
+            s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+            ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
             HOST_INTERFACE_Default_Error( outgoing_message );
-            // TODO  more specific error catagory
             outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
             *response_required                    = true;
             return HOST_INTERFACE_STATUS_OK;
     }
     if ( !check )
     {
-        // Construct the error message
+        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
         HOST_INTERFACE_Default_Error( outgoing_message );
-        // TODO  more specific error catagory
         outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
         *response_required                    = true;
         return HOST_INTERFACE_STATUS_OK;
@@ -667,6 +667,8 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incom
     // 2. Test ID correlation check
     if ( !HOST_INTERFACE_Validate_Test_Id( incoming_message ) )
     {
+        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
         HOST_INTERFACE_Default_Error( outgoing_message );
         outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
         *response_required                    = true;
@@ -676,6 +678,8 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incom
     // 3. Family exclusivity check (cannot send legacy Type 17 if variable Type 21 is active)
     if ( s_session.instruction_family == HOST_INSTRUCTION_FAMILY_VARIABLE_UPDATE )
     {
+        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
         HOST_INTERFACE_Default_Error( outgoing_message );
         outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
         *response_required                    = true;
@@ -750,6 +754,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Instruction_Data(
     // 2. Test ID correlation check
     if ( !HOST_INTERFACE_Validate_Test_Id( incoming_message ) )
     {
+        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
         HOST_INTERFACE_Default_Error( outgoing_message );
         outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
         *response_required                    = true;
@@ -759,6 +765,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Instruction_Data(
     // 3. Family exclusivity check (cannot send variable Type 21 if legacy Type 17 is active)
     if ( s_session.instruction_family == HOST_INSTRUCTION_FAMILY_LEGACY_FIXED )
     {
+        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
         HOST_INTERFACE_Default_Error( outgoing_message );
         outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
         *response_required                    = true;
@@ -1098,6 +1106,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Finalize_Test_Upload(
     // 2. Test ID check
     if ( !HOST_INTERFACE_Validate_Test_Id( incoming_message ) )
     {
+        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
         HOST_INTERFACE_Default_Error( outgoing_message );
         outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
         *response_required                    = true;
@@ -1110,6 +1120,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Finalize_Test_Upload(
         RUN_STATE_ARMED, HOST_REQUEST_CONFIGURATION, 3000, *expected_tick_count );
     if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
     {
+        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
         // Construct the error message
         HOST_INTERFACE_Default_Error( outgoing_message );
         // TODO  more specific error catagory
@@ -1119,6 +1131,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Finalize_Test_Upload(
     }
     if ( status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
     {
+        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
         // Construct the error message
         HOST_INTERFACE_Default_Error( outgoing_message );
         outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
@@ -1127,6 +1141,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Finalize_Test_Upload(
     }
     if ( status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE )
     {
+        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
         // Construct the error message
         HOST_INTERFACE_Default_Error( outgoing_message );
         // TODO  more specific error catagory

@@ -41,12 +41,12 @@ option(EXEC_SPI_ENABLE_TESTS "Build tests for exec_spi module" ON)
 if(EXEC_SPI_ENABLE_TESTS AND BUILD_TESTING)
 
     add_executable(exec_spi_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/exec_spi.c
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_exec_spi.cpp
     )
 
     target_link_libraries(exec_spi_tests
         PRIVATE
-            exec_spi
             gtest
             gtest_main
             gmock
@@ -56,6 +56,9 @@ if(EXEC_SPI_ENABLE_TESTS AND BUILD_TESTING)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_spi
+            ${CMAKE_SOURCE_DIR}/src/hardware_low_level/hw_gpio
+            ${CMAKE_SOURCE_DIR}/src/logic_expander
     )
 
     add_test(NAME exec_spi_tests COMMAND exec_spi_tests)

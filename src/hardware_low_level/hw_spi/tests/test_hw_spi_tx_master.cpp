@@ -858,12 +858,14 @@ TEST_F( HWSpiMasterTxTest, LoadTxPacketBatch_InsufficientCapacityLeavesQueueUnch
     state->tx_num_bytes_pending          = TX_BUFFER_SIZE_BYTES - 4U;
     state->tx_write_position             = TX_BUFFER_SIZE_BYTES - 4U;
 
-    const SPIPeripheralState_T before = *state;
+    SPIPeripheralState_T before = *state;
 
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_1_TX_DMA_IRQN ) );
     EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_1_TX_DMA_IRQN ) );
 
     EXPECT_FALSE( HW_SPI_Load_Tx_Packet_Batch( SPI_CHANNEL_1, data, packet_sizes, 3U ) );
+    before.tx_queue_reject_count = state->tx_queue_reject_count;
+    EXPECT_EQ( state->tx_queue_reject_count, 1U );
     EXPECT_EQ( memcmp( state, &before, sizeof( before ) ), 0 );
 }
 
@@ -960,12 +962,14 @@ TEST_F( HWSpiMasterTxTest, LoadTxPackets_InsufficientByteCapacityLeavesQueueUnch
     state->tx_num_bytes_pending      = TX_BUFFER_SIZE_BYTES - 4U;
     memset( state->tx_buffer, 0xA5, sizeof( state->tx_buffer ) );
 
-    const SPIPeripheralState_T before = *state;
+    SPIPeripheralState_T before = *state;
 
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_1_TX_DMA_IRQN ) );
     EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_1_TX_DMA_IRQN ) );
 
     EXPECT_FALSE( HW_SPI_Load_Tx_Packets( SPI_CHANNEL_1, packets, 3U, 2U ) );
+    before.tx_queue_reject_count = state->tx_queue_reject_count;
+    EXPECT_EQ( state->tx_queue_reject_count, 1U );
     EXPECT_EQ( memcmp( state, &before, sizeof( before ) ), 0 );
 }
 
@@ -975,12 +979,14 @@ TEST_F( HWSpiMasterTxTest, LoadTxPackets_InsufficientDescriptorCapacityLeavesQue
     SPIPeripheralState_T* state      = HW_SPI_STATE( SPI_CHANNEL_1 );
     state->tx_num_packets_pending    = TX_PACKET_QUEUE_DEPTH - 1U;
 
-    const SPIPeripheralState_T before = *state;
+    SPIPeripheralState_T before = *state;
 
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_1_TX_DMA_IRQN ) );
     EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_1_TX_DMA_IRQN ) );
 
     EXPECT_FALSE( HW_SPI_Load_Tx_Packets( SPI_CHANNEL_1, packets, 3U, 2U ) );
+    before.tx_queue_reject_count = state->tx_queue_reject_count;
+    EXPECT_EQ( state->tx_queue_reject_count, 1U );
     EXPECT_EQ( memcmp( state, &before, sizeof( before ) ), 0 );
 }
 

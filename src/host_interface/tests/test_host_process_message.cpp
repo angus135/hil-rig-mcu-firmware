@@ -641,6 +641,8 @@ TEST_F( HostProcessMessageTest, TestConfigurationCommitFailureReturnsProtocolErr
 
     EXPECT_CALL( *g_mock_deps, HOST_INTERFACE_Commit_Config_Message( _ ) )
         .WillOnce( Return( HOST_INTERFACE_STATUS_INTERNAL_ERROR ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+        .WillOnce( Return( true ) );
 
     EXPECT_EQ(
         HOST_INTERFACE_Test_Access_Process_Test_Configuration(
@@ -649,6 +651,7 @@ TEST_F( HostProcessMessageTest, TestConfigurationCommitFailureReturnsProtocolErr
     EXPECT_TRUE( response_required );
     EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
     EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
+    EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_FAULTED );
 }
 
 TEST_F( HostProcessMessageTest, TestConfigurationSuccessCopiesExpectedTicksAndResetsHandlers )
@@ -724,6 +727,8 @@ TEST_F( HostProcessMessageTest, TestConfigurationInvalidFrequencyReturnsProtocol
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
         .WillOnce(
             Invoke( [this]( RunStateManagerStatus_T* status ) { *status = run_state_status; } ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+        .WillOnce( Return( true ) );
 
     EXPECT_EQ(
         HOST_INTERFACE_Test_Access_Process_Test_Configuration(
@@ -732,6 +737,7 @@ TEST_F( HostProcessMessageTest, TestConfigurationInvalidFrequencyReturnsProtocol
     EXPECT_TRUE( response_required );
     EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
     EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
+    EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_FAULTED );
 }
 
 TEST_F( HostProcessMessageTest, TestInstructionHandlerFailureProducesRejectedResponse )
@@ -1541,6 +1547,8 @@ TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadHandlesTransitionFailur
 
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestConfiguration() )
         .WillOnce( Return( false ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+        .WillOnce( Return( true ) );
 
     EXPECT_EQ(
         HOST_INTERFACE_Test_Access_Process_Finalize_Test_Upload(
@@ -1550,6 +1558,7 @@ TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadHandlesTransitionFailur
     EXPECT_TRUE( response_required );
     EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
     EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_INTERNAL );
+    EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_FAULTED );
 }
 
 /**-----------------------------------------------------------------------------

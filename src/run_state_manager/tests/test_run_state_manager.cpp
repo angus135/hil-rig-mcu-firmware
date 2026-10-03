@@ -929,6 +929,96 @@ TEST_F( RunStateManagerTest, DiscardFromArmedClearsRetainedTestAndReturnsToIdle 
     EXPECT_FALSE( execution_abort_requested );
 }
 
+TEST_F( RunStateManagerTest, DiscardFromPackageReceiveClearsRetainedTestAndReturnsToIdle )
+{
+    run_state                 = RUN_STATE_TEST_PACKAGE_RECEIVE;
+    run_configuration_owned   = true;
+    execution_abort_requested = false;
+
+    Process( RUN_STATE_REQUEST_DISCARD_RESULTS );
+
+    EXPECT_EQ( RUN_STATE_TEST_PACKAGE_RECEIVE, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_IDLE_SHUTDOWN, pending_operation );
+    EXPECT_TRUE( configuration_cleared );
+    EXPECT_FALSE( run_configuration_owned );
+    EXPECT_EQ( 1U, flash_abort_calls );
+
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
+}
+
+TEST_F( RunStateManagerTest, DiscardFromConfigurationClearsRetainedTestAndReturnsToIdle )
+{
+    run_state                 = RUN_STATE_CONFIGURATION;
+    run_configuration_owned   = true;
+    execution_abort_requested = false;
+
+    Process( RUN_STATE_REQUEST_DISCARD_RESULTS );
+
+    EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_IDLE_SHUTDOWN, pending_operation );
+    EXPECT_TRUE( configuration_cleared );
+    EXPECT_FALSE( run_configuration_owned );
+    EXPECT_EQ( 1U, flash_abort_calls );
+
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
+}
+
+TEST_F( RunStateManagerTest, DiscardFromResultTransferClearsRetainedTestAndReturnsToIdle )
+{
+    run_state                 = RUN_STATE_RESULT_TRANSFER;
+    run_configuration_owned   = true;
+    execution_abort_requested = false;
+
+    Process( RUN_STATE_REQUEST_DISCARD_RESULTS );
+
+    EXPECT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_IDLE_SHUTDOWN, pending_operation );
+    EXPECT_TRUE( configuration_cleared );
+    EXPECT_FALSE( run_configuration_owned );
+    EXPECT_EQ( 1U, flash_abort_calls );
+
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
+}
+
+TEST_F( RunStateManagerTest, ResetFromPackageReceiveReturnsToIdle )
+{
+    run_state                 = RUN_STATE_TEST_PACKAGE_RECEIVE;
+    run_configuration_owned   = true;
+    execution_abort_requested = false;
+
+    Process( RUN_STATE_REQUEST_RESET );
+
+    EXPECT_EQ( RUN_STATE_TEST_PACKAGE_RECEIVE, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_IDLE_SHUTDOWN, pending_operation );
+    EXPECT_TRUE( configuration_cleared );
+    EXPECT_FALSE( run_configuration_owned );
+    EXPECT_EQ( 1U, flash_abort_calls );
+
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
+}
+
+TEST_F( RunStateManagerTest, ResetFromConfigurationReturnsToIdle )
+{
+    run_state                 = RUN_STATE_CONFIGURATION;
+    run_configuration_owned   = true;
+    execution_abort_requested = false;
+
+    Process( RUN_STATE_REQUEST_RESET );
+
+    EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_IDLE_SHUTDOWN, pending_operation );
+    EXPECT_TRUE( configuration_cleared );
+    EXPECT_FALSE( run_configuration_owned );
+    EXPECT_EQ( 1U, flash_abort_calls );
+
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    EXPECT_EQ( RUN_STATE_IDLE, run_state );
+}
+
 TEST_F( RunStateManagerTest, RuntimeFaultStopsExecutionAndRequestsFlashAbort )
 {
     EnterExecution();

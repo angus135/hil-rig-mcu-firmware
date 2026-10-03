@@ -72,6 +72,8 @@ public:
     MOCK_METHOD( void, Rx_Consume, ( int, uint32_t ) );
     MOCK_METHOD( HwUartTxStatus_T, Get_Tx_Status, ( int ));
     MOCK_METHOD( bool, Is_Rx_Faulted, ( int ));
+    MOCK_METHOD( bool, Get_Diagnostic, ( int, HwUartDiagnostic_T* ) );
+    MOCK_METHOD( void, Reset_Diagnostic, ( int ) );
 };
 
 class MockLogicExpander
@@ -230,6 +232,16 @@ extern "C" HwUartTxStatus_T HW_UART_Get_Tx_Status( HwUartChannel_T channel )
 extern "C" bool HW_UART_Is_Rx_Faulted( HwUartChannel_T channel )
 {
     return g_mock_hw->Is_Rx_Faulted( channel );
+}
+
+extern "C" bool HW_UART_Get_Diagnostic( HwUartChannel_T channel, HwUartDiagnostic_T* diag )
+{
+    return g_mock_hw->Get_Diagnostic( channel, diag );
+}
+
+extern "C" void HW_UART_Reset_Diagnostic( HwUartChannel_T channel )
+{
+    g_mock_hw->Reset_Diagnostic( channel );
 }
 
 // NOLINTEND
