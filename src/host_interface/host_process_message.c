@@ -688,6 +688,9 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incom
 
     if ( instruction_status != HOST_INTERFACE_STATUS_OK )
     {
+        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
+
         outgoing_message->type                  = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
         outgoing_message->subtype               = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
         outgoing_message->body.response.scope   = HIL_APPLICATION_RESPONSE_SCOPE_TICK;
@@ -769,6 +772,9 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Instruction_Data(
 
     if ( instruction_status != HOST_INTERFACE_STATUS_OK )
     {
+        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
+
         outgoing_message->type                  = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
         outgoing_message->subtype               = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
         outgoing_message->body.response.scope   = HIL_APPLICATION_RESPONSE_SCOPE_TICK;
@@ -887,8 +893,9 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
             s_session.state = HOST_INTERFACE_SESSION_FAULTED;
 
             // Signal run state manager to abort
-            status = HOST_INTERFACE_request_state_tranistion( RUN_STATE_FAULT, HOST_REQUEST_FAULT,
-                                                              2, 0 );
+            status = HOST_INTERFACE_request_state_tranistion(
+                RUN_STATE_FAULT, HOST_REQUEST_FAULT, HOST_INTERFACE_POST_REPORT_RESET_WAIT_ATTEMPTS,
+                0 );
             if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
             {
                 // Construct the error message
@@ -947,10 +954,9 @@ HOST_INTERFACE_process_Global_Control( const HIL_Application_Message_T* incoming
             *response_required = false;
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
         case HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION:
-            // Signal run state manager to abort
-            // TODO set up reset instead of just fault
-            status =
-                HOST_INTERFACE_request_state_tranistion( RUN_STATE_IDLE, HOST_REQUEST_RESET, 2, 0 );
+            status = HOST_INTERFACE_request_state_tranistion(
+                RUN_STATE_IDLE, HOST_REQUEST_RESET, HOST_INTERFACE_POST_REPORT_RESET_WAIT_ATTEMPTS,
+                0 );
             if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
             {
                 // Construct the error message

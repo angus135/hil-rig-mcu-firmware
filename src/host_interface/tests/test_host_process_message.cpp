@@ -100,8 +100,8 @@ public:
     MOCK_METHOD( RunStateFaultReason_T, RUN_STATE_MANAGER_GetFaultReason, () );
 };
 
-static MockHostProcessMessageDependencies* g_mock_deps = nullptr;
-static uint32_t instruction_upload_progress_calls = 0U;
+static MockHostProcessMessageDependencies* g_mock_deps                       = nullptr;
+static uint32_t                            instruction_upload_progress_calls = 0U;
 
 extern "C" HOST_Interface_Status_T
 HOST_INTERFACE_Config_Message_To_Driver( const HIL_Application_Message_T* message,
@@ -311,9 +311,9 @@ protected:
         std::memset( &outgoing, 0, sizeof( outgoing ) );
         std::memset( &overflow_outgoing, 0, sizeof( overflow_outgoing ) );
         std::memset( data, 0, sizeof( data ) );
-        response_required   = false;
-        notifications       = 0U;
-        expected_tick_count = 0U;
+        response_required                 = false;
+        notifications                     = 0U;
+        expected_tick_count               = 0U;
         instruction_upload_progress_calls = 0U;
         std::memset( &run_state_status, 0, sizeof( run_state_status ) );
         HOST_INTERFACE_Reset_Session();
@@ -743,6 +743,8 @@ TEST_F( HostProcessMessageTest, TestInstructionHandlerFailureProducesRejectedRes
 
     EXPECT_CALL( *g_mock_deps, HOST_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
         .WillOnce( Return( HOST_INTERFACE_STATUS_VALIDATION_FAILED ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+        .WillOnce( Return( true ) );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
@@ -753,6 +755,7 @@ TEST_F( HostProcessMessageTest, TestInstructionHandlerFailureProducesRejectedRes
     EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
     EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED );
     EXPECT_EQ( outgoing.body.response.tick_number, 1U );
+    EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_FAULTED );
 }
 
 TEST_F( HostProcessMessageTest, TestInstructionIngestsDirectlyWithoutPerTickResponse )
@@ -828,6 +831,8 @@ TEST_F( HostProcessMessageTest, VariableInstructionDataHandlerFailureProducesRej
 
     EXPECT_CALL( *g_mock_deps, HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
         .WillOnce( Return( HOST_INTERFACE_STATUS_VALIDATION_FAILED ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+        .WillOnce( Return( true ) );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Variable_Instruction_Data(
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
@@ -838,6 +843,7 @@ TEST_F( HostProcessMessageTest, VariableInstructionDataHandlerFailureProducesRej
     EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
     EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED );
     EXPECT_EQ( outgoing.body.response.tick_number, 3U );
+    EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_FAULTED );
 }
 
 TEST_F( HostProcessMessageTest, VariableInstructionDataIngestsDirectlyWithoutPerTickResponse )
@@ -1452,6 +1458,8 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInvalidInstruction
 
     EXPECT_CALL( *g_mock_deps, HOST_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
         .WillOnce( Return( HOST_INTERFACE_STATUS_VALIDATION_FAILED ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+        .WillOnce( Return( true ) );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
@@ -1463,6 +1471,7 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInvalidInstruction
     EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
     EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED );
     EXPECT_EQ( outgoing.body.response.tick_number, 2U );
+    EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_FAULTED );
 }
 
 TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInconsistentTick )
@@ -1476,6 +1485,8 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInconsistentTick )
 
     EXPECT_CALL( *g_mock_deps, HOST_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
         .WillOnce( Return( HOST_INTERFACE_STATUS_INCONSISTENT_TICK ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+        .WillOnce( Return( true ) );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
@@ -1487,6 +1498,7 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInconsistentTick )
     EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
     EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_INVALID_TICK );
     EXPECT_EQ( outgoing.body.response.tick_number, 2U );
+    EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_FAULTED );
 }
 
 TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadTransitionsToArmed )
