@@ -492,9 +492,29 @@ bool EXEC_PWM_Capture_Convert( ExecPwmCaptureChannel_T channel, const ExecPwmCap
         return false;
     }
 
-    out->frequency_hz = clock_hz / raw->period_ticks;
+    /*
+     * In hardware Slave-Reset mode, the STM32 timer slave-mode controller takes 2 timer clock
+     * cycles to resynchronize the trigger and reset the counter on the rising edge.
+     * Therefore, both the captured period and high time are reduced by 2 timer clock counts.
+     * We add 2 clock counts (preserving 0 for zero duty) to restore the true physical pulse
+     * duration.
+     *
+     * TODO: The +2 tick correction accurately compensates for the hardware slave-mode reset
+     * resynchronization delay (which is critical for exact integer tick fidelity in loopback
+     * and true duty cycle recovery). However, note that if the MCU is clocked via the internal HSI
+     * oscillator (which has a ~1% factory tolerance), any absolute frequency calculated against
+     * nominal CLOCK_HZ will still exhibit that ~1% systematic clock drift. Calibrating HSITRIM
+     * or switching SYSCLK to an external HSE crystal will align absolute frequency measurements.
+     */
+    const uint32_t corrected_period_ticks = raw->period_ticks + 2U;
+    const uint32_t corrected_high_ticks = ( raw->high_ticks > 0U ) ? ( raw->high_ticks + 2U ) : 0U;
+
+    const uint64_t period_ns = ( ( uint64_t )corrected_period_ticks * 1000000000ULL ) / clock_hz;
+
+    out->period_nanoseconds = ( uint32_t )period_ns;
+    out->frequency_hz       = clock_hz / corrected_period_ticks;
     out->duty_cycle_bp =
-        ( uint32_t )( ( ( uint64_t )raw->high_ticks * 10000U ) / raw->period_ticks );
+        ( uint32_t )( ( ( uint64_t )corrected_high_ticks * 10000U ) / corrected_period_ticks );
 
     return true;
 }

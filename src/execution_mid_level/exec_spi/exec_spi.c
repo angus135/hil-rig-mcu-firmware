@@ -739,3 +739,21 @@ bool EXEC_SPI_Is_Transmission_Faulted( ExecSPIChannel_T peripheral )
 {
     return HW_SPI_Tx_Is_Faulted( exec_spi_hardware_map[peripheral].hw_channel );
 }
+
+bool EXEC_SPI_Get_Diagnostics( ExecSPIChannel_T channel, ExecSPIDiagnostic_T* diag )
+{
+    if ( channel >= EXEC_SPI_CHANNEL_COUNT )
+    {
+        return false;
+    }
+
+    return HW_SPI_Get_Diagnostics( exec_spi_hardware_map[channel].hw_channel, diag );
+}
+
+void EXEC_SPI_Reset_Diagnostics( ExecSPIChannel_T channel )
+{
+    if ( channel < EXEC_SPI_CHANNEL_COUNT )
+    {
+        HW_SPI_Reset_Diagnostics( exec_spi_hardware_map[channel].hw_channel );
+    }
+}

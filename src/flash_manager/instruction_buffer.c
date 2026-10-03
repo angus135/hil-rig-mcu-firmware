@@ -53,13 +53,13 @@
  */
 
 /*
- * Six slots provide instruction-consumption headroom while allowing ready-data
+ * Five slots provide instruction-consumption headroom while allowing ready-data
  * buffering and a NAND page fill to overlap without sharing slot ownership.
  */
-#define INSTRUCTION_BUFFER_PAGE_COUNT ( 6U )
+#define INSTRUCTION_BUFFER_PAGE_COUNT ( 5U )
 
-/* Two mirrored pages keep a two-page instruction contiguous at the ring end. */
-#define INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT ( 2U )
+/* Four mirrored pages keep a four-page instruction contiguous at the ring end. */
+#define INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT ( 4U )
 
 #define INSTRUCTION_BUFFER_MAX_CAPACITY_BYTES                                                      \
     ( EXTERNAL_FLASH_MAX_PAGE_SIZE_BYTES * INSTRUCTION_BUFFER_PAGE_COUNT )
@@ -93,9 +93,6 @@ _Static_assert( ( INSTRUCTION_BUFFER_STORAGE_BYTES % sizeof( uint32_t ) ) == 0U,
 #else
 #define INSTRUCTION_BUFFER_COLD_NOINLINE
 #endif
-
-/** Required alignment of instruction headers, operations, and payloads. */
-#define INSTRUCTION_BUFFER_STORAGE_ALIGNMENT_BYTES ( 4U )
 
 /* The serialized NAND layout depends on this fixed header width. */
 #if defined( __cplusplus )
@@ -521,59 +518,56 @@ static bool INSTRUCTION_BUFFER_AreUploadPagesEmpty( void )
 static InstructionBufferUploadCapacityStatus_T
 INSTRUCTION_BUFFER_CheckUploadCapacity( uint32_t length )
 {
-    uint8_t                      page_index = instruction_buffer_context.upload_write_page_index;
-    InstructionBufferPageState_T page_state = instruction_buffer_context.page_states[page_index];
-    uint32_t valid_length_bytes = instruction_buffer_context.page_valid_bytes[page_index];
-    uint32_t available_length_bytes;
+    uint8_t  page_index      = instruction_buffer_context.upload_write_page_index;
+    uint32_t remaining_bytes = length;
 
-    if ( page_state == INSTRUCTION_BUFFER_PAGE_EMPTY )
+    while ( remaining_bytes > 0U )
     {
-        if ( valid_length_bytes != 0U )
+        const InstructionBufferPageState_T page_state =
+            instruction_buffer_context.page_states[page_index];
+        const uint32_t valid_length_bytes = instruction_buffer_context.page_valid_bytes[page_index];
+        uint32_t       available_length_bytes = 0U;
+
+        if ( page_state == INSTRUCTION_BUFFER_PAGE_EMPTY )
         {
-            return INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
+            if ( valid_length_bytes != 0U )
+            {
+                return INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
+            }
+
+            available_length_bytes = instruction_buffer_context.page_size_bytes;
+        }
+        else if ( page_state == INSTRUCTION_BUFFER_PAGE_FILLING_FROM_HOST )
+        {
+            if ( ( page_index != instruction_buffer_context.upload_write_page_index )
+                 || ( valid_length_bytes >= instruction_buffer_context.page_size_bytes )
+                 || ( valid_length_bytes
+                      > instruction_buffer_context.upload_accepted_length_bytes ) )
+            {
+                return INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
+            }
+
+            available_length_bytes =
+                instruction_buffer_context.page_size_bytes - valid_length_bytes;
+        }
+        else
+        {
+            return ( page_state == INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND
+                     || page_state == INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND )
+                       ? INSTRUCTION_BUFFER_UPLOAD_CAPACITY_BUSY
+                       : INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
         }
 
-        available_length_bytes = instruction_buffer_context.page_size_bytes;
-    }
-    else if ( page_state == INSTRUCTION_BUFFER_PAGE_FILLING_FROM_HOST )
-    {
-        if ( ( valid_length_bytes >= instruction_buffer_context.page_size_bytes )
-             || ( valid_length_bytes > instruction_buffer_context.upload_accepted_length_bytes ) )
+        if ( remaining_bytes <= available_length_bytes )
         {
-            return INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
+            return INSTRUCTION_BUFFER_UPLOAD_CAPACITY_AVAILABLE;
         }
 
-        available_length_bytes = instruction_buffer_context.page_size_bytes - valid_length_bytes;
-    }
-    else
-    {
-        return ( page_state == INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND
-                 || page_state == INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND )
-                   ? INSTRUCTION_BUFFER_UPLOAD_CAPACITY_BUSY
-                   : INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
+        remaining_bytes -= available_length_bytes;
+        page_index = INSTRUCTION_BUFFER_NextPageIndex( page_index );
     }
 
-    if ( length <= available_length_bytes )
-    {
-        return INSTRUCTION_BUFFER_UPLOAD_CAPACITY_AVAILABLE;
-    }
-
-    /* A one-page host chunk can cross into at most one successor page. */
-    uint8_t successor_page_index = INSTRUCTION_BUFFER_NextPageIndex( page_index );
-    InstructionBufferPageState_T successor_state =
-        instruction_buffer_context.page_states[successor_page_index];
-
-    if ( successor_state != INSTRUCTION_BUFFER_PAGE_EMPTY )
-    {
-        return ( successor_state == INSTRUCTION_BUFFER_PAGE_READY_FOR_NAND
-                 || successor_state == INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND )
-                   ? INSTRUCTION_BUFFER_UPLOAD_CAPACITY_BUSY
-                   : INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
-    }
-
-    return ( instruction_buffer_context.page_valid_bytes[successor_page_index] == 0U )
-               ? INSTRUCTION_BUFFER_UPLOAD_CAPACITY_AVAILABLE
-               : INSTRUCTION_BUFFER_UPLOAD_CAPACITY_INVALID;
+    return INSTRUCTION_BUFFER_UPLOAD_CAPACITY_AVAILABLE;
 }
 
 static bool INSTRUCTION_BUFFER_CopyUploadBytes( const uint8_t* data, uint32_t length )
@@ -899,6 +893,19 @@ uint32_t INSTRUCTION_BUFFER_GetBufferedUnreadBytes( void )
            - instruction_buffer_context.consumer_stream_offset_bytes;
 }
 
+uint32_t INSTRUCTION_BUFFER_GetUnconsumedBytes( void )
+{
+    if ( !instruction_buffer_context.is_read_prepared
+         || ( instruction_buffer_context.consumer_stream_offset_bytes
+              > instruction_buffer_context.instruction_length_bytes ) )
+    {
+        return 0U;
+    }
+
+    return instruction_buffer_context.instruction_length_bytes
+           - instruction_buffer_context.consumer_stream_offset_bytes;
+}
+
 /**
  * @brief Returns the current instruction view without advancing the stream.
  *
@@ -1077,6 +1084,22 @@ bool INSTRUCTION_BUFFER_GetUploadExpectedLength( uint32_t* expected_length_bytes
 }
 
 /**
+ * @brief Returns the total accepted host bytes in the prepared upload.
+ */
+bool INSTRUCTION_BUFFER_GetUploadAcceptedLength( uint32_t* accepted_length_bytes )
+{
+    if ( ( accepted_length_bytes == NULL ) || !instruction_buffer_context.is_initialised
+         || !instruction_buffer_context.is_upload_prepared )
+    {
+        return false;
+    }
+
+    *accepted_length_bytes = instruction_buffer_context.upload_accepted_length_bytes;
+
+    return true;
+}
+
+/**
  * @brief Atomically appends one complete host chunk to upload RAM.
  */
 InstructionBufferUploadWriteStatus_T INSTRUCTION_BUFFER_WriteUploadBytes( const uint8_t* data,
@@ -1090,7 +1113,8 @@ InstructionBufferUploadWriteStatus_T INSTRUCTION_BUFFER_WriteUploadBytes( const 
     }
 
     if ( ( data == NULL ) || ( length == 0U )
-         || ( length > instruction_buffer_context.page_size_bytes ) )
+         || ( length > ( instruction_buffer_context.page_size_bytes
+                         * INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT ) ) )
     {
         return INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_ARGUMENT;
     }
@@ -1218,13 +1242,17 @@ bool INSTRUCTION_BUFFER_FinaliseUpload( void )
          || ( instruction_buffer_context.page_states[drain_page_index]
               == INSTRUCTION_BUFFER_PAGE_WRITING_TO_NAND )
          || ( instruction_buffer_context.upload_accepted_length_bytes
-              != instruction_buffer_context.upload_expected_length_bytes )
+              > instruction_buffer_context.upload_expected_length_bytes )
          || ( instruction_buffer_context.page_size_bytes == 0U )
          || ( instruction_buffer_context.upload_persisted_length_bytes
               > instruction_buffer_context.upload_accepted_length_bytes ) )
     {
         return false;
     }
+
+    /* Snap expected length to the actual accepted host payload */
+    instruction_buffer_context.upload_expected_length_bytes =
+        instruction_buffer_context.upload_accepted_length_bytes;
 
     uint32_t partial_length_bytes = instruction_buffer_context.upload_expected_length_bytes
                                     % instruction_buffer_context.page_size_bytes;

@@ -57,6 +57,7 @@
 #endif
 
 #include "hw_uart_dut.h"
+#include "hardware_low_level/hw_clock_calibration/hw_clock_calibration.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -112,8 +113,6 @@
       | DMA_HIFCR_CHTIF5 )
 
 /* RX buffer size must remain a power of 2 for mask-based circular indexing. */
-#define HW_UART_RX_BUFFER_SIZE 4096U
-
 #if ( ( HW_UART_RX_BUFFER_SIZE & ( HW_UART_RX_BUFFER_SIZE - 1U ) ) != 0U )
 #error "HW_UART_RX_BUFFER_SIZE must be a power of 2"
 #endif
@@ -192,6 +191,11 @@ typedef struct
     volatile uint32_t tx_dma_length_bytes;
     volatile bool     tx_dma_active;
 
+    volatile uint32_t tx_peak_count;
+    volatile uint32_t tx_reject_count;
+    volatile uint32_t dma_error_count;
+    volatile uint32_t rx_unread_peak;
+
 } HwUartRuntimeState_T;
 
 /**
@@ -250,6 +254,16 @@ typedef struct
 /* Driver owned per-channel runtime and buffer storage */
 static HwUartChannelState_T hw_uart_channel_states[HW_UART_CHANNEL_COUNT];
 
+static uint32_t HW_UART_Get_Channel1_Clock_Hz( void )
+{
+    return HW_CLOCK_Calibrate_Hz( HAL_RCC_GetPCLK2Freq() );
+}
+
+static uint32_t HW_UART_Get_Channel2_Clock_Hz( void )
+{
+    return HW_CLOCK_Calibrate_Hz( HAL_RCC_GetPCLK1Freq() );
+}
+
 /* Fixed board-level mapping from logical UART channels to MCU peripherals */
 static const HwUartHardwareMap_T hw_uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
 
@@ -257,7 +271,7 @@ static const HwUartHardwareMap_T hw_uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
                             .rx_dma_stream           = HW_UART_CH1_DMA_RX_STREAM,
                             .tx_dma_stream           = HW_UART_CH1_DMA_TX_STREAM,
                             .uart_handle             = HW_UART_CH1_HANDLE,
-                            .get_peripheral_clock_hz = HAL_RCC_GetPCLK2Freq,
+                            .get_peripheral_clock_hz = HW_UART_Get_Channel1_Clock_Hz,
                             .tx_dma_controller       = HW_UART_CH1_DMA_CONTROLLER,
                             .tx_ll_stream            = HW_UART_CH1_DMA_TX_LL_STREAM,
                             .tx_dma_irq              = HW_UART_CH1_TX_DMA_IRQ,
@@ -270,7 +284,7 @@ static const HwUartHardwareMap_T hw_uart_hardware_map[HW_UART_CHANNEL_COUNT] = {
                             .rx_dma_stream           = HW_UART_CH2_DMA_RX_STREAM,
                             .tx_dma_stream           = HW_UART_CH2_DMA_TX_STREAM,
                             .uart_handle             = HW_UART_CH2_HANDLE,
-                            .get_peripheral_clock_hz = HAL_RCC_GetPCLK1Freq,
+                            .get_peripheral_clock_hz = HW_UART_Get_Channel2_Clock_Hz,
                             .tx_dma_controller       = HW_UART_CH2_DMA_CONTROLLER,
                             .tx_ll_stream            = HW_UART_CH2_DMA_TX_LL_STREAM,
                             .tx_dma_irq              = HW_UART_CH2_TX_DMA_IRQ,
@@ -654,6 +668,7 @@ static inline void HW_UART_Tx_Error_Handler( HwUartChannel_T channel )
     runtime->tx_dma_length_bytes = 0U;
     runtime->tx_dma_active       = false;
     runtime->latched_faults |= HW_UART_FAULT_TX_DMA;
+    runtime->dma_error_count++;
 }
 
 /**
@@ -667,6 +682,7 @@ static inline void HW_UART_Rx_Error_Handler( HwUartChannel_T channel )
     HwUartRuntimeState_T* runtime = &hw_uart_channel_states[channel].runtime;
     runtime->latched_faults |= HW_UART_FAULT_RX_DMA;
     runtime->rx_running = false;
+    runtime->dma_error_count++;
 }
 
 /**-----------------------------------------------------------------------------
@@ -935,6 +951,11 @@ HwUartRxSpans_T HW_UART_Rx_Peek( HwUartChannel_T channel )
 
     uint32_t unread_bytes = HW_UART_Unread_Bytes_Count_Helper( read_index, dma_write_index );
 
+    if ( unread_bytes > state->runtime.rx_unread_peak )
+    {
+        state->runtime.rx_unread_peak = unread_bytes;
+    }
+
     if ( unread_bytes == 0U )
     {
         /* No Data Available */
@@ -1013,6 +1034,7 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
     if ( ( state->runtime.latched_faults & HW_UART_FAULT_TX_DMA ) != 0U
          || length_bytes > free_space )
     {
+        state->runtime.tx_reject_count++;
         HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
         return false;
     }
@@ -1043,12 +1065,18 @@ bool HW_UART_Tx_Load_Buffer( HwUartChannel_T channel, const uint8_t* data, uint3
 
     if ( ( state->runtime.latched_faults & HW_UART_FAULT_TX_DMA ) != 0U )
     {
+        state->runtime.tx_reject_count++;
         HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
         return false;
     }
 
     state->runtime.tx_head = new_head;
     state->runtime.tx_count += length_bytes;
+
+    if ( state->runtime.tx_count > state->runtime.tx_peak_count )
+    {
+        state->runtime.tx_peak_count = state->runtime.tx_count;
+    }
 
     HW_UART_Tx_Dma_Irq_Restore( channel, tx_irq_was_enabled );
 
@@ -1357,4 +1385,42 @@ void HW_UART_CH2_RX_DMA_IRQ_HANDLER( void )
     {
         *( hw_map->rx_dma_ifcr_reg ) = hw_map->rx_dma_ifcr_mask;
     }
+}
+
+bool HW_UART_Get_Diagnostic( HwUartChannel_T channel, HwUartDiagnostic_T* diag )
+{
+    if ( ( diag == NULL ) || ( channel >= HW_UART_CHANNEL_COUNT ) )
+    {
+        return false;
+    }
+
+    const HwUartChannelState_T* state = &hw_uart_channel_states[channel];
+
+    diag->tx_count_bytes       = state->runtime.tx_count;
+    diag->tx_peak_bytes        = state->runtime.tx_peak_count;
+    diag->tx_reject_count      = state->runtime.tx_reject_count;
+    diag->dma_error_count      = state->runtime.dma_error_count;
+    diag->rx_unread_bytes      = HW_UART_Rx_Peek( channel ).total_length_bytes;
+    diag->rx_unread_peak_bytes = state->runtime.rx_unread_peak;
+    diag->latched_faults       = state->runtime.latched_faults;
+    diag->tx_dma_active        = state->runtime.tx_dma_active;
+    diag->is_started           = state->runtime.is_started;
+    diag->is_configured        = state->runtime.is_configured_and_initialised;
+
+    return true;
+}
+
+void HW_UART_Reset_Diagnostic( HwUartChannel_T channel )
+{
+    if ( channel >= HW_UART_CHANNEL_COUNT )
+    {
+        return;
+    }
+
+    HwUartChannelState_T* state = &hw_uart_channel_states[channel];
+
+    state->runtime.tx_peak_count   = state->runtime.tx_count;
+    state->runtime.tx_reject_count = 0U;
+    state->runtime.dma_error_count = 0U;
+    state->runtime.rx_unread_peak  = 0U;
 }

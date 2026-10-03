@@ -40,10 +40,10 @@
 
 EXEC_CAN_STATIC_ASSERT( EXEC_CAN_MAX_PAYLOAD_SIZE == CAN_PACKET_SIZE,
                         "Execution and hardware CAN payload limits must match" );
-EXEC_CAN_STATIC_ASSERT( EXEC_CAN_MAX_BATCH_SIZE <= HW_CAN_TX_QUEUE_CAPACITY,
-                        "Execution CAN batches must fit the hardware TX queue" );
 EXEC_CAN_STATIC_ASSERT( EXEC_CAN_MAX_BATCH_SIZE <= HW_CAN_RX_QUEUE_CAPACITY,
                         "Execution CAN receive storage must cover the hardware RX queue" );
+EXEC_CAN_STATIC_ASSERT( sizeof( EXEC_CAN_Packet_T ) == sizeof( CAN_Packet_T ),
+                        "Execution and hardware CAN packet layouts must match" );
 
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
@@ -349,17 +349,11 @@ bool EXEC_CAN_Is_Started( EXEC_CAN_Channel_T channel )
 EXEC_CAN_Result_T EXEC_CAN_Transmit( EXEC_CAN_Channel_T channel, const EXEC_CAN_Packet_T packets[],
                                      uint16_t packet_count )
 {
-    if ( !EXEC_CAN_Channel_Is_Valid( channel ) || packets == NULL || packet_count == 0U
-         || packet_count > EXEC_CAN_MAX_BATCH_SIZE )
+    if ( !EXEC_CAN_Channel_Is_Valid( channel ) || packets == NULL || packet_count == 0U )
     {
         return EXEC_CAN_RESULT_INVALID_ARGUMENT;
     }
 
-    CAN_Packet_T hardware_packets[EXEC_CAN_MAX_BATCH_SIZE] = EXEC_CAN_ZERO_INITIALIZER;
-    /* TODO: Avoid full-capacity initialization and redundant packet translation
-     * using a shared transport representation or prepared batch. Preserve
-     * validation/ownership; do not cast between distinct packet struct types.
-     */
     for ( uint16_t i = 0U; i < packet_count; i++ )
     {
         if ( packets[i].id > EXEC_CAN_STANDARD_ID_MAX
@@ -367,15 +361,11 @@ EXEC_CAN_Result_T EXEC_CAN_Transmit( EXEC_CAN_Channel_T channel, const EXEC_CAN_
         {
             return EXEC_CAN_RESULT_INVALID_ARGUMENT;
         }
-
-        hardware_packets[i].id  = packets[i].id;
-        hardware_packets[i].dlc = packets[i].dlc;
-        memcpy( hardware_packets[i].data, packets[i].data, packets[i].dlc );
     }
 
     HW_CAN_Result_T result = channel == EXEC_CAN_CHANNEL_1
-                                 ? HW_CAN_Tx_Buffer_Write1( hardware_packets, packet_count )
-                                 : HW_CAN_Tx_Buffer_Write2( hardware_packets, packet_count );
+                                 ? HW_CAN_Tx_Buffer_Write1( packets, packet_count )
+                                 : HW_CAN_Tx_Buffer_Write2( packets, packet_count );
     if ( result != HW_CAN_RESULT_OK )
     {
         return EXEC_CAN_Map_Result( result );
@@ -411,33 +401,20 @@ EXEC_CAN_Result_T EXEC_CAN_Receive( EXEC_CAN_Channel_T channel, EXEC_CAN_Packet_
         return EXEC_CAN_RESULT_OK;
     }
 
-    uint16_t hardware_capacity = capacity;
-    if ( hardware_capacity > EXEC_CAN_MAX_BATCH_SIZE )
-    {
-        hardware_capacity = EXEC_CAN_MAX_BATCH_SIZE;
-    }
-
-    /* TODO: Remove full-capacity temporary initialization and redundant RX
-     * copies while preserving validation and defined unused payload bytes.
-     * The conversion loop already processes only the received packet count.
-     */
-    CAN_Packet_T hardware_packets[EXEC_CAN_MAX_BATCH_SIZE] = EXEC_CAN_ZERO_INITIALIZER;
-    uint16_t     count                                     = channel == EXEC_CAN_CHANNEL_1
-                                                                 ? HW_CAN_Rx_Buffer_Read1( hardware_packets, hardware_capacity )
-                                                                 : HW_CAN_Rx_Buffer_Read2( hardware_packets, hardware_capacity );
+    uint16_t count = channel == EXEC_CAN_CHANNEL_1
+                         ? HW_CAN_Rx_Buffer_Read1( destination, capacity )
+                         : HW_CAN_Rx_Buffer_Read2( destination, capacity );
 
     for ( uint16_t i = 0U; i < count; i++ )
     {
-        if ( hardware_packets[i].id > EXEC_CAN_STANDARD_ID_MAX
-             || hardware_packets[i].dlc > EXEC_CAN_MAX_PAYLOAD_SIZE )
+        if ( destination[i].id > EXEC_CAN_STANDARD_ID_MAX
+             || destination[i].dlc > EXEC_CAN_MAX_PAYLOAD_SIZE )
         {
             return EXEC_CAN_RESULT_ERROR;
         }
 
-        destination[i].id  = hardware_packets[i].id;
-        destination[i].dlc = hardware_packets[i].dlc;
-        memset( destination[i].data, 0, sizeof( destination[i].data ) );
-        memcpy( destination[i].data, hardware_packets[i].data, hardware_packets[i].dlc );
+        memset( &destination[i].data[destination[i].dlc], 0,
+                sizeof( destination[i].data ) - destination[i].dlc );
     }
 
     *packets_read = count;

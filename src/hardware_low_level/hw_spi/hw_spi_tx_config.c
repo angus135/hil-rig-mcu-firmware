@@ -281,11 +281,11 @@ static void HW_SPI_Configure_Tx_Timer( SPIPeripheralState_T* peripheral_state )
 HW_SPI_ALWAYS_INLINE void
 HW_SPI_TX_Bounded_Final_Drain_Wait( const SPIPeripheralState_T* peripheral_state )
 {
-    volatile uint32_t wait_cycles = peripheral_state->tx_final_drain_cycles;
+    uint32_t wait_cycles = peripheral_state->tx_final_drain_cycles;
 
-    while ( wait_cycles > 0U )
+    while ( ( LL_SPI_IsActiveFlag_BSY( peripheral_state->spi_peripheral ) != 0U )
+            && ( wait_cycles > 0U ) )
     {
-        __asm volatile( "nop" );
         wait_cycles--;
     }
 }
@@ -429,6 +429,7 @@ static void HW_SPI_COLD_NOINLINE HW_SPI_TX_Fault_Master_Transaction(
     peripheral_state->tx_num_bytes_in_transmission  = 0U;
     peripheral_state->tx_final_drain_timer_attempts = 0U;
     peripheral_state->tx_transaction_state          = HW_SPI_TX_TRANSACTION_ERROR;
+    peripheral_state->tx_final_drain_timeout_count++;
 }
 /**
  * @brief Handle TX DMA transfer-complete for a master software-CS packet.
@@ -568,6 +569,7 @@ void HW_SPI_COLD_NOINLINE HW_SPI_TX_Error_Handler( SPIChannel_T peripheral )
     // rebuild, or retry the transaction.
     peripheral_state->tx_num_bytes_in_transmission  = 0U;
     peripheral_state->tx_final_drain_timer_attempts = 0U;
+    peripheral_state->tx_dma_error_count++;
 
     if ( peripheral_state->is_master != false )
     {

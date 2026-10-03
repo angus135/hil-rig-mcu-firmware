@@ -27,6 +27,8 @@ extern "C"
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "can_packet.h"
+#include "hw_can.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -34,8 +36,8 @@ extern "C"
  */
 
 #define EXEC_CAN_MAX_PAYLOAD_SIZE ( 8U )
-/** Usable hardware queue capacity, compile-time checked in exec_can.c. */
-#define EXEC_CAN_MAX_BATCH_SIZE ( 19U )
+/** Maximum number of packets that can be accepted by the driver TX queue. */
+#define EXEC_CAN_MAX_BATCH_SIZE HW_CAN_TX_QUEUE_CAPACITY
 #define EXEC_CAN_STANDARD_ID_MAX ( 0x7FFU )
 
 /**-----------------------------------------------------------------------------
@@ -88,12 +90,7 @@ typedef enum EXEC_CAN_Tx_Status_T
 } EXEC_CAN_Tx_Status_T;
 
 /** Standard classical CAN data frame. */
-typedef struct EXEC_CAN_Packet_T
-{
-    uint16_t id;
-    uint8_t  dlc;
-    uint8_t  data[EXEC_CAN_MAX_PAYLOAD_SIZE];
-} EXEC_CAN_Packet_T;
+typedef CAN_Packet_T EXEC_CAN_Packet_T;
 
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
@@ -138,8 +135,10 @@ bool EXEC_CAN_Is_Started( EXEC_CAN_Channel_T channel );
  *
  * The hardware trigger is called exactly once and only after the complete
  * batch has loaded successfully. A trigger failure discards the loaded batch.
- * Null storage, zero or oversized batches, extended identifiers, and DLCs
- * greater than eight return EXEC_CAN_RESULT_INVALID_ARGUMENT.
+ * Null storage, zero-sized batches, extended identifiers, and DLCs greater
+ * than eight return EXEC_CAN_RESULT_INVALID_ARGUMENT. Queue capacity is
+ * enforced atomically by the hardware driver; a batch that does not fit
+ * returns the mapped driver error without loading any packets.
  */
 EXEC_CAN_Result_T EXEC_CAN_Transmit( EXEC_CAN_Channel_T channel, const EXEC_CAN_Packet_T packets[],
                                      uint16_t packet_count );

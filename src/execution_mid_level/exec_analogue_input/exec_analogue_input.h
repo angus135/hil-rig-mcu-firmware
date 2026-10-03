@@ -145,6 +145,14 @@ bool EXEC_ANALOGUE_INPUT_Is_Started( void );
  */
 void EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( ExecAnalogueInputVoltages_T voltage_destination );
 
+/**
+ * @brief Computes the scaled value for analog inputs (post calibration).
+ *
+ * @param[in] value Raw ADC reading pointer.
+ * @param[out] scaled_value Destination pointer for scaled voltage.
+ */
+float EXEC_ANALOGUE_INPUT_Scale( uint32_t value );
+
 #ifdef __cplusplus
 }
 #endif

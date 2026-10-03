@@ -456,6 +456,7 @@ protected:
                                  IRQn_Type tx_irqn, Timer_T timer )
     {
         memset( state, 0, sizeof( *state ) );
+        state->rx_buffer                 = HW_SPI_Get_Rx_Buffer( logical );
         state->config                    = config;
         state->logical_peripheral        = logical;
         state->nss_pin                   = config.nss_pin;
@@ -465,7 +466,7 @@ protected:
         state->is_master                 = config.spi_mode == SPI_MASTER_MODE;
         state->frame_size_bytes          = config.data_size == SPI_SIZE_16_BIT ? 2U : 1U;
         state->frame_shift               = config.data_size == SPI_SIZE_16_BIT ? 1U : 0U;
-        state->tx_uses_final_drain_timer = config.baud_rate > SPI_BAUD_5M625BIT;
+        state->tx_uses_final_drain_timer = config.baud_rate > SPI_BAUD_2M813BIT;
         state->tx_final_drain_cycles     = 0U;
         state->tx_final_drain_timer      = timer;
         state->rx_dma                    = rx_dma;

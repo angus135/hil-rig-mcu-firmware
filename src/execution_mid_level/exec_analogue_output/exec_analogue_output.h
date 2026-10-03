@@ -328,6 +328,14 @@ bool EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( const uint8_t* frame_bytes, uin
  */
 bool EXEC_ANALOGUE_OUTPUT_Write_Voltage( uint8_t channel, float input_voltage_v );
 
+/**
+ * @brief Computes the scaled value for analog outputs (post calibration).
+ *
+ * @param[in] value Input voltage pointer.
+ * @param[out] scaled_value Destination pointer for scaled voltage.
+ */
+void EXEC_ANALOGUE_OUTPUT_Scale( const float* value, float* scaled_value );
+
 #ifdef __cplusplus
 }
 #endif

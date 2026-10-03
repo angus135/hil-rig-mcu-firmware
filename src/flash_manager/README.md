@@ -400,7 +400,9 @@ The call that copies the final bytes returns `OK`; a later read reports
 all declared bytes have been copied and all fill/page ownership is clear. It
 then returns the manager to `IDLE`. The Host Interface owns every copied byte as
 soon as `FLASH_MANAGER_ReadResultBytes()` returns and may transmit it
-asynchronously.
+asynchronously. Calling `FLASH_MANAGER_FinishResultTransfer()` before the stream
+is consumed returns `FLASH_MANAGER_RESULT_TRANSFER_INCOMPLETE` and leaves the
+manager in `TRANSFERRING_RESULTS` so reading can continue.
 
 ---
 

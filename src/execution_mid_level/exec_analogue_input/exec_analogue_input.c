@@ -127,6 +127,15 @@ static bool EXEC_ANALOGUE_INPUT_Translate_Sample_Rate( ExecAnalogueInputSampleRa
  *------------------------------------------------------------------------------
  */
 
+float EXEC_ANALOGUE_INPUT_Scale( uint32_t value )
+{
+    if ( value - 392 < 0 )
+    {
+        return 0.0;
+    }
+    return ( value - 392 ) * 0.008478497992;
+}
+
 /**
  * @brief Configures the execution-layer analogue input path.
  *
