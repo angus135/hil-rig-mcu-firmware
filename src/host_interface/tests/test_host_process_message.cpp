@@ -641,7 +641,8 @@ TEST_F( HostProcessMessageTest, TestConfigurationCommitFailureReturnsProtocolErr
 
     EXPECT_CALL( *g_mock_deps, HOST_INTERFACE_Commit_Config_Message( _ ) )
         .WillOnce( Return( HOST_INTERFACE_STATUS_INTERNAL_ERROR ) );
-    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+    EXPECT_CALL( *g_mock_deps,
+                 RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
         .WillOnce( Return( true ) );
 
     EXPECT_EQ(
@@ -727,7 +728,8 @@ TEST_F( HostProcessMessageTest, TestConfigurationInvalidFrequencyReturnsProtocol
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
         .WillOnce(
             Invoke( [this]( RunStateManagerStatus_T* status ) { *status = run_state_status; } ) );
-    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+    EXPECT_CALL( *g_mock_deps,
+                 RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
         .WillOnce( Return( true ) );
 
     EXPECT_EQ(
@@ -749,7 +751,8 @@ TEST_F( HostProcessMessageTest, TestInstructionHandlerFailureProducesRejectedRes
 
     EXPECT_CALL( *g_mock_deps, HOST_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
         .WillOnce( Return( HOST_INTERFACE_STATUS_VALIDATION_FAILED ) );
-    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+    EXPECT_CALL( *g_mock_deps,
+                 RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
         .WillOnce( Return( true ) );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
@@ -837,7 +840,8 @@ TEST_F( HostProcessMessageTest, VariableInstructionDataHandlerFailureProducesRej
 
     EXPECT_CALL( *g_mock_deps, HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
         .WillOnce( Return( HOST_INTERFACE_STATUS_VALIDATION_FAILED ) );
-    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+    EXPECT_CALL( *g_mock_deps,
+                 RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
         .WillOnce( Return( true ) );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Variable_Instruction_Data(
@@ -1464,7 +1468,8 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInvalidInstruction
 
     EXPECT_CALL( *g_mock_deps, HOST_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
         .WillOnce( Return( HOST_INTERFACE_STATUS_VALIDATION_FAILED ) );
-    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+    EXPECT_CALL( *g_mock_deps,
+                 RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
         .WillOnce( Return( true ) );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
@@ -1491,7 +1496,8 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInconsistentTick )
 
     EXPECT_CALL( *g_mock_deps, HOST_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
         .WillOnce( Return( HOST_INTERFACE_STATUS_INCONSISTENT_TICK ) );
-    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+    EXPECT_CALL( *g_mock_deps,
+                 RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
         .WillOnce( Return( true ) );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
@@ -1547,7 +1553,8 @@ TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadHandlesTransitionFailur
 
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestConfiguration() )
         .WillOnce( Return( false ) );
-    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+    EXPECT_CALL( *g_mock_deps,
+                 RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
         .WillOnce( Return( true ) );
 
     EXPECT_EQ(
