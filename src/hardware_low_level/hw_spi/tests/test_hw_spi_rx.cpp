@@ -456,6 +456,7 @@ protected:
                                  IRQn_Type tx_irqn, Timer_T timer )
     {
         memset( state, 0, sizeof( *state ) );
+        state->rx_buffer                 = HW_SPI_Get_Rx_Buffer( logical );
         state->config                    = config;
         state->logical_peripheral        = logical;
         state->nss_pin                   = config.nss_pin;
@@ -465,7 +466,7 @@ protected:
         state->is_master                 = config.spi_mode == SPI_MASTER_MODE;
         state->frame_size_bytes          = config.data_size == SPI_SIZE_16_BIT ? 2U : 1U;
         state->frame_shift               = config.data_size == SPI_SIZE_16_BIT ? 1U : 0U;
-        state->tx_uses_final_drain_timer = config.baud_rate > SPI_BAUD_5M625BIT;
+        state->tx_uses_final_drain_timer = config.baud_rate > SPI_BAUD_2M813BIT;
         state->tx_final_drain_cycles     = 0U;
         state->tx_final_drain_timer      = timer;
         state->rx_dma                    = rx_dma;
@@ -644,7 +645,7 @@ TEST_F( HWSPIRxTest, RxPeek_ReturnsSingleSpanWhenUnreadDataDoesNotWrap )
     HW_SPI_STATE( SPI_CHANNEL_1 )->rx_position = 100U;
     EXPECT_CALL( mock,
                  DMAGetDataLength( Eq( SPI_CHANNEL_1_RX_DMA ), Eq( SPI_CHANNEL_1_RX_DMA_STREAM ) ) )
-        .WillOnce( Return( 824U ) );  // write index = 200
+        .WillOnce( Return( RX_BUFFER_SIZE_BYTES - 200U ) );  // write index = 200
 
     HWSPIRxSpans_T spans = HW_SPI_Rx_Peek( SPI_CHANNEL_1 );
 
@@ -657,14 +658,15 @@ TEST_F( HWSPIRxTest, RxPeek_ReturnsSingleSpanWhenUnreadDataDoesNotWrap )
 
 TEST_F( HWSPIRxTest, RxPeek_ReturnsTwoSpansWhenUnreadDataWraps )
 {
-    HW_SPI_STATE( SPI_CHANNEL_1 )->rx_position = 1000U;
+    HW_SPI_STATE( SPI_CHANNEL_1 )->rx_position = RX_BUFFER_SIZE_BYTES - 24U;
     EXPECT_CALL( mock,
                  DMAGetDataLength( Eq( SPI_CHANNEL_1_RX_DMA ), Eq( SPI_CHANNEL_1_RX_DMA_STREAM ) ) )
-        .WillOnce( Return( 974U ) );  // write index = 50
+        .WillOnce( Return( RX_BUFFER_SIZE_BYTES - 50U ) );  // write index = 50
 
     HWSPIRxSpans_T spans = HW_SPI_Rx_Peek( SPI_CHANNEL_1 );
 
-    EXPECT_EQ( spans.first_span.data, &HW_SPI_STATE( SPI_CHANNEL_1 )->rx_buffer[1000] );
+    EXPECT_EQ( spans.first_span.data,
+               &HW_SPI_STATE( SPI_CHANNEL_1 )->rx_buffer[RX_BUFFER_SIZE_BYTES - 24U] );
     EXPECT_EQ( spans.first_span.length_bytes, 24U );
     EXPECT_EQ( spans.second_span.data, &HW_SPI_STATE( SPI_CHANNEL_1 )->rx_buffer[0] );
     EXPECT_EQ( spans.second_span.length_bytes, 50U );
@@ -680,7 +682,8 @@ TEST_F( HWSPIRxTest, RxPeek_ConvertsDmaElementsBackToBytesIn16BitMode )
 
     EXPECT_CALL( mock,
                  DMAGetDataLength( Eq( SPI_CHANNEL_2_RX_DMA ), Eq( SPI_CHANNEL_2_RX_DMA_STREAM ) ) )
-        .WillOnce( Return( 507U ) );  // remaining bytes = 1014, write index = 10
+        .WillOnce( Return( ( RX_BUFFER_SIZE_BYTES / 2U )
+                           - 5U ) );  // 5 elements = 10 bytes, write index = 10
 
     HWSPIRxSpans_T spans = HW_SPI_Rx_Peek( SPI_CHANNEL_2 );
 
@@ -706,7 +709,7 @@ TEST_F( HWSPIRxTest, RxPeek_TreatsNdtrReloadToZeroAsWriteIndexZero )
 
 TEST_F( HWSPIRxTest, RxConsume_UsesMaskBasedWrapAtEndOfBuffer )
 {
-    HW_SPI_STATE( SPI_CHANNEL_1 )->rx_position = 1000U;
+    HW_SPI_STATE( SPI_CHANNEL_1 )->rx_position = RX_BUFFER_SIZE_BYTES - 24U;
 
     HW_SPI_Rx_Consume( SPI_CHANNEL_1, 50U );
 

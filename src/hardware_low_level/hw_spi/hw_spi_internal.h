@@ -91,8 +91,8 @@ extern "C"
 #define SPI_DAC_TX_DMA_CLEAR_TE LL_DMA_ClearFlag_TE1
 
 #define RX_BUFFER_SIZE_BYTES HW_SPI_RX_BUFFER_SIZE_BYTES
-#define TX_BUFFER_SIZE_BYTES 1024U
-#define TX_PACKET_QUEUE_DEPTH 16U
+#define TX_BUFFER_SIZE_BYTES HW_SPI_TX_BUFFER_SIZE_BYTES
+#define TX_PACKET_QUEUE_DEPTH 128U
 #define HW_SPI_DMA_DISABLE_TIMEOUT_ITERATIONS 1000U
 #define SPI_DAC_FINAL_DRAIN_TIMER_MAX_ATTEMPTS 2U
 
@@ -196,8 +196,7 @@ struct SPIPeripheralState_T
     Timer_T      tx_final_drain_timer;       ///< One-shot timer used for slow-baud final drain.
     uint8_t      tx_final_drain_timer_attempts;  ///< Bounded SPI_DAC drain intervals elapsed.
 
-    uint8_t rx_buffer[RX_BUFFER_SIZE_BYTES]
-        __attribute__( ( aligned( 2 ) ) );  ///< DMA-backed circular RX buffer.
+    uint8_t* rx_buffer;    ///< DMA-backed circular RX buffer (NULL for TX-only channels).
     uint32_t rx_position;  ///< Software consume index into rx_buffer, expressed in bytes.
 
     uint8_t tx_buffer[TX_BUFFER_SIZE_BYTES]
@@ -218,6 +217,13 @@ struct SPIPeripheralState_T
     uint8_t                 tx_packet_read_position;   ///< Next descriptor slot to start via DMA.
     uint8_t tx_num_packets_pending;  ///< Number of queued master packet descriptors.
 
+    uint32_t peak_tx_num_bytes_pending;     ///< Peak queued TX bytes.
+    uint32_t peak_tx_num_packets_pending;   ///< Peak queued packet descriptors.
+    uint32_t tx_queue_reject_count;         ///< Total count of packet rejects.
+    uint32_t tx_dma_error_count;            ///< Total count of TX DMA transfer errors.
+    uint32_t tx_final_drain_timeout_count;  ///< Total count of final drain timeouts.
+    uint32_t rx_unread_peak_bytes;          ///< Peak unread RX bytes in buffer.
+
     DMA_TypeDef* rx_dma;          ///< RX DMA controller instance.
     uint32_t     rx_dma_stream;   ///< RX DMA stream selection.
     DMA_TypeDef* tx_dma;          ///< TX DMA controller instance.
@@ -232,6 +238,7 @@ struct SPIPeripheralState_T
  */
 
 extern SPIPeripheralState_T channel_state_array[SPI_NUM_CHANNELS];
+uint8_t*                    HW_SPI_Get_Rx_Buffer( SPIChannel_T peripheral );
 
 /**-----------------------------------------------------------------------------
  *  Internal Hot-Path Inline Helpers

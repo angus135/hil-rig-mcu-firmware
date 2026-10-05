@@ -728,7 +728,7 @@ DigitalOutputPinmask_T HW_GPIO_Combine_Port_Pin_Masks( GPIOOutput_T* gpio_names,
         if ( checker != port_packet.gpiox )
         {
             // Not all of the pins had the same port, so return an error
-            return NULL;  // 4294901760 = 0xFFFF0000
+            return 0U;
         }
         pin_mask = pin_mask | port_packet.pin_mask;  // combine pin masks
     }

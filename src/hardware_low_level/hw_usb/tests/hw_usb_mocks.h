@@ -107,6 +107,7 @@ typedef struct USBD_HandleTypeDef  // Note this definition is not complete, addi
  * @retval USBD_OK if all operations are OK else USBD_FAIL or USBD_BUSY
  */
 uint8_t CDC_Transmit_FS( uint8_t* Buf, uint16_t Len );
+void    CDC_Resume_Receive_FS( void );
 
 // NOLINTEND
 

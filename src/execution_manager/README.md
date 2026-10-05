@@ -8,11 +8,11 @@ execution failure, and the placement of future result production within each
 boundary. The Run State Manager owns TIM4, the DUT driver lifecycle, and Flash
 Manager session transitions.
 
-`EXECUTION_MANAGER_Prepare(tick_count)` establishes tick zero while TIM4 is
-stopped. Tick zero is the configured initial condition at execution time zero;
-it is not processed by an interrupt. The first TIM4 interrupt processes tick
-one. A run of N ticks therefore processes boundaries 1 through N and completes
-at time `N / tick_rate_hz`.
+`EXECUTION_MANAGER_Prepare(tick_count)` prepares boundary zero while TIM4 is
+stopped. The first TIM4 interrupt processes boundary zero without collecting a
+measurement and applies any timestamp-zero instruction. Later interrupts
+process boundaries 1 through N. A run of N logical intervals therefore
+processes N + 1 boundary events and completes after boundary N.
 
 ## Tick and I/O semantics
 
@@ -24,10 +24,13 @@ timestamp X = the driver operation was performed at boundary X
 boundary time = X / tick_rate_hz
 ```
 
-At each boundary the Execution Manager advances the authoritative tick once,
-collects measurements, and then applies or queues outputs. The tick remains
-unchanged for the rest of that ISR. A tick-X measurement therefore observes
-the system immediately before tick-X outputs are requested.
+Boundary zero applies outputs without collecting a measurement because no
+interval has elapsed. At each later boundary the Execution Manager advances
+the authoritative tick, collects measurements for the interval that just
+ended, and then applies or queues outputs for the interval beginning at that
+boundary. The tick remains unchanged for the rest of that ISR. A boundary-X
+measurement therefore observes the system immediately before boundary-X
+outputs are requested.
 
 The common timestamp identifies the observation or request boundary. Driver
 behaviour determines the relationship between that boundary and physical data:

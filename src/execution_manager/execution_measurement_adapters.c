@@ -236,89 +236,114 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleCanReceive( uint8_t channel, uint32_t t
 bool EXECUTION_MEASUREMENT_ADAPTER_SampleSpiReceive( uint8_t channel, uint32_t timestamp,
                                                      BaseType_t* higher_priority_task_woken )
 {
-    const uint32_t pending_bytes = EXEC_SPI_GetPendingReceiveBytes( ( ExecSPIChannel_T )channel );
-    if ( pending_bytes == 0U )
+    /*
+     * Snapshot the pending count once. Re-querying the live DMA NDTR register
+     * each iteration would chase continuously arriving slave-mode data and
+     * extend the ISR beyond the tick budget at high frequencies.
+     */
+    uint32_t remaining_bytes = EXEC_SPI_GetPendingReceiveBytes( ( ExecSPIChannel_T )channel );
+    if ( remaining_bytes == 0U )
     {
         return true;
     }
 
-    const uint16_t reservation_bytes =
-        ( uint16_t )( pending_bytes < EXEC_SPI_MAX_RX_CHUNK_SIZE ? pending_bytes
-                                                                 : EXEC_SPI_MAX_RX_CHUNK_SIZE );
-    FlashManagerResultWriteLease_T lease = { 0 };
-    if ( !FLASH_MANAGER_ReserveResultRecordFromISR( reservation_bytes, &lease ) )
+    while ( remaining_bytes > 0U )
     {
-        return false;
+        uint16_t reservation_bytes = ( uint16_t )( remaining_bytes < EXEC_SPI_MAX_RX_CHUNK_SIZE
+                                                       ? remaining_bytes
+                                                       : EXEC_SPI_MAX_RX_CHUNK_SIZE );
+        if ( reservation_bytes > FLASH_MANAGER_RESULT_MAX_PAYLOAD_BYTES )
+        {
+            reservation_bytes = FLASH_MANAGER_RESULT_MAX_PAYLOAD_BYTES;
+        }
+
+        FlashManagerResultWriteLease_T lease = { 0 };
+        if ( !FLASH_MANAGER_ReserveResultRecordFromISR( reservation_bytes, &lease ) )
+        {
+            return false;
+        }
+
+        uint32_t bytes_read = 0U;
+        if ( !EXEC_SPI_Receive( ( ExecSPIChannel_T )channel, lease.payload, reservation_bytes,
+                                &bytes_read ) )
+        {
+            ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+            return false;
+        }
+
+        if ( bytes_read == 0U )
+        {
+            ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+            return true;
+        }
+
+        remaining_bytes -= bytes_read;
+
+        if ( FLASH_MANAGER_CommitResultRecordFromISR(
+                 &lease, timestamp, FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE, channel,
+                 ( uint16_t )bytes_read, higher_priority_task_woken )
+             != FLASH_MANAGER_RESULT_COMMIT_OK )
+        {
+            ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+            return false;
+        }
     }
 
-    uint32_t bytes_read = 0U;
-    if ( !EXEC_SPI_Receive( ( ExecSPIChannel_T )channel, lease.payload, reservation_bytes,
-                            &bytes_read ) )
-    {
-        ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
-        return false;
-    }
-
-    if ( bytes_read == 0U )
-    {
-        ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
-        return true;
-    }
-
-    if ( FLASH_MANAGER_CommitResultRecordFromISR(
-             &lease, timestamp, FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE, channel,
-             ( uint16_t )bytes_read, higher_priority_task_woken )
-         == FLASH_MANAGER_RESULT_COMMIT_OK )
-    {
-        return true;
-    }
-
-    ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
-    return false;
+    return true;
 }
 
 bool EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive( uint8_t channel, uint32_t timestamp,
                                                       BaseType_t* higher_priority_task_woken )
 {
-    const uint32_t pending_bytes = EXEC_UART_GetPendingReceiveBytes( ( ExecUartChannel_T )channel );
-    if ( pending_bytes == 0U )
+    uint32_t remaining_bytes = EXEC_UART_GetPendingReceiveBytes( ( ExecUartChannel_T )channel );
+    if ( remaining_bytes == 0U )
     {
         return true;
     }
 
-    const uint16_t reservation_bytes =
-        ( uint16_t )( pending_bytes < EXEC_UART_MAX_CHUNK_SIZE ? pending_bytes
-                                                               : EXEC_UART_MAX_CHUNK_SIZE );
-    FlashManagerResultWriteLease_T lease = { 0 };
-    if ( !FLASH_MANAGER_ReserveResultRecordFromISR( reservation_bytes, &lease ) )
+    while ( remaining_bytes > 0U )
     {
-        return false;
+        uint16_t reservation_bytes =
+            ( uint16_t )( remaining_bytes < EXEC_UART_MAX_CHUNK_SIZE ? remaining_bytes
+                                                                     : EXEC_UART_MAX_CHUNK_SIZE );
+        if ( reservation_bytes > FLASH_MANAGER_RESULT_MAX_PAYLOAD_BYTES )
+        {
+            reservation_bytes = FLASH_MANAGER_RESULT_MAX_PAYLOAD_BYTES;
+        }
+
+        FlashManagerResultWriteLease_T lease = { 0 };
+        if ( !FLASH_MANAGER_ReserveResultRecordFromISR( reservation_bytes, &lease ) )
+        {
+            return false;
+        }
+
+        uint32_t bytes_read = 0U;
+        if ( !EXEC_UART_Read( ( ExecUartChannel_T )channel, lease.payload, reservation_bytes,
+                              &bytes_read ) )
+        {
+            ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+            return false;
+        }
+
+        if ( bytes_read == 0U )
+        {
+            ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+            return true;
+        }
+
+        remaining_bytes -= bytes_read;
+
+        if ( FLASH_MANAGER_CommitResultRecordFromISR(
+                 &lease, timestamp, FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE, channel,
+                 ( uint16_t )bytes_read, higher_priority_task_woken )
+             != FLASH_MANAGER_RESULT_COMMIT_OK )
+        {
+            ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+            return false;
+        }
     }
 
-    uint32_t bytes_read = 0U;
-    if ( !EXEC_UART_Read( ( ExecUartChannel_T )channel, lease.payload, reservation_bytes,
-                          &bytes_read ) )
-    {
-        ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
-        return false;
-    }
-
-    if ( bytes_read == 0U )
-    {
-        ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
-        return true;
-    }
-
-    if ( FLASH_MANAGER_CommitResultRecordFromISR(
-             &lease, timestamp, FLASH_MANAGER_RESULT_PERIPHERAL_UART_RECEIVE, channel,
-             ( uint16_t )bytes_read, higher_priority_task_woken )
-         == FLASH_MANAGER_RESULT_COMMIT_OK )
-    {
-        return true;
-    }
-
-    ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
-    return false;
+    return true;
 }
 
 bool EXECUTION_MEASUREMENT_ADAPTER_SampleAnalogueInput( uint8_t channel, uint32_t timestamp,
@@ -385,6 +410,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurementsProfiled(
         if ( elapsed_cycles > timing->maximum_cycles )
         {
             timing->maximum_cycles = elapsed_cycles;
+            timing->max_timestamp  = timestamp;
         }
 
         if ( !accepted )
@@ -404,6 +430,7 @@ void EXECUTION_MEASUREMENT_ADAPTER_ResetTiming( void )
         execution_measurement_timing[type].sample_count   = 0U;
         execution_measurement_timing[type].total_cycles   = 0U;
         execution_measurement_timing[type].maximum_cycles = 0U;
+        execution_measurement_timing[type].max_timestamp  = 0U;
     }
 }
 
@@ -419,6 +446,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_GetTiming( ExecutionMeasurementType_T    type
     timing->sample_count   = execution_measurement_timing[type].sample_count;
     timing->total_cycles   = execution_measurement_timing[type].total_cycles;
     timing->maximum_cycles = execution_measurement_timing[type].maximum_cycles;
+    timing->max_timestamp  = execution_measurement_timing[type].max_timestamp;
     taskEXIT_CRITICAL();
     return true;
 }

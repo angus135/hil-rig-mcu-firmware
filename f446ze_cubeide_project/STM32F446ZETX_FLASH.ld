@@ -38,7 +38,12 @@ ENTRY(Reset_Handler)
 /* Highest address of the user mode stack */
 _estack = ORIGIN(RAM) + LENGTH(RAM); /* end of "RAM" Ram type memory */
 
-_Min_Heap_Size = 0x200; /* required amount of heap */
+/*
+ * WARNING: _Min_Heap_Size is set to 0 to preserve SRAM for the MSP interrupt stack.
+ * The embedded firmware strictly forbids runtime heap allocation (malloc/free).
+ * If any module or third-party code requires libc dynamic allocation, sbrk will fail.
+ */
+_Min_Heap_Size = 0x0; /* required amount of heap */
 _Min_Stack_Size = 0x400; /* required amount of stack */
 
 /* Memories definition */

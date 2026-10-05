@@ -92,8 +92,11 @@
 static HW_TIMER_ExecutionCallback_T volatile execution_timer_callback = NULL;
 static HW_TIMER_ExecutionGuard_T volatile execution_timer_guard       = NULL;
 static volatile uint32_t execution_isr_sample_count                   = 0U;
+static volatile uint64_t execution_isr_total_cycles                   = 0U;
 static volatile uint32_t execution_isr_latest_cycles                  = 0U;
+static volatile uint32_t execution_isr_minimum_cycles                 = 0U;
 static volatile uint32_t execution_isr_maximum_cycles                 = 0U;
+static volatile uint32_t execution_isr_max_sample_number              = 0U;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -117,17 +120,27 @@ static inline void HW_TIMER_Record_Execution_ISR_Cycles( uint32_t start_cycles )
 
     execution_isr_latest_cycles = elapsed_cycles;
     execution_isr_sample_count++;
+    execution_isr_total_cycles += elapsed_cycles;
+    if ( ( execution_isr_sample_count == 1U ) || ( elapsed_cycles < execution_isr_minimum_cycles ) )
+    {
+        execution_isr_minimum_cycles = elapsed_cycles;
+    }
     if ( elapsed_cycles > execution_isr_maximum_cycles )
     {
-        execution_isr_maximum_cycles = elapsed_cycles;
+        execution_isr_maximum_cycles    = elapsed_cycles;
+        execution_isr_max_sample_number = execution_isr_sample_count;
     }
 }
 #endif
 
+/**
+ * @brief Services TIM4 with Blue 2 (PE2) high for the ISR body, including guard rejection.
+ */
 void EXECUTION_MANAGER_TIMER_IRQ_HANDLER( void )
 {
 #ifdef TEST_BUILD
 #else
+    LED_B_1_GPIO_Port->BSRR = LED_B_1_Pin;
     if ( LL_TIM_IsActiveFlag_UPDATE( EXECUTION_MANAGER_TIMER_INSTANCE ) )
     {
         const uint32_t start_cycles               = DWT->CYCCNT;
@@ -139,6 +152,7 @@ void EXECUTION_MANAGER_TIMER_IRQ_HANDLER( void )
 
         if ( guard != NULL && !guard() )
         {
+            LED_B_1_GPIO_Port->BSRR = ( uint32_t )LED_B_1_Pin << 16U;
             return;
         }
 
@@ -156,6 +170,7 @@ void EXECUTION_MANAGER_TIMER_IRQ_HANDLER( void )
         HW_TIMER_Record_Execution_ISR_Cycles( start_cycles );
         portYIELD_FROM_ISR( higher_priority_task_woken );
     }
+    LED_B_1_GPIO_Port->BSRR = ( uint32_t )LED_B_1_Pin << 16U;
 #endif
 }
 
@@ -309,9 +324,12 @@ bool HW_TIMER_Start_Timer( Timer_T timer )
 {
     if ( timer == EXECUTION_MANAGER_TIMER )
     {
-        execution_isr_sample_count   = 0U;
-        execution_isr_latest_cycles  = 0U;
-        execution_isr_maximum_cycles = 0U;
+        execution_isr_sample_count      = 0U;
+        execution_isr_total_cycles      = 0U;
+        execution_isr_latest_cycles     = 0U;
+        execution_isr_minimum_cycles    = 0U;
+        execution_isr_maximum_cycles    = 0U;
+        execution_isr_max_sample_number = 0U;
     }
 
 #ifdef TEST_BUILD
@@ -497,13 +515,16 @@ void HW_TIMER_Get_Execution_Timing( HW_TIMER_ExecutionTiming_T* timing )
         return;
     }
 
-    timing->sample_count   = execution_isr_sample_count;
-    timing->latest_cycles  = execution_isr_latest_cycles;
-    timing->maximum_cycles = execution_isr_maximum_cycles;
+    timing->sample_count      = execution_isr_sample_count;
+    timing->total_cycles      = execution_isr_total_cycles;
+    timing->latest_cycles     = execution_isr_latest_cycles;
+    timing->minimum_cycles    = execution_isr_minimum_cycles;
+    timing->maximum_cycles    = execution_isr_maximum_cycles;
+    timing->max_sample_number = execution_isr_max_sample_number;
 #ifdef TEST_BUILD
     timing->core_clock_hz = 0U;
 #else
-    timing->core_clock_hz = SystemCoreClock;
+    timing->core_clock_hz = HW_CLOCK_Get_SysClock_Hz();
 #endif
 }
 
@@ -545,11 +566,11 @@ uint32_t HW_TIMER_Get_Clock_Hz( Timer_T timer )
 
             if ( apb_prescaler == LL_RCC_APB1_DIV_1 )
             {
-                return pclk;
+                return HW_CLOCK_Calibrate_Hz( pclk );
             }
             else
             {
-                return pclk * 2U;
+                return HW_CLOCK_Calibrate_Hz( pclk * 2U );
             }
         }
 

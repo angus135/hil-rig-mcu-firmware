@@ -226,10 +226,9 @@ protected:
 
         for ( uint32_t i = 0U; i < TEST_PAGE_SIZE_BYTES; i++ )
         {
-            transfer_data[i]                          = static_cast<uint8_t>( i & 0xFFU );
-            external_flash_result_page_buffer[i]      = 0xFFU;
-            external_flash_instruction_page_buffer[i] = 0xFFU;
-            external_flash_recovery_page_buffer[i]    = 0xFFU;
+            transfer_data[i]                       = static_cast<uint8_t>( i & 0xFFU );
+            external_flash_staging_page_buffer[i]  = 0xFFU;
+            external_flash_recovery_page_buffer[i] = 0xFFU;
         }
 
         EXTERNAL_FLASH_ALLOCATOR_Reset();
@@ -375,7 +374,7 @@ TEST_F( ExternalFlashTest, InitRemovesBadBlocksFromCapacity )
 TEST_F( ExternalFlashTest, StartSessionErasesOnlyGoodResultBlocks )
 {
     InitDriverAllGood();
-    external_flash_allocator_bad_blocks[TEST_RESULT_BLOCK + 1U] = true;
+    EXTERNAL_FLASH_ALLOCATOR_SetPhysicalBlockBad( TEST_RESULT_BLOCK + 1U );
 
     EXPECT_CALL( mock, BlockErase( _ ) )
         .Times( EXTERNAL_FLASH_RESULT_BLOCK_COUNT - 2U )
@@ -420,7 +419,7 @@ TEST_F( ExternalFlashTest, StartSessionRejectsReservationLargerThanResultPartiti
 TEST_F( ExternalFlashTest, StartInstructionUploadErasesOnlyGoodInstructionBlocks )
 {
     InitDriverAllGood();
-    external_flash_allocator_bad_blocks[1U] = true;
+    EXTERNAL_FLASH_ALLOCATOR_SetPhysicalBlockBad( 1U );
 
     EXPECT_CALL( mock, BlockErase( _ ) ).Times( 1U ).WillRepeatedly( Invoke( []( uint32_t block ) {
         EXPECT_LT( block, EXTERNAL_FLASH_INSTRUCTION_BLOCK_COUNT );
@@ -523,6 +522,34 @@ TEST_F( ExternalFlashTest, FinishInstructionUploadRejectsIncompleteUpload )
         .WillOnce( Return( HW_NAND_STATUS_OK ) );
 
     EXPECT_EQ( EXTERNAL_FLASH_STATUS_ERROR, EXTERNAL_FLASH_FinishInstructionUpload() );
+}
+
+TEST_F( ExternalFlashTest, UpdateInstructionUploadExpectedLengthValidatesStateAndBounds )
+{
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_NOT_INITIALISED,
+               EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( TEST_PAGE_SIZE_BYTES ) );
+
+    InitDriverAllGood();
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_ERROR,
+               EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( TEST_PAGE_SIZE_BYTES ) );
+
+    StartInstructionUploadAllGood( TEST_PAGE_SIZE_BYTES * 2U );
+
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_INVALID_ARG,
+               EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( TEST_PAGE_SIZE_BYTES * 3U ) );
+
+    EXPECT_CALL( mock, ProgramPageDma( Eq( TEST_INSTRUCTION_PAGE ), Eq( 0U ), Eq( transfer_data ),
+                                       Eq( TEST_PAGE_SIZE_BYTES ) ) )
+        .WillOnce( Return( HW_NAND_STATUS_OK ) );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
+               EXTERNAL_FLASH_WriteInstructionPage( transfer_data, TEST_PAGE_SIZE_BYTES ) );
+
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_INVALID_ARG,
+               EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( TEST_PAGE_SIZE_BYTES - 1U ) );
+
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK,
+               EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( TEST_PAGE_SIZE_BYTES ) );
+    EXPECT_EQ( EXTERNAL_FLASH_STATUS_OK, EXTERNAL_FLASH_FinishInstructionUpload() );
 }
 
 TEST_F( ExternalFlashTest, ResultSessionUsesWearRotationStartOffset )

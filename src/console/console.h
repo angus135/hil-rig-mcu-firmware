@@ -32,7 +32,7 @@ extern "C"
  *  Public Defines / Macros
  *------------------------------------------------------------------------------
  */
-#define CONSOLE_TASK_MEMORY 1024U
+#define CONSOLE_TASK_MEMORY 512U
 #define CONSOLE_TASK_PRIORITY 3
 
 #define ARRAY_LEN( a )                                                                             \

@@ -1411,16 +1411,8 @@ ResultBufferReadStatus_T RESULT_BUFFER_ReadBytes( uint8_t*  destination,
          * An empty or actively filling page means the NAND producer has not yet
          * published the next sequential bytes.
          */
-        if ( page_state == RESULT_BUFFER_PAGE_EMPTY )
-        {
-            /* Already loaded bytes cannot disappear before reaching the consumer. */
-            invalid_state_detected = !result_buffer_context.active_read_fill_reservation.is_active
-                                     && ( result_buffer_context.next_nand_read_offset_bytes
-                                          > result_buffer_context.host_consumed_bytes );
-            break;
-        }
-
-        if ( page_state == RESULT_BUFFER_PAGE_FILLING_FROM_NAND )
+        if ( ( page_state == RESULT_BUFFER_PAGE_EMPTY )
+             || ( page_state == RESULT_BUFFER_PAGE_FILLING_FROM_NAND ) )
         {
             break;
         }

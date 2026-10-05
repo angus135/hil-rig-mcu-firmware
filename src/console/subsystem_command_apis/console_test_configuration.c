@@ -6,6 +6,7 @@
 
 #include "console_test_configuration.h"
 #include "console.h"
+#include "hardware_low_level/hw_clock_calibration/hw_clock_calibration.h"
 #include "hw_pwm_gen.h"
 #include "run_state_manager.h"
 #include "test_configuration.h"
@@ -15,8 +16,8 @@
 #include <string.h>
 
 /* Current board clock tree: TIM12 is APB1 x2; TIM8 is APB2 x2. */
-#define CONSOLE_PWM_LV_TIMER_CLOCK_HZ ( 90000000U )
-#define CONSOLE_PWM_HV_TIMER_CLOCK_HZ ( 180000000U )
+#define CONSOLE_PWM_LV_TIMER_CLOCK_HZ ( HW_CLOCK_Get_Timer_APB1_Hz() )
+#define CONSOLE_PWM_HV_TIMER_CLOCK_HZ ( HW_CLOCK_Get_Timer_APB2_Hz() )
 
 static void CONSOLE_TestConfiguration_PrintUsage( void )
 {

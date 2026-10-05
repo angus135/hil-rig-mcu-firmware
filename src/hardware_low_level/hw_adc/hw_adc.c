@@ -33,6 +33,7 @@
 
 #include "hw_adc.h"
 #include "hw_timer.h"
+#include "hardware_low_level/hw_clock_calibration/hw_clock_calibration.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include "stddef.h"
@@ -224,38 +225,49 @@ bool HW_ADC_Configure_ADC_Measurement_Frequency( ADCSampleRates_T rate )
         return false;
     }
 
-    uint32_t psc = 0;
-    uint32_t arr = 0;
+    uint32_t psc            = 0;
+    uint32_t sample_rate_hz = 0;
 
     switch ( rate )
     {
         case ADC_SAMPLE_RATE_100K_HZ:
-            psc = ADC_SAMPLE_100K_PSC;
-            arr = ADC_SAMPLE_100K_ARR;
+            psc            = ADC_SAMPLE_100K_PSC;
+            sample_rate_hz = 100000U;
             break;
         case ADC_SAMPLE_RATE_50K_HZ:
-            psc = ADC_SAMPLE_50K_PSC;
-            arr = ADC_SAMPLE_50K_ARR;
+            psc            = ADC_SAMPLE_50K_PSC;
+            sample_rate_hz = 50000U;
             break;
         case ADC_SAMPLE_RATE_10K_HZ:
-            psc = ADC_SAMPLE_10K_PSC;
-            arr = ADC_SAMPLE_10K_ARR;
+            psc            = ADC_SAMPLE_10K_PSC;
+            sample_rate_hz = 10000U;
             break;
         case ADC_SAMPLE_RATE_5K_HZ:
-            psc = ADC_SAMPLE_5K_PSC;
-            arr = ADC_SAMPLE_5K_ARR;
+            psc            = ADC_SAMPLE_5K_PSC;
+            sample_rate_hz = 5000U;
             break;
         case ADC_SAMPLE_RATE_1K_HZ:
-            psc = ADC_SAMPLE_1K_PSC;
-            arr = ADC_SAMPLE_1K_ARR;
+            psc            = ADC_SAMPLE_1K_PSC;
+            sample_rate_hz = 1000U;
             break;
         case ADC_SAMPLE_RATE_500_HZ:
-            psc = ADC_SAMPLE_500_PSC;
-            arr = ADC_SAMPLE_500_ARR;
+            psc            = ADC_SAMPLE_500_PSC;
+            sample_rate_hz = 500U;
             break;
         default:
             return false;
     }
+
+    const uint32_t timer_clk_hz  = HW_CLOCK_Get_Timer_APB1_Hz();
+    const uint32_t divisor       = ( psc + 1U ) * sample_rate_hz;
+    const uint32_t period_counts = ( divisor > 0U ) ? ( timer_clk_hz / divisor ) : 0U;
+
+    if ( ( period_counts == 0U ) || ( period_counts > 65536U ) )
+    {
+        return false;
+    }
+
+    const uint32_t arr = period_counts - 1U;
     HW_TIMER_Configure_Timer( ANALOGUE_INPUT_TIMER, psc, arr );
 
     hw_adc_state.is_configured = true;

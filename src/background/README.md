@@ -9,15 +9,15 @@ transaction queue progresses promptly.
 The status LEDs have explicit ownership:
 
 - Blue 1 is the one-second heartbeat.
-- Blue 2 is execution activity and is toggled by the Execution Manager ISR.
+- Blue 2 (`USER_LED_BLUE_1`, PE2) is high during the TIM4 Execution Manager
+  ISR body and low on every exit, including execution-guard rejection.
 - Blue 3 through Blue 6 display `RunState_T + 1` in binary, with Blue 3 as the
   most-significant bit and rightmost Blue 6 as the least-significant bit. Adding
   one keeps `IDLE` visibly distinct from all LEDs off.
 - All six red LEDs are reserved for faults and flash together while the Run
   State Manager is in `RUN_STATE_FAULT`.
 
-The background task clears Blue 2 whenever the execution timer is stopped, so
-an odd number of ISR toggles cannot leave the activity indicator latched.
+The background task also clears Blue 2 whenever the execution timer is stopped.
 
 Application startup initializes the Logic Expander and starts its asynchronous
 self-configuration before the scheduler runs. Each background cycle then loops

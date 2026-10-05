@@ -79,6 +79,7 @@ typedef uint32_t TickType_t;
  */
 #define taskENTER_CRITICAL() ( ( void )0 )
 #define taskEXIT_CRITICAL() ( ( void )0 )
+#define taskYIELD() ( ( void )0 )
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures

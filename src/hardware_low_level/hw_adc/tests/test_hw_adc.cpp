@@ -316,8 +316,10 @@ TEST_F( HWADCTest, StopDMAMeasurements_StopsADC )
 
 TEST_F( HWADCTest, ConfigureMeasurementFrequency_ConfiguresStoppedLifecycleState )
 {
-    EXPECT_CALL( mock,
-                 ConfigureTimer( ANALOGUE_INPUT_TIMER, ADC_SAMPLE_50K_PSC, ADC_SAMPLE_50K_ARR ) );
+    EXPECT_CALL(
+        mock, ConfigureTimer(
+                  ANALOGUE_INPUT_TIMER, ADC_SAMPLE_50K_PSC,
+                  HW_CLOCK_Get_Timer_APB1_Hz() / ( ( ADC_SAMPLE_50K_PSC + 1U ) * 50000U ) - 1U ) );
 
     EXPECT_TRUE( HW_ADC_Configure_ADC_Measurement_Frequency( ADC_SAMPLE_RATE_50K_HZ ) );
     EXPECT_TRUE( hw_adc_state.is_configured );

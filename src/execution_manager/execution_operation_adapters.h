@@ -87,6 +87,7 @@ typedef struct
     uint32_t sample_count;
     uint64_t total_cycles;
     uint32_t maximum_cycles;
+    uint32_t max_sample;
 } ExecutionOperationTiming_T;
 
 /**-----------------------------------------------------------------------------

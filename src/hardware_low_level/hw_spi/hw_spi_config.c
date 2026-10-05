@@ -36,7 +36,29 @@
  *------------------------------------------------------------------------------
  */
 
-SPIPeripheralState_T channel_state_array[SPI_NUM_CHANNELS];
+static uint8_t s_spi1_rx_buffer[RX_BUFFER_SIZE_BYTES] __attribute__( ( aligned( 2 ) ) );
+static uint8_t s_spi2_rx_buffer[RX_BUFFER_SIZE_BYTES] __attribute__( ( aligned( 2 ) ) );
+
+static uint8_t* const SPI_RX_BUFFER_ARRAY[SPI_NUM_CHANNELS] = {
+    [SPI_CHANNEL_1] = s_spi1_rx_buffer,
+    [SPI_CHANNEL_2] = s_spi2_rx_buffer,
+    [SPI_DAC]       = NULL,
+};
+
+SPIPeripheralState_T channel_state_array[SPI_NUM_CHANNELS] = {
+    [SPI_CHANNEL_1] = { .rx_buffer = s_spi1_rx_buffer },
+    [SPI_CHANNEL_2] = { .rx_buffer = s_spi2_rx_buffer },
+    [SPI_DAC]       = { .rx_buffer = NULL },
+};
+
+uint8_t* HW_SPI_Get_Rx_Buffer( SPIChannel_T peripheral )
+{
+    if ( ( uint32_t )peripheral >= ( uint32_t )SPI_NUM_CHANNELS )
+    {
+        return NULL;
+    }
+    return SPI_RX_BUFFER_ARRAY[( uint32_t )peripheral];
+}
 
 static SPI_HandleTypeDef* const SPI_HAL_HANDLE_ARRAY[SPI_NUM_CHANNELS] = {
     [SPI_CHANNEL_1] = &SPI_CHANNEL_1_HANDLE,
@@ -122,7 +144,7 @@ static uint16_t HW_SPI_Config_Get_Cycles_Per_SCK( SPIBaudRate_T baud_rate )
 
 static bool HW_SPI_Config_Uses_Final_Drain_Timer( SPIBaudRate_T baud_rate )
 {
-    return baud_rate >= SPI_BAUD_2M813BIT;
+    return baud_rate > SPI_BAUD_2M813BIT;
 }
 
 static bool HW_SPI_Config_Is_Valid_NSS( SPIChannel_T         peripheral,
@@ -569,6 +591,7 @@ bool HW_SPI_Configure_Channel( SPIChannel_T peripheral, HWSPIConfig_T configurat
     peripheral_state->is_started    = false;
     peripheral_state->cs_asserted   = false;
 
+    peripheral_state->rx_buffer      = SPI_RX_BUFFER_ARRAY[( uint32_t )peripheral];
     peripheral_state->rx_dma         = SPI_RX_DMA_ARRAY[( uint32_t )peripheral];
     peripheral_state->rx_dma_stream  = SPI_RX_DMA_STREAM_ARRAY[( uint32_t )peripheral];
     peripheral_state->tx_dma         = SPI_TX_DMA_ARRAY[( uint32_t )peripheral];
@@ -677,4 +700,49 @@ bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
     }
 
     return tx_stopped && rx_stopped;
+}
+
+bool HW_SPI_Get_Diagnostics( SPIChannel_T peripheral, HWSPI_Diagnostic_T* diag )
+{
+    if ( ( diag == NULL ) || !HW_SPI_Is_Valid_Channel( peripheral ) )
+    {
+        return false;
+    }
+
+    const SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State_Fast( peripheral );
+
+    diag->tx_num_bytes_pending         = peripheral_state->tx_num_bytes_pending;
+    diag->peak_tx_num_bytes_pending    = peripheral_state->peak_tx_num_bytes_pending;
+    diag->tx_num_bytes_in_transmission = peripheral_state->tx_num_bytes_in_transmission;
+    diag->tx_num_packets_pending       = ( uint32_t )peripheral_state->tx_num_packets_pending;
+    diag->peak_tx_num_packets_pending  = peripheral_state->peak_tx_num_packets_pending;
+    diag->tx_queue_reject_count        = peripheral_state->tx_queue_reject_count;
+    diag->tx_dma_error_count           = peripheral_state->tx_dma_error_count;
+    diag->tx_final_drain_timeout_count = peripheral_state->tx_final_drain_timeout_count;
+    diag->rx_unread_bytes              = HW_SPI_Rx_Peek( peripheral ).total_length_bytes;
+    diag->rx_unread_peak_bytes         = peripheral_state->rx_unread_peak_bytes;
+    diag->tx_transaction_state         = ( uint8_t )peripheral_state->tx_transaction_state;
+    diag->is_started                   = peripheral_state->is_started;
+    diag->is_configured                = peripheral_state->is_configured;
+    diag->is_master                    = peripheral_state->is_master;
+
+    return true;
+}
+
+void HW_SPI_Reset_Diagnostics( SPIChannel_T peripheral )
+{
+    if ( !HW_SPI_Is_Valid_Channel( peripheral ) )
+    {
+        return;
+    }
+
+    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State_Fast( peripheral );
+
+    peripheral_state->peak_tx_num_bytes_pending = peripheral_state->tx_num_bytes_pending;
+    peripheral_state->peak_tx_num_packets_pending =
+        ( uint32_t )peripheral_state->tx_num_packets_pending;
+    peripheral_state->tx_queue_reject_count        = 0U;
+    peripheral_state->tx_dma_error_count           = 0U;
+    peripheral_state->tx_final_drain_timeout_count = 0U;
+    peripheral_state->rx_unread_peak_bytes         = 0U;
 }

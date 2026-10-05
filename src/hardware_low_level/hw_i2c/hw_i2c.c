@@ -35,6 +35,7 @@
 #endif
 
 #include "hw_i2c.h"
+#include "hardware_low_level/hw_clock_calibration/hw_clock_calibration.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -43,7 +44,7 @@
 #define HW_I2C_CHANNEL_2_DMA_RX_STREAM DMA1_Stream2
 #define HW_I2C_CHANNEL_2_DMA_TX_STREAM DMA1_Stream7
 
-#define HW_I2C_APB1_HZ 45000000UL
+#define HW_I2C_APB1_HZ ( HW_CLOCK_Get_PCLK1_Hz() )
 #define FMPI2C1_TIMINGR 0xC0000E12U
 #define HW_I2C_CHANNEL_2_DMA_RX_TC_FLAG DMA_LISR_TCIF2
 #define HW_I2C_CHANNEL_2_DMA_RX_TE_FLAG DMA_LISR_TEIF2

@@ -146,6 +146,8 @@ EXECUTION_OPERATION_ADAPTER_ApplyOperationsProfiled( const uint8_t* operations,
         if ( elapsed_cycles > execution_operation_timing[opcode].maximum_cycles )
         {
             execution_operation_timing[opcode].maximum_cycles = elapsed_cycles;
+            execution_operation_timing[opcode].max_sample =
+                execution_operation_timing[opcode].sample_count;
         }
 
         if ( result != EXECUTION_OPERATION_ADAPTER_ACCEPTED )
@@ -171,6 +173,7 @@ void EXECUTION_OPERATION_ADAPTER_ResetTiming( void )
         execution_operation_timing[opcode].sample_count   = 0U;
         execution_operation_timing[opcode].total_cycles   = 0U;
         execution_operation_timing[opcode].maximum_cycles = 0U;
+        execution_operation_timing[opcode].max_sample     = 0U;
     }
 }
 
@@ -186,6 +189,7 @@ bool EXECUTION_OPERATION_ADAPTER_GetTiming( ExecutionOperationOpcode_T  opcode,
     timing->sample_count   = execution_operation_timing[opcode].sample_count;
     timing->total_cycles   = execution_operation_timing[opcode].total_cycles;
     timing->maximum_cycles = execution_operation_timing[opcode].maximum_cycles;
+    timing->max_sample     = execution_operation_timing[opcode].max_sample;
     taskEXIT_CRITICAL();
     return true;
 }
