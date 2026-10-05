@@ -337,6 +337,25 @@ bool EXEC_SPI_Is_Transmission_Complete( ExecSPIChannel_T channel );
 /** Return true when the low-level TX path has latched a terminal fault. */
 bool EXEC_SPI_Is_Transmission_Faulted( ExecSPIChannel_T channel );
 
+typedef HWSPI_Diagnostic_T ExecSPIDiagnostic_T;
+
+/**
+ * @brief Retrieve diagnostic telemetry and high watermarks for an execution SPI channel.
+ *
+ * @param channel Logical execution SPI channel.
+ * @param diag Destination diagnostic structure.
+ *
+ * @return true if channel was valid and diag populated; false otherwise.
+ */
+bool EXEC_SPI_Get_Diagnostics( ExecSPIChannel_T channel, ExecSPIDiagnostic_T* diag );
+
+/**
+ * @brief Reset diagnostic telemetry for an execution SPI channel.
+ *
+ * @param channel Logical execution SPI channel.
+ */
+void EXEC_SPI_Reset_Diagnostics( ExecSPIChannel_T channel );
+
 #ifdef __cplusplus
 }
 #endif

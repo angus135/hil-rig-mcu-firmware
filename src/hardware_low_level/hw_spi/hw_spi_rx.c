@@ -275,6 +275,11 @@ HWSPIRxSpans_T HW_SPI_Rx_Peek( SPIChannel_T peripheral )
     // regions.
     uint32_t unread_bytes = ( dma_write_index - read_index ) & RX_BUFFER_INDEX_MASK;
 
+    if ( unread_bytes > peripheral_state->rx_unread_peak_bytes )
+    {
+        peripheral_state->rx_unread_peak_bytes = unread_bytes;
+    }
+
     if ( unread_bytes == 0U )
     {
         return ( HWSPIRxSpans_T ){ .first_span  = { .data = &rx_buffer[0], .length_bytes = 0U },

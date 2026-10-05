@@ -214,15 +214,15 @@ protected:
  *------------------------------------------------------------------------------
  */
 
-/** Verify the calculated CAN timing parameters for a 1 Mbps configuration. */
-TEST_F( HWCANTest, ComputePropertiesReturnsExpectedValuesFor1Mbps )
+/** Verify CAN timing parameters for the calibrated clock with prescaler three. */
+TEST_F( HWCANTest, ComputePropertiesReturnsExpectedValuesForCalibratedBitrate )
 {
-    CanProperties_T props = HW_CAN_Compute_Properties( 1000000, 15, 800 );
+    CanProperties_T props = HW_CAN_Compute_Properties( CAN_TIMER_HZ / 45U, 15, 800 );
 
     EXPECT_EQ( props.bs1, 11 );
     EXPECT_EQ( props.bs2, 3 );
     EXPECT_EQ( props.psc, 3 );
-    EXPECT_EQ( props.timer_hz, 45000000 );
+    EXPECT_EQ( props.timer_hz, HW_CLOCK_Get_PCLK1_Hz() );
 }
 
 /** Verify that an invalid zero bitrate produces zeroed timing properties. */
@@ -235,15 +235,15 @@ TEST_F( HWCANTest, ComputePropertiesRejectsInvalidBitrate )
     EXPECT_EQ( props.psc, 0 );
 }
 
-/** Verify other project bitrates that are exact with the fixed 45 MHz, 15-TQ model. */
+/** Verify exact calibrated bitrates with the 15-TQ model. */
 TEST_F( HWCANTest, ComputePropertiesAcceptsExactProjectBitrates )
 {
-    CanProperties_T props_500k = HW_CAN_Compute_Properties( 500000U, 15U, 800U );
+    CanProperties_T props_500k = HW_CAN_Compute_Properties( CAN_TIMER_HZ / 90U, 15U, 800U );
     EXPECT_EQ( props_500k.bs1, 11U );
     EXPECT_EQ( props_500k.bs2, 3U );
     EXPECT_EQ( props_500k.psc, 6U );
 
-    CanProperties_T props_250k = HW_CAN_Compute_Properties( 250000U, 15U, 800U );
+    CanProperties_T props_250k = HW_CAN_Compute_Properties( CAN_TIMER_HZ / 180U, 15U, 800U );
     EXPECT_EQ( props_250k.bs1, 11U );
     EXPECT_EQ( props_250k.bs2, 3U );
     EXPECT_EQ( props_250k.psc, 12U );
@@ -1275,7 +1275,8 @@ TEST_F( HWCANTest, ConfigureReturnsTimingErrorWhenInitFails )
     EXPECT_CALL( mock, CANInit( _ ) ).WillOnce( Return( HAL_ERROR ) );
     EXPECT_CALL( mock, CANConfigFilter( _, _ ) ).Times( 0 );
 
-    EXPECT_EQ( HW_CAN_Configure( &hcan1, 1000000, 0, 0x123, 0x7FF ), HW_CAN_RESULT_TIMING_ERROR );
+    EXPECT_EQ( HW_CAN_Configure( &hcan1, CAN_TIMER_HZ / 45U, 0, 0x123, 0x7FF ),
+               HW_CAN_RESULT_TIMING_ERROR );
 }
 
 /** Verify inexact timing is rejected before HAL or channel state is touched. */
@@ -1301,7 +1302,8 @@ TEST_F( HWCANTest, ConfigureReturnsFilterErrorWhenFilterConfigurationFails )
     EXPECT_CALL( mock, CANInit( _ ) ).WillOnce( Return( HAL_OK ) );
     EXPECT_CALL( mock, CANConfigFilter( _, _ ) ).WillOnce( Return( HAL_ERROR ) );
 
-    EXPECT_EQ( HW_CAN_Configure( &hcan1, 1000000, 0, 0x123, 0x7FF ), HW_CAN_RESULT_FILTER_ERROR );
+    EXPECT_EQ( HW_CAN_Configure( &hcan1, CAN_TIMER_HZ / 45U, 0, 0x123, 0x7FF ),
+               HW_CAN_RESULT_FILTER_ERROR );
 }
 
 /** Verify that HW_CAN_Configure() completes successfully when each HAL configuration step succeeds.
@@ -1312,7 +1314,7 @@ TEST_F( HWCANTest, ConfigureSucceedsAndLeavesChannelStopped )
     EXPECT_CALL( mock, CANConfigFilter( _, _ ) ).WillOnce( Return( HAL_OK ) );
     EXPECT_CALL( mock, CANStart( _ ) ).Times( 0 );
 
-    EXPECT_EQ( HW_CAN_Configure1( 1000000, 0, 0x123, 0x7FF ), HW_CAN_RESULT_OK );
+    EXPECT_EQ( HW_CAN_Configure1( CAN_TIMER_HZ / 45U, 0, 0x123, 0x7FF ), HW_CAN_RESULT_OK );
     EXPECT_TRUE( HW_CAN_Is_Configured1() );
     EXPECT_FALSE( HW_CAN_Is_Started1() );
     EXPECT_EQ( mock_can1_regs.IER
@@ -1337,7 +1339,7 @@ TEST_F( HWCANTest, ChannelConfigurationResetsSoftwareState )
     EXPECT_CALL( mock, CANInit( &hcan1 ) ).WillOnce( Return( HAL_OK ) );
     EXPECT_CALL( mock, CANConfigFilter( &hcan1, _ ) ).WillOnce( Return( HAL_OK ) );
     EXPECT_CALL( mock, CANStart( _ ) ).Times( 0 );
-    ASSERT_EQ( HW_CAN_Configure1( 1000000, 0, 0x123, 0x7FF ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Configure1( CAN_TIMER_HZ / 45U, 0, 0x123, 0x7FF ), HW_CAN_RESULT_OK );
 
     EXPECT_EQ( can_tx_wp1, 0 );
     EXPECT_EQ( can_tx_rp1, 0 );
@@ -1355,7 +1357,7 @@ TEST_F( HWCANTest, ConfigureReturnsBusyWhenChannelIsStarted )
     EXPECT_CALL( mock, CANInit( _ ) ).Times( 0 );
     EXPECT_CALL( mock, CANConfigFilter( _, _ ) ).Times( 0 );
 
-    EXPECT_EQ( HW_CAN_Configure1( 1000000, 0, 0x123, 0x7FF ), HW_CAN_RESULT_BUSY );
+    EXPECT_EQ( HW_CAN_Configure1( CAN_TIMER_HZ / 45U, 0, 0x123, 0x7FF ), HW_CAN_RESULT_BUSY );
     EXPECT_TRUE( HW_CAN_Is_Configured1() );
     EXPECT_TRUE( HW_CAN_Is_Started1() );
 }
@@ -1674,8 +1676,8 @@ TEST_F( HWCANTest, StartingSecondBatchClearsCompletedState )
     EXPECT_FALSE( HW_CAN_Channel1_Sent() );
 }
 
-/** Verify that retriggering an active batch returns busy without changing its queue state. */
-TEST_F( HWCANTest, TriggerWhileActiveReturnsBusy )
+/** Verify that retriggering an active batch returns OK and preserves queue state. */
+TEST_F( HWCANTest, TriggerWhileActiveSucceedsAndPreservesActiveState )
 {
     mock_can1_regs.TSR      = CAN_TSR_TME0;
     CAN_Packet_T packets[2] = {
@@ -1687,14 +1689,14 @@ TEST_F( HWCANTest, TriggerWhileActiveReturnsBusy )
     ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
     uint16_t read_position = can_tx_rp1;
 
-    EXPECT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_BUSY );
+    EXPECT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
     EXPECT_EQ( can_tx_rp1, read_position );
     EXPECT_TRUE( can_tx_active1 );
     EXPECT_FALSE( HW_CAN_Channel1_Sent() );
 }
 
-/** Verify that loading a new batch while transmission is active returns busy. */
-TEST_F( HWCANTest, LoadWhileActiveReturnsBusy )
+/** Verify that loading a new batch while transmission is active appends to the queue. */
+TEST_F( HWCANTest, LoadWhileActiveAppendsToQueue )
 {
     mock_can1_regs.TSR     = CAN_TSR_TME0;
     CAN_Packet_T packet[1] = { { .id = 0x123, .dlc = 1, .data = { 0xAA } } };
@@ -1703,8 +1705,28 @@ TEST_F( HWCANTest, LoadWhileActiveReturnsBusy )
     ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
     uint16_t write_position = can_tx_wp1;
 
-    EXPECT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_BUSY );
-    EXPECT_EQ( can_tx_wp1, write_position );
+    EXPECT_EQ( HW_CAN_Tx_Buffer_Write1( packet, 1 ), HW_CAN_RESULT_OK );
+    EXPECT_EQ( can_tx_wp1, ( write_position + 1U ) % TRANSMIT_BUFFER_WIDTH );
+    EXPECT_TRUE( can_tx_active1 );
+}
+
+/** Verify that all 3 hardware mailboxes are pipelined simultaneously when available. */
+TEST_F( HWCANTest, PipelinedMailboxesLoadAllThreeSimultaneously )
+{
+    mock_can1_regs.TSR      = CAN_TSR_TME;
+    CAN_Packet_T packets[3] = {
+        { .id = 0x101, .dlc = 1, .data = { 0x11 } },
+        { .id = 0x102, .dlc = 1, .data = { 0x22 } },
+        { .id = 0x103, .dlc = 1, .data = { 0x33 } },
+    };
+
+    ASSERT_EQ( HW_CAN_Tx_Buffer_Write1( packets, 3 ), HW_CAN_RESULT_OK );
+    ASSERT_EQ( HW_CAN_Tx_Trigger1(), HW_CAN_RESULT_OK );
+
+    EXPECT_NE( mock_can1_regs.sTxMailBox[0].TIR & CAN_TI0R_TXRQ, 0U );
+    EXPECT_NE( mock_can1_regs.sTxMailBox[1].TIR & CAN_TI0R_TXRQ, 0U );
+    EXPECT_NE( mock_can1_regs.sTxMailBox[2].TIR & CAN_TI0R_TXRQ, 0U );
+    EXPECT_EQ( can_tx_pending_mailbox1, CAN_TSR_RQCP0 | CAN_TSR_RQCP1 | CAN_TSR_RQCP2 );
     EXPECT_TRUE( can_tx_active1 );
 }
 

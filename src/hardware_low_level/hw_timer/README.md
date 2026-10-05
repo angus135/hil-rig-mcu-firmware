@@ -31,6 +31,14 @@ higher-priority interrupt preemption is deliberately included because it also
 consumes the execution deadline. `run_state status` reports the sample count,
 latest service time, and maximum service time in cycles and microseconds.
 
+Physical Blue 2 (`USER_LED_BLUE_1`, PE2) provides a scope marker: direct GPIO
+set/reset writes bracket the TIM4 ISR body, including the optional yield request.
+Every exit clears the marker, including a rejected execution guard or an IRQ
+without an update flag. Probe PE2 relative to board ground. Pulse width includes
+higher-priority interrupt preemption and excludes hardware exception entry/return;
+rising-edge spacing measures interrupt service intervals, nominally 100 us during
+10 kHz execution. The marker has two GPIO writes of instrumentation overhead.
+
 
 ---
 

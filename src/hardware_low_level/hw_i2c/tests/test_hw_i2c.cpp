@@ -223,23 +223,29 @@ TEST_F( HWI2CTest, QueueFullRejectsWithoutChangingQueueStateOrPayload )
 TEST_F( HWI2CTest, MasterReceiveMayExactlyFillReservedByteCapacity )
 {
     ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
-    HWI2CChannelState_T&            state = hw_i2c_channel_state[HW_I2C_CHANNEL_1];
-    const std::array<uint8_t, 100U> completed{};
+    HWI2CChannelState_T&          state = hw_i2c_channel_state[HW_I2C_CHANNEL_1];
+    const std::array<uint8_t, 4U> completed{};
     StageAndPublish( state, HW_I2C_TRANSFER_KIND_MASTER_RX, 0x20U, completed.data(),
                      completed.size() );
 
-    EXPECT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_1, 0x21U, 412U ), HW_I2C_STATUS_OK );
+    EXPECT_EQ( HW_I2C_Enqueue_Master_Receive(
+                   HW_I2C_CHANNEL_1, 0x21U,
+                   static_cast<uint16_t>( HW_I2C_RX_BUFFER_SIZE - completed.size() ) ),
+               HW_I2C_STATUS_OK );
 }
 
 TEST_F( HWI2CTest, MasterReceiveRejectsWhenReservedBytesWouldOverflow )
 {
     ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
-    HWI2CChannelState_T&            state = hw_i2c_channel_state[HW_I2C_CHANNEL_1];
-    const std::array<uint8_t, 100U> completed{};
+    HWI2CChannelState_T&          state = hw_i2c_channel_state[HW_I2C_CHANNEL_1];
+    const std::array<uint8_t, 4U> completed{};
     StageAndPublish( state, HW_I2C_TRANSFER_KIND_MASTER_RX, 0x20U, completed.data(),
                      completed.size() );
 
-    EXPECT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_1, 0x21U, 413U ), HW_I2C_STATUS_BUSY );
+    EXPECT_EQ( HW_I2C_Enqueue_Master_Receive(
+                   HW_I2C_CHANNEL_1, 0x21U,
+                   static_cast<uint16_t>( ( HW_I2C_RX_BUFFER_SIZE - completed.size() ) + 1U ) ),
+               HW_I2C_STATUS_BUSY );
     EXPECT_EQ( state.master_queue_count, 0U );
 }
 
@@ -247,7 +253,7 @@ TEST_F( HWI2CTest, MasterReceiveRejectsWhenFutureDescriptorCapacityWouldOverflow
 {
     ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
     HWI2CChannelState_T& state = hw_i2c_channel_state[HW_I2C_CHANNEL_1];
-    for ( uint8_t index = 0U; index < 7U; ++index )
+    for ( uint8_t index = 0U; index < ( HW_I2C_RX_MESSAGE_QUEUE_DEPTH - 1U ); ++index )
     {
         const uint8_t completed = index;
         StageAndPublish( state, HW_I2C_TRANSFER_KIND_MASTER_RX, 0x20U, &completed, 1U );
@@ -275,15 +281,18 @@ TEST_F( HWI2CTest, ConsumingCompletedMessageReleasesReservedCapacity )
 TEST_F( HWI2CTest, RejectedReceiveReservationDoesNotMutateQueue )
 {
     ConfigureExternal( HW_I2C_CHANNEL_1, HW_I2C_MODE_MASTER );
-    HWI2CChannelState_T&            state = hw_i2c_channel_state[HW_I2C_CHANNEL_1];
-    const std::array<uint8_t, 500U> completed{};
+    HWI2CChannelState_T&          state = hw_i2c_channel_state[HW_I2C_CHANNEL_1];
+    const std::array<uint8_t, 4U> completed{};
     StageAndPublish( state, HW_I2C_TRANSFER_KIND_MASTER_RX, 0x20U, completed.data(),
                      completed.size() );
     I2C3->SR2                = I2C_SR2_BUSY;
     const uint8_t tx_payload = 0x5AU;
     ASSERT_EQ( HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_1, 0x30U, &tx_payload, 1U ),
                HW_I2C_STATUS_OK );
-    ASSERT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_1, 0x31U, 12U ), HW_I2C_STATUS_OK );
+    ASSERT_EQ( HW_I2C_Enqueue_Master_Receive(
+                   HW_I2C_CHANNEL_1, 0x31U,
+                   static_cast<uint16_t>( HW_I2C_RX_BUFFER_SIZE - completed.size() ) ),
+               HW_I2C_STATUS_OK );
 
     const uint8_t original_head  = state.master_queue_head;
     const uint8_t original_tail  = state.master_queue_tail;
@@ -554,23 +563,25 @@ TEST_F( HWI2CTest, MasterRequestValidationRejectsInvalidInputsBeforeStateAccess 
     EXPECT_EQ( hw_i2c_channel_state[HW_I2C_CHANNEL_1].master_queue_count, 0U );
 }
 
-TEST_F( HWI2CTest, FmpiAccepts255BytesAndRejects256BytesForTxAndRx )
+TEST_F( HWI2CTest, FmpiAcceptsMaxBytesAndRejectsOverflowForTxAndRx )
 {
     ASSERT_EQ( HW_I2C_Configure_Internal_FMPI2C1( 0x33U ), HW_I2C_STATUS_OK );
-    std::array<uint8_t, 256U> payload{};
+    std::array<uint8_t, HW_I2C_TX_MAX_MESSAGE_SIZE + 1U> payload{};
 
-    EXPECT_EQ(
-        HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, payload.data(), 255U ),
-        HW_I2C_STATUS_OK );
-    EXPECT_EQ(
-        HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, payload.data(), 256U ),
-        HW_I2C_STATUS_INVALID_PARAM );
+    EXPECT_EQ( HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, payload.data(),
+                                               HW_I2C_TX_MAX_MESSAGE_SIZE ),
+               HW_I2C_STATUS_OK );
+    EXPECT_EQ( HW_I2C_Enqueue_Master_Transmit( HW_I2C_CHANNEL_FMPI2C1, 0x20U, payload.data(),
+                                               HW_I2C_TX_MAX_MESSAGE_SIZE + 1U ),
+               HW_I2C_STATUS_INVALID_PARAM );
 
     ASSERT_EQ( HW_I2C_Configure_Internal_FMPI2C1( 0x33U ), HW_I2C_STATUS_OK );
-    EXPECT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_FMPI2C1, 0x20U, 255U ),
-               HW_I2C_STATUS_OK );
-    EXPECT_EQ( HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_FMPI2C1, 0x20U, 256U ),
-               HW_I2C_STATUS_INVALID_PARAM );
+    EXPECT_EQ(
+        HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_FMPI2C1, 0x20U, HW_I2C_RX_BUFFER_SIZE ),
+        HW_I2C_STATUS_OK );
+    EXPECT_EQ(
+        HW_I2C_Enqueue_Master_Receive( HW_I2C_CHANNEL_FMPI2C1, 0x20U, HW_I2C_RX_BUFFER_SIZE + 1U ),
+        HW_I2C_STATUS_INVALID_PARAM );
 }
 
 TEST_F( HWI2CTest, OneByteMasterReceiveNacksAndStopsBeforeReadingRxne )

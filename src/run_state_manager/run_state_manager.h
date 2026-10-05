@@ -28,6 +28,7 @@ extern "C"
 #include <stdint.h>
 #include <stdbool.h>
 #include "hw_can.h"
+#include "run_metadata.h"
 
 /**-----------------------------------------------------------------------------
  *  Public Defines / Macros
@@ -89,6 +90,12 @@ typedef enum
     RUN_STATE_FAULT_FLASH_RESULT_TRANSFER,
     RUN_STATE_FAULT_FLASH_RESULT_DISPOSITION,
     RUN_STATE_FAULT_FLASH_MANAGER,
+    RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED,
+    RUN_STATE_FAULT_HOST_INTERFACE_INSTRUCTION_UPLOAD_TIMEOUT,
+    RUN_STATE_FAULT_HOST_INTERFACE_USB_INIT,
+    RUN_STATE_FAULT_HOST_INTERFACE_CODEC_INIT,
+    RUN_STATE_FAULT_HOST_INTERFACE_TRANSPORT_INIT,
+    RUN_STATE_FAULT_HOST_INTERFACE_ERROR,
     RUN_STATE_FAULT_INTERNAL
 } RunStateFaultReason_T;
 
@@ -129,6 +136,8 @@ typedef struct
      * budgets and derives the reservation from the committed configuration.
      */
     uint32_t maximum_result_length_bytes;
+    /** Keep the legacy peripheral drain tail after the requested range. */
+    bool enable_drain_tail;
 } RunStateExecutionRequest_T;
 
 /** Immediate admission result for an asynchronous execution request. */
@@ -271,11 +280,29 @@ RunStateFrequencyMode_T RUN_STATE_MANAGER_Get_Execution_Frequency( void );
 void RUN_STATE_MANAGER_Init( void );
 
 /**
+ * @brief Requests entry into test-package reception from IDLE with an expected tick count.
+ *
+ * @param expected_tick_count Expected execution ticks from the configuration message,
+ *                            used to size the conservative instruction upload reservation.
+ *
+ * @returns true if the request was delivered to the task, otherwise false.
+ */
+bool RUN_STATE_MANAGER_RequestPackageReceiveWithTicks( uint32_t expected_tick_count );
+
+/**
  * @brief Requests entry into test-package reception from IDLE.
  *
  * @returns true if the request was delivered to the task, otherwise false.
  */
 bool RUN_STATE_MANAGER_RequestPackageReceive( void );
+
+/**
+ * @brief Records successful instruction-upload progress.
+ *
+ * Refreshes the TEST_PACKAGE_RECEIVE inactivity watchdog. Calls outside an
+ * active package-receive state have no effect.
+ */
+void RUN_STATE_MANAGER_RecordInstructionUploadProgress( void );
 
 /** Requests application of the committed configuration. */
 bool RUN_STATE_MANAGER_RequestConfiguration( void );
@@ -306,7 +333,7 @@ bool RUN_STATE_MANAGER_RequestExecutionComplete( void );
 /** Requests entry into result transfer from RESULTS_READY. */
 bool RUN_STATE_MANAGER_RequestResultTransfer( void );
 
-/** Finishes result transfer, reapplies the retained configuration, and returns to ARMED. */
+/** Finishes Flash Manager result transfer and notifies the Host Interface. */
 bool RUN_STATE_MANAGER_RequestResultTransferComplete( void );
 
 /** Discards completed results and returns to ARMED with configuration retained. */

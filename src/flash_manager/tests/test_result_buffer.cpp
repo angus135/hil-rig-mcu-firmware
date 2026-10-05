@@ -1047,3 +1047,55 @@ TEST_F( ResultBufferTest, EndReadRejectsEarlyFinishAndPreservesFillLeaseSequence
     EXPECT_NE( stale_lease.lease_id, next_lease.lease_id );
     EXPECT_FALSE( RESULT_BUFFER_CompleteReadFillPage( &stale_lease, true ) );
 }
+
+/**
+ * @brief Tests that reading an empty slot awaiting NAND refill returns BUSY
+ *        without flagging an invalid state, and resumes normally after refill.
+ */
+TEST_F( ResultBufferTest, ReadBytesReturnsBusyOnEmptySlotAwaitingRefillAndResumesAfterRefill )
+{
+    constexpr uint32_t result_length_bytes = TEST_PAGE_SIZE_BYTES * 4U;
+    PrepareRead( result_length_bytes );
+
+    // Preload the initial 3 slots
+    for ( uint32_t slot = 0U; slot < 3U; slot++ )
+    {
+        ResultBufferReadFillLease_T lease = {};
+        ASSERT_TRUE( RESULT_BUFFER_AcquireReadFillPage( &lease ) );
+        std::memset( lease.page_data, static_cast<int>( 0x10U + slot ), lease.read_length_bytes );
+        ASSERT_TRUE( RESULT_BUFFER_CompleteReadFillPage( &lease, true ) );
+    }
+
+    // Consume all 3 loaded pages
+    for ( uint32_t slot = 0U; slot < 3U; slot++ )
+    {
+        std::array<uint8_t, TEST_PAGE_SIZE_BYTES> dest       = {};
+        uint32_t                                  bytes_read = 0U;
+        ASSERT_EQ( RESULT_BUFFER_READ_PAGE_RELEASED,
+                   RESULT_BUFFER_ReadBytes( dest.data(), dest.size(), &bytes_read ) );
+        EXPECT_EQ( TEST_PAGE_SIZE_BYTES, bytes_read );
+    }
+
+    // Now all 3 slots are EMPTY, and the 4th page has not yet been acquired/filled.
+    // ReadBytes should return BUSY (not INVALID_STATE).
+    std::array<uint8_t, TEST_PAGE_SIZE_BYTES> dest       = {};
+    uint32_t                                  bytes_read = 0U;
+    EXPECT_EQ( RESULT_BUFFER_READ_BUSY,
+               RESULT_BUFFER_ReadBytes( dest.data(), dest.size(), &bytes_read ) );
+    EXPECT_EQ( 0U, bytes_read );
+
+    // Now simulate the Flash Manager task refilling page 4 into slot 0
+    ResultBufferReadFillLease_T lease = {};
+    ASSERT_TRUE( RESULT_BUFFER_AcquireReadFillPage( &lease ) );
+    EXPECT_NE( nullptr, lease.page_data );
+    EXPECT_EQ( 3U * TEST_PAGE_SIZE_BYTES, lease.result_offset_bytes );
+    std::memset( lease.page_data, 0x99, lease.read_length_bytes );
+    ASSERT_TRUE( RESULT_BUFFER_CompleteReadFillPage( &lease, true ) );
+
+    // ReadBytes should now succeed in consuming the 4th page
+    ASSERT_EQ( RESULT_BUFFER_READ_PAGE_RELEASED,
+               RESULT_BUFFER_ReadBytes( dest.data(), dest.size(), &bytes_read ) );
+    EXPECT_EQ( TEST_PAGE_SIZE_BYTES, bytes_read );
+    EXPECT_EQ( 0x99U, dest[0] );
+    EXPECT_TRUE( RESULT_BUFFER_IsReadComplete() );
+}

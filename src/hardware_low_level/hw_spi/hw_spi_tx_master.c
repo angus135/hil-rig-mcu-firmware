@@ -163,16 +163,19 @@ bool HW_SPI_TX_Load_Master_Packet( SPIPeripheralState_T* peripheral_state, const
 
     if ( HW_SPI_Is_Frame_Aligned_Size_Fast( peripheral_state, size ) == false )
     {
+        peripheral_state->tx_queue_reject_count++;
         return false;
     }
 
     if ( HW_SPI_TX_Packet_Queue_Has_Free_Slot( peripheral_state ) == false )
     {
+        peripheral_state->tx_queue_reject_count++;
         return false;
     }
 
     if ( size > HW_SPI_TX_Get_Free_Space_Fast( peripheral_state ) )
     {
+        peripheral_state->tx_queue_reject_count++;
         return false;
     }
 
@@ -186,6 +189,7 @@ bool HW_SPI_TX_Load_Master_Packet( SPIPeripheralState_T* peripheral_state, const
         // the read pointer, wrapping to zero could overwrite queued data.
         if ( peripheral_state->tx_write_position < peripheral_state->tx_read_position )
         {
+            peripheral_state->tx_queue_reject_count++;
             return false;
         }
 
@@ -196,6 +200,7 @@ bool HW_SPI_TX_Load_Master_Packet( SPIPeripheralState_T* peripheral_state, const
 
         if ( size > contiguous_free )
         {
+            peripheral_state->tx_queue_reject_count++;
             return false;
         }
     }
@@ -216,6 +221,17 @@ bool HW_SPI_TX_Load_Master_Packet( SPIPeripheralState_T* peripheral_state, const
     peripheral_state->tx_write_position =
         HW_SPI_Wrap_Tx_Buffer_Index( peripheral_state->tx_write_position + size );
     peripheral_state->tx_num_bytes_pending = peripheral_state->tx_num_bytes_pending + size;
+
+    if ( peripheral_state->tx_num_bytes_pending > peripheral_state->peak_tx_num_bytes_pending )
+    {
+        peripheral_state->peak_tx_num_bytes_pending = peripheral_state->tx_num_bytes_pending;
+    }
+    if ( ( uint32_t )peripheral_state->tx_num_packets_pending
+         > peripheral_state->peak_tx_num_packets_pending )
+    {
+        peripheral_state->peak_tx_num_packets_pending =
+            ( uint32_t )peripheral_state->tx_num_packets_pending;
+    }
 
     return true;
 }
@@ -238,23 +254,27 @@ bool HW_SPI_TX_Load_Master_Packets( SPIPeripheralState_T* peripheral_state, cons
          || packet_size_bytes > UINT16_MAX
          || !HW_SPI_Is_Frame_Aligned_Size_Fast( peripheral_state, packet_size_bytes ) )
     {
+        peripheral_state->tx_queue_reject_count++;
         return false;
     }
 
     if ( packet_count
          > ( uint32_t )( TX_PACKET_QUEUE_DEPTH - peripheral_state->tx_num_packets_pending ) )
     {
+        peripheral_state->tx_queue_reject_count++;
         return false;
     }
 
     if ( packet_count > ( UINT32_MAX / packet_size_bytes ) )
     {
+        peripheral_state->tx_queue_reject_count++;
         return false;
     }
 
     total_size_bytes = packet_size_bytes * packet_count;
     if ( total_size_bytes > HW_SPI_TX_Get_Free_Space_Fast( peripheral_state ) )
     {
+        peripheral_state->tx_queue_reject_count++;
         return false;
     }
 
@@ -280,6 +300,7 @@ bool HW_SPI_TX_Load_Master_Packets( SPIPeripheralState_T* peripheral_state, cons
         {
             if ( candidate_write_position < peripheral_state->tx_read_position )
             {
+                peripheral_state->tx_queue_reject_count++;
                 return false;
             }
 
@@ -293,6 +314,7 @@ bool HW_SPI_TX_Load_Master_Packets( SPIPeripheralState_T* peripheral_state, cons
 
             if ( packet_size_bytes > contiguous_free )
             {
+                peripheral_state->tx_queue_reject_count++;
                 return false;
             }
         }
@@ -321,6 +343,17 @@ bool HW_SPI_TX_Load_Master_Packets( SPIPeripheralState_T* peripheral_state, cons
         ( uint8_t )( peripheral_state->tx_num_packets_pending + packet_count );
     peripheral_state->tx_num_bytes_pending += total_size_bytes;
 
+    if ( peripheral_state->tx_num_bytes_pending > peripheral_state->peak_tx_num_bytes_pending )
+    {
+        peripheral_state->peak_tx_num_bytes_pending = peripheral_state->tx_num_bytes_pending;
+    }
+    if ( ( uint32_t )peripheral_state->tx_num_packets_pending
+         > peripheral_state->peak_tx_num_packets_pending )
+    {
+        peripheral_state->peak_tx_num_packets_pending =
+            ( uint32_t )peripheral_state->tx_num_packets_pending;
+    }
+
     return true;
 }
 
@@ -342,6 +375,7 @@ bool HW_SPI_TX_Load_Master_Packet_Batch( SPIPeripheralState_T* peripheral_state,
     if ( packet_count
          > ( uint32_t )( TX_PACKET_QUEUE_DEPTH - peripheral_state->tx_num_packets_pending ) )
     {
+        peripheral_state->tx_queue_reject_count++;
         return false;
     }
 
@@ -368,6 +402,7 @@ bool HW_SPI_TX_Load_Master_Packet_Batch( SPIPeripheralState_T* peripheral_state,
         {
             if ( candidate_write_position < peripheral_state->tx_read_position )
             {
+                peripheral_state->tx_queue_reject_count++;
                 return false;
             }
 
@@ -381,6 +416,7 @@ bool HW_SPI_TX_Load_Master_Packet_Batch( SPIPeripheralState_T* peripheral_state,
 
             if ( packet_size_bytes > contiguous_free )
             {
+                peripheral_state->tx_queue_reject_count++;
                 return false;
             }
         }
@@ -411,6 +447,17 @@ bool HW_SPI_TX_Load_Master_Packet_Batch( SPIPeripheralState_T* peripheral_state,
     peripheral_state->tx_num_packets_pending =
         ( uint8_t )( peripheral_state->tx_num_packets_pending + packet_count );
     peripheral_state->tx_num_bytes_pending += queued_bytes;
+
+    if ( peripheral_state->tx_num_bytes_pending > peripheral_state->peak_tx_num_bytes_pending )
+    {
+        peripheral_state->peak_tx_num_bytes_pending = peripheral_state->tx_num_bytes_pending;
+    }
+    if ( ( uint32_t )peripheral_state->tx_num_packets_pending
+         > peripheral_state->peak_tx_num_packets_pending )
+    {
+        peripheral_state->peak_tx_num_packets_pending =
+            ( uint32_t )peripheral_state->tx_num_packets_pending;
+    }
 
     return true;
 }

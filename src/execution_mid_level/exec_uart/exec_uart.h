@@ -227,6 +227,33 @@ bool EXEC_UART_Is_Tx_Complete( ExecUartChannel_T channel );
  */
 bool EXEC_UART_Is_Rx_Faulted( ExecUartChannel_T channel );
 
+typedef HwUartDiagnostic_T ExecUartDiagnostic_T;
+
+/**
+ * @brief Retrieve diagnostic telemetry and high watermarks for an execution UART channel.
+ *
+ * @param channel Execution UART channel to inspect.
+ * @param diag Destination diagnostic structure.
+ *
+ * @return true if channel was valid and diag populated; false otherwise.
+ */
+bool EXEC_UART_Get_Diagnostic( ExecUartChannel_T channel, ExecUartDiagnostic_T* diag );
+
+/**
+ * @brief Reset diagnostic telemetry for an execution UART channel.
+ *
+ * @param channel Execution UART channel whose diagnostics should be reset.
+ */
+void EXEC_UART_Reset_Diagnostic( ExecUartChannel_T channel );
+
+/**
+ * @brief Report whether the current run's last UART TX rejection was a queue rejection.
+ *
+ * @param channel Execution UART channel to inspect.
+ * @return true if the last rejection on this channel was due to TX queue capacity.
+ */
+bool EXEC_UART_Was_Tx_Queue_Rejected( ExecUartChannel_T channel );
+
 #ifdef __cplusplus
 }
 #endif

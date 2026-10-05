@@ -330,10 +330,10 @@ Wire the physical connectors before running the test:
 From an IDLE run state and IDLE Flash Manager:
 
 ```text
+run_state receive 1010
 flash upload_output_stress
-run_state receive
 run_state configure
-run_state frequency 100
+run_state frequency 10000
 run_state execute 1010
 run_state status
 execution status

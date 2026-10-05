@@ -83,11 +83,13 @@ typedef struct
 /**
  * @brief Physical PWM measurement converted from raw timer ticks.
  *
+ * period_nanoseconds is the PWM signal period in nanoseconds.
  * frequency_hz is the PWM signal frequency in Hz.
  * duty_cycle_bp is the duty cycle in basis points (0–10000, where 10000 = 100%).
  */
 typedef struct
 {
+    uint32_t period_nanoseconds;
     uint32_t frequency_hz;
     uint32_t duty_cycle_bp;  // basis points, 0–10000 (1bp = 0.01%)
 } ExecPwmCapturePhysical_T;

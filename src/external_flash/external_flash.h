@@ -230,6 +230,20 @@ ExternalFlashStatus_T EXTERNAL_FLASH_WriteInstructionPage( const uint8_t* data,
                                                            uint32_t       valid_length );
 
 /**
+ * @brief Updates the expected instruction upload length before finalising a variable stream.
+ *
+ * @param expected_length Actual total instruction bytes accepted.
+ *
+ * @return EXTERNAL_FLASH_STATUS_OK on success, otherwise an error status.
+ *
+ * @note Must be called while instruction upload is active, with expected_length
+ *       at least the committed instruction bytes and no greater than the
+ *       initially declared expected length.
+ */
+ExternalFlashStatus_T
+EXTERNAL_FLASH_UpdateInstructionUploadExpectedLength( uint32_t expected_length );
+
+/**
  * @brief Finishes an instruction upload and commits any final partial page.
  *
  * @return EXTERNAL_FLASH_STATUS_OK if the expected instruction length has been

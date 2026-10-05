@@ -61,7 +61,10 @@ extern "C"
  */
 
 /** Capacity of each channel's DMA-backed receive ring, in bytes. */
-#define HW_SPI_RX_BUFFER_SIZE_BYTES 1024U
+#define HW_SPI_RX_BUFFER_SIZE_BYTES 4096U
+
+/** Capacity of each channel's software transmit ring, in bytes. */
+#define HW_SPI_TX_BUFFER_SIZE_BYTES 4096U
 
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
@@ -180,10 +183,48 @@ typedef struct
     uint32_t      total_length_bytes;  ///< Total unread byte count across both spans.
 } HWSPIRxSpans_T;
 
+/**
+ * @brief Diagnostic telemetry and queue occupancy state for one SPI peripheral.
+ */
+typedef struct
+{
+    uint32_t tx_num_bytes_pending;          ///< Currently queued TX bytes in software buffer.
+    uint32_t peak_tx_num_bytes_pending;     ///< Peak queued TX bytes observed.
+    uint32_t tx_num_bytes_in_transmission;  ///< Currently in-flight DMA TX bytes.
+    uint32_t tx_num_packets_pending;        ///< Currently queued packet descriptors.
+    uint32_t peak_tx_num_packets_pending;   ///< Peak queued packet descriptors observed.
+    uint32_t tx_queue_reject_count;         ///< Count of times packet loading was rejected.
+    uint32_t tx_dma_error_count;            ///< Count of TX DMA errors encountered.
+    uint32_t tx_final_drain_timeout_count;  ///< Count of master final drain timeouts.
+    uint32_t rx_unread_bytes;               ///< Current unread RX bytes in circular buffer.
+    uint32_t rx_unread_peak_bytes;          ///< Peak unread RX bytes observed.
+    uint8_t  tx_transaction_state;          ///< Current transaction state enum value.
+    bool     is_started;                    ///< Channel runtime started status.
+    bool     is_configured;                 ///< Channel configured status.
+    bool     is_master;                     ///< Master mode status flag.
+} HWSPI_Diagnostic_T;
+
 /**-----------------------------------------------------------------------------
  *  Public Function Prototypes
  *------------------------------------------------------------------------------
  */
+
+/**
+ * @brief Retrieve diagnostic telemetry and high watermarks for a SPI channel.
+ *
+ * @param peripheral Logical SPI peripheral to inspect.
+ * @param diag Destination diagnostic structure.
+ *
+ * @return true if peripheral was valid and diag was populated; false otherwise.
+ */
+bool HW_SPI_Get_Diagnostics( SPIChannel_T peripheral, HWSPI_Diagnostic_T* diag );
+
+/**
+ * @brief Reset peak watermarks and cumulative error counters for a SPI channel.
+ *
+ * @param peripheral Logical SPI peripheral whose diagnostics should be reset.
+ */
+void HW_SPI_Reset_Diagnostics( SPIChannel_T peripheral );
 
 /**
  * @brief Configure a hardware SPI channel and initialise its low-level driver state.

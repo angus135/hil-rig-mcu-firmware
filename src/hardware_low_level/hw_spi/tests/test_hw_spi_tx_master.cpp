@@ -500,6 +500,7 @@ protected:
                                  IRQn_Type tx_irqn, Timer_T timer )
     {
         memset( state, 0, sizeof( *state ) );
+        state->rx_buffer                 = HW_SPI_Get_Rx_Buffer( logical );
         state->config                    = config;
         state->logical_peripheral        = logical;
         state->nss_pin                   = config.nss_pin;
@@ -509,7 +510,7 @@ protected:
         state->is_master                 = config.spi_mode == SPI_MASTER_MODE;
         state->frame_size_bytes          = config.data_size == SPI_SIZE_16_BIT ? 2U : 1U;
         state->frame_shift               = config.data_size == SPI_SIZE_16_BIT ? 1U : 0U;
-        state->tx_uses_final_drain_timer = config.baud_rate > SPI_BAUD_5M625BIT;
+        state->tx_uses_final_drain_timer = config.baud_rate > SPI_BAUD_2M813BIT;
         state->tx_final_drain_cycles     = 0U;
         state->tx_final_drain_timer      = timer;
         state->rx_dma                    = rx_dma;
@@ -857,12 +858,14 @@ TEST_F( HWSpiMasterTxTest, LoadTxPacketBatch_InsufficientCapacityLeavesQueueUnch
     state->tx_num_bytes_pending          = TX_BUFFER_SIZE_BYTES - 4U;
     state->tx_write_position             = TX_BUFFER_SIZE_BYTES - 4U;
 
-    const SPIPeripheralState_T before = *state;
+    SPIPeripheralState_T before = *state;
 
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_1_TX_DMA_IRQN ) );
     EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_1_TX_DMA_IRQN ) );
 
     EXPECT_FALSE( HW_SPI_Load_Tx_Packet_Batch( SPI_CHANNEL_1, data, packet_sizes, 3U ) );
+    before.tx_queue_reject_count = state->tx_queue_reject_count;
+    EXPECT_EQ( state->tx_queue_reject_count, 1U );
     EXPECT_EQ( memcmp( state, &before, sizeof( before ) ), 0 );
 }
 
@@ -959,12 +962,14 @@ TEST_F( HWSpiMasterTxTest, LoadTxPackets_InsufficientByteCapacityLeavesQueueUnch
     state->tx_num_bytes_pending      = TX_BUFFER_SIZE_BYTES - 4U;
     memset( state->tx_buffer, 0xA5, sizeof( state->tx_buffer ) );
 
-    const SPIPeripheralState_T before = *state;
+    SPIPeripheralState_T before = *state;
 
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_1_TX_DMA_IRQN ) );
     EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_1_TX_DMA_IRQN ) );
 
     EXPECT_FALSE( HW_SPI_Load_Tx_Packets( SPI_CHANNEL_1, packets, 3U, 2U ) );
+    before.tx_queue_reject_count = state->tx_queue_reject_count;
+    EXPECT_EQ( state->tx_queue_reject_count, 1U );
     EXPECT_EQ( memcmp( state, &before, sizeof( before ) ), 0 );
 }
 
@@ -974,12 +979,14 @@ TEST_F( HWSpiMasterTxTest, LoadTxPackets_InsufficientDescriptorCapacityLeavesQue
     SPIPeripheralState_T* state      = HW_SPI_STATE( SPI_CHANNEL_1 );
     state->tx_num_packets_pending    = TX_PACKET_QUEUE_DEPTH - 1U;
 
-    const SPIPeripheralState_T before = *state;
+    SPIPeripheralState_T before = *state;
 
     EXPECT_CALL( mock, NVICDisableIRQ( SPI_CHANNEL_1_TX_DMA_IRQN ) );
     EXPECT_CALL( mock, NVICEnableIRQ( SPI_CHANNEL_1_TX_DMA_IRQN ) );
 
     EXPECT_FALSE( HW_SPI_Load_Tx_Packets( SPI_CHANNEL_1, packets, 3U, 2U ) );
+    before.tx_queue_reject_count = state->tx_queue_reject_count;
+    EXPECT_EQ( state->tx_queue_reject_count, 1U );
     EXPECT_EQ( memcmp( state, &before, sizeof( before ) ), 0 );
 }
 

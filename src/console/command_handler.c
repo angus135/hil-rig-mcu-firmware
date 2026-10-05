@@ -19,6 +19,7 @@
  */
 
 #include "console.h"
+#include "hardware_low_level/hw_clock_calibration/hw_clock_calibration.h"
 #include "exec_i2c.h"
 #include "logic_expander.h"
 #include "command_helpers.h"
@@ -45,6 +46,7 @@
 #include "subsystem_command_apis/console_pwm_capture.h"
 #include "subsystem_command_apis/console_can.h"
 #include "subsystem_command_apis/console_flash_manager.h"
+#include "subsystem_command_apis/console_host_interface.h"
 #include "subsystem_command_apis/console_run_state_manager.h"
 #include "subsystem_command_apis/console_test_configuration.h"
 
@@ -147,6 +149,7 @@ const Command_T CONSOLE_COMMANDS[] = {
     {"flash",               CONSOLE_FlashManager_Command,           "External Flash and Flash Manager hardware bring-up"},
     {"run_state",           CONSOLE_RunStateManager_Command,        "Manual lifecycle and execution-timer control"},
     {"test_config",         CONSOLE_TestConfiguration_Command,      "Commit DUT lifecycle test configurations"},
+    {"host",                CONSOLE_HostInterface_Command,          "Host Interface status and diagnostics"},
 
 };
 
@@ -446,9 +449,10 @@ static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] )
         return;
     }
 
-    char* end_ptr                    = NULL;
-    errno                            = 0;
-    const unsigned long frequency_hz = strtoul( argv[4], &end_ptr, 10 );
+    char* end_ptr = NULL;
+    errno         = 0;
+    const unsigned long frequency_hz =
+        EXEC_PWM_GEN_calibrate( strtoul( argv[4], &end_ptr, 10 ) );  // Scaling
     if ( errno == ERANGE || end_ptr == argv[4] || *end_ptr != '\0' || argv[4][0] == '-'
          || frequency_hz == 0UL || frequency_hz > 1000000UL )
     {
@@ -466,10 +470,14 @@ static void CONSOLE_Command_PWM_Output( uint16_t argc, char* argv[] )
         return;
     }
 
-    const uint32_t timer_hz = 90000000U;
-    uint16_t       psc;
-    uint16_t       arr;
-    uint16_t       ccr;
+    uint32_t timer_hz = HW_CLOCK_Get_Timer_APB1_Hz();
+    if ( channel == EXEC_PWM_GEN_CHANNEL_HV )
+    {
+        timer_hz = HW_CLOCK_Get_Timer_APB2_Hz();
+    }
+    uint16_t psc;
+    uint16_t arr;
+    uint16_t ccr;
     if ( !HW_PWM_GEN_compute_psc( ( uint32_t )frequency_hz, timer_hz, &psc )
          || !HW_PWM_GEN_compute_arr( ( uint32_t )frequency_hz, timer_hz, psc, &arr )
          || !HW_PWM_GEN_compute_ccr( ( uint16_t )duty, arr, &ccr ) )
@@ -1381,7 +1389,9 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
             char*          channel_end    = NULL;
             char*          voltage_end    = NULL;
             long           channel        = strtol( argv[argument_index], &channel_end, 10 );
-            float          voltage        = strtof( argv[argument_index + 1U], &voltage_end );
+            float          init_voltage   = strtof( argv[argument_index + 1U], &voltage_end );
+            float          voltage        = init_voltage;
+            EXEC_ANALOGUE_OUTPUT_Scale( &init_voltage, &voltage );
             AnalogueOutputPreparedFrame_T prepared_frame;
 
             if ( ( channel_end == argv[argument_index] ) || ( *channel_end != '\0' )
@@ -1454,6 +1464,7 @@ static void CONSOLE_Command_Analogue_Output( uint16_t argc, char* argv[] )
 
     char* endptr2 = NULL;
     float voltage = strtof( argv[2], &endptr2 );
+    EXEC_ANALOGUE_OUTPUT_Scale( &voltage, &voltage );
     if ( ( endptr2 == argv[2] ) || ( *endptr2 != '\0' ) )
     {
         CONSOLE_Printf( "Invalid voltage\r\n" );
@@ -1672,8 +1683,13 @@ static void CONSOLE_Command_Analogue_Inputs( uint16_t argc, char* argv[] )
 
         EXEC_ANALOGUE_INPUT_Read_Analogue_Inputs( voltage_destination );
 
-        CONSOLE_Printf( "Analogue input 0: %lu\r\n", ( unsigned long )channel_0_voltage );
-        CONSOLE_Printf( "Analogue input 1: %lu\r\n", ( unsigned long )channel_1_voltage );
+        CONSOLE_Printf( "Analogue input 0 raw value: %lu, scaled value: %lu\r\n",
+                        ( uint32_t )channel_0_voltage,
+                        ( uint32_t )EXEC_ANALOGUE_INPUT_Scale( ( uint32_t )channel_0_voltage ) );
+        CONSOLE_Printf( "Analogue input 1 raw value: %lu, scaled value: %lu\r\n",
+                        ( uint32_t )channel_1_voltage,
+                        ( uint32_t )EXEC_ANALOGUE_INPUT_Scale( ( uint32_t )channel_1_voltage ) );
+        CONSOLE_Printf( "Done reading Analogue inputs\r\n" );
     }
     else if ( strcmp( argv[1], "configure" ) == 0 )
     {

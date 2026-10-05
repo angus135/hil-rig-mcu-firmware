@@ -6,11 +6,13 @@
 
 set(RUN_STATE_MANAGER_SOURCES
     run_state_manager.c
+    run_metadata.c
     dut_driver_lifecycle.c
 )
 
 set(RUN_STATE_MANAGER_HEADERS
     run_state_manager.h
+    run_metadata.h
     dut_driver_lifecycle.h
 )
 
@@ -31,12 +33,14 @@ target_link_libraries(run_state_manager
         project_warnings
         cubeide_hal
         rtos
+        hw_can
         hw_timer
         hw_gpio
         logic_expander
         flash_manager
         execution_manager
         test_configuration
+        host_interface
 )
 
 # -----------------------------

@@ -94,8 +94,10 @@ typedef struct
 
 static ConsoleUartLoopbackState_T s_uart_loopback_state = { 0 };
 
+#if GLOBAL_CONFIG__CONSOLE_UART_BLAST_ENABLED
 static uint8_t s_uart_blast_tx_buf[CONSOLE_UART_BLAST_RANDOM_MAX_LENGTH];
 static uint8_t s_uart_blast_rx_buf[CONSOLE_UART_BLAST_RANDOM_MAX_LENGTH];
+#endif
 
 /**-----------------------------------------------------------------------------
  *  Private Function Prototypes
@@ -346,6 +348,7 @@ static bool CONSOLE_UART_Parse_Framing( const char* text, HwUartWordLength_T* wo
     return false;
 }
 
+#if GLOBAL_CONFIG__CONSOLE_UART_BLAST_ENABLED
 static uint32_t CONSOLE_UART_Prng_Next( uint32_t* state )
 {
     *state = ( *state * 1664525UL ) + 1013904223UL;
@@ -361,6 +364,7 @@ static void CONSOLE_UART_Fill_Random_Buffer( uint8_t* buffer, uint32_t length, u
         buffer[i] = ( uint8_t )( CONSOLE_UART_Prng_Next( &prng_state ) >> 24 );
     }
 }
+#endif
 
 static bool CONSOLE_UART_Build_Tx_Text( uint16_t argc, char* argv[], uint16_t first_text_arg,
                                         char* tx_text, uint32_t tx_text_size,
@@ -831,6 +835,7 @@ static bool CONSOLE_UART_Transmit_Buffer_Chunked( ExecUartChannel_T sender_ch, c
     return true;
 }
 
+#if GLOBAL_CONFIG__CONSOLE_UART_BLAST_ENABLED
 static bool CONSOLE_UART_Read_And_Compare_Buffer( ExecUartChannel_T receiver_ch,
                                                   const uint8_t* expected, uint32_t expected_length,
                                                   uint32_t iteration )
@@ -976,6 +981,14 @@ static void CONSOLE_UART_Loopback_Blast_Random( uint16_t argc, char* argv[] )
     CONSOLE_Printf( "  failed: %lu\r\n", ( unsigned long )failed );
     CONSOLE_Printf( "  bytes tested: %lu\r\n", ( unsigned long )( passed * length ) );
 }
+#else
+static void CONSOLE_UART_Loopback_Blast_Random( uint16_t argc, char* argv[] )
+{
+    ( void )argc;
+    ( void )argv;
+    CONSOLE_Printf( "uart loopback blast_random is disabled in this build\r\n" );
+}
+#endif
 
 static void CONSOLE_UART_Command_Loopback( uint16_t argc, char* argv[] )
 {
