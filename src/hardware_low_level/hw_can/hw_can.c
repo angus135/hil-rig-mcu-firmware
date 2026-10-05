@@ -37,7 +37,8 @@ CAN_TypeDef              ← "Hardware registers (memory mapped)"
  *------------------------------------------------------------------------------
  */
 
-#define CAN_TIMER_HZ HW_CLOCK_Get_PCLK1_Hz()
+/* CAN nominal wire rates use the configured clock tree, not the measured calibration offset. */
+#define CAN_TIMER_HZ HW_CLOCK_NOMINAL_APB1_HZ
 #define TOTAL_TQ ( uint32_t )15
 #define MBPS_SAMPLE_POINT ( uint32_t )800
 

@@ -214,15 +214,15 @@ protected:
  *------------------------------------------------------------------------------
  */
 
-/** Verify CAN timing parameters for the calibrated clock with prescaler three. */
-TEST_F( HWCANTest, ComputePropertiesReturnsExpectedValuesForCalibratedBitrate )
+/** Verify CAN timing parameters for the nominal APB1 clock with prescaler three. */
+TEST_F( HWCANTest, ComputePropertiesReturnsExpectedValuesForNominalBitrate )
 {
     CanProperties_T props = HW_CAN_Compute_Properties( CAN_TIMER_HZ / 45U, 15, 800 );
 
     EXPECT_EQ( props.bs1, 11 );
     EXPECT_EQ( props.bs2, 3 );
     EXPECT_EQ( props.psc, 3 );
-    EXPECT_EQ( props.timer_hz, HW_CLOCK_Get_PCLK1_Hz() );
+    EXPECT_EQ( props.timer_hz, HW_CLOCK_NOMINAL_APB1_HZ );
 }
 
 /** Verify that an invalid zero bitrate produces zeroed timing properties. */
@@ -235,15 +235,20 @@ TEST_F( HWCANTest, ComputePropertiesRejectsInvalidBitrate )
     EXPECT_EQ( props.psc, 0 );
 }
 
-/** Verify exact calibrated bitrates with the 15-TQ model. */
+/** Verify exact nominal bitrates with the 15-TQ model. */
 TEST_F( HWCANTest, ComputePropertiesAcceptsExactProjectBitrates )
 {
-    CanProperties_T props_500k = HW_CAN_Compute_Properties( CAN_TIMER_HZ / 90U, 15U, 800U );
+    CanProperties_T props_1m = HW_CAN_Compute_Properties( 1000000U, 15U, 800U );
+    EXPECT_EQ( props_1m.bs1, 11U );
+    EXPECT_EQ( props_1m.bs2, 3U );
+    EXPECT_EQ( props_1m.psc, 3U );
+
+    CanProperties_T props_500k = HW_CAN_Compute_Properties( 500000U, 15U, 800U );
     EXPECT_EQ( props_500k.bs1, 11U );
     EXPECT_EQ( props_500k.bs2, 3U );
     EXPECT_EQ( props_500k.psc, 6U );
 
-    CanProperties_T props_250k = HW_CAN_Compute_Properties( CAN_TIMER_HZ / 180U, 15U, 800U );
+    CanProperties_T props_250k = HW_CAN_Compute_Properties( 250000U, 15U, 800U );
     EXPECT_EQ( props_250k.bs1, 11U );
     EXPECT_EQ( props_250k.bs2, 3U );
     EXPECT_EQ( props_250k.psc, 12U );
