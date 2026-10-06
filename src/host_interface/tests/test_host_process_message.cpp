@@ -1126,10 +1126,8 @@ TEST_F( HostProcessMessageTest, GlobalControlGetStatusReportsIdleReady )
     EXPECT_EQ( HIL_APPLICATION_MESSAGE_TYPE_RIG_STATUS, outgoing.type );
     EXPECT_EQ( HIL_APPLICATION_STATUS_ORIGIN_QUERY_RESPONSE, outgoing.body.rig_status.origin );
     EXPECT_EQ( HIL_APPLICATION_RIG_STATE_IDLE, outgoing.body.rig_status.state );
-    EXPECT_NE( 0U, outgoing.body.rig_status.flags
-                       & HIL_APPLICATION_RIG_STATUS_READY_FOR_NEW_TEST );
-    EXPECT_NE( 0U,
-               outgoing.body.rig_status.flags & HIL_APPLICATION_RIG_STATUS_RESET_PERMITTED );
+    EXPECT_NE( 0U, outgoing.body.rig_status.flags & HIL_APPLICATION_RIG_STATUS_READY_FOR_NEW_TEST );
+    EXPECT_NE( 0U, outgoing.body.rig_status.flags & HIL_APPLICATION_RIG_STATUS_RESET_PERMITTED );
     EXPECT_EQ( 0U, outgoing.has_test_id );
 }
 
@@ -1172,15 +1170,12 @@ TEST_F( HostProcessMessageTest, GlobalControlResetCanBeRetriedAfterCleanupComple
         .WillOnce( Return( true ) )
         .WillOnce( Return( true ) );
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
-        .WillOnce( Invoke( [&pending_status]( RunStateManagerStatus_T* status ) {
-            *status = pending_status;
-        } ) )
-        .WillOnce( Invoke( [&pending_status]( RunStateManagerStatus_T* status ) {
-            *status = pending_status;
-        } ) )
-        .WillOnce( Invoke( [&idle_status]( RunStateManagerStatus_T* status ) {
-            *status = idle_status;
-        } ) );
+        .WillOnce( Invoke(
+            [&pending_status]( RunStateManagerStatus_T* status ) { *status = pending_status; } ) )
+        .WillOnce( Invoke(
+            [&pending_status]( RunStateManagerStatus_T* status ) { *status = pending_status; } ) )
+        .WillOnce( Invoke(
+            [&idle_status]( RunStateManagerStatus_T* status ) { *status = idle_status; } ) );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Global_Control(
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
@@ -1284,7 +1279,7 @@ TEST_F( HostProcessMessageTest, UnimplementedNotificationsReturnNotImplemented )
 TEST_F( HostProcessMessageTest, TransferCompleteNotificationAwaitsReset )
 {
     HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_COMPLETED );
-    notifications          = HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE;
+    notifications = HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE;
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Transfer_Complete_Notification(
                    &outgoing, &notifications, &response_required, data, sizeof( data ) ),
@@ -1377,18 +1372,18 @@ TEST_F( HostProcessMessageTest, ResultTransferNotificationQueuesReportAtEndOfStr
 TEST_F( HostProcessMessageTest, RunReportNotificationEmitsRejectedConfigurationReport )
 {
     HostTestSession_T session{};
-    session.state               = HOST_INTERFACE_SESSION_FAULTED;
-    session.has_active_test_id  = true;
-    session.expected_tick_count = 25U;
-    session.tick_period_us      = 1000U;
-    session.report_owed         = true;
+    session.state                   = HOST_INTERFACE_SESSION_FAULTED;
+    session.has_active_test_id      = true;
+    session.expected_tick_count     = 25U;
+    session.tick_period_us          = 1000U;
+    session.report_owed             = true;
     session.active_test_id.bytes[0] = 0xA5U;
     HOST_INTERFACE_Test_Access_Set_Session( &session );
 
     notifications = HOST_INTERFACE_NOTIFY_RUN_REPORT;
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetRunMetadataSnapshot( _ ) )
         .WillOnce( Invoke( []( RunMetadataSnapshot_T* snapshot ) {
-            *snapshot = {};
+            *snapshot                      = {};
             snapshot->structure_version    = RUN_METADATA_STRUCTURE_VERSION;
             snapshot->valid_sections       = RUN_METADATA_VALID_TERMINAL;
             snapshot->terminal_status      = RUN_METADATA_TERMINAL_REJECTED;
@@ -1429,10 +1424,9 @@ TEST_F( HostProcessMessageTest, AcceptedRunReportCompletesResultTransfer )
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestResultTransferComplete() )
         .WillOnce( Return( true ) );
 
-    EXPECT_EQ( HOST_INTERFACE_process_message( false, &incoming, true, &outgoing,
-                                               &overflow_outgoing, &response_required, data,
-                                               sizeof( data ), &notifications,
-                                               &expected_tick_count ),
+    EXPECT_EQ( HOST_INTERFACE_process_message(
+                   false, &incoming, true, &outgoing, &overflow_outgoing, &response_required, data,
+                   sizeof( data ), &notifications, &expected_tick_count ),
                HOST_INTERFACE_STATUS_OK );
     EXPECT_FALSE( HOST_INTERFACE_Get_Session()->report_owed );
     EXPECT_FALSE( HOST_INTERFACE_Get_Session()->report_in_flight );
@@ -1450,10 +1444,9 @@ TEST_F( HostProcessMessageTest, AcceptedFailedRunReportAwaitsReset )
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_AcknowledgeRunReport() );
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestResultTransferComplete() ).Times( 0 );
 
-    EXPECT_EQ( HOST_INTERFACE_process_message( false, &incoming, true, &outgoing,
-                                               &overflow_outgoing, &response_required, data,
-                                               sizeof( data ), &notifications,
-                                               &expected_tick_count ),
+    EXPECT_EQ( HOST_INTERFACE_process_message(
+                   false, &incoming, true, &outgoing, &overflow_outgoing, &response_required, data,
+                   sizeof( data ), &notifications, &expected_tick_count ),
                HOST_INTERFACE_STATUS_OK );
     EXPECT_EQ( HOST_INTERFACE_SESSION_AWAITING_RESET, HOST_INTERFACE_Get_Session()->state );
     EXPECT_FALSE( HOST_INTERFACE_Get_Session()->report_owed );
@@ -1462,24 +1455,22 @@ TEST_F( HostProcessMessageTest, AcceptedFailedRunReportAwaitsReset )
 /** @brief Acceptance of RESET COMPLETED queues the following readiness notification. */
 TEST_F( HostProcessMessageTest, AcceptedResetResponseEmitsIdleReadiness )
 {
-    outgoing.type = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
-    outgoing.body.response.scope = HIL_APPLICATION_RESPONSE_SCOPE_GLOBAL_CONTROL;
+    outgoing.type                  = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+    outgoing.body.response.scope   = HIL_APPLICATION_RESPONSE_SCOPE_GLOBAL_CONTROL;
     outgoing.body.response.outcome = HIL_APPLICATION_RESPONSE_OUTCOME_COMPLETED;
     outgoing.body.response.global_control_command =
         HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION;
     run_state_status.state = RUN_STATE_IDLE;
 
-    EXPECT_EQ( HOST_INTERFACE_process_message( false, &incoming, true, &outgoing,
-                                               &overflow_outgoing, &response_required, data,
-                                               sizeof( data ), &notifications,
-                                               &expected_tick_count ),
+    EXPECT_EQ( HOST_INTERFACE_process_message(
+                   false, &incoming, true, &outgoing, &overflow_outgoing, &response_required, data,
+                   sizeof( data ), &notifications, &expected_tick_count ),
                HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
     EXPECT_EQ( HIL_APPLICATION_MESSAGE_TYPE_RIG_STATUS, outgoing.type );
     EXPECT_EQ( HIL_APPLICATION_STATUS_ORIGIN_NOTIFICATION, outgoing.body.rig_status.origin );
     EXPECT_EQ( HIL_APPLICATION_RIG_STATE_IDLE, outgoing.body.rig_status.state );
-    EXPECT_NE( 0U, outgoing.body.rig_status.flags
-                       & HIL_APPLICATION_RIG_STATUS_READY_FOR_NEW_TEST );
+    EXPECT_NE( 0U, outgoing.body.rig_status.flags & HIL_APPLICATION_RIG_STATUS_READY_FOR_NEW_TEST );
 }
 
 TEST_F( HostProcessMessageTest, ResultTransferNotificationFaultsSessionOnCorruptData )
@@ -1859,12 +1850,11 @@ TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadReportsConfigurationRej
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestConfiguration() )
         .WillOnce( Return( true ) );
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
-        .WillOnce( Invoke( [this]( RunStateManagerStatus_T* status ) {
-            *status = run_state_status;
-        } ) );
+        .WillOnce(
+            Invoke( [this]( RunStateManagerStatus_T* status ) { *status = run_state_status; } ) );
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetRunMetadataSnapshot( _ ) )
         .WillOnce( Invoke( []( RunMetadataSnapshot_T* snapshot ) {
-            *snapshot = {};
+            *snapshot                      = {};
             snapshot->valid_sections       = RUN_METADATA_VALID_TERMINAL;
             snapshot->terminal_status      = RUN_METADATA_TERMINAL_REJECTED;
             snapshot->result_stream_status = RUN_METADATA_RESULT_STREAM_UNAVAILABLE;

@@ -1838,7 +1838,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
 
     TickType_t overflow_timer = xTaskGetTickCount();
 
-    bool can_consume_incoming = true;
+    bool can_consume_incoming         = true;
     bool application_connection_ready = false;
 
     static HIL_Application_Message_T overflow_outgoing_message = { 0 };

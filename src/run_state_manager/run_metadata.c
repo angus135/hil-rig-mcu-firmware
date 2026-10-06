@@ -31,7 +31,7 @@ bool RUN_METADATA_LatchTerminal( RunMetadataTerminalStatus_T status,
                                  RunMetadataFailureSource_T source, uint32_t reason )
 {
     const bool is_complete = status == RUN_METADATA_TERMINAL_COMPLETE;
-    const bool is_failure = status == RUN_METADATA_TERMINAL_FAILED
+    const bool is_failure  = status == RUN_METADATA_TERMINAL_FAILED
                             || status == RUN_METADATA_TERMINAL_ABORTED
                             || status == RUN_METADATA_TERMINAL_REJECTED;
 

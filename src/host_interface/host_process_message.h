@@ -141,9 +141,9 @@ typedef enum
     HOST_INTERFACE_SESSION_ARMED,     /**< Upload finalized & hardware armed; ready for START */
     HOST_INTERFACE_SESSION_EXECUTING, /**< Running on hardware */
     HOST_INTERFACE_SESSION_RESULT_TRANSFER, /**< Streaming results (Type 32/34) to host */
-    HOST_INTERFACE_SESSION_COMPLETED, /**< Results complete; terminal report is pending */
-    HOST_INTERFACE_SESSION_AWAITING_RESET, /**< Terminal report sent; retained test may be reset or
-                                              repeated */
+    HOST_INTERFACE_SESSION_COMPLETED,       /**< Results complete; terminal report is pending */
+    HOST_INTERFACE_SESSION_AWAITING_RESET,  /**< Terminal report sent; retained test may be reset or
+                                               repeated */
     HOST_INTERFACE_SESSION_FAULTED          /**< Fault awaiting its terminal report */
 } HOST_INTERFACE_Session_State_T;
 
@@ -162,15 +162,15 @@ typedef enum
  */
 typedef struct
 {
-    HOST_INTERFACE_Session_State_T state;
-    bool                           has_active_test_id;
-    HIL_Application_Test_Id_T      active_test_id;
-    HostInstructionFamily_T        instruction_family;
-    uint32_t                       expected_tick_count;
-    uint32_t                       tick_period_us;
-    uint32_t                       result_ticks_emitted;
-    bool                           report_owed;
-    bool                           report_in_flight;
+    HOST_INTERFACE_Session_State_T   state;
+    bool                             has_active_test_id;
+    HIL_Application_Test_Id_T        active_test_id;
+    HostInstructionFamily_T          instruction_family;
+    uint32_t                         expected_tick_count;
+    uint32_t                         tick_period_us;
+    uint32_t                         result_ticks_emitted;
+    bool                             report_owed;
+    bool                             report_in_flight;
     HIL_Application_Failure_Source_T last_failure_source;
     HIL_Application_Failure_Stage_T  last_failure_stage;
     HIL_Application_Failure_Reason_T last_failure_reason;

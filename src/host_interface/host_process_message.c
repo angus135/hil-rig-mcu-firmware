@@ -81,12 +81,12 @@
 
 /* The test session context */
 static HostTestSession_T s_session = {
-    .state               = HOST_INTERFACE_SESSION_STATE_IDLE,
-    .has_active_test_id  = false,
-    .active_test_id      = { { 0 } },
-    .instruction_family  = HOST_INSTRUCTION_FAMILY_UNSET,
-    .expected_tick_count = 0U,
-    .tick_period_us      = 0U,
+    .state                = HOST_INTERFACE_SESSION_STATE_IDLE,
+    .has_active_test_id   = false,
+    .active_test_id       = { { 0 } },
+    .instruction_family   = HOST_INSTRUCTION_FAMILY_UNSET,
+    .expected_tick_count  = 0U,
+    .tick_period_us       = 0U,
     .result_ticks_emitted = 0U,
     .report_owed          = false,
     .report_in_flight     = false,
@@ -105,8 +105,8 @@ void HOST_INTERFACE_Reset_Session( void )
     s_session.state              = HOST_INTERFACE_SESSION_STATE_IDLE;
     s_session.has_active_test_id = false;
     ( void )memset( &s_session.active_test_id, 0, sizeof( s_session.active_test_id ) );
-    s_session.instruction_family  = HOST_INSTRUCTION_FAMILY_UNSET;
-    s_session.expected_tick_count = 0U;
+    s_session.instruction_family   = HOST_INSTRUCTION_FAMILY_UNSET;
+    s_session.expected_tick_count  = 0U;
     s_session.tick_period_us       = 0U;
     s_session.result_ticks_emitted = 0U;
     s_session.report_owed          = false;
@@ -192,23 +192,23 @@ static void HOST_INTERFACE_BuildExecutionControlResponse(
 /** Builds the correlated Application Response for a Global Control request. */
 static void HOST_INTERFACE_BuildGlobalControlResponse(
     HIL_Application_Message_T* message, HIL_Application_Response_Outcome_T outcome,
-    HIL_Application_Response_Reason_T reason,
-    HIL_Application_Global_Control_Command_T command, uint32_t detail )
+    HIL_Application_Response_Reason_T reason, HIL_Application_Global_Control_Command_T command,
+    uint32_t detail )
 {
-    message->type                          = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
-    message->subtype                       = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-    message->has_test_id                   = 0U;
-    message->body.response.scope           = HIL_APPLICATION_RESPONSE_SCOPE_GLOBAL_CONTROL;
-    message->body.response.outcome         = outcome;
-    message->body.response.reason          = reason;
-    message->body.response.tick_number     = 0U;
-    message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
+    message->type                                 = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+    message->subtype                              = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    message->has_test_id                          = 0U;
+    message->body.response.scope                  = HIL_APPLICATION_RESPONSE_SCOPE_GLOBAL_CONTROL;
+    message->body.response.outcome                = outcome;
+    message->body.response.reason                 = reason;
+    message->body.response.tick_number            = 0U;
+    message->body.response.control_command        = HIL_APPLICATION_CONTROL_INVALID;
     message->body.response.global_control_command = command;
     message->body.response.detail                 = detail;
 }
 
 /** Maps one native first-cause failure into stable schema-1 wire values. */
-static void HOST_INTERFACE_MapRunFailure( const RunMetadataSnapshot_T* snapshot,
+static void HOST_INTERFACE_MapRunFailure( const RunMetadataSnapshot_T*  snapshot,
                                           HIL_Application_Run_Report_T* report )
 {
     switch ( snapshot->failure_source )
@@ -388,7 +388,7 @@ static void HOST_INTERFACE_MapRunFailure( const RunMetadataSnapshot_T* snapshot,
 }
 
 /** Maps the RSM and Host Interface snapshot into a public schema-1 Rig Status. */
-static void HOST_INTERFACE_BuildRigStatus( HIL_Application_Message_T* message,
+static void HOST_INTERFACE_BuildRigStatus( HIL_Application_Message_T*      message,
                                            HIL_Application_Status_Origin_T origin )
 {
     RunStateManagerStatus_T rsm_status = { 0 };
@@ -443,10 +443,9 @@ static void HOST_INTERFACE_BuildRigStatus( HIL_Application_Message_T* message,
             break;
     }
 
-    const bool ready = rsm_status.state == RUN_STATE_IDLE
-                       && s_session.state == HOST_INTERFACE_SESSION_STATE_IDLE
-                       && !rsm_status.transition_pending && !s_session.report_owed
-                       && !s_session.report_in_flight;
+    const bool ready =
+        rsm_status.state == RUN_STATE_IDLE && s_session.state == HOST_INTERFACE_SESSION_STATE_IDLE
+        && !rsm_status.transition_pending && !s_session.report_owed && !s_session.report_in_flight;
     if ( ready )
     {
         status->flags |= HIL_APPLICATION_RIG_STATUS_READY_FOR_NEW_TEST;
@@ -455,8 +454,8 @@ static void HOST_INTERFACE_BuildRigStatus( HIL_Application_Message_T* message,
     {
         status->flags |= HIL_APPLICATION_RIG_STATUS_TRANSITION_PENDING;
     }
-    if ( !rsm_status.transition_pending && !rsm_status.execution_active
-         && !s_session.report_owed && !s_session.report_in_flight )
+    if ( !rsm_status.transition_pending && !rsm_status.execution_active && !s_session.report_owed
+         && !s_session.report_in_flight )
     {
         status->flags |= HIL_APPLICATION_RIG_STATUS_RESET_PERMITTED;
     }
@@ -534,18 +533,18 @@ static bool HOST_INTERFACE_BuildRunReport( HIL_Application_Message_T* message )
         return false;
     }
 
-    HIL_Application_Run_Report_T* report = &message->body.run_report;
-    const bool execution_started = RUN_STATE_MANAGER_DidExecutionStart();
+    HIL_Application_Run_Report_T* report            = &message->body.run_report;
+    const bool                    execution_started = RUN_STATE_MANAGER_DidExecutionStart();
     ( void )memset( report, 0, sizeof( *report ) );
     message->type        = HIL_APPLICATION_MESSAGE_TYPE_RUN_REPORT;
     message->subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
     message->has_test_id = 1U;
     message->test_id     = s_session.active_test_id;
 
-    report->schema_version      = 1U;
-    report->valid_sections      = snapshot.valid_sections;
-    report->expected_tick_count = s_session.expected_tick_count;
-    report->tick_period_us      = s_session.tick_period_us;
+    report->schema_version       = 1U;
+    report->valid_sections       = snapshot.valid_sections;
+    report->expected_tick_count  = s_session.expected_tick_count;
+    report->tick_period_us       = s_session.tick_period_us;
     report->result_ticks_emitted = s_session.result_ticks_emitted;
 
     switch ( snapshot.terminal_status )
@@ -591,24 +590,24 @@ static bool HOST_INTERFACE_BuildRunReport( HIL_Application_Message_T* message )
             return false;
     }
 
-    report->last_completed_boundary = snapshot.last_completed_boundary;
-    report->isr_timing.sample_count = snapshot.isr_timing.sample_count;
-    report->isr_timing.total_cycles = snapshot.isr_timing.total_cycles;
-    report->isr_timing.minimum_cycles = snapshot.isr_timing.minimum_cycles;
-    report->isr_timing.maximum_cycles = snapshot.isr_timing.maximum_cycles;
-    report->isr_timing.maximum_boundary = snapshot.isr_timing.maximum_boundary;
+    report->last_completed_boundary         = snapshot.last_completed_boundary;
+    report->isr_timing.sample_count         = snapshot.isr_timing.sample_count;
+    report->isr_timing.total_cycles         = snapshot.isr_timing.total_cycles;
+    report->isr_timing.minimum_cycles       = snapshot.isr_timing.minimum_cycles;
+    report->isr_timing.maximum_cycles       = snapshot.isr_timing.maximum_cycles;
+    report->isr_timing.maximum_boundary     = snapshot.isr_timing.maximum_boundary;
     report->instruction_buffer.sample_count = snapshot.instruction_buffer.sample_count;
     report->instruction_buffer.minimum_unread_bytes =
         snapshot.instruction_buffer.minimum_unread_bytes;
-    report->instruction_buffer.minimum_boundary = snapshot.instruction_buffer.minimum_boundary;
+    report->instruction_buffer.minimum_boundary  = snapshot.instruction_buffer.minimum_boundary;
     report->result_buffer.committed_record_count = snapshot.result_buffer.committed_record_count;
-    report->result_buffer.committed_bytes = snapshot.result_buffer.committed_bytes;
-    report->result_buffer.peak_pending_bytes = snapshot.result_buffer.peak_pending_bytes;
-    report->result_buffer.peak_pending_boundary = snapshot.result_buffer.peak_pending_boundary;
-    report->result_buffer.reserve_failure_count = snapshot.result_buffer.reserve_failure_count;
-    report->result_buffer.commit_failure_count = snapshot.result_buffer.commit_failure_count;
-    report->flash.result_pages_drained = snapshot.flash_throughput.result_pages_drained;
-    report->flash.result_bytes_drained = snapshot.flash_throughput.result_bytes_drained;
+    report->result_buffer.committed_bytes        = snapshot.result_buffer.committed_bytes;
+    report->result_buffer.peak_pending_bytes     = snapshot.result_buffer.peak_pending_bytes;
+    report->result_buffer.peak_pending_boundary  = snapshot.result_buffer.peak_pending_boundary;
+    report->result_buffer.reserve_failure_count  = snapshot.result_buffer.reserve_failure_count;
+    report->result_buffer.commit_failure_count   = snapshot.result_buffer.commit_failure_count;
+    report->flash.result_pages_drained           = snapshot.flash_throughput.result_pages_drained;
+    report->flash.result_bytes_drained           = snapshot.flash_throughput.result_bytes_drained;
     report->flash.result_drain_total_cycles = snapshot.flash_throughput.result_drain_total_cycles;
     report->flash.result_drain_maximum_cycles =
         snapshot.flash_throughput.result_drain_maximum_cycles;
@@ -624,8 +623,8 @@ static bool HOST_INTERFACE_BuildRunReport( HIL_Application_Message_T* message )
         snapshot.flash_throughput.instruction_publish_total_cycles;
     report->flash.instruction_publish_maximum_cycles =
         snapshot.flash_throughput.instruction_publish_maximum_cycles;
-    report->flash.service_gap_sample_count = snapshot.flash_throughput.service_gap_sample_count;
-    report->flash.service_gap_total_cycles = snapshot.flash_throughput.service_gap_total_cycles;
+    report->flash.service_gap_sample_count   = snapshot.flash_throughput.service_gap_sample_count;
+    report->flash.service_gap_total_cycles   = snapshot.flash_throughput.service_gap_total_cycles;
     report->flash.service_gap_maximum_cycles = snapshot.flash_throughput.service_gap_maximum_cycles;
     report->flash.refill_drain_contention_count =
         snapshot.flash_throughput.refill_drain_contention_count;
@@ -791,7 +790,6 @@ HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion( RunState_T expe
         {
             return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
         }
-
     }
 
     return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
@@ -1685,19 +1683,18 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Finalize_Test_Upload(
         RUN_STATE_ARMED, HOST_REQUEST_CONFIGURATION, 3000, *expected_tick_count );
     if ( status != HOST_INTERFACE_STATUS_OK )
     {
-        RunMetadataSnapshot_T snapshot = { 0 };
-        const bool             report_ready =
-            RUN_STATE_MANAGER_GetRunMetadataSnapshot( &snapshot );
-        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+        RunMetadataSnapshot_T snapshot     = { 0 };
+        const bool            report_ready = RUN_STATE_MANAGER_GetRunMetadataSnapshot( &snapshot );
+        s_session.state                    = HOST_INTERFACE_SESSION_FAULTED;
         if ( report_ready )
         {
-            outgoing_message->type                = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
-            outgoing_message->subtype             = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-            outgoing_message->body.response.scope = HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST;
+            outgoing_message->type                  = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+            outgoing_message->subtype               = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+            outgoing_message->body.response.scope   = HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST;
             outgoing_message->body.response.outcome = HIL_APPLICATION_RESPONSE_OUTCOME_FAILED;
             outgoing_message->body.response.reason =
                 HIL_APPLICATION_RESPONSE_REASON_HARDWARE_NOT_READY;
-            outgoing_message->body.response.tick_number = 0U;
+            outgoing_message->body.response.tick_number     = 0U;
             outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
             outgoing_message->body.response.global_control_command =
                 HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
@@ -1922,9 +1919,9 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Result_Transfer_Notification(
 }
 
 /** Emits the terminal report after diagnostics/results and before cleanup. */
-static HOST_Interface_Status_T HOST_INTERFACE_process_Run_Report_Notification(
-    HIL_Application_Message_T* outgoing_message, uint32_t* notifications,
-    bool* response_required )
+static HOST_Interface_Status_T
+HOST_INTERFACE_process_Run_Report_Notification( HIL_Application_Message_T* outgoing_message,
+                                                uint32_t* notifications, bool* response_required )
 {
     if ( !HOST_INTERFACE_BuildRunReport( outgoing_message ) )
     {
@@ -1938,13 +1935,12 @@ static HOST_Interface_Status_T HOST_INTERFACE_process_Run_Report_Notification(
 }
 
 /** Emits one unsolicited snapshot after connection or successful reset. */
-static HOST_Interface_Status_T HOST_INTERFACE_process_Rig_Status_Notification(
-    HIL_Application_Message_T* outgoing_message, uint32_t* notifications,
-    bool* response_required )
+static HOST_Interface_Status_T
+HOST_INTERFACE_process_Rig_Status_Notification( HIL_Application_Message_T* outgoing_message,
+                                                uint32_t* notifications, bool* response_required )
 {
     *notifications &= ( uint32_t )~HOST_INTERFACE_NOTIFY_RIG_STATUS;
-    HOST_INTERFACE_BuildRigStatus( outgoing_message,
-                                   HIL_APPLICATION_STATUS_ORIGIN_NOTIFICATION );
+    HOST_INTERFACE_BuildRigStatus( outgoing_message, HIL_APPLICATION_STATUS_ORIGIN_NOTIFICATION );
     *response_required = true;
     return HOST_INTERFACE_STATUS_OK;
 }
@@ -2212,8 +2208,8 @@ HOST_INTERFACE_process_internal_message( HIL_Application_Message_T* outgoing_mes
 
     if ( ( *notifications & HOST_INTERFACE_NOTIFY_RIG_STATUS ) != 0U )
     {
-        return HOST_INTERFACE_process_Rig_Status_Notification(
-            outgoing_message, notifications, response_required );
+        return HOST_INTERFACE_process_Rig_Status_Notification( outgoing_message, notifications,
+                                                               response_required );
     }
 
     *notifications     = 0U;
@@ -2259,8 +2255,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_message(
     if ( outgoing_message_accepted
          && outgoing_message->type == HIL_APPLICATION_MESSAGE_TYPE_RESPONSE
          && outgoing_message->body.response.scope == HIL_APPLICATION_RESPONSE_SCOPE_GLOBAL_CONTROL
-         && outgoing_message->body.response.outcome
-                == HIL_APPLICATION_RESPONSE_OUTCOME_COMPLETED
+         && outgoing_message->body.response.outcome == HIL_APPLICATION_RESPONSE_OUTCOME_COMPLETED
          && outgoing_message->body.response.global_control_command
                 == HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION )
     {
@@ -2282,8 +2277,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_message(
         return host_status;
     }
 
-    if ( *response_required
-         && temp_outgoing_message.type == HIL_APPLICATION_MESSAGE_TYPE_RESPONSE
+    if ( *response_required && temp_outgoing_message.type == HIL_APPLICATION_MESSAGE_TYPE_RESPONSE
          && temp_outgoing_message.body.response.scope
                 == HIL_APPLICATION_RESPONSE_SCOPE_GLOBAL_CONTROL
          && temp_outgoing_message.body.response.outcome
