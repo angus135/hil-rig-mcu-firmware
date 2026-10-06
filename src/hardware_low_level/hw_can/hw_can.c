@@ -739,7 +739,7 @@ void HW_CAN_GetDiagnostic( HW_CAN_Diagnostic_T* diag )
     diag->can_tx_pending_mailbox2 = can_tx_pending_mailbox2;
 
     /* CAN1 peripheral registers. */
-    if ( hcan1.Instance != NULL )
+    if ( hw_can_lifecycle1.is_configured && ( hcan1.Instance != NULL ) )
     {
         diag->TSR1        = hcan1.Instance->TSR;
         diag->ESR1        = hcan1.Instance->ESR;
@@ -769,7 +769,7 @@ void HW_CAN_GetDiagnostic( HW_CAN_Diagnostic_T* diag )
     }
 
     /* CAN2 peripheral registers. */
-    if ( hcan2.Instance != NULL )
+    if ( hw_can_lifecycle2.is_configured && ( hcan2.Instance != NULL ) )
     {
         diag->TSR2        = hcan2.Instance->TSR;
         diag->ESR2        = hcan2.Instance->ESR;
@@ -1214,6 +1214,7 @@ HW_CAN_Result_T HW_CAN_Configure2( uint32_t bitrate, uint16_t filter_bank, uint1
     hw_can_lifecycle2.is_configured = false;
     hw_can_lifecycle2.is_started    = false;
 
+    __HAL_RCC_CAN1_CLK_ENABLE();
     __HAL_RCC_CAN2_CLK_ENABLE();
 
     HW_CAN_Result_T result =
@@ -1930,6 +1931,16 @@ static void HW_CAN_Clear_Error_Interrupt( CAN_TypeDef* can )
 #endif
 }
 
+/** Reset the bxCAN ESR Last Error Code field to 000 (No Error) by writing 0b111. */
+static void HW_CAN_Clear_Last_Error( CAN_TypeDef* can )
+{
+#ifdef TEST_BUILD
+    can->ESR &= ~CAN_ESR_LEC;
+#else
+    can->ESR = CAN_ESR_LEC;
+#endif
+}
+
 /** Directly service a bxCAN status/error interrupt for one channel. */
 static void HW_CAN_Error_IRQ( CAN_HandleTypeDef* hcan, volatile bool* active,
                               volatile bool* completed, volatile uint32_t* pending_mailbox,
@@ -1954,7 +1965,7 @@ static void HW_CAN_Error_IRQ( CAN_HandleTypeDef* hcan, volatile bool* active,
 
         if ( last_error != 0U )
         {
-            CLEAR_BIT( can->ESR, CAN_ESR_LEC );
+            HW_CAN_Clear_Last_Error( can );
         }
     }
 
@@ -2221,7 +2232,7 @@ static HW_CAN_Result_T HW_CAN_Recover( CAN_HandleTypeDef* hcan, IRQn_Type tx_irq
     *completed       = false;
     *pending_mailbox = 0U;
 
-    CLEAR_BIT( can->ESR, CAN_ESR_LEC );
+    HW_CAN_Clear_Last_Error( can );
     HW_CAN_Clear_Error_Interrupt( can );
 
     if ( stop_result != HAL_OK )

@@ -32,6 +32,7 @@
 #include "test_configuration.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 #include "hw_can.h"
 #include "host_interface.h"
 
@@ -380,7 +381,8 @@ static void RUN_STATE_MANAGER_RecordFault( RunStateFaultReason_T reason )
 
 static void RUN_STATE_MANAGER_CaptureExecutionMetadata( void )
 {
-    RunMetadataExecutionCapture_T capture = { 0 };
+    static RunMetadataExecutionCapture_T capture;
+    ( void )memset( &capture, 0, sizeof( capture ) );
 
     uint32_t boundary = 0U;
     if ( EXECUTION_MANAGER_GetLastCompletedBoundary( &boundary ) )

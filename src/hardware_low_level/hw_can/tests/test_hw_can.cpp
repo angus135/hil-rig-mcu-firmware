@@ -1829,14 +1829,16 @@ TEST_F( HWCANTest, GetDiagnosticPopulatesStateAndRegisters )
     mock_can2_regs.MSR = 0x00000C08;
     mock_can2_regs.IER = 0x00008F0E;
 
-    can_tx_active1        = true;
-    can_tx_wp1            = 3;
-    can_tx_rp1            = 1;
-    can_tx_peak1          = 2;
-    can_rx_wp1            = 5;
-    can_rx_rp1            = 2;
-    can_rx_peak1          = 3;
-    can_rx_dropped_count1 = 4;
+    hw_can_lifecycle1.is_configured = true;
+    hw_can_lifecycle2.is_configured = true;
+    can_tx_active1                  = true;
+    can_tx_wp1                      = 3;
+    can_tx_rp1                      = 1;
+    can_tx_peak1                    = 2;
+    can_rx_wp1                      = 5;
+    can_rx_rp1                      = 2;
+    can_rx_peak1                    = 3;
+    can_rx_dropped_count1           = 4;
 
     HW_CAN_Diagnostic_T diag{};
     HW_CAN_GetDiagnostic( &diag );
@@ -1867,6 +1869,25 @@ TEST_F( HWCANTest, GetDiagnosticPopulatesStateAndRegisters )
     EXPECT_EQ( diag.TEC2, 0U );
     EXPECT_EQ( diag.REC2, 0U );
     EXPECT_EQ( diag.error_code2, 0U );
+}
+
+/** Verify that unconfigured channels do not read hardware registers. */
+TEST_F( HWCANTest, GetDiagnosticZeroesRegistersWhenNotConfigured )
+{
+    mock_can1_regs.TSR = 0x1C000009;
+    mock_can1_regs.ESR = 0x00800030;
+    mock_can2_regs.TSR = 0x1C000000;
+    mock_can2_regs.ESR = 0x00800030;
+    hw_can_lifecycle1.is_configured = false;
+    hw_can_lifecycle2.is_configured = false;
+
+    HW_CAN_Diagnostic_T diag{};
+    HW_CAN_GetDiagnostic( &diag );
+
+    EXPECT_EQ( diag.TSR1, 0U );
+    EXPECT_EQ( diag.ESR1, 0U );
+    EXPECT_EQ( diag.TSR2, 0U );
+    EXPECT_EQ( diag.ESR2, 0U );
 }
 
 /** Verify wrapped queue pointers report usable occupancy rather than an underflowed subtraction. */

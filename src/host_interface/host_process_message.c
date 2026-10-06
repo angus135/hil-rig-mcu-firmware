@@ -938,7 +938,8 @@ static void HOST_INTERFACE_BuildRigStatus( HIL_Application_Message_T*      messa
 /** Builds the schema-1 report from the RSM-owned sealed metadata snapshot. */
 static bool HOST_INTERFACE_BuildRunReport( HIL_Application_Message_T* message )
 {
-    RunMetadataSnapshot_T snapshot = { 0 };
+    static RunMetadataSnapshot_T snapshot;
+    ( void )memset( &snapshot, 0, sizeof( snapshot ) );
     if ( message == NULL || !s_session.report_owed || !s_session.has_active_test_id
          || !RUN_STATE_MANAGER_GetRunMetadataSnapshot( &snapshot ) )
     {
