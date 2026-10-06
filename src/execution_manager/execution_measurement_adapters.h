@@ -56,6 +56,33 @@ typedef enum
     EXECUTION_MEASUREMENT_COUNT
 } ExecutionMeasurementType_T;
 
+/** Stable first-cause classification for a rejected measurement. */
+typedef enum
+{
+    EXECUTION_MEASUREMENT_FAILURE_REASON_NONE = 0,
+    EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_RESERVE_FAILED,
+    EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_COMMIT_FAILED,
+    EXECUTION_MEASUREMENT_FAILURE_REASON_INVALID_SAMPLE,
+    EXECUTION_MEASUREMENT_FAILURE_REASON_INVALID_ARGUMENT,
+    EXECUTION_MEASUREMENT_FAILURE_REASON_BUSY,
+    EXECUTION_MEASUREMENT_FAILURE_REASON_EMPTY,
+    EXECUTION_MEASUREMENT_FAILURE_REASON_NOT_CONFIGURED,
+    EXECUTION_MEASUREMENT_FAILURE_REASON_NOT_STARTED,
+    EXECUTION_MEASUREMENT_FAILURE_REASON_TIMING_ERROR,
+    EXECUTION_MEASUREMENT_FAILURE_REASON_FILTER_ERROR,
+    EXECUTION_MEASUREMENT_FAILURE_REASON_DRIVER_FAULT,
+    EXECUTION_MEASUREMENT_FAILURE_REASON_DRIVER_REJECTED
+} ExecutionMeasurementFailureReason_T;
+
+/** Identifies the first rejected measurement and why it was rejected. */
+typedef struct
+{
+    uint8_t                             measurement_index;
+    ExecutionMeasurementType_T          type;
+    uint8_t                             channel;
+    ExecutionMeasurementFailureReason_T reason;
+} ExecutionMeasurementFailure_T;
+
 typedef struct
 {
     uint32_t sample_count;
@@ -87,6 +114,12 @@ void EXECUTION_MEASUREMENT_ADAPTER_ResetTiming( void );
 /** Copies an atomic task-context snapshot for one measurement type. */
 bool EXECUTION_MEASUREMENT_ADAPTER_GetTiming( ExecutionMeasurementType_T    type,
                                               ExecutionMeasurementTiming_T* timing );
+
+/** Clears the retained measurement rejection diagnostic before a new run. */
+void EXECUTION_MEASUREMENT_ADAPTER_ResetFailure( void );
+
+/** Returns true and copies the retained measurement rejection when one exists. */
+bool EXECUTION_MEASUREMENT_ADAPTER_GetFailure( ExecutionMeasurementFailure_T* failure );
 
 /**
  * @brief Samples digital inputs and commits one result record.

@@ -118,6 +118,7 @@ static volatile uint16_t can_rx_rp1 = 0;
 static CAN_Packet_T      can_tx_buffer1[TRANSMIT_BUFFER_WIDTH];
 static volatile uint16_t can_tx_wp1 = 0;
 static volatile uint16_t can_tx_rp1 = 0;
+static volatile uint16_t can_tx_peak1 = 0;
 /* Buffer for rx channel 2 */
 static CAN_Packet_T      can_rx_buffer2[RECEIVE_BUFFER_WIDTH];
 static volatile uint16_t can_rx_wp2 = 0;
@@ -126,6 +127,15 @@ static volatile uint16_t can_rx_rp2 = 0;
 static CAN_Packet_T      can_tx_buffer2[TRANSMIT_BUFFER_WIDTH];
 static volatile uint16_t can_tx_wp2 = 0;
 static volatile uint16_t can_tx_rp2 = 0;
+static volatile uint16_t can_tx_peak2 = 0;
+static volatile uint16_t can_rx_peak1 = 0;
+static volatile uint16_t can_rx_peak2 = 0;
+static volatile uint32_t can_error_count1 = 0U;
+static volatile uint32_t can_error_count2 = 0U;
+static volatile uint8_t  can_max_tec1     = 0U;
+static volatile uint8_t  can_max_rec1     = 0U;
+static volatile uint8_t  can_max_tec2     = 0U;
+static volatile uint8_t  can_max_rec2     = 0U;
 
 /** Buffer example:
  *          [0,0,0,0,0,0,0,0],  <- r_p
@@ -173,7 +183,8 @@ static void HW_CAN_Tx_IRQ( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[], volat
                            volatile HW_CAN_Tx_Status_T* status );
 
 static void HW_CAN_Rx_IRQ( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[], volatile uint16_t* w_p,
-                           volatile uint16_t* r_p, volatile uint32_t* dropped_count );
+                           volatile uint16_t* r_p, volatile uint32_t* dropped_count,
+                           volatile uint16_t* peak_count );
 
 static void HW_CAN_Error_IRQ( CAN_HandleTypeDef* hcan, volatile bool* active,
                               volatile bool* completed, volatile uint32_t* pending_mailbox,
@@ -185,7 +196,8 @@ static void HW_CAN_Reset_Channel( CAN_TypeDef* can, IRQn_Type tx_irq, IRQn_Type 
                                   volatile uint16_t* rx_rp, volatile bool* active,
                                   volatile bool* completed, volatile uint32_t* dropped_count,
                                   volatile uint32_t*           pending_mailbox,
-                                  volatile HW_CAN_Tx_Status_T* status );
+                                  volatile HW_CAN_Tx_Status_T* status,
+                                  volatile uint16_t* tx_peak, volatile uint16_t* rx_peak );
 
 static HW_CAN_Result_T HW_CAN_Recover( CAN_HandleTypeDef* hcan, IRQn_Type tx_irq, IRQn_Type rx_irq,
                                        IRQn_Type error_irq, volatile uint16_t* tx_wp,
@@ -196,6 +208,17 @@ static HW_CAN_Result_T HW_CAN_Recover( CAN_HandleTypeDef* hcan, IRQn_Type tx_irq
 
 static void HW_CAN_Tx_Buffer_Cancel( IRQn_Type tx_irq, volatile uint16_t* w_p,
                                      volatile uint16_t* r_p );
+
+static void HW_CAN_Update_Peak( volatile uint16_t* peak, volatile uint16_t* w_p,
+                                volatile uint16_t* r_p, uint16_t buffer_width )
+{
+    const uint16_t occupancy =
+        ( uint16_t )( ( *w_p - *r_p + buffer_width ) % buffer_width );
+    if ( occupancy > *peak )
+    {
+        *peak = occupancy;
+    }
+}
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -710,6 +733,8 @@ void HW_CAN_GetDiagnostic( HW_CAN_Diagnostic_T* diag )
     diag->can_tx_rp1              = can_tx_rp1;
     diag->can_tx_wp2              = can_tx_wp2;
     diag->can_tx_rp2              = can_tx_rp2;
+    diag->can_tx_peak1            = can_tx_peak1;
+    diag->can_tx_peak2            = can_tx_peak2;
     diag->can_tx_pending_mailbox1 = can_tx_pending_mailbox1;
     diag->can_tx_pending_mailbox2 = can_tx_pending_mailbox2;
 
@@ -723,6 +748,14 @@ void HW_CAN_GetDiagnostic( HW_CAN_Diagnostic_T* diag )
         diag->TEC1        = ( uint8_t )( ( hcan1.Instance->ESR >> 16U ) & 0xFFU );
         diag->REC1        = ( uint8_t )( ( hcan1.Instance->ESR >> 24U ) & 0xFFU );
         diag->error_code1 = ( uint8_t )( ( hcan1.Instance->ESR >> 4U ) & 0x07U );
+        if ( diag->TEC1 > can_max_tec1 )
+        {
+            can_max_tec1 = diag->TEC1;
+        }
+        if ( diag->REC1 > can_max_rec1 )
+        {
+            can_max_rec1 = diag->REC1;
+        }
     }
     else
     {
@@ -745,6 +778,14 @@ void HW_CAN_GetDiagnostic( HW_CAN_Diagnostic_T* diag )
         diag->TEC2        = ( uint8_t )( ( hcan2.Instance->ESR >> 16U ) & 0xFFU );
         diag->REC2        = ( uint8_t )( ( hcan2.Instance->ESR >> 24U ) & 0xFFU );
         diag->error_code2 = ( uint8_t )( ( hcan2.Instance->ESR >> 4U ) & 0x07U );
+        if ( diag->TEC2 > can_max_tec2 )
+        {
+            can_max_tec2 = diag->TEC2;
+        }
+        if ( diag->REC2 > can_max_rec2 )
+        {
+            can_max_rec2 = diag->REC2;
+        }
     }
     else
     {
@@ -757,11 +798,37 @@ void HW_CAN_GetDiagnostic( HW_CAN_Diagnostic_T* diag )
         diag->error_code2 = 0U;
     }
 
-    /* RX queue occupancy (16-bit wrapping subtraction). */
-    diag->rx_queued1  = ( uint16_t )( can_rx_wp1 - can_rx_rp1 );
-    diag->rx_dropped1 = ( uint16_t )can_rx_dropped_count1;
-    diag->rx_queued2  = ( uint16_t )( can_rx_wp2 - can_rx_rp2 );
-    diag->rx_dropped2 = ( uint16_t )can_rx_dropped_count2;
+    /* Queue occupancy uses the usable circular-buffer width, not raw pointer subtraction. */
+    diag->rx_queued1   = ( uint16_t )( ( can_rx_wp1 - can_rx_rp1 + RECEIVE_BUFFER_WIDTH )
+                                       % RECEIVE_BUFFER_WIDTH );
+    diag->rx_dropped1  = can_rx_dropped_count1;
+    diag->rx_queued2   = ( uint16_t )( ( can_rx_wp2 - can_rx_rp2 + RECEIVE_BUFFER_WIDTH )
+                                       % RECEIVE_BUFFER_WIDTH );
+    diag->rx_dropped2  = can_rx_dropped_count2;
+    diag->rx_peak1     = can_rx_peak1;
+    diag->rx_peak2     = can_rx_peak2;
+    diag->error_count1 = can_error_count1;
+    diag->error_count2 = can_error_count2;
+    diag->max_tec1     = can_max_tec1;
+    diag->max_rec1     = can_max_rec1;
+    diag->max_tec2     = can_max_tec2;
+    diag->max_rec2     = can_max_rec2;
+}
+
+void HW_CAN_Reset_Diagnostics( void )
+{
+    can_tx_peak1          = 0U;
+    can_tx_peak2          = 0U;
+    can_rx_peak1          = 0U;
+    can_rx_peak2          = 0U;
+    can_rx_dropped_count1 = 0U;
+    can_rx_dropped_count2 = 0U;
+    can_error_count1      = 0U;
+    can_error_count2      = 0U;
+    can_max_tec1          = 0U;
+    can_max_rec1          = 0U;
+    can_max_tec2          = 0U;
+    can_max_rec2          = 0U;
 }
 
 /**
@@ -1172,7 +1239,8 @@ void HW_CAN_Reset1( void )
 {
     HW_CAN_Reset_Channel( CAN1, CAN1_TX_IRQn, CAN1_RX0_IRQn, CAN1_SCE_IRQn, &can_tx_wp1,
                           &can_tx_rp1, &can_rx_wp1, &can_rx_rp1, &can_tx_active1, &can_sent_flag1,
-                          &can_rx_dropped_count1, &can_tx_pending_mailbox1, &can_tx_status1 );
+                          &can_rx_dropped_count1, &can_tx_pending_mailbox1, &can_tx_status1,
+                          &can_tx_peak1, &can_rx_peak1 );
 }
 
 /** Reset channel 2 software state while its CAN interrupts are masked. */
@@ -1180,7 +1248,8 @@ void HW_CAN_Reset2( void )
 {
     HW_CAN_Reset_Channel( CAN2, CAN2_TX_IRQn, CAN2_RX0_IRQn, CAN2_SCE_IRQn, &can_tx_wp2,
                           &can_tx_rp2, &can_rx_wp2, &can_rx_rp2, &can_tx_active2, &can_sent_flag2,
-                          &can_rx_dropped_count2, &can_tx_pending_mailbox2, &can_tx_status2 );
+                          &can_rx_dropped_count2, &can_tx_pending_mailbox2, &can_tx_status2,
+                          &can_tx_peak2, &can_rx_peak2 );
 }
 
 static bool HW_CAN_Establish_Rx_Epoch( CAN_TypeDef* can, IRQn_Type rx_irq, volatile uint16_t* rx_wp,
@@ -1434,6 +1503,8 @@ HW_CAN_Result_T HW_CAN_Tx_Buffer_Write1( const CAN_Packet_T source[], uint16_t l
         NVIC_EnableIRQ( CAN1_TX_IRQn );
     }
 
+    HW_CAN_Update_Peak( &can_tx_peak1, &can_tx_wp1, &can_tx_rp1, TRANSMIT_BUFFER_WIDTH );
+
     return ( write_status == 0U ) ? HW_CAN_RESULT_OK : HW_CAN_RESULT_ERROR;
 }
 
@@ -1453,8 +1524,10 @@ uint8_t can_rx_buffer1[X][CAN_PACKET_SIZE];
  */
 uint16_t HW_CAN_Rx_Buffer_Write1( CAN_Packet_T source[], uint16_t length )
 {
-    return HW_CAN_Buffer_Write( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH,
-                                source, length );
+    const uint16_t status = HW_CAN_Buffer_Write( can_rx_buffer1, &can_rx_wp1, &can_rx_rp1,
+                                                 RECEIVE_BUFFER_WIDTH, source, length );
+    HW_CAN_Update_Peak( &can_rx_peak1, &can_rx_wp1, &can_rx_rp1, RECEIVE_BUFFER_WIDTH );
+    return status;
 }
 
 /**
@@ -1495,6 +1568,8 @@ HW_CAN_Result_T HW_CAN_Tx_Buffer_Write2( const CAN_Packet_T source[], uint16_t l
         NVIC_EnableIRQ( CAN2_TX_IRQn );
     }
 
+    HW_CAN_Update_Peak( &can_tx_peak2, &can_tx_wp2, &can_tx_rp2, TRANSMIT_BUFFER_WIDTH );
+
     return ( write_status == 0U ) ? HW_CAN_RESULT_OK : HW_CAN_RESULT_ERROR;
 }
 
@@ -1514,8 +1589,10 @@ uint8_t can_rx_buffer1[X][CAN_PACKET_SIZE];
  */
 uint16_t HW_CAN_Rx_Buffer_Write2( CAN_Packet_T source[], uint16_t length )
 {
-    return HW_CAN_Buffer_Write( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH,
-                                source, length );
+    const uint16_t status = HW_CAN_Buffer_Write( can_rx_buffer2, &can_rx_wp2, &can_rx_rp2,
+                                                 RECEIVE_BUFFER_WIDTH, source, length );
+    HW_CAN_Update_Peak( &can_rx_peak2, &can_rx_wp2, &can_rx_rp2, RECEIVE_BUFFER_WIDTH );
+    return status;
 }
 
 /**
@@ -1670,7 +1747,8 @@ void HW_CAN_CH1_TX_IRQ_HANDLER( void )
  */
 void HW_CAN_CH1_RX_IRQ_HANDLER( void )
 {
-    HW_CAN_Rx_IRQ( &hcan1, can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, &can_rx_dropped_count1 );
+    HW_CAN_Rx_IRQ( &hcan1, can_rx_buffer1, &can_rx_wp1, &can_rx_rp1, &can_rx_dropped_count1,
+                   &can_rx_peak1 );
 }
 
 /**
@@ -1695,12 +1773,14 @@ void HW_CAN_CH2_TX_IRQ_HANDLER( void )
  */
 void HW_CAN_CH2_RX_IRQ_HANDLER( void )
 {
-    HW_CAN_Rx_IRQ( &hcan2, can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, &can_rx_dropped_count2 );
+    HW_CAN_Rx_IRQ( &hcan2, can_rx_buffer2, &can_rx_wp2, &can_rx_rp2, &can_rx_dropped_count2,
+                   &can_rx_peak2 );
 }
 
 /** Direct CAN1 status/error interrupt vector. */
 void HW_CAN_CH1_ERROR_IRQ_HANDLER( void )
 {
+    can_error_count1++;
     HW_CAN_Error_IRQ( &hcan1, &can_tx_active1, &can_sent_flag1, &can_tx_pending_mailbox1,
                       &can_tx_status1 );
 }
@@ -1708,6 +1788,7 @@ void HW_CAN_CH1_ERROR_IRQ_HANDLER( void )
 /** Direct CAN2 status/error interrupt vector. */
 void HW_CAN_CH2_ERROR_IRQ_HANDLER( void )
 {
+    can_error_count2++;
     HW_CAN_Error_IRQ( &hcan2, &can_tx_active2, &can_sent_flag2, &can_tx_pending_mailbox2,
                       &can_tx_status2 );
 }
@@ -1801,7 +1882,8 @@ static void HW_CAN_Tx_IRQ( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[], volat
 
 /** Directly drain at most the hardware FIFO0 depth into one software RX queue. */
 static void HW_CAN_Rx_IRQ( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[], volatile uint16_t* w_p,
-                           volatile uint16_t* r_p, volatile uint32_t* dropped_count )
+                           volatile uint16_t* r_p, volatile uint32_t* dropped_count,
+                           volatile uint16_t* peak_count )
 {
     CAN_TypeDef* can     = hcan->Instance;
     bool         overrun = ( can->RF0R & CAN_RF0R_FOVR0 ) != 0U;
@@ -1823,6 +1905,7 @@ static void HW_CAN_Rx_IRQ( CAN_HandleTypeDef* hcan, CAN_Packet_T buffer[], volat
         {
             ( *dropped_count )++;
         }
+        HW_CAN_Update_Peak( peak_count, w_p, r_p, RECEIVE_BUFFER_WIDTH );
     }
 
     if ( overrun && *dropped_count != UINT32_MAX )
@@ -1885,7 +1968,8 @@ static void HW_CAN_Reset_Channel( CAN_TypeDef* can, IRQn_Type tx_irq, IRQn_Type 
                                   volatile uint16_t* rx_rp, volatile bool* active,
                                   volatile bool* completed, volatile uint32_t* dropped_count,
                                   volatile uint32_t*           pending_mailbox,
-                                  volatile HW_CAN_Tx_Status_T* status )
+                                  volatile HW_CAN_Tx_Status_T* status,
+                                  volatile uint16_t* tx_peak, volatile uint16_t* rx_peak )
 {
     uint32_t tx_irq_was_enabled    = NVIC_GetEnableIRQ( tx_irq );
     uint32_t rx_irq_was_enabled    = NVIC_GetEnableIRQ( rx_irq );
@@ -1905,6 +1989,8 @@ static void HW_CAN_Reset_Channel( CAN_TypeDef* can, IRQn_Type tx_irq, IRQn_Type 
     *dropped_count   = 0;
     *pending_mailbox = 0U;
     *status          = HW_CAN_TX_STATUS_IDLE;
+    *tx_peak         = 0U;
+    *rx_peak         = 0U;
 
     if ( error_irq_was_enabled != 0U )
     {

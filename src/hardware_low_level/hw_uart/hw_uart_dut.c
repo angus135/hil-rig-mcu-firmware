@@ -124,9 +124,6 @@
 #define HW_UART_BRR_SAMPLING16_MIN ( 0x0010U )
 #define HW_UART_BRR_SAMPLING16_MAX ( 0xFFFFU )
 
-#define HW_UART_FAULT_TX_DMA ( ( uint32_t )1U << 0U )
-#define HW_UART_FAULT_RX_DMA ( ( uint32_t )1U << 1U )
-
 /**-----------------------------------------------------------------------------
  *  Typedefs / Enums / Structures
  *------------------------------------------------------------------------------

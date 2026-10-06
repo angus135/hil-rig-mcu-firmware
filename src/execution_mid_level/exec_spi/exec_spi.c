@@ -754,6 +754,7 @@ void EXEC_SPI_Reset_Diagnostics( ExecSPIChannel_T channel )
 {
     if ( channel < EXEC_SPI_CHANNEL_COUNT )
     {
+        spi_tx_queue_rejected[channel] = false;
         HW_SPI_Reset_Diagnostics( exec_spi_hardware_map[channel].hw_channel );
     }
 }

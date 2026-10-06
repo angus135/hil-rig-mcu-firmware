@@ -212,6 +212,11 @@ protected:
         ON_CALL( mock_logic_expander, SendControlBits )
             .WillByDefault( ::testing::Return( LOGIC_EXPANDER_STATUS_OK ) );
 
+        EXPECT_CALL( mock_hw_spi, ResetDiagnostics( SPI_CHANNEL_1 ) );
+        EXPECT_CALL( mock_hw_spi, ResetDiagnostics( SPI_CHANNEL_2 ) );
+        EXEC_SPI_Reset_Diagnostics( EXEC_SPI_CHANNEL_1 );
+        EXEC_SPI_Reset_Diagnostics( EXEC_SPI_CHANNEL_2 );
+        ::testing::Mock::VerifyAndClearExpectations( &mock_hw_spi );
         ForceAllChannelsDisabled();
     }
 
@@ -595,6 +600,22 @@ TEST_F( ExecSPITest, Transmit_BatchLoadFails_DoesNotTriggerTxAndReturnsFalse )
 
     EXPECT_FALSE( result );
     EXPECT_TRUE( EXEC_SPI_Was_Tx_Queue_Rejected( EXEC_SPI_CHANNEL_1 ) );
+}
+
+/** Verifies that a repeat run cannot inherit the previous run's queue-rejection cause. */
+TEST_F( ExecSPITest, ResetDiagnosticsClearsQueueRejectionCause )
+{
+    const uint8_t  tx_data[]      = { 0x11U };
+    const uint32_t packet_sizes[] = { 1U };
+    EXPECT_CALL( mock_hw_spi, LoadTxPacketBatch( SPI_CHANNEL_1, tx_data, packet_sizes, 1U ) )
+        .WillOnce( ::testing::Return( false ) );
+    ASSERT_FALSE( EXEC_SPI_Transmit( EXEC_SPI_CHANNEL_1, tx_data, packet_sizes, 1U ) );
+    ASSERT_TRUE( EXEC_SPI_Was_Tx_Queue_Rejected( EXEC_SPI_CHANNEL_1 ) );
+
+    EXPECT_CALL( mock_hw_spi, ResetDiagnostics( SPI_CHANNEL_1 ) );
+    EXEC_SPI_Reset_Diagnostics( EXEC_SPI_CHANNEL_1 );
+
+    EXPECT_FALSE( EXEC_SPI_Was_Tx_Queue_Rejected( EXEC_SPI_CHANNEL_1 ) );
 }
 
 TEST_F( ExecSPITest, Transmit_TriggerFaultReturnsFalse )

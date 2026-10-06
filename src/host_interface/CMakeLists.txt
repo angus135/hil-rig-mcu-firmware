@@ -22,6 +22,7 @@ set(HOST_INTERFACE_HEADERS
     variable_instruction_message_handler.h
     variable_result_message_producer.h
     config_message_handler.h
+    run_report_diagnostics.h
 )
 
 add_library(host_interface STATIC

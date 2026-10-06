@@ -66,6 +66,8 @@ static const ExecutionOperationAdapter_T
 
 static volatile bool                               execution_operation_failure_valid = false;
 static volatile ExecutionOperationAdapterFailure_T execution_operation_failure       = { 0 };
+static volatile ExecutionOperationAdapterFailureReason_T execution_operation_last_reason =
+    EXECUTION_OPERATION_FAILURE_REASON_NONE;
 static volatile ExecutionOperationTiming_T
     execution_operation_timing[EXECUTION_OPERATION_OPCODE_COUNT] = { 0 };
 
@@ -78,6 +80,21 @@ static volatile ExecutionOperationTiming_T
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/** Ensures every non-accepted adapter result has a reportable first cause. */
+static ExecutionOperationAdapterFailureReason_T
+EXECUTION_OPERATION_ADAPTER_NormalizeFailureReason( ExecutionOperationAdapterResult_T result )
+{
+    if ( result == EXECUTION_OPERATION_ADAPTER_INVALID )
+    {
+        return EXECUTION_OPERATION_FAILURE_REASON_INVALID_ARGUMENT;
+    }
+    if ( execution_operation_last_reason == EXECUTION_OPERATION_FAILURE_REASON_NONE )
+    {
+        return EXECUTION_OPERATION_FAILURE_REASON_DRIVER_REJECTED;
+    }
+    return execution_operation_last_reason;
+}
 
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
@@ -108,6 +125,8 @@ EXECUTION_OPERATION_ADAPTER_ApplyOperations( const uint8_t* operations, uint8_t 
             execution_operation_failure.operation_index = operation_index;
             execution_operation_failure.opcode          = opcode;
             execution_operation_failure.channel         = channel;
+            execution_operation_failure.reason =
+                EXECUTION_OPERATION_ADAPTER_NormalizeFailureReason( result );
             execution_operation_failure_valid           = true;
             return result;
         }
@@ -155,6 +174,8 @@ EXECUTION_OPERATION_ADAPTER_ApplyOperationsProfiled( const uint8_t* operations,
             execution_operation_failure.operation_index = operation_index;
             execution_operation_failure.opcode          = opcode;
             execution_operation_failure.channel         = channel;
+            execution_operation_failure.reason =
+                EXECUTION_OPERATION_ADAPTER_NormalizeFailureReason( result );
             execution_operation_failure_valid           = true;
             return result;
         }
@@ -200,6 +221,8 @@ void EXECUTION_OPERATION_ADAPTER_ResetFailure( void )
     execution_operation_failure.operation_index = 0U;
     execution_operation_failure.opcode          = 0U;
     execution_operation_failure.channel         = 0U;
+    execution_operation_failure.reason          = EXECUTION_OPERATION_FAILURE_REASON_NONE;
+    execution_operation_last_reason             = EXECUTION_OPERATION_FAILURE_REASON_NONE;
 }
 
 bool EXECUTION_OPERATION_ADAPTER_GetFailure( ExecutionOperationAdapterFailure_T* failure )
@@ -212,6 +235,7 @@ bool EXECUTION_OPERATION_ADAPTER_GetFailure( ExecutionOperationAdapterFailure_T*
     failure->operation_index = execution_operation_failure.operation_index;
     failure->opcode          = execution_operation_failure.opcode;
     failure->channel         = execution_operation_failure.channel;
+    failure->reason          = execution_operation_failure.reason;
     return true;
 }
 
@@ -229,6 +253,7 @@ EXECUTION_OPERATION_ADAPTER_ApplyDigitalOutput( uint8_t channel, const uint8_t* 
 
     EXEC_DIGITAL_OUTPUT_Reset_Output( digital_output->low_bitmask );
 
+    execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_NONE;
     return EXECUTION_OPERATION_ADAPTER_ACCEPTED;
 }
 
@@ -250,6 +275,7 @@ EXECUTION_OPERATION_ADAPTER_ApplyPwmUpdate( uint8_t channel, const uint8_t* payl
         EXEC_PWM_GEN_Set_PWM_HV( pwm_update->arr, pwm_update->ccr, pwm_update->psc );
     }
 
+    execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_NONE;
     return EXECUTION_OPERATION_ADAPTER_ACCEPTED;
 }
 
@@ -267,19 +293,55 @@ EXECUTION_OPERATION_ADAPTER_ApplySpiTransmit( uint8_t channel, const uint8_t* pa
 
     const uint8_t* data = &payload[EXECUTION_SPI_DATA_OFFSET_BYTES( prefix->packet_count )];
 
-    return EXEC_SPI_Transmit( ( ExecSPIChannel_T )channel, data, packet_sizes,
-                              prefix->packet_count )
-               ? EXECUTION_OPERATION_ADAPTER_ACCEPTED
-               : EXECUTION_OPERATION_ADAPTER_REJECTED;
+    const bool accepted = EXEC_SPI_Transmit( ( ExecSPIChannel_T )channel, data, packet_sizes,
+                                             prefix->packet_count );
+    if ( accepted )
+    {
+        execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_NONE;
+        return EXECUTION_OPERATION_ADAPTER_ACCEPTED;
+    }
+
+    if ( EXEC_SPI_Was_Tx_Queue_Rejected( ( ExecSPIChannel_T )channel ) )
+    {
+        execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_QUEUE_FULL;
+    }
+    else if ( EXEC_SPI_Is_Transmission_Faulted( ( ExecSPIChannel_T )channel ) )
+    {
+        execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_DRIVER_FAULT;
+    }
+    else
+    {
+        execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_DRIVER_REJECTED;
+    }
+    return EXECUTION_OPERATION_ADAPTER_REJECTED;
 }
 
 ExecutionOperationAdapterResult_T
 EXECUTION_OPERATION_ADAPTER_ApplyUartTransmit( uint8_t channel, const uint8_t* payload,
                                                uint16_t payload_length_bytes )
 {
-    return EXEC_UART_Transmit( ( ExecUartChannel_T )channel, payload, payload_length_bytes )
-               ? EXECUTION_OPERATION_ADAPTER_ACCEPTED
-               : EXECUTION_OPERATION_ADAPTER_REJECTED;
+    const bool accepted =
+        EXEC_UART_Transmit( ( ExecUartChannel_T )channel, payload, payload_length_bytes );
+    if ( accepted )
+    {
+        execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_NONE;
+        return EXECUTION_OPERATION_ADAPTER_ACCEPTED;
+    }
+
+    if ( EXEC_UART_Was_Tx_Queue_Rejected( ( ExecUartChannel_T )channel ) )
+    {
+        execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_QUEUE_FULL;
+    }
+    else if ( EXEC_UART_Get_Tx_Status( ( ExecUartChannel_T )channel )
+              == EXEC_UART_TX_STATUS_FAULTED )
+    {
+        execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_DRIVER_FAULT;
+    }
+    else
+    {
+        execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_DRIVER_REJECTED;
+    }
+    return EXECUTION_OPERATION_ADAPTER_REJECTED;
 }
 
 ExecutionOperationAdapterResult_T
@@ -288,9 +350,13 @@ EXECUTION_OPERATION_ADAPTER_ApplyAnalogueOutput( uint8_t channel, const uint8_t*
 {
     ( void )channel;
 
-    return EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( payload, payload_length_bytes )
-               ? EXECUTION_OPERATION_ADAPTER_ACCEPTED
-               : EXECUTION_OPERATION_ADAPTER_REJECTED;
+    const bool accepted =
+        EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( payload, payload_length_bytes );
+    execution_operation_last_reason = accepted
+                                          ? EXECUTION_OPERATION_FAILURE_REASON_NONE
+                                          : EXECUTION_OPERATION_FAILURE_REASON_DRIVER_REJECTED;
+    return accepted ? EXECUTION_OPERATION_ADAPTER_ACCEPTED
+                    : EXECUTION_OPERATION_ADAPTER_REJECTED;
 }
 
 ExecutionOperationAdapterResult_T
@@ -304,6 +370,37 @@ EXECUTION_OPERATION_ADAPTER_ApplyCanTransmit( uint8_t channel, const uint8_t* pa
         EXEC_CAN_Transmit( ( EXEC_CAN_Channel_T )channel,
                            ( const EXEC_CAN_Packet_T* )( const void* )payload, packet_count );
 
-    return result == EXEC_CAN_RESULT_OK ? EXECUTION_OPERATION_ADAPTER_ACCEPTED
-                                        : EXECUTION_OPERATION_ADAPTER_REJECTED;
+    switch ( result )
+    {
+        case EXEC_CAN_RESULT_OK:
+            execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_NONE;
+            return EXECUTION_OPERATION_ADAPTER_ACCEPTED;
+        case EXEC_CAN_RESULT_INVALID_ARGUMENT:
+            execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_INVALID_ARGUMENT;
+            break;
+        case EXEC_CAN_RESULT_BUSY:
+            execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_BUSY;
+            break;
+        case EXEC_CAN_RESULT_EMPTY:
+            execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_EMPTY;
+            break;
+        case EXEC_CAN_RESULT_NOT_CONFIGURED:
+            execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_NOT_CONFIGURED;
+            break;
+        case EXEC_CAN_RESULT_NOT_STARTED:
+            execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_NOT_STARTED;
+            break;
+        case EXEC_CAN_RESULT_TIMING_ERROR:
+            execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_TIMING_ERROR;
+            break;
+        case EXEC_CAN_RESULT_FILTER_ERROR:
+            execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_FILTER_ERROR;
+            break;
+        case EXEC_CAN_RESULT_ERROR:
+        default:
+            execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_DRIVER_FAULT;
+            break;
+    }
+
+    return EXECUTION_OPERATION_ADAPTER_REJECTED;
 }

@@ -184,6 +184,7 @@ protected:
         pwm_capture_result   = {};
         pwm_capture_accepted = false;
         result_storage.fill( 0U );
+        EXECUTION_MEASUREMENT_ADAPTER_ResetFailure();
     }
 };
 
@@ -349,4 +350,22 @@ TEST_F( ExecutionMeasurementAdaptersTest, CommitFailureCancelsReservation )
         EXECUTION_MEASUREMENT_ADAPTER_SampleCanReceive( EXEC_CAN_CHANNEL_1, 1U, &task_woken ) );
     EXPECT_EQ( committed_bytes, sizeof( EXEC_CAN_Packet_T ) );
     EXPECT_EQ( cancel_count, 1U );
+}
+
+TEST_F( ExecutionMeasurementAdaptersTest, WalkerRetainsCanFailureLocationAndReason )
+{
+    ExecutionMeasurementConfiguration_T configuration = {};
+    configuration.can_receive_enabled_mask            = 1U << EXEC_CAN_CHANNEL_2;
+    EXECUTION_MEASUREMENT_ADAPTER_Prepare( &configuration );
+    can_pending_packets = 1U;
+    can_result          = EXEC_CAN_RESULT_NOT_STARTED;
+
+    EXPECT_FALSE( EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( 12U, &task_woken ) );
+
+    ExecutionMeasurementFailure_T failure = {};
+    ASSERT_TRUE( EXECUTION_MEASUREMENT_ADAPTER_GetFailure( &failure ) );
+    EXPECT_EQ( failure.measurement_index, 0U );
+    EXPECT_EQ( failure.type, EXECUTION_MEASUREMENT_CAN_RECEIVE );
+    EXPECT_EQ( failure.channel, EXEC_CAN_CHANNEL_2 );
+    EXPECT_EQ( failure.reason, EXECUTION_MEASUREMENT_FAILURE_REASON_NOT_STARTED );
 }

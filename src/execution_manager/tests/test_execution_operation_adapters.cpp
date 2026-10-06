@@ -27,11 +27,15 @@ static const uint8_t*              last_spi_data;
 static const uint32_t*             last_spi_packet_sizes;
 static uint32_t                    last_spi_packet_count;
 static bool                        spi_accept;
+static bool                        spi_queue_rejected;
+static bool                        spi_faulted;
 static uint32_t                    uart_calls;
 static ExecUartChannel_T           last_uart_channel;
 static uint8_t                     last_uart_payload[8];
 static uint32_t                    last_uart_length;
 static bool                        uart_accept;
+static bool                        uart_queue_rejected;
+static ExecUartTxStatus_T          uart_tx_status;
 static uint32_t                    analogue_output_calls;
 static const uint8_t*              last_analogue_output_payload;
 static uint32_t                    last_analogue_output_length;
@@ -130,6 +134,18 @@ extern "C" bool EXEC_SPI_Transmit( ExecSPIChannel_T channel, const uint8_t* data
     return spi_accept;
 }
 
+extern "C" bool EXEC_SPI_Was_Tx_Queue_Rejected( ExecSPIChannel_T channel )
+{
+    ( void )channel;
+    return spi_queue_rejected;
+}
+
+extern "C" bool EXEC_SPI_Is_Transmission_Faulted( ExecSPIChannel_T channel )
+{
+    ( void )channel;
+    return spi_faulted;
+}
+
 extern "C" bool EXEC_UART_Transmit( ExecUartChannel_T channel, const uint8_t* data,
                                     uint32_t length_bytes )
 {
@@ -141,6 +157,18 @@ extern "C" bool EXEC_UART_Transmit( ExecUartChannel_T channel, const uint8_t* da
         std::memcpy( last_uart_payload, data, length_bytes );
     }
     return uart_accept;
+}
+
+extern "C" bool EXEC_UART_Was_Tx_Queue_Rejected( ExecUartChannel_T channel )
+{
+    ( void )channel;
+    return uart_queue_rejected;
+}
+
+extern "C" ExecUartTxStatus_T EXEC_UART_Get_Tx_Status( ExecUartChannel_T channel )
+{
+    ( void )channel;
+    return uart_tx_status;
 }
 
 extern "C" bool EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( const uint8_t* payload,
@@ -181,11 +209,15 @@ protected:
         last_spi_packet_sizes       = nullptr;
         last_spi_packet_count       = 0U;
         spi_accept                  = true;
+        spi_queue_rejected          = false;
+        spi_faulted                 = false;
         uart_calls                  = 0U;
         last_uart_channel           = EXEC_UART_CHANNEL_1;
         std::memset( last_uart_payload, 0, sizeof( last_uart_payload ) );
         last_uart_length             = 0U;
         uart_accept                  = true;
+        uart_queue_rejected          = false;
+        uart_tx_status               = EXEC_UART_TX_STATUS_COMPLETE;
         analogue_output_calls        = 0U;
         last_analogue_output_payload = nullptr;
         last_analogue_output_length  = 0U;
@@ -341,11 +373,16 @@ TEST_F( ExecutionOperationAdaptersTest, SpiDriverRejectionPropagatesToOperationW
         { 0U, 0U, 0U },
     };
     spi_accept = false;
+    spi_faulted = true;
 
     EXPECT_EQ( EXECUTION_OPERATION_ADAPTER_ApplyOperations(
                    reinterpret_cast<const uint8_t*>( &operation ), 1U ),
                EXECUTION_OPERATION_ADAPTER_REJECTED );
     EXPECT_EQ( spi_calls, 1U );
+
+    ExecutionOperationAdapterFailure_T failure = {};
+    ASSERT_TRUE( EXECUTION_OPERATION_ADAPTER_GetFailure( &failure ) );
+    EXPECT_EQ( failure.reason, EXECUTION_OPERATION_FAILURE_REASON_DRIVER_FAULT );
 }
 
 TEST_F( ExecutionOperationAdaptersTest, WalkerSkipsSpiAlignmentPaddingBeforeNextOperation )
@@ -416,6 +453,27 @@ TEST_F( ExecutionOperationAdaptersTest, UartDriverRejectionPropagatesToOperation
     EXPECT_EQ( failure.operation_index, 0U );
     EXPECT_EQ( failure.opcode, EXECUTION_OPERATION_OPCODE_UART_TRANSMIT );
     EXPECT_EQ( failure.channel, EXECUTION_OPERATION_UART_CHANNEL_1 );
+    EXPECT_EQ( failure.reason, EXECUTION_OPERATION_FAILURE_REASON_DRIVER_REJECTED );
+}
+
+TEST_F( ExecutionOperationAdaptersTest, UartQueueRejectionRetainsSpecificFailureReason )
+{
+    const EncodedUartOperation operation = {
+        EXECUTION_OPERATION_OPCODE_UART_TRANSMIT | ( EXECUTION_OPERATION_UART_CHANNEL_1 << 8U )
+            | ( 5U << 16U ),
+        { 1U, 2U, 3U, 4U, 5U },
+        { 0U, 0U, 0U },
+    };
+    uart_accept         = false;
+    uart_queue_rejected = true;
+
+    EXPECT_EQ( EXECUTION_OPERATION_ADAPTER_ApplyOperations(
+                   reinterpret_cast<const uint8_t*>( &operation ), 1U ),
+               EXECUTION_OPERATION_ADAPTER_REJECTED );
+
+    ExecutionOperationAdapterFailure_T failure = {};
+    ASSERT_TRUE( EXECUTION_OPERATION_ADAPTER_GetFailure( &failure ) );
+    EXPECT_EQ( failure.reason, EXECUTION_OPERATION_FAILURE_REASON_QUEUE_FULL );
 }
 
 TEST_F( ExecutionOperationAdaptersTest, AnalogueOutputPassesPreparedPayloadAndLengthWithoutCopy )
@@ -490,4 +548,11 @@ TEST_F( ExecutionOperationAdaptersTest, CanTransmitRejectionPropagatesToOperatio
                EXECUTION_OPERATION_ADAPTER_REJECTED );
     EXPECT_EQ( can_calls, 1U );
     EXPECT_EQ( last_can_packet_count, 1U );
+
+    ExecutionOperationAdapterFailure_T failure = {};
+    ASSERT_TRUE( EXECUTION_OPERATION_ADAPTER_GetFailure( &failure ) );
+    EXPECT_EQ( failure.operation_index, 0U );
+    EXPECT_EQ( failure.opcode, EXECUTION_OPERATION_OPCODE_CAN_TRANSMIT );
+    EXPECT_EQ( failure.channel, EXECUTION_OPERATION_CAN_CHANNEL_1 );
+    EXPECT_EQ( failure.reason, EXECUTION_OPERATION_FAILURE_REASON_BUSY );
 }

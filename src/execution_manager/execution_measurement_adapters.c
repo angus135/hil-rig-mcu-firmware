@@ -81,6 +81,10 @@ static ExecutionMeasurementDispatchEntry_T
 static uint8_t active_measurement_count                                         = 0U;
 static volatile ExecutionMeasurementTiming_T
     execution_measurement_timing[EXECUTION_MEASUREMENT_COUNT] = { 0 };
+static volatile bool                          execution_measurement_failure_valid = false;
+static volatile ExecutionMeasurementFailure_T execution_measurement_failure      = { 0 };
+static volatile ExecutionMeasurementFailureReason_T execution_measurement_last_reason =
+    EXECUTION_MEASUREMENT_FAILURE_REASON_NONE;
 
 /**-----------------------------------------------------------------------------
  *  Private (static) Function Prototypes
@@ -91,6 +95,48 @@ static volatile ExecutionMeasurementTiming_T
  *  Private Function Definitions
  *------------------------------------------------------------------------------
  */
+
+/** Maps a CAN receive result into the stable measurement first-cause model. */
+static ExecutionMeasurementFailureReason_T
+EXECUTION_MEASUREMENT_ADAPTER_MapCanFailure( EXEC_CAN_Result_T result )
+{
+    switch ( result )
+    {
+        case EXEC_CAN_RESULT_INVALID_ARGUMENT:
+            return EXECUTION_MEASUREMENT_FAILURE_REASON_INVALID_ARGUMENT;
+        case EXEC_CAN_RESULT_BUSY:
+            return EXECUTION_MEASUREMENT_FAILURE_REASON_BUSY;
+        case EXEC_CAN_RESULT_EMPTY:
+            return EXECUTION_MEASUREMENT_FAILURE_REASON_EMPTY;
+        case EXEC_CAN_RESULT_NOT_CONFIGURED:
+            return EXECUTION_MEASUREMENT_FAILURE_REASON_NOT_CONFIGURED;
+        case EXEC_CAN_RESULT_NOT_STARTED:
+            return EXECUTION_MEASUREMENT_FAILURE_REASON_NOT_STARTED;
+        case EXEC_CAN_RESULT_TIMING_ERROR:
+            return EXECUTION_MEASUREMENT_FAILURE_REASON_TIMING_ERROR;
+        case EXEC_CAN_RESULT_FILTER_ERROR:
+            return EXECUTION_MEASUREMENT_FAILURE_REASON_FILTER_ERROR;
+        case EXEC_CAN_RESULT_ERROR:
+            return EXECUTION_MEASUREMENT_FAILURE_REASON_DRIVER_FAULT;
+        case EXEC_CAN_RESULT_OK:
+        default:
+            return EXECUTION_MEASUREMENT_FAILURE_REASON_DRIVER_REJECTED;
+    }
+}
+
+/** Retains the dispatch location after an adapter has latched its local cause. */
+static void EXECUTION_MEASUREMENT_ADAPTER_RecordFailure(
+    uint8_t measurement_index, const ExecutionMeasurementDispatchEntry_T* entry )
+{
+    execution_measurement_failure.measurement_index = measurement_index;
+    execution_measurement_failure.type              = entry->type;
+    execution_measurement_failure.channel           = entry->channel;
+    execution_measurement_failure.reason =
+        execution_measurement_last_reason == EXECUTION_MEASUREMENT_FAILURE_REASON_NONE
+            ? EXECUTION_MEASUREMENT_FAILURE_REASON_DRIVER_REJECTED
+            : execution_measurement_last_reason;
+    execution_measurement_failure_valid = true;
+}
 
 /**-----------------------------------------------------------------------------
  *  Public Function Definitions
@@ -200,6 +246,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleCanReceive( uint8_t channel, uint32_t t
     FlashManagerResultWriteLease_T lease = { 0 };
     if ( !FLASH_MANAGER_ReserveResultRecordFromISR( reservation_bytes, &lease ) )
     {
+        execution_measurement_last_reason =
+            EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_RESERVE_FAILED;
         return false;
     }
 
@@ -210,6 +258,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleCanReceive( uint8_t channel, uint32_t t
     if ( result != EXEC_CAN_RESULT_OK )
     {
         ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+        execution_measurement_last_reason = EXECUTION_MEASUREMENT_ADAPTER_MapCanFailure( result );
         return false;
     }
 
@@ -230,6 +279,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleCanReceive( uint8_t channel, uint32_t t
     }
 
     ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+    execution_measurement_last_reason =
+        EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_COMMIT_FAILED;
     return false;
 }
 
@@ -260,6 +311,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleSpiReceive( uint8_t channel, uint32_t t
         FlashManagerResultWriteLease_T lease = { 0 };
         if ( !FLASH_MANAGER_ReserveResultRecordFromISR( reservation_bytes, &lease ) )
         {
+            execution_measurement_last_reason =
+                EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_RESERVE_FAILED;
             return false;
         }
 
@@ -268,6 +321,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleSpiReceive( uint8_t channel, uint32_t t
                                 &bytes_read ) )
         {
             ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+            execution_measurement_last_reason = EXECUTION_MEASUREMENT_FAILURE_REASON_DRIVER_FAULT;
             return false;
         }
 
@@ -285,6 +339,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleSpiReceive( uint8_t channel, uint32_t t
              != FLASH_MANAGER_RESULT_COMMIT_OK )
         {
             ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+            execution_measurement_last_reason =
+                EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_COMMIT_FAILED;
             return false;
         }
     }
@@ -314,6 +370,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive( uint8_t channel, uint32_t 
         FlashManagerResultWriteLease_T lease = { 0 };
         if ( !FLASH_MANAGER_ReserveResultRecordFromISR( reservation_bytes, &lease ) )
         {
+            execution_measurement_last_reason =
+                EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_RESERVE_FAILED;
             return false;
         }
 
@@ -322,6 +380,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive( uint8_t channel, uint32_t 
                               &bytes_read ) )
         {
             ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+            execution_measurement_last_reason = EXECUTION_MEASUREMENT_FAILURE_REASON_DRIVER_FAULT;
             return false;
         }
 
@@ -339,6 +398,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleUartReceive( uint8_t channel, uint32_t 
              != FLASH_MANAGER_RESULT_COMMIT_OK )
         {
             ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+            execution_measurement_last_reason =
+                EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_COMMIT_FAILED;
             return false;
         }
     }
@@ -354,6 +415,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleAnalogueInput( uint8_t channel, uint32_
 
     if ( !FLASH_MANAGER_ReserveResultRecordFromISR( 2U * sizeof( uint32_t ), &lease ) )
     {
+        execution_measurement_last_reason =
+            EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_RESERVE_FAILED;
         return false;
     }
 
@@ -372,6 +435,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleAnalogueInput( uint8_t channel, uint32_
     }
 
     ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+    execution_measurement_last_reason =
+        EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_COMMIT_FAILED;
     return false;
 }
 
@@ -383,6 +448,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurements( uint32_t    timestamp,
         const ExecutionMeasurementDispatchEntry_T* entry = &active_measurement_adapters[index];
         if ( !entry->adapter( entry->channel, timestamp, higher_priority_task_woken ) )
         {
+            EXECUTION_MEASUREMENT_ADAPTER_RecordFailure( index, entry );
             return false;
         }
     }
@@ -415,6 +481,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_ApplyMeasurementsProfiled(
 
         if ( !accepted )
         {
+            EXECUTION_MEASUREMENT_ADAPTER_RecordFailure( index, entry );
             return false;
         }
     }
@@ -451,6 +518,30 @@ bool EXECUTION_MEASUREMENT_ADAPTER_GetTiming( ExecutionMeasurementType_T    type
     return true;
 }
 
+void EXECUTION_MEASUREMENT_ADAPTER_ResetFailure( void )
+{
+    execution_measurement_failure_valid             = false;
+    execution_measurement_failure.measurement_index = 0U;
+    execution_measurement_failure.type              = EXECUTION_MEASUREMENT_ANALOGUE_INPUT;
+    execution_measurement_failure.channel           = 0U;
+    execution_measurement_failure.reason = EXECUTION_MEASUREMENT_FAILURE_REASON_NONE;
+    execution_measurement_last_reason     = EXECUTION_MEASUREMENT_FAILURE_REASON_NONE;
+}
+
+bool EXECUTION_MEASUREMENT_ADAPTER_GetFailure( ExecutionMeasurementFailure_T* failure )
+{
+    if ( !execution_measurement_failure_valid || failure == NULL )
+    {
+        return false;
+    }
+
+    failure->measurement_index = execution_measurement_failure.measurement_index;
+    failure->type              = execution_measurement_failure.type;
+    failure->channel           = execution_measurement_failure.channel;
+    failure->reason            = execution_measurement_failure.reason;
+    return true;
+}
+
 bool EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput( uint8_t channel, uint32_t timestamp,
                                                        BaseType_t* higher_priority_task_woken )
 {
@@ -459,6 +550,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput( uint8_t channel, uint32_t
 
     if ( !FLASH_MANAGER_ReserveResultRecordFromISR( sizeof( uint32_t ), &lease ) )
     {
+        execution_measurement_last_reason =
+            EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_RESERVE_FAILED;
         return false;
     }
 
@@ -473,6 +566,8 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput( uint8_t channel, uint32_t
     }
 
     ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+    execution_measurement_last_reason =
+        EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_COMMIT_FAILED;
     return false;
 }
 
@@ -482,12 +577,19 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SamplePwmCapture( uint8_t channel, uint32_t t
     ExecPwmCaptureResult_T capture = { 0 };
     if ( !EXEC_PWM_Capture_Consume( ( ExecPwmCaptureChannel_T )channel, &capture ) )
     {
+        if ( capture.has_new_data )
+        {
+            execution_measurement_last_reason =
+                EXECUTION_MEASUREMENT_FAILURE_REASON_INVALID_SAMPLE;
+        }
         return !capture.has_new_data;
     }
 
     FlashManagerResultWriteLease_T lease = { 0 };
     if ( !FLASH_MANAGER_ReserveResultRecordFromISR( 2U * sizeof( uint32_t ), &lease ) )
     {
+        execution_measurement_last_reason =
+            EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_RESERVE_FAILED;
         return false;
     }
 
@@ -504,5 +606,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SamplePwmCapture( uint8_t channel, uint32_t t
     }
 
     ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
+    execution_measurement_last_reason =
+        EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_COMMIT_FAILED;
     return false;
 }

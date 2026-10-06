@@ -92,7 +92,7 @@ extern "C"
 
 #define RX_BUFFER_SIZE_BYTES HW_SPI_RX_BUFFER_SIZE_BYTES
 #define TX_BUFFER_SIZE_BYTES HW_SPI_TX_BUFFER_SIZE_BYTES
-#define TX_PACKET_QUEUE_DEPTH 128U
+#define TX_PACKET_QUEUE_DEPTH HW_SPI_TX_PACKET_QUEUE_DEPTH
 #define HW_SPI_DMA_DISABLE_TIMEOUT_ITERATIONS 1000U
 #define SPI_DAC_FINAL_DRAIN_TIMER_MAX_ATTEMPTS 2U
 
@@ -162,10 +162,10 @@ typedef struct SPITxPacketDescriptor_T
  */
 typedef enum HWSPI_TX_Transaction_State_T
 {
-    HW_SPI_TX_TRANSACTION_IDLE,              ///< No master packet is currently active.
-    HW_SPI_TX_TRANSACTION_DMA_ACTIVE,        ///< One packet has been handed to TX DMA.
-    HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN,  ///< DMA is complete, but SPI may still be busy.
-    HW_SPI_TX_TRANSACTION_ERROR,             ///< TX transaction fault; recovery is required.
+    HW_SPI_TX_TRANSACTION_IDLE = HW_SPI_DIAGNOSTIC_TX_IDLE,
+    HW_SPI_TX_TRANSACTION_DMA_ACTIVE = HW_SPI_DIAGNOSTIC_TX_DMA_ACTIVE,
+    HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN = HW_SPI_DIAGNOSTIC_TX_WAIT_FINAL_DRAIN,
+    HW_SPI_TX_TRANSACTION_ERROR = HW_SPI_DIAGNOSTIC_TX_ERROR,
 } HWSPI_TX_Transaction_State_T;
 
 typedef struct SPIPeripheralState_T SPIPeripheralState_T;

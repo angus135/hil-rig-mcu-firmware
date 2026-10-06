@@ -1,34 +1,45 @@
-FROM alpine:3.20 AS base
+FROM ubuntu:24.04 AS base
 
-RUN apk add --no-cache \
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     git \
-    openssh \
+    openssh-client \
     ca-certificates \
-    gcc \
-    g++ \
-    make \
+    build-essential \
     cmake \
-    ninja
+    ninja-build \
+    curl \
+    wget \
+    procps \
+    tar \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /hil-rig-mcu-firmware
 
 # CI image: build & run tests, run clang-tidy/clang-format
 FROM base AS ci
 
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     clang \
-    clang-extra-tools
+    clang-format \
+    clang-tidy \
+    clangd \
+    && rm -rf /var/lib/apt/lists/*
 
-# Dev image: everything in ci + gdb for debugging tests
+# Dev image: everything in ci + gdb for debugging tests + python
 FROM base AS dev
 
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     clang \
-    clang-extra-tools \
+    clang-format \
+    clang-tidy \
+    clangd \
     gdb \
     python3 \
-    py3-pip
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
 
 # Default to an interactive shell in dev
 CMD ["bash"]

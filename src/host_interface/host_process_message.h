@@ -174,6 +174,7 @@ typedef struct
     HIL_Application_Failure_Source_T last_failure_source;
     HIL_Application_Failure_Stage_T  last_failure_stage;
     HIL_Application_Failure_Reason_T last_failure_reason;
+    uint32_t                         run_sequence;
 } HostTestSession_T;
 
 /**-----------------------------------------------------------------------------

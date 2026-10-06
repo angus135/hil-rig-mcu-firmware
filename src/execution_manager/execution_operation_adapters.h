@@ -55,12 +55,29 @@ typedef enum
     EXECUTION_OPERATION_ADAPTER_REJECTED
 } ExecutionOperationAdapterResult_T;
 
-/** Identifies the first operation rejected by the adapter walker. */
+/** Stable first-cause classification for a rejected execution operation. */
+typedef enum
+{
+    EXECUTION_OPERATION_FAILURE_REASON_NONE = 0,
+    EXECUTION_OPERATION_FAILURE_REASON_INVALID_ARGUMENT,
+    EXECUTION_OPERATION_FAILURE_REASON_QUEUE_FULL,
+    EXECUTION_OPERATION_FAILURE_REASON_BUSY,
+    EXECUTION_OPERATION_FAILURE_REASON_EMPTY,
+    EXECUTION_OPERATION_FAILURE_REASON_NOT_CONFIGURED,
+    EXECUTION_OPERATION_FAILURE_REASON_NOT_STARTED,
+    EXECUTION_OPERATION_FAILURE_REASON_TIMING_ERROR,
+    EXECUTION_OPERATION_FAILURE_REASON_FILTER_ERROR,
+    EXECUTION_OPERATION_FAILURE_REASON_DRIVER_FAULT,
+    EXECUTION_OPERATION_FAILURE_REASON_DRIVER_REJECTED
+} ExecutionOperationAdapterFailureReason_T;
+
+/** Identifies the first operation rejected by the adapter walker and why. */
 typedef struct
 {
-    uint8_t                    operation_index;
-    ExecutionOperationOpcode_T opcode;
-    uint8_t                    channel;
+    uint8_t                                  operation_index;
+    ExecutionOperationOpcode_T               opcode;
+    uint8_t                                  channel;
+    ExecutionOperationAdapterFailureReason_T reason;
 } ExecutionOperationAdapterFailure_T;
 
 /**

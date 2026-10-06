@@ -172,6 +172,9 @@ typedef enum
  */
 bool INSTRUCTION_BUFFER_Init( void );
 
+/** Returns the statically allocated execution-time instruction ring capacity. */
+uint32_t INSTRUCTION_BUFFER_GetCapacityBytes( void );
+
 /* Instruction retrieval: lifecycle, NAND fill, and execution serving. */
 
 /**

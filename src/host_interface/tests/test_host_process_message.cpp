@@ -29,12 +29,15 @@ extern "C"
 #include "host_interface.h"
 #include "config_message_handler.h"
 #include "execution_manager.h"
+#include "execution_measurement_adapters.h"
+#include "execution_operation_adapters.h"
 #include "host_process_message.h"
 #include "host_process_message_test_access.h"
 #include "hil_rig_protocol/version.h"
 #include "instruction_message_handler.h"
 #include "result_message_producer.h"
 #include "run_state_manager.h"
+#include "run_report_diagnostics.h"
 #include "variable_instruction_message_handler.h"
 #include "variable_result_message_producer.h"
 }
@@ -1390,6 +1393,24 @@ TEST_F( HostProcessMessageTest, RunReportNotificationEmitsRejectedConfigurationR
             snapshot->result_stream_status = RUN_METADATA_RESULT_STREAM_UNAVAILABLE;
             snapshot->failure_source       = RUN_METADATA_FAILURE_SOURCE_RUN_STATE_MANAGER;
             snapshot->failure_reason       = RUN_STATE_FAULT_DRIVER_CONFIGURATION;
+            snapshot->valid_sections |= RUN_METADATA_VALID_DIAGNOSTICS;
+            snapshot->diagnostics.core_clock_hz = 180000000U;
+            snapshot->diagnostics.execution_boundary = 7U;
+            snapshot->diagnostics.operation_failure.valid = 1U;
+            snapshot->diagnostics.operation_failure.operation_index = 2U;
+            snapshot->diagnostics.operation_failure.opcode =
+                EXECUTION_OPERATION_OPCODE_UART_TRANSMIT;
+            snapshot->diagnostics.operation_failure.channel =
+                EXECUTION_OPERATION_UART_CHANNEL_1;
+            snapshot->diagnostics.operation_failure.reason =
+                EXECUTION_OPERATION_FAILURE_REASON_QUEUE_FULL;
+            snapshot->diagnostics.measurement_failure.valid = 1U;
+            snapshot->diagnostics.measurement_failure.measurement_index = 3U;
+            snapshot->diagnostics.measurement_failure.type =
+                EXECUTION_MEASUREMENT_SPI_RECEIVE;
+            snapshot->diagnostics.measurement_failure.channel = EXEC_SPI_CHANNEL_2;
+            snapshot->diagnostics.measurement_failure.reason =
+                EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_COMMIT_FAILED;
             return true;
         } ) );
 
@@ -1409,6 +1430,68 @@ TEST_F( HostProcessMessageTest, RunReportNotificationEmitsRejectedConfigurationR
                HIL_APPLICATION_FAILURE_SOURCE_DRIVER_LIFECYCLE );
     EXPECT_EQ( outgoing.body.run_report.failure_reason,
                HIL_APPLICATION_FAILURE_REASON_DRIVER_CONFIGURATION_FAILED );
+    ASSERT_EQ( outgoing.body.run_report.extension_data.data[0], RUN_REPORT_DIAGNOSTICS_MAGIC_0 );
+    ASSERT_EQ( outgoing.body.run_report.extension_data.data[1], RUN_REPORT_DIAGNOSTICS_MAGIC_1 );
+    EXPECT_EQ( outgoing.body.run_report.extension_data.data[2], RUN_REPORT_DIAGNOSTICS_VERSION );
+    EXPECT_GT( outgoing.body.run_report.extension_data.size, RUN_REPORT_DIAGNOSTICS_HEADER_BYTES );
+    EXPECT_EQ( outgoing.body.run_report.extension_data.data[3],
+               RUN_REPORT_DIAGNOSTICS_HEADER_BYTES );
+    EXPECT_EQ( outgoing.body.run_report.extension_data.data[4],
+               outgoing.body.run_report.extension_data.size );
+    EXPECT_EQ( outgoing.body.run_report.extension_data.data[5], 9U );
+
+    bool   found_failure_detail = false;
+    bool   found_can_detail     = false;
+    size_t offset               = RUN_REPORT_DIAGNOSTICS_HEADER_BYTES;
+    while ( offset + 2U <= outgoing.body.run_report.extension_data.size )
+    {
+        const uint8_t* record = &outgoing.body.run_report.extension_data.data[offset];
+        const size_t   record_size = 2U + record[1];
+        ASSERT_LE( offset + record_size, outgoing.body.run_report.extension_data.size );
+        if ( record[0] == RUN_REPORT_DIAGNOSTICS_RECORD_FAILURE_DETAIL )
+        {
+            ASSERT_GE( record[1], RUN_REPORT_DIAGNOSTICS_FAILURE_DETAIL_BYTES );
+            EXPECT_EQ( record[2], 1U );
+            EXPECT_EQ( record[4], 2U );
+            EXPECT_EQ( record[5], EXECUTION_OPERATION_OPCODE_UART_TRANSMIT );
+            EXPECT_EQ( record[6], EXECUTION_OPERATION_UART_CHANNEL_1 );
+            EXPECT_EQ( record[7], RUN_REPORT_DIAGNOSTICS_OPERATION_FAILURE_QUEUE_FULL );
+            EXPECT_EQ( record[8], 7U );
+            EXPECT_EQ( record[9], 0U );
+            EXPECT_EQ( record[10], 0U );
+            EXPECT_EQ( record[11], 0U );
+            EXPECT_EQ( record[12], 1U );
+            EXPECT_EQ( record[13], 3U );
+            EXPECT_EQ( record[14], EXECUTION_MEASUREMENT_SPI_RECEIVE );
+            EXPECT_EQ( record[15], EXEC_SPI_CHANNEL_2 );
+            EXPECT_EQ( record[16],
+                       RUN_REPORT_DIAGNOSTICS_MEASUREMENT_FAILURE_RESULT_COMMIT_FAILED );
+            found_failure_detail = true;
+        }
+        if ( record[0] == RUN_REPORT_DIAGNOSTICS_RECORD_CAN )
+        {
+            ASSERT_GE( record[1], RUN_REPORT_DIAGNOSTICS_CAN_BYTES );
+            found_can_detail = true;
+        }
+        offset += record_size;
+    }
+    EXPECT_EQ( offset, outgoing.body.run_report.extension_data.size );
+    EXPECT_TRUE( found_failure_detail );
+    EXPECT_TRUE( found_can_detail );
+
+    HIL_Application_Config_T application_config{};
+    HIL_Application_Context_T application_context{};
+    ASSERT_EQ( HIL_APPLICATION_Default_Config( &application_config ), HIL_APPLICATION_STATUS_OK );
+    application_config.max_encoded_message_size = 512U;
+    ASSERT_EQ( HIL_APPLICATION_Init( &application_context, &application_config ),
+               HIL_APPLICATION_STATUS_OK );
+
+    uint8_t encoded_report[512]{};
+    size_t  encoded_report_size = 0U;
+    ASSERT_EQ( HIL_APPLICATION_Encode_Message( &application_context, &outgoing, encoded_report,
+                                               sizeof( encoded_report ), &encoded_report_size ),
+               HIL_APPLICATION_STATUS_OK );
+    EXPECT_EQ( encoded_report_size, 454U );
 }
 
 /** Verifies that successful cleanup starts only after report handoff. */

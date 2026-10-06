@@ -23,6 +23,8 @@
 #include "exec_uart.h"
 #include "execution_instruction.h"
 #include "execution_manager.h"
+#include "execution_measurement_adapters.h"
+#include "execution_operation_adapters.h"
 #include "flash_manager.h"
 #include "hw_timer.h"
 #include "logic_expander.h"
@@ -389,6 +391,7 @@ static void RUN_STATE_MANAGER_CaptureExecutionMetadata( void )
 
     HW_TIMER_ExecutionTiming_T timer_timing = { 0 };
     HW_TIMER_Get_Execution_Timing( &timer_timing );
+    capture.diagnostics.core_clock_hz = timer_timing.core_clock_hz;
     if ( timer_timing.sample_count > 0U )
     {
         capture.valid_sections |= RUN_METADATA_VALID_ISR_TIMING;
@@ -443,7 +446,145 @@ static void RUN_STATE_MANAGER_CaptureExecutionMetadata( void )
             flash_diag.nand_service_gap_max_cycles;
         capture.flash_throughput.refill_drain_contention_count =
             flash_diag.refill_drain_contentions;
+
+        capture.diagnostics.instruction_buffer_capacity_bytes =
+            flash_diag.instruction_buffer_capacity_bytes;
+        capture.diagnostics.result_buffer_capacity_bytes = flash_diag.result_buffer_capacity_bytes;
+        capture.diagnostics.current_pending_result_bytes = flash_diag.current_pending_result_bytes;
+        capture.diagnostics.last_failed_reserve_payload_bytes =
+            flash_diag.last_failed_reserve_payload_bytes;
+        capture.diagnostics.free_bytes_at_last_reserve_failure =
+            flash_diag.free_bytes_at_last_reserve_failure;
+        capture.diagnostics.last_commit_failure = ( uint8_t )flash_diag.last_commit_failure;
     }
+
+    capture.diagnostics.execution_failure = execution_started
+                                               ? ( uint8_t )EXECUTION_MANAGER_GetFailure()
+                                               : 0U;
+    capture.diagnostics.execution_boundary = execution_started
+                                                ? EXECUTION_MANAGER_GetCurrentTick()
+                                                : 0U;
+
+    ExecutionOperationAdapterFailure_T operation_failure = { 0 };
+    if ( execution_started && EXECUTION_OPERATION_ADAPTER_GetFailure( &operation_failure ) )
+    {
+        capture.diagnostics.operation_failure.valid = 1U;
+        capture.diagnostics.operation_failure.operation_index = operation_failure.operation_index;
+        capture.diagnostics.operation_failure.opcode = ( uint8_t )operation_failure.opcode;
+        capture.diagnostics.operation_failure.channel = operation_failure.channel;
+        capture.diagnostics.operation_failure.reason = ( uint8_t )operation_failure.reason;
+    }
+
+    ExecutionMeasurementFailure_T measurement_failure = { 0 };
+    if ( execution_started && EXECUTION_MEASUREMENT_ADAPTER_GetFailure( &measurement_failure ) )
+    {
+        capture.diagnostics.measurement_failure.valid = 1U;
+        capture.diagnostics.measurement_failure.measurement_index =
+            measurement_failure.measurement_index;
+        capture.diagnostics.measurement_failure.type = ( uint8_t )measurement_failure.type;
+        capture.diagnostics.measurement_failure.channel = measurement_failure.channel;
+        capture.diagnostics.measurement_failure.reason = ( uint8_t )measurement_failure.reason;
+    }
+
+    for ( uint32_t channel = 0U; channel < RUN_METADATA_UART_CHANNEL_COUNT; channel++ )
+    {
+        HwUartDiagnostic_T diagnostic = { 0 };
+        RunMetadataUartDiagnostic_T* report = &capture.diagnostics.uart[channel];
+        report->channel = ( uint8_t )channel;
+        if ( EXEC_UART_Get_Diagnostic( ( ExecUartChannel_T )channel, &diagnostic ) )
+        {
+            report->flags = RUN_METADATA_PERIPHERAL_DIAGNOSTIC_VALID
+                            | ( diagnostic.tx_dma_active
+                                    ? RUN_METADATA_UART_DIAGNOSTIC_TX_DMA_ACTIVE
+                                    : 0U )
+                            | ( diagnostic.is_started ? RUN_METADATA_UART_DIAGNOSTIC_STARTED : 0U )
+                            | ( diagnostic.is_configured
+                                    ? RUN_METADATA_UART_DIAGNOSTIC_CONFIGURED
+                                    : 0U );
+            report->tx_pending_bytes = ( uint16_t )diagnostic.tx_count_bytes;
+            report->tx_peak_bytes = ( uint16_t )diagnostic.tx_peak_bytes;
+            report->tx_reject_count = diagnostic.tx_reject_count;
+            report->dma_error_count = diagnostic.dma_error_count;
+            report->rx_unread_bytes = ( uint16_t )diagnostic.rx_unread_bytes;
+            report->rx_peak_bytes = ( uint16_t )diagnostic.rx_unread_peak_bytes;
+            report->latched_faults = diagnostic.latched_faults;
+        }
+    }
+
+    for ( uint32_t channel = 0U; channel < RUN_METADATA_SPI_CHANNEL_COUNT; channel++ )
+    {
+        ExecSPIDiagnostic_T diagnostic = { 0 };
+        RunMetadataSpiDiagnostic_T* report = &capture.diagnostics.spi[channel];
+        report->channel = ( uint8_t )channel;
+        if ( EXEC_SPI_Get_Diagnostics( ( ExecSPIChannel_T )channel, &diagnostic ) )
+        {
+            report->flags = RUN_METADATA_PERIPHERAL_DIAGNOSTIC_VALID
+                            | ( diagnostic.is_started ? RUN_METADATA_SPI_DIAGNOSTIC_STARTED : 0U )
+                            | ( diagnostic.is_configured
+                                    ? RUN_METADATA_SPI_DIAGNOSTIC_CONFIGURED
+                                    : 0U )
+                            | ( diagnostic.is_master ? RUN_METADATA_SPI_DIAGNOSTIC_MASTER : 0U );
+            report->tx_pending_bytes = ( uint16_t )diagnostic.tx_num_bytes_pending;
+            report->tx_peak_bytes = ( uint16_t )diagnostic.peak_tx_num_bytes_pending;
+            report->tx_in_flight_bytes = ( uint16_t )diagnostic.tx_num_bytes_in_transmission;
+            report->tx_pending_packets = ( uint16_t )diagnostic.tx_num_packets_pending;
+            report->tx_peak_packets = ( uint16_t )diagnostic.peak_tx_num_packets_pending;
+            report->tx_reject_count = diagnostic.tx_queue_reject_count;
+            report->tx_dma_error_count = diagnostic.tx_dma_error_count;
+            report->tx_drain_timeout_count = diagnostic.tx_final_drain_timeout_count;
+            report->rx_unread_bytes = ( uint16_t )diagnostic.rx_unread_bytes;
+            report->rx_peak_bytes = ( uint16_t )diagnostic.rx_unread_peak_bytes;
+            report->tx_state = diagnostic.tx_transaction_state;
+        }
+    }
+
+    HW_CAN_Diagnostic_T can_diagnostic = { 0 };
+    HW_CAN_GetDiagnostic( &can_diagnostic );
+    const HW_CAN_Tx_Status_T can_status[RUN_METADATA_CAN_CHANNEL_COUNT] = {
+        HW_CAN_Tx_Status1(), HW_CAN_Tx_Status2() };
+    const bool can_active[RUN_METADATA_CAN_CHANNEL_COUNT] = {
+        can_diagnostic.can_tx_active1, can_diagnostic.can_tx_active2 };
+    const uint16_t can_tx_pending[RUN_METADATA_CAN_CHANNEL_COUNT] = {
+        ( uint16_t )( ( can_diagnostic.can_tx_wp1 - can_diagnostic.can_tx_rp1
+                        + HW_CAN_TX_QUEUE_CAPACITY + 1U )
+                      % ( HW_CAN_TX_QUEUE_CAPACITY + 1U ) ),
+        ( uint16_t )( ( can_diagnostic.can_tx_wp2 - can_diagnostic.can_tx_rp2
+                        + HW_CAN_TX_QUEUE_CAPACITY + 1U )
+                      % ( HW_CAN_TX_QUEUE_CAPACITY + 1U ) ) };
+    const uint16_t can_rx_queued[RUN_METADATA_CAN_CHANNEL_COUNT] = {
+        can_diagnostic.rx_queued1, can_diagnostic.rx_queued2 };
+    const uint32_t can_rx_dropped[RUN_METADATA_CAN_CHANNEL_COUNT] = {
+        can_diagnostic.rx_dropped1, can_diagnostic.rx_dropped2 };
+    for ( uint32_t channel = 0U; channel < RUN_METADATA_CAN_CHANNEL_COUNT; channel++ )
+    {
+        RunMetadataCanDiagnostic_T* report = &capture.diagnostics.can[channel];
+        report->channel = ( uint8_t )channel;
+        report->flags = RUN_METADATA_PERIPHERAL_DIAGNOSTIC_VALID
+                        | ( can_active[channel] ? RUN_METADATA_CAN_DIAGNOSTIC_TX_ACTIVE : 0U )
+                        | ( can_status[channel] == HW_CAN_TX_STATUS_ERROR
+                                ? RUN_METADATA_CAN_DIAGNOSTIC_TX_ERROR
+                                : 0U );
+        report->tx_pending = can_tx_pending[channel];
+        report->tx_peak = channel == 0U ? can_diagnostic.can_tx_peak1
+                                        : can_diagnostic.can_tx_peak2;
+        report->tx_pending_mailbox = channel == 0U ? can_diagnostic.can_tx_pending_mailbox1
+                                                   : can_diagnostic.can_tx_pending_mailbox2;
+        report->rx_queued = can_rx_queued[channel];
+        report->rx_peak = channel == 0U ? can_diagnostic.rx_peak1 : can_diagnostic.rx_peak2;
+        report->rx_dropped = can_rx_dropped[channel];
+        report->tec = channel == 0U ? can_diagnostic.TEC1 : can_diagnostic.TEC2;
+        report->rec = channel == 0U ? can_diagnostic.REC1 : can_diagnostic.REC2;
+        report->last_error = channel == 0U ? can_diagnostic.error_code1
+                                           : can_diagnostic.error_code2;
+        report->tsr = channel == 0U ? can_diagnostic.TSR1 : can_diagnostic.TSR2;
+        report->esr = channel == 0U ? can_diagnostic.ESR1 : can_diagnostic.ESR2;
+        report->error_count = channel == 0U ? can_diagnostic.error_count1
+                                            : can_diagnostic.error_count2;
+        report->max_tec = channel == 0U ? can_diagnostic.max_tec1 : can_diagnostic.max_tec2;
+        report->max_rec = channel == 0U ? can_diagnostic.max_rec1 : can_diagnostic.max_rec2;
+    }
+
+    capture.valid_sections |= RUN_METADATA_VALID_DIAGNOSTICS;
 
     ( void )RUN_METADATA_CaptureExecution( &capture );
 }
@@ -511,10 +652,11 @@ static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason )
 
     if ( report_lifecycle_active )
     {
-        if ( execution_started )
-        {
-            RUN_STATE_MANAGER_CaptureExecutionMetadata();
-        }
+        /* Capture the same bounded diagnostic snapshot for execution failures
+         * and configuration-time rejection. The timer/peripheral sections stay
+         * invalid when execution never started, while the report still carries
+         * the admission context and resource limits. */
+        RUN_STATE_MANAGER_CaptureExecutionMetadata();
         ( void )RUN_METADATA_SetResultStreamStatus( RUN_METADATA_RESULT_STREAM_UNAVAILABLE );
         ( void )RUN_METADATA_Seal();
     }
@@ -987,6 +1129,18 @@ static bool RUN_STATE_MANAGER_BeginDriverStart( void )
         RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_EXECUTION_MANAGER );
         return false;
     }
+
+    /* Diagnostics belong to the execution attempt, including repeat runs that
+     * reuse an already configured peripheral. */
+    for ( uint32_t channel = 0U; channel < EXEC_UART_CHANNEL_COUNT; channel++ )
+    {
+        EXEC_UART_Reset_Diagnostic( ( ExecUartChannel_T )channel );
+    }
+    for ( uint32_t channel = 0U; channel < EXEC_SPI_CHANNEL_COUNT; channel++ )
+    {
+        EXEC_SPI_Reset_Diagnostics( ( ExecSPIChannel_T )channel );
+    }
+    HW_CAN_Reset_Diagnostics();
 
     if ( !DUT_DRIVER_LIFECYCLE_Start() )
     {

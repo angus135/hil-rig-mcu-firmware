@@ -295,6 +295,7 @@ protected:
         memset( s_first_span_data, 0, sizeof( s_first_span_data ) );
         memset( s_second_span_data, 0, sizeof( s_second_span_data ) );
         memset( exec_uart_channel_states, 0, sizeof( exec_uart_channel_states ) );
+        memset( uart_tx_queue_rejected, 0, sizeof( uart_tx_queue_rejected ) );
     }
 
     void TearDown( void ) override
@@ -654,6 +655,21 @@ TEST_F( ExecUARTTest, TransmitReturnsFalseAndDoesNotTriggerWhenLoadFails )
     EXPECT_CALL( mock_hw, Tx_Trigger( _ ) ).Times( 0 );
 
     EXPECT_FALSE( EXEC_UART_Transmit( EXEC_UART_CHANNEL_1, payload, sizeof( payload ) ) );
+}
+
+/** Verifies that a repeat run cannot inherit the previous run's queue-rejection cause. */
+TEST_F( ExecUARTTest, ResetDiagnosticClearsQueueRejectionCause )
+{
+    const uint8_t payload[] = { 0x11U };
+    EXPECT_CALL( mock_hw, Tx_Load_Buffer( EXEC_UART_CHANNEL_1, payload, sizeof( payload ) ) )
+        .WillOnce( Return( false ) );
+    ASSERT_FALSE( EXEC_UART_Transmit( EXEC_UART_CHANNEL_1, payload, sizeof( payload ) ) );
+    ASSERT_TRUE( EXEC_UART_Was_Tx_Queue_Rejected( EXEC_UART_CHANNEL_1 ) );
+
+    EXPECT_CALL( mock_hw, Reset_Diagnostic( EXEC_UART_CHANNEL_1 ) );
+    EXEC_UART_Reset_Diagnostic( EXEC_UART_CHANNEL_1 );
+
+    EXPECT_FALSE( EXEC_UART_Was_Tx_Queue_Rejected( EXEC_UART_CHANNEL_1 ) );
 }
 
 TEST_F( ExecUARTTest, TransmitReturnsFalseWhenTriggerFails )

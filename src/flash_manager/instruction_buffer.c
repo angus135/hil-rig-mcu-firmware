@@ -666,6 +666,11 @@ bool INSTRUCTION_BUFFER_Init( void )
     return true;
 }
 
+uint32_t INSTRUCTION_BUFFER_GetCapacityBytes( void )
+{
+    return instruction_buffer_context.page_size_bytes * INSTRUCTION_BUFFER_PAGE_COUNT;
+}
+
 /* Instruction retrieval: lifecycle, NAND fill, and execution serving. */
 
 /**

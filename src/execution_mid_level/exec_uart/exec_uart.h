@@ -240,14 +240,14 @@ typedef HwUartDiagnostic_T ExecUartDiagnostic_T;
 bool EXEC_UART_Get_Diagnostic( ExecUartChannel_T channel, ExecUartDiagnostic_T* diag );
 
 /**
- * @brief Reset diagnostic telemetry for an execution UART channel.
+ * @brief Reset diagnostic telemetry and the TX rejection cause for a new run.
  *
  * @param channel Execution UART channel whose diagnostics should be reset.
  */
 void EXEC_UART_Reset_Diagnostic( ExecUartChannel_T channel );
 
 /**
- * @brief Report whether the current run's last UART TX rejection was a queue rejection.
+ * @brief Report whether the current run's first UART TX rejection was a queue rejection.
  *
  * @param channel Execution UART channel to inspect.
  * @return true if the last rejection on this channel was due to TX queue capacity.

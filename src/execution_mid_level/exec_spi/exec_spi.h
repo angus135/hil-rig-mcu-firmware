@@ -260,11 +260,11 @@ bool EXEC_SPI_Transmit( ExecSPIChannel_T channel, const uint8_t* data_src,
  * @brief Report whether the current run's first SPI TX rejection was a queue rejection.
  *
  * This diagnostic is latched only when the low-level TX queue rejects a batch.
- * It is cleared by the next successful enabled configuration of the channel and
- * intentionally survives stop/disable cleanup so it can be inspected after an
- * execution fault. Call this only when EXEC_SPI_Transmit() has returned false;
- * a clear latch then identifies the other failure path, a low-level TX fault
- * observed after triggering.
+ * It survives stop/disable cleanup so it can be inspected after an execution
+ * fault, and is cleared by successful enabled configuration or the explicit
+ * per-run diagnostic reset. Call this only when EXEC_SPI_Transmit() has
+ * returned false; a clear latch then identifies the other failure path, a
+ * low-level TX fault observed after triggering.
  */
 bool EXEC_SPI_Was_Tx_Queue_Rejected( ExecSPIChannel_T channel );
 
@@ -350,7 +350,7 @@ typedef HWSPI_Diagnostic_T ExecSPIDiagnostic_T;
 bool EXEC_SPI_Get_Diagnostics( ExecSPIChannel_T channel, ExecSPIDiagnostic_T* diag );
 
 /**
- * @brief Reset diagnostic telemetry for an execution SPI channel.
+ * @brief Reset diagnostic telemetry and the TX rejection cause for a new run.
  *
  * @param channel Logical execution SPI channel.
  */

@@ -159,6 +159,9 @@ typedef struct
  */
 bool RESULT_BUFFER_Init( void );
 
+/** Returns the statically allocated execution-time result ring capacity. */
+uint32_t RESULT_BUFFER_GetCapacityBytes( void );
+
 /**
  * @brief Resets all result-buffer ownership and cursor state.
  *

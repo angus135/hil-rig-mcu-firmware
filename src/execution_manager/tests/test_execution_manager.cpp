@@ -39,6 +39,10 @@ extern "C" void EXECUTION_MEASUREMENT_ADAPTER_ResetTiming( void )
 {
 }
 
+extern "C" void EXECUTION_MEASUREMENT_ADAPTER_ResetFailure( void )
+{
+}
+
 extern "C" void
 EXECUTION_MEASUREMENT_ADAPTER_Prepare( const ExecutionMeasurementConfiguration_T* configuration )
 {

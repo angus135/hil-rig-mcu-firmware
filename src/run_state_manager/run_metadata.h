@@ -21,7 +21,7 @@ extern "C"
 #include <stdint.h>
 
 /** Version of the firmware-side metadata model. */
-#define RUN_METADATA_STRUCTURE_VERSION ( 1U )
+#define RUN_METADATA_STRUCTURE_VERSION ( 2U )
 
 /** Authoritative validity bits for optional fields and statistic sections. */
 #define RUN_METADATA_VALID_TERMINAL ( UINT32_C( 1 ) << 0U )
@@ -30,6 +30,25 @@ extern "C"
 #define RUN_METADATA_VALID_INSTRUCTION_BUFFER ( UINT32_C( 1 ) << 3U )
 #define RUN_METADATA_VALID_RESULT_BUFFER ( UINT32_C( 1 ) << 4U )
 #define RUN_METADATA_VALID_FLASH_THROUGHPUT ( UINT32_C( 1 ) << 5U )
+#define RUN_METADATA_VALID_DIAGNOSTICS ( UINT32_C( 1 ) << 6U )
+
+#define RUN_METADATA_UART_CHANNEL_COUNT ( 2U )
+#define RUN_METADATA_SPI_CHANNEL_COUNT  ( 2U )
+#define RUN_METADATA_CAN_CHANNEL_COUNT  ( 2U )
+
+/** Common high bit in UART/SPI/CAN diagnostic flags when the snapshot is valid. */
+#define RUN_METADATA_PERIPHERAL_DIAGNOSTIC_VALID ( UINT8_C( 1 ) << 7U )
+
+#define RUN_METADATA_UART_DIAGNOSTIC_TX_DMA_ACTIVE ( UINT8_C( 1 ) << 0U )
+#define RUN_METADATA_UART_DIAGNOSTIC_STARTED       ( UINT8_C( 1 ) << 1U )
+#define RUN_METADATA_UART_DIAGNOSTIC_CONFIGURED    ( UINT8_C( 1 ) << 2U )
+
+#define RUN_METADATA_SPI_DIAGNOSTIC_STARTED    ( UINT8_C( 1 ) << 0U )
+#define RUN_METADATA_SPI_DIAGNOSTIC_CONFIGURED ( UINT8_C( 1 ) << 1U )
+#define RUN_METADATA_SPI_DIAGNOSTIC_MASTER     ( UINT8_C( 1 ) << 2U )
+
+#define RUN_METADATA_CAN_DIAGNOSTIC_TX_ACTIVE ( UINT8_C( 1 ) << 0U )
+#define RUN_METADATA_CAN_DIAGNOSTIC_TX_ERROR  ( UINT8_C( 1 ) << 1U )
 
 /** Terminal outcome of the requested execution. */
 typedef enum
@@ -189,6 +208,102 @@ typedef struct
 } RunMetadataFlashThroughput_T;
 
 /**
+ * @brief Bounded peripheral and first-cause diagnostics retained for the report extension.
+ *
+ * These fields are deliberately a firmware-side semantic snapshot rather than
+ * a native copy of any driver structure. The Host Interface serialises them
+ * into the versioned, length-delimited report extension.
+ */
+typedef struct
+{
+    uint8_t  channel;
+    uint8_t  flags;
+    uint16_t tx_pending_bytes;
+    uint16_t tx_peak_bytes;
+    uint32_t tx_reject_count;
+    uint32_t dma_error_count;
+    uint16_t rx_unread_bytes;
+    uint16_t rx_peak_bytes;
+    uint32_t latched_faults;
+} RunMetadataUartDiagnostic_T;
+
+typedef struct
+{
+    uint8_t  channel;
+    uint8_t  flags;
+    uint16_t tx_pending_bytes;
+    uint16_t tx_peak_bytes;
+    uint16_t tx_in_flight_bytes;
+    uint16_t tx_pending_packets;
+    uint16_t tx_peak_packets;
+    uint32_t tx_reject_count;
+    uint32_t tx_dma_error_count;
+    uint32_t tx_drain_timeout_count;
+    uint16_t rx_unread_bytes;
+    uint16_t rx_peak_bytes;
+    uint8_t  tx_state;
+} RunMetadataSpiDiagnostic_T;
+
+typedef struct
+{
+    uint8_t  channel;
+    uint8_t  flags;
+    uint16_t tx_pending;
+    uint16_t tx_peak;
+    uint32_t tx_pending_mailbox;
+    uint16_t rx_queued;
+    uint16_t rx_peak;
+    uint32_t rx_dropped;
+    uint8_t  tec;
+    uint8_t  rec;
+    uint8_t  last_error;
+    uint32_t tsr;
+    uint32_t esr;
+    uint32_t error_count;
+    uint8_t  max_tec;
+    uint8_t  max_rec;
+} RunMetadataCanDiagnostic_T;
+
+/** First operation adapter rejection; diagnostics.execution_boundary locates its tick. */
+typedef struct
+{
+    uint8_t valid;
+    uint8_t operation_index;
+    uint8_t opcode;
+    uint8_t channel;
+    uint8_t reason;
+} RunMetadataOperationFailure_T;
+
+/** First measurement rejection; diagnostics.execution_boundary locates its tick. */
+typedef struct
+{
+    uint8_t valid;
+    uint8_t measurement_index;
+    uint8_t type;
+    uint8_t channel;
+    uint8_t reason;
+} RunMetadataMeasurementFailure_T;
+
+/** Compact summary of resources and the first-cause context for one run. */
+typedef struct
+{
+    uint32_t core_clock_hz;
+    uint32_t instruction_buffer_capacity_bytes;
+    uint32_t result_buffer_capacity_bytes;
+    uint32_t current_pending_result_bytes;
+    uint16_t last_failed_reserve_payload_bytes;
+    uint32_t free_bytes_at_last_reserve_failure;
+    uint8_t  last_commit_failure;
+    uint8_t  execution_failure;
+    uint32_t execution_boundary;
+    RunMetadataOperationFailure_T operation_failure;
+    RunMetadataMeasurementFailure_T measurement_failure;
+    RunMetadataUartDiagnostic_T uart[RUN_METADATA_UART_CHANNEL_COUNT];
+    RunMetadataSpiDiagnostic_T  spi[RUN_METADATA_SPI_CHANNEL_COUNT];
+    RunMetadataCanDiagnostic_T  can[RUN_METADATA_CAN_CHANNEL_COUNT];
+} RunMetadataDiagnostics_T;
+
+/**
  * @brief Immutable terminal metadata for one execution after snapshot completion.
  *
  * Zero is a valid measurement. Consumers must use valid_sections rather than
@@ -225,6 +340,7 @@ typedef struct
     RunMetadataInstructionBuffer_T instruction_buffer;
     RunMetadataResultBuffer_T      result_buffer;
     RunMetadataFlashThroughput_T   flash_throughput;
+    RunMetadataDiagnostics_T       diagnostics;
 } RunMetadataSnapshot_T;
 
 /** Task-context inputs captured after the execution timer has stopped. */
@@ -238,6 +354,7 @@ typedef struct
     RunMetadataInstructionBuffer_T instruction_buffer;
     RunMetadataResultBuffer_T      result_buffer;
     RunMetadataFlashThroughput_T   flash_throughput;
+    RunMetadataDiagnostics_T       diagnostics;
 } RunMetadataExecutionCapture_T;
 
 /**

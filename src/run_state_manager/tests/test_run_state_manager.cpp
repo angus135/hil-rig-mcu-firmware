@@ -10,6 +10,10 @@ extern "C"
 #include "run_state_manager.h"
 #include "dut_driver_lifecycle.h"
 #include "execution_manager.h"
+#include "execution_measurement_adapters.h"
+#include "execution_operation_adapters.h"
+#include "exec_spi.h"
+#include "exec_uart.h"
 #include "flash_manager.h"
 #include "host_interface.h"
 #include "hw_timer.h"
@@ -334,6 +338,53 @@ void HW_CAN_GetDiagnostic( HW_CAN_Diagnostic_T* diag )
         std::memset( diag, 0, sizeof( *diag ) );
     }
 }
+void HW_CAN_Reset_Diagnostics( void ) {}
+HW_CAN_Tx_Status_T HW_CAN_Tx_Status1( void )
+{
+    return HW_CAN_TX_STATUS_IDLE;
+}
+HW_CAN_Tx_Status_T HW_CAN_Tx_Status2( void )
+{
+    return HW_CAN_TX_STATUS_IDLE;
+}
+uint32_t EXECUTION_MANAGER_GetCurrentTick( void )
+{
+    return execution_last_boundary;
+}
+bool EXECUTION_OPERATION_ADAPTER_GetFailure( ExecutionOperationAdapterFailure_T* failure )
+{
+    if ( failure != nullptr )
+    {
+        std::memset( failure, 0, sizeof( *failure ) );
+    }
+    return false;
+}
+bool EXECUTION_MEASUREMENT_ADAPTER_GetFailure( ExecutionMeasurementFailure_T* failure )
+{
+    if ( failure != nullptr )
+    {
+        std::memset( failure, 0, sizeof( *failure ) );
+    }
+    return false;
+}
+bool EXEC_UART_Get_Diagnostic( ExecUartChannel_T, ExecUartDiagnostic_T* diagnostic )
+{
+    if ( diagnostic != nullptr )
+    {
+        std::memset( diagnostic, 0, sizeof( *diagnostic ) );
+    }
+    return true;
+}
+void EXEC_UART_Reset_Diagnostic( ExecUartChannel_T ) {}
+bool EXEC_SPI_Get_Diagnostics( ExecSPIChannel_T, ExecSPIDiagnostic_T* diagnostic )
+{
+    if ( diagnostic != nullptr )
+    {
+        std::memset( diagnostic, 0, sizeof( *diagnostic ) );
+    }
+    return true;
+}
+void EXEC_SPI_Reset_Diagnostics( ExecSPIChannel_T ) {}
 bool HOST_INTERFACE_Notify( uint32_t notification )
 {
     host_interface_notify_calls++;
@@ -580,7 +631,8 @@ TEST_F( RunStateManagerTest, ConfigurationFailureEntersFault )
     ASSERT_TRUE( RUN_STATE_MANAGER_GetRunMetadataSnapshot( &snapshot ) );
     EXPECT_EQ( RUN_METADATA_TERMINAL_REJECTED, snapshot.terminal_status );
     EXPECT_EQ( RUN_METADATA_RESULT_STREAM_UNAVAILABLE, snapshot.result_stream_status );
-    EXPECT_EQ( RUN_METADATA_VALID_TERMINAL, snapshot.valid_sections );
+    EXPECT_EQ( RUN_METADATA_VALID_TERMINAL | RUN_METADATA_VALID_DIAGNOSTICS,
+               snapshot.valid_sections );
     EXPECT_EQ( RUN_METADATA_FAILURE_SOURCE_RUN_STATE_MANAGER, snapshot.failure_source );
     EXPECT_EQ( static_cast<uint32_t>( RUN_STATE_FAULT_DRIVER_CONFIGURATION ),
                snapshot.failure_reason );

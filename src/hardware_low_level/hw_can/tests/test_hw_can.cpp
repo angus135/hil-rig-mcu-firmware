@@ -94,6 +94,12 @@ static void ResetCANBuffers()
     can_tx_pending_mailbox2 = 0;
     can_tx_status1          = HW_CAN_TX_STATUS_IDLE;
     can_tx_status2          = HW_CAN_TX_STATUS_IDLE;
+    can_error_count1        = 0U;
+    can_error_count2        = 0U;
+    can_max_tec1            = 0U;
+    can_max_rec1            = 0U;
+    can_max_tec2            = 0U;
+    can_max_rec2            = 0U;
     hw_can_lifecycle1       = { false, false };
     hw_can_lifecycle2       = { false, false };
 }
@@ -1826,8 +1832,10 @@ TEST_F( HWCANTest, GetDiagnosticPopulatesStateAndRegisters )
     can_tx_active1        = true;
     can_tx_wp1            = 3;
     can_tx_rp1            = 1;
+    can_tx_peak1          = 2;
     can_rx_wp1            = 5;
     can_rx_rp1            = 2;
+    can_rx_peak1          = 3;
     can_rx_dropped_count1 = 4;
 
     HW_CAN_Diagnostic_T diag{};
@@ -1837,6 +1845,7 @@ TEST_F( HWCANTest, GetDiagnosticPopulatesStateAndRegisters )
     EXPECT_FALSE( diag.can_tx_active2 );
     EXPECT_EQ( diag.can_tx_wp1, 3U );
     EXPECT_EQ( diag.can_tx_rp1, 1U );
+    EXPECT_EQ( diag.can_tx_peak1, 2U );
     EXPECT_EQ( diag.TSR1, 0x1C000009U );
     EXPECT_EQ( diag.ESR1, 0x00800030U );
     EXPECT_EQ( diag.MSR1, 0x00000C08U );
@@ -1845,7 +1854,11 @@ TEST_F( HWCANTest, GetDiagnosticPopulatesStateAndRegisters )
     EXPECT_EQ( diag.REC1, 0U );
     EXPECT_EQ( diag.error_code1, 3U );
     EXPECT_EQ( diag.rx_queued1, 3U );
+    EXPECT_EQ( diag.rx_peak1, 3U );
     EXPECT_EQ( diag.rx_dropped1, 4U );
+    EXPECT_EQ( diag.max_tec1, 128U );
+    EXPECT_EQ( diag.max_rec1, 0U );
+    EXPECT_EQ( diag.error_count1, 0U );
 
     EXPECT_EQ( diag.TSR2, 0x1C000000U );
     EXPECT_EQ( diag.ESR2, 0x00000000U );
@@ -1854,4 +1867,16 @@ TEST_F( HWCANTest, GetDiagnosticPopulatesStateAndRegisters )
     EXPECT_EQ( diag.TEC2, 0U );
     EXPECT_EQ( diag.REC2, 0U );
     EXPECT_EQ( diag.error_code2, 0U );
+}
+
+/** Verify wrapped queue pointers report usable occupancy rather than an underflowed subtraction. */
+TEST_F( HWCANTest, GetDiagnosticReportsWrappedRxOccupancy )
+{
+    can_rx_wp1 = 1U;
+    can_rx_rp1 = HW_CAN_RX_QUEUE_CAPACITY;
+
+    HW_CAN_Diagnostic_T diag{};
+    HW_CAN_GetDiagnostic( &diag );
+
+    EXPECT_EQ( diag.rx_queued1, 2U );
 }
