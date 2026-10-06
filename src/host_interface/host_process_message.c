@@ -27,6 +27,7 @@
 #include "hil_rig_protocol/application/application_error.h"
 #include "hil_rig_protocol/application/application_message.h"
 #include "hil_rig_protocol/application/application_response.h"
+#include "hil_rig_protocol/application/application_rig_status.h"
 #include "hil_rig_protocol/application/application_run_report.h"
 #include "hil_rig_protocol/transport/transport.h"
 #include "hil_rig_protocol/version.h"
@@ -89,6 +90,9 @@ static HostTestSession_T s_session = {
     .result_ticks_emitted = 0U,
     .report_owed          = false,
     .report_in_flight     = false,
+    .last_failure_source  = HIL_APPLICATION_FAILURE_SOURCE_NONE,
+    .last_failure_stage   = HIL_APPLICATION_FAILURE_STAGE_NONE,
+    .last_failure_reason  = HIL_APPLICATION_FAILURE_REASON_NONE,
 };
 
 /**-----------------------------------------------------------------------------
@@ -107,6 +111,9 @@ void HOST_INTERFACE_Reset_Session( void )
     s_session.result_ticks_emitted = 0U;
     s_session.report_owed          = false;
     s_session.report_in_flight     = false;
+    s_session.last_failure_source  = HIL_APPLICATION_FAILURE_SOURCE_NONE;
+    s_session.last_failure_stage   = HIL_APPLICATION_FAILURE_STAGE_NONE;
+    s_session.last_failure_reason  = HIL_APPLICATION_FAILURE_REASON_NONE;
     HOST_INSTRUCTION_HANDLER_Reset();
     RESULT_MESSAGE_PRODUCER_Reset();
     HOST_VARIABLE_INSTRUCTION_HANDLER_Reset();
@@ -180,6 +187,24 @@ static void HOST_INTERFACE_BuildExecutionControlResponse(
     message->body.response.control_command = command;
     message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
     message->body.response.detail                 = 0U;
+}
+
+/** Builds the correlated Application Response for a Global Control request. */
+static void HOST_INTERFACE_BuildGlobalControlResponse(
+    HIL_Application_Message_T* message, HIL_Application_Response_Outcome_T outcome,
+    HIL_Application_Response_Reason_T reason,
+    HIL_Application_Global_Control_Command_T command, uint32_t detail )
+{
+    message->type                          = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+    message->subtype                       = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    message->has_test_id                   = 0U;
+    message->body.response.scope           = HIL_APPLICATION_RESPONSE_SCOPE_GLOBAL_CONTROL;
+    message->body.response.outcome         = outcome;
+    message->body.response.reason          = reason;
+    message->body.response.tick_number     = 0U;
+    message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
+    message->body.response.global_control_command = command;
+    message->body.response.detail                 = detail;
 }
 
 /** Maps one native first-cause failure into stable schema-1 wire values. */
@@ -362,6 +387,143 @@ static void HOST_INTERFACE_MapRunFailure( const RunMetadataSnapshot_T* snapshot,
     }
 }
 
+/** Maps the RSM and Host Interface snapshot into a public schema-1 Rig Status. */
+static void HOST_INTERFACE_BuildRigStatus( HIL_Application_Message_T* message,
+                                           HIL_Application_Status_Origin_T origin )
+{
+    RunStateManagerStatus_T rsm_status = { 0 };
+    RUN_STATE_MANAGER_GetStatus( &rsm_status );
+
+    message->type        = HIL_APPLICATION_MESSAGE_TYPE_RIG_STATUS;
+    message->subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    message->has_test_id = s_session.has_active_test_id ? 1U : 0U;
+    if ( s_session.has_active_test_id )
+    {
+        message->test_id = s_session.active_test_id;
+    }
+
+    HIL_Application_Rig_Status_T* status = &message->body.rig_status;
+    ( void )memset( status, 0, sizeof( *status ) );
+    status->schema_version = 1U;
+    status->origin         = origin;
+
+    switch ( rsm_status.state )
+    {
+        case RUN_STATE_IDLE:
+            status->state = HIL_APPLICATION_RIG_STATE_IDLE;
+            break;
+        case RUN_STATE_TEST_PACKAGE_RECEIVE:
+            status->state = HIL_APPLICATION_RIG_STATE_UPLOADING;
+            break;
+        case RUN_STATE_CONFIGURATION:
+            status->state = HIL_APPLICATION_RIG_STATE_CONFIGURING;
+            break;
+        case RUN_STATE_ARMED:
+            status->state = HIL_APPLICATION_RIG_STATE_ARMED;
+            break;
+        case RUN_STATE_EXECUTION:
+            status->state = HIL_APPLICATION_RIG_STATE_RUNNING;
+            break;
+        case RUN_STATE_RESULT_FINALISATION:
+            status->state = HIL_APPLICATION_RIG_STATE_FINALISING;
+            break;
+        case RUN_STATE_RESULTS_READY:
+            status->state = HIL_APPLICATION_RIG_STATE_RESULTS_READY;
+            break;
+        case RUN_STATE_RESULT_TRANSFER:
+            status->state = ( s_session.state == HOST_INTERFACE_SESSION_AWAITING_RESET )
+                                ? HIL_APPLICATION_RIG_STATE_RESULTS_READY
+                                : HIL_APPLICATION_RIG_STATE_TRANSFERRING;
+            break;
+        case RUN_STATE_FAULT:
+            status->state = HIL_APPLICATION_RIG_STATE_FAULT;
+            break;
+        default:
+            status->state = HIL_APPLICATION_RIG_STATE_INITIALISING;
+            break;
+    }
+
+    const bool ready = rsm_status.state == RUN_STATE_IDLE
+                       && s_session.state == HOST_INTERFACE_SESSION_STATE_IDLE
+                       && !rsm_status.transition_pending && !s_session.report_owed
+                       && !s_session.report_in_flight;
+    if ( ready )
+    {
+        status->flags |= HIL_APPLICATION_RIG_STATUS_READY_FOR_NEW_TEST;
+    }
+    if ( rsm_status.transition_pending )
+    {
+        status->flags |= HIL_APPLICATION_RIG_STATUS_TRANSITION_PENDING;
+    }
+    if ( !rsm_status.transition_pending && !rsm_status.execution_active
+         && !s_session.report_owed && !s_session.report_in_flight )
+    {
+        status->flags |= HIL_APPLICATION_RIG_STATUS_RESET_PERMITTED;
+    }
+    if ( rsm_status.execution_active )
+    {
+        status->flags |= HIL_APPLICATION_RIG_STATUS_EXECUTION_ACTIVE;
+    }
+
+    status->failure_source = s_session.last_failure_source;
+    status->failure_stage  = s_session.last_failure_stage;
+    status->failure_reason = s_session.last_failure_reason;
+
+    if ( rsm_status.state == RUN_STATE_FAULT
+         && status->failure_reason == HIL_APPLICATION_FAILURE_REASON_NONE )
+    {
+        RunMetadataSnapshot_T snapshot = { 0 };
+        snapshot.failure_source        = RUN_METADATA_FAILURE_SOURCE_RUN_STATE_MANAGER;
+        snapshot.failure_reason        = ( uint32_t )rsm_status.fault_reason;
+        switch ( rsm_status.fault_reason )
+        {
+            case RUN_STATE_FAULT_EXECUTION_MANAGER:
+                snapshot.failure_source = RUN_METADATA_FAILURE_SOURCE_EXECUTION_MANAGER;
+                snapshot.failure_reason = ( uint32_t )EXECUTION_MANAGER_GetFailure();
+                break;
+            case RUN_STATE_FAULT_FLASH_MANAGER:
+            case RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION:
+            case RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION_TIMEOUT:
+            case RUN_STATE_FAULT_FLASH_RESULT_FINALISATION:
+            case RUN_STATE_FAULT_FLASH_RESULT_FINALISATION_TIMEOUT:
+            case RUN_STATE_FAULT_FLASH_RESULT_TRANSFER:
+            case RUN_STATE_FAULT_FLASH_RESULT_DISPOSITION:
+                snapshot.failure_source = RUN_METADATA_FAILURE_SOURCE_FLASH_MANAGER;
+                break;
+            case RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED:
+            case RUN_STATE_FAULT_HOST_INTERFACE_INSTRUCTION_UPLOAD_TIMEOUT:
+            case RUN_STATE_FAULT_HOST_INTERFACE_USB_INIT:
+            case RUN_STATE_FAULT_HOST_INTERFACE_CODEC_INIT:
+            case RUN_STATE_FAULT_HOST_INTERFACE_TRANSPORT_INIT:
+            case RUN_STATE_FAULT_HOST_INTERFACE_ERROR:
+                snapshot.failure_source = RUN_METADATA_FAILURE_SOURCE_HOST_INTERFACE;
+                break;
+            case RUN_STATE_FAULT_NONE:
+            case RUN_STATE_FAULT_EXTERNAL_REQUEST:
+            case RUN_STATE_FAULT_INVALID_TRANSITION:
+            case RUN_STATE_FAULT_LOGIC_EXPANDER_NOT_READY:
+            case RUN_STATE_FAULT_CONFIGURATION_UNAVAILABLE:
+            case RUN_STATE_FAULT_DRIVER_CONFIGURATION:
+            case RUN_STATE_FAULT_DRIVER_CONFIGURATION_TIMEOUT:
+            case RUN_STATE_FAULT_DRIVER_START:
+            case RUN_STATE_FAULT_DRIVER_START_TIMEOUT:
+            case RUN_STATE_FAULT_ACQUISITION_EPOCH:
+            case RUN_STATE_FAULT_DRIVER_STOP:
+            case RUN_STATE_FAULT_DRIVER_STOP_TIMEOUT:
+            case RUN_STATE_FAULT_EXECUTION_TIMER:
+            case RUN_STATE_FAULT_INTERNAL:
+            default:
+                break;
+        }
+
+        HIL_Application_Run_Report_T mapped = { 0 };
+        HOST_INTERFACE_MapRunFailure( &snapshot, &mapped );
+        status->failure_source = mapped.failure_source;
+        status->failure_stage  = mapped.failure_stage;
+        status->failure_reason = mapped.failure_reason;
+    }
+}
+
 /** Builds the schema-1 report from the RSM-owned sealed metadata snapshot. */
 static bool HOST_INTERFACE_BuildRunReport( HIL_Application_Message_T* message )
 {
@@ -468,6 +630,9 @@ static bool HOST_INTERFACE_BuildRunReport( HIL_Application_Message_T* message )
     report->flash.refill_drain_contention_count =
         snapshot.flash_throughput.refill_drain_contention_count;
     HOST_INTERFACE_MapRunFailure( &snapshot, report );
+    s_session.last_failure_source = report->failure_source;
+    s_session.last_failure_stage  = report->failure_stage;
+    s_session.last_failure_reason = report->failure_reason;
     return true;
 }
 
@@ -523,6 +688,12 @@ HOST_Interface_Status_T HOST_INTERFACE_state_to_state_request( Host_RunState_Req
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
         case HOST_REQUEST_RESULT_TRANSFER:
             if ( RUN_STATE_MANAGER_RequestResultTransfer() != true )
+            {
+                return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
+            }
+            return HOST_INTERFACE_STATUS_OK;
+        case HOST_REQUEST_REPEAT:
+            if ( RUN_STATE_MANAGER_RequestRepeat() != true )
             {
                 return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
             }
@@ -596,6 +767,9 @@ HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion( RunState_T expe
     // TODO change to use a timeout number instead of number of tries
     for ( uint16_t i = 0; i < num_trys; i++ )
     {
+        /* Let the RSM consume the queued request before interpreting its prior state. */
+        vTaskDelay( pdMS_TO_TICKS( HOST_INTERFACE_STATE_TRANSITION_RETRY_DELAY_MS ) );
+
         RunStateManagerStatus_T run_state_status = { 0 };
         RUN_STATE_MANAGER_GetStatus( &run_state_status );
 
@@ -618,7 +792,6 @@ HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion( RunState_T expe
             return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
         }
 
-        vTaskDelay( pdMS_TO_TICKS( HOST_INTERFACE_STATE_TRANSITION_RETRY_DELAY_MS ) );
     }
 
     return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
@@ -791,9 +964,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     ( void )data;
     ( void )data_size;
 
-    // Only accept configuration when IDLE or COMPLETED
-    if ( ( s_session.state != HOST_INTERFACE_SESSION_STATE_IDLE )
-         && ( s_session.state != HOST_INTERFACE_SESSION_COMPLETED ) )
+    // A retained terminal run must be reset before a different test is uploaded.
+    if ( s_session.state != HOST_INTERFACE_SESSION_STATE_IDLE )
     {
         HOST_INTERFACE_Default_Error( outgoing_message );
         outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
@@ -1132,9 +1304,8 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
             *response_required = false;
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
         case HIL_APPLICATION_CONTROL_START:
-
-            // Must be ARMED to start
-            if ( s_session.state != HOST_INTERFACE_SESSION_ARMED )
+            if ( s_session.state != HOST_INTERFACE_SESSION_ARMED
+                 && s_session.state != HOST_INTERFACE_SESSION_AWAITING_RESET )
             {
                 HOST_INTERFACE_BuildExecutionControlResponse(
                     outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
@@ -1151,6 +1322,64 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
                     HIL_APPLICATION_CONTROL_START );
                 *response_required = true;
                 return HOST_INTERFACE_STATUS_OK;
+            }
+
+            if ( s_session.state == HOST_INTERFACE_SESSION_AWAITING_RESET )
+            {
+                RunStateManagerStatus_T rsm_status = { 0 };
+                RUN_STATE_MANAGER_GetStatus( &rsm_status );
+                if ( rsm_status.transition_pending )
+                {
+                    HOST_INTERFACE_BuildExecutionControlResponse(
+                        outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+                        HIL_APPLICATION_RESPONSE_REASON_HARDWARE_NOT_READY,
+                        HIL_APPLICATION_CONTROL_START );
+                    *response_required = true;
+                    return HOST_INTERFACE_STATUS_OK;
+                }
+
+                s_session.result_ticks_emitted = 0U;
+                s_session.report_owed          = true;
+                s_session.last_failure_source  = HIL_APPLICATION_FAILURE_SOURCE_NONE;
+                s_session.last_failure_stage   = HIL_APPLICATION_FAILURE_STAGE_NONE;
+                s_session.last_failure_reason  = HIL_APPLICATION_FAILURE_REASON_NONE;
+                RESULT_MESSAGE_PRODUCER_Reset();
+                VARIABLE_RESULT_MESSAGE_PRODUCER_Reset();
+                VARIABLE_RESULT_MESSAGE_PRODUCER_SetExpectedTickCount(
+                    s_session.expected_tick_count );
+
+                status = HOST_INTERFACE_request_state_tranistion(
+                    RUN_STATE_ARMED, HOST_REQUEST_REPEAT,
+                    HOST_INTERFACE_POST_REPORT_RESET_WAIT_ATTEMPTS, 0U );
+                if ( status != HOST_INTERFACE_STATUS_OK )
+                {
+                    RunMetadataSnapshot_T snapshot = { 0 };
+                    if ( RUN_STATE_MANAGER_GetRunMetadataSnapshot( &snapshot ) )
+                    {
+                        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+                        HOST_INTERFACE_BuildExecutionControlResponse(
+                            outgoing_message,
+                            snapshot.terminal_status == RUN_METADATA_TERMINAL_REJECTED
+                                ? HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED
+                                : HIL_APPLICATION_RESPONSE_OUTCOME_FAILED,
+                            snapshot.terminal_status == RUN_METADATA_TERMINAL_REJECTED
+                                ? HIL_APPLICATION_RESPONSE_REASON_HARDWARE_NOT_READY
+                                : HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE,
+                            HIL_APPLICATION_CONTROL_START );
+                        outgoing_message->body.response.detail = snapshot.failure_reason;
+                    }
+                    else
+                    {
+                        s_session.report_owed = false;
+                        HOST_INTERFACE_BuildExecutionControlResponse(
+                            outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+                            HIL_APPLICATION_RESPONSE_REASON_HARDWARE_NOT_READY,
+                            HIL_APPLICATION_CONTROL_START );
+                    }
+                    *response_required = true;
+                    return HOST_INTERFACE_STATUS_OK;
+                }
+                s_session.state = HOST_INTERFACE_SESSION_ARMED;
             }
 
             // Signal run state manager to move to execution
@@ -1260,51 +1489,79 @@ HOST_INTERFACE_process_Global_Control( const HIL_Application_Message_T* incoming
                                        HIL_Application_Message_T*       outgoing_message,
                                        bool* response_required, uint8_t* data, size_t data_size )
 {
+    ( void )data;
+    ( void )data_size;
     HOST_Interface_Status_T status = HOST_INTERFACE_STATUS_INTERNAL_ERROR;
     switch ( incoming_message->body.global_control.command )
     {
         case HIL_APPLICATION_GLOBAL_CONTROL_INVALID:
             *response_required = false;
             return HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE;
-        case HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION:
+        case HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION: {
+            if ( s_session.report_owed || s_session.report_in_flight )
+            {
+                HOST_INTERFACE_BuildGlobalControlResponse(
+                    outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+                    HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED,
+                    HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION, 0U );
+                *response_required = true;
+                return HOST_INTERFACE_STATUS_OK;
+            }
+
+            if ( s_session.state != HOST_INTERFACE_SESSION_STATE_IDLE
+                 && s_session.state != HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS
+                 && s_session.state != HOST_INTERFACE_SESSION_AWAITING_RESET
+                 && s_session.state != HOST_INTERFACE_SESSION_FAULTED )
+            {
+                HOST_INTERFACE_BuildGlobalControlResponse(
+                    outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+                    HIL_APPLICATION_RESPONSE_REASON_HARDWARE_NOT_READY,
+                    HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION, 0U );
+                *response_required = true;
+                return HOST_INTERFACE_STATUS_OK;
+            }
+
             status = HOST_INTERFACE_request_state_tranistion(
                 RUN_STATE_IDLE, HOST_REQUEST_RESET, HOST_INTERFACE_POST_REPORT_RESET_WAIT_ATTEMPTS,
                 0 );
-            if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
-            {
-                // Construct the error message
-                HOST_INTERFACE_Default_Error( outgoing_message );
-                // TODO  more specific error catagory
-                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-                *response_required                    = true;
-                return HOST_INTERFACE_STATUS_OK;
-            }
-            if ( status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
-            {
-                // Construct the error message
-                HOST_INTERFACE_Default_Error( outgoing_message );
-                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-                *response_required                    = true;
-                return HOST_INTERFACE_STATUS_OK;
-            }
-            if ( status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE )
-            {
-                // Construct the error message
-                HOST_INTERFACE_Default_Error( outgoing_message );
-                // TODO  more specific error catagory
-                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-                *response_required                    = true;
-                return HOST_INTERFACE_STATUS_OK;
-            }
             if ( status == HOST_INTERFACE_STATUS_OK )
             {
                 HOST_INTERFACE_Reset_Session();
-                *response_required = false;
+                HOST_INTERFACE_BuildGlobalControlResponse(
+                    outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_COMPLETED,
+                    HIL_APPLICATION_RESPONSE_REASON_NONE,
+                    HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION, 0U );
+                *response_required = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
-            // Construct the error message
-            HOST_INTERFACE_Default_Error( outgoing_message );
-            // TODO  more specific error catagory
+
+            RunStateManagerStatus_T rsm_status = { 0 };
+            RUN_STATE_MANAGER_GetStatus( &rsm_status );
+            if ( rsm_status.last_request_result == RUN_STATE_REQUEST_RESULT_REJECTED_PENDING
+                 || rsm_status.last_request_result
+                        == RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE
+                 || rsm_status.last_request_result == RUN_STATE_REQUEST_RESULT_REJECTED_STATE )
+            {
+                HOST_INTERFACE_BuildGlobalControlResponse(
+                    outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+                    HIL_APPLICATION_RESPONSE_REASON_HARDWARE_NOT_READY,
+                    HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION,
+                    ( uint32_t )rsm_status.last_request_result );
+            }
+            else
+            {
+                HOST_INTERFACE_BuildGlobalControlResponse(
+                    outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_FAILED,
+                    HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE,
+                    HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION,
+                    ( uint32_t )rsm_status.fault_reason );
+            }
+            *response_required = true;
+            return HOST_INTERFACE_STATUS_OK;
+        }
+        case HIL_APPLICATION_GLOBAL_CONTROL_GET_STATUS:
+            HOST_INTERFACE_BuildRigStatus( outgoing_message,
+                                           HIL_APPLICATION_STATUS_ORIGIN_QUERY_RESPONSE );
             *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_GLOBAL_CONTROL_RESERVED:
@@ -1594,20 +1851,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Transfer_Complete_Notification(
 
     *notifications &= ( uint32_t ) ~( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE );
 
-    /*
-     * This is the post-report control seam. Until metadata control responses
-     * are implemented, always select the reset/new-upload policy by discarding
-     * the retained test and asking the RSM to return to IDLE.
-     */
-    HOST_Interface_Status_T reset_status = HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
-    if ( s_session.state == HOST_INTERFACE_SESSION_COMPLETED )
-    {
-        reset_status = HOST_INTERFACE_request_state_tranistion(
-            RUN_STATE_IDLE, HOST_REQUEST_DISCARD_RESULTS,
-            HOST_INTERFACE_POST_REPORT_RESET_WAIT_ATTEMPTS, 0U );
-    }
-
-    if ( reset_status != HOST_INTERFACE_STATUS_OK )
+    if ( s_session.state != HOST_INTERFACE_SESSION_COMPLETED )
     {
         s_session.state = HOST_INTERFACE_SESSION_FAULTED;
         HOST_INTERFACE_Default_Error( outgoing_message );
@@ -1616,7 +1860,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Transfer_Complete_Notification(
         return HOST_INTERFACE_STATUS_OK;
     }
 
-    HOST_INTERFACE_Reset_Session();
+    /* Retain the accepted test until the host explicitly resets or repeats it. */
+    s_session.state    = HOST_INTERFACE_SESSION_AWAITING_RESET;
     *response_required = false;
     return HOST_INTERFACE_STATUS_OK;
 }
@@ -1689,6 +1934,18 @@ static HOST_Interface_Status_T HOST_INTERFACE_process_Run_Report_Notification(
     *notifications &= ( uint32_t )~HOST_INTERFACE_NOTIFY_RUN_REPORT;
     s_session.report_in_flight = true;
     *response_required         = true;
+    return HOST_INTERFACE_STATUS_OK;
+}
+
+/** Emits one unsolicited snapshot after connection or successful reset. */
+static HOST_Interface_Status_T HOST_INTERFACE_process_Rig_Status_Notification(
+    HIL_Application_Message_T* outgoing_message, uint32_t* notifications,
+    bool* response_required )
+{
+    *notifications &= ( uint32_t )~HOST_INTERFACE_NOTIFY_RIG_STATUS;
+    HOST_INTERFACE_BuildRigStatus( outgoing_message,
+                                   HIL_APPLICATION_STATUS_ORIGIN_NOTIFICATION );
+    *response_required = true;
     return HOST_INTERFACE_STATUS_OK;
 }
 
@@ -1953,6 +2210,12 @@ HOST_INTERFACE_process_internal_message( HIL_Application_Message_T* outgoing_mes
         return HOST_INTERFACE_STATUS_OK;
     }
 
+    if ( ( *notifications & HOST_INTERFACE_NOTIFY_RIG_STATUS ) != 0U )
+    {
+        return HOST_INTERFACE_process_Rig_Status_Notification(
+            outgoing_message, notifications, response_required );
+    }
+
     *notifications     = 0U;
     *response_required = false;
     return HOST_INTERFACE_STATUS_UNSUPPORTED_NOTIFICATION;
@@ -1987,6 +2250,21 @@ HOST_Interface_Status_T HOST_INTERFACE_process_message(
             s_session.state = HOST_INTERFACE_SESSION_FAULTED;
             return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
         }
+        if ( s_session.state == HOST_INTERFACE_SESSION_FAULTED )
+        {
+            s_session.state = HOST_INTERFACE_SESSION_AWAITING_RESET;
+        }
+    }
+
+    if ( outgoing_message_accepted
+         && outgoing_message->type == HIL_APPLICATION_MESSAGE_TYPE_RESPONSE
+         && outgoing_message->body.response.scope == HIL_APPLICATION_RESPONSE_SCOPE_GLOBAL_CONTROL
+         && outgoing_message->body.response.outcome
+                == HIL_APPLICATION_RESPONSE_OUTCOME_COMPLETED
+         && outgoing_message->body.response.global_control_command
+                == HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION )
+    {
+        *notifications |= HOST_INTERFACE_NOTIFY_RIG_STATUS;
     }
 
     // create temporary output message (incase output is not accepted)
@@ -2002,6 +2280,19 @@ HOST_Interface_Status_T HOST_INTERFACE_process_message(
     {
         *response_required = false;
         return host_status;
+    }
+
+    if ( *response_required
+         && temp_outgoing_message.type == HIL_APPLICATION_MESSAGE_TYPE_RESPONSE
+         && temp_outgoing_message.body.response.scope
+                == HIL_APPLICATION_RESPONSE_SCOPE_GLOBAL_CONTROL
+         && temp_outgoing_message.body.response.outcome
+                == HIL_APPLICATION_RESPONSE_OUTCOME_COMPLETED
+         && temp_outgoing_message.body.response.global_control_command
+                == HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION )
+    {
+        /* No notification from the discarded transaction may follow reset completion. */
+        *notifications = 0U;
     }
 
     // CHECK IF A RESPONSE IS REQUIRED

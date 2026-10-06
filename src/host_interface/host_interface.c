@@ -1839,6 +1839,7 @@ void HOST_INTERFACE_Task( void* task_parameters )
     TickType_t overflow_timer = xTaskGetTickCount();
 
     bool can_consume_incoming = true;
+    bool application_connection_ready = false;
 
     static HIL_Application_Message_T overflow_outgoing_message = { 0 };
     HostInterfaceTaskHandle                                    = xTaskGetCurrentTaskHandle();
@@ -1962,6 +1963,20 @@ void HOST_INTERFACE_Task( void* task_parameters )
             s_host_interface_status.last_tx_tick =
                 HOST_INTERFACE_GetMessageTick( &outgoing_message );
             outgoing_message_pending = false;
+
+            if ( outgoing_message.type == HIL_APPLICATION_MESSAGE_TYPE_RESPONSE
+                 && outgoing_message.body.response.scope
+                        == HIL_APPLICATION_RESPONSE_SCOPE_GLOBAL_CONTROL
+                 && outgoing_message.body.response.outcome
+                        == HIL_APPLICATION_RESPONSE_OUTCOME_COMPLETED
+                 && outgoing_message.body.response.global_control_command
+                        == HIL_APPLICATION_GLOBAL_CONTROL_RESET_APPLICATION )
+            {
+                expected_tick_count                              = 0U;
+                s_host_interface_status.instruction_phase_active = false;
+                s_host_interface_status.result_phase_active      = false;
+                HOST_INTERFACE_Result_Tx_Audit_Reset();
+            }
 
             if ( s_host_interface_status.result_phase_active
                  && ( ( outgoing_message.type == HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT )
@@ -2089,7 +2104,18 @@ void HOST_INTERFACE_Task( void* task_parameters )
 #if !HOST_INTERFACE_DIRECT_USB_STREAMING
         HIL_Transport_Status_Snapshot_T transport_snapshot = { 0 };
         ( void )HIL_TRANSPORT_Get_Status( &protocol_state.transport.context, &transport_snapshot );
+        const bool connection_ready =
+            transport_snapshot.session_state == HIL_TRANSPORT_SESSION_STATE_ESTABLISHED;
+#else
+        const bool connection_ready =
+            HW_USB_Get_Connection_State() == HW_USB_CONNECTION_STATE_ACTIVE;
 #endif
+
+        if ( connection_ready && !application_connection_ready )
+        {
+            carry_on_notifications |= HOST_INTERFACE_NOTIFY_RIG_STATUS;
+        }
+        application_connection_ready = connection_ready;
 
         s_host_interface_status.is_initialized       = true;
         s_host_interface_status.usb_connection_state = HW_USB_Get_Connection_State();

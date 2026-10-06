@@ -1394,7 +1394,7 @@ TEST_F( RunStateManagerTest, FlashFaultCallbackNotifiesAndTransitionsToFault )
     EXPECT_EQ( RUN_STATE_FAULT_FLASH_MANAGER, fault_reason );
 }
 
-TEST_F( RunStateManagerTest, RepeatRequestRejectedFromResultTransferState )
+TEST_F( RunStateManagerTest, RepeatRequestRejectedBeforeResultTransferIsFinished )
 {
     EnterExecution();
     Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
@@ -1408,7 +1408,49 @@ TEST_F( RunStateManagerTest, RepeatRequestRejectedFromResultTransferState )
 
     Process( RUN_STATE_REQUEST_REPEAT );
     EXPECT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
-    EXPECT_EQ( RUN_STATE_REQUEST_RESULT_REJECTED_STATE, last_request_result );
+    EXPECT_EQ( RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE, last_request_result );
+}
+
+/** @brief A fully transferred result stream can reconfigure the retained test. */
+TEST_F( RunStateManagerTest, RepeatAfterResultTransferReconfiguresRetainedTest )
+{
+    EnterExecution();
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    flash_manager_state = FLASH_MANAGER_STATE_RESULTS_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    ASSERT_EQ( RUN_STATE_RESULTS_READY, run_state );
+
+    Process( RUN_STATE_REQUEST_RESULT_TRANSFER );
+    ASSERT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
+    Process( RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE );
+    flash_manager_state = FLASH_MANAGER_STATE_IDLE;
+
+    Process( RUN_STATE_REQUEST_REPEAT );
+    EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_CONFIGURATION, pending_operation );
+    EXPECT_TRUE( run_configuration_owned );
+    EXPECT_EQ( 0U, flash_discard_calls );
+}
+
+/** @brief A cleaned-up failed run can reconfigure its retained test. */
+TEST_F( RunStateManagerTest, RepeatAfterFaultReconfiguresRetainedTest )
+{
+    ConfigureToArmed();
+    ASSERT_TRUE( run_configuration_owned );
+
+    RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_START );
+    ASSERT_EQ( RUN_STATE_FAULT, run_state );
+    flash_manager_state = FLASH_MANAGER_STATE_IDLE;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    ASSERT_EQ( RUN_STATE_PENDING_NONE, pending_operation );
+
+    Process( RUN_STATE_REQUEST_REPEAT );
+    EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_CONFIGURATION, pending_operation );
+    EXPECT_EQ( RUN_STATE_FAULT_NONE, fault_reason );
+    EXPECT_FALSE( execution_abort_requested );
+    EXPECT_TRUE( run_configuration_owned );
 }
 
 TEST_F( RunStateManagerTest, ConfigurationOwnershipHeldAcrossExecutionAndReleasedOnDiscard )

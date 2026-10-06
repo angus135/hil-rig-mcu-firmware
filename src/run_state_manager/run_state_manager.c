@@ -180,6 +180,7 @@ static bool RUN_STATE_MANAGER_EnterResultTransfer( void );
 static bool RUN_STATE_MANAGER_ClearConfigurationAndReturnToIdle( void );
 static bool RUN_STATE_MANAGER_CompleteResultTransfer( void );
 static bool RUN_STATE_MANAGER_DiscardCompletedResults( RunState_T next_state );
+static bool RUN_STATE_MANAGER_RecoverRetainedTestForRepeat( void );
 static bool RUN_STATE_MANAGER_FlashIsIdle( void );
 
 static void RUN_STATE_MANAGER_ProcessPendingOperation( void );
@@ -573,7 +574,7 @@ static bool RUN_STATE_MANAGER_IsTransitionAllowed( RunState_T current_state, Run
             return next_state == RUN_STATE_CONFIGURATION || next_state == RUN_STATE_IDLE;
 
         case RUN_STATE_FAULT:
-            return next_state == RUN_STATE_IDLE;
+            return next_state == RUN_STATE_CONFIGURATION || next_state == RUN_STATE_IDLE;
 
         default:
             return false;
@@ -1174,6 +1175,44 @@ static bool RUN_STATE_MANAGER_DiscardCompletedResults( RunState_T next_state )
     return RUN_STATE_MANAGER_TransitionTo( next_state );
 }
 
+/** Reapplies a retained test after a completed transfer or a cleaned-up fault. */
+static bool RUN_STATE_MANAGER_RecoverRetainedTestForRepeat( void )
+{
+    if ( !RUN_STATE_MANAGER_FlashIsIdle() )
+    {
+        return false;
+    }
+
+    if ( run_state == RUN_STATE_FAULT )
+    {
+        if ( !driver_cleanup_complete )
+        {
+            return false;
+        }
+        bool fault_requested = false;
+        taskENTER_CRITICAL();
+        fault_requested = requested_fault_reason != RUN_STATE_FAULT_NONE;
+        if ( !fault_requested )
+        {
+            execution_abort_requested = false;
+        }
+        taskEXIT_CRITICAL();
+        if ( fault_requested )
+        {
+            return false;
+        }
+        fault_reason = RUN_STATE_FAULT_NONE;
+    }
+
+    if ( !RUN_STATE_MANAGER_TransitionTo( RUN_STATE_CONFIGURATION ) )
+    {
+        return false;
+    }
+
+    RUN_STATE_MANAGER_StartPendingOperation( RUN_STATE_PENDING_CONFIGURATION );
+    return true;
+}
+
 /** Returns true only when Flash is in the reusable IDLE state. */
 static bool RUN_STATE_MANAGER_FlashIsIdle( void )
 {
@@ -1532,6 +1571,15 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
             {
                 accepted = RUN_STATE_MANAGER_DiscardCompletedResults( RUN_STATE_ARMED );
             }
+            else if ( run_state == RUN_STATE_RESULT_TRANSFER || run_state == RUN_STATE_FAULT )
+            {
+                accepted = RUN_STATE_MANAGER_RecoverRetainedTestForRepeat();
+                if ( !accepted && run_state != RUN_STATE_FAULT )
+                {
+                    last_request_result = RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE;
+                    return;
+                }
+            }
             break;
 
         case RUN_STATE_REQUEST_DISCARD_RESULTS:
@@ -1576,6 +1624,7 @@ static void RUN_STATE_MANAGER_ProcessRequest( RunStateRequest_T request )
                 {
                     fault_reason              = RUN_STATE_FAULT_NONE;
                     execution_abort_requested = false;
+                    TEST_CONFIGURATION_Clear();
                     TEST_CONFIGURATION_ReleaseRunOwnership();
                     run_configuration_owned = false;
                 }

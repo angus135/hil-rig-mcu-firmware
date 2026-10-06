@@ -49,6 +49,7 @@ typedef enum
     HOST_REQUEST_RESULT_FINALISATION,
     HOST_REQUEST_RESULTS_READY,
     HOST_REQUEST_RESULT_TRANSFER,
+    HOST_REQUEST_REPEAT,
     HOST_REQUEST_DISCARD_RESULTS,
     HOST_REQUEST_FAULT,
     HOST_REQUEST_ABORT,
@@ -140,8 +141,10 @@ typedef enum
     HOST_INTERFACE_SESSION_ARMED,     /**< Upload finalized & hardware armed; ready for START */
     HOST_INTERFACE_SESSION_EXECUTING, /**< Running on hardware */
     HOST_INTERFACE_SESSION_RESULT_TRANSFER, /**< Streaming results (Type 32/34) to host */
-    HOST_INTERFACE_SESSION_COMPLETED,       /**< All results transferred; ready to return to IDLE */
-    HOST_INTERFACE_SESSION_FAULTED          /**< Fault or aborted */
+    HOST_INTERFACE_SESSION_COMPLETED, /**< Results complete; terminal report is pending */
+    HOST_INTERFACE_SESSION_AWAITING_RESET, /**< Terminal report sent; retained test may be reset or
+                                              repeated */
+    HOST_INTERFACE_SESSION_FAULTED          /**< Fault awaiting its terminal report */
 } HOST_INTERFACE_Session_State_T;
 
 /**
@@ -168,6 +171,9 @@ typedef struct
     uint32_t                       result_ticks_emitted;
     bool                           report_owed;
     bool                           report_in_flight;
+    HIL_Application_Failure_Source_T last_failure_source;
+    HIL_Application_Failure_Stage_T  last_failure_stage;
+    HIL_Application_Failure_Reason_T last_failure_reason;
 } HostTestSession_T;
 
 /**-----------------------------------------------------------------------------
