@@ -44,7 +44,10 @@ typedef enum
     RUN_METADATA_TERMINAL_FAILED,
 
     /** Execution ended because the host or operator explicitly aborted it. */
-    RUN_METADATA_TERMINAL_ABORTED
+    RUN_METADATA_TERMINAL_ABORTED,
+
+    /** The finalised test was rejected before execution admission. */
+    RUN_METADATA_TERMINAL_REJECTED
 } RunMetadataTerminalStatus_T;
 
 /** Availability of the result stream associated with the terminal outcome. */
@@ -250,7 +253,7 @@ void RUN_METADATA_Reset( void );
  * @brief Latches the first terminal cause without blocking.
  *
  * This function is safe to call from the execution ISR. The lifecycle owner
- * must prevent concurrent task and ISR calls. FAILED and ABORTED require a
+ * must prevent concurrent task and ISR calls. FAILED, ABORTED, and REJECTED require a
  * non-NONE source and non-zero native reason. COMPLETE requires neither.
  *
  * @return true when this call latched the terminal cause; false when the

@@ -574,6 +574,16 @@ TEST_F( RunStateManagerTest, ConfigurationFailureEntersFault )
     EXPECT_EQ( RUN_STATE_FAULT_DRIVER_CONFIGURATION, fault_reason );
     EXPECT_EQ( 1U, driver_shutdown_begin_calls );
     EXPECT_EQ( 1U, flash_abort_calls );
+    EXPECT_NE( 0U, host_interface_notified_bits & HOST_INTERFACE_NOTIFY_RUN_REPORT );
+
+    RunMetadataSnapshot_T snapshot = {};
+    ASSERT_TRUE( RUN_STATE_MANAGER_GetRunMetadataSnapshot( &snapshot ) );
+    EXPECT_EQ( RUN_METADATA_TERMINAL_REJECTED, snapshot.terminal_status );
+    EXPECT_EQ( RUN_METADATA_RESULT_STREAM_UNAVAILABLE, snapshot.result_stream_status );
+    EXPECT_EQ( RUN_METADATA_VALID_TERMINAL, snapshot.valid_sections );
+    EXPECT_EQ( RUN_METADATA_FAILURE_SOURCE_RUN_STATE_MANAGER, snapshot.failure_source );
+    EXPECT_EQ( static_cast<uint32_t>( RUN_STATE_FAULT_DRIVER_CONFIGURATION ),
+               snapshot.failure_reason );
 }
 
 TEST_F( RunStateManagerTest, ConfigurationTimeoutEntersFault )

@@ -27,9 +27,11 @@
 #include "hil_rig_protocol/application/application_error.h"
 #include "hil_rig_protocol/application/application_message.h"
 #include "hil_rig_protocol/application/application_response.h"
+#include "hil_rig_protocol/application/application_run_report.h"
 #include "hil_rig_protocol/transport/transport.h"
 #include "hil_rig_protocol/version.h"
 #include "host_interface.h"
+#include "execution_manager.h"
 #include "instruction_message_handler.h"
 #include "result_message_producer.h"
 #include "variable_instruction_message_handler.h"
@@ -83,6 +85,10 @@ static HostTestSession_T s_session = {
     .active_test_id      = { { 0 } },
     .instruction_family  = HOST_INSTRUCTION_FAMILY_UNSET,
     .expected_tick_count = 0U,
+    .tick_period_us      = 0U,
+    .result_ticks_emitted = 0U,
+    .report_owed          = false,
+    .report_in_flight     = false,
 };
 
 /**-----------------------------------------------------------------------------
@@ -97,6 +103,10 @@ void HOST_INTERFACE_Reset_Session( void )
     ( void )memset( &s_session.active_test_id, 0, sizeof( s_session.active_test_id ) );
     s_session.instruction_family  = HOST_INSTRUCTION_FAMILY_UNSET;
     s_session.expected_tick_count = 0U;
+    s_session.tick_period_us       = 0U;
+    s_session.result_ticks_emitted = 0U;
+    s_session.report_owed          = false;
+    s_session.report_in_flight     = false;
     HOST_INSTRUCTION_HANDLER_Reset();
     RESULT_MESSAGE_PRODUCER_Reset();
     HOST_VARIABLE_INSTRUCTION_HANDLER_Reset();
@@ -170,6 +180,295 @@ static void HOST_INTERFACE_BuildExecutionControlResponse(
     message->body.response.control_command = command;
     message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
     message->body.response.detail                 = 0U;
+}
+
+/** Maps one native first-cause failure into stable schema-1 wire values. */
+static void HOST_INTERFACE_MapRunFailure( const RunMetadataSnapshot_T* snapshot,
+                                          HIL_Application_Run_Report_T* report )
+{
+    switch ( snapshot->failure_source )
+    {
+        case RUN_METADATA_FAILURE_SOURCE_NONE:
+            report->failure_source = HIL_APPLICATION_FAILURE_SOURCE_NONE;
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_NONE;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_NONE;
+            return;
+
+        case RUN_METADATA_FAILURE_SOURCE_EXECUTION_MANAGER:
+            report->failure_source = HIL_APPLICATION_FAILURE_SOURCE_EXECUTION_MANAGER;
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_EXECUTION;
+            switch ( ( ExecutionManagerFailure_T )snapshot->failure_reason )
+            {
+                case EXECUTION_MANAGER_FAILURE_NOT_PREPARED:
+                    report->failure_reason = HIL_APPLICATION_FAILURE_REASON_EXECUTION_NOT_PREPARED;
+                    return;
+                case EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNDERRUN:
+                    report->failure_reason = HIL_APPLICATION_FAILURE_REASON_INSTRUCTION_UNDERRUN;
+                    return;
+                case EXECUTION_MANAGER_FAILURE_INSTRUCTION_CORRUPT:
+                    report->failure_reason = HIL_APPLICATION_FAILURE_REASON_INSTRUCTION_CORRUPT;
+                    return;
+                case EXECUTION_MANAGER_FAILURE_INSTRUCTION_LATE:
+                    report->failure_reason = HIL_APPLICATION_FAILURE_REASON_INSTRUCTION_LATE;
+                    return;
+                case EXECUTION_MANAGER_FAILURE_OPERATION_REJECTED:
+                    report->failure_reason = HIL_APPLICATION_FAILURE_REASON_OPERATION_REJECTED;
+                    return;
+                case EXECUTION_MANAGER_FAILURE_INSTRUCTION_CONSUME:
+                    report->failure_reason =
+                        HIL_APPLICATION_FAILURE_REASON_INSTRUCTION_CONSUME_FAILED;
+                    return;
+                case EXECUTION_MANAGER_FAILURE_MEASUREMENT_REJECTED:
+                    report->failure_reason = HIL_APPLICATION_FAILURE_REASON_MEASUREMENT_REJECTED;
+                    return;
+                case EXECUTION_MANAGER_FAILURE_INSTRUCTION_UNCONSUMED:
+                    report->failure_reason = HIL_APPLICATION_FAILURE_REASON_INSTRUCTION_UNCONSUMED;
+                    return;
+                case EXECUTION_MANAGER_FAILURE_NONE:
+                default:
+                    report->failure_reason = HIL_APPLICATION_FAILURE_REASON_INTERNAL_FAILURE;
+                    return;
+            }
+
+        case RUN_METADATA_FAILURE_SOURCE_FLASH_MANAGER:
+            report->failure_source = HIL_APPLICATION_FAILURE_SOURCE_FLASH_MANAGER;
+            break;
+        case RUN_METADATA_FAILURE_SOURCE_HOST_INTERFACE:
+            report->failure_source = HIL_APPLICATION_FAILURE_SOURCE_HOST_INTERFACE;
+            break;
+        case RUN_METADATA_FAILURE_SOURCE_RUN_STATE_MANAGER:
+        default:
+            report->failure_source = HIL_APPLICATION_FAILURE_SOURCE_RUN_STATE_MANAGER;
+            break;
+    }
+
+    switch ( ( RunStateFaultReason_T )snapshot->failure_reason )
+    {
+        case RUN_STATE_FAULT_EXTERNAL_REQUEST:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_CLEANUP;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_HOST_ABORT;
+            break;
+        case RUN_STATE_FAULT_INVALID_TRANSITION:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_PREPARATION;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_INVALID_LIFECYCLE_STATE;
+            break;
+        case RUN_STATE_FAULT_LOGIC_EXPANDER_NOT_READY:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_PREPARATION;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_HARDWARE_NOT_READY;
+            break;
+        case RUN_STATE_FAULT_CONFIGURATION_UNAVAILABLE:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_PREPARATION;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_CONFIGURATION_UNAVAILABLE;
+            break;
+        case RUN_STATE_FAULT_DRIVER_CONFIGURATION:
+            report->failure_source = HIL_APPLICATION_FAILURE_SOURCE_DRIVER_LIFECYCLE;
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_PREPARATION;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_DRIVER_CONFIGURATION_FAILED;
+            break;
+        case RUN_STATE_FAULT_DRIVER_CONFIGURATION_TIMEOUT:
+            report->failure_source = HIL_APPLICATION_FAILURE_SOURCE_DRIVER_LIFECYCLE;
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_PREPARATION;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_DRIVER_CONFIGURATION_TIMEOUT;
+            break;
+        case RUN_STATE_FAULT_DRIVER_START:
+            report->failure_source = HIL_APPLICATION_FAILURE_SOURCE_DRIVER_LIFECYCLE;
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_PREPARATION;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_DRIVER_START_FAILED;
+            break;
+        case RUN_STATE_FAULT_DRIVER_START_TIMEOUT:
+            report->failure_source = HIL_APPLICATION_FAILURE_SOURCE_DRIVER_LIFECYCLE;
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_PREPARATION;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_DRIVER_START_TIMEOUT;
+            break;
+        case RUN_STATE_FAULT_ACQUISITION_EPOCH:
+            report->failure_source = HIL_APPLICATION_FAILURE_SOURCE_DRIVER_LIFECYCLE;
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_PREPARATION;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_ACQUISITION_EPOCH_FAILED;
+            break;
+        case RUN_STATE_FAULT_DRIVER_STOP:
+            report->failure_source = HIL_APPLICATION_FAILURE_SOURCE_DRIVER_LIFECYCLE;
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_SHUTDOWN;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_DRIVER_STOP_FAILED;
+            break;
+        case RUN_STATE_FAULT_DRIVER_STOP_TIMEOUT:
+            report->failure_source = HIL_APPLICATION_FAILURE_SOURCE_DRIVER_LIFECYCLE;
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_SHUTDOWN;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_DRIVER_STOP_TIMEOUT;
+            break;
+        case RUN_STATE_FAULT_EXECUTION_TIMER:
+            report->failure_source = HIL_APPLICATION_FAILURE_SOURCE_EXECUTION_TIMER;
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_EXECUTION;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_EXECUTION_TIMER_FAILED;
+            break;
+        case RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_PREPARATION;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_FLASH_PREPARATION_FAILED;
+            break;
+        case RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION_TIMEOUT:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_PREPARATION;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_FLASH_PREPARATION_TIMEOUT;
+            break;
+        case RUN_STATE_FAULT_FLASH_RESULT_FINALISATION:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_FINALISATION;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_FLASH_FINALISATION_FAILED;
+            break;
+        case RUN_STATE_FAULT_FLASH_RESULT_FINALISATION_TIMEOUT:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_FINALISATION;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_FLASH_FINALISATION_TIMEOUT;
+            break;
+        case RUN_STATE_FAULT_FLASH_RESULT_TRANSFER:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_TRANSFER;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_RESULT_TRANSFER_FAILED;
+            break;
+        case RUN_STATE_FAULT_FLASH_RESULT_DISPOSITION:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_CLEANUP;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_RESULT_DISPOSITION_FAILED;
+            break;
+        case RUN_STATE_FAULT_FLASH_MANAGER:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_EXECUTION;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_FLASH_MANAGER_FAILED;
+            break;
+        case RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_TRANSFER;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_HOST_RESPONSE_BLOCKED;
+            break;
+        case RUN_STATE_FAULT_HOST_INTERFACE_INSTRUCTION_UPLOAD_TIMEOUT:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_PREPARATION;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_INSTRUCTION_UPLOAD_TIMEOUT;
+            break;
+        case RUN_STATE_FAULT_HOST_INTERFACE_USB_INIT:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_TRANSFER;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_USB_INITIALISATION_FAILED;
+            break;
+        case RUN_STATE_FAULT_HOST_INTERFACE_CODEC_INIT:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_TRANSFER;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_CODEC_INITIALISATION_FAILED;
+            break;
+        case RUN_STATE_FAULT_HOST_INTERFACE_TRANSPORT_INIT:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_TRANSFER;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_TRANSPORT_INITIALISATION_FAILED;
+            break;
+        case RUN_STATE_FAULT_HOST_INTERFACE_ERROR:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_TRANSFER;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_HOST_INTERFACE_FAILED;
+            break;
+        case RUN_STATE_FAULT_NONE:
+        case RUN_STATE_FAULT_EXECUTION_MANAGER:
+        case RUN_STATE_FAULT_INTERNAL:
+        default:
+            report->failure_stage  = HIL_APPLICATION_FAILURE_STAGE_EXECUTION;
+            report->failure_reason = HIL_APPLICATION_FAILURE_REASON_INTERNAL_FAILURE;
+            break;
+    }
+}
+
+/** Builds the schema-1 report from the RSM-owned sealed metadata snapshot. */
+static bool HOST_INTERFACE_BuildRunReport( HIL_Application_Message_T* message )
+{
+    RunMetadataSnapshot_T snapshot = { 0 };
+    if ( message == NULL || !s_session.report_owed || !s_session.has_active_test_id
+         || !RUN_STATE_MANAGER_GetRunMetadataSnapshot( &snapshot ) )
+    {
+        return false;
+    }
+
+    HIL_Application_Run_Report_T* report = &message->body.run_report;
+    const bool execution_started = RUN_STATE_MANAGER_DidExecutionStart();
+    ( void )memset( report, 0, sizeof( *report ) );
+    message->type        = HIL_APPLICATION_MESSAGE_TYPE_RUN_REPORT;
+    message->subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    message->has_test_id = 1U;
+    message->test_id     = s_session.active_test_id;
+
+    report->schema_version      = 1U;
+    report->valid_sections      = snapshot.valid_sections;
+    report->expected_tick_count = s_session.expected_tick_count;
+    report->tick_period_us      = s_session.tick_period_us;
+    report->result_ticks_emitted = s_session.result_ticks_emitted;
+
+    switch ( snapshot.terminal_status )
+    {
+        case RUN_METADATA_TERMINAL_COMPLETE:
+            report->run_outcome       = HIL_APPLICATION_RUN_OUTCOME_SUCCESS;
+            report->execution_outcome = HIL_APPLICATION_EXECUTION_OUTCOME_COMPLETE;
+            break;
+        case RUN_METADATA_TERMINAL_FAILED:
+            report->run_outcome       = HIL_APPLICATION_RUN_OUTCOME_FAILED;
+            report->execution_outcome = execution_started
+                                            ? HIL_APPLICATION_EXECUTION_OUTCOME_FAILED
+                                            : HIL_APPLICATION_EXECUTION_OUTCOME_NOT_STARTED;
+            break;
+        case RUN_METADATA_TERMINAL_ABORTED:
+            report->run_outcome       = HIL_APPLICATION_RUN_OUTCOME_ABORTED;
+            report->execution_outcome = execution_started
+                                            ? HIL_APPLICATION_EXECUTION_OUTCOME_ABORTED
+                                            : HIL_APPLICATION_EXECUTION_OUTCOME_NOT_STARTED;
+            break;
+        case RUN_METADATA_TERMINAL_REJECTED:
+            report->run_outcome       = HIL_APPLICATION_RUN_OUTCOME_REJECTED;
+            report->execution_outcome = HIL_APPLICATION_EXECUTION_OUTCOME_NOT_STARTED;
+            break;
+        case RUN_METADATA_TERMINAL_PENDING:
+        default:
+            return false;
+    }
+
+    switch ( snapshot.result_stream_status )
+    {
+        case RUN_METADATA_RESULT_STREAM_COMPLETE:
+            report->result_status = HIL_APPLICATION_RUN_RESULT_STATUS_COMPLETE;
+            break;
+        case RUN_METADATA_RESULT_STREAM_PARTIAL:
+            report->result_status = HIL_APPLICATION_RUN_RESULT_STATUS_PARTIAL;
+            break;
+        case RUN_METADATA_RESULT_STREAM_UNAVAILABLE:
+            report->result_status = HIL_APPLICATION_RUN_RESULT_STATUS_UNAVAILABLE;
+            break;
+        case RUN_METADATA_RESULT_STREAM_PENDING:
+        default:
+            return false;
+    }
+
+    report->last_completed_boundary = snapshot.last_completed_boundary;
+    report->isr_timing.sample_count = snapshot.isr_timing.sample_count;
+    report->isr_timing.total_cycles = snapshot.isr_timing.total_cycles;
+    report->isr_timing.minimum_cycles = snapshot.isr_timing.minimum_cycles;
+    report->isr_timing.maximum_cycles = snapshot.isr_timing.maximum_cycles;
+    report->isr_timing.maximum_boundary = snapshot.isr_timing.maximum_boundary;
+    report->instruction_buffer.sample_count = snapshot.instruction_buffer.sample_count;
+    report->instruction_buffer.minimum_unread_bytes =
+        snapshot.instruction_buffer.minimum_unread_bytes;
+    report->instruction_buffer.minimum_boundary = snapshot.instruction_buffer.minimum_boundary;
+    report->result_buffer.committed_record_count = snapshot.result_buffer.committed_record_count;
+    report->result_buffer.committed_bytes = snapshot.result_buffer.committed_bytes;
+    report->result_buffer.peak_pending_bytes = snapshot.result_buffer.peak_pending_bytes;
+    report->result_buffer.peak_pending_boundary = snapshot.result_buffer.peak_pending_boundary;
+    report->result_buffer.reserve_failure_count = snapshot.result_buffer.reserve_failure_count;
+    report->result_buffer.commit_failure_count = snapshot.result_buffer.commit_failure_count;
+    report->flash.result_pages_drained = snapshot.flash_throughput.result_pages_drained;
+    report->flash.result_bytes_drained = snapshot.flash_throughput.result_bytes_drained;
+    report->flash.result_drain_total_cycles = snapshot.flash_throughput.result_drain_total_cycles;
+    report->flash.result_drain_maximum_cycles =
+        snapshot.flash_throughput.result_drain_maximum_cycles;
+    report->flash.instruction_pages_refilled = snapshot.flash_throughput.instruction_pages_refilled;
+    report->flash.instruction_bytes_refilled = snapshot.flash_throughput.instruction_bytes_refilled;
+    report->flash.instruction_refill_total_cycles =
+        snapshot.flash_throughput.instruction_refill_total_cycles;
+    report->flash.instruction_refill_maximum_cycles =
+        snapshot.flash_throughput.instruction_refill_maximum_cycles;
+    report->flash.instruction_publish_sample_count =
+        snapshot.flash_throughput.instruction_publish_sample_count;
+    report->flash.instruction_publish_total_cycles =
+        snapshot.flash_throughput.instruction_publish_total_cycles;
+    report->flash.instruction_publish_maximum_cycles =
+        snapshot.flash_throughput.instruction_publish_maximum_cycles;
+    report->flash.service_gap_sample_count = snapshot.flash_throughput.service_gap_sample_count;
+    report->flash.service_gap_total_cycles = snapshot.flash_throughput.service_gap_total_cycles;
+    report->flash.service_gap_maximum_cycles = snapshot.flash_throughput.service_gap_maximum_cycles;
+    report->flash.refill_drain_contention_count =
+        snapshot.flash_throughput.refill_drain_contention_count;
+    HOST_INTERFACE_MapRunFailure( &snapshot, report );
+    return true;
 }
 
 /**
@@ -616,6 +915,8 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     s_session.active_test_id      = incoming_message->test_id;
     s_session.instruction_family  = HOST_INSTRUCTION_FAMILY_UNSET;
     s_session.expected_tick_count = incoming_message->body.test_configuration.expected_tick_count;
+    s_session.tick_period_us =
+        incoming_message->body.test_configuration.tick_duration_us.microseconds;
 
     return HOST_INTERFACE_STATUS_OK;
 }
@@ -857,6 +1158,8 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
                 RUN_STATE_EXECUTION, HOST_REQUEST_EXECUTION, 100, s_session.expected_tick_count );
             if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
             {
+                s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+                ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
                 HOST_INTERFACE_BuildExecutionControlResponse(
                     outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
                     HIL_APPLICATION_RESPONSE_REASON_UNSUPPORTED, HIL_APPLICATION_CONTROL_START );
@@ -876,6 +1179,8 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
             }
             if ( status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE )
             {
+                s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+                ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
                 HOST_INTERFACE_BuildExecutionControlResponse(
                     outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
                     HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED,
@@ -1114,40 +1419,44 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Finalize_Test_Upload(
         return HOST_INTERFACE_STATUS_OK;
     }
 
+    /* A validated complete upload now owns exactly one terminal report. */
+    s_session.report_owed = true;
+
     // Request transition to CONFIGURATION
     // TODO change 3000 back to 4
     HOST_Interface_Status_T status = HOST_INTERFACE_request_state_tranistion(
         RUN_STATE_ARMED, HOST_REQUEST_CONFIGURATION, 3000, *expected_tick_count );
-    if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
+    if ( status != HOST_INTERFACE_STATUS_OK )
     {
+        RunMetadataSnapshot_T snapshot = { 0 };
+        const bool             report_ready =
+            RUN_STATE_MANAGER_GetRunMetadataSnapshot( &snapshot );
         s_session.state = HOST_INTERFACE_SESSION_FAULTED;
-        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
-        // Construct the error message
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        // TODO  more specific error catagory
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-        *response_required                    = true;
-        return HOST_INTERFACE_STATUS_OK;
-    }
-    if ( status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
-    {
-        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
-        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
-        // Construct the error message
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-        *response_required                    = true;
-        return HOST_INTERFACE_STATUS_OK;
-    }
-    if ( status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE )
-    {
-        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
-        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
-        // Construct the error message
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        // TODO  more specific error catagory
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-        *response_required                    = true;
+        if ( report_ready )
+        {
+            outgoing_message->type                = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+            outgoing_message->subtype             = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+            outgoing_message->body.response.scope = HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST;
+            outgoing_message->body.response.outcome = HIL_APPLICATION_RESPONSE_OUTCOME_FAILED;
+            outgoing_message->body.response.reason =
+                HIL_APPLICATION_RESPONSE_REASON_HARDWARE_NOT_READY;
+            outgoing_message->body.response.tick_number = 0U;
+            outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
+            outgoing_message->body.response.global_control_command =
+                HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
+            outgoing_message->body.response.detail = snapshot.failure_reason;
+        }
+        else
+        {
+            s_session.report_owed = false;
+            ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
+            HOST_INTERFACE_Default_Error( outgoing_message );
+            outgoing_message->body.error.category =
+                ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
+                    ? HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL
+                    : HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
+        }
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
     /* Update the session to track progression through the test*/
@@ -1325,14 +1634,7 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Result_Transfer_Notification(
     {
         // clear the result notification flag
         *notifications = *notifications & ( uint32_t ) ~( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
-        if ( RUN_STATE_MANAGER_RequestResultTransferComplete() == false )
-        {
-            s_session.state = HOST_INTERFACE_SESSION_FAULTED;
-            HOST_INTERFACE_Default_Error( outgoing_message );
-            outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-            *response_required                    = true;
-            return HOST_INTERFACE_STATUS_OK;
-        }
+        *notifications |= HOST_INTERFACE_NOTIFY_RUN_REPORT;
         s_session.state    = HOST_INTERFACE_SESSION_COMPLETED;
         *response_required = false;
         return HOST_INTERFACE_STATUS_OK;
@@ -1351,6 +1653,16 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Result_Transfer_Notification(
             outgoing_message->has_test_id = 1U;
             outgoing_message->test_id     = s_session.active_test_id;
         }
+        if ( outgoing_message->type == HIL_APPLICATION_MESSAGE_TYPE_TEST_RESULT )
+        {
+            s_session.result_ticks_emitted++;
+        }
+        else if ( outgoing_message->type == HIL_APPLICATION_MESSAGE_TYPE_VARIABLE_TEST_RESULT
+                  && outgoing_message->body.variable_test_result.flags
+                         == HIL_APPLICATION_RESULT_FLAG_COMPLETE_TICK )
+        {
+            s_session.result_ticks_emitted++;
+        }
         *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
@@ -1361,6 +1673,22 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Result_Transfer_Notification(
     HOST_INTERFACE_Default_Error( outgoing_message );
     outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
     *response_required                    = true;
+    return HOST_INTERFACE_STATUS_OK;
+}
+
+/** Emits the terminal report after diagnostics/results and before cleanup. */
+static HOST_Interface_Status_T HOST_INTERFACE_process_Run_Report_Notification(
+    HIL_Application_Message_T* outgoing_message, uint32_t* notifications,
+    bool* response_required )
+{
+    if ( !HOST_INTERFACE_BuildRunReport( outgoing_message ) )
+    {
+        return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+    }
+
+    *notifications &= ( uint32_t )~HOST_INTERFACE_NOTIFY_RUN_REPORT;
+    s_session.report_in_flight = true;
+    *response_required         = true;
     return HOST_INTERFACE_STATUS_OK;
 }
 
@@ -1592,6 +1920,27 @@ HOST_INTERFACE_process_internal_message( HIL_Application_Message_T* outgoing_mes
         return HOST_INTERFACE_STATUS_OK;
     }
 
+    if ( ( *notifications & HOST_INTERFACE_NOTIFY_RUN_REPORT ) != 0U
+         && ( s_session.state == HOST_INTERFACE_SESSION_COMPLETED
+              || s_session.state == HOST_INTERFACE_SESSION_FAULTED ) )
+    {
+        host_status = HOST_INTERFACE_process_Run_Report_Notification(
+            outgoing_message, notifications, response_required );
+        if ( host_status != HOST_INTERFACE_STATUS_OK )
+        {
+            *response_required = false;
+            return host_status;
+        }
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
+    if ( ( *notifications & HOST_INTERFACE_NOTIFY_RUN_REPORT ) != 0U )
+    {
+        /* The sealed report waits until fault diagnostics or all results are emitted. */
+        *response_required = false;
+        return HOST_INTERFACE_STATUS_OK;
+    }
+
     if ( ( *notifications & HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE ) != 0U )
     {
         host_status = HOST_INTERFACE_process_Transfer_Complete_Notification(
@@ -1626,6 +1975,20 @@ HOST_Interface_Status_T HOST_INTERFACE_process_message(
         return HOST_INTERFACE_STATUS_INVALID_ARGUMENT;
     }
     *response_required = false;
+
+    if ( s_session.report_in_flight && outgoing_message_accepted )
+    {
+        s_session.report_in_flight = false;
+        s_session.report_owed      = false;
+        RUN_STATE_MANAGER_AcknowledgeRunReport();
+        if ( s_session.state == HOST_INTERFACE_SESSION_COMPLETED
+             && !RUN_STATE_MANAGER_RequestResultTransferComplete() )
+        {
+            s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+            return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
+        }
+    }
+
     // create temporary output message (incase output is not accepted)
     static HIL_Application_Message_T temp_outgoing_message = { 0 };
     ( void )memset( &temp_outgoing_message, 0, sizeof( temp_outgoing_message ) );

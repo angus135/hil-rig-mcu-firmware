@@ -164,6 +164,10 @@ typedef struct
     HIL_Application_Test_Id_T      active_test_id;
     HostInstructionFamily_T        instruction_family;
     uint32_t                       expected_tick_count;
+    uint32_t                       tick_period_us;
+    uint32_t                       result_ticks_emitted;
+    bool                           report_owed;
+    bool                           report_in_flight;
 } HostTestSession_T;
 
 /**-----------------------------------------------------------------------------

@@ -98,6 +98,9 @@ public:
     MOCK_METHOD( bool, RUN_STATE_MANAGER_Set_Execution_Frequency, ( RunStateFrequencyMode_T ) );
     MOCK_METHOD( void, RUN_STATE_MANAGER_GetStatus, ( RunStateManagerStatus_T* ));
     MOCK_METHOD( RunStateFaultReason_T, RUN_STATE_MANAGER_GetFaultReason, () );
+    MOCK_METHOD( bool, RUN_STATE_MANAGER_GetRunMetadataSnapshot, ( RunMetadataSnapshot_T* ));
+    MOCK_METHOD( bool, RUN_STATE_MANAGER_DidExecutionStart, () );
+    MOCK_METHOD( void, RUN_STATE_MANAGER_AcknowledgeRunReport, () );
 };
 
 static MockHostProcessMessageDependencies* g_mock_deps                       = nullptr;
@@ -289,6 +292,26 @@ extern "C" RunStateFaultReason_T RUN_STATE_MANAGER_GetFaultReason( void )
 {
     return g_mock_deps != nullptr ? g_mock_deps->RUN_STATE_MANAGER_GetFaultReason()
                                   : RUN_STATE_FAULT_NONE;
+}
+
+extern "C" bool RUN_STATE_MANAGER_GetRunMetadataSnapshot( RunMetadataSnapshot_T* snapshot )
+{
+    return g_mock_deps != nullptr
+               ? g_mock_deps->RUN_STATE_MANAGER_GetRunMetadataSnapshot( snapshot )
+               : false;
+}
+
+extern "C" void RUN_STATE_MANAGER_AcknowledgeRunReport( void )
+{
+    if ( g_mock_deps != nullptr )
+    {
+        g_mock_deps->RUN_STATE_MANAGER_AcknowledgeRunReport();
+    }
+}
+
+extern "C" bool RUN_STATE_MANAGER_DidExecutionStart( void )
+{
+    return g_mock_deps != nullptr ? g_mock_deps->RUN_STATE_MANAGER_DidExecutionStart() : false;
 }
 
 class HostProcessMessageTest : public ::testing::Test
@@ -936,6 +959,9 @@ TEST_F( HostProcessMessageTest, ExecutionControlStartAdmissionFailureReturnsReje
 
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestExecution( _ ) )
         .WillOnce( Return( RUN_STATE_EXECUTION_REQUEST_INVALID_STATE ) );
+    EXPECT_CALL( *g_mock_deps,
+                 RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+        .WillOnce( Return( true ) );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Execution_Control(
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
@@ -947,7 +973,7 @@ TEST_F( HostProcessMessageTest, ExecutionControlStartAdmissionFailureReturnsReje
     EXPECT_EQ( HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED,
                outgoing.body.response.reason );
     EXPECT_EQ( HIL_APPLICATION_CONTROL_START, outgoing.body.response.control_command );
-    EXPECT_EQ( HOST_INTERFACE_SESSION_ARMED, HOST_INTERFACE_Get_Session()->state );
+    EXPECT_EQ( HOST_INTERFACE_SESSION_FAULTED, HOST_INTERFACE_Get_Session()->state );
 }
 
 TEST_F( HostProcessMessageTest, ExecutionControlStartFaultReturnsFailedResponseWithFaultReason )
@@ -1185,20 +1211,85 @@ TEST_F( HostProcessMessageTest, ResultTransferNotificationRetriesWhenNoDataIsAva
     EXPECT_EQ( notifications, HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
 }
 
-TEST_F( HostProcessMessageTest, ResultTransferNotificationClearsFlagAtEndOfStream )
+/** Verifies that end-of-stream replaces result work with terminal report work. */
+TEST_F( HostProcessMessageTest, ResultTransferNotificationQueuesReportAtEndOfStream )
 {
     notifications = HOST_INTERFACE_NOTIFY_RESULT_TRANSFER;
 
     EXPECT_CALL( *g_mock_deps, RESULT_MESSAGE_PRODUCER_ProduceNextMessage( _ ) )
         .WillOnce( Return( RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM ) );
-    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestResultTransferComplete() )
-        .WillOnce( Return( true ) );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Result_Transfer_Notification(
                    &outgoing, &notifications, &response_required, data, sizeof( data ) ),
                HOST_INTERFACE_STATUS_OK );
     EXPECT_FALSE( response_required );
+    EXPECT_EQ( notifications, HOST_INTERFACE_NOTIFY_RUN_REPORT );
+    EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_COMPLETED );
+}
+
+/** Verifies that a sealed pre-execution failure produces a correlated rejected report. */
+TEST_F( HostProcessMessageTest, RunReportNotificationEmitsRejectedConfigurationReport )
+{
+    HostTestSession_T session{};
+    session.state               = HOST_INTERFACE_SESSION_FAULTED;
+    session.has_active_test_id  = true;
+    session.expected_tick_count = 25U;
+    session.tick_period_us      = 1000U;
+    session.report_owed         = true;
+    session.active_test_id.bytes[0] = 0xA5U;
+    HOST_INTERFACE_Test_Access_Set_Session( &session );
+
+    notifications = HOST_INTERFACE_NOTIFY_RUN_REPORT;
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetRunMetadataSnapshot( _ ) )
+        .WillOnce( Invoke( []( RunMetadataSnapshot_T* snapshot ) {
+            *snapshot = {};
+            snapshot->structure_version    = RUN_METADATA_STRUCTURE_VERSION;
+            snapshot->valid_sections       = RUN_METADATA_VALID_TERMINAL;
+            snapshot->terminal_status      = RUN_METADATA_TERMINAL_REJECTED;
+            snapshot->result_stream_status = RUN_METADATA_RESULT_STREAM_UNAVAILABLE;
+            snapshot->failure_source       = RUN_METADATA_FAILURE_SOURCE_RUN_STATE_MANAGER;
+            snapshot->failure_reason       = RUN_STATE_FAULT_DRIVER_CONFIGURATION;
+            return true;
+        } ) );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Internal_Message(
+                   &outgoing, &response_required, data, sizeof( data ), &notifications ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_TRUE( response_required );
     EXPECT_EQ( notifications, 0U );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RUN_REPORT );
+    EXPECT_EQ( outgoing.test_id.bytes[0], 0xA5U );
+    EXPECT_EQ( outgoing.body.run_report.run_outcome, HIL_APPLICATION_RUN_OUTCOME_REJECTED );
+    EXPECT_EQ( outgoing.body.run_report.execution_outcome,
+               HIL_APPLICATION_EXECUTION_OUTCOME_NOT_STARTED );
+    EXPECT_EQ( outgoing.body.run_report.result_status,
+               HIL_APPLICATION_RUN_RESULT_STATUS_UNAVAILABLE );
+    EXPECT_EQ( outgoing.body.run_report.failure_source,
+               HIL_APPLICATION_FAILURE_SOURCE_DRIVER_LIFECYCLE );
+    EXPECT_EQ( outgoing.body.run_report.failure_reason,
+               HIL_APPLICATION_FAILURE_REASON_DRIVER_CONFIGURATION_FAILED );
+}
+
+/** Verifies that successful cleanup starts only after report handoff. */
+TEST_F( HostProcessMessageTest, AcceptedRunReportCompletesResultTransfer )
+{
+    HostTestSession_T session{};
+    session.state            = HOST_INTERFACE_SESSION_COMPLETED;
+    session.report_owed      = true;
+    session.report_in_flight = true;
+    HOST_INTERFACE_Test_Access_Set_Session( &session );
+
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_AcknowledgeRunReport() );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestResultTransferComplete() )
+        .WillOnce( Return( true ) );
+
+    EXPECT_EQ( HOST_INTERFACE_process_message( false, &incoming, true, &outgoing,
+                                               &overflow_outgoing, &response_required, data,
+                                               sizeof( data ), &notifications,
+                                               &expected_tick_count ),
+               HOST_INTERFACE_STATUS_OK );
+    EXPECT_FALSE( HOST_INTERFACE_Get_Session()->report_owed );
+    EXPECT_FALSE( HOST_INTERFACE_Get_Session()->report_in_flight );
 }
 
 TEST_F( HostProcessMessageTest, ResultTransferNotificationFaultsSessionOnCorruptData )
@@ -1242,7 +1333,8 @@ TEST_F( HostProcessMessageTest, VariableResultTransferNotificationProducesNextRe
     EXPECT_EQ( notifications, HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
 }
 
-TEST_F( HostProcessMessageTest, VariableResultTransferNotificationClearsFlagAtEndOfStream )
+/** Verifies identical report ordering for the variable-result family. */
+TEST_F( HostProcessMessageTest, VariableResultTransferNotificationQueuesReportAtEndOfStream )
 {
     HostTestSession_T session{};
     session.state              = HOST_INTERFACE_SESSION_RESULT_TRANSFER;
@@ -1253,14 +1345,12 @@ TEST_F( HostProcessMessageTest, VariableResultTransferNotificationClearsFlagAtEn
 
     EXPECT_CALL( *g_mock_deps, VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( _ ) )
         .WillOnce( Return( RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM ) );
-    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestResultTransferComplete() )
-        .WillOnce( Return( true ) );
-
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Result_Transfer_Notification(
                    &outgoing, &notifications, &response_required, data, sizeof( data ) ),
                HOST_INTERFACE_STATUS_OK );
     EXPECT_FALSE( response_required );
-    EXPECT_EQ( notifications, 0U );
+    EXPECT_EQ( notifications, HOST_INTERFACE_NOTIFY_RUN_REPORT );
+    EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_COMPLETED );
 }
 
 TEST_F( HostProcessMessageTest, IncomingDispatcherRejectsNullArguments )
@@ -1568,6 +1658,43 @@ TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadHandlesTransitionFailur
     EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_FAULTED );
 }
 
+/** Verifies that post-upload configuration rejection responds before the owed report. */
+TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadReportsConfigurationRejection )
+{
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS );
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_FINALIZE_TEST_UPLOAD );
+    expected_tick_count    = 100U;
+    run_state_status.state = RUN_STATE_FAULT;
+
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestConfiguration() )
+        .WillOnce( Return( true ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
+        .WillOnce( Invoke( [this]( RunStateManagerStatus_T* status ) {
+            *status = run_state_status;
+        } ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetRunMetadataSnapshot( _ ) )
+        .WillOnce( Invoke( []( RunMetadataSnapshot_T* snapshot ) {
+            *snapshot = {};
+            snapshot->valid_sections       = RUN_METADATA_VALID_TERMINAL;
+            snapshot->terminal_status      = RUN_METADATA_TERMINAL_REJECTED;
+            snapshot->result_stream_status = RUN_METADATA_RESULT_STREAM_UNAVAILABLE;
+            snapshot->failure_reason       = RUN_STATE_FAULT_DRIVER_CONFIGURATION;
+            return true;
+        } ) );
+
+    EXPECT_EQ(
+        HOST_INTERFACE_Test_Access_Process_Finalize_Test_Upload(
+            &incoming, &outgoing, &response_required, data, sizeof( data ), &expected_tick_count ),
+        HOST_INTERFACE_STATUS_OK );
+
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_FAILED );
+    EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_HARDWARE_NOT_READY );
+    EXPECT_TRUE( HOST_INTERFACE_Get_Session()->report_owed );
+}
+
 /**-----------------------------------------------------------------------------
  *  Session State & Notification Integration Tests
  *------------------------------------------------------------------------------
@@ -1745,7 +1872,7 @@ TEST_F( HostProcessMessageTest, ResultTransferNotificationUpdatesStateAndStampsT
 }
 
 /**
- * @brief Verifies that Result Transfer notification marks session COMPLETED upon end of stream.
+ * @brief Verifies that end-of-stream marks COMPLETED and defers cleanup behind the report.
  */
 TEST_F( HostProcessMessageTest, ResultTransferNotificationSetsCompletedAtEndOfStream )
 {
@@ -1754,14 +1881,11 @@ TEST_F( HostProcessMessageTest, ResultTransferNotificationSetsCompletedAtEndOfSt
 
     EXPECT_CALL( *g_mock_deps, RESULT_MESSAGE_PRODUCER_ProduceNextMessage( _ ) )
         .WillOnce( Return( RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM ) );
-    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestResultTransferComplete() )
-        .WillOnce( Return( true ) );
-
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Result_Transfer_Notification(
                    &outgoing, &notifications, &response_required, data, sizeof( data ) ),
                HOST_INTERFACE_STATUS_OK );
     EXPECT_FALSE( response_required );
-    EXPECT_EQ( notifications, 0U );
+    EXPECT_EQ( notifications, HOST_INTERFACE_NOTIFY_RUN_REPORT );
     EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_COMPLETED );
 }
 

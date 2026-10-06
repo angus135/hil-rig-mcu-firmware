@@ -115,6 +115,9 @@ static bool driver_cleanup_complete = true;
 
 static bool                        execution_timer_running   = false;
 static bool                        execution_request_pending = false;
+static bool                        report_lifecycle_active   = false;
+static bool                        execution_admitted        = false;
+static bool                        execution_started         = false;
 static RunStatePreparedExecution_T prepared_execution        = {
            .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ, .enable_drain_tail = false };
 
@@ -453,9 +456,19 @@ static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason )
     taskEXIT_CRITICAL();
     RUN_STATE_MANAGER_RecordFault( reason );
 
-    if ( reason == RUN_STATE_FAULT_EXTERNAL_REQUEST )
+    if ( !report_lifecycle_active )
+    {
+        /* Faults before hardware configuration remain upload/startup failures. */
+    }
+    else if ( reason == RUN_STATE_FAULT_EXTERNAL_REQUEST )
     {
         ( void )RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_ABORTED,
+                                            RUN_METADATA_FAILURE_SOURCE_RUN_STATE_MANAGER,
+                                            ( uint32_t )reason );
+    }
+    else if ( !execution_admitted )
+    {
+        ( void )RUN_METADATA_LatchTerminal( RUN_METADATA_TERMINAL_REJECTED,
                                             RUN_METADATA_FAILURE_SOURCE_RUN_STATE_MANAGER,
                                             ( uint32_t )reason );
     }
@@ -495,12 +508,22 @@ static void RUN_STATE_MANAGER_EnterFault( RunStateFaultReason_T reason )
                                             ( uint32_t )reason );
     }
 
-    RUN_STATE_MANAGER_CaptureExecutionMetadata();
-    ( void )RUN_METADATA_SetResultStreamStatus( RUN_METADATA_RESULT_STREAM_UNAVAILABLE );
-    ( void )RUN_METADATA_Seal();
+    if ( report_lifecycle_active )
+    {
+        if ( execution_started )
+        {
+            RUN_STATE_MANAGER_CaptureExecutionMetadata();
+        }
+        ( void )RUN_METADATA_SetResultStreamStatus( RUN_METADATA_RESULT_STREAM_UNAVAILABLE );
+        ( void )RUN_METADATA_Seal();
+    }
 
     ( void )RUN_STATE_MANAGER_TransitionTo( RUN_STATE_FAULT );
     ( void )HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_FAULT );
+    if ( report_lifecycle_active )
+    {
+        ( void )HOST_INTERFACE_Notify( HOST_INTERFACE_NOTIFY_RUN_REPORT );
+    }
 }
 
 /**
@@ -729,6 +752,11 @@ static bool RUN_STATE_MANAGER_EnterResultTransfer( void )
  */
 static bool RUN_STATE_MANAGER_EnterConfiguration( void )
 {
+    RUN_METADATA_Reset();
+    report_lifecycle_active = true;
+    execution_admitted      = false;
+    execution_started       = false;
+
     DutDriverConfiguration_T configuration = { 0 };
 
     if ( !LOGIC_EXPANDER_Is_Ready() )
@@ -799,8 +827,10 @@ static bool RUN_STATE_MANAGER_EnterExecution( void )
         return false;
     }
 
+    execution_started = true;
     if ( !RUN_STATE_MANAGER_StartExecutionTimer() )
     {
+        execution_started = false;
         EXECUTION_MANAGER_Abort();
         ( void )DUT_DRIVER_LIFECYCLE_Stop();
         RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_EXECUTION_TIMER );
@@ -1902,6 +1932,9 @@ void RUN_STATE_MANAGER_Init( void )
     driver_cleanup_complete      = true;
     execution_timer_running      = false;
     execution_request_pending    = false;
+    report_lifecycle_active      = false;
+    execution_admitted           = false;
+    execution_started            = false;
     prepared_execution           = ( RunStatePreparedExecution_T ){
                   .tick_count = 0U, .frequency = RUN_STATE_FREQUENCY_1KHZ, .enable_drain_tail = false };
     execution_abort_requested           = false;
@@ -1976,12 +2009,12 @@ RUN_STATE_MANAGER_RequestExecution( const RunStateExecutionRequest_T* request )
     }
     else
     {
-        RUN_METADATA_Reset();
         prepared_execution = ( RunStatePreparedExecution_T ){
             .tick_count        = request->tick_count,
             .frequency         = frequency_mode,
             .enable_drain_tail = request->enable_drain_tail,
         };
+        execution_admitted        = true;
         execution_request_pending = true;
     }
     taskEXIT_CRITICAL();
@@ -1998,6 +2031,7 @@ RUN_STATE_MANAGER_RequestExecution( const RunStateExecutionRequest_T* request )
 
     taskENTER_CRITICAL();
     execution_request_pending = false;
+    execution_admitted        = false;
     taskEXIT_CRITICAL();
     return RUN_STATE_EXECUTION_REQUEST_NOTIFY_FAILED;
 }
@@ -2025,6 +2059,25 @@ bool RUN_STATE_MANAGER_RequestRepeat( void )
 bool RUN_STATE_MANAGER_RequestDiscardResults( void )
 {
     return RUN_STATE_MANAGER_Notify( RUN_STATE_MANAGER_NOTIFY_DISCARD_RESULTS );
+}
+
+bool RUN_STATE_MANAGER_GetRunMetadataSnapshot( RunMetadataSnapshot_T* snapshot )
+{
+    if ( !report_lifecycle_active || !RUN_METADATA_GetSnapshot( snapshot ) )
+    {
+        return false;
+    }
+    return true;
+}
+
+bool RUN_STATE_MANAGER_DidExecutionStart( void )
+{
+    return report_lifecycle_active && execution_started;
+}
+
+void RUN_STATE_MANAGER_AcknowledgeRunReport( void )
+{
+    report_lifecycle_active = false;
 }
 
 bool RUN_STATE_MANAGER_RequestFault( RunStateFaultReason_T reason )
