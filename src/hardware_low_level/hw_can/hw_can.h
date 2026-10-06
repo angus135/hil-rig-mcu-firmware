@@ -278,6 +278,12 @@ HW_CAN_Result_T HW_CAN_Stop1( void );
 /** Stop idle CAN channel 2 while retaining configuration and software state. */
 HW_CAN_Result_T HW_CAN_Stop2( void );
 
+/** Cancel pending TX work and stop CAN channel 1 immediately. */
+HW_CAN_Result_T HW_CAN_Abort1( void );
+
+/** Cancel pending TX work and stop CAN channel 2 immediately. */
+HW_CAN_Result_T HW_CAN_Abort2( void );
+
 /** Return true when CAN channel 1 has been configured successfully. */
 bool HW_CAN_Is_Configured1( void );
 

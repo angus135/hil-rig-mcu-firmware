@@ -812,11 +812,12 @@ bool DUT_DRIVER_LIFECYCLE_BeginShutdown( bool force_abort, bool clear_configurat
     }
     lifecycle_context.configuration_pending = false;
 
-    if ( ( lifecycle_context.start_batch_id != 0U ) && !lifecycle_context.start_accepted )
+    if ( lifecycle_context.start_batch_id != 0U )
     {
         LOGIC_EXPANDER_Cancel_Control_Batch( lifecycle_context.start_batch_id );
         lifecycle_context.start_batch_id = 0U;
     }
+    lifecycle_context.start_accepted = false;
 
     LogicExpanderControlBatchId_T batch_id = 0U;
     if ( LOGIC_EXPANDER_Begin_Control_Batch( &batch_id ) != LOGIC_EXPANDER_STATUS_OK )

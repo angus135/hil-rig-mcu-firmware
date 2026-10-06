@@ -206,6 +206,13 @@ static HW_CAN_Result_T HW_CAN_Recover( CAN_HandleTypeDef* hcan, IRQn_Type tx_irq
                                        volatile HW_CAN_Tx_Status_T* status,
                                        HWCANLifecycleState_T*       lifecycle );
 
+static HW_CAN_Result_T HW_CAN_Abort( CAN_HandleTypeDef* hcan, IRQn_Type tx_irq, IRQn_Type rx_irq,
+                                     IRQn_Type error_irq, volatile uint16_t* tx_wp,
+                                     volatile uint16_t* tx_rp, volatile bool* active,
+                                     volatile bool* completed, volatile uint32_t* pending_mailbox,
+                                     volatile HW_CAN_Tx_Status_T* status,
+                                     HWCANLifecycleState_T*       lifecycle );
+
 static void HW_CAN_Tx_Buffer_Cancel( IRQn_Type tx_irq, volatile uint16_t* w_p,
                                      volatile uint16_t* r_p );
 
@@ -1323,6 +1330,20 @@ HW_CAN_Result_T HW_CAN_Stop2( void )
                         &hw_can_lifecycle2 );
 }
 
+HW_CAN_Result_T HW_CAN_Abort1( void )
+{
+    return HW_CAN_Abort( &hcan1, CAN1_TX_IRQn, CAN1_RX0_IRQn, CAN1_SCE_IRQn, &can_tx_wp1,
+                         &can_tx_rp1, &can_tx_active1, &can_sent_flag1,
+                         &can_tx_pending_mailbox1, &can_tx_status1, &hw_can_lifecycle1 );
+}
+
+HW_CAN_Result_T HW_CAN_Abort2( void )
+{
+    return HW_CAN_Abort( &hcan2, CAN2_TX_IRQn, CAN2_RX0_IRQn, CAN2_SCE_IRQn, &can_tx_wp2,
+                         &can_tx_rp2, &can_tx_active2, &can_sent_flag2,
+                         &can_tx_pending_mailbox2, &can_tx_status2, &hw_can_lifecycle2 );
+}
+
 bool HW_CAN_Is_Configured1( void )
 {
     return hw_can_lifecycle1.is_configured;
@@ -2262,6 +2283,56 @@ static HW_CAN_Result_T HW_CAN_Recover( CAN_HandleTypeDef* hcan, IRQn_Type tx_irq
     }
 
     *status = HW_CAN_TX_STATUS_IDLE;
+
+    return HW_CAN_RESULT_OK;
+}
+
+/** Abort and stop one CAN channel in task context after a terminal error. */
+static HW_CAN_Result_T HW_CAN_Abort( CAN_HandleTypeDef* hcan, IRQn_Type tx_irq, IRQn_Type rx_irq,
+                                     IRQn_Type error_irq, volatile uint16_t* tx_wp,
+                                     volatile uint16_t* tx_rp, volatile bool* active,
+                                     volatile bool* completed, volatile uint32_t* pending_mailbox,
+                                     volatile HW_CAN_Tx_Status_T* status,
+                                     HWCANLifecycleState_T*       lifecycle )
+{
+    if ( hcan == NULL || lifecycle == NULL )
+    {
+        return HW_CAN_RESULT_ERROR;
+    }
+
+    if ( !lifecycle->is_configured )
+    {
+        return HW_CAN_RESULT_NOT_CONFIGURED;
+    }
+
+    if ( !lifecycle->is_started )
+    {
+        return HW_CAN_RESULT_OK;
+    }
+
+    CAN_TypeDef* can = hcan->Instance;
+
+    NVIC_DisableIRQ( tx_irq );
+    NVIC_DisableIRQ( rx_irq );
+    NVIC_DisableIRQ( error_irq );
+
+    CLEAR_BIT( can->IER, CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK );
+
+    HW_CAN_Abort_Tx_Mailboxes( can );
+
+    ( void )HAL_CAN_Stop( hcan );
+
+    *tx_wp           = 0U;
+    *tx_rp           = 0U;
+    *active          = false;
+    *completed       = false;
+    *pending_mailbox = 0U;
+
+    HW_CAN_Clear_Last_Error( can );
+    HW_CAN_Clear_Error_Interrupt( can );
+
+    lifecycle->is_started = false;
+    *status               = HW_CAN_TX_STATUS_IDLE;
 
     return HW_CAN_RESULT_OK;
 }

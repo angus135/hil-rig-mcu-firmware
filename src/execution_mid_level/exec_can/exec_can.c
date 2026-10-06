@@ -315,15 +315,15 @@ EXEC_CAN_Result_T EXEC_CAN_Abort_Channel( EXEC_CAN_Channel_T channel )
     }
     if ( !state->is_started )
     {
-        return EXEC_CAN_RESULT_NOT_STARTED;
+        return EXEC_CAN_RESULT_OK;
     }
 
-    if ( EXEC_CAN_Recover( channel ) != EXEC_CAN_RESULT_OK )
+    HW_CAN_Result_T result = channel == EXEC_CAN_CHANNEL_1 ? HW_CAN_Abort1() : HW_CAN_Abort2();
+    if ( result == HW_CAN_RESULT_OK )
     {
-        return EXEC_CAN_RESULT_ERROR;
+        state->is_started = false;
     }
-
-    return EXEC_CAN_Stop_Channel( channel );
+    return EXEC_CAN_Map_Result( result );
 }
 
 bool EXEC_CAN_Is_Configured( EXEC_CAN_Channel_T channel )

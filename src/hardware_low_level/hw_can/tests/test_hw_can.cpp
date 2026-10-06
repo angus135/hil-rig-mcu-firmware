@@ -1901,3 +1901,45 @@ TEST_F( HWCANTest, GetDiagnosticReportsWrappedRxOccupancy )
 
     EXPECT_EQ( diag.rx_queued1, 2U );
 }
+
+/** Verify that HW_CAN_Abort forces mailboxes abort, disables IRQs, and clears state. */
+TEST_F( HWCANTest, AbortRequiresConfiguredChannelAndClearsStartedState )
+{
+    EXPECT_EQ( HW_CAN_Abort1(), HW_CAN_RESULT_NOT_CONFIGURED );
+
+    hw_can_lifecycle1 = { true, false };
+    EXPECT_EQ( HW_CAN_Abort1(), HW_CAN_RESULT_OK );
+
+    hw_can_lifecycle1  = { true, true };
+    mock_can1_regs.IER = CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK;
+    can_tx_active1     = true;
+    can_tx_wp1         = 3U;
+    can_tx_rp1         = 1U;
+    SET_BIT( mock_can1_regs.sTxMailBox[0].TIR, CAN_TI0R_TXRQ );
+    EXPECT_CALL( mock, CANStop( &hcan1 ) ).WillOnce( Return( HAL_OK ) );
+
+    EXPECT_EQ( HW_CAN_Abort1(), HW_CAN_RESULT_OK );
+    EXPECT_TRUE( HW_CAN_Is_Configured1() );
+    EXPECT_FALSE( HW_CAN_Is_Started1() );
+    EXPECT_FALSE( can_tx_active1 );
+    EXPECT_EQ( can_tx_wp1, 0U );
+    EXPECT_EQ( can_tx_rp1, 0U );
+    EXPECT_EQ( mock_can1_regs.IER
+                   & ( CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK ),
+               0U );
+    EXPECT_FALSE( nvic_irq_enabled[CAN1_TX_IRQn] );
+    EXPECT_FALSE( nvic_irq_enabled[CAN1_RX0_IRQn] );
+    EXPECT_FALSE( nvic_irq_enabled[CAN1_SCE_IRQn] );
+
+    /* Abort channel 2 */
+    hw_can_lifecycle2  = { true, true };
+    mock_can2_regs.IER = CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK;
+    can_tx_active2     = true;
+    EXPECT_CALL( mock, CANStop( &hcan2 ) ).WillOnce( Return( HAL_ERROR ) );
+
+    EXPECT_EQ( HW_CAN_Abort2(), HW_CAN_RESULT_OK );
+    EXPECT_TRUE( HW_CAN_Is_Configured2() );
+    EXPECT_FALSE( HW_CAN_Is_Started2() );
+    EXPECT_FALSE( can_tx_active2 );
+}
+
