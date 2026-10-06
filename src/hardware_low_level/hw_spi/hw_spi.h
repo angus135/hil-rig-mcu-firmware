@@ -336,6 +336,14 @@ bool HW_SPI_Start_Channel( SPIChannel_T peripheral );
 bool HW_SPI_Stop_Channel( SPIChannel_T peripheral );
 
 /**
+ * @brief Reset and abort runtime operation of an SPI channel, clearing all in-flight state and queues.
+ *
+ * @param peripheral The SPI peripheral/channel to reset.
+ * @return true on success, false if channel is invalid.
+ */
+bool HW_SPI_Reset_Channel( SPIChannel_T peripheral );
+
+/**
  * @brief Return the unread received data as one or two spans into the internal RX buffer.
  *
  * Provides a read-only view of the unread portion of the selected channel's

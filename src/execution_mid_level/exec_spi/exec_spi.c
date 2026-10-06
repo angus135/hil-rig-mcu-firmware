@@ -522,8 +522,7 @@ bool EXEC_SPI_Abort_Channel( ExecSPIChannel_T peripheral )
     const SPIChannel_T hw_channel = exec_spi_hardware_map[peripheral].hw_channel;
     const bool         interface_disabled =
         EXEC_SPI_Apply_Interface_Control( peripheral, false, state->configuration.spi_mode );
-    const bool hardware_stopped =
-        state->state == EXEC_SPI_STATE_CONFIGURED ? true : HW_SPI_Stop_Channel( hw_channel );
+    const bool hardware_stopped = HW_SPI_Reset_Channel( hw_channel );
 
     if ( hardware_stopped )
     {

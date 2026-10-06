@@ -60,6 +60,7 @@ public:
     MOCK_METHOD( bool, StartChannel, ( SPIChannel_T peripheral ), () );
 
     MOCK_METHOD( bool, StopChannel, ( SPIChannel_T peripheral ), () );
+    MOCK_METHOD( bool, ResetChannel, ( SPIChannel_T peripheral ), () );
 
     MOCK_METHOD( bool, LoadTxBuffer,
                  ( SPIChannel_T peripheral, const uint8_t* data, uint32_t size_bytes ), () );
@@ -110,6 +111,11 @@ bool HW_SPI_Start_Channel( SPIChannel_T peripheral )
 bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
 {
     return g_mock_hw_spi->StopChannel( peripheral );
+}
+
+bool HW_SPI_Reset_Channel( SPIChannel_T peripheral )
+{
+    return g_mock_hw_spi->ResetChannel( peripheral );
 }
 
 bool HW_SPI_Load_Tx_Buffer( SPIChannel_T peripheral, const uint8_t* data, uint32_t size )
@@ -493,7 +499,7 @@ TEST_F( ExecSPITest, AbortChannelTerminatesWithoutWaitingForTransmissionCompleti
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
     EXPECT_CALL( mock_logic_expander, SendControlBits() )
         .WillOnce( Return( LOGIC_EXPANDER_STATUS_OK ) );
-    EXPECT_CALL( mock_hw_spi, StopChannel( SPI_CHANNEL_1 ) ).WillOnce( Return( true ) );
+    EXPECT_CALL( mock_hw_spi, ResetChannel( SPI_CHANNEL_1 ) ).WillOnce( Return( true ) );
 
     EXPECT_TRUE( EXEC_SPI_Abort_Channel( EXEC_SPI_CHANNEL_1 ) );
     EXPECT_FALSE( EXEC_SPI_Is_Started( EXEC_SPI_CHANNEL_1 ) );

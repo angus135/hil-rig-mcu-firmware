@@ -886,6 +886,16 @@ DutDriverShutdownStatus_T DUT_DRIVER_LIFECYCLE_GetShutdownStatus( void )
     if ( status == LOGIC_EXPANDER_CONTROL_BATCH_FAILED
          || status == LOGIC_EXPANDER_CONTROL_BATCH_UNKNOWN )
     {
+        if ( lifecycle_context.shutdown_forced )
+        {
+            const bool clear_configuration    = lifecycle_context.shutdown_clear_configuration;
+            lifecycle_context.shutdown_active = false;
+            if ( clear_configuration )
+            {
+                ( void )memset( &lifecycle_context, 0, sizeof( lifecycle_context ) );
+            }
+            return DUT_DRIVER_SHUTDOWN_COMPLETE;
+        }
         return DUT_DRIVER_SHUTDOWN_FAILED;
     }
     return DUT_DRIVER_SHUTDOWN_PENDING;

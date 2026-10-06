@@ -557,6 +557,22 @@ TEST_F( HostProcessMessageTest, RequestStateTransitionReturnsInternalErrorForFau
                HOST_INTERFACE_STATUS_INTERNAL_ERROR );
 }
 
+TEST_F( HostProcessMessageTest, RequestStateTransitionResetSucceedsFromFaultState )
+{
+    run_state_status.state               = RUN_STATE_IDLE;
+    run_state_status.transition_pending  = false;
+    run_state_status.last_request_result = RUN_STATE_REQUEST_RESULT_ACCEPTED;
+
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_RequestReset() ).WillOnce( Return( true ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
+        .WillOnce(
+            Invoke( [this]( RunStateManagerStatus_T* status ) { *status = run_state_status; } ) );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Request_State_Transition(
+                   RUN_STATE_IDLE, HOST_REQUEST_RESET, 2U, 0U ),
+               HOST_INTERFACE_STATUS_OK );
+}
+
 TEST_F( HostProcessMessageTest, RequestStateTransitionWithZeroAttemptsReturnsFailure )
 {
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Request_State_Transition(

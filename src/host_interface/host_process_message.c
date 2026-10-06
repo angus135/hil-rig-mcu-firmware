@@ -1200,7 +1200,8 @@ HOST_Interface_Status_T HOST_INTERFACE_request_state_tranistion( RunState_T expe
             return HOST_INTERFACE_STATUS_OK;
         }
 
-        if ( run_state_status.state == RUN_STATE_FAULT )
+        if ( ( run_state_status.state == RUN_STATE_FAULT ) && ( expected_state != RUN_STATE_FAULT )
+             && ( request != HOST_REQUEST_RESET ) )
         {
             return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
         }
