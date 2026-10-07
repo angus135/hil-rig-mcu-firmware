@@ -146,7 +146,10 @@ typedef enum
     INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_STATE,
 
     /** The supplied pointer or length was invalid. */
-    INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_ARGUMENT
+    INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_ARGUMENT,
+
+    /** The complete chunk exceeds the remaining instruction-image allocation. */
+    INSTRUCTION_BUFFER_UPLOAD_WRITE_STORAGE_FULL
 } InstructionBufferUploadWriteStatus_T;
 
 /**-----------------------------------------------------------------------------
@@ -376,6 +379,8 @@ bool INSTRUCTION_BUFFER_GetUploadAcceptedLength( uint32_t* accepted_length_bytes
  *
  * @note The complete chunk is copied or no state is changed. BUSY therefore
  *       permits the caller to retry the identical data and length.
+ * @note STORAGE_FULL reports that the chunk exceeds the remaining declared
+ *       instruction-image allocation; it is not transient RAM backpressure.
  * @note A maximum-size chunk beginning in a partial page may occupy the tail of
  *       that page and continue through two successor pages.
  * @note Chunk boundaries are transport boundaries only. They need not align

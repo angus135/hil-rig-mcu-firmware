@@ -708,6 +708,20 @@ TEST_F( InstructionMessageHandlerTest, FlashManagerInvalidStateReturnsStateTrans
                HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE );
 }
 
+/** @brief Preserves instruction storage exhaustion for the Application response mapping. */
+TEST_F( InstructionMessageHandlerTest, FlashManagerStorageFullReturnsStorageFull )
+{
+    HIL_Application_Test_Instruction_T instruction = {};
+    instruction.tick_number                        = 1U;
+    instruction.digital_outputs[0].high            = 1U;
+
+    EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) )
+        .WillOnce( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_STORAGE_FULL ) );
+
+    EXPECT_EQ( HOST_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_STORAGE_FULL );
+}
+
 /**-----------------------------------------------------------------------------
  *  Public API Tests: Configuration Guard Validation
  *------------------------------------------------------------------------------

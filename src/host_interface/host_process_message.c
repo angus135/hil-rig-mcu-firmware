@@ -551,7 +551,7 @@ static bool HOST_INTERFACE_Validate_Test_Id( const HIL_Application_Message_T* in
 }
 
 /**
- * @brief Construct a generic error message
+ * @brief Constructs a valid recoverable protocol error with no optional context.
  *
  * @details is given a pointer to a message and fills it with default error values
  *
@@ -568,8 +568,9 @@ HOST_Interface_Status_T HOST_INTERFACE_Default_Error( HIL_Application_Message_T*
     // Set the type and subtype
     message->type    = HIL_APPLICATION_MESSAGE_TYPE_ERROR;
     message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-    // Set Error body TODO update error catagory
-    message->body.error.category             = HIL_APPLICATION_ERROR_CATEGORY_INVALID;
+    /* INVALID is a sentinel rejected by the protocol encoder. Callers may
+     * replace this conservative category with a more specific valid value. */
+    message->body.error.category             = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
     message->body.error.recoverable          = 1U;
     message->body.error.has_tick_number      = 0U;
     message->body.error.tick_number          = 0U;
@@ -577,6 +578,55 @@ HOST_Interface_Status_T HOST_INTERFACE_Default_Error( HIL_Application_Message_T*
     message->body.error.diagnostic_data.size = 0U;
     message->body.error.diagnostic_data.data = NULL;
     return HOST_INTERFACE_STATUS_OK;
+}
+
+/** Builds the correlated Application Response for a Test Configuration request. */
+static void HOST_INTERFACE_BuildTestConfigurationResponse(
+    HIL_Application_Message_T* message, HIL_Application_Response_Outcome_T outcome,
+    HIL_Application_Response_Reason_T reason, uint32_t detail )
+{
+    message->type                          = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+    message->subtype                       = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    message->body.response.scope           = HIL_APPLICATION_RESPONSE_SCOPE_TEST_CONFIGURATION;
+    message->body.response.outcome         = outcome;
+    message->body.response.reason          = reason;
+    message->body.response.tick_number     = 0U;
+    message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
+    message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
+    message->body.response.detail                 = detail;
+}
+
+/** Builds the correlated Application Response for a complete uploaded test. */
+static void HOST_INTERFACE_BuildCompleteTestResponse( HIL_Application_Message_T*         message,
+                                                      HIL_Application_Response_Outcome_T outcome,
+                                                      HIL_Application_Response_Reason_T  reason,
+                                                      uint32_t                           detail )
+{
+    message->type                                 = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+    message->subtype                              = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    message->body.response.scope                  = HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST;
+    message->body.response.outcome                = outcome;
+    message->body.response.reason                 = reason;
+    message->body.response.tick_number            = 0U;
+    message->body.response.control_command        = HIL_APPLICATION_CONTROL_INVALID;
+    message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
+    message->body.response.detail                 = detail;
+}
+
+/** Builds the correlated Application Response for one uploaded instruction tick. */
+static void HOST_INTERFACE_BuildTickResponse( HIL_Application_Message_T*        message,
+                                              HIL_Application_Response_Reason_T reason,
+                                              uint32_t tick_number, uint32_t detail )
+{
+    message->type                                 = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
+    message->subtype                              = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
+    message->body.response.scope                  = HIL_APPLICATION_RESPONSE_SCOPE_TICK;
+    message->body.response.outcome                = HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED;
+    message->body.response.reason                 = reason;
+    message->body.response.tick_number            = tick_number;
+    message->body.response.control_command        = HIL_APPLICATION_CONTROL_INVALID;
+    message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
+    message->body.response.detail                 = detail;
 }
 
 /** Builds the correlated Application Response for an Execution Control request. */
@@ -611,6 +661,65 @@ static void HOST_INTERFACE_BuildGlobalControlResponse(
     message->body.response.control_command        = HIL_APPLICATION_CONTROL_INVALID;
     message->body.response.global_control_command = command;
     message->body.response.detail                 = detail;
+}
+
+/**
+ * @brief Maps a latched lifecycle fault to the broad Application Error class.
+ *
+ * The fault enum is firmware-owned and is retained in the detail field.  The
+ * category gives the host a useful first-level routing decision without
+ * changing the run-report failure schema.
+ */
+static HIL_Application_Error_Category_T
+HOST_INTERFACE_Error_Category_For_Fault( RunStateFaultReason_T fault_reason )
+{
+    switch ( fault_reason )
+    {
+        case RUN_STATE_FAULT_DRIVER_CONFIGURATION:
+        case RUN_STATE_FAULT_DRIVER_START:
+        case RUN_STATE_FAULT_DRIVER_STOP:
+        case RUN_STATE_FAULT_LOGIC_EXPANDER_NOT_READY:
+        case RUN_STATE_FAULT_CONFIGURATION_UNAVAILABLE:
+        case RUN_STATE_FAULT_ACQUISITION_EPOCH:
+            return HIL_APPLICATION_ERROR_CATEGORY_HARDWARE;
+
+        case RUN_STATE_FAULT_DRIVER_CONFIGURATION_TIMEOUT:
+        case RUN_STATE_FAULT_DRIVER_START_TIMEOUT:
+        case RUN_STATE_FAULT_DRIVER_STOP_TIMEOUT:
+            return HIL_APPLICATION_ERROR_CATEGORY_TIMEOUT;
+
+        case RUN_STATE_FAULT_EXECUTION_TIMER:
+        case RUN_STATE_FAULT_EXECUTION_MANAGER:
+        case RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION:
+            return HIL_APPLICATION_ERROR_CATEGORY_EXECUTION;
+
+        case RUN_STATE_FAULT_FLASH_EXECUTION_PREPARATION_TIMEOUT:
+        case RUN_STATE_FAULT_FLASH_RESULT_FINALISATION_TIMEOUT:
+            return HIL_APPLICATION_ERROR_CATEGORY_TIMEOUT;
+
+        case RUN_STATE_FAULT_FLASH_RESULT_FINALISATION:
+        case RUN_STATE_FAULT_FLASH_RESULT_TRANSFER:
+        case RUN_STATE_FAULT_FLASH_RESULT_DISPOSITION:
+        case RUN_STATE_FAULT_FLASH_MANAGER:
+            return HIL_APPLICATION_ERROR_CATEGORY_RETAINED_DATA;
+
+        case RUN_STATE_FAULT_HOST_INTERFACE_RESPONSE_BLOCKED:
+        case RUN_STATE_FAULT_HOST_INTERFACE_INSTRUCTION_UPLOAD_TIMEOUT:
+            return HIL_APPLICATION_ERROR_CATEGORY_TIMEOUT;
+
+        case RUN_STATE_FAULT_HOST_INTERFACE_USB_INIT:
+        case RUN_STATE_FAULT_HOST_INTERFACE_CODEC_INIT:
+        case RUN_STATE_FAULT_HOST_INTERFACE_TRANSPORT_INIT:
+            return HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
+
+        case RUN_STATE_FAULT_EXTERNAL_REQUEST:
+        case RUN_STATE_FAULT_INVALID_TRANSITION:
+        case RUN_STATE_FAULT_HOST_INTERFACE_ERROR:
+        case RUN_STATE_FAULT_INTERNAL:
+        case RUN_STATE_FAULT_NONE:
+        default:
+            return HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
+    }
 }
 
 /** Maps one native first-cause failure into stable schema-1 wire values. */
@@ -1239,6 +1348,8 @@ HOST_INTERFACE_process_Info_Request( const HIL_Application_Message_T* incoming_m
         case HIL_APPLICATION_SYSTEM_INFO_QUERY_INVALID:
             // Construct the error message
             HOST_INTERFACE_Default_Error( outgoing_message );
+            outgoing_message->body.error.detail =
+                ( uint32_t )incoming_message->body.system_info_request.query;
             *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_SYSTEM_INFO_QUERY_BASIC:
@@ -1280,11 +1391,15 @@ HOST_INTERFACE_process_Info_Request( const HIL_Application_Message_T* incoming_m
         case HIL_APPLICATION_SYSTEM_INFO_QUERY_RESERVED:
             // Construct the error message
             HOST_INTERFACE_Default_Error( outgoing_message );
+            outgoing_message->body.error.detail =
+                ( uint32_t )incoming_message->body.system_info_request.query;
             *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
         default:
             // Construct the error message
             HOST_INTERFACE_Default_Error( outgoing_message );
+            outgoing_message->body.error.detail =
+                ( uint32_t )incoming_message->body.system_info_request.query;
             *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
     }
@@ -1317,7 +1432,8 @@ HOST_INTERFACE_process_Info_Response( const HIL_Application_Message_T* incoming_
         case HIL_APPLICATION_MESSAGE_SUBTYPE_NONE:
             // Construct the error message
             HOST_INTERFACE_Default_Error( outgoing_message );
-            *response_required = true;
+            outgoing_message->body.error.detail = ( uint32_t )incoming_message->subtype;
+            *response_required                  = true;
             return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_MESSAGE_SUBTYPE_BASIC:
             // Check protocol version
@@ -1330,7 +1446,8 @@ HOST_INTERFACE_process_Info_Response( const HIL_Application_Message_T* incoming_
             {
                 // Construct the error message
                 HOST_INTERFACE_Default_Error( outgoing_message );
-                *response_required = true;
+                outgoing_message->body.error.detail = HOST_INTERFACE_STATUS_OUT_OF_DATE;
+                *response_required                  = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             // Check firmware version TODO
@@ -1345,12 +1462,14 @@ HOST_INTERFACE_process_Info_Response( const HIL_Application_Message_T* incoming_
         case HIL_APPLICATION_MESSAGE_SUBTYPE_RESERVED:
             // Construct the error message
             HOST_INTERFACE_Default_Error( outgoing_message );
-            *response_required = true;
+            outgoing_message->body.error.detail = ( uint32_t )incoming_message->subtype;
+            *response_required                  = true;
             return HOST_INTERFACE_STATUS_OK;
         default:
             // Construct the error message
             HOST_INTERFACE_Default_Error( outgoing_message );
-            *response_required = true;
+            outgoing_message->body.error.detail = ( uint32_t )incoming_message->subtype;
+            *response_required                  = true;
             return HOST_INTERFACE_STATUS_OK;
     }
 }
@@ -1380,9 +1499,10 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     // A retained terminal run must be reset before a different test is uploaded.
     if ( s_session.state != HOST_INTERFACE_SESSION_STATE_IDLE )
     {
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-        *response_required                    = true;
+        HOST_INTERFACE_BuildTestConfigurationResponse(
+            outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+            HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED, ( uint32_t )s_session.state );
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
 
@@ -1392,11 +1512,10 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
         HOST_INTERFACE_Config_Message_To_Driver( incoming_message, &driver_config );
     if ( status != HOST_INTERFACE_STATUS_OK )
     {
-        // Construct the error message
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        // TODO  more specific error catagory
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-        *response_required                    = true;
+        HOST_INTERFACE_BuildTestConfigurationResponse(
+            outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+            HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED, ( uint32_t )status );
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
 
@@ -1407,28 +1526,27 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
         incoming_message->body.test_configuration.expected_tick_count );
     if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
     {
-        // Construct the error message
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        // TODO  more specific error catagory
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-        *response_required                    = true;
+        HOST_INTERFACE_BuildTestConfigurationResponse(
+            outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+            HIL_APPLICATION_RESPONSE_REASON_UNSUPPORTED, ( uint32_t )status );
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
     if ( status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
     {
-        // Construct the error message
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-        *response_required                    = true;
+        HOST_INTERFACE_BuildTestConfigurationResponse(
+            outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_FAILED,
+            HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE,
+            ( uint32_t )RUN_STATE_MANAGER_GetFaultReason() );
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
     if ( status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE )
     {
-        // Construct the error message
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        // TODO  more specific error catagory
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-        *response_required                    = true;
+        HOST_INTERFACE_BuildTestConfigurationResponse(
+            outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+            HIL_APPLICATION_RESPONSE_REASON_HARDWARE_NOT_READY, ( uint32_t )status );
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
 
@@ -1438,9 +1556,10 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     {
         s_session.state = HOST_INTERFACE_SESSION_FAULTED;
         ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-        *response_required                    = true;
+        HOST_INTERFACE_BuildTestConfigurationResponse(
+            outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_FAILED,
+            HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE, ( uint32_t )status );
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
 
@@ -1458,19 +1577,22 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
             break;
         default:
             s_session.state = HOST_INTERFACE_SESSION_FAULTED;
-            ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
-            HOST_INTERFACE_Default_Error( outgoing_message );
-            outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-            *response_required                    = true;
+            HOST_INTERFACE_BuildTestConfigurationResponse(
+                outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+                HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED,
+                incoming_message->body.test_configuration.tick_duration_us.microseconds );
+            *response_required = true;
             return HOST_INTERFACE_STATUS_OK;
     }
     if ( !check )
     {
         s_session.state = HOST_INTERFACE_SESSION_FAULTED;
         ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-        *response_required                    = true;
+        HOST_INTERFACE_BuildTestConfigurationResponse(
+            outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_FAILED,
+            HIL_APPLICATION_RESPONSE_REASON_HARDWARE_NOT_READY,
+            incoming_message->body.test_configuration.tick_duration_us.microseconds );
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
 
@@ -1481,18 +1603,10 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
     VARIABLE_RESULT_MESSAGE_PRODUCER_Reset();
     VARIABLE_RESULT_MESSAGE_PRODUCER_SetExpectedTickCount( *expected_tick_count );
 
-    // Set the type and subtype
-    outgoing_message->type    = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
-    outgoing_message->subtype = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-    // Set Response body
-    outgoing_message->body.response.scope       = HIL_APPLICATION_RESPONSE_SCOPE_TEST_CONFIGURATION;
-    outgoing_message->body.response.outcome     = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
-    outgoing_message->body.response.reason      = HIL_APPLICATION_RESPONSE_REASON_NONE;
-    outgoing_message->body.response.tick_number = 0U;
-    outgoing_message->body.response.control_command        = HIL_APPLICATION_CONTROL_INVALID;
-    outgoing_message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
-    outgoing_message->body.response.detail                 = 0U;
-    *response_required                                     = true;
+    HOST_INTERFACE_BuildTestConfigurationResponse( outgoing_message,
+                                                   HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED,
+                                                   HIL_APPLICATION_RESPONSE_REASON_NONE, 0U );
+    *response_required = true;
 
     /* Update the session state to track the progression through the tests*/
     s_session.state               = HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS;
@@ -1507,32 +1621,11 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Test_Configuration(
 }
 
 /**
- * @brief Process an incoming Test Instruction message from the host device.
+ * @brief Processes one fixed-format instruction upload.
  *
- * @todo Implementation guidelines & pseudocode:
- *
- * 1. Validate Test ID correlation:
- *    if (!incoming_message->has_test_id ||
- *        memcmp(incoming_message->test_id.bytes, active_test_id.bytes, 16) != 0)
- *    {
- *        HOST_INTERFACE_Default_Error(outgoing_message);
- *        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_REJECTED;
- *        *response_required = true;
- *        return HOST_INTERFACE_STATUS_INCONSISTENT_TEST_ID;
- *    }
- *
- * 2. Forward to the Instruction Message Handler:
- *    HOST_Interface_Status_T host_status =
- *        HOST_INSTRUCTION_HANDLER_HandleInstruction(&incoming_message->body.test_instruction);
- *
- * 3. Handle outcome:
- *    - On HOST_INTERFACE_STATUS_OK:
- *        *response_required = false;  // Fixed instruction ticks have no Application response
- *        return HOST_INTERFACE_STATUS_OK;
- *    - On error (validation failure, flash upload error, state error):
- *        HOST_INTERFACE_Default_Error(outgoing_message);
- *        *response_required = true;
- *        return host_status;
+ * Validates session and test correlation before handing the instruction to
+ * the storage handler. Successful ticks remain response-free; rejected ticks
+ * use a correlated TICK response so the host can retry or discard the upload.
  */
 HOST_Interface_Status_T
 HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incoming_message,
@@ -1544,9 +1637,10 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incom
     // 1. Session state check
     if ( s_session.state != HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS )
     {
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-        *response_required                    = true;
+        HOST_INTERFACE_BuildTickResponse(
+            outgoing_message, HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED,
+            incoming_message->body.test_instruction.tick_number, ( uint32_t )s_session.state );
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
 
@@ -1554,10 +1648,10 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incom
     if ( !HOST_INTERFACE_Validate_Test_Id( incoming_message ) )
     {
         s_session.state = HOST_INTERFACE_SESSION_FAULTED;
-        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-        *response_required                    = true;
+        HOST_INTERFACE_BuildTickResponse( outgoing_message,
+                                          HIL_APPLICATION_RESPONSE_REASON_INCONSISTENT_TEST_ID,
+                                          incoming_message->body.test_instruction.tick_number, 0U );
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
 
@@ -1565,10 +1659,11 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incom
     if ( s_session.instruction_family == HOST_INSTRUCTION_FAMILY_VARIABLE_UPDATE )
     {
         s_session.state = HOST_INTERFACE_SESSION_FAULTED;
-        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-        *response_required                    = true;
+        HOST_INTERFACE_BuildTickResponse( outgoing_message,
+                                          HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED,
+                                          incoming_message->body.test_instruction.tick_number,
+                                          ( uint32_t )s_session.instruction_family );
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
     s_session.instruction_family = HOST_INSTRUCTION_FAMILY_LEGACY_FIXED;
@@ -1579,34 +1674,30 @@ HOST_INTERFACE_process_Test_Instructions( const HIL_Application_Message_T* incom
     if ( instruction_status != HOST_INTERFACE_STATUS_OK )
     {
         s_session.state = HOST_INTERFACE_SESSION_FAULTED;
-        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
-
-        outgoing_message->type                  = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
-        outgoing_message->subtype               = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-        outgoing_message->body.response.scope   = HIL_APPLICATION_RESPONSE_SCOPE_TICK;
-        outgoing_message->body.response.outcome = HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED;
+        if ( instruction_status == HOST_INTERFACE_STATUS_INTERNAL_ERROR
+             || instruction_status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE )
+        {
+            ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
+        }
+        HIL_Application_Response_Reason_T reason =
+            HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED;
         if ( instruction_status == HOST_INTERFACE_STATUS_INCONSISTENT_TICK )
         {
-            outgoing_message->body.response.reason = HIL_APPLICATION_RESPONSE_REASON_INVALID_TICK;
+            reason = HIL_APPLICATION_RESPONSE_REASON_INVALID_TICK;
+        }
+        else if ( instruction_status == HOST_INTERFACE_STATUS_STORAGE_FULL )
+        {
+            reason = HIL_APPLICATION_RESPONSE_REASON_STORAGE_UNAVAILABLE;
         }
         else if ( ( instruction_status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
                   || ( instruction_status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE ) )
         {
-            outgoing_message->body.response.reason =
-                HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE;
+            reason = HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE;
         }
-        else
-        {
-            outgoing_message->body.response.reason =
-                HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED;
-        }
-        outgoing_message->body.response.tick_number =
-            incoming_message->body.test_instruction.tick_number;
-        outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
-        outgoing_message->body.response.global_control_command =
-            HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
-        outgoing_message->body.response.detail = ( uint32_t )instruction_status;
-        *response_required                     = true;
+        HOST_INTERFACE_BuildTickResponse( outgoing_message, reason,
+                                          incoming_message->body.test_instruction.tick_number,
+                                          ( uint32_t )instruction_status );
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
 
@@ -1631,9 +1722,10 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Instruction_Data(
     // 1. Session state check
     if ( s_session.state != HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS )
     {
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-        *response_required                    = true;
+        HOST_INTERFACE_BuildTickResponse(
+            outgoing_message, HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED,
+            incoming_message->body.update_instruction.tick_number, ( uint32_t )s_session.state );
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
 
@@ -1641,10 +1733,10 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Instruction_Data(
     if ( !HOST_INTERFACE_Validate_Test_Id( incoming_message ) )
     {
         s_session.state = HOST_INTERFACE_SESSION_FAULTED;
-        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-        *response_required                    = true;
+        HOST_INTERFACE_BuildTickResponse(
+            outgoing_message, HIL_APPLICATION_RESPONSE_REASON_INCONSISTENT_TEST_ID,
+            incoming_message->body.update_instruction.tick_number, 0U );
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
 
@@ -1652,10 +1744,11 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Instruction_Data(
     if ( s_session.instruction_family == HOST_INSTRUCTION_FAMILY_LEGACY_FIXED )
     {
         s_session.state = HOST_INTERFACE_SESSION_FAULTED;
-        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-        *response_required                    = true;
+        HOST_INTERFACE_BuildTickResponse( outgoing_message,
+                                          HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED,
+                                          incoming_message->body.update_instruction.tick_number,
+                                          ( uint32_t )s_session.instruction_family );
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
     s_session.instruction_family = HOST_INSTRUCTION_FAMILY_VARIABLE_UPDATE;
@@ -1667,34 +1760,30 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Variable_Instruction_Data(
     if ( instruction_status != HOST_INTERFACE_STATUS_OK )
     {
         s_session.state = HOST_INTERFACE_SESSION_FAULTED;
-        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
-
-        outgoing_message->type                  = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
-        outgoing_message->subtype               = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-        outgoing_message->body.response.scope   = HIL_APPLICATION_RESPONSE_SCOPE_TICK;
-        outgoing_message->body.response.outcome = HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED;
+        if ( instruction_status == HOST_INTERFACE_STATUS_INTERNAL_ERROR
+             || instruction_status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE )
+        {
+            ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
+        }
+        HIL_Application_Response_Reason_T reason =
+            HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED;
         if ( instruction_status == HOST_INTERFACE_STATUS_INCONSISTENT_TICK )
         {
-            outgoing_message->body.response.reason = HIL_APPLICATION_RESPONSE_REASON_INVALID_TICK;
+            reason = HIL_APPLICATION_RESPONSE_REASON_INVALID_TICK;
+        }
+        else if ( instruction_status == HOST_INTERFACE_STATUS_STORAGE_FULL )
+        {
+            reason = HIL_APPLICATION_RESPONSE_REASON_STORAGE_UNAVAILABLE;
         }
         else if ( ( instruction_status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
                   || ( instruction_status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE ) )
         {
-            outgoing_message->body.response.reason =
-                HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE;
+            reason = HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE;
         }
-        else
-        {
-            outgoing_message->body.response.reason =
-                HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED;
-        }
-        outgoing_message->body.response.tick_number =
-            incoming_message->body.update_instruction.tick_number;
-        outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
-        outgoing_message->body.response.global_control_command =
-            HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
-        outgoing_message->body.response.detail = ( uint32_t )instruction_status;
-        *response_required                     = true;
+        HOST_INTERFACE_BuildTickResponse( outgoing_message, reason,
+                                          incoming_message->body.update_instruction.tick_number,
+                                          ( uint32_t )instruction_status );
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
 
@@ -1854,28 +1943,31 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
                 0 );
             if ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
             {
-                // Construct the error message
-                HOST_INTERFACE_Default_Error( outgoing_message );
-                // TODO  more specific error catagory
-                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-                *response_required                    = true;
+                HOST_INTERFACE_BuildExecutionControlResponse(
+                    outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+                    HIL_APPLICATION_RESPONSE_REASON_UNSUPPORTED, HIL_APPLICATION_CONTROL_ABORT );
+                outgoing_message->body.response.detail = ( uint32_t )status;
+                *response_required                     = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             if ( status == HOST_INTERFACE_STATUS_INTERNAL_ERROR )
             {
-                // Construct the error message
-                HOST_INTERFACE_Default_Error( outgoing_message );
-                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-                *response_required                    = true;
+                HOST_INTERFACE_BuildExecutionControlResponse(
+                    outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_FAILED,
+                    HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE,
+                    HIL_APPLICATION_CONTROL_ABORT );
+                outgoing_message->body.response.detail = ( uint32_t )status;
+                *response_required                     = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             if ( status == HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE )
             {
-                // Construct the error message
-                HOST_INTERFACE_Default_Error( outgoing_message );
-                // TODO  more specific error catagory
-                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-                *response_required                    = true;
+                HOST_INTERFACE_BuildExecutionControlResponse(
+                    outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+                    HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED,
+                    HIL_APPLICATION_CONTROL_ABORT );
+                outgoing_message->body.response.detail = ( uint32_t )status;
+                *response_required                     = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             if ( status == HOST_INTERFACE_STATUS_OK )
@@ -1884,10 +1976,11 @@ HOST_INTERFACE_process_Execution_Control( const HIL_Application_Message_T* incom
                 *response_required = false;
                 return HOST_INTERFACE_STATUS_OK;
             }
-            // Construct the error message
-            HOST_INTERFACE_Default_Error( outgoing_message );
-            // TODO  more specific error catagory
-            *response_required = true;
+            HOST_INTERFACE_BuildExecutionControlResponse(
+                outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_FAILED,
+                HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE, HIL_APPLICATION_CONTROL_ABORT );
+            outgoing_message->body.response.detail = ( uint32_t )status;
+            *response_required                     = true;
             return HOST_INTERFACE_STATUS_OK;
         case HIL_APPLICATION_CONTROL_RESERVED:
             *response_required = false;
@@ -1998,7 +2091,8 @@ HOST_INTERFACE_process_Test_Result( const HIL_Application_Message_T* incoming_me
 
     // Incoming Test Result from host is unexpected
     HOST_INTERFACE_Default_Error( outgoing_message );
-    *response_required = true;
+    outgoing_message->body.error.detail = ( uint32_t )incoming_message->type;
+    *response_required                  = true;
     return HOST_INTERFACE_STATUS_OK;
 }
 
@@ -2026,7 +2120,8 @@ HOST_INTERFACE_process_Response( const HIL_Application_Message_T* incoming_messa
     // Host device should never be sending a response
     // report error to host device
     HOST_INTERFACE_Default_Error( outgoing_message );
-    *response_required = true;
+    outgoing_message->body.error.detail = ( uint32_t )incoming_message->type;
+    *response_required                  = true;
     return HOST_INTERFACE_STATUS_OK;
 }
 
@@ -2046,7 +2141,9 @@ HOST_INTERFACE_process_Error( const HIL_Application_Message_T* incoming_message,
             {
                 // Construct the error message
                 HOST_INTERFACE_Default_Error( outgoing_message );
-                *response_required = true;
+                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
+                outgoing_message->body.error.detail   = ( uint32_t )fault;
+                *response_required                    = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             *response_required = false;
@@ -2056,7 +2153,9 @@ HOST_INTERFACE_process_Error( const HIL_Application_Message_T* incoming_message,
             {
                 // Construct the error message
                 HOST_INTERFACE_Default_Error( outgoing_message );
-                *response_required = true;
+                outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
+                outgoing_message->body.error.detail   = ( uint32_t )fault;
+                *response_required                    = true;
                 return HOST_INTERFACE_STATUS_OK;
             }
             *response_required = false;
@@ -2074,19 +2173,20 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Finalize_Test_Upload(
     // 1. Session state check
     if ( s_session.state != HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS )
     {
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-        *response_required                    = true;
+        HOST_INTERFACE_BuildCompleteTestResponse(
+            outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+            HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED, ( uint32_t )s_session.state );
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
     // 2. Test ID check
     if ( !HOST_INTERFACE_Validate_Test_Id( incoming_message ) )
     {
         s_session.state = HOST_INTERFACE_SESSION_FAULTED;
-        ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
-        HOST_INTERFACE_Default_Error( outgoing_message );
-        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL;
-        *response_required                    = true;
+        HOST_INTERFACE_BuildCompleteTestResponse(
+            outgoing_message, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED,
+            HIL_APPLICATION_RESPONSE_REASON_INCONSISTENT_TEST_ID, 0U );
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
 
@@ -2120,11 +2220,15 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Finalize_Test_Upload(
         {
             s_session.report_owed = false;
             ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
-            HOST_INTERFACE_Default_Error( outgoing_message );
-            outgoing_message->body.error.category =
-                ( status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE )
-                    ? HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL
-                    : HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
+            HOST_INTERFACE_BuildCompleteTestResponse(
+                outgoing_message,
+                status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE
+                    ? HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED
+                    : HIL_APPLICATION_RESPONSE_OUTCOME_FAILED,
+                status == HOST_INTERFACE_STATUS_UNSUPPORTED_MESSAGE
+                    ? HIL_APPLICATION_RESPONSE_REASON_UNSUPPORTED
+                    : HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE,
+                ( uint32_t )status );
         }
         *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
@@ -2132,16 +2236,10 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Finalize_Test_Upload(
     /* Update the session to track progression through the test*/
     s_session.state = HOST_INTERFACE_SESSION_ARMED;
 
-    outgoing_message->type                          = HIL_APPLICATION_MESSAGE_TYPE_RESPONSE;
-    outgoing_message->subtype                       = HIL_APPLICATION_MESSAGE_SUBTYPE_NONE;
-    outgoing_message->body.response.scope           = HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST;
-    outgoing_message->body.response.outcome         = HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED;
-    outgoing_message->body.response.reason          = HIL_APPLICATION_RESPONSE_REASON_NONE;
-    outgoing_message->body.response.tick_number     = 0U; /* FIXED line 889 bug */
-    outgoing_message->body.response.control_command = HIL_APPLICATION_CONTROL_INVALID;
-    outgoing_message->body.response.global_control_command = HIL_APPLICATION_GLOBAL_CONTROL_INVALID;
-    outgoing_message->body.response.detail                 = 0U;
-    *response_required                                     = true;
+    HOST_INTERFACE_BuildCompleteTestResponse( outgoing_message,
+                                              HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED,
+                                              HIL_APPLICATION_RESPONSE_REASON_NONE, 0U );
+    *response_required = true;
 
     return HOST_INTERFACE_STATUS_OK;
 }
@@ -2214,9 +2312,12 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Execution_Complete_Notification(
     {
         if ( RUN_STATE_MANAGER_RequestResultTransfer() != true )
         {
-            s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+            s_session.state                          = HOST_INTERFACE_SESSION_FAULTED;
+            const RunStateFaultReason_T fault_reason = RUN_STATE_MANAGER_GetFaultReason();
             HOST_INTERFACE_Default_Error( outgoing_message );
-            outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
+            outgoing_message->body.error.category =
+                HOST_INTERFACE_Error_Category_For_Fault( fault_reason );
+            outgoing_message->body.error.detail = ( uint32_t )fault_reason;
             if ( s_session.has_active_test_id )
             {
                 outgoing_message->has_test_id = 1U;
@@ -2243,9 +2344,10 @@ HOST_INTERFACE_process_Fault_Notification( HIL_Application_Message_T* outgoing_m
 
     s_session.state = HOST_INTERFACE_SESSION_FAULTED;
 
+    RunStateFaultReason_T fault_reason = RUN_STATE_MANAGER_GetFaultReason();
     HOST_INTERFACE_Default_Error( outgoing_message );
-    outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_HARDWARE;
-    outgoing_message->body.error.detail   = ( uint32_t )RUN_STATE_MANAGER_GetFaultReason();
+    outgoing_message->body.error.category = HOST_INTERFACE_Error_Category_For_Fault( fault_reason );
+    outgoing_message->body.error.detail   = ( uint32_t )fault_reason;
     if ( s_session.has_active_test_id )
     {
         outgoing_message->has_test_id = 1U;
@@ -2266,10 +2368,17 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Transfer_Complete_Notification(
 
     if ( s_session.state != HOST_INTERFACE_SESSION_COMPLETED )
     {
-        s_session.state = HOST_INTERFACE_SESSION_FAULTED;
+        const HOST_INTERFACE_Session_State_T previous_state = s_session.state;
+        s_session.state                                     = HOST_INTERFACE_SESSION_FAULTED;
         HOST_INTERFACE_Default_Error( outgoing_message );
         outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-        *response_required                    = true;
+        outgoing_message->body.error.detail   = ( uint32_t )previous_state;
+        if ( s_session.has_active_test_id )
+        {
+            outgoing_message->has_test_id = 1U;
+            outgoing_message->test_id     = s_session.active_test_id;
+        }
+        *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
 
@@ -2324,13 +2433,26 @@ HOST_Interface_Status_T HOST_INTERFACE_process_Result_Transfer_Notification(
         *response_required = true;
         return HOST_INTERFACE_STATUS_OK;
     }
-    // Result producer failed with corrupt data or internal error
+    // Result producer failed with corrupt data or internal error. Preserve the
+    // producer status so the host can distinguish invalid input from retained
+    // result corruption without parsing a free-form diagnostic string.
     *notifications  = *notifications & ( uint32_t ) ~( HOST_INTERFACE_NOTIFY_RESULT_TRANSFER );
     s_session.state = HOST_INTERFACE_SESSION_FAULTED;
-    ( void )RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
+    const bool retained_data_failure = result_status == RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA;
+    ( void )RUN_STATE_MANAGER_RequestFault( retained_data_failure
+                                                ? RUN_STATE_FAULT_FLASH_RESULT_TRANSFER
+                                                : RUN_STATE_FAULT_HOST_INTERFACE_ERROR );
     HOST_INTERFACE_Default_Error( outgoing_message );
-    outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
-    *response_required                    = true;
+    outgoing_message->body.error.category = retained_data_failure
+                                                ? HIL_APPLICATION_ERROR_CATEGORY_RETAINED_DATA
+                                                : HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
+    outgoing_message->body.error.detail   = ( uint32_t )result_status;
+    if ( s_session.has_active_test_id )
+    {
+        outgoing_message->has_test_id = 1U;
+        outgoing_message->test_id     = s_session.active_test_id;
+    }
+    *response_required = true;
     return HOST_INTERFACE_STATUS_OK;
 }
 
@@ -2341,7 +2463,19 @@ HOST_INTERFACE_process_Run_Report_Notification( HIL_Application_Message_T* outgo
 {
     if ( !HOST_INTERFACE_BuildRunReport( outgoing_message ) )
     {
-        return HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+        /* Keep RUN_REPORT pending so a transient metadata/transport condition
+         * cannot silently lose the terminal report. The explicit error gives
+         * the host a correlated indication while the report is retried. */
+        HOST_INTERFACE_Default_Error( outgoing_message );
+        outgoing_message->body.error.category = HIL_APPLICATION_ERROR_CATEGORY_INTERNAL;
+        outgoing_message->body.error.detail   = HOST_INTERFACE_STATUS_INTERNAL_ERROR;
+        if ( s_session.has_active_test_id )
+        {
+            outgoing_message->has_test_id = 1U;
+            outgoing_message->test_id     = s_session.active_test_id;
+        }
+        *response_required = true;
+        return HOST_INTERFACE_STATUS_OK;
     }
 
     *notifications &= ( uint32_t )~HOST_INTERFACE_NOTIFY_RUN_REPORT;

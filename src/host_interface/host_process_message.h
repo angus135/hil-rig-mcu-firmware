@@ -128,6 +128,9 @@ typedef enum
 
     /** Failed to transition to a different state. */
     HOST_INTERFACE_STATUS_UNSUPPORTED_NOTIFICATION = 20,
+
+    /** The active upload cannot retain the complete instruction image. */
+    HOST_INTERFACE_STATUS_STORAGE_FULL = 21,
 } HOST_Interface_Status_T;
 
 /**

@@ -1136,7 +1136,7 @@ InstructionBufferUploadWriteStatus_T INSTRUCTION_BUFFER_WriteUploadBytes( const 
 
     if ( length > remaining_upload_bytes )
     {
-        return INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_ARGUMENT;
+        return INSTRUCTION_BUFFER_UPLOAD_WRITE_STORAGE_FULL;
     }
 
     InstructionBufferUploadCapacityStatus_T capacity_status =

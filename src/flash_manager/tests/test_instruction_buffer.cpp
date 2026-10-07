@@ -970,24 +970,29 @@ TEST_F( InstructionBufferTest, PrepareUploadValidatesLengthAndExclusiveStorageOw
 
 TEST_F( InstructionBufferTest, WriteUploadBytesRejectsInvalidStateAndArgumentsWithoutMutation )
 {
-    std::array<uint8_t, ( 2U * TEST_INSTRUCTION_PAGE_SIZE_BYTES ) + 1U> data = {};
+    std::array<uint8_t,
+               ( INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT * TEST_INSTRUCTION_PAGE_SIZE_BYTES ) + 1U>
+        oversized_data = {};
 
     EXPECT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_STATE,
-               INSTRUCTION_BUFFER_WriteUploadBytes( data.data(), 1U ) );
+               INSTRUCTION_BUFFER_WriteUploadBytes( oversized_data.data(), 1U ) );
 
-    PrepareUpload( TEST_INSTRUCTION_PAGE_SIZE_BYTES );
+    PrepareUpload( ( INSTRUCTION_BUFFER_MIRROR_PAGE_COUNT + 1U )
+                   * TEST_INSTRUCTION_PAGE_SIZE_BYTES );
 
     EXPECT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_ARGUMENT,
                INSTRUCTION_BUFFER_WriteUploadBytes( nullptr, 1U ) );
     EXPECT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_ARGUMENT,
-               INSTRUCTION_BUFFER_WriteUploadBytes( data.data(), 0U ) );
-    EXPECT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_ARGUMENT,
-               INSTRUCTION_BUFFER_WriteUploadBytes( data.data(), data.size() ) );
+               INSTRUCTION_BUFFER_WriteUploadBytes( oversized_data.data(), 0U ) );
+    EXPECT_EQ(
+        INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_ARGUMENT,
+        INSTRUCTION_BUFFER_WriteUploadBytes( oversized_data.data(), oversized_data.size() ) );
     EXPECT_EQ( 0U, instruction_buffer_context.upload_accepted_length_bytes );
     EXPECT_EQ( INSTRUCTION_BUFFER_PAGE_EMPTY, instruction_buffer_context.page_states[0] );
 }
 
-TEST_F( InstructionBufferTest, WriteUploadBytesRejectsDataBeyondDeclaredRemainingLength )
+/** @brief Reports storage exhaustion without consuming any part of the rejected chunk. */
+TEST_F( InstructionBufferTest, WriteUploadBytesReportsStorageFullBeyondRemainingLength )
 {
     std::array<uint8_t, 20U> first_chunk         = {};
     std::array<uint8_t, 13U> oversized_remainder = {};
@@ -998,7 +1003,7 @@ TEST_F( InstructionBufferTest, WriteUploadBytesRejectsDataBeyondDeclaredRemainin
     std::array<uint8_t, 20U> page_before = {};
     std::memcpy( page_before.data(), test_instruction_buffer_storage, page_before.size() );
 
-    EXPECT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_ARGUMENT,
+    EXPECT_EQ( INSTRUCTION_BUFFER_UPLOAD_WRITE_STORAGE_FULL,
                INSTRUCTION_BUFFER_WriteUploadBytes( oversized_remainder.data(),
                                                     oversized_remainder.size() ) );
     EXPECT_EQ( first_chunk.size(), instruction_buffer_context.upload_accepted_length_bytes );

@@ -411,6 +411,8 @@ protected:
                     *status = run_state_status;
                 }
             } );
+        ON_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetFaultReason() )
+            .WillByDefault( Return( RUN_STATE_FAULT_NONE ) );
         ON_CALL( *g_mock_deps, EXECUTION_MANAGER_GetFailure() )
             .WillByDefault( Return( EXECUTION_MANAGER_FAILURE_NONE ) );
     }
@@ -437,7 +439,7 @@ TEST_F( HostProcessMessageTest, DefaultErrorInitializesProtocolErrorEnvelope )
     EXPECT_EQ( status, HOST_INTERFACE_STATUS_OK );
     EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
     EXPECT_EQ( outgoing.subtype, HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
-    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_INVALID );
+    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
     EXPECT_EQ( outgoing.body.error.recoverable, 1U );
     EXPECT_EQ( outgoing.body.error.has_tick_number, 0U );
     EXPECT_EQ( outgoing.body.error.tick_number, 0U );
@@ -681,7 +683,7 @@ TEST_F( HostProcessMessageTest, InfoResponseWithFullyMismatchedVersionProducesEr
     EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
 }
 
-TEST_F( HostProcessMessageTest, TestConfigurationConversionFailureReturnsProtocolErrorResponse )
+TEST_F( HostProcessMessageTest, TestConfigurationConversionFailureReturnsRejectedResponse )
 {
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION );
     incoming.body.test_configuration.expected_tick_count = 900U;
@@ -694,11 +696,14 @@ TEST_F( HostProcessMessageTest, TestConfigurationConversionFailureReturnsProtoco
             &incoming, &outgoing, &response_required, data, sizeof( data ), &expected_tick_count ),
         HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
-    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
-    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TEST_CONFIGURATION );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
+    EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED );
+    EXPECT_EQ( outgoing.body.response.detail, HOST_INTERFACE_STATUS_INVALID_ARGUMENT );
 }
 
-TEST_F( HostProcessMessageTest, TestConfigurationCommitFailureReturnsProtocolErrorResponse )
+TEST_F( HostProcessMessageTest, TestConfigurationCommitFailureReturnsFailedResponse )
 {
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION );
     run_state_status.state = RUN_STATE_TEST_PACKAGE_RECEIVE;
@@ -714,8 +719,11 @@ TEST_F( HostProcessMessageTest, TestConfigurationCommitFailureReturnsProtocolErr
             &incoming, &outgoing, &response_required, data, sizeof( data ), &expected_tick_count ),
         HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
-    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
-    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TEST_CONFIGURATION );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_FAILED );
+    EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE );
+    EXPECT_EQ( outgoing.body.response.detail, HOST_INTERFACE_STATUS_INTERNAL_ERROR );
     EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_FAULTED );
 }
 
@@ -780,7 +788,7 @@ TEST_F( HostProcessMessageTest, TestConfigurationWaitCoversRunStateFlashPreparat
     EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_ACCEPTED );
 }
 
-TEST_F( HostProcessMessageTest, TestConfigurationInvalidFrequencyReturnsProtocolErrorResponse )
+TEST_F( HostProcessMessageTest, TestConfigurationInvalidFrequencyReturnsRejectedResponse )
 {
     SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_CONFIGURATION );
     incoming.body.test_configuration.expected_tick_count           = 4567U;
@@ -792,17 +800,18 @@ TEST_F( HostProcessMessageTest, TestConfigurationInvalidFrequencyReturnsProtocol
     EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_GetStatus( _ ) )
         .WillOnce(
             Invoke( [this]( RunStateManagerStatus_T* status ) { *status = run_state_status; } ) );
-    EXPECT_CALL( *g_mock_deps,
-                 RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
-        .WillOnce( Return( true ) );
+    EXPECT_CALL( *g_mock_deps, RUN_STATE_MANAGER_Set_Execution_Frequency( _ ) ).Times( 0 );
 
     EXPECT_EQ(
         HOST_INTERFACE_Test_Access_Process_Test_Configuration(
             &incoming, &outgoing, &response_required, data, sizeof( data ), &expected_tick_count ),
         HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
-    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
-    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TEST_CONFIGURATION );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED );
+    EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED );
+    EXPECT_EQ( outgoing.body.response.detail, 500U );
     EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_FAULTED );
 }
 
@@ -817,7 +826,7 @@ TEST_F( HostProcessMessageTest, TestInstructionHandlerFailureProducesRejectedRes
         .WillOnce( Return( HOST_INTERFACE_STATUS_VALIDATION_FAILED ) );
     EXPECT_CALL( *g_mock_deps,
                  RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
-        .WillOnce( Return( true ) );
+        .Times( 0 );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
@@ -874,8 +883,11 @@ TEST_F( HostProcessMessageTest, VariableInstructionDataRejectsWhenNotInReceiving
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
                HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
-    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
-    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TICK );
+    EXPECT_EQ( outgoing.body.response.reason,
+               HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED );
+    EXPECT_EQ( outgoing.body.response.tick_number, 1U );
 }
 
 TEST_F( HostProcessMessageTest, VariableInstructionDataRejectsFamilyMismatch )
@@ -892,8 +904,11 @@ TEST_F( HostProcessMessageTest, VariableInstructionDataRejectsFamilyMismatch )
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
                HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
-    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
-    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TICK );
+    EXPECT_EQ( outgoing.body.response.reason,
+               HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED );
+    EXPECT_EQ( outgoing.body.response.tick_number, 1U );
 }
 
 TEST_F( HostProcessMessageTest, VariableInstructionDataHandlerFailureProducesRejectedResponse )
@@ -906,7 +921,7 @@ TEST_F( HostProcessMessageTest, VariableInstructionDataHandlerFailureProducesRej
         .WillOnce( Return( HOST_INTERFACE_STATUS_VALIDATION_FAILED ) );
     EXPECT_CALL( *g_mock_deps,
                  RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
-        .WillOnce( Return( true ) );
+        .Times( 0 );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Variable_Instruction_Data(
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
@@ -918,6 +933,33 @@ TEST_F( HostProcessMessageTest, VariableInstructionDataHandlerFailureProducesRej
     EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_VALIDATION_FAILED );
     EXPECT_EQ( outgoing.body.response.tick_number, 3U );
     EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_FAULTED );
+}
+
+/** @brief Variable upload exhaustion is recoverable through RESET_APPLICATION. */
+TEST_F( HostProcessMessageTest, VariableInstructionStorageFullDoesNotFaultRig )
+{
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS );
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_UPDATE_INSTRUCTION );
+    incoming.body.update_instruction.tick_number = 12743U;
+
+    EXPECT_CALL( *g_mock_deps, HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
+        .WillOnce( Return( HOST_INTERFACE_STATUS_STORAGE_FULL ) );
+    EXPECT_CALL( *g_mock_deps,
+                 RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+        .Times( 0 );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Variable_Instruction_Data(
+                   &incoming, &outgoing, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( HIL_APPLICATION_MESSAGE_TYPE_RESPONSE, outgoing.type );
+    EXPECT_EQ( HIL_APPLICATION_RESPONSE_SCOPE_TICK, outgoing.body.response.scope );
+    EXPECT_EQ( HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED, outgoing.body.response.outcome );
+    EXPECT_EQ( HIL_APPLICATION_RESPONSE_REASON_STORAGE_UNAVAILABLE, outgoing.body.response.reason );
+    EXPECT_EQ( 12743U, outgoing.body.response.tick_number );
+    EXPECT_EQ( HOST_INTERFACE_STATUS_STORAGE_FULL, outgoing.body.response.detail );
+    EXPECT_EQ( HOST_INTERFACE_SESSION_FAULTED, HOST_INTERFACE_Get_Session()->state );
 }
 
 TEST_F( HostProcessMessageTest, VariableInstructionDataIngestsDirectlyWithoutPerTickResponse )
@@ -1577,13 +1619,17 @@ TEST_F( HostProcessMessageTest, ResultTransferNotificationFaultsSessionOnCorrupt
     EXPECT_CALL( *g_mock_deps, RESULT_MESSAGE_PRODUCER_ProduceNextMessage( _ ) )
         .WillOnce( Return( RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA ) );
     EXPECT_CALL( *g_mock_deps,
-                 RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+                 RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_FLASH_RESULT_TRANSFER ) )
         .WillOnce( Return( true ) );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Result_Transfer_Notification(
                    &outgoing, &notifications, &response_required, data, sizeof( data ) ),
                HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
+    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_RETAINED_DATA );
+    EXPECT_EQ( outgoing.body.error.detail,
+               static_cast<uint32_t>( RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA ) );
     EXPECT_EQ( notifications, 0U );
 }
 
@@ -1838,7 +1884,7 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInvalidInstruction
         .WillOnce( Return( HOST_INTERFACE_STATUS_VALIDATION_FAILED ) );
     EXPECT_CALL( *g_mock_deps,
                  RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
-        .WillOnce( Return( true ) );
+        .Times( 0 );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
@@ -1866,7 +1912,7 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInconsistentTick )
         .WillOnce( Return( HOST_INTERFACE_STATUS_INCONSISTENT_TICK ) );
     EXPECT_CALL( *g_mock_deps,
                  RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
-        .WillOnce( Return( true ) );
+        .Times( 0 );
 
     EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
@@ -1879,6 +1925,34 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsInconsistentTick )
     EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_INVALID_TICK );
     EXPECT_EQ( outgoing.body.response.tick_number, 2U );
     EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_FAULTED );
+}
+
+/** @brief Storage exhaustion rejects the upload without faulting the Run State Manager. */
+TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsStorageFullWithoutRigFault )
+{
+    HOST_INTERFACE_Test_Access_Set_Session_State( HOST_INTERFACE_SESSION_RECEIVING_INSTRUCTIONS );
+    SetIncomingType( HIL_APPLICATION_MESSAGE_TYPE_TEST_INSTRUCTION,
+                     HIL_APPLICATION_MESSAGE_SUBTYPE_NONE );
+    incoming.body.test_instruction.tick_number = 12743U;
+
+    EXPECT_CALL( *g_mock_deps, HOST_INSTRUCTION_HANDLER_HandleInstruction( _ ) )
+        .WillOnce( Return( HOST_INTERFACE_STATUS_STORAGE_FULL ) );
+    EXPECT_CALL( *g_mock_deps,
+                 RUN_STATE_MANAGER_RequestFault( RUN_STATE_FAULT_HOST_INTERFACE_ERROR ) )
+        .Times( 0 );
+
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Process_Test_Instructions(
+                   &incoming, &outgoing, &response_required, data, sizeof( data ) ),
+               HOST_INTERFACE_STATUS_OK );
+
+    EXPECT_TRUE( response_required );
+    EXPECT_EQ( HIL_APPLICATION_MESSAGE_TYPE_RESPONSE, outgoing.type );
+    EXPECT_EQ( HIL_APPLICATION_RESPONSE_SCOPE_TICK, outgoing.body.response.scope );
+    EXPECT_EQ( HIL_APPLICATION_RESPONSE_OUTCOME_REJECTED, outgoing.body.response.outcome );
+    EXPECT_EQ( HIL_APPLICATION_RESPONSE_REASON_STORAGE_UNAVAILABLE, outgoing.body.response.reason );
+    EXPECT_EQ( 12743U, outgoing.body.response.tick_number );
+    EXPECT_EQ( HOST_INTERFACE_STATUS_STORAGE_FULL, outgoing.body.response.detail );
+    EXPECT_EQ( HOST_INTERFACE_SESSION_FAULTED, HOST_INTERFACE_Get_Session()->state );
 }
 
 TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadTransitionsToArmed )
@@ -1931,8 +2005,11 @@ TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadHandlesTransitionFailur
         HOST_INTERFACE_STATUS_OK );
 
     EXPECT_TRUE( response_required );
-    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
-    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_INTERNAL );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST );
+    EXPECT_EQ( outgoing.body.response.outcome, HIL_APPLICATION_RESPONSE_OUTCOME_FAILED );
+    EXPECT_EQ( outgoing.body.response.reason, HIL_APPLICATION_RESPONSE_REASON_INTERNAL_FAILURE );
+    EXPECT_EQ( outgoing.body.response.detail, HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE );
     EXPECT_EQ( HOST_INTERFACE_Get_Session()->state, HOST_INTERFACE_SESSION_FAULTED );
 }
 
@@ -1989,8 +2066,10 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsWhenSessionIdle )
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
                HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
-    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
-    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TICK );
+    EXPECT_EQ( outgoing.body.response.reason,
+               HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED );
 }
 
 /**
@@ -2005,8 +2084,10 @@ TEST_F( HostProcessMessageTest, ProcessFinalizeTestUploadRejectsWhenSessionIdle 
             &incoming, &outgoing, &response_required, data, sizeof( data ), &expected_tick_count ),
         HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
-    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
-    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_COMPLETE_TEST );
+    EXPECT_EQ( outgoing.body.response.reason,
+               HIL_APPLICATION_RESPONSE_REASON_OPERATION_NOT_ALLOWED );
 }
 
 /**
@@ -2080,8 +2161,11 @@ TEST_F( HostProcessMessageTest, ProcessTestInstructionsRejectsMismatchedTestId )
                    &incoming, &outgoing, &response_required, data, sizeof( data ) ),
                HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
-    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
-    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_PROTOCOL );
+    EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_RESPONSE );
+    EXPECT_EQ( outgoing.body.response.scope, HIL_APPLICATION_RESPONSE_SCOPE_TICK );
+    EXPECT_EQ( outgoing.body.response.reason,
+               HIL_APPLICATION_RESPONSE_REASON_INCONSISTENT_TEST_ID );
+    EXPECT_EQ( outgoing.body.response.tick_number, 1U );
 }
 
 /**
@@ -2274,7 +2358,7 @@ TEST_F( HostProcessMessageTest, FaultNotificationProducesErrorMessageAndSetsFaul
                HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
     EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
-    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_HARDWARE );
+    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_TIMEOUT );
     EXPECT_EQ( outgoing.body.error.detail,
                static_cast<uint32_t>( RUN_STATE_FAULT_DRIVER_START_TIMEOUT ) );
     EXPECT_EQ( outgoing.has_test_id, 1U );
@@ -2299,7 +2383,7 @@ TEST_F( HostProcessMessageTest, ProcessInternalMessageHandlesFaultNotification )
                HOST_INTERFACE_STATUS_OK );
     EXPECT_TRUE( response_required );
     EXPECT_EQ( outgoing.type, HIL_APPLICATION_MESSAGE_TYPE_ERROR );
-    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_HARDWARE );
+    EXPECT_EQ( outgoing.body.error.category, HIL_APPLICATION_ERROR_CATEGORY_EXECUTION );
     EXPECT_EQ( outgoing.body.error.detail,
                static_cast<uint32_t>( RUN_STATE_FAULT_EXECUTION_TIMER ) );
     EXPECT_EQ( notifications, 0U );

@@ -40,7 +40,11 @@
  *------------------------------------------------------------------------------
  */
 
-#define HOST_VAR_INSTRUCTION_FLASH_UPLOAD_MAX_RETRIES ( 200U )
+/** Maximum time to wait for upload RAM while the Flash Manager drains a NAND page. */
+#define HOST_VAR_INSTRUCTION_FLASH_UPLOAD_BUSY_TIMEOUT_MS ( 100U )
+
+/** Scheduler delay between retries so elapsed time and NAND progress are guaranteed. */
+#define HOST_VAR_INSTRUCTION_FLASH_UPLOAD_RETRY_DELAY_TICKS ( ( TickType_t )1U )
 
 /**
  * @brief Conservative canonical-size bound for one maximum-sized wire instruction.
@@ -696,17 +700,18 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_UploadToFlash( const uint8_t
 
     if ( upload_status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
     {
-        for ( uint32_t retry = 0U; retry < HOST_VAR_INSTRUCTION_FLASH_UPLOAD_MAX_RETRIES; retry++ )
+        const TickType_t timeout_ticks =
+            pdMS_TO_TICKS( HOST_VAR_INSTRUCTION_FLASH_UPLOAD_BUSY_TIMEOUT_MS );
+        TickType_t waited_ticks = 0U;
+
+        while ( ( upload_status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
+                && ( waited_ticks < timeout_ticks ) )
         {
-            taskYIELD();
+            vTaskDelay( HOST_VAR_INSTRUCTION_FLASH_UPLOAD_RETRY_DELAY_TICKS );
+            waited_ticks += HOST_VAR_INSTRUCTION_FLASH_UPLOAD_RETRY_DELAY_TICKS;
 
             upload_status = FLASH_MANAGER_SubmitInstructionUploadBytes( data, ( uint32_t )length );
             s_last_raw_flash_upload_status = ( uint32_t )upload_status;
-
-            if ( upload_status != FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY )
-            {
-                break;
-            }
         }
     }
 
@@ -718,6 +723,11 @@ static HOST_Interface_Status_T HOST_VAR_INSTRUCTION_UploadToFlash( const uint8_t
     if ( upload_status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE )
     {
         return HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE;
+    }
+
+    if ( upload_status == FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_STORAGE_FULL )
+    {
+        return HOST_INTERFACE_STATUS_STORAGE_FULL;
     }
 
     return HOST_INTERFACE_STATUS_INTERNAL_ERROR;

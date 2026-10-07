@@ -702,6 +702,18 @@ TEST_F( FlashManagerTest, InstructionUploadSubmissionRejectsChunkLargerThanMaxim
     EXPECT_EQ( 0U, notify_calls );
 }
 
+/** @brief Propagates instruction-image exhaustion distinctly from invalid caller arguments. */
+TEST_F( FlashManagerTest, InstructionUploadSubmissionReportsStorageFull )
+{
+    std::array<uint8_t, 5U> data = {};
+    PrepareInstructionUpload( 4U );
+
+    EXPECT_EQ( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_STORAGE_FULL,
+               FLASH_MANAGER_SubmitInstructionUploadBytes( data.data(), data.size() ) );
+    EXPECT_FALSE( INSTRUCTION_BUFFER_IsUploadInputComplete() );
+    EXPECT_EQ( 0U, notify_calls );
+}
+
 TEST_F( FlashManagerTest, InstructionUploadSubmissionCopiesPartialChunkWithoutNotification )
 {
     std::array<uint8_t, TEST_PARTIAL_PAYLOAD_BYTES> data = {};

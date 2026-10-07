@@ -96,6 +96,8 @@ void HOST_VARIABLE_INSTRUCTION_HANDLER_Reset( void );
  *         Hardware feasibility validation failed (e.g. disabled channel or invalid data).
  * @retval HOST_INTERFACE_STATUS_STATE_TRANSITION_FAILURE
  *         Flash Manager rejected the upload submission due to invalid lifecycle state.
+ * @retval HOST_INTERFACE_STATUS_STORAGE_FULL
+ *         The instruction image cannot retain the complete canonical instruction.
  * @retval HOST_INTERFACE_STATUS_INTERNAL_ERROR
  *         Flash Manager upload ring is busy or encountered an internal error.
  *

@@ -66,6 +66,15 @@
 #define HOST_INTERFACE_DIRECT_USB_FLUSH_THRESHOLD ( 400U )
 #define HOST_INTERFACE_OUTGOING_BACKPRESSURE_TIMEOUT_MS ( 5000U )
 
+/**
+ * Direct USB receive idle period after which an incomplete staged frame, or the unread remainder
+ * of a rejected oversized frame, is treated as abandoned by the host and discarded.
+ *
+ * The host writes each length-prefixed frame contiguously, so this only fires for a truncated
+ * stream. It must be long enough that USB/host scheduling gaps inside one frame never trigger it.
+ */
+#define HOST_INTERFACE_DIRECT_USB_IDLE_TIMEOUT_MS ( 250U )
+
 /** Maximum number of result batches that can await CDC completion. */
 #define HOST_INTERFACE_RESULT_TX_OUTSTANDING_BATCH_CAPACITY ( 64U )
 
@@ -149,6 +158,15 @@ typedef struct
 
     /** Offset of the first byte not yet accepted by Transport. */
     uint32_t receive_offset;
+
+    /** Tick count when bytes were last received via HW_USB_Receive. */
+    TickType_t last_rx_tick;
+
+    /**
+     * Direct USB bytes still to be dropped from a frame whose length prefix exceeded staging
+     * capacity. Non-zero only while the remainder of that frame is arriving.
+     */
+    uint32_t discard_remaining;
 
     /** Task-owned USB byte staging buffer. */
     uint8_t receive_buffer[HOST_INTERFACE_USB_RECEIVE_CAPACITY];
@@ -1021,8 +1039,9 @@ HOST_INTERFACE_Protocol_Update_Link_State( HOST_INTERFACE_Protocol_State_T* cons
         // Do not offer bytes retained from an abandoned physical link to a new
         // session. The staged Transport suffix and any USB transmit ownership
         // belong to the old physical connection.
-        protocol_state->usb.receive_count  = 0U;
-        protocol_state->usb.receive_offset = 0U;
+        protocol_state->usb.receive_count     = 0U;
+        protocol_state->usb.receive_offset    = 0U;
+        protocol_state->usb.discard_remaining = 0U;
 #if !HOST_INTERFACE_DIRECT_USB_STREAMING
         protocol_state->transport.output_acceptance_pending_commit = false;
 #endif
@@ -1059,6 +1078,51 @@ HOST_INTERFACE_Protocol_Update_Link_State( HOST_INTERFACE_Protocol_State_T* cons
     }
 #endif
 }
+
+#if HOST_INTERFACE_DIRECT_USB_STREAMING
+/**
+ * @brief Drop staged bytes that belong to a rejected oversized Direct USB frame.
+ *
+ * @details
+ * Consumes up to usb.discard_remaining bytes from the unconsumed staging suffix. Bytes of the
+ * rejected frame that have not yet arrived are dropped by later calls as they are received, so the
+ * next byte offered to the frame parser is the length prefix of the following frame.
+ *
+ * @param[in,out] protocol_state Complete Host Interface protocol state.
+ */
+static void
+HOST_INTERFACE_Direct_Usb_Discard_Staged( HOST_INTERFACE_Protocol_State_T* const protocol_state )
+{
+    const uint32_t staged  = protocol_state->usb.receive_count - protocol_state->usb.receive_offset;
+    const uint32_t discard = ( protocol_state->usb.discard_remaining < staged )
+                                 ? protocol_state->usb.discard_remaining
+                                 : staged;
+
+    protocol_state->usb.receive_offset += discard;
+    protocol_state->usb.discard_remaining -= discard;
+}
+
+/**
+ * @brief Report whether the staged Direct USB bytes begin with a complete length-prefixed frame.
+ *
+ * @param[in] protocol_state Complete Host Interface protocol state.
+ * @return true when the frame at receive_offset is fully staged.
+ */
+static bool HOST_INTERFACE_Direct_Usb_Has_Complete_Frame(
+    const HOST_INTERFACE_Protocol_State_T* const protocol_state )
+{
+    const uint32_t staged = protocol_state->usb.receive_count - protocol_state->usb.receive_offset;
+    if ( staged < HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE )
+    {
+        return false;
+    }
+
+    const uint8_t* const frame =
+        &protocol_state->usb.receive_buffer[protocol_state->usb.receive_offset];
+    const uint32_t msg_len = ( uint32_t )frame[0] | ( ( uint32_t )frame[1] << 8 );
+    return staged >= ( msg_len + HOST_INTERFACE_DIRECT_USB_LENGTH_PREFIX_SIZE );
+}
+#endif
 
 /**
  * @brief Execute one complete Host Interface protocol service cycle.
@@ -1215,7 +1279,30 @@ static void HOST_INTERFACE_Protocol_Process(
                 &protocol_state->usb.receive_buffer[protocol_state->usb.receive_count],
                 ( uint32_t )( sizeof( protocol_state->usb.receive_buffer )
                               - protocol_state->usb.receive_count ) );
-            protocol_state->usb.receive_count += rx;
+            if ( rx > 0U )
+            {
+                protocol_state->usb.receive_count += rx;
+                protocol_state->usb.last_rx_tick = xTaskGetTickCount();
+            }
+        }
+
+        HOST_INTERFACE_Direct_Usb_Discard_Staged( protocol_state );
+
+        if ( !can_consume_incoming_message )
+        {
+            /* Application backpressure, not host silence, is holding staged bytes. */
+            protocol_state->usb.last_rx_tick = xTaskGetTickCount();
+        }
+        else if ( ( ( protocol_state->usb.discard_remaining > 0U )
+                    || ( ( protocol_state->usb.receive_count > protocol_state->usb.receive_offset )
+                         && !HOST_INTERFACE_Direct_Usb_Has_Complete_Frame( protocol_state ) ) )
+                  && ( ( xTaskGetTickCount() - protocol_state->usb.last_rx_tick )
+                       >= pdMS_TO_TICKS( HOST_INTERFACE_DIRECT_USB_IDLE_TIMEOUT_MS ) ) )
+        {
+            /* The host stopped mid-frame. Without this, the stale prefix would be completed by
+             * the next session's bytes and every later frame would be misaligned. */
+            protocol_state->usb.receive_offset    = protocol_state->usb.receive_count;
+            protocol_state->usb.discard_remaining = 0U;
         }
 
         /* Process all complete 2-byte-length framed Application messages */
@@ -1232,8 +1319,9 @@ static void HOST_INTERFACE_Protocol_Process(
 
             if ( total_frame_len > sizeof( protocol_state->usb.receive_buffer ) )
             {
-                /* Frame length exceeds maximum buffer capacity; unrecoverable framing or oversized
-                 * message */
+                /* The frame can never be staged. Skip exactly its declared length so the next
+                 * frame's length prefix stays aligned; advancing by less would interpret payload
+                 * bytes as a length and swallow subsequent messages. */
                 if ( !s_host_interface_status.is_faulted )
                 {
                     s_host_interface_status.is_faulted = true;
@@ -1241,7 +1329,8 @@ static void HOST_INTERFACE_Protocol_Process(
                         RUN_STATE_FAULT_HOST_INTERFACE_ERROR;
                     HOST_INTERFACE_Error_Handler();
                 }
-                protocol_state->usb.receive_offset += 1U;
+                protocol_state->usb.discard_remaining = ( uint32_t )total_frame_len;
+                HOST_INTERFACE_Direct_Usb_Discard_Staged( protocol_state );
             }
             else if ( bytes_available >= total_frame_len )
             {
@@ -1720,7 +1809,8 @@ static void HOST_INTERFACE_Protocol_Init( HOST_INTERFACE_Protocol_State_T* const
 
     // Start both periodic scheduling and logical Transport time from the same
     // tick observation so the first cycle has no artificial elapsed interval.
-    protocol_state->initial_ticks = xTaskGetTickCount();
+    protocol_state->initial_ticks    = xTaskGetTickCount();
+    protocol_state->usb.last_rx_tick = protocol_state->initial_ticks;
 #if !HOST_INTERFACE_DIRECT_USB_STREAMING
     protocol_state->transport_clock.last_ticks = protocol_state->initial_ticks;
 #endif
@@ -1878,6 +1968,21 @@ void HOST_INTERFACE_Task( void* task_parameters )
             s_host_interface_status.result_phase_active      = false;
             HOST_INTERFACE_Result_Tx_Audit_Reset();
             HOST_INTERFACE_Reset_Session();
+
+            /* Purge any stale bytes in Direct USB staging and drain pending USB stream */
+            protocol_state.usb.receive_count     = 0U;
+            protocol_state.usb.receive_offset    = 0U;
+            protocol_state.usb.discard_remaining = 0U;
+            protocol_state.usb.last_rx_tick      = xTaskGetTickCount();
+            while ( HW_USB_Get_Receive_Stream_Used_Bytes() > 0U )
+            {
+                if ( HW_USB_Receive( protocol_state.usb.receive_buffer,
+                                     sizeof( protocol_state.usb.receive_buffer ) )
+                     == 0U )
+                {
+                    break;
+                }
+            }
         }
 
         if ( ( RUN_STATE_MANAGER_GetState() == RUN_STATE_IDLE )
