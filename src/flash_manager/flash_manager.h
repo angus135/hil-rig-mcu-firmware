@@ -383,7 +383,7 @@ typedef void ( *FlashManagerFaultCallback_T )( bool from_isr );
 typedef struct
 {
     /** Execution-time RAM ring capacity, not the NAND partition capacity. */
-    uint32_t                         result_buffer_capacity_bytes;
+    uint32_t result_buffer_capacity_bytes;
     /** Execution-time RAM ring capacity, not the NAND partition capacity. */
     uint32_t                         instruction_buffer_capacity_bytes;
     uint32_t                         result_pages_drained;

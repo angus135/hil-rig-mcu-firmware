@@ -338,7 +338,9 @@ void HW_CAN_GetDiagnostic( HW_CAN_Diagnostic_T* diag )
         std::memset( diag, 0, sizeof( *diag ) );
     }
 }
-void HW_CAN_Reset_Diagnostics( void ) {}
+void HW_CAN_Reset_Diagnostics( void )
+{
+}
 HW_CAN_Tx_Status_T HW_CAN_Tx_Status1( void )
 {
     return HW_CAN_TX_STATUS_IDLE;
@@ -375,7 +377,9 @@ bool EXEC_UART_Get_Diagnostic( ExecUartChannel_T, ExecUartDiagnostic_T* diagnost
     }
     return true;
 }
-void EXEC_UART_Reset_Diagnostic( ExecUartChannel_T ) {}
+void EXEC_UART_Reset_Diagnostic( ExecUartChannel_T )
+{
+}
 bool EXEC_SPI_Get_Diagnostics( ExecSPIChannel_T, ExecSPIDiagnostic_T* diagnostic )
 {
     if ( diagnostic != nullptr )
@@ -384,7 +388,9 @@ bool EXEC_SPI_Get_Diagnostics( ExecSPIChannel_T, ExecSPIDiagnostic_T* diagnostic
     }
     return true;
 }
-void EXEC_SPI_Reset_Diagnostics( ExecSPIChannel_T ) {}
+void EXEC_SPI_Reset_Diagnostics( ExecSPIChannel_T )
+{
+}
 bool HOST_INTERFACE_Notify( uint32_t notification )
 {
     host_interface_notify_calls++;

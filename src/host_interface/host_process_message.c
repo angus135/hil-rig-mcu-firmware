@@ -109,10 +109,10 @@ static HostTestSession_T s_session = {
 static uint8_t s_run_report_extension[RUN_REPORT_DIAGNOSTICS_MAX_BYTES];
 
 #define HOST_INTERFACE_RUN_REPORT_EXTENSION_V1_BYTES                                               \
-    ( RUN_REPORT_DIAGNOSTICS_HEADER_BYTES                                                          \
-      + RUN_REPORT_DIAGNOSTICS_RECORD_HEADER_BYTES + RUN_REPORT_DIAGNOSTICS_RUNTIME_LIMITS_BYTES   \
-      + RUN_REPORT_DIAGNOSTICS_RECORD_HEADER_BYTES + RUN_REPORT_DIAGNOSTICS_FAILURE_DETAIL_BYTES   \
-      + RUN_REPORT_DIAGNOSTICS_RECORD_HEADER_BYTES + RUN_REPORT_DIAGNOSTICS_FLASH_DETAIL_BYTES     \
+    ( RUN_REPORT_DIAGNOSTICS_HEADER_BYTES + RUN_REPORT_DIAGNOSTICS_RECORD_HEADER_BYTES             \
+      + RUN_REPORT_DIAGNOSTICS_RUNTIME_LIMITS_BYTES + RUN_REPORT_DIAGNOSTICS_RECORD_HEADER_BYTES   \
+      + RUN_REPORT_DIAGNOSTICS_FAILURE_DETAIL_BYTES + RUN_REPORT_DIAGNOSTICS_RECORD_HEADER_BYTES   \
+      + RUN_REPORT_DIAGNOSTICS_FLASH_DETAIL_BYTES                                                  \
       + RUN_METADATA_UART_CHANNEL_COUNT                                                            \
             * ( RUN_REPORT_DIAGNOSTICS_RECORD_HEADER_BYTES + RUN_REPORT_DIAGNOSTICS_UART_BYTES )   \
       + RUN_METADATA_SPI_CHANNEL_COUNT                                                             \
@@ -120,31 +120,25 @@ static uint8_t s_run_report_extension[RUN_REPORT_DIAGNOSTICS_MAX_BYTES];
       + RUN_METADATA_CAN_CHANNEL_COUNT                                                             \
             * ( RUN_REPORT_DIAGNOSTICS_RECORD_HEADER_BYTES + RUN_REPORT_DIAGNOSTICS_CAN_BYTES ) )
 
-_Static_assert( HOST_INTERFACE_RUN_REPORT_EXTENSION_V1_BYTES
-                    <= RUN_REPORT_DIAGNOSTICS_MAX_BYTES,
+_Static_assert( HOST_INTERFACE_RUN_REPORT_EXTENSION_V1_BYTES <= RUN_REPORT_DIAGNOSTICS_MAX_BYTES,
                 "Run-report diagnostics exceed the protocol extension capacity" );
 _Static_assert( RUN_METADATA_PERIPHERAL_DIAGNOSTIC_VALID
                     == RUN_REPORT_DIAGNOSTICS_PERIPHERAL_FLAG_VALID,
                 "Run-report peripheral diagnostic validity flag changed" );
-_Static_assert( RUN_METADATA_UART_DIAGNOSTIC_TX_DMA_ACTIVE
-                        == RUN_REPORT_DIAGNOSTICS_UART_FLAG_TX_DMA_ACTIVE
-                    && RUN_METADATA_UART_DIAGNOSTIC_STARTED
-                           == RUN_REPORT_DIAGNOSTICS_UART_FLAG_STARTED
-                    && RUN_METADATA_UART_DIAGNOSTIC_CONFIGURED
-                           == RUN_REPORT_DIAGNOSTICS_UART_FLAG_CONFIGURED,
-                "Run-report UART diagnostic flags changed" );
+_Static_assert(
+    RUN_METADATA_UART_DIAGNOSTIC_TX_DMA_ACTIVE == RUN_REPORT_DIAGNOSTICS_UART_FLAG_TX_DMA_ACTIVE
+        && RUN_METADATA_UART_DIAGNOSTIC_STARTED == RUN_REPORT_DIAGNOSTICS_UART_FLAG_STARTED
+        && RUN_METADATA_UART_DIAGNOSTIC_CONFIGURED == RUN_REPORT_DIAGNOSTICS_UART_FLAG_CONFIGURED,
+    "Run-report UART diagnostic flags changed" );
 _Static_assert( HW_UART_FAULT_TX_DMA == RUN_REPORT_DIAGNOSTICS_UART_FAULT_TX_DMA
                     && HW_UART_FAULT_RX_DMA == RUN_REPORT_DIAGNOSTICS_UART_FAULT_RX_DMA,
                 "Run-report UART diagnostic fault bits changed" );
-_Static_assert( RUN_METADATA_SPI_DIAGNOSTIC_STARTED
-                        == RUN_REPORT_DIAGNOSTICS_SPI_FLAG_STARTED
+_Static_assert( RUN_METADATA_SPI_DIAGNOSTIC_STARTED == RUN_REPORT_DIAGNOSTICS_SPI_FLAG_STARTED
                     && RUN_METADATA_SPI_DIAGNOSTIC_CONFIGURED
                            == RUN_REPORT_DIAGNOSTICS_SPI_FLAG_CONFIGURED
-                    && RUN_METADATA_SPI_DIAGNOSTIC_MASTER
-                           == RUN_REPORT_DIAGNOSTICS_SPI_FLAG_MASTER,
+                    && RUN_METADATA_SPI_DIAGNOSTIC_MASTER == RUN_REPORT_DIAGNOSTICS_SPI_FLAG_MASTER,
                 "Run-report SPI diagnostic flags changed" );
-_Static_assert( RUN_METADATA_CAN_DIAGNOSTIC_TX_ACTIVE
-                        == RUN_REPORT_DIAGNOSTICS_CAN_FLAG_TX_ACTIVE
+_Static_assert( RUN_METADATA_CAN_DIAGNOSTIC_TX_ACTIVE == RUN_REPORT_DIAGNOSTICS_CAN_FLAG_TX_ACTIVE
                     && RUN_METADATA_CAN_DIAGNOSTIC_TX_ERROR
                            == RUN_REPORT_DIAGNOSTICS_CAN_FLAG_TX_ERROR,
                 "Run-report CAN diagnostic flags changed" );
@@ -175,20 +169,20 @@ static bool HOST_INTERFACE_Extension_AddRecord( uint8_t type, const uint8_t* pay
         return false;
     }
 
-    s_run_report_extension[*total_length] = type;
+    s_run_report_extension[*total_length]                     = type;
     s_run_report_extension[( uint8_t )( *total_length + 1U )] = payload_length;
     memcpy( &s_run_report_extension[( uint8_t )( *total_length
-                                                  + RUN_REPORT_DIAGNOSTICS_RECORD_HEADER_BYTES )],
+                                                 + RUN_REPORT_DIAGNOSTICS_RECORD_HEADER_BYTES )],
             payload, payload_length );
-    *total_length = ( uint8_t )( *total_length + RUN_REPORT_DIAGNOSTICS_RECORD_HEADER_BYTES
-                                 + payload_length );
+    *total_length =
+        ( uint8_t )( *total_length + RUN_REPORT_DIAGNOSTICS_RECORD_HEADER_BYTES + payload_length );
     *record_count = ( uint8_t )( *record_count + 1U );
     return true;
 }
 
 /** Maps internal adapter reasons into stable extension values. */
-static RunReportDiagnosticsOperationFailure_T HOST_INTERFACE_MapOperationFailureReason(
-    uint8_t reason )
+static RunReportDiagnosticsOperationFailure_T
+HOST_INTERFACE_MapOperationFailureReason( uint8_t reason )
 {
     switch ( ( ExecutionOperationAdapterFailureReason_T )reason )
     {
@@ -219,8 +213,7 @@ static RunReportDiagnosticsOperationFailure_T HOST_INTERFACE_MapOperationFailure
 }
 
 /** Maps internal Execution Manager failures into stable extension values. */
-static RunReportDiagnosticsExecutionFailure_T HOST_INTERFACE_MapExecutionFailure(
-    uint8_t failure )
+static RunReportDiagnosticsExecutionFailure_T HOST_INTERFACE_MapExecutionFailure( uint8_t failure )
 {
     switch ( ( ExecutionManagerFailure_T )failure )
     {
@@ -311,8 +304,8 @@ static RunReportDiagnosticsSpiTxState_T HOST_INTERFACE_MapSpiTxState( uint8_t st
 }
 
 /** Maps internal measurement reasons into stable extension values. */
-static RunReportDiagnosticsMeasurementFailure_T HOST_INTERFACE_MapMeasurementFailureReason(
-    uint8_t reason )
+static RunReportDiagnosticsMeasurementFailure_T
+HOST_INTERFACE_MapMeasurementFailureReason( uint8_t reason )
 {
     switch ( ( ExecutionMeasurementFailureReason_T )reason )
     {
@@ -347,7 +340,7 @@ static RunReportDiagnosticsMeasurementFailure_T HOST_INTERFACE_MapMeasurementFai
 }
 
 /** Encodes the firmware-local, versioned diagnostic extension for one report. */
-static void HOST_INTERFACE_BuildRunReportExtension( const RunMetadataSnapshot_T* snapshot,
+static void HOST_INTERFACE_BuildRunReportExtension( const RunMetadataSnapshot_T*  snapshot,
                                                     HIL_Application_Run_Report_T* report )
 {
     if ( snapshot == NULL || report == NULL
@@ -369,15 +362,16 @@ static void HOST_INTERFACE_BuildRunReportExtension( const RunMetadataSnapshot_T*
     s_run_report_extension[7] = 0U;
     HOST_INTERFACE_Extension_PutU32( &s_run_report_extension[8], s_session.run_sequence );
 
-    uint8_t total_length = RUN_REPORT_DIAGNOSTICS_HEADER_BYTES;
-    uint8_t record_count = 0U;
-    uint8_t payload[40] = { 0 };
+    uint8_t total_length     = RUN_REPORT_DIAGNOSTICS_HEADER_BYTES;
+    uint8_t record_count     = 0U;
+    uint8_t payload[40]      = { 0 };
     bool    records_complete = true;
 
     HOST_INTERFACE_Extension_PutU32( &payload[0], snapshot->diagnostics.core_clock_hz );
     HOST_INTERFACE_Extension_PutU32( &payload[4],
                                      snapshot->diagnostics.instruction_buffer_capacity_bytes );
-    HOST_INTERFACE_Extension_PutU32( &payload[8], snapshot->diagnostics.result_buffer_capacity_bytes );
+    HOST_INTERFACE_Extension_PutU32( &payload[8],
+                                     snapshot->diagnostics.result_buffer_capacity_bytes );
     HOST_INTERFACE_Extension_PutU16( &payload[12], HW_UART_TX_BUFFER_SIZE );
     HOST_INTERFACE_Extension_PutU16( &payload[14], HW_UART_RX_BUFFER_SIZE );
     HOST_INTERFACE_Extension_PutU16( &payload[16], HW_SPI_TX_BUFFER_SIZE_BYTES );
@@ -385,11 +379,11 @@ static void HOST_INTERFACE_BuildRunReportExtension( const RunMetadataSnapshot_T*
     HOST_INTERFACE_Extension_PutU16( &payload[20], HW_SPI_TX_PACKET_QUEUE_CAPACITY );
     HOST_INTERFACE_Extension_PutU16( &payload[22], HW_CAN_TX_QUEUE_CAPACITY );
     HOST_INTERFACE_Extension_PutU16( &payload[24], HW_CAN_RX_QUEUE_CAPACITY );
-    records_complete = HOST_INTERFACE_Extension_AddRecord(
-                           RUN_REPORT_DIAGNOSTICS_RECORD_RUNTIME_LIMITS, payload,
-                           RUN_REPORT_DIAGNOSTICS_RUNTIME_LIMITS_BYTES, &total_length,
-                           &record_count )
-                       && records_complete;
+    records_complete =
+        HOST_INTERFACE_Extension_AddRecord( RUN_REPORT_DIAGNOSTICS_RECORD_RUNTIME_LIMITS, payload,
+                                            RUN_REPORT_DIAGNOSTICS_RUNTIME_LIMITS_BYTES,
+                                            &total_length, &record_count )
+        && records_complete;
 
     memset( payload, 0, sizeof( payload ) );
     payload[0] = snapshot->diagnostics.operation_failure.valid;
@@ -408,14 +402,15 @@ static void HOST_INTERFACE_BuildRunReportExtension( const RunMetadataSnapshot_T*
     payload[13] = snapshot->diagnostics.measurement_failure.channel;
     payload[14] = ( uint8_t )HOST_INTERFACE_MapMeasurementFailureReason(
         snapshot->diagnostics.measurement_failure.reason );
-    records_complete = HOST_INTERFACE_Extension_AddRecord(
-                           RUN_REPORT_DIAGNOSTICS_RECORD_FAILURE_DETAIL, payload,
-                           RUN_REPORT_DIAGNOSTICS_FAILURE_DETAIL_BYTES, &total_length,
-                           &record_count )
-                       && records_complete;
+    records_complete =
+        HOST_INTERFACE_Extension_AddRecord( RUN_REPORT_DIAGNOSTICS_RECORD_FAILURE_DETAIL, payload,
+                                            RUN_REPORT_DIAGNOSTICS_FAILURE_DETAIL_BYTES,
+                                            &total_length, &record_count )
+        && records_complete;
 
     memset( payload, 0, sizeof( payload ) );
-    HOST_INTERFACE_Extension_PutU32( &payload[0], snapshot->diagnostics.current_pending_result_bytes );
+    HOST_INTERFACE_Extension_PutU32( &payload[0],
+                                     snapshot->diagnostics.current_pending_result_bytes );
     HOST_INTERFACE_Extension_PutU16( &payload[4],
                                      snapshot->diagnostics.last_failed_reserve_payload_bytes );
     HOST_INTERFACE_Extension_PutU32( &payload[6],
@@ -424,8 +419,7 @@ static void HOST_INTERFACE_BuildRunReportExtension( const RunMetadataSnapshot_T*
         ( uint8_t )HOST_INTERFACE_MapCommitStatus( snapshot->diagnostics.last_commit_failure );
     records_complete = HOST_INTERFACE_Extension_AddRecord(
                            RUN_REPORT_DIAGNOSTICS_RECORD_FLASH_DETAIL, payload,
-                           RUN_REPORT_DIAGNOSTICS_FLASH_DETAIL_BYTES, &total_length,
-                           &record_count )
+                           RUN_REPORT_DIAGNOSTICS_FLASH_DETAIL_BYTES, &total_length, &record_count )
                        && records_complete;
 
     for ( uint32_t channel = 0U; channel < RUN_METADATA_UART_CHANNEL_COUNT; channel++ )
@@ -463,7 +457,7 @@ static void HOST_INTERFACE_BuildRunReportExtension( const RunMetadataSnapshot_T*
         HOST_INTERFACE_Extension_PutU32( &payload[20], diagnostic->tx_drain_timeout_count );
         HOST_INTERFACE_Extension_PutU16( &payload[24], diagnostic->rx_unread_bytes );
         HOST_INTERFACE_Extension_PutU16( &payload[26], diagnostic->rx_peak_bytes );
-        payload[28] = ( uint8_t )HOST_INTERFACE_MapSpiTxState( diagnostic->tx_state );
+        payload[28]      = ( uint8_t )HOST_INTERFACE_MapSpiTxState( diagnostic->tx_state );
         records_complete = HOST_INTERFACE_Extension_AddRecord(
                                RUN_REPORT_DIAGNOSTICS_RECORD_SPI, payload,
                                RUN_REPORT_DIAGNOSTICS_SPI_BYTES, &total_length, &record_count )
@@ -488,8 +482,8 @@ static void HOST_INTERFACE_BuildRunReportExtension( const RunMetadataSnapshot_T*
         HOST_INTERFACE_Extension_PutU32( &payload[21], diagnostic->tsr );
         HOST_INTERFACE_Extension_PutU32( &payload[25], diagnostic->esr );
         HOST_INTERFACE_Extension_PutU32( &payload[29], diagnostic->error_count );
-        payload[33] = diagnostic->max_tec;
-        payload[34] = diagnostic->max_rec;
+        payload[33]      = diagnostic->max_tec;
+        payload[34]      = diagnostic->max_rec;
         records_complete = HOST_INTERFACE_Extension_AddRecord(
                                RUN_REPORT_DIAGNOSTICS_RECORD_CAN, payload,
                                RUN_REPORT_DIAGNOSTICS_CAN_BYTES, &total_length, &record_count )
@@ -954,15 +948,14 @@ static bool HOST_INTERFACE_BuildRunReport( HIL_Application_Message_T* message )
     message->has_test_id = 1U;
     message->test_id     = s_session.active_test_id;
 
-    report->schema_version       = 1U;
+    report->schema_version = 1U;
     /* Diagnostics are carried in the opaque extension; do not expose the
      * firmware-internal validity bit to the shared schema-1 bitmask. */
-    report->valid_sections       = snapshot.valid_sections & ( RUN_METADATA_VALID_TERMINAL
-                                                               | RUN_METADATA_VALID_LAST_COMPLETED_BOUNDARY
-                                                               | RUN_METADATA_VALID_ISR_TIMING
-                                                               | RUN_METADATA_VALID_INSTRUCTION_BUFFER
-                                                               | RUN_METADATA_VALID_RESULT_BUFFER
-                                                               | RUN_METADATA_VALID_FLASH_THROUGHPUT );
+    report->valid_sections =
+        snapshot.valid_sections
+        & ( RUN_METADATA_VALID_TERMINAL | RUN_METADATA_VALID_LAST_COMPLETED_BOUNDARY
+            | RUN_METADATA_VALID_ISR_TIMING | RUN_METADATA_VALID_INSTRUCTION_BUFFER
+            | RUN_METADATA_VALID_RESULT_BUFFER | RUN_METADATA_VALID_FLASH_THROUGHPUT );
     report->expected_tick_count  = s_session.expected_tick_count;
     report->tick_period_us       = s_session.tick_period_us;
     report->result_ticks_emitted = s_session.result_ticks_emitted;

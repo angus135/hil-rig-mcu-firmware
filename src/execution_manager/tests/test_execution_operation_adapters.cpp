@@ -372,7 +372,7 @@ TEST_F( ExecutionOperationAdaptersTest, SpiDriverRejectionPropagatesToOperationW
         { 1U, 2U, 3U, 4U, 5U },
         { 0U, 0U, 0U },
     };
-    spi_accept = false;
+    spi_accept  = false;
     spi_faulted = true;
 
     EXPECT_EQ( EXECUTION_OPERATION_ADAPTER_ApplyOperations(

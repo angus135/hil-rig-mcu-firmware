@@ -1874,10 +1874,10 @@ TEST_F( HWCANTest, GetDiagnosticPopulatesStateAndRegisters )
 /** Verify that unconfigured channels do not read hardware registers. */
 TEST_F( HWCANTest, GetDiagnosticZeroesRegistersWhenNotConfigured )
 {
-    mock_can1_regs.TSR = 0x1C000009;
-    mock_can1_regs.ESR = 0x00800030;
-    mock_can2_regs.TSR = 0x1C000000;
-    mock_can2_regs.ESR = 0x00800030;
+    mock_can1_regs.TSR              = 0x1C000009;
+    mock_can1_regs.ESR              = 0x00800030;
+    mock_can2_regs.TSR              = 0x1C000000;
+    mock_can2_regs.ESR              = 0x00800030;
     hw_can_lifecycle1.is_configured = false;
     hw_can_lifecycle2.is_configured = false;
 
@@ -1942,4 +1942,3 @@ TEST_F( HWCANTest, AbortRequiresConfiguredChannelAndClearsStartedState )
     EXPECT_FALSE( HW_CAN_Is_Started2() );
     EXPECT_FALSE( can_tx_active2 );
 }
-

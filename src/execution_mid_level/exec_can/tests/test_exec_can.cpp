@@ -377,8 +377,8 @@ TEST_F( ExecCANTest, StartAndStopEnforceLifecycleAndUpdateStateOnlyOnSuccess )
     EXPECT_EQ( EXEC_CAN_Stop_Channel( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_RESULT_NOT_STARTED );
 }
 
-static HW_CAN_Result_T           abort_results[2];
-static uint16_t                  abort_call_count[2];
+static HW_CAN_Result_T abort_results[2];
+static uint16_t        abort_call_count[2];
 
 extern "C" HW_CAN_Result_T HW_CAN_Abort1( void )
 {

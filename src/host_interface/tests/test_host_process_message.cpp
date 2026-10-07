@@ -568,8 +568,8 @@ TEST_F( HostProcessMessageTest, RequestStateTransitionResetSucceedsFromFaultStat
         .WillOnce(
             Invoke( [this]( RunStateManagerStatus_T* status ) { *status = run_state_status; } ) );
 
-    EXPECT_EQ( HOST_INTERFACE_Test_Access_Request_State_Transition(
-                   RUN_STATE_IDLE, HOST_REQUEST_RESET, 2U, 0U ),
+    EXPECT_EQ( HOST_INTERFACE_Test_Access_Request_State_Transition( RUN_STATE_IDLE,
+                                                                    HOST_REQUEST_RESET, 2U, 0U ),
                HOST_INTERFACE_STATUS_OK );
 }
 
@@ -1410,20 +1410,18 @@ TEST_F( HostProcessMessageTest, RunReportNotificationEmitsRejectedConfigurationR
             snapshot->failure_source       = RUN_METADATA_FAILURE_SOURCE_RUN_STATE_MANAGER;
             snapshot->failure_reason       = RUN_STATE_FAULT_DRIVER_CONFIGURATION;
             snapshot->valid_sections |= RUN_METADATA_VALID_DIAGNOSTICS;
-            snapshot->diagnostics.core_clock_hz = 180000000U;
-            snapshot->diagnostics.execution_boundary = 7U;
-            snapshot->diagnostics.operation_failure.valid = 1U;
+            snapshot->diagnostics.core_clock_hz                     = 180000000U;
+            snapshot->diagnostics.execution_boundary                = 7U;
+            snapshot->diagnostics.operation_failure.valid           = 1U;
             snapshot->diagnostics.operation_failure.operation_index = 2U;
             snapshot->diagnostics.operation_failure.opcode =
                 EXECUTION_OPERATION_OPCODE_UART_TRANSMIT;
-            snapshot->diagnostics.operation_failure.channel =
-                EXECUTION_OPERATION_UART_CHANNEL_1;
+            snapshot->diagnostics.operation_failure.channel = EXECUTION_OPERATION_UART_CHANNEL_1;
             snapshot->diagnostics.operation_failure.reason =
                 EXECUTION_OPERATION_FAILURE_REASON_QUEUE_FULL;
-            snapshot->diagnostics.measurement_failure.valid = 1U;
+            snapshot->diagnostics.measurement_failure.valid             = 1U;
             snapshot->diagnostics.measurement_failure.measurement_index = 3U;
-            snapshot->diagnostics.measurement_failure.type =
-                EXECUTION_MEASUREMENT_SPI_RECEIVE;
+            snapshot->diagnostics.measurement_failure.type    = EXECUTION_MEASUREMENT_SPI_RECEIVE;
             snapshot->diagnostics.measurement_failure.channel = EXEC_SPI_CHANNEL_2;
             snapshot->diagnostics.measurement_failure.reason =
                 EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_COMMIT_FAILED;
@@ -1461,7 +1459,7 @@ TEST_F( HostProcessMessageTest, RunReportNotificationEmitsRejectedConfigurationR
     size_t offset               = RUN_REPORT_DIAGNOSTICS_HEADER_BYTES;
     while ( offset + 2U <= outgoing.body.run_report.extension_data.size )
     {
-        const uint8_t* record = &outgoing.body.run_report.extension_data.data[offset];
+        const uint8_t* record      = &outgoing.body.run_report.extension_data.data[offset];
         const size_t   record_size = 2U + record[1];
         ASSERT_LE( offset + record_size, outgoing.body.run_report.extension_data.size );
         if ( record[0] == RUN_REPORT_DIAGNOSTICS_RECORD_FAILURE_DETAIL )
@@ -1495,7 +1493,7 @@ TEST_F( HostProcessMessageTest, RunReportNotificationEmitsRejectedConfigurationR
     EXPECT_TRUE( found_failure_detail );
     EXPECT_TRUE( found_can_detail );
 
-    HIL_Application_Config_T application_config{};
+    HIL_Application_Config_T  application_config{};
     HIL_Application_Context_T application_context{};
     ASSERT_EQ( HIL_APPLICATION_Default_Config( &application_config ), HIL_APPLICATION_STATUS_OK );
     application_config.max_encoded_message_size = 512U;

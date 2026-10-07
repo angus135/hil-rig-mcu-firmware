@@ -64,8 +64,8 @@ static const ExecutionOperationAdapter_T
         [EXECUTION_OPERATION_OPCODE_CAN_TRANSMIT] = EXECUTION_OPERATION_ADAPTER_ApplyCanTransmit,
 };
 
-static volatile bool                               execution_operation_failure_valid = false;
-static volatile ExecutionOperationAdapterFailure_T execution_operation_failure       = { 0 };
+static volatile bool                                     execution_operation_failure_valid = false;
+static volatile ExecutionOperationAdapterFailure_T       execution_operation_failure       = { 0 };
 static volatile ExecutionOperationAdapterFailureReason_T execution_operation_last_reason =
     EXECUTION_OPERATION_FAILURE_REASON_NONE;
 static volatile ExecutionOperationTiming_T
@@ -127,7 +127,7 @@ EXECUTION_OPERATION_ADAPTER_ApplyOperations( const uint8_t* operations, uint8_t 
             execution_operation_failure.channel         = channel;
             execution_operation_failure.reason =
                 EXECUTION_OPERATION_ADAPTER_NormalizeFailureReason( result );
-            execution_operation_failure_valid           = true;
+            execution_operation_failure_valid = true;
             return result;
         }
 
@@ -176,7 +176,7 @@ EXECUTION_OPERATION_ADAPTER_ApplyOperationsProfiled( const uint8_t* operations,
             execution_operation_failure.channel         = channel;
             execution_operation_failure.reason =
                 EXECUTION_OPERATION_ADAPTER_NormalizeFailureReason( result );
-            execution_operation_failure_valid           = true;
+            execution_operation_failure_valid = true;
             return result;
         }
 
@@ -293,8 +293,8 @@ EXECUTION_OPERATION_ADAPTER_ApplySpiTransmit( uint8_t channel, const uint8_t* pa
 
     const uint8_t* data = &payload[EXECUTION_SPI_DATA_OFFSET_BYTES( prefix->packet_count )];
 
-    const bool accepted = EXEC_SPI_Transmit( ( ExecSPIChannel_T )channel, data, packet_sizes,
-                                             prefix->packet_count );
+    const bool accepted =
+        EXEC_SPI_Transmit( ( ExecSPIChannel_T )channel, data, packet_sizes, prefix->packet_count );
     if ( accepted )
     {
         execution_operation_last_reason = EXECUTION_OPERATION_FAILURE_REASON_NONE;
@@ -352,11 +352,9 @@ EXECUTION_OPERATION_ADAPTER_ApplyAnalogueOutput( uint8_t channel, const uint8_t*
 
     const bool accepted =
         EXEC_ANALOGUE_OUTPUT_Submit_Prepared_Batch( payload, payload_length_bytes );
-    execution_operation_last_reason = accepted
-                                          ? EXECUTION_OPERATION_FAILURE_REASON_NONE
-                                          : EXECUTION_OPERATION_FAILURE_REASON_DRIVER_REJECTED;
-    return accepted ? EXECUTION_OPERATION_ADAPTER_ACCEPTED
-                    : EXECUTION_OPERATION_ADAPTER_REJECTED;
+    execution_operation_last_reason = accepted ? EXECUTION_OPERATION_FAILURE_REASON_NONE
+                                               : EXECUTION_OPERATION_FAILURE_REASON_DRIVER_REJECTED;
+    return accepted ? EXECUTION_OPERATION_ADAPTER_ACCEPTED : EXECUTION_OPERATION_ADAPTER_REJECTED;
 }
 
 ExecutionOperationAdapterResult_T

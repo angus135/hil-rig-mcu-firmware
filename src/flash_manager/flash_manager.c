@@ -1219,10 +1219,10 @@ bool FLASH_MANAGER_GetExecutionDiagnostics( FlashManagerExecutionDiagnostics_T* 
     }
 
     taskENTER_CRITICAL();
-    *diagnostics                              = flash_manager_execution_diagnostics;
-    diagnostics->result_buffer_capacity_bytes = RESULT_BUFFER_GetCapacityBytes();
+    *diagnostics                                   = flash_manager_execution_diagnostics;
+    diagnostics->result_buffer_capacity_bytes      = RESULT_BUFFER_GetCapacityBytes();
     diagnostics->instruction_buffer_capacity_bytes = INSTRUCTION_BUFFER_GetCapacityBytes();
-    diagnostics->current_pending_result_bytes = RESULT_BUFFER_GetPendingBytes();
+    diagnostics->current_pending_result_bytes      = RESULT_BUFFER_GetPendingBytes();
     taskEXIT_CRITICAL();
     return true;
 }

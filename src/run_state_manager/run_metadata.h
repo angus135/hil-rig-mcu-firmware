@@ -33,22 +33,22 @@ extern "C"
 #define RUN_METADATA_VALID_DIAGNOSTICS ( UINT32_C( 1 ) << 6U )
 
 #define RUN_METADATA_UART_CHANNEL_COUNT ( 2U )
-#define RUN_METADATA_SPI_CHANNEL_COUNT  ( 2U )
-#define RUN_METADATA_CAN_CHANNEL_COUNT  ( 2U )
+#define RUN_METADATA_SPI_CHANNEL_COUNT ( 2U )
+#define RUN_METADATA_CAN_CHANNEL_COUNT ( 2U )
 
 /** Common high bit in UART/SPI/CAN diagnostic flags when the snapshot is valid. */
 #define RUN_METADATA_PERIPHERAL_DIAGNOSTIC_VALID ( UINT8_C( 1 ) << 7U )
 
 #define RUN_METADATA_UART_DIAGNOSTIC_TX_DMA_ACTIVE ( UINT8_C( 1 ) << 0U )
-#define RUN_METADATA_UART_DIAGNOSTIC_STARTED       ( UINT8_C( 1 ) << 1U )
-#define RUN_METADATA_UART_DIAGNOSTIC_CONFIGURED    ( UINT8_C( 1 ) << 2U )
+#define RUN_METADATA_UART_DIAGNOSTIC_STARTED ( UINT8_C( 1 ) << 1U )
+#define RUN_METADATA_UART_DIAGNOSTIC_CONFIGURED ( UINT8_C( 1 ) << 2U )
 
-#define RUN_METADATA_SPI_DIAGNOSTIC_STARTED    ( UINT8_C( 1 ) << 0U )
+#define RUN_METADATA_SPI_DIAGNOSTIC_STARTED ( UINT8_C( 1 ) << 0U )
 #define RUN_METADATA_SPI_DIAGNOSTIC_CONFIGURED ( UINT8_C( 1 ) << 1U )
-#define RUN_METADATA_SPI_DIAGNOSTIC_MASTER     ( UINT8_C( 1 ) << 2U )
+#define RUN_METADATA_SPI_DIAGNOSTIC_MASTER ( UINT8_C( 1 ) << 2U )
 
 #define RUN_METADATA_CAN_DIAGNOSTIC_TX_ACTIVE ( UINT8_C( 1 ) << 0U )
-#define RUN_METADATA_CAN_DIAGNOSTIC_TX_ERROR  ( UINT8_C( 1 ) << 1U )
+#define RUN_METADATA_CAN_DIAGNOSTIC_TX_ERROR ( UINT8_C( 1 ) << 1U )
 
 /** Terminal outcome of the requested execution. */
 typedef enum
@@ -287,20 +287,20 @@ typedef struct
 /** Compact summary of resources and the first-cause context for one run. */
 typedef struct
 {
-    uint32_t core_clock_hz;
-    uint32_t instruction_buffer_capacity_bytes;
-    uint32_t result_buffer_capacity_bytes;
-    uint32_t current_pending_result_bytes;
-    uint16_t last_failed_reserve_payload_bytes;
-    uint32_t free_bytes_at_last_reserve_failure;
-    uint8_t  last_commit_failure;
-    uint8_t  execution_failure;
-    uint32_t execution_boundary;
-    RunMetadataOperationFailure_T operation_failure;
+    uint32_t                        core_clock_hz;
+    uint32_t                        instruction_buffer_capacity_bytes;
+    uint32_t                        result_buffer_capacity_bytes;
+    uint32_t                        current_pending_result_bytes;
+    uint16_t                        last_failed_reserve_payload_bytes;
+    uint32_t                        free_bytes_at_last_reserve_failure;
+    uint8_t                         last_commit_failure;
+    uint8_t                         execution_failure;
+    uint32_t                        execution_boundary;
+    RunMetadataOperationFailure_T   operation_failure;
     RunMetadataMeasurementFailure_T measurement_failure;
-    RunMetadataUartDiagnostic_T uart[RUN_METADATA_UART_CHANNEL_COUNT];
-    RunMetadataSpiDiagnostic_T  spi[RUN_METADATA_SPI_CHANNEL_COUNT];
-    RunMetadataCanDiagnostic_T  can[RUN_METADATA_CAN_CHANNEL_COUNT];
+    RunMetadataUartDiagnostic_T     uart[RUN_METADATA_UART_CHANNEL_COUNT];
+    RunMetadataSpiDiagnostic_T      spi[RUN_METADATA_SPI_CHANNEL_COUNT];
+    RunMetadataCanDiagnostic_T      can[RUN_METADATA_CAN_CHANNEL_COUNT];
 } RunMetadataDiagnostics_T;
 
 /**

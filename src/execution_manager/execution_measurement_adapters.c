@@ -80,9 +80,9 @@ static ExecutionMeasurementDispatchEntry_T
                active_measurement_adapters[EXECUTION_MEASUREMENT_ADAPTER_COUNT] = { 0 };
 static uint8_t active_measurement_count                                         = 0U;
 static volatile ExecutionMeasurementTiming_T
-    execution_measurement_timing[EXECUTION_MEASUREMENT_COUNT] = { 0 };
-static volatile bool                          execution_measurement_failure_valid = false;
-static volatile ExecutionMeasurementFailure_T execution_measurement_failure      = { 0 };
+                     execution_measurement_timing[EXECUTION_MEASUREMENT_COUNT]    = { 0 };
+static volatile bool execution_measurement_failure_valid                          = false;
+static volatile ExecutionMeasurementFailure_T       execution_measurement_failure = { 0 };
 static volatile ExecutionMeasurementFailureReason_T execution_measurement_last_reason =
     EXECUTION_MEASUREMENT_FAILURE_REASON_NONE;
 
@@ -125,8 +125,9 @@ EXECUTION_MEASUREMENT_ADAPTER_MapCanFailure( EXEC_CAN_Result_T result )
 }
 
 /** Retains the dispatch location after an adapter has latched its local cause. */
-static void EXECUTION_MEASUREMENT_ADAPTER_RecordFailure(
-    uint8_t measurement_index, const ExecutionMeasurementDispatchEntry_T* entry )
+static void
+EXECUTION_MEASUREMENT_ADAPTER_RecordFailure( uint8_t measurement_index,
+                                             const ExecutionMeasurementDispatchEntry_T* entry )
 {
     execution_measurement_failure.measurement_index = measurement_index;
     execution_measurement_failure.type              = entry->type;
@@ -279,8 +280,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleCanReceive( uint8_t channel, uint32_t t
     }
 
     ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
-    execution_measurement_last_reason =
-        EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_COMMIT_FAILED;
+    execution_measurement_last_reason = EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_COMMIT_FAILED;
     return false;
 }
 
@@ -435,8 +435,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleAnalogueInput( uint8_t channel, uint32_
     }
 
     ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
-    execution_measurement_last_reason =
-        EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_COMMIT_FAILED;
+    execution_measurement_last_reason = EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_COMMIT_FAILED;
     return false;
 }
 
@@ -524,8 +523,8 @@ void EXECUTION_MEASUREMENT_ADAPTER_ResetFailure( void )
     execution_measurement_failure.measurement_index = 0U;
     execution_measurement_failure.type              = EXECUTION_MEASUREMENT_ANALOGUE_INPUT;
     execution_measurement_failure.channel           = 0U;
-    execution_measurement_failure.reason = EXECUTION_MEASUREMENT_FAILURE_REASON_NONE;
-    execution_measurement_last_reason     = EXECUTION_MEASUREMENT_FAILURE_REASON_NONE;
+    execution_measurement_failure.reason            = EXECUTION_MEASUREMENT_FAILURE_REASON_NONE;
+    execution_measurement_last_reason               = EXECUTION_MEASUREMENT_FAILURE_REASON_NONE;
 }
 
 bool EXECUTION_MEASUREMENT_ADAPTER_GetFailure( ExecutionMeasurementFailure_T* failure )
@@ -566,8 +565,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SampleDigitalInput( uint8_t channel, uint32_t
     }
 
     ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
-    execution_measurement_last_reason =
-        EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_COMMIT_FAILED;
+    execution_measurement_last_reason = EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_COMMIT_FAILED;
     return false;
 }
 
@@ -579,8 +577,7 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SamplePwmCapture( uint8_t channel, uint32_t t
     {
         if ( capture.has_new_data )
         {
-            execution_measurement_last_reason =
-                EXECUTION_MEASUREMENT_FAILURE_REASON_INVALID_SAMPLE;
+            execution_measurement_last_reason = EXECUTION_MEASUREMENT_FAILURE_REASON_INVALID_SAMPLE;
         }
         return !capture.has_new_data;
     }
@@ -606,7 +603,6 @@ bool EXECUTION_MEASUREMENT_ADAPTER_SamplePwmCapture( uint8_t channel, uint32_t t
     }
 
     ( void )FLASH_MANAGER_CancelResultRecordFromISR( &lease );
-    execution_measurement_last_reason =
-        EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_COMMIT_FAILED;
+    execution_measurement_last_reason = EXECUTION_MEASUREMENT_FAILURE_REASON_RESULT_COMMIT_FAILED;
     return false;
 }
