@@ -1219,8 +1219,10 @@ bool FLASH_MANAGER_GetExecutionDiagnostics( FlashManagerExecutionDiagnostics_T* 
     }
 
     taskENTER_CRITICAL();
-    *diagnostics                              = flash_manager_execution_diagnostics;
-    diagnostics->current_pending_result_bytes = RESULT_BUFFER_GetPendingBytes();
+    *diagnostics                                   = flash_manager_execution_diagnostics;
+    diagnostics->result_buffer_capacity_bytes      = RESULT_BUFFER_GetCapacityBytes();
+    diagnostics->instruction_buffer_capacity_bytes = INSTRUCTION_BUFFER_GetCapacityBytes();
+    diagnostics->current_pending_result_bytes      = RESULT_BUFFER_GetPendingBytes();
     taskEXIT_CRITICAL();
     return true;
 }
@@ -1571,6 +1573,9 @@ FLASH_MANAGER_SubmitInstructionUploadBytes( const uint8_t* data, uint32_t length
 
         case INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_STATE:
             return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_INVALID_STATE;
+
+        case INSTRUCTION_BUFFER_UPLOAD_WRITE_STORAGE_FULL:
+            return FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_STORAGE_FULL;
 
         case INSTRUCTION_BUFFER_UPLOAD_WRITE_PAGE_READY:
             break;

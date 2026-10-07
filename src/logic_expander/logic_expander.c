@@ -735,6 +735,10 @@ LogicExpanderStatus_T LOGIC_EXPANDER_End_Control_Batch( LogicExpanderControlBatc
     else
     {
         logic_expander_control_batch_status = LOGIC_EXPANDER_CONTROL_BATCH_PENDING;
+        if ( logic_expander_dirty_bitmask != 0U )
+        {
+            status = LOGIC_EXPANDER_Send_Control_Bits_Locked();
+        }
         LOGIC_EXPANDER_Complete_Control_Batch_If_Drained();
     }
 

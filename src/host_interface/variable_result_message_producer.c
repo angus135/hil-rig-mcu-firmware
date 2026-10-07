@@ -63,6 +63,15 @@ _Static_assert( ( VAR_RESULT_PRODUCER_BUFFER_CAPACITY
  */
 #define VAR_RESULT_PRODUCER_CHUNK_PAYLOAD_THRESHOLD ( 512U )
 
+/**
+ * @brief Maximum payload allowed per outgoing Variable Test Result chunk.
+ *
+ * Keeps encoded message wire size within the USB transport envelope (2,302 B)
+ * by forcing an intermediate chunk flush whenever appending another record
+ * would exceed this limit.
+ */
+#define VAR_RESULT_PRODUCER_MAX_CHUNK_PAYLOAD ( 2048U )
+
 /** @brief Timer input clock frequency for PWM capture (TIM2 and TIM5 on APB1). */
 #define VAR_RESULT_PRODUCER_PWM_TIMER_CLOCK_HZ ( HW_CLOCK_Get_Timer_APB1_Hz() )
 
@@ -306,6 +315,13 @@ static bool VAR_RESULT_PRODUCER_CanStageRecord( const FlashManagerResultHeader_T
 
     if ( ( stream->staged_payload_offset + req_bytes )
          > VAR_RESULT_PRODUCER_STAGED_PAYLOAD_CAPACITY )
+    {
+        return false;
+    }
+
+    if ( ( stream->staged_record_count > 0U )
+         && ( ( stream->staged_payload_offset + req_bytes )
+              > VAR_RESULT_PRODUCER_MAX_CHUNK_PAYLOAD ) )
     {
         return false;
     }

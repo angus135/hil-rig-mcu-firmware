@@ -336,7 +336,10 @@ typedef enum
     FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_TASK_NOT_READY,
 
     /** Task notification failed and the manager entered FAULT. */
-    FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOTIFY_FAILED
+    FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_NOTIFY_FAILED,
+
+    /** The complete chunk exceeds the remaining instruction-image allocation. */
+    FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_STORAGE_FULL
 } FlashManagerInstructionUploadRequestStatus_T;
 
 /* Host Interface result retrieval. */
@@ -382,6 +385,10 @@ typedef void ( *FlashManagerFaultCallback_T )( bool from_isr );
 /** Execution-time result-drain diagnostics; observational only. */
 typedef struct
 {
+    /** Execution-time RAM ring capacity, not the NAND partition capacity. */
+    uint32_t result_buffer_capacity_bytes;
+    /** Execution-time RAM ring capacity, not the NAND partition capacity. */
+    uint32_t                         instruction_buffer_capacity_bytes;
     uint32_t                         result_pages_drained;
     uint64_t                         result_bytes_drained;
     uint64_t                         result_page_drain_total_cycles;
@@ -659,6 +666,9 @@ FLASH_MANAGER_RequestInstructionUploadStart( uint32_t expected_length_bytes );
  *       the three-page upload ring cannot accept the complete chunk, this
  *       function returns FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY and the
  *       caller may retry the identical pointer contents and length.
+ * @note A chunk larger than the remaining instruction-image allocation returns
+ *       FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_STORAGE_FULL without copying
+ *       any bytes.
  * @note Completing a page asynchronously wakes the Flash Manager task. NAND
  *       persistence proceeds concurrently with later host submissions into
  *       other available ring pages.

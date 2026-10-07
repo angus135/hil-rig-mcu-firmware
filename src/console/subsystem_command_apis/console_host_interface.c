@@ -460,6 +460,8 @@ static const char* CONSOLE_HostInterface_StatusName( HOST_Interface_Status_T sta
             return "OUTGOING_REQUIRED";
         case HOST_INTERFACE_STATUS_UNSUPPORTED_NOTIFICATION:
             return "UNSUPPORTED_NOTIFICATION";
+        case HOST_INTERFACE_STATUS_STORAGE_FULL:
+            return "STORAGE_FULL";
         default:
             return "UNKNOWN";
     }

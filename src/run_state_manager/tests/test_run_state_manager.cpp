@@ -10,6 +10,10 @@ extern "C"
 #include "run_state_manager.h"
 #include "dut_driver_lifecycle.h"
 #include "execution_manager.h"
+#include "execution_measurement_adapters.h"
+#include "execution_operation_adapters.h"
+#include "exec_spi.h"
+#include "exec_uart.h"
 #include "flash_manager.h"
 #include "host_interface.h"
 #include "hw_timer.h"
@@ -334,6 +338,59 @@ void HW_CAN_GetDiagnostic( HW_CAN_Diagnostic_T* diag )
         std::memset( diag, 0, sizeof( *diag ) );
     }
 }
+void HW_CAN_Reset_Diagnostics( void )
+{
+}
+HW_CAN_Tx_Status_T HW_CAN_Tx_Status1( void )
+{
+    return HW_CAN_TX_STATUS_IDLE;
+}
+HW_CAN_Tx_Status_T HW_CAN_Tx_Status2( void )
+{
+    return HW_CAN_TX_STATUS_IDLE;
+}
+uint32_t EXECUTION_MANAGER_GetCurrentTick( void )
+{
+    return execution_last_boundary;
+}
+bool EXECUTION_OPERATION_ADAPTER_GetFailure( ExecutionOperationAdapterFailure_T* failure )
+{
+    if ( failure != nullptr )
+    {
+        std::memset( failure, 0, sizeof( *failure ) );
+    }
+    return false;
+}
+bool EXECUTION_MEASUREMENT_ADAPTER_GetFailure( ExecutionMeasurementFailure_T* failure )
+{
+    if ( failure != nullptr )
+    {
+        std::memset( failure, 0, sizeof( *failure ) );
+    }
+    return false;
+}
+bool EXEC_UART_Get_Diagnostic( ExecUartChannel_T, ExecUartDiagnostic_T* diagnostic )
+{
+    if ( diagnostic != nullptr )
+    {
+        std::memset( diagnostic, 0, sizeof( *diagnostic ) );
+    }
+    return true;
+}
+void EXEC_UART_Reset_Diagnostic( ExecUartChannel_T )
+{
+}
+bool EXEC_SPI_Get_Diagnostics( ExecSPIChannel_T, ExecSPIDiagnostic_T* diagnostic )
+{
+    if ( diagnostic != nullptr )
+    {
+        std::memset( diagnostic, 0, sizeof( *diagnostic ) );
+    }
+    return true;
+}
+void EXEC_SPI_Reset_Diagnostics( ExecSPIChannel_T )
+{
+}
 bool HOST_INTERFACE_Notify( uint32_t notification )
 {
     host_interface_notify_calls++;
@@ -574,6 +631,17 @@ TEST_F( RunStateManagerTest, ConfigurationFailureEntersFault )
     EXPECT_EQ( RUN_STATE_FAULT_DRIVER_CONFIGURATION, fault_reason );
     EXPECT_EQ( 1U, driver_shutdown_begin_calls );
     EXPECT_EQ( 1U, flash_abort_calls );
+    EXPECT_NE( 0U, host_interface_notified_bits & HOST_INTERFACE_NOTIFY_RUN_REPORT );
+
+    RunMetadataSnapshot_T snapshot = {};
+    ASSERT_TRUE( RUN_STATE_MANAGER_GetRunMetadataSnapshot( &snapshot ) );
+    EXPECT_EQ( RUN_METADATA_TERMINAL_REJECTED, snapshot.terminal_status );
+    EXPECT_EQ( RUN_METADATA_RESULT_STREAM_UNAVAILABLE, snapshot.result_stream_status );
+    EXPECT_EQ( RUN_METADATA_VALID_TERMINAL | RUN_METADATA_VALID_DIAGNOSTICS,
+               snapshot.valid_sections );
+    EXPECT_EQ( RUN_METADATA_FAILURE_SOURCE_RUN_STATE_MANAGER, snapshot.failure_source );
+    EXPECT_EQ( static_cast<uint32_t>( RUN_STATE_FAULT_DRIVER_CONFIGURATION ),
+               snapshot.failure_reason );
 }
 
 TEST_F( RunStateManagerTest, ConfigurationTimeoutEntersFault )
@@ -1384,7 +1452,7 @@ TEST_F( RunStateManagerTest, FlashFaultCallbackNotifiesAndTransitionsToFault )
     EXPECT_EQ( RUN_STATE_FAULT_FLASH_MANAGER, fault_reason );
 }
 
-TEST_F( RunStateManagerTest, RepeatRequestRejectedFromResultTransferState )
+TEST_F( RunStateManagerTest, RepeatRequestRejectedBeforeResultTransferIsFinished )
 {
     EnterExecution();
     Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
@@ -1398,7 +1466,49 @@ TEST_F( RunStateManagerTest, RepeatRequestRejectedFromResultTransferState )
 
     Process( RUN_STATE_REQUEST_REPEAT );
     EXPECT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
-    EXPECT_EQ( RUN_STATE_REQUEST_RESULT_REJECTED_STATE, last_request_result );
+    EXPECT_EQ( RUN_STATE_REQUEST_RESULT_REJECTED_SUBSYSTEM_STATE, last_request_result );
+}
+
+/** @brief A fully transferred result stream can reconfigure the retained test. */
+TEST_F( RunStateManagerTest, RepeatAfterResultTransferReconfiguresRetainedTest )
+{
+    EnterExecution();
+    Process( RUN_STATE_REQUEST_EXECUTION_COMPLETE );
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    flash_manager_state = FLASH_MANAGER_STATE_RESULTS_READY;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    ASSERT_EQ( RUN_STATE_RESULTS_READY, run_state );
+
+    Process( RUN_STATE_REQUEST_RESULT_TRANSFER );
+    ASSERT_EQ( RUN_STATE_RESULT_TRANSFER, run_state );
+    Process( RUN_STATE_REQUEST_RESULT_TRANSFER_COMPLETE );
+    flash_manager_state = FLASH_MANAGER_STATE_IDLE;
+
+    Process( RUN_STATE_REQUEST_REPEAT );
+    EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_CONFIGURATION, pending_operation );
+    EXPECT_TRUE( run_configuration_owned );
+    EXPECT_EQ( 0U, flash_discard_calls );
+}
+
+/** @brief A cleaned-up failed run can reconfigure its retained test. */
+TEST_F( RunStateManagerTest, RepeatAfterFaultReconfiguresRetainedTest )
+{
+    ConfigureToArmed();
+    ASSERT_TRUE( run_configuration_owned );
+
+    RUN_STATE_MANAGER_EnterFault( RUN_STATE_FAULT_DRIVER_START );
+    ASSERT_EQ( RUN_STATE_FAULT, run_state );
+    flash_manager_state = FLASH_MANAGER_STATE_IDLE;
+    RUN_STATE_MANAGER_ProcessPendingOperation();
+    ASSERT_EQ( RUN_STATE_PENDING_NONE, pending_operation );
+
+    Process( RUN_STATE_REQUEST_REPEAT );
+    EXPECT_EQ( RUN_STATE_CONFIGURATION, run_state );
+    EXPECT_EQ( RUN_STATE_PENDING_CONFIGURATION, pending_operation );
+    EXPECT_EQ( RUN_STATE_FAULT_NONE, fault_reason );
+    EXPECT_FALSE( execution_abort_requested );
+    EXPECT_TRUE( run_configuration_owned );
 }
 
 TEST_F( RunStateManagerTest, ConfigurationOwnershipHeldAcrossExecutionAndReleasedOnDiscard )

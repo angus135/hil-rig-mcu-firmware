@@ -597,6 +597,7 @@ void EXEC_UART_Reset_Diagnostic( ExecUartChannel_T channel )
 {
     if ( EXEC_UART_Is_Valid_Channel( channel ) )
     {
+        uart_tx_queue_rejected[channel] = false;
         HW_UART_Reset_Diagnostic( exec_uart_hardware_map[channel].hw_channel );
     }
 }

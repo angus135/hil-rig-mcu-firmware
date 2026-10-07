@@ -345,7 +345,8 @@ static bool HW_SPI_Config_Channel_Is_Stopped( const SPIPeripheralState_T* periph
            && peripheral_state->tx_num_bytes_pending == 0U
            && peripheral_state->tx_num_bytes_in_transmission == 0U
            && peripheral_state->tx_num_packets_pending == 0U
-           && peripheral_state->tx_transaction_state == HW_SPI_TX_TRANSACTION_IDLE;
+           && ( peripheral_state->tx_transaction_state == HW_SPI_TX_TRANSACTION_IDLE
+                || peripheral_state->tx_transaction_state == HW_SPI_TX_TRANSACTION_ERROR );
 }
 
 static bool HW_SPI_Config_Apply_GPIO( const HWSPIConfig_T* configuration )
@@ -700,6 +701,48 @@ bool HW_SPI_Stop_Channel( SPIChannel_T peripheral )
     }
 
     return tx_stopped && rx_stopped;
+}
+
+bool HW_SPI_Reset_Channel( SPIChannel_T peripheral )
+{
+    if ( !HW_SPI_Is_Valid_Channel( peripheral ) )
+    {
+        return false;
+    }
+
+    SPIPeripheralState_T* peripheral_state = HW_SPI_Get_State_Fast( peripheral );
+
+    if ( peripheral_state->is_master
+         && peripheral_state->tx_transaction_state == HW_SPI_TX_TRANSACTION_WAIT_FINAL_DRAIN )
+    {
+        HW_TIMER_Stop_Timer( peripheral_state->tx_final_drain_timer );
+    }
+
+    const uint32_t tx_irq_was_enabled = NVIC_GetEnableIRQ( peripheral_state->tx_dma_irqn );
+    NVIC_DisableIRQ( peripheral_state->tx_dma_irqn );
+    LL_SPI_DisableDMAReq_TX( peripheral_state->spi_peripheral );
+    LL_SPI_DisableDMAReq_RX( peripheral_state->spi_peripheral );
+
+    ( void )HW_SPI_Config_Stop_DMA_Stream( peripheral_state->tx_dma,
+                                           peripheral_state->tx_dma_stream );
+    ( void )HW_SPI_Config_Stop_DMA_Stream( peripheral_state->rx_dma,
+                                           peripheral_state->rx_dma_stream );
+
+    if ( peripheral_state->is_master )
+    {
+        HW_SPI_TX_Master_CS_Deassert( peripheral_state );
+    }
+
+    HW_SPI_TX_Reset_State( peripheral_state );
+    peripheral_state->rx_position = 0U;
+    peripheral_state->is_started  = false;
+
+    if ( tx_irq_was_enabled != 0U )
+    {
+        NVIC_EnableIRQ( peripheral_state->tx_dma_irqn );
+    }
+
+    return true;
 }
 
 bool HW_SPI_Get_Diagnostics( SPIChannel_T peripheral, HWSPI_Diagnostic_T* diag )

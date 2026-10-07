@@ -66,6 +66,10 @@ extern "C"
 /** Capacity of each channel's software transmit ring, in bytes. */
 #define HW_SPI_TX_BUFFER_SIZE_BYTES 4096U
 
+/** Descriptor queue depth and usable capacity for one SPI TX channel. */
+#define HW_SPI_TX_PACKET_QUEUE_DEPTH 128U
+#define HW_SPI_TX_PACKET_QUEUE_CAPACITY ( HW_SPI_TX_PACKET_QUEUE_DEPTH - 1U )
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------
@@ -183,6 +187,15 @@ typedef struct
     uint32_t      total_length_bytes;  ///< Total unread byte count across both spans.
 } HWSPIRxSpans_T;
 
+/** Stable diagnostic values reported by HWSPI_Diagnostic_T.tx_transaction_state. */
+typedef enum
+{
+    HW_SPI_DIAGNOSTIC_TX_IDLE = 0U,
+    HW_SPI_DIAGNOSTIC_TX_DMA_ACTIVE,
+    HW_SPI_DIAGNOSTIC_TX_WAIT_FINAL_DRAIN,
+    HW_SPI_DIAGNOSTIC_TX_ERROR,
+} HWSPI_DiagnosticTxState_T;
+
 /**
  * @brief Diagnostic telemetry and queue occupancy state for one SPI peripheral.
  */
@@ -198,7 +211,7 @@ typedef struct
     uint32_t tx_final_drain_timeout_count;  ///< Count of master final drain timeouts.
     uint32_t rx_unread_bytes;               ///< Current unread RX bytes in circular buffer.
     uint32_t rx_unread_peak_bytes;          ///< Peak unread RX bytes observed.
-    uint8_t  tx_transaction_state;          ///< Current transaction state enum value.
+    uint8_t  tx_transaction_state;          ///< HWSPI_DiagnosticTxState_T value.
     bool     is_started;                    ///< Channel runtime started status.
     bool     is_configured;                 ///< Channel configured status.
     bool     is_master;                     ///< Master mode status flag.
@@ -321,6 +334,15 @@ bool HW_SPI_Start_Channel( SPIChannel_T peripheral );
  *     an owned DMA stream did not stop within the bounded wait.
  */
 bool HW_SPI_Stop_Channel( SPIChannel_T peripheral );
+
+/**
+ * @brief Reset and abort runtime operation of an SPI channel, clearing all in-flight state and
+ * queues.
+ *
+ * @param peripheral The SPI peripheral/channel to reset.
+ * @return true on success, false if channel is invalid.
+ */
+bool HW_SPI_Reset_Channel( SPIChannel_T peripheral );
 
 /**
  * @brief Return the unread received data as one or two spans into the internal RX buffer.

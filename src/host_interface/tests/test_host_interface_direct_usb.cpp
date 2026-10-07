@@ -11,11 +11,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <deque>
 #include <vector>
 
 extern "C"
 {
 #include "hil_rig_protocol/application/application.h"
+#include "hil_rig_protocol/version.h"
 #include "host_interface.h"
 #include "host_interface_test_access.h"
 #include "rtos_config.h"
@@ -47,6 +49,7 @@ TickType_t             test_ticks          = 0U;
 std::vector<uint8_t>   flash_result_bytes;
 size_t                 flash_read_offset    = 0U;
 uint32_t               flash_max_chunk_size = 0U;
+std::deque<uint8_t>    host_rx_bytes;
 
 uint32_t DistributedUnits( const uint32_t index, const uint32_t total_units )
 {
@@ -241,6 +244,7 @@ void InitialisePath( const size_t initial_ring_offset )
     active_cdc_data   = nullptr;
     active_cdc_length = 0U;
     transmitted_bytes.clear();
+    host_rx_bytes.clear();
     test_ticks = 0U;
 
     hUsbDeviceFS.dev_state  = USBD_STATE_CONFIGURED;
@@ -396,6 +400,46 @@ void RunProducerToUsbWorkload( const uint32_t flash_chunk_size, const uint32_t c
     EXPECT_EQ( HOST_INTERFACE_RESULT_TX_INVARIANT_NONE, status.result_invariant_failure );
 }
 
+/** Encode a framed SystemInfoRequest as the host would send it in direct USB mode. */
+std::vector<uint8_t> FramedSystemInfoRequest()
+{
+    HIL_Application_Config_T  config{};
+    HIL_Application_Context_T context{};
+    EXPECT_EQ( HIL_APPLICATION_STATUS_OK, HIL_APPLICATION_Default_Config( &config ) );
+    EXPECT_EQ( HIL_APPLICATION_STATUS_OK, HIL_APPLICATION_Init( &context, &config ) );
+
+    HIL_Application_Message_T message{};
+    message.type        = HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_REQUEST;
+    message.subtype     = HIL_APPLICATION_MESSAGE_SUBTYPE_BASIC;
+    message.has_test_id = 0U;
+    message.body.system_info_request.request_firmware_git_hash = 1U;
+    message.body.system_info_request.query = HIL_APPLICATION_SYSTEM_INFO_QUERY_BASIC;
+    message.body.system_info_request.application_protocol_major = HIL_RIG_PROTOCOL_VERSION_MAJOR;
+    message.body.system_info_request.application_protocol_minor = HIL_RIG_PROTOCOL_VERSION_MINOR;
+    message.body.system_info_request.application_protocol_patch = HIL_RIG_PROTOCOL_VERSION_PATCH;
+    return EncodeFramed( context, message );
+}
+
+/**
+ * Run protocol cycles until one incoming message is decoded or the cycle budget is exhausted.
+ *
+ * @return true when a message was decoded into incoming_message.
+ */
+bool ProcessUntilIncoming( HIL_Application_Message_T& incoming_message, const uint32_t max_cycles )
+{
+    for ( uint32_t cycle = 0U; cycle < max_cycles; ++cycle )
+    {
+        bool available = false;
+        HOST_INTERFACE_Test_Access_Process_Once_With_Consumption( true, &incoming_message,
+                                                                  &available );
+        if ( available )
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
 extern "C" USBD_HandleTypeDef hUsbDeviceFS = {};
@@ -455,14 +499,24 @@ extern "C" size_t xStreamBufferSendFromISR( StreamBufferHandle_t, const void*, s
     return 0U;
 }
 
-extern "C" size_t xStreamBufferReceive( StreamBufferHandle_t, void*, size_t, TickType_t )
+extern "C" size_t xStreamBufferReceive( StreamBufferHandle_t, void* destination, size_t max_size,
+                                        TickType_t )
 {
-    return 0U;
+    const size_t count  = std::min( max_size, host_rx_bytes.size() );
+    auto* const  output = static_cast<uint8_t*>( destination );
+    for ( size_t index = 0U; index < count; ++index )
+    {
+        output[index] = host_rx_bytes.front();
+        host_rx_bytes.pop_front();
+    }
+    return count;
 }
 
 extern "C" size_t xStreamBufferSpacesAvailable( StreamBufferHandle_t )
 {
-    return MAX_USB_RECEIVE_STREAM_BYTES;
+    return ( host_rx_bytes.size() >= MAX_USB_RECEIVE_STREAM_BYTES )
+               ? 0U
+               : MAX_USB_RECEIVE_STREAM_BYTES - host_rx_bytes.size();
 }
 
 extern "C" SemaphoreHandle_t xSemaphoreCreateMutexStatic( StaticSemaphore_t* )
@@ -608,4 +662,69 @@ TEST( HostInterfaceDirectUsbTest, MultiChunkResultPreservesCustodyWithoutFault )
     EXPECT_EQ( 2U, status.result_staged_count );
     EXPECT_EQ( 2U, status.result_cdc_completed_count );
     EXPECT_EQ( 0U, status.result_last_cdc_completed_tick );
+}
+
+/**
+ * Verifies that a frame declaring more bytes than receive staging can hold faults the Host
+ * Interface, is skipped by its declared length across several receive cycles, and leaves the next
+ * host frame aligned and decodable (field failure: 3,567-byte UpdateInstruction then
+ * reset/discovery).
+ */
+TEST( HostInterfaceDirectUsbTest, OversizedFrameIsSkippedAndNextFrameDecodes )
+{
+    InitialisePath( 0U );
+
+    constexpr uint16_t kOversizedLength = 3567U;
+    host_rx_bytes.push_back( static_cast<uint8_t>( kOversizedLength & 0xFFU ) );
+    host_rx_bytes.push_back( static_cast<uint8_t>( kOversizedLength >> 8U ) );
+    // Every misaligned byte pair reads as a small plausible length, so any parser that advances
+    // by less than the declared frame length would treat payload as frames.
+    for ( uint16_t index = 0U; index < kOversizedLength; ++index )
+    {
+        host_rx_bytes.push_back( ( index % 2U ) == 0U ? 0x10U : 0x00U );
+    }
+    const std::vector<uint8_t> request = FramedSystemInfoRequest();
+    host_rx_bytes.insert( host_rx_bytes.end(), request.begin(), request.end() );
+
+    HIL_Application_Message_T incoming{};
+    ASSERT_TRUE( ProcessUntilIncoming( incoming, 16U ) );
+    EXPECT_EQ( HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_REQUEST, incoming.type );
+    EXPECT_TRUE( host_rx_bytes.empty() );
+
+    HostInterfaceStatus_T status{};
+    HOST_INTERFACE_GetStatus( &status );
+    EXPECT_TRUE( status.is_faulted );
+    EXPECT_EQ( RUN_STATE_FAULT_HOST_INTERFACE_ERROR, status.last_fault_reason );
+}
+
+/**
+ * Verifies that a frame split by a short host gap still decodes, while a truncated frame followed
+ * by host silence for the idle timeout is discarded so the next host frame is not swallowed.
+ */
+TEST( HostInterfaceDirectUsbTest, TruncatedFrameIsDiscardedAfterIdleTimeout )
+{
+    InitialisePath( 0U );
+    const std::vector<uint8_t> request = FramedSystemInfoRequest();
+    HIL_Application_Message_T  incoming{};
+
+    host_rx_bytes.insert( host_rx_bytes.end(), request.begin(), request.begin() + 5 );
+    EXPECT_FALSE( ProcessUntilIncoming( incoming, 4U ) );
+    test_ticks += pdMS_TO_TICKS( 100U );
+    EXPECT_FALSE( ProcessUntilIncoming( incoming, 1U ) );
+    host_rx_bytes.insert( host_rx_bytes.end(), request.begin() + 5, request.end() );
+    ASSERT_TRUE( ProcessUntilIncoming( incoming, 4U ) );
+    EXPECT_EQ( HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_REQUEST, incoming.type );
+
+    // Truncated frame: declares 100 bytes, host stops after 10.
+    host_rx_bytes.push_back( 100U );
+    host_rx_bytes.push_back( 0U );
+    host_rx_bytes.insert( host_rx_bytes.end(), 10U, 0xA5U );
+    EXPECT_FALSE( ProcessUntilIncoming( incoming, 4U ) );
+    test_ticks += pdMS_TO_TICKS( 250U );
+    EXPECT_FALSE( ProcessUntilIncoming( incoming, 1U ) );
+
+    incoming = {};
+    host_rx_bytes.insert( host_rx_bytes.end(), request.begin(), request.end() );
+    ASSERT_TRUE( ProcessUntilIncoming( incoming, 4U ) );
+    EXPECT_EQ( HIL_APPLICATION_MESSAGE_TYPE_SYSTEM_INFO_REQUEST, incoming.type );
 }

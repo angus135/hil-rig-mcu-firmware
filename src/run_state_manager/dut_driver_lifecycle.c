@@ -812,11 +812,12 @@ bool DUT_DRIVER_LIFECYCLE_BeginShutdown( bool force_abort, bool clear_configurat
     }
     lifecycle_context.configuration_pending = false;
 
-    if ( ( lifecycle_context.start_batch_id != 0U ) && !lifecycle_context.start_accepted )
+    if ( lifecycle_context.start_batch_id != 0U )
     {
         LOGIC_EXPANDER_Cancel_Control_Batch( lifecycle_context.start_batch_id );
         lifecycle_context.start_batch_id = 0U;
     }
+    lifecycle_context.start_accepted = false;
 
     LogicExpanderControlBatchId_T batch_id = 0U;
     if ( LOGIC_EXPANDER_Begin_Control_Batch( &batch_id ) != LOGIC_EXPANDER_STATUS_OK )
@@ -885,6 +886,16 @@ DutDriverShutdownStatus_T DUT_DRIVER_LIFECYCLE_GetShutdownStatus( void )
     if ( status == LOGIC_EXPANDER_CONTROL_BATCH_FAILED
          || status == LOGIC_EXPANDER_CONTROL_BATCH_UNKNOWN )
     {
+        if ( lifecycle_context.shutdown_forced )
+        {
+            const bool clear_configuration    = lifecycle_context.shutdown_clear_configuration;
+            lifecycle_context.shutdown_active = false;
+            if ( clear_configuration )
+            {
+                ( void )memset( &lifecycle_context, 0, sizeof( lifecycle_context ) );
+            }
+            return DUT_DRIVER_SHUTDOWN_COMPLETE;
+        }
         return DUT_DRIVER_SHUTDOWN_FAILED;
     }
     return DUT_DRIVER_SHUTDOWN_PENDING;

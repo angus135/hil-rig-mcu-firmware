@@ -95,6 +95,10 @@ extern "C"
 /* Number of UART channels supported by the hardware */
 #define HW_UART_CHANNEL_COUNT 2U
 
+/** Stable bits reported by HwUartDiagnostic_T.latched_faults. */
+#define HW_UART_FAULT_TX_DMA ( UINT32_C( 1 ) << 0U )
+#define HW_UART_FAULT_RX_DMA ( UINT32_C( 1 ) << 1U )
+
 /**-----------------------------------------------------------------------------
  *  Public Typedefs / Enums / Structures
  *------------------------------------------------------------------------------

@@ -82,6 +82,7 @@ bool EXECUTION_MANAGER_Prepare( uint32_t tick_count )
     operation_timing_active       = operation_timing_requested;
     operation_timing_requested    = false;
     EXECUTION_OPERATION_ADAPTER_ResetFailure();
+    EXECUTION_MEASUREMENT_ADAPTER_ResetFailure();
     EXECUTION_OPERATION_ADAPTER_ResetTiming();
     EXECUTION_MEASUREMENT_ADAPTER_ResetTiming();
     return true;

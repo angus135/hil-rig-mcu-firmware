@@ -549,6 +549,56 @@ TEST_F( VariableResultMessageProducerTest, ProducesMultiChunkResultsForLargeTick
 }
 
 /**
+ * @brief High-throughput SPI transfers across multiple channels on the same tick
+ * are split into bounded chunks that fit the USB message envelope.
+ */
+TEST_F( VariableResultMessageProducerTest, ProducesMultiChunkResultsForHighThroughputSpiBurst )
+{
+    std::vector<uint8_t> spi1( 1595U, 0x11 );
+    std::vector<uint8_t> spi2( 1758U, 0x22 );
+    const uint32_t       pinmask = ( 1UL << 8U );
+
+    // DI and two large SPI transfers all captured on tick 0
+    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_DIGITAL_INPUT, 0U, &pinmask,
+                                    sizeof( pinmask ) );
+    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE, 0U,
+                                    spi1.data(), static_cast<uint16_t>( spi1.size() ) );
+    simulated_stream_.AppendRecord( 0U, FLASH_MANAGER_RESULT_PERIPHERAL_SPI_RECEIVE, 1U,
+                                    spi2.data(), static_cast<uint16_t>( spi2.size() ) );
+    HookSimulatedStream();
+
+    // Chunk 1 for tick 0: DI (2B) + SPI1 (1595B) with HAS_MORE_CHUNKS because appending SPI2
+    // exceeds max chunk payload
+    EXPECT_EQ( VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &out_msg_ ),
+               RESULT_MESSAGE_PRODUCER_STATUS_OK );
+    EXPECT_EQ( out_msg_.body.variable_test_result.tick_number, 0U );
+    EXPECT_EQ( out_msg_.body.variable_test_result.flags,
+               HIL_APPLICATION_RESULT_FLAG_HAS_MORE_CHUNKS );
+    EXPECT_EQ( out_msg_.body.variable_test_result.record_count, 2U );
+    EXPECT_EQ( out_msg_.body.variable_test_result.records[0].peripheral_type,
+               HIL_APPLICATION_PERIPHERAL_DIGITAL_INPUT );
+    EXPECT_EQ( out_msg_.body.variable_test_result.records[1].peripheral_type,
+               HIL_APPLICATION_PERIPHERAL_SPI );
+    EXPECT_EQ( out_msg_.body.variable_test_result.records[1].data.size, 1595U );
+
+    // Chunk 2 for tick 0: SPI2 (1758B) with COMPLETE_TICK
+    EXPECT_EQ( VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &out_msg_ ),
+               RESULT_MESSAGE_PRODUCER_STATUS_OK );
+    EXPECT_EQ( out_msg_.body.variable_test_result.tick_number, 0U );
+    EXPECT_EQ( out_msg_.body.variable_test_result.flags,
+               HIL_APPLICATION_RESULT_FLAG_COMPLETE_TICK );
+    EXPECT_EQ( out_msg_.body.variable_test_result.record_count, 1U );
+    EXPECT_EQ( out_msg_.body.variable_test_result.records[0].peripheral_type,
+               HIL_APPLICATION_PERIPHERAL_SPI );
+    EXPECT_EQ( out_msg_.body.variable_test_result.records[0].channel, 1U );
+    EXPECT_EQ( out_msg_.body.variable_test_result.records[0].data.size, 1758U );
+
+    // End of stream
+    EXPECT_EQ( VARIABLE_RESULT_MESSAGE_PRODUCER_ProduceNextMessage( &out_msg_ ),
+               RESULT_MESSAGE_PRODUCER_STATUS_END_OF_STREAM );
+}
+
+/**
  * @brief When a single record exceeds staged payload storage capacity, producer faults
  * with RESULT_MESSAGE_PRODUCER_STATUS_CORRUPT_DATA instead of silently truncating.
  */

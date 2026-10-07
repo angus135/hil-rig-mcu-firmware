@@ -782,7 +782,7 @@ TEST_F( VariableInstructionMessageHandlerTest, MultiChunkExceedingMaxCapacityFai
                HOST_INTERFACE_STATUS_BUFFER_TOO_SMALL );
 }
 
-TEST_F( VariableInstructionMessageHandlerTest, FlashManagerBusyExhaustsRetriesReturnsInternalError )
+TEST_F( VariableInstructionMessageHandlerTest, FlashManagerBusyUntilTimeoutReturnsInternalError )
 {
     static uint8_t uart_data[2] = { 0x12, 0x34 };
 
@@ -801,8 +801,11 @@ TEST_F( VariableInstructionMessageHandlerTest, FlashManagerBusyExhaustsRetriesRe
     EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) )
         .WillRepeatedly( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_BUSY ) );
 
+    const TickType_t start_ticks = xTaskGetTickCount();
     EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
                HOST_INTERFACE_STATUS_INTERNAL_ERROR );
+    const TickType_t elapsed_ticks = xTaskGetTickCount() - start_ticks;
+    EXPECT_GE( elapsed_ticks, pdMS_TO_TICKS( HOST_VAR_INSTRUCTION_FLASH_UPLOAD_BUSY_TIMEOUT_MS ) );
 }
 
 TEST_F( VariableInstructionMessageHandlerTest, FlashManagerBusyRetriesAndSucceeds )
@@ -827,4 +830,28 @@ TEST_F( VariableInstructionMessageHandlerTest, FlashManagerBusyRetriesAndSucceed
 
     EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
                HOST_INTERFACE_STATUS_OK );
+}
+
+/** @brief Preserves instruction storage exhaustion for the Application response mapping. */
+TEST_F( VariableInstructionMessageHandlerTest, FlashManagerStorageFullReturnsStorageFull )
+{
+    static uint8_t uart_data[2] = { 0x12, 0x34 };
+
+    HIL_Application_Logical_Operation_T op{};
+    op.peripheral_type = HIL_APPLICATION_PERIPHERAL_UART;
+    op.channel         = 0U;
+    op.payload.data    = uart_data;
+    op.payload.size    = sizeof( uart_data );
+
+    HIL_Application_Update_Instruction_T instruction{};
+    instruction.tick_number     = 0U;
+    instruction.flags           = HIL_APPLICATION_INSTRUCTION_FLAG_COMPLETE_TICK;
+    instruction.operation_count = 1U;
+    instruction.operations      = &op;
+
+    EXPECT_CALL( *g_mock_deps, FLASH_MANAGER_SubmitInstructionUploadBytes( _, _ ) )
+        .WillOnce( Return( FLASH_MANAGER_INSTRUCTION_UPLOAD_REQUEST_STORAGE_FULL ) );
+
+    EXPECT_EQ( HOST_VARIABLE_INSTRUCTION_HANDLER_HandleInstruction( &instruction ),
+               HOST_INTERFACE_STATUS_STORAGE_FULL );
 }

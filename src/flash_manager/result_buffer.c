@@ -632,6 +632,11 @@ bool RESULT_BUFFER_Init( void )
     return true;
 }
 
+uint32_t RESULT_BUFFER_GetCapacityBytes( void )
+{
+    return result_buffer_context.page_size_bytes * RESULT_BUFFER_PAGE_COUNT;
+}
+
 /**
  * @brief Resets session ownership while retaining initialised NAND geometry.
  */

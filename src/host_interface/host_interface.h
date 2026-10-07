@@ -53,6 +53,8 @@ extern "C"
 #define HOST_INTERFACE_NOTIFY_RESULT_TRANSFER_COMPLETE ( ( uint32_t )1U << 5U )
 #define HOST_INTERFACE_NOTIFY_FAULT ( ( uint32_t )1U << 6U )
 #define HOST_INTERFACE_NOTIFY_RESET ( ( uint32_t )1U << 7U )
+#define HOST_INTERFACE_NOTIFY_RUN_REPORT ( ( uint32_t )1U << 8U )
+#define HOST_INTERFACE_NOTIFY_RIG_STATUS ( ( uint32_t )1U << 9U )
 
 /** Number of recent result-path events retained for post-fault inspection. */
 #define HOST_INTERFACE_RESULT_TX_AUDIT_DEPTH ( 8U )

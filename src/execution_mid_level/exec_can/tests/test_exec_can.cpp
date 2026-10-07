@@ -377,6 +377,21 @@ TEST_F( ExecCANTest, StartAndStopEnforceLifecycleAndUpdateStateOnlyOnSuccess )
     EXPECT_EQ( EXEC_CAN_Stop_Channel( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_RESULT_NOT_STARTED );
 }
 
+static HW_CAN_Result_T abort_results[2];
+static uint16_t        abort_call_count[2];
+
+extern "C" HW_CAN_Result_T HW_CAN_Abort1( void )
+{
+    abort_call_count[0]++;
+    return abort_results[0];
+}
+
+extern "C" HW_CAN_Result_T HW_CAN_Abort2( void )
+{
+    abort_call_count[1]++;
+    return abort_results[1];
+}
+
 TEST_F( ExecCANTest, StartFailureLeavesConfiguredChannelStopped )
 {
     exec_can_state[EXEC_CAN_CHANNEL_2] = { true, false };
@@ -390,12 +405,10 @@ TEST_F( ExecCANTest, StartFailureLeavesConfiguredChannelStopped )
 TEST_F( ExecCANTest, AbortCancelsPendingTransmissionThenStopsChannel )
 {
     exec_can_state[EXEC_CAN_CHANNEL_1] = { true, true };
-    recover_results[0]                 = HW_CAN_RESULT_OK;
-    stop_results[0]                    = HW_CAN_RESULT_OK;
+    abort_results[0]                   = HW_CAN_RESULT_OK;
 
     EXPECT_EQ( EXEC_CAN_Abort_Channel( EXEC_CAN_CHANNEL_1 ), EXEC_CAN_RESULT_OK );
-    EXPECT_EQ( recover_call_count[0], 1U );
-    EXPECT_EQ( stop_call_count[0], 1U );
+    EXPECT_EQ( abort_call_count[0], 1U );
     EXPECT_TRUE( EXEC_CAN_Is_Configured( EXEC_CAN_CHANNEL_1 ) );
     EXPECT_FALSE( EXEC_CAN_Is_Started( EXEC_CAN_CHANNEL_1 ) );
 }

@@ -13,7 +13,7 @@
 #define RUN_METADATA_EXECUTION_VALID_FLAGS                                                         \
     ( RUN_METADATA_VALID_LAST_COMPLETED_BOUNDARY | RUN_METADATA_VALID_ISR_TIMING                   \
       | RUN_METADATA_VALID_INSTRUCTION_BUFFER | RUN_METADATA_VALID_RESULT_BUFFER                   \
-      | RUN_METADATA_VALID_FLASH_THROUGHPUT )
+      | RUN_METADATA_VALID_FLASH_THROUGHPUT | RUN_METADATA_VALID_DIAGNOSTICS )
 
 static RunMetadataSnapshot_T run_metadata_snapshot         = { 0 };
 static bool                  execution_statistics_captured = false;
@@ -31,8 +31,9 @@ bool RUN_METADATA_LatchTerminal( RunMetadataTerminalStatus_T status,
                                  RunMetadataFailureSource_T source, uint32_t reason )
 {
     const bool is_complete = status == RUN_METADATA_TERMINAL_COMPLETE;
-    const bool is_failure =
-        status == RUN_METADATA_TERMINAL_FAILED || status == RUN_METADATA_TERMINAL_ABORTED;
+    const bool is_failure  = status == RUN_METADATA_TERMINAL_FAILED
+                            || status == RUN_METADATA_TERMINAL_ABORTED
+                            || status == RUN_METADATA_TERMINAL_REJECTED;
 
     if ( run_metadata_sealed || ( !is_complete && !is_failure )
          || ( is_complete && ( source != RUN_METADATA_FAILURE_SOURCE_NONE || reason != 0U ) )
@@ -77,6 +78,10 @@ bool RUN_METADATA_CaptureExecution( const RunMetadataExecutionCapture_T* capture
     if ( ( capture->valid_sections & RUN_METADATA_VALID_FLASH_THROUGHPUT ) != 0U )
     {
         run_metadata_snapshot.flash_throughput = capture->flash_throughput;
+    }
+    if ( ( capture->valid_sections & RUN_METADATA_VALID_DIAGNOSTICS ) != 0U )
+    {
+        run_metadata_snapshot.diagnostics = capture->diagnostics;
     }
 
     run_metadata_snapshot.valid_sections |= capture->valid_sections;

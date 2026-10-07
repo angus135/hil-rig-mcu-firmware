@@ -94,6 +94,12 @@ static void ResetCANBuffers()
     can_tx_pending_mailbox2 = 0;
     can_tx_status1          = HW_CAN_TX_STATUS_IDLE;
     can_tx_status2          = HW_CAN_TX_STATUS_IDLE;
+    can_error_count1        = 0U;
+    can_error_count2        = 0U;
+    can_max_tec1            = 0U;
+    can_max_rec1            = 0U;
+    can_max_tec2            = 0U;
+    can_max_rec2            = 0U;
     hw_can_lifecycle1       = { false, false };
     hw_can_lifecycle2       = { false, false };
 }
@@ -214,15 +220,15 @@ protected:
  *------------------------------------------------------------------------------
  */
 
-/** Verify CAN timing parameters for the calibrated clock with prescaler three. */
-TEST_F( HWCANTest, ComputePropertiesReturnsExpectedValuesForCalibratedBitrate )
+/** Verify CAN timing parameters for the nominal APB1 clock with prescaler three. */
+TEST_F( HWCANTest, ComputePropertiesReturnsExpectedValuesForNominalBitrate )
 {
     CanProperties_T props = HW_CAN_Compute_Properties( CAN_TIMER_HZ / 45U, 15, 800 );
 
     EXPECT_EQ( props.bs1, 11 );
     EXPECT_EQ( props.bs2, 3 );
     EXPECT_EQ( props.psc, 3 );
-    EXPECT_EQ( props.timer_hz, HW_CLOCK_Get_PCLK1_Hz() );
+    EXPECT_EQ( props.timer_hz, HW_CLOCK_NOMINAL_APB1_HZ );
 }
 
 /** Verify that an invalid zero bitrate produces zeroed timing properties. */
@@ -235,15 +241,20 @@ TEST_F( HWCANTest, ComputePropertiesRejectsInvalidBitrate )
     EXPECT_EQ( props.psc, 0 );
 }
 
-/** Verify exact calibrated bitrates with the 15-TQ model. */
+/** Verify exact nominal bitrates with the 15-TQ model. */
 TEST_F( HWCANTest, ComputePropertiesAcceptsExactProjectBitrates )
 {
-    CanProperties_T props_500k = HW_CAN_Compute_Properties( CAN_TIMER_HZ / 90U, 15U, 800U );
+    CanProperties_T props_1m = HW_CAN_Compute_Properties( 1000000U, 15U, 800U );
+    EXPECT_EQ( props_1m.bs1, 11U );
+    EXPECT_EQ( props_1m.bs2, 3U );
+    EXPECT_EQ( props_1m.psc, 3U );
+
+    CanProperties_T props_500k = HW_CAN_Compute_Properties( 500000U, 15U, 800U );
     EXPECT_EQ( props_500k.bs1, 11U );
     EXPECT_EQ( props_500k.bs2, 3U );
     EXPECT_EQ( props_500k.psc, 6U );
 
-    CanProperties_T props_250k = HW_CAN_Compute_Properties( CAN_TIMER_HZ / 180U, 15U, 800U );
+    CanProperties_T props_250k = HW_CAN_Compute_Properties( 250000U, 15U, 800U );
     EXPECT_EQ( props_250k.bs1, 11U );
     EXPECT_EQ( props_250k.bs2, 3U );
     EXPECT_EQ( props_250k.psc, 12U );
@@ -1818,12 +1829,16 @@ TEST_F( HWCANTest, GetDiagnosticPopulatesStateAndRegisters )
     mock_can2_regs.MSR = 0x00000C08;
     mock_can2_regs.IER = 0x00008F0E;
 
-    can_tx_active1        = true;
-    can_tx_wp1            = 3;
-    can_tx_rp1            = 1;
-    can_rx_wp1            = 5;
-    can_rx_rp1            = 2;
-    can_rx_dropped_count1 = 4;
+    hw_can_lifecycle1.is_configured = true;
+    hw_can_lifecycle2.is_configured = true;
+    can_tx_active1                  = true;
+    can_tx_wp1                      = 3;
+    can_tx_rp1                      = 1;
+    can_tx_peak1                    = 2;
+    can_rx_wp1                      = 5;
+    can_rx_rp1                      = 2;
+    can_rx_peak1                    = 3;
+    can_rx_dropped_count1           = 4;
 
     HW_CAN_Diagnostic_T diag{};
     HW_CAN_GetDiagnostic( &diag );
@@ -1832,6 +1847,7 @@ TEST_F( HWCANTest, GetDiagnosticPopulatesStateAndRegisters )
     EXPECT_FALSE( diag.can_tx_active2 );
     EXPECT_EQ( diag.can_tx_wp1, 3U );
     EXPECT_EQ( diag.can_tx_rp1, 1U );
+    EXPECT_EQ( diag.can_tx_peak1, 2U );
     EXPECT_EQ( diag.TSR1, 0x1C000009U );
     EXPECT_EQ( diag.ESR1, 0x00800030U );
     EXPECT_EQ( diag.MSR1, 0x00000C08U );
@@ -1840,7 +1856,11 @@ TEST_F( HWCANTest, GetDiagnosticPopulatesStateAndRegisters )
     EXPECT_EQ( diag.REC1, 0U );
     EXPECT_EQ( diag.error_code1, 3U );
     EXPECT_EQ( diag.rx_queued1, 3U );
+    EXPECT_EQ( diag.rx_peak1, 3U );
     EXPECT_EQ( diag.rx_dropped1, 4U );
+    EXPECT_EQ( diag.max_tec1, 128U );
+    EXPECT_EQ( diag.max_rec1, 0U );
+    EXPECT_EQ( diag.error_count1, 0U );
 
     EXPECT_EQ( diag.TSR2, 0x1C000000U );
     EXPECT_EQ( diag.ESR2, 0x00000000U );
@@ -1849,4 +1869,76 @@ TEST_F( HWCANTest, GetDiagnosticPopulatesStateAndRegisters )
     EXPECT_EQ( diag.TEC2, 0U );
     EXPECT_EQ( diag.REC2, 0U );
     EXPECT_EQ( diag.error_code2, 0U );
+}
+
+/** Verify that unconfigured channels do not read hardware registers. */
+TEST_F( HWCANTest, GetDiagnosticZeroesRegistersWhenNotConfigured )
+{
+    mock_can1_regs.TSR              = 0x1C000009;
+    mock_can1_regs.ESR              = 0x00800030;
+    mock_can2_regs.TSR              = 0x1C000000;
+    mock_can2_regs.ESR              = 0x00800030;
+    hw_can_lifecycle1.is_configured = false;
+    hw_can_lifecycle2.is_configured = false;
+
+    HW_CAN_Diagnostic_T diag{};
+    HW_CAN_GetDiagnostic( &diag );
+
+    EXPECT_EQ( diag.TSR1, 0U );
+    EXPECT_EQ( diag.ESR1, 0U );
+    EXPECT_EQ( diag.TSR2, 0U );
+    EXPECT_EQ( diag.ESR2, 0U );
+}
+
+/** Verify wrapped queue pointers report usable occupancy rather than an underflowed subtraction. */
+TEST_F( HWCANTest, GetDiagnosticReportsWrappedRxOccupancy )
+{
+    can_rx_wp1 = 1U;
+    can_rx_rp1 = HW_CAN_RX_QUEUE_CAPACITY;
+
+    HW_CAN_Diagnostic_T diag{};
+    HW_CAN_GetDiagnostic( &diag );
+
+    EXPECT_EQ( diag.rx_queued1, 2U );
+}
+
+/** Verify that HW_CAN_Abort forces mailboxes abort, disables IRQs, and clears state. */
+TEST_F( HWCANTest, AbortRequiresConfiguredChannelAndClearsStartedState )
+{
+    EXPECT_EQ( HW_CAN_Abort1(), HW_CAN_RESULT_NOT_CONFIGURED );
+
+    hw_can_lifecycle1 = { true, false };
+    EXPECT_EQ( HW_CAN_Abort1(), HW_CAN_RESULT_OK );
+
+    hw_can_lifecycle1  = { true, true };
+    mock_can1_regs.IER = CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK;
+    can_tx_active1     = true;
+    can_tx_wp1         = 3U;
+    can_tx_rp1         = 1U;
+    SET_BIT( mock_can1_regs.sTxMailBox[0].TIR, CAN_TI0R_TXRQ );
+    EXPECT_CALL( mock, CANStop( &hcan1 ) ).WillOnce( Return( HAL_OK ) );
+
+    EXPECT_EQ( HW_CAN_Abort1(), HW_CAN_RESULT_OK );
+    EXPECT_TRUE( HW_CAN_Is_Configured1() );
+    EXPECT_FALSE( HW_CAN_Is_Started1() );
+    EXPECT_FALSE( can_tx_active1 );
+    EXPECT_EQ( can_tx_wp1, 0U );
+    EXPECT_EQ( can_tx_rp1, 0U );
+    EXPECT_EQ( mock_can1_regs.IER
+                   & ( CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK ),
+               0U );
+    EXPECT_FALSE( nvic_irq_enabled[CAN1_TX_IRQn] );
+    EXPECT_FALSE( nvic_irq_enabled[CAN1_RX0_IRQn] );
+    EXPECT_FALSE( nvic_irq_enabled[CAN1_SCE_IRQn] );
+
+    /* Abort channel 2 */
+    hw_can_lifecycle2  = { true, true };
+    mock_can2_regs.IER = CAN_IER_TMEIE | HW_CAN_RX_INTERRUPT_MASK | HW_CAN_ERROR_INTERRUPT_MASK;
+    can_tx_active2     = true;
+    EXPECT_CALL( mock, CANStop( &hcan2 ) ).WillOnce( Return( HAL_ERROR ) );
+
+    EXPECT_EQ( HW_CAN_Abort2(), HW_CAN_RESULT_OK );
+    EXPECT_TRUE( HW_CAN_Is_Configured2() );
+    EXPECT_FALSE( HW_CAN_Is_Started2() );
+    EXPECT_FALSE( can_tx_active2 );
 }

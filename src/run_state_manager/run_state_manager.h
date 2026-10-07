@@ -342,6 +342,15 @@ bool RUN_STATE_MANAGER_RequestRepeat( void );
 /** Discards results, or an ARMED retained test, and returns to IDLE with configuration cleared. */
 bool RUN_STATE_MANAGER_RequestDiscardResults( void );
 
+/** Copies the sealed terminal metadata for the active report lifecycle. */
+bool RUN_STATE_MANAGER_GetRunMetadataSnapshot( RunMetadataSnapshot_T* snapshot );
+
+/** Returns whether the active report lifecycle reached execution. */
+bool RUN_STATE_MANAGER_DidExecutionStart( void );
+
+/** Ends the current report lifecycle after Host Interface accepts the report. */
+void RUN_STATE_MANAGER_AcknowledgeRunReport( void );
+
 /**
  * @brief Requests a transition to the fault state from task context.
  *

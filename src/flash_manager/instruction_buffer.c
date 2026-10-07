@@ -666,6 +666,11 @@ bool INSTRUCTION_BUFFER_Init( void )
     return true;
 }
 
+uint32_t INSTRUCTION_BUFFER_GetCapacityBytes( void )
+{
+    return instruction_buffer_context.page_size_bytes * INSTRUCTION_BUFFER_PAGE_COUNT;
+}
+
 /* Instruction retrieval: lifecycle, NAND fill, and execution serving. */
 
 /**
@@ -1131,7 +1136,7 @@ InstructionBufferUploadWriteStatus_T INSTRUCTION_BUFFER_WriteUploadBytes( const 
 
     if ( length > remaining_upload_bytes )
     {
-        return INSTRUCTION_BUFFER_UPLOAD_WRITE_INVALID_ARGUMENT;
+        return INSTRUCTION_BUFFER_UPLOAD_WRITE_STORAGE_FULL;
     }
 
     InstructionBufferUploadCapacityStatus_T capacity_status =

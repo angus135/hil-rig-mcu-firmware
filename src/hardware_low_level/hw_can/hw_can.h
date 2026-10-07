@@ -99,6 +99,8 @@ typedef struct
     uint16_t can_tx_rp1;
     uint16_t can_tx_wp2;
     uint16_t can_tx_rp2;
+    uint16_t can_tx_peak1;
+    uint16_t can_tx_peak2;
     uint32_t can_tx_pending_mailbox1;
     uint32_t can_tx_pending_mailbox2;
     uint32_t TSR1;
@@ -116,9 +118,17 @@ typedef struct
     uint8_t  REC2;
     uint8_t  error_code2;
     uint16_t rx_queued1;
-    uint16_t rx_dropped1;
+    uint32_t rx_dropped1;
     uint16_t rx_queued2;
-    uint16_t rx_dropped2;
+    uint32_t rx_dropped2;
+    uint16_t rx_peak1;
+    uint16_t rx_peak2;
+    uint32_t error_count1;
+    uint32_t error_count2;
+    uint8_t  max_tec1;
+    uint8_t  max_rec1;
+    uint8_t  max_tec2;
+    uint8_t  max_rec2;
 } HW_CAN_Diagnostic_T;
 
 /**-----------------------------------------------------------------------------
@@ -267,6 +277,12 @@ HW_CAN_Result_T HW_CAN_Stop1( void );
 
 /** Stop idle CAN channel 2 while retaining configuration and software state. */
 HW_CAN_Result_T HW_CAN_Stop2( void );
+
+/** Cancel pending TX work and stop CAN channel 1 immediately. */
+HW_CAN_Result_T HW_CAN_Abort1( void );
+
+/** Cancel pending TX work and stop CAN channel 2 immediately. */
+HW_CAN_Result_T HW_CAN_Abort2( void );
 
 /** Return true when CAN channel 1 has been configured successfully. */
 bool HW_CAN_Is_Configured1( void );
@@ -581,6 +597,9 @@ HW_CAN_Result_T HW_CAN_Tx_Trigger2( void );
  * @param diag  Output struct to populate. Must not be NULL.
  */
 void HW_CAN_GetDiagnostic( HW_CAN_Diagnostic_T* diag );
+
+/** Clears execution-attempt high-water and dropped-frame counters. */
+void HW_CAN_Reset_Diagnostics( void );
 
 #ifdef __cplusplus
 }
